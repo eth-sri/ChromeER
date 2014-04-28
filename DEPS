@@ -15,15 +15,15 @@
 vars = {
   # Use this googlecode_url variable only if there is an internal mirror for it.
   # If you do not know, use the full path while defining your new deps entry.
+  "mirror_url" : "chill.local:GIT/chromium",
   "googlecode_url": "http://%s.googlecode.com/svn",
   "sourceforge_url": "http://svn.code.sf.net/p/%(repo)s/code",
   "llvm_url": "http://src.chromium.org/llvm-project",
   "llvm_git": "https://llvm.googlesource.com",
   "libcxx_revision": "206024",
   "libcxxabi_revision": "206024",
-  "webkit_trunk": "http://src.chromium.org/blink/trunk",
+  "webkit_hash": "5a3eb8137628a87465bf2724be7cd5c5e7eeffad",
   "nacl_trunk": "http://src.chromium.org/native_client/trunk",
-  "webkit_revision": "172472",
   "chromium_git": "https://chromium.googlesource.com",
   "chromiumos_git": "https://chromium.googlesource.com/chromiumos",
   "skia_git": "https://skia.googlesource.com",
@@ -92,7 +92,7 @@ deps = {
     (Var("googlecode_url") % "trace-viewer") + "/trunk@1265",
 
   "src/third_party/WebKit":
-    Var("webkit_trunk") + "@" + Var("webkit_revision"),
+    Var("mirror_url") + "/blink.git@" + Var("webkit_hash"),
 
   "src/third_party/WebKit/LayoutTests/w3c/web-platform-tests":
     Var("chromium_git") +
