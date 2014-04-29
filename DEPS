@@ -22,7 +22,7 @@ vars = {
   "llvm_git": "https://llvm.googlesource.com",
   "libcxx_revision": "206024",
   "libcxxabi_revision": "206024",
-  "webkit_hash": "5a3eb8137628a87465bf2724be7cd5c5e7eeffad",
+  "webkit_hash": "f0f09a7737ca0075f7d4f14232e9065e38791251",
   "nacl_trunk": "http://src.chromium.org/native_client/trunk",
   "chromium_git": "https://chromium.googlesource.com",
   "chromiumos_git": "https://chromium.googlesource.com/chromiumos",
