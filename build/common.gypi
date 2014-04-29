@@ -3201,7 +3201,6 @@
               # Requires gold and gcc >= 4.8 or clang.
               ['linux_use_gold_flags==1 and (clang==1 or gcc_version>=48) and binutils_version>=223', {
                 'cflags': ['-gsplit-dwarf'],
-                'ldflags': ['-Wl,--gdb-index'],
               }],
             ],
           },
