@@ -3161,6 +3161,8 @@
             'cflags': [
               '-O>(debug_optimize)',
               '-g',
+              '-gdwarf-3',
+              '-gstrict-dwarf',
             ],
             'conditions' : [
               ['OS=="android"', {
