@@ -217,6 +217,7 @@ class CONTENT_EXPORT RenderFrameHostImpl : public RenderFrameHost {
                                 const base::string16& message,
                                 bool is_reload,
                                 IPC::Message* reply_msg);
+  void OnStartEventRacerLog();
   void OnRequestDesktopNotificationPermission(const GURL& origin,
                                               int callback_id);
   void OnShowDesktopNotification(

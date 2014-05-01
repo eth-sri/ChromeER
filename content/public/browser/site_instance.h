@@ -14,6 +14,7 @@ namespace content {
 class BrowserContext;
 class BrowsingInstance;
 class RenderProcessHost;
+class EventRacerLogHost;
 
 ///////////////////////////////////////////////////////////////////////////////
 // SiteInstance interface.
@@ -106,6 +107,12 @@ class CONTENT_EXPORT SiteInstance : public base::RefCounted<SiteInstance> {
   // this one.  If so, JavaScript interactions that are permitted across
   // origins (e.g., postMessage) should be supported.
   virtual bool IsRelatedSiteInstance(const SiteInstance* instance) = 0;
+
+  // Creates a new EventRacer log, replacing the old one.
+  virtual void StartEventRacerLog() = 0;
+
+  // Returns the EventRacer log, associated with this SiteInstance.
+  virtual EventRacerLogHost *GetEventRacerLog() = 0;
 
   // Factory method to create a new SiteInstance.  This will create a new
   // new BrowsingInstance, so it should only be used when creating a new tab

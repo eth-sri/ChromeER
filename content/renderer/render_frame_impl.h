@@ -357,6 +357,14 @@ class CONTENT_EXPORT RenderFrameImpl
   virtual void initializeChildFrame(const blink::WebRect& frame_rect,
                                     float scale_factor);
 
+  // EventRacer ------------------------------------------------------
+  virtual void didStartEventRacerLog() OVERRIDE;
+
+  virtual void didStartEventRacerEvent(unsigned int id) OVERRIDE;
+  virtual void didEndEventRacerEvent() OVERRIDE;
+
+  virtual void didEventRacerOperation() OVERRIDE;
+
   // TODO(nasko): Make all tests in RenderViewImplTest friends and then move
   // this back to private member.
   void OnNavigate(const FrameMsg_Navigate_Params& params);

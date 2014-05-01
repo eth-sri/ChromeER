@@ -5,6 +5,7 @@
 #ifndef CONTENT_BROWSER_SITE_INSTANCE_IMPL_H_
 #define CONTENT_BROWSER_SITE_INSTANCE_IMPL_H_
 
+#include "content/browser/eventracer/event_racer_log_host.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/render_process_host_observer.h"
@@ -24,6 +25,9 @@ class CONTENT_EXPORT SiteInstanceImpl : public SiteInstance,
   virtual const GURL& GetSiteURL() const OVERRIDE;
   virtual SiteInstance* GetRelatedSiteInstance(const GURL& url) OVERRIDE;
   virtual bool IsRelatedSiteInstance(const SiteInstance* instance) OVERRIDE;
+  virtual void StartEventRacerLog() OVERRIDE;
+  virtual EventRacerLogHost *GetEventRacerLog() OVERRIDE;
+
   virtual BrowserContext* GetBrowserContext() const OVERRIDE;
 
   // Set the web site that this SiteInstance is rendering pages for.
@@ -120,6 +124,9 @@ class CONTENT_EXPORT SiteInstanceImpl : public SiteInstance,
 
   // Whether SetSite has been called.
   bool has_site_;
+
+  // EventRacer log for this instance.
+  scoped_ptr<EventRacerLogHost> event_racer_log_;
 
   DISALLOW_COPY_AND_ASSIGN(SiteInstanceImpl);
 };

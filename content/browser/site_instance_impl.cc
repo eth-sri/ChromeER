@@ -33,6 +33,13 @@ SiteInstanceImpl::SiteInstanceImpl(BrowsingInstance* browsing_instance)
 }
 
 SiteInstanceImpl::~SiteInstanceImpl() {
+  // Write out the EventRacer log.
+  if (event_racer_log_) {
+    BrowserThread::PostTask(
+      BrowserThread::FILE, FROM_HERE,
+      base::Bind(&EventRacerLogHost::Write, Passed(event_racer_log_.Pass()), id_));
+  }
+
   GetContentClient()->browser()->SiteInstanceDeleting(this);
 
   if (process_)
@@ -180,6 +187,26 @@ SiteInstance* SiteInstanceImpl::GetRelatedSiteInstance(const GURL& url) {
 bool SiteInstanceImpl::IsRelatedSiteInstance(const SiteInstance* instance) {
   return browsing_instance_.get() == static_cast<const SiteInstanceImpl*>(
                                          instance)->browsing_instance_.get();
+}
+
+void SiteInstanceImpl::StartEventRacerLog() {
+  LOG(INFO) << "Started new log for " << site_.spec() << "\n";
+  LOG(INFO) << " site instance id: " << id_ << "\n";
+
+  // Create a new log and replace the old one.
+  scoped_ptr<EventRacerLogHost> log(new EventRacerLogHost);
+  event_racer_log_.swap(log);
+
+  // Write out the old one. The writer task will delete the log.
+  if (log) {
+    BrowserThread::PostTask(
+      BrowserThread::FILE, FROM_HERE,
+      base::Bind(&EventRacerLogHost::Write, Passed(log.Pass()), id_));
+  }
+}
+
+EventRacerLogHost *SiteInstanceImpl::GetEventRacerLog() {
+  return event_racer_log_.get();
 }
 
 bool SiteInstanceImpl::HasWrongProcessForURL(const GURL& url) {

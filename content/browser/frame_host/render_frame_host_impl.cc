@@ -288,6 +288,7 @@ bool RenderFrameHostImpl::OnMessageReceived(const IPC::Message &msg) {
                                     OnRunJavaScriptMessage)
     IPC_MESSAGE_HANDLER_DELAY_REPLY(FrameHostMsg_RunBeforeUnloadConfirm,
                                     OnRunBeforeUnloadConfirm)
+    IPC_MESSAGE_HANDLER(FrameHostMsg_StartEventRacerLog, OnStartEventRacerLog)
     IPC_MESSAGE_HANDLER(DesktopNotificationHostMsg_RequestPermission,
                         OnRequestDesktopNotificationPermission)
     IPC_MESSAGE_HANDLER(DesktopNotificationHostMsg_Show,
@@ -647,6 +648,10 @@ void RenderFrameHostImpl::OnRunBeforeUnloadConfirm(
   GetProcess()->SetIgnoreInputEvents(true);
   render_view_host_->StopHangMonitorTimeout();
   delegate_->RunBeforeUnloadConfirm(this, message, is_reload, reply_msg);
+}
+
+void RenderFrameHostImpl::OnStartEventRacerLog() {
+  GetSiteInstance()->StartEventRacerLog();
 }
 
 void RenderFrameHostImpl::OnRequestDesktopNotificationPermission(

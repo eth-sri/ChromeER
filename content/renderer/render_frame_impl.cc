@@ -2670,6 +2670,27 @@ void RenderFrameImpl::initializeChildFrame(const blink::WebRect& frame_rect,
       routing_id_, frame_rect, scale_factor));
 }
 
+  // EventRacer ------------------------------------------------------
+void RenderFrameImpl::didStartEventRacerLog()
+{
+  Send(new FrameHostMsg_StartEventRacerLog(routing_id_));
+}
+
+void RenderFrameImpl::didStartEventRacerEvent(unsigned int)
+{
+
+}
+
+void RenderFrameImpl::didEndEventRacerEvent()
+{
+
+}
+
+void RenderFrameImpl::didEventRacerOperation()
+{
+
+}
+
 void RenderFrameImpl::AddObserver(RenderFrameObserver* observer) {
   observers_.AddObserver(observer);
 }

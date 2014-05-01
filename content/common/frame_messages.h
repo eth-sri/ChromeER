@@ -568,3 +568,6 @@ IPC_MESSAGE_ROUTED1(FrameHostMsg_EndColorChooser, int /* id */)
 IPC_MESSAGE_ROUTED2(FrameHostMsg_SetSelectedColorInColorChooser,
                     int /* id */,
                     SkColor /* color */)
+
+// Start a new EventRacer log.
+IPC_MESSAGE_ROUTED0(FrameHostMsg_StartEventRacerLog)

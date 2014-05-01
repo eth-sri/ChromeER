@@ -517,6 +517,8 @@
     'browser/download/save_package.h',
     'browser/download/save_types.cc',
     'browser/download/save_types.h',
+    'browser/eventracer/event_racer_log_host.cc',
+    'browser/eventracer/event_racer_log_host.h',
     'browser/fileapi/blob_storage_host.cc',
     'browser/fileapi/blob_storage_host.h',
     'browser/fileapi/browser_file_system_helper.cc',
