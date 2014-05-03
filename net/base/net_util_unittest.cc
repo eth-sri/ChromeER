@@ -1091,7 +1091,7 @@ TEST(NetUtilTest, FormatUrl) {
 
 TEST(NetUtilTest, FormatUrlParsed) {
   // No unescape case.
-  url_parse::Parsed parsed;
+  url::Parsed parsed;
   base::string16 formatted = FormatUrl(
       GURL("http://\xE3\x82\xB0:\xE3\x83\xBC@xn--qcka1pmc.jp:8080/"
            "%E3%82%B0/?q=%E3%82%B0#\xE3\x82\xB0"),
@@ -1803,6 +1803,9 @@ TEST(NetUtilTest, GetNetworkList) {
       EXPECT_LT(base::win::GetVersion(), base::win::VERSION_VISTA);
       EXPECT_LT(it->interface_index, 1u << 24u);  // Must fit 0.x.x.x.
       EXPECT_NE(it->interface_index, 0u);  // 0 means to use default.
+    }
+    if (it->type == NetworkChangeNotifier::CONNECTION_WIFI) {
+      EXPECT_NE(WIFI_PHY_LAYER_PROTOCOL_NONE, GetWifiPHYLayerProtocol());
     }
 #elif !defined(OS_ANDROID)
     char name[IF_NAMESIZE];

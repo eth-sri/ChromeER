@@ -22,7 +22,6 @@ class Size;
 
 namespace content {
 
-class BrowserAccessibilityManager;
 class RenderWidgetHost;
 
 // RenderWidgetHostView is an interface implemented by an object that acts as
@@ -35,25 +34,11 @@ class RenderWidgetHost;
 //
 // RenderWidgetHostView Class Hierarchy:
 //   RenderWidgetHostView - Public interface.
-//   RenderWidgetHostViewPort - Private interface for content/ and ports.
 //   RenderWidgetHostViewBase - Common implementation between platforms.
-//   RenderWidgetHostViewWin, ... - Platform specific implementations.
+//   RenderWidgetHostViewAura, ... - Platform specific implementations.
 class CONTENT_EXPORT RenderWidgetHostView {
  public:
   virtual ~RenderWidgetHostView() {}
-
-  // Platform-specific creator. Use this to construct new RenderWidgetHostViews
-  // rather than using RenderWidgetHostViewWin & friends.
-  //
-  // This function must NOT size it, because the RenderView in the renderer
-  // wouldn't have been created yet. The widget would set its "waiting for
-  // resize ack" flag, and the ack would never come becasue no RenderView
-  // received it.
-  //
-  // The RenderWidgetHost must already be created (because we can't know if it's
-  // going to be a regular RenderWidgetHost or a RenderViewHost (a subclass).
-  static RenderWidgetHostView* CreateViewForWidget(
-      RenderWidgetHost* widget);
 
   // Initialize this object for use as a drawing area.  |parent_view| may be
   // left as NULL on platforms where a parent view is not required to initialize
@@ -113,6 +98,15 @@ class CONTENT_EXPORT RenderWidgetHostView {
   virtual void UnlockMouse() = 0;
   // Returns true if the mouse pointer is currently locked.
   virtual bool IsMouseLocked() = 0;
+
+  // Retrives the size of the viewport for the visible region. May be smaller
+  // than the view size if a portion of the view is obstructed (e.g. by a
+  // virtual keyboard).
+  virtual gfx::Size GetVisibleViewportSize() const = 0;
+
+  // Set insets for the visible region of the root window. Used to compute the
+  // visible viewport.
+  virtual void SetInsets(const gfx::Insets& insets) = 0;
 
 #if defined(OS_MACOSX)
   // Set the view's active state (i.e., tint state of controls).

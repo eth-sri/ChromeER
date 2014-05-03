@@ -15,6 +15,7 @@
 #include "content/public/renderer/content_renderer_client.h"
 #include "ipc/ipc_channel_proxy.h"
 
+class ChromeExtensionsDispatcherDelegate;
 class ChromeRenderProcessObserver;
 class PrescientNetworkingDispatcher;
 class RendererNetPredictor;
@@ -131,8 +132,10 @@ class ChromeContentRendererClient : public content::ContentRendererClient {
   virtual void AddKeySystems(
       std::vector<content::KeySystemInfo>* key_systems) OVERRIDE;
 
-  // For testing.
-  void SetExtensionDispatcher(extensions::Dispatcher* extension_dispatcher);
+  // Takes ownership.
+  void SetExtensionDispatcherForTest(
+      extensions::Dispatcher* extension_dispatcher);
+  extensions::Dispatcher* GetExtensionDispatcherForTest();
 
 #if defined(ENABLE_SPELLCHECK)
   // Sets a new |spellcheck|. Used for testing only.
@@ -187,6 +190,7 @@ class ChromeContentRendererClient : public content::ContentRendererClient {
                             blink::WebPluginParams* params);
 
   scoped_ptr<ChromeRenderProcessObserver> chrome_observer_;
+  scoped_ptr<ChromeExtensionsDispatcherDelegate> extension_dispatcher_delegate_;
   scoped_ptr<extensions::Dispatcher> extension_dispatcher_;
   scoped_ptr<extensions::RendererPermissionsPolicyDelegate>
       permissions_policy_delegate_;

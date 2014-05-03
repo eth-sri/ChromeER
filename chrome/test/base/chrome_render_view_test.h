@@ -7,6 +7,7 @@
 
 #include <string>
 
+#include "base/memory/scoped_ptr.h"
 #include "chrome/renderer/chrome_mock_render_thread.h"
 #include "content/public/test/render_view_test.h"
 
@@ -17,7 +18,7 @@ class TestPasswordGenerationAgent;
 }
 
 namespace extensions {
-class Dispatcher;
+class DispatcherDelegate;
 }
 
 class ChromeRenderViewTest : public content::RenderViewTest {
@@ -34,7 +35,7 @@ class ChromeRenderViewTest : public content::RenderViewTest {
   virtual content::ContentRendererClient*
       CreateContentRendererClient() OVERRIDE;
 
-  extensions::Dispatcher* extension_dispatcher_;
+  scoped_ptr<extensions::DispatcherDelegate> extension_dispatcher_delegate_;
 
   autofill::TestPasswordAutofillAgent* password_autofill_;
   autofill::TestPasswordGenerationAgent* password_generation_;

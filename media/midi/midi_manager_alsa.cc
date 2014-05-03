@@ -6,9 +6,10 @@
 
 #include <alsa/asoundlib.h>
 #include <stdlib.h>
+#include <algorithm>
+#include <string>
 
 #include "base/bind.h"
-#include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/message_loop/message_loop.h"
@@ -127,11 +128,7 @@ MidiManagerAlsa::MidiManagerAlsa()
     pipe_fd_[i] = -1;
 }
 
-MidiResult MidiManagerAlsa::Initialize() {
-  // TODO(toyoshim): Make Initialize() asynchronous.
-  // See http://crbug.com/339746.
-  TRACE_EVENT0("midi", "MidiManagerAlsa::Initialize");
-
+void MidiManagerAlsa::StartInitialization() {
   // Enumerate only hardware MIDI devices because software MIDIs running in
   // the browser process is not secure.
   snd_ctl_card_info_t* card;
@@ -188,14 +185,14 @@ MidiResult MidiManagerAlsa::Initialize() {
 
   if (pipe(pipe_fd_) < 0) {
     VPLOG(1) << "pipe() failed";
-    return MIDI_INITIALIZATION_ERROR;
+    CompleteInitialization(MIDI_INITIALIZATION_ERROR);
+  } else {
+    event_thread_.Start();
+    event_thread_.message_loop()->PostTask(
+        FROM_HERE,
+        base::Bind(&MidiManagerAlsa::EventReset, base::Unretained(this)));
+    CompleteInitialization(MIDI_OK);
   }
-  event_thread_.Start();
-  event_thread_.message_loop()->PostTask(
-      FROM_HERE,
-      base::Bind(&MidiManagerAlsa::EventReset, base::Unretained(this)));
-
-  return MIDI_OK;
 }
 
 MidiManagerAlsa::~MidiManagerAlsa() {
@@ -239,7 +236,7 @@ void MidiManagerAlsa::DispatchSendMidiData(MidiManagerClient* client,
 }
 
 void MidiManagerAlsa::EventReset() {
-  CHECK(pipe_fd_[0] >= 0);
+  CHECK_GE(pipe_fd_[0], 0);
 
   // Sum up descriptors which are needed to poll input devices and a shutdown
   // message.
@@ -282,10 +279,6 @@ void MidiManagerAlsa::EventLoop() {
   // Read available incoming MIDI data.
   int fds_index = 1;
   uint8 buffer[kReceiveBufferSize];
-  // TODO(toyoshim): Revisit if the following conversion is the best way.
-  base::TimeDelta timestamp_delta =
-      base::TimeDelta::FromInternalValue(now.ToInternalValue());
-  double timestamp = timestamp_delta.InSecondsF();
 
   for (size_t i = 0; i < in_devices_.size(); ++i) {
     unsigned short revents =
@@ -297,7 +290,7 @@ void MidiManagerAlsa::EventLoop() {
     }
     if (revents & POLLIN) {
       size_t read_size = in_devices_[i]->Receive(buffer, kReceiveBufferSize);
-      ReceiveMidiData(i, buffer, read_size, timestamp);
+      ReceiveMidiData(i, buffer, read_size, now);
     }
     fds_index += in_devices_[i]->GetPollDescriptorsCount();
   }

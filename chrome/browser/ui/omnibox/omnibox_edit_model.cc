@@ -17,7 +17,6 @@
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier_factory.h"
-#include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/browser/autocomplete/autocomplete_provider.h"
 #include "chrome/browser/autocomplete/extension_app_provider.h"
 #include "chrome/browser/autocomplete/history_url_provider.h"
@@ -104,7 +103,7 @@ const char kFocusToEditTimeHistogram[] = "Omnibox.FocusToEditTime";
 
 // Histogram name which counts the number of milliseconds a user takes
 // between focusing and opening an omnibox match.
-const char kFocusToOpenTimeHistogram[] = "Omnibox.FocusToOpenTime";
+const char kFocusToOpenTimeHistogram[] = "Omnibox.FocusToOpenTimeAnyPopupState";
 
 // Split the percentage match histograms into buckets based on the width of the
 // omnibox.
@@ -175,7 +174,8 @@ OmniboxEditModel::State::State(bool user_input_in_progress,
                                bool is_keyword_hint,
                                bool url_replacement_enabled,
                                OmniboxFocusState focus_state,
-                               FocusSource focus_source)
+                               FocusSource focus_source,
+                               const AutocompleteInput& autocomplete_input)
     : user_input_in_progress(user_input_in_progress),
       user_text(user_text),
       gray_text(gray_text),
@@ -183,7 +183,8 @@ OmniboxEditModel::State::State(bool user_input_in_progress,
       is_keyword_hint(is_keyword_hint),
       url_replacement_enabled(url_replacement_enabled),
       focus_state(focus_state),
-      focus_source(focus_source) {
+      focus_source(focus_source),
+      autocomplete_input(autocomplete_input) {
 }
 
 OmniboxEditModel::State::~State() {
@@ -240,7 +241,7 @@ const OmniboxEditModel::State OmniboxEditModel::GetStateForTabSwitch() {
       user_input_in_progress_, user_text_, view_->GetGrayTextAutocompletion(),
       keyword_, is_keyword_hint_,
       controller_->GetToolbarModel()->url_replacement_enabled(),
-      focus_state_, focus_source_);
+      focus_state_, focus_source_, input_);
 }
 
 void OmniboxEditModel::RestoreState(const State* state) {
@@ -252,6 +253,9 @@ void OmniboxEditModel::RestoreState(const State* state) {
   // Don't muck with the search term replacement state, as we've just set it
   // correctly.
   view_->RevertWithoutResettingSearchTermReplacement();
+  // Restore the autocomplete controller's input, or clear it if this is a new
+  // tab.
+  input_ = state ? state->autocomplete_input : AutocompleteInput();
   if (!state)
     return;
 
@@ -278,7 +282,7 @@ AutocompleteMatch OmniboxEditModel::CurrentMatch(
     GetInfoForCurrentText(&match, alternate_nav_url);
   } else if (alternate_nav_url) {
     *alternate_nav_url = AutocompleteResult::ComputeAlternateNavUrl(
-        autocomplete_controller()->input(), match);
+        input_, match);
   }
   return match;
 }
@@ -538,7 +542,7 @@ void OmniboxEditModel::Revert() {
 
 void OmniboxEditModel::StartAutocomplete(
     bool has_selected_text,
-    bool prevent_inline_autocomplete) const {
+    bool prevent_inline_autocomplete) {
   size_t cursor_position;
   if (inline_autocomplete_text_.empty()) {
     // Cursor position is equivalent to the current selection's end.
@@ -568,16 +572,20 @@ void OmniboxEditModel::StartAutocomplete(
       (delegate_->CurrentPageExists() && view_->IsIndicatingQueryRefinement()) ?
       delegate_->GetURL() : GURL();
   bool keyword_is_selected = KeywordIsSelected();
-  omnibox_controller_->StartAutocomplete(
+  input_ = AutocompleteInput(
       user_text_,
       cursor_position,
+      base::string16(),
       current_url,
       ClassifyPage(),
       prevent_inline_autocomplete || just_deleted_text_ ||
       (has_selected_text && inline_autocomplete_text_.empty()) ||
       (paste_state_ != NONE),
       keyword_is_selected,
-      keyword_is_selected || allow_exact_keyword_match_);
+      keyword_is_selected || allow_exact_keyword_match_,
+      true);
+
+  omnibox_controller_->StartAutocomplete(input_);
 }
 
 void OmniboxEditModel::StopAutocomplete() {
@@ -631,18 +639,18 @@ void OmniboxEditModel::AcceptInput(WindowOpenDisposition disposition,
     // to "foodnetwork.com", ctrl-enter will navigate to "foo.com", not
     // "foodnetwork.com".  At the time of writing, this behavior matches
     // Internet Explorer, but not Firefox.
-    const AutocompleteInput& old_input = autocomplete_controller()->input();
-    AutocompleteInput input(
+    input_ = AutocompleteInput(
       has_temporary_text_ ?
-          UserTextFromDisplayText(view_->GetText())  : old_input.text(),
-      old_input.cursor_position(), base::ASCIIToUTF16("com"),
-      GURL(), old_input.current_page_classification(),
-      old_input.prevent_inline_autocomplete(), old_input.prefer_keyword(),
-      old_input.allow_exact_keyword_match(),
-      old_input.want_asynchronous_matches());
+          UserTextFromDisplayText(view_->GetText())  : input_.text(),
+      input_.cursor_position(), base::ASCIIToUTF16("com"),
+      GURL(), input_.current_page_classification(),
+      input_.prevent_inline_autocomplete(), input_.prefer_keyword(),
+      input_.allow_exact_keyword_match(),
+      input_.want_asynchronous_matches());
     AutocompleteMatch url_match(
         autocomplete_controller()->history_url_provider()->SuggestExactInput(
-            input.text(), input.canonicalized_url(), false));
+            input_.text(), input_.canonicalized_url(), false));
+
 
     if (url_match.destination_url.is_valid()) {
       // We have a valid URL, we use this newly generated AutocompleteMatch.
@@ -704,63 +712,66 @@ void OmniboxEditModel::OpenMatch(AutocompleteMatch match,
               input_text, alternate_nav_url,
               AutocompleteInput::HasHTTPScheme(input_text))));
 
-  // We only care about cases where there is a selection (i.e. the popup is
-  // open).
-  if (popup_model()->IsOpen()) {
-    base::TimeDelta elapsed_time_since_last_change_to_default_match(
-        now - autocomplete_controller()->last_time_default_match_changed());
-    // These elapsed times don't really make sense for ZeroSuggest matches
-    // (because the user does not modify the omnibox for ZeroSuggest), so for
-    // those we set the elapsed times to something that will be ignored by
-    // metrics_log.cc.
-    if (match.provider &&
-        (match.provider->type() == AutocompleteProvider::TYPE_ZERO_SUGGEST)) {
-      elapsed_time_since_user_first_modified_omnibox =
-          base::TimeDelta::FromMilliseconds(-1);
-      elapsed_time_since_last_change_to_default_match =
-          base::TimeDelta::FromMilliseconds(-1);
-    }
-    DCHECK_NE(OmniboxPopupModel::kNoMatch, index);
-    OmniboxLog log(
-        input_text,
-        just_deleted_text_,
-        autocomplete_controller()->input().type(),
-        index,
-        -1,  // don't yet know tab ID; set later if appropriate
-        ClassifyPage(),
-        elapsed_time_since_user_first_modified_omnibox,
-        match.inline_autocompletion.length(),
-        elapsed_time_since_last_change_to_default_match,
-        result());
-
-    DCHECK(user_input_in_progress_ || (match.provider &&
-           (match.provider->type() == AutocompleteProvider::TYPE_ZERO_SUGGEST)))
-        << "We didn't get here through the expected series of calls. "
-        << "time_user_first_modified_omnibox_ is not set correctly and other "
-        << "things may be wrong. Match provider: "
-        << (match.provider ? match.provider->GetName() : "NULL");
-    DCHECK(log.elapsed_time_since_user_first_modified_omnibox >=
-           log.elapsed_time_since_last_change_to_default_match)
-        << "We should've got the notification that the user modified the "
-        << "omnibox text at same time or before the most recent time the "
-        << "default match changed.";
-
-    if ((disposition == CURRENT_TAB) && delegate_->CurrentPageExists()) {
-      // If we know the destination is being opened in the current tab,
-      // we can easily get the tab ID.  (If it's being opened in a new
-      // tab, we don't know the tab ID yet.)
-      log.tab_id = delegate_->GetSessionID().id();
-    }
-    autocomplete_controller()->AddProvidersInfo(&log.providers_info);
-    content::NotificationService::current()->Notify(
-        chrome::NOTIFICATION_OMNIBOX_OPENED_URL,
-        content::Source<Profile>(profile_),
-        content::Details<OmniboxLog>(&log));
-    HISTOGRAM_ENUMERATION("Omnibox.EventCount", 1, 2);
-    DCHECK(!last_omnibox_focus_.is_null())
-        << "An omnibox focus should have occurred before opening a match.";
-    UMA_HISTOGRAM_TIMES(kFocusToOpenTimeHistogram, now - last_omnibox_focus_);
+  base::TimeDelta elapsed_time_since_last_change_to_default_match(
+      now - autocomplete_controller()->last_time_default_match_changed());
+  // These elapsed times don't really make sense for ZeroSuggest matches
+  // (because the user does not modify the omnibox for ZeroSuggest), so for
+  // those we set the elapsed times to something that will be ignored by
+  // metrics_log.cc.  They also don't necessarily make sense if the omnibox
+  // dropdown is closed or the user used a paste-and-go action.  (In most
+  // cases when this happens, the user never modified the omnibox.)
+  if ((match.provider &&
+       (match.provider->type() == AutocompleteProvider::TYPE_ZERO_SUGGEST)) ||
+      !popup_model()->IsOpen() || !pasted_text.empty()) {
+    const base::TimeDelta default_time_delta =
+        base::TimeDelta::FromMilliseconds(-1);
+    elapsed_time_since_user_first_modified_omnibox = default_time_delta;
+    elapsed_time_since_last_change_to_default_match = default_time_delta;
   }
+  // If the popup is closed or this is a paste-and-go action (meaning the
+  // contents of the dropdown are ignored regardless), we record for logging
+  // purposes a selected_index of 0 and a suggestion list as having a single
+  // entry of the match used.
+  ACMatches fake_single_entry_matches;
+  fake_single_entry_matches.push_back(match);
+  AutocompleteResult fake_single_entry_result;
+  fake_single_entry_result.AppendMatches(fake_single_entry_matches);
+  OmniboxLog log(
+      input_text,
+      just_deleted_text_,
+      input_.type(),
+      popup_model()->IsOpen(),
+      (!popup_model()->IsOpen() || !pasted_text.empty()) ? 0 : index,
+      !pasted_text.empty(),
+      -1,  // don't yet know tab ID; set later if appropriate
+      ClassifyPage(),
+      elapsed_time_since_user_first_modified_omnibox,
+      match.inline_autocompletion.length(),
+      elapsed_time_since_last_change_to_default_match,
+      (!popup_model()->IsOpen() || !pasted_text.empty()) ?
+          fake_single_entry_result : result());
+  DCHECK(!popup_model()->IsOpen() || !pasted_text.empty() ||
+         (log.elapsed_time_since_user_first_modified_omnibox >=
+          log.elapsed_time_since_last_change_to_default_match))
+      << "We should've got the notification that the user modified the "
+      << "omnibox text at same time or before the most recent time the "
+      << "default match changed.";
+
+  if ((disposition == CURRENT_TAB) && delegate_->CurrentPageExists()) {
+    // If we know the destination is being opened in the current tab,
+    // we can easily get the tab ID.  (If it's being opened in a new
+    // tab, we don't know the tab ID yet.)
+    log.tab_id = delegate_->GetSessionID().id();
+  }
+  autocomplete_controller()->AddProvidersInfo(&log.providers_info);
+  content::NotificationService::current()->Notify(
+      chrome::NOTIFICATION_OMNIBOX_OPENED_URL,
+      content::Source<Profile>(profile_),
+      content::Details<OmniboxLog>(&log));
+  HISTOGRAM_ENUMERATION("Omnibox.EventCount", 1, 2);
+  DCHECK(!last_omnibox_focus_.is_null())
+      << "An omnibox focus should have occurred before opening a match.";
+  UMA_HISTOGRAM_TIMES(kFocusToOpenTimeHistogram, now - last_omnibox_focus_);
 
   TemplateURL* template_url = match.GetTemplateURL(profile_, false);
   if (template_url) {

@@ -5,8 +5,6 @@
 #ifndef CHROME_BROWSER_CHROMEOS_FILE_SYSTEM_PROVIDER_FAKE_PROVIDED_FILE_SYSTEM_H_
 #define CHROME_BROWSER_CHROMEOS_FILE_SYSTEM_PROVIDER_FAKE_PROVIDED_FILE_SYSTEM_H_
 
-#include <string>
-
 #include "chrome/browser/chromeos/file_system_provider/provided_file_system_info.h"
 #include "chrome/browser/chromeos/file_system_provider/provided_file_system_interface.h"
 
@@ -28,8 +26,11 @@ class FakeProvidedFileSystem : public ProvidedFileSystemInterface {
   virtual ~FakeProvidedFileSystem();
 
   // ProvidedFileSystemInterface overrides.
-  virtual bool RequestUnmount(
+  virtual void RequestUnmount(
       const fileapi::AsyncFileUtil::StatusCallback& callback) OVERRIDE;
+  virtual void GetMetadata(
+      const base::FilePath& entry_path,
+      const fileapi::AsyncFileUtil::GetFileInfoCallback& callback) OVERRIDE;
   virtual const ProvidedFileSystemInfo& GetFileSystemInfo() const OVERRIDE;
   virtual RequestManager* GetRequestManager() OVERRIDE;
 
@@ -41,6 +42,7 @@ class FakeProvidedFileSystem : public ProvidedFileSystemInterface {
 
  private:
   ProvidedFileSystemInfo file_system_info_;
+
   DISALLOW_COPY_AND_ASSIGN(FakeProvidedFileSystem);
 };
 

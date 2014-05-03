@@ -18,8 +18,9 @@
 #define MMNOMMIO
 #include <mmsystem.h>
 
+#include <algorithm>
+#include <string>
 #include "base/bind.h"
-#include "base/debug/trace_event.h"
 #include "base/message_loop/message_loop.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
@@ -338,13 +339,7 @@ class MidiManagerWin::InDeviceInfo {
     // http://msdn.microsoft.com/en-us/library/windows/desktop/dd757286.aspx
     const base::TimeTicks event_time =
         start_time_ + base::TimeDelta::FromMilliseconds(elapsed_ms);
-    // MidiManager::ReceiveMidiData() expects |timestamp| as the elapsed seconds
-    // from base::TimeTicks::Now().
-    // TODO(yukawa): Update MidiManager::ReceiveMidiData() so that it can
-    // receive |event_time| directly if the precision of base::TimeTicks is
-    // sufficient.
-    const double timestamp = (event_time - base::TimeTicks()).InSecondsF();
-    manager_->ReceiveMidiData(port_index_, data, length, timestamp);
+    manager_->ReceiveMidiData(port_index_, data, length, event_time);
   }
 
   MidiManagerWin* manager_;
@@ -501,8 +496,7 @@ MidiManagerWin::MidiManagerWin()
     : send_thread_("MidiSendThread") {
 }
 
-MidiResult MidiManagerWin::Initialize() {
-  TRACE_EVENT0("midi", "MidiManagerWin::Initialize");
+void MidiManagerWin::StartInitialization() {
   const UINT num_in_devices = midiInGetNumDevs();
   in_devices_.reserve(num_in_devices);
   for (UINT device_id = 0; device_id < num_in_devices; ++device_id) {
@@ -548,7 +542,7 @@ MidiResult MidiManagerWin::Initialize() {
     out_devices_.push_back(out_port.Pass());
   }
 
-  return MIDI_OK;
+  CompleteInitialization(MIDI_OK);
 }
 
 MidiManagerWin::~MidiManagerWin() {

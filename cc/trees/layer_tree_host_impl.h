@@ -63,16 +63,21 @@ class LayerTreeHostImplClient {
  public:
   virtual void UpdateRendererCapabilitiesOnImplThread() = 0;
   virtual void DidLoseOutputSurfaceOnImplThread() = 0;
+  virtual void CommitVSyncParameters(base::TimeTicks timebase,
+                                     base::TimeDelta interval) = 0;
+  virtual void SetEstimatedParentDrawTime(base::TimeDelta draw_time) = 0;
   virtual void SetMaxSwapsPendingOnImplThread(int max) = 0;
   virtual void DidSwapBuffersOnImplThread() = 0;
   virtual void DidSwapBuffersCompleteOnImplThread() = 0;
   virtual void BeginFrame(const BeginFrameArgs& args) = 0;
   virtual void OnCanDrawStateChanged(bool can_draw) = 0;
   virtual void NotifyReadyToActivate() = 0;
-  // Please call these 2 functions through
-  // LayerTreeHostImpl's SetNeedsRedraw() and SetNeedsRedrawRect().
+  // Please call these 3 functions through
+  // LayerTreeHostImpl's SetNeedsRedraw(), SetNeedsRedrawRect() and
+  // SetNeedsAnimate().
   virtual void SetNeedsRedrawOnImplThread() = 0;
   virtual void SetNeedsRedrawRectOnImplThread(const gfx::Rect& damage_rect) = 0;
+  virtual void SetNeedsAnimateOnImplThread() = 0;
   virtual void DidInitializeVisibleTileOnImplThread() = 0;
   virtual void SetNeedsCommitOnImplThread() = 0;
   virtual void SetNeedsManageTilesOnImplThread() = 0;
@@ -135,7 +140,7 @@ class CC_EXPORT LayerTreeHostImpl
                                        bool anchor_point,
                                        float page_scale,
                                        base::TimeDelta duration) OVERRIDE;
-  virtual void ScheduleAnimation() OVERRIDE;
+  virtual void SetNeedsAnimate() OVERRIDE;
   virtual bool HaveTouchEventHandlersAt(const gfx::Point& viewport_port)
       OVERRIDE;
   virtual scoped_ptr<SwapPromiseMonitor> CreateLatencyInfoSwapPromiseMonitor(
@@ -170,6 +175,7 @@ class CC_EXPORT LayerTreeHostImpl
   virtual void CommitComplete();
   virtual void Animate(base::TimeTicks monotonic_time);
   virtual void UpdateAnimationState(bool start_ready_animations);
+  void ActivateAnimations();
   void MainThreadHasStoppedFlinging();
   void UpdateBackgroundAnimateTicking(bool should_background_tick);
   void DidAnimateScrollOffset();
@@ -220,10 +226,13 @@ class CC_EXPORT LayerTreeHostImpl
 
   // TileManagerClient implementation.
   virtual void NotifyReadyToActivate() OVERRIDE;
+  virtual void NotifyTileInitialized(const Tile* tile) OVERRIDE;
 
   // OutputSurfaceClient implementation.
   virtual void DeferredInitialize() OVERRIDE;
   virtual void ReleaseGL() OVERRIDE;
+  virtual void CommitVSyncParameters(base::TimeTicks timebase,
+                                     base::TimeDelta interval) OVERRIDE;
   virtual void SetNeedsRedrawRect(const gfx::Rect& rect) OVERRIDE;
   virtual void BeginFrame(const BeginFrameArgs& args) OVERRIDE;
   virtual void SetExternalDrawConstraints(
@@ -254,6 +263,7 @@ class CC_EXPORT LayerTreeHostImpl
   virtual bool InitializeRenderer(scoped_ptr<OutputSurface> output_surface);
   bool IsContextLost();
   TileManager* tile_manager() { return tile_manager_.get(); }
+  ResourcePool* resource_pool() { return resource_pool_.get(); }
   Renderer* renderer() { return renderer_.get(); }
   const RendererCapabilitiesImpl& GetRendererCapabilities() const;
 
@@ -463,7 +473,8 @@ class CC_EXPORT LayerTreeHostImpl
       bool skip_gl_renderer);
   void CreateAndSetTileManager(ResourceProvider* resource_provider,
                                ContextProvider* context_provider,
-                               bool using_map_image,
+                               bool use_zero_copy,
+                               bool use_one_copy,
                                bool allow_rasterize_on_demand);
   void ReleaseTreeResources();
   void EnforceZeroBudget(bool zero_budget);
@@ -538,6 +549,7 @@ class CC_EXPORT LayerTreeHostImpl
   scoped_ptr<RasterWorkerPool> raster_worker_pool_;
   scoped_ptr<RasterWorkerPool> direct_raster_worker_pool_;
   scoped_ptr<ResourcePool> resource_pool_;
+  scoped_ptr<ResourcePool> staging_resource_pool_;
   scoped_ptr<Renderer> renderer_;
 
   GlobalStateThatImpactsTilePriority global_tile_state_;
@@ -649,6 +661,8 @@ class CC_EXPORT LayerTreeHostImpl
   int id_;
 
   std::set<SwapPromiseMonitor*> swap_promise_monitor_;
+
+  size_t transfer_buffer_memory_limit_;
 
   DISALLOW_COPY_AND_ASSIGN(LayerTreeHostImpl);
 };

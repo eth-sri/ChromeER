@@ -22,6 +22,7 @@ SchedulerStateMachine::SchedulerStateMachine(const SchedulerSettings& settings)
       readback_state_(READBACK_STATE_IDLE),
       commit_count_(0),
       current_frame_number_(0),
+      last_frame_number_animate_performed_(-1),
       last_frame_number_swap_performed_(-1),
       last_frame_number_begin_main_frame_sent_(-1),
       last_frame_number_update_visible_tiles_was_called_(-1),
@@ -30,6 +31,7 @@ SchedulerStateMachine::SchedulerStateMachine(const SchedulerSettings& settings)
       max_pending_swaps_(1),
       pending_swaps_(0),
       needs_redraw_(false),
+      needs_animate_(false),
       needs_manage_tiles_(false),
       swap_used_incomplete_tile_(false),
       needs_commit_(false),
@@ -40,13 +42,13 @@ SchedulerStateMachine::SchedulerStateMachine(const SchedulerSettings& settings)
       has_pending_tree_(false),
       pending_tree_is_ready_for_activation_(false),
       active_tree_needs_first_draw_(false),
-      draw_if_possible_failed_(false),
       did_create_and_initialize_first_output_surface_(false),
       smoothness_takes_priority_(false),
       skip_next_begin_main_frame_to_reduce_latency_(false),
       skip_begin_main_frame_to_reduce_latency_(false),
       continuous_painting_(false),
-      needs_back_to_back_readback_(false) {}
+      needs_back_to_back_readback_(false) {
+}
 
 const char* SchedulerStateMachine::OutputSurfaceStateToString(
     OutputSurfaceState state) {
@@ -143,6 +145,8 @@ const char* SchedulerStateMachine::ActionToString(Action action) {
   switch (action) {
     case ACTION_NONE:
       return "ACTION_NONE";
+    case ACTION_ANIMATE:
+      return "ACTION_ANIMATE";
     case ACTION_SEND_BEGIN_MAIN_FRAME:
       return "ACTION_SEND_BEGIN_MAIN_FRAME";
     case ACTION_COMMIT:
@@ -216,6 +220,8 @@ scoped_ptr<base::Value> SchedulerStateMachine::AsValue() const  {
   minor_state->SetInteger("commit_count", commit_count_);
   minor_state->SetInteger("current_frame_number", current_frame_number_);
 
+  minor_state->SetInteger("last_frame_number_animate_performed",
+                          last_frame_number_animate_performed_);
   minor_state->SetInteger("last_frame_number_swap_performed",
                           last_frame_number_swap_performed_);
   minor_state->SetInteger(
@@ -231,6 +237,7 @@ scoped_ptr<base::Value> SchedulerStateMachine::AsValue() const  {
   minor_state->SetInteger("max_pending_swaps_", max_pending_swaps_);
   minor_state->SetInteger("pending_swaps_", pending_swaps_);
   minor_state->SetBoolean("needs_redraw", needs_redraw_);
+  minor_state->SetBoolean("needs_animate_", needs_animate_);
   minor_state->SetBoolean("needs_manage_tiles", needs_manage_tiles_);
   minor_state->SetBoolean("swap_used_incomplete_tile",
                           swap_used_incomplete_tile_);
@@ -243,7 +250,6 @@ scoped_ptr<base::Value> SchedulerStateMachine::AsValue() const  {
                           pending_tree_is_ready_for_activation_);
   minor_state->SetBoolean("active_tree_needs_first_draw",
                           active_tree_needs_first_draw_);
-  minor_state->SetBoolean("draw_if_possible_failed", draw_if_possible_failed_);
   minor_state->SetBoolean("did_create_and_initialize_first_output_surface",
                           did_create_and_initialize_first_output_surface_);
   minor_state->SetBoolean("smoothness_takes_priority",
@@ -427,6 +433,20 @@ bool SchedulerStateMachine::ShouldUpdateVisibleTiles() const {
   return false;
 }
 
+bool SchedulerStateMachine::ShouldAnimate() const {
+  if (!can_draw_)
+    return false;
+
+  if (last_frame_number_animate_performed_ == current_frame_number_)
+    return false;
+
+  if (begin_impl_frame_state_ != BEGIN_IMPL_FRAME_STATE_BEGIN_FRAME_STARTING &&
+      begin_impl_frame_state_ != BEGIN_IMPL_FRAME_STATE_INSIDE_DEADLINE)
+    return false;
+
+  return needs_redraw_ || needs_animate_;
+}
+
 bool SchedulerStateMachine::ShouldSendBeginMainFrame() const {
   if (!needs_commit_)
     return false;
@@ -531,6 +551,8 @@ SchedulerStateMachine::Action SchedulerStateMachine::NextAction() const {
     return ACTION_ACTIVATE_PENDING_TREE;
   if (ShouldCommit())
     return ACTION_COMMIT;
+  if (ShouldAnimate())
+    return ACTION_ANIMATE;
   if (ShouldDraw()) {
     if (readback_state_ == READBACK_STATE_WAITING_FOR_DRAW_AND_READBACK)
       return ACTION_DRAW_AND_READBACK;
@@ -569,6 +591,14 @@ void SchedulerStateMachine::UpdateState(Action action) {
 
     case ACTION_ACTIVATE_PENDING_TREE:
       UpdateStateOnActivation();
+      return;
+
+    case ACTION_ANIMATE:
+      last_frame_number_animate_performed_ = current_frame_number_;
+      needs_animate_ = false;
+      // TODO(skyostil): Instead of assuming this, require the client to tell
+      // us.
+      SetNeedsRedraw();
       return;
 
     case ACTION_SEND_BEGIN_MAIN_FRAME:
@@ -695,9 +725,6 @@ void SchedulerStateMachine::UpdateStateOnCommit(bool commit_was_aborted) {
   // This post-commit work is common to both completed and aborted commits.
   pending_tree_is_ready_for_activation_ = false;
 
-  if (draw_if_possible_failed_)
-    last_frame_number_swap_performed_ = -1;
-
   if (continuous_painting_)
     needs_commit_ = true;
 }
@@ -761,7 +788,6 @@ void SchedulerStateMachine::UpdateStateOnDraw(bool did_request_swap) {
     commit_state_ = COMMIT_STATE_IDLE;
 
   needs_redraw_ = false;
-  draw_if_possible_failed_ = false;
   active_tree_needs_first_draw_ = false;
 
   if (did_request_swap)
@@ -783,9 +809,9 @@ bool SchedulerStateMachine::BeginFrameNeeded() const {
   // To poll for state with the synchronous compositor without having to draw,
   // we rely on ShouldPollForAnticipatedDrawTriggers instead.
   if (!SupportsProactiveBeginFrame())
-    return BeginFrameNeededToDraw();
+    return BeginFrameNeededToAnimateOrDraw();
 
-  return BeginFrameNeededToDraw() || ProactiveBeginFrameWanted();
+  return BeginFrameNeededToAnimateOrDraw() || ProactiveBeginFrameWanted();
 }
 
 bool SchedulerStateMachine::ShouldPollForAnticipatedDrawTriggers() const {
@@ -793,7 +819,7 @@ bool SchedulerStateMachine::ShouldPollForAnticipatedDrawTriggers() const {
   // ProactiveBeginFrameWanted when we are using the synchronous
   // compositor.
   if (!SupportsProactiveBeginFrame()) {
-    return !BeginFrameNeededToDraw() && ProactiveBeginFrameWanted();
+    return !BeginFrameNeededToAnimateOrDraw() && ProactiveBeginFrameWanted();
   }
 
   // Non synchronous compositors should rely on
@@ -801,16 +827,19 @@ bool SchedulerStateMachine::ShouldPollForAnticipatedDrawTriggers() const {
   return false;
 }
 
+// Note: If SupportsProactiveBeginFrame is false, the scheduler should poll
+// for changes in it's draw state so it can request a BeginFrame when it's
+// actually ready.
 bool SchedulerStateMachine::SupportsProactiveBeginFrame() const {
-  // Both the synchronous compositor and disabled vsync settings
-  // make it undesirable to proactively request BeginImplFrames.
-  // If this is true, the scheduler should poll.
+  // It is undesirable to proactively request BeginFrames if we are
+  // using a synchronous compositor because we *must* draw for every
+  // BeginFrame, which could cause duplicate draws.
   return !settings_.using_synchronous_renderer_compositor;
 }
 
 // These are the cases where we definitely (or almost definitely) have a
-// new frame to draw and can draw.
-bool SchedulerStateMachine::BeginFrameNeededToDraw() const {
+// new frame to animate and/or draw and can draw.
+bool SchedulerStateMachine::BeginFrameNeededToAnimateOrDraw() const {
   // The output surface is the provider of BeginImplFrames, so we are not going
   // to get them even if we ask for them.
   if (!HasInitializedOutputSurface())
@@ -833,6 +862,9 @@ bool SchedulerStateMachine::BeginFrameNeededToDraw() const {
   // so request another BeginImplFrame in anticipation that we will have
   // additional visible tiles.
   if (swap_used_incomplete_tile_)
+    return true;
+
+  if (needs_animate_)
     return true;
 
   return needs_redraw_;
@@ -1003,6 +1035,10 @@ void SchedulerStateMachine::SetVisible(bool visible) { visible_ = visible; }
 void SchedulerStateMachine::SetCanDraw(bool can_draw) { can_draw_ = can_draw; }
 
 void SchedulerStateMachine::SetNeedsRedraw() { needs_redraw_ = true; }
+
+void SchedulerStateMachine::SetNeedsAnimate() {
+  needs_animate_ = true;
+}
 
 void SchedulerStateMachine::SetNeedsManageTiles() {
   if (!needs_manage_tiles_) {

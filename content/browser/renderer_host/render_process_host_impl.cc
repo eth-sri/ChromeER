@@ -395,6 +395,7 @@ RenderProcessHostImpl::RenderProcessHostImpl(
       is_self_deleted_(false),
 #endif
       pending_views_(0),
+      mojo_activation_required_(false),
       visible_widgets_(0),
       backgrounded_(true),
       is_initialized_(false),
@@ -602,6 +603,20 @@ bool RenderProcessHostImpl::Init() {
 
   is_initialized_ = true;
   return true;
+}
+
+void RenderProcessHostImpl::MaybeActivateMojo() {
+  // TODO(darin): Following security review, we can unconditionally initialize
+  // Mojo in all renderers. We will then be able to directly call Activate()
+  // from OnProcessLaunched.
+  if (!mojo_activation_required_)
+    return;  // Waiting on someone to require Mojo.
+
+  if (!GetHandle())
+    return;  // Waiting on renderer startup.
+
+  if (!mojo_application_host_->did_activate())
+    mojo_application_host_->Activate(this, GetHandle());
 }
 
 void RenderProcessHostImpl::CreateMessageFilters() {
@@ -939,7 +954,10 @@ StoragePartition* RenderProcessHostImpl::GetStoragePartition() const {
   return storage_partition_impl_;
 }
 
-static void AppendGpuCommandLineFlags(CommandLine* command_line) {
+static void AppendCompositorCommandLineFlags(CommandLine* command_line) {
+  if (IsPinchVirtualViewportEnabled())
+    command_line->AppendSwitch(cc::switches::kEnablePinchVirtualViewport);
+
   if (IsThreadedCompositingEnabled())
     command_line->AppendSwitch(switches::kEnableThreadedCompositing);
 
@@ -992,7 +1010,7 @@ void RenderProcessHostImpl::AppendRendererCommandLine(
   if (content::IsPinchToZoomEnabled())
     command_line->AppendSwitch(switches::kEnablePinch);
 
-  AppendGpuCommandLineFlags(command_line);
+  AppendCompositorCommandLineFlags(command_line);
 }
 
 void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
@@ -1001,6 +1019,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
   // Propagate the following switches to the renderer command line (along
   // with any associated values) if present in the browser command line.
   static const char* const kSwitchNames[] = {
+    switches::kAllowInsecureWebSocketFromHttpsOrigin,
     switches::kAllowLoopbackInPeerConnection,
     switches::kAudioBufferSize,
     switches::kAuditAllHandles,
@@ -1030,7 +1049,6 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kDisableLayerSquashing,
     switches::kDisableLocalStorage,
     switches::kDisableLogging,
-    switches::kDisableMapImage,
     switches::kDisableMediaSource,
     switches::kDisableOverlayScrollbar,
     switches::kDisablePinch,
@@ -1044,6 +1062,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kDisableTouchDragDrop,
     switches::kDisableTouchEditing,
     switches::kDisableUniversalAcceleratedOverflowScroll,
+    switches::kDisableZeroCopy,
     switches::kDomAutomationController,
     switches::kEnableAcceleratedFixedRootBackground,
     switches::kEnableAcceleratedOverflowScroll,
@@ -1051,7 +1070,6 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kEnableADTSStreamParser,
     switches::kEnableBeginFrameScheduling,
     switches::kEnableBleedingEdgeRenderingFastPaths,
-    switches::kEnableBrowserPluginForAllViewTypes,
     switches::kEnableCompositingForFixedPosition,
     switches::kEnableCompositingForTransition,
     switches::kEnableDeferredImageDecoding,
@@ -1068,8 +1086,8 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kEnableLCDText,
     switches::kEnableLayerSquashing,
     switches::kEnableLogging,
-    switches::kEnableMapImage,
     switches::kEnableMemoryBenchmarking,
+    switches::kEnableOneCopy,
     switches::kEnableOverlayFullscreenVideo,
     switches::kEnableOverlayScrollbar,
     switches::kEnableOverscrollNotifications,
@@ -1093,6 +1111,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kEnableWebAnimationsSVG,
     switches::kEnableWebGLDraftExtensions,
     switches::kEnableWebMIDI,
+    switches::kEnableZeroCopy,
     switches::kForceCompositingMode,
     switches::kForceDeviceScaleFactor,
     switches::kFullMemoryCrashReport,
@@ -1135,7 +1154,6 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     cc::switches::kDisableMainFrameBeforeDraw,
     cc::switches::kDisableThreadedAnimation,
     cc::switches::kEnableGpuBenchmarking,
-    cc::switches::kEnablePinchVirtualViewport,
     cc::switches::kEnableMainFrameBeforeActivation,
     cc::switches::kEnableTopControlsPositionCalculation,
     cc::switches::kMaxTilesForInterestArea,
@@ -1643,7 +1661,7 @@ void RenderProcessHost::SetRunRendererInProcess(bool value) {
     // TODO(piman): we should really send configuration through bools rather
     // than by parsing strings, i.e. sending an IPC rather than command line
     // args. crbug.com/314909
-    AppendGpuCommandLineFlags(command_line);
+    AppendCompositorCommandLineFlags(command_line);
   }
 }
 
@@ -1969,13 +1987,10 @@ void RenderProcessHostImpl::OnProcessLaunched() {
       Source<RenderProcessHost>(this),
       NotificationService::NoDetails());
 
-  // TODO(darin): This is blocked on security review. Un-commenting this will
-  // allow Mojo calls from all renderers.
-#if 0
-  // Let the Mojo system get setup on the child process side before any other
-  // IPCs arrive. This way those may safely generate Mojo-related RPCs.
-  mojo_application_host_->Activate(this, GetHandle());
-#endif
+  // Allow Mojo to be setup before the renderer sees any Chrome IPC messages.
+  // This way, Mojo can be safely used from the renderer in response to any
+  // Chrome IPC message.
+  MaybeActivateMojo();
 
   while (!queued_messages_.empty()) {
     Send(queued_messages_.front());
@@ -2062,8 +2077,8 @@ void RenderProcessHostImpl::DecrementWorkerRefCount() {
 void RenderProcessHostImpl::ConnectTo(
     const base::StringPiece& service_name,
     mojo::ScopedMessagePipeHandle handle) {
-  if (!mojo_application_host_->did_activate())
-    mojo_application_host_->Activate(this, GetHandle());
+  mojo_activation_required_ = true;
+  MaybeActivateMojo();
 
   mojo::AllocationScope scope;
   mojo_application_host_->shell_client()->AcceptConnection(service_name,

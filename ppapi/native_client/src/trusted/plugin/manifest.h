@@ -47,22 +47,14 @@ class Manifest {
                              bool* uses_nonsfi_mode,
                              ErrorInfo* error_info) const = 0;
 
-  // Gets the file names from the "files" section of the manifest.  No
-  // checking that the keys' values are proper ISA dictionaries -- it
-  // is assumed that other consistency checks take care of that, and
-  // that the keys are appropriate for use with ResolveKey.
-  virtual bool GetFileKeys(std::set<nacl::string>* keys) const = 0;
-
   // Resolves a key from the "files" section to a fully resolved URL,
   // i.e., relative URL values are fully expanded relative to the
   // manifest's URL.  Fills in |pnacl_options| if
   // the resolved key requires a pnacl translation step to obtain
   // the final requested resource.
-  // If there was an error, details are reported via error_info.
   virtual bool ResolveKey(const nacl::string& key,
                           nacl::string* full_url,
-                          PP_PNaClOptions* pnacl_options,
-                          ErrorInfo* error_info) const = 0;
+                          PP_PNaClOptions* pnacl_options) const = 0;
 
  protected:
   NACL_DISALLOW_COPY_AND_ASSIGN(Manifest);

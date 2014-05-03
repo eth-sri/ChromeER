@@ -16,6 +16,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
 #include "base/prefs/pref_change_registrar.h"
+#include "chrome/browser/search_engines/default_search_manager.h"
 #include "chrome/browser/search_engines/template_url_id.h"
 #include "chrome/browser/webdata/web_data_service.h"
 #include "components/keyed_service/core/keyed_service.h"
@@ -29,6 +30,8 @@ class PrefService;
 class Profile;
 class SearchHostToURLsMap;
 class SearchTermsData;
+class TemplateURL;
+struct TemplateURLData;
 class TemplateURLServiceObserver;
 
 namespace syncer {
@@ -97,6 +100,22 @@ class TemplateURLService : public WebDataServiceConsumer,
   // The following is for testing.
   TemplateURLService(const Initializer* initializers, const int count);
   virtual ~TemplateURLService();
+
+  // Creates a TemplateURLData that was previously saved to |prefs| via
+  // SaveDefaultSearchProviderToPrefs or set via policy.
+  // Returns true if successful, false otherwise.
+  // If the user or the policy has opted for no default search, this
+  // returns true but default_provider is set to NULL.
+  // |*is_managed| specifies whether the default is managed via policy.
+  static bool LoadDefaultSearchProviderFromPrefs(
+      PrefService* prefs,
+      scoped_ptr<TemplateURLData>* default_provider_data,
+      bool* is_managed);
+
+  // Saves enough of url to |prefs| so that it can be loaded from preferences on
+  // start up.
+  static void SaveDefaultSearchProviderToPrefs(const TemplateURL* url,
+                                               PrefService* prefs);
 
   // Generates a suitable keyword for the specified url, which must be valid.
   // This is guaranteed not to return an empty string, since TemplateURLs should
@@ -229,7 +248,7 @@ class TemplateURLService : public WebDataServiceConsumer,
   // Set the default search provider.  |url| may be null.
   // This will assert if the default search is managed; the UI should not be
   // invoking this method in that situation.
-  void SetDefaultSearchProvider(TemplateURL* url);
+  void SetUserSelectedDefaultSearchProvider(TemplateURL* url);
 
   // Returns the default search provider. If the TemplateURLService hasn't been
   // loaded, the default search provider is pulled from preferences.
@@ -457,20 +476,6 @@ class TemplateURLService : public WebDataServiceConsumer,
   // Transitions to the loaded state.
   void ChangeToLoadedState();
 
-  // Saves enough of url to preferences so that it can be loaded from
-  // preferences on start up.
-  void SaveDefaultSearchProviderToPrefs(const TemplateURL* url);
-
-  // Creates a TemplateURL that was previously saved to prefs via
-  // SaveDefaultSearchProviderToPrefs or set via policy.
-  // Returns true if successful, false otherwise.
-  // If the user or the policy has opted for no default search, this
-  // returns true but default_provider is set to NULL.
-  // |*is_managed| specifies whether the default is managed via policy.
-  bool LoadDefaultSearchProviderFromPrefs(
-      scoped_ptr<TemplateURL>* default_provider,
-      bool* is_managed);
-
   // Clears user preferences describing the default search engine.
   void ClearDefaultProviderFromPrefs();
 
@@ -530,6 +535,11 @@ class TemplateURLService : public WebDataServiceConsumer,
   // preference has changed.
   void UpdateDefaultSearch();
 
+  // Set the default search provider.  |url| may be user-selected or
+  // automatically selected and may be null.
+  // This will assert if the default search is managed.
+  void SetDefaultSearchProvider(TemplateURL* url);
+
   // Set the default search provider even if it is managed. |url| may be null.
   // Caller is responsible for notifying observers.  Returns whether |url| was
   // found in |template_urls_|.
@@ -569,7 +579,7 @@ class TemplateURLService : public WebDataServiceConsumer,
   void RemoveProvidersCreatedByPolicy(
       TemplateURLVector* template_urls,
       TemplateURL** default_search_provider,
-      TemplateURL* default_from_prefs);
+      TemplateURLData* default_from_prefs);
 
   // Resets the sync GUID of the specified TemplateURL and persists the change
   // to the database. This does not notify observers.
@@ -770,6 +780,10 @@ class TemplateURLService : public WebDataServiceConsumer,
 
   // Stores a list of callbacks to be run after TemplateURLService has loaded.
   base::CallbackList<void(void)> on_loaded_callbacks_;
+
+  // Helper class to manage the default search engine. This will be NULL when
+  // using the testing-specific constructor.
+  scoped_ptr<DefaultSearchManager> default_search_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(TemplateURLService);
 };

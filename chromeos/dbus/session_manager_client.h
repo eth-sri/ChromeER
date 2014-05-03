@@ -70,8 +70,13 @@ class CHROMEOS_EXPORT SessionManagerClient : public DBusClient {
   // Restarts a job referenced by |pid| with the provided command line.
   virtual void RestartJob(int pid, const std::string& command_line) = 0;
 
+  // Used for StartSession. Takes a boolean indicating whether the
+  // operation was successful or not.
+  typedef base::Callback<void(bool success)> StartSessionCallback;
+
   // Starts the session for the user.
-  virtual void StartSession(const std::string& user_email) = 0;
+  virtual void StartSession(const std::string& user_email,
+                            const StartSessionCallback& callback) = 0;
 
   // Stops the current session.
   virtual void StopSession() = 0;
@@ -151,11 +156,8 @@ class CHROMEOS_EXPORT SessionManagerClient : public DBusClient {
 
   // Attempts to asynchronously store |policy_blob| as user policy for the given
   // |username|. Upon completion of the store attempt, we will call callback.
-  // The |policy_key| argument is not sent to the session manager, but is used
-  // by the stub implementation to enable policy validation on desktop builds.
   virtual void StorePolicyForUser(const std::string& username,
                                   const std::string& policy_blob,
-                                  const std::string& policy_key,
                                   const StorePolicyCallback& callback) = 0;
 
   // Sends a request to store a policy blob for the specified device-local

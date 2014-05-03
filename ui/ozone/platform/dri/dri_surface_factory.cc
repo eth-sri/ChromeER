@@ -12,6 +12,7 @@
 #include "base/message_loop/message_loop.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkDevice.h"
+#include "third_party/skia/include/core/SkSurface.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/ozone/surface_ozone_canvas.h"
 #include "ui/ozone/platform/dri/dri_surface.h"
@@ -78,25 +79,52 @@ class DriSurfaceAdapter : public gfx::SurfaceOzoneCanvas {
       : widget_(w), dri_(dri) {}
   virtual ~DriSurfaceAdapter() {}
 
-  // gfx::SurfaceOzoneCanvas overrides:
-  virtual skia::RefPtr<SkCanvas> GetCanvas() OVERRIDE {
-    return skia::SharePtr(dri_->GetCanvasForWidget(widget_));
-  }
-  virtual bool ResizeCanvas(const gfx::Size& viewport_size) OVERRIDE {
-    NOTIMPLEMENTED();
-    return false;
-  }
-  virtual bool PresentCanvas() OVERRIDE {
-    return dri_->SchedulePageFlip(widget_);
-  }
-  virtual scoped_ptr<gfx::VSyncProvider> CreateVSyncProvider() OVERRIDE {
-    return dri_->CreateVSyncProvider(widget_);
-  }
+  // SurfaceOzoneCanvas:
+  virtual skia::RefPtr<SkCanvas> GetCanvas() OVERRIDE;
+  virtual void ResizeCanvas(const gfx::Size& viewport_size) OVERRIDE;
+  virtual void PresentCanvas(const gfx::Rect& damage) OVERRIDE;
+  virtual scoped_ptr<gfx::VSyncProvider> CreateVSyncProvider() OVERRIDE;
 
  private:
+  skia::RefPtr<SkSurface> surface_;
+  gfx::Rect last_damage_;
+
   gfx::AcceleratedWidget widget_;
   DriSurfaceFactory* dri_;
 };
+
+skia::RefPtr<SkCanvas> DriSurfaceAdapter::GetCanvas() {
+  return skia::SharePtr(surface_->getCanvas());
+}
+
+void DriSurfaceAdapter::ResizeCanvas(const gfx::Size& viewport_size) {
+  SkImageInfo info = SkImageInfo::MakeN32(
+      viewport_size.width(), viewport_size.height(), kOpaque_SkAlphaType);
+  surface_ = skia::AdoptRef(SkSurface::NewRaster(info));
+}
+
+void DriSurfaceAdapter::PresentCanvas(const gfx::Rect& damage) {
+  // The underlying display is gone.
+  if (!dri_->IsWidgetValid(widget_))
+    return;
+
+  SkCanvas* canvas = dri_->GetCanvasForWidget(widget_);
+
+  // The DriSurface is double buffered, so the current back buffer is
+  // missing the previous update. Expand damage region.
+  SkRect real_damage = RectToSkRect(UnionRects(damage, last_damage_));
+
+  // Copy damage region.
+  skia::RefPtr<SkImage> image = skia::AdoptRef(surface_->newImageSnapshot());
+  image->draw(canvas, &real_damage, real_damage, NULL);
+
+  last_damage_ = damage;
+  dri_->SchedulePageFlip(widget_);
+}
+
+scoped_ptr<gfx::VSyncProvider> DriSurfaceAdapter::CreateVSyncProvider() {
+  return dri_->CreateVSyncProvider(widget_);
+}
 
 }  // namespace
 
@@ -107,7 +135,8 @@ DriSurfaceFactory::DriSurfaceFactory()
     : drm_(),
       state_(UNINITIALIZED),
       controllers_(),
-      allocated_widgets_(0) {
+      allocated_widgets_(0),
+      last_added_widget_(0) {
 }
 
 DriSurfaceFactory::~DriSurfaceFactory() {
@@ -220,14 +249,32 @@ SkCanvas* DriSurfaceFactory::GetCanvasForWidget(
 scoped_ptr<gfx::VSyncProvider> DriSurfaceFactory::CreateVSyncProvider(
     gfx::AcceleratedWidget w) {
   CHECK(state_ == INITIALIZED);
-  return scoped_ptr<gfx::VSyncProvider>(new DriVSyncProvider(
-      GetControllerForWidget(w)));
+  return scoped_ptr<gfx::VSyncProvider>(new DriVSyncProvider(this, w));
 }
 
 bool DriSurfaceFactory::CreateHardwareDisplayController(
     uint32_t connector, uint32_t crtc, const drmModeModeInfo& mode) {
-  scoped_ptr<HardwareDisplayController> controller(
-      new HardwareDisplayController(drm_.get(), connector, crtc, mode));
+  gfx::AcceleratedWidget widget = 0;
+  scoped_ptr<HardwareDisplayController> controller;
+  for (HardwareDisplayControllerMap::iterator it = controllers_.begin();
+       it != controllers_.end(); ++it) {
+    if (it->second->connector_id() == connector &&
+        it->second->crtc_id() == crtc) {
+      if (SameMode(mode, it->second->get_mode()))
+        return true;
+
+      widget = it->first;
+      controller.reset(it->second);
+      controller->UnbindSurfaceFromController();
+      break;
+    }
+  }
+
+  if (!controller) {
+    controller.reset(
+        new HardwareDisplayController(drm_.get(), connector, crtc));
+    widget = ++last_added_widget_;
+  }
 
   // Create a surface suitable for the current controller.
   scoped_ptr<DriSurface> surface(CreateSurface(
@@ -241,13 +288,27 @@ bool DriSurfaceFactory::CreateHardwareDisplayController(
   // Bind the surface to the controller. This will register the backing buffers
   // with the hardware CRTC such that we can show the buffers and performs the
   // initial modeset. The controller takes ownership of the surface.
-  if (!controller->BindSurfaceToController(surface.Pass())) {
+  if (!controller->BindSurfaceToController(surface.Pass(), mode)) {
     LOG(ERROR) << "Failed to bind surface to controller";
     return false;
   }
 
-  controllers_.push_back(controller.release());
+  controllers_.insert(std::make_pair(widget,
+                                     controller.release()));
   return true;
+}
+
+void DriSurfaceFactory::DestroyHardwareDisplayController(
+    uint32_t connector, uint32_t crtc) {
+  for (HardwareDisplayControllerMap::iterator it = controllers_.begin();
+       it != controllers_.end(); ++it) {
+    if (it->second->connector_id() == connector &&
+        it->second->crtc_id() == crtc) {
+      delete it->second;
+      controllers_.erase(it);
+      return;
+    }
+  }
 }
 
 bool DriSurfaceFactory::DisableHardwareDisplayController(uint32_t crtc) {
@@ -273,7 +334,8 @@ void DriSurfaceFactory::MoveHardwareCursor(gfx::AcceleratedWidget window,
   if (state_ != INITIALIZED)
     return;
 
-  GetControllerForWidget(window)->MoveCursor(location);
+  if (IsWidgetValid(window))
+    GetControllerForWidget(window)->MoveCursor(location);
 }
 
 void DriSurfaceFactory::UnsetHardwareCursor(gfx::AcceleratedWidget window) {
@@ -283,6 +345,10 @@ void DriSurfaceFactory::UnsetHardwareCursor(gfx::AcceleratedWidget window) {
     return;
 
   ResetCursor(window);
+}
+
+bool DriSurfaceFactory::IsWidgetValid(gfx::AcceleratedWidget w) const {
+  return controllers_.find(w) != controllers_.end();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -333,6 +399,9 @@ void DriSurfaceFactory::WaitForPageFlipEvent(int fd) {
 }
 
 void DriSurfaceFactory::ResetCursor(gfx::AcceleratedWidget w) {
+  if (!IsWidgetValid(w))
+    return;
+
   if (!cursor_bitmap_.empty()) {
     // Draw new cursor into backbuffer.
     UpdateCursorImage(cursor_surface_.get(), cursor_bitmap_);
@@ -348,10 +417,10 @@ void DriSurfaceFactory::ResetCursor(gfx::AcceleratedWidget w) {
 
 HardwareDisplayController* DriSurfaceFactory::GetControllerForWidget(
     gfx::AcceleratedWidget w) {
-  CHECK_GE(w, 1);
-  CHECK_LE(static_cast<size_t>(w), controllers_.size());
+  HardwareDisplayControllerMap::iterator it = controllers_.find(w);
+  CHECK(it != controllers_.end());
 
-  return controllers_[w - 1];
+  return it->second;
 }
 
 }  // namespace ui

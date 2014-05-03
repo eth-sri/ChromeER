@@ -26,7 +26,6 @@
 #include "cc/resources/prioritized_resource.h"
 #include "cc/resources/prioritized_resource_manager.h"
 #include "cc/resources/resource_update_queue.h"
-#include "cc/scheduler/frame_rate_controller.h"
 #include "cc/test/fake_content_layer.h"
 #include "cc/test/fake_content_layer_client.h"
 #include "cc/test/fake_content_layer_impl.h"
@@ -2604,7 +2603,7 @@ SINGLE_THREAD_TEST_F(LayerTreeHostTestLCDNotification);
 class LayerTreeHostTestBeginFrameNotification : public LayerTreeHostTest {
  public:
   virtual void InitializeSettings(LayerTreeSettings* settings) OVERRIDE {
-    settings->begin_impl_frame_scheduling_enabled = true;
+    settings->begin_frame_scheduling_enabled = true;
   }
 
   virtual void BeginTest() OVERRIDE {
@@ -2633,7 +2632,7 @@ class LayerTreeHostTestBeginFrameNotificationShutdownWhileEnabled
     : public LayerTreeHostTest {
  public:
   virtual void InitializeSettings(LayerTreeSettings* settings) OVERRIDE {
-    settings->begin_impl_frame_scheduling_enabled = true;
+    settings->begin_frame_scheduling_enabled = true;
     settings->using_synchronous_renderer_compositor = true;
   }
 
@@ -2660,7 +2659,7 @@ class LayerTreeHostTestAbortedCommitDoesntStall : public LayerTreeHostTest {
       : commit_count_(0), commit_abort_count_(0), commit_complete_count_(0) {}
 
   virtual void InitializeSettings(LayerTreeSettings* settings) OVERRIDE {
-    settings->begin_impl_frame_scheduling_enabled = true;
+    settings->begin_frame_scheduling_enabled = true;
   }
 
   virtual void BeginTest() OVERRIDE { PostSetNeedsCommitToMainThread(); }
@@ -4964,11 +4963,11 @@ class LayerTreeHostTestHighResRequiredAfterEvictingUIResources
 
 MULTI_THREAD_TEST_F(LayerTreeHostTestHighResRequiredAfterEvictingUIResources);
 
-class LayerTreeHostTestHybridRasterizationSetting : public LayerTreeHostTest {
+class LayerTreeHostTestGpuRasterizationEnabled : public LayerTreeHostTest {
  protected:
   virtual void InitializeSettings(LayerTreeSettings* settings) OVERRIDE {
     settings->impl_side_painting = true;
-    settings->rasterization_site = LayerTreeSettings::HybridRasterization;
+    settings->gpu_rasterization_enabled = true;
   }
 
   virtual void SetupTree() OVERRIDE {
@@ -4982,7 +4981,7 @@ class LayerTreeHostTestHybridRasterizationSetting : public LayerTreeHostTest {
     child->SetBounds(gfx::Size(10, 10));
     parent->AddChild(child);
 
-    parent->SetHasGpuRasterizationHint(true);
+    layer_tree_host()->set_has_gpu_rasterization_trigger(true);
   }
 
   virtual void BeginTest() OVERRIDE { PostSetNeedsCommitToMainThread(); }
@@ -4994,9 +4993,8 @@ class LayerTreeHostTestHybridRasterizationSetting : public LayerTreeHostTest {
     PictureLayerImpl* child =
         static_cast<PictureLayerImpl*>(parent->children()[0]);
 
-    // Only layers with a GPU rasterization hint should use GPU rasterization.
     EXPECT_TRUE(parent->ShouldUseGpuRasterization());
-    EXPECT_FALSE(child->ShouldUseGpuRasterization());
+    EXPECT_TRUE(child->ShouldUseGpuRasterization());
   }
 
   virtual void DidActivateTreeOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
@@ -5006,9 +5004,8 @@ class LayerTreeHostTestHybridRasterizationSetting : public LayerTreeHostTest {
     PictureLayerImpl* child =
         static_cast<PictureLayerImpl*>(parent->children()[0]);
 
-    // Only layers with a GPU rasterization hint should use GPU rasterization.
     EXPECT_TRUE(parent->ShouldUseGpuRasterization());
-    EXPECT_FALSE(child->ShouldUseGpuRasterization());
+    EXPECT_TRUE(child->ShouldUseGpuRasterization());
     EndTest();
   }
 
@@ -5017,13 +5014,13 @@ class LayerTreeHostTestHybridRasterizationSetting : public LayerTreeHostTest {
   FakeContentLayerClient client_;
 };
 
-MULTI_THREAD_TEST_F(LayerTreeHostTestHybridRasterizationSetting);
+MULTI_THREAD_TEST_F(LayerTreeHostTestGpuRasterizationEnabled);
 
-class LayerTreeHostTestGpuRasterizationSetting : public LayerTreeHostTest {
+class LayerTreeHostTestGpuRasterizationForced : public LayerTreeHostTest {
  protected:
   virtual void InitializeSettings(LayerTreeSettings* settings) OVERRIDE {
     settings->impl_side_painting = true;
-    settings->rasterization_site = LayerTreeSettings::GpuRasterization;
+    settings->gpu_rasterization_forced = true;
   }
 
   virtual void SetupTree() OVERRIDE {
@@ -5037,7 +5034,7 @@ class LayerTreeHostTestGpuRasterizationSetting : public LayerTreeHostTest {
     child->SetBounds(gfx::Size(10, 10));
     parent->AddChild(child);
 
-    parent->SetHasGpuRasterizationHint(true);
+    layer_tree_host()->set_has_gpu_rasterization_trigger(false);
   }
 
   virtual void BeginTest() OVERRIDE { PostSetNeedsCommitToMainThread(); }
@@ -5050,7 +5047,7 @@ class LayerTreeHostTestGpuRasterizationSetting : public LayerTreeHostTest {
         static_cast<PictureLayerImpl*>(parent->children()[0]);
 
     // All layers should use GPU rasterization, regardless of whether a GPU
-    // rasterization hint has been set.
+    // rasterization trigger has been set.
     EXPECT_TRUE(parent->ShouldUseGpuRasterization());
     EXPECT_TRUE(child->ShouldUseGpuRasterization());
   }
@@ -5063,7 +5060,7 @@ class LayerTreeHostTestGpuRasterizationSetting : public LayerTreeHostTest {
         static_cast<PictureLayerImpl*>(parent->children()[0]);
 
     // All layers should use GPU rasterization, regardless of whether a GPU
-    // rasterization hint has been set.
+    // rasterization trigger has been set.
     EXPECT_TRUE(parent->ShouldUseGpuRasterization());
     EXPECT_TRUE(child->ShouldUseGpuRasterization());
     EndTest();
@@ -5074,7 +5071,7 @@ class LayerTreeHostTestGpuRasterizationSetting : public LayerTreeHostTest {
   FakeContentLayerClient client_;
 };
 
-MULTI_THREAD_TEST_F(LayerTreeHostTestGpuRasterizationSetting);
+MULTI_THREAD_TEST_F(LayerTreeHostTestGpuRasterizationForced);
 
 class LayerTreeHostTestContinuousPainting : public LayerTreeHostTest {
  public:

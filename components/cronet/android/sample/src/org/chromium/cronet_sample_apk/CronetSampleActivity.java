@@ -9,6 +9,7 @@ import android.app.AlertDialog;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.os.Bundle;
+import android.os.Environment;
 import android.util.Log;
 import android.widget.EditText;
 import android.widget.Toast;
@@ -16,6 +17,7 @@ import android.widget.Toast;
 import org.chromium.net.HttpUrlRequest;
 import org.chromium.net.HttpUrlRequestFactory;
 import org.chromium.net.HttpUrlRequestListener;
+import org.chromium.net.LibraryLoader;
 import org.chromium.net.UrlRequest;
 import org.chromium.net.UrlRequestContext;
 import org.chromium.net.UrlRequestPriority;
@@ -86,6 +88,12 @@ public class CronetSampleActivity extends Activity {
 
     class SampleHttpUrlRequestListener implements HttpUrlRequestListener {
         public SampleHttpUrlRequestListener() {
+        }
+
+        @Override
+        public void onResponseStarted(HttpUrlRequest request) {
+            Log.i(TAG, "****** Response Started, content length is "
+                    + request.getContentLength());
         }
 
         @Override
@@ -216,7 +224,8 @@ public class CronetSampleActivity extends Activity {
     }
 
     public void startNetLog() {
-        mRequestContext.startNetLogToFile("/sdcard/cronet_sample_netlog.json");
+        mRequestContext.startNetLogToFile(
+                Environment.getExternalStorageDirectory().getPath() + "/cronet_sample_netlog.json");
     }
 
     public void stopNetLog() {

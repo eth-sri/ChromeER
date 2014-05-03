@@ -101,6 +101,7 @@ class CC_EXPORT SchedulerStateMachine {
 
   enum Action {
     ACTION_NONE,
+    ACTION_ANIMATE,
     ACTION_SEND_BEGIN_MAIN_FRAME,
     ACTION_COMMIT,
     ACTION_UPDATE_VISIBLE_TILES,
@@ -163,6 +164,9 @@ class CC_EXPORT SchedulerStateMachine {
   // or the screen being damaged and simply needing redisplay.
   void SetNeedsRedraw();
   bool needs_redraw() const { return needs_redraw_; }
+
+  void SetNeedsAnimate();
+  bool needs_animate() const { return needs_animate_; }
 
   // Indicates that manage-tiles is required. This guarantees another
   // ManageTiles will occur shortly (even if no redraw is required).
@@ -248,12 +252,13 @@ class CC_EXPORT SchedulerStateMachine {
   }
 
  protected:
-  bool BeginFrameNeededToDraw() const;
+  bool BeginFrameNeededToAnimateOrDraw() const;
   bool ProactiveBeginFrameWanted() const;
 
   // True if we need to force activations to make forward progress.
   bool PendingActivationsShouldBeForced() const;
 
+  bool ShouldAnimate() const;
   bool ShouldBeginOutputSurfaceCreation() const;
   bool ShouldDrawForced() const;
   bool ShouldDraw() const;
@@ -265,7 +270,6 @@ class CC_EXPORT SchedulerStateMachine {
 
   void AdvanceCurrentFrameNumber();
   bool HasSentBeginMainFrameThisFrame() const;
-  bool HasScheduledManageTilesThisFrame() const;
   bool HasUpdatedVisibleTilesThisFrame() const;
   bool HasSwappedThisFrame() const;
 
@@ -286,6 +290,7 @@ class CC_EXPORT SchedulerStateMachine {
 
   int commit_count_;
   int current_frame_number_;
+  int last_frame_number_animate_performed_;
   int last_frame_number_swap_performed_;
   int last_frame_number_begin_main_frame_sent_;
   int last_frame_number_update_visible_tiles_was_called_;
@@ -299,6 +304,7 @@ class CC_EXPORT SchedulerStateMachine {
   int max_pending_swaps_;
   int pending_swaps_;
   bool needs_redraw_;
+  bool needs_animate_;
   bool needs_manage_tiles_;
   bool swap_used_incomplete_tile_;
   bool needs_commit_;
@@ -309,7 +315,6 @@ class CC_EXPORT SchedulerStateMachine {
   bool has_pending_tree_;
   bool pending_tree_is_ready_for_activation_;
   bool active_tree_needs_first_draw_;
-  bool draw_if_possible_failed_;
   bool did_create_and_initialize_first_output_surface_;
   bool smoothness_takes_priority_;
   bool skip_next_begin_main_frame_to_reduce_latency_;

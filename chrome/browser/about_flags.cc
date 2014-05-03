@@ -164,16 +164,6 @@ const Experiment::Choice kTouchEventsChoices[] = {
     switches::kTouchEventsDisabled }
 };
 
-const Experiment::Choice kTouchOptimizedUIChoices[] = {
-  { IDS_GENERIC_EXPERIMENT_CHOICE_AUTOMATIC, "", "" },
-  { IDS_GENERIC_EXPERIMENT_CHOICE_ENABLED,
-    switches::kTouchOptimizedUI,
-    switches::kTouchOptimizedUIEnabled },
-  { IDS_GENERIC_EXPERIMENT_CHOICE_DISABLED,
-    switches::kTouchOptimizedUI,
-    switches::kTouchOptimizedUIDisabled }
-};
-
 #if defined(USE_AURA)
 const Experiment::Choice kOverscrollHistoryNavigationChoices[] = {
   { IDS_GENERIC_EXPERIMENT_CHOICE_ENABLED, "", "" },
@@ -299,12 +289,12 @@ const Experiment::Choice kOverlayScrollbarChoices[] = {
 };
 #endif
 
-const Experiment::Choice kMapImageChoices[] = {
+const Experiment::Choice kZeroCopyChoices[] = {
   { IDS_GENERIC_EXPERIMENT_CHOICE_DEFAULT, "", "" },
   { IDS_GENERIC_EXPERIMENT_CHOICE_ENABLED,
-    switches::kEnableMapImage, ""},
+    switches::kEnableZeroCopy, ""},
   { IDS_GENERIC_EXPERIMENT_CHOICE_DISABLED,
-    switches::kDisableMapImage, ""}
+    switches::kDisableZeroCopy, ""}
 };
 
 #if defined(OS_ANDROID)
@@ -384,9 +374,9 @@ const Experiment::Choice kTouchScrollingModeChoices[] = {
   { IDS_FLAGS_TOUCH_SCROLLING_MODE_TOUCHCANCEL,
     switches::kTouchScrollingMode,
     switches::kTouchScrollingModeTouchcancel },
-  { IDS_FLAGS_TOUCH_SCROLLING_MODE_ABSORB_TOUCHMOVE,
+  { IDS_FLAGS_TOUCH_SCROLLING_MODE_ASYNC_TOUCHMOVE,
     switches::kTouchScrollingMode,
-    switches::kTouchScrollingModeAbsorbTouchmove },
+    switches::kTouchScrollingModeAsyncTouchmove },
   { IDS_FLAGS_TOUCH_SCROLLING_MODE_SYNC_TOUCHMOVE,
     switches::kTouchScrollingMode,
     switches::kTouchScrollingModeSyncTouchmove },
@@ -894,13 +884,6 @@ const Experiment kExperiments[] = {
     MULTI_VALUE_TYPE(kTouchEventsChoices)
   },
   {
-    "touch-optimized-ui",
-    IDS_FLAGS_TOUCH_OPTIMIZED_UI_NAME,
-    IDS_FLAGS_TOUCH_OPTIMIZED_UI_DESCRIPTION,
-    kOsWin,
-    MULTI_VALUE_TYPE(kTouchOptimizedUIChoices)
-  },
-  {
     "disable-touch-adjustment",
     IDS_DISABLE_TOUCH_ADJUSTMENT_NAME,
     IDS_DISABLE_TOUCH_ADJUSTMENT_DESCRIPTION,
@@ -984,14 +967,16 @@ const Experiment kExperiments[] = {
     kOsLinux | kOsWin | kOsCrOS,
     ENABLE_DISABLE_VALUE_TYPE(switches::kEnablePinch, switches::kDisablePinch),
   },
+#endif  // defined(USE_ASH)
   {
     "enable-pinch-virtual-viewport",
     IDS_FLAGS_ENABLE_PINCH_VIRTUAL_VIEWPORT_NAME,
     IDS_FLAGS_ENABLE_PINCH_VIRTUAL_VIEWPORT_DESCRIPTION,
-    kOsLinux | kOsWin | kOsCrOS,
-    SINGLE_VALUE_TYPE(cc::switches::kEnablePinchVirtualViewport),
+    kOsLinux | kOsWin | kOsCrOS | kOsAndroid,
+    ENABLE_DISABLE_VALUE_TYPE(
+        cc::switches::kEnablePinchVirtualViewport,
+        cc::switches::kDisablePinchVirtualViewport),
   },
-#endif  // defined(USE_ASH)
   {
     "enable-viewport-meta",
     IDS_FLAGS_ENABLE_VIEWPORT_META_NAME,
@@ -1104,6 +1089,14 @@ const Experiment kExperiments[] = {
                               autofill::switches::kDisablePasswordGeneration)
   },
   {
+    "enable-automatic-password-saving",
+    IDS_FLAGS_ENABLE_AUTOMATIC_PASSWORD_SAVING_NAME,
+    IDS_FLAGS_ENABLE_AUTOMATIC_PASSWORD_SAVING_DESCRIPTION,
+    kOsDesktop,
+    SINGLE_VALUE_TYPE(
+        password_manager::switches::kEnableAutomaticPasswordSaving)
+  },
+  {
     "password-manager-reauthentication",
     IDS_FLAGS_PASSWORD_MANAGER_REAUTHENTICATION_NAME,
     IDS_FLAGS_PASSWORD_MANAGER_REAUTHENTICATION_DESCRIPTION,
@@ -1166,6 +1159,14 @@ const Experiment kExperiments[] = {
     kOsCrOS,
     ENABLE_DISABLE_VALUE_TYPE(switches::kEnableTouchEditing,
                               switches::kDisableTouchEditing)
+  },
+  {
+    "enable-suggestions-service",
+    IDS_FLAGS_ENABLE_SUGGESTIONS_SERVICE_NAME,
+    IDS_FLAGS_ENABLE_SUGGESTIONS_SERVICE_DESCRIPTION,
+    kOsAndroid | kOsCrOS,
+    ENABLE_DISABLE_VALUE_TYPE(switches::kEnableSuggestionsService,
+                              switches::kDisableSuggestionsService)
   },
   {
     "enable-sync-synced-notifications",
@@ -1274,6 +1275,15 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_ENABLE_VIRTUAL_KEYBOARD_DESCRIPTION,
     kOsCrOS,
     SINGLE_VALUE_TYPE(keyboard::switches::kEnableVirtualKeyboard)
+  },
+  {
+    "enable-virtual-keyboard-overscroll",
+    IDS_FLAGS_ENABLE_VIRTUAL_KEYBOARD_OVERSCROLL_NAME,
+    IDS_FLAGS_ENABLE_VIRTUAL_KEYBOARD_OVERSCROLL_DESCRIPTION,
+    kOsCrOS,
+    ENABLE_DISABLE_VALUE_TYPE(
+        keyboard::switches::kEnableVirtualKeyboardOverscroll,
+        keyboard::switches::kDisableVirtualKeyboardOverscroll)
   },
   {
     "enable-swipe-selection",
@@ -1495,11 +1505,18 @@ const Experiment kExperiments[] = {
   },
 #endif
   {
-    "map-image",
-    IDS_FLAGS_MAP_IMAGE_NAME,
-    IDS_FLAGS_MAP_IMAGE_DESCRIPTION,
+    "enable-one-copy",
+    IDS_FLAGS_ONE_COPY_NAME,
+    IDS_FLAGS_ONE_COPY_DESCRIPTION,
     kOsAll,
-    MULTI_VALUE_TYPE(kMapImageChoices)
+    SINGLE_VALUE_TYPE(switches::kEnableOneCopy)
+  },
+  {
+    "enable-zero-copy",
+    IDS_FLAGS_ZERO_COPY_NAME,
+    IDS_FLAGS_ZERO_COPY_DESCRIPTION,
+    kOsAll,
+    MULTI_VALUE_TYPE(kZeroCopyChoices)
   },
 #if defined(OS_CHROMEOS)
   {
@@ -1637,14 +1654,14 @@ const Experiment kExperiments[] = {
     "origin-chip",
     IDS_FLAGS_ORIGIN_CHIP_NAME,
     IDS_FLAGS_ORIGIN_CHIP_DESCRIPTION,
-    kOsCrOS | kOsWin,
+    kOsCrOS | kOsWin | kOsLinux,
     MULTI_VALUE_TYPE(kOriginChipChoices)
   },
   {
     "origin-chip-in-omnibox",
     IDS_FLAGS_ORIGIN_CHIP_V2_NAME,
     IDS_FLAGS_ORIGIN_CHIP_V2_DESCRIPTION,
-    kOsCrOS | kOsMac | kOsWin,
+    kOsCrOS | kOsMac | kOsWin | kOsLinux,
     MULTI_VALUE_TYPE(kOriginChipV2Choices)
   },
   {
@@ -1667,6 +1684,13 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_ENABLE_PERMISSIONS_BUBBLES_DESCRIPTION,
     kOsCrOS | kOsMac | kOsWin,
     SINGLE_VALUE_TYPE(switches::kEnablePermissionsBubbles)
+  },
+  {
+    "enable-session-crashed-bubble",
+    IDS_FLAGS_ENABLE_SESSION_CRASHED_BUBBLE_NAME,
+    IDS_FLAGS_ENABLE_SESSION_CRASHED_BUBBLE_DESCRIPTION,
+    kOsWin | kOsLinux,
+    SINGLE_VALUE_TYPE(switches::kEnableSessionCrashedBubble)
   },
   {
     "out-of-process-pdf",
@@ -1776,6 +1800,40 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_ENABLE_FILE_MANAGER_MTP_DESCRIPTION,
     kOsCrOS,
     SINGLE_VALUE_TYPE(chromeos::switches::kEnableFileManagerMTP)
+  },
+#endif
+  // TODO(tyoshino): Remove this temporary flag and command line switch. See
+  // crbug.com/366483 for the target milestone.
+  {
+    "allow-insecure-websocket-from-https-origin",
+    IDS_FLAGS_ALLOW_INSECURE_WEBSOCKET_FROM_HTTPS_ORIGIN_NAME,
+    IDS_FLAGS_ALLOW_INSECURE_WEBSOCKET_FROM_HTTPS_ORIGIN_DESCRIPTION,
+    kOsAll,
+    SINGLE_VALUE_TYPE(switches::kAllowInsecureWebSocketFromHttpsOrigin)
+  },
+#if defined(OS_MACOSX)
+  {
+    "apps-keep-chrome-alive",
+    IDS_FLAGS_APPS_KEEP_CHROME_ALIVE_NAME,
+    IDS_FLAGS_APPS_KEEP_CHROME_ALIVE_DESCRIPTION,
+    kOsMac,
+    SINGLE_VALUE_TYPE(switches::kAppsKeepChromeAlive)
+  },
+#endif
+  {
+    "enable-apps-file-associations",
+    IDS_FLAGS_ENABLE_APPS_FILE_ASSOCIATIONS_NAME,
+    IDS_FLAGS_ENABLE_APPS_FILE_ASSOCIATIONS_DESCRIPTION,
+    kOsMac,
+    SINGLE_VALUE_TYPE(switches::kEnableAppsFileAssociations)
+  },
+#if defined(OS_ANDROID)
+  {
+    "enable-embeddedsearch-api",
+    IDS_FLAGS_ENABLE_EMBEDDEDSEARCH_API_NAME,
+    IDS_FLAGS_ENABLE_EMBEDDEDSEARCH_API_DESCRIPTION,
+    kOsAndroid,
+    SINGLE_VALUE_TYPE(switches::kEnableEmbeddedSearchAPI)
   },
 #endif
 };

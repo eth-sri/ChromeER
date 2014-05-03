@@ -16,7 +16,7 @@ LayerTreeSettings::LayerTreeSettings()
     : impl_side_painting(false),
       allow_antialiasing(true),
       throttle_frame_production(true),
-      begin_impl_frame_scheduling_enabled(false),
+      begin_frame_scheduling_enabled(false),
       main_frame_before_draw_enabled(true),
       main_frame_before_activation_enabled(false),
       using_synchronous_renderer_compositor(false),
@@ -26,7 +26,8 @@ LayerTreeSettings::LayerTreeSettings()
       accelerated_animation_enabled(true),
       can_use_lcd_text(true),
       should_clear_root_render_pass(true),
-      rasterization_site(CpuRasterization),
+      gpu_rasterization_enabled(false),
+      gpu_rasterization_forced(false),
       create_low_res_tiling(true),
       scrollbar_animator(NoAnimator),
       scrollbar_linear_fade_delay_ms(300),
@@ -56,11 +57,13 @@ LayerTreeSettings::LayerTreeSettings()
       max_memory_for_prepaint_percentage(100),
       highp_threshold_min(0),
       strict_layer_property_change_checking(false),
-      use_map_image(false),
+      use_one_copy(false),
+      use_zero_copy(false),
       ignore_root_layer_flings(false),
       use_rgba_4444_textures(false),
       touch_hit_testing(true),
-      texture_id_allocation_chunk_size(64) {}
+      texture_id_allocation_chunk_size(64) {
+}
 
 LayerTreeSettings::~LayerTreeSettings() {}
 

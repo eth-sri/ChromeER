@@ -52,8 +52,7 @@ class Manifest;
 
 class Plugin : public pp::Instance {
  public:
-  // Factory method for creation.
-  static Plugin* New(PP_Instance instance);
+  explicit Plugin(PP_Instance instance);
 
   // ----- Methods inherited from pp::Instance:
 
@@ -166,7 +165,6 @@ class Plugin : public pp::Instance {
   bool DocumentCanRequest(const std::string& url);
 
   Manifest const* manifest() const { return manifest_.get(); }
-  const pp::URLUtil_Dev* url_util() const { return url_util_; }
 
   // set_exit_status may be called off the main thread.
   void set_exit_status(int exit_status);
@@ -176,14 +174,10 @@ class Plugin : public pp::Instance {
 
  private:
   NACL_DISALLOW_COPY_AND_ASSIGN(Plugin);
-  // Prevent construction and destruction from outside the class:
-  // must use factory New() method instead.
-  explicit Plugin(PP_Instance instance);
   // The browser will invoke the destructor via the pp::Instance
   // pointer to this object, not from base's Delete().
   ~Plugin();
 
-  bool EarlyInit();
   // Shuts down socket connection, service runtime, and receive thread,
   // in this order, for the main nacl subprocess.
   void ShutDownSubprocesses();
@@ -203,10 +197,8 @@ class Plugin : public pp::Instance {
                           int sample,
                           int maximum,
                           int out_of_range_replacement);
-  void HistogramEnumerateOsArch(const std::string& sandbox_isa);
   void HistogramEnumerateLoadStatus(PP_NaClError error_code);
   void HistogramEnumerateSelLdrLoadStatus(NaClErrorCode error_code);
-  void HistogramEnumerateManifestIsDataURI(bool is_data_uri);
   void HistogramHTTPStatusCode(const std::string& name, int status);
 
   // Load a nacl module from the file specified in wrapper.
@@ -275,8 +267,7 @@ class Plugin : public pp::Instance {
   // On success, |true| is returned and |manifest_| is updated to
   // contain a Manifest that is used by SelectNexeURLFromManifest.
   // On failure, |false| is returned, and |manifest_| is unchanged.
-  bool SetManifestObject(const nacl::string& manifest_json,
-                         ErrorInfo* error_info);
+  bool SetManifestObject(const nacl::string& manifest_json);
 
   // Logs timing information to a UMA histogram, and also logs the same timing
   // information divided by the size of the nexe to another histogram.
@@ -315,8 +306,6 @@ class Plugin : public pp::Instance {
 
   // The manifest dictionary.  Used for looking up resources to be loaded.
   nacl::scoped_ptr<Manifest> manifest_;
-  // URL processing interface for use in looking up resources in manifests.
-  const pp::URLUtil_Dev* url_util_;
 
   // Keep track of the FileDownloaders created to fetch urls.
   std::set<FileDownloader*> url_downloaders_;
@@ -342,8 +331,9 @@ class Plugin : public pp::Instance {
   int exit_status_;
 
   // Open times are in microseconds.
-  int64_t manifest_open_time_;
   int64_t nexe_open_time_;
+
+  PP_Var manifest_data_var_;
 
   const PPB_NaCl_Private* nacl_interface_;
   pp::UMAPrivate uma_interface_;

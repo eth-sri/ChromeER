@@ -8,10 +8,14 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/ui/simple_message_box.h"
+#include "content/public/browser/notification_service.h"
 
 ExtensionErrorReporter* ExtensionErrorReporter::instance_ = NULL;
 
@@ -35,9 +39,26 @@ ExtensionErrorReporter::ExtensionErrorReporter(bool enable_noisy_errors)
 
 ExtensionErrorReporter::~ExtensionErrorReporter() {}
 
+void ExtensionErrorReporter::ReportLoadError(
+    const base::FilePath& extension_path,
+    const std::string& error,
+    Profile* profile,
+    bool be_noisy) {
+  content::NotificationService::current()->Notify(
+      chrome::NOTIFICATION_EXTENSION_LOAD_ERROR,
+      content::Source<Profile>(profile),
+      content::Details<const std::string>(&error));
+
+  std::string path_str = base::UTF16ToUTF8(extension_path.LossyDisplayName());
+  base::string16 message = base::UTF8ToUTF16(
+      base::StringPrintf("Could not load extension from '%s'. %s",
+                         path_str.c_str(),
+                         error.c_str()));
+  ReportError(message, be_noisy);
+}
+
 void ExtensionErrorReporter::ReportError(const base::string16& message,
-                                         bool be_noisy,
-                                         bool* user_response) {
+                                         bool be_noisy) {
   // NOTE: There won't be a ui_loop_ in the unit test environment.
   if (ui_loop_) {
     CHECK(base::MessageLoop::current() == ui_loop_)
@@ -51,19 +72,10 @@ void ExtensionErrorReporter::ReportError(const base::string16& message,
   LOG(WARNING) << "Extension error: " << message;
 
   if (enable_noisy_errors_ && be_noisy) {
-    if (user_response) {
-      *user_response =
-          chrome::MESSAGE_BOX_RESULT_YES ==
-          chrome::ShowMessageBox(NULL,
-                                 base::ASCIIToUTF16("Extension error"),
-                                 message,
-                                 chrome::MESSAGE_BOX_TYPE_QUESTION);
-    } else {
-      chrome::ShowMessageBox(NULL,
-                             base::ASCIIToUTF16("Extension error"),
-                             message,
-                             chrome::MESSAGE_BOX_TYPE_WARNING);
-    }
+    chrome::ShowMessageBox(NULL,
+                           base::ASCIIToUTF16("Extension error"),
+                           message,
+                           chrome::MESSAGE_BOX_TYPE_WARNING);
   }
 }
 

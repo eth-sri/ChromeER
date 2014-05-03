@@ -56,7 +56,6 @@ class RenderViewHost;
 class RenderViewHostDelegateView;
 class RenderViewHostImpl;
 class RenderWidgetHostImpl;
-class RenderWidgetHostViewPort;
 class SavePackage;
 class SessionStorageNamespaceImpl;
 class SiteInstance;
@@ -339,6 +338,7 @@ class CONTENT_EXPORT WebContentsImpl
                                       const base::string16& message,
                                       bool is_reload,
                                       IPC::Message* reply_msg) OVERRIDE;
+  virtual void DidAccessInitialDocument() OVERRIDE;
   virtual WebContents* GetAsWebContents() OVERRIDE;
   virtual bool IsNeverVisible() OVERRIDE;
 
@@ -371,7 +371,6 @@ class CONTENT_EXPORT WebContentsImpl
   virtual void DidCancelLoading() OVERRIDE;
   virtual void DidChangeLoadProgress(double progress) OVERRIDE;
   virtual void DidDisownOpener(RenderViewHost* rvh) OVERRIDE;
-  virtual void DidAccessInitialDocument() OVERRIDE;
   virtual void DocumentAvailableInMainFrame(
       RenderViewHost* render_view_host) OVERRIDE;
   virtual void DocumentOnLoadCompletedInMainFrame(
@@ -557,6 +556,11 @@ class CONTENT_EXPORT WebContentsImpl
   // Activate this WebContents and show a form repost warning.
   virtual void ActivateAndShowRepostFormWarningDialog() OVERRIDE;
 
+  // Whether the initial empty page of this view has been accessed by another
+  // page, making it unsafe to show the pending URL. Always false after the
+  // first commit.
+  virtual bool HasAccessedInitialDocument() OVERRIDE;
+
   // Updates the max page ID for the current SiteInstance in this
   // WebContentsImpl to be at least |page_id|.
   virtual void UpdateMaxPageID(int32 page_id) OVERRIDE;
@@ -620,7 +624,6 @@ class CONTENT_EXPORT WebContentsImpl
   void SelectRange(const gfx::Point& start, const gfx::Point& end);
 
  private:
-  friend class NavigationControllerImpl;
   friend class TestNavigationObserver;
   friend class WebContentsObserver;
   friend class WebContents;  // To implement factory methods.
@@ -666,8 +669,11 @@ class CONTENT_EXPORT WebContentsImpl
   // watching |web_contents|. No-op if there is no such observer.
   void RemoveDestructionObserver(WebContentsImpl* web_contents);
 
-  // Callback function when showing JavaScript dialogs.
-  void OnDialogClosed(RenderFrameHost* rfh,
+  // Callback function when showing JavaScript dialogs.  Takes in a routing ID
+  // pair to identify the RenderFrameHost that opened the dialog, because it's
+  // possible for the RenderFrameHost to be deleted by the time this is called.
+  void OnDialogClosed(int render_process_id,
+                      int render_frame_id,
                       IPC::Message* reply_msg,
                       bool dialog_was_suppressed,
                       bool success,
@@ -811,13 +817,6 @@ class CONTENT_EXPORT WebContentsImpl
   // renderer-initiated creation, and returns it. Note that this can only be
   // called once as this call also removes it from the internal map.
   WebContentsImpl* GetCreatedWindow(int route_id);
-
-  // Returns the RenderWidgetHostView that is associated with a native window
-  // and can be used in showing created widgets.
-  // If this WebContents belongs to a browser plugin guest, there is no native
-  // window 'view' associated with this WebContents. This method returns the
-  // 'view' of the embedder instead.
-  RenderWidgetHostViewPort* GetRenderWidgetHostViewPort() const;
 
   // Misc non-view stuff -------------------------------------------------------
 
@@ -968,6 +967,11 @@ class CONTENT_EXPORT WebContentsImpl
 
   // True if this is a secure page which displayed insecure content.
   bool displayed_insecure_content_;
+
+  // Whether the initial empty page has been accessed by another page, making it
+  // unsafe to show the pending URL. Usually false unless another window tries
+  // to modify the blank page.  Always false after the first commit.
+  bool has_accessed_initial_document_;
 
   // Data for misc internal state ----------------------------------------------
 

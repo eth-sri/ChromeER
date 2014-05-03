@@ -36,18 +36,6 @@
 
 namespace content {
 
-// static
-RenderWidgetHostViewPort* RenderWidgetHostViewPort::FromRWHV(
-    RenderWidgetHostView* rwhv) {
-  return static_cast<RenderWidgetHostViewPort*>(rwhv);
-}
-
-// static
-RenderWidgetHostViewPort* RenderWidgetHostViewPort::CreateViewForWidget(
-    RenderWidgetHost* widget) {
-  return FromRWHV(RenderWidgetHostView::CreateViewForWidget(widget));
-}
-
 #if defined(OS_WIN)
 
 namespace {
@@ -498,6 +486,17 @@ void RenderWidgetHostViewBase::SetBrowserAccessibilityManager(
   browser_accessibility_manager_.reset(manager);
 }
 
+void RenderWidgetHostViewBase::OnAccessibilitySetFocus(int acc_obj_id) {
+}
+
+void RenderWidgetHostViewBase::AccessibilityShowMenu(int acc_obj_id) {
+}
+
+gfx::Point RenderWidgetHostViewBase::AccessibilityOriginInScreen(
+    const gfx::Rect& bounds) {
+  return bounds.origin();
+}
+
 void RenderWidgetHostViewBase::UpdateScreenInfo(gfx::NativeView view) {
   RenderWidgetHostImpl* impl = NULL;
   if (GetRenderWidgetHost())
@@ -522,19 +521,12 @@ bool RenderWidgetHostViewBase::HasDisplayPropertyChanged(gfx::NativeView view) {
   return true;
 }
 
-void RenderWidgetHostViewBase::ProcessAckedTouchEvent(
-    const TouchEventWithLatencyInfo& touch, InputEventAckState ack_result) {
-}
-
 scoped_ptr<SyntheticGestureTarget>
 RenderWidgetHostViewBase::CreateSyntheticGestureTarget() {
   RenderWidgetHostImpl* host =
       RenderWidgetHostImpl::From(GetRenderWidgetHost());
   return scoped_ptr<SyntheticGestureTarget>(
       new SyntheticGestureTargetBase(host));
-}
-
-void RenderWidgetHostViewBase::FocusedNodeChanged(bool is_editable_node) {
 }
 
 // Platform implementation should override this method to allow frame
@@ -573,25 +565,12 @@ void RenderWidgetHostViewBase::EndFrameSubscription() {
   render_process_host->EndFrameSubscription(impl->GetRoutingID());
 }
 
-void RenderWidgetHostViewBase::OnOverscrolled(
-    gfx::Vector2dF accumulated_overscroll,
-    gfx::Vector2dF current_fling_velocity) {
-}
-
 uint32 RenderWidgetHostViewBase::RendererFrameNumber() {
   return renderer_frame_number_;
 }
 
 void RenderWidgetHostViewBase::DidReceiveRendererFrame() {
   ++renderer_frame_number_;
-}
-
-void RenderWidgetHostViewBase::LockCompositingSurface() {
-  NOTIMPLEMENTED();
-}
-
-void RenderWidgetHostViewBase::UnlockCompositingSurface() {
-  NOTIMPLEMENTED();
 }
 
 void RenderWidgetHostViewBase::FlushInput() {
@@ -605,6 +584,14 @@ void RenderWidgetHostViewBase::FlushInput() {
 
 SkBitmap::Config RenderWidgetHostViewBase::PreferredReadbackFormat() {
   return SkBitmap::kARGB_8888_Config;
+}
+
+gfx::Size RenderWidgetHostViewBase::GetVisibleViewportSize() const {
+  return GetViewBounds().size();
+}
+
+void RenderWidgetHostViewBase::SetInsets(const gfx::Insets& insets) {
+  NOTIMPLEMENTED();
 }
 
 }  // namespace content

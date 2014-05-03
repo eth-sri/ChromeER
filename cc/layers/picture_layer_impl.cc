@@ -50,13 +50,15 @@ PictureLayerImpl::PictureLayerImpl(LayerTreeImpl* tree_impl, int id)
       raster_source_scale_(0.f),
       raster_contents_scale_(0.f),
       low_res_raster_contents_scale_(0.f),
-      raster_source_scale_was_animating_(false),
+      raster_source_scale_is_fixed_(false),
+      was_animating_transform_to_screen_(false),
       is_using_lcd_text_(tree_impl->settings().can_use_lcd_text),
       needs_post_commit_initialization_(true),
       should_update_tile_priorities_(false),
       should_use_low_res_tiling_(tree_impl->settings().create_low_res_tiling),
       use_gpu_rasterization_(false),
-      layer_needs_to_register_itself_(true) {}
+      layer_needs_to_register_itself_(true) {
+}
 
 PictureLayerImpl::~PictureLayerImpl() {
   if (!layer_needs_to_register_itself_)
@@ -238,6 +240,9 @@ void PictureLayerImpl::AppendQuads(QuadSink* quad_sink,
     if (visible_geometry_rect.IsEmpty())
       continue;
 
+    append_quads_data->visible_content_area +=
+        visible_geometry_rect.width() * visible_geometry_rect.height();
+
     if (!*iter || !iter->IsReadyToDraw()) {
       if (draw_checkerboard_for_missing_tiles()) {
         scoped_ptr<CheckerboardDrawQuad> quad = CheckerboardDrawQuad::Create();
@@ -258,6 +263,8 @@ void PictureLayerImpl::AppendQuads(QuadSink* quad_sink,
 
       append_quads_data->num_missing_tiles++;
       append_quads_data->had_incomplete_tile = true;
+      append_quads_data->approximated_visible_content_area +=
+          visible_geometry_rect.width() * visible_geometry_rect.height();
       continue;
     }
 
@@ -322,6 +329,11 @@ void PictureLayerImpl::AppendQuads(QuadSink* quad_sink,
 
     DCHECK(draw_quad);
     quad_sink->Append(draw_quad.Pass());
+
+    if (iter->priority(ACTIVE_TREE).resolution != HIGH_RESOLUTION) {
+      append_quads_data->approximated_visible_content_area +=
+          visible_geometry_rect.width() * visible_geometry_rect.height();
+    }
 
     if (seen_tilings.empty() || seen_tilings.back() != iter.CurrentTiling())
       seen_tilings.push_back(iter.CurrentTiling());
@@ -400,6 +412,14 @@ void PictureLayerImpl::UpdateTilePriorities() {
 
   // Tile priorities were modified.
   layer_tree_impl()->DidModifyTilePriorities();
+}
+
+void PictureLayerImpl::NotifyTileInitialized(const Tile* tile) {
+  if (layer_tree_impl()->IsActiveTree()) {
+    gfx::RectF layer_damage_rect =
+        gfx::ScaleRect(tile->content_rect(), 1.f / tile->contents_scale());
+    AddDamageRect(layer_damage_rect);
+  }
 }
 
 void PictureLayerImpl::DidBecomeActive() {
@@ -676,23 +696,14 @@ void PictureLayerImpl::SyncTiling(
     return;
   tilings_->AddTiling(tiling->contents_scale());
 
-  if (!layer_tree_impl()->needs_update_draw_properties()) {
-    // When the tree is up to date, the set of tilings must either be empty or
-    // contain at least one high resolution tiling.  (If it is up to date,
-    // then it would be invalid to sync a tiling if it is the first tiling
-    // on the layer, since there would be no high resolution tiling.)
-    SanityCheckTilingState();
-    // TODO(enne): temporary sanity CHECK for http://crbug.com/358350
-    CHECK_GT(tilings_->num_tilings(), 1u);
-  }
-
   // If this tree needs update draw properties, then the tiling will
   // get updated prior to drawing or activation.  If this tree does not
   // need update draw properties, then its transforms are up to date and
   // we can create tiles for this tiling immediately.
   if (!layer_tree_impl()->needs_update_draw_properties() &&
-      should_update_tile_priorities_)
+      should_update_tile_priorities_) {
     UpdateTilePriorities();
+  }
 }
 
 void PictureLayerImpl::SetIsMask(bool is_mask) {
@@ -956,14 +967,15 @@ void PictureLayerImpl::ManageTilings(bool animating_transform_to_screen,
         << "A layer with no tilings shouldn't have valid raster scales";
   }
 
-  // Store the value for the next time ShouldAdjustRasterScale is called.
-  raster_source_scale_was_animating_ = animating_transform_to_screen;
+  if (change_target_tiling) {
+    RecalculateRasterScales(animating_transform_to_screen,
+                            maximum_animation_contents_scale);
+  }
+
+  was_animating_transform_to_screen_ = animating_transform_to_screen;
 
   if (!change_target_tiling)
     return;
-
-  RecalculateRasterScales(animating_transform_to_screen,
-                          maximum_animation_contents_scale);
 
   PictureLayerTiling* high_res = NULL;
   PictureLayerTiling* low_res = NULL;
@@ -1011,12 +1023,7 @@ void PictureLayerImpl::ManageTilings(bool animating_transform_to_screen,
 
 bool PictureLayerImpl::ShouldAdjustRasterScale(
     bool animating_transform_to_screen) const {
-  // TODO(danakj): Adjust raster source scale closer to ideal source scale at
-  // a throttled rate. Possibly make use of invalidation_.IsEmpty() on pending
-  // tree. This will allow CSS scale changes to get re-rastered at an
-  // appropriate rate.
-
-  if (raster_source_scale_was_animating_ != animating_transform_to_screen)
+  if (was_animating_transform_to_screen_ != animating_transform_to_screen)
     return true;
 
   if (animating_transform_to_screen &&
@@ -1045,6 +1052,12 @@ bool PictureLayerImpl::ShouldAdjustRasterScale(
   if (raster_device_scale_ != ideal_device_scale_)
     return true;
 
+  // When the source scale changes we want to match it, but not when animating
+  // or when we've fixed the scale in place.
+  if (!animating_transform_to_screen && !raster_source_scale_is_fixed_ &&
+      raster_source_scale_ != ideal_source_scale_)
+    return true;
+
   return false;
 }
 
@@ -1066,24 +1079,47 @@ float PictureLayerImpl::SnappedContentsScale(float scale) {
 void PictureLayerImpl::RecalculateRasterScales(
     bool animating_transform_to_screen,
     float maximum_animation_contents_scale) {
-  raster_device_scale_ = ideal_device_scale_;
-  raster_source_scale_ = ideal_source_scale_;
+  float old_raster_contents_scale = raster_contents_scale_;
+  float old_raster_page_scale = raster_page_scale_;
+  float old_raster_source_scale = raster_source_scale_;
 
+  raster_device_scale_ = ideal_device_scale_;
+  raster_page_scale_ = ideal_page_scale_;
+  raster_source_scale_ = ideal_source_scale_;
+  raster_contents_scale_ = ideal_contents_scale_;
+
+  // If we're not animating, or leaving an animation, and the
+  // ideal_source_scale_ changes, then things are unpredictable, and we fix
+  // the raster_source_scale_ in place.
+  if (old_raster_source_scale && !animating_transform_to_screen &&
+      !was_animating_transform_to_screen_ &&
+      old_raster_source_scale != ideal_source_scale_)
+    raster_source_scale_is_fixed_ = true;
+
+  // TODO(danakj): Adjust raster source scale closer to ideal source scale at
+  // a throttled rate. Possibly make use of invalidation_.IsEmpty() on pending
+  // tree. This will allow CSS scale changes to get re-rastered at an
+  // appropriate rate.
+  if (raster_source_scale_is_fixed_) {
+    raster_contents_scale_ /= raster_source_scale_;
+    raster_source_scale_ = 1.f;
+  }
+
+  // During pinch we completely ignore the current ideal scale, and just use
+  // a multiple of the previous scale.
+  // TODO(danakj): This seems crazy, we should use the current ideal, no?
   bool is_pinching = layer_tree_impl()->PinchGestureActive();
-  if (!is_pinching || raster_contents_scale_ == 0.f) {
-    // When not pinching or when we have no previous scale, we use ideal scale:
-    raster_page_scale_ = ideal_page_scale_;
-    raster_contents_scale_ = ideal_contents_scale_;
-  } else {
+  if (is_pinching && old_raster_contents_scale) {
     // See ShouldAdjustRasterScale:
     // - When zooming out, preemptively create new tiling at lower resolution.
     // - When zooming in, approximate ideal using multiple of kMaxScaleRatio.
-    bool zooming_out = raster_page_scale_ > ideal_page_scale_;
+    bool zooming_out = old_raster_page_scale > ideal_page_scale_;
     float desired_contents_scale =
-        zooming_out ? raster_contents_scale_ / kMaxScaleRatioDuringPinch
-                    : raster_contents_scale_ * kMaxScaleRatioDuringPinch;
+        zooming_out ? old_raster_contents_scale / kMaxScaleRatioDuringPinch
+                    : old_raster_contents_scale * kMaxScaleRatioDuringPinch;
     raster_contents_scale_ = SnappedContentsScale(desired_contents_scale);
-    raster_page_scale_ = raster_contents_scale_ / raster_device_scale_;
+    raster_page_scale_ =
+        raster_contents_scale_ / raster_device_scale_ / raster_source_scale_;
   }
 
   raster_contents_scale_ =
@@ -1211,6 +1247,7 @@ void PictureLayerImpl::ResetRasterScale() {
   raster_source_scale_ = 0.f;
   raster_contents_scale_ = 0.f;
   low_res_raster_contents_scale_ = 0.f;
+  raster_source_scale_is_fixed_ = false;
 
   // When raster scales aren't valid, don't update tile priorities until
   // this layer has been updated via UpdateDrawProperties.

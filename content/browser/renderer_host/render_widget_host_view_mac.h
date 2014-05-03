@@ -16,10 +16,10 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
-#include "content/browser/accessibility/browser_accessibility_delegate_mac.h"
 #include "content/browser/renderer_host/display_link_mac.h"
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/browser/renderer_host/software_frame_manager.h"
+#include "content/common/content_export.h"
 #include "content/common/cursors/webcursor.h"
 #include "content/common/edit_command.h"
 #import "content/public/browser/render_widget_host_view_mac_base.h"
@@ -51,8 +51,7 @@ class WebContents;
 @interface RenderWidgetHostViewCocoa
     : BaseView <RenderWidgetHostViewMacBase,
                 RenderWidgetHostViewMacOwner,
-                NSTextInputClient,
-                BrowserAccessibilityDelegateCocoa> {
+                NSTextInputClient> {
  @private
   scoped_ptr<content::RenderWidgetHostViewMac> renderWidgetHostView_;
   // This ivar is the cocoa delegate of the NSResponder.
@@ -213,10 +212,15 @@ class RenderWidgetHostImpl;
 //     references to it must become NULL."
 //
 // RenderWidgetHostView class hierarchy described in render_widget_host_view.h.
-class RenderWidgetHostViewMac : public RenderWidgetHostViewBase,
-                                public IPC::Sender,
-                                public SoftwareFrameManagerClient {
+class CONTENT_EXPORT RenderWidgetHostViewMac
+    : public RenderWidgetHostViewBase,
+      public IPC::Sender,
+      public SoftwareFrameManagerClient {
  public:
+  // The view will associate itself with the given widget. The native view must
+  // be hooked up immediately to the view hierarchy, or else when it is
+  // deleted it will delete this out from under the caller.
+  explicit RenderWidgetHostViewMac(RenderWidgetHost* widget);
   virtual ~RenderWidgetHostViewMac();
 
   RenderWidgetHostViewCocoa* cocoa_view() const { return cocoa_view_; }
@@ -255,7 +259,7 @@ class RenderWidgetHostViewMac : public RenderWidgetHostViewBase,
   virtual void StopSpeaking() OVERRIDE;
   virtual void SetBackground(const SkBitmap& background) OVERRIDE;
 
-  // Implementation of RenderWidgetHostViewPort.
+  // Implementation of RenderWidgetHostViewBase.
   virtual void InitAsPopup(RenderWidgetHostView* parent_host_view,
                            const gfx::Rect& pos) OVERRIDE;
   virtual void InitAsFullscreen(
@@ -263,7 +267,6 @@ class RenderWidgetHostViewMac : public RenderWidgetHostViewBase,
   virtual void WasShown() OVERRIDE;
   virtual void WasHidden() OVERRIDE;
   virtual void MovePluginWindows(
-      const gfx::Vector2d& scroll_offset,
       const std::vector<WebPluginGeometry>& moves) OVERRIDE;
   virtual void Focus() OVERRIDE;
   virtual void Blur() OVERRIDE;
@@ -276,11 +279,6 @@ class RenderWidgetHostViewMac : public RenderWidgetHostViewBase,
   virtual void ImeCompositionRangeChanged(
       const gfx::Range& range,
       const std::vector<gfx::Rect>& character_bounds) OVERRIDE;
-  virtual void DidUpdateBackingStore(
-      const gfx::Rect& scroll_rect,
-      const gfx::Vector2d& scroll_delta,
-      const std::vector<gfx::Rect>& copy_rects,
-      const std::vector<ui::LatencyInfo>& latency_info) OVERRIDE;
   virtual void RenderProcessGone(base::TerminationStatus status,
                                  int error_code) OVERRIDE;
   virtual void Destroy() OVERRIDE;
@@ -311,6 +309,10 @@ class RenderWidgetHostViewMac : public RenderWidgetHostViewBase,
   virtual void AcceleratedSurfaceInitialized(int host_id,
                                              int route_id) OVERRIDE;
   virtual void CreateBrowserAccessibilityManagerIfNeeded() OVERRIDE;
+  virtual gfx::Point AccessibilityOriginInScreen(const gfx::Rect& bounds)
+      OVERRIDE;
+  virtual void OnAccessibilitySetFocus(int acc_obj_id) OVERRIDE;
+  virtual void AccessibilityShowMenu(int acc_obj_id) OVERRIDE;
   virtual bool PostProcessEventForPluginIme(
       const NativeWebKeyboardEvent& event) OVERRIDE;
 
@@ -327,8 +329,6 @@ class RenderWidgetHostViewMac : public RenderWidgetHostViewBase,
   virtual gfx::Rect GetBoundsInRootWindow() OVERRIDE;
   virtual gfx::GLSurfaceHandle GetCompositingSurface() OVERRIDE;
 
-  virtual void SetHasHorizontalScrollbar(
-      bool has_horizontal_scrollbar) OVERRIDE;
   virtual void SetScrollOffsetPinning(
       bool is_pinned_to_left, bool is_pinned_to_right) OVERRIDE;
   virtual bool LockMouse() OVERRIDE;
@@ -515,7 +515,6 @@ class RenderWidgetHostViewMac : public RenderWidgetHostViewBase,
   bool HasPendingSwapAck() const { return pending_swap_ack_; }
 
  private:
-  friend class RenderWidgetHostView;
   friend class RenderWidgetHostViewMacTest;
 
   struct PendingSwapAck {
@@ -529,11 +528,6 @@ class RenderWidgetHostViewMac : public RenderWidgetHostViewBase,
   };
   scoped_ptr<PendingSwapAck> pending_swap_ack_;
   void AddPendingSwapAck(int32 route_id, int gpu_host_id, int32 renderer_id);
-
-  // The view will associate itself with the given widget. The native view must
-  // be hooked up immediately to the view hierarchy, or else when it is
-  // deleted it will delete this out from under the caller.
-  explicit RenderWidgetHostViewMac(RenderWidgetHost* widget);
 
   // Returns whether this render view is a popup (autocomplete window).
   bool IsPopup() const;
@@ -575,8 +569,11 @@ class RenderWidgetHostViewMac : public RenderWidgetHostViewBase,
   // received. In this case, switch from polling for frames to pushing them.
   void TimerSinceGotAcceleratedFrameFired();
 
+  // IPC message handlers.
   void OnPluginFocusChanged(bool focused, int plugin_id);
   void OnStartPluginIme();
+  void OnDidChangeScrollbarsForMainFrame(bool has_horizontal_scrollbar,
+                                         bool has_vertical_scrollbar);
 
   // Convert |rect| from the views coordinate (upper-left origin) into
   // the OpenGL coordinate (lower-left origin) and scale for HiDPI displays.

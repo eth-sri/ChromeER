@@ -92,6 +92,7 @@ class CC_EXPORT PictureLayerImpl
   virtual void AppendQuads(QuadSink* quad_sink,
                            AppendQuadsData* append_quads_data) OVERRIDE;
   virtual void UpdateTilePriorities() OVERRIDE;
+  virtual void NotifyTileInitialized(const Tile* tile) OVERRIDE;
   virtual void DidBecomeActive() OVERRIDE;
   virtual void DidBeginTracing() OVERRIDE;
   virtual void ReleaseResources() OVERRIDE;
@@ -203,7 +204,8 @@ class CC_EXPORT PictureLayerImpl
   float raster_contents_scale_;
   float low_res_raster_contents_scale_;
 
-  bool raster_source_scale_was_animating_;
+  bool raster_source_scale_is_fixed_;
+  bool was_animating_transform_to_screen_;
   bool is_using_lcd_text_;
   bool needs_post_commit_initialization_;
   // A sanity state check to make sure UpdateTilePriorities only gets called

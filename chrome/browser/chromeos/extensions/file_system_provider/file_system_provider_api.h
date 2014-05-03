@@ -17,7 +17,7 @@ class FileSystemProviderMountFunction : public ChromeSyncExtensionFunction {
 
  protected:
   virtual ~FileSystemProviderMountFunction() {}
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
 class FileSystemProviderUnmountFunction : public ChromeSyncExtensionFunction {
@@ -27,7 +27,7 @@ class FileSystemProviderUnmountFunction : public ChromeSyncExtensionFunction {
 
  protected:
   virtual ~FileSystemProviderUnmountFunction() {}
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
 class FileSystemProviderInternalUnmountRequestedSuccessFunction
@@ -39,7 +39,7 @@ class FileSystemProviderInternalUnmountRequestedSuccessFunction
 
  protected:
   virtual ~FileSystemProviderInternalUnmountRequestedSuccessFunction() {}
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
 class FileSystemProviderInternalUnmountRequestedErrorFunction
@@ -50,7 +50,31 @@ class FileSystemProviderInternalUnmountRequestedErrorFunction
 
  protected:
   virtual ~FileSystemProviderInternalUnmountRequestedErrorFunction() {}
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
+};
+
+class FileSystemProviderInternalGetMetadataRequestedSuccessFunction
+    : public ChromeSyncExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION(
+      "fileSystemProviderInternal.getMetadataRequestedSuccess",
+      FILESYSTEMPROVIDERINTERNAL_GETMETADATAREQUESTEDSUCCESS)
+
+ protected:
+  virtual ~FileSystemProviderInternalGetMetadataRequestedSuccessFunction() {}
+  virtual bool RunSync() OVERRIDE;
+};
+
+class FileSystemProviderInternalGetMetadataRequestedErrorFunction
+    : public ChromeSyncExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION(
+      "fileSystemProviderInternal.getMetadataRequestedError",
+      FILESYSTEMPROVIDERINTERNAL_GETMETADATAREQUESTEDERROR)
+
+ protected:
+  virtual ~FileSystemProviderInternalGetMetadataRequestedErrorFunction() {}
+  virtual bool RunSync() OVERRIDE;
 };
 
 }  // namespace extensions

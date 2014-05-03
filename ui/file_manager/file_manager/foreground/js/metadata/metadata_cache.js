@@ -115,8 +115,10 @@ MetadataCache.EVICTION_THRESHOLD_MARGIN = 500;
  */
 MetadataCache.createFull = function(volumeManager) {
   var cache = new MetadataCache();
-  cache.providers_.push(new FilesystemProvider());
+  // DriveProvider should be prior to FileSystemProvider, because it covers
+  // FileSystemProvider for files in Drive.
   cache.providers_.push(new DriveProvider(volumeManager));
+  cache.providers_.push(new FilesystemProvider());
   cache.providers_.push(new ContentProvider());
   return cache;
 };
@@ -681,7 +683,7 @@ FilesystemProvider.prototype.fetch = function(
   function onMetadata(entry, metadata) {
     callback({
       filesystem: {
-        size: entry.isFile ? (metadata.size || 0) : -1,
+        size: (entry.isFile ? (metadata.size || 0) : -1),
         modificationTime: metadata.modificationTime
       }
     });
@@ -735,7 +737,7 @@ DriveProvider.prototype.supportsEntry = function(entry) {
  */
 DriveProvider.prototype.providesType = function(type) {
   return type === 'drive' || type === 'thumbnail' ||
-      type === 'streaming' || type === 'media';
+      type === 'streaming' || type === 'media' || type === 'filesystem';
 };
 
 /**
@@ -838,6 +840,11 @@ DriveProvider.prototype.convert_ = function(data, entry) {
     shared: data.shared
   };
 
+  result.filesystem = {
+    size: (entry.isFile ? (data.fileSize || 0) : -1),
+    modificationTime: new Date(data.lastModifiedTime)
+  };
+
   if ('thumbnailUrl' in data) {
     result.thumbnail = {
       url: data.thumbnailUrl,
@@ -874,16 +881,11 @@ function ContentProvider() {
   // Pass all URLs to the metadata reader until we have a correct filter.
   this.urlFilter_ = /.*/;
 
-  var path = document.location.pathname;
-  var workerPath = document.location.origin +
-      path.substring(0, path.lastIndexOf('/') + 1) +
-      'foreground/js/metadata/metadata_dispatcher.js';
-
-  this.dispatcher_ = new SharedWorker(workerPath).port;
-  this.dispatcher_.start();
-
-  this.dispatcher_.onmessage = this.onMessage_.bind(this);
-  this.dispatcher_.postMessage({verb: 'init'});
+  var dispatcher = new SharedWorker(ContentProvider.WORKER_SCRIPT).port;
+  dispatcher.onmessage = this.onMessage_.bind(this);
+  dispatcher.postMessage({verb: 'init'});
+  dispatcher.start();
+  this.dispatcher_ = dispatcher;
 
   // Initialization is not complete until the Worker sends back the
   // 'initialized' message.  See below.
@@ -893,6 +895,15 @@ function ContentProvider() {
   // Note that simultaneous requests for same url are handled in MetadataCache.
   this.callbacks_ = {};
 }
+
+/**
+ * Path of a worker script.
+ * @type {string}
+ * @const
+ */
+ContentProvider.WORKER_SCRIPT =
+    'chrome-extension://hhaomjibdihmijegdhdafkllkbggdgoj/' +
+    'foreground/js/metadata/metadata_dispatcher.js';
 
 ContentProvider.prototype = {
   __proto__: MetadataProvider.prototype

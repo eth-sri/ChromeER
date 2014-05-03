@@ -15,6 +15,8 @@
 #include "components/nacl/common/nacl_messages.h"
 #include "components/nacl/common/nacl_switches.h"
 #include "components/nacl/common/nacl_types.h"
+#include "components/nacl/renderer/histogram.h"
+#include "components/nacl/renderer/manifest_downloader.h"
 #include "components/nacl/renderer/manifest_service_channel.h"
 #include "components/nacl/renderer/nexe_load_manager.h"
 #include "components/nacl/renderer/pnacl_translation_resource_host.h"
@@ -28,6 +30,7 @@
 #include "content/public/renderer/render_view.h"
 #include "content/public/renderer/renderer_ppapi_host.h"
 #include "net/base/data_url.h"
+#include "net/base/net_errors.h"
 #include "net/http/http_util.h"
 #include "ppapi/c/pp_bool.h"
 #include "ppapi/c/private/pp_file_handle.h"
@@ -37,6 +40,13 @@
 #include "ppapi/shared_impl/ppapi_preferences.h"
 #include "ppapi/shared_impl/var.h"
 #include "ppapi/thunk/enter.h"
+#include "third_party/WebKit/public/platform/WebURLLoader.h"
+#include "third_party/WebKit/public/web/WebDocument.h"
+#include "third_party/WebKit/public/web/WebElement.h"
+#include "third_party/WebKit/public/web/WebLocalFrame.h"
+#include "third_party/WebKit/public/web/WebPluginContainer.h"
+#include "third_party/WebKit/public/web/WebSecurityOrigin.h"
+#include "third_party/WebKit/public/web/WebURLLoaderOptions.h"
 
 namespace nacl {
 namespace {
@@ -546,6 +556,22 @@ PP_FileHandle OpenNaClExecutable(PP_Instance instance,
                                  const char* file_url,
                                  uint64_t* nonce_lo,
                                  uint64_t* nonce_hi) {
+  // Fast path only works for installed file URLs.
+  GURL gurl(file_url);
+  if (!gurl.SchemeIs("chrome-extension"))
+    return PP_kInvalidFileHandle;
+
+  content::PepperPluginInstance* plugin_instance =
+      content::PepperPluginInstance::Get(instance);
+  // IMPORTANT: Make sure the document can request the given URL. If we don't
+  // check, a malicious app could probe the extension system. This enforces a
+  // same-origin policy which prevents the app from requesting resources from
+  // another app.
+  blink::WebSecurityOrigin security_origin =
+      plugin_instance->GetContainer()->element().document().securityOrigin();
+  if (!security_origin.canRequest(gurl))
+    return PP_kInvalidFileHandle;
+
   IPC::PlatformFileForTransit out_fd = IPC::InvalidPlatformFileForTransit();
   IPC::Sender* sender = content::RenderThread::Get();
   DCHECK(sender);
@@ -554,10 +580,10 @@ PP_FileHandle OpenNaClExecutable(PP_Instance instance,
   base::FilePath file_path;
   if (!sender->Send(
       new NaClHostMsg_OpenNaClExecutable(GetRoutingID(instance),
-                                               GURL(file_url),
-                                               &out_fd,
-                                               nonce_lo,
-                                               nonce_hi))) {
+                                         GURL(file_url),
+                                         &out_fd,
+                                         nonce_lo,
+                                         nonce_hi))) {
     return base::kInvalidPlatformFileValue;
   }
 
@@ -693,19 +719,6 @@ PP_Bool NaClDebugEnabledForURL(const char* alleged_nmf_url) {
     return PP_FALSE;
   }
   return PP_FromBool(should_debug);
-}
-
-PP_UrlSchemeType GetUrlScheme(PP_Var url) {
-  scoped_refptr<ppapi::StringVar> url_string = ppapi::StringVar::FromPPVar(url);
-  if (!url_string)
-    return PP_SCHEME_OTHER;
-
-  GURL gurl(url_string->value());
-  if (gurl.SchemeIs("chrome-extension"))
-    return PP_SCHEME_CHROME_EXTENSION;
-  if (gurl.SchemeIs("data"))
-    return PP_SCHEME_DATA;
-  return PP_SCHEME_OTHER;
 }
 
 void LogToConsole(PP_Instance instance, const char* message) {
@@ -844,6 +857,110 @@ PP_Bool DevInterfacesEnabled(PP_Instance instance) {
   return PP_FALSE;
 }
 
+void DownloadManifestToBufferCompletion(PP_Instance instance,
+                                        struct PP_CompletionCallback callback,
+                                        struct PP_Var* out_data,
+                                        base::Time start_time,
+                                        PP_NaClError pp_nacl_error,
+                                        const std::string& data);
+
+void DownloadManifestToBuffer(PP_Instance instance,
+                              struct PP_Var* out_data,
+                              struct PP_CompletionCallback callback) {
+  nacl::NexeLoadManager* load_manager = GetNexeLoadManager(instance);
+  DCHECK(load_manager);
+  if (!load_manager) {
+    ppapi::PpapiGlobals::Get()->GetMainThreadMessageLoop()->PostTask(
+        FROM_HERE,
+        base::Bind(callback.func, callback.user_data,
+                   static_cast<int32_t>(PP_ERROR_FAILED)));
+  }
+
+  const GURL& gurl = load_manager->manifest_base_url();
+
+  content::PepperPluginInstance* plugin_instance =
+      content::PepperPluginInstance::Get(instance);
+  blink::WebURLLoaderOptions options;
+  options.untrustedHTTP = true;
+
+  blink::WebSecurityOrigin security_origin =
+      plugin_instance->GetContainer()->element().document().securityOrigin();
+  // Options settings here follow the original behavior in the trusted
+  // plugin and PepperURLLoaderHost.
+  if (security_origin.canRequest(gurl)) {
+    options.allowCredentials = true;
+  } else {
+    // Allow CORS.
+    options.crossOriginRequestPolicy =
+        blink::WebURLLoaderOptions::CrossOriginRequestPolicyUseAccessControl;
+  }
+
+  blink::WebFrame* frame =
+      plugin_instance->GetContainer()->element().document().frame();
+  blink::WebURLLoader* url_loader = frame->createAssociatedURLLoader(options);
+  blink::WebURLRequest request;
+  request.initialize();
+  request.setURL(gurl);
+  request.setFirstPartyForCookies(frame->document().firstPartyForCookies());
+
+  // ManifestDownloader deletes itself after invoking the callback.
+  ManifestDownloader* client = new ManifestDownloader(
+      load_manager->is_installed(),
+      base::Bind(DownloadManifestToBufferCompletion,
+                 instance, callback, out_data, base::Time::Now()));
+  url_loader->loadAsynchronously(request, client);
+}
+
+void DownloadManifestToBufferCompletion(PP_Instance instance,
+                                        struct PP_CompletionCallback callback,
+                                        struct PP_Var* out_data,
+                                        base::Time start_time,
+                                        PP_NaClError pp_nacl_error,
+                                        const std::string& data) {
+  base::TimeDelta download_time = base::Time::Now() - start_time;
+  HistogramTimeSmall("NaCl.Perf.StartupTime.ManifestDownload",
+                     download_time.InMilliseconds());
+
+  nacl::NexeLoadManager* load_manager = GetNexeLoadManager(instance);
+  if (!load_manager) {
+    callback.func(callback.user_data, PP_ERROR_ABORTED);
+    return;
+  }
+
+  int32_t pp_error;
+  switch (pp_nacl_error) {
+    case PP_NACL_ERROR_LOAD_SUCCESS:
+      pp_error = PP_OK;
+      break;
+    case PP_NACL_ERROR_MANIFEST_LOAD_URL:
+      pp_error = PP_ERROR_FAILED;
+      load_manager->ReportLoadError(PP_NACL_ERROR_MANIFEST_LOAD_URL,
+                                    "could not load manifest url.");
+      break;
+    case PP_NACL_ERROR_MANIFEST_TOO_LARGE:
+      pp_error = PP_ERROR_FILETOOBIG;
+      load_manager->ReportLoadError(PP_NACL_ERROR_MANIFEST_TOO_LARGE,
+                                    "manifest file too large.");
+      break;
+    case PP_NACL_ERROR_MANIFEST_NOACCESS_URL:
+      pp_error = PP_ERROR_NOACCESS;
+      load_manager->ReportLoadError(PP_NACL_ERROR_MANIFEST_NOACCESS_URL,
+                                    "access to manifest url was denied.");
+      break;
+    default:
+      NOTREACHED();
+      pp_error = PP_ERROR_FAILED;
+      load_manager->ReportLoadError(PP_NACL_ERROR_MANIFEST_LOAD_URL,
+                                    "could not load manifest url.");
+  }
+
+  if (pp_error == PP_OK) {
+    std::string contents;
+    *out_data = ppapi::StringVar::StringToPPVar(data);
+  }
+  callback.func(callback.user_data, pp_error);
+}
+
 const PPB_NaCl_Private nacl_interface = {
   &LaunchSelLdr,
   &StartPpapiProxy,
@@ -867,7 +984,6 @@ const PPB_NaCl_Private nacl_interface = {
   &InstanceDestroyed,
   &NaClDebugEnabledForURL,
   &GetSandboxArch,
-  &GetUrlScheme,
   &LogToConsole,
   &GetNaClReadyState,
   &GetIsInstalled,
@@ -883,7 +999,8 @@ const PPB_NaCl_Private nacl_interface = {
   &ProcessNaClManifest,
   &GetManifestURLArgument,
   &IsPNaCl,
-  &DevInterfacesEnabled
+  &DevInterfacesEnabled,
+  &DownloadManifestToBuffer
 };
 
 }  // namespace

@@ -5,14 +5,15 @@
 #include "apps/shell/renderer/shell_content_renderer_client.h"
 
 #include "apps/shell/common/shell_extensions_client.h"
+#include "apps/shell/renderer/shell_dispatcher_delegate.h"
 #include "apps/shell/renderer/shell_extensions_renderer_client.h"
-#include "chrome/renderer/extensions/dispatcher.h"
-#include "chrome/renderer/extensions/extension_helper.h"
 #include "content/public/renderer/render_frame.h"
 #include "content/public/renderer/render_frame_observer.h"
 #include "content/public/renderer/render_frame_observer_tracker.h"
 #include "content/public/renderer/render_thread.h"
 #include "extensions/common/extensions_client.h"
+#include "extensions/renderer/dispatcher.h"
+#include "extensions/renderer/extension_helper.h"
 
 using blink::WebFrame;
 using blink::WebString;
@@ -64,17 +65,21 @@ ShellContentRendererClient::~ShellContentRendererClient() {}
 void ShellContentRendererClient::RenderThreadStarted() {
   RenderThread* thread = RenderThread::Get();
 
-  extension_dispatcher_.reset(new extensions::Dispatcher());
-  thread->AddObserver(extension_dispatcher_.get());
-
-  // TODO(jamescook): Init WebSecurityPolicy for chrome-extension: schemes.
-  // See ChromeContentRendererClient for details.
-
   extensions_client_.reset(new ShellExtensionsClient);
   extensions::ExtensionsClient::Set(extensions_client_.get());
 
   extensions_renderer_client_.reset(new ShellExtensionsRendererClient);
   extensions::ExtensionsRendererClient::Set(extensions_renderer_client_.get());
+
+  extension_dispatcher_delegate_.reset(new ShellDispatcherDelegate());
+
+  // Must be initialized after ExtensionsRendererClient.
+  extension_dispatcher_.reset(
+      new extensions::Dispatcher(extension_dispatcher_delegate_.get()));
+  thread->AddObserver(extension_dispatcher_.get());
+
+  // TODO(jamescook): Init WebSecurityPolicy for chrome-extension: schemes.
+  // See ChromeContentRendererClient for details.
 }
 
 void ShellContentRendererClient::RenderFrameCreated(

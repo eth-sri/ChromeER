@@ -37,12 +37,14 @@ class AppWindowRegistry : public KeyedService {
     virtual void OnAppWindowIconChanged(apps::AppWindow* app_window) = 0;
     // Called just after a app window was removed.
     virtual void OnAppWindowRemoved(apps::AppWindow* app_window) = 0;
+#if defined(OS_CHROMEOS)
     // Called just after a app window was hidden. This is different from
     // window visibility as a minimize does not hide a window, but does make
     // it not visible.
     virtual void OnAppWindowHidden(apps::AppWindow* app_window);
     // Called just after a app window was shown.
     virtual void OnAppWindowShown(apps::AppWindow* app_window);
+#endif
 
    protected:
     virtual ~Observer();
@@ -64,8 +66,10 @@ class AppWindowRegistry : public KeyedService {
   void AppWindowIconChanged(apps::AppWindow* app_window);
   // Called by |app_window| when it is activated.
   void AppWindowActivated(apps::AppWindow* app_window);
+#if defined(OS_CHROMEOS)
   void AppWindowHidden(apps::AppWindow* app_window);
   void AppWindowShown(apps::AppWindow* app_window);
+#endif
   void RemoveAppWindow(apps::AppWindow* app_window);
 
   void AddObserver(Observer* observer);
@@ -107,6 +111,9 @@ class AppWindowRegistry : public KeyedService {
   // contexts is non-zero. |window_type_mask| is a bitwise OR filter of
   // AppWindow::WindowType, or 0 for any window type.
   static bool IsAppWindowRegisteredInAnyProfile(int window_type_mask);
+
+  // Close all app windows in all profiles.
+  static void CloseAllAppWindows();
 
   class Factory : public BrowserContextKeyedServiceFactory {
    public:

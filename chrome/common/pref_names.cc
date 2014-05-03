@@ -1883,6 +1883,17 @@ const char kRemoteAccessHostAllowClientPairing[] =
 const char kRemoteAccessHostAllowGnubbyAuth[] =
     "remote_access.host_allow_gnubby_auth";
 
+// Boolean that indicates whether the Chromoting host should allow connections
+// using relay servers.
+const char kRemoteAccessHostAllowRelayedConnection[] =
+    "remote_access.host_allow_relayed_connection";
+
+// String containing the UDP port range that the Chromoting host should used
+// when connecting to clients. The port range should be in the form:
+// <min_port>-<max_port>. E.g. 12400-12409.
+const char kRemoteAccessHostUdpPortRange[] =
+    "remote_access.host_udp_port_range";
+
 // The last used printer and its settings.
 const char kPrintPreviewStickySettings[] =
     "printing.print_preview_sticky_settings";
@@ -2134,6 +2145,9 @@ const char kMessageCenterShowedFirstRunBalloon[] =
 // menubar or systray icon.
 const char kMessageCenterShowIcon[] = "message_center.show_icon";
 
+const char kMessageCenterForcedOnTaskbar[] =
+    "message_center.was_forced_on_taskbar";
+
 // *************** SERVICE PREFS ***************
 // These are attached to the service process.
 
@@ -2240,6 +2254,11 @@ const char kChromeCreatedLoginItem[] =
 // time.
 const char kMigratedLoginItemPref[] =
   "background_mode.migrated_login_item_pref";
+
+// A boolean that tracks whether to show a notification when trying to quit
+// while there are apps running.
+const char kNotifyWhenAppsKeepChromeAlive[] =
+    "apps.notify-when-apps-keep-chrome-alive";
 #endif
 
 // Set to true if background mode is enabled on this browser.

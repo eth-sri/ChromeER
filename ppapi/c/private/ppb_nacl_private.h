@@ -3,7 +3,7 @@
  * found in the LICENSE file.
  */
 
-/* From private/ppb_nacl_private.idl modified Wed Apr 23 12:20:47 2014. */
+/* From private/ppb_nacl_private.idl modified Wed Apr 30 14:13:27 2014. */
 
 #ifndef PPAPI_C_PRIVATE_PPB_NACL_PRIVATE_H_
 #define PPAPI_C_PRIVATE_PPB_NACL_PRIVATE_H_
@@ -346,8 +346,6 @@ struct PPB_NaCl_Private_1_0 {
    * platform.
    */
   const char* (*GetSandboxArch)(void);
-  /* Returns the scheme type for a given url. */
-  PP_UrlSchemeType (*GetUrlScheme)(struct PP_Var url);
   /* Logs the message to the console. */
   void (*LogToConsole)(PP_Instance instance, const char* message);
   /* Returns the NaCl readiness status for this instance. */
@@ -374,6 +372,7 @@ struct PPB_NaCl_Private_1_0 {
   struct PP_Var (*GetManifestBaseURL)(PP_Instance instance);
   PP_Bool (*ResolvesRelativeToPluginBaseUrl)(PP_Instance instance,
                                              const char* url);
+  /* Returns the parsed contents of a data URL. */
   struct PP_Var (*ParseDataURL)(const char* data_url);
   /* Processes the NaCl manifest once it's been retrieved.
    * TODO(teravest): Move the rest of the supporting logic out of the trusted
@@ -384,6 +383,12 @@ struct PPB_NaCl_Private_1_0 {
   struct PP_Var (*GetManifestURLArgument)(PP_Instance instance);
   PP_Bool (*IsPNaCl)(PP_Instance instance);
   PP_Bool (*DevInterfacesEnabled)(PP_Instance instance);
+  /* Downloads the manifest into the buffer |data|, invoking
+   * |callback| when finished.
+   * TODO(teravest): Merge data URL parsing into this. */
+  void (*DownloadManifestToBuffer)(PP_Instance instance,
+                                   struct PP_Var* data,
+                                   struct PP_CompletionCallback callback);
 };
 
 typedef struct PPB_NaCl_Private_1_0 PPB_NaCl_Private;

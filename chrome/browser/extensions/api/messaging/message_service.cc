@@ -22,7 +22,6 @@
 #include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/tab_contents/tab_util.h"
-#include "chrome/common/extensions/manifest_handlers/externally_connectable.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
@@ -39,6 +38,7 @@
 #include "extensions/common/extension_messages.h"
 #include "extensions/common/manifest_constants.h"
 #include "extensions/common/manifest_handlers/background_info.h"
+#include "extensions/common/manifest_handlers/externally_connectable.h"
 #include "extensions/common/manifest_handlers/incognito_info.h"
 #include "net/base/completion_callback.h"
 #include "url/gurl.h"
@@ -272,11 +272,17 @@ void MessageService::OpenChannelToExtension(
 
   if (context->IsOffTheRecord() &&
       !util::IsIncognitoEnabled(target_extension_id, context)) {
-    // Give the user a chance to accept an incognito connection if they haven't
-    // already - but only for spanning-mode incognito. We don't want the
-    // complication of spinning up an additional process here which might need
-    // to do some setup that we're not expecting.
+    // Give the user a chance to accept an incognito connection from the web if
+    // they haven't already, with the conditions:
+    // - Only for spanning-mode incognito. We don't want the complication of
+    //   spinning up an additional process here which might need to do some
+    //   setup that we're not expecting.
+    // - Only for extensions that can't normally be enabled in incognito, since
+    //   that surface (e.g. chrome://extensions) should be the only one for
+    //   enabling in incognito. In practice this means platform apps only.
     if (!is_web_connection || IncognitoInfo::IsSplitMode(target_extension) ||
+        target_extension->can_be_incognito_enabled() ||
+        // This check may show a dialog.
         !IncognitoConnectability::Get(context)
              ->Query(target_extension, source_contents, source_url)) {
       DispatchOnDisconnect(

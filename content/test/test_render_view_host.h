@@ -83,7 +83,7 @@ class TestRenderWidgetHostView : public RenderWidgetHostViewBase {
       uint32 output_surface_id,
       scoped_ptr<cc::CompositorFrame> frame) OVERRIDE;
 
-  // RenderWidgetHostViewPort implementation.
+  // RenderWidgetHostViewBase implementation.
   virtual void InitAsPopup(RenderWidgetHostView* parent_host_view,
                            const gfx::Rect& pos) OVERRIDE {}
   virtual void InitAsFullscreen(
@@ -91,7 +91,6 @@ class TestRenderWidgetHostView : public RenderWidgetHostViewBase {
   virtual void WasShown() OVERRIDE {}
   virtual void WasHidden() OVERRIDE {}
   virtual void MovePluginWindows(
-      const gfx::Vector2d& scroll_offset,
       const std::vector<WebPluginGeometry>& moves) OVERRIDE {}
   virtual void Focus() OVERRIDE {}
   virtual void Blur() OVERRIDE {}
@@ -106,11 +105,6 @@ class TestRenderWidgetHostView : public RenderWidgetHostViewBase {
       const gfx::Range& range,
       const std::vector<gfx::Rect>& character_bounds) OVERRIDE {}
 #endif
-  virtual void DidUpdateBackingStore(
-      const gfx::Rect& scroll_rect,
-      const gfx::Vector2d& scroll_delta,
-      const std::vector<gfx::Rect>& rects,
-      const std::vector<ui::LatencyInfo>& latency_info) OVERRIDE {}
   virtual void RenderProcessGone(base::TerminationStatus status,
                                  int error_code) OVERRIDE;
   virtual void WillDestroyRenderWidget(RenderWidgetHost* rwh) { }
@@ -118,9 +112,6 @@ class TestRenderWidgetHostView : public RenderWidgetHostViewBase {
   virtual void SetTooltipText(const base::string16& tooltip_text) OVERRIDE {}
   virtual void SelectionBoundsChanged(
       const ViewHostMsg_SelectionBounds_Params& params) OVERRIDE {}
-#if defined(OS_ANDROID)
-  virtual void SelectionRootBoundsChanged(const gfx::Rect&) OVERRIDE {}
-#endif
   virtual void ScrollOffsetChanged() OVERRIDE {}
   virtual void CopyFromCompositingSurface(
       const gfx::Rect& src_subrect,
@@ -148,14 +139,15 @@ class TestRenderWidgetHostView : public RenderWidgetHostViewBase {
   virtual bool PostProcessEventForPluginIme(
       const NativeWebKeyboardEvent& event) OVERRIDE;
 #elif defined(OS_ANDROID)
+  virtual void SelectionRootBoundsChanged(const gfx::Rect&) OVERRIDE {}
   virtual void ShowDisambiguationPopup(
       const gfx::Rect& target_rect,
       const SkBitmap& zoomed_bitmap) OVERRIDE {}
+  virtual void LockCompositingSurface() OVERRIDE {}
+  virtual void UnlockCompositingSurface() OVERRIDE {}
 #endif
   virtual void GetScreenInfo(blink::WebScreenInfo* results) OVERRIDE {}
   virtual gfx::Rect GetBoundsInRootWindow() OVERRIDE;
-  virtual void SetHasHorizontalScrollbar(
-      bool has_horizontal_scrollbar) OVERRIDE { }
   virtual void SetScrollOffsetPinning(
       bool is_pinned_to_left, bool is_pinned_to_right) OVERRIDE { }
   virtual gfx::GLSurfaceHandle GetCompositingSurface() OVERRIDE;

@@ -56,25 +56,16 @@ class PnaclManifest : public Manifest {
     return false;
   }
 
-  virtual bool GetFileKeys(std::set<nacl::string>* keys) const {
-    // Does not support enumeration.
-    PLUGIN_PRINTF(("PnaclManifest does not support key enumeration\n"));
-    UNREFERENCED_PARAMETER(keys);
-    return false;
-  }
-
   virtual bool ResolveKey(const nacl::string& key,
                           nacl::string* full_url,
-                          PP_PNaClOptions* pnacl_options,
-                          ErrorInfo* error_info) const {
+                          PP_PNaClOptions* pnacl_options) const {
     // All of the component files are native (do not require pnacl translate).
     pnacl_options->translate = PP_FALSE;
     // We can only resolve keys in the files/ namespace.
     const nacl::string kFilesPrefix = "files/";
     size_t files_prefix_pos = key.find(kFilesPrefix);
     if (files_prefix_pos == nacl::string::npos) {
-      error_info->SetReport(PP_NACL_ERROR_MANIFEST_RESOLVE_URL,
-                            "key did not start with files/");
+      PLUGIN_PRINTF(("key did not start with files/"));
       return false;
     }
     // Resolve the full URL to the file. Provide it with a platform-specific
@@ -264,7 +255,9 @@ nacl::DescWrapper* PnaclCoordinator::ReleaseTranslatedFD() {
 
 void PnaclCoordinator::ReportNonPpapiError(PP_NaClError err_code,
                                            const nacl::string& message) {
-  error_info_.SetReport(err_code, message);
+  ErrorInfo error_info;
+  error_info.SetReport(err_code, message);
+  plugin_->ReportLoadError(error_info);
   ExitWithError();
 }
 
@@ -273,16 +266,14 @@ void PnaclCoordinator::ReportPpapiError(PP_NaClError err_code,
                                         const nacl::string& message) {
   nacl::stringstream ss;
   ss << "PnaclCoordinator: " << message << " (pp_error=" << pp_error << ").";
-  error_info_.SetReport(err_code, ss.str());
+  ErrorInfo error_info;
+  error_info.SetReport(err_code, ss.str());
+  plugin_->ReportLoadError(error_info);
   ExitWithError();
 }
 
 void PnaclCoordinator::ExitWithError() {
-  PLUGIN_PRINTF(("PnaclCoordinator::ExitWithError (error_code=%d, "
-                 "message='%s')\n",
-                 error_info_.error_code(),
-                 error_info_.message().c_str()));
-  plugin_->ReportLoadError(error_info_);
+  PLUGIN_PRINTF(("PnaclCoordinator::ExitWithError\n"));
   // Free all the intermediate callbacks we ever created.
   // Note: this doesn't *cancel* the callbacks from the factories attached
   // to the various helper classes (e.g., pnacl_resources). Thus, those
@@ -310,6 +301,7 @@ void PnaclCoordinator::TranslateFinished(int32_t pp_error) {
   // Bail out if there was an earlier error (e.g., pexe load failure),
   // or if there is an error from the translation thread.
   if (translate_finish_error_ != PP_OK || pp_error != PP_OK) {
+    plugin_->ReportLoadError(error_info_);
     ExitWithError();
     return;
   }
@@ -581,9 +573,8 @@ void PnaclCoordinator::BitcodeStreamGotData(int32_t pp_error,
 
   translate_thread_->PutBytes(data, pp_error);
   // If pp_error > 0, then it represents the number of bytes received.
-  if (data && pp_error > 0) {
+  if (data && pp_error > 0)
     pexe_size_ += pp_error;
-  }
 }
 
 StreamCallback PnaclCoordinator::GetCallback() {

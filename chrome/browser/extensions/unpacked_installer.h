@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include "base/bind.h"
 #include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
@@ -29,6 +30,9 @@ class RequirementsChecker;
 class UnpackedInstaller
     : public base::RefCountedThreadSafe<UnpackedInstaller> {
  public:
+  typedef base::Callback<void(const base::FilePath&, const std::string&)>
+      OnFailureCallback;
+
   static scoped_refptr<UnpackedInstaller> Create(
       ExtensionService* extension_service);
 
@@ -59,6 +63,14 @@ class UnpackedInstaller
   }
   void set_require_modern_manifest_version(bool val) {
     require_modern_manifest_version_ = val;
+  }
+
+  void set_on_failure_callback(const OnFailureCallback& callback) {
+    on_failure_callback_ = callback;
+  }
+
+  void set_be_noisy_on_failure(bool be_noisy_on_failure) {
+    be_noisy_on_failure_ = be_noisy_on_failure;
   }
 
  private:
@@ -116,6 +128,12 @@ class UnpackedInstaller
   // Whether to require the extension installed to have a modern manifest
   // version.
   bool require_modern_manifest_version_;
+
+  // An optional callback to set in order to be notified of failure.
+  OnFailureCallback on_failure_callback_;
+
+  // Whether or not to be noisy (show a dialog) on failure. Defaults to true.
+  bool be_noisy_on_failure_;
 
   // Gives access to common methods and data of an extension installer.
   ExtensionInstaller installer_;

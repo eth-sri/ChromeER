@@ -1381,6 +1381,7 @@ IN_PROC_BROWSER_TEST_F(LauncherPlatformAppBrowserTest, LaunchPanelWindow) {
   EXPECT_EQ(item_count, shelf_model()->item_count());
 }
 
+#if defined(OS_CHROMEOS)
 // Test that we get correct shelf presence with hidden app windows.
 IN_PROC_BROWSER_TEST_F(LauncherPlatformAppBrowserTest, HiddenAppWindows) {
   int item_count = shelf_model()->item_count();
@@ -1417,6 +1418,7 @@ IN_PROC_BROWSER_TEST_F(LauncherPlatformAppBrowserTest, HiddenAppWindows) {
   --item_count;
   EXPECT_EQ(item_count, shelf_model()->item_count());
 }
+#endif
 
 // Test attention states of windows.
 IN_PROC_BROWSER_TEST_F(LauncherPlatformAppBrowserTest, WindowAttentionStatus) {

@@ -21,7 +21,7 @@ class CC_EXPORT LayerTreeSettings {
   bool impl_side_painting;
   bool allow_antialiasing;
   bool throttle_frame_production;
-  bool begin_impl_frame_scheduling_enabled;
+  bool begin_frame_scheduling_enabled;
   bool main_frame_before_draw_enabled;
   bool main_frame_before_activation_enabled;
   bool using_synchronous_renderer_compositor;
@@ -31,12 +31,8 @@ class CC_EXPORT LayerTreeSettings {
   bool accelerated_animation_enabled;
   bool can_use_lcd_text;
   bool should_clear_root_render_pass;
-  enum RasterizationSite {
-    CpuRasterization,
-    HybridRasterization,
-    GpuRasterization,
-  };
-  RasterizationSite rasterization_site;
+  bool gpu_rasterization_enabled;
+  bool gpu_rasterization_forced;
   bool create_low_res_tiling;
 
   enum ScrollbarAnimator {
@@ -71,7 +67,8 @@ class CC_EXPORT LayerTreeSettings {
   size_t max_memory_for_prepaint_percentage;
   int highp_threshold_min;
   bool strict_layer_property_change_checking;
-  bool use_map_image;
+  bool use_one_copy;
+  bool use_zero_copy;
   bool ignore_root_layer_flings;
   bool use_rgba_4444_textures;
   bool touch_hit_testing;

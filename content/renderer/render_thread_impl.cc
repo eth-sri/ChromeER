@@ -409,9 +409,10 @@ void RenderThreadImpl::Init() {
   webkit::WebLayerImpl::SetImplSidePaintingEnabled(
       is_impl_side_painting_enabled_);
 
-  is_map_image_enabled_ =
-      command_line.HasSwitch(switches::kEnableMapImage) &&
-      !command_line.HasSwitch(switches::kDisableMapImage);
+  is_zero_copy_enabled_ = command_line.HasSwitch(switches::kEnableZeroCopy) &&
+                          !command_line.HasSwitch(switches::kDisableZeroCopy);
+
+  is_one_copy_enabled_ = command_line.HasSwitch(switches::kEnableOneCopy);
 
   if (command_line.HasSwitch(switches::kDisableLCDText)) {
     is_lcd_text_enabled_ = false;
@@ -664,19 +665,19 @@ void RenderThreadImpl::RemoveRoute(int32 routing_id) {
   ChildThread::GetRouter()->RemoveRoute(routing_id);
 }
 
-void RenderThreadImpl::AddSharedWorkerRoute(int32 routing_id,
-                                            IPC::Listener* listener) {
+void RenderThreadImpl::AddEmbeddedWorkerRoute(int32 routing_id,
+                                              IPC::Listener* listener) {
   AddRoute(routing_id, listener);
   if (devtools_agent_message_filter_.get()) {
-    devtools_agent_message_filter_->AddSharedWorkerRouteOnMainThread(
+    devtools_agent_message_filter_->AddEmbeddedWorkerRouteOnMainThread(
         routing_id);
   }
 }
 
-void RenderThreadImpl::RemoveSharedWorkerRoute(int32 routing_id) {
+void RenderThreadImpl::RemoveEmbeddedWorkerRoute(int32 routing_id) {
   RemoveRoute(routing_id);
   if (devtools_agent_message_filter_.get()) {
-    devtools_agent_message_filter_->RemoveSharedWorkerRouteOnMainThread(
+    devtools_agent_message_filter_->RemoveEmbeddedWorkerRouteOnMainThread(
         routing_id);
   }
 }
@@ -687,11 +688,11 @@ int RenderThreadImpl::GenerateRoutingID() {
   return routing_id;
 }
 
-void RenderThreadImpl::AddFilter(IPC::ChannelProxy::MessageFilter* filter) {
+void RenderThreadImpl::AddFilter(IPC::MessageFilter* filter) {
   channel()->AddFilter(filter);
 }
 
-void RenderThreadImpl::RemoveFilter(IPC::ChannelProxy::MessageFilter* filter) {
+void RenderThreadImpl::RemoveFilter(IPC::MessageFilter* filter) {
   channel()->RemoveFilter(filter);
 }
 

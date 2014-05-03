@@ -5,35 +5,28 @@
 import csv
 import inspect
 import os
-import sys
 
 from telemetry.core import util
 from telemetry.page import page as page_module
 from telemetry.page import page_set_archive_info
-from telemetry.page.actions.navigate import NavigateAction
-
-# TODO(nednguyen): Remove this when crbug.com/239179 is marked fixed
-LEGACY_NAME_CONVERSION_DICT = {
-  'endure' : 'RunEndure',
-  'navigate_steps' : 'RunNavigateSteps',
-  'media_metrics' : 'RunMediaMetrics',
-  'stress_memory' : 'RunStressMemory',
-  'no_op' : 'RunNoOp',
-  'repaint' : 'RunRepaint',
-  'smoothness' : 'RunSmoothness',
-  'webrtc' : 'RunWebrtc'
-}
-
 
 class PageSetError(Exception):
   pass
 
 
 class PageSet(object):
-  def __init__(self, file_path='', description='', archive_data_file='',
+  def __init__(self, file_path=None, description='', archive_data_file='',
                credentials_path=None, user_agent_type=None,
                make_javascript_deterministic=True, startup_url='',
                serving_dirs=None):
+    # The default value of file_path is location of the file that define this
+    # page set instance's class.
+    if file_path is None:
+      file_path = inspect.getfile(self.__class__)
+      # Turn pyc file into py files if we can
+      if file_path.endswith('.pyc') and os.path.exists(file_path[:-1]):
+        file_path = file_path[:-1]
+
     self.file_path = file_path
     # These attributes can be set dynamically by the page set.
     self.description = description
@@ -44,51 +37,14 @@ class PageSet(object):
     self._wpr_archive_info = None
     self.startup_url = startup_url
     self.pages = []
-    if serving_dirs:
-      self.serving_dirs = serving_dirs
-    else:
-      self.serving_dirs = set()
-    self._is_dict_based_page_set = False
-
-  # TODO(nednguyen): Remove this when crbug.com/239179 is marked fixed
-  def IsDictBasedPageSet(self):
-    return self._is_dict_based_page_set
-
-  def _InitializeFromDict(self, attributes):
-    self._is_dict_based_page_set = True
-    if attributes:
-      for k, v in attributes.iteritems():
-        if k in LEGACY_NAME_CONVERSION_DICT:
-          setattr(self, LEGACY_NAME_CONVERSION_DICT[k], v)
-        else:
-          setattr(self, k, v)
-
-    # Create a Page object for every page.
-    self.pages = []
-    if attributes and 'pages' in attributes:
-      for page_attributes in attributes['pages']:
-        url = page_attributes.pop('url')
-        page = page_module.Page(
-            url, self, base_dir=self.base_dir)
-        for k, v in page_attributes.iteritems():
-          setattr(page, k, v)
-        page._SchemeErrorCheck()  # pylint: disable=W0212
-        for legacy_name in LEGACY_NAME_CONVERSION_DICT:
-          if hasattr(page, legacy_name):
-            setattr(page, LEGACY_NAME_CONVERSION_DICT[legacy_name],
-                    getattr(page, legacy_name))
-            delattr(page, legacy_name)
-        self.AddPage(page)
-
-    # Prepend base_dir to our serving dirs.
-    # Always use realpath to ensure no duplicates in set.
     self.serving_dirs = set()
-    if attributes and 'serving_dirs' in attributes:
-      if not isinstance(attributes['serving_dirs'], list):
-        raise ValueError('serving_dirs must be a list.')
-      for serving_dir in attributes['serving_dirs']:
-        self.serving_dirs.add(
-            os.path.realpath(os.path.join(self.base_dir, serving_dir)))
+    serving_dirs = [] if serving_dirs is None else serving_dirs
+    # Makes sure that page_set's serving_dirs are absolute paths
+    for sd in serving_dirs:
+      if os.path.isabs(sd):
+        self.serving_dirs.add(os.path.realpath(sd))
+      else:
+        self.serving_dirs.add(os.path.realpath(os.path.join(self.base_dir, sd)))
 
   def AddPage(self, page):
     assert page.page_set is self
@@ -100,13 +56,6 @@ class PageSet(object):
     """
     self.AddPage(page_module.PageWithDefaultRunNavigate(
       page_url, self, self.base_dir))
-
-  # In json page_set, a page inherits attributes from its page_set. With
-  # python page_set, this property will no longer be needed since pages can
-  # share property through a common ancestor class.
-  # TODO(nednguyen): move this to page when crbug.com/239179 is marked fixed
-  def RunNavigateSteps(self, action_runner):
-    action_runner.RunAction(NavigateAction())
 
   @staticmethod
   def FromFile(file_path):
@@ -127,15 +76,6 @@ class PageSet(object):
       raise PageSetError("Pageset file needs to contain exactly 1 pageset class"
                          " with prefix 'PageSet'")
     page_set = page_set_classes[0]()
-    page_set.file_path = file_path
-    # Makes sure that page_set's serving_dirs are absolute paths
-    if page_set.serving_dirs:
-      abs_serving_dirs = set()
-      for serving_dir in page_set.serving_dirs:
-        abs_serving_dirs.add(os.path.realpath(os.path.join(
-          page_set.base_dir,  # pylint: disable=W0212
-          serving_dir)))
-      page_set.serving_dirs = abs_serving_dirs
     for page in page_set.pages:
       page_class = page.__class__
 
@@ -147,17 +87,6 @@ class PageSet(object):
             raise PageSetError("""Definition of Run<...> method of all
 pages in %s must be in the form of def Run<...>(self, action_runner):"""
                                      % file_path)
-      # Set page's base_dir attribute.
-      page_file_path = sys.modules[page_class.__module__].__file__
-      page._base_dir = os.path.dirname(page_file_path)
-
-    return page_set
-
-  @staticmethod
-  def FromDict(attributes, file_path=''):
-    page_set = PageSet(file_path)
-    # pylint: disable=W0212
-    page_set._InitializeFromDict(attributes)
     return page_set
 
   @property

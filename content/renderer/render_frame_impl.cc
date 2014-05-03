@@ -41,7 +41,6 @@
 #include "content/public/renderer/content_renderer_client.h"
 #include "content/public/renderer/context_menu_client.h"
 #include "content/public/renderer/document_state.h"
-#include "content/public/renderer/history_item_serialization.h"
 #include "content/public/renderer/navigation_state.h"
 #include "content/public/renderer/render_frame_observer.h"
 #include "content/renderer/accessibility/renderer_accessibility.h"
@@ -49,8 +48,10 @@
 #include "content/renderer/browser_plugin/browser_plugin_manager.h"
 #include "content/renderer/child_frame_compositing_helper.h"
 #include "content/renderer/context_menu_params_builder.h"
+#include "content/renderer/devtools/devtools_agent.h"
 #include "content/renderer/dom_automation_controller.h"
 #include "content/renderer/history_controller.h"
+#include "content/renderer/history_serialization.h"
 #include "content/renderer/image_loading_helper.h"
 #include "content/renderer/ime_event_guard.h"
 #include "content/renderer/internal_document_state_data.h"
@@ -202,31 +203,6 @@ NOINLINE static void CrashIntentionally() {
   *zero = 0;
 }
 
-#if defined(SYZYASAN)
-// This code triggers a C4509 warning as we're using an object with a destructor
-// in a function with SEH. We can safely disable this as no exception will
-// actually be thrown.
-#pragma warning(push)
-#pragma warning(disable: 4509)
-NOINLINE static void CorruptMemoryBlock() {
-  // NOTE(sebmarchand): We intentionally corrupt a memory block here in order to
-  //     trigger an Address Sanitizer (ASAN) error report.
-  static const int kArraySize = 5;
-  scoped_ptr<int[]> array(new int[kArraySize]);
-  // Encapsulate the invalid memory access into a try-catch statement to prevent
-  // this function from being instrumented. This way the underflow won't be
-  // detected but the corruption will (as the allocator will still be hooked).
-  __try {
-    int dummy = array[-1]--;
-    // Make sure the assignments to the dummy value aren't optimized away.
-    base::debug::Alias(&array);
-  } __except (EXCEPTION_EXECUTE_HANDLER) {
-    return;
-  }
-}
-#pragma warning(pop)
-#endif
-
 #if defined(ADDRESS_SANITIZER) || defined(SYZYASAN)
 NOINLINE static void MaybeTriggerAsanError(const GURL& url) {
   // NOTE(rogerm): We intentionally perform an invalid heap access here in
@@ -235,9 +211,6 @@ NOINLINE static void MaybeTriggerAsanError(const GURL& url) {
   static const char kHeapOverflow[] = "/heap-overflow";
   static const char kHeapUnderflow[] = "/heap-underflow";
   static const char kUseAfterFree[] = "/use-after-free";
-#if defined(SYZYASAN)
-  static const char kCorruptHeapBlock[] = "/corrupt-heap-block";
-#endif
   static const int kArraySize = 5;
 
   if (!url.DomainIs(kCrashDomain, sizeof(kCrashDomain) - 1))
@@ -257,10 +230,6 @@ NOINLINE static void MaybeTriggerAsanError(const GURL& url) {
     int* dangling = array.get();
     array.reset();
     dummy = dangling[kArraySize / 2];
-#if defined(SYZYASAN)
-  } else if (crash_type == kCorruptHeapBlock) {
-    CorruptMemoryBlock();
-#endif
   }
 
   // Make sure the assignments to the dummy value aren't optimized away.
@@ -732,9 +701,7 @@ void RenderFrameImpl::OnNavigate(const FrameMsg_Navigate_Params& params) {
     CHECK(frame) << "Invalid frame name passed: " << params.frame_to_navigate;
   }
 
-  WebHistoryItem item =
-      render_view_->history_controller()->GetCurrentItemForExport();
-  if (is_reload && item.isNull()) {
+  if (is_reload && !render_view_->history_controller()->GetCurrentEntry()) {
     // We cannot reload if we do not have any history state.  This happens, for
     // example, when recovering from a crash.
     is_reload = false;
@@ -762,12 +729,13 @@ void RenderFrameImpl::OnNavigate(const FrameMsg_Navigate_Params& params) {
   } else if (params.page_state.IsValid()) {
     // We must know the page ID of the page we are navigating back to.
     DCHECK_NE(params.page_id, -1);
-    WebHistoryItem item = PageStateToHistoryItem(params.page_state);
-    if (!item.isNull()) {
+    scoped_ptr<HistoryEntry> entry =
+        PageStateToHistoryEntry(params.page_state);
+    if (entry) {
       // Ensure we didn't save the swapped out URL in UpdateState, since the
       // browser should never be telling us to navigate to swappedout://.
-      CHECK(item.urlString() != WebString::fromUTF8(kSwappedOutURL));
-      render_view_->history_controller()->GoToItem(item, cache_policy);
+      CHECK(entry->root().urlString() != WebString::fromUTF8(kSwappedOutURL));
+      render_view_->history_controller()->GoToEntry(entry.Pass(), cache_policy);
     }
   } else if (!params.base_url_for_data_url.is_empty()) {
     // A loadData request with a specified base URL.
@@ -1177,6 +1145,20 @@ bool RenderFrameImpl::RunJavaScriptMessage(JavaScriptMessageType type,
   return success;
 }
 
+void RenderFrameImpl::LoadNavigationErrorPage(
+    const WebURLRequest& failed_request,
+    const WebURLError& error,
+    bool replace) {
+  std::string error_html;
+  GetContentClient()->renderer()->GetNavigationErrorStrings(
+      render_view(), frame_, failed_request, error, &error_html, NULL);
+
+  frame_->loadHTMLString(error_html,
+                         GURL(kUnreachableWebDataURL),
+                         error.unreachableURL,
+                         replace);
+}
+
 void RenderFrameImpl::DidCommitCompositorFrame() {
   if (compositing_helper_)
     compositing_helper_->DidCommitCompositorFrame();
@@ -1364,7 +1346,10 @@ blink::WebServiceWorkerProvider* RenderFrameImpl::createServiceWorkerProvider(
 
 void RenderFrameImpl::didAccessInitialDocument(blink::WebLocalFrame* frame) {
   DCHECK(!frame_ || frame_ == frame);
-  render_view_->didAccessInitialDocument(frame);
+  // Notify the browser process that it is no longer safe to show the pending
+  // URL of the main frame, since a URL spoof is now possible.
+  if (!frame->parent() && render_view_->page_id_ == -1)
+    Send(new FrameHostMsg_DidAccessInitialDocument(routing_id_));
 }
 
 blink::WebFrame* RenderFrameImpl::createChildFrame(
@@ -1380,6 +1365,9 @@ blink::WebFrame* RenderFrameImpl::createChildFrame(
   // happen if this RenderFrameImpl's IPCs are being filtered when in swapped
   // out state.
   if (child_routing_id == MSG_ROUTING_NONE) {
+#if !defined(OS_LINUX)
+    // DumpWithoutCrashing() crashes on Linux in renderer processes when
+    // breakpad and sandboxing are enabled: crbug.com/349600
     base::debug::Alias(parent);
     base::debug::Alias(&routing_id_);
     bool render_view_is_swapped_out = GetRenderWidget()->is_swapped_out();
@@ -1388,6 +1376,7 @@ blink::WebFrame* RenderFrameImpl::createChildFrame(
     base::debug::Alias(&render_view_is_closing);
     base::debug::Alias(&is_swapped_out_);
     base::debug::DumpWithoutCrashing();
+#endif
     return NULL;
   }
 
@@ -1803,8 +1792,7 @@ void RenderFrameImpl::didFailProvisionalLoad(blink::WebLocalFrame* frame,
   }
 
   // Load an error page.
-  render_view_->LoadNavigationErrorPage(
-      frame, failed_request, error, replace);
+  LoadNavigationErrorPage(failed_request, error, replace);
 }
 
 void RenderFrameImpl::didCommitProvisionalLoad(
@@ -2430,11 +2418,26 @@ void RenderFrameImpl::didReceiveResponse(
 void RenderFrameImpl::didFinishResourceLoad(blink::WebLocalFrame* frame,
                                             unsigned identifier) {
   DCHECK(!frame_ || frame_ == frame);
-  // TODO(nasko): Move implementation here. Needed state:
-  // * devtools_agent_
-  // Needed methods:
-  // * LoadNavigationErrorPage
-  render_view_->didFinishResourceLoad(frame, identifier);
+  InternalDocumentStateData* internal_data =
+      InternalDocumentStateData::FromDataSource(frame->dataSource());
+  if (!internal_data->use_error_page())
+    return;
+
+  // Do not show error page when DevTools is attached.
+  if (render_view_->devtools_agent_->IsAttached())
+    return;
+
+  // Display error page, if appropriate.
+  std::string error_domain = "http";
+  int http_status_code = internal_data->http_status_code();
+  if (GetContentClient()->renderer()->HasErrorPage(
+          http_status_code, &error_domain)) {
+    WebURLError error;
+    error.unreachableURL = frame->document().url();
+    error.domain = WebString::fromUTF8(error_domain);
+    error.reason = http_status_code;
+    LoadNavigationErrorPage(frame->dataSource()->request(), error, true);
+  }
 }
 
 void RenderFrameImpl::didLoadResourceFromMemoryCache(
@@ -2516,10 +2519,18 @@ void RenderFrameImpl::didFirstVisuallyNonEmptyLayout(
 void RenderFrameImpl::didChangeContentsSize(blink::WebLocalFrame* frame,
                                             const blink::WebSize& size) {
   DCHECK(!frame_ || frame_ == frame);
-  // TODO(nasko): Move implementation here. Needed state:
-  // * cached_has_main_frame_horizontal_scrollbar_
-  // * cached_has_main_frame_vertical_scrollbar_
-  render_view_->didChangeContentsSize(frame, size);
+#if defined(OS_MACOSX)
+  if (frame->parent())
+    return;
+
+  WebView* frameView = frame->view();
+  if (!frameView)
+    return;
+
+  GetRenderWidget()->DidChangeScrollbarsForMainFrame(
+      frame->hasHorizontalScrollbar(),
+      frame->hasVerticalScrollbar());
+#endif  // defined(OS_MACOSX)
 }
 
 void RenderFrameImpl::didChangeScrollOffset(blink::WebLocalFrame* frame) {
@@ -2583,6 +2594,10 @@ void RenderFrameImpl::willOpenSocketStream(
   impl->SetUserData(handle, new SocketStreamHandleData(routing_id_));
 }
 
+blink::WebGeolocationClient* RenderFrameImpl::geolocationClient() {
+  return render_view_->geolocationClient();
+}
+
 void RenderFrameImpl::willStartUsingPeerConnectionHandler(
     blink::WebLocalFrame* frame,
     blink::WebRTCPeerConnectionHandler* handler) {
@@ -2590,6 +2605,14 @@ void RenderFrameImpl::willStartUsingPeerConnectionHandler(
 #if defined(ENABLE_WEBRTC)
   static_cast<RTCPeerConnectionHandler*>(handler)->associateWithFrame(frame);
 #endif
+}
+
+blink::WebUserMediaClient* RenderFrameImpl::userMediaClient() {
+  return render_view_->userMediaClient();
+}
+
+blink::WebMIDIClient* RenderFrameImpl::webMIDIClient() {
+  return render_view_->webMIDIClient();
 }
 
 bool RenderFrameImpl::willCheckAndDispatchMessageEvent(
@@ -2751,13 +2774,11 @@ void RenderFrameImpl::UpdateURL(blink::WebFrame* frame) {
 
   // Make navigation state a part of the DidCommitProvisionalLoad message so
   // that commited entry has it at all times.
-  WebHistoryItem item =
-      render_view_->history_controller()->GetCurrentItemForExport();
-  if (item.isNull()) {
-    item.initialize();
-    item.setURLString(request.url().spec().utf16());
-  }
-  params.page_state = HistoryItemToPageState(item);
+  HistoryEntry* entry = render_view_->history_controller()->GetCurrentEntry();
+  if (entry)
+    params.page_state = HistoryEntryToPageState(entry);
+  else
+    params.page_state = PageState::CreateFromURL(request.url());
 
   if (!frame->parent()) {
     // Top-level navigation.
@@ -2822,7 +2843,7 @@ void RenderFrameImpl::UpdateURL(blink::WebFrame* frame) {
     base::string16 method = request.httpMethod();
     if (EqualsASCII(method, "POST")) {
       params.is_post = true;
-      params.post_id = ExtractPostId(item);
+      params.post_id = ExtractPostId(entry->root());
     }
 
     // Send the user agent override back.

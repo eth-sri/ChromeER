@@ -147,6 +147,8 @@ void Target::OnResolved() {
     // pulled from G to A in case G has configs directly on it).
     PullDependentTargetInfo(&unique_configs);
   }
+  PullForwardedDependentConfigs();
+  PullRecursiveHardDeps();
 }
 
 bool Target::IsLinkable() const {
@@ -181,6 +183,12 @@ void Target::PullDependentTargetInfo(std::set<const Config*>* unique_configs) {
       all_libs_.append(dep->all_libs());
     }
   }
+}
+
+void Target::PullForwardedDependentConfigs() {
+  // Groups implicitly forward all if its dependency's configs.
+  if (output_type() == GROUP)
+    forward_dependent_configs_ = deps_;
 
   // Forward direct dependent configs if requested.
   for (size_t dep = 0; dep < forward_dependent_configs_.size(); dep++) {
@@ -195,5 +203,15 @@ void Target::PullDependentTargetInfo(std::set<const Config*>* unique_configs) {
         direct_dependent_configs_.end(),
         from_target->direct_dependent_configs().begin(),
         from_target->direct_dependent_configs().end());
+  }
+}
+
+void Target::PullRecursiveHardDeps() {
+  for (size_t dep_i = 0; dep_i < deps_.size(); dep_i++) {
+    const Target* dep = deps_[dep_i].ptr;
+    if (dep->hard_dep())
+      recursive_hard_deps_.insert(dep);
+    recursive_hard_deps_.insert(dep->recursive_hard_deps().begin(),
+                                dep->recursive_hard_deps().end());
   }
 }

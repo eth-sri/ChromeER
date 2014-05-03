@@ -42,6 +42,7 @@
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
+#include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/browser/site_instance_impl.h"
 #include "content/browser/web_contents/web_contents_view_guest.h"
 #include "content/browser/webui/generic_handler.h"
@@ -55,7 +56,6 @@
 #include "content/common/ssl_status_serialization.h"
 #include "content/common/view_messages.h"
 #include "content/port/browser/render_view_host_delegate_view.h"
-#include "content/port/browser/render_widget_host_view_port.h"
 #include "content/public/browser/ax_event_notification_details.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/content_browser_client.h"
@@ -335,6 +335,7 @@ WebContentsImpl::WebContentsImpl(
       upload_size_(0),
       upload_position_(0),
       displayed_insecure_content_(false),
+      has_accessed_initial_document_(false),
       capturer_count_(0),
       should_normally_be_visible_(true),
       is_being_destroyed_(false),
@@ -361,6 +362,14 @@ WebContentsImpl::WebContentsImpl(
 
 WebContentsImpl::~WebContentsImpl() {
   is_being_destroyed_ = true;
+
+  // If there is an interstitial page being shown, tell it to close down early
+  // so that this contents will be alive enough to handle all the UI triggered
+  // by that. <http://crbug.com/363564>
+  InterstitialPageImpl* interstitial_page =
+      static_cast<InterstitialPageImpl*>(GetInterstitialPage());
+  if (interstitial_page)
+    interstitial_page->WebContentsWillBeDestroyed();
 
   // Delete all RFH pending shutdown, which will lead the corresponding RVH to
   // shutdown and be deleted as well.
@@ -674,14 +683,6 @@ RenderWidgetHostView* WebContentsImpl::GetRenderWidgetHostView() const {
   return GetRenderManager()->GetRenderWidgetHostView();
 }
 
-RenderWidgetHostViewPort* WebContentsImpl::GetRenderWidgetHostViewPort() const {
-  BrowserPluginGuest* guest = GetBrowserPluginGuest();
-  if (guest && guest->embedder_web_contents()) {
-    return guest->embedder_web_contents()->GetRenderWidgetHostViewPort();
-  }
-  return RenderWidgetHostViewPort::FromRWHV(GetRenderWidgetHostView());
-}
-
 RenderWidgetHostView* WebContentsImpl::GetFullscreenRenderWidgetHostView()
     const {
   RenderWidgetHost* const widget_host =
@@ -958,8 +959,7 @@ base::TimeTicks WebContentsImpl::GetLastActiveTime() const {
 
 void WebContentsImpl::WasShown() {
   controller_.SetActive(true);
-  RenderWidgetHostViewPort* rwhv =
-      RenderWidgetHostViewPort::FromRWHV(GetRenderWidgetHostView());
+  RenderWidgetHostView* rwhv = GetRenderWidgetHostView();
   if (rwhv) {
     rwhv->Show();
 #if defined(OS_MACOSX)
@@ -992,8 +992,7 @@ void WebContentsImpl::WasHidden() {
     // removes the |GetRenderViewHost()|; then when we actually destroy the
     // window, OnWindowPosChanged() notices and calls WasHidden() (which
     // calls us).
-    RenderWidgetHostViewPort* rwhv =
-        RenderWidgetHostViewPort::FromRWHV(GetRenderWidgetHostView());
+    RenderWidgetHostView* rwhv = GetRenderWidgetHostView();
     if (rwhv)
       rwhv->Hide();
   }
@@ -1263,7 +1262,7 @@ bool WebContentsImpl::HandleGestureEvent(
     float zoomOutThreshold = (currentPinchZoomStepDelta_ <= 0) ? -nextStep
         : backStep;
 
-    totalPinchGestureAmount_ += event.data.pinchUpdate.scale;
+    totalPinchGestureAmount_ += (event.data.pinchUpdate.scale - 1.0);
     if (totalPinchGestureAmount_ > zoomInThreshold) {
       currentPinchZoomStepDelta_++;
       if (delegate_)
@@ -1524,8 +1523,9 @@ void WebContentsImpl::CreateNewWidget(int render_process_id,
       new RenderWidgetHostImpl(this, process, route_id, IsHidden());
   created_widgets_.insert(widget_host);
 
-  RenderWidgetHostViewPort* widget_view = RenderWidgetHostViewPort::FromRWHV(
-      view_->CreateViewForPopupWidget(widget_host));
+  RenderWidgetHostViewBase* widget_view =
+      static_cast<RenderWidgetHostViewBase*>(
+          view_->CreateViewForPopupWidget(widget_host));
   if (!widget_view)
     return;
   if (!is_fullscreen) {
@@ -1568,10 +1568,19 @@ void WebContentsImpl::ShowCreatedFullscreenWidget(int route_id) {
 void WebContentsImpl::ShowCreatedWidget(int route_id,
                                         bool is_fullscreen,
                                         const gfx::Rect& initial_pos) {
-  RenderWidgetHostViewPort* widget_host_view =
-      RenderWidgetHostViewPort::FromRWHV(GetCreatedWidget(route_id));
+  RenderWidgetHostViewBase* widget_host_view =
+      static_cast<RenderWidgetHostViewBase*>(GetCreatedWidget(route_id));
   if (!widget_host_view)
     return;
+
+  RenderWidgetHostView* view = NULL;
+  BrowserPluginGuest* guest = GetBrowserPluginGuest();
+  if (guest && guest->embedder_web_contents()) {
+    view = guest->embedder_web_contents()->GetRenderWidgetHostView();
+  } else {
+    view = GetRenderWidgetHostView();
+  }
+
   if (is_fullscreen) {
     DCHECK_EQ(MSG_ROUTING_NONE, fullscreen_widget_routing_id_);
     fullscreen_widget_routing_id_ = route_id;
@@ -1579,7 +1588,7 @@ void WebContentsImpl::ShowCreatedWidget(int route_id,
       widget_host_view->InitAsChild(GetRenderWidgetHostView()->GetNativeView());
       delegate_->ToggleFullscreenModeForTab(this, true);
     } else {
-      widget_host_view->InitAsFullscreen(GetRenderWidgetHostViewPort());
+      widget_host_view->InitAsFullscreen(view);
     }
     FOR_EACH_OBSERVER(WebContentsObserver,
                       observers_,
@@ -1587,7 +1596,7 @@ void WebContentsImpl::ShowCreatedWidget(int route_id,
     if (!widget_host_view->HasFocus())
       widget_host_view->Focus();
   } else {
-    widget_host_view->InitAsPopup(GetRenderWidgetHostViewPort(), initial_pos);
+    widget_host_view->InitAsPopup(view, initial_pos);
   }
 
   RenderWidgetHostImpl* render_widget_host_impl =
@@ -1768,7 +1777,7 @@ void WebContentsImpl::AttachInterstitialPage(
 }
 
 void WebContentsImpl::DetachInterstitialPage() {
-  if (GetInterstitialPage())
+  if (ShowingInterstitialPage())
     GetRenderManager()->remove_interstitial_page();
   FOR_EACH_OBSERVER(WebContentsObserver, observers_,
                     DidDetachInterstitialPage());
@@ -2465,6 +2474,10 @@ void WebContentsImpl::DidNavigateAnyFramePostCommit(
     RenderFrameHostImpl* render_frame_host,
     const LoadCommittedDetails& details,
     const FrameHostMsg_DidCommitProvisionalLoad_Params& params) {
+  // Now that something has committed, we don't need to track whether the
+  // initial page has been accessed.
+  has_accessed_initial_document_ = false;
+
   // If we navigate off the page, close all JavaScript dialogs.
   if (dialog_manager_ && !details.is_in_page)
     dialog_manager_->CancelActiveAndPendingDialogs(this);
@@ -2851,6 +2864,10 @@ void WebContentsImpl::ActivateAndShowRepostFormWarningDialog() {
     delegate_->ShowRepostFormWarningDialog(this);
 }
 
+bool WebContentsImpl::HasAccessedInitialDocument() {
+  return has_accessed_initial_document_;
+}
+
 // Notifies the RenderWidgetHost instance about the fact that the page is
 // loading, or done loading.
 void WebContentsImpl::SetIsLoading(RenderViewHost* render_view_host,
@@ -3080,7 +3097,8 @@ void WebContentsImpl::RunJavaScriptMessage(
         default_prompt,
         base::Bind(&WebContentsImpl::OnDialogClosed,
                    base::Unretained(this),
-                   rfh,
+                   rfh->GetProcess()->GetID(),
+                   rfh->GetRoutingID(),
                    reply_msg,
                    false),
         &suppress_this_message);
@@ -3089,7 +3107,8 @@ void WebContentsImpl::RunJavaScriptMessage(
   if (suppress_this_message) {
     // If we are suppressing messages, just reply as if the user immediately
     // pressed "Cancel", passing true to |dialog_was_suppressed|.
-    OnDialogClosed(rfh, reply_msg, true, false, base::string16());
+    OnDialogClosed(rfh->GetProcess()->GetID(), rfh->GetRoutingID(), reply_msg,
+                   true, false, base::string16());
   }
 
   // OnDialogClosed (two lines up) may have caused deletion of this object (see
@@ -3122,7 +3141,8 @@ void WebContentsImpl::RunBeforeUnloadConfirm(
   dialog_manager_->RunBeforeUnloadDialog(
       this, message, is_reload,
       base::Bind(&WebContentsImpl::OnDialogClosed, base::Unretained(this),
-                 rfh, reply_msg, false));
+                 rfh->GetProcess()->GetID(), rfh->GetRoutingID(), reply_msg,
+                 false));
 }
 
 WebContents* WebContentsImpl::GetAsWebContents() {
@@ -3414,6 +3434,8 @@ void WebContentsImpl::DidDisownOpener(RenderViewHost* rvh) {
 }
 
 void WebContentsImpl::DidAccessInitialDocument() {
+  has_accessed_initial_document_ = true;
+
   // We may have left a failed browser-initiated navigation in the address bar
   // to let the user edit it and try again.  Clear it now that content might
   // show up underneath it.
@@ -3732,7 +3754,7 @@ bool WebContentsImpl::CreateRenderViewForRenderManager(
     CrossProcessFrameConnector* frame_connector) {
   TRACE_EVENT0("browser", "WebContentsImpl::CreateRenderViewForRenderManager");
   // Can be NULL during tests.
-  RenderWidgetHostView* rwh_view;
+  RenderWidgetHostViewBase* rwh_view;
   // TODO(kenrb): RenderWidgetHostViewChildFrame special casing is temporary
   // until RenderWidgetHost is attached to RenderFrameHost. We need to special
   // case this because RWH is still a base class of RenderViewHost, and child
@@ -3796,17 +3818,21 @@ bool WebContentsImpl::CreateRenderViewForInitialEmptyDocument() {
 }
 #endif
 
-void WebContentsImpl::OnDialogClosed(RenderFrameHost* rfh,
+void WebContentsImpl::OnDialogClosed(int render_process_id,
+                                     int render_frame_id,
                                      IPC::Message* reply_msg,
                                      bool dialog_was_suppressed,
                                      bool success,
                                      const base::string16& user_input) {
+  RenderFrameHostImpl* rfh = RenderFrameHostImpl::FromID(render_process_id,
+                                                         render_frame_id);
   last_dialog_suppressed_ = dialog_was_suppressed;
 
   if (is_showing_before_unload_dialog_ && !success) {
     // If a beforeunload dialog is canceled, we need to stop the throbber from
     // spinning, since we forced it to start spinning in Navigate.
-    DidStopLoading(rfh);
+    if (rfh)
+      DidStopLoading(rfh);
     controller_.DiscardNonCommittedEntries();
 
     FOR_EACH_OBSERVER(WebContentsObserver, observers_,
@@ -3814,8 +3840,13 @@ void WebContentsImpl::OnDialogClosed(RenderFrameHost* rfh,
   }
 
   is_showing_before_unload_dialog_ = false;
-  static_cast<RenderFrameHostImpl*>(rfh)->JavaScriptDialogClosed(
-      reply_msg, success, user_input, dialog_was_suppressed);
+  if (rfh) {
+    rfh->JavaScriptDialogClosed(reply_msg, success, user_input,
+                                dialog_was_suppressed);
+  } else {
+    // Don't leak the sync IPC reply if the RFH or process is gone.
+    delete reply_msg;
+  }
 }
 
 void WebContentsImpl::SetEncoding(const std::string& encoding) {
@@ -3824,7 +3855,7 @@ void WebContentsImpl::SetEncoding(const std::string& encoding) {
 }
 
 void WebContentsImpl::CreateViewAndSetSizeForRVH(RenderViewHost* rvh) {
-  RenderWidgetHostView* rwh_view = view_->CreateViewForWidget(rvh);
+  RenderWidgetHostViewBase* rwh_view = view_->CreateViewForWidget(rvh);
   // Can be NULL during tests.
   if (rwh_view)
     rwh_view->SetSize(GetView()->GetContainerSize());

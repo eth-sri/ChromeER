@@ -6,7 +6,7 @@
  * TestFixture for kiosk app settings WebUI testing.
  * @extends {testing.Test}
  * @constructor
- **/
+ */
 function KioskAppSettingsWebUITest() {}
 
 KioskAppSettingsWebUITest.prototype = {
@@ -90,7 +90,7 @@ TEST_F('KioskAppSettingsWebUITest', 'testAddKioskApp', function() {
   appIdInput.value = testAppId;
 
   this.mockHandler.expects(once()).addKioskApp([testAppId]);
-  var keypress = document.createEvent("KeyboardEvents");
+  var keypress = document.createEvent('KeyboardEvents');
   keypress.initKeyboardEvent('keypress', true, true, null, 'Enter', '');
   appIdInput.dispatchEvent(keypress);
 });

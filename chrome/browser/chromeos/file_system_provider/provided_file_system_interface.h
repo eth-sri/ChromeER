@@ -9,6 +9,10 @@
 
 class EventRouter;
 
+namespace base {
+class FilePath;
+}  // namespace base
+
 namespace chromeos {
 namespace file_system_provider {
 
@@ -23,10 +27,15 @@ class ProvidedFileSystemInterface {
   virtual ~ProvidedFileSystemInterface() {}
 
   // Requests unmounting of the file system. The callback is called when the
-  // request is accepted or rejected, with an error code. Returns false if the
-  // request could not been created, true otherwise.
-  virtual bool RequestUnmount(
+  // request is accepted or rejected, with an error code.
+  virtual void RequestUnmount(
       const fileapi::AsyncFileUtil::StatusCallback& callback) = 0;
+
+  // Requests metadata of the passed |entry_path|. It can be either a file
+  // or a directory.
+  virtual void GetMetadata(
+      const base::FilePath& entry_path,
+      const fileapi::AsyncFileUtil::GetFileInfoCallback& callback) = 0;
 
   // Returns a provided file system info for this file system.
   virtual const ProvidedFileSystemInfo& GetFileSystemInfo() const = 0;

@@ -85,6 +85,7 @@ class LayerTreeHostImplTest : public testing::Test,
         did_notify_ready_to_activate_(false),
         did_request_commit_(false),
         did_request_redraw_(false),
+        did_request_animate_(false),
         did_request_manage_tiles_(false),
         did_upload_visible_tile_(false),
         reduce_memory_result_(true),
@@ -110,6 +111,9 @@ class LayerTreeHostImplTest : public testing::Test,
 
   virtual void UpdateRendererCapabilitiesOnImplThread() OVERRIDE {}
   virtual void DidLoseOutputSurfaceOnImplThread() OVERRIDE {}
+  virtual void CommitVSyncParameters(base::TimeTicks timebase,
+                                     base::TimeDelta interval) OVERRIDE {}
+  virtual void SetEstimatedParentDrawTime(base::TimeDelta draw_time) OVERRIDE {}
   virtual void SetMaxSwapsPendingOnImplThread(int max) OVERRIDE {}
   virtual void DidSwapBuffersOnImplThread() OVERRIDE {}
   virtual void DidSwapBuffersCompleteOnImplThread() OVERRIDE {}
@@ -127,6 +131,9 @@ class LayerTreeHostImplTest : public testing::Test,
   virtual void SetNeedsRedrawRectOnImplThread(
       const gfx::Rect& damage_rect) OVERRIDE {
     did_request_redraw_ = true;
+  }
+  virtual void SetNeedsAnimateOnImplThread() OVERRIDE {
+    did_request_animate_ = true;
   }
   virtual void SetNeedsManageTilesOnImplThread() OVERRIDE {
     did_request_manage_tiles_ = true;
@@ -393,6 +400,7 @@ class LayerTreeHostImplTest : public testing::Test,
   bool did_notify_ready_to_activate_;
   bool did_request_commit_;
   bool did_request_redraw_;
+  bool did_request_animate_;
   bool did_request_manage_tiles_;
   bool did_upload_visible_tile_;
   bool reduce_memory_result_;
@@ -901,6 +909,7 @@ TEST_F(LayerTreeHostImplTest, ImplPinchZoom) {
               scroll_layer->FixedContainerSizeDelta());
     host_impl_->PinchGestureEnd();
     host_impl_->ScrollEnd();
+    EXPECT_FALSE(did_request_animate_);
     EXPECT_TRUE(did_request_redraw_);
     EXPECT_TRUE(did_request_commit_);
     EXPECT_EQ(gfx::Size(50, 50), container_layer->bounds());
@@ -943,6 +952,61 @@ TEST_F(LayerTreeHostImplTest, ImplPinchZoom) {
   }
 }
 
+TEST_F(LayerTreeHostImplTest, MasksToBoundsDoesntClobberInnerContainerSize) {
+  SetupScrollAndContentsLayers(gfx::Size(100, 100));
+  host_impl_->SetViewportSize(gfx::Size(50, 50));
+  DrawFrame();
+
+  LayerImpl* scroll_layer = host_impl_->InnerViewportScrollLayer();
+  LayerImpl* container_layer = scroll_layer->scroll_clip_layer();
+  DCHECK(scroll_layer);
+
+  float min_page_scale = 1.f;
+  float max_page_scale = 4.f;
+  host_impl_->active_tree()->SetPageScaleFactorAndLimits(1.f,
+                                                         min_page_scale,
+                                                         max_page_scale);
+
+  // If the container's masks_to_bounds is false, the viewport size should
+  // overwrite the inner viewport container layer's size.
+  {
+    EXPECT_EQ(gfx::Size(50, 50),
+              container_layer->bounds());
+    container_layer->SetMasksToBounds(false);
+
+    container_layer->SetBounds(gfx::Size(30, 25));
+    EXPECT_EQ(gfx::Size(30, 25),
+              container_layer->bounds());
+
+    // This should cause a reset of the inner viewport container layer's bounds.
+    host_impl_->DidChangeTopControlsPosition();
+
+    EXPECT_EQ(gfx::Size(50, 50),
+              container_layer->bounds());
+  }
+
+  host_impl_->SetViewportSize(gfx::Size(50, 50));
+  container_layer->SetBounds(gfx::Size(50, 50));
+
+  // If the container's masks_to_bounds is true, the viewport size should
+  // *NOT* overwrite the inner viewport container layer's size.
+  {
+    EXPECT_EQ(gfx::Size(50, 50),
+              container_layer->bounds());
+    container_layer->SetMasksToBounds(true);
+
+    container_layer->SetBounds(gfx::Size(30, 25));
+    EXPECT_EQ(gfx::Size(30, 25),
+              container_layer->bounds());
+
+    // This should cause a reset of the inner viewport container layer's bounds.
+    host_impl_->DidChangeTopControlsPosition();
+
+    EXPECT_EQ(gfx::Size(30, 25),
+              container_layer->bounds());
+  }
+}
+
 TEST_F(LayerTreeHostImplTest, PinchGesture) {
   SetupScrollAndContentsLayers(gfx::Size(100, 100));
   host_impl_->SetViewportSize(gfx::Size(50, 50));
@@ -967,6 +1031,7 @@ TEST_F(LayerTreeHostImplTest, PinchGesture) {
     host_impl_->PinchGestureUpdate(page_scale_delta, gfx::Point(50, 50));
     host_impl_->PinchGestureEnd();
     host_impl_->ScrollEnd();
+    EXPECT_FALSE(did_request_animate_);
     EXPECT_TRUE(did_request_redraw_);
     EXPECT_TRUE(did_request_commit_);
 
@@ -1108,19 +1173,30 @@ TEST_F(LayerTreeHostImplTest, PageScaleAnimation) {
                                                            max_page_scale);
     scroll_layer->SetScrollOffset(gfx::Vector2d(50, 50));
 
-    host_impl_->StartPageScaleAnimation(gfx::Vector2d(), false, 2.f, duration);
     did_request_redraw_ = false;
+    did_request_animate_ = false;
+    host_impl_->StartPageScaleAnimation(gfx::Vector2d(), false, 2.f, duration);
+    EXPECT_FALSE(did_request_redraw_);
+    EXPECT_TRUE(did_request_animate_);
+
+    did_request_redraw_ = false;
+    did_request_animate_ = false;
     host_impl_->Animate(start_time);
     EXPECT_TRUE(did_request_redraw_);
+    EXPECT_TRUE(did_request_animate_);
 
     did_request_redraw_ = false;
+    did_request_animate_ = false;
     host_impl_->Animate(halfway_through_animation);
     EXPECT_TRUE(did_request_redraw_);
+    EXPECT_TRUE(did_request_animate_);
 
     did_request_redraw_ = false;
+    did_request_animate_ = false;
     did_request_commit_ = false;
     host_impl_->Animate(end_time);
     EXPECT_TRUE(did_request_commit_);
+    EXPECT_FALSE(did_request_animate_);
 
     scoped_ptr<ScrollAndScaleSet> scroll_info =
         host_impl_->ProcessScrollDeltas();
@@ -1135,16 +1211,25 @@ TEST_F(LayerTreeHostImplTest, PageScaleAnimation) {
                                                            max_page_scale);
     scroll_layer->SetScrollOffset(gfx::Vector2d(50, 50));
 
+    did_request_redraw_ = false;
+    did_request_animate_ = false;
     host_impl_->StartPageScaleAnimation(
         gfx::Vector2d(25, 25), true, min_page_scale, duration);
+    EXPECT_FALSE(did_request_redraw_);
+    EXPECT_TRUE(did_request_animate_);
+
     did_request_redraw_ = false;
+    did_request_animate_ = false;
     host_impl_->Animate(start_time);
     EXPECT_TRUE(did_request_redraw_);
+    EXPECT_TRUE(did_request_animate_);
 
     did_request_redraw_ = false;
     did_request_commit_ = false;
+    did_request_animate_ = false;
     host_impl_->Animate(end_time);
     EXPECT_TRUE(did_request_redraw_);
+    EXPECT_FALSE(did_request_animate_);
     EXPECT_TRUE(did_request_commit_);
 
     scoped_ptr<ScrollAndScaleSet> scroll_info =
@@ -1298,10 +1383,12 @@ TEST_F(LayerTreeHostImplTest, ScrollbarLinearFadeScheduling) {
   host_impl_->ScrollBy(gfx::Point(), gfx::Vector2dF(5, 0));
   host_impl_->ScrollEnd();
   did_request_redraw_ = false;
+  did_request_animate_ = false;
   host_impl_->StartScrollbarAnimation();
   EXPECT_LT(base::TimeDelta::FromMilliseconds(19),
             requested_scrollbar_animation_delay_);
   EXPECT_FALSE(did_request_redraw_);
+  EXPECT_FALSE(did_request_animate_);
   requested_scrollbar_animation_delay_ = base::TimeDelta();
 
   // After the fade begins, we should start getting redraws instead of a
@@ -1310,8 +1397,8 @@ TEST_F(LayerTreeHostImplTest, ScrollbarLinearFadeScheduling) {
   host_impl_override_time->SetCurrentPhysicalTimeTicksForTest(fake_now);
   host_impl_->StartScrollbarAnimation();
   EXPECT_EQ(base::TimeDelta(), requested_scrollbar_animation_delay_);
-  EXPECT_TRUE(did_request_redraw_);
-  did_request_redraw_ = false;
+  EXPECT_TRUE(did_request_animate_);
+  did_request_animate_ = false;
 
   // If no scroll happened recently, StartScrollbarAnimation should have no
   // effect.
@@ -1328,6 +1415,7 @@ TEST_F(LayerTreeHostImplTest, ScrollbarLinearFadeScheduling) {
   EXPECT_LT(base::TimeDelta::FromMilliseconds(19),
             requested_scrollbar_animation_delay_);
   EXPECT_FALSE(did_request_redraw_);
+  EXPECT_FALSE(did_request_animate_);
   requested_scrollbar_animation_delay_ = base::TimeDelta();
 
   // None of the above should have called CurrentFrameTimeTicks, so if we call
@@ -1355,7 +1443,7 @@ TEST_F(LayerTreeHostImplTest, ScrollbarFadePinchZoomScrollbars) {
   // effect.
   host_impl_->StartScrollbarAnimation();
   EXPECT_EQ(base::TimeDelta(), requested_scrollbar_animation_delay_);
-  EXPECT_FALSE(did_request_redraw_);
+  EXPECT_FALSE(did_request_animate_);
 
   // If no scroll happened during a scroll gesture, StartScrollbarAnimation
   // should have no effect.
@@ -1363,7 +1451,7 @@ TEST_F(LayerTreeHostImplTest, ScrollbarFadePinchZoomScrollbars) {
   host_impl_->ScrollEnd();
   host_impl_->StartScrollbarAnimation();
   EXPECT_EQ(base::TimeDelta(), requested_scrollbar_animation_delay_);
-  EXPECT_FALSE(did_request_redraw_);
+  EXPECT_FALSE(did_request_animate_);
 
   // After a scroll, no fade animation should be scheduled.
   host_impl_->ScrollBegin(gfx::Point(), InputHandler::Wheel);
@@ -1372,7 +1460,7 @@ TEST_F(LayerTreeHostImplTest, ScrollbarFadePinchZoomScrollbars) {
   did_request_redraw_ = false;
   host_impl_->StartScrollbarAnimation();
   EXPECT_EQ(base::TimeDelta(), requested_scrollbar_animation_delay_);
-  EXPECT_FALSE(did_request_redraw_);
+  EXPECT_FALSE(did_request_animate_);
   requested_scrollbar_animation_delay_ = base::TimeDelta();
 
   // We should not see any draw requests.
@@ -1380,7 +1468,7 @@ TEST_F(LayerTreeHostImplTest, ScrollbarFadePinchZoomScrollbars) {
   host_impl_override_time->SetCurrentPhysicalTimeTicksForTest(fake_now);
   host_impl_->StartScrollbarAnimation();
   EXPECT_EQ(base::TimeDelta(), requested_scrollbar_animation_delay_);
-  EXPECT_FALSE(did_request_redraw_);
+  EXPECT_FALSE(did_request_animate_);
 
   // Make page scale > min so that subsequent scrolls will trigger fades.
   host_impl_->active_tree()->SetPageScaleDelta(1.1f);
@@ -1393,7 +1481,7 @@ TEST_F(LayerTreeHostImplTest, ScrollbarFadePinchZoomScrollbars) {
   host_impl_->StartScrollbarAnimation();
   EXPECT_LT(base::TimeDelta::FromMilliseconds(19),
             requested_scrollbar_animation_delay_);
-  EXPECT_FALSE(did_request_redraw_);
+  EXPECT_FALSE(did_request_animate_);
   requested_scrollbar_animation_delay_ = base::TimeDelta();
 
   // After the fade begins, we should start getting redraws instead of a
@@ -1402,7 +1490,7 @@ TEST_F(LayerTreeHostImplTest, ScrollbarFadePinchZoomScrollbars) {
   host_impl_override_time->SetCurrentPhysicalTimeTicksForTest(fake_now);
   host_impl_->StartScrollbarAnimation();
   EXPECT_EQ(base::TimeDelta(), requested_scrollbar_animation_delay_);
-  EXPECT_TRUE(did_request_redraw_);
+  EXPECT_TRUE(did_request_animate_);
 }
 
 void LayerTreeHostImplTest::SetupMouseMoveAtWithDeviceScale(
@@ -1444,6 +1532,7 @@ void LayerTreeHostImplTest::SetupMouseMoveAtWithDeviceScale(
   scrollbar->SetBounds(gfx::Size(15, viewport_size.height()));
   scrollbar->SetContentBounds(gfx::Size(15, viewport_size.height()));
   scrollbar->SetPosition(gfx::Point(285, 0));
+  scrollbar->SetClipLayerById(1);
   scrollbar->SetScrollLayerById(2);
 
   scroll->AddChild(contents.Pass());
@@ -5678,8 +5767,8 @@ TEST_F(LayerTreeHostImplTest, MemoryPolicy) {
       gpu::MemoryAllocation::CUTOFF_ALLOW_NOTHING);
 
   // GPU rasterization should be disabled by default.
-  EXPECT_EQ(LayerTreeSettings::CpuRasterization,
-            host_impl_->settings().rasterization_site);
+  EXPECT_FALSE(host_impl_->settings().gpu_rasterization_enabled);
+  EXPECT_FALSE(host_impl_->settings().gpu_rasterization_forced);
 
   host_impl_->SetVisible(true);
   host_impl_->SetMemoryPolicy(policy1);
@@ -5697,7 +5786,7 @@ TEST_F(LayerTreeHostImplTest, MemoryPolicy) {
   // Now enable GPU rasterization and test if we get required only cutoff,
   // when visible.
   LayerTreeSettings settings;
-  settings.rasterization_site = LayerTreeSettings::GpuRasterization;
+  settings.gpu_rasterization_forced = true;
   host_impl_ = LayerTreeHostImpl::Create(
       settings, this, &proxy_, &stats_instrumentation_, NULL, 0);
 
@@ -6207,6 +6296,14 @@ TEST_F(LayerTreeHostImplWithTopControlsTest, NoIdleAnimations) {
   EXPECT_FALSE(did_request_redraw_);
 }
 
+TEST_F(LayerTreeHostImplWithTopControlsTest, TopControlsAnimationScheduling) {
+  SetupScrollAndContentsLayers(gfx::Size(100, 100))
+      ->SetScrollOffset(gfx::Vector2d(0, 10));
+  host_impl_->DidChangeTopControlsPosition();
+  EXPECT_TRUE(did_request_animate_);
+  EXPECT_TRUE(did_request_redraw_);
+}
+
 TEST_F(LayerTreeHostImplWithTopControlsTest, ScrollHandledByTopControls) {
   LayerImpl* scroll_layer = SetupScrollAndContentsLayers(gfx::Size(100, 200));
   host_impl_->SetViewportSize(gfx::Size(100, 100));
@@ -6377,7 +6474,6 @@ class LayerTreeHostImplWithImplicitLimitsTest : public LayerTreeHostImplTest {
  public:
   virtual void SetUp() OVERRIDE {
     LayerTreeSettings settings = DefaultSettings();
-    settings.max_unused_resource_memory_percentage = 50;
     settings.max_memory_for_prepaint_percentage = 50;
     CreateHostImpl(settings, CreateOutputSurface());
   }
@@ -6394,8 +6490,6 @@ TEST_F(LayerTreeHostImplWithImplicitLimitsTest, ImplicitMemoryLimits) {
             300u * 1024u * 1024u);
   EXPECT_EQ(host_impl_->global_tile_state().soft_memory_limit_in_bytes,
             150u * 1024u * 1024u);
-  EXPECT_EQ(host_impl_->global_tile_state().unused_memory_limit_in_bytes,
-            75u * 1024u * 1024u);
 }
 
 }  // namespace

@@ -17,6 +17,7 @@
 #include "mojo/bindings/js/core.h"
 #include "mojo/bindings/js/handle.h"
 #include "mojo/bindings/js/support.h"
+#include "mojo/bindings/js/unicode.h"
 
 namespace mojo {
 namespace apps {
@@ -41,7 +42,7 @@ void StartCallback(base::WeakPtr<gin::Runner> runner,
   CHECK(gin::ConvertFromV8(isolate, module, &start));
 
   v8::Handle<v8::Value> args[] = {
-      gin::ConvertToV8(isolate, mojo::Handle(pipe)) };
+      gin::ConvertToV8(isolate, Handle(pipe)) };
   runner->Call(start, runner->global(), 1, args);
 }
 
@@ -53,7 +54,8 @@ MojoRunnerDelegate::MojoRunnerDelegate()
   AddBuiltinModule(gin::TimerModule::kName, gin::TimerModule::GetModule);
   AddBuiltinModule(js::Core::kModuleName, js::Core::GetModule);
   AddBuiltinModule(js::Support::kModuleName, js::Support::GetModule);
-  AddBuiltinModule(mojo::js::gl::kModuleName, mojo::js::gl::GetModule);
+  AddBuiltinModule(js::Unicode::kModuleName, js::Unicode::GetModule);
+  AddBuiltinModule(js::gl::kModuleName, js::gl::GetModule);
   AddBuiltinModule(MonotonicClock::kModuleName, MonotonicClock::GetModule);
   AddBuiltinModule(Threading::kModuleName, Threading::GetModule);
 }

@@ -11,6 +11,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "components/autofill/core/common/password_form.h"
+#include "components/password_manager/core/browser/mock_password_manager_driver.h"
 #include "components/password_manager/core/browser/mock_password_store.h"
 #include "components/password_manager/core/browser/password_form_manager.h"
 #include "components/password_manager/core/browser/password_manager.h"
@@ -43,25 +44,6 @@ void RunAllPendingTasks() {
       FROM_HERE, base::MessageLoop::QuitWhenIdleClosure());
   run_loop.Run();
 }
-
-class MockPasswordManagerDriver : public PasswordManagerDriver {
- public:
-  MockPasswordManagerDriver() {}
-  virtual ~MockPasswordManagerDriver() {}
-
-  MOCK_METHOD1(FillPasswordForm, void(const autofill::PasswordFormFillData&));
-  MOCK_METHOD0(DidLastPageLoadEncounterSSLErrors, bool());
-  MOCK_METHOD0(IsOffTheRecord, bool());
-  MOCK_METHOD0(GetPasswordGenerationManager, PasswordGenerationManager*());
-  MOCK_METHOD0(GetPasswordManager, PasswordManager*());
-  MOCK_METHOD0(GetAutofillManager, autofill::AutofillManager*());
-  MOCK_METHOD0(GetPasswordAutofillManager, PasswordAutofillManager*());
-  MOCK_METHOD1(AllowPasswordGenerationForForm, void(autofill::PasswordForm*));
-  MOCK_METHOD1(AccountCreationFormsFound,
-               void(const std::vector<autofill::FormData>&));
-  MOCK_METHOD2(AcceptPasswordAutofillSuggestion,
-               void(const base::string16&, const base::string16&));
-};
 
 class TestPasswordManagerClient : public StubPasswordManagerClient {
  public:
@@ -703,6 +685,36 @@ TEST_F(PasswordFormManagerTest, TestUpdateIncompleteCredentials) {
   // Check that PasswordStore receives an update request with the complete form.
   EXPECT_CALL(*mock_store(), UpdateLogin(complete_form));
   form_manager.Save();
+}
+
+TEST_F(PasswordFormManagerTest, TestScoringPublicSuffixMatch) {
+  base::MessageLoop message_loop;
+
+  TestPasswordManagerClient client(NULL);
+  MockPasswordManagerDriver driver;
+  EXPECT_CALL(driver, IsOffTheRecord()).WillRepeatedly(Return(false));
+  EXPECT_CALL(driver, AllowPasswordGenerationForForm(_));
+
+  TestPasswordManager password_manager(&client);
+  scoped_ptr<PasswordFormManager> manager(new PasswordFormManager(
+    &password_manager, &client, &driver, *observed_form(), false));
+
+  // Simulate having two matches for this form, first comes from different
+  // signon realm, but reports the same origin and action as matched form.
+  // Second candidate has the same signon realm as the form, but has a different
+  // origin and action. Public suffix match is the most important criterion so
+  // the second candidate should be selected.
+  std::vector<PasswordForm*> results;
+  results.push_back(CreateSavedMatch(false));
+  results.push_back(CreateSavedMatch(false));
+  results[0]->original_signon_realm = "http://accounts2.google.com";
+  results[1]->origin = GURL("http://accounts.google.com/a/ServiceLoginAuth2");
+  results[1]->action = GURL("http://accounts.google.com/a/ServiceLogin2");
+  SimulateFetchMatchingLoginsFromPasswordStore(manager.get());
+  SimulateResponseFromPasswordStore(manager.get(), results);
+  EXPECT_EQ(1u, password_manager.GetLatestBestMatches().size());
+  EXPECT_EQ("", password_manager.GetLatestBestMatches().begin()
+      ->second->original_signon_realm);
 }
 
 }  // namespace password_manager

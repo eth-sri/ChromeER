@@ -90,7 +90,7 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
 
   settings.throttle_frame_production =
       !cmd->HasSwitch(switches::kDisableGpuVsync);
-  settings.begin_impl_frame_scheduling_enabled =
+  settings.begin_frame_scheduling_enabled =
       cmd->HasSwitch(switches::kEnableBeginFrameScheduling);
   settings.main_frame_before_activation_enabled =
       cmd->HasSwitch(cc::switches::kEnableMainFrameBeforeActivation) &&
@@ -140,15 +140,14 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
   if (render_thread) {
     settings.impl_side_painting =
         render_thread->is_impl_side_painting_enabled();
-    if (render_thread->is_gpu_rasterization_forced())
-      settings.rasterization_site = cc::LayerTreeSettings::GpuRasterization;
-    else if (render_thread->is_gpu_rasterization_enabled())
-      settings.rasterization_site = cc::LayerTreeSettings::HybridRasterization;
-    else
-      settings.rasterization_site = cc::LayerTreeSettings::CpuRasterization;
+    settings.gpu_rasterization_forced =
+        render_thread->is_gpu_rasterization_forced();
+    settings.gpu_rasterization_enabled =
+        render_thread->is_gpu_rasterization_enabled();
     settings.create_low_res_tiling = render_thread->is_low_res_tiling_enabled();
     settings.can_use_lcd_text = render_thread->is_lcd_text_enabled();
-    settings.use_map_image = render_thread->is_map_image_enabled();
+    settings.use_zero_copy = render_thread->is_zero_copy_enabled();
+    settings.use_one_copy = render_thread->is_one_copy_enabled();
   }
 
   settings.calculate_top_controls_position =
@@ -498,6 +497,11 @@ void RenderWidgetCompositor::startPageScaleAnimation(
       duration);
 }
 
+void RenderWidgetCompositor::heuristicsForGpuRasterizationUpdated(
+    bool matches_heuristics) {
+  layer_tree_host_->set_has_gpu_rasterization_trigger(matches_heuristics);
+}
+
 void RenderWidgetCompositor::setNeedsAnimate() {
   layer_tree_host_->SetNeedsAnimate();
 }
@@ -612,9 +616,7 @@ scoped_ptr<cc::OutputSurface> RenderWidgetCompositor::CreateOutputSurface(
   return widget_->CreateOutputSurface(fallback);
 }
 
-void RenderWidgetCompositor::DidInitializeOutputSurface(bool success) {
-  if (!success)
-    widget_->webwidget()->didExitCompositingMode();
+void RenderWidgetCompositor::DidInitializeOutputSurface() {
 }
 
 void RenderWidgetCompositor::WillCommit() {

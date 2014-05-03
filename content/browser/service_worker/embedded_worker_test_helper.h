@@ -14,6 +14,7 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
 
+struct EmbeddedWorkerMsg_StartWorker_Params;
 class GURL;
 
 namespace content {
@@ -21,12 +22,14 @@ namespace content {
 class EmbeddedWorkerRegistry;
 class EmbeddedWorkerTestHelper;
 class ServiceWorkerContextCore;
+class ServiceWorkerContextWrapper;
 struct ServiceWorkerFetchRequest;
 
 // In-Process EmbeddedWorker test helper.
 //
-// Usage: create an instance of this class for a ServiceWorkerContextCore
-// to test browser-side embedded worker code without creating a child process.
+// Usage: create an instance of this class to test browser-side embedded worker
+// code without creating a child process.  This class will create a
+// ServiceWorkerContextWrapper and ServiceWorkerContextCore for you.
 //
 // By default this class just notifies back WorkerStarted and WorkerStopped
 // for StartWorker and StopWorker requests. The default implementation
@@ -42,8 +45,7 @@ class EmbeddedWorkerTestHelper : public IPC::Sender,
  public:
   // Initialize this helper for |context|, and enable this as an IPC
   // sender for |mock_render_process_id|.
-  EmbeddedWorkerTestHelper(ServiceWorkerContextCore* context,
-                           int mock_render_process_id);
+  EmbeddedWorkerTestHelper(int mock_render_process_id);
   virtual ~EmbeddedWorkerTestHelper();
 
   // Call this to simulate add/associate a process to a worker.
@@ -60,6 +62,10 @@ class EmbeddedWorkerTestHelper : public IPC::Sender,
   IPC::TestSink* ipc_sink() { return &sink_; }
   // Inner IPC sink for script context messages sent via EmbeddedWorker.
   IPC::TestSink* inner_ipc_sink() { return &inner_sink_; }
+
+  ServiceWorkerContextCore* context();
+  ServiceWorkerContextWrapper* context_wrapper() { return wrapper_.get(); }
+  void ShutdownContext();
 
  protected:
   // Called when StartWorker, StopWorker and SendMessageToWorker message
@@ -99,10 +105,7 @@ class EmbeddedWorkerTestHelper : public IPC::Sender,
   EmbeddedWorkerRegistry* registry();
 
  private:
-  void OnStartWorkerStub(int embedded_worker_id,
-                         int64 service_worker_version_id,
-                         const GURL& scope,
-                         const GURL& script_url);
+  void OnStartWorkerStub(const EmbeddedWorkerMsg_StartWorker_Params& params);
   void OnStopWorkerStub(int embedded_worker_id);
   void OnMessageToWorkerStub(int thread_id,
                              int embedded_worker_id,
@@ -112,7 +115,7 @@ class EmbeddedWorkerTestHelper : public IPC::Sender,
   void OnFetchEventStub(int request_id,
                         const ServiceWorkerFetchRequest& request);
 
-  base::WeakPtr<ServiceWorkerContextCore> context_;
+  scoped_refptr<ServiceWorkerContextWrapper> wrapper_;
 
   IPC::TestSink sink_;
   IPC::TestSink inner_sink_;

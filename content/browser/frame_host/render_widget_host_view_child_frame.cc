@@ -120,14 +120,6 @@ void RenderWidgetHostViewChildFrame::ImeCompositionRangeChanged(
 }
 #endif
 
-void RenderWidgetHostViewChildFrame::DidUpdateBackingStore(
-    const gfx::Rect& scroll_rect,
-    const gfx::Vector2d& scroll_delta,
-    const std::vector<gfx::Rect>& copy_rects,
-    const std::vector<ui::LatencyInfo>& latency_info) {
-  NOTREACHED();
-}
-
 void RenderWidgetHostViewChildFrame::WasShown() {
   if (!host_->is_hidden())
     return;
@@ -141,7 +133,6 @@ void RenderWidgetHostViewChildFrame::WasHidden() {
 }
 
 void RenderWidgetHostViewChildFrame::MovePluginWindows(
-    const gfx::Vector2d& scroll_offset,
     const std::vector<WebPluginGeometry>& moves) {
 }
 
@@ -196,8 +187,19 @@ void RenderWidgetHostViewChildFrame::SelectionBoundsChanged(
 }
 
 #if defined(OS_ANDROID)
+void RenderWidgetHostViewChildFrame::ShowDisambiguationPopup(
+    const gfx::Rect& target_rect,
+    const SkBitmap& zoomed_bitmap) {
+}
+
 void RenderWidgetHostViewChildFrame::SelectionRootBoundsChanged(
     const gfx::Rect& bounds) {
+}
+
+void RenderWidgetHostViewChildFrame::LockCompositingSurface() {
+}
+
+void RenderWidgetHostViewChildFrame::UnlockCompositingSurface() {
 }
 #endif
 
@@ -294,13 +296,6 @@ bool RenderWidgetHostViewChildFrame::PostProcessEventForPluginIme(
 }
 #endif // defined(OS_MACOSX)
 
-#if defined(OS_ANDROID)
-void RenderWidgetHostViewChildFrame::ShowDisambiguationPopup(
-    const gfx::Rect& target_rect,
-    const SkBitmap& zoomed_bitmap) {
-}
-#endif  // defined(OS_ANDROID)
-
 void RenderWidgetHostViewChildFrame::CopyFromCompositingSurface(
     const gfx::Rect& src_subrect,
     const gfx::Size& /* dst_size */,
@@ -335,10 +330,6 @@ bool RenderWidgetHostViewChildFrame::HasAcceleratedSurface(
 
 gfx::GLSurfaceHandle RenderWidgetHostViewChildFrame::GetCompositingSurface() {
   return gfx::GLSurfaceHandle(gfx::kNullPluginWindow, gfx::TEXTURE_TRANSPORT);
-}
-
-void RenderWidgetHostViewChildFrame::SetHasHorizontalScrollbar(
-    bool has_horizontal_scrollbar) {
 }
 
 void RenderWidgetHostViewChildFrame::SetScrollOffsetPinning(

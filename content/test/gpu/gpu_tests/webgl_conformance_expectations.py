@@ -27,12 +27,14 @@ class WebGLConformanceExpectations(test_expectations.TestExpectations):
     # Fails on all platforms
     self.Fail('conformance/glsl/misc/shaders-with-mis-matching-uniforms.html',
         bug=351396)
+    self.Fail('conformance/glsl/misc/boolean_precision.html',
+        bug=368874)
+    self.Fail('conformance/glsl/bugs/nested-structs-with-same-name.html',
+        bug=368910)
 
-    # Temporary suppressions of failures until bugs are fixed.
-    self.Fail('conformance/context/constants-and-properties.html',
-        bug=363842)
-    self.Fail('conformance/rendering/draw-elements-out-of-bounds.html',
-        bug=363869)
+    # Windows failures
+    self.Fail('conformance/extensions/oes-texture-float.html',
+        ['win'], bug=368919)
 
     # Win7 / Intel failures
     self.Fail('conformance/rendering/gl-scissor-test.html',
@@ -62,6 +64,11 @@ class WebGLConformanceExpectations(test_expectations.TestExpectations):
         ['mountainlion', ('intel', 0x116)], bug=314997)
     self.Fail('conformance/ogles/GL/operators/operators_009_to_016.html',
         ['mountainlion', ('intel', 0x116)], bug=322795)
+
+    # Mac 10.8 / Mac Retina failures
+    self.Fail(
+        'conformance/glsl/bugs/array-of-struct-with-int-first-position.html',
+        ['mountainlion', ('nvidia', 0xfd5)], bug=368912)
 
     # Mac 10.7 / Intel failures
     self.Skip('conformance/glsl/functions/glsl-function-asin.html',
@@ -103,4 +110,15 @@ class WebGLConformanceExpectations(test_expectations.TestExpectations):
         ['android'], bug=315976)
     self.Fail('conformance/glsl/misc/gl_position_unset.vert.html',
         ['android'], bug=315976)
+    # The following tests are disabled due to security issues.
+    self.Fail('conformance/textures/tex-image-and-sub-image-2d-with-video.html',
+        ['android'], bug=334204)
+    self.Fail('conformance/textures/tex-image-and-sub-image-2d-with-video-rgb565.html',
+        ['android'], bug=334204)
+    self.Fail('conformance/textures/tex-image-and-sub-image-2d-with-video-rgba4444.html',
+        ['android'], bug=334204)
+    self.Fail('conformance/textures/tex-image-and-sub-image-2d-with-video-rgba5551.html',
+        ['android'], bug=334204)
+    self.Fail('conformance/textures/texture-npot-video.html',
+        ['android'], bug=334204)
 

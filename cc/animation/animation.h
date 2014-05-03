@@ -48,6 +48,8 @@ class CC_EXPORT Animation {
     TargetPropertyEnumSize
   };
 
+  enum Direction { Normal, Reverse, Alternate, AlternateReverse };
+
   static scoped_ptr<Animation> Create(scoped_ptr<AnimationCurve> curve,
                                       int animation_id,
                                       int group_id,
@@ -78,12 +80,8 @@ class CC_EXPORT Animation {
   void Suspend(double monotonic_time);
   void Resume(double monotonic_time);
 
-  // If alternates_direction is true, on odd numbered iterations we reverse the
-  // curve.
-  bool alternates_direction() const { return alternates_direction_; }
-  void set_alternates_direction(bool alternates) {
-    alternates_direction_ = alternates;
-  }
+  Direction direction() { return direction_; }
+  void set_direction(Direction direction) { direction_ = direction; }
 
   bool IsFinishedAt(double monotonic_time) const;
   bool is_finished() const {
@@ -126,6 +124,16 @@ class CC_EXPORT Animation {
   void set_is_impl_only(bool is_impl_only) { is_impl_only_ = is_impl_only; }
   bool is_impl_only() const { return is_impl_only_; }
 
+  void set_affects_active_observers(bool affects_active_observers) {
+    affects_active_observers_ = affects_active_observers;
+  }
+  bool affects_active_observers() const { return affects_active_observers_; }
+
+  void set_affects_pending_observers(bool affects_pending_observers) {
+    affects_pending_observers_ = affects_pending_observers;
+  }
+  bool affects_pending_observers() const { return affects_pending_observers_; }
+
  private:
   Animation(scoped_ptr<AnimationCurve> curve,
             int animation_id,
@@ -148,7 +156,7 @@ class CC_EXPORT Animation {
   RunState run_state_;
   int iterations_;
   double start_time_;
-  bool alternates_direction_;
+  Direction direction_;
 
   // The time offset effectively pushes the start of the animation back in time.
   // This is used for resuming paused animations -- an animation is added with a
@@ -181,6 +189,20 @@ class CC_EXPORT Animation {
   bool is_controlling_instance_;
 
   bool is_impl_only_;
+
+  // When pushed from a main-thread controller to a compositor-thread
+  // controller, an animation will initially only affect pending observers
+  // (corresponding to layers in the pending tree). Animations that only
+  // affect pending observers are able to reach the Starting state and tick
+  // pending observers, but cannot proceed any further and do not tick active
+  // observers. After activation, such animations affect both kinds of observers
+  // and are able to proceed past the Starting state. When the removal of
+  // an animation is pushed from a main-thread controller to a
+  // compositor-thread controller, this initially only makes the animation
+  // stop affecting pending observers. After activation, such animations no
+  // longer affect any observers, and are deleted.
+  bool affects_active_observers_;
+  bool affects_pending_observers_;
 
   DISALLOW_COPY_AND_ASSIGN(Animation);
 };

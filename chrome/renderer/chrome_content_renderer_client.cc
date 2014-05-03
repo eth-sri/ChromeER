@@ -31,10 +31,10 @@
 #include "chrome/renderer/chrome_render_process_observer.h"
 #include "chrome/renderer/chrome_render_view_observer.h"
 #include "chrome/renderer/content_settings_observer.h"
+#include "chrome/renderer/extensions/chrome_extension_helper.h"
+#include "chrome/renderer/extensions/chrome_extensions_dispatcher_delegate.h"
 #include "chrome/renderer/extensions/chrome_extensions_renderer_client.h"
-#include "chrome/renderer/extensions/dispatcher.h"
 #include "chrome/renderer/extensions/extension_frame_helper.h"
-#include "chrome/renderer/extensions/extension_helper.h"
 #include "chrome/renderer/extensions/renderer_permissions_policy_delegate.h"
 #include "chrome/renderer/extensions/resource_request_policy.h"
 #include "chrome/renderer/external_extension.h"
@@ -81,6 +81,8 @@
 #include "extensions/common/extension_set.h"
 #include "extensions/common/extension_urls.h"
 #include "extensions/common/switches.h"
+#include "extensions/renderer/dispatcher.h"
+#include "extensions/renderer/extension_helper.h"
 #include "extensions/renderer/script_context.h"
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
@@ -226,6 +228,11 @@ bool ShouldUseJavaScriptSettingForPlugin(const WebPluginInfo& plugin) {
 
 ChromeContentRendererClient::ChromeContentRendererClient() {
   g_current_client = this;
+
+  extensions::ExtensionsClient::Set(
+      extensions::ChromeExtensionsClient::GetInstance());
+  extensions::ExtensionsRendererClient::Set(
+      ChromeExtensionsRendererClient::GetInstance());
 }
 
 ChromeContentRendererClient::~ChromeContentRendererClient() {
@@ -236,10 +243,15 @@ void ChromeContentRendererClient::RenderThreadStarted() {
   RenderThread* thread = RenderThread::Get();
 
   chrome_observer_.reset(new ChromeRenderProcessObserver(this));
+
+  extension_dispatcher_delegate_.reset(
+      new ChromeExtensionsDispatcherDelegate());
   // ChromeRenderViewTest::SetUp() creates its own ExtensionDispatcher and
   // injects it using SetExtensionDispatcher(). Don't overwrite it.
-  if (!extension_dispatcher_)
-    extension_dispatcher_.reset(new extensions::Dispatcher());
+  if (!extension_dispatcher_) {
+    extension_dispatcher_.reset(
+        new extensions::Dispatcher(extension_dispatcher_delegate_.get()));
+  }
   permissions_policy_delegate_.reset(
       new extensions::RendererPermissionsPolicyDelegate(
           extension_dispatcher_.get()));
@@ -359,11 +371,6 @@ void ChromeContentRendererClient::RenderThreadStarted() {
   WebSecurityPolicy::registerURLSchemeAsBypassingContentSecurityPolicy(
       extension_resource_scheme);
 
-  extensions::ExtensionsClient::Set(
-      extensions::ChromeExtensionsClient::GetInstance());
-  extensions::ExtensionsRendererClient::Set(
-      ChromeExtensionsRendererClient::GetInstance());
-
 #if defined(OS_WIN)
   // Report if the renderer process has been patched by chrome_elf.
   // TODO(csharp): Remove once the renderer is no longer getting
@@ -412,6 +419,7 @@ void ChromeContentRendererClient::RenderFrameCreated(
 void ChromeContentRendererClient::RenderViewCreated(
     content::RenderView* render_view) {
   new extensions::ExtensionHelper(render_view, extension_dispatcher_.get());
+  new extensions::ChromeExtensionHelper(render_view);
   new PageLoadHistograms(render_view);
 #if defined(ENABLE_PRINTING)
   new printing::PrintWebViewHelper(render_view);
@@ -474,9 +482,6 @@ bool ChromeContentRendererClient::OverrideCreatePlugin(
     WebPlugin** plugin) {
   std::string orig_mime_type = params.mimeType.utf8();
   if (orig_mime_type == content::kBrowserPluginMimeType) {
-    if (CommandLine::ForCurrentProcess()->HasSwitch(
-        switches::kEnableBrowserPluginForAllViewTypes))
-      return false;
     WebDocument document = frame->document();
     const Extension* extension =
         GetExtensionByOrigin(document.securityOrigin());
@@ -1249,12 +1254,17 @@ bool ChromeContentRendererClient::ShouldOverridePageVisibilityState(
   return true;
 }
 
-void ChromeContentRendererClient::SetExtensionDispatcher(
+void ChromeContentRendererClient::SetExtensionDispatcherForTest(
     extensions::Dispatcher* extension_dispatcher) {
   extension_dispatcher_.reset(extension_dispatcher);
   permissions_policy_delegate_.reset(
       new extensions::RendererPermissionsPolicyDelegate(
           extension_dispatcher_.get()));
+}
+
+extensions::Dispatcher*
+ChromeContentRendererClient::GetExtensionDispatcherForTest() {
+  return extension_dispatcher_.get();
 }
 
 bool ChromeContentRendererClient::CrossesExtensionExtents(
@@ -1321,18 +1331,18 @@ bool ChromeContentRendererClient::IsAdblockPlusInstalled() {
 }
 
 bool ChromeContentRendererClient::IsAdblockWithWebRequestInstalled() {
-  return g_current_client->extension_dispatcher_->
-      IsAdblockWithWebRequestInstalled();
+  return g_current_client->extension_dispatcher_delegate_
+      ->IsAdblockWithWebRequestInstalled();
 }
 
 bool ChromeContentRendererClient::IsAdblockPlusWithWebRequestInstalled() {
-  return g_current_client->extension_dispatcher_->
-      IsAdblockPlusWithWebRequestInstalled();
+  return g_current_client->extension_dispatcher_delegate_
+      ->IsAdblockPlusWithWebRequestInstalled();
 }
 
 bool ChromeContentRendererClient::IsOtherExtensionWithWebRequestInstalled() {
-  return g_current_client->extension_dispatcher_->
-      IsOtherExtensionWithWebRequestInstalled();
+  return g_current_client->extension_dispatcher_delegate_
+      ->IsOtherExtensionWithWebRequestInstalled();
 }
 
 const void* ChromeContentRendererClient::CreatePPAPIInterface(
@@ -1372,10 +1382,6 @@ ChromeContentRendererClient::OverrideSpeechSynthesizer(
 
 bool ChromeContentRendererClient::AllowBrowserPlugin(
     blink::WebPluginContainer* container) {
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableBrowserPluginForAllViewTypes))
-    return true;
-
   // If this |BrowserPlugin| <object> in the |container| is not inside a
   // <webview>/<adview> shadowHost, we disable instantiating this plugin. This
   // is to discourage and prevent developers from accidentally attaching

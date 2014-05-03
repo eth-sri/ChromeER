@@ -47,11 +47,11 @@ blink::WebGestureEvent CreateFlingCancelEvent(double time_stamp) {
 RenderWidgetHostViewGuest::RenderWidgetHostViewGuest(
     RenderWidgetHost* widget_host,
     BrowserPluginGuest* guest,
-    RenderWidgetHostView* platform_view)
+    RenderWidgetHostViewBase* platform_view)
     : RenderWidgetHostViewChildFrame(widget_host),
       // |guest| is NULL during test.
       guest_(guest ? guest->AsWeakPtr() : base::WeakPtr<BrowserPluginGuest>()),
-      platform_view_(static_cast<RenderWidgetHostViewPort*>(platform_view)) {
+      platform_view_(platform_view) {
 #if defined(USE_AURA)
   gesture_recognizer_.reset(ui::GestureRecognizer::Create());
   gesture_recognizer_->AddGestureEventHelper(this);
@@ -121,8 +121,7 @@ gfx::Rect RenderWidgetHostViewGuest::GetViewBounds() const {
   if (!guest_)
     return gfx::Rect();
 
-  RenderWidgetHostViewPort* rwhv = static_cast<RenderWidgetHostViewPort*>(
-      guest_->GetEmbedderRenderWidgetHostView());
+  RenderWidgetHostViewBase* rwhv = GetGuestRenderWidgetHostView();
   gfx::Rect embedder_bounds;
   if (rwhv)
     embedder_bounds = rwhv->GetViewBounds();
@@ -167,9 +166,6 @@ void RenderWidgetHostViewGuest::AcceleratedSurfaceBuffersSwapped(
   if (!guest_)
     return;
 
-  // If accelerated surface buffers are getting swapped then we're not using
-  // the software path.
-  guest_->clear_damage_buffer();
   FrameMsg_BuffersSwapped_Params guest_params;
   guest_params.size = params.size;
   guest_params.mailbox = params.mailbox;
@@ -191,8 +187,6 @@ void RenderWidgetHostViewGuest::OnSwapCompositorFrame(
     scoped_ptr<cc::CompositorFrame> frame) {
   if (!guest_)
     return;
-
-  guest_->clear_damage_buffer();
 
   if (!guest_->attached()) {
     // If the guest doesn't have an embedder then there's nothing to give the
@@ -281,9 +275,8 @@ gfx::NativeViewAccessible RenderWidgetHostViewGuest::GetNativeViewAccessible() {
 }
 
 void RenderWidgetHostViewGuest::MovePluginWindows(
-    const gfx::Vector2d& scroll_offset,
     const std::vector<WebPluginGeometry>& moves) {
-  platform_view_->MovePluginWindows(scroll_offset, moves);
+  platform_view_->MovePluginWindows(moves);
 }
 
 void RenderWidgetHostViewGuest::UpdateCursor(const WebCursor& cursor) {
@@ -301,8 +294,7 @@ void RenderWidgetHostViewGuest::TextInputTypeChanged(
   if (!guest_)
     return;
 
-  RenderWidgetHostViewPort* rwhv = RenderWidgetHostViewPort::FromRWHV(
-      guest_->GetEmbedderRenderWidgetHostView());
+  RenderWidgetHostViewBase* rwhv = GetGuestRenderWidgetHostView();
   if (!rwhv)
     return;
   // Forward the information to embedding RWHV.
@@ -313,8 +305,7 @@ void RenderWidgetHostViewGuest::ImeCancelComposition() {
   if (!guest_)
     return;
 
-  RenderWidgetHostViewPort* rwhv = RenderWidgetHostViewPort::FromRWHV(
-      guest_->GetEmbedderRenderWidgetHostView());
+  RenderWidgetHostViewBase* rwhv = GetGuestRenderWidgetHostView();
   if (!rwhv)
     return;
   // Forward the information to embedding RWHV.
@@ -328,8 +319,7 @@ void RenderWidgetHostViewGuest::ImeCompositionRangeChanged(
   if (!guest_)
     return;
 
-  RenderWidgetHostViewPort* rwhv = RenderWidgetHostViewPort::FromRWHV(
-      guest_->GetEmbedderRenderWidgetHostView());
+  RenderWidgetHostViewBase* rwhv = GetGuestRenderWidgetHostView();
   if (!rwhv)
     return;
   std::vector<gfx::Rect> guest_character_bounds;
@@ -342,14 +332,6 @@ void RenderWidgetHostViewGuest::ImeCompositionRangeChanged(
 }
 #endif
 
-void RenderWidgetHostViewGuest::DidUpdateBackingStore(
-    const gfx::Rect& scroll_rect,
-    const gfx::Vector2d& scroll_delta,
-    const std::vector<gfx::Rect>& copy_rects,
-    const std::vector<ui::LatencyInfo>& latency_info) {
-  NOTREACHED();
-}
-
 void RenderWidgetHostViewGuest::SelectionChanged(const base::string16& text,
                                                  size_t offset,
                                                  const gfx::Range& range) {
@@ -361,8 +343,7 @@ void RenderWidgetHostViewGuest::SelectionBoundsChanged(
   if (!guest_)
     return;
 
-  RenderWidgetHostViewPort* rwhv = RenderWidgetHostViewPort::FromRWHV(
-      guest_->GetEmbedderRenderWidgetHostView());
+  RenderWidgetHostViewBase* rwhv = GetGuestRenderWidgetHostView();
   if (!rwhv)
     return;
   ViewHostMsg_SelectionBounds_Params guest_params(params);
@@ -377,8 +358,7 @@ void RenderWidgetHostViewGuest::SelectionRootBoundsChanged(
   if (!guest_)
     return;
 
-  RenderWidgetHostViewPort* rwhv = RenderWidgetHostViewPort::FromRWHV(
-      guest_->GetEmbedderRenderWidgetHostView());
+  RenderWidgetHostViewBase* rwhv = GetGuestRenderWidgetHostView();
   if (!rwhv)
     return;
 
@@ -399,11 +379,6 @@ void RenderWidgetHostViewGuest::SetBackground(const SkBitmap& background) {
   platform_view_->SetBackground(background);
 }
 
-void RenderWidgetHostViewGuest::SetHasHorizontalScrollbar(
-    bool has_horizontal_scrollbar) {
-  platform_view_->SetHasHorizontalScrollbar(has_horizontal_scrollbar);
-}
-
 void RenderWidgetHostViewGuest::SetScrollOffsetPinning(
     bool is_pinned_to_left, bool is_pinned_to_right) {
   platform_view_->SetScrollOffsetPinning(
@@ -421,9 +396,7 @@ void RenderWidgetHostViewGuest::UnlockMouse() {
 void RenderWidgetHostViewGuest::GetScreenInfo(blink::WebScreenInfo* results) {
   if (!guest_)
     return;
-  RenderWidgetHostViewPort* embedder_view =
-      RenderWidgetHostViewPort::FromRWHV(
-          guest_->GetEmbedderRenderWidgetHostView());
+  RenderWidgetHostViewBase* embedder_view = GetGuestRenderWidgetHostView();
   if (embedder_view)
     embedder_view->GetScreenInfo(results);
 }
@@ -495,6 +468,12 @@ bool RenderWidgetHostViewGuest::PostProcessEventForPluginIme(
 void RenderWidgetHostViewGuest::ShowDisambiguationPopup(
     const gfx::Rect& target_rect,
     const SkBitmap& zoomed_bitmap) {
+}
+
+void RenderWidgetHostViewGuest::LockCompositingSurface() {
+}
+
+void RenderWidgetHostViewGuest::UnlockCompositingSurface() {
 }
 #endif  // defined(OS_ANDROID)
 
@@ -589,6 +568,12 @@ void RenderWidgetHostViewGuest::ProcessGestures(
 
 SkBitmap::Config RenderWidgetHostViewGuest::PreferredReadbackFormat() {
   return SkBitmap::kARGB_8888_Config;
+}
+
+RenderWidgetHostViewBase*
+RenderWidgetHostViewGuest::GetGuestRenderWidgetHostView() const {
+  return static_cast<RenderWidgetHostViewBase*>(
+      guest_->GetEmbedderRenderWidgetHostView());
 }
 
 }  // namespace content

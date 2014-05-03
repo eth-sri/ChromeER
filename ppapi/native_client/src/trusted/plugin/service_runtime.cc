@@ -184,11 +184,6 @@ void PluginReverseInterface::PostMessage_MainThreadContinuation(
   plugin_->PostMessage(std::string("DEBUG_POSTMESSAGE:") + p->message);
 }
 
-bool PluginReverseInterface::EnumerateManifestKeys(
-    std::set<nacl::string>* out_keys) {
-  return manifest_->GetFileKeys(out_keys);
-}
-
 // TODO(bsy): OpenManifestEntry should use the manifest to ResolveKey
 // and invoke StreamAsFile with a completion callback that invokes
 // GetPOSIXFileDesc.
@@ -266,14 +261,8 @@ void PluginReverseInterface::OpenManifestEntry_MainThreadContinuation(
 
   std::string mapped_url;
   PP_PNaClOptions pnacl_options = {PP_FALSE, PP_FALSE, 2};
-  ErrorInfo error_info;
-  if (!manifest_->ResolveKey(p->url, &mapped_url,
-                             &pnacl_options, &error_info)) {
+  if (!manifest_->ResolveKey(p->url, &mapped_url, &pnacl_options)) {
     NaClLog(4, "OpenManifestEntry_MainThreadContinuation: ResolveKey failed\n");
-    NaClLog(4,
-            "Error code %d, string %s\n",
-            error_info.error_code(),
-            error_info.message().c_str());
     // Failed, and error_info has the details on what happened.  Wake
     // up requesting thread -- we are done.
     nacl::MutexLocker take(&mu_);

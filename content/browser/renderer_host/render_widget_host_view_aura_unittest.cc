@@ -5,6 +5,7 @@
 #include "content/browser/renderer_host/render_widget_host_view_aura.h"
 
 #include "base/basictypes.h"
+#include "base/command_line.h"
 #include "base/memory/shared_memory.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
@@ -17,6 +18,7 @@
 #include "content/browser/renderer_host/render_widget_host_delegate.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/common/gpu/gpu_messages.h"
+#include "content/common/host_shared_bitmap_manager.h"
 #include "content/common/input_messages.h"
 #include "content/common/view_messages.h"
 #include "content/port/browser/render_widget_host_view_frame_subscriber.h"
@@ -45,6 +47,7 @@
 #include "ui/compositor/test/in_process_context_factory.h"
 #include "ui/events/event.h"
 #include "ui/events/event_utils.h"
+#include "ui/wm/core/default_activation_client.h"
 
 using testing::_;
 
@@ -152,16 +155,22 @@ class FakeRenderWidgetHostViewAura : public RenderWidgetHostViewAura {
 
   virtual ~FakeRenderWidgetHostViewAura() {}
 
-  virtual bool ShouldCreateResizeLock() OVERRIDE {
-    gfx::Size desired_size = window()->bounds().size();
-    return desired_size != current_frame_size_in_dip();
-  }
-
-  virtual scoped_ptr<ResizeLock> CreateResizeLock(bool defer_compositor_lock)
-      OVERRIDE {
+  virtual scoped_ptr<ResizeLock> CreateResizeLock(
+      bool defer_compositor_lock) OVERRIDE {
     gfx::Size desired_size = window()->bounds().size();
     return scoped_ptr<ResizeLock>(
         new FakeResizeLock(desired_size, defer_compositor_lock));
+  }
+
+  void RunOnCompositingDidCommit() {
+    GetDelegatedFrameHost()->OnCompositingDidCommitForTesting(
+        window()->GetHost()->compositor());
+  }
+
+  virtual bool ShouldCreateResizeLock() OVERRIDE {
+    gfx::Size desired_size = window()->bounds().size();
+    return desired_size !=
+           GetDelegatedFrameHost()->CurrentFrameSizeInDIPForTesting();
   }
 
   virtual void RequestCopyOfOutput(scoped_ptr<cc::CopyOutputRequest> request)
@@ -178,8 +187,8 @@ class FakeRenderWidgetHostViewAura : public RenderWidgetHostViewAura {
     }
   }
 
-  void RunOnCompositingDidCommit() {
-    OnCompositingDidCommit(window()->GetHost()->compositor());
+  cc::DelegatedFrameProvider* frame_provider() const {
+    return GetDelegatedFrameHost()->FrameProviderForTesting();
   }
 
   // A lock that doesn't actually do anything to the compositor, and does not
@@ -205,6 +214,7 @@ class RenderWidgetHostViewAuraTest : public testing::Test {
         scoped_ptr<ui::ContextFactory>(new ui::InProcessContextFactory));
     aura_test_helper_.reset(new aura::test::AuraTestHelper(&message_loop_));
     aura_test_helper_->SetUp();
+    new wm::DefaultActivationClient(aura_test_helper_->root_window());
 
     browser_context_.reset(new TestBrowserContext);
     process_host_ = new MockRenderProcessHost(browser_context_.get());
@@ -213,8 +223,7 @@ class RenderWidgetHostViewAuraTest : public testing::Test {
 
     parent_host_ = new RenderWidgetHostImpl(
         &delegate_, process_host_, MSG_ROUTING_NONE, false);
-    parent_view_ = static_cast<RenderWidgetHostViewAura*>(
-        RenderWidgetHostView::CreateViewForWidget(parent_host_));
+    parent_view_ = new RenderWidgetHostViewAura(parent_host_);
     parent_view_->InitAsChild(NULL);
     aura::client::ParentWindowWithContext(parent_view_->GetNativeView(),
                                           aura_test_helper_->root_window(),
@@ -980,7 +989,7 @@ TEST_F(RenderWidgetHostViewAuraTest, SkippedDelegatedFrames) {
   // Lock the compositor. Now we should drop frames.
   view_rect = gfx::Rect(150, 150);
   view_->SetSize(view_rect.size());
-  view_->MaybeCreateResizeLock();
+  view_->GetDelegatedFrameHost()->MaybeCreateResizeLock();
 
   // This frame is dropped.
   gfx::Rect dropped_damage_rect_1(10, 20, 30, 40);
@@ -1071,6 +1080,7 @@ TEST_F(RenderWidgetHostViewAuraTest, DiscardDelegatedFrames) {
   size_t renderer_count = max_renderer_frames + 1;
   gfx::Rect view_rect(100, 100);
   gfx::Size frame_size = view_rect.size();
+  DCHECK_EQ(0u, HostSharedBitmapManager::current()->AllocatedBitmapCount());
 
   scoped_ptr<RenderWidgetHostImpl * []> hosts(
       new RenderWidgetHostImpl* [renderer_count]);
@@ -1098,37 +1108,37 @@ TEST_F(RenderWidgetHostViewAuraTest, DiscardDelegatedFrames) {
     views[i]->WasShown();
     views[i]->OnSwapCompositorFrame(
         1, MakeDelegatedFrame(1.f, frame_size, view_rect));
-    EXPECT_TRUE(views[i]->frame_provider_);
+    EXPECT_TRUE(views[i]->frame_provider());
     views[i]->WasHidden();
   }
 
   // There should be max_renderer_frames with a frame in it, and one without it.
   // Since the logic is LRU eviction, the first one should be without.
-  EXPECT_FALSE(views[0]->frame_provider_);
+  EXPECT_FALSE(views[0]->frame_provider());
   for (size_t i = 1; i < renderer_count; ++i)
-    EXPECT_TRUE(views[i]->frame_provider_);
+    EXPECT_TRUE(views[i]->frame_provider());
 
   // LRU renderer is [0], make it visible, it shouldn't evict anything yet.
   views[0]->WasShown();
-  EXPECT_FALSE(views[0]->frame_provider_);
-  EXPECT_TRUE(views[1]->frame_provider_);
+  EXPECT_FALSE(views[0]->frame_provider());
+  EXPECT_TRUE(views[1]->frame_provider());
 
   // Swap a frame on it, it should evict the next LRU [1].
   views[0]->OnSwapCompositorFrame(
       1, MakeDelegatedFrame(1.f, frame_size, view_rect));
-  EXPECT_TRUE(views[0]->frame_provider_);
-  EXPECT_FALSE(views[1]->frame_provider_);
+  EXPECT_TRUE(views[0]->frame_provider());
+  EXPECT_FALSE(views[1]->frame_provider());
   views[0]->WasHidden();
 
   // LRU renderer is [1], still hidden. Swap a frame on it, it should evict
   // the next LRU [2].
   views[1]->OnSwapCompositorFrame(
       1, MakeDelegatedFrame(1.f, frame_size, view_rect));
-  EXPECT_TRUE(views[0]->frame_provider_);
-  EXPECT_TRUE(views[1]->frame_provider_);
-  EXPECT_FALSE(views[2]->frame_provider_);
+  EXPECT_TRUE(views[0]->frame_provider());
+  EXPECT_TRUE(views[1]->frame_provider());
+  EXPECT_FALSE(views[2]->frame_provider());
   for (size_t i = 3; i < renderer_count; ++i)
-    EXPECT_TRUE(views[i]->frame_provider_);
+    EXPECT_TRUE(views[i]->frame_provider());
 
   // Make all renderers but [0] visible and swap a frame on them, keep [0]
   // hidden, it becomes the LRU.
@@ -1136,14 +1146,14 @@ TEST_F(RenderWidgetHostViewAuraTest, DiscardDelegatedFrames) {
     views[i]->WasShown();
     views[i]->OnSwapCompositorFrame(
         1, MakeDelegatedFrame(1.f, frame_size, view_rect));
-    EXPECT_TRUE(views[i]->frame_provider_);
+    EXPECT_TRUE(views[i]->frame_provider());
   }
-  EXPECT_FALSE(views[0]->frame_provider_);
+  EXPECT_FALSE(views[0]->frame_provider());
 
   // Swap a frame on [0], it should be evicted immediately.
   views[0]->OnSwapCompositorFrame(
       1, MakeDelegatedFrame(1.f, frame_size, view_rect));
-  EXPECT_FALSE(views[0]->frame_provider_);
+  EXPECT_FALSE(views[0]->frame_provider());
 
   // Make [0] visible, and swap a frame on it. Nothing should be evicted
   // although we're above the limit.
@@ -1151,11 +1161,40 @@ TEST_F(RenderWidgetHostViewAuraTest, DiscardDelegatedFrames) {
   views[0]->OnSwapCompositorFrame(
       1, MakeDelegatedFrame(1.f, frame_size, view_rect));
   for (size_t i = 0; i < renderer_count; ++i)
-    EXPECT_TRUE(views[i]->frame_provider_);
+    EXPECT_TRUE(views[i]->frame_provider());
 
   // Make [0] hidden, it should evict its frame.
   views[0]->WasHidden();
-  EXPECT_FALSE(views[0]->frame_provider_);
+  EXPECT_FALSE(views[0]->frame_provider());
+
+  for (size_t i = 0; i < renderer_count - 1; ++i)
+    views[i]->WasHidden();
+
+  // Allocate enough bitmaps so that two frames (proportionally) would be
+  // enough hit the handle limit.
+  int handles_per_frame = 5;
+  RendererFrameManager::GetInstance()->set_max_handles(handles_per_frame * 2);
+
+  for (size_t i = 0; i < (renderer_count - 1) * handles_per_frame; i++) {
+    HostSharedBitmapManager::current()->ChildAllocatedSharedBitmap(
+        1,
+        base::SharedMemory::NULLHandle(),
+        base::GetCurrentProcessHandle(),
+        cc::SharedBitmap::GenerateId());
+  }
+
+  // Hiding this last bitmap should evict all but two frames.
+  views[renderer_count - 1]->WasHidden();
+  for (size_t i = 0; i < renderer_count; ++i) {
+    if (i + 2 < renderer_count)
+      EXPECT_FALSE(views[i]->frame_provider());
+    else
+      EXPECT_TRUE(views[i]->frame_provider());
+  }
+  HostSharedBitmapManager::current()->ProcessRemoved(
+      base::GetCurrentProcessHandle());
+  RendererFrameManager::GetInstance()->set_max_handles(
+      base::SharedMemory::GetHandleLimit());
 
   for (size_t i = 0; i < renderer_count; ++i) {
     views[i]->Destroy();
@@ -1170,6 +1209,7 @@ TEST_F(RenderWidgetHostViewAuraTest, DiscardDelegatedFramesWithLocking) {
   size_t renderer_count = max_renderer_frames + 1;
   gfx::Rect view_rect(100, 100);
   gfx::Size frame_size = view_rect.size();
+  DCHECK_EQ(0u, HostSharedBitmapManager::current()->AllocatedBitmapCount());
 
   scoped_ptr<RenderWidgetHostImpl * []> hosts(
       new RenderWidgetHostImpl* [renderer_count]);
@@ -1198,25 +1238,25 @@ TEST_F(RenderWidgetHostViewAuraTest, DiscardDelegatedFramesWithLocking) {
     views[i]->WasShown();
     views[i]->OnSwapCompositorFrame(
         1, MakeDelegatedFrame(1.f, frame_size, view_rect));
-    EXPECT_TRUE(views[i]->frame_provider_);
+    EXPECT_TRUE(views[i]->frame_provider());
   }
 
   // If we hide [0], then [0] should be evicted.
   views[0]->WasHidden();
-  EXPECT_FALSE(views[0]->frame_provider_);
+  EXPECT_FALSE(views[0]->frame_provider());
 
   // If we lock [0] before hiding it, then [0] should not be evicted.
   views[0]->WasShown();
   views[0]->OnSwapCompositorFrame(
         1, MakeDelegatedFrame(1.f, frame_size, view_rect));
-  EXPECT_TRUE(views[0]->frame_provider_);
-  views[0]->LockResources();
+  EXPECT_TRUE(views[0]->frame_provider());
+  views[0]->GetDelegatedFrameHost()->LockResources();
   views[0]->WasHidden();
-  EXPECT_TRUE(views[0]->frame_provider_);
+  EXPECT_TRUE(views[0]->frame_provider());
 
   // If we unlock [0] now, then [0] should be evicted.
-  views[0]->UnlockResources();
-  EXPECT_FALSE(views[0]->frame_provider_);
+  views[0]->GetDelegatedFrameHost()->UnlockResources();
+  EXPECT_FALSE(views[0]->frame_provider());
 
   for (size_t i = 0; i < renderer_count; ++i) {
     views[i]->Destroy();
@@ -1242,7 +1282,7 @@ TEST_F(RenderWidgetHostViewAuraTest, SoftwareDPIChange) {
 
   // Save the frame provider.
   scoped_refptr<cc::DelegatedFrameProvider> frame_provider =
-      view_->frame_provider_;
+      view_->frame_provider();
 
   // This frame will have the same number of physical pixels, but has a new
   // scale on it.
@@ -1252,7 +1292,7 @@ TEST_F(RenderWidgetHostViewAuraTest, SoftwareDPIChange) {
   // When we get a new frame with the same frame size in physical pixels, but a
   // different scale, we should generate a new frame provider, as the final
   // result will need to be scaled differently to the screen.
-  EXPECT_NE(frame_provider.get(), view_->frame_provider_.get());
+  EXPECT_NE(frame_provider.get(), view_->frame_provider());
 }
 
 class RenderWidgetHostViewAuraCopyRequestTest
@@ -1308,7 +1348,9 @@ TEST_F(RenderWidgetHostViewAuraCopyRequestTest, DestroyedAfterCopyRequest) {
   request = view_->last_copy_request_.Pass();
 
   // There should be one subscriber texture in flight.
-  EXPECT_EQ(1u, view_->active_frame_subscriber_textures_.size());
+  EXPECT_EQ(1u,
+            view_->GetDelegatedFrameHost()->
+                active_frame_subscriber_textures_.size());
 
   // Send back the mailbox included in the request. There's no release callback
   // since the mailbox came from the RWHVA originally.
@@ -1320,7 +1362,9 @@ TEST_F(RenderWidgetHostViewAuraCopyRequestTest, DestroyedAfterCopyRequest) {
   run_loop.Run();
 
   // The callback should succeed.
-  EXPECT_EQ(0u, view_->active_frame_subscriber_textures_.size());
+  EXPECT_EQ(0u,
+            view_->GetDelegatedFrameHost()->
+                active_frame_subscriber_textures_.size());
   EXPECT_EQ(1, callback_count_);
   EXPECT_TRUE(result_);
 
@@ -1331,7 +1375,9 @@ TEST_F(RenderWidgetHostViewAuraCopyRequestTest, DestroyedAfterCopyRequest) {
   request = view_->last_copy_request_.Pass();
 
   // There should be one subscriber texture in flight again.
-  EXPECT_EQ(1u, view_->active_frame_subscriber_textures_.size());
+  EXPECT_EQ(1u,
+            view_->GetDelegatedFrameHost()->
+                active_frame_subscriber_textures_.size());
 
   // Destroy the RenderWidgetHostViewAura and ImageTransportFactory.
   TearDownEnvironment();
@@ -1348,6 +1394,35 @@ TEST_F(RenderWidgetHostViewAuraCopyRequestTest, DestroyedAfterCopyRequest) {
   // these things being destroyed.
   EXPECT_EQ(2, callback_count_);
   EXPECT_FALSE(result_);
+}
+
+TEST_F(RenderWidgetHostViewAuraTest, VisibleViewportTest) {
+  gfx::Rect view_rect(100, 100);
+
+  view_->InitAsChild(NULL);
+  aura::client::ParentWindowWithContext(
+      view_->GetNativeView(),
+      parent_view_->GetNativeView()->GetRootWindow(),
+      gfx::Rect());
+  view_->SetSize(view_rect.size());
+  view_->WasShown();
+
+  // Defaults to full height of the view.
+  EXPECT_EQ(100, view_->GetVisibleViewportSize().height());
+
+  widget_host_->ResetSizeAndRepaintPendingFlags();
+  sink_->ClearMessages();
+  view_->SetInsets(gfx::Insets(0, 0, 40, 0));
+
+  EXPECT_EQ(60, view_->GetVisibleViewportSize().height());
+
+  const IPC::Message *message = sink_->GetFirstMessageMatching(
+      ViewMsg_Resize::ID);
+  ASSERT_TRUE(message != NULL);
+
+  ViewMsg_Resize::Param params;
+  ViewMsg_Resize::Read(message, &params);
+  EXPECT_EQ(60, params.a.visible_viewport_size.height());
 }
 
 }  // namespace content

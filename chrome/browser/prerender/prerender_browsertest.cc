@@ -21,6 +21,7 @@
 #include "base/values.h"
 #include "chrome/browser/browsing_data/browsing_data_helper.h"
 #include "chrome/browser/browsing_data/browsing_data_remover.h"
+#include "chrome/browser/browsing_data/browsing_data_remover_test_util.h"
 #include "chrome/browser/chrome_content_browser_client.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
@@ -58,7 +59,7 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension_constants.h"
-#include "chrome/common/extensions/mime_types_handler.h"
+#include "chrome/common/extensions/manifest_handlers/mime_types_handler.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/test_switches.h"
@@ -143,7 +144,9 @@ std::string CreateServerRedirect(const std::string& dest_url) {
 void ClearBrowsingData(Browser* browser, int remove_mask) {
   BrowsingDataRemover* remover =
       BrowsingDataRemover::CreateForUnboundedRange(browser->profile());
+  BrowsingDataRemoverCompletionObserver observer(remover);
   remover->Remove(remove_mask, BrowsingDataHelper::UNPROTECTED_WEB);
+  observer.BlockUntilCompletion();
   // BrowsingDataRemover deletes itself.
 }
 
@@ -2844,6 +2847,7 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderSSLErrorIframe) {
 
 // Checks that we cancel correctly when window.print() is called.
 IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderPrint) {
+  DisableLoadEventCheck();
   PrerenderTestURL("files/prerender/prerender_print.html",
                    FINAL_STATUS_WINDOW_PRINT,
                    0);
@@ -3119,28 +3123,22 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderClearHistory) {
                        FINAL_STATUS_CACHE_OR_HISTORY_CLEARED,
                        1);
 
-  base::MessageLoop::current()->PostTask(
-      FROM_HERE,
-      base::Bind(&ClearBrowsingData, current_browser(),
-                 BrowsingDataRemover::REMOVE_HISTORY));
+  ClearBrowsingData(current_browser(), BrowsingDataRemover::REMOVE_HISTORY);
   prerender->WaitForStop();
 
   // Make sure prerender history was cleared.
   EXPECT_EQ(0, GetHistoryLength());
 }
 
-// Disabled due to flakiness: crbug.com/316225
 // Checks that when the cache is cleared, prerenders are cancelled but
 // prerendering history is not cleared.
-IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, DISABLED_PrerenderClearCache) {
+IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderClearCache) {
   scoped_ptr<TestPrerender> prerender =
       PrerenderTestURL("files/prerender/prerender_page.html",
                        FINAL_STATUS_CACHE_OR_HISTORY_CLEARED,
                        1);
 
-  base::MessageLoop::current()->PostTask(FROM_HERE,
-      base::Bind(&ClearBrowsingData, current_browser(),
-                 BrowsingDataRemover::REMOVE_CACHE));
+  ClearBrowsingData(current_browser(), BrowsingDataRemover::REMOVE_CACHE);
   prerender->WaitForStop();
 
   // Make sure prerender history was not cleared.  Not a vital behavior, but
@@ -4153,6 +4151,13 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderPPLTNormalNavigation) {
   histograms.ExpectTotalCount("Prerender.none_PerceivedPLT", 1);
   histograms.ExpectTotalCount("Prerender.none_PerceivedPLTMatched", 0);
   histograms.ExpectTotalCount("Prerender.none_PerceivedPLTMatchedComplete", 0);
+}
+
+// Checks that a prerender which calls window.close() on itself is aborted.
+IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderWindowClose) {
+  DisableLoadEventCheck();
+  PrerenderTestURL("files/prerender/prerender_window_close.html",
+                   FINAL_STATUS_CLOSED, 0);
 }
 
 class PrerenderIncognitoBrowserTest : public PrerenderBrowserTest {

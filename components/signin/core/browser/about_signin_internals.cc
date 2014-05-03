@@ -42,10 +42,12 @@ base::ListValue* AddSection(base::ListValue* parent_list,
 
 void AddSectionEntry(base::ListValue* section_list,
                      const std::string& field_name,
-                     const std::string& field_val) {
+                     const std::string& field_status,
+                     const std::string& field_time = "") {
   scoped_ptr<base::DictionaryValue> entry(new base::DictionaryValue());
   entry->SetString("label", field_name);
-  entry->SetString("value", field_val);
+  entry->SetString("status", field_status);
+  entry->SetString("time", field_time);
   section_list->Append(entry.release());
 }
 
@@ -61,32 +63,26 @@ std::string SigninStatusFieldToLabel(UntimedSigninStatusField field) {
   return std::string();
 }
 
-TimedSigninStatusValue SigninStatusFieldToLabel(TimedSigninStatusField field) {
+std::string SigninStatusFieldToLabel(TimedSigninStatusField field) {
   switch (field) {
     case SIGNIN_TYPE:
-      return TimedSigninStatusValue("Type", "Time");
+      return "Type";
     case CLIENT_LOGIN_STATUS:
-      return TimedSigninStatusValue("Last OnClientLogin Status",
-                                    "Last OnClientLogin Time");
-    case OAUTH_LOGIN_STATUS:
-      return TimedSigninStatusValue("Last OnOAuthLogin Status",
-                                    "Last OnOAuthLogin Time");
-
+      return "Last OnClientLogin Received";
+    case REFRESH_TOKEN_RECEIVED:
+      return "Last RefreshToken Received";
     case GET_USER_INFO_STATUS:
-      return TimedSigninStatusValue("Last OnGetUserInfo Status",
-                                    "Last OnGetUserInfo Time");
+      return "Last OnGetUserInfo Received";
     case UBER_TOKEN_STATUS:
-      return TimedSigninStatusValue("Last OnUberToken Status",
-                                    "Last OnUberToken Time");
+      return "Last OnUberToken Received";
     case MERGE_SESSION_STATUS:
-      return TimedSigninStatusValue("Last OnMergeSession Status",
-                                    "Last OnMergeSession Time");
+      return "Last OnMergeSession Received";
     case TIMED_FIELDS_END:
       NOTREACHED();
-      return TimedSigninStatusValue("Error", std::string());
+      return "Error";
   }
   NOTREACHED();
-  return TimedSigninStatusValue("Error", std::string());
+  return "Error";
 }
 
 }  // anonymous namespace
@@ -252,6 +248,10 @@ void AboutSigninInternals::OnTokenRemoved(
   NotifyObservers();
 }
 
+void AboutSigninInternals::OnRefreshTokenReceived(std::string status) {
+  NotifySigninValueChanged(REFRESH_TOKEN_RECEIVED, status);
+}
+
 AboutSigninInternals::TokenInfo::TokenInfo(
     const std::string& consumer_id,
     const OAuth2TokenService::ScopeSet& scopes)
@@ -370,16 +370,12 @@ scoped_ptr<base::DictionaryValue> AboutSigninInternals::SigninStatus::ToValue(
   base::ListValue* detailed_info =
       AddSection(signin_info, "Last Signin Details");
   for (int i = TIMED_FIELDS_BEGIN; i < TIMED_FIELDS_END; ++i) {
-    const std::string value_field =
-        SigninStatusFieldToLabel(static_cast<TimedSigninStatusField>(i)).first;
-    const std::string time_field =
-        SigninStatusFieldToLabel(static_cast<TimedSigninStatusField>(i)).second;
+    const std::string status_field_label =
+        SigninStatusFieldToLabel(static_cast<TimedSigninStatusField>(i));
 
     AddSectionEntry(detailed_info,
-                    value_field,
-                    timed_signin_fields[i - TIMED_FIELDS_BEGIN].first);
-    AddSectionEntry(detailed_info,
-                    time_field,
+                    status_field_label,
+                    timed_signin_fields[i - TIMED_FIELDS_BEGIN].first,
                     timed_signin_fields[i - TIMED_FIELDS_BEGIN].second);
   }
 

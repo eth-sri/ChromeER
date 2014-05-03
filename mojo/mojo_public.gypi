@@ -107,6 +107,7 @@
         'mojo_test_support',
       ],
       'sources': [
+        'public/cpp/test_support/lib/test_support.cc',
         'public/cpp/test_support/lib/test_utils.cc',
         'public/cpp/test_support/test_utils.h',
       ],
@@ -117,7 +118,7 @@
       'type': 'executable',
       'dependencies': [
         '../testing/gtest.gyp:gtest',
-        'mojo_bindings',
+        'mojo_cpp_bindings',
         'mojo_environment_standalone',
         'mojo_public_test_utils',
         'mojo_run_all_unittests',
@@ -134,6 +135,7 @@
         'public/cpp/bindings/tests/router_unittest.cc',
         'public/cpp/bindings/tests/sample_service_unittest.cc',
         'public/cpp/bindings/tests/type_conversion_unittest.cc',
+        'public/cpp/bindings/tests/validation_unittest.cc',
       ],
     },
     {
@@ -157,7 +159,7 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../testing/gtest.gyp:gtest',
-        'mojo_bindings',
+        'mojo_cpp_bindings',
         'mojo_public_test_utils',
         'mojo_run_all_unittests',
       ],
@@ -175,7 +177,7 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../testing/gtest.gyp:gtest',
-        'mojo_bindings',
+        'mojo_cpp_bindings',
         'mojo_public_test_utils',
         'mojo_run_all_unittests',
         'mojo_utility',
@@ -210,7 +212,7 @@
       ],
     },
     {
-      'target_name': 'mojo_bindings',
+      'target_name': 'mojo_cpp_bindings',
       'type': 'static_library',
       'include_dirs': [
         '..'
@@ -243,6 +245,8 @@
         'public/cpp/bindings/lib/message.cc',
         'public/cpp/bindings/lib/message_builder.cc',
         'public/cpp/bindings/lib/message_builder.h',
+        'public/cpp/bindings/lib/message_header_validator.cc',
+        'public/cpp/bindings/lib/message_header_validator.h',
         'public/cpp/bindings/lib/message_internal.h',
         'public/cpp/bindings/lib/message_queue.cc',
         'public/cpp/bindings/lib/message_queue.h',
@@ -253,6 +257,15 @@
         'public/cpp/bindings/lib/shared_data.h',
         'public/cpp/bindings/lib/shared_ptr.h',
         'public/cpp/bindings/lib/sync_dispatcher.cc',
+      ],
+    },
+    {
+      'target_name': 'mojo_js_bindings',
+      'type': 'static_library',
+      'include_dirs': [
+        '..'
+      ],
+      'sources': [
         'public/js/bindings/constants.cc',
         'public/js/bindings/constants.h',
       ],
@@ -274,10 +287,10 @@
       },
       'includes': [ 'public/tools/bindings/mojom_bindings_generator.gypi' ],
       'export_dependent_settings': [
-        'mojo_bindings',
+        'mojo_cpp_bindings',
       ],
       'dependencies': [
-        'mojo_bindings',
+        'mojo_cpp_bindings',
       ],
     },
     {
@@ -337,10 +350,10 @@
       },
       'includes': [ 'public/tools/bindings/mojom_bindings_generator.gypi' ],
       'dependencies': [
-        'mojo_bindings',
+        'mojo_cpp_bindings',
       ],
       'export_dependent_settings': [
-        'mojo_bindings',
+        'mojo_cpp_bindings',
       ],
     },
     {

@@ -431,8 +431,14 @@ IN_PROC_BROWSER_TEST_F(FindInPageControllerTest, BigString) {
                             kFwd, kIgnoreCase, NULL));
 }
 
+// http://crbug.com/369169
+#if defined(OS_CHROMEOS)
+#define MAYBE_SingleOccurrence DISABLED_SingleOccurrence
+#else
+#define MAYBE_SingleOccurrence SingleOccurrence
+#endif
 // Search Back and Forward on a single occurrence.
-IN_PROC_BROWSER_TEST_F(FindInPageControllerTest, SingleOccurrence) {
+IN_PROC_BROWSER_TEST_F(FindInPageControllerTest, MAYBE_SingleOccurrence) {
   WebContents* web_contents =
       browser()->tab_strip_model()->GetActiveWebContents();
   ui_test_utils::NavigateToURL(browser(), GetURL("FindRandomTests.html"));
@@ -797,9 +803,17 @@ IN_PROC_BROWSER_TEST_F(FindInPageControllerTest, FindRestarts_Issue1155639) {
   EXPECT_EQ(1, ordinal);
 }
 
+// Disable the test for win and mac as it started being flaky, see
+// http://crbug/367701.
+#if defined(OS_MACOSX) && !defined(OS_IOS) || defined(OS_WIN)
+#define MAYBE_FindRestarts_Issue70505 DISABLED_FindRestarts_Issue70505
+#else
+#define MAYBE_FindRestarts_Issue70505 FindRestarts_Issue70505
+#endif
 // Make sure we don't get into an infinite loop when text box contains very
 // large amount of text.
-IN_PROC_BROWSER_TEST_F(FindInPageControllerTest, FindRestarts_Issue70505) {
+IN_PROC_BROWSER_TEST_F(FindInPageControllerTest,
+                       MAYBE_FindRestarts_Issue70505) {
   // First we navigate to our page.
   GURL url = GetURL(kLongTextareaPage);
   ui_test_utils::NavigateToURL(browser(), url);
