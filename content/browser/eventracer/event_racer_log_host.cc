@@ -13,7 +13,7 @@ EventRacerLogHost::EventRacerLogHost()
 
 void EventRacerLogHost::Write(scoped_ptr<EventRacerLogHost> log, int32 site_id) {
   base::FilePath path(
-    base::StringPrintf("eventracer--site-%u--id-%u.log", site_id, log->GetId()));
+    base::StringPrintf("eventracer--site-%02d--id-%02u.log", site_id, log->GetId()));
   base::File file(path, base::File::FLAG_WRITE | base::File::FLAG_CREATE_ALWAYS);
   const char data[] = "alabala";
   file.WriteAtCurrentPos(data, sizeof data - 1);
