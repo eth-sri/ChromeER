@@ -8,7 +8,8 @@ namespace content {
 
 class EventAction {
 public:
- EventAction(unsigned int id) : id_ (id) {}
+  EventAction(unsigned int);
+  ~EventAction();
 
   unsigned int GetId() { return id_; }
 
@@ -31,6 +32,8 @@ private:
 class EventRacerLogHost {
 public:
   EventRacerLogHost();
+  ~EventRacerLogHost();
+  
   uint32 GetId() const { return id_; }
 
   EventAction *CreateEventAction(unsigned int);

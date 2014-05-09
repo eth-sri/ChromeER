@@ -6,6 +6,10 @@
 
 namespace content {
 
+EventAction::EventAction(unsigned int id) : id_(id) {}
+
+EventAction::~EventAction() {}
+
 void EventAction::AddEdge(unsigned int dst) {
   if (std::find(edges_.begin(), edges_.end(), dst) == edges_.end())
     edges_.push_back(dst);
@@ -16,6 +20,8 @@ uint32 EventRacerLogHost::next_event_racer_log_id_ = 1;
 EventRacerLogHost::EventRacerLogHost()
  : id_ (next_event_racer_log_id_++) {
 }
+
+EventRacerLogHost::~EventRacerLogHost() {}
 
 EventAction *EventRacerLogHost::CreateEventAction(unsigned int id) {
   scoped_ptr<EventAction> a(new EventAction(id));
