@@ -2699,19 +2699,18 @@ void RenderFrameImpl::didStartEventRacerLog()
   Send(new FrameHostMsg_StartEventRacerLog(routing_id_));
 }
 
-void RenderFrameImpl::didStartEventRacerEvent(unsigned int)
+void RenderFrameImpl::didCompleteEventAction(const blink::WebEventAction &a)
 {
-
+  Send(new FrameHostMsg_CompletedEventAction(routing_id_, a));
 }
 
-void RenderFrameImpl::didEndEventRacerEvent()
+void RenderFrameImpl::didHappenBefore(const blink::WebVector<blink::WebEventActionEdge> &wv)
 {
-
-}
-
-void RenderFrameImpl::didEventRacerOperation()
-{
-
+  std::vector<blink::WebEventActionEdge> v;
+  v.reserve(wv.size());
+  for (size_t i = 0; i < wv.size(); ++i)
+    v.push_back(wv[i]);
+  Send(new FrameHostMsg_HappensBefore(routing_id_, v));
 }
 
 void RenderFrameImpl::AddObserver(RenderFrameObserver* observer) {

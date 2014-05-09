@@ -37,7 +37,7 @@ SiteInstanceImpl::~SiteInstanceImpl() {
   if (event_racer_log_) {
     BrowserThread::PostTask(
       BrowserThread::FILE, FROM_HERE,
-      base::Bind(&EventRacerLogHost::Write, Passed(event_racer_log_.Pass()), id_));
+      base::Bind(&EventRacerLogHost::WriteDot, Passed(event_racer_log_.Pass()), id_));
   }
 
   GetContentClient()->browser()->SiteInstanceDeleting(this);
@@ -201,7 +201,7 @@ void SiteInstanceImpl::StartEventRacerLog() {
   if (log) {
     BrowserThread::PostTask(
       BrowserThread::FILE, FROM_HERE,
-      base::Bind(&EventRacerLogHost::Write, Passed(log.Pass()), id_));
+      base::Bind(&EventRacerLogHost::WriteDot, Passed(log.Pass()), id_));
   }
 }
 

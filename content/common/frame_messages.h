@@ -11,6 +11,7 @@
 #include "content/common/frame_param.h"
 #include "content/common/navigation_gesture.h"
 #include "content/public/common/color_suggestion.h"
+#include "content/public/common/eventracer.h"
 #include "content/public/common/common_param_traits.h"
 #include "content/public/common/context_menu_params.h"
 #include "content/public/common/frame_navigate_params.h"
@@ -574,5 +575,25 @@ IPC_MESSAGE_ROUTED2(FrameHostMsg_SetSelectedColorInColorChooser,
                     int /* id */,
                     SkColor /* color */)
 
+// -----------------------------------------------------------------------------
+// EventRacer messages
+IPC_STRUCT_TRAITS_BEGIN(blink::WebOperation)
+  IPC_STRUCT_TRAITS_MEMBER(type)
+  IPC_STRUCT_TRAITS_MEMBER(location)
+IPC_STRUCT_TRAITS_END()
+
+IPC_STRUCT_TRAITS_BEGIN(blink::WebEventAction)
+  IPC_STRUCT_TRAITS_MEMBER(id)
+  IPC_STRUCT_TRAITS_MEMBER(type)
+  IPC_STRUCT_TRAITS_MEMBER(ops)
+IPC_STRUCT_TRAITS_END()
+
 // Start a new EventRacer log.
 IPC_MESSAGE_ROUTED0(FrameHostMsg_StartEventRacerLog)
+
+// Completed an EventRacer action.
+IPC_MESSAGE_ROUTED1(FrameHostMsg_CompletedEventAction, blink::WebEventAction)
+
+// HappensBefore edges
+IPC_MESSAGE_ROUTED1(FrameHostMsg_HappensBefore,
+                    std::vector<blink::WebEventActionEdge>)

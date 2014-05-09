@@ -289,6 +289,8 @@ bool RenderFrameHostImpl::OnMessageReceived(const IPC::Message &msg) {
     IPC_MESSAGE_HANDLER_DELAY_REPLY(FrameHostMsg_RunBeforeUnloadConfirm,
                                     OnRunBeforeUnloadConfirm)
     IPC_MESSAGE_HANDLER(FrameHostMsg_StartEventRacerLog, OnStartEventRacerLog)
+    IPC_MESSAGE_HANDLER(FrameHostMsg_CompletedEventAction, OnCompletedEventAction)
+    IPC_MESSAGE_HANDLER(FrameHostMsg_HappensBefore, OnHappensBefore)
     IPC_MESSAGE_HANDLER(FrameHostMsg_DidAccessInitialDocument,
                         OnDidAccessInitialDocument)
     IPC_MESSAGE_HANDLER(DesktopNotificationHostMsg_RequestPermission,
@@ -650,6 +652,16 @@ void RenderFrameHostImpl::OnRunBeforeUnloadConfirm(
 
 void RenderFrameHostImpl::OnStartEventRacerLog() {
   GetSiteInstance()->StartEventRacerLog();
+}
+
+void RenderFrameHostImpl::OnCompletedEventAction(const blink::WebEventAction &a) {
+  GetSiteInstance()->GetEventRacerLog()->CreateEventAction(a.id);
+}
+
+void RenderFrameHostImpl::OnHappensBefore(const std::vector<blink::WebEventActionEdge> &v) {
+  EventRacerLogHost *log = GetSiteInstance()->GetEventRacerLog();
+  for (size_t i = 0; i < v.size(); ++i)
+      log->CreateEdge(v[i].first, v[i].second);
 }
 
 void RenderFrameHostImpl::OnRequestDesktopNotificationPermission(

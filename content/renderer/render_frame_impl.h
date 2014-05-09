@@ -20,6 +20,7 @@
 #include "content/renderer/renderer_webcookiejar_impl.h"
 #include "ipc/ipc_message.h"
 #include "third_party/WebKit/public/web/WebDataSource.h"
+#include "third_party/WebKit/public/web/WebEventRacer.h"
 #include "third_party/WebKit/public/web/WebFrameClient.h"
 #include "third_party/WebKit/public/web/WebHistoryCommitType.h"
 #include "ui/gfx/range/range.h"
@@ -365,11 +366,8 @@ class CONTENT_EXPORT RenderFrameImpl
 
   // EventRacer ------------------------------------------------------
   virtual void didStartEventRacerLog() OVERRIDE;
-
-  virtual void didStartEventRacerEvent(unsigned int id) OVERRIDE;
-  virtual void didEndEventRacerEvent() OVERRIDE;
-
-  virtual void didEventRacerOperation() OVERRIDE;
+  virtual void didCompleteEventAction(const blink::WebEventAction &) OVERRIDE;
+  virtual void didHappenBefore(const blink::WebVector<blink::WebEventActionEdge> &) OVERRIDE;
 
   // TODO(nasko): Make all tests in RenderViewImplTest friends and then move
   // this back to private member.
