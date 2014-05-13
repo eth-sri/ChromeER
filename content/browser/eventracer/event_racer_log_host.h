@@ -6,6 +6,33 @@
 
 namespace content {
 
+namespace detail {
+
+class Operation {
+public:
+  enum Type {
+    ENTER_SCOPE,
+    EXIT_SCOPE,
+    READ_MEMORY,
+    WRITE_MEMORY,
+    TRIGGER_ARC,
+    MEMORY_VALUE,
+    OTHER
+  };
+
+  Operation(Type type, size_t loc = 0) : type_(type), loc_(loc) {}
+
+  Type GetType() const { return type_; }
+  const char *GetTypeStr() const;
+
+  size_t GetLocation() const { return loc_ ;}
+
+private:
+  Type type_;
+  size_t loc_;
+  static const char *typestr[];
+};
+
 class EventAction {
 public:
   EventAction(unsigned int);
@@ -15,30 +42,38 @@ public:
 
   void AddEdge(unsigned int dst);
 
-  typedef std::vector<unsigned int>::iterator iterator;
-  typedef std::vector<unsigned int>::const_iterator const_iterator;
+  typedef std::vector<unsigned int> EdgesType;
+  EdgesType       &Edges()       { return edges_; }
+  const EdgesType &Edges() const { return edges_; }
 
-  iterator begin() { return edges_.begin(); }
-  const_iterator begin() const { return edges_.begin(); }
+  void AddOperation(unsigned int, size_t);
 
-  iterator end() { return edges_.end(); }
-  const_iterator end() const { return edges_.end(); }
+  typedef std::vector<Operation> OpsType;
+  OpsType       &Ops()       { return ops_; }
+  const OpsType &Ops() const { return ops_; }
 
 private:
   unsigned int id_;
-  std::vector<unsigned int> edges_;
+  EdgesType edges_;
+  OpsType ops_;
 };
+
+} // end namespace detail
 
 class EventRacerLogHost {
 public:
   EventRacerLogHost();
   ~EventRacerLogHost();
-  
+
+  typedef detail::EventAction EventAction;
+  typedef detail::Operation Operation;
+
   uint32 GetId() const { return id_; }
 
   EventAction *CreateEventAction(unsigned int);
   void CreateEdge(unsigned int, unsigned int);
-
+  void UpdateStringTable(size_t, const std::vector<std::string> &);
+  
   static void WriteDot(scoped_ptr<EventRacerLogHost> log, int32 site_id);
 
 private:
@@ -47,6 +82,7 @@ private:
 
   typedef base::ScopedPtrHashMap<unsigned int, EventAction> ActionsMapType;
   ActionsMapType actions_;
+  std::vector<std::string> strings_;
 };
 
 } // namespace content

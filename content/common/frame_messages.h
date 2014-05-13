@@ -597,3 +597,5 @@ IPC_MESSAGE_ROUTED1(FrameHostMsg_CompletedEventAction, blink::WebEventAction)
 // HappensBefore edges
 IPC_MESSAGE_ROUTED1(FrameHostMsg_HappensBefore,
                     std::vector<blink::WebEventActionEdge>)
+
+IPC_MESSAGE_ROUTED2(FrameHostMsg_UpdateStringTable, size_t, std::vector<std::string>)

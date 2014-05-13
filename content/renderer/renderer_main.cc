@@ -120,6 +120,8 @@ int RendererMain(const MainFunctionParams& parameters) {
   base::debug::TraceLog::GetInstance()->SetProcessSortIndex(
       kTraceEventRendererProcessSortIndex);
 
+  base::PlatformThread::Sleep(base::TimeDelta::FromSeconds(20));
+
   const CommandLine& parsed_command_line = parameters.command_line;
 
 #if defined(OS_MACOSX)

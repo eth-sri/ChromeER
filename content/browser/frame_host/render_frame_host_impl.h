@@ -221,6 +221,8 @@ class CONTENT_EXPORT RenderFrameHostImpl : public RenderFrameHost {
   void OnStartEventRacerLog();
   void OnCompletedEventAction(const blink::WebEventAction &);
   void OnHappensBefore(const std::vector<blink::WebEventActionEdge> &);
+  void OnUpdateStringTable(size_t, const std::vector<std::string> &);
+
   void OnRequestDesktopNotificationPermission(const GURL& origin,
                                               int callback_id);
   void OnShowDesktopNotification(

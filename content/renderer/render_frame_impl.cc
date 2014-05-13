@@ -2693,7 +2693,7 @@ void RenderFrameImpl::initializeChildFrame(const blink::WebRect& frame_rect,
       routing_id_, frame_rect, scale_factor));
 }
 
-  // EventRacer ------------------------------------------------------
+// EventRacer ------------------------------------------------------
 void RenderFrameImpl::didStartEventRacerLog()
 {
   Send(new FrameHostMsg_StartEventRacerLog(routing_id_));
@@ -2711,6 +2711,13 @@ void RenderFrameImpl::didHappenBefore(const blink::WebVector<blink::WebEventActi
   for (size_t i = 0; i < wv.size(); ++i)
     v.push_back(wv[i]);
   Send(new FrameHostMsg_HappensBefore(routing_id_, v));
+}
+
+void RenderFrameImpl::didUpdateStringTable(size_t index, const WebVector<WebString> &wv) {
+  std::vector<std::string> v;
+  for (size_t i = 0; i < wv.size(); ++i)
+    v.push_back (wv[i].latin1());
+  Send(new FrameHostMsg_UpdateStringTable(routing_id_, index, v));
 }
 
 void RenderFrameImpl::AddObserver(RenderFrameObserver* observer) {
