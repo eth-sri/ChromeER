@@ -8,7 +8,7 @@ namespace content {
 
 namespace detail {
 
-const char * Operation::typestr[] = { "enter: ", "exit: ", "read: ", "write: ",
+const char * Operation::typestr[] = { "", "", "read: ", "write: ",
                                       "trigger: ", "value: ", "other: " };
 
 const char *Operation::GetTypeStr() const {
@@ -89,8 +89,8 @@ void EventRacerLogHost::WriteDot(scoped_ptr<EventRacerLogHost> log, int32 site_i
           dotsrc += "\\l";
         }
       }
-      dotsrc += "\"\n]\n\n";
     }
+    dotsrc += "\"\n]\n\n";
 
   // Output edges.
     EventAction::EdgesType::const_iterator j;
