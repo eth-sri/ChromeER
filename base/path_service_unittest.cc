@@ -177,11 +177,15 @@ TEST_F(PathServiceTest, Override) {
       base::MakeAbsoluteFilePath(temp_dir.path()).AppendASCII("non_existent"));
   EXPECT_TRUE(non_existent.IsAbsolute());
   EXPECT_FALSE(base::PathExists(non_existent));
+#if !defined(OS_ANDROID)
   // This fails because MakeAbsoluteFilePath fails for non-existent files.
+  // Earlier versions of Bionic libc don't fail for non-existent files, so
+  // skip this check on Android.
   EXPECT_FALSE(PathService::OverrideAndCreateIfNeeded(my_special_key,
                                                       non_existent,
                                                       false,
                                                       false));
+#endif
   // This works because indicating that |non_existent| is absolute skips the
   // internal MakeAbsoluteFilePath call.
   EXPECT_TRUE(PathService::OverrideAndCreateIfNeeded(my_special_key,

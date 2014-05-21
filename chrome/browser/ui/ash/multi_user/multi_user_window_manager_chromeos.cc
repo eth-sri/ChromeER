@@ -14,13 +14,14 @@
 #include "ash/shell.h"
 #include "ash/shell_delegate.h"
 #include "ash/shell_window_ids.h"
+#include "ash/system/tray/system_tray_notifier.h"
 #include "ash/wm/window_state.h"
 #include "base/auto_reset.h"
 #include "base/message_loop/message_loop.h"
 #include "base/strings/string_util.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/ash/multi_user/multi_user_notification_blocker_chromeos.h"
@@ -197,8 +198,6 @@ class AppObserver : public apps::AppWindowRegistry::Observer {
     MultiUserWindowManagerChromeOS::GetInstance()->SetWindowOwner(window,
                                                                   user_id_);
   }
-  virtual void OnAppWindowIconChanged(apps::AppWindow* app_window) OVERRIDE {}
-  virtual void OnAppWindowRemoved(apps::AppWindow* app_window) OVERRIDE {}
 
  private:
   std::string user_id_;
@@ -400,6 +399,11 @@ void MultiUserWindowManagerChromeOS::ActiveUserChanged(
   animation_.reset(
       new UserSwichAnimatorChromeOS(
           this, user_id, GetAdjustedAnimationTimeInMS(kUserFadeTimeMS)));
+  // Call notifier here instead of observing ActiveUserChanged because
+  // this must happen after MultiUserWindowManagerChromeOS is notified.
+  ash::Shell::GetInstance()
+      ->system_tray_notifier()
+      ->NotifyMediaCaptureChanged();
 }
 
 void MultiUserWindowManagerChromeOS::OnWindowDestroyed(aura::Window* window) {

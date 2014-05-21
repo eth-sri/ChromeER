@@ -120,7 +120,8 @@ TEST(NinjaActionTargetWriter, ActionWithSources) {
         "  command = /usr/bin/python ../../foo/script.py\n"
         "  description = ACTION //foo:bar()\n"
         "  restat = 1\n"
-        "obj/foo/bar.inputdeps.stamp: stamp ../../foo/included.txt ../../foo/source.txt\n"
+        "build obj/foo/bar.inputdeps.stamp: "
+            "stamp ../../foo/included.txt ../../foo/source.txt\n"
         "\n"
         "build foo.out: __foo_bar___rule | obj/foo/bar.inputdeps.stamp\n"
         "\n"
@@ -153,7 +154,8 @@ TEST(NinjaActionTargetWriter, ActionWithSources) {
         "  restat = 1\n"
         "  rspfile = __foo_bar___rule.$unique_name.rsp\n"
         "  rspfile_content = C$:/python/python.exe ../../foo/script.py\n"
-        "obj/foo/bar.inputdeps.stamp: stamp ../../foo/included.txt ../../foo/source.txt\n"
+        "build obj/foo/bar.inputdeps.stamp: "
+            "stamp ../../foo/included.txt ../../foo/source.txt\n"
         "\n"
         "build foo.out: __foo_bar___rule | obj/foo/bar.inputdeps.stamp\n"
         "\n"
@@ -169,8 +171,20 @@ TEST(NinjaActionTargetWriter, ActionWithSources) {
 TEST(NinjaActionTargetWriter, ForEach) {
   TestWithScope setup;
   setup.build_settings()->SetBuildDir(SourceDir("//out/Debug/"));
+
+  // Some dependencies that the action can depend on. Use actions for these
+  // so they have a nice platform-independent stamp file that can appear in the
+  // output (rather than having to worry about how the current platform names
+  // binaries).
+  Target dep(setup.settings(), Label(SourceDir("//foo/"), "dep"));
+  dep.set_output_type(Target::ACTION);
+  Target datadep(setup.settings(), Label(SourceDir("//foo/"), "datadep"));
+  datadep.set_output_type(Target::ACTION);
+
   Target target(setup.settings(), Label(SourceDir("//foo/"), "bar"));
   target.set_output_type(Target::ACTION_FOREACH);
+  target.deps().push_back(LabelTargetPair(&dep));
+  target.datadeps().push_back(LabelTargetPair(&datadep));
 
   target.sources().push_back(SourceFile("//foo/input1.txt"));
   target.sources().push_back(SourceFile("//foo/input2.txt"));
@@ -203,7 +217,8 @@ TEST(NinjaActionTargetWriter, ForEach) {
             "\"--out=foo$ bar${source_name_part}.o\"\n"
         "  description = ACTION //foo:bar()\n"
         "  restat = 1\n"
-        "obj/foo/bar.inputdeps.stamp: stamp ../../foo/included.txt\n"
+        "build obj/foo/bar.inputdeps.stamp: "
+            "stamp ../../foo/included.txt obj/foo/dep.stamp\n"
         "\n"
         "build input1.out: __foo_bar___rule ../../foo/input1.txt | "
             "obj/foo/bar.inputdeps.stamp\n"
@@ -214,7 +229,8 @@ TEST(NinjaActionTargetWriter, ForEach) {
         "  source = ../../foo/input2.txt\n"
         "  source_name_part = input2\n"
         "\n"
-        "build obj/foo/bar.stamp: stamp input1.out input2.out\n";
+        "build obj/foo/bar.stamp: "
+            "stamp input1.out input2.out obj/foo/datadep.stamp\n";
 
     std::string out_str = out.str();
 #if defined(OS_WIN)
@@ -246,7 +262,8 @@ TEST(NinjaActionTargetWriter, ForEach) {
         "  rspfile = __foo_bar___rule.$unique_name.rsp\n"
         "  rspfile_content = C$:/python/python.exe ../../foo/script.py -i "
             "${source} \"--out=foo$ bar${source_name_part}.o\"\n"
-        "obj/foo/bar.inputdeps.stamp: stamp ../../foo/included.txt\n"
+        "build obj/foo/bar.inputdeps.stamp: "
+            "stamp ../../foo/included.txt obj/foo/dep.stamp\n"
         "\n"
         "build input1.out: __foo_bar___rule ../../foo/input1.txt | "
             "obj/foo/bar.inputdeps.stamp\n"
@@ -259,7 +276,8 @@ TEST(NinjaActionTargetWriter, ForEach) {
         "  source = ../../foo/input2.txt\n"
         "  source_name_part = input2\n"
         "\n"
-        "build obj/foo/bar.stamp: stamp input1.out input2.out\n";
+        "build obj/foo/bar.stamp: "
+            "stamp input1.out input2.out obj/foo/datadep.stamp\n";
     std::string out_str = out.str();
 #if defined(OS_WIN)
     std::replace(out_str.begin(), out_str.end(), '\\', '/');
@@ -307,7 +325,7 @@ TEST(NinjaActionTargetWriter, ForEachWithDepfile) {
             "\"--out=foo$ bar${source_name_part}.o\"\n"
         "  description = ACTION //foo:bar()\n"
         "  restat = 1\n"
-        "obj/foo/bar.inputdeps.stamp: stamp ../../foo/included.txt\n"
+        "build obj/foo/bar.inputdeps.stamp: stamp ../../foo/included.txt\n"
         "\n"
         "build gen/input1.d input1.out: __foo_bar___rule ../../foo/input1.txt"
             " | obj/foo/bar.inputdeps.stamp\n"
@@ -352,7 +370,7 @@ TEST(NinjaActionTargetWriter, ForEachWithDepfile) {
         "  rspfile = __foo_bar___rule.$unique_name.rsp\n"
         "  rspfile_content = C$:/python/python.exe ../../foo/script.py -i "
             "${source} \"--out=foo$ bar${source_name_part}.o\"\n"
-        "obj/foo/bar.inputdeps.stamp: stamp ../../foo/included.txt\n"
+        "build obj/foo/bar.inputdeps.stamp: stamp ../../foo/included.txt\n"
         "\n"
         "build gen/input1.d input1.out: __foo_bar___rule ../../foo/input1.txt"
             " | obj/foo/bar.inputdeps.stamp\n"

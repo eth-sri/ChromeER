@@ -1939,6 +1939,10 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, MAYBE_DownloadTest_History) {
   std::string last_modified = item->GetLastModifiedTime();
   base::TrimWhitespaceASCII(last_modified, base::TRIM_ALL, &last_modified);
   EXPECT_EQ("Mon, 13 Nov 2006 20:31:09 GMT", last_modified);
+
+  // Downloads that were restored from history shouldn't cause the download
+  // shelf to be displayed.
+  EXPECT_FALSE(browser()->window()->IsDownloadShelfVisible());
 }
 
 // Test for crbug.com/14505. This tests that chrome:// urls are still functional
@@ -3211,4 +3215,18 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, Resumption_MultipleAttempts) {
   EXPECT_EQ(DownloadItem::COMPLETE, download->GetState());
 
   EXPECT_FALSE(DidShowFileChooser());
+}
+
+// The file empty.bin is served with a MIME type of application/octet-stream.
+// The content body is empty. Make sure this case is handled properly and we
+// don't regress on http://crbug.com/320394.
+IN_PROC_BROWSER_TEST_F(DownloadTest, DownloadTest_GZipWithNoContent) {
+  ASSERT_TRUE(test_server()->Start());
+  GURL url(test_server()->GetURL("files/downloads/empty.bin"));
+  // Downloading the same URL twice causes the second request to be served from
+  // cached (with a high probability). This test verifies that that doesn't
+  // happen regardless of whether the request is served via the cache or from
+  // the network.
+  DownloadAndWait(browser(), url);
+  DownloadAndWait(browser(), url);
 }

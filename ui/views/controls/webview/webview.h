@@ -94,6 +94,7 @@ class WEBVIEW_EXPORT WebView : public View,
 
   // Overridden from View:
   virtual const char* GetClassName() const OVERRIDE;
+  virtual ui::TextInputClient* GetTextInputClient() OVERRIDE;
 
  protected:
   // Overridden from View:
@@ -107,13 +108,15 @@ class WEBVIEW_EXPORT WebView : public View,
   virtual void AboutToRequestFocusFromTabTraversal(bool reverse) OVERRIDE;
   virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
   virtual gfx::NativeViewAccessible GetNativeViewAccessible() OVERRIDE;
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
 
   // Overridden from content::WebContentsDelegate:
   virtual void WebContentsFocused(content::WebContents* web_contents) OVERRIDE;
   virtual bool EmbedsFullscreenWidget() const OVERRIDE;
 
   // Overridden from content::WebContentsObserver:
+  virtual void RenderViewDeleted(
+      content::RenderViewHost* render_view_host) OVERRIDE;
   virtual void RenderViewHostChanged(
       content::RenderViewHost* old_host,
       content::RenderViewHost* new_host) OVERRIDE;
@@ -124,11 +127,13 @@ class WEBVIEW_EXPORT WebView : public View,
   // instantiation of the inline IPC::Listener methods in all translation units.
   virtual void OnChannelConnected(int32 peer_id) OVERRIDE {}
   virtual void OnChannelError() OVERRIDE {}
+  virtual void OnBadMessageReceived(const IPC::Message& message) OVERRIDE {}
 
  private:
   void AttachWebContents();
   void DetachWebContents();
   void ReattachForFullscreenChange(bool enter_fullscreen);
+  void NotifyMaybeTextInputClientChanged();
 
   // Create a regular or test web contents (based on whether we're running
   // in a unit test or not).

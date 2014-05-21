@@ -9,11 +9,10 @@
 
 #include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
+#include "gpu/command_buffer/client/gpu_control.h"
 #include "gpu/command_buffer/common/command_buffer.h"
 #include "gpu/command_buffer/common/command_buffer_shared.h"
-#include "gpu/command_buffer/common/gpu_control.h"
 #include "mojo/public/cpp/bindings/error_handler.h"
-#include "mojo/public/cpp/bindings/remote_ptr.h"
 #include "mojo/services/gles2/command_buffer.mojom.h"
 
 namespace base {
@@ -43,7 +42,7 @@ class CommandBufferClientImpl : public CommandBufferClient,
   explicit CommandBufferClientImpl(
       CommandBufferDelegate* delegate,
       MojoAsyncWaiter* async_waiter,
-      ScopedCommandBufferHandle command_buffer_handle);
+      ScopedMessagePipeHandle command_buffer_handle);
   virtual ~CommandBufferClientImpl();
 
   // CommandBuffer implementation:
@@ -63,6 +62,7 @@ class CommandBufferClientImpl : public CommandBufferClient,
   virtual gfx::GpuMemoryBuffer* CreateGpuMemoryBuffer(size_t width,
                                                       size_t height,
                                                       unsigned internalformat,
+                                                      unsigned usage,
                                                       int32* id) OVERRIDE;
   virtual void DestroyGpuMemoryBuffer(int32 id) OVERRIDE;
   virtual uint32 InsertSyncPoint() OVERRIDE;
@@ -87,7 +87,7 @@ class CommandBufferClientImpl : public CommandBufferClient,
   virtual void LostContext(int32_t lost_reason) OVERRIDE;
 
   // ErrorHandler implementation:
-  virtual void OnError() OVERRIDE;
+  virtual void OnConnectionError() OVERRIDE;
 
   virtual void DrawAnimationFrame() OVERRIDE;
 
@@ -97,7 +97,7 @@ class CommandBufferClientImpl : public CommandBufferClient,
   gpu::CommandBufferSharedState* shared_state() const { return shared_state_; }
 
   CommandBufferDelegate* delegate_;
-  RemotePtr<mojo::CommandBuffer> command_buffer_;
+  CommandBufferPtr command_buffer_;
   scoped_ptr<SyncDispatcher<CommandBufferSyncClient> > sync_dispatcher_;
 
   State last_state_;
@@ -107,6 +107,7 @@ class CommandBufferClientImpl : public CommandBufferClient,
   int32 next_transfer_buffer_id_;
 
   bool initialize_result_;
+  MojoAsyncWaiter* async_waiter_;
 };
 
 }  // gles2

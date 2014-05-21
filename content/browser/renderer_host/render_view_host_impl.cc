@@ -39,6 +39,7 @@
 #include "content/browser/renderer_host/media/audio_renderer_host.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_view_host_delegate.h"
+#include "content/browser/renderer_host/render_view_host_delegate_view.h"
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/common/accessibility_messages.h"
 #include "content/common/browser_plugin/browser_plugin_messages.h"
@@ -52,7 +53,6 @@
 #include "content/common/swapped_out_messages.h"
 #include "content/common/view_messages.h"
 #include "content/common/web_ui_setup.mojom.h"
-#include "content/port/browser/render_view_host_delegate_view.h"
 #include "content/public/browser/ax_event_notification_details.h"
 #include "content/public/browser/browser_accessibility_state.h"
 #include "content/public/browser/browser_context.h"
@@ -108,20 +108,6 @@ using blink::WebPluginAction;
 
 namespace content {
 namespace {
-
-// Translate a WebKit text direction into a base::i18n one.
-base::i18n::TextDirection WebTextDirectionToChromeTextDirection(
-    blink::WebTextDirection dir) {
-  switch (dir) {
-    case blink::WebTextDirectionLeftToRight:
-      return base::i18n::LEFT_TO_RIGHT;
-    case blink::WebTextDirectionRightToLeft:
-      return base::i18n::RIGHT_TO_LEFT;
-    default:
-      NOTREACHED();
-      return base::i18n::UNKNOWN_DIRECTION;
-  }
-}
 
 #if defined(OS_WIN)
 
@@ -215,7 +201,8 @@ RenderViewHostImpl::RenderViewHostImpl(
       sudden_termination_allowed_(false),
       render_view_termination_status_(base::TERMINATION_STATUS_STILL_RUNNING),
       virtual_keyboard_requested_(false),
-      weak_factory_(this) {
+      weak_factory_(this),
+      is_focused_element_editable_(false) {
   DCHECK(instance_.get());
   CHECK(delegate_);  // http://crbug.com/82827
 
@@ -276,6 +263,7 @@ SiteInstance* RenderViewHostImpl::GetSiteInstance() const {
 bool RenderViewHostImpl::CreateRenderView(
     const base::string16& frame_name,
     int opener_route_id,
+    int proxy_route_id,
     int32 max_page_id,
     bool window_was_created_with_opener) {
   TRACE_EVENT0("renderer_host", "RenderViewHostImpl::CreateRenderView");
@@ -314,6 +302,7 @@ bool RenderViewHostImpl::CreateRenderView(
   // Ensure the RenderView sets its opener correctly.
   params.opener_route_id = opener_route_id;
   params.swapped_out = !IsRVHStateActive(rvh_state_);
+  params.proxy_routing_id = proxy_route_id;
   params.hidden = is_hidden();
   params.never_visible = delegate_->IsNeverVisible();
   params.window_was_created_with_opener = window_was_created_with_opener;
@@ -420,7 +409,7 @@ WebPreferences RenderViewHostImpl::GetWebkitPrefs(const GURL& url) {
       atoi(command_line.GetSwitchValueASCII(
       switches::kAcceleratedCanvas2dMSAASampleCount).c_str());
   prefs.deferred_filters_enabled =
-      command_line.HasSwitch(switches::kEnableDeferredFilters);
+      !command_line.HasSwitch(switches::kDisableDeferredFilters);
   prefs.container_culling_enabled =
       command_line.HasSwitch(switches::kEnableContainerCulling);
   prefs.lazy_layout_enabled =
@@ -686,12 +675,11 @@ void RenderViewHostImpl::SetWebUIHandle(mojo::ScopedMessagePipeHandle handle) {
 
   DCHECK(renderer_initialized_);
 
-  mojo::InterfacePipe<WebUISetup, mojo::AnyInterface> pipe;
-  mojo::RemotePtr<WebUISetup> web_ui_setup(pipe.handle_to_self.Pass(), NULL);
-  web_ui_setup->SetWebUIHandle(GetRoutingID(), handle.Pass());
-
+  WebUISetupPtr web_ui_setup;
   static_cast<RenderProcessHostImpl*>(GetProcess())->ConnectTo(
-      kRendererService_WebUISetup, pipe.handle_to_peer.Pass());
+      kRendererService_WebUISetup, &web_ui_setup);
+
+  web_ui_setup->SetWebUIHandle(GetRoutingID(), handle.Pass());
 }
 
 #if defined(OS_ANDROID)
@@ -983,8 +971,7 @@ bool RenderViewHostImpl::OnMessageReceived(const IPC::Message& msg) {
     return true;
 
   bool handled = true;
-  bool msg_is_ok = true;
-  IPC_BEGIN_MESSAGE_MAP_EX(RenderViewHostImpl, msg, msg_is_ok)
+  IPC_BEGIN_MESSAGE_MAP(RenderViewHostImpl, msg)
     IPC_MESSAGE_HANDLER(ViewHostMsg_ShowView, OnShowView)
     IPC_MESSAGE_HANDLER(ViewHostMsg_ShowWidget, OnShowWidget)
     IPC_MESSAGE_HANDLER(ViewHostMsg_ShowFullscreenWidget,
@@ -993,20 +980,13 @@ bool RenderViewHostImpl::OnMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(ViewHostMsg_RenderViewReady, OnRenderViewReady)
     IPC_MESSAGE_HANDLER(ViewHostMsg_RenderProcessGone, OnRenderProcessGone)
     IPC_MESSAGE_HANDLER(ViewHostMsg_UpdateState, OnUpdateState)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_UpdateTitle, OnUpdateTitle)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_UpdateEncoding, OnUpdateEncoding)
     IPC_MESSAGE_HANDLER(ViewHostMsg_UpdateTargetURL, OnUpdateTargetURL)
     IPC_MESSAGE_HANDLER(ViewHostMsg_UpdateInspectorSetting,
                         OnUpdateInspectorSetting)
     IPC_MESSAGE_HANDLER(ViewHostMsg_Close, OnClose)
     IPC_MESSAGE_HANDLER(ViewHostMsg_RequestMove, OnRequestMove)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_DidChangeLoadProgress,
-                        OnDidChangeLoadProgress)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_DidDisownOpener, OnDidDisownOpener)
     IPC_MESSAGE_HANDLER(ViewHostMsg_DocumentAvailableInMainFrame,
                         OnDocumentAvailableInMainFrame)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_DocumentOnLoadCompletedInMainFrame,
-                        OnDocumentOnLoadCompletedInMainFrame)
     IPC_MESSAGE_HANDLER(ViewHostMsg_ToggleFullscreen, OnToggleFullscreen)
     IPC_MESSAGE_HANDLER(ViewHostMsg_DidContentsPreferredSizeChange,
                         OnDidContentsPreferredSizeChange)
@@ -1042,14 +1022,7 @@ bool RenderViewHostImpl::OnMessageReceived(const IPC::Message& msg) {
     // Have the super handle all other messages.
     IPC_MESSAGE_UNHANDLED(
         handled = RenderWidgetHostImpl::OnMessageReceived(msg))
-  IPC_END_MESSAGE_MAP_EX()
-
-  if (!msg_is_ok) {
-    // The message had a handler, but its de-serialization failed.
-    // Kill the renderer.
-    RecordAction(base::UserMetricsAction("BadMessageTerminate_RVH"));
-    GetProcess()->ReceivedBadMessage();
-  }
+  IPC_END_MESSAGE_MAP()
 
   return handled;
 }
@@ -1186,24 +1159,6 @@ void RenderViewHostImpl::OnUpdateState(int32 page_id, const PageState& state) {
   delegate_->UpdateState(this, page_id, state);
 }
 
-void RenderViewHostImpl::OnUpdateTitle(
-    int32 page_id,
-    const base::string16& title,
-    blink::WebTextDirection title_direction) {
-  if (title.length() > kMaxTitleChars) {
-    NOTREACHED() << "Renderer sent too many characters in title.";
-    return;
-  }
-
-  delegate_->UpdateTitle(this, page_id, title,
-                         WebTextDirectionToChromeTextDirection(
-                             title_direction));
-}
-
-void RenderViewHostImpl::OnUpdateEncoding(const std::string& encoding_name) {
-  delegate_->UpdateEncoding(this, encoding_name);
-}
-
 void RenderViewHostImpl::OnUpdateTargetURL(int32 page_id, const GURL& url) {
   if (IsRVHStateActive(rvh_state_))
     delegate_->UpdateTargetURL(page_id, url);
@@ -1231,21 +1186,8 @@ void RenderViewHostImpl::OnRequestMove(const gfx::Rect& pos) {
   Send(new ViewMsg_Move_ACK(GetRoutingID()));
 }
 
-void RenderViewHostImpl::OnDidChangeLoadProgress(double load_progress) {
-  delegate_->DidChangeLoadProgress(load_progress);
-}
-
-void RenderViewHostImpl::OnDidDisownOpener() {
-  delegate_->DidDisownOpener(this);
-}
-
 void RenderViewHostImpl::OnDocumentAvailableInMainFrame() {
   delegate_->DocumentAvailableInMainFrame(this);
-}
-
-void RenderViewHostImpl::OnDocumentOnLoadCompletedInMainFrame(
-    int32 page_id) {
-  delegate_->DocumentOnLoadCompletedInMainFrame(this, page_id);
 }
 
 void RenderViewHostImpl::OnToggleFullscreen(bool enter_fullscreen) {
@@ -1347,7 +1289,7 @@ void RenderViewHostImpl::OnStartDragging(
       filtered_data.file_system_files.push_back(drop_data.file_system_files[i]);
   }
 
-  float scale = ui::GetImageScale(GetScaleFactorForView(GetView()));
+  float scale = GetScaleFactorForView(GetView());
   gfx::ImageSkia image(gfx::ImageSkiaRep(bitmap, scale));
   view->StartDragging(filtered_data, drag_operations_mask, image,
       bitmap_offset_in_dip, event_info);
@@ -1373,6 +1315,7 @@ void RenderViewHostImpl::OnTakeFocus(bool reverse) {
 }
 
 void RenderViewHostImpl::OnFocusedNodeChanged(bool is_editable_node) {
+  is_focused_element_editable_ = is_editable_node;
   if (view_)
     view_->FocusedNodeChanged(is_editable_node);
 #if defined(OS_WIN)
@@ -1498,14 +1441,6 @@ void RenderViewHostImpl::DidCancelPopupMenu() {
 }
 #endif
 
-void RenderViewHostImpl::SendOrientationChangeEvent(int orientation) {
-  Send(new ViewMsg_OrientationChangeEvent(GetRoutingID(), orientation));
-}
-
-void RenderViewHostImpl::ToggleSpeechInput() {
-  Send(new InputTagSpeechMsg_ToggleSpeechInput(GetRoutingID()));
-}
-
 bool RenderViewHostImpl::IsWaitingForUnloadACK() const {
   return rvh_state_ == STATE_WAITING_FOR_UNLOAD_ACK ||
          rvh_state_ == STATE_WAITING_FOR_CLOSE ||
@@ -1547,7 +1482,12 @@ void RenderViewHostImpl::GetAudioOutputControllers(
 }
 
 void RenderViewHostImpl::ClearFocusedElement() {
+  is_focused_element_editable_ = false;
   Send(new ViewMsg_ClearFocusedElement(GetRoutingID()));
+}
+
+bool RenderViewHostImpl::IsFocusedElementEditable() {
+  return is_focused_element_editable_;
 }
 
 void RenderViewHostImpl::Zoom(PageZoom zoom) {
@@ -1575,6 +1515,10 @@ void RenderViewHostImpl::DisableAutoResize(const gfx::Size& new_size) {
 
 void RenderViewHostImpl::CopyImageAt(int x, int y) {
   Send(new ViewMsg_CopyImageAt(GetRoutingID(), x, y));
+}
+
+void RenderViewHostImpl::SaveImageAt(int x, int y) {
+  Send(new ViewMsg_SaveImageAt(GetRoutingID(), x, y));
 }
 
 void RenderViewHostImpl::ExecuteMediaPlayerActionAtLocation(
@@ -1741,6 +1685,10 @@ void RenderViewHostImpl::AttachToFrameTree() {
   FrameTree* frame_tree = delegate_->GetFrameTree();
 
   frame_tree->ResetForMainFrameSwap();
+}
+
+void RenderViewHostImpl::SelectWordAroundCaret() {
+  Send(new ViewMsg_SelectWordAroundCaret(GetRoutingID()));
 }
 
 }  // namespace content

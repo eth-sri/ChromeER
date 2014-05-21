@@ -134,10 +134,8 @@ static void OnSeekDone_OKExpected(bool* called, PipelineStatus status) {
 static void LogFunc(const std::string& str) { DVLOG(1) << str; }
 
 // Test parameter determines which coded frame processor is used to process
-// appended data. If true, LegacyFrameProcessor is used. Otherwise, (not yet
-// supported), a more compliant frame processor is used.
-// TODO(wolenetz): Enable usage of new frame processor based on this flag.
-// See http://crbug.com/249422.
+// appended data. If true, LegacyFrameProcessor is used. Otherwise, the new
+// FrameProcessor is used.
 class ChunkDemuxerTest : public ::testing::TestWithParam<bool> {
  protected:
   enum CodecsIndex {
@@ -320,6 +318,15 @@ class ChunkDemuxerTest : public ::testing::TestWithParam<bool> {
       return AddId(kSourceId, HAS_AUDIO | HAS_VIDEO);
     }
 
+    return demuxer_->AddId(source_id, type, codecs,
+                           use_legacy_frame_processor_);
+  }
+
+  ChunkDemuxer::Status AddIdForMp2tSource(const std::string& source_id) {
+    std::vector<std::string> codecs;
+    std::string type = "video/mp2t";
+    codecs.push_back("mp4a.40.2");
+    codecs.push_back("avc1.640028");
     return demuxer_->AddId(source_id, type, codecs,
                            use_legacy_frame_processor_);
   }
@@ -1038,6 +1045,8 @@ TEST_P(ChunkDemuxerTest, Init) {
       EXPECT_EQ(kSampleFormatPlanarF32, config.sample_format());
       EXPECT_EQ(is_audio_encrypted,
                 audio_stream->audio_decoder_config().is_encrypted());
+      EXPECT_TRUE(static_cast<ChunkDemuxerStream*>(audio_stream)
+                      ->supports_partial_append_window_trimming());
     } else {
       EXPECT_FALSE(audio_stream);
     }
@@ -1047,6 +1056,8 @@ TEST_P(ChunkDemuxerTest, Init) {
       EXPECT_TRUE(video_stream);
       EXPECT_EQ(is_video_encrypted,
                 video_stream->video_decoder_config().is_encrypted());
+      EXPECT_FALSE(static_cast<ChunkDemuxerStream*>(video_stream)
+                       ->supports_partial_append_window_trimming());
     } else {
       EXPECT_FALSE(video_stream);
     }
@@ -1087,6 +1098,8 @@ TEST_P(ChunkDemuxerTest, InitText) {
     ASSERT_TRUE(text_stream);
     EXPECT_EQ(DemuxerStream::TEXT, text_stream->type());
     EXPECT_EQ(kTextSubtitles, text_config.kind());
+    EXPECT_FALSE(static_cast<ChunkDemuxerStream*>(text_stream)
+                     ->supports_partial_append_window_trimming());
 
     DemuxerStream* audio_stream = demuxer_->GetStream(DemuxerStream::AUDIO);
     if (has_audio) {
@@ -1102,6 +1115,8 @@ TEST_P(ChunkDemuxerTest, InitText) {
       EXPECT_EQ(kSampleFormatPlanarF32, config.sample_format());
       EXPECT_EQ(is_audio_encrypted,
                 audio_stream->audio_decoder_config().is_encrypted());
+      EXPECT_TRUE(static_cast<ChunkDemuxerStream*>(audio_stream)
+                      ->supports_partial_append_window_trimming());
     } else {
       EXPECT_FALSE(audio_stream);
     }
@@ -1111,6 +1126,8 @@ TEST_P(ChunkDemuxerTest, InitText) {
       EXPECT_TRUE(video_stream);
       EXPECT_EQ(is_video_encrypted,
                 video_stream->video_decoder_config().is_encrypted());
+      EXPECT_FALSE(static_cast<ChunkDemuxerStream*>(video_stream)
+                       ->supports_partial_append_window_trimming());
     } else {
       EXPECT_FALSE(video_stream);
     }
@@ -2697,11 +2714,62 @@ TEST_P(ChunkDemuxerTest, IsParsingMediaSegmentMidMediaSegment) {
   // Confirm we're in the middle of parsing a media segment.
   ASSERT_TRUE(demuxer_->IsParsingMediaSegment(kSourceId));
 
-  demuxer_->Abort(kSourceId);
+  demuxer_->Abort(kSourceId,
+                  append_window_start_for_next_append_,
+                  append_window_end_for_next_append_,
+                  &timestamp_offset_map_[kSourceId]);
+
   // After Abort(), parsing should no longer be in the middle of a media
   // segment.
   ASSERT_FALSE(demuxer_->IsParsingMediaSegment(kSourceId));
 }
+
+#if defined(USE_PROPRIETARY_CODECS)
+#if defined(ENABLE_MPEG2TS_STREAM_PARSER)
+TEST_P(ChunkDemuxerTest, EmitBuffersDuringAbort) {
+  EXPECT_CALL(*this, DemuxerOpened());
+  demuxer_->Initialize(
+      &host_, CreateInitDoneCB(kInfiniteDuration(), PIPELINE_OK), true);
+  EXPECT_EQ(ChunkDemuxer::kOk, AddIdForMp2tSource(kSourceId));
+
+  // For info:
+  // DTS/PTS derived using dvbsnoop -s ts -if bear-1280x720.ts -tssubdecode
+  // Video: first PES:
+  //        PTS: 126912 (0x0001efc0)  [= 90 kHz-Timestamp: 0:00:01.4101]
+  //        DTS: 123909 (0x0001e405)  [= 90 kHz-Timestamp: 0:00:01.3767]
+  // Audio: first PES:
+  //        PTS: 126000 (0x0001ec30)  [= 90 kHz-Timestamp: 0:00:01.4000]
+  //        DTS: 123910 (0x0001e406)  [= 90 kHz-Timestamp: 0:00:01.3767]
+  // Video: last PES:
+  //        PTS: 370155 (0x0005a5eb)  [= 90 kHz-Timestamp: 0:00:04.1128]
+  //        DTS: 367152 (0x00059a30)  [= 90 kHz-Timestamp: 0:00:04.0794]
+  // Audio: last PES:
+  //        PTS: 353788 (0x000565fc)  [= 90 kHz-Timestamp: 0:00:03.9309]
+
+  scoped_refptr<DecoderBuffer> buffer = ReadTestDataFile("bear-1280x720.ts");
+  AppendData(kSourceId, buffer->data(), buffer->data_size());
+
+  // Confirm we're in the middle of parsing a media segment.
+  ASSERT_TRUE(demuxer_->IsParsingMediaSegment(kSourceId));
+
+  // Abort on the Mpeg2 TS parser triggers the emission of the last video
+  // buffer which is pending in the stream parser.
+  Ranges<base::TimeDelta> range_before_abort =
+      demuxer_->GetBufferedRanges(kSourceId);
+  demuxer_->Abort(kSourceId,
+                  append_window_start_for_next_append_,
+                  append_window_end_for_next_append_,
+                  &timestamp_offset_map_[kSourceId]);
+  Ranges<base::TimeDelta> range_after_abort =
+      demuxer_->GetBufferedRanges(kSourceId);
+
+  ASSERT_EQ(range_before_abort.size(), 1u);
+  ASSERT_EQ(range_after_abort.size(), 1u);
+  EXPECT_EQ(range_after_abort.start(0), range_before_abort.start(0));
+  EXPECT_GT(range_after_abort.end(0), range_before_abort.end(0));
+}
+#endif
+#endif
 
 TEST_P(ChunkDemuxerTest, WebMIsParsingMediaSegmentDetection) {
   // TODO(wolenetz): Also test 'unknown' sized clusters.
@@ -2747,12 +2815,11 @@ TEST_P(ChunkDemuxerTest, DurationChange) {
   // Add data beginning at the currently set duration and expect a new duration
   // to be signaled. Note that the last video block will have a higher end
   // timestamp than the last audio block.
-  // TODO(wolenetz): Compliant coded frame processor will emit a max of one
-  // duration change per each ProcessFrames(). Remove the first expectation here
-  // once compliant coded frame processor is used. See http://crbug.com/249422.
-  const int kNewStreamDurationAudio = kStreamDuration + kAudioBlockDuration;
-  EXPECT_CALL(host_, SetDuration(
+  if (use_legacy_frame_processor_) {
+    const int kNewStreamDurationAudio = kStreamDuration + kAudioBlockDuration;
+    EXPECT_CALL(host_, SetDuration(
       base::TimeDelta::FromMilliseconds(kNewStreamDurationAudio)));
+  }
   const int kNewStreamDurationVideo = kStreamDuration + kVideoBlockDuration;
   EXPECT_CALL(host_, SetDuration(
       base::TimeDelta::FromMilliseconds(kNewStreamDurationVideo)));
@@ -2779,12 +2846,11 @@ TEST_P(ChunkDemuxerTest, DurationChangeTimestampOffset) {
 
   ASSERT_TRUE(SetTimestampOffset(kSourceId, kDefaultDuration()));
 
-  // TODO(wolenetz): Compliant coded frame processor will emit a max of one
-  // duration change per each ProcessFrames(). Remove the first expectation here
-  // once compliant coded frame processor is used. See http://crbug.com/249422.
-  EXPECT_CALL(host_, SetDuration(
-      kDefaultDuration() + base::TimeDelta::FromMilliseconds(
-          kAudioBlockDuration * 2)));
+  if (use_legacy_frame_processor_) {
+    EXPECT_CALL(host_, SetDuration(
+        kDefaultDuration() + base::TimeDelta::FromMilliseconds(
+            kAudioBlockDuration * 2)));
+  }
   EXPECT_CALL(host_, SetDuration(
       kDefaultDuration() + base::TimeDelta::FromMilliseconds(
           kVideoBlockDuration * 2)));
@@ -2830,26 +2896,6 @@ TEST_P(ChunkDemuxerTest, Shutdown_BeforeInitialize) {
   demuxer_->Initialize(
       &host_, CreateInitDoneCB(DEMUXER_ERROR_COULD_NOT_OPEN), true);
   message_loop_.RunUntilIdle();
-}
-
-TEST_P(ChunkDemuxerTest, ReadAfterAudioDisabled) {
-  ASSERT_TRUE(InitDemuxer(HAS_AUDIO | HAS_VIDEO));
-  AppendCluster(kDefaultFirstCluster());
-
-  DemuxerStream* stream = demuxer_->GetStream(DemuxerStream::AUDIO);
-  ASSERT_TRUE(stream);
-
-  // The stream should no longer be present.
-  demuxer_->OnAudioRendererDisabled();
-  ASSERT_FALSE(demuxer_->GetStream(DemuxerStream::AUDIO));
-
-  // Normally this would return an audio buffer at timestamp zero, but
-  // all reads should return EOS buffers when disabled.
-  bool audio_read_done = false;
-  stream->Read(base::Bind(&OnReadDone_EOSExpected, &audio_read_done));
-  message_loop_.RunUntilIdle();
-
-  EXPECT_TRUE(audio_read_done);
 }
 
 // Verifies that signaling end of stream while stalled at a gap
@@ -3026,11 +3072,14 @@ TEST_P(ChunkDemuxerTest, AppendWindow_Audio) {
       kSourceId, kAudioTrackNum,
       "0K 30K 60K 90K 120K 150K 180K 210K 240K 270K 300K 330K");
 
-  // Verify that frames that start outside the window are not included
+  // Verify that frames that end outside the window are not included
   // in the buffer. Also verify that buffers that start inside the
   // window and extend beyond the end of the window are not included.
-  CheckExpectedRanges(kSourceId, "{ [30,270) }");
-  CheckExpectedBuffers(stream, "30 60 90 120 150 180 210 240");
+  //
+  // The first 20ms of the first buffer should be trimmed off since it
+  // overlaps the start of the append window.
+  CheckExpectedRanges(kSourceId, "{ [20,270) }");
+  CheckExpectedBuffers(stream, "20 30 60 90 120 150 180 210 240");
 
   // Extend the append window to [20,650).
   append_window_end_for_next_append_ = base::TimeDelta::FromMilliseconds(650);
@@ -3039,7 +3088,22 @@ TEST_P(ChunkDemuxerTest, AppendWindow_Audio) {
   AppendSingleStreamCluster(
       kSourceId, kAudioTrackNum,
       "360K 390K 420K 450K 480K 510K 540K 570K 600K 630K");
-  CheckExpectedRanges(kSourceId, "{ [30,270) [360,630) }");
+  CheckExpectedRanges(kSourceId, "{ [20,270) [360,630) }");
+}
+
+TEST_P(ChunkDemuxerTest, AppendWindow_AudioOverlapStartAndEnd) {
+  ASSERT_TRUE(InitDemuxer(HAS_AUDIO));
+
+  // Set the append window to [10,20).
+  append_window_start_for_next_append_ = base::TimeDelta::FromMilliseconds(10);
+  append_window_end_for_next_append_ = base::TimeDelta::FromMilliseconds(20);
+
+  // Append a cluster that starts before and ends after the append window.
+  AppendSingleStreamCluster(kSourceId, kAudioTrackNum, "0K");
+
+  // Verify that everything is dropped in this case.  No partial append should
+  // be generated.
+  CheckExpectedRanges(kSourceId, "{ }");
 }
 
 TEST_P(ChunkDemuxerTest, AppendWindow_Text) {
@@ -3187,8 +3251,9 @@ TEST_P(ChunkDemuxerTest, SeekCompletesWithoutTextCues) {
   CheckExpectedBuffers(video_stream, "180 210");
 }
 
-// TODO(wolenetz): Enable testing of new frame processor based on this flag,
-// once the new processor has landed. See http://crbug.com/249422.
+// Generate two sets of tests: one using FrameProcessor, and one using
+// LegacyFrameProcessor.
+INSTANTIATE_TEST_CASE_P(NewFrameProcessor, ChunkDemuxerTest, Values(false));
 INSTANTIATE_TEST_CASE_P(LegacyFrameProcessor, ChunkDemuxerTest, Values(true));
 
 }  // namespace media

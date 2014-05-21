@@ -13,8 +13,8 @@
 #include "chrome/browser/chromeos/attestation/attestation_ca_client.h"
 #include "chrome/browser/chromeos/attestation/attestation_signed_data.pb.h"
 #include "chrome/browser/chromeos/attestation/platform_verification_dialog.h"
-#include "chrome/browser/chromeos/login/user.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/profiles/profile.h"
@@ -24,7 +24,7 @@
 #include "chromeos/cryptohome/async_method_caller.h"
 #include "chromeos/dbus/cryptohome_client.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
-#include "components/user_prefs/pref_registry_syncable.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "components/user_prefs/user_prefs.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
@@ -445,9 +445,9 @@ void PlatformVerificationFlow::RecordDomainConsent(
          ->WithPathWildcard();
   if (!url.port().empty())
     builder->WithPort(url.port());
-  else if (url.SchemeIs(content::kHttpsScheme))
+  else if (url.SchemeIs(url::kHttpsScheme))
     builder->WithPort(kDefaultHttpsPort);
-  else if (url.SchemeIs(content::kHttpScheme))
+  else if (url.SchemeIs(url::kHttpScheme))
     builder->WithPortWildcard();
   ContentSettingsPattern pattern = builder->Build();
   if (pattern.IsValid()) {

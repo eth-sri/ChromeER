@@ -240,7 +240,7 @@ void ShowCreateChromeAppShortcutsDialog(
     gfx::NativeWindow parent_window,
     Profile* profile,
     const extensions::Extension* app,
-    const base::Closure& close_callback) {
+    const base::Callback<void(bool)>& close_callback) {
   CreateBrowserModalDialogViews(
       new CreateChromeApplicationShortcutView(profile, app, close_callback),
       parent_window)->Show();
@@ -332,7 +332,7 @@ void CreateApplicationShortcutView::InitControls() {
   }
 }
 
-gfx::Size CreateApplicationShortcutView::GetPreferredSize() {
+gfx::Size CreateApplicationShortcutView::GetPreferredSize() const {
   // TODO(evanm): should this use IDS_CREATE_SHORTCUTS_DIALOG_WIDTH_CHARS?
   static const int kDialogWidth = 360;
   int height = GetLayoutManager()->GetPreferredHeightForWidth(this,
@@ -495,8 +495,9 @@ void CreateUrlApplicationShortcutView::DidDownloadFavicon(
 
   if (!bitmaps.empty()) {
     std::vector<ui::ScaleFactor> scale_factors;
-    ui::ScaleFactor scale_factor = ui::GetScaleFactorForNativeView(
-        web_contents_->GetRenderViewHost()->GetView()->GetNativeView());
+    ui::ScaleFactor scale_factor = ui::GetSupportedScaleFactor(
+        ui::GetScaleFactorForNativeView(
+            web_contents_->GetRenderViewHost()->GetView()->GetNativeView()));
     scale_factors.push_back(scale_factor);
     std::vector<size_t> closest_indices;
     SelectFaviconFrameIndices(original_bitmap_sizes,
@@ -519,7 +520,7 @@ void CreateUrlApplicationShortcutView::DidDownloadFavicon(
 CreateChromeApplicationShortcutView::CreateChromeApplicationShortcutView(
     Profile* profile,
     const extensions::Extension* app,
-    const base::Closure& close_callback)
+    const base::Callback<void(bool)>& close_callback)
         : CreateApplicationShortcutView(profile),
           close_callback_(close_callback),
           weak_ptr_factory_(this) {
@@ -543,13 +544,13 @@ CreateChromeApplicationShortcutView::~CreateChromeApplicationShortcutView() {}
 
 bool CreateChromeApplicationShortcutView::Accept() {
   if (!close_callback_.is_null())
-    close_callback_.Run();
+    close_callback_.Run(true);
   return CreateApplicationShortcutView::Accept();
 }
 
 bool CreateChromeApplicationShortcutView::Cancel() {
   if (!close_callback_.is_null())
-    close_callback_.Run();
+    close_callback_.Run(false);
   return CreateApplicationShortcutView::Cancel();
 }
 

@@ -6,6 +6,7 @@
 #define UI_APP_LIST_VIEWS_APPS_GRID_VIEW_H_
 
 #include <set>
+#include <string>
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
@@ -114,6 +115,8 @@ class APP_LIST_EXPORT AppsGridView : public views::View,
   void UpdateDrag(Pointer pointer, const gfx::Point& point);
   void EndDrag(bool cancel);
   bool IsDraggedView(const views::View* view) const;
+  void ClearDragState();
+  void SetDragViewVisible(bool visible);
 
   // Set the drag and drop host for application links.
   void SetDragAndDropHostOfCurrentAppList(
@@ -122,11 +125,14 @@ class APP_LIST_EXPORT AppsGridView : public views::View,
   // Prerenders the icons on and around |page_index|.
   void Prerender(int page_index);
 
+  // Return true if the |bounds_animator_| is animating |view|.
+  bool IsAnimatingView(views::View* view);
+
   bool has_dragged_view() const { return drag_view_ != NULL; }
   bool dragging() const { return drag_pointer_ != NONE; }
 
   // Overridden from views::View:
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
   virtual void Layout() OVERRIDE;
   virtual bool OnKeyPressed(const ui::KeyEvent& event) OVERRIDE;
   virtual bool OnKeyReleased(const ui::KeyEvent& event) OVERRIDE;
@@ -172,8 +178,10 @@ class APP_LIST_EXPORT AppsGridView : public views::View,
   // root level grid view to end reparenting a folder item.
   // |events_forwarded_to_drag_drop_host|: True if the dragged item is dropped
   // to the drag_drop_host, eg. dropped on shelf.
+  // |cancel_drag|: True if the drag is ending because it has been canceled.
   void EndDragFromReparentItemInRootLevel(
-      bool events_forwarded_to_drag_drop_host);
+      bool events_forwarded_to_drag_drop_host,
+      bool cancel_drag);
 
   // Handles EndDrag event in the hidden folder grid view to end reparenting
   // a folder item.
@@ -198,8 +206,8 @@ class APP_LIST_EXPORT AppsGridView : public views::View,
     folder_delegate_ = folder_delegate;
   }
 
-  AppListItemView* activated_item_view() const {
-    return activated_item_view_;
+  AppListItemView* activated_folder_item_view() const {
+    return activated_folder_item_view_;
   }
 
  private:
@@ -527,8 +535,8 @@ class APP_LIST_EXPORT AppsGridView : public views::View,
 
   views::BoundsAnimator bounds_animator_;
 
-  // The most recent activated item view.
-  AppListItemView* activated_item_view_;
+  // The most recent activated folder item view.
+  AppListItemView* activated_folder_item_view_;
 
   // Tracks if drag_view_ is dragged out of the folder container bubble
   // when dragging a item inside a folder.

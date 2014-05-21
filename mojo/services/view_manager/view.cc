@@ -7,14 +7,22 @@
 #include "mojo/services/view_manager/node.h"
 
 namespace mojo {
-namespace services {
 namespace view_manager {
+namespace service {
 
 View::View(const ViewId& id) : id_(id), node_(NULL) {}
 
 View::~View() {
 }
 
+void View::SetBitmap(const SkBitmap& bitmap) {
+  bitmap_ = bitmap;
+  if (node_) {
+    node_->window()->SchedulePaintInRect(
+        gfx::Rect(node_->window()->bounds().size()));
+  }
+}
+
+}  // namespace service
 }  // namespace view_manager
-}  // namespace services
 }  // namespace mojo

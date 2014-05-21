@@ -25,7 +25,6 @@
 #include "content/public/test/test_utils.h"
 
 #if defined(OS_WIN)
-#include "content/public/browser/web_contents_view.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_tree_host.h"
 #endif
@@ -35,6 +34,11 @@ using task_manager::browsertest_util::MatchAnyPrint;
 using task_manager::browsertest_util::MatchAnyTab;
 using task_manager::browsertest_util::MatchPrint;
 using task_manager::browsertest_util::WaitForTaskManagerRows;
+
+// http://crbug.com/375126: these tests fail after pdf plugin was open sourced.
+// They must not have been running before since these bots didn't have the PDf
+// plugin.
+#if !defined(ADDRESS_SANITIZER)
 
 namespace {
 
@@ -159,8 +163,7 @@ IN_PROC_BROWSER_TEST_F(PrintPreviewTest, WindowedNPAPIPluginHidden) {
 
   // Now get the region of the plugin before and after the print preview is
   // shown. They should be different.
-  HWND hwnd = tab->GetView()->GetNativeView()->GetHost()->
-      GetAcceleratedWidget();
+  HWND hwnd = tab->GetNativeView()->GetHost()->GetAcceleratedWidget();
   HWND child = NULL;
   EnumChildWindows(hwnd, EnumerateChildren,reinterpret_cast<LPARAM>(&child));
 
@@ -209,3 +212,5 @@ IN_PROC_BROWSER_TEST_F(PrintPreviewTest, NoCrashOnCloseWithOtherTabs) {
 #endif
 
 }  // namespace
+
+#endif

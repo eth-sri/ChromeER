@@ -37,16 +37,16 @@ PepperGamepadHost::PepperGamepadHost(GamepadService* gamepad_service,
 
 PepperGamepadHost::~PepperGamepadHost() {
   if (is_started_)
-    gamepad_service_->RemoveConsumer();
+    gamepad_service_->RemoveConsumer(this);
 }
 
 int32_t PepperGamepadHost::OnResourceMessageReceived(
     const IPC::Message& msg,
     ppapi::host::HostMessageContext* context) {
-  IPC_BEGIN_MESSAGE_MAP(PepperGamepadHost, msg)
-  PPAPI_DISPATCH_HOST_RESOURCE_CALL_0(PpapiHostMsg_Gamepad_RequestMemory,
-                                      OnRequestMemory)
-  IPC_END_MESSAGE_MAP()
+  PPAPI_BEGIN_MESSAGE_MAP(PepperGamepadHost, msg)
+    PPAPI_DISPATCH_HOST_RESOURCE_CALL_0(PpapiHostMsg_Gamepad_RequestMemory,
+                                        OnRequestMemory)
+  PPAPI_END_MESSAGE_MAP()
   return PP_ERROR_FAILED;
 }
 
@@ -55,7 +55,7 @@ int32_t PepperGamepadHost::OnRequestMemory(
   if (is_started_)
     return PP_ERROR_FAILED;
 
-  gamepad_service_->AddConsumer();
+  gamepad_service_->ConsumerBecameActive(this);
   is_started_ = true;
 
   // Don't send the shared memory back until the user has interacted with the

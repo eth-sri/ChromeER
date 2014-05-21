@@ -94,8 +94,8 @@
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/drive/drive_protocol_handler.h"
 #include "chrome/browser/chromeos/login/startup_utils.h"
-#include "chrome/browser/chromeos/login/user.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/net/cert_verify_proc_chromeos.h"
 #include "chrome/browser/chromeos/policy/policy_cert_service.h"
 #include "chrome/browser/chromeos/policy/policy_cert_service_factory.h"
@@ -366,6 +366,7 @@ void ProfileIOData::InitializeOnUIThread(Profile* profile) {
 #endif
 
   params->profile = profile;
+  params->prerender_tracker = g_browser_process->prerender_tracker();
   profile_params_.reset(params.release());
 
   ChromeNetworkDelegate::InitializePrefsOnUIThread(
@@ -948,6 +949,7 @@ void ProfileIOData::Init(
   network_delegate->set_cookie_settings(profile_params_->cookie_settings.get());
   network_delegate->set_enable_do_not_track(&enable_do_not_track_);
   network_delegate->set_force_google_safe_search(&force_safesearch_);
+  network_delegate->set_prerender_tracker(profile_params_->prerender_tracker);
   network_delegate_.reset(network_delegate);
 
   fraudulent_certificate_reporter_.reset(
@@ -988,15 +990,11 @@ void ProfileIOData::Init(
 #if defined(OS_CHROMEOS)
   username_hash_ = profile_params_->username_hash;
   scoped_refptr<net::CertVerifyProc> verify_proc;
-  if (chromeos::UserManager::IsMultipleProfilesAllowed()) {
-    crypto::ScopedPK11Slot public_slot =
-        crypto::GetPublicSlotForChromeOSUser(username_hash_);
-    // The private slot won't be ready by this point. It shouldn't be necessary
-    // for cert trust purposes anyway.
-    verify_proc = new chromeos::CertVerifyProcChromeOS(public_slot.Pass());
-  } else {
-    verify_proc = net::CertVerifyProc::CreateDefault();
-  }
+  crypto::ScopedPK11Slot public_slot =
+      crypto::GetPublicSlotForChromeOSUser(username_hash_);
+  // The private slot won't be ready by this point. It shouldn't be necessary
+  // for cert trust purposes anyway.
+  verify_proc = new chromeos::CertVerifyProcChromeOS(public_slot.Pass());
   if (cert_verifier_) {
     cert_verifier_->InitializeOnIOThread(verify_proc);
     main_request_context_->set_cert_verifier(cert_verifier_.get());

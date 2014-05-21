@@ -6,22 +6,23 @@
 
 #include "base/bind.h"
 #include "base/time/time.h"
+#include "components/domain_reliability/config.h"
 #include "components/domain_reliability/test_util.h"
 #include "components/domain_reliability/util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+namespace domain_reliability {
+namespace {
+
 using base::TimeDelta;
 using base::TimeTicks;
 
-namespace domain_reliability {
-
 class DomainReliabilitySchedulerTest : public testing::Test {
  public:
-  DomainReliabilitySchedulerTest() :
-      num_collectors_(0),
-      params_(CreateDefaultParams()),
-      callback_called_(false) {
-  }
+  DomainReliabilitySchedulerTest()
+      : num_collectors_(0),
+        params_(MakeTestSchedulerParams()),
+        callback_called_(false) {}
 
   void CreateScheduler(int num_collectors) {
     DCHECK_LT(0, num_collectors);
@@ -34,14 +35,6 @@ class DomainReliabilitySchedulerTest : public testing::Test {
         params_,
         base::Bind(&DomainReliabilitySchedulerTest::ScheduleUploadCallback,
                    base::Unretained(this))));
-  }
-
-  static DomainReliabilityScheduler::Params CreateDefaultParams() {
-    DomainReliabilityScheduler::Params params;
-    params.minimum_upload_delay = base::TimeDelta::FromSeconds(60);
-    params.maximum_upload_delay = base::TimeDelta::FromSeconds(300);
-    params.upload_retry_interval = base::TimeDelta::FromSeconds(15);
-    return params;
   }
 
   ::testing::AssertionResult CheckNoPendingUpload() {
@@ -63,6 +56,7 @@ class DomainReliabilitySchedulerTest : public testing::Test {
 
     if (callback_called_ && expected_min == callback_min_
                          && expected_max == callback_max_) {
+      callback_called_ = false;
       return ::testing::AssertionSuccess();
     }
 
@@ -80,13 +74,11 @@ class DomainReliabilitySchedulerTest : public testing::Test {
     }
   }
 
-  ::testing::AssertionResult CheckStartingUpload(int expected_collector) {
+  ::testing::AssertionResult CheckStartingUpload(size_t expected_collector) {
     DCHECK(scheduler_);
-    DCHECK_LE(0, expected_collector);
     DCHECK_GT(num_collectors_, expected_collector);
 
-    int collector;
-    scheduler_->OnUploadStart(&collector);
+    size_t collector = scheduler_->OnUploadStart();
     if (collector == expected_collector)
       return ::testing::AssertionSuccess();
 
@@ -108,7 +100,7 @@ class DomainReliabilitySchedulerTest : public testing::Test {
   }
 
   MockTime time_;
-  int num_collectors_;
+  size_t num_collectors_;
   DomainReliabilityScheduler::Params params_;
   scoped_ptr<DomainReliabilityScheduler> scheduler_;
 
@@ -212,4 +204,41 @@ TEST_F(DomainReliabilitySchedulerTest, DetermineCollectorAtUpload) {
   scheduler_->OnUploadComplete(true);
 }
 
+TEST_F(DomainReliabilitySchedulerTest, BeaconWhilePending) {
+  CreateScheduler(1);
+
+  scheduler_->OnBeaconAdded();
+  ASSERT_TRUE(CheckPendingUpload(min_delay(), max_delay()));
+
+  // Second beacon should not call callback again.
+  scheduler_->OnBeaconAdded();
+  ASSERT_TRUE(CheckNoPendingUpload());
+  time_.Advance(min_delay());
+
+  // No pending upload after beacon.
+  ASSERT_TRUE(CheckStartingUpload(0));
+  scheduler_->OnUploadComplete(true);
+  ASSERT_TRUE(CheckNoPendingUpload());
+}
+
+TEST_F(DomainReliabilitySchedulerTest, BeaconWhileUploading) {
+  CreateScheduler(1);
+
+  scheduler_->OnBeaconAdded();
+  ASSERT_TRUE(CheckPendingUpload(min_delay(), max_delay()));
+  time_.Advance(min_delay());
+
+  // If a beacon arrives during the upload, a new upload should be pending.
+  ASSERT_TRUE(CheckStartingUpload(0));
+  scheduler_->OnBeaconAdded();
+  scheduler_->OnUploadComplete(true);
+  ASSERT_TRUE(CheckPendingUpload(min_delay(), max_delay()));
+
+  time_.Advance(min_delay());
+  ASSERT_TRUE(CheckStartingUpload(0));
+  scheduler_->OnUploadComplete(true);
+  ASSERT_TRUE(CheckNoPendingUpload());
+}
+
+}  // namespace
 }  // namespace domain_reliability

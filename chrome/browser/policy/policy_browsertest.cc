@@ -497,8 +497,7 @@ class WebContentsLoadedOrDestroyedWatcher
   void Wait();
 
   // Overridden WebContentsObserver methods.
-  virtual void WebContentsDestroyed(
-      content::WebContents* web_contents) OVERRIDE;
+  virtual void WebContentsDestroyed() OVERRIDE;
   virtual void DidStopLoading(
       content::RenderViewHost* render_view_host) OVERRIDE;
 
@@ -520,8 +519,7 @@ void WebContentsLoadedOrDestroyedWatcher::Wait() {
   message_loop_runner_->Run();
 }
 
-void WebContentsLoadedOrDestroyedWatcher::WebContentsDestroyed(
-    content::WebContents* web_contents) {
+void WebContentsLoadedOrDestroyedWatcher::WebContentsDestroyed() {
   message_loop_runner_->Quit();
 }
 
@@ -540,8 +538,6 @@ class TestAddAppWindowObserver : public apps::AppWindowRegistry::Observer {
 
   // apps::AppWindowRegistry::Observer:
   virtual void OnAppWindowAdded(apps::AppWindow* app_window) OVERRIDE;
-  virtual void OnAppWindowIconChanged(apps::AppWindow* app_window) OVERRIDE;
-  virtual void OnAppWindowRemoved(apps::AppWindow* app_window) OVERRIDE;
 
   apps::AppWindow* WaitForAppWindow();
 
@@ -566,12 +562,6 @@ TestAddAppWindowObserver::~TestAddAppWindowObserver() {
 void TestAddAppWindowObserver::OnAppWindowAdded(apps::AppWindow* app_window) {
   window_ = app_window;
   run_loop_.Quit();
-}
-
-void TestAddAppWindowObserver::OnAppWindowIconChanged(
-    apps::AppWindow* app_window) {}
-
-void TestAddAppWindowObserver::OnAppWindowRemoved(apps::AppWindow* app_window) {
 }
 
 apps::AppWindow* TestAddAppWindowObserver::WaitForAppWindow() {
@@ -1701,6 +1691,12 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, MAYBE_ExtensionInstallSources) {
       base::FilePath(FILE_PATH_LITERAL("extensions/*"))));
   const GURL referrer_url(URLRequestMockHTTPJob::GetMockUrl(
       base::FilePath(FILE_PATH_LITERAL("policy/*"))));
+
+  base::ScopedTempDir download_directory;
+  ASSERT_TRUE(download_directory.CreateUniqueTempDir());
+  DownloadPrefs* download_prefs =
+      DownloadPrefs::FromBrowserContext(browser()->profile());
+  download_prefs->SetDownloadPath(download_directory.path());
 
   const GURL download_page_url(URLRequestMockHTTPJob::GetMockUrl(base::FilePath(
       FILE_PATH_LITERAL("policy/extension_install_sources_test.html"))));

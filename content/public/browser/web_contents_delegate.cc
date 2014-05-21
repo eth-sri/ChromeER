@@ -73,7 +73,7 @@ int WebContentsDelegate::GetExtraRenderViewHeight() const {
 
 void WebContentsDelegate::CanDownload(
     RenderViewHost* render_view_host,
-    int request_id,
+    const GURL& url,
     const std::string& request_method,
     const base::Callback<void(bool)>& callback) {
   callback.Run(true);
@@ -196,7 +196,7 @@ void WebContentsDelegate::Detach(WebContents* web_contents) {
 }
 
 gfx::Size WebContentsDelegate::GetSizeForNewRenderView(
-    const WebContents* web_contents) const {
+   WebContents* web_contents) const {
   return gfx::Size();
 }
 

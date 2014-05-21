@@ -94,6 +94,10 @@ FakeProfile::GetGeolocationPermissionContext() {
   return NULL;
 }
 
+content::BrowserPluginGuestManager* FakeProfile::GetGuestManager() {
+  return NULL;
+}
+
 quota::SpecialStoragePolicy* FakeProfile::GetSpecialStoragePolicy() {
   return NULL;
 }
@@ -205,8 +209,14 @@ chrome_browser_net::Predictor* FakeProfile::GetNetworkPredictor() {
   return NULL;
 }
 
-void FakeProfile::ClearNetworkingHistorySince(base::Time time,
-                                              const base::Closure& completion) {
+void FakeProfile::ClearNetworkingHistorySince(
+    base::Time time,
+    const base::Closure& completion) {
+}
+
+void FakeProfile::ClearDomainReliabilityMonitor(
+    domain_reliability::DomainReliabilityClearMode mode,
+    const base::Closure& completion) {
 }
 
 GURL FakeProfile::GetHomePage() {

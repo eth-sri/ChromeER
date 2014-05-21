@@ -31,6 +31,8 @@ class SpecialStoragePolicy;
 
 namespace content {
 
+class BlobHandle;
+class BrowserPluginGuestManager;
 class DownloadManager;
 class DownloadManagerDelegate;
 class GeolocationPermissionContext;
@@ -75,6 +77,13 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
   // Use GetStoragePartition() instead. Ask ajwong@ if you have problems.
   static content::StoragePartition* GetDefaultStoragePartition(
       BrowserContext* browser_context);
+
+  typedef base::Callback<void(scoped_ptr<BlobHandle>)> BlobCallback;
+
+  // |callback| returns a NULL scoped_ptr on failure.
+  static void CreateMemoryBackedBlob(BrowserContext* browser_context,
+                                     const char* data, size_t length,
+                                     const BlobCallback& callback);
 
   // Ensures that the corresponding ResourceContext is initialized. Normally the
   // BrowserContext initializs the corresponding getters when its objects are
@@ -168,6 +177,9 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
   // Returns the geolocation permission context for this context. It's valid to
   // return NULL, in which case geolocation requests will always be allowed.
   virtual GeolocationPermissionContext* GetGeolocationPermissionContext() = 0;
+
+  // Returns the guest manager for this context.
+  virtual BrowserPluginGuestManager* GetGuestManager() = 0;
 
   // Returns a special storage policy implementation, or NULL.
   virtual quota::SpecialStoragePolicy* GetSpecialStoragePolicy() = 0;

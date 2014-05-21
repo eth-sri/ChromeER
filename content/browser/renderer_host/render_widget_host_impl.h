@@ -25,14 +25,14 @@
 #include "build/build_config.h"
 #include "cc/resources/shared_bitmap.h"
 #include "content/browser/accessibility/browser_accessibility_manager.h"
+#include "content/browser/renderer_host/event_with_latency_info.h"
 #include "content/browser/renderer_host/input/input_ack_handler.h"
 #include "content/browser/renderer_host/input/input_router_client.h"
 #include "content/browser/renderer_host/input/synthetic_gesture.h"
 #include "content/browser/renderer_host/input/touch_emulator_client.h"
+#include "content/common/input/input_event_ack_state.h"
 #include "content/common/input/synthetic_gesture_packet.h"
 #include "content/common/view_message_enums.h"
-#include "content/port/browser/event_with_latency_info.h"
-#include "content/port/common/input_event_ack_state.h"
 #include "content/public/browser/render_widget_host.h"
 #include "content/public/common/page_zoom.h"
 #include "ipc/ipc_listener.h"
@@ -242,11 +242,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // Noifies the RenderWidget of the current mouse cursor visibility state.
   void SendCursorVisibilityState(bool is_visible);
 
-  // Tells us whether the page is rendered directly via the GPU process.
-  bool is_accelerated_compositing_active() {
-    return is_accelerated_compositing_active_;
-  }
-
   // Notifies the RenderWidgetHost that the View was destroyed.
   void ViewDestroyed();
 
@@ -384,8 +379,8 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // perform an action. See OnUserGesture for more details.
   void StartUserGesture();
 
-  // Set the RenderView background.
-  void SetBackground(const SkBitmap& background);
+  // Set the RenderView background transparency.
+  void SetBackgroundOpaque(bool opaque);
 
   // Notifies the renderer that the next key event is bound to one or more
   // pre-defined edit commands
@@ -637,7 +632,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   bool OnSwapCompositorFrame(const IPC::Message& message);
   void OnFlingingStopped();
   void OnUpdateRect(const ViewHostMsg_UpdateRect_Params& params);
-  void OnUpdateIsDelayed();
   void OnQueueSyntheticGesture(const SyntheticGesturePacket& gesture_packet);
   virtual void OnFocus();
   virtual void OnBlur();
@@ -652,7 +646,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl
       const std::vector<gfx::Rect>& character_bounds);
 #endif
   void OnImeCancelComposition();
-  void OnDidActivateAcceleratedCompositing(bool activated);
   void OnLockMouse(bool user_gesture,
                    bool last_unlocked_by_target,
                    bool privileged);
@@ -692,6 +685,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   virtual void OnHasTouchEventHandlers(bool has_handlers) OVERRIDE;
   virtual OverscrollController* GetOverscrollController() const OVERRIDE;
   virtual void DidFlush() OVERRIDE;
+  virtual void DidOverscroll(const DidOverscrollParams& params) OVERRIDE;
 
   // InputAckHandler
   virtual void OnKeyboardEventAck(const NativeWebKeyboardEvent& event,
@@ -738,9 +732,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl
 
   // Indicates whether a page is fullscreen or not.
   bool is_fullscreen_;
-
-  // True when a page is rendered directly via the GPU process.
-  bool is_accelerated_compositing_active_;
 
   // Set if we are waiting for a repaint ack for the view.
   bool repaint_ack_pending_;
@@ -819,12 +810,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl
 
   // Flag to detect recursive calls to GetBackingStore().
   bool in_get_backing_store_;
-
-  // Flag to trigger the GetBackingStore method to abort early.
-  bool abort_get_backing_store_;
-
-  // Set when we call DidPaintRect/DidScrollRect on the view.
-  bool view_being_painted_;
 
   // Used for UMA histogram logging to measure the time for a repaint view
   // operation to finish.

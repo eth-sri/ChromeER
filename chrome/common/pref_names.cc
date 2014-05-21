@@ -471,14 +471,12 @@ const char kAlternateProtocolServers[] = "spdy.alternate_protocol";
 // Disables the listed protocol schemes.
 const char kDisabledSchemes[] = "protocol.disabled_schemes";
 
-#if defined(OS_ANDROID)
+#if defined(OS_ANDROID) || defined(OS_IOS)
 // Last time that a check for cloud policy management was done. This time is
 // recorded on Android so that retries aren't attempted on every startup.
 // Instead the cloud policy registration is retried at least 1 or 3 days later.
 const char kLastPolicyCheckTime[] = "policy.last_policy_check_time";
-#endif
 
-#if defined(OS_ANDROID) || defined(OS_IOS)
 // A list of bookmarks to include in a Managed Bookmarks root node. Each
 // list item is a dictionary containing a "name" and an "url" entry, detailing
 // the bookmark name and target URL respectively.
@@ -1299,6 +1297,9 @@ extern const char kEasyUnlockShowTutorial[] = "easy_unlock.show_tutorial";
 // Preference storing Easy Unlock pairing data.
 extern const char kEasyUnlockPairing[] = "easy_unlock.pairing";
 
+// A cache of zero suggest results using JSON serialized into a string.
+const char kZeroSuggestCachedResults[] = "zerosuggest.cachedresults";
+
 // *************** LOCAL STATE ***************
 // These are attached to the machine/installation
 
@@ -1348,8 +1349,6 @@ const char kMetricsClientID[] = "user_experience_metrics.client_id2";
 const char kMetricsSessionID[] = "user_experience_metrics.session_id";
 const char kMetricsLowEntropySource[] =
     "user_experience_metrics.low_entropy_source2";
-const char kMetricsPermutedEntropyCache[] =
-    "user_experience_metrics.permuted_entropy_cache";
 
 // Old client id and low entropy source values, cleared the first time this
 // version is launched.
@@ -1383,19 +1382,6 @@ const char kMetricsResetIds[] =
 const char kCrashReportingEnabled[] =
     "user_experience_metrics_crash.reporting_enabled";
 #endif
-
-// Array of strings that are each UMA logs that were supposed to be sent in the
-// first minute of a browser session. These logs include things like crash count
-// info, etc.
-const char kMetricsInitialLogs[] =
-    "user_experience_metrics.initial_logs_as_protobufs";
-
-// Array of strings that are each UMA logs that were not sent because the
-// browser terminated before these accumulated metrics could be sent.  These
-// logs typically include histograms and memory reports, as well as ongoing
-// user activities.
-const char kMetricsOngoingLogs[] =
-    "user_experience_metrics.ongoing_logs_as_protobufs";
 
 // 64-bit integer serialization of the base::Time from the last successful seed
 // fetch (i.e. when the Variations server responds with 200 or 304).
@@ -1803,17 +1789,6 @@ const char kDevToolsPortForwardingConfig[] = "devtools.port_forwarding_config";
 // A boolean specifying whether remote dev tools debugging is enabled.
 const char kDevToolsRemoteEnabled[] = "devtools.remote_enabled";
 #endif
-
-// An ID to uniquely identify this client to the invalidator service.
-const char kInvalidatorClientId[] = "invalidator.client_id";
-
-// Opaque state from the invalidation subsystem that is persisted via prefs.
-// The value is base 64 encoded.
-const char kInvalidatorInvalidationState[] = "invalidator.invalidation_state";
-
-// List of received invalidations that have not been acted on by any clients
-// yet.  Used to keep invalidation clients in sync in case of a restart.
-const char kInvalidatorSavedInvalidations[] = "invalidator.saved_invalidations";
 
 // Boolean indicating that TiclInvalidationService should use GCM channel.
 // False or lack of settings means XMPPPushClient channel.

@@ -11,7 +11,7 @@
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/common/content_switches_internal.h"
-#include "content/port/browser/render_widget_host_view_frame_subscriber.h"
+#include "content/public/browser/render_widget_host_view_frame_subscriber.h"
 #include "third_party/WebKit/public/platform/WebScreenInfo.h"
 #include "ui/gfx/display.h"
 #include "ui/gfx/screen.h"
@@ -367,11 +367,13 @@ const int kFlushInputRateInUs = 16666;
 
 RenderWidgetHostViewBase::RenderWidgetHostViewBase()
     : popup_type_(blink::WebPopupTypeNone),
+      background_opaque_(true),
       mouse_locked_(false),
       showing_context_menu_(false),
       selection_text_offset_(0),
       selection_range_(gfx::Range::InvalidRange()),
       current_device_scale_factor_(0),
+      current_display_rotation_(gfx::Display::ROTATE_0),
       pinch_zoom_enabled_(content::IsPinchToZoomEnabled()),
       renderer_frame_number_(0) {
 }
@@ -384,12 +386,12 @@ bool RenderWidgetHostViewBase::OnMessageReceived(const IPC::Message& msg){
   return false;
 }
 
-void RenderWidgetHostViewBase::SetBackground(const SkBitmap& background) {
-  background_ = background;
+void RenderWidgetHostViewBase::SetBackgroundOpaque(bool opaque) {
+  background_opaque_ = opaque;
 }
 
-const SkBitmap& RenderWidgetHostViewBase::GetBackground() {
-  return background_;
+bool RenderWidgetHostViewBase::GetBackgroundOpaque() {
+  return background_opaque_;
 }
 
 gfx::Size RenderWidgetHostViewBase::GetPhysicalBackingSize() const {
@@ -411,6 +413,11 @@ void RenderWidgetHostViewBase::SelectionChanged(const base::string16& text,
   selection_text_offset_ = offset;
   selection_range_.set_start(range.start());
   selection_range_.set_end(range.end());
+}
+
+ui::TextInputClient* RenderWidgetHostViewBase::GetTextInputClient() {
+  NOTREACHED();
+  return NULL;
 }
 
 bool RenderWidgetHostViewBase::IsShowingContextMenu() const {
@@ -513,11 +520,14 @@ bool RenderWidgetHostViewBase::HasDisplayPropertyChanged(gfx::NativeView view) {
   gfx::Display display =
       gfx::Screen::GetScreenFor(view)->GetDisplayNearestWindow(view);
   if (current_display_area_ == display.work_area() &&
-      current_device_scale_factor_ == display.device_scale_factor()) {
+      current_device_scale_factor_ == display.device_scale_factor() &&
+      current_display_rotation_ == display.rotation()) {
     return false;
   }
+
   current_display_area_ = display.work_area();
   current_device_scale_factor_ = display.device_scale_factor();
+  current_display_rotation_ = display.rotation();
   return true;
 }
 

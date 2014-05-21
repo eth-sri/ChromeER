@@ -34,11 +34,12 @@
 #include "chrome/browser/extensions/api/media_galleries_private/media_galleries_private_api.h"
 #include "chrome/browser/extensions/api/networking_private/networking_private_event_router_factory.h"
 #include "chrome/browser/extensions/api/omnibox/omnibox_api.h"
+#include "chrome/browser/extensions/api/power/power_api_manager.h"
 #include "chrome/browser/extensions/api/preference/chrome_direct_setting_api.h"
 #include "chrome/browser/extensions/api/preference/preference_api.h"
 #include "chrome/browser/extensions/api/processes/processes_api.h"
 #include "chrome/browser/extensions/api/push_messaging/push_messaging_api.h"
-#include "chrome/browser/extensions/api/runtime/runtime_api.h"
+#include "chrome/browser/extensions/api/screenlock_private/screenlock_private_api.h"
 #include "chrome/browser/extensions/api/serial/serial_connection.h"
 #include "chrome/browser/extensions/api/sessions/sessions_api.h"
 #include "chrome/browser/extensions/api/settings_overrides/settings_overrides_api.h"
@@ -47,7 +48,6 @@
 #include "chrome/browser/extensions/api/system_info/system_info_api.h"
 #include "chrome/browser/extensions/api/tab_capture/tab_capture_registry.h"
 #include "chrome/browser/extensions/api/tabs/tabs_windows_api.h"
-#include "chrome/browser/extensions/api/usb/usb_device_resource.h"
 #include "chrome/browser/extensions/api/web_navigation/web_navigation_api.h"
 #include "chrome/browser/extensions/api/web_request/web_request_api.h"
 #include "chrome/browser/extensions/api/webrtc_audio_private/webrtc_audio_private_api.h"
@@ -64,12 +64,12 @@
 #include "chrome/browser/extensions/token_cache/token_cache_service_factory.h"
 #include "chrome/browser/speech/extension_api/tts_extension_api.h"
 #include "extensions/browser/api/api_resource_manager.h"
+#include "extensions/browser/api/usb/usb_device_resource.h"
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/extensions/file_manager/file_browser_private_api_factory.h"
 #include "chrome/browser/chromeos/extensions/input_method_api.h"
 #include "chrome/browser/chromeos/extensions/media_player_api.h"
-#include "chrome/browser/chromeos/extensions/screenlock_private_api.h"
 #include "chrome/browser/extensions/api/input_ime/input_ime_api.h"
 #include "chrome/browser/extensions/api/log_private/log_private_api.h"
 #endif
@@ -124,7 +124,6 @@ void EnsureBrowserContextKeyedServiceFactoriesBuilt() {
   extensions::LocationManager::GetFactoryInstance();
 #if defined(OS_CHROMEOS)
   extensions::LogPrivateAPI::GetFactoryInstance();
-  extensions::ScreenlockPrivateEventRouter::GetFactoryInstance();
 #endif
   extensions::ManagementAPI::GetFactoryInstance();
   extensions::MDnsAPI::GetFactoryInstance();
@@ -140,10 +139,11 @@ void EnsureBrowserContextKeyedServiceFactoriesBuilt() {
 #if defined(ENABLE_PLUGINS)
   extensions::PluginManager::GetFactoryInstance();
 #endif  // defined(ENABLE_PLUGINS)
+  extensions::PowerApiManager::GetFactoryInstance();
   extensions::PreferenceAPI::GetFactoryInstance();
   extensions::ProcessesAPI::GetFactoryInstance();
   extensions::PushMessagingAPI::GetFactoryInstance();
-  extensions::RuntimeAPI::GetFactoryInstance();
+  extensions::ScreenlockPrivateEventRouter::GetFactoryInstance();
   extensions::SessionsAPI::GetFactoryInstance();
   extensions::SettingsOverridesAPI::GetFactoryInstance();
   extensions::SignedInDevicesManager::GetFactoryInstance();

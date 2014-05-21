@@ -175,6 +175,8 @@ void BrowserAccessibilityManager::OnAccessibilityEvents(
     }
   }
 
+  OnTreeUpdateFinished();
+
   if (should_send_initial_focus &&
       (!delegate_ || delegate_->AccessibilityViewHasFocus())) {
     NotifyAccessibilityEvent(ui::AX_EVENT_FOCUS, GetFromAXNode(focus_));
@@ -220,6 +222,23 @@ void BrowserAccessibilityManager::OnLocationChanges(
     node->SetLocation(params[i].new_location);
     obj->OnLocationChanged();
   }
+}
+
+BrowserAccessibility* BrowserAccessibilityManager::GetActiveDescendantFocus(
+    BrowserAccessibility* root) {
+  BrowserAccessibility* node = BrowserAccessibilityManager::GetFocus(root);
+  if (!node)
+    return NULL;
+
+  int active_descendant_id;
+  if (node->GetIntAttribute(ui::AX_ATTR_ACTIVEDESCENDANT_ID,
+                            &active_descendant_id)) {
+    BrowserAccessibility* active_descendant =
+        node->manager()->GetFromID(active_descendant_id);
+    if (active_descendant)
+      return active_descendant;
+  }
+  return node;
 }
 
 BrowserAccessibility* BrowserAccessibilityManager::GetFocus(

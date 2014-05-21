@@ -47,10 +47,7 @@ void RemoteToLocalTimeTicks(
   *time = converter.ToLocalTimeTicks(remote_time).ToTimeTicks();
 }
 
-
-}  // namespace
-
-static void CrashOnMapFailure() {
+void CrashOnMapFailure() {
 #if defined(OS_WIN)
   DWORD last_err = GetLastError();
   base::debug::Alias(&last_err);
@@ -59,13 +56,15 @@ static void CrashOnMapFailure() {
 }
 
 // Each resource request is assigned an ID scoped to this process.
-static int MakeRequestID() {
+int MakeRequestID() {
   // NOTE: The resource_dispatcher_host also needs probably unique
   // request_ids, so they count down from -2 (-1 is a special we're
   // screwed value), while the renderer process counts up.
   static int next_request_id = 0;
   return next_request_id++;
 }
+
+}  // namespace
 
 // ResourceLoaderBridge implementation ----------------------------------------
 
@@ -162,11 +161,6 @@ IPCResourceLoaderBridge::~IPCResourceLoaderBridge() {
     // this operation may fail, as the dispatcher will have preemptively
     // removed us when the renderer sends the ReceivedAllData message.
     dispatcher_->RemovePendingRequest(request_id_);
-
-    if (request_.download_to_file) {
-      dispatcher_->message_sender()->Send(
-          new ResourceHostMsg_ReleaseDownloadedFile(request_id_));
-    }
   }
 }
 
@@ -190,7 +184,8 @@ bool IPCResourceLoaderBridge::Start(RequestPeer* peer) {
                                                request_.resource_type,
                                                request_.origin_pid,
                                                frame_origin_,
-                                               request_.url);
+                                               request_.url,
+                                               request_.download_to_file);
 
   return dispatcher_->message_sender()->Send(
       new ResourceHostMsg_RequestResource(routing_id_, request_id_, request_));
@@ -220,14 +215,15 @@ void IPCResourceLoaderBridge::SetDefersLoading(bool value) {
 }
 
 void IPCResourceLoaderBridge::DidChangePriority(
-    net::RequestPriority new_priority, int intra_priority_value) {
+    net::RequestPriority new_priority,
+    int intra_priority_value) {
   if (request_id_ < 0) {
     NOTREACHED() << "Trying to change priority of an unstarted request";
     return;
   }
 
-  dispatcher_->DidChangePriority(routing_id_, request_id_, new_priority,
-                                 intra_priority_value);
+  dispatcher_->DidChangePriority(
+      request_id_, new_priority, intra_priority_value);
 }
 
 void IPCResourceLoaderBridge::SyncLoad(SyncLoadResponse* response) {
@@ -479,6 +475,7 @@ void ResourceDispatcher::OnDownloadedData(int request_id,
 void ResourceDispatcher::OnReceivedRedirect(
     int request_id,
     const GURL& new_url,
+    const GURL& new_first_party_for_cookies,
     const ResourceResponseHead& response_head) {
   TRACE_EVENT0("loader", "ResourceDispatcher::OnReceivedRedirect");
   PendingRequestInfo* request_info = GetPendingRequestInfo(request_id);
@@ -486,13 +483,10 @@ void ResourceDispatcher::OnReceivedRedirect(
     return;
   request_info->response_start = ConsumeIOTimestamp();
 
-  bool has_new_first_party_for_cookies = false;
-  GURL new_first_party_for_cookies;
   ResourceResponseInfo renderer_response_info;
   ToResourceResponseInfo(*request_info, response_head, &renderer_response_info);
-  if (request_info->peer->OnReceivedRedirect(new_url, renderer_response_info,
-                                             &has_new_first_party_for_cookies,
-                                             &new_first_party_for_cookies)) {
+  if (request_info->peer->OnReceivedRedirect(
+          new_url, new_first_party_for_cookies, renderer_response_info)) {
     // Double-check if the request is still around. The call above could
     // potentially remove it.
     request_info = GetPendingRequestInfo(request_id);
@@ -502,9 +496,7 @@ void ResourceDispatcher::OnReceivedRedirect(
     // SiteIsolationPolicy later when OnReceivedResponse is called.
     request_info->response_url = new_url;
     request_info->pending_redirect_message.reset(
-        new ResourceHostMsg_FollowRedirect(request_id,
-                                           has_new_first_party_for_cookies,
-                                           new_first_party_for_cookies));
+        new ResourceHostMsg_FollowRedirect(request_id));
     if (!request_info->is_deferred) {
       FollowPendingRedirect(request_id, *request_info);
     }
@@ -561,11 +553,16 @@ int ResourceDispatcher::AddPendingRequest(RequestPeer* callback,
                                           ResourceType::Type resource_type,
                                           int origin_pid,
                                           const GURL& frame_origin,
-                                          const GURL& request_url) {
+                                          const GURL& request_url,
+                                          bool download_to_file) {
   // Compute a unique request_id for this renderer process.
   int id = MakeRequestID();
-  pending_requests_[id] = PendingRequestInfo(
-      callback, resource_type, origin_pid, frame_origin, request_url);
+  pending_requests_[id] = PendingRequestInfo(callback,
+                                             resource_type,
+                                             origin_pid,
+                                             frame_origin,
+                                             request_url,
+                                             download_to_file);
   return id;
 }
 
@@ -575,8 +572,16 @@ bool ResourceDispatcher::RemovePendingRequest(int request_id) {
     return false;
 
   PendingRequestInfo& request_info = it->second;
+
+  bool release_downloaded_file = request_info.download_to_file;
+
   ReleaseResourcesInMessageQueue(&request_info.deferred_message_queue);
   pending_requests_.erase(it);
+
+  if (release_downloaded_file) {
+    message_sender_->Send(
+        new ResourceHostMsg_ReleaseDownloadedFile(request_id));
+  }
 
   return true;
 }
@@ -615,9 +620,9 @@ void ResourceDispatcher::SetDefersLoading(int request_id, bool value) {
   }
 }
 
-void ResourceDispatcher::DidChangePriority(
-    int routing_id, int request_id, net::RequestPriority new_priority,
-    int intra_priority_value) {
+void ResourceDispatcher::DidChangePriority(int request_id,
+                                           net::RequestPriority new_priority,
+                                           int intra_priority_value) {
   DCHECK(ContainsKey(pending_requests_, request_id));
   message_sender()->Send(new ResourceHostMsg_DidChangePriority(
       request_id, new_priority, intra_priority_value));
@@ -627,6 +632,7 @@ ResourceDispatcher::PendingRequestInfo::PendingRequestInfo()
     : peer(NULL),
       resource_type(ResourceType::SUB_RESOURCE),
       is_deferred(false),
+      download_to_file(false),
       blocked_response(false),
       buffer_size(0) {
 }
@@ -636,7 +642,8 @@ ResourceDispatcher::PendingRequestInfo::PendingRequestInfo(
     ResourceType::Type resource_type,
     int origin_pid,
     const GURL& frame_origin,
-    const GURL& request_url)
+    const GURL& request_url,
+    bool download_to_file)
     : peer(peer),
       resource_type(resource_type),
       origin_pid(origin_pid),
@@ -644,6 +651,7 @@ ResourceDispatcher::PendingRequestInfo::PendingRequestInfo(
       url(request_url),
       frame_origin(frame_origin),
       response_url(request_url),
+      download_to_file(download_to_file),
       request_start(base::TimeTicks::Now()),
       blocked_response(false) {}
 

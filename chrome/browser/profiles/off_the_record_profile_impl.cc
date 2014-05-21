@@ -25,6 +25,7 @@
 #include "chrome/browser/extensions/extension_special_storage_policy.h"
 #include "chrome/browser/geolocation/chrome_geolocation_permission_context.h"
 #include "chrome/browser/geolocation/chrome_geolocation_permission_context_factory.h"
+#include "chrome/browser/guest_view/guest_view_manager.h"
 #include "chrome/browser/io_thread.h"
 #include "chrome/browser/media/chrome_midi_permission_context.h"
 #include "chrome/browser/media/chrome_midi_permission_context_factory.h"
@@ -423,6 +424,11 @@ content::GeolocationPermissionContext*
   return ChromeGeolocationPermissionContextFactory::GetForProfile(this);
 }
 
+content::BrowserPluginGuestManager*
+    OffTheRecordProfileImpl::GetGuestManager() {
+  return GuestViewManager::FromBrowserContext(this);
+}
+
 quota::SpecialStoragePolicy*
     OffTheRecordProfileImpl::GetSpecialStoragePolicy() {
   return GetExtensionSpecialStoragePolicy();
@@ -502,6 +508,16 @@ void OffTheRecordProfileImpl::ClearNetworkingHistorySince(
   // Still, fire the callback to indicate we have finished, otherwise the
   // BrowsingDataRemover will never be destroyed and the dialog will never be
   // closed. We must do this asynchronously in order to avoid reentrancy issues.
+  if (!completion.is_null()) {
+    BrowserThread::PostTask(BrowserThread::UI, FROM_HERE, completion);
+  }
+}
+
+void OffTheRecordProfileImpl::ClearDomainReliabilityMonitor(
+    domain_reliability::DomainReliabilityClearMode mode,
+    const base::Closure& completion) {
+  // Incognito profiles don't have Domain Reliability Monitors, so there's
+  // nothing to do here.
   if (!completion.is_null()) {
     BrowserThread::PostTask(BrowserThread::UI, FROM_HERE, completion);
   }

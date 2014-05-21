@@ -21,7 +21,6 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "content/public/test/browser_test_utils.h"
 #include "third_party/WebKit/public/web/WebContextMenuData.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
@@ -77,6 +76,19 @@ IN_PROC_BROWSER_TEST_F(ContextMenuBrowserTest,
   ASSERT_TRUE(menu->IsItemPresent(IDC_CONTENT_CONTEXT_COPYLINKLOCATION));
 }
 
+IN_PROC_BROWSER_TEST_F(ContextMenuBrowserTest,
+                       SaveAsImageForCanvas) {
+  content::ContextMenuParams params;
+  params.media_type = blink::WebContextMenuData::MediaTypeCanvas;
+
+  TestRenderViewContextMenu menu(
+      browser()->tab_strip_model()->GetActiveWebContents()->GetMainFrame(),
+      params);
+  menu.Init();
+
+  ASSERT_TRUE(menu.IsItemPresent(IDC_CONTENT_CONTEXT_SAVEIMAGEAS));
+}
+
 // GTK requires a X11-level mouse event to open a context menu correctly.
 #if defined(TOOLKIT_GTK)
 #define MAYBE_RealMenu DISABLED_RealMenu
@@ -101,10 +113,9 @@ IN_PROC_BROWSER_TEST_F(ContextMenuBrowserTest,
   mouse_event.button = blink::WebMouseEvent::ButtonRight;
   mouse_event.x = 15;
   mouse_event.y = 15;
-  gfx::Rect offset;
   content::WebContents* tab =
       browser()->tab_strip_model()->GetActiveWebContents();
-  tab->GetView()->GetContainerBounds(&offset);
+  gfx::Rect offset = tab->GetContainerBounds();
   mouse_event.globalX = 15 + offset.x();
   mouse_event.globalY = 15 + offset.y();
   mouse_event.clickCount = 1;
@@ -223,6 +234,31 @@ IN_PROC_BROWSER_TEST_F(ContextMenuBrowserTest, OpenIncognitoNoneReferrer) {
       "window.domAutomationController.send(window.document.referrer);",
       &page_referrer));
   ASSERT_EQ(kEmptyReferrer, page_referrer);
+}
+
+// Ensure that View Page Info won't crash if there is no visible entry.
+// See http://crbug.com/370863.
+IN_PROC_BROWSER_TEST_F(ContextMenuBrowserTest, ViewPageInfoWithNoEntry) {
+  // Create a new tab with no committed entry.
+  ui_test_utils::WindowedTabAddedNotificationObserver tab_observer(
+      content::NotificationService::AllSources());
+  ASSERT_TRUE(content::ExecuteScript(
+      browser()->tab_strip_model()->GetActiveWebContents(), "window.open();"));
+  tab_observer.Wait();
+  content::WebContents* tab = tab_observer.GetTab();
+  EXPECT_FALSE(tab->GetController().GetLastCommittedEntry());
+  EXPECT_FALSE(tab->GetController().GetVisibleEntry());
+
+  // Create a context menu.
+  content::ContextMenuParams context_menu_params;
+  TestRenderViewContextMenu menu(tab->GetMainFrame(), context_menu_params);
+  menu.Init();
+
+  // The item shouldn't be enabled in the menu.
+  EXPECT_FALSE(menu.IsCommandIdEnabled(IDC_CONTENT_CONTEXT_VIEWPAGEINFO));
+
+  // Ensure that viewing page info doesn't crash even if you can get to it.
+  menu.ExecuteCommand(IDC_CONTENT_CONTEXT_VIEWPAGEINFO, 0);
 }
 
 }  // namespace

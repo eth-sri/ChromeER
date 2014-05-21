@@ -23,7 +23,7 @@ namespace media {
 class FFmpegURLProtocol;
 class SourceState;
 
-class ChunkDemuxerStream : public DemuxerStream {
+class MEDIA_EXPORT ChunkDemuxerStream : public DemuxerStream {
  public:
   typedef std::deque<scoped_refptr<StreamParserBuffer> > BufferQueue;
 
@@ -96,6 +96,10 @@ class ChunkDemuxerStream : public DemuxerStream {
     stream_->set_memory_limit_for_testing(memory_limit);
   }
 
+  bool supports_partial_append_window_trimming() const {
+    return partial_append_window_trimming_enabled_;
+  }
+
  private:
   enum State {
     UNINITIALIZED,
@@ -117,7 +121,8 @@ class ChunkDemuxerStream : public DemuxerStream {
   mutable base::Lock lock_;
   State state_;
   ReadCB read_cb_;
-  const bool splice_frames_enabled_;
+  bool splice_frames_enabled_;
+  bool partial_append_window_trimming_enabled_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(ChunkDemuxerStream);
 };
@@ -155,7 +160,6 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
                           bool enable_text_tracks) OVERRIDE;
   virtual void Stop(const base::Closure& callback) OVERRIDE;
   virtual void Seek(base::TimeDelta time, const PipelineStatusCB&  cb) OVERRIDE;
-  virtual void OnAudioRendererDisabled() OVERRIDE;
   virtual DemuxerStream* GetStream(DemuxerStream::Type type) OVERRIDE;
   virtual base::TimeDelta GetStartTime() const OVERRIDE;
   virtual base::Time GetTimelineOffset() const OVERRIDE;
@@ -189,10 +193,7 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
   // Registers a new |id| to use for AppendData() calls. |type| indicates
   // the MIME type for the data that we intend to append for this ID.
   // |use_legacy_frame_processor| determines which of LegacyFrameProcessor or
-  // a (not yet implemented) more compliant frame processor to use to process
-  // parsed frames from AppendData() calls.
-  // TODO(wolenetz): Enable usage of new frame processor based on this flag.
-  // See http://crbug.com/249422.
+  // FrameProcessor to use to process parsed frames from AppendData() calls.
   // kOk is returned if the demuxer has enough resources to support another ID
   //    and supports the format indicated by |type|.
   // kNotSupported is returned if |type| is not a supported format.
@@ -221,7 +222,12 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
 
   // Aborts parsing the current segment and reset the parser to a state where
   // it can accept a new segment.
-  void Abort(const std::string& id);
+  // Some pending frames can be emitted during that process. These frames are
+  // applied |timestamp_offset|.
+  void Abort(const std::string& id,
+             base::TimeDelta append_window_start,
+             base::TimeDelta append_window_end,
+             base::TimeDelta* timestamp_offset);
 
   // Remove buffers between |start| and |end| for the source buffer
   // associated with |id|.
@@ -245,6 +251,12 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
   // is requesting "sequence" mode. Otherwise, caller is requesting "segments"
   // mode.
   void SetSequenceMode(const std::string& id, bool sequence_mode);
+
+  // Signals the coded frame processor for the source buffer associated with
+  // |id| to update its group start timestamp to be |timestamp_offset| if it is
+  // in sequence append mode.
+  void SetGroupStartTimestampIfInSequenceMode(const std::string& id,
+                                              base::TimeDelta timestamp_offset);
 
   // Called to signal changes in the "end of stream"
   // state. UnmarkEndOfStream() must not be called if a matching
@@ -353,9 +365,6 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
 
   scoped_ptr<ChunkDemuxerStream> audio_;
   scoped_ptr<ChunkDemuxerStream> video_;
-
-  // Keeps |audio_| alive when audio has been disabled.
-  scoped_ptr<ChunkDemuxerStream> disabled_audio_;
 
   base::TimeDelta duration_;
 

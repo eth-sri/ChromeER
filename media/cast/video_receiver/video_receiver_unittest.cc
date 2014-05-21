@@ -37,13 +37,11 @@ class FakeVideoClient {
   }
 
   void DeliverEncodedVideoFrame(
-      scoped_ptr<transport::EncodedVideoFrame> video_frame,
-      const base::TimeTicks& playout_time) {
+      scoped_ptr<transport::EncodedFrame> video_frame) {
     ASSERT_FALSE(!video_frame)
         << "If at shutdown: There were unsatisfied requests enqueued.";
     EXPECT_EQ(expected_frame_id_, video_frame->frame_id);
-    EXPECT_EQ(transport::kVp8, video_frame->codec);
-    EXPECT_EQ(expected_playout_time_, playout_time);
+    EXPECT_EQ(expected_playout_time_, video_frame->reference_time);
     ++num_called_;
   }
 
@@ -144,7 +142,7 @@ TEST_F(VideoReceiverTest, GetOnePacketEncodedFrame) {
   event_subscriber.GetFrameEventsAndReset(&frame_events);
 
   ASSERT_TRUE(!frame_events.empty());
-  EXPECT_EQ(kVideoAckSent, frame_events.begin()->type);
+  EXPECT_EQ(FRAME_ACK_SENT, frame_events.begin()->type);
   EXPECT_EQ(rtp_header_.frame_id, frame_events.begin()->frame_id);
   EXPECT_EQ(rtp_header_.rtp_timestamp, frame_events.begin()->rtp_timestamp);
 
@@ -156,7 +154,7 @@ TEST_F(VideoReceiverTest, MultiplePendingGetCalls) {
       .WillRepeatedly(testing::Return(true));
 
   // Enqueue a request for an video frame.
-  const VideoFrameEncodedCallback frame_encoded_callback =
+  const FrameEncodedCallback frame_encoded_callback =
       base::Bind(&FakeVideoClient::DeliverEncodedVideoFrame,
                  base::Unretained(&fake_video_client_));
   receiver_->GetEncodedVideoFrame(frame_encoded_callback);

@@ -5,6 +5,8 @@
 #ifndef UI_APP_LIST_VIEWS_APPS_CONTAINER_VIEW_H_
 #define UI_APP_LIST_VIEWS_APPS_CONTAINER_VIEW_H_
 
+#include <vector>
+
 #include "ui/app_list/app_list_folder_item.h"
 #include "ui/app_list/views/top_icon_animation_view.h"
 #include "ui/views/view.h"
@@ -62,7 +64,7 @@ class AppsContainerView : public views::View,
   bool IsInFolderView() const;
 
   // views::View overrides:
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
   virtual void Layout() OVERRIDE;
   virtual bool OnKeyPressed(const ui::KeyEvent& event) OVERRIDE;
 

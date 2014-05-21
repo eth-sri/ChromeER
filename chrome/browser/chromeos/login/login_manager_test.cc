@@ -7,11 +7,12 @@
 #include "base/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
+#include "chrome/browser/chromeos/login/auth/user_context.h"
 #include "chrome/browser/chromeos/login/existing_user_controller.h"
-#include "chrome/browser/chromeos/login/login_display_host_impl.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
-#include "chrome/browser/chromeos/login/webui_login_view.h"
-#include "chrome/common/chrome_switches.h"
+#include "chrome/browser/chromeos/login/ui/login_display_host_impl.h"
+#include "chrome/browser/chromeos/login/ui/webui_login_view.h"
+#include "chrome/browser/chromeos/login/users/user.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chromeos/chromeos_switches.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_contents.h"
@@ -36,7 +37,6 @@ void LoginManagerTest::CleanUpOnMainThread() {
 void LoginManagerTest::SetUpCommandLine(CommandLine* command_line) {
   command_line->AppendSwitch(chromeos::switches::kLoginManager);
   command_line->AppendSwitch(chromeos::switches::kForceLoginManagerInTests);
-  command_line->AppendSwitch(::switches::kMultiProfiles);
 }
 
 void LoginManagerTest::SetUpInProcessBrowserTestFixture() {
@@ -66,14 +66,14 @@ void LoginManagerTest::SetExpectedCredentials(const std::string& username,
 
 bool LoginManagerTest::TryToLogin(const std::string& username,
                                   const std::string& password) {
-  if (!AddUserTosession(username, password))
+  if (!AddUserToSession(username, password))
     return false;
   if (const User* active_user = UserManager::Get()->GetActiveUser())
     return active_user->email() == username;
   return false;
 }
 
-bool LoginManagerTest::AddUserTosession(const std::string& username,
+bool LoginManagerTest::AddUserToSession(const std::string& username,
                                         const std::string& password) {
   ExistingUserController* controller =
       ExistingUserController::current_controller();
@@ -81,7 +81,9 @@ bool LoginManagerTest::AddUserTosession(const std::string& username,
     ADD_FAILURE();
     return false;
   }
-  controller->Login(UserContext(username, password, std::string()));
+  UserContext user_context(username);
+  user_context.SetPassword(password);
+  controller->Login(user_context);
   content::WindowedNotificationObserver(
       chrome::NOTIFICATION_SESSION_STARTED,
       content::NotificationService::AllSources()).Wait();
@@ -101,7 +103,7 @@ void LoginManagerTest::LoginUser(const std::string& username) {
 
 void LoginManagerTest::AddUser(const std::string& username) {
   SetExpectedCredentials(username, "password");
-  EXPECT_TRUE(AddUserTosession(username, "password"));
+  EXPECT_TRUE(AddUserToSession(username, "password"));
 }
 
 void LoginManagerTest::JSExpect(const std::string& expression) {

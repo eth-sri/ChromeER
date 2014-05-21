@@ -13,7 +13,6 @@
 #include "base/message_loop/message_loop.h"
 #include "cc/layers/layer.h"
 #include "content/browser/android/content_view_core_impl.h"
-#include "content/browser/android/layer_tree_build_helper_impl.h"
 #include "content/public/browser/android/compositor.h"
 #include "content/public/browser/android/content_view_layer_renderer.h"
 #include "content/public/browser/android/layer_tree_build_helper.h"
@@ -28,6 +27,24 @@ using base::android::ScopedJavaLocalRef;
 
 namespace content {
 
+namespace {
+
+class LayerTreeBuildHelperImpl : public LayerTreeBuildHelper {
+ public:
+  LayerTreeBuildHelperImpl() {}
+  virtual ~LayerTreeBuildHelperImpl() {}
+
+  virtual scoped_refptr<cc::Layer> GetLayerTree(
+      scoped_refptr<cc::Layer> content_root_layer) OVERRIDE {
+    return content_root_layer;
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(LayerTreeBuildHelperImpl);
+};
+
+}  // anonymous namespace
+
 // static
 bool ContentViewRenderView::RegisterContentViewRenderView(JNIEnv* env) {
   return RegisterNativesImpl(env);
@@ -36,8 +53,7 @@ bool ContentViewRenderView::RegisterContentViewRenderView(JNIEnv* env) {
 ContentViewRenderView::ContentViewRenderView(JNIEnv* env,
                                              jobject obj,
                                              gfx::NativeWindow root_window)
-    : buffers_swapped_during_composite_(false),
-      layer_tree_build_helper_(new LayerTreeBuildHelperImpl()),
+    : layer_tree_build_helper_(new LayerTreeBuildHelperImpl()),
       root_window_(root_window),
       current_surface_format_(0) {
   java_obj_.Reset(env, obj);
@@ -75,8 +91,10 @@ void ContentViewRenderView::SetCurrentContentViewCore(
   InitCompositor();
   ContentViewCoreImpl* content_view_core =
       reinterpret_cast<ContentViewCoreImpl*>(native_content_view_core);
-  compositor_->SetRootLayer(
-      layer_tree_build_helper_->GetLayerTree(content_view_core->GetLayer()));
+  compositor_->SetRootLayer(content_view_core
+                                ? layer_tree_build_helper_->GetLayerTree(
+                                      content_view_core->GetLayer())
+                                : scoped_refptr<cc::Layer>());
 }
 
 void ContentViewRenderView::SurfaceCreated(
@@ -99,40 +117,17 @@ void ContentViewRenderView::SurfaceChanged(JNIEnv* env, jobject obj,
   compositor_->SetWindowBounds(gfx::Size(width, height));
 }
 
-jboolean ContentViewRenderView::Composite(JNIEnv* env, jobject obj) {
-  if (!compositor_)
-    return false;
-
-  buffers_swapped_during_composite_ = false;
-  compositor_->Composite();
-  return buffers_swapped_during_composite_;
-}
-
-jboolean ContentViewRenderView::CompositeToBitmap(JNIEnv* env, jobject obj,
-                                                  jobject java_bitmap) {
-  gfx::JavaBitmap bitmap(java_bitmap);
-  if (!compositor_ || bitmap.format() != ANDROID_BITMAP_FORMAT_RGBA_8888)
-    return false;
-  return compositor_->CompositeAndReadback(bitmap.pixels(),
-                                           gfx::Rect(bitmap.size()));
-}
-
 void ContentViewRenderView::SetOverlayVideoMode(
     JNIEnv* env, jobject obj, bool enabled) {
   compositor_->SetHasTransparentBackground(enabled);
-  Java_ContentViewRenderView_requestRender(env, obj);
 }
 
-void ContentViewRenderView::ScheduleComposite() {
+void ContentViewRenderView::Layout() {
   JNIEnv* env = base::android::AttachCurrentThread();
-  Java_ContentViewRenderView_requestRender(env, java_obj_.obj());
+  Java_ContentViewRenderView_onCompositorLayout(env, java_obj_.obj());
 }
 
-void ContentViewRenderView::OnSwapBuffersPosted() {
-  buffers_swapped_during_composite_ = true;
-}
-
-void ContentViewRenderView::OnSwapBuffersCompleted() {
+void ContentViewRenderView::OnSwapBuffersCompleted(int pending_swap_buffers) {
   JNIEnv* env = base::android::AttachCurrentThread();
   Java_ContentViewRenderView_onSwapBuffersCompleted(env, java_obj_.obj());
 }

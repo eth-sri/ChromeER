@@ -32,15 +32,14 @@
         '<(DEPTH)'
       ],
       'conditions': [
-        ['OS == "android" and gtest_target_type == "shared_library"', {
+        ['OS == "android"', {
           'dependencies': [
             '<(DEPTH)/testing/android/native_test.gyp:native_test_native_code',
           ],
         }],
         [ 'os_posix == 1 and OS != "mac" and OS != "android" and OS != "ios"', {
           'conditions': [
-            # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
-            [ '(use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1)', {
+            [ 'use_allocator!="none"', {
               'dependencies': [
                 '<(DEPTH)/base/allocator/allocator.gyp:allocator',
               ],
@@ -51,9 +50,7 @@
     },
   ],
   'conditions': [
-    # Special target to wrap a gtest_target_type==shared_library
-    # package webkit_compositor_bindings_unittests into an android apk for execution.
-    ['OS == "android" and gtest_target_type == "shared_library"', {
+    ['OS == "android"', {
       'targets': [
         {
           'target_name': 'webkit_compositor_bindings_unittests_apk',

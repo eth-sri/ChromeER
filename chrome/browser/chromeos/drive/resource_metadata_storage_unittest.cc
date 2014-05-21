@@ -32,9 +32,9 @@ class ResourceMetadataStorageTest : public testing::Test {
   // Overwrites |storage_|'s version.
   void SetDBVersion(int version) {
     ResourceMetadataHeader header;
-    ASSERT_TRUE(storage_->GetHeader(&header));
+    ASSERT_EQ(FILE_ERROR_OK, storage_->GetHeader(&header));
     header.set_version(version);
-    EXPECT_TRUE(storage_->PutHeader(header));
+    EXPECT_EQ(FILE_ERROR_OK, storage_->PutHeader(header));
   }
 
   bool CheckValidity() {
@@ -69,8 +69,11 @@ class ResourceMetadataStorageTest : public testing::Test {
 
 TEST_F(ResourceMetadataStorageTest, LargestChangestamp) {
   const int64 kLargestChangestamp = 1234567890;
-  EXPECT_TRUE(storage_->SetLargestChangestamp(kLargestChangestamp));
-  EXPECT_EQ(kLargestChangestamp, storage_->GetLargestChangestamp());
+  EXPECT_EQ(FILE_ERROR_OK,
+            storage_->SetLargestChangestamp(kLargestChangestamp));
+  int64 value = 0;
+  EXPECT_EQ(FILE_ERROR_OK, storage_->GetLargestChangestamp(&value));
+  EXPECT_EQ(kLargestChangestamp, value);
 }
 
 TEST_F(ResourceMetadataStorageTest, PutEntry) {
@@ -82,56 +85,60 @@ TEST_F(ResourceMetadataStorageTest, PutEntry) {
 
   // key1 not found.
   ResourceEntry result;
-  EXPECT_FALSE(storage_->GetEntry(key1, &result));
+  EXPECT_EQ(FILE_ERROR_NOT_FOUND, storage_->GetEntry(key1, &result));
 
   // Put entry1.
   ResourceEntry entry1;
   entry1.set_local_id(key1);
-  EXPECT_TRUE(storage_->PutEntry(entry1));
+  EXPECT_EQ(FILE_ERROR_OK, storage_->PutEntry(entry1));
 
   // key1 found.
-  EXPECT_TRUE(storage_->GetEntry(key1, &result));
+  EXPECT_EQ(FILE_ERROR_OK, storage_->GetEntry(key1, &result));
 
   // key2 not found.
-  EXPECT_FALSE(storage_->GetEntry(key2, &result));
+  EXPECT_EQ(FILE_ERROR_NOT_FOUND, storage_->GetEntry(key2, &result));
 
   // Put entry2 as a child of entry1.
   ResourceEntry entry2;
   entry2.set_local_id(key2);
   entry2.set_parent_local_id(key1);
   entry2.set_base_name(name2);
-  EXPECT_TRUE(storage_->PutEntry(entry2));
+  EXPECT_EQ(FILE_ERROR_OK, storage_->PutEntry(entry2));
 
   // key2 found.
-  EXPECT_TRUE(storage_->GetEntry(key2, &result));
-  EXPECT_EQ(key2, storage_->GetChild(key1, name2));
+  std::string child_id;
+  EXPECT_EQ(FILE_ERROR_OK, storage_->GetEntry(key2, &result));
+  EXPECT_EQ(FILE_ERROR_OK, storage_->GetChild(key1, name2, &child_id));
+  EXPECT_EQ(key2, child_id);
 
   // Put entry3 as a child of entry2.
   ResourceEntry entry3;
   entry3.set_local_id(key3);
   entry3.set_parent_local_id(key2);
   entry3.set_base_name(name3);
-  EXPECT_TRUE(storage_->PutEntry(entry3));
+  EXPECT_EQ(FILE_ERROR_OK, storage_->PutEntry(entry3));
 
   // key3 found.
-  EXPECT_TRUE(storage_->GetEntry(key3, &result));
-  EXPECT_EQ(key3, storage_->GetChild(key2, name3));
+  EXPECT_EQ(FILE_ERROR_OK, storage_->GetEntry(key3, &result));
+  EXPECT_EQ(FILE_ERROR_OK, storage_->GetChild(key2, name3, &child_id));
+  EXPECT_EQ(key3, child_id);
 
   // Change entry3's parent to entry1.
   entry3.set_parent_local_id(key1);
-  EXPECT_TRUE(storage_->PutEntry(entry3));
+  EXPECT_EQ(FILE_ERROR_OK, storage_->PutEntry(entry3));
 
   // entry3 is a child of entry1 now.
-  EXPECT_TRUE(storage_->GetChild(key2, name3).empty());
-  EXPECT_EQ(key3, storage_->GetChild(key1, name3));
+  EXPECT_EQ(FILE_ERROR_NOT_FOUND, storage_->GetChild(key2, name3, &child_id));
+  EXPECT_EQ(FILE_ERROR_OK, storage_->GetChild(key1, name3, &child_id));
+  EXPECT_EQ(key3, child_id);
 
   // Remove entries.
-  EXPECT_TRUE(storage_->RemoveEntry(key3));
-  EXPECT_FALSE(storage_->GetEntry(key3, &result));
-  EXPECT_TRUE(storage_->RemoveEntry(key2));
-  EXPECT_FALSE(storage_->GetEntry(key2, &result));
-  EXPECT_TRUE(storage_->RemoveEntry(key1));
-  EXPECT_FALSE(storage_->GetEntry(key1, &result));
+  EXPECT_EQ(FILE_ERROR_OK, storage_->RemoveEntry(key3));
+  EXPECT_EQ(FILE_ERROR_NOT_FOUND, storage_->GetEntry(key3, &result));
+  EXPECT_EQ(FILE_ERROR_OK, storage_->RemoveEntry(key2));
+  EXPECT_EQ(FILE_ERROR_NOT_FOUND, storage_->GetEntry(key2, &result));
+  EXPECT_EQ(FILE_ERROR_OK, storage_->RemoveEntry(key1));
+  EXPECT_EQ(FILE_ERROR_NOT_FOUND, storage_->GetEntry(key1, &result));
 }
 
 TEST_F(ResourceMetadataStorageTest, Iterator) {
@@ -146,108 +153,22 @@ TEST_F(ResourceMetadataStorageTest, Iterator) {
   for (size_t i = 0; i < keys.size(); ++i) {
     ResourceEntry entry;
     entry.set_local_id(keys[i]);
-    EXPECT_TRUE(storage_->PutEntry(entry));
+    EXPECT_EQ(FILE_ERROR_OK, storage_->PutEntry(entry));
   }
-
-  // Insert some cache entries.
-  std::map<std::string, FileCacheEntry> cache_entries;
-  cache_entries[keys[0]].set_md5("aaaaaa");
-  cache_entries[keys[1]].set_md5("bbbbbb");
-  for (std::map<std::string, FileCacheEntry>::iterator it =
-           cache_entries.begin(); it != cache_entries.end(); ++it)
-    EXPECT_TRUE(storage_->PutCacheEntry(it->first, it->second));
 
   // Iterate and check the result.
   std::map<std::string, ResourceEntry> found_entries;
-  std::map<std::string, FileCacheEntry> found_cache_entries;
   scoped_ptr<ResourceMetadataStorage::Iterator> it = storage_->GetIterator();
   ASSERT_TRUE(it);
   for (; !it->IsAtEnd(); it->Advance()) {
     const ResourceEntry& entry = it->GetValue();
     found_entries[it->GetID()] = entry;
-
-    FileCacheEntry cache_entry;
-    if (it->GetCacheEntry(&cache_entry))
-      found_cache_entries[it->GetID()] = cache_entry;
   }
   EXPECT_FALSE(it->HasError());
 
   EXPECT_EQ(keys.size(), found_entries.size());
   for (size_t i = 0; i < keys.size(); ++i)
     EXPECT_EQ(1U, found_entries.count(keys[i]));
-
-  EXPECT_EQ(cache_entries.size(), found_cache_entries.size());
-  for (std::map<std::string, FileCacheEntry>::iterator it =
-           cache_entries.begin(); it != cache_entries.end(); ++it) {
-    ASSERT_EQ(1U, found_cache_entries.count(it->first));
-    EXPECT_EQ(it->second.md5(), found_cache_entries[it->first].md5());
-  }
-}
-
-TEST_F(ResourceMetadataStorageTest, PutCacheEntry) {
-  FileCacheEntry entry;
-  const std::string key1 = "abcdefg";
-  const std::string key2 = "abcd";
-  const std::string md5_1 = "foo";
-  const std::string md5_2 = "bar";
-
-  // Put cache entries.
-  entry.set_md5(md5_1);
-  EXPECT_TRUE(storage_->PutCacheEntry(key1, entry));
-  entry.set_md5(md5_2);
-  EXPECT_TRUE(storage_->PutCacheEntry(key2, entry));
-
-  // Get cache entires.
-  EXPECT_TRUE(storage_->GetCacheEntry(key1, &entry));
-  EXPECT_EQ(md5_1, entry.md5());
-  EXPECT_TRUE(storage_->GetCacheEntry(key2, &entry));
-  EXPECT_EQ(md5_2, entry.md5());
-
-  // Remove cache entries.
-  EXPECT_TRUE(storage_->RemoveCacheEntry(key1));
-  EXPECT_FALSE(storage_->GetCacheEntry(key1, &entry));
-
-  EXPECT_TRUE(storage_->RemoveCacheEntry(key2));
-  EXPECT_FALSE(storage_->GetCacheEntry(key2, &entry));
-}
-
-TEST_F(ResourceMetadataStorageTest, CacheEntryIterator) {
-  // Prepare data.
-  std::map<std::string, FileCacheEntry> entries;
-  FileCacheEntry cache_entry;
-
-  cache_entry.set_md5("aA");
-  entries["entry1"] = cache_entry;
-  cache_entry.set_md5("bB");
-  entries["entry2"] = cache_entry;
-  cache_entry.set_md5("cC");
-  entries["entry3"] = cache_entry;
-  cache_entry.set_md5("dD");
-  entries["entry4"] = cache_entry;
-
-  for (std::map<std::string, FileCacheEntry>::iterator it = entries.begin();
-       it != entries.end(); ++it)
-    EXPECT_TRUE(storage_->PutCacheEntry(it->first, it->second));
-
-  // Insert some dummy entries.
-  ResourceEntry entry;
-  entry.set_local_id("entry1");
-  EXPECT_TRUE(storage_->PutEntry(entry));
-  entry.set_local_id("entry2");
-  EXPECT_TRUE(storage_->PutEntry(entry));
-
-  // Iterate and check the result.
-  scoped_ptr<ResourceMetadataStorage::CacheEntryIterator> it =
-      storage_->GetCacheEntryIterator();
-  ASSERT_TRUE(it);
-  size_t num_entries = 0;
-  for (; !it->IsAtEnd(); it->Advance()) {
-    EXPECT_EQ(1U, entries.count(it->GetID()));
-    EXPECT_EQ(entries[it->GetID()].md5(), it->GetValue().md5());
-    ++num_entries;
-  }
-  EXPECT_FALSE(it->HasError());
-  EXPECT_EQ(entries.size(), num_entries);
 }
 
 TEST_F(ResourceMetadataStorageTest, GetIdByResourceId) {
@@ -256,21 +177,23 @@ TEST_F(ResourceMetadataStorageTest, GetIdByResourceId) {
 
   // Resource ID to local ID mapping is not stored yet.
   std::string id;
-  EXPECT_FALSE(storage_->GetIdByResourceId(resource_id, &id));
+  EXPECT_EQ(FILE_ERROR_NOT_FOUND,
+            storage_->GetIdByResourceId(resource_id, &id));
 
   // Put an entry with the resource ID.
   ResourceEntry entry;
   entry.set_local_id(local_id);
   entry.set_resource_id(resource_id);
-  EXPECT_TRUE(storage_->PutEntry(entry));
+  EXPECT_EQ(FILE_ERROR_OK, storage_->PutEntry(entry));
 
   // Can get local ID by resource ID.
-  EXPECT_TRUE(storage_->GetIdByResourceId(resource_id, &id));
+  EXPECT_EQ(FILE_ERROR_OK, storage_->GetIdByResourceId(resource_id, &id));
   EXPECT_EQ(local_id, id);
 
   // Resource ID to local ID mapping is removed.
-  EXPECT_TRUE(storage_->RemoveEntry(local_id));
-  EXPECT_FALSE(storage_->GetIdByResourceId(resource_id, &id));
+  EXPECT_EQ(FILE_ERROR_OK, storage_->RemoveEntry(local_id));
+  EXPECT_EQ(FILE_ERROR_NOT_FOUND,
+            storage_->GetIdByResourceId(resource_id, &id));
 }
 
 TEST_F(ResourceMetadataStorageTest, GetChildren) {
@@ -297,7 +220,7 @@ TEST_F(ResourceMetadataStorageTest, GetChildren) {
   for (size_t i = 0; i < arraysize(parents_id); ++i) {
     ResourceEntry entry;
     entry.set_local_id(parents_id[i]);
-    EXPECT_TRUE(storage_->PutEntry(entry));
+    EXPECT_EQ(FILE_ERROR_OK, storage_->PutEntry(entry));
   }
 
   // Put children.
@@ -307,14 +230,8 @@ TEST_F(ResourceMetadataStorageTest, GetChildren) {
       entry.set_local_id(children_name_id[i][j].second);
       entry.set_parent_local_id(parents_id[i]);
       entry.set_base_name(children_name_id[i][j].first);
-      EXPECT_TRUE(storage_->PutEntry(entry));
+      EXPECT_EQ(FILE_ERROR_OK, storage_->PutEntry(entry));
     }
-  }
-
-  // Put some dummy cache entries.
-  for (size_t i = 0; i < arraysize(parents_id); ++i) {
-    FileCacheEntry cache_entry;
-    EXPECT_TRUE(storage_->PutCacheEntry(parents_id[i], cache_entry));
   }
 
   // Try to get children.
@@ -343,8 +260,8 @@ TEST_F(ResourceMetadataStorageTest, OpenExistingDB) {
   entry2.set_base_name(child_name1);
 
   // Put some data.
-  EXPECT_TRUE(storage_->PutEntry(entry1));
-  EXPECT_TRUE(storage_->PutEntry(entry2));
+  EXPECT_EQ(FILE_ERROR_OK, storage_->PutEntry(entry1));
+  EXPECT_EQ(FILE_ERROR_OK, storage_->PutEntry(entry2));
 
   // Close DB and reopen.
   storage_.reset(new ResourceMetadataStorage(
@@ -353,13 +270,16 @@ TEST_F(ResourceMetadataStorageTest, OpenExistingDB) {
 
   // Can read data.
   ResourceEntry result;
-  EXPECT_TRUE(storage_->GetEntry(parent_id1, &result));
+  EXPECT_EQ(FILE_ERROR_OK, storage_->GetEntry(parent_id1, &result));
 
-  EXPECT_TRUE(storage_->GetEntry(child_id1, &result));
+  EXPECT_EQ(FILE_ERROR_OK, storage_->GetEntry(child_id1, &result));
   EXPECT_EQ(parent_id1, result.parent_local_id());
   EXPECT_EQ(child_name1, result.base_name());
 
-  EXPECT_EQ(child_id1, storage_->GetChild(parent_id1, child_name1));
+  std::string child_id;
+  EXPECT_EQ(FILE_ERROR_OK,
+            storage_->GetChild(parent_id1, child_name1, &child_id));
+  EXPECT_EQ(child_id1, child_id);
 }
 
 TEST_F(ResourceMetadataStorageTest, IncompatibleDB_M29) {
@@ -367,7 +287,8 @@ TEST_F(ResourceMetadataStorageTest, IncompatibleDB_M29) {
 
   // Construct M29 version DB.
   SetDBVersion(6);
-  EXPECT_TRUE(storage_->SetLargestChangestamp(kLargestChangestamp));
+  EXPECT_EQ(FILE_ERROR_OK,
+            storage_->SetLargestChangestamp(kLargestChangestamp));
 
   leveldb::WriteBatch batch;
 
@@ -394,12 +315,16 @@ TEST_F(ResourceMetadataStorageTest, IncompatibleDB_M29) {
 
   // Resource-ID-to-local-ID mapping is added.
   std::string id;
-  EXPECT_TRUE(storage_->GetIdByResourceId("abcd", &id));  // "file:" is dropped.
+  EXPECT_EQ(FILE_ERROR_OK,
+            storage_->GetIdByResourceId("abcd", &id));  // "file:" is dropped.
 
   // Data is erased, except cache entries.
-  EXPECT_EQ(0, storage_->GetLargestChangestamp());
-  EXPECT_FALSE(storage_->GetEntry(id, &entry));
-  EXPECT_TRUE(storage_->GetCacheEntry(id, &cache_entry));
+  int64 largest_changestamp = 0;
+  EXPECT_EQ(FILE_ERROR_OK,
+            storage_->GetLargestChangestamp(&largest_changestamp));
+  EXPECT_EQ(0, largest_changestamp);
+  EXPECT_EQ(FILE_ERROR_NOT_FOUND, storage_->GetEntry(id, &entry));
+  EXPECT_EQ(FILE_ERROR_OK, storage_->GetCacheEntry(id, &cache_entry));
 }
 
 TEST_F(ResourceMetadataStorageTest, IncompatibleDB_M32) {
@@ -409,7 +334,8 @@ TEST_F(ResourceMetadataStorageTest, IncompatibleDB_M32) {
 
   // Construct M32 version DB.
   SetDBVersion(11);
-  EXPECT_TRUE(storage_->SetLargestChangestamp(kLargestChangestamp));
+  EXPECT_EQ(FILE_ERROR_OK,
+            storage_->SetLargestChangestamp(kLargestChangestamp));
 
   leveldb::WriteBatch batch;
 
@@ -438,11 +364,14 @@ TEST_F(ResourceMetadataStorageTest, IncompatibleDB_M32) {
 
   // Data is erased, except cache and id mapping entries.
   std::string id;
-  EXPECT_TRUE(storage_->GetIdByResourceId(resource_id, &id));
+  EXPECT_EQ(FILE_ERROR_OK, storage_->GetIdByResourceId(resource_id, &id));
   EXPECT_EQ(local_id, id);
-  EXPECT_EQ(0, storage_->GetLargestChangestamp());
-  EXPECT_FALSE(storage_->GetEntry(id, &entry));
-  EXPECT_TRUE(storage_->GetCacheEntry(id, &cache_entry));
+  int64 largest_changestamp = 0;
+  EXPECT_EQ(FILE_ERROR_OK,
+            storage_->GetLargestChangestamp(&largest_changestamp));
+  EXPECT_EQ(0, largest_changestamp);
+  EXPECT_EQ(FILE_ERROR_NOT_FOUND, storage_->GetEntry(id, &entry));
+  EXPECT_EQ(FILE_ERROR_OK, storage_->GetCacheEntry(id, &cache_entry));
 }
 
 TEST_F(ResourceMetadataStorageTest, IncompatibleDB_Unknown) {
@@ -450,12 +379,11 @@ TEST_F(ResourceMetadataStorageTest, IncompatibleDB_Unknown) {
   const std::string key1 = "abcd";
 
   // Put some data.
-  EXPECT_TRUE(storage_->SetLargestChangestamp(kLargestChangestamp));
+  EXPECT_EQ(FILE_ERROR_OK,
+            storage_->SetLargestChangestamp(kLargestChangestamp));
   ResourceEntry entry;
   entry.set_local_id(key1);
-  EXPECT_TRUE(storage_->PutEntry(entry));
-  FileCacheEntry cache_entry;
-  EXPECT_TRUE(storage_->PutCacheEntry(key1, cache_entry));
+  EXPECT_EQ(FILE_ERROR_OK, storage_->PutEntry(entry));
 
   // Set newer version, upgrade and reopen DB.
   SetDBVersion(ResourceMetadataStorage::kDBVersion + 1);
@@ -467,9 +395,11 @@ TEST_F(ResourceMetadataStorageTest, IncompatibleDB_Unknown) {
   ASSERT_TRUE(storage_->Initialize());
 
   // Data is erased because of the incompatible version.
-  EXPECT_EQ(0, storage_->GetLargestChangestamp());
-  EXPECT_FALSE(storage_->GetEntry(key1, &entry));
-  EXPECT_FALSE(storage_->GetCacheEntry(key1, &cache_entry));
+  int64 largest_changestamp = 0;
+  EXPECT_EQ(FILE_ERROR_OK,
+            storage_->GetLargestChangestamp(&largest_changestamp));
+  EXPECT_EQ(0, largest_changestamp);
+  EXPECT_EQ(FILE_ERROR_NOT_FOUND, storage_->GetEntry(key1, &entry));
 }
 
 TEST_F(ResourceMetadataStorageTest, WrongPath) {
@@ -484,27 +414,22 @@ TEST_F(ResourceMetadataStorageTest, WrongPath) {
 }
 
 TEST_F(ResourceMetadataStorageTest, RecoverCacheEntriesFromTrashedResourceMap) {
-  // Put some cache entries.
-  FileCacheEntry cache_entry;
-  cache_entry.set_md5("md5_foo");
-  EXPECT_TRUE(storage_->PutCacheEntry("id_foo", cache_entry));
-  cache_entry.set_md5("md5_bar");
-  cache_entry.set_is_dirty(true);
-  EXPECT_TRUE(storage_->PutCacheEntry("id_bar", cache_entry));
-
   // Put entry with id_foo.
   ResourceEntry entry;
   entry.set_local_id("id_foo");
   entry.set_base_name("foo");
   entry.set_title("foo");
-  EXPECT_TRUE(storage_->PutEntry(entry));
+  entry.mutable_file_specific_info()->mutable_cache_state()->set_md5("md5_foo");
+  EXPECT_EQ(FILE_ERROR_OK, storage_->PutEntry(entry));
 
   // Put entry with id_bar as a id_foo's child.
   entry.set_local_id("id_bar");
   entry.set_parent_local_id("id_foo");
   entry.set_base_name("bar");
   entry.set_title("bar");
-  EXPECT_TRUE(storage_->PutEntry(entry));
+  entry.mutable_file_specific_info()->mutable_cache_state()->set_md5("md5_bar");
+  entry.mutable_file_specific_info()->mutable_cache_state()->set_is_dirty(true);
+  EXPECT_EQ(FILE_ERROR_OK, storage_->PutEntry(entry));
 
   // Remove parent-child relationship to make the DB invalid.
   RemoveChild("id_foo", "bar");
@@ -542,14 +467,14 @@ TEST_F(ResourceMetadataStorageTest, CheckValidity) {
   ResourceEntry entry;
   entry.set_local_id(key1);
   entry.set_base_name(name1);
-  EXPECT_TRUE(storage_->PutEntry(entry));
+  EXPECT_EQ(FILE_ERROR_OK, storage_->PutEntry(entry));
   EXPECT_TRUE(CheckValidity());
 
   // Put entry with key2 under key1.
   entry.set_local_id(key2);
   entry.set_parent_local_id(key1);
   entry.set_base_name(name2);
-  EXPECT_TRUE(storage_->PutEntry(entry));
+  EXPECT_EQ(FILE_ERROR_OK, storage_->PutEntry(entry));
   EXPECT_TRUE(CheckValidity());
 
   RemoveChild(key1, name2);
@@ -567,7 +492,7 @@ TEST_F(ResourceMetadataStorageTest, CheckValidity) {
   entry.set_local_id(key3);
   entry.set_parent_local_id(key2);
   entry.set_base_name(name3);
-  EXPECT_TRUE(storage_->PutEntry(entry));
+  EXPECT_EQ(FILE_ERROR_OK, storage_->PutEntry(entry));
   EXPECT_TRUE(CheckValidity());
 
   // Parent-child relationship with wrong name.
@@ -582,25 +507,20 @@ TEST_F(ResourceMetadataStorageTest, CheckValidity) {
   PutChild(key2, name3, key3);
   EXPECT_TRUE(CheckValidity());
 
-  // Add some cache entries.
-  FileCacheEntry cache_entry;
-  EXPECT_TRUE(storage_->PutCacheEntry(key1, cache_entry));
-  EXPECT_TRUE(storage_->PutCacheEntry(key2, cache_entry));
-
   // Remove key2.
   RemoveChild(key1, name2);
   EXPECT_FALSE(CheckValidity());
-  EXPECT_TRUE(storage_->RemoveEntry(key2));
+  EXPECT_EQ(FILE_ERROR_OK, storage_->RemoveEntry(key2));
   EXPECT_FALSE(CheckValidity());
 
   // Remove key3.
   RemoveChild(key2, name3);
   EXPECT_FALSE(CheckValidity());
-  EXPECT_TRUE(storage_->RemoveEntry(key3));
+  EXPECT_EQ(FILE_ERROR_OK, storage_->RemoveEntry(key3));
   EXPECT_TRUE(CheckValidity());
 
   // Remove key1.
-  EXPECT_TRUE(storage_->RemoveEntry(key1));
+  EXPECT_EQ(FILE_ERROR_OK, storage_->RemoveEntry(key1));
   EXPECT_TRUE(CheckValidity());
 }
 

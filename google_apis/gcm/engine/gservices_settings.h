@@ -9,9 +9,11 @@
 #include <string>
 
 #include "base/memory/weak_ptr.h"
+#include "base/time/time.h"
 #include "google_apis/gcm/base/gcm_export.h"
 #include "google_apis/gcm/engine/gcm_store.h"
 #include "google_apis/gcm/protocol/checkin.pb.h"
+#include "url/gurl.h"
 
 namespace gcm {
 
@@ -19,67 +21,55 @@ namespace gcm {
 // extracting them from checkin response and storing in GCMStore.
 class GCM_EXPORT GServicesSettings {
  public:
-  // Minimum periodic checkin interval in seconds.
-  static const int64 kMinimumCheckinInterval;
+  typedef std::map<std::string, std::string> SettingsMap;
 
-  // Create an instance of GServicesSettings class. |gcm_store| is used to store
-  // the settings after they are extracted from checkin response.
-  explicit GServicesSettings(GCMStore* gcm_store);
+  // Minimum periodic checkin interval in seconds.
+  static const base::TimeDelta MinimumCheckinInterval();
+
+  // Default checkin URL.
+  static const GURL DefaultCheckinURL();
+
+  // Calculates digest of provided settings.
+  static std::string CalculateDigest(const SettingsMap& settings);
+
+  GServicesSettings();
   ~GServicesSettings();
 
-  // Udpates the settings based on |checkin_response|.
-  void UpdateFromCheckinResponse(
+  // Updates the settings based on |checkin_response|.
+  bool UpdateFromCheckinResponse(
       const checkin_proto::AndroidCheckinResponse& checkin_response);
 
-  // Updates the settings based on |load_result|.
+  // Updates the settings based on |load_result|. Returns true if update was
+  // successful, false otherwise.
   void UpdateFromLoadResult(const GCMStore::LoadResult& load_result);
 
-  const std::string& digest() const { return digest_; }
+  SettingsMap settings_map() const { return settings_; }
 
-  // TODO(fgorski): Consider returning TimeDelta.
-  int64 checkin_interval() const { return checkin_interval_; }
+  std::string digest() const { return digest_; }
 
-  // TODO(fgorski): Consider returning GURL and use it for validation.
-  const std::string& checkin_url() const { return checkin_url_; }
+  // Gets the interval at which device should perform a checkin.
+  base::TimeDelta GetCheckinInterval() const;
 
-  // TODO(fgorski): Consider returning GURL and use it for validation.
-  const std::string& mcs_hostname() const { return mcs_hostname_; }
+  // Gets the URL to use when checking in.
+  GURL GetCheckinURL() const;
 
-  int mcs_secure_port() const { return mcs_secure_port_; }
+  // Gets address of main MCS endpoint.
+  GURL GetMCSMainEndpoint() const;
 
-  // TODO(fgorski): Consider returning GURL and use it for validation.
-  const std::string& registration_url() const { return registration_url_; }
+  // Gets address of fallback MCS endpoint.
+  GURL GetMCSFallbackEndpoint() const;
+
+  // Gets the URL to use when registering or unregistering the apps.
+  GURL GetRegistrationURL() const;
 
  private:
-  // Parses the |settings| to fill in specific fields.
-  // TODO(fgorski): Change to a status variable that can be logged to UMA.
-  bool UpdateSettings(const std::map<std::string, std::string>& settings);
-
-  // Callback passed to GCMStore::SetGServicesSettings.
-  void SetGServicesSettingsCallback(bool success);
-
-  // GCM store to persist the settings. Not owned.
-  GCMStore* gcm_store_;
-
   // Digest (hash) of the settings, used to check whether settings need update.
   // It is meant to be sent with checkin request, instead of sending the whole
   // settings table.
   std::string digest_;
 
-  // Time in seconds between periodic checkins.
-  int64 checkin_interval_;
-
-  // URL that should be used for checkins.
-  std::string checkin_url_;
-
-  // Hostname of the MCS server.
-  std::string mcs_hostname_;
-
-  // Secure port to connect to on MCS sever.
-  int mcs_secure_port_;
-
-  // URL that should be used for regisrations and unregistrations.
-  std::string registration_url_;
+  // G-services settings as provided by checkin response.
+  SettingsMap settings_;
 
   // Factory for creating references in callbacks.
   base::WeakPtrFactory<GServicesSettings> weak_ptr_factory_;

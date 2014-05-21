@@ -34,9 +34,9 @@
 #include "content/common/gpu/client/gl_helper.h"
 #include "content/common/gpu/gpu_messages.h"
 #include "content/common/view_messages.h"
-#include "content/port/browser/render_widget_host_view_frame_subscriber.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/render_view_host.h"
+#include "content/public/browser/render_widget_host_view_frame_subscriber.h"
 #include "content/public/browser/user_metrics.h"
 #include "third_party/WebKit/public/platform/WebScreenInfo.h"
 #include "third_party/WebKit/public/web/WebCompositionUnderline.h"
@@ -646,6 +646,10 @@ gfx::NativeViewAccessible RenderWidgetHostViewAura::GetNativeViewAccessible() {
   return static_cast<gfx::NativeViewAccessible>(NULL);
 }
 
+ui::TextInputClient* RenderWidgetHostViewAura::GetTextInputClient() {
+  return this;
+}
+
 void RenderWidgetHostViewAura::SetKeyboardFocus() {
 #if defined(OS_WIN)
   if (CanFocus()) {
@@ -764,17 +768,13 @@ bool RenderWidgetHostViewAura::IsShowing() {
 }
 
 gfx::Rect RenderWidgetHostViewAura::GetViewBounds() const {
-  // This is the size that we want the renderer to produce. While we're waiting
-  // for the correct frame (i.e. during a resize), don't change the size so that
-  // we don't pipeline more resizes than we can handle.
-  gfx::Rect bounds(window_->GetBoundsInScreen());
-  return delegated_frame_host_->GetViewBoundsWithResizeLock(bounds);
+  return window_->GetBoundsInScreen();
 }
 
-void RenderWidgetHostViewAura::SetBackground(const SkBitmap& background) {
-  RenderWidgetHostViewBase::SetBackground(background);
-  host_->SetBackground(background);
-  window_->layer()->SetFillsBoundsOpaquely(background.isOpaque());
+void RenderWidgetHostViewAura::SetBackgroundOpaque(bool opaque) {
+  RenderWidgetHostViewBase::SetBackgroundOpaque(opaque);
+  host_->SetBackgroundOpaque(opaque);
+  window_->layer()->SetFillsBoundsOpaquely(opaque);
 }
 
 gfx::Size RenderWidgetHostViewAura::GetVisibleViewportSize() const {
@@ -957,9 +957,6 @@ void RenderWidgetHostViewAura::EndFrameSubscription() {
   delegated_frame_host_->EndFrameSubscription();
 }
 
-void RenderWidgetHostViewAura::OnAcceleratedCompositingStateChange() {
-}
-
 void RenderWidgetHostViewAura::AcceleratedSurfaceInitialized(int host_id,
                                                              int route_id) {
 }
@@ -990,13 +987,17 @@ void RenderWidgetHostViewAura::InternalSetBounds(const gfx::Rect& rect) {
   // Additonally the legacy dummy window is needed for accessibility and for
   // scrolling to work in legacy drivers for trackpoints/trackpads, etc.
   if (GetNativeViewId()) {
+    bool show_legacy_window = false;
     if (!legacy_render_widget_host_HWND_) {
       legacy_render_widget_host_HWND_ = LegacyRenderWidgetHostHWND::Create(
           reinterpret_cast<HWND>(GetNativeViewId()));
+      show_legacy_window = window_->TargetVisibility();
     }
     if (legacy_render_widget_host_HWND_) {
       legacy_render_widget_host_HWND_->SetBounds(
           window_->GetBoundsInRootWindow());
+      if (show_legacy_window)
+        legacy_render_widget_host_HWND_->Show();
     }
   }
 
@@ -1006,6 +1007,10 @@ void RenderWidgetHostViewAura::InternalSetBounds(const gfx::Rect& rect) {
 }
 
 #if defined(OS_WIN)
+bool RenderWidgetHostViewAura::UsesNativeWindowFrame() const {
+  return (legacy_render_widget_host_HWND_ != NULL);
+}
+
 void RenderWidgetHostViewAura::UpdateConstrainedWindowRects(
     const std::vector<gfx::Rect>& rects) {
   // Check this before setting constrained_rects_, so that next time they're set
@@ -1108,13 +1113,41 @@ void RenderWidgetHostViewAura::GetScreenInfo(WebScreenInfo* results) {
 }
 
 gfx::Rect RenderWidgetHostViewAura::GetBoundsInRootWindow() {
-  gfx::Rect rect = window_->GetToplevelWindow()->GetBoundsInScreen();
+  aura::Window* top_level = window_->GetToplevelWindow();
+  gfx::Rect bounds(top_level->GetBoundsInScreen());
 
 #if defined(OS_WIN)
-  rect = gfx::win::ScreenToDIPRect(rect);
+  // TODO(zturner,iyengar): This will break when we remove support for NPAPI and
+  // remove the legacy hwnd, so a better fix will need to be decided when that
+  // happens.
+  if (UsesNativeWindowFrame()) {
+    // aura::Window doesn't take into account non-client area of native windows
+    // (e.g. HWNDs), so for that case ask Windows directly what the bounds are.
+    aura::WindowTreeHost* host = top_level->GetHost();
+    if (!host)
+      return top_level->GetBoundsInScreen();
+    RECT window_rect = {0};
+    HWND hwnd = host->GetAcceleratedWidget();
+    ::GetWindowRect(hwnd, &window_rect);
+    bounds = gfx::Rect(window_rect);
+
+    // Maximized windows are outdented from the work area by the frame thickness
+    // even though this "frame" is not painted.  This confuses code (and people)
+    // that think of a maximized window as corresponding exactly to the work
+    // area.  Correct for this by subtracting the frame thickness back off.
+    if (::IsZoomed(hwnd)) {
+      bounds.Inset(GetSystemMetrics(SM_CXSIZEFRAME),
+                   GetSystemMetrics(SM_CYSIZEFRAME));
+
+      bounds.Inset(GetSystemMetrics(SM_CXPADDEDBORDER),
+                   GetSystemMetrics(SM_CXPADDEDBORDER));
+    }
+  }
+
+  bounds = gfx::win::ScreenToDIPRect(bounds);
 #endif
 
-  return rect;
+  return bounds;
 }
 
 void RenderWidgetHostViewAura::GestureEventAck(

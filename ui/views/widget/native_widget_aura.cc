@@ -17,6 +17,7 @@
 #include "ui/aura/window_event_dispatcher.h"
 #include "ui/aura/window_observer.h"
 #include "ui/base/dragdrop/os_exchange_data.h"
+#include "ui/base/ui_base_switches_util.h"
 #include "ui/base/ui_base_types.h"
 #include "ui/compositor/layer.h"
 #include "ui/events/event.h"
@@ -26,6 +27,7 @@
 #include "ui/native_theme/native_theme_aura.h"
 #include "ui/views/drag_utils.h"
 #include "ui/views/ime/input_method_bridge.h"
+#include "ui/views/ime/null_input_method.h"
 #include "ui/views/views_delegate.h"
 #include "ui/views/widget/drop_helper.h"
 #include "ui/views/widget/native_widget_delegate.h"
@@ -74,7 +76,6 @@ NativeWidgetAura::NativeWidgetAura(internal::NativeWidgetDelegate* delegate)
       window_(new aura::Window(this)),
       ownership_(Widget::InitParams::NATIVE_WIDGET_OWNS_WIDGET),
       close_widget_factory_(this),
-      can_activate_(true),
       destroying_(false),
       cursor_(gfx::kNullCursor),
       saved_window_state_(ui::SHOW_STATE_DEFAULT) {
@@ -159,9 +160,6 @@ void NativeWidgetAura::InitNativeWidget(const Widget::InitParams& params) {
   else
     SetBounds(window_bounds);
   window_->set_ignore_events(!params.accept_events);
-  can_activate_ = params.can_activate &&
-      params.type != Widget::InitParams::TYPE_CONTROL &&
-      params.type != Widget::InitParams::TYPE_TOOLTIP;
   DCHECK(GetWidget()->GetRootView());
   if (params.type != Widget::InitParams::TYPE_TOOLTIP)
     tooltip_manager_.reset(new views::TooltipManagerAura(GetWidget()));
@@ -270,6 +268,10 @@ bool NativeWidgetAura::HasCapture() const {
 InputMethod* NativeWidgetAura::CreateInputMethod() {
   if (!window_)
     return NULL;
+
+  if (switches::IsTextInputFocusManagerEnabled())
+    return new NullInputMethod();
+
   aura::Window* root_window = window_->GetRootWindow();
   ui::InputMethod* host =
       root_window->GetProperty(aura::client::kRootWindowInputMethodKey);
@@ -278,6 +280,11 @@ InputMethod* NativeWidgetAura::CreateInputMethod() {
 
 internal::InputMethodDelegate* NativeWidgetAura::GetInputMethodDelegate() {
   return this;
+}
+
+ui::InputMethod* NativeWidgetAura::GetHostInputMethod() {
+  aura::Window* root_window = window_->GetRootWindow();
+  return root_window->GetProperty(aura::client::kRootWindowInputMethodKey);
 }
 
 void NativeWidgetAura::CenterWindow(const gfx::Size& size) {
@@ -476,7 +483,7 @@ void NativeWidgetAura::ShowWithWindowState(ui::WindowShowState state) {
   if (state == ui::SHOW_STATE_MAXIMIZED || state == ui::SHOW_STATE_FULLSCREEN)
     window_->SetProperty(aura::client::kShowStateKey, state);
   window_->Show();
-  if (can_activate_) {
+  if (delegate_->CanActivate()) {
     if (state != ui::SHOW_STATE_INACTIVE)
       Activate();
     // SetInitialFocus() should be always be called, even for
@@ -762,7 +769,7 @@ bool NativeWidgetAura::ShouldDescendIntoChildForEventHandling(
 }
 
 bool NativeWidgetAura::CanFocus() {
-  return can_activate_;
+  return ShouldActivate();
 }
 
 void NativeWidgetAura::OnCaptureLost() {
@@ -821,6 +828,12 @@ void NativeWidgetAura::OnKeyEvent(ui::KeyEvent* event) {
   if (!window_->IsVisible())
     return;
   GetWidget()->GetInputMethod()->DispatchKeyEvent(*event);
+  if (switches::IsTextInputFocusManagerEnabled()) {
+    FocusManager* focus_manager = GetWidget()->GetFocusManager();
+    delegate_->OnKeyEvent(event);
+    if (!event->handled() && focus_manager)
+      focus_manager->OnKeyEvent(*event);
+  }
   event->SetHandled();
 }
 
@@ -853,7 +866,7 @@ void NativeWidgetAura::OnGestureEvent(ui::GestureEvent* event) {
 // NativeWidgetAura, aura::client::ActivationDelegate implementation:
 
 bool NativeWidgetAura::ShouldActivate() const {
-  return can_activate_ && delegate_->CanActivate();
+  return delegate_->CanActivate();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -882,6 +895,7 @@ void NativeWidgetAura::OnWindowFocused(aura::Window* gained_focus,
     if (GetWidget()->GetInputMethod())  // Null in tests.
       GetWidget()->GetInputMethod()->OnFocus();
     delegate_->OnNativeFocus(lost_focus);
+    GetWidget()->GetFocusManager()->RestoreFocusedView();
   } else if (window_ == lost_focus) {
     // GetInputMethod() recreates the input method if it's previously been
     // destroyed.  If we get called during destruction, the input method will be
@@ -897,9 +911,8 @@ void NativeWidgetAura::OnWindowFocused(aura::Window* gained_focus,
       DCHECK_EQ(ownership_, Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET);
     }
 
-    aura::client::FocusClient* client = aura::client::GetFocusClient(window_);
-    if (client)  // NULL during destruction of aura::Window.
-      delegate_->OnNativeBlur(client->GetFocusedWindow());
+    delegate_->OnNativeBlur(gained_focus);
+    GetWidget()->GetFocusManager()->StoreFocusedView(true);
   }
 }
 

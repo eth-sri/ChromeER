@@ -14,12 +14,10 @@
 #include "content/common/content_export.h"
 #include "content/common/content_param_traits.h"
 #include "content/common/cookie_data.h"
-#include "content/common/input/did_overscroll_params.h"
 #include "content/common/navigation_gesture.h"
 #include "content/common/pepper_renderer_instance_data.h"
 #include "content/common/view_message_enums.h"
 #include "content/common/webplugin_geometry.h"
-#include "content/port/common/input_event_ack_state.h"
 #include "content/public/common/common_param_traits.h"
 #include "content/public/common/favicon_url.h"
 #include "content/public/common/file_chooser_params.h"
@@ -152,12 +150,6 @@ IPC_STRUCT_TRAITS_BEGIN(content::DateTimeSuggestion)
   IPC_STRUCT_TRAITS_MEMBER(value)
   IPC_STRUCT_TRAITS_MEMBER(localized_value)
   IPC_STRUCT_TRAITS_MEMBER(label)
-IPC_STRUCT_TRAITS_END()
-
-IPC_STRUCT_TRAITS_BEGIN(content::DidOverscrollParams)
-  IPC_STRUCT_TRAITS_MEMBER(accumulated_overscroll)
-  IPC_STRUCT_TRAITS_MEMBER(latest_overscroll_delta)
-  IPC_STRUCT_TRAITS_MEMBER(current_fling_velocity)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(content::FaviconURL)
@@ -462,6 +454,10 @@ IPC_STRUCT_BEGIN(ViewMsg_New_Params)
   // Whether the RenderView should initially be swapped out.
   IPC_STRUCT_MEMBER(bool, swapped_out)
 
+  // The ID of the proxy object for the main frame in this view. It is only
+  // used if |swapped_out| is true.
+  IPC_STRUCT_MEMBER(int32, proxy_routing_id)
+
   // Whether the RenderView should initially be hidden.
   IPC_STRUCT_MEMBER(bool, hidden)
 
@@ -527,10 +523,6 @@ IPC_MESSAGE_ROUTED1(ViewMsg_LockMouse_ACK,
                     bool /* succeeded */)
 // Tells the render side that the mouse has been unlocked.
 IPC_MESSAGE_ROUTED0(ViewMsg_MouseLockLost)
-
-// Screen was rotated. Dispatched to the onorientationchange javascript API.
-IPC_MESSAGE_ROUTED1(ViewMsg_OrientationChangeEvent,
-                    int /* orientation */)
 
 // Sent by the browser when the parameters for vsync alignment have changed.
 IPC_MESSAGE_ROUTED2(ViewMsg_UpdateVSyncParameters,
@@ -647,6 +639,12 @@ IPC_MESSAGE_ROUTED1(ViewMsg_ReplaceDateTime,
 // Copies the image at location x, y to the clipboard (if there indeed is an
 // image at that location).
 IPC_MESSAGE_ROUTED2(ViewMsg_CopyImageAt,
+                    int /* x */,
+                    int /* y */)
+
+// Saves the image at location x, y to the disk (if there indeed is an
+// image at that location).
+IPC_MESSAGE_ROUTED2(ViewMsg_SaveImageAt,
                     int /* x */,
                     int /* y */)
 
@@ -819,10 +817,8 @@ IPC_MESSAGE_ROUTED1(ViewMsg_SetTextDirection,
 // Tells the renderer to clear the focused element (if any).
 IPC_MESSAGE_ROUTED0(ViewMsg_ClearFocusedElement)
 
-// Make the RenderView transparent and render it onto a custom background. The
-// background will be tiled in both directions if it is not large enough.
-IPC_MESSAGE_ROUTED1(ViewMsg_SetBackground,
-                    SkBitmap /* background */)
+// Make the RenderView background transparent or opaque.
+IPC_MESSAGE_ROUTED1(ViewMsg_SetBackgroundOpaque, bool /* opaque */)
 
 // Used to tell the renderer not to add scrollbars with height and
 // width below a threshold.
@@ -994,6 +990,8 @@ IPC_MESSAGE_ROUTED2(ViewMsg_ReclaimCompositorResources,
                     uint32 /* output_surface_id */,
                     cc::CompositorFrameAck /* ack */)
 
+IPC_MESSAGE_ROUTED0(ViewMsg_SelectWordAroundCaret)
+
 // -----------------------------------------------------------------------------
 // Messages sent from the renderer to the browser.
 
@@ -1118,31 +1116,11 @@ IPC_MESSAGE_ROUTED5(ViewHostMsg_Find_Reply,
 // message.
 IPC_MESSAGE_ROUTED0(ViewHostMsg_ClosePage_ACK)
 
-// Notifies the browser that media has started/stopped playing.
-IPC_MESSAGE_ROUTED3(ViewHostMsg_MediaPlayingNotification,
-                    int64 /* player_cookie, distinguishes instances */,
-                    bool /* has_video */,
-                    bool /* has_audio */)
-IPC_MESSAGE_ROUTED1(ViewHostMsg_MediaPausedNotification,
-                    int64 /* player_cookie, distinguishes instances */)
-
 // Notifies the browser that we have session history information.
 // page_id: unique ID that allows us to distinguish between history entries.
 IPC_MESSAGE_ROUTED2(ViewHostMsg_UpdateState,
                     int32 /* page_id */,
                     content::PageState /* state */)
-
-// Changes the title for the page in the UI when the page is navigated or the
-// title changes.
-IPC_MESSAGE_ROUTED3(ViewHostMsg_UpdateTitle,
-                    int32 /* page_id */,
-                    base::string16 /* title */,
-                    blink::WebTextDirection /* title direction */)
-
-// Change the encoding name of the page in UI when the page has detected
-// proper encoding name.
-IPC_MESSAGE_ROUTED1(ViewHostMsg_UpdateEncoding,
-                    std::string /* new encoding name */)
 
 // Notifies the browser that we want to show a destination url for a potential
 // action (e.g. when the user is hovering over a link).
@@ -1150,23 +1128,10 @@ IPC_MESSAGE_ROUTED2(ViewHostMsg_UpdateTargetURL,
                     int32,
                     GURL)
 
-// Sent when the renderer main frame has made progress loading.
-IPC_MESSAGE_ROUTED1(ViewHostMsg_DidChangeLoadProgress,
-                    double /* load_progress */)
-
-// Sent when the renderer main frame sets its opener to null, disowning it for
-// the lifetime of the window.
-IPC_MESSAGE_ROUTED0(ViewHostMsg_DidDisownOpener)
-
 // Sent when the document element is available for the top-level frame.  This
 // happens after the page starts loading, but before all resources are
 // finished.
 IPC_MESSAGE_ROUTED0(ViewHostMsg_DocumentAvailableInMainFrame)
-
-// Sent when after the onload handler has been invoked for the document
-// in the top-level frame.
-IPC_MESSAGE_ROUTED1(ViewHostMsg_DocumentOnLoadCompletedInMainFrame,
-                    int32 /* page_id */)
 
 // Sent when the renderer loads a resource from its memory cache.
 // The security info is non empty if the resource was originally loaded over
@@ -1191,15 +1156,6 @@ IPC_MESSAGE_ROUTED2(ViewHostMsg_DidRunInsecureContent,
 // generates a ViewMsg_UpdateRect_ACK message.
 IPC_MESSAGE_ROUTED1(ViewHostMsg_UpdateRect,
                     ViewHostMsg_UpdateRect_Params)
-
-// Sent to unblock the browser's UI thread if it is waiting on an UpdateRect,
-// which may get delayed until the browser's UI unblocks.
-IPC_MESSAGE_ROUTED0(ViewHostMsg_UpdateIsDelayed)
-
-// Sent by the renderer when accelerated compositing is enabled or disabled to
-// notify the browser whether or not is should do painting.
-IPC_MESSAGE_ROUTED1(ViewHostMsg_DidActivateAcceleratedCompositing,
-                    bool /* true if the accelerated compositor is actve */)
 
 IPC_MESSAGE_ROUTED0(ViewHostMsg_Focus)
 IPC_MESSAGE_ROUTED0(ViewHostMsg_Blur)
@@ -1304,10 +1260,12 @@ IPC_MESSAGE_ROUTED2(ViewHostMsg_AppCacheAccessed,
                     bool /* blocked by policy */)
 
 // Initiates a download based on user actions like 'ALT+click'.
-IPC_MESSAGE_ROUTED3(ViewHostMsg_DownloadUrl,
-                    GURL     /* url */,
-                    content::Referrer /* referrer */,
-                    base::string16 /* suggested_name */)
+IPC_MESSAGE_CONTROL5(ViewHostMsg_DownloadUrl,
+                     int /* render_view_id */,
+                     GURL /* url */,
+                     content::Referrer /* referrer */,
+                     base::string16 /* suggested_name */,
+                     bool /* use prompt for save location */)
 
 // Used to go to the session history entry at the given offset (ie, -1 will
 // return the "back" item).
@@ -1538,11 +1496,6 @@ IPC_MESSAGE_ROUTED2(ViewHostMsg_SwapCompositorFrame,
                     uint32 /* output_surface_id */,
                     cc::CompositorFrame /* frame */)
 
-// Sent by the compositor when input scroll events are dropped due to bounds
-// restricions on the root scroll offset.
-IPC_MESSAGE_ROUTED1(ViewHostMsg_DidOverscroll,
-                    content::DidOverscrollParams /* params */)
-
 // Sent by the compositor when a flinging animation is stopped.
 IPC_MESSAGE_ROUTED0(ViewHostMsg_DidStopFlinging)
 
@@ -1652,14 +1605,12 @@ IPC_MESSAGE_CONTROL3(ViewHostMsg_DidLose3DContext,
 IPC_MESSAGE_ROUTED0(ViewHostMsg_WillInsertBody)
 
 // Notification that the urls for the favicon of a site has been determined.
-IPC_MESSAGE_ROUTED2(ViewHostMsg_UpdateFaviconURL,
-                    int32 /* page_id */,
+IPC_MESSAGE_ROUTED1(ViewHostMsg_UpdateFaviconURL,
                     std::vector<content::FaviconURL> /* candidates */)
 
 // Sent once a paint happens after the first non empty layout. In other words
 // after the page has painted something.
-IPC_MESSAGE_ROUTED1(ViewHostMsg_DidFirstVisuallyNonEmptyPaint,
-                    int /* page_id */)
+IPC_MESSAGE_ROUTED0(ViewHostMsg_DidFirstVisuallyNonEmptyPaint)
 
 // Sent by the renderer to the browser to start a vibration with the given
 // duration.

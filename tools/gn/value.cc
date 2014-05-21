@@ -5,6 +5,7 @@
 #include "tools/gn/value.h"
 
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "tools/gn/scope.h"
 
 Value::Value()
@@ -130,8 +131,17 @@ std::string Value::ToString(bool quote_string) const {
     case INTEGER:
       return base::Int64ToString(int_value_);
     case STRING:
-      if (quote_string)
-        return "\"" + string_value_ + "\"";
+      if (quote_string) {
+        std::string escaped = string_value_;
+        // First escape all special uses of a backslash.
+        ReplaceSubstringsAfterOffset(&escaped, 0, "\\$", "\\\\$");
+        ReplaceSubstringsAfterOffset(&escaped, 0, "\\\"", "\\\\\"");
+
+        // Now escape special chars.
+        ReplaceSubstringsAfterOffset(&escaped, 0, "$", "\\$");
+        ReplaceSubstringsAfterOffset(&escaped, 0, "\"", "\\\"");
+        return "\"" + escaped + "\"";
+      }
       return string_value_;
     case LIST: {
       std::string result = "[";
@@ -143,8 +153,22 @@ std::string Value::ToString(bool quote_string) const {
       result.push_back(']');
       return result;
     }
-    case SCOPE:
-      return std::string("<scope>");
+    case SCOPE: {
+      Scope::KeyValueMap scope_values;
+      scope_value_->GetCurrentScopeValues(&scope_values);
+      if (scope_values.empty())
+        return std::string("{ }");
+
+      std::string result = "{\n";
+      for (Scope::KeyValueMap::const_iterator i = scope_values.begin();
+           i != scope_values.end(); ++i) {
+        result += "  " + i->first.as_string() + " = " +
+                  i->second.ToString(true) + "\n";
+      }
+      result += "}";
+
+      return result;
+    }
   }
   return std::string();
 }

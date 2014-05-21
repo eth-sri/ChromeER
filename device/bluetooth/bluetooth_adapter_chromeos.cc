@@ -9,7 +9,10 @@
 #include "base/bind.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
+#include "base/sequenced_task_runner.h"
+#include "base/single_thread_task_runner.h"
 #include "base/sys_info.h"
+#include "base/thread_task_runner_handle.h"
 #include "chromeos/dbus/bluetooth_adapter_client.h"
 #include "chromeos/dbus/bluetooth_agent_manager_client.h"
 #include "chromeos/dbus/bluetooth_agent_service_provider.h"
@@ -19,10 +22,15 @@
 #include "device/bluetooth/bluetooth_device.h"
 #include "device/bluetooth/bluetooth_device_chromeos.h"
 #include "device/bluetooth/bluetooth_pairing_chromeos.h"
+#include "device/bluetooth/bluetooth_socket_chromeos.h"
+#include "device/bluetooth/bluetooth_socket_thread.h"
+#include "device/bluetooth/bluetooth_uuid.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
 
 using device::BluetoothAdapter;
 using device::BluetoothDevice;
+using device::BluetoothSocket;
+using device::BluetoothUUID;
 
 namespace {
 
@@ -64,6 +72,9 @@ BluetoothAdapterChromeOS::BluetoothAdapterChromeOS()
     : num_discovery_sessions_(0),
       discovery_request_pending_(false),
       weak_ptr_factory_(this) {
+  ui_task_runner_ = base::ThreadTaskRunnerHandle::Get();
+  socket_thread_ = device::BluetoothSocketThread::Get();
+
   DBusThreadManager::Get()->GetBluetoothAdapterClient()->AddObserver(this);
   DBusThreadManager::Get()->GetBluetoothDeviceClient()->AddObserver(this);
   DBusThreadManager::Get()->GetBluetoothInputClient()->AddObserver(this);
@@ -117,7 +128,7 @@ std::string BluetoothAdapterChromeOS::GetAddress() const {
           GetProperties(object_path_);
   DCHECK(properties);
 
-  return properties->address.value();
+  return BluetoothDevice::CanonicalizeAddress(properties->address.value());
 }
 
 std::string BluetoothAdapterChromeOS::GetName() const {
@@ -226,6 +237,51 @@ void BluetoothAdapterChromeOS::ReadLocalOutOfBandPairingData(
   error_callback.Run();
 }
 
+void BluetoothAdapterChromeOS::CreateRfcommService(
+    const BluetoothUUID& uuid,
+    int channel,
+    bool insecure,
+    const CreateServiceCallback& callback,
+    const CreateServiceErrorCallback& error_callback) {
+  VLOG(1) << object_path_.value() << ": Creating RFCOMM service: "
+          << uuid.canonical_value();
+  scoped_refptr<BluetoothSocketChromeOS> socket =
+      BluetoothSocketChromeOS::CreateBluetoothSocket(
+          ui_task_runner_,
+          socket_thread_,
+          NULL,
+          net::NetLog::Source());
+  socket->Listen(this,
+                 BluetoothSocketChromeOS::kRfcomm,
+                 uuid,
+                 channel,
+                 insecure,
+                 base::Bind(callback, socket),
+                 error_callback);
+}
+
+void BluetoothAdapterChromeOS::CreateL2capService(
+    const BluetoothUUID& uuid,
+    int psm,
+    const CreateServiceCallback& callback,
+    const CreateServiceErrorCallback& error_callback) {
+  VLOG(1) << object_path_.value() << ": Creating L2CAP service: "
+          << uuid.canonical_value();
+  scoped_refptr<BluetoothSocketChromeOS> socket =
+      BluetoothSocketChromeOS::CreateBluetoothSocket(
+          ui_task_runner_,
+          socket_thread_,
+          NULL,
+          net::NetLog::Source());
+  socket->Listen(this,
+                 BluetoothSocketChromeOS::kL2cap,
+                 uuid,
+                 psm,
+                 false,
+                 base::Bind(callback, socket),
+                 error_callback);
+}
+
 void BluetoothAdapterChromeOS::RemovePairingDelegateInternal(
     BluetoothDevice::PairingDelegate* pairing_delegate) {
   // Before removing a pairing delegate make sure that there aren't any devices
@@ -282,7 +338,10 @@ void BluetoothAdapterChromeOS::DeviceAdded(
     return;
 
   BluetoothDeviceChromeOS* device_chromeos =
-      new BluetoothDeviceChromeOS(this, object_path);
+      new BluetoothDeviceChromeOS(this,
+                                  object_path,
+                                  ui_task_runner_,
+                                  socket_thread_);
   DCHECK(devices_.find(device_chromeos->GetAddress()) == devices_.end());
 
   devices_[device_chromeos->GetAddress()] = device_chromeos;
@@ -325,17 +384,27 @@ void BluetoothAdapterChromeOS::DevicePropertyChanged(
       property_name == properties->paired.name() ||
       property_name == properties->trusted.name() ||
       property_name == properties->connected.name() ||
-      property_name == properties->uuids.name())
+      property_name == properties->uuids.name() ||
+      property_name == properties->rssi.name() ||
+      property_name == properties->connection_rssi.name() ||
+      property_name == properties->connection_tx_power.name())
     NotifyDeviceChanged(device_chromeos);
 
   // When a device becomes paired, mark it as trusted so that the user does
   // not need to approve every incoming connection
   if (property_name == properties->paired.name() &&
-      properties->paired.value())
+      properties->paired.value() && !properties->trusted.value())
     device_chromeos->SetTrusted();
 
   // UMA connection counting
   if (property_name == properties->connected.name()) {
+    // PlayStation joystick tries to reconnect after disconnection from USB.
+    // If it is still not trusted, set it, so it becomes available on the
+    // list of known devices.
+    if (properties->connected.value() && device_chromeos->IsTrustable() &&
+        !properties->trusted.value())
+      device_chromeos->SetTrusted();
+
     int count = 0;
 
     for (DevicesMap::iterator iter = devices_.begin();
@@ -592,13 +661,7 @@ void BluetoothAdapterChromeOS::SetAdapter(const dbus::ObjectPath& object_path) {
 
   for (std::vector<dbus::ObjectPath>::iterator iter = device_paths.begin();
        iter != device_paths.end(); ++iter) {
-    BluetoothDeviceChromeOS* device_chromeos =
-        new BluetoothDeviceChromeOS(this, *iter);
-
-    devices_[device_chromeos->GetAddress()] = device_chromeos;
-
-    FOR_EACH_OBSERVER(BluetoothAdapter::Observer, observers_,
-                      DeviceAdded(this, device_chromeos));
+    DeviceAdded(*iter);
   }
 }
 

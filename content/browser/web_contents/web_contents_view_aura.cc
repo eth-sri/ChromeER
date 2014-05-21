@@ -70,7 +70,7 @@
 #include "ui/wm/public/drag_drop_delegate.h"
 
 namespace content {
-WebContentsViewPort* CreateWebContentsView(
+WebContentsView* CreateWebContentsView(
     WebContentsImpl* web_contents,
     WebContentsViewDelegate* delegate,
     RenderViewHostDelegateView** render_view_host_delegate_view) {
@@ -132,8 +132,7 @@ class OverscrollWindowDelegate : public ImageWindowDelegate {
     if (entry && entry->screenshot().get()) {
       std::vector<gfx::ImagePNGRep> image_reps;
       image_reps.push_back(gfx::ImagePNGRep(entry->screenshot(),
-          ui::GetImageScale(
-              ui::GetScaleFactorForNativeView(web_contents_window()))));
+          ui::GetScaleFactorForNativeView(web_contents_window())));
       image = gfx::Image(image_reps);
     }
     SetImage(image);
@@ -159,7 +158,7 @@ class OverscrollWindowDelegate : public ImageWindowDelegate {
       web_contents_window()->delegate()->OnGestureEvent(event);
   }
 
-  WebContents* web_contents_;
+  WebContentsImpl* web_contents_;
 
   // The window is displayed both during the gesture, and after the gesture
   // while the navigation is in progress. During the gesture, it is necessary to
@@ -979,10 +978,6 @@ void WebContentsViewAura::GetContainerBounds(gfx::Rect *out) const {
   *out = window_->GetBoundsInScreen();
 }
 
-void WebContentsViewAura::OnTabCrashed(base::TerminationStatus status,
-                                       int error_code) {
-}
-
 void WebContentsViewAura::SizeContents(const gfx::Size& size) {
   gfx::Rect bounds = window_->bounds();
   if (bounds.size() != size) {
@@ -1035,7 +1030,7 @@ gfx::Rect WebContentsViewAura::GetViewBounds() const {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// WebContentsViewAura, WebContentsViewPort implementation:
+// WebContentsViewAura, WebContentsView implementation:
 
 void WebContentsViewAura::CreateView(
     const gfx::Size& initial_size, gfx::NativeView context) {
@@ -1043,7 +1038,7 @@ void WebContentsViewAura::CreateView(
   // if the bookmark bar is not shown and you create a new tab). The right
   // value is set shortly after this, so its safe to ignore.
 
-  aura::Env::CreateInstance();
+  aura::Env::CreateInstance(true);
   window_.reset(new aura::Window(this));
   window_->set_owned_by_parent(false);
   window_->SetType(ui::wm::WINDOW_TYPE_CONTROL);
@@ -1261,8 +1256,6 @@ void WebContentsViewAura::OnOverscrollUpdate(float delta_x, float delta_y) {
     return;
 
   aura::Window* target = GetWindowToAnimateForOverscroll();
-  ui::ScopedLayerAnimationSettings settings(target->layer()->GetAnimator());
-  settings.SetPreemptionStrategy(ui::LayerAnimator::IMMEDIATELY_SET_NEW_TARGET);
   gfx::Vector2d translate = GetTranslationForOverscroll(delta_x, delta_y);
   gfx::Transform transform;
 
@@ -1476,17 +1469,25 @@ void WebContentsViewAura::OnMouseEvent(ui::MouseEvent* event) {
 // WebContentsViewAura, aura::client::DragDropDelegate implementation:
 
 void WebContentsViewAura::OnDragEntered(const ui::DropTargetEvent& event) {
-  if (drag_dest_delegate_)
-    drag_dest_delegate_->DragInitialize(web_contents_);
-
+  current_rvh_for_drag_ = web_contents_->GetRenderViewHost();
   current_drop_data_.reset(new DropData());
 
   PrepareDropData(current_drop_data_.get(), event.data());
   blink::WebDragOperationsMask op = ConvertToWeb(event.source_operations());
 
+  // Give the delegate an opportunity to cancel the drag.
+  if (!web_contents_->GetDelegate()->CanDragEnter(web_contents_,
+                                                  *current_drop_data_.get(),
+                                                  op)) {
+    current_drop_data_.reset(NULL);
+    return;
+  }
+
+  if (drag_dest_delegate_)
+    drag_dest_delegate_->DragInitialize(web_contents_);
+
   gfx::Point screen_pt =
       gfx::Screen::GetScreenFor(GetNativeView())->GetCursorScreenPoint();
-  current_rvh_for_drag_ = web_contents_->GetRenderViewHost();
   web_contents_->GetRenderViewHost()->DragTargetDragEnter(
       *current_drop_data_.get(), event.location(), screen_pt, op,
       ConvertAuraEventFlagsToWebInputEventModifiers(event.flags()));
@@ -1501,6 +1502,9 @@ int WebContentsViewAura::OnDragUpdated(const ui::DropTargetEvent& event) {
   DCHECK(current_rvh_for_drag_);
   if (current_rvh_for_drag_ != web_contents_->GetRenderViewHost())
     OnDragEntered(event);
+
+  if (!current_drop_data_)
+    return ui::DragDropTypes::DRAG_NONE;
 
   blink::WebDragOperationsMask op = ConvertToWeb(event.source_operations());
   gfx::Point screen_pt =
@@ -1520,6 +1524,9 @@ void WebContentsViewAura::OnDragExited() {
   if (current_rvh_for_drag_ != web_contents_->GetRenderViewHost())
     return;
 
+  if (!current_drop_data_)
+    return;
+
   web_contents_->GetRenderViewHost()->DragTargetDragLeave();
   if (drag_dest_delegate_)
     drag_dest_delegate_->OnDragLeave();
@@ -1531,6 +1538,9 @@ int WebContentsViewAura::OnPerformDrop(const ui::DropTargetEvent& event) {
   DCHECK(current_rvh_for_drag_);
   if (current_rvh_for_drag_ != web_contents_->GetRenderViewHost())
     OnDragEntered(event);
+
+  if (!current_drop_data_)
+    return ui::DragDropTypes::DRAG_NONE;
 
   web_contents_->GetRenderViewHost()->DragTargetDrop(
       event.location(),

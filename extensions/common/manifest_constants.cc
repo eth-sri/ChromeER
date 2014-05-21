@@ -11,6 +11,7 @@ namespace manifest_keys {
 const char kAllFrames[] = "all_frames";
 const char kAltKey[] = "altKey";
 const char kApp[] = "app";
+const char kAutomation[] = "automation";
 const char kBackgroundAllowJsAccess[] = "background.allow_js_access";
 const char kBackgroundPage[] = "background.page";
 const char kBackgroundPageLegacy[] = "background_page";
@@ -74,6 +75,7 @@ const char kLaunchWebURL[] = "app.launch.web_url";
 const char kLaunchWidth[] = "app.launch.width";
 const char kLayouts[] = "layouts";
 const char kManifestVersion[] = "manifest_version";
+const char kMatchAboutBlank[] = "match_about_blank";
 const char kMatches[] = "matches";
 const char kMinimumChromeVersion[] = "minimum_chrome_version";
 const char kMinimumVersion[] = "minimum_version";
@@ -171,6 +173,7 @@ const char kWebview[] = "webview";
 const char kWebviewAccessibleResources[] = "accessible_resources";
 const char kWebviewName[] = "name";
 const char kWebviewPartitions[] = "partitions";
+const char kWhitelist[] = "whitelist";
 
 }  // namespace manifest_keys
 
@@ -330,6 +333,10 @@ const char kInvalidExportResources[] =
     "Invalid value for 'export.resources'.";
 const char kInvalidExportResourcesString[] =
     "Invalid value for 'export.resources[*]'.";
+const char kInvalidExportWhitelist[] =
+    "Invalid value for 'export.whitelist'.";
+const char kInvalidExportWhitelistString[] =
+    "Invalid value for 'export.whitelist[*]'.";
 const char kInvalidFileAccessList[] =
     "Invalid value for 'file_access'.";
 const char kInvalidFileAccessValue[] =
@@ -472,6 +479,8 @@ const char kInvalidManifestVersionOld[] =
     "See developer.chrome.com/*/manifestVersion.html for details.";
 const char kInvalidMatch[] =
     "Invalid value for 'content_scripts[*].matches[*]': *";
+const char kInvalidMatchAboutBlank[] =
+    "Invalid value for 'content_scripts[*].match_about_blank'.";
 const char kInvalidMatchCount[] =
     "Invalid value for 'content_scripts[*].matches'. There must be at least "
     "one match specified.";

@@ -17,12 +17,13 @@
 #include "content/browser/compositor/resize_lock.h"
 #include "content/browser/renderer_host/render_widget_host_delegate.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
+#include "content/common/gpu/client/gl_helper.h"
 #include "content/common/gpu/gpu_messages.h"
 #include "content/common/host_shared_bitmap_manager.h"
 #include "content/common/input_messages.h"
 #include "content/common/view_messages.h"
-#include "content/port/browser/render_widget_host_view_frame_subscriber.h"
 #include "content/public/browser/render_widget_host_view.h"
+#include "content/public/browser/render_widget_host_view_frame_subscriber.h"
 #include "content/public/test/mock_render_process_host.h"
 #include "content/public/test/test_browser_context.h"
 #include "ipc/ipc_test_sink.h"
@@ -232,8 +233,6 @@ class RenderWidgetHostViewAuraTest : public testing::Test {
     widget_host_ = new RenderWidgetHostImpl(
         &delegate_, process_host_, MSG_ROUTING_NONE, false);
     widget_host_->Init();
-    widget_host_->OnMessageReceived(
-        ViewHostMsg_DidActivateAcceleratedCompositing(0, true));
     view_ = new FakeRenderWidgetHostViewAura(widget_host_);
   }
 
@@ -1092,8 +1091,6 @@ TEST_F(RenderWidgetHostViewAuraTest, DiscardDelegatedFrames) {
     hosts[i] = new RenderWidgetHostImpl(
         &delegate_, process_host_, MSG_ROUTING_NONE, false);
     hosts[i]->Init();
-    hosts[i]->OnMessageReceived(
-        ViewHostMsg_DidActivateAcceleratedCompositing(0, true));
     views[i] = new FakeRenderWidgetHostViewAura(hosts[i]);
     views[i]->InitAsChild(NULL);
     aura::client::ParentWindowWithContext(
@@ -1221,8 +1218,6 @@ TEST_F(RenderWidgetHostViewAuraTest, DiscardDelegatedFramesWithLocking) {
     hosts[i] = new RenderWidgetHostImpl(
         &delegate_, process_host_, MSG_ROUTING_NONE, false);
     hosts[i]->Init();
-    hosts[i]->OnMessageReceived(
-        ViewHostMsg_DidActivateAcceleratedCompositing(0, true));
     views[i] = new FakeRenderWidgetHostViewAura(hosts[i]);
     views[i]->InitAsChild(NULL);
     aura::client::ParentWindowWithContext(

@@ -15,6 +15,7 @@ import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Picture;
 import android.graphics.Rect;
+import android.net.Uri;
 import android.net.http.SslCertificate;
 import android.os.AsyncTask;
 import android.os.Build;
@@ -61,9 +62,8 @@ import java.io.File;
 import java.lang.annotation.Annotation;
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.Callable;
 
@@ -238,11 +238,6 @@ public class AwContents {
     // Reference to the active mNativeAwContents pointer while it is active use
     // (ie before it is destroyed).
     private CleanupReference mCleanupReference;
-
-    // A list of references to native pointers where the Java counterpart has been
-    // destroyed, but are held here because they are waiting for onDetachFromWindow
-    // to release GL resources. This is cleared inside onDetachFromWindow.
-    private List<CleanupReference> mPendingDetachCleanupReferences;
 
     //--------------------------------------------------------------------------------------------
     private class IoThreadClientImpl implements AwContentsIoThreadClient {
@@ -499,7 +494,7 @@ public class AwContents {
         mLayoutSizer.setDIPScale(mDIPScale);
         mWebContentsDelegate = new AwWebContentsDelegateAdapter(contentsClient, mContainerView);
         mContentsClientBridge = new AwContentsClientBridge(contentsClient,
-                mBrowserContext.getKeyStore(), mBrowserContext.getClientCertLookupTable());
+                mBrowserContext.getKeyStore(), AwContentsStatics.getClientCertLookupTable());
         mZoomControls = new AwZoomControls(this);
         mIoThreadClient = new IoThreadClientImpl();
         mInterceptNavigationDelegate = new InterceptNavigationDelegateImpl();
@@ -642,13 +637,17 @@ public class AwContents {
     }
 
     /**
-     * Deletes the native counterpart of this object. Normally happens immediately,
-     * but maybe deferred until the appropriate time for GL resource cleanup. Either way
-     * this is transparent to the caller: after this function returns the object is
-     * effectively dead and methods are no-ops.
+     * Deletes the native counterpart of this object.
      */
     public void destroy() {
         if (mCleanupReference != null) {
+            assert mNativeAwContents != 0;
+            // If we are attached, we have to call native detach to clean up
+            // hardware resources.
+            if (mIsAttachedToWindow) {
+                nativeOnDetachedFromWindow(mNativeAwContents);
+            }
+
             // We explicitly do not null out the mContentViewCore reference here
             // because ContentViewCore already has code to deal with the case
             // methods are called on it after it's been destroyed, and other
@@ -656,17 +655,7 @@ public class AwContents {
             mContentViewCore.destroy();
             mNativeAwContents = 0;
 
-            // We cannot destroy immediately if we are still attached to the window.
-            // Instead if we make sure to null out the native pointer so there is no more native
-            // calls, and delay the actual destroy until onDetachedFromWindow.
-            if (mIsAttachedToWindow) {
-                if (mPendingDetachCleanupReferences == null) {
-                    mPendingDetachCleanupReferences = new ArrayList<CleanupReference>();
-                }
-                mPendingDetachCleanupReferences.add(mCleanupReference);
-            } else {
-                mCleanupReference.cleanupNow();
-            }
+            mCleanupReference.cleanupNow();
             mCleanupReference = null;
         }
 
@@ -912,7 +901,7 @@ public class AwContents {
         Map<String, String> extraHeaders = params.getExtraHeaders();
         if (extraHeaders != null) {
             for (String header : extraHeaders.keySet()) {
-                if (REFERER.equals(header.toLowerCase())) {
+                if (REFERER.equals(header.toLowerCase(Locale.US))) {
                     params.setReferrer(new Referrer(extraHeaders.remove(header), 1));
                     params.setExtraHeaders(extraHeaders);
                     break;
@@ -1374,14 +1363,8 @@ public class AwContents {
         mContentViewCore.clearSslPreferences();
     }
 
-    /**
-     * @see android.webkit.WebView#clearClientCertPreferences()
-     */
-    public void clearClientCertPreferences() {
-        mBrowserContext.getClientCertLookupTable().clear();
-        if (mNativeAwContents == 0) return;
-        nativeClearClientCertPreferences(mNativeAwContents);
-    }
+    // TODO(sgurun) remove after this rolls in. To keep internal tree happy.
+    public void clearClientCertPreferences() { }
 
     /**
      * Method to return all hit test values relevant to public WebView API.
@@ -1515,6 +1498,14 @@ public class AwContents {
     }
 
     /**
+     * @see android.webkit.WebView#preauthorizePermission(Uri, long)
+     */
+    public void preauthorizePermission(Uri origin, long resources) {
+        if (mNativeAwContents == 0) return;
+        nativePreauthorizePermission(mNativeAwContents, origin.toString(), resources);
+    }
+
+    /**
      * @see ContentViewCore.evaluateJavaScript(String, ContentViewCore.JavaScriptCallback)
      */
     public void evaluateJavaScript(String script, final ValueCallback<String> callback) {
@@ -1600,6 +1591,10 @@ public class AwContents {
      */
     public void onAttachedToWindow() {
         if (mNativeAwContents == 0) return;
+        if (mIsAttachedToWindow) {
+            Log.w(TAG, "onAttachedToWindow called when already attached. Ignoring");
+            return;
+        }
         mIsAttachedToWindow = true;
 
         mContentViewCore.onAttachedToWindow();
@@ -1617,6 +1612,10 @@ public class AwContents {
      */
     @SuppressLint("MissingSuperCall")
     public void onDetachedFromWindow() {
+        if (!mIsAttachedToWindow) {
+            Log.w(TAG, "onDetachedFromWindow called when already detached. Ignoring");
+            return;
+        }
         mIsAttachedToWindow = false;
         hideAutofillPopup();
         if (mNativeAwContents != 0) {
@@ -1632,13 +1631,6 @@ public class AwContents {
         }
 
         mScrollAccessibilityHelper.removePostedCallbacks();
-
-        if (mPendingDetachCleanupReferences != null) {
-            for (int i = 0; i < mPendingDetachCleanupReferences.size(); ++i) {
-                mPendingDetachCleanupReferences.get(i).cleanupNow();
-            }
-            mPendingDetachCleanupReferences = null;
-        }
     }
 
     /**
@@ -1957,11 +1949,6 @@ public class AwContents {
     }
 
     @CalledByNative
-    private void setMaxContainerViewScrollOffset(int maxX, int maxY) {
-        mScrollOffsetManager.setMaxScrollOffset(maxX, maxY);
-    }
-
-    @CalledByNative
     private void scrollContainerViewTo(int x, int y) {
         mScrollOffsetManager.scrollContainerViewTo(x, y);
     }
@@ -1972,31 +1959,14 @@ public class AwContents {
     }
 
     @CalledByNative
-    private void setContentsSize(int widthDip, int heightDip) {
-        mContentWidthDip = widthDip;
-        mContentHeightDip = heightDip;
-    }
-
-    @CalledByNative
-    private void setPageScaleFactorAndLimits(
+    private void updateScrollState(int maxContainerViewScrollOffsetX,
+            int maxContainerViewScrollOffsetY, int contentWidthDip, int contentHeightDip,
             float pageScaleFactor, float minPageScaleFactor, float maxPageScaleFactor) {
-        if (mPageScaleFactor == pageScaleFactor &&
-                mMinPageScaleFactor == minPageScaleFactor &&
-                mMaxPageScaleFactor == maxPageScaleFactor) {
-            return;
-        }
-        mMinPageScaleFactor = minPageScaleFactor;
-        mMaxPageScaleFactor = maxPageScaleFactor;
-        if (mPageScaleFactor != pageScaleFactor) {
-          float oldPageScaleFactor = mPageScaleFactor;
-          mPageScaleFactor = pageScaleFactor;
-          // NOTE: if this ever needs to become synchronous then we need to make sure the scroll
-          // bounds are correctly updated before calling the method, otherwise embedder code that
-          // attempts to scroll on scale change might cause weird results.
-          mContentsClient.getCallbackHelper().postOnScaleChangedScaled(
-                  (float)(oldPageScaleFactor * mDIPScale),
-                  (float)(mPageScaleFactor * mDIPScale));
-        }
+        mContentWidthDip = contentWidthDip;
+        mContentHeightDip = contentHeightDip;
+        mScrollOffsetManager.setMaxScrollOffset(maxContainerViewScrollOffsetX,
+            maxContainerViewScrollOffsetY);
+        setPageScaleFactorAndLimits(pageScaleFactor, minPageScaleFactor, maxPageScaleFactor);
     }
 
     @CalledByNative
@@ -2021,6 +1991,27 @@ public class AwContents {
     // -------------------------------------------------------------------------------------------
     // Helper methods
     // -------------------------------------------------------------------------------------------
+
+    private void setPageScaleFactorAndLimits(
+            float pageScaleFactor, float minPageScaleFactor, float maxPageScaleFactor) {
+        if (mPageScaleFactor == pageScaleFactor &&
+                mMinPageScaleFactor == minPageScaleFactor &&
+                mMaxPageScaleFactor == maxPageScaleFactor) {
+            return;
+        }
+        mMinPageScaleFactor = minPageScaleFactor;
+        mMaxPageScaleFactor = maxPageScaleFactor;
+        if (mPageScaleFactor != pageScaleFactor) {
+            float oldPageScaleFactor = mPageScaleFactor;
+            mPageScaleFactor = pageScaleFactor;
+            // NOTE: if this ever needs to become synchronous then we need to make sure the scroll
+            // bounds are correctly updated before calling the method, otherwise embedder code that
+            // attempts to scroll on scale change might cause weird results.
+            mContentsClient.getCallbackHelper().postOnScaleChangedScaled(
+                    (float)(oldPageScaleFactor * mDIPScale),
+                    (float)(mPageScaleFactor * mDIPScale));
+        }
+    }
 
     private void saveWebArchiveInternal(String path, final ValueCallback<String> callback) {
         if (path == null || mNativeAwContents == 0) {
@@ -2088,6 +2079,7 @@ public class AwContents {
     private static native long nativeGetAwDrawGLFunction();
     private static native int nativeGetNativeInstanceCount();
     private static native void nativeSetShouldDownloadFavicons();
+
     private native void nativeSetJavaPeers(long nativeAwContents, AwContents awContents,
             AwWebContentsDelegate webViewWebContentsDelegate,
             AwContentsClientBridge contentsClientBridge,
@@ -2151,5 +2143,6 @@ public class AwContents {
 
     private native void nativeCreatePdfExporter(long nativeAwContents, AwPdfExporter awPdfExporter);
 
-    private native void nativeClearClientCertPreferences(long nativeAwContents);
+    private native void nativePreauthorizePermission(long nativeAwContents, String origin,
+            long resources);
 }

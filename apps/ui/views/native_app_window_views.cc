@@ -9,7 +9,6 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "extensions/common/draggable_region.h"
 #include "third_party/skia/include/core/SkRegion.h"
 #include "ui/gfx/path.h"
@@ -233,7 +232,7 @@ bool NativeAppWindowViews::ShouldDescendIntoChildForEventHandling(
     gfx::NativeView child,
     const gfx::Point& location) {
 #if defined(USE_AURA)
-  if (child->Contains(web_view_->web_contents()->GetView()->GetNativeView())) {
+  if (child->Contains(web_view_->web_contents()->GetNativeView())) {
     // App window should claim mouse events that fall within the draggable
     // region.
     return !draggable_region_.get() ||
@@ -263,15 +262,9 @@ void NativeAppWindowViews::OnWidgetActivationChanged(views::Widget* widget,
 void NativeAppWindowViews::RenderViewCreated(
     content::RenderViewHost* render_view_host) {
   if (transparent_background_) {
-    // Use a background with transparency to trigger transparency in Webkit.
-    SkBitmap background;
-    background.setConfig(SkBitmap::kARGB_8888_Config, 1, 1);
-    background.allocPixels();
-    background.eraseARGB(0x00, 0x00, 0x00, 0x00);
-
     content::RenderWidgetHostView* view = render_view_host->GetView();
     DCHECK(view);
-    view->SetBackground(background);
+    view->SetBackgroundOpaque(false);
   }
 }
 
@@ -298,7 +291,7 @@ void NativeAppWindowViews::ViewHierarchyChanged(
   }
 }
 
-gfx::Size NativeAppWindowViews::GetMinimumSize() {
+gfx::Size NativeAppWindowViews::GetMinimumSize() const {
   return size_constraints_.GetMinimumSize();
 }
 

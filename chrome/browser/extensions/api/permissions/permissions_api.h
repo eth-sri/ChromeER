@@ -12,8 +12,6 @@
 #include "chrome/browser/extensions/extension_install_prompt.h"
 #include "extensions/common/permissions/permission_set.h"
 
-class ExtensionService;
-
 namespace extensions {
 
 // chrome.permissions.contains
@@ -72,7 +70,7 @@ class PermissionsRequestFunction : public ChromeAsyncExtensionFunction,
   virtual ~PermissionsRequestFunction();
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 
  private:
   scoped_ptr<ExtensionInstallPrompt> install_ui_;

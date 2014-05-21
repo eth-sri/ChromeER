@@ -616,7 +616,6 @@ class Browser : public TabStripModelObserver,
   virtual void RegisterProtocolHandler(content::WebContents* web_contents,
                                        const std::string& protocol,
                                        const GURL& url,
-                                       const base::string16& title,
                                        bool user_gesture) OVERRIDE;
   virtual void UpdatePreferredSize(content::WebContents* source,
                                    const gfx::Size& pref_size) OVERRIDE;
@@ -642,7 +641,7 @@ class Browser : public TabStripModelObserver,
       const base::FilePath& plugin_path,
       const base::Callback<void(bool)>& callback) OVERRIDE;
   virtual gfx::Size GetSizeForNewRenderView(
-      const content::WebContents* web_contents) const OVERRIDE;
+      content::WebContents* web_contents) const OVERRIDE;
 
   // Overridden from CoreTabHelperDelegate:
   // Note that the caller is responsible for deleting |old_contents|.

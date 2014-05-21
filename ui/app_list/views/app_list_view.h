@@ -5,6 +5,7 @@
 #ifndef UI_APP_LIST_VIEWS_APP_LIST_VIEW_H_
 #define UI_APP_LIST_VIEWS_APP_LIST_VIEW_H_
 
+#include "base/callback.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
 #include "ui/app_list/app_list_export.h"
@@ -15,10 +16,6 @@
 
 namespace base {
 class FilePath;
-}
-
-namespace gfx {
-class Screen;
 }
 
 namespace app_list {
@@ -39,7 +36,6 @@ class APP_LIST_EXPORT AppListView : public views::BubbleDelegateView,
                                     public AppListViewDelegateObserver,
                                     public SpeechUIModelObserver {
  public:
-
   // Takes ownership of |delegate|.
   explicit AppListView(AppListViewDelegate* delegate);
   virtual ~AppListView();
@@ -61,15 +57,6 @@ class APP_LIST_EXPORT AppListView : public views::BubbleDelegateView,
                                    views::BubbleBorder::Arrow arrow,
                                    bool border_accepts_events);
 
-  // Initializes the widget and use the center of the primary display for
-  // positioning.
-  void InitAsBubbleCenteredOnPrimaryDisplay(
-      gfx::NativeView parent,
-      PaginationModel* pagination_model,
-      gfx::Screen* screen_to_keep_centered_on,
-      views::BubbleBorder::Arrow arrow,
-      bool border_accepts_events);
-
   void SetBubbleArrow(views::BubbleBorder::Arrow arrow);
 
   void SetAnchorPoint(const gfx::Point& anchor_point);
@@ -89,9 +76,13 @@ class APP_LIST_EXPORT AppListView : public views::BubbleDelegateView,
 
   void UpdateBounds();
 
+  // Returns true if the app list should be centered and in landscape mode.
+  bool ShouldCenterWindow() const;
+
   // Overridden from views::View:
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
-  virtual void Paint(gfx::Canvas* canvas) OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
+  virtual void Paint(gfx::Canvas* canvas,
+                     const views::CullSet& cull_set) OVERRIDE;
   virtual void OnThemeChanged() OVERRIDE;
 
   // WidgetDelegate overrides:
@@ -108,7 +99,7 @@ class APP_LIST_EXPORT AppListView : public views::BubbleDelegateView,
   void RemoveObserver(AppListViewObserver* observer);
 
   // Set a callback to be called the next time any app list paints.
-  static void SetNextPaintCallback(void (*callback)());
+  void SetNextPaintCallback(const base::Closure& callback);
 
 #if defined(OS_WIN)
   HWND GetHWND() const;
@@ -122,10 +113,6 @@ class APP_LIST_EXPORT AppListView : public views::BubbleDelegateView,
                             views::BubbleBorder::Arrow arrow,
                             bool border_accepts_events,
                             const gfx::Vector2d& anchor_offset);
-
-  // Gets the point at the center of the current screen.
-  // |screen_to_keep_centered_on_| must not be NULL.
-  gfx::Point GetCenterPoint();
 
   // Overridden from views::BubbleDelegateView:
   virtual void OnBeforeBubbleWidgetInit(
@@ -165,9 +152,8 @@ class APP_LIST_EXPORT AppListView : public views::BubbleDelegateView,
   ObserverList<AppListViewObserver> observers_;
   scoped_ptr<HideViewAnimationObserver> animation_observer_;
 
-  // If non-NULL, the app list will remain centered on this screen's primary
-  // display.
-  gfx::Screen* screen_to_keep_centered_on_;
+  // For UMA and testing. If non-null, triggered when the app list is painted.
+  base::Closure next_paint_callback_;
 
   DISALLOW_COPY_AND_ASSIGN(AppListView);
 };

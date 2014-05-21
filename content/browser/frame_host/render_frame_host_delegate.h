@@ -6,6 +6,7 @@
 #define CONTENT_BROWSER_FRAME_HOST_RENDER_FRAME_HOST_DELEGATE_H_
 
 #include "base/basictypes.h"
+#include "base/i18n/rtl.h"
 #include "content/common/content_export.h"
 #include "content/public/common/javascript_message_type.h"
 
@@ -51,10 +52,6 @@ class CONTENT_EXPORT RenderFrameHostDelegate {
   virtual void DidStartLoading(RenderFrameHost* render_frame_host,
                                bool to_different_document) {}
 
-  // The top-level RenderFrame stopped loading a page. This corresponds to
-  // Blink's notion of the throbber stopping.
-  virtual void DidStopLoading(RenderFrameHost* render_frame_host) {}
-
   // The RenderFrameHost has been swapped out.
   virtual void SwappedOut(RenderFrameHost* render_frame_host) {}
 
@@ -67,14 +64,14 @@ class CONTENT_EXPORT RenderFrameHostDelegate {
                                const ContextMenuParams& params) {}
 
   // A JavaScript message, confirmation or prompt should be shown.
-  virtual void RunJavaScriptMessage(RenderFrameHost* rfh,
+  virtual void RunJavaScriptMessage(RenderFrameHost* render_frame_host,
                                     const base::string16& message,
                                     const base::string16& default_prompt,
                                     const GURL& frame_url,
                                     JavaScriptMessageType type,
                                     IPC::Message* reply_msg) {}
 
-  virtual void RunBeforeUnloadConfirm(RenderFrameHost* rfh,
+  virtual void RunBeforeUnloadConfirm(RenderFrameHost* render_frame_host,
                                       const base::string16& message,
                                       bool is_reload,
                                       IPC::Message* reply_msg) {}
@@ -82,6 +79,26 @@ class CONTENT_EXPORT RenderFrameHostDelegate {
   // Another page accessed the top-level initial empty document, which means it
   // is no longer safe to display a pending URL without risking a URL spoof.
   virtual void DidAccessInitialDocument() {}
+
+  // The frame set its opener to null, disowning it for the lifetime of the
+  // window. Only called for the top-level frame.
+  virtual void DidDisownOpener(RenderFrameHost* render_frame_host) {}
+
+  // The onload handler in the frame has completed. Only called for the top-
+  // level frame.
+  virtual void DocumentOnLoadCompleted(RenderFrameHost* render_frame_host) {}
+
+  // The page's title was changed and should be updated. Only called for the
+  // top-level frame.
+  virtual void UpdateTitle(RenderFrameHost* render_frame_host,
+                           int32 page_id,
+                           const base::string16& title,
+                           base::i18n::TextDirection title_direction) {}
+
+  // The page's encoding was changed and should be updated. Only called for the
+  // top-level frame.
+  virtual void UpdateEncoding(RenderFrameHost* render_frame_host,
+                              const std::string& encoding) {}
 
   // Return this object cast to a WebContents, if it is one. If the object is
   // not a WebContents, returns NULL.

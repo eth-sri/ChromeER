@@ -68,7 +68,7 @@ int InfoBarService::GetActiveEntryID() {
 void InfoBarService::NotifyInfoBarAdded(InfoBar* infobar) {
   InfoBarManager::NotifyInfoBarAdded(infobar);
   // TODO(droger): Remove the notifications and have listeners change to be
-  // NavigationManager::Observers instead. See http://crbug.com/354380
+  // InfoBarManager::Observers instead. See http://crbug.com/354380
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_TAB_CONTENTS_INFOBAR_ADDED,
       content::Source<InfoBarService>(this),
@@ -78,24 +78,12 @@ void InfoBarService::NotifyInfoBarAdded(InfoBar* infobar) {
 void InfoBarService::NotifyInfoBarRemoved(InfoBar* infobar, bool animate) {
   InfoBarManager::NotifyInfoBarRemoved(infobar, animate);
   // TODO(droger): Remove the notifications and have listeners change to be
-  // NavigationManager::Observers instead. See http://crbug.com/354380
+  // InfoBarManager::Observers instead. See http://crbug.com/354380
   InfoBar::RemovedDetails removed_details(infobar, animate);
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_TAB_CONTENTS_INFOBAR_REMOVED,
       content::Source<InfoBarService>(this),
       content::Details<InfoBar::RemovedDetails>(&removed_details));
-}
-
-void InfoBarService::NotifyInfoBarReplaced(InfoBar* old_infobar,
-                                           InfoBar* new_infobar) {
-  InfoBarManager::NotifyInfoBarReplaced(old_infobar, new_infobar);
-  // TODO(droger): Remove the notifications and have listeners change to be
-  // NavigationManager::Observers instead. See http://crbug.com/354380
-  InfoBar::ReplacedDetails replaced_details(old_infobar, new_infobar);
-  content::NotificationService::current()->Notify(
-      chrome::NOTIFICATION_TAB_CONTENTS_INFOBAR_REPLACED,
-      content::Source<InfoBarService>(this),
-      content::Details<InfoBar::ReplacedDetails>(&replaced_details));
 }
 
 void InfoBarService::RenderProcessGone(base::TerminationStatus status) {
@@ -107,11 +95,11 @@ void InfoBarService::NavigationEntryCommitted(
   OnNavigation(NavigationDetailsFromLoadCommittedDetails(load_details));
 }
 
-void InfoBarService::WebContentsDestroyed(content::WebContents* web_contents) {
+void InfoBarService::WebContentsDestroyed() {
   // The WebContents is going away; be aggressively paranoid and delete
   // ourselves lest other parts of the system attempt to add infobars or use
   // us otherwise during the destruction.
-  web_contents->RemoveUserData(UserDataKey());
+  web_contents()->RemoveUserData(UserDataKey());
   // That was the equivalent of "delete this". This object is now destroyed;
   // returning from this function is the only safe thing to do.
 }

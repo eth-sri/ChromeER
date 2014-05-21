@@ -25,6 +25,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/posix/eintr_wrapper.h"
 #include "sandbox/linux/seccomp-bpf/codegen.h"
+#include "sandbox/linux/seccomp-bpf/sandbox_bpf_compatibility_policy.h"
 #include "sandbox/linux/seccomp-bpf/sandbox_bpf_policy.h"
 #include "sandbox/linux/seccomp-bpf/syscall.h"
 #include "sandbox/linux/seccomp-bpf/syscall_iterator.h"
@@ -78,9 +79,7 @@ void ProbeProcess(void) {
 }
 
 ErrorCode AllowAllEvaluator(SandboxBPF*, int sysnum, void*) {
-  if (!SandboxBPF::IsValidSyscallNumber(sysnum)) {
-    return ErrorCode(ENOSYS);
-  }
+  DCHECK(SandboxBPF::IsValidSyscallNumber(sysnum));
   return ErrorCode(ErrorCode::ERR_ALLOWED);
 }
 
@@ -187,13 +186,21 @@ class RedirectToUserSpacePolicyWrapper : public SandboxBPFPolicy {
     ErrorCode err =
         wrapped_policy_->EvaluateSyscall(sandbox_compiler, system_call_number);
     if ((err.err() & SECCOMP_RET_ACTION) == SECCOMP_RET_ERRNO) {
-      return sandbox_compiler->Trap(
-          ReturnErrno, reinterpret_cast<void*>(err.err() & SECCOMP_RET_DATA));
+      return ReturnErrnoViaTrap(sandbox_compiler, err.err() & SECCOMP_RET_DATA);
     }
     return err;
   }
 
+  virtual ErrorCode InvalidSyscall(
+      SandboxBPF* sandbox_compiler) const OVERRIDE {
+    return ReturnErrnoViaTrap(sandbox_compiler, ENOSYS);
+  }
+
  private:
+  ErrorCode ReturnErrnoViaTrap(SandboxBPF* sandbox_compiler, int err) const {
+    return sandbox_compiler->Trap(ReturnErrno, reinterpret_cast<void*>(err));
+  }
+
   const SandboxBPFPolicy* wrapped_policy_;
   DISALLOW_COPY_AND_ASSIGN(RedirectToUserSpacePolicyWrapper);
 };
@@ -201,25 +208,6 @@ class RedirectToUserSpacePolicyWrapper : public SandboxBPFPolicy {
 intptr_t BPFFailure(const struct arch_seccomp_data&, void* aux) {
   SANDBOX_DIE(static_cast<char*>(aux));
 }
-
-// This class allows compatibility with the old, deprecated SetSandboxPolicy.
-class CompatibilityPolicy : public SandboxBPFPolicy {
- public:
-  CompatibilityPolicy(SandboxBPF::EvaluateSyscall syscall_evaluator, void* aux)
-      : syscall_evaluator_(syscall_evaluator), aux_(aux) {
-    DCHECK(syscall_evaluator_);
-  }
-
-  virtual ErrorCode EvaluateSyscall(SandboxBPF* sandbox_compiler,
-                                    int system_call_number) const OVERRIDE {
-    return syscall_evaluator_(sandbox_compiler, system_call_number, aux_);
-  }
-
- private:
-  SandboxBPF::EvaluateSyscall syscall_evaluator_;
-  void* aux_;
-  DISALLOW_COPY_AND_ASSIGN(CompatibilityPolicy);
-};
 
 }  // namespace
 
@@ -481,13 +469,8 @@ bool SandboxBPF::StartSandbox(SandboxThreadState thread_state) {
 }
 
 void SandboxBPF::PolicySanityChecks(SandboxBPFPolicy* policy) {
-  for (SyscallIterator iter(true); !iter.Done();) {
-    uint32_t sysnum = iter.Next();
-    if (!IsDenied(policy->EvaluateSyscall(this, sysnum))) {
-      SANDBOX_DIE(
-          "Policies should deny system calls that are outside the "
-          "expected range (typically MIN_SYSCALL..MAX_SYSCALL)");
-    }
+  if (!IsDenied(policy->InvalidSyscall(this))) {
+    SANDBOX_DIE("Policies should deny invalid system calls.");
   }
   return;
 }
@@ -498,7 +481,7 @@ void SandboxBPF::SetSandboxPolicyDeprecated(EvaluateSyscall syscall_evaluator,
   if (sandbox_has_started_ || !conds_) {
     SANDBOX_DIE("Cannot change policy after sandbox has started");
   }
-  SetSandboxPolicy(new CompatibilityPolicy(syscall_evaluator, aux));
+  SetSandboxPolicy(new CompatibilityPolicy<void>(syscall_evaluator, aux));
 }
 
 // Don't take a scoped_ptr here, polymorphism make their use awkward.
@@ -763,20 +746,18 @@ void SandboxBPF::FindRanges(Ranges* ranges) {
   // deal with this disparity by enumerating from MIN_SYSCALL to MAX_SYSCALL,
   // and then verifying that the rest of the number range (both positive and
   // negative) all return the same ErrorCode.
+  const ErrorCode invalid_err = policy_->InvalidSyscall(this);
   uint32_t old_sysnum = 0;
-  ErrorCode old_err = policy_->EvaluateSyscall(this, old_sysnum);
-  ErrorCode invalid_err = policy_->EvaluateSyscall(this, MIN_SYSCALL - 1);
+  ErrorCode old_err = IsValidSyscallNumber(old_sysnum)
+                          ? policy_->EvaluateSyscall(this, old_sysnum)
+                          : invalid_err;
 
   for (SyscallIterator iter(false); !iter.Done();) {
     uint32_t sysnum = iter.Next();
-    ErrorCode err = policy_->EvaluateSyscall(this, static_cast<int>(sysnum));
-    if (!iter.IsValid(sysnum) && !invalid_err.Equals(err)) {
-      // A proper sandbox policy should always treat system calls outside of
-      // the range MIN_SYSCALL..MAX_SYSCALL (i.e. anything that returns
-      // "false" for SyscallIterator::IsValid()) identically. Typically, all
-      // of these system calls would be denied with the same ErrorCode.
-      SANDBOX_DIE("Invalid seccomp policy");
-    }
+    ErrorCode err =
+        IsValidSyscallNumber(sysnum)
+            ? policy_->EvaluateSyscall(this, static_cast<int>(sysnum))
+            : invalid_err;
     if (!err.Equals(old_err) || iter.Done()) {
       ranges->push_back(Range(old_sysnum, sysnum - 1, old_err));
       old_sysnum = sysnum;

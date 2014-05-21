@@ -20,6 +20,7 @@ tfoot, thead, tr, th, td, button {
 
 .inset {
   padding: 20px 20px 0 20px;
+  position: relative;
 }
 
 body {
@@ -29,6 +30,7 @@ body {
   margin: 0;
   direction: __MSG_@@bidi_dir__;
 }
+
 
 /*
 * The "app-v2" class is added to the <html> node by remoting.init if it's
@@ -621,7 +623,7 @@ button {
 }
 
 .dialog-screen {
-  position: fixed;
+  position: absolute;
   top: 0;
   left: 0;
   width: 100%;
@@ -707,6 +709,10 @@ html.apps-v2.scrollable {
   display: none !important;
 }
 
+.full-width {
+  width: 100%;
+}
+
 .full-height {
   height: 100%;
 }
@@ -745,7 +751,6 @@ html.apps-v2.scrollable {
 /* video-container needs relative position so that mediasource-video-output can
  * be positioned relative to the parent with position:absolute. */
 #video-container {
-  width: 100%;
   position: relative;
 }
 

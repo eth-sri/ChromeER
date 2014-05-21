@@ -28,7 +28,7 @@ function set(name, message, stack, targetChrome) {
   clear(targetChrome);  // in case somebody has set a sneaky getter/setter
 
   var errorObject = { message: message };
-  if (GetAvailability('extension.lastError').is_available)
+  if (targetChrome && targetChrome.extension)
     targetChrome.extension.lastError = errorObject;
 
   assertRuntimeIsAvailable();
@@ -58,14 +58,31 @@ function hasAccessed(targetChrome) {
 }
 
 /**
+ * Check whether there is an error set on |targetChrome| without setting
+ * |accessedLastError|.
+ * @param {Object} targetChrome the Chrome object to check.
+ * @return boolean Whether lastError has been set.
+ */
+function hasError(targetChrome) {
+  if (!targetChrome)
+    throw new Error('No target chrome to check');
+
+  assertRuntimeIsAvailable();
+  if ('lastError' in targetChrome.runtime)
+    return true;
+
+  return false;
+};
+
+/**
  * Clears the last error on |targetChrome|.
  */
 function clear(targetChrome) {
   if (!targetChrome)
     throw new Error('No target chrome to clear error');
 
-  if (GetAvailability('extension.lastError').is_available)
-    delete targetChrome.extension.lastError;
+  if (targetChrome && targetChrome.extension)
+   delete targetChrome.extension.lastError;
 
   assertRuntimeIsAvailable();
   delete targetChrome.runtime.lastError;
@@ -102,5 +119,6 @@ function run(name, message, stack, callback, args) {
 
 exports.clear = clear;
 exports.hasAccessed = hasAccessed;
+exports.hasError = hasError;
 exports.set = set;
 exports.run = run;

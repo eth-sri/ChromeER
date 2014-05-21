@@ -29,12 +29,12 @@ class WebGLConformanceExpectations(test_expectations.TestExpectations):
         bug=351396)
     self.Fail('conformance/glsl/misc/boolean_precision.html',
         bug=368874)
-    self.Fail('conformance/glsl/bugs/nested-structs-with-same-name.html',
+    self.Fail('conformance/glsl/misc/shader-struct-scope.html',
         bug=368910)
 
-    # Windows failures
-    self.Fail('conformance/extensions/oes-texture-float.html',
-        ['win'], bug=368919)
+    # Flaky on Win
+    self.Fail('conformance/extensions/webgl-draw-buffers.html',
+        ['win'], bug=369349)
 
     # Win7 / Intel failures
     self.Fail('conformance/rendering/gl-scissor-test.html',
@@ -43,6 +43,10 @@ class WebGLConformanceExpectations(test_expectations.TestExpectations):
         ['win7', 'intel'])
     self.Fail('conformance/textures/copy-tex-image-and-sub-image-2d.html',
         ['win7', 'intel'])
+    self.Fail('conformance/rendering/gl-viewport-test.html',
+        ['win7', 'intel'], bug=372511)
+    self.Fail('conformance/glsl/misc/shader-with-array-of-structs-uniform.html',
+        ['win7', 'intel', 'nvidia'], bug=373972)
 
     # Mac / Intel failures
     # Radar 13499466
@@ -58,6 +62,8 @@ class WebGLConformanceExpectations(test_expectations.TestExpectations):
     # Radar 13499677
     self.Fail('conformance/glsl/functions/glsl-function-smoothstep-gentype.html',
         ['mac', ('intel', 0x116)], bug=225642)
+    self.Fail('conformance/extensions/webgl-draw-buffers.html',
+        ['mac', ('intel', 0x116)], bug=369349)
 
     # Mac 10.8 / Intel HD 3000 failures
     self.Fail('conformance/rendering/gl-scissor-test.html',
@@ -65,10 +71,15 @@ class WebGLConformanceExpectations(test_expectations.TestExpectations):
     self.Fail('conformance/ogles/GL/operators/operators_009_to_016.html',
         ['mountainlion', ('intel', 0x116)], bug=322795)
 
-    # Mac 10.8 / Mac Retina failures
+    # Mac Retina failures
     self.Fail(
         'conformance/glsl/bugs/array-of-struct-with-int-first-position.html',
-        ['mountainlion', ('nvidia', 0xfd5)], bug=368912)
+        ['mac', ('nvidia', 0xfd5), ('nvidia', 0xfe9)], bug=368912)
+
+    # Mac 10.8 / ATI failures
+    self.Fail(
+        'conformance/rendering/point-with-gl-pointcoord-in-fragment-shader.html',
+        ['mountainlion', 'amd'])
 
     # Mac 10.7 / Intel failures
     self.Skip('conformance/glsl/functions/glsl-function-asin.html',
@@ -106,6 +117,9 @@ class WebGLConformanceExpectations(test_expectations.TestExpectations):
     # The following test is very slow and therefore times out on Android bot.
     self.Skip('conformance/rendering/multisample-corruption.html',
         ['android'])
+    # The following test times out on Android bot.
+    self.Fail('conformance/uniforms/gl-uniform-arrays.html',
+        ['android'], bug=369300)
     self.Fail('conformance/glsl/misc/empty_main.vert.html',
         ['android'], bug=315976)
     self.Fail('conformance/glsl/misc/gl_position_unset.vert.html',

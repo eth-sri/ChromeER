@@ -15,6 +15,9 @@
 #include "base/prefs/pref_service.h"
 #include "base/prefs/pref_service_factory.h"
 #include "components/autofill/core/common/autofill_pref_names.h"
+#include "components/data_reduction_proxy/browser/data_reduction_proxy_config_service.h"
+#include "components/data_reduction_proxy/browser/data_reduction_proxy_prefs.h"
+#include "components/data_reduction_proxy/browser/data_reduction_proxy_settings.h"
 #include "components/user_prefs/user_prefs.h"
 #include "components/visitedlink/browser/visitedlink_master.h"
 #include "content/public/browser/browser_thread.h"
@@ -24,6 +27,7 @@
 
 using base::FilePath;
 using content::BrowserThread;
+using data_reduction_proxy::DataReductionProxySettings;
 
 namespace android_webview {
 
@@ -36,6 +40,9 @@ void HandleReadError(PersistentPrefStore::PrefReadError error) {
 AwBrowserContext* g_browser_context = NULL;
 
 }  // namespace
+
+// Data reduction proxy is disabled by default.
+bool AwBrowserContext::data_reduction_proxy_enabled_ = false;
 
 AwBrowserContext::AwBrowserContext(
     const FilePath path,
@@ -69,10 +76,38 @@ AwBrowserContext* AwBrowserContext::FromWebContents(
   return static_cast<AwBrowserContext*>(web_contents->GetBrowserContext());
 }
 
+// static
+void AwBrowserContext::SetDataReductionProxyEnabled(bool enabled) {
+  // Cache the setting value. It is possible that data reduction proxy is
+  // not created yet.
+  data_reduction_proxy_enabled_ = enabled;
+  AwBrowserContext* context = AwBrowserContext::GetDefault();
+  // Can't enable Data reduction proxy if user pref service is not ready.
+  if (context == NULL || context->user_pref_service_.get() == NULL)
+    return;
+  DataReductionProxySettings* proxy_settings =
+      context->GetDataReductionProxySettings();
+  if (proxy_settings == NULL)
+    return;
+  proxy_settings->SetDataReductionProxyEnabled(data_reduction_proxy_enabled_);
+}
+
 void AwBrowserContext::PreMainMessageLoopRun() {
   cookie_store_ = CreateCookieStore(this);
+  DataReductionProxySettings::SetAllowed(true);
+  DataReductionProxySettings::SetPromoAllowed(false);
+  data_reduction_proxy_settings_.reset(
+      new DataReductionProxySettings());
+  data_reduction_proxy_settings_->set_fallback_allowed(false);
+
   url_request_context_getter_ =
       new AwURLRequestContextGetter(GetPath(), cookie_store_.get());
+
+  scoped_ptr<data_reduction_proxy::DataReductionProxyConfigurator>
+      configurator(new data_reduction_proxy::DataReductionProxyConfigTracker(
+          url_request_context_getter_->proxy_config_service(),
+          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO)));
+  data_reduction_proxy_settings_->SetProxyConfigurator(configurator.Pass());
 
   visitedlink_master_.reset(
       new visitedlink::VisitedLinkMaster(this, this, false));
@@ -119,6 +154,10 @@ AwFormDatabaseService* AwBrowserContext::GetFormDatabaseService() {
   return form_database_service_.get();
 }
 
+DataReductionProxySettings* AwBrowserContext::GetDataReductionProxySettings() {
+  return data_reduction_proxy_settings_.get();
+}
+
 // Create user pref service for autofill functionality.
 void AwBrowserContext::CreateUserPrefServiceIfNecessary() {
   if (user_pref_service_)
@@ -134,6 +173,8 @@ void AwBrowserContext::CreateUserPrefServiceIfNecessary() {
       autofill::prefs::kAutofillPositiveUploadRate, 0.0);
   pref_registry->RegisterDoublePref(
       autofill::prefs::kAutofillNegativeUploadRate, 0.0);
+  data_reduction_proxy::RegisterSimpleProfilePrefs(pref_registry);
+  data_reduction_proxy::RegisterPrefs(pref_registry);
 
   base::PrefServiceFactory pref_service_factory;
   pref_service_factory.set_user_prefs(make_scoped_refptr(new AwPrefStore()));
@@ -141,6 +182,14 @@ void AwBrowserContext::CreateUserPrefServiceIfNecessary() {
   user_pref_service_ = pref_service_factory.Create(pref_registry).Pass();
 
   user_prefs::UserPrefs::Set(this, user_pref_service_.get());
+
+  data_reduction_proxy_settings_->InitDataReductionProxySettings(
+      user_pref_service_.get(),
+      user_pref_service_.get(),
+      GetRequestContext());
+
+  data_reduction_proxy_settings_->SetDataReductionProxyEnabled(
+      data_reduction_proxy_enabled_);
 }
 
 base::FilePath AwBrowserContext::GetPath() const {
@@ -235,6 +284,10 @@ AwBrowserContext::GetGeolocationPermissionContext() {
         native_factory_->CreateGeolocationPermission(this);
   }
   return geolocation_permission_context_.get();
+}
+
+content::BrowserPluginGuestManager* AwBrowserContext::GetGuestManager() {
+  return NULL;
 }
 
 quota::SpecialStoragePolicy* AwBrowserContext::GetSpecialStoragePolicy() {

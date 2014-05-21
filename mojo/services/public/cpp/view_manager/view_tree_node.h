@@ -9,27 +9,30 @@
 
 #include "base/basictypes.h"
 #include "base/observer_list.h"
+#include "mojo/services/public/cpp/view_manager/view_manager_types.h"
 
 namespace mojo {
-namespace services {
 namespace view_manager {
 
+class View;
 class ViewManager;
 class ViewTreeNodeObserver;
 
+// ViewTreeNodes are owned by the ViewManager.
+// TODO(beng): Right now, you'll have to implement a ViewTreeNodeObserver to
+//             track destruction and NULL any pointers you have.
+//             Investigate some kind of smart pointer or weak pointer for these.
 class ViewTreeNode {
  public:
   typedef std::vector<ViewTreeNode*> Children;
 
-  explicit ViewTreeNode(ViewManager* manager);
-  ViewTreeNode();  // Used for tests.
-  ~ViewTreeNode();
+  static ViewTreeNode* Create(ViewManager* view_manager);
+
+  // Destroys this node and all its children.
+  void Destroy();
 
   // Configuration.
-  uint16_t id() const { return id_; }
-  void set_owned_by_parent(bool owned_by_parent) {
-    owned_by_parent_ = owned_by_parent;
-  }
+  TransportNodeId id() const { return id_; }
 
   // Observation.
   void AddObserver(ViewTreeNodeObserver* observer);
@@ -45,22 +48,40 @@ class ViewTreeNode {
 
   bool Contains(ViewTreeNode* child) const;
 
+  ViewTreeNode* GetChildById(TransportNodeId id);
+
+  // View.
+  void SetActiveView(View* view);
+  View* active_view() { return active_view_; }
+
+ protected:
+  // This class is subclassed only by test classes that provide a public ctor.
+  ViewTreeNode();
+  ~ViewTreeNode();
+
  private:
   friend class ViewTreeNodePrivate;
 
+  explicit ViewTreeNode(ViewManager* manager);
+
+  void LocalDestroy();
+  void LocalAddChild(ViewTreeNode* child);
+  void LocalRemoveChild(ViewTreeNode* child);
+  void LocalSetActiveView(View* view);
+
   ViewManager* manager_;
-  uint16_t id_;
-  bool owned_by_parent_;
+  TransportNodeId id_;
   ViewTreeNode* parent_;
   Children children_;
 
   ObserverList<ViewTreeNodeObserver> observers_;
 
+  View* active_view_;
+
   DISALLOW_COPY_AND_ASSIGN(ViewTreeNode);
 };
 
 }  // namespace view_manager
-}  // namespace services
 }  // namespace mojo
 
 #endif  // MOJO_SERVICES_PUBLIC_CPP_VIEW_MANAGER_VIEW_TREE_NODE_H_

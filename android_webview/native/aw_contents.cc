@@ -10,10 +10,12 @@
 #include "android_webview/browser/aw_browser_main_parts.h"
 #include "android_webview/browser/aw_resource_context.h"
 #include "android_webview/browser/browser_view_renderer.h"
+#include "android_webview/browser/deferred_gpu_command_service.h"
 #include "android_webview/browser/gpu_memory_buffer_factory_impl.h"
 #include "android_webview/browser/hardware_renderer.h"
 #include "android_webview/browser/net_disk_cache_remover.h"
 #include "android_webview/browser/renderer_host/aw_resource_dispatcher_host_delegate.h"
+#include "android_webview/browser/scoped_app_gl_state_restore.h"
 #include "android_webview/common/aw_hit_test_data.h"
 #include "android_webview/common/devtools_instrumentation.h"
 #include "android_webview/native/aw_autofill_manager_delegate.h"
@@ -43,6 +45,7 @@
 #include "components/autofill/content/browser/content_autofill_driver.h"
 #include "components/autofill/core/browser/autofill_manager.h"
 #include "components/autofill/core/browser/webdata/autofill_webdata_service.h"
+#include "components/data_reduction_proxy/browser/data_reduction_proxy_settings.h"
 #include "components/navigation_interception/intercept_navigation_delegate.h"
 #include "content/public/browser/android/content_view_core.h"
 #include "content/public/browser/browser_thread.h"
@@ -56,7 +59,7 @@
 #include "content/public/common/renderer_preferences.h"
 #include "content/public/common/ssl_status.h"
 #include "jni/AwContents_jni.h"
-#include "net/cert/cert_database.h"
+#include "net/base/auth.h"
 #include "net/cert/x509_certificate.h"
 #include "third_party/skia/include/core/SkPicture.h"
 #include "ui/base/l10n/l10n_util_android.h"
@@ -77,6 +80,7 @@ using base::android::ConvertUTF8ToJavaString;
 using base::android::JavaRef;
 using base::android::ScopedJavaGlobalRef;
 using base::android::ScopedJavaLocalRef;
+using data_reduction_proxy::DataReductionProxySettings;
 using navigation_interception::InterceptNavigationDelegate;
 using content::BrowserThread;
 using content::ContentViewCore;
@@ -127,21 +131,16 @@ void OnIoThreadClientReady(content::RenderFrameHost* rfh) {
       render_process_id, render_frame_id);
 }
 
-void NotifyClientCertificatesChanged() {
-  DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  net::CertDatabase::GetInstance()->OnAndroidKeyStoreChanged();
-}
-
 }  // namespace
 
 // static
 AwContents* AwContents::FromWebContents(WebContents* web_contents) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   return AwContentsUserData::GetContents(web_contents);
 }
 
 // static
 AwContents* AwContents::FromID(int render_process_id, int render_view_id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   const content::RenderViewHost* rvh =
       content::RenderViewHost::FromID(render_process_id, render_view_id);
   if (!rvh) return NULL;
@@ -152,9 +151,7 @@ AwContents* AwContents::FromID(int render_process_id, int render_view_id) {
 }
 
 AwContents::AwContents(scoped_ptr<WebContents> web_contents)
-    : weak_factory_on_ui_thread_(this),
-      ui_thread_weak_ptr_(weak_factory_on_ui_thread_.GetWeakPtr()),
-      web_contents_(web_contents.Pass()),
+    : web_contents_(web_contents.Pass()),
       shared_renderer_state_(
           BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI),
           this),
@@ -162,7 +159,8 @@ AwContents::AwContents(scoped_ptr<WebContents> web_contents)
           this,
           &shared_renderer_state_,
           web_contents_.get(),
-          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI)) {
+          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI)),
+      renderer_manager_key_(GLViewRendererManager::GetInstance()->NullKey()) {
   base::subtle::NoBarrier_AtomicIncrement(&g_instance_count, 1);
   icon_helper_.reset(new IconHelper(web_contents_.get()));
   icon_helper_->SetListener(this);
@@ -171,10 +169,12 @@ AwContents::AwContents(scoped_ptr<WebContents> web_contents)
   render_view_host_ext_.reset(
       new AwRenderViewHostExt(this, web_contents_.get()));
 
-  permission_request_handler_.reset(new PermissionRequestHandler(this));
+  permission_request_handler_.reset(
+      new PermissionRequestHandler(this, web_contents_.get()));
 
   AwAutofillManagerDelegate* autofill_manager_delegate =
       AwAutofillManagerDelegate::FromWebContents(web_contents_.get());
+  InitDataReductionProxyIfNecessary();
   if (autofill_manager_delegate)
     InitAutofillIfNecessary(autofill_manager_delegate->GetSaveFormData());
 }
@@ -221,6 +221,12 @@ void AwContents::SetSaveFormData(bool enabled) {
     AwAutofillManagerDelegate::FromWebContents(web_contents_.get())->
         SetSaveFormData(enabled);
   }
+}
+
+void AwContents::InitDataReductionProxyIfNecessary() {
+  AwBrowserContext* browser_context =
+      AwBrowserContext::FromWebContents(web_contents_.get());
+  browser_context->CreateUserPrefServiceIfNecessary();
 }
 
 void AwContents::InitAutofillIfNecessary(bool enabled) {
@@ -320,23 +326,30 @@ jlong AwContents::GetAwDrawGLViewContext(JNIEnv* env, jobject obj) {
 }
 
 void AwContents::DrawGL(AwDrawGLInfo* draw_info) {
+  GLViewRendererManager::GetInstance()->DidDrawGL(renderer_manager_key_);
+
+  ScopedAppGLStateRestore state_restore(
+      draw_info->mode == AwDrawGLInfo::kModeDraw
+          ? ScopedAppGLStateRestore::MODE_DRAW
+          : ScopedAppGLStateRestore::MODE_RESOURCE_MANAGEMENT);
+  ScopedAllowGL allow_gl;
+
   for (base::Closure c = shared_renderer_state_.PopFrontClosure(); !c.is_null();
        c = shared_renderer_state_.PopFrontClosure()) {
     c.Run();
   }
 
+  if (!hardware_renderer_)
+    return;
+
   // TODO(boliu): Make this a task as well.
   DrawGLResult result;
-  if (hardware_renderer_ && hardware_renderer_->DrawGL(draw_info, &result)) {
-    content::BrowserThread::PostTask(
-        content::BrowserThread::UI,
-        FROM_HERE,
-        base::Bind(&AwContents::DidDrawGL, ui_thread_weak_ptr_, result));
+  if (hardware_renderer_->DrawGL(state_restore.stencil_enabled(),
+                                 state_restore.framebuffer_binding_ext(),
+                                 draw_info,
+                                 &result)) {
+    browser_view_renderer_.DidDrawGL(result);
   }
-}
-
-void AwContents::DidDrawGL(const DrawGLResult& result) {
-  browser_view_renderer_.DidDrawGL(result);
 }
 
 namespace {
@@ -538,12 +551,21 @@ void AwContents::OnPermissionRequest(AwPermissionRequest* request) {
 void AwContents::OnPermissionRequestCanceled(AwPermissionRequest* request) {
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> j_request = request->GetJavaObject();
-  if (j_request.is_null())
+  ScopedJavaLocalRef<jobject> j_ref = java_ref_.get(env);
+  if (j_request.is_null() || j_ref.is_null())
     return;
 
-  ScopedJavaLocalRef<jobject> j_ref = java_ref_.get(env);
   Java_AwContents_onPermissionRequestCanceled(
       env, j_ref.obj(), j_request.obj());
+}
+
+void AwContents::PreauthorizePermission(
+    JNIEnv* env,
+    jobject obj,
+    jstring origin,
+    jlong resources) {
+  permission_request_handler_->PreauthorizePermission(
+      GURL(base::android::ConvertJavaStringToUTF8(env, origin)), resources);
 }
 
 void AwContents::FindAllAsync(JNIEnv* env, jobject obj, jstring search_string) {
@@ -755,12 +777,20 @@ void AwContents::SetIsPaused(JNIEnv* env, jobject obj, bool paused) {
 
 void AwContents::OnAttachedToWindow(JNIEnv* env, jobject obj, int w, int h) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  // Add task but don't schedule it. It will run when DrawGL is called for
-  // the first time.
-  shared_renderer_state_.AppendClosure(
-      base::Bind(&AwContents::InitializeHardwareDrawOnRenderThread,
-                 base::Unretained(this)));
   browser_view_renderer_.OnAttachedToWindow(w, h);
+}
+
+void AwContents::InitializeHardwareDrawIfNeeded() {
+  GLViewRendererManager* manager = GLViewRendererManager::GetInstance();
+  if (renderer_manager_key_ == manager->NullKey()) {
+    // Add task but don't schedule it. It will run when DrawGL is called for
+    // the first time.
+    shared_renderer_state_.AppendClosure(
+        base::Bind(&AwContents::InitializeHardwareDrawOnRenderThread,
+                   base::Unretained(this)));
+    renderer_manager_key_ = manager->PushBack(&shared_renderer_state_);
+    DeferredGpuCommandService::SetInstance();
+  }
 }
 
 void AwContents::InitializeHardwareDrawOnRenderThread() {
@@ -779,21 +809,30 @@ void AwContents::OnDetachedFromWindow(JNIEnv* env, jobject obj) {
   bool draw_functor_succeeded = RequestDrawGL(NULL, true);
   if (!draw_functor_succeeded &&
       shared_renderer_state_.IsHardwareInitialized()) {
-    LOG(ERROR) << "Unable to free GL resources. Has the Window leaked";
+    LOG(ERROR) << "Unable to free GL resources. Has the Window leaked?";
     // Calling release on wrong thread intentionally.
-    ReleaseHardwareDrawOnRenderThread();
+    AwDrawGLInfo info;
+    info.mode = AwDrawGLInfo::kModeProcess;
+    DrawGL(&info);
   } else {
     shared_renderer_state_.ClearClosureQueue();
   }
 
   browser_view_renderer_.OnDetachedFromWindow();
+
+  GLViewRendererManager* manager = GLViewRendererManager::GetInstance();
+  if (renderer_manager_key_ != manager->NullKey()) {
+    manager->Remove(renderer_manager_key_);
+    renderer_manager_key_ = manager->NullKey();
+  }
 }
 
 void AwContents::ReleaseHardwareDrawOnRenderThread() {
-  DCHECK(hardware_renderer_);
-  DCHECK(shared_renderer_state_.IsHardwareInitialized());
   // No point in running any other commands if we released hardware already.
   shared_renderer_state_.ClearClosureQueue();
+  if (!shared_renderer_state_.IsHardwareInitialized())
+    return;
+
   hardware_renderer_.reset();
   shared_renderer_state_.SetHardwareInitialized(false);
 }
@@ -845,6 +884,8 @@ bool AwContents::OnDraw(JNIEnv* env,
                         jint clip_right,
                         jint clip_bottom) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  if (is_hardware_accelerated)
+    InitializeHardwareDrawIfNeeded();
   return browser_view_renderer_.OnDraw(
       canvas,
       is_hardware_accelerated,
@@ -899,16 +940,6 @@ gfx::Point AwContents::GetLocationOnScreen() {
   return gfx::Point(location[0], location[1]);
 }
 
-void AwContents::SetMaxContainerViewScrollOffset(gfx::Vector2d new_value) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  JNIEnv* env = AttachCurrentThread();
-  ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
-  if (obj.is_null())
-    return;
-  Java_AwContents_setMaxContainerViewScrollOffset(
-      env, obj.obj(), new_value.x(), new_value.y());
-}
-
 void AwContents::ScrollContainerViewTo(gfx::Vector2d new_value) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   JNIEnv* env = AttachCurrentThread();
@@ -928,30 +959,25 @@ bool AwContents::IsFlingActive() const {
   return Java_AwContents_isFlingActive(env, obj.obj());
 }
 
-void AwContents::SetPageScaleFactorAndLimits(
-    float page_scale_factor,
-    float min_page_scale_factor,
-    float max_page_scale_factor) {
+void AwContents::UpdateScrollState(gfx::Vector2d max_scroll_offset,
+                                   gfx::SizeF contents_size_dip,
+                                   float page_scale_factor,
+                                   float min_page_scale_factor,
+                                   float max_page_scale_factor) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
   if (obj.is_null())
     return;
-  Java_AwContents_setPageScaleFactorAndLimits(env,
-                                              obj.obj(),
-                                              page_scale_factor,
-                                              min_page_scale_factor,
-                                              max_page_scale_factor);
-}
-
-void AwContents::SetContentsSize(gfx::SizeF contents_size_dip) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  JNIEnv* env = AttachCurrentThread();
-  ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
-  if (obj.is_null())
-    return;
-  Java_AwContents_setContentsSize(
-      env, obj.obj(), contents_size_dip.width(), contents_size_dip.height());
+  Java_AwContents_updateScrollState(env,
+                                    obj.obj(),
+                                    max_scroll_offset.x(),
+                                    max_scroll_offset.y(),
+                                    contents_size_dip.width(),
+                                    contents_size_dip.height(),
+                                    page_scale_factor,
+                                    min_page_scale_factor,
+                                    max_page_scale_factor);
 }
 
 void AwContents::DidOverscroll(gfx::Vector2d overscroll_delta) {
@@ -1040,13 +1066,6 @@ void AwContents::SetExtraHeadersForUrl(JNIEnv* env, jobject obj,
                                     extra_headers);
 }
 
-void AwContents::ClearClientCertPreferences(JNIEnv* env, jobject obj) {
-  content::BrowserThread::PostTask(
-      BrowserThread::IO,
-      FROM_HERE,
-      base::Bind(&NotifyClientCertificatesChanged));
-}
-
 void AwContents::SetJsOnlineProperty(JNIEnv* env,
                                      jobject obj,
                                      jboolean network_up) {
@@ -1058,28 +1077,12 @@ void AwContents::TrimMemory(JNIEnv* env,
                             jobject obj,
                             jint level,
                             jboolean visible) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
   if (!shared_renderer_state_.IsHardwareInitialized())
     return;
 
-  shared_renderer_state_.AppendClosure(
-      base::Bind(&AwContents::TrimMemoryOnRenderThread,
-                 base::Unretained(this),
-                 level,
-                 visible));
-  RequestDrawGL(NULL, true);
-}
-
-void AwContents::TrimMemoryOnRenderThread(int level, bool visible) {
-  if (hardware_renderer_ && hardware_renderer_->TrimMemory(level, visible)) {
-    content::BrowserThread::PostTask(
-        content::BrowserThread::UI,
-        FROM_HERE,
-        base::Bind(&AwContents::ForceFakeComposite, ui_thread_weak_ptr_));
-  }
-}
-
-void AwContents::ForceFakeComposite() {
-  browser_view_renderer_.ForceFakeCompositeSW();
+  browser_view_renderer_.TrimMemory(level, visible);
 }
 
 void SetShouldDownloadFavicons(JNIEnv* env, jclass jclazz) {

@@ -5,14 +5,12 @@
 #include "apps/shell/browser/shell_browser_main_parts.h"
 
 #include "apps/shell/browser/shell_browser_context.h"
+#include "apps/shell/browser/shell_browser_main_delegate.h"
 #include "apps/shell/browser/shell_desktop_controller.h"
 #include "apps/shell/browser/shell_extension_system.h"
 #include "apps/shell/browser/shell_extension_system_factory.h"
 #include "apps/shell/browser/shell_extensions_browser_client.h"
 #include "apps/shell/common/shell_extensions_client.h"
-#include "base/command_line.h"
-#include "base/file_util.h"
-#include "base/files/file_path.h"
 #include "base/run_loop.h"
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
 #include "content/public/common/result_codes.h"
@@ -24,6 +22,7 @@
 #include "ui/base/resource/resource_bundle.h"
 
 #if defined(OS_CHROMEOS)
+#include "apps/shell/browser/shell_network_controller_chromeos.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #endif
 
@@ -46,10 +45,13 @@ void EnsureBrowserContextKeyedServiceFactoriesBuilt() {
 namespace apps {
 
 ShellBrowserMainParts::ShellBrowserMainParts(
-    const content::MainFunctionParams& parameters)
+    const content::MainFunctionParams& parameters,
+    ShellBrowserMainDelegate* browser_main_delegate)
     : extension_system_(NULL),
       parameters_(parameters),
-      run_message_loop_(true) {}
+      run_message_loop_(true),
+      browser_main_delegate_(browser_main_delegate) {
+}
 
 ShellBrowserMainParts::~ShellBrowserMainParts() {
 }
@@ -61,6 +63,7 @@ void ShellBrowserMainParts::PreMainMessageLoopStart() {
 void ShellBrowserMainParts::PostMainMessageLoopStart() {
 #if defined(OS_CHROMEOS)
   chromeos::DBusThreadManager::Initialize();
+  network_controller_.reset(new ShellNetworkController);
 #endif
 }
 
@@ -103,20 +106,13 @@ void ShellBrowserMainParts::PreMainMessageLoopRun() {
 
   devtools_delegate_.reset(
       new content::ShellDevToolsDelegate(browser_context_.get()));
-
-  const std::string kAppSwitch = "app";
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
-  if (command_line->HasSwitch(kAppSwitch)) {
-    base::FilePath app_dir(command_line->GetSwitchValueNative(kAppSwitch));
-    base::FilePath app_absolute_dir = base::MakeAbsoluteFilePath(app_dir);
-    extension_system_->LoadAndLaunchApp(app_absolute_dir);
-  } else if (parameters_.ui_task) {
+  if (parameters_.ui_task) {
     // For running browser tests.
     parameters_.ui_task->Run();
     delete parameters_.ui_task;
     run_message_loop_ = false;
   } else {
-    LOG(ERROR) << "--" << kAppSwitch << " unset; boredom is in your future";
+    browser_main_delegate_->Start(browser_context_.get());
   }
 }
 
@@ -131,6 +127,8 @@ bool ShellBrowserMainParts::MainMessageLoopRun(int* result_code)  {
 }
 
 void ShellBrowserMainParts::PostMainMessageLoopRun() {
+  browser_main_delegate_->Shutdown();
+
   BrowserContextDependencyManager::GetInstance()->DestroyBrowserContextServices(
       browser_context_.get());
   extension_system_ = NULL;
@@ -144,6 +142,7 @@ void ShellBrowserMainParts::PostMainMessageLoopRun() {
 
 void ShellBrowserMainParts::PostDestroyThreads() {
 #if defined(OS_CHROMEOS)
+  network_controller_.reset();
   chromeos::DBusThreadManager::Shutdown();
 #endif
 }

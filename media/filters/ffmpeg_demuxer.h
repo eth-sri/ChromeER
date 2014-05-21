@@ -129,7 +129,10 @@ class FFmpegDemuxerStream : public DemuxerStream {
   DecoderBufferQueue buffer_queue_;
   ReadCB read_cb_;
 
+#if defined(USE_PROPRIETARY_CODECS)
   scoped_ptr<FFmpegH264ToAnnexBBitstreamConverter> bitstream_converter_;
+#endif
+
   bool bitstream_converter_enabled_;
 
   std::string encryption_key_id_;
@@ -151,7 +154,6 @@ class MEDIA_EXPORT FFmpegDemuxer : public Demuxer {
                           bool enable_text_tracks) OVERRIDE;
   virtual void Stop(const base::Closure& callback) OVERRIDE;
   virtual void Seek(base::TimeDelta time, const PipelineStatusCB& cb) OVERRIDE;
-  virtual void OnAudioRendererDisabled() OVERRIDE;
   virtual DemuxerStream* GetStream(DemuxerStream::Type type) OVERRIDE;
   virtual base::TimeDelta GetStartTime() const OVERRIDE;
   virtual base::Time GetTimelineOffset() const OVERRIDE;
@@ -254,10 +256,6 @@ class MEDIA_EXPORT FFmpegDemuxer : public Demuxer {
 
   // Liveness of the stream.
   Liveness liveness_;
-
-  // Whether audio has been disabled for this demuxer (in which case this class
-  // drops packets destined for AUDIO demuxer streams on the floor).
-  bool audio_disabled_;
 
   // Whether text streams have been enabled for this demuxer.
   bool text_enabled_;

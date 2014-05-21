@@ -10,7 +10,7 @@
 #include "base/metrics/histogram.h"
 #include "base/strings/utf_string_conversions.h"
 #include "components/autofill/core/common/password_form.h"
-#include "components/password_manager/core/browser/password_store.h"
+#include "components/password_manager/core/browser/password_store_sync.h"
 #include "net/base/escape.h"
 #include "sync/api/sync_error_factory.h"
 
@@ -109,7 +109,8 @@ void AppendChanges(const PasswordStoreChangeList& new_changes,
 
 }  // namespace
 
-PasswordSyncableService::PasswordSyncableService(PasswordStore* password_store)
+PasswordSyncableService::PasswordSyncableService(
+    PasswordStoreSync* password_store)
     : password_store_(password_store),
       is_processing_sync_changes_(false) {
 }
@@ -274,10 +275,12 @@ void PasswordSyncableService::ActOnPasswordStoreChanges(
   for (PasswordStoreChangeList::const_iterator it = local_changes.begin();
        it != local_changes.end();
        ++it) {
+    syncer::SyncData data = (it->type() == PasswordStoreChange::REMOVE ?
+        syncer::SyncData::CreateLocalDelete(MakePasswordSyncTag(it->form()),
+                                            syncer::PASSWORDS) :
+        SyncDataFromPassword(it->form()));
     sync_changes.push_back(
-        syncer::SyncChange(FROM_HERE,
-                           GetSyncChangeType(it->type()),
-                           SyncDataFromPassword(it->form())));
+        syncer::SyncChange(FROM_HERE, GetSyncChangeType(it->type()), data));
   }
   sync_processor_->ProcessSyncChanges(FROM_HERE, sync_changes);
 }

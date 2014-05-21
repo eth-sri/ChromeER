@@ -62,13 +62,17 @@ bool Router::HandleIncomingMessageThunk::AcceptWithResponder(
 
 // ----------------------------------------------------------------------------
 
-Router::Router(ScopedMessagePipeHandle message_pipe, MojoAsyncWaiter* waiter)
-    : connector_(message_pipe.Pass(), waiter),
+Router::Router(ScopedMessagePipeHandle message_pipe,
+               FilterChain filters,
+               MojoAsyncWaiter* waiter)
+    : thunk_(this),
+      filters_(filters.Pass()),
+      connector_(message_pipe.Pass(), waiter),
       weak_self_(this),
       incoming_receiver_(NULL),
-      thunk_(this),
       next_request_id_(0) {
-  connector_.set_incoming_receiver(&thunk_);
+  filters_.SetSink(&thunk_);
+  connector_.set_incoming_receiver(filters_.GetHead());
 }
 
 Router::~Router() {
@@ -125,8 +129,9 @@ bool Router::HandleIncomingMessage(Message* message) {
     }
     MessageReceiver* responder = it->second;
     responders_.erase(it);
-    responder->Accept(message);
+    bool ok = responder->Accept(message);
     delete responder;
+    return ok;
   } else {
     if (incoming_receiver_)
       return incoming_receiver_->Accept(message);

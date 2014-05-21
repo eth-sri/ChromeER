@@ -17,6 +17,8 @@
 #include "content/public/common/javascript_message_type.h"
 #include "content/public/common/referrer.h"
 #include "content/public/renderer/render_frame.h"
+#include "content/renderer/media/webmediaplayer_delegate.h"
+#include "content/renderer/render_frame_proxy.h"
 #include "content/renderer/renderer_webcookiejar_impl.h"
 #include "ipc/ipc_message.h"
 #include "third_party/WebKit/public/web/WebDataSource.h"
@@ -36,9 +38,9 @@ class WebInputEvent;
 class WebMouseEvent;
 class WebContentDecryptionModule;
 class WebMIDIClient;
+class WebMediaPlayer;
 class WebNotificationPresenter;
 class WebSecurityOrigin;
-class WebUserMediaClient;
 struct WebCompositionUnderline;
 struct WebContextMenuData;
 struct WebCursorInfo;
@@ -53,6 +55,7 @@ class Rect;
 namespace content {
 
 class ChildFrameCompositingHelper;
+class MediaStreamClient;
 class NotificationProvider;
 class PepperPluginInstanceImpl;
 class RendererPpapiHost;
@@ -64,13 +67,17 @@ struct CustomContextMenuContext;
 
 class CONTENT_EXPORT RenderFrameImpl
     : public RenderFrame,
-      NON_EXPORTED_BASE(public blink::WebFrameClient) {
+      NON_EXPORTED_BASE(public blink::WebFrameClient),
+      NON_EXPORTED_BASE(public WebMediaPlayerDelegate) {
  public:
   // Creates a new RenderFrame. |render_view| is the RenderView object that this
   // frame belongs to.
   // Callers *must* call |SetWebFrame| immediately after creation.
   // TODO(creis): We should structure this so that |SetWebFrame| isn't needed.
   static RenderFrameImpl* Create(RenderViewImpl* render_view, int32 routing_id);
+
+  // Returns the RenderFrameImpl for the given routing ID.
+  static RenderFrameImpl* FromRoutingID(int routing_id);
 
   // Just like RenderFrame::FromWebFrame but returns the implementation.
   static RenderFrameImpl* FromWebFrame(blink::WebFrame* web_frame);
@@ -84,6 +91,12 @@ class CONTENT_EXPORT RenderFrameImpl
 
   bool is_swapped_out() const {
     return is_swapped_out_;
+  }
+
+  // TODO(nasko): This can be removed once we don't have a swapped out state on
+  // RenderFrames. See https://crbug.com/357747.
+  void set_render_frame_proxy(RenderFrameProxy* proxy) {
+    render_frame_proxy_ = proxy;
   }
 
   // Out-of-process child frames receive a signal from RenderWidgetCompositor
@@ -176,6 +189,10 @@ class CONTENT_EXPORT RenderFrameImpl
     bool keep_selection);
 #endif  // ENABLE_PLUGINS
 
+  // Overrides the MediaStreamClient used when creating MediaStream players.
+  // Must be called before any players are created.
+  void SetMediaStreamClientForTesting(MediaStreamClient* media_stream_client);
+
   // IPC::Sender
   virtual bool Send(IPC::Message* msg) OVERRIDE;
 
@@ -200,7 +217,7 @@ class CONTENT_EXPORT RenderFrameImpl
                                  blink::WebNavigationPolicy policy) OVERRIDE;
   virtual void ExecuteJavaScript(const base::string16& javascript) OVERRIDE;
 
-  // blink::WebFrameClient implementation -------------------------------------
+  // blink::WebFrameClient implementation:
   virtual blink::WebPlugin* createPlugin(blink::WebLocalFrame* frame,
                                          const blink::WebPluginParams& params);
   virtual blink::WebMediaPlayer* createMediaPlayer(
@@ -268,7 +285,7 @@ class CONTENT_EXPORT RenderFrameImpl
       blink::WebLocalFrame* frame,
       const blink::WebHistoryItem& item,
       blink::WebHistoryCommitType commit_type);
-  virtual void didClearWindowObject(blink::WebLocalFrame* frame, int world_id);
+  virtual void didClearWindowObject(blink::WebLocalFrame* frame);
   virtual void didCreateDocumentElement(blink::WebLocalFrame* frame);
   virtual void didReceiveTitle(blink::WebLocalFrame* frame,
                                const blink::WebString& title,
@@ -350,9 +367,9 @@ class CONTENT_EXPORT RenderFrameImpl
   virtual blink::WebUserMediaClient* userMediaClient();
   virtual blink::WebMIDIClient* webMIDIClient();
   virtual bool willCheckAndDispatchMessageEvent(
-      blink::WebLocalFrame* sourceFrame,
-      blink::WebFrame* targetFrame,
-      blink::WebSecurityOrigin targetOrigin,
+      blink::WebLocalFrame* source_frame,
+      blink::WebFrame* target_frame,
+      blink::WebSecurityOrigin target_origin,
       blink::WebDOMMessageEvent event);
   virtual blink::WebString userAgentOverride(blink::WebLocalFrame* frame,
                                              const blink::WebURL& url);
@@ -363,6 +380,11 @@ class CONTENT_EXPORT RenderFrameImpl
   virtual void forwardInputEvent(const blink::WebInputEvent* event);
   virtual void initializeChildFrame(const blink::WebRect& frame_rect,
                                     float scale_factor);
+
+  // WebMediaPlayerDelegate implementation:
+  virtual void DidPlay(blink::WebMediaPlayer* player) OVERRIDE;
+  virtual void DidPause(blink::WebMediaPlayer* player) OVERRIDE;
+  virtual void PlayerGone(blink::WebMediaPlayer* player) OVERRIDE;
 
   // EventRacer ------------------------------------------------------
   virtual void didStartEventRacerLog() OVERRIDE;
@@ -407,7 +429,7 @@ class CONTENT_EXPORT RenderFrameImpl
   // The documentation for these functions should be in
   // content/common/*_messages.h for the message that the function is handling.
   void OnBeforeUnload();
-  void OnSwapOut();
+  void OnSwapOut(int proxy_routing_id);
   void OnChildFrameProcessGone();
   void OnBuffersSwapped(const FrameMsg_BuffersSwapped_Params& params);
   void OnCompositorFrameSwapped(const IPC::Message& message);
@@ -455,6 +477,22 @@ class CONTENT_EXPORT RenderFrameImpl
                const Referrer& referrer,
                blink::WebNavigationPolicy policy);
 
+  // Update current main frame's encoding and send it to browser window.
+  // Since we want to let users see the right encoding info from menu
+  // before finishing loading, we call the UpdateEncoding in
+  // a) function:DidCommitLoadForFrame. When this function is called,
+  // that means we have got first data. In here we try to get encoding
+  // of page if it has been specified in http header.
+  // b) function:DidReceiveTitle. When this function is called,
+  // that means we have got specified title. Because in most of webpages,
+  // title tags will follow meta tags. In here we try to get encoding of
+  // page if it has been specified in meta tag.
+  // c) function:DidFinishDocumentLoadForFrame. When this function is
+  // called, that means we have got whole html page. In here we should
+  // finally get right encoding of page.
+  void UpdateEncoding(blink::WebFrame* frame,
+                      const std::string& encoding_name);
+
   // Dispatches the current state of selection on the webpage to the browser if
   // it has changed.
   // TODO(varunjain): delete this method once we figure out how to keep
@@ -480,12 +518,31 @@ class CONTENT_EXPORT RenderFrameImpl
                                const blink::WebURLError& error,
                                bool replace);
 
+  // Initializes |media_stream_client_|, returning true if successful. Returns
+  // false if it wasn't possible to create a MediaStreamClient (e.g., WebRTC is
+  // disabled) in which case |media_stream_client_| is NULL.
+  bool InitializeMediaStreamClient();
+
+  blink::WebMediaPlayer* CreateWebMediaPlayerForMediaStream(
+      const blink::WebURL& url,
+      blink::WebMediaPlayerClient* client);
+
+#if defined(OS_ANDROID)
+ blink::WebMediaPlayer* CreateAndroidWebMediaPlayer(
+      const blink::WebURL& url,
+      blink::WebMediaPlayerClient* client);
+#endif
+
   // Stores the WebLocalFrame we are associated with.
   blink::WebLocalFrame* frame_;
 
   base::WeakPtr<RenderViewImpl> render_view_;
   int routing_id_;
   bool is_swapped_out_;
+  // RenderFrameProxy exists only when is_swapped_out_ is true.
+  // TODO(nasko): This can be removed once we don't have a swapped out state on
+  // RenderFrame. See https://crbug.com/357747.
+  RenderFrameProxy* render_frame_proxy_;
   bool is_detaching_;
 
 #if defined(ENABLE_PLUGINS)
@@ -538,6 +595,12 @@ class CONTENT_EXPORT RenderFrameImpl
 
   // Holds a reference to the service which provides desktop notifications.
   NotificationProvider* notification_provider_;
+
+  // MediaStreamClient attached to this frame; lazily initialized.
+  MediaStreamClient* media_stream_client_;
+  blink::WebUserMediaClient* web_user_media_client_;
+
+  base::WeakPtrFactory<RenderFrameImpl> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderFrameImpl);
 };

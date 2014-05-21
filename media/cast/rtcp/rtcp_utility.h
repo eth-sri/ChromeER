@@ -7,6 +7,7 @@
 
 #include "media/cast/cast_config.h"
 #include "media/cast/cast_defines.h"
+#include "media/cast/logging/logging_defines.h"
 #include "media/cast/rtcp/rtcp_defines.h"
 
 namespace media {
@@ -21,7 +22,6 @@ static const int kRtcpMaxNumberOfRembFeedbackSsrcs = 255;
 static const uint32 kRemb = ('R' << 24) + ('E' << 16) + ('M' << 8) + 'B';
 static const uint32 kCast = ('C' << 24) + ('A' << 16) + ('S' << 8) + 'T';
 
-static const uint8 kSenderLogSubtype = 1;
 static const uint8 kReceiverLogSubtype = 2;
 
 static const size_t kRtcpMaxReceiverLogMessages = 256;
@@ -159,12 +159,6 @@ struct RtcpFieldApplicationSpecificCastReceiverLogItem {
   uint16 event_timestamp_delta;
 };
 
-struct RtcpFieldApplicationSpecificCastSenderLogItem {
-  uint32 sender_ssrc;
-  uint8 status;
-  uint32 rtp_timestamp;
-};
-
 union RtcpField {
   RtcpFieldReceiverReport receiver_report;
   RtcpFieldSenderReport sender_report;
@@ -189,7 +183,6 @@ union RtcpField {
   RtcpFieldPayloadSpecificCastNackItem cast_nack_item;
 
   RtcpFieldApplicationSpecificCastReceiverLogItem cast_receiver_log;
-  RtcpFieldApplicationSpecificCastSenderLogItem cast_sender_log;
 };
 
 enum RtcpFieldTypes {
@@ -224,7 +217,6 @@ enum RtcpFieldTypes {
   kRtcpApplicationSpecificCastReceiverLogCode,
   kRtcpApplicationSpecificCastReceiverLogFrameCode,
   kRtcpApplicationSpecificCastReceiverLogEventCode,
-  kRtcpApplicationSpecificCastSenderLogCode,
 
   // RFC 5104.
   kRtcpPayloadSpecificFirCode,
@@ -263,7 +255,6 @@ class RtcpParser {
     kStateBye,
     kStateApplicationSpecificCastReceiverFrameLog,
     kStateApplicationSpecificCastReceiverEventLog,
-    kStateApplicationSpecificCastSenderLog,
     kStateExtendedReportBlock,
     kStateExtendedReportDelaySinceLastReceiverReport,
     kStateGenericRtpFeedbackNack,
@@ -285,7 +276,6 @@ class RtcpParser {
   void IterateByeItem();
   void IterateCastReceiverLogFrame();
   void IterateCastReceiverLogEvent();
-  void IterateCastSenderLog();
   void IterateExtendedReportItem();
   void IterateExtendedReportDelaySinceLastReceiverReportItem();
   void IterateNackItem();
@@ -311,7 +301,6 @@ class RtcpParser {
   bool ParseApplicationDefined(uint8 subtype);
   bool ParseCastReceiverLogFrameItem();
   bool ParseCastReceiverLogEventItem();
-  bool ParseCastSenderLogItem();
 
   bool ParseExtendedReport();
   bool ParseExtendedReportItem();
@@ -342,6 +331,14 @@ class RtcpParser {
 
   DISALLOW_COPY_AND_ASSIGN(RtcpParser);
 };
+
+// Converts a log event type to an integer value.
+// NOTE: We have only allocated 4 bits to represent the type of event over the
+// wire. Therefore, this function can only return values from 0 to 15.
+uint8 ConvertEventTypeToWireFormat(CastLoggingEvent event);
+
+// The inverse of |ConvertEventTypeToWireFormat()|.
+CastLoggingEvent TranslateToLogEventFromWireFormat(uint8 event);
 
 }  // namespace cast
 }  // namespace media

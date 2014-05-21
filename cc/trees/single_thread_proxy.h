@@ -27,8 +27,6 @@ class SingleThreadProxy : public Proxy, LayerTreeHostImplClient {
   virtual ~SingleThreadProxy();
 
   // Proxy implementation
-  virtual bool CompositeAndReadback(void* pixels,
-                                    const gfx::Rect& rect) OVERRIDE;
   virtual void FinishAllRendering() OVERRIDE;
   virtual bool IsStarted() const OVERRIDE;
   virtual void SetLayerTreeHostClientReady() OVERRIDE;
@@ -79,8 +77,9 @@ class SingleThreadProxy : public Proxy, LayerTreeHostImplClient {
   virtual void SendManagedMemoryStats() OVERRIDE;
   virtual bool IsInsideDraw() OVERRIDE;
   virtual void RenewTreePriority() OVERRIDE {}
-  virtual void RequestScrollbarAnimationOnImplThread(base::TimeDelta delay)
-      OVERRIDE {}
+  virtual void PostDelayedScrollbarFadeOnImplThread(
+      const base::Closure& start_fade,
+      base::TimeDelta delay) OVERRIDE {}
   virtual void DidActivatePendingTree() OVERRIDE {}
   virtual void DidManageTiles() OVERRIDE {}
   virtual void SetDebugState(const LayerTreeDebugState& debug_state) OVERRIDE {}
@@ -92,14 +91,8 @@ class SingleThreadProxy : public Proxy, LayerTreeHostImplClient {
   SingleThreadProxy(LayerTreeHost* layer_tree_host,
                     LayerTreeHostSingleThreadClient* client);
 
-  bool CommitAndComposite(base::TimeTicks frame_begin_time,
-                          const gfx::Rect& device_viewport_damage_rect,
-                          bool for_readback,
-                          LayerTreeHostImpl::FrameData* frame);
   void DoCommit(scoped_ptr<ResourceUpdateQueue> queue);
   bool DoComposite(base::TimeTicks frame_begin_time,
-                   const gfx::Rect& device_viewport_damage_rect,
-                   bool for_readback,
                    LayerTreeHostImpl::FrameData* frame);
   void DidSwapFrame();
 

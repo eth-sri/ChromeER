@@ -17,7 +17,6 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/sequenced_worker_pool.h"
-#include "chrome/browser/app_mode/app_mode_utils.h"
 #include "chrome/browser/browser_about_handler.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browser_shutdown.h"
@@ -31,6 +30,7 @@
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/content_settings/tab_specific_content_settings.h"
 #include "chrome/browser/defaults.h"
+#include "chrome/browser/devtools/chrome_devtools_manager_delegate.h"
 #include "chrome/browser/download/download_prefs.h"
 #include "chrome/browser/extensions/api/web_request/web_request_api.h"
 #include "chrome/browser/extensions/browser_permissions_policy_delegate.h"
@@ -44,6 +44,7 @@
 #include "chrome/browser/guest_view/ad_view/ad_view_guest.h"
 #include "chrome/browser/guest_view/guest_view_base.h"
 #include "chrome/browser/guest_view/guest_view_constants.h"
+#include "chrome/browser/guest_view/guest_view_manager.h"
 #include "chrome/browser/guest_view/web_view/web_view_guest.h"
 #include "chrome/browser/media/cast_transport_host_filter.h"
 #include "chrome/browser/media/media_capture_devices_dispatcher.h"
@@ -97,15 +98,16 @@
 #include "chrome/common/url_constants.h"
 #include "chrome/installer/util/google_update_settings.h"
 #include "chromeos/chromeos_constants.h"
+#include "components/cdm/browser/cdm_message_filter_android.h"
 #include "components/cloud_devices/common/cloud_devices_switches.h"
 #include "components/nacl/browser/nacl_browser.h"
 #include "components/nacl/browser/nacl_host_message_filter.h"
 #include "components/nacl/browser/nacl_process_host.h"
 #include "components/nacl/common/nacl_process_type.h"
 #include "components/nacl/common/nacl_switches.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "components/signin/core/common/profile_management_switches.h"
 #include "components/translate/core/common/translate_switches.h"
-#include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/browser_child_process_host.h"
 #include "content/public/browser/browser_main_parts.h"
 #include "content/public/browser/browser_ppapi_host.h"
@@ -119,7 +121,6 @@
 #include "content/public/browser/resource_context.h"
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "content/public/common/child_process_host.h"
 #include "content/public/common/content_descriptors.h"
 #include "content/public/common/url_utils.h"
@@ -168,7 +169,7 @@
 #include "chrome/browser/chromeos/fileapi/file_system_backend.h"
 #include "chrome/browser/chromeos/fileapi/mtp_file_system_backend_delegate.h"
 #include "chrome/browser/chromeos/login/startup_utils.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/system/input_device_settings.h"
 #include "chromeos/chromeos_switches.h"
 #elif defined(OS_LINUX)
@@ -177,7 +178,6 @@
 #include "chrome/browser/android/new_tab_page_url_handler.h"
 #include "chrome/browser/android/webapps/single_tab_mode_tab_helper.h"
 #include "chrome/browser/chrome_browser_main_android.h"
-#include "chrome/browser/media/encrypted_media_message_filter_android.h"
 #include "chrome/common/descriptors_android.h"
 #include "components/breakpad/browser/crash_dump_manager_android.h"
 #elif defined(OS_POSIX)
@@ -213,10 +213,6 @@
 
 #if defined(ENABLE_WEBRTC)
 #include "chrome/browser/media/webrtc_logging_handler_host.h"
-#endif
-
-#if defined(ENABLE_INPUT_SPEECH)
-#include "chrome/browser/speech/chrome_speech_recognition_manager_delegate_bubble_ui.h"
 #endif
 
 #if defined(OS_CHROMEOS)
@@ -634,7 +630,8 @@ float GetDeviceScaleAdjustment() {
 
 namespace chrome {
 
-ChromeContentBrowserClient::ChromeContentBrowserClient() {
+ChromeContentBrowserClient::ChromeContentBrowserClient()
+    : prerender_tracker_(NULL) {
 #if defined(ENABLE_PLUGINS)
   for (size_t i = 0; i < arraysize(kPredefinedAllowedFileHandleOrigins); ++i)
     allowed_file_handle_origins_.insert(kPredefinedAllowedFileHandleOrigins[i]);
@@ -814,6 +811,7 @@ content::WebContentsViewDelegate*
 }
 
 void ChromeContentBrowserClient::GuestWebContentsCreated(
+    int guest_instance_id,
     SiteInstance* guest_site_instance,
     WebContents* guest_web_contents,
     WebContents* opener_web_contents,
@@ -853,7 +851,10 @@ void ChromeContentBrowserClient::GuestWebContentsCreated(
 
     // Create a new GuestViewBase of the same type as the opener.
     *guest_delegate = GuestViewBase::Create(
-        guest_web_contents, extension_id, guest->GetViewType());
+        guest_instance_id,
+        guest_web_contents,
+        extension_id,
+        guest->GetViewType());
     return;
   }
 
@@ -868,7 +869,10 @@ void ChromeContentBrowserClient::GuestWebContentsCreated(
     return;
 
   *guest_delegate =
-      GuestViewBase::Create(guest_web_contents, extension_id, api_type);
+      GuestViewBase::Create(guest_instance_id,
+                            guest_web_contents,
+                            extension_id,
+                            api_type);
 }
 
 void ChromeContentBrowserClient::GuestWebContentsAttached(
@@ -928,7 +932,7 @@ void ChromeContentBrowserClient::RenderProcessWillLaunch(
       context));
 #endif
 #if defined(OS_ANDROID)
-  host->AddFilter(new EncryptedMediaMessageFilterAndroid());
+  host->AddFilter(new cdm::CdmMessageFilterAndroid());
 #endif
   if (switches::IsNewProfileManagement())
     host->AddFilter(new PrincipalsMessageFilter(id));
@@ -1210,6 +1214,24 @@ bool ChromeContentBrowserClient::IsSuitableHost(
       GetPrivilegeRequiredByUrl(site_url, service);
   return GetProcessPrivilege(process_host, process_map, service) ==
       privilege_required;
+}
+
+bool ChromeContentBrowserClient::MayReuseHost(
+    content::RenderProcessHost* process_host) {
+  // If there is currently a prerender in progress for the host provided,
+  // it may not be shared. We require prerenders to be by themselves in a
+  // separate process, so that we can monitor their resource usage, and so that
+  // we can track the cookies that they change.
+  Profile* profile = Profile::FromBrowserContext(
+      process_host->GetBrowserContext());
+  prerender::PrerenderManager* prerender_manager =
+      prerender::PrerenderManagerFactory::GetForProfile(profile);
+  if (prerender_manager &&
+      prerender_manager->IsProcessPrerendering(process_host)) {
+    return false;
+  }
+
+  return true;
 }
 
 // This function is trying to limit the amount of processes used by extensions
@@ -1553,11 +1575,56 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
     {
       // Enable auto-reload if this session is in the field trial or the user
       // explicitly enabled it.
-      std::string group =
-          base::FieldTrialList::FindFullName("AutoReloadExperiment");
-      if (group == "Enabled" ||
-          browser_command_line.HasSwitch(switches::kEnableOfflineAutoReload)) {
+      bool hard_enabled =
+          browser_command_line.HasSwitch(switches::kEnableOfflineAutoReload);
+      bool hard_disabled =
+          browser_command_line.HasSwitch(switches::kDisableOfflineAutoReload);
+      if (hard_enabled) {
         command_line->AppendSwitch(switches::kEnableOfflineAutoReload);
+      } else if (!hard_disabled) {
+        std::string group =
+            base::FieldTrialList::FindFullName("AutoReloadExperiment");
+#if !defined(OS_ANDROID) && !defined(OS_IOS)
+        chrome::VersionInfo::Channel channel =
+          chrome::VersionInfo::GetChannel();
+        chrome::VersionInfo::Channel kForceChannel =
+            chrome::VersionInfo::CHANNEL_CANARY;
+        if (channel <= kForceChannel || group == "Enabled")
+#else
+        if (group == "Enabled")
+#endif
+          command_line->AppendSwitch(switches::kEnableOfflineAutoReload);
+      }
+    }
+
+    {
+      // Enable load stale cache if this session is in the field trial, one
+      // of the forced on channels, or the user explicitly enabled it.
+      // Note that as far as the renderer  is concerned, the feature is
+      // enabled if-and-only-if the kEnableOfflineLoadStaleCache flag
+      // is on the command line; the yes/no/default behavior is only
+      // at the browser command line level.
+
+      // Command line switches override
+      if (browser_command_line.HasSwitch(
+              switches::kEnableOfflineLoadStaleCache)) {
+        command_line->AppendSwitch(switches::kEnableOfflineLoadStaleCache);
+      } else if (!browser_command_line.HasSwitch(
+          switches::kDisableOfflineLoadStaleCache)) {
+        std::string group =
+            base::FieldTrialList::FindFullName("LoadStaleCacheExperiment");
+        chrome::VersionInfo::Channel channel =
+            chrome::VersionInfo::GetChannel();
+#if defined(OS_ANDROID) || defined(OS_IOS)
+        chrome::VersionInfo::Channel forceChannel =
+            chrome::VersionInfo::CHANNEL_DEV;
+#else
+        chrome::VersionInfo::Channel forceChannel =
+            chrome::VersionInfo::CHANNEL_CANARY;
+#endif
+
+        if (channel <= forceChannel || group == "Enabled")
+          command_line->AppendSwitch(switches::kEnableOfflineLoadStaleCache);
       }
     }
 
@@ -1592,9 +1659,9 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
       switches::kEnableNetBenchmarking,
       switches::kEnableStreamlinedHostedApps,
       switches::kEnableWatchdog,
+      switches::kEnableWebBasedSignin,
       switches::kMemoryProfiling,
       switches::kMessageLoopHistogrammer,
-      switches::kNoJsRandomness,
       switches::kOutOfProcessPdf,
       switches::kPlaybackMode,
       switches::kPpapiFlashArgs,
@@ -1635,6 +1702,7 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
     static const char* const kSwitchNames[] = {
       // Load (in-process) Pepper plugins in-process in the zygote pre-sandbox.
       switches::kDisableBundledPpapiFlash,
+      switches::kEnableNaClNonSfiMode,
       switches::kNaClDangerousNoSandboxNonSfi,
       switches::kPpapiFlashPath,
       switches::kPpapiFlashVersion,
@@ -1715,6 +1783,13 @@ bool ChromeContentBrowserClient::AllowSetCookie(
   ProfileIOData* io_data = ProfileIOData::FromResourceContext(context);
   CookieSettings* cookie_settings = io_data->GetCookieSettings();
   bool allow = cookie_settings->IsSettingCookieAllowed(url, first_party);
+
+  if (prerender_tracker_) {
+    prerender_tracker_->OnCookieChangedForURL(
+        render_process_id,
+        context->GetRequestContext()->cookie_store()->GetCookieMonster(),
+        url);
+  }
 
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
@@ -2102,12 +2177,6 @@ bool ChromeContentBrowserClient::CanCreateWindow(
     return true;
   }
 
-  // No new browser window (popup or tab) in app mode.
-  if (container_type == WINDOW_CONTAINER_TYPE_NORMAL &&
-      chrome::IsRunningInForcedAppMode()) {
-    return false;
-  }
-
   if (is_guest)
     return true;
 
@@ -2162,19 +2231,15 @@ std::string ChromeContentBrowserClient::GetWorkerProcessTitle(
 }
 
 void ChromeContentBrowserClient::ResourceDispatcherHostCreated() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  prerender_tracker_ = g_browser_process->prerender_tracker();
   return g_browser_process->ResourceDispatcherHostCreated();
 }
 
 // TODO(tommi): Rename from Get to Create.
 content::SpeechRecognitionManagerDelegate*
     ChromeContentBrowserClient::GetSpeechRecognitionManagerDelegate() {
-#if defined(ENABLE_INPUT_SPEECH)
-  return new speech::ChromeSpeechRecognitionManagerDelegateBubbleUI();
-#else
-  // Platforms who don't implement x-webkit-speech (a.k.a INPUT_SPEECH) just
-  // need the base delegate without the bubble UI.
   return new speech::ChromeSpeechRecognitionManagerDelegate();
-#endif
 }
 
 net::NetLog* ChromeContentBrowserClient::GetNetLog() {
@@ -2653,6 +2718,21 @@ bool ChromeContentBrowserClient::IsPluginAllowedToUseDevChannelAPIs() {
 #else
   return false;
 #endif
+}
+
+content::DevToolsManagerDelegate*
+ChromeContentBrowserClient::GetDevToolsManagerDelegate() {
+  return new ChromeDevToolsManagerDelegate();
+}
+
+net::CookieStore*
+ChromeContentBrowserClient::OverrideCookieStoreForRenderProcess(
+    int render_process_id) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  if (!prerender_tracker_)
+    return NULL;
+  return prerender_tracker_->
+      GetPrerenderCookieStoreForRenderProcess(render_process_id);
 }
 
 #if defined(ENABLE_WEBRTC)

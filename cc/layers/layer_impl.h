@@ -65,6 +65,15 @@ enum DrawMode {
 class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
                             public LayerAnimationValueProvider {
  public:
+  // Allows for the ownership of the total scroll offset to be delegated outside
+  // of the layer.
+  class ScrollOffsetDelegate {
+   public:
+    virtual void SetTotalScrollOffset(const gfx::Vector2dF& new_value) = 0;
+    virtual gfx::Vector2dF GetTotalScrollOffset() = 0;
+    virtual bool IsExternalFlingActive() const = 0;
+  };
+
   typedef LayerImplList RenderSurfaceListType;
   typedef LayerImplList LayerListType;
   typedef RenderSurfaceImpl RenderSurfaceType;
@@ -158,7 +167,7 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
 
   LayerTreeImpl* layer_tree_impl() const { return layer_tree_impl_; }
 
-  scoped_ptr<SharedQuadState> CreateSharedQuadState() const;
+  void PopulateSharedQuadState(SharedQuadState* state) const;
   // WillDraw must be called before AppendQuads. If WillDraw returns false,
   // AppendQuads and DidDraw will not be called. If WillDraw returns true,
   // DidDraw is guaranteed to be called before another WillDraw or before
@@ -361,8 +370,7 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
                                       float* contents_scale_y,
                                       gfx::Size* content_bounds);
 
-  void SetScrollOffsetDelegate(
-      LayerScrollOffsetDelegate* scroll_offset_delegate);
+  void SetScrollOffsetDelegate(ScrollOffsetDelegate* scroll_offset_delegate);
   bool IsExternalFlingActive() const;
 
   void SetScrollOffset(const gfx::Vector2d& scroll_offset);
@@ -534,6 +542,8 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   virtual void SetDebugInfo(
       scoped_refptr<base::debug::ConvertableToTraceFormat> other);
 
+  bool IsDrawnRenderSurfaceLayerListMember() const;
+
  protected:
   LayerImpl(LayerTreeImpl* layer_impl, int id);
 
@@ -592,7 +602,7 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   gfx::Size bounds_;
   gfx::SizeF temporary_impl_bounds_;
   gfx::Vector2d scroll_offset_;
-  LayerScrollOffsetDelegate* scroll_offset_delegate_;
+  ScrollOffsetDelegate* scroll_offset_delegate_;
   LayerImpl* scroll_clip_layer_;
   bool scrollable_ : 1;
   bool should_scroll_on_main_thread_ : 1;

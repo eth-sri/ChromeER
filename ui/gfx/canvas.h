@@ -320,6 +320,22 @@ class GFX_EXPORT Canvas {
                     bool filter,
                     const SkPaint& paint);
 
+  // Same as the DrawImageInt functions above. Difference being this does not
+  // do any scaling, i.e. it assumes that the source/destination/image, etc are
+  // in pixels. It does translate the destination rectangle to ensure that the
+  // image is displayed at the correct pixel coordinates.
+  void DrawImageIntInPixel(const ImageSkia& image,
+                           int src_x,
+                           int src_y,
+                           int src_w,
+                           int src_h,
+                           int dest_x,
+                           int dest_y,
+                           int dest_w,
+                           int dest_h,
+                           bool filter,
+                           const SkPaint& paint);
+
   // Draws an |image| with the top left corner at |x| and |y|, clipped to
   // |path|.
   // Parameters are specified relative to current canvas scale not in pixels.
@@ -427,16 +443,22 @@ class GFX_EXPORT Canvas {
   bool IntersectsClipRectInt(int x, int y, int w, int h);
   bool IntersectsClipRect(const Rect& rect);
 
-  // Returns the image rep which best matches the canvas |image_scale_|.
-  // Returns a null image rep if |image| contains no image reps.
-  // Builds mip map for returned image rep if necessary.
-  //
-  // An optional additional user defined scale can be provided.
-  const ImageSkiaRep& GetImageRepToPaint(const ImageSkia& image) const;
-  const ImageSkiaRep& GetImageRepToPaint(
-      const ImageSkia& image,
-      float user_defined_scale_factor_x,
-      float user_defined_scale_factor_y) const;
+  // Helper for the DrawImageInt functions declared above. The |pixel|
+  // parameter if true indicates that the bounds and the image are to
+  // be assumed to be in pixels, i.e. no scaling needs to be performed.
+  void DrawImageIntHelper(const ImageSkia& image,
+                          int src_x,
+                          int src_y,
+                          int src_w,
+                          int src_h,
+                          int dest_x,
+                          int dest_y,
+                          int dest_w,
+                          int dest_h,
+                          bool filter,
+                          const SkPaint& paint,
+                          float image_scale,
+                          bool pixel);
 
   // The device scale factor at which drawing on this canvas occurs.
   // An additional scale can be applied via Canvas::Scale(). However,

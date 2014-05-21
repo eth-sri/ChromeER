@@ -68,6 +68,10 @@ gfx::NativeViewAccessible TestRenderWidgetHostView::GetNativeViewAccessible() {
   return NULL;
 }
 
+ui::TextInputClient* TestRenderWidgetHostView::GetTextInputClient() {
+  return &text_input_client_;
+}
+
 bool TestRenderWidgetHostView::HasFocus() const {
   return true;
 }
@@ -116,9 +120,6 @@ void TestRenderWidgetHostView::CopyFromCompositingSurfaceToVideoFrame(
 
 bool TestRenderWidgetHostView::CanCopyToVideoFrame() const {
   return false;
-}
-
-void TestRenderWidgetHostView::OnAcceleratedCompositingStateChange() {
 }
 
 void TestRenderWidgetHostView::AcceleratedSurfaceInitialized(int host_id,
@@ -238,6 +239,7 @@ TestRenderViewHost::~TestRenderViewHost() {
 bool TestRenderViewHost::CreateRenderView(
     const base::string16& frame_name,
     int opener_route_id,
+    int proxy_route_id,
     int32 max_page_id,
     bool window_was_created_with_opener) {
   DCHECK(!render_view_created_);

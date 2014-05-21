@@ -27,25 +27,40 @@ namespace {
 class MultipleArgumentsResponseValue
     : public ExtensionFunction::ResponseValueObject {
  public:
-  MultipleArgumentsResponseValue(ExtensionFunction* function,
-                                 base::ListValue* result) {
+  MultipleArgumentsResponseValue(const std::string& function_name,
+                                 const char* title,
+                                 ExtensionFunction* function,
+                                 base::ListValue* result)
+      : function_name_(function_name), title_(title) {
     if (function->GetResultList()) {
-      DCHECK_EQ(function->GetResultList(), result);
+      DCHECK_EQ(function->GetResultList(), result)
+          << "The result set on this function (" << function_name_ << ") "
+          << "either by calling SetResult() or directly modifying |result_| is "
+          << "different to the one passed to " << title_ << "(). "
+          << "The best way to fix this problem is to exclusively use " << title_
+          << "(). SetResult() and |result_| are deprecated.";
     } else {
       function->SetResultList(make_scoped_ptr(result));
     }
-    DCHECK_EQ("", function->GetError());
+    // It would be nice to DCHECK(error.empty()) but some legacy extension
+    // function implementations... I'm looking at chrome.input.ime... do this
+    // for some reason.
   }
 
   virtual ~MultipleArgumentsResponseValue() {}
 
   virtual bool Apply() OVERRIDE { return true; }
+
+ private:
+  std::string function_name_;
+  const char* title_;
 };
 
 class ErrorResponseValue : public ExtensionFunction::ResponseValueObject {
  public:
   ErrorResponseValue(ExtensionFunction* function, const std::string& error) {
-    DCHECK_NE("", error);
+    // It would be nice to DCHECK(!error.empty()) but too many legacy extension
+    // function implementations don't set error but signal failure.
     function->SetError(error);
   }
 
@@ -127,6 +142,16 @@ class UIThreadExtensionFunction::RenderHostTracker
     function_->SetRenderFrameHost(NULL);
   }
 
+  virtual bool OnMessageReceived(
+      const IPC::Message& message,
+      content::RenderFrameHost* render_frame_host) OVERRIDE {
+    DCHECK(render_frame_host);
+    if (render_frame_host == function_->render_frame_host())
+      return function_->OnMessageReceived(message);
+    else
+      return false;
+  }
+
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE {
     return function_->OnMessageReceived(message);
   }
@@ -197,59 +222,51 @@ void ExtensionFunction::SetError(const std::string& error) {
 }
 
 ExtensionFunction::ResponseValue ExtensionFunction::NoArguments() {
-  return MultipleArguments(new base::ListValue());
+  return ResponseValue(new MultipleArgumentsResponseValue(
+      name(), "NoArguments", this, new base::ListValue()));
 }
 
 ExtensionFunction::ResponseValue ExtensionFunction::SingleArgument(
     base::Value* arg) {
   base::ListValue* args = new base::ListValue();
   args->Append(arg);
-  return MultipleArguments(args);
+  return ResponseValue(
+      new MultipleArgumentsResponseValue(name(), "SingleArgument", this, args));
 }
 
 ExtensionFunction::ResponseValue ExtensionFunction::MultipleArguments(
     base::ListValue* args) {
-  return scoped_ptr<ResponseValueObject>(
-      new MultipleArgumentsResponseValue(this, args));
+  return ResponseValue(new MultipleArgumentsResponseValue(
+      name(), "MultipleArguments", this, args));
 }
 
 ExtensionFunction::ResponseValue ExtensionFunction::Error(
     const std::string& error) {
-  return scoped_ptr<ResponseValueObject>(new ErrorResponseValue(this, error));
+  return ResponseValue(new ErrorResponseValue(this, error));
 }
 
 ExtensionFunction::ResponseValue ExtensionFunction::BadMessage() {
-  return scoped_ptr<ResponseValueObject>(new BadMessageResponseValue(this));
+  return ResponseValue(new BadMessageResponseValue(this));
 }
 
 ExtensionFunction::ResponseAction ExtensionFunction::RespondNow(
     ResponseValue result) {
-  return scoped_ptr<ResponseActionObject>(new RespondNowAction(
+  return ResponseAction(new RespondNowAction(
       result.Pass(), base::Bind(&ExtensionFunction::SendResponse, this)));
 }
 
 ExtensionFunction::ResponseAction ExtensionFunction::RespondLater() {
-  return scoped_ptr<ResponseActionObject>(new RespondLaterAction());
+  return ResponseAction(new RespondLaterAction());
 }
 
-void ExtensionFunction::Run() {
-  if (!RunImpl())
-    SendResponse(false);
+// static
+ExtensionFunction::ResponseAction ExtensionFunction::ValidationFailure(
+    ExtensionFunction* function) {
+  return function->RespondNow(function->BadMessage());
 }
 
-bool ExtensionFunction::RunImpl() {
-  RunImplTypesafe()->Execute();
-  return true;
-}
-
-ExtensionFunction::ResponseAction ExtensionFunction::RunImplTypesafe() {
-  NOTREACHED()
-      << "ExtensionFunctions must override either RunImpl or RunImplTypesafe";
-  return RespondNow(NoArguments());
-}
-
-void ExtensionFunction::SendResponseTypesafe(ResponseValue response) {
-  SendResponse(response->Apply());
+void ExtensionFunction::Respond(ResponseValue result) {
+  SendResponse(result->Apply());
 }
 
 bool ExtensionFunction::ShouldSkipQuotaLimiting() const {
@@ -275,6 +292,10 @@ void ExtensionFunction::SendResponseImpl(bool success) {
     results_.reset(new base::ListValue());
 
   response_callback_.Run(type, *results_, GetError());
+}
+
+void ExtensionFunction::OnRespondingLater(ResponseValue value) {
+  SendResponse(value->Apply());
 }
 
 UIThreadExtensionFunction::UIThreadExtensionFunction()
@@ -369,15 +390,30 @@ AsyncExtensionFunction::AsyncExtensionFunction() {
 AsyncExtensionFunction::~AsyncExtensionFunction() {
 }
 
+ExtensionFunction::ResponseAction AsyncExtensionFunction::Run() {
+  return RunAsync() ? RespondLater() : RespondNow(Error(error_));
+}
+
+// static
+bool AsyncExtensionFunction::ValidationFailure(
+    AsyncExtensionFunction* function) {
+  return false;
+}
+
 SyncExtensionFunction::SyncExtensionFunction() {
 }
 
 SyncExtensionFunction::~SyncExtensionFunction() {
 }
 
-bool SyncExtensionFunction::RunImpl() {
-  SendResponse(RunSync());
-  return true;
+ExtensionFunction::ResponseAction SyncExtensionFunction::Run() {
+  return RespondNow(RunSync() ? MultipleArguments(results_.get())
+                              : Error(error_));
+}
+
+// static
+bool SyncExtensionFunction::ValidationFailure(SyncExtensionFunction* function) {
+  return false;
 }
 
 SyncIOThreadExtensionFunction::SyncIOThreadExtensionFunction() {
@@ -386,7 +422,13 @@ SyncIOThreadExtensionFunction::SyncIOThreadExtensionFunction() {
 SyncIOThreadExtensionFunction::~SyncIOThreadExtensionFunction() {
 }
 
-bool SyncIOThreadExtensionFunction::RunImpl() {
-  SendResponse(RunSync());
-  return true;
+ExtensionFunction::ResponseAction SyncIOThreadExtensionFunction::Run() {
+  return RespondNow(RunSync() ? MultipleArguments(results_.get())
+                              : Error(error_));
+}
+
+// static
+bool SyncIOThreadExtensionFunction::ValidationFailure(
+    SyncIOThreadExtensionFunction* function) {
+  return false;
 }

@@ -19,7 +19,7 @@ namespace shell {
 struct ShellTestHelper::State {
   scoped_ptr<Context> context;
   scoped_ptr<ServiceManager::TestAPI> test_api;
-  ScopedShellHandle shell_handle;
+  ScopedMessagePipeHandle shell_handle;
 };
 
 namespace {
@@ -49,7 +49,7 @@ class ShellTestHelper::TestShellClient : public ShellClient {
 };
 
 ShellTestHelper::ShellTestHelper()
-    : shell_thread_("Test Shell Thread"),
+    : shell_thread_("shell_test_helper"),
       state_(NULL) {
   CommandLine::Init(0, NULL);
   mojo::shell::InitializeLogging();
@@ -79,7 +79,8 @@ void ShellTestHelper::Init() {
 void ShellTestHelper::OnShellStarted() {
   DCHECK(state_);
   shell_client_.reset(new TestShellClient);
-  shell_.reset(state_->shell_handle.Pass(), shell_client_.get());
+  shell_.Bind(state_->shell_handle.Pass());
+  shell_->SetClient(shell_client_.get());
   run_loop_->Quit();
 }
 

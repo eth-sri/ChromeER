@@ -112,6 +112,7 @@ const OncFieldSignature openvpn_fields[] = {
     { ::onc::vpn::kClientCertType, &kStringSignature},
     { ::onc::openvpn::kCompLZO, &kStringSignature},
     { ::onc::openvpn::kCompNoAdapt, &kBoolSignature},
+    { ::onc::openvpn::kIgnoreDefaultRoute, &kBoolSignature},
     { ::onc::openvpn::kKeyDirection, &kStringSignature},
     { ::onc::openvpn::kNsCertType, &kStringSignature},
     { ::onc::vpn::kPassword, &kStringSignature},
@@ -279,6 +280,9 @@ const OncFieldSignature network_configuration_fields[] = {
 const OncFieldSignature network_with_state_fields[] = {
     { ::onc::network_config::kCellular, &kCellularWithStateSignature},
     { ::onc::network_config::kConnectionState, &kStringSignature},
+    { ::onc::network_config::kConnectable, &kBoolSignature},
+    { ::onc::network_config::kErrorState, &kStringSignature},
+    { ::onc::network_config::kMacAddress, &kStringSignature},
     { ::onc::network_config::kWiFi, &kWiFiWithStateSignature},
     {NULL}};
 

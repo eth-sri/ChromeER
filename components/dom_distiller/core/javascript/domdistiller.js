@@ -3,24 +3,19 @@
 // found in the LICENSE file.
 
 // These includes will be processed at build time by grit.
-<include src="../../../../third_party/dom_distiller_js/js/domdistiller.js"/>
+<include src="../../../../third_party/dom_distiller_js/package/js/domdistiller.js"/>
 
-// Extracts long-form content from a page and returns an array where the first
-// element is the article title, the second element is HTML containing the
-// long-form content, the third element is the next page link, and the fourth
-// element is the previous page link.
+// Applies DomDistillerJs to the content of the page and returns a
+// DomDistillerResults (as a javascript object/dict).
 (function() {
-  var result = new Array(4);
   try {
-    result[0] = com.dom_distiller.DocumentTitleGetter.getDocumentTitle(
-        document.title, document.documentElement);
-    result[1] = com.dom_distiller.ContentExtractor.extractContent();
-    result[2] = com.dom_distiller.PagingLinksFinder.findNext(
-        document.documentElement);
-    // TODO(shashishekhar): Add actual previous page link here.
-    result[3] = '';
+    // The OPTIONS placeholder will be replaced with the DomDistillerOptions at
+    // runtime.
+    res = com.dom_distiller.DomDistiller.applyWithOptions($$OPTIONS);
+    return res;
   } catch (e) {
-    window.console.log("Error during distillation: " + e);
+    window.console.error("Error during distillation: " + e);
+    if (e.stack != undefined) window.console.error(e.stack);
   }
-  return result;
+  return undefined;
 })()

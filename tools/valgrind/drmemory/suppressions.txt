@@ -455,3 +455,81 @@ GDI USAGE ERROR
 name=http://crbug.com/42043-gdi
 ...
 QuickTime.qts!*
+
+UNADDRESSABLE ACCESS
+name=IntentionalCrash
+*!content::*::*Crash*
+*!content::*::MaybeHandleDebugURL
+
+HANDLE LEAK
+name=http://crbug.com/371348
+system call NtCreateSection
+KERNELBASE.dll!CreateFileMappingW
+base.dll!base::SharedMemory::Create
+base.dll!base::SharedMemory::CreateAndMapAnonymous
+content.dll!content::ChildThread::AllocateSharedMemory
+content.dll!content::ChildSharedBitmapManager::AllocateSharedBitmap
+cc.dll!cc::ResourceProvider::CreateBitmap
+
+HANDLE LEAK
+name=http://crbug.com/371357
+system call NtCreateEvent
+KERNELBASE.dll!CreateEventExW
+KERNELBASE.dll!CreateEventW
+
+HANDLE LEAK
+name=http://crbug.com/371368
+system call NtCreateNamedPipeFile
+KERNELBASE.dll!CreateNamedPipeW
+ipc.dll!IPC::Channel::ChannelImpl::CreatePipe
+ipc.dll!IPC::Channel::ChannelImpl::ChannelImpl
+ipc.dll!IPC::Channel::Channel
+ipc.dll!IPC::ChannelProxy::Context::CreateChannel
+
+HANDLE LEAK
+name=http://crbug.com/371942
+system call NtCreateThreadEx
+KERNELBASE.dll!CreateRemoteThreadEx
+KERNEL32.dll!CreateThread
+
+HANDLE LEAK
+name=http://crbug.com/371946
+system call NtUserWindowFromPoint
+content.dll!content::LegacyRenderWidgetHostHWND::OnMouseLeave
+content.dll!content::LegacyRenderWidgetHostHWND::_ProcessWindowMessage
+content.dll!content::LegacyRenderWidgetHostHWND::ProcessWindowMessage
+content.dll!ATL::CWindowImplBaseT<>::WindowProc
+USER32.dll!gapfnScSendMessage
+USER32.dll!GetThreadDesktop
+USER32.dll!CharPrevW
+USER32.dll!DispatchMessageW
+base.dll!base::MessagePumpForUI::ProcessMessageHelper
+base.dll!base::MessagePumpForUI::ProcessNextWindowsMessage
+
+UNADDRESSABLE ACCESS
+name=http://crbug.com/372177
+NPCTRL.dll!DllGetClassObject
+NPCTRL.dll!DllGetClassObject
+NPCTRL.dll!DllGetClassObject
+NPCTRL.dll!DllGetClassObject
+
+HANDLE LEAK
+name=http://crbug.com/373333
+system call NtGdiCreateCompatibleDC
+*!CreateCompatibleDC
+*!SkScalerContext_GDI::SkScalerContext_GDI
+*!LogFontTypeface::onCreateScalerContext
+*!SkTypeface::createScalerContext
+*!SkGlyphCache::VisitCache
+...
+*!SkPaint::descriptorProc
+...
+*!WebCore::RenderBlockFlow::layoutBlockFlow
+*!WebCore::RenderBlockFlow::layoutBlock
+*!WebCore::RenderBlock::layout
+
+HANDLE LEAK
+name=https://code.google.com/p/drmemory/issues/detail?id=1545
+system call NtGdiCreateCompatibleDC
+GDI32.dll!CreateCompatibleDC
+skia.dll!LogFontTypeface::onGetTableData

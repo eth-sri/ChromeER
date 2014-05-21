@@ -319,10 +319,12 @@ login.createScreen('GaiaSigninScreen', 'gaia-signin', function() {
      * @param {string} email The authenticated user's e-mail address.
      */
     setAuthenticatedUserEmail: function(attemptToken, email) {
-      if (!email)
-        this.showFatalAuthError();
-      else
+      if (!email) {
+        this.showFatalAuthError(
+            loadTimeData.getString('fatalErrorMessageNoEmail'));
+      } else {
         this.gaiaAuthHost_.setAuthenticatedUserEmail(attemptToken, email);
+      }
     },
 
     /**
@@ -426,7 +428,8 @@ login.createScreen('GaiaSigninScreen', 'gaia-signin', function() {
             this.onConfirmPasswordCollected_.bind(this));
       } else {
         chrome.send('scrapedPasswordVerificationFailed');
-        this.showFatalAuthError();
+        this.showFatalAuthError(
+            loadTimeData.getString('fatalErrorMessageVerificationFailed'));
       }
     },
 
@@ -448,7 +451,8 @@ login.createScreen('GaiaSigninScreen', 'gaia-signin', function() {
      * @param {string} email The authenticated user's e-mail.
      */
     onAuthNoPassword_: function(email) {
-      this.showFatalAuthError();
+      this.showFatalAuthError(loadTimeData.getString(
+          'fatalErrorMessageNoPassword'));
       chrome.send('scrapedPasswordCount', [0]);
     },
 
@@ -457,16 +461,20 @@ login.createScreen('GaiaSigninScreen', 'gaia-signin', function() {
      * served over an unencrypted connection was detected. Shows a fatal error.
      * This method is only called on Chrome OS, where the entire authentication
      * flow is required to be encrypted.
+     * @param {string} url The URL that was blocked.
      */
-    onInsecureContentBlocked_: function() {
-      this.showFatalAuthError();
+    onInsecureContentBlocked_: function(url) {
+      this.showFatalAuthError(loadTimeData.getStringF(
+          'fatalErrorMessageInsecureURL',
+          url));
     },
 
     /**
      * Shows the fatal auth error.
+     * @param {string} message The error message to show.
      */
-    showFatalAuthError: function() {
-      login.FatalErrorScreen.show(Oobe.showSigninUI);
+    showFatalAuthError: function(message) {
+      login.FatalErrorScreen.show(message, Oobe.showSigninUI);
     },
 
     /**

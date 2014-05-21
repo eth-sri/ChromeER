@@ -54,26 +54,21 @@ bool IsValidMessageHeader(const internal::MessageHeader* header) {
 
 }  // namespace
 
-MessageHeaderValidator::MessageHeaderValidator(MessageReceiver* next)
-    : next_(next) {
-  assert(next);
+MessageHeaderValidator::MessageHeaderValidator(MessageReceiver* sink)
+    : MessageFilter(sink) {
 }
 
 bool MessageHeaderValidator::Accept(Message* message) {
   // Make sure the message header isn't truncated before we start to read it.
-  if (message->data_num_bytes() < message->header()->num_bytes)
+  if (message->data_num_bytes() < sizeof(internal::MessageHeader) ||
+      message->data_num_bytes() < message->header()->num_bytes) {
     return false;
+  }
 
   if (!IsValidMessageHeader(message->header()))
     return false;
 
-  return next_->Accept(message);
-}
-
-bool MessageHeaderValidator::AcceptWithResponder(Message* message,
-                                                 MessageReceiver* responder) {
-  assert(false);  // Not reached!
-  return false;
+  return sink_->Accept(message);
 }
 
 }  // namespace internal

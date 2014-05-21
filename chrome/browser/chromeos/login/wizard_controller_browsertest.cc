@@ -17,12 +17,12 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
 #include "chrome/browser/chromeos/base/locale_util.h"
+#include "chrome/browser/chromeos/login/auth/mock_authenticator.h"
+#include "chrome/browser/chromeos/login/auth/mock_login_status_consumer.h"
+#include "chrome/browser/chromeos/login/auth/user_context.h"
 #include "chrome/browser/chromeos/login/enrollment/enrollment_screen.h"
 #include "chrome/browser/chromeos/login/enrollment/mock_enrollment_screen.h"
 #include "chrome/browser/chromeos/login/existing_user_controller.h"
-#include "chrome/browser/chromeos/login/login_display_host_impl.h"
-#include "chrome/browser/chromeos/login/mock_authenticator.h"
-#include "chrome/browser/chromeos/login/mock_login_status_consumer.h"
 #include "chrome/browser/chromeos/login/screens/error_screen.h"
 #include "chrome/browser/chromeos/login/screens/hid_detection_screen.h"
 #include "chrome/browser/chromeos/login/screens/mock_eula_screen.h"
@@ -33,10 +33,11 @@
 #include "chrome/browser/chromeos/login/screens/user_image_screen.h"
 #include "chrome/browser/chromeos/login/screens/wrong_hwid_screen.h"
 #include "chrome/browser/chromeos/login/startup_utils.h"
+#include "chrome/browser/chromeos/login/test/wizard_in_process_browser_test.h"
 #include "chrome/browser/chromeos/login/test_login_utils.h"
-#include "chrome/browser/chromeos/login/webui_login_view.h"
+#include "chrome/browser/chromeos/login/ui/login_display_host_impl.h"
+#include "chrome/browser/chromeos/login/ui/webui_login_view.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
-#include "chrome/browser/chromeos/login/wizard_in_process_browser_test.h"
 #include "chrome/browser/chromeos/policy/server_backed_device_state.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
@@ -52,8 +53,6 @@
 #include "chromeos/dbus/fake_dbus_thread_manager.h"
 #include "chromeos/dbus/fake_session_manager_client.h"
 #include "chromeos/network/network_state_handler.h"
-#include "chromeos/system/mock_statistics_provider.h"
-#include "chromeos/system/statistics_provider.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/test_utils.h"
 #include "grit/generated_resources.h"
@@ -508,8 +507,9 @@ IN_PROC_BROWSER_TEST_F(WizardControllerFlowTest,
       &mock_consumer);
   // This calls StartWizard, destroying the current controller() and its mocks;
   // don't set expectations on those objects.
-  ExistingUserController::current_controller()->CompleteLogin(
-      UserContext(kUsername, kPassword, ""));
+  UserContext user_context(kUsername);
+  user_context.SetPassword(kPassword);
+  ExistingUserController::current_controller()->CompleteLogin(user_context);
   // Run the tasks posted to complete the login:
   base::MessageLoop::current()->RunUntilIdle();
 
@@ -560,37 +560,7 @@ class WizardControllerEnrollmentFlowTest : public WizardControllerFlowTest {
         switches::kEnterpriseEnrollmentModulusLimit, "2");
   }
 
-  virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
-    WizardControllerFlowTest::SetUpInProcessBrowserTestFixture();
-    system::StatisticsProvider::SetTestProvider(&statistics_provider_);
-    EXPECT_CALL(statistics_provider_, StartLoadingMachineStatistics(_, _));
-    EXPECT_CALL(statistics_provider_, GetMachineStatistic(_, _)).WillRepeatedly(
-        Invoke(this, &WizardControllerEnrollmentFlowTest::GetMachineStatistic));
-    EXPECT_CALL(statistics_provider_, GetMachineFlag(_, _)).WillRepeatedly(
-        Return(false));
-    EXPECT_CALL(statistics_provider_, Shutdown());
-  }
-
-  virtual void TearDownInProcessBrowserTestFixture() OVERRIDE {
-    system::StatisticsProvider::SetTestProvider(NULL);
-    WizardControllerFlowTest::TearDownInProcessBrowserTestFixture();
-  }
-
-  bool GetMachineStatistic(const std::string& name, std::string* result) {
-    if (name == system::kDiskSerialNumber) {
-      *result = "fake-disk-serial-number";
-      return true;
-    } else if (name == "serial_number") {
-      *result = "fake-machine-serial-number";
-      return true;
-    }
-
-    return false;
-  }
-
  private:
-  system::MockStatisticsProvider statistics_provider_;
-
   DISALLOW_COPY_AND_ASSIGN(WizardControllerEnrollmentFlowTest);
 };
 

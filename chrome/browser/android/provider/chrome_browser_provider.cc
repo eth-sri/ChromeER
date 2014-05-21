@@ -31,8 +31,8 @@
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
-#include "components/bookmarks/core/browser/bookmark_model.h"
-#include "components/bookmarks/core/browser/bookmark_utils.h"
+#include "components/bookmarks/browser/bookmark_model.h"
+#include "components/bookmarks/browser/bookmark_utils.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "grit/generated_resources.h"
@@ -264,10 +264,12 @@ class RemoveBookmarkTask : public BookmarkModelObserverTask {
   }
 
   // Verify that the bookmark was actually removed. Called synchronously.
-  virtual void BookmarkNodeRemoved(BookmarkModel* bookmark_model,
-                                   const BookmarkNode* parent,
-                                   int old_index,
-                                   const BookmarkNode* node) OVERRIDE {
+  virtual void BookmarkNodeRemoved(
+      BookmarkModel* bookmark_model,
+      const BookmarkNode* parent,
+      int old_index,
+      const BookmarkNode* node,
+      const std::set<GURL>& removed_urls) OVERRIDE {
     if (bookmark_model == model() && node->id() == id_to_delete_)
         ++deleted_;
   }

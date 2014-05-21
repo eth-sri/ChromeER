@@ -14,6 +14,7 @@
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/shill_device_client.h"
+#include "chromeos/dbus/shill_ipconfig_client.h"
 #include "chromeos/dbus/shill_profile_client.h"
 #include "chromeos/dbus/shill_property_changed_observer.h"
 #include "chromeos/dbus/shill_service_client.h"
@@ -249,7 +250,10 @@ void FakeShillManagerClient::ConfigureService(
   if (!existing_properties) {
     // Add a new service to the service client stub because none exists, yet.
     // This calls AddManagerService.
-    service_client->AddServiceWithIPConfig(service_path, guid, type,
+    service_client->AddServiceWithIPConfig(service_path,
+                                           guid /* guid */,
+                                           guid /* name */,
+                                           type,
                                            shill::kStateIdle, ipconfig_path,
                                            true /* visible */,
                                            true /* watch */);
@@ -328,6 +332,13 @@ void FakeShillManagerClient::VerifyAndEncryptData(
 void FakeShillManagerClient::ConnectToBestServices(
     const base::Closure& callback,
     const ErrorCallback& error_callback) {
+  if (best_service_.empty()) {
+    VLOG(1) << "No 'best' service set.";
+    return;
+  }
+
+  DBusThreadManager::Get()->GetShillServiceClient()->Connect(
+      dbus::ObjectPath(best_service_), callback, error_callback);
 }
 
 ShillManagerClient::TestInterface* FakeShillManagerClient::GetTestInterface() {
@@ -449,24 +460,26 @@ void FakeShillManagerClient::AddManagerService(const std::string& service_path,
 }
 
 void FakeShillManagerClient::RemoveManagerService(
-    const std::string& service_path) {
+    const std::string& service_path,
+    bool remove_from_complete_list) {
   base::StringValue service_path_value(service_path);
+  if (remove_from_complete_list) {
+    GetListProperty(shill::kServiceCompleteListProperty)->Remove(
+        service_path_value, NULL);
+  }
   if (GetListProperty(shill::kServicesProperty)->Remove(
       service_path_value, NULL)) {
     CallNotifyObserversPropertyChanged(shill::kServicesProperty);
   }
-  GetListProperty(shill::kServiceCompleteListProperty)->Remove(
-      service_path_value, NULL);
   if (GetListProperty(shill::kServiceWatchListProperty)->Remove(
       service_path_value, NULL)) {
-    CallNotifyObserversPropertyChanged(
-        shill::kServiceWatchListProperty);
+    CallNotifyObserversPropertyChanged(shill::kServiceWatchListProperty);
   }
 }
 
 void FakeShillManagerClient::ClearManagerServices() {
-  GetListProperty(shill::kServicesProperty)->Clear();
   GetListProperty(shill::kServiceCompleteListProperty)->Clear();
+  GetListProperty(shill::kServicesProperty)->Clear();
   GetListProperty(shill::kServiceWatchListProperty)->Clear();
   CallNotifyObserversPropertyChanged(shill::kServicesProperty);
   CallNotifyObserversPropertyChanged(shill::kServiceWatchListProperty);
@@ -484,6 +497,11 @@ void FakeShillManagerClient::ServiceStateChanged(
 }
 
 void FakeShillManagerClient::SortManagerServices() {
+  SortServiceList(shill::kServicesProperty);
+  SortServiceList(shill::kServiceCompleteListProperty);
+}
+
+void FakeShillManagerClient::SortServiceList(const std::string& property) {
   static const char* ordered_types[] = {
     shill::kTypeEthernet,
     shill::kTypeWifi,
@@ -491,28 +509,26 @@ void FakeShillManagerClient::SortManagerServices() {
     shill::kTypeWimax,
     shill::kTypeVPN
   };
-  base::ListValue* service_list = GetListProperty(shill::kServicesProperty);
-  if (!service_list || service_list->empty()) {
-    if (!default_service_.empty()) {
-      default_service_.clear();
-      base::StringValue empty_value("");
-      SetManagerProperty(shill::kDefaultServiceProperty, empty_value);
-    }
-    return;
-  }
+
+  base::ListValue* service_list = GetListProperty(property);
   std::vector<std::string> active_services;
   std::vector<std::string> inactive_services;
-  for (size_t i = 0; i < arraysize(ordered_types); ++i) {
-    AppendServicesForType(service_list, ordered_types[i],
-                          &active_services, &inactive_services);
+  if (service_list && !service_list->empty()) {
+    for (size_t i = 0; i < arraysize(ordered_types); ++i) {
+      AppendServicesForType(service_list, ordered_types[i],
+                            &active_services, &inactive_services);
+    }
+    service_list->Clear();
+    for (size_t i = 0; i < active_services.size(); ++i)
+      service_list->AppendString(active_services[i]);
+    for (size_t i = 0; i < inactive_services.size(); ++i)
+      service_list->AppendString(inactive_services[i]);
   }
-  service_list->Clear();
-  for (size_t i = 0; i < active_services.size(); ++i)
-    service_list->AppendString(active_services[i]);
-  for (size_t i = 0; i < inactive_services.size(); ++i)
-    service_list->AppendString(inactive_services[i]);
 
-  CallNotifyObserversPropertyChanged(shill::kServicesProperty);
+  if (property != shill::kServicesProperty)
+    return;
+
+  CallNotifyObserversPropertyChanged(property);
 
   // Set the first active service as the Default service.
   std::string new_default_service;
@@ -538,21 +554,29 @@ void FakeShillManagerClient::SortManagerServices() {
   }
 }
 
-
 int FakeShillManagerClient::GetInteractiveDelay() const {
   return interactive_delay_;
+}
+
+void FakeShillManagerClient::SetBestServiceToConnect(
+    const std::string& service_path) {
+  best_service_ = service_path;
 }
 
 void FakeShillManagerClient::SetupDefaultEnvironment() {
   DBusThreadManager* dbus_manager = DBusThreadManager::Get();
   ShillServiceClient::TestInterface* services =
       dbus_manager->GetShillServiceClient()->GetTestInterface();
+  DCHECK(services);
   ShillProfileClient::TestInterface* profiles =
       dbus_manager->GetShillProfileClient()->GetTestInterface();
+  DCHECK(profiles);
   ShillDeviceClient::TestInterface* devices =
       dbus_manager->GetShillDeviceClient()->GetTestInterface();
-  if (!services || !profiles || !devices)
-    return;
+  DCHECK(devices);
+  ShillIPConfigClient::TestInterface* ip_configs =
+      dbus_manager->GetShillIPConfigClient()->GetTestInterface();
+  DCHECK(ip_configs);
 
   const std::string shared_profile = ShillProfileClient::GetSharedProfilePath();
   profiles->AddProfile(shared_profile, std::string());
@@ -563,12 +587,39 @@ void FakeShillManagerClient::SetupDefaultEnvironment() {
   bool enabled;
   std::string state;
 
+  // IPConfigs
+  base::DictionaryValue ipconfig_v4_dictionary;
+  ipconfig_v4_dictionary.SetStringWithoutPathExpansion(
+      shill::kAddressProperty, "0.0.0.0");
+  ipconfig_v4_dictionary.SetStringWithoutPathExpansion(
+      shill::kGatewayProperty, "0.0.0.1");
+  ipconfig_v4_dictionary.SetIntegerWithoutPathExpansion(
+      shill::kPrefixlenProperty, 0);
+  ipconfig_v4_dictionary.SetStringWithoutPathExpansion(
+      shill::kMethodProperty, shill::kTypeIPv4);
+  ip_configs->AddIPConfig("ipconfig_v4_path", ipconfig_v4_dictionary);
+  base::DictionaryValue ipconfig_v6_dictionary;
+  ipconfig_v6_dictionary.SetStringWithoutPathExpansion(
+      shill::kAddressProperty, "0:0:0:0:0:0:0:0");
+  ipconfig_v6_dictionary.SetStringWithoutPathExpansion(
+      shill::kMethodProperty, shill::kTypeIPv6);
+  ip_configs->AddIPConfig("ipconfig_v6_path", ipconfig_v6_dictionary);
+
   // Ethernet
   state = GetInitialStateForType(shill::kTypeEthernet, &enabled);
   if (state == shill::kStateOnline) {
     AddTechnology(shill::kTypeEthernet, enabled);
     devices->AddDevice(
         "/device/eth1", shill::kTypeEthernet, "stub_eth_device1");
+    devices->SetDeviceProperty("/device/eth1",
+                               shill::kAddressProperty,
+                               base::StringValue("0123456789ab"));
+    base::ListValue eth_ip_configs;
+    eth_ip_configs.AppendString("ipconfig_v4_path");
+    eth_ip_configs.AppendString("ipconfig_v6_path");
+    devices->SetDeviceProperty("/device/eth1",
+                               shill::kIPConfigsProperty,
+                               eth_ip_configs);
     services->AddService("eth1", "eth1",
                          shill::kTypeEthernet,
                          state,
@@ -586,6 +637,15 @@ void FakeShillManagerClient::SetupDefaultEnvironment() {
     }
     AddTechnology(shill::kTypeWifi, enabled);
     devices->AddDevice("/device/wifi1", shill::kTypeWifi, "stub_wifi_device1");
+    devices->SetDeviceProperty("/device/wifi1",
+                               shill::kAddressProperty,
+                               base::StringValue("23456789abc"));
+    base::ListValue wifi_ip_configs;
+    wifi_ip_configs.AppendString("ipconfig_v4_path");
+    wifi_ip_configs.AppendString("ipconfig_v6_path");
+    devices->SetDeviceProperty("/device/wifi1",
+                               shill::kIPConfigsProperty,
+                               wifi_ip_configs);
 
     services->AddService("wifi1",
                          "wifi1",
@@ -860,8 +920,6 @@ base::ListValue* FakeShillManagerClient::GetEnabledServiceList(
         LOG(ERROR) << "Properties not found for service: " << service_path;
         continue;
       }
-      std::string name;
-      properties->GetString(shill::kNameProperty, &name);
       std::string type;
       properties->GetString(shill::kTypeProperty, &type);
       if (TechnologyEnabled(type))

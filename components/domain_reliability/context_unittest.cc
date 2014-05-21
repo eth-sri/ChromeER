@@ -18,7 +18,6 @@
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace domain_reliability {
-
 namespace {
 
 typedef std::vector<DomainReliabilityBeacon> BeaconVector;
@@ -34,20 +33,20 @@ DomainReliabilityBeacon MakeBeacon(MockableTime* time) {
   return beacon;
 }
 
-}  // namespace
-
 class DomainReliabilityContextTest : public testing::Test {
  protected:
   DomainReliabilityContextTest()
       : dispatcher_(&time_),
-        params_(CreateParams()),
+        params_(MakeTestSchedulerParams()),
         uploader_(base::Bind(&DomainReliabilityContextTest::OnUploadRequest,
                              base::Unretained(this))),
+        upload_reporter_string_("test-reporter"),
         context_(&time_,
                  params_,
+                 upload_reporter_string_,
                  &dispatcher_,
                  &uploader_,
-                 CreateConfig().Pass()),
+                 MakeTestConfig().Pass()),
         upload_pending_(false) {}
 
   TimeDelta min_delay() const { return params_.minimum_upload_delay; }
@@ -73,14 +72,16 @@ class DomainReliabilityContextTest : public testing::Test {
     upload_pending_ = false;
   }
 
-  bool CheckNoBeacons(int index) {
+  bool CheckNoBeacons(size_t index) {
     BeaconVector beacons;
     context_.GetQueuedDataForTesting(index, &beacons, NULL, NULL);
     return beacons.empty();
   }
 
-  bool CheckCounts(int index, int expected_successful, int expected_failed) {
-    int successful, failed;
+  bool CheckCounts(size_t index,
+                   unsigned expected_successful,
+                   unsigned expected_failed) {
+    unsigned successful, failed;
     context_.GetQueuedDataForTesting(index, NULL, &successful, &failed);
     return successful == expected_successful && failed == expected_failed;
   }
@@ -89,6 +90,7 @@ class DomainReliabilityContextTest : public testing::Test {
   DomainReliabilityDispatcher dispatcher_;
   DomainReliabilityScheduler::Params params_;
   MockUploader uploader_;
+  std::string upload_reporter_string_;
   DomainReliabilityContext context_;
 
  private:
@@ -101,42 +103,6 @@ class DomainReliabilityContextTest : public testing::Test {
     upload_url_ = upload_url;
     upload_callback_ = callback;
     upload_pending_ = true;
-  }
-
-  static DomainReliabilityScheduler::Params CreateParams() {
-    DomainReliabilityScheduler::Params params;
-    params.minimum_upload_delay = base::TimeDelta::FromSeconds(60);
-    params.maximum_upload_delay = base::TimeDelta::FromSeconds(300);
-    params.upload_retry_interval = base::TimeDelta::FromSeconds(15);
-    return params;
-  }
-
-  static scoped_ptr<const DomainReliabilityConfig> CreateConfig() {
-    DomainReliabilityConfig* config = new DomainReliabilityConfig();
-    DomainReliabilityConfig::Resource* resource;
-
-    resource = new DomainReliabilityConfig::Resource();
-    resource->name = "always_report";
-    resource->url_patterns.push_back(
-        new std::string("http://example/always_report"));
-    resource->success_sample_rate = 1.0;
-    resource->failure_sample_rate = 1.0;
-    config->resources.push_back(resource);
-
-    resource = new DomainReliabilityConfig::Resource();
-    resource->name = "never_report";
-    resource->url_patterns.push_back(
-        new std::string("http://example/never_report"));
-    resource->success_sample_rate = 0.0;
-    resource->failure_sample_rate = 0.0;
-    config->resources.push_back(resource);
-
-    DomainReliabilityConfig::Collector* collector;
-    collector = new DomainReliabilityConfig::Collector();
-    collector->upload_url = GURL("https://example/upload");
-    config->collectors.push_back(collector);
-
-    return scoped_ptr<const DomainReliabilityConfig>(config);
   }
 
   bool upload_pending_;
@@ -153,8 +119,9 @@ TEST_F(DomainReliabilityContextTest, Create) {
 }
 
 TEST_F(DomainReliabilityContextTest, NoResource) {
+  GURL url("http://example/no_resource");
   DomainReliabilityBeacon beacon = MakeBeacon(&time_);
-  context_.AddBeacon(beacon, GURL("http://example/no_resource"));
+  context_.OnBeacon(url, beacon);
 
   EXPECT_TRUE(CheckNoBeacons(0));
   EXPECT_TRUE(CheckCounts(0, 0, 0));
@@ -163,8 +130,9 @@ TEST_F(DomainReliabilityContextTest, NoResource) {
 }
 
 TEST_F(DomainReliabilityContextTest, NeverReport) {
+  GURL url("http://example/never_report");
   DomainReliabilityBeacon beacon = MakeBeacon(&time_);
-  context_.AddBeacon(beacon, GURL("http://example/never_report"));
+  context_.OnBeacon(url, beacon);
 
   EXPECT_TRUE(CheckNoBeacons(0));
   EXPECT_TRUE(CheckCounts(0, 0, 0));
@@ -173,8 +141,9 @@ TEST_F(DomainReliabilityContextTest, NeverReport) {
 }
 
 TEST_F(DomainReliabilityContextTest, AlwaysReport) {
+  GURL url("http://example/always_report");
   DomainReliabilityBeacon beacon = MakeBeacon(&time_);
-  context_.AddBeacon(beacon, GURL("http://example/always_report"));
+  context_.OnBeacon(url, beacon);
 
   BeaconVector beacons;
   context_.GetQueuedDataForTesting(0, &beacons, NULL, NULL);
@@ -185,16 +154,17 @@ TEST_F(DomainReliabilityContextTest, AlwaysReport) {
 }
 
 TEST_F(DomainReliabilityContextTest, ReportUpload) {
+  GURL url("http://example/always_report");
   DomainReliabilityBeacon beacon = MakeBeacon(&time_);
-  context_.AddBeacon(beacon, GURL("http://example/always_report"));
+  context_.OnBeacon(url, beacon);
 
-  const char* kExpectedReport = "{\"reporter\":\"chrome\","
+  // N.B.: Assumes max_delay is 5 minutes.
+  const char* kExpectedReport = "{\"config_version\":\"1\","
+      "\"reporter\":\"test-reporter\","
       "\"resource_reports\":[{\"beacons\":[{\"http_response_code\":200,"
       "\"request_age_ms\":300250,\"request_elapsed_ms\":250,\"server_ip\":"
       "\"127.0.0.1\",\"status\":\"ok\"}],\"failed_requests\":0,"
-      "\"resource_name\":\"always_report\",\"successful_requests\":1},"
-      "{\"beacons\":[],\"failed_requests\":0,\"resource_name\":"
-      "\"never_report\",\"successful_requests\":0}]}";
+      "\"resource_name\":\"always_report\",\"successful_requests\":1}]}";
 
   time_.Advance(max_delay());
   EXPECT_TRUE(upload_pending());
@@ -203,4 +173,5 @@ TEST_F(DomainReliabilityContextTest, ReportUpload) {
   CallUploadCallback(true);
 }
 
+}  // namespace
 }  // namespace domain_reliability

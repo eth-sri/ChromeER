@@ -18,6 +18,9 @@ MEDIA_EXPORT extern const char kVideoThreads[];
 
 MEDIA_EXPORT extern const char kEnableADTSStreamParser[];
 
+MEDIA_EXPORT extern const char
+    kIgnoreResolutionLimitsForAcceleratedVideoDecode[];
+
 #if defined(OS_ANDROID)
 MEDIA_EXPORT extern const char kDisableInfobarForProtectedMediaIdentifier[];
 MEDIA_EXPORT extern const char kMediaDrmEnableNonCompositing[];
@@ -30,6 +33,7 @@ MEDIA_EXPORT extern const char kAlsaOutputDevice[];
 
 #if defined(OS_MACOSX)
 MEDIA_EXPORT extern const char kEnableAVFoundation[];
+MEDIA_EXPORT extern const char kForceQTKit[];
 #endif
 
 #if defined(OS_WIN)
@@ -45,6 +49,7 @@ MEDIA_EXPORT extern const char kWaveOutBuffers[];
 MEDIA_EXPORT extern const char kUseCras[];
 #endif
 
+MEDIA_EXPORT extern const char kUseFakeDeviceForMediaStream[];
 MEDIA_EXPORT extern const char kUseFileForFakeVideoCapture[];
 
 }  // namespace switches

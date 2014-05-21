@@ -15,6 +15,7 @@
 #include "content/browser/frame_host/frame_tree_node.h"
 #include "content/browser/frame_host/navigator.h"
 #include "content/browser/frame_host/render_frame_host_delegate.h"
+#include "content/browser/frame_host/render_frame_proxy_host.h"
 #include "content/browser/renderer_host/input/input_router.h"
 #include "content/browser/renderer_host/input/timeout_monitor.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
@@ -29,6 +30,7 @@
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/user_metrics.h"
+#include "content/public/common/content_constants.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/common/url_utils.h"
 #include "url/gurl.h"
@@ -106,6 +108,20 @@ class DesktopNotificationDelegateImpl : public DesktopNotificationDelegate {
   int notification_id_;
 };
 
+// Translate a WebKit text direction into a base::i18n one.
+base::i18n::TextDirection WebTextDirectionToChromeTextDirection(
+    blink::WebTextDirection dir) {
+  switch (dir) {
+    case blink::WebTextDirectionLeftToRight:
+      return base::i18n::LEFT_TO_RIGHT;
+    case blink::WebTextDirectionRightToLeft:
+      return base::i18n::RIGHT_TO_LEFT;
+    default:
+      NOTREACHED();
+      return base::i18n::UNKNOWN_DIRECTION;
+  }
+}
+
 }  // namespace
 
 RenderFrameHost* RenderFrameHost::FromID(int render_process_id,
@@ -133,6 +149,7 @@ RenderFrameHostImpl::RenderFrameHostImpl(
     : render_view_host_(render_view_host),
       delegate_(delegate),
       cross_process_frame_connector_(NULL),
+      render_frame_proxy_host_(NULL),
       frame_tree_(frame_tree),
       frame_tree_node_(frame_tree_node),
       routing_id_(routing_id),
@@ -229,6 +246,11 @@ bool RenderFrameHostImpl::Send(IPC::Message* message) {
         make_scoped_ptr(message));
   }
 
+  if (render_view_host_->IsSwappedOut()) {
+    DCHECK(render_frame_proxy_host_);
+    return render_frame_proxy_host_->Send(message);
+  }
+
   return GetProcess()->Send(message);
 }
 
@@ -261,8 +283,7 @@ bool RenderFrameHostImpl::OnMessageReceived(const IPC::Message &msg) {
     return true;
 
   bool handled = true;
-  bool msg_is_ok = true;
-  IPC_BEGIN_MESSAGE_MAP_EX(RenderFrameHostImpl, msg, msg_is_ok)
+  IPC_BEGIN_MESSAGE_MAP(RenderFrameHostImpl, msg)
     IPC_MESSAGE_HANDLER(FrameHostMsg_AddMessageToConsole, OnAddMessageToConsole)
     IPC_MESSAGE_HANDLER(FrameHostMsg_Detach, OnDetach)
     IPC_MESSAGE_HANDLER(FrameHostMsg_FrameFocused, OnFrameFocused)
@@ -276,9 +297,9 @@ bool RenderFrameHostImpl::OnMessageReceived(const IPC::Message &msg) {
                         OnDidFailLoadWithError)
     IPC_MESSAGE_HANDLER_GENERIC(FrameHostMsg_DidCommitProvisionalLoad,
                                 OnNavigate(msg))
-    IPC_MESSAGE_HANDLER(FrameHostMsg_DidStartLoading, OnDidStartLoading)
-    IPC_MESSAGE_HANDLER(FrameHostMsg_DidStopLoading, OnDidStopLoading)
     IPC_MESSAGE_HANDLER(FrameHostMsg_OpenURL, OnOpenURL)
+    IPC_MESSAGE_HANDLER(FrameHostMsg_DocumentOnLoadCompleted,
+                        OnDocumentOnLoadCompleted)
     IPC_MESSAGE_HANDLER(FrameHostMsg_BeforeUnload_ACK, OnBeforeUnloadACK)
     IPC_MESSAGE_HANDLER(FrameHostMsg_SwapOut_ACK, OnSwapOutACK)
     IPC_MESSAGE_HANDLER(FrameHostMsg_ContextMenu, OnContextMenu)
@@ -294,20 +315,16 @@ bool RenderFrameHostImpl::OnMessageReceived(const IPC::Message &msg) {
     IPC_MESSAGE_HANDLER(FrameHostMsg_UpdateStringTable, OnUpdateStringTable)
     IPC_MESSAGE_HANDLER(FrameHostMsg_DidAccessInitialDocument,
                         OnDidAccessInitialDocument)
+    IPC_MESSAGE_HANDLER(FrameHostMsg_DidDisownOpener, OnDidDisownOpener)
+    IPC_MESSAGE_HANDLER(FrameHostMsg_UpdateTitle, OnUpdateTitle)
+    IPC_MESSAGE_HANDLER(FrameHostMsg_UpdateEncoding, OnUpdateEncoding)
     IPC_MESSAGE_HANDLER(DesktopNotificationHostMsg_RequestPermission,
                         OnRequestDesktopNotificationPermission)
     IPC_MESSAGE_HANDLER(DesktopNotificationHostMsg_Show,
                         OnShowDesktopNotification)
     IPC_MESSAGE_HANDLER(DesktopNotificationHostMsg_Cancel,
                         OnCancelDesktopNotification)
-  IPC_END_MESSAGE_MAP_EX()
-
-  if (!msg_is_ok) {
-    // The message had a handler, but its de-serialization failed.
-    // Kill the renderer.
-    RecordAction(base::UserMetricsAction("BadMessageTerminate_RFH"));
-    GetProcess()->ReceivedBadMessage();
-  }
+  IPC_END_MESSAGE_MAP()
 
   return handled;
 }
@@ -358,6 +375,12 @@ void RenderFrameHostImpl::OnOpenURL(
   frame_tree_node_->navigator()->RequestOpenURL(
       this, validated_url, params.referrer, params.disposition,
       params.should_replace_current_entry, params.user_gesture);
+}
+
+void RenderFrameHostImpl::OnDocumentOnLoadCompleted() {
+  // This message is only sent for top-level frames. TODO(avi): when frame tree
+  // mirroring works correctly, add a check here to enforce it.
+  delegate_->DocumentOnLoadCompleted(this);
 }
 
 void RenderFrameHostImpl::OnDidStartProvisionalLoadForFrame(
@@ -486,7 +509,7 @@ void RenderFrameHostImpl::OnCrossSiteResponse(
       should_replace_current_entry);
 }
 
-void RenderFrameHostImpl::SwapOut() {
+void RenderFrameHostImpl::SwapOut(RenderFrameProxyHost* proxy) {
   // TODO(creis): Move swapped out state to RFH.  Until then, only update it
   // when swapping out the main frame.
   if (!GetParent()) {
@@ -502,22 +525,16 @@ void RenderFrameHostImpl::SwapOut() {
             RenderViewHostImpl::kUnloadTimeoutMS));
   }
 
+  set_render_frame_proxy_host(proxy);
+
   if (render_view_host_->IsRenderViewLive())
-    Send(new FrameMsg_SwapOut(routing_id_));
+    Send(new FrameMsg_SwapOut(routing_id_, proxy->GetRoutingID()));
 
   if (!GetParent())
     delegate_->SwappedOut(this);
 
   // Allow the navigation to proceed.
   frame_tree_node_->render_manager()->SwappedOut(this);
-}
-
-void RenderFrameHostImpl::OnDidStartLoading(bool to_different_document) {
-  delegate_->DidStartLoading(this, to_different_document);
-}
-
-void RenderFrameHostImpl::OnDidStopLoading() {
-  delegate_->DidStopLoading(this);
 }
 
 void RenderFrameHostImpl::OnBeforeUnloadACK(
@@ -704,6 +721,34 @@ void RenderFrameHostImpl::OnCancelDesktopNotification(int notification_id) {
 
 void RenderFrameHostImpl::OnDidAccessInitialDocument() {
   delegate_->DidAccessInitialDocument();
+}
+
+void RenderFrameHostImpl::OnDidDisownOpener() {
+  // This message is only sent for top-level frames. TODO(avi): when frame tree
+  // mirroring works correctly, add a check here to enforce it.
+  delegate_->DidDisownOpener(this);
+}
+
+void RenderFrameHostImpl::OnUpdateTitle(
+    int32 page_id,
+    const base::string16& title,
+    blink::WebTextDirection title_direction) {
+  // This message is only sent for top-level frames. TODO(avi): when frame tree
+  // mirroring works correctly, add a check here to enforce it.
+  if (title.length() > kMaxTitleChars) {
+    NOTREACHED() << "Renderer sent too many characters in title.";
+    return;
+  }
+
+  delegate_->UpdateTitle(this, page_id, title,
+                         WebTextDirectionToChromeTextDirection(
+                             title_direction));
+}
+
+void RenderFrameHostImpl::OnUpdateEncoding(const std::string& encoding_name) {
+  // This message is only sent for top-level frames. TODO(avi): when frame tree
+  // mirroring works correctly, add a check here to enforce it.
+  delegate_->UpdateEncoding(this, encoding_name);
 }
 
 void RenderFrameHostImpl::SetPendingShutdown(const base::Closure& on_swap_out) {

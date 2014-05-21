@@ -31,6 +31,10 @@ namespace extensions {
 class BrowserPermissionsPolicyDelegate;
 }
 
+namespace prerender {
+class PrerenderTracker;
+}
+
 namespace user_prefs {
 class PrefRegistrySyncable;
 }
@@ -66,6 +70,7 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
   virtual content::WebContentsViewDelegate* GetWebContentsViewDelegate(
       content::WebContents* web_contents) OVERRIDE;
   virtual void GuestWebContentsCreated(
+      int guest_instance_id,
       content::SiteInstance* guest_site_instance,
       content::WebContents* guest_web_contents,
       content::WebContents* opener_web_contents,
@@ -102,6 +107,7 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
                                   const GURL& url) OVERRIDE;
   virtual bool IsSuitableHost(content::RenderProcessHost* process_host,
                               const GURL& site_url) OVERRIDE;
+  virtual bool MayReuseHost(content::RenderProcessHost* process_host) OVERRIDE;
   virtual bool ShouldTryToUseExistingProcessHost(
       content::BrowserContext* browser_context, const GURL& url) OVERRIDE;
   virtual void SiteInstanceGotProcess(
@@ -259,6 +265,8 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
       content::BrowserContext* browser_context,
       const base::FilePath& storage_partition_path,
       ScopedVector<fileapi::FileSystemBackend>* additional_backends) OVERRIDE;
+  virtual content::DevToolsManagerDelegate*
+      GetDevToolsManagerDelegate() OVERRIDE;
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
   virtual void GetAdditionalMappedFilesForChildProcess(
@@ -278,6 +286,9 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
 
   virtual bool IsPluginAllowedToUseDevChannelAPIs() OVERRIDE;
 
+  virtual net::CookieStore* OverrideCookieStoreForRenderProcess(
+      int render_process_id) OVERRIDE;
+
  private:
 #if defined(ENABLE_WEBRTC)
   // Copies disable WebRTC encryption switch depending on the channel.
@@ -295,6 +306,14 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
 #endif
   scoped_ptr<extensions::BrowserPermissionsPolicyDelegate>
       permissions_policy_delegate_;
+
+  // The prerender tracker used to determine whether a render process is used
+  // for prerendering and an override cookie store must be provided.
+  // This needs to be kept as a member rather than just looked up from
+  // the profile due to initialization ordering, as well as due to threading.
+  // It is initialized on the UI thread when the ResoureDispatcherHost is
+  // created. It is used only the IO thread.
+  prerender::PrerenderTracker* prerender_tracker_;
 
   friend class DisableWebRtcEncryptionFlagTest;
 

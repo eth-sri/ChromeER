@@ -378,7 +378,7 @@
         ['use_x11 == 1', {
           'dependencies': [
             '../build/linux/system.gyp:x11',
-            '../ui/gfx/gfx.gyp:gfx_x11',
+            '../ui/gfx/x/gfx_x11.gyp:gfx_x11',
           ],
         }, {
           # use_x11 == 0
@@ -547,8 +547,7 @@
         '..',
       ],
       'conditions': [
-        # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
-        [ '(use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1)', {
+        [ 'use_allocator!="none"', {
            'dependencies': [
               '../base/allocator/allocator.gyp:allocator',
             ],
@@ -556,7 +555,7 @@
         ],
         ['use_x11 == 1', {
           'dependencies': [
-            '../ui/gfx/gfx.gyp:gfx_x11',
+            '../ui/gfx/x/gfx_x11.gyp:gfx_x11',
           ],
         }]
       ],

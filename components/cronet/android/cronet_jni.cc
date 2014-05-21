@@ -6,22 +6,26 @@
 #include "base/android/jni_android.h"
 #include "base/android/jni_registrar.h"
 #include "base/at_exit.h"
-#include "base/i18n/icu_util.h"
 #include "components/cronet/android/org_chromium_net_UrlRequest.h"
 #include "components/cronet/android/org_chromium_net_UrlRequestContext.h"
 #include "net/android/net_jni_registrar.h"
+#include "url/android/url_jni_registrar.h"
+
+#if !defined(USE_ICU_ALTERNATIVES_ON_ANDROID)
+#include "base/i18n/icu_util.h"
+#endif
 
 namespace {
 
 const base::android::RegistrationMethod kCronetRegisteredMethods[] = {
-    {"BaseAndroid", base::android::RegisterJni},
-    {"NetAndroid", net::android::RegisterJni},
-    {"UrlRequest", cronet::UrlRequestRegisterJni},
-    {"UrlRequestContext", cronet::UrlRequestContextRegisterJni},
+  {"BaseAndroid", base::android::RegisterJni},
+  {"NetAndroid", net::android::RegisterJni},
+  {"UrlAndroid", url::android::RegisterJni},
+  {"UrlRequest", cronet::UrlRequestRegisterJni},
+  {"UrlRequestContext", cronet::UrlRequestContextRegisterJni},
 };
 
 base::AtExitManager* g_at_exit_manager = NULL;
-
 
 }  // namespace
 
@@ -41,7 +45,9 @@ extern "C" jint JNI_OnLoad(JavaVM* vm, void* reserved) {
 
   g_at_exit_manager = new base::AtExitManager();
 
+#if !defined(USE_ICU_ALTERNATIVES_ON_ANDROID)
   base::i18n::InitializeICU();
+#endif
 
   return JNI_VERSION_1_6;
 }

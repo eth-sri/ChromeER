@@ -79,20 +79,12 @@ TouchEventConverterEvdev::TouchEventConverterEvdev(
     const EventDeviceInfo& info,
     const EventDispatchCallback& callback)
     : EventConverterEvdev(callback),
-      pressure_min_(info.GetAbsMinimum(ABS_MT_PRESSURE)),
-      pressure_max_(info.GetAbsMaximum(ABS_MT_PRESSURE)),
-      x_min_tuxels_(info.GetAbsMinimum(ABS_MT_POSITION_X)),
-      x_num_tuxels_(info.GetAbsMaximum(ABS_MT_POSITION_X) - x_min_tuxels_ + 1),
-      y_min_tuxels_(info.GetAbsMinimum(ABS_MT_POSITION_Y)),
-      y_num_tuxels_(info.GetAbsMaximum(ABS_MT_POSITION_Y) - y_min_tuxels_ + 1),
-      x_min_pixels_(x_min_tuxels_),
-      x_num_pixels_(x_num_tuxels_),
-      y_min_pixels_(y_min_tuxels_),
-      y_num_pixels_(y_num_tuxels_),
+      syn_dropped_(false),
+      is_type_a_(false),
       current_slot_(0),
       fd_(fd),
       path_(path) {
-  Init();
+  Init(info);
 }
 
 TouchEventConverterEvdev::~TouchEventConverterEvdev() {
@@ -100,12 +92,23 @@ TouchEventConverterEvdev::~TouchEventConverterEvdev() {
   close(fd_);
 }
 
-void TouchEventConverterEvdev::Init() {
+void TouchEventConverterEvdev::Init(const EventDeviceInfo& info) {
   gfx::Screen *screen = gfx::Screen::GetScreenByType(gfx::SCREEN_TYPE_NATIVE);
   if (!screen)
     return;  // No scaling.
   gfx::Display display = screen->GetPrimaryDisplay();
   gfx::Size size = display.GetSizeInPixel();
+
+  pressure_min_ = info.GetAbsMinimum(ABS_MT_PRESSURE),
+  pressure_max_ = info.GetAbsMaximum(ABS_MT_PRESSURE),
+  x_min_tuxels_ = info.GetAbsMinimum(ABS_MT_POSITION_X),
+  x_num_tuxels_ = info.GetAbsMaximum(ABS_MT_POSITION_X) - x_min_tuxels_ + 1,
+  y_min_tuxels_ = info.GetAbsMinimum(ABS_MT_POSITION_Y),
+  y_num_tuxels_ = info.GetAbsMaximum(ABS_MT_POSITION_Y) - y_min_tuxels_ + 1,
+  x_min_pixels_ = x_min_tuxels_,
+  x_num_pixels_ = x_num_tuxels_,
+  y_min_pixels_ = y_min_tuxels_,
+  y_num_pixels_ = y_num_tuxels_,
 
   // Map coordinates onto screen.
   x_min_pixels_ = 0;
@@ -141,6 +144,15 @@ void TouchEventConverterEvdev::Stop() {
   controller_.StopWatchingFileDescriptor();
 }
 
+bool TouchEventConverterEvdev::Reinitialize() {
+  EventDeviceInfo info;
+  if (info.Initialize(fd_)) {
+    Init(info);
+    return true;
+  }
+  return false;
+}
+
 void TouchEventConverterEvdev::OnFileCanWriteWithoutBlocking(int /* fd */) {
   // Read-only file-descriptors.
   NOTREACHED();
@@ -158,101 +170,138 @@ void TouchEventConverterEvdev::OnFileCanReadWithoutBlocking(int fd) {
     return;
   }
 
-  ScopedVector<ui::TouchEvent> touch_events;
   for (unsigned i = 0; i < read_size / sizeof(*inputs); i++) {
-    const input_event& input = inputs[i];
-    if (input.type == EV_ABS) {
-      switch (input.code) {
-        case ABS_MT_TOUCH_MAJOR:
-          altered_slots_.set(current_slot_);
-          events_[current_slot_].major_ = input.value;
-          break;
-        case ABS_X:
-        case ABS_MT_POSITION_X:
-          altered_slots_.set(current_slot_);
-          events_[current_slot_].x_ = TuxelsToPixels(input.value,
-                                                     x_min_tuxels_,
-                                                     x_num_tuxels_,
-                                                     x_min_pixels_,
-                                                     x_num_pixels_);
-          break;
-        case ABS_Y:
-        case ABS_MT_POSITION_Y:
-          altered_slots_.set(current_slot_);
-          events_[current_slot_].y_ = TuxelsToPixels(input.value,
-                                                     y_min_tuxels_,
-                                                     y_num_tuxels_,
-                                                     y_min_pixels_,
-                                                     y_num_pixels_);
-          break;
-        case ABS_MT_TRACKING_ID:
-          altered_slots_.set(current_slot_);
-          if (input.value < 0) {
-            events_[current_slot_].type_ = ET_TOUCH_RELEASED;
-          } else {
-            events_[current_slot_].finger_ = input.value;
-            events_[current_slot_].type_ = ET_TOUCH_PRESSED;
-          }
-          break;
-        case ABS_MT_PRESSURE:
-        case ABS_PRESSURE:
-          altered_slots_.set(current_slot_);
-          events_[current_slot_].pressure_ = input.value - pressure_min_;
-          events_[current_slot_].pressure_ /= pressure_max_ - pressure_min_;
-          break;
-        case ABS_MT_SLOT:
-          current_slot_ = input.value;
-          altered_slots_.set(current_slot_);
-          break;
-        default:
-          NOTIMPLEMENTED() << "invalid code for EV_ABS: " << input.code;
-      }
-    } else if (input.type == EV_SYN) {
-      switch (input.code) {
-        case SYN_REPORT:
-          for (int j = 0; j < MAX_FINGERS; j++) {
-            if (altered_slots_[j]) {
-              // TODO(rjkroege): Support elliptical finger regions.
-              touch_events.push_back(new TouchEvent(
-                  events_[j].type_,
-                  gfx::PointF(events_[j].x_, events_[j].y_),
-                  /* flags */ 0,
-                  /* touch_id */ j,
-                  base::TimeDelta::FromMicroseconds(
-                      input.time.tv_sec * 1000000 + input.time.tv_usec),
-                  events_[j].pressure_ * kFingerWidth,
-                  events_[j].pressure_ * kFingerWidth,
-                  /* angle */ 0.,
-                  events_[j].pressure_));
+    ProcessInputEvent(inputs[i]);
+  }
+}
 
-              // Subsequent events for this finger will be touch-move until it
-              // is released.
-              events_[j].type_ = ET_TOUCH_MOVED;
-            }
-          }
+void TouchEventConverterEvdev::ProcessInputEvent(const input_event& input) {
+  if (input.type == EV_SYN) {
+    ProcessSyn(input);
+  } else if(syn_dropped_) {
+    // Do nothing. This branch indicates we have lost sync with the driver.
+  } else if (input.type == EV_ABS) {
+    if (current_slot_ >= MAX_FINGERS) {
+      LOG(ERROR) << "too many touch events: " << current_slot_;
+      return;
+    }
+    ProcessAbs(input);
+  } else if (input.type == EV_KEY) {
+    switch (input.code) {
+      case BTN_TOUCH:
+        break;
+      default:
+        NOTIMPLEMENTED() << "invalid code for EV_KEY: " << input.code;
+    }
+  } else {
+    NOTIMPLEMENTED() << "invalid type: " << input.type;
+  }
+}
+
+void TouchEventConverterEvdev::ProcessAbs(const input_event& input) {
+  switch (input.code) {
+    case ABS_MT_TOUCH_MAJOR:
+      altered_slots_.set(current_slot_);
+      events_[current_slot_].major_ = input.value;
+      break;
+    case ABS_X:
+    case ABS_MT_POSITION_X:
+      altered_slots_.set(current_slot_);
+      events_[current_slot_].x_ = TuxelsToPixels(input.value,
+                                                 x_min_tuxels_,
+                                                 x_num_tuxels_,
+                                                 x_min_pixels_,
+                                                 x_num_pixels_);
+      break;
+    case ABS_Y:
+    case ABS_MT_POSITION_Y:
+      altered_slots_.set(current_slot_);
+      events_[current_slot_].y_ = TuxelsToPixels(input.value,
+                                                 y_min_tuxels_,
+                                                 y_num_tuxels_,
+                                                 y_min_pixels_,
+                                                 y_num_pixels_);
+      break;
+    case ABS_MT_TRACKING_ID:
+      altered_slots_.set(current_slot_);
+      if (input.value < 0) {
+        events_[current_slot_].type_ = ET_TOUCH_RELEASED;
+      } else {
+        events_[current_slot_].finger_ = input.value;
+        events_[current_slot_].type_ = ET_TOUCH_PRESSED;
+      }
+      break;
+    case ABS_MT_PRESSURE:
+    case ABS_PRESSURE:
+      altered_slots_.set(current_slot_);
+      events_[current_slot_].pressure_ = input.value - pressure_min_;
+      events_[current_slot_].pressure_ /= pressure_max_ - pressure_min_;
+      break;
+    case ABS_MT_SLOT:
+      current_slot_ = input.value;
+      altered_slots_.set(current_slot_);
+      break;
+    default:
+      NOTIMPLEMENTED() << "invalid code for EV_ABS: " << input.code;
+  }
+}
+
+void TouchEventConverterEvdev::ProcessSyn(const input_event& input) {
+  switch (input.code) {
+    case SYN_REPORT:
+      if (syn_dropped_) {
+        // Have to re-initialize.
+        if (Reinitialize()) {
+          syn_dropped_ = false;
           altered_slots_.reset();
-          break;
-        case SYN_MT_REPORT:
-        case SYN_CONFIG:
-        case SYN_DROPPED:
-          NOTIMPLEMENTED() << "invalid code for EV_SYN: " << input.code;
-          break;
+        } else {
+          LOG(ERROR) << "failed to re-initialize device info";
+        }
+      } else {
+        ReportEvents(base::TimeDelta::FromMicroseconds(
+            input.time.tv_sec * 1000000 + input.time.tv_usec));
       }
-    } else if (input.type == EV_KEY) {
-      switch (input.code) {
-        case BTN_TOUCH:
-          break;
-        default:
-          NOTIMPLEMENTED() << "invalid code for EV_KEY: " << input.code;
-      }
-    } else {
-      NOTIMPLEMENTED() << "invalid type: " << input.type;
+      if (is_type_a_)
+        current_slot_ = 0;
+      break;
+    case SYN_MT_REPORT:
+      // For type A devices, we just get a stream of all current contacts,
+      // in some arbitrary order.
+      events_[current_slot_++].type_ = ET_TOUCH_PRESSED;
+      is_type_a_ = true;
+      break;
+    case SYN_DROPPED:
+      // Some buffer has overrun. We ignore all events up to and
+      // including the next SYN_REPORT.
+      syn_dropped_ = true;
+      break;
+    default:
+      NOTIMPLEMENTED() << "invalid code for EV_SYN: " << input.code;
+  }
+}
+
+void TouchEventConverterEvdev::ReportEvents(base::TimeDelta delta) {
+  for (int i = 0; i < MAX_FINGERS; i++) {
+    if (altered_slots_[i]) {
+      // TODO(rikroege): Support elliptical finger regions.
+      TouchEvent evt(
+          events_[i].type_,
+          gfx::PointF(events_[i].x_, events_[i].y_),
+          /* flags */ 0,
+          /* touch_id */ i,
+          delta,
+          events_[i].pressure_ * kFingerWidth,
+          events_[i].pressure_ * kFingerWidth,
+          /* angle */ 0.,
+          events_[i].pressure_);
+      DispatchEventToCallback(&evt);
+
+      // Subsequent events for this finger will be touch-move until it
+      // is released.
+      events_[i].type_ = ET_TOUCH_MOVED;
     }
   }
-  for (ScopedVector<ui::TouchEvent>::iterator iter = touch_events.begin();
-       iter != touch_events.end(); ++iter) {
-    DispatchEventToCallback(*iter);
-  }
+  altered_slots_.reset();
 }
 
 }  // namespace ui

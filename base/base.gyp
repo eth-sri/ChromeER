@@ -143,8 +143,7 @@
             ],
           },
           'conditions': [
-            # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
-            ['use_allocator!="tcmalloc" and (use_allocator!="see_use_tcmalloc" or linux_use_tcmalloc==0)', {
+            ['use_allocator!="tcmalloc"', {
               'defines': [
                 'NO_TCMALLOC',
               ],
@@ -155,6 +154,32 @@
               },
             }],
           ],
+        }],
+        ['OS == "win"', {
+          # Specify delayload for base.dll.
+          'msvs_settings': {
+            'VCLinkerTool': {
+              'DelayLoadDLLs': [
+                'powrprof.dll',
+              ],
+              'AdditionalDependencies': [
+                'powrprof.lib',
+              ],
+            },
+          },
+          # Specify delayload for components that link with base.lib.
+          'all_dependent_settings': {
+            'msvs_settings': {
+              'VCLinkerTool': {
+                'DelayLoadDLLs': [
+                  'powrprof.dll',
+                ],
+                'AdditionalDependencies': [
+                  'powrprof.lib',
+                ],
+              },
+            },
+          },
         }],
         ['OS == "mac" or (OS == "ios" and _toolset == "host")', {
           'link_settings': {
@@ -638,13 +663,7 @@
         ['OS == "android"', {
           'dependencies': [
             'android/jni_generator/jni_generator.gyp:jni_generator_tests',
-          ],
-          'conditions': [
-            ['gtest_target_type == "shared_library"', {
-              'dependencies': [
-                '../testing/android/native_test.gyp:native_test_native_code',
-              ],
-            }],
+            '../testing/android/native_test.gyp:native_test_native_code',
           ],
         }],
         ['OS == "ios" and _toolset != "host"', {
@@ -700,8 +719,7 @@
             'message_loop/message_pump_glib_unittest.cc',
           ]
         }],
-        # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
-        ['OS == "linux" and ((use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1))', {
+        ['OS == "linux" and use_allocator!="none"', {
             'dependencies': [
               'allocator/allocator.gyp:allocator',
             ],
@@ -781,7 +799,7 @@
         '../testing/perf/perf_test.cc'
       ],
       'conditions': [
-        ['OS == "android" and gtest_target_type == "shared_library"', {
+        ['OS == "android"', {
           'dependencies': [
             '../testing/android/native_test.gyp:native_test_native_code',
           ],
@@ -978,8 +996,7 @@
       'conditions': [
         ['use_custom_libcxx==1', {
           'dependencies!': [
-            '../third_party/libc++/libc++.gyp:libc++',
-            '../third_party/libc++abi/libc++abi.gyp:libc++abi',
+            '../third_party/libc++/libc++.gyp:libcxx_proxy',
           ],
         }],
       ],
@@ -1062,6 +1079,30 @@
               ],
             }],
           ],
+          # Specify delayload for base_win64.dll.
+          'msvs_settings': {
+            'VCLinkerTool': {
+              'DelayLoadDLLs': [
+                'powrprof.dll',
+              ],
+              'AdditionalDependencies': [
+                'powrprof.lib',
+              ],
+            },
+          },
+          # Specify delayload for components that link with base_win64.lib.
+          'all_dependent_settings': {
+            'msvs_settings': {
+              'VCLinkerTool': {
+                'DelayLoadDLLs': [
+                  'powrprof.dll',
+                ],
+                'AdditionalDependencies': [
+                  'powrprof.lib',
+                ],
+              },
+            },
+          },
           # TODO(rvargas): Bug 78117. Remove this.
           'msvs_disabled_warnings': [
             4244,
@@ -1249,7 +1290,6 @@
           ],
           'variables': {
             'jni_gen_package': 'base',
-            'jni_generator_ptr_type': 'long',
           },
           'includes': [ '../build/jni_generator.gypi' ],
         },
@@ -1261,7 +1301,6 @@
           ],
           'variables': {
             'jni_gen_package': 'base',
-            'jni_generator_ptr_type': 'long',
           },
           'includes': [ '../build/jni_generator.gypi' ],
         },
@@ -1385,7 +1424,7 @@
 
       ],
     }],
-    ['OS == "android" and gtest_target_type == "shared_library"', {
+    ['OS == "android"', {
       'targets': [
         {
           'target_name': 'base_perftests_apk',
@@ -1416,13 +1455,7 @@
         },
       ],
     }],
-    # Special target to wrap a gtest_target_type == shared_library
-    # base_unittests into an android apk for execution.
-    # TODO(jrg): lib.target comes from _InstallableTargetInstallPath()
-    # in the gyp make generator.  What is the correct way to extract
-    # this path from gyp and into 'raw' for input to antfiles?
-    # Hard-coding in the gypfile seems a poor choice.
-    ['OS == "android" and gtest_target_type == "shared_library"', {
+    ['OS == "android"', {
       'targets': [
         {
           'target_name': 'base_unittests_apk',

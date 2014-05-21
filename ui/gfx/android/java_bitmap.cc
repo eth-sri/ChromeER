@@ -12,6 +12,7 @@
 #include "ui/gfx/size.h"
 
 using base::android::AttachCurrentThread;
+using base::android::ConvertUTF8ToJavaString;
 
 namespace gfx {
 
@@ -73,7 +74,7 @@ ScopedJavaLocalRef<jobject> CreateJavaBitmapFromAndroidResource(
   DCHECK(name);
   DCHECK(!size.IsEmpty());
   JNIEnv* env = AttachCurrentThread();
-  ScopedJavaLocalRef<jstring> jname(env, env->NewStringUTF(name));
+  ScopedJavaLocalRef<jstring> jname(ConvertUTF8ToJavaString(env, name));
   return Java_BitmapHelper_decodeDrawableResource(
       env, jname.obj(), size.width(), size.height());
 }
@@ -81,7 +82,7 @@ ScopedJavaLocalRef<jobject> CreateJavaBitmapFromAndroidResource(
 ScopedJavaLocalRef<jobject> ConvertToJavaBitmap(const SkBitmap* skbitmap) {
   DCHECK(skbitmap);
   DCHECK(!skbitmap->isNull());
-  SkBitmap::Config bitmap_config = skbitmap->getConfig();
+  SkBitmap::Config bitmap_config = skbitmap->config();
   DCHECK((bitmap_config == SkBitmap::kRGB_565_Config) ||
          (bitmap_config == SkBitmap::kARGB_8888_Config));
   ScopedJavaLocalRef<jobject> jbitmap = CreateJavaBitmap(

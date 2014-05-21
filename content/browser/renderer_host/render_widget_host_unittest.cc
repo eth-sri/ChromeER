@@ -11,8 +11,6 @@
 #include "content/browser/browser_thread_impl.h"
 #include "content/browser/renderer_host/input/gesture_event_queue.h"
 #include "content/browser/renderer_host/input/input_router_impl.h"
-#include "content/browser/renderer_host/input/tap_suppression_controller.h"
-#include "content/browser/renderer_host/input/tap_suppression_controller_client.h"
 #include "content/browser/renderer_host/input/touch_event_queue.h"
 #include "content/browser/renderer_host/overscroll_controller.h"
 #include "content/browser/renderer_host/overscroll_controller_delegate.h"
@@ -199,7 +197,6 @@ class MockRenderWidgetHost : public RenderWidgetHostImpl {
       int routing_id)
       : RenderWidgetHostImpl(delegate, process, routing_id, false),
         unresponsive_timer_fired_(false) {
-    input_router_impl_ = static_cast<InputRouterImpl*>(input_router_.get());
     acked_touch_event_type_ = blink::WebInputEvent::Undefined;
   }
 
@@ -250,13 +247,10 @@ class MockRenderWidgetHost : public RenderWidgetHostImpl {
     overscroll_controller_->set_delegate(overscroll_delegate_.get());
   }
 
-  void DisableGestureDebounce() {
-    gesture_event_queue().set_debounce_enabled_for_testing(false);
-  }
+  void DisableGestureDebounce() { set_debounce_interval_time_ms(0); }
 
   void set_debounce_interval_time_ms(int delay_ms) {
-    gesture_event_queue().
-        set_debounce_interval_time_ms_for_testing(delay_ms);
+    gesture_event_queue().set_debounce_interval_time_ms_for_testing(delay_ms);
   }
 
   bool TouchEventQueueEmpty() const {
@@ -308,12 +302,11 @@ class MockRenderWidgetHost : public RenderWidgetHostImpl {
   }
 
   void SetupForInputRouterTest() {
-    mock_input_router_ = new MockInputRouter(this);
-    input_router_.reset(mock_input_router_);
+    input_router_.reset(new MockInputRouter(this));
   }
 
   MockInputRouter* mock_input_router() {
-    return mock_input_router_;
+    return static_cast<MockInputRouter*>(input_router_.get());
   }
 
  protected:
@@ -322,26 +315,28 @@ class MockRenderWidgetHost : public RenderWidgetHostImpl {
   }
 
   const TouchEventQueue& touch_event_queue() const {
-    return input_router_impl_->touch_event_queue_;
+    return input_router_impl()->touch_event_queue_;
   }
 
   const GestureEventQueue& gesture_event_queue() const {
-    return input_router_impl_->gesture_event_queue_;
+    return input_router_impl()->gesture_event_queue_;
   }
 
   GestureEventQueue& gesture_event_queue() {
-    return input_router_impl_->gesture_event_queue_;
+    return input_router_impl()->gesture_event_queue_;
   }
 
  private:
+  const InputRouterImpl* input_router_impl() const {
+    return static_cast<InputRouterImpl*>(input_router_.get());
+  }
+
+  InputRouterImpl* input_router_impl() {
+    return static_cast<InputRouterImpl*>(input_router_.get());
+  }
+
   bool unresponsive_timer_fired_;
   WebInputEvent::Type acked_touch_event_type_;
-
-  // |input_router_impl_| and |mock_input_router_| are owned by
-  // RenderWidgetHostImpl.  The handles below are provided for convenience so
-  // that we don't have to reinterpret_cast it all the time.
-  InputRouterImpl* input_router_impl_;
-  MockInputRouter* mock_input_router_;
 
   scoped_ptr<TestOverscrollDelegate> overscroll_delegate_;
 
@@ -607,7 +602,7 @@ class RenderWidgetHostTest : public testing::Test {
 #if defined(USE_AURA)
     ImageTransportFactory::InitializeForUnitTests(
         scoped_ptr<ui::ContextFactory>(new ui::InProcessContextFactory));
-    aura::Env::CreateInstance();
+    aura::Env::CreateInstance(true);
     screen_.reset(aura::TestScreen::Create());
     gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE, screen_.get());
 #endif
@@ -616,6 +611,9 @@ class RenderWidgetHostTest : public testing::Test {
     view_.reset(new TestView(host_.get()));
     host_->SetView(view_.get());
     host_->Init();
+
+    // Tests for debounce-related behavior will explicitly enable debouncing.
+    host_->DisableGestureDebounce();
   }
   virtual void TearDown() {
     view_.reset();
@@ -640,10 +638,10 @@ class RenderWidgetHostTest : public testing::Test {
 
   void SendInputEventACK(WebInputEvent::Type type,
                          InputEventAckState ack_result) {
-    scoped_ptr<IPC::Message> response(
-        new InputHostMsg_HandleInputEvent_ACK(0, type, ack_result,
-                                              ui::LatencyInfo()));
-    host_->OnMessageReceived(*response);
+    InputHostMsg_HandleInputEvent_ACK_Params ack;
+    ack.type = type;
+    ack.state = ack_result;
+    host_->OnMessageReceived(InputHostMsg_HandleInputEvent_ACK(0, ack));
   }
 
   double GetNextSimulatedEventTimeSeconds() {
@@ -743,11 +741,8 @@ class RenderWidgetHostTest : public testing::Test {
                                        float anchorX,
                                        float anchorY,
                                        int modifiers) {
-    SimulateGestureEventCore(
-        SyntheticWebGestureEventBuilder::BuildPinchUpdate(scale,
-                                                          anchorX,
-                                                          anchorY,
-                                                          modifiers));
+    SimulateGestureEventCore(SyntheticWebGestureEventBuilder::BuildPinchUpdate(
+        scale, anchorX, anchorY, modifiers, WebGestureEvent::Touchscreen));
   }
 
   // Inject synthetic GestureFlingStart events.
@@ -958,9 +953,10 @@ TEST_F(RenderWidgetHostTest, ResizeThenCrash) {
   host_->SetView(view_.get());
 }
 
-// Tests setting custom background
-TEST_F(RenderWidgetHostTest, Background) {
+// Unable to include render_widget_host_view_mac.h and compile.
 #if !defined(OS_MACOSX)
+// Tests setting background transparency.
+TEST_F(RenderWidgetHostTest, Background) {
   scoped_ptr<RenderWidgetHostViewBase> view;
 #if defined(USE_AURA)
   view.reset(new RenderWidgetHostViewAura(host_.get()));
@@ -971,57 +967,25 @@ TEST_F(RenderWidgetHostTest, Background) {
 #endif
   host_->SetView(view.get());
 
-  // Create a checkerboard background to test with.
-  gfx::Canvas canvas(gfx::Size(4, 4), 1.0f, true);
-  canvas.FillRect(gfx::Rect(0, 0, 2, 2), SK_ColorBLACK);
-  canvas.FillRect(gfx::Rect(2, 0, 2, 2), SK_ColorWHITE);
-  canvas.FillRect(gfx::Rect(0, 2, 2, 2), SK_ColorWHITE);
-  canvas.FillRect(gfx::Rect(2, 2, 2, 2), SK_ColorBLACK);
-  const SkBitmap& background =
-      canvas.sk_canvas()->getDevice()->accessBitmap(false);
-
-  // Set the background and make sure we get back a copy.
-  view->SetBackground(background);
-  EXPECT_EQ(4, view->GetBackground().width());
-  EXPECT_EQ(4, view->GetBackground().height());
-  EXPECT_EQ(background.getSize(), view->GetBackground().getSize());
-  background.lockPixels();
-  view->GetBackground().lockPixels();
-  EXPECT_TRUE(0 == memcmp(background.getPixels(),
-                          view->GetBackground().getPixels(),
-                          background.getSize()));
-  view->GetBackground().unlockPixels();
-  background.unlockPixels();
+  EXPECT_TRUE(view->GetBackgroundOpaque());
+  view->SetBackgroundOpaque(false);
+  EXPECT_FALSE(view->GetBackgroundOpaque());
 
   const IPC::Message* set_background =
-      process_->sink().GetUniqueMessageMatching(ViewMsg_SetBackground::ID);
+      process_->sink().GetUniqueMessageMatching(
+          ViewMsg_SetBackgroundOpaque::ID);
   ASSERT_TRUE(set_background);
-  Tuple1<SkBitmap> sent_background;
-  ViewMsg_SetBackground::Read(set_background, &sent_background);
-  EXPECT_EQ(background.getSize(), sent_background.a.getSize());
-  background.lockPixels();
-  sent_background.a.lockPixels();
-  EXPECT_TRUE(0 == memcmp(background.getPixels(),
-                          sent_background.a.getPixels(),
-                          background.getSize()));
-  sent_background.a.unlockPixels();
-  background.unlockPixels();
+  Tuple1<bool> sent_background;
+  ViewMsg_SetBackgroundOpaque::Read(set_background, &sent_background);
+  EXPECT_FALSE(sent_background.a);
 
 #if defined(USE_AURA)
   // See the comment above |InitAsChild(NULL)|.
   host_->SetView(NULL);
   static_cast<RenderWidgetHostViewBase*>(view.release())->Destroy();
 #endif
-
-#else
-  // TODO(port): Mac does not have gfx::Canvas. Maybe we can just change this
-  // test to use SkCanvas directly?
-#endif
-
-  // TODO(aa): It would be nice to factor out the painting logic so that we
-  // could test that, but it appears that would mean painting everything twice
-  // since windows HDC structures are opaque.
 }
+#endif
 
 // Test that we don't paint when we're hidden, but we still send the ACK. Most
 // of the rest of the painting is tested in the GetBackingStore* ones.
@@ -1521,7 +1485,6 @@ TEST_F(RenderWidgetHostTest, ScrollEventsOverscrollWithZeroFling) {
 // overscroll nav instead of completing it.
 TEST_F(RenderWidgetHostTest, ReverseFlingCancelsOverscroll) {
   host_->SetupForOverscrollControllerTest();
-  host_->DisableGestureDebounce();
   process_->sink().ClearMessages();
   view_->set_bounds(gfx::Rect(0, 0, 400, 200));
   view_->Show();
@@ -1574,7 +1537,6 @@ TEST_F(RenderWidgetHostTest, ReverseFlingCancelsOverscroll) {
 TEST_F(RenderWidgetHostTest, GestureScrollOverscrolls) {
   // Turn off debounce handling for test isolation.
   host_->SetupForOverscrollControllerTest();
-  host_->DisableGestureDebounce();
   process_->sink().ClearMessages();
 
   SimulateGestureEvent(WebInputEvent::GestureScrollBegin,
@@ -1628,7 +1590,6 @@ TEST_F(RenderWidgetHostTest, GestureScrollOverscrolls) {
 TEST_F(RenderWidgetHostTest, GestureScrollConsumedHorizontal) {
   // Turn off debounce handling for test isolation.
   host_->SetupForOverscrollControllerTest();
-  host_->DisableGestureDebounce();
   process_->sink().ClearMessages();
 
   SimulateGestureEvent(WebInputEvent::GestureScrollBegin,
@@ -2083,7 +2044,6 @@ TEST_F(RenderWidgetHostTest, OverscrollDirectionChange) {
 // move events do reach the renderer.
 TEST_F(RenderWidgetHostTest, OverscrollMouseMoveCompletion) {
   host_->SetupForOverscrollControllerTest();
-  host_->DisableGestureDebounce();
   process_->sink().ClearMessages();
   view_->set_bounds(gfx::Rect(0, 0, 400, 200));
   view_->Show();
@@ -2174,7 +2134,6 @@ TEST_F(RenderWidgetHostTest, OverscrollMouseMoveCompletion) {
 // reset after the end of the scroll.
 TEST_F(RenderWidgetHostTest, OverscrollStateResetsAfterScroll) {
   host_->SetupForOverscrollControllerTest();
-  host_->DisableGestureDebounce();
   process_->sink().ClearMessages();
   view_->set_bounds(gfx::Rect(0, 0, 400, 200));
   view_->Show();
@@ -2249,6 +2208,7 @@ TEST_F(RenderWidgetHostTest, OverscrollResetsOnBlur) {
                     INPUT_EVENT_ACK_STATE_NOT_CONSUMED);
   EXPECT_EQ(OVERSCROLL_EAST, host_->overscroll_mode());
   EXPECT_EQ(OVERSCROLL_EAST, host_->overscroll_delegate()->current_mode());
+  EXPECT_EQ(2U, process_->sink().message_count());
 
   host_->Blur();
   EXPECT_EQ(OVERSCROLL_NONE, host_->overscroll_mode());
@@ -2260,7 +2220,8 @@ TEST_F(RenderWidgetHostTest, OverscrollResetsOnBlur) {
 
   SimulateGestureEvent(WebInputEvent::GestureScrollEnd,
                        WebGestureEvent::Touchscreen);
-  EXPECT_EQ(0U, process_->sink().message_count());
+  EXPECT_EQ(1U, process_->sink().message_count());
+  process_->sink().ClearMessages();
 
   // Start a scroll gesture again. This should correctly start the overscroll
   // after the threshold.
@@ -2277,19 +2238,17 @@ TEST_F(RenderWidgetHostTest, OverscrollResetsOnBlur) {
                        WebGestureEvent::Touchscreen);
   EXPECT_EQ(OVERSCROLL_NONE, host_->overscroll_delegate()->current_mode());
   EXPECT_EQ(OVERSCROLL_EAST, host_->overscroll_delegate()->completed_mode());
-  process_->sink().ClearMessages();
+  EXPECT_EQ(3U, process_->sink().message_count());
 }
 
 std::string GetInputMessageTypes(RenderWidgetHostProcess* process) {
-  const WebInputEvent* event = NULL;
-  ui::LatencyInfo latency_info;
-  bool is_keyboard_shortcut;
   std::string result;
   for (size_t i = 0; i < process->sink().message_count(); ++i) {
     const IPC::Message *message = process->sink().GetMessageAt(i);
     EXPECT_EQ(InputMsg_HandleInputEvent::ID, message->type());
-    EXPECT_TRUE(InputMsg_HandleInputEvent::Read(
-        message, &event, &latency_info, &is_keyboard_shortcut));
+    InputMsg_HandleInputEvent::Param params;
+    EXPECT_TRUE(InputMsg_HandleInputEvent::Read(message, &params));
+    const WebInputEvent* event = params.a;
     if (i != 0)
       result += " ";
     result += WebInputEventTraits::GetName(event->type);
@@ -2300,7 +2259,6 @@ std::string GetInputMessageTypes(RenderWidgetHostProcess* process) {
 
 TEST_F(RenderWidgetHostTest, TouchEmulator) {
   simulated_event_time_delta_seconds_ = 0.1;
-  host_->DisableGestureDebounce();
   // Immediately ack all touches instead of sending them to the renderer.
   host_->OnMessageReceived(ViewHostMsg_HasTouchEventHandlers(0, false));
   host_->OnMessageReceived(
@@ -2613,14 +2571,12 @@ TEST_F(RenderWidgetHostTest, InputRouterReceivesHasTouchEventHandlers) {
 void CheckLatencyInfoComponentInMessage(RenderWidgetHostProcess* process,
                                         int64 component_id,
                                         WebInputEvent::Type input_type) {
-  const WebInputEvent* event = NULL;
-  ui::LatencyInfo latency_info;
-  bool is_keyboard_shortcut;
   const IPC::Message* message = process->sink().GetUniqueMessageMatching(
       InputMsg_HandleInputEvent::ID);
   ASSERT_TRUE(message);
-  EXPECT_TRUE(InputMsg_HandleInputEvent::Read(
-      message, &event, &latency_info, &is_keyboard_shortcut));
+  InputMsg_HandleInputEvent::Param params;
+  EXPECT_TRUE(InputMsg_HandleInputEvent::Read(message, &params));
+  ui::LatencyInfo latency_info = params.b;
   EXPECT_TRUE(latency_info.FindLatency(
       ui::INPUT_EVENT_LATENCY_BEGIN_RWH_COMPONENT,
       component_id,

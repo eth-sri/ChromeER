@@ -27,7 +27,6 @@ class NavigationControllerImpl;
 class RenderViewHostImpl;
 class RenderWidgetHostView;
 class WebContentsView;
-class WebContentsImpl;
 
 enum ResourceRequestAction {
   BLOCK,
@@ -69,10 +68,6 @@ class CONTENT_EXPORT InterstitialPageImpl
   virtual void SetSize(const gfx::Size& size) OVERRIDE;
   virtual void Focus() OVERRIDE;
 
-  // This is called by a hosting WebContents to notify this interstitial page
-  // that it is going away.
-  void WebContentsWillBeDestroyed();
-
   // Allows the user to navigate away by disabling the interstitial, canceling
   // the pending request, and unblocking the hidden renderer.  The interstitial
   // will stay visible until the navigation completes.
@@ -109,8 +104,10 @@ class CONTENT_EXPORT InterstitialPageImpl
                        const NotificationDetails& details) OVERRIDE;
 
   // WebContentsObserver implementation:
+  virtual bool OnMessageReceived(const IPC::Message& message,
+                                 RenderFrameHost* render_frame_host) OVERRIDE;
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-  virtual void WebContentsDestroyed(WebContents* web_contents) OVERRIDE;
+  virtual void WebContentsDestroyed() OVERRIDE;
   virtual void NavigationEntryCommitted(
       const LoadCommittedDetails& load_details) OVERRIDE;
 
@@ -118,6 +115,10 @@ class CONTENT_EXPORT InterstitialPageImpl
   virtual bool OnMessageReceived(RenderFrameHost* render_frame_host,
                                  const IPC::Message& message) OVERRIDE;
   virtual void RenderFrameCreated(RenderFrameHost* render_frame_host) OVERRIDE;
+  virtual void UpdateTitle(RenderFrameHost* render_frame_host,
+                           int32 page_id,
+                           const base::string16& title,
+                           base::i18n::TextDirection title_direction) OVERRIDE;
 
   // RenderViewHostDelegate implementation:
   virtual RenderViewHostDelegateView* GetDelegateView() OVERRIDE;
@@ -127,10 +128,6 @@ class CONTENT_EXPORT InterstitialPageImpl
   virtual void RenderViewTerminated(RenderViewHost* render_view_host,
                                     base::TerminationStatus status,
                                     int error_code) OVERRIDE;
-  virtual void UpdateTitle(RenderViewHost* render_view_host,
-                           int32 page_id,
-                           const base::string16& title,
-                           base::i18n::TextDirection title_direction) OVERRIDE;
   virtual RendererPreferences GetRendererPrefs(
       BrowserContext* browser_context) const OVERRIDE;
   virtual WebPreferences GetWebkitPrefs() OVERRIDE;

@@ -69,11 +69,9 @@ NativeWidget* CreateNativeWidget(NativeWidget* native_widget,
 // WidgetDelegate is supplied.
 class DefaultWidgetDelegate : public WidgetDelegate {
  public:
-  DefaultWidgetDelegate(Widget* widget, const Widget::InitParams& params)
+  DefaultWidgetDelegate(Widget* widget, bool can_activate)
       : widget_(widget),
-        can_activate_(!params.child &&
-                      params.type != Widget::InitParams::TYPE_POPUP &&
-                      params.type != Widget::InitParams::TYPE_DRAG) {
+        can_activate_(can_activate) {
   }
   virtual ~DefaultWidgetDelegate() {}
 
@@ -113,7 +111,7 @@ Widget::InitParams::InitParams()
       child(false),
       opacity(INFER_OPACITY),
       accept_events(true),
-      can_activate(true),
+      activatable(ACTIVATABLE_DEFAULT),
       keep_on_top(false),
       visible_on_all_workspaces(false),
       ownership(NATIVE_WIDGET_OWNS_WIDGET),
@@ -138,8 +136,7 @@ Widget::InitParams::InitParams(Type type)
       child(type == TYPE_CONTROL),
       opacity(INFER_OPACITY),
       accept_events(true),
-      can_activate(type != TYPE_POPUP && type != TYPE_MENU &&
-                   type != TYPE_DRAG),
+      activatable(ACTIVATABLE_DEFAULT),
       keep_on_top(type == TYPE_MENU || type == TYPE_DRAG),
       visible_on_all_workspaces(false),
       ownership(NATIVE_WIDGET_OWNS_WIDGET),
@@ -347,6 +344,20 @@ void Widget::Init(const InitParams& in_params) {
        params.type != InitParams::TYPE_TOOLTIP);
   params.top_level = is_top_level_;
 
+  if (params.activatable != InitParams::ACTIVATABLE_DEFAULT) {
+    can_activate_ = (params.activatable == InitParams::ACTIVATABLE_YES);
+  } else if (params.type != InitParams::TYPE_CONTROL &&
+             params.type != InitParams::TYPE_POPUP &&
+             params.type != InitParams::TYPE_MENU &&
+             params.type != InitParams::TYPE_TOOLTIP &&
+             params.type != InitParams::TYPE_DRAG) {
+    can_activate_ = true;
+    params.activatable = InitParams::ACTIVATABLE_YES;
+  } else {
+    can_activate_ = false;
+    params.activatable = InitParams::ACTIVATABLE_NO;
+  }
+
   if (params.opacity == views::Widget::InitParams::INFER_OPACITY &&
       params.type != views::Widget::InitParams::TYPE_WINDOW &&
       params.type != views::Widget::InitParams::TYPE_PANEL)
@@ -359,7 +370,7 @@ void Widget::Init(const InitParams& in_params) {
     params.opacity = views::Widget::InitParams::OPAQUE_WINDOW;
 
   widget_delegate_ = params.delegate ?
-      params.delegate : new DefaultWidgetDelegate(this, params);
+      params.delegate : new DefaultWidgetDelegate(this, can_activate_);
   ownership_ = params.ownership;
   native_widget_ = CreateNativeWidget(params.native_widget, this)->
                    AsNativeWidgetPrivate();
@@ -429,7 +440,7 @@ bool Widget::HasRemovalsObserver(WidgetRemovalsObserver* observer) {
   return removals_observers_.HasObserver(observer);
 }
 
-bool Widget::GetAccelerator(int cmd_id, ui::Accelerator* accelerator) {
+bool Widget::GetAccelerator(int cmd_id, ui::Accelerator* accelerator) const {
   return false;
 }
 
@@ -789,6 +800,10 @@ const InputMethod* Widget::GetInputMethod() const {
   }
 }
 
+ui::InputMethod* Widget::GetHostInputMethod() {
+  return native_widget_private()->GetHostInputMethod();
+}
+
 void Widget::RunShellDrag(View* view,
                           const ui::OSExchangeData& data,
                           const gfx::Point& location,
@@ -1004,7 +1019,7 @@ bool Widget::IsDialogBox() const {
 }
 
 bool Widget::CanActivate() const {
-  return widget_delegate_->CanActivate();
+  return can_activate_ && widget_delegate_->CanActivate();
 }
 
 bool Widget::IsInactiveRenderingDisabled() const {
@@ -1146,7 +1161,7 @@ void Widget::OnNativeWidgetPaint(gfx::Canvas* canvas) {
   // On Linux Aura, we can get here during Init() because of the
   // SetInitialBounds call.
   if (native_widget_initialized_)
-    GetRootView()->Paint(canvas);
+    GetRootView()->Paint(canvas, CullSet());
 }
 
 int Widget::GetNonClientComponent(const gfx::Point& point) {
@@ -1253,7 +1268,14 @@ void Widget::OnMouseCaptureLost() {
 }
 
 void Widget::OnScrollEvent(ui::ScrollEvent* event) {
-  SendEventToProcessor(event);
+  ui::ScrollEvent event_copy(*event);
+  SendEventToProcessor(&event_copy);
+
+  // Convert unhandled ui::ET_SCROLL events into ui::ET_MOUSEWHEEL events.
+  if (!event_copy.handled() && event_copy.type() == ui::ET_SCROLL) {
+    ui::MouseWheelEvent wheel(*event);
+    OnMouseEvent(&wheel);
+  }
 }
 
 void Widget::OnGestureEvent(ui::GestureEvent* event) {
@@ -1356,8 +1378,15 @@ View* Widget::GetFocusTraversableParentView() {
 // Widget, ui::NativeThemeObserver implementation:
 
 void Widget::OnNativeThemeUpdated(ui::NativeTheme* observed_theme) {
-  DCHECK_EQ(observed_theme, GetNativeTheme());
-  root_view_->PropagateNativeThemeChanged(GetNativeTheme());
+  DCHECK(observer_manager_.IsObserving(observed_theme));
+
+  ui::NativeTheme* current_native_theme = GetNativeTheme();
+  if (!observer_manager_.IsObserving(current_native_theme)) {
+    observer_manager_.RemoveAll();
+    observer_manager_.Add(current_native_theme);
+  }
+
+  root_view_->PropagateNativeThemeChanged(current_native_theme);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

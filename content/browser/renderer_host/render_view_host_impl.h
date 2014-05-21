@@ -24,7 +24,6 @@
 #include "third_party/WebKit/public/web/WebAXEnums.h"
 #include "third_party/WebKit/public/web/WebConsoleMessage.h"
 #include "third_party/WebKit/public/web/WebPopupType.h"
-#include "third_party/WebKit/public/web/WebTextDirection.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/accessibility/ax_node_data.h"
 #include "ui/base/window_open_disposition.h"
@@ -155,8 +154,10 @@ class CONTENT_EXPORT RenderViewHostImpl
   virtual RenderFrameHost* GetMainFrame() OVERRIDE;
   virtual void AllowBindings(int binding_flags) OVERRIDE;
   virtual void ClearFocusedElement() OVERRIDE;
+  virtual bool IsFocusedElementEditable() OVERRIDE;
   virtual void ClosePage() OVERRIDE;
   virtual void CopyImageAt(int x, int y) OVERRIDE;
+  virtual void SaveImageAt(int x, int y) OVERRIDE;
   virtual void DirectoryEnumerationFinished(
       int request_id,
       const std::vector<base::FilePath>& files) OVERRIDE;
@@ -203,13 +204,13 @@ class CONTENT_EXPORT RenderViewHostImpl
                                 const std::string& value) OVERRIDE;
   virtual void Zoom(PageZoom zoom) OVERRIDE;
   virtual void SyncRendererPrefs() OVERRIDE;
-  virtual void ToggleSpeechInput() OVERRIDE;
   virtual WebPreferences GetWebkitPreferences() OVERRIDE;
   virtual void UpdateWebkitPreferences(
       const WebPreferences& prefs) OVERRIDE;
   virtual void GetAudioOutputControllers(
       const GetAudioOutputControllersCallback& callback) const OVERRIDE;
   virtual void SetWebUIHandle(mojo::ScopedMessagePipeHandle handle) OVERRIDE;
+  virtual void SelectWordAroundCaret() OVERRIDE;
 
 #if defined(OS_ANDROID)
   virtual void ActivateNearestFindResult(int request_id,
@@ -231,8 +232,11 @@ class CONTENT_EXPORT RenderViewHostImpl
   // RenderView is told to start issuing page IDs at |max_page_id| + 1.
   // |window_was_created_with_opener| is true if this top-level frame was
   // created with an opener. (The opener may have been closed since.)
+  // The |proxy_route_id| is only used when creating a RenderView in swapped out
+  // state.
   virtual bool CreateRenderView(const base::string16& frame_name,
                                 int opener_route_id,
+                                int proxy_route_id,
                                 int32 max_page_id,
                                 bool window_was_created_with_opener);
 
@@ -396,9 +400,6 @@ class CONTENT_EXPORT RenderViewHostImpl
   void DidCancelPopupMenu();
 #endif
 
-  // User rotated the screen. Calls the "onorientationchange" Javascript hook.
-  void SendOrientationChangeEvent(int orientation);
-
   int main_frame_routing_id() const {
     return main_frame_routing_id_;
   }
@@ -484,17 +485,10 @@ class CONTENT_EXPORT RenderViewHostImpl
   void OnRenderViewReady();
   void OnRenderProcessGone(int status, int error_code);
   void OnUpdateState(int32 page_id, const PageState& state);
-  void OnUpdateTitle(int32 page_id,
-                     const base::string16& title,
-                     blink::WebTextDirection title_direction);
-  void OnUpdateEncoding(const std::string& encoding);
   void OnUpdateTargetURL(int32 page_id, const GURL& url);
   void OnClose();
   void OnRequestMove(const gfx::Rect& pos);
-  void OnDidChangeLoadProgress(double load_progress);
-  void OnDidDisownOpener();
   void OnDocumentAvailableInMainFrame();
-  void OnDocumentOnLoadCompletedInMainFrame(int32 page_id);
   void OnToggleFullscreen(bool enter_fullscreen);
   void OnDidContentsPreferredSizeChange(const gfx::Size& new_size);
   void OnDidChangeScrollOffset();
@@ -647,6 +641,9 @@ class CONTENT_EXPORT RenderViewHostImpl
   base::Closure pending_shutdown_on_swap_out_;
 
   base::WeakPtrFactory<RenderViewHostImpl> weak_factory_;
+
+  // True if the current focused element is editable.
+  bool is_focused_element_editable_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderViewHostImpl);
 };

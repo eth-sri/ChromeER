@@ -14,6 +14,7 @@
 #include "base/callback.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
+#include "base/file_util.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/message_loop/message_loop.h"
@@ -57,6 +58,7 @@
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "components/signin/core/browser/about_signin_internals.h"
 #include "components/signin/core/browser/profile_oauth2_token_service.h"
 #include "components/signin/core/browser/signin_manager.h"
@@ -65,11 +67,9 @@
 #include "components/sync_driver/pref_names.h"
 #include "components/sync_driver/system_encryptor.h"
 #include "components/sync_driver/user_selectable_sync_type.h"
-#include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
-#include "google_apis/gaia/gaia_constants.h"
 #include "grit/generated_resources.h"
 #include "net/cookies/cookie_monster.h"
 #include "net/url_request/url_request_context_getter.h"
@@ -77,6 +77,7 @@
 #include "sync/internal_api/public/configure_reason.h"
 #include "sync/internal_api/public/http_bridge_network_resources.h"
 #include "sync/internal_api/public/network_resources.h"
+#include "sync/internal_api/public/sessions/type_debug_info_observer.h"
 #include "sync/internal_api/public/sync_core_proxy.h"
 #include "sync/internal_api/public/sync_encryption_handler.h"
 #include "sync/internal_api/public/util/experiments.h"
@@ -85,10 +86,6 @@
 #include "sync/util/cryptographer.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/l10n/time_format.h"
-
-#if defined(ENABLE_MANAGED_USERS)
-#include "chrome/browser/managed_mode/managed_user_constants.h"
-#endif
 
 #if defined(OS_ANDROID)
 #include "sync/internal_api/public/read_transaction.h"
@@ -150,6 +147,9 @@ const net::BackoffEntry::Policy kRequestAccessTokenBackoffPolicy = {
   // Don't use initial delay unless the last request was an error.
   false,
 };
+
+static const base::FilePath::CharType kSyncDataFolderName[] =
+    FILE_PATH_LITERAL("Sync Data");
 
 bool ShouldShowActionOnUI(
     const syncer::SyncProtocolError& error) {
@@ -523,7 +523,8 @@ void ProfileSyncService::InitializeBackend(bool delete_stale_data) {
       credentials,
       delete_stale_data,
       scoped_ptr<syncer::SyncManagerFactory>(
-          new syncer::SyncManagerFactory).Pass(),
+          new syncer::SyncManagerFactory(
+              syncer::SyncManagerFactory::NORMAL)).Pass(),
       backend_unrecoverable_error_handler.Pass(),
       &browser_sync::ChromeReportUnrecoverableError,
       network_resources_.get());
@@ -552,6 +553,30 @@ void ProfileSyncService::OnProtocolEvent(
   FOR_EACH_OBSERVER(browser_sync::ProtocolEventObserver,
                     protocol_event_observers_,
                     OnProtocolEvent(event));
+}
+
+void ProfileSyncService::OnDirectoryTypeCommitCounterUpdated(
+    syncer::ModelType type,
+    const syncer::CommitCounters& counters) {
+  FOR_EACH_OBSERVER(syncer::TypeDebugInfoObserver,
+                    type_debug_info_observers_,
+                    OnCommitCountersUpdated(type, counters));
+}
+
+void ProfileSyncService::OnDirectoryTypeUpdateCounterUpdated(
+    syncer::ModelType type,
+    const syncer::UpdateCounters& counters) {
+  FOR_EACH_OBSERVER(syncer::TypeDebugInfoObserver,
+                    type_debug_info_observers_,
+                    OnUpdateCountersUpdated(type, counters));
+}
+
+void ProfileSyncService::OnDirectoryTypeStatusCounterUpdated(
+    syncer::ModelType type,
+    const syncer::StatusCounters& counters) {
+  FOR_EACH_OBSERVER(syncer::TypeDebugInfoObserver,
+                    type_debug_info_observers_,
+                    OnStatusCountersUpdated(type, counters));
 }
 
 void ProfileSyncService::OnDataTypeRequestsSyncStartup(
@@ -585,7 +610,8 @@ void ProfileSyncService::StartUpSlowBackendComponents() {
       factory_->CreateSyncBackendHost(
           profile_->GetDebugName(),
           profile_,
-          sync_prefs_.AsWeakPtr()));
+          sync_prefs_.AsWeakPtr(),
+          base::FilePath(kSyncDataFolderName)));
 
   // Initialize the backend.  Every time we start up a new SyncBackendHost,
   // we'll want to start from a fresh SyncDB, so delete any old one that might
@@ -935,6 +961,10 @@ void ProfileSyncService::OnBackendInitialized(
   non_blocking_data_type_manager_.ConnectSyncBackend(
       backend_->GetSyncCoreProxy());
 
+  if (type_debug_info_observers_.might_have_observers()) {
+    backend_->EnableDirectoryTypeDebugInfoForwarding();
+  }
+
   // If we have a cached passphrase use it to decrypt/encrypt data now that the
   // backend is initialized. We want to call this before notifying observers in
   // case this operation affects the "passphrase required" status.
@@ -1041,8 +1071,8 @@ void ProfileSyncService::OnExperimentsChanged(
           sync_driver::prefs::kEnhancedBookmarksExperimentEnabled));
   // If bookmark experiment state was changed update about flags experiment.
   if (bookmarks_experiment_state_before != bookmarks_experiment_state) {
-    UpdateBookmarksExperiment(g_browser_process->local_state(),
-                              bookmarks_experiment_state);
+    ForceFinchBookmarkExperimentIfNeeded(g_browser_process->local_state(),
+                                         bookmarks_experiment_state);
   }
 
   // If this is a first time sync for a client, this will be called before
@@ -1909,17 +1939,6 @@ base::Value* ProfileSyncService::GetTypeStatusMap() const {
   return result.release();
 }
 
-void ProfileSyncService::ActivateDataType(
-    syncer::ModelType type, syncer::ModelSafeGroup group,
-    ChangeProcessor* change_processor) {
-  if (!backend_) {
-    NOTREACHED();
-    return;
-  }
-  DCHECK(backend_initialized_);
-  backend_->ActivateDataType(type, group, change_processor);
-}
-
 void ProfileSyncService::DeactivateDataType(syncer::ModelType type) {
   if (!backend_)
     return;
@@ -1958,11 +1977,7 @@ void ProfileSyncService::RequestAccessToken() {
     return;
   request_access_token_retry_timer_.Stop();
   OAuth2TokenService::ScopeSet oauth2_scopes;
-  if (profile_->IsManaged()) {
-    oauth2_scopes.insert(GaiaConstants::kChromeSyncManagedOAuth2Scope);
-  } else {
-    oauth2_scopes.insert(GaiaConstants::kChromeSyncOAuth2Scope);
-  }
+  oauth2_scopes.insert(signin_->GetSyncScopeToUse());
 
   // Invalidate previous token, otherwise token service will return the same
   // token again.
@@ -2103,6 +2118,22 @@ void ProfileSyncService::RemoveProtocolEventObserver(
   protocol_event_observers_.RemoveObserver(observer);
   if (backend_ && !protocol_event_observers_.might_have_observers()) {
     backend_->DisableProtocolEventForwarding();
+  }
+}
+
+void ProfileSyncService::AddTypeDebugInfoObserver(
+    syncer::TypeDebugInfoObserver* type_debug_info_observer) {
+  type_debug_info_observers_.AddObserver(type_debug_info_observer);
+  if (type_debug_info_observers_.might_have_observers() && backend_) {
+    backend_->EnableDirectoryTypeDebugInfoForwarding();
+  }
+}
+
+void ProfileSyncService::RemoveTypeDebugInfoObserver(
+    syncer::TypeDebugInfoObserver* type_debug_info_observer) {
+  type_debug_info_observers_.RemoveObserver(type_debug_info_observer);
+  if (!type_debug_info_observers_.might_have_observers() && backend_) {
+    backend_->DisableDirectoryTypeDebugInfoForwarding();
   }
 }
 

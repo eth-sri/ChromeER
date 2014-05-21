@@ -8,7 +8,7 @@ from telemetry.page import page_set as page_set_module
 from telemetry.web_perf import timeline_interaction_record as tir_module
 
 
-class KeySilkCasesPage(page_module.PageWithDefaultRunNavigate):
+class KeySilkCasesPage(page_module.Page):
 
   def __init__(self, url, page_set):
     super(KeySilkCasesPage, self).__init__(url=url, page_set=page_set)
@@ -667,4 +667,4 @@ class KeySilkCasesPageSet(page_set_module.PageSet):
     self.AddPage(Page23(self))
     self.AddPage(Page24(self))
     self.AddPage(Page25(self))
-    # self.AddPage(Page26(self))  # crbug.com/366371
+    self.AddPage(Page26(self))

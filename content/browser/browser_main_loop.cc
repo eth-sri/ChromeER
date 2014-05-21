@@ -122,11 +122,6 @@
 #include "ui/gfx/x/x11_types.h"
 #endif
 
-#if defined(USE_OZONE)
-#include "ui/ozone/ozone_platform.h"
-#include "ui/events/ozone/event_factory_ozone.h"
-#endif
-
 // One of the linux specific headers defines this as a macro.
 #ifdef DestroyAll
 #undef DestroyAll
@@ -164,7 +159,7 @@ void SetupSandbox(const CommandLine& parsed_command_line) {
   }
 
   // Tickle the sandbox host and zygote host so they fork now.
-  RenderSandboxHostLinux::GetInstance()->Init(sandbox_binary.value());
+  RenderSandboxHostLinux::GetInstance()->Init();
   ZygoteHostImpl::GetInstance()->Init(sandbox_binary.value());
 }
 #endif
@@ -754,8 +749,8 @@ void BrowserMainLoop::ShutdownThreadsAndCleanUp() {
     resource_dispatcher_host_.get()->Shutdown();
   }
 
-#if defined(USE_AURA)
-  {
+#if defined(USE_AURA) || defined(OS_MACOSX)
+  if (ShouldInitializeBrowserGpuChannelAndTransportSurface()) {
     TRACE_EVENT0("shutdown",
                  "BrowserMainLoop::Subsystem:ImageTransportFactory");
     ImageTransportFactory::Terminate();
@@ -959,12 +954,6 @@ int BrowserMainLoop::BrowserThreadsStarted() {
   device_monitor_mac_.reset(new DeviceMonitorMac());
 #endif
 
-#if defined(USE_OZONE)
-  ui::OzonePlatform::Initialize();
-  ui::EventFactoryOzone::GetInstance()->SetFileTaskRunner(
-      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE));
-#endif
-
   // RDH needs the IO thread to be created
   {
     TRACE_EVENT0("startup",
@@ -1070,7 +1059,7 @@ bool BrowserMainLoop::InitializeToolkit() {
 
   // Env creates the compositor. Aura widgets need the compositor to be created
   // before they can be initialized by the browser.
-  aura::Env::CreateInstance();
+  aura::Env::CreateInstance(true);
 #endif  // defined(USE_AURA)
 
   if (parts_)

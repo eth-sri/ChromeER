@@ -64,7 +64,9 @@ import org.chromium.content.browser.input.ImeAdapter;
 import org.chromium.content.browser.input.ImeAdapter.AdapterInputConnectionFactory;
 import org.chromium.content.browser.input.InputMethodManagerWrapper;
 import org.chromium.content.browser.input.InsertionHandleController;
+import org.chromium.content.browser.input.SelectPopup;
 import org.chromium.content.browser.input.SelectPopupDialog;
+import org.chromium.content.browser.input.SelectPopupDropdown;
 import org.chromium.content.browser.input.SelectPopupItem;
 import org.chromium.content.browser.input.SelectionHandleController;
 import org.chromium.content.common.ContentSwitches;
@@ -227,7 +229,7 @@ public class ContentViewCore
     private ZoomControlsDelegate mZoomControlsDelegate;
 
     private PopupZoomer mPopupZoomer;
-    private SelectPopupDialog mSelectPopupDialog;
+    private SelectPopup mSelectPopup;
 
     private Runnable mFakeMouseMoveRunnable = null;
 
@@ -262,11 +264,6 @@ public class ContentViewCore
     private final RenderCoordinates.NormalizedPoint mStartHandlePoint;
     private final RenderCoordinates.NormalizedPoint mEndHandlePoint;
     private final RenderCoordinates.NormalizedPoint mInsertionHandlePoint;
-
-    // Cached copy of the visible rectangle defined by two points. Needed to determine
-    // visibility of insertion/selection handles.
-    private final RenderCoordinates.NormalizedPoint mTopLeftVisibilityClippingPoint;
-    private final RenderCoordinates.NormalizedPoint mBottomRightVisibilityClippingPoint;
 
     // Tracks whether a selection is currently active.  When applied to selected text, indicates
     // whether the last selected text is still highlighted.
@@ -303,9 +300,6 @@ public class ContentViewCore
     // Temporary notification to tell onSizeChanged to focus a form element,
     // because the OSK was just brought up.
     private final Rect mFocusPreOSKViewportRect = new Rect();
-
-    // Whether we received a new frame since consumePendingRendererFrame() was last called.
-    private boolean mPendingRendererFrame = false;
 
     // On single tap this will store the x, y coordinates of the touch.
     private int mSingleTapX;
@@ -364,8 +358,6 @@ public class ContentViewCore
         mStartHandlePoint = mRenderCoordinates.createNormalizedPoint();
         mEndHandlePoint = mRenderCoordinates.createNormalizedPoint();
         mInsertionHandlePoint = mRenderCoordinates.createNormalizedPoint();
-        mTopLeftVisibilityClippingPoint = mRenderCoordinates.createNormalizedPoint();
-        mBottomRightVisibilityClippingPoint = mRenderCoordinates.createNormalizedPoint();
         mAccessibilityManager = (AccessibilityManager)
                 getContext().getSystemService(Context.ACCESSIBILITY_SERVICE);
         mGestureStateListeners = new ObserverList<GestureStateListener>();
@@ -607,7 +599,8 @@ public class ContentViewCore
         };
 
         mNativeContentViewCore = nativeInit(
-                nativeWebContents, viewAndroidNativePointer, windowNativePointer);
+                nativeWebContents, viewAndroidNativePointer, windowNativePointer,
+                mRetainedJavaScriptObjects);
         mWebContents = nativeGetWebContentsAndroid(mNativeContentViewCore);
         mContentSettings = new ContentSettings(this, mNativeContentViewCore);
         initializeContainerView(internalDispatcher);
@@ -627,14 +620,14 @@ public class ContentViewCore
             public void didNavigateMainFrame(String url, String baseUrl,
                     boolean isNavigationToDifferentPage, boolean isNavigationInPage) {
                 if (!isNavigationToDifferentPage) return;
-                hidePopupDialog();
+                hidePopups();
                 resetScrollInProgress();
                 resetGestureDetection();
             }
 
             @Override
             public void renderProcessGone(boolean wasOomProtected) {
-                hidePopupDialog();
+                hidePopups();
                 resetScrollInProgress();
                 // No need to reset gesture detection as the detector will have
                 // been destroyed in the RenderWidgetHostView.
@@ -884,17 +877,6 @@ public class ContentViewCore
     }
 
     /**
-     * Mark any new frames that have arrived since this function was last called as non-pending.
-     *
-     * @return Whether there was a pending frame from the renderer.
-     */
-    public boolean consumePendingRendererFrame() {
-        boolean hadPendingFrame = mPendingRendererFrame;
-        mPendingRendererFrame = false;
-        return hadPendingFrame;
-    }
-
-    /**
      * @return Viewport width in physical pixels as set from onSizeChanged.
      */
     @CalledByNative
@@ -1081,36 +1063,48 @@ public class ContentViewCore
      * @see View#onTouchEvent(MotionEvent)
      */
     public boolean onTouchEvent(MotionEvent event) {
-        MotionEvent offset = createOffsetMotionEvent(event);
+        TraceEvent.begin("onTouchEvent");
+        try {
+            cancelRequestToScrollFocusedEditableNodeIntoView();
 
-        cancelRequestToScrollFocusedEditableNodeIntoView();
+            final int eventAction = event.getActionMasked();
 
-        final int eventAction = offset.getActionMasked();
+            // Only these actions have any effect on gesture detection.  Other
+            // actions have no corresponding WebTouchEvent type and may confuse the
+            // touch pipline, so we ignore them entirely.
+            if (eventAction != MotionEvent.ACTION_DOWN
+                    && eventAction != MotionEvent.ACTION_UP
+                    && eventAction != MotionEvent.ACTION_CANCEL
+                    && eventAction != MotionEvent.ACTION_MOVE
+                    && eventAction != MotionEvent.ACTION_POINTER_DOWN
+                    && eventAction != MotionEvent.ACTION_POINTER_UP) {
+                return false;
+            }
 
-        // Only these actions have any effect on gesture detection.  Other
-        // actions have no corresponding WebTouchEvent type and may confuse the
-        // touch pipline, so we ignore them entirely.
-        if (eventAction != MotionEvent.ACTION_DOWN
-                && eventAction != MotionEvent.ACTION_UP
-                && eventAction != MotionEvent.ACTION_CANCEL
-                && eventAction != MotionEvent.ACTION_MOVE
-                && eventAction != MotionEvent.ACTION_POINTER_DOWN
-                && eventAction != MotionEvent.ACTION_POINTER_UP) {
-            return false;
+            if (mNativeContentViewCore == 0) return false;
+
+            // A zero offset is quite common, in which case the unnecessary copy should be avoided.
+            MotionEvent offset = null;
+            if (mCurrentTouchOffsetX != 0 || mCurrentTouchOffsetY != 0) {
+                offset = createOffsetMotionEvent(event);
+                event = offset;
+            }
+
+            final int pointerCount = event.getPointerCount();
+            final boolean consumed = nativeOnTouchEvent(mNativeContentViewCore, event,
+                    event.getEventTime(), eventAction,
+                    pointerCount, event.getHistorySize(), event.getActionIndex(),
+                    event.getX(), event.getY(),
+                    pointerCount > 1 ? event.getX(1) : 0,
+                    pointerCount > 1 ? event.getY(1) : 0,
+                    event.getPointerId(0), pointerCount > 1 ? event.getPointerId(1) : -1,
+                    event.getTouchMajor(), pointerCount > 1 ? event.getTouchMajor(1) : 0);
+
+            if (offset != null) offset.recycle();
+            return consumed;
+        } finally {
+            TraceEvent.end("onTouchEvent");
         }
-
-        if (mNativeContentViewCore == 0) return false;
-        final int pointerCount = offset.getPointerCount();
-        boolean consumed = nativeOnTouchEvent(mNativeContentViewCore, offset,
-                offset.getEventTime(), eventAction,
-                pointerCount, offset.getHistorySize(), offset.getActionIndex(),
-                offset.getX(), offset.getY(),
-                pointerCount > 1 ? offset.getX(1) : 0,
-                pointerCount > 1 ? offset.getY(1) : 0,
-                offset.getPointerId(0), pointerCount > 1 ? offset.getPointerId(1) : -1,
-                offset.getTouchMajor(), pointerCount > 1 ? offset.getTouchMajor(1) : 0);
-        offset.recycle();
-        return consumed;
     }
 
     public void setIgnoreRemainingTouchEvents() {
@@ -1192,10 +1186,10 @@ public class ContentViewCore
 
     @SuppressWarnings("unused")
     @CalledByNative
-    private void onTapEventNotConsumed(int x, int y) {
+    private void onSingleTapEventAck(boolean consumed, int x, int y) {
         for (mGestureStateListenersIterator.rewind();
                 mGestureStateListenersIterator.hasNext();) {
-            mGestureStateListenersIterator.next().onUnhandledTapEvent(x, y);
+            mGestureStateListenersIterator.next().onSingleTap(consumed, x, y);
         }
     }
 
@@ -1346,7 +1340,7 @@ public class ContentViewCore
      */
     public void onHide() {
         assert mNativeContentViewCore != 0;
-        hidePopupDialog();
+        hidePopups();
         setInjectedAccessibility(false);
         nativeOnHide(mNativeContentViewCore);
     }
@@ -1361,7 +1355,7 @@ public class ContentViewCore
         return mContentSettings;
     }
 
-    private void hidePopupDialog() {
+    private void hidePopups() {
         hideSelectPopup();
         hideHandles();
         hideSelectActionBar();
@@ -1400,7 +1394,7 @@ public class ContentViewCore
     @SuppressLint("MissingSuperCall")
     public void onDetachedFromWindow() {
         setInjectedAccessibility(false);
-        hidePopupDialog();
+        hidePopups();
         mZoomControlsDelegate.dismissZoomPicker();
         unregisterAccessibilityContentObserver();
 
@@ -1456,8 +1450,10 @@ public class ContentViewCore
         TraceEvent.begin();
 
         if (newConfig.keyboard != Configuration.KEYBOARD_NOKEYS) {
-            mImeAdapter.attach(nativeGetNativeImeAdapter(mNativeContentViewCore),
-                    ImeAdapter.getTextInputTypeNone());
+            if (mNativeContentViewCore != 0) {
+                mImeAdapter.attach(nativeGetNativeImeAdapter(mNativeContentViewCore),
+                        ImeAdapter.getTextInputTypeNone());
+            }
             mInputMethodManagerWrapper.restartInput(mContainerView);
         }
         mContainerViewInternals.super_onConfigurationChanged(newConfig);
@@ -1613,25 +1609,27 @@ public class ContentViewCore
     public boolean onHoverEvent(MotionEvent event) {
         TraceEvent.begin("onHoverEvent");
         MotionEvent offset = createOffsetMotionEvent(event);
+        try {
+            if (mBrowserAccessibilityManager != null) {
+                return mBrowserAccessibilityManager.onHoverEvent(offset);
+            }
 
-        if (mBrowserAccessibilityManager != null) {
-            return mBrowserAccessibilityManager.onHoverEvent(offset);
-        }
+            // Work around Android bug where the x, y coordinates of a hover exit
+            // event are incorrect when touch exploration is on.
+            if (mTouchExplorationEnabled && offset.getAction() == MotionEvent.ACTION_HOVER_EXIT) {
+                return true;
+            }
 
-        // Work around Android bug where the x, y coordinates of a hover exit
-        // event are incorrect when touch exploration is on.
-        if (mTouchExplorationEnabled && offset.getAction() == MotionEvent.ACTION_HOVER_EXIT) {
+            mContainerView.removeCallbacks(mFakeMouseMoveRunnable);
+            if (mNativeContentViewCore != 0) {
+                nativeSendMouseMoveEvent(mNativeContentViewCore, offset.getEventTime(),
+                        offset.getX(), offset.getY());
+            }
             return true;
+        } finally {
+            offset.recycle();
+            TraceEvent.end("onHoverEvent");
         }
-
-        mContainerView.removeCallbacks(mFakeMouseMoveRunnable);
-        if (mNativeContentViewCore != 0) {
-            nativeSendMouseMoveEvent(mNativeContentViewCore, offset.getEventTime(),
-                    offset.getX(), offset.getY());
-        }
-        TraceEvent.end("onHoverEvent");
-        offset.recycle();
-        return true;
     }
 
     /**
@@ -1641,6 +1639,8 @@ public class ContentViewCore
         if ((event.getSource() & InputDevice.SOURCE_CLASS_POINTER) != 0) {
             switch (event.getAction()) {
                 case MotionEvent.ACTION_SCROLL:
+                    if (mNativeContentViewCore == 0) return false;
+
                     nativeSendMouseWheelEvent(mNativeContentViewCore, event.getEventTime(),
                             event.getX(), event.getY(),
                             event.getAxisValue(MotionEvent.AXIS_VSCROLL));
@@ -1653,6 +1653,7 @@ public class ContentViewCore
                         @Override
                         public void run() {
                             onHoverEvent(eventFakeMouseMove);
+                            eventFakeMouseMove.recycle();
                         }
                     };
                     mContainerView.postDelayed(mFakeMouseMoveRunnable, 250);
@@ -1851,7 +1852,7 @@ public class ContentViewCore
         if (mNativeContentViewCore != 0) {
             nativeSelectPopupMenuItems(mNativeContentViewCore, indices);
         }
-        mSelectPopupDialog = null;
+        mSelectPopup = null;
     }
 
     /**
@@ -1901,7 +1902,6 @@ public class ContentViewCore
             };
 
             mSelectionHandleController.hideAndDisallowAutomaticShowing();
-            updateInsertionSelectionVisibleBounds();
         }
 
         return mSelectionHandleController;
@@ -1940,7 +1940,6 @@ public class ContentViewCore
             };
 
             mInsertionHandleController.hideAndDisallowAutomaticShowing();
-            updateInsertionSelectionVisibleBounds();
         }
 
         return mInsertionHandleController;
@@ -2053,6 +2052,11 @@ public class ContentViewCore
             }
 
             @Override
+            public boolean isSelectionPassword() {
+                return mImeAdapter.isSelectionPassword();
+            }
+
+            @Override
             public boolean isSelectionEditable() {
                 return mSelectionEditable;
             }
@@ -2116,7 +2120,7 @@ public class ContentViewCore
     }
 
     public void clearSslPreferences() {
-        nativeClearSslPreferences(mNativeContentViewCore);
+        if (mNativeContentViewCore != 0) nativeClearSslPreferences(mNativeContentViewCore);
     }
 
     private boolean isSelectionHandleShowing() {
@@ -2273,7 +2277,6 @@ public class ContentViewCore
         getContentViewClient().onOffsetsForFullscreenChanged(
                 controlsOffsetPix, contentOffsetYPix, overdrawBottomHeightPix);
 
-        mPendingRendererFrame = true;
         if (mBrowserAccessibilityManager != null) {
             mBrowserAccessibilityManager.notifyFrameInfoInitialized();
         }
@@ -2314,20 +2317,25 @@ public class ContentViewCore
      */
     @SuppressWarnings("unused")
     @CalledByNative
-    private void showSelectPopup(String[] items, int[] enabled, boolean multiple,
+    private void showSelectPopup(Rect bounds, String[] items, int[] enabled, boolean multiple,
             int[] selectedIndices) {
         if (mContainerView.getParent() == null || mContainerView.getVisibility() != View.VISIBLE) {
             selectPopupMenuItems(null);
             return;
         }
 
-        hideSelectPopup();
         assert items.length == enabled.length;
         List<SelectPopupItem> popupItems = new ArrayList<SelectPopupItem>();
         for (int i = 0; i < items.length; i++) {
             popupItems.add(new SelectPopupItem(items[i], enabled[i]));
         }
-        mSelectPopupDialog = SelectPopupDialog.show(this, popupItems, multiple, selectedIndices);
+        hidePopups();
+        if (DeviceUtils.isTablet(mContext) && !multiple) {
+            mSelectPopup = new SelectPopupDropdown(this, popupItems, bounds, selectedIndices);
+        } else {
+            mSelectPopup = new SelectPopupDialog(this, popupItems, multiple, selectedIndices);
+        }
+        mSelectPopup.show();
     }
 
     /**
@@ -2335,17 +2343,14 @@ public class ContentViewCore
      */
     @CalledByNative
     private void hideSelectPopup() {
-        if (mSelectPopupDialog != null) {
-            mSelectPopupDialog.hide();
-            mSelectPopupDialog = null;
-        }
+        if (mSelectPopup != null) mSelectPopup.hide();
     }
 
     /**
-     * @return The visible select popup dialog being shown.
+     * @return The visible select popup being shown.
      */
-    public SelectPopupDialog getSelectPopupForTest() {
-        return mSelectPopupDialog;
+    public SelectPopup getSelectPopupForTest() {
+        return mSelectPopup;
     }
 
     @SuppressWarnings("unused")
@@ -2435,32 +2440,6 @@ public class ContentViewCore
         }
         if (isSelectionHandleShowing() || isInsertionHandleShowing()) {
             mPositionObserver.addListener(mPositionListener);
-        }
-    }
-
-    @CalledByNative
-    private void setSelectionRootBounds(Rect bounds) {
-        mTopLeftVisibilityClippingPoint.setLocalDip(bounds.left, bounds.top);
-        mBottomRightVisibilityClippingPoint.setLocalDip(bounds.right, bounds.bottom);
-        updateInsertionSelectionVisibleBounds();
-    }
-
-    private void updateInsertionSelectionVisibleBounds() {
-        if (mSelectionHandleController == null && mInsertionHandleController == null) {
-            return;
-        }
-
-        int x1 = Math.round(mTopLeftVisibilityClippingPoint.getXPix());
-        int y1 = Math.round(mTopLeftVisibilityClippingPoint.getYPix());
-        int x2 = Math.round(mBottomRightVisibilityClippingPoint.getXPix());
-        int y2 = Math.round(mBottomRightVisibilityClippingPoint.getYPix());
-
-        if (mSelectionHandleController != null) {
-            mSelectionHandleController.setVisibleClippingRectangle(x1, y1, x2, y2);
-        }
-
-        if (mInsertionHandleController != null) {
-            mInsertionHandleController.setVisibleClippingRectangle(x1, y1, x2, y2);
         }
     }
 
@@ -2679,8 +2658,7 @@ public class ContentViewCore
             Class<? extends Annotation> requiredAnnotation) {
         if (mNativeContentViewCore != 0 && object != null) {
             mJavaScriptInterfaces.put(name, object);
-            nativeAddJavascriptInterface(mNativeContentViewCore, object, name, requiredAnnotation,
-                    mRetainedJavaScriptObjects);
+            nativeAddJavascriptInterface(mNativeContentViewCore, object, name, requiredAnnotation);
         }
     }
 
@@ -3059,7 +3037,7 @@ public class ContentViewCore
     }
 
     private native long nativeInit(long webContentsPtr,
-            long viewAndroidPtr, long windowAndroidPtr);
+            long viewAndroidPtr, long windowAndroidPtr, HashSet<Object> retainedObjectSet);
 
     @CalledByNative
     private ContentVideoViewClient getContentVideoViewClient() {
@@ -3213,7 +3191,7 @@ public class ContentViewCore
             long nativeContentViewCoreImpl, boolean allow);
 
     private native void nativeAddJavascriptInterface(long nativeContentViewCoreImpl, Object object,
-            String name, Class requiredAnnotation, HashSet<Object> retainedObjectSet);
+            String name, Class requiredAnnotation);
 
     private native void nativeRemoveJavascriptInterface(long nativeContentViewCoreImpl,
             String name);

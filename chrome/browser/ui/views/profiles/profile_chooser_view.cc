@@ -11,6 +11,7 @@
 #include "chrome/browser/profiles/profile_avatar_icon_util.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/profiles/profile_metrics.h"
 #include "chrome/browser/profiles/profile_window.h"
 #include "chrome/browser/profiles/profiles_state.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
@@ -59,7 +60,7 @@ namespace {
 
 const int kFixedMenuWidth = 250;
 const int kButtonHeight = 29;
-const int kProfileAvatarTutorialShowMax = 5;
+const int kProfileAvatarTutorialShowMax = 1;
 const int kFixedGaiaViewHeight = 400;
 const int kFixedGaiaViewWidth = 360;
 const int kFixedAccountRemovalViewWidth = 280;
@@ -300,7 +301,7 @@ class EditableProfileName : public views::LabelButton,
 // A title card with one back button right aligned and one label center aligned.
 class TitleCard : public views::View {
  public:
-   TitleCard(int message_id, views::ButtonListener* listener,
+  TitleCard(int message_id, views::ButtonListener* listener,
              views::ImageButton** back_button) {
     back_button_ = new views::ImageButton(listener);
     back_button_->SetImageAlignment(views::ImageButton::ALIGN_LEFT,
@@ -326,6 +327,37 @@ class TitleCard : public views::View {
     AddChildView(title_label_);
   }
 
+  // Creates a new view that has the |title_card| with padding at the top, an
+  // edge-to-edge separator below, and the specified |view| at the bottom.
+  static views::View* AddPaddedTitleCard(views::View* view,
+                                         TitleCard* title_card,
+                                         int width) {
+    views::View* titled_view = new views::View();
+    views::GridLayout* layout = new views::GridLayout(titled_view);
+    titled_view->SetLayoutManager(layout);
+
+    // Column set 0 is a single column layout with horizontal padding at left
+    // and right, and column set 1 is a single column layout with no padding.
+    views::ColumnSet* columns = layout->AddColumnSet(0);
+    columns->AddPaddingColumn(1, views::kButtonHEdgeMarginNew);
+    int available_width = width - 2 * views::kButtonHEdgeMarginNew;
+    columns->AddColumn(views::GridLayout::FILL, views::GridLayout::FILL, 0,
+        views::GridLayout::FIXED, available_width, available_width);
+    columns->AddPaddingColumn(1, views::kButtonHEdgeMarginNew);
+    layout->AddColumnSet(1)->AddColumn(views::GridLayout::FILL,
+        views::GridLayout::FILL, 0,views::GridLayout::FIXED, width, width);
+
+    layout->StartRowWithPadding(1, 0, 0, views::kButtonVEdgeMarginNew);
+    layout->AddView(title_card);
+    layout->StartRowWithPadding(1, 1, 0, views::kRelatedControlVerticalSpacing);
+    layout->AddView(new views::Separator(views::Separator::HORIZONTAL));
+
+    layout->StartRow(1, 1);
+    layout->AddView(view);
+
+    return titled_view;
+  }
+
  private:
   virtual void Layout() OVERRIDE{
     back_button_->SetBounds(
@@ -333,7 +365,7 @@ class TitleCard : public views::View {
     title_label_->SetBoundsRect(GetContentsBounds());
   }
 
-  virtual gfx::Size GetPreferredSize() OVERRIDE{
+  virtual gfx::Size GetPreferredSize() const OVERRIDE{
     int height = std::max(title_label_->GetPreferredSize().height(),
         back_button_->GetPreferredSize().height());
     return gfx::Size(width(), height);
@@ -359,6 +391,9 @@ void ProfileChooserView::ShowBubble(
     views::BubbleBorder::BubbleAlignment border_alignment,
     const gfx::Rect& anchor_rect,
     Browser* browser) {
+  if (IsShowing())
+    return;
+
   profile_bubble_ = new ProfileChooserView(anchor_view, arrow, anchor_rect,
                                            browser, view_mode);
   views::BubbleDelegateView::CreateBubble(profile_bubble_);
@@ -428,7 +463,7 @@ void ProfileChooserView::ResetView() {
   tutorial_send_feedback_button_ = NULL;
   end_preview_and_relaunch_button_ = NULL;
   end_preview_cancel_button_ = NULL;
-  remove_account_and_relaunch_button_ = NULL;
+  remove_account_button_ = NULL;
   account_removal_cancel_button_ = NULL;
   gaia_signin_cancel_button_ = NULL;
   open_other_profile_indexes_map_.clear();
@@ -541,10 +576,15 @@ void ProfileChooserView::ButtonPressed(views::Button* sender,
     // is indeed shown for the maximum number of times.
     browser_->profile()->GetPrefs()->SetInteger(
         prefs::kProfileAvatarTutorialShown, kProfileAvatarTutorialShowMax + 1);
+
+    ProfileMetrics::LogProfileUpgradeEnrollment(
+        ProfileMetrics::PROFILE_ENROLLMENT_CLOSE_WELCOME_CARD);
     ShowView(BUBBLE_VIEW_MODE_PROFILE_CHOOSER, avatar_menu_.get());
   } else if (sender == tutorial_enable_new_profile_management_button_) {
+    ProfileMetrics::LogProfileUpgradeEnrollment(
+        ProfileMetrics::PROFILE_ENROLLMENT_ACCEPT_NEW_PROFILE_MGMT);
     profiles::EnableNewProfileManagementPreview();
-  } else if (sender == remove_account_and_relaunch_button_) {
+  } else if (sender == remove_account_button_) {
     RemoveAccount();
   } else if (sender == account_removal_cancel_button_) {
     account_id_to_remove_.clear();
@@ -560,8 +600,12 @@ void ProfileChooserView::ButtonPressed(views::Button* sender,
     tutorial_mode_ = TUTORIAL_MODE_SEND_FEEDBACK;
     ShowView(BUBBLE_VIEW_MODE_PROFILE_CHOOSER, avatar_menu_.get());
   } else if (sender == tutorial_send_feedback_button_) {
+    ProfileMetrics::LogProfileUpgradeEnrollment(
+        ProfileMetrics::PROFILE_ENROLLMENT_SEND_FEEDBACK);
     chrome::OpenFeedbackDialog(browser_);
   } else if (sender == end_preview_and_relaunch_button_) {
+    ProfileMetrics::LogProfileUpgradeEnrollment(
+        ProfileMetrics::PROFILE_ENROLLMENT_DISABLE_NEW_PROFILE_MGMT);
     profiles::DisableNewProfileManagementPreview();
   } else if (sender == end_preview_cancel_button_) {
     tutorial_mode_ = TUTORIAL_MODE_SEND_FEEDBACK;
@@ -606,7 +650,7 @@ void ProfileChooserView::RemoveAccount() {
     oauth2_token_service->RevokeCredentials(account_id_to_remove_);
   account_id_to_remove_.clear();
 
-  chrome::AttemptRestart();
+  ShowView(BUBBLE_VIEW_MODE_ACCOUNT_MANAGEMENT, avatar_menu_.get());
 }
 
 void ProfileChooserView::LinkClicked(views::Link* sender, int event_flags) {
@@ -622,6 +666,8 @@ void ProfileChooserView::LinkClicked(views::Link* sender, int event_flags) {
   } else if (sender == add_account_link_) {
     ShowView(BUBBLE_VIEW_MODE_GAIA_ADD_ACCOUNT, avatar_menu_.get());
   } else if (sender == tutorial_learn_more_link_) {
+    ProfileMetrics::LogProfileUpgradeEnrollment(
+        ProfileMetrics::PROFILE_ENROLLMENT_LAUNCH_LEARN_MORE);
     // TODO(guohui): update |learn_more_url| once it is decided.
     const GURL lear_more_url("https://support.google.com/chrome/?hl=en#to");
     chrome::NavigateParams params(
@@ -671,7 +717,8 @@ bool ProfileChooserView::HandleKeyEvent(views::Textfield* sender,
 }
 
 views::View* ProfileChooserView::CreateProfileChooserView(
-    AvatarMenu* avatar_menu, TutorialMode last_tutorial_mode) {
+    AvatarMenu* avatar_menu,
+    TutorialMode last_tutorial_mode) {
   // TODO(guohui, noms): the view should be customized based on whether new
   // profile management preview is enabled or not.
 
@@ -707,6 +754,12 @@ views::View* ProfileChooserView::CreateProfileChooserView(
   }
 
   if (tutorial_view) {
+    // Be sure not to track the tutorial display on View refresh, and only count
+    // the preview-promo view, shown when New Profile Management is off.
+    if (tutorial_mode_ != last_tutorial_mode && !is_new_profile_management) {
+      ProfileMetrics::LogProfileUpgradeEnrollment(
+          ProfileMetrics::PROFILE_ENROLLMENT_SHOW_PREVIEW_PROMO);
+    }
     layout->StartRow(1, 0);
     layout->AddView(tutorial_view);
   }
@@ -736,7 +789,7 @@ views::View* ProfileChooserView::CreateProfileChooserView(
   layout->AddView(new views::Separator(views::Separator::HORIZONTAL));
 
   // Option buttons. Only available with the new profile management flag.
-  if (switches::IsNewProfileManagement()) {
+  if (option_buttons_view) {
     layout->StartRow(0, 0);
     layout->AddView(option_buttons_view);
   }
@@ -812,7 +865,7 @@ views::View* ProfileChooserView::CreateTutorialView(
   title_label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
   title_label->SetAutoColorReadabilityEnabled(false);
   title_label->SetEnabledColor(SK_ColorWHITE);
-  title_label ->SetFontList(ui::ResourceBundle::GetSharedInstance().GetFontList(
+  title_label->SetFontList(ui::ResourceBundle::GetSharedInstance().GetFontList(
       ui::ResourceBundle::MediumFont));
   layout->StartRow(1, 0);
   layout->AddView(title_label);
@@ -904,7 +957,11 @@ views::View* ProfileChooserView::CreateCurrentProfileView(
         views::ImageButton::ALIGN_LEFT, views::ImageButton::ALIGN_MIDDLE);
     ui::ResourceBundle* rb = &ui::ResourceBundle::GetSharedInstance();
     question_mark_button_->SetImage(views::ImageButton::STATE_NORMAL,
-                                    rb->GetImageSkiaNamed(IDR_QUESTION_MARK));
+        rb->GetImageSkiaNamed(IDR_ICON_PROFILES_MENU_QUESTION_STABLE));
+    question_mark_button_->SetImage(views::ImageButton::STATE_HOVERED,
+        rb->GetImageSkiaNamed(IDR_ICON_PROFILES_MENU_QUESTION_HOVER));
+    question_mark_button_->SetImage(views::ImageButton::STATE_PRESSED,
+        rb->GetImageSkiaNamed(IDR_ICON_PROFILES_MENU_QUESTION_SELECT));
     gfx::Size preferred_size = question_mark_button_->GetPreferredSize();
     question_mark_button_->SetBounds(
         0, 0, preferred_size.width(), preferred_size.height());
@@ -996,6 +1053,9 @@ views::View* ProfileChooserView::CreateOtherProfilesView(
 }
 
 views::View* ProfileChooserView::CreateOptionsView(bool enable_lock) {
+  if (!switches::IsNewProfileManagement())
+    return NULL;
+
   views::View* view = new views::View();
   views::GridLayout* layout;
 
@@ -1085,49 +1145,44 @@ void ProfileChooserView::CreateAccountButton(views::GridLayout* layout,
                                              bool is_primary_account,
                                              int width) {
   ui::ResourceBundle* rb = &ui::ResourceBundle::GetSharedInstance();
-  const gfx::ImageSkia* menu_marker =
+  const gfx::ImageSkia* default_image =
       rb->GetImageNamed(IDR_CLOSE_1).ToImageSkia();
+  int kDeleteButtonWidth = default_image->width();
+  int available_width = width -
+      kDeleteButtonWidth - views::kButtonHEdgeMarginNew;
 
   views::LabelButton* email_button = new BackgroundColorHoverButton(
-      this,
+      NULL,
       gfx::ElideEmail(base::UTF8ToUTF16(account),
                       rb->GetFontList(ui::ResourceBundle::BaseFont),
-                      width - menu_marker->width()),
+                      available_width),
       gfx::ImageSkia(),
       gfx::ImageSkia());
   layout->StartRow(1, 0);
   layout->AddView(email_button);
 
+  // Delete button.
+  views::ImageButton* delete_button = new views::ImageButton(this);
+  delete_button->SetImageAlignment(views::ImageButton::ALIGN_RIGHT,
+                                   views::ImageButton::ALIGN_MIDDLE);
+  delete_button->SetImage(views::ImageButton::STATE_NORMAL,
+                          default_image);
+  delete_button->SetImage(views::ImageButton::STATE_HOVERED,
+                          rb->GetImageSkiaNamed(IDR_CLOSE_1_H));
+  delete_button->SetImage(views::ImageButton::STATE_PRESSED,
+                          rb->GetImageSkiaNamed(IDR_CLOSE_1_P));
+  delete_button->SetBounds(
+      available_width, 0, kDeleteButtonWidth, kButtonHeight);
+
+  email_button->set_notify_enter_exit_on_child(true);
+  email_button->AddChildView(delete_button);
+
   // Save the original email address, as the button text could be elided.
-  current_profile_accounts_map_[email_button] = account;
+  current_profile_accounts_map_[delete_button] = account;
 }
 
 views::View* ProfileChooserView::CreateGaiaSigninView(
     bool add_secondary_account) {
-  views::View* view = new views::View();
-  views::GridLayout* layout =
-      CreateSingleColumnLayout(view, kFixedGaiaViewWidth);
-
-  // Adds title.
-  views::View* padded_title = new views::View();
-  int available_width = kFixedGaiaViewWidth - 2 * views::kButtonHEdgeMarginNew;
-  views::GridLayout* padded_layout = CreateSingleColumnLayout(
-      padded_title, available_width);
-  padded_layout->SetInsets(views::kButtonVEdgeMarginNew,
-                           views::kButtonHEdgeMarginNew,
-                           views::kButtonVEdgeMarginNew,
-                           views::kButtonHEdgeMarginNew);
-  padded_layout->StartRow(1, 0);
-  padded_layout->AddView(new TitleCard(
-      add_secondary_account ? IDS_PROFILES_GAIA_ADD_ACCOUNT_TITLE :
-                              IDS_PROFILES_GAIA_SIGNIN_TITLE,
-      this, &gaia_signin_cancel_button_));
-
-  layout->StartRow(1, 0);
-  layout->AddView(padded_title);
-  layout->StartRow(1, 0);
-  layout->AddView(new views::Separator(views::Separator::HORIZONTAL));
-
   // Adds Gaia signin webview
   Profile* profile = browser_->profile();
   views::WebView* web_view = new views::WebView(profile);
@@ -1140,27 +1195,22 @@ views::View* ProfileChooserView::CreateGaiaSigninView(
   web_view->SetPreferredSize(
       gfx::Size(kFixedGaiaViewWidth, kFixedGaiaViewHeight));
 
-  layout->StartRow(1, 0);
-  layout->AddView(web_view);
-
-  return view;
+  TitleCard* title_card = new TitleCard(
+      add_secondary_account ? IDS_PROFILES_GAIA_ADD_ACCOUNT_TITLE :
+                              IDS_PROFILES_GAIA_SIGNIN_TITLE,
+      this, &gaia_signin_cancel_button_);
+  return TitleCard::AddPaddedTitleCard(
+      web_view, title_card, kFixedGaiaViewWidth);
 }
 
 views::View* ProfileChooserView::CreateAccountRemovalView() {
   views::View* view = new views::View();
   views::GridLayout* layout = CreateSingleColumnLayout(
       view, kFixedAccountRemovalViewWidth - 2 * views::kButtonHEdgeMarginNew);
-  layout->SetInsets(views::kButtonVEdgeMarginNew,
+  layout->SetInsets(0,
                     views::kButtonHEdgeMarginNew,
                     views::kButtonVEdgeMarginNew,
                     views::kButtonHEdgeMarginNew);
-
-  // Adds title.
-  layout->StartRow(1, 0);
-  layout->AddView(new TitleCard(IDS_PROFILES_ACCOUNT_REMOVAL_TITLE, this,
-                                &account_removal_cancel_button_));
-  layout->StartRowWithPadding(1, 0, 0, views::kRelatedControlVerticalSpacing);
-  layout->AddView(new views::Separator(views::Separator::HORIZONTAL));
 
   const std::string& primary_account = SigninManagerFactory::GetForProfile(
       browser_->profile())->GetAuthenticatedUsername();
@@ -1197,18 +1247,21 @@ views::View* ProfileChooserView::CreateAccountRemovalView() {
 
   // Adds button.
   if (!is_primary_account) {
-    remove_account_and_relaunch_button_ = new views::BlueButton(
+    remove_account_button_ = new views::BlueButton(
         this, l10n_util::GetStringUTF16(IDS_PROFILES_ACCOUNT_REMOVAL_BUTTON));
-    remove_account_and_relaunch_button_->SetHorizontalAlignment(
+    remove_account_button_->SetHorizontalAlignment(
         gfx::ALIGN_CENTER);
     layout->StartRowWithPadding(
         1, 0, 0, views::kUnrelatedControlVerticalSpacing);
-    layout->AddView(remove_account_and_relaunch_button_);
+    layout->AddView(remove_account_button_);
   } else {
     layout->AddPaddingRow(0, views::kUnrelatedControlVerticalSpacing);
   }
 
-  return view;
+  TitleCard* title_card = new TitleCard(IDS_PROFILES_ACCOUNT_REMOVAL_TITLE,
+      this, &account_removal_cancel_button_);
+  return TitleCard::AddPaddedTitleCard(view, title_card,
+      kFixedAccountRemovalViewWidth);
 }
 
 views::View* ProfileChooserView::CreateNewProfileManagementPreviewView() {
@@ -1226,17 +1279,10 @@ views::View* ProfileChooserView::CreateEndPreviewView() {
   views::View* view = new views::View();
   views::GridLayout* layout = CreateSingleColumnLayout(
       view, kFixedAccountRemovalViewWidth - 2 * views::kButtonHEdgeMarginNew);
-  layout->SetInsets(views::kButtonVEdgeMarginNew,
+  layout->SetInsets(0,
                     views::kButtonHEdgeMarginNew,
                     views::kButtonVEdgeMarginNew,
                     views::kButtonHEdgeMarginNew);
-
-  // Adds title.
-  layout->StartRow(1, 0);
-  layout->AddView(new TitleCard(IDS_PROFILES_END_PREVIEW, this,
-                                &end_preview_cancel_button_));
-  layout->StartRowWithPadding(1, 0, 0, views::kRelatedControlVerticalSpacing);
-  layout->AddView(new views::Separator(views::Separator::HORIZONTAL));
 
   // Adds main text.
   views::Label* content_label = new views::Label(
@@ -1259,6 +1305,9 @@ views::View* ProfileChooserView::CreateEndPreviewView() {
       1, 0, 0, views::kUnrelatedControlVerticalSpacing);
   layout->AddView(end_preview_and_relaunch_button_);
 
-  return view;
+  TitleCard* title_card = new TitleCard(
+      IDS_PROFILES_END_PREVIEW, this, &end_preview_cancel_button_);
+  return TitleCard::AddPaddedTitleCard(
+      view, title_card, kFixedAccountRemovalViewWidth);
 }
 

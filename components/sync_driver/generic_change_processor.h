@@ -28,6 +28,7 @@ typedef std::vector<syncer::SyncData> SyncDataList;
 }  // namespace syncer
 
 namespace browser_sync {
+class SyncApiComponentFactory;
 
 // Datatype agnostic change processor. One instance of GenericChangeProcessor
 // is created for each datatype and lives on the datatype's thread. It then
@@ -39,6 +40,7 @@ namespace browser_sync {
 // be used on the same thread in which it was created.
 class GenericChangeProcessor : public ChangeProcessor,
                                public syncer::SyncChangeProcessor,
+                               public syncer::AttachmentService::Delegate,
                                public base::NonThreadSafe {
  public:
   // Create a change processor and connect it to the syncer.
@@ -47,7 +49,7 @@ class GenericChangeProcessor : public ChangeProcessor,
       const base::WeakPtr<syncer::SyncableService>& local_service,
       const base::WeakPtr<syncer::SyncMergeResult>& merge_result,
       syncer::UserShare* user_share,
-      scoped_ptr<syncer::AttachmentService> attachment_service);
+      SyncApiComponentFactory* sync_factory);
   virtual ~GenericChangeProcessor();
 
   // ChangeProcessor interface.
@@ -70,6 +72,10 @@ class GenericChangeProcessor : public ChangeProcessor,
       syncer::ModelType type,
       syncer::SyncChangeProcessor::ContextRefreshStatus refresh_status,
       const std::string& context) OVERRIDE;
+
+  // syncer::AttachmentService::Delegate implementation.
+  virtual void OnAttachmentUploaded(
+      const syncer::AttachmentId& attachment_id) OVERRIDE;
 
   // Similar to above, but returns a SyncError for use by direct clients
   // of GenericChangeProcessor that may need more error visibility.
@@ -98,18 +104,27 @@ class GenericChangeProcessor : public ChangeProcessor,
   virtual syncer::UserShare* share_handle() const OVERRIDE;
 
  private:
-  // Helper methods for acting on changes coming from the datatype. These are
-  // logically part of ProcessSyncChanges.
+  // Logically part of ProcessSyncChanges.
+  //
+  // |new_attachments| is an output parameter containing newly added attachments
+  // that need to be stored.  This method will append to it.
   syncer::SyncError HandleActionAdd(const syncer::SyncChange& change,
                                     const std::string& type_str,
                                     const syncer::ModelType& type,
                                     const syncer::WriteTransaction& trans,
-                                    syncer::WriteNode* sync_node);
+                                    syncer::WriteNode* sync_node,
+                                    syncer::AttachmentList* new_attachments);
+
+  // Logically part of ProcessSyncChanges.
+  //
+  // |new_attachments| is an output parameter containing newly added attachments
+  // that need to be stored.  This method will append to it.
   syncer::SyncError HandleActionUpdate(const syncer::SyncChange& change,
                                        const std::string& type_str,
                                        const syncer::ModelType& type,
                                        const syncer::WriteTransaction& trans,
-                                       syncer::WriteNode* sync_node);
+                                       syncer::WriteNode* sync_node,
+                                       syncer::AttachmentList* new_attachments);
 
   // The SyncableService this change processor will forward changes on to.
   const base::WeakPtr<syncer::SyncableService> local_service_;

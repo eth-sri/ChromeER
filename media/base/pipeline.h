@@ -13,6 +13,7 @@
 #include "base/threading/thread_checker.h"
 #include "base/time/default_tick_clock.h"
 #include "media/base/audio_renderer.h"
+#include "media/base/buffering_state.h"
 #include "media/base/demuxer.h"
 #include "media/base/media_export.h"
 #include "media/base/pipeline_status.h"
@@ -58,14 +59,13 @@ typedef base::Callback<void(PipelineMetadata)> PipelineMetadataCB;
 //   [ InitXXX (for each filter) ]      [ Stopping ]
 //         |                                 |
 //         V                                 V
-//   [ InitPreroll ]                    [ Stopped ]
+//   [ InitPrerolling ]                 [ Stopped ]
 //         |
 //         V
-//   [ Starting ] <-- [ Seeking ]
+//   [ Playing ] <-- [ Seeking ]
 //         |               ^
-//         V               |
-//   [ Started ] ----------'
-//                 Seek()
+//         `---------------'
+//              Seek()
 //
 // Initialization is a series of state transitions from "Created" through each
 // filter initialization state.  When all filter initialization states have
@@ -164,7 +164,7 @@ class MEDIA_EXPORT Pipeline : public DemuxerHost {
   base::TimeDelta GetMediaTime() const;
 
   // Get approximate time ranges of buffered media.
-  Ranges<base::TimeDelta> GetBufferedTimeRanges();
+  Ranges<base::TimeDelta> GetBufferedTimeRanges() const;
 
   // Get the duration of the media in microseconds.  If the duration has not
   // been determined yet, then returns 0.
@@ -172,7 +172,7 @@ class MEDIA_EXPORT Pipeline : public DemuxerHost {
 
   // Return true if loading progress has been made since the last time this
   // method was called.
-  bool DidLoadingProgress() const;
+  bool DidLoadingProgress();
 
   // Gets the current pipeline statistics.
   PipelineStatistics GetStatistics() const;
@@ -182,8 +182,6 @@ class MEDIA_EXPORT Pipeline : public DemuxerHost {
 
  private:
   FRIEND_TEST_ALL_PREFIXES(PipelineTest, GetBufferedTimeRanges);
-  FRIEND_TEST_ALL_PREFIXES(PipelineTest, DisableAudioRenderer);
-  FRIEND_TEST_ALL_PREFIXES(PipelineTest, DisableAudioRendererDuringInit);
   FRIEND_TEST_ALL_PREFIXES(PipelineTest, EndedCallback);
   FRIEND_TEST_ALL_PREFIXES(PipelineTest, AudioStreamShorterThanVideo);
   friend class MediaLog;
@@ -196,8 +194,7 @@ class MEDIA_EXPORT Pipeline : public DemuxerHost {
     kInitVideoRenderer,
     kInitPrerolling,
     kSeeking,
-    kStarting,
-    kStarted,
+    kPlaying,
     kStopping,
     kStopped,
   };
@@ -234,9 +231,6 @@ class MEDIA_EXPORT Pipeline : public DemuxerHost {
   // Callback executed by filters to update statistics.
   void OnUpdateStatistics(const PipelineStatistics& stats);
 
-  // Callback executed by audio renderer when it has been disabled.
-  void OnAudioDisabled();
-
   // Callback executed by audio renderer to update clock time.
   void OnAudioTimeUpdate(base::TimeDelta time, base::TimeDelta max_time);
 
@@ -269,9 +263,6 @@ class MEDIA_EXPORT Pipeline : public DemuxerHost {
   void DoVideoRendererEnded();
   void DoTextRendererEnded();
   void RunEndedCallbackIfNeeded();
-
-  // Carries out disabling the audio renderer.
-  void AudioDisabledTask();
 
   // Carries out adding a new text stream to the text renderer.
   void AddTextStreamTask(DemuxerStream* text_stream,
@@ -313,16 +304,27 @@ class MEDIA_EXPORT Pipeline : public DemuxerHost {
   // indepentent from seeking.
   void DoSeek(base::TimeDelta seek_timestamp, const PipelineStatusCB& done_cb);
 
-  // Updates playback rate and volume and initiates an asynchronous play call
-  // sequence executing |done_cb| with the final status when completed.
-  void DoPlay(const PipelineStatusCB& done_cb);
-
   // Initiates an asynchronous pause-flush-stop call sequence executing
   // |done_cb| when completed.
   void DoStop(const PipelineStatusCB& done_cb);
   void OnStopCompleted(PipelineStatus status);
 
   void OnAudioUnderflow();
+
+  // Collection of callback methods and helpers for tracking changes in
+  // buffering state and transition from paused/underflow states and playing
+  // states.
+  //
+  // While in the kPlaying state:
+  //   - A waiting to non-waiting transition indicates preroll has completed
+  //     and StartPlayback() should be called
+  //   - A non-waiting to waiting transition indicates underflow has occurred
+  //     and StartWaitingForEnoughData() should be called
+  void BufferingStateChanged(BufferingState* buffering_state,
+                             BufferingState new_buffering_state);
+  bool WaitingForEnoughData() const;
+  void StartWaitingForEnoughData();
+  void StartPlayback();
 
   void StartClockIfWaitingForTimeUpdate_Locked();
 
@@ -343,7 +345,7 @@ class MEDIA_EXPORT Pipeline : public DemuxerHost {
 
   // True when AddBufferedTimeRange() has been called more recently than
   // DidLoadingProgress().
-  mutable bool did_loading_progress_;
+  bool did_loading_progress_;
 
   // Current volume level (from 0.0f to 1.0f).  This value is set immediately
   // via SetVolume() and a task is dispatched on the task runner to notify the
@@ -385,8 +387,8 @@ class MEDIA_EXPORT Pipeline : public DemuxerHost {
   bool video_ended_;
   bool text_ended_;
 
-  // Set to true in DisableAudioRendererTask().
-  bool audio_disabled_;
+  BufferingState audio_buffering_state_;
+  BufferingState video_buffering_state_;
 
   // Temporary callback used for Start() and Seek().
   PipelineStatusCB seek_cb_;

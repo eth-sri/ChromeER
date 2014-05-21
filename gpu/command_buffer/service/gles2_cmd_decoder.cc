@@ -278,15 +278,6 @@ static bool StringIsValidForGLES(const char* str) {
   return true;
 }
 
-// Wrapper for glEnable/glDisable that doesn't suck.
-static void EnableDisable(GLenum pname, bool enable) {
-  if (enable) {
-    glEnable(pname);
-  } else {
-    glDisable(pname);
-  }
-}
-
 // This class prevents any GL errors that occur when it is in scope from
 // being reported to the client.
 class ScopedGLErrorSuppressor {
@@ -661,6 +652,7 @@ class GLES2DecoderImpl : public GLES2Decoder,
   virtual void ResetAsyncPixelTransferManagerForTest() OVERRIDE;
   virtual void SetAsyncPixelTransferManagerForTest(
       AsyncPixelTransferManager* manager) OVERRIDE;
+  virtual void SetIgnoreCachedStateForTest(bool ignore) OVERRIDE;
   void ProcessFinishedAsyncTransfers();
 
   virtual bool GetServiceTextureId(uint32 client_texture_id,
@@ -1932,7 +1924,7 @@ ScopedResolvedFrameBufferBinder::ScopedResolvedFrameBufferBinder(
   glBindFramebufferEXT(GL_DRAW_FRAMEBUFFER_EXT, targetid);
   const int width = decoder_->offscreen_size_.width();
   const int height = decoder_->offscreen_size_.height();
-  glDisable(GL_SCISSOR_TEST);
+  decoder->state_.SetDeviceCapabilityState(GL_SCISSOR_TEST, false);
   decoder->BlitFramebufferHelper(0,
                                  0,
                                  width,
@@ -1954,7 +1946,7 @@ ScopedResolvedFrameBufferBinder::~ScopedResolvedFrameBufferBinder() {
       "ScopedResolvedFrameBufferBinder::dtor", decoder_->GetErrorState());
   decoder_->RestoreCurrentFramebufferBindings();
   if (decoder_->state_.enable_flags.scissor_test) {
-    glEnable(GL_SCISSOR_TEST);
+    decoder_->state_.SetDeviceCapabilityState(GL_SCISSOR_TEST, true);
   }
 }
 
@@ -2688,6 +2680,7 @@ Capabilities GLES2DecoderImpl::GetCapabilities() {
 #endif
 
   caps.post_sub_buffer = supports_post_sub_buffer_;
+  caps.map_image = !!image_manager();
 
   return caps;
 }
@@ -3070,12 +3063,12 @@ bool GLES2DecoderImpl::CheckFramebufferValid(
     if (backbuffer_needs_clear_bits_) {
       glClearColor(0, 0, 0, (GLES2Util::GetChannelsForFormat(
           offscreen_target_color_format_) & 0x0008) != 0 ? 0 : 1);
-      glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+      state_.SetDeviceColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
       glClearStencil(0);
       glStencilMask(-1);
       glClearDepth(1.0f);
-      glDepthMask(true);
-      glDisable(GL_SCISSOR_TEST);
+      state_.SetDeviceDepthMask(GL_TRUE);
+      state_.SetDeviceCapabilityState(GL_SCISSOR_TEST, false);
       glClear(backbuffer_needs_clear_bits_);
       backbuffer_needs_clear_bits_ = 0;
       RestoreClearState();
@@ -3578,13 +3571,13 @@ bool GLES2DecoderImpl::ResizeOffscreenFrameBuffer(const gfx::Size& size) {
     ScopedFrameBufferBinder binder(this, offscreen_target_frame_buffer_->id());
     glClearColor(0, 0, 0, (GLES2Util::GetChannelsForFormat(
         offscreen_target_color_format_) & 0x0008) != 0 ? 0 : 1);
-    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    state_.SetDeviceColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     glClearStencil(0);
-    glStencilMaskSeparate(GL_FRONT, -1);
-    glStencilMaskSeparate(GL_BACK, -1);
+    state_.SetDeviceStencilMaskSeparate(GL_FRONT, -1);
+    state_.SetDeviceStencilMaskSeparate(GL_BACK, -1);
     glClearDepth(0);
-    glDepthMask(GL_TRUE);
-    glDisable(GL_SCISSOR_TEST);
+    state_.SetDeviceDepthMask(GL_TRUE);
+    state_.SetDeviceCapabilityState(GL_SCISSOR_TEST, false);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
     RestoreClearState();
   }
@@ -3847,23 +3840,25 @@ bool GLES2DecoderImpl::BoundFramebufferHasStencilAttachment() {
 
 void GLES2DecoderImpl::ApplyDirtyState() {
   if (framebuffer_state_.clear_state_dirty) {
-    glColorMask(
-        state_.color_mask_red, state_.color_mask_green, state_.color_mask_blue,
-        state_.color_mask_alpha &&
-            BoundFramebufferHasColorAttachmentWithAlpha(true));
+    bool have_alpha = BoundFramebufferHasColorAttachmentWithAlpha(true);
+    state_.SetDeviceColorMask(state_.color_mask_red,
+                              state_.color_mask_green,
+                              state_.color_mask_blue,
+                              state_.color_mask_alpha && have_alpha);
+
     bool have_depth = BoundFramebufferHasDepthAttachment();
-    glDepthMask(state_.depth_mask && have_depth);
-    EnableDisable(GL_DEPTH_TEST, state_.enable_flags.depth_test && have_depth);
+    state_.SetDeviceDepthMask(state_.depth_mask && have_depth);
+
     bool have_stencil = BoundFramebufferHasStencilAttachment();
-    glStencilMaskSeparate(
+    state_.SetDeviceStencilMaskSeparate(
         GL_FRONT, have_stencil ? state_.stencil_front_writemask : 0);
-    glStencilMaskSeparate(
+    state_.SetDeviceStencilMaskSeparate(
         GL_BACK, have_stencil ? state_.stencil_back_writemask : 0);
-    EnableDisable(
+
+    state_.SetDeviceCapabilityState(
+        GL_DEPTH_TEST, state_.enable_flags.depth_test && have_depth);
+    state_.SetDeviceCapabilityState(
         GL_STENCIL_TEST, state_.enable_flags.stencil_test && have_stencil);
-    EnableDisable(GL_CULL_FACE, state_.enable_flags.cull_face);
-    EnableDisable(GL_SCISSOR_TEST, state_.enable_flags.scissor_test);
-    EnableDisable(GL_BLEND, state_.enable_flags.blend);
     framebuffer_state_.clear_state_dirty = false;
   }
 }
@@ -3934,6 +3929,10 @@ void GLES2DecoderImpl::ClearAllAttributes() const {
 
 void GLES2DecoderImpl::RestoreAllAttributes() const {
   state_.RestoreVertexAttribs();
+}
+
+void GLES2DecoderImpl::SetIgnoreCachedStateForTest(bool ignore) {
+  state_.SetIgnoreCachedStateForTest(ignore);
 }
 
 void GLES2DecoderImpl::OnFboChanged() const {
@@ -4117,13 +4116,6 @@ void GLES2DecoderImpl::DoDisableVertexAttribArray(GLuint index) {
 void GLES2DecoderImpl::DoDiscardFramebufferEXT(GLenum target,
                                                GLsizei numAttachments,
                                                const GLenum* attachments) {
-  if (!features().ext_discard_framebuffer) {
-    LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION,
-                       "glDiscardFramebufferEXT",
-                       "function not available");
-    return;
-  }
-
   Framebuffer* framebuffer =
       GetFramebufferInfoForTarget(GL_FRAMEBUFFER);
 
@@ -4719,7 +4711,7 @@ error::Error GLES2DecoderImpl::HandleBindAttribLocation(
   if (name == NULL) {
     return error::kOutOfBounds;
   }
-  String name_str(name, name_size);
+  std::string name_str(name, name_size);
   DoBindAttribLocation(program, index, name_str.c_str());
   return error::kNoError;
 }
@@ -4784,7 +4776,7 @@ error::Error GLES2DecoderImpl::HandleBindUniformLocationCHROMIUM(
   if (name == NULL) {
     return error::kOutOfBounds;
   }
-  String name_str(name, name_size);
+  std::string name_str(name, name_size);
   DoBindUniformLocationCHROMIUM(program, location, name_str.c_str());
   return error::kNoError;
 }
@@ -5029,7 +5021,7 @@ void GLES2DecoderImpl::ClearUnclearedAttachments(
         (GLES2Util::GetChannelsForFormat(
              framebuffer->GetColorAttachmentFormat()) & 0x0008) != 0 ? 0.0f :
                                                                        1.0f);
-    glColorMask(true, true, true, true);
+    state_.SetDeviceColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     clear_bits |= GL_COLOR_BUFFER_BIT;
   }
 
@@ -5043,11 +5035,11 @@ void GLES2DecoderImpl::ClearUnclearedAttachments(
   if (framebuffer->HasUnclearedAttachment(GL_DEPTH_ATTACHMENT) ||
       framebuffer->HasUnclearedAttachment(GL_DEPTH_STENCIL_ATTACHMENT)) {
     glClearDepth(1.0f);
-    glDepthMask(true);
+    state_.SetDeviceDepthMask(GL_TRUE);
     clear_bits |= GL_DEPTH_BUFFER_BIT;
   }
 
-  glDisable(GL_SCISSOR_TEST);
+  state_.SetDeviceCapabilityState(GL_SCISSOR_TEST, false);
   glClear(clear_bits);
 
   framebuffer_manager()->MarkAttachmentsAsCleared(
@@ -5073,7 +5065,7 @@ void GLES2DecoderImpl::RestoreClearState() {
   glClearStencil(state_.stencil_clear);
   glClearDepth(state_.depth_clear);
   if (state_.enable_flags.scissor_test) {
-    glEnable(GL_SCISSOR_TEST);
+    state_.SetDeviceCapabilityState(GL_SCISSOR_TEST, true);
   }
 }
 
@@ -5101,12 +5093,6 @@ void GLES2DecoderImpl::DoFramebufferTexture2D(
 void GLES2DecoderImpl::DoFramebufferTexture2DMultisample(
     GLenum target, GLenum attachment, GLenum textarget,
     GLuint client_texture_id, GLint level, GLsizei samples) {
-  if (!features().multisampled_render_to_texture) {
-    LOCAL_SET_GL_ERROR(
-        GL_INVALID_OPERATION,
-        "glFramebufferTexture2DMultisample", "function not available");
-    return;
-  }
   DoFramebufferTexture2DCommon(
     "glFramebufferTexture2DMultisample", target, attachment,
     textarget, client_texture_id, level, samples);
@@ -5239,21 +5225,16 @@ void GLES2DecoderImpl::DoBlitFramebufferCHROMIUM(
     GLint dstX0, GLint dstY0, GLint dstX1, GLint dstY1,
     GLbitfield mask, GLenum filter) {
   DCHECK(!ShouldDeferReads() && !ShouldDeferDraws());
-  if (!features().chromium_framebuffer_multisample) {
-    LOCAL_SET_GL_ERROR(
-        GL_INVALID_OPERATION,
-        "glBlitFramebufferCHROMIUM", "function not available");
-    return;
-  }
 
   if (!CheckBoundFramebuffersValid("glBlitFramebufferCHROMIUM")) {
     return;
   }
 
-  glDisable(GL_SCISSOR_TEST);
+  state_.SetDeviceCapabilityState(GL_SCISSOR_TEST, false);
   BlitFramebufferHelper(
       srcX0, srcY0, srcX1, srcY1, dstX0, dstY0, dstX1, dstY1, mask, filter);
-  EnableDisable(GL_SCISSOR_TEST, state_.enable_flags.scissor_test);
+  state_.SetDeviceCapabilityState(GL_SCISSOR_TEST,
+                                  state_.enable_flags.scissor_test);
 }
 
 void GLES2DecoderImpl::RenderbufferStorageMultisampleHelper(
@@ -5343,13 +5324,6 @@ bool GLES2DecoderImpl::ValidateRenderbufferStorageMultisample(
 void GLES2DecoderImpl::DoRenderbufferStorageMultisampleCHROMIUM(
     GLenum target, GLsizei samples, GLenum internalformat,
     GLsizei width, GLsizei height) {
-  if (!features().chromium_framebuffer_multisample) {
-    LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION,
-                       "glRenderbufferStorageMultisampleCHROMIUM",
-                       "function not available");
-    return;
-  }
-
   Renderbuffer* renderbuffer = GetRenderbufferInfoForTarget(GL_RENDERBUFFER);
   if (!renderbuffer) {
     LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION,
@@ -5396,13 +5370,6 @@ void GLES2DecoderImpl::DoRenderbufferStorageMultisampleCHROMIUM(
 void GLES2DecoderImpl::DoRenderbufferStorageMultisampleEXT(
     GLenum target, GLsizei samples, GLenum internalformat,
     GLsizei width, GLsizei height) {
-  if (!features().multisampled_render_to_texture) {
-    LOCAL_SET_GL_ERROR(
-        GL_INVALID_OPERATION,
-        "glRenderbufferStorageMultisampleEXT", "function not available");
-    return;
-  }
-
   Renderbuffer* renderbuffer = GetRenderbufferInfoForTarget(GL_RENDERBUFFER);
   if (!renderbuffer) {
     LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION,
@@ -5492,11 +5459,11 @@ bool GLES2DecoderImpl::VerifyMultisampleRenderbufferIntegrity(
   GLboolean scissor_enabled = false;
   glGetBooleanv(GL_SCISSOR_TEST, &scissor_enabled);
   if (scissor_enabled)
-    glDisable(GL_SCISSOR_TEST);
+    state_.SetDeviceCapabilityState(GL_SCISSOR_TEST, false);
 
-  GLboolean color_mask[4] = {true, true, true, true};
+  GLboolean color_mask[4] = {GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE};
   glGetBooleanv(GL_COLOR_WRITEMASK, color_mask);
-  glColorMask(true, true, true, true);
+  state_.SetDeviceColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 
   GLfloat clear_color[4] = {0.0f, 0.0f, 0.0f, 0.0f};
   glGetFloatv(GL_COLOR_CLEAR_VALUE, clear_color);
@@ -5525,9 +5492,10 @@ bool GLES2DecoderImpl::VerifyMultisampleRenderbufferIntegrity(
 
   // Restore cached state.
   if (scissor_enabled)
-    glEnable(GL_SCISSOR_TEST);
+    state_.SetDeviceCapabilityState(GL_SCISSOR_TEST, true);
 
-  glColorMask(color_mask[0], color_mask[1], color_mask[2], color_mask[3]);
+  state_.SetDeviceColorMask(
+      color_mask[0], color_mask[1], color_mask[2], color_mask[3]);
   glClearColor(clear_color[0], clear_color[1], clear_color[2], clear_color[3]);
   glBindFramebufferEXT(GL_DRAW_FRAMEBUFFER, draw_framebuffer);
   glBindFramebufferEXT(GL_READ_FRAMEBUFFER, read_framebuffer);
@@ -7632,7 +7600,7 @@ error::Error GLES2DecoderImpl::HandleGetAttribLocation(
   if (!name) {
     return error::kOutOfBounds;
   }
-  String name_str(name, name_size);
+  std::string name_str(name, name_size);
   return GetAttribLocationHelper(
     c.program, c.location_shm_id, c.location_shm_offset, name_str);
 }
@@ -7691,7 +7659,7 @@ error::Error GLES2DecoderImpl::HandleGetUniformLocation(
   if (!name) {
     return error::kOutOfBounds;
   }
-  String name_str(name, name_size);
+  std::string name_str(name, name_size);
   return GetUniformLocationHelper(
     c.program, c.location_shm_id, c.location_shm_offset, name_str);
 }
@@ -7843,8 +7811,8 @@ bool GLES2DecoderImpl::ClearLevel(
     glClearStencil(0);
     glStencilMask(-1);
     glClearDepth(1.0f);
-    glDepthMask(true);
-    glDisable(GL_SCISSOR_TEST);
+    state_.SetDeviceDepthMask(GL_TRUE);
+    state_.SetDeviceCapabilityState(GL_SCISSOR_TEST, false);
     glClear(GL_DEPTH_BUFFER_BIT | (have_stencil ? GL_STENCIL_BUFFER_BIT : 0));
 
     RestoreClearState();
@@ -8286,7 +8254,8 @@ error::Error GLES2DecoderImpl::HandleCompressedTexSubImage2DBucket(
 
 error::Error GLES2DecoderImpl::HandleTexImage2D(
     uint32 immediate_data_size, const cmds::TexImage2D& c) {
-  TRACE_EVENT0("gpu", "GLES2DecoderImpl::HandleTexImage2D");
+  TRACE_EVENT2("gpu", "GLES2DecoderImpl::HandleTexImage2D",
+      "width", c.width, "height", c.height);
   // Set as failed for now, but if it successed, this will be set to not failed.
   texture_state_.tex_image_2d_failed = true;
   GLenum target = static_cast<GLenum>(c.target);
@@ -8760,7 +8729,8 @@ error::Error GLES2DecoderImpl::DoTexSubImage2D(
 
 error::Error GLES2DecoderImpl::HandleTexSubImage2D(
     uint32 immediate_data_size, const cmds::TexSubImage2D& c) {
-  TRACE_EVENT0("gpu", "GLES2DecoderImpl::HandleTexSubImage2D");
+  TRACE_EVENT2("gpu", "GLES2DecoderImpl::HandleTexSubImage2D",
+      "width", c.width, "height", c.height);
   GLboolean internal = static_cast<GLboolean>(c.internal);
   if (internal == GL_TRUE && texture_state_.tex_image_2d_failed)
     return error::kNoError;
@@ -9170,8 +9140,8 @@ void GLES2DecoderImpl::DoSwapBuffers() {
           ScopedFrameBufferBinder binder(this,
                                          offscreen_saved_frame_buffer_->id());
           glClearColor(0, 0, 0, 0);
-          glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-          glDisable(GL_SCISSOR_TEST);
+          state_.SetDeviceColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+          state_.SetDeviceCapabilityState(GL_SCISSOR_TEST, false);
           glClear(GL_COLOR_BUFFER_BIT);
           RestoreClearState();
         }
@@ -10132,7 +10102,8 @@ void GLES2DecoderImpl::DoTexStorage2DEXT(
     GLenum internal_format,
     GLsizei width,
     GLsizei height) {
-  TRACE_EVENT0("gpu", "GLES2DecoderImpl::DoTexStorage2DEXT");
+  TRACE_EVENT2("gpu", "GLES2DecoderImpl::DoTexStorage2DEXT",
+      "width", width, "height", height);
   if (!texture_manager()->ValidForTarget(target, 0, width, height, 1) ||
       TextureManager::ComputeMipMapCount(target, width, height, 1) < levels) {
     LOCAL_SET_GL_ERROR(

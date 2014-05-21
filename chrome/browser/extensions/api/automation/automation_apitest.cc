@@ -55,11 +55,6 @@ class AutomationApiTest : public ExtensionApiTest {
   }
 
  public:
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
-    ExtensionApiTest::SetUpCommandLine(command_line);
-    command_line->AppendSwitch(::switches::kEnableAutomationAPI);
-  }
-
   virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
     ExtensionApiTest::SetUpInProcessBrowserTestFixture();
   }
@@ -91,34 +86,45 @@ IN_PROC_BROWSER_TEST_F(AutomationApiTest, TestRendererAccessibilityEnabled) {
   ASSERT_TRUE(rwh->IsTreeOnlyAccessibilityModeForTesting());
 }
 
-// TODO(dtseng): See crbug.com/360297.
-#if defined(OS_MACOSX)
-#define MAYBE_SanityCheck DISABLED_SanityCheck
-#else
-#define MAYBE_SanityCheck SanityCheck
-#endif  // defined(OS_MACOSX)
-IN_PROC_BROWSER_TEST_F(AutomationApiTest, MAYBE_SanityCheck) {
+IN_PROC_BROWSER_TEST_F(AutomationApiTest, SanityCheck) {
   StartEmbeddedTestServer();
-  ASSERT_TRUE(RunExtensionSubtest("automation/tests", "sanity_check.html"))
+  ASSERT_TRUE(RunExtensionSubtest("automation/tests/tabs", "sanity_check.html"))
       << message_;
 }
 
 IN_PROC_BROWSER_TEST_F(AutomationApiTest, Events) {
   LoadPage();
-  ASSERT_TRUE(RunExtensionSubtest("automation/tests", "events.html"))
+  ASSERT_TRUE(RunExtensionSubtest("automation/tests/tabs", "events.html"))
       << message_;
 }
 
 IN_PROC_BROWSER_TEST_F(AutomationApiTest, Actions) {
   LoadPage();
-  ASSERT_TRUE(RunExtensionSubtest("automation/tests", "actions.html"))
+  ASSERT_TRUE(RunExtensionSubtest("automation/tests/tabs", "actions.html"))
       << message_;
 }
 
 IN_PROC_BROWSER_TEST_F(AutomationApiTest, Location) {
   LoadPage();
-  ASSERT_TRUE(RunExtensionSubtest("automation/tests", "location.html"))
+  ASSERT_TRUE(RunExtensionSubtest("automation/tests/tabs", "location.html"))
       << message_;
 }
+
+#if defined(OS_CHROMEOS)
+IN_PROC_BROWSER_TEST_F(AutomationApiTest, Desktop) {
+  ASSERT_TRUE(RunExtensionSubtest("automation/tests/desktop", "desktop.html"))
+      << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(AutomationApiTest, DesktopNotRequested) {
+  ASSERT_TRUE(RunExtensionSubtest("automation/tests/tabs",
+                                  "desktop_not_requested.html")) << message_;
+}
+#else
+IN_PROC_BROWSER_TEST_F(AutomationApiTest, DesktopNotSupported) {
+  ASSERT_TRUE(RunExtensionSubtest("automation/tests/desktop",
+                                  "desktop_not_supported.html")) << message_;
+}
+#endif
 
 }  // namespace extensions

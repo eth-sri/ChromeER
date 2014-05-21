@@ -14,7 +14,7 @@
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/cocoa/bookmarks/bookmark_menu_bridge.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_menu_cocoa_controller.h"
-#include "components/bookmarks/core/browser/bookmark_model.h"
+#include "components/bookmarks/browser/bookmark_model.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "grit/ui_resources.h"
@@ -128,14 +128,18 @@ void BookmarkMenuBridge::BookmarkNodeAdded(BookmarkModel* model,
   InvalidateMenu();
 }
 
-void BookmarkMenuBridge::BookmarkNodeRemoved(BookmarkModel* model,
-                                             const BookmarkNode* parent,
-                                             int old_index,
-                                             const BookmarkNode* node) {
+void BookmarkMenuBridge::BookmarkNodeRemoved(
+    BookmarkModel* model,
+    const BookmarkNode* parent,
+    int old_index,
+    const BookmarkNode* node,
+    const std::set<GURL>& removed_urls) {
   InvalidateMenu();
 }
 
-void BookmarkMenuBridge::BookmarkAllNodesRemoved(BookmarkModel* model) {
+void BookmarkMenuBridge::BookmarkAllNodesRemoved(
+    BookmarkModel* model,
+    const std::set<GURL>& removed_urls) {
   InvalidateMenu();
 }
 

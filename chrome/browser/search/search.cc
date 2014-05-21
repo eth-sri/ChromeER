@@ -27,8 +27,8 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/common/search_urls.h"
 #include "chrome/common/url_constants.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "components/sessions/serialized_navigation_entry.h"
-#include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/web_contents.h"
@@ -332,7 +332,7 @@ struct NewTabURLDetails {
       default:
         // Use the local New Tab otherwise.
         return NewTabURLDetails(local_url, state);
-    };
+    }
   }
 
   GURL url;
@@ -408,7 +408,9 @@ base::string16 ExtractSearchTermsFromURL(Profile* profile, const GURL& url) {
     // page.
     InstantSearchPrerenderer* prerenderer =
         InstantSearchPrerenderer::GetForProfile(profile);
-    DCHECK(prerenderer);
+    // TODO(kmadhusu): Remove this CHECK after the investigation of
+    // crbug.com/367204.
+    CHECK(prerenderer);
     return prerenderer->get_last_query();
   }
 
@@ -530,7 +532,7 @@ GURL GetInstantURL(Profile* profile, int start_margin,
   if (!instant_url.SchemeIsSecure() &&
       !google_util::StartsWithCommandLineGoogleBaseURL(instant_url)) {
     GURL::Replacements replacements;
-    const std::string secure_scheme(content::kHttpsScheme);
+    const std::string secure_scheme(url::kHttpsScheme);
     replacements.SetSchemeStr(secure_scheme);
     instant_url = instant_url.ReplaceComponents(replacements);
   }
@@ -650,10 +652,10 @@ OriginChipPosition GetOriginChipPosition() {
 }
 
 bool ShouldDisplayOriginChipV2() {
-  return GetOriginChipV2HideTrigger() != ORIGIN_CHIP_V2_DISABLED;
+  return GetOriginChipV2Condition() != ORIGIN_CHIP_V2_DISABLED;
 }
 
-OriginChipV2HideTrigger GetOriginChipV2HideTrigger() {
+OriginChipV2Condition GetOriginChipV2Condition() {
   const CommandLine* cl = CommandLine::ForCurrentProcess();
   if (cl->HasSwitch(switches::kDisableOriginChipV2))
     return ORIGIN_CHIP_V2_DISABLED;
@@ -661,6 +663,8 @@ OriginChipV2HideTrigger GetOriginChipV2HideTrigger() {
     return ORIGIN_CHIP_V2_HIDE_ON_MOUSE_RELEASE;
   if (cl->HasSwitch(switches::kEnableOriginChipV2HideOnUserInput))
     return ORIGIN_CHIP_V2_HIDE_ON_USER_INPUT;
+  if (cl->HasSwitch(switches::kEnableOriginChipV2OnSrp))
+    return ORIGIN_CHIP_V2_ON_SRP;
 
   FieldTrialFlags flags;
   if (!GetFieldTrialInfo(&flags))
@@ -668,7 +672,7 @@ OriginChipV2HideTrigger GetOriginChipV2HideTrigger() {
   uint64 value =
       GetUInt64ValueForFlagWithDefault(kOriginChipV2FlagName, 0, flags);
   return (value < ORIGIN_CHIP_V2_NUM_VALUES) ?
-      static_cast<OriginChipV2HideTrigger>(value) :
+      static_cast<OriginChipV2Condition>(value) :
       ORIGIN_CHIP_V2_DISABLED;
 }
 

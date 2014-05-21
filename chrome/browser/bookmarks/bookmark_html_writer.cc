@@ -11,7 +11,6 @@
 #include "base/files/file.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
-#include "base/platform_file.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/time/time.h"
 #include "base/values.h"
@@ -19,8 +18,8 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/favicon/favicon_service.h"
 #include "chrome/browser/favicon/favicon_service_factory.h"
-#include "components/bookmarks/core/browser/bookmark_codec.h"
-#include "components/bookmarks/core/browser/bookmark_model.h"
+#include "components/bookmarks/browser/bookmark_codec.h"
+#include "components/bookmarks/browser/bookmark_model.h"
 #include "components/favicon_base/favicon_types.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_source.h"
@@ -205,7 +204,7 @@ class Writer : public base::RefCountedThreadSafe<Writer> {
   // Writes out the text string (as UTF8). The text is escaped based on
   // type.
   bool Write(const std::string& text, TextType type) {
-    DCHECK(IsStringUTF8(text));
+    DCHECK(base::IsStringUTF8(text));
     std::string utf8_string;
 
     switch (type) {

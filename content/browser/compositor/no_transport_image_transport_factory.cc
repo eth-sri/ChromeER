@@ -17,7 +17,7 @@ NoTransportImageTransportFactory::NoTransportImageTransportFactory(
 
 NoTransportImageTransportFactory::~NoTransportImageTransportFactory() {}
 
-ui::ContextFactory* NoTransportImageTransportFactory::AsContextFactory() {
+ui::ContextFactory* NoTransportImageTransportFactory::GetContextFactory() {
   return context_factory_.get();
 }
 

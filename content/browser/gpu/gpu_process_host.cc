@@ -25,11 +25,11 @@
 #include "content/common/child_process_host_impl.h"
 #include "content/common/gpu/gpu_messages.h"
 #include "content/common/view_messages.h"
-#include "content/port/browser/render_widget_host_view_frame_subscriber.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_widget_host_view.h"
+#include "content/public/browser/render_widget_host_view_frame_subscriber.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/result_codes.h"
@@ -38,6 +38,7 @@
 #include "ipc/ipc_channel_handle.h"
 #include "ipc/ipc_switches.h"
 #include "ipc/message_filter.h"
+#include "media/base/media_switches.h"
 #include "ui/events/latency_info.h"
 #include "ui/gl/gl_switches.h"
 
@@ -800,6 +801,13 @@ void GpuProcessHost::OnAcceleratedSurfaceBuffersSwapped(
                                "GpuHostMsg_AcceleratedSurfaceBuffersSwapped"))
     return;
 
+  gfx::AcceleratedWidget native_widget =
+      GpuSurfaceTracker::Get()->AcquireNativeWidget(params.surface_id);
+  if (native_widget) {
+    RenderWidgetHelper::OnNativeSurfaceBuffersSwappedOnIOThread(this, params);
+    return;
+  }
+
   gfx::GLSurfaceHandle surface_handle =
       GpuSurfaceTracker::Get()->GetSurfaceHandle(params.surface_id);
   // Compositor window is always gfx::kNullPluginWindow.
@@ -917,7 +925,6 @@ bool GpuProcessHost::LaunchGpuProcess(const std::string& channel_id) {
   static const char* const kSwitchNames[] = {
     switches::kDisableAcceleratedVideoDecode,
     switches::kDisableBreakpad,
-    switches::kDisableGLDrawingForTests,
     switches::kDisableGpuSandbox,
     switches::kDisableGpuWatchdog,
     switches::kDisableLogging,
@@ -931,6 +938,7 @@ bool GpuProcessHost::LaunchGpuProcess(const std::string& channel_id) {
     switches::kGpuSandboxAllowSysVShm,
     switches::kGpuSandboxFailuresFatal,
     switches::kGpuSandboxStartAfterInitialization,
+    switches::kIgnoreResolutionLimitsForAcceleratedVideoDecode,
     switches::kLoggingLevel,
     switches::kNoSandbox,
     switches::kTestGLLib,

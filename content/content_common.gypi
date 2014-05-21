@@ -32,7 +32,6 @@
   'sources': [
     'public/common/assert_matching_enums.cc',
     'public/common/bindings_policy.h',
-    'public/common/browser_plugin_permission_type.h',
     'public/common/child_process_host.h',
     'public/common/child_process_host_delegate.cc',
     'public/common/child_process_host_delegate.h',
@@ -140,6 +139,7 @@
     'common/android/surface_texture_peer.cc',
     'common/android/surface_texture_peer.h',
     'common/appcache_messages.h',
+    'common/battery_status_messages.h',
     'common/browser_plugin/browser_plugin_constants.cc',
     'common/browser_plugin/browser_plugin_constants.h',
     'common/browser_plugin/browser_plugin_messages.h',
@@ -175,7 +175,6 @@
     'common/cursors/webcursor_aurax11.cc',
     'common/cursors/webcursor_mac.mm',
     'common/cursors/webcursor_ozone.cc',
-    'common/cursors/webcursor_win.cc',
     'common/database_messages.h',
     'common/date_time_suggestion.h',
     'common/desktop_notification_messages.h',
@@ -212,9 +211,12 @@
     'common/frame_param_macros.h',
     'common/gamepad_hardware_buffer.h',
     'common/gamepad_messages.h',
+    'common/gamepad_param_traits.cc',
+    'common/gamepad_param_traits.h',
     'common/gamepad_user_gesture.cc',
     'common/gamepad_user_gesture.h',
     'common/geolocation_messages.h',
+    'common/gin_java_bridge_messages.h',
     'common/gpu/client/command_buffer_proxy_impl.cc',
     'common/gpu/client/command_buffer_proxy_impl.h',
     'common/gpu/client/context_provider_command_buffer.cc',
@@ -452,7 +454,6 @@
     'common/websocket_messages.h',
     'common/worker_messages.h',
     'common/zygote_commands_linux.h',
-    'port/common/input_event_ack_state.h',
   ],
   'target_conditions': [
     ['OS=="android" and <(use_seccomp_bpf)==1', {
@@ -466,7 +467,6 @@
     ['use_aura==1', {
       'sources!': [
         'common/cursors/webcursor_mac.mm',
-        'common/cursors/webcursor_win.cc',
       ],
     }],
     ['OS=="ios"', {
@@ -523,7 +523,30 @@
         '../webkit/common/webkit_common.gyp:webkit_common',
         '../webkit/storage_browser.gyp:webkit_storage_browser',
         '../webkit/storage_common.gyp:webkit_storage_common',
-        'content.gyp:webkit_version',
+      ],
+      'actions': [
+        {
+          'action_name': 'generate_webkit_version',
+          'inputs': [
+            '<(script)',
+            '<(lastchange)',
+            '<(template)',
+          ],
+          'outputs': [
+            '<(SHARED_INTERMEDIATE_DIR)/webkit_version.h',
+          ],
+          'action': ['python',
+                     '<(script)',
+                     '-f', '<(lastchange)',
+                     '<(template)',
+                     '<@(_outputs)',
+          ],
+          'variables': {
+            'script': '<(DEPTH)/build/util/version.py',
+            'lastchange': '<(DEPTH)/build/util/LASTCHANGE.blink',
+            'template': 'webkit_version.h.in',
+          },
+        },
       ],
     }],
     ['OS=="mac"', {
@@ -616,14 +639,16 @@
       'sources': [
         'common/gpu/media/exynos_v4l2_video_device.cc',
         'common/gpu/media/exynos_v4l2_video_device.h',
-        'common/gpu/media/exynos_video_encode_accelerator.cc',
-        'common/gpu/media/exynos_video_encode_accelerator.h',
         'common/gpu/media/tegra_v4l2_video_device.cc',
         'common/gpu/media/tegra_v4l2_video_device.h',
+        'common/gpu/media/v4l2_image_processor.cc',
+        'common/gpu/media/v4l2_image_processor.h',
         'common/gpu/media/v4l2_video_decode_accelerator.cc',
         'common/gpu/media/v4l2_video_decode_accelerator.h',
         'common/gpu/media/v4l2_video_device.cc',
         'common/gpu/media/v4l2_video_device.h',
+        'common/gpu/media/v4l2_video_encode_accelerator.cc',
+        'common/gpu/media/v4l2_video_encode_accelerator.h',
       ],
       'include_dirs': [
         '<(DEPTH)/third_party/khronos',

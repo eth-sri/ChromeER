@@ -84,6 +84,8 @@ const char kGoogleRLZParameter[] = "google:RLZ";
 const char kGoogleSearchClient[] = "google:searchClient";
 const char kGoogleSearchFieldtrialParameter[] =
     "google:searchFieldtrialParameter";
+const char kGoogleSearchVersion[] = "google:searchVersion";
+const char kGoogleSessionToken[] = "google:sessionToken";
 const char kGoogleSourceIdParameter[] = "google:sourceId";
 const char kGoogleSuggestAPIKeyParameter[] = "google:suggestAPIKeyParameter";
 const char kGoogleSuggestClient[] = "google:suggestClient";
@@ -601,6 +603,12 @@ bool TemplateURLRef::ParseParameter(size_t start,
     replacements->push_back(Replacement(GOOGLE_SEARCH_CLIENT, start));
   } else if (parameter == kGoogleSearchFieldtrialParameter) {
     replacements->push_back(Replacement(GOOGLE_SEARCH_FIELDTRIAL_GROUP, start));
+  } else if (parameter == kGoogleSearchVersion) {
+    if (CommandLine::ForCurrentProcess()->HasSwitch(
+            switches::kEnableAnswersInSuggest))
+      url->insert(start, "gs_rn=42&");
+  } else if (parameter == kGoogleSessionToken) {
+    replacements->push_back(Replacement(GOOGLE_SESSION_TOKEN, start));
   } else if (parameter == kGoogleSourceIdParameter) {
 #if defined(OS_ANDROID)
     url->insert(start, "sourceid=chrome-mobile&");
@@ -835,7 +843,7 @@ std::string TemplateURLRef::HandleReplacements(
           search_terms_args_without_aqs.assisted_query_stats.clear();
           GURL base_url(ReplaceSearchTermsUsingTermsData(
               search_terms_args_without_aqs, search_terms_data, NULL));
-          if (base_url.SchemeIs(content::kHttpsScheme)) {
+          if (base_url.SchemeIs(url::kHttpsScheme)) {
             HandleReplacement(
                 "aqs", search_terms_args.assisted_query_stats, *i, &url);
           }
@@ -965,6 +973,13 @@ std::string TemplateURLRef::HandleReplacements(
         // url.  If we do, then we'd have some conditional insert such as:
         // url.insert(i->index, used_www ? "gcx=w&" : "gcx=c&");
         break;
+
+      case GOOGLE_SESSION_TOKEN: {
+        std::string token = search_terms_args.session_token;
+        if (!token.empty())
+          HandleReplacement("psi", token, *i, &url);
+        break;
+      }
 
       case GOOGLE_SUGGEST_CLIENT:
         HandleReplacement(
@@ -1112,6 +1127,33 @@ GURL TemplateURL::GenerateFaviconURL(const GURL& url) {
   return url.ReplaceComponents(rep);
 }
 
+// static
+bool TemplateURL::MatchesData(const TemplateURL* t_url,
+                              const TemplateURLData* data) {
+  if (!t_url || !data)
+    return !t_url && !data;
+
+  return (t_url->short_name() == data->short_name) &&
+      t_url->HasSameKeywordAs(*data) &&
+      (t_url->url() == data->url()) &&
+      (t_url->suggestions_url() == data->suggestions_url) &&
+      (t_url->instant_url() == data->instant_url) &&
+      (t_url->image_url() == data->image_url) &&
+      (t_url->new_tab_url() == data->new_tab_url) &&
+      (t_url->search_url_post_params() == data->search_url_post_params) &&
+      (t_url->suggestions_url_post_params() ==
+          data->suggestions_url_post_params) &&
+      (t_url->instant_url_post_params() == data->instant_url_post_params) &&
+      (t_url->image_url_post_params() == data->image_url_post_params) &&
+      (t_url->favicon_url() == data->favicon_url) &&
+      (t_url->safe_for_autoreplace() == data->safe_for_autoreplace) &&
+      (t_url->show_in_default_list() == data->show_in_default_list) &&
+      (t_url->input_encodings() == data->input_encodings) &&
+      (t_url->alternate_urls() == data->alternate_urls) &&
+      (t_url->search_terms_replacement_key() ==
+          data->search_terms_replacement_key);
+}
+
 base::string16 TemplateURL::AdjustedShortNameForLocaleDirection() const {
   base::string16 bidi_safe_short_name = data_.short_name;
   base::i18n::AdjustStringForLocaleDirection(&bidi_safe_short_name);
@@ -1130,6 +1172,14 @@ bool TemplateURL::SupportsReplacement() const {
 bool TemplateURL::SupportsReplacementUsingTermsData(
     const SearchTermsData& search_terms_data) const {
   return url_ref_.SupportsReplacementUsingTermsData(search_terms_data);
+}
+
+bool TemplateURL::HasGoogleBaseURLs() const {
+  return url_ref_.HasGoogleBaseURLs() ||
+      suggestions_url_ref_.HasGoogleBaseURLs() ||
+      instant_url_ref_.HasGoogleBaseURLs() ||
+      image_url_ref_.HasGoogleBaseURLs() ||
+      new_tab_url_ref_.HasGoogleBaseURLs();
 }
 
 bool TemplateURL::IsGoogleSearchURLWithReplaceableKeyword() const {

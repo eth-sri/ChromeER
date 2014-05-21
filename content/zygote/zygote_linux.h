@@ -5,6 +5,8 @@
 #ifndef CONTENT_ZYGOTE_ZYGOTE_H_
 #define CONTENT_ZYGOTE_ZYGOTE_H_
 
+#include <stddef.h>
+
 #include <string>
 
 #include "base/containers/small_map.h"
@@ -26,8 +28,7 @@ class ZygoteForkDelegate;
 // runs it.
 class Zygote {
  public:
-  Zygote(int sandbox_flags,
-         ZygoteForkDelegate* helper);
+  Zygote(int sandbox_flags, ScopedVector<ZygoteForkDelegate> helpers);
   ~Zygote();
 
   bool ProcessRequests();
@@ -36,9 +37,8 @@ class Zygote {
   struct ZygoteProcessInfo {
     // Pid from inside the Zygote's PID namespace.
     base::ProcessHandle internal_pid;
-    // Keeps track of whether or not a process was started from a fork
-    // delegate helper.
-    bool started_from_helper;
+    // Keeps track of which fork delegate helper the process was started from.
+    ZygoteForkDelegate* started_from_helper;
   };
   typedef base::SmallMap< std::map<base::ProcessHandle, ZygoteProcessInfo> >
       ZygoteProcessMap;
@@ -75,12 +75,16 @@ class Zygote {
 
   // This is equivalent to fork(), except that, when using the SUID sandbox, it
   // returns the real PID of the child process as it appears outside the
-  // sandbox, rather than returning the PID inside the sandbox. Optionally, it
-  // fills in uma_name et al with a report the helper wants to make via
-  // UMA_HISTOGRAM_ENUMERATION.
+  // sandbox, rather than returning the PID inside the sandbox.  The child's
+  // real PID is determined by having it call content::SendZygoteChildPing(int)
+  // using the |pid_oracle| descriptor.
+  // Finally, when using a ZygoteForkDelegate helper, |uma_name|, |uma_sample|,
+  // and |uma_boundary_value| may be set if the helper wants to make a UMA
+  // report via UMA_HISTOGRAM_ENUMERATION.
   int ForkWithRealPid(const std::string& process_type,
                       const base::GlobalDescriptors::Mapping& fd_mapping,
                       const std::string& channel_id,
+                      base::ScopedFD pid_oracle,
                       std::string* uma_name,
                       int* uma_sample,
                       int* uma_boundary_value);
@@ -115,13 +119,10 @@ class Zygote {
   ZygoteProcessMap process_info_map_;
 
   const int sandbox_flags_;
-  ZygoteForkDelegate* helper_;
+  ScopedVector<ZygoteForkDelegate> helpers_;
 
-  // These might be set by helper_->InitialUMA. They supply a UMA enumeration
-  // sample we should report on the first fork.
-  std::string initial_uma_name_;
-  int initial_uma_sample_;
-  int initial_uma_boundary_value_;
+  // Count of how many fork delegates for which we've invoked InitialUMA().
+  size_t initial_uma_index_;
 };
 
 }  // namespace content

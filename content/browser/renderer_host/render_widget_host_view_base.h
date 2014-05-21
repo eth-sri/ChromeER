@@ -17,15 +17,16 @@
 #include "base/process/kill.h"
 #include "base/timer/timer.h"
 #include "cc/output/compositor_frame.h"
+#include "content/browser/renderer_host/event_with_latency_info.h"
 #include "content/common/content_export.h"
-#include "content/port/browser/event_with_latency_info.h"
-#include "content/port/common/input_event_ack_state.h"
+#include "content/common/input/input_event_ack_state.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "ipc/ipc_listener.h"
 #include "third_party/WebKit/public/web/WebPopupType.h"
 #include "third_party/WebKit/public/web/WebTextDirection.h"
 #include "ui/base/ime/text_input_mode.h"
 #include "ui/base/ime/text_input_type.h"
+#include "ui/gfx/display.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/range/range.h"
 #include "ui/gfx/rect.h"
@@ -49,12 +50,12 @@ struct WebScreenInfo;
 
 namespace content {
 class BrowserAccessibilityManager;
-class RenderWidgetHostViewFrameSubscriber;
 class SyntheticGesture;
 class SyntheticGestureTarget;
 class WebCursor;
-struct WebPluginGeometry;
+struct DidOverscrollParams;
 struct NativeWebKeyboardEvent;
+struct WebPluginGeometry;
 
 // Basic implementation shared by concrete RenderWidgetHostView subclasses.
 class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
@@ -63,14 +64,18 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   virtual ~RenderWidgetHostViewBase();
 
   // RenderWidgetHostView implementation.
-  virtual void SetBackground(const SkBitmap& background) OVERRIDE;
-  virtual const SkBitmap& GetBackground() OVERRIDE;
+  virtual void SetBackgroundOpaque(bool opaque) OVERRIDE;
+  virtual bool GetBackgroundOpaque() OVERRIDE;
+  virtual ui::TextInputClient* GetTextInputClient() OVERRIDE;
   virtual bool IsShowingContextMenu() const OVERRIDE;
   virtual void SetShowingContextMenu(bool showing_menu) OVERRIDE;
   virtual base::string16 GetSelectedText() const OVERRIDE;
   virtual bool IsMouseLocked() OVERRIDE;
   virtual gfx::Size GetVisibleViewportSize() const OVERRIDE;
   virtual void SetInsets(const gfx::Insets& insets) OVERRIDE;
+  virtual void BeginFrameSubscription(
+      scoped_ptr<RenderWidgetHostViewFrameSubscriber> subscriber) OVERRIDE;
+  virtual void EndFrameSubscription() OVERRIDE;
 
   // IPC::Listener implementation:
   virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
@@ -142,16 +147,6 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   // Return true if frame subscription is supported on this platform.
   virtual bool CanSubscribeFrame() const;
 
-  // Begin subscribing for presentation events and captured frames.
-  // |subscriber| is now owned by this object, it will be called only on the
-  // UI thread.
-  virtual void BeginFrameSubscription(
-      scoped_ptr<RenderWidgetHostViewFrameSubscriber> subscriber);
-
-  // End subscribing for frame presentation events. FrameSubscriber will be
-  // deleted after this call.
-  virtual void EndFrameSubscription();
-
   // Create a BrowserAccessibilityManager for this view if it's possible to
   // create one and if one doesn't exist already. Some ports may not create
   // one depending on the current state.
@@ -176,6 +171,8 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   // or ignored (when |ack_result| is CONSUMED).
   virtual void ProcessAckedTouchEvent(const TouchEventWithLatencyInfo& touch,
                                       InputEventAckState ack_result) {}
+
+  virtual void DidOverscroll(const DidOverscrollParams& params) {}
 
   virtual void DidStopFlinging() {}
 
@@ -282,8 +279,6 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   // IsSurfaceAvailableForCopy() and HasAcceleratedSurface().
   virtual bool CanCopyToVideoFrame() const = 0;
 
-  // Called when accelerated compositing state changes.
-  virtual void OnAcceleratedCompositingStateChange() = 0;
   // Called when an accelerated compositing surface is initialized.
   virtual void AcceleratedSurfaceInitialized(int host_id, int route_id) = 0;
   // |params.window| and |params.surface_id| indicate which accelerated
@@ -385,9 +380,8 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   // autofill...).
   blink::WebPopupType popup_type_;
 
-  // A custom background to paint behind the web content. This will be tiled
-  // horizontally. Can be null, in which case we fall back to painting white.
-  SkBitmap background_;
+  // When false, the background of the web content is not fully opaque.
+  bool background_opaque_;
 
   // While the mouse is locked, the cursor is hidden from the user. Mouse events
   // are still generated. However, the position they report is the last known
@@ -412,6 +406,9 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
 protected:
   // The scale factor of the display the renderer is currently on.
   float current_device_scale_factor_;
+
+  // The orientation of the display the renderer is currently on.
+  gfx::Display::Rotation current_display_rotation_;
 
   // Whether pinch-to-zoom should be enabled and pinch events forwarded to the
   // renderer.

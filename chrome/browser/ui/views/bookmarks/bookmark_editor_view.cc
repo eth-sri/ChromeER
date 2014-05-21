@@ -17,8 +17,8 @@
 #include "chrome/browser/ui/bookmarks/bookmark_utils.h"
 #include "chrome/browser/ui/views/constrained_window_views.h"
 #include "chrome/common/net/url_fixer_upper.h"
-#include "components/bookmarks/core/browser/bookmark_model.h"
-#include "components/bookmarks/core/browser/bookmark_utils.h"
+#include "components/bookmarks/browser/bookmark_model.h"
+#include "components/bookmarks/browser/bookmark_utils.h"
 #include "components/user_prefs/user_prefs.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
@@ -134,7 +134,7 @@ bool BookmarkEditorView::Accept() {
   return true;
 }
 
-gfx::Size BookmarkEditorView::GetPreferredSize() {
+gfx::Size BookmarkEditorView::GetPreferredSize() const {
   if (!show_tree_)
     return views::View::GetPreferredSize();
 
@@ -376,10 +376,12 @@ void BookmarkEditorView::BookmarkNodeAdded(BookmarkModel* model,
   Reset();
 }
 
-void BookmarkEditorView::BookmarkNodeRemoved(BookmarkModel* model,
-                                             const BookmarkNode* parent,
-                                             int index,
-                                             const BookmarkNode* node) {
+void BookmarkEditorView::BookmarkNodeRemoved(
+    BookmarkModel* model,
+    const BookmarkNode* parent,
+    int index,
+    const BookmarkNode* node,
+    const std::set<GURL>& removed_urls) {
   if ((details_.type == EditDetails::EXISTING_NODE &&
        details_.existing_node->HasAncestor(node)) ||
       (parent_ && parent_->HasAncestor(node))) {
@@ -390,12 +392,15 @@ void BookmarkEditorView::BookmarkNodeRemoved(BookmarkModel* model,
   }
 }
 
-void BookmarkEditorView::BookmarkAllNodesRemoved(BookmarkModel* model) {
+void BookmarkEditorView::BookmarkAllNodesRemoved(
+    BookmarkModel* model,
+    const std::set<GURL>& removed_urls) {
   Reset();
 }
 
 void BookmarkEditorView::BookmarkNodeChildrenReordered(
-    BookmarkModel* model, const BookmarkNode* node) {
+    BookmarkModel* model,
+    const BookmarkNode* node) {
   Reset();
 }
 

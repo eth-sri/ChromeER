@@ -153,18 +153,24 @@
           'target_name': 'nacl_renderer',
           'type': 'static_library',
           'sources': [
+            'nacl/renderer/file_downloader.cc',
+            'nacl/renderer/file_downloader.h',
             'nacl/renderer/histogram.cc',
             'nacl/renderer/histogram.h',
             'nacl/renderer/manifest_downloader.cc',
             'nacl/renderer/manifest_downloader.h',
             'nacl/renderer/manifest_service_channel.cc',
             'nacl/renderer/manifest_service_channel.h',
+            'nacl/renderer/json_manifest.cc',
+            'nacl/renderer/json_manifest.h',
             'nacl/renderer/nexe_load_manager.cc',
             'nacl/renderer/nexe_load_manager.h',
             'nacl/renderer/pnacl_translation_resource_host.cc',
             'nacl/renderer/pnacl_translation_resource_host.h',
             'nacl/renderer/ppb_nacl_private_impl.cc',
             'nacl/renderer/ppb_nacl_private_impl.h',
+            'nacl/renderer/progress_event.cc',
+            'nacl/renderer/progress_event.h',
             'nacl/renderer/sandbox_arch.cc',
             'nacl/renderer/sandbox_arch.h',
             'nacl/renderer/trusted_plugin_channel.cc',
@@ -175,6 +181,7 @@
           ],
           'dependencies': [
             '../content/content.gyp:content_renderer',
+            '../third_party/jsoncpp/jsoncpp.gyp:jsoncpp',
             '../third_party/WebKit/public/blink.gyp:blink',
             '../webkit/common/webkit_common.gyp:webkit_common',
           ],
@@ -201,6 +208,10 @@
           'conditions': [
             ['OS=="linux"', {
               'sources': [
+                # TODO(mazda): Move this to browser_tests once we have
+                # established a way to run browser_tests on ARM Chrome OS
+                # devices (http://crbug.com/364729).
+                'nacl/loader/nonsfi/irt_icache_unittest.cc',
                 # TODO(hamaji): Currently, we build them twice. Stop building
                 # them for components_unittests. See crbug.com/364751
                 'nacl/loader/nonsfi/nonsfi_sandbox_unittest.cc',
@@ -262,11 +273,13 @@
                 'nacl/loader/nonsfi/irt_exception_handling.cc',
                 'nacl/loader/nonsfi/irt_fdio.cc',
                 'nacl/loader/nonsfi/irt_futex.cc',
+                'nacl/loader/nonsfi/irt_icache.cc',
                 'nacl/loader/nonsfi/irt_interfaces.cc',
                 'nacl/loader/nonsfi/irt_interfaces.h',
                 'nacl/loader/nonsfi/irt_memory.cc',
                 'nacl/loader/nonsfi/irt_ppapi.cc',
                 'nacl/loader/nonsfi/irt_random.cc',
+                'nacl/loader/nonsfi/irt_resource_open.cc',
                 'nacl/loader/nonsfi/irt_thread.cc',
                 'nacl/loader/nonsfi/irt_util.h',
                 'nacl/loader/nonsfi/nonsfi_main.cc',
@@ -275,6 +288,7 @@
                 'nacl/loader/nonsfi/nonsfi_sandbox.h',
                 'nacl/loader/sandbox_linux/nacl_bpf_sandbox_linux.cc',
                 'nacl/loader/sandbox_linux/nacl_sandbox_linux.cc',
+                '../ppapi/nacl_irt/irt_manifest.h',
                 '../ppapi/nacl_irt/manifest_service.cc',
                 '../ppapi/nacl_irt/manifest_service.h',
                 '../ppapi/nacl_irt/plugin_main.cc',
@@ -302,8 +316,7 @@
                 }],
                 ['os_posix == 1 and OS != "mac"', {
                   'conditions': [
-                    # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
-                    ['(use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1)', {
+                    ['use_allocator!="none"', {
                       'dependencies': [
                         '../base/allocator/allocator.gyp:allocator',
                       ],
@@ -455,6 +468,8 @@
         'nacl/common/nacl_host_messages.cc',
         'nacl/common/nacl_messages.cc',
         'nacl/common/nacl_messages.h',
+        'nacl/common/nacl_nonsfi_util.cc',
+        'nacl/common/nacl_nonsfi_util.h',
         'nacl/common/nacl_process_type.h',
         'nacl/common/nacl_sandbox_type_mac.h',
         'nacl/common/nacl_types.cc',

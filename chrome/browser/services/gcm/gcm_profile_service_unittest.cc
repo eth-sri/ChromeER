@@ -11,14 +11,14 @@
 #include "base/callback.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/run_loop.h"
+#include "chrome/browser/services/gcm/fake_gcm_client.h"
 #include "chrome/browser/services/gcm/fake_gcm_client_factory.h"
 #include "chrome/browser/services/gcm/fake_signin_manager.h"
-#include "chrome/browser/services/gcm/gcm_client_factory.h"
-#include "chrome/browser/services/gcm/gcm_client_mock.h"
 #include "chrome/browser/services/gcm/gcm_profile_service_factory.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/test/base/testing_profile.h"
-#include "components/user_prefs/pref_registry_syncable.h"
+#include "components/gcm_driver/gcm_client_factory.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "google_apis/gcm/gcm_client.h"
@@ -46,7 +46,7 @@ class GCMProfileServiceTest : public testing::Test {
   // testing::Test:
   virtual void SetUp() OVERRIDE;
 
-  GCMClientMock* GetGCMClient() const;
+  FakeGCMClient* GetGCMClient() const;
 
   void RegisterAndWaitForCompletion(const std::vector<std::string>& sender_ids);
   void SendAndWaitForCompletion(const GCMClient::OutgoingMessage& message);
@@ -80,8 +80,8 @@ GCMProfileServiceTest::GCMProfileServiceTest()
 GCMProfileServiceTest::~GCMProfileServiceTest() {
 }
 
-GCMClientMock* GCMProfileServiceTest::GetGCMClient() const {
-  return static_cast<GCMClientMock*>(
+FakeGCMClient* GCMProfileServiceTest::GetGCMClient() const {
+  return static_cast<FakeGCMClient*>(
       gcm_profile_service_->GetGCMClientForTesting());
 }
 
@@ -96,7 +96,7 @@ void GCMProfileServiceTest::SetUp() {
           profile_.get(),
           &BuildGCMProfileService));
   gcm_profile_service_->Initialize(scoped_ptr<GCMClientFactory>(
-      new FakeGCMClientFactory(GCMClientMock::NO_DELAY_LOADING)));
+      new FakeGCMClientFactory(FakeGCMClient::NO_DELAY_START)));
 
   FakeSigninManager* signin_manager = static_cast<FakeSigninManager*>(
       SigninManagerFactory::GetInstance()->GetForProfile(profile_.get()));
@@ -149,7 +149,7 @@ void GCMProfileServiceTest::SendCompleted(
 TEST_F(GCMProfileServiceTest, RegisterUnderNeutralChannelSignal) {
   // GCMClient should not be checked in.
   EXPECT_FALSE(gcm_profile_service_->IsGCMClientReady());
-  EXPECT_EQ(GCMClientMock::UNINITIALIZED, GetGCMClient()->status());
+  EXPECT_EQ(FakeGCMClient::UNINITIALIZED, GetGCMClient()->status());
 
   // Invoking register will make GCMClient checked in.
   std::vector<std::string> sender_ids;
@@ -158,11 +158,11 @@ TEST_F(GCMProfileServiceTest, RegisterUnderNeutralChannelSignal) {
 
   // GCMClient should be checked in.
   EXPECT_TRUE(gcm_profile_service_->IsGCMClientReady());
-  EXPECT_EQ(GCMClientMock::LOADED, GetGCMClient()->status());
+  EXPECT_EQ(FakeGCMClient::STARTED, GetGCMClient()->status());
 
   // Registration should succeed.
   std::string expected_registration_id =
-      GCMClientMock::GetRegistrationIdFromSenderIds(sender_ids);
+      FakeGCMClient::GetRegistrationIdFromSenderIds(sender_ids);
   EXPECT_EQ(expected_registration_id, registration_id_);
   EXPECT_EQ(GCMClient::SUCCESS, registration_result_);
 }
@@ -170,7 +170,7 @@ TEST_F(GCMProfileServiceTest, RegisterUnderNeutralChannelSignal) {
 TEST_F(GCMProfileServiceTest, SendUnderNeutralChannelSignal) {
   // GCMClient should not be checked in.
   EXPECT_FALSE(gcm_profile_service_->IsGCMClientReady());
-  EXPECT_EQ(GCMClientMock::UNINITIALIZED, GetGCMClient()->status());
+  EXPECT_EQ(FakeGCMClient::UNINITIALIZED, GetGCMClient()->status());
 
   // Invoking send will make GCMClient checked in.
   GCMClient::OutgoingMessage message;
@@ -180,7 +180,7 @@ TEST_F(GCMProfileServiceTest, SendUnderNeutralChannelSignal) {
 
   // GCMClient should be checked in.
   EXPECT_TRUE(gcm_profile_service_->IsGCMClientReady());
-  EXPECT_EQ(GCMClientMock::LOADED, GetGCMClient()->status());
+  EXPECT_EQ(FakeGCMClient::STARTED, GetGCMClient()->status());
 
   // Sending should succeed.
   EXPECT_EQ(message.id, send_message_id_);

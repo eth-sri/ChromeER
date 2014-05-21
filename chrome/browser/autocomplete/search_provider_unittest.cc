@@ -34,13 +34,13 @@
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/metrics/variations/variations_util.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/signin/core/browser/signin_manager.h"
 #include "components/sync_driver/pref_names.h"
 #include "components/variations/entropy_provider.h"
+#include "components/variations/variations_associated_data.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "net/url_request/test_url_fetcher_factory.h"
 #include "net/url_request/url_request_status.h"
@@ -2325,8 +2325,9 @@ TEST_F(SearchProviderTest, NavigationInline) {
     QueryForInput(ASCIIToUTF16(cases[i].input), false, false);
     AutocompleteMatch match(
         provider_->NavigationToMatch(SearchProvider::NavigationResult(
-            *provider_.get(), GURL(cases[i].url), base::string16(), false, 0,
-            false, ASCIIToUTF16(cases[i].input), std::string())));
+            *provider_.get(), GURL(cases[i].url),
+            AutocompleteMatchType::NAVSUGGEST, base::string16(), std::string(),
+            false, 0, false, ASCIIToUTF16(cases[i].input), std::string())));
     EXPECT_EQ(ASCIIToUTF16(cases[i].inline_autocompletion),
               match.inline_autocompletion);
     EXPECT_EQ(ASCIIToUTF16(cases[i].fill_into_edit), match.fill_into_edit);
@@ -2337,8 +2338,9 @@ TEST_F(SearchProviderTest, NavigationInline) {
     QueryForInput(ASCIIToUTF16(cases[i].input), true, false);
     AutocompleteMatch match_prevent_inline(
         provider_->NavigationToMatch(SearchProvider::NavigationResult(
-            *provider_.get(), GURL(cases[i].url), base::string16(), false, 0,
-            false, ASCIIToUTF16(cases[i].input), std::string())));
+            *provider_.get(), GURL(cases[i].url),
+            AutocompleteMatchType::NAVSUGGEST, base::string16(), std::string(),
+            false, 0, false, ASCIIToUTF16(cases[i].input), std::string())));
     EXPECT_EQ(ASCIIToUTF16(cases[i].inline_autocompletion),
               match_prevent_inline.inline_autocompletion);
     EXPECT_EQ(ASCIIToUTF16(cases[i].fill_into_edit),
@@ -2353,8 +2355,8 @@ TEST_F(SearchProviderTest, NavigationInlineSchemeSubstring) {
   const base::string16 input(ASCIIToUTF16("ht"));
   const base::string16 url(ASCIIToUTF16("http://a.com"));
   const SearchProvider::NavigationResult result(
-      *provider_.get(), GURL(url), base::string16(), false, 0, false,
-      input, std::string());
+      *provider_.get(), GURL(url), AutocompleteMatchType::NAVSUGGEST,
+      base::string16(), std::string(), false, 0, false, input, std::string());
 
   // Check the offset and strings when inline autocompletion is allowed.
   QueryForInput(input, false, false);
@@ -2377,8 +2379,9 @@ TEST_F(SearchProviderTest, NavigationInlineDomainClassify) {
   QueryForInput(ASCIIToUTF16("w"), false, false);
   AutocompleteMatch match(
       provider_->NavigationToMatch(SearchProvider::NavigationResult(
-          *provider_.get(), GURL("http://www.wow.com"), base::string16(), false,
-          0, false, ASCIIToUTF16("w"), std::string())));
+          *provider_.get(), GURL("http://www.wow.com"),
+          AutocompleteMatchType::NAVSUGGEST, base::string16(), std::string(),
+          false, 0, false, ASCIIToUTF16("w"), std::string())));
   EXPECT_EQ(ASCIIToUTF16("ow.com"), match.inline_autocompletion);
   EXPECT_TRUE(match.allowed_to_be_default_match);
   EXPECT_EQ(ASCIIToUTF16("www.wow.com"), match.fill_into_edit);
@@ -2747,7 +2750,7 @@ TEST_F(SearchProviderTest, XSSIGuardedJSONParsing_ValidResponses) {
 }
 
 // Test that deletion url gets set on an AutocompleteMatch when available for a
-// personalized query.
+// personalized query or a personalized URL.
 TEST_F(SearchProviderTest, ParseDeletionUrl) {
    struct Match {
      std::string contents;
@@ -2759,38 +2762,66 @@ TEST_F(SearchProviderTest, ParseDeletionUrl) {
        kNotApplicable, "", AutocompleteMatchType::NUM_TYPES
    };
 
-   const char url[] = "https://www.google.com/complete/deleteitems"
-       "?delq=ab&client=chrome&deltok=xsrf123";
+   const char* url[] = {
+    "http://defaultturl/complete/deleteitems"
+       "?delq=ab&client=chrome&deltok=xsrf124",
+    "http://defaultturl/complete/deleteitems"
+       "?delq=www.amazon.com&client=chrome&deltok=xsrf123",
+     };
 
    struct {
        const std::string input_text;
        const std::string response_json;
-       const Match matches[4];
+       const Match matches[5];
      } cases[] = {
        // A deletion URL on a personalized query should be reflected in the
        // resulting AutocompleteMatch.
        { "a",
-         "[\"a\",[\"ab\", \"ac\"],[],[],"
-         "{\"google:suggesttype\":[\"PERSONALIZED_QUERY\",\"QUERY\"],"
-         "\"google:suggestrelevance\":[1, 2],"
+         "[\"a\",[\"ab\", \"ac\",\"www.amazon.com\"],[],[],"
+         "{\"google:suggesttype\":[\"PERSONALIZED_QUERY\",\"QUERY\","
+          "\"PERSONALIZED_NAVIGATION\"],"
+         "\"google:suggestrelevance\":[3, 2, 1],"
          "\"google:suggestdetail\":[{\"du\":"
-         "\"https://www.google.com/complete/deleteitems?delq=ab&client=chrome"
-         "&deltok=xsrf123\"}, {}]}]",
+         "\"/complete/deleteitems?delq=ab&client=chrome"
+          "&deltok=xsrf124\"}, {}, {\"du\":"
+         "\"/complete/deleteitems?delq=www.amazon.com&"
+         "client=chrome&deltok=xsrf123\"}]}]",
          { { "a", "", AutocompleteMatchType::SEARCH_WHAT_YOU_TYPED },
+           { "ab", url[0], AutocompleteMatchType::SEARCH_SUGGEST },
            { "ac", "", AutocompleteMatchType::SEARCH_SUGGEST },
-           { "ab", url, AutocompleteMatchType::SEARCH_SUGGEST },
+           { "www.amazon.com", url[1],
+              AutocompleteMatchType::NAVSUGGEST_PERSONALIZED },
            kEmptyMatch,
          },
        },
-       // Personalized queries without deletion URLs shouldn't cause errors.
+       // Personalized queries or a personalized URL without deletion URLs
+       // shouldn't cause errors.
        { "a",
          "[\"a\",[\"ab\", \"ac\"],[],[],"
-         "{\"google:suggesttype\":[\"PERSONALIZED_QUERY\",\"QUERY\"],"
+         "{\"google:suggesttype\":[\"PERSONALIZED_QUERY\",\"QUERY\","
+         "\"PERSONALIZED_NAVIGATION\"],"
          "\"google:suggestrelevance\":[1, 2],"
          "\"google:suggestdetail\":[{}, {}]}]",
          { { "a", "", AutocompleteMatchType::SEARCH_WHAT_YOU_TYPED },
            { "ac", "", AutocompleteMatchType::SEARCH_SUGGEST },
            { "ab", "", AutocompleteMatchType::SEARCH_SUGGEST },
+           { "www.amazon.com", "",
+              AutocompleteMatchType::NAVSUGGEST_PERSONALIZED },
+           kEmptyMatch,
+         },
+       },
+       // Personalized queries or a personalized URL without
+       // google:suggestdetail shouldn't cause errors.
+       { "a",
+         "[\"a\",[\"ab\", \"ac\"],[],[],"
+         "{\"google:suggesttype\":[\"PERSONALIZED_QUERY\",\"QUERY\","
+         "\"PERSONALIZED_NAVIGATION\"],"
+         "\"google:suggestrelevance\":[1, 2]}]",
+         { { "a", "", AutocompleteMatchType::SEARCH_WHAT_YOU_TYPED },
+           { "ac", "", AutocompleteMatchType::SEARCH_SUGGEST },
+           { "ab", "", AutocompleteMatchType::SEARCH_SUGGEST },
+           { "www.amazon.com", "",
+              AutocompleteMatchType::NAVSUGGEST_PERSONALIZED },
            kEmptyMatch,
          },
        },
@@ -3071,4 +3102,72 @@ TEST_F(SearchProviderTest, CheckDuplicateMatchesSaved) {
   EXPECT_EQ(1U, match_avid.duplicate_matches.size());
 
   EXPECT_EQ(0U, match_apricot.duplicate_matches.size());
+}
+
+TEST_F(SearchProviderTest, SuggestQueryUsesToken) {
+  CommandLine::ForCurrentProcess()->AppendSwitch(
+      switches::kEnableAnswersInSuggest);
+
+  TemplateURLService* turl_model =
+      TemplateURLServiceFactory::GetForProfile(&profile_);
+
+  TemplateURLData data;
+  data.short_name = ASCIIToUTF16("default");
+  data.SetKeyword(data.short_name);
+  data.SetURL("http://example/{searchTerms}{google:sessionToken}");
+  data.suggestions_url =
+      "http://suggest/?q={searchTerms}&{google:sessionToken}";
+  default_t_url_ = new TemplateURL(&profile_, data);
+  turl_model->Add(default_t_url_);
+  turl_model->SetUserSelectedDefaultSearchProvider(default_t_url_);
+
+  base::string16 term = term1_.substr(0, term1_.length() - 1);
+  QueryForInput(term, false, false);
+
+  // Make sure the default provider's suggest service was queried.
+  net::TestURLFetcher* fetcher = test_factory_.GetFetcherByID(
+      SearchProvider::kDefaultProviderURLFetcherID);
+  ASSERT_TRUE(fetcher);
+
+  // And the URL matches what we expected.
+  TemplateURLRef::SearchTermsArgs search_terms_args(term);
+  search_terms_args.session_token = provider_->current_token_;
+  GURL expected_url(default_t_url_->suggestions_url_ref().ReplaceSearchTerms(
+      search_terms_args));
+  EXPECT_EQ(fetcher->GetOriginalURL().spec(), expected_url.spec());
+
+  // Complete running the fetcher to clean up.
+  fetcher->set_response_code(200);
+  fetcher->delegate()->OnURLFetchComplete(fetcher);
+  RunTillProviderDone();
+}
+
+TEST_F(SearchProviderTest, SessionToken) {
+  // Subsequent calls always get the same token.
+  std::string token = provider_->GetSessionToken();
+  std::string token2 = provider_->GetSessionToken();
+  EXPECT_EQ(token, token2);
+  EXPECT_FALSE(token.empty());
+
+  // Calls do not regenerate a token.
+  provider_->current_token_ = "PRE-EXISTING TOKEN";
+  token = provider_->GetSessionToken();
+  EXPECT_EQ(token, "PRE-EXISTING TOKEN");
+
+  // ... unless the token has expired.
+  provider_->current_token_.clear();
+  const base::TimeDelta kSmallDelta = base::TimeDelta::FromMilliseconds(1);
+  provider_->token_expiration_time_ = base::TimeTicks::Now() - kSmallDelta;
+  token = provider_->GetSessionToken();
+  EXPECT_FALSE(token.empty());
+  EXPECT_EQ(token, provider_->current_token_);
+
+  // The expiration time is always updated.
+  provider_->GetSessionToken();
+  base::TimeTicks expiration_time_1 = provider_->token_expiration_time_;
+  base::PlatformThread::Sleep(kSmallDelta);
+  provider_->GetSessionToken();
+  base::TimeTicks expiration_time_2 = provider_->token_expiration_time_;
+  EXPECT_GT(expiration_time_2, expiration_time_1);
+  EXPECT_GE(expiration_time_2, expiration_time_1 + kSmallDelta);
 }

@@ -31,7 +31,7 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "components/infobars/core/infobar.h"
-#include "components/user_prefs/pref_registry_syncable.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_frame_host.h"
@@ -514,12 +514,14 @@ void DesktopNotificationService::RequestPermission(
     if (PermissionBubbleManager::Enabled()) {
       PermissionBubbleManager* bubble_manager =
           PermissionBubbleManager::FromWebContents(web_contents);
-      bubble_manager->AddRequest(new NotificationPermissionRequest(
-          this,
-          origin,
-          DisplayNameForOriginInProcessId(
-              origin, render_frame_host->GetProcess()->GetID()),
-          callback));
+      if (bubble_manager) {
+        bubble_manager->AddRequest(new NotificationPermissionRequest(
+            this,
+            origin,
+            DisplayNameForOriginInProcessId(
+                origin, render_frame_host->GetProcess()->GetID()),
+            callback));
+      }
       return;
     }
 

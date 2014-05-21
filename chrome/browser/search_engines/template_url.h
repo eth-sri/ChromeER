@@ -105,6 +105,9 @@ class TemplateURLRef {
     // True for searches issued with the bookmark bar pref set to shown.
     bool bookmark_bar_pinned;
 
+    // Optional session token.
+    std::string session_token;
+
     // Additional query params provided by the suggest server.
     std::string suggest_query_params;
 
@@ -273,6 +276,7 @@ class TemplateURLRef {
     GOOGLE_RLZ,
     GOOGLE_SEARCH_CLIENT,
     GOOGLE_SEARCH_FIELDTRIAL_GROUP,
+    GOOGLE_SESSION_TOKEN,
     GOOGLE_SUGGEST_CLIENT,
     GOOGLE_SUGGEST_REQUEST_ID,
     GOOGLE_UNESCAPED_SEARCH_TERMS,
@@ -567,6 +571,11 @@ class TemplateURL {
   // Generates a favicon URL from the specified url.
   static GURL GenerateFaviconURL(const GURL& url);
 
+  // Returns true if |t_url| and |data| are equal in all meaningful respects.
+  // Static to allow either or both params to be NULL.
+  static bool MatchesData(const TemplateURL* t_url,
+                          const TemplateURLData* data);
+
   Profile* profile() { return profile_; }
   const TemplateURLData& data() const { return data_; }
 
@@ -644,6 +653,9 @@ class TemplateURL {
   // Like SupportsReplacement but usable on threads other than the UI thread.
   bool SupportsReplacementUsingTermsData(
       const SearchTermsData& search_terms_data) const;
+
+  // Returns true if any URLRefs use Googe base URLs.
+  bool HasGoogleBaseURLs() const;
 
   // Returns true if this TemplateURL uses Google base URLs and has a keyword
   // of "google.TLD".  We use this to decide whether we can automatically

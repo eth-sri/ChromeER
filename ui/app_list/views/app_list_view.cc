@@ -28,11 +28,9 @@
 #include "ui/compositor/layer.h"
 #include "ui/compositor/layer_animation_observer.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
-#include "ui/gfx/display.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/insets.h"
 #include "ui/gfx/path.h"
-#include "ui/gfx/screen.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/views/bubble/bubble_frame_view.h"
 #include "ui/views/bubble/bubble_window_targeter.h"
@@ -55,8 +53,6 @@ namespace app_list {
 
 namespace {
 
-void (*g_next_paint_callback)();
-
 // The margin from the edge to the speech UI.
 const int kSpeechUIMargin = 12;
 
@@ -75,7 +71,7 @@ bool SupportsShadow() {
           switches::kDisableDwmComposition)) {
     return false;
   }
-#elif defined(OS_LINUX) && !defined(USE_ASH)
+#elif defined(OS_LINUX) && !defined(OS_CHROMEOS)
   // Shadows are not supported on (non-ChromeOS) Linux.
   return false;
 #endif
@@ -131,8 +127,7 @@ AppListView::AppListView(AppListViewDelegate* delegate)
       app_list_main_view_(NULL),
       signin_view_(NULL),
       speech_view_(NULL),
-      animation_observer_(new HideViewAnimationObserver()),
-      screen_to_keep_centered_on_(NULL) {
+      animation_observer_(new HideViewAnimationObserver()) {
   CHECK(delegate);
 
   delegate_->AddObserver(this);
@@ -157,7 +152,6 @@ void AppListView::InitAsBubbleAttachedToAnchor(
   SetAnchorView(anchor);
   InitAsBubbleInternal(
       parent, pagination_model, arrow, border_accepts_events, anchor_offset);
-  screen_to_keep_centered_on_ = NULL;
 }
 
 void AppListView::InitAsBubbleAtFixedLocation(
@@ -168,20 +162,6 @@ void AppListView::InitAsBubbleAtFixedLocation(
     bool border_accepts_events) {
   SetAnchorView(NULL);
   SetAnchorRect(gfx::Rect(anchor_point_in_screen, gfx::Size()));
-  InitAsBubbleInternal(
-      parent, pagination_model, arrow, border_accepts_events, gfx::Vector2d());
-  screen_to_keep_centered_on_ = NULL;
-}
-
-void AppListView::InitAsBubbleCenteredOnPrimaryDisplay(
-    gfx::NativeView parent,
-    PaginationModel* pagination_model,
-    gfx::Screen* screen_to_keep_centered_on,
-    views::BubbleBorder::Arrow arrow,
-    bool border_accepts_events) {
-  screen_to_keep_centered_on_ = screen_to_keep_centered_on;
-  SetAnchorView(NULL);
-  SetAnchorRect(gfx::Rect(GetCenterPoint(), gfx::Size()));
   InitAsBubbleInternal(
       parent, pagination_model, arrow, border_accepts_events, gfx::Vector2d());
 }
@@ -211,20 +191,22 @@ void AppListView::Close() {
 }
 
 void AppListView::UpdateBounds() {
-  if (screen_to_keep_centered_on_)
-    SetAnchorRect(gfx::Rect(GetCenterPoint(), gfx::Size()));
   SizeToContents();
 }
 
-gfx::Size AppListView::GetPreferredSize() {
+bool AppListView::ShouldCenterWindow() const {
+  return delegate_->ShouldCenterWindow();
+}
+
+gfx::Size AppListView::GetPreferredSize() const {
   return app_list_main_view_->GetPreferredSize();
 }
 
-void AppListView::Paint(gfx::Canvas* canvas) {
-  views::BubbleDelegateView::Paint(canvas);
-  if (g_next_paint_callback) {
-    g_next_paint_callback();
-    g_next_paint_callback = NULL;
+void AppListView::Paint(gfx::Canvas* canvas, const views::CullSet& cull_set) {
+  views::BubbleDelegateView::Paint(canvas, cull_set);
+  if (!next_paint_callback_.is_null()) {
+    next_paint_callback_.Run();
+    next_paint_callback_.Reset();
   }
 }
 
@@ -266,8 +248,8 @@ void AppListView::RemoveObserver(AppListViewObserver* observer) {
 }
 
 // static
-void AppListView::SetNextPaintCallback(void (*callback)()) {
-  g_next_paint_callback = callback;
+void AppListView::SetNextPaintCallback(const base::Closure& callback) {
+  next_paint_callback_ = callback;
 }
 
 #if defined(OS_WIN)
@@ -317,7 +299,6 @@ void AppListView::InitAsBubbleInternal(gfx::NativeView parent,
   OnProfilesChanged();
   set_color(kContentsBackgroundColor);
   set_margins(gfx::Insets());
-  set_move_with_anchor(true);
   set_parent_window(parent);
   set_close_on_deactivate(false);
   set_close_on_esc(false);
@@ -355,12 +336,6 @@ void AppListView::InitAsBubbleInternal(gfx::NativeView parent,
 
   if (delegate_)
     delegate_->ViewInitialized();
-}
-
-gfx::Point AppListView::GetCenterPoint() {
-  DCHECK(screen_to_keep_centered_on_);
-  gfx::Rect bounds = screen_to_keep_centered_on_->GetPrimaryDisplay().bounds();
-  return bounds.CenterPoint();
 }
 
 void AppListView::OnBeforeBubbleWidgetInit(

@@ -9,7 +9,6 @@
 
 #include "base/basictypes.h"
 #include "base/callback.h"
-#include "base/i18n/rtl.h"
 #include "base/process/kill.h"
 #include "base/strings/string16.h"
 #include "content/common/content_export.h"
@@ -113,16 +112,6 @@ class CONTENT_EXPORT RenderViewHostDelegate {
                            int32 page_id,
                            const PageState& state) {}
 
-  // The page's title was changed and should be updated.
-  virtual void UpdateTitle(RenderViewHost* render_view_host,
-                           int32 page_id,
-                           const base::string16& title,
-                           base::i18n::TextDirection title_direction) {}
-
-  // The page's encoding was changed and should be updated.
-  virtual void UpdateEncoding(RenderViewHost* render_view_host,
-                              const std::string& encoding) {}
-
   // The destination URL has changed should be updated
   virtual void UpdateTargetURL(int32 page_id, const GURL& url) {}
 
@@ -135,23 +124,9 @@ class CONTENT_EXPORT RenderViewHostDelegate {
   // The pending page load was canceled.
   virtual void DidCancelLoading() {}
 
-  // The RenderView made progress loading a page's top frame.
-  // |progress| is a value between 0 (nothing loaded) to 1.0 (top frame
-  // entirely loaded).
-  virtual void DidChangeLoadProgress(double progress) {}
-
-  // The RenderView set its opener to null, disowning it for the lifetime of
-  // the window.
-  virtual void DidDisownOpener(RenderViewHost* rvh) {}
-
   // The RenderView's main frame document element is ready. This happens when
   // the document has finished parsing.
   virtual void DocumentAvailableInMainFrame(RenderViewHost* render_view_host) {}
-
-  // The onload handler in the RenderView's main frame has completed.
-  virtual void DocumentOnLoadCompletedInMainFrame(
-      RenderViewHost* render_view_host,
-      int32 page_id) {}
 
   // The page wants to close the active view in this tab.
   virtual void RouteCloseEvent(RenderViewHost* rvh) {}

@@ -86,7 +86,7 @@ SyncChange CreateSyncChange(const autofill::PasswordForm& password,
 // out all interaction with the password database.
 class MockPasswordSyncableService : public PasswordSyncableService {
  public:
-  explicit MockPasswordSyncableService(PasswordStore* password_store)
+  explicit MockPasswordSyncableService(PasswordStoreSync* password_store)
       : PasswordSyncableService(password_store) {}
   virtual ~MockPasswordSyncableService() {}
 
@@ -238,10 +238,8 @@ SyncError PasswordStoreDataVerifier::TestSyncChanges(
     const SyncChangeList& change_list) {
   for (SyncChangeList::const_iterator it = change_list.begin();
       it != change_list.end(); ++it) {
-    const SyncChange& data = *it;
-    const sync_pb::PasswordSpecificsData& actual_password(
-        GetPasswordSpecifics(data.sync_data()));
-    std::string actual_tag = MakePasswordSyncTag(actual_password);
+    SyncData data = it->sync_data();
+    std::string actual_tag = syncer::SyncDataLocal(data).GetTag();
 
     bool matched = false;
     for (SyncChangeList::iterator expected_it =
@@ -251,9 +249,10 @@ SyncError PasswordStoreDataVerifier::TestSyncChanges(
       const sync_pb::PasswordSpecificsData& expected_password(
           GetPasswordSpecifics(expected_it->sync_data()));
       if (actual_tag == MakePasswordSyncTag(expected_password)) {
-        PasswordsEqual(expected_password, actual_password);
-        EXPECT_EQ(expected_it->change_type(), data.change_type());
+        EXPECT_EQ(expected_it->change_type(), it->change_type());
         matched = true;
+        if (it->change_type() != SyncChange::ACTION_DELETE)
+          PasswordsEqual(expected_password, GetPasswordSpecifics(data));
         break;
       }
     }
@@ -279,7 +278,8 @@ class PasswordSyncableServiceWrapper {
  public:
   PasswordSyncableServiceWrapper() {
     password_store_ = new MockPasswordStore;
-    service_.reset(new MockPasswordSyncableService(password_store_));
+    service_.reset(new MockPasswordSyncableService(
+        password_store_->GetSyncInterface()));
   }
 
   ~PasswordSyncableServiceWrapper() {

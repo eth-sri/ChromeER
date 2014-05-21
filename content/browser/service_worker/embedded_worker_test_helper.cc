@@ -23,7 +23,10 @@ EmbeddedWorkerTestHelper::EmbeddedWorkerTestHelper(int mock_render_process_id)
     : wrapper_(new ServiceWorkerContextWrapper(NULL)),
       next_thread_id_(0),
       weak_factory_(this) {
-  wrapper_->Init(base::FilePath(), NULL);
+  wrapper_->InitInternal(base::FilePath(),
+                         base::MessageLoopProxy::current(),
+                         base::MessageLoopProxy::current(),
+                         NULL);
   scoped_ptr<ServiceWorkerProcessManager> process_manager(
       new ServiceWorkerProcessManager(wrapper_));
   process_manager->SetProcessRefcountOpsForTest(base::Bind(AlwaysTrue),
@@ -151,8 +154,8 @@ void EmbeddedWorkerTestHelper::SimulateWorkerStarted(
 void EmbeddedWorkerTestHelper::SimulateWorkerStopped(
     int embedded_worker_id) {
   EmbeddedWorkerInstance* worker = registry()->GetWorker(embedded_worker_id);
-  ASSERT_TRUE(worker != NULL);
-  registry()->OnWorkerStopped(worker->process_id(), embedded_worker_id);
+  if (worker != NULL)
+    registry()->OnWorkerStopped(worker->process_id(), embedded_worker_id);
 }
 
 void EmbeddedWorkerTestHelper::SimulateSend(

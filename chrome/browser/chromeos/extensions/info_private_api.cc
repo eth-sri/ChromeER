@@ -9,7 +9,7 @@
 #include "base/sys_info.h"
 #include "base/values.h"
 #include "chrome/browser/chromeos/login/startup_utils.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/system/timezone_util.h"
 #include "chrome/browser/profiles/profile.h"
@@ -112,7 +112,7 @@ ChromeosInfoPrivateGetFunction::ChromeosInfoPrivateGetFunction() {
 ChromeosInfoPrivateGetFunction::~ChromeosInfoPrivateGetFunction() {
 }
 
-bool ChromeosInfoPrivateGetFunction::RunImpl() {
+bool ChromeosInfoPrivateGetFunction::RunAsync() {
   base::ListValue* list = NULL;
   EXTENSION_FUNCTION_VALIDATE(args_->GetList(0, &list));
   scoped_ptr<base::DictionaryValue> result(new base::DictionaryValue());

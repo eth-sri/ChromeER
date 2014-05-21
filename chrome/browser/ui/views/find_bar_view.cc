@@ -78,7 +78,6 @@ FindBarView::FindBarView(FindBarHost* host)
       find_previous_button_(NULL),
       find_next_button_(NULL),
       close_button_(NULL) {
-  set_id(VIEW_ID_FIND_IN_PAGE);
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
 
   find_text_ = new views::Textfield;
@@ -338,7 +337,7 @@ void FindBarView::Layout() {
       find_previous_button_->height());
 }
 
-gfx::Size FindBarView::GetPreferredSize() {
+gfx::Size FindBarView::GetPreferredSize() const {
   gfx::Size prefsize = find_text_->GetPreferredSize();
   prefsize.set_height(preferred_height_);
 

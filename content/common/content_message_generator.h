@@ -8,6 +8,7 @@
 
 #include "content/common/accessibility_messages.h"
 #include "content/common/appcache_messages.h"
+#include "content/common/battery_status_messages.h"
 #include "content/common/browser_plugin/browser_plugin_messages.h"
 #include "content/common/cc_messages.h"
 #include "content/common/clipboard_messages.h"
@@ -60,6 +61,7 @@
 #include "content/common/worker_messages.h"
 
 #if defined(OS_ANDROID)
+#include "content/common/gin_java_bridge_messages.h"
 #include "content/common/media/cdm_messages.h"
 #include "content/common/media/media_player_messages_android.h"
 #endif  // defined(OS_ANDROID)

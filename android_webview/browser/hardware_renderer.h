@@ -7,12 +7,10 @@
 
 #include <queue>
 
-#include "android_webview/browser/gl_view_renderer_manager.h"
 #include "android_webview/browser/shared_renderer_state.h"
 #include "base/lazy_instance.h"
 #include "base/memory/ref_counted.h"
 #include "base/threading/thread_local.h"
-#include "content/public/browser/android/synchronous_compositor.h"
 
 struct AwDrawGLInfo;
 
@@ -30,15 +28,15 @@ class HardwareRenderer {
   explicit HardwareRenderer(SharedRendererState* state);
   ~HardwareRenderer();
 
-  static void CalculateTileMemoryPolicy();
-
-  bool DrawGL(AwDrawGLInfo* draw_info, DrawGLResult* result);
-  bool TrimMemory(int level, bool visible);
+  bool DrawGL(bool stencil_enabled,
+              int framebuffer_binding_ext,
+              AwDrawGLInfo* draw_info,
+              DrawGLResult* result);
 
  private:
   friend class internal::DeferredGpuCommandService;
 
-  void SetMemoryPolicy(content::SynchronousCompositorMemoryPolicy& new_policy);
+  void SetCompositorMemoryPolicy();
 
   SharedRendererState* shared_renderer_state_;
 
@@ -46,61 +44,9 @@ class HardwareRenderer {
   EGLContext last_egl_context_;
 
   scoped_refptr<AwGLSurface> gl_surface_;
-  content::SynchronousCompositorMemoryPolicy memory_policy_;
-
-  GLViewRendererManager::Key manager_key_;
 
   DISALLOW_COPY_AND_ASSIGN(HardwareRenderer);
 };
-
-namespace internal {
-
-class ScopedAllowGL {
- public:
-  ScopedAllowGL();
-  ~ScopedAllowGL();
-
-  static bool IsAllowed();
-
- private:
-  static base::LazyInstance<base::ThreadLocalBoolean> allow_gl;
-
-  DISALLOW_COPY_AND_ASSIGN(ScopedAllowGL);
-};
-
-// TODO(boliu): Teach this class about RT.
-class DeferredGpuCommandService
-    : public gpu::InProcessCommandBuffer::Service,
-      public base::RefCountedThreadSafe<DeferredGpuCommandService> {
- public:
-  DeferredGpuCommandService();
-
-  virtual void ScheduleTask(const base::Closure& task) OVERRIDE;
-  virtual void ScheduleIdleWork(const base::Closure& task) OVERRIDE;
-  virtual bool UseVirtualizedGLContexts() OVERRIDE;
-  virtual scoped_refptr<gpu::gles2::ShaderTranslatorCache>
-      shader_translator_cache() OVERRIDE;
-
-  void RunTasks();
-
-  virtual void AddRef() const OVERRIDE;
-  virtual void Release() const OVERRIDE;
-
- protected:
-  virtual ~DeferredGpuCommandService();
-  friend class base::RefCountedThreadSafe<DeferredGpuCommandService>;
-
- private:
-  static void RequestProcessGLOnUIThread();
-
-  base::Lock tasks_lock_;
-  std::queue<base::Closure> tasks_;
-
-  scoped_refptr<gpu::gles2::ShaderTranslatorCache> shader_translator_cache_;
-  DISALLOW_COPY_AND_ASSIGN(DeferredGpuCommandService);
-};
-
-}  // namespace internal
 
 }  // namespace android_webview
 

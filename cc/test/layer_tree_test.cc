@@ -35,10 +35,10 @@ TestHooks::TestHooks() {}
 
 TestHooks::~TestHooks() {}
 
-DrawSwapReadbackResult::DrawResult TestHooks::PrepareToDrawOnThread(
+DrawResult TestHooks::PrepareToDrawOnThread(
     LayerTreeHostImpl* host_impl,
     LayerTreeHostImpl::FrameData* frame_data,
-    DrawSwapReadbackResult::DrawResult draw_result) {
+    DrawResult draw_result) {
   return draw_result;
 }
 
@@ -108,11 +108,8 @@ class LayerTreeHostImplForTesting : public LayerTreeHostImpl {
     }
   }
 
-  virtual DrawSwapReadbackResult::DrawResult PrepareToDraw(
-      FrameData* frame,
-      const gfx::Rect& damage_rect) OVERRIDE {
-    DrawSwapReadbackResult::DrawResult draw_result =
-        LayerTreeHostImpl::PrepareToDraw(frame, damage_rect);
+  virtual DrawResult PrepareToDraw(FrameData* frame) OVERRIDE {
+    DrawResult draw_result = LayerTreeHostImpl::PrepareToDraw(frame);
     return test_hooks_->PrepareToDrawOnThread(this, frame, draw_result);
   }
 
@@ -418,12 +415,6 @@ void LayerTreeTest::PostSetNeedsUpdateLayersToMainThread() {
                  main_thread_weak_ptr_));
 }
 
-void LayerTreeTest::PostReadbackToMainThread() {
-  main_task_runner_->PostTask(
-      FROM_HERE,
-      base::Bind(&LayerTreeTest::DispatchReadback, main_thread_weak_ptr_));
-}
-
 void LayerTreeTest::PostSetNeedsRedrawToMainThread() {
   main_task_runner_->PostTask(FROM_HERE,
                               base::Bind(&LayerTreeTest::DispatchSetNeedsRedraw,
@@ -549,15 +540,6 @@ void LayerTreeTest::DispatchSetNeedsUpdateLayers() {
     layer_tree_host_->SetNeedsUpdateLayers();
 }
 
-void LayerTreeTest::DispatchReadback() {
-  DCHECK(!proxy() || proxy()->IsMainThread());
-
-  if (layer_tree_host_) {
-    char pixels[4];
-    layer_tree_host()->CompositeAndReadback(&pixels, gfx::Rect(0, 0, 1, 1));
-  }
-}
-
 void LayerTreeTest::DispatchSetNeedsRedraw() {
   DCHECK(!proxy() || proxy()->IsMainThread());
 
@@ -666,6 +648,10 @@ void LayerTreeTest::RunTestWithImplSidePainting() {
 scoped_ptr<OutputSurface> LayerTreeTest::CreateOutputSurface(bool fallback) {
   scoped_ptr<FakeOutputSurface> output_surface =
       CreateFakeOutputSurface(fallback);
+  if (output_surface) {
+    DCHECK_EQ(delegating_renderer_,
+              output_surface->capabilities().delegated_rendering);
+  }
   output_surface_ = output_surface.get();
   return output_surface.PassAs<OutputSurface>();
 }

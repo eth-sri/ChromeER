@@ -191,6 +191,9 @@ class _Generator(object):
       .Sblock('    %s) {' % self._GenerateParams(
           ('const base::Value& value', '%(name)s* out'))))
 
+    if self._generate_error_messages:
+      c.Append('DCHECK(error);')
+
     if type_.property_type == PropertyType.CHOICES:
       for choice in type_.choices:
         (c.Sblock('if (%s) {' % self._GenerateValueIsTypeExpression('value',
@@ -313,7 +316,10 @@ class _Generator(object):
     (c.Append('// static')
       .Append('scoped_ptr<%s> %s::FromValue(%s) {' % (classname,
         cpp_namespace, self._GenerateParams(('const base::Value& value',))))
-      .Append('  scoped_ptr<%s> out(new %s());' % (classname, classname))
+    )
+    if self._generate_error_messages:
+      c.Append('DCHECK(error);')
+    (c.Append('  scoped_ptr<%s> out(new %s());' % (classname, classname))
       .Append('  if (!Populate(%s))' % self._GenerateArgs(
           ('value', 'out.get()')))
       .Append('    return scoped_ptr<%s>();' % classname)
@@ -360,12 +366,12 @@ class _Generator(object):
       # ANY is a base::Value which is abstract and cannot be a direct member, so
       # it will always be a pointer.
       is_ptr = prop.optional or prop.type_.property_type == PropertyType.ANY
-      c.Append('value->SetWithoutPathExpansion("%s", %s);' % (
+      c.Cblock(self._CreateValueFromType(
+          'value->SetWithoutPathExpansion("%s", %%s);' % prop.name,
           prop.name,
-          self._CreateValueFromType(cpp_namespace,
-                                    prop.type_,
-                                    prop_var,
-                                    is_ptr=is_ptr)))
+          prop.type_,
+          prop_var,
+          is_ptr=is_ptr))
 
       if prop.optional:
         c.Eblock('}')
@@ -384,11 +390,11 @@ class _Generator(object):
                       cpp_util.PadForGenerics(cpp_type))
           .Append('       additional_properties.begin();')
           .Append('   it != additional_properties.end(); ++it) {')
-          .Append('value->SetWithoutPathExpansion(it->first, %s);' %
-              self._CreateValueFromType(
-                  cpp_namespace,
-                  type_.additional_properties,
-                  '%sit->second' % ('*' if needs_unwrap else '')))
+          .Cblock(self._CreateValueFromType(
+              'value->SetWithoutPathExpansion(it->first, %s);',
+              type_.additional_properties.name,
+              type_.additional_properties,
+              '%sit->second' % ('*' if needs_unwrap else '')))
           .Eblock('}')
         )
 
@@ -408,10 +414,10 @@ class _Generator(object):
       (c.Sblock('if (%s) {' % choice_var)
           .Append('DCHECK(!result) << "Cannot set multiple choices for %s";' %
                       type_.unix_name)
-          .Append('result.reset(%s);' % self._CreateValueFromType(
-              cpp_namespace,
-              choice,
-              '*%s' % choice_var))
+          .Cblock(self._CreateValueFromType('result.reset(%s);',
+                                            choice.name,
+                                            choice,
+                                            '*%s' % choice_var))
         .Eblock('}')
       )
     (c.Append('DCHECK(result) << "Must set at least one choice for %s";' %
@@ -468,13 +474,59 @@ class _Generator(object):
     )
     return c
 
-  def _CreateValueFromType(self, cpp_namespace, type_, var, is_ptr=False):
+  def _CreateValueFromType(self, code, prop_name, type_, var, is_ptr=False):
     """Creates a base::Value given a type. Generated code passes ownership
     to caller.
 
     var: variable or variable*
 
     E.g for std::string, generate new base::StringValue(var)
+    """
+    c = Code()
+    underlying_type = self._type_helper.FollowRef(type_)
+    if underlying_type.property_type == PropertyType.ARRAY:
+      # Enums are treated specially because C++ templating thinks that they're
+      # ints, but really they're strings. So we create a vector of strings and
+      # populate it with the names of the enum in the array. The |ToString|
+      # function of the enum can be in another namespace when the enum is
+      # referenced. Templates can not be used here because C++ templating does
+      # not support passing a namespace as an argument.
+      item_type = self._type_helper.FollowRef(underlying_type.item_type)
+      if item_type.property_type == PropertyType.ENUM:
+        vardot = '(%s)%s' % (var, '->' if is_ptr else '.')
+
+        maybe_namespace = ''
+        if type_.item_type.property_type == PropertyType.REF:
+          maybe_namespace = '%s::' % item_type.namespace.unix_name
+
+        enum_list_var = '%s_list' % prop_name
+        # Scope the std::vector variable declaration inside braces.
+        (c.Sblock('{')
+          .Append('std::vector<std::string> %s;' % enum_list_var)
+          .Append('for (std::vector<%s>::const_iterator it = %sbegin();'
+              % (self._type_helper.GetCppType(item_type), vardot))
+          .Sblock('    it != %send(); ++it) {' % vardot)
+          .Append('%s.push_back(%sToString(*it));' % (enum_list_var,
+                                                      maybe_namespace))
+          .Eblock('}'))
+
+        # Because the std::vector above is always created for both required and
+        # optional enum arrays, |is_ptr| is set to false and uses the
+        # std::vector to create the values.
+        (c.Append(code %
+            self._GenerateCreateValueFromType(type_, enum_list_var, False))
+          .Eblock('}'))
+        return c
+
+    c.Append(code % self._GenerateCreateValueFromType(type_, var, is_ptr))
+    return c
+
+  def _GenerateCreateValueFromType(self, type_, var, is_ptr):
+    """Generates the statement to create a base::Value given a type.
+
+    type_:  The type of the values being converted.
+    var:    The name of the variable.
+    is_ptr: Whether |type_| is optional.
     """
     underlying_type = self._type_helper.FollowRef(type_)
     if (underlying_type.property_type == PropertyType.CHOICES or
@@ -491,7 +543,10 @@ class _Generator(object):
         vardot = '(%s).' % var
       return '%sDeepCopy()' % vardot
     elif underlying_type.property_type == PropertyType.ENUM:
-      return 'new base::StringValue(ToString(%s))' % var
+      maybe_namespace = ''
+      if type_.property_type == PropertyType.REF:
+        maybe_namespace = '%s::' % underlying_type.namespace.unix_name
+      return 'new base::StringValue(%sToString(%s))' % (maybe_namespace, var)
     elif underlying_type.property_type == PropertyType.BINARY:
       if is_ptr:
         vardot = var + '->'
@@ -501,8 +556,6 @@ class _Generator(object):
               (vardot, vardot))
     elif underlying_type.property_type == PropertyType.ARRAY:
       return '%s.release()' % self._util_cc_helper.CreateValueFromArray(
-          cpp_namespace,
-          underlying_type,
           var,
           is_ptr)
     elif underlying_type.property_type.is_fundamental:
@@ -554,7 +607,10 @@ class _Generator(object):
     (c.Append('// static')
       .Sblock('scoped_ptr<Params> Params::Create(%s) {' % self._GenerateParams(
         ['const base::ListValue& args']))
-      .Concat(self._GenerateParamsCheck(function, 'args'))
+    )
+    if self._generate_error_messages:
+      c.Append('DCHECK(error);')
+    (c.Concat(self._GenerateParamsCheck(function, 'args'))
       .Append('scoped_ptr<Params> params(new Params());')
     )
 
@@ -881,8 +937,11 @@ class _Generator(object):
                  (maybe_namespace, classname))
     c.Sblock('switch (enum_param) {')
     for enum_value in self._type_helper.FollowRef(type_).enum_values:
+      name = enum_value.name
+      if 'camel_case_enum_to_string' in self._namespace.compiler_options:
+        name = enum_value.CamelName()
       (c.Append('case %s: ' % self._type_helper.GetEnumValue(type_, enum_value))
-        .Append('  return "%s";' % enum_value.name))
+        .Append('  return "%s";' % name))
     (c.Append('case %s:' % self._type_helper.GetEnumNoneValue(type_))
       .Append('  return "";')
       .Eblock('}')
@@ -944,10 +1003,10 @@ class _Generator(object):
     for param in params:
       declaration_list.append(cpp_util.GetParameterDeclaration(
           param, self._type_helper.GetCppType(param.type_)))
-      c.Append('create_results->Append(%s);' % self._CreateValueFromType(
-          cpp_namespace,
-          param.type_,
-          param.unix_name))
+      c.Cblock(self._CreateValueFromType('create_results->Append(%s);',
+                                         param.name,
+                                         param.type_,
+                                         param.unix_name))
     c.Append('return create_results.Pass();')
     c.Eblock('}')
     c.Substitute({
@@ -990,13 +1049,9 @@ class _Generator(object):
     c = Code()
     if not self._generate_error_messages:
       return c
-    (c.Append('if (error) {')
-      .Append('  if (error->length())')
-      .Append('    error->append(UTF8ToUTF16("; "));')
-      .Append('  error->append(UTF8ToUTF16(%s));' % body)
-      .Append('}')
-      .Append('else')
-      .Append('  *error = UTF8ToUTF16(%s);' % body))
+    (c.Append('if (error->length())')
+      .Append('  error->append(UTF8ToUTF16("; "));')
+      .Append('error->append(UTF8ToUTF16(%s));' % body))
     return c
 
   def _GenerateParams(self, params):

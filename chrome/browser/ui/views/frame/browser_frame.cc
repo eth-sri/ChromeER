@@ -191,6 +191,15 @@ bool BrowserFrame::UseCustomFrame() const {
   return use_custom_frame_pref_.GetValue();
 }
 
+bool BrowserFrame::ShouldSaveWindowPlacement() const {
+  return native_browser_frame_->ShouldSaveWindowPlacement();
+}
+
+void BrowserFrame::GetWindowPlacement(gfx::Rect* bounds,
+                                      ui::WindowShowState* show_state) const {
+  return native_browser_frame_->GetWindowPlacement(bounds, show_state);
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // BrowserFrame, views::Widget overrides:
 
@@ -206,7 +215,7 @@ views::NonClientFrameView* BrowserFrame::CreateNonClientFrameView() {
 }
 
 bool BrowserFrame::GetAccelerator(int command_id,
-                                  ui::Accelerator* accelerator) {
+                                  ui::Accelerator* accelerator) const {
   return browser_view_->GetAccelerator(command_id, accelerator);
 }
 

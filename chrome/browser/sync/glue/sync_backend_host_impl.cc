@@ -6,14 +6,15 @@
 
 #include "base/command_line.h"
 #include "base/logging.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/invalidation/invalidation_service.h"
 #include "chrome/browser/invalidation/invalidation_service_factory.h"
 #include "chrome/browser/network_time/network_time_tracker.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync/glue/sync_backend_host_core.h"
 #include "chrome/browser/sync/glue/sync_backend_registrar.h"
 #include "chrome/common/chrome_switches.h"
+#include "components/invalidation/invalidation_service.h"
 #include "components/sync_driver/sync_frontend.h"
 #include "components/sync_driver/sync_prefs.h"
 #include "content/public/browser/browser_thread.h"
@@ -40,15 +41,35 @@
 
 using syncer::InternalComponentsFactory;
 
-static const base::FilePath::CharType kSyncDataFolderName[] =
-    FILE_PATH_LITERAL("Sync Data");
-
 namespace browser_sync {
+
+namespace {
+
+void UpdateNetworkTimeOnUIThread(base::Time network_time,
+                                 base::TimeDelta resolution,
+                                 base::TimeDelta latency,
+                                 base::TimeTicks post_time) {
+  g_browser_process->network_time_tracker()->UpdateNetworkTime(
+      network_time, resolution, latency, post_time);
+}
+
+void UpdateNetworkTime(const base::Time& network_time,
+                       const base::TimeDelta& resolution,
+                       const base::TimeDelta& latency) {
+  content::BrowserThread::PostTask(
+      content::BrowserThread::UI,
+      FROM_HERE,
+      base::Bind(&UpdateNetworkTimeOnUIThread,
+                 network_time, resolution, latency, base::TimeTicks::Now()));
+}
+
+}  // namespace
 
 SyncBackendHostImpl::SyncBackendHostImpl(
     const std::string& name,
     Profile* profile,
-    const base::WeakPtr<sync_driver::SyncPrefs>& sync_prefs)
+    const base::WeakPtr<sync_driver::SyncPrefs>& sync_prefs,
+    const base::FilePath& sync_folder)
     : frontend_loop_(base::MessageLoop::current()),
       profile_(profile),
       name_(name),
@@ -63,7 +84,7 @@ SyncBackendHostImpl::SyncBackendHostImpl(
   CHECK(invalidator_);
   core_ = new SyncBackendHostCore(
       name_,
-      profile_->GetPath().Append(kSyncDataFolderName),
+      profile_->GetPath().Append(sync_folder),
       sync_prefs_->HasSyncSetupCompleted(),
       weak_ptr_factory_.GetWeakPtr());
 }
@@ -123,7 +144,7 @@ void SyncBackendHostImpl::Initialize(
       sync_service_url,
       network_resources->GetHttpPostProviderFactory(
           make_scoped_refptr(profile_->GetRequestContext()),
-          NetworkTimeTracker::BuildNotifierUpdateCallback(),
+          base::Bind(&UpdateNetworkTime),
           core_->GetRequestContextCancelationSignal()),
       credentials,
       invalidator_->GetInvalidatorClientId(),
@@ -159,7 +180,7 @@ void SyncBackendHostImpl::StartSyncingWithServer() {
 }
 
 void SyncBackendHostImpl::SetEncryptionPassphrase(const std::string& passphrase,
-                                              bool is_explicit) {
+                                                  bool is_explicit) {
   DCHECK(registrar_->sync_thread()->IsRunning());
   if (!IsNigoriEnabled()) {
     NOTREACHED() << "SetEncryptionPassphrase must never be called when nigori"
@@ -500,6 +521,24 @@ void SyncBackendHostImpl::DisableProtocolEventForwarding() {
           core_));
 }
 
+void SyncBackendHostImpl::EnableDirectoryTypeDebugInfoForwarding() {
+  DCHECK(initialized());
+  registrar_->sync_thread()->message_loop()->PostTask(
+      FROM_HERE,
+      base::Bind(
+          &SyncBackendHostCore::EnableDirectoryTypeDebugInfoForwarding,
+          core_));
+}
+
+void SyncBackendHostImpl::DisableDirectoryTypeDebugInfoForwarding() {
+  DCHECK(initialized());
+  registrar_->sync_thread()->message_loop()->PostTask(
+      FROM_HERE,
+      base::Bind(
+          &SyncBackendHostCore::DisableDirectoryTypeDebugInfoForwarding,
+          core_));
+}
+
 void SyncBackendHostImpl::GetAllNodesForTypes(
     syncer::ModelTypeSet types,
     base::Callback<void(const std::vector<syncer::ModelType>&,
@@ -796,6 +835,30 @@ void SyncBackendHostImpl::HandleProtocolEventOnFrontendLoop(
   frontend_->OnProtocolEvent(*scoped_event);
 }
 
+void SyncBackendHostImpl::HandleDirectoryCommitCountersUpdatedOnFrontendLoop(
+    syncer::ModelType type,
+    const syncer::CommitCounters& counters) {
+  if (!frontend_)
+    return;
+  frontend_->OnDirectoryTypeCommitCounterUpdated(type, counters);
+}
+
+void SyncBackendHostImpl::HandleDirectoryUpdateCountersUpdatedOnFrontendLoop(
+    syncer::ModelType type,
+    const syncer::UpdateCounters& counters) {
+  if (!frontend_)
+    return;
+  frontend_->OnDirectoryTypeUpdateCounterUpdated(type, counters);
+}
+
+void SyncBackendHostImpl::HandleDirectoryStatusCountersUpdatedOnFrontendLoop(
+    syncer::ModelType type,
+    const syncer::StatusCounters& counters) {
+  if (!frontend_)
+    return;
+  frontend_->OnDirectoryTypeStatusCounterUpdated(type, counters);
+}
+
 base::MessageLoop* SyncBackendHostImpl::GetSyncLoopForTesting() {
   return registrar_->sync_thread()->message_loop();
 }
@@ -805,4 +868,3 @@ base::MessageLoop* SyncBackendHostImpl::GetSyncLoopForTesting() {
 #undef SDVLOG
 
 #undef SLOG
-

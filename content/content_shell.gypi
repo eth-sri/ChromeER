@@ -177,8 +177,6 @@
         'shell/renderer/test_runner/MockColorChooser.h',
         'shell/renderer/test_runner/MockConstraints.cpp',
         'shell/renderer/test_runner/MockConstraints.h',
-        'shell/renderer/test_runner/MockGrammarCheck.cpp',
-        'shell/renderer/test_runner/MockGrammarCheck.h',
         'shell/renderer/test_runner/MockSpellCheck.cpp',
         'shell/renderer/test_runner/MockSpellCheck.h',
         'shell/renderer/test_runner/MockWebAudioDevice.cpp',
@@ -193,8 +191,6 @@
         'shell/renderer/test_runner/MockWebRTCDataChannelHandler.h',
         'shell/renderer/test_runner/MockWebRTCPeerConnectionHandler.cpp',
         'shell/renderer/test_runner/MockWebRTCPeerConnectionHandler.h',
-        'shell/renderer/test_runner/MockWebSpeechInputController.cpp',
-        'shell/renderer/test_runner/MockWebSpeechInputController.h',
         'shell/renderer/test_runner/MockWebSpeechRecognizer.cpp',
         'shell/renderer/test_runner/MockWebSpeechRecognizer.h',
         'shell/renderer/test_runner/SpellCheckClient.cpp',
@@ -205,7 +201,6 @@
         'shell/renderer/test_runner/TestInterfaces.h',
         'shell/renderer/test_runner/TestPlugin.cpp',
         'shell/renderer/test_runner/TestPlugin.h',
-        'shell/renderer/test_runner/WebFrameTestProxy.h',
         'shell/renderer/test_runner/WebPermissions.cpp',
         'shell/renderer/test_runner/WebPermissions.h',
         'shell/renderer/test_runner/WebTask.cpp',
@@ -213,8 +208,6 @@
         'shell/renderer/test_runner/WebTestDelegate.h',
         'shell/renderer/test_runner/WebTestInterfaces.cpp',
         'shell/renderer/test_runner/WebTestInterfaces.h',
-        'shell/renderer/test_runner/WebTestProxy.cpp',
-        'shell/renderer/test_runner/WebTestProxy.h',
         'shell/renderer/test_runner/WebTestRunner.h',
         'shell/renderer/test_runner/WebTestThemeEngineMac.h',
         'shell/renderer/test_runner/WebTestThemeEngineMac.mm',
@@ -228,6 +221,8 @@
         'shell/renderer/test_runner/event_sender.h',
         'shell/renderer/test_runner/gamepad_controller.cc',
         'shell/renderer/test_runner/gamepad_controller.h',
+        'shell/renderer/test_runner/mock_grammar_check.cc',
+        'shell/renderer/test_runner/mock_grammar_check.h',
         'shell/renderer/test_runner/notification_presenter.cc',
         'shell/renderer/test_runner/notification_presenter.h',
         'shell/renderer/test_runner/test_runner.cc',
@@ -236,6 +231,9 @@
         'shell/renderer/test_runner/text_input_controller.h',
         'shell/renderer/test_runner/web_ax_object_proxy.cc',
         'shell/renderer/test_runner/web_ax_object_proxy.h',
+        'shell/renderer/test_runner/web_frame_test_proxy.h',
+        'shell/renderer/test_runner/web_test_proxy.cc',
+        'shell/renderer/test_runner/web_test_proxy.h',
         'shell/renderer/webkit_test_runner.cc',
         'shell/renderer/webkit_test_runner.h',
       ],
@@ -301,8 +299,7 @@
             '../components/components.gyp:breakpad_host',
           ],
         }],
-        # TODO(dmikurube): Kill {linux|android}_use_tcmalloc. http://crbug.com/345554
-        ['(use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and ((OS=="linux" and linux_use_tcmalloc==1) or (OS=="android" and android_use_tcmalloc==1)))', {
+        ['(OS=="linux" or OS=="android") and use_allocator!="none"', {
           'dependencies': [
             # This is needed by content/app/content_main_runner.cc
             '../base/allocator/allocator.gyp:allocator',
@@ -312,8 +309,8 @@
           'dependencies': [
             '../ui/aura/aura.gyp:aura',
             '../ui/aura/aura.gyp:aura_test_support',
-            '../ui/base/strings/ui_strings.gyp:ui_strings',
             '../ui/events/events.gyp:events',
+            '../ui/strings/ui_strings.gyp:ui_strings',
             '../ui/wm/wm.gyp:wm',
           ],
           'conditions': [
@@ -367,12 +364,18 @@
     {
       'target_name': 'content_shell_resources',
       'type': 'none',
-      'dependencies': [
-        'generate_content_shell_resources',
-      ],
       'variables': {
         'grit_out_dir': '<(SHARED_INTERMEDIATE_DIR)/content',
       },
+      'actions': [
+        {
+          'action_name': 'generate_content_shell_resources',
+          'variables': {
+            'grit_grd_file': 'shell/shell_resources.grd',
+          },
+          'includes': [ '../build/grit_action.gypi' ],
+        },
+      ],
       'includes': [ '../build/grit_target.gypi' ],
       'copies': [
         {
@@ -421,22 +424,6 @@
       ],
     },
     {
-      'target_name': 'generate_content_shell_resources',
-      'type': 'none',
-      'variables': {
-        'grit_out_dir': '<(SHARED_INTERMEDIATE_DIR)/content',
-      },
-      'actions': [
-        {
-          'action_name': 'content_shell_resources',
-          'variables': {
-            'grit_grd_file': 'shell/shell_resources.grd',
-          },
-          'includes': [ '../build/grit_action.gypi' ],
-        },
-      ],
-    },
-    {
       # We build a minimal set of resources so WebKit in content_shell has
       # access to necessary resources.
       'target_name': 'content_shell_pak',
@@ -445,8 +432,8 @@
         'content_resources.gyp:content_resources',
         'content_shell_resources',
         '<(DEPTH)/net/net.gyp:net_resources',
-        '<(DEPTH)/ui/base/strings/ui_strings.gyp:ui_strings',
         '<(DEPTH)/ui/resources/ui_resources.gyp:ui_resources',
+        '<(DEPTH)/ui/strings/ui_strings.gyp:ui_strings',
         '<(DEPTH)/webkit/webkit_resources.gyp:webkit_resources',
         '<(DEPTH)/webkit/webkit_resources.gyp:webkit_strings',
       ],
@@ -639,23 +626,7 @@
         'content_shell',
       ],
     },
-    {
-      'target_name': 'layout_test_helper',
-      'type': 'executable',
-      'sources': [
-        'shell/renderer/test_runner/helper/layout_test_helper_mac.mm',
-        'shell/renderer/test_runner/helper/layout_test_helper_win.cc',
-      ],
-      'conditions': [
-        ['OS=="mac"', {
-          'link_settings': {
-            'libraries': [
-              '$(SDKROOT)/System/Library/Frameworks/AppKit.framework',
-            ],
-          },
-        }],
-      ],
-    },
+
     {
       'target_name': 'test_netscape_plugin',
       'type': 'loadable_module',
@@ -761,6 +732,27 @@
     }
   ],
   'conditions': [
+    ['OS=="mac" or OS=="win"', {
+      'targets': [
+        {
+          'target_name': 'layout_test_helper',
+          'type': 'executable',
+          'sources': [
+            'shell/renderer/test_runner/helper/layout_test_helper_mac.mm',
+            'shell/renderer/test_runner/helper/layout_test_helper_win.cc',
+          ],
+          'conditions': [
+            ['OS=="mac"', {
+              'link_settings': {
+                'libraries': [
+                  '$(SDKROOT)/System/Library/Frameworks/AppKit.framework',
+                ],
+              },
+            }],
+          ],
+        },
+      ],
+    }],  # OS=="mac" or OS=="win"
     ['OS=="mac"', {
       'targets': [
         {
@@ -951,7 +943,6 @@
           ],
           'variables': {
             'jni_gen_package': 'content/shell',
-            'jni_generator_ptr_type': 'long',
           },
           'includes': [ '../build/jni_generator.gypi' ],
         },
@@ -1073,7 +1064,7 @@
         },
       ],
     }],  # OS=="win"
-    ['OS=="win" and fastbuild==0 and target_arch=="ia32"', {
+    ['OS=="win" and fastbuild==0 and target_arch=="ia32" and syzyasan==1', {
       'variables': {
         'dest_dir': '<(PRODUCT_DIR)/syzygy',
       },

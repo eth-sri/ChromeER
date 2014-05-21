@@ -29,8 +29,10 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/fake_speech_recognition_manager.h"
+#include "content/public/test/test_renderer_host.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extensions_client.h"
+#include "media/base/media_switches.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/test/embedded_test_server/http_request.h"
 #include "net/test/embedded_test_server/http_response.h"
@@ -122,6 +124,30 @@ class GuestContentBrowserClient : public chrome::ChromeContentBrowserClient {
   scoped_refptr<content::MessageLoopRunner> message_loop_runner_;
 };
 
+class WebContentsHiddenObserver : public content::WebContentsObserver {
+ public:
+  WebContentsHiddenObserver(content::WebContents* web_contents,
+                            const base::Closure& hidden_callback)
+      : WebContentsObserver(web_contents),
+        hidden_callback_(hidden_callback),
+        hidden_observed_(true) {
+  }
+
+  // WebContentsObserver.
+  virtual void WasHidden() OVERRIDE {
+    hidden_observed_ = true;
+    hidden_callback_.Run();
+  }
+
+  bool hidden_observed() { return hidden_observed_; }
+
+ private:
+  base::Closure hidden_callback_;
+  bool hidden_observed_;
+
+  DISALLOW_COPY_AND_ASSIGN(WebContentsHiddenObserver);
+};
+
 class InterstitialObserver : public content::WebContentsObserver {
  public:
   InterstitialObserver(content::WebContents* web_contents,
@@ -146,6 +172,18 @@ class InterstitialObserver : public content::WebContentsObserver {
 
   DISALLOW_COPY_AND_ASSIGN(InterstitialObserver);
 };
+
+void ExecuteScriptWaitForTitle(content::WebContents* web_contents,
+                               const char* script,
+                               const char* title) {
+  base::string16 expected_title(base::ASCIIToUTF16(title));
+  base::string16 error_title(base::ASCIIToUTF16("error"));
+
+  content::TitleWatcher title_watcher(web_contents, expected_title);
+  title_watcher.AlsoWaitForTitle(error_title);
+  EXPECT_TRUE(content::ExecuteScript(web_contents, script));
+  EXPECT_EQ(expected_title, title_watcher.WaitAndGetTitle());
+}
 
 }  // namespace
 
@@ -197,11 +235,11 @@ class MockDownloadWebContentsDelegate : public content::WebContentsDelegate {
 
   virtual void CanDownload(
       content::RenderViewHost* render_view_host,
-      int request_id,
+      const GURL& url,
       const std::string& request_method,
       const base::Callback<void(bool)>& callback) OVERRIDE {
     orig_delegate_->CanDownload(
-        render_view_host, request_id, request_method,
+        render_view_host, url, request_method,
         base::Bind(&MockDownloadWebContentsDelegate::DownloadDecided,
                    base::Unretained(this)));
   }
@@ -457,18 +495,6 @@ class WebViewTest : public extensions::PlatformAppBrowserTest {
     }
   }
 
-  void ExecuteScriptWaitForTitle(content::WebContents* web_contents,
-                                 const char* script,
-                                 const char* title) {
-    base::string16 expected_title(base::ASCIIToUTF16(title));
-    base::string16 error_title(base::ASCIIToUTF16("error"));
-
-    content::TitleWatcher title_watcher(web_contents, expected_title);
-    title_watcher.AlsoWaitForTitle(error_title);
-    EXPECT_TRUE(content::ExecuteScript(web_contents, script));
-    EXPECT_EQ(expected_title, title_watcher.WaitAndGetTitle());
-  }
-
   // Handles |request| by serving a redirect response.
   static scoped_ptr<net::test_server::HttpResponse> RedirectResponseHandler(
       const std::string& path,
@@ -628,20 +654,135 @@ class WebViewTest : public extensions::PlatformAppBrowserTest {
       loop_runner->Run();
   }
 
+  void LoadAppWithGuest(const std::string& app_path) {
+    GuestContentBrowserClient new_client;
+    content::ContentBrowserClient* old_client =
+        SetBrowserClientForTesting(&new_client);
+
+    ExtensionTestMessageListener launched_listener("WebViewTest.LAUNCHED",
+                                                   false);
+    launched_listener.set_failure_message("WebViewTest.FAILURE");
+    LoadAndLaunchPlatformApp(app_path.c_str());
+    ASSERT_TRUE(launched_listener.WaitUntilSatisfied());
+
+    guest_web_contents_ = new_client.WaitForGuestCreated();
+    SetBrowserClientForTesting(old_client);
+  }
+
+  void SendMessageToEmbedder(const std::string& message) {
+    EXPECT_TRUE(
+        content::ExecuteScript(
+            GetEmbedderWebContents(),
+            base::StringPrintf("onAppCommand('%s');", message.c_str())));
+  }
+
+  void SendMessageToGuestAndWait(const std::string& message,
+                                 const std::string& wait_message) {
+    scoped_ptr<ExtensionTestMessageListener> listener;
+    if (!wait_message.empty()) {
+      listener.reset(new ExtensionTestMessageListener(wait_message, false));
+    }
+
+    EXPECT_TRUE(
+        content::ExecuteScript(
+            GetGuestWebContents(),
+            base::StringPrintf("onAppCommand('%s');", message.c_str())));
+
+    if (listener) {
+      ASSERT_TRUE(listener->WaitUntilSatisfied());
+    }
+  }
+
+  content::WebContents* GetGuestWebContents() {
+    return guest_web_contents_;
+  }
+
+  content::WebContents* GetEmbedderWebContents() {
+    if (!embedder_web_contents_) {
+      embedder_web_contents_ = GetFirstAppWindowWebContents();
+    }
+    return embedder_web_contents_;
+  }
+
+  WebViewTest() : guest_web_contents_(NULL),
+                  embedder_web_contents_(NULL) {
+  }
+
  private:
   bool UsesFakeSpeech() {
     const testing::TestInfo* const test_info =
         testing::UnitTest::GetInstance()->current_test_info();
 
     // SpeechRecognition test specific SetUp.
-    return !strcmp(test_info->name(), "SpeechRecognition") ||
-           !strcmp(test_info->name(),
+    return !strcmp(test_info->name(),
                    "SpeechRecognitionAPI_HasPermissionAllow");
   }
 
   scoped_ptr<content::FakeSpeechRecognitionManager>
       fake_speech_recognition_manager_;
+
+  // Note that these are only set if you launch app using LoadAppWithGuest().
+  content::WebContents* guest_web_contents_;
+  content::WebContents* embedder_web_contents_;
 };
+
+// This test verifies that hiding the guest triggers WebContents::WasHidden().
+IN_PROC_BROWSER_TEST_F(WebViewTest, GuestVisibilityChanged) {
+  LoadAppWithGuest("web_view/visibility_changed");
+
+  scoped_refptr<content::MessageLoopRunner> loop_runner(
+      new content::MessageLoopRunner);
+  WebContentsHiddenObserver observer(GetGuestWebContents(),
+                                     loop_runner->QuitClosure());
+
+  // Handled in platform_apps/web_view/visibility_changed/main.js
+  SendMessageToEmbedder("hide-guest");
+  if (!observer.hidden_observed())
+    loop_runner->Run();
+}
+
+// This test verifies that hiding the embedder also hides the guest.
+IN_PROC_BROWSER_TEST_F(WebViewTest, EmbedderVisibilityChanged) {
+  LoadAppWithGuest("web_view/visibility_changed");
+
+  scoped_refptr<content::MessageLoopRunner> loop_runner(
+      new content::MessageLoopRunner);
+  WebContentsHiddenObserver observer(GetGuestWebContents(),
+                                     loop_runner->QuitClosure());
+
+  // Handled in platform_apps/web_view/visibility_changed/main.js
+  SendMessageToEmbedder("hide-embedder");
+  if (!observer.hidden_observed())
+    loop_runner->Run();
+}
+
+IN_PROC_BROWSER_TEST_F(WebViewTest, AcceptTouchEvents) {
+  LoadAppWithGuest("web_view/accept_touch_events");
+
+  content::RenderViewHost* embedder_rvh =
+      GetEmbedderWebContents()->GetRenderViewHost();
+
+  bool embedder_has_touch_handler =
+      content::RenderViewHostTester::HasTouchEventHandler(embedder_rvh);
+  EXPECT_FALSE(embedder_has_touch_handler);
+
+  SendMessageToGuestAndWait("install-touch-handler", "installed-touch-handler");
+
+  // Note that we need to wait for the installed/registered touch handler to
+  // appear in browser process before querying |embedder_rvh|.
+  // In practice, since we do a roundrtip from browser process to guest and
+  // back, this is sufficient.
+  embedder_has_touch_handler =
+      content::RenderViewHostTester::HasTouchEventHandler(embedder_rvh);
+  EXPECT_TRUE(embedder_has_touch_handler);
+
+  SendMessageToGuestAndWait("uninstall-touch-handler",
+                            "uninstalled-touch-handler");
+  // Same as the note above about waiting.
+  embedder_has_touch_handler =
+      content::RenderViewHostTester::HasTouchEventHandler(embedder_rvh);
+  EXPECT_FALSE(embedder_has_touch_handler);
+}
 
 // This test ensures JavaScript errors ("Cannot redefine property") do not
 // happen when a <webview> is removed from DOM and added back.
@@ -816,6 +957,10 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestNavOnSrcAttributeChange) {
   TestHelper("testNavOnSrcAttributeChange", "web_view/shim", NO_TEST_SERVER);
 }
 
+IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestNavigateAfterResize) {
+  TestHelper("testNavigateAfterResize", "web_view/shim", NO_TEST_SERVER);
+}
+
 IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestRemoveSrcAttribute) {
   TestHelper("testRemoveSrcAttribute", "web_view/shim", NO_TEST_SERVER);
 }
@@ -919,6 +1064,14 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestLoadAbortIllegalJavaScriptURL) {
   TestHelper("testLoadAbortIllegalJavaScriptURL",
              "web_view/shim",
              NO_TEST_SERVER);
+}
+
+IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestLoadAbortInvalidNavigation) {
+  TestHelper("testLoadAbortInvalidNavigation", "web_view/shim", NO_TEST_SERVER);
+}
+
+IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestLoadAbortNonWebSafeScheme) {
+  TestHelper("testLoadAbortNonWebSafeScheme", "web_view/shim", NO_TEST_SERVER);
 }
 
 IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestReload) {
@@ -1588,20 +1741,10 @@ void WebViewTest::MediaAccessAPIAllowTestHelper(const std::string& test_name) {
 }
 
 IN_PROC_BROWSER_TEST_F(WebViewTest, ContextMenusAPI_Basic) {
-  GuestContentBrowserClient new_client;
-  content::ContentBrowserClient* old_client =
-      SetBrowserClientForTesting(&new_client);
+  LoadAppWithGuest("web_view/context_menus/basic");
 
-  ExtensionTestMessageListener launched_listener("Launched", false);
-  launched_listener.set_failure_message("TEST_FAILED");
-  LoadAndLaunchPlatformApp("web_view/context_menus/basic");
-  ASSERT_TRUE(launched_listener.WaitUntilSatisfied());
-
-  content::WebContents* guest_web_contents = new_client.WaitForGuestCreated();
-  ASSERT_TRUE(guest_web_contents);
-  SetBrowserClientForTesting(old_client);
-
-  content::WebContents* embedder = GetFirstAppWindowWebContents();
+  content::WebContents* guest_web_contents = GetGuestWebContents();
+  content::WebContents* embedder = GetEmbedderWebContents();
   ASSERT_TRUE(embedder);
 
   // 1. Basic property test.
@@ -1672,25 +1815,6 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, ScreenCoordinates) {
   ASSERT_TRUE(RunPlatformAppTestWithArg(
       "platform_apps/web_view/common", "screen_coordinates"))
           << message_;
-}
-
-// crbug/360448
-IN_PROC_BROWSER_TEST_F(WebViewTest, DISABLED_SpeechRecognition) {
-  ASSERT_TRUE(StartEmbeddedTestServer());
-  content::WebContents* guest_web_contents = LoadGuest(
-      "/extensions/platform_apps/web_view/speech/guest.html",
-      "web_view/speech");
-  ASSERT_TRUE(guest_web_contents);
-
-  // Click on the guest (center of the WebContents), the guest is rendered in a
-  // way that this will trigger clicking on speech recognition input mic.
-  SimulateMouseClick(guest_web_contents, 0, blink::WebMouseEvent::ButtonLeft);
-
-  base::string16 expected_title(base::ASCIIToUTF16("PASSED"));
-  base::string16 error_title(base::ASCIIToUTF16("FAILED"));
-  content::TitleWatcher title_watcher(guest_web_contents, expected_title);
-  title_watcher.AlsoWaitForTitle(error_title);
-  EXPECT_EQ(expected_title, title_watcher.WaitAndGetTitle());
 }
 
 #if defined(OS_CHROMEOS)

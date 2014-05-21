@@ -71,6 +71,8 @@ void RecordDailyEventFrequency(
     return;  // In a unit test.
 
   PrefService* local_state = g_browser_process->local_state();
+  if (!local_state)
+    return;  // In a unit test.
 
   int count = local_state->GetInteger(count_pref);
   local_state->SetInteger(count_pref, count + 1);
@@ -134,7 +136,8 @@ class ProfileStoreImpl : public ProfileStore {
     ProfileInfoCache& profile_info =
         g_browser_process->profile_manager()->GetProfileInfoCache();
     size_t profile_index = profile_info.GetIndexOfProfileWithPath(profile_path);
-    return profile_info.ProfileIsManagedAtIndex(profile_index);
+    return profile_index != std::string::npos &&
+        profile_info.ProfileIsManagedAtIndex(profile_index);
   }
 
  private:

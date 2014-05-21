@@ -68,7 +68,8 @@ class Rtcp {
        const base::TimeDelta& rtcp_interval,
        uint32 local_ssrc,
        uint32 remote_ssrc,
-       const std::string& c_name);
+       const std::string& c_name,
+       bool is_audio);
 
   virtual ~Rtcp();
 
@@ -77,15 +78,12 @@ class Rtcp {
   static uint32 GetSsrcOfSender(const uint8* rtcp_buffer, size_t length);
 
   base::TimeTicks TimeToSendNextRtcpReport();
-  // |sender_log_message| is optional; without it no log messages will be
-  // attached to the RTCP report; instead a normal RTCP send report will be
-  // sent.
-  // Additionally if all messages in |sender_log_message| does
-  // not fit in the packet the |sender_log_message| will contain the remaining
-  // unsent messages.
-  void SendRtcpFromRtpSender(
-      const transport::RtcpSenderLogMessage& sender_log_message,
-      transport::RtcpSenderInfo sender_info);
+
+  // Send a RTCP sender report.
+  // |current_time| is the current time reported by a tick clock.
+  // |current_time_as_rtp_timestamp| is the corresponding RTP timestamp.
+  void SendRtcpFromRtpSender(base::TimeTicks current_time,
+                             uint32 current_time_as_rtp_timestamp);
 
   // |cast_message| and |rtcp_events| is optional; if |cast_message| is
   // provided the RTCP receiver report will append a Cast message containing
@@ -110,6 +108,8 @@ class Rtcp {
 
   // Update the target delay. Will be added to every sender report.
   void SetTargetDelay(base::TimeDelta target_delay);
+
+  void OnReceivedReceiverLog(const RtcpReceiverLogMessage& receiver_log);
 
  protected:
   int CheckForWrapAround(uint32 new_timestamp, uint32 old_timestamp) const;
@@ -176,6 +176,7 @@ class Rtcp {
   int number_of_rtt_in_avg_;
   float avg_rtt_ms_;
   uint16 target_delay_ms_;
+  bool is_audio_;
 
   DISALLOW_COPY_AND_ASSIGN(Rtcp);
 };

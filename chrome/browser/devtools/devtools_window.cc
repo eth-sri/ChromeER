@@ -13,6 +13,7 @@
 #include "base/values.h"
 #include "chrome/browser/chrome_page_zoom.h"
 #include "chrome/browser/file_select_helper.h"
+#include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/prefs/pref_service_syncable.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sessions/session_tab_helper.h"
@@ -29,7 +30,7 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/common/url_constants.h"
-#include "components/user_prefs/pref_registry_syncable.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/devtools_agent_host.h"
 #include "content/public/browser/devtools_client_host.h"
@@ -44,7 +45,6 @@
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
-#include "content/public/browser/web_contents_view.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/page_transition_types.h"
 #include "content/public/common/url_constants.h"
@@ -480,12 +480,12 @@ void DevToolsWindow::Show(const DevToolsToggleAction& action) {
     tab_strip_model->ActivateTabAt(inspected_tab_index, true);
 
     inspected_window->UpdateDevTools();
-    web_contents_->GetView()->SetInitialFocus();
+    web_contents_->SetInitialFocus();
     inspected_window->Show();
     // On Aura, focusing once is not enough. Do it again.
     // Note that focusing only here but not before isn't enough either. We just
     // need to focus twice.
-    web_contents_->GetView()->SetInitialFocus();
+    web_contents_->SetInitialFocus();
 
     PrefsTabHelper::CreateForWebContents(web_contents_);
     web_contents_->GetRenderViewHost()->SyncRendererPrefs();
@@ -504,7 +504,7 @@ void DevToolsWindow::Show(const DevToolsToggleAction& action) {
 
   if (should_show_window) {
     browser_->window()->Show();
-    web_contents_->GetView()->SetInitialFocus();
+    web_contents_->SetInitialFocus();
   }
 
   DoAction(action);
@@ -608,7 +608,8 @@ DevToolsWindow::DevToolsWindow(Profile* profile,
       content::PAGE_TRANSITION_AUTO_TOPLEVEL, std::string());
 
   // Lookup bindings and pass ownership over self into them.
-  bindings_ = DevToolsUIBindings::ForWebContents(web_contents_);
+  bindings_ = DevToolsUIBindings::GetOrCreateFor(web_contents_);
+  // Bindings take ownership over devtools as its delegate.
   bindings_->SetDelegate(this);
 
   g_instances.Get().push_back(this);
@@ -752,6 +753,11 @@ void DevToolsWindow::AddNewContents(WebContents* source,
 
 void DevToolsWindow::CloseContents(WebContents* source) {
   CHECK(is_docked_);
+  // Do this first so that when GetDockedInstanceForInspectedTab is called
+  // from UpdateDevTools it won't return this instance
+  // see crbug.com/372504
+  content::DevToolsManager::GetInstance()->ClientHostClosing(
+      bindings_->frontend_host());
   // This will prevent any activity after frontend is loaded.
   action_on_load_ = DevToolsToggleAction::NoOp();
   ignore_set_is_docked_ = true;
@@ -761,7 +767,7 @@ void DevToolsWindow::CloseContents(WebContents* source) {
     inspected_window->UpdateDevTools();
   // In case of docked web_contents_, we own it so delete here.
   // Embedding DevTools window will be deleted as a result of
-  // WebContentsDestroyed callback.
+  // DevToolsUIBindings destruction.
   delete web_contents_;
 }
 
@@ -863,7 +869,7 @@ bool DevToolsWindow::PreHandleGestureEvent(
 
 void DevToolsWindow::ActivateWindow() {
   if (is_docked_ && GetInspectedBrowserWindow())
-    web_contents_->GetView()->Focus();
+    web_contents_->Focus();
   else if (!is_docked_ && !browser_->window()->IsActive())
     browser_->window()->Activate();
 }
@@ -876,10 +882,18 @@ void DevToolsWindow::CloseWindow() {
   web_contents_->DispatchBeforeUnload(false);
 }
 
-void DevToolsWindow::SetContentsInsets(
-    int top, int left, int bottom, int right) {
-  gfx::Insets insets(top, left, bottom, right);
-  SetContentsResizingStrategy(insets, contents_resizing_strategy_.min_size());
+void DevToolsWindow::SetInspectedPageBounds(const gfx::Rect& rect) {
+  DevToolsContentsResizingStrategy strategy(rect);
+  if (contents_resizing_strategy_.Equals(strategy))
+    return;
+
+  contents_resizing_strategy_.CopyFrom(strategy);
+  if (is_docked_) {
+    // Update inspected window.
+    BrowserWindow* inspected_window = GetInspectedBrowserWindow();
+    if (inspected_window)
+      inspected_window->UpdateDevTools();
+  }
 }
 
 void DevToolsWindow::SetContentsResizingStrategy(
@@ -1013,6 +1027,20 @@ void DevToolsWindow::InspectedContentsClosing() {
   web_contents_->GetRenderViewHost()->ClosePage();
 }
 
+InfoBarService* DevToolsWindow::GetInfoBarService() {
+  return is_docked_ ?
+      InfoBarService::FromWebContents(GetInspectedWebContents()) :
+      InfoBarService::FromWebContents(web_contents_);
+}
+
+void DevToolsWindow::RenderProcessGone() {
+  // Docked DevToolsWindow owns its web_contents_ and must delete it.
+  // Undocked web_contents_ are owned and handled by browser.
+  // see crbug.com/369932
+  if (is_docked_)
+    CloseContents(web_contents_);
+}
+
 void DevToolsWindow::OnLoadCompleted() {
   // First seed inspected tab id for extension APIs.
   WebContents* inspected_web_contents = GetInspectedWebContents();
@@ -1054,7 +1082,7 @@ void DevToolsWindow::CreateDevToolsBrowser() {
   browser_ = new Browser(Browser::CreateParams::CreateForDevTools(
       profile_,
       chrome::GetHostDesktopTypeForNativeView(
-          web_contents_->GetView()->GetNativeView())));
+          web_contents_->GetNativeView())));
   browser_->tab_strip_model()->AddWebContents(
       web_contents_, -1, content::PAGE_TRANSITION_AUTO_TOPLEVEL,
       TabStripModel::ADD_ACTIVE);

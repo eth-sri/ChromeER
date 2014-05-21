@@ -4,7 +4,6 @@
 
 #include "base/message_loop/message_loop.h"
 #include "mojo/public/cpp/bindings/allocation_scope.h"
-#include "mojo/public/cpp/bindings/remote_ptr.h"
 #include "mojo/public/cpp/environment/environment.h"
 #include "mojo/public/cpp/shell/application.h"
 #include "mojo/public/interfaces/shell/shell.mojom.h"
@@ -25,36 +24,32 @@ struct TestContext {
   int num_loader_deletes;
 };
 
-class TestServiceImpl :
-    public ServiceConnection<TestService, TestServiceImpl, TestContext> {
+class TestServiceImpl : public InterfaceImpl<TestService> {
  public:
-  TestServiceImpl() {}
-
-  virtual ~TestServiceImpl() {
-    if (context())
-      --context()->num_impls;
+  explicit TestServiceImpl(TestContext* context) : context_(context) {
+    ++context_->num_impls;
   }
 
+  virtual ~TestServiceImpl() {
+    --context_->num_impls;
+  }
+
+  // TestService implementation:
   virtual void Test(const mojo::String& test_string) OVERRIDE {
-    context()->last_test_string = test_string.To<std::string>();
+    context_->last_test_string = test_string.To<std::string>();
     client()->AckTest();
   }
 
-  void Initialize(
-      ServiceConnector<TestServiceImpl, TestContext>* service_factory,
-      ScopedMessagePipeHandle client_handle) {
-    ServiceConnection<TestService, TestServiceImpl, TestContext>::Initialize(
-        service_factory, client_handle.Pass());
-    if (context())
-      ++context()->num_impls;
-  }
+ private:
+  TestContext* context_;
 };
 
 class TestClientImpl : public TestClient {
  public:
-  explicit TestClientImpl(ScopedTestServiceHandle service_handle)
-      : service_(service_handle.Pass(), this),
+  explicit TestClientImpl(TestServicePtr service)
+      : service_(service.Pass()),
         quit_after_ack_(false) {
+    service_->SetClient(this);
   }
 
   virtual ~TestClientImpl() {}
@@ -67,11 +62,11 @@ class TestClientImpl : public TestClient {
   void Test(std::string test_string) {
     AllocationScope scope;
     quit_after_ack_ = true;
-    service_->Test(mojo::String(test_string));
+    service_->Test(test_string);
   }
 
  private:
-  RemotePtr<TestService> service_;
+  TestServicePtr service_;
   bool quit_after_ack_;
   DISALLOW_COPY_AND_ASSIGN(TestClientImpl);
 };
@@ -100,11 +95,10 @@ class TestServiceLoader : public ServiceLoader {
  private:
   virtual void LoadService(ServiceManager* manager,
                            const GURL& url,
-                           ScopedShellHandle shell_handle) OVERRIDE {
+                           ScopedMessagePipeHandle shell_handle) OVERRIDE {
     ++num_loads_;
     test_app_.reset(new Application(shell_handle.Pass()));
-    test_app_->AddServiceConnector(
-        new ServiceConnector<TestServiceImpl, TestContext>(context_));
+    test_app_->AddService<TestServiceImpl>(context_);
   }
 
   virtual void OnServiceError(ServiceManager* manager,
@@ -162,14 +156,17 @@ class ServiceManagerTest : public testing::Test {
     GURL test_url(kTestURLString);
     service_manager_.reset(new ServiceManager);
 
-    InterfacePipe<TestService, AnyInterface> pipe;
-    test_client_.reset(new TestClientImpl(pipe.handle_to_self.Pass()));
+    MessagePipe pipe;
+    TestServicePtr service_proxy = MakeProxy<TestService>(pipe.handle0.Pass());
+    test_client_.reset(new TestClientImpl(service_proxy.Pass()));
+
     TestServiceLoader* default_loader = new TestServiceLoader;
     default_loader->set_context(&context_);
     default_loader->set_quit_after_error(true);
     service_manager_->set_default_loader(
         scoped_ptr<ServiceLoader>(default_loader));
-    service_manager_->Connect(test_url, pipe.handle_to_peer.Pass());
+
+    service_manager_->Connect(test_url, pipe.handle1.Pass());
   }
 
   virtual void TearDown() OVERRIDE {
@@ -243,22 +240,22 @@ TEST_F(ServiceManagerTest, SetLoaders) {
   sm.SetLoaderForScheme(scoped_ptr<ServiceLoader>(scheme_loader), "test");
 
   // test::test1 should go to url_loader.
-  InterfacePipe<TestService, AnyInterface> pipe1;
-  sm.Connect(GURL("test:test1"), pipe1.handle_to_peer.Pass());
+  MessagePipe pipe1;
+  sm.Connect(GURL("test:test1"), pipe1.handle0.Pass());
   EXPECT_EQ(1, url_loader->num_loads());
   EXPECT_EQ(0, scheme_loader->num_loads());
   EXPECT_EQ(0, default_loader->num_loads());
 
   // test::test2 should go to scheme loader.
-  InterfacePipe<TestService, AnyInterface> pipe2;
-  sm.Connect(GURL("test:test2"), pipe2.handle_to_peer.Pass());
+  MessagePipe pipe2;
+  sm.Connect(GURL("test:test2"), pipe2.handle0.Pass());
   EXPECT_EQ(1, url_loader->num_loads());
   EXPECT_EQ(1, scheme_loader->num_loads());
   EXPECT_EQ(0, default_loader->num_loads());
 
   // http::test1 should go to default loader.
-  InterfacePipe<TestService, AnyInterface> pipe3;
-  sm.Connect(GURL("http:test1"), pipe3.handle_to_peer.Pass());
+  MessagePipe pipe3;
+  sm.Connect(GURL("http:test1"), pipe3.handle0.Pass());
   EXPECT_EQ(1, url_loader->num_loads());
   EXPECT_EQ(1, scheme_loader->num_loads());
   EXPECT_EQ(1, default_loader->num_loads());
@@ -272,8 +269,8 @@ TEST_F(ServiceManagerTest, Interceptor) {
   sm.SetInterceptor(&interceptor);
 
   std::string url("test:test3");
-  InterfacePipe<TestService, AnyInterface> pipe1;
-  sm.Connect(GURL(url), pipe1.handle_to_peer.Pass());
+  MessagePipe pipe1;
+  sm.Connect(GURL(url), pipe1.handle0.Pass());
   EXPECT_EQ(1, interceptor.call_count());
   EXPECT_EQ(url, interceptor.url_spec());
   EXPECT_EQ(1, default_loader->num_loads());

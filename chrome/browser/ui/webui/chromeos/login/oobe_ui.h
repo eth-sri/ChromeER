@@ -12,7 +12,7 @@
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "base/observer_list.h"
-#include "chrome/browser/chromeos/login/oobe_display.h"
+#include "chrome/browser/chromeos/login/ui/oobe_display.h"
 #include "chrome/browser/ui/webui/chromeos/login/core_oobe_handler.h"
 #include "content/public/browser/web_ui_controller.h"
 
@@ -52,6 +52,7 @@ class OobeUI : public OobeDisplay,
   };
 
   // JS oobe/login screens names.
+  static const char kScreenOobeHIDDetection[];
   static const char kScreenOobeNetwork[];
   static const char kScreenOobeEula[];
   static const char kScreenOobeUpdate[];

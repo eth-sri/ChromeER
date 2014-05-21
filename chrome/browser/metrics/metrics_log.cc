@@ -36,14 +36,14 @@
 #include "chrome/browser/plugins/plugin_prefs.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/chrome_version_info.h"
-#include "chrome/common/logging_chrome.h"
-#include "chrome/common/metrics/proto/omnibox_event.pb.h"
-#include "chrome/common/metrics/proto/profiler_event.pb.h"
-#include "chrome/common/metrics/proto/system_profile.pb.h"
-#include "chrome/common/metrics/variations/variations_util.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/installer/util/google_update_settings.h"
+#include "components/metrics/metrics_provider.h"
+#include "components/metrics/proto/omnibox_event.pb.h"
+#include "components/metrics/proto/profiler_event.pb.h"
+#include "components/metrics/proto/system_profile.pb.h"
 #include "components/nacl/common/nacl_process_type.h"
+#include "components/variations/active_field_trials.h"
 #include "content/public/browser/gpu_data_manager.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/webplugininfo.h"
@@ -67,11 +67,12 @@ extern "C" IMAGE_DOS_HEADER __ImageBase;
 #endif  // OS_CHROMEOS
 
 using content::GpuDataManager;
+using metrics::MetricsLogBase;
 using metrics::OmniboxEventProto;
 using metrics::ProfilerEventProto;
 using metrics::SystemProfileProto;
 using tracked_objects::ProcessDataSnapshot;
-typedef chrome_variations::ActiveGroupId ActiveGroupId;
+typedef variations::ActiveGroupId ActiveGroupId;
 typedef SystemProfileProto::GoogleUpdate::ProductInfo ProductInfo;
 
 namespace {
@@ -141,6 +142,8 @@ OmniboxEventProto::Suggestion::ResultType AsOmniboxEventResultType(
       return OmniboxEventProto::Suggestion::EXTENSION_APP;
     case AutocompleteMatchType::BOOKMARK_TITLE:
       return OmniboxEventProto::Suggestion::BOOKMARK_TITLE;
+    case AutocompleteMatchType::NAVSUGGEST_PERSONALIZED:
+      return OmniboxEventProto::Suggestion::NAVSUGGEST_PERSONALIZED;
     default:
       NOTREACHED();
       return OmniboxEventProto::Suggestion::UNKNOWN_RESULT_TYPE;
@@ -204,6 +207,25 @@ ProfilerEventProto::TrackedObject::ProcessType AsProtobufProcessType(
     default:
       NOTREACHED();
       return ProfilerEventProto::TrackedObject::UNKNOWN;
+  }
+}
+
+SystemProfileProto::Channel AsProtobufChannel(
+    chrome::VersionInfo::Channel channel) {
+  switch (channel) {
+    case chrome::VersionInfo::CHANNEL_UNKNOWN:
+      return SystemProfileProto::CHANNEL_UNKNOWN;
+    case chrome::VersionInfo::CHANNEL_CANARY:
+      return SystemProfileProto::CHANNEL_CANARY;
+    case chrome::VersionInfo::CHANNEL_DEV:
+      return SystemProfileProto::CHANNEL_DEV;
+    case chrome::VersionInfo::CHANNEL_BETA:
+      return SystemProfileProto::CHANNEL_BETA;
+    case chrome::VersionInfo::CHANNEL_STABLE:
+      return SystemProfileProto::CHANNEL_STABLE;
+    default:
+      NOTREACHED();
+      return SystemProfileProto::CHANNEL_UNKNOWN;
   }
 }
 
@@ -386,6 +408,9 @@ MetricsLog::MetricsLog(const std::string& client_id,
                      MetricsLog::GetVersionString()),
       creation_time_(base::TimeTicks::Now()),
       extension_metrics_(uma_proto()->client_id()) {
+  uma_proto()->mutable_system_profile()->set_channel(
+      AsProtobufChannel(chrome::VersionInfo::GetChannel()));
+
 #if defined(OS_CHROMEOS)
   metrics_log_chromeos_.reset(new MetricsLogChromeOS(uma_proto()));
 #endif  // OS_CHROMEOS
@@ -424,8 +449,10 @@ const std::string& MetricsLog::version_extension() {
   return g_version_extension.Get();
 }
 
-void MetricsLog::RecordStabilityMetrics(base::TimeDelta incremental_uptime,
-                                        base::TimeDelta uptime) {
+void MetricsLog::RecordStabilityMetrics(
+    const std::vector<metrics::MetricsProvider*>& metrics_providers,
+    base::TimeDelta incremental_uptime,
+    base::TimeDelta uptime) {
   DCHECK(!locked());
   DCHECK(HasEnvironment());
   DCHECK(!HasStabilityMetrics());
@@ -445,6 +472,11 @@ void MetricsLog::RecordStabilityMetrics(base::TimeDelta incremental_uptime,
   // users that run happily for a looooong time.  We send increments with each
   // uma log upload, just as we send histogram data.
   WriteRealtimeStabilityAttributes(pref, incremental_uptime, uptime);
+
+  SystemProfileProto::Stability* stability =
+      uma_proto()->mutable_system_profile()->mutable_stability();
+  for (size_t i = 0; i < metrics_providers.size(); ++i)
+    metrics_providers[i]->ProvideStabilityMetrics(stability);
 
   // Omit some stats unless this is the initial stability log.
   if (log_type() != INITIAL_STABILITY_LOG)
@@ -468,8 +500,6 @@ void MetricsLog::RecordStabilityMetrics(base::TimeDelta incremental_uptime,
 
   // TODO(jar): The following are all optional, so we *could* optimize them for
   // values of zero (and not include them).
-  SystemProfileProto::Stability* stability =
-      uma_proto()->mutable_system_profile()->mutable_stability();
   stability->set_incomplete_shutdown_count(incomplete_shutdown_count);
   stability->set_breakpad_registration_success_count(
       breakpad_registration_success_count);
@@ -477,6 +507,12 @@ void MetricsLog::RecordStabilityMetrics(base::TimeDelta incremental_uptime,
       breakpad_registration_failure_count);
   stability->set_debugger_present_count(debugger_present_count);
   stability->set_debugger_not_present_count(debugger_not_present_count);
+}
+
+void MetricsLog::RecordGeneralMetrics(
+    const std::vector<metrics::MetricsProvider*>& metrics_providers) {
+  for (size_t i = 0; i < metrics_providers.size(); ++i)
+    metrics_providers[i]->ProvideGeneralMetrics(uma_proto());
 }
 
 PrefService* MetricsLog::GetPrefService() {
@@ -499,7 +535,7 @@ int MetricsLog::GetScreenCount() const {
 
 void MetricsLog::GetFieldTrialIds(
     std::vector<ActiveGroupId>* field_trial_ids) const {
-  chrome_variations::GetFieldTrialActiveGroupIds(field_trial_ids);
+  variations::GetFieldTrialActiveGroupIds(field_trial_ids);
 }
 
 bool MetricsLog::HasEnvironment() const {
@@ -665,9 +701,10 @@ void MetricsLog::WritePluginList(
 }
 
 void MetricsLog::RecordEnvironment(
+    const std::vector<metrics::MetricsProvider*>& metrics_providers,
     const std::vector<content::WebPluginInfo>& plugin_list,
     const GoogleUpdateMetrics& google_update_metrics,
-    const std::vector<chrome_variations::ActiveGroupId>& synthetic_trials) {
+    const std::vector<variations::ActiveGroupId>& synthetic_trials) {
   DCHECK(!HasEnvironment());
 
   SystemProfileProto* system_profile = uma_proto()->mutable_system_profile();
@@ -770,6 +807,9 @@ void MetricsLog::RecordEnvironment(
 #if defined(OS_CHROMEOS)
   metrics_log_chromeos_->LogChromeOSMetrics();
 #endif  // OS_CHROMEOS
+
+  for (size_t i = 0; i < metrics_providers.size(); ++i)
+    metrics_providers[i]->ProvideSystemProfileMetrics(system_profile);
 
   std::string serialied_system_profile;
   std::string base64_system_profile;
@@ -890,8 +930,6 @@ void MetricsLog::RecordOmniboxOpenedURL(const OmniboxLog& log) {
         omnibox_event->add_provider_info();
     provider_info->CopyFrom(*i);
   }
-
-  ++num_events_;
 }
 
 void MetricsLog::WriteGoogleUpdateProto(

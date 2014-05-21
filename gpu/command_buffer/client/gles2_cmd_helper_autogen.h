@@ -27,9 +27,9 @@ void AttachShader(GLuint program, GLuint shader) {
 
 void BindAttribLocation(GLuint program,
                         GLuint index,
-                        uint32 name_shm_id,
-                        uint32 name_shm_offset,
-                        uint32 data_size) {
+                        uint32_t name_shm_id,
+                        uint32_t name_shm_offset,
+                        uint32_t data_size) {
   gles2::cmds::BindAttribLocation* c =
       GetCmdSpace<gles2::cmds::BindAttribLocation>();
   if (c) {
@@ -39,7 +39,7 @@ void BindAttribLocation(GLuint program,
 
 void BindAttribLocationBucket(GLuint program,
                               GLuint index,
-                              uint32 name_bucket_id) {
+                              uint32_t name_bucket_id) {
   gles2::cmds::BindAttribLocationBucket* c =
       GetCmdSpace<gles2::cmds::BindAttribLocationBucket>();
   if (c) {
@@ -118,8 +118,8 @@ void BlendFuncSeparate(GLenum srcRGB,
 
 void BufferData(GLenum target,
                 GLsizeiptr size,
-                uint32 data_shm_id,
-                uint32 data_shm_offset,
+                uint32_t data_shm_id,
+                uint32_t data_shm_offset,
                 GLenum usage) {
   gles2::cmds::BufferData* c = GetCmdSpace<gles2::cmds::BufferData>();
   if (c) {
@@ -130,8 +130,8 @@ void BufferData(GLenum target,
 void BufferSubData(GLenum target,
                    GLintptr offset,
                    GLsizeiptr size,
-                   uint32 data_shm_id,
-                   uint32 data_shm_offset) {
+                   uint32_t data_shm_id,
+                   uint32_t data_shm_offset) {
   gles2::cmds::BufferSubData* c = GetCmdSpace<gles2::cmds::BufferSubData>();
   if (c) {
     c->Init(target, offset, size, data_shm_id, data_shm_offset);
@@ -139,8 +139,8 @@ void BufferSubData(GLenum target,
 }
 
 void CheckFramebufferStatus(GLenum target,
-                            uint32 result_shm_id,
-                            uint32 result_shm_offset) {
+                            uint32_t result_shm_id,
+                            uint32_t result_shm_offset) {
   gles2::cmds::CheckFramebufferStatus* c =
       GetCmdSpace<gles2::cmds::CheckFramebufferStatus>();
   if (c) {
@@ -198,10 +198,9 @@ void CompressedTexImage2D(GLenum target,
                           GLenum internalformat,
                           GLsizei width,
                           GLsizei height,
-                          GLint border,
                           GLsizei imageSize,
-                          uint32 data_shm_id,
-                          uint32 data_shm_offset) {
+                          uint32_t data_shm_id,
+                          uint32_t data_shm_offset) {
   gles2::cmds::CompressedTexImage2D* c =
       GetCmdSpace<gles2::cmds::CompressedTexImage2D>();
   if (c) {
@@ -210,7 +209,6 @@ void CompressedTexImage2D(GLenum target,
             internalformat,
             width,
             height,
-            border,
             imageSize,
             data_shm_id,
             data_shm_offset);
@@ -222,12 +220,11 @@ void CompressedTexImage2DBucket(GLenum target,
                                 GLenum internalformat,
                                 GLsizei width,
                                 GLsizei height,
-                                GLint border,
                                 GLuint bucket_id) {
   gles2::cmds::CompressedTexImage2DBucket* c =
       GetCmdSpace<gles2::cmds::CompressedTexImage2DBucket>();
   if (c) {
-    c->Init(target, level, internalformat, width, height, border, bucket_id);
+    c->Init(target, level, internalformat, width, height, bucket_id);
   }
 }
 
@@ -239,8 +236,8 @@ void CompressedTexSubImage2D(GLenum target,
                              GLsizei height,
                              GLenum format,
                              GLsizei imageSize,
-                             uint32 data_shm_id,
-                             uint32 data_shm_offset) {
+                             uint32_t data_shm_id,
+                             uint32_t data_shm_offset) {
   gles2::cmds::CompressedTexSubImage2D* c =
       GetCmdSpace<gles2::cmds::CompressedTexSubImage2D>();
   if (c) {
@@ -278,11 +275,10 @@ void CopyTexImage2D(GLenum target,
                     GLint x,
                     GLint y,
                     GLsizei width,
-                    GLsizei height,
-                    GLint border) {
+                    GLsizei height) {
   gles2::cmds::CopyTexImage2D* c = GetCmdSpace<gles2::cmds::CopyTexImage2D>();
   if (c) {
-    c->Init(target, level, internalformat, x, y, width, height, border);
+    c->Init(target, level, internalformat, x, y, width, height);
   }
 }
 
@@ -301,14 +297,14 @@ void CopyTexSubImage2D(GLenum target,
   }
 }
 
-void CreateProgram(uint32 client_id) {
+void CreateProgram(uint32_t client_id) {
   gles2::cmds::CreateProgram* c = GetCmdSpace<gles2::cmds::CreateProgram>();
   if (c) {
     c->Init(client_id);
   }
 }
 
-void CreateShader(GLenum type, uint32 client_id) {
+void CreateShader(GLenum type, uint32_t client_id) {
   gles2::cmds::CreateShader* c = GetCmdSpace<gles2::cmds::CreateShader>();
   if (c) {
     c->Init(type, client_id);
@@ -323,8 +319,8 @@ void CullFace(GLenum mode) {
 }
 
 void DeleteBuffers(GLsizei n,
-                   uint32 buffers_shm_id,
-                   uint32 buffers_shm_offset) {
+                   uint32_t buffers_shm_id,
+                   uint32_t buffers_shm_offset) {
   gles2::cmds::DeleteBuffers* c = GetCmdSpace<gles2::cmds::DeleteBuffers>();
   if (c) {
     c->Init(n, buffers_shm_id, buffers_shm_offset);
@@ -332,7 +328,7 @@ void DeleteBuffers(GLsizei n,
 }
 
 void DeleteBuffersImmediate(GLsizei n, const GLuint* buffers) {
-  const uint32 size = gles2::cmds::DeleteBuffersImmediate::ComputeSize(n);
+  const uint32_t size = gles2::cmds::DeleteBuffersImmediate::ComputeSize(n);
   gles2::cmds::DeleteBuffersImmediate* c =
       GetImmediateCmdSpaceTotalSize<gles2::cmds::DeleteBuffersImmediate>(size);
   if (c) {
@@ -341,8 +337,8 @@ void DeleteBuffersImmediate(GLsizei n, const GLuint* buffers) {
 }
 
 void DeleteFramebuffers(GLsizei n,
-                        uint32 framebuffers_shm_id,
-                        uint32 framebuffers_shm_offset) {
+                        uint32_t framebuffers_shm_id,
+                        uint32_t framebuffers_shm_offset) {
   gles2::cmds::DeleteFramebuffers* c =
       GetCmdSpace<gles2::cmds::DeleteFramebuffers>();
   if (c) {
@@ -351,7 +347,8 @@ void DeleteFramebuffers(GLsizei n,
 }
 
 void DeleteFramebuffersImmediate(GLsizei n, const GLuint* framebuffers) {
-  const uint32 size = gles2::cmds::DeleteFramebuffersImmediate::ComputeSize(n);
+  const uint32_t size =
+      gles2::cmds::DeleteFramebuffersImmediate::ComputeSize(n);
   gles2::cmds::DeleteFramebuffersImmediate* c =
       GetImmediateCmdSpaceTotalSize<gles2::cmds::DeleteFramebuffersImmediate>(
           size);
@@ -368,8 +365,8 @@ void DeleteProgram(GLuint program) {
 }
 
 void DeleteRenderbuffers(GLsizei n,
-                         uint32 renderbuffers_shm_id,
-                         uint32 renderbuffers_shm_offset) {
+                         uint32_t renderbuffers_shm_id,
+                         uint32_t renderbuffers_shm_offset) {
   gles2::cmds::DeleteRenderbuffers* c =
       GetCmdSpace<gles2::cmds::DeleteRenderbuffers>();
   if (c) {
@@ -378,7 +375,8 @@ void DeleteRenderbuffers(GLsizei n,
 }
 
 void DeleteRenderbuffersImmediate(GLsizei n, const GLuint* renderbuffers) {
-  const uint32 size = gles2::cmds::DeleteRenderbuffersImmediate::ComputeSize(n);
+  const uint32_t size =
+      gles2::cmds::DeleteRenderbuffersImmediate::ComputeSize(n);
   gles2::cmds::DeleteRenderbuffersImmediate* c =
       GetImmediateCmdSpaceTotalSize<gles2::cmds::DeleteRenderbuffersImmediate>(
           size);
@@ -395,8 +393,8 @@ void DeleteShader(GLuint shader) {
 }
 
 void DeleteTextures(GLsizei n,
-                    uint32 textures_shm_id,
-                    uint32 textures_shm_offset) {
+                    uint32_t textures_shm_id,
+                    uint32_t textures_shm_offset) {
   gles2::cmds::DeleteTextures* c = GetCmdSpace<gles2::cmds::DeleteTextures>();
   if (c) {
     c->Init(n, textures_shm_id, textures_shm_offset);
@@ -404,7 +402,7 @@ void DeleteTextures(GLsizei n,
 }
 
 void DeleteTexturesImmediate(GLsizei n, const GLuint* textures) {
-  const uint32 size = gles2::cmds::DeleteTexturesImmediate::ComputeSize(n);
+  const uint32_t size = gles2::cmds::DeleteTexturesImmediate::ComputeSize(n);
   gles2::cmds::DeleteTexturesImmediate* c =
       GetImmediateCmdSpaceTotalSize<gles2::cmds::DeleteTexturesImmediate>(size);
   if (c) {
@@ -515,12 +513,11 @@ void FramebufferRenderbuffer(GLenum target,
 void FramebufferTexture2D(GLenum target,
                           GLenum attachment,
                           GLenum textarget,
-                          GLuint texture,
-                          GLint level) {
+                          GLuint texture) {
   gles2::cmds::FramebufferTexture2D* c =
       GetCmdSpace<gles2::cmds::FramebufferTexture2D>();
   if (c) {
-    c->Init(target, attachment, textarget, texture, level);
+    c->Init(target, attachment, textarget, texture);
   }
 }
 
@@ -531,7 +528,9 @@ void FrontFace(GLenum mode) {
   }
 }
 
-void GenBuffers(GLsizei n, uint32 buffers_shm_id, uint32 buffers_shm_offset) {
+void GenBuffers(GLsizei n,
+                uint32_t buffers_shm_id,
+                uint32_t buffers_shm_offset) {
   gles2::cmds::GenBuffers* c = GetCmdSpace<gles2::cmds::GenBuffers>();
   if (c) {
     c->Init(n, buffers_shm_id, buffers_shm_offset);
@@ -539,7 +538,7 @@ void GenBuffers(GLsizei n, uint32 buffers_shm_id, uint32 buffers_shm_offset) {
 }
 
 void GenBuffersImmediate(GLsizei n, GLuint* buffers) {
-  const uint32 size = gles2::cmds::GenBuffersImmediate::ComputeSize(n);
+  const uint32_t size = gles2::cmds::GenBuffersImmediate::ComputeSize(n);
   gles2::cmds::GenBuffersImmediate* c =
       GetImmediateCmdSpaceTotalSize<gles2::cmds::GenBuffersImmediate>(size);
   if (c) {
@@ -555,8 +554,8 @@ void GenerateMipmap(GLenum target) {
 }
 
 void GenFramebuffers(GLsizei n,
-                     uint32 framebuffers_shm_id,
-                     uint32 framebuffers_shm_offset) {
+                     uint32_t framebuffers_shm_id,
+                     uint32_t framebuffers_shm_offset) {
   gles2::cmds::GenFramebuffers* c = GetCmdSpace<gles2::cmds::GenFramebuffers>();
   if (c) {
     c->Init(n, framebuffers_shm_id, framebuffers_shm_offset);
@@ -564,7 +563,7 @@ void GenFramebuffers(GLsizei n,
 }
 
 void GenFramebuffersImmediate(GLsizei n, GLuint* framebuffers) {
-  const uint32 size = gles2::cmds::GenFramebuffersImmediate::ComputeSize(n);
+  const uint32_t size = gles2::cmds::GenFramebuffersImmediate::ComputeSize(n);
   gles2::cmds::GenFramebuffersImmediate* c =
       GetImmediateCmdSpaceTotalSize<gles2::cmds::GenFramebuffersImmediate>(
           size);
@@ -574,8 +573,8 @@ void GenFramebuffersImmediate(GLsizei n, GLuint* framebuffers) {
 }
 
 void GenRenderbuffers(GLsizei n,
-                      uint32 renderbuffers_shm_id,
-                      uint32 renderbuffers_shm_offset) {
+                      uint32_t renderbuffers_shm_id,
+                      uint32_t renderbuffers_shm_offset) {
   gles2::cmds::GenRenderbuffers* c =
       GetCmdSpace<gles2::cmds::GenRenderbuffers>();
   if (c) {
@@ -584,7 +583,7 @@ void GenRenderbuffers(GLsizei n,
 }
 
 void GenRenderbuffersImmediate(GLsizei n, GLuint* renderbuffers) {
-  const uint32 size = gles2::cmds::GenRenderbuffersImmediate::ComputeSize(n);
+  const uint32_t size = gles2::cmds::GenRenderbuffersImmediate::ComputeSize(n);
   gles2::cmds::GenRenderbuffersImmediate* c =
       GetImmediateCmdSpaceTotalSize<gles2::cmds::GenRenderbuffersImmediate>(
           size);
@@ -594,8 +593,8 @@ void GenRenderbuffersImmediate(GLsizei n, GLuint* renderbuffers) {
 }
 
 void GenTextures(GLsizei n,
-                 uint32 textures_shm_id,
-                 uint32 textures_shm_offset) {
+                 uint32_t textures_shm_id,
+                 uint32_t textures_shm_offset) {
   gles2::cmds::GenTextures* c = GetCmdSpace<gles2::cmds::GenTextures>();
   if (c) {
     c->Init(n, textures_shm_id, textures_shm_offset);
@@ -603,7 +602,7 @@ void GenTextures(GLsizei n,
 }
 
 void GenTexturesImmediate(GLsizei n, GLuint* textures) {
-  const uint32 size = gles2::cmds::GenTexturesImmediate::ComputeSize(n);
+  const uint32_t size = gles2::cmds::GenTexturesImmediate::ComputeSize(n);
   gles2::cmds::GenTexturesImmediate* c =
       GetImmediateCmdSpaceTotalSize<gles2::cmds::GenTexturesImmediate>(size);
   if (c) {
@@ -613,9 +612,9 @@ void GenTexturesImmediate(GLsizei n, GLuint* textures) {
 
 void GetActiveAttrib(GLuint program,
                      GLuint index,
-                     uint32 name_bucket_id,
-                     uint32 result_shm_id,
-                     uint32 result_shm_offset) {
+                     uint32_t name_bucket_id,
+                     uint32_t result_shm_id,
+                     uint32_t result_shm_offset) {
   gles2::cmds::GetActiveAttrib* c = GetCmdSpace<gles2::cmds::GetActiveAttrib>();
   if (c) {
     c->Init(program, index, name_bucket_id, result_shm_id, result_shm_offset);
@@ -624,9 +623,9 @@ void GetActiveAttrib(GLuint program,
 
 void GetActiveUniform(GLuint program,
                       GLuint index,
-                      uint32 name_bucket_id,
-                      uint32 result_shm_id,
-                      uint32 result_shm_offset) {
+                      uint32_t name_bucket_id,
+                      uint32_t result_shm_id,
+                      uint32_t result_shm_offset) {
   gles2::cmds::GetActiveUniform* c =
       GetCmdSpace<gles2::cmds::GetActiveUniform>();
   if (c) {
@@ -635,9 +634,9 @@ void GetActiveUniform(GLuint program,
 }
 
 void GetAttachedShaders(GLuint program,
-                        uint32 result_shm_id,
-                        uint32 result_shm_offset,
-                        uint32 result_size) {
+                        uint32_t result_shm_id,
+                        uint32_t result_shm_offset,
+                        uint32_t result_size) {
   gles2::cmds::GetAttachedShaders* c =
       GetCmdSpace<gles2::cmds::GetAttachedShaders>();
   if (c) {
@@ -645,7 +644,9 @@ void GetAttachedShaders(GLuint program,
   }
 }
 
-void GetBooleanv(GLenum pname, uint32 params_shm_id, uint32 params_shm_offset) {
+void GetBooleanv(GLenum pname,
+                 uint32_t params_shm_id,
+                 uint32_t params_shm_offset) {
   gles2::cmds::GetBooleanv* c = GetCmdSpace<gles2::cmds::GetBooleanv>();
   if (c) {
     c->Init(pname, params_shm_id, params_shm_offset);
@@ -654,8 +655,8 @@ void GetBooleanv(GLenum pname, uint32 params_shm_id, uint32 params_shm_offset) {
 
 void GetBufferParameteriv(GLenum target,
                           GLenum pname,
-                          uint32 params_shm_id,
-                          uint32 params_shm_offset) {
+                          uint32_t params_shm_id,
+                          uint32_t params_shm_offset) {
   gles2::cmds::GetBufferParameteriv* c =
       GetCmdSpace<gles2::cmds::GetBufferParameteriv>();
   if (c) {
@@ -663,14 +664,16 @@ void GetBufferParameteriv(GLenum target,
   }
 }
 
-void GetError(uint32 result_shm_id, uint32 result_shm_offset) {
+void GetError(uint32_t result_shm_id, uint32_t result_shm_offset) {
   gles2::cmds::GetError* c = GetCmdSpace<gles2::cmds::GetError>();
   if (c) {
     c->Init(result_shm_id, result_shm_offset);
   }
 }
 
-void GetFloatv(GLenum pname, uint32 params_shm_id, uint32 params_shm_offset) {
+void GetFloatv(GLenum pname,
+               uint32_t params_shm_id,
+               uint32_t params_shm_offset) {
   gles2::cmds::GetFloatv* c = GetCmdSpace<gles2::cmds::GetFloatv>();
   if (c) {
     c->Init(pname, params_shm_id, params_shm_offset);
@@ -680,8 +683,8 @@ void GetFloatv(GLenum pname, uint32 params_shm_id, uint32 params_shm_offset) {
 void GetFramebufferAttachmentParameteriv(GLenum target,
                                          GLenum attachment,
                                          GLenum pname,
-                                         uint32 params_shm_id,
-                                         uint32 params_shm_offset) {
+                                         uint32_t params_shm_id,
+                                         uint32_t params_shm_offset) {
   gles2::cmds::GetFramebufferAttachmentParameteriv* c =
       GetCmdSpace<gles2::cmds::GetFramebufferAttachmentParameteriv>();
   if (c) {
@@ -689,7 +692,9 @@ void GetFramebufferAttachmentParameteriv(GLenum target,
   }
 }
 
-void GetIntegerv(GLenum pname, uint32 params_shm_id, uint32 params_shm_offset) {
+void GetIntegerv(GLenum pname,
+                 uint32_t params_shm_id,
+                 uint32_t params_shm_offset) {
   gles2::cmds::GetIntegerv* c = GetCmdSpace<gles2::cmds::GetIntegerv>();
   if (c) {
     c->Init(pname, params_shm_id, params_shm_offset);
@@ -698,15 +703,15 @@ void GetIntegerv(GLenum pname, uint32 params_shm_id, uint32 params_shm_offset) {
 
 void GetProgramiv(GLuint program,
                   GLenum pname,
-                  uint32 params_shm_id,
-                  uint32 params_shm_offset) {
+                  uint32_t params_shm_id,
+                  uint32_t params_shm_offset) {
   gles2::cmds::GetProgramiv* c = GetCmdSpace<gles2::cmds::GetProgramiv>();
   if (c) {
     c->Init(program, pname, params_shm_id, params_shm_offset);
   }
 }
 
-void GetProgramInfoLog(GLuint program, uint32 bucket_id) {
+void GetProgramInfoLog(GLuint program, uint32_t bucket_id) {
   gles2::cmds::GetProgramInfoLog* c =
       GetCmdSpace<gles2::cmds::GetProgramInfoLog>();
   if (c) {
@@ -716,8 +721,8 @@ void GetProgramInfoLog(GLuint program, uint32 bucket_id) {
 
 void GetRenderbufferParameteriv(GLenum target,
                                 GLenum pname,
-                                uint32 params_shm_id,
-                                uint32 params_shm_offset) {
+                                uint32_t params_shm_id,
+                                uint32_t params_shm_offset) {
   gles2::cmds::GetRenderbufferParameteriv* c =
       GetCmdSpace<gles2::cmds::GetRenderbufferParameteriv>();
   if (c) {
@@ -727,15 +732,15 @@ void GetRenderbufferParameteriv(GLenum target,
 
 void GetShaderiv(GLuint shader,
                  GLenum pname,
-                 uint32 params_shm_id,
-                 uint32 params_shm_offset) {
+                 uint32_t params_shm_id,
+                 uint32_t params_shm_offset) {
   gles2::cmds::GetShaderiv* c = GetCmdSpace<gles2::cmds::GetShaderiv>();
   if (c) {
     c->Init(shader, pname, params_shm_id, params_shm_offset);
   }
 }
 
-void GetShaderInfoLog(GLuint shader, uint32 bucket_id) {
+void GetShaderInfoLog(GLuint shader, uint32_t bucket_id) {
   gles2::cmds::GetShaderInfoLog* c =
       GetCmdSpace<gles2::cmds::GetShaderInfoLog>();
   if (c) {
@@ -745,8 +750,8 @@ void GetShaderInfoLog(GLuint shader, uint32 bucket_id) {
 
 void GetShaderPrecisionFormat(GLenum shadertype,
                               GLenum precisiontype,
-                              uint32 result_shm_id,
-                              uint32 result_shm_offset) {
+                              uint32_t result_shm_id,
+                              uint32_t result_shm_offset) {
   gles2::cmds::GetShaderPrecisionFormat* c =
       GetCmdSpace<gles2::cmds::GetShaderPrecisionFormat>();
   if (c) {
@@ -754,14 +759,14 @@ void GetShaderPrecisionFormat(GLenum shadertype,
   }
 }
 
-void GetShaderSource(GLuint shader, uint32 bucket_id) {
+void GetShaderSource(GLuint shader, uint32_t bucket_id) {
   gles2::cmds::GetShaderSource* c = GetCmdSpace<gles2::cmds::GetShaderSource>();
   if (c) {
     c->Init(shader, bucket_id);
   }
 }
 
-void GetString(GLenum name, uint32 bucket_id) {
+void GetString(GLenum name, uint32_t bucket_id) {
   gles2::cmds::GetString* c = GetCmdSpace<gles2::cmds::GetString>();
   if (c) {
     c->Init(name, bucket_id);
@@ -770,8 +775,8 @@ void GetString(GLenum name, uint32 bucket_id) {
 
 void GetTexParameterfv(GLenum target,
                        GLenum pname,
-                       uint32 params_shm_id,
-                       uint32 params_shm_offset) {
+                       uint32_t params_shm_id,
+                       uint32_t params_shm_offset) {
   gles2::cmds::GetTexParameterfv* c =
       GetCmdSpace<gles2::cmds::GetTexParameterfv>();
   if (c) {
@@ -781,8 +786,8 @@ void GetTexParameterfv(GLenum target,
 
 void GetTexParameteriv(GLenum target,
                        GLenum pname,
-                       uint32 params_shm_id,
-                       uint32 params_shm_offset) {
+                       uint32_t params_shm_id,
+                       uint32_t params_shm_offset) {
   gles2::cmds::GetTexParameteriv* c =
       GetCmdSpace<gles2::cmds::GetTexParameteriv>();
   if (c) {
@@ -792,8 +797,8 @@ void GetTexParameteriv(GLenum target,
 
 void GetUniformfv(GLuint program,
                   GLint location,
-                  uint32 params_shm_id,
-                  uint32 params_shm_offset) {
+                  uint32_t params_shm_id,
+                  uint32_t params_shm_offset) {
   gles2::cmds::GetUniformfv* c = GetCmdSpace<gles2::cmds::GetUniformfv>();
   if (c) {
     c->Init(program, location, params_shm_id, params_shm_offset);
@@ -802,8 +807,8 @@ void GetUniformfv(GLuint program,
 
 void GetUniformiv(GLuint program,
                   GLint location,
-                  uint32 params_shm_id,
-                  uint32 params_shm_offset) {
+                  uint32_t params_shm_id,
+                  uint32_t params_shm_offset) {
   gles2::cmds::GetUniformiv* c = GetCmdSpace<gles2::cmds::GetUniformiv>();
   if (c) {
     c->Init(program, location, params_shm_id, params_shm_offset);
@@ -812,8 +817,8 @@ void GetUniformiv(GLuint program,
 
 void GetVertexAttribfv(GLuint index,
                        GLenum pname,
-                       uint32 params_shm_id,
-                       uint32 params_shm_offset) {
+                       uint32_t params_shm_id,
+                       uint32_t params_shm_offset) {
   gles2::cmds::GetVertexAttribfv* c =
       GetCmdSpace<gles2::cmds::GetVertexAttribfv>();
   if (c) {
@@ -823,8 +828,8 @@ void GetVertexAttribfv(GLuint index,
 
 void GetVertexAttribiv(GLuint index,
                        GLenum pname,
-                       uint32 params_shm_id,
-                       uint32 params_shm_offset) {
+                       uint32_t params_shm_id,
+                       uint32_t params_shm_offset) {
   gles2::cmds::GetVertexAttribiv* c =
       GetCmdSpace<gles2::cmds::GetVertexAttribiv>();
   if (c) {
@@ -834,8 +839,8 @@ void GetVertexAttribiv(GLuint index,
 
 void GetVertexAttribPointerv(GLuint index,
                              GLenum pname,
-                             uint32 pointer_shm_id,
-                             uint32 pointer_shm_offset) {
+                             uint32_t pointer_shm_id,
+                             uint32_t pointer_shm_offset) {
   gles2::cmds::GetVertexAttribPointerv* c =
       GetCmdSpace<gles2::cmds::GetVertexAttribPointerv>();
   if (c) {
@@ -850,14 +855,16 @@ void Hint(GLenum target, GLenum mode) {
   }
 }
 
-void IsBuffer(GLuint buffer, uint32 result_shm_id, uint32 result_shm_offset) {
+void IsBuffer(GLuint buffer,
+              uint32_t result_shm_id,
+              uint32_t result_shm_offset) {
   gles2::cmds::IsBuffer* c = GetCmdSpace<gles2::cmds::IsBuffer>();
   if (c) {
     c->Init(buffer, result_shm_id, result_shm_offset);
   }
 }
 
-void IsEnabled(GLenum cap, uint32 result_shm_id, uint32 result_shm_offset) {
+void IsEnabled(GLenum cap, uint32_t result_shm_id, uint32_t result_shm_offset) {
   gles2::cmds::IsEnabled* c = GetCmdSpace<gles2::cmds::IsEnabled>();
   if (c) {
     c->Init(cap, result_shm_id, result_shm_offset);
@@ -865,15 +872,17 @@ void IsEnabled(GLenum cap, uint32 result_shm_id, uint32 result_shm_offset) {
 }
 
 void IsFramebuffer(GLuint framebuffer,
-                   uint32 result_shm_id,
-                   uint32 result_shm_offset) {
+                   uint32_t result_shm_id,
+                   uint32_t result_shm_offset) {
   gles2::cmds::IsFramebuffer* c = GetCmdSpace<gles2::cmds::IsFramebuffer>();
   if (c) {
     c->Init(framebuffer, result_shm_id, result_shm_offset);
   }
 }
 
-void IsProgram(GLuint program, uint32 result_shm_id, uint32 result_shm_offset) {
+void IsProgram(GLuint program,
+               uint32_t result_shm_id,
+               uint32_t result_shm_offset) {
   gles2::cmds::IsProgram* c = GetCmdSpace<gles2::cmds::IsProgram>();
   if (c) {
     c->Init(program, result_shm_id, result_shm_offset);
@@ -881,22 +890,26 @@ void IsProgram(GLuint program, uint32 result_shm_id, uint32 result_shm_offset) {
 }
 
 void IsRenderbuffer(GLuint renderbuffer,
-                    uint32 result_shm_id,
-                    uint32 result_shm_offset) {
+                    uint32_t result_shm_id,
+                    uint32_t result_shm_offset) {
   gles2::cmds::IsRenderbuffer* c = GetCmdSpace<gles2::cmds::IsRenderbuffer>();
   if (c) {
     c->Init(renderbuffer, result_shm_id, result_shm_offset);
   }
 }
 
-void IsShader(GLuint shader, uint32 result_shm_id, uint32 result_shm_offset) {
+void IsShader(GLuint shader,
+              uint32_t result_shm_id,
+              uint32_t result_shm_offset) {
   gles2::cmds::IsShader* c = GetCmdSpace<gles2::cmds::IsShader>();
   if (c) {
     c->Init(shader, result_shm_id, result_shm_offset);
   }
 }
 
-void IsTexture(GLuint texture, uint32 result_shm_id, uint32 result_shm_offset) {
+void IsTexture(GLuint texture,
+               uint32_t result_shm_id,
+               uint32_t result_shm_offset) {
   gles2::cmds::IsTexture* c = GetCmdSpace<gles2::cmds::IsTexture>();
   if (c) {
     c->Init(texture, result_shm_id, result_shm_offset);
@@ -937,10 +950,10 @@ void ReadPixels(GLint x,
                 GLsizei height,
                 GLenum format,
                 GLenum type,
-                uint32 pixels_shm_id,
-                uint32 pixels_shm_offset,
-                uint32 result_shm_id,
-                uint32 result_shm_offset,
+                uint32_t pixels_shm_id,
+                uint32_t pixels_shm_offset,
+                uint32_t result_shm_id,
+                uint32_t result_shm_offset,
                 GLboolean async) {
   gles2::cmds::ReadPixels* c = GetCmdSpace<gles2::cmds::ReadPixels>();
   if (c) {
@@ -992,11 +1005,11 @@ void Scissor(GLint x, GLint y, GLsizei width, GLsizei height) {
 }
 
 void ShaderBinary(GLsizei n,
-                  uint32 shaders_shm_id,
-                  uint32 shaders_shm_offset,
+                  uint32_t shaders_shm_id,
+                  uint32_t shaders_shm_offset,
                   GLenum binaryformat,
-                  uint32 binary_shm_id,
-                  uint32 binary_shm_offset,
+                  uint32_t binary_shm_id,
+                  uint32_t binary_shm_offset,
                   GLsizei length) {
   gles2::cmds::ShaderBinary* c = GetCmdSpace<gles2::cmds::ShaderBinary>();
   if (c) {
@@ -1011,16 +1024,16 @@ void ShaderBinary(GLsizei n,
 }
 
 void ShaderSource(GLuint shader,
-                  uint32 data_shm_id,
-                  uint32 data_shm_offset,
-                  uint32 data_size) {
+                  uint32_t data_shm_id,
+                  uint32_t data_shm_offset,
+                  uint32_t data_size) {
   gles2::cmds::ShaderSource* c = GetCmdSpace<gles2::cmds::ShaderSource>();
   if (c) {
     c->Init(shader, data_shm_id, data_shm_offset, data_size);
   }
 }
 
-void ShaderSourceBucket(GLuint shader, uint32 data_bucket_id) {
+void ShaderSourceBucket(GLuint shader, uint32_t data_bucket_id) {
   gles2::cmds::ShaderSourceBucket* c =
       GetCmdSpace<gles2::cmds::ShaderSourceBucket>();
   if (c) {
@@ -1078,11 +1091,10 @@ void TexImage2D(GLenum target,
                 GLint internalformat,
                 GLsizei width,
                 GLsizei height,
-                GLint border,
                 GLenum format,
                 GLenum type,
-                uint32 pixels_shm_id,
-                uint32 pixels_shm_offset) {
+                uint32_t pixels_shm_id,
+                uint32_t pixels_shm_offset) {
   gles2::cmds::TexImage2D* c = GetCmdSpace<gles2::cmds::TexImage2D>();
   if (c) {
     c->Init(target,
@@ -1090,7 +1102,6 @@ void TexImage2D(GLenum target,
             internalformat,
             width,
             height,
-            border,
             format,
             type,
             pixels_shm_id,
@@ -1107,8 +1118,8 @@ void TexParameterf(GLenum target, GLenum pname, GLfloat param) {
 
 void TexParameterfv(GLenum target,
                     GLenum pname,
-                    uint32 params_shm_id,
-                    uint32 params_shm_offset) {
+                    uint32_t params_shm_id,
+                    uint32_t params_shm_offset) {
   gles2::cmds::TexParameterfv* c = GetCmdSpace<gles2::cmds::TexParameterfv>();
   if (c) {
     c->Init(target, pname, params_shm_id, params_shm_offset);
@@ -1118,7 +1129,7 @@ void TexParameterfv(GLenum target,
 void TexParameterfvImmediate(GLenum target,
                              GLenum pname,
                              const GLfloat* params) {
-  const uint32 size = gles2::cmds::TexParameterfvImmediate::ComputeSize();
+  const uint32_t size = gles2::cmds::TexParameterfvImmediate::ComputeSize();
   gles2::cmds::TexParameterfvImmediate* c =
       GetImmediateCmdSpaceTotalSize<gles2::cmds::TexParameterfvImmediate>(size);
   if (c) {
@@ -1135,8 +1146,8 @@ void TexParameteri(GLenum target, GLenum pname, GLint param) {
 
 void TexParameteriv(GLenum target,
                     GLenum pname,
-                    uint32 params_shm_id,
-                    uint32 params_shm_offset) {
+                    uint32_t params_shm_id,
+                    uint32_t params_shm_offset) {
   gles2::cmds::TexParameteriv* c = GetCmdSpace<gles2::cmds::TexParameteriv>();
   if (c) {
     c->Init(target, pname, params_shm_id, params_shm_offset);
@@ -1144,7 +1155,7 @@ void TexParameteriv(GLenum target,
 }
 
 void TexParameterivImmediate(GLenum target, GLenum pname, const GLint* params) {
-  const uint32 size = gles2::cmds::TexParameterivImmediate::ComputeSize();
+  const uint32_t size = gles2::cmds::TexParameterivImmediate::ComputeSize();
   gles2::cmds::TexParameterivImmediate* c =
       GetImmediateCmdSpaceTotalSize<gles2::cmds::TexParameterivImmediate>(size);
   if (c) {
@@ -1160,8 +1171,8 @@ void TexSubImage2D(GLenum target,
                    GLsizei height,
                    GLenum format,
                    GLenum type,
-                   uint32 pixels_shm_id,
-                   uint32 pixels_shm_offset,
+                   uint32_t pixels_shm_id,
+                   uint32_t pixels_shm_offset,
                    GLboolean internal) {
   gles2::cmds::TexSubImage2D* c = GetCmdSpace<gles2::cmds::TexSubImage2D>();
   if (c) {
@@ -1188,8 +1199,8 @@ void Uniform1f(GLint location, GLfloat x) {
 
 void Uniform1fv(GLint location,
                 GLsizei count,
-                uint32 v_shm_id,
-                uint32 v_shm_offset) {
+                uint32_t v_shm_id,
+                uint32_t v_shm_offset) {
   gles2::cmds::Uniform1fv* c = GetCmdSpace<gles2::cmds::Uniform1fv>();
   if (c) {
     c->Init(location, count, v_shm_id, v_shm_offset);
@@ -1197,7 +1208,7 @@ void Uniform1fv(GLint location,
 }
 
 void Uniform1fvImmediate(GLint location, GLsizei count, const GLfloat* v) {
-  const uint32 size = gles2::cmds::Uniform1fvImmediate::ComputeSize(count);
+  const uint32_t size = gles2::cmds::Uniform1fvImmediate::ComputeSize(count);
   gles2::cmds::Uniform1fvImmediate* c =
       GetImmediateCmdSpaceTotalSize<gles2::cmds::Uniform1fvImmediate>(size);
   if (c) {
@@ -1214,8 +1225,8 @@ void Uniform1i(GLint location, GLint x) {
 
 void Uniform1iv(GLint location,
                 GLsizei count,
-                uint32 v_shm_id,
-                uint32 v_shm_offset) {
+                uint32_t v_shm_id,
+                uint32_t v_shm_offset) {
   gles2::cmds::Uniform1iv* c = GetCmdSpace<gles2::cmds::Uniform1iv>();
   if (c) {
     c->Init(location, count, v_shm_id, v_shm_offset);
@@ -1223,7 +1234,7 @@ void Uniform1iv(GLint location,
 }
 
 void Uniform1ivImmediate(GLint location, GLsizei count, const GLint* v) {
-  const uint32 size = gles2::cmds::Uniform1ivImmediate::ComputeSize(count);
+  const uint32_t size = gles2::cmds::Uniform1ivImmediate::ComputeSize(count);
   gles2::cmds::Uniform1ivImmediate* c =
       GetImmediateCmdSpaceTotalSize<gles2::cmds::Uniform1ivImmediate>(size);
   if (c) {
@@ -1240,8 +1251,8 @@ void Uniform2f(GLint location, GLfloat x, GLfloat y) {
 
 void Uniform2fv(GLint location,
                 GLsizei count,
-                uint32 v_shm_id,
-                uint32 v_shm_offset) {
+                uint32_t v_shm_id,
+                uint32_t v_shm_offset) {
   gles2::cmds::Uniform2fv* c = GetCmdSpace<gles2::cmds::Uniform2fv>();
   if (c) {
     c->Init(location, count, v_shm_id, v_shm_offset);
@@ -1249,7 +1260,7 @@ void Uniform2fv(GLint location,
 }
 
 void Uniform2fvImmediate(GLint location, GLsizei count, const GLfloat* v) {
-  const uint32 size = gles2::cmds::Uniform2fvImmediate::ComputeSize(count);
+  const uint32_t size = gles2::cmds::Uniform2fvImmediate::ComputeSize(count);
   gles2::cmds::Uniform2fvImmediate* c =
       GetImmediateCmdSpaceTotalSize<gles2::cmds::Uniform2fvImmediate>(size);
   if (c) {
@@ -1266,8 +1277,8 @@ void Uniform2i(GLint location, GLint x, GLint y) {
 
 void Uniform2iv(GLint location,
                 GLsizei count,
-                uint32 v_shm_id,
-                uint32 v_shm_offset) {
+                uint32_t v_shm_id,
+                uint32_t v_shm_offset) {
   gles2::cmds::Uniform2iv* c = GetCmdSpace<gles2::cmds::Uniform2iv>();
   if (c) {
     c->Init(location, count, v_shm_id, v_shm_offset);
@@ -1275,7 +1286,7 @@ void Uniform2iv(GLint location,
 }
 
 void Uniform2ivImmediate(GLint location, GLsizei count, const GLint* v) {
-  const uint32 size = gles2::cmds::Uniform2ivImmediate::ComputeSize(count);
+  const uint32_t size = gles2::cmds::Uniform2ivImmediate::ComputeSize(count);
   gles2::cmds::Uniform2ivImmediate* c =
       GetImmediateCmdSpaceTotalSize<gles2::cmds::Uniform2ivImmediate>(size);
   if (c) {
@@ -1292,8 +1303,8 @@ void Uniform3f(GLint location, GLfloat x, GLfloat y, GLfloat z) {
 
 void Uniform3fv(GLint location,
                 GLsizei count,
-                uint32 v_shm_id,
-                uint32 v_shm_offset) {
+                uint32_t v_shm_id,
+                uint32_t v_shm_offset) {
   gles2::cmds::Uniform3fv* c = GetCmdSpace<gles2::cmds::Uniform3fv>();
   if (c) {
     c->Init(location, count, v_shm_id, v_shm_offset);
@@ -1301,7 +1312,7 @@ void Uniform3fv(GLint location,
 }
 
 void Uniform3fvImmediate(GLint location, GLsizei count, const GLfloat* v) {
-  const uint32 size = gles2::cmds::Uniform3fvImmediate::ComputeSize(count);
+  const uint32_t size = gles2::cmds::Uniform3fvImmediate::ComputeSize(count);
   gles2::cmds::Uniform3fvImmediate* c =
       GetImmediateCmdSpaceTotalSize<gles2::cmds::Uniform3fvImmediate>(size);
   if (c) {
@@ -1318,8 +1329,8 @@ void Uniform3i(GLint location, GLint x, GLint y, GLint z) {
 
 void Uniform3iv(GLint location,
                 GLsizei count,
-                uint32 v_shm_id,
-                uint32 v_shm_offset) {
+                uint32_t v_shm_id,
+                uint32_t v_shm_offset) {
   gles2::cmds::Uniform3iv* c = GetCmdSpace<gles2::cmds::Uniform3iv>();
   if (c) {
     c->Init(location, count, v_shm_id, v_shm_offset);
@@ -1327,7 +1338,7 @@ void Uniform3iv(GLint location,
 }
 
 void Uniform3ivImmediate(GLint location, GLsizei count, const GLint* v) {
-  const uint32 size = gles2::cmds::Uniform3ivImmediate::ComputeSize(count);
+  const uint32_t size = gles2::cmds::Uniform3ivImmediate::ComputeSize(count);
   gles2::cmds::Uniform3ivImmediate* c =
       GetImmediateCmdSpaceTotalSize<gles2::cmds::Uniform3ivImmediate>(size);
   if (c) {
@@ -1344,8 +1355,8 @@ void Uniform4f(GLint location, GLfloat x, GLfloat y, GLfloat z, GLfloat w) {
 
 void Uniform4fv(GLint location,
                 GLsizei count,
-                uint32 v_shm_id,
-                uint32 v_shm_offset) {
+                uint32_t v_shm_id,
+                uint32_t v_shm_offset) {
   gles2::cmds::Uniform4fv* c = GetCmdSpace<gles2::cmds::Uniform4fv>();
   if (c) {
     c->Init(location, count, v_shm_id, v_shm_offset);
@@ -1353,7 +1364,7 @@ void Uniform4fv(GLint location,
 }
 
 void Uniform4fvImmediate(GLint location, GLsizei count, const GLfloat* v) {
-  const uint32 size = gles2::cmds::Uniform4fvImmediate::ComputeSize(count);
+  const uint32_t size = gles2::cmds::Uniform4fvImmediate::ComputeSize(count);
   gles2::cmds::Uniform4fvImmediate* c =
       GetImmediateCmdSpaceTotalSize<gles2::cmds::Uniform4fvImmediate>(size);
   if (c) {
@@ -1370,8 +1381,8 @@ void Uniform4i(GLint location, GLint x, GLint y, GLint z, GLint w) {
 
 void Uniform4iv(GLint location,
                 GLsizei count,
-                uint32 v_shm_id,
-                uint32 v_shm_offset) {
+                uint32_t v_shm_id,
+                uint32_t v_shm_offset) {
   gles2::cmds::Uniform4iv* c = GetCmdSpace<gles2::cmds::Uniform4iv>();
   if (c) {
     c->Init(location, count, v_shm_id, v_shm_offset);
@@ -1379,7 +1390,7 @@ void Uniform4iv(GLint location,
 }
 
 void Uniform4ivImmediate(GLint location, GLsizei count, const GLint* v) {
-  const uint32 size = gles2::cmds::Uniform4ivImmediate::ComputeSize(count);
+  const uint32_t size = gles2::cmds::Uniform4ivImmediate::ComputeSize(count);
   gles2::cmds::Uniform4ivImmediate* c =
       GetImmediateCmdSpaceTotalSize<gles2::cmds::Uniform4ivImmediate>(size);
   if (c) {
@@ -1389,79 +1400,73 @@ void Uniform4ivImmediate(GLint location, GLsizei count, const GLint* v) {
 
 void UniformMatrix2fv(GLint location,
                       GLsizei count,
-                      GLboolean transpose,
-                      uint32 value_shm_id,
-                      uint32 value_shm_offset) {
+                      uint32_t value_shm_id,
+                      uint32_t value_shm_offset) {
   gles2::cmds::UniformMatrix2fv* c =
       GetCmdSpace<gles2::cmds::UniformMatrix2fv>();
   if (c) {
-    c->Init(location, count, transpose, value_shm_id, value_shm_offset);
+    c->Init(location, count, value_shm_id, value_shm_offset);
   }
 }
 
 void UniformMatrix2fvImmediate(GLint location,
                                GLsizei count,
-                               GLboolean transpose,
                                const GLfloat* value) {
-  const uint32 size =
+  const uint32_t size =
       gles2::cmds::UniformMatrix2fvImmediate::ComputeSize(count);
   gles2::cmds::UniformMatrix2fvImmediate* c =
       GetImmediateCmdSpaceTotalSize<gles2::cmds::UniformMatrix2fvImmediate>(
           size);
   if (c) {
-    c->Init(location, count, transpose, value);
+    c->Init(location, count, value);
   }
 }
 
 void UniformMatrix3fv(GLint location,
                       GLsizei count,
-                      GLboolean transpose,
-                      uint32 value_shm_id,
-                      uint32 value_shm_offset) {
+                      uint32_t value_shm_id,
+                      uint32_t value_shm_offset) {
   gles2::cmds::UniformMatrix3fv* c =
       GetCmdSpace<gles2::cmds::UniformMatrix3fv>();
   if (c) {
-    c->Init(location, count, transpose, value_shm_id, value_shm_offset);
+    c->Init(location, count, value_shm_id, value_shm_offset);
   }
 }
 
 void UniformMatrix3fvImmediate(GLint location,
                                GLsizei count,
-                               GLboolean transpose,
                                const GLfloat* value) {
-  const uint32 size =
+  const uint32_t size =
       gles2::cmds::UniformMatrix3fvImmediate::ComputeSize(count);
   gles2::cmds::UniformMatrix3fvImmediate* c =
       GetImmediateCmdSpaceTotalSize<gles2::cmds::UniformMatrix3fvImmediate>(
           size);
   if (c) {
-    c->Init(location, count, transpose, value);
+    c->Init(location, count, value);
   }
 }
 
 void UniformMatrix4fv(GLint location,
                       GLsizei count,
-                      GLboolean transpose,
-                      uint32 value_shm_id,
-                      uint32 value_shm_offset) {
+                      uint32_t value_shm_id,
+                      uint32_t value_shm_offset) {
   gles2::cmds::UniformMatrix4fv* c =
       GetCmdSpace<gles2::cmds::UniformMatrix4fv>();
   if (c) {
-    c->Init(location, count, transpose, value_shm_id, value_shm_offset);
+    c->Init(location, count, value_shm_id, value_shm_offset);
   }
 }
 
 void UniformMatrix4fvImmediate(GLint location,
                                GLsizei count,
-                               GLboolean transpose,
                                const GLfloat* value) {
-  const uint32 size =
+  const uint32_t size =
       gles2::cmds::UniformMatrix4fvImmediate::ComputeSize(count);
   gles2::cmds::UniformMatrix4fvImmediate* c =
       GetImmediateCmdSpaceTotalSize<gles2::cmds::UniformMatrix4fvImmediate>(
           size);
   if (c) {
-    c->Init(location, count, transpose, value);
+    c->Init(location, count, value);
   }
 }
 
@@ -1487,8 +1492,8 @@ void VertexAttrib1f(GLuint indx, GLfloat x) {
 }
 
 void VertexAttrib1fv(GLuint indx,
-                     uint32 values_shm_id,
-                     uint32 values_shm_offset) {
+                     uint32_t values_shm_id,
+                     uint32_t values_shm_offset) {
   gles2::cmds::VertexAttrib1fv* c = GetCmdSpace<gles2::cmds::VertexAttrib1fv>();
   if (c) {
     c->Init(indx, values_shm_id, values_shm_offset);
@@ -1496,7 +1501,7 @@ void VertexAttrib1fv(GLuint indx,
 }
 
 void VertexAttrib1fvImmediate(GLuint indx, const GLfloat* values) {
-  const uint32 size = gles2::cmds::VertexAttrib1fvImmediate::ComputeSize();
+  const uint32_t size = gles2::cmds::VertexAttrib1fvImmediate::ComputeSize();
   gles2::cmds::VertexAttrib1fvImmediate* c =
       GetImmediateCmdSpaceTotalSize<gles2::cmds::VertexAttrib1fvImmediate>(
           size);
@@ -1513,8 +1518,8 @@ void VertexAttrib2f(GLuint indx, GLfloat x, GLfloat y) {
 }
 
 void VertexAttrib2fv(GLuint indx,
-                     uint32 values_shm_id,
-                     uint32 values_shm_offset) {
+                     uint32_t values_shm_id,
+                     uint32_t values_shm_offset) {
   gles2::cmds::VertexAttrib2fv* c = GetCmdSpace<gles2::cmds::VertexAttrib2fv>();
   if (c) {
     c->Init(indx, values_shm_id, values_shm_offset);
@@ -1522,7 +1527,7 @@ void VertexAttrib2fv(GLuint indx,
 }
 
 void VertexAttrib2fvImmediate(GLuint indx, const GLfloat* values) {
-  const uint32 size = gles2::cmds::VertexAttrib2fvImmediate::ComputeSize();
+  const uint32_t size = gles2::cmds::VertexAttrib2fvImmediate::ComputeSize();
   gles2::cmds::VertexAttrib2fvImmediate* c =
       GetImmediateCmdSpaceTotalSize<gles2::cmds::VertexAttrib2fvImmediate>(
           size);
@@ -1539,8 +1544,8 @@ void VertexAttrib3f(GLuint indx, GLfloat x, GLfloat y, GLfloat z) {
 }
 
 void VertexAttrib3fv(GLuint indx,
-                     uint32 values_shm_id,
-                     uint32 values_shm_offset) {
+                     uint32_t values_shm_id,
+                     uint32_t values_shm_offset) {
   gles2::cmds::VertexAttrib3fv* c = GetCmdSpace<gles2::cmds::VertexAttrib3fv>();
   if (c) {
     c->Init(indx, values_shm_id, values_shm_offset);
@@ -1548,7 +1553,7 @@ void VertexAttrib3fv(GLuint indx,
 }
 
 void VertexAttrib3fvImmediate(GLuint indx, const GLfloat* values) {
-  const uint32 size = gles2::cmds::VertexAttrib3fvImmediate::ComputeSize();
+  const uint32_t size = gles2::cmds::VertexAttrib3fvImmediate::ComputeSize();
   gles2::cmds::VertexAttrib3fvImmediate* c =
       GetImmediateCmdSpaceTotalSize<gles2::cmds::VertexAttrib3fvImmediate>(
           size);
@@ -1565,8 +1570,8 @@ void VertexAttrib4f(GLuint indx, GLfloat x, GLfloat y, GLfloat z, GLfloat w) {
 }
 
 void VertexAttrib4fv(GLuint indx,
-                     uint32 values_shm_id,
-                     uint32 values_shm_offset) {
+                     uint32_t values_shm_id,
+                     uint32_t values_shm_offset) {
   gles2::cmds::VertexAttrib4fv* c = GetCmdSpace<gles2::cmds::VertexAttrib4fv>();
   if (c) {
     c->Init(indx, values_shm_id, values_shm_offset);
@@ -1574,7 +1579,7 @@ void VertexAttrib4fv(GLuint indx,
 }
 
 void VertexAttrib4fvImmediate(GLuint indx, const GLfloat* values) {
-  const uint32 size = gles2::cmds::VertexAttrib4fvImmediate::ComputeSize();
+  const uint32_t size = gles2::cmds::VertexAttrib4fvImmediate::ComputeSize();
   gles2::cmds::VertexAttrib4fvImmediate* c =
       GetImmediateCmdSpaceTotalSize<gles2::cmds::VertexAttrib4fvImmediate>(
           size);
@@ -1649,12 +1654,11 @@ void FramebufferTexture2DMultisampleEXT(GLenum target,
                                         GLenum attachment,
                                         GLenum textarget,
                                         GLuint texture,
-                                        GLint level,
                                         GLsizei samples) {
   gles2::cmds::FramebufferTexture2DMultisampleEXT* c =
       GetCmdSpace<gles2::cmds::FramebufferTexture2DMultisampleEXT>();
   if (c) {
-    c->Init(target, attachment, textarget, texture, level, samples);
+    c->Init(target, attachment, textarget, texture, samples);
   }
 }
 
@@ -1670,8 +1674,8 @@ void TexStorage2DEXT(GLenum target,
 }
 
 void GenQueriesEXT(GLsizei n,
-                   uint32 queries_shm_id,
-                   uint32 queries_shm_offset) {
+                   uint32_t queries_shm_id,
+                   uint32_t queries_shm_offset) {
   gles2::cmds::GenQueriesEXT* c = GetCmdSpace<gles2::cmds::GenQueriesEXT>();
   if (c) {
     c->Init(n, queries_shm_id, queries_shm_offset);
@@ -1679,7 +1683,7 @@ void GenQueriesEXT(GLsizei n,
 }
 
 void GenQueriesEXTImmediate(GLsizei n, GLuint* queries) {
-  const uint32 size = gles2::cmds::GenQueriesEXTImmediate::ComputeSize(n);
+  const uint32_t size = gles2::cmds::GenQueriesEXTImmediate::ComputeSize(n);
   gles2::cmds::GenQueriesEXTImmediate* c =
       GetImmediateCmdSpaceTotalSize<gles2::cmds::GenQueriesEXTImmediate>(size);
   if (c) {
@@ -1688,8 +1692,8 @@ void GenQueriesEXTImmediate(GLsizei n, GLuint* queries) {
 }
 
 void DeleteQueriesEXT(GLsizei n,
-                      uint32 queries_shm_id,
-                      uint32 queries_shm_offset) {
+                      uint32_t queries_shm_id,
+                      uint32_t queries_shm_offset) {
   gles2::cmds::DeleteQueriesEXT* c =
       GetCmdSpace<gles2::cmds::DeleteQueriesEXT>();
   if (c) {
@@ -1698,7 +1702,7 @@ void DeleteQueriesEXT(GLsizei n,
 }
 
 void DeleteQueriesEXTImmediate(GLsizei n, const GLuint* queries) {
-  const uint32 size = gles2::cmds::DeleteQueriesEXTImmediate::ComputeSize(n);
+  const uint32_t size = gles2::cmds::DeleteQueriesEXTImmediate::ComputeSize(n);
   gles2::cmds::DeleteQueriesEXTImmediate* c =
       GetImmediateCmdSpaceTotalSize<gles2::cmds::DeleteQueriesEXTImmediate>(
           size);
@@ -1709,8 +1713,8 @@ void DeleteQueriesEXTImmediate(GLsizei n, const GLuint* queries) {
 
 void BeginQueryEXT(GLenum target,
                    GLuint id,
-                   uint32 sync_data_shm_id,
-                   uint32 sync_data_shm_offset) {
+                   uint32_t sync_data_shm_id,
+                   uint32_t sync_data_shm_offset) {
   gles2::cmds::BeginQueryEXT* c = GetCmdSpace<gles2::cmds::BeginQueryEXT>();
   if (c) {
     c->Init(target, id, sync_data_shm_id, sync_data_shm_offset);
@@ -1749,8 +1753,8 @@ void PopGroupMarkerEXT() {
 }
 
 void GenVertexArraysOES(GLsizei n,
-                        uint32 arrays_shm_id,
-                        uint32 arrays_shm_offset) {
+                        uint32_t arrays_shm_id,
+                        uint32_t arrays_shm_offset) {
   gles2::cmds::GenVertexArraysOES* c =
       GetCmdSpace<gles2::cmds::GenVertexArraysOES>();
   if (c) {
@@ -1759,7 +1763,8 @@ void GenVertexArraysOES(GLsizei n,
 }
 
 void GenVertexArraysOESImmediate(GLsizei n, GLuint* arrays) {
-  const uint32 size = gles2::cmds::GenVertexArraysOESImmediate::ComputeSize(n);
+  const uint32_t size =
+      gles2::cmds::GenVertexArraysOESImmediate::ComputeSize(n);
   gles2::cmds::GenVertexArraysOESImmediate* c =
       GetImmediateCmdSpaceTotalSize<gles2::cmds::GenVertexArraysOESImmediate>(
           size);
@@ -1769,8 +1774,8 @@ void GenVertexArraysOESImmediate(GLsizei n, GLuint* arrays) {
 }
 
 void DeleteVertexArraysOES(GLsizei n,
-                           uint32 arrays_shm_id,
-                           uint32 arrays_shm_offset) {
+                           uint32_t arrays_shm_id,
+                           uint32_t arrays_shm_offset) {
   gles2::cmds::DeleteVertexArraysOES* c =
       GetCmdSpace<gles2::cmds::DeleteVertexArraysOES>();
   if (c) {
@@ -1779,7 +1784,7 @@ void DeleteVertexArraysOES(GLsizei n,
 }
 
 void DeleteVertexArraysOESImmediate(GLsizei n, const GLuint* arrays) {
-  const uint32 size =
+  const uint32_t size =
       gles2::cmds::DeleteVertexArraysOESImmediate::ComputeSize(n);
   gles2::cmds::DeleteVertexArraysOESImmediate* c =
       GetImmediateCmdSpaceTotalSize<
@@ -1790,8 +1795,8 @@ void DeleteVertexArraysOESImmediate(GLsizei n, const GLuint* arrays) {
 }
 
 void IsVertexArrayOES(GLuint array,
-                      uint32 result_shm_id,
-                      uint32 result_shm_offset) {
+                      uint32_t result_shm_id,
+                      uint32_t result_shm_offset) {
   gles2::cmds::IsVertexArrayOES* c =
       GetCmdSpace<gles2::cmds::IsVertexArrayOES>();
   if (c) {
@@ -1818,8 +1823,8 @@ void GetMaxValueInBufferCHROMIUM(GLuint buffer_id,
                                  GLsizei count,
                                  GLenum type,
                                  GLuint offset,
-                                 uint32 result_shm_id,
-                                 uint32 result_shm_offset) {
+                                 uint32_t result_shm_id,
+                                 uint32_t result_shm_offset) {
   gles2::cmds::GetMaxValueInBufferCHROMIUM* c =
       GetCmdSpace<gles2::cmds::GetMaxValueInBufferCHROMIUM>();
   if (c) {
@@ -1830,8 +1835,8 @@ void GetMaxValueInBufferCHROMIUM(GLuint buffer_id,
 void GenSharedIdsCHROMIUM(GLuint namespace_id,
                           GLuint id_offset,
                           GLsizei n,
-                          uint32 ids_shm_id,
-                          uint32 ids_shm_offset) {
+                          uint32_t ids_shm_id,
+                          uint32_t ids_shm_offset) {
   gles2::cmds::GenSharedIdsCHROMIUM* c =
       GetCmdSpace<gles2::cmds::GenSharedIdsCHROMIUM>();
   if (c) {
@@ -1841,8 +1846,8 @@ void GenSharedIdsCHROMIUM(GLuint namespace_id,
 
 void DeleteSharedIdsCHROMIUM(GLuint namespace_id,
                              GLsizei n,
-                             uint32 ids_shm_id,
-                             uint32 ids_shm_offset) {
+                             uint32_t ids_shm_id,
+                             uint32_t ids_shm_offset) {
   gles2::cmds::DeleteSharedIdsCHROMIUM* c =
       GetCmdSpace<gles2::cmds::DeleteSharedIdsCHROMIUM>();
   if (c) {
@@ -1852,8 +1857,8 @@ void DeleteSharedIdsCHROMIUM(GLuint namespace_id,
 
 void RegisterSharedIdsCHROMIUM(GLuint namespace_id,
                                GLsizei n,
-                               uint32 ids_shm_id,
-                               uint32 ids_shm_offset) {
+                               uint32_t ids_shm_id,
+                               uint32_t ids_shm_offset) {
   gles2::cmds::RegisterSharedIdsCHROMIUM* c =
       GetCmdSpace<gles2::cmds::RegisterSharedIdsCHROMIUM>();
   if (c) {
@@ -1862,8 +1867,8 @@ void RegisterSharedIdsCHROMIUM(GLuint namespace_id,
 }
 
 void EnableFeatureCHROMIUM(GLuint bucket_id,
-                           uint32 result_shm_id,
-                           uint32 result_shm_offset) {
+                           uint32_t result_shm_id,
+                           uint32_t result_shm_offset) {
   gles2::cmds::EnableFeatureCHROMIUM* c =
       GetCmdSpace<gles2::cmds::EnableFeatureCHROMIUM>();
   if (c) {
@@ -1878,7 +1883,7 @@ void ResizeCHROMIUM(GLuint width, GLuint height, GLfloat scale_factor) {
   }
 }
 
-void GetRequestableExtensionsCHROMIUM(uint32 bucket_id) {
+void GetRequestableExtensionsCHROMIUM(uint32_t bucket_id) {
   gles2::cmds::GetRequestableExtensionsCHROMIUM* c =
       GetCmdSpace<gles2::cmds::GetRequestableExtensionsCHROMIUM>();
   if (c) {
@@ -1886,7 +1891,7 @@ void GetRequestableExtensionsCHROMIUM(uint32 bucket_id) {
   }
 }
 
-void RequestExtensionCHROMIUM(uint32 bucket_id) {
+void RequestExtensionCHROMIUM(uint32_t bucket_id) {
   gles2::cmds::RequestExtensionCHROMIUM* c =
       GetCmdSpace<gles2::cmds::RequestExtensionCHROMIUM>();
   if (c) {
@@ -1894,11 +1899,11 @@ void RequestExtensionCHROMIUM(uint32 bucket_id) {
   }
 }
 
-void GetMultipleIntegervCHROMIUM(uint32 pnames_shm_id,
-                                 uint32 pnames_shm_offset,
+void GetMultipleIntegervCHROMIUM(uint32_t pnames_shm_id,
+                                 uint32_t pnames_shm_offset,
                                  GLuint count,
-                                 uint32 results_shm_id,
-                                 uint32 results_shm_offset,
+                                 uint32_t results_shm_id,
+                                 uint32_t results_shm_offset,
                                  GLsizeiptr size) {
   gles2::cmds::GetMultipleIntegervCHROMIUM* c =
       GetCmdSpace<gles2::cmds::GetMultipleIntegervCHROMIUM>();
@@ -1912,7 +1917,7 @@ void GetMultipleIntegervCHROMIUM(uint32 pnames_shm_id,
   }
 }
 
-void GetProgramInfoCHROMIUM(GLuint program, uint32 bucket_id) {
+void GetProgramInfoCHROMIUM(GLuint program, uint32_t bucket_id) {
   gles2::cmds::GetProgramInfoCHROMIUM* c =
       GetCmdSpace<gles2::cmds::GetProgramInfoCHROMIUM>();
   if (c) {
@@ -1920,7 +1925,7 @@ void GetProgramInfoCHROMIUM(GLuint program, uint32 bucket_id) {
   }
 }
 
-void GetTranslatedShaderSourceANGLE(GLuint shader, uint32 bucket_id) {
+void GetTranslatedShaderSourceANGLE(GLuint shader, uint32_t bucket_id) {
   gles2::cmds::GetTranslatedShaderSourceANGLE* c =
       GetCmdSpace<gles2::cmds::GetTranslatedShaderSourceANGLE>();
   if (c) {
@@ -1993,8 +1998,8 @@ void VertexAttribDivisorANGLE(GLuint index, GLuint divisor) {
 }
 
 void ProduceTextureCHROMIUM(GLenum target,
-                            uint32 mailbox_shm_id,
-                            uint32 mailbox_shm_offset) {
+                            uint32_t mailbox_shm_id,
+                            uint32_t mailbox_shm_offset) {
   gles2::cmds::ProduceTextureCHROMIUM* c =
       GetCmdSpace<gles2::cmds::ProduceTextureCHROMIUM>();
   if (c) {
@@ -2003,7 +2008,7 @@ void ProduceTextureCHROMIUM(GLenum target,
 }
 
 void ProduceTextureCHROMIUMImmediate(GLenum target, const GLbyte* mailbox) {
-  const uint32 size =
+  const uint32_t size =
       gles2::cmds::ProduceTextureCHROMIUMImmediate::ComputeSize();
   gles2::cmds::ProduceTextureCHROMIUMImmediate* c =
       GetImmediateCmdSpaceTotalSize<
@@ -2014,8 +2019,8 @@ void ProduceTextureCHROMIUMImmediate(GLenum target, const GLbyte* mailbox) {
 }
 
 void ConsumeTextureCHROMIUM(GLenum target,
-                            uint32 mailbox_shm_id,
-                            uint32 mailbox_shm_offset) {
+                            uint32_t mailbox_shm_id,
+                            uint32_t mailbox_shm_offset) {
   gles2::cmds::ConsumeTextureCHROMIUM* c =
       GetCmdSpace<gles2::cmds::ConsumeTextureCHROMIUM>();
   if (c) {
@@ -2024,7 +2029,7 @@ void ConsumeTextureCHROMIUM(GLenum target,
 }
 
 void ConsumeTextureCHROMIUMImmediate(GLenum target, const GLbyte* mailbox) {
-  const uint32 size =
+  const uint32_t size =
       gles2::cmds::ConsumeTextureCHROMIUMImmediate::ComputeSize();
   gles2::cmds::ConsumeTextureCHROMIUMImmediate* c =
       GetImmediateCmdSpaceTotalSize<
@@ -2036,9 +2041,9 @@ void ConsumeTextureCHROMIUMImmediate(GLenum target, const GLbyte* mailbox) {
 
 void BindUniformLocationCHROMIUM(GLuint program,
                                  GLint location,
-                                 uint32 name_shm_id,
-                                 uint32 name_shm_offset,
-                                 uint32 data_size) {
+                                 uint32_t name_shm_id,
+                                 uint32_t name_shm_offset,
+                                 uint32_t data_size) {
   gles2::cmds::BindUniformLocationCHROMIUM* c =
       GetCmdSpace<gles2::cmds::BindUniformLocationCHROMIUM>();
   if (c) {
@@ -2048,7 +2053,7 @@ void BindUniformLocationCHROMIUM(GLuint program,
 
 void BindUniformLocationCHROMIUMBucket(GLuint program,
                                        GLint location,
-                                       uint32 name_bucket_id) {
+                                       uint32_t name_bucket_id) {
   gles2::cmds::BindUniformLocationCHROMIUMBucket* c =
       GetCmdSpace<gles2::cmds::BindUniformLocationCHROMIUMBucket>();
   if (c) {
@@ -2096,11 +2101,11 @@ void AsyncTexSubImage2DCHROMIUM(GLenum target,
                                 GLsizei height,
                                 GLenum format,
                                 GLenum type,
-                                uint32 data_shm_id,
-                                uint32 data_shm_offset,
-                                uint32 async_upload_token,
-                                uint32 sync_data_shm_id,
-                                uint32 sync_data_shm_offset) {
+                                uint32_t data_shm_id,
+                                uint32_t data_shm_offset,
+                                uint32_t async_upload_token,
+                                uint32_t sync_data_shm_id,
+                                uint32_t sync_data_shm_offset) {
   gles2::cmds::AsyncTexSubImage2DCHROMIUM* c =
       GetCmdSpace<gles2::cmds::AsyncTexSubImage2DCHROMIUM>();
   if (c) {
@@ -2125,14 +2130,13 @@ void AsyncTexImage2DCHROMIUM(GLenum target,
                              GLint internalformat,
                              GLsizei width,
                              GLsizei height,
-                             GLint border,
                              GLenum format,
                              GLenum type,
-                             uint32 pixels_shm_id,
-                             uint32 pixels_shm_offset,
-                             uint32 async_upload_token,
-                             uint32 sync_data_shm_id,
-                             uint32 sync_data_shm_offset) {
+                             uint32_t pixels_shm_id,
+                             uint32_t pixels_shm_offset,
+                             uint32_t async_upload_token,
+                             uint32_t sync_data_shm_id,
+                             uint32_t sync_data_shm_offset) {
   gles2::cmds::AsyncTexImage2DCHROMIUM* c =
       GetCmdSpace<gles2::cmds::AsyncTexImage2DCHROMIUM>();
   if (c) {
@@ -2141,7 +2145,6 @@ void AsyncTexImage2DCHROMIUM(GLenum target,
             internalformat,
             width,
             height,
-            border,
             format,
             type,
             pixels_shm_id,
@@ -2170,8 +2173,8 @@ void WaitAllAsyncTexImage2DCHROMIUM() {
 
 void DiscardFramebufferEXT(GLenum target,
                            GLsizei count,
-                           uint32 attachments_shm_id,
-                           uint32 attachments_shm_offset) {
+                           uint32_t attachments_shm_id,
+                           uint32_t attachments_shm_offset) {
   gles2::cmds::DiscardFramebufferEXT* c =
       GetCmdSpace<gles2::cmds::DiscardFramebufferEXT>();
   if (c) {
@@ -2182,7 +2185,7 @@ void DiscardFramebufferEXT(GLenum target,
 void DiscardFramebufferEXTImmediate(GLenum target,
                                     GLsizei count,
                                     const GLenum* attachments) {
-  const uint32 size =
+  const uint32_t size =
       gles2::cmds::DiscardFramebufferEXTImmediate::ComputeSize(count);
   gles2::cmds::DiscardFramebufferEXTImmediate* c =
       GetImmediateCmdSpaceTotalSize<
@@ -2208,7 +2211,9 @@ void WaitSyncPointCHROMIUM(GLuint sync_point) {
   }
 }
 
-void DrawBuffersEXT(GLsizei count, uint32 bufs_shm_id, uint32 bufs_shm_offset) {
+void DrawBuffersEXT(GLsizei count,
+                    uint32_t bufs_shm_id,
+                    uint32_t bufs_shm_offset) {
   gles2::cmds::DrawBuffersEXT* c = GetCmdSpace<gles2::cmds::DrawBuffersEXT>();
   if (c) {
     c->Init(count, bufs_shm_id, bufs_shm_offset);
@@ -2216,7 +2221,8 @@ void DrawBuffersEXT(GLsizei count, uint32 bufs_shm_id, uint32 bufs_shm_offset) {
 }
 
 void DrawBuffersEXTImmediate(GLsizei count, const GLenum* bufs) {
-  const uint32 size = gles2::cmds::DrawBuffersEXTImmediate::ComputeSize(count);
+  const uint32_t size =
+      gles2::cmds::DrawBuffersEXTImmediate::ComputeSize(count);
   gles2::cmds::DrawBuffersEXTImmediate* c =
       GetImmediateCmdSpaceTotalSize<gles2::cmds::DrawBuffersEXTImmediate>(size);
   if (c) {

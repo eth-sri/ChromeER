@@ -6,8 +6,8 @@
 
 #include "base/deferred_sequenced_task_runner.h"
 #include "base/message_loop/message_loop.h"
+#include "sync/engine/non_blocking_type_processor.h"
 #include "sync/internal_api/public/base/model_type.h"
-#include "sync/internal_api/public/non_blocking_type_processor.h"
 #include "sync/sessions/model_type_registry.h"
 #include "sync/test/engine/fake_model_worker.h"
 #include "sync/test/engine/test_directory_setter_upper.h"
@@ -113,6 +113,24 @@ TEST_F(ModelTypeRegistryTest, SetEnabledDirectoryTypes_Clear) {
   registry()->SetEnabledDirectoryTypes(routing_info2);
 }
 
+// Test disabling then re-enabling some directory types.
+//
+// We don't get to inspect any of the state we're modifying.  This test is
+// useful only for detecting crashes or memory leaks.
+TEST_F(ModelTypeRegistryTest, SetEnabledDirectoryTypes_OffAndOn) {
+  ModelSafeRoutingInfo routing_info1;
+  routing_info1.insert(std::make_pair(NIGORI, GROUP_PASSIVE));
+  routing_info1.insert(std::make_pair(BOOKMARKS, GROUP_UI));
+  routing_info1.insert(std::make_pair(AUTOFILL, GROUP_DB));
+
+  registry()->SetEnabledDirectoryTypes(routing_info1);
+
+  ModelSafeRoutingInfo routing_info2;
+  registry()->SetEnabledDirectoryTypes(routing_info2);
+
+  registry()->SetEnabledDirectoryTypes(routing_info1);
+}
+
 TEST_F(ModelTypeRegistryTest, NonBlockingTypes) {
   NonBlockingTypeProcessor themes_processor(syncer::THEMES);
   NonBlockingTypeProcessor sessions_processor(syncer::SESSIONS);
@@ -122,16 +140,12 @@ TEST_F(ModelTypeRegistryTest, NonBlockingTypes) {
   EXPECT_TRUE(registry()->GetEnabledTypes().Empty());
 
   registry()->InitializeNonBlockingType(
-      syncer::THEMES,
-      task_runner,
-      themes_processor.AsWeakPtr());
+      syncer::THEMES, task_runner, themes_processor.AsWeakPtrForUI());
   EXPECT_TRUE(registry()->GetEnabledTypes().Equals(
       ModelTypeSet(syncer::THEMES)));
 
   registry()->InitializeNonBlockingType(
-      syncer::SESSIONS,
-      task_runner,
-      sessions_processor.AsWeakPtr());
+      syncer::SESSIONS, task_runner, sessions_processor.AsWeakPtrForUI());
   EXPECT_TRUE(registry()->GetEnabledTypes().Equals(
       ModelTypeSet(syncer::THEMES, syncer::SESSIONS)));
 
@@ -159,9 +173,7 @@ TEST_F(ModelTypeRegistryTest, NonBlockingTypesWithDirectoryTypes) {
 
   // Add the themes non-blocking type.
   registry()->InitializeNonBlockingType(
-      syncer::THEMES,
-      task_runner,
-      themes_processor.AsWeakPtr());
+      syncer::THEMES, task_runner, themes_processor.AsWeakPtrForUI());
   current_types.Put(syncer::THEMES);
   EXPECT_TRUE(registry()->GetEnabledTypes().Equals(current_types));
 
@@ -172,9 +184,7 @@ TEST_F(ModelTypeRegistryTest, NonBlockingTypesWithDirectoryTypes) {
 
   // Add sessions non-blocking type.
   registry()->InitializeNonBlockingType(
-      syncer::SESSIONS,
-      task_runner,
-      sessions_processor.AsWeakPtr());
+      syncer::SESSIONS, task_runner, sessions_processor.AsWeakPtrForUI());
   current_types.Put(syncer::SESSIONS);
   EXPECT_TRUE(registry()->GetEnabledTypes().Equals(current_types));
 
@@ -201,13 +211,9 @@ TEST_F(ModelTypeRegistryTest, DeletionOrdering) {
   EXPECT_TRUE(registry()->GetEnabledTypes().Empty());
 
   registry()->InitializeNonBlockingType(
-      syncer::THEMES,
-      task_runner,
-      themes_processor->AsWeakPtr());
+      syncer::THEMES, task_runner, themes_processor->AsWeakPtrForUI());
   registry()->InitializeNonBlockingType(
-      syncer::SESSIONS,
-      task_runner,
-      sessions_processor->AsWeakPtr());
+      syncer::SESSIONS, task_runner, sessions_processor->AsWeakPtrForUI());
   EXPECT_TRUE(registry()->GetEnabledTypes().Equals(
       ModelTypeSet(syncer::THEMES, syncer::SESSIONS)));
 

@@ -15,8 +15,8 @@
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/pref_names.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "components/signin/core/browser/signin_manager.h"
-#include "components/user_prefs/pref_registry_syncable.h"
 #include "google_apis/gaia/identity_provider.h"
 #include "net/url_request/url_request_context_getter.h"
 
@@ -74,7 +74,7 @@ void GCMProfileService::RegisterProfilePrefs(
 }
 
 GCMProfileService::GCMProfileService(Profile* profile)
-    : GCMService(scoped_ptr<IdentityProvider>(new ProfileIdentityProvider(
+    : GCMDriver(scoped_ptr<IdentityProvider>(new ProfileIdentityProvider(
           SigninManagerFactory::GetForProfile(profile),
           ProfileOAuth2TokenServiceFactory::GetForProfile(profile),
 #if defined(OS_ANDROID)

@@ -54,6 +54,8 @@
         'mojo_system_impl',
         'mojo_system_unittests',
         'mojo_utility',
+        'mojo_view_manager_lib',
+        'mojo_view_manager_lib_unittests',
       ],
       'conditions': [
         ['use_aura==1', {
@@ -67,10 +69,17 @@
         }],
         ['OS == "android"', {
           'dependencies': [
+            'mojo_bindings_java',
             'mojo_public_java',
             'mojo_system_java',
             'libmojo_system_java',
             'mojo_test_apk',
+          ],
+        }],
+        ['OS == "linux"', {
+          'dependencies': [
+            'mojo_dbus_echo',
+            'mojo_dbus_echo_service',
           ],
         }],
       ]
@@ -143,6 +152,8 @@
         'embedder/platform_channel_utils_posix.h',
         'embedder/platform_handle.cc',
         'embedder/platform_handle.h',
+        'embedder/platform_handle_vector.cc',
+        'embedder/platform_handle_vector.h',
         'embedder/scoped_platform_handle.h',
         'system/channel.cc',
         'system/channel.h',
@@ -178,6 +189,8 @@
         'system/message_pipe_dispatcher.h',
         'system/message_pipe_endpoint.cc',
         'system/message_pipe_endpoint.h',
+        'system/platform_handle_dispatcher.cc',
+        'system/platform_handle_dispatcher.h',
         'system/proxy_message_pipe_endpoint.cc',
         'system/proxy_message_pipe_endpoint.h',
         'system/raw_channel.cc',
@@ -192,6 +205,8 @@
         'system/shared_buffer_dispatcher.h',
         'system/simple_dispatcher.cc',
         'system/simple_dispatcher.h',
+        'system/transport_data.cc',
+        'system/transport_data.h',
         'system/waiter.cc',
         'system/waiter.h',
         'system/waiter_list.cc',
@@ -231,6 +246,7 @@
         'system/message_pipe_dispatcher_unittest.cc',
         'system/message_pipe_unittest.cc',
         'system/multiprocess_message_pipe_unittest.cc',
+        'system/platform_handle_dispatcher_unittest.cc',
         'system/raw_channel_unittest.cc',
         'system/raw_shared_buffer_unittest.cc',
         'system/remote_message_pipe_unittest.cc',
@@ -409,6 +425,8 @@
         'mojo_system_impl',
       ],
       'sources': [
+        'service_manager/background_service_loader.cc',
+        'service_manager/background_service_loader.h',
         'service_manager/service_loader.h',
         'service_manager/service_manager.cc',
         'service_manager/service_manager.h',
@@ -498,6 +516,8 @@
         'shell/test_child_process.h',
         'shell/url_request_context_getter.cc',
         'shell/url_request_context_getter.h',
+        'shell/view_manager_loader.cc',
+        'shell/view_manager_loader.h',
       ],
       'conditions': [
         ['OS=="linux"', {
@@ -510,8 +530,15 @@
           'dependencies': [
             # These are only necessary as long as we hard code use of ViewManager.
             '../skia/skia.gyp:skia',
+            'mojo_gles2',
             'mojo_shell_client',
             'mojo_view_manager',
+            'mojo_view_manager_bindings',
+          ],
+        }, {  # use_aura==0
+          'sources!': [
+            'shell/view_manager_loader.cc',
+            'shell/view_manager_loader.h',
           ],
         }],
       ],
@@ -628,6 +655,21 @@
         'tools/message_generator.cc',
       ],
     },
+    {
+      'target_name': 'mojo_cc_support',
+      'type': 'static_library',
+      'dependencies': [
+        '../base/base.gyp:base',
+        '../cc/cc.gyp:cc',
+        '../skia/skia.gyp:skia',
+        '../gpu/gpu.gyp:gles2_implementation',
+        'mojo_gles2',
+      ],
+      'sources': [
+        'cc/context_provider_mojo.cc',
+        'cc/context_provider_mojo.h',
+      ],
+    },
   ],
   'conditions': [
     ['OS=="android"', {
@@ -646,7 +688,6 @@
           ],
           'variables': {
             'jni_gen_package': 'mojo',
-            'jni_generator_ptr_type': 'long',
          },
           'includes': [ '../build/jni_generator.gypi' ],
         },
@@ -684,6 +725,7 @@
           'type': 'shared_library',
           'dependencies': [
             '../base/base.gyp:base',
+            '../base/base.gyp:test_support_base',
             'libmojo_system_java',
             'mojo_jni_headers',
           ],
@@ -697,6 +739,8 @@
           'target_name': 'mojo_test_apk',
           'type': 'none',
           'dependencies': [
+            'mojo_bindings_java',
+            'mojo_public_test_interfaces',
             'mojo_system_java',
             '../base/base.gyp:base_java_test_support',
           ],
@@ -732,7 +776,6 @@
           'type': 'none',
           'variables': {
             'jni_gen_package': 'mojo',
-            'jni_generator_ptr_type': 'long',
             'input_java_class': 'java/util/HashSet.class',
           },
           'includes': [ '../build/jar_file_jni_generator.gypi' ],
@@ -812,6 +855,34 @@
           ],
           'sources': [
             'mojo_js_unittests.isolate',
+          ],
+        },
+      ],
+    }],
+    ['use_aura==1', {
+      'targets': [
+        {
+          'target_name': 'mojo_aura_support',
+          'type': 'static_library',
+          'dependencies': [
+            '../cc/cc.gyp:cc',
+            '../ui/aura/aura.gyp:aura',
+            '../ui/events/events.gyp:events',
+            '../ui/events/events.gyp:events_base',
+            '../ui/compositor/compositor.gyp:compositor',
+            '../ui/gl/gl.gyp:gl',
+            '../webkit/common/gpu/webkit_gpu.gyp:webkit_gpu',
+            'mojo_cc_support',
+            'mojo_gles2',
+            'mojo_native_viewport_bindings',
+          ],
+          'sources': [
+            'aura/context_factory_mojo.cc',
+            'aura/context_factory_mojo.h',
+            'aura/screen_mojo.cc',
+            'aura/screen_mojo.h',
+            'aura/window_tree_host_mojo.cc',
+            'aura/window_tree_host_mojo.h',
           ],
         },
       ],

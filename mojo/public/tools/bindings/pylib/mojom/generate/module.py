@@ -60,18 +60,31 @@ PRIMITIVES = (
 )
 
 
-class Constant(object):
-  def __init__(self, module, enum, field):
+class NamedValue(object):
+  def __init__(self, module, parent_kind, name):
     self.module = module
     self.namespace = module.namespace
-    self.parent_kind = enum.parent_kind
-    self.name = [enum.name, field.name]
+    self.parent_kind = parent_kind
+    self.name = name
     self.imported_from = None
 
   def GetSpec(self):
     return (self.namespace + '.' +
-        (self.parent_kind and (self.parent_kind.name + '.') or "") + \
-        self.name[1])
+        (self.parent_kind and (self.parent_kind.name + '.') or "") +
+        self.name)
+
+
+class EnumValue(NamedValue):
+  def __init__(self, module, enum, field):
+    NamedValue.__init__(self, module, enum.parent_kind, field.name)
+    self.enum_name = enum.name
+
+
+class Constant(object):
+  def __init__(self, name=None, kind=None, value=None):
+    self.name = name
+    self.kind = kind
+    self.value = value
 
 
 class Field(object):
@@ -118,7 +131,8 @@ class Parameter(object):
 
 
 class Method(object):
-  def __init__(self, name=None, ordinal=None):
+  def __init__(self, interface, name, ordinal=None):
+    self.interface = interface
     self.name = name
     self.ordinal = ordinal
     self.parameters = []
@@ -138,7 +152,7 @@ class Method(object):
 
 
 class Interface(Kind):
-  def __init__(self, name=None, peer=None, module=None):
+  def __init__(self, name=None, client=None, module=None):
     self.module = module
     self.name = name
     if name != None:
@@ -146,11 +160,11 @@ class Interface(Kind):
     else:
       spec = None
     Kind.__init__(self, spec)
-    self.peer = peer
+    self.client = client
     self.methods = []
 
   def AddMethod(self, name, ordinal=None):
-    method = Method(name, ordinal)
+    method = Method(self, name, ordinal=ordinal)
     self.methods.append(method)
     return method
 

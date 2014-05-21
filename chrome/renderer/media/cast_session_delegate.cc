@@ -15,6 +15,7 @@
 #include "media/cast/cast_sender.h"
 #include "media/cast/logging/log_serializer.h"
 #include "media/cast/logging/logging_defines.h"
+#include "media/cast/logging/proto/raw_events.pb.h"
 #include "media/cast/logging/raw_event_subscriber_bundle.h"
 #include "media/cast/transport/cast_transport_config.h"
 #include "media/cast/transport/cast_transport_sender.h"
@@ -50,13 +51,6 @@ void CastSessionDelegate::StartAudio(
   }
 
   audio_frame_input_available_callback_ = callback;
-  media::cast::transport::CastTransportAudioConfig transport_config;
-  transport_config.base.ssrc = config.sender_ssrc;
-  transport_config.codec = config.codec;
-  transport_config.base.rtp_config = config.rtp_config;
-  transport_config.frequency = config.frequency;
-  transport_config.channels = config.channels;
-  cast_transport_->InitializeAudio(transport_config);
   cast_sender_->InitializeAudio(
       config,
       base::Bind(&CastSessionDelegate::InitializationResultCB,
@@ -79,11 +73,6 @@ void CastSessionDelegate::StartVideo(
 
   video_frame_input_available_callback_ = callback;
 
-  media::cast::transport::CastTransportVideoConfig transport_config;
-  transport_config.base.ssrc = config.sender_ssrc;
-  transport_config.codec = config.codec;
-  transport_config.base.rtp_config = config.rtp_config;
-  cast_transport_->InitializeVideo(transport_config);
   cast_sender_->InitializeVideo(
       config,
       base::Bind(&CastSessionDelegate::InitializationResultCB,
@@ -131,6 +120,7 @@ void CastSessionDelegate::ToggleLogging(bool is_audio, bool enable) {
 
 void CastSessionDelegate::GetEventLogsAndReset(
     bool is_audio,
+    const std::string& extra_data,
     const EventLogsCallback& callback) {
   DCHECK(io_message_loop_proxy_->BelongsToCurrentThread());
 
@@ -151,6 +141,9 @@ void CastSessionDelegate::GetEventLogsAndReset(
   media::cast::PacketEventList packet_events;
 
   subscriber->GetEventsAndReset(&metadata, &frame_events, &packet_events);
+
+  if (!extra_data.empty())
+    metadata.set_extra_data(extra_data);
 
   scoped_ptr<char[]> serialized_log(new char[media::cast::kMaxSerializedBytes]);
   int output_bytes;
@@ -227,6 +220,7 @@ void CastSessionDelegate::LogRawEvents(
        ++it) {
     cast_environment_->Logging()->InsertPacketEvent(it->timestamp,
                                                     it->type,
+                                                    it->media_type,
                                                     it->rtp_timestamp,
                                                     it->frame_id,
                                                     it->packet_id,

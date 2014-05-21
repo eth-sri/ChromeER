@@ -80,14 +80,12 @@ class TestRtcpPacketBuilder {
   void AddRpsi(uint32 sender_ssrc, uint32 media_ssrc);
   void AddRemb(uint32 sender_ssrc, uint32 media_ssrc);
   void AddCast(uint32 sender_ssrc, uint32 media_ssrc, uint16 target_delay_ms);
-  void AddSenderLog(uint32 sender_ssrc);
-  void AddSenderFrameLog(uint8 event_id, uint32 rtp_timestamp);
   void AddReceiverLog(uint32 sender_ssrc);
   void AddReceiverFrameLog(uint32 rtp_timestamp,
                            int num_events,
                            uint32 event_timesamp_base);
   void AddReceiverEventLog(uint16 event_data,
-                           uint8 event_id,
+                           CastLoggingEvent event,
                            uint16 event_timesamp_delta);
 
   scoped_ptr<Packet> GetPacket();

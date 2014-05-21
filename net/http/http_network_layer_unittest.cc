@@ -11,7 +11,7 @@
 #include "net/dns/mock_host_resolver.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_server_properties_impl.h"
-#include "net/http/http_transaction_unittest.h"
+#include "net/http/http_transaction_test_util.h"
 #include "net/http/transport_security_state.h"
 #include "net/proxy/proxy_service.h"
 #include "net/socket/socket_test_util.h"
@@ -108,7 +108,7 @@ class HttpNetworkLayerTest : public PlatformTest {
   // Simulates a request through a proxy which returns a bypass, which is then
   // retried through a second proxy that doesn't bypass.
   // Checks that the expected requests were issued, the expected content was
-  // recieved, and the first proxy |bad_proxy| was marked as bad.
+  // received, and the first proxy |bad_proxy| was marked as bad.
   void TestProxyFallback(const std::string& bad_proxy) {
     MockRead data_reads[] = {
       MockRead("HTTP/1.1 200 OK\r\n"

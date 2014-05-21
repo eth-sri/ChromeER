@@ -16,6 +16,7 @@
 #include "content/public/common/page_transition_types.h"
 #include "content/public/test/test_renderer_host.h"
 #include "content/test/test_render_frame_host.h"
+#include "ui/base/ime/dummy_text_input_client.h"
 #include "ui/base/layout.h"
 #include "ui/gfx/vector2d_f.h"
 
@@ -62,6 +63,7 @@ class TestRenderWidgetHostView : public RenderWidgetHostViewBase {
   virtual gfx::NativeView GetNativeView() const OVERRIDE;
   virtual gfx::NativeViewId GetNativeViewId() const OVERRIDE;
   virtual gfx::NativeViewAccessible GetNativeViewAccessible() OVERRIDE;
+  virtual ui::TextInputClient* GetTextInputClient() OVERRIDE;
   virtual bool HasFocus() const OVERRIDE;
   virtual bool IsSurfaceAvailableForCopy() const OVERRIDE;
   virtual void Show() OVERRIDE;
@@ -123,7 +125,6 @@ class TestRenderWidgetHostView : public RenderWidgetHostViewBase {
       const scoped_refptr<media::VideoFrame>& target,
       const base::Callback<void(bool)>& callback) OVERRIDE;
   virtual bool CanCopyToVideoFrame() const OVERRIDE;
-  virtual void OnAcceleratedCompositingStateChange() OVERRIDE;
   virtual void AcceleratedSurfaceInitialized(int host_id,
                                              int route_id) OVERRIDE;
   virtual void AcceleratedSurfaceBuffersSwapped(
@@ -168,6 +169,7 @@ class TestRenderWidgetHostView : public RenderWidgetHostViewBase {
  private:
   bool is_showing_;
   bool did_swap_compositor_frame_;
+  ui::DummyTextInputClient text_input_client_;
 };
 
 #if defined(COMPILER_MSVC)
@@ -307,6 +309,7 @@ class TestRenderViewHost
 
   virtual bool CreateRenderView(const base::string16& frame_name,
                                 int opener_route_id,
+                                int proxy_route_id,
                                 int32 max_page_id,
                                 bool window_was_created_with_opener) OVERRIDE;
   virtual bool IsRenderViewLive() const OVERRIDE;

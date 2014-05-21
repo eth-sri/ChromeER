@@ -151,7 +151,8 @@ class ToolbarView : public views::AccessiblePaneView,
       int command_id, ui::Accelerator* accelerator) OVERRIDE;
 
   // Overridden from views::View:
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
+  virtual gfx::Size GetMinimumSize() const OVERRIDE;
   virtual void Layout() OVERRIDE;
   virtual bool HitTestRect(const gfx::Rect& rect) const OVERRIDE;
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
@@ -200,6 +201,9 @@ class ToolbarView : public views::AccessiblePaneView,
 
   // Returns the number of pixels above the location bar in non-normal display.
   int PopupTopSpacing() const;
+
+  // Given toolbar contents of size |size|, returns the total toolbar size.
+  gfx::Size SizeForContentSize(gfx::Size size) const;
 
   // Loads the images for all the child views.
   void LoadImages();

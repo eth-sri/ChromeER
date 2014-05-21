@@ -27,6 +27,10 @@ class ResourceContext;
 class WebContents;
 }
 
+namespace data_reduction_proxy {
+class DataReductionProxySettings;
+}
+
 namespace net {
 class CookieStore;
 }
@@ -34,6 +38,8 @@ class CookieStore;
 namespace visitedlink {
 class VisitedLinkMaster;
 }
+
+using data_reduction_proxy::DataReductionProxySettings;
 
 namespace android_webview {
 
@@ -58,6 +64,8 @@ class AwBrowserContext : public content::BrowserContext,
   static AwBrowserContext* FromWebContents(
       content::WebContents* web_contents);
 
+  static void SetDataReductionProxyEnabled(bool enabled);
+
   // Maps to BrowserMainParts::PreMainMessageLoopRun.
   void PreMainMessageLoopRun();
 
@@ -74,6 +82,9 @@ class AwBrowserContext : public content::BrowserContext,
   AwQuotaManagerBridge* GetQuotaManagerBridge();
 
   AwFormDatabaseService* GetFormDatabaseService();
+
+  DataReductionProxySettings* GetDataReductionProxySettings();
+
   void CreateUserPrefServiceIfNecessary();
 
   // content::BrowserContext implementation.
@@ -114,6 +125,7 @@ class AwBrowserContext : public content::BrowserContext,
       GetDownloadManagerDelegate() OVERRIDE;
   virtual content::GeolocationPermissionContext*
       GetGeolocationPermissionContext() OVERRIDE;
+  virtual content::BrowserPluginGuestManager* GetGuestManager() OVERRIDE;
   virtual quota::SpecialStoragePolicy* GetSpecialStoragePolicy() OVERRIDE;
 
   // visitedlink::VisitedLinkDelegate implementation.
@@ -121,6 +133,8 @@ class AwBrowserContext : public content::BrowserContext,
       const scoped_refptr<URLEnumerator>& enumerator) OVERRIDE;
 
  private:
+  static bool data_reduction_proxy_enabled_;
+
   // The file path where data for this context is persisted.
   base::FilePath context_storage_path_;
 
@@ -138,6 +152,8 @@ class AwBrowserContext : public content::BrowserContext,
   scoped_ptr<content::ResourceContext> resource_context_;
 
   scoped_ptr<PrefService> user_pref_service_;
+
+  scoped_ptr<DataReductionProxySettings> data_reduction_proxy_settings_;
 
   DISALLOW_COPY_AND_ASSIGN(AwBrowserContext);
 };

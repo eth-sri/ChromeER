@@ -158,7 +158,11 @@ class CONTENT_EXPORT BrowserAccessibilityManager : public ui::AXTreeDelegate {
 
   // Return the object that has focus, if it's a descandant of the
   // given root (inclusive). Does not make a new reference.
-  BrowserAccessibility* GetFocus(BrowserAccessibility* root);
+  virtual BrowserAccessibility* GetFocus(BrowserAccessibility* root);
+
+  // Return the descentant of the given root that has focus, or that object's
+  // active descendant if it has one.
+  BrowserAccessibility* GetActiveDescendantFocus(BrowserAccessibility* root);
 
   // True by default, but some platforms want to treat the root
   // scroll offsets separately.
@@ -187,6 +191,9 @@ class CONTENT_EXPORT BrowserAccessibilityManager : public ui::AXTreeDelegate {
       const ui::AXTreeUpdate& initial_tree,
       BrowserAccessibilityDelegate* delegate,
       BrowserAccessibilityFactory* factory);
+
+  // Called at the end of updating the tree.
+  virtual void OnTreeUpdateFinished() {}
 
  private:
   // The following states keep track of whether or not the

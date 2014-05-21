@@ -33,8 +33,8 @@
 #include "content/shell/renderer/shell_render_process_observer.h"
 #include "content/shell/renderer/test_runner/WebTask.h"
 #include "content/shell/renderer/test_runner/WebTestInterfaces.h"
-#include "content/shell/renderer/test_runner/WebTestProxy.h"
 #include "content/shell/renderer/test_runner/WebTestRunner.h"
+#include "content/shell/renderer/test_runner/web_test_proxy.h"
 #include "net/base/filename_util.h"
 #include "net/base/net_errors.h"
 #include "skia/ext/platform_canvas.h"
@@ -87,8 +87,6 @@ using blink::WebScreenOrientationType;
 using blink::WebTestingSupport;
 using blink::WebVector;
 using blink::WebView;
-using WebTestRunner::WebTask;
-using WebTestRunner::WebTestInterfaces;
 
 namespace content {
 
@@ -98,32 +96,6 @@ void InvokeTaskHelper(void* context) {
   WebTask* task = reinterpret_cast<WebTask*>(context);
   task->run();
   delete task;
-}
-
-#if !defined(OS_MACOSX)
-void MakeBitmapOpaque(SkBitmap* bitmap) {
-  SkAutoLockPixels lock(*bitmap);
-  DCHECK_EQ(bitmap->config(), SkBitmap::kARGB_8888_Config);
-  for (int y = 0; y < bitmap->height(); ++y) {
-    uint32_t* row = bitmap->getAddr32(0, y);
-    for (int x = 0; x < bitmap->width(); ++x)
-      row[x] |= 0xFF000000;  // Set alpha bits to 1.
-  }
-}
-#endif
-
-void CopyCanvasToBitmap(SkCanvas* canvas,  SkBitmap* snapshot) {
-  SkBaseDevice* device = skia::GetTopDevice(*canvas);
-  const SkBitmap& bitmap = device->accessBitmap(false);
-  const bool success = bitmap.copyTo(snapshot, kPMColor_SkColorType);
-  DCHECK(success);
-
-#if !defined(OS_MACOSX)
-  // Only the expected PNGs for Mac have a valid alpha channel.
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kEnableOverlayFullscreenVideo))
-    MakeBitmapOpaque(snapshot);
-#endif
 }
 
 class SyncNavigationStateVisitor : public RenderViewVisitor {
@@ -212,9 +184,7 @@ WebKitTestRunner::WebKitTestRunner(RenderView* render_view)
       focused_view_(NULL),
       is_main_window_(false),
       focus_on_next_commit_(false),
-      leak_detector_(new LeakDetector(this))
-{
-  UseMockMediaStreams(render_view);
+      leak_detector_(new LeakDetector(this)) {
 }
 
 WebKitTestRunner::~WebKitTestRunner() {
@@ -258,7 +228,11 @@ void WebKitTestRunner::setDeviceOrientationData(
 
 void WebKitTestRunner::setScreenOrientation(
     const WebScreenOrientationType& orientation) {
-  SetMockScreenOrientation(orientation);
+  SetMockScreenOrientation(render_view(), orientation);
+}
+
+void WebKitTestRunner::resetScreenOrientation() {
+  ResetMockScreenOrientation();
 }
 
 void WebKitTestRunner::printMessage(const std::string& message) {
@@ -436,6 +410,10 @@ void WebKitTestRunner::setDeviceScaleFactor(float factor) {
   SetDeviceScaleFactor(render_view(), factor);
 }
 
+void WebKitTestRunner::setDeviceColorProfile(const std::string& name) {
+  SetDeviceColorProfile(render_view(), name);
+}
+
 void WebKitTestRunner::setFocus(WebTestProxyBase* proxy, bool focus) {
   ProxyToRenderViewVisitor visitor(proxy);
   RenderView::ForEach(&visitor);
@@ -562,13 +540,10 @@ std::string WebKitTestRunner::dumpHistoryForWindow(WebTestProxyBase* proxy) {
 
 // RenderViewObserver  --------------------------------------------------------
 
-void WebKitTestRunner::DidClearWindowObject(WebLocalFrame* frame,
-                                            int world_id) {
+void WebKitTestRunner::DidClearWindowObject(WebLocalFrame* frame) {
   WebTestingSupport::injectInternalsObject(frame);
-  if (world_id == 0) {
-    ShellRenderProcessObserver::GetInstance()->test_interfaces()->bindTo(frame);
-    GCController::Install(frame);
-  }
+  ShellRenderProcessObserver::GetInstance()->test_interfaces()->bindTo(frame);
+  GCController::Install(frame);
 }
 
 bool WebKitTestRunner::OnMessageReceived(const IPC::Message& message) {
@@ -615,8 +590,8 @@ void WebKitTestRunner::DidFailProvisionalLoad(WebLocalFrame* frame,
 
 void WebKitTestRunner::Reset() {
   // The proxy_ is always non-NULL, it is set right after construction.
-  proxy_->setWidget(render_view()->GetWebView());
-  proxy_->reset();
+  proxy_->set_widget(render_view()->GetWebView());
+  proxy_->Reset();
   prefs_.Reset();
   routing_ids_.clear();
   session_histories_.clear();
@@ -640,6 +615,7 @@ void WebKitTestRunner::Reset() {
 void WebKitTestRunner::CaptureDump() {
   WebTestInterfaces* interfaces =
       ShellRenderProcessObserver::GetInstance()->test_interfaces();
+  TRACE_EVENT0("shell", "WebKitTestRunner::CaptureDump");
 
   if (interfaces->testRunner()->shouldDumpAsAudio()) {
     std::vector<unsigned char> vector_data;
@@ -647,29 +623,42 @@ void WebKitTestRunner::CaptureDump() {
     Send(new ShellViewHostMsg_AudioDump(routing_id(), vector_data));
   } else {
     Send(new ShellViewHostMsg_TextDump(routing_id(),
-                                       proxy()->captureTree(false)));
+                                       proxy()->CaptureTree(false)));
 
     if (test_config_.enable_pixel_dumping &&
         interfaces->testRunner()->shouldGeneratePixelResults()) {
-      SkBitmap snapshot;
-      CopyCanvasToBitmap(proxy()->capturePixels(), &snapshot);
-
-      SkAutoLockPixels snapshot_lock(snapshot);
-      base::MD5Digest digest;
-      base::MD5Sum(snapshot.getPixels(), snapshot.getSize(), &digest);
-      std::string actual_pixel_hash = base::MD5DigestToBase16(digest);
-
-      if (actual_pixel_hash == test_config_.expected_pixel_hash) {
-        SkBitmap empty_image;
-        Send(new ShellViewHostMsg_ImageDump(
-            routing_id(), actual_pixel_hash, empty_image));
-      } else {
-        Send(new ShellViewHostMsg_ImageDump(
-            routing_id(), actual_pixel_hash, snapshot));
-      }
+      CHECK(render_view()->GetWebView()->isAcceleratedCompositingActive());
+      proxy()->CapturePixelsAsync(base::Bind(
+          &WebKitTestRunner::CaptureDumpPixels, base::Unretained(this)));
+      return;
     }
   }
 
+  CaptureDumpComplete();
+}
+
+void WebKitTestRunner::CaptureDumpPixels(const SkBitmap& snapshot) {
+  DCHECK_NE(0, snapshot.info().fWidth);
+  DCHECK_NE(0, snapshot.info().fHeight);
+
+  SkAutoLockPixels snapshot_lock(snapshot);
+  base::MD5Digest digest;
+  base::MD5Sum(snapshot.getPixels(), snapshot.getSize(), &digest);
+  std::string actual_pixel_hash = base::MD5DigestToBase16(digest);
+
+  if (actual_pixel_hash == test_config_.expected_pixel_hash) {
+    SkBitmap empty_image;
+    Send(new ShellViewHostMsg_ImageDump(
+        routing_id(), actual_pixel_hash, empty_image));
+  } else {
+    Send(new ShellViewHostMsg_ImageDump(
+        routing_id(), actual_pixel_hash, snapshot));
+  }
+
+  CaptureDumpComplete();
+}
+
+void WebKitTestRunner::CaptureDumpComplete() {
   render_view()->GetWebView()->mainFrame()->stopLoading();
 
   base::MessageLoop::current()->PostTask(

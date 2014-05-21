@@ -15,6 +15,7 @@
 #include "chrome/browser/devtools/device/android_device_manager.h"
 #include "components/keyed_service/content/browser_context_keyed_service_factory.h"
 #include "components/keyed_service/core/keyed_service.h"
+#include "content/public/browser/devtools_agent_host.h"
 #include "ui/gfx/size.h"
 
 template<typename T> struct DefaultSingletonTraits;
@@ -30,15 +31,8 @@ namespace content {
 class BrowserContext;
 }
 
-namespace crypto {
-class RSAPrivateKey;
-}
-
 class DevToolsTargetImpl;
 class Profile;
-
-// The format used for constructing DevTools server socket names.
-extern const char kDevToolsChannelNameFormat[];
 
 class DevToolsAndroidBridge
     : public base::RefCountedThreadSafe<
@@ -47,7 +41,6 @@ class DevToolsAndroidBridge
  public:
   typedef base::Callback<void(int result,
                               const std::string& response)> Callback;
-  typedef base::Callback<void(DevToolsTargetImpl*)> TargetCallback;
 
   class Wrapper : public KeyedService {
    public:
@@ -93,8 +86,8 @@ class DevToolsAndroidBridge
 
     AndroidWebSocket() {}
 
+    virtual void Connect() = 0;
     virtual void Disconnect() = 0;
-
     virtual void SendFrame(const std::string& message) = 0;
 
    protected:
@@ -106,12 +99,21 @@ class DevToolsAndroidBridge
     DISALLOW_COPY_AND_ASSIGN(AndroidWebSocket);
   };
 
+  class RemotePage {
+   public:
+    virtual ~RemotePage() {}
+    virtual DevToolsTargetImpl* GetTarget() = 0;
+    virtual std::string GetFrontendURL() = 0;
+  };
+
+  typedef base::Callback<void(RemotePage*)> RemotePageCallback;
+
   class RemoteBrowser : public base::RefCounted<RemoteBrowser> {
    public:
     RemoteBrowser(
         scoped_refptr<DevToolsAndroidBridge> android_bridge,
         const std::string& serial,
-        const std::string& socket);
+        const AndroidDeviceManager::BrowserInfo& browser_info);
 
     std::string serial() { return serial_; }
     std::string socket() { return socket_; }
@@ -123,11 +125,12 @@ class DevToolsAndroidBridge
     void set_version(const std::string& version) { version_ = version; }
 
     bool IsChrome() const;
+    bool IsWebView() const;
 
     typedef std::vector<int> ParsedVersion;
     ParsedVersion GetParsedVersion() const;
 
-    std::vector<DevToolsTargetImpl*> CreatePageTargets();
+    std::vector<RemotePage*> CreatePages();
     void SetPageDescriptors(const base::ListValue&);
 
     typedef base::Callback<void(int, const std::string&)> JsonRequestCallback;
@@ -139,7 +142,9 @@ class DevToolsAndroidBridge
                              const base::Closure callback);
 
     void Open(const std::string& url,
-              const TargetCallback& callback);
+              const RemotePageCallback& callback);
+
+    scoped_refptr<content::DevToolsAgentHost> GetAgentHost();
 
     scoped_refptr<AndroidWebSocket> CreateWebSocket(
         const std::string& url,
@@ -162,7 +167,7 @@ class DevToolsAndroidBridge
         const std::string& url);
 
     void RespondToOpenOnUIThread(
-        const DevToolsAndroidBridge::TargetCallback& callback,
+        const DevToolsAndroidBridge::RemotePageCallback& callback,
         int result,
         const std::string& response);
 
@@ -170,6 +175,7 @@ class DevToolsAndroidBridge
     const std::string serial_;
     const std::string socket_;
     std::string display_name_;
+    const AndroidDeviceManager::BrowserInfo::Type type_;
     std::string version_;
     scoped_ptr<base::ListValue> page_descriptors_;
 
@@ -182,17 +188,14 @@ class DevToolsAndroidBridge
    public:
     RemoteDevice(scoped_refptr<DevToolsAndroidBridge> android_bridge,
                  const std::string& serial,
-                 const std::string& model,
+                 const AndroidDeviceManager::DeviceInfo& device_info,
                  bool connected);
 
     std::string serial() { return serial_; }
     std::string model() { return model_; }
     bool is_connected() { return connected_; }
-    void AddBrowser(scoped_refptr<RemoteBrowser> browser);
-
     RemoteBrowsers& browsers() { return browsers_; }
     gfx::Size screen_size() { return screen_size_; }
-    void set_screen_size(const gfx::Size& size) { screen_size_ = size; }
 
     void OpenSocket(const std::string& socket_name,
                     const AndroidDeviceManager::SocketCallback& callback);

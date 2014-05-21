@@ -34,15 +34,20 @@ class NetLog;
 namespace apps {
 
 class ShellBrowserContext;
+class ShellBrowserMainDelegate;
 class ShellDesktopController;
 class ShellExtensionsClient;
+
+#if defined(OS_CHROMEOS)
+class ShellNetworkController;
+#endif
 
 // Handles initialization of AppShell.
 class ShellBrowserMainParts : public content::BrowserMainParts,
                               public aura::WindowTreeHostObserver {
  public:
-  explicit ShellBrowserMainParts(
-      const content::MainFunctionParams& parameters);
+  ShellBrowserMainParts(const content::MainFunctionParams& parameters,
+                        ShellBrowserMainDelegate* browser_main_delegate);
   virtual ~ShellBrowserMainParts();
 
   ShellBrowserContext* browser_context() {
@@ -70,6 +75,9 @@ class ShellBrowserMainParts : public content::BrowserMainParts,
   // Creates and initializes the ExtensionSystem.
   void CreateExtensionSystem();
 
+#if defined(OS_CHROMEOS)
+  scoped_ptr<ShellNetworkController> network_controller_;
+#endif
   scoped_ptr<ShellDesktopController> desktop_controller_;
   scoped_ptr<ShellBrowserContext> browser_context_;
   scoped_ptr<ShellExtensionsClient> extensions_client_;
@@ -88,6 +96,8 @@ class ShellBrowserMainParts : public content::BrowserMainParts,
   // If true, indicates the main message loop should be run
   // in MainMessageLoopRun. If false, it has already been run.
   bool run_message_loop_;
+
+  scoped_ptr<ShellBrowserMainDelegate> browser_main_delegate_;
 
   DISALLOW_COPY_AND_ASSIGN(ShellBrowserMainParts);
 };

@@ -40,8 +40,8 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
-#include "components/bookmarks/core/browser/bookmark_model.h"
-#include "components/bookmarks/core/browser/bookmark_utils.h"
+#include "components/bookmarks/browser/bookmark_model.h"
+#include "components/bookmarks/browser/bookmark_utils.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/url_data_source.h"
@@ -65,8 +65,7 @@
 #endif
 
 #if defined(OS_ANDROID)
-#include "chrome/browser/ui/android/tab_model/tab_model.h"
-#include "chrome/browser/ui/android/tab_model/tab_model_list.h"
+#include "chrome/browser/android/chromium_application.h"
 #endif
 
 #if !defined(OS_ANDROID) && !defined(OS_IOS)
@@ -642,10 +641,8 @@ void BrowsingHistoryHandler::HandleRemoveVisits(const base::ListValue* args) {
 void BrowsingHistoryHandler::HandleClearBrowsingData(
     const base::ListValue* args) {
 #if defined(OS_ANDROID)
-  const TabModel* tab_model = TabModelList::GetTabModelForWebContents(
+  chrome::android::ChromiumApplication::OpenClearBrowsingData(
       web_ui()->GetWebContents());
-  if (tab_model)
-    tab_model->OpenClearBrowsingData();
 #else
   // TODO(beng): This is an improper direct dependency on Browser. Route this
   // through some sort of delegate.
@@ -1003,12 +1000,6 @@ HistoryUI::HistoryUI(content::WebUI* web_ui) : WebUIController(web_ui) {
   // Set up the chrome://history-frame/ source.
   Profile* profile = Profile::FromWebUI(web_ui);
   content::WebUIDataSource::Add(profile, CreateHistoryUIHTMLSource(profile));
-}
-
-// static
-const GURL HistoryUI::GetHistoryURLWithSearchText(const base::string16& text) {
-  return GURL(std::string(chrome::kChromeUIHistoryURL) + "#q=" +
-              net::EscapeQueryParamValue(base::UTF16ToUTF8(text), true));
 }
 
 // static

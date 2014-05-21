@@ -10,66 +10,26 @@
 
 namespace {
 
-media::cast::CastLoggingEvent TranslateToLogEventFromWireFormat(uint8 event) {
-  switch (event) {
-    case 1:
-      return media::cast::kAudioAckSent;
-    case 2:
-      return media::cast::kAudioPlayoutDelay;
-    case 3:
-      return media::cast::kAudioFrameDecoded;
-    case 4:
-      return media::cast::kAudioPacketReceived;
-    case 5:
-      return media::cast::kVideoAckSent;
-    case 6:
-      return media::cast::kVideoFrameDecoded;
-    case 7:
-      return media::cast::kVideoRenderDelay;
-    case 8:
-      return media::cast::kVideoPacketReceived;
-    case 9:
-      return media::cast::kDuplicateAudioPacketReceived;
-    case 10:
-      return media::cast::kDuplicateVideoPacketReceived;
-    default:
-      // If the sender adds new log messages we will end up here until we add
-      // the new messages in the receiver.
-      VLOG(1) << "Unexpected log message received: " << static_cast<int>(event);
-      NOTREACHED();
-      return media::cast::kUnknown;
-  }
-}
-
-media::cast::transport::RtcpSenderFrameStatus
-TranslateToFrameStatusFromWireFormat(uint8 status) {
-  switch (status) {
-    case 0:
-      return media::cast::transport::kRtcpSenderFrameStatusUnknown;
-    case 1:
-      return media::cast::transport::kRtcpSenderFrameStatusDroppedByEncoder;
-    case 2:
-      return media::cast::transport::kRtcpSenderFrameStatusDroppedByFlowControl;
-    case 3:
-      return media::cast::transport::kRtcpSenderFrameStatusSentToNetwork;
-    default:
-      // If the sender adds new log messages we will end up here until we add
-      // the new messages in the receiver.
-      NOTREACHED();
-      VLOG(1) << "Unexpected status received: " << static_cast<int>(status);
-      return media::cast::transport::kRtcpSenderFrameStatusUnknown;
-  }
-}
-
-// A receiver event is identified by frame RTP timestamp, event timestamp and
-// event type.
-size_t HashReceiverEvent(uint32 frame_rtp_timestamp,
-                         const base::TimeTicks& event_timestamp,
-                         media::cast::CastLoggingEvent event_type) {
+// A receiver frame event is identified by frame RTP timestamp, event timestamp
+// and event type.
+// A receiver packet event is identified by all of the above plus packet id.
+// The key format is as follows:
+// First uint64:
+//   bits 0-11: zeroes (unused).
+//   bits 12-15: event type ID.
+//   bits 16-31: packet ID if packet event, 0 otherwise.
+//   bits 32-63: RTP timestamp.
+// Second uint64:
+//   bits 0-63: event TimeTicks internal value.
+std::pair<uint64, uint64> GetReceiverEventKey(
+    uint32 frame_rtp_timestamp, const base::TimeTicks& event_timestamp,
+    uint8 event_type, uint16 packet_id_or_zero) {
   uint64 value1 = event_type;
+  value1 <<= 16;
+  value1 |= packet_id_or_zero;
   value1 <<= 32;
   value1 |= frame_rtp_timestamp;
-  return base::HashInts64(
+  return std::make_pair(
       value1, static_cast<uint64>(event_timestamp.ToInternalValue()));
 }
 
@@ -140,9 +100,6 @@ void RtcpReceiver::IncomingRtcpPacket(RtcpParser* rtcp_parser) {
         break;
       case kRtcpApplicationSpecificCastReceiverLogCode:
         HandleApplicationSpecificCastReceiverLog(rtcp_parser);
-        break;
-      case kRtcpApplicationSpecificCastSenderLogCode:
-        HandleApplicationSpecificCastSenderLog(rtcp_parser);
         break;
       case kRtcpPayloadSpecificRembCode:
       case kRtcpPayloadSpecificRembItemCode:
@@ -490,8 +447,10 @@ void RtcpReceiver::HandleApplicationSpecificCastReceiverEventLog(
     RtcpReceiverEventLogMessages* event_log_messages) {
   const RtcpField& rtcp_field = rtcp_parser->Field();
 
-  const CastLoggingEvent event_type =
-      TranslateToLogEventFromWireFormat(rtcp_field.cast_receiver_log.event);
+  const uint8 event = rtcp_field.cast_receiver_log.event;
+  const CastLoggingEvent event_type = TranslateToLogEventFromWireFormat(event);
+  uint16 packet_id = event_type == PACKET_RECEIVED ?
+      rtcp_field.cast_receiver_log.delay_delta_or_packet_id.packet_id : 0;
   const base::TimeTicks event_timestamp =
       base::TimeTicks() +
       base::TimeDelta::FromMilliseconds(
@@ -503,21 +462,19 @@ void RtcpReceiver::HandleApplicationSpecificCastReceiverEventLog(
   // a queue and a set of events. We enqueue every new event and insert it
   // into the set. When the queue becomes too big we remove the oldest event
   // from both the queue and the set.
-  // Different events may have the same hash value. That's okay because full
-  // accuracy is not important in this case.
-  const size_t event_hash =
-      HashReceiverEvent(frame_rtp_timestamp, event_timestamp, event_type);
-  if (receiver_event_hash_set_.find(event_hash) !=
-      receiver_event_hash_set_.end()) {
+  ReceiverEventKey key =
+      GetReceiverEventKey(
+          frame_rtp_timestamp, event_timestamp, event, packet_id);
+  if (receiver_event_key_set_.find(key) != receiver_event_key_set_.end()) {
     return;
   } else {
-    receiver_event_hash_set_.insert(event_hash);
-    receiver_event_hash_queue_.push(event_hash);
+    receiver_event_key_set_.insert(key);
+    receiver_event_key_queue_.push(key);
 
-    if (receiver_event_hash_queue_.size() > receiver_event_history_size_) {
-      const size_t oldest_hash = receiver_event_hash_queue_.front();
-      receiver_event_hash_queue_.pop();
-      receiver_event_hash_set_.erase(oldest_hash);
+    if (receiver_event_key_queue_.size() > receiver_event_history_size_) {
+      const ReceiverEventKey oldest_key = receiver_event_key_queue_.front();
+      receiver_event_key_queue_.pop();
+      receiver_event_key_set_.erase(oldest_key);
     }
   }
 
@@ -529,36 +486,6 @@ void RtcpReceiver::HandleApplicationSpecificCastReceiverEventLog(
   event_log.packet_id =
       rtcp_field.cast_receiver_log.delay_delta_or_packet_id.packet_id;
   event_log_messages->push_back(event_log);
-}
-
-void RtcpReceiver::HandleApplicationSpecificCastSenderLog(
-    RtcpParser* rtcp_parser) {
-  const RtcpField& rtcp_field = rtcp_parser->Field();
-  uint32 remote_ssrc = rtcp_field.cast_sender_log.sender_ssrc;
-
-  if (remote_ssrc_ != remote_ssrc) {
-    RtcpFieldTypes field_type;
-    // Message not to us. Iterate until we have passed this message.
-    do {
-      field_type = rtcp_parser->Iterate();
-    } while (field_type == kRtcpApplicationSpecificCastSenderLogCode);
-    return;
-  }
-  transport::RtcpSenderLogMessage sender_log;
-
-  RtcpFieldTypes field_type = rtcp_parser->Iterate();
-  while (field_type == kRtcpApplicationSpecificCastSenderLogCode) {
-    const RtcpField& rtcp_field = rtcp_parser->Field();
-    transport::RtcpSenderFrameLogMessage frame_log;
-    frame_log.frame_status =
-        TranslateToFrameStatusFromWireFormat(rtcp_field.cast_sender_log.status);
-    frame_log.rtp_timestamp = rtcp_field.cast_sender_log.rtp_timestamp;
-    sender_log.push_back(frame_log);
-    field_type = rtcp_parser->Iterate();
-  }
-  if (receiver_feedback_) {
-    receiver_feedback_->OnReceivedSenderLog(sender_log);
-  }
 }
 
 void RtcpReceiver::HandlePayloadSpecificCastItem(RtcpParser* rtcp_parser) {

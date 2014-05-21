@@ -10,6 +10,7 @@
 namespace {
 
 const char kSocketNotConnectedError[] = "Socket not connected";
+const char kSocketNotListeningError[] = "Socket not listening";
 
 }  // namespace
 
@@ -58,15 +59,45 @@ BluetoothApiSocket::~BluetoothApiSocket() {
     socket_->Close();
 }
 
-void BluetoothApiSocket::Disconnect(const base::Closure& success_callback) {
+void BluetoothApiSocket::AdoptConnectedSocket(
+    scoped_refptr<device::BluetoothSocket> socket,
+    const std::string& device_address,
+    const device::BluetoothUUID& uuid) {
   DCHECK(content::BrowserThread::CurrentlyOn(kThreadId));
 
-  if (!socket_.get() || !IsConnected()) {
-    success_callback.Run();
+  if (socket_.get())
+    socket_->Close();
+
+  socket_ = socket;
+  device_address_ = device_address;
+  uuid_ = uuid;
+  connected_ = true;
+}
+
+void BluetoothApiSocket::AdoptListeningSocket(
+    scoped_refptr<device::BluetoothSocket> socket,
+    const device::BluetoothUUID& uuid) {
+  DCHECK(content::BrowserThread::CurrentlyOn(kThreadId));
+
+  if (socket_.get())
+    socket_->Close();
+
+  socket_ = socket;
+  device_address_ = "";
+  uuid_ = uuid;
+  connected_ = false;
+}
+
+void BluetoothApiSocket::Disconnect(const base::Closure& callback) {
+  DCHECK(content::BrowserThread::CurrentlyOn(kThreadId));
+
+  if (!socket_.get()) {
+    callback.Run();
     return;
   }
 
-  socket_->Disconnect(success_callback);
+  connected_ = false;
+  socket_->Disconnect(callback);
 }
 
 bool BluetoothApiSocket::IsPersistent() const {
@@ -138,7 +169,29 @@ void BluetoothApiSocket::OnSocketSendError(
     const std::string& message) {
   DCHECK(content::BrowserThread::CurrentlyOn(kThreadId));
   error_callback.Run(BluetoothApiSocket::kSystemError, message);
+}
 
+void BluetoothApiSocket::Accept(
+    const AcceptCompletionCallback& success_callback,
+    const ErrorCompletionCallback& error_callback) {
+  DCHECK(content::BrowserThread::CurrentlyOn(kThreadId));
+
+  if (!socket_.get() || IsConnected()) {
+    error_callback.Run(BluetoothApiSocket::kNotListening,
+                       kSocketNotListeningError);
+    return;
+  }
+
+  socket_->Accept(success_callback,
+                  base::Bind(&OnSocketAcceptError, error_callback));
+}
+
+// static
+void BluetoothApiSocket::OnSocketAcceptError(
+    const ErrorCompletionCallback& error_callback,
+    const std::string& message) {
+  DCHECK(content::BrowserThread::CurrentlyOn(kThreadId));
+  error_callback.Run(BluetoothApiSocket::kSystemError, message);
 }
 
 }  // namespace extensions

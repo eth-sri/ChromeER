@@ -31,7 +31,7 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "components/data_reduction_proxy/browser/data_reduction_proxy_settings.h"
-#include "components/user_prefs/pref_registry_syncable.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "content/public/browser/browser_thread.h"
 #include "net/base/address_list.h"
 #include "net/base/completion_callback.h"
@@ -1320,14 +1320,9 @@ GURL Predictor::GetHSTSRedirectOnIOThread(const GURL& url) {
     return url;
   if (!url.SchemeIs("http"))
     return url;
-  net::TransportSecurityState::DomainState domain_state;
-  if (!transport_security_state_->GetDomainState(
-          url.host(),
-          net::SSLConfigService::IsSNIAvailable(ssl_config_service_),
-          &domain_state)) {
-    return url;
-  }
-  if (!domain_state.ShouldUpgradeToSSL())
+  bool sni_available =
+      net::SSLConfigService::IsSNIAvailable(ssl_config_service_);
+  if (!transport_security_state_->ShouldUpgradeToSSL(url.host(), sni_available))
     return url;
 
   url::Replacements<char> replacements;

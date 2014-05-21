@@ -76,9 +76,8 @@ std::pair<MojoHandle, MojoHandle> HandleTable::AddDispatcherPair(
                         AddDispatcherNoSizeCheck(dispatcher1));
 }
 
-bool HandleTable::AddDispatcherVector(
-    const std::vector<scoped_refptr<Dispatcher> >& dispatchers,
-    MojoHandle* handles) {
+bool HandleTable::AddDispatcherVector(const DispatcherVector& dispatchers,
+                                      MojoHandle* handles) {
   DCHECK_LE(dispatchers.size(), kMaxMessageNumHandles);
   DCHECK(handles);
   // TODO(vtl): |std::numeric_limits<size_t>::max()| isn't a compile-time
@@ -112,6 +111,7 @@ MojoResult HandleTable::MarkBusyAndStartTransport(
   DCHECK(handles);
   DCHECK_LE(num_handles, kMaxMessageNumHandles);
   DCHECK(transports);
+  DCHECK_EQ(transports->size(), num_handles);
 
   std::vector<Entry*> entries(num_handles);
 

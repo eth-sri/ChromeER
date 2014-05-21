@@ -21,6 +21,8 @@ class Core;
 class Dispatcher;
 class DispatcherTransport;
 
+typedef std::vector<scoped_refptr<Dispatcher> > DispatcherVector;
+
 // Test-only function (defined/used in embedder/test_embedder.cc). Declared here
 // so it can be friended.
 namespace internal {
@@ -74,9 +76,8 @@ class MOJO_SYSTEM_IMPL_EXPORT HandleTable {
   // of the dispatchers may be invalid (null). Returns true on success and false
   // on failure (if the handle table is full), in which case it leaves
   // |handles[...]| untouched (and all dispatchers unadded).
-  bool AddDispatcherVector(
-      const std::vector<scoped_refptr<Dispatcher> >& dispatchers,
-      MojoHandle* handles);
+  bool AddDispatcherVector(const DispatcherVector& dispatchers,
+                           MojoHandle* handles);
 
   // Tries to mark the given handles as busy and start transport on them (i.e.,
   // take their dispatcher locks); |transports| must be sized to contain
@@ -100,6 +101,23 @@ class MOJO_SYSTEM_IMPL_EXPORT HandleTable {
  private:
   friend bool internal::ShutdownCheckNoLeaks(Core*);
 
+  // The |busy| member is used only to deal with functions (in particular
+  // |Core::WriteMessage()|) that want to hold on to a dispatcher and later
+  // remove it from the handle table, without holding on to the handle table
+  // lock.
+  //
+  // For example, if |Core::WriteMessage()| is called with a handle to be sent,
+  // (under the handle table lock) it must first check that that handle is not
+  // busy (if it is busy, then it fails with |MOJO_RESULT_BUSY|) and then marks
+  // it as busy. To avoid deadlock, it should also try to acquire the locks for
+  // all the dispatchers for the handles that it is sending (and fail with
+  // |MOJO_RESULT_BUSY| if the attempt fails). At this point, it can release the
+  // handle table lock.
+  //
+  // If |Core::Close()| is simultaneously called on that handle, it too checks
+  // if the handle is marked busy. If it is, it fails (with |MOJO_RESULT_BUSY|).
+  // This prevents |Core::WriteMessage()| from sending a handle that has been
+  // closed (or learning about this too late).
   struct Entry {
     Entry();
     explicit Entry(const scoped_refptr<Dispatcher>& dispatcher);

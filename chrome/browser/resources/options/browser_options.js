@@ -173,6 +173,8 @@ cr.define('options', function() {
 
       $('change-home-page').onclick = function(event) {
         OptionsPage.navigateToPage('homePageOverlay');
+        chrome.send('coreOptionsUserMetricsAction',
+                    ['Options_Homepage_ShowSettings']);
       };
 
       chrome.send('requestHotwordAvailable');
@@ -180,11 +182,15 @@ cr.define('options', function() {
       if ($('set-wallpaper')) {
         $('set-wallpaper').onclick = function(event) {
           chrome.send('openWallpaperManager');
+          chrome.send('coreOptionsUserMetricsAction',
+                      ['Options_OpenWallpaperManager']);
         };
       }
 
       $('themes-gallery').onclick = function(event) {
         window.open(loadTimeData.getString('themesGalleryURL'));
+        chrome.send('coreOptionsUserMetricsAction',
+                    ['Options_ThemesGallery']);
       };
       $('themes-reset').onclick = function(event) {
         chrome.send('themesReset');
@@ -553,11 +559,17 @@ cr.define('options', function() {
 
       // Extension controlled UI.
       this.addExtensionControlledBox_('search-section-content',
-                                      'search-engine-controlled');
+                                      'search-engine-controlled',
+                                      true);
       this.addExtensionControlledBox_('extension-controlled-container',
-                                      'homepage-controlled');
+                                      'homepage-controlled',
+                                      true);
       this.addExtensionControlledBox_('startup-section-content',
-                                      'startpage-controlled');
+                                      'startpage-controlled',
+                                      false);
+      this.addExtensionControlledBox_('newtab-section-content',
+                                      'newtab-controlled',
+                                      false);
 
       document.body.addEventListener('click', function(e) {
         var button = findAncestor(e.target, function(el) {
@@ -825,17 +837,18 @@ cr.define('options', function() {
       $('sync-section').hidden = false;
       this.maybeShowUserSection_();
 
-      var subSection = $('sync-section').firstChild;
-      while (subSection) {
-        if (subSection.nodeType == Node.ELEMENT_NODE)
-          subSection.hidden = syncData.supervisedUser;
-        subSection = subSection.nextSibling;
-      }
+      if (cr.isChromeOS && syncData.supervisedUser) {
+        var subSection = $('sync-section').firstChild;
+        while (subSection) {
+          if (subSection.nodeType == Node.ELEMENT_NODE)
+            subSection.hidden = true;
+          subSection = subSection.nextSibling;
+        }
 
-      if (syncData.supervisedUser) {
         $('account-picture-wrapper').hidden = false;
         $('sync-general').hidden = false;
         $('sync-status').hidden = true;
+
         return;
       }
 
@@ -1288,6 +1301,15 @@ cr.define('options', function() {
              'There should always be a current profile, but none found.');
     },
 
+    /**
+     * Propmpts user to confirm deletion of the profile for this browser
+     * window.
+     * @private
+     */
+    deleteCurrentProfile_: function() {
+      ManageProfileOverlay.showDeleteDialog(this.getCurrentProfile_());
+    },
+
     setNativeThemeButtonEnabled_: function(enabled) {
       var button = $('themes-native-button');
       if (button)
@@ -1528,13 +1550,17 @@ cr.define('options', function() {
      * extensions.
      * @param {string} parentDiv The div name to append the bubble to.
      * @param {string} bubbleId The ID to use for the bubble.
+     * @param {boolean} first Add as first node if true, otherwise last.
      * @private
      */
-    addExtensionControlledBox_: function(parentDiv, bubbleId) {
+    addExtensionControlledBox_: function(parentDiv, bubbleId, first) {
       var bubble = $('extension-controlled-warning-template').cloneNode(true);
       bubble.id = bubbleId;
       var parent = $(parentDiv);
-      parent.insertBefore(bubble, parent.firstChild);
+      if (first)
+        parent.insertBefore(bubble, parent.firstChild);
+      else
+        parent.appendChild(bubble);
     },
 
     /**
@@ -1570,49 +1596,31 @@ cr.define('options', function() {
     },
 
     /**
-     * Toggles the bubble that shows which extension is controlling the search
-     * engine.
-     * @param {string} extensionId The ID of the extension controlling the
-     *     default search engine setting.
-     * @param {string} extensionName The name of the extension.
+     * Toggles the warning boxes that show which extension is controlling
+     * various settings of Chrome.
+     * @param {object} details A dictionary of ID+name pairs for each of the
+     *     settings controlled by an extension.
      * @private
      */
-    toggleSearchEngineControlled_: function(extensionId, extensionName) {
+    toggleExtensionIndicators_: function(details) {
       this.toggleExtensionControlledBox_('search-section-content',
                                          'search-engine-controlled',
-                                         extensionId,
-                                         extensionName);
-    },
-
-    /**
-     * Toggles the bubble that shows which extension is controlling the home
-     * page.
-     * @param {string} extensionId The ID of the extension controlling the
-     *     home page setting.
-     * @param {string} extensionName The name of the extension.
-     * @private
-     */
-    toggleHomepageControlled_: function(extensionId, extensionName) {
+                                         details.searchEngine.id,
+                                         details.searchEngine.name);
       this.toggleExtensionControlledBox_('extension-controlled-container',
                                          'homepage-controlled',
-                                         extensionId,
-                                         extensionName);
-    },
-
-    /**
-     * Toggles the bubble that shows which extension is controlling the startup
-     * pages.
-     * @param {string} extensionId The ID of the extension controlling the
-     *     startup pages setting.
-     * @param {string} extensionName The name of the extension.
-     * @private
-     */
-    toggleStartupPagesControlled_: function(extensionId, extensionName) {
+                                         details.homePage.id,
+                                         details.homePage.name);
       this.toggleExtensionControlledBox_('startup-section-content',
                                          'startpage-controlled',
-                                         extensionId,
-                                         extensionName);
+                                         details.startUpPage.id,
+                                         details.startUpPage.name);
+      this.toggleExtensionControlledBox_('newtab-section-content',
+                                         'newtab-controlled',
+                                         details.newTabPage.id,
+                                         details.newTabPage.name);
     },
+
 
     /**
      * Show/hide touchpad-related settings.
@@ -1755,6 +1763,7 @@ cr.define('options', function() {
   //Forward public APIs to private implementations.
   [
     'addBluetoothDevice',
+    'deleteCurrentProfile',
     'enableCertificateButton',
     'enableFactoryResetSection',
     'getCurrentProfile',
@@ -1788,9 +1797,7 @@ cr.define('options', function() {
     'showManagedUserImportSuccess',
     'showMouseControls',
     'showTouchpadControls',
-    'toggleHomepageControlled',
-    'toggleSearchEngineControlled',
-    'toggleStartupPagesControlled',
+    'toggleExtensionIndicators',
     'updateAccountPicture',
     'updateAutoLaunchState',
     'updateDefaultBrowserState',

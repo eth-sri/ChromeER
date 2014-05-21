@@ -481,7 +481,7 @@ int Textfield::GetBaseline() const {
   return GetInsets().top() + GetRenderText()->GetBaseline();
 }
 
-gfx::Size Textfield::GetPreferredSize() {
+gfx::Size Textfield::GetPreferredSize() const {
   const gfx::Insets& insets = GetInsets();
   return gfx::Size(GetFontList().GetExpectedTextWidth(default_width_in_chars_) +
                    insets.width(), GetFontList().GetHeight() + insets.height());
@@ -548,7 +548,6 @@ bool Textfield::OnMousePressed(const ui::MouseEvent& event) {
 #endif
   }
 
-  touch_selection_controller_.reset();
   return true;
 }
 
@@ -592,7 +591,6 @@ void Textfield::OnMouseReleased(const ui::MouseEvent& event) {
 
 bool Textfield::OnKeyPressed(const ui::KeyEvent& event) {
   bool handled = controller_ && controller_->HandleKeyEvent(this, event);
-  touch_selection_controller_.reset();
   if (handled)
     return true;
 
@@ -685,7 +683,7 @@ void Textfield::OnGestureEvent(ui::GestureEvent* event) {
           event->SetHandled();
       } else if (switches::IsTouchDragDropEnabled()) {
         initiating_drag_ = true;
-        touch_selection_controller_.reset();
+        DestroyTouchSelection();
       } else {
         if (!touch_selection_controller_)
           CreateTouchSelectionControllerAndNotifyIt();
@@ -726,9 +724,10 @@ bool Textfield::SkipDefaultKeyEventProcessing(const ui::KeyEvent& event) {
   }
 #endif
 
-  // Skip any accelerator handling of backspace; textfields handle this key.
+  // Skip backspace accelerator handling; editable textfields handle this key.
   // Also skip processing Windows [Alt]+<num-pad digit> Unicode alt-codes.
-  return event.key_code() == ui::VKEY_BACK || event.IsUnicodeKeyCode();
+  const bool is_backspace = event.key_code() == ui::VKEY_BACK;
+  return (is_backspace && !read_only()) || event.IsUnicodeKeyCode();
 }
 
 bool Textfield::GetDropFormats(
@@ -864,7 +863,7 @@ void Textfield::OnFocus() {
   GetRenderText()->set_focused(true);
   cursor_visible_ = true;
   SchedulePaint();
-  GetInputMethod()->OnFocus();
+  GetInputMethod()->OnTextInputTypeChanged(this);
   OnCaretBoundsChanged();
 
   const size_t caret_blink_ms = Textfield::GetCaretBlinkMs();
@@ -880,14 +879,14 @@ void Textfield::OnFocus() {
 
 void Textfield::OnBlur() {
   GetRenderText()->set_focused(false);
-  GetInputMethod()->OnBlur();
+  GetInputMethod()->OnTextInputTypeChanged(this);
   cursor_repaint_timer_.Stop();
   if (cursor_visible_) {
     cursor_visible_ = false;
     RepaintCursor();
   }
 
-  touch_selection_controller_.reset();
+  DestroyTouchSelection();
 
   // Border typically draws focus indicator.
   SchedulePaint();
@@ -957,7 +956,7 @@ void Textfield::WriteDragDataForView(View* sender,
   // Desktop Linux Aura does not yet support transparency in drag images.
   canvas->DrawColor(background);
 #endif
-  label.Paint(canvas.get());
+  label.Paint(canvas.get(), views::CullSet());
   const gfx::Vector2d kOffset(-15, 0);
   drag_utils::SetDragImageOnDataObject(*canvas, label.size(), kOffset, data);
   if (controller_)
@@ -1036,8 +1035,12 @@ bool Textfield::DrawsHandles() {
 }
 
 void Textfield::OpenContextMenu(const gfx::Point& anchor) {
-  touch_selection_controller_.reset();
+  DestroyTouchSelection();
   ShowContextMenu(anchor, ui::MENU_SOURCE_TOUCH_EDIT_MENU);
+}
+
+void Textfield::DestroyTouchSelection() {
+  touch_selection_controller_.reset();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1099,7 +1102,7 @@ bool Textfield::GetAcceleratorForCommandId(int command_id,
 }
 
 void Textfield::ExecuteCommand(int command_id, int event_flags) {
-  touch_selection_controller_.reset();
+  DestroyTouchSelection();
   if (!IsCommandIdEnabled(command_id))
     return;
 
@@ -1334,7 +1337,7 @@ bool Textfield::GetCompositionCharacterBounds(uint32 index,
   size_t text_index = composition_range.start() + index;
   if (composition_range.end() <= text_index)
     return false;
-  if (!render_text->IsCursorablePosition(text_index)) {
+  if (!render_text->IsValidCursorIndex(text_index)) {
     text_index = render_text->IndexOfAdjacentGrapheme(
         text_index, gfx::CURSOR_BACKWARD);
   }
@@ -1486,7 +1489,7 @@ void Textfield::UpdateAfterChange(bool text_changed, bool cursor_changed) {
     cursor_visible_ = true;
     RepaintCursor();
     if (cursor_repaint_timer_.IsRunning())
-    cursor_repaint_timer_.Reset();
+      cursor_repaint_timer_.Reset();
     if (!text_changed) {
       // TEXT_CHANGED implies SELECTION_CHANGED, so we only need to fire
       // this if only the selection changed.

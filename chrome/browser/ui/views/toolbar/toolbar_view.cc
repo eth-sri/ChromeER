@@ -54,16 +54,19 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "ui/accessibility/ax_view_state.h"
+#include "ui/aura/window.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/theme_provider.h"
 #include "ui/base/window_open_disposition.h"
+#include "ui/compositor/layer.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/image/canvas_image_source.h"
+#include "ui/keyboard/keyboard_controller.h"
+#include "ui/native_theme/native_theme_aura.h"
 #include "ui/views/controls/menu/menu_listener.h"
 #include "ui/views/focus/view_storage.h"
 #include "ui/views/widget/tooltip_manager.h"
@@ -75,12 +78,6 @@
 #include "chrome/browser/enumerate_modules_model_win.h"
 #include "chrome/browser/ui/views/conflicting_module_view_win.h"
 #include "chrome/browser/ui/views/critical_notification_bubble_view.h"
-#endif
-
-#if defined(USE_AURA)
-#include "ui/aura/window.h"
-#include "ui/compositor/layer.h"
-#include "ui/native_theme/native_theme_aura.h"
 #endif
 
 #if !defined(OS_CHROMEOS)
@@ -406,11 +403,17 @@ void ToolbarView::OnMenuButtonClicked(views::View* source,
   bool use_new_menu = false;
   bool supports_new_separators = false;
   // TODO: remove this.
-#if defined(USE_AURA) && !(defined(OS_LINUX) && !defined(OS_CHROMEOS))
+#if !defined(OS_LINUX) || defined(OS_CHROMEOS)
   supports_new_separators =
       GetNativeTheme() == ui::NativeThemeAura::instance();
   use_new_menu = supports_new_separators;
 #endif
+
+  if (keyboard::KeyboardController::GetInstance() &&
+      keyboard::KeyboardController::GetInstance()->keyboard_visible()) {
+    keyboard::KeyboardController::GetInstance()->HideKeyboard(
+        keyboard::KeyboardController::HIDE_REASON_AUTOMATIC);
+  }
 
   wrench_menu_.reset(new WrenchMenu(browser_, use_new_menu,
                                     supports_new_separators));
@@ -535,35 +538,35 @@ bool ToolbarView::GetAcceleratorForCommandId(int command_id,
 ////////////////////////////////////////////////////////////////////////////////
 // ToolbarView, views::View overrides:
 
-gfx::Size ToolbarView::GetPreferredSize() {
+gfx::Size ToolbarView::GetPreferredSize() const {
   gfx::Size size(location_bar_->GetPreferredSize());
   if (is_display_mode_normal()) {
-    size.Enlarge(
-        kLeftEdgeSpacing + back_->GetPreferredSize().width() +
-            forward_->GetPreferredSize().width() +
-            reload_->GetPreferredSize().width() + kStandardSpacing +
-            (show_home_button_.GetValue() ?
-                home_->GetPreferredSize().width() : 0) +
-            (origin_chip_view_->visible() ?
-                (origin_chip_view_->GetPreferredSize().width() +
-                    2 * kStandardSpacing) :
-                0) +
-            browser_actions_->GetPreferredSize().width() +
-            app_menu_->GetPreferredSize().width() + kRightEdgeSpacing,
-        0);
-    gfx::ImageSkia* normal_background =
-        GetThemeProvider()->GetImageSkiaNamed(IDR_CONTENT_TOP_CENTER);
-    size.SetToMax(
-        gfx::Size(0, normal_background->height() - content_shadow_height()));
-  } else {
-    const int kPopupBottomSpacingGlass = 1;
-    const int kPopupBottomSpacingNonGlass = 2;
-    size.Enlarge(
-        0,
-        PopupTopSpacing() + (GetWidget()->ShouldWindowContentsBeTransparent() ?
-            kPopupBottomSpacingGlass : kPopupBottomSpacingNonGlass));
+    int content_width = kLeftEdgeSpacing + back_->GetPreferredSize().width() +
+        forward_->GetPreferredSize().width() +
+        reload_->GetPreferredSize().width() +
+        (show_home_button_.GetValue() ? home_->GetPreferredSize().width() : 0) +
+        kStandardSpacing + browser_actions_->GetPreferredSize().width() +
+        app_menu_->GetPreferredSize().width() + kRightEdgeSpacing;
+    content_width += origin_chip_view_->visible() ?
+        (origin_chip_view_->GetPreferredSize().width() + kStandardSpacing) : 0;
+    size.Enlarge(content_width, 0);
   }
-  return size;
+  return SizeForContentSize(size);
+}
+
+gfx::Size ToolbarView::GetMinimumSize() const {
+  gfx::Size size(location_bar_->GetMinimumSize());
+  if (is_display_mode_normal()) {
+    int content_width = kLeftEdgeSpacing + back_->GetMinimumSize().width() +
+        forward_->GetMinimumSize().width() + reload_->GetMinimumSize().width() +
+        (show_home_button_.GetValue() ? home_->GetMinimumSize().width() : 0) +
+        kStandardSpacing + browser_actions_->GetMinimumSize().width() +
+        app_menu_->GetMinimumSize().width() + kRightEdgeSpacing;
+    content_width += origin_chip_view_->visible() ?
+        (origin_chip_view_->GetMinimumSize().width() + kStandardSpacing) : 0;
+    size.Enlarge(content_width, 0);
+  }
+  return SizeForContentSize(size);
 }
 
 void ToolbarView::Layout() {
@@ -777,9 +780,25 @@ bool ToolbarView::ShouldShowIncompatibilityWarning() {
 
 int ToolbarView::PopupTopSpacing() const {
   const int kPopupTopSpacingNonGlass = 3;
-  return GetWidget()->ShouldWindowContentsBeTransparent()
-             ? 0
-             : kPopupTopSpacingNonGlass;
+  return GetWidget()->ShouldWindowContentsBeTransparent() ?
+      0 : kPopupTopSpacingNonGlass;
+}
+
+gfx::Size ToolbarView::SizeForContentSize(gfx::Size size) const {
+  if (is_display_mode_normal()) {
+    gfx::ImageSkia* normal_background =
+        GetThemeProvider()->GetImageSkiaNamed(IDR_CONTENT_TOP_CENTER);
+    size.SetToMax(
+        gfx::Size(0, normal_background->height() - content_shadow_height()));
+  } else {
+    const int kPopupBottomSpacingGlass = 1;
+    const int kPopupBottomSpacingNonGlass = 2;
+    size.Enlarge(
+        0,
+        PopupTopSpacing() + (GetWidget()->ShouldWindowContentsBeTransparent() ?
+            kPopupBottomSpacingGlass : kPopupBottomSpacingNonGlass));
+  }
+  return size;
 }
 
 void ToolbarView::LoadImages() {

@@ -42,15 +42,17 @@ class ListChangesTaskTest : public testing::Test {
     ASSERT_TRUE(database_dir_.CreateUniqueTempDir());
     in_memory_env_.reset(leveldb::NewMemEnv(leveldb::Env::Default()));
 
-    fake_drive_service_.reset(new drive::FakeDriveService);
+    scoped_ptr<drive::FakeDriveService>
+        fake_drive_service(new drive::FakeDriveService);
 
-    drive_uploader_.reset(
-        new drive::DriveUploader(fake_drive_service_.get(),
-                                 base::MessageLoopProxy::current()));
+    scoped_ptr<drive::DriveUploaderInterface>
+        drive_uploader(new drive::DriveUploader(
+            fake_drive_service.get(),
+            base::MessageLoopProxy::current()));
 
     fake_drive_service_helper_.reset(
-        new FakeDriveServiceHelper(fake_drive_service_.get(),
-                                   drive_uploader_.get(),
+        new FakeDriveServiceHelper(fake_drive_service.get(),
+                                   drive_uploader.get(),
                                    kSyncRootFolderTitle));
 
     sync_task_manager_.reset(new SyncTaskManager(
@@ -58,12 +60,12 @@ class ListChangesTaskTest : public testing::Test {
         10 /* maximum_background_task */));
     sync_task_manager_->Initialize(SYNC_STATUS_OK);
 
-    context_.reset(
-        new SyncEngineContext(fake_drive_service_.get(),
-                              drive_uploader_.get(),
-                              base::MessageLoopProxy::current(),
-                              base::MessageLoopProxy::current(),
-                              base::MessageLoopProxy::current()));
+    context_.reset(new SyncEngineContext(
+        fake_drive_service.PassAs<drive::DriveServiceInterface>(),
+        drive_uploader.Pass(),
+        base::MessageLoopProxy::current(),
+        base::MessageLoopProxy::current(),
+        base::MessageLoopProxy::current()));
 
     SetUpRemoteFolders();
 
@@ -74,8 +76,6 @@ class ListChangesTaskTest : public testing::Test {
   virtual void TearDown() OVERRIDE {
     sync_task_manager_.reset();
     context_.reset();
-    fake_drive_service_.reset();
-    drive_uploader_.reset();
     base::RunLoop().RunUntilIdle();
   }
 
@@ -166,11 +166,9 @@ class ListChangesTaskTest : public testing::Test {
   void InitializeMetadataDatabase() {
     SyncStatusCode status = SYNC_STATUS_UNKNOWN;
     SyncEngineInitializer* initializer =
-        new SyncEngineInitializer(
-            context_.get(),
-            base::MessageLoopProxy::current(),
-            database_dir_.path(),
-            in_memory_env_.get());
+        new SyncEngineInitializer(context_.get(),
+                                  database_dir_.path(),
+                                  in_memory_env_.get());
 
     sync_task_manager_->ScheduleSyncTask(
         FROM_HERE, scoped_ptr<SyncTask>(initializer),
@@ -205,8 +203,6 @@ class ListChangesTaskTest : public testing::Test {
   base::ScopedTempDir database_dir_;
 
   scoped_ptr<SyncEngineContext> context_;
-  scoped_ptr<drive::FakeDriveService> fake_drive_service_;
-  scoped_ptr<drive::DriveUploaderInterface> drive_uploader_;
   scoped_ptr<FakeDriveServiceHelper> fake_drive_service_helper_;
 
   scoped_ptr<SyncTaskManager> sync_task_manager_;

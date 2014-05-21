@@ -32,8 +32,7 @@ class AsyncResourceHandler : public ResourceHandler,
                        ResourceDispatcherHostImpl* rdh);
   virtual ~AsyncResourceHandler();
 
-  virtual bool OnMessageReceived(const IPC::Message& message,
-                                 bool* message_was_ok) OVERRIDE;
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
   // ResourceHandler implementation:
   virtual bool OnUploadProgress(int request_id,
@@ -68,9 +67,7 @@ class AsyncResourceHandler : public ResourceHandler,
 
  private:
   // IPC message handlers:
-  void OnFollowRedirect(int request_id,
-                        bool has_new_first_party_for_cookies,
-                        const GURL& new_first_party_for_cookies);
+  void OnFollowRedirect(int request_id);
   void OnDataReceivedACK(int request_id);
 
   bool EnsureResourceBufferIsInitialized();

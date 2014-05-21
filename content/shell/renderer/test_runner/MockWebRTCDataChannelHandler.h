@@ -12,7 +12,7 @@
 #include "third_party/WebKit/public/platform/WebRTCDataChannelInit.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 
-namespace WebTestRunner {
+namespace content {
 
 class WebTestDelegate;
 
@@ -35,7 +35,7 @@ public:
     virtual void close() OVERRIDE;
 
     // WebTask related methods
-    WebTaskList* taskList() { return &m_taskList; }
+    WebTaskList* mutable_task_list() { return &m_taskList; }
 
 private:
     MockWebRTCDataChannelHandler();
@@ -50,6 +50,6 @@ private:
     DISALLOW_COPY_AND_ASSIGN(MockWebRTCDataChannelHandler);
 };
 
-}
+}  // namespace content
 
 #endif  // CONTENT_SHELL_RENDERER_TEST_RUNNER_MOCKWEBRTCDATACHANNELHANDLER_H_

@@ -20,6 +20,7 @@
         '../compositor/compositor.gyp:compositor',
         '../events/events.gyp:events',
         '../events/events.gyp:events_base',
+        '../events/platform/events_platform.gyp:events_platform',
         '../gfx/gfx.gyp:gfx',
         '../gfx/gfx.gyp:gfx_geometry',
       ],
@@ -116,6 +117,7 @@
             '../../build/linux/system.gyp:x11',
             '../../build/linux/system.gyp:xrandr',
             '../../build/linux/system.gyp:xi',
+            '../events/platform/x11/x11_events_platform.gyp:x11_events_platform',
           ],
         }],
         ['OS=="win"', {
@@ -129,6 +131,7 @@
         }],
         ['use_ozone==1', {
           'dependencies': [
+            '../events/ozone/events_ozone.gyp:events_ozone',
             '../ozone/ozone.gyp:ozone',
           ],
         }],
@@ -211,7 +214,7 @@
       'conditions': [
         ['use_x11==1', {
           'dependencies': [
-            '../gfx/gfx.gyp:gfx_x11',
+            '../gfx/x/gfx_x11.gyp:gfx_x11',
           ],
         }],
       ]
@@ -244,7 +247,7 @@
       'conditions': [
         ['use_x11==1', {
           'dependencies': [
-            '../gfx/gfx.gyp:gfx_x11',
+            '../gfx/x/gfx_x11.gyp:gfx_x11',
           ],
         }],
       ]
@@ -262,6 +265,7 @@
         '../compositor/compositor.gyp:compositor_test_support',
         '../events/events.gyp:events',
         '../events/events.gyp:events_base',
+        '../events/events.gyp:gesture_detection',
         '../gfx/gfx.gyp:gfx',
         '../gfx/gfx.gyp:gfx_geometry',
         '../gl/gl.gyp:gl',
@@ -285,8 +289,7 @@
             '<(DEPTH)/third_party/mesa/mesa.gyp:osmesa',
           ],
         }],
-        # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
-        ['OS=="linux" and ((use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1))', {
+        ['OS=="linux" and use_allocator!="none"', {
           'dependencies': [
            # See http://crbug.com/162998#c4 for why this is needed.
             '../../base/allocator/allocator.gyp:allocator',

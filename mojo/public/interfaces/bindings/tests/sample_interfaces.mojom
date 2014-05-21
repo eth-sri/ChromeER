@@ -2,13 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+[JavaPackage="org.chromium.mojo.bindings.test.sample",
+ Foo = "hello world"]
 module sample {
 
 enum Enum {
   ENUM_VALUE
 };
 
-[Peer=ProviderClient]
+[Client=ProviderClient]
 interface Provider {
   EchoString(string a) => (string a);
   EchoStrings(string a, string b) => (string a, string b);
@@ -16,7 +18,7 @@ interface Provider {
   EchoEnum(Enum a) => (Enum a);
 };
 
-[Peer=Provider]
+// TODO(darin): We shouldn't need this, but JS bindings don't work without it.
 interface ProviderClient {
 };
 

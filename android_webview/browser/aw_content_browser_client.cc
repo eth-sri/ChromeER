@@ -18,6 +18,7 @@
 #include "android_webview/common/url_constants.h"
 #include "base/base_paths_android.h"
 #include "base/path_service.h"
+#include "components/cdm/browser/cdm_message_filter_android.h"
 #include "content/public/browser/access_token_store.h"
 #include "content/public/browser/browser_message_filter.h"
 #include "content/public/browser/browser_thread.h"
@@ -51,8 +52,7 @@ public:
       const IPC::Message& message,
       BrowserThread::ID* thread) OVERRIDE;
   virtual bool OnMessageReceived(
-      const IPC::Message& message,
-      bool* message_was_ok) OVERRIDE;
+      const IPC::Message& message) OVERRIDE;
 
   void OnShouldOverrideUrlLoading(int routing_id,
                                   const base::string16& url,
@@ -82,14 +82,13 @@ void AwContentsMessageFilter::OverrideThreadForMessage(
   }
 }
 
-bool AwContentsMessageFilter::OnMessageReceived(const IPC::Message& message,
-                                                bool* message_was_ok) {
+bool AwContentsMessageFilter::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP_EX(AwContentsMessageFilter, message, *message_was_ok)
-      IPC_MESSAGE_HANDLER(AwViewHostMsg_ShouldOverrideUrlLoading,
-                          OnShouldOverrideUrlLoading)
-      IPC_MESSAGE_HANDLER(AwViewHostMsg_SubFrameCreated, OnSubFrameCreated)
-      IPC_MESSAGE_UNHANDLED(handled = false)
+  IPC_BEGIN_MESSAGE_MAP(AwContentsMessageFilter, message)
+    IPC_MESSAGE_HANDLER(AwViewHostMsg_ShouldOverrideUrlLoading,
+                        OnShouldOverrideUrlLoading)
+    IPC_MESSAGE_HANDLER(AwViewHostMsg_SubFrameCreated, OnSubFrameCreated)
+    IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
 }
@@ -207,6 +206,7 @@ void AwContentBrowserClient::RenderProcessWillLaunch(
       host->GetID(), content::kFileScheme);
 
   host->AddFilter(new AwContentsMessageFilter(host->GetID()));
+  host->AddFilter(new cdm::CdmMessageFilterAndroid());
 }
 
 net::URLRequestContextGetter* AwContentBrowserClient::CreateRequestContext(

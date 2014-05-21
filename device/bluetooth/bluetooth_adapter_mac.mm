@@ -21,6 +21,8 @@
 #include "base/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "device/bluetooth/bluetooth_device_mac.h"
+#include "device/bluetooth/bluetooth_socket_mac.h"
+#include "device/bluetooth/bluetooth_uuid.h"
 
 // Replicate specific 10.7 SDK declarations for building with prior SDKs.
 #if !defined(MAC_OS_X_VERSION_10_7) || \
@@ -29,10 +31,6 @@ MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_7
 @interface IOBluetoothHostController (LionSDKDeclarations)
 - (NSString*)nameAsString;
 - (BluetoothHCIPowerState)powerState;
-@end
-
-@interface IOBluetoothDevice (LionSDKDeclarations)
-- (NSString*)addressString;
 @end
 
 @protocol IOBluetoothDeviceInquiryDelegate
@@ -182,6 +180,25 @@ void BluetoothAdapterMac::ReadLocalOutOfBandPairingData(
     const ErrorCallback& error_callback) {
 }
 
+void BluetoothAdapterMac::CreateRfcommService(
+    const BluetoothUUID& uuid,
+    int channel,
+    bool insecure,
+    const CreateServiceCallback& callback,
+    const CreateServiceErrorCallback& error_callback) {
+  // TODO(keybuk): implement.
+  NOTIMPLEMENTED();
+}
+
+void BluetoothAdapterMac::CreateL2capService(
+    const BluetoothUUID& uuid,
+    int psm,
+    const CreateServiceCallback& callback,
+    const CreateServiceErrorCallback& error_callback) {
+  // TODO(keybuk): implement.
+  NOTIMPLEMENTED();
+}
+
 void BluetoothAdapterMac::AddDiscoverySession(
     const base::Closure& callback,
     const ErrorCallback& error_callback) {
@@ -232,9 +249,8 @@ void BluetoothAdapterMac::PollAdapter() {
 
   if (controller != nil) {
     name = base::SysNSStringToUTF8([controller nameAsString]);
-    // TODO(isherman): Convert the address format to XX:XX:XX:XX:XX:XX rather
-    // than xx-xx-xx-xx-xx-xx.
-    address = base::SysNSStringToUTF8([controller addressAsString]);
+    address = BluetoothDevice::CanonicalizeAddress(
+        base::SysNSStringToUTF8([controller addressAsString]));
     powered = ([controller powerState] == kBluetoothHCIPowerStateON);
   }
 
@@ -273,8 +289,7 @@ void BluetoothAdapterMac::PollAdapter() {
 void BluetoothAdapterMac::UpdateDevices(NSArray* devices) {
   STLDeleteValues(&devices_);
   for (IOBluetoothDevice* device in devices) {
-    std::string device_address =
-        base::SysNSStringToUTF8([device addressString]);
+    std::string device_address = BluetoothDeviceMac::GetDeviceAddress(device);
     devices_[device_address] = new BluetoothDeviceMac(device);
   }
 }
@@ -298,7 +313,7 @@ void BluetoothAdapterMac::DeviceInquiryStarted(
 void BluetoothAdapterMac::DeviceFound(IOBluetoothDeviceInquiry* inquiry,
                                       IOBluetoothDevice* device) {
   DCHECK_EQ(device_inquiry_, inquiry);
-  std::string device_address = base::SysNSStringToUTF8([device addressString]);
+  std::string device_address = BluetoothDeviceMac::GetDeviceAddress(device);
   if (discovered_devices_.find(device_address) == discovered_devices_.end()) {
     BluetoothDeviceMac device_mac(device);
     FOR_EACH_OBSERVER(BluetoothAdapter::Observer, observers_,

@@ -101,8 +101,7 @@ class RenderMessageFilter : public BrowserMessageFilter {
   virtual void OnChannelConnected(int32 peer_pid) OVERRIDE;
 
   // BrowserMessageFilter methods:
-  virtual bool OnMessageReceived(const IPC::Message& message,
-                                 bool* message_was_ok) OVERRIDE;
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
   virtual void OnDestruct() const OVERRIDE;
   virtual base::TaskRunner* OverrideTaskRunnerForMessage(
       const IPC::Message& message) OVERRIDE;
@@ -193,10 +192,11 @@ class RenderMessageFilter : public BrowserMessageFilter {
   void OnOpenChannelToPpapiBroker(int routing_id,
                                   const base::FilePath& path);
   void OnGenerateRoutingID(int* route_id);
-  void OnDownloadUrl(const IPC::Message& message,
+  void OnDownloadUrl(int render_view_id,
                      const GURL& url,
                      const Referrer& referrer,
-                     const base::string16& suggested_name);
+                     const base::string16& suggested_name,
+                     const bool use_prompt);
   void OnCheckNotificationPermission(const GURL& source_origin,
                                      int* permission_level);
 
@@ -259,7 +259,6 @@ class RenderMessageFilter : public BrowserMessageFilter {
   void OnCompletedOpenChannelToNpapiPlugin(
       OpenChannelToNpapiPluginCallback* client);
 
-  void OnUpdateIsDelayed(const IPC::Message& msg);
   void OnAre3DAPIsBlocked(int render_view_id,
                           const GURL& top_origin_url,
                           ThreeDAPIType requester,
@@ -277,6 +276,7 @@ class RenderMessageFilter : public BrowserMessageFilter {
   void OnAllocateGpuMemoryBuffer(uint32 width,
                                  uint32 height,
                                  uint32 internalformat,
+                                 uint32 usage,
                                  gfx::GpuMemoryBufferHandle* handle);
 
   // Cached resource request dispatcher host and plugin service, guaranteed to

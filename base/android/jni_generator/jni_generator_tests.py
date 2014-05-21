@@ -1010,6 +1010,48 @@ class Foo {
           TestOptions())
     self.assertRaises(SyntaxError, willRaise)
 
+  def testImplicitImport(self):
+    test_data = """
+    package org.chromium.android_webview;
+
+    %(IMPORT)s
+
+    @CalledByNative
+    private static void clientCertificatesCleared(Runnable callback) {
+        if (callbaback == null) return;
+        callback.run();
+    }
+    """
+    def generate(import_clause):
+      jni_generator.JNIFromJavaSource(
+          test_data % {'IMPORT': import_clause},
+          'org/chromium/android_webview/AwContentStatics',
+          TestOptions())
+    # Ensure it raises without the import.
+    self.assertRaises(SyntaxError, lambda: generate(''))
+
+    # Ensure it's fine with the import.
+    generate('import java.lang.Runnable;')
+
+  def testJNIAdditionalImport(self):
+    test_data = """
+    package org.chromium.foo;
+
+    @JNIAdditionalImport(Bar.class)
+    class Foo {
+
+    @CalledByNative
+    private static void calledByNative(Bar.Callback callback) {
+    }
+
+    private static native void nativeDoSomething(Bar.Callback callback);
+    }
+    """
+    jni_from_java = jni_generator.JNIFromJavaSource(test_data,
+                                                    'org/chromium/foo/Foo',
+                                                    TestOptions())
+    self.assertGoldenTextEquals(jni_from_java.GetContent())
+
 
 if __name__ == '__main__':
   unittest.main()

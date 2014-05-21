@@ -6,6 +6,7 @@
 
 #import "base/logging.h"
 #import "content/browser/accessibility/browser_accessibility_cocoa.h"
+#import "content/browser/accessibility/browser_accessibility_mac.h"
 #include "content/common/accessibility_messages.h"
 
 namespace content {
@@ -25,7 +26,8 @@ BrowserAccessibilityManagerMac::BrowserAccessibilityManagerMac(
     BrowserAccessibilityDelegate* delegate,
     BrowserAccessibilityFactory* factory)
     : BrowserAccessibilityManager(initial_tree, delegate, factory),
-      parent_view_(parent_view) {
+      parent_view_(parent_view),
+      created_live_region_(false) {
 }
 
 // static
@@ -40,6 +42,12 @@ ui::AXTreeUpdate BrowserAccessibilityManagerMac::GetEmptyDocument() {
   return update;
 }
 
+BrowserAccessibility* BrowserAccessibilityManagerMac::GetFocus(
+    BrowserAccessibility* root) {
+  BrowserAccessibility* node = GetActiveDescendantFocus(root);
+  return node;
+}
+
 void BrowserAccessibilityManagerMac::NotifyAccessibilityEvent(
     ui::AXEvent event_type,
     BrowserAccessibility* node) {
@@ -50,10 +58,16 @@ void BrowserAccessibilityManagerMac::NotifyAccessibilityEvent(
   NSString* event_id = @"";
   switch (event_type) {
     case ui::AX_EVENT_ACTIVEDESCENDANTCHANGED:
-      if (node->GetRole() == ui::AX_ROLE_TREE)
+      if (node->GetRole() == ui::AX_ROLE_TREE) {
         event_id = NSAccessibilitySelectedRowsChangedNotification;
-      else
+      } else {
         event_id = NSAccessibilityFocusedUIElementChangedNotification;
+        BrowserAccessibility* active_descendant_focus =
+            GetActiveDescendantFocus(GetRoot());
+        if (active_descendant_focus)
+          node = active_descendant_focus;
+      }
+
       break;
     case ui::AX_EVENT_ALERT:
       // Not used on Mac.
@@ -140,6 +154,29 @@ void BrowserAccessibilityManagerMac::NotifyAccessibilityEvent(
   BrowserAccessibilityCocoa* native_node = node->ToBrowserAccessibilityCocoa();
   DCHECK(native_node);
   NSAccessibilityPostNotification(native_node, event_id);
+}
+
+void BrowserAccessibilityManagerMac::OnNodeCreationFinished(ui::AXNode* node) {
+  BrowserAccessibility* obj = GetFromAXNode(node);
+  if (obj && obj->HasStringAttribute(ui::AX_ATTR_LIVE_STATUS))
+    created_live_region_ = true;
+}
+
+void BrowserAccessibilityManagerMac::OnTreeUpdateFinished() {
+  if (!created_live_region_)
+    return;
+
+  // This code is to work around a bug in VoiceOver, where a new live
+  // region that gets added is ignored. VoiceOver seems to only scan the
+  // page for live regions once. By recreating the NSAccessibility
+  // object for the root of the tree, we force VoiceOver to clear out its
+  // internal state and find newly-added live regions this time.
+  BrowserAccessibilityMac* root =
+      static_cast<BrowserAccessibilityMac*>(GetRoot());
+  root->RecreateNativeObject();
+  NotifyAccessibilityEvent(ui::AX_EVENT_CHILDREN_CHANGED, root);
+
+  created_live_region_ = false;
 }
 
 }  // namespace content

@@ -136,7 +136,7 @@ AutomationTreeImpl.prototype = {
         }
       }
 
-      if (nodeData.role == 'root_web_area') {
+      if (nodeData.role == 'rootWebArea' || nodeData.role == 'desktop') {
         this.root = node;
         didUpdateRoot = true;
       }

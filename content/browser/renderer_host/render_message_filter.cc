@@ -10,6 +10,7 @@
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "base/debug/alias.h"
+#include "base/numerics/safe_math.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread.h"
@@ -35,6 +36,7 @@
 #include "content/common/desktop_notification_messages.h"
 #include "content/common/frame_messages.h"
 #include "content/common/gpu/client/gpu_memory_buffer_impl.h"
+#include "content/common/gpu/client/gpu_memory_buffer_impl_shm.h"
 #include "content/common/host_shared_bitmap_manager.h"
 #include "content/common/media/media_param_traits.h"
 #include "content/common/view_messages.h"
@@ -393,10 +395,9 @@ void RenderMessageFilter::OnChannelConnected(int32 peer_id) {
   cpu_usage_sample_time_ = base::TimeTicks::Now();
 }
 
-bool RenderMessageFilter::OnMessageReceived(const IPC::Message& message,
-                                            bool* message_was_ok) {
+bool RenderMessageFilter::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP_EX(RenderMessageFilter, message, *message_was_ok)
+  IPC_BEGIN_MESSAGE_MAP(RenderMessageFilter, message)
 #if defined(OS_WIN)
     IPC_MESSAGE_HANDLER(ViewHostMsg_PreCacheFontCharacters,
                         OnPreCacheFontCharacters)
@@ -431,9 +432,8 @@ bool RenderMessageFilter::OnMessageReceived(const IPC::Message& message,
     IPC_MESSAGE_HANDLER(ViewHostMsg_OpenChannelToPpapiBroker,
                         OnOpenChannelToPpapiBroker)
 #endif
-    IPC_MESSAGE_HANDLER_GENERIC(ViewHostMsg_UpdateRect,
+    IPC_MESSAGE_HANDLER_GENERIC(ViewHostMsg_SwapCompositorFrame,
         render_widget_helper_->DidReceiveBackingStoreMsg(message))
-    IPC_MESSAGE_HANDLER(ViewHostMsg_UpdateIsDelayed, OnUpdateIsDelayed)
     IPC_MESSAGE_HANDLER(DesktopNotificationHostMsg_CheckPermission,
                         OnCheckNotificationPermission)
     IPC_MESSAGE_HANDLER(ChildProcessHostMsg_SyncAllocateSharedMemory,
@@ -467,7 +467,7 @@ bool RenderMessageFilter::OnMessageReceived(const IPC::Message& message,
     IPC_MESSAGE_HANDLER(ViewHostMsg_RunWebAudioMediaCodec, OnWebAudioMediaCodec)
 #endif
     IPC_MESSAGE_UNHANDLED(handled = false)
-  IPC_END_MESSAGE_MAP_EX()
+  IPC_END_MESSAGE_MAP()
 
   return handled;
 }
@@ -876,25 +876,18 @@ void RenderMessageFilter::OnGetAudioHardwareConfig(
 #if defined(OS_WIN)
 void RenderMessageFilter::OnGetMonitorColorProfile(std::vector<char>* profile) {
   DCHECK(!BrowserThread::CurrentlyOn(BrowserThread::IO));
-  static bool enabled = false;
-  static bool checked = false;
-  if (!checked) {
-    checked = true;
-    const CommandLine& command = *CommandLine::ForCurrentProcess();
-    enabled = command.HasSwitch(switches::kEnableMonitorProfile);
-  }
-  if (enabled)
-    return;
   *profile = g_color_profile.Get().profile();
 }
 #endif
 
-void RenderMessageFilter::OnDownloadUrl(const IPC::Message& message,
+void RenderMessageFilter::OnDownloadUrl(int render_view_id,
                                         const GURL& url,
                                         const Referrer& referrer,
-                                        const base::string16& suggested_name) {
+                                        const base::string16& suggested_name,
+                                        const bool use_prompt) {
   scoped_ptr<DownloadSaveInfo> save_info(new DownloadSaveInfo());
   save_info->suggested_name = suggested_name;
+  save_info->prompt_for_save_location = use_prompt;
 
   // There may be a special cookie store that we could use for this download,
   // rather than the default one. Since this feature is generally only used for
@@ -913,7 +906,7 @@ void RenderMessageFilter::OnDownloadUrl(const IPC::Message& message,
       true,  // is_content_initiated
       resource_context_,
       render_process_id_,
-      message.routing_id(),
+      render_view_id,
       false,
       save_info.Pass(),
       content::DownloadItem::kInvalidId,
@@ -1143,19 +1136,6 @@ void RenderMessageFilter::OnCompletedOpenChannelToNpapiPlugin(
   plugin_host_clients_.erase(client);
 }
 
-void RenderMessageFilter::OnUpdateIsDelayed(const IPC::Message& msg) {
-  // When not in accelerated compositing mode, in certain cases (e.g. waiting
-  // for a resize or if no backing store) the RenderWidgetHost is blocking the
-  // UI thread for some time, waiting for an UpdateRect from the renderer. If we
-  // are going to switch to accelerated compositing, the GPU process may need
-  // round-trips to the UI thread before finishing the frame, causing deadlocks
-  // if we delay the UpdateRect until we receive the OnSwapBuffersComplete. So
-  // the renderer sent us this message, so that we can unblock the UI thread.
-  // We will simply re-use the UpdateRect unblock mechanism, just with a
-  // different message.
-  render_widget_helper_->DidReceiveBackingStoreMsg(msg);
-}
-
 void RenderMessageFilter::OnAre3DAPIsBlocked(int render_view_id,
                                              const GURL& top_origin_url,
                                              ThreeDAPIType requester,
@@ -1254,14 +1234,26 @@ void RenderMessageFilter::OnAllocateGpuMemoryBuffer(
     uint32 width,
     uint32 height,
     uint32 internalformat,
+    uint32 usage,
     gfx::GpuMemoryBufferHandle* handle) {
-  if (!GpuMemoryBufferImpl::IsFormatValid(internalformat)) {
+  if (!GpuMemoryBufferImpl::IsFormatValid(internalformat) ||
+      !GpuMemoryBufferImpl::IsUsageValid(usage)) {
+    handle->type = gfx::EMPTY_BUFFER;
+    return;
+  }
+  base::CheckedNumeric<int> size = width;
+  size *= height;
+  if (!size.IsValid()) {
     handle->type = gfx::EMPTY_BUFFER;
     return;
   }
 
 #if defined(OS_MACOSX)
-  if (GpuMemoryBufferImplIOSurface::IsFormatSupported(internalformat)) {
+  // TODO(reveman): This should be moved to
+  // GpuMemoryBufferImpl::AllocateForChildProcess and
+  // GpuMemoryBufferImplIOSurface. crbug.com/325045, crbug.com/323304
+  if (GpuMemoryBufferImplIOSurface::IsConfigurationSupported(internalformat,
+                                                             usage)) {
     IOSurfaceSupport* io_surface_support = IOSurfaceSupport::Initialize();
     if (io_surface_support) {
       base::ScopedCFTypeRef<CFMutableDictionaryRef> properties;
@@ -1306,7 +1298,12 @@ void RenderMessageFilter::OnAllocateGpuMemoryBuffer(
 #endif
 
 #if defined(OS_ANDROID)
-  if (GpuMemoryBufferImplSurfaceTexture::IsFormatSupported(internalformat)) {
+  // TODO(reveman): This should be moved to
+  // GpuMemoryBufferImpl::AllocateForChildProcess and
+  // GpuMemoryBufferImplSurfaceTexture when adding support for out-of-process
+  // GPU service. crbug.com/368716
+  if (GpuMemoryBufferImplSurfaceTexture::IsConfigurationSupported(
+          internalformat, usage)) {
     // Each surface texture is associated with a render process id. This allows
     // the GPU service and Java Binder IPC to verify that a renderer is not
     // trying to use a surface texture it doesn't own.
@@ -1321,24 +1318,8 @@ void RenderMessageFilter::OnAllocateGpuMemoryBuffer(
   }
 #endif
 
-  uint64 stride = static_cast<uint64>(width) *
-      GpuMemoryBufferImpl::BytesPerPixel(internalformat);
-  if (stride > std::numeric_limits<uint32>::max()) {
-    handle->type = gfx::EMPTY_BUFFER;
-    return;
-  }
-
-  uint64 buffer_size = stride * static_cast<uint64>(height);
-  if (buffer_size > std::numeric_limits<size_t>::max()) {
-    handle->type = gfx::EMPTY_BUFFER;
-    return;
-  }
-
-  // Fallback to fake GpuMemoryBuffer that is backed by shared memory and
-  // requires an upload before it can be used as a texture.
-  handle->type = gfx::SHARED_MEMORY_BUFFER;
-  ChildProcessHostImpl::AllocateSharedMemory(
-      static_cast<size_t>(buffer_size), PeerHandle(), &handle->handle);
+  GpuMemoryBufferImpl::AllocateForChildProcess(
+      gfx::Size(width, height), internalformat, usage, PeerHandle(), handle);
 }
 
 }  // namespace content

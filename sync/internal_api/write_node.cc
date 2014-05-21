@@ -57,6 +57,7 @@ void WriteNode::SetTitle(const std::string& title) {
   if (type != BOOKMARKS && needs_encryption) {
     new_legal_title = kEncryptedString;
   } else {
+    DCHECK(base::IsStringUTF8(title));
     SyncAPINameToServerName(title, &new_legal_title);
     base::TruncateUTF8ToByteSize(new_legal_title, 255, &new_legal_title);
   }
@@ -462,6 +463,11 @@ bool WriteNode::SetPosition(const BaseNode& new_parent,
 
   // Now set the predecessor, which sets IS_UNSYNCED as necessary.
   return PutPredecessor(predecessor);
+}
+
+void WriteNode::SetAttachmentMetadata(
+    const sync_pb::AttachmentMetadata& attachment_metadata) {
+  entry_->PutAttachmentMetadata(attachment_metadata);
 }
 
 const syncable::Entry* WriteNode::GetEntry() const {

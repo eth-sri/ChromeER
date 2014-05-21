@@ -8,6 +8,7 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/files/file_path.h"
+#include "base/memory/weak_ptr.h"
 #include "base/strings/string_tokenizer.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/content_settings/cookie_settings.h"
@@ -25,15 +26,20 @@
 #include "chrome/browser/extensions/standard_management_policy_provider.h"
 #include "chrome/browser/extensions/state_store.h"
 #include "chrome/browser/extensions/unpacked_installer.h"
+#include "chrome/browser/extensions/updater/manifest_fetch_data.h"
 #include "chrome/browser/extensions/user_script_master.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/webui/extensions/extension_icon_source.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
+#include "chrome/common/extensions/extension_file_util.h"
 #include "chrome/common/extensions/features/feature_channel.h"
+#include "chrome/common/extensions/manifest_url_handler.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/url_data_source.h"
+#include "extensions/browser/content_verifier.h"
+#include "extensions/browser/content_verifier_delegate.h"
 #include "extensions/browser/event_router.h"
 #include "extensions/browser/extension_pref_store.h"
 #include "extensions/browser/extension_pref_value_map.h"
@@ -49,6 +55,7 @@
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/manifest.h"
+#include "net/base/escape.h"
 
 #if defined(ENABLE_NOTIFICATIONS)
 #include "chrome/browser/notifications/desktop_notification_service.h"
@@ -59,8 +66,8 @@
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/app_mode/app_mode_utils.h"
 #include "chrome/browser/chromeos/extensions/device_local_account_management_policy_provider.h"
-#include "chrome/browser/chromeos/login/user.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/policy/device_local_account.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/login/login_state.h"
@@ -137,6 +144,76 @@ void ExtensionSystemImpl::Shared::RegisterManagementPolicyProviders() {
 #endif  // defined(ENABLE_EXTENSIONS)
 }
 
+namespace {
+
+class ContentVerifierDelegateImpl : public ContentVerifierDelegate {
+ public:
+  explicit ContentVerifierDelegateImpl(ExtensionService* service)
+      : service_(service->AsWeakPtr()) {}
+
+  virtual ~ContentVerifierDelegateImpl() {}
+
+  virtual bool ShouldBeVerified(const Extension& extension) OVERRIDE {
+    if (!extension.is_extension() && !extension.is_legacy_packaged_app())
+      return false;
+    if (!Manifest::IsAutoUpdateableLocation(extension.location()))
+      return false;
+
+    if (!ManifestURL::UpdatesFromGallery(&extension)) {
+      // It's possible that the webstore update url was overridden for testing
+      // so also consider extensions with the default (production) update url
+      // to be from the store as well.
+      GURL default_webstore_url = extension_urls::GetDefaultWebstoreUpdateUrl();
+      if (ManifestURL::GetUpdateURL(&extension) != default_webstore_url)
+        return false;
+    }
+
+    return true;
+  }
+
+  virtual const ContentVerifierKey& PublicKey() OVERRIDE {
+    static ContentVerifierKey key(
+        extension_misc::kWebstoreSignaturesPublicKey,
+        extension_misc::kWebstoreSignaturesPublicKeySize);
+    return key;
+  }
+
+  virtual GURL GetSignatureFetchUrl(const std::string& extension_id,
+                                    const base::Version& version) OVERRIDE {
+    // TODO(asargent) Factor out common code from the extension updater's
+    // ManifestFetchData class that can be shared for use here.
+    std::vector<std::string> parts;
+    parts.push_back("uc");
+    parts.push_back("installsource=signature");
+    parts.push_back("id=" + extension_id);
+    parts.push_back("v=" + version.GetString());
+    std::string x_value =
+        net::EscapeQueryParamValue(JoinString(parts, "&"), true);
+    std::string query = "response=redirect&x=" + x_value;
+
+    GURL base_url = extension_urls::GetWebstoreUpdateUrl();
+    GURL::Replacements replacements;
+    replacements.SetQuery(query.c_str(), url::Component(0, query.length()));
+    return base_url.ReplaceComponents(replacements);
+  }
+
+  virtual std::set<base::FilePath> GetBrowserImagePaths(
+      const extensions::Extension* extension) OVERRIDE {
+    return extension_file_util::GetBrowserImagePaths(extension);
+  }
+
+  virtual void VerifyFailed(const std::string& extension_id) OVERRIDE {
+    if (service_)
+      service_->DisableExtension(extension_id, Extension::DISABLE_CORRUPTED);
+  }
+
+ private:
+  base::WeakPtr<ExtensionService> service_;
+  DISALLOW_COPY_AND_ASSIGN(ContentVerifierDelegateImpl);
+};
+
+}  // namespace
+
 void ExtensionSystemImpl::Shared::Init(bool extensions_enabled) {
   const CommandLine* command_line = CommandLine::ForCurrentProcess();
 
@@ -171,6 +248,10 @@ void ExtensionSystemImpl::Shared::Init(bool extensions_enabled) {
     install_verifier_.reset(
         new InstallVerifier(ExtensionPrefs::Get(profile_), profile_));
     install_verifier_->Init();
+    content_verifier_ = new ContentVerifier(
+        profile_, new ContentVerifierDelegateImpl(extension_service_.get()));
+    content_verifier_->Start();
+    info_map()->SetContentVerifier(content_verifier_.get());
 
     management_policy_.reset(new ManagementPolicy);
     RegisterManagementPolicyProviders();
@@ -243,6 +324,8 @@ void ExtensionSystemImpl::Shared::Shutdown() {
     extension_warning_service_->RemoveObserver(
         extension_warning_badge_service_.get());
   }
+  if (content_verifier_)
+    content_verifier_->Shutdown();
   if (extension_service_)
     extension_service_->Shutdown();
 }
@@ -304,6 +387,10 @@ InstallVerifier* ExtensionSystemImpl::Shared::install_verifier() {
 
 QuotaService* ExtensionSystemImpl::Shared::quota_service() {
   return quota_service_.get();
+}
+
+ContentVerifier* ExtensionSystemImpl::Shared::content_verifier() {
+  return content_verifier_.get();
 }
 
 //
@@ -401,6 +488,10 @@ InstallVerifier* ExtensionSystemImpl::install_verifier() {
 
 QuotaService* ExtensionSystemImpl::quota_service() {
   return shared_->quota_service();
+}
+
+ContentVerifier* ExtensionSystemImpl::content_verifier() {
+  return shared_->content_verifier();
 }
 
 void ExtensionSystemImpl::RegisterExtensionWithRequestContexts(

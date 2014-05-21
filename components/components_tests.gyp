@@ -63,9 +63,16 @@
             'autofill/core/common/form_field_data_unittest.cc',
             'autofill/core/common/password_form_fill_data_unittest.cc',
             'autofill/core/common/save_password_progress_logger_unittest.cc',
+            'bookmarks/browser/bookmark_codec_unittest.cc',
+            'bookmarks/browser/bookmark_expanded_state_tracker_unittest.cc',
+            'bookmarks/browser/bookmark_index_unittest.cc',
+            'bookmarks/browser/bookmark_model_unittest.cc',
+            'bookmarks/browser/bookmark_utils_unittest.cc',
             'captive_portal/captive_portal_detector_unittest.cc',
             'cloud_devices/common/cloud_devices_urls_unittest.cc',
             'cloud_devices/common/printer_description_unittest.cc',
+            'data_reduction_proxy/browser/data_reduction_proxy_auth_request_handler_unittest.cc',
+            'data_reduction_proxy/browser/data_reduction_proxy_config_service_unittest.cc',
             'data_reduction_proxy/browser/data_reduction_proxy_metrics_unittest.cc',
             'data_reduction_proxy/browser/data_reduction_proxy_settings_unittest.cc',
             'data_reduction_proxy/browser/http_auth_handler_data_reduction_proxy_unittest.cc',
@@ -88,6 +95,9 @@
             'domain_reliability/test_util.h',
             'domain_reliability/uploader_unittest.cc',
             'domain_reliability/util_unittest.cc',
+            'enhanced_bookmarks/image_store_unittest.cc',
+            'feedback/feedback_uploader_unittest.cc',
+            'invalidation/invalidation_logger_unittest.cc',
             'json_schema/json_schema_validator_unittest.cc',
             'json_schema/json_schema_validator_unittest_base.cc',
             'json_schema/json_schema_validator_unittest_base.h',
@@ -95,11 +105,16 @@
             'keyed_service/core/dependency_graph_unittest.cc',
             'language_usage_metrics/language_usage_metrics_unittest.cc',
             'metrics/metrics_hashes_unittest.cc',
+            'metrics/metrics_log_base_unittest.cc',
+            'metrics/metrics_log_manager_unittest.cc',
+            'metrics/metrics_reporting_scheduler_unittest.cc',
+            'metrics/persisted_logs_unittest.cc',
             'navigation_interception/intercept_navigation_resource_throttle_unittest.cc',
             'os_crypt/ie7_password_win_unittest.cc',
             'os_crypt/keychain_password_mac_unittest.mm',
             'os_crypt/os_crypt_unittest.cc',
             'password_manager/core/browser/browser_save_password_progress_logger_unittest.cc',
+            'password_manager/core/browser/log_router_unittest.cc',
             'password_manager/core/browser/login_database_unittest.cc',
             'password_manager/core/browser/password_autofill_manager_unittest.cc',
             'password_manager/core/browser/password_form_manager_unittest.cc',
@@ -136,6 +151,7 @@
             'storage_monitor/storage_monitor_mac_unittest.mm',
             'storage_monitor/storage_monitor_unittest.cc',
             'storage_monitor/storage_monitor_win_unittest.cc',
+            'sync_driver/data_type_manager_impl_unittest.cc',
             'sync_driver/generic_change_processor_unittest.cc',
             'sync_driver/model_association_manager_unittest.cc',
             'sync_driver/non_blocking_data_type_controller_unittest.cc',
@@ -148,12 +164,14 @@
             'translate/core/browser/translate_script_unittest.cc',
             'translate/core/common/translate_metrics_unittest.cc',
             'translate/core/common/translate_util_unittest.cc',
-            'translate/language_detection/language_detection_util_unittest.cc',
+            'translate/core/language_detection/language_detection_util_unittest.cc',
             'url_matcher/regex_set_matcher_unittest.cc',
             'url_matcher/string_pattern_unittest.cc',
             'url_matcher/substring_set_matcher_unittest.cc',
             'url_matcher/url_matcher_factory_unittest.cc',
             'url_matcher/url_matcher_unittest.cc',
+            'variations/active_field_trials_unittest.cc',
+            'variations/caching_permuted_entropy_provider_unittest.cc',
             'variations/entropy_provider_unittest.cc',
             'variations/metrics_util_unittest.cc',
             'variations/study_filtering_unittest.cc',
@@ -194,6 +212,10 @@
             'components_strings.gyp:components_strings',
             '../third_party/libphonenumber/libphonenumber.gyp:libphonenumber',
 
+            # Dependencies of bookmarks
+            'components.gyp:bookmarks_browser',
+            'components.gyp:bookmarks_test_support',
+
             # Dependencies of captive_portal
             'components.gyp:captive_portal_test_support',
             '../net/net.gyp:net_test_support',
@@ -213,6 +235,16 @@
 
             # Dependencies of domain_reliability
             'components.gyp:domain_reliability',
+
+            # Dependencies of enhanced_bookmarks
+            'components.gyp:enhanced_bookmarks',
+            'components.gyp:enhanced_bookmarks_test_support',
+
+            # Dependencies of feedback
+            'components.gyp:feedback_component',
+
+            # Dependencies of invalidation
+            'components.gyp:invalidation',
 
             # Dependencies of json_schema
             'components.gyp:json_schema',
@@ -254,12 +286,17 @@
             # Dependencies of translate.
             'components.gyp:translate_core_browser',
             'components.gyp:translate_core_common',
-            'components.gyp:translate_language_detection',
+            'components.gyp:translate_core_language_detection',
 
             # Dependencies of variations
             'components.gyp:variations',
           ],
           'conditions': [
+            ['toolkit_views == 1', {
+              'sources': [
+                'bookmarks/browser/bookmark_node_data_unittest.cc',
+              ],
+            }],
             ['OS != "ios"', {
               'sources': [
                 'autofill/content/renderer/renderer_save_password_progress_logger_unittest.cc',
@@ -319,7 +356,10 @@
                 ['include', '^test/run_all_unittests\\.cc$'],
                 ['include', '^auto_login_parser/'],
                 ['include', '^autofill/core/'],
+                ['include', '^bookmarks/'],
+                ['include', '^data_reduction_proxy/'],
                 ['include', '^dom_distiller/'],
+                ['include', '^invalidation/'],
                 ['include', '^json_schema/'],
                 ['include', '^keyed_service/core/'],
                 ['include', '^language_usage_metrics/'],
@@ -370,16 +410,6 @@
                 'nacl.gyp:nacl_common',
               ],
             }],
-            ['disable_nacl==0 and OS=="linux"', {
-              'sources': [
-                'nacl/loader/nonsfi/nonsfi_sandbox_unittest.cc',
-                'nacl/loader/nonsfi/nonsfi_sandbox_sigsys_unittest.cc',
-              ],
-              'dependencies': [
-                'nacl.gyp:nacl_linux',
-                '../sandbox/sandbox.gyp:sandbox_linux_test_utils',
-              ],
-            }],
             ['OS == "mac"', {
               'link_settings': {
                 'libraries': [
@@ -410,17 +440,21 @@
                 '../third_party/libusb/libusb.gyp:libusb',
               ],
             }],
-            ['OS == "android" and gtest_target_type == "shared_library"', {
+            ['OS == "android"', {
               'dependencies': [
                 '../testing/android/native_test.gyp:native_test_native_code',
               ]
             }],
             ['chromeos==1', {
+              'sources': [
+                'metrics/chromeos/serialization_utils_unittest.cc',
+              ],
               'sources!': [
                 'storage_monitor/storage_monitor_linux_unittest.cc',
               ],
               'dependencies': [
                 '../chromeos/chromeos.gyp:chromeos_test_support',
+                'components.gyp:metrics_chromeos',
               ],
             }],
             ['OS=="linux"', {
@@ -434,8 +468,7 @@
                 '../base/allocator/allocator.gyp:allocator',
               ],
             }],
-            # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
-            ['OS=="linux" and component=="shared_library" and ((use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1))', {
+            ['OS=="linux" and component=="shared_library" and use_allocator!="none"', {
             'dependencies': [
                 '<(DEPTH)/base/allocator/allocator.gyp:allocator',
             ],
@@ -554,7 +587,7 @@
            'visitedlink/test/visitedlink_perftest.cc',
          ],
          'conditions': [
-           ['OS == "android" and gtest_target_type == "shared_library"', {
+           ['OS == "android"', {
              'dependencies': [
                '../testing/android/native_test.gyp:native_test_native_code',
              ],
@@ -565,7 +598,7 @@
         },
       ],
       'conditions': [
-        ['OS == "android" and gtest_target_type == "shared_library"', {
+        ['OS == "android"', {
           'targets': [
             {
               'target_name': 'components_unittests_apk',
@@ -605,7 +638,6 @@
             '../skia/skia.gyp:skia',
             '../testing/gmock.gyp:gmock',
             '../testing/gtest.gyp:gtest',
-            '../testing/gmock.gyp:gmock',
           ],
           'include_dirs': [
             '..',

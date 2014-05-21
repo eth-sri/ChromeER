@@ -70,6 +70,11 @@ void BindFields(const EntryKernel& entry,
     entry.ref(static_cast<UniquePositionField>(i)).SerializeToString(&temp);
     statement->BindBlob(index++, temp.data(), temp.length());
   }
+  for (; i < ATTACHMENT_METADATA_FIELDS_END; ++i) {
+    std::string temp;
+    entry.ref(static_cast<AttachmentMetadataField>(i)).SerializeToString(&temp);
+    statement->BindBlob(index++, temp.data(), temp.length());
+  }
 }
 
 // The caller owns the returned EntryKernel*.  Assumes the statement currently
@@ -114,6 +119,20 @@ scoped_ptr<EntryKernel> UnpackEntry(sql::Statement* statement) {
     kernel->mutable_ref(static_cast<UniquePositionField>(i)) =
         UniquePosition::FromProto(proto);
   }
+  for (; i < ATTACHMENT_METADATA_FIELDS_END; ++i) {
+    kernel->mutable_ref(static_cast<AttachmentMetadataField>(i)).ParseFromArray(
+        statement->ColumnBlob(i), statement->ColumnByteLength(i));
+  }
+
+  // Sanity check on positions.  We risk strange and rare crashes if our
+  // assumptions about unique position values are broken.
+  if (kernel->ShouldMaintainPosition() &&
+      !kernel->ref(UNIQUE_POSITION).IsValid()) {
+    DVLOG(1) << "Unpacked invalid position on an entity that should have a "
+             << "valid position.  Assuming the DB is corrupt.";
+    return scoped_ptr<EntryKernel>();
+  }
+
   return kernel.Pass();
 }
 

@@ -4,7 +4,6 @@
 
 #include "content/browser/browser_plugin/test_browser_plugin_guest.h"
 
-#include "base/test/test_timeouts.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/common/browser_plugin/browser_plugin_messages.h"
@@ -16,13 +15,11 @@ class BrowserPluginGuest;
 TestBrowserPluginGuest::TestBrowserPluginGuest(
     int instance_id,
     WebContentsImpl* web_contents)
-    : BrowserPluginGuest(instance_id, false, web_contents, NULL),
+    : BrowserPluginGuest(instance_id, false, web_contents),
       update_rect_count_(0),
-      exit_observed_(false),
       focus_observed_(false),
       blur_observed_(false),
       advance_focus_observed_(false),
-      was_hidden_observed_(false),
       input_observed_(false),
       load_stop_observed_(false),
       ime_cancel_observed_(false) {
@@ -38,9 +35,9 @@ WebContentsImpl* TestBrowserPluginGuest::web_contents() const {
 void TestBrowserPluginGuest::SendMessageToEmbedder(IPC::Message* msg) {
   if (msg->type() == BrowserPluginMsg_UpdateRect::ID) {
     update_rect_count_++;
-    int instance_id = 0;
-    BrowserPluginMsg_UpdateRect_Params params;
-    BrowserPluginMsg_UpdateRect::Read(msg, &instance_id, &params);
+    BrowserPluginMsg_UpdateRect::Param param;
+    BrowserPluginMsg_UpdateRect::Read(msg, &param);
+    BrowserPluginMsg_UpdateRect_Params params = param.b;
     last_view_size_observed_ = params.view_size;
     if (!expected_auto_view_size_.IsEmpty() &&
         expected_auto_view_size_ == params.view_size) {
@@ -65,16 +62,6 @@ void TestBrowserPluginGuest::ResetUpdateRectCount() {
   update_rect_count_ = 0;
 }
 
-void TestBrowserPluginGuest::RenderProcessGone(base::TerminationStatus status) {
-  exit_observed_ = true;
-  if (status != base::TERMINATION_STATUS_NORMAL_TERMINATION &&
-      status != base::TERMINATION_STATUS_STILL_RUNNING)
-    VLOG(0) << "Guest crashed status: " << status;
-  if (crash_message_loop_runner_)
-    crash_message_loop_runner_->Quit();
-  BrowserPluginGuest::RenderProcessGone(status);
-}
-
 void TestBrowserPluginGuest::OnHandleInputEvent(
     int instance_id,
     const gfx::Rect& guest_window_rect,
@@ -85,15 +72,6 @@ void TestBrowserPluginGuest::OnHandleInputEvent(
   input_observed_ = true;
   if (input_message_loop_runner_)
     input_message_loop_runner_->Quit();
-}
-
-void TestBrowserPluginGuest::WaitForExit() {
-  // Check if we already observed a guest crash, return immediately if so.
-  if (exit_observed_)
-    return;
-
-  crash_message_loop_runner_ = new MessageLoopRunner();
-  crash_message_loop_runner_->Run();
 }
 
 void TestBrowserPluginGuest::WaitForFocus() {
@@ -121,16 +99,6 @@ void TestBrowserPluginGuest::WaitForAdvanceFocus() {
     return;
   advance_focus_message_loop_runner_ = new MessageLoopRunner();
   advance_focus_message_loop_runner_->Run();
-}
-
-void TestBrowserPluginGuest::WaitUntilHidden() {
-  if (was_hidden_observed_) {
-    was_hidden_observed_ = false;
-    return;
-  }
-  was_hidden_message_loop_runner_ = new MessageLoopRunner();
-  was_hidden_message_loop_runner_->Run();
-  was_hidden_observed_ = false;
 }
 
 void TestBrowserPluginGuest::WaitForInput() {
@@ -178,18 +146,6 @@ void TestBrowserPluginGuest::WaitForImeCancel() {
   ime_cancel_observed_ = false;
 }
 
-void TestBrowserPluginGuest::WaitForResizeGuest(const gfx::Size& view_size) {
-  if (last_size_observed_in_resize_ == view_size) {
-    last_size_observed_in_resize_ = gfx::Size();
-    return;
-  }
-
-  expected_view_size_in_resize_ = view_size;
-  resize_guest_message_loop_runner_ = new MessageLoopRunner();
-  resize_guest_message_loop_runner_->Run();
-  last_size_observed_in_resize_ = gfx::Size();
-}
-
 void TestBrowserPluginGuest::OnSetFocus(int instance_id, bool focused) {
   if (focused) {
     focus_observed_ = true;
@@ -225,24 +181,6 @@ void TestBrowserPluginGuest::OnImeCancelComposition() {
       ime_cancel_message_loop_runner_->Quit();
   }
   BrowserPluginGuest::OnImeCancelComposition();
-}
-
-void TestBrowserPluginGuest::OnResizeGuest(
-    int instance_id,
-    const BrowserPluginHostMsg_ResizeGuest_Params& params) {
-  last_size_observed_in_resize_ = params.view_rect.size();
-  if (last_size_observed_in_resize_ == expected_view_size_in_resize_ &&
-      resize_guest_message_loop_runner_) {
-    resize_guest_message_loop_runner_->Quit();
-  }
-
-  BrowserPluginGuest::OnResizeGuest(instance_id, params);
-}
-
-void TestBrowserPluginGuest::WasHidden() {
-  was_hidden_observed_ = true;
-  if (was_hidden_message_loop_runner_)
-    was_hidden_message_loop_runner_->Quit();
 }
 
 }  // namespace content

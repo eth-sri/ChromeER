@@ -20,7 +20,6 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/path.h"
 #include "ui/gfx/screen.h"
@@ -903,7 +902,7 @@ void PanelView::Layout() {
     web_view_->SetBounds(0, 0, width(), height());
 }
 
-gfx::Size PanelView::GetMinimumSize() {
+gfx::Size PanelView::GetMinimumSize() const {
   // If the panel is minimized, it can be rendered to very small size, like
   // 4-pixel lines when it is docked. Otherwise, its size should not be less
   // than its minimum size.
@@ -997,7 +996,7 @@ void PanelView::OnWidgetActivationChanged(views::Widget* widget, bool active) {
   if (focused_) {
     content::WebContents* web_contents = panel_->GetWebContents();
     if (web_contents)
-      web_contents->GetView()->RestoreFocus();
+      web_contents->RestoreFocus();
   }
 }
 

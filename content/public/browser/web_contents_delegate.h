@@ -226,7 +226,7 @@ class CONTENT_EXPORT WebContentsDelegate {
   // Asks the delegate if the given tab can download.
   // Invoking the |callback| synchronously is OK.
   virtual void CanDownload(RenderViewHost* render_view_host,
-                           int request_id,
+                           const GURL& url,
                            const std::string& request_method,
                            const base::Callback<void(bool)>& callback);
 
@@ -377,7 +377,6 @@ class CONTENT_EXPORT WebContentsDelegate {
   virtual void RegisterProtocolHandler(WebContents* web_contents,
                                        const std::string& protocol,
                                        const GURL& url,
-                                       const base::string16& title,
                                        bool user_gesture) {}
 
   // Result of string search in the page. This includes the number of matches
@@ -447,8 +446,7 @@ class CONTENT_EXPORT WebContentsDelegate {
   // This is optional for implementations of WebContentsDelegate; if the
   // delegate doesn't provide a size, the current WebContentsView's size will be
   // used.
-  virtual gfx::Size GetSizeForNewRenderView(
-      const WebContents* web_contents) const;
+  virtual gfx::Size GetSizeForNewRenderView(WebContents* web_contents) const;
 
   // Notification that validation of a form displayed by the |web_contents|
   // has failed. There can only be one message per |web_contents| at a time.

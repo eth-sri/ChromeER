@@ -117,9 +117,6 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   if (command_line.HasSwitch(switches::kEnableWebMIDI))
     WebRuntimeFeatures::enableWebMIDI(true);
 
-  if (command_line.HasSwitch(switches::kDisableSpeechInput))
-    WebRuntimeFeatures::enableSpeechInput(false);
-
   if (command_line.HasSwitch(switches::kDisableFileSystem))
     WebRuntimeFeatures::enableFileSystem(false);
 
@@ -138,9 +135,11 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   if (ui::IsOverlayScrollbarEnabled())
     WebRuntimeFeatures::enableOverlayScrollbars(true);
 
-  if (command_line.HasSwitch(switches::kEnableFastTextAutosizing)
-      && !command_line.HasSwitch(switches::kDisableFastTextAutosizing))
+  if (command_line.HasSwitch(switches::kEnableFastTextAutosizing))
     WebRuntimeFeatures::enableFastTextAutosizing(true);
+
+  if (command_line.HasSwitch(switches::kDisableFastTextAutosizing))
+    WebRuntimeFeatures::enableFastTextAutosizing(false);
 
   if (command_line.HasSwitch(switches::kDisableRepaintAfterLayout))
     WebRuntimeFeatures::enableRepaintAfterLayout(false);
@@ -153,6 +152,12 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
 
   if (command_line.HasSwitch(switches::kEnableBleedingEdgeRenderingFastPaths))
     WebRuntimeFeatures::enableBleedingEdgeFastPaths(true);
+
+  if (command_line.HasSwitch(switches::kEnablePreciseMemoryInfo))
+    WebRuntimeFeatures::enablePreciseMemoryInfo(true);
+
+  if (command_line.HasSwitch(switches::kEnableLayerSquashing))
+    WebRuntimeFeatures::enableLayerSquashing(true);
 }
 
 }  // namespace content

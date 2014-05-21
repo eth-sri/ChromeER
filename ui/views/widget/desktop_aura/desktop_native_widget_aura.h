@@ -121,6 +121,7 @@ class VIEWS_EXPORT DesktopNativeWidgetAura
   virtual bool HasCapture() const OVERRIDE;
   virtual InputMethod* CreateInputMethod() OVERRIDE;
   virtual internal::InputMethodDelegate* GetInputMethodDelegate() OVERRIDE;
+  virtual ui::InputMethod* GetHostInputMethod() OVERRIDE;
   virtual void CenterWindow(const gfx::Size& size) OVERRIDE;
   virtual void GetWindowPlacement(
       gfx::Rect* bounds,
@@ -258,9 +259,6 @@ class VIEWS_EXPORT DesktopNativeWidgetAura
   // instance.
   base::WeakPtrFactory<DesktopNativeWidgetAura> close_widget_factory_;
 
-  // Can we be made active?
-  bool can_activate_;
-
   // Child of the root, contains |content_window_|.
   aura::Window* content_window_container_;
 
@@ -295,8 +293,8 @@ class VIEWS_EXPORT DesktopNativeWidgetAura
   scoped_ptr<wm::WindowModalityController>
       window_modality_controller_;
 
-  // See comments in OnLostActive().
   bool restore_focus_on_activate_;
+  bool restore_focus_on_window_focus_;
 
   gfx::NativeCursor cursor_;
   // We must manually reference count the number of users of |cursor_manager_|

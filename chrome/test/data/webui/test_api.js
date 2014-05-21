@@ -142,6 +142,8 @@ var testing = {};
       if (!this.accessibilityAuditConfig_) {
         this.accessibilityAuditConfig_ = new axs.AuditConfiguration();
 
+        this.accessibilityAuditConfig_.showUnsupportedRulesWarning = false;
+
         this.accessibilityAuditConfig_.auditRulesToIgnore = [
             // The "elements with meaningful background image" accessibility
             // audit (AX_IMAGE_01) does not apply, since Chrome doesn't
@@ -445,7 +447,9 @@ var testing = {};
       try {
         this.setUp();
       } catch(e) {
-        console.error(e.stack);
+        // Mock4JSException doesn't inherit from Error, so fall back on
+        // toString().
+        console.error(e.stack || e.toString());
       }
 
       if (!this.deferred_)

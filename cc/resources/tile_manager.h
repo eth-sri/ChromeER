@@ -22,6 +22,7 @@
 #include "cc/resources/picture_pile_impl.h"
 #include "cc/resources/prioritized_tile_set.h"
 #include "cc/resources/rasterizer.h"
+#include "cc/resources/rasterizer_delegate.h"
 #include "cc/resources/resource_pool.h"
 #include "cc/resources/tile.h"
 
@@ -158,7 +159,6 @@ class CC_EXPORT TileManager : public RasterizerClient,
       ResourcePool* resource_pool,
       Rasterizer* rasterizer,
       Rasterizer* gpu_rasterizer,
-      size_t max_raster_usage_bytes,
       bool use_rasterize_on_demand,
       RenderingStatsInstrumentation* rendering_stats_instrumentation);
   virtual ~TileManager();
@@ -225,12 +225,16 @@ class CC_EXPORT TileManager : public RasterizerClient,
     }
   }
 
+  void SetRasterizersForTesting(Rasterizer* rasterizer,
+                                Rasterizer* gpu_rasterizer);
+
+  void CleanUpReleasedTilesForTesting() { CleanUpReleasedTiles(); }
+
  protected:
   TileManager(TileManagerClient* client,
               ResourcePool* resource_pool,
               Rasterizer* rasterizer,
               Rasterizer* gpu_rasterizer,
-              size_t max_raster_usage_bytes,
               bool use_rasterize_on_demand,
               RenderingStatsInstrumentation* rendering_stats_instrumentation);
 
@@ -288,6 +292,7 @@ class CC_EXPORT TileManager : public RasterizerClient,
   scoped_refptr<RasterTask> CreateRasterTask(Tile* tile);
   scoped_ptr<base::Value> GetMemoryRequirementsAsValue() const;
   void UpdatePrioritizedTileSetIfNeeded();
+  void CleanUpLayers();
 
   TileManagerClient* client_;
   ResourcePool* resource_pool_;
@@ -308,7 +313,6 @@ class CC_EXPORT TileManager : public RasterizerClient,
 
   size_t bytes_releasable_;
   size_t resources_releasable_;
-  size_t max_raster_usage_bytes_;
 
   bool ever_exceeded_memory_budget_;
   MemoryHistory::Entry memory_stats_from_last_assign_;

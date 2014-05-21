@@ -99,7 +99,9 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
     DISABLE_KNOWN_DISABLED = 1 << 7,
     DISABLE_NOT_VERIFIED = 1 << 8,  // Disabled because we could not verify
                                     // the install.
-    DISABLE_GREYLIST = 1 << 9
+    DISABLE_GREYLIST = 1 << 9,
+    DISABLE_CORRUPTED = 1 << 10,
+    DISABLE_REMOTE_INSTALL = 1 << 11
   };
 
   enum InstallType {
@@ -117,6 +119,8 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
     virtual ~ManifestData() {}
   };
 
+  // Do not change the order of entries or remove entries in this list
+  // as this is used in UMA_HISTOGRAM_ENUMERATIONs about extensions.
   enum InitFromValueFlags {
     NO_FLAGS = 0,
 
@@ -169,7 +173,12 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
     // be placed in a special OEM folder in the App Launcher. Note: OEM apps are
     // also installed by Default (i.e. WAS_INSTALLED_BY_DEFAULT is also true).
     WAS_INSTALLED_BY_OEM = 1 << 10,
+
+    // When adding new flags, make sure to update kInitFromValueFlagBits.
   };
+
+  // This is the highest bit index of the flags defined above.
+  static const int kInitFromValueFlagBits;
 
   static scoped_refptr<Extension> Create(const base::FilePath& path,
                                          Manifest::Location location,
@@ -513,11 +522,13 @@ struct InstalledExtensionInfo {
 struct UnloadedExtensionInfo {
   // TODO(DHNishi): Move this enum to ExtensionRegistryObserver.
   enum Reason {
-    REASON_DISABLE,    // Extension is being disabled.
-    REASON_UPDATE,     // Extension is being updated to a newer version.
-    REASON_UNINSTALL,  // Extension is being uninstalled.
-    REASON_TERMINATE,  // Extension has terminated.
-    REASON_BLACKLIST,  // Extension has been blacklisted.
+    REASON_UNDEFINED,         // Undefined state used to initialize variables.
+    REASON_DISABLE,           // Extension is being disabled.
+    REASON_UPDATE,            // Extension is being updated to a newer version.
+    REASON_UNINSTALL,         // Extension is being uninstalled.
+    REASON_TERMINATE,         // Extension has terminated.
+    REASON_BLACKLIST,         // Extension has been blacklisted.
+    REASON_PROFILE_SHUTDOWN,  // Profile is being shut down.
   };
 
   Reason reason;

@@ -7,7 +7,9 @@
 #include <vector>
 
 #include "base/bind.h"
+#include "base/metrics/histogram.h"
 #include "base/threading/sequenced_worker_pool.h"
+#include "base/time/time.h"
 #include "base/values.h"
 #include "chrome/browser/drive/drive_api_service.h"
 #include "chrome/browser/drive/drive_notification_manager.h"
@@ -21,10 +23,16 @@
 #include "chrome/browser/sync_file_system/drive_backend/callback_helper.h"
 #include "chrome/browser/sync_file_system/drive_backend/conflict_resolver.h"
 #include "chrome/browser/sync_file_system/drive_backend/drive_backend_constants.h"
+#include "chrome/browser/sync_file_system/drive_backend/drive_service_on_worker.h"
+#include "chrome/browser/sync_file_system/drive_backend/drive_service_wrapper.h"
+#include "chrome/browser/sync_file_system/drive_backend/drive_uploader_on_worker.h"
+#include "chrome/browser/sync_file_system/drive_backend/drive_uploader_wrapper.h"
 #include "chrome/browser/sync_file_system/drive_backend/list_changes_task.h"
 #include "chrome/browser/sync_file_system/drive_backend/local_to_remote_syncer.h"
 #include "chrome/browser/sync_file_system/drive_backend/metadata_database.h"
 #include "chrome/browser/sync_file_system/drive_backend/register_app_task.h"
+#include "chrome/browser/sync_file_system/drive_backend/remote_change_processor_on_worker.h"
+#include "chrome/browser/sync_file_system/drive_backend/remote_change_processor_wrapper.h"
 #include "chrome/browser/sync_file_system/drive_backend/remote_to_local_syncer.h"
 #include "chrome/browser/sync_file_system/drive_backend/sync_engine_context.h"
 #include "chrome/browser/sync_file_system/drive_backend/sync_engine_initializer.h"
@@ -52,18 +60,21 @@ class RemoteChangeProcessor;
 
 namespace drive_backend {
 
-class SyncEngine::WorkerObserver
-    : public SyncWorker::Observer {
+class SyncEngine::WorkerObserver : public SyncWorker::Observer {
  public:
   WorkerObserver(base::SequencedTaskRunner* ui_task_runner,
                  base::WeakPtr<SyncEngine> sync_engine)
       : ui_task_runner_(ui_task_runner),
-        sync_engine_(sync_engine){
-  }
+        sync_engine_(sync_engine) {}
 
   virtual ~WorkerObserver() {}
 
   virtual void OnPendingFileListUpdated(int item_count) OVERRIDE {
+    if (ui_task_runner_->RunsTasksOnCurrentThread()) {
+      sync_engine_->OnPendingFileListUpdated(item_count);
+      return;
+    }
+
     ui_task_runner_->PostTask(
         FROM_HERE,
         base::Bind(&SyncEngine::OnPendingFileListUpdated,
@@ -75,6 +86,12 @@ class SyncEngine::WorkerObserver
                                    SyncFileStatus file_status,
                                    SyncAction sync_action,
                                    SyncDirection direction) OVERRIDE {
+    if (ui_task_runner_->RunsTasksOnCurrentThread()) {
+      sync_engine_->OnFileStatusChanged(
+          url, file_status, sync_action, direction);
+      return;
+    }
+
     ui_task_runner_->PostTask(
         FROM_HERE,
         base::Bind(&SyncEngine::OnFileStatusChanged,
@@ -82,9 +99,13 @@ class SyncEngine::WorkerObserver
                    url, file_status, sync_action, direction));
   }
 
-
   virtual void UpdateServiceState(RemoteServiceState state,
                                   const std::string& description) OVERRIDE {
+    if (ui_task_runner_->RunsTasksOnCurrentThread()) {
+      sync_engine_->UpdateServiceState(state, description);
+      return;
+    }
+
     ui_task_runner_->PostTask(
         FROM_HERE,
         base::Bind(&SyncEngine::UpdateServiceState,
@@ -101,6 +122,14 @@ class SyncEngine::WorkerObserver
 namespace {
 
 void EmptyStatusCallback(SyncStatusCode status) {}
+
+void DidRegisterOrigin(const base::TimeTicks& start_time,
+                       const SyncStatusCallback& callback,
+                       SyncStatusCode status) {
+  base::TimeDelta delta(base::TimeTicks::Now() - start_time);
+  HISTOGRAM_TIMES("SyncFileSystem.RegisterOriginTime", delta);
+  callback.Run(status);
+}
 
 }  // namespace
 
@@ -154,10 +183,9 @@ scoped_ptr<SyncEngine> SyncEngine::CreateForBrowserContext(
                      notification_manager,
                      extension_service,
                      signin_manager));
-  sync_engine->Initialize(
-      GetSyncFileSystemDir(context->GetPath()),
-      file_task_runner.get(),
-      NULL);
+  sync_engine->Initialize(GetSyncFileSystemDir(context->GetPath()),
+                          file_task_runner.get(),
+                          NULL);
 
   return sync_engine.Pass();
 }
@@ -183,12 +211,26 @@ SyncEngine::~SyncEngine() {
 void SyncEngine::Initialize(const base::FilePath& base_dir,
                             base::SequencedTaskRunner* file_task_runner,
                             leveldb::Env* env_override) {
-  scoped_ptr<SyncEngineContext> sync_engine_context(
-      new SyncEngineContext(drive_service_.get(),
-                            drive_uploader_.get(),
-                            base::MessageLoopProxy::current(),
-                            worker_task_runner_,
-                            file_task_runner));
+  // DriveServiceWrapper and DriveServiceOnWorker relay communications
+  // between DriveService and syncers in SyncWorker.
+  scoped_ptr<drive::DriveServiceInterface>
+      drive_service_on_worker(
+          new DriveServiceOnWorker(drive_service_wrapper_->AsWeakPtr(),
+                                   base::MessageLoopProxy::current(),
+                                   worker_task_runner_));
+  scoped_ptr<drive::DriveUploaderInterface>
+      drive_uploader_on_worker(
+          new DriveUploaderOnWorker(drive_uploader_wrapper_->AsWeakPtr(),
+                                    base::MessageLoopProxy::current(),
+                                    worker_task_runner_));
+  scoped_ptr<SyncEngineContext>
+      sync_engine_context(
+          new SyncEngineContext(drive_service_on_worker.Pass(),
+                                drive_uploader_on_worker.Pass(),
+                                base::MessageLoopProxy::current(),
+                                worker_task_runner_,
+                                file_task_runner));
+
   worker_observer_.reset(
       new WorkerObserver(base::MessageLoopProxy::current(),
                          weak_ptr_factory_.GetWeakPtr()));
@@ -227,7 +269,10 @@ void SyncEngine::RegisterOrigin(
                  base::Unretained(sync_worker_.get()),
                  origin,
                  RelayCallbackToCurrentThread(
-                     FROM_HERE, callback)));
+                     FROM_HERE,
+                     base::Bind(&DidRegisterOrigin,
+                                base::TimeTicks::Now(),
+                                callback))));
 }
 
 void SyncEngine::EnableOrigin(
@@ -275,11 +320,20 @@ void SyncEngine::ProcessRemoteChange(const SyncFileCallback& callback) {
 }
 
 void SyncEngine::SetRemoteChangeProcessor(RemoteChangeProcessor* processor) {
+  remote_change_processor_ = processor;
+  remote_change_processor_wrapper_.reset(
+      new RemoteChangeProcessorWrapper(processor));
+
+  remote_change_processor_on_worker_.reset(new RemoteChangeProcessorOnWorker(
+      remote_change_processor_wrapper_->AsWeakPtr(),
+      base::MessageLoopProxy::current(), /* ui_task_runner */
+      worker_task_runner_));
+
   worker_task_runner_->PostTask(
       FROM_HERE,
       base::Bind(&SyncWorker::SetRemoteChangeProcessor,
                  base::Unretained(sync_worker_.get()),
-                 processor));
+                 remote_change_processor_on_worker_.get()));
 }
 
 LocalChangeProcessor* SyncEngine::GetLocalChangeProcessor() {
@@ -292,8 +346,7 @@ bool SyncEngine::IsConflicting(const fileapi::FileSystemURL& url) {
 }
 
 RemoteServiceState SyncEngine::GetCurrentState() const {
-  // TODO(peria): Post task
-  return sync_worker_->GetCurrentState();
+  return service_state_;
 }
 
 void SyncEngine::GetOriginStatusMap(OriginStatusMap* status_map) {
@@ -301,14 +354,24 @@ void SyncEngine::GetOriginStatusMap(OriginStatusMap* status_map) {
   sync_worker_->GetOriginStatusMap(status_map);
 }
 
-scoped_ptr<base::ListValue> SyncEngine::DumpFiles(const GURL& origin) {
-  // TODO(peria): Make this route asynchronous.
-  return sync_worker_->DumpFiles(origin);
+void SyncEngine::DumpFiles(const GURL& origin,
+                           const ListCallback& callback) {
+  PostTaskAndReplyWithResult(
+      worker_task_runner_,
+      FROM_HERE,
+      base::Bind(&SyncWorker::DumpFiles,
+                 base::Unretained(sync_worker_.get()),
+                 origin),
+      callback);
 }
 
-scoped_ptr<base::ListValue> SyncEngine::DumpDatabase() {
-  // TODO(peria): Make this route asynchronous.
-  return sync_worker_->DumpDatabase();
+void SyncEngine::DumpDatabase(const ListCallback& callback) {
+  PostTaskAndReplyWithResult(
+      worker_task_runner_,
+      FROM_HERE,
+      base::Bind(&SyncWorker::DumpDatabase,
+                 base::Unretained(sync_worker_.get())),
+      callback);
 }
 
 void SyncEngine::SetSyncEnabled(bool enabled) {
@@ -317,13 +380,6 @@ void SyncEngine::SetSyncEnabled(bool enabled) {
       base::Bind(&SyncWorker::SetSyncEnabled,
                  base::Unretained(sync_worker_.get()),
                  enabled));
-}
-
-void SyncEngine::UpdateSyncEnabled(bool enabled) {
-  const char* status_message = enabled ? "Sync is enabled" : "Sync is disabled";
-  FOR_EACH_OBSERVER(
-      Observer, service_observers_,
-      OnRemoteServiceStateUpdated(GetCurrentState(), status_message));
 }
 
 SyncStatusCode SyncEngine::SetDefaultConflictResolutionPolicy(
@@ -396,7 +452,6 @@ void SyncEngine::ApplyLocalChange(
 }
 
 SyncTaskManager* SyncEngine::GetSyncTaskManagerForTesting() {
-  // TODO(peria): Post task
   return sync_worker_->GetSyncTaskManager();
 }
 
@@ -457,7 +512,10 @@ SyncEngine::SyncEngine(
     ExtensionServiceInterface* extension_service,
     SigninManagerBase* signin_manager)
     : drive_service_(drive_service.Pass()),
+      drive_service_wrapper_(new DriveServiceWrapper(drive_service_.get())),
       drive_uploader_(drive_uploader.Pass()),
+      drive_uploader_wrapper_(new DriveUploaderWrapper(drive_uploader_.get())),
+      service_state_(REMOTE_SERVICE_TEMPORARY_UNAVAILABLE),
       notification_manager_(notification_manager),
       extension_service_(extension_service),
       signin_manager_(signin_manager),
@@ -483,6 +541,8 @@ void SyncEngine::OnFileStatusChanged(const fileapi::FileSystemURL& url,
 
 void SyncEngine::UpdateServiceState(RemoteServiceState state,
                                     const std::string& description) {
+  service_state_ = state;
+
   FOR_EACH_OBSERVER(
       Observer, service_observers_,
       OnRemoteServiceStateUpdated(state, description));

@@ -31,7 +31,8 @@ void LogFrameEncodedEvent(
     media::cast::RtpTimestamp rtp_timestamp,
     uint32 frame_id) {
   cast_environment->Logging()->InsertFrameEvent(
-      event_time, media::cast::kVideoFrameEncoded, rtp_timestamp, frame_id);
+      event_time, media::cast::FRAME_ENCODED, media::cast::VIDEO_EVENT,
+      rtp_timestamp, frame_id);
 }
 
 // Proxy this call to ExternalVideoEncoder on the cast main thread.
@@ -221,21 +222,19 @@ class LocalVideoEncodeAcceleratorClient
       stream_header_.append(static_cast<const char*>(output_buffer->memory()),
                             payload_size);
     } else if (!encoded_frame_data_storage_.empty()) {
-      scoped_ptr<transport::EncodedVideoFrame> encoded_frame(
-          new transport::EncodedVideoFrame());
-
-      encoded_frame->codec = codec_;
-      encoded_frame->key_frame = key_frame;
-      encoded_frame->last_referenced_frame_id = last_encoded_frame_id_;
-      last_encoded_frame_id_++;
-      encoded_frame->frame_id = last_encoded_frame_id_;
-      encoded_frame->rtp_timestamp = GetVideoRtpTimestamp(
-          encoded_frame_data_storage_.front().capture_time);
-      if (key_frame) {
-        // Self referenced.
-        encoded_frame->last_referenced_frame_id = encoded_frame->frame_id;
-      }
-
+      scoped_ptr<transport::EncodedFrame> encoded_frame(
+          new transport::EncodedFrame());
+      encoded_frame->dependency = key_frame ? transport::EncodedFrame::KEY :
+          transport::EncodedFrame::DEPENDENT;
+      encoded_frame->frame_id = ++last_encoded_frame_id_;
+      if (key_frame)
+        encoded_frame->referenced_frame_id = encoded_frame->frame_id;
+      else
+        encoded_frame->referenced_frame_id = encoded_frame->frame_id - 1;
+      encoded_frame->reference_time =
+          encoded_frame_data_storage_.front().capture_time;
+      encoded_frame->rtp_timestamp =
+          GetVideoRtpTimestamp(encoded_frame->reference_time);
       if (!stream_header_.empty()) {
         encoded_frame->data = stream_header_;
         stream_header_.clear();
@@ -256,8 +255,7 @@ class LocalVideoEncodeAcceleratorClient
           CastEnvironment::MAIN,
           FROM_HERE,
           base::Bind(encoded_frame_data_storage_.front().frame_encoded_callback,
-                     base::Passed(&encoded_frame),
-                     encoded_frame_data_storage_.front().capture_time));
+                     base::Passed(&encoded_frame)));
 
       encoded_frame_data_storage_.pop_front();
     } else {
@@ -401,12 +399,6 @@ bool ExternalVideoEncoder::EncodeVideoFrame(
     ++skip_count_;
     return false;
   }
-  base::TimeTicks now = cast_environment_->Clock()->NowTicks();
-  cast_environment_->Logging()->InsertFrameEvent(
-      now,
-      kVideoFrameSentToEncoder,
-      GetVideoRtpTimestamp(capture_time),
-      kFrameIdUnknown);
 
   encoder_task_runner_->PostTask(
       FROM_HERE,

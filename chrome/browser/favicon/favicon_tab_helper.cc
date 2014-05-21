@@ -15,7 +15,8 @@
 #include "chrome/browser/search/search.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/url_constants.h"
-#include "components/bookmarks/core/browser/bookmark_model.h"
+#include "components/bookmarks/browser/bookmark_model.h"
+#include "components/favicon_base/favicon_types.h"
 #include "content/public/browser/favicon_status.h"
 #include "content/public/browser/invalidate_type.h"
 #include "content/public/browser/navigation_controller.h"
@@ -25,6 +26,7 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
+#include "content/public/common/favicon_url.h"
 #include "ui/gfx/codec/png_codec.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/image/image_skia.h"
@@ -135,10 +137,6 @@ void FaviconTabHelper::SaveFavicon() {
       entry->GetURL(), favicon.url, favicon_base::FAVICON, favicon.image);
 }
 
-NavigationEntry* FaviconTabHelper::GetActiveEntry() {
-  return web_contents()->GetController().GetActiveEntry();
-}
-
 int FaviconTabHelper::StartDownload(const GURL& url, int max_image_size) {
   FaviconService* favicon_service = FaviconServiceFactory::GetForProfile(
       profile_->GetOriginalProfile(), Profile::IMPLICIT_ACCESS);
@@ -167,6 +165,42 @@ bool FaviconTabHelper::IsOffTheRecord() {
   return web_contents()->GetBrowserContext()->IsOffTheRecord();
 }
 
+const gfx::Image FaviconTabHelper::GetActiveFaviconImage() {
+  return GetFaviconStatus().image;
+}
+
+const GURL FaviconTabHelper::GetActiveFaviconURL() {
+  return GetFaviconStatus().url;
+}
+
+bool FaviconTabHelper::GetActiveFaviconValidity() {
+  return GetFaviconStatus().valid;
+}
+
+const GURL FaviconTabHelper::GetActiveURL() {
+  NavigationEntry* entry = web_contents()->GetController().GetActiveEntry();
+  if (!entry || entry->GetURL().is_empty())
+    return GURL();
+  return entry->GetURL();
+}
+
+void FaviconTabHelper::SetActiveFaviconImage(gfx::Image image) {
+  GetFaviconStatus().image = image;
+}
+
+void FaviconTabHelper::SetActiveFaviconURL(GURL url) {
+  GetFaviconStatus().url = url;
+}
+
+void FaviconTabHelper::SetActiveFaviconValidity(bool validity) {
+  GetFaviconStatus().valid = validity;
+}
+
+content::FaviconStatus& FaviconTabHelper::GetFaviconStatus() {
+  DCHECK(web_contents()->GetController().GetActiveEntry());
+  return web_contents()->GetController().GetActiveEntry()->GetFavicon();
+}
+
 void FaviconTabHelper::DidStartNavigationToPendingEntry(
     const GURL& url,
     NavigationController::ReloadType reload_type) {
@@ -190,15 +224,40 @@ void FaviconTabHelper::DidNavigateMainFrame(
   FetchFavicon(details.entry->GetURL());
 }
 
+// Returns favicon_base::IconType the given icon_type corresponds to.
+// TODO(jif): Move function to /components/favicon_base/content/
+// crbug.com/374281.
+favicon_base::IconType ToChromeIconType(
+    content::FaviconURL::IconType icon_type) {
+  switch (icon_type) {
+    case content::FaviconURL::FAVICON:
+      return favicon_base::FAVICON;
+    case content::FaviconURL::TOUCH_ICON:
+      return favicon_base::TOUCH_ICON;
+    case content::FaviconURL::TOUCH_PRECOMPOSED_ICON:
+      return favicon_base::TOUCH_PRECOMPOSED_ICON;
+    case content::FaviconURL::INVALID_ICON:
+      return favicon_base::INVALID_ICON;
+  }
+  NOTREACHED();
+  return favicon_base::INVALID_ICON;
+}
+
 void FaviconTabHelper::DidUpdateFaviconURL(
-    int32 page_id,
     const std::vector<content::FaviconURL>& candidates) {
   DCHECK(!candidates.empty());
   favicon_urls_ = candidates;
-
-  favicon_handler_->OnUpdateFaviconURL(page_id, candidates);
+  std::vector<favicon::FaviconURL> favicon_urls;
+  for (size_t i = 0; i < candidates.size(); i++) {
+    const content::FaviconURL& candidate = candidates[i];
+    favicon_urls.push_back(
+        favicon::FaviconURL(candidate.icon_url,
+                            ToChromeIconType(candidate.icon_type),
+                            candidate.icon_sizes));
+  }
+  favicon_handler_->OnUpdateFaviconURL(favicon_urls);
   if (touch_icon_handler_.get())
-    touch_icon_handler_->OnUpdateFaviconURL(page_id, candidates);
+    touch_icon_handler_->OnUpdateFaviconURL(favicon_urls);
 }
 
 FaviconService* FaviconTabHelper::GetFaviconService() {

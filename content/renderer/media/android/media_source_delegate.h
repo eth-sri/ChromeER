@@ -68,6 +68,7 @@ class MediaSourceDelegate : public media::DemuxerHost {
       const DurationChangeCB& duration_change_cb);
 
   const blink::WebTimeRanges& Buffered();
+  blink::WebTimeRanges Buffered() const;
   size_t DecodedFrameCount() const;
   size_t DroppedFrameCount() const;
   size_t AudioDecodedByteCount() const;
@@ -97,14 +98,14 @@ class MediaSourceDelegate : public media::DemuxerHost {
   // Called when DemuxerStreamPlayer needs to read data from ChunkDemuxer.
   void OnReadFromDemuxer(media::DemuxerStream::Type type);
 
-  // Called when the player needs the new config data from ChunkDemuxer.
-  void OnMediaConfigRequest();
-
   // Called by the Destroyer to destroy an instance of this object.
   void Destroy();
 
   // Called on the main thread to check whether the video stream is encrypted.
   bool IsVideoEncrypted();
+
+  // Gets the ChunkDemuxer timeline offset.
+  base::Time GetTimelineOffset() const;
 
  private:
   // This is private to enforce use of the Destroyer.
@@ -179,6 +180,11 @@ class MediaSourceDelegate : public media::DemuxerHost {
   // |seeking_lock_| must be held by caller.
   base::TimeDelta FindBufferedBrowserSeekTime_Locked(
       const base::TimeDelta& seek_time) const;
+
+  // Get the demuxer configs for a particular stream identified by |is_audio|.
+  // Returns true on success, of false otherwise.
+  bool GetDemuxerConfigFromStream(media::DemuxerConfigs* configs,
+                                  bool is_audio);
 
   RendererDemuxerAndroid* demuxer_client_;
   int demuxer_client_id_;

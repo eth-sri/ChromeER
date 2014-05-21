@@ -81,7 +81,8 @@ DirectoryModel.prototype.getFileListSelection = function() {
 };
 
 /**
- * @return {?RootType} Root type of current root, or null if not found.
+ * @return {?VolumeManagerCommon.RootType} Root type of current root, or null if
+ *     not found.
  */
 DirectoryModel.prototype.getCurrentRootType = function() {
   var entry = this.currentDirContents_.getDirectoryEntry();
@@ -164,6 +165,11 @@ DirectoryModel.prototype.updateSelectionAndPublishEvent_ =
  * @private
  */
 DirectoryModel.prototype.onWatcherDirectoryChanged_ = function() {
+  // Clear the metadata cache since something in this directory has changed.
+  var directoryEntry = this.getCurrentDirEntry();
+  if (!util.isFakeEntry(directoryEntry))
+    this.metadataCache_.clearRecursively(directoryEntry, '*');
+
   this.rescanSoon();
 };
 
@@ -405,7 +411,8 @@ DirectoryModel.prototype.scan_ = function(
     if (!dirContents.isSearch()) {
       var locationInfo =
           this.volumeManager_.getLocationInfo(dirContents.getDirectoryEntry());
-      if (locationInfo.volumeInfo.volumeType === util.VolumeType.DOWNLOADS &&
+      if (locationInfo.volumeInfo.volumeType ===
+          VolumeManagerCommon.VolumeType.DOWNLOADS &&
           locationInfo.isRootEntry) {
         metrics.recordMediumCount('DownloadsCount',
                                   dirContents.fileList_.length);
@@ -485,10 +492,10 @@ DirectoryModel.prototype.onEntryChanged = function(kind, entry) {
   // TODO(hidehiko): We should update directory model even the search result
   // is shown.
   var rootType = this.getCurrentRootType();
-  if ((rootType === RootType.DRIVE ||
-       rootType === RootType.DRIVE_SHARED_WITH_ME ||
-       rootType === RootType.DRIVE_RECENT ||
-       rootType === RootType.DRIVE_OFFLINE) &&
+  if ((rootType === VolumeManagerCommon.RootType.DRIVE ||
+       rootType === VolumeManagerCommon.RootType.DRIVE_SHARED_WITH_ME ||
+       rootType === VolumeManagerCommon.RootType.DRIVE_RECENT ||
+       rootType === VolumeManagerCommon.RootType.DRIVE_OFFLINE) &&
       this.isSearching())
     return;
 
@@ -581,10 +588,12 @@ DirectoryModel.prototype.onRenameEntry = function(
  * @param {string} name Directory name.
  * @param {function(DirectoryEntry)} successCallback Callback on success.
  * @param {function(FileError)} errorCallback Callback on failure.
+ * @param {function()} abortCallback Callback on abort (cancelled by user).
  */
 DirectoryModel.prototype.createDirectory = function(name,
                                                     successCallback,
-                                                    errorCallback) {
+                                                    errorCallback,
+                                                    abortCallback) {
   // Obtain and check the current directory.
   var entry = this.getCurrentDirEntry();
   if (!entry || this.isSearching()) {
@@ -613,8 +622,10 @@ DirectoryModel.prototype.createDirectory = function(name,
         // Do not change anything or call the callback if current
         // directory changed.
         tracker.stop();
-        if (tracker.hasChanged)
+        if (tracker.hasChanged) {
+          abortCallback();
           return;
+        }
 
         // If target directory is already in the list, just select it.
         var existing = this.getFileList().slice().filter(
@@ -636,11 +647,15 @@ DirectoryModel.prototype.createDirectory = function(name,
 };
 
 /**
- * Change the current directory to the directory represented by
+ * Changes the current directory to the directory represented by
  * a DirectoryEntry or a fake entry.
  *
  * Dispatches the 'directory-changed' event when the directory is successfully
  * changed.
+ *
+ * Note : if this is called from UI, please consider to use DirectoryModel.
+ * activateDirectoryEntry instead of this, which is higher-level function and
+ * cares about the selection.
  *
  * @param {DirectoryEntry|Object} dirEntry The entry of the new directory to
  *     be opened.
@@ -681,6 +696,31 @@ DirectoryModel.prototype.changeDirectoryEntry = function(
           this.dispatchEvent(event);
         }.bind(this));
       }.bind(this, this.changeDirectorySequence_));
+};
+
+/**
+ * Activates the given directry.
+ * This method:
+ *  - Changes the current directory, if the given directory is the current
+ *    directory.
+ *  - Clears the selection, if the given directory is the current directory.
+ *
+ * @param {DirectoryEntry|Object} dirEntry The entry of the new directory to
+ *     be opened.
+ * @param {function()=} opt_callback Executed if the directory loads
+ *     successfully.
+ */
+DirectoryModel.prototype.activateDirectoryEntry = function(
+    dirEntry, opt_callback) {
+  var currentDirectoryEntry = this.getCurrentDirEntry();
+  if (currentDirectoryEntry &&
+      util.isSameEntry(dirEntry, currentDirectoryEntry)) {
+    // On activating the current directory, clear the selection on the filelist.
+    this.clearSelection();
+  } else {
+    // Otherwise, changes the current directory.
+    this.changeDirectoryEntry(dirEntry, opt_callback);
+  }
 };
 
 /**
@@ -801,7 +841,7 @@ DirectoryModel.prototype.createDirectoryContents_ =
   if (!locationInfo)
     return null;
   var canUseDriveSearch = this.volumeManager_.getDriveConnectionState().type !==
-      util.DriveConnectionType.OFFLINE &&
+      VolumeManagerCommon.DriveConnectionType.OFFLINE &&
       locationInfo.isDriveBased;
 
   if (query && canUseDriveSearch) {
@@ -814,15 +854,15 @@ DirectoryModel.prototype.createDirectoryContents_ =
     // Drive special search.
     var searchType;
     switch (locationInfo.rootType) {
-      case RootType.DRIVE_OFFLINE:
+      case VolumeManagerCommon.RootType.DRIVE_OFFLINE:
         searchType =
             DriveMetadataSearchContentScanner.SearchType.SEARCH_OFFLINE;
         break;
-      case RootType.DRIVE_SHARED_WITH_ME:
+      case VolumeManagerCommon.RootType.DRIVE_SHARED_WITH_ME:
         searchType =
             DriveMetadataSearchContentScanner.SearchType.SEARCH_SHARED_WITH_ME;
         break;
-      case RootType.DRIVE_RECENT:
+      case VolumeManagerCommon.RootType.DRIVE_RECENT:
         searchType =
             DriveMetadataSearchContentScanner.SearchType.SEARCH_RECENT_FILES;
         break;

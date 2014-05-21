@@ -12,6 +12,7 @@
 #include "ui/gfx/path.h"
 #include "ui/gfx/screen.h"
 #include "ui/gfx/skia_util.h"
+#include "ui/native_theme/native_theme.h"
 #include "ui/views/bubble/bubble_border.h"
 #include "ui/views/controls/button/label_button.h"
 #include "ui/views/widget/widget.h"
@@ -169,11 +170,11 @@ gfx::Insets BubbleFrameView::GetInsets() const {
   return insets;
 }
 
-gfx::Size BubbleFrameView::GetPreferredSize() {
+gfx::Size BubbleFrameView::GetPreferredSize() const {
   return GetSizeForClientSize(GetWidget()->client_view()->GetPreferredSize());
 }
 
-gfx::Size BubbleFrameView::GetMinimumSize() {
+gfx::Size BubbleFrameView::GetMinimumSize() const {
   return GetSizeForClientSize(GetWidget()->client_view()->GetMinimumSize());
 }
 
@@ -221,6 +222,14 @@ void BubbleFrameView::OnThemeChanged() {
   UpdateWindowTitle();
   ResetWindowControls();
   UpdateWindowIcon();
+}
+
+void BubbleFrameView::OnNativeThemeChanged(const ui::NativeTheme* theme) {
+  if (bubble_border_ && bubble_border_->use_theme_background_color()) {
+    bubble_border_->set_background_color(GetNativeTheme()->
+        GetSystemColor(ui::NativeTheme::kColorId_DialogBackground));
+    SchedulePaint();
+  }
 }
 
 void BubbleFrameView::ButtonPressed(Button* sender, const ui::Event& event) {
@@ -336,7 +345,8 @@ void BubbleFrameView::OffsetArrowIfOffScreen(const gfx::Rect& anchor_rect,
     SchedulePaint();
 }
 
-gfx::Size BubbleFrameView::GetSizeForClientSize(const gfx::Size& client_size) {
+gfx::Size BubbleFrameView::GetSizeForClientSize(
+    const gfx::Size& client_size) const {
   // Accommodate the width of the title bar elements.
   int title_bar_width = GetInsets().width() + border()->GetInsets().width();
   if (!title_->text().empty())

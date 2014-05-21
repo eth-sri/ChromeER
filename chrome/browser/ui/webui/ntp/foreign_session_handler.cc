@@ -26,12 +26,11 @@
 #include "chrome/browser/ui/webui/ntp/new_tab_ui.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
-#include "components/user_prefs/pref_registry_syncable.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/url_data_source.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "content/public/browser/web_ui.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -114,7 +113,7 @@ void ForeignSessionHandler::OpenForeignSessionWindows(
       iter_begin + 1;
   chrome::HostDesktopType host_desktop_type =
       chrome::GetHostDesktopTypeForNativeView(
-          web_ui->GetWebContents()->GetView()->GetNativeView());
+          web_ui->GetWebContents()->GetNativeView());
   SessionRestore::RestoreForeignSessionWindows(
       Profile::FromWebUI(web_ui), host_desktop_type, iter_begin, iter_end);
 }

@@ -41,6 +41,7 @@
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/chrome_pages.h"
 #include "chrome/browser/ui/extensions/application_launch.h"
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/settings_window_manager.h"
@@ -91,13 +92,9 @@ class TestAppWindowRegistryObserver : public apps::AppWindowRegistry::Observer {
   }
 
   // Overridden from AppWindowRegistry::Observer:
-  virtual void OnAppWindowAdded(AppWindow* app_window) OVERRIDE {}
-
   virtual void OnAppWindowIconChanged(AppWindow* app_window) OVERRIDE {
     ++icon_updates_;
   }
-
-  virtual void OnAppWindowRemoved(AppWindow* app_window) OVERRIDE {}
 
   int icon_updates() { return icon_updates_; }
 
@@ -1381,7 +1378,6 @@ IN_PROC_BROWSER_TEST_F(LauncherPlatformAppBrowserTest, LaunchPanelWindow) {
   EXPECT_EQ(item_count, shelf_model()->item_count());
 }
 
-#if defined(OS_CHROMEOS)
 // Test that we get correct shelf presence with hidden app windows.
 IN_PROC_BROWSER_TEST_F(LauncherPlatformAppBrowserTest, HiddenAppWindows) {
   int item_count = shelf_model()->item_count();
@@ -1418,7 +1414,6 @@ IN_PROC_BROWSER_TEST_F(LauncherPlatformAppBrowserTest, HiddenAppWindows) {
   --item_count;
   EXPECT_EQ(item_count, shelf_model()->item_count());
 }
-#endif
 
 // Test attention states of windows.
 IN_PROC_BROWSER_TEST_F(LauncherPlatformAppBrowserTest, WindowAttentionStatus) {
@@ -2084,7 +2079,9 @@ IN_PROC_BROWSER_TEST_F(ShelfAppBrowserTest, SettingsWindow) {
 
   // Open a settings window. Number of browser items should remain unchanged,
   // number of shelf items should increase.
-  settings_manager->ShowForProfile(browser()->profile(), std::string());
+  settings_manager->ShowChromePageForProfile(
+      browser()->profile(),
+      chrome::GetSettingsUrl(std::string()));
   Browser* settings_browser =
       settings_manager->FindBrowserForProfile(browser()->profile());
   ASSERT_TRUE(settings_browser);

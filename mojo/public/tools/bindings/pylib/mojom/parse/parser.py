@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 # Copyright 2014 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
@@ -80,7 +79,7 @@ class Parser(object):
       # Generator expects a module. If one wasn't specified insert one with an
       # empty name.
       if p[1][0] != 'MODULE':
-        p[0] = [('MODULE', '', p[1])]
+        p[0] = [('MODULE', '', None, p[1])]
       else:
         p[0] = [p[1]]
 
@@ -90,8 +89,8 @@ class Parser(object):
     p[0] = ('IMPORT', eval(p[2]))
 
   def p_module(self, p):
-    """module : MODULE identifier LBRACE definitions RBRACE"""
-    p[0] = ('MODULE', p[2], p[4])
+    """module : attribute_section MODULE identifier LBRACE definitions RBRACE"""
+    p[0] = ('MODULE', p[3], p[1], p[5])
 
   def p_definitions(self, p):
     """definitions : definition definitions
@@ -102,7 +101,8 @@ class Parser(object):
   def p_definition(self, p):
     """definition : struct
                   | interface
-                  | enum"""
+                  | enum
+                  | const"""
     p[0] = p[1]
 
   def p_attribute_section(self, p):
@@ -132,6 +132,7 @@ class Parser(object):
   def p_struct_body(self, p):
     """struct_body : field struct_body
                    | enum struct_body
+                   | const struct_body
                    | """
     if len(p) > 1:
       p[0] = _ListFromConcat(p[1], p[2])
@@ -155,6 +156,7 @@ class Parser(object):
   def p_interface_body(self, p):
     """interface_body : method interface_body
                       | enum interface_body
+                      | const interface_body
                       | """
     if len(p) > 1:
       p[0] = _ListFromConcat(p[1], p[2])
@@ -191,20 +193,25 @@ class Parser(object):
 
   def p_basictypename(self, p):
     """basictypename : identifier
-                     | HANDLE
-                     | specializedhandle"""
+                     | handletype"""
     p[0] = p[1]
 
-  def p_specializedhandle(self, p):
-    """specializedhandle : HANDLE LANGLE specializedhandlename RANGLE"""
-    p[0] = "handle<" + p[3] + ">"
-
-  def p_specializedhandlename(self, p):
-    """specializedhandlename : DATA_PIPE_CONSUMER
-                             | DATA_PIPE_PRODUCER
-                             | MESSAGE_PIPE
-                             | SHARED_BUFFER"""
-    p[0] = p[1]
+  def p_handletype(self, p):
+    """handletype : HANDLE
+                  | HANDLE LANGLE NAME RANGLE"""
+    if len(p) == 2:
+      p[0] = p[1]
+    else:
+      if p[3] not in ('data_pipe_consumer',
+                      'data_pipe_producer',
+                      'message_pipe',
+                      'shared_buffer'):
+        # Note: We don't enable tracking of line numbers for everything, so we
+        # can't use |p.lineno(3)|.
+        raise ParseError(self.filename, "Invalid handle type %r:" % p[3],
+                         lineno=p.lineno(1),
+                         snippet=self._GetSnippet(p.lineno(1)))
+      p[0] = "handle<" + p[3] + ">"
 
   def p_array(self, p):
     """array : typename LBRACKET RBRACKET"""
@@ -243,6 +250,10 @@ class Parser(object):
       p[0] = ('ENUM_FIELD', p[1], None)
     else:
       p[0] = ('ENUM_FIELD', p[1], p[3])
+
+  def p_const(self, p):
+    """const : CONST typename NAME EQUALS expression SEMI"""
+    p[0] = ('CONST', p[2], p[3], p[5])
 
   ### Expressions ###
 
@@ -360,24 +371,3 @@ def Parse(source, filename):
 
   tree = yacc.parse(source)
   return tree
-
-
-def main(argv):
-  if len(argv) < 2:
-    print "usage: %s filename" % argv[0]
-    return 0
-
-  for filename in argv[1:]:
-    with open(filename) as f:
-      print "%s:" % filename
-      try:
-        print Parse(f.read(), filename)
-      except ParseError, e:
-        print e
-        return 1
-
-  return 0
-
-
-if __name__ == '__main__':
-  sys.exit(main(sys.argv))

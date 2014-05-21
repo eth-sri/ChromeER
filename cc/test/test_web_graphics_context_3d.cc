@@ -67,7 +67,6 @@ TestWebGraphicsContext3D::TestWebGraphicsContext3D()
       next_insert_sync_point_(1),
       last_waited_sync_point_(0),
       bound_buffer_(0),
-      peak_transfer_buffer_memory_used_bytes_(0),
       weak_ptr_factory_(this) {
   CreateNamespace();
 }
@@ -503,10 +502,6 @@ void TestWebGraphicsContext3D::bufferData(GLenum target,
   buffer->size = size;
   if (data != NULL)
     memcpy(buffer->pixels.get(), data, size);
-
-  peak_transfer_buffer_memory_used_bytes_ =
-      std::max(peak_transfer_buffer_memory_used_bytes_,
-               GetTransferBufferMemoryUsedBytes());
 }
 
 void* TestWebGraphicsContext3D::mapBufferCHROMIUM(GLenum target,
@@ -522,10 +517,6 @@ void* TestWebGraphicsContext3D::mapBufferCHROMIUM(GLenum target,
     --times_map_buffer_chromium_succeeds_;
   }
 
-  peak_transfer_buffer_memory_used_bytes_ =
-      std::max(peak_transfer_buffer_memory_used_bytes_,
-               GetTransferBufferMemoryUsedBytes());
-
   return buffers.get(bound_buffer_)->pixels.get();
 }
 
@@ -539,9 +530,10 @@ GLboolean TestWebGraphicsContext3D::unmapBufferCHROMIUM(
   return true;
 }
 
-GLuint TestWebGraphicsContext3D::createImageCHROMIUM(
-      GLsizei width, GLsizei height,
-      GLenum internalformat) {
+GLuint TestWebGraphicsContext3D::createImageCHROMIUM(GLsizei width,
+                                                     GLsizei height,
+                                                     GLenum internalformat,
+                                                     GLenum usage) {
   DCHECK_EQ(GL_RGBA8_OES, static_cast<int>(internalformat));
   GLuint image_id = NextImageId();
   base::AutoLock lock(namespace_->lock);
@@ -566,8 +558,7 @@ void TestWebGraphicsContext3D::getImageParameterivCHROMIUM(
   *params = 0;
 }
 
-void* TestWebGraphicsContext3D::mapImageCHROMIUM(GLuint image_id,
-                                                 GLenum access) {
+void* TestWebGraphicsContext3D::mapImageCHROMIUM(GLuint image_id) {
   base::AutoLock lock(namespace_->lock);
   base::ScopedPtrHashMap<unsigned, Image>& images = namespace_->images;
   DCHECK_GT(images.count(image_id), 0u);

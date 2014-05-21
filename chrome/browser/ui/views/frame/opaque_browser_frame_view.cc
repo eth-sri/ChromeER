@@ -190,7 +190,7 @@ void OpaqueBrowserFrameView::UpdateThrobber(bool running) {
     window_icon_->Update();
 }
 
-gfx::Size OpaqueBrowserFrameView::GetMinimumSize() {
+gfx::Size OpaqueBrowserFrameView::GetMinimumSize() const {
   return layout_->GetMinimumSize(width());
 }
 
@@ -325,25 +325,9 @@ bool OpaqueBrowserFrameView::HitTestRect(const gfx::Rect& rect) const {
     return tabstrip->IsRectInWindowCaption(rect_in_tabstrip_coords);
   }
 
-  // The window switcher button is to the right of the tabstrip but is
-  // part of the client view.
-  views::View* window_switcher_button =
-      browser_view()->window_switcher_button();
-  if (window_switcher_button && window_switcher_button->visible()) {
-    gfx::RectF rect_in_window_switcher_coords_f(rect);
-    View::ConvertRectToTarget(this, window_switcher_button,
-        &rect_in_window_switcher_coords_f);
-    gfx::Rect rect_in_window_switcher_coords = gfx::ToEnclosingRect(
-        rect_in_window_switcher_coords_f);
-
-    if (window_switcher_button->HitTestRect(rect_in_window_switcher_coords))
-      return false;
-  }
-
   // We claim |rect| because it is above the bottom of the tabstrip, but
-  // neither in the tabstrip nor in the window switcher button. In particular,
-  // the avatar label/button is left of the tabstrip and the window controls
-  // are right of the tabstrip.
+  // not in the tabstrip itself. In particular, the avatar label/button is left
+  // of the tabstrip and the window controls are right of the tabstrip.
   return true;
 }
 
@@ -503,15 +487,6 @@ int OpaqueBrowserFrameView::GetTabStripHeight() const {
   return browser_view()->GetTabStripHeight();
 }
 
-int OpaqueBrowserFrameView::GetAdditionalReservedSpaceInTabStrip() const {
-  // We don't have the sysmenu buttons in Windows 8 metro mode. However there
-  // are buttons like the window switcher which are drawn in the non client
-  // are in the BrowserView. We need to ensure that the tab strip does not
-  // draw on the window switcher button.
-  views::View* button = browser_view()->window_switcher_button();
-  return button ? button->width() : 0;
-}
-
 gfx::Size OpaqueBrowserFrameView::GetTabstripPreferredSize() const {
   gfx::Size s = browser_view()->tabstrip()->GetPreferredSize();
   return s;
@@ -641,7 +616,7 @@ void OpaqueBrowserFrameView::PaintMaximizedFrameBorder(gfx::Canvas* canvas) {
   // the system title bar pref is set, or when maximized on Ubuntu). Hide the
   // gradient in the tab strip (by shifting it up vertically) to avoid a
   // double-gradient effect.
-  if (tp->UsingNativeTheme())
+  if (tp->UsingSystemTheme())
     frame_background_->set_maximized_top_inset(kGTKThemeCondensedFrameTopInset);
 #endif
 
@@ -781,8 +756,14 @@ void OpaqueBrowserFrameView::PaintRestoredClientEdge(gfx::Canvas* canvas) {
     // client edge filled rects start there or at the bottom of the toolbar,
     // whichever is shorter.
     gfx::Rect toolbar_bounds(browser_view()->GetToolbarBounds());
-    image_top += toolbar_bounds.y() +
-        tp->GetImageSkiaNamed(IDR_CONTENT_TOP_LEFT_CORNER)->height();
+
+    gfx::ImageSkia* content_top_left_corner =
+        tp->GetImageSkiaNamed(IDR_CONTENT_TOP_LEFT_CORNER);
+    // TODO(oshima): Sanity checks for crbug.com/374273. Remove when it's fixed.
+    CHECK(content_top_left_corner);
+    CHECK(!content_top_left_corner->isNull());
+
+    image_top += toolbar_bounds.y() + content_top_left_corner->height();
     client_area_top = std::min(image_top,
         client_area_top + toolbar_bounds.bottom() - kClientEdgeThickness);
   } else if (!browser_view()->IsTabStripVisible()) {
@@ -864,7 +845,7 @@ SkColor OpaqueBrowserFrameView::GetFrameColor() const {
   }
 
   if (browser_view()->IsBrowserTypeNormal() ||
-      platform_observer_->IsUsingNativeTheme()) {
+      platform_observer_->IsUsingSystemTheme()) {
     return GetThemeProvider()->GetColor(color_id);
   }
 
@@ -894,8 +875,8 @@ gfx::ImageSkia* OpaqueBrowserFrameView::GetFrameImage() const {
         IDR_THEME_FRAME_INCOGNITO_INACTIVE : IDR_THEME_FRAME_INACTIVE;
   }
 
-  if (platform_observer_->IsUsingNativeTheme()) {
-    // We want to use theme images provided by the platform theme when enabled,
+  if (platform_observer_->IsUsingSystemTheme()) {
+    // We want to use theme images provided by the system theme when enabled,
     // even if we are an app or popup window.
     return GetThemeProvider()->GetImageSkiaNamed(resource_id);
   }

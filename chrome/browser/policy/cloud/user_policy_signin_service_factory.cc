@@ -14,13 +14,11 @@
 #include "chrome/common/pref_names.h"
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
 #include "components/policy/core/browser/browser_policy_connector.h"
-#include "components/user_prefs/pref_registry_syncable.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "net/url_request/url_request_context_getter.h"
 
-#if defined(OS_ANDROID)
-#include "chrome/browser/policy/cloud/user_policy_signin_service_android.h"
-#elif defined(OS_IOS)
-#include "chrome/browser/policy/cloud/user_policy_signin_service_ios.h"
+#if defined(OS_ANDROID) || defined(OS_IOS)
+#include "chrome/browser/policy/cloud/user_policy_signin_service_mobile.h"
 #else
 #include "chrome/browser/policy/cloud/user_policy_signin_service.h"
 #endif
@@ -99,7 +97,7 @@ UserPolicySigninServiceFactory::ServiceIsCreatedWithBrowserContext() const {
 
 void UserPolicySigninServiceFactory::RegisterProfilePrefs(
     user_prefs::PrefRegistrySyncable* user_prefs) {
-#if defined(OS_ANDROID)
+#if defined(OS_ANDROID) || defined(OS_IOS)
   user_prefs->RegisterInt64Pref(
       prefs::kLastPolicyCheckTime,
       0,

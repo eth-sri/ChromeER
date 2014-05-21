@@ -27,11 +27,13 @@ const char kClassMustLeftMostlyDeriveGC[] =
     "[blink-gc] Class %0 must derive its GC base in the left-most position.";
 
 const char kClassRequiresTraceMethod[] =
-    "[blink-gc] Class %0 requires a trace method"
-    " because it contains fields that require tracing.";
+    "[blink-gc] Class %0 requires a trace method.";
 
 const char kBaseRequiresTracing[] =
     "[blink-gc] Base class %0 of derived class %1 requires tracing.";
+
+const char kBaseRequiresTracingNote[] =
+    "[blink-gc] Untraced base class %0 declared here:";
 
 const char kFieldsRequireTracing[] =
     "[blink-gc] Class %0 has untraced fields that require tracing.";
@@ -115,6 +117,14 @@ const char kManualDispatchMethodNote[] =
 const char kDerivesNonStackAllocated[] =
     "[blink-gc] Stack-allocated class %0 derives class %1"
     " which is not stack allocated.";
+
+const char kClassOverridesNew[] =
+    "[blink-gc] Garbage collected class %0"
+    " is not permitted to override its new operator.";
+
+const char kClassDeclaresPureVirtualTrace[] =
+    "[blink-gc] Garbage collected class %0"
+    " is not permitted to declare a pure-virtual trace method.";
 
 struct BlinkGCPluginOptions {
   BlinkGCPluginOptions() : enable_oilpan(false), dump_graph(false) {}
@@ -346,10 +356,13 @@ class CheckTraceVisitor : public RecursiveASTVisitor<CheckTraceVisitor> {
         return true;
       }
 
-      // TODO: It is possible to have multiple bases, where one must be traced
-      // using a traceAfterDispatch. In such a case we should also check that
-      // the mixin does not add a vtable.
-      if (Config::IsTraceMethod(fn) && member->hasQualifier()) {
+      // Currently, a manually dispatched class cannot have mixin bases (having
+      // one would add a vtable which we explicitly check against). This means
+      // that we can only make calls to a trace method of the same name. Revisit
+      // this if our mixin/vtable assumption changes.
+      if (Config::IsTraceMethod(fn) &&
+          fn->getName() == trace_->getName() &&
+          member->hasQualifier()) {
         if (const Type* type = member->getQualifier()->getAsType()) {
           if (CXXRecordDecl* decl = type->getAsCXXRecordDecl()) {
             RecordInfo::Bases::iterator it = info_->GetBases().find(decl);
@@ -490,9 +503,7 @@ class CheckFieldsVisitor : public RecursiveEdgeVisitor {
     if (options_.enable_oilpan) {
       if (Parent()->IsOwnPtr() ||
           Parent()->IsRawPtrClass() ||
-          (stack_allocated_host_ && Parent()->IsRawPtr() &&
-           // TODO: Remove this exception once the node hierarchy is moved.
-           !edge->value()->IsTreeShared())) {
+          (stack_allocated_host_ && Parent()->IsRawPtr())) {
         invalid_fields_.push_back(std::make_pair(current_, Parent()));
         return;
       }
@@ -564,8 +575,14 @@ class BlinkGCPluginConsumer : public ASTConsumer {
         diagnostic_.getCustomDiagID(getErrorLevel(), kMissingFinalizeDispatch);
     diag_derives_non_stack_allocated_ =
         diagnostic_.getCustomDiagID(getErrorLevel(), kDerivesNonStackAllocated);
+    diag_class_overrides_new_ =
+        diagnostic_.getCustomDiagID(getErrorLevel(), kClassOverridesNew);
+    diag_class_declares_pure_virtual_trace_ = diagnostic_.getCustomDiagID(
+        getErrorLevel(), kClassDeclaresPureVirtualTrace);
 
     // Register note messages.
+    diag_base_requires_tracing_note_ = diagnostic_.getCustomDiagID(
+        DiagnosticsEngine::Note, kBaseRequiresTracingNote);
     diag_field_requires_tracing_note_ = diagnostic_.getCustomDiagID(
         DiagnosticsEngine::Note, kFieldRequiresTracingNote);
     diag_raw_ptr_to_gc_managed_class_note_ = diagnostic_.getCustomDiagID(
@@ -686,8 +703,12 @@ class BlinkGCPluginConsumer : public ASTConsumer {
       }
     }
 
-    if (info->RequiresTraceMethod() && !info->GetTraceMethod())
+    if (CXXMethodDecl* trace = info->GetTraceMethod()) {
+      if (trace->isPure())
+        ReportClassDeclaresPureVirtualTrace(info, trace);
+    } else if (info->RequiresTraceMethod()) {
       ReportClassRequiresTraceMethod(info);
+    }
 
     {
       CheckFieldsVisitor visitor(options_);
@@ -700,8 +721,10 @@ class BlinkGCPluginConsumer : public ASTConsumer {
 
       CheckDispatch(info);
 
-      // TODO: Remove this exception once TreeShared is properly traced.
-      if (!info->IsTreeShared()) {
+      if (CXXMethodDecl* newop = info->DeclaresNewOperator())
+        ReportClassOverridesNew(info, newop);
+
+      {
         CheckGCRootsVisitor visitor;
         if (visitor.ContainsGCRoots(info))
           ReportClassContainsGCRoots(info, &visitor.gc_roots());
@@ -1037,12 +1060,14 @@ class BlinkGCPluginConsumer : public ASTConsumer {
     DeclContext* context = info->record()->getDeclContext();
     if (context->isRecord())
       return InCheckedNamespace(cache_.Lookup(context));
-    if (context->isNamespace()) {
-      const NamespaceDecl* decl = dyn_cast<NamespaceDecl>(context);
+    while (context->isNamespace()) {
+      NamespaceDecl* decl = dyn_cast<NamespaceDecl>(context);
       if (decl->isAnonymousNamespace())
         return false;
-      return options_.checked_namespaces.find(decl->getNameAsString()) !=
-          options_.checked_namespaces.end();
+      if (options_.checked_namespaces.find(decl->getNameAsString()) !=
+          options_.checked_namespaces.end())
+        return true;
+      context = decl->getDeclContext();
     }
     return false;
   }
@@ -1074,6 +1099,14 @@ class BlinkGCPluginConsumer : public ASTConsumer {
     FullSourceLoc full_loc(loc, manager);
     diagnostic_.Report(full_loc, diag_class_requires_trace_method_)
         << info->record();
+
+    for (RecordInfo::Bases::iterator it = info->GetBases().begin();
+         it != info->GetBases().end();
+         ++it) {
+      if (it->second.NeedsTracing().IsNeeded())
+        NoteBaseRequiresTracing(&it->second);
+    }
+
     for (RecordInfo::Fields::iterator it = info->GetFields().begin();
          it != info->GetFields().end();
          ++it) {
@@ -1236,11 +1269,35 @@ class BlinkGCPluginConsumer : public ASTConsumer {
         << info->record() << base->info()->record();
   }
 
+  void ReportClassOverridesNew(RecordInfo* info, CXXMethodDecl* newop) {
+    SourceLocation loc = newop->getLocStart();
+    SourceManager& manager = instance_.getSourceManager();
+    FullSourceLoc full_loc(loc, manager);
+    diagnostic_.Report(full_loc, diag_class_overrides_new_) << info->record();
+  }
+
+  void ReportClassDeclaresPureVirtualTrace(RecordInfo* info,
+                                           CXXMethodDecl* trace) {
+    SourceLocation loc = trace->getLocStart();
+    SourceManager& manager = instance_.getSourceManager();
+    FullSourceLoc full_loc(loc, manager);
+    diagnostic_.Report(full_loc, diag_class_declares_pure_virtual_trace_)
+        << info->record();
+  }
+
   void NoteManualDispatchMethod(CXXMethodDecl* dispatch) {
     SourceLocation loc = dispatch->getLocStart();
     SourceManager& manager = instance_.getSourceManager();
     FullSourceLoc full_loc(loc, manager);
     diagnostic_.Report(full_loc, diag_manual_dispatch_method_note_) << dispatch;
+  }
+
+  void NoteBaseRequiresTracing(BasePoint* base) {
+    SourceLocation loc = base->spec().getLocStart();
+    SourceManager& manager = instance_.getSourceManager();
+    FullSourceLoc full_loc(loc, manager);
+    diagnostic_.Report(full_loc, diag_base_requires_tracing_note_)
+        << base->info()->record();
   }
 
   void NoteFieldRequiresTracing(RecordInfo* holder, FieldDecl* field) {
@@ -1316,7 +1373,10 @@ class BlinkGCPluginConsumer : public ASTConsumer {
   unsigned diag_missing_trace_dispatch_;
   unsigned diag_missing_finalize_dispatch_;
   unsigned diag_derives_non_stack_allocated_;
+  unsigned diag_class_overrides_new_;
+  unsigned diag_class_declares_pure_virtual_trace_;
 
+  unsigned diag_base_requires_tracing_note_;
   unsigned diag_field_requires_tracing_note_;
   unsigned diag_raw_ptr_to_gc_managed_class_note_;
   unsigned diag_ref_ptr_to_gc_managed_class_note_;

@@ -54,6 +54,7 @@
       'layers/ui_resource_layer_impl_unittest.cc',
       'layers/ui_resource_layer_unittest.cc',
       'layers/video_layer_impl_unittest.cc',
+      'output/begin_frame_args_unittest.cc',
       'output/delegating_renderer_unittest.cc',
       'output/filter_operations_unittest.cc',
       'output/gl_renderer_unittest.cc',
@@ -107,6 +108,7 @@
       'trees/layer_tree_host_unittest_picture.cc',
       'trees/layer_tree_host_unittest_scroll.cc',
       'trees/layer_tree_host_unittest_video.cc',
+      'trees/layer_tree_impl_unittest.cc',
       'trees/occlusion_tracker_unittest.cc',
       'trees/tree_synchronizer_unittest.cc',
     ],
@@ -120,6 +122,8 @@
     'cc_tests_support_files': [
       'test/animation_test_common.cc',
       'test/animation_test_common.h',
+      'test/begin_frame_args_test.cc',
+      'test/begin_frame_args_test.h',
       'test/fake_content_layer.cc',
       'test/fake_content_layer.h',
       'test/fake_content_layer_client.cc',
@@ -177,6 +181,8 @@
       'test/impl_side_painting_settings.h',
       'test/layer_test_common.cc',
       'test/layer_test_common.h',
+      'test/layer_tree_host_common_test.cc',
+      'test/layer_tree_host_common_test.h',
       'test/layer_tree_json_parser.cc',
       'test/layer_tree_json_parser.h',
       'test/layer_tree_pixel_test.cc',
@@ -258,7 +264,7 @@
         '.',
       ],
       'conditions': [
-        ['OS == "android" and gtest_target_type == "shared_library"',
+        ['OS == "android"',
           {
             'dependencies': [
               '../testing/android/native_test.gyp:native_test_native_code',
@@ -268,8 +274,7 @@
         [ 'os_posix == 1 and OS != "mac" and OS != "android" and OS != "ios"',
           {
             'conditions': [
-              # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
-              [ '(use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1)',
+              [ 'use_allocator!="none"',
                 {
                   'dependencies': [
                     '../base/allocator/allocator.gyp:allocator',
@@ -309,7 +314,6 @@
         'resources/task_graph_runner_perftest.cc',
         'resources/tile_manager_perftest.cc',
         'test/cc_test_suite.cc',
-        'test/lap_timer.cc',
         'test/run_all_perftests.cc',
         'trees/layer_tree_host_common_perftest.cc',
         'trees/layer_tree_host_perftest.cc',
@@ -320,7 +324,7 @@
         '.',
       ],
       'conditions': [
-        ['OS == "android" and gtest_target_type == "shared_library"',
+        ['OS == "android"',
           {
             'dependencies': [
               '../testing/android/native_test.gyp:native_test_native_code',
@@ -328,8 +332,7 @@
           }
         ],
         # See http://crbug.com/162998#c4 for why this is needed.
-        # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
-        ['OS=="linux" and ((use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1))',
+        ['OS=="linux" and use_allocator!="none"',
           {
             'dependencies': [
               '../base/allocator/allocator.gyp:allocator',
@@ -373,9 +376,7 @@
     },
   ],
   'conditions': [
-    # Special target to wrap a gtest_target_type==shared_library
-    # cc_unittests into an android apk for execution.
-    ['OS == "android" and gtest_target_type == "shared_library"',
+    ['OS == "android"',
       {
         'targets': [
           {

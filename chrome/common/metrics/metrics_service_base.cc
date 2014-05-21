@@ -6,12 +6,14 @@
 
 #include <cstdlib>
 
-#include "chrome/common/metrics/metrics_log_base.h"
+#include "components/metrics/metrics_log_base.h"
 
 using base::Histogram;
 
-MetricsServiceBase::MetricsServiceBase()
-    : histogram_snapshot_manager_(this) {
+MetricsServiceBase::MetricsServiceBase(PrefService* local_state,
+                                       size_t max_ongoing_log_size)
+    : log_manager_(local_state, max_ongoing_log_size),
+      histogram_snapshot_manager_(this) {
 }
 
 MetricsServiceBase::~MetricsServiceBase() {

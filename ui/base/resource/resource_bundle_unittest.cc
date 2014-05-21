@@ -484,6 +484,11 @@ TEST_F(ResourceBundleImageTest, GetImageNamed) {
   ui::ScaleFactor scale_factor = GetSupportedScaleFactor(image_rep.scale());
   EXPECT_TRUE(scale_factor == ui::SCALE_FACTOR_100P ||
               scale_factor == ui::SCALE_FACTOR_200P);
+#if !defined(OS_WIN)
+  // If the image is not found, the it should simply image rep should
+  // contain the scale of the image rep, not the requested scale.
+  EXPECT_EQ(1.0f, image_skia->GetRepresentation(1.4f).scale());
+#endif
 }
 
 // Test that GetImageNamed() behaves properly for images which GRIT has
@@ -579,6 +584,7 @@ TEST_F(ResourceBundleImageTest, MAYBE_FallbackToNone) {
 
   gfx::ImageSkia* image_skia = resource_bundle->GetImageSkiaNamed(3);
   EXPECT_EQ(1u, image_skia->image_reps().size());
+  EXPECT_TRUE(image_skia->image_reps()[0].unscaled());
   EXPECT_EQ(ui::SCALE_FACTOR_100P,
             GetSupportedScaleFactor(image_skia->image_reps()[0].scale()));
 }

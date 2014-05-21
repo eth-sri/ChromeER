@@ -22,6 +22,7 @@
 #include "chrome/browser/android/logo_bridge.h"
 #include "chrome/browser/android/most_visited_sites.h"
 #include "chrome/browser/android/new_tab_page_prefs.h"
+#include "chrome/browser/android/omnibox/autocomplete_controller_android.h"
 #include "chrome/browser/android/omnibox/omnibox_prerender.h"
 #include "chrome/browser/android/password_authentication_manager.h"
 #include "chrome/browser/android/password_ui_view_android.h"
@@ -61,11 +62,14 @@
 #include "chrome/browser/ui/android/infobars/translate_infobar.h"
 #include "chrome/browser/ui/android/javascript_app_modal_dialog_android.h"
 #include "chrome/browser/ui/android/navigation_popup.h"
+#include "chrome/browser/ui/android/omnibox/omnibox_view_util.h"
 #include "chrome/browser/ui/android/ssl_client_certificate_request.h"
+#include "chrome/browser/ui/android/tab_model/tab_model_base.h"
 #include "chrome/browser/ui/android/toolbar/toolbar_model_android.h"
 #include "chrome/browser/ui/android/website_settings_popup_android.h"
 #include "components/autofill/core/browser/android/component_jni_registrar.h"
 #include "components/dom_distiller/android/component_jni_registrar.h"
+#include "components/gcm_driver/android/component_jni_registrar.h"
 #include "components/navigation_interception/component_jni_registrar.h"
 #include "components/web_contents_delegate_android/component_jni_registrar.h"
 
@@ -81,6 +85,7 @@ namespace android {
 static base::android::RegistrationMethod kChromeRegisteredMethods[] = {
   // Register JNI for components we depend on.
   { "DomDistiller", dom_distiller::android::RegisterDomDistiller },
+  { "GCMDriver", gcm::android::RegisterGCMDriverJni },
   { "NavigationInterception",
     navigation_interception::RegisterNavigationInterceptionJni },
   { "WebContentsDelegateAndroid",
@@ -93,6 +98,7 @@ static base::android::RegistrationMethod kChromeRegisteredMethods[] = {
     AndroidProfileOAuth2TokenService::Register },
   { "AppBannerManager", banners::RegisterAppBannerManager },
   { "ApplicationLifetime", RegisterApplicationLifetimeAndroid },
+  { "AutocompleteControllerAndroid", RegisterAutocompleteControllerAndroid },
   { "AutofillDialogControllerAndroid",
     autofill::AutofillDialogControllerAndroid::
         RegisterAutofillDialogControllerAndroid },
@@ -139,6 +145,7 @@ static base::android::RegistrationMethod kChromeRegisteredMethods[] = {
   { "NewTabPagePrefs",
     NewTabPagePrefs::RegisterNewTabPagePrefs },
   { "OmniboxPrerender", RegisterOmniboxPrerender },
+  { "OmniboxViewUtil", OmniboxViewUtil::RegisterOmniboxViewUtil },
   { "PasswordAuthenticationManager",
     PasswordAuthenticationManager::RegisterPasswordAuthenticationManager },
   { "PasswordUIViewAndroid",
@@ -155,6 +162,7 @@ static base::android::RegistrationMethod kChromeRegisteredMethods[] = {
   { "SSLClientCertificateRequest", RegisterSSLClientCertificateRequestAndroid },
   { "StartupMetricUtils", RegisterStartupMetricUtils },
   { "TabAndroid", TabAndroid::RegisterTabAndroid },
+  { "TabModelBase", RegisterTabModelBase},
   { "TemplateUrlServiceAndroid", TemplateUrlServiceAndroid::Register },
   { "ToolbarModelAndroid", ToolbarModelAndroid::RegisterToolbarModelAndroid },
   { "TranslateInfoBarDelegate", RegisterTranslateInfoBarDelegate },

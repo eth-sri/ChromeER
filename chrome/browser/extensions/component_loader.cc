@@ -44,7 +44,7 @@
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chromeos/chromeos_switches.h"
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/storage_partition.h"
@@ -297,9 +297,7 @@ void ComponentLoader::AddVideoPlayerExtension() {
 
 void ComponentLoader::AddGalleryExtension() {
 #if defined(OS_CHROMEOS)
-  const CommandLine* const command_line = CommandLine::ForCurrentProcess();
-  if (command_line->HasSwitch(chromeos::switches::kFileManagerEnableNewGallery))
-    Add(IDR_GALLERY_MANIFEST, base::FilePath(FILE_PATH_LITERAL("gallery")));
+  Add(IDR_GALLERY_MANIFEST, base::FilePath(FILE_PATH_LITERAL("gallery")));
 #endif
 }
 
@@ -334,6 +332,11 @@ std::string ComponentLoader::AddChromeVoxExtension() {
   const CommandLine* command_line = CommandLine::ForCurrentProcess();
   int idr = command_line->HasSwitch(chromeos::switches::kGuestSession) ?
       IDR_CHROMEVOX_GUEST_MANIFEST : IDR_CHROMEVOX_MANIFEST;
+
+  // TODO(dtseng): Guest mode manifest for ChromeVox Next pending work to
+  // generate manifests.
+  if (command_line->HasSwitch(chromeos::switches::kEnableChromeVoxNext))
+    idr = IDR_CHROMEVOX2_MANIFEST;
   return Add(idr, base::FilePath(extension_misc::kChromeVoxExtensionPath));
 }
 
@@ -508,13 +511,8 @@ void ComponentLoader::AddDefaultComponentExtensionsWithBackgroundPages(
     }
 #endif  // defined(GOOGLE_CHROME_BUILD)
 
-    base::FilePath echo_extension_path(FILE_PATH_LITERAL(
-        "/usr/share/chromeos-assets/echo"));
-    if (command_line->HasSwitch(chromeos::switches::kEchoExtensionPath)) {
-      echo_extension_path = command_line->GetSwitchValuePath(
-          chromeos::switches::kEchoExtensionPath);
-    }
-    Add(IDR_ECHO_MANIFEST, echo_extension_path);
+    Add(IDR_ECHO_MANIFEST,
+        base::FilePath(FILE_PATH_LITERAL("/usr/share/chromeos-assets/echo")));
 
     if (!command_line->HasSwitch(chromeos::switches::kGuestSession)) {
       Add(IDR_WALLPAPERMANAGER_MANIFEST,
@@ -569,7 +567,8 @@ void ComponentLoader::AddDefaultComponentExtensionsWithBackgroundPages(
   AddNetworkSpeechSynthesisExtension();
 #endif
 
-  if (command_line->HasSwitch(switches::kEnableEasyUnlock)) {
+  if (!skip_session_components &&
+      command_line->HasSwitch(switches::kEnableEasyUnlock)) {
     if (command_line->HasSwitch(switches::kEasyUnlockAppPath)) {
       base::FilePath easy_unlock_path(
           command_line->GetSwitchValuePath(switches::kEasyUnlockAppPath));

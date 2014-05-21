@@ -14,8 +14,8 @@
 #include "chrome/browser/ui/sync/sync_promo_ui.h"
 #include "chrome/browser/ui/views/bookmarks/bookmark_bubble_view_observer.h"
 #include "chrome/browser/ui/views/bookmarks/bookmark_sync_promo_view.h"
-#include "components/bookmarks/core/browser/bookmark_model.h"
-#include "components/bookmarks/core/browser/bookmark_utils.h"
+#include "components/bookmarks/browser/bookmark_model.h"
+#include "components/bookmarks/browser/bookmark_utils.h"
 #include "content/public/browser/user_metrics.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
@@ -275,7 +275,6 @@ BookmarkBubbleView::BookmarkBubbleView(
       sync_promo_view_(NULL),
       remove_bookmark_(false),
       apply_edits_(true) {
-  set_move_with_anchor(true);
   set_margins(gfx::Insets(views::kPanelVertMargin, 0, 0, 0));
   // Compensate for built-in vertical padding in the anchor view's image.
   set_anchor_view_insets(gfx::Insets(2, 0, 2, 0));
@@ -293,7 +292,7 @@ base::string16 BookmarkBubbleView::GetTitle() {
   return base::string16();
 }
 
-gfx::Size BookmarkBubbleView::GetMinimumSize() {
+gfx::Size BookmarkBubbleView::GetMinimumSize() const {
   gfx::Size size(views::BubbleDelegateView::GetPreferredSize());
   size.SetToMax(gfx::Size(kMinBubbleWidth, 0));
   return size;

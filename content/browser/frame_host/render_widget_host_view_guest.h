@@ -53,7 +53,7 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
   virtual gfx::NativeViewId GetNativeViewId() const OVERRIDE;
   virtual gfx::NativeViewAccessible GetNativeViewAccessible() OVERRIDE;
   virtual gfx::Rect GetViewBounds() const OVERRIDE;
-  virtual void SetBackground(const SkBitmap& background) OVERRIDE;
+  virtual void SetBackgroundOpaque(bool opaque) OVERRIDE;
   virtual gfx::Size GetPhysicalBackingSize() const OVERRIDE;
   virtual base::string16 GetSelectedText() const OVERRIDE;
 
@@ -145,7 +145,7 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
 
   // Overridden from ui::GestureEventHelper.
   virtual bool CanDispatchToConsumer(ui::GestureConsumer* consumer) OVERRIDE;
-  virtual void DispatchPostponedGestureEvent(ui::GestureEvent* event) OVERRIDE;
+  virtual void DispatchGestureEvent(ui::GestureEvent* event) OVERRIDE;
   virtual void DispatchCancelTouchEvent(ui::TouchEvent* event) OVERRIDE;
 
   virtual SkBitmap::Config PreferredReadbackFormat() OVERRIDE;

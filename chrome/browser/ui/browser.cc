@@ -66,7 +66,6 @@
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_destroyer.h"
-#include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/profiles/profile_metrics.h"
 #include "chrome/browser/repost_form_warning_controller.h"
 #include "chrome/browser/search/search.h"
@@ -149,8 +148,8 @@
 #include "chrome/common/profiling.h"
 #include "chrome/common/search_types.h"
 #include "chrome/common/url_constants.h"
-#include "components/bookmarks/core/browser/bookmark_model.h"
-#include "components/bookmarks/core/browser/bookmark_utils.h"
+#include "components/bookmarks/browser/bookmark_model.h"
+#include "components/bookmarks/browser/bookmark_utils.h"
 #include "components/startup_metric_utils/startup_metric_utils.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "content/public/browser/devtools_manager.h"
@@ -169,7 +168,6 @@
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/page_zoom.h"
 #include "content/public/common/renderer_preferences.h"
@@ -348,8 +346,7 @@ Browser::Browser(const CreateParams& params)
       tab_restore_service_delegate_(new BrowserTabRestoreServiceDelegate(this)),
       synced_window_delegate_(new BrowserSyncedWindowDelegate(this)),
       bookmark_bar_state_(BookmarkBar::HIDDEN),
-      command_controller_(new chrome::BrowserCommandController(
-          this, g_browser_process->profile_manager())),
+      command_controller_(new chrome::BrowserCommandController(this)),
       window_has_shown_(false),
       chrome_updater_factory_(this),
       weak_factory_(this),
@@ -448,6 +445,11 @@ Browser::Browser(const CreateParams& params)
 }
 
 Browser::~Browser() {
+  // Stop observing notifications before continuing with destruction. Profile
+  // destruction will unload extensions and reentrant calls to Browser:: should
+  // be avoided while it is being torn down.
+  registrar_.RemoveAll();
+
   // The tab strip should not have any tabs at this point.
   DCHECK(tab_strip_model_->empty());
   tab_strip_model_->RemoveObserver(this);
@@ -880,7 +882,7 @@ void Browser::UpdateUIForNavigationInTab(WebContents* contents,
   ScheduleUIUpdate(contents, content::INVALIDATE_TYPE_URL);
 
   if (contents_is_selected)
-    contents->GetView()->SetInitialFocus();
+    contents->SetInitialFocus();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1618,7 +1620,6 @@ bool Browser::IsFullscreenForTabOrPending(
 void Browser::RegisterProtocolHandler(WebContents* web_contents,
                                       const std::string& protocol,
                                       const GURL& url,
-                                      const base::string16& title,
                                       bool user_gesture) {
   Profile* profile =
       Profile::FromBrowserContext(web_contents->GetBrowserContext());
@@ -1626,7 +1627,7 @@ void Browser::RegisterProtocolHandler(WebContents* web_contents,
     return;
 
   ProtocolHandler handler =
-      ProtocolHandler::CreateProtocolHandler(protocol, url, title);
+      ProtocolHandler::CreateProtocolHandler(protocol, url);
 
   ProtocolHandlerRegistry* registry =
       ProtocolHandlerRegistryFactory::GetForProfile(profile);
@@ -1717,12 +1718,11 @@ bool Browser::RequestPpapiBrokerPermission(
   return true;
 }
 
-gfx::Size Browser::GetSizeForNewRenderView(
-    const WebContents* web_contents) const {
+gfx::Size Browser::GetSizeForNewRenderView(WebContents* web_contents) const {
   // When navigating away from NTP with unpinned bookmark bar, the bookmark bar
   // would disappear on non-NTP pages, resulting in a bigger size for the new
   // render view.
-  gfx::Size size = web_contents->GetView()->GetContainerSize();
+  gfx::Size size = web_contents->GetContainerBounds().size();
   // Don't change render view size if bookmark bar is currently not detached,
   // or there's no pending entry, or navigating to a NTP page.
   if (size.IsEmpty() || bookmark_bar_state_ != BookmarkBar::DETACHED)
@@ -1822,7 +1822,7 @@ void Browser::SetWebContentsBlocked(content::WebContents* web_contents,
   }
   tab_strip_model_->SetTabBlocked(index, blocked);
   if (!blocked && tab_strip_model_->GetActiveWebContents() == web_contents)
-    web_contents->GetView()->Focus();
+    web_contents->Focus();
 }
 
 web_modal::WebContentsModalDialogHost*

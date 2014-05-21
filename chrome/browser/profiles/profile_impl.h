@@ -17,6 +17,7 @@
 #include "base/timer/timer.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_impl_io_data.h"
+#include "components/domain_reliability/clear_mode.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/host_zoom_map.h"
 
@@ -28,7 +29,9 @@ class SSLConfigServiceManager;
 
 #if defined(OS_CHROMEOS)
 namespace chromeos {
+class KioskTest;
 class LocaleChangeGuard;
+class ManagedUserTestBase;
 class Preferences;
 }
 #endif
@@ -99,6 +102,7 @@ class ProfileImpl : public Profile {
   virtual content::ResourceContext* GetResourceContext() OVERRIDE;
   virtual content::GeolocationPermissionContext*
       GetGeolocationPermissionContext() OVERRIDE;
+  virtual content::BrowserPluginGuestManager* GetGuestManager() OVERRIDE;
   virtual quota::SpecialStoragePolicy* GetSpecialStoragePolicy() OVERRIDE;
 
   // Profile implementation:
@@ -140,6 +144,9 @@ class ProfileImpl : public Profile {
   virtual void ClearNetworkingHistorySince(
       base::Time time,
       const base::Closure& completion) OVERRIDE;
+  virtual void ClearDomainReliabilityMonitor(
+      domain_reliability::DomainReliabilityClearMode mode,
+      const base::Closure& completion) OVERRIDE;
   virtual GURL GetHomePage() OVERRIDE;
   virtual bool WasCreatedByVersionOrLater(const std::string& version) OVERRIDE;
   virtual void SetExitType(ExitType exit_type) OVERRIDE;
@@ -155,6 +162,10 @@ class ProfileImpl : public Profile {
   virtual PrefProxyConfigTracker* GetProxyConfigTracker() OVERRIDE;
 
  private:
+#if defined(OS_CHROMEOS)
+  friend class chromeos::KioskTest;
+  friend class chromeos::ManagedUserTestBase;
+#endif
   friend class Profile;
   friend class BetterSessionRestoreCrashTest;
   FRIEND_TEST_ALL_PREFIXES(StartupBrowserCreatorTest,

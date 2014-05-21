@@ -53,7 +53,6 @@ void PictureLayer::PushPropertiesTo(LayerImpl* base_layer) {
   }
 
   layer_impl->SetIsMask(is_mask_);
-  layer_impl->SetUseGpuRasterization(ShouldUseGpuRasterization());
 
   // Unlike other properties, invalidation must always be set on layer_impl.
   // See PictureLayerImpl::PushPropertiesTo for more details.
@@ -124,6 +123,7 @@ bool PictureLayer::Update(ResourceUpdateQueue* queue,
                            pile_invalidation_,
                            visible_layer_rect,
                            update_source_frame_number_,
+                           RecordingMode(),
                            rendering_stats_instrumentation());
   last_updated_visible_content_rect_ = visible_content_rect();
 
@@ -142,15 +142,15 @@ void PictureLayer::SetIsMask(bool is_mask) {
   is_mask_ = is_mask;
 }
 
-bool PictureLayer::ShouldUseGpuRasterization() const {
-  if (layer_tree_host()->settings().gpu_rasterization_forced) {
-    return true;
-  } else if (layer_tree_host()->settings().gpu_rasterization_enabled) {
-    return layer_tree_host()->has_gpu_rasterization_trigger() &&
-           pile_->is_suitable_for_gpu_rasterization();
-  } else {
-    return false;
+Picture::RecordingMode PictureLayer::RecordingMode() const {
+  switch (layer_tree_host()->settings().recording_mode) {
+    case LayerTreeSettings::RecordNormally:
+      return Picture::RECORD_NORMALLY;
+    case LayerTreeSettings::RecordWithSkRecord:
+      return Picture::RECORD_WITH_SKRECORD;
   }
+  NOTREACHED();
+  return Picture::RECORD_NORMALLY;
 }
 
 bool PictureLayer::SupportsLCDText() const {
@@ -170,9 +170,16 @@ skia::RefPtr<SkPicture> PictureLayer::GetPicture() const {
 
   SkPictureRecorder recorder;
   SkCanvas* canvas = recorder.beginRecording(width, height, NULL, 0);
-  client_->PaintContents(canvas, gfx::Rect(width, height), &opaque);
+  client_->PaintContents(canvas,
+                         gfx::Rect(width, height),
+                         &opaque,
+                         ContentLayerClient::GRAPHICS_CONTEXT_ENABLED);
   skia::RefPtr<SkPicture> picture = skia::AdoptRef(recorder.endRecording());
   return picture;
+}
+
+bool PictureLayer::IsSuitableForGpuRasterization() const {
+  return pile_->is_suitable_for_gpu_rasterization();
 }
 
 void PictureLayer::RunMicroBenchmark(MicroBenchmark* benchmark) {

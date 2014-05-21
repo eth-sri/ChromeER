@@ -27,7 +27,6 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/cancelable_task_tracker.h"
-#include "base/threading/worker_pool.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browsing_data/browsing_data_helper.h"
@@ -80,8 +79,8 @@
 #include "ui/base/resource/resource_bundle.h"
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/login/user.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/net/onc_utils.h"
 #include "chrome/browser/chromeos/system/syslogs_provider.h"
 #include "chrome/browser/net/nss_context.h"
@@ -209,48 +208,6 @@ content::WebUIDataSource* CreateNetInternalsHTMLSource() {
 }
 
 #if defined(OS_CHROMEOS)
-// Small helper class used to create temporary log file and pass its
-// handle and error status to callback.
-// Use case:
-// DebugLogFileHelper* helper = new DebugLogFileHelper();
-// base::WorkerPool::PostTaskAndReply(FROM_HERE,
-//     base::Bind(&DebugLogFileHelper::DoWork, base::Unretained(helper), ...),
-//     base::Bind(&DebugLogFileHelper::Reply, base::Owned(helper), ...),
-//     false);
-class DebugLogFileHelper {
- public:
-  typedef base::Callback<void(base::File file,
-                              const base::FilePath& file_path)>
-      DebugLogFileCallback;
-
-  DebugLogFileHelper() {}
-
-  ~DebugLogFileHelper() {}
-
-  void DoWork(const base::FilePath& fileshelf) {
-    const base::FilePath::CharType kLogFileName[] =
-        FILE_PATH_LITERAL("debug-log.tgz");
-
-    file_path_ = fileshelf.Append(kLogFileName);
-    file_path_ = logging::GenerateTimestampedName(file_path_,
-                                                  base::Time::Now());
-
-    int flags =  base::File::FLAG_CREATE_ALWAYS | base::File::FLAG_WRITE;
-    file_.Initialize(file_path_, flags);
-  }
-
-  void Reply(const DebugLogFileCallback& callback) {
-    DCHECK(!callback.is_null());
-    callback.Run(file_.Pass(), file_path_);
-  }
-
- private:
-  base::File file_;
-  base::FilePath file_path_;
-
-  DISALLOW_COPY_AND_ASSIGN(DebugLogFileHelper);
-};
-
 // Following functions are used for getting debug logs. Logs are
 // fetched from /var/log/* and put on the fileshelf.
 
@@ -260,56 +217,39 @@ class DebugLogFileHelper {
 typedef base::Callback<void(const base::FilePath& log_path,
                             bool succeded)> StoreDebugLogsCallback;
 
-// Closes file handle, so, should be called on the WorkerPool thread.
-void CloseDebugLogFile(base::File file) {
-  file.Close();
-}
-
-// Closes file handle and deletes debug log file, so, should be called
-// on the WorkerPool thread.
-void CloseAndDeleteDebugLogFile(base::File file,
-                                const base::FilePath& file_path) {
-  file.Close();
-  base::DeleteFile(file_path, false);
-}
-
 // Called upon completion of |WriteDebugLogToFile|. Closes file
 // descriptor, deletes log file in the case of failure and calls
 // |callback|.
 void WriteDebugLogToFileCompleted(const StoreDebugLogsCallback& callback,
-                                  base::File file,
                                   const base::FilePath& file_path,
                                   bool succeeded) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   if (!succeeded) {
-    bool posted = base::WorkerPool::PostTaskAndReply(FROM_HERE,
-        base::Bind(&CloseAndDeleteDebugLogFile, Passed(&file), file_path),
-        base::Bind(callback, file_path, false), false);
+    bool posted = BrowserThread::PostBlockingPoolTaskAndReply(
+        FROM_HERE,
+        base::Bind(base::IgnoreResult(&base::DeleteFile), file_path, false),
+        base::Bind(callback, file_path, false));
     DCHECK(posted);
     return;
   }
-  bool posted = base::WorkerPool::PostTaskAndReply(FROM_HERE,
-      base::Bind(&CloseDebugLogFile, Passed(&file)),
-      base::Bind(callback, file_path, true), false);
-  DCHECK(posted);
+  callback.Run(file_path, true);
 }
 
 // Stores into |file_path| debug logs in the .tgz format. Calls
 // |callback| upon completion.
 void WriteDebugLogToFile(const StoreDebugLogsCallback& callback,
-                         base::File file,
+                         base::File* file,
                          const base::FilePath& file_path) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  if (!file.IsValid()) {
+  if (!file->IsValid()) {
     LOG(ERROR) <<
         "Can't create debug log file: " << file_path.AsUTF8Unsafe() << ", " <<
-        "error: " << file.error_details();
+        "error: " << file->error_details();
     return;
   }
   chromeos::DBusThreadManager::Get()->GetDebugDaemonClient()->GetDebugLogs(
-      file.GetPlatformFile(),
-      base::Bind(&WriteDebugLogToFileCompleted,
-                 callback, Passed(&file), file_path));
+      file->Pass(),
+      base::Bind(&WriteDebugLogToFileCompleted, callback, file_path));
 }
 
 // Stores debug logs in the .tgz archive on the |fileshelf|. The file
@@ -320,12 +260,20 @@ void StoreDebugLogs(const base::FilePath& fileshelf,
                     const StoreDebugLogsCallback& callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(!callback.is_null());
-  DebugLogFileHelper* helper = new DebugLogFileHelper();
-  bool posted = base::WorkerPool::PostTaskAndReply(FROM_HERE,
-      base::Bind(&DebugLogFileHelper::DoWork,
-          base::Unretained(helper), fileshelf),
-      base::Bind(&DebugLogFileHelper::Reply, base::Owned(helper),
-          base::Bind(&WriteDebugLogToFile, callback)), false);
+
+  const base::FilePath::CharType kLogFileName[] =
+      FILE_PATH_LITERAL("debug-log.tgz");
+
+  base::FilePath file_path = fileshelf.Append(kLogFileName);
+  file_path = logging::GenerateTimestampedName(file_path, base::Time::Now());
+
+  int flags =  base::File::FLAG_CREATE_ALWAYS | base::File::FLAG_WRITE;
+  base::File* file = new base::File;
+  bool posted = BrowserThread::PostBlockingPoolTaskAndReply(
+      FROM_HERE,
+      base::Bind(&base::File::Initialize,
+                 base::Unretained(file), file_path, flags),
+      base::Bind(&WriteDebugLogToFile, callback, base::Owned(file), file_path));
   DCHECK(posted);
 }
 #endif  // defined(OS_CHROMEOS)
@@ -1201,7 +1149,7 @@ void NetInternalsMessageHandler::IOThreadImpl::OnHSTSQuery(
   CHECK(list->GetString(0, &domain));
   base::DictionaryValue* result = new base::DictionaryValue();
 
-  if (!IsStringASCII(domain)) {
+  if (!base::IsStringASCII(domain)) {
     result->SetString("error", "non-ASCII domain name");
   } else {
     net::TransportSecurityState* transport_security_state =
@@ -1209,26 +1157,62 @@ void NetInternalsMessageHandler::IOThreadImpl::OnHSTSQuery(
     if (!transport_security_state) {
       result->SetString("error", "no TransportSecurityState active");
     } else {
-      net::TransportSecurityState::DomainState state;
-      const bool found = transport_security_state->GetDomainState(
-          domain, true, &state);
-
-      result->SetBoolean("result", found);
-      if (found) {
-        result->SetInteger("mode", static_cast<int>(state.upgrade_mode));
-        result->SetBoolean("sts_subdomains", state.sts_include_subdomains);
-        result->SetBoolean("pkp_subdomains", state.pkp_include_subdomains);
-        result->SetDouble("sts_observed", state.sts_observed.ToDoubleT());
-        result->SetDouble("pkp_observed", state.pkp_observed.ToDoubleT());
-        result->SetString("domain", state.domain);
-        result->SetDouble("expiry", state.upgrade_expiry.ToDoubleT());
-        result->SetDouble("dynamic_spki_hashes_expiry",
-                          state.dynamic_spki_hashes_expiry.ToDoubleT());
-
+      net::TransportSecurityState::DomainState static_state;
+      const bool found_static = transport_security_state->GetStaticDomainState(
+          domain, true, &static_state);
+      if (found_static) {
+        result->SetBoolean("has_static_sts",
+                           found_static && static_state.ShouldUpgradeToSSL());
+        result->SetInteger("static_upgrade_mode",
+                           static_cast<int>(static_state.sts.upgrade_mode));
+        result->SetBoolean("static_sts_include_subdomains",
+                           static_state.sts.include_subdomains);
+        result->SetDouble("static_sts_observed",
+                          static_state.sts.last_observed.ToDoubleT());
+        result->SetDouble("static_sts_expiry",
+                          static_state.sts.expiry.ToDoubleT());
+        result->SetBoolean("has_static_pkp",
+                           found_static && static_state.HasPublicKeyPins());
+        result->SetBoolean("static_pkp_include_subdomains",
+                           static_state.pkp.include_subdomains);
+        result->SetDouble("static_pkp_observed",
+                          static_state.pkp.last_observed.ToDoubleT());
+        result->SetDouble("static_pkp_expiry",
+                          static_state.pkp.expiry.ToDoubleT());
         result->SetString("static_spki_hashes",
-                          HashesToBase64String(state.static_spki_hashes));
+                          HashesToBase64String(static_state.pkp.spki_hashes));
+      }
+
+      net::TransportSecurityState::DomainState dynamic_state;
+      const bool found_dynamic =
+          transport_security_state->GetDynamicDomainState(domain,
+                                                          &dynamic_state);
+      if (found_dynamic) {
+        result->SetInteger("dynamic_upgrade_mode",
+                           static_cast<int>(dynamic_state.sts.upgrade_mode));
+        result->SetBoolean("dynamic_sts_include_subdomains",
+                           dynamic_state.sts.include_subdomains);
+        result->SetBoolean("dynamic_pkp_include_subdomains",
+                           dynamic_state.pkp.include_subdomains);
+        result->SetDouble("dynamic_sts_observed",
+                          dynamic_state.sts.last_observed.ToDoubleT());
+        result->SetDouble("dynamic_pkp_observed",
+                          dynamic_state.pkp.last_observed.ToDoubleT());
+        result->SetDouble("dynamic_sts_expiry",
+                          dynamic_state.sts.expiry.ToDoubleT());
+        result->SetDouble("dynamic_pkp_expiry",
+                          dynamic_state.pkp.expiry.ToDoubleT());
         result->SetString("dynamic_spki_hashes",
-                          HashesToBase64String(state.dynamic_spki_hashes));
+                          HashesToBase64String(dynamic_state.pkp.spki_hashes));
+      }
+
+      result->SetBoolean("result", found_static || found_dynamic);
+      if (found_static) {
+        result->SetString("domain", static_state.domain);
+      } else if (found_dynamic) {
+        result->SetString("domain", dynamic_state.domain);
+      } else {
+        result->SetString("domain", domain);
       }
     }
   }
@@ -1242,7 +1226,7 @@ void NetInternalsMessageHandler::IOThreadImpl::OnHSTSAdd(
   // include subdomains>, <key pins>].
   std::string domain;
   CHECK(list->GetString(0, &domain));
-  if (!IsStringASCII(domain)) {
+  if (!base::IsStringASCII(domain)) {
     // Silently fail. The user will get a helpful error if they query for the
     // name.
     return;
@@ -1276,7 +1260,7 @@ void NetInternalsMessageHandler::IOThreadImpl::OnHSTSDelete(
   // |list| should be: [<domain to query>].
   std::string domain;
   CHECK(list->GetString(0, &domain));
-  if (!IsStringASCII(domain)) {
+  if (!base::IsStringASCII(domain)) {
     // There cannot be a unicode entry in the HSTS set.
     return;
   }

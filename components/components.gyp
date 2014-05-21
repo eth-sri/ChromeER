@@ -20,8 +20,11 @@
     'data_reduction_proxy.gypi',
     'dom_distiller.gypi',
     'domain_reliability.gypi',
+    'enhanced_bookmarks.gypi',
     'favicon.gypi',
     'favicon_base.gypi',
+    'feedback.gypi',  # crbug.com/368738
+    'google.gypi',
     'infobars.gypi',
     'json_schema.gypi',
     'keyed_service.gypi',
@@ -33,6 +36,7 @@
     'password_manager.gypi',
     'policy.gypi',
     'precache.gypi',
+    'pref_registry.gypi',
     'query_parser.gypi',
     'rappor.gypi',
     'search_provider_logos.gypi',
@@ -47,6 +51,7 @@
   'conditions': [
     ['OS != "ios"', {
       'includes': [
+        'cdm.gypi',
         'navigation_interception.gypi',
         'plugins.gypi',
         'sessions.gypi',
@@ -67,10 +72,12 @@
       ]
     }],
     ['android_webview_build == 0', {
-      # Android WebView fails to build if a dependency on sync.gyp:sync is
+      # Android WebView fails to build if a dependency on these targets is
       # introduced.
       'includes': [
+        'gcm_driver.gypi',
         'sync_driver.gypi',
+        'invalidation.gypi',
       ],
     }],
   ],

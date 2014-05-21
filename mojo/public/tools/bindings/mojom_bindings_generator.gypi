@@ -23,6 +23,8 @@
         '<(DEPTH)/mojo/public/tools/bindings/generators/cpp_templates/interface_definition.tmpl',
         '<(DEPTH)/mojo/public/tools/bindings/generators/cpp_templates/interface_macros.tmpl',
         '<(DEPTH)/mojo/public/tools/bindings/generators/cpp_templates/interface_proxy_declaration.tmpl',
+        '<(DEPTH)/mojo/public/tools/bindings/generators/cpp_templates/interface_request_validator_declaration.tmpl',
+        '<(DEPTH)/mojo/public/tools/bindings/generators/cpp_templates/interface_response_validator_declaration.tmpl',
         '<(DEPTH)/mojo/public/tools/bindings/generators/cpp_templates/interface_stub_declaration.tmpl',
         '<(DEPTH)/mojo/public/tools/bindings/generators/cpp_templates/module.cc.tmpl',
         '<(DEPTH)/mojo/public/tools/bindings/generators/cpp_templates/module.h.tmpl',
@@ -62,7 +64,7 @@
       ],
       'action': [
         'python', '<@(mojom_bindings_generator)',
-        '<(RULE_INPUT_DIRNAME)/<(RULE_INPUT_ROOT).mojom',
+        './<(RULE_INPUT_DIRNAME)/<(RULE_INPUT_ROOT).mojom',
         '--use_chromium_bundled_pylibs',
         '-d', '<(DEPTH)',
         '-o', '<(SHARED_INTERMEDIATE_DIR)/<(mojom_base_output_dir)/<(RULE_INPUT_DIRNAME)',

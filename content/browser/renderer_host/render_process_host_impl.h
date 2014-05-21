@@ -14,16 +14,13 @@
 #include "base/process/process.h"
 #include "base/timer/timer.h"
 #include "content/browser/child_process_launcher.h"
-#include "content/browser/geolocation/geolocation_dispatcher_host.h"
 #include "content/browser/power_monitor_message_broadcaster.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/gpu_data_manager_observer.h"
 #include "content/public/browser/render_process_host.h"
 #include "ipc/ipc_channel_proxy.h"
 #include "ipc/ipc_platform_file.h"
-#include "mojo/embedder/scoped_platform_handle.h"
-#include "mojo/public/cpp/bindings/remote_ptr.h"
-#include "mojo/public/interfaces/shell/shell.mojom.h"
+#include "mojo/public/cpp/bindings/interface_ptr.h"
 
 struct ViewHostMsg_CompositorSurfaceBuffersSwapped_Params;
 
@@ -39,7 +36,6 @@ class Size;
 namespace content {
 class AudioRendererHost;
 class BrowserDemuxerAndroid;
-class GeolocationDispatcherHost;
 class GpuMessageFilter;
 class MessagePortMessageFilter;
 class MojoApplicationHost;
@@ -142,6 +138,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
   virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
   virtual void OnChannelConnected(int32 peer_pid) OVERRIDE;
   virtual void OnChannelError() OVERRIDE;
+  virtual void OnBadMessageReceived(const IPC::Message& message) OVERRIDE;
 
   // ChildProcessLauncher::Client implementation.
   virtual void OnProcessLaunched() OVERRIDE;
@@ -164,11 +161,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
       int route_id,
       scoped_ptr<RenderWidgetHostViewFrameSubscriber> subscriber);
   void EndFrameSubscription(int route_id);
-
-  scoped_refptr<GeolocationDispatcherHost>
-      geolocation_dispatcher_host() const {
-    return make_scoped_refptr(geolocation_dispatcher_host_);
-  }
 
 #if defined(ENABLE_WEBRTC)
   // Fires the webrtc log message callback with |message|, if callback is set.
@@ -244,6 +236,14 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // content/common/mojo/mojo_service_names.h for a list of services.
   void ConnectTo(const base::StringPiece& service_name,
                  mojo::ScopedMessagePipeHandle handle);
+
+  template <typename Interface>
+  void ConnectTo(const base::StringPiece& service_name,
+                 mojo::InterfacePtr<Interface>* ptr) {
+    mojo::MessagePipe pipe;
+    ptr->Bind(pipe.handle0.Pass());
+    ConnectTo(service_name, pipe.handle1.Pass());
+  }
 
  protected:
   // A proxy for our IPC::Channel that lives on the IO thread (see
@@ -410,9 +410,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
 #if defined(OS_ANDROID)
   scoped_refptr<BrowserDemuxerAndroid> browser_demuxer_android_;
 #endif
-
-  // Message filter for geolocation messages.
-  GeolocationDispatcherHost* geolocation_dispatcher_host_;
 
 #if defined(ENABLE_WEBRTC)
   base::Callback<void(const std::string&)> webrtc_log_message_callback_;

@@ -6,6 +6,7 @@
 
 #include <string>
 
+#include "base/bind_helpers.h"
 #include "base/lazy_instance.h"
 #include "base/memory/ref_counted.h"
 #include "chrome/browser/extensions/api/bluetooth/bluetooth_api_utils.h"
@@ -295,9 +296,8 @@ bool BluetoothGetDeviceFunction::DoWork(
 
   scoped_ptr<GetDevice::Params> params(GetDevice::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get() != NULL);
-  const std::string& device_address = params->device_address;
 
-  BluetoothDevice* device = adapter->GetDevice(device_address);
+  BluetoothDevice* device = adapter->GetDevice(params->device_address);
   if (device) {
     bluetooth::Device extension_device;
     bluetooth::BluetoothDeviceToApiDevice(*device, &extension_device);
@@ -315,7 +315,7 @@ BluetoothAddProfileFunction::BluetoothAddProfileFunction() {}
 
 BluetoothAddProfileFunction::~BluetoothAddProfileFunction() {}
 
-bool BluetoothAddProfileFunction::RunImpl() {
+bool BluetoothAddProfileFunction::RunAsync() {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
   scoped_ptr<AddProfile::Params> params(AddProfile::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get() != NULL);
@@ -457,13 +457,36 @@ bool BluetoothConnectFunction::DoWork(scoped_refptr<BluetoothAdapter> adapter) {
 
   device->ConnectToProfile(
       bluetooth_profile,
-      base::Bind(&BluetoothConnectFunction::OnSuccessCallback, this),
+      base::Bind(&BluetoothConnectFunction::OnConnectedCallback,
+                 this,
+                 adapter,
+                 device->GetAddress()),
       base::Bind(&BluetoothConnectFunction::OnErrorCallback, this));
 
   return true;
 }
 
-void BluetoothConnectFunction::OnSuccessCallback() {
+void BluetoothConnectFunction::OnConnectedCallback(
+    scoped_refptr<device::BluetoothAdapter> adapter,
+    const std::string& device_address) {
+  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+
+  // TODO(tengs): Remove this once we have an API for starting the connection
+  // monitor.
+  BluetoothDevice* device = adapter->GetDevice(device_address);
+  if (!device) {
+    SetError(kInvalidDevice);
+    SendResponse(false);
+    return;
+  }
+  // Start the connection monitor, and return success even if this fails,
+  // as the connection was still opened successfully.
+  device->StartConnectionMonitor(
+      base::Bind(&BluetoothConnectFunction::OnMonitorStartedCallback, this),
+      base::Bind(&BluetoothConnectFunction::OnMonitorStartedCallback, this));
+}
+
+void BluetoothConnectFunction::OnMonitorStartedCallback() {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
   SendResponse(true);
 }
@@ -474,37 +497,37 @@ void BluetoothConnectFunction::OnErrorCallback(const std::string& error) {
   SendResponse(false);
 }
 
-bool BluetoothDisconnectFunction::RunImpl() {
+bool BluetoothDisconnectFunction::RunAsync() {
   // TODO(keybuk): Remove.
   SetError("Removed. Use chrome.bluetoothSocket.disconnect() instead.");
   return false;
 }
 
-bool BluetoothSendFunction::RunImpl() {
+bool BluetoothSendFunction::RunAsync() {
   // TODO(keybuk): Remove.
   SetError("Removed. Use chrome.bluetoothSocket.send() instead.");
   return false;
 }
 
-bool BluetoothUpdateSocketFunction::RunImpl() {
+bool BluetoothUpdateSocketFunction::RunAsync() {
   // TODO(keybuk): Remove.
   SetError("Removed. Use chrome.bluetoothSocket.update() instead.");
   return false;
 }
 
-bool BluetoothSetSocketPausedFunction::RunImpl() {
+bool BluetoothSetSocketPausedFunction::RunAsync() {
   // TODO(keybuk): Remove.
   SetError("Removed. Use chrome.bluetoothSocket.setPaused() instead.");
   return false;
 }
 
-bool BluetoothGetSocketFunction::RunImpl() {
+bool BluetoothGetSocketFunction::RunAsync() {
   // TODO(keybuk): Remove.
   SetError("Removed. Use chrome.bluetoothSocket.getInfo() instead.");
   return false;
 }
 
-bool BluetoothGetSocketsFunction::RunImpl() {
+bool BluetoothGetSocketsFunction::RunAsync() {
   // TODO(keybuk): Remove.
   SetError("Removed. Use chrome.bluetoothSocket.getSockets() instead.");
   return false;

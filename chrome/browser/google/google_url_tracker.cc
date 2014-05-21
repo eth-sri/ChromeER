@@ -17,6 +17,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
+#include "components/google/core/browser/google_url_tracker_client.h"
 #include "components/infobars/core/infobar.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
@@ -34,12 +35,15 @@ const char GoogleURLTracker::kSearchDomainCheckURL[] =
 
 GoogleURLTracker::GoogleURLTracker(
     Profile* profile,
+    scoped_ptr<GoogleURLTrackerClient> client,
     scoped_ptr<GoogleURLTrackerNavigationHelper> nav_helper,
     Mode mode)
     : profile_(profile),
+      client_(client.Pass()),
       nav_helper_(nav_helper.Pass()),
       infobar_creator_(base::Bind(&GoogleURLTrackerInfoBarDelegate::Create)),
-      google_url_(mode == UNIT_TEST_MODE ? kDefaultGoogleHomepage :
+      google_url_(mode == UNIT_TEST_MODE ?
+          kDefaultGoogleHomepage :
           profile->GetPrefs()->GetString(prefs::kLastKnownGoogleURL)),
       fetcher_id_(0),
       in_startup_sleep_(true),
@@ -49,6 +53,7 @@ GoogleURLTracker::GoogleURLTracker(
       search_committed_(false),
       weak_ptr_factory_(this) {
   net::NetworkChangeNotifier::AddIPAddressObserver(this);
+  client_->set_google_url_tracker(this);
   nav_helper_->SetGoogleURLTracker(this);
 
   // Because this function can be called during startup, when kicking off a URL
@@ -102,15 +107,13 @@ void GoogleURLTracker::GoogleURLSearchCommitted(Profile* profile) {
 }
 
 void GoogleURLTracker::AcceptGoogleURL(bool redo_searches) {
-  UpdatedDetails urls(google_url_, fetched_google_url_);
+  GURL old_google_url = google_url_;
   google_url_ = fetched_google_url_;
   PrefService* prefs = profile_->GetPrefs();
   prefs->SetString(prefs::kLastKnownGoogleURL, google_url_.spec());
   prefs->SetString(prefs::kLastPromptedGoogleURL, google_url_.spec());
-  content::NotificationService::current()->Notify(
-      chrome::NOTIFICATION_GOOGLE_URL_UPDATED,
-      content::Source<Profile>(profile_),
-      content::Details<UpdatedDetails>(&urls));
+  NotifyGoogleURLUpdated(old_google_url, google_url_);
+
   need_to_prompt_ = false;
   CloseAllEntries(redo_searches);
 }
@@ -201,6 +204,7 @@ void GoogleURLTracker::OnIPAddressChanged() {
 }
 
 void GoogleURLTracker::Shutdown() {
+  client_.reset();
   nav_helper_.reset();
   fetcher_.reset();
   weak_ptr_factory_.InvalidateWeakPtrs();
@@ -271,8 +275,8 @@ void GoogleURLTracker::SearchCommitted() {
     search_committed_ = true;
     // These notifications will fire a bit later in the same call chain we're
     // currently in.
-    if (!nav_helper_->IsListeningForNavigationStart())
-      nav_helper_->SetListeningForNavigationStart(true);
+    if (!client_->IsListeningForNavigationStart())
+      client_->SetListeningForNavigationStart(true);
   }
 }
 
@@ -374,6 +378,11 @@ void GoogleURLTracker::OnTabClosed(
   NOTREACHED();
 }
 
+scoped_ptr<GoogleURLTracker::Subscription> GoogleURLTracker::RegisterCallback(
+    const OnGoogleURLUpdatedCallback& cb) {
+  return callback_list_.Add(cb);
+}
+
 void GoogleURLTracker::CloseAllEntries(bool redo_searches) {
   // Delete all entries, whether they have infobars or not.
   while (!entry_map_.empty())
@@ -412,12 +421,16 @@ void GoogleURLTracker::UnregisterForEntrySpecificNotifications(
        ++i) {
     if (nav_helper_->IsListeningForNavigationCommit(
             i->second->navigation_controller())) {
-      DCHECK(nav_helper_->IsListeningForNavigationStart());
+      DCHECK(client_->IsListeningForNavigationStart());
       return;
     }
   }
-  if (nav_helper_->IsListeningForNavigationStart()) {
+  if (client_->IsListeningForNavigationStart()) {
     DCHECK(!search_committed_);
-    nav_helper_->SetListeningForNavigationStart(false);
+    client_->SetListeningForNavigationStart(false);
   }
+}
+
+void GoogleURLTracker::NotifyGoogleURLUpdated(GURL old_url, GURL new_url) {
+  callback_list_.Notify(old_url, new_url);
 }

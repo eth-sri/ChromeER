@@ -111,10 +111,8 @@ class TypeConverter<AutocompleteResultsForProviderMojo, AutocompleteProvider*> {
 
 }  // namespace mojo
 
-OmniboxUIHandler::OmniboxUIHandler(ScopedOmniboxPageHandle handle,
-                                   Profile* profile)
-    : page_(handle.Pass(), this),
-      profile_(profile) {
+OmniboxUIHandler::OmniboxUIHandler(Profile* profile)
+    : profile_(profile) {
   ResetController();
 }
 
@@ -146,7 +144,7 @@ void OmniboxUIHandler::OnResultChanged(bool default_match_changed) {
   builder.set_results_by_provider(
       mojo::Array<AutocompleteResultsForProviderMojo>::From(
           *controller_->providers()));
-  page_->HandleNewAutocompleteResult(builder.Finish());
+  client()->HandleNewAutocompleteResult(builder.Finish());
 }
 
 bool OmniboxUIHandler::LookupIsTypedHost(const base::string16& host,

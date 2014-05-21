@@ -39,7 +39,7 @@ TEST(DrawQuadTest, CopySharedQuadState) {
   float opacity = 0.25f;
   SkXfermode::Mode blend_mode = SkXfermode::kMultiply_Mode;
 
-  scoped_ptr<SharedQuadState> state(SharedQuadState::Create());
+  scoped_ptr<SharedQuadState> state(new SharedQuadState);
   state->SetAll(quad_transform,
                 content_bounds,
                 visible_content_rect,
@@ -48,7 +48,8 @@ TEST(DrawQuadTest, CopySharedQuadState) {
                 opacity,
                 blend_mode);
 
-  scoped_ptr<SharedQuadState> copy(state->Copy());
+  scoped_ptr<SharedQuadState> copy(new SharedQuadState);
+  copy->CopyFrom(state.get());
   EXPECT_EQ(quad_transform, copy->content_to_target_transform);
   EXPECT_RECT_EQ(visible_content_rect, copy->visible_content_rect);
   EXPECT_EQ(opacity, copy->opacity);
@@ -66,7 +67,7 @@ scoped_ptr<SharedQuadState> CreateSharedQuadState() {
   float opacity = 1.f;
   SkXfermode::Mode blend_mode = SkXfermode::kSrcOver_Mode;
 
-  scoped_ptr<SharedQuadState> state(SharedQuadState::Create());
+  scoped_ptr<SharedQuadState> state(new SharedQuadState);
   state->SetAll(quad_transform,
                 content_bounds,
                 visible_content_rect,
@@ -88,9 +89,10 @@ void CompareDrawQuad(DrawQuad* quad,
   EXPECT_EQ(copy_shared_state, copy->shared_quad_state);
 }
 
-#define CREATE_SHARED_STATE() \
-    scoped_ptr<SharedQuadState> shared_state(CreateSharedQuadState()); \
-    scoped_ptr<SharedQuadState> copy_shared_state(shared_state->Copy()); \
+#define CREATE_SHARED_STATE()                                         \
+  scoped_ptr<SharedQuadState> shared_state(CreateSharedQuadState());  \
+  scoped_ptr<SharedQuadState> copy_shared_state(new SharedQuadState); \
+  copy_shared_state->CopyFrom(shared_state.get());
 
 #define QUAD_DATA \
     gfx::Rect quad_rect(30, 40, 50, 60); \
@@ -594,16 +596,18 @@ TEST(DrawQuadTest, CopyYUVVideoDrawQuad) {
   ResourceProvider::ResourceId u_plane_resource_id = 532;
   ResourceProvider::ResourceId v_plane_resource_id = 4;
   ResourceProvider::ResourceId a_plane_resource_id = 63;
+  YUVVideoDrawQuad::ColorSpace color_space = YUVVideoDrawQuad::REC_601_JPEG;
   CREATE_SHARED_STATE();
 
-  CREATE_QUAD_7_NEW(YUVVideoDrawQuad,
+  CREATE_QUAD_8_NEW(YUVVideoDrawQuad,
                     opaque_rect,
                     visible_rect,
                     tex_coord_rect,
                     y_plane_resource_id,
                     u_plane_resource_id,
                     v_plane_resource_id,
-                    a_plane_resource_id);
+                    a_plane_resource_id,
+                    color_space);
   EXPECT_EQ(DrawQuad::YUV_VIDEO_CONTENT, copy_quad->material);
   EXPECT_RECT_EQ(opaque_rect, copy_quad->opaque_rect);
   EXPECT_RECT_EQ(visible_rect, copy_quad->visible_rect);
@@ -612,19 +616,22 @@ TEST(DrawQuadTest, CopyYUVVideoDrawQuad) {
   EXPECT_EQ(u_plane_resource_id, copy_quad->u_plane_resource_id);
   EXPECT_EQ(v_plane_resource_id, copy_quad->v_plane_resource_id);
   EXPECT_EQ(a_plane_resource_id, copy_quad->a_plane_resource_id);
+  EXPECT_EQ(color_space, copy_quad->color_space);
 
-  CREATE_QUAD_5_ALL(YUVVideoDrawQuad,
+  CREATE_QUAD_6_ALL(YUVVideoDrawQuad,
                     tex_coord_rect,
                     y_plane_resource_id,
                     u_plane_resource_id,
                     v_plane_resource_id,
-                    a_plane_resource_id);
+                    a_plane_resource_id,
+                    color_space);
   EXPECT_EQ(DrawQuad::YUV_VIDEO_CONTENT, copy_quad->material);
   EXPECT_EQ(tex_coord_rect, copy_quad->tex_coord_rect);
   EXPECT_EQ(y_plane_resource_id, copy_quad->y_plane_resource_id);
   EXPECT_EQ(u_plane_resource_id, copy_quad->u_plane_resource_id);
   EXPECT_EQ(v_plane_resource_id, copy_quad->v_plane_resource_id);
   EXPECT_EQ(a_plane_resource_id, copy_quad->a_plane_resource_id);
+  EXPECT_EQ(color_space, copy_quad->color_space);
 }
 
 TEST(DrawQuadTest, CopyPictureDrawQuad) {
@@ -853,21 +860,24 @@ TEST_F(DrawQuadIteratorTest, YUVVideoDrawQuad) {
   ResourceProvider::ResourceId u_plane_resource_id = 532;
   ResourceProvider::ResourceId v_plane_resource_id = 4;
   ResourceProvider::ResourceId a_plane_resource_id = 63;
+  YUVVideoDrawQuad::ColorSpace color_space = YUVVideoDrawQuad::REC_601_JPEG;
 
   CREATE_SHARED_STATE();
-  CREATE_QUAD_7_NEW(YUVVideoDrawQuad,
+  CREATE_QUAD_8_NEW(YUVVideoDrawQuad,
                     opaque_rect,
                     visible_rect,
                     tex_coord_rect,
                     y_plane_resource_id,
                     u_plane_resource_id,
                     v_plane_resource_id,
-                    a_plane_resource_id);
+                    a_plane_resource_id,
+                    color_space);
   EXPECT_EQ(DrawQuad::YUV_VIDEO_CONTENT, copy_quad->material);
   EXPECT_EQ(y_plane_resource_id, quad_new->y_plane_resource_id);
   EXPECT_EQ(u_plane_resource_id, quad_new->u_plane_resource_id);
   EXPECT_EQ(v_plane_resource_id, quad_new->v_plane_resource_id);
   EXPECT_EQ(a_plane_resource_id, quad_new->a_plane_resource_id);
+  EXPECT_EQ(color_space, quad_new->color_space);
   EXPECT_EQ(4, IterateAndCount(quad_new.get()));
   EXPECT_EQ(y_plane_resource_id + 1, quad_new->y_plane_resource_id);
   EXPECT_EQ(u_plane_resource_id + 1, quad_new->u_plane_resource_id);

@@ -10,6 +10,7 @@ namespace webview {
 const char kEventClose[] = "webview.onClose";
 const char kEventConsoleMessage[] = "webview.onConsoleMessage";
 const char kEventContentLoad[] = "webview.onContentLoad";
+const char kEventContextMenu[] = "webview.contextmenu";
 const char kEventDialog[] = "webview.onDialog";
 const char kEventExit[] = "webview.onExit";
 const char kEventFindReply[] = "webview.onFindReply";
@@ -27,15 +28,19 @@ const char kEventUnresponsive[] = "webview.onUnresponsive";
 const char kEventZoomChange[] = "webview.onZoomChange";
 
 // Parameters/properties on events.
+const char kContextMenuItems[] = "items";
 const char kDefaultPromptText[] = "defaultPromptText";
 const char kFindSearchText[] = "searchText";
 const char kFindFinalUpdate[] = "finalUpdate";
+const char kInitialHeight[] = "initialHeight";
+const char kInitialWidth[] = "initialWidth";
 const char kLastUnlockedBySelf[] = "lastUnlockedBySelf";
 const char kLevel[] = "level";
 const char kLine[] = "line";
 const char kMessage[] = "message";
 const char kMessageText[] = "messageText";
 const char kMessageType[] = "messageType";
+const char kName[] = "name";
 const char kNewHeight[] = "newHeight";
 const char kNewURL[] = "newUrl";
 const char kNewWidth[] = "newWidth";
@@ -55,6 +60,9 @@ const char kProgress[] = "progress";
 const char kReason[] = "reason";
 const char kRequestId[] = "requestId";
 const char kSourceId[] = "sourceId";
+const char kTargetURL[] = "targetUrl";
+const char kWindowID[] = "windowId";
+const char kWindowOpenDisposition[] = "windowOpenDisposition";
 const char kOldZoomFactor[] = "oldZoomFactor";
 const char kNewZoomFactor[] = "newZoomFactor";
 
@@ -77,6 +85,8 @@ const char kFindCanceled[] = "canceled";
 const char kParameterUserAgentOverride[] = "userAgentOverride";
 
 // Miscellaneous.
+const char kMenuItemCommandId[] = "commandId";
+const char kMenuItemLabel[] = "label";
 const unsigned int kMaxOutstandingPermissionRequests = 1024;
 const int kInvalidPermissionRequestID = 0;
 

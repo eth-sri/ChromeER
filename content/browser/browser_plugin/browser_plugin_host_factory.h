@@ -23,8 +23,6 @@ class WebContentsImpl;
 // Factory to create BrowserPlugin embedder and guest.
 class CONTENT_EXPORT BrowserPluginHostFactory {
  public:
-  virtual BrowserPluginGuestManager* CreateBrowserPluginGuestManager() = 0;
-
   virtual BrowserPluginGuest* CreateBrowserPluginGuest(
       int instance_id,
       WebContentsImpl* web_contents) = 0;

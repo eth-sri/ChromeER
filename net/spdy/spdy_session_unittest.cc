@@ -920,6 +920,201 @@ TEST_P(SpdySessionTest, PingAndWriteLoop) {
   session->CloseSessionOnError(ERR_ABORTED, "Aborting");
 }
 
+TEST_P(SpdySessionTest, StreamIdSpaceExhausted) {
+  const SpdyStreamId kLastStreamId = 0x7fffffff;
+  session_deps_.host_resolver->set_synchronous_mode(true);
+
+  // Test setup: |stream_hi_water_mark_| and |max_concurrent_streams_| are
+  // fixed to allow for two stream ID assignments, and three concurrent
+  // streams. Four streams are started, and two are activated. Verify the
+  // session goes away, and that the created (but not activated) and
+  // stalled streams are aborted. Also verify the activated streams complete,
+  // at which point the session closes.
+
+  scoped_ptr<SpdyFrame> req1(spdy_util_.ConstructSpdyGet(
+      NULL, 0, false, kLastStreamId - 2, MEDIUM, true));
+  scoped_ptr<SpdyFrame> req2(
+      spdy_util_.ConstructSpdyGet(NULL, 0, false, kLastStreamId, MEDIUM, true));
+
+  MockWrite writes[] = {
+      CreateMockWrite(*req1, 0), CreateMockWrite(*req2, 1),
+  };
+
+  scoped_ptr<SpdyFrame> resp1(
+      spdy_util_.ConstructSpdyGetSynReply(NULL, 0, kLastStreamId - 2));
+  scoped_ptr<SpdyFrame> resp2(
+      spdy_util_.ConstructSpdyGetSynReply(NULL, 0, kLastStreamId));
+
+  scoped_ptr<SpdyFrame> body1(
+      spdy_util_.ConstructSpdyBodyFrame(kLastStreamId - 2, true));
+  scoped_ptr<SpdyFrame> body2(
+      spdy_util_.ConstructSpdyBodyFrame(kLastStreamId, true));
+
+  MockRead reads[] = {
+      CreateMockRead(*resp1, 2), CreateMockRead(*resp2, 3),
+      CreateMockRead(*body1, 4), CreateMockRead(*body2, 5),
+      MockRead(ASYNC, 0, 6)  // EOF
+  };
+
+  DeterministicSocketData data(
+      reads, arraysize(reads), writes, arraysize(writes));
+
+  MockConnect connect_data(SYNCHRONOUS, OK);
+  data.set_connect_data(connect_data);
+  session_deps_.deterministic_socket_factory->AddSocketDataProvider(&data);
+
+  CreateDeterministicNetworkSession();
+  base::WeakPtr<SpdySession> session =
+      CreateInsecureSpdySession(http_session_, key_, BoundNetLog());
+
+  // Fix stream_hi_water_mark_ to allow for two stream activations.
+  session->stream_hi_water_mark_ = kLastStreamId - 2;
+  // Fix max_concurrent_streams to allow for three stream creations.
+  session->max_concurrent_streams_ = 3;
+
+  // Create three streams synchronously, and begin a fourth (which is stalled).
+  GURL url(kDefaultURL);
+  base::WeakPtr<SpdyStream> stream1 = CreateStreamSynchronously(
+      SPDY_REQUEST_RESPONSE_STREAM, session, url, MEDIUM, BoundNetLog());
+  test::StreamDelegateDoNothing delegate1(stream1);
+  stream1->SetDelegate(&delegate1);
+
+  base::WeakPtr<SpdyStream> stream2 = CreateStreamSynchronously(
+      SPDY_REQUEST_RESPONSE_STREAM, session, url, MEDIUM, BoundNetLog());
+  test::StreamDelegateDoNothing delegate2(stream2);
+  stream2->SetDelegate(&delegate2);
+
+  base::WeakPtr<SpdyStream> stream3 = CreateStreamSynchronously(
+      SPDY_REQUEST_RESPONSE_STREAM, session, url, MEDIUM, BoundNetLog());
+  test::StreamDelegateDoNothing delegate3(stream3);
+  stream3->SetDelegate(&delegate3);
+
+  SpdyStreamRequest request4;
+  TestCompletionCallback callback4;
+  EXPECT_EQ(ERR_IO_PENDING,
+            request4.StartRequest(SPDY_REQUEST_RESPONSE_STREAM,
+                                  session,
+                                  url,
+                                  MEDIUM,
+                                  BoundNetLog(),
+                                  callback4.callback()));
+
+  // Streams 1-3 were created. 4th is stalled. No streams are active yet.
+  EXPECT_EQ(0u, session->num_active_streams());
+  EXPECT_EQ(3u, session->num_created_streams());
+  EXPECT_EQ(1u, session->pending_create_stream_queue_size(MEDIUM));
+
+  // Activate stream 1. One ID remains available.
+  stream1->SendRequestHeaders(
+      scoped_ptr<SpdyHeaderBlock>(
+          spdy_util_.ConstructGetHeaderBlock(url.spec())),
+      NO_MORE_DATA_TO_SEND);
+  data.RunFor(1);
+
+  EXPECT_EQ(kLastStreamId - 2u, stream1->stream_id());
+  EXPECT_EQ(1u, session->num_active_streams());
+  EXPECT_EQ(2u, session->num_created_streams());
+  EXPECT_EQ(1u, session->pending_create_stream_queue_size(MEDIUM));
+
+  // Activate stream 2. ID space is exhausted.
+  stream2->SendRequestHeaders(
+      scoped_ptr<SpdyHeaderBlock>(
+          spdy_util_.ConstructGetHeaderBlock(url.spec())),
+      NO_MORE_DATA_TO_SEND);
+  data.RunFor(1);
+
+  // Active streams remain active.
+  EXPECT_EQ(kLastStreamId, stream2->stream_id());
+  EXPECT_EQ(2u, session->num_active_streams());
+
+  // Session is going away. Created and stalled streams were aborted.
+  EXPECT_EQ(SpdySession::STATE_GOING_AWAY, session->availability_state_);
+  EXPECT_EQ(ERR_ABORTED, delegate3.WaitForClose());
+  EXPECT_EQ(ERR_ABORTED, callback4.WaitForResult());
+  EXPECT_EQ(0u, session->num_created_streams());
+  EXPECT_EQ(0u, session->pending_create_stream_queue_size(MEDIUM));
+
+  // Read responses on remaining active streams.
+  data.RunFor(4);
+  EXPECT_EQ(OK, delegate1.WaitForClose());
+  EXPECT_EQ(kUploadData, delegate1.TakeReceivedData());
+  EXPECT_EQ(OK, delegate2.WaitForClose());
+  EXPECT_EQ(kUploadData, delegate2.TakeReceivedData());
+
+  // Session was destroyed.
+  EXPECT_FALSE(session.get());
+}
+
+// Verifies that an unstalled pending stream creation racing with a new stream
+// creation doesn't violate the maximum stream concurrency. Regression test for
+// crbug.com/373858.
+TEST_P(SpdySessionTest, UnstallRacesWithStreamCreation) {
+  session_deps_.host_resolver->set_synchronous_mode(true);
+
+  MockRead reads[] = {
+      MockRead(SYNCHRONOUS, ERR_IO_PENDING)  // Stall forever.
+  };
+
+  StaticSocketDataProvider data(reads, arraysize(reads), NULL, 0);
+
+  MockConnect connect_data(SYNCHRONOUS, OK);
+  data.set_connect_data(connect_data);
+  session_deps_.socket_factory->AddSocketDataProvider(&data);
+
+  CreateNetworkSession();
+  base::WeakPtr<SpdySession> session =
+      CreateInsecureSpdySession(http_session_, key_, BoundNetLog());
+
+  // Fix max_concurrent_streams to allow for one open stream.
+  session->max_concurrent_streams_ = 1;
+
+  // Create two streams: one synchronously, and one which stalls.
+  GURL url(kDefaultURL);
+  base::WeakPtr<SpdyStream> stream1 = CreateStreamSynchronously(
+      SPDY_REQUEST_RESPONSE_STREAM, session, url, MEDIUM, BoundNetLog());
+
+  SpdyStreamRequest request2;
+  TestCompletionCallback callback2;
+  EXPECT_EQ(ERR_IO_PENDING,
+            request2.StartRequest(SPDY_REQUEST_RESPONSE_STREAM,
+                                  session,
+                                  url,
+                                  MEDIUM,
+                                  BoundNetLog(),
+                                  callback2.callback()));
+
+  EXPECT_EQ(1u, session->num_created_streams());
+  EXPECT_EQ(1u, session->pending_create_stream_queue_size(MEDIUM));
+
+  // Cancel the first stream. A callback to unstall the second stream was
+  // posted. Don't run it yet.
+  stream1->Cancel();
+
+  EXPECT_EQ(0u, session->num_created_streams());
+  EXPECT_EQ(0u, session->pending_create_stream_queue_size(MEDIUM));
+
+  // Create a third stream prior to the second stream's callback.
+  base::WeakPtr<SpdyStream> stream3 = CreateStreamSynchronously(
+      SPDY_REQUEST_RESPONSE_STREAM, session, url, MEDIUM, BoundNetLog());
+
+  EXPECT_EQ(1u, session->num_created_streams());
+  EXPECT_EQ(0u, session->pending_create_stream_queue_size(MEDIUM));
+
+  // NOW run the message loop. The unstalled stream will re-stall itself.
+  base::MessageLoop::current()->RunUntilIdle();
+  EXPECT_EQ(1u, session->num_created_streams());
+  EXPECT_EQ(1u, session->pending_create_stream_queue_size(MEDIUM));
+
+  // Cancel the third stream and run the message loop. Verify that the second
+  // stream creation now completes.
+  stream3->Cancel();
+  base::MessageLoop::current()->RunUntilIdle();
+
+  EXPECT_EQ(1u, session->num_created_streams());
+  EXPECT_EQ(0u, session->pending_create_stream_queue_size(MEDIUM));
+  EXPECT_EQ(OK, callback2.WaitForResult());
+}
+
 TEST_P(SpdySessionTest, DeleteExpiredPushStreams) {
   session_deps_.host_resolver->set_synchronous_mode(true);
   session_deps_.time_func = TheNearFuture;
@@ -1072,7 +1267,13 @@ TEST_P(SpdySessionTest, OnSettings) {
     MockRead(ASYNC, 0, 1),
   };
 
-  DeterministicSocketData data(reads, arraysize(reads), NULL, 0);
+  scoped_ptr<SpdyFrame> settings_ack(spdy_util_.ConstructSpdySettingsAck());
+  MockWrite writes[] = {
+    CreateMockWrite(*settings_ack, 2),
+  };
+
+  DeterministicSocketData data(reads, arraysize(reads),
+                               writes, arraysize(writes));
   MockConnect connect_data(SYNCHRONOUS, OK);
   data.set_connect_data(connect_data);
   session_deps_.deterministic_socket_factory->AddSocketDataProvider(&data);
@@ -2066,6 +2267,7 @@ TEST_P(SpdySessionTest, CloseTwoStalledCreateStream) {
   new_settings[kSpdySettingsIds1] =
       SettingsFlagsAndValue(SETTINGS_FLAG_NONE, max_concurrent_streams);
 
+  scoped_ptr<SpdyFrame> settings_ack(spdy_util_.ConstructSpdySettingsAck());
   scoped_ptr<SpdyFrame> req1(
       spdy_util_.ConstructSpdyGet(NULL, 0, false, 1, LOWEST, true));
   scoped_ptr<SpdyFrame> req2(
@@ -2073,9 +2275,10 @@ TEST_P(SpdySessionTest, CloseTwoStalledCreateStream) {
   scoped_ptr<SpdyFrame> req3(
       spdy_util_.ConstructSpdyGet(NULL, 0, false, 5, LOWEST, true));
   MockWrite writes[] = {
-    CreateMockWrite(*req1, 1),
-    CreateMockWrite(*req2, 4),
-    CreateMockWrite(*req3, 7),
+    CreateMockWrite(*settings_ack, 1),
+    CreateMockWrite(*req1, 2),
+    CreateMockWrite(*req2, 5),
+    CreateMockWrite(*req3, 8),
   };
 
   // Set up the socket so we read a SETTINGS frame that sets max concurrent
@@ -2094,13 +2297,13 @@ TEST_P(SpdySessionTest, CloseTwoStalledCreateStream) {
 
   MockRead reads[] = {
     CreateMockRead(*settings_frame),
-    CreateMockRead(*resp1, 2),
-    CreateMockRead(*body1, 3),
-    CreateMockRead(*resp2, 5),
-    CreateMockRead(*body2, 6),
-    CreateMockRead(*resp3, 8),
-    CreateMockRead(*body3, 9),
-    MockRead(ASYNC, 0, 10)  // EOF
+    CreateMockRead(*resp1, 3),
+    CreateMockRead(*body1, 4),
+    CreateMockRead(*resp2, 6),
+    CreateMockRead(*body2, 7),
+    CreateMockRead(*resp3, 9),
+    CreateMockRead(*body3, 10),
+    MockRead(ASYNC, 0, 11)  // EOF
   };
 
   DeterministicSocketData data(reads, arraysize(reads),
@@ -2152,7 +2355,7 @@ TEST_P(SpdySessionTest, CloseTwoStalledCreateStream) {
 
   // Run until 1st stream is activated and then closed.
   EXPECT_EQ(0u, delegate1.stream_id());
-  data.RunFor(3);
+  data.RunFor(4);
   EXPECT_EQ(NULL, spdy_stream1.get());
   EXPECT_EQ(1u, delegate1.stream_id());
 
@@ -3062,12 +3265,17 @@ TEST_P(SpdySessionTest, UpdateStreamsSendWindowSize) {
     MockRead(ASYNC, 0, 1)  // EOF
   };
 
+  scoped_ptr<SpdyFrame> settings_ack(spdy_util_.ConstructSpdySettingsAck());
+  MockWrite writes[] = {
+    CreateMockWrite(*settings_ack, 2),
+  };
+
   session_deps_.host_resolver->set_synchronous_mode(true);
 
-  scoped_ptr<DeterministicSocketData> data(
-      new DeterministicSocketData(reads, arraysize(reads), NULL, 0));
-  data->set_connect_data(connect_data);
-  session_deps_.deterministic_socket_factory->AddSocketDataProvider(data.get());
+  DeterministicSocketData data(reads, arraysize(reads),
+                               writes, arraysize(writes));
+  data.set_connect_data(connect_data);
+  session_deps_.deterministic_socket_factory->AddSocketDataProvider(&data);
 
   CreateDeterministicNetworkSession();
 
@@ -3080,7 +3288,7 @@ TEST_P(SpdySessionTest, UpdateStreamsSendWindowSize) {
   TestCompletionCallback callback1;
   EXPECT_NE(spdy_stream1->send_window_size(), window_size);
 
-  data->RunFor(1);  // Process the SETTINGS frame, but not the EOF
+  data.RunFor(1);  // Process the SETTINGS frame, but not the EOF
   base::MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(session->stream_initial_send_window_size(), window_size);
   EXPECT_EQ(spdy_stream1->send_window_size(), window_size);

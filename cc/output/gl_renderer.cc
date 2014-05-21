@@ -1777,9 +1777,12 @@ void GLRenderer::DrawYUVVideoQuad(const DrawingFrame* frame,
   // These values are magic numbers that are used in the transformation from YUV
   // to RGB color values.  They are taken from the following webpage:
   // http://www.fourcc.org/fccyvrgb.php
-  float yuv_to_rgb[9] = {1.164f, 1.164f, 1.164f, 0.0f, -.391f,
-                         2.018f, 1.596f, -.813f, 0.0f, };
-  GLC(gl_, gl_->UniformMatrix3fv(yuv_matrix_location, 1, 0, yuv_to_rgb));
+  float yuv_to_rgb_rec601[9] = {
+      1.164f, 1.164f, 1.164f, 0.0f, -.391f, 2.018f, 1.596f, -.813f, 0.0f,
+  };
+  float yuv_to_rgb_rec601_jpeg[9] = {
+      1.f, 1.f, 1.f, 0.0f, -.34414f, 1.772f, 1.402f, -.71414f, 0.0f,
+  };
 
   // These values map to 16, 128, and 128 respectively, and are computed
   // as a fraction over 256 (e.g. 16 / 256 = 0.0625).
@@ -1787,7 +1790,30 @@ void GLRenderer::DrawYUVVideoQuad(const DrawingFrame* frame,
   //   Y - 16   : Gives 16 values of head and footroom for overshooting
   //   U - 128  : Turns unsigned U into signed U [-128,127]
   //   V - 128  : Turns unsigned V into signed V [-128,127]
-  float yuv_adjust[3] = {-0.0625f, -0.5f, -0.5f, };
+  float yuv_adjust_rec601[3] = {
+      -0.0625f, -0.5f, -0.5f,
+  };
+
+  // Same as above, but without the head and footroom.
+  float yuv_adjust_rec601_jpeg[3] = {
+      0.0f, -0.5f, -0.5f,
+  };
+
+  float* yuv_to_rgb = NULL;
+  float* yuv_adjust = NULL;
+
+  switch (quad->color_space) {
+    case YUVVideoDrawQuad::REC_601:
+      yuv_to_rgb = yuv_to_rgb_rec601;
+      yuv_adjust = yuv_adjust_rec601;
+      break;
+    case YUVVideoDrawQuad::REC_601_JPEG:
+      yuv_to_rgb = yuv_to_rgb_rec601_jpeg;
+      yuv_adjust = yuv_adjust_rec601_jpeg;
+      break;
+  }
+
+  GLC(gl_, gl_->UniformMatrix3fv(yuv_matrix_location, 1, 0, yuv_to_rgb));
   GLC(gl_, gl_->Uniform3fv(yuv_adj_location, 1, yuv_adjust));
 
   SetShaderOpacity(quad->opacity(), alpha_location);
@@ -1932,11 +1958,9 @@ void GLRenderer::FlushTextureQuadCache() {
   DCHECK_EQ(GL_TEXTURE0, ResourceProvider::GetActiveTextureUnit(gl_));
   GLC(gl_, gl_->BindTexture(GL_TEXTURE_2D, locked_quad.texture_id()));
 
-  COMPILE_ASSERT(sizeof(Float4) == 4 * sizeof(float),  // NOLINT(runtime/sizeof)
+  COMPILE_ASSERT(sizeof(Float4) == 4 * sizeof(float), struct_is_densely_packed);
+  COMPILE_ASSERT(sizeof(Float16) == 16 * sizeof(float),
                  struct_is_densely_packed);
-  COMPILE_ASSERT(
-      sizeof(Float16) == 16 * sizeof(float),  // NOLINT(runtime/sizeof)
-      struct_is_densely_packed);
 
   // Upload the tranforms for both points and uvs.
   GLC(gl_,
@@ -2313,24 +2337,6 @@ void GLRenderer::EnsureBackbuffer() {
   is_backbuffer_discarded_ = false;
 }
 
-void GLRenderer::GetFramebufferPixels(void* pixels, const gfx::Rect& rect) {
-  if (!pixels || rect.IsEmpty())
-    return;
-
-  // This function assumes that it is reading the root frame buffer.
-  DCHECK(!current_framebuffer_lock_);
-
-  scoped_ptr<PendingAsyncReadPixels> pending_read(new PendingAsyncReadPixels);
-  pending_async_read_pixels_.insert(pending_async_read_pixels_.begin(),
-                                    pending_read.Pass());
-
-  // This is a syncronous call since the callback is null.
-  gfx::Rect window_rect = MoveFromDrawToWindowSpace(rect);
-  DoGetFramebufferPixels(static_cast<uint8*>(pixels),
-                         window_rect,
-                         AsyncGetFramebufferPixelsCleanupCallback());
-}
-
 void GLRenderer::GetFramebufferPixelsAsync(
     const gfx::Rect& rect,
     scoped_ptr<CopyOutputRequest> request) {
@@ -2341,6 +2347,10 @@ void GLRenderer::GetFramebufferPixelsAsync(
     return;
 
   gfx::Rect window_rect = MoveFromDrawToWindowSpace(rect);
+  DCHECK_GE(window_rect.x(), 0);
+  DCHECK_GE(window_rect.y(), 0);
+  DCHECK_LE(window_rect.right(), current_surface_size_.width());
+  DCHECK_LE(window_rect.bottom(), current_surface_size_.height());
 
   if (!request->force_bitmap_result()) {
     bool own_mailbox = !request->has_texture_mailbox();
@@ -2398,39 +2408,10 @@ void GLRenderer::GetFramebufferPixelsAsync(
 
   DCHECK(request->force_bitmap_result());
 
-  scoped_ptr<SkBitmap> bitmap(new SkBitmap);
-  bitmap->allocN32Pixels(window_rect.width(), window_rect.height());
-
-  scoped_ptr<SkAutoLockPixels> lock(new SkAutoLockPixels(*bitmap));
-
-  // Save a pointer to the pixels, the bitmap is owned by the cleanup_callback.
-  uint8* pixels = static_cast<uint8*>(bitmap->getPixels());
-
-  AsyncGetFramebufferPixelsCleanupCallback cleanup_callback =
-      base::Bind(&GLRenderer::PassOnSkBitmap,
-                 base::Unretained(this),
-                 base::Passed(&bitmap),
-                 base::Passed(&lock));
-
   scoped_ptr<PendingAsyncReadPixels> pending_read(new PendingAsyncReadPixels);
   pending_read->copy_request = request.Pass();
   pending_async_read_pixels_.insert(pending_async_read_pixels_.begin(),
                                     pending_read.Pass());
-
-  // This is an asyncronous call since the callback is not null.
-  DoGetFramebufferPixels(pixels, window_rect, cleanup_callback);
-}
-
-void GLRenderer::DoGetFramebufferPixels(
-    uint8* dest_pixels,
-    const gfx::Rect& window_rect,
-    const AsyncGetFramebufferPixelsCleanupCallback& cleanup_callback) {
-  DCHECK_GE(window_rect.x(), 0);
-  DCHECK_GE(window_rect.y(), 0);
-  DCHECK_LE(window_rect.right(), current_surface_size_.width());
-  DCHECK_LE(window_rect.bottom(), current_surface_size_.height());
-
-  bool is_async = !cleanup_callback.is_null();
 
   bool do_workaround = NeedsIOSurfaceReadbackWorkaround();
 
@@ -2482,10 +2463,8 @@ void GLRenderer::DoGetFramebufferPixels(
                       GL_STREAM_READ));
 
   GLuint query = 0;
-  if (is_async) {
-    gl_->GenQueriesEXT(1, &query);
-    GLC(gl_, gl_->BeginQueryEXT(GL_ASYNC_PIXEL_PACK_COMPLETED_CHROMIUM, query));
-  }
+  gl_->GenQueriesEXT(1, &query);
+  GLC(gl_, gl_->BeginQueryEXT(GL_ASYNC_PIXEL_PACK_COMPLETED_CHROMIUM, query));
 
   GLC(gl_,
       gl_->ReadPixels(window_rect.x(),
@@ -2508,10 +2487,8 @@ void GLRenderer::DoGetFramebufferPixels(
 
   base::Closure finished_callback = base::Bind(&GLRenderer::FinishedReadback,
                                                base::Unretained(this),
-                                               cleanup_callback,
                                                buffer,
                                                query,
-                                               dest_pixels,
                                                window_rect.size());
   // Save the finished_callback so it can be cancelled.
   pending_async_read_pixels_.front()->finished_read_pixels_callback.Reset(
@@ -2523,23 +2500,15 @@ void GLRenderer::DoGetFramebufferPixels(
   // Save the buffer to verify the callbacks happen in the expected order.
   pending_async_read_pixels_.front()->buffer = buffer;
 
-  if (is_async) {
-    GLC(gl_, gl_->EndQueryEXT(GL_ASYNC_PIXEL_PACK_COMPLETED_CHROMIUM));
-    context_support_->SignalQuery(query, cancelable_callback);
-  } else {
-    resource_provider_->Finish();
-    finished_callback.Run();
-  }
+  GLC(gl_, gl_->EndQueryEXT(GL_ASYNC_PIXEL_PACK_COMPLETED_CHROMIUM));
+  context_support_->SignalQuery(query, cancelable_callback);
 
   EnforceMemoryPolicy();
 }
 
-void GLRenderer::FinishedReadback(
-    const AsyncGetFramebufferPixelsCleanupCallback& cleanup_callback,
-    unsigned source_buffer,
-    unsigned query,
-    uint8* dest_pixels,
-    const gfx::Size& size) {
+void GLRenderer::FinishedReadback(unsigned source_buffer,
+                                  unsigned query,
+                                  const gfx::Size& size) {
   DCHECK(!pending_async_read_pixels_.empty());
 
   if (query != 0) {
@@ -2551,6 +2520,7 @@ void GLRenderer::FinishedReadback(
   DCHECK_EQ(source_buffer, current_read->buffer);
 
   uint8* src_pixels = NULL;
+  scoped_ptr<SkBitmap> bitmap;
 
   if (source_buffer != 0) {
     GLC(gl_,
@@ -2559,6 +2529,11 @@ void GLRenderer::FinishedReadback(
         GL_PIXEL_PACK_TRANSFER_BUFFER_CHROMIUM, GL_READ_ONLY));
 
     if (src_pixels) {
+      bitmap.reset(new SkBitmap);
+      bitmap->allocN32Pixels(size.width(), size.height());
+      scoped_ptr<SkAutoLockPixels> lock(new SkAutoLockPixels(*bitmap));
+      uint8* dest_pixels = static_cast<uint8*>(bitmap->getPixels());
+
       size_t row_bytes = size.width() * 4;
       int num_rows = size.height();
       size_t total_bytes = num_rows * row_bytes;
@@ -2585,23 +2560,9 @@ void GLRenderer::FinishedReadback(
     GLC(gl_, gl_->DeleteBuffers(1, &source_buffer));
   }
 
-  // TODO(danakj): This can go away when synchronous readback is no more and its
-  // contents can just move here.
-  if (!cleanup_callback.is_null())
-    cleanup_callback.Run(current_read->copy_request.Pass(), src_pixels != NULL);
-
+  if (bitmap)
+    current_read->copy_request->SendBitmapResult(bitmap.Pass());
   pending_async_read_pixels_.pop_back();
-}
-
-void GLRenderer::PassOnSkBitmap(scoped_ptr<SkBitmap> bitmap,
-                                scoped_ptr<SkAutoLockPixels> lock,
-                                scoped_ptr<CopyOutputRequest> request,
-                                bool success) {
-  DCHECK(request->force_bitmap_result());
-
-  lock.reset();
-  if (success)
-    request->SendBitmapResult(bitmap.Pass());
 }
 
 void GLRenderer::GetFramebufferTexture(unsigned texture_id,

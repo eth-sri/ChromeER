@@ -5,12 +5,15 @@
 #include "content/browser/frame_host/navigation_controller_impl.h"
 
 #include "base/bind.h"
+#include "base/command_line.h"
 #include "base/debug/trace_event.h"
 #include "base/logging.h"
+#include "base/metrics/histogram.h"
 #include "base/strings/string_number_conversions.h"  // Temporary
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
+#include "cc/base/switches.h"
 #include "content/browser/browser_url_handler_impl.h"
 #include "content/browser/dom_storage/dom_storage_context_wrapper.h"
 #include "content/browser/dom_storage/session_storage_namespace_impl.h"
@@ -654,8 +657,8 @@ void NavigationControllerImpl::LoadURLWithParams(const LoadURLParams& params) {
     case LOAD_TYPE_DEFAULT:
       break;
     case LOAD_TYPE_BROWSER_INITIATED_HTTP_POST:
-      if (!params.url.SchemeIs(kHttpScheme) &&
-          !params.url.SchemeIs(kHttpsScheme)) {
+      if (!params.url.SchemeIs(url::kHttpScheme) &&
+          !params.url.SchemeIs(url::kHttpsScheme)) {
         NOTREACHED() << "Http post load must use http(s) scheme.";
         return;
       }
@@ -823,6 +826,14 @@ bool NavigationControllerImpl::RendererDidNavigate(
   active_entry->SetHttpStatusCode(params.http_status_code);
   active_entry->SetPageState(params.page_state);
   active_entry->SetRedirectChain(params.redirects);
+
+  // Use histogram to track memory impact of redirect chain because it's now
+  // not cleared for committed entries.
+  size_t redirect_chain_size = 0;
+  for (size_t i = 0; i < params.redirects.size(); ++i) {
+    redirect_chain_size += params.redirects[i].spec().length();
+  }
+  UMA_HISTOGRAM_COUNTS("Navigation.RedirectChainSize", redirect_chain_size);
 
   // Once it is committed, we no longer need to track several pieces of state on
   // the entry.
@@ -1012,8 +1023,18 @@ void NavigationControllerImpl::RendererDidNavigateToNewPage(
     // update the virtual URL when replaceState is called after a pushState.
     GURL url = params.url;
     bool needs_update = false;
-    BrowserURLHandlerImpl::GetInstance()->RewriteURLIfNecessary(
-        &url, browser_context_, &needs_update);
+    // We call RewriteURLIfNecessary twice: once when page navigation
+    // begins in CreateNavigationEntry, and once here when it commits.
+    // With the kEnableGpuBenchmarking flag, the rewriting includes
+    // handling debug URLs which cause an action to occur, and thus we
+    // should not rewrite them a second time.
+    bool skip_rewrite =
+        IsDebugURL(url) && base::CommandLine::ForCurrentProcess()->HasSwitch(
+            cc::switches::kEnableGpuBenchmarking);
+    if (!skip_rewrite) {
+      BrowserURLHandlerImpl::GetInstance()->RewriteURLIfNecessary(
+          &url, browser_context_, &needs_update);
+    }
     new_entry->set_update_virtual_url_with_url(needs_update);
 
     // When navigating to a new page, give the browser URL handler a chance to

@@ -30,7 +30,6 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "net/base/capturing_net_log.h"
-#include "net/base/filename_util.h"
 #include "net/base/load_flags.h"
 #include "net/base/load_timing_info.h"
 #include "net/base/load_timing_info_test_util.h"
@@ -66,11 +65,8 @@
 #include "net/test/cert_test_util.h"
 #include "net/test/spawned_test_server/spawned_test_server.h"
 #include "net/url_request/data_protocol_handler.h"
-#include "net/url_request/file_protocol_handler.h"
-#include "net/url_request/ftp_protocol_handler.h"
 #include "net/url_request/static_http_user_agent_settings.h"
 #include "net/url_request/url_request.h"
-#include "net/url_request/url_request_file_dir_job.h"
 #include "net/url_request/url_request_http_job.h"
 #include "net/url_request/url_request_job_factory_impl.h"
 #include "net/url_request/url_request_redirect_job.h"
@@ -78,6 +74,16 @@
 #include "net/url_request/url_request_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
+
+#if !defined(DISABLE_FILE_SUPPORT)
+#include "net/base/filename_util.h"
+#include "net/url_request/file_protocol_handler.h"
+#include "net/url_request/url_request_file_dir_job.h"
+#endif
+
+#if !defined(DISABLE_FTP_SUPPORT)
+#include "net/url_request/ftp_protocol_handler.h"
+#endif
 
 #if defined(OS_WIN)
 #include "base/win/scoped_com_initializer.h"
@@ -598,8 +604,10 @@ class URLRequestTest : public PlatformTest {
     default_context_.set_network_delegate(&default_network_delegate_);
     default_context_.set_net_log(&net_log_);
     job_factory_.SetProtocolHandler("data", new DataProtocolHandler);
+#if !defined(DISABLE_FILE_SUPPORT)
     job_factory_.SetProtocolHandler(
         "file", new FileProtocolHandler(base::MessageLoopProxy::current()));
+#endif
     default_context_.set_job_factory(&job_factory_);
     default_context_.Init();
   }
@@ -689,6 +697,7 @@ TEST_F(URLRequestTest, DataURLImageTest) {
   }
 }
 
+#if !defined(DISABLE_FILE_SUPPORT)
 TEST_F(URLRequestTest, FileTest) {
   base::FilePath app_path;
   PathService::Get(base::FILE_EXE, &app_path);
@@ -887,80 +896,6 @@ TEST_F(URLRequestTest, AllowFileURLs) {
   }
 }
 
-TEST_F(URLRequestTest, InvalidUrlTest) {
-  TestDelegate d;
-  {
-    URLRequest r(GURL("invalid url"), DEFAULT_PRIORITY, &d, &default_context_);
-
-    r.Start();
-    EXPECT_TRUE(r.is_pending());
-
-    base::RunLoop().Run();
-    EXPECT_TRUE(d.request_failed());
-  }
-}
-
-#if defined(OS_WIN)
-TEST_F(URLRequestTest, ResolveShortcutTest) {
-  base::FilePath app_path;
-  PathService::Get(base::DIR_SOURCE_ROOT, &app_path);
-  app_path = app_path.AppendASCII("net");
-  app_path = app_path.AppendASCII("data");
-  app_path = app_path.AppendASCII("url_request_unittest");
-  app_path = app_path.AppendASCII("with-headers.html");
-
-  std::wstring lnk_path = app_path.value() + L".lnk";
-
-  base::win::ScopedCOMInitializer com_initializer;
-
-  // Temporarily create a shortcut for test
-  {
-    base::win::ScopedComPtr<IShellLink> shell;
-    ASSERT_TRUE(SUCCEEDED(shell.CreateInstance(CLSID_ShellLink, NULL,
-                                               CLSCTX_INPROC_SERVER)));
-    base::win::ScopedComPtr<IPersistFile> persist;
-    ASSERT_TRUE(SUCCEEDED(shell.QueryInterface(persist.Receive())));
-    EXPECT_TRUE(SUCCEEDED(shell->SetPath(app_path.value().c_str())));
-    EXPECT_TRUE(SUCCEEDED(shell->SetDescription(L"ResolveShortcutTest")));
-    EXPECT_TRUE(SUCCEEDED(persist->Save(lnk_path.c_str(), TRUE)));
-  }
-
-  TestDelegate d;
-  {
-    URLRequest r(FilePathToFileURL(base::FilePath(lnk_path)),
-                 DEFAULT_PRIORITY,
-                 &d,
-                 &default_context_);
-
-    r.Start();
-    EXPECT_TRUE(r.is_pending());
-
-    base::RunLoop().Run();
-
-    WIN32_FILE_ATTRIBUTE_DATA data;
-    GetFileAttributesEx(app_path.value().c_str(),
-                        GetFileExInfoStandard, &data);
-    HANDLE file = CreateFile(app_path.value().c_str(), GENERIC_READ,
-                             FILE_SHARE_READ, NULL, OPEN_EXISTING,
-                             FILE_ATTRIBUTE_NORMAL, NULL);
-    EXPECT_NE(INVALID_HANDLE_VALUE, file);
-    scoped_ptr<char[]> buffer(new char[data.nFileSizeLow]);
-    DWORD read_size;
-    BOOL result;
-    result = ReadFile(file, buffer.get(), data.nFileSizeLow,
-                      &read_size, NULL);
-    std::string content(buffer.get(), read_size);
-    CloseHandle(file);
-
-    EXPECT_TRUE(!r.is_pending());
-    EXPECT_EQ(1, d.received_redirect_count());
-    EXPECT_EQ(content, d.data_received());
-  }
-
-  // Clean the shortcut
-  DeleteFile(lnk_path.c_str());
-}
-#endif  // defined(OS_WIN)
 
 TEST_F(URLRequestTest, FileDirCancelTest) {
   // Put in mock resource provider.
@@ -1059,7 +994,84 @@ TEST_F(URLRequestTest, FileDirRedirectSingleSlash) {
   ASSERT_EQ(1, d.received_redirect_count());
   ASSERT_FALSE(req.status().is_success());
 }
-#endif
+#endif  // defined(OS_WIN)
+
+#endif  // !defined(DISABLE_FILE_SUPPORT)
+
+TEST_F(URLRequestTest, InvalidUrlTest) {
+  TestDelegate d;
+  {
+    URLRequest r(GURL("invalid url"), DEFAULT_PRIORITY, &d, &default_context_);
+
+    r.Start();
+    EXPECT_TRUE(r.is_pending());
+
+    base::RunLoop().Run();
+    EXPECT_TRUE(d.request_failed());
+  }
+}
+
+#if defined(OS_WIN)
+TEST_F(URLRequestTest, ResolveShortcutTest) {
+  base::FilePath app_path;
+  PathService::Get(base::DIR_SOURCE_ROOT, &app_path);
+  app_path = app_path.AppendASCII("net");
+  app_path = app_path.AppendASCII("data");
+  app_path = app_path.AppendASCII("url_request_unittest");
+  app_path = app_path.AppendASCII("with-headers.html");
+
+  std::wstring lnk_path = app_path.value() + L".lnk";
+
+  base::win::ScopedCOMInitializer com_initializer;
+
+  // Temporarily create a shortcut for test
+  {
+    base::win::ScopedComPtr<IShellLink> shell;
+    ASSERT_TRUE(SUCCEEDED(shell.CreateInstance(CLSID_ShellLink, NULL,
+                                               CLSCTX_INPROC_SERVER)));
+    base::win::ScopedComPtr<IPersistFile> persist;
+    ASSERT_TRUE(SUCCEEDED(shell.QueryInterface(persist.Receive())));
+    EXPECT_TRUE(SUCCEEDED(shell->SetPath(app_path.value().c_str())));
+    EXPECT_TRUE(SUCCEEDED(shell->SetDescription(L"ResolveShortcutTest")));
+    EXPECT_TRUE(SUCCEEDED(persist->Save(lnk_path.c_str(), TRUE)));
+  }
+
+  TestDelegate d;
+  {
+    URLRequest r(FilePathToFileURL(base::FilePath(lnk_path)),
+                 DEFAULT_PRIORITY,
+                 &d,
+                 &default_context_);
+
+    r.Start();
+    EXPECT_TRUE(r.is_pending());
+
+    base::RunLoop().Run();
+
+    WIN32_FILE_ATTRIBUTE_DATA data;
+    GetFileAttributesEx(app_path.value().c_str(),
+                        GetFileExInfoStandard, &data);
+    HANDLE file = CreateFile(app_path.value().c_str(), GENERIC_READ,
+                             FILE_SHARE_READ, NULL, OPEN_EXISTING,
+                             FILE_ATTRIBUTE_NORMAL, NULL);
+    EXPECT_NE(INVALID_HANDLE_VALUE, file);
+    scoped_ptr<char[]> buffer(new char[data.nFileSizeLow]);
+    DWORD read_size;
+    BOOL result;
+    result = ReadFile(file, buffer.get(), data.nFileSizeLow,
+                      &read_size, NULL);
+    std::string content(buffer.get(), read_size);
+    CloseHandle(file);
+
+    EXPECT_TRUE(!r.is_pending());
+    EXPECT_EQ(1, d.received_redirect_count());
+    EXPECT_EQ(content, d.data_received());
+  }
+
+  // Clean the shortcut
+  DeleteFile(lnk_path.c_str());
+}
+#endif  // defined(OS_WIN)
 
 // Custom URLRequestJobs for use with interceptor tests
 class RestartTestJob : public URLRequestTestJob {
@@ -4960,14 +4972,13 @@ TEST_F(URLRequestTestHTTP, ProcessSTS) {
 
   TransportSecurityState* security_state =
       default_context_.transport_security_state();
-  bool sni_available = true;
   TransportSecurityState::DomainState domain_state;
-  EXPECT_TRUE(security_state->GetDomainState(
-      SpawnedTestServer::kLocalhost, sni_available, &domain_state));
+  EXPECT_TRUE(security_state->GetDynamicDomainState(
+      SpawnedTestServer::kLocalhost, &domain_state));
   EXPECT_EQ(TransportSecurityState::DomainState::MODE_FORCE_HTTPS,
-            domain_state.upgrade_mode);
-  EXPECT_TRUE(domain_state.sts_include_subdomains);
-  EXPECT_FALSE(domain_state.pkp_include_subdomains);
+            domain_state.sts.upgrade_mode);
+  EXPECT_TRUE(domain_state.sts.include_subdomains);
+  EXPECT_FALSE(domain_state.pkp.include_subdomains);
 #if defined(OS_ANDROID)
   // Android's CertVerifyProc does not (yet) handle pins.
 #else
@@ -5004,17 +5015,15 @@ TEST_F(URLRequestTestHTTP, MAYBE_ProcessPKP) {
 
   TransportSecurityState* security_state =
       default_context_.transport_security_state();
-  bool sni_available = true;
   TransportSecurityState::DomainState domain_state;
-  EXPECT_TRUE(security_state->GetDomainState(
-      SpawnedTestServer::kLocalhost, sni_available, &domain_state));
+  EXPECT_TRUE(security_state->GetDynamicDomainState(
+      SpawnedTestServer::kLocalhost, &domain_state));
   EXPECT_EQ(TransportSecurityState::DomainState::MODE_DEFAULT,
-            domain_state.upgrade_mode);
-  EXPECT_FALSE(domain_state.sts_include_subdomains);
-  EXPECT_FALSE(domain_state.pkp_include_subdomains);
+            domain_state.sts.upgrade_mode);
+  EXPECT_FALSE(domain_state.sts.include_subdomains);
+  EXPECT_FALSE(domain_state.pkp.include_subdomains);
   EXPECT_TRUE(domain_state.HasPublicKeyPins());
-  EXPECT_NE(domain_state.upgrade_expiry,
-            domain_state.dynamic_spki_hashes_expiry);
+  EXPECT_NE(domain_state.sts.expiry, domain_state.pkp.expiry);
 }
 
 TEST_F(URLRequestTestHTTP, ProcessSTSOnce) {
@@ -5037,14 +5046,13 @@ TEST_F(URLRequestTestHTTP, ProcessSTSOnce) {
   // We should have set parameters from the first header, not the second.
   TransportSecurityState* security_state =
       default_context_.transport_security_state();
-  bool sni_available = true;
   TransportSecurityState::DomainState domain_state;
-  EXPECT_TRUE(security_state->GetDomainState(
-      SpawnedTestServer::kLocalhost, sni_available, &domain_state));
+  EXPECT_TRUE(security_state->GetDynamicDomainState(
+      SpawnedTestServer::kLocalhost, &domain_state));
   EXPECT_EQ(TransportSecurityState::DomainState::MODE_FORCE_HTTPS,
-            domain_state.upgrade_mode);
-  EXPECT_FALSE(domain_state.sts_include_subdomains);
-  EXPECT_FALSE(domain_state.pkp_include_subdomains);
+            domain_state.sts.upgrade_mode);
+  EXPECT_FALSE(domain_state.sts.include_subdomains);
+  EXPECT_FALSE(domain_state.pkp.include_subdomains);
 }
 
 TEST_F(URLRequestTestHTTP, ProcessSTSAndPKP) {
@@ -5067,25 +5075,23 @@ TEST_F(URLRequestTestHTTP, ProcessSTSAndPKP) {
   // We should have set parameters from the first header, not the second.
   TransportSecurityState* security_state =
       default_context_.transport_security_state();
-  bool sni_available = true;
   TransportSecurityState::DomainState domain_state;
-  EXPECT_TRUE(security_state->GetDomainState(
-      SpawnedTestServer::kLocalhost, sni_available, &domain_state));
+  EXPECT_TRUE(security_state->GetDynamicDomainState(
+      SpawnedTestServer::kLocalhost, &domain_state));
   EXPECT_EQ(TransportSecurityState::DomainState::MODE_FORCE_HTTPS,
-            domain_state.upgrade_mode);
+            domain_state.sts.upgrade_mode);
 #if defined(OS_ANDROID)
   // Android's CertVerifyProc does not (yet) handle pins.
 #else
   EXPECT_TRUE(domain_state.HasPublicKeyPins());
 #endif
-  EXPECT_NE(domain_state.upgrade_expiry,
-            domain_state.dynamic_spki_hashes_expiry);
+  EXPECT_NE(domain_state.sts.expiry, domain_state.pkp.expiry);
 
   // Even though there is an HSTS header asserting includeSubdomains, it is
   // the *second* such header, and we MUST process only the first.
-  EXPECT_FALSE(domain_state.sts_include_subdomains);
+  EXPECT_FALSE(domain_state.sts.include_subdomains);
   // includeSubdomains does not occur in the test HPKP header.
-  EXPECT_FALSE(domain_state.pkp_include_subdomains);
+  EXPECT_FALSE(domain_state.pkp.include_subdomains);
 }
 
 // Tests that when multiple HPKP headers are present, asserting different
@@ -5109,22 +5115,20 @@ TEST_F(URLRequestTestHTTP, ProcessSTSAndPKP2) {
 
   TransportSecurityState* security_state =
       default_context_.transport_security_state();
-  bool sni_available = true;
   TransportSecurityState::DomainState domain_state;
-  EXPECT_TRUE(security_state->GetDomainState(
-      SpawnedTestServer::kLocalhost, sni_available, &domain_state));
+  EXPECT_TRUE(security_state->GetDynamicDomainState(
+      SpawnedTestServer::kLocalhost, &domain_state));
   EXPECT_EQ(TransportSecurityState::DomainState::MODE_FORCE_HTTPS,
-            domain_state.upgrade_mode);
+            domain_state.sts.upgrade_mode);
 #if defined(OS_ANDROID)
   // Android's CertVerifyProc does not (yet) handle pins.
 #else
   EXPECT_TRUE(domain_state.HasPublicKeyPins());
 #endif
-  EXPECT_NE(domain_state.upgrade_expiry,
-            domain_state.dynamic_spki_hashes_expiry);
+  EXPECT_NE(domain_state.sts.expiry, domain_state.pkp.expiry);
 
-  EXPECT_TRUE(domain_state.sts_include_subdomains);
-  EXPECT_FALSE(domain_state.pkp_include_subdomains);
+  EXPECT_TRUE(domain_state.sts.include_subdomains);
+  EXPECT_FALSE(domain_state.pkp.include_subdomains);
 }
 
 TEST_F(URLRequestTestHTTP, ContentTypeNormalizationTest) {
@@ -5148,18 +5152,25 @@ TEST_F(URLRequestTestHTTP, ContentTypeNormalizationTest) {
   req.Cancel();
 }
 
-TEST_F(URLRequestTestHTTP, ProtocolHandlerAndFactoryRestrictRedirects) {
+TEST_F(URLRequestTestHTTP, ProtocolHandlerAndFactoryRestrictDataRedirects) {
   // Test URLRequestJobFactory::ProtocolHandler::IsSafeRedirectTarget().
-  GURL file_url("file:///foo.txt");
   GURL data_url("data:,foo");
-  FileProtocolHandler file_protocol_handler(base::MessageLoopProxy::current());
-  EXPECT_FALSE(file_protocol_handler.IsSafeRedirectTarget(file_url));
   DataProtocolHandler data_protocol_handler;
   EXPECT_FALSE(data_protocol_handler.IsSafeRedirectTarget(data_url));
 
   // Test URLRequestJobFactoryImpl::IsSafeRedirectTarget().
-  EXPECT_FALSE(job_factory_.IsSafeRedirectTarget(file_url));
   EXPECT_FALSE(job_factory_.IsSafeRedirectTarget(data_url));
+}
+
+#if !defined(DISABLE_FILE_SUPPORT)
+TEST_F(URLRequestTestHTTP, ProtocolHandlerAndFactoryRestrictFileRedirects) {
+  // Test URLRequestJobFactory::ProtocolHandler::IsSafeRedirectTarget().
+  GURL file_url("file:///foo.txt");
+  FileProtocolHandler file_protocol_handler(base::MessageLoopProxy::current());
+  EXPECT_FALSE(file_protocol_handler.IsSafeRedirectTarget(file_url));
+
+  // Test URLRequestJobFactoryImpl::IsSafeRedirectTarget().
+  EXPECT_FALSE(job_factory_.IsSafeRedirectTarget(file_url));
 }
 
 TEST_F(URLRequestTestHTTP, RestrictFileRedirects) {
@@ -5176,6 +5187,7 @@ TEST_F(URLRequestTestHTTP, RestrictFileRedirects) {
   EXPECT_EQ(URLRequestStatus::FAILED, req.status().status());
   EXPECT_EQ(ERR_UNSAFE_REDIRECT, req.status().error());
 }
+#endif  // !defined(DISABLE_FILE_SUPPORT)
 
 TEST_F(URLRequestTestHTTP, RestrictDataRedirects) {
   ASSERT_TRUE(test_server_.Start());
@@ -6662,11 +6674,10 @@ TEST_F(HTTPSRequestTest, HTTPSErrorsNoClobberTSSTest) {
       base::FilePath(FILE_PATH_LITERAL("net/data/ssl")));
   ASSERT_TRUE(test_server.Start());
 
-  // We require that the URL be www.google.com in order to pick up the
-  // preloaded and dynamic HSTS and public key pin entries in the
-  // TransportSecurityState. This means that we have to use a
-  // MockHostResolver in order to direct www.google.com to the testserver.
-  // By default, MockHostResolver maps all hosts to 127.0.0.1.
+  // We require that the URL be www.google.com in order to pick up the static
+  // and dynamic STS and PKP entries in the TransportSecurityState. This means
+  // that we have to use a MockHostResolver in order to direct www.google.com to
+  // the testserver. By default, MockHostResolver maps all hosts to 127.0.0.1.
 
   MockHostResolver host_resolver;
   TestNetworkDelegate network_delegate;  // Must outlive URLRequest.
@@ -6674,11 +6685,16 @@ TEST_F(HTTPSRequestTest, HTTPSErrorsNoClobberTSSTest) {
   context.set_network_delegate(&network_delegate);
   context.set_host_resolver(&host_resolver);
   TransportSecurityState transport_security_state;
-  TransportSecurityState::DomainState domain_state;
-  EXPECT_TRUE(transport_security_state.GetDomainState("www.google.com", true,
-                                                      &domain_state));
+
+  TransportSecurityState::DomainState static_domain_state;
+  EXPECT_TRUE(transport_security_state.GetStaticDomainState(
+      "www.google.com", true, &static_domain_state));
   context.set_transport_security_state(&transport_security_state);
   context.Init();
+
+  TransportSecurityState::DomainState dynamic_domain_state;
+  EXPECT_FALSE(transport_security_state.GetDynamicDomainState(
+      "www.google.com", &dynamic_domain_state));
 
   TestDelegate d;
   URLRequest r(GURL(base::StringPrintf("https://www.google.com:%d",
@@ -6697,21 +6713,24 @@ TEST_F(HTTPSRequestTest, HTTPSErrorsNoClobberTSSTest) {
   EXPECT_TRUE(d.have_certificate_errors());
   EXPECT_TRUE(d.certificate_errors_are_fatal());
 
-  // Get a fresh copy of the state, and check that it hasn't been updated.
-  TransportSecurityState::DomainState new_domain_state;
-  EXPECT_TRUE(transport_security_state.GetDomainState("www.google.com", true,
-                                                      &new_domain_state));
-  EXPECT_EQ(new_domain_state.upgrade_mode, domain_state.upgrade_mode);
-  EXPECT_EQ(new_domain_state.sts_include_subdomains,
-            domain_state.sts_include_subdomains);
-  EXPECT_EQ(new_domain_state.pkp_include_subdomains,
-            domain_state.pkp_include_subdomains);
-  EXPECT_TRUE(FingerprintsEqual(new_domain_state.static_spki_hashes,
-                                domain_state.static_spki_hashes));
-  EXPECT_TRUE(FingerprintsEqual(new_domain_state.dynamic_spki_hashes,
-                                domain_state.dynamic_spki_hashes));
-  EXPECT_TRUE(FingerprintsEqual(new_domain_state.bad_static_spki_hashes,
-                                domain_state.bad_static_spki_hashes));
+  // Get a fresh copy of the states, and check that they haven't changed.
+  TransportSecurityState::DomainState new_static_domain_state;
+  EXPECT_TRUE(transport_security_state.GetStaticDomainState(
+      "www.google.com", true, &new_static_domain_state));
+  TransportSecurityState::DomainState new_dynamic_domain_state;
+  EXPECT_FALSE(transport_security_state.GetDynamicDomainState(
+      "www.google.com", &new_dynamic_domain_state));
+
+  EXPECT_EQ(new_static_domain_state.sts.upgrade_mode,
+            static_domain_state.sts.upgrade_mode);
+  EXPECT_EQ(new_static_domain_state.sts.include_subdomains,
+            static_domain_state.sts.include_subdomains);
+  EXPECT_EQ(new_static_domain_state.pkp.include_subdomains,
+            static_domain_state.pkp.include_subdomains);
+  EXPECT_TRUE(FingerprintsEqual(new_static_domain_state.pkp.spki_hashes,
+                                static_domain_state.pkp.spki_hashes));
+  EXPECT_TRUE(FingerprintsEqual(new_static_domain_state.pkp.bad_spki_hashes,
+                                static_domain_state.pkp.bad_spki_hashes));
 }
 
 // Make sure HSTS preserves a POST request's method and body.

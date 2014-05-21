@@ -6,6 +6,7 @@
 #define CONTENT_PUBLIC_BROWSER_RENDER_WIDGET_HOST_VIEW_H_
 
 #include "base/basictypes.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/strings/string16.h"
 #include "content/common/content_export.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -20,9 +21,14 @@ class Rect;
 class Size;
 }
 
+namespace ui {
+class TextInputClient;
+}
+
 namespace content {
 
 class RenderWidgetHost;
+class RenderWidgetHostViewFrameSubscriber;
 
 // RenderWidgetHostView is an interface implemented by an object that acts as
 // the "View" portion of a RenderWidgetHost. The RenderWidgetHost and its
@@ -61,6 +67,13 @@ class CONTENT_EXPORT RenderWidgetHostView {
   virtual gfx::NativeViewId GetNativeViewId() const = 0;
   virtual gfx::NativeViewAccessible GetNativeViewAccessible() = 0;
 
+  // Returns a ui::TextInputClient to support text input or NULL if this RWHV
+  // doesn't support text input.
+  // Note: Not all the platforms use ui::InputMethod and ui::TextInputClient for
+  // text input.  Some platforms (Mac and Android for example) use their own
+  // text input system.
+  virtual ui::TextInputClient* GetTextInputClient() = 0;
+
   // Set focus to the associated View component.
   virtual void Focus() = 0;
   // Returns true if the View currently has the focus.
@@ -89,9 +102,9 @@ class CONTENT_EXPORT RenderWidgetHostView {
   virtual base::string16 GetSelectedText() const = 0;
 
   // Subclasses should override this method to do what is appropriate to set
-  // the custom background for their platform.
-  virtual void SetBackground(const SkBitmap& background) = 0;
-  virtual const SkBitmap& GetBackground() = 0;
+  // the background to be transparent or opaque.
+  virtual void SetBackgroundOpaque(bool opaque) = 0;
+  virtual bool GetBackgroundOpaque() = 0;
 
   // Return value indicates whether the mouse is locked successfully or not.
   virtual bool LockMouse() = 0;
@@ -107,6 +120,16 @@ class CONTENT_EXPORT RenderWidgetHostView {
   // Set insets for the visible region of the root window. Used to compute the
   // visible viewport.
   virtual void SetInsets(const gfx::Insets& insets) = 0;
+
+  // Begin subscribing for presentation events and captured frames.
+  // |subscriber| is now owned by this object, it will be called only on the
+  // UI thread.
+  virtual void BeginFrameSubscription(
+      scoped_ptr<RenderWidgetHostViewFrameSubscriber> subscriber) = 0;
+
+  // End subscribing for frame presentation events. FrameSubscriber will be
+  // deleted after this call.
+  virtual void EndFrameSubscription() = 0;
 
 #if defined(OS_MACOSX)
   // Set the view's active state (i.e., tint state of controls).

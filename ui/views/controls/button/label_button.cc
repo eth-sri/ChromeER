@@ -50,7 +50,8 @@ LabelButton::LabelButton(ButtonListener* listener, const base::string16& text)
       button_state_colors_(),
       explicitly_set_colors_(),
       is_default_(false),
-      style_(STYLE_TEXTBUTTON) {
+      style_(STYLE_TEXTBUTTON),
+      border_is_themed_border_(true) {
   SetAnimationDuration(kHoverAnimationDurationMs);
   SetText(text);
   SetFontList(gfx::FontList());
@@ -165,17 +166,14 @@ void LabelButton::SetStyle(ButtonStyle style) {
   if (style == STYLE_BUTTON)
     set_min_size(gfx::Size(70, 33));
 
-  ResetColorsFromNativeTheme();
-  UpdateThemedBorder(scoped_ptr<Border>(new LabelButtonBorder(style_)));
-  // Invalidate the layout to pickup the new insets from the border.
-  InvalidateLayout();
+  OnNativeThemeChanged(GetNativeTheme());
 }
 
 void LabelButton::SetFocusPainter(scoped_ptr<Painter> focus_painter) {
   focus_painter_ = focus_painter.Pass();
 }
 
-gfx::Size LabelButton::GetPreferredSize() {
+gfx::Size LabelButton::GetPreferredSize() const {
   // Use a temporary label copy for sizing to avoid calculation side-effects.
   Label label(GetText(), cached_normal_font_list_);
   label.SetMultiLine(GetTextMultiLine());
@@ -268,6 +266,15 @@ const char* LabelButton::GetClassName() const {
   return kViewClassName;
 }
 
+scoped_ptr<Border> LabelButton::CreateDefaultBorder() const {
+  return scoped_ptr<Border>(new LabelButtonBorder(style_));
+}
+
+void LabelButton::SetBorder(scoped_ptr<Border> border) {
+  border_is_themed_border_ = false;
+  View::SetBorder(border.Pass());
+}
+
 void LabelButton::OnPaint(gfx::Canvas* canvas) {
   View::OnPaint(canvas);
   Painter::PaintFocusPainter(this, canvas, focus_painter_.get());
@@ -348,7 +355,13 @@ void LabelButton::UpdateImage() {
   image_->SetImage(GetImage(state()));
 }
 
-void LabelButton::UpdateThemedBorder(scoped_ptr<Border> label_button_border) {
+void LabelButton::UpdateThemedBorder() {
+  // Don't override borders set by others.
+  if (!border_is_themed_border_)
+    return;
+
+  scoped_ptr<Border> label_button_border = CreateDefaultBorder();
+
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS)
   views::LinuxUI* linux_ui = views::LinuxUI::instance();
   if (linux_ui) {
@@ -358,6 +371,8 @@ void LabelButton::UpdateThemedBorder(scoped_ptr<Border> label_button_border) {
   {
     SetBorder(label_button_border.Pass());
   }
+
+  border_is_themed_border_ = true;
 }
 
 void LabelButton::StateChanged() {
@@ -377,6 +392,9 @@ void LabelButton::ChildPreferredSizeChanged(View* child) {
 
 void LabelButton::OnNativeThemeChanged(const ui::NativeTheme* theme) {
   ResetColorsFromNativeTheme();
+  UpdateThemedBorder();
+  // Invalidate the layout to pickup the new insets from the border.
+  InvalidateLayout();
 }
 
 ui::NativeTheme::Part LabelButton::GetThemePart() const {

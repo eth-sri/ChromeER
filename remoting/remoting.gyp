@@ -52,6 +52,10 @@
         'host_plugin_extension': 'arm.so',
         'host_plugin_prefix': 'lib',
       }],
+      ['os_posix == 1 and OS != "mac" and target_arch == "arm64"', {
+        'host_plugin_extension': 'arm64.so',
+        'host_plugin_prefix': 'lib',
+      }],
       ['os_posix == 1 and OS != "mac" and target_arch == "mipsel"', {
         'host_plugin_extension': 'mipsel.so',
         'host_plugin_prefix': 'lib',
@@ -202,6 +206,7 @@
           'webapp/manifest.json.jinja2',
           'webapp/paired_client_manager.js',
           'webapp/remoting.js',
+          'webapp/window_frame.js',
         ],
       },
       'actions': [

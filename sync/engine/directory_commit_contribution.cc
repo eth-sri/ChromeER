@@ -7,6 +7,7 @@
 #include "sync/engine/commit_util.h"
 #include "sync/engine/get_commit_ids.h"
 #include "sync/engine/syncer_util.h"
+#include "sync/internal_api/public/sessions/commit_counters.h"
 #include "sync/syncable/model_neutral_mutable_entry.h"
 #include "sync/syncable/syncable_model_neutral_write_transaction.h"
 
@@ -23,7 +24,10 @@ DirectoryCommitContribution::~DirectoryCommitContribution() {
 scoped_ptr<DirectoryCommitContribution> DirectoryCommitContribution::Build(
     syncable::Directory* dir,
     ModelType type,
-    size_t max_entries) {
+    size_t max_entries,
+    DirectoryTypeDebugInfoEmitter* debug_info_emitter) {
+  DCHECK(debug_info_emitter);
+
   std::vector<int64> metahandles;
 
   syncable::ModelNeutralWriteTransaction trans(FROM_HERE, SYNCER, dir);
@@ -45,7 +49,12 @@ scoped_ptr<DirectoryCommitContribution> DirectoryCommitContribution::Build(
   dir->GetDataTypeContext(&trans, type, &context);
 
   return scoped_ptr<DirectoryCommitContribution>(
-      new DirectoryCommitContribution(metahandles, entities, context, dir));
+      new DirectoryCommitContribution(
+          metahandles,
+          entities,
+          context,
+          dir,
+          debug_info_emitter));
 }
 
 void DirectoryCommitContribution::AddToCommitMessage(
@@ -58,6 +67,9 @@ void DirectoryCommitContribution::AddToCommitMessage(
             RepeatedPtrFieldBackInserter(commit_message->mutable_entries()));
   if (!context_.context().empty())
     commit_message->add_client_contexts()->Swap(&context_);
+
+  CommitCounters* counters = debug_info_emitter_->GetMutableCommitCounters();
+  counters->num_commits_attempted += entities_.size();
 }
 
 SyncerError DirectoryCommitContribution::ProcessCommitResponse(
@@ -112,6 +124,11 @@ SyncerError DirectoryCommitContribution::ProcessCommitResponse(
     MarkDeletedChildrenSynced(dir_, &trans, &deleted_folders);
   }
 
+  CommitCounters* counters = debug_info_emitter_->GetMutableCommitCounters();
+  counters->num_commits_success += successes;
+  counters->num_commits_conflict += transient_error_commits;
+  counters->num_commits_error += transient_error_commits;
+
   int commit_count = static_cast<int>(metahandles_.size());
   if (commit_count == successes) {
     return SYNCER_OK;
@@ -140,6 +157,7 @@ SyncerError DirectoryCommitContribution::ProcessCommitResponse(
 void DirectoryCommitContribution::CleanUp() {
   DCHECK(syncing_bits_set_);
   UnsetSyncingBits();
+  debug_info_emitter_->EmitCommitCountersUpdate();
 }
 
 size_t DirectoryCommitContribution::GetNumEntries() const {
@@ -150,13 +168,15 @@ DirectoryCommitContribution::DirectoryCommitContribution(
     const std::vector<int64>& metahandles,
     const google::protobuf::RepeatedPtrField<sync_pb::SyncEntity>& entities,
     const sync_pb::DataTypeContext& context,
-    syncable::Directory* dir)
+    syncable::Directory* dir,
+    DirectoryTypeDebugInfoEmitter* debug_info_emitter)
     : dir_(dir),
       metahandles_(metahandles),
       entities_(entities),
       context_(context),
       entries_start_index_(0xDEADBEEF),
-      syncing_bits_set_(true) {}
+      syncing_bits_set_(true),
+      debug_info_emitter_(debug_info_emitter) {}
 
 void DirectoryCommitContribution::UnsetSyncingBits() {
   syncable::ModelNeutralWriteTransaction trans(FROM_HERE, SYNCER, dir_);

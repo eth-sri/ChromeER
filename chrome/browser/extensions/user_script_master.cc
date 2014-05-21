@@ -7,6 +7,7 @@
 #include <string>
 
 #include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/file_util.h"
 #include "base/files/file_path.h"
 #include "base/version.h"
@@ -19,7 +20,9 @@
 #include "chrome/common/extensions/manifest_handlers/content_scripts_handler.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_process_host.h"
+#include "extensions/browser/content_verifier.h"
 #include "extensions/browser/extension_registry.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/common/file_util.h"
 #include "extensions/common/message_bundle.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -148,12 +151,13 @@ bool UserScriptMaster::ScriptReloader::ParseMetadataHeader(
 
 void UserScriptMaster::ScriptReloader::StartLoad(
     const UserScriptList& user_scripts,
-    const ExtensionsInfo& extensions_info_) {
+    const ExtensionsInfo& extensions_info) {
   // Add a reference to ourselves to keep ourselves alive while we're running.
   // Balanced by NotifyMaster().
   AddRef();
 
-  this->extensions_info_ = extensions_info_;
+  verifier_ = master_->content_verifier();
+  this->extensions_info_ = extensions_info;
   BrowserThread::PostTask(
       BrowserThread::FILE, FROM_HERE,
       base::Bind(
@@ -163,20 +167,34 @@ void UserScriptMaster::ScriptReloader::StartLoad(
 UserScriptMaster::ScriptReloader::~ScriptReloader() {}
 
 void UserScriptMaster::ScriptReloader::NotifyMaster(
-    base::SharedMemory* memory) {
-  // The master went away, so these new scripts aren't useful anymore.
-  if (!master_)
-    delete memory;
-  else
-    master_->NewScriptsAvailable(memory);
+    scoped_ptr<base::SharedMemory> memory) {
+  // The master could go away
+  if (master_)
+    master_->NewScriptsAvailable(memory.Pass());
 
   // Drop our self-reference.
   // Balances StartLoad().
   Release();
 }
 
-static bool LoadScriptContent(UserScript::File* script_file,
-                              const SubstitutionMap* localization_messages) {
+static void VerifyContent(ContentVerifier* verifier,
+                          const std::string& extension_id,
+                          const base::FilePath& extension_root,
+                          const base::FilePath& relative_path,
+                          const std::string& content) {
+  scoped_refptr<ContentVerifyJob> job(
+      verifier->CreateJobFor(extension_id, extension_root, relative_path));
+  if (job.get()) {
+    job->Start();
+    job->BytesRead(content.size(), content.data());
+    job->DoneReading();
+  }
+}
+
+static bool LoadScriptContent(const std::string& extension_id,
+                              UserScript::File* script_file,
+                              const SubstitutionMap* localization_messages,
+                              ContentVerifier* verifier) {
   std::string content;
   const base::FilePath& path = ExtensionResource::GetFilePath(
       script_file->extension_root(), script_file->relative_path(),
@@ -198,6 +216,13 @@ static bool LoadScriptContent(UserScript::File* script_file,
     if (!base::ReadFileToString(path, &content)) {
       LOG(WARNING) << "Failed to load user script file: " << path.value();
       return false;
+    }
+    if (verifier) {
+      VerifyContent(verifier,
+                    extension_id,
+                    script_file->extension_root(),
+                    script_file->relative_path(),
+                    content);
     }
   }
 
@@ -231,12 +256,16 @@ void UserScriptMaster::ScriptReloader::LoadUserScripts(
     for (size_t k = 0; k < script.js_scripts().size(); ++k) {
       UserScript::File& script_file = script.js_scripts()[k];
       if (script_file.GetContent().empty())
-        LoadScriptContent(&script_file, NULL);
+        LoadScriptContent(
+            script.extension_id(), &script_file, NULL, verifier_.get());
     }
     for (size_t k = 0; k < script.css_scripts().size(); ++k) {
       UserScript::File& script_file = script.css_scripts()[k];
       if (script_file.GetContent().empty())
-        LoadScriptContent(&script_file, localization_messages.get());
+        LoadScriptContent(script.extension_id(),
+                          &script_file,
+                          localization_messages.get(),
+                          verifier_.get());
     }
   }
 }
@@ -254,7 +283,7 @@ SubstitutionMap* UserScriptMaster::ScriptReloader::GetLocalizationMessages(
 }
 
 // Pickle user scripts and return pointer to the shared memory.
-static base::SharedMemory* Serialize(const UserScriptList& scripts) {
+static scoped_ptr<base::SharedMemory> Serialize(const UserScriptList& scripts) {
   Pickle pickle;
   pickle.WriteUInt64(scripts.size());
   for (size_t i = 0; i < scripts.size(); i++) {
@@ -282,10 +311,10 @@ static base::SharedMemory* Serialize(const UserScriptList& scripts) {
   options.size = pickle.size();
   options.share_read_only = true;
   if (!shared_memory.Create(options))
-    return NULL;
+    return scoped_ptr<base::SharedMemory>();
 
   if (!shared_memory.Map(pickle.size()))
-    return NULL;
+    return scoped_ptr<base::SharedMemory>();
 
   // Copy the pickle to shared memory.
   memcpy(shared_memory.memory(), pickle.data(), pickle.size());
@@ -293,9 +322,10 @@ static base::SharedMemory* Serialize(const UserScriptList& scripts) {
   base::SharedMemoryHandle readonly_handle;
   if (!shared_memory.ShareReadOnlyToProcess(base::GetCurrentProcessHandle(),
                                             &readonly_handle))
-    return NULL;
+    return scoped_ptr<base::SharedMemory>();
 
-  return new base::SharedMemory(readonly_handle, /*read_only=*/true);
+  return make_scoped_ptr(new base::SharedMemory(readonly_handle,
+                                                /*read_only=*/true));
 }
 
 // This method will be called on the file thread.
@@ -306,10 +336,11 @@ void UserScriptMaster::ScriptReloader::RunLoad(
   // Scripts now contains list of up-to-date scripts. Load the content in the
   // shared memory and let the master know it's ready. We need to post the task
   // back even if no scripts ware found to balance the AddRef/Release calls.
-  BrowserThread::PostTask(
-      master_thread_id_, FROM_HERE,
-      base::Bind(
-          &ScriptReloader::NotifyMaster, this, Serialize(user_scripts)));
+  BrowserThread::PostTask(master_thread_id_,
+                          FROM_HERE,
+                          base::Bind(&ScriptReloader::NotifyMaster,
+                                     this,
+                                     base::Passed(Serialize(user_scripts))));
 }
 
 UserScriptMaster::UserScriptMaster(Profile* profile)
@@ -329,10 +360,8 @@ UserScriptMaster::~UserScriptMaster() {
     script_reloader_->DisownMaster();
 }
 
-void UserScriptMaster::NewScriptsAvailable(base::SharedMemory* handle) {
-  // Ensure handle is deleted or released.
-  scoped_ptr<base::SharedMemory> handle_deleter(handle);
-
+void UserScriptMaster::NewScriptsAvailable(
+    scoped_ptr<base::SharedMemory> handle) {
   if (pending_load_) {
     // While we were loading, there were further changes.  Don't bother
     // notifying about these scripts and instead just immediately reload.
@@ -355,19 +384,24 @@ void UserScriptMaster::NewScriptsAvailable(base::SharedMemory* handle) {
     }
 
     // We've got scripts ready to go.
-    shared_memory_.swap(handle_deleter);
+    shared_memory_ = handle.Pass();
 
     for (content::RenderProcessHost::iterator i(
             content::RenderProcessHost::AllHostsIterator());
          !i.IsAtEnd(); i.Advance()) {
-      SendUpdate(i.GetCurrentValue(), handle);
+      SendUpdate(i.GetCurrentValue(), shared_memory_.get());
     }
 
     content::NotificationService::current()->Notify(
         chrome::NOTIFICATION_USER_SCRIPTS_UPDATED,
         content::Source<Profile>(profile_),
-        content::Details<base::SharedMemory>(handle));
+        content::Details<base::SharedMemory>(shared_memory_.get()));
   }
+}
+
+ContentVerifier* UserScriptMaster::content_verifier() {
+  ExtensionSystem* system = ExtensionSystem::Get(profile_);
+  return system->content_verifier();
 }
 
 void UserScriptMaster::OnExtensionLoaded(

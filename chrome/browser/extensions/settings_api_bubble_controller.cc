@@ -227,16 +227,15 @@ base::string16 SettingsApiBubbleDelegate::GetLearnMoreLabel() const {
 }
 
 GURL SettingsApiBubbleDelegate::GetLearnMoreUrl() const {
-  return GURL(chrome::kSettingsApiLearnMoreURL);
+  return GURL(chrome::kExtensionControlledSettingLearnMoreURL);
 }
 
 base::string16 SettingsApiBubbleDelegate::GetActionButtonLabel() const {
-  return l10n_util::GetStringUTF16(
-      IDS_EXTENSIONS_SETTINGS_API_RESTORE_SETTINGS);
+  return l10n_util::GetStringUTF16(IDS_EXTENSION_CONTROLLED_RESTORE_SETTINGS);
 }
 
 base::string16 SettingsApiBubbleDelegate::GetDismissButtonLabel() const {
-  return l10n_util::GetStringUTF16(IDS_EXTENSIONS_SETTINGS_API_KEEP_CHANGES);
+  return l10n_util::GetStringUTF16(IDS_EXTENSION_CONTROLLED_KEEP_CHANGES);
 }
 
 bool SettingsApiBubbleDelegate::ShouldShowExtensionList() const {
@@ -244,14 +243,30 @@ bool SettingsApiBubbleDelegate::ShouldShowExtensionList() const {
 }
 
 void SettingsApiBubbleDelegate::LogExtensionCount(size_t count) {
-  UMA_HISTOGRAM_COUNTS_100("SettingsApiBubble.ExtensionCount", count);
 }
 
 void SettingsApiBubbleDelegate::LogAction(
     ExtensionMessageBubbleController::BubbleAction action) {
-  UMA_HISTOGRAM_ENUMERATION("SettingsApiBubble.UserSelection",
-                            action,
-                            ExtensionMessageBubbleController::ACTION_BOUNDARY);
+  switch (type_) {
+    case extensions::BUBBLE_TYPE_HOME_PAGE:
+      UMA_HISTOGRAM_ENUMERATION(
+          "ExtensionOverrideBubble.SettingsApiUserSelectionHomePage",
+          action,
+          ExtensionMessageBubbleController::ACTION_BOUNDARY);
+      break;
+    case extensions::BUBBLE_TYPE_STARTUP_PAGES:
+      UMA_HISTOGRAM_ENUMERATION(
+          "ExtensionOverrideBubble.SettingsApiUserSelectionStartupPage",
+          action,
+          ExtensionMessageBubbleController::ACTION_BOUNDARY);
+      break;
+    case extensions::BUBBLE_TYPE_SEARCH_ENGINE:
+      UMA_HISTOGRAM_ENUMERATION(
+          "ExtensionOverrideBubble.SettingsApiUserSelectionSearchEngine",
+          action,
+          ExtensionMessageBubbleController::ACTION_BOUNDARY);
+      break;
+  }
 }
 
 }  // namespace

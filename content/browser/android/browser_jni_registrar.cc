@@ -10,6 +10,7 @@
 #include "content/browser/accessibility/browser_accessibility_manager_android.h"
 #include "content/browser/android/browser_startup_controller.h"
 #include "content/browser/android/child_process_launcher_android.h"
+#include "content/browser/android/content_readback_handler.h"
 #include "content/browser/android/content_settings.h"
 #include "content/browser/android/content_video_view.h"
 #include "content/browser/android/content_view_core_impl.h"
@@ -22,7 +23,7 @@
 #include "content/browser/android/surface_texture_peer_browser_impl.h"
 #include "content/browser/android/tracing_controller_android.h"
 #include "content/browser/android/web_contents_observer_android.h"
-#include "content/browser/battery_status/battery_status_manager_android.h"
+#include "content/browser/battery_status/battery_status_manager.h"
 #include "content/browser/device_sensors/sensor_manager_android.h"
 #include "content/browser/frame_host/navigation_controller_android.h"
 #include "content/browser/geolocation/location_api_adapter_android.h"
@@ -45,12 +46,14 @@ namespace {
 base::android::RegistrationMethod kContentRegisteredMethods[] = {
     {"AndroidLocationApiAdapter",
      content::AndroidLocationApiAdapter::RegisterGeolocationService},
-    {"BatteryStatusManagerAndroid",
-     content::BatteryStatusManagerAndroid::Register},
+    {"BatteryStatusManager",
+     content::BatteryStatusManager::Register},
     {"BrowserAccessibilityManager",
      content::RegisterBrowserAccessibilityManager},
     {"BrowserStartupController", content::RegisterBrowserStartupController},
     {"ChildProcessLauncher", content::RegisterChildProcessLauncher},
+    {"ContentReadbackHandler",
+     content::ContentReadbackHandler::RegisterContentReadbackHandler},
     {"ContentSettings", content::ContentSettings::RegisterContentSettings},
     {"ContentVideoView", content::ContentVideoView::RegisterContentVideoView},
     {"ContentViewCore", content::RegisterContentViewCore},

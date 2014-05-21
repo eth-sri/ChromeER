@@ -14,9 +14,9 @@
 #include "base/threading/non_thread_safe.h"
 #include "base/timer/timer.h"
 #include "base/values.h"
-#include "chrome/browser/invalidation/invalidation_logger.h"
-#include "chrome/browser/invalidation/invalidation_service.h"
-#include "chrome/browser/invalidation/ticl_settings_provider.h"
+#include "components/invalidation/invalidation_logger.h"
+#include "components/invalidation/invalidation_service.h"
+#include "components/invalidation/ticl_settings_provider.h"
 #include "components/keyed_service/core/keyed_service.h"
 #include "google_apis/gaia/identity_provider.h"
 #include "google_apis/gaia/oauth2_token_service.h"
@@ -25,7 +25,7 @@
 #include "sync/notifier/invalidator_registrar.h"
 
 namespace gcm {
-class GCMService;
+class GCMDriver;
 }
 
 namespace net {
@@ -62,7 +62,7 @@ class TiclInvalidationService : public base::NonThreadSafe,
   TiclInvalidationService(
       scoped_ptr<IdentityProvider> identity_provider,
       scoped_ptr<TiclSettingsProvider> settings_provider,
-      gcm::GCMService* gcm_service,
+      gcm::GCMDriver* gcm_service,
       const scoped_refptr<net::URLRequestContextGetter>& request_context);
   virtual ~TiclInvalidationService();
 
@@ -152,7 +152,7 @@ class TiclInvalidationService : public base::NonThreadSafe,
   net::BackoffEntry request_access_token_backoff_;
 
   InvalidationNetworkChannel network_channel_type_;
-  gcm::GCMService* gcm_service_;
+  gcm::GCMDriver* gcm_driver_;
   scoped_ptr<GCMInvalidationBridge> gcm_invalidation_bridge_;
   scoped_refptr<net::URLRequestContextGetter> request_context_;
 

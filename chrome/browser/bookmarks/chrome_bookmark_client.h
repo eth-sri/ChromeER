@@ -6,7 +6,8 @@
 #define CHROME_BROWSER_BOOKMARKS_CHROME_BOOKMARK_CLIENT_H_
 
 #include "base/compiler_specific.h"
-#include "components/bookmarks/core/browser/bookmark_client.h"
+#include "components/bookmarks/browser/base_bookmark_model_observer.h"
+#include "components/bookmarks/browser/bookmark_client.h"
 #include "components/keyed_service/core/keyed_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
@@ -16,8 +17,9 @@ class Profile;
 
 class ChromeBookmarkClient : public BookmarkClient,
                              public content::NotificationObserver,
-                             public KeyedService {
- public:
+                             public KeyedService,
+                             public BaseBookmarkModelObserver {
+  public:
   // |index_urls| says whether URLs should be stored in the BookmarkIndex
   // in addition to bookmark titles.
   ChromeBookmarkClient(Profile* profile, bool index_urls);
@@ -27,6 +29,7 @@ class ChromeBookmarkClient : public BookmarkClient,
   BookmarkModel* model() { return model_.get(); }
 
   // BookmarkClient:
+  virtual bool PreferTouchIcon() OVERRIDE;
   virtual base::CancelableTaskTracker::TaskId GetFaviconImageForURL(
       const GURL& page_url,
       int icon_types,
@@ -37,9 +40,8 @@ class ChromeBookmarkClient : public BookmarkClient,
   virtual void GetTypedCountForNodes(
       const NodeSet& nodes,
       NodeTypedCountPairs* node_typed_count_pairs) OVERRIDE;
+  virtual bool IsPermanentNodeVisible(int node_type) OVERRIDE;
   virtual void RecordAction(const base::UserMetricsAction& action) OVERRIDE;
-  virtual void NotifyHistoryAboutRemovedBookmarks(
-      const std::set<GURL>& removed_bookmarks_urls) OVERRIDE;
 
   // content::NotificationObserver:
   virtual void Observe(int type,
@@ -50,6 +52,17 @@ class ChromeBookmarkClient : public BookmarkClient,
   virtual void Shutdown() OVERRIDE;
 
  private:
+  // BaseBookmarkModelObserver:
+  virtual void BookmarkModelChanged() OVERRIDE;
+  virtual void BookmarkNodeRemoved(BookmarkModel* model,
+                                   const BookmarkNode* parent,
+                                   int old_index,
+                                   const BookmarkNode* node,
+                                   const std::set<GURL>& removed_urls) OVERRIDE;
+  virtual void BookmarkAllNodesRemoved(
+      BookmarkModel* model,
+      const std::set<GURL>& removed_urls) OVERRIDE;
+
   Profile* profile_;
 
   content::NotificationRegistrar registrar_;

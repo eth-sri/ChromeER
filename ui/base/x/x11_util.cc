@@ -167,6 +167,10 @@ class XCustomCursorCache {
     cache_.clear();
   }
 
+  const XcursorImage* GetXcursorImage(::Cursor cursor) const {
+    return cache_.find(cursor)->second->image();
+  }
+
  private:
   friend struct DefaultSingletonTraits<XCustomCursorCache>;
 
@@ -199,6 +203,10 @@ class XCustomCursorCache {
       return false;
     }
 
+    const XcursorImage* image() const {
+      return image_;
+    };
+
    private:
     XcursorImage* image_;
     int ref_;
@@ -215,14 +223,6 @@ class XCustomCursorCache {
   std::map< ::Cursor, XCustomCursor*> cache_;
   DISALLOW_COPY_AND_ASSIGN(XCustomCursorCache);
 };
-
-bool IsShapeAvailable() {
-  int dummy;
-  static bool is_shape_available =
-    XShapeQueryExtension(gfx::GetXDisplay(), &dummy, &dummy);
-  return is_shape_available;
-
-}
 
 }  // namespace
 
@@ -300,15 +300,19 @@ SharedMemorySupport QuerySharedMemorySupport(XDisplay* dpy) {
   return shared_memory_support;
 }
 
+bool QueryRenderSupport(Display* dpy) {
+  int dummy;
+  // We don't care about the version of Xrender since all the features which
+  // we use are included in every version.
+  static bool render_supported = XRenderQueryExtension(dpy, &dummy, &dummy);
+
+  return render_supported;
+}
+
 ::Cursor GetXCursor(int cursor_shape) {
   if (!cursor_cache)
     cursor_cache = new XCursorCache;
   return cursor_cache->GetCursor(cursor_shape);
-}
-
-void ResetXCursorCache() {
-  delete cursor_cache;
-  cursor_cache = NULL;
 }
 
 ::Cursor CreateReffedCustomXCursor(XcursorImage* image) {
@@ -459,6 +463,13 @@ void HideHostCursor() {
   return invisible_cursor;
 }
 
+bool IsShapeExtensionAvailable() {
+  int dummy;
+  static bool is_shape_available =
+      XShapeQueryExtension(gfx::GetXDisplay(), &dummy, &dummy);
+  return is_shape_available;
+}
+
 XID GetX11RootWindow() {
   return DefaultRootWindow(gfx::GetXDisplay());
 }
@@ -567,7 +578,7 @@ bool WindowContainsPoint(XID window, gfx::Point screen_loc) {
   if (!window_rect.Contains(screen_loc))
     return false;
 
-  if (!IsShapeAvailable())
+  if (!IsShapeExtensionAvailable())
     return true;
 
   // According to http://www.x.org/releases/X11R7.6/doc/libXext/shapelib.html,
@@ -1260,6 +1271,18 @@ void XScopedCursor::reset(::Cursor cursor) {
   if (cursor_)
     XFreeCursor(display_, cursor_);
   cursor_ = cursor;
+}
+
+namespace test {
+
+void ResetXCursorCache() {
+  delete cursor_cache;
+  cursor_cache = NULL;
+}
+
+const XcursorImage* GetCachedXcursorImage(::Cursor cursor) {
+  return XCustomCursorCache::GetInstance()->GetXcursorImage(cursor);
+}
 }
 
 // ----------------------------------------------------------------------------

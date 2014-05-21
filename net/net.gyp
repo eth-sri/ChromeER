@@ -45,6 +45,42 @@
   ],
   'targets': [
     {
+      'target_name': 'net_derived_sources',
+      'type': 'none',
+      'sources': [
+        'base/registry_controlled_domains/effective_tld_names.gperf',
+        'base/registry_controlled_domains/effective_tld_names_unittest1.gperf',
+        'base/registry_controlled_domains/effective_tld_names_unittest2.gperf',
+        'base/registry_controlled_domains/effective_tld_names_unittest3.gperf',
+        'base/registry_controlled_domains/effective_tld_names_unittest4.gperf',
+        'base/registry_controlled_domains/effective_tld_names_unittest5.gperf',
+        'base/registry_controlled_domains/effective_tld_names_unittest6.gperf',
+      ],
+      'rules': [
+        {
+          'rule_name': 'dafsa',
+          'extension': 'gperf',
+          'outputs': [
+            '<(SHARED_INTERMEDIATE_DIR)/net/<(RULE_INPUT_DIRNAME)/<(RULE_INPUT_ROOT)-inc.cc',
+          ],
+          'inputs': [
+            'tools/tld_cleanup/make_dafsa.py',
+          ],
+          'action': [
+            'python',
+            'tools/tld_cleanup/make_dafsa.py',
+            '<(RULE_INPUT_PATH)',
+            '<(SHARED_INTERMEDIATE_DIR)/net/<(RULE_INPUT_DIRNAME)/<(RULE_INPUT_ROOT)-inc.cc',
+          ],
+        },
+      ],
+      'direct_dependent_settings': {
+        'include_dirs': [
+          '<(SHARED_INTERMEDIATE_DIR)'
+        ],
+      },
+    },
+    {
       'target_name': 'net',
       'type': '<(component)',
       'variables': { 'enable_wexit_time_destructors': 1, },
@@ -58,6 +94,7 @@
         '../third_party/icu/icu.gyp:icuuc',
         '../third_party/zlib/zlib.gyp:zlib',
         '../url/url.gyp:url_lib',
+        'net_derived_sources',
         'net_resources',
       ],
       'sources': [
@@ -126,6 +163,21 @@
         }, { # else
           'sources!': [
             'disk_cache/blockfile/mapped_file_avoid_mmap_posix.cc',
+          ],
+        }],
+        ['disable_file_support==1', {
+          # TODO(mmenke):  Should probably get rid of the dependency on
+          # net_resources in this case (It's used in net_util, to format
+          # directory listings.  Also used outside of net/).
+          'sources!': [
+            'base/directory_lister.cc',
+            'base/directory_lister.h',
+            'url_request/url_request_file_dir_job.cc',
+            'url_request/url_request_file_dir_job.h',
+            'url_request/url_request_file_job.cc',
+            'url_request/url_request_file_job.h',
+            'url_request/file_protocol_handler.cc',
+            'url_request/file_protocol_handler.h',
           ],
         }],
         ['disable_ftp_support==1', {
@@ -208,7 +260,6 @@
           {  # else !use_openssl: remove the unneeded files
             'sources!': [
               'base/crypto_module_openssl.cc',
-              'base/keygen_handler_openssl.cc',
               'cert/ct_log_verifier_openssl.cc',
               'cert/ct_objects_extractor_openssl.cc',
               'cert/jwk_serializer_openssl.cc',
@@ -224,9 +275,12 @@
               'quic/crypto/p256_key_exchange_openssl.cc',
               'quic/crypto/scoped_evp_aead_ctx.cc',
               'quic/crypto/scoped_evp_aead_ctx.h',
+              'socket/openssl_ssl_util.cc',
+              'socket/openssl_ssl_util.h',
               'socket/ssl_client_socket_openssl.cc',
               'socket/ssl_client_socket_openssl.h',
               'socket/ssl_server_socket_openssl.cc',
+              'socket/ssl_server_socket_openssl.h',
               'socket/ssl_session_cache_openssl.cc',
               'socket/ssl_session_cache_openssl.h',
             ],
@@ -234,6 +288,7 @@
         ],
         [ 'use_openssl_certs == 0', {
             'sources!': [
+              'base/keygen_handler_openssl.cc',
               'base/openssl_private_key_store.h',
               'base/openssl_private_key_store_android.cc',
               'base/openssl_private_key_store_memory.cc',
@@ -423,6 +478,23 @@
             ],
           },
         ],
+        [ 'use_icu_alternatives_on_android == 1', {
+            'dependencies!': [
+              '../base/base.gyp:base_i18n',
+              '../third_party/icu/icu.gyp:icui18n',
+              '../third_party/icu/icu.gyp:icuuc',
+            ],
+            'sources!': [
+              'base/filename_util_icu.cc',
+              'base/net_string_util_icu.cc',
+              'base/net_util_icu.cc',
+            ],
+            'sources': [
+              'base/net_string_util_icu_alternatives_android.cc',
+              'base/net_string_util_icu_alternatives_android.h',
+            ],
+          },
+        ],
       ],
       'target_conditions': [
         # These source files are excluded by default platform rules, but they
@@ -471,7 +543,8 @@
         '../url/url.gyp:url_lib',
         'http_server',
         'net',
-        'net_test_support'
+        'net_derived_sources',
+        'net_test_support',
       ],
       'sources': [
         '<@(net_test_sources)',
@@ -533,8 +606,7 @@
         }],
         [ 'os_posix == 1 and OS != "mac" and OS != "android" and OS != "ios"', {
           'conditions': [
-            # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
-            ['(use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1)', {
+            ['use_allocator!="none"', {
               'dependencies': [
                 '../base/allocator/allocator.gyp:allocator',
               ],
@@ -595,6 +667,12 @@
               ['exclude', '^spdy/spdy_websocket_stream_unittest\\.cc$'],
             ],
         }],
+        ['disable_file_support==1', {
+          'sources!': [
+            'base/directory_lister_unittest.cc',
+            'url_request/url_request_file_job_unittest.cc',
+          ],
+        }],
         [ 'disable_ftp_support==1', {
             'sources/': [
               ['exclude', '^ftp/'],
@@ -611,7 +689,10 @@
             ],
           },
         ],
-        [ 'use_v8_in_net==1', {
+        # Always need use_v8_in_net to be 1 to run gyp on Android, so just
+        # remove net_unittest's dependency on v8 when using icu alternatives
+        # instead of setting use_v8_in_net to 0.
+        [ 'use_v8_in_net==1 and use_icu_alternatives_on_android==0', {
             'dependencies': [
               'net_with_v8',
             ],
@@ -718,11 +799,23 @@
             ],
           },
         ],
-        ['OS == "android" and gtest_target_type == "shared_library"', {
+        ['OS == "android"', {
+          # TODO(mmenke):  This depends on test_support_base, which depends on
+          #                icu.  Figure out a way to remove that dependency.
           'dependencies': [
             '../testing/android/native_test.gyp:native_test_native_code',
           ]
         }],
+        [ 'use_icu_alternatives_on_android == 1', {
+            'dependencies!': [
+              '../base/base.gyp:base_i18n',
+            ],
+            'sources!': [
+              'base/filename_util_unittest.cc',
+              'base/net_util_icu_unittest.cc',
+            ],
+          },
+        ],
       ],
       'target_conditions': [
         # These source files are excluded by default platform rules, but they
@@ -793,6 +886,8 @@
       ],
       'export_dependent_settings': [
         '../base/base.gyp:base',
+        # TODO(mmenke):  This depends on icu, figure out a way to build tests
+        #                without icu.
         '../base/base.gyp:test_support_base',
         '../testing/gtest.gyp:gtest',
         '../testing/gmock.gyp:gmock',
@@ -826,6 +921,8 @@
         'dns/mock_host_resolver.h',
         'dns/mock_mdns_socket_factory.cc',
         'dns/mock_mdns_socket_factory.h',
+        'http/http_transaction_test_util.cc',
+        'http/http_transaction_test_util.h',
         'proxy/mock_proxy_resolver.cc',
         'proxy/mock_proxy_resolver.h',
         'proxy/mock_proxy_script_fetcher.cc',
@@ -887,8 +984,7 @@
         }],
         ['os_posix == 1 and OS != "mac" and OS != "android" and OS != "ios"', {
           'conditions': [
-            # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
-            ['(use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1)', {
+            ['use_allocator!="none"', {
               'dependencies': [
                 '../base/allocator/allocator.gyp:allocator',
               ],
@@ -1088,6 +1184,45 @@
           ],
           'sources': [
             'tools/get_server_time/get_server_time.cc',
+          ],
+          # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+          'msvs_disabled_warnings': [4267, ],
+        },
+        {
+          'target_name': 'hpack_example_generator',
+          'type': 'executable',
+          'dependencies': [
+            '../base/base.gyp:base',
+            'net',
+          ],
+          'sources': [
+            'spdy/fuzzing/hpack_example_generator.cc',
+          ],
+          # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+          'msvs_disabled_warnings': [4267, ],
+        },
+        {
+          'target_name': 'hpack_fuzz_mutator',
+          'type': 'executable',
+          'dependencies': [
+            '../base/base.gyp:base',
+            'net',
+          ],
+          'sources': [
+            'spdy/fuzzing/hpack_fuzz_mutator.cc',
+          ],
+          # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+          'msvs_disabled_warnings': [4267, ],
+        },
+        {
+          'target_name': 'hpack_fuzz_wrapper',
+          'type': 'executable',
+          'dependencies': [
+            '../base/base.gyp:base',
+            'net',
+          ],
+          'sources': [
+            'spdy/fuzzing/hpack_fuzz_wrapper.cc',
           ],
           # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
           'msvs_disabled_warnings': [4267, ],
@@ -1350,39 +1485,6 @@
             'tools/quic/quic_server_bin.cc',
           ],
         },
-        {
-          'target_name': 'hpack_example_generator',
-          'type': 'executable',
-          'dependencies': [
-            '../base/base.gyp:base',
-            'net',
-          ],
-          'sources': [
-            'spdy/fuzzing/hpack_example_generator.cc',
-          ],
-        },
-        {
-          'target_name': 'hpack_fuzz_mutator',
-          'type': 'executable',
-          'dependencies': [
-            '../base/base.gyp:base',
-            'net',
-          ],
-          'sources': [
-            'spdy/fuzzing/hpack_fuzz_mutator.cc',
-          ],
-        },
-        {
-          'target_name': 'hpack_fuzz_wrapper',
-          'type': 'executable',
-          'dependencies': [
-            '../base/base.gyp:base',
-            'net',
-          ],
-          'sources': [
-            'spdy/fuzzing/hpack_fuzz_wrapper.cc',
-          ],
-        }
       ]
     }],
     ['OS=="android"', {
@@ -1402,9 +1504,16 @@
           ],
           'variables': {
             'jni_gen_package': 'net',
-            'jni_generator_ptr_type': 'long',
           },
           'includes': [ '../build/jni_generator.gypi' ],
+
+          'conditions': [
+            ['use_icu_alternatives_on_android==1', {
+              'sources': [
+                'android/java/src/org/chromium/net/NetStringUtil.java',
+              ],
+            }],
+          ],
         },
         {
           'target_name': 'net_test_jni_headers',
@@ -1414,7 +1523,6 @@
           ],
           'variables': {
             'jni_gen_package': 'net',
-            'jni_generator_ptr_type': 'long',
           },
           'includes': [ '../build/jni_generator.gypi' ],
         },
@@ -1519,10 +1627,7 @@
         },
       ],
     }],
-    # Special target to wrap a gtest_target_type==shared_library
-    # net_unittests into an android apk for execution.
-    # See base.gyp for TODO(jrg)s about this strategy.
-    ['OS == "android" and gtest_target_type == "shared_library"', {
+    ['OS == "android"', {
       'targets': [
         {
           'target_name': 'net_unittests_apk',

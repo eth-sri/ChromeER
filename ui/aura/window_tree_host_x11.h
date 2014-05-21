@@ -64,7 +64,7 @@ class AURA_EXPORT WindowTreeHostX11 : public WindowTreeHost,
   // Called when X Configure Notify event is recevied.
   virtual void OnConfigureNotify();
 
-  // Translates the native mouse location into screen coordinates and and
+  // Translates the native mouse location into screen coordinates and
   // dispatches the event via WindowEventDispatcher.
   virtual void TranslateAndDispatchLocatedEvent(ui::LocatedEvent* event);
 
@@ -78,11 +78,6 @@ class AURA_EXPORT WindowTreeHostX11 : public WindowTreeHost,
   // window are dispatched to the aura root window (e.g. touch events after
   // calibration).
   void DispatchXI2Event(const base::NativeEvent& event);
-
-  // Returns true if there's an X window manager present... in most cases.  Some
-  // window managers (notably, ion3) don't implement enough of ICCCM for us to
-  // detect that they're there.
-  bool IsWindowManagerPresent();
 
   // Sets the cursor on |xwindow_| to |cursor|.  Does not check or update
   // |current_cursor_|.
@@ -103,6 +98,8 @@ class AURA_EXPORT WindowTreeHostX11 : public WindowTreeHost,
 
   // The bounds of |xwindow_|.
   gfx::Rect bounds_;
+
+  scoped_ptr<internal::TouchEventCalibrate> touch_calibrate_;
 
   ui::X11AtomCache atom_cache_;
 

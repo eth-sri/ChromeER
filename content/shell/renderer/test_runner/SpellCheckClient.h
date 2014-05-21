@@ -11,21 +11,18 @@
 #include "third_party/WebKit/public/web/WebSpellCheckClient.h"
 
 namespace content {
-class WebTestProxyBase;
-}
-
-namespace WebTestRunner {
 
 class WebTestDelegate;
+class WebTestProxyBase;
 
 class SpellCheckClient : public blink::WebSpellCheckClient {
 public:
-    explicit SpellCheckClient(content::WebTestProxyBase*);
+    explicit SpellCheckClient(WebTestProxyBase*);
     virtual ~SpellCheckClient();
 
     void setDelegate(WebTestDelegate*);
 
-    WebTaskList* taskList() { return &m_taskList; }
+    WebTaskList* mutable_task_list() { return &m_taskList; }
     MockSpellCheck* mockSpellCheck() { return &m_spellcheck; }
 
     // blink::WebSpellCheckClient implementation.
@@ -50,11 +47,11 @@ private:
 
     WebTestDelegate* m_delegate;
 
-    content::WebTestProxyBase* m_webTestProxy;
+    WebTestProxyBase* m_webTestProxy;
 
     DISALLOW_COPY_AND_ASSIGN(SpellCheckClient);
 };
 
-}
+}  // namespace content
 
 #endif  // CONTENT_SHELL_RENDERER_TEST_RUNNER_SPELLCHECKCLIENT_H_

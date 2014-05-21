@@ -16,6 +16,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
 #include "base/prefs/pref_change_registrar.h"
+#include "chrome/browser/google/google_url_tracker.h"
 #include "chrome/browser/search_engines/default_search_manager.h"
 #include "chrome/browser/search_engines/template_url_id.h"
 #include "chrome/browser/webdata/web_data_service.h"
@@ -112,11 +113,6 @@ class TemplateURLService : public WebDataServiceConsumer,
       scoped_ptr<TemplateURLData>* default_provider_data,
       bool* is_managed);
 
-  // Saves enough of url to |prefs| so that it can be loaded from preferences on
-  // start up.
-  static void SaveDefaultSearchProviderToPrefs(const TemplateURL* url,
-                                               PrefService* prefs);
-
   // Generates a suitable keyword for the specified url, which must be valid.
   // This is guaranteed not to return an empty string, since TemplateURLs should
   // never have an empty keyword.
@@ -140,6 +136,11 @@ class TemplateURLService : public WebDataServiceConsumer,
       const TemplateURL* t_url,
       const SearchTermsData& search_terms_data);
 
+  // Saves enough of url to |prefs| so that it can be loaded from preferences on
+  // start up.
+  static void SaveDefaultSearchProviderToPrefs(const TemplateURL* url,
+                                               PrefService* prefs);
+
   // Returns true if there is no TemplateURL that conflicts with the
   // keyword/url pair, or there is one but it can be replaced. If there is an
   // existing keyword that can be replaced and template_url_to_replace is
@@ -156,7 +157,7 @@ class TemplateURLService : public WebDataServiceConsumer,
   // TemplateURLs that support replacement are returned.
   void FindMatchingKeywords(const base::string16& prefix,
                             bool support_replacement_only,
-                            TemplateURLVector* matches) const;
+                            TemplateURLVector* matches);
 
   // Looks up |keyword| and returns the element it maps to.  Returns NULL if
   // the keyword was not found.
@@ -175,7 +176,8 @@ class TemplateURLService : public WebDataServiceConsumer,
 
   // Takes ownership of |template_url| and adds it to this model.  For obvious
   // reasons, it is illegal to Add() the same |template_url| pointer twice.
-  void Add(TemplateURL* template_url);
+  // Returns true if the Add is successful.
+  bool Add(TemplateURL* template_url);
 
   // Like Add(), but overwrites the |template_url|'s values with the provided
   // ones.
@@ -261,7 +263,9 @@ class TemplateURLService : public WebDataServiceConsumer,
   bool IsSearchResultsPageFromDefaultSearchProvider(const GURL& url);
 
   // Returns true if the default search is managed through group policy.
-  bool is_default_search_managed() const { return is_default_search_managed_; }
+  bool is_default_search_managed() const {
+    return default_search_provider_source_ == DefaultSearchManager::FROM_POLICY;
+  }
 
   // Returns true if the default search provider is controlled by an extension.
   bool IsExtensionControlledDefaultSearch();
@@ -276,7 +280,7 @@ class TemplateURLService : public WebDataServiceConsumer,
   // revved: all existing prepopulated entries are checked against the current
   // prepopulate data, any now-extraneous safe_for_autoreplace() entries are
   // removed, any existing engines are reset to the provided data (except for
-  // user-edited names or keywords), and any new prepopulated anegines are
+  // user-edited names or keywords), and any new prepopulated engines are
   // added.
   //
   // After this, the default search engine is reset to the default entry in the
@@ -384,9 +388,20 @@ class TemplateURLService : public WebDataServiceConsumer,
   static SyncDataMap CreateGUIDToSyncDataMap(
       const syncer::SyncDataList& sync_data);
 
+  // Indicates whether the pre-populated TemplateURLs should be disabled. May
+  // only be true in tests.
+  static bool fallback_search_engines_disabled() {
+    return g_fallback_search_engines_disabled;
+  }
+
 #if defined(UNIT_TEST)
-  // Set a different time provider function, such as
-  // base::MockTimeProvider::StaticNow, when testing calls to base::Time::Now.
+  // Disables the pre-populated TemplateURLs for testing purposes.
+  static void set_fallback_search_engines_disabled(bool disabled) {
+    g_fallback_search_engines_disabled = disabled;
+  }
+
+  // Sets a different time provider function, such as
+  // base::MockTimeProvider::StaticNow, for testing calls to base::Time::Now.
   void set_time_provider(TimeProvider* time_provider) {
     time_provider_ = time_provider;
   }
@@ -409,18 +424,15 @@ class TemplateURLService : public WebDataServiceConsumer,
                            DontUpdateKeywordSearchForNonReplaceable);
   FRIEND_TEST_ALL_PREFIXES(TemplateURLServiceTest, ChangeGoogleBaseValue);
   FRIEND_TEST_ALL_PREFIXES(TemplateURLServiceTest, MergeDeletesUnusedProviders);
-  FRIEND_TEST_ALL_PREFIXES(TemplateURLServiceSyncTest,
-                           CreateSyncDataFromTemplateURL);
-  FRIEND_TEST_ALL_PREFIXES(TemplateURLServiceSyncTest,
-                           CreateTemplateURLFromSyncData);
   FRIEND_TEST_ALL_PREFIXES(TemplateURLServiceSyncTest, UniquifyKeyword);
+  FRIEND_TEST_ALL_PREFIXES(TemplateURLServiceSyncTest,
+                           IsLocalTemplateURLBetter);
   FRIEND_TEST_ALL_PREFIXES(TemplateURLServiceSyncTest,
                            ResolveSyncKeywordConflict);
   FRIEND_TEST_ALL_PREFIXES(TemplateURLServiceSyncTest, PreSyncDeletes);
-  FRIEND_TEST_ALL_PREFIXES(TemplateURLServiceSyncTest,
-                           IsLocalTemplateURLBetter);
   FRIEND_TEST_ALL_PREFIXES(TemplateURLServiceSyncTest, MergeInSyncTemplateURL);
 
+  friend class InstantUnitTestBase;
   friend class TemplateURLServiceTestUtilBase;
 
   typedef std::map<base::string16, TemplateURL*> KeywordToTemplateMap;
@@ -476,8 +488,18 @@ class TemplateURLService : public WebDataServiceConsumer,
   // Transitions to the loaded state.
   void ChangeToLoadedState();
 
-  // Clears user preferences describing the default search engine.
-  void ClearDefaultProviderFromPrefs();
+  // Callback that is called when the Google URL is updated.
+  void OnGoogleURLUpdated(GURL old_url, GURL new_url);
+
+  // Called by DefaultSearchManager when the effective default search engine has
+  // changed.
+  void OnDefaultSearchChange(const TemplateURLData* new_dse_data,
+                             DefaultSearchManager::Source source);
+
+  // Applies a DSE change. May be called at startup or after transitioning to
+  // the loaded state.
+  void ApplyDefaultSearchChange(const TemplateURLData* new_dse_data,
+                                DefaultSearchManager::Source source);
 
   // Returns true if there is no TemplateURL that has a search url with the
   // specified host, or the only TemplateURLs matching the specified host can
@@ -514,6 +536,11 @@ class TemplateURLService : public WebDataServiceConsumer,
   static void UpdateTemplateURLIfPrepopulated(TemplateURL* existing_turl,
                                               Profile* profile);
 
+  // If the TemplateURL's sync GUID matches the kSyncedDefaultSearchProviderGUID
+  // preference it will be used to update the DSE in memory and as persisted in
+  // preferences.
+  void MaybeUpdateDSEAfterSync(TemplateURL* synced_turl);
+
   // Returns the preferences we use.
   PrefService* GetPrefs();
 
@@ -530,26 +557,6 @@ class TemplateURLService : public WebDataServiceConsumer,
   // TemplateURLs that have a replacement term of {google:baseURL} or
   // {google:baseSuggestURL}.
   void GoogleBaseURLChanged(const GURL& old_base_url);
-
-  // Update the default search.  Called at initialization or when a managed
-  // preference has changed.
-  void UpdateDefaultSearch();
-
-  // Set the default search provider.  |url| may be user-selected or
-  // automatically selected and may be null.
-  // This will assert if the default search is managed.
-  void SetDefaultSearchProvider(TemplateURL* url);
-
-  // Set the default search provider even if it is managed. |url| may be null.
-  // Caller is responsible for notifying observers.  Returns whether |url| was
-  // found in |template_urls_|.
-  // If |url| is an extension-controlled search engine then preferences and the
-  // database are left untouched.
-  // If |url| is a normal search engine and the existing default search engine
-  // is controlled by an extension then |url| is propagated to the database and
-  // prefs but the extension-controlled default engine will continue to hide
-  // this value until the extension is uninstalled.
-  bool SetDefaultSearchProviderNoNotify(TemplateURL* url);
 
   // Adds a new TemplateURL to this model. TemplateURLService will own the
   // reference, and delete it when the TemplateURL is removed.
@@ -568,18 +575,23 @@ class TemplateURLService : public WebDataServiceConsumer,
   // Caller is responsible for notifying observers.
   void RemoveNoNotify(TemplateURL* template_url);
 
+  // Like ResetTemplateURL(), but instead of notifying observers, returns
+  // whether anything has changed.
+  bool ResetTemplateURLNoNotify(TemplateURL* url,
+                                const base::string16& title,
+                                const base::string16& keyword,
+                                const std::string& search_url);
+
   // Notify the observers that the model has changed.  This is done only if the
   // model is loaded.
   void NotifyObservers();
 
-  // Removes from the vector any template URL that was created because of
-  // policy.  These TemplateURLs are freed and removed from the database.
-  // Sets default_search_provider to NULL if it was one of them, unless it is
-  // the same as the current default from preferences and it is managed.
-  void RemoveProvidersCreatedByPolicy(
+  // Updates |template_urls| so that the only "created by policy" entry is
+  // |default_from_prefs|. |default_from_prefs| may be NULL if there is no
+  // policy-defined DSE in effect.
+  void UpdateProvidersCreatedByPolicy(
       TemplateURLVector* template_urls,
-      TemplateURL** default_search_provider,
-      TemplateURLData* default_from_prefs);
+      const TemplateURLData* default_from_prefs);
 
   // Resets the sync GUID of the specified TemplateURL and persists the change
   // to the database. This does not notify observers.
@@ -637,14 +649,6 @@ class TemplateURLService : public WebDataServiceConsumer,
                               SyncDataMap* local_data,
                               syncer::SyncMergeResult* merge_result);
 
-  // Checks a newly added TemplateURL from Sync by its sync_guid and sets it as
-  // the default search provider if we were waiting for it.
-  void SetDefaultSearchProviderIfNewlySynced(const std::string& guid);
-
-  // Retrieve the pending default search provider according to Sync. Returns
-  // NULL if there was no pending search provider from Sync.
-  TemplateURL* GetPendingSyncedDefaultSearchProvider();
-
   // Goes through a vector of TemplateURLs and ensure that both the in-memory
   // and database copies have valid sync_guids. This is to fix crbug.com/102038,
   // where old entries were being pushed to Sync without a sync_guid.
@@ -652,40 +656,34 @@ class TemplateURLService : public WebDataServiceConsumer,
 
   void OnSyncedDefaultSearchProviderGUIDChanged();
 
-  // Adds |template_urls| to |template_urls_| and sets up the default search
-  // provider.  If |default_search_provider| is non-NULL, it must refer to one
-  // of the |template_urls|, and will be used as the new default.
+  // Adds |template_urls| to |template_urls_|.
   //
   // This transfers ownership of the elements in |template_urls| to |this|, and
   // may delete some elements, so it's not safe for callers to access any
   // elements after calling; to reinforce this, this function clears
   // |template_urls| on exit.
-  void AddTemplateURLsAndSetupDefaultEngine(
-      TemplateURLVector* template_urls,
-      TemplateURL* default_search_provider);
-
-  // If there is no current default search provider, sets the default to the
-  // result of calling FindNewDefaultSearchProvider().
-  void EnsureDefaultSearchProviderExists();
+  void AddTemplateURLs(TemplateURLVector* template_urls);
 
   // Returns a new TemplateURL for the given extension.
   TemplateURL* CreateTemplateURLForExtension(
-      const ExtensionKeyword& extension_keyword) const;
+      const ExtensionKeyword& extension_keyword);
+
+  // Returns the TemplateURL corresponding to |prepopulated_id|, if any.
+  TemplateURL* FindPrepopulatedTemplateURL(int prepopulated_id);
 
   // Returns the TemplateURL associated with |extension_id|, if any.
   TemplateURL* FindTemplateURLForExtension(const std::string& extension_id,
-                                           TemplateURL::Type type) const;
+                                           TemplateURL::Type type);
+
+  // Finds the extension-supplied TemplateURL that matches |data|, if any.
+  TemplateURL* FindMatchingExtensionTemplateURL(const TemplateURLData& data,
+                                                TemplateURL::Type type);
 
   // Finds the most recently-installed NORMAL_CONTROLLED_BY_EXTENSION engine
-  // that supports replacement and wants to be default, if any.
-  TemplateURL* FindExtensionDefaultSearchEngine() const;
-
-  // Sets the default search provider to:
-  // (1) BestDefaultExtensionControlledTURL(), if any; or,
-  // (2) LoadDefaultSearchProviderFromPrefs(), if we have a TURL with that ID;
-  // or,
-  // (3) FindNewDefaultSearchProvider().
-  void SetDefaultSearchProviderAfterRemovingDefaultExtension();
+  // that supports replacement and wants to be default, if any. Notifies the
+  // DefaultSearchManager, which might change the effective default search
+  // engine.
+  void UpdateExtensionDefaultSearchEngine();
 
   content::NotificationRegistrar notification_registrar_;
   PrefChangeRegistrar pref_change_registrar_;
@@ -713,7 +711,9 @@ class TemplateURLService : public WebDataServiceConsumer,
   // Whether the keywords have been loaded.
   bool loaded_;
 
-  // Did loading fail? This is only valid if loaded_ is true.
+  // Set when the web data service fails to load properly.  This prevents
+  // further communication with sync or writing to prefs, so we don't persist
+  // inconsistent state data anywhere.
   bool load_failed_;
 
   // If non-zero, we're waiting on a load.
@@ -727,15 +727,15 @@ class TemplateURLService : public WebDataServiceConsumer,
   std::vector<history::URLVisitedDetails> visits_to_add_;
 
   // Once loaded, the default search provider.  This is a pointer to a
-  // TemplateURL owned by template_urls_.
+  // TemplateURL owned by |template_urls_|.
   TemplateURL* default_search_provider_;
 
-  // The initial search provider extracted from preferences. This is only valid
-  // if we haven't been loaded or loading failed.
+  // A temporary location for the DSE until Web Data has been loaded and it can
+  // be merged into |template_urls_|.
   scoped_ptr<TemplateURL> initial_default_search_provider_;
 
-  // Whether the default search is managed via policy.
-  bool is_default_search_managed_;
+  // Source of the default search provider.
+  DefaultSearchManager::Source default_search_provider_source_;
 
   // ID assigned to next TemplateURL added to this model. This is an ever
   // increasing integer that is initialized from the database.
@@ -760,13 +760,6 @@ class TemplateURLService : public WebDataServiceConsumer,
   // Sync's error handler. We use it to create a sync error.
   scoped_ptr<syncer::SyncErrorFactory> sync_error_factory_;
 
-  // Whether or not we are waiting on the default search provider to come in
-  // from Sync. This is to facilitate the fact that changes to the value of
-  // prefs::kSyncedDefaultSearchProviderGUID do not always come before the
-  // TemplateURL entry it refers to, and to handle the case when we want to use
-  // the Synced default when the default search provider becomes unmanaged.
-  bool pending_synced_default_search_;
-
   // A set of sync GUIDs denoting TemplateURLs that have been removed from this
   // model or the underlying WebDataService prior to MergeDataAndStartSyncing.
   // This set is used to determine what entries from the server we want to
@@ -781,9 +774,13 @@ class TemplateURLService : public WebDataServiceConsumer,
   // Stores a list of callbacks to be run after TemplateURLService has loaded.
   base::CallbackList<void(void)> on_loaded_callbacks_;
 
-  // Helper class to manage the default search engine. This will be NULL when
-  // using the testing-specific constructor.
-  scoped_ptr<DefaultSearchManager> default_search_manager_;
+  // Helper class to manage the default search engine.
+  DefaultSearchManager default_search_manager_;
+
+  scoped_ptr<GoogleURLTracker::Subscription> google_url_updated_subscription_;
+
+  // Used to disable the prepopulated search engines in tests.
+  static bool g_fallback_search_engines_disabled;
 
   DISALLOW_COPY_AND_ASSIGN(TemplateURLService);
 };

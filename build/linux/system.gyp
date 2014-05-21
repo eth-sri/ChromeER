@@ -22,9 +22,9 @@
     'linux_link_libbrlapi%': 0,
   },
   'conditions': [
-    [ 'chromeos==0', {
-      # Hide GTK and related dependencies for Chrome OS, so they won't get
-      # added back to Chrome OS. Don't try to use GTK on Chrome OS.
+    [ 'chromeos==0 and use_ozone==0', {
+      # Hide GTK and related dependencies for Chrome OS and Ozone, so they won't get
+      # added back to Chrome OS and Ozone. Don't try to use GTK on Chrome OS and Ozone.
       'targets': [
         {
           'target_name': 'gdk',
@@ -111,7 +111,7 @@
         },
       ],  # targets
     }],
-    [ 'use_x11==1', {
+    [ 'use_x11==1 or ozone_platform_ozonex==1', {
       # Hide X11 and related dependencies when use_x11=0
       'targets': [
         {

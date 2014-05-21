@@ -9,6 +9,7 @@
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/apps/app_browsertest_util.h"
 #include "chrome/browser/extensions/extension_test_message_listener.h"
+#include "chrome/browser/guest_view/guest_view_base.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/renderer_context_menu/render_view_context_menu_browsertest_util.h"
 #include "chrome/browser/renderer_context_menu/render_view_context_menu_test_util.h"
@@ -20,7 +21,6 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/test/browser_test_utils.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
@@ -223,10 +223,11 @@ class WebViewInteractiveTest
     EXPECT_TRUE(source->GetWebContents()->GetRenderProcessHost()->IsGuest());
 
     guest_web_contents_ = source->GetWebContents();
-    embedder_web_contents_ = guest_web_contents_->GetEmbedderWebContents();
+    embedder_web_contents_ =
+        GuestViewBase::FromWebContents(guest_web_contents_)->
+            embedder_web_contents();
 
-    gfx::Rect offset;
-    embedder_web_contents_->GetView()->GetContainerBounds(&offset);
+    gfx::Rect offset = embedder_web_contents_->GetContainerBounds();
     corner_ = gfx::Point(offset.x(), offset.y());
 
     const testing::TestInfo* const test_info =
@@ -689,9 +690,8 @@ IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, DragDropWithinWebView) {
 
   ASSERT_TRUE(ui_test_utils::ShowAndFocusNativeWindow(GetPlatformAppWindow()));
 
-  gfx::Rect offset;
   embedder_web_contents_ = GetFirstAppWindowWebContents();
-  embedder_web_contents_->GetView()->GetContainerBounds(&offset);
+  gfx::Rect offset = embedder_web_contents_->GetContainerBounds();
   corner_ = gfx::Point(offset.x(), offset.y());
 
   // In the drag drop test we add 20px padding to the page body because on

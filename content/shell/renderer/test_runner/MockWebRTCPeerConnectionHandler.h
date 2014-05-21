@@ -17,7 +17,7 @@ namespace blink {
 class WebRTCPeerConnectionHandlerClient;
 };
 
-namespace WebTestRunner {
+namespace content {
 
 class TestInterfaces;
 
@@ -44,7 +44,7 @@ public:
     virtual void stop() OVERRIDE;
 
     // WebTask related methods
-    WebTaskList* taskList() { return &m_taskList; }
+    WebTaskList* mutable_task_list() { return &m_taskList; }
 
 private:
     MockWebRTCPeerConnectionHandler();
@@ -60,6 +60,6 @@ private:
     DISALLOW_COPY_AND_ASSIGN(MockWebRTCPeerConnectionHandler);
 };
 
-}
+}  // namespace content
 
 #endif  // CONTENT_SHELL_RENDERER_TEST_RUNNER_MOCKWEBRTCPEERCONNECTIONHANDLER_H_

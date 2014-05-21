@@ -84,8 +84,11 @@ class CONTENT_EXPORT ResourceHandler
 
   // Data will be read for the response.  Upon success, this method places the
   // size and address of the buffer where the data is to be written in its
-  // out-params.  This call will be followed by either OnReadCompleted or
-  // OnResponseCompleted, at which point the buffer may be recycled.
+  // out-params.  This call will be followed by either OnReadCompleted (on
+  // successful read or EOF) or OnResponseCompleted (on error).  If
+  // OnReadCompleted is called, the buffer may be recycled.  Otherwise, it may
+  // not be recycled and may potentially outlive the handler.  If |min_size| is
+  // not -1, it is the minimum size of the returned buffer.
   //
   // If the handler returns false, then the request is cancelled.  Otherwise,
   // once data is available, OnReadCompleted will be called.
@@ -97,7 +100,8 @@ class CONTENT_EXPORT ResourceHandler
   // Data (*bytes_read bytes) was written into the buffer provided by
   // OnWillRead.  A return value of false cancels the request, true continues
   // reading data.  Set |*defer| to true to defer reading more response data.
-  // Call controller()->Resume() to continue reading response data.
+  // Call controller()->Resume() to continue reading response data.  A zero
+  // |bytes_read| signals that no further data is available.
   virtual bool OnReadCompleted(int request_id, int bytes_read,
                                bool* defer) = 0;
 

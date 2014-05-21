@@ -11,8 +11,8 @@
       'target_name': 'snapshot',
       'type': '<(component)',
       'dependencies': [
-        '../../skia/skia.gyp:skia',
         '../../base/base.gyp:base',
+        '../../skia/skia.gyp:skia',
         '../base/ui_base.gyp:ui_base',
         '../gfx/gfx.gyp:gfx',
         '../gfx/gfx.gyp:gfx_geometry',
@@ -23,6 +23,8 @@
       'sources': [
         'snapshot.h',
         'snapshot_android.cc',
+        'snapshot_async.cc',
+        'snapshot_async.h',
         'snapshot_aura.cc',
         'snapshot_export.h',
         'snapshot_ios.mm',
@@ -34,9 +36,20 @@
         '..',
       ],
       'conditions': [
-        ['use_aura==1', {
+        ['use_aura==1 or OS=="android"', {
           'dependencies': [
             '../../cc/cc.gyp:cc',
+            '../../gpu/gpu.gyp:command_buffer_common',
+          ],
+        }],
+        ['use_aura!=1 and OS!="android"', {
+	  'sources!': [
+            'snapshot_async.cc',
+            'snapshot_async.h',
+          ],
+        }],
+        ['use_aura==1', {
+          'dependencies': [
             '../aura/aura.gyp:aura',
             '../compositor/compositor.gyp:compositor',
           ],
@@ -72,8 +85,7 @@
           ],
         }],
         # See http://crbug.com/162998#c4 for why this is needed.
-        # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
-        ['OS=="linux" and ((use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1))', {
+        ['OS=="linux" and use_allocator!="none"', {
           'dependencies': [
             '../../base/allocator/allocator.gyp:allocator',
           ],

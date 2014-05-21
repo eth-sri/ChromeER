@@ -11,6 +11,7 @@
 #include "base/version.h"
 #include "chrome/browser/devtools/device/devtools_android_bridge.h"
 #include "chrome/browser/devtools/devtools_target_impl.h"
+#include "chrome/browser/guest_view/guest_view_base.h"
 #include "chrome/common/chrome_version_info.h"
 #include "content/public/browser/browser_child_process_observer.h"
 #include "content/public/browser/browser_thread.h"
@@ -77,7 +78,7 @@ class CancelableTimer {
         FROM_HERE,
         base::Bind(&CancelableTimer::Fire, weak_factory_.GetWeakPtr()),
         delay);
-  };
+  }
 
  private:
   void Fire() { callback_.Run(); }
@@ -175,9 +176,10 @@ void RenderViewHostTargetsUIHandler::UpdateTargets() {
     RenderFrameHost* rfh = (*it);
     RenderFrameHost* parent_rfh = NULL;
     content::RenderViewHost* rvh = rfh->GetRenderViewHost();
-    if (rvh->GetProcess()->IsGuest()) {
-      WebContents* nested_web_contents = WebContents::FromRenderViewHost(rvh);
-      WebContents* embedder = nested_web_contents->GetEmbedderWebContents();
+    WebContents* nested_web_contents = WebContents::FromRenderViewHost(rvh);
+    GuestViewBase* guest = GuestViewBase::FromWebContents(nested_web_contents);
+    if (guest) {
+      WebContents* embedder = guest->embedder_web_contents();
       parent_rfh = embedder->GetRenderViewHost()->GetMainFrame();
     } else {
       parent_rfh = rfh->GetParent();
@@ -344,6 +346,9 @@ class AdbTargetsUIHandler
                     const std::string& url,
                     const DevToolsTargetsUIHandler::TargetCallback&) OVERRIDE;
 
+  virtual scoped_refptr<content::DevToolsAgentHost> GetBrowserAgentHost(
+      const std::string& browser_id) OVERRIDE;
+
  private:
   // DevToolsAndroidBridge::Listener overrides.
   virtual void DeviceListChanged(
@@ -372,13 +377,27 @@ AdbTargetsUIHandler::~AdbTargetsUIHandler() {
     android_bridge->RemoveDeviceListListener(this);
 }
 
+static void CallOnTarget(
+    const DevToolsTargetsUIHandler::TargetCallback& callback,
+    DevToolsAndroidBridge::RemotePage* page) {
+  scoped_ptr<DevToolsAndroidBridge::RemotePage> my_page(page);
+  callback.Run(my_page ? my_page->GetTarget() : NULL);
+}
+
 void AdbTargetsUIHandler::Open(
     const std::string& browser_id,
     const std::string& url,
     const DevToolsTargetsUIHandler::TargetCallback& callback) {
   RemoteBrowsers::iterator it = remote_browsers_.find(browser_id);
   if (it !=  remote_browsers_.end())
-    it->second->Open(url, callback);
+    it->second->Open(url, base::Bind(&CallOnTarget, callback));
+}
+
+scoped_refptr<content::DevToolsAgentHost>
+AdbTargetsUIHandler::GetBrowserAgentHost(
+    const std::string& browser_id) {
+  RemoteBrowsers::iterator it = remote_browsers_.find(browser_id);
+  return it != remote_browsers_.end() ? it->second->GetAgentHost() : NULL;
 }
 
 void AdbTargetsUIHandler::DeviceListChanged(
@@ -443,10 +462,12 @@ void AdbTargetsUIHandler::DeviceListChanged(
       base::ListValue* page_list = new base::ListValue();
       remote_browsers_[browser_id] = browser;
             browser_data->Set(kAdbPagesList, page_list);
-      DevToolsTargetImpl::List pages = browser->CreatePageTargets();
-      for (DevToolsTargetImpl::List::iterator it =
+      std::vector<DevToolsAndroidBridge::RemotePage*> pages =
+          browser->CreatePages();
+      for (std::vector<DevToolsAndroidBridge::RemotePage*>::iterator it =
           pages.begin(); it != pages.end(); ++it) {
-        DevToolsTargetImpl* target =  *it;
+        DevToolsAndroidBridge::RemotePage* page =  *it;
+        DevToolsTargetImpl* target = page->GetTarget();
         base::DictionaryValue* target_data = Serialize(*target);
         target_data->SetBoolean(
             kAdbAttachedForeignField,
@@ -522,6 +543,11 @@ void DevToolsTargetsUIHandler::Open(const std::string& browser_id,
   callback.Run(NULL);
 }
 
+scoped_refptr<content::DevToolsAgentHost>
+DevToolsTargetsUIHandler::GetBrowserAgentHost(const std::string& browser_id) {
+  return NULL;
+}
+
 base::DictionaryValue* DevToolsTargetsUIHandler::Serialize(
     const DevToolsTargetImpl& target) {
   base::DictionaryValue* target_data = new base::DictionaryValue();
@@ -529,9 +555,9 @@ base::DictionaryValue* DevToolsTargetsUIHandler::Serialize(
   target_data->SetString(kTargetIdField, target.GetId());
   target_data->SetString(kTargetTypeField, target.GetType());
   target_data->SetBoolean(kAttachedField, target.IsAttached());
-  target_data->SetString(kUrlField, target.GetUrl().spec());
+  target_data->SetString(kUrlField, target.GetURL().spec());
   target_data->SetString(kNameField, net::EscapeForHTML(target.GetTitle()));
-  target_data->SetString(kFaviconUrlField, target.GetFaviconUrl().spec());
+  target_data->SetString(kFaviconUrlField, target.GetFaviconURL().spec());
   target_data->SetString(kDescriptionField, target.GetDescription());
   return target_data;
 }

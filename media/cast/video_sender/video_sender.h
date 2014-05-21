@@ -17,7 +17,7 @@
 #include "media/cast/congestion_control/congestion_control.h"
 #include "media/cast/logging/logging_defines.h"
 #include "media/cast/rtcp/rtcp.h"
-#include "media/cast/rtcp/sender_rtcp_event_subscriber.h"
+#include "media/cast/rtp_timestamp_helper.h"
 
 namespace media {
 class VideoFrame;
@@ -59,11 +59,6 @@ class VideoSender : public base::NonThreadSafe,
   // Only called from the main cast thread.
   void IncomingRtcpPacket(scoped_ptr<Packet> packet);
 
-  // Store rtp stats computed at the Cast transport sender.
-  void StoreStatistics(const transport::RtcpSenderInfo& sender_info,
-                       base::TimeTicks time_sent,
-                       uint32 rtp_timestamp);
-
  protected:
   // Protected for testability.
   void OnReceivedCastFeedback(const RtcpCastMessage& cast_feedback);
@@ -90,17 +85,17 @@ class VideoSender : public base::NonThreadSafe,
   void ScheduleNextSkippedFramesCheck();
   void SkippedFramesCheck();
 
-  void SendEncodedVideoFrame(const transport::EncodedVideoFrame* video_frame,
-                             const base::TimeTicks& capture_time);
   void ResendFrame(uint32 resend_frame_id);
   void ReceivedAck(uint32 acked_frame_id);
   void UpdateFramesInFlight();
 
   void SendEncodedVideoFrameMainThread(
-      scoped_ptr<transport::EncodedVideoFrame> encoded_frame,
-      const base::TimeTicks& capture_time);
+      int requested_bitrate_before_encode,
+      scoped_ptr<transport::EncodedFrame> encoded_frame);
 
   void InitializeTimers();
+
+  void UpdateBitrate(int32 new_bitrate);
 
   base::TimeDelta rtp_max_delay_;
   const int max_frame_rate_;
@@ -108,21 +103,23 @@ class VideoSender : public base::NonThreadSafe,
   scoped_refptr<CastEnvironment> cast_environment_;
   transport::CastTransportSender* const transport_sender_;
 
-  // Subscribes to raw events.
-  // Processes raw audio events to be sent over to the cast receiver via RTCP.
-  SenderRtcpEventSubscriber event_subscriber_;
-  RtpSenderStatistics rtp_stats_;
+  RtpTimestampHelper rtp_timestamp_helper_;
   scoped_ptr<LocalRtcpVideoSenderFeedback> rtcp_feedback_;
   scoped_ptr<VideoEncoder> video_encoder_;
   scoped_ptr<Rtcp> rtcp_;
   uint8 max_unacked_frames_;
   int last_acked_frame_id_;
   int last_sent_frame_id_;
+  int frames_in_encoder_;
   int duplicate_ack_;
   base::TimeTicks last_send_time_;
   base::TimeTicks last_checked_skip_count_time_;
   int last_skip_count_;
   int current_requested_bitrate_;
+  // When we get close to the max number of un-acked frames, we set lower
+  // the bitrate drastically to ensure that we catch up. Without this we
+  // risk getting stuck in a catch-up state forever.
+  int current_bitrate_divider_;
   CongestionControl congestion_control_;
 
   // This is a "good enough" mapping for finding the RTP timestamp associated

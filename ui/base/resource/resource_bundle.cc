@@ -34,7 +34,6 @@
 #include "ui/gfx/safe_integer_conversions.h"
 #include "ui/gfx/screen.h"
 #include "ui/gfx/size_conversions.h"
-#include "ui/gfx/skbitmap_operations.h"
 
 #if defined(OS_CHROMEOS)
 #include "ui/base/l10n/l10n_util.h"
@@ -109,6 +108,12 @@ class ResourceBundle::ResourceBundleImageSource : public gfx::ImageSkiaSource {
     if (!found)
       return gfx::ImageSkiaRep();
 
+    // If the resource is in the package with SCALE_FACTOR_NONE, it
+    // can be used in any scale factor. The image is maked as "unscaled"
+    // so that the ImageSkia do not automatically scale.
+    if (scale_factor == ui::SCALE_FACTOR_NONE)
+      return gfx::ImageSkiaRep(image, 0.0f);
+
     if (fell_back_to_1x) {
       // GRIT fell back to the 100% image, so rescale it to the correct size.
       image = skia::ImageOperations::Resize(
@@ -116,23 +121,8 @@ class ResourceBundle::ResourceBundleImageSource : public gfx::ImageSkiaSource {
           skia::ImageOperations::RESIZE_LANCZOS3,
           gfx::ToCeiledInt(image.width() * scale),
           gfx::ToCeiledInt(image.height() * scale));
-      // If --highlight-missing-scaled-resources is specified, log the resource
-      // id and blend the created resource with red.
-      if (ShouldHighlightMissingScaledResources()) {
-        LOG(ERROR) << "Missing " << scale << "x scaled resource. id="
-                   << resource_id_;
-
-        SkBitmap mask;
-        mask.setConfig(SkBitmap::kARGB_8888_Config,
-                       image.width(), image.height());
-        mask.allocPixels();
-        mask.eraseColor(SK_ColorRED);
-        image = SkBitmapOperations::CreateBlendedBitmap(image, mask, 0.2);
-      }
     } else {
-      image = PlatformScaleImage(image,
-                                 ui::GetScaleForScaleFactor(scale_factor),
-                                 scale);
+      scale = GetScaleForScaleFactor(scale_factor);
     }
     return gfx::ImageSkiaRep(image, scale);
   }
@@ -268,15 +258,8 @@ std::string ResourceBundle::LoadLocaleResources(
   DCHECK(!locale_resources_data_.get()) << "locale.pak already loaded";
   std::string app_locale = l10n_util::GetApplicationLocale(pref_locale);
   base::FilePath locale_file_path = GetOverriddenPakPath();
-  if (locale_file_path.empty()) {
-    CommandLine* command_line = CommandLine::ForCurrentProcess();
-    if (command_line->HasSwitch(switches::kLocalePak)) {
-      locale_file_path =
-          command_line->GetSwitchValuePath(switches::kLocalePak);
-    } else {
-      locale_file_path = GetLocaleFilePath(app_locale, true);
-    }
-  }
+  if (locale_file_path.empty())
+    locale_file_path = GetLocaleFilePath(app_locale, true);
 
   if (locale_file_path.empty()) {
     // It's possible that there is no locale.pak.
@@ -359,15 +342,13 @@ gfx::Image& ResourceBundle::GetImageNamed(int resource_id) {
   ui::ScaleFactor scale_factor_to_load = ui::SCALE_FACTOR_100P;
 #endif
 
-    float scale = GetImageScale(scale_factor_to_load);
-
     // TODO(oshima): Consider reading the image size from png IHDR chunk and
     // skip decoding here and remove #ifdef below.
     // ResourceBundle::GetSharedInstance() is destroyed after the
     // BrowserMainLoop has finished running. |image_skia| is guaranteed to be
     // destroyed before the resource bundle is destroyed.
     gfx::ImageSkia image_skia(new ResourceBundleImageSource(this, resource_id),
-                              scale);
+                              GetScaleForScaleFactor(scale_factor_to_load));
     if (image_skia.isNull()) {
       LOG(WARNING) << "Unable to load image with id " << resource_id;
       NOTREACHED();  // Want to assert in debug mode.
@@ -742,13 +723,10 @@ bool ResourceBundle::LoadBitmap(int resource_id,
                                 bool* fell_back_to_1x) const {
   DCHECK(fell_back_to_1x);
   for (size_t i = 0; i < data_packs_.size(); ++i) {
-    // If the resource is in the package with SCALE_FACTOR_NONE, it
-    // can be used in any scale factor, but set 100P in ImageSkia so
-    // that it will be scaled property.
     if (data_packs_[i]->GetScaleFactor() == ui::SCALE_FACTOR_NONE &&
         LoadBitmap(*data_packs_[i], resource_id, bitmap, fell_back_to_1x)) {
-      *scale_factor = ui::SCALE_FACTOR_100P;
       DCHECK(!*fell_back_to_1x);
+      *scale_factor = ui::SCALE_FACTOR_NONE;
       return true;
     }
     if (data_packs_[i]->GetScaleFactor() == *scale_factor &&
@@ -771,12 +749,6 @@ gfx::Image& ResourceBundle::GetEmptyImage() {
     empty_image_ = gfx::Image::CreateFrom1xBitmap(bitmap);
   }
   return empty_image_;
-}
-
-// static
-bool ResourceBundle::ShouldHighlightMissingScaledResources() {
-  return CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kHighlightMissingScaledResources);
 }
 
 // static
@@ -821,14 +793,5 @@ bool ResourceBundle::DecodePNG(const unsigned char* buf,
   *fell_back_to_1x = PNGContainsFallbackMarker(buf, size);
   return gfx::PNGCodec::Decode(buf, size, bitmap);
 }
-
-#if !defined(OS_WIN)
-// static
-SkBitmap ResourceBundle::PlatformScaleImage(const SkBitmap& image,
-                                            float loaded_image_scale,
-                                            float desired_scale) {
-  return image;
-}
-#endif
 
 }  // namespace ui

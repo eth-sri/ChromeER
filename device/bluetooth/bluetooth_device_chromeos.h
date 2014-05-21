@@ -7,13 +7,19 @@
 
 #include <string>
 
+#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
+#include "base/sequenced_task_runner.h"
 #include "chromeos/dbus/bluetooth_device_client.h"
 #include "chromeos/dbus/bluetooth_gatt_service_client.h"
 #include "dbus/object_path.h"
 #include "device/bluetooth/bluetooth_device.h"
+
+namespace device {
+class BluetoothSocketThread;
+}  // namespace device
 
 namespace chromeos {
 
@@ -65,11 +71,18 @@ class BluetoothDeviceChromeOS
       device::BluetoothProfile* profile,
       const base::Closure& callback,
       const ConnectToProfileErrorCallback& error_callback) OVERRIDE;
+  virtual void ConnectToService(
+      const device::BluetoothUUID& uuid,
+      const ConnectToServiceCallback& callback,
+      const ConnectToServiceErrorCallback& error_callback) OVERRIDE;
   virtual void SetOutOfBandPairingData(
       const device::BluetoothOutOfBandPairingData& data,
       const base::Closure& callback,
       const ErrorCallback& error_callback) OVERRIDE;
   virtual void ClearOutOfBandPairingData(
+      const base::Closure& callback,
+      const ErrorCallback& error_callback) OVERRIDE;
+  virtual void StartConnectionMonitor(
       const base::Closure& callback,
       const ErrorCallback& error_callback) OVERRIDE;
 
@@ -86,6 +99,9 @@ class BluetoothDeviceChromeOS
   // Returns the current pairing object or NULL if no pairing is in progress.
   BluetoothPairingChromeOS* GetPairing() const;
 
+  // Returns the object path of the device.
+  const dbus::ObjectPath& object_path() const { return object_path_; }
+
  protected:
    // BluetoothDevice override
   virtual std::string GetDeviceName() const OVERRIDE;
@@ -93,8 +109,11 @@ class BluetoothDeviceChromeOS
  private:
   friend class BluetoothAdapterChromeOS;
 
-  BluetoothDeviceChromeOS(BluetoothAdapterChromeOS* adapter,
-                          const dbus::ObjectPath& object_path);
+  BluetoothDeviceChromeOS(
+      BluetoothAdapterChromeOS* adapter,
+      const dbus::ObjectPath& object_path,
+      scoped_refptr<base::SequencedTaskRunner> ui_task_runner,
+      scoped_refptr<device::BluetoothSocketThread> socket_thread);
   virtual ~BluetoothDeviceChromeOS();
 
   // BluetoothGattServiceClient::Observer overrides.
@@ -147,18 +166,12 @@ class BluetoothDeviceChromeOS
                      const std::string& error_name,
                      const std::string& error_message);
 
-  // Called by dbus:: on completion of the D-Bus method call to
-  // connect a peofile.
-  void OnConnectProfile(device::BluetoothProfile* profile,
-                        const base::Closure& callback);
-  void OnConnectProfileError(
-      device::BluetoothProfile* profile,
-      const ConnectToProfileErrorCallback& error_callback,
-      const std::string& error_name,
-      const std::string& error_message);
-
-  // Returns the object path of the device; used by BluetoothAdapterChromeOS
-  const dbus::ObjectPath& object_path() const { return object_path_; }
+  // Called by dbus:: on completion of the D-Bus method call to start the
+  // connection monitor.
+  void OnStartConnectionMonitor(const base::Closure& callback);
+  void OnStartConnectionMonitorError(const ErrorCallback& error_callback,
+                                     const std::string& error_name,
+                                     const std::string& error_message);
 
   // The adapter that owns this device instance.
   BluetoothAdapterChromeOS* adapter_;
@@ -171,6 +184,14 @@ class BluetoothDeviceChromeOS
 
   // Number of ongoing calls to Connect().
   int num_connecting_calls_;
+
+  // True if the connection monitor has been started, tracking the connection
+  // RSSI and TX power.
+  bool connection_monitor_started_;
+
+  // UI thread task runner and socket thread object used to create sockets.
+  scoped_refptr<base::SequencedTaskRunner> ui_task_runner_;
+  scoped_refptr<device::BluetoothSocketThread> socket_thread_;
 
   // During pairing this is set to an object that we don't own, but on which
   // we can make method calls to request, display or confirm PIN Codes and

@@ -8,6 +8,7 @@
 #include <map>
 
 #include "mojo/public/cpp/bindings/lib/connector.h"
+#include "mojo/public/cpp/bindings/lib/filter_chain.h"
 #include "mojo/public/cpp/bindings/lib/shared_data.h"
 
 namespace mojo {
@@ -15,9 +16,9 @@ namespace internal {
 
 class Router : public MessageReceiver {
  public:
-  // The Router takes ownership of |message_pipe|.
-  explicit Router(ScopedMessagePipeHandle message_pipe,
-                  MojoAsyncWaiter* waiter = GetDefaultAsyncWaiter());
+  Router(ScopedMessagePipeHandle message_pipe,
+         FilterChain filters,
+         MojoAsyncWaiter* waiter = GetDefaultAsyncWaiter());
   virtual ~Router();
 
   // Sets the receiver to handle messages read from the message pipe that do
@@ -32,9 +33,24 @@ class Router : public MessageReceiver {
     connector_.set_error_handler(error_handler);
   }
 
+  // Errors from incoming receivers will force the router's connector into an
+  // error state, where no more messages will be processed. This method is used
+  // during testing to prevent that from happening.
+  void set_enforce_errors_from_incoming_receiver(bool enforce) {
+    connector_.set_enforce_errors_from_incoming_receiver(enforce);
+  }
+
   // Returns true if an error was encountered while reading from the pipe or
   // waiting to read from the pipe.
   bool encountered_error() const { return connector_.encountered_error(); }
+
+  void CloseMessagePipe() {
+    connector_.CloseMessagePipe();
+  }
+
+  ScopedMessagePipeHandle ReleaseMessagePipe() {
+    return connector_.ReleaseMessagePipe();
+  }
 
   // MessageReceiver implementation:
   virtual bool Accept(Message* message) MOJO_OVERRIDE;
@@ -59,10 +75,11 @@ class Router : public MessageReceiver {
 
   bool HandleIncomingMessage(Message* message);
 
+  HandleIncomingMessageThunk thunk_;
+  FilterChain filters_;
   Connector connector_;
   SharedData<Router*> weak_self_;
   MessageReceiver* incoming_receiver_;
-  HandleIncomingMessageThunk thunk_;
   ResponderMap responders_;
   uint64_t next_request_id_;
 };

@@ -62,6 +62,10 @@ class BluetoothDeviceMac : public BluetoothDevice {
       BluetoothProfile* profile,
       const base::Closure& callback,
       const ConnectToProfileErrorCallback& error_callback) OVERRIDE;
+  virtual void ConnectToService(
+      const BluetoothUUID& uuid,
+      const ConnectToServiceCallback& callback,
+      const ConnectToServiceErrorCallback& error_callback) OVERRIDE;
   virtual void SetOutOfBandPairingData(
       const BluetoothOutOfBandPairingData& data,
       const base::Closure& callback,
@@ -69,6 +73,13 @@ class BluetoothDeviceMac : public BluetoothDevice {
   virtual void ClearOutOfBandPairingData(
       const base::Closure& callback,
       const ErrorCallback& error_callback) OVERRIDE;
+  virtual void StartConnectionMonitor(
+      const base::Closure& callback,
+      const ErrorCallback& error_callback) OVERRIDE;
+
+  // Returns the Bluetooth address for the |device|. The returned address has a
+  // normalized format (see below).
+  static std::string GetDeviceAddress(IOBluetoothDevice* device);
 
  protected:
   // BluetoothDevice override

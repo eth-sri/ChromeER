@@ -4,8 +4,10 @@
 
 #include "ui/ozone/platform/dri/hardware_display_controller.h"
 
+#include <drm.h>
 #include <errno.h>
 #include <string.h>
+#include <xf86drm.h>
 
 #include "base/basictypes.h"
 #include "base/debug/trace_event.h"
@@ -18,6 +20,30 @@
 #include "ui/ozone/platform/dri/dri_wrapper.h"
 
 namespace ui {
+
+namespace {
+
+// DRM callback on page flip events. This callback is triggered after the
+// page flip has happened and the backbuffer is now the new frontbuffer
+// The old frontbuffer is no longer used by the hardware and can be used for
+// future draw operations.
+//
+// |device| will contain a reference to the |DriSurface| object which
+// the event belongs to.
+//
+// TODO(dnicoara) When we have a FD handler for the DRM calls in the message
+// loop, we can move this function in the handler.
+void HandlePageFlipEvent(int fd,
+                         unsigned int frame,
+                         unsigned int seconds,
+                         unsigned int useconds,
+                         void* controller) {
+  TRACE_EVENT0("dri", "HandlePageFlipEvent");
+  static_cast<HardwareDisplayController*>(controller)
+      ->OnPageFlipEvent(frame, seconds, useconds);
+}
+
+}  // namespace
 
 HardwareDisplayController::HardwareDisplayController(
     DriWrapper* drm,
@@ -40,16 +66,15 @@ HardwareDisplayController::BindSurfaceToController(
     scoped_ptr<DriSurface> surface, drmModeModeInfo mode) {
   CHECK(surface);
 
-  if (!RegisterFramebuffers(surface.get(), mode))
-    return false;
-
   if (!drm_->SetCrtc(crtc_id_,
                      surface->GetFramebufferId(),
                      &connector_id_,
                      &mode)) {
-    LOG(ERROR) << "Failed to modeset: crtc=" << crtc_id_ << " connector="
-               << connector_id_ << " framebuffer_id="
-               << surface->GetFramebufferId();
+    LOG(ERROR) << "Failed to modeset: error='" << strerror(errno)
+               << "' crtc=" << crtc_id_ << " connector=" << connector_id_
+               << " framebuffer_id=" << surface->GetFramebufferId()
+               << " mode=" << mode.hdisplay << "x" << mode.vdisplay << "@"
+               << mode.vrefresh;
     return false;
   }
 
@@ -59,9 +84,12 @@ HardwareDisplayController::BindSurfaceToController(
 }
 
 void HardwareDisplayController::UnbindSurfaceFromController() {
-  if (surface_)
-    UnregisterFramebuffers(surface_.get());
+  drm_->SetCrtc(crtc_id_, 0, 0, NULL);
   surface_.reset();
+}
+
+void HardwareDisplayController::Disable() {
+  UnbindSurfaceFromController();
 }
 
 bool HardwareDisplayController::SchedulePageFlip() {
@@ -75,6 +103,18 @@ bool HardwareDisplayController::SchedulePageFlip() {
   }
 
   return true;
+}
+
+void HardwareDisplayController::WaitForPageFlipEvent() {
+  TRACE_EVENT0("dri", "WaitForPageFlipEvent");
+
+  drmEventContext drm_event;
+  drm_event.version = DRM_EVENT_CONTEXT_VERSION;
+  drm_event.page_flip_handler = HandlePageFlipEvent;
+  drm_event.vblank_handler = NULL;
+
+  // Wait for the page-flip to complete.
+  drm_->HandleEvent(drm_event);
 }
 
 void HardwareDisplayController::OnPageFlipEvent(unsigned int frame,
@@ -102,35 +142,6 @@ bool HardwareDisplayController::UnsetCursor() {
 
 bool HardwareDisplayController::MoveCursor(const gfx::Point& location) {
   return drm_->MoveCursor(crtc_id_, location.x(), location.y());
-}
-
-bool HardwareDisplayController::RegisterFramebuffers(DriSurface* surface,
-                                                     drmModeModeInfo mode) {
-  // Register the buffers.
-  for (size_t i = 0; i < arraysize(surface->bitmaps_); ++i) {
-    uint32_t fb_id;
-    if (!drm_->AddFramebuffer(
-            mode,
-            surface->bitmaps_[i]->GetColorDepth(),
-            surface->bitmaps_[i]->canvas()->imageInfo().bytesPerPixel() << 3,
-            surface->bitmaps_[i]->stride(),
-            surface->bitmaps_[i]->handle(),
-            &fb_id)) {
-      DLOG(ERROR) << "Failed to register framebuffer: " << strerror(errno);
-      return false;
-    }
-    surface->bitmaps_[i]->set_framebuffer(fb_id);
-  }
-
-  return true;
-}
-
-void HardwareDisplayController::UnregisterFramebuffers(DriSurface* surface) {
-  // Unregister the buffers.
-  for (size_t i = 0; i < arraysize(surface->bitmaps_); ++i) {
-    if (!drm_->RemoveFramebuffer(surface->bitmaps_[i]->framebuffer()))
-      DLOG(ERROR) << "Failed to remove FB: " << strerror(errno);
-  }
 }
 
 }  // namespace ui

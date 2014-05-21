@@ -14,12 +14,13 @@
 #include "base/task_runner_util.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "base/values.h"
+#include "chrome/browser/chromeos/login/auth/mount_manager.h"
+#include "chrome/browser/chromeos/login/auth/user_context.h"
 #include "chrome/browser/chromeos/login/managed/locally_managed_user_constants.h"
 #include "chrome/browser/chromeos/login/managed/supervised_user_authentication.h"
-#include "chrome/browser/chromeos/login/mount_manager.h"
-#include "chrome/browser/chromeos/login/supervised_user_manager.h"
-#include "chrome/browser/chromeos/login/user.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/supervised_user_manager.h"
+#include "chrome/browser/chromeos/login/users/user.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
@@ -267,12 +268,11 @@ void ManagedUserCreationControllerNew::OnMountSuccess(
   base::Base64Decode(creation_context_->signature_key,
                      &password_key.signature_key);
 
-  UserContext context(creation_context_->local_user_id,
-                      creation_context_->salted_master_key,
-                      std::string());
-  context.using_oauth = false;
-  context.need_password_hashing = false;
-  context.key_label = kCryptohomeMasterKeyLabel;
+  UserContext context(creation_context_->local_user_id);
+  context.SetPassword(creation_context_->salted_master_key);
+  context.SetDoesNeedPasswordHashing(false);
+  context.SetKeyLabel(kCryptohomeMasterKeyLabel);
+  context.SetIsUsingOAuth(false);
 
   authenticator_->AddKey(
       context,

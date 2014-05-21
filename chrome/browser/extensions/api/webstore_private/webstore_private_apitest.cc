@@ -157,6 +157,11 @@ class ExtensionWebstorePrivateApiTest : public ExtensionApiTest {
             ProfileOAuth2TokenServiceFactory::GetInstance()->GetForProfile(
                 profile()));
     ASSERT_TRUE(token_service_);
+
+    ASSERT_TRUE(webstore_install_dir_.CreateUniqueTempDir());
+    webstore_install_dir_copy_ = webstore_install_dir_.path();
+    WebstoreInstaller::SetDownloadDirectoryForTests(
+        &webstore_install_dir_copy_);
   }
 
  protected:
@@ -223,6 +228,10 @@ class ExtensionWebstorePrivateApiTest : public ExtensionApiTest {
   scoped_ptr<base::CallbackList<void(content::BrowserContext*)>::Subscription>
       will_create_browser_context_services_subscription_;
 
+  base::ScopedTempDir webstore_install_dir_;
+  // WebstoreInstaller needs a reference to a FilePath when setting the download
+  // directory for testing.
+  base::FilePath webstore_install_dir_copy_;
 };
 
 // Test cases for webstore origin frame blocking.
@@ -356,6 +365,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionWebstorePrivateApiTest, MAYBE_BeginInstall) {
   EXPECT_EQ(appId, approval->extension_id);
   EXPECT_TRUE(approval->use_app_installed_bubble);
   EXPECT_FALSE(approval->skip_post_install_ui);
+  EXPECT_EQ("2", approval->authuser);
   EXPECT_EQ(browser()->profile(), approval->profile);
 
   approval = WebstorePrivateApi::PopApprovalForTesting(
@@ -363,6 +373,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionWebstorePrivateApiTest, MAYBE_BeginInstall) {
   EXPECT_EQ(extensionId, approval->extension_id);
   EXPECT_FALSE(approval->use_app_installed_bubble);
   EXPECT_FALSE(approval->skip_post_install_ui);
+  EXPECT_TRUE(approval->authuser.empty());
   EXPECT_EQ(browser()->profile(), approval->profile);
 }
 

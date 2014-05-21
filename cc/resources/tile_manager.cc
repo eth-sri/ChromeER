@@ -17,7 +17,6 @@
 #include "cc/debug/traced_value.h"
 #include "cc/layers/picture_layer_impl.h"
 #include "cc/resources/raster_worker_pool.h"
-#include "cc/resources/rasterizer_delegate.h"
 #include "cc/resources/tile.h"
 #include "skia/ext/paint_simplifier.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -338,13 +337,10 @@ const ManagedTileBin kBinIsActiveMap[2][NUM_BINS] = {
 // Determine bin based on three categories of tiles: things we need now,
 // things we need soon, and eventually.
 inline ManagedTileBin BinFromTilePriority(const TilePriority& prio) {
-  const float kBackflingGuardDistancePixels = 314.0f;
-
   if (prio.priority_bin == TilePriority::NOW)
     return NOW_BIN;
 
-  if (prio.priority_bin == TilePriority::SOON ||
-      prio.distance_to_visible < kBackflingGuardDistancePixels)
+  if (prio.priority_bin == TilePriority::SOON)
     return SOON_BIN;
 
   if (prio.distance_to_visible == std::numeric_limits<float>::infinity())
@@ -372,14 +368,12 @@ scoped_ptr<TileManager> TileManager::Create(
     ResourcePool* resource_pool,
     Rasterizer* rasterizer,
     Rasterizer* gpu_rasterizer,
-    size_t max_raster_usage_bytes,
     bool use_rasterize_on_demand,
     RenderingStatsInstrumentation* rendering_stats_instrumentation) {
   return make_scoped_ptr(new TileManager(client,
                                          resource_pool,
                                          rasterizer,
                                          gpu_rasterizer,
-                                         max_raster_usage_bytes,
                                          use_rasterize_on_demand,
                                          rendering_stats_instrumentation));
 }
@@ -389,7 +383,6 @@ TileManager::TileManager(
     ResourcePool* resource_pool,
     Rasterizer* rasterizer,
     Rasterizer* gpu_rasterizer,
-    size_t max_raster_usage_bytes,
     bool use_rasterize_on_demand,
     RenderingStatsInstrumentation* rendering_stats_instrumentation)
     : client_(client),
@@ -401,7 +394,6 @@ TileManager::TileManager(
       memory_nice_to_have_bytes_(0),
       bytes_releasable_(0),
       resources_releasable_(0),
-      max_raster_usage_bytes_(max_raster_usage_bytes),
       ever_exceeded_memory_budget_(false),
       rendering_stats_instrumentation_(rendering_stats_instrumentation),
       did_initialize_visible_tile_(false),
@@ -685,6 +677,19 @@ void TileManager::GetTilesWithAssignedBins(PrioritizedTileSet* tiles) {
   }
 }
 
+void TileManager::CleanUpLayers() {
+  for (size_t i = 0; i < layers_.size(); ++i) {
+    if (layers_[i]->IsDrawnRenderSurfaceLayerListMember())
+      continue;
+
+    layers_[i]->DidUnregisterLayer();
+    std::swap(layers_[i], layers_.back());
+    layers_.pop_back();
+    --i;
+    prioritized_tiles_dirty_ = true;
+  }
+}
+
 void TileManager::ManageTiles(const GlobalStateThatImpactsTilePriority& state) {
   TRACE_EVENT0("cc", "TileManager::ManageTiles");
 
@@ -693,6 +698,8 @@ void TileManager::ManageTiles(const GlobalStateThatImpactsTilePriority& state) {
     global_state_ = state;
     prioritized_tiles_dirty_ = true;
   }
+
+  CleanUpLayers();
 
   // We need to call CheckForCompletedTasks() once in-between each call
   // to ScheduleTasks() to prevent canceled tasks from being scheduled.
@@ -832,14 +839,6 @@ void TileManager::AssignGpuMemoryToTiles(
   bool oomed_hard = false;
   bool have_hit_soft_memory = false;  // Soft memory comes after hard.
 
-  // Memory we assign to raster tasks now will be deducted from our memory
-  // in future iterations if priorities change. By assigning at most half
-  // the raster limit, we will always have another 50% left even if priorities
-  // change completely (assuming we check for completed/cancelled rasters
-  // between each call to this function).
-  size_t max_raster_bytes = max_raster_usage_bytes_ / 2;
-  size_t raster_bytes = 0;
-
   unsigned schedule_priority = 1u;
   for (PrioritizedTileSet::Iterator it(tiles, true); it; ++it) {
     Tile* tile = *it;
@@ -864,7 +863,6 @@ void TileManager::AssignGpuMemoryToTiles(
 
     const bool tile_uses_hard_limit = mts.bin <= NOW_BIN;
     const size_t bytes_if_allocated = BytesConsumedIfAllocated(tile);
-    const size_t raster_bytes_if_rastered = raster_bytes + bytes_if_allocated;
     const size_t tile_bytes_left =
         (tile_uses_hard_limit) ? hard_bytes_left : soft_bytes_left;
 
@@ -888,7 +886,9 @@ void TileManager::AssignGpuMemoryToTiles(
     // Allow lower priority tiles with initialized resources to keep
     // their memory by only assigning memory to new raster tasks if
     // they can be scheduled.
-    if (raster_bytes_if_rastered <= max_raster_bytes) {
+    bool reached_scheduled_raster_tasks_limit =
+        tiles_that_need_to_be_rasterized->size() >= kScheduledRasterTasksLimit;
+    if (!reached_scheduled_raster_tasks_limit) {
       // If we don't have the required version, and it's not in flight
       // then we'll have to pay to create a new task.
       if (!tile_version.resource_ && !tile_version.raster_task_) {
@@ -932,8 +932,7 @@ void TileManager::AssignGpuMemoryToTiles(
     // 2. Tiles with existing raster task could otherwise incorrectly
     //    be added as they are not affected by |bytes_allocatable|.
     bool can_schedule_tile =
-        !oomed_soft && raster_bytes_if_rastered <= max_raster_bytes &&
-        tiles_that_need_to_be_rasterized->size() < kScheduledRasterTasksLimit;
+        !oomed_soft && !reached_scheduled_raster_tasks_limit;
 
     if (!can_schedule_tile) {
       all_tiles_that_need_to_be_rasterized_have_memory_ = false;
@@ -943,7 +942,6 @@ void TileManager::AssignGpuMemoryToTiles(
       continue;
     }
 
-    raster_bytes = raster_bytes_if_rastered;
     tiles_that_need_to_be_rasterized->push_back(tile);
   }
 
@@ -963,7 +961,7 @@ void TileManager::AssignGpuMemoryToTiles(
   memory_stats_from_last_assign_.bytes_allocated =
       hard_bytes_allocatable - hard_bytes_left;
   memory_stats_from_last_assign_.bytes_unreleasable =
-      hard_bytes_allocatable - bytes_releasable_;
+      resource_pool_->acquired_memory_usage_bytes() - bytes_releasable_;
   memory_stats_from_last_assign_.bytes_over = bytes_that_exceeded_memory_budget;
 }
 
@@ -1630,6 +1628,13 @@ bool TileManager::EvictionTileIterator::EvictionOrderComparator::operator()(
            (a_priority.resolution == NON_IDEAL_RESOLUTION);
   }
   return a_priority.IsHigherPriorityThan(b_priority);
+}
+
+void TileManager::SetRasterizersForTesting(Rasterizer* rasterizer,
+                                           Rasterizer* gpu_rasterizer) {
+  Rasterizer* rasterizers[2] = {rasterizer, gpu_rasterizer};
+  rasterizer_delegate_ =
+      RasterizerDelegate::Create(this, rasterizers, arraysize(rasterizers));
 }
 
 }  // namespace cc

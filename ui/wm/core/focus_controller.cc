@@ -10,6 +10,7 @@
 #include "ui/aura/client/focus_change_observer.h"
 #include "ui/aura/env.h"
 #include "ui/aura/window_tracker.h"
+#include "ui/base/ime/text_input_focus_manager.h"
 #include "ui/events/event.h"
 #include "ui/wm/core/focus_rules.h"
 #include "ui/wm/core/window_util.h"
@@ -168,7 +169,7 @@ void FocusController::OnKeyEvent(ui::KeyEvent* event) {
 }
 
 void FocusController::OnMouseEvent(ui::MouseEvent* event) {
-  if (event->type() == ui::ET_MOUSE_PRESSED)
+  if (event->type() == ui::ET_MOUSE_PRESSED && !event->handled())
     WindowFocusedFromInputEvent(static_cast<aura::Window*>(event->target()));
 }
 
@@ -180,7 +181,8 @@ void FocusController::OnTouchEvent(ui::TouchEvent* event) {
 
 void FocusController::OnGestureEvent(ui::GestureEvent* event) {
   if (event->type() == ui::ET_GESTURE_BEGIN &&
-      event->details().touch_points() == 1) {
+      event->details().touch_points() == 1 &&
+      !event->handled()) {
     WindowFocusedFromInputEvent(static_cast<aura::Window*>(event->target()));
   }
 }
@@ -230,6 +232,15 @@ void FocusController::SetFocusedWindow(aura::Window* window) {
 
   base::AutoReset<bool> updating_focus(&updating_focus_, true);
   aura::Window* lost_focus = focused_window_;
+
+  // |window| is going to get the focus, so reset the text input client.
+  // OnWindowFocused() may set a proper text input client if the implementation
+  // supports text input.
+  ui::TextInputFocusManager* text_input_focus_manager =
+      ui::TextInputFocusManager::GetInstance();
+  if (window)
+    text_input_focus_manager->FocusTextInputClient(NULL);
+
   // Allow for the window losing focus to be deleted during dispatch. If it is
   // deleted pass NULL to observers instead of a deleted window.
   aura::WindowTracker window_tracker;
@@ -261,6 +272,10 @@ void FocusController::SetFocusedWindow(aura::Window* window) {
         focused_window_,
         window_tracker.Contains(lost_focus) ? lost_focus : NULL);
   }
+
+  // Ensure that the text input client is reset when the window loses the focus.
+  if (!window)
+    text_input_focus_manager->FocusTextInputClient(NULL);
 }
 
 void FocusController::SetActiveWindow(aura::Window* requested_window,

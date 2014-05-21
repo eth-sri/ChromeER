@@ -143,6 +143,10 @@ GeolocationPermissionContext*
   return NULL;
 }
 
+BrowserPluginGuestManager* TestBrowserContext::GetGuestManager() {
+  return NULL;
+}
+
 quota::SpecialStoragePolicy* TestBrowserContext::GetSpecialStoragePolicy() {
   return special_storage_policy_.get();
 }

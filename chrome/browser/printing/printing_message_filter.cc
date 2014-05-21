@@ -30,7 +30,6 @@
 #include "base/file_util.h"
 #include "base/lazy_instance.h"
 #include "chrome/browser/printing/print_dialog_cloud.h"
-#include "content/public/browser/web_contents_view.h"
 #endif
 
 #if defined(OS_ANDROID)
@@ -116,10 +115,9 @@ void PrintingMessageFilter::OverrideThreadForMessage(
 #endif
 }
 
-bool PrintingMessageFilter::OnMessageReceived(const IPC::Message& message,
-                                              bool* message_was_ok) {
+bool PrintingMessageFilter::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP_EX(PrintingMessageFilter, message, *message_was_ok)
+  IPC_BEGIN_MESSAGE_MAP(PrintingMessageFilter, message)
 #if defined(OS_WIN)
     IPC_MESSAGE_HANDLER(PrintHostMsg_DuplicateSection, OnDuplicateSection)
 #endif
@@ -242,7 +240,7 @@ void PrintingMessageFilter::CreatePrintDialogForFile(
     return;
   print_dialog_cloud::CreatePrintDialogForFile(
       wc->GetBrowserContext(),
-      wc->GetView()->GetTopLevelNativeWindow(),
+      wc->GetTopLevelNativeWindow(),
       path,
       wc->GetTitle(),
       base::string16(),

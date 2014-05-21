@@ -339,7 +339,7 @@ void InitializeUserDataDir() {
     std::string user_data_dir_string;
     scoped_ptr<base::Environment> environment(base::Environment::Create());
     if (environment->GetVar("CHROME_USER_DATA_DIR", &user_data_dir_string) &&
-        IsStringUTF8(user_data_dir_string)) {
+        base::IsStringUTF8(user_data_dir_string)) {
       user_data_dir = base::FilePath::FromUTF8Unsafe(user_data_dir_string);
     }
   }
@@ -855,11 +855,10 @@ bool ChromeMainDelegate::DelaySandboxInitialization(
       process_type == switches::kRelauncherProcess;
 }
 #elif defined(OS_POSIX) && !defined(OS_ANDROID)
-content::ZygoteForkDelegate* ChromeMainDelegate::ZygoteStarting() {
-#if defined(DISABLE_NACL)
-  return NULL;
-#else
-  return new NaClForkDelegate();
+void ChromeMainDelegate::ZygoteStarting(
+    ScopedVector<content::ZygoteForkDelegate>* delegates) {
+#if !defined(DISABLE_NACL)
+  nacl::AddNaClZygoteForkDelegates(delegates);
 #endif
 }
 

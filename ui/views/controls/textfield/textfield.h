@@ -30,6 +30,10 @@
 
 namespace views {
 
+namespace test {
+class WidgetTestInteractive;
+}
+
 class MenuRunner;
 class Painter;
 class TextfieldController;
@@ -184,7 +188,7 @@ class VIEWS_EXPORT Textfield : public View,
 
   // View overrides:
   virtual int GetBaseline() const OVERRIDE;
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
   virtual const char* GetClassName() const OVERRIDE;
   virtual gfx::NativeCursor GetCursor(const ui::MouseEvent& event) OVERRIDE;
   virtual bool OnMousePressed(const ui::MouseEvent& event) OVERRIDE;
@@ -242,6 +246,7 @@ class VIEWS_EXPORT Textfield : public View,
   virtual void ConvertPointFromScreen(gfx::Point* point) OVERRIDE;
   virtual bool DrawsHandles() OVERRIDE;
   virtual void OpenContextMenu(const gfx::Point& anchor) OVERRIDE;
+  virtual void DestroyTouchSelection() OVERRIDE;
 
   // ui::SimpleMenuModel::Delegate overrides:
   virtual bool IsCommandIdChecked(int command_id) const OVERRIDE;
@@ -294,6 +299,7 @@ class VIEWS_EXPORT Textfield : public View,
  private:
   friend class TextfieldTest;
   friend class TouchSelectionControllerImplTest;
+  friend class test::WidgetTestInteractive;
 
   // Handles a request to change the value of this text field from software
   // using an accessibility API (typically automation software, screen readers

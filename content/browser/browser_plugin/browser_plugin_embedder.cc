@@ -6,7 +6,6 @@
 
 #include "base/values.h"
 #include "content/browser/browser_plugin/browser_plugin_guest.h"
-#include "content/browser/browser_plugin/browser_plugin_guest_manager.h"
 #include "content/browser/browser_plugin/browser_plugin_host_factory.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
@@ -15,6 +14,7 @@
 #include "content/common/drag_messages.h"
 #include "content/common/gpu/gpu_messages.h"
 #include "content/public/browser/browser_context.h"
+#include "content/public/browser/browser_plugin_guest_manager.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/render_view_host.h"
@@ -31,7 +31,8 @@ namespace content {
 BrowserPluginHostFactory* BrowserPluginEmbedder::factory_ = NULL;
 
 BrowserPluginEmbedder::BrowserPluginEmbedder(WebContentsImpl* web_contents)
-    : WebContentsObserver(web_contents) {
+    : WebContentsObserver(web_contents),
+      weak_ptr_factory_(this) {
 }
 
 BrowserPluginEmbedder::~BrowserPluginEmbedder() {
@@ -61,57 +62,45 @@ void BrowserPluginEmbedder::StartDrag(BrowserPluginGuest* guest) {
   guest_started_drag_ = guest->AsWeakPtr();
 }
 
-WebContentsImpl* BrowserPluginEmbedder::GetWebContents() {
+WebContentsImpl* BrowserPluginEmbedder::GetWebContents() const {
   return static_cast<WebContentsImpl*>(web_contents());
 }
 
+BrowserPluginGuestManager*
+BrowserPluginEmbedder::GetBrowserPluginGuestManager() const {
+  return GetWebContents()->GetBrowserContext()->GetGuestManager();
+}
+
 bool BrowserPluginEmbedder::DidSendScreenRectsCallback(
-   BrowserPluginGuest* guest) {
+   WebContents* guest_web_contents) {
   static_cast<RenderViewHostImpl*>(
-      guest->GetWebContents()->GetRenderViewHost())->SendScreenRects();
+      guest_web_contents->GetRenderViewHost())->SendScreenRects();
   // Not handled => Iterate over all guests.
   return false;
 }
 
 void BrowserPluginEmbedder::DidSendScreenRects() {
-  GetBrowserPluginGuestManager()->ForEachGuest(GetWebContents(), base::Bind(
-      &BrowserPluginEmbedder::DidSendScreenRectsCallback,
-      base::Unretained(this)));
-}
-
-bool BrowserPluginEmbedder::UnlockMouseIfNecessaryCallback(
-    const NativeWebKeyboardEvent& event,
-    BrowserPluginGuest* guest) {
-  return guest->UnlockMouseIfNecessary(event);
-}
-
-bool BrowserPluginEmbedder::HandleKeyboardEvent(
-    const NativeWebKeyboardEvent& event) {
-  if ((event.type != blink::WebInputEvent::RawKeyDown) ||
-      (event.windowsKeyCode != ui::VKEY_ESCAPE) ||
-      (event.modifiers & blink::WebInputEvent::InputModifiers)) {
-    return false;
-  }
-
-  return GetBrowserPluginGuestManager()->ForEachGuest(GetWebContents(),
-      base::Bind(&BrowserPluginEmbedder::UnlockMouseIfNecessaryCallback,
-                 base::Unretained(this),
-                 event));
+  GetBrowserPluginGuestManager()->ForEachGuest(
+          GetWebContents(), base::Bind(
+              &BrowserPluginEmbedder::DidSendScreenRectsCallback,
+              base::Unretained(this)));
 }
 
 bool BrowserPluginEmbedder::SetZoomLevelCallback(
-    double level, BrowserPluginGuest* guest) {
+    double level, WebContents* guest_web_contents) {
   double zoom_factor = content::ZoomLevelToZoomFactor(level);
-  guest->SetZoom(zoom_factor);
+  static_cast<WebContentsImpl*>(guest_web_contents)->GetBrowserPluginGuest()->
+      SetZoom(zoom_factor);
   // Not handled => Iterate over all guests.
   return false;
 }
 
 void BrowserPluginEmbedder::SetZoomLevel(double level) {
-  GetBrowserPluginGuestManager()->ForEachGuest(GetWebContents(), base::Bind(
-      &BrowserPluginEmbedder::SetZoomLevelCallback,
-      base::Unretained(this),
-      level));
+  GetBrowserPluginGuestManager()->ForEachGuest(
+      GetWebContents(), base::Bind(
+          &BrowserPluginEmbedder::SetZoomLevelCallback,
+          base::Unretained(this),
+          level));
 }
 
 bool BrowserPluginEmbedder::OnMessageReceived(const IPC::Message& message) {
@@ -151,36 +140,20 @@ void BrowserPluginEmbedder::OnUpdateDragCursor(bool* handled) {
   *handled = (guest_dragging_over_.get() != NULL);
 }
 
-BrowserPluginGuestManager*
-    BrowserPluginEmbedder::GetBrowserPluginGuestManager() {
-  BrowserPluginGuestManager* guest_manager =
-      GetWebContents()->GetBrowserPluginGuestManager();
-  if (!guest_manager) {
-    guest_manager = BrowserPluginGuestManager::Create();
-    GetWebContents()->GetBrowserContext()->SetUserData(
-        browser_plugin::kBrowserPluginGuestManagerKeyName, guest_manager);
-  }
-  return guest_manager;
-}
-
 void BrowserPluginEmbedder::OnAllocateInstanceID(int request_id) {
-  int instance_id = GetBrowserPluginGuestManager()->get_next_instance_id();
+  int instance_id = GetBrowserPluginGuestManager()->GetNextInstanceID();
   Send(new BrowserPluginMsg_AllocateInstanceID_ACK(
       routing_id(), request_id, instance_id));
 }
 
-void BrowserPluginEmbedder::OnAttach(
+void BrowserPluginEmbedder::OnGuestCallback(
     int instance_id,
     const BrowserPluginHostMsg_Attach_Params& params,
-    const base::DictionaryValue& extra_params) {
-  if (!GetBrowserPluginGuestManager()->CanEmbedderAccessInstanceIDMaybeKill(
-          GetWebContents()->GetRenderProcessHost()->GetID(), instance_id))
-    return;
-
-  BrowserPluginGuest* guest =
-      GetBrowserPluginGuestManager()->GetGuestByInstanceID(
-          instance_id, GetWebContents()->GetRenderProcessHost()->GetID());
-
+    const base::DictionaryValue* extra_params,
+    WebContents* guest_web_contents) {
+  BrowserPluginGuest* guest = guest_web_contents ?
+      static_cast<WebContentsImpl*>(guest_web_contents)->
+          GetBrowserPluginGuest() : NULL;
   if (guest) {
     // There is an implicit order expectation here:
     // 1. The content embedder is made aware of the attachment.
@@ -190,23 +163,41 @@ void BrowserPluginEmbedder::OnAttach(
     GetContentClient()->browser()->GuestWebContentsAttached(
         guest->GetWebContents(),
         GetWebContents(),
-        extra_params);
-    guest->Attach(GetWebContents(), params, extra_params);
+        *extra_params);
+    guest->Attach(GetWebContents(), params, *extra_params);
     return;
   }
 
-  scoped_ptr<base::DictionaryValue> copy_extra_params(extra_params.DeepCopy());
-  guest = GetBrowserPluginGuestManager()->CreateGuest(
+  scoped_ptr<base::DictionaryValue> copy_extra_params(extra_params->DeepCopy());
+  guest_web_contents = GetBrowserPluginGuestManager()->CreateGuest(
       GetWebContents()->GetSiteInstance(),
-      instance_id, params,
+      instance_id,
+      params.storage_partition_id,
+      params.persist_storage,
       copy_extra_params.Pass());
+  guest = guest_web_contents ?
+      static_cast<WebContentsImpl*>(guest_web_contents)->
+          GetBrowserPluginGuest() : NULL;
   if (guest) {
     GetContentClient()->browser()->GuestWebContentsAttached(
         guest->GetWebContents(),
         GetWebContents(),
-        extra_params);
+        *extra_params);
     guest->Initialize(params, GetWebContents());
   }
+}
+
+void BrowserPluginEmbedder::OnAttach(
+    int instance_id,
+    const BrowserPluginHostMsg_Attach_Params& params,
+    const base::DictionaryValue& extra_params) {
+  GetBrowserPluginGuestManager()->MaybeGetGuestByInstanceIDOrKill(
+      instance_id, GetWebContents()->GetRenderProcessHost()->GetID(),
+      base::Bind(&BrowserPluginEmbedder::OnGuestCallback,
+                 base::Unretained(this),
+                 instance_id,
+                 params,
+                 &extra_params));
 }
 
 }  // namespace content

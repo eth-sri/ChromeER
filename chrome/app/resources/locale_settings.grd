@@ -380,15 +380,17 @@
         65
       </message>
 
-      <!-- The width of the make-default-in-metro dialog in characters. -->
-      <message name="IDS_METRO_FLOW_WIDTH_CHARS" use_name_for_id="true">
-        78
-      </message>
+      <if expr="is_win">
+        <!-- The width of the make-default-in-metro dialog in characters. -->
+        <message name="IDS_METRO_FLOW_WIDTH_CHARS" use_name_for_id="true">
+          78
+        </message>
 
-      <!-- The height of the make-default-in-metro dialog in characters. -->
-      <message name="IDS_METRO_FLOW_HEIGHT_LINES" use_name_for_id="true">
-        26
-      </message>
+        <!-- The height of the make-default-in-metro dialog in characters. -->
+        <message name="IDS_METRO_FLOW_HEIGHT_LINES" use_name_for_id="true">
+          26
+        </message>
+      </if>
 
       <!-- The width of the media galleries configuration dialog in characters. -->
       <message name="IDS_MEDIA_GALLERIES_DIALOG_CONTENT_WIDTH_CHARS" use_name_for_id="true">
@@ -404,6 +406,16 @@
         <!-- The height of the help-app dialog in pixels. -->
         <message name="IDS_HELP_APP_DIALOG_HEIGHT_PIXELS" use_name_for_id="true">
             400
+        </message>
+
+        <!-- The EULA credits dialog in pixels. -->
+        <message name="IDS_CREDITS_APP_DIALOG_WIDTH_PIXELS" use_name_for_id="true">
+            710
+        </message>
+
+        <!-- The EULA credits dialog in pixels. -->
+        <message name="IDS_CREDITS_APP_DIALOG_HEIGHT_PIXELS" use_name_for_id="true">
+            500
         </message>
 
         <message name="IDS_FACTORY_RESET_HELP_URL" translateable="false">

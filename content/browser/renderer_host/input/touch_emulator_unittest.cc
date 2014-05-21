@@ -23,6 +23,7 @@ using blink::WebGestureEvent;
 using blink::WebInputEvent;
 using blink::WebKeyboardEvent;
 using blink::WebMouseEvent;
+using blink::WebMouseWheelEvent;
 using blink::WebTouchEvent;
 using blink::WebTouchPoint;
 
@@ -46,7 +47,7 @@ class TouchEmulatorTest : public testing::Test,
   // testing::Test
   virtual void SetUp() OVERRIDE {
 #if defined(USE_AURA)
-    aura::Env::CreateInstance();
+    aura::Env::CreateInstance(true);
     screen_.reset(aura::TestScreen::Create());
     gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE, screen_.get());
 #endif
@@ -144,6 +145,14 @@ class TouchEmulatorTest : public testing::Test,
     event.x = event.windowX = event.globalX = x;
     event.y = event.windowY = event.globalY = y;
     emulator()->HandleMouseEvent(event);
+  }
+
+  bool SendMouseWheelEvent() {
+    WebMouseWheelEvent event;
+    event.type = WebInputEvent::MouseWheel;
+    event.timeStampSeconds = GetNextEventTimeSeconds();
+    // Return whether mouse wheel is forwarded.
+    return !emulator()->HandleMouseWheelEvent(event);
   }
 
   void MouseDown(int x, int y) {
@@ -315,6 +324,26 @@ TEST_F(TouchEmulatorTest, MouseMovesDropped) {
   EXPECT_EQ(
       "TouchEnd GestureScrollEnd",
       ExpectedEvents());
+}
+
+TEST_F(TouchEmulatorTest, MouseWheel) {
+  MouseMove(100, 200);
+  EXPECT_EQ("", ExpectedEvents());
+  EXPECT_TRUE(SendMouseWheelEvent());
+  MouseDown(100, 200);
+  EXPECT_EQ("TouchStart GestureTapDown", ExpectedEvents());
+  EXPECT_FALSE(SendMouseWheelEvent());
+  MouseUp(100, 200);
+  EXPECT_EQ("TouchEnd GestureShowPress GestureTap", ExpectedEvents());
+  EXPECT_TRUE(SendMouseWheelEvent());
+  MouseDown(300, 200);
+  EXPECT_EQ("TouchStart GestureTapDown", ExpectedEvents());
+  EXPECT_FALSE(SendMouseWheelEvent());
+  emulator()->Disable();
+  EXPECT_EQ("TouchCancel GestureTapCancel", ExpectedEvents());
+  EXPECT_TRUE(SendMouseWheelEvent());
+  emulator()->Enable(true /* allow_pinch */);
+  EXPECT_TRUE(SendMouseWheelEvent());
 }
 
 }  // namespace content

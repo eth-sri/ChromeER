@@ -263,7 +263,7 @@ PipelineIntegrationTestBase::CreateFilterCollection(
 
   ScopedVector<AudioDecoder> audio_decoders;
   audio_decoders.push_back(
-      new FFmpegAudioDecoder(message_loop_.message_loop_proxy()));
+      new FFmpegAudioDecoder(message_loop_.message_loop_proxy(), LogCB()));
   audio_decoders.push_back(
       new OpusAudioDecoder(message_loop_.message_loop_proxy()));
 
@@ -284,11 +284,8 @@ PipelineIntegrationTestBase::CreateFilterCollection(
                  base::Unretained(this),
                  decryptor),
       &hardware_config_);
-  // Disable underflow if hashing is enabled.
-  if (hashing_enabled_) {
+  if (hashing_enabled_)
     audio_sink_->StartAudioHashForTesting();
-    audio_renderer_impl->DisableUnderflowForTesting();
-  }
   scoped_ptr<AudioRenderer> audio_renderer(audio_renderer_impl);
   collection->SetAudioRenderer(audio_renderer.Pass());
 

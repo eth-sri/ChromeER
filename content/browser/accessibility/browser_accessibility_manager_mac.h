@@ -22,6 +22,8 @@ class CONTENT_EXPORT BrowserAccessibilityManagerMac
 
   static ui::AXTreeUpdate GetEmptyDocument();
 
+  virtual BrowserAccessibility* GetFocus(BrowserAccessibility* root) OVERRIDE;
+
   // Implementation of BrowserAccessibilityManager.
   virtual void NotifyAccessibilityEvent(
       ui::AXEvent event_type, BrowserAccessibility* node) OVERRIDE;
@@ -29,11 +31,16 @@ class CONTENT_EXPORT BrowserAccessibilityManagerMac
   NSView* parent_view() { return parent_view_; }
 
  private:
+  virtual void OnNodeCreationFinished(ui::AXNode* node) OVERRIDE;
+  virtual void OnTreeUpdateFinished() OVERRIDE;
+
   // This gives BrowserAccessibilityManager::Create access to the class
   // constructor.
   friend class BrowserAccessibilityManager;
 
   NSView* parent_view_;
+
+  bool created_live_region_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserAccessibilityManagerMac);
 };

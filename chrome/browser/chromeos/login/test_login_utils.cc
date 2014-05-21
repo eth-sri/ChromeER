@@ -4,8 +4,8 @@
 
 #include "chrome/browser/chromeos/login/test_login_utils.h"
 
-#include "chrome/browser/chromeos/login/mock_authenticator.h"
-#include "chrome/browser/chromeos/login/user.h"
+#include "chrome/browser/chromeos/login/auth/mock_authenticator.h"
+#include "chrome/browser/chromeos/login/auth/user_context.h"
 
 namespace chromeos {
 
@@ -23,8 +23,8 @@ void TestLoginUtils::PrepareProfile(
     bool has_cookies,
     bool has_active_session,
     Delegate* delegate) {
-  DCHECK_EQ(expected_username_, credentials.username);
-  DCHECK_EQ(expected_password_, credentials.password);
+  DCHECK_EQ(expected_username_, credentials.GetUserID());
+  DCHECK_EQ(expected_password_, credentials.GetPassword());
   // Profile hasn't been loaded.
   delegate->OnProfilePrepared(NULL);
 }

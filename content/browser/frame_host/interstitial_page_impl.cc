@@ -19,15 +19,15 @@
 #include "content/browser/frame_host/navigation_entry_impl.h"
 #include "content/browser/loader/resource_dispatcher_host_impl.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
+#include "content/browser/renderer_host/render_view_host_delegate_view.h"
 #include "content/browser/renderer_host/render_view_host_factory.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/browser/site_instance_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
+#include "content/browser/web_contents/web_contents_view.h"
 #include "content/common/frame_messages.h"
 #include "content/common/view_messages.h"
-#include "content/port/browser/render_view_host_delegate_view.h"
-#include "content/port/browser/web_contents_view_port.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
@@ -356,19 +356,14 @@ void InterstitialPageImpl::NavigationEntryCommitted(
   OnNavigatingAwayOrTabClosing();
 }
 
-void InterstitialPageImpl::WebContentsWillBeDestroyed() {
+void InterstitialPageImpl::WebContentsDestroyed() {
   OnNavigatingAwayOrTabClosing();
 }
 
-void InterstitialPageImpl::WebContentsDestroyed(WebContents* web_contents) {
-  // WebContentsImpl will only call WebContentsWillBeDestroyed for interstitial
-  // pages that it knows about, pages that called
-  // WebContentsImpl::AttachInterstitialPage. But it's possible to have an
-  // interstitial page that never progressed that far. In that case, ensure that
-  // this interstitial page is destroyed. (And if it was attached, and
-  // OnNavigatingAwayOrTabClosing was called, it's safe to call
-  // OnNavigatingAwayOrTabClosing twice.)
-  OnNavigatingAwayOrTabClosing();
+bool InterstitialPageImpl::OnMessageReceived(
+    const IPC::Message& message,
+    RenderFrameHost* render_frame_host) {
+  return OnMessageReceived(message);
 }
 
 bool InterstitialPageImpl::OnMessageReceived(RenderFrameHost* render_frame_host,
@@ -384,17 +379,11 @@ bool InterstitialPageImpl::OnMessageReceived(RenderViewHost* render_view_host,
 bool InterstitialPageImpl::OnMessageReceived(const IPC::Message& message) {
 
   bool handled = true;
-  bool message_is_ok = true;
-  IPC_BEGIN_MESSAGE_MAP_EX(InterstitialPageImpl, message, message_is_ok)
+  IPC_BEGIN_MESSAGE_MAP(InterstitialPageImpl, message)
     IPC_MESSAGE_HANDLER(FrameHostMsg_DomOperationResponse,
                         OnDomOperationResponse)
     IPC_MESSAGE_UNHANDLED(handled = false)
-  IPC_END_MESSAGE_MAP_EX()
-
-  if (!message_is_ok) {
-    RecordAction(base::UserMetricsAction("BadMessageTerminate_RVD"));
-    web_contents()->GetRenderProcessHost()->ReceivedBadMessage();
-  }
+  IPC_END_MESSAGE_MAP()
 
   return handled;
 }
@@ -405,6 +394,42 @@ void InterstitialPageImpl::RenderFrameCreated(
   // the main frame happens in RenderViewCreated.
   controller_->delegate()->RenderFrameForInterstitialPageCreated(
       render_frame_host);
+}
+
+void InterstitialPageImpl::UpdateTitle(
+    RenderFrameHost* render_frame_host,
+    int32 page_id,
+    const base::string16& title,
+    base::i18n::TextDirection title_direction) {
+  if (!enabled())
+    return;
+
+  RenderViewHost* render_view_host = render_frame_host->GetRenderViewHost();
+  DCHECK(render_view_host == render_view_host_);
+  NavigationEntry* entry = controller_->GetVisibleEntry();
+  if (!entry) {
+    // Crash reports from the field indicate this can be NULL.
+    // This is unexpected as InterstitialPages constructed with the
+    // new_navigation flag set to true create a transient navigation entry
+    // (that is returned as the active entry). And the only case so far of
+    // interstitial created with that flag set to false is with the
+    // SafeBrowsingBlockingPage, when the resource triggering the interstitial
+    // is a sub-resource, meaning the main page has already been loaded and a
+    // navigation entry should have been created.
+    NOTREACHED();
+    return;
+  }
+
+  // If this interstitial is shown on an existing navigation entry, we'll need
+  // to remember its title so we can revert to it when hidden.
+  if (!new_navigation_ && !should_revert_web_contents_title_) {
+    original_web_contents_title_ = entry->GetTitle();
+    should_revert_web_contents_title_ = true;
+  }
+  // TODO(evan): make use of title_direction.
+  // http://code.google.com/p/chromium/issues/detail?id=27094
+  entry->SetTitle(title);
+  controller_->delegate()->NotifyNavigationStateChanged(INVALIDATE_TYPE_TITLE);
 }
 
 RenderViewHostDelegateView* InterstitialPageImpl::GetDelegateView() {
@@ -469,41 +494,6 @@ void InterstitialPageImpl::DidNavigate(
   web_contents_was_loading_ = controller_->delegate()->IsLoading();
   controller_->delegate()->SetIsLoading(
       controller_->delegate()->GetRenderViewHost(), false, true, NULL);
-}
-
-void InterstitialPageImpl::UpdateTitle(
-    RenderViewHost* render_view_host,
-    int32 page_id,
-    const base::string16& title,
-    base::i18n::TextDirection title_direction) {
-  if (!enabled())
-    return;
-
-  DCHECK(render_view_host == render_view_host_);
-  NavigationEntry* entry = controller_->GetVisibleEntry();
-  if (!entry) {
-    // Crash reports from the field indicate this can be NULL.
-    // This is unexpected as InterstitialPages constructed with the
-    // new_navigation flag set to true create a transient navigation entry
-    // (that is returned as the active entry). And the only case so far of
-    // interstitial created with that flag set to false is with the
-    // SafeBrowsingBlockingPage, when the resource triggering the interstitial
-    // is a sub-resource, meaning the main page has already been loaded and a
-    // navigation entry should have been created.
-    NOTREACHED();
-    return;
-  }
-
-  // If this interstitial is shown on an existing navigation entry, we'll need
-  // to remember its title so we can revert to it when hidden.
-  if (!new_navigation_ && !should_revert_web_contents_title_) {
-    original_web_contents_title_ = entry->GetTitle();
-    should_revert_web_contents_title_ = true;
-  }
-  // TODO(evan): make use of title_direction.
-  // http://code.google.com/p/chromium/issues/detail?id=27094
-  entry->SetTitle(title);
-  controller_->delegate()->NotifyNavigationStateChanged(INVALIDATE_TYPE_TITLE);
 }
 
 RendererPreferences InterstitialPageImpl::GetRendererPrefs(
@@ -576,11 +566,10 @@ RenderViewHost* InterstitialPageImpl::CreateRenderViewHost() {
 WebContentsView* InterstitialPageImpl::CreateWebContentsView() {
   if (!enabled() || !create_view_)
     return NULL;
-  WebContentsView* web_contents_view = web_contents()->GetView();
-  WebContentsViewPort* web_contents_view_port =
-      static_cast<WebContentsViewPort*>(web_contents_view);
+  WebContentsView* wcv =
+      static_cast<WebContentsImpl*>(web_contents())->GetView();
   RenderWidgetHostViewBase* view =
-      web_contents_view_port->CreateViewForWidget(render_view_host_);
+      wcv->CreateViewForWidget(render_view_host_);
   render_view_host_->SetView(view);
   render_view_host_->AllowBindings(BINDINGS_POLICY_DOM_AUTOMATION);
 
@@ -588,14 +577,15 @@ WebContentsView* InterstitialPageImpl::CreateWebContentsView() {
       GetMaxPageIDForSiteInstance(render_view_host_->GetSiteInstance());
   render_view_host_->CreateRenderView(base::string16(),
                                       MSG_ROUTING_NONE,
+                                      MSG_ROUTING_NONE,
                                       max_page_id,
                                       false);
   controller_->delegate()->RenderFrameForInterstitialPageCreated(
       frame_tree_.root()->current_frame_host());
-  view->SetSize(web_contents_view->GetContainerSize());
+  view->SetSize(web_contents()->GetContainerBounds().size());
   // Don't show the interstitial until we have navigated to it.
   view->Hide();
-  return web_contents_view;
+  return wcv;
 }
 
 void InterstitialPageImpl::Proceed() {

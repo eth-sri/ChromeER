@@ -19,47 +19,18 @@ namespace content {
 
 EmbeddedWorkerRegistry::EmbeddedWorkerRegistry(
     base::WeakPtr<ServiceWorkerContextCore> context)
-    : context_(context),
-      next_embedded_worker_id_(0) {}
+    : context_(context), next_embedded_worker_id_(0) {
+}
 
 scoped_ptr<EmbeddedWorkerInstance> EmbeddedWorkerRegistry::CreateWorker() {
   scoped_ptr<EmbeddedWorkerInstance> worker(
-      new EmbeddedWorkerInstance(this, next_embedded_worker_id_));
+      new EmbeddedWorkerInstance(context_, next_embedded_worker_id_));
   worker_map_[next_embedded_worker_id_++] = worker.get();
   return worker.Pass();
 }
 
-void EmbeddedWorkerRegistry::StartWorker(const std::vector<int>& process_ids,
-                                         int embedded_worker_id,
-                                         int64 service_worker_version_id,
-                                         const GURL& scope,
-                                         const GURL& script_url,
-                                         const StatusCallback& callback) {
-  if (!context_) {
-    callback.Run(SERVICE_WORKER_ERROR_ABORT);
-    return;
-  }
-  scoped_ptr<EmbeddedWorkerMsg_StartWorker_Params> params(
-      new EmbeddedWorkerMsg_StartWorker_Params());
-  params->embedded_worker_id = embedded_worker_id;
-  params->service_worker_version_id = service_worker_version_id;
-  params->scope = scope;
-  params->script_url = script_url;
-  params->worker_devtools_agent_route_id = MSG_ROUTING_NONE;
-  context_->process_manager()->AllocateWorkerProcess(
-      process_ids,
-      script_url,
-      base::Bind(&EmbeddedWorkerRegistry::StartWorkerWithProcessId,
-                 this,
-                 embedded_worker_id,
-                 base::Passed(&params),
-                 callback));
-}
-
 ServiceWorkerStatusCode EmbeddedWorkerRegistry::StopWorker(
     int process_id, int embedded_worker_id) {
-  if (context_)
-    context_->process_manager()->ReleaseWorkerProcess(process_id);
   return Send(process_id,
               new EmbeddedWorkerMsg_StopWorker(embedded_worker_id));
 }
@@ -84,6 +55,34 @@ void EmbeddedWorkerRegistry::Shutdown() {
   }
 }
 
+void EmbeddedWorkerRegistry::OnWorkerScriptLoaded(int process_id,
+                                                  int embedded_worker_id) {
+  WorkerInstanceMap::iterator found = worker_map_.find(embedded_worker_id);
+  if (found == worker_map_.end()) {
+    LOG(ERROR) << "Worker " << embedded_worker_id << " not registered";
+    return;
+  }
+  if (found->second->process_id() != process_id) {
+    LOG(ERROR) << "Incorrect embedded_worker_id";
+    return;
+  }
+  found->second->OnScriptLoaded();
+}
+
+void EmbeddedWorkerRegistry::OnWorkerScriptLoadFailed(int process_id,
+                                                      int embedded_worker_id) {
+  WorkerInstanceMap::iterator found = worker_map_.find(embedded_worker_id);
+  if (found == worker_map_.end()) {
+    LOG(ERROR) << "Worker " << embedded_worker_id << " not registered";
+    return;
+  }
+  if (found->second->process_id() != process_id) {
+    LOG(ERROR) << "Incorrect embedded_worker_id";
+    return;
+  }
+  found->second->OnScriptLoadFailed();
+}
+
 void EmbeddedWorkerRegistry::OnWorkerStarted(
     int process_id, int thread_id, int embedded_worker_id) {
   DCHECK(!ContainsKey(worker_process_map_, process_id) ||
@@ -93,8 +92,11 @@ void EmbeddedWorkerRegistry::OnWorkerStarted(
     LOG(ERROR) << "Worker " << embedded_worker_id << " not registered";
     return;
   }
+  if (found->second->process_id() != process_id) {
+    LOG(ERROR) << "Incorrect embedded_worker_id";
+    return;
+  }
   worker_process_map_[process_id].insert(embedded_worker_id);
-  DCHECK_EQ(found->second->process_id(), process_id);
   found->second->OnStarted(thread_id);
 }
 
@@ -105,7 +107,10 @@ void EmbeddedWorkerRegistry::OnWorkerStopped(
     LOG(ERROR) << "Worker " << embedded_worker_id << " not registered";
     return;
   }
-  DCHECK_EQ(found->second->process_id(), process_id);
+  if (found->second->process_id() != process_id) {
+    LOG(ERROR) << "Incorrect embedded_worker_id";
+    return;
+  }
   worker_process_map_[process_id].erase(embedded_worker_id);
   found->second->OnStopped();
 }
@@ -176,37 +181,10 @@ EmbeddedWorkerRegistry::~EmbeddedWorkerRegistry() {
   Shutdown();
 }
 
-void EmbeddedWorkerRegistry::StartWorkerWithProcessId(
-    int embedded_worker_id,
+void EmbeddedWorkerRegistry::SendStartWorker(
     scoped_ptr<EmbeddedWorkerMsg_StartWorker_Params> params,
     const StatusCallback& callback,
-    ServiceWorkerStatusCode status,
     int process_id) {
-  WorkerInstanceMap::const_iterator worker =
-      worker_map_.find(embedded_worker_id);
-  if (worker == worker_map_.end()) {
-    // The Instance was destroyed before it could finish starting.  Undo what
-    // we've done so far.
-    if (context_)
-      context_->process_manager()->ReleaseWorkerProcess(process_id);
-    callback.Run(SERVICE_WORKER_ERROR_ABORT);
-    return;
-  }
-  if (status == SERVICE_WORKER_OK) {
-    // Gets the new routing id for the renderer process.
-    scoped_refptr<RenderWidgetHelper> helper(
-        RenderWidgetHelper::FromProcessHostID(process_id));
-    // |helper| may be NULL in unittest.
-    params->worker_devtools_agent_route_id =
-        helper ? helper->GetNextRoutingID() : MSG_ROUTING_NONE;
-  }
-  worker->second->RecordProcessId(
-      process_id, status, params->worker_devtools_agent_route_id);
-
-  if (status != SERVICE_WORKER_OK) {
-    callback.Run(status);
-    return;
-  }
   // The ServiceWorkerDispatcherHost is supposed to be created when the process
   // is created, and keep an entry in process_sender_map_ for its whole
   // lifetime.
@@ -215,13 +193,14 @@ void EmbeddedWorkerRegistry::StartWorkerWithProcessId(
 }
 
 ServiceWorkerStatusCode EmbeddedWorkerRegistry::Send(
-    int process_id, IPC::Message* message) {
+    int process_id, IPC::Message* message_ptr) {
+  scoped_ptr<IPC::Message> message(message_ptr);
   if (!context_)
     return SERVICE_WORKER_ERROR_ABORT;
   ProcessToSenderMap::iterator found = process_sender_map_.find(process_id);
   if (found == process_sender_map_.end())
     return SERVICE_WORKER_ERROR_PROCESS_NOT_FOUND;
-  if (!found->second->Send(message))
+  if (!found->second->Send(message.release()))
     return SERVICE_WORKER_ERROR_IPC_FAILED;
   return SERVICE_WORKER_OK;
 }

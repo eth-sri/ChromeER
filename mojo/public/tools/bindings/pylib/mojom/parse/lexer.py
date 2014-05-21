@@ -57,16 +57,13 @@ class Lexer(object):
   ##
   keywords = (
     'HANDLE',
-    'DATA_PIPE_CONSUMER',
-    'DATA_PIPE_PRODUCER',
-    'MESSAGE_PIPE',
-    'SHARED_BUFFER',
 
     'IMPORT',
     'MODULE',
     'STRUCT',
     'INTERFACE',
     'ENUM',
+    'CONST',
   )
 
   keyword_map = {}
@@ -112,19 +109,16 @@ class Lexer(object):
   ## Regexes for use in tokens
   ##
 
-  # valid C identifiers (K&R2: A.2.3), plus '$' (supported by some compilers)
-  identifier = r'[a-zA-Z_$][0-9a-zA-Z_$]*'
+  # valid C identifiers (K&R2: A.2.3)
+  identifier = r'[a-zA-Z_][0-9a-zA-Z_]*'
 
   hex_prefix = '0[xX]'
   hex_digits = '[0-9a-fA-F]+'
 
   # integer constants (K&R2: A.2.5.1)
-  integer_suffix_opt = \
-      r'(([uU]ll)|([uU]LL)|(ll[uU]?)|(LL[uU]?)|([uU][lL])|([lL][uU]?)|[uU])?'
-  decimal_constant = \
-      '(0'+integer_suffix_opt+')|([1-9][0-9]*'+integer_suffix_opt+')'
-  octal_constant = '0[0-7]*'+integer_suffix_opt
-  hex_constant = hex_prefix+hex_digits+integer_suffix_opt
+  decimal_constant = '0|([1-9][0-9]*)'
+  octal_constant = '0[0-7]+'
+  hex_constant = hex_prefix+hex_digits
 
   bad_octal_constant = '0[0-7]*[89]'
 

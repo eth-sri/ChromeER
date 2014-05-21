@@ -54,6 +54,7 @@
 #include "components/autofill/content/browser/wallet/wallet_items.h"
 #include "components/autofill/content/browser/wallet/wallet_service_url.h"
 #include "components/autofill/content/browser/wallet/wallet_signin_helper.h"
+#include "components/autofill/core/browser/address_i18n.h"
 #include "components/autofill/core/browser/autofill_country.h"
 #include "components/autofill/core/browser/autofill_data_model.h"
 #include "components/autofill/core/browser/autofill_manager.h"
@@ -63,7 +64,7 @@
 #include "components/autofill/core/browser/validation.h"
 #include "components/autofill/core/common/autofill_pref_names.h"
 #include "components/autofill/core/common/form_data.h"
-#include "components/user_prefs/pref_registry_syncable.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/geolocation_provider.h"
 #include "content/public/browser/navigation_controller.h"
@@ -73,7 +74,6 @@
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "content/public/common/url_constants.h"
 #include "grit/chromium_strings.h"
 #include "grit/component_scaled_resources.h"
@@ -257,13 +257,12 @@ void GetBillingInfoFromOutputs(const FieldValueMap& output,
 // window might be a browser window for a Chrome tab, or it might be an app
 // window for a platform app.
 ui::BaseWindow* GetBaseWindowForWebContents(
-    const content::WebContents* web_contents) {
+    content::WebContents* web_contents) {
   Browser* browser = chrome::FindBrowserWithWebContents(web_contents);
   if (browser)
     return browser->window();
 
-  gfx::NativeWindow native_window =
-      web_contents->GetView()->GetTopLevelNativeWindow();
+  gfx::NativeWindow native_window = web_contents->GetTopLevelNativeWindow();
   apps::AppWindow* app_window =
       apps::AppWindowRegistry::GetAppWindowForNativeWindowAnyProfile(
           native_window);
@@ -305,14 +304,6 @@ bool IsInstrumentAllowed(
     default:
       return false;
   }
-}
-
-// Signals that the user has opted in to geolocation services.  Factored out
-// into a separate method because all interaction with the geolocation provider
-// needs to happen on the IO thread, which is not the thread
-// AutofillDialogViewDelegate lives on.
-void UserDidOptIntoLocationServices() {
-  content::GeolocationProvider::GetInstance()->UserDidOptIntoLocationServices();
 }
 
 // Loops through |addresses_| comparing to |address| ignoring ID. If a match
@@ -521,23 +512,17 @@ ServerFieldType CountryTypeForSection(DialogSection section) {
                                        ADDRESS_BILLING_COUNTRY;
 }
 
-// profile.GetInfo() thunk.
-base::string16 GetInfoFromProfile(const AutofillProfile& profile,
-                                  const AutofillType& type) {
-  return profile.GetInfo(type, g_browser_process->GetApplicationLocale());
-}
-
 // Attempts to canonicalize the administrative area name in |profile| using the
 // rules in |validator|.
 void CanonicalizeState(const AddressValidator* validator,
                        AutofillProfile* profile) {
   base::string16 administrative_area;
-  AddressData address_data;
-  i18ninput::CreateAddressData(base::Bind(&GetInfoFromProfile, *profile),
-                               &address_data);
+  scoped_ptr<AddressData> address_data =
+      i18n::CreateAddressDataFromAutofillProfile(
+          *profile, g_browser_process->GetApplicationLocale());
 
-  validator->CanonicalizeAdministrativeArea(&address_data);
-  administrative_area = base::UTF8ToUTF16(address_data.administrative_area);
+  validator->CanonicalizeAdministrativeArea(address_data.get());
+  administrative_area = base::UTF8ToUTF16(address_data->administrative_area);
 
   profile->SetInfo(AutofillType(ADDRESS_HOME_STATE),
                    administrative_area,
@@ -829,6 +814,12 @@ void AutofillDialogControllerImpl::Show() {
                               profile_,
                               !ShouldShowAccountChooser(),
                               metric_logger_));
+
+  acceptable_cc_types_ = form_structure_.PossibleValues(CREDIT_CARD_TYPE);
+  // Wallet generates MC virtual cards, so we have to disable it if MC is not
+  // allowed.
+  if (ShouldDisallowCcType(CreditCard::TypeForDisplay(kMasterCard)))
+    DisableWallet(wallet::WalletClient::UNSUPPORTED_MERCHANT);
 
   if (account_chooser_model_->WalletIsSelected())
     FetchWalletCookie();
@@ -1441,9 +1432,9 @@ gfx::Image AutofillDialogControllerImpl::GetGeneratedCardImage(
   const int kCardWidthPx = 300;
   const int kCardHeightPx = 190;
   const gfx::Size size(kCardWidthPx, kCardHeightPx);
-  ui::ScaleFactor scale_factor = ui::GetScaleFactorForNativeView(
-      web_contents()->GetView()->GetNativeView());
-  gfx::Canvas canvas(size, ui::GetImageScale(scale_factor), false);
+  float scale_factor = ui::GetScaleFactorForNativeView(
+      web_contents()->GetNativeView());
+  gfx::Canvas canvas(size, scale_factor, false);
 
   gfx::Rect display_rect(size);
 
@@ -1965,13 +1956,13 @@ ValidityMessages AutofillDialogControllerImpl::InputsAreValid(
   if (section != SECTION_CC) {
     AutofillProfile profile;
     FillFormGroupFromOutputs(inputs, &profile);
-    AddressData address_data;
-    i18ninput::CreateAddressData(base::Bind(&GetInfoFromProfile, profile),
-                                 &address_data);
-    address_data.language_code = AddressLanguageCodeForSection(section);
+    scoped_ptr<AddressData> address_data =
+        i18n::CreateAddressDataFromAutofillProfile(
+            profile, g_browser_process->GetApplicationLocale());
+    address_data->language_code = AddressLanguageCodeForSection(section);
 
     AddressProblems problems;
-    status = GetValidator()->ValidateAddress(address_data,
+    status = GetValidator()->ValidateAddress(*address_data,
                                              AddressProblemFilter(),
                                              &problems);
     common::AddressType address_type = section == SECTION_SHIPPING ?
@@ -2850,7 +2841,7 @@ void AutofillDialogControllerImpl::LoadRiskFingerprintData() {
       g_browser_process->local_state()->GetInt64(::prefs::kInstallDate));
 
   risk::GetFingerprint(
-      obfuscated_gaia_id, window_bounds, *web_contents(),
+      obfuscated_gaia_id, window_bounds, web_contents(),
       chrome::VersionInfo().Version(), charset, accept_languages, install_time,
       g_browser_process->GetApplicationLocale(), GetUserAgent(),
       base::Bind(&AutofillDialogControllerImpl::OnDidLoadRiskFingerprintData,
@@ -3029,6 +3020,9 @@ void AutofillDialogControllerImpl::SuggestionsUpdated() {
             cards[i]->guid(),
             cards[i]->Label(),
             rb.GetImageNamed(CreditCard::IconResourceId(cards[i]->type())));
+        suggested_cc_.SetEnabled(
+            cards[i]->guid(),
+            !ShouldDisallowCcType(cards[i]->TypeForDisplay()));
       }
 
       const std::vector<AutofillProfile*>& profiles = manager->GetProfiles();
@@ -3037,7 +3031,8 @@ void AutofillDialogControllerImpl::SuggestionsUpdated() {
       DCHECK_EQ(labels.size(), profiles.size());
       for (size_t i = 0; i < profiles.size(); ++i) {
         const AutofillProfile& profile = *profiles[i];
-        if (!i18ninput::AddressHasCompleteAndVerifiedData(profile) ||
+        if (!i18ninput::AddressHasCompleteAndVerifiedData(
+                profile, g_browser_process->GetApplicationLocale()) ||
             !i18ninput::CountryIsFullySupported(
                 base::UTF16ToASCII(profile.GetRawInfo(ADDRESS_HOME_COUNTRY)))) {
           continue;
@@ -3358,14 +3353,14 @@ void AutofillDialogControllerImpl::GetI18nValidatorSuggestions(
   AutofillProfile profile;
   FillFormGroupFromOutputs(inputs, &profile);
 
-  AddressData user_input;
-  i18ninput::CreateAddressData(
-      base::Bind(&GetInfoFromProfile, profile), &user_input);
-  user_input.language_code = AddressLanguageCodeForSection(section);
+  scoped_ptr<AddressData> user_input =
+      i18n::CreateAddressDataFromAutofillProfile(
+          profile, g_browser_process->GetApplicationLocale());
+  user_input->language_code = AddressLanguageCodeForSection(section);
 
   static const size_t kSuggestionsLimit = 10;
   AddressValidator::Status status = GetValidator()->GetSuggestions(
-      user_input, focused_field, kSuggestionsLimit,
+      *user_input, focused_field, kSuggestionsLimit,
       &i18n_validator_suggestions_);
 
   if (status != AddressValidator::SUCCESS)
@@ -3517,6 +3512,13 @@ base::string16 AutofillDialogControllerImpl::CreditCardNumberValidityMessage(
         IDS_AUTOFILL_DIALOG_VALIDATION_INVALID_CREDIT_CARD_NUMBER);
   }
 
+  if (!IsPayingWithWallet() &&
+      ShouldDisallowCcType(CreditCard::TypeForDisplay(
+          CreditCard::GetCreditCardType(number)))) {
+    return l10n_util::GetStringUTF16(
+        IDS_AUTOFILL_DIALOG_VALIDATION_UNACCEPTED_CREDIT_CARD_TYPE);
+  }
+
   base::string16 message;
   if (IsPayingWithWallet() && !wallet_items_->SupportsCard(number, &message))
     return message;
@@ -3580,14 +3582,27 @@ bool AutofillDialogControllerImpl::IsCreditCardExpirationValid(
   return true;
 }
 
+bool AutofillDialogControllerImpl::ShouldDisallowCcType(
+    const base::string16& type) const {
+  if (acceptable_cc_types_.empty())
+    return false;
+
+  if (acceptable_cc_types_.find(base::i18n::ToUpper(type)) ==
+          acceptable_cc_types_.end()) {
+    return true;
+  }
+
+  return false;
+}
+
 bool AutofillDialogControllerImpl::HasInvalidAddress(
     const AutofillProfile& profile) {
-  AddressData address_data;
-  i18ninput::CreateAddressData(base::Bind(&GetInfoFromProfile, profile),
-                               &address_data);
+  scoped_ptr<AddressData> address_data =
+      i18n::CreateAddressDataFromAutofillProfile(
+          profile, g_browser_process->GetApplicationLocale());
 
   AddressProblems problems;
-  GetValidator()->ValidateAddress(address_data,
+  GetValidator()->ValidateAddress(*address_data,
                                   AddressProblemFilter(),
                                   &problems);
   return !problems.empty();
@@ -3627,9 +3642,7 @@ bool AutofillDialogControllerImpl::AreLegalDocumentsCurrent() const {
 }
 
 void AutofillDialogControllerImpl::AcceptLegalTerms() {
-  content::BrowserThread::PostTask(
-      content::BrowserThread::IO, FROM_HERE,
-      base::Bind(&UserDidOptIntoLocationServices));
+  content::GeolocationProvider::GetInstance()->UserDidOptIntoLocationServices();
   PrefService* local_state = g_browser_process->local_state();
   ListPrefUpdate accepted(
       local_state, ::prefs::kAutofillDialogWalletLocationAcceptance);

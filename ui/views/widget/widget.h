@@ -47,6 +47,7 @@ namespace ui {
 class Accelerator;
 class Compositor;
 class DefaultThemeProvider;
+class InputMethod;
 class Layer;
 class NativeTheme;
 class OSExchangeData;
@@ -161,6 +162,14 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
       TRANSLUCENT_WINDOW,
     };
 
+    enum Activatable {
+      // Infer whether the window should be activatable from the window type.
+      ACTIVATABLE_DEFAULT,
+
+      ACTIVATABLE_YES,
+      ACTIVATABLE_NO
+    };
+
     enum Ownership {
       // Default. Creator is not responsible for managing the lifetime of the
       // Widget, it is destroyed when the corresponding NativeWidget is
@@ -186,7 +195,7 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
     // non-window widgets.
     WindowOpacity opacity;
     bool accept_events;
-    bool can_activate;
+    Activatable activatable;
     bool keep_on_top;
     bool visible_on_all_workspaces;
     Ownership ownership;
@@ -349,7 +358,7 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
 
   // Returns the accelerator given a command id. Returns false if there is
   // no accelerator associated with a given id, which is a common condition.
-  virtual bool GetAccelerator(int cmd_id, ui::Accelerator* accelerator);
+  virtual bool GetAccelerator(int cmd_id, ui::Accelerator* accelerator) const;
 
   // Forwarded from the RootView so that the widget can do any cleanup.
   void ViewHierarchyChanged(const View::ViewHierarchyChangedDetails& details);
@@ -540,6 +549,11 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
   // Note that all widgets in a widget hierarchy share the same input method.
   InputMethod* GetInputMethod();
   const InputMethod* GetInputMethod() const;
+
+  // Returns the ui::InputMethod for this widget.
+  // TODO(yukishiino): Rename this method to GetInputMethod once we remove
+  // views::InputMethod.
+  ui::InputMethod* GetHostInputMethod();
 
   // Starts a drag operation for the specified view. This blocks until the drag
   // operation completes. |view| can be NULL.
@@ -867,6 +881,9 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
   // The restored bounds used for the initial show. This is only used if
   // |saved_show_state_| is maximized.
   gfx::Rect initial_restored_bounds_;
+
+  // True if the widget can be activated.
+  bool can_activate_;
 
   // Focus is automatically set to the view provided by the delegate
   // when the widget is shown. Set this value to false to override

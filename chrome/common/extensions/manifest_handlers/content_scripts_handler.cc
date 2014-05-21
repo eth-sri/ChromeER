@@ -110,6 +110,18 @@ bool LoadUserScriptFromDictionary(const base::DictionaryValue* content_script,
     result->set_match_all_frames(all_frames);
   }
 
+  // match about blank
+  if (content_script->HasKey(keys::kMatchAboutBlank)) {
+    bool match_about_blank = false;
+    if (!content_script->GetBoolean(keys::kMatchAboutBlank,
+                                    &match_about_blank)) {
+      *error = ErrorUtils::FormatErrorMessageUTF16(
+          errors::kInvalidMatchAboutBlank, base::IntToString(definition_index));
+      return false;
+    }
+    result->set_match_about_blank(match_about_blank);
+  }
+
   // matches (required)
   const base::ListValue* matches = NULL;
   if (!content_script->GetList(keys::kMatches, &matches)) {
@@ -304,7 +316,7 @@ static bool IsScriptValid(const base::FilePath& path,
     return false;
   }
 
-  if (!IsStringUTF8(content)) {
+  if (!base::IsStringUTF8(content)) {
     *error = l10n_util::GetStringFUTF8(
         IDS_EXTENSION_BAD_FILE_ENCODING,
         relative_path.LossyDisplayName());

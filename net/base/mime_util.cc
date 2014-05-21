@@ -158,6 +158,7 @@ static const MimeInfo secondary_mappings[] = {
   { "image/tiff", "tiff,tif" },
   { "image/x-xbitmap", "xbm" },
   { "image/svg+xml", "svg,svgz" },
+  { "image/x-png", "png"},
   { "message/rfc822", "eml" },
   { "text/plain", "txt,text" },
   { "text/html", "ehtml" },
@@ -260,7 +261,8 @@ static const char* const supported_image_types[] = {
   "image/bmp",
   "image/vnd.microsoft.icon",    // ico
   "image/x-icon",    // ico
-  "image/x-xbitmap"  // xbm
+  "image/x-xbitmap",  // xbm
+  "image/x-png"
 };
 
 // A list of media types: http://en.wikipedia.org/wiki/Internet_media_type
@@ -411,6 +413,10 @@ static const char* const supported_javascript_types[] = {
 
 #if defined(OS_ANDROID)
 static bool IsCodecSupportedOnAndroid(const std::string& codec) {
+  // Theora is not supported in Android
+  if (!codec.compare("theora"))
+    return false;
+
   // VP9 is supported only in KitKat+ (API Level 19).
   if ((!codec.compare("vp9") || !codec.compare("vp9.0")) &&
       base::android::BuildInfo::GetInstance()->sdk_int() < 19) {
@@ -420,6 +426,16 @@ static bool IsCodecSupportedOnAndroid(const std::string& codec) {
   // TODO(vigneshv): Change this similar to the VP9 check once Opus is
   // supported on Android (http://crbug.com/318436).
   if (!codec.compare("opus")) {
+    return false;
+  }
+  return true;
+}
+
+static bool IsMimeTypeSupportedOnAndroid(const std::string& mimeType) {
+  // HLS codecs are supported in ICS and above (API level 14)
+  if ((!mimeType.compare("application/vnd.apple.mpegurl") ||
+      !mimeType.compare("application/x-mpegurl")) &&
+      base::android::BuildInfo::GetInstance()->sdk_int() < 14) {
     return false;
   }
   return true;
@@ -474,16 +490,26 @@ void MimeUtil::InitializeMimeTypeMaps() {
     unsupported_text_map_.insert(unsupported_text_types[i]);
   for (size_t i = 0; i < arraysize(supported_javascript_types); ++i)
     non_image_map_.insert(supported_javascript_types[i]);
-  for (size_t i = 0; i < arraysize(common_media_types); ++i)
+  for (size_t i = 0; i < arraysize(common_media_types); ++i) {
+#if defined(OS_ANDROID)
+    if (!IsMimeTypeSupportedOnAndroid(common_media_types[i]))
+      continue;
+#endif
     non_image_map_.insert(common_media_types[i]);
+  }
 #if defined(USE_PROPRIETARY_CODECS)
   for (size_t i = 0; i < arraysize(proprietary_media_types); ++i)
     non_image_map_.insert(proprietary_media_types[i]);
 #endif
 
   // Initialize the supported media types.
-  for (size_t i = 0; i < arraysize(common_media_types); ++i)
+  for (size_t i = 0; i < arraysize(common_media_types); ++i) {
+#if defined(OS_ANDROID)
+    if (!IsMimeTypeSupportedOnAndroid(common_media_types[i]))
+      continue;
+#endif
     media_map_.insert(common_media_types[i]);
+  }
 #if defined(USE_PROPRIETARY_CODECS)
   for (size_t i = 0; i < arraysize(proprietary_media_types); ++i)
     media_map_.insert(proprietary_media_types[i]);
@@ -650,7 +676,7 @@ static const char* legal_top_level_types[] = {
 bool MimeUtil::IsMimeType(const std::string& type_string) const {
   // MIME types are always ASCII and case-insensitive (at least, the top-level
   // and secondary types we care about).
-  if (!IsStringASCII(type_string))
+  if (!base::IsStringASCII(type_string))
     return false;
 
   if (type_string == "*/*" || type_string == "*")

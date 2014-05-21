@@ -19,9 +19,10 @@ namespace chromeos {
 // networks).
 // Note: NetworkStateHandler will store an entry for each member of
 // Manager.ServiceCompleteList, even for visible entries that are not
-// favorites. This is necessary to avoid unnecessarily re-requesting entries,
-// and to limit the code complexity. The IsFavorite() accessor is used to skip
-// entries that are not actually favorites.
+// saved. This is necessary to avoid unnecessarily re-requesting entries,
+// and to limit the code complexity. It is also convenient for tracking the
+// complete list of "known" networks. The IsInProfile() accessor is used to
+// skip entries that are not actually saved in a profile.
 class CHROMEOS_EXPORT FavoriteState : public ManagedState {
  public:
   explicit FavoriteState(const std::string& path);
@@ -30,33 +31,40 @@ class CHROMEOS_EXPORT FavoriteState : public ManagedState {
   // ManagedState overrides
   virtual bool PropertyChanged(const std::string& key,
                                const base::Value& value) OVERRIDE;
+  virtual void GetStateProperties(
+      base::DictionaryValue* dictionary) const OVERRIDE;
 
   // Accessors
   const std::string& profile_path() const { return profile_path_; }
   const NetworkUIData& ui_data() const { return ui_data_; }
   const base::DictionaryValue& proxy_config() const { return proxy_config_; }
   const std::string& guid() const { return guid_; }
-  const base::DictionaryValue& properties() const { return properties_; }
 
   // Returns true if this is a favorite stored in a profile (see note above).
-  bool IsFavorite() const;
+  bool IsInProfile() const;
 
   // Returns true if the network properties are stored in a user profile.
   bool IsPrivate() const;
+
+  // Returns a specifier for identifying this network in the absence of a GUID.
+  // This should only be used by NetworkStateHandler for keeping track of
+  // GUIDs assigned to unsaved networks.
+  std::string GetSpecifier() const;
+
+  // Set the GUID. Called exclusively by NetworkStateHandler.
+  void SetGuid(const std::string& guid);
 
  private:
   std::string profile_path_;
   NetworkUIData ui_data_;
   std::string guid_;
 
+  // Keep track of Service.Security. Only used for specifying wifi networks.
+  std::string security_;
+
   // TODO(pneubeck): Remove this once (Managed)NetworkConfigurationHandler
   // provides proxy configuration. crbug.com/241775
   base::DictionaryValue proxy_config_;
-
-  // Keep all Favorite properties in a dictionary so that all configured
-  // properties can be examined for debugging. Since the Favorite list is
-  // mostly fixed, the overhead should be reasonable.
-  base::DictionaryValue properties_;
 
   DISALLOW_COPY_AND_ASSIGN(FavoriteState);
 };

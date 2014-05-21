@@ -9,7 +9,7 @@
 #include "base/metrics/histogram_base.h"
 #include "base/metrics/histogram_flattener.h"
 #include "base/metrics/histogram_snapshot_manager.h"
-#include "chrome/common/metrics/metrics_log_manager.h"
+#include "components/metrics/metrics_log_manager.h"
 
 namespace base {
 class HistogramSamples;
@@ -30,7 +30,10 @@ class MetricsServiceBase : public base::HistogramFlattener {
   virtual void InconsistencyDetectedInLoggedCount(int amount) OVERRIDE;
 
  protected:
-  MetricsServiceBase();
+  // The metrics service will persist it's unsent logs by storing them in
+  // |local_state|, and will not persist ongoing logs over
+  // |max_ongoing_log_size|.
+  MetricsServiceBase(PrefService* local_state, size_t max_ongoing_log_size);
   virtual ~MetricsServiceBase();
 
   // The metrics server's URL.
@@ -48,7 +51,7 @@ class MetricsServiceBase : public base::HistogramFlattener {
   void RecordCurrentStabilityHistograms();
 
   // Manager for the various in-flight logs.
-  MetricsLogManager log_manager_;
+  metrics::MetricsLogManager log_manager_;
 
  private:
   // |histogram_snapshot_manager_| prepares histogram deltas for transmission.

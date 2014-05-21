@@ -3,13 +3,14 @@
 // found in the LICENSE file.
 
 // Custom bindings for the automation API.
+var AutomationNode = require('automationNode').AutomationNode;
+var AutomationTree = require('automationTree').AutomationTree;
 var automation = require('binding').Binding.create('automation');
 var automationInternal =
     require('binding').Binding.create('automationInternal').generate();
 var eventBindings = require('event_bindings');
 var Event = eventBindings.Event;
-var AutomationNode = require('automationNode').AutomationNode;
-var AutomationTree = require('automationTree').AutomationTree;
+var lastError = require('lastError');
 
 // TODO(aboxhall): Look into using WeakMap
 var idToAutomationTree = {};
@@ -24,6 +25,8 @@ var idToCallback = {};
 var createAutomationTreeID = function(pid, rid) {
   return pid + '_' + rid;
 };
+
+var DESKTOP_TREE_ID = createAutomationTreeID(0, 0);
 
 automation.registerCustomHook(function(bindingsAPI) {
   var apiFunctions = bindingsAPI.apiFunctions;
@@ -52,6 +55,29 @@ automation.registerCustomHook(function(bindingsAPI) {
       }
     });
   });
+
+  var desktopTree = null;
+  apiFunctions.setHandleRequest('getDesktop', function(callback) {
+    desktopTree = idToAutomationTree[DESKTOP_TREE_ID];
+    if (!desktopTree) {
+      if (DESKTOP_TREE_ID in idToCallback)
+        idToCallback[DESKTOP_TREE_ID].push(callback);
+      else
+        idToCallback[DESKTOP_TREE_ID] = [callback];
+
+      // TODO(dtseng): Disable desktop tree once desktop object goes out of
+      // scope.
+      automationInternal.enableDesktop(function() {
+        if (lastError.hasError(chrome)) {
+          delete idToAutomationTree[DESKTOP_TREE_ID];
+          callback();
+          return;
+        }
+      });
+    } else {
+      callback(desktopTree);
+    }
+  });
 });
 
 // Listen to the automationInternal.onaccessibilityEvent event, which is
@@ -70,9 +96,8 @@ automationInternal.onAccessibilityEvent.addListener(function(data) {
     idToAutomationTree[id] = targetTree;
   }
   privates(targetTree).impl.update(data);
-
   var eventType = data.eventType;
-  if (eventType == 'load_complete' || eventType == 'layout_complete') {
+  if (eventType == 'loadComplete' || eventType == 'layoutComplete') {
     // If the tree wasn't available when getTree() was called, the callback will
     // have been cached in idToCallback, so call and delete it now that we
     // have the complete tree.

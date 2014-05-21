@@ -121,7 +121,7 @@
         ['use_x11==1', {
           'dependencies': [
             '<(DEPTH)/build/linux/system.gyp:x11',
-            '<(DEPTH)/ui/gfx/gfx.gyp:gfx_x11',
+            '<(DEPTH)/ui/gfx/x/gfx_x11.gyp:gfx_x11',
           ]
         }]
       ]
@@ -162,8 +162,7 @@
         }],
         ['os_posix == 1 and OS != "mac"', {
           'conditions': [
-            # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
-            ['(use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1)', {
+            ['use_allocator!="none"', {
               'dependencies': [
                 '<(DEPTH)/base/allocator/allocator.gyp:allocator',
               ],

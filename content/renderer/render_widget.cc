@@ -254,12 +254,13 @@ void RenderWidget::ScreenMetricsEmulator::Apply(
     const gfx::Size& visible_viewport_size,
     gfx::Rect resizer_rect,
     bool is_fullscreen) {
-  applied_widget_rect_.set_size(params_.viewSize.isEmpty() ?
-      original_size_ : gfx::Size(params_.viewSize));
+  applied_widget_rect_.set_size(gfx::Size(params_.viewSize));
+  if (!applied_widget_rect_.width())
+    applied_widget_rect_.set_width(original_size_.width());
+  if (!applied_widget_rect_.height())
+    applied_widget_rect_.set_height(original_size_.height());
 
-  if (params_.fitToView) {
-    DCHECK(!original_size_.IsEmpty());
-
+  if (params_.fitToView && !original_size_.IsEmpty()) {
     int width_with_gutter =
         std::max(original_size_.width() - 2 * params_.viewInsets.width, 1);
     int height_with_gutter =
@@ -382,10 +383,6 @@ RenderWidget::RenderWidget(blink::WebPopupType popup_type,
       popup_type_(popup_type),
       pending_window_rect_count_(0),
       suppress_next_char_events_(false),
-      is_accelerated_compositing_active_(false),
-      was_accelerated_compositing_ever_active_(false),
-      animation_update_pending_(false),
-      invalidation_task_posted_(false),
       screen_info_(screen_info),
       device_scale_factor_(screen_info_.deviceScaleFactor),
       is_threaded_compositing_enabled_(false),
@@ -393,6 +390,7 @@ RenderWidget::RenderWidget(blink::WebPopupType popup_type,
 #if defined(OS_ANDROID)
       text_field_is_dirty_(false),
       outstanding_ime_acks_(0),
+      body_background_color_(SK_ColorWHITE),
 #endif
 #if defined(OS_MACOSX)
       cached_has_main_frame_horizontal_scrollbar_(false),
@@ -407,11 +405,6 @@ RenderWidget::RenderWidget(blink::WebPopupType popup_type,
   is_threaded_compositing_enabled_ =
       CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnableThreadedCompositing);
-
-  legacy_software_mode_stats_ = cc::RenderingStatsInstrumentation::Create();
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          cc::switches::kEnableGpuBenchmarking))
-    legacy_software_mode_stats_->set_record_rendering_stats(true);
 }
 
 RenderWidget::~RenderWidget() {
@@ -492,14 +485,10 @@ void RenderWidget::CompleteInit() {
 
   init_complete_ = true;
 
-  if (webwidget_) {
-    if (is_threaded_compositing_enabled_ || ForceCompositingModeEnabled()) {
-      webwidget_->enterForceCompositingMode(true);
-    }
-  }
+  if (webwidget_)
+    webwidget_->enterForceCompositingMode(true);
   if (compositor_)
     StartCompositor();
-  DoDeferredUpdate();
 
   Send(new ViewHostMsg_RenderViewReady(routing_id_));
 }
@@ -660,6 +649,7 @@ void RenderWidget::Resize(const gfx::Size& new_size,
 
   physical_backing_size_ = physical_backing_size;
   overdraw_bottom_height_ = overdraw_bottom_height;
+  visible_viewport_size_ = visible_viewport_size;
   resizer_rect_ = resizer_rect;
 
   // NOTE: We may have entered fullscreen mode without changing our size.
@@ -750,11 +740,17 @@ void RenderWidget::OnResize(const ViewMsg_Resize_Params& params) {
     return;
   }
 
+  bool orientation_changed =
+      screen_info_.orientationAngle != params.screen_info.orientationAngle;
+
   screen_info_ = params.screen_info;
   SetDeviceScaleFactor(screen_info_.deviceScaleFactor);
   Resize(params.new_size, params.physical_backing_size,
          params.overdraw_bottom_height, params.visible_viewport_size,
          params.resizer_rect, params.is_fullscreen, SEND_RESIZE_ACK);
+
+  if (orientation_changed)
+    OnOrientationChange();
 }
 
 void RenderWidget::OnChangeResizeRect(const gfx::Rect& resizer_rect) {
@@ -784,13 +780,9 @@ void RenderWidget::OnWasShown(bool needs_repainting) {
     return;
 
   // Generate a full repaint.
-  if (!is_accelerated_compositing_active_) {
-    didInvalidateRect(gfx::Rect(size_.width(), size_.height()));
-  } else {
-    if (compositor_)
-      compositor_->SetNeedsForcedRedraw();
-    scheduleComposite();
-  }
+  if (compositor_)
+    compositor_->SetNeedsForcedRedraw();
+  scheduleComposite();
 }
 
 void RenderWidget::OnWasSwappedOut() {
@@ -1059,12 +1051,15 @@ void RenderWidget::OnHandleInputEvent(const blink::WebInputEvent* input_event,
           kInputHandlingTimeThrottlingThresholdMicroseconds;
   }
 
+  TRACE_EVENT_SYNTHETIC_DELAY_END("blink.HandleInputEvent");
+
   if (!WebInputEventTraits::IgnoresAckDisposition(*input_event)) {
+    InputHostMsg_HandleInputEvent_ACK_Params ack;
+    ack.type = input_event->type;
+    ack.state = ack_result;
+    ack.latency = swap_latency_info;
     scoped_ptr<IPC::Message> response(
-        new InputHostMsg_HandleInputEvent_ACK(routing_id_,
-                                              input_event->type,
-                                              ack_result,
-                                              swap_latency_info));
+        new InputHostMsg_HandleInputEvent_ACK(routing_id_, ack));
     if (rate_limiting_wanted && event_type_can_be_rate_limited &&
         frame_pending && !is_hidden_) {
       // We want to rate limit the input events in this case, so we'll wait for
@@ -1099,7 +1094,6 @@ void RenderWidget::OnHandleInputEvent(const blink::WebInputEvent* input_event,
     UpdateTextInputState(SHOW_IME_IF_NEEDED, FROM_IME);
 #endif
 
-  TRACE_EVENT_SYNTHETIC_DELAY_END("blink.HandleInputEvent");
   handling_input_event_ = false;
 
   if (!prevent_default) {
@@ -1135,100 +1129,14 @@ void RenderWidget::ClearFocus() {
     webwidget_->setFocus(false);
 }
 
-void RenderWidget::AnimationCallback() {
-  TRACE_EVENT0("renderer", "RenderWidget::AnimationCallback");
-  if (!animation_update_pending_) {
-    TRACE_EVENT0("renderer", "EarlyOut_NoAnimationUpdatePending");
-    return;
-  }
-  DoDeferredUpdateAndSendInputAck();
-}
-
-void RenderWidget::InvalidationCallback() {
-  TRACE_EVENT0("renderer", "RenderWidget::InvalidationCallback");
-  invalidation_task_posted_ = false;
-  DoDeferredUpdateAndSendInputAck();
-}
-
 void RenderWidget::FlushPendingInputEventAck() {
   if (pending_input_event_ack_)
     Send(pending_input_event_ack_.release());
   total_input_handling_time_this_frame_ = base::TimeDelta();
 }
 
-void RenderWidget::DoDeferredUpdateAndSendInputAck() {
-  DoDeferredUpdate();
-  FlushPendingInputEventAck();
-}
-
-// TODO(danakj): Remove this when everything is ForceCompositingMode.
-void RenderWidget::DoDeferredUpdate() {
-}
-
 ///////////////////////////////////////////////////////////////////////////////
 // WebWidgetClient
-
-void RenderWidget::didInvalidateRect(const WebRect& rect) {
-  // The invalidated rect might be outside the bounds of the view.
-  gfx::Rect view_rect(size_);
-  gfx::Rect damaged_rect = gfx::IntersectRects(view_rect, rect);
-  if (damaged_rect.IsEmpty())
-    return;
-
-  // We may not need to schedule another call to DoDeferredUpdate.
-  if (invalidation_task_posted_)
-    return;
-
-  // When GPU rendering, combine pending animations and invalidations into
-  // a single update.
-  if (is_accelerated_compositing_active_ &&
-      animation_update_pending_ &&
-      animation_timer_.IsRunning())
-    return;
-
-  // Perform updating asynchronously.  This serves two purposes:
-  // 1) Ensures that we call WebView::Paint without a bunch of other junk
-  //    on the call stack.
-  // 2) Allows us to collect more damage rects before painting to help coalesce
-  //    the work that we will need to do.
-  invalidation_task_posted_ = true;
-  base::MessageLoop::current()->PostTask(
-      FROM_HERE, base::Bind(&RenderWidget::InvalidationCallback, this));
-}
-
-void RenderWidget::didScrollRect(int dx, int dy,
-                                 const WebRect& clip_rect) {
-  // Drop scrolls on the floor when we are in compositing mode.
-  // TODO(nduca): stop WebViewImpl from sending scrolls in the first place.
-  if (is_accelerated_compositing_active_)
-    return;
-
-  // The scrolled rect might be outside the bounds of the view.
-  gfx::Rect view_rect(size_);
-  gfx::Rect damaged_rect = gfx::IntersectRects(view_rect, clip_rect);
-  if (damaged_rect.IsEmpty())
-    return;
-
-  // We may not need to schedule another call to DoDeferredUpdate.
-  if (invalidation_task_posted_)
-    return;
-
-  // When GPU rendering, combine pending animations and invalidations into
-  // a single update.
-  if (is_accelerated_compositing_active_ &&
-      animation_update_pending_ &&
-      animation_timer_.IsRunning())
-    return;
-
-  // Perform updating asynchronously.  This serves two purposes:
-  // 1) Ensures that we call WebView::Paint without a bunch of other junk
-  //    on the call stack.
-  // 2) Allows us to collect more damage rects before painting to help coalesce
-  //    the work that we will need to do.
-  invalidation_task_posted_ = true;
-  base::MessageLoop::current()->PostTask(
-      FROM_HERE, base::Bind(&RenderWidget::InvalidationCallback, this));
-}
 
 void RenderWidget::didAutoResize(const WebSize& new_size) {
   if (size_.width() != new_size.width || size_.height() != new_size.height) {
@@ -1255,49 +1163,6 @@ void RenderWidget::AutoResizeCompositor()  {
       device_scale_factor_));
   if (compositor_)
     compositor_->setViewportSize(size_, physical_backing_size_);
-}
-
-void RenderWidget::didActivateCompositor() {
-  TRACE_EVENT0("gpu", "RenderWidget::didActivateCompositor");
-
-#if !defined(OS_MACOSX)
-  if (!is_accelerated_compositing_active_) {
-    // When not in accelerated compositing mode, in certain cases (e.g. waiting
-    // for a resize or if no backing store) the RenderWidgetHost is blocking the
-    // browser's UI thread for some time, waiting for an UpdateRect. If we are
-    // going to switch to accelerated compositing, the GPU process may need
-    // round-trips to the browser's UI thread before finishing the frame,
-    // causing deadlocks if we delay the UpdateRect until we receive the
-    // OnSwapBuffersComplete.  So send a dummy message that will unblock the
-    // browser's UI thread. This is not necessary on Mac, because SwapBuffers
-    // now unblocks GetBackingStore on Mac.
-    Send(new ViewHostMsg_UpdateIsDelayed(routing_id_));
-  }
-#endif
-
-  is_accelerated_compositing_active_ = true;
-  Send(new ViewHostMsg_DidActivateAcceleratedCompositing(
-      routing_id_, is_accelerated_compositing_active_));
-
-  if (!was_accelerated_compositing_ever_active_) {
-    was_accelerated_compositing_ever_active_ = true;
-    webwidget_->enterForceCompositingMode(true);
-  }
-}
-
-void RenderWidget::didDeactivateCompositor() {
-  TRACE_EVENT0("gpu", "RenderWidget::didDeactivateCompositor");
-
-  is_accelerated_compositing_active_ = false;
-  Send(new ViewHostMsg_DidActivateAcceleratedCompositing(
-      routing_id_, is_accelerated_compositing_active_));
-
-  // In single-threaded mode, we exit force compositing mode and re-enter in
-  // DoDeferredUpdate() if appropriate. In threaded compositing mode,
-  // DoDeferredUpdate() is bypassed and WebKit is responsible for exiting and
-  // entering force compositing mode at the appropriate times.
-  if (!is_threaded_compositing_enabled_ && !ForceCompositingModeEnabled())
-    webwidget_->enterForceCompositingMode(false);
 }
 
 void RenderWidget::initializeLayerTreeView() {
@@ -1383,27 +1248,7 @@ void RenderWidget::scheduleComposite() {
   // render_thread may be NULL in tests.
   if (render_thread && render_thread->compositor_message_loop_proxy().get() &&
       compositor_) {
-      compositor_->setNeedsAnimate();
-  } else {
-    // TODO(nduca): replace with something a little less hacky.  The reason this
-    // hack is still used is because the Invalidate-DoDeferredUpdate loop
-    // contains a lot of host-renderer synchronization logic that is still
-    // important for the accelerated compositing case. The option of simply
-    // duplicating all that code is less desirable than "faking out" the
-    // invalidation path using a magical damage rect.
-    didInvalidateRect(WebRect(0, 0, 1, 1));
-  }
-}
-
-void RenderWidget::scheduleAnimation() {
-  if (animation_update_pending_)
-    return;
-
-  TRACE_EVENT0("gpu", "RenderWidget::scheduleAnimation");
-  animation_update_pending_ = true;
-  if (!animation_timer_.IsRunning()) {
-    animation_timer_.Start(FROM_HERE, base::TimeDelta::FromSeconds(0), this,
-                           &RenderWidget::AnimationCallback);
+    compositor_->setNeedsAnimate();
   }
 }
 
@@ -1620,12 +1465,8 @@ void RenderWidget::OnRepaint(gfx::Size size_to_paint) {
   }
 
   set_next_paint_is_repaint_ack();
-  if (is_accelerated_compositing_active_ && compositor_) {
+  if (compositor_)
     compositor_->SetNeedsRedrawRect(gfx::Rect(size_to_paint));
-  } else {
-    gfx::Rect repaint_rect(size_to_paint.width(), size_to_paint.height());
-    didInvalidateRect(repaint_rect);
-  }
 }
 
 void RenderWidget::OnSyntheticGestureCompleted() {
@@ -1681,12 +1522,10 @@ void RenderWidget::SetDeviceScaleFactor(float device_scale_factor) {
     return;
 
   device_scale_factor_ = device_scale_factor;
+  scheduleComposite();
+}
 
-  if (!is_accelerated_compositing_active_) {
-    didInvalidateRect(gfx::Rect(size_.width(), size_.height()));
-  } else {
-    scheduleComposite();
-  }
+void RenderWidget::OnOrientationChange() {
 }
 
 gfx::Vector2d RenderWidget::GetScrollOffset() {
@@ -1726,13 +1565,6 @@ void RenderWidget::DidToggleFullscreen() {
   } else {
     webwidget_->didExitFullScreen();
   }
-}
-
-void RenderWidget::SetBackground(const SkBitmap& background) {
-  background_ = background;
-
-  // Generate a full repaint.
-  didInvalidateRect(gfx::Rect(size_.width(), size_.height()));
 }
 
 bool RenderWidget::next_paint_is_resize_ack() const {
@@ -1997,6 +1829,20 @@ bool RenderWidget::ShouldUpdateCompositionInfo(
       return true;
   }
   return false;
+}
+#endif
+
+#if defined(OS_ANDROID)
+void RenderWidget::DidChangeBodyBackgroundColor(SkColor bg_color) {
+  // If not initialized, default to white. Note that 0 is different from black
+  // as black still has alpha 0xFF.
+  if (!bg_color)
+    bg_color = SK_ColorWHITE;
+
+  if (bg_color != body_background_color_) {
+    body_background_color_ = bg_color;
+    Send(new ViewHostMsg_DidChangeBodyBackgroundColor(routing_id(), bg_color));
+  }
 }
 #endif
 

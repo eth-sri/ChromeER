@@ -565,6 +565,7 @@ TEST_F(TemplateURLTest, ReplaceCursorPosition) {
       "{google:baseURL}?{searchTerms}&{google:cursorPosition}",
       "http://www.google.com/?foo&cp=15&" },
   };
+  UIThreadSearchTermsData::SetGoogleBaseURL("http://www.google.com/");
   TemplateURLData data;
   data.input_encodings.push_back("UTF-8");
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(test_data); ++i) {
@@ -601,6 +602,7 @@ TEST_F(TemplateURLTest, ReplaceCurrentPageUrl) {
       "{google:baseURL}?{searchTerms}&{google:currentPageUrl}",
       "http://www.google.com/?foo&url=http%3A%2F%2Fg.com%2F%2B-%2F*%26%3D&" },
   };
+  UIThreadSearchTermsData::SetGoogleBaseURL("http://www.google.com/");
   TemplateURLData data;
   data.input_encodings.push_back("UTF-8");
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(test_data); ++i) {
@@ -1297,6 +1299,7 @@ TEST_F(TemplateURLTest, IsSearchResults) {
 }
 
 TEST_F(TemplateURLTest, ReflectsBookmarkBarPinned) {
+  UIThreadSearchTermsData::SetGoogleBaseURL("http://www.google.com/");
   TemplateURLData data;
   data.input_encodings.push_back("UTF-8");
   data.SetURL("{google:baseURL}?{google:bookmarkBarPinned}q={searchTerms}");
@@ -1320,4 +1323,38 @@ TEST_F(TemplateURLTest, ReflectsBookmarkBarPinned) {
   search_terms_args.bookmark_bar_pinned = true;
   result = url.url_ref().ReplaceSearchTerms(search_terms_args);
   EXPECT_EQ("http://www.google.com/?bmbp=1&q=foo", result);
+}
+
+TEST_F(TemplateURLTest, AnswersHasVersion) {
+  TemplateURLData data;
+  UIThreadSearchTermsData::SetGoogleBaseURL("http://bar/");
+  data.SetURL("http://bar/search?q={searchTerms}&{google:searchVersion}xssi=t");
+
+  TemplateURL url(NULL, data);
+  TemplateURLRef::SearchTermsArgs search_terms_args(ASCIIToUTF16("foo"));
+  std::string result = url.url_ref().ReplaceSearchTerms(search_terms_args);
+  EXPECT_EQ("http://bar/search?q=foo&xssi=t", result);
+
+  CommandLine::ForCurrentProcess()->AppendSwitch(
+      switches::kEnableAnswersInSuggest);
+  TemplateURL url2(NULL, data);
+  result = url2.url_ref().ReplaceSearchTerms(search_terms_args);
+  EXPECT_EQ("http://bar/search?q=foo&gs_rn=42&xssi=t", result);
+}
+
+TEST_F(TemplateURLTest, SessionToken) {
+  TemplateURLData data;
+  UIThreadSearchTermsData::SetGoogleBaseURL("http://bar/");
+  data.SetURL("http://bar/search?q={searchTerms}&{google:sessionToken}xssi=t");
+
+  TemplateURL url(NULL, data);
+  TemplateURLRef::SearchTermsArgs search_terms_args(ASCIIToUTF16("foo"));
+  search_terms_args.session_token = "SESSIONTOKENGOESHERE";
+  std::string result = url.url_ref().ReplaceSearchTerms(search_terms_args);
+  EXPECT_EQ("http://bar/search?q=foo&psi=SESSIONTOKENGOESHERE&xssi=t", result);
+
+  TemplateURL url2(NULL, data);
+  search_terms_args.session_token = "";
+  result = url.url_ref().ReplaceSearchTerms(search_terms_args);
+  EXPECT_EQ("http://bar/search?q=foo&xssi=t", result);
 }

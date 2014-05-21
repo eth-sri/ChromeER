@@ -11,9 +11,9 @@
 #include "base/bind.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
-#include "chrome/browser/chromeos/login/screen_locker.h"
-#include "chrome/browser/chromeos/login/screen_locker_tester.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/lock/screen_locker.h"
+#include "chrome/browser/chromeos/login/lock/screen_locker_tester.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/extensions/api/braille_display_private/braille_controller_brlapi.h"
 #include "chrome/browser/extensions/api/braille_display_private/braille_display_private_api.h"
@@ -304,23 +304,23 @@ IN_PROC_BROWSER_TEST_F(BrailleDisplayPrivateAPIUserTest,
   // Send key event to both profiles.
   KeyEvent key_event;
   key_event.command = KEY_COMMAND_LINE_UP;
-  signin_api.OnKeyEvent(key_event);
-  user_api.OnKeyEvent(key_event);
+  signin_api.OnBrailleKeyEvent(key_event);
+  user_api.OnBrailleKeyEvent(key_event);
   EXPECT_EQ(0, signin_delegate->GetEventCount());
   EXPECT_EQ(1, user_delegate->GetEventCount());
 
   // Lock screen, and make sure that the key event goes to the
   // signin profile.
   LockScreen(tester.get());
-  signin_api.OnKeyEvent(key_event);
-  user_api.OnKeyEvent(key_event);
+  signin_api.OnBrailleKeyEvent(key_event);
+  user_api.OnBrailleKeyEvent(key_event);
   EXPECT_EQ(1, signin_delegate->GetEventCount());
   EXPECT_EQ(1, user_delegate->GetEventCount());
 
   // Unlock screen, making sur ekey events go to the user profile again.
   DismissLockScreen(tester.get());
-  signin_api.OnKeyEvent(key_event);
-  user_api.OnKeyEvent(key_event);
+  signin_api.OnBrailleKeyEvent(key_event);
+  user_api.OnBrailleKeyEvent(key_event);
   EXPECT_EQ(1, signin_delegate->GetEventCount());
   EXPECT_EQ(2, user_delegate->GetEventCount());
 }

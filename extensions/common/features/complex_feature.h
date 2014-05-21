@@ -5,6 +5,7 @@
 #ifndef EXTENSIONS_COMMON_FEATURES_COMPLEX_FEATURE_H_
 #define EXTENSIONS_COMMON_FEATURES_COMPLEX_FEATURE_H_
 
+#include <set>
 #include <string>
 
 #include "base/memory/scoped_vector.h"
@@ -36,6 +37,7 @@ class ComplexFeature : public Feature {
                                             const GURL& url,
                                             Platform platform) const OVERRIDE;
 
+  virtual bool IsIdInBlacklist(const std::string& extension_id) const OVERRIDE;
   virtual bool IsIdInWhitelist(const std::string& extension_id) const OVERRIDE;
   virtual bool IsBlockedInServiceWorker() const OVERRIDE;
 

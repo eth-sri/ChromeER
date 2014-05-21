@@ -27,7 +27,6 @@
 #include "chrome/browser/ui/ash/launcher/app_window_launcher_item_controller.h"
 #include "chrome/browser/ui/ash/launcher/launcher_application_menu_item_model.h"
 #include "chrome/browser/ui/ash/launcher/launcher_item_controller.h"
-#include "chrome/browser/ui/ash/test_views_delegate_with_parent.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_finder.h"
@@ -53,7 +52,7 @@
 #include "apps/ui/native_app_window.h"
 #include "ash/test/test_session_state_delegate.h"
 #include "ash/test/test_shell_delegate.h"
-#include "chrome/browser/chromeos/login/fake_user_manager.h"
+#include "chrome/browser/chromeos/login/users/fake_user_manager.h"
 #include "chrome/browser/ui/apps/chrome_app_window_delegate.h"
 #include "chrome/browser/ui/ash/launcher/app_window_launcher_controller.h"
 #include "chrome/browser/ui/ash/launcher/browser_status_monitor.h"
@@ -79,11 +78,13 @@ const char* offline_gmail_url = "https://mail.google.com/mail/mu/u";
 const char* gmail_url = "https://mail.google.com/mail/u";
 const char* kGmailLaunchURL = "https://mail.google.com/mail/ca";
 
+#if defined(OS_CHROMEOS)
 // As defined in /chromeos/dbus/cryptohome_client.cc.
 const char kUserIdHashSuffix[] = "-hash";
 
 // An extension prefix.
 const char kCrxAppPrefix[] = "_crx_";
+#endif
 
 // ShelfModelObserver implementation that tracks what messages are invoked.
 class TestShelfModelObserver : public ash::ShelfModelObserver {
@@ -683,8 +684,7 @@ class WebContentsDestroyedWatcher : public content::WebContentsObserver {
 
  private:
   // Overridden WebContentsObserver methods.
-  virtual void WebContentsDestroyed(
-      content::WebContents* web_contents) OVERRIDE {
+  virtual void WebContentsDestroyed() OVERRIDE {
     message_loop_runner_->Quit();
   }
 
@@ -787,9 +787,6 @@ class MultiProfileMultiBrowserShelfLayoutChromeLauncherControllerTest
 
     // AvatarMenu and multiple profiles works after user logged in.
     profile_manager_->SetLoggedIn(true);
-
-    // Enabling multi profile requires several flags to be set.
-    CommandLine::ForCurrentProcess()->AppendSwitch(switches::kMultiProfiles);
 
     // Initialize the UserManager singleton to a fresh FakeUserManager instance.
     user_manager_enabler_.reset(
@@ -921,10 +918,6 @@ class MultiProfileMultiBrowserShelfLayoutChromeLauncherControllerTest
     DCHECK(it != created_profiles_.end());
     profile_manager_->DeleteTestingProfile(it->second);
     created_profiles_.erase(it);
-  }
-
-  virtual views::ViewsDelegate* CreateViewsDelegate() OVERRIDE {
-    return new TestViewsDelegateWithParent;
   }
 
  private:
@@ -2303,6 +2296,80 @@ TEST_F(MultiProfileMultiBrowserShelfLayoutChromeLauncherControllerTest,
   EXPECT_FALSE(v2_app_5.window()->GetNativeWindow()->IsVisible());
   SwitchActiveUser(profile1->GetProfileName());
   EXPECT_TRUE(v2_app_5.window()->GetNativeWindow()->IsVisible());
+
+  // Switching to desktop #2, hiding the app window and creating an app should
+  // teleport there automatically.
+  SwitchActiveUser(profile2->GetProfileName());
+  v2_app_1.window()->Hide();
+  V2App v2_app_6(profile1, extension1_);
+  EXPECT_FALSE(v2_app_1.window()->GetNativeWindow()->IsVisible());
+  EXPECT_FALSE(v2_app_2.window()->GetNativeWindow()->IsVisible());
+  EXPECT_TRUE(v2_app_6.window()->GetNativeWindow()->IsVisible());
+}
+
+// Check that V2 applications hide correctly on the shelf when the app window
+// is hidden.
+TEST_F(MultiProfileMultiBrowserShelfLayoutChromeLauncherControllerTest,
+       V2AppHiddenWindows) {
+  InitLauncherController();
+
+  TestingProfile* profile2 = CreateMultiUserProfile("user-2");
+  SwitchActiveUser(profile()->GetProfileName());
+  EXPECT_EQ(2, model_->item_count());
+
+  V2App v2_app_1(profile(), extension1_);
+  EXPECT_EQ(3, model_->item_count());
+  {
+    // Hide and show the app.
+    v2_app_1.window()->Hide();
+    EXPECT_EQ(2, model_->item_count());
+
+    v2_app_1.window()->Show(apps::AppWindow::SHOW_ACTIVE);
+    EXPECT_EQ(3, model_->item_count());
+  }
+  {
+    // Switch user, hide and show the app and switch back.
+    SwitchActiveUser(profile2->GetProfileName());
+    EXPECT_EQ(2, model_->item_count());
+
+    v2_app_1.window()->Hide();
+    EXPECT_EQ(2, model_->item_count());
+
+    v2_app_1.window()->Show(apps::AppWindow::SHOW_ACTIVE);
+    EXPECT_EQ(2, model_->item_count());
+
+    SwitchActiveUser(profile()->GetProfileName());
+    EXPECT_EQ(3, model_->item_count());
+  }
+  {
+    // Switch user, hide the app, switch back and then show it again.
+    SwitchActiveUser(profile2->GetProfileName());
+    EXPECT_EQ(2, model_->item_count());
+
+    v2_app_1.window()->Hide();
+    EXPECT_EQ(2, model_->item_count());
+
+    SwitchActiveUser(profile()->GetProfileName());
+    EXPECT_EQ(2, model_->item_count());
+
+    v2_app_1.window()->Show(apps::AppWindow::SHOW_ACTIVE);
+    EXPECT_EQ(3, model_->item_count());
+  }
+  {
+    // Create a second app, hide and show it and then hide both apps.
+    V2App v2_app_2(profile(), extension1_);
+    EXPECT_EQ(3, model_->item_count());
+
+    v2_app_2.window()->Hide();
+    EXPECT_EQ(3, model_->item_count());
+
+    v2_app_2.window()->Show(apps::AppWindow::SHOW_ACTIVE);
+    EXPECT_EQ(3, model_->item_count());
+
+    v2_app_1.window()->Hide();
+    v2_app_2.window()->Hide();
+    EXPECT_EQ(2, model_->item_count());
+  }
 }
 #endif  // defined(OS_CHROMEOS)
 

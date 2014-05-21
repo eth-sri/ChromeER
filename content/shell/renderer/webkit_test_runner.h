@@ -18,6 +18,7 @@
 #include "third_party/WebKit/public/platform/WebScreenOrientationType.h"
 #include "v8/include/v8.h"
 
+class SkBitmap;
 class SkCanvas;
 
 namespace blink {
@@ -35,15 +36,14 @@ struct LeakDetectionResult;
 // This is the renderer side of the webkit test runner.
 class WebKitTestRunner : public RenderViewObserver,
                          public RenderViewObserverTracker<WebKitTestRunner>,
-                         public WebTestRunner::WebTestDelegate {
+                         public WebTestDelegate {
  public:
   explicit WebKitTestRunner(RenderView* render_view);
   virtual ~WebKitTestRunner();
 
   // RenderViewObserver implementation.
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-  virtual void DidClearWindowObject(blink::WebLocalFrame* frame,
-                                    int world_id) OVERRIDE;
+  virtual void DidClearWindowObject(blink::WebLocalFrame* frame) OVERRIDE;
   virtual void Navigate(const GURL& url) OVERRIDE;
   virtual void DidCommitProvisionalLoad(blink::WebLocalFrame* frame,
                                         bool is_new_navigation) OVERRIDE;
@@ -65,10 +65,10 @@ class WebKitTestRunner : public RenderViewObserver,
       const blink::WebDeviceOrientationData& data) OVERRIDE;
   virtual void setScreenOrientation(
       const blink::WebScreenOrientationType& orientation) OVERRIDE;
+  virtual void resetScreenOrientation() OVERRIDE;
   virtual void printMessage(const std::string& message) OVERRIDE;
-  virtual void postTask(::WebTestRunner::WebTask* task) OVERRIDE;
-  virtual void postDelayedTask(::WebTestRunner::WebTask* task,
-                               long long ms) OVERRIDE;
+  virtual void postTask(WebTask* task) OVERRIDE;
+  virtual void postDelayedTask(WebTask* task, long long ms) OVERRIDE;
   virtual blink::WebString registerIsolatedFileSystem(
       const blink::WebVector<blink::WebString>& absolute_filenames) OVERRIDE;
   virtual long long getCurrentTimeInMillisecond() OVERRIDE;
@@ -94,6 +94,7 @@ class WebKitTestRunner : public RenderViewObserver,
   virtual void clearAllDatabases() OVERRIDE;
   virtual void setDatabaseQuota(int quota) OVERRIDE;
   virtual void setDeviceScaleFactor(float factor) OVERRIDE;
+  virtual void setDeviceColorProfile(const std::string& name) OVERRIDE;
   virtual void setFocus(WebTestProxyBase* proxy, bool focus) OVERRIDE;
   virtual void setAcceptAllCookies(bool accept) OVERRIDE;
   virtual std::string pathToLocalResource(const std::string& resource) OVERRIDE;
@@ -130,6 +131,8 @@ class WebKitTestRunner : public RenderViewObserver,
   // After finishing the test, retrieves the audio, text, and pixel dumps from
   // the TestRunner library and sends them to the browser process.
   void CaptureDump();
+  void CaptureDumpPixels(const SkBitmap& snapshot);
+  void CaptureDumpComplete();
 
   WebTestProxyBase* proxy_;
 

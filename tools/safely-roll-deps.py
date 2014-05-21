@@ -33,8 +33,8 @@ def process_deps(path, project, new_rev, is_dry_run):
   # Hack for Blink to get the AutoRollBot running again.
   if project == "blink":
     project = "webkit"
-  old_line = r'(\s+)"%s_revision": "(\d+)",' % project
-  new_line = r'\1"%s_revision": "%d",' % (project, new_rev)
+  old_line = r'(\s+)"%s_revision": "([0-9a-f]{2,40})",' % project
+  new_line = r'\1"%s_revision": "%s",' % (project, new_rev)
   new_content = re.sub(old_line, new_line, content, 1)
   old_rev = re.search(old_line, content).group(2)
   if not old_rev or new_content == content:
@@ -43,6 +43,18 @@ def process_deps(path, project, new_rev, is_dry_run):
   if not is_dry_run:
     open(path, 'w').write(new_content)
   return old_rev
+
+
+class PrintSubprocess(object):
+  """Wrapper for subprocess2 which prints out every command."""
+  def __getattr__(self, attr):
+    def _run_subprocess2(cmd, *args, **kwargs):
+      print cmd
+      sys.stdout.flush()
+      return getattr(subprocess2, attr)(cmd, *args, **kwargs)
+    return _run_subprocess2
+
+prnt_subprocess = PrintSubprocess()
 
 
 def main():
@@ -81,14 +93,14 @@ def main():
   os.chdir(root_dir)
 
   project = args[0]
-  new_rev = int(args[1])
+  new_rev = args[1]
 
   # Silence the editor.
   os.environ['EDITOR'] = 'true'
 
   if options.force and not options.dry_run:
-    subprocess2.check_call(['git', 'clean', '-d', '-f'])
-    subprocess2.call(['git', 'rebase', '--abort'])
+    prnt_subprocess.check_call(['git', 'clean', '-d', '-f'])
+    prnt_subprocess.call(['git', 'rebase', '--abort'])
 
   old_branch = scm.GIT.GetBranch(root_dir)
   new_branch = '%s_roll' % project
@@ -99,23 +111,23 @@ def main():
   if old_branch == new_branch:
     if options.force:
       if not options.dry_run:
-        subprocess2.check_call(['git', 'checkout', options.upstream, '-f'])
-        subprocess2.call(['git', 'branch', '-D', old_branch])
+        prnt_subprocess.check_call(['git', 'checkout', options.upstream, '-f'])
+        prnt_subprocess.call(['git', 'branch', '-D', old_branch])
     else:
       parser.error('Please delete the branch %s and move to a different branch'
                    % new_branch)
 
   if not options.dry_run:
-    subprocess2.check_call(['git', 'fetch', 'origin'])
-    subprocess2.call(['git', 'svn', 'fetch'])
+    prnt_subprocess.check_call(['git', 'fetch', 'origin'])
+    prnt_subprocess.call(['git', 'svn', 'fetch'])
     branch_cmd = ['git', 'checkout', '-b', new_branch, options.upstream]
     if options.force:
       branch_cmd.append('-f')
-    subprocess2.check_output(branch_cmd)
+    prnt_subprocess.check_output(branch_cmd)
 
   try:
-    old_rev = int(process_deps(os.path.join(root_dir, 'DEPS'), project, new_rev,
-                               options.dry_run))
+    old_rev = process_deps(os.path.join(root_dir, 'DEPS'), project, new_rev,
+                           options.dry_run)
     print '%s roll %s:%s' % (project.title(), old_rev, new_rev)
 
     review_field = 'TBR' if options.commit else 'R'
@@ -127,8 +139,9 @@ def main():
       print 'Commit message: ' + commit_msg
       return 0
 
-    subprocess2.check_output(['git', 'commit', '-m', commit_msg, 'DEPS'])
-    subprocess2.check_call(['git', 'diff', '--no-ext-diff', options.upstream])
+    prnt_subprocess.check_output(['git', 'commit', '-m', commit_msg, 'DEPS'])
+    prnt_subprocess.check_call(['git', 'diff', '--no-ext-diff',
+                                options.upstream])
     upload_cmd = ['git', 'cl', 'upload']
     if options.commit:
       upload_cmd.append('--use-commit-queue')
@@ -136,11 +149,11 @@ def main():
       upload_cmd.append('--send-mail')
     if options.cc:
       upload_cmd.extend(['--cc', options.cc])
-    subprocess2.check_call(upload_cmd)
+    prnt_subprocess.check_call(upload_cmd)
   finally:
     if not options.dry_run:
-      subprocess2.check_output(['git', 'checkout', old_branch])
-      subprocess2.check_output(['git', 'branch', '-D', new_branch])
+      prnt_subprocess.check_output(['git', 'checkout', old_branch])
+      prnt_subprocess.check_output(['git', 'branch', '-D', new_branch])
   return 0
 
 

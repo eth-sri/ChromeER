@@ -52,7 +52,7 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/find_in_page_observer.h"
-#include "components/bookmarks/core/browser/bookmark_model.h"
+#include "components/bookmarks/browser/bookmark_model.h"
 #include "content/public/browser/dom_operation_notification_details.h"
 #include "content/public/browser/download_item.h"
 #include "content/public/browser/download_manager.h"
@@ -64,7 +64,6 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
-#include "content/public/browser/web_contents_view.h"
 #include "content/public/common/geoposition.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/download_test_observer.h"
@@ -562,13 +561,8 @@ void OverrideGeolocation(double latitude, double longitude) {
   position.altitude = 0.;
   position.accuracy = 0.;
   position.timestamp = base::Time::Now();
-  scoped_refptr<content::MessageLoopRunner> runner =
-      new content::MessageLoopRunner;
-
-  content::GeolocationProvider::OverrideLocationForTesting(
-      position, runner->QuitClosure());
-
-  runner->Run();
+  content::GeolocationProvider::GetInstance()->OverrideLocationForTesting(
+      position);
 }
 
 HistoryEnumerator::HistoryEnumerator(Profile* profile) {

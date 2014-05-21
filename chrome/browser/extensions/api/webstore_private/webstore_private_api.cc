@@ -215,7 +215,7 @@ WebstorePrivateApi::PopApprovalForTesting(
 WebstorePrivateInstallBundleFunction::WebstorePrivateInstallBundleFunction() {}
 WebstorePrivateInstallBundleFunction::~WebstorePrivateInstallBundleFunction() {}
 
-bool WebstorePrivateInstallBundleFunction::RunImpl() {
+bool WebstorePrivateInstallBundleFunction::RunAsync() {
   scoped_ptr<InstallBundle::Params> params(
       InstallBundle::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params);
@@ -261,22 +261,24 @@ void WebstorePrivateInstallBundleFunction::OnBundleInstallCanceled(
 
   SendResponse(false);
 
-  Release();  // Balanced in RunImpl().
+  Release();  // Balanced in RunAsync().
 }
 
 void WebstorePrivateInstallBundleFunction::OnBundleInstallCompleted() {
   SendResponse(true);
 
-  Release();  // Balanced in RunImpl().
+  Release();  // Balanced in RunAsync().
 }
 
 WebstorePrivateBeginInstallWithManifest3Function::
-    WebstorePrivateBeginInstallWithManifest3Function() {}
+    WebstorePrivateBeginInstallWithManifest3Function() {
+}
 
 WebstorePrivateBeginInstallWithManifest3Function::
-    ~WebstorePrivateBeginInstallWithManifest3Function() {}
+    ~WebstorePrivateBeginInstallWithManifest3Function() {
+}
 
-bool WebstorePrivateBeginInstallWithManifest3Function::RunImpl() {
+bool WebstorePrivateBeginInstallWithManifest3Function::RunAsync() {
   params_ = BeginInstallWithManifest3::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(params_);
 
@@ -301,6 +303,10 @@ bool WebstorePrivateBeginInstallWithManifest3Function::RunImpl() {
       error_ = kInvalidIconUrlError;
       return false;
     }
+  }
+
+  if (params_->details.authuser) {
+    authuser_ = *params_->details.authuser;
   }
 
   std::string icon_data = params_->details.icon_data ?
@@ -434,7 +440,7 @@ void WebstorePrivateBeginInstallWithManifest3Function::OnWebstoreParseFailure(
   g_pending_installs.Get().EraseInstall(GetProfile(), id);
   SendResponse(false);
 
-  // Matches the AddRef in RunImpl().
+  // Matches the AddRef in RunAsync().
   Release();
 }
 
@@ -447,7 +453,7 @@ void WebstorePrivateBeginInstallWithManifest3Function::SigninFailed(
   g_pending_installs.Get().EraseInstall(GetProfile(), params_->details.id);
   SendResponse(false);
 
-  // Matches the AddRef in RunImpl().
+  // Matches the AddRef in RunAsync().
   Release();
 }
 
@@ -492,6 +498,7 @@ void WebstorePrivateBeginInstallWithManifest3Function::InstallUIProceed() {
   approval->skip_post_install_ui = params_->details.enable_launcher;
   approval->dummy_extension = dummy_extension_;
   approval->installing_icon = gfx::ImageSkia::CreateFrom1xBitmap(icon_);
+  approval->authuser = authuser_;
   g_pending_approvals.Get().PushApproval(approval.Pass());
 
   SetResultCode(ERROR_NONE);
@@ -503,7 +510,7 @@ void WebstorePrivateBeginInstallWithManifest3Function::InstallUIProceed() {
   ExtensionService::RecordPermissionMessagesHistogram(
       dummy_extension_.get(), "Extensions.Permissions_WebStoreInstall");
 
-  // Matches the AddRef in RunImpl().
+  // Matches the AddRef in RunAsync().
   Release();
 }
 
@@ -529,7 +536,7 @@ void WebstorePrivateBeginInstallWithManifest3Function::InstallUIAbort(
   ExtensionService::RecordPermissionMessagesHistogram(dummy_extension_.get(),
                                                       histogram_name.c_str());
 
-  // Matches the AddRef in RunImpl().
+  // Matches the AddRef in RunAsync().
   Release();
 }
 
@@ -539,7 +546,7 @@ WebstorePrivateCompleteInstallFunction::
 WebstorePrivateCompleteInstallFunction::
     ~WebstorePrivateCompleteInstallFunction() {}
 
-bool WebstorePrivateCompleteInstallFunction::RunImpl() {
+bool WebstorePrivateCompleteInstallFunction::RunAsync() {
   scoped_ptr<CompleteInstall::Params> params(
       CompleteInstall::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params);
@@ -601,7 +608,7 @@ void WebstorePrivateCompleteInstallFunction::OnExtensionInstallSuccess(
 
   RecordWebstoreExtensionInstallResult(true);
 
-  // Matches the AddRef in RunImpl().
+  // Matches the AddRef in RunAsync().
   Release();
 }
 
@@ -621,7 +628,7 @@ void WebstorePrivateCompleteInstallFunction::OnExtensionInstallFailure(
 
   RecordWebstoreExtensionInstallResult(false);
 
-  // Matches the AddRef in RunImpl().
+  // Matches the AddRef in RunAsync().
   Release();
 }
 
@@ -673,7 +680,7 @@ void WebstorePrivateGetWebGLStatusFunction::CreateResult(bool webgl_allowed) {
       ParseWebgl_status(webgl_allowed ? "webgl_allowed" : "webgl_blocked"));
 }
 
-bool WebstorePrivateGetWebGLStatusFunction::RunImpl() {
+bool WebstorePrivateGetWebGLStatusFunction::RunAsync() {
   feature_checker_->CheckGPUFeatureAvailability();
   return true;
 }
@@ -699,7 +706,7 @@ WebstorePrivateSignInFunction::WebstorePrivateSignInFunction()
     : signin_manager_(NULL) {}
 WebstorePrivateSignInFunction::~WebstorePrivateSignInFunction() {}
 
-bool WebstorePrivateSignInFunction::RunImpl() {
+bool WebstorePrivateSignInFunction::RunAsync() {
   scoped_ptr<SignIn::Params> params = SignIn::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(params);
 
@@ -772,7 +779,7 @@ void WebstorePrivateSignInFunction::SigninFailed(
   SendResponse(false);
 
   SigninManagerFactory::GetInstance()->RemoveObserver(this);
-  Release();  // Balanced in RunImpl().
+  Release();  // Balanced in RunAsync().
 }
 
 void WebstorePrivateSignInFunction::SigninSuccess() {
@@ -789,7 +796,7 @@ void WebstorePrivateSignInFunction::MergeSessionComplete(
   }
 
   SigninManagerFactory::GetInstance()->RemoveObserver(this);
-  Release();  // Balanced in RunImpl().
+  Release();  // Balanced in RunAsync().
 }
 
 }  // namespace extensions

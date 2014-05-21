@@ -9,19 +9,20 @@ namespace cast {
 namespace transport {
 
 namespace {
-const int kDefaultRtpHistoryMs = 1000;
 const int kDefaultRtpMaxDelayMs = 100;
 }  // namespace
 
 RtpConfig::RtpConfig()
-    : history_ms(kDefaultRtpHistoryMs),
+    : ssrc(0),
       max_delay_ms(kDefaultRtpMaxDelayMs),
       payload_type(0) {}
 
-CastTransportBaseConfig::CastTransportBaseConfig()
-    : ssrc(0) {}
+RtpConfig::~RtpConfig() {}
 
-CastTransportBaseConfig::~CastTransportBaseConfig() {}
+CastTransportRtpConfig::CastTransportRtpConfig()
+    : max_outstanding_frames(-1) {}
+
+CastTransportRtpConfig::~CastTransportRtpConfig() {}
 
 CastTransportAudioConfig::CastTransportAudioConfig()
     : codec(kOpus), frequency(0), channels(0) {}
@@ -32,21 +33,13 @@ CastTransportVideoConfig::CastTransportVideoConfig() : codec(kVp8) {}
 
 CastTransportVideoConfig::~CastTransportVideoConfig() {}
 
-EncodedVideoFrame::EncodedVideoFrame()
-    : codec(kVp8),
-      key_frame(false),
+EncodedFrame::EncodedFrame()
+    : dependency(UNKNOWN_DEPENDENCY),
       frame_id(0),
-      last_referenced_frame_id(0),
+      referenced_frame_id(0),
       rtp_timestamp(0) {}
-EncodedVideoFrame::~EncodedVideoFrame() {}
 
-EncodedAudioFrame::EncodedAudioFrame()
-    : codec(kOpus), frame_id(0), rtp_timestamp(0) {}
-EncodedAudioFrame::~EncodedAudioFrame() {}
-
-RtcpSenderFrameLogMessage::RtcpSenderFrameLogMessage()
-    : frame_status(kRtcpSenderFrameStatusUnknown), rtp_timestamp(0) {}
-RtcpSenderFrameLogMessage::~RtcpSenderFrameLogMessage() {}
+EncodedFrame::~EncodedFrame() {}
 
 RtcpSenderInfo::RtcpSenderInfo()
     : ntp_seconds(0),

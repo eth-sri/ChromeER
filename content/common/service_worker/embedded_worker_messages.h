@@ -23,6 +23,7 @@ IPC_STRUCT_BEGIN(EmbeddedWorkerMsg_StartWorker_Params)
   IPC_STRUCT_MEMBER(GURL, scope)
   IPC_STRUCT_MEMBER(GURL, script_url)
   IPC_STRUCT_MEMBER(int, worker_devtools_agent_route_id)
+  IPC_STRUCT_MEMBER(bool, pause_on_start)
 IPC_STRUCT_END()
 
 // Parameters structure for EmbeddedWorkerHostMsg_ReportConsoleMessage.
@@ -42,6 +43,16 @@ IPC_MESSAGE_CONTROL1(EmbeddedWorkerMsg_StartWorker,
 
 // Browser -> Renderer message to stop (terminate) the embedded worker.
 IPC_MESSAGE_CONTROL1(EmbeddedWorkerMsg_StopWorker,
+                     int /* embedded_worker_id */)
+
+// Renderer -> Browser message to indicate that the worker has loadedd the
+// script.
+IPC_MESSAGE_CONTROL1(EmbeddedWorkerHostMsg_WorkerScriptLoaded,
+                     int /* embedded_worker_id */)
+
+// Renderer -> Browser message to indicate that the worker has failed to load
+// the script.
+IPC_MESSAGE_CONTROL1(EmbeddedWorkerHostMsg_WorkerScriptLoadFailed,
                      int /* embedded_worker_id */)
 
 // Renderer -> Browser message to indicate that the worker is started.

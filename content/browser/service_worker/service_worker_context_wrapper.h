@@ -16,6 +16,8 @@
 
 namespace base {
 class FilePath;
+class MessageLoopProxy;
+class SequencedTaskRunner;
 }
 
 namespace quota {
@@ -61,8 +63,14 @@ class CONTENT_EXPORT ServiceWorkerContextWrapper
 
  private:
   friend class base::RefCountedThreadSafe<ServiceWorkerContextWrapper>;
+  friend class EmbeddedWorkerTestHelper;
   friend class ServiceWorkerProcessManager;
   virtual ~ServiceWorkerContextWrapper();
+
+  void InitInternal(const base::FilePath& user_data_directory,
+                    base::SequencedTaskRunner* database_task_runner,
+                    base::MessageLoopProxy* disk_cache_thread,
+                    quota::QuotaManagerProxy* quota_manager_proxy);
 
   const scoped_refptr<ObserverListThreadSafe<ServiceWorkerContextObserver> >
       observer_list_;

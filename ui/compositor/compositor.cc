@@ -10,14 +10,10 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
-#include "base/memory/singleton.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
-#include "base/run_loop.h"
 #include "base/strings/string_util.h"
 #include "base/sys_info.h"
-#include "base/threading/thread.h"
-#include "base/threading/thread_restrictions.h"
 #include "cc/base/latency_info_swap_promise.h"
 #include "cc/base/switches.h"
 #include "cc/input/input_handler.h"
@@ -38,10 +34,6 @@ namespace {
 
 const double kDefaultRefreshRate = 60.0;
 const double kTestRefreshRate = 200.0;
-
-bool g_compositor_initialized = false;
-base::Thread* g_compositor_thread = NULL;
-cc::SharedBitmapManager* g_shared_bitmap_manager;
 
 ui::ContextFactory* g_context_factory = NULL;
 
@@ -91,13 +83,14 @@ namespace {
 namespace ui {
 
 Compositor::Compositor(gfx::AcceleratedWidget widget)
-    : root_layer_(NULL),
+    : context_factory_(g_context_factory),
+      root_layer_(NULL),
       widget_(widget),
+      compositor_thread_loop_(g_context_factory->GetCompositorMessageLoop()),
       vsync_manager_(new CompositorVSyncManager()),
       device_scale_factor_(0.0f),
       last_started_frame_(0),
       last_ended_frame_(0),
-      next_draw_is_resize_(false),
       disable_schedule_composite_(false),
       compositor_lock_(NULL),
       defer_draw_scheduling_(false),
@@ -105,9 +98,32 @@ Compositor::Compositor(gfx::AcceleratedWidget widget)
       draw_on_compositing_end_(false),
       swap_state_(SWAP_NONE),
       schedule_draw_factory_(this) {
-  DCHECK(g_compositor_initialized)
-      << "Compositor::Initialize must be called before creating a Compositor.";
+  Init();
+}
 
+Compositor::Compositor(gfx::AcceleratedWidget widget,
+                       ui::ContextFactory* context_factory)
+    : context_factory_(context_factory),
+      root_layer_(NULL),
+      widget_(widget),
+      compositor_thread_loop_(context_factory->GetCompositorMessageLoop()),
+      vsync_manager_(new CompositorVSyncManager()),
+      device_scale_factor_(0.0f),
+      last_started_frame_(0),
+      last_ended_frame_(0),
+      disable_schedule_composite_(false),
+      compositor_lock_(NULL),
+      defer_draw_scheduling_(false),
+      waiting_on_compositing_end_(false),
+      draw_on_compositing_end_(false),
+      swap_state_(SWAP_NONE),
+      schedule_draw_factory_(this) {
+  Init();
+}
+
+// Yes, this is the wrong place. I'm leaving here to minimize diffs since this
+// function will be nuked soonish.
+void Compositor::Init() {
   root_web_layer_ = cc::Layer::Create();
   root_web_layer_->SetAnchorPoint(gfx::PointF(0.f, 0.f));
 
@@ -115,7 +131,7 @@ Compositor::Compositor(gfx::AcceleratedWidget widget)
 
   cc::LayerTreeSettings settings;
   settings.refresh_rate =
-      ContextFactory::GetInstance()->DoesCreateTestContexts()
+      context_factory_->DoesCreateTestContexts()
       ? kTestRefreshRate
       : kDefaultRefreshRate;
   settings.main_frame_before_draw_enabled = false;
@@ -157,15 +173,15 @@ Compositor::Compositor(gfx::AcceleratedWidget widget)
   settings.use_zero_copy = IsUIZeroCopyEnabled();
 
   base::TimeTicks before_create = base::TimeTicks::Now();
-  if (!!g_compositor_thread) {
+  if (compositor_thread_loop_) {
     host_ = cc::LayerTreeHost::CreateThreaded(
         this,
-        g_shared_bitmap_manager,
+        context_factory_->GetSharedBitmapManager(),
         settings,
-        g_compositor_thread->message_loop_proxy());
+        compositor_thread_loop_);
   } else {
     host_ = cc::LayerTreeHost::CreateSingleThreaded(
-        this, this, g_shared_bitmap_manager, settings);
+        this, this, context_factory_->GetSharedBitmapManager(), settings);
   }
   UMA_HISTOGRAM_TIMES("GPU.CreateBrowserCompositor",
                       base::TimeTicks::Now() - before_create);
@@ -175,8 +191,6 @@ Compositor::Compositor(gfx::AcceleratedWidget widget)
 
 Compositor::~Compositor() {
   TRACE_EVENT0("shutdown", "Compositor::destructor");
-
-  DCHECK(g_compositor_initialized);
 
   CancelCompositorLock();
   DCHECK(!compositor_lock_);
@@ -188,60 +202,12 @@ Compositor::~Compositor() {
   // down any contexts that the |host_| may rely upon.
   host_.reset();
 
-  ContextFactory::GetInstance()->RemoveCompositor(this);
-}
-
-// static
-void Compositor::Initialize() {
-#if defined(OS_CHROMEOS)
-  bool use_thread = !CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kUIDisableThreadedCompositing);
-#else
-  bool use_thread = false;
-#endif
-  if (use_thread) {
-    g_compositor_thread = new base::Thread("Browser Compositor");
-    g_compositor_thread->Start();
-  }
-
-  DCHECK(!g_compositor_initialized) << "Compositor initialized twice.";
-  g_compositor_initialized = true;
-}
-
-// static
-bool Compositor::WasInitializedWithThread() {
-  DCHECK(g_compositor_initialized);
-  return !!g_compositor_thread;
-}
-
-// static
-scoped_refptr<base::MessageLoopProxy> Compositor::GetCompositorMessageLoop() {
-  scoped_refptr<base::MessageLoopProxy> proxy;
-  if (g_compositor_thread)
-    proxy = g_compositor_thread->message_loop_proxy();
-  return proxy;
-}
-
-// static
-void Compositor::Terminate() {
-  if (g_compositor_thread) {
-    g_compositor_thread->Stop();
-    delete g_compositor_thread;
-    g_compositor_thread = NULL;
-  }
-
-  DCHECK(g_compositor_initialized) << "Compositor::Initialize() didn't happen.";
-  g_compositor_initialized = false;
-}
-
-// static
-void Compositor::SetSharedBitmapManager(cc::SharedBitmapManager* manager) {
-  g_shared_bitmap_manager = manager;
+  context_factory_->RemoveCompositor(this);
 }
 
 void Compositor::ScheduleDraw() {
-  if (g_compositor_thread) {
-    host_->Composite(gfx::FrameTime::Now());
+  if (compositor_thread_loop_) {
+    host_->SetNeedsCommit();
   } else if (!defer_draw_scheduling_) {
     defer_draw_scheduling_ = true;
     base::MessageLoop::current()->PostTask(
@@ -269,7 +235,7 @@ void Compositor::SetHostHasTransparentBackground(
 }
 
 void Compositor::Draw() {
-  DCHECK(!g_compositor_thread);
+  DCHECK(!compositor_thread_loop_);
 
   defer_draw_scheduling_ = false;
   if (waiting_on_compositing_end_) {
@@ -292,18 +258,6 @@ void Compositor::Draw() {
     // compositeImmediately() directly.
     Layout();
     host_->Composite(gfx::FrameTime::Now());
-
-#if defined(OS_WIN)
-    // While we resize, we are usually a few frames behind. By blocking
-    // the UI thread here we minize the area that is mis-painted, specially
-    // in the non-client area. See RenderWidgetHostViewAura::SetBounds for
-    // more details and bug 177115.
-    if (next_draw_is_resize_ && (last_ended_frame_ > 1)) {
-      next_draw_is_resize_ = false;
-      host_->FinishAllRendering();
-    }
-#endif
-
   }
   if (swap_state_ == SWAP_NONE)
     NotifyEnd();
@@ -315,6 +269,10 @@ void Compositor::ScheduleFullRedraw() {
 
 void Compositor::ScheduleRedrawRect(const gfx::Rect& damage_rect) {
   host_->SetNeedsRedrawRect(damage_rect);
+}
+
+void Compositor::FinishAllRendering() {
+  host_->FinishAllRendering();
 }
 
 void Compositor::SetLatencyInfo(const ui::LatencyInfo& latency_info) {
@@ -329,11 +287,10 @@ void Compositor::SetScaleAndSize(float scale, const gfx::Size& size_in_pixel) {
     size_ = size_in_pixel;
     host_->SetViewportSize(size_in_pixel);
     root_web_layer_->SetBounds(size_in_pixel);
-
-    next_draw_is_resize_ = true;
   }
   if (device_scale_factor_ != scale) {
     device_scale_factor_ = scale;
+    host_->SetDeviceScaleFactor(scale);
     if (root_layer_)
       root_layer_->OnDeviceScaleFactorChanged(scale);
   }
@@ -370,7 +327,7 @@ void Compositor::Layout() {
 }
 
 scoped_ptr<cc::OutputSurface> Compositor::CreateOutputSurface(bool fallback) {
-  return ContextFactory::GetInstance()->CreateOutputSurface(this, fallback);
+  return context_factory_->CreateOutputSurface(this, fallback);
 }
 
 void Compositor::DidCommit() {
@@ -388,7 +345,7 @@ void Compositor::DidCommitAndDrawFrame() {
 }
 
 void Compositor::DidCompleteSwapBuffers() {
-  if (g_compositor_thread) {
+  if (compositor_thread_loop_) {
     NotifyEnd();
   } else {
     DCHECK_EQ(swap_state_, SWAP_POSTED);
@@ -407,13 +364,13 @@ void Compositor::ScheduleAnimation() {
 }
 
 void Compositor::DidPostSwapBuffers() {
-  DCHECK(!g_compositor_thread);
+  DCHECK(!compositor_thread_loop_);
   DCHECK_EQ(swap_state_, SWAP_NONE);
   swap_state_ = SWAP_POSTED;
 }
 
 void Compositor::DidAbortSwapBuffers() {
-  if (!g_compositor_thread) {
+  if (!compositor_thread_loop_) {
     if (swap_state_ == SWAP_POSTED) {
       NotifyEnd();
       swap_state_ = SWAP_COMPLETED;
@@ -437,7 +394,7 @@ void Compositor::SetLayerTreeDebugState(
 scoped_refptr<CompositorLock> Compositor::GetCompositorLock() {
   if (!compositor_lock_) {
     compositor_lock_ = new CompositorLock(this);
-    if (g_compositor_thread)
+    if (compositor_thread_loop_)
       host_->SetDeferCommits(true);
     FOR_EACH_OBSERVER(CompositorObserver,
                       observer_list_,
@@ -449,7 +406,7 @@ scoped_refptr<CompositorLock> Compositor::GetCompositorLock() {
 void Compositor::UnlockCompositor() {
   DCHECK(compositor_lock_);
   compositor_lock_ = NULL;
-  if (g_compositor_thread)
+  if (compositor_thread_loop_)
     host_->SetDeferCommits(false);
   FOR_EACH_OBSERVER(CompositorObserver,
                     observer_list_,

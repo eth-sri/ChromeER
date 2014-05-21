@@ -11,6 +11,7 @@
 #include "base/location.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
+#include "base/threading/thread.h"
 #include "cc/output/compositor_frame.h"
 #include "cc/output/output_surface.h"
 #include "content/browser/compositor/browser_compositor_output_surface.h"
@@ -27,6 +28,7 @@
 #include "content/common/gpu/client/gpu_channel_host.h"
 #include "content/common/gpu/client/webgraphicscontext3d_command_buffer_impl.h"
 #include "content/common/gpu/gpu_process_launch_causes.h"
+#include "content/common/host_shared_bitmap_manager.h"
 #include "gpu/GLES2/gl2extchromium.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
 #include "gpu/command_buffer/common/mailbox.h"
@@ -61,6 +63,16 @@ GpuProcessTransportFactory::GpuProcessTransportFactory()
     : callback_factory_(this) {
   output_surface_proxy_ = new BrowserCompositorOutputSurfaceProxy(
       &output_surface_map_);
+#if defined(OS_CHROMEOS)
+  bool use_thread = !CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kUIDisableThreadedCompositing);
+#else
+  bool use_thread = false;
+#endif
+  if (use_thread) {
+    compositor_thread_.reset(new base::Thread("Browser Compositor"));
+    compositor_thread_->Start();
+  }
 }
 
 GpuProcessTransportFactory::~GpuProcessTransportFactory() {
@@ -133,7 +145,7 @@ scoped_ptr<cc::OutputSurface> GpuProcessTransportFactory::CreateOutputSurface(
   UMA_HISTOGRAM_BOOLEAN("Aura.CreatedGpuBrowserCompositor", !!context_provider);
 
   if (!context_provider.get()) {
-    if (ui::Compositor::WasInitializedWithThread()) {
+    if (compositor_thread_.get()) {
       LOG(FATAL) << "Failed to create UI context, but can't use software"
                  " compositing with browser threaded compositing. Aborting.";
     }
@@ -149,7 +161,7 @@ scoped_ptr<cc::OutputSurface> GpuProcessTransportFactory::CreateOutputSurface(
   }
 
   scoped_refptr<base::SingleThreadTaskRunner> compositor_thread_task_runner =
-      ui::Compositor::GetCompositorMessageLoop();
+      GetCompositorMessageLoop();
   if (!compositor_thread_task_runner.get())
     compositor_thread_task_runner = base::MessageLoopProxy::current();
 
@@ -177,8 +189,11 @@ scoped_refptr<ui::Reflector> GpuProcessTransportFactory::CreateReflector(
   PerCompositorData* data = per_compositor_data_[source];
   DCHECK(data);
 
-  data->reflector = new ReflectorImpl(
-      source, target, &output_surface_map_, data->surface_id);
+  data->reflector = new ReflectorImpl(source,
+                                      target,
+                                      &output_surface_map_,
+                                      GetCompositorMessageLoop(),
+                                      data->surface_id);
   return data->reflector;
 }
 
@@ -217,8 +232,18 @@ void GpuProcessTransportFactory::RemoveCompositor(ui::Compositor* compositor) {
 
 bool GpuProcessTransportFactory::DoesCreateTestContexts() { return false; }
 
-ui::ContextFactory* GpuProcessTransportFactory::AsContextFactory() {
+cc::SharedBitmapManager* GpuProcessTransportFactory::GetSharedBitmapManager() {
+  return HostSharedBitmapManager::current();
+}
+
+ui::ContextFactory* GpuProcessTransportFactory::GetContextFactory() {
   return this;
+}
+
+base::MessageLoopProxy* GpuProcessTransportFactory::GetCompositorMessageLoop() {
+  if (!compositor_thread_)
+    return NULL;
+  return compositor_thread_->message_loop_proxy();
 }
 
 gfx::GLSurfaceHandle GpuProcessTransportFactory::GetSharedSurfaceHandle() {

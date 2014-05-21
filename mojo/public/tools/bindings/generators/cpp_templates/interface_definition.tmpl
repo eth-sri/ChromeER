@@ -6,6 +6,8 @@
 {%-   for param in parameters %}
 {%-     if param.kind|is_object_kind -%}
 mojo::internal::Wrap(params->{{param.name}}())
+{%-     elif param.kind|is_interface_kind -%}
+mojo::MakeProxy<{{param.kind.name}}>(mojo::MakePassable(params->{{param.name}}()).Pass())
 {%-     elif param.kind|is_handle_kind -%}
 mojo::MakePassable(params->{{param.name}}()).Pass()
 {%-     elif param.kind|is_enum_kind -%}
@@ -38,6 +40,14 @@ params->{{param.name}}()
   if (!in_{{param.name}}.is_null())
     params->set_{{param.name}}(
         mojo::internal::Unwrap(in_{{param.name}})->Clone(builder.buffer()));
+{%-     elif param.kind|is_interface_kind %}
+  if (!in_{{param.name}}.get()) {
+    params->set_{{param.name}}(mojo::MessagePipeHandle());
+  } else {
+    // Delegate handle.
+    params->set_{{param.name}}(
+        in_{{param.name}}.ResetAndReturnMessagePipe().release());
+  }
 {%-     elif param.kind|is_handle_kind %}
   params->set_{{param.name}}(in_{{param.name}}.release());
 {%-     else %}
@@ -48,6 +58,13 @@ params->{{param.name}}()
   params->EncodePointersAndHandles(message.mutable_handles());
   builder.Finish(&message);
 {%- endmacro %}
+
+{#--- Begin #}
+
+{#--- Constants #}
+{%  for constant in interface.constants %}
+const {{constant.kind|cpp_pod_type}} {{interface.name}}::{{constant.name}} = {{constant.value|expression_to_text(module)}};
+{%- endfor %}
 
 {#--- ForwardToCallback definition #}
 {%- for method in interface.methods -%}
@@ -114,7 +131,9 @@ void {{proxy_name}}::{{method.name}}(
   if (!receiver_->AcceptWithResponder(&message, responder))
     delete responder;
 {%- else %}
-  receiver_->Accept(&message);
+  bool ok MOJO_ALLOW_UNUSED = receiver_->Accept(&message);
+  // This return value may be ignored as !ok implies the Connector has
+  // encountered an error, which will be visible through other means.
 {%- endif %}
 }
 {%- endfor %}
@@ -153,15 +172,18 @@ void {{class_name}}_{{method.name}}_ProxyToResponder::Run(
   mojo::internal::ResponseMessageBuilder builder(
       {{message_name}}, payload_size, request_id_);
   {{build_message(params_name, method.response_parameters)}}
-  responder_->Accept(&message);
+  bool ok MOJO_ALLOW_UNUSED = responder_->Accept(&message);
+  // TODO(darin): !ok returned here indicates a malformed message, and that may
+  // be good reason to close the connection. However, we don't have a way to do
+  // that from here. We should add a way.
   delete responder_;
   responder_ = NULL;
 }
 {%-   endif -%}
 {%- endfor %}
 
-{{class_name}}Stub::{{class_name}}Stub({{class_name}}* sink)
-    : sink_(sink) {
+{{class_name}}Stub::{{class_name}}Stub()
+    : sink_(NULL) {
 }
 
 {#--- Stub definition #}
@@ -221,3 +243,26 @@ bool {{class_name}}Stub::AcceptWithResponder(
 {%- endif %}
   return false;
 }
+
+{#--- Request validator definitions #}
+
+{{class_name}}RequestValidator::{{class_name}}RequestValidator(
+    mojo::MessageReceiver* sink) : MessageFilter(sink) {
+}
+
+bool {{class_name}}RequestValidator::Accept(mojo::Message* message) {
+  // TODO(yzshen): implement validation logic.
+  return sink_->Accept(message);
+}
+
+{#--- Response validator definitions #}
+{% if interface|has_callbacks %}
+{{class_name}}ResponseValidator::{{class_name}}ResponseValidator(
+    mojo::MessageReceiver* sink) : MessageFilter(sink) {
+}
+
+bool {{class_name}}ResponseValidator::Accept(mojo::Message* message) {
+  // TODO(yzshen): implement validation logic.
+  return sink_->Accept(message);
+}
+{%- endif -%}

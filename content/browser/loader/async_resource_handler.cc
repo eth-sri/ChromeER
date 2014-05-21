@@ -97,28 +97,21 @@ AsyncResourceHandler::~AsyncResourceHandler() {
     rdh_->FinishedWithResourcesForRequest(request());
 }
 
-bool AsyncResourceHandler::OnMessageReceived(const IPC::Message& message,
-                                             bool* message_was_ok) {
+bool AsyncResourceHandler::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP_EX(AsyncResourceHandler, message, *message_was_ok)
+  IPC_BEGIN_MESSAGE_MAP(AsyncResourceHandler, message)
     IPC_MESSAGE_HANDLER(ResourceHostMsg_FollowRedirect, OnFollowRedirect)
     IPC_MESSAGE_HANDLER(ResourceHostMsg_DataReceived_ACK, OnDataReceivedACK)
     IPC_MESSAGE_UNHANDLED(handled = false)
-  IPC_END_MESSAGE_MAP_EX()
+  IPC_END_MESSAGE_MAP()
   return handled;
 }
 
-void AsyncResourceHandler::OnFollowRedirect(
-    int request_id,
-    bool has_new_first_party_for_cookies,
-    const GURL& new_first_party_for_cookies) {
+void AsyncResourceHandler::OnFollowRedirect(int request_id) {
   if (!request()->status().is_success()) {
     DVLOG(1) << "OnFollowRedirect for invalid request";
     return;
   }
-
-  if (has_new_first_party_for_cookies)
-    request()->set_first_party_for_cookies(new_first_party_for_cookies);
 
   ResumeIfDeferred();
 }
@@ -164,8 +157,13 @@ bool AsyncResourceHandler::OnRequestRedirected(int request_id,
   reported_transfer_size_ = 0;
   response->head.request_start = request()->creation_time();
   response->head.response_start = TimeTicks::Now();
+  // TODO(davidben): Is it necessary to pass the new first party URL for
+  // cookies? The only case where it can change is top-level navigation requests
+  // and hopefully those will eventually all be owned by the browser. It's
+  // possible this is still needed while renderer-owned ones exist.
   return info->filter()->Send(new ResourceMsg_ReceivedRedirect(
-      request_id, new_url, response->head));
+      request_id, new_url, request()->first_party_for_cookies(),
+      response->head));
 }
 
 bool AsyncResourceHandler::OnResponseStarted(int request_id,

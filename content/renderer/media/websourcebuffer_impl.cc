@@ -88,7 +88,13 @@ void WebSourceBufferImpl::append(
 }
 
 void WebSourceBufferImpl::abort() {
-  demuxer_->Abort(id_);
+  demuxer_->Abort(id_,
+                  append_window_start_, append_window_end_,
+                  &timestamp_offset_);
+
+  // TODO(wolenetz): abort should be able to modify the caller timestamp offset
+  // (just like WebSourceBufferImpl::append).
+  // See http://crbug.com/370229 for further details.
 }
 
 void WebSourceBufferImpl::remove(double start, double end) {
@@ -102,6 +108,11 @@ bool WebSourceBufferImpl::setTimestampOffset(double offset) {
     return false;
 
   timestamp_offset_ = DoubleToTimeDelta(offset);
+
+  // http://www.w3.org/TR/media-source/#widl-SourceBuffer-timestampOffset
+  // Step 6: If the mode attribute equals "sequence", then set the group start
+  // timestamp to new timestamp offset.
+  demuxer_->SetGroupStartTimestampIfInSequenceMode(id_, timestamp_offset_);
   return true;
 }
 

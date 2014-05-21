@@ -4,18 +4,25 @@
 
 #include "base/basictypes.h"
 #include "base/bind.h"
+#include "base/command_line.h"
 #include "base/path_service.h"
 #include "base/run_loop.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "ui/aura/client/focus_client.h"
 #include "ui/aura/env.h"
+#include "ui/aura/test/event_generator.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_tree_host.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/ui_base_paths.h"
+#include "ui/base/ui_base_switches.h"
 #include "ui/events/event_processor.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gl/gl_surface.h"
+#include "ui/views/controls/textfield/textfield.h"
 #include "ui/views/test/widget_test.h"
+#include "ui/views/touchui/touch_selection_controller_impl.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/window/dialog_delegate.h"
 #include "ui/wm/public/activation_client.h"
@@ -161,6 +168,28 @@ class WidgetTestInteractive : public WidgetTest {
     ui::ResourceBundle::InitSharedInstanceWithPakPath(pak_file);
     WidgetTest::SetUp();
   }
+
+ protected:
+  void ShowTouchSelectionQuickMenuImmediately(Textfield* textfield) {
+    DCHECK(textfield);
+    DCHECK(textfield->touch_selection_controller_);
+    TouchSelectionControllerImpl* controller =
+        static_cast<TouchSelectionControllerImpl*>(
+            textfield->touch_selection_controller_.get());
+    if (controller->context_menu_timer_.IsRunning()) {
+      controller->context_menu_timer_.Stop();
+      controller->ContextMenuTimerFired();
+    }
+  }
+
+  bool TouchSelectionQuickMenuIsVisible(Textfield* textfield) {
+    DCHECK(textfield);
+    DCHECK(textfield->touch_selection_controller_);
+    TouchSelectionControllerImpl* controller =
+        static_cast<TouchSelectionControllerImpl*>(
+            textfield->touch_selection_controller_.get());
+    return controller->context_menu_ && controller->context_menu_->visible();
+  }
 };
 
 #if defined(OS_WIN)
@@ -172,8 +201,7 @@ class WidgetTestInteractive : public WidgetTest {
 //    another top level widget is created and focused.
 // 3. On focusing the native platform window for widget 1, the active aura
 //    window for widget 1 should be set and that for widget 2 should reset.
-// TODO(ananta)
-// Discuss with erg on how to write this test for linux x11 aura.
+// TODO(ananta): Discuss with erg on how to write this test for linux x11 aura.
 TEST_F(WidgetTestInteractive, DesktopNativeWidgetAuraActivationAndFocusTest) {
   // Create widget 1 and expect the active window to be its window.
   View* contents_view1 = new View;
@@ -462,7 +490,91 @@ TEST_F(WidgetTestInteractive, CheckResizeControllerEvents) {
   toplevel->CloseNow();
 }
 
+// Test view focus restoration when a widget is deactivated and re-activated.
+TEST_F(WidgetTestInteractive, ViewFocusOnWidgetActivationChanges) {
+  Widget* widget1 = CreateTopLevelPlatformWidget();
+  View* view1 = new View;
+  view1->SetFocusable(true);
+  widget1->GetContentsView()->AddChildView(view1);
+
+  Widget* widget2 = CreateTopLevelPlatformWidget();
+  View* view2a = new View;
+  View* view2b = new View;
+  view2a->SetFocusable(true);
+  view2b->SetFocusable(true);
+  widget2->GetContentsView()->AddChildView(view2a);
+  widget2->GetContentsView()->AddChildView(view2b);
+
+  widget1->Show();
+  EXPECT_TRUE(widget1->IsActive());
+  view1->RequestFocus();
+  EXPECT_EQ(view1, widget1->GetFocusManager()->GetFocusedView());
+
+  widget2->Show();
+  EXPECT_TRUE(widget2->IsActive());
+  EXPECT_FALSE(widget1->IsActive());
+  EXPECT_EQ(NULL, widget1->GetFocusManager()->GetFocusedView());
+  view2a->RequestFocus();
+  EXPECT_EQ(view2a, widget2->GetFocusManager()->GetFocusedView());
+  view2b->RequestFocus();
+  EXPECT_EQ(view2b, widget2->GetFocusManager()->GetFocusedView());
+
+  widget1->Activate();
+  EXPECT_TRUE(widget1->IsActive());
+  EXPECT_EQ(view1, widget1->GetFocusManager()->GetFocusedView());
+  EXPECT_FALSE(widget2->IsActive());
+  EXPECT_EQ(NULL, widget2->GetFocusManager()->GetFocusedView());
+
+  widget2->Activate();
+  EXPECT_TRUE(widget2->IsActive());
+  EXPECT_EQ(view2b, widget2->GetFocusManager()->GetFocusedView());
+  EXPECT_FALSE(widget1->IsActive());
+  EXPECT_EQ(NULL, widget1->GetFocusManager()->GetFocusedView());
+
+  widget1->CloseNow();
+  widget2->CloseNow();
+}
+
 #if defined(OS_WIN)
+
+// Test view focus retention when a widget's HWND is disabled and re-enabled.
+TEST_F(WidgetTestInteractive, ViewFocusOnHWNDEnabledChanges) {
+  Widget* widget = CreateTopLevelFramelessPlatformWidget();
+  widget->SetContentsView(new View);
+  for (size_t i = 0; i < 2; ++i) {
+    widget->GetContentsView()->AddChildView(new View);
+    widget->GetContentsView()->child_at(i)->SetFocusable(true);
+  }
+
+  widget->Show();
+  const HWND hwnd = HWNDForWidget(widget);
+  EXPECT_TRUE(::IsWindow(hwnd));
+  EXPECT_TRUE(::IsWindowEnabled(hwnd));
+  EXPECT_EQ(hwnd, ::GetActiveWindow());
+
+  for (int i = 0; i < widget->GetContentsView()->child_count(); ++i) {
+    SCOPED_TRACE(base::StringPrintf("Child view %d", i));
+    View* view = widget->GetContentsView()->child_at(i);
+
+    view->RequestFocus();
+    EXPECT_EQ(view, widget->GetFocusManager()->GetFocusedView());
+    EXPECT_FALSE(::EnableWindow(hwnd, FALSE));
+    EXPECT_FALSE(::IsWindowEnabled(hwnd));
+
+    // Oddly, disabling the HWND leaves it active with the focus unchanged.
+    EXPECT_EQ(hwnd, ::GetActiveWindow());
+    EXPECT_TRUE(widget->IsActive());
+    EXPECT_EQ(view, widget->GetFocusManager()->GetFocusedView());
+
+    EXPECT_TRUE(::EnableWindow(hwnd, TRUE));
+    EXPECT_TRUE(::IsWindowEnabled(hwnd));
+    EXPECT_EQ(hwnd, ::GetActiveWindow());
+    EXPECT_TRUE(widget->IsActive());
+    EXPECT_EQ(view, widget->GetFocusManager()->GetFocusedView());
+  }
+
+  widget->CloseNow();
+}
 
 // This class subclasses the Widget class to listen for activation change
 // notifications and provides accessors to return information as to whether
@@ -542,8 +654,7 @@ class ModalDialogDelegate : public DialogDelegateView {
 };
 
 // Tests whether the focused window is set correctly when a modal window is
-// created and destroyed. When it is destroyed it should focus the owner
-// window.
+// created and destroyed. When it is destroyed it should focus the owner window.
 TEST_F(WidgetTestInteractive, WindowModalWindowDestroyedActivationTest) {
   // Create a top level widget.
   Widget top_level_widget;
@@ -618,6 +729,56 @@ TEST_F(WidgetTestInteractive, SystemModalWindowReleasesCapture) {
 }
 
 #endif
+
+TEST_F(WidgetTestInteractive, CanActivateFlagIsHonored) {
+  Widget widget;
+  Widget::InitParams init_params =
+      CreateParams(Widget::InitParams::TYPE_WINDOW);
+  init_params.bounds = gfx::Rect(0, 0, 200, 200);
+  init_params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+  init_params.activatable = Widget::InitParams::ACTIVATABLE_NO;
+#if !defined(OS_CHROMEOS)
+  init_params.native_widget = new DesktopNativeWidgetAura(&widget);
+#endif  // !defined(OS_CHROMEOS)
+  widget.Init(init_params);
+
+  widget.Show();
+  EXPECT_FALSE(widget.IsActive());
+}
+
+// Test that touch selection quick menu is not activated when opened.
+TEST_F(WidgetTestInteractive, TouchSelectionQuickMenuIsNotActivated) {
+  CommandLine::ForCurrentProcess()->AppendSwitch(switches::kEnableTouchEditing);
+#if defined(OS_WIN)
+  views_delegate().set_use_desktop_native_widgets(true);
+#endif  // !defined(OS_WIN)
+
+  Widget widget;
+  Widget::InitParams init_params =
+      CreateParams(Widget::InitParams::TYPE_WINDOW_FRAMELESS);
+  init_params.bounds = gfx::Rect(0, 0, 200, 200);
+  init_params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+  widget.Init(init_params);
+
+  Textfield* textfield = new Textfield;
+  textfield->SetBounds(0, 0, 200, 20);
+  textfield->SetText(base::ASCIIToUTF16("some text"));
+  widget.GetRootView()->AddChildView(textfield);
+
+  widget.Show();
+  textfield->RequestFocus();
+  textfield->SelectAll(true);
+
+  RunPendingMessages();
+
+  aura::test::EventGenerator generator(widget.GetNativeView()->GetRootWindow());
+  generator.GestureTapAt(gfx::Point(10, 10));
+  ShowTouchSelectionQuickMenuImmediately(textfield);
+
+  EXPECT_TRUE(textfield->HasFocus());
+  EXPECT_TRUE(widget.IsActive());
+  EXPECT_TRUE(TouchSelectionQuickMenuIsVisible(textfield));
+}
 
 namespace {
 

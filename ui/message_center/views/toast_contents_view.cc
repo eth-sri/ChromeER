@@ -40,7 +40,7 @@ const int kFadeInOutDuration = 200;
 }  // namespace.
 
 // static
-gfx::Size ToastContentsView::GetToastSizeForView(views::View* view) {
+gfx::Size ToastContentsView::GetToastSizeForView(const views::View* view) {
   int width = kNotificationWidth + view->GetInsets().width();
   return gfx::Size(width, view->GetHeightForWidth(width));
 }
@@ -84,6 +84,15 @@ void ToastContentsView::SetContents(MessageView* view,
   // The notification type should be ALERT, otherwise the accessibility message
   // won't be read for this view which returns ROLE_WINDOW.
   if (already_has_contents && a11y_feedback_for_updates)
+    NotifyAccessibilityEvent(ui::AX_EVENT_ALERT, false);
+}
+
+void ToastContentsView::UpdateContents(const Notification& notification,
+                                       bool a11y_feedback_for_updates) {
+  DCHECK_GT(child_count(), 0);
+  MessageView* message_view = static_cast<MessageView*>(child_at(0));
+  message_view->UpdateWithNotification(notification);
+  if (a11y_feedback_for_updates)
     NotifyAccessibilityEvent(ui::AX_EVENT_ALERT, false);
 }
 
@@ -273,7 +282,7 @@ void ToastContentsView::Layout() {
   }
 }
 
-gfx::Size ToastContentsView::GetPreferredSize() {
+gfx::Size ToastContentsView::GetPreferredSize() const {
   return child_count() ? GetToastSizeForView(child_at(0)) : gfx::Size();
 }
 

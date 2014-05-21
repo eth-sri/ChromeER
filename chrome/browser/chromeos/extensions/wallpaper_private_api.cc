@@ -21,10 +21,10 @@
 #include "base/strings/stringprintf.h"
 #include "base/threading/worker_pool.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/chromeos/login/user.h"
-#include "chrome/browser/chromeos/login/user_image.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
-#include "chrome/browser/chromeos/login/wallpaper_manager.h"
+#include "chrome/browser/chromeos/login/users/avatar/user_image.h"
+#include "chrome/browser/chromeos/login/users/user.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
+#include "chrome/browser/chromeos/login/users/wallpaper/wallpaper_manager.h"
 #include "chrome/common/chrome_paths.h"
 #include "content/public/browser/browser_thread.h"
 #include "extensions/browser/event_router.h"
@@ -285,7 +285,7 @@ WallpaperPrivateSetWallpaperIfExistsFunction::
 WallpaperPrivateSetWallpaperIfExistsFunction::
     ~WallpaperPrivateSetWallpaperIfExistsFunction() {}
 
-bool WallpaperPrivateSetWallpaperIfExistsFunction::RunImpl() {
+bool WallpaperPrivateSetWallpaperIfExistsFunction::RunAsync() {
   params = set_wallpaper_if_exists::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(params);
 
@@ -380,7 +380,7 @@ void WallpaperPrivateSetWallpaperIfExistsFunction::OnFileNotExists(
     const std::string& error) {
   SetResult(base::Value::CreateBooleanValue(false));
   OnFailure(error);
-};
+}
 
 WallpaperPrivateSetWallpaperFunction::WallpaperPrivateSetWallpaperFunction() {
 }
@@ -388,7 +388,7 @@ WallpaperPrivateSetWallpaperFunction::WallpaperPrivateSetWallpaperFunction() {
 WallpaperPrivateSetWallpaperFunction::~WallpaperPrivateSetWallpaperFunction() {
 }
 
-bool WallpaperPrivateSetWallpaperFunction::RunImpl() {
+bool WallpaperPrivateSetWallpaperFunction::RunAsync() {
   params = set_wallpaper::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(params);
 
@@ -489,7 +489,7 @@ WallpaperPrivateResetWallpaperFunction::
 WallpaperPrivateResetWallpaperFunction::
     ~WallpaperPrivateResetWallpaperFunction() {}
 
-bool WallpaperPrivateResetWallpaperFunction::RunImpl() {
+bool WallpaperPrivateResetWallpaperFunction::RunAsync() {
   chromeos::WallpaperManager* wallpaper_manager =
       chromeos::WallpaperManager::Get();
   chromeos::UserManager* user_manager = chromeos::UserManager::Get();
@@ -517,7 +517,7 @@ WallpaperPrivateSetCustomWallpaperFunction::
 WallpaperPrivateSetCustomWallpaperFunction::
     ~WallpaperPrivateSetCustomWallpaperFunction() {}
 
-bool WallpaperPrivateSetCustomWallpaperFunction::RunImpl() {
+bool WallpaperPrivateSetCustomWallpaperFunction::RunAsync() {
   params = set_custom_wallpaper::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(params);
 
@@ -609,7 +609,7 @@ WallpaperPrivateSetCustomWallpaperLayoutFunction::
 WallpaperPrivateSetCustomWallpaperLayoutFunction::
     ~WallpaperPrivateSetCustomWallpaperLayoutFunction() {}
 
-bool WallpaperPrivateSetCustomWallpaperLayoutFunction::RunImpl() {
+bool WallpaperPrivateSetCustomWallpaperLayoutFunction::RunAsync() {
   scoped_ptr<set_custom_wallpaper_layout::Params> params(
       set_custom_wallpaper_layout::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params);
@@ -645,7 +645,7 @@ WallpaperPrivateMinimizeInactiveWindowsFunction::
     ~WallpaperPrivateMinimizeInactiveWindowsFunction() {
 }
 
-bool WallpaperPrivateMinimizeInactiveWindowsFunction::RunImpl() {
+bool WallpaperPrivateMinimizeInactiveWindowsFunction::RunAsync() {
   WindowStateManager::MinimizeInactiveWindows(
       chromeos::UserManager::Get()->GetActiveUser()->username_hash());
   return true;
@@ -659,7 +659,7 @@ WallpaperPrivateRestoreMinimizedWindowsFunction::
     ~WallpaperPrivateRestoreMinimizedWindowsFunction() {
 }
 
-bool WallpaperPrivateRestoreMinimizedWindowsFunction::RunImpl() {
+bool WallpaperPrivateRestoreMinimizedWindowsFunction::RunAsync() {
   WindowStateManager::RestoreWindows(
       chromeos::UserManager::Get()->GetActiveUser()->username_hash());
   return true;
@@ -671,7 +671,7 @@ WallpaperPrivateGetThumbnailFunction::WallpaperPrivateGetThumbnailFunction() {
 WallpaperPrivateGetThumbnailFunction::~WallpaperPrivateGetThumbnailFunction() {
 }
 
-bool WallpaperPrivateGetThumbnailFunction::RunImpl() {
+bool WallpaperPrivateGetThumbnailFunction::RunAsync() {
   scoped_ptr<get_thumbnail::Params> params(
       get_thumbnail::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params);
@@ -758,7 +758,7 @@ WallpaperPrivateSaveThumbnailFunction::WallpaperPrivateSaveThumbnailFunction() {
 WallpaperPrivateSaveThumbnailFunction::
     ~WallpaperPrivateSaveThumbnailFunction() {}
 
-bool WallpaperPrivateSaveThumbnailFunction::RunImpl() {
+bool WallpaperPrivateSaveThumbnailFunction::RunAsync() {
   scoped_ptr<save_thumbnail::Params> params(
       save_thumbnail::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params);
@@ -811,7 +811,7 @@ WallpaperPrivateGetOfflineWallpaperListFunction::
     ~WallpaperPrivateGetOfflineWallpaperListFunction() {
 }
 
-bool WallpaperPrivateGetOfflineWallpaperListFunction::RunImpl() {
+bool WallpaperPrivateGetOfflineWallpaperListFunction::RunAsync() {
   sequence_token_ = BrowserThread::GetBlockingPool()->
       GetNamedSequenceToken(chromeos::kWallpaperSequenceTokenName);
   scoped_refptr<base::SequencedTaskRunner> task_runner =

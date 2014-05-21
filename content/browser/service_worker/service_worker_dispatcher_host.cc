@@ -85,11 +85,9 @@ void ServiceWorkerDispatcherHost::OnDestruct() const {
 }
 
 bool ServiceWorkerDispatcherHost::OnMessageReceived(
-    const IPC::Message& message,
-    bool* message_was_ok) {
+    const IPC::Message& message) {
   bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP_EX(
-    ServiceWorkerDispatcherHost, message, *message_was_ok)
+  IPC_BEGIN_MESSAGE_MAP(ServiceWorkerDispatcherHost, message)
     IPC_MESSAGE_HANDLER(ServiceWorkerHostMsg_RegisterServiceWorker,
                         OnRegisterServiceWorker)
     IPC_MESSAGE_HANDLER(ServiceWorkerHostMsg_UnregisterServiceWorker,
@@ -98,14 +96,14 @@ bool ServiceWorkerDispatcherHost::OnMessageReceived(
                         OnProviderCreated)
     IPC_MESSAGE_HANDLER(ServiceWorkerHostMsg_ProviderDestroyed,
                         OnProviderDestroyed)
-    IPC_MESSAGE_HANDLER(ServiceWorkerHostMsg_AddScriptClient,
-                        OnAddScriptClient)
-    IPC_MESSAGE_HANDLER(ServiceWorkerHostMsg_RemoveScriptClient,
-                        OnRemoveScriptClient)
     IPC_MESSAGE_HANDLER(ServiceWorkerHostMsg_SetVersionId,
                         OnSetHostedVersionId)
-    IPC_MESSAGE_HANDLER(ServiceWorkerHostMsg_PostMessage,
-                        OnPostMessage)
+    IPC_MESSAGE_HANDLER(ServiceWorkerHostMsg_PostMessageToWorker,
+                        OnPostMessageToWorker)
+    IPC_MESSAGE_HANDLER(EmbeddedWorkerHostMsg_WorkerScriptLoaded,
+                        OnWorkerScriptLoaded)
+    IPC_MESSAGE_HANDLER(EmbeddedWorkerHostMsg_WorkerScriptLoadFailed,
+                        OnWorkerScriptLoadFailed)
     IPC_MESSAGE_HANDLER(EmbeddedWorkerHostMsg_WorkerStarted,
                         OnWorkerStarted)
     IPC_MESSAGE_HANDLER(EmbeddedWorkerHostMsg_WorkerStopped,
@@ -114,8 +112,10 @@ bool ServiceWorkerDispatcherHost::OnMessageReceived(
                         OnReportException)
     IPC_MESSAGE_HANDLER(EmbeddedWorkerHostMsg_ReportConsoleMessage,
                         OnReportConsoleMessage)
-    IPC_MESSAGE_HANDLER(ServiceWorkerHostMsg_ServiceWorkerObjectDestroyed,
-                        OnServiceWorkerObjectDestroyed)
+    IPC_MESSAGE_HANDLER(ServiceWorkerHostMsg_IncrementServiceWorkerRefCount,
+                        OnIncrementServiceWorkerRefCount)
+    IPC_MESSAGE_HANDLER(ServiceWorkerHostMsg_DecrementServiceWorkerRefCount,
+                        OnDecrementServiceWorkerRefCount)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
 
@@ -155,7 +155,7 @@ void ServiceWorkerDispatcherHost::OnRegisterServiceWorker(
     Send(new ServiceWorkerMsg_ServiceWorkerRegistrationError(
         thread_id,
         request_id,
-        WebServiceWorkerError::DisabledError,
+        WebServiceWorkerError::ErrorTypeDisabled,
         base::ASCIIToUTF16(kDisabledErrorMessage)));
     return;
   }
@@ -167,7 +167,7 @@ void ServiceWorkerDispatcherHost::OnRegisterServiceWorker(
     Send(new ServiceWorkerMsg_ServiceWorkerRegistrationError(
         thread_id,
         request_id,
-        WebServiceWorkerError::SecurityError,
+        WebServiceWorkerError::ErrorTypeSecurity,
         base::ASCIIToUTF16(kDomainMismatchErrorMessage)));
     return;
   }
@@ -202,7 +202,7 @@ void ServiceWorkerDispatcherHost::OnUnregisterServiceWorker(
     Send(new ServiceWorkerMsg_ServiceWorkerRegistrationError(
         thread_id,
         request_id,
-        blink::WebServiceWorkerError::DisabledError,
+        blink::WebServiceWorkerError::ErrorTypeDisabled,
         base::ASCIIToUTF16(kDisabledErrorMessage)));
     return;
   }
@@ -222,21 +222,12 @@ void ServiceWorkerDispatcherHost::OnUnregisterServiceWorker(
                  request_id));
 }
 
-void ServiceWorkerDispatcherHost::OnPostMessage(
+void ServiceWorkerDispatcherHost::OnPostMessageToWorker(
     int handle_id,
     const base::string16& message,
     const std::vector<int>& sent_message_port_ids) {
   if (!context_ || !ServiceWorkerUtils::IsFeatureEnabled())
     return;
-
-  std::vector<int> new_routing_ids(sent_message_port_ids.size());
-  for (size_t i = 0; i < sent_message_port_ids.size(); ++i) {
-    new_routing_ids[i] = message_port_message_filter_->GetNextRoutingID();
-    MessagePortService::GetInstance()->UpdateMessagePort(
-        sent_message_port_ids[i],
-        message_port_message_filter_,
-        new_routing_ids[i]);
-  }
 
   ServiceWorkerHandle* handle = handles_.Lookup(handle_id);
   if (!handle) {
@@ -244,8 +235,13 @@ void ServiceWorkerDispatcherHost::OnPostMessage(
     return;
   }
 
+  std::vector<int> new_routing_ids;
+  message_port_message_filter_->UpdateMessagePortsWithNewRoutes(
+      sent_message_port_ids, &new_routing_ids);
   handle->version()->SendMessage(
-      ServiceWorkerMsg_Message(message, sent_message_port_ids, new_routing_ids),
+      ServiceWorkerMsg_MessageToWorker(message,
+                                       sent_message_port_ids,
+                                       new_routing_ids),
       base::Bind(&ServiceWorkerUtils::NoOpStatusCallback));
 }
 
@@ -270,28 +266,6 @@ void ServiceWorkerDispatcherHost::OnProviderDestroyed(int provider_id) {
     return;
   }
   context_->RemoveProviderHost(render_process_id_, provider_id);
-}
-
-void ServiceWorkerDispatcherHost::OnAddScriptClient(
-    int thread_id, int provider_id) {
-  if (!context_)
-    return;
-  ServiceWorkerProviderHost* provider_host =
-      context_->GetProviderHost(render_process_id_, provider_id);
-  if (!provider_host)
-    return;
-  provider_host->AddScriptClient(thread_id);
-}
-
-void ServiceWorkerDispatcherHost::OnRemoveScriptClient(
-    int thread_id, int provider_id) {
-  if (!context_)
-    return;
-  ServiceWorkerProviderHost* provider_host =
-      context_->GetProviderHost(render_process_id_, provider_id);
-  if (!provider_host)
-    return;
-  provider_host->RemoveScriptClient(thread_id);
 }
 
 void ServiceWorkerDispatcherHost::OnSetHostedVersionId(
@@ -328,6 +302,21 @@ void ServiceWorkerDispatcherHost::RegistrationComplete(
   Send(new ServiceWorkerMsg_ServiceWorkerRegistered(
       thread_id, request_id, handle->GetObjectInfo()));
   RegisterServiceWorkerHandle(handle.Pass());
+}
+
+void ServiceWorkerDispatcherHost::OnWorkerScriptLoaded(int embedded_worker_id) {
+  if (!context_)
+    return;
+  context_->embedded_worker_registry()->OnWorkerScriptLoaded(
+      render_process_id_, embedded_worker_id);
+}
+
+void ServiceWorkerDispatcherHost::OnWorkerScriptLoadFailed(
+    int embedded_worker_id) {
+  if (!context_)
+    return;
+  context_->embedded_worker_registry()->OnWorkerScriptLoadFailed(
+      render_process_id_, embedded_worker_id);
 }
 
 void ServiceWorkerDispatcherHost::OnWorkerStarted(
@@ -374,9 +363,26 @@ void ServiceWorkerDispatcherHost::OnReportConsoleMessage(
       params.source_url);
 }
 
-void ServiceWorkerDispatcherHost::OnServiceWorkerObjectDestroyed(
+void ServiceWorkerDispatcherHost::OnIncrementServiceWorkerRefCount(
     int handle_id) {
-  handles_.Remove(handle_id);
+  ServiceWorkerHandle* handle = handles_.Lookup(handle_id);
+  if (!handle) {
+    BadMessageReceived();
+    return;
+  }
+  handle->IncrementRefCount();
+}
+
+void ServiceWorkerDispatcherHost::OnDecrementServiceWorkerRefCount(
+    int handle_id) {
+  ServiceWorkerHandle* handle = handles_.Lookup(handle_id);
+  if (!handle) {
+    BadMessageReceived();
+    return;
+  }
+  handle->DecrementRefCount();
+  if (handle->HasNoRefCount())
+    handles_.Remove(handle_id);
 }
 
 void ServiceWorkerDispatcherHost::UnregistrationComplete(

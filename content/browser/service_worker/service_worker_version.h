@@ -14,7 +14,9 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
+#include "base/timer/timer.h"
 #include "content/browser/service_worker/embedded_worker_instance.h"
+#include "content/browser/service_worker/service_worker_script_cache_map.h"
 #include "content/common/content_export.h"
 #include "content/common/service_worker/service_worker_status_code.h"
 #include "content/common/service_worker/service_worker_types.h"
@@ -95,13 +97,11 @@ class CONTENT_EXPORT ServiceWorkerVersion
 
   int64 version_id() const { return version_id_; }
   int64 registration_id() const { return registration_id_; }
-
+  const GURL& script_url() const { return script_url_; }
   RunningStatus running_status() const {
     return static_cast<RunningStatus>(embedded_worker_->status());
   }
-
   ServiceWorkerVersionInfo GetInfo();
-
   Status status() const { return status_; }
 
   // This sets the new status and also run status change callbacks
@@ -189,14 +189,23 @@ class CONTENT_EXPORT ServiceWorkerVersion
   void AddPendingControllee(ServiceWorkerProviderHost* provider_host);
   void RemovePendingControllee(ServiceWorkerProviderHost* provider_host);
 
-  // Returns if it has (non-pending) controllee.
+  // Returns if it has controllee.
   bool HasControllee() const { return !controllee_map_.empty(); }
 
   // Adds and removes Listeners.
   void AddListener(Listener* listener);
   void RemoveListener(Listener* listener);
 
+  ServiceWorkerScriptCacheMap* script_cache_map() { return &script_cache_map_; }
   EmbeddedWorkerInstance* embedded_worker() { return embedded_worker_.get(); }
+
+ private:
+  typedef ServiceWorkerVersion self;
+  typedef std::map<ServiceWorkerProviderHost*, int> ControlleeMap;
+  typedef IDMap<ServiceWorkerProviderHost> ControlleeByIDMap;
+  friend class base::RefCounted<ServiceWorkerVersion>;
+
+  virtual ~ServiceWorkerVersion();
 
   // EmbeddedWorkerInstance::Listener overrides:
   virtual void OnStarted() OVERRIDE;
@@ -211,14 +220,6 @@ class CONTENT_EXPORT ServiceWorkerVersion
                                       int line_number,
                                       const GURL& source_url) OVERRIDE;
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-
- private:
-  typedef ServiceWorkerVersion self;
-  typedef std::map<ServiceWorkerProviderHost*, int> ControlleeMap;
-  typedef IDMap<ServiceWorkerProviderHost> ControlleeByIDMap;
-  friend class base::RefCounted<ServiceWorkerVersion>;
-
-  virtual ~ServiceWorkerVersion();
 
   void RunStartWorkerCallbacksOnError(ServiceWorkerStatusCode status);
 
@@ -236,6 +237,11 @@ class CONTENT_EXPORT ServiceWorkerVersion
                             ServiceWorkerFetchEventResult result,
                             const ServiceWorkerResponse& response);
   void OnSyncEventFinished(int request_id);
+  void OnPostMessageToDocument(int client_id,
+                               const base::string16& message,
+                               const std::vector<int>& sent_message_port_ids);
+
+  void ScheduleStopWorker();
 
   const int64 version_id_;
   int64 registration_id_;
@@ -257,6 +263,8 @@ class CONTENT_EXPORT ServiceWorkerVersion
   ControlleeByIDMap controllee_by_id_;
   base::WeakPtr<ServiceWorkerContextCore> context_;
   ObserverList<Listener> listeners_;
+  ServiceWorkerScriptCacheMap script_cache_map_;
+  base::OneShotTimer<ServiceWorkerVersion> stop_worker_timer_;
 
   base::WeakPtrFactory<ServiceWorkerVersion> weak_factory_;
 

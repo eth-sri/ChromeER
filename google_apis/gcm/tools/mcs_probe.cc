@@ -23,11 +23,13 @@
 #include "base/threading/worker_pool.h"
 #include "base/time/default_clock.h"
 #include "base/values.h"
+#include "google_apis/gcm/base/fake_encryptor.h"
 #include "google_apis/gcm/base/mcs_message.h"
 #include "google_apis/gcm/base/mcs_util.h"
 #include "google_apis/gcm/engine/checkin_request.h"
 #include "google_apis/gcm/engine/connection_factory_impl.h"
 #include "google_apis/gcm/engine/gcm_store_impl.h"
+#include "google_apis/gcm/engine/gservices_settings.h"
 #include "google_apis/gcm/engine/mcs_client.h"
 #include "google_apis/gcm/monitoring/gcm_stats_recorder.h"
 #include "net/base/host_mapping_rules.h"
@@ -305,7 +307,8 @@ void MCSProbe::Start() {
                                 &recorder_));
   gcm_store_.reset(
       new GCMStoreImpl(gcm_store_path_,
-                       file_thread_.message_loop_proxy()));
+                       file_thread_.message_loop_proxy(),
+                       make_scoped_ptr<Encryptor>(new FakeEncryptor)));
   mcs_client_.reset(new MCSClient("probe",
                                   &clock_,
                                   connection_factory_.get(),
@@ -433,10 +436,12 @@ void MCSProbe::CheckIn() {
       0, 0, std::string(), std::vector<std::string>(), chrome_build_proto);
 
   checkin_request_.reset(new CheckinRequest(
+      GServicesSettings::DefaultCheckinURL(),
       request_info,
       kDefaultBackoffPolicy,
       base::Bind(&MCSProbe::OnCheckInCompleted, base::Unretained(this)),
-      url_request_context_getter_.get()));
+      url_request_context_getter_.get(),
+      &recorder_));
   checkin_request_->Start();
 }
 

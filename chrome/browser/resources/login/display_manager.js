@@ -62,7 +62,8 @@
   MANAGED_USER_CREATION_FLOW: 'ui-state-locally-managed',
   KIOSK_MODE: 'ui-state-kiosk-mode',
   LOCAL_STATE_ERROR: 'ui-state-local-state-error',
-  AUTO_ENROLLMENT_ERROR: 'ui-state-auto-enrollment-error'
+  AUTO_ENROLLMENT_ERROR: 'ui-state-auto-enrollment-error',
+  ROLLBACK_ERROR: 'ui-state-rollback-error'
 };
 
 /* Possible types of UI. */
@@ -177,6 +178,11 @@ cr.define('cr.ui.login', function() {
      */
     displayType_: DISPLAY_TYPE.UNKNOWN,
 
+    /**
+     * Error message (bubble) was shown. This is checked in tests.
+     */
+    errorMessageWasShownForTesting_: false,
+
     get displayType() {
       return this.displayType_;
     },
@@ -239,6 +245,11 @@ cr.define('cr.ui.login', function() {
       if (value) {
         keyboard.initializeKeyboardFlow();
         cr.ui.DropDown.enableKeyboardFlow();
+        for (var i = 0; i < this.screens_.length; ++i) {
+          var screen = $(this.screens_[i]);
+          if (screen.enableKeyboardFlow)
+            screen.enableKeyboardFlow();
+        }
       }
     },
 
@@ -875,8 +886,10 @@ cr.define('cr.ui.login', function() {
     }
 
     var currentScreen = Oobe.getInstance().currentScreen;
-    if (currentScreen && typeof currentScreen.showErrorBubble === 'function')
+    if (currentScreen && typeof currentScreen.showErrorBubble === 'function') {
       currentScreen.showErrorBubble(loginAttempts, error);
+      this.errorMessageWasShownForTesting_ = true;
+    }
   };
 
   /**
@@ -906,6 +919,7 @@ cr.define('cr.ui.login', function() {
    */
   DisplayManager.clearErrors = function() {
     $('bubble').hide();
+    this.errorMessageWasShownForTesting_ = false;
   };
 
   /**

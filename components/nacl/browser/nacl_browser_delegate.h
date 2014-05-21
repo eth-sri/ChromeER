@@ -65,6 +65,7 @@ class NaClBrowserDelegate {
   // urls checking only the url scheme against kExtensionScheme).
   virtual bool MapUrlToLocalFilePath(const GURL& url,
                                      bool use_blocking_api,
+                                     const base::FilePath& profile_directory,
                                      base::FilePath* file_path) = 0;
   // Set match patterns which will be checked before enabling debug stub.
   virtual void SetDebugPatterns(std::string debug_patterns) = 0;
@@ -75,6 +76,10 @@ class NaClBrowserDelegate {
   // Returns a callback that handles NaCl idle state transitions.
   virtual content::BrowserPpapiHost::OnKeepaliveCallback
       GetOnKeepaliveCallback() = 0;
+
+  // Returns whether Non-SFI mode is allowed for a given manifest URL.
+  virtual bool IsNonSfiModeAllowed(const base::FilePath& profile_directory,
+                                   const GURL& manifest_url) = 0;
 };
 
 #endif  // COMPONENTS_NACL_BROWSER_NACL_BROWSER_DELEGATE_H_

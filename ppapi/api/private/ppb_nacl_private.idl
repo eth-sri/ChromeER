@@ -139,6 +139,10 @@ struct PP_PNaClOptions {
   int32_t opt_level;
 };
 
+/* Callback invoked upon completion of PPP_ManifestService::OpenResource(). */
+typedef void PP_OpenResourceCompletionCallback([inout] mem_t user_data,
+                                               [in] PP_FileHandle file_handle);
+
 /* ManifestService to support irt_open_resource() function.
  * All functions of the service should have PP_Bool return value. It represents
  * whether the service is still alive or not. Trivially Quit() should always
@@ -146,12 +150,20 @@ struct PP_PNaClOptions {
  * Once false is called, as the service has been destructed, all functions
  * should never be called afterwords.
  */
-interface PP_ManifestService {
+interface PPP_ManifestService {
   /* Called when ManifestService should be destructed. */
   PP_Bool Quit([inout] mem_t user_data);
 
   /* Called when PPAPI initialization in the NaCl plugin is finished. */
   PP_Bool StartupInitializationComplete([inout] mem_t user_data);
+
+  /* Called when irt_open_resource() is invoked in the NaCl plugin.
+   * Upon completion, callback will be invoked with given callback_user_data
+   * and the result file handle (or PP_kInvalidFileHandle on error). */
+  PP_Bool OpenResource([inout] mem_t user_data,
+                       [in] str_t entry_key,
+                       [in] PP_OpenResourceCompletionCallback callback,
+                       [inout] mem_t callback_user_data);
 };
 
 /* PPB_NaCl_Private */
@@ -176,6 +188,7 @@ interface PPB_NaCl_Private {
    * are throttled by crash throttling.
    */
   void LaunchSelLdr([in] PP_Instance instance,
+                    [in] PP_Bool main_service_runtime,
                     [in] str_t alleged_url,
                     [in] PP_Bool uses_irt,
                     [in] PP_Bool uses_ppapi,
@@ -184,10 +197,9 @@ interface PPB_NaCl_Private {
                     [in] PP_Bool enable_dyncode_syscalls,
                     [in] PP_Bool enable_exception_handling,
                     [in] PP_Bool enable_crash_throttling,
-                    [in] PP_ManifestService manifest_service_interface,
+                    [in] PPP_ManifestService manifest_service_interface,
                     [inout] mem_t manifest_service_user_data,
                     [out] mem_t imc_handle,
-                    [out] PP_Var error_message,
                     [in] PP_CompletionCallback callback);
 
   /* This function starts the IPC proxy so the nexe can communicate with the
@@ -289,19 +301,6 @@ interface PPB_NaCl_Private {
                      [in] uint64_t loaded_bytes,
                      [in] uint64_t total_bytes);
 
-  /* Report that the attempt to open the nexe has finished. Opening the file
-   * may have failed, as indicated by a pp_error value that is not PP_OK or an
-   * fd of -1. Failure to stat the file to determine its length results in
-   * nexe_bytes_read being -1.
-   */
-  void NexeFileDidOpen([in] PP_Instance instance,
-                       [in] int32_t pp_error,
-                       [in] int32_t fd,
-                       [in] int32_t http_status,
-                       [in] int64_t nexe_bytes_read,
-                       [in] str_t url,
-                       [in] int64_t time_since_open);
-
   /* Report that the nexe loaded successfully. */
   void ReportLoadSuccess([in] PP_Instance instance,
                          [in] str_t url,
@@ -333,7 +332,7 @@ interface PPB_NaCl_Private {
   PP_Bool NaClDebugEnabledForURL([in] str_t alleged_nmf_url);
 
   /* Returns the kind of SFI sandbox implemented by NaCl on this
-  /* platform.
+   * platform.
    */
   str_t GetSandboxArch();
 
@@ -367,17 +366,15 @@ interface PPB_NaCl_Private {
   int64_t GetNexeSize([in] PP_Instance instance);
 
   /* Performs accounting for requesting the NaCl manifest at the given URL. */
-  PP_Bool RequestNaClManifest([in] PP_Instance instance,
-                              [in] str_t manifest_url,
-                              [out] PP_Bool is_data_uri);
+  void RequestNaClManifest([in] PP_Instance instance,
+                           [in] str_t manifest_url,
+                           [out] int32_t manifest_id,
+                           [in] PP_CompletionCallback callback);
 
   PP_Var GetManifestBaseURL([in] PP_Instance instance);
 
   PP_Bool ResolvesRelativeToPluginBaseUrl([in] PP_Instance instance,
                                           [in] str_t url);
-
-  /* Returns the parsed contents of a data URL. */
-  PP_Var ParseDataURL([in] str_t data_url);
 
   /* Processes the NaCl manifest once it's been retrieved.
    * TODO(teravest): Move the rest of the supporting logic out of the trusted
@@ -389,14 +386,49 @@ interface PPB_NaCl_Private {
   /* Returns the manifest url as passed as a plugin argument. */
   PP_Var GetManifestURLArgument([in] PP_Instance instance);
 
-  PP_Bool IsPNaCl([in] PP_Instance instance);
-
   PP_Bool DevInterfacesEnabled([in] PP_Instance instance);
 
-  /* Downloads the manifest into the buffer |data|, invoking
-   * |callback| when finished.
-   * TODO(teravest): Merge data URL parsing into this. */
-  void DownloadManifestToBuffer([in] PP_Instance instance,
-                                [out] PP_Var data,
-                                [in] PP_CompletionCallback callback);
+  int32_t CreatePnaclManifest([in] PP_Instance instance);
+
+  void DestroyManifest([in] PP_Instance instance,
+                       [in] int32_t manifest_id);
+
+  PP_Bool GetManifestProgramURL([in] PP_Instance instance,
+                                [in] int32_t manifest_id,
+                                [out] PP_Var full_url,
+                                [out] PP_PNaClOptions pnacl_options,
+                                [out] PP_Bool uses_nonsfi_mode);
+
+  PP_Bool ManifestResolveKey([in] PP_Instance instance,
+                             [in] int32_t manifest_id,
+                             [in] str_t key,
+                             [out] PP_Var full_url,
+                             [out] PP_PNaClOptions pnacl_options);
+
+  /* Returns the filenames for the llc and ld tools, parsing that information
+   * from the file given in |filename|.
+   */
+  PP_Bool GetPnaclResourceInfo([in] PP_Instance instance,
+                               [in] str_t filename,
+                               [out] PP_Var llc_tool_name,
+                               [out] PP_Var ld_tool_name);
+
+  // PP_Var string of attributes describing the CPU features supported
+  // by the current architecture. The string is a comma-delimited list
+  // of attributes supported by LLVM in its -mattr= option:
+  //   http://llvm.org/docs/CommandGuide/llc.html#cmdoption-mattr
+  PP_Var GetCpuFeatureAttrs();
+
+  /* Posts a message to the JavaScript object for the given instance.
+   * This method may be called on any thread.
+   */
+  void PostMessageToJavaScript([in] PP_Instance instance,
+                               [in] str_t message);
+
+  /* Downloads the .nexe file at the given URL to a file, and sets |handle|
+   * to a handle to a file containing its contents. */
+  void DownloadNexe([in] PP_Instance instance,
+                    [in] str_t url,
+                    [out] PP_FileHandle handle,
+                    [in] PP_CompletionCallback callback);
 };

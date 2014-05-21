@@ -227,10 +227,10 @@ class NewTabButton : public views::ImageButton {
  private:
   bool ShouldWindowContentsBeTransparent() const;
   gfx::ImageSkia GetBackgroundImage(views::CustomButton::ButtonState state,
-                                    ui::ScaleFactor scale_factor) const;
+                                    float scale) const;
   gfx::ImageSkia GetImageForState(views::CustomButton::ButtonState state,
-                                  ui::ScaleFactor scale_factor) const;
-  gfx::ImageSkia GetImageForScale(ui::ScaleFactor scale_factor) const;
+                                  float scale) const;
+  gfx::ImageSkia GetImageForScale(float scale) const;
 
   // Tab strip that contains this button.
   TabStrip* tab_strip_;
@@ -307,8 +307,7 @@ void NewTabButton::OnMouseReleased(const ui::MouseEvent& event) {
 #endif
 
 void NewTabButton::OnPaint(gfx::Canvas* canvas) {
-  gfx::ImageSkia image =
-      GetImageForScale(ui::GetSupportedScaleFactor(canvas->image_scale()));
+  gfx::ImageSkia image = GetImageForScale(canvas->image_scale());
   canvas->DrawImageInt(image, 0, height() - image.height());
 }
 
@@ -326,7 +325,7 @@ bool NewTabButton::ShouldWindowContentsBeTransparent() const {
 
 gfx::ImageSkia NewTabButton::GetBackgroundImage(
     views::CustomButton::ButtonState state,
-    ui::ScaleFactor scale_factor) const {
+    float scale) const {
   int background_id = 0;
   if (ShouldWindowContentsBeTransparent()) {
     background_id = IDR_THEME_TAB_BACKGROUND_V;
@@ -355,10 +354,9 @@ gfx::ImageSkia NewTabButton::GetBackgroundImage(
       GetThemeProvider()->GetImageSkiaNamed(IDR_NEWTAB_BUTTON_MASK);
   int height = mask->height();
   int width = mask->width();
-  float scale = ui::GetImageScale(scale_factor);
   // The canvas and mask has to use the same scale factor.
   if (!mask->HasRepresentation(scale))
-    scale_factor = ui::SCALE_FACTOR_100P;
+    scale = ui::GetScaleForScaleFactor(ui::SCALE_FACTOR_100P);
 
   gfx::Canvas canvas(gfx::Size(width, height), scale, false);
 
@@ -400,16 +398,16 @@ gfx::ImageSkia NewTabButton::GetBackgroundImage(
 
 gfx::ImageSkia NewTabButton::GetImageForState(
     views::CustomButton::ButtonState state,
-    ui::ScaleFactor scale_factor) const {
+    float scale) const {
   const int overlay_id = state == views::CustomButton::STATE_PRESSED ?
         IDR_NEWTAB_BUTTON_P : IDR_NEWTAB_BUTTON;
   gfx::ImageSkia* overlay = GetThemeProvider()->GetImageSkiaNamed(overlay_id);
 
   gfx::Canvas canvas(
       gfx::Size(overlay->width(), overlay->height()),
-      ui::GetImageScale(scale_factor),
+      scale,
       false);
-  canvas.DrawImageInt(GetBackgroundImage(state, scale_factor), 0, 0);
+  canvas.DrawImageInt(GetBackgroundImage(state, scale), 0, 0);
 
   // Draw the button border with a slight alpha.
   const int kGlassFrameOverlayAlpha = 178;
@@ -421,13 +419,12 @@ gfx::ImageSkia NewTabButton::GetImageForState(
   return gfx::ImageSkia(canvas.ExtractImageRep());
 }
 
-gfx::ImageSkia NewTabButton::GetImageForScale(
-    ui::ScaleFactor scale_factor) const {
+gfx::ImageSkia NewTabButton::GetImageForScale(float scale) const {
   if (!hover_animation_->is_animating())
-    return GetImageForState(state(), scale_factor);
+    return GetImageForState(state(), scale);
   return gfx::ImageSkiaOperations::CreateBlendedImage(
-      GetImageForState(views::CustomButton::STATE_NORMAL, scale_factor),
-      GetImageForState(views::CustomButton::STATE_HOVERED, scale_factor),
+      GetImageForState(views::CustomButton::STATE_NORMAL, scale),
+      GetImageForState(views::CustomButton::STATE_HOVERED, scale),
       hover_animation_->GetCurrentValue());
 }
 
@@ -1139,7 +1136,8 @@ void TabStrip::Layout() {
   DoLayout();
 }
 
-void TabStrip::PaintChildren(gfx::Canvas* canvas) {
+void TabStrip::PaintChildren(gfx::Canvas* canvas,
+                             const views::CullSet& cull_set) {
   // The view order doesn't match the paint order (tabs_ contains the tab
   // ordering). Additionally we need to paint the tabs that are closing in
   // |tabs_closing_map_|.
@@ -1165,7 +1163,7 @@ void TabStrip::PaintChildren(gfx::Canvas* canvas) {
   if (inactive_tab_alpha < 255)
     canvas->SaveLayerAlpha(inactive_tab_alpha);
 
-  PaintClosingTabs(canvas, tab_count());
+  PaintClosingTabs(canvas, tab_count(), cull_set);
 
   for (int i = tab_count() - 1; i >= 0; --i) {
     Tab* tab = tab_at(i);
@@ -1182,7 +1180,7 @@ void TabStrip::PaintChildren(gfx::Canvas* canvas) {
     } else if (!tab->IsActive()) {
       if (!tab->IsSelected()) {
         if (!stacking)
-          tab->Paint(canvas);
+          tab->Paint(canvas, cull_set);
       } else {
         selected_tabs.push_back(tab);
       }
@@ -1190,19 +1188,19 @@ void TabStrip::PaintChildren(gfx::Canvas* canvas) {
       active_tab = tab;
       active_tab_index = i;
     }
-    PaintClosingTabs(canvas, i);
+    PaintClosingTabs(canvas, i, cull_set);
   }
 
   // Draw from the left and then the right if we're in touch mode.
   if (stacking && active_tab_index >= 0) {
     for (int i = 0; i < active_tab_index; ++i) {
       Tab* tab = tab_at(i);
-      tab->Paint(canvas);
+      tab->Paint(canvas, cull_set);
     }
 
     for (int i = tab_count() - 1; i > active_tab_index; --i) {
       Tab* tab = tab_at(i);
-      tab->Paint(canvas);
+      tab->Paint(canvas, cull_set);
     }
   }
   if (inactive_tab_alpha < 255)
@@ -1226,33 +1224,33 @@ void TabStrip::PaintChildren(gfx::Canvas* canvas) {
   // Now selected but not active. We don't want these dimmed if using native
   // frame, so they're painted after initial pass.
   for (size_t i = 0; i < selected_tabs.size(); ++i)
-    selected_tabs[i]->Paint(canvas);
+    selected_tabs[i]->Paint(canvas, cull_set);
 
   // Next comes the active tab.
   if (active_tab && !is_dragging)
-    active_tab->Paint(canvas);
+    active_tab->Paint(canvas, cull_set);
 
   // Paint the New Tab button.
   if (inactive_tab_alpha < 255)
     canvas->SaveLayerAlpha(inactive_tab_alpha);
-  newtab_button_->Paint(canvas);
+  newtab_button_->Paint(canvas, cull_set);
   if (inactive_tab_alpha < 255)
     canvas->Restore();
 
   // And the dragged tabs.
   for (size_t i = 0; i < tabs_dragging.size(); ++i)
-    tabs_dragging[i]->Paint(canvas);
+    tabs_dragging[i]->Paint(canvas, cull_set);
 
   // If the active tab is being dragged, it goes last.
   if (active_tab && is_dragging)
-    active_tab->Paint(canvas);
+    active_tab->Paint(canvas, cull_set);
 }
 
 const char* TabStrip::GetClassName() const {
   return kViewClassName;
 }
 
-gfx::Size TabStrip::GetPreferredSize() {
+gfx::Size TabStrip::GetPreferredSize() const {
   // For stacked tabs the minimum size is calculated as the size needed to
   // handle showing any number of tabs. Otherwise report the minimum width as
   // the size required for a single selected tab plus the new tab button. Don't
@@ -1975,14 +1973,16 @@ TabDragController* TabStrip::ReleaseDragController() {
   return drag_controller_.release();
 }
 
-void TabStrip::PaintClosingTabs(gfx::Canvas* canvas, int index) {
+void TabStrip::PaintClosingTabs(gfx::Canvas* canvas,
+                                int index,
+                                const views::CullSet& cull_set) {
   if (tabs_closing_map_.find(index) == tabs_closing_map_.end())
     return;
 
   const std::vector<Tab*>& tabs = tabs_closing_map_[index];
   for (std::vector<Tab*>::const_reverse_iterator i(tabs.rbegin());
        i != tabs.rend(); ++i) {
-    (*i)->Paint(canvas);
+    (*i)->Paint(canvas, cull_set);
   }
 }
 
@@ -2348,7 +2348,6 @@ TabStrip::DropInfo::DropInfo(int drop_index,
   params.keep_on_top = true;
   params.opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
   params.accept_events = false;
-  params.can_activate = false;
   params.bounds = gfx::Rect(drop_indicator_width, drop_indicator_height);
   params.context = context->GetNativeView();
   arrow_window->Init(params);

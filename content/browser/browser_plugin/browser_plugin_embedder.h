@@ -45,16 +45,10 @@ class CONTENT_EXPORT BrowserPluginEmbedder : public WebContentsObserver {
   static BrowserPluginEmbedder* Create(WebContentsImpl* web_contents);
 
   // Returns this embedder's WebContentsImpl.
-  WebContentsImpl* GetWebContents();
+  WebContentsImpl* GetWebContents() const;
 
   // Called when embedder's |rwh| has sent screen rects to renderer.
   void DidSendScreenRects();
-
-  // Called when embedder's WebContentsImpl has unhandled keyboard input.
-  // Returns whether the BrowserPlugin has handled the keyboard event.
-  // Currently we are only interested in checking for the escape key to
-  // unlock hte guest's pointer lock.
-  bool HandleKeyboardEvent(const NativeWebKeyboardEvent& event);
 
   // Overrides factory for testing. Default (NULL) value indicates regular
   // (non-test) environment.
@@ -86,16 +80,23 @@ class CONTENT_EXPORT BrowserPluginEmbedder : public WebContentsObserver {
  private:
   friend class TestBrowserPluginEmbedder;
 
-  BrowserPluginEmbedder(WebContentsImpl* web_contents);
+  explicit BrowserPluginEmbedder(WebContentsImpl* web_contents);
 
-  BrowserPluginGuestManager* GetBrowserPluginGuestManager();
+  BrowserPluginGuestManager* GetBrowserPluginGuestManager() const;
 
-  bool DidSendScreenRectsCallback(BrowserPluginGuest* guest);
+  bool DidSendScreenRectsCallback(WebContents* guest_web_contents);
 
-  bool SetZoomLevelCallback(double level, BrowserPluginGuest* guest);
+  bool SetZoomLevelCallback(double level, WebContents* guest_web_contents);
 
   bool UnlockMouseIfNecessaryCallback(const NativeWebKeyboardEvent& event,
-                                      BrowserPluginGuest* guest);
+                                      WebContents* guest);
+
+  // Called by the content embedder when a guest exists with the provided
+  // |instance_id|.
+  void OnGuestCallback(int instance_id,
+                       const BrowserPluginHostMsg_Attach_Params& params,
+                       const base::DictionaryValue* extra_params,
+                       WebContents* guest_web_contents);
 
   // Message handlers.
 
@@ -120,6 +121,8 @@ class CONTENT_EXPORT BrowserPluginEmbedder : public WebContentsObserver {
   // Pointer to the guest that started the drag, used to forward necessary drag
   // status messages to the correct guest.
   base::WeakPtr<BrowserPluginGuest> guest_started_drag_;
+
+  base::WeakPtrFactory<BrowserPluginEmbedder> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserPluginEmbedder);
 };

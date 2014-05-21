@@ -27,6 +27,7 @@ class Profile;
 
 namespace extensions {
 
+class ContentVerifier;
 class ExtensionRegistry;
 
 typedef std::map<std::string, ExtensionSet::ExtensionPathAndDefaultLocale>
@@ -50,10 +51,13 @@ class UserScriptMaster : public base::RefCountedThreadSafe<UserScriptMaster>,
   }
 
   // Called by the script reloader when new scripts have been loaded.
-  void NewScriptsAvailable(base::SharedMemory* handle);
+  void NewScriptsAvailable(scoped_ptr<base::SharedMemory> handle);
 
   // Return true if we have any scripts ready.
   bool ScriptsReady() const { return shared_memory_.get() != NULL; }
+
+  // Returns the content verifier for our browser context.
+  ContentVerifier* content_verifier();
 
  protected:
   friend class base::RefCountedThreadSafe<UserScriptMaster>;
@@ -79,7 +83,7 @@ class UserScriptMaster : public base::RefCountedThreadSafe<UserScriptMaster>,
     // Start loading of scripts.
     // Will always send a message to the master upon completion.
     void StartLoad(const UserScriptList& external_scripts,
-                   const ExtensionsInfo& extension_info_);
+                   const ExtensionsInfo& extensions_info);
 
     // The master is going away; don't call it back.
     void DisownMaster() {
@@ -101,7 +105,7 @@ class UserScriptMaster : public base::RefCountedThreadSafe<UserScriptMaster>,
 
     // Runs on the master thread.
     // Notify the master that new scripts are available.
-    void NotifyMaster(base::SharedMemory* memory);
+    void NotifyMaster(scoped_ptr<base::SharedMemory> memory);
 
     // Runs on the File thread.
     // Load the specified user scripts, calling NotifyMaster when done.
@@ -125,6 +129,8 @@ class UserScriptMaster : public base::RefCountedThreadSafe<UserScriptMaster>,
     // The message loop to call our master back on.
     // Expected to always outlive us.
     content::BrowserThread::ID master_thread_id_;
+
+    scoped_refptr<ContentVerifier> verifier_;
 
     DISALLOW_COPY_AND_ASSIGN(ScriptReloader);
   };

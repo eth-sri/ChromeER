@@ -8,9 +8,8 @@
 #include "base/command_line.h"
 #include "base/memory/ref_counted.h"
 #include "base/run_loop.h"
-#include "chrome/browser/chromeos/login/user.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
-#include "chrome/common/chrome_switches.h"
+#include "chrome/browser/chromeos/login/users/user.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/cryptohome_client.h"
@@ -33,12 +32,11 @@ const char kUserId3[] = "user3@example.com";
 
 class CrashRestoreSimpleTest : public InProcessBrowserTest {
  protected:
-  CrashRestoreSimpleTest() : session_started_count_(0) {}
+  CrashRestoreSimpleTest() {}
 
   virtual ~CrashRestoreSimpleTest() {}
 
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
-    command_line->AppendSwitch(::switches::kMultiProfiles);
     command_line->AppendSwitchASCII(switches::kLoginUser, kUserId1);
     command_line->AppendSwitchASCII(
         switches::kLoginProfile,
@@ -53,27 +51,10 @@ class CrashRestoreSimpleTest : public InProcessBrowserTest {
     dbus_thread_manager->SetSessionManagerClient(
         scoped_ptr<SessionManagerClient>(session_manager_client_));
     DBusThreadManager::SetInstanceForTesting(dbus_thread_manager);
-    // We need to create MessageLoop here to process callback from
-    // session_manager
-    base::MessageLoop msg_loop;
-    session_manager_client_->StartSession(
-        kUserId1,
-        base::Bind(&CrashRestoreSimpleTest::OnSessionStarted,
-                   base::Unretained(this),
-                   kUserId1));
-    base::RunLoop().RunUntilIdle();
-    ASSERT_EQ(1, session_started_count_);
+    session_manager_client_->StartSession(kUserId1);
   }
 
- public:
-  void OnSessionStarted(const std::string& user_email, bool success) {
-    ASSERT_TRUE(success);
-    ++session_started_count_;
-  }
-
- protected:
   FakeSessionManagerClient* session_manager_client_;
-  int session_started_count_;
 };
 
 IN_PROC_BROWSER_TEST_F(CrashRestoreSimpleTest, RestoreSessionForOneUser) {
@@ -135,21 +116,8 @@ class CrashRestoreComplexTest : public CrashRestoreSimpleTest {
 
   virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
     CrashRestoreSimpleTest::SetUpInProcessBrowserTestFixture();
-    // We need to create MessageLoop here to process callback from
-    // session_manager
-    base::MessageLoop msg_loop;
-    session_manager_client_->StartSession(
-        kUserId2,
-        base::Bind(&CrashRestoreSimpleTest::OnSessionStarted,
-                   base::Unretained(this),
-                   kUserId2));
-    session_manager_client_->StartSession(
-        kUserId3,
-        base::Bind(&CrashRestoreSimpleTest::OnSessionStarted,
-                   base::Unretained(this),
-                   kUserId3));
-    base::RunLoop().RunUntilIdle();
-    ASSERT_EQ(3, CrashRestoreSimpleTest::session_started_count_);
+    session_manager_client_->StartSession(kUserId2);
+    session_manager_client_->StartSession(kUserId3);
   }
 };
 

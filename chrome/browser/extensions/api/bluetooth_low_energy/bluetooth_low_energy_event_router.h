@@ -61,7 +61,7 @@ class BluetoothLowEnergyEventRouter
   // with the Bluetooth device with address |device_address| in |out_services|.
   // Returns false, if no device with the given address is known. If the device
   // is found but it has no GATT services, then returns true and leaves
-  // |out_services| as empty. Returns true, on success. |out_services| must not
+  // |out_services| empty. Returns true, on success. |out_services| must not
   // be NULL. If it is non-empty, then its contents will be cleared.
   typedef std::vector<linked_ptr<api::bluetooth_low_energy::Service> >
       ServiceList;
@@ -70,7 +70,7 @@ class BluetoothLowEnergyEventRouter
 
   // Populates |out_service| based on GATT service with instance ID
   // |instance_id|. Returns true on success. Returns false, if no GATT service
-  // with the given ID is known. |service| must not be NULL.
+  // with the given ID is known. |out_service| must not be NULL.
   bool GetService(const std::string& instance_id,
                   api::bluetooth_low_energy::Service* out_service) const;
 
@@ -82,6 +82,55 @@ class BluetoothLowEnergyEventRouter
   // contents will be cleared.
   bool GetIncludedServices(const std::string& instance_id,
                            ServiceList* out_services) const;
+
+  // Returns the list of api::bluetooth_low_energy::Characteristic objects
+  // associated with the GATT service with instance ID |instance_id| in
+  // |out_characteristics|. Returns false, if no service with the given instance
+  // ID is known. If the service is found but it has no characteristics, then
+  // returns true and leaves |out_characteristics| empty. Returns true on
+  // success. |out_characteristics| must not be NULL and if it is non-empty,
+  // then its contents will be cleared.
+  typedef std::vector<linked_ptr<api::bluetooth_low_energy::Characteristic> >
+      CharacteristicList;
+  bool GetCharacteristics(const std::string& instance_id,
+                          CharacteristicList* out_characteristics) const;
+
+  // Populates |out_characteristic| based on GATT characteristic with instance
+  // ID |instance_id|. Returns true, on success. Returns false, if no GATT
+  // characteristic with the given ID is known. |out_characteristic| must not be
+  // NULL.
+  bool GetCharacteristic(
+      const std::string& instance_id,
+      api::bluetooth_low_energy::Characteristic* out_characteristic) const;
+
+  // Returns the list of api::bluetooth_low_energy::Descriptor objects
+  // associated with the GATT characteristic with instance ID |instance_id| in
+  // |out_descriptors|. Returns false, if no characteristic with the given
+  // instance ID is known. If the characteristic is found but it has no
+  // descriptors, then returns true and leaves |out_descriptors| empty. Returns
+  // true on success. |out_descriptors| must not be NULL and if it is non-empty,
+  // then its contents will be cleared.
+  typedef std::vector<linked_ptr<api::bluetooth_low_energy::Descriptor> >
+      DescriptorList;
+  bool GetDescriptors(const std::string& instance_id,
+                      DescriptorList* out_descriptors) const;
+
+  // Sends a request to read the value of the characteristic with intance ID
+  // |instance_id|. Returns false, if no such characteristic is known.
+  // Otherwise, returns true and invokes |callback| on success and
+  // |error_callback| on failure.
+  bool ReadCharacteristicValue(const std::string& instance_id,
+                               const base::Closure& callback,
+                               const base::Closure& error_callback);
+
+  // Sends a request to write the value of the characteristic with instance ID
+  // |instance_id|, with value |value|. Returns false, if no such characteristic
+  // is known. Otherwise, returns true and invokes |callback| on success and
+  // |error_callback| on failure.
+  bool WriteCharacteristicValue(const std::string& instance_id,
+                                const std::vector<uint8>& value,
+                                const base::Closure& callback,
+                                const base::Closure& error_callback);
 
   // Initializes the adapter for testing. Used by unit tests only.
   void SetAdapterForTesting(device::BluetoothAdapter* adapter);
@@ -108,9 +157,19 @@ class BluetoothLowEnergyEventRouter
   virtual void GattCharacteristicRemoved(
       device::BluetoothGattService* service,
       device::BluetoothGattCharacteristic* characteristic) OVERRIDE;
+  virtual void GattDescriptorAdded(
+      device::BluetoothGattCharacteristic* characteristic,
+      device::BluetoothGattDescriptor* descriptor) OVERRIDE;
+  virtual void GattDescriptorRemoved(
+      device::BluetoothGattCharacteristic* characteristic,
+      device::BluetoothGattDescriptor* descriptor) OVERRIDE;
   virtual void GattCharacteristicValueChanged(
       device::BluetoothGattService* service,
       device::BluetoothGattCharacteristic* characteristic,
+      const std::vector<uint8>& value) OVERRIDE;
+  virtual void GattDescriptorValueChanged(
+      device::BluetoothGattCharacteristic* characteristic,
+      device::BluetoothGattDescriptor* descriptor,
       const std::vector<uint8>& value) OVERRIDE;
 
  private:
@@ -127,32 +186,32 @@ class BluetoothLowEnergyEventRouter
   device::BluetoothGattService* FindServiceById(
       const std::string& instance_id) const;
 
-  // Meta-data that identifies GATT services, characteristics, and descriptors,
-  // for obtaining instances from the BluetoothAdapter.
-  struct GattObjectData {
-    GattObjectData();
-    ~GattObjectData();
+  // Returns a BluetoothGattCharacteristic by its instance ID |instance_id|.
+  // Returns NULL, if the characteristic cannot be found.
+  device::BluetoothGattCharacteristic* FindCharacteristicById(
+      const std::string& instance_id) const;
 
-    std::string device_address;
-    std::string service_id;
-    std::string characteristic_id;
-    std::string descriptor_id;
-  };
+  // Called by BluetoothGattCharacteristic in response to
+  // ReadRemoteCharacteristic.
+  void ValueCallback(const base::Closure& callback,
+                     const std::vector<uint8>& value);
 
-  // Mapping from instance ids to GattObjectData. The keys are used to identify
-  // individual instances of GATT objects and is used by bluetoothLowEnergy API
-  // functions to obtain the correct GATT object to operate on. Instance IDs are
-  // string identifiers that are returned by the device/bluetooth API, by
-  // calling GetIdentifier() on the corresponding device::BluetoothGatt*
-  // instance.
+  // Mapping from instance ids to identifiers of owning instances. The keys are
+  // used to identify individual instances of GATT objects and are used by
+  // bluetoothLowEnergy API functions to obtain the correct GATT object to
+  // operate on. Instance IDs are string identifiers that are returned by the
+  // device/bluetooth API, by calling GetIdentifier() on the corresponding
+  // device::BluetoothGatt* instance.
   //
   // This mapping is necessary, as GATT object instances can only be obtained
   // from the object that owns it, where raw pointers should not be cached. E.g.
   // to obtain a device::BluetoothGattCharacteristic, it is necessary to obtain
   // a pointer to the associated device::BluetoothDevice, and then to the
   // device::BluetoothGattService that owns the characteristic.
-  typedef std::map<std::string, GattObjectData> InstanceIdToObjectDataMap;
-  InstanceIdToObjectDataMap service_ids_to_objects_;
+  typedef std::map<std::string, std::string> InstanceIdMap;
+  InstanceIdMap service_id_to_device_address_;
+  InstanceIdMap chrc_id_to_service_id_;
+  InstanceIdMap desc_id_to_chrc_id_;
 
   // Sets of BluetoothDevice and BluetoothGattService objects that are being
   // observed, used to remove the BluetoothLowEnergyEventRouter as an observer

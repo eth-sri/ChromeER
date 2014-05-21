@@ -58,7 +58,7 @@ struct RequestInfo;
 // The main thread of a child process derives from this class.
 class CONTENT_EXPORT ChildThread : public IPC::Listener,
                                    public IPC::Sender,
-                                   public mojo::ShellClient {
+                                   public NON_EXPORTED_BASE(mojo::ShellClient) {
  public:
   // Creates the thread.
   ChildThread();
@@ -78,11 +78,6 @@ class CONTENT_EXPORT ChildThread : public IPC::Listener,
   IPC::SyncChannel* channel() { return channel_.get(); }
 
   MessageRouter* GetRouter();
-
-  // Creates a ResourceLoaderBridge.
-  // Tests can override this method if they want a custom loading behavior.
-  virtual webkit_glue::ResourceLoaderBridge* CreateBridge(
-      const RequestInfo& request_info);
 
   // Allocates a block of shared memory of the given size and
   // maps in into the address space. Returns NULL of failure.

@@ -14,9 +14,9 @@
 #include "base/basictypes.h"
 #include "chrome/browser/metrics/extension_metrics.h"
 #include "chrome/browser/metrics/metrics_network_observer.h"
-#include "chrome/common/metrics/metrics_log_base.h"
 #include "chrome/common/metrics/variations/variations_util.h"
 #include "chrome/installer/util/google_update_settings.h"
+#include "components/metrics/metrics_log_base.h"
 #include "ui/gfx/size.h"
 
 class HashedExtensionMetrics;
@@ -37,11 +37,15 @@ namespace content {
 struct WebPluginInfo;
 }
 
+namespace metrics {
+class MetricsProvider;
+}
+
 namespace tracked_objects {
 struct ProcessDataSnapshot;
 }
 
-namespace chrome_variations {
+namespace variations {
 struct ActiveGroupId;
 }
 
@@ -55,7 +59,7 @@ struct GoogleUpdateMetrics {
     bool is_system_install;
     // The time at which Google Update last started an automatic update check.
     base::Time last_started_au;
-    // The time at which Google Update last successfully recieved update
+    // The time at which Google Update last successfully received update
     // information from Google servers.
     base::Time last_checked;
     // Details about Google Update's attempts to update itself.
@@ -64,7 +68,7 @@ struct GoogleUpdateMetrics {
     GoogleUpdateSettings::ProductData product_data;
 };
 
-class MetricsLog : public MetricsLogBase {
+class MetricsLog : public metrics::MetricsLogBase {
  public:
   // Creates a new metrics log of the specified type.
   // client_id is the identifier for this profile on this installation
@@ -82,16 +86,18 @@ class MetricsLog : public MetricsLogBase {
   static void set_version_extension(const std::string& extension);
   static const std::string& version_extension();
 
-  // Records the current operating environment.  Takes the list of installed
+  // Records the current operating environment, including metrics provided by
+  // the specified set of |metrics_providers|.  Takes the list of installed
   // plugins, Google Update statistics, and synthetic trial IDs as parameters
   // because those can't be obtained synchronously from the UI thread.
   // A synthetic trial is one that is set up dynamically by code in Chrome. For
   // example, a pref may be mapped to a synthetic trial such that the group
   // is determined by the pref value.
   void RecordEnvironment(
+      const std::vector<metrics::MetricsProvider*>& metrics_providers,
       const std::vector<content::WebPluginInfo>& plugin_list,
       const GoogleUpdateMetrics& google_update_metrics,
-      const std::vector<chrome_variations::ActiveGroupId>& synthetic_trials);
+      const std::vector<variations::ActiveGroupId>& synthetic_trials);
 
   // Loads the environment proto that was saved by the last RecordEnvironment()
   // call from prefs and clears the pref value. Returns true on success or false
@@ -108,16 +114,23 @@ class MetricsLog : public MetricsLogBase {
       const tracked_objects::ProcessDataSnapshot& process_data,
       int process_type);
 
-  // Writes application stability metrics (as part of the profile log). The
-  // system profile portion of the log must have already been filled in by a
-  // call to RecordEnvironment() or LoadSavedEnvironmentFromPrefs().
+  // Writes application stability metrics, including stability metrics provided
+  // by the specified set of |metrics_providers|. The system profile portion of
+  // the log must have already been filled in by a call to RecordEnvironment()
+  // or LoadSavedEnvironmentFromPrefs().
   // NOTE: Has the side-effect of clearing the stability prefs..
   //
   // If this log is of type INITIAL_STABILITY_LOG, records additional info such
   // as number of incomplete shutdowns as well as extra breakpad and debugger
   // stats.
-  void RecordStabilityMetrics(base::TimeDelta incremental_uptime,
-                              base::TimeDelta uptime);
+  void RecordStabilityMetrics(
+      const std::vector<metrics::MetricsProvider*>& metrics_providers,
+      base::TimeDelta incremental_uptime,
+      base::TimeDelta uptime);
+
+  // Records general metrics based on the specified |metrics_providers|.
+  void RecordGeneralMetrics(
+      const std::vector<metrics::MetricsProvider*>& metrics_providers);
 
   const base::TimeTicks& creation_time() const {
     return creation_time_;
@@ -141,7 +154,7 @@ class MetricsLog : public MetricsLogBase {
   // Fills |field_trial_ids| with the list of initialized field trials name and
   // group ids.
   virtual void GetFieldTrialIds(
-      std::vector<chrome_variations::ActiveGroupId>* field_trial_ids) const;
+      std::vector<variations::ActiveGroupId>* field_trial_ids) const;
 
   // Exposed to allow dependency injection for tests.
 #if defined(OS_CHROMEOS)

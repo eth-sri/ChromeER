@@ -18,7 +18,6 @@
 #include "chrome/browser/ui/host_desktop.h"
 
 class BackgroundModeManager;
-class BookmarkPromptController;
 class ChromeNetLog;
 class CRLSetFetcher;
 class DownloadRequestLimiter;
@@ -30,6 +29,7 @@ class IntranetRedirectDetector;
 class IOThread;
 class MediaFileSystemRegistry;
 class MetricsService;
+class NetworkTimeTracker;
 class NotificationUIManager;
 class PrefRegistrySimple;
 class PrefService;
@@ -212,8 +212,6 @@ class BrowserProcess {
   virtual component_updater::PnaclComponentInstaller*
       pnacl_component_installer() = 0;
 
-  virtual BookmarkPromptController* bookmark_prompt_controller() = 0;
-
   virtual MediaFileSystemRegistry* media_file_system_registry() = 0;
 
   virtual bool created_local_state() const = 0;
@@ -221,6 +219,8 @@ class BrowserProcess {
 #if defined(ENABLE_WEBRTC)
   virtual WebRtcLogUploader* webrtc_log_uploader() = 0;
 #endif
+
+  virtual NetworkTimeTracker* network_time_tracker() = 0;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(BrowserProcess);

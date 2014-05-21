@@ -55,7 +55,7 @@ AuraTestHelper::~AuraTestHelper() {
 void AuraTestHelper::SetUp() {
   setup_called_ = true;
 
-  Env::CreateInstance();
+  Env::CreateInstance(true);
   // Unit tests generally don't want to query the system, rather use the state
   // from RootWindow.
   EnvTestHelper(Env::GetInstance()).SetInputStateLookup(
@@ -94,7 +94,7 @@ void AuraTestHelper::TearDown() {
   gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE, NULL);
 
 #if defined(USE_X11)
-  ui::ResetXCursorCache();
+  ui::test::ResetXCursorCache();
 #endif
 
   ui::ShutdownInputMethodForTesting();

@@ -21,11 +21,9 @@
 #include "base/threading/platform_thread.h"
 #include "base/values.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
-#include "chrome/browser/bookmarks/bookmark_test_helpers.h"
 #include "chrome/browser/google/google_url_tracker.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/invalidation/invalidation_service_factory.h"
-#include "chrome/browser/invalidation/p2p_invalidation_service.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
@@ -36,6 +34,7 @@
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
+#include "chrome/browser/sync/test/integration/fake_server_invalidation_service.h"
 #include "chrome/browser/sync/test/integration/p2p_invalidation_forwarder.h"
 #include "chrome/browser/sync/test/integration/profile_sync_service_harness.h"
 #include "chrome/browser/sync/test/integration/single_client_status_change_checker.h"
@@ -50,6 +49,9 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/bookmarks/test/bookmark_test_helpers.h"
+#include "components/invalidation/invalidation_switches.h"
+#include "components/invalidation/p2p_invalidation_service.h"
 #include "components/os_crypt/os_crypt.h"
 #include "components/signin/core/browser/signin_manager.h"
 #include "content/public/browser/web_contents.h"
@@ -73,6 +75,10 @@
 #include "sync/test/fake_server/fake_server.h"
 #include "sync/test/fake_server/fake_server_network_resources.h"
 #include "url/gurl.h"
+
+#if defined(OS_CHROMEOS)
+#include "chromeos/chromeos_switches.h"
+#endif
 
 using content::BrowserThread;
 using invalidation::InvalidationServiceFactory;
@@ -234,11 +240,17 @@ void SyncTest::TearDown() {
 
   // Stop the local sync test server. This is a no-op if one wasn't started.
   TearDownLocalTestServer();
+
+  fake_server_.reset();
 }
 
 void SyncTest::SetUpCommandLine(base::CommandLine* cl) {
   AddTestSwitches(cl);
   AddOptionalTypesToCommandLine(cl);
+
+#if defined(OS_CHROMEOS)
+  cl->AppendSwitch(chromeos::switches::kIgnoreUserProfileMappingForTests);
+#endif
 }
 
 void SyncTest::AddTestSwitches(base::CommandLine* cl) {
@@ -326,6 +338,7 @@ bool SyncTest::SetupClients() {
   browsers_.resize(num_clients_);
   clients_.resize(num_clients_);
   invalidation_forwarders_.resize(num_clients_);
+  fake_server_invalidation_services_.resize(num_clients_);
   for (int i = 0; i < num_clients_; ++i) {
     InitializeInstance(i);
   }
@@ -352,14 +365,6 @@ void SyncTest::InitializeInstance(int index) {
   EXPECT_FALSE(GetBrowser(index) == NULL) << "Could not create Browser "
                                           << index << ".";
 
-  invalidation::P2PInvalidationService* p2p_invalidation_service =
-      static_cast<invalidation::P2PInvalidationService*>(
-          InvalidationServiceFactory::GetInstance()->SetTestingFactoryAndUse(
-              GetProfile(index),
-              TestUsesSelfNotifications() ?
-                  BuildSelfNotifyingP2PInvalidationService
-                  : BuildRealisticP2PInvalidationService));
-  p2p_invalidation_service->UpdateCredentials(username_, password_);
 
   // Make sure the ProfileSyncService has been created before creating the
   // ProfileSyncServiceHarness - some tests expect the ProfileSyncService to
@@ -381,11 +386,7 @@ void SyncTest::InitializeInstance(int index) {
           password_);
   EXPECT_FALSE(GetClient(index) == NULL) << "Could not create Client "
                                          << index << ".";
-
-  // Start listening for and emitting notificaitons of commits.
-  invalidation_forwarders_[index] =
-      new P2PInvalidationForwarder(clients_[index]->service(),
-                                   p2p_invalidation_service);
+  InitializeInvalidations(index);
 
   test::WaitForBookmarkModelToLoad(
       BookmarkModelFactory::GetForProfile(GetProfile(index)));
@@ -393,6 +394,32 @@ void SyncTest::InitializeInstance(int index) {
       GetProfile(index), Profile::EXPLICIT_ACCESS));
   ui_test_utils::WaitForTemplateURLServiceToLoad(
       TemplateURLServiceFactory::GetForProfile(GetProfile(index)));
+}
+
+void SyncTest::InitializeInvalidations(int index) {
+  if (server_type_ == IN_PROCESS_FAKE_SERVER) {
+    CHECK(fake_server_.get());
+    fake_server::FakeServerInvalidationService* invalidation_service =
+        static_cast<fake_server::FakeServerInvalidationService*>(
+            InvalidationServiceFactory::GetInstance()->SetTestingFactoryAndUse(
+                GetProfile(index),
+                fake_server::FakeServerInvalidationService::Build));
+    fake_server_->AddObserver(invalidation_service);
+    fake_server_invalidation_services_[index] = invalidation_service;
+  } else {
+    invalidation::P2PInvalidationService* p2p_invalidation_service =
+        static_cast<invalidation::P2PInvalidationService*>(
+            InvalidationServiceFactory::GetInstance()->SetTestingFactoryAndUse(
+                GetProfile(index),
+                TestUsesSelfNotifications() ?
+                    BuildSelfNotifyingP2PInvalidationService
+                    : BuildRealisticP2PInvalidationService));
+    p2p_invalidation_service->UpdateCredentials(username_, password_);
+    // Start listening for and emitting notifications of commits.
+    invalidation_forwarders_[index] =
+        new P2PInvalidationForwarder(clients_[index]->service(),
+                                     p2p_invalidation_service);
+  }
 }
 
 bool SyncTest::SetupSync() {
@@ -434,10 +461,19 @@ void SyncTest::CleanUpOnMainThread() {
   chrome::CloseAllBrowsers();
   content::RunAllPendingInMessageLoop();
 
+  if (fake_server_.get()) {
+    std::vector<fake_server::FakeServerInvalidationService*>::const_iterator it;
+    for (it = fake_server_invalidation_services_.begin();
+         it != fake_server_invalidation_services_.end(); ++it) {
+      fake_server_->RemoveObserver(*it);
+    }
+  }
+
   // All browsers should be closed at this point, or else we could see memory
   // corruption in QuitBrowser().
   CHECK_EQ(0U, chrome::GetTotalBrowserCount());
   invalidation_forwarders_.clear();
+  fake_server_invalidation_services_.clear();
   clients_.clear();
 }
 
@@ -567,8 +603,15 @@ void SyncTest::DecideServerType() {
       // one that makes sense for most developers. FakeServer is the
       // current solution but some scenarios are only supported by the
       // legacy python server.
-        server_type_ = test_type_ == SINGLE_CLIENT || test_type_ == TWO_CLIENT ?
-              IN_PROCESS_FAKE_SERVER : LOCAL_PYTHON_SERVER;
+      switch (test_type_) {
+        case SINGLE_CLIENT:
+        case TWO_CLIENT:
+        case MULTIPLE_CLIENT:
+          server_type_ = IN_PROCESS_FAKE_SERVER;
+          break;
+        default:
+          server_type_ = LOCAL_PYTHON_SERVER;
+      }
     } else if (cl->HasSwitch(switches::kSyncServiceURL) &&
                cl->HasSwitch(switches::kSyncServerCommandLine)) {
       // If a sync server URL and a sync server command line are provided,
@@ -605,8 +648,6 @@ void SyncTest::SetUpTestServerIfRequired() {
       LOG(FATAL) << "Failed to set up local test server";
   } else if (server_type_ == IN_PROCESS_FAKE_SERVER) {
     fake_server_.reset(new fake_server::FakeServer());
-    // Similar to LOCAL_LIVE_SERVER, we must start this for XMPP.
-    SetUpLocalPythonTestServer();
     SetupMockGaiaResponses();
   } else if (server_type_ == EXTERNAL_LIVE_SERVER) {
     // Nothing to do; we'll just talk to the URL we were given.
@@ -640,11 +681,11 @@ bool SyncTest::SetUpLocalPythonTestServer() {
   xmpp_host_port_pair.set_port(xmpp_port);
   xmpp_port_.reset(new net::ScopedPortException(xmpp_port));
 
-  if (!cl->HasSwitch(switches::kSyncNotificationHostPort)) {
-    cl->AppendSwitchASCII(switches::kSyncNotificationHostPort,
+  if (!cl->HasSwitch(invalidation::switches::kSyncNotificationHostPort)) {
+    cl->AppendSwitchASCII(invalidation::switches::kSyncNotificationHostPort,
                           xmpp_host_port_pair.ToString());
     // The local XMPP server only supports insecure connections.
-    cl->AppendSwitch(switches::kSyncAllowInsecureXmppConnection);
+    cl->AppendSwitch(invalidation::switches::kSyncAllowInsecureXmppConnection);
   }
   DVLOG(1) << "Started local python XMPP server at "
            << xmpp_host_port_pair.ToString();
@@ -725,6 +766,10 @@ bool SyncTest::IsTestServerRunning() {
 }
 
 void SyncTest::EnableNetwork(Profile* profile) {
+  // TODO(pvalenzuela): Remove this restriction when FakeServer's observers
+  // (namely FakeServerInvaldationService) are aware of a network disconnect.
+  ASSERT_NE(IN_PROCESS_FAKE_SERVER, server_type_)
+      << "FakeServer does not support EnableNetwork.";
   SetProxyConfig(profile->GetRequestContext(),
                  net::ProxyConfig::CreateDirect());
   if (notifications_enabled_) {
@@ -735,6 +780,10 @@ void SyncTest::EnableNetwork(Profile* profile) {
 }
 
 void SyncTest::DisableNetwork(Profile* profile) {
+  // TODO(pvalenzuela): Remove this restriction when FakeServer's observers
+  // (namely FakeServerInvaldationService) are aware of a network disconnect.
+  ASSERT_NE(IN_PROCESS_FAKE_SERVER, server_type_)
+      << "FakeServer does not support DisableNetwork.";
   DisableNotificationsImpl();
   // Set the current proxy configuration to a nonexistent proxy to effectively
   // disable networking.
@@ -943,6 +992,7 @@ sync_pb::SyncEnums::Action GetClientToServerResponseAction(
       return sync_pb::SyncEnums::DISABLE_SYNC_ON_CLIENT;
     case syncer::STOP_SYNC_FOR_DISABLED_ACCOUNT:
     case syncer::DISABLE_SYNC_AND_ROLLBACK:
+    case syncer::ROLLBACK_DONE:
       NOTREACHED();   // No corresponding proto action for these. Shouldn't
                       // test.
       return sync_pb::SyncEnums::UNKNOWN_ACTION;

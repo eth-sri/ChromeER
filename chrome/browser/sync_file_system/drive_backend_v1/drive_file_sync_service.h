@@ -36,8 +36,6 @@
 #include "chrome/browser/sync_file_system/sync_file_system.pb.h"
 #include "chrome/browser/sync_file_system/sync_status_code.h"
 
-class ExtensionService;
-
 namespace google_apis {
 class ResourceList;
 }
@@ -102,8 +100,9 @@ class DriveFileSyncService : public RemoteFileSyncService,
   virtual bool IsConflicting(const fileapi::FileSystemURL& url) OVERRIDE;
   virtual RemoteServiceState GetCurrentState() const OVERRIDE;
   virtual void GetOriginStatusMap(OriginStatusMap* status_map) OVERRIDE;
-  virtual scoped_ptr<base::ListValue> DumpFiles(const GURL& origin) OVERRIDE;
-  virtual scoped_ptr<base::ListValue> DumpDatabase() OVERRIDE;
+  virtual void DumpFiles(const GURL& origin,
+                         const ListCallback& callback) OVERRIDE;
+  virtual void DumpDatabase(const ListCallback& callback) OVERRIDE;
   virtual void SetSyncEnabled(bool enabled) OVERRIDE;
   virtual SyncStatusCode SetDefaultConflictResolutionPolicy(
       ConflictResolutionPolicy policy) OVERRIDE;

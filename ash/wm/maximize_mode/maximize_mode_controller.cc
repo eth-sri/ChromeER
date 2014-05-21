@@ -4,10 +4,18 @@
 
 #include "ash/wm/maximize_mode/maximize_mode_controller.h"
 
+#include "ash/accelerators/accelerator_controller.h"
+#include "ash/accelerators/accelerator_table.h"
 #include "ash/accelerometer/accelerometer_controller.h"
+#include "ash/ash_switches.h"
 #include "ash/display/display_manager.h"
 #include "ash/shell.h"
 #include "ash/wm/maximize_mode/maximize_mode_event_blocker.h"
+#include "base/command_line.h"
+#include "ui/base/accelerators/accelerator.h"
+#include "ui/events/event.h"
+#include "ui/events/event_handler.h"
+#include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/vector3d_f.h"
 
 namespace ash {
@@ -79,10 +87,52 @@ float ClockwiseAngleBetweenVectorsInDegrees(const gfx::Vector3dF& base,
   return angle;
 }
 
+#if defined(OS_CHROMEOS)
+
+// An event handler which listens for a volume down + power keypress and
+// triggers a screenshot when this is seen.
+class ScreenshotActionHandler : public ui::EventHandler {
+ public:
+  ScreenshotActionHandler();
+  virtual ~ScreenshotActionHandler();
+
+  // ui::EventHandler:
+  virtual void OnKeyEvent(ui::KeyEvent* event) OVERRIDE;
+
+ private:
+  bool volume_down_pressed_;
+
+  DISALLOW_COPY_AND_ASSIGN(ScreenshotActionHandler);
+};
+
+ScreenshotActionHandler::ScreenshotActionHandler()
+    : volume_down_pressed_(false) {
+  Shell::GetInstance()->PrependPreTargetHandler(this);
+}
+
+ScreenshotActionHandler::~ScreenshotActionHandler() {
+  Shell::GetInstance()->RemovePreTargetHandler(this);
+}
+
+void ScreenshotActionHandler::OnKeyEvent(ui::KeyEvent* event) {
+  if (event->key_code() == ui::VKEY_VOLUME_DOWN) {
+    volume_down_pressed_ = event->type() == ui::ET_KEY_PRESSED ||
+                           event->type() == ui::ET_TRANSLATED_KEY_PRESS;
+  } else if (volume_down_pressed_ &&
+             event->key_code() == ui::VKEY_POWER &&
+             event->type() == ui::ET_KEY_PRESSED) {
+    Shell::GetInstance()->accelerator_controller()->PerformAction(
+        ash::TAKE_SCREENSHOT, ui::Accelerator());
+  }
+}
+
+#endif  // OS_CHROMEOS
+
 }  // namespace
 
 MaximizeModeController::MaximizeModeController()
-    : rotation_locked_(false) {
+    : rotation_locked_(false),
+      have_seen_accelerometer_data_(false) {
   Shell::GetInstance()->accelerometer_controller()->AddObserver(this);
 }
 
@@ -90,9 +140,21 @@ MaximizeModeController::~MaximizeModeController() {
   Shell::GetInstance()->accelerometer_controller()->RemoveObserver(this);
 }
 
+bool MaximizeModeController::CanEnterMaximizeMode() {
+  // If we have ever seen accelerometer data, then HandleHingeRotation may
+  // trigger maximize mode at some point in the future.
+  // The --enable-touch-view-testing switch can also mean that we may enter
+  // maximize mode.
+  return have_seen_accelerometer_data_ ||
+         CommandLine::ForCurrentProcess()->HasSwitch(
+             switches::kAshEnableTouchViewTesting);
+}
+
 void MaximizeModeController::OnAccelerometerUpdated(
     const gfx::Vector3dF& base,
     const gfx::Vector3dF& lid) {
+  have_seen_accelerometer_data_ = true;
+
   // Ignore the reading if it appears unstable. The reading is considered
   // unstable if it deviates too much from gravity and/or the magnitude of the
   // reading from the lid differs too much from the reading from the base.
@@ -143,10 +205,14 @@ void MaximizeModeController::HandleHingeRotation(const gfx::Vector3dF& base,
       angle < kExitMaximizeModeAngle) {
     Shell::GetInstance()->EnableMaximizeModeWindowManager(false);
     event_blocker_.reset();
+    event_handler_.reset();
   } else if (!maximize_mode_engaged &&
       angle > kEnterMaximizeModeAngle) {
     Shell::GetInstance()->EnableMaximizeModeWindowManager(true);
     event_blocker_.reset(new MaximizeModeEventBlocker);
+#if defined(OS_CHROMEOS)
+    event_handler_.reset(new ScreenshotActionHandler);
+#endif
   }
 }
 

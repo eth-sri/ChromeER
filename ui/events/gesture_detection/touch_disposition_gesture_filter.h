@@ -98,6 +98,8 @@ class GESTURE_DETECTION_EXPORT TouchDispositionGestureFilter {
   bool needs_show_press_event_;
   bool needs_fling_ending_event_;
   bool needs_scroll_ending_event_;
+  // Only valid in the scope of |FilterAndSendPacket()|.
+  const GestureEventDataPacket* packet_being_sent_;
 
   DISALLOW_COPY_AND_ASSIGN(TouchDispositionGestureFilter);
 };

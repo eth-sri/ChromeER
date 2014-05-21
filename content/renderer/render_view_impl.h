@@ -35,7 +35,6 @@
 #include "content/public/common/stop_find_action.h"
 #include "content/public/common/top_controls_state.h"
 #include "content/public/renderer/render_view.h"
-#include "content/renderer/media/webmediaplayer_delegate.h"
 #include "content/renderer/mouse_lock_dispatcher.h"
 #include "content/renderer/render_frame_impl.h"
 #include "content/renderer/render_widget.h"
@@ -100,19 +99,14 @@ class WebIconURL;
 class WebImage;
 class WebPeerConnection00Handler;
 class WebPeerConnection00HandlerClient;
-class WebMediaPlayer;
-class WebMediaPlayerClient;
 class WebMouseEvent;
 class WebPeerConnectionHandler;
 class WebPeerConnectionHandlerClient;
 class WebSocketStreamHandle;
-class WebSpeechInputController;
-class WebSpeechInputListener;
 class WebSpeechRecognizer;
 class WebStorageNamespace;
 class WebTouchEvent;
 class WebURLRequest;
-class WebUserMediaClient;
 struct WebActiveWheelFlingParameters;
 struct WebDateTimeChooserParams;
 struct WebFileChooserParams;
@@ -142,10 +136,7 @@ class GeolocationDispatcher;
 class HistoryController;
 class HistoryEntry;
 class ImageResourceFetcher;
-class InputTagSpeechDispatcher;
-class LoadProgressTracker;
 class MidiDispatcher;
-class MediaStreamClient;
 class MediaStreamDispatcher;
 class MouseLockDispatcher;
 class NavigationState;
@@ -177,13 +168,14 @@ class CONTENT_EXPORT RenderViewImpl
       NON_EXPORTED_BASE(public blink::WebViewClient),
       NON_EXPORTED_BASE(public blink::WebPageSerializerClient),
       public RenderView,
-      NON_EXPORTED_BASE(public WebMediaPlayerDelegate),
       public base::SupportsWeakPtr<RenderViewImpl> {
  public:
   // Creates a new RenderView. |opener_id| is the routing ID of the RenderView
   // responsible for creating this RenderView. Note that if the original opener
   // has been closed, |window_was_created_with_opener| will be true and
-  // |opener_id| will be MSG_ROUTING_NONE.
+  // |opener_id| will be MSG_ROUTING_NONE. When |swapped_out| is true, the
+  // |proxy_routing_id| is specified, so a RenderFrameProxy can be created for
+  // this RenderView's main RenderFrame.
   static RenderViewImpl* Create(int32 opener_id,
                                 bool window_was_created_with_opener,
                                 const RendererPreferences& renderer_prefs,
@@ -195,6 +187,7 @@ class CONTENT_EXPORT RenderViewImpl
                                 const base::string16& frame_name,
                                 bool is_renderer_created,
                                 bool swapped_out,
+                                int32 proxy_routing_id,
                                 bool hidden,
                                 bool never_visible,
                                 int32 next_page_id,
@@ -231,6 +224,7 @@ class CONTENT_EXPORT RenderViewImpl
 
   RenderFrameImpl* main_render_frame() { return main_render_frame_.get(); }
 
+  // TODO(jam): move to RenderFrameImpl
   MediaStreamDispatcher* media_stream_dispatcher() {
     return media_stream_dispatcher_;
   }
@@ -285,8 +279,6 @@ class CONTENT_EXPORT RenderViewImpl
   void FrameDidStartLoading(blink::WebFrame* frame);
   void FrameDidStopLoading(blink::WebFrame* frame);
 
-  void FrameDidChangeLoadProgress(blink::WebFrame* frame,
-                                  double load_progress);
   void FrameDidCommitProvisionalLoad(blink::WebLocalFrame* frame,
                                      bool is_new_navigation);
 
@@ -355,12 +347,6 @@ class CONTENT_EXPORT RenderViewImpl
   // periodic timer so we don't send too many messages.
   void SyncNavigationState();
 
-  // Temporary call until all this media code moves to RenderFrame.
-  // TODO(jam): remove me
-  blink::WebMediaPlayer* CreateMediaPlayer(RenderFrame* render_frame,
-                                           blink::WebLocalFrame* frame,
-                                           const blink::WebURL& url,
-                                           blink::WebMediaPlayerClient* client);
   // Returns the length of the session history of this RenderView. Note that
   // this only coincides with the actual length of the session history if this
   // RenderView is the currently active RenderView of a WebContents.
@@ -374,6 +360,13 @@ class CONTENT_EXPORT RenderViewImpl
   // Change the device scale factor and force the compositor to resize.
   void SetDeviceScaleFactorForTesting(float factor);
 
+  // Change screen orientation and force the compositor to resize.
+  void SetScreenOrientationForTesting(
+      const blink::WebScreenOrientationType& orientation);
+
+  // Change the device ICC color profile while running a layout test.
+  void SetDeviceColorProfileForTesting(const std::vector<char>& color_profile);
+
   // Used to force the size of a window when running layout tests.
   void ForceResizeForTesting(const gfx::Size& new_size);
 
@@ -383,10 +376,6 @@ class CONTENT_EXPORT RenderViewImpl
   void EnableAutoResizeForTesting(const gfx::Size& min_size,
                                   const gfx::Size& max_size);
   void DisableAutoResizeForTesting(const gfx::Size& new_size);
-
-  // Overrides the MediaStreamClient used when creating MediaStream players.
-  // Must be called before any players are created.
-  void SetMediaStreamClientForTesting(MediaStreamClient* media_stream_client);
 
   // IPC::Listener implementation ----------------------------------------------
 
@@ -467,8 +456,6 @@ class CONTENT_EXPORT RenderViewImpl
   virtual void didUpdateInspectorSetting(const blink::WebString& key,
                                          const blink::WebString& value);
   virtual blink::WebGeolocationClient* geolocationClient();
-  virtual blink::WebSpeechInputController* speechInputController(
-      blink::WebSpeechInputListener* listener);
   virtual blink::WebSpeechRecognizer* speechRecognizer();
   virtual void zoomLimitsChanged(double minimum_level, double maximum_level);
   virtual void zoomLevelChanged();
@@ -479,7 +466,6 @@ class CONTENT_EXPORT RenderViewImpl
                                        const blink::WebURL& url,
                                        const blink::WebString& title);
   virtual blink::WebPageVisibilityState visibilityState() const;
-  virtual blink::WebUserMediaClient* userMediaClient();
   virtual blink::WebMIDIClient* webMIDIClient();
   virtual blink::WebPushClient* webPushClient();
   virtual void draggableRegionsChanged();
@@ -535,12 +521,6 @@ class CONTENT_EXPORT RenderViewImpl
                                       bool animate) OVERRIDE;
 #endif
 
-  // WebMediaPlayerDelegate implementation -----------------------
-
-  virtual void DidPlay(blink::WebMediaPlayer* player) OVERRIDE;
-  virtual void DidPause(blink::WebMediaPlayer* player) OVERRIDE;
-  virtual void PlayerGone(blink::WebMediaPlayer* player) OVERRIDE;
-
   // Please do not add your stuff randomly to the end here. If there is an
   // appropriate section, add it there. If not, there are some random functions
   // nearer to the top you can add it to.
@@ -579,6 +559,7 @@ class CONTENT_EXPORT RenderViewImpl
                                        const gfx::Range& replacement_range,
                                        bool keep_selection) OVERRIDE;
   virtual void SetDeviceScaleFactor(float device_scale_factor) OVERRIDE;
+  virtual void OnOrientationChange() OVERRIDE;
   virtual ui::TextInputType GetTextInputType() OVERRIDE;
   virtual void GetSelectionBounds(gfx::Rect* start, gfx::Rect* end) OVERRIDE;
 #if defined(OS_MACOSX) || defined(USE_AURA)
@@ -678,23 +659,12 @@ class CONTENT_EXPORT RenderViewImpl
   // still live here and are called from RenderFrameImpl. These implementations
   // are to be moved to RenderFrameImpl <http://crbug.com/361761>.
 
-  void didDisownOpener(blink::WebLocalFrame* frame);
   void didCreateDataSource(blink::WebLocalFrame* frame,
                            blink::WebDataSource* datasource);
-  void didClearWindowObject(blink::WebLocalFrame* frame, int world_id);
-  void didReceiveTitle(blink::WebLocalFrame* frame,
-                       const blink::WebString& title,
-                       blink::WebTextDirection direction);
+  void didClearWindowObject(blink::WebLocalFrame* frame);
   void didChangeIcon(blink::WebLocalFrame*, blink::WebIconURL::Type);
-  void didHandleOnloadEvents(blink::WebLocalFrame* frame);
   void didUpdateCurrentHistoryItem(blink::WebLocalFrame* frame);
   void didChangeScrollOffset(blink::WebLocalFrame* frame);
-  void didFirstVisuallyNonEmptyLayout(blink::WebLocalFrame*);
-  bool willCheckAndDispatchMessageEvent(
-      blink::WebLocalFrame* sourceFrame,
-      blink::WebFrame* targetFrame,
-      blink::WebSecurityOrigin targetOrigin,
-      blink::WebDOMMessageEvent event);
 
   static bool IsReload(const FrameMsg_Navigate_Params& params);
 
@@ -705,26 +675,8 @@ class CONTENT_EXPORT RenderViewImpl
   static WindowOpenDisposition NavigationPolicyToDisposition(
       blink::WebNavigationPolicy policy);
 
-  void UpdateTitle(blink::WebFrame* frame, const base::string16& title,
-                   blink::WebTextDirection title_direction);
   void UpdateSessionHistory(blink::WebFrame* frame);
   void SendUpdateState(HistoryEntry* entry);
-
-  // Update current main frame's encoding and send it to browser window.
-  // Since we want to let users see the right encoding info from menu
-  // before finishing loading, we call the UpdateEncoding in
-  // a) function:DidCommitLoadForFrame. When this function is called,
-  // that means we have got first data. In here we try to get encoding
-  // of page if it has been specified in http header.
-  // b) function:DidReceiveTitle. When this function is called,
-  // that means we have got specified title. Because in most of webpages,
-  // title tags will follow meta tags. In here we try to get encoding of
-  // page if it has been specified in meta tag.
-  // c) function:DidFinishDocumentLoadForFrame. When this function is
-  // called, that means we have got whole html page. In here we should
-  // finally get right encoding of page.
-  void UpdateEncoding(blink::WebFrame* frame,
-                      const std::string& encoding_name);
 
   // Sends a message and runs a nested message loop.
   bool SendAndRunNestedMessageLoop(IPC::SyncMessage* message);
@@ -747,6 +699,7 @@ class CONTENT_EXPORT RenderViewImpl
   void OnClosePage();
   void OnShowContextMenu(const gfx::Point& location);
   void OnCopyImageAt(int x, int y);
+  void OnSaveImageAt(int x, int y);
   void OnSetName(const std::string& name);
   void OnDeterminePageLanguage();
   void OnDisableScrollbarsForSmallWindows(
@@ -785,7 +738,6 @@ class CONTENT_EXPORT RenderViewImpl
       const base::FilePath& local_directory_name);
   void OnMediaPlayerActionAt(const gfx::Point& location,
                              const blink::WebMediaPlayerAction& action);
-  void OnOrientationChangeEvent(int orientation);
   void OnPluginActionAt(const gfx::Point& location,
                         const blink::WebPluginAction& action);
   void OnMoveOrResizeStarted();
@@ -794,7 +746,7 @@ class CONTENT_EXPORT RenderViewImpl
   void OnResetPageEncodingToDefault();
   void OnSetAccessibilityMode(AccessibilityMode new_mode);
   void OnSetActive(bool active);
-  void OnSetBackground(const SkBitmap& background);
+  void OnSetBackgroundOpaque(bool opaque);
   void OnExitFullscreen();
   void OnSetHistoryLengthAndPrune(int history_length, int32 minimum_page_id);
   void OnSetInitialFocus(bool reverse);
@@ -814,6 +766,7 @@ class CONTENT_EXPORT RenderViewImpl
   void OnDisownOpener();
   void OnWindowSnapshotCompleted(const int snapshot_id,
       const gfx::Size& size, const std::vector<unsigned char>& png);
+  void OnSelectWordAroundCaret();
 #if defined(OS_ANDROID)
   void OnActivateNearestFindResult(int request_id, float x, float y);
   void OnFindMatchRects(int current_version);
@@ -842,11 +795,6 @@ class CONTENT_EXPORT RenderViewImpl
   // Misc private functions ----------------------------------------------------
   // Check whether the preferred size has changed.
   void CheckPreferredSize();
-
-  // Initializes |media_stream_client_|, returning true if successful. Returns
-  // false if it wasn't possible to create a MediaStreamClient (e.g., WebRTC is
-  // disabled) in which case |media_stream_client_| is NULL.
-  bool InitializeMediaStreamClient();
 
   // This callback is triggered when DownloadFavicon completes, either
   // succesfully or with a failure. See DownloadFavicon for more
@@ -897,17 +845,7 @@ class CONTENT_EXPORT RenderViewImpl
 #if defined(OS_ANDROID)
   // Launch an Android content intent with the given URL.
   void LaunchAndroidContentIntent(const GURL& intent_url, size_t request_id);
-
-  blink::WebMediaPlayer* CreateAndroidWebMediaPlayer(
-      blink::WebFrame* frame,
-      const blink::WebURL& url,
-      blink::WebMediaPlayerClient* client);
 #endif
-
-  blink::WebMediaPlayer* CreateWebMediaPlayerForMediaStream(
-      blink::WebFrame* frame,
-      const blink::WebURL& url,
-      blink::WebMediaPlayerClient* client);
 
   // Sends a reply to the current find operation handling if it was a
   // synchronous find request.
@@ -1052,10 +990,9 @@ class CONTENT_EXPORT RenderViewImpl
   // process.
   int history_list_length_;
 
-  // Counter to track how many frames have sent start notifications but not
-  // stop notifications.
-  // TODO(japhet): This state will need to move to the browser process
-  // (probably WebContents) for site isolation.
+  // Counter to track how many frames have sent start notifications but not stop
+  // notifications. TODO(avi): Remove this once DidStartLoading/DidStopLoading
+  // are gone.
   int frames_in_progress_;
 
   // The list of page IDs for each history item this RenderView knows about.
@@ -1063,11 +1000,6 @@ class CONTENT_EXPORT RenderViewImpl
   // restored from a previous session.  This lets us detect attempts to
   // navigate to stale entries that have been cropped from our history.
   std::vector<int32> history_page_ids_;
-
-  // Page info -----------------------------------------------------------------
-
-  // The last gotten main frame's encoding.
-  std::string last_encoding_name_;
 
   // UI state ------------------------------------------------------------------
 
@@ -1140,9 +1072,6 @@ class CONTENT_EXPORT RenderViewImpl
   // The geolocation dispatcher attached to this view, lazily initialized.
   GeolocationDispatcher* geolocation_dispatcher_;
 
-  // The speech dispatcher attached to this view, lazily initialized.
-  InputTagSpeechDispatcher* input_tag_speech_dispatcher_;
-
   // The speech recognition dispatcher attached to this view, lazily
   // initialized.
   SpeechRecognitionDispatcher* speech_recognition_dispatcher_;
@@ -1155,10 +1084,6 @@ class CONTENT_EXPORT RenderViewImpl
 
   // BrowserPluginManager attached to this view; lazily initialized.
   scoped_refptr<BrowserPluginManager> browser_plugin_manager_;
-
-  // MediaStreamClient attached to this view; lazily initialized.
-  MediaStreamClient* media_stream_client_;
-  blink::WebUserMediaClient* web_user_media_client_;
 
   // MidiClient attached to this view; lazily initialized.
   MidiDispatcher* midi_dispatcher_;
@@ -1179,11 +1104,6 @@ class CONTENT_EXPORT RenderViewImpl
 
 #if defined(OS_ANDROID)
   // Android Specific ---------------------------------------------------------
-
-  // The background color of the document body element. This is used as the
-  // default background color for filling the screen areas for which we don't
-  // have the actual content.
-  SkColor body_background_color_;
 
   // Expected id of the next content intent launched. Used to prevent scheduled
   // intents to be launched if aborted.
@@ -1246,9 +1166,6 @@ class CONTENT_EXPORT RenderViewImpl
   // The current directory enumeration callback
   std::map<int, blink::WebFileChooserCompletion*> enumeration_completions_;
   int enumeration_completion_id_;
-
-  // Reports load progress to the browser.
-  scoped_ptr<LoadProgressTracker> load_progress_tracker_;
 
   // The SessionStorage namespace that we're assigned to has an ID, and that ID
   // is passed to us upon creation.  WebKit asks for this ID upon first use and

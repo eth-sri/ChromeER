@@ -26,12 +26,16 @@
 
 namespace base {
 class File;
-}
+}  // namespace base
 
 namespace content {
 class BrowserContext;
 class WebContents;
-}
+}  // namespace content
+
+namespace test {
+class ScopedCLDDynamicDataHarness;
+}  // namespace test
 
 struct LanguageDetectionDetails;
 class PrefService;
@@ -100,6 +104,7 @@ class TranslateTabHelper
  private:
   explicit TranslateTabHelper(content::WebContents* web_contents);
   friend class content::WebContentsUserData<TranslateTabHelper>;
+  friend class test::ScopedCLDDynamicDataHarness;  // For cleaning static state.
 
   // content::WebContentsObserver implementation.
   virtual void NavigationEntryCommitted(
@@ -108,8 +113,7 @@ class TranslateTabHelper
   virtual void DidNavigateAnyFrame(
       const content::LoadCommittedDetails& details,
       const content::FrameNavigateParams& params) OVERRIDE;
-  virtual void WebContentsDestroyed(
-      content::WebContents* web_contents) OVERRIDE;
+  virtual void WebContentsDestroyed() OVERRIDE;
 
   // Initiates translation once the page is finished loading.
   void InitiateTranslation(const std::string& page_lang, int attempt);
@@ -146,9 +150,9 @@ class TranslateTabHelper
 
   // The data file,  cached as long as the process stays alive.
   // We also track the offset at which the data starts, and its length.
-  static base::File* s_cached_file_; // guarded by file_lock_
-  static uint64 s_cached_data_offset_; // guarded by file_lock_
-  static uint64 s_cached_data_length_; // guarded by file_lock_
+  static base::File* s_cached_file_;    // guarded by file_lock_
+  static uint64 s_cached_data_offset_;  // guarded by file_lock_
+  static uint64 s_cached_data_length_;  // guarded by file_lock_
 
   // Guards s_cached_file_
   static base::LazyInstance<base::Lock> s_file_lock_;

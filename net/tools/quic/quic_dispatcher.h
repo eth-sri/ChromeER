@@ -113,8 +113,7 @@ class QuicDispatcher : public QuicServerSessionVisitor {
   virtual QuicConnection* CreateQuicConnection(
       QuicConnectionId connection_id,
       const IPEndPoint& server_address,
-      const IPEndPoint& client_address,
-      uint32 initial_flow_control_window);
+      const IPEndPoint& client_address);
 
   // Called by |framer_visitor_| when the public header has been parsed.
   virtual bool OnUnauthenticatedPublicHeader(
@@ -141,6 +140,11 @@ class QuicDispatcher : public QuicServerSessionVisitor {
 
   const QuicVersionVector& supported_versions_no_flow_control() const {
     return supported_versions_no_flow_control_;
+  }
+
+  const QuicVersionVector& supported_versions_no_connection_flow_control()
+      const {
+    return supported_versions_no_connection_flow_control_;
   }
 
   const IPEndPoint& current_server_address() {
@@ -219,6 +223,13 @@ class QuicDispatcher : public QuicServerSessionVisitor {
   // TODO(rjshade): Remove this when
   // FLAGS_enable_quic_stream_flow_control_2 is removed.
   QuicVersionVector supported_versions_no_flow_control_;
+  // Versions which do not support *connection* flow control (introduced in
+  // QUIC_VERSION_19).
+  // This is used to construct new QuicConnections when connection flow control
+  // is disabled via flag.
+  // TODO(rjshade): Remove this when
+  // FLAGS_enable_quic_connection_flow_control is removed.
+  QuicVersionVector supported_versions_no_connection_flow_control_;
 
   // Information about the packet currently being handled.
   IPEndPoint current_client_address_;

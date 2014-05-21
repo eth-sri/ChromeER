@@ -67,6 +67,8 @@ static const base::FilePath::CharType kStatsFileName[] =
     FILE_PATH_LITERAL("stats.txt");
 static const char kMainWebrtcTestHtmlPage[] =
     "/webrtc/webrtc_jsep01_test.html";
+static const char kCapturingWebrtcHtmlPage[] =
+    "/webrtc/webrtc_video_quality_test.html";
 
 // If you change the port number, don't forget to modify video_extraction.js
 // too!
@@ -76,16 +78,13 @@ static const struct VideoQualityTestConfig {
   const char* test_name;
   int width;
   int height;
-  const char* capture_page;
   const base::FilePath::CharType* reference_video;
   const char* constraints;
 } kVideoConfigurations[] = {
   { "360p", 640, 360,
-    "/webrtc/webrtc_video_quality_test.html",
     test::kReferenceFileName360p,
     WebRtcTestBase::kAudioVideoCallConstraints360p },
   { "720p", 1280, 720,
-    "/webrtc/webrtc_video_quality_test_hd.html",
     test::kReferenceFileName720p,
     WebRtcTestBase::kAudioVideoCallConstraints720p },
 };
@@ -106,10 +105,7 @@ static const struct VideoQualityTestConfig {
 // * zxing (see the CPP version at https://code.google.com/p/zxing)
 // * ffmpeg 0.11.1 or compatible version (see http://www.ffmpeg.org)
 //
-// The test case will launch a custom binary (peerconnection_server) which will
-// allow two WebRTC clients to find each other.
-//
-// The test also runs several other custom binaries - rgba_to_i420 converter and
+// The test runs several custom binaries - rgba_to_i420 converter and
 // frame_analyzer. Both tools can be found under third_party/webrtc/tools. The
 // test also runs a stand alone Python implementation of a WebSocket server
 // (pywebsocket) and a barcode_decoder script.
@@ -123,7 +119,6 @@ class WebRtcVideoQualityBrowserTest : public WebRtcTestBase,
   }
 
   virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
-    test::PeerConnectionServerRunner::KillAllPeerConnectionServers();
     DetectErrorsInJavaScript();  // Look for errors in our rather complex js.
   }
 
@@ -298,7 +293,6 @@ class WebRtcVideoQualityBrowserTest : public WebRtcTestBase,
   }
 
  protected:
-  test::PeerConnectionServerRunner peerconnection_server_;
   VideoQualityTestConfig test_config_;
 
  private:
@@ -339,7 +333,6 @@ IN_PROC_BROWSER_TEST_P(WebRtcVideoQualityBrowserTest,
   ASSERT_TRUE(HasAllRequiredResources());
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
   ASSERT_TRUE(StartPyWebSocketServer());
-  ASSERT_TRUE(peerconnection_server_.Start());
 
   content::WebContents* left_tab =
       OpenPageAndGetUserMediaInNewTabWithConstraints(
@@ -347,10 +340,13 @@ IN_PROC_BROWSER_TEST_P(WebRtcVideoQualityBrowserTest,
           test_config_.constraints);
   content::WebContents* right_tab =
       OpenPageAndGetUserMediaInNewTabWithConstraints(
-          embedded_test_server()->GetURL(test_config_.capture_page),
+          embedded_test_server()->GetURL(kCapturingWebrtcHtmlPage),
           test_config_.constraints);
 
-  EstablishCall(left_tab, right_tab);
+  SetupPeerconnectionWithLocalStream(left_tab);
+  SetupPeerconnectionWithLocalStream(right_tab);
+
+  NegotiateCall(left_tab, right_tab);
 
   // Poll slower here to avoid flooding the log with messages: capturing and
   // sending frames take quite a bit of time.
@@ -361,8 +357,6 @@ IN_PROC_BROWSER_TEST_P(WebRtcVideoQualityBrowserTest,
       polling_interval_msec));
 
   HangUp(left_tab);
-  WaitUntilHangupVerified(left_tab);
-  WaitUntilHangupVerified(right_tab);
 
   EXPECT_TRUE(test::PollingWaitUntil(
       "haveMoreFramesToSend()", "no-more-frames", right_tab,
@@ -371,7 +365,6 @@ IN_PROC_BROWSER_TEST_P(WebRtcVideoQualityBrowserTest,
   // Shut everything down to avoid having the javascript race with the analysis
   // tools. For instance, dont have console log printouts interleave with the
   // RESULT lines from the analysis tools (crbug.com/323200).
-  ASSERT_TRUE(peerconnection_server_.Stop());
   ASSERT_TRUE(ShutdownPyWebSocketServer());
 
   chrome::CloseWebContents(browser(), left_tab, false);

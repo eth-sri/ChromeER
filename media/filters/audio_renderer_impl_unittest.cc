@@ -118,7 +118,6 @@ class AudioRendererImplTest : public ::testing::Test {
 
   MOCK_METHOD1(OnStatistics, void(const PipelineStatistics&));
   MOCK_METHOD0(OnUnderflow, void());
-  MOCK_METHOD0(OnDisabled, void());
   MOCK_METHOD1(OnError, void(PipelineStatus));
 
   void OnAudioTimeCallback(TimeDelta current_time, TimeDelta max_time) {
@@ -137,8 +136,6 @@ class AudioRendererImplTest : public ::testing::Test {
         base::Bind(&AudioRendererImplTest::OnAudioTimeCallback,
                    base::Unretained(this)),
         ended_event_.GetClosure(),
-        base::Bind(&AudioRendererImplTest::OnDisabled,
-                   base::Unretained(this)),
         base::Bind(&AudioRendererImplTest::OnError,
                    base::Unretained(this)));
   }
@@ -231,22 +228,17 @@ class AudioRendererImplTest : public ::testing::Test {
     EXPECT_TRUE(decode_cb_.is_null());
   }
 
-  void Play() {
-    SCOPED_TRACE("Play()");
-    WaitableMessageLoopEvent event;
-    renderer_->Play(event.GetClosure());
+  void StartRendering() {
+    renderer_->StartRendering();
     renderer_->SetPlaybackRate(1.0f);
-    event.RunAndWait();
   }
 
-  void Pause() {
-    WaitableMessageLoopEvent pause_event;
-    renderer_->Pause(pause_event.GetClosure());
-    pause_event.RunAndWait();
+  void StopRendering() {
+    renderer_->StopRendering();
   }
 
   void Seek() {
-    Pause();
+    StopRendering();
     Flush();
     Preroll();
   }
@@ -288,8 +280,7 @@ class AudioRendererImplTest : public ::testing::Test {
                                kPlayingAudio,
                                0.0f,
                                size,
-                               next_timestamp_->GetTimestamp(),
-                               next_timestamp_->GetFrameDuration(size));
+                               next_timestamp_->GetTimestamp());
     next_timestamp_->AddFrames(size);
 
     DeliverBuffer(AudioDecoder::kOk, buffer);
@@ -334,8 +325,6 @@ class AudioRendererImplTest : public ::testing::Test {
   // number of frames read.  Since time is frozen, the audio delay will increase
   // as frames come in.
   int ConsumeAllBufferedData() {
-    renderer_->DisableUnderflowForTesting();
-
     int frames_read = 0;
     int total_frames_read = 0;
 
@@ -384,7 +373,7 @@ class AudioRendererImplTest : public ::testing::Test {
   void EndOfStreamTest(float playback_rate) {
     Initialize();
     Preroll();
-    Play();
+    StartRendering();
     renderer_->SetPlaybackRate(playback_rate);
 
     // Drain internal buffer, we should have a pending read.
@@ -525,10 +514,10 @@ TEST_F(AudioRendererImplTest, Preroll) {
   Preroll();
 }
 
-TEST_F(AudioRendererImplTest, Play) {
+TEST_F(AudioRendererImplTest, StartRendering) {
   Initialize();
   Preroll();
-  Play();
+  StartRendering();
 
   // Drain internal buffer, we should have a pending read.
   EXPECT_TRUE(ConsumeBufferedData(frames_buffered(), NULL));
@@ -553,7 +542,7 @@ TEST_F(AudioRendererImplTest, Underflow) {
 
   int initial_capacity = buffer_capacity();
 
-  Play();
+  StartRendering();
 
   // Drain internal buffer, we should have a pending read.
   EXPECT_TRUE(ConsumeBufferedData(frames_buffered(), NULL));
@@ -581,13 +570,13 @@ TEST_F(AudioRendererImplTest, Underflow) {
   EXPECT_FALSE(muted);
 }
 
-TEST_F(AudioRendererImplTest, Underflow_FollowedByFlush) {
+TEST_F(AudioRendererImplTest, Underflow_CapacityResetsAfterFlush) {
   Initialize();
   Preroll();
 
   int initial_capacity = buffer_capacity();
 
-  Play();
+  StartRendering();
 
   // Drain internal buffer, we should have a pending read.
   EXPECT_TRUE(ConsumeBufferedData(frames_buffered(), NULL));
@@ -598,24 +587,41 @@ TEST_F(AudioRendererImplTest, Underflow_FollowedByFlush) {
   EXPECT_CALL(*this, OnUnderflow());
   EXPECT_FALSE(ConsumeBufferedData(kDataSize, NULL));
 
+  // Verify that the buffer capacity increased as a result of resuming after
+  // underflow.
+  EXPECT_EQ(buffer_capacity(), initial_capacity);
   renderer_->ResumeAfterUnderflow();
-
-  // Verify that the buffer capacity increased as a result of the underflow.
   EXPECT_GT(buffer_capacity(), initial_capacity);
 
-  // Deliver data to get the renderer out of the underflow/rebuffer state.
-  DeliverRemainingAudio();
-
-  Seek();
-
   // Verify that the buffer capacity is restored to the |initial_capacity|.
+  AbortPendingRead();
+  Flush();
   EXPECT_EQ(buffer_capacity(), initial_capacity);
+}
+
+TEST_F(AudioRendererImplTest, Underflow_FlushWhileUnderflowed) {
+  Initialize();
+  Preroll();
+  StartRendering();
+
+  // Drain internal buffer, we should have a pending read.
+  EXPECT_TRUE(ConsumeBufferedData(frames_buffered(), NULL));
+  WaitForPendingRead();
+
+  // Verify the next FillBuffer() call triggers the underflow callback
+  // since the decoder hasn't delivered any data after it was drained.
+  EXPECT_CALL(*this, OnUnderflow());
+  EXPECT_FALSE(ConsumeBufferedData(kDataSize, NULL));
+
+  // Verify that we can still Flush() before entering the rebuffering state.
+  AbortPendingRead();
+  Flush();
 }
 
 TEST_F(AudioRendererImplTest, Underflow_EndOfStream) {
   Initialize();
   Preroll();
-  Play();
+  StartRendering();
 
   // Figure out how long until the ended event should fire.  Since
   // ConsumeBufferedData() doesn't provide audio delay information, the time
@@ -661,7 +667,7 @@ TEST_F(AudioRendererImplTest, Underflow_EndOfStream) {
 TEST_F(AudioRendererImplTest, Underflow_ResumeFromCallback) {
   Initialize();
   Preroll();
-  Play();
+  StartRendering();
 
   // Drain internal buffer, we should have a pending read.
   EXPECT_TRUE(ConsumeBufferedData(frames_buffered(), NULL));
@@ -688,7 +694,7 @@ TEST_F(AudioRendererImplTest, Underflow_ResumeFromCallback) {
 TEST_F(AudioRendererImplTest, Underflow_SetPlaybackRate) {
   Initialize();
   Preroll();
-  Play();
+  StartRendering();
 
   // Drain internal buffer, we should have a pending read.
   EXPECT_TRUE(ConsumeBufferedData(frames_buffered(), NULL));
@@ -724,7 +730,7 @@ TEST_F(AudioRendererImplTest, Underflow_SetPlaybackRate) {
 TEST_F(AudioRendererImplTest, Underflow_PausePlay) {
   Initialize();
   Preroll();
-  Play();
+  StartRendering();
 
   // Drain internal buffer, we should have a pending read.
   EXPECT_TRUE(ConsumeBufferedData(frames_buffered(), NULL));
@@ -770,42 +776,17 @@ TEST_F(AudioRendererImplTest, AbortPendingRead_Preroll) {
   Preroll(1000, PIPELINE_OK);
 }
 
-TEST_F(AudioRendererImplTest, AbortPendingRead_Pause) {
-  Initialize();
-
-  Preroll();
-  Play();
-
-  // Partially drain internal buffer so we get a pending read.
-  EXPECT_TRUE(ConsumeBufferedData(frames_buffered() / 2, NULL));
-  WaitForPendingRead();
-
-  // Start pausing.
-  WaitableMessageLoopEvent event;
-  renderer_->Pause(event.GetClosure());
-
-  // Simulate the decoder aborting the pending read.
-  AbortPendingRead();
-  event.RunAndWait();
-
-  Flush();
-
-  // Preroll again to a different timestamp and verify it completed normally.
-  Preroll(1000, PIPELINE_OK);
-}
-
-
 TEST_F(AudioRendererImplTest, AbortPendingRead_Flush) {
   Initialize();
 
   Preroll();
-  Play();
+  StartRendering();
 
   // Partially drain internal buffer so we get a pending read.
   EXPECT_TRUE(ConsumeBufferedData(frames_buffered() / 2, NULL));
   WaitForPendingRead();
 
-  Pause();
+  StopRendering();
 
   EXPECT_TRUE(IsReadPending());
 
@@ -823,41 +804,17 @@ TEST_F(AudioRendererImplTest, AbortPendingRead_Flush) {
   Preroll(1000, PIPELINE_OK);
 }
 
-TEST_F(AudioRendererImplTest, PendingRead_Pause) {
-  Initialize();
-
-  Preroll();
-  Play();
-
-  // Partially drain internal buffer so we get a pending read.
-  EXPECT_TRUE(ConsumeBufferedData(frames_buffered() / 2, NULL));
-  WaitForPendingRead();
-
-  // Start pausing.
-  WaitableMessageLoopEvent event;
-  renderer_->Pause(event.GetClosure());
-
-  SatisfyPendingRead(kDataSize);
-
-  event.RunAndWait();
-
-  Flush();
-
-  // Preroll again to a different timestamp and verify it completed normally.
-  Preroll(1000, PIPELINE_OK);
-}
-
 TEST_F(AudioRendererImplTest, PendingRead_Flush) {
   Initialize();
 
   Preroll();
-  Play();
+  StartRendering();
 
   // Partially drain internal buffer so we get a pending read.
   EXPECT_TRUE(ConsumeBufferedData(frames_buffered() / 2, NULL));
   WaitForPendingRead();
 
-  Pause();
+  StopRendering();
 
   EXPECT_TRUE(IsReadPending());
 
@@ -879,13 +836,13 @@ TEST_F(AudioRendererImplTest, PendingRead_Stop) {
   Initialize();
 
   Preroll();
-  Play();
+  StartRendering();
 
   // Partially drain internal buffer so we get a pending read.
   EXPECT_TRUE(ConsumeBufferedData(frames_buffered() / 2, NULL));
   WaitForPendingRead();
 
-  Pause();
+  StopRendering();
 
   EXPECT_TRUE(IsReadPending());
 
@@ -904,13 +861,13 @@ TEST_F(AudioRendererImplTest, PendingFlush_Stop) {
   Initialize();
 
   Preroll();
-  Play();
+  StartRendering();
 
   // Partially drain internal buffer so we get a pending read.
   EXPECT_TRUE(ConsumeBufferedData(frames_buffered() / 2, NULL));
   WaitForPendingRead();
 
-  Pause();
+  StopRendering();
 
   EXPECT_TRUE(IsReadPending());
 
@@ -937,7 +894,7 @@ TEST_F(AudioRendererImplTest, InitializeThenStopDuringDecoderInit) {
 TEST_F(AudioRendererImplTest, ConfigChangeDrainsConverter) {
   Initialize();
   Preroll();
-  Play();
+  StartRendering();
 
   // Drain internal buffer, we should have a pending read.
   EXPECT_TRUE(ConsumeBufferedData(frames_buffered(), NULL));
@@ -959,7 +916,7 @@ TEST_F(AudioRendererImplTest, ConfigChangeDrainsConverter) {
 TEST_F(AudioRendererImplTest, TimeUpdatesOnFirstBuffer) {
   Initialize();
   Preroll();
-  Play();
+  StartRendering();
 
   AudioTimestampHelper timestamp_helper(kOutputSamplesPerSecond);
   EXPECT_EQ(kNoTimestamp(), last_time_update());
@@ -969,15 +926,77 @@ TEST_F(AudioRendererImplTest, TimeUpdatesOnFirstBuffer) {
   EXPECT_TRUE(ConsumeBufferedData(kFramesToConsume, NULL));
   WaitForPendingRead();
 
-  // Ensure we received a time update for the first buffer and it's zero.
+  // ConsumeBufferedData() uses an audio delay of zero, so ensure we received
+  // a time update that's equal to |kFramesToConsume| from above.
   timestamp_helper.SetBaseTimestamp(base::TimeDelta());
-  EXPECT_EQ(timestamp_helper.base_timestamp(), last_time_update());
   timestamp_helper.AddFrames(kFramesToConsume);
+  EXPECT_EQ(timestamp_helper.GetTimestamp(), last_time_update());
 
-  // ConsumeBufferedData() uses an audio delay of zero, so the next buffer
-  // should have a timestamp equal to the duration of |kFramesToConsume|.
+  // The next time update should match the remaining frames_buffered().
+  timestamp_helper.AddFrames(frames_buffered());
   EXPECT_TRUE(ConsumeBufferedData(frames_buffered(), NULL));
   EXPECT_EQ(timestamp_helper.GetTimestamp(), last_time_update());
+}
+
+TEST_F(AudioRendererImplTest, ImmediateEndOfStream) {
+  Initialize();
+  {
+    SCOPED_TRACE("Preroll()");
+    WaitableMessageLoopEvent event;
+    renderer_->Preroll(base::TimeDelta(), event.GetPipelineStatusCB());
+    WaitForPendingRead();
+    DeliverEndOfStream();
+    event.RunAndWaitForStatus(PIPELINE_OK);
+  }
+  StartRendering();
+
+  // Read a single frame. We shouldn't be able to satisfy it.
+  EXPECT_FALSE(ConsumeBufferedData(1, NULL));
+  WaitForEnded();
+}
+
+TEST_F(AudioRendererImplTest, OnRenderErrorCausesDecodeError) {
+  Initialize();
+  Preroll();
+  StartRendering();
+
+  EXPECT_CALL(*this, OnError(PIPELINE_ERROR_DECODE));
+  sink_->OnRenderError();
+}
+
+// Test for AudioRendererImpl calling Pause()/Play() on the sink when the
+// playback rate is set to zero and non-zero.
+TEST_F(AudioRendererImplTest, SetPlaybackRate) {
+  Initialize();
+  Preroll();
+
+  // Rendering hasn't started. Sink should always be paused.
+  EXPECT_EQ(FakeAudioRendererSink::kPaused, sink_->state());
+  renderer_->SetPlaybackRate(0.0f);
+  EXPECT_EQ(FakeAudioRendererSink::kPaused, sink_->state());
+  renderer_->SetPlaybackRate(1.0f);
+  EXPECT_EQ(FakeAudioRendererSink::kPaused, sink_->state());
+
+  // Rendering has started with non-zero rate. Rate changes will affect sink
+  // state.
+  renderer_->StartRendering();
+  EXPECT_EQ(FakeAudioRendererSink::kPlaying, sink_->state());
+  renderer_->SetPlaybackRate(0.0f);
+  EXPECT_EQ(FakeAudioRendererSink::kPaused, sink_->state());
+  renderer_->SetPlaybackRate(1.0f);
+  EXPECT_EQ(FakeAudioRendererSink::kPlaying, sink_->state());
+
+  // Rendering has stopped. Sink should be paused.
+  renderer_->StopRendering();
+  EXPECT_EQ(FakeAudioRendererSink::kPaused, sink_->state());
+
+  // Start rendering with zero playback rate. Sink should be paused until
+  // non-zero rate is set.
+  renderer_->SetPlaybackRate(0.0f);
+  renderer_->StartRendering();
+  EXPECT_EQ(FakeAudioRendererSink::kPaused, sink_->state());
+  renderer_->SetPlaybackRate(1.0f);
+  EXPECT_EQ(FakeAudioRendererSink::kPlaying, sink_->state());
 }
 
 }  // namespace media

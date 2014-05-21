@@ -12,6 +12,7 @@
 #include <unistd.h>
 
 #include "base/file_util.h"
+#include "base/posix/eintr_wrapper.h"
 #include "base/third_party/valgrind/valgrind.h"
 #include "build/build_config.h"
 #include "sandbox/linux/tests/unit_tests.h"
@@ -41,8 +42,6 @@ int CountThreads() {
 }  // namespace
 
 namespace sandbox {
-
-extern bool kAllowForkWithThreads;
 
 bool IsAndroid() {
 #if defined(OS_ANDROID)
@@ -105,10 +104,10 @@ static void SetProcessTimeout(int time_in_seconds) {
 // in the BPF sandbox, as it potentially makes global state changes and as
 // it also tends to raise fatal errors, if the code has been used in an
 // insecure manner.
-void UnitTests::RunTestInProcess(UnitTests::Test test,
-                                 void* arg,
+void UnitTests::RunTestInProcess(SandboxTestRunner* test_runner,
                                  DeathCheck death,
                                  const void* death_aux) {
+  CHECK(test_runner);
   // We need to fork(), so we can't be multi-threaded, as threads could hold
   // locks.
   int num_threads = CountThreads();
@@ -128,26 +127,17 @@ void UnitTests::RunTestInProcess(UnitTests::Test test,
   // appear as still running in /proc.
   // We poll /proc, with an exponential back-off. At most, we'll sleep around
   // 2^iterations nanoseconds in nanosleep().
-  if (!kAllowForkWithThreads) {
-    for (unsigned int iteration = 0; iteration < 30; iteration++) {
-      struct timespec ts = {0, 1L << iteration /* nanoseconds */};
-      PCHECK(0 == HANDLE_EINTR(nanosleep(&ts, &ts)));
-      num_threads = CountThreads();
-      if (kNumExpectedThreads == num_threads)
-        break;
-    }
+  for (unsigned int iteration = 0; iteration < 30; iteration++) {
+    struct timespec ts = {0, 1L << iteration /* nanoseconds */};
+    PCHECK(0 == HANDLE_EINTR(nanosleep(&ts, &ts)));
+    num_threads = CountThreads();
+    if (kNumExpectedThreads == num_threads)
+      break;
   }
 
-  const std::string multiple_threads_error =
-      "Running sandbox tests with multiple threads "
-      "is not supported and will make the tests flaky.";
-  if (!kAllowForkWithThreads) {
-    ASSERT_EQ(kNumExpectedThreads, num_threads) << multiple_threads_error;
-  } else {
-    if (kNumExpectedThreads != num_threads)
-      LOG(ERROR) << multiple_threads_error;
-  }
-
+  ASSERT_EQ(kNumExpectedThreads, num_threads)
+      << "Running sandbox tests with multiple threads "
+      << "is not supported and will make the tests flaky.";
   int fds[2];
   ASSERT_EQ(0, pipe(fds));
   // Check that our pipe is not on one of the standard file descriptor.
@@ -174,7 +164,7 @@ void UnitTests::RunTestInProcess(UnitTests::Test test,
     struct rlimit no_core = {0};
     setrlimit(RLIMIT_CORE, &no_core);
 
-    test(arg);
+    test_runner->Run();
     _exit(kExpectedValue);
   }
 

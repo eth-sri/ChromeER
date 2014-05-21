@@ -510,12 +510,6 @@ DownloadInterruptReason ResourceDispatcherHostImpl::BeginDownload(
   }
   request->SetLoadFlags(request->load_flags() | extra_load_flags);
 
-  // No need to get offline load flags for downloads, but make sure
-  // we have an OfflinePolicy to receive request completions.
-  GlobalRoutingID id(child_id, route_id);
-  if (!offline_policy_map_[id])
-    offline_policy_map_[id] = new OfflinePolicy();
-
   // Check if the renderer is permitted to request the requested URL.
   if (!ChildProcessSecurityPolicyImpl::GetInstance()->
           CanRequestURL(child_id, url)) {
@@ -729,21 +723,6 @@ void ResourceDispatcherHostImpl::DidReceiveResponse(ResourceLoader* loader) {
         info->GetChildID(), info->GetRouteID());
   }
 
-  // There should be an entry in the map created when we dispatched the
-  // request unless it's been detached and the renderer has died.
-  OfflineMap::iterator policy_it(
-      offline_policy_map_.find(info->GetGlobalRoutingID()));
-  if (offline_policy_map_.end() != policy_it) {
-    policy_it->second->UpdateStateForSuccessfullyStartedRequest(
-        loader->request()->response_info());
-  } else {
-    // Unless detached, we should have an entry in offline_policy_map_ from
-    // when this request traversed Begin{Download,SaveFile,Request}.
-    // TODO(rdsmith): This isn't currently true; see http://crbug.com/241176.
-    DCHECK(info->detachable_handler() &&
-           info->detachable_handler()->is_detached());
-  }
-
   int render_process_id, render_frame_host;
   if (!info->GetAssociatedRenderFrame(&render_process_id, &render_frame_host))
     return;
@@ -840,11 +819,10 @@ void ResourceDispatcherHostImpl::OnShutdown() {
 
 bool ResourceDispatcherHostImpl::OnMessageReceived(
     const IPC::Message& message,
-    ResourceMessageFilter* filter,
-    bool* message_was_ok) {
+    ResourceMessageFilter* filter) {
   filter_ = filter;
   bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP_EX(ResourceDispatcherHostImpl, message, *message_was_ok)
+  IPC_BEGIN_MESSAGE_MAP(ResourceDispatcherHostImpl, message)
     IPC_MESSAGE_HANDLER(ResourceHostMsg_RequestResource, OnRequestResource)
     IPC_MESSAGE_HANDLER_DELAY_REPLY(ResourceHostMsg_SyncLoad, OnSyncLoad)
     IPC_MESSAGE_HANDLER(ResourceHostMsg_ReleaseDownloadedFile,
@@ -853,7 +831,7 @@ bool ResourceDispatcherHostImpl::OnMessageReceived(
     IPC_MESSAGE_HANDLER(ResourceHostMsg_UploadProgress_ACK, OnUploadProgressACK)
     IPC_MESSAGE_HANDLER(ResourceHostMsg_CancelRequest, OnCancelRequest)
     IPC_MESSAGE_UNHANDLED(handled = false)
-  IPC_END_MESSAGE_MAP_EX()
+  IPC_END_MESSAGE_MAP()
 
   if (!handled && IPC_MESSAGE_ID_CLASS(message.type()) == ResourceMsgStart) {
     PickleIterator iter(message);
@@ -866,7 +844,7 @@ bool ResourceDispatcherHostImpl::OnMessageReceived(
       ObserverList<ResourceMessageDelegate>::Iterator del_it(*it->second);
       ResourceMessageDelegate* delegate;
       while (!handled && (delegate = del_it.GetNext()) != NULL) {
-        handled = delegate->OnMessageReceived(message, message_was_ok);
+        handled = delegate->OnMessageReceived(message);
       }
     }
 
@@ -880,10 +858,10 @@ bool ResourceDispatcherHostImpl::OnMessageReceived(
 }
 
 void ResourceDispatcherHostImpl::OnRequestResource(
-    const IPC::Message& message,
+    int routing_id,
     int request_id,
     const ResourceHostMsg_Request& request_data) {
-  BeginRequest(request_id, request_data, NULL, message.routing_id());
+  BeginRequest(request_id, request_data, NULL, routing_id);
 }
 
 // Begins a resource request with the given params on behalf of the specified
@@ -936,13 +914,6 @@ void ResourceDispatcherHostImpl::UpdateRequestForTransfer(
   UpdateOutstandingRequestsStats(*info, old_stats);
   IncrementOutstandingRequestsMemory(1, *info);
   if (old_routing_id != new_routing_id) {
-    if (offline_policy_map_.find(old_routing_id) != offline_policy_map_.end()) {
-      if (offline_policy_map_.find(new_routing_id) !=
-          offline_policy_map_.end())
-        delete offline_policy_map_[new_routing_id];
-      offline_policy_map_[new_routing_id] = offline_policy_map_[old_routing_id];
-      offline_policy_map_.erase(old_routing_id);
-    }
     if (blocked_loaders_map_.find(old_routing_id) !=
             blocked_loaders_map_.end()) {
       blocked_loaders_map_[new_routing_id] =
@@ -1046,12 +1017,6 @@ void ResourceDispatcherHostImpl::BeginRequest(
   bool is_sync_load = sync_result != NULL;
   int load_flags =
       BuildLoadFlagsForRequest(request_data, child_id, is_sync_load);
-
-  GlobalRoutingID id(child_id, route_id);
-  if (!offline_policy_map_[id])
-    offline_policy_map_[id] = new OfflinePolicy();
-  load_flags |= offline_policy_map_[id]->GetAdditionalLoadFlags(
-      load_flags, request_data.resource_type == ResourceType::MAIN_FRAME);
 
   // Sync loads should have maximum priority and should be the only
   // requets that have the ignore limits flag set.
@@ -1405,12 +1370,6 @@ void ResourceDispatcherHostImpl::BeginSaveFile(
   // future, maybe we can use a configuration to configure this behavior.
   request->SetLoadFlags(net::LOAD_PREFERRING_CACHE);
 
-  // No need to get offline load flags for save files, but make sure
-  // we have an OfflinePolicy to receive request completions.
-  GlobalRoutingID id(child_id, route_id);
-  if (!offline_policy_map_[id])
-    offline_policy_map_[id] = new OfflinePolicy();
-
   // Since we're just saving some resources we need, disallow downloading.
   ResourceRequestInfoImpl* extra_info =
       CreateRequestInfo(child_id, route_id, false, context);
@@ -1525,27 +1484,6 @@ void ResourceDispatcherHostImpl::CancelRequestsForRoute(int child_id,
     for (std::set<int>::const_iterator iter = route_ids.begin();
         iter != route_ids.end(); ++iter) {
       CancelBlockedRequestsForRoute(child_id, *iter);
-    }
-  }
-
-  // Cleanup the offline state for the route.
-  if (-1 != route_id) {
-    OfflineMap::iterator it = offline_policy_map_.find(
-        GlobalRoutingID(child_id, route_id));
-    if (offline_policy_map_.end() != it) {
-      delete it->second;
-      offline_policy_map_.erase(it);
-    }
-  } else {
-    for (OfflineMap::iterator it = offline_policy_map_.begin();
-         offline_policy_map_.end() != it;) {
-      // Increment iterator so deletion doesn't invalidate it.
-      OfflineMap::iterator current_it = it++;
-
-      if (child_id == current_it->first.child_id) {
-        delete current_it->second;
-        offline_policy_map_.erase(current_it);
-      }
     }
   }
 }

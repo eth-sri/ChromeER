@@ -33,10 +33,6 @@ const char kDisableBootAnimation[]          = "disable-boot-animation";
 // Disables the ChromeOS demo.
 const char kDisableDemoMode[]               = "disable-demo-mode";
 
-// Disables reporting recently logged in users for enterprise-managed devices.
-const char kDisableEnterpriseUserReporting[] =
-    "disable-enterprise-user-reporting";
-
 // Disable Genius App and use the original Help App instead.
 const char kDisableGeniusApp[]              = "disable-genius-app";
 
@@ -61,12 +57,12 @@ const char kDisableVolumeAdjustSound[] = "disable-volume-adjust-sound";
 const char kDisableNetworkPortalNotification[] =
     "disable-network-portal-notification";
 
-// Enables overriding the path for the default echo component extension.
-// Useful for testing.
-const char kEchoExtensionPath[]             = "echo-ext-path";
-
 // Enables switching between different cellular carriers from the UI.
 const char kEnableCarrierSwitching[]        = "enable-carrier-switching";
+
+// Enables the next generation version of ChromeVox. Only valid with
+// use_chromevox_next=1 within your GYP_DEFINES.
+const char kEnableChromeVoxNext[]           = "enable-chromevox-next";
 
 // Enables consumer management, which allows user to enroll, remotely lock and
 // locate the device.
@@ -74,6 +70,9 @@ const char kEnableConsumerManagement[]      = "enable-consumer-management";
 
 // Enables MTP support in Files.app.
 const char kEnableFileManagerMTP[] = "enable-filemanager-mtp";
+
+// Enable explicit HID detection on OOBE.
+const char kEnableHIDDetectionOnOOBE[]     = "enable-hid-detection-on-oobe";
 
 // Enables notifications about captive portals in session.
 const char kEnableNetworkPortalNotification[] =
@@ -86,6 +85,9 @@ const char kEnableTouchpadThreeFingerClick[]
 // Enable Kiosk mode for ChromeOS. Note this switch refers to retail mode rather
 // than the kiosk app mode.
 const char kEnableKioskMode[]               = "enable-kiosk-mode";
+
+// Enables rollback option for resetting ChromeOS.
+const char kEnableRollbackOption[]          = "enable-rollback-option";
 
 // Enables request of tablet site (via user agent override).
 const char kEnableRequestTabletSite[]       = "enable-request-tablet-site";
@@ -113,10 +115,6 @@ const char kEnterpriseEnrollmentSkipRobotAuth[] =
 const char kFileManagerEnableNewAudioPlayer[] =
     "file-manager-enable-new-audio-player";
 
-// Enables the new gallery in the Files.app.
-const char kFileManagerEnableNewGallery[] =
-    "file-manager-enable-new-gallery";
-
 // Passed to Chrome the first time that it's run after the system boots.
 // Not passed on restart after sign out.
 const char kFirstExecAfterBoot[]            = "first-exec-after-boot";
@@ -135,6 +133,13 @@ const char kHasChromeOSKeyboard[]           = "has-chromeos-keyboard";
 
 // If true, the Chromebook has a keyboard with a diamond key.
 const char kHasChromeOSDiamondKey[]         = "has-chromeos-diamond-key";
+
+// If true, profile selection in UserManager will always return active user's
+// profile.
+// TODO(nkostlyev): http://crbug.com/364604 - Get rid of this switch after we
+// turn on multi-profile feature on ChromeOS.
+const char kIgnoreUserProfileMappingForTests[] =
+    "ignore-user-profile-mapping-for-tests";
 
 // Path for the screensaver used in Kiosk mode
 const char kKioskModeScreensaverPath[]      = "kiosk-mode-screensaver-path";

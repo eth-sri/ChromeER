@@ -13,7 +13,7 @@
 #include "base/compiler_specific.h"
 #include "chrome/browser/android/bookmarks/managed_bookmarks_shim.h"
 #include "chrome/browser/android/bookmarks/partner_bookmarks_shim.h"
-#include "components/bookmarks/core/browser/base_bookmark_model_observer.h"
+#include "components/bookmarks/browser/base_bookmark_model_observer.h"
 
 class Profile;
 
@@ -90,7 +90,8 @@ class BookmarksBridge : public BaseBookmarkModelObserver,
   virtual void BookmarkNodeRemoved(BookmarkModel* model,
                                    const BookmarkNode* parent,
                                    int old_index,
-                                   const BookmarkNode* node) OVERRIDE;
+                                   const BookmarkNode* node,
+                                   const std::set<GURL>& removed_urls) OVERRIDE;
   virtual void BookmarkNodeChanged(BookmarkModel* model,
                                    const BookmarkNode* node) OVERRIDE;
   virtual void BookmarkNodeChildrenReordered(BookmarkModel* model,

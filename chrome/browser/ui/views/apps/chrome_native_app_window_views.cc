@@ -40,6 +40,7 @@
 #include "ash/shell.h"
 #include "ash/wm/immersive_fullscreen_controller.h"
 #include "ash/wm/panels/panel_frame_view.h"
+#include "ash/wm/window_properties.h"
 #include "ash/wm/window_state.h"
 #include "ash/wm/window_state_delegate.h"
 #include "ash/wm/window_state_observer.h"
@@ -204,9 +205,8 @@ void ChromeNativeAppWindowViews::OnBeforeWidgetInit(
 
 void ChromeNativeAppWindowViews::InitializeDefaultWindow(
     const AppWindow::CreateParams& create_params) {
-  std::string app_name =
-      web_app::GenerateApplicationNameFromExtensionId(
-          app_window()->extension()->id());
+  std::string app_name = web_app::GenerateApplicationNameFromExtensionId(
+      app_window()->extension_id());
 
   views::Widget::InitParams init_params(views::Widget::InitParams::TYPE_WINDOW);
   init_params.delegate = this;
@@ -388,25 +388,46 @@ ChromeNativeAppWindowViews::CreateNonStandardAppFrame() {
 
 // ui::BaseWindow implementation.
 
+gfx::Rect ChromeNativeAppWindowViews::GetRestoredBounds() const {
+#if defined(USE_ASH)
+  gfx::Rect* bounds = widget()->GetNativeWindow()->GetProperty(
+      ash::kRestoreBoundsOverrideKey);
+  if (bounds && !bounds->IsEmpty())
+    return *bounds;
+#endif
+  return widget()->GetRestoredBounds();
+}
+
 ui::WindowShowState ChromeNativeAppWindowViews::GetRestoredState() const {
+#if !defined(USE_ASH)
   if (IsMaximized())
     return ui::SHOW_STATE_MAXIMIZED;
-  if (IsFullscreen()) {
-#if defined(USE_ASH)
-    if (immersive_fullscreen_controller_.get() &&
-        immersive_fullscreen_controller_->IsEnabled()) {
-      // Restore windows which were previously in immersive fullscreen to
-      // maximized. Restoring the window to a different fullscreen type
-      // makes for a bad experience.
-      return ui::SHOW_STATE_MAXIMIZED;
-    }
-#endif
+  if (IsFullscreen())
     return ui::SHOW_STATE_FULLSCREEN;
-  }
-#if defined(USE_ASH)
+#else
   // Use kRestoreShowStateKey in case a window is minimized/hidden.
   ui::WindowShowState restore_state = widget()->GetNativeWindow()->GetProperty(
       aura::client::kRestoreShowStateKey);
+  if (widget()->GetNativeWindow()->GetProperty(
+          ash::kRestoreBoundsOverrideKey)) {
+    // If an override is given, we use that restore state (after filtering).
+    restore_state = widget()->GetNativeWindow()->GetProperty(
+                        ash::kRestoreShowStateOverrideKey);
+  } else {
+    // Otherwise first normal states are checked.
+    if (IsMaximized())
+      return ui::SHOW_STATE_MAXIMIZED;
+    if (IsFullscreen()) {
+      if (immersive_fullscreen_controller_.get() &&
+          immersive_fullscreen_controller_->IsEnabled()) {
+        // Restore windows which were previously in immersive fullscreen to
+        // maximized. Restoring the window to a different fullscreen type
+        // makes for a bad experience.
+        return ui::SHOW_STATE_MAXIMIZED;
+      }
+      return ui::SHOW_STATE_FULLSCREEN;
+    }
+  }
   // Whitelist states to return so that invalid and transient states
   // are not saved and used to restore windows when they are recreated.
   switch (restore_state) {
@@ -422,7 +443,7 @@ ui::WindowShowState ChromeNativeAppWindowViews::GetRestoredState() const {
     case ui::SHOW_STATE_END:
       return ui::SHOW_STATE_NORMAL;
   }
-#endif
+#endif  // !defined(USE_ASH)
   return ui::SHOW_STATE_NORMAL;
 }
 
@@ -532,15 +553,8 @@ views::NonClientFrameView* ChromeNativeAppWindowViews::CreateNonClientFrameView(
     return custom_frame_view;
   }
 #endif
-#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
-  // Linux always uses the non standard frame view because the OS draws the
-  // frame (if a frame is needed).
-  return CreateNonStandardAppFrame();
-#else
-  if (IsFrameless() || has_frame_color_)
-    return CreateNonStandardAppFrame();
-#endif
-  return CreateStandardDesktopAppFrame();
+  return (IsFrameless() || has_frame_color_) ?
+      CreateNonStandardAppFrame() : CreateStandardDesktopAppFrame();
 }
 
 bool ChromeNativeAppWindowViews::WidgetHasHitTestMask() const {
@@ -553,7 +567,7 @@ void ChromeNativeAppWindowViews::GetWidgetHitTestMask(gfx::Path* mask) const {
 
 // views::View implementation.
 
-gfx::Size ChromeNativeAppWindowViews::GetPreferredSize() {
+gfx::Size ChromeNativeAppWindowViews::GetPreferredSize() const {
   if (!preferred_size_.IsEmpty())
     return preferred_size_;
   return NativeAppWindowViews::GetPreferredSize();
@@ -658,6 +672,7 @@ void ChromeNativeAppWindowViews::UpdateShape(scoped_ptr<SkRegion> region) {
 
   aura::Window* native_window = widget()->GetNativeWindow();
   if (shape_) {
+    widget()->SetShape(new SkRegion(*shape_));
     native_window->layer()->SetAlphaShape(
         make_scoped_ptr(new SkRegion(*shape_)));
     if (!had_shape) {

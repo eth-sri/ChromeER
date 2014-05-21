@@ -41,6 +41,10 @@ window.runTest = function(testName) {
   embedder.test.testList[testName]();
 };
 
+var LOG = function(msg) {
+  window.console.log(msg);
+};
+
 // Creates a <webview> tag in document.body and returns the reference to it.
 // It also sets a dummy src. The dummy src is significant because this makes
 // sure that the <object> shim is created (asynchronously at this point) for the
@@ -1130,6 +1134,41 @@ function testLoadAbortIllegalJavaScriptURL() {
   document.body.appendChild(webview);
 }
 
+// Verifies that navigating to invalid URL (e.g. 'http:') doesn't cause a crash.
+function testLoadAbortInvalidNavigation() {
+  var webview = document.createElement('webview');
+  var validSchemeWithEmptyURL = 'http:';
+  webview.addEventListener('loadabort', function(e) {
+    embedder.test.assertEq('ERR_ABORTED', e.reason);
+    embedder.test.assertEq('', e.url);
+    embedder.test.succeed();
+  });
+  webview.addEventListener('exit', function(e) {
+    // We should not crash.
+    embedder.test.fail();
+  });
+  webview.setAttribute('src', validSchemeWithEmptyURL);
+  document.body.appendChild(webview);
+}
+
+// Verifies that navigation to a URL that is valid but not web-safe or
+// pseudo-scheme fires loadabort and doesn't cause a crash.
+function testLoadAbortNonWebSafeScheme() {
+  var webview = document.createElement('webview');
+  var chromeGuestURL = 'chrome-guest://abc123';
+  webview.addEventListener('loadabort', function(e) {
+    embedder.test.assertEq('ERR_ABORTED', e.reason);
+    embedder.test.assertEq('chrome-guest://abc123/', e.url);
+    embedder.test.succeed();
+  });
+  webview.addEventListener('exit', function(e) {
+    // We should not crash.
+    embedder.test.fail();
+  });
+  webview.setAttribute('src', chromeGuestURL);
+  document.body.appendChild(webview);
+};
+
 // This test verifies that the reload method on webview functions as expected.
 function testReload() {
   var triggerNavUrl = 'data:text/html,trigger navigation';
@@ -1208,6 +1247,54 @@ function testNavigationToExternalProtocol() {
     }, function(results) {});
   });
   webview.setAttribute('src', 'data:text/html,navigate to external protocol');
+  document.body.appendChild(webview);
+}
+
+// This test ensures if the guest isn't there and we resize the guest (from JS),
+// it remembers the size correctly.
+function testNavigateAfterResize() {
+  var webview = new WebView();
+
+  var postMessageHandler = function(e) {
+    var data = JSON.parse(e.data);
+    LOG('postMessageHandler: ' + data);
+    webview.removeEventListener('message', postMessageHandler);
+    if (data[0] == 'dimension-response') {
+      var actualWidth = data[1];
+      var actualHeight = data[2];
+      LOG('actualWidth: ' + actualWidth + ', actualHeight: ' + actualHeight);
+      embedder.test.assertEq(100, actualWidth);
+      embedder.test.assertEq(125, actualHeight);
+      embedder.test.succeed();
+    }
+  };
+  window.addEventListener('message', postMessageHandler);
+
+  webview.addEventListener('consolemessage', function(e) {
+    LOG('guest log: ' + e.message);
+  });
+
+  webview.addEventListener('loadstop', function(e) {
+    webview.executeScript(
+      {file: 'navigate_after_resize.js'},
+      function(results) {
+        if (!results || !results.length) {
+          LOG('Failed to inject navigate_after_resize.js');
+          embedder.test.fail();
+          return;
+        }
+        LOG('Inject success: navigate_after_resize.js');
+        var msg = ['dimension-request'];
+        webview.contentWindow.postMessage(JSON.stringify(msg), '*');
+      });
+  });
+
+  // First set size.
+  webview.style.width = '100px';
+  webview.style.height = '125px';
+
+  // Then navigate.
+  webview.src = 'about:blank';
   document.body.appendChild(webview);
 }
 
@@ -1562,6 +1649,9 @@ embedder.test.testList = {
   'testLoadAbortIllegalChromeURL': testLoadAbortIllegalChromeURL,
   'testLoadAbortIllegalFileURL': testLoadAbortIllegalFileURL,
   'testLoadAbortIllegalJavaScriptURL': testLoadAbortIllegalJavaScriptURL,
+  'testLoadAbortInvalidNavigation': testLoadAbortInvalidNavigation,
+  'testLoadAbortNonWebSafeScheme': testLoadAbortNonWebSafeScheme,
+  'testNavigateAfterResize': testNavigateAfterResize,
   'testNavigationToExternalProtocol': testNavigationToExternalProtocol,
   'testReload': testReload,
   'testRemoveWebviewOnExit': testRemoveWebviewOnExit,

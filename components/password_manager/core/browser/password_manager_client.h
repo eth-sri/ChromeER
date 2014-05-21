@@ -16,7 +16,6 @@ namespace password_manager {
 class PasswordFormManager;
 class PasswordManagerDriver;
 class PasswordStore;
-class PasswordManagerLogger;
 
 // An abstraction of operations that depend on the embedders (e.g. Chrome)
 // environment.
@@ -36,13 +35,19 @@ class PasswordManagerClient {
   // that this form doesn't need to be saved.
   virtual void PromptUserToSavePassword(PasswordFormManager* form_to_save) = 0;
 
-  // Called when a password is autofilled. Default implementation is a no-op.
+  // Called when a password is autofilled. |best_matches| contains the
+  // PasswordForm into which a password was filled: the client may choose to
+  // save this to the PasswordStore, for example. Default implementation is a
+  // noop.
   virtual void PasswordWasAutofilled(
       const autofill::PasswordFormMap& best_matches) const {}
 
-  // Called when password autofill is blocked by the blacklist. Default
-  // implementation is a no-op.
-  virtual void PasswordAutofillWasBlocked() const {}
+  // Called when password autofill is blocked by the blacklist. |best_matches|
+  // contains the PasswordForm that flags the current site as being on the
+  // blacklist. The client may choose to remove this from the PasswordStore in
+  // order to unblacklist a site, for example. Default implementation is a noop.
+  virtual void PasswordAutofillWasBlocked(
+      const autofill::PasswordFormMap& best_matches) const {}
 
   // Called to authenticate the autofill password data.  If authentication is
   // successful, this should continue filling the form.
@@ -67,10 +72,13 @@ class PasswordManagerClient {
   // implementation returns false.
   virtual bool IsPasswordSyncEnabled();
 
-  // Attach or detach (setting NULL) a logger for this client.
-  virtual void SetLogger(PasswordManagerLogger* logger);
+  // Only for clients which registered with a LogRouter: If called with
+  // |router_can_be_used| set to false, the client may no longer use the
+  // LogRouter. If |router_can_be_used| is true, the LogRouter can be used after
+  // the return from OnLogRouterAvailabilityChanged.
+  virtual void OnLogRouterAvailabilityChanged(bool router_can_be_used);
 
-  // Send |text| to the logger.
+  // Forward |text| for display to the LogRouter (if registered with one).
   virtual void LogSavePasswordProgress(const std::string& text);
 
   // Returns true if logs recorded via LogSavePasswordProgress will be

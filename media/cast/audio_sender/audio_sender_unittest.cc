@@ -69,9 +69,6 @@ class AudioSenderTest : public ::testing::Test {
     audio_config_.bitrate = kDefaultAudioEncoderBitrate;
     audio_config_.rtp_config.payload_type = 127;
 
-    transport::CastTransportAudioConfig transport_config;
-    transport_config.base.rtp_config.payload_type = 127;
-    transport_config.channels = 2;
     net::IPEndPoint dummy_endpoint;
 
     transport_sender_.reset(new transport::CastTransportSenderImpl(
@@ -83,7 +80,6 @@ class AudioSenderTest : public ::testing::Test {
         base::TimeDelta(),
         task_runner_,
         &transport_));
-    transport_sender_->InitializeAudio(transport_config);
     audio_sender_.reset(new AudioSender(
         cast_environment_, audio_config_, transport_sender_.get()));
     task_runner_->RunTasks();
@@ -112,8 +108,7 @@ TEST_F(AudioSenderTest, Encode20ms) {
                           TestAudioBusFactory::kMiddleANoteFreq,
                           0.5f).NextAudioBus(kDuration));
 
-  base::TimeTicks recorded_time = base::TimeTicks::Now();
-  audio_sender_->InsertAudio(bus.Pass(), recorded_time);
+  audio_sender_->InsertAudio(bus.Pass(), testing_clock_->NowTicks());
   task_runner_->RunTasks();
   EXPECT_GE(
       transport_.number_of_rtp_packets() + transport_.number_of_rtcp_packets(),
@@ -128,8 +123,7 @@ TEST_F(AudioSenderTest, RtcpTimer) {
                           TestAudioBusFactory::kMiddleANoteFreq,
                           0.5f).NextAudioBus(kDuration));
 
-  base::TimeTicks recorded_time = base::TimeTicks::Now();
-  audio_sender_->InsertAudio(bus.Pass(), recorded_time);
+  audio_sender_->InsertAudio(bus.Pass(), testing_clock_->NowTicks());
   task_runner_->RunTasks();
 
   // Make sure that we send at least one RTCP packet.

@@ -533,6 +533,15 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     this.commandHandler.updateAvailability();
     this.document_.getElementById('drive-separator').hidden =
         !this.shouldShowDriveSettings();
+
+    // Force to update the gear menu position.
+    // TODO(hirono): Remove the workaround for the crbug.com/374093 after fixing
+    // it.
+    var gearMenu = this.document_.querySelector('#gear-menu');
+    gearMenu.style.left = '';
+    gearMenu.style.right = '';
+    gearMenu.style.top = '';
+    gearMenu.style.bottom = '';
   };
 
   /**
@@ -810,7 +819,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     this.document_.addEventListener('keyup', this.onKeyUp_.bind(this));
 
     this.renameInput_ = this.document_.createElement('input');
-    this.renameInput_.className = 'rename';
+    this.renameInput_.className = 'rename entry-name';
 
     this.renameInput_.addEventListener(
         'keydown', this.onRenameInputKeyDown_.bind(this));
@@ -1068,7 +1077,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
 
     var driveVolume = this.volumeManager_.getVolumeInfo(entry);
     var visible = driveVolume && !driveVolume.error &&
-        driveVolume.volumeType === util.VolumeType.DRIVE;
+        driveVolume.volumeType === VolumeManagerCommon.VolumeType.DRIVE;
     this.dialogDom_.
         querySelector('.dialog-middlebar-contents').hidden = !visible;
     this.dialogDom_.querySelector('#middlebar-splitter').hidden = !visible;
@@ -1727,10 +1736,10 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
    */
   FileManager.prototype.isOnDrive = function() {
     var rootType = this.directoryModel_.getCurrentRootType();
-    return rootType === RootType.DRIVE ||
-           rootType === RootType.DRIVE_SHARED_WITH_ME ||
-           rootType === RootType.DRIVE_RECENT ||
-           rootType === RootType.DRIVE_OFFLINE;
+    return rootType === VolumeManagerCommon.RootType.DRIVE ||
+           rootType === VolumeManagerCommon.RootType.DRIVE_SHARED_WITH_ME ||
+           rootType === VolumeManagerCommon.RootType.DRIVE_RECENT ||
+           rootType === VolumeManagerCommon.RootType.DRIVE_OFFLINE;
   };
 
   /**
@@ -2147,7 +2156,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
       }
 
       var basename = entry.name;
-      var splitted = PathUtil.splitExtension(basename);
+      var splitted = util.splitExtension(basename);
       var filename = splitted[0];
       var extension = splitted[1];
       var mime = props[0].contentMimeType;
@@ -2372,7 +2381,8 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
       this.dialogDom_.setAttribute('unformatted', '');
 
       var errorNode = this.dialogDom_.querySelector('#format-panel > .error');
-      if (volumeInfo.error == util.VolumeError.UNSUPPORTED_FILESYSTEM) {
+      if (volumeInfo.error ===
+          VolumeManagerCommon.VolumeError.UNSUPPORTED_FILESYSTEM) {
         errorNode.textContent = str('UNSUPPORTED_FILESYSTEM_WARNING');
       } else {
         errorNode.textContent = str('UNKNOWN_FILESYSTEM_WARNING');
@@ -2434,22 +2444,24 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
       return;
     var label = item.querySelector('.filename-label');
     var input = this.renameInput_;
+    var currentEntry = this.currentList_.dataModel.item(item.listIndex);
 
     input.value = label.textContent;
     item.setAttribute('renaming', '');
     label.parentNode.appendChild(input);
     input.focus();
+
     var selectionEnd = input.value.lastIndexOf('.');
-    if (selectionEnd == -1) {
-      input.select();
-    } else {
+    if (currentEntry.isFile && selectionEnd !== -1) {
       input.selectionStart = 0;
       input.selectionEnd = selectionEnd;
+    } else {
+      input.select();
     }
 
     // This has to be set late in the process so we don't handle spurious
     // blur events.
-    input.currentEntry = this.currentList_.dataModel.item(item.listIndex);
+    input.currentEntry = currentEntry;
     this.table_.startBatchUpdates();
     this.grid_.startBatchUpdates();
   };
@@ -2843,22 +2855,37 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     var self = this;
     var list = self.currentList_;
     var tryCreate = function() {
-      self.directoryModel_.createDirectory(current(),
-                                           onSuccess, onError);
     };
 
     var onSuccess = function(entry) {
       metrics.recordUserAction('CreateNewFolder');
       list.selectedItem = entry;
+
+      self.table_.list.endBatchUpdates();
+      self.grid_.endBatchUpdates();
+
       self.initiateRename();
     };
 
     var onError = function(error) {
+      self.table_.list.endBatchUpdates();
+      self.grid_.endBatchUpdates();
+
       self.alert.show(strf('ERROR_CREATING_FOLDER', current(),
                            util.getFileErrorString(error.name)));
     };
 
-    tryCreate();
+    var onAbort = function() {
+      self.table_.list.endBatchUpdates();
+      self.grid_.endBatchUpdates();
+    };
+
+    this.table_.list.startBatchUpdates();
+    this.grid_.startBatchUpdates();
+    this.directoryModel_.createDirectory(current(),
+                                         onSuccess,
+                                         onError,
+                                         onAbort);
   };
 
   /**

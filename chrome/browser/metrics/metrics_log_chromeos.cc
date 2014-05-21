@@ -8,9 +8,9 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
-#include "chrome/common/metrics/proto/chrome_user_metrics_extension.pb.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/common/pref_names.h"
+#include "components/metrics/proto/chrome_user_metrics_extension.pb.h"
 #include "device/bluetooth/bluetooth_adapter.h"
 #include "device/bluetooth/bluetooth_adapter_factory.h"
 #include "device/bluetooth/bluetooth_device.h"
@@ -201,8 +201,7 @@ void MetricsLogChromeOS::UpdateMultiProfileUserCount() {
   metrics::SystemProfileProto* system_profile =
       uma_proto_->mutable_system_profile();
 
-  if (chromeos::UserManager::IsInitialized() &&
-      chromeos::UserManager::Get()->IsMultipleProfilesAllowed()) {
+  if (chromeos::UserManager::IsInitialized()) {
     size_t user_count = chromeos::UserManager::Get()->GetLoggedInUsers().size();
 
     // We invalidate the user count if it changed while the log was open.

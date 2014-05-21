@@ -31,11 +31,12 @@
         '<(DEPTH)/chrome/chrome_resources.gyp:chrome_resources',
         # Need dev-tools related resources in shell_resources.pak and
         # devtools_resources.pak.
-        '<(DEPTH)/content/content_shell_and_tests.gyp:generate_content_shell_resources',
+        '<(DEPTH)/content/content_shell_and_tests.gyp:content_shell_resources',
         '<(DEPTH)/content/browser/devtools/devtools_resources.gyp:devtools_resources',
         '<(DEPTH)/extensions/extensions_resources.gyp:extensions_resources',
-        '<(DEPTH)/ui/base/strings/ui_strings.gyp:ui_strings',
+        '<(DEPTH)/extensions/extensions_strings.gyp:extensions_strings',
         '<(DEPTH)/ui/resources/ui_resources.gyp:ui_resources',
+        '<(DEPTH)/ui/strings/ui_strings.gyp:ui_strings',
       ],
       'actions': [
         {
@@ -51,6 +52,7 @@
               '<(SHARED_INTERMEDIATE_DIR)/chrome/renderer_resources_100_percent.pak',
               '<(SHARED_INTERMEDIATE_DIR)/content/shell_resources.pak',
               '<(SHARED_INTERMEDIATE_DIR)/extensions/extensions_resources.pak',
+              '<(SHARED_INTERMEDIATE_DIR)/extensions/strings/extensions_strings_en-US.pak',
               '<(SHARED_INTERMEDIATE_DIR)/ui/app_locale_settings/app_locale_settings_en-US.pak',
               '<(SHARED_INTERMEDIATE_DIR)/ui/ui_resources/ui_resources_100_percent.pak',
               '<(SHARED_INTERMEDIATE_DIR)/ui/ui_strings/ui_strings_en-US.pak',
@@ -67,21 +69,12 @@
       'type': 'static_library',
       'defines!': ['CONTENT_IMPLEMENTATION'],
       'dependencies': [
-        '<(DEPTH)/chrome/chrome.gyp:browser',
-        '<(DEPTH)/chrome/chrome.gyp:browser_extensions',
-        '<(DEPTH)/chrome/chrome.gyp:debugger',
-        '<(DEPTH)/chrome/chrome.gyp:plugin',
-        '<(DEPTH)/chrome/chrome.gyp:renderer',
-        '<(DEPTH)/chrome/chrome.gyp:utility',
-        '<(DEPTH)/chrome/chrome_resources.gyp:chrome_resources',
-        '<(DEPTH)/chrome/common/extensions/api/api.gyp:chrome_api',
-        '<(DEPTH)/third_party/WebKit/public/blink_devtools.gyp:blink_devtools_frontend_resources',
-        # TODO(rockot): Dependencies above this line are temporary.
-        # See http://crbug.com/359656.
         'app_shell_pak',
         '<(DEPTH)/apps/shell/common/api/api.gyp:shell_api',
         '<(DEPTH)/base/base.gyp:base',
         '<(DEPTH)/base/base.gyp:base_prefs_test_support',
+        '<(DEPTH)/components/components.gyp:pref_registry',
+        '<(DEPTH)/components/components.gyp:user_prefs',
         '<(DEPTH)/content/content.gyp:content',
         '<(DEPTH)/content/content.gyp:content_gpu',
         '<(DEPTH)/content/content.gyp:content_ppapi_plugin',
@@ -108,12 +101,15 @@
         'app/shell_main_delegate.h',
         'browser/api/shell/shell_api.cc',
         'browser/api/shell/shell_api.h',
+        'browser/default_shell_browser_main_delegate.cc',
+        'browser/default_shell_browser_main_delegate.h',
         'browser/shell_app_sorting.cc',
         'browser/shell_app_sorting.h',
         'browser/shell_app_window.cc',
         'browser/shell_app_window.h',
         'browser/shell_browser_context.cc',
         'browser/shell_browser_context.h',
+        'browser/shell_browser_main_delegate.h',
         'browser/shell_browser_main_parts.cc',
         'browser/shell_browser_main_parts.h',
         'browser/shell_content_browser_client.cc',
@@ -128,6 +124,10 @@
         'browser/shell_extension_web_contents_observer.h',
         'browser/shell_extensions_browser_client.cc',
         'browser/shell_extensions_browser_client.h',
+        'browser/shell_network_controller_chromeos.cc',
+        'browser/shell_network_controller_chromeos.h',
+        'browser/shell_runtime_api_delegate.cc',
+        'browser/shell_runtime_api_delegate.h',
         'common/shell_app_runtime.cc',
         'common/shell_app_runtime.h',
         'common/shell_content_client.cc',
@@ -147,7 +147,9 @@
       'conditions': [
         ['chromeos==1', {
           'dependencies': [
+            '<(DEPTH)/chromeos/chromeos.gyp:chromeos',
             '<(DEPTH)/ui/chromeos/ui_chromeos.gyp:ui_chromeos',
+            '<(DEPTH)/ui/display/display.gyp:display',
           ],
         }],
       ],

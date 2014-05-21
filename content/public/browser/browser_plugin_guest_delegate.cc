@@ -8,21 +8,8 @@
 
 namespace content {
 
-bool BrowserPluginGuestDelegate::HandleKeyboardEvent(
-    const NativeWebKeyboardEvent& event) {
-  return false;
-}
-
 bool BrowserPluginGuestDelegate::IsDragAndDropEnabled() {
   return false;
-}
-
-bool BrowserPluginGuestDelegate::IsOverridingUserAgent() const {
-  return false;
-}
-
-GURL BrowserPluginGuestDelegate::ResolveURL(const std::string& src) {
-  return GURL(src);
 }
 
 void BrowserPluginGuestDelegate::RequestMediaAccessPermission(
@@ -42,6 +29,24 @@ void BrowserPluginGuestDelegate::CanDownload(
 
 JavaScriptDialogManager*
 BrowserPluginGuestDelegate::GetJavaScriptDialogManager() {
+  return NULL;
+}
+
+ColorChooser* BrowserPluginGuestDelegate::OpenColorChooser(
+    WebContents* web_contents,
+    SkColor color,
+    const std::vector<ColorSuggestion>& suggestions) {
+  return NULL;
+}
+
+bool BrowserPluginGuestDelegate::HandleContextMenu(
+    const ContextMenuParams& params) {
+  return false;
+}
+
+WebContents* BrowserPluginGuestDelegate::OpenURLFromTab(
+    WebContents* source,
+    const OpenURLParams& params) {
   return NULL;
 }
 

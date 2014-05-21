@@ -37,11 +37,12 @@ class SingleThreadTaskRunner;
 
 namespace media {
 
-class AudioBus;
 class AudioBufferConverter;
+class AudioBus;
+class AudioClock;
+class AudioHardwareConfig;
 class AudioSplicer;
 class DecryptingDemuxerStream;
-class AudioHardwareConfig;
 
 class MEDIA_EXPORT AudioRendererImpl
     : public AudioRenderer,
@@ -70,10 +71,9 @@ class MEDIA_EXPORT AudioRendererImpl
                           const base::Closure& underflow_cb,
                           const TimeCB& time_cb,
                           const base::Closure& ended_cb,
-                          const base::Closure& disabled_cb,
                           const PipelineStatusCB& error_cb) OVERRIDE;
-  virtual void Play(const base::Closure& callback) OVERRIDE;
-  virtual void Pause(const base::Closure& callback) OVERRIDE;
+  virtual void StartRendering() OVERRIDE;
+  virtual void StopRendering() OVERRIDE;
   virtual void Flush(const base::Closure& callback) OVERRIDE;
   virtual void Stop(const base::Closure& callback) OVERRIDE;
   virtual void SetPlaybackRate(float rate) OVERRIDE;
@@ -81,12 +81,6 @@ class MEDIA_EXPORT AudioRendererImpl
                        const PipelineStatusCB& cb) OVERRIDE;
   virtual void ResumeAfterUnderflow() OVERRIDE;
   virtual void SetVolume(float volume) OVERRIDE;
-
-  // Disables underflow support.  When used, |state_| will never transition to
-  // kUnderflow resulting in Render calls that underflow returning 0 frames
-  // instead of some number of silence frames.  Must be called prior to
-  // Initialize().
-  void DisableUnderflowForTesting();
 
   // Allows injection of a custom time callback for non-realtime testing.
   typedef base::Callback<base::TimeTicks()> NowCB;
@@ -97,12 +91,33 @@ class MEDIA_EXPORT AudioRendererImpl
  private:
   friend class AudioRendererImplTest;
 
-  // TODO(acolwell): Add a state machine graph.
+  // Important detail: being in kPlaying doesn't imply that audio is being
+  // rendered. Rather, it means that the renderer is ready to go. The actual
+  // rendering of audio is controlled via Start/StopRendering().
+  //
+  //   kUninitialized
+  //         | Initialize()
+  //         |
+  //         V
+  //    kInitializing
+  //         | Decoders initialized
+  //         |
+  //         V            Decoders reset
+  //      kFlushed <------------------ kFlushing
+  //         | Preroll()                  ^
+  //         |                            |
+  //         V                            | Flush()
+  //     kPrerolling ----------------> kPlaying ---------.
+  //           Enough data buffered       ^              | Not enough data
+  //                                      |              | buffered
+  //                 Enough data buffered |              V
+  //                                 kRebuffering <--- kUnderflow
+  //                                      ResumeAfterUnderflow()
   enum State {
     kUninitialized,
     kInitializing,
-    kPaused,
     kFlushing,
+    kFlushed,
     kPrerolling,
     kPlaying,
     kStopped,
@@ -127,8 +142,8 @@ class MEDIA_EXPORT AudioRendererImpl
                                     const base::TimeDelta& playback_delay,
                                     const base::TimeTicks& time_now);
 
-  void DoPlay_Locked();
-  void DoPause_Locked();
+  void StartRendering_Locked();
+  void StopRendering_Locked();
 
   // AudioRendererSink::RenderCallback implementation.
   //
@@ -214,7 +229,6 @@ class MEDIA_EXPORT AudioRendererImpl
   base::Closure underflow_cb_;
   TimeCB time_cb_;
   base::Closure ended_cb_;
-  base::Closure disabled_cb_;
   PipelineStatusCB error_cb_;
 
   // Callback provided to Flush().
@@ -236,7 +250,9 @@ class MEDIA_EXPORT AudioRendererImpl
   // Simple state tracking variable.
   State state_;
 
-  // Keep track of whether or not the sink is playing.
+  // Keep track of whether or not the sink is playing and whether we should be
+  // rendering.
+  bool rendering_;
   bool sink_playing_;
 
   // Keep track of our outstanding read to |decoder_|.
@@ -246,10 +262,7 @@ class MEDIA_EXPORT AudioRendererImpl
   bool received_end_of_stream_;
   bool rendered_end_of_stream_;
 
-  // The timestamp of the last frame (i.e. furthest in the future) buffered as
-  // well as the current time that takes current playback delay into account.
-  base::TimeDelta audio_time_buffered_;
-  base::TimeDelta current_time_;
+  scoped_ptr<AudioClock> audio_clock_;
 
   base::TimeDelta preroll_timestamp_;
 
@@ -269,8 +282,6 @@ class MEDIA_EXPORT AudioRendererImpl
   // than nothing.
   base::TimeTicks earliest_end_time_;
   size_t total_frames_filled_;
-
-  bool underflow_disabled_;
 
   // True if the renderer receives a buffer with kAborted status during preroll,
   // false otherwise. This flag is cleared on the next Preroll() call.

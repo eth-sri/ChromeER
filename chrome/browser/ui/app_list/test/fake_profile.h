@@ -9,6 +9,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/sequenced_task_runner.h"
 #include "chrome/browser/profiles/profile.h"
+#include "components/domain_reliability/clear_mode.h"
 #include "content/public/browser/browser_context.h"
 
 class ResourceContext;
@@ -68,6 +69,7 @@ class FakeProfile : public Profile {
   virtual content::ResourceContext* GetResourceContext() OVERRIDE;
   virtual content::GeolocationPermissionContext*
       GetGeolocationPermissionContext() OVERRIDE;
+  virtual content::BrowserPluginGuestManager* GetGuestManager() OVERRIDE;
   virtual quota::SpecialStoragePolicy* GetSpecialStoragePolicy() OVERRIDE;
   virtual scoped_refptr<base::SequencedTaskRunner> GetIOTaskRunner() OVERRIDE;
   virtual Profile* GetOffTheRecordProfile() OVERRIDE;
@@ -111,6 +113,9 @@ class FakeProfile : public Profile {
   virtual chrome_browser_net::Predictor* GetNetworkPredictor() OVERRIDE;
   virtual void ClearNetworkingHistorySince(
       base::Time time, const base::Closure& completion) OVERRIDE;
+  virtual void ClearDomainReliabilityMonitor(
+      domain_reliability::DomainReliabilityClearMode mode,
+      const base::Closure& completion) OVERRIDE;
   virtual GURL GetHomePage() OVERRIDE;
   virtual bool WasCreatedByVersionOrLater(const std::string& version) OVERRIDE;
   virtual void SetExitType(ExitType exit_type) OVERRIDE;

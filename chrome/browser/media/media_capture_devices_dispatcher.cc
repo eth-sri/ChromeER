@@ -28,7 +28,7 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/pref_names.h"
-#include "components/user_prefs/pref_registry_syncable.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/desktop_media_id.h"
 #include "content/public/browser/media_capture_devices.h"
@@ -75,7 +75,7 @@ const content::MediaStreamDevice* FindDeviceWithId(
     }
   }
   return NULL;
-};
+}
 
 // This is a short-term solution to grant camera and/or microphone access to
 // extensions:
@@ -631,8 +631,10 @@ void MediaCaptureDevicesDispatcher::ProcessQueuedAccessRequest(
                        base::Unretained(this), web_contents)));
     if (controller->DismissInfoBarAndTakeActionOnSettings())
       return;
-    PermissionBubbleManager::FromWebContents(web_contents)->
-        AddRequest(controller.release());
+    PermissionBubbleManager* bubble_manager =
+        PermissionBubbleManager::FromWebContents(web_contents);
+    if (bubble_manager)
+      bubble_manager->AddRequest(controller.release());
     return;
   }
 

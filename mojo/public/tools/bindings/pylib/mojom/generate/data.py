@@ -65,17 +65,17 @@ def LookupKind(kinds, spec, scope):
 
   return kinds.get(spec)
 
-def LookupConstant(constants, name, scope):
-  """Like LookupKind, but for constants."""
+def LookupValue(values, name, scope):
+  """Like LookupKind, but for constant values."""
   for i in xrange(len(scope), -1, -1):
     if i > 0:
       test_spec = '.'.join(scope[:i]) + '.'
     test_spec += name
-    constant = constants.get(test_spec)
-    if constant:
-      return constant
+    value = values.get(test_spec)
+    if value:
+      return value
 
-  return constants.get(name)
+  return values.get(name)
 
 def KindToData(kind):
   return kind.spec
@@ -114,12 +114,12 @@ def ImportFromData(module, data):
         kind.imported_from is None):
       kind = KindFromImport(kind, import_item)
       module.kinds[kind.spec] = kind
-  # Ditto for constants.
-  for constant in import_module.constants.itervalues():
-    if constant.imported_from is None:
-      constant = copy.deepcopy(constant)
-      constant.imported_from = import_item
-      module.constants[constant.GetSpec()] = constant
+  # Ditto for values.
+  for value in import_module.values.itervalues():
+    if value.imported_from is None:
+      value = copy.deepcopy(value)
+      value.imported_from = import_item
+      module.values[value.GetSpec()] = value
 
   return import_item
 
@@ -132,10 +132,13 @@ def StructToData(struct):
 def StructFromData(module, data):
   struct = mojom.Struct(module=module)
   struct.name = data['name']
+  struct.attributes = data['attributes']
   struct.spec = 'x:' + module.namespace + '.' + struct.name
   module.kinds[struct.spec] = struct
   struct.enums = map(lambda enum:
       EnumFromData(module, enum, struct), data['enums'])
+  struct.constants = map(lambda constant:
+      ConstantFromData(module, constant, struct), data['constants'])
   # Stash fields data here temporarily.
   struct.fields_data = data['fields']
   return struct
@@ -159,9 +162,9 @@ def FixupExpression(module, value, scope):
       else:
         value[i] = FixupExpression(module, value[i], scope)
   elif value:
-    constant = LookupConstant(module.constants, value, scope)
-    if constant:
-      return constant
+    result = LookupValue(module.values, value, scope)
+    if result:
+      return result
   return value
 
 def FieldFromData(module, data, struct):
@@ -207,9 +210,7 @@ def MethodToData(method):
   return data
 
 def MethodFromData(module, data, interface):
-  method = mojom.Method()
-  method.name = data['name']
-  method.ordinal = data.get('ordinal')
+  method = mojom.Method(interface, data['name'], ordinal=data.get('ordinal'))
   method.default = data.get('default')
   method.parameters = map(lambda parameter:
       ParameterFromData(module, parameter, interface), data['parameters'])
@@ -222,7 +223,7 @@ def MethodFromData(module, data, interface):
 def InterfaceToData(interface):
   return {
     istr(0, 'name'):    interface.name,
-    istr(1, 'peer'):    interface.peer,
+    istr(1, 'client'):  interface.client,
     istr(2, 'methods'): map(MethodToData, interface.methods)
   }
 
@@ -230,10 +231,12 @@ def InterfaceFromData(module, data):
   interface = mojom.Interface(module=module)
   interface.name = data['name']
   interface.spec = 'x:' + module.namespace + '.' + interface.name
-  interface.peer = data['peer'] if data.has_key('peer') else None
+  interface.client = data['client'] if data.has_key('client') else None
   module.kinds[interface.spec] = interface
   interface.enums = map(lambda enum:
       EnumFromData(module, enum, interface), data['enums'])
+  interface.constants = map(lambda constant:
+      ConstantFromData(module, constant, interface), data['constants'])
   # Stash methods data here temporarily.
   interface.methods_data = data['methods']
   return interface
@@ -241,14 +244,18 @@ def InterfaceFromData(module, data):
 def EnumFieldFromData(module, enum, data, parent_kind):
   field = mojom.EnumField()
   field.name = data['name']
+  # TODO(mpcomplete): FixupExpression should be done in the second pass,
+  # so constants and enums can refer to each other.
+  # TODO(mpcomplete): But then, what if constants are initialized to an enum? Or
+  # vice versa?
   if parent_kind:
     field.value = FixupExpression(
         module, data['value'], (module.namespace, parent_kind.name))
   else:
     field.value = FixupExpression(
         module, data['value'], (module.namespace, ))
-  constant = mojom.Constant(module, enum, field)
-  module.constants[constant.GetSpec()] = constant
+  value = mojom.EnumValue(module, enum, field)
+  module.values[value.GetSpec()] = value
   return field
 
 def EnumFromData(module, data, parent_kind):
@@ -266,6 +273,21 @@ def EnumFromData(module, data, parent_kind):
   module.kinds[enum.spec] = enum
   return enum
 
+def ConstantFromData(module, data, parent_kind):
+  constant = mojom.Constant()
+  constant.name = data['name']
+  if parent_kind:
+    scope = (module.namespace, parent_kind.name)
+  else:
+    scope = (module.namespace, )
+  # TODO(mpcomplete): maybe we should only support POD kinds.
+  constant.kind = KindFromData(module.kinds, data['kind'], scope)
+  constant.value = FixupExpression(module, data.get('value'), scope)
+
+  value = mojom.NamedValue(module, parent_kind, constant.name)
+  module.values[value.GetSpec()] = value
+  return constant
+
 def ModuleToData(module):
   return {
     istr(0, 'name'):       module.name,
@@ -280,10 +302,11 @@ def ModuleFromData(data):
   for kind in mojom.PRIMITIVES:
     module.kinds[kind.spec] = kind
 
-  module.constants = {}
+  module.values = {}
 
   module.name = data['name']
   module.namespace = data['namespace']
+  module.attributes = data['attributes']
   # Imports must come first, because they add to module.kinds which is used
   # by by the others.
   module.imports = map(
@@ -298,6 +321,9 @@ def ModuleFromData(data):
   module.interfaces = map(
       lambda interface: InterfaceFromData(module, interface),
       data['interfaces'])
+  module.constants = map(
+      lambda constant: ConstantFromData(module, constant, None),
+      data['constants'])
 
   # Second pass expands fields and methods. This allows fields and parameters
   # to refer to kinds defined anywhere in the mojom.

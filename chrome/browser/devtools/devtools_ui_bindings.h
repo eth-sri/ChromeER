@@ -23,6 +23,7 @@
 #include "content/public/browser/notification_registrar.h"
 #include "ui/gfx/size.h"
 
+class InfoBarService;
 class Profile;
 
 namespace content {
@@ -37,7 +38,7 @@ class DevToolsUIBindings : public content::NotificationObserver,
                            public DevToolsEmbedderMessageDispatcher::Delegate,
                            public DevToolsAndroidBridge::DeviceCountListener {
  public:
-  static DevToolsUIBindings* ForWebContents(
+  static DevToolsUIBindings* GetOrCreateFor(
       content::WebContents* web_contents);
   static GURL ApplyThemeToURL(Profile* profile, const GURL& base_url);
 
@@ -46,8 +47,7 @@ class DevToolsUIBindings : public content::NotificationObserver,
     virtual ~Delegate() {}
     virtual void ActivateWindow() = 0;
     virtual void CloseWindow() = 0;
-    virtual void SetContentsInsets(
-        int left, int top, int right, int bottom) = 0;
+    virtual void SetInspectedPageBounds(const gfx::Rect& rect) = 0;
     virtual void SetContentsResizingStrategy(
         const gfx::Insets& insets, const gfx::Size& min_size) = 0;
     virtual void InspectElementCompleted() = 0;
@@ -58,6 +58,8 @@ class DevToolsUIBindings : public content::NotificationObserver,
 
     virtual void InspectedContentsClosing() = 0;
     virtual void OnLoadCompleted() = 0;
+    virtual InfoBarService* GetInfoBarService() = 0;
+    virtual void RenderProcessGone() = 0;
   };
 
   explicit DevToolsUIBindings(content::WebContents* web_contents);
@@ -67,12 +69,14 @@ class DevToolsUIBindings : public content::NotificationObserver,
   Profile* profile() { return profile_; }
   content::DevToolsClientHost* frontend_host() { return frontend_host_.get(); }
 
+  // Takes ownership over the |delegate|.
   void SetDelegate(Delegate* delegate);
   void CallClientFunction(const std::string& function_name,
                           const base::Value* arg1,
                           const base::Value* arg2,
                           const base::Value* arg3);
-
+  void DispatchEventOnFrontend(const std::string& event_type,
+                               const base::Value* event_data);
  private:
   // content::NotificationObserver:
   virtual void Observe(int type,
@@ -86,11 +90,11 @@ class DevToolsUIBindings : public content::NotificationObserver,
   // DevToolsEmbedderMessageDispatcher::Delegate overrides:
   virtual void ActivateWindow() OVERRIDE;
   virtual void CloseWindow() OVERRIDE;
-  virtual void SetContentsInsets(
-      int left, int top, int right, int bottom) OVERRIDE;
+  virtual void SetInspectedPageBounds(const gfx::Rect& rect) OVERRIDE;
   virtual void SetContentsResizingStrategy(
       const gfx::Insets& insets, const gfx::Size& min_size) OVERRIDE;
   virtual void InspectElementCompleted() OVERRIDE;
+  virtual void InspectedURLChanged(const std::string& url) OVERRIDE;
   virtual void MoveWindow(int x, int y) OVERRIDE;
   virtual void SetIsDocked(bool is_docked) OVERRIDE;
   virtual void OpenInNewTab(const std::string& url) OVERRIDE;
@@ -116,9 +120,10 @@ class DevToolsUIBindings : public content::NotificationObserver,
   virtual void ResetZoom() OVERRIDE;
   virtual void OpenUrlOnRemoteDeviceAndInspect(const std::string& browser_id,
                                                const std::string& url) OVERRIDE;
-  virtual void StartRemoteDevicesListener() OVERRIDE;
-  virtual void StopRemoteDevicesListener() OVERRIDE;
-  virtual void EnableRemoteDeviceCounter(bool enable) OVERRIDE;
+  virtual void Subscribe(const std::string& event_type) OVERRIDE;
+  virtual void Unsubscribe(const std::string& event_type) OVERRIDE;
+
+  void EnableRemoteDeviceCounter(bool enable);
 
   // DevToolsAndroidBridge::DeviceCountListener override:
   virtual void DeviceCountChanged(int count) OVERRIDE;
@@ -172,6 +177,8 @@ class DevToolsUIBindings : public content::NotificationObserver,
       IndexingJobsMap;
   IndexingJobsMap indexing_jobs_;
 
+  typedef std::set<std::string> Subscribers;
+  Subscribers subscribers_;
   scoped_ptr<DevToolsTargetsUIHandler> remote_targets_handler_;
   scoped_ptr<DevToolsEmbedderMessageDispatcher> embedder_message_dispatcher_;
   base::WeakPtrFactory<DevToolsUIBindings> weak_factory_;

@@ -60,7 +60,7 @@ class ShelfTooltipManager::ShelfTooltipBubble
   virtual void WindowClosing() OVERRIDE;
 
   // views::View overrides:
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
 
   ShelfTooltipManager* host_;
   views::Label* label_;
@@ -73,8 +73,6 @@ ShelfTooltipManager::ShelfTooltipBubble::ShelfTooltipBubble(
     views::BubbleBorder::Arrow arrow,
     ShelfTooltipManager* host)
     : views::BubbleDelegateView(anchor, arrow), host_(host) {
-  // Make sure that the bubble follows the animation of the shelf.
-  set_move_with_anchor(true);
   gfx::Insets insets = gfx::Insets(kArrowOffsetTopBottom,
                                    kArrowOffsetLeftRight,
                                    kArrowOffsetTopBottom,
@@ -126,7 +124,7 @@ void ShelfTooltipManager::ShelfTooltipBubble::WindowClosing() {
     host_->OnBubbleClosed(this);
 }
 
-gfx::Size ShelfTooltipManager::ShelfTooltipBubble::GetPreferredSize() {
+gfx::Size ShelfTooltipManager::ShelfTooltipBubble::GetPreferredSize() const {
   gfx::Size pref_size = views::BubbleDelegateView::GetPreferredSize();
   if (pref_size.height() < kTooltipMinHeight)
     pref_size.set_height(kTooltipMinHeight);

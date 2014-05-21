@@ -15,7 +15,7 @@ from telemetry.page.actions.all_page_actions import *
 from telemetry.unittest import options_for_unittests
 
 
-class BasicTestPage(page_module.PageWithDefaultRunNavigate):
+class BasicTestPage(page_module.Page):
   def __init__(self, url, page_set, base_dir):
     super(BasicTestPage, self).__init__(url, page_set, base_dir)
 
@@ -54,7 +54,7 @@ class PageMeasurementUnitTestBase(unittest.TestCase):
         continue
       setattr(options, k, v)
 
-    measurement.CustomizeBrowserOptions(options)
+    measurement.CustomizeBrowserOptions(options.browser_options)
     options.output_file = None
     options.output_format = 'none'
     options.output_trace_tag = None

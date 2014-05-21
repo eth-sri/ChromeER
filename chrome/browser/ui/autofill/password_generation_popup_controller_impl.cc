@@ -22,7 +22,9 @@
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
+#include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
+#include "grit/google_chrome_strings.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/events/keycodes/keyboard_codes.h"
@@ -135,7 +137,7 @@ bool PasswordGenerationPopupControllerImpl::PossiblyAcceptPassword() {
 }
 
 void PasswordGenerationPopupControllerImpl::PasswordSelected(bool selected) {
-  if (!display_password_)
+  if (!display_password_ || selected == password_selected_)
     return;
 
   password_selected_ = selected;
@@ -287,8 +289,7 @@ void PasswordGenerationPopupControllerImpl::OnSavedPasswordsLinkClicked() {
 
 void PasswordGenerationPopupControllerImpl::SetSelectionAtPoint(
     const gfx::Point& point) {
-  if (password_bounds_.Contains(point))
-    PasswordSelected(true);
+  PasswordSelected(password_bounds_.Contains(point));
 }
 
 bool PasswordGenerationPopupControllerImpl::AcceptSelectedLine() {

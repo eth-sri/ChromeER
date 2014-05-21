@@ -45,7 +45,7 @@ class OpaqueBrowserFrameView : public BrowserNonClientFrameView,
   virtual int GetTopInset() const OVERRIDE;
   virtual int GetThemeBackgroundXInset() const OVERRIDE;
   virtual void UpdateThrobber(bool running) OVERRIDE;
-  virtual gfx::Size GetMinimumSize() OVERRIDE;
+  virtual gfx::Size GetMinimumSize() const OVERRIDE;
 
   // Overridden from views::NonClientFrameView:
   virtual gfx::Rect GetBoundsForClientView() const OVERRIDE;
@@ -95,7 +95,6 @@ class OpaqueBrowserFrameView : public BrowserNonClientFrameView,
   virtual bool IsFullscreen() const OVERRIDE;
   virtual bool IsTabStripVisible() const OVERRIDE;
   virtual int GetTabStripHeight() const OVERRIDE;
-  virtual int GetAdditionalReservedSpaceInTabStrip() const OVERRIDE;
   virtual gfx::Size GetTabstripPreferredSize() const OVERRIDE;
 
  protected:

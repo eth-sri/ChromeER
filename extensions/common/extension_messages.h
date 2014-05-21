@@ -116,6 +116,9 @@ IPC_STRUCT_BEGIN(ExtensionMsg_ExecuteCode_Params)
   // Whether to inject into all frames, or only the root frame.
   IPC_STRUCT_MEMBER(bool, all_frames)
 
+  // Whether to inject into about:blank (sub)frames.
+  IPC_STRUCT_MEMBER(bool, match_about_blank)
+
   // When to inject the code.
   IPC_STRUCT_MEMBER(int, run_at)
 
@@ -568,6 +571,10 @@ IPC_MESSAGE_ROUTED3(ExtensionHostMsg_ContentScriptsExecuting,
                     ExecutingScriptsMap,
                     int32 /* page_id of the _topmost_ frame */,
                     GURL /* url of the _topmost_ frame */)
+
+IPC_MESSAGE_ROUTED2(ExtensionHostMsg_NotifyExtensionScriptExecution,
+                    std::string /* extension id */,
+                    int /* page id */)
 
 // Sent by the renderer when a web page is checking if its app is installed.
 IPC_MESSAGE_ROUTED3(ExtensionHostMsg_GetAppInstallState,

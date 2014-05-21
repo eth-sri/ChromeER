@@ -12,7 +12,7 @@
 #include "third_party/WebKit/public/platform/WebRTCDTMFSenderHandler.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 
-namespace WebTestRunner {
+namespace content {
 
 class WebTestDelegate;
 
@@ -28,7 +28,7 @@ public:
     virtual bool insertDTMF(const blink::WebString& tones, long duration, long interToneGap) OVERRIDE;
 
     // WebTask related methods
-    WebTaskList* taskList() { return &m_taskList; }
+    WebTaskList* mutable_task_list() { return &m_taskList; }
     void clearToneBuffer() { m_toneBuffer.reset(); }
 
 private:
@@ -43,6 +43,6 @@ private:
     DISALLOW_COPY_AND_ASSIGN(MockWebRTCDTMFSenderHandler);
 };
 
-}
+}  // namespace content
 
 #endif  // CONTENT_SHELL_RENDERER_TEST_RUNNER_MOCKWEBRTCDTMFSENDERHANDLER_H_

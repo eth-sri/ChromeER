@@ -126,6 +126,7 @@ class ShelfItemDelegateManager;
 class ShelfModel;
 class ShelfWindowWatcher;
 class ShellDelegate;
+struct ShellInitParams;
 class ShellObserver;
 class SlowAnimationEventFilter;
 class StatusAreaWidget;
@@ -136,6 +137,7 @@ class SystemTray;
 class SystemTrayDelegate;
 class SystemTrayNotifier;
 class ToplevelWindowEventHandler;
+class TouchTransformerController;
 class TouchObserverHUD;
 class UserActivityDetector;
 class UserWallpaperDelegate;
@@ -173,7 +175,7 @@ class ASH_EXPORT Shell : public SystemModalContainerEventFilterDelegate,
   // A shell must be explicitly created so that it can call |Init()| with the
   // delegate set. |delegate| can be NULL (if not required for initialization).
   // Takes ownership of |delegate|.
-  static Shell* CreateInstance(ShellDelegate* delegate);
+  static Shell* CreateInstance(const ShellInitParams& init_params);
 
   // Should never be called before |CreateInstance()|.
   static Shell* GetInstance();
@@ -363,6 +365,9 @@ class ASH_EXPORT Shell : public SystemModalContainerEventFilterDelegate,
   VideoDetector* video_detector() {
     return video_detector_.get();
   }
+  WindowCycleController* window_cycle_controller() {
+    return window_cycle_controller_.get();
+  }
   WindowSelectorController* window_selector_controller() {
     return window_selector_controller_.get();
   }
@@ -370,6 +375,11 @@ class ASH_EXPORT Shell : public SystemModalContainerEventFilterDelegate,
   DisplayController* display_controller() {
     return display_controller_.get();
   }
+#if defined(OS_CHROMEOS) && defined(USE_X11)
+  TouchTransformerController* touch_transformer_controller() {
+    return touch_transformer_controller_.get();
+  }
+#endif  // defined(OS_CHROMEOS) && defined(USE_X11)
   MouseCursorEventFilter* mouse_cursor_filter() {
     return mouse_cursor_filter_.get();
   }
@@ -572,7 +582,7 @@ class ASH_EXPORT Shell : public SystemModalContainerEventFilterDelegate,
   explicit Shell(ShellDelegate* delegate);
   virtual ~Shell();
 
-  void Init();
+  void Init(const ShellInitParams& init_params);
 
   // Initializes virtual keyboard controller.
   void InitKeyboard();
@@ -644,6 +654,7 @@ class ASH_EXPORT Shell : public SystemModalContainerEventFilterDelegate,
   scoped_ptr<MruWindowTracker> mru_window_tracker_;
   scoped_ptr< ::wm::UserActivityDetector> user_activity_detector_;
   scoped_ptr<VideoDetector> video_detector_;
+  scoped_ptr<WindowCycleController> window_cycle_controller_;
   scoped_ptr<WindowSelectorController> window_selector_controller_;
   scoped_ptr<FocusCycler> focus_cycler_;
   scoped_ptr<DisplayController> display_controller_;
@@ -714,6 +725,7 @@ class ASH_EXPORT Shell : public SystemModalContainerEventFilterDelegate,
 #if defined(USE_X11)
   scoped_ptr<ui::EventHandler> magnifier_key_scroll_handler_;
   scoped_ptr<ui::EventHandler> speech_feedback_handler_;
+  scoped_ptr<TouchTransformerController> touch_transformer_controller_;
 #endif  // defined(USE_X11)
 #endif  // defined(OS_CHROMEOS)
 

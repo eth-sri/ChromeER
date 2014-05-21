@@ -301,6 +301,9 @@ ExtensionService::ExtensionService(Profile* profile,
                  content::NotificationService::AllBrowserContextsAndSources());
   registrar_.Add(this, chrome::NOTIFICATION_UPGRADE_RECOMMENDED,
                  content::NotificationService::AllBrowserContextsAndSources());
+  registrar_.Add(this,
+                 chrome::NOTIFICATION_PROFILE_DESTRUCTION_STARTED,
+                 content::Source<Profile>(profile_));
   pref_change_registrar_.Init(profile->GetPrefs());
   base::Closure callback =
       base::Bind(&ExtensionService::OnExtensionInstallPrefChanged,
@@ -544,6 +547,8 @@ bool ExtensionService::UpdateExtension(const std::string& id,
     installer->set_install_source(pending_extension_info->install_source());
     if (pending_extension_info->install_silently())
       installer->set_allow_silent_install(true);
+    if (pending_extension_info->remote_install())
+      installer->set_grant_permissions(false);
     creation_flags = pending_extension_info->creation_flags();
     if (pending_extension_info->mark_acknowledged())
       AcknowledgeExternalExtension(id);
@@ -1492,11 +1497,17 @@ void ExtensionService::AddExtension(const Extension* extension) {
         content::Source<Profile>(profile_),
         content::Details<const Extension>(extension));
 
-    // Show the extension disabled error if a permissions increase was the
-    // only reason it was disabled.
-    if (extension_prefs_->GetDisableReasons(extension->id()) ==
-        Extension::DISABLE_PERMISSIONS_INCREASE) {
-      extensions::AddExtensionDisabledError(this, extension);
+    // Show the extension disabled error if a permissions increase or a remote
+    // installation is the reason it was disabled, and no other reasons exist.
+    int reasons = extension_prefs_->GetDisableReasons(extension->id());
+    const int kReasonMask = Extension::DISABLE_PERMISSIONS_INCREASE |
+                            Extension::DISABLE_REMOTE_INSTALL;
+    if (reasons & kReasonMask && !(reasons & ~kReasonMask)) {
+      extensions::AddExtensionDisabledError(
+          this,
+          extension,
+          extension_prefs_->HasDisableReason(
+              extension->id(), Extension::DISABLE_REMOTE_INSTALL));
     }
   } else if (reloading) {
     // Replace the old extension with the new version.
@@ -1658,8 +1669,13 @@ void ExtensionService::CheckPermissionsIncrease(const Extension* extension,
   }
 
   // Extension has changed permissions significantly. Disable it. A
-  // notification should be sent by the caller.
-  if (is_privilege_increase) {
+  // notification should be sent by the caller. If the extension is already
+  // disabled because it was installed remotely, don't add another disable
+  // reason, but instead always set the "did escalate permissions" flag, to
+  // ensure enabling it will always show a warning.
+  if (disable_reasons == Extension::DISABLE_REMOTE_INSTALL) {
+    extension_prefs_->SetDidExtensionEscalatePermissions(extension, true);
+  } else if (is_privilege_increase) {
     disable_reasons |= Extension::DISABLE_PERMISSIONS_INCREASE;
     if (!extension_prefs_->DidExtensionEscalatePermissions(extension->id())) {
       RecordPermissionMessagesHistogram(
@@ -2152,6 +2168,10 @@ void ExtensionService::Observe(int type,
                         OnChromeUpdateAvailable());
       break;
     }
+    case chrome::NOTIFICATION_PROFILE_DESTRUCTION_STARTED: {
+      OnProfileDestructionStarted();
+      break;
+    }
 
     default:
       NOTREACHED() << "Unexpected notification type.";
@@ -2414,4 +2434,13 @@ void ExtensionService::UnloadAllExtensionsInternal() {
   // TODO(erikkay) should there be a notification for this?  We can't use
   // EXTENSION_UNLOADED since that implies that the extension has been disabled
   // or uninstalled.
+}
+
+void ExtensionService::OnProfileDestructionStarted() {
+  ExtensionIdSet ids_to_unload = registry_->enabled_extensions().GetIDs();
+  for (ExtensionIdSet::iterator it = ids_to_unload.begin();
+       it != ids_to_unload.end();
+       ++it) {
+    UnloadExtension(*it, UnloadedExtensionInfo::REASON_PROFILE_SHUTDOWN);
+  }
 }

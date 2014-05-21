@@ -48,17 +48,26 @@ class MemoryTrackerStub : public gpu::gles2::MemoryTracker {
 
 }  // anonymous namespace
 
-CommandBufferImpl::CommandBufferImpl(ScopedCommandBufferClientHandle client,
-                                     gfx::AcceleratedWidget widget,
+CommandBufferImpl::CommandBufferImpl(gfx::AcceleratedWidget widget,
                                      const gfx::Size& size)
-    : client_(client.Pass(), this), widget_(widget), size_(size) {}
+    : widget_(widget), size_(size) {}
 
-CommandBufferImpl::~CommandBufferImpl() { client_->DidDestroy(); }
+CommandBufferImpl::~CommandBufferImpl() {
+  client()->DidDestroy();
+  if (decoder_.get()) {
+    bool have_context = decoder_->MakeCurrent();
+    decoder_->Destroy(have_context);
+  }
+}
+
+void CommandBufferImpl::OnConnectionError() {
+  // TODO(darin): How should we handle this error?
+}
 
 void CommandBufferImpl::Initialize(
-    ScopedCommandBufferSyncClientHandle sync_client,
+    CommandBufferSyncClientPtr sync_client,
     mojo::ScopedSharedBufferHandle shared_state) {
-  sync_client_.reset(sync_client.Pass(), NULL);
+  sync_client_ = sync_client.Pass();
   sync_client_->DidInitialize(DoInitialize(shared_state.Pass()));
 }
 
@@ -112,11 +121,7 @@ bool CommandBufferImpl::DoInitialize(
     return false;
 
   gpu_control_.reset(
-      new gpu::GpuControlService(context_group->image_manager(),
-                                 NULL,
-                                 context_group->mailbox_manager(),
-                                 NULL,
-                                 decoder_->GetCapabilities()));
+      new gpu::GpuControlService(context_group->image_manager(), NULL));
 
   command_buffer_->SetPutOffsetChangeCallback(base::Bind(
       &gpu::GpuScheduler::PutChanged, base::Unretained(scheduler_.get())));
@@ -185,10 +190,10 @@ void CommandBufferImpl::CancelAnimationFrames() { timer_.Stop(); }
 
 void CommandBufferImpl::OnParseError() {
   gpu::CommandBuffer::State state = command_buffer_->GetLastState();
-  client_->LostContext(state.context_lost_reason);
+  client()->LostContext(state.context_lost_reason);
 }
 
-void CommandBufferImpl::DrawAnimationFrame() { client_->DrawAnimationFrame(); }
+void CommandBufferImpl::DrawAnimationFrame() { client()->DrawAnimationFrame(); }
 
 }  // namespace services
 }  // namespace mojo

@@ -6,22 +6,30 @@
 
 #include "ui/wm/core/wm_state.h"
 
+#if !defined(OS_CHROMEOS)
+#include "ui/views/widget/desktop_aura/desktop_native_widget_aura.h"
+#endif  // !defined(OS_CHROMEOS)
+
 
 namespace views {
 
 TestViewsDelegate::TestViewsDelegate()
-    : use_transparent_windows_(false) {
+    : use_desktop_native_widgets_(false),
+      use_transparent_windows_(false)
+#if defined(USE_AURA)
+      , context_factory_(NULL)
+#endif
+      {
   DCHECK(!ViewsDelegate::views_delegate);
   ViewsDelegate::views_delegate = this;
+#if defined(USE_AURA)
   wm_state_.reset(new wm::WMState);
+#endif
 }
 
 TestViewsDelegate::~TestViewsDelegate() {
-  ViewsDelegate::views_delegate = NULL;
-}
-
-void TestViewsDelegate::SetUseTransparentWindows(bool transparent) {
-  use_transparent_windows_ = transparent;
+  if (ViewsDelegate::views_delegate == this)
+    ViewsDelegate::views_delegate = NULL;
 }
 
 void TestViewsDelegate::OnBeforeWidgetInit(
@@ -32,6 +40,16 @@ void TestViewsDelegate::OnBeforeWidgetInit(
         Widget::InitParams::TRANSLUCENT_WINDOW :
         Widget::InitParams::OPAQUE_WINDOW;
   }
+#if !defined(OS_CHROMEOS)
+  if (!params->native_widget && use_desktop_native_widgets_)
+    params->native_widget = new DesktopNativeWidgetAura(delegate);
+#endif  // !defined(OS_CHROMEOS)
 }
+
+#if defined(USE_AURA)
+ui::ContextFactory* TestViewsDelegate::GetContextFactory() {
+  return context_factory_;
+}
+#endif
 
 }  // namespace views

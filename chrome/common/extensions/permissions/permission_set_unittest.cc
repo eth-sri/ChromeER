@@ -655,6 +655,7 @@ TEST(PermissionsTest, PermissionMessages) {
   skip.insert(APIPermission::kGcm);
   skip.insert(APIPermission::kIdle);
   skip.insert(APIPermission::kIdltest);
+  skip.insert(APIPermission::kLedger);
   skip.insert(APIPermission::kLogPrivate);
   skip.insert(APIPermission::kNotification);
   skip.insert(APIPermission::kOverrideEscFullscreen);
@@ -707,6 +708,7 @@ TEST(PermissionsTest, PermissionMessages) {
   skip.insert(APIPermission::kIdentity);
 
   // These are private.
+  skip.insert(APIPermission::kAccessibilityPrivate);
   skip.insert(APIPermission::kAutoTestPrivate);
   skip.insert(APIPermission::kBookmarkManagerPrivate);
   skip.insert(APIPermission::kBrailleDisplayPrivate);
@@ -738,6 +740,7 @@ TEST(PermissionsTest, PermissionMessages) {
   skip.insert(APIPermission::kReadingListPrivate);
   skip.insert(APIPermission::kRtcPrivate);
   skip.insert(APIPermission::kStreamsPrivate);
+  skip.insert(APIPermission::kSyncedNotificationsPrivate);
   skip.insert(APIPermission::kSystemPrivate);
   skip.insert(APIPermission::kTabCaptureForTab);
   skip.insert(APIPermission::kTerminalPrivate);
@@ -751,6 +754,7 @@ TEST(PermissionsTest, PermissionMessages) {
   skip.insert(APIPermission::kDevtools);
 
   // Platform apps.
+  skip.insert(APIPermission::kBrowser);
   skip.insert(APIPermission::kFileSystem);
   skip.insert(APIPermission::kFileSystemProvider);
   skip.insert(APIPermission::kFileSystemRetainEntries);

@@ -11,7 +11,7 @@
 #include "content/shell/renderer/test_runner/MockSpellCheck.h"
 #include "content/shell/renderer/test_runner/TestInterfaces.h"
 #include "content/shell/renderer/test_runner/WebTestDelegate.h"
-#include "content/shell/renderer/test_runner/WebTestProxy.h"
+#include "content/shell/renderer/test_runner/web_test_proxy.h"
 #include "gin/handle.h"
 #include "gin/object_template_builder.h"
 #include "gin/wrappable.h"
@@ -138,7 +138,7 @@ bool OutsideMultiClickRadius(const WebPoint& a, const WebPoint& b) {
 // helpful.
 std::vector<std::string> MakeMenuItemStringsFor(
     WebContextMenuData* context_menu,
-    WebTestRunner::WebTestDelegate* delegate) {
+    WebTestDelegate* delegate) {
   // These constants are based on Safari's context menu because tests are made
   // for it.
   static const char* kNonEditableMenuStrings[] = {
@@ -177,7 +177,7 @@ std::vector<std::string> MakeMenuItemStringsFor(
       strings.push_back(*item);
     }
     WebVector<WebString> suggestions;
-    WebTestRunner::MockSpellCheck::fillSuggestionList(
+    MockSpellCheck::fillSuggestionList(
         context_menu->misspelledWord, &suggestions);
     for (size_t i = 0; i < suggestions.size(); ++i) {
       strings.push_back(suggestions[i].utf8());
@@ -203,7 +203,7 @@ WebMouseEvent::Button GetButtonTypeFromButtonNumber(int button_code) {
   return WebMouseEvent::ButtonMiddle;
 }
 
-class MouseDownTask : public WebTestRunner::WebMethodTask<EventSender> {
+class MouseDownTask : public WebMethodTask<EventSender> {
  public:
   MouseDownTask(EventSender* obj, int button_number, int modifiers)
       : WebMethodTask<EventSender>(obj),
@@ -219,7 +219,7 @@ class MouseDownTask : public WebTestRunner::WebMethodTask<EventSender> {
   int modifiers_;
 };
 
-class MouseUpTask : public WebTestRunner::WebMethodTask<EventSender> {
+class MouseUpTask : public WebMethodTask<EventSender> {
  public:
   MouseUpTask(EventSender* obj, int button_number, int modifiers)
       : WebMethodTask<EventSender>(obj),
@@ -235,7 +235,7 @@ class MouseUpTask : public WebTestRunner::WebMethodTask<EventSender> {
   int modifiers_;
 };
 
-class KeyDownTask : public WebTestRunner::WebMethodTask<EventSender> {
+class KeyDownTask : public WebMethodTask<EventSender> {
  public:
   KeyDownTask(EventSender* obj,
               const std::string code_str,
@@ -336,7 +336,7 @@ class EventSenderBindings : public gin::Wrappable<EventSenderBindings> {
   void TextZoomOut();
   void ZoomPageIn();
   void ZoomPageOut();
-  void SetPageZoomFactor(gin::Arguments* args);
+  void SetPageZoomFactor(double factor);
   void SetPageScaleFactor(gin::Arguments* args);
   void ClearTouchPoints();
   void ReleaseTouchPoint(unsigned index);
@@ -357,7 +357,6 @@ class EventSenderBindings : public gin::Wrappable<EventSenderBindings> {
   void AddTouchPoint(gin::Arguments* args);
   void MouseDragBegin();
   void MouseDragEnd();
-  void MouseMomentumBegin();
   void GestureScrollBegin(gin::Arguments* args);
   void GestureScrollEnd(gin::Arguments* args);
   void GestureScrollUpdate(gin::Arguments* args);
@@ -371,7 +370,13 @@ class EventSenderBindings : public gin::Wrappable<EventSenderBindings> {
   void GestureTwoFingerTap(gin::Arguments* args);
   void ContinuousMouseScrollBy(gin::Arguments* args);
   void MouseMoveTo(gin::Arguments* args);
+  void TrackpadScrollBegin();
+  void TrackpadScroll(gin::Arguments* args);
+  void TrackpadScrollEnd();
   void MouseScrollBy(gin::Arguments* args);
+  // TODO(erikchen): Remove MouseMomentumBegin once CL 282743002 has landed.
+  void MouseMomentumBegin();
+  void MouseMomentumBegin2(gin::Arguments* args);
   void MouseMomentumScrollBy(gin::Arguments* args);
   void MouseMomentumEnd();
   void ScheduleAsynchronousClick(gin::Arguments* args);
@@ -480,7 +485,6 @@ EventSenderBindings::GetObjectTemplateBuilder(v8::Isolate* isolate) {
       .SetMethod("addTouchPoint", &EventSenderBindings::AddTouchPoint)
       .SetMethod("mouseDragBegin", &EventSenderBindings::MouseDragBegin)
       .SetMethod("mouseDragEnd", &EventSenderBindings::MouseDragEnd)
-      .SetMethod("mouseMomentumBegin", &EventSenderBindings::MouseMomentumBegin)
       .SetMethod("gestureScrollBegin", &EventSenderBindings::GestureScrollBegin)
       .SetMethod("gestureScrollEnd", &EventSenderBindings::GestureScrollEnd)
       .SetMethod("gestureScrollUpdate",
@@ -500,8 +504,15 @@ EventSenderBindings::GetObjectTemplateBuilder(v8::Isolate* isolate) {
       .SetMethod("keyDown", &EventSenderBindings::KeyDown)
       .SetMethod("mouseDown", &EventSenderBindings::MouseDown)
       .SetMethod("mouseMoveTo", &EventSenderBindings::MouseMoveTo)
+      .SetMethod("trackpadScrollBegin",
+                 &EventSenderBindings::TrackpadScrollBegin)
+      .SetMethod("trackpadScroll", &EventSenderBindings::TrackpadScroll)
+      .SetMethod("trackpadScrollEnd", &EventSenderBindings::TrackpadScrollEnd)
       .SetMethod("mouseScrollBy", &EventSenderBindings::MouseScrollBy)
       .SetMethod("mouseUp", &EventSenderBindings::MouseUp)
+      .SetMethod("mouseMomentumBegin", &EventSenderBindings::MouseMomentumBegin)
+      .SetMethod("mouseMomentumBegin2",
+                 &EventSenderBindings::MouseMomentumBegin2)
       .SetMethod("mouseMomentumScrollBy",
                  &EventSenderBindings::MouseMomentumScrollBy)
       .SetMethod("mouseMomentumEnd", &EventSenderBindings::MouseMomentumEnd)
@@ -586,14 +597,9 @@ void EventSenderBindings::ZoomPageOut() {
     sender_->ZoomPageOut();
 }
 
-void EventSenderBindings::SetPageZoomFactor(gin::Arguments* args) {
-  if (!sender_)
-    return;
-  double zoom_factor;
-  if (args->PeekNext().IsEmpty())
-    return;
-  args->GetNext(&zoom_factor);
-  sender_->SetPageZoomFactor(zoom_factor);
+void EventSenderBindings::SetPageZoomFactor(double factor) {
+  if (sender_)
+    sender_->SetPageZoomFactor(factor);
 }
 
 void EventSenderBindings::SetPageScaleFactor(gin::Arguments* args) {
@@ -715,11 +721,6 @@ void EventSenderBindings::MouseDragEnd() {
     sender_->MouseDragEnd();
 }
 
-void EventSenderBindings::MouseMomentumBegin() {
-  if (sender_)
-    sender_->MouseMomentumBegin();
-}
-
 void EventSenderBindings::GestureScrollBegin(gin::Arguments* args) {
   if (sender_)
     sender_->GestureScrollBegin(args);
@@ -786,9 +787,34 @@ void EventSenderBindings::MouseMoveTo(gin::Arguments* args) {
     sender_->MouseMoveTo(args);
 }
 
+void EventSenderBindings::TrackpadScrollBegin() {
+  if (sender_)
+    sender_->TrackpadScrollBegin();
+}
+
+void EventSenderBindings::TrackpadScroll(gin::Arguments* args) {
+  if (sender_)
+    sender_->TrackpadScroll(args);
+}
+
+void EventSenderBindings::TrackpadScrollEnd() {
+  if (sender_)
+    sender_->TrackpadScrollEnd();
+}
+
 void EventSenderBindings::MouseScrollBy(gin::Arguments* args) {
   if (sender_)
     sender_->MouseScrollBy(args);
+}
+
+void EventSenderBindings::MouseMomentumBegin() {
+  if (sender_)
+    sender_->MouseMomentumBegin();
+}
+
+void EventSenderBindings::MouseMomentumBegin2(gin::Arguments* args) {
+  if (sender_)
+    sender_->MouseMomentumBegin2(args);
 }
 
 void EventSenderBindings::MouseMomentumScrollBy(gin::Arguments* args) {
@@ -1007,7 +1033,7 @@ EventSender::SavedEvent::SavedEvent()
       milliseconds(0),
       modifiers(0) {}
 
-EventSender::EventSender(WebTestRunner::TestInterfaces* interfaces)
+EventSender::EventSender(TestInterfaces* interfaces)
     : interfaces_(interfaces),
       delegate_(NULL),
       view_(NULL),
@@ -1079,7 +1105,7 @@ void EventSender::Install(WebFrame* frame) {
   EventSenderBindings::Install(weak_factory_.GetWeakPtr(), frame);
 }
 
-void EventSender::SetDelegate(WebTestRunner::WebTestDelegate* delegate) {
+void EventSender::SetDelegate(WebTestDelegate* delegate) {
   delegate_ = delegate;
 }
 
@@ -1383,8 +1409,8 @@ void EventSender::ZoomPageIn() {
   const std::vector<WebTestProxyBase*>& window_list = interfaces_->windowList();
 
   for (size_t i = 0; i < window_list.size(); ++i) {
-    window_list.at(i)->webView()->setZoomLevel(
-        window_list.at(i)->webView()->zoomLevel() + 1);
+    window_list.at(i)->GetWebView()->setZoomLevel(
+        window_list.at(i)->GetWebView()->zoomLevel() + 1);
   }
 }
 
@@ -1392,8 +1418,8 @@ void EventSender::ZoomPageOut() {
   const std::vector<WebTestProxyBase*>& window_list = interfaces_->windowList();
 
   for (size_t i = 0; i < window_list.size(); ++i) {
-    window_list.at(i)->webView()->setZoomLevel(
-        window_list.at(i)->webView()->zoomLevel() - 1);
+    window_list.at(i)->GetWebView()->setZoomLevel(
+        window_list.at(i)->GetWebView()->zoomLevel() - 1);
   }
 }
 
@@ -1401,8 +1427,8 @@ void EventSender::SetPageZoomFactor(double zoom_factor) {
   const std::vector<WebTestProxyBase*>& window_list = interfaces_->windowList();
 
   for (size_t i = 0; i < window_list.size(); ++i) {
-    window_list.at(i)->webView()->setZoomLevel(
-        content::ZoomFactorToZoomLevel(zoom_factor));
+    window_list.at(i)->GetWebView()->setZoomLevel(
+        ZoomFactorToZoomLevel(zoom_factor));
   }
 }
 
@@ -1649,20 +1675,6 @@ void EventSender::MouseDragEnd() {
   view_->handleInputEvent(event);
 }
 
-void EventSender::MouseMomentumBegin() {
-  WebMouseWheelEvent event;
-  InitMouseEvent(WebInputEvent::MouseWheel,
-                 WebMouseEvent::ButtonNone,
-                 last_mouse_pos_,
-                 GetCurrentEventTimeSec(),
-                 click_count_,
-                 0,
-                 &event);
-  event.momentumPhase = WebMouseWheelEvent::PhaseBegan;
-  event.hasPreciseScrollingDeltas = true;
-  view_->handleInputEvent(event);
-}
-
 void EventSender::GestureScrollBegin(gin::Arguments* args) {
   GestureEvent(WebInputEvent::GestureScrollBegin, args);
 }
@@ -1747,9 +1759,67 @@ void EventSender::MouseMoveTo(gin::Arguments* args) {
   }
 }
 
+void EventSender::TrackpadScrollBegin() {
+  WebMouseWheelEvent event;
+  InitMouseEvent(WebInputEvent::MouseWheel,
+                 WebMouseEvent::ButtonNone,
+                 last_mouse_pos_,
+                 GetCurrentEventTimeSec(),
+                 click_count_,
+                 0,
+                 &event);
+  event.phase = blink::WebMouseWheelEvent::PhaseBegan;
+  event.hasPreciseScrollingDeltas = true;
+  view_->handleInputEvent(event);
+}
+
+void EventSender::TrackpadScroll(gin::Arguments* args) {
+  WebMouseWheelEvent event;
+  InitMouseWheelEvent(args, true, &event);
+  event.phase = blink::WebMouseWheelEvent::PhaseChanged;
+  event.hasPreciseScrollingDeltas = true;
+  view_->handleInputEvent(event);
+}
+
+void EventSender::TrackpadScrollEnd() {
+  WebMouseWheelEvent event;
+  InitMouseEvent(WebInputEvent::MouseWheel,
+                 WebMouseEvent::ButtonNone,
+                 last_mouse_pos_,
+                 GetCurrentEventTimeSec(),
+                 click_count_,
+                 0,
+                 &event);
+  event.phase = WebMouseWheelEvent::PhaseEnded;
+  event.hasPreciseScrollingDeltas = true;
+  view_->handleInputEvent(event);
+}
+
 void EventSender::MouseScrollBy(gin::Arguments* args) {
    WebMouseWheelEvent event;
   InitMouseWheelEvent(args, false, &event);
+  view_->handleInputEvent(event);
+}
+
+void EventSender::MouseMomentumBegin() {
+  WebMouseWheelEvent event;
+  InitMouseEvent(WebInputEvent::MouseWheel,
+                 WebMouseEvent::ButtonNone,
+                 last_mouse_pos_,
+                 GetCurrentEventTimeSec(),
+                 click_count_,
+                 0,
+                 &event);
+  event.momentumPhase = WebMouseWheelEvent::PhaseBegan;
+  event.hasPreciseScrollingDeltas = true;
+  view_->handleInputEvent(event);
+}
+
+void EventSender::MouseMomentumBegin2(gin::Arguments* args) {
+  WebMouseWheelEvent event;
+  InitMouseWheelEvent(args, true, &event);
+  event.momentumPhase = WebMouseWheelEvent::PhaseBegan;
+  event.hasPreciseScrollingDeltas = true;
   view_->handleInputEvent(event);
 }
 

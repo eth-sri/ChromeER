@@ -12,10 +12,10 @@
 #include "base/strings/string_piece.h"
 #include "base/threading/thread.h"
 #include "base/time/time.h"
+#include "cc/debug/lap_timer.h"
 #include "cc/layers/layer.h"
 #include "cc/test/fake_content_layer_client.h"
 #include "cc/test/fake_layer_tree_host_client.h"
-#include "cc/test/lap_timer.h"
 #include "cc/test/layer_tree_json_parser.h"
 #include "cc/test/layer_tree_test.h"
 #include "cc/test/paths.h"
@@ -97,7 +97,8 @@ class CalcDrawPropsMainTest : public LayerTreeHostCommonPerfTest {
           layer_tree_host()
               ->settings()
               .layer_transforms_should_scale_layer_contents,
-          &update_list);
+          &update_list,
+          0);
       LayerTreeHostCommon::CalculateDrawProperties(&inputs);
 
       timer_.NextLap();
@@ -136,7 +137,8 @@ class CalcDrawPropsImplTest : public LayerTreeHostCommonPerfTest {
           host_impl->settings().can_use_lcd_text,
           can_render_to_separate_surface,
           host_impl->settings().layer_transforms_should_scale_layer_contents,
-          &update_list);
+          &update_list,
+          0);
       LayerTreeHostCommon::CalculateDrawProperties(&inputs);
 
       timer_.NextLap();

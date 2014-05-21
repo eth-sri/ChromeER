@@ -174,7 +174,6 @@ class PluginFaviconMessageObserver : public WebContentsObserver {
   }
 
   virtual void DidUpdateFaviconURL(
-      int32 page_id,
       const std::vector<FaviconURL>& candidates) OVERRIDE {
     favicon_received_ = true;
   }
@@ -399,7 +398,7 @@ TEST_F(RenderFrameHostManagerTest, FilterMessagesWhileSwappedOut) {
     PluginFaviconMessageObserver observer(contents());
     EXPECT_TRUE(ntp_rvh->OnMessageReceived(
                     ViewHostMsg_UpdateFaviconURL(
-                        rvh()->GetRoutingID(), 0, icons)));
+                        rvh()->GetRoutingID(), icons)));
     EXPECT_TRUE(observer.favicon_received());
   }
   // Create one more view in the same SiteInstance where ntp_rvh
@@ -422,7 +421,7 @@ TEST_F(RenderFrameHostManagerTest, FilterMessagesWhileSwappedOut) {
     PluginFaviconMessageObserver observer(contents());
     EXPECT_TRUE(
         dest_rvh->OnMessageReceived(
-            ViewHostMsg_UpdateFaviconURL(rvh()->GetRoutingID(), 101, icons)));
+            ViewHostMsg_UpdateFaviconURL(rvh()->GetRoutingID(), icons)));
     EXPECT_TRUE(observer.favicon_received());
   }
 
@@ -433,7 +432,7 @@ TEST_F(RenderFrameHostManagerTest, FilterMessagesWhileSwappedOut) {
     PluginFaviconMessageObserver observer(contents());
     EXPECT_TRUE(
         ntp_rvh->OnMessageReceived(
-            ViewHostMsg_UpdateFaviconURL(rvh()->GetRoutingID(), 101, icons)));
+            ViewHostMsg_UpdateFaviconURL(rvh()->GetRoutingID(), icons)));
     EXPECT_FALSE(observer.favicon_received());
   }
 
@@ -493,18 +492,6 @@ TEST_F(RenderFrameHostManagerTest, WhiteListSwapCompositorFrame) {
 
   EXPECT_TRUE(swapped_out_rvh->OnMessageReceived(msg));
   EXPECT_TRUE(swapped_out_rwhv->did_swap_compositor_frame());
-}
-
-TEST_F(RenderFrameHostManagerTest, WhiteListDidActivateAcceleratedCompositing) {
-  TestRenderViewHost* swapped_out_rvh = CreateSwappedOutRenderViewHost();
-
-  MockRenderProcessHost* process_host =
-      static_cast<MockRenderProcessHost*>(swapped_out_rvh->GetProcess());
-  process_host->sink().ClearMessages();
-  ViewHostMsg_DidActivateAcceleratedCompositing msg(
-      rvh()->GetRoutingID(), true);
-  EXPECT_TRUE(swapped_out_rvh->OnMessageReceived(msg));
-  EXPECT_TRUE(swapped_out_rvh->is_accelerated_compositing_active());
 }
 
 // Test if RenderViewHost::GetRenderWidgetHosts() only returns active
@@ -718,14 +705,8 @@ TEST_F(RenderFrameHostManagerTest, Init) {
 
   scoped_ptr<TestWebContents> web_contents(
       TestWebContents::Create(browser_context(), instance));
-  FrameTree tree(web_contents->GetFrameTree()->root()->navigator(),
-                 web_contents.get(), web_contents.get(),
-                 web_contents.get(), web_contents.get());
-  RenderFrameHostManager* manager = tree.root()->render_manager();
 
-  manager->Init(browser_context(), instance, MSG_ROUTING_NONE,
-                MSG_ROUTING_NONE);
-
+  RenderFrameHostManager* manager = web_contents->GetRenderManagerForTesting();
   RenderViewHostImpl* rvh = manager->current_host();
   RenderFrameHostImpl* rfh = manager->current_frame_host();
   ASSERT_TRUE(rvh);
@@ -750,15 +731,7 @@ TEST_F(RenderFrameHostManagerTest, Navigate) {
   notifications.ListenFor(NOTIFICATION_RENDER_VIEW_HOST_CHANGED,
                           Source<WebContents>(web_contents.get()));
 
-  // Create.
-  FrameTree tree(web_contents->GetFrameTree()->root()->navigator(),
-                 web_contents.get(), web_contents.get(),
-                 web_contents.get(), web_contents.get());
-  RenderFrameHostManager* manager = tree.root()->render_manager();
-
-  manager->Init(browser_context(), instance, MSG_ROUTING_NONE,
-                MSG_ROUTING_NONE);
-
+  RenderFrameHostManager* manager = web_contents->GetRenderManagerForTesting();
   RenderFrameHostImpl* host;
 
   // 1) The first navigation. --------------------------
@@ -845,14 +818,7 @@ TEST_F(RenderFrameHostManagerTest, NavigateWithEarlyReNavigation) {
   notifications.ListenFor(NOTIFICATION_RENDER_VIEW_HOST_CHANGED,
                           Source<WebContents>(web_contents.get()));
 
-  // Create.
-  FrameTree tree(web_contents->GetFrameTree()->root()->navigator(),
-                 web_contents.get(), web_contents.get(),
-                 web_contents.get(), web_contents.get());
-  RenderFrameHostManager* manager = tree.root()->render_manager();
-
-  manager->Init(browser_context(), instance, MSG_ROUTING_NONE,
-                MSG_ROUTING_NONE);
+  RenderFrameHostManager* manager = web_contents->GetRenderManagerForTesting();
 
   // 1) The first navigation. --------------------------
   const GURL kUrl1("http://www.google.com/");
@@ -1033,13 +999,8 @@ TEST_F(RenderFrameHostManagerTest, WebUI) {
 
   scoped_ptr<TestWebContents> web_contents(
       TestWebContents::Create(browser_context(), instance));
-  FrameTree tree(web_contents->GetFrameTree()->root()->navigator(),
-                 web_contents.get(), web_contents.get(),
-                 web_contents.get(), web_contents.get());
-  RenderFrameHostManager* manager = tree.root()->render_manager();
+  RenderFrameHostManager* manager = web_contents->GetRenderManagerForTesting();
 
-  manager->Init(browser_context(), instance, MSG_ROUTING_NONE,
-                MSG_ROUTING_NONE);
   EXPECT_FALSE(manager->current_host()->IsRenderViewLive());
 
   const GURL kUrl("chrome://foo");
@@ -1084,14 +1045,11 @@ TEST_F(RenderFrameHostManagerTest, WebUIInNewTab) {
   // Create a blank tab.
   scoped_ptr<TestWebContents> web_contents1(
       TestWebContents::Create(browser_context(), blank_instance));
-  FrameTree tree1(web_contents1->GetFrameTree()->root()->navigator(),
-                 web_contents1.get(), web_contents1.get(),
-                 web_contents1.get(), web_contents1.get());
-  RenderFrameHostManager* manager1 = tree1.root()->render_manager();
-  manager1->Init(
-      browser_context(), blank_instance, MSG_ROUTING_NONE, MSG_ROUTING_NONE);
+  RenderFrameHostManager* manager1 =
+      web_contents1->GetRenderManagerForTesting();
   // Test the case that new RVH is considered live.
-  manager1->current_host()->CreateRenderView(base::string16(), -1, -1, false);
+  manager1->current_host()->CreateRenderView(
+      base::string16(), -1, MSG_ROUTING_NONE, -1, false);
 
   // Navigate to a WebUI page.
   const GURL kUrl1("chrome://foo");
@@ -1118,15 +1076,12 @@ TEST_F(RenderFrameHostManagerTest, WebUIInNewTab) {
   // Now simulate clicking a link that opens in a new tab.
   scoped_ptr<TestWebContents> web_contents2(
       TestWebContents::Create(browser_context(), webui_instance));
-  FrameTree tree2(web_contents2->GetFrameTree()->root()->navigator(),
-                  web_contents2.get(), web_contents2.get(),
-                  web_contents2.get(), web_contents2.get());
-  RenderFrameHostManager* manager2 = tree2.root()->render_manager();
-  manager2->Init(
-      browser_context(), webui_instance, MSG_ROUTING_NONE, MSG_ROUTING_NONE);
+  RenderFrameHostManager* manager2 =
+      web_contents2->GetRenderManagerForTesting();
   // Make sure the new RVH is considered live.  This is usually done in
   // RenderWidgetHost::Init when opening a new tab from a link.
-  manager2->current_host()->CreateRenderView(base::string16(), -1, -1, false);
+  manager2->current_host()->CreateRenderView(
+      base::string16(), -1, MSG_ROUTING_NONE, -1, false);
 
   const GURL kUrl2("chrome://foo/bar");
   NavigationEntryImpl entry2(NULL /* instance */, -1 /* page_id */, kUrl2,
@@ -1329,7 +1284,7 @@ TEST_F(RenderFrameHostManagerTest, CleanUpSwappedOutRVHOnProcessCrash) {
 
   // Make sure the new opener RVH is considered live.
   opener1_manager->current_host()->CreateRenderView(
-      base::string16(), -1, -1, false);
+      base::string16(), -1, MSG_ROUTING_NONE, -1, false);
 
   // Use a cross-process navigation in the opener to swap out the old RVH.
   EXPECT_FALSE(opener1_manager->GetSwappedOutRenderViewHost(
@@ -1412,14 +1367,7 @@ TEST_F(RenderFrameHostManagerTest, NoSwapOnGuestNavigations) {
   scoped_ptr<TestWebContents> web_contents(
       TestWebContents::Create(browser_context(), instance));
 
-  // Create.
-  FrameTree tree(web_contents->GetFrameTree()->root()->navigator(),
-                 web_contents.get(), web_contents.get(),
-                 web_contents.get(), web_contents.get());
-  RenderFrameHostManager* manager = tree.root()->render_manager();
-
-  manager->Init(browser_context(), instance, MSG_ROUTING_NONE,
-                MSG_ROUTING_NONE);
+  RenderFrameHostManager* manager = web_contents->GetRenderManagerForTesting();
 
   RenderFrameHostImpl* host;
 
@@ -1480,14 +1428,7 @@ TEST_F(RenderFrameHostManagerTest, NavigateWithEarlyClose) {
   notifications.ListenFor(NOTIFICATION_RENDER_VIEW_HOST_CHANGED,
                           Source<WebContents>(web_contents.get()));
 
-  // Create.
-  FrameTree tree(web_contents->GetFrameTree()->root()->navigator(),
-                 web_contents.get(), web_contents.get(),
-                 web_contents.get(), web_contents.get());
-  RenderFrameHostManager* manager = tree.root()->render_manager();
-
-  manager->Init(browser_context(), instance, MSG_ROUTING_NONE,
-                MSG_ROUTING_NONE);
+  RenderFrameHostManager* manager = web_contents->GetRenderManagerForTesting();
 
   // 1) The first navigation. --------------------------
   const GURL kUrl1("http://www.google.com/");

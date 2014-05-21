@@ -28,6 +28,7 @@
 #include "chrome/browser/favicon/favicon_service_factory.h"
 #include "chrome/browser/geolocation/chrome_geolocation_permission_context.h"
 #include "chrome/browser/geolocation/chrome_geolocation_permission_context_factory.h"
+#include "chrome/browser/guest_view/guest_view_manager.h"
 #include "chrome/browser/history/history_backend.h"
 #include "chrome/browser/history/history_db_task.h"
 #include "chrome/browser/history/history_service.h"
@@ -56,8 +57,8 @@
 #include "chrome/test/base/history_index_restore_observer.h"
 #include "chrome/test/base/testing_pref_service_syncable.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "components/bookmarks/core/browser/bookmark_model.h"
-#include "components/bookmarks/core/common/bookmark_constants.h"
+#include "components/bookmarks/browser/bookmark_model.h"
+#include "components/bookmarks/common/bookmark_constants.h"
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
 #include "components/policy/core/common/policy_service.h"
 #include "components/user_prefs/user_prefs.h"
@@ -827,6 +828,10 @@ TestingProfile::GetGeolocationPermissionContext() {
   return ChromeGeolocationPermissionContextFactory::GetForProfile(this);
 }
 
+content::BrowserPluginGuestManager* TestingProfile::GetGuestManager() {
+  return GuestViewManager::FromBrowserContext(this);
+}
+
 std::wstring TestingProfile::GetName() {
   return std::wstring();
 }
@@ -882,6 +887,14 @@ chrome_browser_net::Predictor* TestingProfile::GetNetworkPredictor() {
 
 void TestingProfile::ClearNetworkingHistorySince(
     base::Time time,
+    const base::Closure& completion) {
+  if (!completion.is_null()) {
+    BrowserThread::PostTask(BrowserThread::UI, FROM_HERE, completion);
+  }
+}
+
+void TestingProfile::ClearDomainReliabilityMonitor(
+    domain_reliability::DomainReliabilityClearMode mode,
     const base::Closure& completion) {
   if (!completion.is_null()) {
     BrowserThread::PostTask(BrowserThread::UI, FROM_HERE, completion);

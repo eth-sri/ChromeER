@@ -184,7 +184,13 @@ void RendererAccessibilityComplete::SendPendingAccessibilityEvents() {
 
     WebAXObject obj = document.accessibilityObjectFromID(
         event.id);
+    // Make sure the object still exists.
     if (!obj.updateBackingStoreAndCheckValidity())
+      continue;
+    // Make sure it's a descendant of our root node - exceptions include the
+    // scroll area that's the parent of the main document (we ignore it), and
+    // possibly nodes attached to a different document.
+    if (!tree_source_.IsInTree(obj))
       continue;
 
     // When we get a "selected children changed" event, Blink
@@ -201,13 +207,9 @@ void RendererAccessibilityComplete::SendPendingAccessibilityEvents() {
     serializer_.SerializeChanges(obj, &event_msg.update);
     event_msgs.push_back(event_msg);
 
-#ifndef NDEBUG
-    VLOG(0) << "Accessibility update: \n"
-            << "routing id=" << routing_id()
-            << " event="
-            << AccessibilityEventToString(event.event_type)
+    VLOG(0) << "Accessibility event: " << ui::ToString(event.event_type)
+            << " on node id " << event_msg.id
             << "\n" << event_msg.update.ToString();
-#endif
   }
 
   Send(new AccessibilityHostMsg_Events(routing_id(), event_msgs));

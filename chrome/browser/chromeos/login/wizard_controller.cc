@@ -30,10 +30,8 @@
 #include "chrome/browser/chromeos/login/existing_user_controller.h"
 #include "chrome/browser/chromeos/login/helper.h"
 #include "chrome/browser/chromeos/login/hwid_checker.h"
-#include "chrome/browser/chromeos/login/login_display_host.h"
 #include "chrome/browser/chromeos/login/login_utils.h"
 #include "chrome/browser/chromeos/login/managed/locally_managed_user_creation_screen.h"
-#include "chrome/browser/chromeos/login/oobe_display.h"
 #include "chrome/browser/chromeos/login/screens/error_screen.h"
 #include "chrome/browser/chromeos/login/screens/eula_screen.h"
 #include "chrome/browser/chromeos/login/screens/hid_detection_screen.h"
@@ -46,7 +44,9 @@
 #include "chrome/browser/chromeos/login/screens/user_image_screen.h"
 #include "chrome/browser/chromeos/login/screens/wrong_hwid_screen.h"
 #include "chrome/browser/chromeos/login/startup_utils.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/ui/login_display_host.h"
+#include "chrome/browser/chromeos/login/ui/oobe_display.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/net/delay_network_call.h"
 #include "chrome/browser/chromeos/net/network_portal_detector.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
@@ -61,6 +61,7 @@
 #include "chrome/common/pref_names.h"
 #include "chromeos/audio/cras_audio_handler.h"
 #include "chromeos/chromeos_constants.h"
+#include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/session_manager_client.h"
 #include "chromeos/network/network_state.h"
@@ -84,6 +85,13 @@ static int kShowDelayMs = 400;
 
 // Total timezone resolving process timeout.
 const unsigned int kResolveTimeZoneTimeoutSeconds = 60;
+
+// Checks flag for HID-detection screen show.
+bool CanShowHIDDetectionScreen() {
+  return CommandLine::ForCurrentProcess()->HasSwitch(
+      chromeos::switches::kEnableHIDDetectionOnOOBE);
+}
+
 }  // namespace
 
 namespace chromeos {
@@ -385,6 +393,8 @@ void WizardController::ShowEulaScreen() {
 }
 
 void WizardController::ShowEnrollmentScreen() {
+  VLOG(1) << "Showing enrollment screen.";
+
   SetStatusAreaVisible(true);
 
   bool is_auto_enrollment = false;
@@ -456,16 +466,21 @@ void WizardController::ShowLocallyManagedUserCreationScreen() {
 
 void WizardController::ShowHIDDetectionScreen() {
   VLOG(1) << "Showing HID discovery screen.";
-  SetStatusAreaVisible(false);
+  SetStatusAreaVisible(true);
   SetCurrentScreen(GetHIDDetectionScreen());
 }
 
 void WizardController::SkipToLoginForTesting(
     const LoginScreenContext& context) {
+  VLOG(1) << "SkipToLoginForTesting.";
   StartupUtils::MarkEulaAccepted();
   PerformPostEulaActions();
   PerformOOBECompletedActions();
-  ShowLoginScreen(context);
+  if (ShouldAutoStartEnrollment()) {
+    ShowEnrollmentScreen();
+  } else {
+    ShowLoginScreen(context);
+  }
 }
 
 void WizardController::AddObserver(Observer* observer) {
@@ -776,7 +791,10 @@ void WizardController::AdvanceToScreen(const std::string& screen_name) {
     ShowHIDDetectionScreen();
   } else if (screen_name != kTestNoScreenName) {
     if (is_out_of_box_) {
-      ShowNetworkScreen();
+      if (CanShowHIDDetectionScreen())
+        ShowHIDDetectionScreen();
+      else
+        ShowNetworkScreen();
     } else {
       ShowLoginScreen(LoginScreenContext());
     }

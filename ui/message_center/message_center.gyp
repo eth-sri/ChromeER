@@ -16,11 +16,11 @@
         '../../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
         '../../skia/skia.gyp:skia',
         '../../url/url.gyp:url_lib',
-        '../base/strings/ui_strings.gyp:ui_strings',
         '../base/ui_base.gyp:ui_base',
         '../gfx/gfx.gyp:gfx',
         '../gfx/gfx.gyp:gfx_geometry',
         '../resources/ui_resources.gyp:ui_resources',
+        '../strings/ui_strings.gyp:ui_strings',
       ],
       'defines': [
         'MESSAGE_CENTER_IMPLEMENTATION',
@@ -224,6 +224,7 @@
             'views/bounded_label_unittest.cc',
             'views/message_center_view_unittest.cc',
             'views/message_popup_collection_unittest.cc',
+            'views/notification_view_unittest.cc',
             'views/notifier_settings_view_unittest.cc',
           ],
         }],
@@ -235,8 +236,7 @@
           ],
         }],
         # See http://crbug.com/162998#c4 for why this is needed.
-        # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
-        ['OS=="linux" and ((use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1))', {
+        ['OS=="linux" and use_allocator!="none"', {
           'dependencies': [
             '../../base/allocator/allocator.gyp:allocator',
           ],

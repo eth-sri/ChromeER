@@ -47,8 +47,6 @@ class CC_EXPORT Proxy {
 
   virtual ~Proxy();
 
-  virtual bool CompositeAndReadback(void* pixels, const gfx::Rect& rect) = 0;
-
   virtual void FinishAllRendering() = 0;
 
   virtual bool IsStarted() const = 0;
@@ -101,7 +99,7 @@ class CC_EXPORT Proxy {
 
   // Testing hooks
   virtual bool CommitPendingForTesting() = 0;
-  virtual scoped_ptr<base::Value> SchedulerStateAsValueForTesting();
+  virtual scoped_ptr<base::Value> SchedulerAsValueForTesting();
 
  protected:
   explicit Proxy(

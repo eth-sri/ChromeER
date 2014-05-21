@@ -66,7 +66,6 @@ class MEDIA_EXPORT VideoRendererImpl
                           const TimeDeltaCB& get_time_cb,
                           const TimeDeltaCB& get_duration_cb) OVERRIDE;
   virtual void Play(const base::Closure& callback) OVERRIDE;
-  virtual void Pause(const base::Closure& callback) OVERRIDE;
   virtual void Flush(const base::Closure& callback) OVERRIDE;
   virtual void Preroll(base::TimeDelta time,
                        const PipelineStatusCB& cb) OVERRIDE;
@@ -137,19 +136,24 @@ class MEDIA_EXPORT VideoRendererImpl
   // Provides video frames to VideoRendererImpl.
   VideoFrameStream video_frame_stream_;
 
+  // Flag indicating low-delay mode.
+  bool low_delay_;
+
   // Queue of incoming frames yet to be painted.
   typedef std::deque<scoped_refptr<VideoFrame> > VideoFrameQueue;
   VideoFrameQueue ready_frames_;
 
-  // Keeps track of whether we received the end of stream buffer.
+  // Keeps track of whether we received the end of stream buffer and finished
+  // rendering.
   bool received_end_of_stream_;
+  bool rendered_end_of_stream_;
 
   // Used to signal |thread_| as frames are added to |frames_|.  Rule of thumb:
   // always check |state_| to see if it was set to STOPPED after waking up!
   base::ConditionVariable frame_available_;
 
   // State transition Diagram of this class:
-  //       [kUninitialized] -------> [kError]
+  //       [kUninitialized]
   //              |
   //              | Initialize()
   //        [kInitializing]
@@ -159,33 +163,27 @@ class MEDIA_EXPORT VideoRendererImpl
   //   |          | Preroll() or upon               ^
   //   |          V got first frame            [kFlushing]
   //   |      [kPrerolling]                         ^
-  //   |          |                                 | Flush()
+  //   |          |                                 |
   //   |          V Got enough frames               |
-  //   |      [kPrerolled]---------------------->[kPaused]
-  //   |          |                Pause()          ^
+  //   |      [kPrerolled]--------------------------|
+  //   |          |                Flush()          ^
   //   |          V Play()                          |
   //   |       [kPlaying]---------------------------|
-  //   |          |                Pause()          ^
-  //   |          V Receive EOF frame.              | Pause()
-  //   |       [kEnded]-----------------------------+
-  //   |                                            ^
+  //   |                           Flush()          ^ Flush()
   //   |                                            |
   //   +-----> [kStopped]                 [Any state other than]
-  //                                      [kUninitialized/kError]
+  //                                      [   kUninitialized   ]
 
   // Simple state tracking variable.
   enum State {
     kUninitialized,
     kInitializing,
     kPrerolled,
-    kPaused,
     kFlushing,
     kFlushed,
     kPrerolling,
     kPlaying,
-    kEnded,
     kStopped,
-    kError,
   };
   State state_;
 

@@ -13,44 +13,6 @@ using std::max;
 
 namespace net {
 
-QuicUnackedPacketMap::TransmissionInfo::TransmissionInfo()
-    : retransmittable_frames(NULL),
-      sequence_number_length(PACKET_1BYTE_SEQUENCE_NUMBER),
-      sent_time(QuicTime::Zero()),
-      bytes_sent(0),
-      nack_count(0),
-      all_transmissions(NULL),
-      pending(false) { }
-
-QuicUnackedPacketMap::TransmissionInfo::TransmissionInfo(
-    RetransmittableFrames* retransmittable_frames,
-    QuicPacketSequenceNumber sequence_number,
-    QuicSequenceNumberLength sequence_number_length)
-    : retransmittable_frames(retransmittable_frames),
-      sequence_number_length(sequence_number_length),
-      sent_time(QuicTime::Zero()),
-      bytes_sent(0),
-      nack_count(0),
-      all_transmissions(new SequenceNumberSet),
-      pending(false) {
-  all_transmissions->insert(sequence_number);
-}
-
-QuicUnackedPacketMap::TransmissionInfo::TransmissionInfo(
-    RetransmittableFrames* retransmittable_frames,
-    QuicPacketSequenceNumber sequence_number,
-    QuicSequenceNumberLength sequence_number_length,
-    SequenceNumberSet* all_transmissions)
-    : retransmittable_frames(retransmittable_frames),
-      sequence_number_length(sequence_number_length),
-      sent_time(QuicTime::Zero()),
-      bytes_sent(0),
-      nack_count(0),
-      all_transmissions(all_transmissions),
-      pending(false) {
-  all_transmissions->insert(sequence_number);
-}
-
 QuicUnackedPacketMap::QuicUnackedPacketMap()
     : largest_sent_packet_(0),
       bytes_in_flight_(0),
@@ -164,17 +126,12 @@ void QuicUnackedPacketMap::RemovePacket(
     LOG(DFATAL) << "packet is not unacked: " << sequence_number;
     return;
   }
-  const TransmissionInfo& transmission_info = it->second;
-  transmission_info.all_transmissions->erase(sequence_number);
-  if (transmission_info.all_transmissions->empty()) {
-    delete transmission_info.all_transmissions;
-  }
-  if (transmission_info.retransmittable_frames != NULL) {
-    if (transmission_info.retransmittable_frames->HasCryptoHandshake()
-            == IS_HANDSHAKE) {
-      --pending_crypto_packet_count_;
-    }
-    delete transmission_info.retransmittable_frames;
+  TransmissionInfo* transmission_info = &it->second;
+  DCHECK(!transmission_info->pending);
+  MaybeRemoveRetransmittableFrames(transmission_info);
+  transmission_info->all_transmissions->erase(sequence_number);
+  if (transmission_info->all_transmissions->empty()) {
+    delete transmission_info->all_transmissions;
   }
   unacked_packets_.erase(it);
 }
@@ -187,11 +144,17 @@ void QuicUnackedPacketMap::NeuterPacket(
     return;
   }
   TransmissionInfo* transmission_info = &it->second;
+  // TODO(ianswett): Ensure packets are pending before neutering them.
+  MaybeRemoveRetransmittableFrames(transmission_info);
   if (transmission_info->all_transmissions->size() > 1) {
     transmission_info->all_transmissions->erase(sequence_number);
     transmission_info->all_transmissions = new SequenceNumberSet();
     transmission_info->all_transmissions->insert(sequence_number);
   }
+}
+
+void QuicUnackedPacketMap::MaybeRemoveRetransmittableFrames(
+    TransmissionInfo* transmission_info) {
   if (transmission_info->retransmittable_frames != NULL) {
     if (transmission_info->retransmittable_frames->HasCryptoHandshake()
             == IS_HANDSHAKE) {
@@ -203,23 +166,16 @@ void QuicUnackedPacketMap::NeuterPacket(
 }
 
 // static
-bool QuicUnackedPacketMap::IsSentAndNotPending(
+bool QuicUnackedPacketMap::IsForRttOnly(
     const TransmissionInfo& transmission_info) {
   return !transmission_info.pending &&
-      transmission_info.sent_time != QuicTime::Zero() &&
-      transmission_info.bytes_sent == 0;
+      transmission_info.retransmittable_frames == NULL &&
+      transmission_info.all_transmissions->size() == 1;
 }
 
 bool QuicUnackedPacketMap::IsUnacked(
     QuicPacketSequenceNumber sequence_number) const {
   return ContainsKey(unacked_packets_, sequence_number);
-}
-
-bool QuicUnackedPacketMap::IsPending(
-    QuicPacketSequenceNumber sequence_number) const {
-  const TransmissionInfo* transmission_info =
-      FindOrNull(unacked_packets_, sequence_number);
-  return transmission_info != NULL && transmission_info->pending;
 }
 
 void QuicUnackedPacketMap::SetNotPending(
@@ -242,18 +198,11 @@ bool QuicUnackedPacketMap::HasUnackedPackets() const {
 }
 
 bool QuicUnackedPacketMap::HasPendingPackets() const {
-  for (UnackedPacketMap::const_reverse_iterator it =
-           unacked_packets_.rbegin(); it != unacked_packets_.rend(); ++it) {
-    if (it->second.pending) {
-      return true;
-    }
-  }
-  return false;
+  return bytes_in_flight_ > 0;
 }
 
-const QuicUnackedPacketMap::TransmissionInfo&
-    QuicUnackedPacketMap::GetTransmissionInfo(
-        QuicPacketSequenceNumber sequence_number) const {
+const TransmissionInfo& QuicUnackedPacketMap::GetTransmissionInfo(
+    QuicPacketSequenceNumber sequence_number) const {
   return unacked_packets_.find(sequence_number)->second;
 }
 
@@ -316,17 +265,6 @@ bool QuicUnackedPacketMap::HasUnackedRetransmittableFrames() const {
   return false;
 }
 
-size_t QuicUnackedPacketMap::GetNumRetransmittablePackets() const {
-  size_t num_unacked_packets = 0;
-  for (UnackedPacketMap::const_iterator it = unacked_packets_.begin();
-       it != unacked_packets_.end(); ++it) {
-    if (it->second.retransmittable_frames != NULL) {
-      ++num_unacked_packets;
-    }
-  }
-  return num_unacked_packets;
-}
-
 QuicPacketSequenceNumber
 QuicUnackedPacketMap::GetLeastUnackedSentPacket() const {
   if (unacked_packets_.empty()) {
@@ -335,15 +273,6 @@ QuicUnackedPacketMap::GetLeastUnackedSentPacket() const {
   }
 
   return unacked_packets_.begin()->first;
-}
-
-SequenceNumberSet QuicUnackedPacketMap::GetUnackedPackets() const {
-  SequenceNumberSet unacked_packets;
-  for (UnackedPacketMap::const_iterator it = unacked_packets_.begin();
-       it != unacked_packets_.end(); ++it) {
-    unacked_packets.insert(it->first);
-  }
-  return unacked_packets;
 }
 
 void QuicUnackedPacketMap::SetSent(QuicPacketSequenceNumber sequence_number,

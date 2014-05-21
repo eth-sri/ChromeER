@@ -5,6 +5,7 @@
 #include "content/browser/service_worker/service_worker_context_core.h"
 
 #include "base/files/file_path.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/strings/string_util.h"
 #include "content/browser/service_worker/embedded_worker_registry.h"
 #include "content/browser/service_worker/service_worker_context_observer.h"
@@ -77,11 +78,15 @@ void ServiceWorkerContextCore::ProviderHostIterator::Initialize() {
 
 ServiceWorkerContextCore::ServiceWorkerContextCore(
     const base::FilePath& path,
+    base::SequencedTaskRunner* database_task_runner,
+    base::MessageLoopProxy* disk_cache_thread,
     quota::QuotaManagerProxy* quota_manager_proxy,
     ObserverListThreadSafe<ServiceWorkerContextObserver>* observer_list,
     scoped_ptr<ServiceWorkerProcessManager> process_manager)
-    : storage_(
-          new ServiceWorkerStorage(path, AsWeakPtr(), quota_manager_proxy)),
+    : weak_factory_(this),
+      storage_(new ServiceWorkerStorage(
+          path, AsWeakPtr(), database_task_runner, disk_cache_thread,
+          quota_manager_proxy)),
       embedded_worker_registry_(new EmbeddedWorkerRegistry(AsWeakPtr())),
       job_coordinator_(new ServiceWorkerJobCoordinator(AsWeakPtr())),
       process_manager_(process_manager.Pass()),
@@ -95,10 +100,7 @@ ServiceWorkerContextCore::~ServiceWorkerContextCore() {
        ++it) {
     it->second->RemoveListener(this);
   }
-  providers_.Clear();
-  storage_.reset();
-  job_coordinator_.reset();
-  embedded_worker_registry_ = NULL;
+  weak_factory_.InvalidateWeakPtrs();
 }
 
 ServiceWorkerProviderHost* ServiceWorkerContextCore::GetProviderHost(
@@ -155,6 +157,7 @@ void ServiceWorkerContextCore::RegisterServiceWorker(
       source_process_id,
       base::Bind(&ServiceWorkerContextCore::RegistrationComplete,
                  AsWeakPtr(),
+                 pattern,
                  callback));
 }
 
@@ -163,10 +166,16 @@ void ServiceWorkerContextCore::UnregisterServiceWorker(
     const UnregistrationCallback& callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
-  job_coordinator_->Unregister(pattern, callback);
+  job_coordinator_->Unregister(
+      pattern,
+      base::Bind(&ServiceWorkerContextCore::UnregistrationComplete,
+                 AsWeakPtr(),
+                 pattern,
+                 callback));
 }
 
 void ServiceWorkerContextCore::RegistrationComplete(
+    const GURL& pattern,
     const ServiceWorkerContextCore::RegistrationCallback& callback,
     ServiceWorkerStatusCode status,
     ServiceWorkerRegistration* registration,
@@ -184,6 +193,21 @@ void ServiceWorkerContextCore::RegistrationComplete(
   callback.Run(status,
                registration->id(),
                version->version_id());
+  if (observer_list_) {
+    observer_list_->Notify(&ServiceWorkerContextObserver::OnRegistrationStored,
+                           pattern);
+  }
+}
+
+void ServiceWorkerContextCore::UnregistrationComplete(
+    const GURL& pattern,
+    const ServiceWorkerContextCore::UnregistrationCallback& callback,
+    ServiceWorkerStatusCode status) {
+  callback.Run(status);
+  if (observer_list_) {
+    observer_list_->Notify(&ServiceWorkerContextObserver::OnRegistrationDeleted,
+                           pattern);
+  }
 }
 
 ServiceWorkerRegistration* ServiceWorkerContextCore::GetLiveRegistration(

@@ -12,7 +12,7 @@
 #include "third_party/WebKit/public/platform/WebURL.h"
 #include "third_party/WebKit/public/web/WebUserMediaClient.h"
 
-namespace WebTestRunner {
+namespace content {
 
 class WebTestDelegate;
 
@@ -27,7 +27,7 @@ public:
     virtual void cancelMediaDevicesRequest(const blink::WebMediaDevicesRequest&) OVERRIDE;
 
     // Task related methods
-    WebTaskList* taskList() { return &m_taskList; }
+    WebTaskList* mutable_task_list() { return &m_taskList; }
 
 private:
     WebTaskList m_taskList;
@@ -36,6 +36,6 @@ private:
     DISALLOW_COPY_AND_ASSIGN(WebUserMediaClientMock);
 };
 
-}
+}  // namespace content
 
 #endif  // CONTENT_SHELL_RENDERER_TEST_RUNNER_WEBUSERMEDIACLIENTMOCK_H_

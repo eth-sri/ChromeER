@@ -34,7 +34,6 @@
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #import "testing/gtest_mac.h"
 
 namespace {
@@ -142,9 +141,9 @@ class BrowserWindowControllerTest : public InProcessBrowserTest {
     return height;
   }
 
-  void SetDevToolsWindowContentsInsets(
-      DevToolsWindow* window, int left, int top, int right, int bottom) {
-    window->SetContentsInsets(left, top, right, bottom);
+  void SetDevToolsWindowContentsBounds(
+      DevToolsWindow* window, const gfx::Rect& bounds) {
+    window->SetInspectedPageBounds(bounds);
   }
 
  private:
@@ -356,17 +355,17 @@ IN_PROC_BROWSER_TEST_F(BrowserWindowControllerTest,
 // visible.
 IN_PROC_BROWSER_TEST_F(BrowserWindowControllerTest,
                        AllowOverlappingViewsHistoryOverlay) {
-  content::WebContentsView* web_contents_view =
-      browser()->tab_strip_model()->GetActiveWebContents()->GetView();
-  EXPECT_TRUE(web_contents_view->GetAllowOverlappingViews());
+  content::WebContents* web_contents =
+      browser()->tab_strip_model()->GetActiveWebContents();
+  EXPECT_TRUE(web_contents->GetAllowOverlappingViews());
 
   base::scoped_nsobject<HistoryOverlayController> overlay(
       [[HistoryOverlayController alloc] initForMode:kHistoryOverlayModeBack]);
-  [overlay showPanelForView:web_contents_view->GetNativeView()];
-  EXPECT_TRUE(web_contents_view->GetAllowOverlappingViews());
+  [overlay showPanelForView:web_contents->GetNativeView()];
+  EXPECT_TRUE(web_contents->GetAllowOverlappingViews());
 
   overlay.reset();
-  EXPECT_TRUE(web_contents_view->GetAllowOverlappingViews());
+  EXPECT_TRUE(web_contents->GetAllowOverlappingViews());
 }
 
 // Tests that status bubble's base frame does move when devTools are docked.
@@ -376,7 +375,7 @@ IN_PROC_BROWSER_TEST_F(BrowserWindowControllerTest,
 
   DevToolsWindow* devtools_window = DevToolsWindow::OpenDevToolsWindowForTest(
       browser(), true);
-  SetDevToolsWindowContentsInsets(devtools_window, 10, 10, 10, 10);
+  SetDevToolsWindowContentsBounds(devtools_window, gfx::Rect(10, 10, 100, 100));
 
   NSPoint originWithDevTools = [controller() statusBubbleBaseFrame].origin;
   EXPECT_FALSE(NSEqualPoints(origin, originWithDevTools));

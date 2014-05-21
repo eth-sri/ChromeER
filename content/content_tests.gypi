@@ -50,9 +50,11 @@
         '../testing/gtest.gyp:gtest',
         '../ui/accessibility/accessibility.gyp:ax_gen',
         '../ui/base/ui_base.gyp:ui_base',
+        '../ui/base/ui_base.gyp:ui_base_test_support',
         '../ui/events/events.gyp:dom4_keycode_converter',
         '../ui/events/events.gyp:events_base',
         '../ui/events/events.gyp:events_test_support',
+        '../ui/events/events.gyp:gesture_detection',
         '../ui/gfx/gfx.gyp:gfx',
         '../ui/gfx/gfx.gyp:gfx_geometry',
         '../ui/gfx/gfx.gyp:gfx_test_support',
@@ -81,6 +83,8 @@
         'public/test/download_test_observer.h',
         'public/test/fake_speech_recognition_manager.cc',
         'public/test/fake_speech_recognition_manager.h',
+        'public/test/javascript_test_observer.cc',
+        'public/test/javascript_test_observer.h',
         'public/test/mock_blob_url_request_context.cc',
         'public/test/mock_blob_url_request_context.h',
         'public/test/mock_download_item.cc',
@@ -161,6 +165,8 @@
         'test/content_browser_test_utils_internal.h',
         'test/content_test_suite.cc',
         'test/content_test_suite.h',
+        'test/frame_load_waiter.cc',
+        'test/frame_load_waiter.h',
         'test/mock_google_streaming_server.cc',
         'test/mock_google_streaming_server.h',
         'test/mock_keyboard.cc',
@@ -200,8 +206,6 @@
         'test/test_render_view_host_factory.h',
         'test/test_web_contents.cc',
         'test/test_web_contents.h',
-        'test/test_web_contents_view.cc',
-        'test/test_web_contents_view.h',
         'test/web_gesture_curve_mock.cc',
         'test/web_gesture_curve_mock.h',
         'test/weburl_loader_mock.cc',
@@ -284,14 +288,14 @@
         }],
         ['enable_webrtc==1', {
           'sources': [
-            'renderer/media/mock_media_stream_dependency_factory.cc',
-            'renderer/media/mock_media_stream_dependency_factory.h',
             'renderer/media/mock_media_stream_dispatcher.cc',
             'renderer/media/mock_media_stream_dispatcher.h',
             'renderer/media/mock_peer_connection_impl.cc',
             'renderer/media/mock_peer_connection_impl.h',
             'renderer/media/mock_web_rtc_peer_connection_handler_client.cc',
             'renderer/media/mock_web_rtc_peer_connection_handler_client.h',
+            'renderer/media/webrtc/mock_peer_connection_dependency_factory.cc',
+            'renderer/media/webrtc/mock_peer_connection_dependency_factory.h',
           ],
           'dependencies': [
             '../third_party/libjingle/libjingle.gyp:libjingle_webrtc',
@@ -396,9 +400,9 @@
         'browser/database_tracker_unittest.cc',
         'browser/device_sensors/data_fetcher_shared_memory_base_unittest.cc',
         'browser/device_sensors/sensor_manager_android_unittest.cc',
+        'browser/devtools/embedded_worker_devtools_manager_unittest.cc',
         'browser/devtools/devtools_http_handler_unittest.cc',
         'browser/devtools/devtools_manager_unittest.cc',
-        'browser/devtools/shared_worker_devtools_manager_unittest.cc',
         'browser/dom_storage/dom_storage_area_unittest.cc',
         'browser/dom_storage/dom_storage_context_impl_unittest.cc',
         'browser/dom_storage/dom_storage_database_unittest.cc',
@@ -484,7 +488,6 @@
         'browser/indexed_db/mock_indexed_db_database_callbacks.h',
         'browser/indexed_db/leveldb/leveldb_unittest.cc',
         'browser/indexed_db/list_set_unittest.cc',
-        'browser/loader/offline_policy_unittest.cc',
         'browser/loader/resource_buffer_unittest.cc',
         'browser/loader/resource_dispatcher_host_unittest.cc',
         'browser/loader/resource_loader_unittest.cc',
@@ -637,6 +640,7 @@
         'renderer/active_notification_tracker_unittest.cc',
         'renderer/android/email_detector_unittest.cc',
         'renderer/android/phone_number_detector_unittest.cc',
+        'renderer/battery_status/battery_status_dispatcher_unittest.cc',
         'renderer/bmp_image_decoder_unittest.cc',
         'renderer/device_sensors/device_motion_event_pump_unittest.cc',
         'renderer/device_sensors/device_orientation_event_pump_unittest.cc',
@@ -745,7 +749,7 @@
             'browser/renderer_host/p2p/socket_host_udp_unittest.cc',
             'browser/renderer_host/p2p/socket_host_unittest.cc',
             'renderer/media/media_stream_audio_processor_unittest.cc',
-            'renderer/media/media_stream_dependency_factory_unittest.cc',
+            'renderer/media/media_stream_constraints_util_unittest.cc',
             'renderer/media/media_stream_dispatcher_unittest.cc',
             'renderer/media/media_stream_impl_unittest.cc',
             'renderer/media/media_stream_video_capture_source_unittest.cc',
@@ -763,6 +767,7 @@
             'renderer/media/video_source_handler_unittest.cc',
             'renderer/media/webrtc/media_stream_remote_video_source_unittest.cc',
             'renderer/media/webrtc/media_stream_track_metrics_unittest.cc',
+            'renderer/media/webrtc/peer_connection_dependency_factory_unittest.cc',
             'renderer/media/webrtc/webrtc_local_audio_track_adapter_unittest.cc',
             'renderer/media/webrtc/webrtc_media_stream_adapter_unittest.cc',
             'renderer/media/webrtc/webrtc_video_capturer_adapter_unittest.cc',
@@ -875,7 +880,7 @@
             '../third_party/libvpx/libvpx.gyp:libvpx',
           ],
         }],
-        ['OS == "android" and gtest_target_type == "shared_library"', {
+        ['OS == "android"', {
           'dependencies': [
             '../testing/android/native_test.gyp:native_test_native_code',
           ],
@@ -888,6 +893,16 @@
         ['use_dbus==0', {
           'sources!': [
             'browser/geolocation/wifi_data_provider_linux_unittest.cc',
+          ],
+        }],
+        ['OS!="win" and OS!="mac"', {
+          'sources!': [
+            'common/plugin_list_unittest.cc',
+          ],
+        }],
+        ['use_ozone==1', {
+          'dependencies': [
+            '../ui/gfx/ozone/gfx_ozone.gyp:gfx_ozone',
           ],
         }],
       ],
@@ -939,7 +954,7 @@
             'test/run_all_perftests.cc',
           ],
           'conditions': [
-            ['OS == "android" and gtest_target_type == "shared_library"', {
+            ['OS == "android"', {
               'dependencies': [
                 '../testing/android/native_test.gyp:native_test_native_code',
               ],
@@ -1064,8 +1079,8 @@
             'browser/browser_plugin/test_browser_plugin_guest.h',
             'browser/browser_plugin/test_browser_plugin_guest_delegate.cc',
             'browser/browser_plugin/test_browser_plugin_guest_delegate.h',
-            'browser/browser_plugin/test_browser_plugin_guest_manager.cc',
-            'browser/browser_plugin/test_browser_plugin_guest_manager.h',
+            'browser/browser_plugin/test_guest_manager.cc',
+            'browser/browser_plugin/test_guest_manager.h',
             'browser/child_process_security_policy_browsertest.cc',
             'browser/cross_site_transfer_browsertest.cc',
             'browser/database_browsertest.cc',
@@ -1103,7 +1118,6 @@
             'browser/service_worker/service_worker_browsertest.cc',
             'browser/session_history_browsertest.cc',
             'browser/site_per_process_browsertest.cc',
-            'browser/speech/input_tag_speech_browsertest.cc',
             'browser/speech/speech_recognition_browsertest.cc',
             'browser/tracing/tracing_controller_browsertest.cc',
             'browser/web_contents/opened_by_dom_browsertest.cc',
@@ -1271,7 +1285,7 @@
               'sources!': [
                 # These tests depend on single process mode, which is disabled
                 # in official builds.
-		'renderer/browser_render_view_browsertest.cc',
+    'renderer/browser_render_view_browsertest.cc',
                 'renderer/dom_serializer_browsertest.cc',
                 'renderer/resource_fetcher_browsertest.cc',
                 'renderer/savable_resources_browsertest.cc',
@@ -1410,10 +1424,9 @@
                   '<(angle_path)/src/build_angle.gyp:libGLESv2',
                 ],
               }],
-              # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
               ['(OS=="win" and win_use_allocator_shim==1) or '
                '(os_posix == 1 and OS != "android" and '
-               ' ((use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1)))', {
+               ' use_allocator!="none")', {
                 'dependencies': [
                   '../base/allocator/allocator.gyp:allocator',
                 ],
@@ -1426,7 +1439,7 @@
               ['use_x11==1', {
                 'dependencies': [
                   '../build/linux/system.gyp:x11',  # Used by rendering_helper.cc
-                  '../ui/gfx/gfx.gyp:gfx_x11',
+                  '../ui/gfx/x/gfx_x11.gyp:gfx_x11',
                 ],
               }],
             ],
@@ -1481,10 +1494,7 @@
         },
       ]
     }],
-    # Special target to wrap a gtest_target_type==shared_library
-    # content_unittests into an android apk for execution.
-    # See base.gyp for TODO(jrg)s about this strategy.
-    ['OS == "android" and gtest_target_type == "shared_library"', {
+    ['OS == "android"', {
       'targets': [
         {
           'target_name': 'content_gl_tests_apk',
@@ -1608,7 +1618,6 @@
           ],
           'variables': {
             'jni_gen_package': 'content/shell',
-            'jni_generator_ptr_type': 'long',
           },
           'includes': [ '../build/jni_generator.gypi' ],
         },
@@ -1635,7 +1644,6 @@
           ],
           'variables': {
             'jni_gen_package': 'content/public/test',
-            'jni_generator_ptr_type': 'long',
           },
           'includes': [ '../build/jni_generator.gypi' ],
         },

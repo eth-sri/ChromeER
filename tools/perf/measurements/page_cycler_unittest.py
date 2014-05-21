@@ -51,6 +51,34 @@ class FakeTab(object):
     return 1
   def WaitForJavaScriptExpression(self, _, __):
     pass
+  @property
+  def browser(self):
+    return FakeBrowser()
+
+class FakeBrowser(object):
+  _iteration = 0
+
+  @property
+  def cpu_stats(self):
+    FakeBrowser._iteration += 1
+    return {
+        'Browser': {'CpuProcessTime': FakeBrowser._iteration,
+                    'TotalTime': FakeBrowser._iteration * 2},
+        'Renderer': {'CpuProcessTime': FakeBrowser._iteration,
+                    'TotalTime': FakeBrowser._iteration * 3},
+        'Gpu': {'CpuProcessTime': FakeBrowser._iteration,
+                 'TotalTime': FakeBrowser._iteration * 4}
+    }
+  @property
+  def platform(self):
+    return FakePlatform()
+
+
+class FakePlatform(object):
+  def GetOSName(self):
+    return 'fake'
+  def CanMonitorPower(self):
+    return False
 
 
 class PageCyclerUnitTest(unittest.TestCase):
@@ -58,6 +86,7 @@ class PageCyclerUnitTest(unittest.TestCase):
   def SetUpCycler(self, args, setup_memory_module=False):
     cycler = page_cycler.PageCycler()
     options = browser_options.BrowserFinderOptions()
+    options.browser_options.platform = FakePlatform()
     parser = options.CreateParser()
     page_runner.AddCommandLineArgs(parser)
     cycler.AddCommandLineArgs(parser)
@@ -65,7 +94,7 @@ class PageCyclerUnitTest(unittest.TestCase):
     parser.parse_args(args)
     page_runner.ProcessCommandLineArgs(parser, options)
     cycler.ProcessCommandLineArgs(parser, options)
-    cycler.CustomizeBrowserOptions(options)
+    cycler.CustomizeBrowserOptions(options.browser_options)
 
     if setup_memory_module:
       # Mock out memory metrics; the real ones require a real browser.
@@ -79,7 +108,7 @@ class PageCyclerUnitTest(unittest.TestCase):
       real_memory_module = page_cycler.memory
       try:
         page_cycler.memory = mock_memory_module
-        cycler.DidStartBrowser(None)
+        cycler.DidStartBrowser(FakeBrowser())
       finally:
         page_cycler.memory = real_memory_module
 
@@ -106,7 +135,7 @@ class PageCyclerUnitTest(unittest.TestCase):
                                '--cold-load-percent=50'],
                               True)
 
-    url_name = "http://fakepage.com"
+    url_name = 'http://fakepage.com'
     page = FakePage(url_name)
     tab = FakeTab()
     results = page_measurement_results.PageMeasurementResults()
@@ -114,7 +143,7 @@ class PageCyclerUnitTest(unittest.TestCase):
     for i in range(5):
       cycler.WillNavigateToPage(page, tab)
       self.assertEqual(max(0, i - 2), tab.clear_cache_calls,
-                       "Iteration %d tab.clear_cache_calls %d" %
+                       'Iteration %d tab.clear_cache_calls %d' %
                        (i, tab.clear_cache_calls))
       results.WillMeasurePage(page)
       cycler.MeasurePage(page, tab, results)
@@ -122,9 +151,9 @@ class PageCyclerUnitTest(unittest.TestCase):
       values = results.page_specific_values_for_current_page
       results.DidMeasurePage()
 
-      self.assertEqual(1, len(values))
-      self.assertEqual(values[0].page, page)
+      self.assertGreater(len(values), 2)
 
+      self.assertEqual(values[0].page, page)
       chart_name = 'cold_times' if i == 0 or i > 2 else 'warm_times'
       self.assertEqual(values[0].name, '%s.page_load_time' % chart_name)
       self.assertEqual(values[0].units, 'ms')
@@ -133,7 +162,7 @@ class PageCyclerUnitTest(unittest.TestCase):
 
   def testColdWarm(self):
     cycler = self.SetUpCycler(['--pageset-repeat=3'], True)
-    pages = [FakePage("http://fakepage1.com"), FakePage("http://fakepage2.com")]
+    pages = [FakePage('http://fakepage1.com'), FakePage('http://fakepage2.com')]
     tab = FakeTab()
     results = page_measurement_results.PageMeasurementResults()
     for i in range(3):
@@ -145,10 +174,44 @@ class PageCyclerUnitTest(unittest.TestCase):
         values = results.page_specific_values_for_current_page
         results.DidMeasurePage()
 
-        self.assertEqual(1, len(values))
+        self.assertGreater(len(values), 2)
+
         self.assertEqual(values[0].page, page)
 
         chart_name = 'cold_times' if i == 0 or i > 1 else 'warm_times'
         self.assertEqual(values[0].name, '%s.page_load_time' % chart_name)
+        self.assertEqual(values[0].units, 'ms')
+
+        cycler.DidNavigateToPage(page, tab)
+
+  def testResults(self):
+    cycler = self.SetUpCycler([], True)
+
+    pages = [FakePage('http://fakepage1.com'), FakePage('http://fakepage2.com')]
+    tab = FakeTab()
+    results = page_measurement_results.PageMeasurementResults()
+
+    for i in range(2):
+      for page in pages:
+        cycler.WillNavigateToPage(page, tab)
+        results.WillMeasurePage(page)
+        cycler.MeasurePage(page, tab, results)
+
+        values = results.page_specific_values_for_current_page
+        results.DidMeasurePage()
+
+        self.assertEqual(4, len(values))
+
+        self.assertEqual(values[0].page, page)
+        chart_name = 'cold_times' if i == 0 else 'warm_times'
+        self.assertEqual(values[0].name, '%s.page_load_time' % chart_name)
+        self.assertEqual(values[0].units, 'ms')
+
+        for value, expected in zip(values[1:], ['gpu', 'renderer', 'browser']):
+          self.assertEqual(value.page, page)
+          self.assertEqual(value.name,
+                           'cpu_utilization.cpu_utilization_%s' % expected)
+          self.assertEqual(value.units, '%')
+
 
         cycler.DidNavigateToPage(page, tab)

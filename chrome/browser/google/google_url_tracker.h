@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "base/callback_forward.h"
+#include "base/callback_list.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
@@ -20,6 +21,7 @@
 #include "net/url_request/url_fetcher_delegate.h"
 #include "url/gurl.h"
 
+class GoogleURLTrackerClient;
 class GoogleURLTrackerNavigationHelper;
 class PrefService;
 class Profile;
@@ -38,9 +40,9 @@ class InfoBar;
 //
 // Most consumers should only call GoogleURL(), which is guaranteed to
 // synchronously return a value at all times (even during startup or in unittest
-// mode).  Consumers who need to be notified when things change should listen to
-// the notification service for NOTIFICATION_GOOGLE_URL_UPDATED, which provides
-// the original and updated values.
+// mode).  Consumers who need to be notified when things change should register
+// a callback that provides the original and updated values via
+// RegisterCallback().
 //
 // To protect users' privacy and reduce server load, no updates will be
 // performed (ever) unless at least one consumer registers interest by calling
@@ -49,8 +51,11 @@ class GoogleURLTracker : public net::URLFetcherDelegate,
                          public net::NetworkChangeNotifier::IPAddressObserver,
                          public KeyedService {
  public:
-  // The contents of the Details for a NOTIFICATION_GOOGLE_URL_UPDATED.
-  typedef std::pair<GURL, GURL> UpdatedDetails;
+  // Callback that is called when the Google URL is updated. The arguments are
+  // the old and new URLs.
+  typedef base::Callback<void(GURL, GURL)> OnGoogleURLUpdatedCallback;
+  typedef base::CallbackList<void(GURL, GURL)> CallbackList;
+  typedef CallbackList::Subscription Subscription;
 
   // The constructor does different things depending on which of these values
   // you pass it.  Hopefully these are self-explanatory.
@@ -59,10 +64,14 @@ class GoogleURLTracker : public net::URLFetcherDelegate,
     UNIT_TEST_MODE,
   };
 
+  static const char kDefaultGoogleHomepage[];
+  static const char kSearchDomainCheckURL[];
+
   // Only the GoogleURLTrackerFactory and tests should call this.  No code other
   // than the GoogleURLTracker itself should actually use
   // GoogleURLTrackerFactory::GetForProfile().
   GoogleURLTracker(Profile* profile,
+                   scoped_ptr<GoogleURLTrackerClient> client,
                    scoped_ptr<GoogleURLTrackerNavigationHelper> nav_helper,
                    Mode mode);
 
@@ -102,12 +111,12 @@ class GoogleURLTracker : public net::URLFetcherDelegate,
   // No one but GoogleURLTrackerMapEntry should call this.
   void DeleteMapEntryForService(const InfoBarService* infobar_service);
 
-  // Called by the navigation observer after SearchCommitted() registers
-  // listeners, to indicate that we've received the "load now pending"
-  // notification.  |navigation_controller| is the NavigationController for this
-  // load; |infobar_service| is the InfoBarService of the associated tab; and
-  // |pending_id| is the unique ID of the newly pending NavigationEntry.
-  // If there is already a visible GoogleURLTracker infobar for this tab, this
+  // Called by the client after SearchCommitted() registers listeners, to
+  // indicate that we've received the "load now pending" notification.
+  // |navigation_controller| is the NavigationController for this load;
+  // |infobar_service| is the InfoBarService of the associated tab; and
+  // |pending_id| is the unique ID of the newly pending NavigationEntry.  If
+  // there is already a visible GoogleURLTracker infobar for this tab, this
   // function resets its associated pending entry ID to the new ID.  Otherwise
   // this function creates a map entry for the associated tab.
   virtual void OnNavigationPending(
@@ -125,8 +134,8 @@ class GoogleURLTracker : public net::URLFetcherDelegate,
   virtual void OnTabClosed(
       content::NavigationController* navigation_controller);
 
-  static const char kDefaultGoogleHomepage[];
-  static const char kSearchDomainCheckURL[];
+  scoped_ptr<Subscription> RegisterCallback(
+      const OnGoogleURLUpdatedCallback& cb);
 
  private:
   friend class GoogleURLTrackerTest;
@@ -175,7 +184,13 @@ class GoogleURLTracker : public net::URLFetcherDelegate,
       const GoogleURLTrackerMapEntry& map_entry,
       bool must_be_listening_for_commit);
 
+  void NotifyGoogleURLUpdated(GURL old_url, GURL new_url);
+
+  CallbackList callback_list_;
+
   Profile* profile_;
+
+  scoped_ptr<GoogleURLTrackerClient> client_;
 
   scoped_ptr<GoogleURLTrackerNavigationHelper> nav_helper_;
 
@@ -197,8 +212,8 @@ class GoogleURLTracker : public net::URLFetcherDelegate,
   bool need_to_fetch_;     // True if a consumer actually wants us to fetch an
                            // updated URL.  If this is never set, we won't
                            // bother to fetch anything.
-                           // Consumers should observe
-                           // chrome::NOTIFICATION_GOOGLE_URL_UPDATED.
+                           // Consumers should register a callback via
+                           // RegisterCallback().
   bool need_to_prompt_;    // True if the last fetched Google URL is not
                            // matched with current user's default Google URL
                            // nor the last prompted Google URL.

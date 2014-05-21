@@ -11,6 +11,8 @@
 #include "base/memory/scoped_vector.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/values.h"
+#include "content/browser/devtools/devtools_manager_impl.h"
+#include "content/browser/devtools/embedded_worker_devtools_manager.h"
 #include "content/browser/service_worker/service_worker_context_observer.h"
 #include "content/browser/service_worker/service_worker_context_wrapper.h"
 #include "content/browser/service_worker/service_worker_registration.h"
@@ -55,6 +57,9 @@ class ServiceWorkerInternalsUI::OperationProxy
   void DispatchSyncEventToWorkerOnIOThread(
       scoped_refptr<ServiceWorkerContextWrapper> context,
       const GURL& scope);
+  void InspectWorkerOnIOThread(
+      scoped_refptr<ServiceWorkerContextWrapper> context,
+      const GURL& scope);
 
  private:
   friend class base::RefCountedThreadSafe<OperationProxy>;
@@ -77,6 +82,15 @@ class ServiceWorkerInternalsUI::OperationProxy
   void DispatchSyncEventToActiveWorker(
       ServiceWorkerStatusCode status,
       const scoped_refptr<ServiceWorkerRegistration>& registration);
+
+  void InspectActiveWorker(
+      const ServiceWorkerContextCore* const service_worker_context,
+      ServiceWorkerStatusCode status,
+      const scoped_refptr<ServiceWorkerRegistration>& registration);
+
+  void InspectWorkerOnUIThread(
+      const ServiceWorkerContextCore* const service_worker_context,
+      int64 version_id);
 
   WeakPtr<ServiceWorkerInternalsUI> internals_;
   scoped_ptr<ListValue> original_args_;
@@ -157,6 +171,15 @@ class ServiceWorkerInternalsUI::PartitionObserver
     web_ui_->CallJavascriptFunction("serviceworker.onConsoleMessageReported",
                                     args.get());
   }
+  virtual void OnRegistrationStored(const GURL& pattern) OVERRIDE {
+    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+    web_ui_->CallJavascriptFunction("serviceworker.onRegistrationStored",
+                                    StringValue(pattern.spec()));
+  }
+  virtual void OnRegistrationDeleted(const GURL& pattern) OVERRIDE {
+    web_ui_->CallJavascriptFunction("serviceworker.onRegistrationDeleted",
+                                    StringValue(pattern.spec()));
+  }
   int partition_id() const { return partition_id_; }
 
  private:
@@ -199,6 +222,10 @@ ServiceWorkerInternalsUI::ServiceWorkerInternalsUI(WebUI* web_ui)
   web_ui->RegisterMessageCallback(
       "sync",
       base::Bind(&ServiceWorkerInternalsUI::DispatchSyncEventToWorker,
+                 base::Unretained(this)));
+  web_ui->RegisterMessageCallback(
+      "inspect",
+      base::Bind(&ServiceWorkerInternalsUI::InspectWorker,
                  base::Unretained(this)));
 }
 
@@ -328,6 +355,24 @@ void ServiceWorkerInternalsUI::DispatchSyncEventToWorker(
                  scope));
 }
 
+void ServiceWorkerInternalsUI::InspectWorker(const ListValue* args) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  base::FilePath partition_path;
+  GURL scope;
+  scoped_refptr<ServiceWorkerContextWrapper> context;
+  if (!GetRegistrationInfo(args, &partition_path, &scope, &context))
+    return;
+  scoped_ptr<ListValue> args_copy(args->DeepCopy());
+  BrowserThread::PostTask(
+      BrowserThread::IO,
+      FROM_HERE,
+      base::Bind(
+          &ServiceWorkerInternalsUI::OperationProxy::InspectWorkerOnIOThread,
+          new OperationProxy(AsWeakPtr(), args_copy.Pass()),
+          context,
+          scope));
+}
+
 void ServiceWorkerInternalsUI::Unregister(const ListValue* args) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   base::FilePath partition_path;
@@ -444,6 +489,17 @@ ServiceWorkerInternalsUI::OperationProxy::DispatchSyncEventToWorkerOnIOThread(
                  this));
 }
 
+void ServiceWorkerInternalsUI::OperationProxy::InspectWorkerOnIOThread(
+    scoped_refptr<ServiceWorkerContextWrapper> context,
+    const GURL& scope) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  context->context()->storage()->FindRegistrationForPattern(
+      scope,
+      base::Bind(&ServiceWorkerInternalsUI::OperationProxy::InspectActiveWorker,
+                 this,
+                 context->context()));
+}
+
 namespace {
 void UpdateVersionInfo(const ServiceWorkerVersionInfo& version,
                        DictionaryValue* info) {
@@ -531,7 +587,7 @@ void ServiceWorkerInternalsUI::OperationProxy::OnHaveRegistrations(
     result.Append(registration_info);
   }
 
-  if (internals_ && !result.empty())
+  if (internals_)
     internals_->web_ui()->CallJavascriptFunction(
         "serviceworker.onPartitionData",
         result,
@@ -599,6 +655,44 @@ void ServiceWorkerInternalsUI::OperationProxy::DispatchSyncEventToActiveWorker(
   }
 
   OperationComplete(SERVICE_WORKER_ERROR_FAILED);
+}
+
+void ServiceWorkerInternalsUI::OperationProxy::InspectActiveWorker(
+    const ServiceWorkerContextCore* const service_worker_context,
+    ServiceWorkerStatusCode status,
+    const scoped_refptr<ServiceWorkerRegistration>& registration) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  if (status == SERVICE_WORKER_OK) {
+    BrowserThread::PostTask(
+        BrowserThread::UI,
+        FROM_HERE,
+        base::Bind(&OperationProxy::InspectWorkerOnUIThread,
+                   this,
+                   service_worker_context,
+                   registration->active_version()->version_id()));
+    return;
+  }
+
+  OperationComplete(status);
+}
+
+void ServiceWorkerInternalsUI::OperationProxy::InspectWorkerOnUIThread(
+    const ServiceWorkerContextCore* const service_worker_context,
+    int64 version_id) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  scoped_refptr<DevToolsAgentHost> agent_host(
+      EmbeddedWorkerDevToolsManager::GetInstance()
+          ->GetDevToolsAgentHostForServiceWorker(
+              EmbeddedWorkerDevToolsManager::ServiceWorkerIdentifier(
+                  service_worker_context, version_id)));
+  if (agent_host) {
+    DevToolsManagerImpl::GetInstance()->Inspect(
+        internals_->web_ui()->GetWebContents()->GetBrowserContext(),
+        agent_host.get());
+    OperationComplete(SERVICE_WORKER_OK);
+    return;
+  }
+  OperationComplete(SERVICE_WORKER_ERROR_NOT_FOUND);
 }
 
 }  // namespace content

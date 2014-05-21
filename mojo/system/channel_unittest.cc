@@ -124,6 +124,13 @@ class MockRawChannelOnInitFails : public RawChannel {
   MockRawChannelOnInitFails() : on_init_called_(false) {}
   virtual ~MockRawChannelOnInitFails() {}
 
+  // |RawChannel| public methods:
+  virtual size_t GetSerializedPlatformHandleSize() const OVERRIDE {
+    return 0;
+  }
+
+ private:
+  // |RawChannel| protected methods:
   virtual IOResult Read(size_t*) OVERRIDE {
     CHECK(false);
     return IO_FAILED;
@@ -132,7 +139,12 @@ class MockRawChannelOnInitFails : public RawChannel {
     CHECK(false);
     return IO_FAILED;
   }
-  virtual IOResult WriteNoLock(size_t*) OVERRIDE {
+  virtual embedder::ScopedPlatformHandleVectorPtr GetReadPlatformHandles(
+      size_t, const void*) OVERRIDE {
+    CHECK(false);
+    return embedder::ScopedPlatformHandleVectorPtr();
+  }
+  virtual IOResult WriteNoLock(size_t*, size_t*) OVERRIDE {
     CHECK(false);
     return IO_FAILED;
   }
@@ -150,7 +162,6 @@ class MockRawChannelOnInitFails : public RawChannel {
     CHECK(false);
   }
 
- private:
   bool on_init_called_;
 
   DISALLOW_COPY_AND_ASSIGN(MockRawChannelOnInitFails);

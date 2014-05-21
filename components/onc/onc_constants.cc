@@ -37,12 +37,14 @@ const char kCellular[] = "Cellular";
 const char kEthernet[] = "Ethernet";
 const char kGUID[] = "GUID";
 const char kIPConfigs[] = "IPConfigs";
+const char kMacAddress[] = "MacAddress";
 const char kName[] = "Name";
 const char kNameServers[] = "NameServers";
 const char kProxySettings[] = "ProxySettings";
 const char kSearchDomains[] = "SearchDomains";
-const char kServicePath[] = "ServicePath";
 const char kConnectionState[] = "ConnectionState";
+const char kConnectable[] = "Connectable";
+const char kErrorState[] = "ErrorState";
 const char kType[] = "Type";
 const char kVPN[] = "VPN";
 const char kWiFi[] = "WiFi";
@@ -67,6 +69,8 @@ const char kCellular[] = "Cellular";
 const char kEthernet[] = "Ethernet";
 const char kVPN[] = "VPN";
 const char kWiFi[] = "WiFi";
+const char kWimax[] = "Wimax";
+const char kWireless[] = "Wireless";
 }  // namespace network_type
 
 namespace cellular {
@@ -259,6 +263,7 @@ const char kAuth[] = "Auth";
 const char kCipher[] = "Cipher";
 const char kCompLZO[] = "CompLZO";
 const char kCompNoAdapt[] = "CompNoAdapt";
+const char kIgnoreDefaultRoute[] = "IgnoreDefaultRoute";
 const char kInteract[] = "interact";
 const char kKeyDirection[] = "KeyDirection";
 const char kNoInteract[] = "nointeract";

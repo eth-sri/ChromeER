@@ -12,8 +12,7 @@
 // 2. Create CastSender (accepts CastTransportSender as an input).
 // 3. Call CastTransportSender::SetPacketReceiver to ensure that the packets
 //    received by the CastTransportSender will be sent to the CastSender.
-// 4. Initialize audio and/or video.
-// Steps 3 & 4 can be done interchangeably.
+// Steps 3 can be done interchangeably.
 
 // Destruction: The CastTransportSender is assumed to be valid as long as the
 // CastSender is alive. Therefore the CastSender should be destructed before the
@@ -46,10 +45,6 @@ namespace transport {
 typedef base::Callback<void(CastTransportStatus status)>
     CastTransportStatusCallback;
 
-typedef base::Callback<void(const RtcpSenderInfo& sender_info,
-                            base::TimeTicks time_sent,
-                            uint32 rtp_timestamp)> CastTransportRtpStatistics;
-
 typedef base::Callback<void(const std::vector<PacketEvent>&)>
     BulkRawEventsCallback;
 
@@ -69,7 +64,7 @@ class CastTransportSender : public base::NonThreadSafe {
 
   // Audio/Video initialization.
   // Encoded frames cannot be transmitted until the relevant initialize method
-  // is called.
+  // is called. Usually called by CastSender.
   virtual void InitializeAudio(const CastTransportAudioConfig& config) = 0;
 
   virtual void InitializeVideo(const CastTransportVideoConfig& config) = 0;
@@ -82,17 +77,17 @@ class CastTransportSender : public base::NonThreadSafe {
   // The following two functions handle the encoded media frames (audio and
   // video) to be processed.
   // Frames will be encrypted, packetized and transmitted to the network.
-  virtual void InsertCodedAudioFrame(const EncodedAudioFrame* audio_frame,
-                                     const base::TimeTicks& recorded_time) = 0;
-
-  virtual void InsertCodedVideoFrame(const EncodedVideoFrame* video_frame,
-                                     const base::TimeTicks& capture_time) = 0;
+  virtual void InsertCodedAudioFrame(const EncodedFrame& audio_frame) = 0;
+  virtual void InsertCodedVideoFrame(const EncodedFrame& video_frame) = 0;
 
   // Builds an RTCP packet and sends it to the network.
+  // |ntp_seconds|, |ntp_fraction| and |rtp_timestamp| are used in the
+  // RTCP Sender Report.
   virtual void SendRtcpFromRtpSender(uint32 packet_type_flags,
-                                     const RtcpSenderInfo& sender_info,
+                                     uint32 ntp_seconds,
+                                     uint32 ntp_fraction,
+                                     uint32 rtp_timestamp,
                                      const RtcpDlrrReportBlock& dlrr,
-                                     const RtcpSenderLogMessage& sender_log,
                                      uint32 sending_ssrc,
                                      const std::string& c_name) = 0;
 
@@ -100,15 +95,6 @@ class CastTransportSender : public base::NonThreadSafe {
   virtual void ResendPackets(
       bool is_audio,
       const MissingFramesAndPacketsMap& missing_packets) = 0;
-
-  // RTP statistics will be returned on a regular interval on the designated
-  // callback.
-  // Must be called after initialization of the corresponding A/V pipeline.
-  virtual void SubscribeAudioRtpStatsCallback(
-      const CastTransportRtpStatistics& callback) = 0;
-
-  virtual void SubscribeVideoRtpStatsCallback(
-      const CastTransportRtpStatistics& callback) = 0;
 };
 
 }  // namespace transport

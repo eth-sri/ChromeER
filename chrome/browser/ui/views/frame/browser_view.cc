@@ -107,7 +107,6 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "content/public/common/content_switches.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
@@ -140,14 +139,6 @@
 #include "ui/views/widget/root_view.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/window/dialog_delegate.h"
-
-#if defined(USE_ASH)
-#include "ash/ash_switches.h"
-#include "ash/shelf/shelf.h"
-#include "ash/shelf/shelf_model.h"
-#include "ash/shell.h"
-#include "chrome/browser/ui/ash/ash_util.h"
-#endif
 
 #if defined(OS_WIN)
 #include "base/win/windows_version.h"
@@ -255,10 +246,6 @@ class BrowserViewLayoutDelegateImpl : public BrowserViewLayoutDelegate {
   // BrowserViewLayoutDelegate overrides:
   virtual views::View* GetContentsWebView() const OVERRIDE {
     return browser_view_->contents_web_view_;
-  }
-
-  virtual views::View* GetWindowSwitcherButton() const OVERRIDE {
-    return browser_view_->window_switcher_button();
   }
 
   virtual bool DownloadShelfNeedsLayout() const OVERRIDE {
@@ -403,7 +390,6 @@ BrowserView::BrowserView()
       top_container_(NULL),
       tabstrip_(NULL),
       toolbar_(NULL),
-      window_switcher_button_(NULL),
       find_bar_host_view_(NULL),
       infobar_container_(NULL),
       contents_web_view_(NULL),
@@ -585,7 +571,8 @@ bool BrowserView::ShouldShowAvatar() const {
 #endif
 }
 
-bool BrowserView::GetAccelerator(int cmd_id, ui::Accelerator* accelerator) {
+bool BrowserView::GetAccelerator(int cmd_id,
+                                 ui::Accelerator* accelerator) const {
   // We retrieve the accelerator information for standard accelerators
   // for cut, copy and paste.
   if (chrome::GetStandardAcceleratorForCommandId(cmd_id, accelerator))
@@ -832,7 +819,7 @@ void BrowserView::OnActiveTabChanged(content::WebContents* old_contents,
       GetWidget()->IsVisible()) {
     // We only restore focus if our window is visible, to avoid invoking blur
     // handlers when we are eventually shown.
-    new_contents->GetView()->RestoreFocus();
+    new_contents->RestoreFocus();
   }
 
   // Update all the UI bits.
@@ -845,15 +832,17 @@ void BrowserView::ZoomChangedForActiveTab(bool can_show_bubble) {
 }
 
 gfx::Rect BrowserView::GetRestoredBounds() const {
-  return frame_->GetRestoredBounds();
+  gfx::Rect bounds;
+  ui::WindowShowState state;
+  frame_->GetWindowPlacement(&bounds, &state);
+  return bounds;
 }
 
 ui::WindowShowState BrowserView::GetRestoredState() const {
-  if (IsMaximized())
-    return ui::SHOW_STATE_MAXIMIZED;
-  if (IsMinimized())
-    return ui::SHOW_STATE_MINIMIZED;
-  return ui::SHOW_STATE_NORMAL;
+  gfx::Rect bounds;
+  ui::WindowShowState state;
+  frame_->GetWindowPlacement(&bounds, &state);
+  return state;
 }
 
 gfx::Rect BrowserView::GetBounds() const {
@@ -942,13 +931,7 @@ bool BrowserView::IsInMetroSnapMode() const {
 void BrowserView::RestoreFocus() {
   WebContents* selected_web_contents = GetActiveWebContents();
   if (selected_web_contents)
-    selected_web_contents->GetView()->RestoreFocus();
-}
-
-void BrowserView::SetWindowSwitcherButton(views::Button* button) {
-  if (window_switcher_button_)
-    RemoveChildView(window_switcher_button_);
-  window_switcher_button_ = button;
+    selected_web_contents->RestoreFocus();
 }
 
 void BrowserView::FullscreenStateChanged() {
@@ -1172,10 +1155,6 @@ void BrowserView::ShowBookmarkAppBubble(
                                     browser_->profile(),
                                     web_app_info,
                                     extension_id);
-}
-
-void BrowserView::ShowBookmarkPrompt() {
-  GetLocationBarView()->ShowBookmarkPrompt();
 }
 
 void BrowserView::ShowTranslateBubble(content::WebContents* web_contents,
@@ -1432,12 +1411,12 @@ void BrowserView::TabInsertedAt(WebContents* contents,
   // window yet. Per http://crbug/342672 add them now since drawing the
   // WebContents requires root window specific data - information about
   // the screen the WebContents is drawn on, for example.
-  if (!contents->GetView()->GetNativeView()->GetRootWindow()) {
-    aura::Window* window = contents->GetView()->GetNativeView();
+  if (!contents->GetNativeView()->GetRootWindow()) {
+    aura::Window* window = contents->GetNativeView();
     aura::Window* root_window = GetNativeWindow()->GetRootWindow();
     aura::client::ParentWindowWithContext(
         window, root_window, root_window->GetBoundsInScreen());
-    DCHECK(contents->GetView()->GetNativeView()->GetRootWindow());
+    DCHECK(contents->GetNativeView()->GetRootWindow());
   }
   web_contents_close_handler_->TabInserted();
 
@@ -1471,7 +1450,7 @@ void BrowserView::TabDeactivated(WebContents* contents) {
   // Some reports seem to show that the focus manager and/or focused view can
   // be garbage at that point, it is not clear why.
   if (!contents->IsBeingDestroyed())
-    contents->GetView()->StoreFocus();
+    contents->StoreFocus();
 }
 
 void BrowserView::TabStripEmpty() {
@@ -1613,7 +1592,8 @@ void BrowserView::SaveWindowPlacement(const gfx::Rect& bounds,
   // If IsFullscreen() is true, we've just changed into fullscreen mode, and
   // we're catching the going-into-fullscreen sizing and positioning calls,
   // which we want to ignore.
-  if (!IsFullscreen() && chrome::ShouldSaveWindowPlacement(browser_.get())) {
+  if (!IsFullscreen() && frame_->ShouldSaveWindowPlacement() &&
+      chrome::ShouldSaveWindowPlacement(browser_.get())) {
     WidgetDelegate::SaveWindowPlacement(bounds, show_state);
     chrome::SaveWindowPlacement(browser_.get(), bounds, show_state);
   }
@@ -1784,7 +1764,7 @@ int BrowserView::NonClientHitTest(const gfx::Point& point) {
   return GetBrowserViewLayout()->NonClientHitTest(point);
 }
 
-gfx::Size BrowserView::GetMinimumSize() {
+gfx::Size BrowserView::GetMinimumSize() const {
   return GetBrowserViewLayout()->GetMinimumSize();
 }
 
@@ -1805,16 +1785,17 @@ void BrowserView::Layout() {
   toolbar_->location_bar()->omnibox_view()->SetFocusable(IsToolbarVisible());
 }
 
-void BrowserView::PaintChildren(gfx::Canvas* canvas) {
+void BrowserView::PaintChildren(gfx::Canvas* canvas,
+                                const views::CullSet& cull_set) {
   // Paint the |infobar_container_| last so that it may paint its
   // overlapping tabs.
   for (int i = 0; i < child_count(); ++i) {
     View* child = child_at(i);
     if (child != infobar_container_ && !child->layer())
-      child->Paint(canvas);
+      child->Paint(canvas, cull_set);
   }
 
-  infobar_container_->Paint(canvas);
+  infobar_container_->Paint(canvas, cull_set);
 }
 
 void BrowserView::ViewHierarchyChanged(
@@ -1971,9 +1952,6 @@ void BrowserView::InitViews() {
   // bar widget.
   find_bar_host_view_ = new View();
   AddChildView(find_bar_host_view_);
-
-  if (window_switcher_button_)
-    AddChildView(window_switcher_button_);
 
   immersive_mode_controller_->Init(this);
 
@@ -2392,7 +2370,8 @@ void BrowserView::ShowAvatarBubble(WebContents* web_contents,
   views::View::ConvertPointToScreen(GetTabContentsContainerView(), &origin);
   gfx::Rect bounds(origin, rect.size());
 
-  AvatarMenuBubbleView::ShowBubble(this, views::BubbleBorder::TOP_RIGHT,
+  AvatarMenuBubbleView::ShowBubble(
+      this, views::BubbleBorder::TOP_RIGHT, views::BubbleBorder::PAINT_NORMAL,
       views::BubbleBorder::ALIGN_EDGE_TO_ANCHOR_EDGE, bounds, browser_.get());
 }
 
@@ -2413,9 +2392,21 @@ void BrowserView::ShowAvatarBubbleFromAvatarButton(AvatarBubbleMode mode) {
           views::BubbleBorder::ALIGN_EDGE_TO_ANCHOR_EDGE, bounds, browser());
     }
   } else {
-    AvatarMenuButton* button = frame_->GetAvatarMenuButton();
-    if (button)
-      button->ShowAvatarBubble();
+    views::BubbleBorder::Arrow arrow = views::BubbleBorder::TOP_RIGHT;
+    views::View* anchor_view = frame_->GetAvatarMenuButton();
+    if (!anchor_view)
+      anchor_view = toolbar_->app_menu();
+    else if (!frame_->GetAvatarMenuButton()->button_on_right())
+      arrow = views::BubbleBorder::TOP_LEFT;
+    gfx::Point origin;
+    views::View::ConvertPointToScreen(anchor_view, &origin);
+    gfx::Rect bounds(origin, anchor_view->size());
+    views::BubbleBorder::ArrowPaintType arrow_paint_type =
+        ShouldHideUIForFullscreen() ? views::BubbleBorder::PAINT_TRANSPARENT :
+                                      views::BubbleBorder::PAINT_NORMAL;
+    AvatarMenuBubbleView::ShowBubble(anchor_view, arrow, arrow_paint_type,
+        views::BubbleBorder::ALIGN_ARROW_TO_MID_ANCHOR, bounds, browser());
+    ProfileMetrics::LogProfileOpenMethod(ProfileMetrics::ICON_AVATAR_BUBBLE);
   }
 }
 
@@ -2507,7 +2498,7 @@ void BrowserView::DoCutCopyPaste(void (WebContents::*method)(),
 bool BrowserView::DoCutCopyPasteForWebContents(
     WebContents* contents,
     void (WebContents::*method)()) {
-  gfx::NativeView native_view = contents->GetView()->GetContentNativeView();
+  gfx::NativeView native_view = contents->GetContentNativeView();
   if (!native_view)
     return false;
   if (native_view->HasFocus()) {

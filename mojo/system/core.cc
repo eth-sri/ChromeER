@@ -27,12 +27,11 @@ namespace system {
 
 // Implementation notes
 //
-// Mojo primitives are implemented by the singleton |Core| object. Most
-// calls are for a "primary" handle (the first argument).
-// |Core::GetDispatcher()| is used to look up a |Dispatcher| object for a
-// given handle. That object implements most primitives for that object. The
-// wait primitives are not attached to objects and are implemented by |Core|
-// itself.
+// Mojo primitives are implemented by the singleton |Core| object. Most calls
+// are for a "primary" handle (the first argument). |Core::GetDispatcher()| is
+// used to look up a |Dispatcher| object for a given handle. That object
+// implements most primitives for that object. The wait primitives are not
+// attached to objects and are implemented by |Core| itself.
 //
 // Some objects have multiple handles associated to them, e.g., message pipes
 // (which have two). In such a case, there is still a |Dispatcher| (e.g.,
@@ -74,20 +73,6 @@ namespace system {
 //    - Locks at the "INF" level may not have any locks taken while they are
 //      held.
 
-Core::HandleTableEntry::HandleTableEntry()
-    : busy(false) {
-}
-
-Core::HandleTableEntry::HandleTableEntry(
-    const scoped_refptr<Dispatcher>& dispatcher)
-    : dispatcher(dispatcher),
-      busy(false) {
-}
-
-Core::HandleTableEntry::~HandleTableEntry() {
-  DCHECK(!busy);
-}
-
 Core::Core() {
 }
 
@@ -98,6 +83,14 @@ MojoHandle Core::AddDispatcher(
     const scoped_refptr<Dispatcher>& dispatcher) {
   base::AutoLock locker(handle_table_lock_);
   return handle_table_.AddDispatcher(dispatcher);
+}
+
+scoped_refptr<Dispatcher> Core::GetDispatcher(MojoHandle handle) {
+  if (handle == MOJO_HANDLE_INVALID)
+    return NULL;
+
+  base::AutoLock locker(handle_table_lock_);
+  return handle_table_.GetDispatcher(handle);
 }
 
 MojoTimeTicks Core::GetTimeTicksNow() {
@@ -269,7 +262,7 @@ MojoResult Core::ReadMessage(MojoHandle message_pipe_handle,
   if (!num_handles || *num_handles == 0)
     return dispatcher->ReadMessage(bytes, num_bytes, NULL, num_handles, flags);
 
-  std::vector<scoped_refptr<Dispatcher> > dispatchers;
+  DispatcherVector dispatchers;
   MojoResult rv = dispatcher->ReadMessage(bytes, num_bytes,
                                           &dispatchers, num_handles,
                                           flags);
@@ -519,14 +512,6 @@ MojoResult Core::UnmapBuffer(void* buffer) {
   return mapping_table_.RemoveMapping(buffer);
 }
 
-scoped_refptr<Dispatcher> Core::GetDispatcher(MojoHandle handle) {
-  if (handle == MOJO_HANDLE_INVALID)
-    return NULL;
-
-  base::AutoLock locker(handle_table_lock_);
-  return handle_table_.GetDispatcher(handle);
-}
-
 // Note: We allow |handles| to repeat the same handle multiple times, since
 // different flags may be specified.
 // TODO(vtl): This incurs a performance cost in |RemoveWaiter()|. Analyze this
@@ -537,7 +522,7 @@ MojoResult Core::WaitManyInternal(const MojoHandle* handles,
                                   MojoDeadline deadline) {
   DCHECK_GT(num_handles, 0u);
 
-  std::vector<scoped_refptr<Dispatcher> > dispatchers;
+  DispatcherVector dispatchers;
   dispatchers.reserve(num_handles);
   for (uint32_t i = 0; i < num_handles; i++) {
     scoped_refptr<Dispatcher> dispatcher = GetDispatcher(handles[i]);

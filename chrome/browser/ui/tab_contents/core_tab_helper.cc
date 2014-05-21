@@ -150,7 +150,7 @@ void CoreTabHelper::WasShown() {
       web_contents()->GetRenderProcessHost()->GetID());
 }
 
-void CoreTabHelper::WebContentsDestroyed(WebContents* web_contents) {
+void CoreTabHelper::WebContentsDestroyed() {
   // OnCloseStarted isn't called in unit tests.
   if (!close_start_time_.is_null()) {
     bool fast_tab_close_enabled = CommandLine::ForCurrentProcess()->HasSwitch(
@@ -188,7 +188,9 @@ void CoreTabHelper::BeforeUnloadDialogCancelled() {
   OnCloseCanceled();
 }
 
-bool CoreTabHelper::OnMessageReceived(const IPC::Message& message) {
+bool CoreTabHelper::OnMessageReceived(
+    const IPC::Message& message,
+    content::RenderFrameHost* render_frame_host) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(CoreTabHelper, message)
     IPC_MESSAGE_HANDLER(ChromeViewHostMsg_RequestThumbnailForContextNode_ACK,

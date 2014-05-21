@@ -45,11 +45,12 @@ void _sanitizer_options_link_helper() { }
 // Chromium builds.
 const char kAsanDefaultOptions[] =
     "legacy_pthread_cond=1 malloc_context_size=5 strict_memcmp=0 "
-    "symbolize=false check_printf=1 use_sigaltstack=1";
+    "symbolize=false check_printf=1 use_sigaltstack=1 detect_leaks=0";
 #else
 // Default AddressSanitizer options for buildbots and non-official builds.
 const char *kAsanDefaultOptions =
-    "strict_memcmp=0 symbolize=false check_printf=1 use_sigaltstack=1";
+    "strict_memcmp=0 symbolize=false check_printf=1 use_sigaltstack=1 "
+    "detect_leaks=0";
 #endif  // GOOGLE_CHROME_BUILD
 
 #elif defined(OS_MACOSX)
@@ -60,8 +61,30 @@ const char *kAsanDefaultOptions =
 #if defined(OS_LINUX) || defined(OS_MACOSX)
 extern "C"
 __attribute__((no_sanitize_address))
+__attribute__((visibility("default")))
+// The function isn't referenced from the executable itself. Make sure it isn't
+// stripped by the linker.
+__attribute__((used))
 const char *__asan_default_options() {
   return kAsanDefaultOptions;
 }
 #endif  // OS_LINUX || OS_MACOSX
 #endif  // ADDRESS_SANITIZER
+
+#if defined(THREAD_SANITIZER) && defined(OS_LINUX)
+// Default options for ThreadSanitizer in various configurations:
+//   detect_deadlocks=1 - enable deadlock (lock inversion) detection.
+//   second_deadlock_stack=1 - more verbose deadlock reports.
+const char kTsanDefaultOptions[] = "detect_deadlocks=1 second_deadlock_stack=1";
+
+extern "C"
+__attribute__((no_sanitize_thread))
+__attribute__((visibility("default")))
+// The function isn't referenced from the executable itself. Make sure it isn't
+// stripped by the linker.
+__attribute__((used))
+const char *__tsan_default_options() {
+  return kTsanDefaultOptions;
+}
+
+#endif  // THREAD_SANITIZER && OS_LINUX

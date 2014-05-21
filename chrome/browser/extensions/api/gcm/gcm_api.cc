@@ -8,6 +8,7 @@
 #include <map>
 #include <vector>
 
+#include "base/metrics/histogram.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "chrome/browser/profiles/profile.h"
@@ -78,7 +79,7 @@ bool IsMessageKeyValid(const std::string& key) {
 
 namespace extensions {
 
-bool GcmApiFunction::RunImpl() {
+bool GcmApiFunction::RunAsync() {
   if (!IsGcmApiEnabled())
     return false;
 
@@ -131,6 +132,8 @@ GcmUnregisterFunction::GcmUnregisterFunction() {}
 GcmUnregisterFunction::~GcmUnregisterFunction() {}
 
 bool GcmUnregisterFunction::DoWork() {
+  UMA_HISTOGRAM_BOOLEAN("GCM.APICallUnregister", true);
+
   GCMProfileService()->Unregister(
       GetExtension()->id(),
       base::Bind(&GcmUnregisterFunction::CompleteFunctionWithResult, this));

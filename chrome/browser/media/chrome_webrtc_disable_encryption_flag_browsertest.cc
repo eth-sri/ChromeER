@@ -8,6 +8,7 @@
 #include "chrome/browser/media/webrtc_browsertest_common.h"
 #include "chrome/common/chrome_version_info.h"
 #include "content/public/common/content_switches.h"
+#include "media/base/media_switches.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 
 static const char kMainWebrtcTestHtmlPage[] =
@@ -32,7 +33,6 @@ class WebRtcDisableEncryptionFlagBrowserTest : public WebRtcTestBase {
   virtual ~WebRtcDisableEncryptionFlagBrowserTest() {}
 
   virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
-    test::PeerConnectionServerRunner::KillAllPeerConnectionServers();
     DetectErrorsInJavaScript();  // Look for errors in our rather complex js.
   }
 
@@ -44,19 +44,13 @@ class WebRtcDisableEncryptionFlagBrowserTest : public WebRtcTestBase {
     command_line->AppendSwitch(switches::kDisableWebRtcEncryption);
   }
 
- protected:
-  test::PeerConnectionServerRunner peerconnection_server_;
-
  private:
   DISALLOW_COPY_AND_ASSIGN(WebRtcDisableEncryptionFlagBrowserTest);
 };
 
 // Makes a call and checks that there's encryption or not in the SDP offer.
-// TODO(phoglund): this is unreliable on non-webrtc bots because its peer
-// connection server could clash with other tests running in parallel,
-// therefore only running manually. http://crbug.com/358207.
 IN_PROC_BROWSER_TEST_F(WebRtcDisableEncryptionFlagBrowserTest,
-                       MANUAL_VerifyEncryption) {
+                       VerifyEncryption) {
 // Flaky timeout on a webrtc Win XP bot. http://crbug.com/368163.
 #if defined (OS_WIN)
   if (base::win::GetVersion() < base::win::VERSION_VISTA)
@@ -64,14 +58,16 @@ IN_PROC_BROWSER_TEST_F(WebRtcDisableEncryptionFlagBrowserTest,
 #endif
 
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
-  ASSERT_TRUE(peerconnection_server_.Start());
 
   content::WebContents* left_tab =
       OpenTestPageAndGetUserMediaInNewTab(kMainWebrtcTestHtmlPage);
   content::WebContents* right_tab =
       OpenTestPageAndGetUserMediaInNewTab(kMainWebrtcTestHtmlPage);
 
-  EstablishCall(left_tab, right_tab);
+  SetupPeerconnectionWithLocalStream(left_tab);
+  SetupPeerconnectionWithLocalStream(right_tab);
+
+  NegotiateCall(left_tab, right_tab);
 
   StartDetectingVideo(left_tab, "remote-view");
   StartDetectingVideo(right_tab, "remote-view");
@@ -98,8 +94,4 @@ IN_PROC_BROWSER_TEST_F(WebRtcDisableEncryptionFlagBrowserTest,
             ExecuteJavascript("hasSeenCryptoInSdp()", left_tab));
 
   HangUp(left_tab);
-  WaitUntilHangupVerified(left_tab);
-  WaitUntilHangupVerified(right_tab);
-
-  ASSERT_TRUE(peerconnection_server_.Stop());
 }

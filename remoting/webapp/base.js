@@ -12,7 +12,7 @@
 'use strict';
 
 var base = {};
-base.debug = function () {};
+base.debug = function() {};
 
 /**
  * Whether to break in debugger and alert when an assertion fails.
@@ -50,8 +50,8 @@ base.debug.callstack = function() {
     var error = /** @type {Error} */ e;
     var callstack = error.stack
       .replace(/^\s+(at eval )?at\s+/gm, '') // Remove 'at' and indentation.
-      .split('\n')
-      .splice(0,2); // Remove the stack of the current function.
+      .split('\n');
+    callstack.splice(0,2); // Remove the stack of the current function.
   }
   return callstack.join('\n');
 };
@@ -98,6 +98,33 @@ base.extend = function(dest, src) {
 };
 
 base.doNothing = function() {};
+
+/**
+ * Returns an array containing the values of |dict|.
+ * @param {!Object} dict
+ * @return {Array}
+ */
+base.values = function(dict) {
+  return Object.keys(dict).map(
+    /** @param {string} key */
+    function(key) {
+      return dict[key];
+    });
+};
+
+base.Promise = function() {};
+
+/**
+ * @param {number} delay
+ * @return {Promise} a Promise that will be fulfilled after |delay| ms.
+ */
+base.Promise.sleep = function(delay) {
+  return new Promise(
+    /** @param {function():void} fulfill */
+    function(fulfill) {
+      window.setTimeout(fulfill, delay);
+    });
+};
 
 /**
  * A mixin for classes with events.

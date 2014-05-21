@@ -23,6 +23,7 @@
 
 class ChromeNetLog;
 class ChromeResourceDispatcherHostDelegate;
+class MetricsServicesManager;
 class RemoteDebuggingServer;
 class PrefRegistrySimple;
 class PromoResourceService;
@@ -126,17 +127,16 @@ class BrowserProcessImpl : public BrowserProcess,
   virtual CRLSetFetcher* crl_set_fetcher() OVERRIDE;
   virtual component_updater::PnaclComponentInstaller*
       pnacl_component_installer() OVERRIDE;
-  virtual BookmarkPromptController* bookmark_prompt_controller() OVERRIDE;
   virtual MediaFileSystemRegistry* media_file_system_registry() OVERRIDE;
   virtual bool created_local_state() const OVERRIDE;
 #if defined(ENABLE_WEBRTC)
   virtual WebRtcLogUploader* webrtc_log_uploader() OVERRIDE;
 #endif
+  virtual NetworkTimeTracker* network_time_tracker() OVERRIDE;
 
   static void RegisterPrefs(PrefRegistrySimple* registry);
 
  private:
-  void CreateMetricsService();
   void CreateWatchdogThread();
   void CreateProfileManager();
   void CreateLocalState();
@@ -152,14 +152,13 @@ class BrowserProcessImpl : public BrowserProcess,
   void CreateStatusTray();
   void CreateBackgroundModeManager();
 
+  MetricsServicesManager* GetMetricsServicesManager();
+
   void ApplyAllowCrossOriginAuthPromptPolicy();
   void ApplyDefaultBrowserPolicy();
   void ApplyMetricsReportingPolicy();
 
-  bool created_metrics_service_;
-  scoped_ptr<MetricsService> metrics_service_;
-
-  scoped_ptr<rappor::RapporService> rappor_service_;
+  scoped_ptr<MetricsServicesManager> metrics_services_manager_;
 
   scoped_ptr<IOThread> io_thread_;
 
@@ -196,9 +195,6 @@ class BrowserProcessImpl : public BrowserProcess,
 
 #if !defined(OS_ANDROID)
   scoped_ptr<RemoteDebuggingServer> remote_debugging_server_;
-
-  // Bookmark prompt controller displays the prompt for frequently visited URL.
-  scoped_ptr<BookmarkPromptController> bookmark_prompt_controller_;
 #endif
 
 #if !defined(OS_ANDROID) && !defined(OS_IOS)
@@ -209,8 +205,6 @@ class BrowserProcessImpl : public BrowserProcess,
       print_preview_dialog_controller_;
 
   scoped_ptr<printing::BackgroundPrintingManager> background_printing_manager_;
-
-  scoped_ptr<chrome_variations::VariationsService> variations_service_;
 
   // Manager for desktop notification UI.
   bool created_notification_ui_manager_;
@@ -291,6 +285,8 @@ class BrowserProcessImpl : public BrowserProcess,
   // Lazily initialized.
   scoped_ptr<WebRtcLogUploader> webrtc_log_uploader_;
 #endif
+
+  scoped_ptr<NetworkTimeTracker> network_time_tracker_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserProcessImpl);
 };

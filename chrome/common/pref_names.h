@@ -12,7 +12,7 @@
 #include "build/build_config.h"
 
 #include "components/autofill/core/common/autofill_pref_names.h"
-#include "components/bookmarks/core/common/bookmark_pref_names.h"
+#include "components/bookmarks/common/bookmark_pref_names.h"
 #include "components/data_reduction_proxy/common/data_reduction_proxy_pref_names.h"
 #include "components/signin/core/common/signin_pref_names.h"
 
@@ -173,10 +173,8 @@ extern const char kHttpServerProperties[];
 extern const char kSpdyServers[];
 extern const char kAlternateProtocolServers[];
 extern const char kDisabledSchemes[];
-#if defined(OS_ANDROID)
-extern const char kLastPolicyCheckTime[];
-#endif
 #if defined(OS_ANDROID) || defined(OS_IOS)
+extern const char kLastPolicyCheckTime[];
 extern const char kManagedBookmarks[];
 #endif
 extern const char kInstantUIZeroSuggestUrlPrefix[];
@@ -411,6 +409,8 @@ extern const char kEasyUnlockEnabled[];
 extern const char kEasyUnlockShowTutorial[];
 extern const char kEasyUnlockPairing[];
 
+extern const char kZeroSuggestCachedResults[];
+
 // Local state prefs. Please add Profile prefs above instead.
 extern const char kCertRevocationCheckingEnabled[];
 extern const char kCertRevocationCheckingRequiredLocalAnchors[];
@@ -428,7 +428,6 @@ extern const char kEulaAccepted[];
 extern const char kMetricsClientID[];
 extern const char kMetricsSessionID[];
 extern const char kMetricsLowEntropySource[];
-extern const char kMetricsPermutedEntropyCache[];
 extern const char kMetricsOldClientID[];
 extern const char kMetricsOldLowEntropySource[];
 extern const char kMetricsReportingEnabled[];
@@ -441,8 +440,6 @@ extern const char kMetricsResetIds[];
 #if defined(OS_ANDROID)
 extern const char kCrashReportingEnabled[];
 #endif
-extern const char kMetricsInitialLogs[];
-extern const char kMetricsOngoingLogs[];
 
 extern const char kVariationsLastFetchTime[];
 extern const char kVariationsRestrictParameter[];
@@ -594,9 +591,6 @@ extern const char kDevToolsRemoteEnabled[];
 
 extern const char kGoogleServicesPasswordHash[];
 
-extern const char kInvalidatorClientId[];
-extern const char kInvalidatorInvalidationState[];
-extern const char kInvalidatorSavedInvalidations[];
 extern const char kInvalidationServiceUseGCMChannel[];
 
 extern const char kSignInPromoStartupCount[];

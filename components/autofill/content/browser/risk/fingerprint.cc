@@ -34,7 +34,6 @@
 #include "content/public/browser/render_widget_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "content/public/common/geoposition.h"
 #include "content/public/common/webplugininfo.h"
 #include "gpu/config/gpu_info.h"
@@ -180,74 +179,6 @@ void AddGpuInfoToFingerprint(Fingerprint::MachineCharacteristics* machine) {
   gpu_performance->set_overall_score(gpu_info.performance_stats.overall);
 }
 
-// Waits for geoposition data to be loaded.  Lives on the IO thread.
-class GeopositionLoader {
- public:
-  // |callback_| will be called on the UI thread with the loaded geoposition,
-  // once it is available.
-  GeopositionLoader(
-      const base::TimeDelta& timeout,
-      const base::Callback<void(const content::Geoposition&)>& callback);
-  ~GeopositionLoader() {}
-
- private:
-  // Methods to communicate with the GeolocationProvider.
-  void OnGotGeoposition(const content::Geoposition& geoposition);
-
-  // The callback that will be called once the geoposition is available.
-  // Will be called on the UI thread.
-  const base::Callback<void(const content::Geoposition&)> callback_;
-
-  // The callback used as an "observer" of the GeolocationProvider.
-  content::GeolocationProvider::LocationUpdateCallback geolocation_callback_;
-
-  // Timer to enforce a maximum timeout before the |callback_| is called, even
-  // if the geoposition has not been loaded.
-  base::OneShotTimer<GeopositionLoader> timeout_timer_;
-};
-
-GeopositionLoader::GeopositionLoader(
-    const base::TimeDelta& timeout,
-    const base::Callback<void(const content::Geoposition&)>& callback)
-  : callback_(callback) {
-  timeout_timer_.Start(FROM_HERE, timeout,
-                       base::Bind(&GeopositionLoader::OnGotGeoposition,
-                                  base::Unretained(this),
-                                  content::Geoposition()));
-
-  geolocation_callback_ =
-      base::Bind(&GeopositionLoader::OnGotGeoposition, base::Unretained(this));
-  content::GeolocationProvider::GetInstance()->AddLocationUpdateCallback(
-      geolocation_callback_, false);
-}
-
-void GeopositionLoader::OnGotGeoposition(
-    const content::Geoposition& geoposition) {
-  content::BrowserThread::PostTask(content::BrowserThread::UI, FROM_HERE,
-                                   base::Bind(callback_, geoposition));
-
-  // Unregister as an observer, since this class instance might be destroyed
-  // after this callback.  Note: It's important to unregister *after* posting
-  // the task above.  Unregistering as an observer can have the side-effect of
-  // modifying the value of |geoposition|.
-  bool removed =
-      content::GeolocationProvider::GetInstance()->RemoveLocationUpdateCallback(
-          geolocation_callback_);
-  DCHECK(removed);
-
-  delete this;
-}
-
-// Asynchronously loads the user's current geoposition and calls |callback_| on
-// the UI thread with the loaded geoposition, once it is available. Expected to
-// be called on the IO thread.
-void LoadGeoposition(
-    const base::TimeDelta& timeout,
-    const base::Callback<void(const content::Geoposition&)>& callback) {
-  // The loader is responsible for freeing its own memory.
-  new GeopositionLoader(timeout, callback);
-}
-
 // Waits for all asynchronous data required for the fingerprint to be loaded,
 // then fills out the fingerprint.
 class FingerprintDataLoader : public content::GpuDataManagerObserver {
@@ -322,6 +253,10 @@ class FingerprintDataLoader : public content::GpuDataManagerObserver {
   // The callback that will be called once all the data is available.
   base::Callback<void(scoped_ptr<Fingerprint>)> callback_;
 
+  // The callback used as an "observer" of the GeolocationProvider.
+  scoped_ptr<content::GeolocationProvider::Subscription>
+      geolocation_subscription_;
+
   DISALLOW_COPY_AND_ASSIGN(FingerprintDataLoader);
 };
 
@@ -381,12 +316,11 @@ FingerprintDataLoader::FingerprintDataLoader(
                  weak_ptr_factory_.GetWeakPtr()));
 
   // Load geolocation data.
-  content::BrowserThread::PostTask(
-      content::BrowserThread::IO, FROM_HERE,
-      base::Bind(&LoadGeoposition,
-                 timeout,
-                 base::Bind(&FingerprintDataLoader::OnGotGeoposition,
-                            weak_ptr_factory_.GetWeakPtr())));
+  geolocation_subscription_ = content::GeolocationProvider::GetInstance()->
+      AddLocationUpdateCallback(
+          base::Bind(&FingerprintDataLoader::OnGotGeoposition,
+                      weak_ptr_factory_.GetWeakPtr()),
+          false);
 }
 
 void FingerprintDataLoader::OnGpuInfoUpdate() {
@@ -418,6 +352,7 @@ void FingerprintDataLoader::OnGotGeoposition(
   geoposition_ = geoposition;
   DCHECK(geoposition_.Validate() ||
          geoposition_.error_code != content::Geoposition::ERROR_CODE_NONE);
+  geolocation_subscription_.reset();
 
   MaybeFillFingerprint();
 }
@@ -531,7 +466,7 @@ void GetFingerprintInternal(
 void GetFingerprint(
     uint64 obfuscated_gaia_id,
     const gfx::Rect& window_bounds,
-    const content::WebContents& web_contents,
+    content::WebContents* web_contents,
     const std::string& version,
     const std::string& charset,
     const std::string& accept_languages,
@@ -539,12 +474,11 @@ void GetFingerprint(
     const std::string& app_locale,
     const std::string& user_agent,
     const base::Callback<void(scoped_ptr<Fingerprint>)>& callback) {
-  gfx::Rect content_bounds;
-  web_contents.GetView()->GetContainerBounds(&content_bounds);
+  gfx::Rect content_bounds = web_contents->GetContainerBounds();
 
   blink::WebScreenInfo screen_info;
   content::RenderWidgetHostView* host_view =
-      web_contents.GetRenderWidgetHostView();
+      web_contents->GetRenderWidgetHostView();
   if (host_view)
     host_view->GetRenderWidgetHost()->GetWebScreenInfo(&screen_info);
 

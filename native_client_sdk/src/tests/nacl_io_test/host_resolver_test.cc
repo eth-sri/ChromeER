@@ -35,19 +35,18 @@ class HostResolverTest : public ::testing::Test {
 
 class FakeHostResolverTest : public ::testing::Test {
  public:
-  FakeHostResolverTest() : pepper_(NULL), fake_resolver_(NULL) {}
+  FakeHostResolverTest() : fake_resolver_(NULL) {}
 
   void SetUp() {
-    pepper_ = new FakePepperInterface();
     fake_resolver_ = static_cast<FakeHostResolverInterface*>(
-        pepper_->GetHostResolverInterface());
+        pepper_.GetHostResolverInterface());
 
     // Seed the fake resolver with some data
     fake_resolver_->fake_hostname = FAKE_HOSTNAME;
     AddFakeAddress(AF_INET);
 
     ASSERT_EQ(0, ki_push_state_for_testing());
-    ASSERT_EQ(0, ki_init_interface(NULL, pepper_));
+    ASSERT_EQ(0, ki_init_interface(NULL, &pepper_));
   }
 
   void AddFakeAddress(int family) {
@@ -72,11 +71,10 @@ class FakeHostResolverTest : public ::testing::Test {
 
   void TearDown() {
     ki_uninit();
-    pepper_ = NULL;
   }
 
  protected:
-  FakePepperInterface* pepper_;
+  FakePepperInterface pepper_;
   FakeHostResolverInterface* fake_resolver_;
 };
 
@@ -323,8 +321,12 @@ TEST_F(FakeHostResolverTest, Gethostbyname) {
   in_addr_t** addr_list = reinterpret_cast<in_addr_t**>(host->h_addr_list);
   ASSERT_NE(reinterpret_cast<in_addr_t**>(NULL), addr_list);
   ASSERT_EQ(NULL, addr_list[1]);
-  in_addr_t exptected_addr = htonl(FAKE_IP);
-  ASSERT_EQ(exptected_addr, *addr_list[0]);
+  in_addr_t expected_addr = htonl(FAKE_IP);
+  ASSERT_EQ(expected_addr, *addr_list[0]);
+  // Check that h_addr also matches as in some libc's it may be a separate
+  // member.
+  in_addr_t* first_addr = reinterpret_cast<in_addr_t*>(host->h_addr);
+  ASSERT_EQ(expected_addr, *first_addr);
 }
 
 TEST_F(FakeHostResolverTest, Gethostbyname_Failure) {
@@ -348,6 +350,10 @@ TEST_F(HostResolverTest, Gethostbyname_Numeric) {
   ASSERT_NE(reinterpret_cast<in_addr_t**>(NULL), addr_list);
   ASSERT_EQ(NULL, addr_list[1]);
   ASSERT_EQ(inet_addr("8.8.8.8"), *addr_list[0]);
+  // Check that h_addr also matches as in some libc's it may be a separate
+  // member.
+  in_addr_t* first_addr = reinterpret_cast<in_addr_t*>(host->h_addr);
+  ASSERT_EQ(inet_addr("8.8.8.8"), *first_addr);
 }
 
 // These utility functions are only used for newlib (glibc provides its own

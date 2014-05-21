@@ -73,7 +73,7 @@ MojoResult WriteMessage(
   // release them here.
   if (rv == MOJO_RESULT_OK) {
     for (size_t i = 0; i < handles.size(); ++i)
-      mojo::Handle _ MOJO_ALLOW_UNUSED = handles[i]->release();
+      ignore_result(handles[i]->release());
   }
   return rv;
 }
@@ -219,10 +219,6 @@ v8::Local<v8::Value> Core::GetModule(v8::Isolate* isolate) {
         .SetMethod("createDataPipe", CreateDataPipe)
         .SetMethod("writeData", WriteData)
         .SetMethod("readData", ReadData)
-
-        // TODO(vtl): Change name of "kInvalidHandle", now that there's no such
-        // C++ constant?
-        .SetValue("kInvalidHandle", mojo::Handle())
 
         .SetValue("RESULT_OK", MOJO_RESULT_OK)
         .SetValue("RESULT_CANCELLED", MOJO_RESULT_CANCELLED)

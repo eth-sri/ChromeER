@@ -111,13 +111,14 @@ class TestingBrowserProcess : public BrowserProcess {
   virtual CRLSetFetcher* crl_set_fetcher() OVERRIDE;
   virtual component_updater::PnaclComponentInstaller*
       pnacl_component_installer() OVERRIDE;
-  virtual BookmarkPromptController* bookmark_prompt_controller() OVERRIDE;
   virtual MediaFileSystemRegistry* media_file_system_registry() OVERRIDE;
   virtual bool created_local_state() const OVERRIDE;
 
 #if defined(ENABLE_WEBRTC)
   virtual WebRtcLogUploader* webrtc_log_uploader() OVERRIDE;
 #endif
+
+  virtual NetworkTimeTracker* network_time_tracker() OVERRIDE;
 
   // Set the local state for tests. Consumer is responsible for cleaning it up
   // afterwards (using ScopedTestingLocalState, for example).
@@ -126,7 +127,6 @@ class TestingBrowserProcess : public BrowserProcess {
   void SetIOThread(IOThread* io_thread);
   void SetBrowserPolicyConnector(policy::BrowserPolicyConnector* connector);
   void SetSafeBrowsingService(SafeBrowsingService* sb_service);
-  void SetBookmarkPromptController(BookmarkPromptController* controller);
   void SetSystemRequestContext(net::URLRequestContextGetter* context_getter);
 
  private:
@@ -157,12 +157,13 @@ class TestingBrowserProcess : public BrowserProcess {
 
   scoped_ptr<prerender::PrerenderTracker> prerender_tracker_;
   scoped_refptr<SafeBrowsingService> sb_service_;
-  scoped_ptr<BookmarkPromptController> bookmark_prompt_controller_;
 #endif  // !defined(OS_IOS)
 
 #if !defined(OS_IOS) && !defined(OS_ANDROID)
   scoped_ptr<MediaFileSystemRegistry> media_file_system_registry_;
 #endif
+
+  scoped_ptr<NetworkTimeTracker> network_time_tracker_;
 
   // The following objects are not owned by TestingBrowserProcess:
   PrefService* local_state_;

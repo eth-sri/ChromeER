@@ -11,7 +11,7 @@
 #include "base/callback_forward.h"
 #include "base/synchronization/lock.h"
 #include "content/common/content_export.h"
-#include "content/port/common/input_event_ack_state.h"
+#include "content/common/input/input_event_ack_state.h"
 #include "content/renderer/input/input_handler_manager_client.h"
 #include "ipc/message_filter.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
@@ -70,12 +70,8 @@ class CONTENT_EXPORT InputEventFilter : public InputHandlerManagerClient,
 
   void ForwardToMainListener(const IPC::Message& message);
   void ForwardToHandler(const IPC::Message& message);
-  void SendACK(blink::WebInputEvent::Type type,
-               InputEventAckState ack_result,
-               const ui::LatencyInfo& latency_info,
-               int routing_id);
-  void SendMessage(const IPC::Message& message);
-  void SendMessageOnIOThread(const IPC::Message& message);
+  void SendMessage(scoped_ptr<IPC::Message> message);
+  void SendMessageOnIOThread(scoped_ptr<IPC::Message> message);
 
   scoped_refptr<base::MessageLoopProxy> main_loop_;
   IPC::Listener* main_listener_;
@@ -96,6 +92,12 @@ class CONTENT_EXPORT InputEventFilter : public InputHandlerManagerClient,
 
   // Specifies whether overscroll notifications are forwarded to the host.
   bool overscroll_notifications_enabled_;
+
+  // Used to intercept overscroll notifications while an event is being
+  // dispatched.  If the event causes overscroll, the overscroll metadata can be
+  // bundled in the event ack, saving an IPC.  Note that we must continue
+  // supporting overscroll IPC notifications due to fling animation updates.
+  scoped_ptr<DidOverscrollParams>* current_overscroll_params_;
 };
 
 }  // namespace content

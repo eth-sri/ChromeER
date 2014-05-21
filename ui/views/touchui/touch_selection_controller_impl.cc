@@ -7,6 +7,8 @@
 #include "base/time/time.h"
 #include "grit/ui_resources.h"
 #include "grit/ui_strings.h"
+#include "ui/aura/client/cursor_client.h"
+#include "ui/aura/env.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/image/image.h"
@@ -72,7 +74,6 @@ views::Widget* CreateTouchSelectionPopupWidget(
     views::WidgetDelegate* widget_delegate) {
   views::Widget* widget = new views::Widget;
   views::Widget::InitParams params(views::Widget::InitParams::TYPE_POPUP);
-  params.can_activate = false;
   params.opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
   params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
   params.parent = context;
@@ -229,7 +230,7 @@ class TouchSelectionControllerImpl::EditingHandleView
     }
   }
 
-  virtual gfx::Size GetPreferredSize() OVERRIDE {
+  virtual gfx::Size GetPreferredSize() const OVERRIDE {
     gfx::Size image_size = GetHandleImageSize();
     return gfx::Size(image_size.width() + 2 * kSelectionHandleHorizPadding,
                      image_size.height() + selection_rect_.height() +
@@ -330,10 +331,12 @@ TouchSelectionControllerImpl::TouchSelectionControllerImpl(
       client_view_->GetNativeView());
   if (client_widget_)
     client_widget_->AddObserver(this);
+  aura::Env::GetInstance()->AddPreTargetHandler(this);
 }
 
 TouchSelectionControllerImpl::~TouchSelectionControllerImpl() {
   HideContextMenu();
+  aura::Env::GetInstance()->RemovePreTargetHandler(this);
   if (client_widget_)
     client_widget_->RemoveObserver(this);
 }
@@ -522,6 +525,21 @@ void TouchSelectionControllerImpl::OnWidgetBoundsChanged(
   SelectionChanged();
 }
 
+void TouchSelectionControllerImpl::OnKeyEvent(ui::KeyEvent* event) {
+  client_view_->DestroyTouchSelection();
+}
+
+void TouchSelectionControllerImpl::OnMouseEvent(ui::MouseEvent* event) {
+  aura::client::CursorClient* cursor_client = aura::client::GetCursorClient(
+      client_view_->GetNativeView()->GetRootWindow());
+  if (!cursor_client || cursor_client->IsMouseEventsEnabled())
+    client_view_->DestroyTouchSelection();
+}
+
+void TouchSelectionControllerImpl::OnScrollEvent(ui::ScrollEvent* event) {
+  client_view_->DestroyTouchSelection();
+}
+
 void TouchSelectionControllerImpl::ContextMenuTimerFired() {
   // Get selection end points in client_view's space.
   gfx::Rect end_rect_1_in_screen;
@@ -554,6 +572,7 @@ void TouchSelectionControllerImpl::ContextMenuTimerFired() {
 
   DCHECK(!context_menu_);
   context_menu_ = TouchEditingMenuView::Create(this, menu_anchor,
+                                               GetHandleImageSize(),
                                                client_view_->GetNativeView());
 }
 

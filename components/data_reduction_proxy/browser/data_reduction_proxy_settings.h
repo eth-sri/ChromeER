@@ -89,8 +89,32 @@ class DataReductionProxySettings
   // TODO(marq): Consider instead using a std::pair instead of a vector.
   typedef std::vector<GURL> DataReductionProxyList;
 
+  // Returns true of the data reduction proxy origin is set on the command line.
+  static bool IsProxyOriginSetOnCommandLine();
+
+  // Returns true if the data reduction proxy key is set on the command line.
+  static bool IsProxyKeySetOnCommandLine();
+
+  // Returns true if this application instance is part of the data reduction
+  // proxy field trial, or if it a proxy origin is set in flags. This is a
+  // convenience method for platforms like Chrome on Android and iOS, to
+  // determine if the data reduction proxy is allowed.
+  static bool IsIncludedInFieldTrialOrFlags();
+
+  static void SetAllowed(bool allowed);
+  static void SetPromoAllowed(bool promo_allowed);
+
   DataReductionProxySettings();
   virtual ~DataReductionProxySettings();
+
+  // Set and get the key to be used for data reduction proxy authentication.
+  void set_key(const std::string& key) {
+    key_ = key;
+  }
+
+  const std::string& key() const {
+    return key_;
+  }
 
   // Initializes the data reduction proxy with profile and local state prefs,
   // and a |UrlRequestContextGetter| for canary probes. The caller must ensure
@@ -99,17 +123,32 @@ class DataReductionProxySettings
   void InitDataReductionProxySettings(
       PrefService* prefs,
       PrefService* local_state_prefs,
+      net::URLRequestContextGetter* url_request_context_getter);
+
+  // Initializes the data reduction proxy with profile and local state prefs,
+  // a |UrlRequestContextGetter| for canary probes, and a proxy configurator.
+  // The caller must ensure that all parameters remain alive for the lifetime of
+  // the |DataReductionProxySettings| instance.
+  // TODO(marq): Remove when iOS supports the new interface above.
+  void InitDataReductionProxySettings(
+      PrefService* prefs,
+      PrefService* local_state_prefs,
       net::URLRequestContextGetter* url_request_context_getter,
       scoped_ptr<DataReductionProxyConfigurator> config);
 
-  // If proxy authentication is compiled in, pre-cache authentication
-  // keys for all configured proxies in |session|.
-  static void InitDataReductionProxySession(net::HttpNetworkSession* session);
+  // Sets the logic the embedder uses to set the networking configuration that
+  // causes traffic to be proxied.
+  void SetProxyConfigurator(
+      scoped_ptr<DataReductionProxyConfigurator> configurator);
 
-  // Returns true if the data reduction proxy is allowed to be used on this
-  // instance of Chrome. This could return false, for example, if this instance
-  // is not part of the field trial, or if the proxy name is not configured
-  // via gyp.
+  // If proxy authentication is compiled in, pre-cache an authentication
+  // |key| for all configured proxies in |session|.
+  static void InitDataReductionProxySession(net::HttpNetworkSession* session,
+                                            const std::string& key);
+
+  // Returns true if the data reduction proxy is allowed to be used. This could
+  // return false, for example, if this instance is not part of the field trial,
+  // or if the proxy name is not configured via gyp.
   static bool IsDataReductionProxyAllowed();
 
   // Returns true if a screen promoting the data reduction proxy is allowed to
@@ -133,7 +172,7 @@ class DataReductionProxySettings
 
   // Returns true if |auth_info| represents an authentication challenge from
   // a compatible, configured proxy.
-  bool IsAcceptableAuthChallenge(net::AuthChallengeInfo* auth_info);
+  static bool IsAcceptableAuthChallenge(net::AuthChallengeInfo* auth_info);
 
   // Returns a UTF16 string suitable for use as an authentication token in
   // response to the challenge represented by |auth_info|. If the token can't
@@ -150,6 +189,16 @@ class DataReductionProxySettings
   // and a probe request fails at some point, the proxy won't be used until a
   // probe succeeds.
   void SetDataReductionProxyEnabled(bool enabled);
+
+  // If |allowed|, the fallback proxy will be included in the proxy
+  // configuration.
+  void set_fallback_allowed(bool allowed) {
+    fallback_allowed_ = allowed;
+  }
+
+  bool fallback_allowed() const {
+    return fallback_allowed_;
+  }
 
   // Returns the time in microseconds that the last update was made to the
   // daily original and received content lengths.
@@ -245,7 +294,8 @@ class DataReductionProxySettings
 
   // Underlying implementation of InitDataReductionProxySession(), factored
   // out to be testable without creating a full HttpNetworkSession.
-  static void InitDataReductionAuthentication(net::HttpAuthCache* auth_cache);
+  static void InitDataReductionAuthentication(net::HttpAuthCache* auth_cache,
+                                              const std::string& key);
 
   void OnProxyEnabledPrefChange();
 
@@ -260,10 +310,14 @@ class DataReductionProxySettings
   std::string GetProxyCheckURL();
 
   // Returns a UTF16 string that's the hash of the configured authentication
-  // key and |salt|. Returns an empty UTF16 string if no key is configured or
+  // |key| and |salt|. Returns an empty UTF16 string if no key is configured or
   // the data reduction proxy feature isn't available.
-  static base::string16 AuthHashForSalt(int64 salt);
+  static base::string16 AuthHashForSalt(int64 salt, const std::string& key);
 
+  static bool allowed_;
+  static bool promo_allowed_;
+
+  std::string key_;
   bool restricted_by_carrier_;
   bool enabled_by_user_;
 
@@ -278,6 +332,8 @@ class DataReductionProxySettings
   scoped_ptr<DataReductionProxyConfigurator> config_;
 
   base::ThreadChecker thread_checker_;
+
+  bool fallback_allowed_;
 
   DISALLOW_COPY_AND_ASSIGN(DataReductionProxySettings);
 };

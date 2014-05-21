@@ -5,12 +5,6 @@
  */
 
 /**
- * The ID of the video tag from which frames are captured.
- * @private
- */
-var gVideoId = 'remote-view';
-
-/**
  * Counts the number of frames that have been captured. Used in timeout
  * adjustments.
  * @private
@@ -78,39 +72,52 @@ window.onload = function() {
 /**
  * Starts the frame capturing.
  *
- * @param {Number} The width of the video/canvas area to be captured.
- * @param {Number} The height of the video area to be captured.
- * @param {Number} The height of the canvas where we put the video frames.
+ * @param {!Object} The video tag from which the height and width parameters are
+                    to be extracted.
  * @param {Number} The frame rate at which we would like to capture frames.
  * @param {Number} The duration of the frame capture in seconds.
  */
-function startFrameCapture(width, height, canvas_height, frame_rate, duration){
+function startFrameCapture(videoTag, frame_rate, duration) {
   gFrameCaptureInterval = 1000/frame_rate;
   gCaptureDuration = 1000 * duration;
+  var width = videoTag.videoWidth;
+  var height = videoTag.videoHeight;
+
+  if (width == 0 || height == 0) {
+    throw failTest('Trying to capture from ' + videoTag.id +
+                   ' but it is not playing any video.');
+  }
 
   console.log('Received width is: ' + width + ', received height is: ' + height
               + ', capture interval is: ' + gFrameCaptureInterval +
               ', duration is: ' + gCaptureDuration);
+
+  var remoteCanvas = document.createElement('canvas');
+  remoteCanvas.width = width;
+  remoteCanvas.height = height;
+  document.body.appendChild(remoteCanvas);
+
   gStartOfTime = new Date().getTime();
-  setTimeout(function() { shoot(width, height, canvas_height); },
+  setTimeout(function() { shoot(videoTag, remoteCanvas, width, height); },
              gFrameCaptureInterval);
 }
 
 /**
  * Captures an image frame from the provided video element.
  *
+ * @private
  * @param {Video} video HTML5 video element from where the image frame will
  * be captured.
+ * @param {!Object} 2d context of the canvas on which the image frame will be
+ * captured.
  * @param {Number} The width of the video/canvas area to be captured.
  * @param {Number} The height of the video/canvas area to be captured.
  *
- * @return {Canvas}
+ * @return {Object} Returns the ImageData object.
  */
-function capture(video, width, height) {
-  var canvas = document.getElementById('remote-canvas');
-  var ctx = canvas.getContext('2d');
-  ctx.drawImage(video, 0, 0, width, height);
-  return canvas;
+function captureFrame_(video, context, width, height) {
+  context.drawImage(video, 0, 0, width, height);
+  return context.getImageData(0, 0, width, height);
 }
 
 /**
@@ -119,11 +126,12 @@ function capture(video, width, height) {
  * it in the frames array and adjusts the capture interval (timers in JavaScript
  * aren't precise).
  *
+ * @param {!Object} The video whose frames are to be captured.
+ * @param {Canvas} The canvas on which the image will be captured.
  * @param {Number} The width of the video/canvas area to be captured.
  * @param {Number} The height of the video area to be captured.
- * @param {Number} The height of the canvas where we put the video frames.
  */
-function shoot(width, height, canvas_height){
+function shoot(video, canvas, width, height) {
   // The first two captured frames have big difference between the ideal time
   // interval between two frames and the real one. As a consequence this affects
   // enormously the interval adjustment for subsequent frames. That's why we
@@ -136,19 +144,9 @@ function shoot(width, height, canvas_height){
     gFrames.pop();
     gFrames.pop();
   }
-  var video  = document.getElementById(gVideoId);
-  var canvas = capture(video, width, height);
 
-  // Extract the data from the canvas.
-  var ctx = canvas.getContext('2d');
-  var img;
-  if (height == canvas_height) {
-    // We capture the whole video frame.
-    img = ctx.getImageData(0, 0, width, height);
-  } else {
-    // We capture only the barcode (canvas_height is the height of the barcode).
-    img = ctx.getImageData(0, 0, width, canvas_height);
-  }
+  // We capture the whole video frame.
+  var img = captureFrame_(video, canvas.getContext('2d'), width, height);
   gFrames.push(img.data.buffer);
   gFrameCounter++;
 
@@ -160,7 +158,7 @@ function shoot(width, height, canvas_height){
 
   if (real_time_elapsed < gCaptureDuration) {
     // If duration isn't over shoot again
-    setTimeout(function() { shoot(width, height, canvas_height); },
+    setTimeout(function() { shoot(video, canvas, width, height); },
                gFrameCaptureInterval - diff);
   } else {  // Else reset gFrameCounter and send the frames
     dDoneFrameCapturing = true;

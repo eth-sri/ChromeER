@@ -247,8 +247,11 @@ const OmniboxEditModel::State OmniboxEditModel::GetStateForTabSwitch() {
 void OmniboxEditModel::RestoreState(const State* state) {
   // We need to update the permanent text correctly and revert the view
   // regardless of whether there is saved state.
+  bool url_replacement_enabled = !state || state->url_replacement_enabled;
   controller_->GetToolbarModel()->set_url_replacement_enabled(
-      !state || state->url_replacement_enabled);
+      url_replacement_enabled);
+  controller_->GetToolbarModel()->set_origin_chip_enabled(
+      url_replacement_enabled);
   permanent_text_ = controller_->GetToolbarModel()->GetText();
   // Don't muck with the search term replacement state, as we've just set it
   // correctly.
@@ -481,10 +484,10 @@ void OmniboxEditModel::AdjustTextForCopy(int sel_min,
   // entire host, and the user hasn't edited the host or manually removed the
   // scheme.
   GURL perm_url(PermanentURL());
-  if (perm_url.SchemeIs(content::kHttpScheme) &&
-      url->SchemeIs(content::kHttpScheme) && perm_url.host() == url->host()) {
+  if (perm_url.SchemeIs(url::kHttpScheme) &&
+      url->SchemeIs(url::kHttpScheme) && perm_url.host() == url->host()) {
     *write_url = true;
-    base::string16 http = base::ASCIIToUTF16(content::kHttpScheme) +
+    base::string16 http = base::ASCIIToUTF16(url::kHttpScheme) +
         base::ASCIIToUTF16(content::kStandardSchemeSeparator);
     if (text->compare(0, http.length(), http) != 0)
       *text = http + *text;
@@ -510,7 +513,8 @@ void OmniboxEditModel::SetInputInProgress(bool in_progress) {
   }
 
   // The following code handles two cases:
-  // * For HIDE_ON_USER_INPUT, it hides the chip when user input begins.
+  // * For HIDE_ON_USER_INPUT and ON_SRP, it hides the chip when user input
+  //   begins.
   // * For HIDE_ON_MOUSE_RELEASE, which only hides the chip on mouse release if
   //   the omnibox is empty, it handles the "omnibox was not empty" case by
   //   acting like HIDE_ON_USER_INPUT.
@@ -714,14 +718,14 @@ void OmniboxEditModel::OpenMatch(AutocompleteMatch match,
 
   base::TimeDelta elapsed_time_since_last_change_to_default_match(
       now - autocomplete_controller()->last_time_default_match_changed());
+  DCHECK(match.provider);
   // These elapsed times don't really make sense for ZeroSuggest matches
   // (because the user does not modify the omnibox for ZeroSuggest), so for
   // those we set the elapsed times to something that will be ignored by
   // metrics_log.cc.  They also don't necessarily make sense if the omnibox
   // dropdown is closed or the user used a paste-and-go action.  (In most
   // cases when this happens, the user never modified the omnibox.)
-  if ((match.provider &&
-       (match.provider->type() == AutocompleteProvider::TYPE_ZERO_SUGGEST)) ||
+  if ((match.provider->type() == AutocompleteProvider::TYPE_ZERO_SUGGEST) ||
       !popup_model()->IsOpen() || !pasted_text.empty()) {
     const base::TimeDelta default_time_delta =
         base::TimeDelta::FromMilliseconds(-1);
@@ -1317,6 +1321,7 @@ void OmniboxEditModel::GetInfoForCurrentText(AutocompleteMatch* match,
     // SearchProvider::CreateSearchSuggestion(), since the user may be in a
     // non-default search mode such as image search.
     match->type = AutocompleteMatchType::SEARCH_WHAT_YOU_TYPED;
+    match->provider = autocomplete_controller()->search_provider();
     match->destination_url =
         delegate_->GetNavigationController().GetVisibleEntry()->GetURL();
     match->transition = content::PAGE_TRANSITION_RELOAD;

@@ -88,6 +88,7 @@ class WebMediaPlayerImpl
   virtual void setVolume(double volume);
   virtual void setPreload(blink::WebMediaPlayer::Preload preload);
   virtual const blink::WebTimeRanges& buffered();
+  virtual blink::WebTimeRanges buffered() const;
   virtual double maxTimeSeekable() const;
 
   // Methods for painting.
@@ -115,9 +116,7 @@ class WebMediaPlayerImpl
   virtual blink::WebMediaPlayer::NetworkState networkState() const;
   virtual blink::WebMediaPlayer::ReadyState readyState() const;
 
-  // TODO(sandersd): Change this to non-const in blink::WebMediaPlayer.
-  // http://crbug.com/360251
-  virtual bool didLoadingProgress() const;
+  virtual bool didLoadingProgress();
 
   virtual bool hasSingleSecurityOrigin() const;
   virtual bool didPassCORSAccessCheck() const;
@@ -241,6 +240,10 @@ class WebMediaPlayerImpl
   // NULL immediately and reset.
   void SetDecryptorReadyCB(const media::DecryptorReadyCB& decryptor_ready_cb);
 
+  // Returns the current video frame from |compositor_|. Blocks until the
+  // compositor can return the frame.
+  scoped_refptr<media::VideoFrame> GetCurrentFrameFromCompositor();
+
   blink::WebLocalFrame* frame_;
 
   // TODO(hclam): get rid of these members and read from the pipeline directly.
@@ -332,7 +335,8 @@ class WebMediaPlayerImpl
   std::string init_data_type_;
 
   // Video rendering members.
-  VideoFrameCompositor compositor_;
+  scoped_refptr<base::SingleThreadTaskRunner> compositor_task_runner_;
+  VideoFrameCompositor* compositor_;  // Deleted on |compositor_task_runner_|.
   media::SkCanvasVideoRenderer skcanvas_video_renderer_;
 
   // The compositor layer for displaying the video content when using composited

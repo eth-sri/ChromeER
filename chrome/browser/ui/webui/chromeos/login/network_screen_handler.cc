@@ -16,16 +16,17 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/sys_info.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
 #include "chrome/browser/chromeos/base/locale_util.h"
 #include "chrome/browser/chromeos/idle_detector.h"
 #include "chrome/browser/chromeos/input_method/input_method_util.h"
-#include "chrome/browser/chromeos/login/input_events_blocker.h"
-#include "chrome/browser/chromeos/login/login_display_host.h"
-#include "chrome/browser/chromeos/login/login_display_host_impl.h"
 #include "chrome/browser/chromeos/login/screens/core_oobe_actor.h"
+#include "chrome/browser/chromeos/login/ui/input_events_blocker.h"
+#include "chrome/browser/chromeos/login/ui/login_display_host.h"
+#include "chrome/browser/chromeos/login/ui/login_display_host_impl.h"
 #include "chrome/browser/chromeos/system/input_device_settings.h"
 #include "chrome/browser/chromeos/system/timezone_util.h"
 #include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
@@ -148,6 +149,13 @@ void NetworkScreenHandler::Show() {
     HandleOnLanguageChanged(startup_manifest->initial_locale_default());
   }
 
+  PrefService* prefs = g_browser_process->local_state();
+  if (prefs->GetBoolean(prefs::kFactoryResetRequested)) {
+    if (core_oobe_actor_)
+      core_oobe_actor_->ShowDeviceResetScreen();
+    return;
+  }
+
   // Make sure all our network technologies are turned on. On OOBE, the user
   // should be able to select any of the available networks on the device.
   NetworkStateHandler* handler = NetworkHandler::Get()->network_state_handler();
@@ -158,6 +166,14 @@ void NetworkScreenHandler::Show() {
 
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDisableDemoMode))
     return;
+  if (base::SysInfo::IsRunningOnChromeOS()) {
+    std::string track;
+    // We're running on an actual device; if we cannot find our release track
+    // value or if the track contains "testimage", don't start demo mode.
+    if (!base::SysInfo::GetLsbReleaseValue("CHROMEOS_RELEASE_TRACK", &track) ||
+        track.find("testimage") != std::string::npos)
+      return;
+  }
 
   if (IsDerelict())
     StartIdleDetection();

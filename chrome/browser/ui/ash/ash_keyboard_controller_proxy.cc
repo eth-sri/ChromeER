@@ -14,7 +14,6 @@
 #include "chrome/common/extensions/api/virtual_keyboard_private.h"
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "extensions/browser/event_router.h"
 #include "extensions/browser/extension_function_dispatcher.h"
 #include "extensions/browser/extension_system.h"
@@ -25,8 +24,6 @@
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_event_dispatcher.h"
-#include "ui/base/ime/input_method.h"
-#include "ui/base/ime/text_input_client.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
 #include "ui/keyboard/keyboard_controller.h"
 
@@ -148,16 +145,6 @@ void AshKeyboardControllerProxy::ShowKeyboardContainer(
     NOTIMPLEMENTED();
 
   KeyboardControllerProxy::ShowKeyboardContainer(container);
-}
-
-void AshKeyboardControllerProxy::EnsureCaretInWorkArea() {
-  // GetTextInputClient may return NULL when keyboard-usability-experiment
-  // flag is set.
-  if (GetInputMethod()->GetTextInputClient()) {
-    gfx::Rect showing_area =
-        ash::Shell::GetScreen()->GetPrimaryDisplay().work_area();
-    GetInputMethod()->GetTextInputClient()->EnsureCaretInRect(showing_area);
-  }
 }
 
 void AshKeyboardControllerProxy::SetUpdateInputType(ui::TextInputType type) {

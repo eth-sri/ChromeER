@@ -15,6 +15,7 @@
 #include "ui/base/cursor/cursor_loader_x11.h"
 #include "ui/events/event_source.h"
 #include "ui/events/platform/platform_event_dispatcher.h"
+#include "ui/gfx/insets.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/x/x11_atom_cache.h"
 #include "ui/views/views_export.h"
@@ -57,6 +58,14 @@ class VIEWS_EXPORT DesktopWindowTreeHostX11
 
   // Returns the current bounds in terms of the X11 Root Window.
   gfx::Rect GetX11RootWindowBounds() const;
+
+  // Returns the current bounds in terms of the X11 Root Window including the
+  // borders provided by the window manager (if any).
+  gfx::Rect GetX11RootWindowOuterBounds() const;
+
+  // Returns the window shape if the window is not rectangular. Returns NULL
+  // otherwise.
+  ::Region GetWindowShape() const;
 
   // Called by X11DesktopHandler to notify us that the native windowing system
   // has changed our activation.
@@ -117,7 +126,6 @@ class VIEWS_EXPORT DesktopWindowTreeHostX11
   virtual bool ShouldUseNativeFrame() const OVERRIDE;
   virtual bool ShouldWindowContentsBeTransparent() const OVERRIDE;
   virtual void FrameTypeChanged() OVERRIDE;
-  virtual NonClientFrameView* CreateNonClientFrameView() OVERRIDE;
   virtual void SetFullscreen(bool fullscreen) OVERRIDE;
   virtual bool IsFullscreen() const OVERRIDE;
   virtual void SetOpacity(unsigned char opacity) OVERRIDE;
@@ -158,10 +166,11 @@ private:
   // along with all aura client objects that direct behavior.
   aura::WindowEventDispatcher* InitDispatcher(const Widget::InitParams& params);
 
-  // Returns true if there's an X window manager present... in most cases.  Some
-  // window managers (notably, ion3) don't implement enough of ICCCM for us to
-  // detect that they're there.
-  bool IsWindowManagerPresent();
+  // Called when |xwindow_|'s _NET_WM_STATE property is updated.
+  void OnWMStateUpdated();
+
+  // Called when |xwindow_|'s _NET_FRAME_EXTENTS property is updated.
+  void OnFrameExtentsUpdated();
 
   // Sends a message to the x11 window manager, enabling or disabling the
   // states |state1| and |state2|.
@@ -194,11 +203,17 @@ private:
   void SerializeImageRepresentation(const gfx::ImageSkiaRep& rep,
                                     std::vector<unsigned long>* data);
 
+  // Returns an 8888 ARGB visual. Can return NULL if there is no matching
+  // visual on this display.
+  Visual* GetARGBVisual();
+
   // See comment for variable open_windows_.
   static std::list<XID>& open_windows();
 
   // Map the window (shows it) taking into account the given |show_state|.
   void MapWindow(ui::WindowShowState show_state);
+
+  void SetWindowTransparency();
 
   // ui::PlatformEventDispatcher:
   virtual bool CanDispatchEvent(const ui::PlatformEvent& event) OVERRIDE;
@@ -246,6 +261,9 @@ private:
   // True if the window has title-bar / borders provided by the window manager.
   bool use_native_frame_;
 
+  // Whether we used an ARGB visual for our window.
+  bool use_argb_visual_;
+
   scoped_ptr<DesktopDispatcherClient> dispatcher_client_;
 
   DesktopDragDropClientAuraX11* drag_drop_client_;
@@ -271,8 +289,14 @@ private:
 
   ObserverList<DesktopWindowTreeHostObserverX11> observer_list_;
 
-  // Copy of custom window shape specified via SetShape(), if any.
-  ::Region custom_window_shape_;
+  // The window shape if the window is non-rectangular.
+  ::Region window_shape_;
+
+  // Whether |window_shape_| was set via SetShape().
+  bool custom_window_shape_;
+
+  // The size of the window manager provided borders (if any).
+  gfx::Insets native_window_frame_borders_;
 
   // The current root window host that has capture. While X11 has something
   // like Windows SetCapture()/ReleaseCapture(), it is entirely implicit and

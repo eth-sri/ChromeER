@@ -7,9 +7,9 @@
 #include <functional>
 #include <iterator>
 
-#include "base/base64.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
+#include "base/strings/string_number_conversions.h"
 #include "chrome/common/extensions/api/cast_streaming_rtp_stream.h"
 #include "chrome/common/extensions/api/cast_streaming_udp_transport.h"
 #include "chrome/renderer/media/cast_rtp_stream.h"
@@ -55,6 +55,16 @@ void FromCastCodecSpecificParams(const CastCodecSpecificParams& cast_params,
   ext_params->value = cast_params.value;
 }
 
+namespace {
+bool HexDecode(const std::string& input, std::string* output) {
+  std::vector<uint8> bytes;
+  if (!base::HexStringToBytes(input, &bytes))
+    return false;
+  output->assign(reinterpret_cast<const char*>(&bytes[0]), bytes.size());
+  return true;
+}
+}  // namespace
+
 bool ToCastRtpPayloadParamsOrThrow(v8::Isolate* isolate,
                                    const RtpPayloadParams& ext_params,
                                    CastRtpPayloadParams* cast_params) {
@@ -72,14 +82,13 @@ bool ToCastRtpPayloadParamsOrThrow(v8::Isolate* isolate,
   cast_params->width = ext_params.width ? *ext_params.width : 0;
   cast_params->height = ext_params.height ? *ext_params.height : 0;
   if (ext_params.aes_key &&
-      !base::Base64Decode(*ext_params.aes_key, &cast_params->aes_key)) {
+      !HexDecode(*ext_params.aes_key, &cast_params->aes_key)) {
     isolate->ThrowException(v8::Exception::Error(
         v8::String::NewFromUtf8(isolate, kInvalidAesKey)));
     return false;
   }
   if (ext_params.aes_iv_mask &&
-      !base::Base64Decode(*ext_params.aes_iv_mask,
-                          &cast_params->aes_iv_mask)) {
+      !HexDecode(*ext_params.aes_iv_mask, &cast_params->aes_iv_mask)) {
     isolate->ThrowException(v8::Exception::Error(
         v8::String::NewFromUtf8(isolate, kInvalidAesIvMask)));
     return false;
@@ -208,6 +217,8 @@ void CastStreamingNativeHandler::CreateCastSession(
   scoped_ptr<CastUdpTransport> udp_transport(
       new CastUdpTransport(session));
 
+  // TODO(imcheng): Use a weak reference to ensure we don't call into an
+  // invalid context when the callback is invoked.
   create_callback_.reset(args[2].As<v8::Function>());
 
   base::MessageLoop::current()->PostTask(
@@ -437,23 +448,32 @@ void CastStreamingNativeHandler::ToggleLogging(
 
 void CastStreamingNativeHandler::GetRawEvents(
     const v8::FunctionCallbackInfo<v8::Value>& args) {
-  CHECK_EQ(2, args.Length());
+  CHECK_EQ(3, args.Length());
   CHECK(args[0]->IsInt32());
-  CHECK(args[1]->IsFunction());
+  CHECK(args[1]->IsNull() || args[1]->IsString());
+  CHECK(args[2]->IsFunction());
+
   const int transport_id = args[0]->ToInt32()->Value();
+  // TODO(imcheng): Use a weak reference to ensure we don't call into an
+  // invalid context when the callback is invoked.
+  linked_ptr<ScopedPersistent<v8::Function> > callback(
+      new ScopedPersistent<v8::Function>(args[2].As<v8::Function>()));
+  std::string extra_data;
+  if (!args[1]->IsNull()) {
+    extra_data = *v8::String::Utf8Value(args[1]);
+  }
+
   CastRtpStream* transport = GetRtpStreamOrThrow(transport_id);
   if (!transport)
     return;
 
-  linked_ptr<extensions::ScopedPersistent<v8::Function> > callback(
-      new extensions::ScopedPersistent<v8::Function>);
-  callback->reset(args[1].As<v8::Function>());
   get_raw_events_callbacks_.insert(std::make_pair(transport_id, callback));
 
   transport->GetRawEvents(
       base::Bind(&CastStreamingNativeHandler::CallGetRawEventsCallback,
                  weak_factory_.GetWeakPtr(),
-                 transport_id));
+                 transport_id),
+      extra_data);
 }
 
 void CastStreamingNativeHandler::GetStats(
@@ -466,9 +486,10 @@ void CastStreamingNativeHandler::GetStats(
   if (!transport)
     return;
 
-  linked_ptr<extensions::ScopedPersistent<v8::Function> > callback(
-      new extensions::ScopedPersistent<v8::Function>);
-  callback->reset(args[1].As<v8::Function>());
+  // TODO(imcheng): Use a weak reference to ensure we don't call into an
+  // invalid context when the callback is invoked.
+  linked_ptr<ScopedPersistent<v8::Function> > callback(
+      new ScopedPersistent<v8::Function>(args[1].As<v8::Function>()));
   get_stats_callbacks_.insert(std::make_pair(transport_id, callback));
 
   transport->GetStats(

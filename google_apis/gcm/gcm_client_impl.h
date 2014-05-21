@@ -15,6 +15,7 @@
 #include "base/stl_util.h"
 #include "google_apis/gcm/base/mcs_message.h"
 #include "google_apis/gcm/engine/gcm_store.h"
+#include "google_apis/gcm/engine/gservices_settings.h"
 #include "google_apis/gcm/engine/mcs_client.h"
 #include "google_apis/gcm/engine/registration_request.h"
 #include "google_apis/gcm/engine/unregistration_request.h"
@@ -45,7 +46,6 @@ namespace gcm {
 class CheckinRequest;
 class ConnectionFactory;
 class GCMClientImplTest;
-class GServicesSettings;
 
 // Helper class for building GCM internals. Allows tests to inject fake versions
 // as necessary.
@@ -73,7 +73,8 @@ class GCM_EXPORT GCMInternalsBuilder {
 // with MCS) and other pieces of GCM infrastructure like Registration and
 // Checkins. It also allows for registering user delegates that host
 // applications that send and receive messages.
-class GCM_EXPORT GCMClientImpl : public GCMClient {
+class GCM_EXPORT GCMClientImpl
+    : public GCMClient, public GCMStatsRecorder::Delegate {
  public:
   explicit GCMClientImpl(scoped_ptr<GCMInternalsBuilder> internals_builder);
   virtual ~GCMClientImpl();
@@ -86,8 +87,9 @@ class GCM_EXPORT GCMClientImpl : public GCMClient {
       const scoped_refptr<base::SequencedTaskRunner>& blocking_task_runner,
       const scoped_refptr<net::URLRequestContextGetter>&
           url_request_context_getter,
-      Delegate* delegate) OVERRIDE;
-  virtual void Load() OVERRIDE;
+      scoped_ptr<Encryptor> encryptor,
+      GCMClient::Delegate* delegate) OVERRIDE;
+  virtual void Start() OVERRIDE;
   virtual void Stop() OVERRIDE;
   virtual void CheckOut() OVERRIDE;
   virtual void Register(const std::string& app_id,
@@ -99,6 +101,7 @@ class GCM_EXPORT GCMClientImpl : public GCMClient {
   virtual void SetRecording(bool recording) OVERRIDE;
   virtual void ClearActivityLogs() OVERRIDE;
   virtual GCMStatistics GetStatistics() const OVERRIDE;
+  virtual void OnActivityRecorded() OVERRIDE;
 
  private:
   // State representation of the GCMClient.
@@ -179,6 +182,10 @@ class GCM_EXPORT GCMClientImpl : public GCMClient {
   // Function also cleans up the pending checkin.
   void OnCheckinCompleted(
       const checkin_proto::AndroidCheckinResponse& checkin_response);
+
+  // Callback passed to GCMStore::SetGServicesSettings.
+  void SetGServicesSettingsCallback(bool success);
+
   // Schedules next periodic device checkin and makes sure there is at most one
   // pending checkin at a time. This function is meant to be called after a
   // successful checkin.
@@ -231,7 +238,7 @@ class GCM_EXPORT GCMClientImpl : public GCMClient {
   // State of the GCM Client Implementation.
   State state_;
 
-  Delegate* delegate_;
+  GCMClient::Delegate* delegate_;
 
   // Device checkin info (android ID and security token used by device).
   CheckinInfo device_checkin_info_;
@@ -275,7 +282,7 @@ class GCM_EXPORT GCMClientImpl : public GCMClient {
       pending_unregistration_requests_deleter_;
 
   // G-services settings that were provided by MCS.
-  scoped_ptr<GServicesSettings> gservices_settings_;
+  GServicesSettings gservices_settings_;
 
   // Time of the last successful checkin.
   base::Time last_checkin_time_;

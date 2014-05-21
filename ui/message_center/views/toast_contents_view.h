@@ -39,7 +39,7 @@ class ToastContentsView : public views::WidgetDelegateView,
                           public gfx::AnimationDelegate {
  public:
   // Computes the size of a toast assuming it will host the given view.
-  static gfx::Size GetToastSizeForView(views::View* view);
+  static gfx::Size GetToastSizeForView(const views::View* view);
 
   ToastContentsView(const std::string& notification_id,
                     base::WeakPtr<MessagePopupCollection> collection);
@@ -49,6 +49,9 @@ class ToastContentsView : public views::WidgetDelegateView,
   // |a11y_feedback_for_updates| causes the view to notify that the
   // accessibility message should be read after this update.
   void SetContents(MessageView* view, bool a11y_feedback_for_updates);
+
+  void UpdateContents(const Notification& notification,
+                      bool a11y_feedback_for_updates);
 
   // Shows the new toast for the first time, animated.
   // |origin| is the right-bottom corner of the toast.
@@ -71,7 +74,7 @@ class ToastContentsView : public views::WidgetDelegateView,
   virtual void OnMouseEntered(const ui::MouseEvent& event) OVERRIDE;
   virtual void OnMouseExited(const ui::MouseEvent& event) OVERRIDE;
   virtual void Layout() OVERRIDE;
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
   virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
 
  private:

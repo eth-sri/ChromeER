@@ -16,11 +16,8 @@ class UI_BASE_EXPORT CursorFactoryOzone {
   CursorFactoryOzone();
   virtual ~CursorFactoryOzone();
 
-  // Returns the static instance.
+  // Returns the singleton instance.
   static CursorFactoryOzone* GetInstance();
-
-  // Sets the static instance. Ownership is retained by the caller.
-  static void SetInstance(CursorFactoryOzone* impl);
 
   // Return the default cursor of the specified type. The types are listed in
   // ui/base/cursor/cursor.h. Default cursors are managed by the implementation
@@ -42,6 +39,11 @@ class UI_BASE_EXPORT CursorFactoryOzone {
   // Change the active cursor for an AcceleratedWidget.
   // TODO(spang): Move this.
   virtual void SetCursor(gfx::AcceleratedWidget widget, PlatformCursor cursor);
+
+  // Returns the window on which the cursor is active.
+  // TODO(dnicoara) Move this once the WindowTreeHost refactoring finishes and
+  // WindowTreeHost::CanDispatchEvent() is no longer present.
+  virtual gfx::AcceleratedWidget GetCursorWindow();
 
  private:
   static CursorFactoryOzone* impl_;  // not owned

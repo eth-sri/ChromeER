@@ -8,13 +8,15 @@
 #include "base/macros.h"
 #include "base/threading/thread_checker.h"
 #include "content/public/renderer/media_stream_video_sink.h"
-#include "content/renderer/media/media_stream_dependency_factory.h"
+#include "content/renderer/media/webrtc/peer_connection_dependency_factory.h"
 #include "content/renderer/media/webrtc/webrtc_video_capturer_adapter.h"
 #include "third_party/WebKit/public/platform/WebMediaStreamTrack.h"
 #include "third_party/libjingle/source/talk/app/webrtc/mediastreaminterface.h"
 #include "third_party/libjingle/source/talk/app/webrtc/videosourceinterface.h"
 
 namespace content {
+
+class MediaStreamVideoTrack;
 
 // WebRtcVideoTrackAdapter is an adapter between a
 // content::MediaStreamVideoTrack object and a webrtc VideoTrack that is
@@ -28,7 +30,7 @@ namespace content {
 class WebRtcVideoTrackAdapter : public MediaStreamVideoSink {
  public:
   WebRtcVideoTrackAdapter(const blink::WebMediaStreamTrack& track,
-                          MediaStreamDependencyFactory* factory);
+                          PeerConnectionDependencyFactory* factory);
   virtual ~WebRtcVideoTrackAdapter();
 
   webrtc::VideoTrackInterface* webrtc_video_track() {
@@ -36,24 +38,20 @@ class WebRtcVideoTrackAdapter : public MediaStreamVideoSink {
   }
 
  protected:
-  // Implements MediaStreamVideoSink
-  virtual void OnVideoFrame(
-      const scoped_refptr<media::VideoFrame>& frame) OVERRIDE;
+  // Implementation of MediaStreamSink.
   virtual void OnEnabledChanged(bool enabled) OVERRIDE;
 
  private:
   // Used to DCHECK that we are called on the correct thread.
   base::ThreadChecker thread_checker_;
 
-  scoped_refptr<webrtc::VideoSourceInterface> video_source_;
   scoped_refptr<webrtc::VideoTrackInterface> video_track_;
-
   blink::WebMediaStreamTrack web_track_;
 
-  // |capture_adapter_| is owned by |video_source_|
-  WebRtcVideoCapturerAdapter* capture_adapter_;
+  class WebRtcVideoSourceAdapter;
+  scoped_refptr<WebRtcVideoSourceAdapter> source_adapter_;
 
-  DISALLOW_COPY_AND_ASSIGN (WebRtcVideoTrackAdapter);
+  DISALLOW_COPY_AND_ASSIGN(WebRtcVideoTrackAdapter);
 };
 
 }  // namespace content

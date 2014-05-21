@@ -41,7 +41,8 @@ class CC_EXPORT LayerTreeHostCommon {
                         bool can_use_lcd_text,
                         bool can_render_to_separate_surface,
                         bool can_adjust_raster_scales,
-                        RenderSurfaceLayerListType* render_surface_layer_list)
+                        RenderSurfaceLayerListType* render_surface_layer_list,
+                        int current_render_surface_layer_list_id)
         : root_layer(root_layer),
           device_viewport_size(device_viewport_size),
           device_transform(device_transform),
@@ -52,7 +53,9 @@ class CC_EXPORT LayerTreeHostCommon {
           can_use_lcd_text(can_use_lcd_text),
           can_render_to_separate_surface(can_render_to_separate_surface),
           can_adjust_raster_scales(can_adjust_raster_scales),
-          render_surface_layer_list(render_surface_layer_list) {}
+          render_surface_layer_list(render_surface_layer_list),
+          current_render_surface_layer_list_id(
+              current_render_surface_layer_list_id) {}
 
     LayerType* root_layer;
     gfx::Size device_viewport_size;
@@ -65,6 +68,7 @@ class CC_EXPORT LayerTreeHostCommon {
     bool can_render_to_separate_surface;
     bool can_adjust_raster_scales;
     RenderSurfaceLayerListType* render_surface_layer_list;
+    int current_render_surface_layer_list_id;
   };
 
   template <typename LayerType, typename RenderSurfaceLayerListType>
@@ -94,24 +98,6 @@ class CC_EXPORT LayerTreeHostCommon {
   typedef CalcDrawPropsInputsForTesting<LayerImpl, LayerImplList>
       CalcDrawPropsImplInputsForTesting;
   static void CalculateDrawProperties(CalcDrawPropsImplInputs* inputs);
-
-  // Performs hit testing for a given render_surface_layer_list.
-  static LayerImpl* FindFirstScrollingLayerThatIsHitByPoint(
-      const gfx::PointF& screen_space_point,
-      const LayerImplList& render_surface_layer_list);
-
-  // Performs hit testing for a given render_surface_layer_list.
-  static LayerImpl* FindLayerThatIsHitByPoint(
-      const gfx::PointF& screen_space_point,
-      const LayerImplList& render_surface_layer_list);
-
-  static LayerImpl* FindLayerThatIsHitByPointInTouchHandlerRegion(
-      const gfx::PointF& screen_space_point,
-      const LayerImplList& render_surface_layer_list);
-
-  static bool LayerHasTouchEventHandlersAt(
-      const gfx::PointF& screen_space_point,
-      LayerImpl* layer_impl);
 
   template <typename LayerType>
   static bool RenderSurfaceContributesToTarget(LayerType*,
@@ -233,7 +219,8 @@ LayerTreeHostCommon::CalcDrawPropsInputsForTesting<LayerType,
           false,
           true,
           false,
-          render_surface_layer_list) {
+          render_surface_layer_list,
+          0) {
   DCHECK(root_layer);
   DCHECK(render_surface_layer_list);
 }
@@ -256,7 +243,8 @@ LayerTreeHostCommon::CalcDrawPropsInputsForTesting<LayerType,
           false,
           true,
           false,
-          render_surface_layer_list) {
+          render_surface_layer_list,
+          0) {
   DCHECK(root_layer);
   DCHECK(render_surface_layer_list);
 }

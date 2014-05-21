@@ -50,13 +50,18 @@ void CommandBufferDelegate::DrawAnimationFrame() {}
 CommandBufferClientImpl::CommandBufferClientImpl(
     CommandBufferDelegate* delegate,
     MojoAsyncWaiter* async_waiter,
-    ScopedCommandBufferHandle command_buffer_handle)
+    ScopedMessagePipeHandle command_buffer_handle)
     : delegate_(delegate),
-      command_buffer_(command_buffer_handle.Pass(), this, this, async_waiter),
+      command_buffer_(MakeProxy<mojo::CommandBuffer>(
+          command_buffer_handle.Pass(), async_waiter)),
       shared_state_(NULL),
       last_put_offset_(-1),
       next_transfer_buffer_id_(0),
-      initialize_result_(false) {}
+      initialize_result_(false),
+      async_waiter_(async_waiter) {
+  command_buffer_.set_error_handler(this);
+  command_buffer_->SetClient(this);
+}
 
 CommandBufferClientImpl::~CommandBufferClientImpl() {}
 
@@ -73,11 +78,15 @@ bool CommandBufferClientImpl::Initialize() {
 
   shared_state()->Initialize();
 
-  InterfacePipe<CommandBufferSyncClient, NoInterface> sync_pipe;
+  // TODO(darin): We need better sugar for sync calls.
+  MessagePipe sync_pipe;
   sync_dispatcher_.reset(new SyncDispatcher<CommandBufferSyncClient>(
-      sync_pipe.handle_to_peer.Pass(), this));
+      sync_pipe.handle0.Pass(), this));
+  CommandBufferSyncClientPtr sync_client =
+      MakeProxy<CommandBufferSyncClient>(sync_pipe.handle1.Pass(),
+                                         async_waiter_);
   AllocationScope scope;
-  command_buffer_->Initialize(sync_pipe.handle_to_self.Pass(), duped.Pass());
+  command_buffer_->Initialize(sync_client.Pass(), duped.Pass());
   // Wait for DidInitialize to come on the sync client pipe.
   if (!sync_dispatcher_->WaitAndDispatchOneMessage()) {
     VLOG(1) << "Channel encountered error while creating command buffer";
@@ -164,6 +173,7 @@ gfx::GpuMemoryBuffer* CommandBufferClientImpl::CreateGpuMemoryBuffer(
     size_t width,
     size_t height,
     unsigned internalformat,
+    unsigned usage,
     int32* id) {
   // TODO(piman)
   NOTIMPLEMENTED();
@@ -242,7 +252,9 @@ void CommandBufferClientImpl::LostContext(int32_t lost_reason) {
   delegate_->ContextLost();
 }
 
-void CommandBufferClientImpl::OnError() { LostContext(gpu::error::kUnknown); }
+void CommandBufferClientImpl::OnConnectionError() {
+  LostContext(gpu::error::kUnknown);
+}
 
 void CommandBufferClientImpl::TryUpdateState() {
   if (last_state_.error == gpu::error::kNoError)

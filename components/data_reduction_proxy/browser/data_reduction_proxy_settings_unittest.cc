@@ -41,7 +41,8 @@ class DataReductionProxySettingsTest
 TEST_F(DataReductionProxySettingsTest, TestAuthenticationInit) {
   AddProxyToCommandLine();
   net::HttpAuthCache cache;
-  DataReductionProxySettings::InitDataReductionAuthentication(&cache);
+  DataReductionProxySettings::InitDataReductionAuthentication(
+      &cache, kDataReductionProxyKey);
   DataReductionProxySettings::DataReductionProxyList proxies =
       DataReductionProxySettings::GetDataReductionProxies();
   for (DataReductionProxySettings::DataReductionProxyList::iterator it =
@@ -120,7 +121,8 @@ TEST_F(DataReductionProxySettingsTest, TestAuthHashGeneration) {
   std::string salted_key = salt + kDataReductionProxyKey + salt;
   base::string16 expected_hash = base::UTF8ToUTF16(base::MD5String(salted_key));
   EXPECT_EQ(expected_hash,
-            DataReductionProxySettings::AuthHashForSalt(8675309));
+            DataReductionProxySettings::AuthHashForSalt(
+                8675309, kDataReductionProxyKey));
 }
 
 // Test that the auth key set by preprocessor directive is not used
@@ -131,20 +133,26 @@ TEST_F(DataReductionProxySettingsTest,
   CommandLine::ForCurrentProcess()->AppendSwitchASCII(
       switches::kDataReductionProxy, kDataReductionProxy);
   EXPECT_EQ(base::string16(),
-            DataReductionProxySettings::AuthHashForSalt(8675309));
+            DataReductionProxySettings::AuthHashForSalt(
+                8675309, kDataReductionProxyKey));
 }
 
 TEST_F(DataReductionProxySettingsTest, TestIsProxyEnabledOrManaged) {
+  AddProxyToCommandLine();
   settings_->InitPrefMembers();
+    base::MessageLoopForUI loop;
+    // The proxy is disabled initially.
+    settings_->enabled_by_user_ = false;
+    settings_->SetProxyConfigs(false, false, false);
+
   EXPECT_FALSE(settings_->IsDataReductionProxyEnabled());
   EXPECT_FALSE(settings_->IsDataReductionProxyManaged());
 
-  pref_service_.SetBoolean(prefs::kDataReductionProxyEnabled, true);
+  CheckOnPrefChange(true, true, false);
   EXPECT_TRUE(settings_->IsDataReductionProxyEnabled());
   EXPECT_FALSE(settings_->IsDataReductionProxyManaged());
 
-  pref_service_.SetManagedPref(prefs::kDataReductionProxyEnabled,
-                               base::Value::CreateBooleanValue(true));
+  CheckOnPrefChange(true, true, true);
   EXPECT_TRUE(settings_->IsDataReductionProxyEnabled());
   EXPECT_TRUE(settings_->IsDataReductionProxyManaged());
 }
@@ -177,7 +185,8 @@ TEST_F(DataReductionProxySettingsTest, TestAcceptableChallenges) {
     auth_info->challenger = net::HostPortPair::FromString(tests[i].host);
     auth_info->realm = tests[i].realm;
     EXPECT_EQ(tests[i].expected_to_succeed,
-              settings_->IsAcceptableAuthChallenge(auth_info.get()));
+              DataReductionProxySettings::IsAcceptableAuthChallenge(
+                  auth_info.get()));
   }
 }
 
@@ -285,14 +294,14 @@ TEST_F(DataReductionProxySettingsTest, TestMaybeActivateDataReductionProxy) {
   base::MessageLoopForUI loop;
   // The proxy is enabled and unrestructed initially.
   // Request succeeded but with bad response, expect proxy to be restricted.
-  CheckProbe(true, kProbeURLWithBadResponse, "Bad", true, true, true);
+  CheckProbe(true, kProbeURLWithBadResponse, "Bad", true, true, true, false);
   // Request succeeded with valid response, expect proxy to be unrestricted.
-  CheckProbe(true, kProbeURLWithOKResponse, "OK", true, true, false);
+  CheckProbe(true, kProbeURLWithOKResponse, "OK", true, true, false, false);
   // Request failed, expect proxy to be enabled but restricted.
-  CheckProbe(true, kProbeURLWithNoResponse, "", false, true, true);
+  CheckProbe(true, kProbeURLWithNoResponse, "", false, true, true, false);
   // The proxy is disabled initially. Probes should not be emitted to change
   // state.
-  CheckProbe(false, kProbeURLWithOKResponse, "OK", true, false, false);
+  CheckProbe(false, kProbeURLWithOKResponse, "OK", true, false, false, false);
 }
 
 TEST_F(DataReductionProxySettingsTest, TestOnIPAddressChanged) {
@@ -308,13 +317,13 @@ TEST_F(DataReductionProxySettingsTest, TestOnIPAddressChanged) {
   settings_->SetProxyConfigs(true, false, true);
   // IP address change triggers a probe that succeeds. Proxy remains
   // unrestricted.
-  CheckProbeOnIPChange(kProbeURLWithOKResponse, "OK", true, false);
+  CheckProbeOnIPChange(kProbeURLWithOKResponse, "OK", true, false, false);
   // IP address change triggers a probe that fails. Proxy is restricted.
-  CheckProbeOnIPChange(kProbeURLWithBadResponse, "Bad", true, true);
+  CheckProbeOnIPChange(kProbeURLWithBadResponse, "Bad", true, true, false);
   // IP address change triggers a probe that fails. Proxy remains restricted.
-  CheckProbeOnIPChange(kProbeURLWithBadResponse, "Bad", true, true);
+  CheckProbeOnIPChange(kProbeURLWithBadResponse, "Bad", true, true, false);
   // IP address change triggers a probe that succeed. Proxy is unrestricted.
-  CheckProbeOnIPChange(kProbeURLWithBadResponse, "OK", true, false);
+  CheckProbeOnIPChange(kProbeURLWithBadResponse, "OK", true, false, false);
 }
 
 TEST_F(DataReductionProxySettingsTest, TestOnProxyEnabledPrefChange) {
@@ -325,9 +334,9 @@ TEST_F(DataReductionProxySettingsTest, TestOnProxyEnabledPrefChange) {
   settings_->enabled_by_user_ = true;
   settings_->SetProxyConfigs(true, false, true);
   // The pref is disabled, so correspondingly should be the proxy.
-  CheckOnPrefChange(false, false);
+  CheckOnPrefChange(false, false, false);
   // The pref is enabled, so correspondingly should be the proxy.
-  CheckOnPrefChange(true, true);
+  CheckOnPrefChange(true, true, false);
 }
 
 TEST_F(DataReductionProxySettingsTest, TestInitDataReductionProxyOn) {
@@ -375,17 +384,19 @@ TEST_F(DataReductionProxySettingsTest, CheckInitMetricsWhenNotAllowed) {
   // No call to |AddProxyToCommandLine()| was made, so the proxy feature
   // should be unavailable.
   base::MessageLoopForUI loop;
+  DataReductionProxySettings::SetAllowed(false);
   EXPECT_FALSE(DataReductionProxySettings::IsDataReductionProxyAllowed());
   MockSettings* settings = static_cast<MockSettings*>(settings_.get());
   EXPECT_CALL(*settings, RecordStartupState(PROXY_NOT_AVAILABLE));
 
   scoped_ptr<DataReductionProxyConfigurator> configurator(
       new TestDataReductionProxyConfig());
+  settings_->SetProxyConfigurator(configurator.Pass());
   scoped_refptr<net::TestURLRequestContextGetter> request_context =
       new net::TestURLRequestContextGetter(base::MessageLoopProxy::current());
-  settings_->InitDataReductionProxySettings(
-      &pref_service_, &pref_service_, request_context.get(),
-      configurator.Pass());
+  settings_->InitDataReductionProxySettings(&pref_service_,
+                                            &pref_service_,
+                                            request_context.get());
 
   base::MessageLoop::current()->RunUntilIdle();
 }

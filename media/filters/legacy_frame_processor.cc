@@ -50,10 +50,6 @@ bool LegacyFrameProcessor::ProcessFrames(
   MseTrackBuffer* video_track = FindTrack(kVideoTrackId);
   DCHECK(video_buffers.empty() || video_track);
 
-  // TODO(wolenetz): DCHECK + return false if any of these buffers have UNKNOWN
-  // type() in upcoming coded frame processing compliant implementation. See
-  // http://crbug.com/249422.
-
   StreamParser::BufferQueue filtered_audio;
   StreamParser::BufferQueue filtered_video;
   StreamParser::TextBufferQueueMap filtered_text;
@@ -110,13 +106,8 @@ bool LegacyFrameProcessor::ProcessFrames(
     }
 
     *new_media_segment = false;
-
     DCHECK(segment_timestamp != kInfiniteDuration());
-    for (TrackBufferMap::iterator itr = track_buffers_.begin();
-         itr != track_buffers_.end();
-         ++itr) {
-      itr->second->stream()->OnNewMediaSegment(segment_timestamp);
-    }
+    NotifyNewMediaSegmentStarting(segment_timestamp);
   }
 
   if (!filtered_audio.empty() &&
@@ -193,16 +184,39 @@ void LegacyFrameProcessor::FilterWithAppendWindow(
 
     if (presentation_timestamp < append_window_start ||
         frame_end_timestamp > append_window_end) {
-      DVLOG(1) << "Dropping buffer outside append window."
-               << " presentation_timestamp "
-               << presentation_timestamp.InSecondsF();
-      track->set_needs_random_access_point(true);
+      // See if a partial discard can be done around |append_window_start|.
+      if (track->stream()->supports_partial_append_window_trimming() &&
+          presentation_timestamp < append_window_start &&
+          frame_end_timestamp > append_window_start &&
+          frame_end_timestamp <= append_window_end) {
+        DCHECK((*itr)->IsKeyframe());
+        DVLOG(1) << "Truncating buffer which overlaps append window start."
+                 << " presentation_timestamp "
+                 << presentation_timestamp.InSecondsF()
+                 << " append_window_start " << append_window_start.InSecondsF();
 
-      // This triggers a discontinuity so we need to treat the next frames
-      // appended within the append window as if they were the beginning of a
-      // new segment.
-      *new_media_segment = true;
-      continue;
+        // Adjust the timestamp of this buffer forward to |append_window_start|,
+        // while decreasing the duration appropriately.
+        const scoped_refptr<StreamParserBuffer>& buffer = *itr;
+        buffer->set_discard_padding(std::make_pair(
+            append_window_start - presentation_timestamp, base::TimeDelta()));
+        buffer->set_timestamp(append_window_start);
+        buffer->SetDecodeTimestamp(append_window_start);
+        buffer->set_duration(frame_end_timestamp - append_window_start);
+
+        // TODO(dalecurtis): This could also be done with |append_window_end|,
+        // but is not necessary since splice frames cover the overlap there.
+      } else {
+        track->set_needs_random_access_point(true);
+        DVLOG(1) << "Dropping buffer outside append window."
+                 << " presentation_timestamp "
+                 << presentation_timestamp.InSecondsF();
+        // This triggers a discontinuity so we need to treat the next frames
+        // appended within the append window as if they were the beginning of a
+        // new segment.
+        *new_media_segment = true;
+        continue;
+      }
     }
 
     // If the track needs a keyframe, then filter out buffers until we

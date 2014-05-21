@@ -18,6 +18,8 @@
 #include "chromeos/dbus/shill_manager_client.h"
 #include "chromeos/dbus/shill_profile_client.h"
 #include "chromeos/dbus/shill_service_client.h"
+#include "chromeos/network/device_state.h"
+#include "chromeos/network/favorite_state.h"
 #include "chromeos/network/network_configuration_handler.h"
 #include "chromeos/network/network_event_log.h"
 #include "chromeos/network/network_policy_observer.h"
@@ -49,7 +51,7 @@ const char kPoliciesNotInitialized[] = "PoliciesNotInitialized";
 const char kProfileNotInitialized[] = "ProflieNotInitialized";
 const char kSetOnUnconfiguredNetwork[] = "SetCalledOnUnconfiguredNetwork";
 const char kUnknownProfilePath[] = "UnknownProfilePath";
-const char kUnknownServicePath[] = "UnknownServicePath";
+const char kUnknownNetwork[] = "UnknownNetwork";
 
 std::string ToDebugString(::onc::ONCSource source,
                           const std::string& userhash) {
@@ -81,17 +83,6 @@ const base::DictionaryValue* GetByGUID(const GuidToPolicyMap& policies,
   if (it == policies.end())
     return NULL;
   return it->second;
-}
-
-void TranslatePropertiesToOncAndRunCallback(
-    const network_handler::DictionaryResultCallback& callback,
-    const std::string& service_path,
-    const base::DictionaryValue& shill_properties) {
-  scoped_ptr<base::DictionaryValue> onc_network(
-      onc::TranslateShillServiceToONCPart(
-          shill_properties,
-          &onc::kNetworkWithStateSignature));
-  callback.Run(service_path, *onc_network);
 }
 
 }  // namespace
@@ -169,9 +160,14 @@ void ManagedNetworkConfigurationHandlerImpl::GetManagedPropertiesCallback(
     // properties _might_ be user configured.
   }
 
+  scoped_ptr<base::DictionaryValue> properties_copy(
+      shill_properties.DeepCopy());
+  // Add associated Device properties before the ONC translation.
+  GetDeviceProperties(service_path, properties_copy.get());
+
   scoped_ptr<base::DictionaryValue> active_settings(
       onc::TranslateShillServiceToONCPart(
-          shill_properties,
+          *properties_copy,
           &onc::kNetworkWithStateSignature));
 
   std::string guid;
@@ -212,11 +208,29 @@ void ManagedNetworkConfigurationHandlerImpl::GetManagedPropertiesCallback(
 void ManagedNetworkConfigurationHandlerImpl::GetProperties(
     const std::string& service_path,
     const network_handler::DictionaryResultCallback& callback,
-    const network_handler::ErrorCallback& error_callback) const {
+    const network_handler::ErrorCallback& error_callback) {
   network_configuration_handler_->GetProperties(
       service_path,
-      base::Bind(&TranslatePropertiesToOncAndRunCallback, callback),
+      base::Bind(&ManagedNetworkConfigurationHandlerImpl::GetPropertiesCallback,
+                 weak_ptr_factory_.GetWeakPtr(),
+                 callback),
       error_callback);
+}
+
+void ManagedNetworkConfigurationHandlerImpl::GetPropertiesCallback(
+    const network_handler::DictionaryResultCallback& callback,
+    const std::string& service_path,
+    const base::DictionaryValue& shill_properties) {
+  scoped_ptr<base::DictionaryValue> properties_copy(
+      shill_properties.DeepCopy());
+  // Add associated Device properties before the ONC translation.
+  GetDeviceProperties(service_path, properties_copy.get());
+
+  scoped_ptr<base::DictionaryValue> onc_network(
+      onc::TranslateShillServiceToONCPart(
+          *properties_copy,
+          &onc::kNetworkWithStateSignature));
+  callback.Run(service_path, *onc_network);
 }
 
 void ManagedNetworkConfigurationHandlerImpl::SetProperties(
@@ -224,11 +238,11 @@ void ManagedNetworkConfigurationHandlerImpl::SetProperties(
     const base::DictionaryValue& user_settings,
     const base::Closure& callback,
     const network_handler::ErrorCallback& error_callback) const {
-  const NetworkState* state =
-      network_state_handler_->GetNetworkState(service_path);
-
+  const FavoriteState* state =
+      network_state_handler_->GetFavoriteStateFromServicePath(
+          service_path, true /* configured_only */);
   if (!state) {
-    InvokeErrorCallback(service_path, error_callback, kUnknownServicePath);
+    InvokeErrorCallback(service_path, error_callback, kUnknownNetwork);
     return;
   }
 
@@ -393,19 +407,21 @@ void ManagedNetworkConfigurationHandlerImpl::SetPolicy(
 
   const NetworkProfile* profile =
       network_profile_handler_->GetProfileForUserhash(userhash);
-  if (!profile) {
+  if (profile) {
+    scoped_refptr<PolicyApplicator> applicator =
+        new PolicyApplicator(weak_ptr_factory_.GetWeakPtr(),
+                             *profile,
+                             policies->per_network_config,
+                             policies->global_network_config,
+                             &modified_policies);
+    applicator->Run();
+  } else {
     VLOG(1) << "The relevant Shill profile isn't initialized yet, postponing "
             << "policy application.";
-    return;
+    // See OnProfileAdded.
   }
 
-  scoped_refptr<PolicyApplicator> applicator =
-      new PolicyApplicator(weak_ptr_factory_.GetWeakPtr(),
-                           *profile,
-                           policies->per_network_config,
-                           policies->global_network_config,
-                           &modified_policies);
-  applicator->Run();
+  FOR_EACH_OBSERVER(NetworkPolicyObserver, observers_, PolicyChanged(userhash));
 }
 
 void ManagedNetworkConfigurationHandlerImpl::OnProfileAdded(
@@ -416,6 +432,7 @@ void ManagedNetworkConfigurationHandlerImpl::OnProfileAdded(
   if (!policies) {
     VLOG(1) << "The relevant policy is not initialized, "
             << "postponing policy application.";
+    // See SetPolicy.
     return;
   }
 
@@ -594,6 +611,43 @@ void ManagedNetworkConfigurationHandlerImpl::OnPolicyAppliedToNetwork(
     return;
   FOR_EACH_OBSERVER(
       NetworkPolicyObserver, observers_, PolicyApplied(service_path));
+}
+
+void ManagedNetworkConfigurationHandlerImpl::GetDeviceProperties(
+    const std::string& service_path,
+    base::DictionaryValue* properties) {
+  std::string connection_state;
+  properties->GetStringWithoutPathExpansion(
+      shill::kStateProperty, &connection_state);
+  if (!NetworkState::StateIsConnected(connection_state))
+    return;
+
+  // Get the IPConfig properties from the device and store them in "IPConfigs"
+  // (plural) in the properties dictionary. (Note: Shill only provides a single
+  // "IPConfig" property for a network service, but a consumer of this API may
+  // want information about all ipv4 and ipv6 IPConfig properties.
+  std::string device;
+  properties->GetStringWithoutPathExpansion(shill::kDeviceProperty, &device);
+  const DeviceState* device_state =
+      network_state_handler_->GetDeviceState(device);
+  if (!device_state) {
+    NET_LOG_ERROR("GetDeviceProperties: no device: " + device, service_path);
+    return;
+  }
+
+  // Get the hardware MAC address from the DeviceState.
+  if (!device_state->mac_address().empty()) {
+    properties->SetStringWithoutPathExpansion(
+        shill::kAddressProperty, device_state->mac_address());
+  }
+
+  // Convert IPConfig dictionary to a ListValue.
+  base::ListValue* ip_configs = new base::ListValue;
+  for (base::DictionaryValue::Iterator iter(device_state->ip_configs());
+       !iter.IsAtEnd(); iter.Advance()) {
+    ip_configs->Append(iter.value().DeepCopy());
+  }
+  properties->SetWithoutPathExpansion(shill::kIPConfigsProperty, ip_configs);
 }
 
 }  // namespace chromeos

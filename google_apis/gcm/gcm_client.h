@@ -30,6 +30,8 @@ class URLRequestContextGetter;
 
 namespace gcm {
 
+class Encryptor;
+
 // Interface that encapsulates the network communications with the Google Cloud
 // Messaging server. This interface is not supposed to be thread-safe.
 class GCM_EXPORT GCMClient {
@@ -67,6 +69,8 @@ class GCM_EXPORT GCMClient {
     // In seconds.
     int time_to_live;
     MessageData data;
+
+    static const int kMaximumTTL = 4 * 7 * 24 * 60 * 60;  // 4 weeks.
   };
 
   // Message being received from the other party.
@@ -156,6 +160,10 @@ class GCM_EXPORT GCMClient {
     // finished loading from the GCM store and retrieved the device check-in
     // from the server if it hadn't yet.
     virtual void OnGCMReady() = 0;
+
+    // Called when activities are being recorded and a new activity has just
+    // been recorded.
+    virtual void OnActivityRecorded() = 0;
   };
 
   GCMClient();
@@ -177,12 +185,13 @@ class GCM_EXPORT GCMClient {
       const scoped_refptr<base::SequencedTaskRunner>& blocking_task_runner,
       const scoped_refptr<net::URLRequestContextGetter>&
           url_request_context_getter,
+      scoped_ptr<Encryptor> encryptor,
       Delegate* delegate) = 0;
 
-  // Loads the data from the persistent store. This will automatically kick off
-  // the check-in if the check-in info is not found in the store.
-  // TODO(jianli): consider renaming this name to Start.
-  virtual void Load() = 0;
+  // Starts the GCM service by first loading the data from the persistent store.
+  // This will then kick off the check-in if the check-in info is not found in
+  // the store.
+  virtual void Start() = 0;
 
   // Stops using the GCM service. This will not erase the persisted data.
   virtual void Stop() = 0;

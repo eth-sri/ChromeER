@@ -81,6 +81,8 @@ AutocompleteMatch::AutocompleteMatch(const AutocompleteMatch& match)
       contents_class(match.contents_class),
       description(match.description),
       description_class(match.description_class),
+      answer_contents(match.answer_contents),
+      answer_type(match.answer_type),
       transition(match.transition),
       is_history_what_you_typed_match(match.is_history_what_you_typed_match),
       type(match.type),
@@ -117,6 +119,8 @@ AutocompleteMatch& AutocompleteMatch::operator=(
   contents_class = match.contents_class;
   description = match.description;
   description_class = match.description_class;
+  answer_contents = match.answer_contents;
+  answer_type = match.answer_type;
   transition = match.transition;
   is_history_what_you_typed_match = match.is_history_what_you_typed_match;
   type = match.type;
@@ -151,6 +155,7 @@ int AutocompleteMatch::TypeToIcon(Type type) {
     IDR_OMNIBOX_SEARCH,
     IDR_OMNIBOX_EXTENSION_APP,
     IDR_OMNIBOX_SEARCH,
+    IDR_OMNIBOX_HTTP,
     IDR_OMNIBOX_HTTP,
   };
   COMPILE_ASSERT(arraysize(icons) == AutocompleteMatchType::NUM_TYPES,
@@ -376,9 +381,9 @@ void AutocompleteMatch::ComputeStrippedDestinationURL(Profile* profile) {
   }
 
   // Replace https protocol with http protocol.
-  if (stripped_destination_url.SchemeIs(content::kHttpsScheme)) {
-    replacements.SetScheme(content::kHttpScheme,
-                           url::Component(0, strlen(content::kHttpScheme)));
+  if (stripped_destination_url.SchemeIs(url::kHttpsScheme)) {
+    replacements.SetScheme(url::kHttpScheme,
+                           url::Component(0, strlen(url::kHttpScheme)));
     needs_replacement = true;
   }
 

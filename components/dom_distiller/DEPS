@@ -3,6 +3,7 @@ include_rules = [
   "+jni",
   "+sync/api",
   "+sync/protocol",
+  "+third_party/dom_distiller_js",
   "+third_party/leveldatabase/src/include",
   "+net/base",
   "+net/http",
@@ -15,5 +16,4 @@ include_rules = [
   # http://www.chromium.org/developers/design-documents/layered-components-design
   "-components/dom_distiller",
   "+components/dom_distiller/core",
-  "-content/public",
 ]

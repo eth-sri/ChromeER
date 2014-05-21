@@ -6,6 +6,7 @@
 #include "base/values.h"
 #include "content/browser/frame_host/navigation_entry_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
+#include "content/browser/web_contents/web_contents_view.h"
 #include "content/public/browser/load_notification_details.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/notification_details.h"
@@ -14,7 +15,6 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents_observer.h"
-#include "content/public/browser/web_contents_view.h"
 #include "content/public/common/content_paths.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/content_browser_test.h"
@@ -40,7 +40,8 @@ void ResizeWebContentsView(Shell* shell, const gfx::Size& size,
   if (set_start_page)
     NavigateToURL(shell, GURL("about://blank"));
 #else
-  shell->web_contents()->GetView()->SizeContents(size);
+  static_cast<WebContentsImpl*>(shell->web_contents())->GetView()->
+      SizeContents(size);
 #endif  // defined(OS_MACOSX)
 }
 
@@ -113,8 +114,8 @@ class RenderViewSizeDelegate : public WebContentsDelegate {
 
   // WebContentsDelegate:
   virtual gfx::Size GetSizeForNewRenderView(
-      const WebContents* web_contents) const OVERRIDE {
-    gfx::Size size(web_contents->GetView()->GetContainerSize());
+      WebContents* web_contents) const OVERRIDE {
+    gfx::Size size(web_contents->GetContainerBounds().size());
     size.Enlarge(size_insets_.width(), size_insets_.height());
     return size;
   }
@@ -157,7 +158,7 @@ class LoadingStateChangedDelegate : public WebContentsDelegate {
       , loadingStateToDifferentDocumentCount_(0) {
   }
 
-  // WebContentsDelgate:
+  // WebContentsDelegate:
   virtual void LoadingStateChanged(WebContents* contents,
                                    bool to_different_document) OVERRIDE {
       loadingStateChangedCount_++;
@@ -284,7 +285,7 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
   // When no size is set, RenderWidgetHostView adopts the size of
   // WebContentsView.
   NavigateToURL(shell(), embedded_test_server()->GetURL("/title2.html"));
-  EXPECT_EQ(shell()->web_contents()->GetView()->GetContainerSize(),
+  EXPECT_EQ(shell()->web_contents()->GetContainerBounds().size(),
             shell()->web_contents()->GetRenderWidgetHostView()->GetViewBounds().
                 size());
 
@@ -308,7 +309,7 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
 #endif
 
   EXPECT_EQ(exp_wcv_size,
-            shell()->web_contents()->GetView()->GetContainerSize());
+            shell()->web_contents()->GetContainerBounds().size());
 
   // If WebContentsView is resized after RenderWidgetHostView is created but
   // before pending navigation entry is committed, both RenderWidgetHostView and
@@ -334,7 +335,7 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
       GetViewBounds().size();
 
   EXPECT_EQ(new_size, actual_size);
-  EXPECT_EQ(new_size, shell()->web_contents()->GetView()->GetContainerSize());
+  EXPECT_EQ(new_size, shell()->web_contents()->GetContainerBounds().size());
 }
 
 IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest, OpenURLSubframe) {
@@ -434,6 +435,84 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
   EXPECT_EQ("pushState", shell()->web_contents()->GetURL().ref());
   EXPECT_EQ(4, delegate->loadingStateChangedCount());
   EXPECT_EQ(3, delegate->loadingStateToDifferentDocumentCount());
+}
+
+IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
+                       RenderViewCreatedForChildWindow) {
+  ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
+
+  NavigateToURL(shell(),
+                embedded_test_server()->GetURL("/title1.html"));
+
+  WebContentsAddedObserver new_web_contents_observer;
+  ASSERT_TRUE(ExecuteScript(shell()->web_contents(),
+                            "var a = document.createElement('a');"
+                            "a.href='./title2.html';"
+                            "a.target = '_blank';"
+                            "document.body.appendChild(a);"
+                            "a.click();"));
+  WebContents* new_web_contents = new_web_contents_observer.GetWebContents();
+  WaitForLoadStop(new_web_contents);
+  EXPECT_TRUE(new_web_contents_observer.RenderViewCreatedCalled());
+}
+
+struct LoadProgressDelegateAndObserver : public WebContentsDelegate,
+                                         public WebContentsObserver {
+  LoadProgressDelegateAndObserver(Shell* shell)
+      : WebContentsObserver(shell->web_contents()),
+        did_start_loading(false),
+        did_stop_loading(false) {
+    web_contents()->SetDelegate(this);
+  }
+
+  // WebContentsDelegate:
+  virtual void LoadProgressChanged(WebContents* source,
+                                   double progress) OVERRIDE {
+    EXPECT_TRUE(did_start_loading);
+    EXPECT_FALSE(did_stop_loading);
+    progresses.push_back(progress);
+  }
+
+  // WebContentsObserver:
+  virtual void DidStartLoading(RenderViewHost* render_view_host) OVERRIDE {
+    EXPECT_FALSE(did_start_loading);
+    EXPECT_EQ(0U, progresses.size());
+    EXPECT_FALSE(did_stop_loading);
+    did_start_loading = true;
+  }
+
+  virtual void DidStopLoading(RenderViewHost* render_view_host) OVERRIDE {
+    EXPECT_TRUE(did_start_loading);
+    EXPECT_GE(progresses.size(), 1U);
+    EXPECT_FALSE(did_stop_loading);
+    did_stop_loading = true;
+  }
+
+  bool did_start_loading;
+  std::vector<double> progresses;
+  bool did_stop_loading;
+};
+
+IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest, LoadProgress) {
+  ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
+  scoped_ptr<LoadProgressDelegateAndObserver> delegate(
+      new LoadProgressDelegateAndObserver(shell()));
+
+  NavigateToURL(shell(), embedded_test_server()->GetURL("/title1.html"));
+
+  const std::vector<double>& progresses = delegate->progresses;
+  // All updates should be in order ...
+  if (std::adjacent_find(progresses.begin(),
+                         progresses.end(),
+                         std::greater<double>()) != progresses.end()) {
+    ADD_FAILURE() << "Progress values should be in order: "
+                  << ::testing::PrintToString(progresses);
+  }
+
+  // ... and the last one should be 1.0, meaning complete.
+  ASSERT_GE(progresses.size(), 1U)
+      << "There should be at least one progress update";
+  EXPECT_EQ(1.0, *progresses.rbegin());
 }
 
 }  // namespace content

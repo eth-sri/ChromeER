@@ -25,6 +25,7 @@
 #include "content/public/browser/dom_operation_notification_details.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_contents.h"
+#include "media/base/media_switches.h"
 #include "net/base/filename_util.h"
 #include "net/base/test_data_directory.h"
 #include "ppapi/shared_impl/ppapi_switches.h"
@@ -32,6 +33,7 @@
 
 using content::DomOperationNotificationDetails;
 using content::RenderViewHost;
+using content::TestMessageHandler;
 
 namespace {
 
@@ -279,7 +281,7 @@ void PPAPITestBase::RunTestURL(const GURL& test_url) {
   // any other value indicates completion (in this case it will start with
   // "PASS" or "FAIL"). This keeps us from timing out on waits for long tests.
   PPAPITestMessageHandler handler;
-  JavascriptTestObserver observer(
+  content::JavascriptTestObserver observer(
       browser()->tab_strip_model()->GetActiveWebContents(),
       &handler);
 

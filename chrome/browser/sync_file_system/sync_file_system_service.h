@@ -48,7 +48,7 @@ class SyncFileSystemService
       public content::NotificationObserver,
       public base::SupportsWeakPtr<SyncFileSystemService> {
  public:
-  typedef base::Callback<void(const base::ListValue* files)> DumpFilesCallback;
+  typedef base::Callback<void(const base::ListValue&)> DumpFilesCallback;
 
   // KeyedService overrides.
   virtual void Shutdown() OVERRIDE;
@@ -61,7 +61,7 @@ class SyncFileSystemService
   SyncServiceState GetSyncServiceState();
   void GetExtensionStatusMap(std::map<GURL, std::string>* status_map);
   void DumpFiles(const GURL& origin, const DumpFilesCallback& callback);
-  scoped_ptr<base::ListValue> DumpDatabase();
+  void DumpDatabase(const DumpFilesCallback& callback);
 
   // Returns the file |url|'s sync status.
   void GetFileSyncStatus(
@@ -103,6 +103,15 @@ class SyncFileSystemService
   void DidInitializeFileSystemForDump(const GURL& app_origin,
                                       const DumpFilesCallback& callback,
                                       SyncStatusCode status);
+  void DidDumpFiles(const GURL& app_origin,
+                    const DumpFilesCallback& callback,
+                    scoped_ptr<base::ListValue> files);
+
+  void DidDumpDatabase(const DumpFilesCallback& callback,
+                       scoped_ptr<base::ListValue> list);
+  void DidDumpV2Database(const DumpFilesCallback& callback,
+                         scoped_ptr<base::ListValue> v1list,
+                         scoped_ptr<base::ListValue> v2list);
 
   // Overrides sync_enabled_ setting. This should be called only by tests.
   void SetSyncEnabledForTesting(bool enabled);

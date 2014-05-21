@@ -21,23 +21,33 @@ namespace extensions {
 
 // Implementation of the chrome.automation API.
 class AutomationInternalEnableCurrentTabFunction
-    : public ChromeAsyncExtensionFunction {
+    : public ChromeUIThreadExtensionFunction {
   DECLARE_EXTENSION_FUNCTION("automationInternal.enableCurrentTab",
                              AUTOMATIONINTERNAL_ENABLECURRENTTAB)
  protected:
   virtual ~AutomationInternalEnableCurrentTabFunction() {}
 
-  virtual bool RunImpl() OVERRIDE;
+  virtual ExtensionFunction::ResponseAction Run() OVERRIDE;
 };
 
 class AutomationInternalPerformActionFunction
-    : public ChromeAsyncExtensionFunction {
+    : public UIThreadExtensionFunction {
   DECLARE_EXTENSION_FUNCTION("automationInternal.performAction",
                              AUTOMATIONINTERNAL_PERFORMACTION)
  protected:
   virtual ~AutomationInternalPerformActionFunction() {}
 
-  virtual bool RunImpl() OVERRIDE;
+  virtual ExtensionFunction::ResponseAction Run() OVERRIDE;
+};
+
+class AutomationInternalEnableDesktopFunction
+    : public UIThreadExtensionFunction {
+  DECLARE_EXTENSION_FUNCTION("automationInternal.enableDesktop",
+                             AUTOMATIONINTERNAL_ENABLEDESKTOP)
+ protected:
+  virtual ~AutomationInternalEnableDesktopFunction() {}
+
+  virtual ResponseAction Run() OVERRIDE;
 };
 
 }  // namespace extensions

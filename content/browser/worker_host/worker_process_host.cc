@@ -204,7 +204,7 @@ bool WorkerProcessHost::Init(int render_process_id, int render_frame_id) {
     switches::kDisableFileSystem,
     switches::kDisableSeccompFilterSandbox,
     switches::kEnableExperimentalWebPlatformFeatures,
-    switches::kEnableSharedWorkerMemoryInfo,
+    switches::kEnablePreciseMemoryInfo,
     switches::kEnableServiceWorker,
 #if defined(OS_MACOSX)
     switches::kEnableSandboxLogging,
@@ -373,9 +373,8 @@ void WorkerProcessHost::OnProcessLaunched() {
 }
 
 bool WorkerProcessHost::OnMessageReceived(const IPC::Message& message) {
-  bool msg_is_ok = true;
   bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP_EX(WorkerProcessHost, message, msg_is_ok)
+  IPC_BEGIN_MESSAGE_MAP(WorkerProcessHost, message)
     IPC_MESSAGE_HANDLER(WorkerHostMsg_WorkerContextClosed,
                         OnWorkerContextClosed)
     IPC_MESSAGE_HANDLER(WorkerHostMsg_WorkerContextDestroyed,
@@ -392,14 +391,7 @@ bool WorkerProcessHost::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(WorkerProcessHostMsg_ForceKillWorker,
                         OnForceKillWorkerProcess)
     IPC_MESSAGE_UNHANDLED(handled = false)
-  IPC_END_MESSAGE_MAP_EX()
-
-  if (!msg_is_ok) {
-    NOTREACHED();
-    RecordAction(base::UserMetricsAction("BadMessageTerminate_WPH"));
-    base::KillProcess(
-        process_->GetData().handle, RESULT_CODE_KILLED_BAD_MESSAGE, false);
-  }
+  IPC_END_MESSAGE_MAP()
 
   return handled;
 }
@@ -510,12 +502,12 @@ void WorkerProcessHost::RelayMessage(
     WorkerInstance* instance) {
   if (message.type() == WorkerMsg_Connect::ID) {
     // Crack the SharedWorker Connect message to setup routing for the port.
-    int sent_message_port_id;
-    int new_routing_id;
-    if (!WorkerMsg_Connect::Read(
-            &message, &sent_message_port_id, &new_routing_id)) {
+    WorkerMsg_Connect::Param params;
+    if (!WorkerMsg_Connect::Read(&message, &params))
       return;
-    }
+
+    int sent_message_port_id = params.a;
+    int new_routing_id = params.b;
     new_routing_id = worker_message_filter_->GetNextRoutingID();
     MessagePortService::GetInstance()->UpdateMessagePort(
         sent_message_port_id,

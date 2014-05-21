@@ -11,6 +11,7 @@
 #include "nacl_io/kernel_proxy.h"
 #include "nacl_io/kernel_wrap.h"
 #include "nacl_io/kernel_wrap_real.h"
+#include "nacl_io/log.h"
 #include "nacl_io/osmman.h"
 #include "nacl_io/ossocket.h"
 #include "nacl_io/pepper_interface.h"
@@ -26,6 +27,7 @@ using namespace nacl_io;
 
 struct KernelInterceptState {
   KernelProxy* kp;
+  PepperInterface* ppapi;
   bool kp_owned;
 };
 
@@ -41,11 +43,13 @@ int ki_push_state_for_testing() {
     return 1;
   s_saved_state = s_state;
   s_state.kp = NULL;
+  s_state.ppapi = NULL;
   s_state.kp_owned = false;
   return 0;
 }
 
 int ki_init(void* kp) {
+  LOG_TRACE("ki_init: %p", kp);
   return ki_init_ppapi(kp, 0, NULL);
 }
 
@@ -56,12 +60,16 @@ int ki_init_ppapi(void* kp,
   if (s_state.kp != NULL)
     return 1;
   PepperInterface* ppapi = NULL;
-  if (instance && get_browser_interface)
+  if (instance && get_browser_interface) {
     ppapi = new RealPepperInterface(instance, get_browser_interface);
-  return ki_init_interface(kp, ppapi);
+    s_state.ppapi = ppapi;
+  }
+  int rtn = ki_init_interface(kp, ppapi);
+  return rtn;
 }
 
 int ki_init_interface(void* kp, void* pepper_interface) {
+  LOG_TRACE("ki_init_interface: %p %p", kp, pepper_interface);
   assert(!s_state.kp);
   if (s_state.kp != NULL)
     return 1;
@@ -87,22 +95,26 @@ int ki_is_initialized() {
 }
 
 void ki_uninit() {
+  LOG_TRACE("ki_uninit");
   if (s_saved_state.kp == NULL)
     kernel_wrap_uninit();
 
   // If we are going to delete the KernelProxy don't do it
   // until we've swapped it out.
-  KernelProxy* delete_kp = s_state.kp_owned ? s_state.kp : NULL;
+  KernelInterceptState state_to_delete = s_state;
 
   // Swap out the KernelProxy. This will normally reset the
   // proxy to NULL, aside from in test code that has called
   // ki_push_state_for_testing().
   s_state = s_saved_state;
   s_saved_state.kp = NULL;
+  s_saved_state.ppapi = NULL;
   s_saved_state.kp_owned = false;
 
-  if (delete_kp)
-    delete delete_kp;
+  if (state_to_delete.kp_owned)
+    delete state_to_delete.kp;
+
+  delete state_to_delete.ppapi;
 }
 
 nacl_io::KernelProxy* ki_get_proxy() {

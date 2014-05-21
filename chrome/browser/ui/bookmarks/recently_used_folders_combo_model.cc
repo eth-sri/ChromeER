@@ -4,8 +4,8 @@
 
 #include "chrome/browser/ui/bookmarks/recently_used_folders_combo_model.h"
 
-#include "components/bookmarks/core/browser/bookmark_model.h"
-#include "components/bookmarks/core/browser/bookmark_utils.h"
+#include "components/bookmarks/browser/bookmark_model.h"
+#include "components/bookmarks/browser/bookmark_utils.h"
 #include "content/public/browser/user_metrics.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -180,8 +180,8 @@ void RecentlyUsedFoldersComboModel::BookmarkNodeRemoved(
     BookmarkModel* model,
     const BookmarkNode* parent,
     int old_index,
-    const BookmarkNode* node) {
-}
+    const BookmarkNode* node,
+    const std::set<GURL>& removed_urls) {}
 
 void RecentlyUsedFoldersComboModel::BookmarkNodeChanged(
     BookmarkModel* model,
@@ -199,7 +199,8 @@ void RecentlyUsedFoldersComboModel::BookmarkNodeChildrenReordered(
 }
 
 void RecentlyUsedFoldersComboModel::BookmarkAllNodesRemoved(
-    BookmarkModel* model) {
+    BookmarkModel* model,
+    const std::set<GURL>& removed_urls) {
   // Changing is rare enough that we don't attempt to readjust the contents.
   // Update |items_| so we aren't left pointing to a deleted node.
   bool changed = false;

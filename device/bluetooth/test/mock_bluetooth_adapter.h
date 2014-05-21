@@ -31,6 +31,8 @@ class MockBluetoothAdapter : public BluetoothAdapter {
 
   MockBluetoothAdapter();
 
+  virtual bool IsInitialized() const { return true; }
+
   MOCK_METHOD1(AddObserver, void(BluetoothAdapter::Observer*));
   MOCK_METHOD1(RemoveObserver, void(BluetoothAdapter::Observer*));
   MOCK_CONST_METHOD0(GetAddress, std::string());
@@ -39,7 +41,6 @@ class MockBluetoothAdapter : public BluetoothAdapter {
                void(const std::string& name,
                     const base::Closure& callback,
                     const ErrorCallback& error_callback));
-  MOCK_CONST_METHOD0(IsInitialized, bool());
   MOCK_CONST_METHOD0(IsPresent, bool());
   MOCK_CONST_METHOD0(IsPowered, bool());
   MOCK_METHOD3(SetPowered,
@@ -69,6 +70,17 @@ class MockBluetoothAdapter : public BluetoothAdapter {
   MOCK_METHOD1(RemovePairingDelegate,
                void(BluetoothDevice::PairingDelegate* pairing_delegate));
   MOCK_METHOD0(DefaultPairingDelegate, BluetoothDevice::PairingDelegate*());
+  MOCK_METHOD5(CreateRfcommService,
+               void(const BluetoothUUID& uuid,
+                    int channel,
+                    bool insecure,
+                    const CreateServiceCallback& callback,
+                    const CreateServiceErrorCallback& error_callback));
+  MOCK_METHOD4(CreateL2capService,
+               void(const BluetoothUUID& uuid,
+                    int psm,
+                    const CreateServiceCallback& callback,
+                    const CreateServiceErrorCallback& error_callback));
 
  protected:
   virtual void AddDiscoverySession(const base::Closure& callback,

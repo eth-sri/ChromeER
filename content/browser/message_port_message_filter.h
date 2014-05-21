@@ -23,11 +23,16 @@ class CONTENT_EXPORT MessagePortMessageFilter : public BrowserMessageFilter {
 
   // BrowserMessageFilter implementation.
   virtual void OnChannelClosing() OVERRIDE;
-  virtual bool OnMessageReceived(const IPC::Message& message,
-                                 bool* message_was_ok) OVERRIDE;
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
   virtual void OnDestruct() const OVERRIDE;
 
   int GetNextRoutingID();
+
+  // Updates message ports registered for |message_port_ids| and returns
+  // new routing IDs for the updated ports via |new_routing_ids|.
+  void UpdateMessagePortsWithNewRoutes(
+      const std::vector<int>& message_port_ids,
+      std::vector<int>* new_routing_ids);
 
  protected:
   // This is protected, so we can define sub classes for testing.

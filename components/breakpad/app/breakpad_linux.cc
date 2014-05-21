@@ -34,6 +34,7 @@
 #include "base/posix/global_descriptors.h"
 #include "base/process/memory.h"
 #include "base/strings/string_util.h"
+#include "breakpad/src/client/linux/crash_generation/crash_generation_client.h"
 #include "breakpad/src/client/linux/handler/exception_handler.h"
 #include "breakpad/src/client/linux/minidump_writer/directory_reader.h"
 #include "breakpad/src/common/linux/linux_libc_support.h"
@@ -200,16 +201,6 @@ size_t LengthWithoutTrailingSpaces(const char* str, size_t len) {
     len--;
   }
   return len;
-}
-
-// Populates the passed in allocated string and its size with the distro of
-// the crashing process.
-// The passed string is expected to be at least kDistroSize bytes long.
-void PopulateDistro(char* distro, size_t* distro_len_param) {
-  size_t distro_len = std::min(my_strlen(base::g_linux_distro), kDistroSize);
-  memcpy(distro, base::g_linux_distro, distro_len);
-  if (distro_len_param)
-    *distro_len_param = distro_len;
 }
 
 void SetClientIdFromCommandLine(const CommandLine& command_line) {
@@ -697,16 +688,13 @@ bool CrashDoneInProcessNoUpload(
   }
 
   // Start constructing the message to send to the browser.
-  char distro[kDistroSize + 1] = {0};
-  size_t distro_length = 0;
-  PopulateDistro(distro, &distro_length);
   BreakpadInfo info = {0};
   info.filename = NULL;
   info.fd = descriptor.fd();
   info.process_type = g_process_type;
   info.process_type_length = my_strlen(g_process_type);
-  info.distro = distro;
-  info.distro_length = distro_length;
+  info.distro = NULL;
+  info.distro_length = 0;
   info.upload = false;
   info.process_start_time = g_process_start_time;
   info.pid = g_pid;
@@ -768,88 +756,100 @@ void EnableNonBrowserCrashDumping(const std::string& process_type,
 }
 #else
 // Non-Browser = Extension, Gpu, Plugins, Ppapi and Renderer
-bool NonBrowserCrashHandler(const void* crash_context,
-                            size_t crash_context_size,
-                            void* context) {
-  const int fd = reinterpret_cast<intptr_t>(context);
-  int fds[2] = { -1, -1 };
-  if (sys_socketpair(AF_UNIX, SOCK_STREAM, 0, fds) < 0) {
-    static const char msg[] = "Failed to create socket for crash dumping.\n";
-    WriteLog(msg, sizeof(msg) - 1);
-    return false;
+class NonBrowserCrashHandler : public google_breakpad::CrashGenerationClient {
+ public:
+  NonBrowserCrashHandler()
+      : server_fd_(base::GlobalDescriptors::GetInstance()->Get(
+            kCrashDumpSignal)) {
   }
 
-  // Start constructing the message to send to the browser.
-  char distro[kDistroSize + 1] = {0};
-  PopulateDistro(distro, NULL);
+  virtual ~NonBrowserCrashHandler() {}
 
-  char b;  // Dummy variable for sys_read below.
-  const char* b_addr = &b;  // Get the address of |b| so we can create the
-                            // expected /proc/[pid]/syscall content in the
-                            // browser to convert namespace tids.
+  virtual bool RequestDump(const void* crash_context,
+                           size_t crash_context_size) OVERRIDE {
+    int fds[2] = { -1, -1 };
+    if (sys_socketpair(AF_UNIX, SOCK_STREAM, 0, fds) < 0) {
+      static const char msg[] = "Failed to create socket for crash dumping.\n";
+      WriteLog(msg, sizeof(msg) - 1);
+      return false;
+    }
 
-  // The length of the control message:
-  static const unsigned kControlMsgSize = sizeof(fds);
-  static const unsigned kControlMsgSpaceSize = CMSG_SPACE(kControlMsgSize);
-  static const unsigned kControlMsgLenSize = CMSG_LEN(kControlMsgSize);
+    // Start constructing the message to send to the browser.
+    char b;  // Dummy variable for sys_read below.
+    const char* b_addr = &b;  // Get the address of |b| so we can create the
+                              // expected /proc/[pid]/syscall content in the
+                              // browser to convert namespace tids.
 
-  struct kernel_msghdr msg;
-  my_memset(&msg, 0, sizeof(struct kernel_msghdr));
-  struct kernel_iovec iov[kCrashIovSize];
-  iov[0].iov_base = const_cast<void*>(crash_context);
-  iov[0].iov_len = crash_context_size;
-  iov[1].iov_base = distro;
-  iov[1].iov_len = kDistroSize + 1;
-  iov[2].iov_base = &b_addr;
-  iov[2].iov_len = sizeof(b_addr);
-  iov[3].iov_base = &fds[0];
-  iov[3].iov_len = sizeof(fds[0]);
-  iov[4].iov_base = &g_process_start_time;
-  iov[4].iov_len = sizeof(g_process_start_time);
-  iov[5].iov_base = &base::g_oom_size;
-  iov[5].iov_len = sizeof(base::g_oom_size);
-  google_breakpad::SerializedNonAllocatingMap* serialized_map;
-  iov[6].iov_len = g_crash_keys->Serialize(
-      const_cast<const google_breakpad::SerializedNonAllocatingMap**>(
-          &serialized_map));
-  iov[6].iov_base = serialized_map;
-#if defined(ADDRESS_SANITIZER)
-  iov[7].iov_base = const_cast<char*>(g_asan_report_str);
-  iov[7].iov_len = kMaxAsanReportSize + 1;
+    // The length of the control message:
+    static const unsigned kControlMsgSize = sizeof(int);
+    static const unsigned kControlMsgSpaceSize = CMSG_SPACE(kControlMsgSize);
+    static const unsigned kControlMsgLenSize = CMSG_LEN(kControlMsgSize);
+
+    struct kernel_msghdr msg;
+    my_memset(&msg, 0, sizeof(struct kernel_msghdr));
+    struct kernel_iovec iov[kCrashIovSize];
+    iov[0].iov_base = const_cast<void*>(crash_context);
+    iov[0].iov_len = crash_context_size;
+    iov[1].iov_base = &b_addr;
+    iov[1].iov_len = sizeof(b_addr);
+    iov[2].iov_base = &fds[0];
+    iov[2].iov_len = sizeof(fds[0]);
+    iov[3].iov_base = &g_process_start_time;
+    iov[3].iov_len = sizeof(g_process_start_time);
+    iov[4].iov_base = &base::g_oom_size;
+    iov[4].iov_len = sizeof(base::g_oom_size);
+    google_breakpad::SerializedNonAllocatingMap* serialized_map;
+    iov[5].iov_len = g_crash_keys->Serialize(
+        const_cast<const google_breakpad::SerializedNonAllocatingMap**>(
+            &serialized_map));
+    iov[5].iov_base = serialized_map;
+#if !defined(ADDRESS_SANITIZER)
+    COMPILE_ASSERT(5 == kCrashIovSize - 1, Incorrect_Number_Of_Iovec_Members);
+#else
+    iov[6].iov_base = const_cast<char*>(g_asan_report_str);
+    iov[6].iov_len = kMaxAsanReportSize + 1;
+    COMPILE_ASSERT(6 == kCrashIovSize - 1, Incorrect_Number_Of_Iovec_Members);
 #endif
 
-  msg.msg_iov = iov;
-  msg.msg_iovlen = kCrashIovSize;
-  char cmsg[kControlMsgSpaceSize];
-  my_memset(cmsg, 0, kControlMsgSpaceSize);
-  msg.msg_control = cmsg;
-  msg.msg_controllen = sizeof(cmsg);
+    msg.msg_iov = iov;
+    msg.msg_iovlen = kCrashIovSize;
+    char cmsg[kControlMsgSpaceSize];
+    my_memset(cmsg, 0, kControlMsgSpaceSize);
+    msg.msg_control = cmsg;
+    msg.msg_controllen = sizeof(cmsg);
 
-  struct cmsghdr *hdr = CMSG_FIRSTHDR(&msg);
-  hdr->cmsg_level = SOL_SOCKET;
-  hdr->cmsg_type = SCM_RIGHTS;
-  hdr->cmsg_len = kControlMsgLenSize;
-  ((int*) CMSG_DATA(hdr))[0] = fds[0];
-  ((int*) CMSG_DATA(hdr))[1] = fds[1];
+    struct cmsghdr *hdr = CMSG_FIRSTHDR(&msg);
+    hdr->cmsg_level = SOL_SOCKET;
+    hdr->cmsg_type = SCM_RIGHTS;
+    hdr->cmsg_len = kControlMsgLenSize;
+    ((int*)CMSG_DATA(hdr))[0] = fds[1];
 
-  if (HANDLE_EINTR(sys_sendmsg(fd, &msg, 0)) < 0) {
-    static const char errmsg[] = "Failed to tell parent about crash.\n";
-    WriteLog(errmsg, sizeof(errmsg) - 1);
+    if (HANDLE_EINTR(sys_sendmsg(server_fd_, &msg, 0)) < 0) {
+      static const char errmsg[] = "Failed to tell parent about crash.\n";
+      WriteLog(errmsg, sizeof(errmsg) - 1);
+      IGNORE_RET(sys_close(fds[0]));
+      IGNORE_RET(sys_close(fds[1]));
+      return false;
+    }
     IGNORE_RET(sys_close(fds[1]));
-    return false;
-  }
-  IGNORE_RET(sys_close(fds[1]));
 
-  if (HANDLE_EINTR(sys_read(fds[0], &b, 1)) != 1) {
-    static const char errmsg[] = "Parent failed to complete crash dump.\n";
-    WriteLog(errmsg, sizeof(errmsg) - 1);
+    if (HANDLE_EINTR(sys_read(fds[0], &b, 1)) != 1) {
+      static const char errmsg[] = "Parent failed to complete crash dump.\n";
+      WriteLog(errmsg, sizeof(errmsg) - 1);
+    }
+    IGNORE_RET(sys_close(fds[0]));
+
+    return true;
   }
 
-  return true;
-}
+ private:
+  // The pipe FD to the browser process, which will handle the crash dumping.
+  const int server_fd_;
+
+  DISALLOW_COPY_AND_ASSIGN(NonBrowserCrashHandler);
+};
 
 void EnableNonBrowserCrashDumping() {
-  const int fd = base::GlobalDescriptors::GetInstance()->Get(kCrashDumpSignal);
   g_is_crash_reporter_enabled = true;
   // We deliberately leak this object.
   DCHECK(!g_breakpad);
@@ -858,10 +858,10 @@ void EnableNonBrowserCrashDumping() {
       MinidumpDescriptor("/tmp"),  // Unused but needed or Breakpad will assert.
       NULL,
       NULL,
-      reinterpret_cast<void*>(fd),  // Param passed to the crash handler.
+      NULL,
       true,
       -1);
-  g_breakpad->set_crash_handler(NonBrowserCrashHandler);
+  g_breakpad->set_crash_generation_client(new NonBrowserCrashHandler());
 }
 #endif  // defined(OS_ANDROID)
 

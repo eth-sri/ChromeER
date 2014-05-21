@@ -36,6 +36,10 @@ using ::testing::StrictMock;
 
 namespace media {
 
+ACTION_P(RunClosure, closure) {
+  closure.Run();
+}
+
 MATCHER_P(HasTimestamp, ms, "") {
   *result_listener << "has timestamp " << arg->timestamp().InMilliseconds();
   return arg->timestamp().InMilliseconds() == ms;
@@ -80,6 +84,10 @@ class VideoRendererImplTest : public ::testing::Test {
   MOCK_METHOD1(OnTimeUpdate, void(base::TimeDelta));
 
   void Initialize() {
+    InitializeWithLowDelay(false);
+  }
+
+  void InitializeWithLowDelay(bool low_delay) {
     // Monitor decodes from the decoder.
     EXPECT_CALL(*decoder_, Decode(_, _))
         .WillRepeatedly(Invoke(this, &VideoRendererImplTest::FrameRequested));
@@ -96,20 +104,20 @@ class VideoRendererImplTest : public ::testing::Test {
     renderer_->SetPlaybackRate(1.0f);
 
     // Initialize, we shouldn't have any reads.
-    InitializeRenderer(PIPELINE_OK);
+    InitializeRenderer(PIPELINE_OK, low_delay);
   }
 
-  void InitializeRenderer(PipelineStatus expected) {
+  void InitializeRenderer(PipelineStatus expected, bool low_delay) {
     SCOPED_TRACE(base::StringPrintf("InitializeRenderer(%d)", expected));
     WaitableMessageLoopEvent event;
-    CallInitialize(event.GetPipelineStatusCB());
+    CallInitialize(event.GetPipelineStatusCB(), low_delay);
     event.RunAndWaitForStatus(expected);
   }
 
-  void CallInitialize(const PipelineStatusCB& status_cb) {
+  void CallInitialize(const PipelineStatusCB& status_cb, bool low_delay) {
     renderer_->Initialize(
         &demuxer_stream_,
-        false,
+        low_delay,
         status_cb,
         base::Bind(&MockStatisticsCB::OnStatistics,
                    base::Unretained(&statistics_cb_object_)),
@@ -138,13 +146,6 @@ class VideoRendererImplTest : public ::testing::Test {
     event.RunAndWaitForStatus(expected);
   }
 
-  void Pause() {
-    SCOPED_TRACE("Pause()");
-    WaitableMessageLoopEvent event;
-    renderer_->Pause(event.GetClosure());
-    event.RunAndWait();
-  }
-
   void Flush() {
     SCOPED_TRACE("Flush()");
     WaitableMessageLoopEvent event;
@@ -160,7 +161,6 @@ class VideoRendererImplTest : public ::testing::Test {
   }
 
   void Shutdown() {
-    Pause();
     Flush();
     Stop();
   }
@@ -216,6 +216,10 @@ class VideoRendererImplTest : public ::testing::Test {
 
       CHECK(false) << "Unrecognized decoder buffer token: " << tokens[i];
     }
+  }
+
+  bool IsReadPending() {
+    return !read_cb_.is_null();
   }
 
   void WaitForError(PipelineStatus expected) {
@@ -376,7 +380,7 @@ static void ExpectNotCalled(PipelineStatus) {
 TEST_F(VideoRendererImplTest, StopWhileInitializing) {
   EXPECT_CALL(*decoder_, Initialize(_, _, _))
       .WillOnce(RunCallback<2>(PIPELINE_OK));
-  CallInitialize(base::Bind(&ExpectNotCalled));
+  CallInitialize(base::Bind(&ExpectNotCalled), false);
   Stop();
 
   // ~VideoRendererImpl() will CHECK() if we left anything initialized.
@@ -384,7 +388,6 @@ TEST_F(VideoRendererImplTest, StopWhileInitializing) {
 
 TEST_F(VideoRendererImplTest, StopWhileFlushing) {
   Initialize();
-  Pause();
   renderer_->Flush(base::Bind(&ExpectNotCalled, PIPELINE_OK));
   Stop();
 
@@ -413,6 +416,7 @@ TEST_F(VideoRendererImplTest, EndOfStream_ClipDuration) {
 
   // Queue the end of stream frame and wait for the last frame to be rendered.
   QueueFrames("eos");
+  SatisfyPendingRead();
   EXPECT_CALL(mock_display_cb_, Display(HasTimestamp(kVideoDurationInMs)));
   AdvanceTimeInMs(kVideoDurationInMs);
   WaitForEnded();
@@ -428,8 +432,7 @@ TEST_F(VideoRendererImplTest, DecodeError_Playing) {
   Play();
 
   QueueFrames("error");
-  EXPECT_CALL(mock_display_cb_, Display(HasTimestamp(10)));
-  AdvanceTimeInMs(10);
+  SatisfyPendingRead();
   WaitForError(PIPELINE_ERROR_DECODE);
   Shutdown();
 }
@@ -468,6 +471,27 @@ TEST_F(VideoRendererImplTest, Preroll_RightAfter) {
   Shutdown();
 }
 
+TEST_F(VideoRendererImplTest, Preroll_LowDelay) {
+  // In low-delay mode only one frame is required to finish preroll.
+  InitializeWithLowDelay(true);
+  QueueFrames("0");
+
+  EXPECT_CALL(mock_display_cb_, Display(HasTimestamp(0)));
+  Preroll(0, PIPELINE_OK);
+  Play();
+
+  QueueFrames("10");
+  SatisfyPendingRead();
+
+  WaitableMessageLoopEvent event;
+  EXPECT_CALL(mock_display_cb_, Display(HasTimestamp(10)))
+      .WillOnce(RunClosure(event.GetClosure()));
+  AdvanceTimeInMs(10);
+  event.RunAndWait();
+
+  Shutdown();
+}
+
 TEST_F(VideoRendererImplTest, PlayAfterPreroll) {
   Initialize();
   QueueFrames("0 10 20 30");
@@ -475,10 +499,9 @@ TEST_F(VideoRendererImplTest, PlayAfterPreroll) {
   Preroll(0, PIPELINE_OK);
   Play();
 
-  // Advance time past prerolled time to trigger a Read().
-  EXPECT_CALL(mock_display_cb_, Display(HasTimestamp(10)));
-  AdvanceTimeInMs(10);
-  WaitForPendingRead();
+  // Check that there is an outstanding Read() request.
+  EXPECT_TRUE(IsReadPending());
+
   Shutdown();
 }
 
@@ -493,9 +516,7 @@ TEST_F(VideoRendererImplTest, Rebuffer) {
   AdvanceTimeInMs(50);
   WaitForPendingRead();
 
-  // Simulate a Pause/Preroll/Play rebuffer sequence.
-  Pause();
-
+  // Simulate a Preroll/Play rebuffer sequence.
   WaitableMessageLoopEvent event;
   renderer_->Preroll(kNoTimestamp(),
                      event.GetPipelineStatusCB());
@@ -524,11 +545,11 @@ TEST_F(VideoRendererImplTest, Rebuffer_AlreadyHaveEnoughFrames) {
   // Queue an extra frame so that we'll have enough frames to satisfy
   // preroll even after the first frame is painted.
   QueueFrames("40");
+  SatisfyPendingRead();
   Play();
 
-  // Simulate a Pause/Preroll/Play rebuffer sequence.
-  Pause();
-
+  // Simulate a Preroll/Play rebuffer sequence.
+  //
   // TODO(scherkus): We shouldn't display the next ready frame in a rebuffer
   // situation, see http://crbug.com/365516
   EXPECT_CALL(mock_display_cb_, Display(_)).Times(AtLeast(1));
@@ -552,10 +573,8 @@ TEST_F(VideoRendererImplTest, StopDuringOutstandingRead) {
   Preroll(0, PIPELINE_OK);
   Play();
 
-  // Advance time a bit to trigger a Read().
-  EXPECT_CALL(mock_display_cb_, Display(HasTimestamp(10)));
-  AdvanceTimeInMs(10);
-  WaitForPendingRead();
+  // Check that there is an outstanding Read() request.
+  EXPECT_TRUE(IsReadPending());
 
   WaitableMessageLoopEvent event;
   renderer_->Stop(event.GetClosure());
@@ -569,14 +588,12 @@ TEST_F(VideoRendererImplTest, AbortPendingRead_Playing) {
   Preroll(0, PIPELINE_OK);
   Play();
 
-  // Advance time a bit to trigger a Read().
-  EXPECT_CALL(mock_display_cb_, Display(HasTimestamp(10)));
-  AdvanceTimeInMs(10);
-  WaitForPendingRead();
+  // Check that there is an outstanding Read() request.
+  EXPECT_TRUE(IsReadPending());
+
   QueueFrames("abort");
   SatisfyPendingRead();
 
-  Pause();
   Flush();
   QueueFrames("60 70 80 90");
   EXPECT_CALL(mock_display_cb_, Display(HasTimestamp(60)));
@@ -591,12 +608,9 @@ TEST_F(VideoRendererImplTest, AbortPendingRead_Flush) {
   Preroll(0, PIPELINE_OK);
   Play();
 
-  // Advance time a bit to trigger a Read().
-  EXPECT_CALL(mock_display_cb_, Display(HasTimestamp(10)));
-  AdvanceTimeInMs(10);
-  WaitForPendingRead();
+  // Check that there is an outstanding Read() request.
+  EXPECT_TRUE(IsReadPending());
 
-  Pause();
   Flush();
   Shutdown();
 }
@@ -614,7 +628,7 @@ TEST_F(VideoRendererImplTest, VideoDecoder_InitFailure) {
 
   EXPECT_CALL(*decoder_, Initialize(_, _, _))
       .WillOnce(RunCallback<2>(DECODER_ERROR_NOT_SUPPORTED));
-  InitializeRenderer(DECODER_ERROR_NOT_SUPPORTED);
+  InitializeRenderer(DECODER_ERROR_NOT_SUPPORTED, false);
 
   Stop();
 }

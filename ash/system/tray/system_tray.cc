@@ -61,6 +61,7 @@
 #include "ash/system/chromeos/tray_caps_lock.h"
 #include "ash/system/chromeos/tray_display.h"
 #include "ash/system/chromeos/tray_tracing.h"
+#include "ash/system/tray/media_security/multi_profile_media_tray_item.h"
 #include "ui/message_center/message_center.h"
 #elif defined(OS_WIN)
 #include "ash/system/win/audio/tray_audio_win.h"
@@ -152,9 +153,6 @@ void SystemTray::InitializeTrayItems(SystemTrayDelegate* delegate) {
 }
 
 void SystemTray::CreateItems(SystemTrayDelegate* delegate) {
-#if defined(OS_CHROMEOS)
-  AddTrayItem(new TraySessionLengthLimit(this));
-#endif
 #if !defined(OS_WIN)
   // Create user items for each possible user.
   ash::Shell* shell = ash::Shell::GetInstance();
@@ -174,6 +172,7 @@ void SystemTray::CreateItems(SystemTrayDelegate* delegate) {
   tray_date_ = new TrayDate(this);
 
 #if defined(OS_CHROMEOS)
+  AddTrayItem(new TraySessionLengthLimit(this));
   AddTrayItem(new TrayEnterprise(this));
   AddTrayItem(new TrayLocallyManagedUser(this));
   AddTrayItem(new TrayIME(this));
@@ -188,6 +187,7 @@ void SystemTray::CreateItems(SystemTrayDelegate* delegate) {
   AddTrayItem(new TrayDisplay(this));
   AddTrayItem(new ScreenCaptureTrayItem(this));
   AddTrayItem(new ScreenShareTrayItem(this));
+  AddTrayItem(new MultiProfileMediaTrayItem(this));
   AddTrayItem(new TrayAudioChromeOs(this));
   AddTrayItem(new TrayBrightness(this));
   AddTrayItem(new TrayCapsLock(this));
@@ -666,7 +666,7 @@ base::string16 SystemTray::GetAccessibleNameForBubble() {
 gfx::Rect SystemTray::GetAnchorRect(
     views::Widget* anchor_widget,
     TrayBubbleView::AnchorType anchor_type,
-    TrayBubbleView::AnchorAlignment anchor_alignment) {
+    TrayBubbleView::AnchorAlignment anchor_alignment) const {
   return GetBubbleAnchorRect(anchor_widget, anchor_type, anchor_alignment);
 }
 

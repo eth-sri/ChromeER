@@ -484,10 +484,6 @@ class VIEWS_EXPORT HWNDMessageHandler :
 
   bool use_system_default_icon_;
 
-  // Whether the focus should be restored next time we get enabled.  Needed to
-  // restore focus correctly when Windows modal dialogs are displayed.
-  bool restore_focus_when_enabled_;
-
   // Whether all ancestors have been enabled. This is only used if is_modal_ is
   // true.
   bool restored_enabled_;
@@ -589,12 +585,12 @@ class VIEWS_EXPORT HWNDMessageHandler :
   // class. Allows callers to retrieve the interface pointer.
   scoped_ptr<ui::ViewProp> prop_window_target_;
 
-  // Set to true if we are in the context of a touch down event. This is reset
-  // to false in a delayed task. Defaults to false.
+  // Number of active touch down contexts. This is incremented on touch down
+  // events and decremented later using a delayed task.
   // We need this to ignore WM_MOUSEACTIVATE messages generated in response to
   // touch input. This is fine because activation still works correctly via
   // native SetFocus calls invoked in the views code.
-  bool touch_down_context_;
+  int touch_down_contexts_;
 
   // Time the last touch message was received. Used to flag mouse messages
   // synthesized by Windows for touch which are not flagged by the OS as

@@ -113,6 +113,12 @@
       'sources': [
         'test/fake_server/bookmark_entity.cc',
         'test/fake_server/bookmark_entity.h',
+        'test/fake_server/bookmark_entity_builder.cc',
+        'test/fake_server/bookmark_entity_builder.h',
+        'test/fake_server/entity_builder.cc',
+        'test/fake_server/entity_builder.h',
+        'test/fake_server/entity_builder_factory.cc',
+        'test/fake_server/entity_builder_factory.h',
         'test/fake_server/fake_server.cc',
         'test/fake_server/fake_server.h',
         'test/fake_server/fake_server_entity.cc',
@@ -296,6 +302,7 @@
           'engine/sync_scheduler_unittest.cc',
           'engine/syncer_proto_util_unittest.cc',
           'engine/syncer_unittest.cc',
+          'engine/syncer_util_unittest.cc',
           'js/js_event_details_unittest.cc',
           'js/sync_js_controller_unittest.cc',
           'protocol/proto_enum_conversions_unittest.cc',
@@ -418,6 +425,9 @@
           '..',
         ],
         'sources': [
+          'internal_api/attachments/attachment_uploader_impl_unittest.cc',
+          'internal_api/attachments/fake_attachment_store_unittest.cc',
+          'internal_api/attachments/fake_attachment_uploader_unittest.cc',
           'internal_api/debug_info_event_listener_unittest.cc',
           'internal_api/http_bridge_unittest.cc',
           'internal_api/js_mutation_event_observer_unittest.cc',
@@ -429,7 +439,7 @@
           'internal_api/sync_backup_manager_unittest.cc',
           'internal_api/sync_core_proxy_impl_unittest.cc',
           'internal_api/sync_encryption_handler_impl_unittest.cc',
-          'internal_api/sync_manager_impl_unittest.cc',          
+          'internal_api/sync_manager_impl_unittest.cc',
           'internal_api/sync_rollback_manager_base_unittest.cc',
           'internal_api/sync_rollback_manager_unittest.cc',
           'internal_api/syncapi_server_connection_manager_unittest.cc',
@@ -475,7 +485,6 @@
           'api/attachments/attachment_unittest.cc',
           'api/attachments/attachment_id_unittest.cc',
           'api/attachments/attachment_service_proxy_unittest.cc',
-          'api/attachments/fake_attachment_store_unittest.cc',
           'api/sync_change_unittest.cc',
           'api/sync_data_unittest.cc',
           'api/sync_error_unittest.cc',
@@ -504,13 +513,12 @@
         # TODO(akalin): This is needed because histogram.cc uses
         # leak_annotations.h, which pulls this in.  Make 'base'
         # propagate this dependency.
-        # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
-        ['OS=="linux" and ((use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1))', {
+        ['OS=="linux" and use_allocator!="none"', {
           'dependencies': [
             '../base/allocator/allocator.gyp:allocator',
           ],
         }],
-        ['OS == "android" and gtest_target_type == "shared_library"', {
+        ['OS == "android"', {
           'dependencies': [
             '../testing/android/native_test.gyp:native_test_native_code',
           ],
@@ -598,27 +606,6 @@
           ],
         },
 
-        # A standalone executable that runs a Sync FakeServer instance.
-        {
-          'target_name': 'run_sync_fake_server',
-          'type': 'executable',
-          'dependencies': [
-            '../base/base.gyp:base',
-            '../base/base.gyp:test_support_base',
-            '../net/net.gyp:http_server',
-            '../net/net.gyp:net',
-            '../net/net.gyp:net_test_support',
-            '../testing/gtest.gyp:gtest',
-            '../url/url.gyp:url_lib',
-            'test_support_sync_fake_server',
-          ],
-          'sources': [
-            'test/fake_server/run_sync_fake_server.cc',
-            'test/fake_server/fake_sync_server_http_handler.cc',
-            'test/fake_server/fake_sync_server_http_handler.h',
-          ],
-        },
-
         # A tool to listen to sync notifications and print them out.
         {
           'target_name': 'sync_listen_notifications',
@@ -690,9 +677,7 @@
         },
       ],
     }],
-    # Special target to wrap a gtest_target_type==shared_library
-    # sync_unit_tests into an android apk for execution.
-    ['OS == "android" and gtest_target_type == "shared_library"', {
+    ['OS == "android"', {
       'targets': [
         {
           'target_name': 'sync_unit_tests_apk',

@@ -6,19 +6,21 @@
 #include <vector>
 
 #include "base/memory/scoped_ptr.h"
+#include "base/message_loop/message_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
+#include "content/child/child_process.h"
 #include "content/renderer/media/media_stream.h"
 #include "content/renderer/media/media_stream_audio_source.h"
 #include "content/renderer/media/media_stream_source.h"
 #include "content/renderer/media/media_stream_video_track.h"
-#include "content/renderer/media/mock_media_stream_dependency_factory.h"
 #include "content/renderer/media/mock_media_stream_video_source.h"
 #include "content/renderer/media/mock_peer_connection_impl.h"
 #include "content/renderer/media/mock_web_rtc_peer_connection_handler_client.h"
 #include "content/renderer/media/peer_connection_tracker.h"
 #include "content/renderer/media/rtc_media_constraints.h"
 #include "content/renderer/media/rtc_peer_connection_handler.h"
+#include "content/renderer/media/webrtc/mock_peer_connection_dependency_factory.h"
 #include "content/renderer/media/webrtc/webrtc_local_audio_track_adapter.h"
 #include "content/renderer/media/webrtc_audio_capturer.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -185,7 +187,7 @@ class RTCPeerConnectionHandlerUnderTest : public RTCPeerConnectionHandler {
  public:
   RTCPeerConnectionHandlerUnderTest(
       WebRTCPeerConnectionHandlerClient* client,
-      MediaStreamDependencyFactory* dependency_factory)
+      PeerConnectionDependencyFactory* dependency_factory)
       : RTCPeerConnectionHandler(client, dependency_factory) {
   }
 
@@ -198,11 +200,12 @@ class RTCPeerConnectionHandlerUnderTest : public RTCPeerConnectionHandler {
 class RTCPeerConnectionHandlerTest : public ::testing::Test {
  public:
   RTCPeerConnectionHandlerTest() : mock_peer_connection_(NULL) {
+    child_process_.reset(new ChildProcess());
   }
 
   virtual void SetUp() {
     mock_client_.reset(new NiceMock<MockWebRTCPeerConnectionHandlerClient>());
-    mock_dependency_factory_.reset(new MockMediaStreamDependencyFactory());
+    mock_dependency_factory_.reset(new MockPeerConnectionDependencyFactory());
     pc_handler_.reset(
         new RTCPeerConnectionHandlerUnderTest(mock_client_.get(),
                                               mock_dependency_factory_.get()));
@@ -285,8 +288,9 @@ class RTCPeerConnectionHandlerTest : public ::testing::Test {
   }
 
   base::MessageLoop message_loop_;
+  scoped_ptr<ChildProcess> child_process_;
   scoped_ptr<MockWebRTCPeerConnectionHandlerClient> mock_client_;
-  scoped_ptr<MockMediaStreamDependencyFactory> mock_dependency_factory_;
+  scoped_ptr<MockPeerConnectionDependencyFactory> mock_dependency_factory_;
   scoped_ptr<NiceMock<MockPeerConnectionTracker> > mock_tracker_;
   scoped_ptr<RTCPeerConnectionHandlerUnderTest> pc_handler_;
 

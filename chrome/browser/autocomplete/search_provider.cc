@@ -7,13 +7,16 @@
 #include <algorithm>
 #include <cmath>
 
+#include "base/base64.h"
 #include "base/callback.h"
+#include "base/command_line.h"
 #include "base/i18n/break_iterator.h"
 #include "base/i18n/case_conversion.h"
 #include "base/json/json_string_value_serializer.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/prefs/pref_service.h"
+#include "base/rand_util.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier.h"
@@ -34,6 +37,7 @@
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/ui/search/instant_controller.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/user_metrics.h"
@@ -46,7 +50,6 @@
 #include "net/url_request/url_request_status.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "url/url_util.h"
-
 
 // Helpers --------------------------------------------------------------------
 
@@ -559,8 +562,8 @@ bool SearchProvider::IsQuerySuitableForSuggest() const {
   // and happens to currently be invalid -- in which case we again want to run
   // our checks below.  Other QUERY cases are less likely to be URLs and thus we
   // assume we're OK.
-  if (!LowerCaseEqualsASCII(input_.scheme(), content::kHttpScheme) &&
-      !LowerCaseEqualsASCII(input_.scheme(), content::kHttpsScheme) &&
+  if (!LowerCaseEqualsASCII(input_.scheme(), url::kHttpScheme) &&
+      !LowerCaseEqualsASCII(input_.scheme(), url::kHttpsScheme) &&
       !LowerCaseEqualsASCII(input_.scheme(), content::kFtpScheme))
     return (input_.type() == AutocompleteInput::QUERY);
 
@@ -582,7 +585,7 @@ bool SearchProvider::IsQuerySuitableForSuggest() const {
   // Don't send anything for https except the hostname.  Hostnames are OK
   // because they are visible when the TCP connection is established, but the
   // specific path may reveal private information.
-  if (LowerCaseEqualsASCII(input_.scheme(), content::kHttpsScheme) &&
+  if (LowerCaseEqualsASCII(input_.scheme(), url::kHttpsScheme) &&
       parts.path.is_nonempty())
     return false;
 
@@ -638,6 +641,9 @@ net::URLFetcher* SearchProvider::CreateSuggestFetcher(
   TemplateURLRef::SearchTermsArgs search_term_args(input.text());
   search_term_args.cursor_position = input.cursor_position();
   search_term_args.page_classification = input.current_page_classification();
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableAnswersInSuggest))
+    search_term_args.session_token = GetSessionToken();
   GURL suggest_url(template_url->suggestions_url_ref().ReplaceSearchTerms(
       search_term_args));
   if (!suggest_url.is_valid())
@@ -691,8 +697,9 @@ void SearchProvider::ConvertResultsToAutocompleteMatches() {
         base::CollapseWhitespace(input_.text(), false);
     SuggestResult verbatim(
         trimmed_verbatim, AutocompleteMatchType::SEARCH_WHAT_YOU_TYPED,
-        trimmed_verbatim, base::string16(), base::string16(), std::string(),
-        std::string(), false, verbatim_relevance, relevance_from_server, false,
+        trimmed_verbatim, base::string16(), base::string16(), base::string16(),
+        base::string16(), std::string(), std::string(), false,
+        verbatim_relevance, relevance_from_server, false,
         trimmed_verbatim);
     AddMatchToMap(verbatim, std::string(), did_not_accept_default_suggestion,
                   false, &map);
@@ -716,8 +723,9 @@ void SearchProvider::ConvertResultsToAutocompleteMatches() {
         SuggestResult verbatim(
             trimmed_verbatim, AutocompleteMatchType::SEARCH_OTHER_ENGINE,
             trimmed_verbatim, base::string16(), base::string16(),
-            std::string(), std::string(), true, keyword_verbatim_relevance,
-            keyword_relevance_from_server, false, trimmed_verbatim);
+            base::string16(), base::string16(), std::string(), std::string(),
+            true, keyword_verbatim_relevance, keyword_relevance_from_server,
+            false, trimmed_verbatim);
         AddMatchToMap(verbatim, std::string(),
                       did_not_accept_keyword_suggestion, false, &map);
       }
@@ -807,7 +815,8 @@ bool SearchProvider::IsTopMatchSearchWithURLInput() const {
   return (input_.type() == AutocompleteInput::URL) &&
       (first_match != matches_.end()) &&
       (first_match->relevance > CalculateRelevanceForVerbatim()) &&
-      (first_match->type != AutocompleteMatchType::NAVSUGGEST);
+      (first_match->type != AutocompleteMatchType::NAVSUGGEST) &&
+      (first_match->type != AutocompleteMatchType::NAVSUGGEST_PERSONALIZED);
 }
 
 void SearchProvider::AddNavigationResultsToMatches(
@@ -918,8 +927,9 @@ SearchProvider::SuggestResults SearchProvider::ScoreHistoryResults(
         prevent_search_history_inlining);
     scored_results.push_back(SuggestResult(
         trimmed_suggestion, AutocompleteMatchType::SEARCH_HISTORY,
-        trimmed_suggestion, base::string16(), base::string16(), std::string(),
-        std::string(), is_keyword, relevance, false, false, trimmed_input));
+        trimmed_suggestion, base::string16(), base::string16(),
+        base::string16(), base::string16(), std::string(), std::string(),
+        is_keyword, relevance, false, false, trimmed_input));
   }
 
   // History returns results sorted for us.  However, we may have docked some
@@ -1063,9 +1073,9 @@ AutocompleteMatch SearchProvider::NavigationToMatch(
           keyword_input_.text() : input_.text(),
       base::TRIM_TRAILING, &input) != base::TRIM_NONE;
   AutocompleteMatch match(this, navigation.relevance(), false,
-                          AutocompleteMatchType::NAVSUGGEST);
+                          navigation.type());
   match.destination_url = navigation.url();
-
+  BaseSearchProvider::SetDeletionURL(navigation.deletion_url(), &match);
   // First look for the user's input inside the formatted url as it would be
   // without trimming the scheme, so we can find matches at the beginning of the
   // scheme.
@@ -1110,7 +1120,7 @@ AutocompleteMatch SearchProvider::NavigationToMatch(
   match.allowed_to_be_default_match = navigation.IsInlineable(input) &&
       (providers_.GetKeywordProviderURL() == NULL) &&
       (match.inline_autocompletion.empty() ||
-       (!input_.prevent_inline_autocomplete() && !trimmed_whitespace));
+      (!input_.prevent_inline_autocomplete() && !trimmed_whitespace));
 
   match.contents = navigation.match_contents();
   match.contents_class = navigation.match_contents_class();
@@ -1130,4 +1140,24 @@ void SearchProvider::UpdateDone() {
   // We're done when the timer isn't running, there are no suggest queries
   // pending, and we're not waiting on Instant.
   done_ = !timer_.IsRunning() && (suggest_results_pending_ == 0);
+}
+
+std::string SearchProvider::GetSessionToken() {
+  base::TimeTicks current_time(base::TimeTicks::Now());
+  // Renew token if it expired.
+  if (current_time > token_expiration_time_) {
+    const size_t kTokenBytes = 12;
+    std::string raw_data;
+    base::RandBytes(WriteInto(&raw_data, kTokenBytes + 1), kTokenBytes);
+    base::Base64Encode(raw_data, &current_token_);
+
+    // Make the base64 encoded value URL and filename safe(see RFC 3548).
+    std::replace(current_token_.begin(), current_token_.end(), '+', '-');
+    std::replace(current_token_.begin(), current_token_.end(), '/', '_');
+  }
+
+  // Extend expiration time another 60 seconds.
+  token_expiration_time_ = current_time + base::TimeDelta::FromSeconds(60);
+
+  return current_token_;
 }

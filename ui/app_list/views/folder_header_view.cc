@@ -4,6 +4,8 @@
 
 #include "ui/app_list/views/folder_header_view.h"
 
+#include <algorithm>
+
 #include "base/strings/utf_string_conversions.h"
 #include "grit/ui_resources.h"
 #include "grit/ui_strings.h"
@@ -146,7 +148,7 @@ bool FolderHeaderView::IsFolderNameEnabledForTest() const {
   return folder_name_view_->enabled();
 }
 
-gfx::Size FolderHeaderView::GetPreferredSize() {
+gfx::Size FolderHeaderView::GetPreferredSize() const {
   return gfx::Size(kPreferredWidth, kPreferredHeight);
 }
 

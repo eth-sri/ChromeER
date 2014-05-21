@@ -10,9 +10,11 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/time/time.h"
 #include "google_apis/gcm/base/gcm_export.h"
 #include "net/base/backoff_entry.h"
 #include "net/url_request/url_fetcher_delegate.h"
+#include "url/gurl.h"
 
 namespace net {
 class URLRequestContextGetter;
@@ -72,6 +74,7 @@ class GCM_EXPORT UnregistrationRequest : public net::URLFetcherDelegate {
   // once registration has been revoked or there has been an error that makes
   // further retries pointless.
   UnregistrationRequest(
+      const GURL& registration_url,
       const RequestInfo& request_info,
       const net::BackoffEntry::Policy& backoff_policy,
       const UnregistrationCallback& callback,
@@ -92,10 +95,12 @@ class GCM_EXPORT UnregistrationRequest : public net::URLFetcherDelegate {
 
   UnregistrationCallback callback_;
   RequestInfo request_info_;
+  GURL registration_url_;
 
   net::BackoffEntry backoff_entry_;
   scoped_refptr<net::URLRequestContextGetter> request_context_getter_;
   scoped_ptr<net::URLFetcher> url_fetcher_;
+  base::TimeTicks request_start_time_;
 
   // Recorder that records GCM activities for debugging purpose. Not owned.
   GCMStatsRecorder* recorder_;

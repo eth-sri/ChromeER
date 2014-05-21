@@ -124,6 +124,14 @@ def JavaDataTypeToC(java_type):
     return 'jobject'
 
 
+def JavaDataTypeToCForCalledByNativeParam(java_type):
+  """Returns a C datatype to be when calling from native."""
+  if java_type == 'int':
+    return 'JniIntWrapper'
+  else:
+    return JavaDataTypeToC(java_type)
+
+
 def JavaReturnValueToC(java_type):
   """Returns a valid C return value for the given java type."""
   java_pod_type_map = {
@@ -146,6 +154,7 @@ class JniParams(object):
   _package = ''
   _inner_classes = []
   _remappings = []
+  _implicit_imports = []
 
   @staticmethod
   def SetFullyQualifiedClass(fully_qualified_class):
@@ -154,6 +163,9 @@ class JniParams(object):
 
   @staticmethod
   def ExtractImportsAndInnerClasses(contents):
+    if not JniParams._package:
+      raise RuntimeError('SetFullyQualifiedClass must be called before '
+                         'ExtractImportsAndInnerClasses')
     contents = contents.replace('\n', '')
     re_import = re.compile(r'import.*?(?P<class>\S*?);')
     for match in re.finditer(re_import, contents):
@@ -165,6 +177,19 @@ class JniParams(object):
       if not JniParams._fully_qualified_class.endswith(inner):
         JniParams._inner_classes += [JniParams._fully_qualified_class + '$' +
                                      inner]
+
+    re_additional_imports = re.compile(
+        r'@JNIAdditionalImport\((?P<class_name>\w+?)\.class\)')
+    for match in re.finditer(re_additional_imports, contents):
+      class_name = match.group('class_name')
+      if '.' in class_name:
+        raise SyntaxError('*.class cannot be used in @JNIAdditionalImport. '
+                          'Only import unqualified outer classes.' % class_name)
+      new_import = 'L%s/%s' % (JniParams._package, class_name)
+      if new_import in JniParams._imports:
+        raise SyntaxError('Do not use JNIAdditionalImport on an already '
+                          'imported class: %s' % (new_import.replace('/', '.')))
+      JniParams._imports += [new_import]
 
   @staticmethod
   def ParseJavaPSignature(signature_line):
@@ -193,6 +218,7 @@ class JniParams(object):
         'Ljava/lang/String',
         'Ljava/lang/Class',
     ]
+
     prefix = ''
     # Array?
     while param[-2:] == '[]':
@@ -246,9 +272,31 @@ class JniParams(object):
                         (param, JniParams._package.replace('/', '.'),
                          outer.replace('/', '.')))
 
+    JniParams._CheckImplicitImports(param)
+
     # Type not found, falling back to same package as this class.
     return (prefix + 'L' +
             JniParams.RemapClassName(JniParams._package + '/' + param) + ';')
+
+  @staticmethod
+  def _CheckImplicitImports(param):
+    # Ensure implicit imports, such as java.lang.*, are not being treated
+    # as being in the same package.
+    if not JniParams._implicit_imports:
+      # This file was generated from android.jar and lists
+      # all classes that are implicitly imported.
+      with file(os.path.join(os.path.dirname(sys.argv[0]),
+                             'android_jar.classes'), 'r') as f:
+        JniParams._implicit_imports = f.readlines()
+    for implicit_import in JniParams._implicit_imports:
+      implicit_import = implicit_import.strip().replace('.class', '')
+      implicit_import = implicit_import.replace('/', '.')
+      if implicit_import.endswith('.' + param):
+        raise SyntaxError('Ambiguous class (%s) can not be used directly '
+                          'by JNI.\nPlease import it, probably:\n\n'
+                          'import %s;' %
+                          (param, implicit_import))
+
 
   @staticmethod
   def Signature(params, returns, wrap):
@@ -327,11 +375,11 @@ def ExtractNatives(contents, ptr_type):
   contents = contents.replace('\n', '')
   natives = []
   re_native = re.compile(r'(@NativeClassQualifiedName'
-                         '\(\"(?P<native_class_name>.*?)\"\))?\s*'
-                         '(@NativeCall(\(\"(?P<java_class_name>.*?)\"\)))?\s*'
-                         '(?P<qualifiers>\w+\s\w+|\w+|\s+)\s*?native '
-                         '(?P<return_type>\S*?) '
-                         '(?P<name>native\w+?)\((?P<params>.*?)\);')
+                         '\(\"(?P<native_class_name>.*?)\"\)\s+)?'
+                         '(@NativeCall(\(\"(?P<java_class_name>.*?)\"\))\s+)?'
+                         '(?P<qualifiers>\w+\s\w+|\w+|\s+)\s*native '
+                         '(?P<return_type>\S*) '
+                         '(?P<name>native\w+)\((?P<params>.*?)\);')
   for match in re.finditer(re_native, contents):
     native = NativeMethod(
         static='static' in match.group('qualifiers'),
@@ -672,6 +720,8 @@ class InlHeaderFileGenerator(object):
 
 ${INCLUDES}
 
+#include "base/android/jni_int_wrapper.h"
+
 // Step 1: forward declarations.
 namespace {
 $CLASS_PATH_DEFINITIONS
@@ -932,9 +982,10 @@ Java_${FULLY_QUALIFIED_CLASS}_${INIT_NATIVE_NAME}(JNIEnv* env, jclass clazz) {
                            for param in native.params])
 
   def GetCalledByNativeParamsInDeclaration(self, called_by_native):
-    return ',\n    '.join([JavaDataTypeToC(param.datatype) + ' ' +
-                           param.name
-                           for param in called_by_native.params])
+    return ',\n    '.join([
+        JavaDataTypeToCForCalledByNativeParam(param.datatype) + ' ' +
+        param.name
+        for param in called_by_native.params])
 
   def GetForwardDeclaration(self, native):
     template = Template("""
@@ -978,6 +1029,14 @@ static ${RETURN} ${NAME}(JNIEnv* env, ${PARAMS_IN_DECLARATION}) {
     }
     return template.substitute(values)
 
+  def GetArgument(self, param):
+    return ('as_jint(' + param.name + ')'
+            if param.datatype == 'int' else param.name)
+
+  def GetArgumentsInCall(self, params):
+    """Return a string of arguments to call from native into Java"""
+    return [self.GetArgument(p) for p in params]
+
   def GetCalledByNativeValues(self, called_by_native):
     """Fills in necessary values for the CalledByNative methods."""
     if called_by_native.static or called_by_native.is_constructor:
@@ -992,7 +1051,7 @@ static ${RETURN} ${NAME}(JNIEnv* env, ${PARAMS_IN_DECLARATION}) {
         called_by_native)
     if params_in_declaration:
       params_in_declaration = ', ' + params_in_declaration
-    params_in_call = ', '.join(param.name for param in called_by_native.params)
+    params_in_call = ', '.join(self.GetArgumentsInCall(called_by_native.params))
     if params_in_call:
       params_in_call = ', ' + params_in_call
     pre_call = ''

@@ -55,15 +55,12 @@ class InfoBarService : public infobars::InfoBarManager,
   virtual void NotifyInfoBarAdded(infobars::InfoBar* infobar) OVERRIDE;
   virtual void NotifyInfoBarRemoved(infobars::InfoBar* infobar,
                                     bool animate) OVERRIDE;
-  virtual void NotifyInfoBarReplaced(infobars::InfoBar* old_infobar,
-                                     infobars::InfoBar* new_infobar) OVERRIDE;
 
   // content::WebContentsObserver:
   virtual void RenderProcessGone(base::TerminationStatus status) OVERRIDE;
   virtual void NavigationEntryCommitted(
       const content::LoadCommittedDetails& load_details) OVERRIDE;
-  virtual void WebContentsDestroyed(
-      content::WebContents* web_contents) OVERRIDE;
+  virtual void WebContentsDestroyed() OVERRIDE;
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
   // Message handlers.

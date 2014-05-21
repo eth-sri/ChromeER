@@ -73,7 +73,7 @@ class TestWindow : public views::WidgetDelegateView {
   }
 
   // Overridden from views::View:
-  virtual gfx::Size GetPreferredSize() OVERRIDE {
+  virtual gfx::Size GetPreferredSize() const OVERRIDE {
     return gfx::Size(50, 50);
   }
 
@@ -431,6 +431,24 @@ TEST_F(SystemModalContainerLayoutManagerTest, KeepVisible) {
   EXPECT_EQ(bounds, gfx::Rect(700, 500, 100, 100));
 }
 
+// Verifies that centered windows will remain centered after the visible screen
+// area changed.
+TEST_F(SystemModalContainerLayoutManagerTest, KeepCentered) {
+  GetModalContainer()->SetBounds(gfx::Rect(0, 0, 800, 600));
+  scoped_ptr<aura::Window> main(OpenTestWindowWithParent(GetModalContainer(),
+                                                         true));
+  // Center the window.
+  main->SetBounds(gfx::Rect((800 - 512) / 2, (600 - 256) / 2, 512, 256));
+
+  // We set now the bounds of the root window to something new which will
+  // Then trigger the reposition operation.
+  GetModalContainer()->SetBounds(gfx::Rect(0, 0, 1024, 768));
+
+  // The window should still be centered.
+  gfx::Rect bounds = main->bounds();
+  EXPECT_EQ(bounds.ToString(), gfx::Rect(256, 256, 512, 256).ToString());
+}
+
 TEST_F(SystemModalContainerLayoutManagerTest, ShowNormalBackgroundOrLocked) {
   scoped_ptr<aura::Window> parent(OpenToplevelTestWindow(false));
   scoped_ptr<aura::Window> modal_window(
@@ -572,6 +590,69 @@ TEST_F(SystemModalContainerLayoutManagerTest,
   EXPECT_NE(modal_bounds.ToString(), modal_window->bounds().ToString());
   EXPECT_EQ(modal_size.ToString(), modal_window->bounds().size().ToString());
   EXPECT_EQ(modal_origin.x(), modal_window->bounds().x());
+}
+
+// Test that windows will not get cropped through the visible virtual keyboard -
+// if centered.
+TEST_F(SystemModalContainerLayoutManagerTest,
+       SystemModalDialogGetPushedButNotCroppedFromKeyboard) {
+  const gfx::Rect& container_bounds = GetModalContainer()->bounds();
+  const gfx::Size screen_size = Shell::GetPrimaryRootWindow()->bounds().size();
+  // Place the window at the bottom of the screen.
+  gfx::Size modal_size(100, screen_size.height() - 70);
+  gfx::Point modal_origin = gfx::Point(
+      (container_bounds.right() - modal_size.width()) / 2,  // X centered
+      container_bounds.bottom() - modal_size.height());     // at bottom
+  gfx::Rect modal_bounds = gfx::Rect(modal_origin, modal_size);
+
+  // Create a modal window.
+  scoped_ptr<aura::Window> parent(OpenToplevelTestWindow(false));
+  scoped_ptr<aura::Window> modal_window(
+      OpenTestWindowWithParent(parent.get(), true));
+  modal_window->SetBounds(modal_bounds);
+  parent->Show();
+  modal_window->Show();
+
+  EXPECT_EQ(modal_bounds.ToString(), modal_window->bounds().ToString());
+
+  // The keyboard gets shown and the dialog should get pushed up, but not get
+  // cropped (and aligned to the top).
+  ShowKeyboard(true);
+  EXPECT_EQ(modal_size.ToString(), modal_window->bounds().size().ToString());
+  EXPECT_EQ(modal_origin.x(), modal_window->bounds().x());
+  EXPECT_EQ(0, modal_window->bounds().y());
+
+  ShowKeyboard(false);
+}
+
+// Test that windows will not get cropped through the visible virtual keyboard -
+// if not centered.
+TEST_F(SystemModalContainerLayoutManagerTest,
+       SystemModalDialogGetPushedButNotCroppedFromKeyboardIfNotCentered) {
+  const gfx::Size screen_size = Shell::GetPrimaryRootWindow()->bounds().size();
+  // Place the window at the bottom of the screen.
+  gfx::Size modal_size(100, screen_size.height() - 70);
+  gfx::Point modal_origin = gfx::Point(10, 20);
+  gfx::Rect modal_bounds = gfx::Rect(modal_origin, modal_size);
+
+  // Create a modal window.
+  scoped_ptr<aura::Window> parent(OpenToplevelTestWindow(false));
+  scoped_ptr<aura::Window> modal_window(
+      OpenTestWindowWithParent(parent.get(), true));
+  modal_window->SetBounds(modal_bounds);
+  parent->Show();
+  modal_window->Show();
+
+  EXPECT_EQ(modal_bounds.ToString(), modal_window->bounds().ToString());
+
+  // The keyboard gets shown and the dialog should get pushed up, but not get
+  // cropped (and aligned to the top).
+  ShowKeyboard(true);
+  EXPECT_EQ(modal_size.ToString(), modal_window->bounds().size().ToString());
+  EXPECT_EQ(modal_origin.x(), modal_window->bounds().x());
+  EXPECT_EQ(0, modal_window->bounds().y());
+
+  ShowKeyboard(false);
 }
 
 }  // namespace test

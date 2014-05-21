@@ -26,7 +26,7 @@ namespace device {
 
 class BluetoothAdapterWinTest;
 class BluetoothDevice;
-class BluetoothSocketThreadWin;
+class BluetoothSocketThread;
 
 class BluetoothAdapterWin : public BluetoothAdapter,
                             public BluetoothTaskManagerWin::Observer {
@@ -58,6 +58,17 @@ class BluetoothAdapterWin : public BluetoothAdapter,
   virtual void ReadLocalOutOfBandPairingData(
       const BluetoothOutOfBandPairingDataCallback& callback,
       const ErrorCallback& error_callback) OVERRIDE;
+  virtual void CreateRfcommService(
+      const BluetoothUUID& uuid,
+      int channel,
+      bool insecure,
+      const CreateServiceCallback& callback,
+      const CreateServiceErrorCallback& error_callback) OVERRIDE;
+  virtual void CreateL2capService(
+      const BluetoothUUID& uuid,
+      int psm,
+      const CreateServiceCallback& callback,
+      const CreateServiceErrorCallback& error_callback) OVERRIDE;
 
   // BluetoothTaskManagerWin::Observer override
   virtual void AdapterStateChanged(
@@ -75,7 +86,7 @@ class BluetoothAdapterWin : public BluetoothAdapter,
   const scoped_refptr<base::SequencedTaskRunner>& ui_task_runner() const {
     return ui_task_runner_;
   }
-  const scoped_refptr<BluetoothSocketThreadWin>& socket_thread() const {
+  const scoped_refptr<BluetoothSocketThread>& socket_thread() const {
     return socket_thread_;
   }
 
@@ -127,7 +138,7 @@ class BluetoothAdapterWin : public BluetoothAdapter,
   size_t num_discovery_listeners_;
 
   scoped_refptr<base::SequencedTaskRunner> ui_task_runner_;
-  scoped_refptr<BluetoothSocketThreadWin> socket_thread_;
+  scoped_refptr<BluetoothSocketThread> socket_thread_;
   scoped_refptr<BluetoothTaskManagerWin> task_manager_;
 
   base::ThreadChecker thread_checker_;

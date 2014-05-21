@@ -52,7 +52,6 @@ VideoCapturerDelegate::VideoCapturerDelegate(
 
 VideoCapturerDelegate::~VideoCapturerDelegate() {
   DVLOG(3) << "VideoCapturerDelegate::dtor";
-  DCHECK(new_frame_callback_.is_null());
   if (!release_device_cb_.is_null())
     release_device_cb_.Run();
 }
@@ -99,11 +98,10 @@ void VideoCapturerDelegate::GetCurrentSupportedFormats(
 void VideoCapturerDelegate::StartCapture(
     const media::VideoCaptureParams& params,
     const VideoCaptureDeliverFrameCB& new_frame_callback,
-    const StartedCallback& started_callback) {
+    const RunningCallback& running_callback) {
   DCHECK(params.requested_format.IsValid());
   DCHECK(thread_checker_.CalledOnValidThread());
-  new_frame_callback_ = new_frame_callback;
-  started_callback_ = started_callback;
+  running_callback_ = running_callback;
   got_first_frame_ = false;
 
   // NULL in unit test.
@@ -119,8 +117,7 @@ void VideoCapturerDelegate::StartCapture(
           params,
           media::BindToCurrentLoop(base::Bind(
               &VideoCapturerDelegate::OnStateUpdateOnRenderThread, this)),
-          media::BindToCurrentLoop(base::Bind(
-              &VideoCapturerDelegate::OnFrameReadyOnRenderThread, this)));
+          new_frame_callback);
 }
 
 void VideoCapturerDelegate::StopCapture() {
@@ -130,29 +127,20 @@ void VideoCapturerDelegate::StopCapture() {
   if (!stop_capture_cb_.is_null()) {
     base::ResetAndReturn(&stop_capture_cb_).Run();
   }
-  new_frame_callback_.Reset();
-  started_callback_.Reset();
+  running_callback_.Reset();
   source_formats_callback_.Reset();
-}
-
-void VideoCapturerDelegate::OnFrameReadyOnRenderThread(
-    const scoped_refptr<media::VideoFrame>& frame,
-    const media::VideoCaptureFormat& format) {
-  if (!got_first_frame_) {
-    got_first_frame_ = true;
-    if (!started_callback_.is_null())
-      started_callback_.Run(true);
-  }
-
-  if (!new_frame_callback_.is_null()) {
-    new_frame_callback_.Run(frame, format);
-  }
 }
 
 void VideoCapturerDelegate::OnStateUpdateOnRenderThread(
     VideoCaptureState state) {
-  if (state == VIDEO_CAPTURE_STATE_ERROR && !started_callback_.is_null()) {
-    started_callback_.Run(false);
+  DCHECK(thread_checker_.CalledOnValidThread());
+  DVLOG(3) << "OnStateUpdateOnRenderThread state = " << state;
+  if (state == VIDEO_CAPTURE_STATE_STARTED && !running_callback_.is_null()) {
+    running_callback_.Run(true);
+    return;
+  }
+  if (state > VIDEO_CAPTURE_STATE_STARTED && !running_callback_.is_null()) {
+    base::ResetAndReturn(&running_callback_).Run(false);
   }
 }
 
@@ -217,8 +205,7 @@ MediaStreamVideoCapturerSource::MediaStreamVideoCapturerSource(
     const StreamDeviceInfo& device_info,
     const SourceStoppedCallback& stop_callback,
     const scoped_refptr<VideoCapturerDelegate>& delegate)
-    : MediaStreamVideoSource(),
-      delegate_(delegate) {
+    : delegate_(delegate) {
   SetDeviceInfo(device_info);
   SetStopCallback(stop_callback);
 }
@@ -228,16 +215,17 @@ MediaStreamVideoCapturerSource::~MediaStreamVideoCapturerSource() {
 
 void MediaStreamVideoCapturerSource::GetCurrentSupportedFormats(
     int max_requested_width,
-    int max_requested_height) {
+    int max_requested_height,
+    const VideoCaptureDeviceFormatsCB& callback) {
   delegate_->GetCurrentSupportedFormats(
       max_requested_width,
       max_requested_height,
-      base::Bind(&MediaStreamVideoCapturerSource::OnSupportedFormats,
-                 base::Unretained(this)));
+      callback);
 }
 
 void MediaStreamVideoCapturerSource::StartSourceImpl(
-    const media::VideoCaptureParams& params) {
+    const media::VideoCaptureParams& params,
+    const VideoCaptureDeliverFrameCB& frame_callback) {
   media::VideoCaptureParams new_params(params);
   if (device_info().device.type == MEDIA_TAB_VIDEO_CAPTURE ||
       device_info().device.type == MEDIA_DESKTOP_VIDEO_CAPTURE) {
@@ -245,8 +233,7 @@ void MediaStreamVideoCapturerSource::StartSourceImpl(
   }
   delegate_->StartCapture(
       new_params,
-      base::Bind(&MediaStreamVideoCapturerSource::DeliverVideoFrame,
-                 base::Unretained(this)),
+      frame_callback,
       base::Bind(&MediaStreamVideoCapturerSource::OnStartDone,
                  base::Unretained(this)));
 }

@@ -18,7 +18,6 @@
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "extensions/common/extension.h"
 #include "third_party/skia/include/core/SkRegion.h"
 #include "ui/gfx/skia_util.h"
@@ -161,12 +160,12 @@ std::vector<gfx::Rect> CalculateNonDraggableRegions(
 
 - (void)windowDidEnterFullScreen:(NSNotification*)notification {
   if (appWindow_)
-    appWindow_->WindowDidFinishResize();
+    appWindow_->WindowDidEnterFullscreen();
 }
 
 - (void)windowDidExitFullScreen:(NSNotification*)notification {
   if (appWindow_)
-    appWindow_->WindowDidFinishResize();
+    appWindow_->WindowDidExitFullscreen();
 }
 
 - (void)windowDidMove:(NSNotification*)notification {
@@ -299,7 +298,6 @@ NativeAppWindowCocoa::NativeAppWindowCocoa(
     const AppWindow::CreateParams& params)
     : app_window_(app_window),
       has_frame_(params.frame == AppWindow::FRAME_CHROME),
-      is_hidden_(false),
       is_hidden_with_app_(false),
       is_maximized_(false),
       is_fullscreen_(false),
@@ -307,7 +305,7 @@ NativeAppWindowCocoa::NativeAppWindowCocoa(
       shows_resize_controls_(true),
       shows_fullscreen_controls_(true),
       attention_request_id_(0) {
-  Observe(web_contents());
+  Observe(WebContents());
 
   base::scoped_nsobject<NSWindow> window;
   Class window_class;
@@ -330,7 +328,12 @@ NativeAppWindowCocoa::NativeAppWindowCocoa(
                 styleMask:GetWindowStyleMask()
                   backing:NSBackingStoreBuffered
                     defer:NO]);
-  [window setTitle:base::SysUTF8ToNSString(extension()->name())];
+
+  std::string name;
+  const extensions::Extension* extension = app_window_->GetExtension();
+  if (extension)
+    name = extension->name();
+  [window setTitle:base::SysUTF8ToNSString(name)];
   [[window contentView] cr_setWantsLayer:YES];
 
   if (base::mac::IsOSSnowLeopard() &&
@@ -344,7 +347,7 @@ NativeAppWindowCocoa::NativeAppWindowCocoa(
   window_controller_.reset(
       [[NativeAppWindowController alloc] initWithWindow:window.release()]);
 
-  NSView* view = web_contents()->GetView()->GetNativeView();
+  NSView* view = WebContents()->GetNativeView();
   [view setAutoresizingMask:NSViewWidthSizable | NSViewHeightSizable];
 
   InstallView();
@@ -382,7 +385,7 @@ NSUInteger NativeAppWindowCocoa::GetWindowStyleMask() const {
 }
 
 void NativeAppWindowCocoa::InstallView() {
-  NSView* view = web_contents()->GetView()->GetNativeView();
+  NSView* view = WebContents()->GetNativeView();
   if (has_frame_) {
     [view setFrame:[[window() contentView] bounds]];
     [[window() contentView] addSubview:view];
@@ -415,7 +418,7 @@ void NativeAppWindowCocoa::InstallView() {
 }
 
 void NativeAppWindowCocoa::UninstallView() {
-  NSView* view = web_contents()->GetView()->GetNativeView();
+  NSView* view = WebContents()->GetNativeView();
   [view removeFromSuperview];
 }
 
@@ -531,8 +534,6 @@ gfx::Rect NativeAppWindowCocoa::GetBounds() const {
 }
 
 void NativeAppWindowCocoa::Show() {
-  is_hidden_ = false;
-
   if (is_hidden_with_app_) {
     // If there is a shim to gently request attention, return here. Otherwise
     // show the window as usual.
@@ -547,12 +548,10 @@ void NativeAppWindowCocoa::Show() {
 }
 
 void NativeAppWindowCocoa::ShowInactive() {
-  is_hidden_ = false;
   [window() orderFront:window_controller_];
 }
 
 void NativeAppWindowCocoa::Hide() {
-  is_hidden_ = true;
   HideWithoutMarkingHidden();
 }
 
@@ -661,7 +660,7 @@ void NativeAppWindowCocoa::UpdateDraggableRegionViews() {
   // All ControlRegionViews should be added as children of the WebContentsView,
   // because WebContentsView will be removed and re-added when entering and
   // leaving fullscreen mode.
-  NSView* webView = web_contents()->GetView()->GetNativeView();
+  NSView* webView = WebContents()->GetNativeView();
   NSInteger webViewWidth = NSWidth([webView bounds]);
   NSInteger webViewHeight = NSHeight([webView bounds]);
 
@@ -711,7 +710,7 @@ bool NativeAppWindowCocoa::IsAlwaysOnTop() const {
 
 void NativeAppWindowCocoa::RenderViewCreated(content::RenderViewHost* rvh) {
   if (IsActive())
-    web_contents()->GetView()->RestoreFocus();
+    WebContents()->RestoreFocus();
 }
 
 bool NativeAppWindowCocoa::IsFrameless() const {
@@ -785,12 +784,12 @@ void NativeAppWindowCocoa::WindowWillClose() {
 
 void NativeAppWindowCocoa::WindowDidBecomeKey() {
   content::RenderWidgetHostView* rwhv =
-      web_contents()->GetRenderWidgetHostView();
+      WebContents()->GetRenderWidgetHostView();
   if (rwhv)
     rwhv->SetActive(true);
   app_window_->OnNativeWindowActivated();
 
-  web_contents()->GetView()->RestoreFocus();
+  WebContents()->RestoreFocus();
 }
 
 void NativeAppWindowCocoa::WindowDidResignKey() {
@@ -801,10 +800,10 @@ void NativeAppWindowCocoa::WindowDidResignKey() {
   if ([NSApp isActive] && ([NSApp keyWindow] == window()))
     return;
 
-  web_contents()->GetView()->StoreFocus();
+  WebContents()->StoreFocus();
 
   content::RenderWidgetHostView* rwhv =
-      web_contents()->GetRenderWidgetHostView();
+      WebContents()->GetRenderWidgetHostView();
   if (rwhv)
     rwhv->SetActive(false);
 }
@@ -820,13 +819,6 @@ void NativeAppWindowCocoa::WindowDidFinishResize() {
     is_maximized_ = false;
   else if (NSEqualPoints(frame.origin, screen.origin))
     is_maximized_ = true;
-
-  // Update |is_fullscreen_| if needed.
-  is_fullscreen_ = ([window() styleMask] & NSFullScreenWindowMask) != 0;
-  // If not fullscreen but the window is constrained, disable the fullscreen UI
-  // control.
-  if (!is_fullscreen_ && !shows_fullscreen_controls_)
-    SetFullScreenCollectionBehavior(window(), false);
 
   UpdateRestoredBounds();
 }
@@ -849,6 +841,21 @@ void NativeAppWindowCocoa::WindowDidDeminiaturize() {
   app_window_->OnNativeWindowChanged();
 }
 
+void NativeAppWindowCocoa::WindowDidEnterFullscreen() {
+  is_fullscreen_ = true;
+  app_window_->OSFullscreen();
+  app_window_->OnNativeWindowChanged();
+}
+
+void NativeAppWindowCocoa::WindowDidExitFullscreen() {
+  is_fullscreen_ = false;
+  if (!shows_fullscreen_controls_)
+    SetFullScreenCollectionBehavior(window(), false);
+
+  app_window_->Restore();
+  app_window_->OnNativeWindowChanged();
+}
+
 void NativeAppWindowCocoa::WindowWillZoom() {
   // See top of file NOTE: Maximize and Zoom.
   if (IsMaximized())
@@ -864,7 +871,7 @@ bool NativeAppWindowCocoa::HandledByExtensionCommand(NSEvent* event) {
 
 void NativeAppWindowCocoa::ShowWithApp() {
   is_hidden_with_app_ = false;
-  if (!is_hidden_)
+  if (!app_window_->is_hidden())
     ShowInactive();
 }
 
@@ -938,6 +945,10 @@ ShellNSWindow* NativeAppWindowCocoa::window() const {
   NSWindow* window = [window_controller_ window];
   CHECK(!window || [window isKindOfClass:[ShellNSWindow class]]);
   return static_cast<ShellNSWindow*>(window);
+}
+
+content::WebContents* NativeAppWindowCocoa::WebContents() const {
+  return app_window_->web_contents();
 }
 
 void NativeAppWindowCocoa::UpdateRestoredBounds() {

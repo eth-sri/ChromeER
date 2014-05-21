@@ -39,12 +39,11 @@ class MESSAGE_CENTER_EXPORT NotificationView : public MessageView,
   static NotificationView* Create(MessageCenterController* controller,
                                   const Notification& notification,
                                   bool top_level);
-
-    virtual ~NotificationView();
+  virtual ~NotificationView();
 
   // Overridden from views::View:
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
-  virtual int GetHeightForWidth(int width) OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
+  virtual int GetHeightForWidth(int width) const OVERRIDE;
   virtual void Layout() OVERRIDE;
   virtual void OnFocus() OVERRIDE;
   virtual void ScrollRectToVisible(const gfx::Rect& rect) OVERRIDE;
@@ -52,6 +51,8 @@ class MESSAGE_CENTER_EXPORT NotificationView : public MessageView,
   virtual gfx::NativeCursor GetCursor(const ui::MouseEvent& event) OVERRIDE;
 
   // Overridden from MessageView:
+  virtual void UpdateWithNotification(
+      const Notification& notification) OVERRIDE;
   virtual void ButtonPressed(views::Button* sender,
                              const ui::Event& event) OVERRIDE;
 
@@ -69,8 +70,23 @@ class MESSAGE_CENTER_EXPORT NotificationView : public MessageView,
                    const Notification& notification);
 
  private:
-  int GetMessageLineLimit(int width);
-  int GetMessageHeight(int width, int limit);
+  FRIEND_TEST_ALL_PREFIXES(NotificationViewTest, CreateOrUpdateTest);
+  FRIEND_TEST_ALL_PREFIXES(NotificationViewTest, TestLineLimits);
+
+  void CreateOrUpdateViews(const Notification& notification);
+  void SetAccessibleName(const Notification& notification);
+
+  void CreateOrUpdateTitleView(const Notification& notification);
+  void CreateOrUpdateMessageView(const Notification& notification);
+  void CreateOrUpdateContextMessageView(const Notification& notification);
+  void CreateOrUpdateProgressBarView(const Notification& notification);
+  void CreateOrUpdateListItemViews(const Notification& notification);
+  void CreateOrUpdateIconView(const Notification& notification);
+  void CreateOrUpdateImageView(const Notification& notification);
+  void CreateOrUpdateActionButtonViews(const Notification& notification);
+
+  int GetMessageLineLimit(int title_lines, int width) const;
+  int GetMessageHeight(int width, int limit) const;
 
   MessageCenterController* controller_;  // Weak, lives longer then views.
 
@@ -88,6 +104,7 @@ class MESSAGE_CENTER_EXPORT NotificationView : public MessageView,
   views::View* image_view_;
   views::ProgressBar* progress_bar_view_;
   std::vector<views::View*> action_buttons_;
+  std::vector<views::View*> separators_;
 
   DISALLOW_COPY_AND_ASSIGN(NotificationView);
 };

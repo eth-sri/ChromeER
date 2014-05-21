@@ -7,10 +7,11 @@
 
 namespace mojo {
 
+// This interface is used to report connection errors.
 class ErrorHandler {
  public:
   virtual ~ErrorHandler() {}
-  virtual void OnError() = 0;
+  virtual void OnConnectionError() = 0;
 };
 
 }  // namespace mojo

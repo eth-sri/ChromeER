@@ -107,8 +107,8 @@ LayerTreeHost::LayerTreeHost(LayerTreeHostClient* client,
       page_scale_factor_(1.f),
       min_page_scale_factor_(1.f),
       max_page_scale_factor_(1.f),
-      trigger_idle_updates_(true),
       has_gpu_rasterization_trigger_(false),
+      content_is_suitable_for_gpu_rasterization_(true),
       background_color_(SK_ColorWHITE),
       has_transparent_background_(false),
       partial_texture_update_requests_(0),
@@ -347,6 +347,8 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
                                          max_page_scale_factor_);
   sync_tree->SetPageScaleDelta(page_scale_delta / sent_page_scale_delta);
 
+  sync_tree->SetUseGpuRasterization(UseGpuRasterization());
+
   sync_tree->PassSwapPromises(&swap_promise_list_);
 
   host_impl->SetViewportSize(device_viewport_size_);
@@ -451,15 +453,6 @@ void LayerTreeHost::DidLoseOutputSurface() {
   num_failed_recreate_attempts_ = 0;
   output_surface_lost_ = true;
   SetNeedsCommit();
-}
-
-bool LayerTreeHost::CompositeAndReadback(
-    void* pixels,
-    const gfx::Rect& rect_in_device_viewport) {
-  trigger_idle_updates_ = false;
-  bool ret = proxy_->CompositeAndReadback(pixels, rect_in_device_viewport);
-  trigger_idle_updates_ = true;
-  return ret;
 }
 
 void LayerTreeHost::FinishAllRendering() {
@@ -589,6 +582,10 @@ void LayerTreeHost::SetRootLayer(scoped_refptr<Layer> root_layer) {
   if (hud_layer_.get())
     hud_layer_->RemoveFromParent();
 
+  // Reset gpu rasterization flag.
+  // This flag is sticky until a new tree comes along.
+  content_is_suitable_for_gpu_rasterization_ = true;
+
   SetNeedsFullTreeSync();
 }
 
@@ -606,6 +603,17 @@ void LayerTreeHost::SetDebugState(const LayerTreeDebugState& debug_state) {
 
   SetNeedsCommit();
   proxy_->SetDebugState(debug_state);
+}
+
+bool LayerTreeHost::UseGpuRasterization() const {
+  if (settings_.gpu_rasterization_forced) {
+    return true;
+  } else if (settings_.gpu_rasterization_enabled) {
+    return has_gpu_rasterization_trigger_ &&
+           content_is_suitable_for_gpu_rasterization_;
+  } else {
+    return false;
+  }
 }
 
 void LayerTreeHost::SetViewportSize(const gfx::Size& device_viewport_size) {
@@ -688,11 +696,9 @@ void LayerTreeHost::NotifyInputThrottledUntilCommit() {
 }
 
 void LayerTreeHost::Composite(base::TimeTicks frame_begin_time) {
-  if (!proxy_->HasImplThread())
-    static_cast<SingleThreadProxy*>(proxy_.get())->CompositeImmediately(
-        frame_begin_time);
-  else
-    SetNeedsCommit();
+  DCHECK(!proxy_->HasImplThread());
+  SingleThreadProxy* proxy = static_cast<SingleThreadProxy*>(proxy_.get());
+  proxy->CompositeImmediately(frame_begin_time);
 }
 
 bool LayerTreeHost::InitializeOutputSurfaceIfNeeded() {
@@ -772,6 +778,10 @@ bool LayerTreeHost::UpdateLayers(Layer* root_layer,
 
     TRACE_EVENT0("cc", "LayerTreeHost::UpdateLayers::CalcDrawProps");
     bool can_render_to_separate_surface = true;
+    // TODO(vmpstr): Passing 0 as the current render surface layer list id means
+    // that we won't be able to detect if a layer is part of |update_list|.
+    // Change this if this information is required.
+    int render_surface_layer_list_id = 0;
     LayerTreeHostCommon::CalcDrawPropsMainInputs inputs(
         root_layer,
         device_viewport_size(),
@@ -783,7 +793,8 @@ bool LayerTreeHost::UpdateLayers(Layer* root_layer,
         settings_.can_use_lcd_text,
         can_render_to_separate_surface,
         settings_.layer_transforms_should_scale_layer_contents,
-        &update_list);
+        &update_list,
+        render_surface_layer_list_id);
     LayerTreeHostCommon::CalculateDrawProperties(&inputs);
 
     if (total_frames_used_for_lcd_text_metrics_ <=
@@ -817,7 +828,7 @@ bool LayerTreeHost::UpdateLayers(Layer* root_layer,
   bool need_more_updates = false;
   PaintLayerContents(
       update_list, queue, &did_paint_content, &need_more_updates);
-  if (trigger_idle_updates_ && need_more_updates) {
+  if (need_more_updates) {
     TRACE_EVENT0("cc", "LayerTreeHost::UpdateLayers::posting prepaint task");
     prepaint_callback_.Reset(base::Bind(&LayerTreeHost::TriggerPrepaint,
                                         base::Unretained(this)));
@@ -978,10 +989,19 @@ void LayerTreeHost::PaintLayerContents(
     if (it.represents_target_render_surface()) {
       PaintMasksForRenderSurface(
           *it, queue, did_paint_content, need_more_updates);
-    } else if (it.represents_itself() && it->DrawsContent()) {
+    } else if (it.represents_itself()) {
       DCHECK(!it->paint_properties().bounds.IsEmpty());
       *did_paint_content |= it->Update(queue, &occlusion_tracker);
       *need_more_updates |= it->NeedMoreUpdates();
+      // Note the '&&' with previous is-suitable state.
+      // This means that once the layer-tree becomes unsuitable for gpu
+      // rasterization due to some content, it will continue to be unsuitable
+      // even if that content is replaced by gpu-friendly content.
+      // This is to avoid switching back-and-forth between gpu and sw
+      // rasterization which may be both bad for performance and visually
+      // jarring.
+      content_is_suitable_for_gpu_rasterization_ &=
+          it->IsSuitableForGpuRasterization();
     }
 
     occlusion_tracker.LeaveLayer(it);
@@ -1118,14 +1138,12 @@ scoped_ptr<base::Value> LayerTreeHost::AsValue() const {
   return state.PassAs<base::Value>();
 }
 
-void LayerTreeHost::AnimateLayers(base::TimeTicks time) {
+void LayerTreeHost::AnimateLayers(base::TimeTicks monotonic_time) {
   if (!settings_.accelerated_animation_enabled ||
       animation_registrar_->active_animation_controllers().empty())
     return;
 
   TRACE_EVENT0("cc", "LayerTreeHost::AnimateLayers");
-
-  double monotonic_time = (time - base::TimeTicks()).InSecondsF();
 
   AnimationRegistrar::AnimationControllerMap copy =
       animation_registrar_->active_animation_controllers();

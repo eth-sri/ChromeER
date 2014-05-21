@@ -19,20 +19,6 @@
 #include "tools/gn/source_file.h"
 #include "tools/gn/trace.h"
 
-namespace {
-
-std::string GetOutputSubdirName(const Label& toolchain_label, bool is_default) {
-  // The default toolchain has no subdir.
-  if (is_default)
-    return std::string();
-
-  // For now just assume the toolchain name is always a valid dir name. We may
-  // want to clean up the in the future.
-  return toolchain_label.name();
-}
-
-}  // namespace
-
 // Identifies one time a file is loaded in a given toolchain so we don't load
 // it more than once.
 struct LoaderImpl::LoadID {
@@ -247,6 +233,10 @@ void LoaderImpl::BackgroundLoadFile(const Settings* settings,
   ScopePerFileProvider per_file_provider(&our_scope, true);
   our_scope.set_source_dir(file_name.GetDir());
 
+  // Targets, etc. generated as part of running this file will end up here.
+  Scope::ItemVector collected_items;
+  our_scope.set_item_collector(&collected_items);
+
   ScopedTrace trace(TraceItem::TRACE_FILE_EXECUTE, file_name.value());
   trace.SetToolchain(settings->toolchain_label());
 
@@ -254,6 +244,13 @@ void LoaderImpl::BackgroundLoadFile(const Settings* settings,
   root->Execute(&our_scope, &err);
   if (err.has_error())
     g_scheduler->FailWithError(err);
+
+  if (!our_scope.CheckForUnusedVars(&err))
+    g_scheduler->FailWithError(err);
+
+  // Pass all of the items that were defined off to the builder.
+  for (size_t i = 0; i < collected_items.size(); i++)
+    settings->build_settings()->ItemDefined(collected_items[i]->Pass());
 
   trace.Done();
 
@@ -290,6 +287,11 @@ void LoaderImpl::BackgroundLoadBuildConfig(
   const BlockNode* root_block = root->AsBlock();
   Err err;
   root_block->ExecuteBlockInScope(base_config, &err);
+
+  // Clear all private variables left in the scope. We want the root build
+  // config to be like a .gni file in that variables beginning with an
+  // underscore aren't exported.
+  base_config->RemovePrivateIdentifiers();
 
   trace.Done();
 

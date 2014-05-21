@@ -9,7 +9,6 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "extensions/browser/extension_host.h"
 #include "extensions/common/view_type.h"
 #include "ui/events/event.h"
@@ -38,7 +37,7 @@ ExtensionViewViews::~ExtensionViewViews() {
   CleanUp();
 }
 
-gfx::Size ExtensionViewViews::GetMinimumSize() {
+gfx::Size ExtensionViewViews::GetMinimumSize() const {
   // If the minimum size has never been set, returns the preferred size (same
   // behavior as views::View).
   return (minimum_size_ == gfx::Size()) ? GetPreferredSize() : minimum_size_;
@@ -134,13 +133,13 @@ void ExtensionViewViews::PreferredSizeChanged() {
 }
 
 void ExtensionViewViews::OnFocus() {
-  host()->host_contents()->GetView()->Focus();
+  host()->host_contents()->Focus();
 }
 
 void ExtensionViewViews::CreateWidgetHostView() {
   DCHECK(!initialized_);
   initialized_ = true;
-  Attach(host_->host_contents()->GetView()->GetNativeView());
+  Attach(host_->host_contents()->GetNativeView());
   host_->CreateRenderViewSoon();
   SetVisible(false);
 }

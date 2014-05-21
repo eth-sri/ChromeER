@@ -9,8 +9,10 @@
 #include "content/browser/web_contents/aura/image_window_delegate.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/common/view_messages.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "ui/aura/window.h"
+#include "ui/base/layout.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/layer_animation_observer.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
@@ -195,8 +197,7 @@ ui::Layer* OverscrollNavigationOverlay::CreateSlideLayer(int offset) {
   if (entry && entry->screenshot().get()) {
     std::vector<gfx::ImagePNGRep> image_reps;
     image_reps.push_back(gfx::ImagePNGRep(entry->screenshot(),
-        ui::GetImageScale(
-            ui::GetScaleFactorForNativeView(window_.get()))));
+        ui::GetScaleFactorForNativeView(window_.get())));
     image = gfx::Image(image_reps);
   }
   if (!layer_delegate_)
@@ -301,8 +302,7 @@ void OverscrollNavigationOverlay::OnWindowSliderDestroyed() {
   }
 }
 
-void OverscrollNavigationOverlay::DocumentOnLoadCompletedInMainFrame(
-    int32 page_id) {
+void OverscrollNavigationOverlay::DocumentOnLoadCompletedInMainFrame() {
   // Use the last committed entry rather than the active one, in case a
   // pending entry has been created.
   int committed_entry_id =
@@ -314,7 +314,7 @@ void OverscrollNavigationOverlay::DocumentOnLoadCompletedInMainFrame(
   }
 }
 
-void OverscrollNavigationOverlay::DidFirstVisuallyNonEmptyPaint(int32 page_id) {
+void OverscrollNavigationOverlay::DidFirstVisuallyNonEmptyPaint() {
   int visible_entry_id =
       web_contents_->GetController().GetVisibleEntry()->GetUniqueID();
   if (visible_entry_id == pending_entry_id_ || !pending_entry_id_) {

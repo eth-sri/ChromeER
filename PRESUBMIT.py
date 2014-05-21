@@ -170,6 +170,7 @@ _BANNED_CPP_FUNCTIONS = (
         r"^content[\\\/]shell[\\\/]browser[\\\/]shell_message_filter\.cc$",
         r"^mojo[\\\/]system[\\\/]raw_shared_buffer_posix\.cc$",
         r"^net[\\\/]disk_cache[\\\/]cache_util\.cc$",
+        r"^net[\\\/]url_request[\\\/]test_url_fetcher_factory\.cc$",
       ),
     ),
     (
@@ -278,9 +279,9 @@ def _CheckNoProductionCodeUsingTestOnlyFunctions(input_api, output_api):
   # calls to such functions without a proper C++ parser.
   file_inclusion_pattern = r'.+%s' % _IMPLEMENTATION_EXTENSIONS
 
-  base_function_pattern = r'ForTest(ing)?|for_test(ing)?'
+  base_function_pattern = r'[ :]test::[^\s]+|ForTest(ing)?|for_test(ing)?'
   inclusion_pattern = input_api.re.compile(r'(%s)\s*\(' % base_function_pattern)
-  comment_pattern = input_api.re.compile(r'//.*%s' % base_function_pattern)
+  comment_pattern = input_api.re.compile(r'//.*(%s)' % base_function_pattern)
   exclusion_pattern = input_api.re.compile(
     r'::[A-Za-z0-9_]+(%s)|(%s)[^;]+\{' % (
       base_function_pattern, base_function_pattern))
@@ -1077,6 +1078,44 @@ def _CheckJavaStyle(input_api, output_api):
       input_api, output_api, 'tools/android/checkstyle/chromium-style-5.0.xml')
 
 
+_DEPRECATED_CSS = [
+  # Values
+  ( "-webkit-box", "flex" ),
+  ( "-webkit-inline-box", "inline-flex" ),
+  ( "-webkit-flex", "flex" ),
+  ( "-webkit-inline-flex", "inline-flex" ),
+  ( "-webkit-min-content", "min-content" ),
+  ( "-webkit-max-content", "max-content" ),
+
+  # Properties
+  ( "-webkit-background-clip", "background-clip" ),
+  ( "-webkit-background-origin", "background-origin" ),
+  ( "-webkit-background-size", "background-size" ),
+  ( "-webkit-box-shadow", "box-shadow" ),
+
+  # Functions
+  ( "-webkit-gradient", "gradient" ),
+  ( "-webkit-repeating-gradient", "repeating-gradient" ),
+  ( "-webkit-linear-gradient", "linear-gradient" ),
+  ( "-webkit-repeating-linear-gradient", "repeating-linear-gradient" ),
+  ( "-webkit-radial-gradient", "radial-gradient" ),
+  ( "-webkit-repeating-radial-gradient", "repeating-radial-gradient" ),
+]
+
+def _CheckNoDeprecatedCSS(input_api, output_api):
+  """ Make sure that we don't use deprecated CSS
+      properties, functions or values. """
+  results = []
+  file_filter = lambda f: f.LocalPath().endswith('.css')
+  for fpath in input_api.AffectedFiles(file_filter=file_filter):
+    for line_num, line in fpath.ChangedContents():
+      for (deprecated_value, value) in _DEPRECATED_CSS:
+        if input_api.re.search(deprecated_value, line):
+          results.append(output_api.PresubmitError(
+              "%s:%d: Use of deprecated CSS %s, use %s instead" %
+              (fpath.LocalPath(), line_num, deprecated_value, value)))
+  return results
+
 def _CommonChecks(input_api, output_api):
   """Checks common to both upload and commit."""
   results = []
@@ -1112,6 +1151,7 @@ def _CommonChecks(input_api, output_api):
   results.extend(_CheckForAnonymousVariables(input_api, output_api))
   results.extend(_CheckCygwinShell(input_api, output_api))
   results.extend(_CheckUserActionUpdate(input_api, output_api))
+  results.extend(_CheckNoDeprecatedCSS(input_api, output_api))
 
   if any('PRESUBMIT.py' == f.LocalPath() for f in input_api.AffectedFiles()):
     results.extend(input_api.canned_checks.RunUnitTestsInDirectory(
@@ -1267,6 +1307,7 @@ def GetTryServerMasterForBot(bot):
   Assumes that most Try Servers are on the tryserver.chromium master."""
   non_default_master_map = {
       'linux_gpu': 'tryserver.chromium.gpu',
+      'mac_gpu': 'tryserver.chromium.gpu',
       'win_gpu': 'tryserver.chromium.gpu',
   }
   return non_default_master_map.get(bot, 'tryserver.chromium')
@@ -1316,6 +1357,7 @@ def GetDefaultTryConfigs(bots=None):
       # TODO(maruel): An option would be to run 'sizes' but not count a failure
       # of this step as a try job failure.
       'android_aosp': ['compile'],
+      'android_chromium_gn_compile_rel': ['compile'],
       'android_clang_dbg': ['slave_steps'],
       'android_dbg': ['slave_steps'],
       'cros_x86': ['defaulttests'],
@@ -1338,6 +1380,7 @@ def GetDefaultTryConfigs(bots=None):
       'linux_chromium_chromeos_clang_dbg': ['defaulttests'],
       'linux_chromium_chromeos_rel': ['defaulttests'],
       'linux_chromium_compile_dbg': ['defaulttests'],
+      'linux_chromium_gn_rel': ['defaulttests'],
       'linux_chromium_rel': ['defaulttests'],
       'linux_chromium_clang_dbg': ['defaulttests'],
       'linux_gpu': ['defaulttests'],
@@ -1348,6 +1391,7 @@ def GetDefaultTryConfigs(bots=None):
       ],
       'mac_chromium_compile_dbg': ['defaulttests'],
       'mac_chromium_rel': ['defaulttests'],
+      'mac_gpu': ['defaulttests'],
       'mac_nacl_sdk_build': ['compile'],
       'mac_rel': [
           'telemetry_perf_unittests',
@@ -1464,16 +1508,19 @@ def GetPreferredTryMasters(project, change):
     return GetDefaultTryConfigs(['ios_rel_device', 'ios_dbg_simulator'])
 
   builders = [
+      'android_chromium_gn_compile_rel',
       'android_clang_dbg',
       'android_dbg',
       'ios_dbg_simulator',
       'ios_rel_device',
       'linux_chromium_chromeos_rel',
       'linux_chromium_clang_dbg',
+      'linux_chromium_gn_rel',
       'linux_chromium_rel',
       'linux_gpu',
       'mac_chromium_compile_dbg',
       'mac_chromium_rel',
+      'mac_gpu',
       'win_chromium_compile_dbg',
       'win_chromium_rel',
       'win_chromium_x64_rel',

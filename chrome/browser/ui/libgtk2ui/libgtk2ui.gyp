@@ -19,9 +19,9 @@
         '../../../../build/linux/system.gyp:gtkprint',
         '../../../../printing/printing.gyp:cups',
         '../../../../skia/skia.gyp:skia',
-        '../../../../ui/base/strings/ui_strings.gyp:ui_strings',
         '../../../../ui/base/ui_base.gyp:ui_base',
         '../../../../ui/resources/ui_resources.gyp:ui_resources',
+        '../../../../ui/strings/ui_strings.gyp:ui_strings',
         '../../../../ui/views/views.gyp:views',
         '../../../chrome_resources.gyp:chrome_extra_resources',
         '../../../chrome_resources.gyp:chrome_resources',
@@ -86,6 +86,13 @@
           'sources!': [
             'gconf_listener.cc',
             'gconf_listener.h',
+          ],
+        }],
+        [ 'clang==1', {
+          # G_DEFINE_TYPE automatically generates a *get_instance_private inline function after glib 2.37.
+          # That's unused. Prevent to complain about it.
+          'cflags': [
+            '-Wno-unused-function',
           ],
         }],
       ],

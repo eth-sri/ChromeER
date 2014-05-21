@@ -9,20 +9,12 @@
 #include "ui/events/ozone/event_factory_ozone.h"
 #include "ui/events/platform/platform_event_source.h"
 #include "ui/gfx/ozone/surface_factory_ozone.h"
-#include "ui/ozone/ozone_platform.h"
 
 namespace aura {
 
 WindowTreeHostOzone::WindowTreeHostOzone(const gfx::Rect& bounds)
     : widget_(0),
       bounds_(bounds) {
-  ui::OzonePlatform::Initialize();
-
-  // EventFactoryOzone creates converters that obtain input events from the
-  // underlying input system and dispatch them as |ui::Event| instances into
-  // Aura.
-  ui::EventFactoryOzone::GetInstance()->StartProcessingEvents();
-
   gfx::SurfaceFactoryOzone* surface_factory =
       gfx::SurfaceFactoryOzone::GetInstance();
   widget_ = surface_factory->GetAcceleratedWidget();
@@ -40,8 +32,9 @@ WindowTreeHostOzone::~WindowTreeHostOzone() {
 bool WindowTreeHostOzone::CanDispatchEvent(const ui::PlatformEvent& ne) {
   CHECK(ne);
   ui::Event* event = static_cast<ui::Event*>(ne);
-  if (event->IsMouseEvent() || event->IsScrollEvent() || event->IsTouchEvent())
-    return bounds_.Contains(static_cast<ui::LocatedEvent*>(event)->location());
+  if (event->IsMouseEvent() || event->IsScrollEvent())
+    return ui::CursorFactoryOzone::GetInstance()->GetCursorWindow() == widget_;
+
   return true;
 }
 

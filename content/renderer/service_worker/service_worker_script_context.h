@@ -10,7 +10,9 @@
 #include "base/basictypes.h"
 #include "base/id_map.h"
 #include "base/strings/string16.h"
+#include "content/child/webmessageportchannel_impl.h"
 #include "content/common/service_worker/service_worker_types.h"
+#include "third_party/WebKit/public/platform/WebMessagePortChannel.h"
 #include "third_party/WebKit/public/platform/WebServiceWorkerClientsInfo.h"
 #include "third_party/WebKit/public/platform/WebServiceWorkerEventResult.h"
 
@@ -49,6 +51,10 @@ class ServiceWorkerScriptContext {
   void DidHandleSyncEvent(int request_id);
   void GetClientDocuments(
       blink::WebServiceWorkerClientsCallbacks* callbacks);
+  void PostMessageToDocument(
+      int client_id,
+      const base::string16& message,
+      scoped_ptr<blink::WebMessagePortChannelArray> channels);
 
  private:
   typedef IDMap<blink::WebServiceWorkerClientsCallbacks, IDMapOwnPointer>

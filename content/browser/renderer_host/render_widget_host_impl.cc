@@ -31,6 +31,7 @@
 #include "content/browser/gpu/gpu_process_host_ui_shim.h"
 #include "content/browser/gpu/gpu_surface_tracker.h"
 #include "content/browser/renderer_host/dip_util.h"
+#include "content/browser/renderer_host/input/input_router_config_helper.h"
 #include "content/browser/renderer_host/input/input_router_impl.h"
 #include "content/browser/renderer_host/input/synthetic_gesture.h"
 #include "content/browser/renderer_host/input/synthetic_gesture_controller.h"
@@ -170,7 +171,6 @@ RenderWidgetHostImpl::RenderWidgetHostImpl(RenderWidgetHostDelegate* delegate,
       is_loading_(false),
       is_hidden_(hidden),
       is_fullscreen_(false),
-      is_accelerated_compositing_active_(false),
       repaint_ack_pending_(false),
       resize_ack_pending_(false),
       screen_info_out_of_date_(false),
@@ -182,8 +182,6 @@ RenderWidgetHostImpl::RenderWidgetHostImpl(RenderWidgetHostDelegate* delegate,
       is_unresponsive_(false),
       in_flight_event_count_(0),
       in_get_backing_store_(false),
-      abort_get_backing_store_(false),
-      view_being_painted_(false),
       ignore_input_events_(false),
       input_method_active_(false),
       text_direction_updated_(false),
@@ -229,7 +227,8 @@ RenderWidgetHostImpl::RenderWidgetHostImpl(RenderWidgetHostDelegate* delegate,
   accessibility_mode_ =
       BrowserAccessibilityStateImpl::GetInstance()->accessibility_mode();
 
-  input_router_.reset(new InputRouterImpl(process_, this, this, routing_id_));
+  input_router_.reset(new InputRouterImpl(
+      process_, this, this, routing_id_, GetInputRouterConfigForPlatform()));
 
   touch_emulator_.reset();
 
@@ -450,8 +449,7 @@ bool RenderWidgetHostImpl::IsRenderView() const {
 
 bool RenderWidgetHostImpl::OnMessageReceived(const IPC::Message &msg) {
   bool handled = true;
-  bool msg_is_ok = true;
-  IPC_BEGIN_MESSAGE_MAP_EX(RenderWidgetHostImpl, msg, msg_is_ok)
+  IPC_BEGIN_MESSAGE_MAP(RenderWidgetHostImpl, msg)
     IPC_MESSAGE_HANDLER(InputHostMsg_QueueSyntheticGesture,
                         OnQueueSyntheticGesture)
     IPC_MESSAGE_HANDLER(ViewHostMsg_RenderViewReady, OnRenderViewReady)
@@ -462,10 +460,9 @@ bool RenderWidgetHostImpl::OnMessageReceived(const IPC::Message &msg) {
     IPC_MESSAGE_HANDLER(ViewHostMsg_RequestMove, OnRequestMove)
     IPC_MESSAGE_HANDLER(ViewHostMsg_SetTooltipText, OnSetTooltipText)
     IPC_MESSAGE_HANDLER_GENERIC(ViewHostMsg_SwapCompositorFrame,
-                                msg_is_ok = OnSwapCompositorFrame(msg))
+                                OnSwapCompositorFrame(msg))
     IPC_MESSAGE_HANDLER(ViewHostMsg_DidStopFlinging, OnFlingingStopped)
     IPC_MESSAGE_HANDLER(ViewHostMsg_UpdateRect, OnUpdateRect)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_UpdateIsDelayed, OnUpdateIsDelayed)
     IPC_MESSAGE_HANDLER(ViewHostMsg_Focus, OnFocus)
     IPC_MESSAGE_HANDLER(ViewHostMsg_Blur, OnBlur)
     IPC_MESSAGE_HANDLER(ViewHostMsg_SetCursor, OnSetCursor)
@@ -475,8 +472,6 @@ bool RenderWidgetHostImpl::OnMessageReceived(const IPC::Message &msg) {
                         OnTextInputTypeChanged)
     IPC_MESSAGE_HANDLER(ViewHostMsg_ImeCancelComposition,
                         OnImeCancelComposition)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_DidActivateAcceleratedCompositing,
-                        OnDidActivateAcceleratedCompositing)
     IPC_MESSAGE_HANDLER(ViewHostMsg_LockMouse, OnLockMouse)
     IPC_MESSAGE_HANDLER(ViewHostMsg_UnlockMouse, OnUnlockMouse)
     IPC_MESSAGE_HANDLER(ViewHostMsg_ShowDisambiguationPopup,
@@ -499,7 +494,7 @@ bool RenderWidgetHostImpl::OnMessageReceived(const IPC::Message &msg) {
                         OnImeCompositionRangeChanged)
 #endif
     IPC_MESSAGE_UNHANDLED(handled = false)
-  IPC_END_MESSAGE_MAP_EX()
+  IPC_END_MESSAGE_MAP()
 
   if (!handled && input_router_ && input_router_->OnMessageReceived(msg))
     return true;
@@ -507,11 +502,6 @@ bool RenderWidgetHostImpl::OnMessageReceived(const IPC::Message &msg) {
   if (!handled && view_ && view_->OnMessageReceived(msg))
     return true;
 
-  if (!msg_is_ok) {
-    // The message de-serialization failed. Kill the renderer process.
-    RecordAction(base::UserMetricsAction("BadMessageTerminate_RWH"));
-    GetProcess()->ReceivedBadMessage();
-  }
   return handled;
 }
 
@@ -703,7 +693,7 @@ void RenderWidgetHostImpl::CopyFromBackingStore(
     const gfx::Size& accelerated_dst_size,
     const base::Callback<void(bool, const SkBitmap&)>& callback,
     const SkBitmap::Config& bitmap_config) {
-  if (view_ && is_accelerated_compositing_active_) {
+  if (view_) {
     TRACE_EVENT0("browser",
         "RenderWidgetHostImpl::CopyFromBackingStore::FromCompositingSurface");
     gfx::Rect accelerated_copy_rect = src_subrect.IsEmpty() ?
@@ -750,7 +740,7 @@ bool RenderWidgetHostImpl::CanPauseForPendingResizeOrRepaints() {
     return false;
 
   // Do not pause if there is not a paint or resize already coming.
-  if (!repaint_ack_pending_ && !resize_ack_pending_ && !view_being_painted_)
+  if (!repaint_ack_pending_ && !resize_ack_pending_)
     return false;
 
   return true;
@@ -799,7 +789,7 @@ void RenderWidgetHostImpl::WaitForSurface() {
 
   // We do not have a suitable backing store in the cache, so send out a
   // request to the renderer to paint the view if required.
-  if (!repaint_ack_pending_ && !resize_ack_pending_ && !view_being_painted_) {
+  if (!repaint_ack_pending_ && !resize_ack_pending_) {
     repaint_start_time_ = TimeTicks::Now();
     repaint_ack_pending_ = true;
     TRACE_EVENT_ASYNC_BEGIN0(
@@ -826,10 +816,8 @@ void RenderWidgetHostImpl::WaitForSurface() {
 
       // Break now if we got a backing store or accelerated surface of the
       // correct size.
-      if (view_->HasAcceleratedSurface(view_size) || abort_get_backing_store_) {
-        abort_get_backing_store_ = false;
+      if (view_->HasAcceleratedSurface(view_size))
         return;
-      }
     } else {
       TRACE_EVENT0("renderer_host", "WaitForSurface::Timeout");
       break;
@@ -844,9 +832,8 @@ void RenderWidgetHostImpl::WaitForSurface() {
 }
 
 bool RenderWidgetHostImpl::ScheduleComposite() {
-  if (is_hidden_ || !is_accelerated_compositing_active_ ||
-      current_size_.IsEmpty() || repaint_ack_pending_ ||
-      resize_ack_pending_ || view_being_painted_) {
+  if (is_hidden_ || current_size_.IsEmpty() || repaint_ack_pending_ ||
+      resize_ack_pending_) {
     return false;
   }
 
@@ -1218,7 +1205,8 @@ void RenderWidgetHostImpl::RendererExited(base::TerminationStatus status,
   waiting_for_screen_rects_ack_ = false;
 
   // Reset to ensure that input routing works with a new renderer.
-  input_router_.reset(new InputRouterImpl(process_, this, this, routing_id_));
+  input_router_.reset(new InputRouterImpl(
+      process_, this, this, routing_id_, GetInputRouterConfigForPlatform()));
 
   if (overscroll_controller_)
     overscroll_controller_->Reset();
@@ -1230,7 +1218,6 @@ void RenderWidgetHostImpl::RendererExited(base::TerminationStatus status,
   ResetSizeAndRepaintPendingFlags();
   current_size_.SetSize(0, 0);
   is_hidden_ = false;
-  is_accelerated_compositing_active_ = false;
 
   // Reset this to ensure the hung renderer mechanism is working properly.
   in_flight_event_count_ = 0;
@@ -1571,11 +1558,6 @@ void RenderWidgetHostImpl::OnUpdateRect(
   UMA_HISTOGRAM_TIMES("MPArch.RWH_OnMsgUpdateRect", delta);
 }
 
-void RenderWidgetHostImpl::OnUpdateIsDelayed() {
-  if (in_get_backing_store_)
-    abort_get_backing_store_ = true;
-}
-
 void RenderWidgetHostImpl::DidUpdateBackingStore(
     const ViewHostMsg_UpdateRect_Params& params,
     const TimeTicks& paint_start) {
@@ -1677,15 +1659,6 @@ void RenderWidgetHostImpl::OnImeCompositionRangeChanged(
 void RenderWidgetHostImpl::OnImeCancelComposition() {
   if (view_)
     view_->ImeCancelComposition();
-}
-
-void RenderWidgetHostImpl::OnDidActivateAcceleratedCompositing(bool activated) {
-  TRACE_EVENT1("renderer_host",
-               "RenderWidgetHostImpl::OnDidActivateAcceleratedCompositing",
-               "activated", activated);
-  is_accelerated_compositing_active_ = activated;
-  if (view_)
-    view_->OnAcceleratedCompositingStateChange();
 }
 
 void RenderWidgetHostImpl::OnLockMouse(bool user_gesture,
@@ -1855,6 +1828,11 @@ void RenderWidgetHostImpl::DidFlush() {
     view_->OnDidFlushInput();
 }
 
+void RenderWidgetHostImpl::DidOverscroll(const DidOverscrollParams& params) {
+  if (view_)
+    view_->DidOverscroll(params);
+}
+
 void RenderWidgetHostImpl::OnKeyboardEventAck(
       const NativeWebKeyboardEvent& event,
       InputEventAckState ack_result) {
@@ -1971,8 +1949,8 @@ void RenderWidgetHostImpl::Stop() {
   Send(new ViewMsg_Stop(GetRoutingID()));
 }
 
-void RenderWidgetHostImpl::SetBackground(const SkBitmap& background) {
-  Send(new ViewMsg_SetBackground(GetRoutingID(), background));
+void RenderWidgetHostImpl::SetBackgroundOpaque(bool opaque) {
+  Send(new ViewMsg_SetBackgroundOpaque(GetRoutingID(), opaque));
 }
 
 void RenderWidgetHostImpl::SetEditCommandsForNextKeyEvent(

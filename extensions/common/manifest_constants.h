@@ -13,6 +13,7 @@ namespace manifest_keys {
 extern const char kAllFrames[];
 extern const char kAltKey[];
 extern const char kApp[];
+extern const char kAutomation[];
 extern const char kBackgroundAllowJsAccess[];
 extern const char kBackgroundPage[];
 extern const char kBackgroundPageLegacy[];
@@ -82,6 +83,7 @@ extern const char kLaunchWebURL[];
 extern const char kLaunchWidth[];
 extern const char kLayouts[];
 extern const char kManifestVersion[];
+extern const char kMatchAboutBlank[];
 extern const char kMatches[];
 extern const char kMediaGalleriesHandlers[];
 extern const char kMIMETypes[];
@@ -178,6 +180,7 @@ extern const char kWebview[];
 extern const char kWebviewName[];
 extern const char kWebviewAccessibleResources[];
 extern const char kWebviewPartitions[];
+extern const char kWhitelist[];
 
 }  // namespace manifest_keys
 
@@ -286,6 +289,8 @@ extern const char kInvalidExport[];
 extern const char kInvalidExportPermissions[];
 extern const char kInvalidExportResources[];
 extern const char kInvalidExportResourcesString[];
+extern const char kInvalidExportWhitelist[];
+extern const char kInvalidExportWhitelistString[];
 extern const char kInvalidFileAccessList[];
 extern const char kInvalidFileAccessValue[];
 extern const char kInvalidFileBrowserHandler[];
@@ -354,6 +359,7 @@ extern const char kInvalidManifest[];
 extern const char kInvalidManifestVersion[];
 extern const char kInvalidManifestVersionOld[];
 extern const char kInvalidMatch[];
+extern const char kInvalidMatchAboutBlank[];
 extern const char kInvalidMatchCount[];
 extern const char kInvalidMatches[];
 extern const char kInvalidMIMETypes[];

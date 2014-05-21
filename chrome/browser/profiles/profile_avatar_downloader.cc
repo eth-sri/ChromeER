@@ -9,6 +9,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_avatar_icon_util.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
+#include "net/base/load_flags.h"
 
 namespace {
 const char kHighResAvatarDownloadUrlPrefix[] =
@@ -17,8 +18,10 @@ const char kHighResAvatarDownloadUrlPrefix[] =
 
 ProfileAvatarDownloader::ProfileAvatarDownloader(
     size_t icon_index,
+    const base::FilePath& profile_path,
     ProfileInfoCache* cache)
     : icon_index_(icon_index),
+      profile_path_(profile_path),
       cache_(cache) {
   GURL url(std::string(kHighResAvatarDownloadUrlPrefix) +
            profiles::GetDefaultAvatarIconFileNameAtIndex(icon_index));
@@ -33,7 +36,11 @@ void ProfileAvatarDownloader::Start() {
   net::URLRequestContextGetter* request_context =
       g_browser_process->system_request_context();
   if (request_context)
-    fetcher_->Start(request_context);
+    fetcher_->Start(
+        request_context,
+        std::string(),
+        net::URLRequest::CLEAR_REFERRER_ON_TRANSITION_FROM_SECURE_TO_INSECURE,
+        net::LOAD_NORMAL);
 }
 
 // BitmapFetcherDelegate overrides.
@@ -46,5 +53,6 @@ void ProfileAvatarDownloader::OnFetchComplete(const GURL url,
   gfx::Image image = gfx::Image::CreateFrom1xBitmap(*bitmap);
   cache_->SaveAvatarImageAtPath(&image,
       profiles::GetDefaultAvatarIconFileNameAtIndex(icon_index_),
-      profiles::GetPathOfHighResAvatarAtIndex(icon_index_));
+      profiles::GetPathOfHighResAvatarAtIndex(icon_index_),
+      profile_path_);
 }

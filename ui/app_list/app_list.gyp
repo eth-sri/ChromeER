@@ -15,13 +15,13 @@
         '../../base/base.gyp:base_i18n',
         '../../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
         '../../skia/skia.gyp:skia',
-        '../base/strings/ui_strings.gyp:ui_strings',
         '../base/ui_base.gyp:ui_base',
         '../compositor/compositor.gyp:compositor',
         '../events/events.gyp:events_base',
         '../gfx/gfx.gyp:gfx',
         '../gfx/gfx.gyp:gfx_geometry',
         '../resources/ui_resources.gyp:ui_resources',
+        '../strings/ui_strings.gyp:ui_strings',
       ],
       'defines': [
         'APP_LIST_IMPLEMENTATION',
@@ -136,6 +136,8 @@
         'views/signin_view.h',
         'views/speech_view.cc',
         'views/speech_view.h',
+        'views/start_page_view.cc',
+        'views/start_page_view.h',
         'views/top_icon_animation_view.cc',
         'views/top_icon_animation_view.h',
       ],
@@ -221,6 +223,7 @@
         'cocoa/test/apps_grid_controller_test_helper.mm',
         'test/run_all_unittests.cc',
         'views/app_list_main_view_unittest.cc',
+        'views/app_list_view_unittest.cc',
         'views/apps_grid_view_unittest.cc',
         'views/folder_header_view_unittest.cc',
         'views/search_box_view_unittest.cc',
@@ -258,8 +261,7 @@
           ],
         }],
         # See http://crbug.com/162998#c4 for why this is needed.
-        # TODO(dmikurube): Kill linux_use_tcmalloc. http://crbug.com/345554
-        ['OS=="linux" and ((use_allocator!="none" and use_allocator!="see_use_tcmalloc") or (use_allocator=="see_use_tcmalloc" and linux_use_tcmalloc==1))', {
+        ['OS=="linux" and use_allocator!="none"', {
           'dependencies': [
             '../../base/allocator/allocator.gyp:allocator',
             # The following two dependencies provide the missing

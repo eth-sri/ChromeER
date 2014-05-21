@@ -38,6 +38,9 @@
       'target_name': 'remoting_client',
       'type': 'static_library',
       'variables': { 'enable_wexit_time_destructors': 1, },
+      'defines': [
+        'VERSION=<(version_full)',
+      ],
       'dependencies': [
         'remoting_base',
         'remoting_protocol',
@@ -98,6 +101,13 @@
         'remoting_webapp_v1',
         'remoting_webapp_v2',
       ],
+      'conditions': [
+        ['disable_nacl==0 and disable_nacl_untrusted==0', {
+          'dependencies': [
+            'remoting_webapp_pnacl',
+          ],
+        }],
+      ],
     },  # end of target 'remoting_webapp'
 
     {
@@ -124,4 +134,23 @@
       'includes': [ 'remoting_webapp.gypi', ],
     },  # end of target 'remoting_webapp_v2'
   ],  # end of targets
+
+  'conditions': [
+    ['disable_nacl==0 and disable_nacl_untrusted==0', {
+      'targets': [
+        {
+          'target_name': 'remoting_webapp_pnacl',
+          'type': 'none',
+          'variables': {
+            'output_dir': '<(PRODUCT_DIR)/remoting/remoting.webapp.pnacl',
+            'zip_path': '<(PRODUCT_DIR)/remoting-webapp-pnacl.zip',
+            'extra_files': [ 'webapp/background.js' ],
+            'webapp_type': 'v2_pnacl',
+          },
+          'includes': [ 'remoting_webapp.gypi', ],
+        },  # end of target 'remoting_webapp_pnacl'
+      ],
+    }],
+  ],
+
 }

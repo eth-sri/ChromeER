@@ -2891,6 +2891,14 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
+<action name="GoogleNow.MessageCenter.NotificationPoppedUp">
+  <owner>robliao@chromium.org</owner>
+  <owner>skare@chromium.org</owner>
+  <description>
+    A Google Now notification was popped up to the user.
+  </description>
+</action>
+
 <action name="GoogleNow.MessageClicked">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -7374,6 +7382,26 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
+<action name="MobilePreviewPageBack">
+  <owner>ksimbili@chromium.org</owner>
+  <description>
+    When user navigates back, using either system back or toolbar back button,
+    from the preview page.
+  </description>
+</action>
+
+<action name="MobilePreviewPageReload">
+  <owner>ksimbili@chromium.org</owner>
+  <description>
+    User pressed reload button while the preview page is being shown.
+  </description>
+</action>
+
+<action name="MobilePreviewPageTabClose">
+  <owner>ksimbili@chromium.org</owner>
+  <description>User closes the tab while preview page is loaded.</description>
+</action>
+
 <action name="MobileReceivedExternalIntent">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -8170,6 +8198,11 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
+<action name="Options_Display">
+  <owner>michaelpg@chromium.org</owner>
+  <description>Settings: Device: Display settings</description>
+</action>
+
 <action name="Options_DisplayRearrange">
   <owner>stevenjb@chromium.org</owner>
   <description>
@@ -8255,6 +8288,9 @@ should be able to be added at any place in this file.
 <action name="Options_Homepage_HideHomeButton">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>
+    Deprecated as of 03/2012. This option is now a checkbox (r127199).
+  </obsolete>
 </action>
 
 <action name="Options_Homepage_HomeButton_Disable">
@@ -8280,6 +8316,19 @@ should be able to be added at any place in this file.
 <action name="Options_Homepage_ShowHomeButton">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>
+    Deprecated as of 03/2012. This option is now a checkbox (r127199).
+  </obsolete>
+</action>
+
+<action name="Options_Homepage_ShowSettings">
+  <owner>michaelpg@chromium.org</owner>
+  <description>Settings: Appearance: (Homepage settings): Change</description>
+</action>
+
+<action name="Options_Homepage_URL">
+  <owner>michaelpg@chromium.org</owner>
+  <description>Settings: Appearance: Home page: Open this page</description>
 </action>
 
 <action name="Options_Homepage_UseNewTab">
@@ -8387,11 +8436,23 @@ should be able to be added at any place in this file.
   <description>Settings: Keyboard settings: Search</description>
 </action>
 
+<action name="Options_KeyboardShowKeyboardShortcuts">
+  <owner>michaelpg@chromium.org</owner>
+  <description>
+    Settings: Keyboard settings: View keyboard shortcuts
+  </description>
+</action>
+
 <action name="Options_KeyboardShowLanguageSettings">
   <owner>stevenjb@chromium.org</owner>
   <description>
     Settings: Keyboard settings: Change language and input settings
   </description>
+</action>
+
+<action name="Options_LanuageAndSpellCheckSettings">
+  <owner>michaelpg@chromium.org</owner>
+  <description>Settings: Language and input settings</description>
 </action>
 
 <action name="Options_LinkDoctorCheckbox_Disable">
@@ -8590,6 +8651,11 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
+<action name="Options_OpenWallpaperManager">
+  <owner>michaelpg@chromium.org</owner>
+  <description>Settings: Appearance: Set wallpaper...</description>
+</action>
+
 <action name="Options_PasswordGenerationCheckbox_Disable">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -8675,6 +8741,16 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
+<action name="Options_SearchEngineRemoved">
+  <owner>michaelpg@chromium.org</owner>
+  <description>Settings: Manage search engines...: Remove</description>
+</action>
+
+<action name="Options_SearchEngineSetDefault">
+  <owner>michaelpg@chromium.org</owner>
+  <description>Settings: Manage search engines...: Make default</description>
+</action>
+
 <action name="Options_SensitivitySlider_Changed">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -8755,6 +8831,16 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
+<action name="Options_SpellingServiceCheckbox_Disable">
+  <owner>michaelpg@chromium.org</owner>
+  <description>Settings: Privacy: Use spelling service</description>
+</action>
+
+<action name="Options_SpellingServiceCheckbox_Enable">
+  <owner>michaelpg@chromium.org</owner>
+  <description>Settings: Privacy: Use spelling service</description>
+</action>
+
 <action name="Options_Startup_Custom">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -8806,8 +8892,8 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="Options_ThemesGallery">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
+  <owner>michaelpg@chromium.org</owner>
+  <description>Settings: Appearance: Get themes</description>
 </action>
 
 <action name="Options_ThemesReset">
@@ -9274,6 +9360,21 @@ should be able to be added at any place in this file.
 <action name="PeopleSearch_SendEmail">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="PermissionBubbleRequest">
+  <owner>gbillock@chromium.org</owner>
+  <owner>leng@chromium.org</owner>
+  <description>A website requested a permission.</description>
+</action>
+
+<action name="PermissionBubbleRequestQueued">
+  <owner>gbillock@chromium.org</owner>
+  <owner>leng@chromium.org</owner>
+  <description>
+    A website requested a permission which was queued because an existing
+    permission request was already visible.
+  </description>
 </action>
 
 <action name="PlatformVerificationAccepted">

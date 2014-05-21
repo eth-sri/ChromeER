@@ -132,7 +132,7 @@ void DidGetFileSyncStatusForDump(
   if (++*num_results < files->GetSize())
     return;
 
-  callback.Run(files);
+  callback.Run(*files);
 }
 
 // We need this indirection because WeakPtr can only be bound to methods
@@ -327,22 +327,10 @@ void SyncFileSystemService::DumpFiles(const GURL& origin,
                  AsWeakPtr(), origin, callback));
 }
 
-scoped_ptr<base::ListValue> SyncFileSystemService::DumpDatabase() {
-  scoped_ptr<base::ListValue> list = remote_service_->DumpDatabase();
-  if (!list)
-    list.reset(new base::ListValue);
-  if (v2_remote_service_) {
-    scoped_ptr<base::ListValue> v2list = v2_remote_service_->DumpDatabase();
-    if (!v2list)
-      return list.Pass();
-    for (base::ListValue::iterator itr = v2list->begin();
-         itr != v2list->end(); ) {
-      scoped_ptr<base::Value> item;
-      itr = v2list->Erase(itr, &item);
-      list->Append(item.release());
-    }
-  }
-  return list.Pass();
+void SyncFileSystemService::DumpDatabase(const DumpFilesCallback& callback) {
+  remote_service_->DumpDatabase(
+      base::Bind(&SyncFileSystemService::DidDumpDatabase,
+                 AsWeakPtr(), callback));
 }
 
 void SyncFileSystemService::GetFileSyncStatus(
@@ -508,28 +496,36 @@ void SyncFileSystemService::DidInitializeFileSystemForDump(
   DCHECK(!origin.is_empty());
 
   if (status != SYNC_STATUS_OK) {
-    base::ListValue empty_result;
-    callback.Run(&empty_result);
+    callback.Run(base::ListValue());
     return;
   }
 
-  base::ListValue* files =
-      GetRemoteService(origin)->DumpFiles(origin).release();
-  if (!files) {
-    callback.Run(new base::ListValue);
+  GetRemoteService(origin)->DumpFiles(
+      origin,
+      base::Bind(
+          &SyncFileSystemService::DidDumpFiles,
+          AsWeakPtr(),
+          origin,
+          callback));
+}
+
+void SyncFileSystemService::DidDumpFiles(
+    const GURL& origin,
+    const DumpFilesCallback& callback,
+    scoped_ptr<base::ListValue> dump_files) {
+  if (!dump_files || !dump_files->GetSize()) {
+    callback.Run(base::ListValue());
     return;
   }
 
-  if (!files->GetSize()) {
-    callback.Run(files);
-    return;
-  }
-
-  base::Callback<void(base::DictionaryValue* file,
-                      SyncStatusCode sync_status,
-                      SyncFileStatus sync_file_status)> completion_callback =
-      base::Bind(&DidGetFileSyncStatusForDump, base::Owned(files),
-                 base::Owned(new size_t(0)), callback);
+  base::ListValue* files = dump_files.get();
+  base::Callback<void(base::DictionaryValue*,
+                      SyncStatusCode,
+                      SyncFileStatus)> completion_callback =
+      base::Bind(&DidGetFileSyncStatusForDump,
+                 base::Owned(dump_files.release()),
+                 base::Owned(new size_t(0)),
+                 callback);
 
   // After all metadata loaded, sync status can be added to each entry.
   for (size_t i = 0; i < files->GetSize(); ++i) {
@@ -547,6 +543,39 @@ void SyncFileSystemService::DidInitializeFileSystemForDump(
     FileSystemURL url = CreateSyncableFileSystemURL(origin, file_path);
     GetFileSyncStatus(url, base::Bind(completion_callback, file));
   }
+}
+
+void SyncFileSystemService::DidDumpDatabase(
+    const DumpFilesCallback& callback, scoped_ptr<base::ListValue> list) {
+  if (!list)
+    list = make_scoped_ptr(new base::ListValue);
+
+  if (!v2_remote_service_) {
+    callback.Run(*list);
+    return;
+  }
+
+  v2_remote_service_->DumpDatabase(
+      base::Bind(&SyncFileSystemService::DidDumpV2Database,
+                 AsWeakPtr(), callback, base::Passed(&list)));
+}
+
+void SyncFileSystemService::DidDumpV2Database(
+    const DumpFilesCallback& callback,
+    scoped_ptr<base::ListValue> v1list,
+    scoped_ptr<base::ListValue> v2list) {
+  DCHECK(v1list);
+
+  if (v2list) {
+    for (base::ListValue::iterator itr = v2list->begin();
+         itr != v2list->end();) {
+      scoped_ptr<base::Value> item;
+      itr = v2list->Erase(itr, &item);
+      v1list->Append(item.release());
+    }
+  }
+
+  callback.Run(*v1list);
 }
 
 void SyncFileSystemService::SetSyncEnabledForTesting(bool enabled) {

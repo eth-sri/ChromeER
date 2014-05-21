@@ -11,7 +11,9 @@
 #include "base/compiler_specific.h"
 #include "base/logging.h"
 #include "base/strings/stringprintf.h"
+#include "mojo/embedder/platform_handle_vector.h"
 #include "mojo/system/message_pipe_endpoint.h"
+#include "mojo/system/transport_data.h"
 
 namespace mojo {
 namespace system {
@@ -262,23 +264,25 @@ void Channel::DetachMessagePipeEndpoint(
   }
 }
 
+size_t Channel::GetSerializedPlatformHandleSize() const {
+  return raw_channel_->GetSerializedPlatformHandleSize();
+}
+
 Channel::~Channel() {
   // The channel should have been shut down first.
   DCHECK(!is_running_no_lock());
 }
 
-void Channel::OnReadMessage(const MessageInTransit::View& message_view) {
-  // Note: |ValidateReadMessage()| will call |HandleRemoteError()| if necessary.
-  if (!ValidateReadMessage(message_view))
-    return;
-
+void Channel::OnReadMessage(
+    const MessageInTransit::View& message_view,
+    embedder::ScopedPlatformHandleVectorPtr platform_handles) {
   switch (message_view.type()) {
     case MessageInTransit::kTypeMessagePipeEndpoint:
     case MessageInTransit::kTypeMessagePipe:
-      OnReadMessageForDownstream(message_view);
+      OnReadMessageForDownstream(message_view, platform_handles.Pass());
       break;
     case MessageInTransit::kTypeChannel:
-      OnReadMessageForChannel(message_view);
+      OnReadMessageForChannel(message_view, platform_handles.Pass());
       break;
     default:
       HandleRemoteError(base::StringPrintf(
@@ -293,19 +297,9 @@ void Channel::OnFatalError(FatalError fatal_error) {
   Shutdown();
 }
 
-bool Channel::ValidateReadMessage(const MessageInTransit::View& message_view) {
-  const char* error_message = NULL;
-  if (!message_view.IsValid(&error_message)) {
-    DCHECK(error_message);
-    HandleRemoteError(error_message);
-    return false;
-  }
-
-  return true;
-}
-
 void Channel::OnReadMessageForDownstream(
-    const MessageInTransit::View& message_view) {
+    const MessageInTransit::View& message_view,
+    embedder::ScopedPlatformHandleVectorPtr platform_handles) {
   DCHECK(message_view.type() == MessageInTransit::kTypeMessagePipeEndpoint ||
          message_view.type() == MessageInTransit::kTypeMessagePipe);
 
@@ -347,10 +341,18 @@ void Channel::OnReadMessageForDownstream(
     return;
   }
 
-  // We need to duplicate the message, because |EnqueueMessage()| will take
-  // ownership of it.
+  // We need to duplicate the message (data), because |EnqueueMessage()| will
+  // take ownership of it.
   scoped_ptr<MessageInTransit> message(new MessageInTransit(message_view));
-  message->DeserializeDispatchers(this);
+  if (message_view.transport_data_buffer_size() > 0) {
+    DCHECK(message_view.transport_data_buffer());
+    message->SetDispatchers(
+        TransportData::DeserializeDispatchers(
+            message_view.transport_data_buffer(),
+            message_view.transport_data_buffer_size(),
+            platform_handles.Pass(),
+            this));
+  }
   MojoResult result = endpoint_info.message_pipe->EnqueueMessage(
       MessagePipe::GetPeerPort(endpoint_info.port), message.Pass());
   if (result != MOJO_RESULT_OK) {
@@ -366,8 +368,17 @@ void Channel::OnReadMessageForDownstream(
 }
 
 void Channel::OnReadMessageForChannel(
-    const MessageInTransit::View& message_view) {
+    const MessageInTransit::View& message_view,
+    embedder::ScopedPlatformHandleVectorPtr platform_handles) {
   DCHECK_EQ(message_view.type(), MessageInTransit::kTypeChannel);
+
+  // Currently, no channel messages take platform handles.
+  if (platform_handles) {
+    HandleRemoteError(
+        "Received invalid channel message (has platform handles)");
+    NOTREACHED();
+    return;
+  }
 
   switch (message_view.subtype()) {
     case MessageInTransit::kSubtypeChannelRunMessagePipeEndpoint:
@@ -458,7 +469,7 @@ bool Channel::SendControlMessage(MessageInTransit::Subtype subtype,
   DVLOG(2) << "Sending channel control message: subtype " << subtype
            << ", local ID " << local_id << ", remote ID " << remote_id;
   scoped_ptr<MessageInTransit> message(new MessageInTransit(
-      MessageInTransit::kTypeChannel, subtype, 0, 0, NULL));
+      MessageInTransit::kTypeChannel, subtype, 0, NULL));
   message->set_source_id(local_id);
   message->set_destination_id(remote_id);
   return WriteMessage(message.Pass());

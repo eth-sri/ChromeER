@@ -10,6 +10,7 @@
 #include "base/location.h"
 #include "base/metrics/histogram.h"
 #include "base/single_thread_task_runner.h"
+#include "base/time/time.h"
 #include "cc/animation/animation.h"
 #include "cc/animation/animation_events.h"
 #include "cc/animation/keyframed_animation_curve.h"
@@ -1043,6 +1044,10 @@ bool Layer::NeedMoreUpdates() {
   return false;
 }
 
+bool Layer::IsSuitableForGpuRasterization() const {
+  return true;
+}
+
 scoped_refptr<base::debug::ConvertableToTraceFormat> Layer::TakeDebugInfo() {
   if (client_)
     return client_->TakeDebugInfo();
@@ -1082,7 +1087,10 @@ void Layer::OnOpacityAnimated(float opacity) {
 }
 
 void Layer::OnTransformAnimated(const gfx::Transform& transform) {
+  if (transform_ == transform)
+    return;
   transform_ = transform;
+  transform_is_invertible_ = transform.IsInvertible();
 }
 
 void Layer::OnScrollOffsetAnimated(const gfx::Vector2dF& scroll_offset) {
@@ -1112,7 +1120,8 @@ bool Layer::AddAnimation(scoped_ptr <Animation> animation) {
 }
 
 void Layer::PauseAnimation(int animation_id, double time_offset) {
-  layer_animation_controller_->PauseAnimation(animation_id, time_offset);
+  layer_animation_controller_->PauseAnimation(
+      animation_id, base::TimeDelta::FromSecondsD(time_offset));
   SetNeedsCommit();
 }
 

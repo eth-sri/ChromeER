@@ -19,6 +19,7 @@ bool SelLdrLauncherChrome::Start(const char* url) {
 
 void SelLdrLauncherChrome::Start(
     PP_Instance instance,
+    bool main_service_runtime,
     const char* url,
     bool uses_irt,
     bool uses_ppapi,
@@ -27,15 +28,15 @@ void SelLdrLauncherChrome::Start(
     bool enable_dyncode_syscalls,
     bool enable_exception_handling,
     bool enable_crash_throttling,
-    const PP_ManifestService* manifest_service_interface,
+    const PPP_ManifestService* manifest_service_interface,
     void* manifest_service_user_data,
-    PP_Var* error_message,
     pp::CompletionCallback callback) {
   if (!launch_nacl_process) {
     pp::Module::Get()->core()->CallOnMainThread(0, callback, PP_ERROR_FAILED);
     return;
   }
   launch_nacl_process(instance,
+                      PP_FromBool(main_service_runtime),
                       url,
                       PP_FromBool(uses_irt),
                       PP_FromBool(uses_ppapi),
@@ -47,7 +48,6 @@ void SelLdrLauncherChrome::Start(
                       manifest_service_interface,
                       manifest_service_user_data,
                       &channel_,
-                      error_message,
                       callback.pp_completion_callback());
 }
 

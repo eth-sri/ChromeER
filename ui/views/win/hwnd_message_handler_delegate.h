@@ -46,13 +46,6 @@ class VIEWS_EXPORT HWNDMessageHandlerDelegate {
 
   virtual bool WidgetSizeIsClientSize() const = 0;
 
-  // Returns true if the delegate has a focus saving mechanism that should be
-  // used when the window is activated and deactivated.
-  virtual bool CanSaveFocus() const = 0;
-  virtual void SaveFocusOnDeactivate() = 0;
-  virtual void RestoreFocusOnActivate() = 0;
-  virtual void RestoreFocusOnEnable() = 0;
-
   // Returns true if the delegate represents a modal window.
   virtual bool IsModal() const = 0;
 
@@ -239,6 +232,9 @@ class VIEWS_EXPORT HWNDMessageHandlerDelegate {
   // Called when a scroll event is received. Returns true if the event was
   // handled by the delegate.
   virtual bool HandleScrollEvent(const ui::ScrollEvent& event) = 0;
+
+  // Called when the window size is about to change.
+  virtual void HandleWindowSizeChanging() = 0;
 
  protected:
   virtual ~HWNDMessageHandlerDelegate() {}

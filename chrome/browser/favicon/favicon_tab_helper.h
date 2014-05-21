@@ -19,6 +19,10 @@ namespace gfx {
 class Image;
 }
 
+namespace content {
+struct FaviconStatus;
+}
+
 class GURL;
 class FaviconHandler;
 class Profile;
@@ -62,17 +66,22 @@ class FaviconTabHelper : public content::WebContentsObserver,
   // content::WebContentsObserver override. Must be public, because also
   // called from PrerenderContents.
   virtual void DidUpdateFaviconURL(
-      int32 page_id,
       const std::vector<content::FaviconURL>& candidates) OVERRIDE;
 
   // Saves the favicon for the current page.
   void SaveFavicon();
 
   // FaviconDriver methods.
-  virtual content::NavigationEntry* GetActiveEntry() OVERRIDE;
   virtual int StartDownload(const GURL& url, int max_bitmap_size) OVERRIDE;
   virtual void NotifyFaviconUpdated(bool icon_url_changed) OVERRIDE;
   virtual bool IsOffTheRecord() OVERRIDE;
+  virtual const gfx::Image GetActiveFaviconImage() OVERRIDE;
+  virtual const GURL GetActiveFaviconURL() OVERRIDE;
+  virtual bool GetActiveFaviconValidity() OVERRIDE;
+  virtual const GURL GetActiveURL() OVERRIDE;
+  virtual void SetActiveFaviconImage(gfx::Image image) OVERRIDE;
+  virtual void SetActiveFaviconURL(GURL url) OVERRIDE;
+  virtual void SetActiveFaviconValidity(bool validity) OVERRIDE;
 
   // Favicon download callback.
   void DidDownloadFavicon(
@@ -97,6 +106,9 @@ class FaviconTabHelper : public content::WebContentsObserver,
   virtual void DidNavigateMainFrame(
       const content::LoadCommittedDetails& details,
       const content::FrameNavigateParams& params) OVERRIDE;
+
+  // Helper method that returns the active navigation entry's favicon.
+  content::FaviconStatus& GetFaviconStatus();
 
   Profile* profile_;
 

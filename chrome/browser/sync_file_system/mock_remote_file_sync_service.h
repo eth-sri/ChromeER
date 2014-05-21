@@ -70,8 +70,9 @@ class MockRemoteFileSyncService : public RemoteFileSyncService {
                     const DownloadVersionCallback&));
   MOCK_METHOD0(PromoteDemotedChanges, void());
 
-  virtual scoped_ptr<base::ListValue> DumpFiles(const GURL& origin) OVERRIDE;
-  virtual scoped_ptr<base::ListValue> DumpDatabase() OVERRIDE;
+  virtual void DumpFiles(const GURL& origin,
+                         const ListCallback& callback) OVERRIDE;
+  virtual void DumpDatabase(const ListCallback& callback) OVERRIDE;
 
   void SetServiceState(RemoteServiceState state);
 

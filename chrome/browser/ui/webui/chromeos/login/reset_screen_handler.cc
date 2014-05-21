@@ -13,7 +13,7 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/login/help_app_launcher.h"
 #include "chrome/browser/chromeos/reset/metrics.h"
-#include "chrome/common/chrome_switches.h"
+#include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
 #include "chrome/common/pref_names.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
@@ -23,6 +23,7 @@
 #include "grit/browser_resources.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
+#include "ui/base/l10n/l10n_util.h"
 
 namespace {
 
@@ -30,6 +31,8 @@ const char kJsScreenPath[] = "login.ResetScreen";
 
 // Reset screen id.
 const char kResetScreen[] = "reset";
+
+const int kErrorUIStateRollback = 7;
 
 }  // namespace
 
@@ -42,12 +45,13 @@ ResetScreenHandler::ResetScreenHandler()
       restart_required_(true),
       reboot_was_requested_(false),
       rollback_available_(false),
-      weak_factory_(this) {
+      weak_ptr_factory_(this) {
 }
 
 ResetScreenHandler::~ResetScreenHandler() {
   if (delegate_)
     delegate_->OnActorDestroyed(this);
+  DBusThreadManager::Get()->GetUpdateEngineClient()->RemoveObserver(this);
 }
 
 void ResetScreenHandler::PrepareToShow() {
@@ -97,18 +101,23 @@ void ResetScreenHandler::Show() {
   rollback_available_ = false;
   if (!restart_required_)  // First exec after boot.
     reboot_was_requested_ = prefs->GetBoolean(prefs::kFactoryResetRequested);
-  if (!restart_required_ && reboot_was_requested_) {
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableRollbackOption)) {
+    rollback_available_ = false;
+    ShowWithParams();
+  } else if (!restart_required_ && reboot_was_requested_) {
     // First exec after boot.
     rollback_available_ = prefs->GetBoolean(prefs::kRollbackRequested);
     ShowWithParams();
   } else {
     chromeos::DBusThreadManager::Get()->GetUpdateEngineClient()->
         CanRollbackCheck(base::Bind(&ResetScreenHandler::OnRollbackCheck,
-        weak_factory_.GetWeakPtr()));
+        weak_ptr_factory_.GetWeakPtr()));
   }
 }
 
 void ResetScreenHandler::Hide() {
+  DBusThreadManager::Get()->GetUpdateEngineClient()->RemoveObserver(this);
 }
 
 void ResetScreenHandler::SetDelegate(Delegate* delegate) {
@@ -127,6 +136,12 @@ void ResetScreenHandler::DeclareLocalizedValues(
   builder->Add("resetRestartMessage", IDS_RESET_SCREEN_RESTART_MSG);
   builder->AddF("resetRollbackOption",
                 IDS_RESET_SCREEN_ROLLBACK_OPTION,
+                IDS_SHORT_PRODUCT_NAME);
+  builder->AddF("resetRevertPromise",
+               IDS_RESET_SCREEN_PREPARING_REVERT_PROMISE,
+               IDS_SHORT_PRODUCT_NAME);
+  builder->AddF("resetRevertSpinnerMessage",
+                IDS_RESET_SCREEN_PREPARING_REVERT_SPINNER_MESSAGE,
                 IDS_SHORT_PRODUCT_NAME);
 
   // Different variants of the same UI elements for all dialog cases.
@@ -184,6 +199,7 @@ void ResetScreenHandler::RegisterMessages() {
 void ResetScreenHandler::HandleOnCancel() {
   if (delegate_)
     delegate_->OnExit();
+  DBusThreadManager::Get()->GetUpdateEngineClient()->RemoveObserver(this);
 }
 
 void ResetScreenHandler::HandleOnRestart(bool should_rollback) {
@@ -197,6 +213,8 @@ void ResetScreenHandler::HandleOnRestart(bool should_rollback) {
 
 void ResetScreenHandler::HandleOnPowerwash(bool rollback_checked) {
   if (rollback_available_ && (rollback_checked || reboot_was_requested_)) {
+      CallJS("updateViewOnRollbackCall");
+      DBusThreadManager::Get()->GetUpdateEngineClient()->AddObserver(this);
       chromeos::DBusThreadManager::Get()->GetUpdateEngineClient()->Rollback();
   } else {
     if (rollback_checked && !rollback_available_) {
@@ -212,6 +230,20 @@ void ResetScreenHandler::HandleOnLearnMore() {
   if (!help_app_.get())
     help_app_ = new HelpAppLauncher(GetNativeWindow());
   help_app_->ShowHelpTopic(HelpAppLauncher::HELP_POWERWASH);
+}
+
+void ResetScreenHandler::UpdateStatusChanged(
+    const UpdateEngineClient::Status& status) {
+  VLOG(1) << "Update status change to " << status.status;
+  if (status.status == UpdateEngineClient::UPDATE_STATUS_ERROR) {
+    // Show error screen.
+    base::DictionaryValue params;
+    params.SetInteger("uiState", kErrorUIStateRollback);
+    ShowScreen(OobeUI::kScreenErrorMessage, &params);
+  } else if (status.status ==
+      UpdateEngineClient::UPDATE_STATUS_UPDATED_NEED_REBOOT) {
+    DBusThreadManager::Get()->GetPowerManagerClient()->RequestRestart();
+  }
 }
 
 }  // namespace chromeos

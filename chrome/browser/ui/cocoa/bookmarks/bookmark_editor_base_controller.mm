@@ -18,7 +18,7 @@
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_name_folder_controller.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_tree_browser_cell.h"
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
-#include "components/bookmarks/core/browser/bookmark_model.h"
+#include "components/bookmarks/browser/bookmark_model.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/l10n/l10n_util_mac.h"
@@ -140,16 +140,20 @@ class BookmarkEditorBaseControllerBridge : public BookmarkModelObserver {
       [controller_ modelChangedPreserveSelection:YES];
   }
 
-  virtual void BookmarkNodeRemoved(BookmarkModel* model,
-                                   const BookmarkNode* parent,
-                                   int old_index,
-                                   const BookmarkNode* node) OVERRIDE {
+  virtual void BookmarkNodeRemoved(
+      BookmarkModel* model,
+      const BookmarkNode* parent,
+      int old_index,
+      const BookmarkNode* node,
+      const std::set<GURL>& removed_urls) OVERRIDE {
     [controller_ nodeRemoved:node fromParent:parent];
     if (node->is_folder())
       [controller_ modelChangedPreserveSelection:NO];
   }
 
-  virtual void BookmarkAllNodesRemoved(BookmarkModel* model) OVERRIDE {
+  virtual void BookmarkAllNodesRemoved(
+      BookmarkModel* model,
+      const std::set<GURL>& removed_urls) OVERRIDE {
     [controller_ modelChangedPreserveSelection:NO];
   }
 

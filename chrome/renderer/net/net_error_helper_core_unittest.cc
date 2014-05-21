@@ -4,16 +4,27 @@
 
 #include "chrome/renderer/net/net_error_helper_core.h"
 
+#include <map>
+#include <string>
+#include <vector>
+
+#include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/logging.h"
+#include "base/metrics/statistics_recorder.h"
 #include "base/strings/stringprintf.h"
 #include "base/timer/mock_timer.h"
 #include "base/timer/timer.h"
 #include "base/values.h"
 #include "chrome/common/net/net_error_info.h"
+#include "chrome/test/base/uma_histogram_helper.h"
+#include "content/public/common/url_constants.h"
 #include "net/base/net_errors.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/public/platform/WebURLError.h"
+#include "url/gurl.h"
+
+namespace {
 
 using blink::WebURLError;
 using chrome_common_net::DnsProbeStatus;
@@ -21,13 +32,22 @@ using chrome_common_net::DnsProbeStatusToString;
 
 const char kFailedUrl[] = "http://failed/";
 const char kFailedHttpsUrl[] = "https://failed/";
+
 const char kNavigationCorrectionUrl[] = "http://navigation.corrections/";
+const char kLanguage[] = "en";
+const char kCountry[] = "us";
+const char kApiKey[] = "api_key";
 const char kSearchUrl[] = "http://www.google.com/search";
+
 const char kSuggestedSearchTerms[] = "Happy Goats";
+const char kNavigationCorrectionEventId[] = "#007";
+const char kNavigationCorrectionFingerprint[] = "RandumStuff";
 
 struct NavigationCorrection {
   const char* correction_type;
   const char* url_correction;
+  const char* click_type;
+  const char* click_data;
   bool is_porn;
   bool is_soft_porn;
 
@@ -35,6 +55,8 @@ struct NavigationCorrection {
     base::DictionaryValue* dict = new base::DictionaryValue();
     dict->SetString("correctionType", correction_type);
     dict->SetString("urlCorrection", url_correction);
+    dict->SetString("clickType", click_type);
+    dict->SetString("clickData", click_data);
     dict->SetBoolean("isPorn", is_porn);
     dict->SetBoolean("isSoftPorn", is_soft_porn);
     return dict;
@@ -42,15 +64,15 @@ struct NavigationCorrection {
 };
 
 const NavigationCorrection kDefaultCorrections[] = {
-  {"reloadPage", kFailedUrl, false, false},
-  {"urlCorrection", "http://somewhere_else/", false, false},
-  {"contentOverlap", "http://somewhere_else_entirely/", false, false},
+  {"reloadPage", kFailedUrl, "rld", "data1", false, false},
+  {"urlCorrection", "http://somewhere_else/", "btn", "data2", false, false},
+  {"contentOverlap", "http://pony_island/", "btn", "data3", false, false},
 
   // Porn should be ignored.
-  {"emphasizedUrlCorrection", "http://porn/", true, false},
-  {"sitemap", "http://more_porn/", false, true},
+  {"emphasizedUrlCorrection", "http://porn/", "btn", "data4", true, false},
+  {"sitemap", "http://more_porn/", "btn", "data5", false, true},
 
-  {"webSearchQuery", kSuggestedSearchTerms, false, false},
+  {"webSearchQuery", kSuggestedSearchTerms, "frm", "data6", false, false},
 };
 
 std::string SuggestionsToResponse(const NavigationCorrection* corrections,
@@ -61,10 +83,26 @@ std::string SuggestionsToResponse(const NavigationCorrection* corrections,
 
   scoped_ptr<base::DictionaryValue> response(new base::DictionaryValue());
   response->Set("result.UrlCorrections", url_corrections);
+  response->SetString("result.eventId", kNavigationCorrectionEventId);
+  response->SetString("result.fingerprint", kNavigationCorrectionFingerprint);
 
   std::string json;
   base::JSONWriter::Write(response.get(), &json);
   return json;
+}
+
+testing::AssertionResult StringValueEquals(
+    const base::DictionaryValue& dict,
+    const std::string& key,
+    const std::string& expected_value) {
+  std::string actual_value;
+  if (!dict.GetString(key, &actual_value))
+    return testing::AssertionFailure() << key << " not found.";
+  if (actual_value != expected_value) {
+    return testing::AssertionFailure()
+        << "actual: " << actual_value << "\n expected: " << expected_value;
+  }
+  return testing::AssertionSuccess();
 }
 
 // Creates a string from an error that is used as a mock locally generated
@@ -93,14 +131,6 @@ WebURLError NetError(net::Error net_error) {
   return error;
 }
 
-WebURLError HttpError(int status_code) {
-  WebURLError error;
-  error.unreachableURL = GURL(kFailedUrl);
-  error.domain = blink::WebString::fromUTF8("http");
-  error.reason = status_code;
-  return error;
-}
-
 // Convenience functions that create an error string for a non-POST request.
 
 std::string ProbeErrorString(DnsProbeStatus status) {
@@ -114,14 +144,16 @@ std::string NetErrorString(net::Error net_error) {
 class NetErrorHelperCoreTest : public testing::Test,
                                public NetErrorHelperCore::Delegate {
  public:
-  NetErrorHelperCoreTest()
-      : timer_(new base::MockTimer(false, false)),
-        core_(this),
-        update_count_(0),
-        error_html_update_count_(0),
-        reload_count_(0),
-        load_stale_count_(0),
-        enable_page_helper_functions_count_(0) {
+  NetErrorHelperCoreTest() : timer_(new base::MockTimer(false, false)),
+                             core_(this),
+                             update_count_(0),
+                             error_html_update_count_(0),
+                             reload_count_(0),
+                             load_stale_count_(0),
+                             enable_page_helper_functions_count_(0),
+                             default_url_(GURL(kFailedUrl)),
+                             error_url_(GURL(content::kUnreachableWebDataURL)),
+                             tracking_request_count_(0) {
     core_.set_auto_reload_enabled(false);
     core_.set_timer_for_testing(scoped_ptr<base::Timer>(timer_));
   }
@@ -129,6 +161,10 @@ class NetErrorHelperCoreTest : public testing::Test,
   virtual ~NetErrorHelperCoreTest() {
     // No test finishes while an error page is being fetched.
     EXPECT_FALSE(is_url_being_fetched());
+  }
+
+  virtual void SetUp() OVERRIDE {
+    base::StatisticsRecorder::Initialize();
   }
 
   NetErrorHelperCore& core() { return core_; }
@@ -148,6 +184,14 @@ class NetErrorHelperCoreTest : public testing::Test,
     return load_stale_url_;
   }
 
+  const GURL& default_url() const {
+    return default_url_;
+  }
+
+  const GURL& error_url() const {
+    return error_url_;
+  }
+
   int enable_page_helper_functions_count() const {
     return enable_page_helper_functions_count_;
   }
@@ -161,6 +205,12 @@ class NetErrorHelperCoreTest : public testing::Test,
   const LocalizedError::ErrorPageParams* last_error_page_params() const {
     return last_error_page_params_.get();
   }
+
+  const GURL& last_tracking_url() const { return last_tracking_url_; }
+  const std::string& last_tracking_request_body() const {
+    return last_tracking_request_body_;
+  }
+  int tracking_request_count() const { return tracking_request_count_; }
 
   base::MockTimer* timer() { return timer_; }
 
@@ -190,14 +240,15 @@ class NetErrorHelperCoreTest : public testing::Test,
 
     core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
                        NetErrorHelperCore::ERROR_PAGE);
-    core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME);
+    core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME,
+                        error_url());
     core().OnFinishLoad(NetErrorHelperCore::MAIN_FRAME);
   }
 
   void DoSuccessLoad() {
     core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
                        NetErrorHelperCore::NON_ERROR_PAGE);
-    core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME);
+    core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME, default_url());
     core().OnFinishLoad(NetErrorHelperCore::MAIN_FRAME);
   }
 
@@ -226,7 +277,7 @@ class NetErrorHelperCoreTest : public testing::Test,
  private:
   void SetNavigationCorrectionURL(const GURL& navigation_correction_url) {
     core().OnSetNavigationCorrectionInfo(navigation_correction_url,
-                                         "en", "us", "api_key",
+                                         kLanguage, kCountry, kApiKey,
                                          GURL(kSearchUrl));
   }
 
@@ -270,6 +321,20 @@ class NetErrorHelperCoreTest : public testing::Test,
 
     url_being_fetched_ = navigation_correction_url;
     request_body_ = navigation_correction_request_body;
+
+    // Check the body of the request.
+
+    base::JSONReader reader;
+    scoped_ptr<base::Value> parsed_body(reader.Read(
+        navigation_correction_request_body));
+    ASSERT_TRUE(parsed_body);
+    base::DictionaryValue* dict = NULL;
+    ASSERT_TRUE(parsed_body->GetAsDictionary(&dict));
+
+    EXPECT_TRUE(StringValueEquals(*dict, "params.urlQuery", kFailedUrl));
+    EXPECT_TRUE(StringValueEquals(*dict, "params.language", kLanguage));
+    EXPECT_TRUE(StringValueEquals(*dict, "params.originCountry", kCountry));
+    EXPECT_TRUE(StringValueEquals(*dict, "params.key", kApiKey));
   }
 
   virtual void CancelFetchNavigationCorrections() OVERRIDE {
@@ -284,6 +349,28 @@ class NetErrorHelperCoreTest : public testing::Test,
   virtual void LoadPageFromCache(const GURL& error_url) OVERRIDE {
     load_stale_count_++;
     load_stale_url_ = error_url;
+  }
+
+  virtual void SendTrackingRequest(
+      const GURL& tracking_url,
+      const std::string& tracking_request_body) OVERRIDE {
+    last_tracking_url_ = tracking_url;
+    last_tracking_request_body_ = tracking_request_body;
+    tracking_request_count_++;
+
+    // Check the body of the request.
+
+    base::JSONReader reader;
+    scoped_ptr<base::Value> parsed_body(reader.Read(tracking_request_body));
+    ASSERT_TRUE(parsed_body);
+    base::DictionaryValue* dict = NULL;
+    ASSERT_TRUE(parsed_body->GetAsDictionary(&dict));
+
+    EXPECT_TRUE(StringValueEquals(*dict, "params.originalUrlQuery",
+                                  kFailedUrl));
+    EXPECT_TRUE(StringValueEquals(*dict, "params.language", kLanguage));
+    EXPECT_TRUE(StringValueEquals(*dict, "params.originCountry", kCountry));
+    EXPECT_TRUE(StringValueEquals(*dict, "params.key", kApiKey));
   }
 
   base::MockTimer* timer_;
@@ -312,6 +399,13 @@ class NetErrorHelperCoreTest : public testing::Test,
   GURL load_stale_url_;
 
   int enable_page_helper_functions_count_;
+
+  const GURL default_url_;
+  const GURL error_url_;
+
+  GURL last_tracking_url_;
+  std::string last_tracking_request_body_;
+  int tracking_request_count_;
 };
 
 //------------------------------------------------------------------------------
@@ -325,7 +419,7 @@ TEST_F(NetErrorHelperCoreTest, Null) {
 TEST_F(NetErrorHelperCoreTest, SuccessfulPageLoad) {
   core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
                      NetErrorHelperCore::NON_ERROR_PAGE);
-  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME);
+  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME, default_url());
   core().OnFinishLoad(NetErrorHelperCore::MAIN_FRAME);
   EXPECT_EQ(0, update_count());
   EXPECT_EQ(0, error_html_update_count());
@@ -335,7 +429,7 @@ TEST_F(NetErrorHelperCoreTest, SuccessfulPageLoadWithNavigationCorrections) {
   EnableNavigationCorrections();
   core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
                      NetErrorHelperCore::NON_ERROR_PAGE);
-  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME);
+  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME, default_url());
   core().OnFinishLoad(NetErrorHelperCore::MAIN_FRAME);
   EXPECT_EQ(0, update_count());
   EXPECT_EQ(0, error_html_update_count());
@@ -358,7 +452,7 @@ TEST_F(NetErrorHelperCoreTest, MainFrameNonDnsError) {
   EXPECT_EQ(0, enable_page_helper_functions_count());
   core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
                      NetErrorHelperCore::ERROR_PAGE);
-  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME);
+  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME, error_url());
   core().OnFinishLoad(NetErrorHelperCore::MAIN_FRAME);
   EXPECT_EQ(0, update_count());
   EXPECT_EQ(0, error_html_update_count());
@@ -383,7 +477,7 @@ TEST_F(NetErrorHelperCoreTest, MainFrameNonDnsErrorWithCorrections) {
   // Error page loads.
   core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
                      NetErrorHelperCore::ERROR_PAGE);
-  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME);
+  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME, error_url());
   core().OnFinishLoad(NetErrorHelperCore::MAIN_FRAME);
   EXPECT_EQ(0, update_count());
   EXPECT_EQ(0, error_html_update_count());
@@ -414,7 +508,7 @@ TEST_F(NetErrorHelperCoreTest, MainFrameNonDnsErrorSpuriousStatus) {
                      NetErrorHelperCore::ERROR_PAGE);
   core().OnNetErrorInfo(chrome_common_net::DNS_PROBE_FINISHED_NXDOMAIN);
 
-  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME);
+  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME, error_url());
   core().OnNetErrorInfo(chrome_common_net::DNS_PROBE_FINISHED_NXDOMAIN);
 
   core().OnFinishLoad(NetErrorHelperCore::MAIN_FRAME);
@@ -440,7 +534,7 @@ TEST_F(NetErrorHelperCoreTest, SubFrameDnsError) {
   // Error page loads.
   core().OnStartLoad(NetErrorHelperCore::SUB_FRAME,
                      NetErrorHelperCore::ERROR_PAGE);
-  core().OnCommitLoad(NetErrorHelperCore::SUB_FRAME);
+  core().OnCommitLoad(NetErrorHelperCore::SUB_FRAME, error_url());
   core().OnFinishLoad(NetErrorHelperCore::SUB_FRAME);
   EXPECT_EQ(0, update_count());
   EXPECT_EQ(0, error_html_update_count());
@@ -464,7 +558,7 @@ TEST_F(NetErrorHelperCoreTest, SubFrameDnsErrorWithCorrections) {
   // Error page loads.
   core().OnStartLoad(NetErrorHelperCore::SUB_FRAME,
                      NetErrorHelperCore::ERROR_PAGE);
-  core().OnCommitLoad(NetErrorHelperCore::SUB_FRAME);
+  core().OnCommitLoad(NetErrorHelperCore::SUB_FRAME, error_url());
   core().OnFinishLoad(NetErrorHelperCore::SUB_FRAME);
   EXPECT_EQ(0, update_count());
   EXPECT_EQ(0, error_html_update_count());
@@ -494,7 +588,7 @@ TEST_F(NetErrorHelperCoreTest, SubFrameDnsErrorSpuriousStatus) {
                      NetErrorHelperCore::ERROR_PAGE);
   core().OnNetErrorInfo(chrome_common_net::DNS_PROBE_FINISHED_NXDOMAIN);
 
-  core().OnCommitLoad(NetErrorHelperCore::SUB_FRAME);
+  core().OnCommitLoad(NetErrorHelperCore::SUB_FRAME, error_url());
   core().OnNetErrorInfo(chrome_common_net::DNS_PROBE_FINISHED_NXDOMAIN);
 
   core().OnFinishLoad(NetErrorHelperCore::SUB_FRAME);
@@ -527,7 +621,7 @@ TEST_F(NetErrorHelperCoreTest, FinishedBeforeProbe) {
   // Error page loads.
   core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
                      NetErrorHelperCore::ERROR_PAGE);
-  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME);
+  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME, error_url());
   core().OnFinishLoad(NetErrorHelperCore::MAIN_FRAME);
   EXPECT_EQ(0, update_count());
 
@@ -565,7 +659,7 @@ TEST_F(NetErrorHelperCoreTest, FinishedBeforeProbeNotRun) {
   // Error page loads.
   core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
                      NetErrorHelperCore::ERROR_PAGE);
-  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME);
+  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME, error_url());
   core().OnFinishLoad(NetErrorHelperCore::MAIN_FRAME);
   EXPECT_EQ(0, update_count());
 
@@ -599,7 +693,7 @@ TEST_F(NetErrorHelperCoreTest, FinishedBeforeProbeInconclusive) {
   // Error page loads.
   core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
                      NetErrorHelperCore::ERROR_PAGE);
-  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME);
+  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME, error_url());
   core().OnFinishLoad(NetErrorHelperCore::MAIN_FRAME);
   EXPECT_EQ(0, update_count());
 
@@ -637,7 +731,7 @@ TEST_F(NetErrorHelperCoreTest, FinishedBeforeProbeNoInternet) {
   // Error page loads.
   core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
                      NetErrorHelperCore::ERROR_PAGE);
-  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME);
+  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME, error_url());
   core().OnFinishLoad(NetErrorHelperCore::MAIN_FRAME);
   EXPECT_EQ(0, update_count());
 
@@ -676,7 +770,7 @@ TEST_F(NetErrorHelperCoreTest, FinishedBeforeProbeBadConfig) {
   // Error page loads.
   core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
                      NetErrorHelperCore::ERROR_PAGE);
-  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME);
+  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME, error_url());
   core().OnFinishLoad(NetErrorHelperCore::MAIN_FRAME);
   EXPECT_EQ(0, update_count());
 
@@ -716,7 +810,7 @@ TEST_F(NetErrorHelperCoreTest, FinishedAfterStartProbe) {
   // Error page loads.
   core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
                      NetErrorHelperCore::ERROR_PAGE);
-  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME);
+  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME, error_url());
 
   // Nothing should be done when a probe status comes in before loading
   // finishes.
@@ -763,7 +857,7 @@ TEST_F(NetErrorHelperCoreTest, FinishedBeforeProbePost) {
   EXPECT_EQ(0, enable_page_helper_functions_count());
   core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
                      NetErrorHelperCore::ERROR_PAGE);
-  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME);
+  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME, error_url());
   core().OnFinishLoad(NetErrorHelperCore::MAIN_FRAME);
   EXPECT_EQ(0, update_count());
   EXPECT_EQ(1, enable_page_helper_functions_count());
@@ -807,7 +901,7 @@ TEST_F(NetErrorHelperCoreTest, ProbeFinishesEarly) {
   core().OnNetErrorInfo(chrome_common_net::DNS_PROBE_FINISHED_NXDOMAIN);
   EXPECT_EQ(0, update_count());
 
-  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME);
+  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME, error_url());
   EXPECT_EQ(0, update_count());
 
   // When loading finishes, however, the buffered probe status should be sent
@@ -841,7 +935,7 @@ TEST_F(NetErrorHelperCoreTest, TwoErrorsWithProbes) {
   // Error page loads.
   core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
                      NetErrorHelperCore::ERROR_PAGE);
-  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME);
+  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME, error_url());
   core().OnFinishLoad(NetErrorHelperCore::MAIN_FRAME);
 
   // Probe results come in.
@@ -867,7 +961,7 @@ TEST_F(NetErrorHelperCoreTest, TwoErrorsWithProbes) {
   // Error page loads.
   core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
                      NetErrorHelperCore::ERROR_PAGE);
-  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME);
+  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME, error_url());
   core().OnFinishLoad(NetErrorHelperCore::MAIN_FRAME);
   EXPECT_EQ(2, update_count());
 
@@ -903,7 +997,7 @@ TEST_F(NetErrorHelperCoreTest, TwoErrorsWithProbesAfterSecondStarts) {
   // Error page loads.
   core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
                      NetErrorHelperCore::ERROR_PAGE);
-  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME);
+  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME, error_url());
   core().OnFinishLoad(NetErrorHelperCore::MAIN_FRAME);
 
   // The process starts again.
@@ -931,7 +1025,7 @@ TEST_F(NetErrorHelperCoreTest, TwoErrorsWithProbesAfterSecondStarts) {
             last_error_html());
 
   // Second page finishes loading, and is updated using the same probe result.
-  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME);
+  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME, error_url());
   core().OnFinishLoad(NetErrorHelperCore::MAIN_FRAME);
   EXPECT_EQ(3, update_count());
   EXPECT_EQ(ProbeErrorString(chrome_common_net::DNS_PROBE_FINISHED_NXDOMAIN),
@@ -977,7 +1071,7 @@ TEST_F(NetErrorHelperCoreTest, ErrorPageLoadInterrupted) {
   EXPECT_EQ(ProbeErrorString(chrome_common_net::DNS_PROBE_POSSIBLE), html);
 
   // Error page finishes loading.
-  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME);
+  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME, error_url());
   core().OnFinishLoad(NetErrorHelperCore::MAIN_FRAME);
 
   // Probe results come in.
@@ -1020,7 +1114,7 @@ TEST_F(NetErrorHelperCoreTest, NoCorrectionsForHttps) {
   // The blank page loads, no error page is loaded.
   core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
                      NetErrorHelperCore::ERROR_PAGE);
-  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME);
+  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME, error_url());
   core().OnFinishLoad(NetErrorHelperCore::MAIN_FRAME);
   EXPECT_FALSE(is_url_being_fetched());
   EXPECT_FALSE(last_error_page_params());
@@ -1057,7 +1151,7 @@ TEST_F(NetErrorHelperCoreTest, CorrectionsReceivedBeforeProbe) {
   // The blank page loads.
   core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
                       NetErrorHelperCore::ERROR_PAGE);
-  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME);
+  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME, error_url());
 
   // Corrections retrieval starts when the error page finishes loading.
   EXPECT_FALSE(is_url_being_fetched());
@@ -1077,7 +1171,7 @@ TEST_F(NetErrorHelperCoreTest, CorrectionsReceivedBeforeProbe) {
   // Corrections load.
   core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
                       NetErrorHelperCore::ERROR_PAGE);
-  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME);
+  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME, error_url());
   core().OnFinishLoad(NetErrorHelperCore::MAIN_FRAME);
 
   // Any probe statuses should be ignored.
@@ -1106,7 +1200,7 @@ TEST_F(NetErrorHelperCoreTest, CorrectionsRetrievedAfterProbes) {
   // The blank page loads.
   core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
                      NetErrorHelperCore::ERROR_PAGE);
-  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME);
+  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME, error_url());
   core().OnFinishLoad(NetErrorHelperCore::MAIN_FRAME);
   EXPECT_TRUE(is_url_being_fetched());
   EXPECT_FALSE(last_error_page_params());
@@ -1130,7 +1224,7 @@ TEST_F(NetErrorHelperCoreTest, CorrectionsRetrievedAfterProbes) {
   // Corrections load.
   core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
                      NetErrorHelperCore::ERROR_PAGE);
-  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME);
+  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME, error_url());
   core().OnFinishLoad(NetErrorHelperCore::MAIN_FRAME);
   EXPECT_EQ(1, error_html_update_count());
   EXPECT_EQ(0, update_count());
@@ -1154,7 +1248,7 @@ TEST_F(NetErrorHelperCoreTest, CorrectionsFailLoadNoProbes) {
   // The blank page loads.
   core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
                      NetErrorHelperCore::ERROR_PAGE);
-  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME);
+  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME, error_url());
   core().OnFinishLoad(NetErrorHelperCore::MAIN_FRAME);
 
   // Corrections request fails, final error page is shown.
@@ -1169,7 +1263,7 @@ TEST_F(NetErrorHelperCoreTest, CorrectionsFailLoadNoProbes) {
   // Error page loads.
   core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
                      NetErrorHelperCore::ERROR_PAGE);
-  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME);
+  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME, error_url());
   core().OnFinishLoad(NetErrorHelperCore::MAIN_FRAME);
 
   // If probe statuses come in last from another page load, they should be
@@ -1198,7 +1292,7 @@ TEST_F(NetErrorHelperCoreTest, CorrectionsFailLoadBeforeProbe) {
   // The blank page loads.
   core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
                      NetErrorHelperCore::ERROR_PAGE);
-  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME);
+  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME, error_url());
   core().OnFinishLoad(NetErrorHelperCore::MAIN_FRAME);
 
   // Corrections request fails, probe pending page shown.
@@ -1213,7 +1307,7 @@ TEST_F(NetErrorHelperCoreTest, CorrectionsFailLoadBeforeProbe) {
   // Probe page loads.
   core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
                      NetErrorHelperCore::ERROR_PAGE);
-  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME);
+  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME, error_url());
   core().OnFinishLoad(NetErrorHelperCore::MAIN_FRAME);
 
   // Probe statuses comes in, and page is updated.
@@ -1250,7 +1344,7 @@ TEST_F(NetErrorHelperCoreTest, CorrectionsFailAfterProbe) {
   // The blank page loads.
   core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
                      NetErrorHelperCore::ERROR_PAGE);
-  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME);
+  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME, error_url());
   core().OnFinishLoad(NetErrorHelperCore::MAIN_FRAME);
 
   // Results come in, but end up being ignored.
@@ -1270,7 +1364,7 @@ TEST_F(NetErrorHelperCoreTest, CorrectionsFailAfterProbe) {
   // Probe page loads.
   core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
                      NetErrorHelperCore::ERROR_PAGE);
-  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME);
+  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME, error_url());
   core().OnFinishLoad(NetErrorHelperCore::MAIN_FRAME);
 
   // Probe statuses comes in, and page is updated.
@@ -1310,7 +1404,7 @@ TEST_F(NetErrorHelperCoreTest, CorrectionsInterruptedBeforeCommit) {
   core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
                      NetErrorHelperCore::NON_ERROR_PAGE);
   EXPECT_FALSE(is_url_being_fetched());
-  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME);
+  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME, default_url());
   EXPECT_FALSE(is_url_being_fetched());
   core().OnFinishLoad(NetErrorHelperCore::MAIN_FRAME);
 
@@ -1337,14 +1431,14 @@ TEST_F(NetErrorHelperCoreTest, CorrectionsInterruptedBeforeLoad) {
   // The blank page starts loading and is committed.
   core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
                      NetErrorHelperCore::ERROR_PAGE);
-  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME);
+  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME, error_url());
 
   // A new page load interrupts the original load.
   EXPECT_FALSE(is_url_being_fetched());
   core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
                      NetErrorHelperCore::NON_ERROR_PAGE);
   EXPECT_FALSE(is_url_being_fetched());
-  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME);
+  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME, default_url());
   EXPECT_FALSE(is_url_being_fetched());
   core().OnFinishLoad(NetErrorHelperCore::MAIN_FRAME);
 
@@ -1371,7 +1465,7 @@ TEST_F(NetErrorHelperCoreTest, CorrectionsInterrupted) {
   // The blank page loads.
   core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
                      NetErrorHelperCore::ERROR_PAGE);
-  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME);
+  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME, error_url());
   core().OnFinishLoad(NetErrorHelperCore::MAIN_FRAME);
   EXPECT_TRUE(is_url_being_fetched());
 
@@ -1392,7 +1486,7 @@ TEST_F(NetErrorHelperCoreTest, CorrectionsInterrupted) {
   EXPECT_TRUE(html.empty());
   core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
                      NetErrorHelperCore::ERROR_PAGE);
-  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME);
+  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME, error_url());
   EXPECT_FALSE(is_url_being_fetched());
   core().OnFinishLoad(NetErrorHelperCore::MAIN_FRAME);
   EXPECT_TRUE(is_url_being_fetched());
@@ -1430,7 +1524,7 @@ TEST_F(NetErrorHelperCoreTest, CorrectionsStopped) {
   // The blank page loads.
   core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
                      NetErrorHelperCore::ERROR_PAGE);
-  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME);
+  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME, error_url());
   core().OnFinishLoad(NetErrorHelperCore::MAIN_FRAME);
 
   EXPECT_TRUE(is_url_being_fetched());
@@ -1455,7 +1549,7 @@ TEST_F(NetErrorHelperCoreTest, CorrectionsStopped) {
   // The blank page loads again.
   core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
                      NetErrorHelperCore::ERROR_PAGE);
-  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME);
+  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME, error_url());
   core().OnFinishLoad(NetErrorHelperCore::MAIN_FRAME);
   EXPECT_TRUE(is_url_being_fetched());
 
@@ -1469,7 +1563,7 @@ TEST_F(NetErrorHelperCoreTest, CorrectionsStopped) {
   // Probe page loads.
   core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
                      NetErrorHelperCore::ERROR_PAGE);
-  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME);
+  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME, error_url());
   core().OnFinishLoad(NetErrorHelperCore::MAIN_FRAME);
 
   // Probe statuses comes in, and page is updated.
@@ -1505,7 +1599,7 @@ TEST_F(NetErrorHelperCoreTest, CorrectionsDisabledBeforeFetch) {
                      NetErrorHelperCore::ERROR_PAGE);
   // Corrections is disabled.
   DisableNavigationCorrections();
-  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME);
+  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME, error_url());
   core().OnFinishLoad(NetErrorHelperCore::MAIN_FRAME);
   EXPECT_TRUE(is_url_being_fetched());
   EXPECT_FALSE(last_error_page_params());
@@ -1521,7 +1615,7 @@ TEST_F(NetErrorHelperCoreTest, CorrectionsDisabledBeforeFetch) {
   // Corrections load.
   core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
                      NetErrorHelperCore::ERROR_PAGE);
-  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME);
+  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME, error_url());
   core().OnFinishLoad(NetErrorHelperCore::MAIN_FRAME);
   EXPECT_EQ(1, error_html_update_count());
   EXPECT_EQ(0, update_count());
@@ -1545,7 +1639,7 @@ TEST_F(NetErrorHelperCoreTest, CorrectionsDisabledDuringFetch) {
   // The blank page loads.
   core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
                      NetErrorHelperCore::ERROR_PAGE);
-  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME);
+  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME, error_url());
   core().OnFinishLoad(NetErrorHelperCore::MAIN_FRAME);
   EXPECT_TRUE(is_url_being_fetched());
   EXPECT_FALSE(last_error_page_params());
@@ -1564,7 +1658,7 @@ TEST_F(NetErrorHelperCoreTest, CorrectionsDisabledDuringFetch) {
   // Corrections load.
   core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
                      NetErrorHelperCore::ERROR_PAGE);
-  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME);
+  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME, error_url());
   core().OnFinishLoad(NetErrorHelperCore::MAIN_FRAME);
   EXPECT_EQ(1, error_html_update_count());
   EXPECT_EQ(0, update_count());
@@ -1573,7 +1667,7 @@ TEST_F(NetErrorHelperCoreTest, CorrectionsDisabledDuringFetch) {
 // Checks corrections are is used when there are no search suggestions.
 TEST_F(NetErrorHelperCoreTest, CorrectionsWithoutSearch) {
   const NavigationCorrection kCorrections[] = {
-    {"urlCorrection", "http://somewhere_else/", false, false},
+    {"urlCorrection", "http://somewhere_else/", "btn", "data", false, false},
   };
 
   // Original page starts loading.
@@ -1591,7 +1685,7 @@ TEST_F(NetErrorHelperCoreTest, CorrectionsWithoutSearch) {
   // The blank page loads.
   core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
                      NetErrorHelperCore::ERROR_PAGE);
-  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME);
+  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME, error_url());
   core().OnFinishLoad(NetErrorHelperCore::MAIN_FRAME);
   EXPECT_TRUE(is_url_being_fetched());
   EXPECT_FALSE(last_error_page_params());
@@ -1612,7 +1706,7 @@ TEST_F(NetErrorHelperCoreTest, CorrectionsWithoutSearch) {
   // Corrections load.
   core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
                      NetErrorHelperCore::ERROR_PAGE);
-  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME);
+  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME, error_url());
   core().OnFinishLoad(NetErrorHelperCore::MAIN_FRAME);
   EXPECT_EQ(1, error_html_update_count());
   EXPECT_EQ(0, update_count());
@@ -1621,7 +1715,7 @@ TEST_F(NetErrorHelperCoreTest, CorrectionsWithoutSearch) {
 // Checks corrections are used when there are only search suggestions.
 TEST_F(NetErrorHelperCoreTest, CorrectionsOnlySearchSuggestion) {
   const NavigationCorrection kCorrections[] = {
-    {"webSearchQuery", kSuggestedSearchTerms, false, false},
+    {"webSearchQuery", kSuggestedSearchTerms, "frm", "data", false, false},
   };
 
   // Original page starts loading.
@@ -1639,7 +1733,7 @@ TEST_F(NetErrorHelperCoreTest, CorrectionsOnlySearchSuggestion) {
   // The blank page loads.
   core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
                      NetErrorHelperCore::ERROR_PAGE);
-  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME);
+  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME, error_url());
   core().OnFinishLoad(NetErrorHelperCore::MAIN_FRAME);
   EXPECT_TRUE(is_url_being_fetched());
   EXPECT_FALSE(last_error_page_params());
@@ -1660,7 +1754,7 @@ TEST_F(NetErrorHelperCoreTest, CorrectionsOnlySearchSuggestion) {
   // Corrections load.
   core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
                      NetErrorHelperCore::ERROR_PAGE);
-  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME);
+  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME, error_url());
   core().OnFinishLoad(NetErrorHelperCore::MAIN_FRAME);
   EXPECT_EQ(1, error_html_update_count());
   EXPECT_EQ(0, update_count());
@@ -1683,7 +1777,7 @@ TEST_F(NetErrorHelperCoreTest, CorrectionServiceReturnsNonJsonResult) {
   // The blank page loads.
   core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
                      NetErrorHelperCore::ERROR_PAGE);
-  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME);
+  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME, error_url());
   core().OnFinishLoad(NetErrorHelperCore::MAIN_FRAME);
 
   // Corrections request fails, final error page is shown.
@@ -1698,7 +1792,7 @@ TEST_F(NetErrorHelperCoreTest, CorrectionServiceReturnsNonJsonResult) {
   // Error page loads.
   core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
                      NetErrorHelperCore::ERROR_PAGE);
-  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME);
+  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME, error_url());
   core().OnFinishLoad(NetErrorHelperCore::MAIN_FRAME);
 }
 
@@ -1720,7 +1814,7 @@ TEST_F(NetErrorHelperCoreTest, CorrectionServiceReturnsInvalidJsonResult) {
   // The blank page loads.
   core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
                      NetErrorHelperCore::ERROR_PAGE);
-  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME);
+  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME, error_url());
   core().OnFinishLoad(NetErrorHelperCore::MAIN_FRAME);
 
   // Corrections request fails, final error page is shown.
@@ -1735,8 +1829,96 @@ TEST_F(NetErrorHelperCoreTest, CorrectionServiceReturnsInvalidJsonResult) {
   // Error page loads.
   core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
                      NetErrorHelperCore::ERROR_PAGE);
-  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME);
+  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME, error_url());
   core().OnFinishLoad(NetErrorHelperCore::MAIN_FRAME);
+}
+
+TEST_F(NetErrorHelperCoreTest, CorrectionClickTracking) {
+  // Go through the standard navigation correction steps.
+
+  // Original page starts loading.
+  EnableNavigationCorrections();
+  core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
+                     NetErrorHelperCore::NON_ERROR_PAGE);
+
+  // It fails.
+  std::string html;
+  core().GetErrorHTML(NetErrorHelperCore::MAIN_FRAME,
+                      NetError(net::ERR_NAME_NOT_RESOLVED),
+                      false, &html);
+  EXPECT_TRUE(html.empty());
+  EXPECT_FALSE(is_url_being_fetched());
+  EXPECT_FALSE(last_error_page_params());
+
+  // The blank page loads.
+  core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
+                      NetErrorHelperCore::ERROR_PAGE);
+  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME, error_url());
+
+  // Corrections retrieval starts when the error page finishes loading.
+  EXPECT_FALSE(is_url_being_fetched());
+  EXPECT_FALSE(last_error_page_params());
+  core().OnFinishLoad(NetErrorHelperCore::MAIN_FRAME);
+  EXPECT_TRUE(is_url_being_fetched());
+  EXPECT_FALSE(last_error_page_params());
+
+  // Corrections are retrieved.
+  NavigationCorrectionsLoadSuccess(kDefaultCorrections,
+                                   arraysize(kDefaultCorrections));
+  EXPECT_EQ(1, error_html_update_count());
+  EXPECT_EQ(NetErrorString(net::ERR_NAME_NOT_RESOLVED), last_error_html());
+  ExpectDefaultNavigationCorrections();
+  EXPECT_FALSE(is_url_being_fetched());
+
+  // Corrections load.
+  core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
+                      NetErrorHelperCore::ERROR_PAGE);
+  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME, error_url());
+  core().OnFinishLoad(NetErrorHelperCore::MAIN_FRAME);
+
+  EXPECT_EQ(0, tracking_request_count());
+
+  // Invalid clicks should be ignored.
+  core().TrackClick(-1);
+  core().TrackClick(arraysize(kDefaultCorrections));
+  EXPECT_EQ(0, tracking_request_count());
+
+  for (size_t i = 0; i < arraysize(kDefaultCorrections); ++i) {
+    // Skip links that do not appear in the page.
+    if (kDefaultCorrections[i].is_porn || kDefaultCorrections[i].is_soft_porn)
+      continue;
+
+    int old_tracking_request_count = tracking_request_count();
+    core().TrackClick(i);
+    EXPECT_EQ(old_tracking_request_count + 1, tracking_request_count());
+    EXPECT_EQ(GURL(kNavigationCorrectionUrl), last_tracking_url());
+
+    // Make sure all expected strings appear in output.
+    EXPECT_TRUE(last_tracking_request_body().find(
+                    kDefaultCorrections[i].url_correction));
+    EXPECT_TRUE(last_tracking_request_body().find(
+                    kDefaultCorrections[i].click_data));
+    EXPECT_TRUE(last_tracking_request_body().find(
+                    kDefaultCorrections[i].click_type));
+    EXPECT_TRUE(last_tracking_request_body().find(
+                    kNavigationCorrectionEventId));
+    EXPECT_TRUE(last_tracking_request_body().find(
+                    kNavigationCorrectionFingerprint));
+  }
+
+  // Make sure duplicate tracking requests are ignored.
+  for (size_t i = 0; i < arraysize(kDefaultCorrections); ++i) {
+    // Skip links that do not appear in the page.
+    if (kDefaultCorrections[i].is_porn || kDefaultCorrections[i].is_soft_porn)
+      continue;
+
+    int old_tracking_request_count = tracking_request_count();
+    core().TrackClick(i);
+    EXPECT_EQ(old_tracking_request_count, tracking_request_count());
+  }
+
+  EXPECT_EQ(0, update_count());
+  EXPECT_EQ(1, error_html_update_count());
 }
 
 TEST_F(NetErrorHelperCoreTest, AutoReloadDisabled) {
@@ -1837,6 +2019,8 @@ TEST_F(NetErrorHelperCoreTest, AutoReloadRestartsOnOnline) {
   DoErrorLoad(net::ERR_CONNECTION_RESET);
   EXPECT_TRUE(timer()->IsRunning());
   EXPECT_NE(delay, timer()->GetCurrentDelay());
+  core().NetworkStateChanged(false);
+  EXPECT_FALSE(timer()->IsRunning());
   core().NetworkStateChanged(true);
   EXPECT_TRUE(timer()->IsRunning());
   EXPECT_EQ(delay, timer()->GetCurrentDelay());
@@ -1852,24 +2036,13 @@ TEST_F(NetErrorHelperCoreTest, AutoReloadDoesNotStartOnOnline) {
   EXPECT_FALSE(timer()->IsRunning());
 }
 
-TEST_F(NetErrorHelperCoreTest, AutoReloadStopsOnOffline) {
+TEST_F(NetErrorHelperCoreTest, AutoReloadDoesNotStartOffline) {
   core().set_auto_reload_enabled(true);
-  DoErrorLoad(net::ERR_CONNECTION_RESET);
-  EXPECT_TRUE(timer()->IsRunning());
   core().NetworkStateChanged(false);
-  EXPECT_FALSE(timer()->IsRunning());
-  EXPECT_EQ(0, core().auto_reload_count());
-}
-
-TEST_F(NetErrorHelperCoreTest, AutoReloadStopsOnOfflineThenRestartsOnOnline) {
-  core().set_auto_reload_enabled(true);
   DoErrorLoad(net::ERR_CONNECTION_RESET);
-  EXPECT_TRUE(timer()->IsRunning());
-  core().NetworkStateChanged(false);
   EXPECT_FALSE(timer()->IsRunning());
   core().NetworkStateChanged(true);
   EXPECT_TRUE(timer()->IsRunning());
-  EXPECT_EQ(0, core().auto_reload_count());
 }
 
 TEST_F(NetErrorHelperCoreTest, AutoReloadDoesNotRestartOnOnlineAfterStop) {
@@ -1915,7 +2088,7 @@ TEST_F(NetErrorHelperCoreTest, AutoReloadSlowError) {
                       NetError(net::ERR_CONNECTION_RESET), false, &html);
   core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
                      NetErrorHelperCore::ERROR_PAGE);
-  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME);
+  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME, error_url());
   EXPECT_FALSE(timer()->IsRunning());
   // Start a new non-error page load.
   core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
@@ -1924,7 +2097,7 @@ TEST_F(NetErrorHelperCoreTest, AutoReloadSlowError) {
   // Finish the error page load.
   core().OnFinishLoad(NetErrorHelperCore::MAIN_FRAME);
   EXPECT_FALSE(timer()->IsRunning());
-  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME);
+  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME, error_url());
   core().OnFinishLoad(NetErrorHelperCore::MAIN_FRAME);
   EXPECT_FALSE(timer()->IsRunning());
 }
@@ -1939,7 +2112,7 @@ TEST_F(NetErrorHelperCoreTest, AutoReloadOnlineSlowError) {
                       NetError(net::ERR_CONNECTION_RESET), false, &html);
   core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
                      NetErrorHelperCore::ERROR_PAGE);
-  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME);
+  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME, error_url());
   EXPECT_FALSE(timer()->IsRunning());
   core().NetworkStateChanged(true);
   EXPECT_FALSE(timer()->IsRunning());
@@ -1964,7 +2137,7 @@ TEST_F(NetErrorHelperCoreTest, AutoReloadOnlinePendingError) {
   core().NetworkStateChanged(true);
   EXPECT_FALSE(timer()->IsRunning());
   core().NetworkStateChanged(false);
-  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME);
+  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME, error_url());
   core().OnFinishLoad(NetErrorHelperCore::MAIN_FRAME);
   EXPECT_FALSE(timer()->IsRunning());
   core().NetworkStateChanged(true);
@@ -1981,7 +2154,7 @@ TEST_F(NetErrorHelperCoreTest, AutoReloadOnlinePartialErrorReplacement) {
                       NetError(net::ERR_CONNECTION_RESET), false, &html);
   core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
                      NetErrorHelperCore::ERROR_PAGE);
-  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME);
+  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME, error_url());
   core().OnFinishLoad(NetErrorHelperCore::MAIN_FRAME);
   core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
                      NetErrorHelperCore::NON_ERROR_PAGE);
@@ -1992,6 +2165,238 @@ TEST_F(NetErrorHelperCoreTest, AutoReloadOnlinePartialErrorReplacement) {
   EXPECT_FALSE(timer()->IsRunning());
   core().NetworkStateChanged(true);
   EXPECT_FALSE(timer()->IsRunning());
+}
+
+// Return the count for the named histogram, or 0 if there is no histogram by
+// that name. This function is error-tolerant because histograms that have no
+// data points may not be registered, and the unit tests below still need to be
+// able to check that they haven't changed.
+int GetHistogramCount(const char *name) {
+  base::HistogramBase* histogram =
+      base::StatisticsRecorder::FindHistogram(name);
+  if (!histogram)
+    return 0;
+  scoped_ptr<base::HistogramSamples> samples = histogram->SnapshotSamples();
+  if (!samples)
+    return 0;
+  return samples->TotalCount();
+}
+
+void ExpectHistogramDelta(const char *name, int old_count, int delta) {
+  int new_count = GetHistogramCount(name);
+  EXPECT_EQ(old_count + delta, new_count) << "For histogram " << name;
+}
+
+class NetErrorHelperCoreHistogramTest : public NetErrorHelperCoreTest {
+ public:
+  virtual void SetUp() OVERRIDE {
+    NetErrorHelperCoreTest::SetUp();
+    StoreOldCounts();
+    core().set_auto_reload_enabled(true);
+  }
+
+  void ExpectDelta(const char *name, int delta) {
+    DCHECK(old_counts_.count(name) == 1);
+    ExpectHistogramDelta(name, old_counts_[name], delta);
+  }
+
+  static const char kCountAtStop[];
+  static const char kErrorAtStop[];
+  static const char kCountAtSuccess[];
+  static const char kErrorAtSuccess[];
+  static const char kErrorAtFirstSuccess[];
+
+ private:
+  void StoreOldCounts() {
+    for (size_t i = 0; kHistogramNames[i]; i++)
+      old_counts_[kHistogramNames[i]] = GetHistogramCount(kHistogramNames[i]);
+  }
+
+  static const char *kHistogramNames[];
+
+  std::map<std::string, int> old_counts_;
+};
+
+const char NetErrorHelperCoreHistogramTest::kCountAtStop[] =
+    "Net.AutoReload.CountAtStop";
+const char NetErrorHelperCoreHistogramTest::kErrorAtStop[] =
+    "Net.AutoReload.ErrorAtStop";
+const char NetErrorHelperCoreHistogramTest::kCountAtSuccess[] =
+    "Net.AutoReload.CountAtSuccess";
+const char NetErrorHelperCoreHistogramTest::kErrorAtSuccess[] =
+    "Net.AutoReload.ErrorAtSuccess";
+const char NetErrorHelperCoreHistogramTest::kErrorAtFirstSuccess[] =
+    "Net.AutoReload.ErrorAtFirstSuccess";
+const char *NetErrorHelperCoreHistogramTest::kHistogramNames[] = {
+  kCountAtStop,
+  kErrorAtStop,
+  kCountAtSuccess,
+  kErrorAtSuccess,
+  kErrorAtFirstSuccess,
+  NULL
+};
+
+// Test that the success histograms are updated when auto-reload succeeds at the
+// first attempt, and that the failure histograms are not updated.
+TEST_F(NetErrorHelperCoreHistogramTest, SuccessAtFirstAttempt) {
+  DoErrorLoad(net::ERR_CONNECTION_RESET);
+  timer()->Fire();
+  DoSuccessLoad();
+
+  // All of CountAtSuccess, ErrorAtSuccess, and ErrorAtFirstSuccess should
+  // reflect this successful load. The failure histograms should be unchanged.
+  ExpectDelta(kCountAtSuccess, 1);
+  ExpectDelta(kErrorAtSuccess, 1);
+  ExpectDelta(kErrorAtFirstSuccess, 1);
+  ExpectDelta(kCountAtStop, 0);
+  ExpectDelta(kErrorAtStop, 0);
+}
+
+// Test that the success histograms are updated when auto-reload succeeds but
+// not on the first attempt, and that the first-success histogram is not
+// updated.
+TEST_F(NetErrorHelperCoreHistogramTest, SuccessAtSecondAttempt) {
+  DoErrorLoad(net::ERR_CONNECTION_RESET);
+  timer()->Fire();
+  EXPECT_TRUE(core().ShouldSuppressErrorPage(NetErrorHelperCore::MAIN_FRAME,
+                                             default_url()));
+//  DoErrorLoad(net::ERR_CONNECTION_RESET);
+  timer()->Fire();
+  DoSuccessLoad();
+
+  // CountAtSuccess and ErrorAtSuccess should reflect this successful load, but
+  // not ErrorAtFirstSuccess since it wasn't a first success.
+  ExpectDelta(kCountAtSuccess, 1);
+  ExpectDelta(kErrorAtSuccess, 1);
+  ExpectDelta(kErrorAtFirstSuccess, 0);
+  ExpectDelta(kCountAtStop, 0);
+  ExpectDelta(kErrorAtStop, 0);
+}
+
+// Test that a user stop (caused by the user pressing the 'Stop' button)
+// registers as an auto-reload failure if an auto-reload attempt is in flight.
+// Note that "user stop" is also caused by a cross-process navigation, for which
+// the browser process will send an OnStop to the old process.
+TEST_F(NetErrorHelperCoreHistogramTest, UserStop) {
+  DoErrorLoad(net::ERR_CONNECTION_RESET);
+  timer()->Fire();
+  core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
+                     NetErrorHelperCore::NON_ERROR_PAGE);
+  core().OnStop();
+
+  // CountAtStop and ErrorAtStop should reflect the failure.
+  ExpectDelta(kCountAtSuccess, 0);
+  ExpectDelta(kErrorAtSuccess, 0);
+  ExpectDelta(kErrorAtFirstSuccess, 0);
+  ExpectDelta(kCountAtStop, 1);
+  ExpectDelta(kErrorAtStop, 1);
+}
+
+// Test that a user stop (caused by the user pressing the 'Stop' button)
+// registers as an auto-reload failure even if an auto-reload attempt has not
+// been launched yet (i.e., if the timer is running, but no reload is in
+// flight), because this means auto-reload didn't successfully replace the error
+// page.
+TEST_F(NetErrorHelperCoreHistogramTest, OtherPageLoaded) {
+  DoErrorLoad(net::ERR_CONNECTION_RESET);
+  core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
+                     NetErrorHelperCore::NON_ERROR_PAGE);
+  core().OnStop();
+
+  ExpectDelta(kCountAtSuccess, 0);
+  ExpectDelta(kErrorAtSuccess, 0);
+  ExpectDelta(kErrorAtFirstSuccess, 0);
+  ExpectDelta(kCountAtStop, 1);
+  ExpectDelta(kErrorAtStop, 1);
+}
+
+// Test that a commit of a different URL (caused by the user navigating to a
+// different page) with an auto-reload attempt in flight registers as an
+// auto-reload failure.
+TEST_F(NetErrorHelperCoreHistogramTest, OtherPageLoadedAfterTimerFires) {
+  const GURL kTestUrl("https://anotherurl");
+  DoErrorLoad(net::ERR_CONNECTION_RESET);
+  timer()->Fire();
+  core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
+                     NetErrorHelperCore::NON_ERROR_PAGE);
+  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME,
+                      kTestUrl);
+  core().OnFinishLoad(NetErrorHelperCore::MAIN_FRAME);
+
+  ExpectDelta(kCountAtSuccess, 0);
+  ExpectDelta(kErrorAtSuccess, 0);
+  ExpectDelta(kErrorAtFirstSuccess, 0);
+  ExpectDelta(kCountAtStop, 1);
+  ExpectDelta(kErrorAtStop, 1);
+}
+
+// Test that a commit of the same URL with an auto-reload attempt in flight
+// registers as an auto-reload success.
+TEST_F(NetErrorHelperCoreHistogramTest, SamePageLoadedAfterTimerFires) {
+  DoErrorLoad(net::ERR_CONNECTION_RESET);
+  timer()->Fire();
+  DoSuccessLoad();
+
+  ExpectDelta(kCountAtSuccess, 1);
+  ExpectDelta(kErrorAtSuccess, 1);
+  ExpectDelta(kErrorAtFirstSuccess, 1);
+  ExpectDelta(kCountAtStop, 0);
+  ExpectDelta(kErrorAtStop, 0);
+}
+
+TEST_F(NetErrorHelperCoreHistogramTest, SamePageLoadedAfterLoadStarts) {
+  DoErrorLoad(net::ERR_CONNECTION_RESET);
+  timer()->Fire();
+  // Autoreload attempt starts
+  core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
+                     NetErrorHelperCore::NON_ERROR_PAGE);
+  // User does a manual reload
+  DoSuccessLoad();
+
+  ExpectDelta(kCountAtSuccess, 1);
+  ExpectDelta(kErrorAtSuccess, 1);
+  ExpectDelta(kErrorAtFirstSuccess, 1);
+  ExpectDelta(kCountAtStop, 0);
+  ExpectDelta(kErrorAtStop, 0);
+}
+
+// In this test case, the user presses the reload button manually after an
+// auto-reload fails and the error page is suppressed.
+TEST_F(NetErrorHelperCoreHistogramTest, ErrorPageLoadedAfterTimerFires) {
+  DoErrorLoad(net::ERR_CONNECTION_RESET);
+  timer()->Fire();
+  core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
+                     NetErrorHelperCore::NON_ERROR_PAGE);
+  EXPECT_TRUE(core().ShouldSuppressErrorPage(NetErrorHelperCore::MAIN_FRAME,
+                                             default_url()));
+  DoErrorLoad(net::ERR_CONNECTION_RESET);
+
+  ExpectDelta(kCountAtSuccess, 0);
+  ExpectDelta(kErrorAtSuccess, 0);
+  ExpectDelta(kErrorAtFirstSuccess, 0);
+  ExpectDelta(kCountAtStop, 0);
+  ExpectDelta(kErrorAtStop, 0);
+}
+
+TEST_F(NetErrorHelperCoreHistogramTest, SuccessPageLoadedBeforeTimerFires) {
+  DoErrorLoad(net::ERR_CONNECTION_RESET);
+  core().OnStartLoad(NetErrorHelperCore::MAIN_FRAME,
+                     NetErrorHelperCore::NON_ERROR_PAGE);
+  core().OnCommitLoad(NetErrorHelperCore::MAIN_FRAME,
+                      GURL(kFailedHttpsUrl));
+
+  ExpectDelta(kCountAtSuccess, 0);
+  ExpectDelta(kErrorAtSuccess, 0);
+  ExpectDelta(kErrorAtFirstSuccess, 0);
+  ExpectDelta(kCountAtStop, 1);
+  ExpectDelta(kErrorAtStop, 1);
+}
+
+TEST_F(NetErrorHelperCoreTest, ShouldSuppressNonReloadableErrorPage) {
+  core().set_auto_reload_enabled(true);
+  DoErrorLoad(net::ERR_ABORTED);
+  EXPECT_FALSE(core().ShouldSuppressErrorPage(NetErrorHelperCore::MAIN_FRAME,
+                                              GURL(kFailedUrl)));
 }
 
 TEST_F(NetErrorHelperCoreTest, ShouldSuppressErrorPage) {
@@ -2024,4 +2429,4 @@ TEST_F(NetErrorHelperCoreTest, ExplicitLoadStaleSucceeds) {
   EXPECT_EQ(GURL(kFailedUrl), load_stale_url());
 }
 
-
+} // namespace

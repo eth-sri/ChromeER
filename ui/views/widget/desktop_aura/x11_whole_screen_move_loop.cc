@@ -62,6 +62,7 @@ X11WholeScreenMoveLoop::X11WholeScreenMoveLoop(
       should_reset_mouse_flags_(false),
       grab_input_window_(None),
       canceled_(false),
+      has_grab_(false),
       weak_factory_(this) {
   last_xmotion_.type = LASTEvent;
 }
@@ -134,6 +135,11 @@ uint32_t X11WholeScreenMoveLoop::DispatchEvent(const ui::PlatformEvent& event) {
         EndMoveLoop();
         return ui::POST_DISPATCH_NONE;
       }
+      break;
+    }
+    case FocusOut: {
+      if (xev->xfocus.mode != NotifyGrab)
+        has_grab_ = false;
       break;
     }
     case GenericEvent: {
@@ -253,8 +259,11 @@ void X11WholeScreenMoveLoop::EndMoveLoop() {
 
   // Ungrab before we let go of the window.
   XDisplay* display = gfx::GetXDisplay();
-  XUngrabPointer(display, CurrentTime);
-  XUngrabKeyboard(display, CurrentTime);
+  // Only ungrab pointer if capture was not switched to another window.
+  if (has_grab_) {
+    XUngrabPointer(display, CurrentTime);
+    XUngrabKeyboard(display, CurrentTime);
+  }
 
   // Restore the previous dispatcher.
   nested_dispatcher_.reset();
@@ -295,6 +304,7 @@ bool X11WholeScreenMoveLoop::GrabPointerAndKeyboard(gfx::NativeCursor cursor) {
     DLOG(ERROR) << "Grabbing pointer for dragging failed: "
                 << ui::GetX11ErrorString(display, ret);
   } else {
+    has_grab_ = true;
     XUngrabKeyboard(display, CurrentTime);
     ret = XGrabKeyboard(
         display,
@@ -363,17 +373,9 @@ void X11WholeScreenMoveLoop::CreateDragImageWindow() {
 }
 
 bool X11WholeScreenMoveLoop::CheckIfIconValid() {
-  // TODO(erg): I've tried at least five different strategies for trying to
-  // build a mask based off the alpha channel. While all of them have worked,
-  // none of them have been performant and introduced multiple second
-  // delays. (I spent a day getting a rectangle segmentation algorithm polished
-  // here...and then found that even through I had the rectangle extraction
-  // down to mere milliseconds, SkRegion still fell over on the number of
-  // rectangles.)
-  //
-  // Creating a mask here near instantaneously should be possible, as GTK does
-  // it, but I've blown days on this and I'm punting now.
-
+  // Because we need a GL context per window, we do a quick check so that we
+  // don't make another context if the window would just be displaying a mostly
+  // transparent image.
   const SkBitmap* in_bitmap = drag_image_.bitmap();
   SkAutoLockPixels in_lock(*in_bitmap);
   for (int y = 0; y < in_bitmap->height(); ++y) {

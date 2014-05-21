@@ -225,6 +225,11 @@
             '../apps/shell/app_shell.gyp:*',
           ],
         }],
+        ['chromeos==1', {
+          'dependencies': [
+            '../athena/main/athena_main.gyp:*',
+          ],
+        }],
       ],
     }, # target_name: All
     {
@@ -604,11 +609,10 @@
           'target_name': 'chromium_builder_webrtc',
           'type': 'none',
           'dependencies': [
-            'chromium_builder_qa',  # needed for perf pyauto tests
+            'chromium_builder_qa',  # TODO(phoglund): not sure if needed?
             '../chrome/chrome.gyp:browser_tests',
             '../content/content_shell_and_tests.gyp:content_browsertests',
             '../content/content_shell_and_tests.gyp:content_unittests',
-            '../third_party/libjingle/libjingle.gyp:peerconnection_server',
             '../third_party/webrtc/tools/tools.gyp:frame_analyzer',
             '../third_party/webrtc/tools/tools.gyp:rgba_to_i420_converter',
           ],
@@ -642,6 +646,7 @@
           'conditions': [
             ['OS!="win"', {
               'dependencies': [
+                '../net/net.gyp:hpack_fuzz_wrapper',
                 '../net/net.gyp:dns_fuzz_stub',
                 '../skia/skia.gyp:filter_fuzz_stub',
               ],
@@ -926,14 +931,6 @@
           ],
         },
         {
-          # TODO(dpranke): Update the bots to refer to 'chromium_builder_asan'.
-          'target_name': 'chromium_builder_asan_mac',
-          'type': 'none',
-          'dependencies': [
-            'chromium_builder_asan'
-          ],
-        },
-        {
           'target_name': 'chromium_builder_dbg_valgrind_mac',
           'type': 'none',
           'dependencies': [
@@ -973,6 +970,7 @@
           'dependencies': [
             '../cc/cc_tests.gyp:cc_unittests',
             '../chrome/chrome.gyp:browser_tests',
+            '../chrome/chrome.gyp:crash_service',
             '../chrome/chrome.gyp:gcapi_test',
             '../chrome/chrome.gyp:installer_util_unittests',
             '../chrome/chrome.gyp:interactive_ui_tests',
@@ -1011,6 +1009,13 @@
             '../ui/views/views.gyp:views_unittests',
             '../url/url.gyp:url_unittests',
             '../webkit/renderer/compositor_bindings/compositor_bindings_tests.gyp:webkit_compositor_bindings_unittests',
+          ],
+          'conditions': [
+            ['target_arch=="ia32"', {
+              'dependencies': [
+                '../chrome/chrome.gyp:crash_service_win64',
+              ],
+            }],
           ],
         },
         {
@@ -1058,6 +1063,7 @@
             '../ipc/ipc.gyp:ipc_tests',
             '../jingle/jingle.gyp:jingle_unittests',
             '../media/media.gyp:media_unittests',
+            '../mojo/mojo.gyp:mojo',
             '../net/net.gyp:net_unittests',
             '../google_apis/gcm/gcm.gyp:gcm_unit_tests',
             '../gpu/gpu.gyp:gpu_unittests',
@@ -1097,6 +1103,7 @@
                 '../ipc/ipc.gyp:ipc_tests',
                 '../media/media.gyp:media_unittests',
                 '../net/net.gyp:net_unittests_run',
+                '../pdf/pdf.gyp:pdf',
                 '../printing/printing.gyp:printing_unittests',
                 '../remoting/remoting.gyp:remoting_webapp',
                 '../sql/sql.gyp:sql_unittests',
@@ -1108,11 +1115,6 @@
                 '../url/url.gyp:url_unittests',
               ],
               'conditions': [
-                ['internal_pdf', {
-                  'dependencies': [
-                    '../pdf/pdf.gyp:pdf',
-                  ],
-                }], # internal_pdf
                 ['target_arch=="ia32"', {
                   'dependencies': [
                     '../chrome/chrome.gyp:crash_service_win64',
@@ -1193,6 +1195,7 @@
             ['chromeos==1', {
               'dependencies': [
                 '../chromeos/chromeos.gyp:chromeos_unittests',
+                '../athena/main/athena_main.gyp:*',
               ],
             }],
             ['use_ozone==1', {

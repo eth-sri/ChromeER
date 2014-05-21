@@ -14,9 +14,10 @@
 #include "device/bluetooth/bluetooth_out_of_band_pairing_data.h"
 #include "device/bluetooth/bluetooth_profile_win.h"
 #include "device/bluetooth/bluetooth_service_record_win.h"
-#include "device/bluetooth/bluetooth_socket_thread_win.h"
+#include "device/bluetooth/bluetooth_socket_thread.h"
 #include "device/bluetooth/bluetooth_socket_win.h"
 #include "device/bluetooth/bluetooth_task_manager_win.h"
+#include "device/bluetooth/bluetooth_uuid.h"
 
 namespace {
 
@@ -29,7 +30,7 @@ namespace device {
 BluetoothDeviceWin::BluetoothDeviceWin(
     const BluetoothTaskManagerWin::DeviceState& state,
     scoped_refptr<base::SequencedTaskRunner> ui_task_runner,
-    scoped_refptr<BluetoothSocketThreadWin> socket_thread,
+    scoped_refptr<BluetoothSocketThread> socket_thread,
     net::NetLog* net_log,
     const net::NetLog::Source& net_log_source)
     : BluetoothDevice(),
@@ -38,7 +39,7 @@ BluetoothDeviceWin::BluetoothDeviceWin(
       net_log_(net_log),
       net_log_source_(net_log_source) {
   name_ = state.name;
-  address_ = state.address;
+  address_ = CanonicalizeAddress(state.address);
   bluetooth_class_ = state.bluetooth_class;
   visible_ = state.visible;
   connected_ = state.connected;
@@ -212,6 +213,14 @@ void BluetoothDeviceWin::ConnectToProfile(
                                                       error_callback);
 }
 
+void BluetoothDeviceWin::ConnectToService(
+    const BluetoothUUID& uuid,
+    const ConnectToServiceCallback& callback,
+    const ConnectToServiceErrorCallback& error_callback) {
+  // TODO(keybuk): implement
+  NOTIMPLEMENTED();
+}
+
 void BluetoothDeviceWin::SetOutOfBandPairingData(
     const BluetoothOutOfBandPairingData& data,
     const base::Closure& callback,
@@ -220,6 +229,12 @@ void BluetoothDeviceWin::SetOutOfBandPairingData(
 }
 
 void BluetoothDeviceWin::ClearOutOfBandPairingData(
+    const base::Closure& callback,
+    const ErrorCallback& error_callback) {
+  NOTIMPLEMENTED();
+}
+
+void BluetoothDeviceWin::StartConnectionMonitor(
     const base::Closure& callback,
     const ErrorCallback& error_callback) {
   NOTIMPLEMENTED();

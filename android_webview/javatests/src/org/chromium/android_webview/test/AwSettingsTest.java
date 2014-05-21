@@ -1726,8 +1726,12 @@ public class AwSettingsTest extends AwTestBase {
                 views.getClient1()));
     }
 
+    /*
     @SmallTest
     @Feature({"AndroidWebView", "Preferences"})
+    crbug.com/370950
+    */
+    @DisabledTest
     public void testFileUrlAccessWithTwoViews() throws Throwable {
         ViewPair views = createViews();
         runPerViewSettingsTest(
@@ -1735,8 +1739,12 @@ public class AwSettingsTest extends AwTestBase {
             new AwSettingsFileUrlAccessTestHelper(views.getContainer1(), views.getClient1(), 1));
     }
 
+    /*
     @SmallTest
     @Feature({"AndroidWebView", "Preferences"})
+    crbug.com/370950
+    */
+    @DisabledTest
     public void testContentUrlAccessWithTwoViews() throws Throwable {
         ViewPair views = createViews();
         runPerViewSettingsTest(
@@ -2177,8 +2185,12 @@ public class AwSettingsTest extends AwTestBase {
         }
     }
 
+    /*
     @SmallTest
     @Feature({"AndroidWebView", "Preferences"})
+    See crbug.com/374305
+    */
+    @DisabledTest
     public void testCacheModeWithTwoViews() throws Throwable {
         ViewPair views = createViews();
         TestWebServer webServer = null;

@@ -4,6 +4,8 @@
 
 #include "chrome/browser/profiles/profile_impl.h"
 
+#include <vector>
+
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/command_line.h"
@@ -41,6 +43,7 @@
 #include "chrome/browser/extensions/extension_special_storage_policy.h"
 #include "chrome/browser/geolocation/chrome_geolocation_permission_context.h"
 #include "chrome/browser/geolocation/chrome_geolocation_permission_context_factory.h"
+#include "chrome/browser/guest_view/guest_view_manager.h"
 #include "chrome/browser/history/top_sites.h"
 #include "chrome/browser/media/chrome_midi_permission_context.h"
 #include "chrome/browser/media/chrome_midi_permission_context_factory.h"
@@ -78,11 +81,11 @@
 #include "chrome/common/net/url_fixer_upper.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
-#include "components/bookmarks/core/browser/bookmark_model.h"
+#include "components/bookmarks/browser/bookmark_model.h"
 #include "components/dom_distiller/content/dom_distiller_viewer_source.h"
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "components/startup_metric_utils/startup_metric_utils.h"
-#include "components/user_prefs/pref_registry_syncable.h"
 #include "components/user_prefs/user_prefs.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/dom_storage_context.h"
@@ -93,6 +96,7 @@
 #include "content/public/browser/url_data_source.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/common/content_constants.h"
+#include "content/public/common/page_zoom.h"
 #include "extensions/browser/extension_pref_store.h"
 #include "extensions/browser/extension_pref_value_map.h"
 #include "extensions/browser/extension_pref_value_map_factory.h"
@@ -126,7 +130,7 @@
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/locale_change_guard.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/preferences.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #endif
@@ -657,6 +661,7 @@ void ProfileImpl::InitHostZoomMap() {
       prefs_->GetDictionary(prefs::kPerHostZoomLevels);
   // Careful: The returned value could be NULL if the pref has never been set.
   if (host_zoom_dictionary != NULL) {
+    std::vector<std::string> keys_to_remove;
     for (base::DictionaryValue::Iterator i(*host_zoom_dictionary); !i.IsAtEnd();
          i.Advance()) {
       const std::string& host(i.key());
@@ -664,7 +669,29 @@ void ProfileImpl::InitHostZoomMap() {
 
       bool success = i.value().GetAsDouble(&zoom_level);
       DCHECK(success);
+
+      // Filter out A) the empty host, B) zoom levels equal to the default; and
+      // remember them, so that we can later erase them from Prefs.
+      // Values of type A and B could have been stored due to crbug.com/364399.
+      // Values of type B could further have been stored before the default zoom
+      // level was set to its current value. In either case, SetZoomLevelForHost
+      // will ignore type B values, thus, to have consistency with HostZoomMap's
+      // internal state, these values must also be removed from Prefs.
+      if (host.empty() ||
+          content::ZoomValuesEqual(zoom_level,
+                                   host_zoom_map->GetDefaultZoomLevel())) {
+        keys_to_remove.push_back(host);
+        continue;
+      }
+
       host_zoom_map->SetZoomLevelForHost(host, zoom_level);
+    }
+
+    DictionaryPrefUpdate update(prefs_.get(), prefs::kPerHostZoomLevels);
+    base::DictionaryValue* host_zoom_dictionary = update.Get();
+    for (std::vector<std::string>::const_iterator it = keys_to_remove.begin();
+         it != keys_to_remove.end(); ++it) {
+      host_zoom_dictionary->RemoveWithoutPathExpansion(*it, NULL);
     }
   }
 
@@ -1044,6 +1071,10 @@ content::GeolocationPermissionContext*
   return ChromeGeolocationPermissionContextFactory::GetForProfile(this);
 }
 
+content::BrowserPluginGuestManager* ProfileImpl::GetGuestManager() {
+  return GuestViewManager::FromBrowserContext(this);
+}
+
 DownloadManagerDelegate* ProfileImpl::GetDownloadManagerDelegate() {
   return DownloadServiceFactory::GetForBrowserContext(this)->
       GetDownloadManagerDelegate();
@@ -1090,7 +1121,7 @@ void ProfileImpl::OnZoomLevelChanged(
   double level = change.zoom_level;
   DictionaryPrefUpdate update(prefs_.get(), prefs::kPerHostZoomLevels);
   base::DictionaryValue* host_zoom_dictionary = update.Get();
-  if (level == host_zoom_map->GetDefaultZoomLevel()) {
+  if (content::ZoomValuesEqual(level, host_zoom_map->GetDefaultZoomLevel())) {
     host_zoom_dictionary->RemoveWithoutPathExpansion(change.host, NULL);
   } else {
     host_zoom_dictionary->SetWithoutPathExpansion(
@@ -1212,9 +1243,16 @@ chrome_browser_net::Predictor* ProfileImpl::GetNetworkPredictor() {
   return predictor_;
 }
 
-void ProfileImpl::ClearNetworkingHistorySince(base::Time time,
-                                              const base::Closure& completion) {
+void ProfileImpl::ClearNetworkingHistorySince(
+    base::Time time,
+    const base::Closure& completion) {
   io_data_.ClearNetworkingHistorySince(time, completion);
+}
+
+void ProfileImpl::ClearDomainReliabilityMonitor(
+    domain_reliability::DomainReliabilityClearMode mode,
+    const base::Closure& completion) {
+  io_data_.ClearDomainReliabilityMonitor(mode, completion);
 }
 
 GURL ProfileImpl::GetHomePage() {

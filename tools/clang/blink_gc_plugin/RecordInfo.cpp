@@ -115,24 +115,6 @@ bool RecordInfo::IsGCFinalized() {
   return false;
 }
 
-bool RecordInfo::IsTreeShared() {
-  if (Config::IsTreeSharedBase(name_))
-    return true;
-  if (!IsGCDerived())
-    return false;
-  for (CXXBasePaths::paths_iterator it = base_paths_->begin();
-       it != base_paths_->end();
-       ++it) {
-    // TreeShared is an immediate base of GCFinalized.
-    if (it->size() < 2) continue;
-    const CXXBasePathElement& elem = (*it)[it->size() - 2];
-    CXXRecordDecl* base = elem.Base->getType()->getAsCXXRecordDecl();
-    if (Config::IsTreeSharedBase(base->getName()))
-      return true;
-  }
-  return false;
-}
-
 // A GC mixin is a class that inherits from a GC mixin base and has
 // not yet been "mixed in" with another GC base class.
 bool RecordInfo::IsGCMixin() {
@@ -230,10 +212,28 @@ bool RecordInfo::IsOnlyPlacementNewable() {
   return is_only_placement_newable_;
 }
 
-// An object requires a tracing method if it has any fields that need tracing.
+CXXMethodDecl* RecordInfo::DeclaresNewOperator() {
+  for (CXXRecordDecl::method_iterator it = record_->method_begin();
+       it != record_->method_end();
+       ++it) {
+    if (it->getNameAsString() == kNewOperatorName && it->getNumParams() == 1)
+      return *it;
+  }
+  return 0;
+}
+
+// An object requires a tracing method if it has any fields that need tracing
+// or if it inherits from multiple bases that need tracing.
 bool RecordInfo::RequiresTraceMethod() {
   if (IsStackAllocated())
     return false;
+  unsigned bases_with_trace = 0;
+  for (Bases::iterator it = GetBases().begin(); it != GetBases().end(); ++it) {
+    if (it->second.NeedsTracing().IsNeeded())
+      ++bases_with_trace;
+  }
+  if (bases_with_trace > 1)
+    return true;
   GetFields();
   return fields_need_tracing_.IsNeeded();
 }
@@ -262,11 +262,11 @@ RecordInfo::Bases& RecordInfo::GetBases() {
   return *bases_;
 }
 
-bool RecordInfo::InheritsNonPureTrace() {
-  if (CXXMethodDecl* trace = GetTraceMethod())
-    return !trace->isPure();
+bool RecordInfo::InheritsTrace() {
+  if (GetTraceMethod())
+    return true;
   for (Bases::iterator it = GetBases().begin(); it != GetBases().end(); ++it) {
-    if (it->second.info()->InheritsNonPureTrace())
+    if (it->second.info()->InheritsTrace())
       return true;
   }
   return false;
@@ -313,7 +313,7 @@ RecordInfo::Bases* RecordInfo::CollectBases() {
     if (!info)
       continue;
     CXXRecordDecl* base = info->record();
-    TracingStatus status = info->InheritsNonPureTrace()
+    TracingStatus status = info->InheritsTrace()
                                ? TracingStatus::Needed()
                                : TracingStatus::Unneeded();
     bases->insert(std::make_pair(base, BasePoint(spec, info, status)));
@@ -504,11 +504,9 @@ Edge* RecordInfo::CreateEdge(const Type* type) {
     for (TemplateArgs::iterator it = args.begin(); it != args.end(); ++it) {
       if (Edge* member = CreateEdge(*it)) {
         edge->members().push_back(member);
-      } else {
-        // We failed to create an edge so abort the entire edge construction.
-        delete edge;  // Will delete the already allocated members.
-        return 0;
       }
+      // TODO: Handle the case where we fail to create an edge (eg, if the
+      // argument is a primitive type or just not fully known yet).
     }
     return edge;
   }

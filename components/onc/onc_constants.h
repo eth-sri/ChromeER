@@ -61,12 +61,14 @@ ONC_EXPORT extern const char kCellular[];
 ONC_EXPORT extern const char kEthernet[];
 ONC_EXPORT extern const char kGUID[];
 ONC_EXPORT extern const char kIPConfigs[];
+ONC_EXPORT extern const char kMacAddress[];
 ONC_EXPORT extern const char kName[];
 ONC_EXPORT extern const char kNameServers[];
 ONC_EXPORT extern const char kProxySettings[];
 ONC_EXPORT extern const char kSearchDomains[];
-ONC_EXPORT extern const char kServicePath[];
 ONC_EXPORT extern const char kConnectionState[];
+ONC_EXPORT extern const char kConnectable[];
+ONC_EXPORT extern const char kErrorState[];
 ONC_EXPORT extern const char kType[];
 ONC_EXPORT extern const char kVPN[];
 ONC_EXPORT extern const char kWiFi[];
@@ -78,11 +80,14 @@ ONC_EXPORT extern std::string WifiProperty(const std::string& property);
 }  // namespace network_config
 
 namespace network_type {
-ONC_EXPORT extern const char kAllTypes[];
 ONC_EXPORT extern const char kCellular[];
 ONC_EXPORT extern const char kEthernet[];
 ONC_EXPORT extern const char kVPN[];
 ONC_EXPORT extern const char kWiFi[];
+ONC_EXPORT extern const char kWimax[];
+// Patterns matching multiple types, not part of the ONC spec.
+ONC_EXPORT extern const char kAllTypes[];
+ONC_EXPORT extern const char kWireless[];
 }  // namespace network_type
 
 namespace cellular {
@@ -276,6 +281,7 @@ ONC_EXPORT extern const char kAuth[];
 ONC_EXPORT extern const char kCipher[];
 ONC_EXPORT extern const char kCompLZO[];
 ONC_EXPORT extern const char kCompNoAdapt[];
+ONC_EXPORT extern const char kIgnoreDefaultRoute[];
 ONC_EXPORT extern const char kInteract[];
 ONC_EXPORT extern const char kKeyDirection[];
 ONC_EXPORT extern const char kNoInteract[];

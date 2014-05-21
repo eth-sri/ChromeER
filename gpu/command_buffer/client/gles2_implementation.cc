@@ -6,24 +6,24 @@
 
 #include "gpu/command_buffer/client/gles2_implementation.h"
 
+#include <GLES2/gl2ext.h>
+#include <GLES2/gl2extchromium.h>
 #include <algorithm>
+#include <limits>
 #include <map>
 #include <queue>
 #include <set>
-#include <limits>
 #include <sstream>
 #include <string>
-#include <GLES2/gl2ext.h>
-#include <GLES2/gl2extchromium.h>
 #include "base/bind.h"
 #include "gpu/command_buffer/client/buffer_tracker.h"
+#include "gpu/command_buffer/client/gpu_control.h"
 #include "gpu/command_buffer/client/gpu_memory_buffer_tracker.h"
 #include "gpu/command_buffer/client/program_info_manager.h"
 #include "gpu/command_buffer/client/query_tracker.h"
 #include "gpu/command_buffer/client/transfer_buffer.h"
 #include "gpu/command_buffer/client/vertex_array_object_manager.h"
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
-#include "gpu/command_buffer/common/gpu_control.h"
 #include "gpu/command_buffer/common/trace_event.h"
 #include "ui/gfx/gpu_memory_buffer.h"
 
@@ -32,8 +32,8 @@
 #endif
 
 #if defined(GPU_CLIENT_DEBUG)
-#include "ui/gl/gl_switches.h"
 #include "base/command_line.h"
+#include "ui/gl/gl_switches.h"
 #endif
 
 namespace gpu {
@@ -1616,6 +1616,10 @@ void GLES2Implementation::CompressedTexImage2D(
     SetGLError(GL_INVALID_VALUE, "glCompressedTexImage2D", "dimension < 0");
     return;
   }
+  if (border != 0) {
+    SetGLError(GL_INVALID_VALUE, "glCompressedTexImage2D", "border != 0");
+    return;
+  }
   if (height == 0 || width == 0) {
     return;
   }
@@ -1628,7 +1632,7 @@ void GLES2Implementation::CompressedTexImage2D(
         "glCompressedTexImage2D", offset, image_size);
     if (buffer && buffer->shm_id() != -1) {
       helper_->CompressedTexImage2D(
-          target, level, internalformat, width, height, border, image_size,
+          target, level, internalformat, width, height, image_size,
           buffer->shm_id(), buffer->shm_offset() + offset);
       buffer->set_last_usage_token(helper_->InsertToken());
     }
@@ -1636,7 +1640,7 @@ void GLES2Implementation::CompressedTexImage2D(
   }
   SetBucketContents(kResultBucketId, data, image_size);
   helper_->CompressedTexImage2DBucket(
-      target, level, internalformat, width, height, border, kResultBucketId);
+      target, level, internalformat, width, height, kResultBucketId);
   // Free the bucket. This is not required but it does free up the memory.
   // and we don't have to wait for the result so from the client's perspective
   // it's cheap.
@@ -1738,6 +1742,10 @@ void GLES2Implementation::TexImage2D(
     SetGLError(GL_INVALID_VALUE, "glTexImage2D", "dimension < 0");
     return;
   }
+  if (border != 0) {
+    SetGLError(GL_INVALID_VALUE, "glTexImage2D", "border != 0");
+    return;
+  }
   uint32 size;
   uint32 unpadded_row_size;
   uint32 padded_row_size;
@@ -1756,7 +1764,7 @@ void GLES2Implementation::TexImage2D(
         "glTexImage2D", offset, size);
     if (buffer && buffer->shm_id() != -1) {
       helper_->TexImage2D(
-          target, level, internalformat, width, height, border, format, type,
+          target, level, internalformat, width, height, format, type,
           buffer->shm_id(), buffer->shm_offset() + offset);
       buffer->set_last_usage_token(helper_->InsertToken());
       CheckGLError();
@@ -1767,7 +1775,7 @@ void GLES2Implementation::TexImage2D(
   // If there's no data just issue TexImage2D
   if (!pixels) {
     helper_->TexImage2D(
-       target, level, internalformat, width, height, border, format, type,
+       target, level, internalformat, width, height, format, type,
        0, 0);
     CheckGLError();
     return;
@@ -1807,7 +1815,7 @@ void GLES2Implementation::TexImage2D(
         pixels, height, unpadded_row_size, src_padded_row_size, unpack_flip_y_,
         buffer.address(), padded_row_size);
     helper_->TexImage2D(
-        target, level, internalformat, width, height, border, format, type,
+        target, level, internalformat, width, height, format, type,
         buffer.shm_id(), buffer.offset());
     CheckGLError();
     return;
@@ -1815,7 +1823,7 @@ void GLES2Implementation::TexImage2D(
 
   // No, so send it using TexSubImage2D.
   helper_->TexImage2D(
-     target, level, internalformat, width, height, border, format, type,
+     target, level, internalformat, width, height, format, type,
      0, 0);
   TexSubImage2DImpl(
       target, level, 0, 0, width, height, format, type, unpadded_row_size,
@@ -2189,7 +2197,8 @@ const GLubyte* GLES2Implementation::GetStringHelper(GLenum name) {
       case GL_EXTENSIONS:
         str += std::string(str.empty() ? "" : " ") +
             "GL_CHROMIUM_flipy "
-            "GL_EXT_unpack_subimage";
+            "GL_EXT_unpack_subimage "
+            "GL_CHROMIUM_map_sub";
         if (capabilities_.map_image) {
           // The first space character is intentional.
           str += " GL_CHROMIUM_map_image";
@@ -3475,8 +3484,7 @@ void GLES2Implementation::GetQueryObjectuivEXT(
       if (!query->CheckResultsAvailable(helper_)) {
         helper_->WaitForToken(query->token());
         if (!query->CheckResultsAvailable(helper_)) {
-          // TODO(gman): Speed this up.
-          WaitForCmd();
+          FinishHelper();
           CHECK(query->CheckResultsAvailable(helper_));
         }
       }
@@ -3830,6 +3838,10 @@ void GLES2Implementation::AsyncTexImage2DCHROMIUM(
     SetGLError(GL_INVALID_VALUE, "glTexImage2D", "dimension < 0");
     return;
   }
+  if (border != 0) {
+    SetGLError(GL_INVALID_VALUE, "glTexImage2D", "border != 0");
+    return;
+  }
   uint32 size;
   uint32 unpadded_row_size;
   uint32 padded_row_size;
@@ -3843,7 +3855,7 @@ void GLES2Implementation::AsyncTexImage2DCHROMIUM(
   // If there's no data/buffer just issue the AsyncTexImage2D
   if (!pixels && !bound_pixel_unpack_transfer_buffer_id_) {
     helper_->AsyncTexImage2DCHROMIUM(
-       target, level, internalformat, width, height, border, format, type,
+       target, level, internalformat, width, height, format, type,
        0, 0, 0, 0, 0);
     return;
   }
@@ -3865,7 +3877,7 @@ void GLES2Implementation::AsyncTexImage2DCHROMIUM(
     uint32 async_token = NextAsyncUploadToken();
     buffer->set_last_async_upload_token(async_token);
     helper_->AsyncTexImage2DCHROMIUM(
-        target, level, internalformat, width, height, border, format, type,
+        target, level, internalformat, width, height, format, type,
         buffer->shm_id(), buffer->shm_offset() + offset,
         async_token,
         async_upload_sync_shm_id_, async_upload_sync_shm_offset_);
@@ -3948,8 +3960,10 @@ GLuint GLES2Implementation::InsertSyncPointCHROMIUM() {
   return gpu_control_->InsertSyncPoint();
 }
 
-GLuint GLES2Implementation::CreateImageCHROMIUMHelper(
-    GLsizei width, GLsizei height, GLenum internalformat) {
+GLuint GLES2Implementation::CreateImageCHROMIUMHelper(GLsizei width,
+                                                      GLsizei height,
+                                                      GLenum internalformat,
+                                                      GLenum usage) {
   if (width <= 0) {
     SetGLError(GL_INVALID_VALUE, "glCreateImageCHROMIUM", "width <= 0");
     return 0;
@@ -3965,7 +3979,7 @@ GLuint GLES2Implementation::CreateImageCHROMIUMHelper(
 
   // Create new buffer.
   GLuint buffer_id = gpu_memory_buffer_tracker_->CreateBuffer(
-      width, height, internalformat);
+      width, height, internalformat, usage);
   if (buffer_id == 0) {
     SetGLError(GL_OUT_OF_MEMORY, "glCreateImageCHROMIUM", "out of GPU memory.");
     return 0;
@@ -3973,14 +3987,18 @@ GLuint GLES2Implementation::CreateImageCHROMIUMHelper(
   return buffer_id;
 }
 
-GLuint GLES2Implementation::CreateImageCHROMIUM(
-    GLsizei width, GLsizei height, GLenum internalformat) {
+GLuint GLES2Implementation::CreateImageCHROMIUM(GLsizei width,
+                                                GLsizei height,
+                                                GLenum internalformat,
+                                                GLenum usage) {
   GPU_CLIENT_SINGLE_THREAD_CHECK();
-  GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glCreateImageCHROMIUM("
-      << width << ", "
-      << height << ", "
-      << GLES2Util::GetStringTextureInternalFormat(internalformat) << ")");
-  GLuint image_id = CreateImageCHROMIUMHelper(width, height, internalformat);
+  GPU_CLIENT_LOG(
+      "[" << GetLogPrefix() << "] glCreateImageCHROMIUM(" << width << ", "
+          << height << ", "
+          << GLES2Util::GetStringTextureInternalFormat(internalformat) << ", "
+          << GLES2Util::GetStringTextureInternalFormat(usage) << ")");
+  GLuint image_id =
+      CreateImageCHROMIUMHelper(width, height, internalformat, usage);
   CheckGLError();
   return image_id;
 }
@@ -4031,29 +4049,12 @@ void GLES2Implementation::UnmapImageCHROMIUM(GLuint image_id) {
   CheckGLError();
 }
 
-void* GLES2Implementation::MapImageCHROMIUMHelper(GLuint image_id,
-                                                  GLenum access) {
+void* GLES2Implementation::MapImageCHROMIUMHelper(GLuint image_id) {
   gfx::GpuMemoryBuffer* gpu_buffer = gpu_memory_buffer_tracker_->GetBuffer(
       image_id);
   if (!gpu_buffer) {
     SetGLError(GL_INVALID_OPERATION, "glMapImageCHROMIUM", "invalid image");
     return NULL;
-  }
-  gfx::GpuMemoryBuffer::AccessMode mode;
-  switch(access) {
-    case GL_WRITE_ONLY:
-      mode = gfx::GpuMemoryBuffer::WRITE_ONLY;
-      break;
-    case GL_READ_ONLY:
-      mode = gfx::GpuMemoryBuffer::READ_ONLY;
-      break;
-    case GL_READ_WRITE:
-      mode = gfx::GpuMemoryBuffer::READ_WRITE;
-      break;
-    default:
-      SetGLError(GL_INVALID_ENUM, "glMapImageCHROMIUM",
-                 "invalid GPU access mode");
-      return NULL;
   }
 
   if (gpu_buffer->IsMapped()) {
@@ -4061,17 +4062,15 @@ void* GLES2Implementation::MapImageCHROMIUMHelper(GLuint image_id,
     return NULL;
   }
 
-  return gpu_buffer->Map(mode);
+  return gpu_buffer->Map();
 }
 
-void* GLES2Implementation::MapImageCHROMIUM(
-    GLuint image_id, GLenum access) {
+void* GLES2Implementation::MapImageCHROMIUM(GLuint image_id) {
   GPU_CLIENT_SINGLE_THREAD_CHECK();
-  GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glMapImageCHROMIUM("
-      << image_id << ", "
-      << GLES2Util::GetStringEnum(access) << ")");
+  GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glMapImageCHROMIUM(" << image_id
+                     << ")");
 
-  void* mapped = MapImageCHROMIUMHelper(image_id, access);
+  void* mapped = MapImageCHROMIUMHelper(image_id);
   CheckGLError();
   return mapped;
 }

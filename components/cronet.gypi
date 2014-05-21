@@ -17,7 +17,6 @@
           ],
           'variables': {
             'jni_gen_package': 'cronet',
-            'jni_generator_ptr_type': 'long',
           },
           'includes': [ '../build/jni_generator.gypi' ],
         },
@@ -89,7 +88,17 @@
             '-landroid',
             '-Wl,--gc-sections',
             '-Wl,--exclude-libs,ALL'
-          ]
+          ],
+          'conditions': [
+            [ 'use_icu_alternatives_on_android == 1', {
+                'dependencies!': [
+                  '../base/base.gyp:base_i18n',
+                  '../third_party/icu/icu.gyp:icui18n',
+                  '../third_party/icu/icu.gyp:icuuc',
+                ]
+              },
+            ],
+          ],
         },
         {
           'target_name': 'cronet',
@@ -133,9 +142,11 @@
           ],
           'copies': [
             {
-              'destination': '<(package_dir)',
+              'destination': '<(package_dir)/libs',
               'files': [
                 '<(PRODUCT_DIR)/lib.java/<(java_lib)',
+                '<(PRODUCT_DIR)/lib.java/base_java.jar',
+                '<(PRODUCT_DIR)/lib.java/net_java.jar',
               ],
             },
           ],

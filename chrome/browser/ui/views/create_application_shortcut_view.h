@@ -47,7 +47,7 @@ class CreateApplicationShortcutView : public views::DialogDelegateView,
   void InitControls();
 
   // Overridden from views::View:
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
 
   // Overridden from views::DialogDelegate:
   virtual base::string16 GetDialogButtonLabel(
@@ -126,7 +126,7 @@ class CreateChromeApplicationShortcutView
   CreateChromeApplicationShortcutView(
       Profile* profile,
       const extensions::Extension* app,
-      const base::Closure& close_callback);
+      const base::Callback<void(bool)>& close_callback);
   virtual ~CreateChromeApplicationShortcutView();
   virtual bool Accept() OVERRIDE;
   virtual bool Cancel() OVERRIDE;
@@ -135,7 +135,7 @@ class CreateChromeApplicationShortcutView
   void OnShortcutInfoLoaded(
       const web_app::ShortcutInfo& shortcut_info);
 
-  base::Closure close_callback_;
+  base::Callback<void(bool)> close_callback_;
 
   base::WeakPtrFactory<CreateChromeApplicationShortcutView> weak_ptr_factory_;
 

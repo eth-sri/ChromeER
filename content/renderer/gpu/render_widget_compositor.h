@@ -46,7 +46,6 @@ class RenderWidgetCompositor : public blink::WebLayerTreeView,
   void SetSuppressScheduleComposite(bool suppress);
   bool BeginMainFrameRequested() const;
   void UpdateAnimations(base::TimeTicks time);
-  void Composite(base::TimeTicks frame_begin_time);
   void SetNeedsDisplayOnAllLayers();
   void SetRasterizeOnlyVisibleContent();
   void UpdateTopControlsState(cc::TopControlsState constraints,
@@ -100,7 +99,8 @@ class RenderWidgetCompositor : public blink::WebLayerTreeView,
   virtual void setNeedsAnimate();
   virtual bool commitRequested() const;
   virtual void didStopFlinging();
-  virtual bool compositeAndReadback(void *pixels, const blink::WebRect& rect);
+  virtual void compositeAndReadbackAsync(
+      blink::WebCompositeAndReadbackAsyncCallback* callback);
   virtual void finishAllRendering();
   virtual void setDeferCommits(bool defer_commits);
   virtual void registerForAnimations(blink::WebLayer* layer);

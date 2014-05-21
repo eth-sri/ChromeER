@@ -23,6 +23,8 @@
 #include "cc/output/copy_output_request.h"
 #include "cc/output/copy_output_result.h"
 #include "cc/output/output_surface.h"
+#include "cc/quads/draw_quad.h"
+#include "cc/quads/io_surface_draw_quad.h"
 #include "cc/resources/prioritized_resource.h"
 #include "cc/resources/prioritized_resource_manager.h"
 #include "cc/resources/resource_update_queue.h"
@@ -284,11 +286,11 @@ class LayerTreeHostTestSetNeedsRedrawRect : public LayerTreeHostTest {
     PostSetNeedsCommitToMainThread();
   }
 
-  virtual DrawSwapReadbackResult::DrawResult PrepareToDrawOnThread(
+  virtual DrawResult PrepareToDrawOnThread(
       LayerTreeHostImpl* host_impl,
       LayerTreeHostImpl::FrameData* frame_data,
-      DrawSwapReadbackResult::DrawResult draw_result) OVERRIDE {
-    EXPECT_EQ(DrawSwapReadbackResult::DRAW_SUCCESS, draw_result);
+      DrawResult draw_result) OVERRIDE {
+    EXPECT_EQ(DRAW_SUCCESS, draw_result);
 
     gfx::RectF root_damage_rect;
     if (!frame_data->render_passes.empty())
@@ -437,202 +439,6 @@ class LayerTreeHostTestNoExtraCommitFromScrollbarInvalidate
 SINGLE_AND_MULTI_THREAD_TEST_F(
     LayerTreeHostTestNoExtraCommitFromScrollbarInvalidate);
 
-class LayerTreeHostTestCompositeAndReadback : public LayerTreeHostTest {
- public:
-  LayerTreeHostTestCompositeAndReadback() : num_commits_(0) {}
-
-  virtual void BeginTest() OVERRIDE { PostSetNeedsCommitToMainThread(); }
-
-  virtual void DidCommit() OVERRIDE {
-    num_commits_++;
-    if (num_commits_ == 1) {
-      char pixels[4];
-      layer_tree_host()->CompositeAndReadback(&pixels, gfx::Rect(0, 0, 1, 1));
-    } else if (num_commits_ == 2) {
-      // This is inside the readback. We should get another commit after it.
-    } else if (num_commits_ == 3) {
-      EndTest();
-    } else {
-      NOTREACHED();
-    }
-  }
-
-  virtual void AfterTest() OVERRIDE {}
-
- private:
-  int num_commits_;
-};
-
-MULTI_THREAD_TEST_F(LayerTreeHostTestCompositeAndReadback);
-
-class LayerTreeHostTestCompositeAndReadbackBeforePreviousCommitDraws
-    : public LayerTreeHostTest {
- public:
-  LayerTreeHostTestCompositeAndReadbackBeforePreviousCommitDraws()
-      : num_commits_(0) {}
-
-  virtual void BeginTest() OVERRIDE { PostSetNeedsCommitToMainThread(); }
-
-  virtual void DidCommit() OVERRIDE {
-    num_commits_++;
-    if (num_commits_ == 1) {
-      layer_tree_host()->SetNeedsCommit();
-    } else if (num_commits_ == 2) {
-      char pixels[4];
-      layer_tree_host()->CompositeAndReadback(&pixels, gfx::Rect(0, 0, 1, 1));
-    } else if (num_commits_ == 3) {
-      // This is inside the readback. We should get another commit after it.
-    } else if (num_commits_ == 4) {
-      EndTest();
-    } else {
-      NOTREACHED();
-    }
-  }
-
-  virtual void AfterTest() OVERRIDE {}
-
- private:
-  int num_commits_;
-};
-
-MULTI_THREAD_TEST_F(
-    LayerTreeHostTestCompositeAndReadbackBeforePreviousCommitDraws);
-
-class LayerTreeHostTestCompositeAndReadbackDuringForcedDraw
-    : public LayerTreeHostTest {
- protected:
-  static const int kFirstCommitSourceFrameNumber = 0;
-  static const int kReadbackSourceFrameNumber = 1;
-  static const int kReadbackReplacementAndForcedDrawSourceFrameNumber = 2;
-
-  LayerTreeHostTestCompositeAndReadbackDuringForcedDraw()
-      : did_post_readback_(false) {}
-
-  virtual void InitializeSettings(LayerTreeSettings* settings) OVERRIDE {
-    // This enables forced draws after a single prepare to draw failure.
-    settings->timeout_and_draw_when_animation_checkerboards = true;
-    settings->maximum_number_of_failed_draws_before_draw_is_forced_ = 1;
-  }
-
-  virtual void BeginTest() OVERRIDE { PostSetNeedsCommitToMainThread(); }
-
-  virtual DrawSwapReadbackResult::DrawResult PrepareToDrawOnThread(
-      LayerTreeHostImpl* host_impl,
-      LayerTreeHostImpl::FrameData* frame_data,
-      DrawSwapReadbackResult::DrawResult draw_result) OVERRIDE {
-    int sfn = host_impl->active_tree()->source_frame_number();
-    EXPECT_TRUE(sfn == kFirstCommitSourceFrameNumber ||
-                sfn == kReadbackSourceFrameNumber ||
-                sfn == kReadbackReplacementAndForcedDrawSourceFrameNumber)
-        << sfn;
-
-    // Before we react to the failed draw by initiating the forced draw
-    // sequence, start a readback on the main thread.
-    if (sfn == kFirstCommitSourceFrameNumber && !did_post_readback_) {
-      did_post_readback_ = true;
-      PostReadbackToMainThread();
-    }
-
-    // Aborting for checkerboarding animations will result in a forced draw.
-    return DrawSwapReadbackResult::DRAW_ABORTED_CHECKERBOARD_ANIMATIONS;
-  }
-
-  virtual void DrawLayersOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
-    // We should only draw for the readback and the forced draw.
-    int sfn = host_impl->active_tree()->source_frame_number();
-    EXPECT_TRUE(sfn == kReadbackSourceFrameNumber ||
-                sfn == kReadbackReplacementAndForcedDrawSourceFrameNumber)
-        << sfn;
-  }
-
-  virtual void SwapBuffersOnThread(LayerTreeHostImpl* host_impl,
-                                   bool result) OVERRIDE {
-    // We should only swap for the forced draw.
-    int sfn = host_impl->active_tree()->source_frame_number();
-    EXPECT_TRUE(sfn == kReadbackReplacementAndForcedDrawSourceFrameNumber)
-        << sfn;
-    EndTest();
-  }
-
-  virtual void AfterTest() OVERRIDE {}
-
-  bool did_post_readback_;
-};
-
-MULTI_THREAD_TEST_F(LayerTreeHostTestCompositeAndReadbackDuringForcedDraw);
-
-class LayerTreeHostTestCompositeAndReadbackAfterForcedDraw
-    : public LayerTreeHostTest {
- protected:
-  static const int kFirstCommitSourceFrameNumber = 0;
-  static const int kForcedDrawSourceFrameNumber = 1;
-  static const int kReadbackSourceFrameNumber = 2;
-  static const int kReadbackReplacementSourceFrameNumber = 3;
-
-  virtual void InitializeSettings(LayerTreeSettings* settings) OVERRIDE {
-    // This enables forced draws after a single prepare to draw failure.
-    settings->timeout_and_draw_when_animation_checkerboards = true;
-    settings->maximum_number_of_failed_draws_before_draw_is_forced_ = 1;
-  }
-
-  virtual void BeginTest() OVERRIDE { PostSetNeedsCommitToMainThread(); }
-
-  virtual DrawSwapReadbackResult::DrawResult PrepareToDrawOnThread(
-      LayerTreeHostImpl* host_impl,
-      LayerTreeHostImpl::FrameData* frame_data,
-      DrawSwapReadbackResult::DrawResult draw_result) OVERRIDE {
-    int sfn = host_impl->active_tree()->source_frame_number();
-    EXPECT_TRUE(sfn == kFirstCommitSourceFrameNumber ||
-                sfn == kForcedDrawSourceFrameNumber ||
-                sfn == kReadbackSourceFrameNumber ||
-                sfn == kReadbackReplacementSourceFrameNumber)
-        << sfn;
-
-    // Aborting for checkerboarding animations will result in a forced draw.
-    return DrawSwapReadbackResult::DRAW_ABORTED_CHECKERBOARD_ANIMATIONS;
-  }
-
-  virtual void DidCommit() OVERRIDE {
-    if (layer_tree_host()->source_frame_number() ==
-        kForcedDrawSourceFrameNumber) {
-      // Avoid aborting the forced draw commit so source_frame_number
-      // increments.
-      layer_tree_host()->SetNeedsCommit();
-    } else if (layer_tree_host()->source_frame_number() ==
-               kReadbackSourceFrameNumber) {
-      // Perform a readback immediately after the forced draw's commit.
-      char pixels[4];
-      layer_tree_host()->CompositeAndReadback(&pixels, gfx::Rect(0, 0, 1, 1));
-    }
-  }
-
-  virtual void DrawLayersOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
-    // We should only draw for the the forced draw, readback, and
-    // replacement commit.
-    int sfn = host_impl->active_tree()->source_frame_number();
-    EXPECT_TRUE(sfn == kForcedDrawSourceFrameNumber ||
-                sfn == kReadbackSourceFrameNumber ||
-                sfn == kReadbackReplacementSourceFrameNumber)
-        << sfn;
-  }
-
-  virtual void SwapBuffersOnThread(LayerTreeHostImpl* host_impl,
-                                   bool result) OVERRIDE {
-    // We should only swap for the forced draw and replacement commit.
-    int sfn = host_impl->active_tree()->source_frame_number();
-    EXPECT_TRUE(sfn == kForcedDrawSourceFrameNumber ||
-                sfn == kReadbackReplacementSourceFrameNumber)
-        << sfn;
-
-    if (sfn == kReadbackReplacementSourceFrameNumber)
-      EndTest();
-  }
-
-  virtual void AfterTest() OVERRIDE {}
-};
-
-MULTI_THREAD_TEST_F(LayerTreeHostTestCompositeAndReadbackAfterForcedDraw);
-
 class LayerTreeHostTestSetNextCommitForcesRedraw : public LayerTreeHostTest {
  public:
   LayerTreeHostTestSetNextCommitForcesRedraw()
@@ -654,11 +460,11 @@ class LayerTreeHostTestSetNextCommitForcesRedraw : public LayerTreeHostTest {
       host_impl->SetNeedsRedrawRect(invalid_rect_);
   }
 
-  virtual DrawSwapReadbackResult::DrawResult PrepareToDrawOnThread(
+  virtual DrawResult PrepareToDrawOnThread(
       LayerTreeHostImpl* host_impl,
       LayerTreeHostImpl::FrameData* frame_data,
-      DrawSwapReadbackResult::DrawResult draw_result) OVERRIDE {
-    EXPECT_EQ(DrawSwapReadbackResult::DRAW_SUCCESS, draw_result);
+      DrawResult draw_result) OVERRIDE {
+    EXPECT_EQ(DRAW_SUCCESS, draw_result);
 
     gfx::RectF root_damage_rect;
     if (!frame_data->render_passes.empty())
@@ -752,11 +558,11 @@ class LayerTreeHostTestUndrawnLayersDamageLater : public LayerTreeHostTest {
 
   virtual void BeginTest() OVERRIDE { PostSetNeedsCommitToMainThread(); }
 
-  virtual DrawSwapReadbackResult::DrawResult PrepareToDrawOnThread(
+  virtual DrawResult PrepareToDrawOnThread(
       LayerTreeHostImpl* host_impl,
       LayerTreeHostImpl::FrameData* frame_data,
-      DrawSwapReadbackResult::DrawResult draw_result) OVERRIDE {
-    EXPECT_EQ(DrawSwapReadbackResult::DRAW_SUCCESS, draw_result);
+      DrawResult draw_result) OVERRIDE {
+    EXPECT_EQ(DRAW_SUCCESS, draw_result);
 
     gfx::RectF root_damage_rect;
     if (!frame_data->render_passes.empty())
@@ -886,88 +692,6 @@ class LayerTreeHostTestUndrawnLayersPushContentBoundsLater
 
 SINGLE_AND_MULTI_THREAD_TEST_F(
     LayerTreeHostTestUndrawnLayersPushContentBoundsLater);
-
-// If the layerTreeHost says it can't draw, Then we should not try to draw.
-class LayerTreeHostTestCanDrawBlocksDrawing : public LayerTreeHostTest {
- public:
-  LayerTreeHostTestCanDrawBlocksDrawing() : done_(false) {}
-
-  virtual void BeginTest() OVERRIDE { PostSetNeedsCommitToMainThread(); }
-
-  virtual void DrawLayersOnThread(LayerTreeHostImpl* impl) OVERRIDE {
-    if (done_)
-      return;
-    // Only the initial draw should bring us here.
-    EXPECT_TRUE(impl->CanDraw());
-    EXPECT_EQ(0, impl->active_tree()->source_frame_number());
-  }
-
-  virtual void CommitCompleteOnThread(LayerTreeHostImpl* impl) OVERRIDE {
-    if (done_)
-      return;
-    if (LastCommittedSourceFrameNumber(impl) >= 1) {
-      // After the first commit, we should not be able to draw.
-      EXPECT_FALSE(impl->CanDraw());
-    }
-  }
-
-  virtual void DidCommit() OVERRIDE {
-    switch (layer_tree_host()->source_frame_number()) {
-      case 1:
-        // Make the viewport empty so the host says it can't draw.
-        layer_tree_host()->SetViewportSize(gfx::Size(0, 0));
-        break;
-      case 2: {
-        char pixels[4];
-        layer_tree_host()->CompositeAndReadback(&pixels, gfx::Rect(0, 0, 1, 1));
-        break;
-      }
-      case 3:
-        // Let it draw so we go idle and end the test.
-        layer_tree_host()->SetViewportSize(gfx::Size(1, 1));
-        done_ = true;
-        EndTest();
-        break;
-    }
-  }
-
-  virtual void AfterTest() OVERRIDE {}
-
- private:
-  bool done_;
-};
-
-SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostTestCanDrawBlocksDrawing);
-
-// A compositeAndReadback while invisible should force a normal commit without
-// assertion.
-class LayerTreeHostTestCompositeAndReadbackWhileInvisible
-    : public LayerTreeHostTest {
- public:
-  LayerTreeHostTestCompositeAndReadbackWhileInvisible() : num_commits_(0) {}
-
-  virtual void BeginTest() OVERRIDE { PostSetNeedsCommitToMainThread(); }
-
-  virtual void DidCommitAndDrawFrame() OVERRIDE {
-    num_commits_++;
-    if (num_commits_ == 1) {
-      layer_tree_host()->SetVisible(false);
-      layer_tree_host()->SetNeedsCommit();
-      layer_tree_host()->SetNeedsCommit();
-      char pixels[4];
-      layer_tree_host()->CompositeAndReadback(&pixels, gfx::Rect(0, 0, 1, 1));
-    } else {
-      EndTest();
-    }
-  }
-
-  virtual void AfterTest() OVERRIDE {}
-
- private:
-  int num_commits_;
-};
-
-MULTI_THREAD_TEST_F(LayerTreeHostTestCompositeAndReadbackWhileInvisible);
 
 class LayerTreeHostTestAbortFrameWhenInvisible : public LayerTreeHostTest {
  public:
@@ -1240,8 +964,11 @@ class TestOpacityChangeLayerDelegate : public ContentLayerClient {
 
   void SetTestLayer(Layer* test_layer) { test_layer_ = test_layer; }
 
-  virtual void PaintContents(SkCanvas*, const gfx::Rect&,
-                             gfx::RectF*) OVERRIDE {
+  virtual void PaintContents(
+      SkCanvas* canvas,
+      const gfx::Rect& clip,
+      gfx::RectF* opaque,
+      ContentLayerClient::GraphicsContextStatus gc_status) OVERRIDE {
     // Set layer opacity to 0.
     if (test_layer_)
       test_layer_->SetOpacity(0.f);
@@ -1396,7 +1123,7 @@ class LayerTreeHostTestDeviceScaleFactorScalesViewportAndLayers
 
     // Compute all the layer transforms for the frame.
     LayerTreeHostImpl::FrameData frame_data;
-    impl->PrepareToDraw(&frame_data, gfx::Rect());
+    impl->PrepareToDraw(&frame_data);
     impl->DidDrawAllLayers(frame_data);
 
     const LayerImplList& render_surface_layer_list =
@@ -1839,24 +1566,6 @@ class LayerTreeHostTestFinishAllRendering : public LayerTreeHostTest {
 };
 
 SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostTestFinishAllRendering);
-
-class LayerTreeHostTestCompositeAndReadbackCleanup : public LayerTreeHostTest {
- public:
-  virtual void BeginTest() OVERRIDE {
-    Layer* root_layer = layer_tree_host()->root_layer();
-
-    char pixels[4];
-    layer_tree_host()->CompositeAndReadback(static_cast<void*>(&pixels),
-                                            gfx::Rect(0, 0, 1, 1));
-    EXPECT_FALSE(root_layer->render_surface());
-
-    EndTest();
-  }
-
-  virtual void AfterTest() OVERRIDE {}
-};
-
-SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostTestCompositeAndReadbackCleanup);
 
 class LayerTreeHostTestSurfaceNotAllocatedForLayersOutsideMemoryLimit
     : public LayerTreeHostTest {
@@ -2521,9 +2230,11 @@ class LayerTreeHostTestLCDNotification : public LayerTreeHostTest {
     int paint_count() const { return paint_count_; }
     int lcd_notification_count() const { return lcd_notification_count_; }
 
-    virtual void PaintContents(SkCanvas* canvas,
-                               const gfx::Rect& clip,
-                               gfx::RectF* opaque) OVERRIDE {
+    virtual void PaintContents(
+        SkCanvas* canvas,
+        const gfx::Rect& clip,
+        gfx::RectF* opaque,
+        ContentLayerClient::GraphicsContextStatus gc_status) OVERRIDE {
       ++paint_count_;
     }
     virtual void DidChangeLayerCanUseLCDText() OVERRIDE {
@@ -2612,12 +2323,12 @@ class LayerTreeHostTestBeginFrameNotification : public LayerTreeHostTest {
     PostSetNeedsCommitToMainThread();
   }
 
-  virtual DrawSwapReadbackResult::DrawResult PrepareToDrawOnThread(
+  virtual DrawResult PrepareToDrawOnThread(
       LayerTreeHostImpl* host_impl,
       LayerTreeHostImpl::FrameData* frame,
-      DrawSwapReadbackResult::DrawResult draw_result) OVERRIDE {
+      DrawResult draw_result) OVERRIDE {
     EndTest();
-    return DrawSwapReadbackResult::DRAW_SUCCESS;
+    return DRAW_SUCCESS;
   }
 
   virtual void AfterTest() OVERRIDE {}
@@ -2762,9 +2473,11 @@ class LayerTreeHostTestChangeLayerPropertiesInPaintContents
 
     void set_layer(Layer* layer) { layer_ = layer; }
 
-    virtual void PaintContents(SkCanvas* canvas,
-                               const gfx::Rect& clip,
-                               gfx::RectF* opaque) OVERRIDE {
+    virtual void PaintContents(
+        SkCanvas* canvas,
+        const gfx::Rect& clip,
+        gfx::RectF* opaque,
+        ContentLayerClient::GraphicsContextStatus gc_status) OVERRIDE {
       layer_->SetBounds(gfx::Size(2, 2));
     }
 
@@ -2837,6 +2550,8 @@ class MockIOSurfaceWebGraphicsContext3D : public TestWebGraphicsContext3D {
                                   GLenum type,
                                   GLintptr offset));
   MOCK_METHOD1(deleteTexture, void(GLenum texture));
+  MOCK_METHOD2(produceTextureCHROMIUM,
+               void(GLenum target, const GLbyte* mailbox));
 };
 
 class LayerTreeHostTestIOSurfaceDrawing : public LayerTreeHostTest {
@@ -2847,8 +2562,13 @@ class LayerTreeHostTestIOSurfaceDrawing : public LayerTreeHostTest {
         new MockIOSurfaceWebGraphicsContext3D);
     mock_context_ = mock_context_owned.get();
 
-    return FakeOutputSurface::Create3d(
-        mock_context_owned.PassAs<TestWebGraphicsContext3D>());
+    if (delegating_renderer()) {
+      return FakeOutputSurface::CreateDelegating3d(
+          mock_context_owned.PassAs<TestWebGraphicsContext3D>());
+    } else {
+      return FakeOutputSurface::Create3d(
+          mock_context_owned.PassAs<TestWebGraphicsContext3D>());
+    }
   }
 
   virtual void SetupTree() OVERRIDE {
@@ -2863,6 +2583,7 @@ class LayerTreeHostTestIOSurfaceDrawing : public LayerTreeHostTest {
     io_surface_layer->SetBounds(gfx::Size(10, 10));
     io_surface_layer->SetAnchorPoint(gfx::PointF());
     io_surface_layer->SetIsDrawable(true);
+    io_surface_layer->SetContentsOpaque(true);
     io_surface_layer->SetIOSurfaceProperties(io_surface_id_, io_surface_size_);
     layer_tree_host()->root_layer()->AddChild(io_surface_layer);
   }
@@ -2870,6 +2591,7 @@ class LayerTreeHostTestIOSurfaceDrawing : public LayerTreeHostTest {
   virtual void BeginTest() OVERRIDE { PostSetNeedsCommitToMainThread(); }
 
   virtual void DidActivateTreeOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
+    EXPECT_EQ(0u, host_impl->resource_provider()->num_resources());
     // In WillDraw, the IOSurfaceLayer sets up the io surface texture.
 
     EXPECT_CALL(*mock_context_, activeTexture(_)).Times(0);
@@ -2883,6 +2605,10 @@ class LayerTreeHostTestIOSurfaceDrawing : public LayerTreeHostTest {
                 texParameteri(
                     GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_MAG_FILTER, GL_LINEAR))
         .Times(1);
+    EXPECT_CALL(*mock_context_,
+                texParameteri(GL_TEXTURE_RECTANGLE_ARB,
+                              GL_TEXTURE_POOL_CHROMIUM,
+                              GL_TEXTURE_POOL_UNMANAGED_CHROMIUM)).Times(1);
     EXPECT_CALL(*mock_context_,
                 texParameteri(GL_TEXTURE_RECTANGLE_ARB,
                               GL_TEXTURE_WRAP_S,
@@ -2902,18 +2628,37 @@ class LayerTreeHostTestIOSurfaceDrawing : public LayerTreeHostTest {
     EXPECT_CALL(*mock_context_, bindTexture(_, 0)).Times(AnyNumber());
   }
 
-  virtual DrawSwapReadbackResult::DrawResult PrepareToDrawOnThread(
+  virtual DrawResult PrepareToDrawOnThread(
       LayerTreeHostImpl* host_impl,
       LayerTreeHostImpl::FrameData* frame,
-      DrawSwapReadbackResult::DrawResult draw_result) OVERRIDE {
+      DrawResult draw_result) OVERRIDE {
     Mock::VerifyAndClearExpectations(&mock_context_);
+    ResourceProvider* resource_provider = host_impl->resource_provider();
+    EXPECT_EQ(1u, resource_provider->num_resources());
+    CHECK_EQ(1u, frame->render_passes.size());
+    CHECK_LE(1u, frame->render_passes[0]->quad_list.size());
+    const DrawQuad* quad = frame->render_passes[0]->quad_list[0];
+    CHECK_EQ(DrawQuad::IO_SURFACE_CONTENT, quad->material);
+    const IOSurfaceDrawQuad* io_surface_draw_quad =
+        IOSurfaceDrawQuad::MaterialCast(quad);
+    EXPECT_SIZE_EQ(io_surface_size_, io_surface_draw_quad->io_surface_size);
+    EXPECT_NE(0u, io_surface_draw_quad->io_surface_resource_id);
+    EXPECT_EQ(static_cast<GLenum>(GL_TEXTURE_RECTANGLE_ARB),
+              resource_provider->TargetForTesting(
+                  io_surface_draw_quad->io_surface_resource_id));
 
-    // The io surface layer's texture is drawn.
-    EXPECT_CALL(*mock_context_, activeTexture(GL_TEXTURE0)).Times(AtLeast(1));
     EXPECT_CALL(*mock_context_, bindTexture(GL_TEXTURE_RECTANGLE_ARB, 1))
         .Times(1);
-    EXPECT_CALL(*mock_context_, drawElements(GL_TRIANGLES, 6, _, _))
-        .Times(AtLeast(1));
+    if (delegating_renderer()) {
+      // The io surface layer's resource should be sent to the parent.
+      EXPECT_CALL(*mock_context_,
+                  produceTextureCHROMIUM(GL_TEXTURE_RECTANGLE_ARB, _)).Times(1);
+    } else {
+      // The io surface layer's texture is drawn.
+      EXPECT_CALL(*mock_context_, activeTexture(GL_TEXTURE0)).Times(AtLeast(1));
+      EXPECT_CALL(*mock_context_, drawElements(GL_TRIANGLES, 6, _, _))
+          .Times(AtLeast(1));
+    }
 
     return draw_result;
   }
@@ -2921,7 +2666,7 @@ class LayerTreeHostTestIOSurfaceDrawing : public LayerTreeHostTest {
   virtual void DrawLayersOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
     Mock::VerifyAndClearExpectations(&mock_context_);
 
-    EXPECT_CALL(*mock_context_, deleteTexture(1)).Times(1);
+    EXPECT_CALL(*mock_context_, deleteTexture(1)).Times(AtLeast(1));
     EndTest();
   }
 
@@ -2932,9 +2677,7 @@ class LayerTreeHostTestIOSurfaceDrawing : public LayerTreeHostTest {
   gfx::Size io_surface_size_;
 };
 
-// TODO(danakj): IOSurface layer can not be transported. crbug.com/239335
-SINGLE_AND_MULTI_THREAD_DIRECT_RENDERER_TEST_F(
-    LayerTreeHostTestIOSurfaceDrawing);
+SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostTestIOSurfaceDrawing);
 
 class LayerTreeHostTestNumFramesPending : public LayerTreeHostTest {
  public:
@@ -2946,8 +2689,6 @@ class LayerTreeHostTestNumFramesPending : public LayerTreeHostTest {
   // Round 1: commit + draw
   // Round 2: commit only (no draw/swap)
   // Round 3: draw only (no commit)
-  // Round 4: composite & readback (2 commits, no draw/swap)
-  // Round 5: commit + draw
 
   virtual void DidCommit() OVERRIDE {
     int commit = layer_tree_host()->source_frame_number();
@@ -2957,23 +2698,12 @@ class LayerTreeHostTestNumFramesPending : public LayerTreeHostTest {
         EXPECT_EQ(1, frame_);
         layer_tree_host()->SetNeedsRedraw();
         break;
-      case 3:
-        // CompositeAndReadback in Round 4, first commit.
-        EXPECT_EQ(2, frame_);
-        break;
-      case 4:
-        // Round 4 done.
-        EXPECT_EQ(2, frame_);
-        layer_tree_host()->SetNeedsCommit();
-        layer_tree_host()->SetNeedsRedraw();
-        break;
     }
   }
 
   virtual void DidCompleteSwapBuffers() OVERRIDE {
     int commit = layer_tree_host()->source_frame_number();
     ++frame_;
-    char pixels[4] = {0};
     switch (frame_) {
       case 1:
         // Round 1 done.
@@ -2983,11 +2713,6 @@ class LayerTreeHostTestNumFramesPending : public LayerTreeHostTest {
       case 2:
         // Round 3 done.
         EXPECT_EQ(2, commit);
-        layer_tree_host()->CompositeAndReadback(pixels, gfx::Rect(0, 0, 1, 1));
-        break;
-      case 3:
-        // Round 5 done.
-        EXPECT_EQ(5, commit);
         EndTest();
         break;
     }
@@ -3109,7 +2834,7 @@ class LayerTreeHostTestDeferredInitialize : public LayerTreeHostTest {
   int last_source_frame_number_drawn_;
 };
 
-MULTI_THREAD_TEST_F(LayerTreeHostTestDeferredInitialize);
+MULTI_THREAD_DIRECT_RENDERER_TEST_F(LayerTreeHostTestDeferredInitialize);
 
 // Test for UI Resource management.
 class LayerTreeHostTestUIResource : public LayerTreeHostTest {
@@ -4159,10 +3884,10 @@ class LayerTreeHostTestTreeActivationCallback : public LayerTreeHostTest {
     PostSetNeedsCommitToMainThread();
   }
 
-  virtual DrawSwapReadbackResult::DrawResult PrepareToDrawOnThread(
+  virtual DrawResult PrepareToDrawOnThread(
       LayerTreeHostImpl* host_impl,
       LayerTreeHostImpl::FrameData* frame_data,
-      DrawSwapReadbackResult::DrawResult draw_result) OVERRIDE {
+      DrawResult draw_result) OVERRIDE {
     ++num_commits_;
     switch (num_commits_) {
       case 1:
@@ -4472,7 +4197,6 @@ class LayerTreeHostTestMaxTransferBufferUsageBytes : public LayerTreeHostTest {
  protected:
   virtual void InitializeSettings(LayerTreeSettings* settings) OVERRIDE {
     settings->impl_side_painting = true;
-    settings->default_tile_size = gfx::Size(128, 128);
   }
 
   virtual scoped_ptr<FakeOutputSurface> CreateFakeOutputSurface(bool fallback)
@@ -4480,7 +4204,10 @@ class LayerTreeHostTestMaxTransferBufferUsageBytes : public LayerTreeHostTest {
     scoped_refptr<TestContextProvider> context_provider =
         TestContextProvider::Create();
     context_provider->SetMaxTransferBufferUsageBytes(1024 * 1024);
-    return FakeOutputSurface::Create3d(context_provider);
+    if (delegating_renderer())
+      return FakeOutputSurface::CreateDelegating3d(context_provider);
+    else
+      return FakeOutputSurface::Create3d(context_provider);
   }
 
   virtual void SetupTree() OVERRIDE {
@@ -4500,10 +4227,7 @@ class LayerTreeHostTestMaxTransferBufferUsageBytes : public LayerTreeHostTest {
 
     // Expect that the transfer buffer memory used is equal to the
     // MaxTransferBufferUsageBytes value set in CreateOutputSurface.
-    // NOTE: This is now 1/2 due to raster memory limit in TileManager.
-    //       Only half the limit will be reached unless the task set
-    //       thrashes to a completly new set of tiles.
-    EXPECT_EQ(512 * 1024u, context->GetPeakTransferBufferMemoryUsedBytes());
+    EXPECT_EQ(1024 * 1024u, context->GetTransferBufferMemoryUsedBytes());
     EndTest();
   }
 
@@ -4607,41 +4331,6 @@ class LayerTreeHostTestMemoryLimits : public LayerTreeHostTest {
 
 SINGLE_AND_MULTI_THREAD_NOIMPL_TEST_F(LayerTreeHostTestMemoryLimits);
 
-class LayerTreeHostTestNoQuadsForEmptyLayer : public LayerTreeHostTest {
- protected:
-  virtual void SetupTree() OVERRIDE {
-    LayerTreeHostTest::SetupTree();
-    root_layer_ = FakeContentLayer::Create(&client_);
-    root_layer_->SetBounds(gfx::Size(10, 10));
-    root_layer_->SetIsDrawable(false);
-    root_layer_->SetHaveWheelEventHandlers(true);
-    layer_tree_host()->SetRootLayer(root_layer_);
-    LayerTreeHostTest::SetupTree();
-  }
-
-  virtual void BeginTest() OVERRIDE { PostSetNeedsCommitToMainThread(); }
-
-  virtual void DidActivateTreeOnThread(LayerTreeHostImpl* impl) OVERRIDE {
-    FakeContentLayerImpl* layer_impl =
-        static_cast<FakeContentLayerImpl*>(impl->RootLayer());
-    EXPECT_FALSE(layer_impl->DrawsContent());
-    EXPECT_EQ(0u, layer_impl->append_quads_count());
-  }
-
-  virtual void DidCommit() OVERRIDE {
-    // The layer is not drawable, so it should not be updated.
-    EXPECT_EQ(0u, root_layer_->update_count());
-    EndTest();
-  }
-  virtual void AfterTest() OVERRIDE {}
-
- private:
-  FakeContentLayerClient client_;
-  scoped_refptr<FakeContentLayer> root_layer_;
-};
-
-SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostTestNoQuadsForEmptyLayer);
-
 }  // namespace
 
 class LayerTreeHostTestSetMemoryPolicyOnLostOutputSurface
@@ -4660,9 +4349,14 @@ class LayerTreeHostTestSetMemoryPolicyOnLostOutputSurface
       second_context_provider_ = TestContextProvider::Create();
     }
 
-    scoped_ptr<FakeOutputSurface> output_surface(FakeOutputSurface::Create3d(
-        second_context_provider_ ? second_context_provider_
-                                 : first_context_provider_));
+    scoped_refptr<TestContextProvider> provider(second_context_provider_
+                                                    ? second_context_provider_
+                                                    : first_context_provider_);
+    scoped_ptr<FakeOutputSurface> output_surface;
+    if (delegating_renderer())
+      output_surface = FakeOutputSurface::CreateDelegating3d(provider);
+    else
+      output_surface = FakeOutputSurface::Create3d(provider);
     output_surface->SetMemoryPolicyToSetAtBind(
         make_scoped_ptr(new ManagedMemoryPolicy(
             second_context_provider_ ? second_output_surface_memory_limit_
@@ -4963,55 +4657,135 @@ class LayerTreeHostTestHighResRequiredAfterEvictingUIResources
 
 MULTI_THREAD_TEST_F(LayerTreeHostTestHighResRequiredAfterEvictingUIResources);
 
+class LayerTreeHostTestGpuRasterizationDefault : public LayerTreeHostTest {
+ protected:
+  virtual void InitializeSettings(LayerTreeSettings* settings) OVERRIDE {
+    settings->impl_side_painting = true;
+
+    EXPECT_FALSE(settings->gpu_rasterization_enabled);
+    EXPECT_FALSE(settings->gpu_rasterization_forced);
+  }
+
+  virtual void SetupTree() OVERRIDE {
+    LayerTreeHostTest::SetupTree();
+
+    scoped_refptr<PictureLayer> layer = PictureLayer::Create(&layer_client_);
+    layer->SetBounds(gfx::Size(10, 10));
+    layer->SetIsDrawable(true);
+    layer_tree_host()->root_layer()->AddChild(layer);
+  }
+
+  virtual void BeginTest() OVERRIDE {
+    Layer* root = layer_tree_host()->root_layer();
+    PictureLayer* layer = static_cast<PictureLayer*>(root->child_at(0));
+    PicturePile* pile = layer->GetPicturePileForTesting();
+
+    // Verify default values.
+    EXPECT_TRUE(root->IsSuitableForGpuRasterization());
+    EXPECT_TRUE(layer->IsSuitableForGpuRasterization());
+    EXPECT_TRUE(pile->is_suitable_for_gpu_rasterization());
+    EXPECT_FALSE(layer_tree_host()->has_gpu_rasterization_trigger());
+    EXPECT_FALSE(layer_tree_host()->UseGpuRasterization());
+
+    // Setting gpu rasterization trigger does not enable gpu rasterization.
+    layer_tree_host()->set_has_gpu_rasterization_trigger(true);
+    EXPECT_TRUE(layer_tree_host()->has_gpu_rasterization_trigger());
+    EXPECT_FALSE(layer_tree_host()->UseGpuRasterization());
+
+    PostSetNeedsCommitToMainThread();
+  }
+
+  virtual void CommitCompleteOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
+    LayerImpl* root = host_impl->pending_tree()->root_layer();
+    PictureLayerImpl* layer_impl =
+        static_cast<PictureLayerImpl*>(root->children()[0]);
+
+    EXPECT_FALSE(layer_impl->use_gpu_rasterization());
+  }
+
+  virtual void DidActivateTreeOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
+    LayerImpl* root = host_impl->active_tree()->root_layer();
+    PictureLayerImpl* layer_impl =
+        static_cast<PictureLayerImpl*>(root->children()[0]);
+
+    EXPECT_FALSE(layer_impl->use_gpu_rasterization());
+    EndTest();
+  }
+
+  virtual void AfterTest() OVERRIDE {}
+
+  FakeContentLayerClient layer_client_;
+};
+
+MULTI_THREAD_TEST_F(LayerTreeHostTestGpuRasterizationDefault);
+
 class LayerTreeHostTestGpuRasterizationEnabled : public LayerTreeHostTest {
  protected:
   virtual void InitializeSettings(LayerTreeSettings* settings) OVERRIDE {
     settings->impl_side_painting = true;
+
+    EXPECT_FALSE(settings->gpu_rasterization_enabled);
     settings->gpu_rasterization_enabled = true;
   }
 
   virtual void SetupTree() OVERRIDE {
     LayerTreeHostTest::SetupTree();
 
-    scoped_refptr<PictureLayer> parent = PictureLayer::Create(&client_);
-    parent->SetBounds(gfx::Size(10, 10));
-    layer_tree_host()->root_layer()->AddChild(parent);
-
-    scoped_refptr<Layer> child = PictureLayer::Create(&client_);
-    child->SetBounds(gfx::Size(10, 10));
-    parent->AddChild(child);
-
-    layer_tree_host()->set_has_gpu_rasterization_trigger(true);
+    scoped_refptr<PictureLayer> layer = PictureLayer::Create(&layer_client_);
+    layer->SetBounds(gfx::Size(10, 10));
+    layer->SetIsDrawable(true);
+    layer_tree_host()->root_layer()->AddChild(layer);
   }
 
-  virtual void BeginTest() OVERRIDE { PostSetNeedsCommitToMainThread(); }
+  virtual void BeginTest() OVERRIDE {
+    Layer* root = layer_tree_host()->root_layer();
+    PictureLayer* layer = static_cast<PictureLayer*>(root->child_at(0));
+    PicturePile* pile = layer->GetPicturePileForTesting();
+
+    // Verify default values.
+    EXPECT_TRUE(root->IsSuitableForGpuRasterization());
+    EXPECT_TRUE(layer->IsSuitableForGpuRasterization());
+    EXPECT_TRUE(pile->is_suitable_for_gpu_rasterization());
+    EXPECT_FALSE(layer_tree_host()->has_gpu_rasterization_trigger());
+    EXPECT_FALSE(layer_tree_host()->UseGpuRasterization());
+
+    // Gpu rasterization trigger is relevant.
+    layer_tree_host()->set_has_gpu_rasterization_trigger(true);
+    EXPECT_TRUE(layer_tree_host()->has_gpu_rasterization_trigger());
+    EXPECT_TRUE(layer_tree_host()->UseGpuRasterization());
+
+    // Content-based veto is relevant as well.
+    pile->SetUnsuitableForGpuRasterizationForTesting();
+    EXPECT_FALSE(pile->is_suitable_for_gpu_rasterization());
+    EXPECT_FALSE(layer->IsSuitableForGpuRasterization());
+    // Veto will take effect when layers are updated.
+    // The results will be verified after commit is completed below.
+    // Since we are manually marking picture pile as unsuitable,
+    // make sure that the layer gets a chance to update.
+    layer->SetNeedsDisplay();
+    PostSetNeedsCommitToMainThread();
+  }
 
   virtual void CommitCompleteOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
     LayerImpl* root = host_impl->pending_tree()->root_layer();
-    PictureLayerImpl* parent =
+    PictureLayerImpl* layer_impl =
         static_cast<PictureLayerImpl*>(root->children()[0]);
-    PictureLayerImpl* child =
-        static_cast<PictureLayerImpl*>(parent->children()[0]);
 
-    EXPECT_TRUE(parent->ShouldUseGpuRasterization());
-    EXPECT_TRUE(child->ShouldUseGpuRasterization());
+    EXPECT_FALSE(layer_impl->use_gpu_rasterization());
   }
 
   virtual void DidActivateTreeOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
     LayerImpl* root = host_impl->active_tree()->root_layer();
-    PictureLayerImpl* parent =
+    PictureLayerImpl* layer_impl =
         static_cast<PictureLayerImpl*>(root->children()[0]);
-    PictureLayerImpl* child =
-        static_cast<PictureLayerImpl*>(parent->children()[0]);
 
-    EXPECT_TRUE(parent->ShouldUseGpuRasterization());
-    EXPECT_TRUE(child->ShouldUseGpuRasterization());
+    EXPECT_FALSE(layer_impl->use_gpu_rasterization());
     EndTest();
   }
 
   virtual void AfterTest() OVERRIDE {}
 
-  FakeContentLayerClient client_;
+  FakeContentLayerClient layer_client_;
 };
 
 MULTI_THREAD_TEST_F(LayerTreeHostTestGpuRasterizationEnabled);
@@ -5020,55 +4794,69 @@ class LayerTreeHostTestGpuRasterizationForced : public LayerTreeHostTest {
  protected:
   virtual void InitializeSettings(LayerTreeSettings* settings) OVERRIDE {
     settings->impl_side_painting = true;
+
+    EXPECT_FALSE(settings->gpu_rasterization_forced);
     settings->gpu_rasterization_forced = true;
   }
 
   virtual void SetupTree() OVERRIDE {
     LayerTreeHostTest::SetupTree();
 
-    scoped_refptr<PictureLayer> parent = PictureLayer::Create(&client_);
-    parent->SetBounds(gfx::Size(10, 10));
-    layer_tree_host()->root_layer()->AddChild(parent);
-
-    scoped_refptr<Layer> child = PictureLayer::Create(&client_);
-    child->SetBounds(gfx::Size(10, 10));
-    parent->AddChild(child);
-
-    layer_tree_host()->set_has_gpu_rasterization_trigger(false);
+    scoped_refptr<PictureLayer> layer = PictureLayer::Create(&layer_client_);
+    layer->SetBounds(gfx::Size(10, 10));
+    layer->SetIsDrawable(true);
+    layer_tree_host()->root_layer()->AddChild(layer);
   }
 
-  virtual void BeginTest() OVERRIDE { PostSetNeedsCommitToMainThread(); }
+  virtual void BeginTest() OVERRIDE {
+    Layer* root = layer_tree_host()->root_layer();
+    PictureLayer* layer = static_cast<PictureLayer*>(root->child_at(0));
+    PicturePile* pile = layer->GetPicturePileForTesting();
+
+    // Verify default values.
+    EXPECT_TRUE(root->IsSuitableForGpuRasterization());
+    EXPECT_TRUE(layer->IsSuitableForGpuRasterization());
+    EXPECT_TRUE(pile->is_suitable_for_gpu_rasterization());
+    EXPECT_FALSE(layer_tree_host()->has_gpu_rasterization_trigger());
+
+    // With gpu rasterization forced, gpu rasterization trigger is irrelevant.
+    EXPECT_TRUE(layer_tree_host()->UseGpuRasterization());
+    layer_tree_host()->set_has_gpu_rasterization_trigger(true);
+    EXPECT_TRUE(layer_tree_host()->has_gpu_rasterization_trigger());
+    EXPECT_TRUE(layer_tree_host()->UseGpuRasterization());
+
+    // Content-based veto is irrelevant as well.
+    pile->SetUnsuitableForGpuRasterizationForTesting();
+    EXPECT_FALSE(pile->is_suitable_for_gpu_rasterization());
+    EXPECT_FALSE(layer->IsSuitableForGpuRasterization());
+    // Veto will take effect when layers are updated.
+    // The results will be verified after commit is completed below.
+    // Since we are manually marking picture pile as unsuitable,
+    // make sure that the layer gets a chance to update.
+    layer->SetNeedsDisplay();
+    PostSetNeedsCommitToMainThread();
+  }
 
   virtual void CommitCompleteOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
     LayerImpl* root = host_impl->pending_tree()->root_layer();
-    PictureLayerImpl* parent =
+    PictureLayerImpl* layer_impl =
         static_cast<PictureLayerImpl*>(root->children()[0]);
-    PictureLayerImpl* child =
-        static_cast<PictureLayerImpl*>(parent->children()[0]);
 
-    // All layers should use GPU rasterization, regardless of whether a GPU
-    // rasterization trigger has been set.
-    EXPECT_TRUE(parent->ShouldUseGpuRasterization());
-    EXPECT_TRUE(child->ShouldUseGpuRasterization());
+    EXPECT_TRUE(layer_impl->use_gpu_rasterization());
   }
 
   virtual void DidActivateTreeOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
     LayerImpl* root = host_impl->active_tree()->root_layer();
-    PictureLayerImpl* parent =
+    PictureLayerImpl* layer_impl =
         static_cast<PictureLayerImpl*>(root->children()[0]);
-    PictureLayerImpl* child =
-        static_cast<PictureLayerImpl*>(parent->children()[0]);
 
-    // All layers should use GPU rasterization, regardless of whether a GPU
-    // rasterization trigger has been set.
-    EXPECT_TRUE(parent->ShouldUseGpuRasterization());
-    EXPECT_TRUE(child->ShouldUseGpuRasterization());
+    EXPECT_TRUE(layer_impl->use_gpu_rasterization());
     EndTest();
   }
 
   virtual void AfterTest() OVERRIDE {}
 
-  FakeContentLayerClient client_;
+  FakeContentLayerClient layer_client_;
 };
 
 MULTI_THREAD_TEST_F(LayerTreeHostTestGpuRasterizationForced);

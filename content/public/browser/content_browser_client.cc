@@ -15,12 +15,6 @@ BrowserMainParts* ContentBrowserClient::CreateBrowserMainParts(
   return NULL;
 }
 
-WebContentsViewPort* ContentBrowserClient::OverrideCreateWebContentsView(
-    WebContents* web_contents,
-    RenderViewHostDelegateView** render_view_host_delegate_view) {
-  return NULL;
-}
-
 WebContentsViewDelegate* ContentBrowserClient::GetWebContentsViewDelegate(
     WebContents* web_contents) {
   return NULL;
@@ -69,6 +63,10 @@ bool ContentBrowserClient::ShouldAllowOpenURL(SiteInstance* site_instance,
 
 bool ContentBrowserClient::IsSuitableHost(RenderProcessHost* process_host,
                                           const GURL& site_url) {
+  return true;
+}
+
+bool ContentBrowserClient::MayReuseHost(RenderProcessHost* process_host) {
   return true;
 }
 
@@ -286,6 +284,10 @@ LocationProvider* ContentBrowserClient::OverrideSystemLocationProvider() {
 }
 
 VibrationProvider* ContentBrowserClient::OverrideVibrationProvider() {
+  return NULL;
+}
+
+DevToolsManagerDelegate* ContentBrowserClient::GetDevToolsManagerDelegate() {
   return NULL;
 }
 

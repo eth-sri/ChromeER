@@ -10,9 +10,9 @@
 #include "base/basictypes.h"
 
 namespace mojo {
-namespace services {
 namespace view_manager {
 
+class View;
 class ViewTreeNode;
 
 class ViewTreeNodeObserver {
@@ -33,12 +33,19 @@ class ViewTreeNodeObserver {
 
   virtual void OnTreeChange(const TreeChangeParams& params) {}
 
+  virtual void OnNodeDestroy(ViewTreeNode* node,
+                             DispositionChangePhase phase) {}
+
+  virtual void OnNodeActiveViewChange(ViewTreeNode* node,
+                                      View* old_view,
+                                      View* new_view,
+                                      DispositionChangePhase phase) {}
+
  protected:
   virtual ~ViewTreeNodeObserver() {}
 };
 
 }  // namespace view_manager
-}  // namespace services
 }  // namespace mojo
 
 #endif  // MOJO_SERVICES_PUBLIC_CPP_VIEW_MANAGER_VIEW_TREE_NODE_OBSERVER_H_

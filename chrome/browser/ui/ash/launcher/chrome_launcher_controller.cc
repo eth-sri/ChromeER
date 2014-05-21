@@ -84,11 +84,12 @@
 #include "ui/aura/window.h"
 #include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/keyboard/keyboard_util.h"
 #include "ui/wm/core/window_animations.h"
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/ui/ash/chrome_shell_delegate.h"
 #include "chrome/browser/ui/ash/launcher/multi_profile_app_window_launcher_controller.h"
 #include "chrome/browser/ui/ash/launcher/multi_profile_browser_status_monitor.h"
@@ -649,8 +650,10 @@ void ChromeLauncherController::LaunchApp(const std::string& app_id,
     return;
   }
 
+#if defined(OS_WIN)
   if (LaunchedInNativeDesktop(app_id))
     return;
+#endif
 
   // The app will be created for the currently active profile.
   AppLaunchParams params(profile_,
@@ -1102,6 +1105,9 @@ void ChromeLauncherController::ActiveUserChanged(
   RestoreUnpinnedRunningApplicationOrder(user_email);
   // Inform the system tray of the change.
   ash::Shell::GetInstance()->system_tray_delegate()->ActiveUserWasChanged();
+  // Force on-screen keyboard to reset.
+  if (keyboard::IsKeyboardEnabled())
+    ash::Shell::GetInstance()->CreateKeyboard();
 }
 
 void ChromeLauncherController::AdditionalUserAddedToSession(Profile* profile) {

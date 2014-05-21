@@ -11,8 +11,11 @@
 #include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/memory/singleton.h"
+#include "base/metrics/histogram.h"
 #include "base/prefs/pref_service.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/sys_info.h"
 #include "chrome/browser/chromeos/drive/drive_integration_service.h"
 #include "chrome/browser/chromeos/drive/file_errors.h"
 #include "chrome/browser/chromeos/drive/file_system_interface.h"
@@ -43,6 +46,7 @@ namespace {
 const bool kNotRemounting = false;
 
 const char kFileManagerMTPMountNamePrefix[] = "fileman-mtp-";
+const char kMtpVolumeIdPrefix [] = "mtp:";
 
 // Registers |path| as the "Downloads" folder to the FileSystem API backend.
 // If another folder is already mounted. It revokes and overrides the old one.
@@ -111,6 +115,8 @@ std::string VolumeTypeToString(VolumeType type) {
       return "mtp";
     case VOLUME_TYPE_TESTING:
       return "testing";
+    case NUM_VOLUME_TYPE:
+      break;
   }
   NOTREACHED();
   return "";
@@ -233,6 +239,7 @@ std::string GetMountPointNameForMediaStorage(
 VolumeInfo::VolumeInfo()
     : file_system_id(0),
       type(VOLUME_TYPE_GOOGLE_DRIVE),
+      device_type(chromeos::DEVICE_TYPE_UNKNOWN),
       mount_condition(chromeos::disks::MOUNT_CONDITION_NONE),
       is_parent(false),
       is_read_only(false) {}
@@ -283,15 +290,21 @@ void VolumeManager::Initialize() {
                                       new_path);
   }
 
-  // Register 'Downloads' folder for the profile to the file system.
-  const base::FilePath downloads =
-      file_manager::util::GetDownloadsFolderForProfile(profile_);
-  const bool success = RegisterDownloadsMountPoint(profile_, downloads);
-  DCHECK(success);
+  static bool added_downloads = false;
+  if (base::SysInfo::IsRunningOnChromeOS() || !added_downloads) {
+    // Register 'Downloads' folder for the profile to the file system.
+    // On non-ChromeOS system (test+development), we should do this only for
+    // the first registered profile.
+    const base::FilePath downloads =
+        file_manager::util::GetDownloadsFolderForProfile(profile_);
+    const bool success = RegisterDownloadsMountPoint(profile_, downloads);
+    added_downloads = success;
+    DCHECK(success);
 
-  DoMountEvent(chromeos::MOUNT_ERROR_NONE,
-               CreateDownloadsVolumeInfo(downloads),
-               kNotRemounting);
+    DoMountEvent(chromeos::MOUNT_ERROR_NONE,
+                 CreateDownloadsVolumeInfo(downloads),
+                 kNotRemounting);
+  }
 
   // Subscribe to DriveIntegrationService.
   if (drive_integration_service_) {
@@ -717,7 +730,12 @@ void VolumeManager::OnRemovableStorageAttached(
 
   const base::FilePath path = base::FilePath::FromUTF8Unsafe(info.location());
   const std::string fsid = GetMountPointNameForMediaStorage(info);
-  const std::string name = base::UTF16ToUTF8(info.GetDisplayName(false));
+  const std::string base_name = base::UTF16ToUTF8(info.model_name());
+
+  // Assign a fresh volume ID based on the volume name.
+  std::string id = kMtpVolumeIdPrefix + base_name;
+  for (int i = 2; mounted_volumes_.count(id); ++i)
+    id = kMtpVolumeIdPrefix + base_name + base::StringPrintf(" (%d)", i);
 
   bool result =
       fileapi::ExternalMountPoints::GetSystemInstance()->RegisterFileSystem(
@@ -736,7 +754,7 @@ void VolumeManager::OnRemovableStorageAttached(
   volume_info.mount_condition = chromeos::disks::MOUNT_CONDITION_NONE;
   volume_info.is_parent = true;
   volume_info.is_read_only = true;
-  volume_info.volume_id = "mtp:" + name;
+  volume_info.volume_id = id;
   volume_info.source_path = path;
   volume_info.device_type = chromeos::DEVICE_TYPE_MOBILE;
   DoMountEvent(chromeos::MOUNT_ERROR_NONE, volume_info, false);
@@ -801,8 +819,15 @@ void VolumeManager::DoMountEvent(chromeos::MountError error_code,
     return;
   }
 
-  if (error_code == chromeos::MOUNT_ERROR_NONE || volume_info.mount_condition)
+  if (error_code == chromeos::MOUNT_ERROR_NONE || volume_info.mount_condition) {
     mounted_volumes_[volume_info.volume_id] = volume_info;
+
+    if (!is_remounting) {
+      UMA_HISTOGRAM_ENUMERATION("FileBrowser.VolumeType",
+                                volume_info.type,
+                                NUM_VOLUME_TYPE);
+    }
+  }
 
   FOR_EACH_OBSERVER(VolumeManagerObserver,
                     observers_,

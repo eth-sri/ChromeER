@@ -16,7 +16,7 @@ class WebAudioSourceProvider;
 class WebMediaStreamCenterClient;
 };
 
-namespace WebTestRunner {
+namespace content {
 
 class TestInterfaces;
 
@@ -36,7 +36,7 @@ public:
         const blink::WebMediaStreamTrack&) OVERRIDE;
 
    // Task related methods
-    WebTaskList* taskList() { return &m_taskList; }
+    WebTaskList* mutable_task_list() { return &m_taskList; }
 
 private:
     WebTaskList m_taskList;
@@ -45,6 +45,6 @@ private:
     DISALLOW_COPY_AND_ASSIGN(MockWebMediaStreamCenter);
 };
 
-}
+}  // namespace content
 
 #endif  // CONTENT_SHELL_RENDERER_TEST_RUNNER_MOCKWEBMEDIASTREAMCENTER_H_

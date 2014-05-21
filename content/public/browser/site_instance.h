@@ -12,7 +12,6 @@
 
 namespace content {
 class BrowserContext;
-class BrowsingInstance;
 class RenderProcessHost;
 class EventRacerLogHost;
 
@@ -107,6 +106,10 @@ class CONTENT_EXPORT SiteInstance : public base::RefCounted<SiteInstance> {
   // this one.  If so, JavaScript interactions that are permitted across
   // origins (e.g., postMessage) should be supported.
   virtual bool IsRelatedSiteInstance(const SiteInstance* instance) = 0;
+
+  // Returns the total active WebContents count for this SiteInstance and all
+  // related SiteInstances in the same BrowsingInstance.
+  virtual size_t GetRelatedActiveContentsCount() = 0;
 
   // Creates a new EventRacer log, replacing the old one.
   virtual void StartEventRacerLog() = 0;

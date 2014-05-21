@@ -37,13 +37,11 @@ class FakeAudioClient {
   }
 
   void DeliverEncodedAudioFrame(
-      scoped_ptr<transport::EncodedAudioFrame> audio_frame,
-      const base::TimeTicks& playout_time) {
+      scoped_ptr<transport::EncodedFrame> audio_frame) {
     ASSERT_FALSE(!audio_frame)
         << "If at shutdown: There were unsatisfied requests enqueued.";
     EXPECT_EQ(expected_frame_id_, audio_frame->frame_id);
-    EXPECT_EQ(transport::kPcm16, audio_frame->codec);
-    EXPECT_EQ(expected_playout_time_, playout_time);
+    EXPECT_EQ(expected_playout_time_, audio_frame->reference_time);
     num_called_++;
   }
 
@@ -92,7 +90,7 @@ class AudioReceiverTest : public ::testing::Test {
     rtp_header_.frame_id = kFirstFrameId;
     rtp_header_.packet_id = 0;
     rtp_header_.max_packet_id = 0;
-    rtp_header_.reference_frame_id = 0;
+    rtp_header_.reference_frame_id = rtp_header_.frame_id;
     rtp_header_.rtp_timestamp = 0;
   }
 
@@ -141,7 +139,8 @@ TEST_F(AudioReceiverTest, GetOnePacketEncodedFrame) {
   event_subscriber.GetFrameEventsAndReset(&frame_events);
 
   ASSERT_TRUE(!frame_events.empty());
-  EXPECT_EQ(kAudioAckSent, frame_events.begin()->type);
+  EXPECT_EQ(FRAME_ACK_SENT, frame_events.begin()->type);
+  EXPECT_EQ(AUDIO_EVENT, frame_events.begin()->media_type);
   EXPECT_EQ(rtp_header_.frame_id, frame_events.begin()->frame_id);
   EXPECT_EQ(rtp_header_.rtp_timestamp, frame_events.begin()->rtp_timestamp);
 
@@ -153,7 +152,7 @@ TEST_F(AudioReceiverTest, MultiplePendingGetCalls) {
       .WillRepeatedly(testing::Return(true));
 
   // Enqueue a request for an audio frame.
-  const AudioFrameEncodedCallback frame_encoded_callback =
+  const FrameEncodedCallback frame_encoded_callback =
       base::Bind(&FakeAudioClient::DeliverEncodedAudioFrame,
                  base::Unretained(&fake_audio_client_));
   receiver_->GetEncodedAudioFrame(frame_encoded_callback);

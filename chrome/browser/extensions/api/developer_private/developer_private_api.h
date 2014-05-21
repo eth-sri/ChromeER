@@ -25,7 +25,6 @@
 #include "webkit/browser/fileapi/file_system_context.h"
 #include "webkit/browser/fileapi/file_system_operation.h"
 
-class ExtensionService;
 class Profile;
 
 namespace extensions {
@@ -162,7 +161,7 @@ class DeveloperPrivateGetItemsInfoFunction
   virtual ~DeveloperPrivateGetItemsInfoFunction();
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 
  private:
   scoped_ptr<developer::ItemInfo> CreateItemInfo(const Extension& item,
@@ -278,7 +277,7 @@ class DeveloperPrivateEnableFunction
   virtual ~DeveloperPrivateEnableFunction();
 
   // Callback for requirements checker.
-  void OnRequirementsChecked(std::string extension_id,
+  void OnRequirementsChecked(const std::string& extension_id,
                              std::vector<std::string> requirements_errors);
   // ExtensionFunction:
   virtual bool RunSync() OVERRIDE;
@@ -291,7 +290,7 @@ class DeveloperPrivateChooseEntryFunction : public ChromeAsyncExtensionFunction,
                                             public EntryPickerClient {
  protected:
   virtual ~DeveloperPrivateChooseEntryFunction();
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
   bool ShowPicker(ui::SelectFileDialog::Type picker_type,
                   const base::FilePath& last_directory,
                   const base::string16& select_title,
@@ -312,7 +311,7 @@ class DeveloperPrivateLoadUnpackedFunction
 
  protected:
   virtual ~DeveloperPrivateLoadUnpackedFunction();
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 
   // EntryPickerCLient implementation.
   virtual void FileSelected(const base::FilePath& path) OVERRIDE;
@@ -327,7 +326,7 @@ class DeveloperPrivateChoosePathFunction
 
  protected:
   virtual ~DeveloperPrivateChoosePathFunction();
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 
   // EntryPickerClient functions.
   virtual void FileSelected(const base::FilePath& path) OVERRIDE;
@@ -352,7 +351,7 @@ class DeveloperPrivatePackDirectoryFunction
 
  protected:
   virtual ~DeveloperPrivatePackDirectoryFunction();
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 
  private:
   scoped_refptr<PackExtensionJob> pack_job_;
@@ -385,7 +384,7 @@ class DeveloperPrivateLoadDirectoryFunction
   virtual ~DeveloperPrivateLoadDirectoryFunction();
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 
   void ClearExistingDirectoryContent(const base::FilePath& project_path);
 
@@ -442,7 +441,7 @@ class DeveloperPrivateRequestFileSourceFunction
   virtual ~DeveloperPrivateRequestFileSourceFunction();
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 
  private:
   void LaunchCallback(const base::DictionaryValue& results);
@@ -460,7 +459,7 @@ class DeveloperPrivateOpenDevToolsFunction
   virtual ~DeveloperPrivateOpenDevToolsFunction();
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 };
 
 }  // namespace api

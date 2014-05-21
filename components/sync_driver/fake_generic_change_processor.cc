@@ -6,31 +6,23 @@
 
 #include "base/location.h"
 #include "base/memory/weak_ptr.h"
-#include "sync/api/attachments/fake_attachment_service.h"
+#include "sync/api/attachments/attachment_service_impl.h"
 #include "sync/api/syncable_service.h"
 
 namespace browser_sync {
 
-FakeGenericChangeProcessor::FakeGenericChangeProcessor()
+FakeGenericChangeProcessor::FakeGenericChangeProcessor(
+    SyncApiComponentFactory* sync_factory)
     : GenericChangeProcessor(NULL,
                              base::WeakPtr<syncer::SyncableService>(),
                              base::WeakPtr<syncer::SyncMergeResult>(),
                              NULL,
-                             syncer::FakeAttachmentService::CreateForTest()),
+                             sync_factory),
       sync_model_has_user_created_nodes_(true),
-      sync_model_has_user_created_nodes_success_(true),
-      crypto_ready_if_necessary_(true) {}
+      sync_model_has_user_created_nodes_success_(true) {}
 
 FakeGenericChangeProcessor::~FakeGenericChangeProcessor() {}
 
-void FakeGenericChangeProcessor::set_process_sync_changes_error(
-    const syncer::SyncError& error) {
-  process_sync_changes_error_ = error;
-}
-void FakeGenericChangeProcessor::set_get_sync_data_for_type_error(
-    const syncer::SyncError& error) {
-  get_sync_data_for_type_error_ = error;
-}
 void FakeGenericChangeProcessor::set_sync_model_has_user_created_nodes(
     bool has_nodes) {
   sync_model_has_user_created_nodes_ = has_nodes;
@@ -39,20 +31,16 @@ void FakeGenericChangeProcessor::set_sync_model_has_user_created_nodes_success(
     bool success) {
   sync_model_has_user_created_nodes_success_ = success;
 }
-void FakeGenericChangeProcessor::set_crypto_ready_if_necessary(
-    bool crypto_ready) {
-  crypto_ready_if_necessary_ = crypto_ready;
-}
 
 syncer::SyncError FakeGenericChangeProcessor::ProcessSyncChanges(
     const tracked_objects::Location& from_here,
     const syncer::SyncChangeList& change_list) {
-  return process_sync_changes_error_;
+  return syncer::SyncError();
 }
 
 syncer::SyncError FakeGenericChangeProcessor::GetAllSyncDataReturnError(
     syncer::ModelType type, syncer::SyncDataList* current_sync_data) const {
-  return get_sync_data_for_type_error_;
+  return syncer::SyncError();
 }
 
 bool FakeGenericChangeProcessor::GetDataTypeContext(
@@ -73,7 +61,23 @@ bool FakeGenericChangeProcessor::SyncModelHasUserCreatedNodes(
 
 bool FakeGenericChangeProcessor::CryptoReadyIfNecessary(
     syncer::ModelType type) {
-  return crypto_ready_if_necessary_;
+  return true;
+}
+
+FakeGenericChangeProcessorFactory::FakeGenericChangeProcessorFactory(
+    scoped_ptr<FakeGenericChangeProcessor> processor)
+    : processor_(processor.Pass()) {}
+
+FakeGenericChangeProcessorFactory::~FakeGenericChangeProcessorFactory() {}
+
+scoped_ptr<GenericChangeProcessor>
+FakeGenericChangeProcessorFactory::CreateGenericChangeProcessor(
+    syncer::UserShare* user_share,
+    browser_sync::DataTypeErrorHandler* error_handler,
+    const base::WeakPtr<syncer::SyncableService>& local_service,
+    const base::WeakPtr<syncer::SyncMergeResult>& merge_result,
+    SyncApiComponentFactory* sync_factory) {
+  return processor_.PassAs<GenericChangeProcessor>();
 }
 
 }  // namespace browser_sync

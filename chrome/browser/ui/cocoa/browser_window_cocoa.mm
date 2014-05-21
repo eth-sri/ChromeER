@@ -54,7 +54,6 @@
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util_mac.h"
@@ -74,7 +73,7 @@ namespace {
 NSPoint GetPointForBubble(content::WebContents* web_contents,
                           int x_offset,
                           int y_offset) {
-  NSView* view = web_contents->GetView()->GetNativeView();
+  NSView* view = web_contents->GetNativeView();
   NSRect bounds = [view bounds];
   NSPoint point;
   point.x = NSMinX(bounds) + x_offset;
@@ -707,7 +706,10 @@ void BrowserWindowCocoa::ShowAvatarBubble(WebContents* web_contents,
 void BrowserWindowCocoa::ShowAvatarBubbleFromAvatarButton(
     AvatarBubbleMode mode) {
   AvatarBaseController* controller = [controller_ avatarButtonController];
-  [controller showAvatarBubble:[controller buttonView] withMode:mode];
+  NSView* anchor = [controller buttonView];
+  if ([anchor isHiddenOrHasHiddenAncestor])
+    anchor = [[controller_ toolbarController] wrenchButton];
+  [controller showAvatarBubble:anchor withMode:mode];
 }
 
 void BrowserWindowCocoa::ShowPasswordGenerationBubble(

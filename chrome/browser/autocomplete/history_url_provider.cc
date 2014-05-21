@@ -33,7 +33,7 @@
 #include "chrome/common/net/url_fixer_upper.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
-#include "components/bookmarks/core/browser/bookmark_utils.h"
+#include "components/bookmarks/browser/bookmark_utils.h"
 #include "net/base/net_util.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "url/gurl.h"
@@ -862,7 +862,7 @@ bool HistoryURLProvider::CanFindIntranetURL(
   // input's text and parts between Parse() and here, it seems better to be
   // paranoid and check.
   if ((input.type() != AutocompleteInput::UNKNOWN) ||
-      !LowerCaseEqualsASCII(input.scheme(), content::kHttpScheme) ||
+      !LowerCaseEqualsASCII(input.scheme(), url::kHttpScheme) ||
       !input.parts().host.is_nonempty())
     return false;
   const std::string host(base::UTF16ToUTF8(

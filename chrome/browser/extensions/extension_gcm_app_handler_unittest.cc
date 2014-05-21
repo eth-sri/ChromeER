@@ -20,15 +20,15 @@
 #include "chrome/browser/extensions/test_extension_service.h"
 #include "chrome/browser/extensions/test_extension_system.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/services/gcm/fake_gcm_client.h"
 #include "chrome/browser/services/gcm/fake_gcm_client_factory.h"
 #include "chrome/browser/services/gcm/fake_signin_manager.h"
-#include "chrome/browser/services/gcm/gcm_client_factory.h"
-#include "chrome/browser/services/gcm/gcm_client_mock.h"
 #include "chrome/browser/services/gcm/gcm_profile_service.h"
 #include "chrome/browser/services/gcm/gcm_profile_service_factory.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/gcm_driver/gcm_client_factory.h"
 #include "components/keyed_service/core/keyed_service.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
@@ -45,7 +45,7 @@
 #endif
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
 #endif
@@ -216,7 +216,7 @@ class ExtensionGCMAppHandlerTest : public testing::Test {
                     profile(),
                     &ExtensionGCMAppHandlerTest::BuildGCMProfileService));
     scoped_ptr<gcm::GCMClientFactory> gcm_client_factory(
-        new gcm::FakeGCMClientFactory(gcm::GCMClientMock::NO_DELAY_LOADING));
+        new gcm::FakeGCMClientFactory(gcm::FakeGCMClient::NO_DELAY_START));
     gcm_profile_service->Initialize(gcm_client_factory.Pass());
 
     // Create a fake version of ExtensionGCMAppHandler.
@@ -306,7 +306,7 @@ class ExtensionGCMAppHandlerTest : public testing::Test {
   }
 
   bool HasAppHandlers(const std::string& app_id) const {
-    return GetGCMProfileService()->app_handlers_.count(app_id);
+    return GetGCMProfileService()->app_handlers().count(app_id);
   }
 
   Profile* profile() const { return profile_.get(); }

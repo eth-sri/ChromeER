@@ -67,14 +67,13 @@ void MidiHost::OnDestruct() const {
 }
 
 // IPC Messages handler
-bool MidiHost::OnMessageReceived(const IPC::Message& message,
-                                 bool* message_was_ok) {
+bool MidiHost::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP_EX(MidiHost, message, *message_was_ok)
+  IPC_BEGIN_MESSAGE_MAP(MidiHost, message)
     IPC_MESSAGE_HANDLER(MidiHostMsg_StartSession, OnStartSession)
     IPC_MESSAGE_HANDLER(MidiHostMsg_SendData, OnSendData)
     IPC_MESSAGE_UNHANDLED(handled = false)
-  IPC_END_MESSAGE_MAP_EX()
+  IPC_END_MESSAGE_MAP()
 
   return handled;
 }
@@ -122,9 +121,7 @@ void MidiHost::CompleteStartSession(int client_id, media::MidiResult result) {
   MidiPortInfoList input_ports;
   MidiPortInfoList output_ports;
 
-  // TODO(toyoshim): Report what error happens back to blink.
-  bool success = result == media::MIDI_OK;
-  if (success) {
+  if (result == media::MIDI_OK) {
     input_ports = midi_manager_->input_ports();
     output_ports = midi_manager_->output_ports();
     received_messages_queues_.clear();
@@ -136,7 +133,7 @@ void MidiHost::CompleteStartSession(int client_id, media::MidiResult result) {
   }
 
   Send(new MidiMsg_SessionStarted(client_id,
-                                  success,
+                                  result,
                                   input_ports,
                                   output_ports));
 }

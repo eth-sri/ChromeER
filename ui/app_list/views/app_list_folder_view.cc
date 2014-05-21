@@ -117,7 +117,7 @@ void AppListFolderView::ScheduleShowHideAnimation(bool show,
   layer()->SetOpacity(show ? 1.0f : 0.0f);
 }
 
-gfx::Size AppListFolderView::GetPreferredSize() {
+gfx::Size AppListFolderView::GetPreferredSize() const {
   const gfx::Size header_size = folder_header_view_->GetPreferredSize();
   const gfx::Size grid_size = items_grid_view_->GetPreferredSize();
   int width = std::max(header_size.width(), grid_size.width());
@@ -276,9 +276,10 @@ void AppListFolderView::DispatchDragEventForReparent(
 }
 
 void AppListFolderView::DispatchEndDragEventForReparent(
-    bool events_forwarded_to_drag_drop_host) {
-  container_view_->apps_grid_view()->
-      EndDragFromReparentItemInRootLevel(events_forwarded_to_drag_drop_host);
+    bool events_forwarded_to_drag_drop_host,
+    bool cancel_drag) {
+  container_view_->apps_grid_view()->EndDragFromReparentItemInRootLevel(
+      events_forwarded_to_drag_drop_host, cancel_drag);
 }
 
 void AppListFolderView::HideViewImmediately() {
@@ -300,6 +301,10 @@ void AppListFolderView::CloseFolderPage() {
 
 bool AppListFolderView::IsOEMFolder() const {
   return folder_item_->folder_type() == AppListFolderItem::FOLDER_TYPE_OEM;
+}
+
+void AppListFolderView::SetRootLevelDragViewVisible(bool visible) {
+  container_view_->apps_grid_view()->SetDragViewVisible(visible);
 }
 
 void AppListFolderView::GetAccessibleState(ui::AXViewState* state) {

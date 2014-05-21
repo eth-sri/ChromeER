@@ -53,6 +53,10 @@ class APP_LIST_EXPORT AppListMainView : public views::View,
 
   void ModelChanged();
 
+  void OnContentsViewShowStateChanged();
+
+  void OnStartPageSearchButtonPressed();
+
   SearchBoxView* search_box_view() const { return search_box_view_; }
 
   // If |drag_and_drop_host| is not NULL it will be called upon drag and drop
@@ -61,6 +65,9 @@ class APP_LIST_EXPORT AppListMainView : public views::View,
       ApplicationDragAndDropHost* drag_and_drop_host);
 
   ContentsView* contents_view() const { return contents_view_; }
+
+  // Returns true if the app list should be centered and in landscape mode.
+  bool ShouldCenterWindow() const;
 
  private:
   class IconLoader;

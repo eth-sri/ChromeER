@@ -21,7 +21,8 @@
 #include "base/values.h"
 #include "cc/base/switches.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/boot_times_loader.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
@@ -73,6 +74,7 @@ std::string DeriveCommandLine(const GURL& start_url,
     ::switches::kDisableAcceleratedOverflowScroll,
     ::switches::kDisableAcceleratedVideoDecode,
     ::switches::kDisableDelegatedRenderer,
+    ::switches::kDisableDistanceFieldText,
     ::switches::kDisableFastTextAutosizing,
     ::switches::kDisableFiltersOverIPC,
     ::switches::kDisableGpuShaderDiskCache,
@@ -103,8 +105,9 @@ std::string DeriveCommandLine(const GURL& start_url,
     ::switches::kEnableGestureTapHighlight,
     ::switches::kDisableGestureTapHighlight,
     ::switches::kDisableGpuSandbox,
-    ::switches::kEnableDeferredFilters,
+    ::switches::kDisableDeferredFilters,
     ::switches::kEnableContainerCulling,
+    ::switches::kEnableDistanceFieldText,
     ::switches::kEnableGpuRasterization,
     ::switches::kEnableImplSidePainting,
     ::switches::kEnableLogging,
@@ -126,7 +129,7 @@ std::string DeriveCommandLine(const GURL& start_url,
     ::switches::kGpuSandboxAllowSysVShm,
     ::switches::kGpuSandboxFailuresFatal,
     ::switches::kGpuSandboxStartAfterInitialization,
-    ::switches::kMultiProfiles,
+    ::switches::kIgnoreResolutionLimitsForAcceleratedVideoDecode,
     ::switches::kNoSandbox,
     ::switches::kNumRasterThreads,
     ::switches::kPpapiFlashArgs,
@@ -152,7 +155,6 @@ std::string DeriveCommandLine(const GURL& start_url,
     ::switches::kUserDataDir,
     ::switches::kV,
     ::switches::kVModule,
-    ::switches::kWebGLCommandBufferSizeKb,
     ::switches::kEnableWebGLDraftExtensions,
 #if defined(ENABLE_WEBRTC)
     ::switches::kDisableWebRtcHWDecoding,
@@ -203,6 +205,7 @@ std::string DeriveCommandLine(const GURL& start_url,
     chromeos::switches::kDbusStub,
     chromeos::switches::kDisableLoginAnimations,
     chromeos::switches::kEnableConsumerManagement,
+    chromeos::switches::kEnterpriseEnableForcedReEnrollment,
     chromeos::switches::kHasChromeOSDiamondKey,
     chromeos::switches::kHasChromeOSKeyboard,
     chromeos::switches::kLoginProfile,
@@ -362,6 +365,7 @@ std::string GetOffTheRecordCommandLine(
 
 void RestartChrome(const std::string& command_line) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  BootTimesLoader::Get()->set_restart_requested();
 
   static bool restart_requested = false;
   if (restart_requested) {

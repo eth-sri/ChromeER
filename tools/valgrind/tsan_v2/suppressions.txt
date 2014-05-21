@@ -253,3 +253,25 @@ race:WTF::Latin1Encoding()::globalLatin1Encoding
 
 # https://code.google.com/p/v8/issues/detail?id=3143
 race:v8::internal::FLAG_track_double_fields
+
+# http://crbug.com/370244
+race:cc::RenderingStatsInstrumentation::AccumulateAndClearImplThreadStats
+
+# https://crbug.com/369257
+# TODO(mtklein): annotate properly and remove suppressions.
+race:SandboxIPCHandler::HandleFontMatchRequest
+race:SkFontConfigInterfaceDirect::matchFamilyName
+race:SkFontConfigInterface::GetSingletonDirectInterface
+
+# http://crbug.com/372807
+deadlock:net::X509Certificate::CreateCertificateListFromBytes
+deadlock:net::X509Certificate::CreateFromBytes
+deadlock:net::SSLClientSocketNSS::Core::DoHandshakeLoop
+
+# http://crbug.com/374135
+race:media::AlsaWrapper::PcmWritei
+deadlock:media::AudioOutputDispatcherImpl::StopStream
+deadlock:media::AudioStreamHandler::AudioStreamContainer::OnMoreData
+
+# http://crbug.com/374151
+deadlock:media::FakeAudioConsumer::Worker::DoRead

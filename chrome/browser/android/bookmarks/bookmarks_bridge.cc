@@ -13,8 +13,8 @@
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/common/pref_names.h"
-#include "components/bookmarks/core/browser/bookmark_model.h"
-#include "components/bookmarks/core/browser/bookmark_utils.h"
+#include "components/bookmarks/browser/bookmark_model.h"
+#include "components/bookmarks/browser/bookmark_utils.h"
 #include "components/signin/core/browser/signin_manager.h"
 #include "content/public/browser/browser_thread.h"
 #include "jni/BookmarksBridge_jni.h"
@@ -405,7 +405,8 @@ void BookmarksBridge::BookmarkNodeAdded(BookmarkModel* model,
 void BookmarksBridge::BookmarkNodeRemoved(BookmarkModel* model,
                                           const BookmarkNode* parent,
                                           int old_index,
-                                          const BookmarkNode* node) {
+                                          const BookmarkNode* node,
+                                          const std::set<GURL>& removed_urls) {
   if (!IsLoaded())
     return;
 

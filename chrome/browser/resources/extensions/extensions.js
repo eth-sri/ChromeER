@@ -88,6 +88,13 @@ cr.define('extensions', function() {
     __proto__: HTMLDivElement.prototype,
 
     /**
+     * Whether or not to try to display the Apps Developer Tools promotion.
+     * @type {boolean}
+     * @private
+     */
+    displayPromo_: false,
+
+    /**
      * Perform initial setup.
      */
     initialize: function() {
@@ -96,8 +103,7 @@ cr.define('extensions', function() {
       measureCheckboxStrings();
 
       // Set the title.
-      var title = loadTimeData.getString('extensionSettings');
-      uber.invokeMethodOnParent('setTitle', {title: title});
+      uber.setTitle(loadTimeData.getString('extensionSettings'));
 
       // This will request the data to show on the page and will get a response
       // back in returnExtensionsData.
@@ -122,7 +128,8 @@ cr.define('extensions', function() {
       // Set up the close dialog for the apps developer tools promo.
       $('apps-developer-tools-promo').querySelector('.close-button').
           addEventListener('click', function(e) {
-        $('extension-settings').classList.remove('adt-promo');
+        this.displayPromo_ = false;
+        this.updatePromoVisibility_();
         chrome.send('extensionSettingsDismissADTPromo');
       }.bind(this));
 
@@ -171,6 +178,26 @@ cr.define('extensions', function() {
       }
 
       preventDefaultOnPoundLinkClicks();  // From webui/js/util.js.
+    },
+
+    /**
+     * Updates the Chrome Apps and Extensions Developer Tools promotion's
+     * visibility.
+     * @private
+     */
+    updatePromoVisibility_: function() {
+      var extensionSettings = $('extension-settings');
+      var visible = extensionSettings.classList.contains('dev-mode') &&
+                    this.displayPromo_;
+
+      var adtPromo = $('apps-developer-tools-promo');
+      var controls = adtPromo.querySelectorAll('a, button');
+      Array.prototype.forEach.call(controls, function(control) {
+        control[visible ? 'removeAttribute' : 'setAttribute']('tabindex', '-1');
+      });
+
+      adtPromo.setAttribute('aria-hidden', !visible);
+      extensionSettings.classList.toggle('adt-promo', visible);
     },
 
     /**
@@ -226,6 +253,7 @@ cr.define('extensions', function() {
       } else {
         $('extension-settings').classList.remove('dev-mode');
       }
+      window.setTimeout(this.updatePromoVisibility_.bind(this));
 
       chrome.send('extensionSettingsToggleDeveloperMode');
     },
@@ -300,7 +328,9 @@ cr.define('extensions', function() {
       $('toggle-dev-on').checked = false;
     }
 
-    pageDiv.classList.toggle('adt-promo', extensionsData.promoteAppsDevTools);
+    ExtensionSettings.getInstance().displayPromo_ =
+        extensionsData.promoteAppsDevTools;
+    ExtensionSettings.getInstance().updatePromoVisibility_();
 
     $('load-unpacked').disabled = extensionsData.loadUnpackedDisabled;
 

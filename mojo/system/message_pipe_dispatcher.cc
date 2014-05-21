@@ -162,7 +162,7 @@ MojoResult MessagePipeDispatcher::WriteMessageImplNoLock(
 MojoResult MessagePipeDispatcher::ReadMessageImplNoLock(
     void* bytes,
     uint32_t* num_bytes,
-    std::vector<scoped_refptr<Dispatcher> >* dispatchers,
+    DispatcherVector* dispatchers,
     uint32_t* num_dispatchers,
     MojoReadMessageFlags flags) {
   lock().AssertAcquired();
@@ -203,7 +203,7 @@ bool MessagePipeDispatcher::EndSerializeAndCloseImplNoLock(
     Channel* channel,
     void* destination,
     size_t* actual_size,
-    std::vector<embedder::PlatformHandle>* platform_handles) {
+    embedder::PlatformHandleVector* /*platform_handles*/) {
   DCHECK(HasOneRef());  // Only one ref => no need to take the lock.
 
   // Convert the local endpoint to a proxy endpoint (moving the message queue).

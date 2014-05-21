@@ -49,6 +49,12 @@ class GCM_EXPORT GCMStatsRecorder {
     virtual ~ConnectionActivity();
   };
 
+  // Contains relevant data of a check-in activity.
+  struct GCM_EXPORT CheckinActivity : Activity {
+    CheckinActivity();
+    virtual ~CheckinActivity();
+  };
+
   // Contains relevant data of a registration/unregistration step.
   struct GCM_EXPORT RegistrationActivity : Activity {
     RegistrationActivity();
@@ -82,10 +88,20 @@ class GCM_EXPORT GCMStatsRecorder {
     RecordedActivities();
     virtual ~RecordedActivities();
 
+    std::vector<GCMStatsRecorder::CheckinActivity> checkin_activities;
     std::vector<GCMStatsRecorder::ConnectionActivity> connection_activities;
     std::vector<GCMStatsRecorder::RegistrationActivity> registration_activities;
     std::vector<GCMStatsRecorder::ReceivingActivity> receiving_activities;
     std::vector<GCMStatsRecorder::SendingActivity> sending_activities;
+  };
+
+  // A delegate interface that allows the GCMStatsRecorder instance to interact
+  // with its container.
+  class Delegate {
+   public:
+    // Called when the GCMStatsRecorder is recording activities and a new
+    // activity has just been recorded.
+    virtual void OnActivityRecorded() = 0;
   };
 
   GCMStatsRecorder();
@@ -99,12 +115,28 @@ class GCM_EXPORT GCMStatsRecorder {
   // Turns recording on/off.
   void SetRecording(bool recording);
 
+  // Set a delegate to receive callback from the recorder.
+  void SetDelegate(Delegate* delegate);
+
   // Clear all recorded activities.
   void Clear();
 
   // All RecordXXXX methods below will record one activity. It will be inserted
   // to the front of a queue so that entries in the queue had reverse
   // chronological order.
+
+  // Records that a check-in has been initiated.
+  void RecordCheckinInitiated(uint64 android_id);
+
+  // Records that a check-in has been delayed due to backoff.
+  void RecordCheckinDelayedDueToBackoff(int64 delay_msec);
+
+  // Records that a check-in request has succeeded.
+  void RecordCheckinSuccess();
+
+  // Records that a check-in request has failed. If a retry will be tempted then
+  // will_retry should be true.
+  void RecordCheckinFailure(std::string status, bool will_retry);
 
   // Records that a connection to MCS has been initiated.
   void RecordConnectionInitiated(const std::string& host);
@@ -156,7 +188,7 @@ class GCM_EXPORT GCMStatsRecorder {
   // sent to a registered app, to_registered_app shoudl be false. If it
   // indicates that a message has been dropped on the server, is_message_dropped
   // should be true.
-  void RecordDataMessageRecieved(const std::string& app_id,
+  void RecordDataMessageReceived(const std::string& app_id,
                                  const std::string& from,
                                  int message_byte_size,
                                  bool to_registered_app,
@@ -182,6 +214,9 @@ class GCM_EXPORT GCMStatsRecorder {
   // Collect all recorded activities into the struct.
   void CollectActivities(RecordedActivities* recorder_activities) const;
 
+  const std::deque<CheckinActivity>& checkin_activities() const {
+    return checkin_activities_;
+  }
   const std::deque<ConnectionActivity>& connection_activities() const {
     return connection_activities_;
   }
@@ -196,17 +231,27 @@ class GCM_EXPORT GCMStatsRecorder {
   }
 
  protected:
+  // Notify the recorder delegate, if it exists, that an activity has been
+  // recorded.
+  void NotifyActivityRecorded();
+
+  void RecordCheckin(const std::string& event,
+                     const std::string& details);
+
   void RecordConnection(const std::string& event,
                         const std::string& details);
+
   void RecordRegistration(const std::string& app_id,
                           const std::string& sender_id,
                           const std::string& event,
                           const std::string& details);
+
   void RecordReceiving(const std::string& app_id,
                        const std::string& from,
                        int message_byte_size,
                        const std::string& event,
                        const std::string& details);
+
   void RecordSending(const std::string& app_id,
                      const std::string& receiver_id,
                      const std::string& message_id,
@@ -214,7 +259,9 @@ class GCM_EXPORT GCMStatsRecorder {
                      const std::string& details);
 
   bool is_recording_;
+  Delegate* delegate_;
 
+  std::deque<CheckinActivity> checkin_activities_;
   std::deque<ConnectionActivity> connection_activities_;
   std::deque<RegistrationActivity> registration_activities_;
   std::deque<ReceivingActivity> receiving_activities_;

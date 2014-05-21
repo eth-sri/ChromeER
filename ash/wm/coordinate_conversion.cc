@@ -31,15 +31,16 @@ aura::Window* GetRootWindowMatching(const gfx::Rect& rect) {
       GetRootWindowForDisplayId(display.id());
 }
 
-void ConvertPointToScreen(aura::Window* window, gfx::Point* point) {
-  CHECK(window);
-  CHECK(window->GetRootWindow());
-  CHECK(aura::client::GetScreenPositionClient(window->GetRootWindow()));
+void ConvertPointToScreen(const aura::Window* window, gfx::Point* point) {
+  // It is possible for the root window to not have a screen position client
+  // when switching multi-monitor mode from extended to mirror.
+  if (!aura::client::GetScreenPositionClient(window->GetRootWindow()))
+    return;
   aura::client::GetScreenPositionClient(window->GetRootWindow())->
       ConvertPointToScreen(window, point);
 }
 
-void ConvertPointFromScreen(aura::Window* window,
+void ConvertPointFromScreen(const aura::Window* window,
                             gfx::Point* point_in_screen) {
   aura::client::GetScreenPositionClient(window->GetRootWindow())->
       ConvertPointFromScreen(window, point_in_screen);

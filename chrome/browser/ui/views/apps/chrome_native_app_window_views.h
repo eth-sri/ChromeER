@@ -48,6 +48,7 @@ class ChromeNativeAppWindowViews : public apps::NativeAppWindowViews,
   apps::AppWindowFrameView* CreateNonStandardAppFrame();
 
   // ui::BaseWindow implementation.
+  virtual gfx::Rect GetRestoredBounds() const OVERRIDE;
   virtual ui::WindowShowState GetRestoredState() const OVERRIDE;
   virtual bool IsAlwaysOnTop() const OVERRIDE;
 
@@ -65,7 +66,7 @@ class ChromeNativeAppWindowViews : public apps::NativeAppWindowViews,
   virtual void GetWidgetHitTestMask(gfx::Path* mask) const OVERRIDE;
 
   // views::View implementation.
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
   virtual bool AcceleratorPressed(const ui::Accelerator& accelerator) OVERRIDE;
 
   // NativeAppWindow implementation.

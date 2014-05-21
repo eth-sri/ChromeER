@@ -35,6 +35,16 @@ const char kEventPageIdleTime[] = "event-page-idle-time";
 // notified of its impending unload and that unload happening.
 const char kEventPageSuspendingTime[] = "event-page-unloading-time";
 
+// Values for the kExtensionContentVerification flag. See ContentVerifier::Mode
+// for more explanation.
+const char kExtensionContentVerificationBootstrap[] = "bootstrap";
+const char kExtensionContentVerificationEnforceStrict[] = "enforce_strict";
+const char kExtensionContentVerificationEnforce[] = "enforce";
+
+// Name of the command line flag to force content verification to be on in one
+// of various modes.
+const char kExtensionContentVerification[] = "extension-content-verification";
+
 // Marks a renderer as extension process.
 const char kExtensionProcess[] = "extension-process";
 
@@ -48,6 +58,17 @@ const char kForceDevModeHighlighting[] = "force-dev-mode-highlighting";
 
 // Enables setting global commands through the Extensions Commands API.
 const char kGlobalCommands[] = "global-commands";
+
+// Notify the user and require consent for extensions running scripts.
+// Appending --scripts-require-action=1 has the same effect as
+// --enable-scripts-require-action (see below).
+const char kScriptsRequireAction[] = "scripts-require-action";
+// FeatureSwitch and about_flags don't play nice. Feature switch expects either
+// --enable-<feature> or --<feature>=1, but about_flags expects the command
+// line argument to enable it (or a selection). Hack this in, so enabling it
+// in about_flags enables the feature. Appending this flag has the same effect
+// as --scripts-require-action=1.
+const char kEnableScriptsRequireAction[] = "enable-scripts-require-action";
 
 // Makes component extensions appear in chrome://settings/extensions.
 const char kShowComponentExtensionOptions[] =

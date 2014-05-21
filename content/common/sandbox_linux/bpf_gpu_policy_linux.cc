@@ -87,6 +87,10 @@ intptr_t GpuSIGSYS_Handler(const struct arch_seccomp_data& args,
       return broker_process->Access(reinterpret_cast<const char*>(args.args[0]),
                                     static_cast<int>(args.args[1]));
     case __NR_open:
+#if defined(MEMORY_SANITIZER)
+      // http://crbug.com/372840
+      __msan_unpoison_string(reinterpret_cast<const char*>(args.args[0]));
+#endif
       return broker_process->Open(reinterpret_cast<const char*>(args.args[0]),
                                   static_cast<int>(args.args[1]));
     case __NR_openat:
@@ -185,10 +189,6 @@ ErrorCode GpuProcessPolicy::EvaluateSyscall(SandboxBPF* sandbox,
       DCHECK(broker_process_);
       return sandbox->Trap(GpuSIGSYS_Handler, broker_process_);
     default:
-      // Allow *kill from the GPU process temporarily until fork()
-      // is denied here.
-      if (SyscallSets::IsKill(sysno))
-        return ErrorCode(ErrorCode::ERR_ALLOWED);
       if (SyscallSets::IsEventFd(sysno))
         return ErrorCode(ErrorCode::ERR_ALLOWED);
 

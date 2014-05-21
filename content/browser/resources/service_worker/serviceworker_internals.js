@@ -15,7 +15,7 @@ cr.define('serviceworker', function() {
 
     // All commands are sent with the partition_path and scope, and
     // are all completed with 'onOperationComplete'.
-    var COMMANDS = ['unregister', 'start', 'stop', 'sync'];
+    var COMMANDS = ['unregister', 'start', 'stop', 'sync', 'inspect'];
     function commandHandler(command) {
         return function(event) {
             var link = event.target;
@@ -133,6 +133,14 @@ cr.define('serviceworker', function() {
         update();
     }
 
+    function onRegistrationStored(scope) {
+        update();
+    }
+
+    function onRegistrationDeleted(scope) {
+        update();
+    }
+
     function outputLogMessage(partition_id, version_id, message) {
         if (!(partition_id in allLogMessages)) {
             allLogMessages[partition_id] = {};
@@ -164,6 +172,8 @@ cr.define('serviceworker', function() {
         onErrorReported: onErrorReported,
         onConsoleMessageReported: onConsoleMessageReported,
         onVersionStateChanged: onVersionStateChanged,
+        onRegistrationStored: onRegistrationStored,
+        onRegistrationDeleted: onRegistrationDeleted,
     };
 });
 

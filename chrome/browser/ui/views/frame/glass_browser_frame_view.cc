@@ -162,7 +162,7 @@ void GlassBrowserFrameView::UpdateThrobber(bool running) {
   }
 }
 
-gfx::Size GlassBrowserFrameView::GetMinimumSize() {
+gfx::Size GlassBrowserFrameView::GetMinimumSize() const {
   gfx::Size min_size(browser_view()->GetMinimumSize());
 
   // Account for the client area insets.
@@ -448,17 +448,21 @@ void GlassBrowserFrameView::LayoutNewStyleAvatar() {
 
   int button_x = frame()->GetMinimizeButtonOffset() -
       kNewAvatarButtonOffset - label_size.width();
-
   if (base::i18n::IsRTL())
     button_x = width() - frame()->GetMinimizeButtonOffset() +
         kNewAvatarButtonOffset;
-
   int button_y = frame()->IsMaximized() ? NonClientTopBorderHeight() : 1;
+
+  // If the window is maximized, the button is 2 pixels too tall. Determined
+  // via visual inspection.
+  int height_to_subtract = frame()->IsMaximized() ? 2 : 0;
+
   new_avatar_button()->SetBounds(
       button_x,
       button_y,
       label_size.width(),
-      button_y + gfx::win::GetSystemMetricsInDIP(SM_CXMENUSIZE));
+      button_y + gfx::win::GetSystemMetricsInDIP(SM_CXMENUSIZE) -
+          height_to_subtract);
 }
 
 void GlassBrowserFrameView::LayoutAvatar() {

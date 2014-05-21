@@ -14,7 +14,6 @@
 #include "cc/quads/solid_color_draw_quad.h"
 #include "cc/quads/surface_draw_quad.h"
 #include "cc/surfaces/surface.h"
-#include "cc/test/mock_quad_culler.h"
 #include "cc/test/render_pass_test_common.h"
 #include "cc/test/render_pass_test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -34,7 +33,7 @@ void AddTestSurfaceQuad(TestRenderPass* pass,
   float opacity = 1.0;
   SkXfermode::Mode blend_mode = SkXfermode::kSrcOver_Mode;
 
-  scoped_ptr<SharedQuadState> shared_quad_state = SharedQuadState::Create();
+  SharedQuadState* shared_quad_state = pass->CreateAndAppendSharedQuadState();
   shared_quad_state->SetAll(content_to_target_transform,
                             content_bounds,
                             visible_content_rect,
@@ -42,7 +41,6 @@ void AddTestSurfaceQuad(TestRenderPass* pass,
                             is_clipped,
                             opacity,
                             blend_mode);
-  pass->shared_quad_state_list.push_back(shared_quad_state.Pass());
 
   scoped_ptr<SurfaceDrawQuad> surface_quad = SurfaceDrawQuad::Create();
   gfx::Rect quad_rect = gfx::Rect(surface_size);
@@ -54,10 +52,8 @@ void AddTestSurfaceQuad(TestRenderPass* pass,
 }
 void AddTestRenderPassQuad(TestRenderPass* pass,
                            RenderPass::Id render_pass_id) {
-  MockQuadCuller quad_sink(&pass->quad_list, &pass->shared_quad_state_list);
   gfx::Rect output_rect = gfx::Rect(0, 0, 5, 5);
-  SharedQuadState* shared_state =
-      quad_sink.UseSharedQuadState(SharedQuadState::Create());
+  SharedQuadState* shared_state = pass->CreateAndAppendSharedQuadState();
   shared_state->SetAll(gfx::Transform(),
                        output_rect.size(),
                        output_rect,
@@ -76,7 +72,7 @@ void AddTestRenderPassQuad(TestRenderPass* pass,
                gfx::RectF(),
                FilterOperations(),
                FilterOperations());
-  quad_sink.Append(quad.PassAs<DrawQuad>());
+  pass->AppendDrawQuad(quad.PassAs<DrawQuad>());
 }
 
 void AddQuadInPass(TestRenderPass* pass, Quad desc) {

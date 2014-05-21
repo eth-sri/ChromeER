@@ -218,15 +218,17 @@ void HttpStreamFactoryImpl::Job::Orphan(const Request* request) {
     blocking_job_->waiting_job_ = NULL;
     blocking_job_ = NULL;
     if (stream_factory_->for_websockets_ &&
-        connection_ && connection_->socket())
+        connection_ && connection_->socket()) {
       connection_->socket()->Disconnect();
+    }
     stream_factory_->OnOrphanedJobComplete(this);
   } else if (stream_factory_->for_websockets_) {
     // We cancel this job because a WebSocketHandshakeStream can't be created
     // without a WebSocketHandshakeStreamBase::CreateHelper which is stored in
     // the Request class and isn't accessible from this job.
-    if (connection_ && connection_->socket())
+    if (connection_ && connection_->socket()) {
       connection_->socket()->Disconnect();
+    }
     stream_factory_->OnOrphanedJobComplete(this);
   }
 }
@@ -475,9 +477,9 @@ int HttpStreamFactoryImpl::Job::RunLoop(int result) {
 
   switch (result) {
     case ERR_PROXY_AUTH_REQUESTED: {
-      DCHECK(connection_.get());
-      DCHECK(connection_->socket());
-      DCHECK(establishing_tunnel_);
+      CHECK(connection_.get());
+      CHECK(connection_->socket());
+      CHECK(establishing_tunnel_);
 
       next_state_ = STATE_WAITING_USER_ACTION;
       ProxyClientSocket* proxy_socket =
@@ -977,6 +979,14 @@ int HttpStreamFactoryImpl::Job::DoInitConnectionComplete(int result) {
     return result;
   }
 
+  if (using_quic_) {
+    if (result < 0)
+      return result;
+    stream_ = quic_request_.ReleaseStream();
+    next_state_ = STATE_NONE;
+    return OK;
+  }
+
   if (!ssl_started && result < 0 && original_url_.get()) {
     HistogramBrokenAlternateProtocolLocation(
         BROKEN_ALTERNATE_PROTOCOL_LOCATION_HTTP_STREAM_FACTORY_IMPL_JOB);
@@ -984,14 +994,6 @@ int HttpStreamFactoryImpl::Job::DoInitConnectionComplete(int result) {
     session_->http_server_properties()->SetBrokenAlternateProtocol(
         HostPortPair::FromURL(*original_url_));
     return result;
-  }
-
-  if (using_quic_) {
-    if (result < 0)
-      return result;
-    stream_ = quic_request_.ReleaseStream();
-    next_state_ = STATE_NONE;
-    return OK;
   }
 
   if (result < 0 && !ssl_started)
