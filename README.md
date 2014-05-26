@@ -22,8 +22,7 @@
         u'url': u'https://github.com/eth-srl/ChromeER.git',
         u'custom_deps': {},
         u'deps_file': u'.DEPS.git',
-    }]
-
+    }]<br>
     target_os = ['all']
 
 1. (GNU/Linux only) From the `src` directory run:
