@@ -15,13 +15,12 @@
     Note that the repository is cloned in the `src` subdirectory. By default this command will checkout the `srl` branch.
 
 1. Create a file named `.gclient` in the `chromium` directory (above `src`), with the following content:
-2. 
-    solutions = [{
-        u'managed': False,
-        u'name': u'src',
-        u'url': u'https://github.com/eth-srl/ChromeER.git',
-        u'custom_deps': {},
-        u'deps_file': u'.DEPS.git',
+   solutions = [{ <br>
+        u'managed': False,  <br>
+        u'name': u'src', <br>
+        u'url': u'https://github.com/eth-srl/ChromeER.git',  <br>
+        u'custom_deps': {},  <br>
+        u'deps_file': u'.DEPS.git',  <br>
     }]<br>
     target_os = ['all']
 
