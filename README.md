@@ -28,6 +28,10 @@
    
     build/install-build-deps.sh
 
+    If the above does not work directly (sometimes it asks to install mingw packages on Linux), then an alternative command is:
+    
+    build/install-build-deps.sh --no-nacl
+
 1. From the `src` directory run: 
     
     gclient sync
