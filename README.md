@@ -42,11 +42,11 @@
 
 1. To run without sandbox on, type:
 
-./chrome --no-sandbox
+    ./chrome --no-sandbox
 
-Otherwise, to build with sandbox, follow: 
+    Otherwise, to build with sandbox, follow: 
 
-https://code.google.com/p/chromium/wiki/LinuxSUIDSandboxDevelopment
+    https://code.google.com/p/chromium/wiki/LinuxSUIDSandboxDevelopment
 
 1. For more information, consult the developer pages at http://chromium.org
 
