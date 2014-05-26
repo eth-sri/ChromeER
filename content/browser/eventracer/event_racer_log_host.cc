@@ -100,7 +100,7 @@ void EventRacerLogHost::WriteDot(scoped_ptr<EventRacerLogHost> log, int32 site_i
   }
   dotsrc += "}\n";
   base::FilePath path(
-    base::StringPrintf("eventracer-id%02u-site%02d.log", log->GetId(), site_id));
+    base::StringPrintf("eventracer-id%02u-site%02d.dot", log->GetId(), site_id));
   base::File file(path, base::File::FLAG_WRITE | base::File::FLAG_CREATE_ALWAYS);
   file.WriteAtCurrentPos(dotsrc.data(), dotsrc.size());
 }
