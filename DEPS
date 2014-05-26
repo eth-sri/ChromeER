@@ -20,7 +20,7 @@
 vars = {
   # Use this googlecode_url variable only if there is an internal mirror for it.
   # If you do not know, use the full path while defining your new deps entry.
-  "mirror_url" : "chill.local:GIT/chromium",
+  "mirror_url" : "https://github.com/eth-srl",
   "googlecode_url": "http://%s.googlecode.com/svn",
   "sourceforge_url": "http://svn.code.sf.net/p/%(repo)s/code",
   "llvm_url": "http://src.chromium.org/llvm-project",
@@ -104,7 +104,7 @@ deps = {
     (Var("googlecode_url") % "trace-viewer") + "/trunk@1267",
 
   "src/third_party/WebKit":
-    Var("mirror_url") + "/blink.git@" + Var("webkit_hash"),
+    Var("mirror_url") + "/BlinkER.git@" + Var("webkit_hash"),
 
   "src/third_party/WebKit/LayoutTests/w3c/web-platform-tests":
     Var("chromium_git") +
