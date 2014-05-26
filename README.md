@@ -15,7 +15,6 @@
     Note that the repository is cloned in the `src` subdirectory. By default this command will checkout the `srl` branch.
 
 1. Create a file named `.gclient` in the `chromium` directory (above `src`), with the following content:
-
     solutions = [{
         u'managed': False,
         u'name': u'src',
