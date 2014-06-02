@@ -35,6 +35,7 @@ SiteInstanceImpl::SiteInstanceImpl(BrowsingInstance* browsing_instance)
 SiteInstanceImpl::~SiteInstanceImpl() {
   // Write out the EventRacer log.
   if (event_racer_log_) {
+    process_->RemoveRoute(event_racer_log_->GetRoutingId());
     BrowserThread::PostTask(
       BrowserThread::FILE, FROM_HERE,
       base::Bind(&EventRacerLogHost::WriteDot, Passed(event_racer_log_.Pass()), id_));
@@ -193,20 +194,25 @@ size_t SiteInstanceImpl::GetRelatedActiveContentsCount() {
   return browsing_instance_->active_contents_count();
 }
 
-void SiteInstanceImpl::StartEventRacerLog() {
+int32 SiteInstanceImpl::CreateEventRacerLog() {
   LOG(INFO) << "Started new log for " << site_.spec() << "\n";
   LOG(INFO) << " site instance id: " << id_ << "\n";
 
   // Create a new log and replace the old one.
-  scoped_ptr<EventRacerLogHost> log(new EventRacerLogHost);
+  int32 routing_id = process_->GetNextRoutingID();
+  scoped_ptr<EventRacerLogHost> log(new EventRacerLogHost(routing_id));
+  process_->AddRoute(routing_id, log.get());
   event_racer_log_.swap(log);
 
   // Write out the old one. The writer task will delete the log.
   if (log) {
+    process_->RemoveRoute(log->GetRoutingId());
     BrowserThread::PostTask(
       BrowserThread::FILE, FROM_HERE,
       base::Bind(&EventRacerLogHost::WriteDot, Passed(log.Pass()), id_));
   }
+
+  return event_racer_log_->GetRoutingId();
 }
 
 EventRacerLogHost *SiteInstanceImpl::GetEventRacerLog() {

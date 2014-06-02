@@ -15,7 +15,6 @@
 #include "base/time/time.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/render_frame_host.h"
-#include "content/public/common/eventracer.h"
 #include "content/public/common/javascript_message_type.h"
 #include "content/public/common/page_transition_types.h"
 #include "third_party/WebKit/public/web/WebTextDirection.h"
@@ -218,10 +217,7 @@ class CONTENT_EXPORT RenderFrameHostImpl : public RenderFrameHost {
                                 const base::string16& message,
                                 bool is_reload,
                                 IPC::Message* reply_msg);
-  void OnStartEventRacerLog();
-  void OnCompletedEventAction(const blink::WebEventAction &);
-  void OnHappensBefore(const std::vector<blink::WebEventActionEdge> &);
-  void OnUpdateStringTable(size_t, const std::vector<std::string> &);
+  void OnCreateEventRacerLog(int32 *);
 
   void OnRequestDesktopNotificationPermission(const GURL& origin,
                                               int callback_id);

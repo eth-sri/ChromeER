@@ -2,6 +2,7 @@
 #include "base/files/file.h"
 #include "base/files/file_path.h"
 #include "base/strings/stringprintf.h"
+#include "content/common/event_racer_messages.h"
 #include <algorithm>
 
 namespace content {
@@ -35,11 +36,14 @@ void EventAction::AddOperation(unsigned int type, size_t loc) {
 
 uint32 EventRacerLogHost::next_event_racer_log_id_ = 1;
 
-EventRacerLogHost::EventRacerLogHost()
- : id_ (next_event_racer_log_id_++), strings_(1) {
+EventRacerLogHost::EventRacerLogHost(int32 routing_id)
+  : id_ (next_event_racer_log_id_++),
+    routing_id_(routing_id),
+    strings_(1) {
 }
 
-EventRacerLogHost::~EventRacerLogHost() {}
+EventRacerLogHost::~EventRacerLogHost() {
+}
 
 EventRacerLogHost::EventAction *EventRacerLogHost::CreateEventAction(unsigned int id) {
   scoped_ptr<EventAction> a(new EventAction(id));
@@ -60,7 +64,34 @@ void EventRacerLogHost::UpdateStringTable(size_t index, const std::vector<std::s
   assert(index == strings_.size());
   strings_.insert(strings_.end(), v.begin(), v.end());
 }
- 
+
+bool EventRacerLogHost::OnMessageReceived(const IPC::Message& msg) {
+  bool handled = true;
+  IPC_BEGIN_MESSAGE_MAP(EventRacerLogHost, msg)
+    IPC_MESSAGE_HANDLER(EventRacerLogHostMsg_CompletedEventAction, OnCompletedEventAction)
+    IPC_MESSAGE_HANDLER(EventRacerLogHostMsg_HappensBefore, OnHappensBefore)
+    IPC_MESSAGE_HANDLER(EventRacerLogHostMsg_UpdateStringTable, OnUpdateStringTable)
+  IPC_END_MESSAGE_MAP()
+
+  return handled;
+}
+
+void EventRacerLogHost::OnCompletedEventAction(const blink::WebEventAction &wa) {
+  EventAction *a = CreateEventAction(wa.id);
+  for (size_t i = 0; i < wa.ops.size(); ++i)
+    a->AddOperation(wa.ops[i].type, wa.ops[i].location);
+}
+
+void EventRacerLogHost::OnHappensBefore(const std::vector<blink::WebEventActionEdge> &v) {
+  for (size_t i = 0; i < v.size(); ++i)
+    CreateEdge(v[i].first, v[i].second);
+}
+
+void EventRacerLogHost::OnUpdateStringTable(size_t index, const std::vector<std::string> &v) {
+  UpdateStringTable(index, v);
+}
+
+
 void EventRacerLogHost::WriteDot(scoped_ptr<EventRacerLogHost> log, int32 site_id) {
   std::string dotsrc = "digraph ER {\n";
   for (ActionsMapType::const_iterator i = log->actions_.begin(); i != log->actions_.end(); ++i) {

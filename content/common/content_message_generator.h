@@ -20,6 +20,7 @@
 #include "content/common/dom_storage/dom_storage_messages.h"
 #include "content/common/drag_messages.h"
 #include "content/common/drag_traits.h"
+#include "content/common/event_racer_messages.h"
 #include "content/common/file_utilities_messages.h"
 #include "content/common/fileapi/file_system_messages.h"
 #include "content/common/fileapi/webblob_messages.h"

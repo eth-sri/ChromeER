@@ -3,6 +3,8 @@
 
 #include "base/basictypes.h"
 #include "base/containers/scoped_ptr_hash_map.h"
+#include "content/public/common/eventracer.h"
+#include "ipc/ipc_listener.h"
 
 namespace content {
 
@@ -60,29 +62,38 @@ private:
 
 } // end namespace detail
 
-class EventRacerLogHost {
+class EventRacerLogHost : public IPC::Listener {
 public:
-  EventRacerLogHost();
-  ~EventRacerLogHost();
+  EventRacerLogHost(int32);
+  virtual ~EventRacerLogHost();
 
   typedef detail::EventAction EventAction;
   typedef detail::Operation Operation;
 
   uint32 GetId() const { return id_; }
 
+  int32 GetRoutingId() { return routing_id_; }
+
   EventAction *CreateEventAction(unsigned int);
   void CreateEdge(unsigned int, unsigned int);
   void UpdateStringTable(size_t, const std::vector<std::string> &);
+
+  virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
   
   static void WriteDot(scoped_ptr<EventRacerLogHost> log, int32 site_id);
 
 private:
   static uint32 next_event_racer_log_id_;
   uint32 id_;
+  int32 routing_id_;
 
   typedef base::ScopedPtrHashMap<unsigned int, EventAction> ActionsMapType;
   ActionsMapType actions_;
   std::vector<std::string> strings_;
+
+  void OnCompletedEventAction(const blink::WebEventAction &);
+  void OnHappensBefore(const std::vector<blink::WebEventActionEdge> &);
+  void OnUpdateStringTable(size_t, const std::vector<std::string> &);
 };
 
 } // namespace content

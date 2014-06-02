@@ -445,6 +445,8 @@
     'renderer/pepper/v8_var_converter.h',
     'renderer/push_messaging_dispatcher.cc',
     'renderer/push_messaging_dispatcher.h',
+    'renderer/render_event_racer_log_client.cc',
+    'renderer/render_event_racer_log_client.h',
     'renderer/render_frame_impl.cc',
     'renderer/render_frame_impl.h',
     'renderer/render_frame_proxy.cc',

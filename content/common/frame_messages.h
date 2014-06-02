@@ -609,27 +609,5 @@ IPC_MESSAGE_ROUTED3(FrameHostMsg_MediaPlayingNotification,
 IPC_MESSAGE_ROUTED1(FrameHostMsg_MediaPausedNotification,
                     int64 /* player_cookie, distinguishes instances */)
 
-// -----------------------------------------------------------------------------
-// EventRacer messages
-IPC_STRUCT_TRAITS_BEGIN(blink::WebOperation)
-  IPC_STRUCT_TRAITS_MEMBER(type)
-  IPC_STRUCT_TRAITS_MEMBER(location)
-IPC_STRUCT_TRAITS_END()
-
-IPC_STRUCT_TRAITS_BEGIN(blink::WebEventAction)
-  IPC_STRUCT_TRAITS_MEMBER(id)
-  IPC_STRUCT_TRAITS_MEMBER(type)
-  IPC_STRUCT_TRAITS_MEMBER(ops)
-IPC_STRUCT_TRAITS_END()
-
 // Start a new EventRacer log.
-IPC_MESSAGE_ROUTED0(FrameHostMsg_StartEventRacerLog)
-
-// Completed an EventRacer action.
-IPC_MESSAGE_ROUTED1(FrameHostMsg_CompletedEventAction, blink::WebEventAction)
-
-// HappensBefore edges
-IPC_MESSAGE_ROUTED1(FrameHostMsg_HappensBefore,
-                    std::vector<blink::WebEventActionEdge>)
-
-IPC_MESSAGE_ROUTED2(FrameHostMsg_UpdateStringTable, size_t, std::vector<std::string>)
+IPC_SYNC_MESSAGE_ROUTED0_1(FrameHostMsg_CreateEventRacerLog, int32/* routing id */)

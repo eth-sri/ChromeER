@@ -67,6 +67,7 @@
 #include "content/renderer/media/webmediaplayer_params.h"
 #include "content/renderer/notification_provider.h"
 #include "content/renderer/npapi/plugin_channel_host.h"
+#include "content/renderer/render_event_racer_log_client.h"
 #include "content/renderer/render_process.h"
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/render_view_impl.h"
@@ -1442,6 +1443,14 @@ blink::WebServiceWorkerProvider* RenderFrameImpl::createServiceWorkerProvider(
   return new WebServiceWorkerProviderImpl(
       ChildThread::current()->thread_safe_sender(),
       provider ? provider->context() : NULL);
+}
+
+blink::WebEventRacerLogClient *RenderFrameImpl::createEventRacerLogClient() {
+  int32 rid = MSG_ROUTING_NONE;
+  Send(new FrameHostMsg_CreateEventRacerLog(routing_id_, &rid));
+  if (rid == MSG_ROUTING_NONE)
+    return 0;
+  return new RenderEventRacerLogClient(rid);
 }
 
 void RenderFrameImpl::didAccessInitialDocument(blink::WebLocalFrame* frame) {
@@ -2871,33 +2880,6 @@ void RenderFrameImpl::DidPause(blink::WebMediaPlayer* player) {
 
 void RenderFrameImpl::PlayerGone(blink::WebMediaPlayer* player) {
   DidPause(player);
-}
-
-// EventRacer ------------------------------------------------------
-void RenderFrameImpl::didStartEventRacerLog()
-{
-  Send(new FrameHostMsg_StartEventRacerLog(routing_id_));
-}
-
-void RenderFrameImpl::didCompleteEventAction(const blink::WebEventAction &a)
-{
-  Send(new FrameHostMsg_CompletedEventAction(routing_id_, a));
-}
-
-void RenderFrameImpl::didHappenBefore(const blink::WebVector<blink::WebEventActionEdge> &wv)
-{
-  std::vector<blink::WebEventActionEdge> v;
-  v.reserve(wv.size());
-  for (size_t i = 0; i < wv.size(); ++i)
-    v.push_back(wv[i]);
-  Send(new FrameHostMsg_HappensBefore(routing_id_, v));
-}
-
-void RenderFrameImpl::didUpdateStringTable(size_t index, const WebVector<WebString> &wv) {
-  std::vector<std::string> v;
-  for (size_t i = 0; i < wv.size(); ++i)
-    v.push_back (wv[i].latin1());
-  Send(new FrameHostMsg_UpdateStringTable(routing_id_, index, v));
 }
 
 void RenderFrameImpl::AddObserver(RenderFrameObserver* observer) {

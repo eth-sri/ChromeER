@@ -111,8 +111,9 @@ class CONTENT_EXPORT SiteInstance : public base::RefCounted<SiteInstance> {
   // related SiteInstances in the same BrowsingInstance.
   virtual size_t GetRelatedActiveContentsCount() = 0;
 
-  // Creates a new EventRacer log, replacing the old one.
-  virtual void StartEventRacerLog() = 0;
+  // Creates a new EventRacer log, replacing the old one. Returns the routing id
+  // of the new log.
+  virtual int32 CreateEventRacerLog() = 0;
 
   // Returns the EventRacer log, associated with this SiteInstance.
   virtual EventRacerLogHost *GetEventRacerLog() = 0;

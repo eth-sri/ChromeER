@@ -387,10 +387,7 @@ class CONTENT_EXPORT RenderFrameImpl
   virtual void PlayerGone(blink::WebMediaPlayer* player) OVERRIDE;
 
   // EventRacer ------------------------------------------------------
-  virtual void didStartEventRacerLog() OVERRIDE;
-  virtual void didCompleteEventAction(const blink::WebEventAction &) OVERRIDE;
-  virtual void didHappenBefore(const blink::WebVector<blink::WebEventActionEdge> &) OVERRIDE;
-  virtual void didUpdateStringTable(size_t, const blink::WebVector<blink::WebString> &) OVERRIDE;
+  virtual blink::WebEventRacerLogClient *createEventRacerLogClient() OVERRIDE;
 
   // TODO(nasko): Make all tests in RenderViewImplTest friends and then move
   // this back to private member.

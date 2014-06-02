@@ -309,10 +309,7 @@ bool RenderFrameHostImpl::OnMessageReceived(const IPC::Message &msg) {
                                     OnRunJavaScriptMessage)
     IPC_MESSAGE_HANDLER_DELAY_REPLY(FrameHostMsg_RunBeforeUnloadConfirm,
                                     OnRunBeforeUnloadConfirm)
-    IPC_MESSAGE_HANDLER(FrameHostMsg_StartEventRacerLog, OnStartEventRacerLog)
-    IPC_MESSAGE_HANDLER(FrameHostMsg_CompletedEventAction, OnCompletedEventAction)
-    IPC_MESSAGE_HANDLER(FrameHostMsg_HappensBefore, OnHappensBefore)
-    IPC_MESSAGE_HANDLER(FrameHostMsg_UpdateStringTable, OnUpdateStringTable)
+    IPC_MESSAGE_HANDLER(FrameHostMsg_CreateEventRacerLog, OnCreateEventRacerLog)
     IPC_MESSAGE_HANDLER(FrameHostMsg_DidAccessInitialDocument,
                         OnDidAccessInitialDocument)
     IPC_MESSAGE_HANDLER(FrameHostMsg_DidDisownOpener, OnDidDisownOpener)
@@ -668,26 +665,8 @@ void RenderFrameHostImpl::OnRunBeforeUnloadConfirm(
   delegate_->RunBeforeUnloadConfirm(this, message, is_reload, reply_msg);
 }
 
-void RenderFrameHostImpl::OnStartEventRacerLog() {
-  GetSiteInstance()->StartEventRacerLog();
-}
-
-void RenderFrameHostImpl::OnCompletedEventAction(const blink::WebEventAction &wa) {
-  EventRacerLogHost *log = GetSiteInstance()->GetEventRacerLog();
-  EventRacerLogHost::EventAction *a = log->CreateEventAction(wa.id);
-  for (size_t i = 0; i < wa.ops.size(); ++i)
-    a->AddOperation(wa.ops[i].type, wa.ops[i].location);
-}
-
-void RenderFrameHostImpl::OnHappensBefore(const std::vector<blink::WebEventActionEdge> &v) {
-  EventRacerLogHost *log = GetSiteInstance()->GetEventRacerLog();
-  for (size_t i = 0; i < v.size(); ++i)
-      log->CreateEdge(v[i].first, v[i].second);
-}
-
-void RenderFrameHostImpl::OnUpdateStringTable(size_t index, const std::vector<std::string> &v) {
-  EventRacerLogHost *log = GetSiteInstance()->GetEventRacerLog();
-  log->UpdateStringTable(index, v);
+void RenderFrameHostImpl::OnCreateEventRacerLog(int32 *routing_id) {
+  *routing_id = GetSiteInstance()->CreateEventRacerLog();
 }
 
 void RenderFrameHostImpl::OnRequestDesktopNotificationPermission(

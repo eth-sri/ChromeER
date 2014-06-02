@@ -28,7 +28,7 @@ class CONTENT_EXPORT SiteInstanceImpl : public SiteInstance,
   virtual SiteInstance* GetRelatedSiteInstance(const GURL& url) OVERRIDE;
   virtual bool IsRelatedSiteInstance(const SiteInstance* instance) OVERRIDE;
   virtual size_t GetRelatedActiveContentsCount() OVERRIDE;
-  virtual void StartEventRacerLog() OVERRIDE;
+  virtual int32 CreateEventRacerLog() OVERRIDE;
   virtual EventRacerLogHost *GetEventRacerLog() OVERRIDE;
 
   // Set the web site that this SiteInstance is rendering pages for.
