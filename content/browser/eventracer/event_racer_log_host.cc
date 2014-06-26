@@ -58,9 +58,6 @@ void EventRacerLogHost::CreateEdge(unsigned int srcid, unsigned int dstid) {
 }
 
 void EventRacerLogHost::UpdateStringTable(size_t index, const std::vector<std::string> &v) {
-  LOG(INFO) << "UpdateStringTable: index = " << index
-            << " size = " << strings_.size() << "\n";
-
   assert(index == strings_.size());
   strings_.insert(strings_.end(), v.begin(), v.end());
 }
@@ -123,7 +120,7 @@ void EventRacerLogHost::WriteDot(scoped_ptr<EventRacerLogHost> log, int32 site_i
     }
     dotsrc += "\"\n]\n\n";
 
-  // Output edges.
+    // Output edges.
     EventAction::EdgesType::const_iterator j;
     for (j = a->Edges().begin(); j != a->Edges().end(); ++j) {
       base::StringAppendF(&dotsrc, "n%u -> n%u\n", a->GetId(), *j);
