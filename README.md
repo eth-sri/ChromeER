@@ -57,3 +57,8 @@
     echo 0 | sudo tee /proc/sys/kernel/yama/ptrace_scope
 
 1. On the `srl` branch, the build is modified not to tell `gold` to create `.gdb_index` section. Instead use `build/gdb-add-index`. Thus we ensure the `gdb` can understand and use the `.gdb_index` section format.
+
+
+### Misc notes
+
+1. The SRL modifications are based on the `lkgr` branch, which is occasionally merged into the `srl` branch. The tag `srl-base` is updated to point to the last merged revision on the `lkgr` branch, thus `git diff srl-base srl` will show the EventRacer related changes to the original sources.
