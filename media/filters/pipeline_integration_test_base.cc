@@ -37,6 +37,10 @@ PipelineIntegrationTestBase::PipelineIntegrationTestBase()
       last_video_frame_format_(VideoFrame::UNKNOWN),
       hardware_config_(AudioParameters(), AudioParameters()) {
   base::MD5Init(&md5_context_);
+
+  // Prevent non-deterministic buffering state callbacks from firing (e.g., slow
+  // machine, valgrind).
+  pipeline_->set_underflow_disabled_for_testing(true);
 }
 
 PipelineIntegrationTestBase::~PipelineIntegrationTestBase() {
@@ -104,9 +108,11 @@ void PipelineIntegrationTestBase::OnError(PipelineStatus status) {
 
 bool PipelineIntegrationTestBase::Start(const base::FilePath& file_path,
                                         PipelineStatus expected_status) {
-  EXPECT_CALL(*this, OnMetadata(_)).Times(AtMost(1))
+  EXPECT_CALL(*this, OnMetadata(_))
+      .Times(AtMost(1))
       .WillRepeatedly(SaveArg<0>(&metadata_));
-  EXPECT_CALL(*this, OnPrerollCompleted()).Times(AtMost(1));
+  EXPECT_CALL(*this, OnBufferingStateChanged(BUFFERING_HAVE_ENOUGH))
+      .Times(AtMost(1));
   pipeline_->Start(
       CreateFilterCollection(file_path, NULL),
       base::Bind(&PipelineIntegrationTestBase::OnEnded, base::Unretained(this)),
@@ -114,7 +120,7 @@ bool PipelineIntegrationTestBase::Start(const base::FilePath& file_path,
       QuitOnStatusCB(expected_status),
       base::Bind(&PipelineIntegrationTestBase::OnMetadata,
                  base::Unretained(this)),
-      base::Bind(&PipelineIntegrationTestBase::OnPrerollCompleted,
+      base::Bind(&PipelineIntegrationTestBase::OnBufferingStateChanged,
                  base::Unretained(this)),
       base::Closure());
   message_loop_.Run();
@@ -126,9 +132,8 @@ bool PipelineIntegrationTestBase::Start(const base::FilePath& file_path,
                                         kTestType test_type) {
   hashing_enabled_ = test_type == kHashed;
   clockless_playback_ = test_type == kClockless;
-  if (clockless_playback_) {
+  if (clockless_playback_)
     pipeline_->SetClockForTesting(new Clock(&dummy_clock_));
-  }
   return Start(file_path, expected_status);
 }
 
@@ -138,9 +143,11 @@ bool PipelineIntegrationTestBase::Start(const base::FilePath& file_path) {
 
 bool PipelineIntegrationTestBase::Start(const base::FilePath& file_path,
                                         Decryptor* decryptor) {
-  EXPECT_CALL(*this, OnMetadata(_)).Times(AtMost(1))
+  EXPECT_CALL(*this, OnMetadata(_))
+      .Times(AtMost(1))
       .WillRepeatedly(SaveArg<0>(&metadata_));
-  EXPECT_CALL(*this, OnPrerollCompleted()).Times(AtMost(1));
+  EXPECT_CALL(*this, OnBufferingStateChanged(BUFFERING_HAVE_ENOUGH))
+      .Times(AtMost(1));
   pipeline_->Start(
       CreateFilterCollection(file_path, decryptor),
       base::Bind(&PipelineIntegrationTestBase::OnEnded, base::Unretained(this)),
@@ -149,7 +156,7 @@ bool PipelineIntegrationTestBase::Start(const base::FilePath& file_path,
                  base::Unretained(this)),
       base::Bind(&PipelineIntegrationTestBase::OnMetadata,
                  base::Unretained(this)),
-      base::Bind(&PipelineIntegrationTestBase::OnPrerollCompleted,
+      base::Bind(&PipelineIntegrationTestBase::OnBufferingStateChanged,
                  base::Unretained(this)),
       base::Closure());
   message_loop_.Run();
@@ -167,7 +174,7 @@ void PipelineIntegrationTestBase::Pause() {
 bool PipelineIntegrationTestBase::Seek(base::TimeDelta seek_time) {
   ended_ = false;
 
-  EXPECT_CALL(*this, OnPrerollCompleted());
+  EXPECT_CALL(*this, OnBufferingStateChanged(BUFFERING_HAVE_ENOUGH));
   pipeline_->Seek(seek_time, QuitOnStatusCB(PIPELINE_OK));
   message_loop_.Run();
   return (pipeline_status_ == PIPELINE_OK);
@@ -215,7 +222,8 @@ PipelineIntegrationTestBase::CreateFilterCollection(
     const base::FilePath& file_path,
     Decryptor* decryptor) {
   FileDataSource* file_data_source = new FileDataSource();
-  CHECK(file_data_source->Initialize(file_path));
+  CHECK(file_data_source->Initialize(file_path)) << "Is " << file_path.value()
+                                                 << " missing?";
   data_source_.reset(file_data_source);
 
   Demuxer::NeedKeyCB need_key_cb = base::Bind(

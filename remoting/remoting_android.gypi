@@ -26,6 +26,7 @@
             'remoting_jni_headers',
             'remoting_protocol',
             '../google_apis/google_apis.gyp:google_apis',
+            '../ui/gfx/gfx.gyp:gfx',
           ],
           'sources': [
             'client/jni/android_keymap.cc',
@@ -134,7 +135,7 @@
       ],  # end of 'targets'
     }],  # 'OS=="android"'
 
-    ['OS=="android" and gtest_target_type=="shared_library"', {
+    ['OS=="android"', {
       'targets': [
         {
           'target_name': 'remoting_unittests_apk',
@@ -148,6 +149,6 @@
           'includes': [ '../build/apk_test.gypi' ],
         },
       ],
-    }],  # 'OS=="android" and gtest_target_type=="shared_library"'
+    }],  # 'OS=="android"
   ],  # end of 'conditions'
 }

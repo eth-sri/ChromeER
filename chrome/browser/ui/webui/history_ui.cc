@@ -58,10 +58,10 @@
 #include "ui/base/resource/resource_bundle.h"
 
 #if defined(ENABLE_MANAGED_USERS)
-#include "chrome/browser/managed_mode/managed_mode_navigation_observer.h"
-#include "chrome/browser/managed_mode/managed_mode_url_filter.h"
-#include "chrome/browser/managed_mode/managed_user_service.h"
-#include "chrome/browser/managed_mode/managed_user_service_factory.h"
+#include "chrome/browser/supervised_user/supervised_user_navigation_observer.h"
+#include "chrome/browser/supervised_user/supervised_user_service.h"
+#include "chrome/browser/supervised_user/supervised_user_service_factory.h"
+#include "chrome/browser/supervised_user/supervised_user_url_filter.h"
 #endif
 
 #if defined(OS_ANDROID)
@@ -184,8 +184,8 @@ content::WebUIDataSource* CreateHistoryUIHTMLSource(Profile* profile) {
   source->SetDefaultResource(IDR_HISTORY_HTML);
   source->SetUseJsonJSFormatV2();
   source->DisableDenyXFrameOptions();
-  source->AddBoolean("isManagedProfile", profile->IsManaged());
-  source->AddBoolean("showDeleteVisitUI", !profile->IsManaged());
+  source->AddBoolean("isManagedProfile", profile->IsSupervised());
+  source->AddBoolean("showDeleteVisitUI", !profile->IsSupervised());
 
   return source;
 }
@@ -311,7 +311,7 @@ void BrowsingHistoryHandler::HistoryEntry::SetUrlAndTitle(
 
 scoped_ptr<base::DictionaryValue> BrowsingHistoryHandler::HistoryEntry::ToValue(
     BookmarkModel* bookmark_model,
-    ManagedUserService* managed_user_service,
+    SupervisedUserService* supervised_user_service,
     const ProfileSyncService* sync_service) const {
   scoped_ptr<base::DictionaryValue> result(new base::DictionaryValue());
   SetUrlAndTitle(result.get());
@@ -365,9 +365,9 @@ scoped_ptr<base::DictionaryValue> BrowsingHistoryHandler::HistoryEntry::ToValue(
   result->SetString("deviceType", device_type);
 
 #if defined(ENABLE_MANAGED_USERS)
-  if (managed_user_service) {
-    const ManagedModeURLFilter* url_filter =
-        managed_user_service->GetURLFilterForUIThread();
+  if (supervised_user_service) {
+    const SupervisedUserURLFilter* url_filter =
+        supervised_user_service->GetURLFilterForUIThread();
     int filtering_behavior =
         url_filter->GetFilteringBehaviorForURL(url.GetWithEmptyPath());
     result->SetInteger("hostFilteringBehavior", filtering_behavior);
@@ -391,7 +391,7 @@ BrowsingHistoryHandler::BrowsingHistoryHandler()
 }
 
 BrowsingHistoryHandler::~BrowsingHistoryHandler() {
-  history_request_consumer_.CancelAllRequests();
+  query_task_tracker_.TryCancelAll();
   web_history_request_.reset();
 }
 
@@ -434,7 +434,7 @@ bool BrowsingHistoryHandler::ExtractIntegerValueAtIndex(
 
 void BrowsingHistoryHandler::WebHistoryTimeout() {
   // TODO(dubroy): Communicate the failure to the front end.
-  if (!history_request_consumer_.HasPendingRequests())
+  if (!query_task_tracker_.HasTrackedTasks())
     ReturnResultsToFrontEnd();
 
   UMA_HISTOGRAM_ENUMERATION(
@@ -447,7 +447,7 @@ void BrowsingHistoryHandler::QueryHistory(
   Profile* profile = Profile::FromWebUI(web_ui());
 
   // Anything in-flight is invalid.
-  history_request_consumer_.CancelAllRequests();
+  query_task_tracker_.TryCancelAll();
   web_history_request_.reset();
 
   query_results_.clear();
@@ -456,10 +456,12 @@ void BrowsingHistoryHandler::QueryHistory(
   HistoryService* hs = HistoryServiceFactory::GetForProfile(
       profile, Profile::EXPLICIT_ACCESS);
   hs->QueryHistory(search_text,
-      options,
-      &history_request_consumer_,
-      base::Bind(&BrowsingHistoryHandler::QueryComplete,
-                 base::Unretained(this), search_text, options));
+                   options,
+                   base::Bind(&BrowsingHistoryHandler::QueryComplete,
+                              base::Unretained(this),
+                              search_text,
+                              options),
+                   &query_task_tracker_);
 
   history::WebHistoryService* web_history =
       WebHistoryServiceFactory::GetForProfile(profile);
@@ -709,10 +711,11 @@ void BrowsingHistoryHandler::MergeDuplicateResults(
 void BrowsingHistoryHandler::ReturnResultsToFrontEnd() {
   Profile* profile = Profile::FromWebUI(web_ui());
   BookmarkModel* bookmark_model = BookmarkModelFactory::GetForProfile(profile);
-  ManagedUserService* managed_user_service = NULL;
+  SupervisedUserService* supervised_user_service = NULL;
 #if defined(ENABLE_MANAGED_USERS)
-  if (profile->IsManaged())
-    managed_user_service = ManagedUserServiceFactory::GetForProfile(profile);
+  if (profile->IsSupervised())
+    supervised_user_service =
+        SupervisedUserServiceFactory::GetForProfile(profile);
 #endif
   ProfileSyncService* sync_service =
       ProfileSyncServiceFactory::GetInstance()->GetForProfile(profile);
@@ -741,7 +744,7 @@ void BrowsingHistoryHandler::ReturnResultsToFrontEnd() {
   for (std::vector<BrowsingHistoryHandler::HistoryEntry>::iterator it =
            query_results_.begin(); it != query_results_.end(); ++it) {
     scoped_ptr<base::Value> value(
-        it->ToValue(bookmark_model, managed_user_service, sync_service));
+        it->ToValue(bookmark_model, supervised_user_service, sync_service));
     results_value.Append(value.release());
   }
 
@@ -755,7 +758,6 @@ void BrowsingHistoryHandler::ReturnResultsToFrontEnd() {
 void BrowsingHistoryHandler::QueryComplete(
     const base::string16& search_text,
     const history::QueryOptions& options,
-    HistoryService::Handle request_handle,
     history::QueryResults* results) {
   DCHECK_EQ(0U, query_results_.size());
   query_results_.reserve(results->size());
@@ -880,7 +882,7 @@ void BrowsingHistoryHandler::WebHistoryQueryComplete(
     NOTREACHED() << "Failed to parse JSON response.";
   }
   results_info_value_.SetBoolean("hasSyncedResults", results_value != NULL);
-  if (!history_request_consumer_.HasPendingRequests())
+  if (!query_task_tracker_.HasTrackedTasks())
     ReturnResultsToFrontEnd();
 }
 

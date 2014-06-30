@@ -10,15 +10,20 @@
 #include "apps/shell/browser/shell_extension_system.h"
 #include "apps/shell/browser/shell_extension_system_factory.h"
 #include "apps/shell/browser/shell_extensions_browser_client.h"
+#include "apps/shell/browser/shell_omaha_query_params_delegate.h"
 #include "apps/shell/common/shell_extensions_client.h"
+#include "apps/shell/common/switches.h"
+#include "base/command_line.h"
 #include "base/run_loop.h"
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
+#include "components/omaha_query_params/omaha_query_params.h"
 #include "content/public/common/result_codes.h"
 #include "content/shell/browser/shell_devtools_delegate.h"
 #include "content/shell/browser/shell_net_log.h"
 #include "extensions/browser/browser_context_keyed_service_factories.h"
 #include "extensions/browser/extension_system.h"
 #include "ui/aura/window_tree_host.h"
+#include "ui/base/ime/input_method_initializer.h"
 #include "ui/base/resource/resource_bundle.h"
 
 #if defined(OS_CHROMEOS)
@@ -63,7 +68,12 @@ void ShellBrowserMainParts::PreMainMessageLoopStart() {
 void ShellBrowserMainParts::PostMainMessageLoopStart() {
 #if defined(OS_CHROMEOS)
   chromeos::DBusThreadManager::Initialize();
-  network_controller_.reset(new ShellNetworkController);
+  network_controller_.reset(new ShellNetworkController(
+      base::CommandLine::ForCurrentProcess()->GetSwitchValueNative(
+          switches::kAppShellPreferredNetwork)));
+#else
+  // Non-Chrome OS platforms are for developer convenience, so use a test IME.
+  ui::InitializeInputMethodForTesting();
 #endif
 }
 
@@ -81,8 +91,8 @@ void ShellBrowserMainParts::PreMainMessageLoopRun() {
   // Initialize our "profile" equivalent.
   browser_context_.reset(new ShellBrowserContext);
 
-  desktop_controller_.reset(new ShellDesktopController);
-  desktop_controller_->GetWindowTreeHost()->AddObserver(this);
+  desktop_controller_.reset(browser_main_delegate_->CreateDesktopController());
+  desktop_controller_->CreateRootWindow();
 
   // NOTE: Much of this is culled from chrome/test/base/chrome_test_suite.cc
   // TODO(jamescook): Initialize chromeos::UserManager.
@@ -94,6 +104,11 @@ void ShellBrowserMainParts::PreMainMessageLoopRun() {
   extensions_browser_client_.reset(
       new extensions::ShellExtensionsBrowserClient(browser_context_.get()));
   extensions::ExtensionsBrowserClient::Set(extensions_browser_client_.get());
+
+  omaha_query_params_delegate_.reset(
+      new extensions::ShellOmahaQueryParamsDelegate);
+  omaha_query_params::OmahaQueryParams::SetDelegate(
+      omaha_query_params_delegate_.get());
 
   // Create our custom ExtensionSystem first because other
   // KeyedServices depend on it.
@@ -136,7 +151,6 @@ void ShellBrowserMainParts::PostMainMessageLoopRun() {
   extensions_browser_client_.reset();
   browser_context_.reset();
 
-  desktop_controller_->GetWindowTreeHost()->RemoveObserver(this);
   desktop_controller_.reset();
 }
 
@@ -145,13 +159,6 @@ void ShellBrowserMainParts::PostDestroyThreads() {
   network_controller_.reset();
   chromeos::DBusThreadManager::Shutdown();
 #endif
-}
-
-void ShellBrowserMainParts::OnHostCloseRequested(
-    const aura::WindowTreeHost* host) {
-  desktop_controller_->CloseAppWindow();
-  base::MessageLoop::current()->PostTask(FROM_HERE,
-                                         base::MessageLoop::QuitClosure());
 }
 
 void ShellBrowserMainParts::CreateExtensionSystem() {

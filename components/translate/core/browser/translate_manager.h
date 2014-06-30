@@ -13,6 +13,7 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "components/translate/core/browser/language_state.h"
 #include "components/translate/core/common/translate_errors.h"
 
 class GURL;
@@ -41,6 +42,10 @@ class TranslateManager {
   // Cannot return NULL.
   TranslateClient* translate_client() { return translate_client_; }
 
+  // Sets the sequence number of the current page, for use while sending
+  // messages to the renderer.
+  void set_current_seq_no(int page_seq_no) { page_seq_no_ = page_seq_no; }
+
   // Returns the language to translate to. The language returned is the
   // first language found in the following list that is supported by the
   // translation service:
@@ -62,7 +67,7 @@ class TranslateManager {
                      const std::string& target_lang,
                      bool triggered_from_menu);
 
-  // Starts the translation process for a page in the |page_lang| language.
+  // Starts the translation process for the page in the |page_lang| language.
   void InitiateTranslation(const std::string& page_lang);
 
   // Shows the after translate or error infobar depending on the details.
@@ -88,6 +93,9 @@ class TranslateManager {
   static scoped_ptr<TranslateErrorCallbackList::Subscription>
       RegisterTranslateErrorCallback(const TranslateErrorCallback& callback);
 
+  // Gets the LanguageState associated with the TranslateManager
+  LanguageState& GetLanguageState();
+
  private:
   // Sends a translation request to the TranslateDriver.
   void DoTranslatePage(const std::string& translate_script,
@@ -96,17 +104,21 @@ class TranslateManager {
 
   // Called when the Translate script has been fetched.
   // Initiates the translation.
-  void OnTranslateScriptFetchComplete(int page_id,
-                                      const std::string& source_lang,
+  void OnTranslateScriptFetchComplete(const std::string& source_lang,
                                       const std::string& target_lang,
                                       bool success,
                                       const std::string& data);
+
+  // Sequence number of the current page.
+  int page_seq_no_;
 
   // Preference name for the Accept-Languages HTTP header.
   std::string accept_languages_pref_name_;
 
   TranslateClient* translate_client_;  // Weak.
   TranslateDriver* translate_driver_;  // Weak.
+
+  LanguageState language_state_;
 
   base::WeakPtrFactory<TranslateManager> weak_method_factory_;
 

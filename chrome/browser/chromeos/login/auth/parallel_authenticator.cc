@@ -8,15 +8,16 @@
 #include "base/command_line.h"
 #include "base/files/file_path.h"
 #include "base/logging.h"
-#include "base/strings/string_number_conversions.h"
-#include "base/strings/string_util.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/boot_times_loader.h"
 #include "chrome/browser/chromeos/login/auth/authentication_notification_details.h"
+#include "chrome/browser/chromeos/login/auth/key.h"
 #include "chrome/browser/chromeos/login/auth/login_status_consumer.h"
 #include "chrome/browser/chromeos/login/auth/user_context.h"
 #include "chrome/browser/chromeos/login/users/user.h"
 #include "chrome/browser/chromeos/login/users/user_manager.h"
+#include "chrome/browser/chromeos/ownership/owner_settings_service.h"
+#include "chrome/browser/chromeos/ownership/owner_settings_service_factory.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/common/chrome_switches.h"
 #include "chromeos/cryptohome/async_method_caller.h"
@@ -26,7 +27,6 @@
 #include "chromeos/login/login_state.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
-#include "crypto/sha2.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
 
 using content::BrowserThread;
@@ -35,8 +35,16 @@ namespace chromeos {
 
 namespace {
 
-// Length of password hashed with SHA-256.
-const int kPasswordHashLength = 32;
+// Hashes |key| with |system_salt| if it its type is KEY_TYPE_PASSWORD_PLAIN.
+// Returns the keys unmodified otherwise.
+scoped_ptr<Key> TransformKeyIfNeeded(const Key& key,
+                                     const std::string& system_salt) {
+  scoped_ptr<Key> result(new Key(key));
+  if (result->GetKeyType() == Key::KEY_TYPE_PASSWORD_PLAIN)
+    result->Transform(Key::KEY_TYPE_SALTED_SHA256_TOP_HALF, system_salt);
+
+  return result.Pass();
+}
 
 // Records status and calls resolver->Resolve().
 void TriggerResolve(AuthAttemptState* attempt,
@@ -83,10 +91,12 @@ void Mount(AuthAttemptState* attempt,
   // Set state that username_hash is requested here so that test implementation
   // that returns directly would not generate 2 OnLoginSucces() calls.
   attempt->UsernameHashRequested();
+
+  scoped_ptr<Key> key =
+      TransformKeyIfNeeded(*attempt->user_context.GetKey(), system_salt);
   cryptohome::AsyncMethodCaller::GetInstance()->AsyncMount(
       attempt->user_context.GetUserID(),
-      ParallelAuthenticator::HashPassword(attempt->user_context.GetPassword(),
-                                          system_salt),
+      key->GetSecret(),
       flags,
       base::Bind(&TriggerResolveWithLoginTimeMarker,
                  "CryptohomeMount-End",
@@ -158,26 +168,29 @@ void Migrate(AuthAttemptState* attempt,
       "CryptohomeMigrate-Start", false);
   cryptohome::AsyncMethodCaller* caller =
       cryptohome::AsyncMethodCaller::GetInstance();
+
+  // TODO(bartfab): Retrieve the hashing algorithm and salt to use for |old_key|
+  // from cryptohomed.
+  scoped_ptr<Key> old_key =
+      TransformKeyIfNeeded(Key(old_password), system_salt);
+  scoped_ptr<Key> new_key =
+      TransformKeyIfNeeded(*attempt->user_context.GetKey(), system_salt);
   if (passing_old_hash) {
-    caller->AsyncMigrateKey(
-        attempt->user_context.GetUserID(),
-        ParallelAuthenticator::HashPassword(old_password, system_salt),
-        ParallelAuthenticator::HashPassword(attempt->user_context.GetPassword(),
-                                            system_salt),
-        base::Bind(&TriggerResolveWithLoginTimeMarker,
-                   "CryptohomeMount-End",
-                   attempt,
-                   resolver));
+    caller->AsyncMigrateKey(attempt->user_context.GetUserID(),
+                            old_key->GetSecret(),
+                            new_key->GetSecret(),
+                            base::Bind(&TriggerResolveWithLoginTimeMarker,
+                                       "CryptohomeMount-End",
+                                       attempt,
+                                       resolver));
   } else {
-    caller->AsyncMigrateKey(
-        attempt->user_context.GetUserID(),
-        ParallelAuthenticator::HashPassword(attempt->user_context.GetPassword(),
-                                            system_salt),
-        ParallelAuthenticator::HashPassword(old_password, system_salt),
-        base::Bind(&TriggerResolveWithLoginTimeMarker,
-                   "CryptohomeMount-End",
-                   attempt,
-                   resolver));
+    caller->AsyncMigrateKey(attempt->user_context.GetUserID(),
+                            new_key->GetSecret(),
+                            old_key->GetSecret(),
+                            base::Bind(&TriggerResolveWithLoginTimeMarker,
+                                       "CryptohomeMount-End",
+                                       attempt,
+                                       resolver));
   }
 }
 
@@ -200,10 +213,11 @@ void CheckKey(AuthAttemptState* attempt,
               scoped_refptr<ParallelAuthenticator> resolver,
               const std::string& system_salt) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  scoped_ptr<Key> key =
+      TransformKeyIfNeeded(*attempt->user_context.GetKey(), system_salt);
   cryptohome::AsyncMethodCaller::GetInstance()->AsyncCheckKey(
       attempt->user_context.GetUserID(),
-      ParallelAuthenticator::HashPassword(attempt->user_context.GetPassword(),
-                                          system_salt),
+      key->GetSecret(),
       base::Bind(&TriggerResolve, attempt, resolver));
 }
 
@@ -488,16 +502,18 @@ bool ParallelAuthenticator::VerifyOwner() {
     owner_is_verified_ = true;
     return true;
   }
-  // Now we can continue reading the private key.
-  DeviceSettingsService::Get()->SetUsername(
-      current_state_->user_context.GetUserID());
+
+  const std::string& user_id = current_state_->user_context.GetUserID();
+  OwnerSettingsServiceFactory::GetInstance()->SetUsername(user_id);
+
   // This should trigger certificate loading, which is needed in order to
   // correctly determine if the current user is the owner.
   if (LoginState::IsInitialized()) {
     LoginState::Get()->SetLoggedInState(LoginState::LOGGED_IN_SAFE_MODE,
                                         LoginState::LOGGED_IN_USER_NONE);
   }
-  DeviceSettingsService::Get()->IsCurrentUserOwnerAsync(
+
+  OwnerSettingsService::IsPrivateKeyExistAsync(
       base::Bind(&ParallelAuthenticator::OnOwnershipChecked, this));
   return false;
 }
@@ -656,27 +672,6 @@ void ParallelAuthenticator::Resolve() {
       NOTREACHED();
       break;
   }
-}
-
-// static.
-std::string ParallelAuthenticator::HashPassword(const std::string& password,
-                                                const std::string& ascii_salt) {
-  // Update sha with ascii encoded salt, then update with ascii of password,
-  // then end.
-  // TODO(stevenjb/nkostylev): Handle empty system salt gracefully.
-  CHECK(!ascii_salt.empty());
-  char passhash_buf[kPasswordHashLength];
-
-  // Hash salt and password
-  crypto::SHA256HashString(ascii_salt + password,
-                           &passhash_buf, sizeof(passhash_buf));
-
-  // Only want the top half for 'weak' hashing so that the passphrase is not
-  // immediately exposed even if the output is reversed.
-  const int encoded_length = sizeof(passhash_buf) / 2;
-
-  return StringToLowerASCII(base::HexEncode(
-      reinterpret_cast<const void*>(passhash_buf), encoded_length));
 }
 
 ParallelAuthenticator::~ParallelAuthenticator() {}

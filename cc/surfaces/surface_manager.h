@@ -7,9 +7,8 @@
 
 #include "base/containers/hash_tables.h"
 #include "base/macros.h"
+#include "cc/surfaces/surface_id.h"
 #include "cc/surfaces/surfaces_export.h"
-
-namespace gfx { class Size; }
 
 namespace cc {
 class CompositorFrame;
@@ -20,13 +19,14 @@ class CC_SURFACES_EXPORT SurfaceManager {
   SurfaceManager();
   ~SurfaceManager();
 
-  int RegisterAndAllocateIDForSurface(Surface* surface);
-  void DeregisterSurface(int surface_id);
+  SurfaceId AllocateId();
+  void RegisterSurface(Surface* surface);
+  void DeregisterSurface(SurfaceId surface_id);
 
-  Surface* GetSurfaceForID(int surface_id);
+  Surface* GetSurfaceForId(SurfaceId surface_id);
 
  private:
-  typedef base::hash_map<int, Surface*> SurfaceMap;
+  typedef base::hash_map<SurfaceId, Surface*> SurfaceMap;
   SurfaceMap surface_map_;
 
   int next_surface_id_;

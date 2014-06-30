@@ -24,6 +24,7 @@
 #include "ppapi/c/dev/ppb_cursor_control_dev.h"
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/c/pp_rect.h"
+#include "ppapi/c/private/ppb_instance_private.h"
 #include "ppapi/c/private/ppp_pdf.h"
 #include "ppapi/c/trusted/ppb_url_loader_trusted.h"
 #include "ppapi/cpp/core.h"
@@ -33,6 +34,7 @@
 #include "ppapi/cpp/module.h"
 #include "ppapi/cpp/point.h"
 #include "ppapi/cpp/private/pdf.h"
+#include "ppapi/cpp/private/var_private.h"
 #include "ppapi/cpp/rect.h"
 #include "ppapi/cpp/resource.h"
 #include "ppapi/cpp/url_request_info.h"
@@ -63,60 +65,73 @@ const char kAccessibleLoaded[] = "loaded";
 const char kAccessibleCopyable[] = "copyable";
 
 // Constants used in handling postMessage() messages.
-const char* kType = "type";
+const char kType[] = "type";
 // Viewport message arguments. (Page -> Plugin).
-const char* kJSViewportType = "viewport";
-const char* kJSXOffset = "xOffset";
-const char* kJSYOffset = "yOffset";
-const char* kJSZoom = "zoom";
+const char kJSViewportType[] = "viewport";
+const char kJSXOffset[] = "xOffset";
+const char kJSYOffset[] = "yOffset";
+const char kJSZoom[] = "zoom";
+// Stop scrolling message (Page -> Plugin)
+const char kJSStopScrollingType[] = "stopScrolling";
 // Document dimension arguments (Plugin -> Page).
-const char* kJSDocumentDimensionsType = "documentDimensions";
-const char* kJSDocumentWidth = "width";
-const char* kJSDocumentHeight = "height";
-const char* kJSPageDimensions = "pageDimensions";
-const char* kJSPageX = "x";
-const char* kJSPageY = "y";
-const char* kJSPageWidth = "width";
-const char* kJSPageHeight = "height";
+const char kJSDocumentDimensionsType[] = "documentDimensions";
+const char kJSDocumentWidth[] = "width";
+const char kJSDocumentHeight[] = "height";
+const char kJSPageDimensions[] = "pageDimensions";
+const char kJSPageX[] = "x";
+const char kJSPageY[] = "y";
+const char kJSPageWidth[] = "width";
+const char kJSPageHeight[] = "height";
 // Document load progress arguments (Plugin -> Page)
-const char* kJSLoadProgressType = "loadProgress";
-const char* kJSProgressPercentage = "progress";
+const char kJSLoadProgressType[] = "loadProgress";
+const char kJSProgressPercentage[] = "progress";
 // Get password arguments (Plugin -> Page)
-const char* kJSGetPasswordType = "getPassword";
+const char kJSGetPasswordType[] = "getPassword";
 // Get password complete arguments (Page -> Plugin)
-const char* kJSGetPasswordCompleteType = "getPasswordComplete";
-const char* kJSPassword = "password";
+const char kJSGetPasswordCompleteType[] = "getPasswordComplete";
+const char kJSPassword[] = "password";
 // Print (Page -> Plugin)
-const char* kJSPrintType = "print";
+const char kJSPrintType[] = "print";
 // Go to page (Plugin -> Page)
-const char* kJSGoToPageType = "goToPage";
-const char* kJSPageNumber = "page";
+const char kJSGoToPageType[] = "goToPage";
+const char kJSPageNumber[] = "page";
 // Reset print preview mode (Page -> Plugin)
-const char* kJSResetPrintPreviewModeType = "resetPrintPreviewMode";
-const char* kJSPrintPreviewUrl = "url";
-const char* kJSPrintPreviewGrayscale = "grayscale";
-const char* kJSPrintPreviewPageCount = "pageCount";
+const char kJSResetPrintPreviewModeType[] = "resetPrintPreviewMode";
+const char kJSPrintPreviewUrl[] = "url";
+const char kJSPrintPreviewGrayscale[] = "grayscale";
+const char kJSPrintPreviewPageCount[] = "pageCount";
 // Load preview page (Page -> Plugin)
-const char* kJSLoadPreviewPageType = "loadPreviewPage";
-const char* kJSPreviewPageUrl = "url";
-const char* kJSPreviewPageIndex = "index";
+const char kJSLoadPreviewPageType[] = "loadPreviewPage";
+const char kJSPreviewPageUrl[] = "url";
+const char kJSPreviewPageIndex[] = "index";
 // Set scroll position (Plugin -> Page)
-const char* kJSSetScrollPositionType = "setScrollPosition";
-const char* kJSPositionX = "x";
-const char* kJSPositionY = "y";
+const char kJSSetScrollPositionType[] = "setScrollPosition";
+const char kJSPositionX[] = "x";
+const char kJSPositionY[] = "y";
 // Set translated strings (Plugin -> Page)
-const char* kJSSetTranslatedStringsType = "setTranslatedStrings";
-const char* kJSGetPasswordString = "getPasswordString";
-const char* kJSLoadingString = "loadingString";
-const char* kJSLoadFailedString = "loadFailedString";
+const char kJSSetTranslatedStringsType[] = "setTranslatedStrings";
+const char kJSGetPasswordString[] = "getPasswordString";
+const char kJSLoadingString[] = "loadingString";
+const char kJSLoadFailedString[] = "loadFailedString";
 // Request accessibility JSON data (Page -> Plugin)
-const char* kJSGetAccessibilityJSONType = "getAccessibilityJSON";
-const char* kJSAccessibilityPageNumber = "page";
+const char kJSGetAccessibilityJSONType[] = "getAccessibilityJSON";
+const char kJSAccessibilityPageNumber[] = "page";
 // Reply with accessibility JSON data (Plugin -> Page)
-const char* kJSGetAccessibilityJSONReplyType = "getAccessibilityJSONReply";
-const char* kJSAccessibilityJSON = "json";
+const char kJSGetAccessibilityJSONReplyType[] = "getAccessibilityJSONReply";
+const char kJSAccessibilityJSON[] = "json";
 // Cancel the stream URL request (Plugin -> Page)
-const char* kJSCancelStreamUrlType = "cancelStreamUrl";
+const char kJSCancelStreamUrlType[] = "cancelStreamUrl";
+// Navigate to the given URL (Plugin -> Page)
+const char kJSNavigateType[] = "navigate";
+const char kJSNavigateUrl[] = "url";
+const char kJSNavigateNewTab[] = "newTab";
+// Open the email editor with the given parameters (Plugin -> Page)
+const char kJSEmailType[] = "email";
+const char kJSEmailTo[] = "to";
+const char kJSEmailCc[] = "cc";
+const char kJSEmailBcc[] = "bcc";
+const char kJSEmailSubject[] = "subject";
+const char kJSEmailBody[] = "body";
 
 const int kFindResultCooldownMs = 100;
 
@@ -191,10 +206,29 @@ void ScaleRect(float scale, pp::Rect* rect) {
   rect->SetRect(left, top, right - left, bottom - top);
 }
 
+// TODO(raymes): Remove this dependency on VarPrivate/InstancePrivate. It's
+// needed right now to do a synchronous call to JavaScript, but we could easily
+// replace this with a custom PPB_PDF function.
+pp::Var ModalDialog(const pp::Instance* instance,
+                    const std::string& type,
+                    const std::string& message,
+                    const std::string& default_answer) {
+  const PPB_Instance_Private* interface =
+      reinterpret_cast<const PPB_Instance_Private*>(
+          pp::Module::Get()->GetBrowserInterface(
+              PPB_INSTANCE_PRIVATE_INTERFACE));
+  pp::VarPrivate window(pp::PASS_REF,
+      interface->GetWindowObject(instance->pp_instance()));
+  if (default_answer.empty())
+    return window.Call(type, message);
+  else
+    return window.Call(type, message, default_answer);
+}
+
 }  // namespace
 
 OutOfProcessInstance::OutOfProcessInstance(PP_Instance instance)
-    : pp::InstancePrivate(instance),
+    : pp::Instance(instance),
       pp::Find_Private(this),
       pp::Printing_Dev(this),
       pp::Selection_Dev(this),
@@ -212,7 +246,9 @@ OutOfProcessInstance::OutOfProcessInstance(PP_Instance instance)
       print_preview_page_count_(0),
       last_progress_sent_(0),
       recently_sent_find_update_(false),
-      received_viewport_message_(false) {
+      received_viewport_message_(false),
+      did_call_start_loading_(false),
+      stop_scrolling_(false) {
   loader_factory_.Initialize(this);
   timer_factory_.Initialize(this);
   form_factory_.Initialize(this);
@@ -285,6 +321,12 @@ bool OutOfProcessInstance::Init(uint32_t argc,
       headers = argv[i];
   }
 
+  // TODO(raymes): This is a hack to ensure that if no headers are passed in
+  // then we get the right MIME type. When the in process plugin is removed we
+  // can fix the document loader properly and remove this hack.
+  if (!headers || strcmp(headers, "") == 0)
+    headers = "content-type: application/pdf";
+
   if (!original_url)
     return false;
 
@@ -317,20 +359,17 @@ void OutOfProcessInstance::HandleMessage(const pp::Var& message) {
       dict.Get(pp::Var(kJSYOffset)).is_int() &&
       dict.Get(pp::Var(kJSZoom)).is_number()) {
     received_viewport_message_ = true;
+    stop_scrolling_ = false;
     double zoom = dict.Get(pp::Var(kJSZoom)).AsDouble();
-    int x = dict.Get(pp::Var(kJSXOffset)).AsInt();
-    int y = dict.Get(pp::Var(kJSYOffset)).AsInt();
+    pp::Point scroll_offset(dict.Get(pp::Var(kJSXOffset)).AsInt(),
+                            dict.Get(pp::Var(kJSYOffset)).AsInt());
 
     // Bound the input parameters.
     zoom = std::max(kMinZoom, zoom);
-    int max_x = document_size_.width() * zoom - plugin_dip_size_.width();
-    x = std::max(std::min(x, max_x), 0);
-    int max_y = document_size_.height() * zoom - plugin_dip_size_.height();
-    y = std::max(std::min(y, max_y), 0);
-
     SetZoom(zoom);
-    engine_->ScrolledToXPosition(x * device_scale_);
-    engine_->ScrolledToYPosition(y * device_scale_);
+    scroll_offset = BoundScrollOffsetToDocument(scroll_offset);
+    engine_->ScrolledToXPosition(scroll_offset.x() * device_scale_);
+    engine_->ScrolledToYPosition(scroll_offset.y() * device_scale_);
   } else if (type == kJSGetPasswordCompleteType &&
              dict.Get(pp::Var(kJSPassword)).is_string()) {
     if (password_callback_) {
@@ -370,7 +409,7 @@ void OutOfProcessInstance::HandleMessage(const pp::Var& message) {
     pp::VarDictionary reply;
     reply.Set(pp::Var(kType), pp::Var(kJSGetAccessibilityJSONReplyType));
     if (dict.Get(pp::Var(kJSAccessibilityPageNumber)).is_int()) {
-      int page = pp::Var(kJSAccessibilityPageNumber).AsInt();
+      int page = dict.Get(pp::Var(kJSAccessibilityPageNumber)).AsInt();
       reply.Set(pp::Var(kJSAccessibilityJSON),
                         pp::Var(engine_->GetPageAsJSON(page)));
     } else {
@@ -387,6 +426,8 @@ void OutOfProcessInstance::HandleMessage(const pp::Var& message) {
       reply.Set(pp::Var(kJSAccessibilityJSON), pp::Var(json));
     }
     PostMessage(reply);
+  } else if (type == kJSStopScrollingType) {
+    stop_scrolling_ = true;
   } else {
     NOTREACHED();
   }
@@ -469,36 +510,38 @@ void OutOfProcessInstance::DidChangeView(const pp::View& view) {
   pp::Size view_device_size(view_rect.width() * device_scale,
                             view_rect.height() * device_scale);
 
-  if (view_device_size == plugin_size_ && device_scale == device_scale_)
-    return; // We don't care about the position, only the size.
+  if (view_device_size != plugin_size_ || device_scale != device_scale_) {
+    device_scale_ = device_scale;
+    plugin_dip_size_ = view_rect.size();
+    plugin_size_ = view_device_size;
 
-  device_scale_ = device_scale;
-  plugin_dip_size_ = view_rect.size();
-  plugin_size_ = view_device_size;
+    paint_manager_.SetSize(view_device_size, device_scale_);
 
-  paint_manager_.SetSize(view_device_size, device_scale_);
+    pp::Size new_image_data_size = PaintManager::GetNewContextSize(
+        image_data_.size(),
+        plugin_size_);
+    if (new_image_data_size != image_data_.size()) {
+      image_data_ = pp::ImageData(this,
+                                  PP_IMAGEDATAFORMAT_BGRA_PREMUL,
+                                  new_image_data_size,
+                                  false);
+      first_paint_ = true;
+    }
 
-  pp::Size new_image_data_size = PaintManager::GetNewContextSize(
-      image_data_.size(),
-      plugin_size_);
-  if (new_image_data_size != image_data_.size()) {
-    image_data_ = pp::ImageData(this,
-                                PP_IMAGEDATAFORMAT_BGRA_PREMUL,
-                                new_image_data_size,
-                                false);
-    first_paint_ = true;
+    if (image_data_.is_null()) {
+      DCHECK(plugin_size_.IsEmpty());
+      return;
+    }
+
+    OnGeometryChanged(zoom_, old_device_scale);
   }
 
-  if (image_data_.is_null()) {
-    DCHECK(plugin_size_.IsEmpty());
-    return;
+  if (!stop_scrolling_) {
+    pp::Point scroll_offset(
+        BoundScrollOffsetToDocument(view.GetScrollOffset()));
+    engine_->ScrolledToXPosition(scroll_offset.x() * device_scale_);
+    engine_->ScrolledToYPosition(scroll_offset.y() * device_scale_);
   }
-
-  OnGeometryChanged(zoom_, old_device_scale);
-}
-
-pp::Var OutOfProcessInstance::GetInstanceObject() {
-  return pp::Var();
 }
 
 pp::Var OutOfProcessInstance::GetLinkAtPosition(
@@ -752,7 +795,8 @@ void OutOfProcessInstance::Invalidate(const pp::Rect& rect) {
 }
 
 void OutOfProcessInstance::Scroll(const pp::Point& point) {
-  paint_manager_.ScrollRect(available_area_, point);
+  if (!image_data_.is_null())
+    paint_manager_.ScrollRect(available_area_, point);
 }
 
 void OutOfProcessInstance::ScrollToX(int x) {
@@ -807,12 +851,11 @@ void OutOfProcessInstance::NavigateTo(const std::string& url,
       return;
     }
   }
-  if (open_in_new_tab) {
-    GetWindowObject().Call("open", url_copy);
-  } else {
-    GetWindowObject().GetProperty("top").GetProperty("location").
-        SetProperty("href", url_copy);
-  }
+  pp::VarDictionary message;
+  message.Set(kType, kJSNavigateType);
+  message.Set(kJSNavigateUrl, url_copy);
+  message.Set(kJSNavigateNewTab, open_in_new_tab);
+  PostMessage(message);
 }
 
 void OutOfProcessInstance::UpdateCursor(PP_CursorType_Dev cursor) {
@@ -885,17 +928,17 @@ void OutOfProcessInstance::GetDocumentPassword(
 }
 
 void OutOfProcessInstance::Alert(const std::string& message) {
-  GetWindowObject().Call("alert", message);
+  ModalDialog(this, "alert", message, std::string());
 }
 
 bool OutOfProcessInstance::Confirm(const std::string& message) {
-  pp::Var result = GetWindowObject().Call("confirm", message);
+  pp::Var result = ModalDialog(this, "confirm", message, std::string());
   return result.is_bool() ? result.AsBool() : false;
 }
 
 std::string OutOfProcessInstance::Prompt(const std::string& question,
                                          const std::string& default_answer) {
-  pp::Var result = GetWindowObject().Call("prompt", question, default_answer);
+  pp::Var result = ModalDialog(this, "prompt", question, default_answer);
   return result.is_string() ? result.AsString() : std::string();
 }
 
@@ -908,15 +951,19 @@ void OutOfProcessInstance::Email(const std::string& to,
                                  const std::string& bcc,
                                  const std::string& subject,
                                  const std::string& body) {
-  std::string javascript =
-      "var href = 'mailto:" + net::EscapeUrlEncodedData(to, false) +
-      "?cc=" + net::EscapeUrlEncodedData(cc, false) +
-      "&bcc=" + net::EscapeUrlEncodedData(bcc, false) +
-      "&subject=" + net::EscapeUrlEncodedData(subject, false) +
-      "&body=" + net::EscapeUrlEncodedData(body, false) +
-      "';var temp = window.open(href, '_blank', " +
-      "'width=1,height=1');if(temp) temp.close();";
-  ExecuteScript(javascript);
+  pp::VarDictionary message;
+  message.Set(pp::Var(kType), pp::Var(kJSEmailType));
+  message.Set(pp::Var(kJSEmailTo),
+              pp::Var(net::EscapeUrlEncodedData(to, false)));
+  message.Set(pp::Var(kJSEmailCc),
+              pp::Var(net::EscapeUrlEncodedData(cc, false)));
+  message.Set(pp::Var(kJSEmailBcc),
+              pp::Var(net::EscapeUrlEncodedData(bcc, false)));
+  message.Set(pp::Var(kJSEmailSubject),
+              pp::Var(net::EscapeUrlEncodedData(subject, false)));
+  message.Set(pp::Var(kJSEmailBody),
+              pp::Var(net::EscapeUrlEncodedData(body, false)));
+  PostMessage(message);
 }
 
 void OutOfProcessInstance::Print() {
@@ -966,6 +1013,19 @@ std::string OutOfProcessInstance::ShowFileSelectionDialog() {
 }
 
 pp::URLLoader OutOfProcessInstance::CreateURLLoader() {
+  if (full_) {
+    if (!did_call_start_loading_) {
+      did_call_start_loading_ = true;
+      pp::PDF::DidStartLoading(this);
+    }
+
+    // Disable save and print until the document is fully loaded, since they
+    // would generate an incomplete document.  Need to do this each time we
+    // call DidStartLoading since that resets the content restrictions.
+    pp::PDF::SetContentRestriction(this, CONTENT_RESTRICTION_SAVE |
+                                   CONTENT_RESTRICTION_PRINT);
+  }
+
   return CreateURLLoaderInternal();
 }
 
@@ -1029,7 +1089,10 @@ void OutOfProcessInstance::DocumentLoadComplete(int page_count) {
   if (!full_)
     return;
 
-  pp::PDF::DidStopLoading(this);
+  if (did_call_start_loading_) {
+    pp::PDF::DidStopLoading(this);
+    did_call_start_loading_ = false;
+  }
 
   int content_restrictions =
       CONTENT_RESTRICTION_CUT | CONTENT_RESTRICTION_PASTE;
@@ -1083,10 +1146,12 @@ void OutOfProcessInstance::DocumentLoadFailed() {
   DCHECK(document_load_state_ == LOAD_STATE_LOADING);
   UserMetricsRecordAction("PDF.LoadFailure");
 
-  if (full_)
+  if (did_call_start_loading_) {
     pp::PDF::DidStopLoading(this);
-  document_load_state_ = LOAD_STATE_FAILED;
+    did_call_start_loading_ = false;
+  }
 
+  document_load_state_ = LOAD_STATE_FAILED;
   paint_manager_.InvalidateRect(pp::Rect(pp::Point(), plugin_size_));
 
   // Send a progress value of -1 to indicate a failure.
@@ -1227,16 +1292,6 @@ void OutOfProcessInstance::LoadUrlInternal(
 }
 
 pp::URLLoader OutOfProcessInstance::CreateURLLoaderInternal() {
-  if (full_) {
-    pp::PDF::DidStartLoading(this);
-
-    // Disable save and print until the document is fully loaded, since they
-    // would generate an incomplete document.  Need to do this each time we
-    // call DidStartLoading since that resets the content restrictions.
-    pp::PDF::SetContentRestriction(this, CONTENT_RESTRICTION_SAVE |
-                                   CONTENT_RESTRICTION_PRINT);
-  }
-
   pp::URLLoader loader(this);
 
   const PPB_URLLoaderTrusted* trusted_interface =
@@ -1357,6 +1412,15 @@ void OutOfProcessInstance::UserMetricsRecordAction(
     const std::string& action) {
   // TODO(raymes): Move this function to PPB_UMA_Private.
   pp::PDF::UserMetricsRecordAction(this, pp::Var(action));
+}
+
+pp::Point OutOfProcessInstance::BoundScrollOffsetToDocument(
+    const pp::Point& scroll_offset) {
+  int max_x = document_size_.width() * zoom_ - plugin_dip_size_.width();
+  int x = std::max(std::min(scroll_offset.x(), max_x), 0);
+  int max_y = document_size_.height() * zoom_ - plugin_dip_size_.height();
+  int y = std::max(std::min(scroll_offset.y(), max_y), 0);
+  return pp::Point(x, y);
 }
 
 }  // namespace chrome_pdf

@@ -36,6 +36,7 @@
 #include "ui/views/widget/widget_aura_utils.h"
 #include "ui/views/widget/widget_delegate.h"
 #include "ui/views/widget/window_reorderer.h"
+#include "ui/wm/core/shadow_types.h"
 #include "ui/wm/core/window_util.h"
 #include "ui/wm/public/activation_client.h"
 #include "ui/wm/public/drag_drop_client.h"
@@ -108,6 +109,10 @@ void NativeWidgetAura::InitNativeWidget(const Widget::InitParams& params) {
   window_->SetTransparent(
       params.opacity == Widget::InitParams::TRANSLUCENT_WINDOW);
   window_->Init(params.layer_type);
+  if (params.shadow_type == Widget::InitParams::SHADOW_TYPE_NONE)
+    SetShadowType(window_, wm::SHADOW_TYPE_NONE);
+  else if (params.shadow_type == Widget::InitParams::SHADOW_TYPE_DROP)
+    SetShadowType(window_, wm::SHADOW_TYPE_RECTANGULAR);
   if (params.type == Widget::InitParams::TYPE_CONTROL)
     window_->Show();
 
@@ -351,7 +356,7 @@ bool NativeWidgetAura::SetWindowTitle(const base::string16& title) {
     return false;
   if (window_->title() == title)
     return false;
-  window_->set_title(title);
+  window_->SetTitle(title);
   return true;
 }
 
@@ -686,6 +691,10 @@ ui::NativeTheme* NativeWidgetAura::GetNativeTheme() const {
 void NativeWidgetAura::OnRootViewLayout() const {
 }
 
+void NativeWidgetAura::RepostNativeEvent(gfx::NativeEvent native_event) {
+  OnEvent(native_event);
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // NativeWidgetAura, views::InputMethodDelegate implementation:
 
@@ -912,7 +921,8 @@ void NativeWidgetAura::OnWindowFocused(aura::Window* gained_focus,
     }
 
     delegate_->OnNativeBlur(gained_focus);
-    GetWidget()->GetFocusManager()->StoreFocusedView(true);
+    if (GetWidget()->GetFocusManager())
+      GetWidget()->GetFocusManager()->StoreFocusedView(true);
   }
 }
 
@@ -941,13 +951,6 @@ int NativeWidgetAura::OnPerformDrop(const ui::DropTargetEvent& event) {
   DCHECK(drop_helper_.get() != NULL);
   return drop_helper_->OnDrop(event.data(), event.location(),
       last_drop_operation_);
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// NativeWidgetAura, NativeWidget implementation:
-
-ui::EventHandler* NativeWidgetAura::GetEventHandler() {
-  return this;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

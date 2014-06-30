@@ -4,11 +4,14 @@
 
 #include "gpu/command_buffer/service/texture_manager.h"
 
+#include <utility>
+
 #include "base/memory/scoped_ptr.h"
 #include "gpu/command_buffer/service/error_state_mock.h"
 #include "gpu/command_buffer/service/feature_info.h"
 #include "gpu/command_buffer/service/framebuffer_manager.h"
 #include "gpu/command_buffer/service/gles2_cmd_decoder_mock.h"
+#include "gpu/command_buffer/service/gpu_service_test.h"
 #include "gpu/command_buffer/service/mailbox_manager.h"
 #include "gpu/command_buffer/service/memory_tracking.h"
 #include "gpu/command_buffer/service/mocks.h"
@@ -39,7 +42,7 @@ class TextureTestHelper {
   }
 };
 
-class TextureManagerTest : public testing::Test {
+class TextureManagerTest : public GpuServiceTest {
  public:
   static const GLint kMaxTextureSize = 16;
   static const GLint kMaxCubeMapTextureSize = 8;
@@ -56,9 +59,7 @@ class TextureManagerTest : public testing::Test {
 
  protected:
   virtual void SetUp() {
-    gl_.reset(new ::testing::StrictMock< ::gfx::MockGLInterface>());
-    ::gfx::MockGLInterface::SetGLInterface(gl_.get());
-
+    GpuServiceTest::SetUp();
     manager_.reset(new TextureManager(NULL,
                                       feature_info_.get(),
                                       kMaxTextureSize,
@@ -73,8 +74,7 @@ class TextureManagerTest : public testing::Test {
   virtual void TearDown() {
     manager_->Destroy(false);
     manager_.reset();
-    ::gfx::MockGLInterface::SetGLInterface(NULL);
-    gl_.reset();
+    GpuServiceTest::TearDown();
   }
 
   void SetParameter(
@@ -84,8 +84,6 @@ class TextureManagerTest : public testing::Test {
         texture_ref, pname, value, error);
   }
 
-  // Use StrictMock to make 100% sure we know how GL will be called.
-  scoped_ptr< ::testing::StrictMock< ::gfx::MockGLInterface> > gl_;
   scoped_refptr<FeatureInfo> feature_info_;
   scoped_ptr<TextureManager> manager_;
   scoped_ptr<MockErrorState> error_state_;
@@ -222,7 +220,7 @@ TEST_F(TextureManagerTest, TextureUsageExt) {
   ASSERT_TRUE(texture_ref != NULL);
   TestHelper::SetTexParameteriWithExpectations(
       gl_.get(), error_state_.get(), &manager, texture_ref,
-      GL_TEXTURE_USAGE_ANGLE, GL_FRAMEBUFFER_ATTACHMENT_ANGLE,GL_NO_ERROR);
+      GL_TEXTURE_USAGE_ANGLE, GL_FRAMEBUFFER_ATTACHMENT_ANGLE, GL_NO_ERROR);
   EXPECT_EQ(static_cast<GLenum>(GL_FRAMEBUFFER_ATTACHMENT_ANGLE),
             texture_ref->texture()->usage());
   manager.Destroy(false);
@@ -385,7 +383,7 @@ TEST_F(TextureManagerTest, ValidForTargetNPOT) {
   manager.Destroy(false);
 }
 
-class TextureTestBase : public testing::Test {
+class TextureTestBase : public GpuServiceTest {
  public:
   static const GLint kMaxTextureSize = 16;
   static const GLint kMaxCubeMapTextureSize = 8;
@@ -404,9 +402,7 @@ class TextureTestBase : public testing::Test {
 
  protected:
   void SetUpBase(MemoryTracker* memory_tracker, std::string extensions) {
-    gl_.reset(new ::testing::StrictMock< ::gfx::MockGLInterface>());
-    ::gfx::MockGLInterface::SetGLInterface(gl_.get());
-
+    GpuServiceTest::SetUp();
     if (!extensions.empty()) {
       TestHelper::SetupFeatureInfoInitExpectations(gl_.get(),
                                                    extensions.c_str());
@@ -440,8 +436,7 @@ class TextureTestBase : public testing::Test {
     }
     manager_->Destroy(false);
     manager_.reset();
-    ::gfx::MockGLInterface::SetGLInterface(NULL);
-    gl_.reset();
+    GpuServiceTest::TearDown();
   }
 
   void SetParameter(
@@ -453,8 +448,6 @@ class TextureTestBase : public testing::Test {
 
   scoped_ptr<MockGLES2Decoder> decoder_;
   scoped_ptr<MockErrorState> error_state_;
-  // Use StrictMock to make 100% sure we know how GL will be called.
-  scoped_ptr< ::testing::StrictMock< ::gfx::MockGLInterface> > gl_;
   scoped_refptr<FeatureInfo> feature_info_;
   scoped_ptr<TextureManager> manager_;
   scoped_refptr<TextureRef> texture_ref_;
@@ -2201,7 +2194,7 @@ class CountingMemoryTracker : public MemoryTracker {
   DISALLOW_COPY_AND_ASSIGN(CountingMemoryTracker);
 };
 
-class SharedTextureTest : public testing::Test {
+class SharedTextureTest : public GpuServiceTest {
  public:
   static const bool kUseDefaultTextures = false;
 
@@ -2211,9 +2204,7 @@ class SharedTextureTest : public testing::Test {
   }
 
   virtual void SetUp() {
-    gl_.reset(new ::gfx::MockGLInterface());
-    ::gfx::MockGLInterface::SetGLInterface(gl_.get());
-
+    GpuServiceTest::SetUp();
     memory_tracker1_ = new CountingMemoryTracker;
     texture_manager1_.reset(
         new TextureManager(memory_tracker1_.get(),
@@ -2241,12 +2232,10 @@ class SharedTextureTest : public testing::Test {
     texture_manager2_.reset();
     texture_manager1_->Destroy(false);
     texture_manager1_.reset();
-    ::gfx::MockGLInterface::SetGLInterface(NULL);
-    gl_.reset();
+    GpuServiceTest::TearDown();
   }
 
  protected:
-  scoped_ptr< ::gfx::MockGLInterface > gl_;
   scoped_refptr<FeatureInfo> feature_info_;
   scoped_refptr<CountingMemoryTracker> memory_tracker1_;
   scoped_ptr<TextureManager> texture_manager1_;

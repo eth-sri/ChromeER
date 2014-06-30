@@ -10,6 +10,9 @@
 #include "content/common/service_worker/service_worker_messages.h"
 #include "content/renderer/service_worker/embedded_worker_context_client.h"
 #include "ipc/ipc_message.h"
+#include "third_party/WebKit/public/platform/WebServiceWorkerRequest.h"
+#include "third_party/WebKit/public/platform/WebString.h"
+#include "third_party/WebKit/public/platform/WebURL.h"
 #include "third_party/WebKit/public/web/WebServiceWorkerContextClient.h"
 #include "third_party/WebKit/public/web/WebServiceWorkerContextProxy.h"
 
@@ -47,6 +50,7 @@ void ServiceWorkerScriptContext::OnMessageReceived(
     IPC_MESSAGE_HANDLER(ServiceWorkerMsg_FetchEvent, OnFetchEvent)
     IPC_MESSAGE_HANDLER(ServiceWorkerMsg_InstallEvent, OnInstallEvent)
     IPC_MESSAGE_HANDLER(ServiceWorkerMsg_SyncEvent, OnSyncEvent)
+    IPC_MESSAGE_HANDLER(ServiceWorkerMsg_PushEvent, OnPushEvent)
     IPC_MESSAGE_HANDLER(ServiceWorkerMsg_MessageToWorker, OnPostMessage)
     IPC_MESSAGE_HANDLER(ServiceWorkerMsg_DidGetClientDocuments,
                         OnDidGetClientDocuments)
@@ -121,12 +125,29 @@ void ServiceWorkerScriptContext::OnInstallEvent(int request_id,
 void ServiceWorkerScriptContext::OnFetchEvent(
     int request_id,
     const ServiceWorkerFetchRequest& request) {
-  // TODO(falken): Pass in the request.
-  proxy_->dispatchFetchEvent(request_id);
+  blink::WebServiceWorkerRequest webRequest;
+  webRequest.setURL(blink::WebURL(request.url));
+  webRequest.setMethod(blink::WebString::fromUTF8(request.method));
+  for (std::map<std::string, std::string>::const_iterator it =
+           request.headers.begin();
+       it != request.headers.end();
+       ++it) {
+    webRequest.setHeader(blink::WebString::fromUTF8(it->first),
+                         blink::WebString::fromUTF8(it->second));
+  }
+  webRequest.setIsReload(request.is_reload);
+  proxy_->dispatchFetchEvent(request_id, webRequest);
 }
 
 void ServiceWorkerScriptContext::OnSyncEvent(int request_id) {
   proxy_->dispatchSyncEvent(request_id);
+}
+
+void ServiceWorkerScriptContext::OnPushEvent(int request_id,
+                                             const std::string& data) {
+  proxy_->dispatchPushEvent(request_id, blink::WebString::fromUTF8(data));
+  Send(new ServiceWorkerHostMsg_PushEventFinished(
+      GetRoutingID(), request_id));
 }
 
 void ServiceWorkerScriptContext::OnPostMessage(

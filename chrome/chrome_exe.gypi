@@ -229,12 +229,6 @@
               'dependencies': [
                 '../breakpad/breakpad.gyp:dump_syms',
                 '../breakpad/breakpad.gyp:symupload',
-
-                # In order to process symbols for the Remoting Host plugin,
-                # that plugin needs to be built beforehand.  Since the
-                # "Dump Symbols" step hangs off this target, that plugin also
-                # needs to be added as a dependency.
-                '../remoting/remoting.gyp:remoting_host_plugin',
               ],
               # The "Dump Symbols" post-build step is in a target_conditions
               # block so that it will follow the "Strip If Needed" step if that
@@ -360,15 +354,12 @@
               # application reads Keystone keys from this plist and not the
               # framework's, and the ticket will reference this Info.plist to
               # determine the tag of the installed product.  Use --scm=1 to
-              # include SCM information.  The --pdf flag controls whether
-              # to insert PDF as a supported type identifier that can be
-              # opened.
+              # include SCM information.
               'postbuild_name': 'Tweak Info.plist',
               'action': ['<(tweak_info_plist_path)',
                          '--breakpad=0',
                          '--keystone=<(mac_keystone)',
                          '--scm=1',
-                         '--pdf=1',
                          '--bundle_id=<(mac_bundle_id)'],
             },
             {
@@ -436,11 +427,16 @@
                 '../pdf/pdf.gyp:pdf_linux_symbols',
               ],
             }], # OS=="linux" and chromeos==0 and linux_dump_symbols==1
+            # Android doesn't use pdfium.
+            ['OS!="android"', {
+              'dependencies': [
+                # On Mac, this is done in chrome_dll.gypi.
+                '../pdf/pdf.gyp:pdf',
+              ],
+            }], # OS=="android"
           ],
           'dependencies': [
             '../components/components.gyp:startup_metric_utils',
-            # On Mac, this is done in chrome_dll.gypi.
-            '../pdf/pdf.gyp:pdf',
             'chrome_resources.gyp:packed_extra_resources',
             'chrome_resources.gyp:packed_resources',
             # Copy Flash Player files to PRODUCT_DIR if applicable. Let the .gyp
@@ -517,8 +513,13 @@
                 'oleaut32.dll',
               ],
               'AdditionalDependencies': [ 'wintrust.lib' ],
-              # Set /SUBSYSTEM:WINDOWS for chrome.exe itself.
-              'SubSystem': '2',
+              'conditions': [
+                ['asan==0', {
+                  # Set /SUBSYSTEM:WINDOWS for chrome.exe itself, except for the
+                  # AddressSanitizer build where console output is important.
+                  'SubSystem': '2',
+                }],
+              ],
             },
             'VCManifestTool': {
               'AdditionalManifestFiles': [
@@ -562,14 +563,6 @@
         }, {  # 'OS!="win"
           'sources!': [
             'app/client_util.cc',
-          ],
-        }],
-        ['OS=="win" and target_arch=="ia32"', {
-          'sources': [
-            # TODO(scottmg): This is a workaround for
-            # http://crbug.com/348525 that affects VS2013 before Update 2.
-            # This should be removed once Update 2 is released.
-            '../build/win/ftol3.obj',
           ],
         }],
         ['OS=="win" and component=="shared_library"', {

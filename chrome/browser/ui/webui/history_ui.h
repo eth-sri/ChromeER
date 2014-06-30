@@ -20,8 +20,8 @@
 #include "content/public/browser/web_ui_message_handler.h"
 
 class BookmarkModel;
-class ManagedUserService;
 class ProfileSyncService;
+class SupervisedUserService;
 
 // The handler for Javascript messages related to the "history" view.
 class BrowsingHistoryHandler : public content::WebUIMessageHandler,
@@ -53,7 +53,7 @@ class BrowsingHistoryHandler : public content::WebUIMessageHandler,
     // Converts the entry to a DictionaryValue to be owned by the caller.
     scoped_ptr<base::DictionaryValue> ToValue(
         BookmarkModel* bookmark_model,
-        ManagedUserService* managed_user_service,
+        SupervisedUserService* supervised_user_service,
         const ProfileSyncService* sync_service) const;
 
     // Comparison function for sorting HistoryEntries from newest to oldest.
@@ -144,7 +144,6 @@ class BrowsingHistoryHandler : public content::WebUIMessageHandler,
   // Callback from the history system when a history query has completed.
   void QueryComplete(const base::string16& search_text,
                      const history::QueryOptions& options,
-                     HistoryService::Handle request_handle,
                      history::QueryResults* results);
 
   // Callback from the WebHistoryService when a query has completed.
@@ -174,8 +173,8 @@ class BrowsingHistoryHandler : public content::WebUIMessageHandler,
 
   content::NotificationRegistrar registrar_;
 
-  // Consumer for search requests to the history service.
-  CancelableRequestConsumerT<int, 0> history_request_consumer_;
+  // Tracker for search requests to the history service.
+  base::CancelableTaskTracker query_task_tracker_;
 
   // The currently-executing request for synced history results.
   // Deleting the request will cancel it.

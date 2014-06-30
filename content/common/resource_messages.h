@@ -24,7 +24,7 @@ namespace net {
 struct LoadTimingInfo;
 }
 
-namespace webkit_glue {
+namespace content {
 struct ResourceDevToolsInfo;
 }
 
@@ -47,8 +47,8 @@ struct CONTENT_EXPORT ParamTraits<webkit_common::DataElement> {
 };
 
 template <>
-struct ParamTraits<scoped_refptr<webkit_glue::ResourceDevToolsInfo> > {
-  typedef scoped_refptr<webkit_glue::ResourceDevToolsInfo> param_type;
+struct ParamTraits<scoped_refptr<content::ResourceDevToolsInfo> > {
+  typedef scoped_refptr<content::ResourceDevToolsInfo> param_type;
   static void Write(Message* m, const param_type& p);
   static bool Read(const Message* m, PickleIterator* iter, param_type* r);
   static void Log(const param_type& p, std::string* l);
@@ -84,7 +84,7 @@ IPC_ENUM_TRAITS_MAX_VALUE( \
     net::HttpResponseInfo::NUM_OF_CONNECTION_INFOS - 1)
 
 IPC_STRUCT_TRAITS_BEGIN(content::ResourceResponseHead)
-  IPC_STRUCT_TRAITS_PARENT(webkit_glue::ResourceResponseInfo)
+IPC_STRUCT_TRAITS_PARENT(content::ResourceResponseInfo)
   IPC_STRUCT_TRAITS_MEMBER(error_code)
   IPC_STRUCT_TRAITS_MEMBER(request_start)
   IPC_STRUCT_TRAITS_MEMBER(response_start)
@@ -96,7 +96,7 @@ IPC_STRUCT_TRAITS_BEGIN(content::SyncLoadResult)
   IPC_STRUCT_TRAITS_MEMBER(data)
 IPC_STRUCT_TRAITS_END()
 
-IPC_STRUCT_TRAITS_BEGIN(webkit_glue::ResourceResponseInfo)
+IPC_STRUCT_TRAITS_BEGIN(content::ResourceResponseInfo)
   IPC_STRUCT_TRAITS_MEMBER(request_time)
   IPC_STRUCT_TRAITS_MEMBER(response_time)
   IPC_STRUCT_TRAITS_MEMBER(headers)
@@ -167,7 +167,7 @@ IPC_STRUCT_BEGIN(ResourceHostMsg_Request)
   IPC_STRUCT_MEMBER(uint32, request_context)
 
   // Indicates which frame (or worker context) the request is being loaded into,
-  // or kNoHostId.
+  // or kAppCacheNoHostId.
   IPC_STRUCT_MEMBER(int, appcache_host_id)
 
   // Indicates which frame (or worker context) the request is being loaded into,

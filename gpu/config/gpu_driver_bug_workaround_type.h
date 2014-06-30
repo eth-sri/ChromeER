@@ -18,12 +18,16 @@
          count_all_in_varyings_packing)                      \
   GPU_OP(DISABLE_ANGLE_INSTANCED_ARRAYS,                     \
          disable_angle_instanced_arrays)                     \
+  GPU_OP(DISABLE_ARB_SYNC,                                   \
+         disable_arb_sync)                                   \
   GPU_OP(DISABLE_ASYNC_READPIXELS,                           \
          disable_async_readpixels)                           \
   GPU_OP(DISABLE_D3D11,                                      \
          disable_d3d11)                                      \
   GPU_OP(DISABLE_DEPTH_TEXTURE,                              \
          disable_depth_texture)                              \
+  GPU_OP(DISABLE_EGL_KHR_FENCE_SYNC,                         \
+         disable_egl_khr_fence_sync)                         \
   GPU_OP(DISABLE_EXT_DISCARD_FRAMEBUFFER,                    \
          disable_ext_discard_framebuffer)                    \
   GPU_OP(DISABLE_EXT_DRAW_BUFFERS,                           \

@@ -46,12 +46,16 @@
 #    By default, the package given in AndroidManifest.xml will be used.
 #  use_chromium_linker - Enable the content dynamic linker that allows sharing the
 #    RELRO section of the native libraries between the different processes.
+#  load_library_from_zip_file - When using the dynamic linker, load the library
+#    directly out of the zip file.
 #  enable_chromium_linker_tests - Enable the content dynamic linker test support
 #    code. This allows a test APK to inject a Linker.TestRunner instance at
 #    runtime. Should only be used by the chromium_linker_test_apk target!!
 #  never_lint - Set to 1 to not run lint on this target.
 {
   'variables': {
+    'tested_apk_obfuscated_jar_path%': '/',
+    'tested_apk_dex_path%': '/',
     'additional_input_paths': [],
     'input_jars_paths': [],
     'library_dexed_jars_paths': [],
@@ -59,13 +63,15 @@
     'generated_src_dirs': [],
     'app_manifest_version_name%': '<(android_app_version_name)',
     'app_manifest_version_code%': '<(android_app_version_code)',
+    # aapt generates this proguard.txt.
+    'generated_proguard_file': '<(intermediate_dir)/proguard.txt',
     'proguard_enabled%': 'false',
-    'proguard_flags_paths%': ['<(DEPTH)/build/android/empty_proguard.flags'],
+    'proguard_flags_paths': ['<(generated_proguard_file)'],
     'jar_name': 'chromium_apk_<(_target_name).jar',
     'resource_dir%':'<(DEPTH)/build/android/ant/empty/res',
     'R_package%':'',
     'additional_R_text_files': [],
-    'additional_res_dirs': [],
+    'dependencies_res_zip_paths': [],
     'additional_res_packages': [],
     'is_test_apk%': 0,
     'resource_input_paths': [],
@@ -90,31 +96,37 @@
     'jar_stamp': '<(intermediate_dir)/jar.stamp',
     'obfuscate_stamp': '<(intermediate_dir)/obfuscate.stamp',
     'strip_stamp': '<(intermediate_dir)/strip.stamp',
-    'classes_dir': '<(intermediate_dir)/classes',
-    'classes_final_dir': '<(intermediate_dir)/classes_instr',
+    'classes_dir': '<(intermediate_dir)/classes/2',
     'javac_includes': [],
     'jar_excluded_classes': [],
+    'javac_jar_path': '<(intermediate_dir)/<(_target_name).javac.jar',
     'jar_path': '<(PRODUCT_DIR)/lib.java/<(jar_name)',
     'obfuscated_jar_path': '<(intermediate_dir)/obfuscated.jar',
+    'test_jar_path': '<(PRODUCT_DIR)/test.lib.java/<(apk_name).jar',
     'dex_path': '<(intermediate_dir)/classes.dex',
     'emma_device_jar': '<(android_sdk_root)/tools/lib/emma_device.jar',
     'android_manifest_path%': '<(java_in_dir)/AndroidManifest.xml',
     'push_stamp': '<(intermediate_dir)/push.stamp',
     'link_stamp': '<(intermediate_dir)/link.stamp',
     'package_resources_stamp': '<(intermediate_dir)/package_resources.stamp',
+    'resource_zip_path': '<(intermediate_dir)/<(_target_name).resources.zip',
+    'resource_packaged_apk_name': '<(apk_name)-resources.ap_',
+    'resource_packaged_apk_path': '<(intermediate_dir)/<(resource_packaged_apk_name)',
     'unsigned_apk_path': '<(intermediate_dir)/<(apk_name)-unsigned.apk',
     'final_apk_path%': '<(PRODUCT_DIR)/apks/<(apk_name).apk',
     'incomplete_apk_path': '<(intermediate_dir)/<(apk_name)-incomplete.apk',
     'apk_install_record': '<(intermediate_dir)/apk_install.record.stamp',
-    'device_intermediate_dir': '/data/local/tmp/chromium/<(_target_name)/<(CONFIGURATION_NAME)',
+    'device_intermediate_dir': '/data/data/org.chromium.gyp_managed_install/<(_target_name)/<(CONFIGURATION_NAME)',
     'symlink_script_host_path': '<(intermediate_dir)/create_symlinks.sh',
     'symlink_script_device_path': '<(device_intermediate_dir)/create_symlinks.sh',
     'create_standalone_apk%': 1,
+    'res_v14_verify_only%': 0,
     'variables': {
       'variables': {
         'native_lib_target%': '',
         'native_lib_version_name%': '',
         'use_chromium_linker%' : 0,
+        'load_library_from_zip_file%' : 0,
         'enable_chromium_linker_tests%': 0,
         'is_test_apk%': 0,
       },
@@ -140,6 +152,7 @@
     'native_lib_version_name%': '',
     'use_chromium_linker%' : 0,
     'enable_chromium_linker_tests%': 0,
+    'load_library_from_zip_file%' : 0,
     'emma_instrument%': '<(emma_instrument)',
     'apk_package_native_libs_dir': '<(apk_package_native_libs_dir)',
     'unsigned_standalone_apk_path': '<(unsigned_standalone_apk_path)',
@@ -149,8 +162,17 @@
   # direct_dependent_settings, but a variable set by a direct_dependent_settings
   # cannot be lifted in a dependent to all_dependent_settings.
   'all_dependent_settings': {
+    'conditions': [
+      ['proguard_enabled == "true"', {
+        'variables': {
+          'proguard_enabled': 'true',
+        }
+      }],
+    ],
     'variables': {
       'apk_output_jar_path': '<(jar_path)',
+      'tested_apk_obfuscated_jar_path': '<(obfuscated_jar_path)',
+      'tested_apk_dex_path': '<(dex_path)',
     },
   },
   'conditions': [
@@ -163,7 +185,6 @@
       'variables': {
         # We generate R.java in package R_package (in addition to the package
         # listed in the AndroidManifest.xml, which is unavoidable).
-        'additional_res_dirs': ['<(DEPTH)/build/android/ant/empty/res'],
         'additional_res_packages': ['<(R_package)'],
         'additional_R_text_files': ['<(PRODUCT_DIR)/<(package_name)/R.txt'],
       },
@@ -258,6 +279,17 @@
                   'linker_gcc_preprocess_defines': [],
                 },
               }],
+              ['load_library_from_zip_file == 1', {
+                'variables': {
+                  'linker_load_from_zip_file_preprocess_defines': [
+                    '--defines', 'ENABLE_CHROMIUM_LINKER_LIBRARY_IN_ZIP_FILE',
+                  ],
+                }
+              }, {
+                'variables': {
+                  'linker_load_from_zip_file_preprocess_defines': [],
+                },
+              }],
               ['enable_chromium_linker_tests == 1', {
                 'variables': {
                   'linker_tests_gcc_preprocess_defines': [
@@ -271,6 +303,7 @@
               }],
             ],
             'gcc_preprocess_defines': [
+              '<@(linker_load_from_zip_file_preprocess_defines)',
               '<@(linker_gcc_preprocess_defines)',
               '<@(linker_tests_gcc_preprocess_defines)',
             ],
@@ -389,6 +422,9 @@
           'includes': [ 'android/finalize_apk_action.gypi']
         },
       ],
+      'dependencies': [
+        '<(DEPTH)/build/android/rezip.gyp:rezip#host',
+      ],
     }],
     ['gyp_managed_install == 1', {
       'actions': [
@@ -421,6 +457,9 @@
           ],
         },
       ],
+      'dependencies': [
+        '<(DEPTH)/build/android/rezip.gyp:rezip#host',
+      ],
     }],
     ['is_test_apk == 1', {
       'dependencies': [
@@ -433,51 +472,58 @@
   ],
   'actions': [
     {
-      'action_name': 'ant_codegen_<(_target_name)',
-      'message': 'Generating R.java for <(_target_name)',
-      'conditions': [
-        ['is_test_apk == 1', {
-          'variables': {
-            'additional_res_dirs=': [],
-            'additional_res_packages=': [],
-          }
-        }],
-      ],
+      'action_name': 'process_resources',
+      'message': 'processing resources for <(_target_name)',
       'variables': {
         # Write the inputs list to a file, so that its mtime is updated when
         # the list of inputs changes.
-        'inputs_list_file': '>|(apk_codegen.<(_target_name).gypcmd >@(additional_input_paths) >@(resource_input_paths))'
+        'inputs_list_file': '>|(apk_codegen.<(_target_name).gypcmd >@(additional_input_paths) >@(resource_input_paths))',
+        'process_resources_options': [],
+        'conditions': [
+          ['is_test_apk == 1', {
+            'dependencies_res_zip_paths=': [],
+            'additional_res_packages=': [],
+          }],
+          ['res_v14_verify_only == 1', {
+            'process_resources_options': ['--v14-verify-only']
+          }],
+        ],
       },
       'inputs': [
-        '<(DEPTH)/build/android/ant/apk-codegen.xml',
         '<(DEPTH)/build/android/gyp/util/build_utils.py',
-        '<(DEPTH)/build/android/gyp/ant.py',
+        '<(DEPTH)/build/android/gyp/process_resources.py',
         '<(android_manifest_path)',
         '>@(additional_input_paths)',
         '>@(resource_input_paths)',
+        '>@(dependencies_res_zip_paths)',
         '>(inputs_list_file)',
       ],
       'outputs': [
+        '<(resource_zip_path)',
+        '<(generated_proguard_file)',
         '<(codegen_stamp)',
       ],
       'action': [
-        'python', '<(DEPTH)/build/android/gyp/ant.py',
-        '-quiet',
-        '-DADDITIONAL_RES_DIRS=>(additional_res_dirs)',
-        '-DADDITIONAL_RES_PACKAGES=>(additional_res_packages)',
-        '-DADDITIONAL_R_TEXT_FILES=>(additional_R_text_files)',
-        '-DANDROID_MANIFEST=<(android_manifest_path)',
-        '-DANDROID_SDK_JAR=<(android_sdk_jar)',
-        '-DANDROID_SDK_ROOT=<(android_sdk_root)',
-        '-DANDROID_SDK_VERSION=<(android_sdk_version)',
-        '-DANDROID_SDK_TOOLS=<(android_sdk_tools)',
-        '-DOUT_DIR=<(intermediate_dir)',
-        '-DRESOURCE_DIR=<(resource_dir)',
+        'python', '<(DEPTH)/build/android/gyp/process_resources.py',
+        '--android-sdk', '<(android_sdk)',
+        '--android-sdk-tools', '<(android_sdk_tools)',
 
-        '-DSTAMP=<(codegen_stamp)',
-        '-Dbasedir=.',
-        '-buildfile',
-        '<(DEPTH)/build/android/ant/apk-codegen.xml',
+        '--android-manifest', '<(android_manifest_path)',
+        '--dependencies-res-zips', '>(dependencies_res_zip_paths)',
+
+        '--extra-res-packages', '>(additional_res_packages)',
+        '--extra-r-text-files', '>(additional_R_text_files)',
+
+        '--proguard-file', '<(generated_proguard_file)',
+
+        '--resource-dir', '<(resource_dir)',
+        '--resource-zip-out', '<(resource_zip_path)',
+
+        '--R-dir', '<(intermediate_dir)/gen',
+
+        '--stamp', '<(codegen_stamp)',
+
+        '<@(process_resources_options)',
       ],
     },
     {
@@ -515,14 +561,17 @@
       ],
       'outputs': [
         '<(compile_stamp)',
+        '<(javac_jar_path)',
       ],
       'action': [
         'python', '<(DEPTH)/build/android/gyp/javac.py',
-        '--output-dir=<(classes_dir)',
+        '--classes-dir=<(classes_dir)',
         '--classpath=>(input_jars_paths) <(android_sdk_jar)',
         '--src-gendirs=>(gen_src_dirs)',
         '--javac-includes=<(javac_includes)',
         '--chromium-code=<(chromium_code)',
+        '--jar-path=<(javac_jar_path)',
+        '--jar-excluded-classes=<(jar_excluded_classes)',
         '--stamp=<(compile_stamp)',
         '>@(java_sources)',
       ],
@@ -546,150 +595,189 @@
       'includes': [ 'android/lint_action.gypi' ],
     },
     {
-      'action_name': 'instr_classes_<(_target_name)',
-      'message': 'Instrumenting <(_target_name) classes',
+      'action_name': 'instr_jar_<(_target_name)',
+      'message': 'Instrumenting <(_target_name) jar',
       'variables': {
-        'input_path': '<(classes_dir)',
-        'output_path': '<(classes_final_dir)',
+        'input_path': '<(javac_jar_path)',
+        'output_path': '<(jar_path)',
         'stamp_path': '<(instr_stamp)',
-        'instr_type': 'classes',
+        'instr_type': 'jar',
       },
-      'inputs': [
-        '<(compile_stamp)',
-      ],
       'outputs': [
         '<(instr_stamp)',
+        '<(jar_path)',
+      ],
+      'inputs': [
+        '<(javac_jar_path)',
       ],
       'includes': [ 'android/instr_action.gypi' ],
     },
     {
-      'action_name': 'jar_<(_target_name)',
-      'message': 'Creating <(_target_name) jar',
-      'inputs': [
-        '<(DEPTH)/build/android/gyp/util/build_utils.py',
-        '<(DEPTH)/build/android/gyp/util/md5_check.py',
-        '<(DEPTH)/build/android/gyp/jar.py',
-        '<(instr_stamp)',
-      ],
-      'outputs': [
-        '<(jar_stamp)',
-      ],
-      'action': [
-        'python', '<(DEPTH)/build/android/gyp/jar.py',
-        '--classes-dir=<(classes_final_dir)',
-        '--jar-path=<(jar_path)',
-        '--excluded-classes=<(jar_excluded_classes)',
-        '--stamp=<(jar_stamp)',
-      ]
-    },
-    {
-      'action_name': 'ant_obfuscate_<(_target_name)',
+      'action_name': 'obfuscate_<(_target_name)',
       'message': 'Obfuscating <(_target_name)',
+      'variables': {
+        'additional_obfuscate_options': [],
+        'additional_obfuscate_input_paths': [],
+        'proguard_out_dir': '<(intermediate_dir)/proguard',
+        'proguard_input_jar_paths': [
+          '>@(input_jars_paths)',
+          '<(jar_path)',
+        ],
+        'target_conditions': [
+          ['is_test_apk == 1', {
+            'additional_obfuscate_options': [
+              '--testapp',
+            ],
+          }],
+          ['is_test_apk == 1 and tested_apk_obfuscated_jar_path != "/"', {
+            'additional_obfuscate_options': [
+              '--tested-apk-obfuscated-jar-path', '>(tested_apk_obfuscated_jar_path)',
+            ],
+            'additional_obfuscate_input_paths': [
+              '>(tested_apk_obfuscated_jar_path).info',
+            ],
+          }],
+          ['proguard_enabled == "true"', {
+            'additional_obfuscate_options': [
+              '--proguard-enabled',
+            ],
+          }],
+        ],
+        'obfuscate_input_jars_paths': [
+          '>@(input_jars_paths)',
+          '<(jar_path)',
+        ],
+      },
+      'conditions': [
+        ['is_test_apk == 1', {
+          'outputs': [
+            '<(test_jar_path)',
+          ],
+        }],
+      ],
       'inputs': [
-        '<(DEPTH)/build/android/ant/apk-obfuscate.xml',
+        '<(DEPTH)/build/android/gyp/apk_obfuscate.py',
         '<(DEPTH)/build/android/gyp/util/build_utils.py',
-        '<(DEPTH)/build/android/gyp/ant.py',
-        '<(android_manifest_path)',
         '>@(proguard_flags_paths)',
+        '>@(obfuscate_input_jars_paths)',
+        '>@(additional_obfuscate_input_paths)',
         '<(instr_stamp)',
       ],
       'outputs': [
-        # This lists obfuscate_stamp instead of obfuscated_jar_path because
-        # ant only writes the latter if the md5 of the inputs changes.
         '<(obfuscate_stamp)',
+
+        # In non-Release builds, these paths will all be empty files.
+        '<(obfuscated_jar_path)',
+        '<(obfuscated_jar_path).info',
+        '<(obfuscated_jar_path).dump',
+        '<(obfuscated_jar_path).seeds',
+        '<(obfuscated_jar_path).mapping',
+        '<(obfuscated_jar_path).usage',
       ],
       'action': [
-        'python', '<(DEPTH)/build/android/gyp/ant.py',
-        '-quiet',
-        '-DANDROID_MANIFEST=<(android_manifest_path)',
-        '-DANDROID_SDK_JAR=<(android_sdk_jar)',
-        '-DANDROID_SDK_ROOT=<(android_sdk_root)',
-        '-DANDROID_SDK_VERSION=<(android_sdk_version)',
-        '-DANDROID_SDK_TOOLS=<(android_sdk_tools)',
-        '-DAPK_NAME=<(apk_name)',
-        '-DCONFIGURATION_NAME=<(CONFIGURATION_NAME)',
-        '-DINPUT_JARS_PATHS=>(input_jars_paths)',
-        '-DIS_TEST_APK=<(is_test_apk)',
-        '-DOBFUSCATED_JAR_PATH=<(obfuscated_jar_path)',
-        '-DOUT_DIR=<(intermediate_dir)',
-        '-DPROGUARD_ENABLED=<(proguard_enabled)',
-        '-DPROGUARD_FLAGS=<(proguard_flags_paths)',
-        '-DTEST_JAR_PATH=<(PRODUCT_DIR)/test.lib.java/<(apk_name).jar',
+        'python', '<(DEPTH)/build/android/gyp/apk_obfuscate.py',
 
-        '-DSTAMP=<(obfuscate_stamp)',
-        '-Dbasedir=.',
-        '-buildfile',
-        '<(DEPTH)/build/android/ant/apk-obfuscate.xml',
+        '--configuration-name', '<(CONFIGURATION_NAME)',
+
+        '--android-sdk', '<(android_sdk)',
+        '--android-sdk-tools', '<(android_sdk_tools)',
+        '--android-sdk-jar', '<(android_sdk_jar)',
+
+        '--input-jars-paths=>(proguard_input_jar_paths)',
+        '--proguard-configs=>(proguard_flags_paths)',
+
+
+        '--test-jar-path', '<(test_jar_path)',
+        '--obfuscated-jar-path', '<(obfuscated_jar_path)',
+
+        '--proguard-jar-path', '<(android_sdk_root)/tools/proguard/lib/proguard.jar',
+
+        '--stamp', '<(obfuscate_stamp)',
+
+        '>@(additional_obfuscate_options)',
       ],
     },
     {
       'action_name': 'dex_<(_target_name)',
       'variables': {
-        'conditions': [
-          ['emma_instrument != 0', {
-            'dex_no_locals': 1,
-            'dex_input_paths': [ '<(emma_device_jar)' ],
-          }],
+        'dex_input_paths': [
+          '>@(library_dexed_jars_paths)',
+          '<(jar_path)',
         ],
-        'dex_input_paths': [ '>@(library_dexed_jars_paths)' ],
-        'dex_generated_input_dirs': [ '<(classes_final_dir)' ],
         'output_path': '<(dex_path)',
         'proguard_enabled_input_path': '<(obfuscated_jar_path)',
       },
-      'conditions': [
-        ['proguard_enabled == "true"', { 'inputs': [ '<(obfuscate_stamp)' ] },
-                                       { 'inputs': [ '<(instr_stamp)' ] }],
+      'target_conditions': [
+        ['emma_instrument != 0', {
+          'dex_no_locals': 1,
+          'dex_input_paths': [
+            '<(emma_device_jar)'
+          ],
+        }],
+        ['is_test_apk == 1 and tested_apk_dex_path != "/"', {
+          'variables': {
+            'dex_additional_options': [
+              '--excluded-paths-file', '>(tested_apk_dex_path).inputs'
+            ],
+          },
+          'inputs': [
+            '>(tested_apk_dex_path).inputs',
+          ],
+        }],
+        ['proguard_enabled == "true"', {
+          'inputs': [ '<(obfuscate_stamp)' ]
+        }, {
+          'inputs': [ '<(instr_stamp)' ]
+        }],
       ],
       'includes': [ 'android/dex_action.gypi' ],
     },
     {
-      'action_name': 'ant package resources',
-      'message': 'Packaging resources for <(_target_name) APK',
-      'inputs': [
-        '<(DEPTH)/build/android/ant/apk-package-resources.xml',
-        '<(DEPTH)/build/android/gyp/util/build_utils.py',
-        '<(DEPTH)/build/android/gyp/ant.py',
-        '<(android_manifest_path)',
-        '<(codegen_stamp)',
-        # TODO: This isn't always rerun correctly, http://crbug.com/351928
-
-        '>@(additional_input_paths)',
-      ],
+      'action_name': 'package_resources',
+      'message': 'packaging resources for <(_target_name)',
+      'variables': {
+        'package_resource_zip_input_paths': [
+          '<(resource_zip_path)',
+          '>@(dependencies_res_zip_paths)',
+        ],
+      },
       'conditions': [
         ['is_test_apk == 1', {
           'variables': {
-            'additional_res_dirs=': [],
+            'dependencies_res_zip_paths=': [],
             'additional_res_packages=': [],
           }
         }],
       ],
+      'inputs': [
+        # TODO: This isn't always rerun correctly, http://crbug.com/351928
+        '<(DEPTH)/build/android/gyp/util/build_utils.py',
+        '<(DEPTH)/build/android/gyp/package_resources.py',
+        '<(android_manifest_path)',
+
+        '>@(package_resource_zip_input_paths)',
+
+        '<(codegen_stamp)',
+      ],
       'outputs': [
-        '<(package_resources_stamp)',
+        '<(resource_packaged_apk_path)',
       ],
       'action': [
-        'python', '<(DEPTH)/build/android/gyp/ant.py',
-        '-quiet',
-        '-DADDITIONAL_RES_DIRS=>(additional_res_dirs)',
-        '-DADDITIONAL_RES_PACKAGES=>(additional_res_packages)',
-        '-DADDITIONAL_R_TEXT_FILES=>(additional_R_text_files)',
-        '-DANDROID_MANIFEST=<(android_manifest_path)',
-        '-DANDROID_SDK_JAR=<(android_sdk_jar)',
-        '-DANDROID_SDK_ROOT=<(android_sdk_root)',
-        '-DANDROID_SDK_TOOLS=<(android_sdk_tools)',
-        '-DAPK_NAME=<(apk_name)',
-        '-DAPP_MANIFEST_VERSION_CODE=<(app_manifest_version_code)',
-        '-DAPP_MANIFEST_VERSION_NAME=<(app_manifest_version_name)',
-        '-DASSET_DIR=<(asset_location)',
-        '-DCONFIGURATION_NAME=<(CONFIGURATION_NAME)',
-        '-DOUT_DIR=<(intermediate_dir)',
-        '-DRESOURCE_DIR=<(resource_dir)',
+        'python', '<(DEPTH)/build/android/gyp/package_resources.py',
+        '--android-sdk', '<(android_sdk)',
+        '--android-sdk-tools', '<(android_sdk_tools)',
 
-        '-DSTAMP=<(package_resources_stamp)',
+        '--configuration-name', '<(CONFIGURATION_NAME)',
 
-        '-Dbasedir=.',
-        '-buildfile',
-        '<(DEPTH)/build/android/ant/apk-package-resources.xml',
-      ]
+        '--android-manifest', '<(android_manifest_path)',
+        '--version-code', '<(app_manifest_version_code)',
+        '--version-name', '<(app_manifest_version_name)',
+
+        '--asset-dir', '<(asset_location)',
+        '--resource-zips', '>(package_resource_zip_input_paths)',
+
+        '--apk-path', '<(resource_packaged_apk_path)',
+      ],
     },
     {
       'action_name': 'ant_package_<(_target_name)',
@@ -706,7 +794,7 @@
         '<(dex_path)',
         '<(codegen_stamp)',
         '<(obfuscate_stamp)',
-        '<(package_resources_stamp)',
+        '<(resource_packaged_apk_path)',
         '>@(package_input_paths)',
         '>(inputs_list_file)',
       ],
@@ -718,6 +806,7 @@
         '-quiet',
         '-DANDROID_SDK_ROOT=<(android_sdk_root)',
         '-DANDROID_SDK_TOOLS=<(android_sdk_tools)',
+        '-DRESOURCE_PACKAGED_APK_NAME=<(resource_packaged_apk_name)',
         '-DAPK_NAME=<(apk_name)',
         '-DCONFIGURATION_NAME=<(CONFIGURATION_NAME)',
         '-DNATIVE_LIBS_DIR=<(apk_package_native_libs_dir)',

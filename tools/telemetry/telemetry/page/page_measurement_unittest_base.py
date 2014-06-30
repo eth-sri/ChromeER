@@ -1,9 +1,10 @@
-# Copyright (c) 2012 The Chromium Authors. All rights reserved.
+# Copyright 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
 import unittest
 
+from telemetry.core import exceptions
 from telemetry.core import util
 from telemetry.page import page_runner
 from telemetry.page import page as page_module
@@ -20,7 +21,11 @@ class BasicTestPage(page_module.Page):
     super(BasicTestPage, self).__init__(url, page_set, base_dir)
 
   def RunSmoothness(self, action_runner):
-    action_runner.RunAction(ScrollAction())
+    interaction = action_runner.BeginGestureInteraction(
+        'ScrollAction', is_smooth=True)
+    action_runner.ScrollPage()
+    interaction.End()
+
 
 class PageMeasurementUnitTestBase(unittest.TestCase):
   """unittest.TestCase-derived class to help in the construction of unit tests
@@ -77,7 +82,7 @@ class PageMeasurementUnitTestBase(unittest.TestCase):
         def FakeStartTracing(*args, **kwargs):
           ActualStartTracing(*args, **kwargs)
           start_tracing_called[0] = True
-          raise Exception('Intentional exception')
+          raise exceptions.IntentionalException
         browser.StartTracing = FakeStartTracing
 
         ActualStopTracing = browser.StopTracing

@@ -16,11 +16,15 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_provider.h"
 #include "chrome/browser/autocomplete/autocomplete_provider_listener.h"
+#include "chrome/browser/autocomplete/chrome_autocomplete_scheme_classifier.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/bookmarks/browser/bookmark_match.h"
 #include "components/bookmarks/browser/bookmark_model.h"
 #include "components/bookmarks/test/test_bookmark_client.h"
+#include "components/metrics/proto/omnibox_event.pb.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+using bookmarks::BookmarkMatch;
 
 // The bookmark corpus against which we will simulate searches.
 struct BookmarksTestInfo {
@@ -259,8 +263,9 @@ TEST_F(BookmarkProviderTest, Positions) {
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(query_data); ++i) {
     AutocompleteInput input(base::ASCIIToUTF16(query_data[i].query),
                             base::string16::npos, base::string16(), GURL(),
-                            AutocompleteInput::INVALID_SPEC, false, false,
-                            false, true);
+                            metrics::OmniboxEventProto::INVALID_SPEC, false,
+                            false, false, true,
+                            ChromeAutocompleteSchemeClassifier(profile_.get()));
     provider_->Start(input, false);
     const ACMatches& matches(provider_->matches());
     // Validate number of results is as expected.
@@ -336,8 +341,9 @@ TEST_F(BookmarkProviderTest, Rankings) {
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(query_data); ++i) {
     AutocompleteInput input(base::ASCIIToUTF16(query_data[i].query),
                             base::string16::npos, base::string16(), GURL(),
-                            AutocompleteInput::INVALID_SPEC, false, false,
-                            false, true);
+                            metrics::OmniboxEventProto::INVALID_SPEC, false,
+                            false, false, true,
+                            ChromeAutocompleteSchemeClassifier(profile_.get()));
     provider_->Start(input, false);
     const ACMatches& matches(provider_->matches());
     // Validate number and content of results is as expected.
@@ -392,10 +398,11 @@ TEST_F(BookmarkProviderTest, InlineAutocompletion) {
         " and url=" + query_data[i].url;
     AutocompleteInput input(base::ASCIIToUTF16(query_data[i].query),
                             base::string16::npos, base::string16(), GURL(),
-                            AutocompleteInput::INVALID_SPEC, false, false,
-                            false, true);
-    AutocompleteInput fixed_up_input(input);
-    provider_->FixupUserInput(&fixed_up_input);
+                            metrics::OmniboxEventProto::INVALID_SPEC, false,
+                            false, false, true,
+                            ChromeAutocompleteSchemeClassifier(profile_.get()));
+    const base::string16 fixed_up_input(
+        provider_->FixupUserInput(input).second);
     BookmarkNode node(GURL(query_data[i].url));
     node.SetTitle(base::ASCIIToUTF16(query_data[i].url));
     BookmarkMatch bookmark_match;
@@ -438,8 +445,9 @@ TEST_F(BookmarkProviderTest, StripHttpAndAdjustOffsets) {
     std::string description = "for query=" + query_data[i].query;
     AutocompleteInput input(base::ASCIIToUTF16(query_data[i].query),
                             base::string16::npos, base::string16(), GURL(),
-                            AutocompleteInput::INVALID_SPEC, false, false,
-                            false, true);
+                            metrics::OmniboxEventProto::INVALID_SPEC, false,
+                            false, false, true,
+                            ChromeAutocompleteSchemeClassifier(profile_.get()));
     provider_->Start(input, false);
     const ACMatches& matches(provider_->matches());
     ASSERT_EQ(1U, matches.size()) << description;

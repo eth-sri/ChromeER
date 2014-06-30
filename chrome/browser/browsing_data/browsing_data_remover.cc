@@ -21,6 +21,7 @@
 #include "chrome/browser/chromeos/login/users/user_manager.h"
 #endif
 #include "chrome/browser/content_settings/host_content_settings_map.h"
+#include "chrome/browser/domain_reliability/service_factory.h"
 #include "chrome/browser/download/download_prefs.h"
 #include "chrome/browser/download/download_service_factory.h"
 #include "chrome/browser/extensions/activity_log/activity_log.h"
@@ -54,7 +55,7 @@
 #include "chrome/browser/webdata/web_data_service_factory.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
-#include "components/domain_reliability/monitor.h"
+#include "components/domain_reliability/service.h"
 #include "components/password_manager/core/browser/password_store.h"
 #if defined(OS_CHROMEOS)
 #include "chromeos/attestation/attestation_constants.h"
@@ -75,6 +76,7 @@
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/user_metrics.h"
 #include "net/base/net_errors.h"
+#include "net/base/sdch_manager.h"
 #include "net/cookies/cookie_store.h"
 #include "net/disk_cache/disk_cache.h"
 #include "net/http/http_cache.h"
@@ -312,7 +314,8 @@ void BrowsingDataRemover::RemoveImpl(int remove_mask,
       BrowserThread::PostTask(
           BrowserThread::IO, FROM_HERE,
           base::Bind(&BrowsingDataRemover::ClearNetworkPredictorOnIOThread,
-                     base::Unretained(this)));
+                     base::Unretained(this),
+                     profile_->GetNetworkPredictor()));
     }
 
     // As part of history deletion we also delete the auto-generated keywords.
@@ -676,17 +679,22 @@ void BrowsingDataRemover::RemoveImpl(int remove_mask,
                  base::Unretained(this)));
 
   if (remove_mask & (REMOVE_COOKIES | REMOVE_HISTORY)) {
-    domain_reliability::DomainReliabilityClearMode mode;
-    if (remove_mask & REMOVE_COOKIES)
-      mode = domain_reliability::CLEAR_CONTEXTS;
-    else
-      mode = domain_reliability::CLEAR_BEACONS;
+    domain_reliability::DomainReliabilityService* service =
+      domain_reliability::DomainReliabilityServiceFactory::
+          GetForBrowserContext(profile_);
+    if (service) {
+      domain_reliability::DomainReliabilityClearMode mode;
+      if (remove_mask & REMOVE_COOKIES)
+        mode = domain_reliability::CLEAR_CONTEXTS;
+      else
+        mode = domain_reliability::CLEAR_BEACONS;
 
-    waiting_for_clear_domain_reliability_monitor_ = true;
-    profile_->ClearDomainReliabilityMonitor(
-        mode,
-        base::Bind(&BrowsingDataRemover::OnClearedDomainReliabilityMonitor,
-                   base::Unretained(this)));
+      waiting_for_clear_domain_reliability_monitor_ = true;
+      service->ClearBrowsingData(
+          mode,
+          base::Bind(&BrowsingDataRemover::OnClearedDomainReliabilityMonitor,
+                     base::Unretained(this)));
+    }
   }
 }
 
@@ -864,14 +872,13 @@ void BrowsingDataRemover::OnClearedNetworkPredictor() {
   NotifyAndDeleteIfDone();
 }
 
-void BrowsingDataRemover::ClearNetworkPredictorOnIOThread() {
+void BrowsingDataRemover::ClearNetworkPredictorOnIOThread(
+    chrome_browser_net::Predictor* predictor) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK(predictor);
 
-  chrome_browser_net::Predictor* predictor = profile_->GetNetworkPredictor();
-  if (predictor) {
-    predictor->DiscardInitialNavigationHistory();
-    predictor->DiscardAllResults();
-  }
+  predictor->DiscardInitialNavigationHistory();
+  predictor->DiscardAllResults();
 
   // Notify the UI thread that we are done.
   BrowserThread::PostTask(
@@ -929,6 +936,16 @@ void BrowsingDataRemover::DoClearCache(int rv) {
         // Clear QUIC server information from memory and the disk cache.
         http_cache->GetSession()->quic_stream_factory()->
             ClearCachedStatesInCryptoConfig();
+
+        // Clear SDCH dictionary state.
+        net::SdchManager* sdch_manager =
+            getter->GetURLRequestContext()->sdch_manager();
+        // The test is probably overkill, since chrome should always have an
+        // SdchManager.  But in general the URLRequestContext  is *not*
+        // guaranteed to have an SdchManager, so checking is wise.
+        if (sdch_manager)
+          sdch_manager->ClearData();
+
         rv = http_cache->GetBackend(
             &cache_, base::Bind(&BrowsingDataRemover::DoClearCache,
                                 base::Unretained(this)));

@@ -98,7 +98,6 @@
             'installer/util/advanced_firewall_manager_win_unittest.cc',
             'installer/util/callback_work_item_unittest.cc',
             'installer/util/channel_info_unittest.cc',
-            'installer/util/copy_reg_key_work_item_unittest.cc',
             'installer/util/copy_tree_work_item_unittest.cc',
             'installer/util/create_dir_work_item_unittest.cc',
             'installer/util/create_reg_key_work_item_unittest.cc',
@@ -212,44 +211,6 @@
           ],
         },
         {
-          'target_name': 'mini_installer_test',
-          'type': 'executable',
-          'dependencies': [
-            'installer_util',
-            'installer_util_strings',
-            '../base/base.gyp:base',
-            '../base/base.gyp:base_i18n',
-            '../base/base.gyp:test_support_base',
-            '../chrome/chrome.gyp:test_support_common',
-            '../testing/gtest.gyp:gtest',
-          ],
-          'include_dirs': [
-            '..',
-          ],
-          'sources': [
-            '<(SHARED_INTERMEDIATE_DIR)/installer_util_strings/installer_util_strings.rc',
-            'installer/util/installation_validation_helper.cc',
-            'installer/util/installation_validation_helper.h',
-            'test/mini_installer_test/installer_path_provider.cc',
-            'test/mini_installer_test/installer_path_provider.h',
-            'test/mini_installer_test/installer_test_util.cc',
-            'test/mini_installer_test/installer_test_util.h',
-            'test/mini_installer_test/mini_installer_test_constants.cc',
-            'test/mini_installer_test/mini_installer_test_constants.h',
-            'test/mini_installer_test/run_all_unittests.cc',
-            'test/mini_installer_test/switch_builder.cc',
-            'test/mini_installer_test/switch_builder.h',
-            'test/mini_installer_test/test.cc',
-          ],
-          'msvs_settings': {
-            'VCManifestTool': {
-              'AdditionalManifestFiles': [
-                '$(ProjectDir)\\installer\\mini_installer\\mini_installer.exe.manifest',
-              ],
-            },
-          },
-        },
-        {
           'target_name': 'setup',
           'type': 'executable',
           'dependencies': [
@@ -259,6 +220,7 @@
             '../base/base.gyp:base',
             '../breakpad/breakpad.gyp:breakpad_handler',
             '../chrome/common_constants.gyp:common_constants',
+            '../chrome_elf/chrome_elf.gyp:chrome_elf_constants',
             '../rlz/rlz.gyp:rlz_lib',
             '../third_party/zlib/zlib.gyp:zlib',
           ],

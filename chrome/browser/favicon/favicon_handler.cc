@@ -7,13 +7,15 @@
 #include "build/build_config.h"
 
 #include <algorithm>
+#include <cmath>
 #include <vector>
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/memory/ref_counted_memory.h"
+#include "chrome/browser/favicon/favicon_service.h"
 #include "chrome/browser/favicon/favicon_service_factory.h"
-#include "chrome/browser/favicon/favicon_util.h"
+#include "components/favicon_base/favicon_util.h"
 #include "components/favicon_base/select_favicon_frames.h"
 #include "skia/ext/image_operations.h"
 #include "ui/gfx/codec/png_codec.h"
@@ -60,7 +62,7 @@ bool DoUrlAndIconMatch(const FaviconURL& favicon_url,
 // Returns false if |bitmap_results| is empty.
 bool DoUrlsAndIconsMatch(
     const FaviconURL& favicon_url,
-    const std::vector<favicon_base::FaviconBitmapResult>& bitmap_results) {
+    const std::vector<favicon_base::FaviconRawBitmapResult>& bitmap_results) {
   if (bitmap_results.empty())
     return false;
 
@@ -86,35 +88,35 @@ bool UrlMatches(const GURL& gurl_a, const GURL& gurl_b) {
 }
 
 // Return true if |bitmap_result| is expired.
-bool IsExpired(const favicon_base::FaviconBitmapResult& bitmap_result) {
+bool IsExpired(const favicon_base::FaviconRawBitmapResult& bitmap_result) {
   return bitmap_result.expired;
 }
 
 // Return true if |bitmap_result| is valid.
-bool IsValid(const favicon_base::FaviconBitmapResult& bitmap_result) {
+bool IsValid(const favicon_base::FaviconRawBitmapResult& bitmap_result) {
   return bitmap_result.is_valid();
 }
 
 // Returns true if at least one of the bitmaps in |bitmap_results| is expired or
 // if |bitmap_results| is missing favicons for |desired_size_in_dip| and one of
-// the scale factors in FaviconUtil::GetFaviconScaleFactors().
+// the scale factors in favicon_base::GetFaviconScales().
 bool HasExpiredOrIncompleteResult(
     int desired_size_in_dip,
-    const std::vector<favicon_base::FaviconBitmapResult>& bitmap_results) {
+    const std::vector<favicon_base::FaviconRawBitmapResult>& bitmap_results) {
   // Check if at least one of the bitmaps is expired.
-  std::vector<favicon_base::FaviconBitmapResult>::const_iterator it =
+  std::vector<favicon_base::FaviconRawBitmapResult>::const_iterator it =
       std::find_if(bitmap_results.begin(), bitmap_results.end(), IsExpired);
   if (it != bitmap_results.end())
     return true;
 
-   // Any favicon size is good if the desired size is 0.
-   if (desired_size_in_dip == 0)
-     return false;
+  // Any favicon size is good if the desired size is 0.
+  if (desired_size_in_dip == 0)
+    return false;
 
   // Check if the favicon for at least one of the scale factors is missing.
   // |bitmap_results| should always be complete for data inserted by
   // FaviconHandler as the FaviconHandler stores favicons resized to all
-  // of FaviconUtil::GetFaviconScaleFactors() into the history backend.
+  // of favicon_base::GetFaviconScales() into the history backend.
   // Examples of when |bitmap_results| can be incomplete:
   // - Favicons inserted into the history backend by sync.
   // - Favicons for imported bookmarks.
@@ -122,11 +124,9 @@ bool HasExpiredOrIncompleteResult(
   for (size_t i = 0; i < bitmap_results.size(); ++i)
     favicon_sizes.push_back(bitmap_results[i].pixel_size);
 
-  std::vector<ui::ScaleFactor> scale_factors =
-      FaviconUtil::GetFaviconScaleFactors();
-  for (size_t i = 0; i < scale_factors.size(); ++i) {
-    int edge_size_in_pixel = floor(
-        desired_size_in_dip * ui::GetImageScale(scale_factors[i]));
+  std::vector<float> favicon_scales = favicon_base::GetFaviconScales();
+  for (size_t i = 0; i < favicon_scales.size(); ++i) {
+    int edge_size_in_pixel = std::ceil(desired_size_in_dip * favicon_scales[i]);
     std::vector<gfx::Size>::iterator it = std::find(favicon_sizes.begin(),
         favicon_sizes.end(), gfx::Size(edge_size_in_pixel, edge_size_in_pixel));
     if (it == favicon_sizes.end())
@@ -137,7 +137,7 @@ bool HasExpiredOrIncompleteResult(
 
 // Returns true if at least one of |bitmap_results| is valid.
 bool HasValidResult(
-    const std::vector<favicon_base::FaviconBitmapResult>& bitmap_results) {
+    const std::vector<favicon_base::FaviconRawBitmapResult>& bitmap_results) {
   return std::find_if(bitmap_results.begin(), bitmap_results.end(), IsValid) !=
       bitmap_results.end();
 }
@@ -313,10 +313,10 @@ void FaviconHandler::SetFavicon(const GURL& url,
 }
 
 void FaviconHandler::SetFaviconOnActivePage(const std::vector<
-    favicon_base::FaviconBitmapResult>& favicon_bitmap_results) {
-  gfx::Image resized_image = FaviconUtil::SelectFaviconFramesFromPNGs(
+    favicon_base::FaviconRawBitmapResult>& favicon_bitmap_results) {
+  gfx::Image resized_image = favicon_base::SelectFaviconFramesFromPNGs(
       favicon_bitmap_results,
-      FaviconUtil::GetFaviconScaleFactors(),
+      favicon_base::GetFaviconScales(),
       preferred_icon_size());
   // The history service sends back results for a single icon URL, so it does
   // not matter which result we get the |icon_url| from.
@@ -337,7 +337,7 @@ void FaviconHandler::SetFaviconOnActivePage(const GURL& icon_url,
     return;
 
   gfx::Image image_with_adjusted_colorspace = image;
-  FaviconUtil::SetFaviconColorSpace(&image_with_adjusted_colorspace);
+  favicon_base::SetFaviconColorSpace(&image_with_adjusted_colorspace);
 
   driver_->SetActiveFaviconImage(image_with_adjusted_colorspace);
   NotifyFaviconUpdated(icon_url_changed);
@@ -353,18 +353,16 @@ void FaviconHandler::OnUpdateFaviconURL(
       image_urls_.push_back(*i);
   }
 
-  // TODO(davemoore) Should clear on empty url. Currently we ignore it.
-  // This appears to be what FF does as well.
-  if (image_urls_.empty())
-    return;
-
   if (!client_->GetFaviconService())
     return;
 
   if (download_largest_icon_)
     SortAndPruneImageUrls();
 
-  ProcessCurrentUrl();
+  // TODO(davemoore) Should clear on empty url. Currently we ignore it.
+  // This appears to be what FF does as well.
+  if (!image_urls_.empty())
+    ProcessCurrentUrl();
 }
 
 void FaviconHandler::ProcessCurrentUrl() {
@@ -429,13 +427,10 @@ void FaviconHandler::OnDidDownloadFavicon(
       if (index != -1)
         image_skia = gfx::ImageSkia(gfx::ImageSkiaRep(bitmaps[index], 1));
     } else {
-      std::vector<ui::ScaleFactor> scale_factors =
-          FaviconUtil::GetFaviconScaleFactors();
-      image_skia = SelectFaviconFrames(bitmaps,
-                                       original_bitmap_sizes,
-                                       scale_factors,
-                                       preferred_icon_size(),
-                                       &score);
+      image_skia = CreateFaviconImageSkia(bitmaps,
+                                          original_bitmap_sizes,
+                                          preferred_icon_size(),
+                                          &score);
     }
 
     if (!image_skia.isNull()) {
@@ -489,7 +484,7 @@ void FaviconHandler::UpdateFaviconMappingAndFetch(
     const GURL& page_url,
     const GURL& icon_url,
     favicon_base::IconType icon_type,
-    const FaviconService::FaviconResultsCallback& callback,
+    const favicon_base::FaviconResultsCallback& callback,
     base::CancelableTaskTracker* tracker) {
   // TODO(pkotwicz): pass in all of |image_urls_| to
   // UpdateFaviconMappingsAndFetch().
@@ -502,7 +497,7 @@ void FaviconHandler::UpdateFaviconMappingAndFetch(
 void FaviconHandler::GetFaviconFromFaviconService(
     const GURL& icon_url,
     favicon_base::IconType icon_type,
-    const FaviconService::FaviconResultsCallback& callback,
+    const favicon_base::FaviconResultsCallback& callback,
     base::CancelableTaskTracker* tracker) {
   client_->GetFaviconService()->GetFavicon(
       icon_url, icon_type, preferred_icon_size(), callback, tracker);
@@ -511,10 +506,10 @@ void FaviconHandler::GetFaviconFromFaviconService(
 void FaviconHandler::GetFaviconForURLFromFaviconService(
     const GURL& page_url,
     int icon_types,
-    const FaviconService::FaviconResultsCallback& callback,
+    const favicon_base::FaviconResultsCallback& callback,
     base::CancelableTaskTracker* tracker) {
-  client_->GetFaviconService()->GetFaviconForURL(
-      FaviconService::FaviconForURLParams(
+  client_->GetFaviconService()->GetFaviconForPageURL(
+      FaviconService::FaviconForPageURLParams(
           page_url, icon_types, preferred_icon_size()),
       callback,
       tracker);
@@ -541,7 +536,7 @@ void FaviconHandler::NotifyFaviconUpdated(bool icon_url_changed) {
 }
 
 void FaviconHandler::OnFaviconDataForInitialURLFromFaviconService(
-    const std::vector<favicon_base::FaviconBitmapResult>&
+    const std::vector<favicon_base::FaviconRawBitmapResult>&
         favicon_bitmap_results) {
   if (PageChangedSinceFaviconWasRequested())
     return;
@@ -620,7 +615,7 @@ void FaviconHandler::DownloadFaviconOrAskFaviconService(
 }
 
 void FaviconHandler::OnFaviconData(const std::vector<
-    favicon_base::FaviconBitmapResult>& favicon_bitmap_results) {
+    favicon_base::FaviconRawBitmapResult>& favicon_bitmap_results) {
   if (PageChangedSinceFaviconWasRequested())
     return;
 

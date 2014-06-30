@@ -88,18 +88,98 @@ function getChildren(entry) {
       });
     });
   };
-  return readEntries();
+  return readEntries().then(function(entries) {
+    return entries.sort(function(a, b) {
+      return a.name.localeCompare(b.name);
+    });
+  });
 }
 
 /**
  * Promise to be fulfilled with single application window.
- * @param {AppWindow}
+ * @type {Promise}
  */
-var appWindowPromise = null;
+var appWindowPromise = Promise.resolve(null);
+
+/**
+ * Promise to be fulfilled with the current window is closed.
+ * @type {Promise}
+ */
+var closingPromise = Promise.resolve(null);
+
+/**
+ * Launches the application with entries.
+ *
+ * @param {Promise} selectedEntriesPromise Promise to be fulfilled with the
+ *     entries that are stored in the exteranl file system (not in the isolated
+ *     file system).
+ */
+function launch(selectedEntriesPromise) {
+  // If there is the previous window, close the window.
+  appWindowPromise = appWindowPromise.then(function(appWindow) {
+    if (appWindow) {
+      appWindow.close();
+      return closingPromise;
+    }
+  });
+
+  // Create a new window.
+  appWindowPromise = appWindowPromise.then(function() {
+    return new Promise(function(fulfill) {
+      chrome.app.window.create(
+          'gallery.html',
+          {
+            id: 'gallery',
+            minWidth: 160,
+            minHeight: 100,
+            frame: 'none'
+          },
+          function(appWindow) {
+            appWindow.contentWindow.addEventListener(
+                'load', fulfill.bind(null, appWindow));
+            closingPromise = new Promise(function(fulfill) {
+              appWindow.onClosed.addListener(fulfill);
+            });
+          });
+    });
+  });
+
+  // Initialize the window document.
+  appWindowPromise = Promise.all([
+    appWindowPromise,
+    backgroundComponentsPromise,
+  ]).then(function(args) {
+    args[0].contentWindow.initialize(args[1]);
+    return args[0];
+  });
+
+
+  // If only 1 entry is selected, retrieve entries in the same directory.
+  // Otherwise, just use the selectedEntries as an entry set.
+  var allEntriesPromise = selectedEntriesPromise.then(function(entries) {
+    if (entries.length === 1) {
+      var parentPromise = new Promise(entries[0].getParent.bind(entries[0]));
+      return parentPromise.then(getChildren).then(function(entries) {
+        return entries.filter(FileType.isImage);
+      });
+    } else {
+      return entries;
+    }
+  });
+
+  // Open entries.
+  return Promise.all([
+    appWindowPromise,
+    allEntriesPromise,
+    selectedEntriesPromise
+  ]).then(function(args) {
+    args[0].contentWindow.loadEntries(args[1], args[2]);
+  });
+}
 
 chrome.app.runtime.onLaunched.addListener(function(launchData) {
   // Skip if files are not selected.
-  if (!launchData || !launchData.items || launchData.items.length == 0)
+  if (!launchData || !launchData.items || launchData.items.length === 0)
     return;
 
   // Obtains entries in non-isolated file systems.
@@ -113,73 +193,21 @@ chrome.app.runtime.onLaunched.addListener(function(launchData) {
     return resolveEntries(isolatedEntries);
   });
 
-  // If only 1 entry is selected, retrieve entries in the same directory.
-  // Otherwise, just use the selectedEntries as an entry set.
-  var allEntriesPromise = selectedEntriesPromise.then(function(entries) {
-    if (entries.length === 1) {
-      var parent = new Promise(entries[0].getParent.bind(entries[0]));
-      return parent.then(getChildren).then(function(entries) {
-        return entries.filter(FileType.isImageOrVideo);
-      });
-    } else {
-      return entries;
-    }
-  });
-
-  // Store the selected and all entries to the launchData.
-  launchData.entriesPromise = Promise.all([selectedEntriesPromise,
-                                           allEntriesPromise]).then(
-      function(args) {
-        return Object.freeze({
-          selectedEntries: args[0],
-          allEntries: args[1]
-        });
-      });
-
-  // Close previous window.
-  var closePromise;
-  if (appWindowPromise) {
-    closePromise = appWindowPromise.then(function(appWindow) {
-      return new Promise(function(fulfill) {
-        appWindow.close();
-        appWindow.onClosed.addListener(fulfill);
-      });
-    });
-  } else {
-    closePromise = Promise.resolve();
-  }
-  var createdWindowPromise = closePromise.then(function() {
-    return new Promise(function(fulfill) {
-      chrome.app.window.create(
-          'gallery.html',
-          {
-            id: 'gallery',
-            minWidth: 160,
-            minHeight: 100,
-            frame: 'none'
-          },
-          function(appWindow) {
-            appWindow.contentWindow.addEventListener(
-                'load', fulfill.bind(null, appWindow));
-          });
-    });
-  });
-  appWindowPromise = Promise.all([
-    createdWindowPromise,
-    backgroundComponentsPromise,
-  ]).then(function(args) {
-    args[0].contentWindow.initialize(args[1]);
-    return args[0];
-  });
-
-  // Open entries.
-  Promise.all([
-    appWindowPromise,
-    allEntriesPromise,
-    selectedEntriesPromise
-  ]).then(function(args) {
-    args[0].contentWindow.loadEntries(args[1], args[2]);
-  }).catch(function(error) {
+  launch(selectedEntriesPromise).catch(function(error) {
     console.error(error.stack || error);
   });
 });
+
+// If is is run in the browser test, wait for the test resources are installed
+// as a component extension, and then load the test resources.
+if (chrome.test) {
+  chrome.runtime.onMessageExternal.addListener(function(message) {
+    if (message.name !== 'testResourceLoaded')
+      return;
+    var script = document.createElement('script');
+    script.src =
+        'chrome-extension://ejhcmmdhhpdhhgmifplfmjobgegbibkn' +
+        '/gallery/test_loader.js';
+    document.documentElement.appendChild(script);
+  });
+}

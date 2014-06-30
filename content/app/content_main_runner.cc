@@ -49,7 +49,10 @@
 #include "sandbox/win/src/sandbox_types.h"
 #include "ui/base/ui_base_paths.h"
 #include "ui/base/ui_base_switches.h"
-#include "ui/gfx/win/dpi.h"
+
+#if defined(OS_ANDROID)
+#include "content/public/common/content_descriptors.h"
+#endif
 
 #if defined(USE_TCMALLOC)
 #include "third_party/tcmalloc/chromium/src/gperftools/malloc_extension.h"
@@ -70,10 +73,13 @@
 #endif
 
 #if defined(OS_WIN)
-#include <atlbase.h>
-#include <atlapp.h>
 #include <malloc.h>
 #include <cstring>
+
+#include "base/strings/string_number_conversions.h"
+#include "ui/base/win/atl_module.h"
+#include "ui/base/win/dpi_setup.h"
+#include "ui/gfx/win/dpi.h"
 #elif defined(OS_MACOSX)
 #include "base/mac/scoped_nsautorelease_pool.h"
 #if !defined(OS_IOS)
@@ -132,8 +138,6 @@ base::LazyInstance<ContentUtilityClient>
 #endif  // !OS_IOS && !CHROME_MULTIPLE_DLL_BROWSER
 
 #if defined(OS_WIN)
-
-static CAppModule _Module;
 
 #endif  // defined(OS_WIN)
 
@@ -329,6 +333,7 @@ int RunZygote(const MainFunctionParams& main_function_params,
   InitializeStatsTable(command_line);
 
   MainFunctionParams main_params(command_line);
+  main_params.zygote_child = true;
 
   for (size_t i = 0; i < arraysize(kMainFunctions); ++i) {
     if (process_type == kMainFunctions[i].name)
@@ -477,7 +482,7 @@ class ContentMainRunnerImpl : public ContentMainRunner {
 
 #if defined(OS_WIN)
     RegisterInvalidParamHandler();
-    _Module.Init(NULL, static_cast<HINSTANCE>(params.instance));
+    ui::win::CreateATLModuleIfNeeded();
 
     sandbox_info_ = *params.sandbox_info;
 #else  // !OS_WIN
@@ -658,6 +663,19 @@ class ContentMainRunnerImpl : public ContentMainRunner {
     if (command_line.HasSwitch(switches::kEnableHighResolutionTime))
       base::TimeTicks::SetNowIsHighResNowIfSupported();
 
+    bool init_device_scale_factor = true;
+    if (command_line.HasSwitch(switches::kDeviceScaleFactor)) {
+      std::string scale_factor_string = command_line.GetSwitchValueASCII(
+          switches::kDeviceScaleFactor);
+      double scale_factor = 0;
+      if (base::StringToDouble(scale_factor_string, &scale_factor)) {
+        init_device_scale_factor = false;
+        gfx::InitDeviceScaleFactor(scale_factor);
+      }
+    }
+    if (init_device_scale_factor)
+      ui::win::InitDeviceScaleFactor();
+
     SetupCRT(command_line);
 #endif
 
@@ -687,7 +705,16 @@ class ContentMainRunnerImpl : public ContentMainRunner {
     RegisterPathProvider();
     RegisterContentSchemes(true);
 
+#if defined(OS_ANDROID)
+    int icudata_fd = base::GlobalDescriptors::GetInstance()->MaybeGet(
+        kAndroidICUDataDescriptor);
+    if (icudata_fd != -1)
+      CHECK(base::i18n::InitializeICUWithFileDescriptor(icudata_fd));
+    else
+      CHECK(base::i18n::InitializeICU());
+#else
     CHECK(base::i18n::InitializeICU());
+#endif
 
     InitializeStatsTable(command_line);
 
@@ -751,16 +778,10 @@ class ContentMainRunnerImpl : public ContentMainRunner {
       delegate_->ProcessExiting(process_type);
     }
 
-#if !defined(OS_IOS)
-    ShutdownMojo();
-#endif
-
 #if defined(OS_WIN)
 #ifdef _CRTDBG_MAP_ALLOC
     _CrtDumpMemoryLeaks();
 #endif  // _CRTDBG_MAP_ALLOC
-
-    _Module.Term();
 #endif  // OS_WIN
 
 #if defined(OS_MACOSX)

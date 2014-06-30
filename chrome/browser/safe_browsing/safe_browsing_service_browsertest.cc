@@ -76,6 +76,9 @@ class FakeSafeBrowsingService : public SafeBrowsingService {
     // Makes sure the auto update is not triggered. The tests will force the
     // update when needed.
     config.disable_auto_update = true;
+#if defined(OS_ANDROID)
+    config.disable_connection_check = true;
+#endif
     config.client_name = "browser_tests";
     return config;
   }
@@ -168,8 +171,9 @@ class TestSafeBrowsingDatabase :  public SafeBrowsingDatabase {
     ADD_FAILURE() << "Not implemented.";
     return false;
   }
-  virtual void InsertChunks(const std::string& list_name,
-                            const SBChunkList& chunks) OVERRIDE {
+  virtual void InsertChunks(
+      const std::string& list_name,
+      const std::vector<SBChunkData*>& chunks) OVERRIDE {
     ADD_FAILURE() << "Not implemented.";
   }
   virtual void DeleteChunks(

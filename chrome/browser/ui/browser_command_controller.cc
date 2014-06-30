@@ -39,6 +39,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/url_constants.h"
+#include "extensions/browser/extension_system.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 
 #if defined(OS_MACOSX)
@@ -765,6 +766,9 @@ void BrowserCommandController::ExecuteCommandWithDisposition(
     case IDC_TOGGLE_SPEECH_INPUT:
       ToggleSpeechInput(browser_);
       break;
+    case IDC_DISTILL_PAGE:
+      DistillCurrentPage(browser_);
+      break;
 
     default:
       LOG(WARNING) << "Received Unimplemented Command: " << id;
@@ -954,6 +958,7 @@ void BrowserCommandController::InitCommandState() {
   command_updater_.UpdateCommandEnabled(IDC_TASK_MANAGER, CanOpenTaskManager());
   command_updater_.UpdateCommandEnabled(IDC_SHOW_HISTORY, !guest_session);
   command_updater_.UpdateCommandEnabled(IDC_SHOW_DOWNLOADS, true);
+  command_updater_.UpdateCommandEnabled(IDC_HELP_MENU, true);
   command_updater_.UpdateCommandEnabled(IDC_HELP_PAGE_VIA_KEYBOARD, true);
   command_updater_.UpdateCommandEnabled(IDC_HELP_PAGE_VIA_MENU, true);
   command_updater_.UpdateCommandEnabled(IDC_BOOKMARKS_MENU, !guest_session);
@@ -1008,6 +1013,12 @@ void BrowserCommandController::InitCommandState() {
   // Toggle speech input
   command_updater_.UpdateCommandEnabled(IDC_TOGGLE_SPEECH_INPUT, true);
 
+  // Distill current page.
+  command_updater_.UpdateCommandEnabled(
+      IDC_DISTILL_PAGE,
+      CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableDomDistiller));
+
   // Initialize other commands whose state changes based on various conditions.
   UpdateCommandsForFullscreenMode();
   UpdateCommandsForContentRestrictionState();
@@ -1035,7 +1046,8 @@ void BrowserCommandController::UpdateSharedCommandsForIncognitoAvailability(
   command_updater->UpdateCommandEnabled(
       IDC_SHOW_BOOKMARK_MANAGER,
       browser_defaults::bookmarks_enabled && !forced_incognito);
-  ExtensionService* extension_service = profile->GetExtensionService();
+  ExtensionService* extension_service =
+      extensions::ExtensionSystem::Get(profile)->extension_service();
   const bool enable_extensions =
       extension_service && extension_service->extensions_enabled();
 
@@ -1091,7 +1103,7 @@ void BrowserCommandController::UpdateCommandsForTabState() {
 
   // Changing the encoding is not possible on Chrome-internal webpages.
   NavigationController& nc = current_web_contents->GetController();
-  bool is_chrome_internal = HasInternalURL(nc.GetActiveEntry()) ||
+  bool is_chrome_internal = HasInternalURL(nc.GetLastCommittedEntry()) ||
       current_web_contents->ShowingInterstitialPage();
   command_updater_.UpdateCommandEnabled(IDC_ENCODING_MENU,
       !is_chrome_internal && current_web_contents->IsSavable());

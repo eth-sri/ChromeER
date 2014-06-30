@@ -12,7 +12,6 @@
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/common/content_switches_internal.h"
 #include "content/public/browser/render_widget_host_view_frame_subscriber.h"
-#include "third_party/WebKit/public/platform/WebScreenInfo.h"
 #include "ui/gfx/display.h"
 #include "ui/gfx/screen.h"
 #include "ui/gfx/size_conversions.h"
@@ -398,7 +397,7 @@ gfx::Size RenderWidgetHostViewBase::GetPhysicalBackingSize() const {
   gfx::NativeView view = GetNativeView();
   gfx::Display display =
       gfx::Screen::GetScreenFor(view)->GetDisplayNearestWindow(view);
-  return gfx::ToCeiledSize(gfx::ScaleSize(GetViewBounds().size(),
+  return gfx::ToCeiledSize(gfx::ScaleSize(GetRequestedRendererSize(),
                                           display.device_scale_factor()));
 }
 
@@ -413,6 +412,10 @@ void RenderWidgetHostViewBase::SelectionChanged(const base::string16& text,
   selection_text_offset_ = offset;
   selection_range_.set_start(range.start());
   selection_range_.set_end(range.end());
+}
+
+gfx::Size RenderWidgetHostViewBase::GetRequestedRendererSize() const {
+  return GetViewBounds().size();
 }
 
 ui::TextInputClient* RenderWidgetHostViewBase::GetTextInputClient() {
@@ -441,11 +444,6 @@ bool RenderWidgetHostViewBase::IsMouseLocked() {
   return mouse_locked_;
 }
 
-void RenderWidgetHostViewBase::UnhandledWheelEvent(
-    const blink::WebMouseWheelEvent& event) {
-  // Most implementations don't need to do anything here.
-}
-
 InputEventAckState RenderWidgetHostViewBase::FilterInputEvent(
     const blink::WebInputEvent& input_event) {
   // By default, input events are simply forwarded to the renderer.
@@ -465,6 +463,11 @@ void RenderWidgetHostViewBase::OnSetNeedsFlushInput() {
       base::TimeDelta::FromMicroseconds(kFlushInputRateInUs),
       this,
       &RenderWidgetHostViewBase::FlushInput);
+}
+
+void RenderWidgetHostViewBase::WheelEventAck(
+    const blink::WebMouseWheelEvent& event,
+    InputEventAckState ack_result) {
 }
 
 void RenderWidgetHostViewBase::GestureEventAck(
@@ -602,6 +605,39 @@ gfx::Size RenderWidgetHostViewBase::GetVisibleViewportSize() const {
 
 void RenderWidgetHostViewBase::SetInsets(const gfx::Insets& insets) {
   NOTIMPLEMENTED();
+}
+
+// static
+blink::WebScreenOrientationType
+RenderWidgetHostViewBase::GetOrientationTypeFromDisplay(
+    const gfx::Display& display) {
+  int angle = display.RotationAsDegree();
+  const gfx::Rect& bounds = display.bounds();
+
+  // Whether the device's natural orientation is portrait.
+  bool naturalPortrait = false;
+  if (angle == 0 || angle == 180) // The device is in its natural orientation.
+    naturalPortrait = bounds.height() > bounds.width();
+  else
+    naturalPortrait = bounds.height() < bounds.width();
+
+  switch (angle) {
+  case 0:
+    return naturalPortrait ? blink::WebScreenOrientationPortraitPrimary
+                           : blink::WebScreenOrientationLandscapePrimary;
+  case 90:
+    return naturalPortrait ? blink::WebScreenOrientationLandscapePrimary
+                           : blink::WebScreenOrientationPortraitSecondary;
+  case 180:
+    return naturalPortrait ? blink::WebScreenOrientationPortraitSecondary
+                           : blink::WebScreenOrientationLandscapeSecondary;
+  case 270:
+    return naturalPortrait ? blink::WebScreenOrientationLandscapeSecondary
+                           : blink::WebScreenOrientationPortraitPrimary;
+  default:
+    NOTREACHED();
+    return blink::WebScreenOrientationPortraitPrimary;
+  }
 }
 
 }  // namespace content

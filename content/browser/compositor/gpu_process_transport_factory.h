@@ -19,6 +19,10 @@ namespace base {
 class Thread;
 }
 
+namespace cc {
+class SurfaceManager;
+}
+
 namespace content {
 class BrowserCompositorOutputSurface;
 class BrowserCompositorOutputSurfaceProxy;
@@ -60,6 +64,9 @@ class GpuProcessTransportFactory
   virtual void AddObserver(ImageTransportFactoryObserver* observer) OVERRIDE;
   virtual void RemoveObserver(
       ImageTransportFactoryObserver* observer) OVERRIDE;
+#if defined(OS_MACOSX)
+  virtual void OnSurfaceDisplayed(int surface_id) OVERRIDE;
+#endif
 
  private:
   struct PerCompositorData;
@@ -78,6 +85,7 @@ class GpuProcessTransportFactory
   scoped_ptr<GLHelper> gl_helper_;
   ObserverList<ImageTransportFactoryObserver> observer_list_;
   base::WeakPtrFactory<GpuProcessTransportFactory> callback_factory_;
+  scoped_ptr<cc::SurfaceManager> surface_manager_;
 
   // The contents of this map and its methods may only be used on the compositor
   // thread.

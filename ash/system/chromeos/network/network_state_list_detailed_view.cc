@@ -31,7 +31,6 @@
 #include "chromeos/network/network_configuration_handler.h"
 #include "chromeos/network/network_state.h"
 #include "chromeos/network/network_state_handler.h"
-#include "chromeos/network/shill_property_util.h"
 #include "grit/ash_resources.h"
 #include "grit/ash_strings.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
@@ -183,7 +182,7 @@ void NetworkStateListDetailedView::ManagerChanged() {
 void NetworkStateListDetailedView::NetworkListChanged() {
   NetworkStateHandler* handler = NetworkHandler::Get()->network_state_handler();
   NetworkStateHandler::NetworkStateList network_list;
-  handler->GetNetworkList(&network_list);
+  handler->GetVisibleNetworkList(&network_list);
   UpdateNetworks(network_list);
   UpdateNetworkList();
   UpdateHeaderButtons();

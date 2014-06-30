@@ -4,6 +4,7 @@
 
 #include "net/quic/test_tools/quic_test_utils.h"
 
+#include "base/sha1.h"
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "net/quic/crypto/crypto_framer.h"
@@ -22,8 +23,8 @@ using base::StringPiece;
 using std::max;
 using std::min;
 using std::string;
-using testing::_;
 using testing::AnyNumber;
+using testing::_;
 
 namespace net {
 namespace test {
@@ -50,6 +51,44 @@ QuicAckFrame MakeAckFrame(QuicPacketSequenceNumber largest_observed,
   ack.sent_info.least_unacked = least_unacked;
   ack.sent_info.entropy_hash = 0;
   return ack;
+}
+
+QuicAckFrame MakeAckFrameWithNackRanges(
+    size_t num_nack_ranges, QuicPacketSequenceNumber least_unacked) {
+  QuicAckFrame ack = MakeAckFrame(2 * num_nack_ranges + least_unacked,
+                                  least_unacked);
+  // Add enough missing packets to get num_nack_ranges nack ranges.
+  for (QuicPacketSequenceNumber i = 1; i < 2 * num_nack_ranges; i += 2) {
+    ack.received_info.missing_packets.insert(least_unacked + i);
+  }
+  return ack;
+}
+
+SerializedPacket BuildUnsizedDataPacket(QuicFramer* framer,
+                                        const QuicPacketHeader& header,
+                                        const QuicFrames& frames) {
+  const size_t max_plaintext_size = framer->GetMaxPlaintextSize(kMaxPacketSize);
+  size_t packet_size = GetPacketHeaderSize(header);
+  for (size_t i = 0; i < frames.size(); ++i) {
+    DCHECK_LE(packet_size, max_plaintext_size);
+    bool first_frame = i == 0;
+    bool last_frame = i == frames.size() - 1;
+    const size_t frame_size = framer->GetSerializedFrameLength(
+        frames[i], max_plaintext_size - packet_size, first_frame, last_frame,
+        header.is_in_fec_group,
+        header.public_header.sequence_number_length);
+    DCHECK(frame_size);
+    packet_size += frame_size;
+  }
+  return framer->BuildDataPacket(header, frames, packet_size);
+}
+
+uint64 SimpleRandom::RandUint64() {
+  unsigned char hash[base::kSHA1Length];
+  base::SHA1HashBytes(reinterpret_cast<unsigned char*>(&seed_), sizeof(seed_),
+                      hash);
+  memcpy(&seed_, hash, sizeof(seed_));
+  return seed_;
 }
 
 MockFramerVisitor::MockFramerVisitor() {
@@ -262,9 +301,8 @@ bool PacketSavingConnection::SendOrQueuePacket(
 }
 
 MockSession::MockSession(QuicConnection* connection)
-    : QuicSession(connection, kInitialFlowControlWindowForTest,
-                  DefaultQuicConfig()) {
-  ON_CALL(*this, WritevData(_, _, _, _, _))
+    : QuicSession(connection, DefaultQuicConfig()) {
+  ON_CALL(*this, WritevData(_, _, _, _, _, _))
       .WillByDefault(testing::Return(QuicConsumedData(0, false)));
 }
 
@@ -272,7 +310,7 @@ MockSession::~MockSession() {
 }
 
 TestSession::TestSession(QuicConnection* connection, const QuicConfig& config)
-    : QuicSession(connection, kInitialFlowControlWindowForTest, config),
+    : QuicSession(connection, config),
       crypto_stream_(NULL) {}
 
 TestSession::~TestSession() {}
@@ -287,7 +325,7 @@ QuicCryptoStream* TestSession::GetCryptoStream() {
 
 TestClientSession::TestClientSession(QuicConnection* connection,
                                      const QuicConfig& config)
-    : QuicClientSessionBase(connection, kInitialFlowControlWindowForTest,
+    : QuicClientSessionBase(connection,
                             config),
       crypto_stream_(NULL) {
     EXPECT_CALL(*this, OnProofValid(_)).Times(AnyNumber());
@@ -380,6 +418,12 @@ IPAddressNumber Loopback4() {
   return addr;
 }
 
+IPAddressNumber Loopback6() {
+  IPAddressNumber addr;
+  CHECK(ParseIPLiteralToNumber("::1", &addr));
+  return addr;
+}
+
 void GenerateBody(string* body, int length) {
   body->clear();
   body->reserve(length);
@@ -412,7 +456,7 @@ QuicEncryptedPacket* ConstructEncryptedPacket(
   frames.push_back(frame);
   QuicFramer framer(QuicSupportedVersions(), QuicTime::Zero(), false);
   scoped_ptr<QuicPacket> packet(
-      framer.BuildUnsizedDataPacket(header, frames).packet);
+      BuildUnsizedDataPacket(&framer, header, frames).packet);
   EXPECT_TRUE(packet != NULL);
   QuicEncryptedPacket* encrypted = framer.EncryptPacket(ENCRYPTION_NONE,
                                                         sequence_number,
@@ -489,7 +533,7 @@ static QuicPacket* ConstructPacketFromHandshakeMessage(
   QuicFrame frame(&stream_frame);
   QuicFrames frames;
   frames.push_back(frame);
-  return quic_framer.BuildUnsizedDataPacket(header, frames).packet;
+  return BuildUnsizedDataPacket(&quic_framer, header, frames).packet;
 }
 
 QuicPacket* ConstructHandshakePacket(QuicConnectionId connection_id,
@@ -510,7 +554,7 @@ size_t GetPacketLengthForOneStream(
       NullEncrypter().GetCiphertextSize(*payload_length) +
       QuicPacketCreator::StreamFramePacketOverhead(
           version, PACKET_8BYTE_CONNECTION_ID, include_version,
-          sequence_number_length, is_in_fec_group);
+          sequence_number_length, 0u, is_in_fec_group);
   const size_t ack_length = NullEncrypter().GetCiphertextSize(
       QuicFramer::GetMinAckFrameSize(
           version, sequence_number_length, PACKET_1BYTE_SEQUENCE_NUMBER)) +
@@ -523,25 +567,31 @@ size_t GetPacketLengthForOneStream(
   return NullEncrypter().GetCiphertextSize(*payload_length) +
       QuicPacketCreator::StreamFramePacketOverhead(
           version, PACKET_8BYTE_CONNECTION_ID, include_version,
-          sequence_number_length, is_in_fec_group);
+          sequence_number_length, 0u, is_in_fec_group);
 }
 
-TestEntropyCalculator::TestEntropyCalculator() { }
+TestEntropyCalculator::TestEntropyCalculator() {}
 
-TestEntropyCalculator::~TestEntropyCalculator() { }
+TestEntropyCalculator::~TestEntropyCalculator() {}
 
 QuicPacketEntropyHash TestEntropyCalculator::EntropyHash(
     QuicPacketSequenceNumber sequence_number) const {
   return 1u;
 }
 
-MockEntropyCalculator::MockEntropyCalculator() { }
+MockEntropyCalculator::MockEntropyCalculator() {}
 
-MockEntropyCalculator::~MockEntropyCalculator() { }
+MockEntropyCalculator::~MockEntropyCalculator() {}
 
 QuicConfig DefaultQuicConfig() {
   QuicConfig config;
   config.SetDefaults();
+  config.SetInitialFlowControlWindowToSend(
+      kInitialSessionFlowControlWindowForTest);
+  config.SetInitialStreamFlowControlWindowToSend(
+      kInitialStreamFlowControlWindowForTest);
+  config.SetInitialSessionFlowControlWindowToSend(
+      kInitialSessionFlowControlWindowForTest);
   return config;
 }
 

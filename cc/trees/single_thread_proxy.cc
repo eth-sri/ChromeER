@@ -88,6 +88,7 @@ void SingleThreadProxy::CreateAndInitializeOutputSurface() {
   TRACE_EVENT0(
       "cc", "SingleThreadProxy::CreateAndInitializeOutputSurface");
   DCHECK(Proxy::IsMainThread());
+  DCHECK(layer_tree_host_->output_surface_lost());
 
   scoped_ptr<OutputSurface> output_surface =
       layer_tree_host_->CreateOutputSurface();
@@ -296,21 +297,6 @@ bool SingleThreadProxy::ReduceContentsTextureMemoryOnImplThread(
       limit_bytes, priority_cutoff, resource_provider);
 }
 
-void SingleThreadProxy::SendManagedMemoryStats() {
-  DCHECK(Proxy::IsImplThread());
-  if (!layer_tree_host_impl_)
-    return;
-  PrioritizedResourceManager* contents_texture_manager =
-      layer_tree_host_->contents_texture_manager();
-  if (!contents_texture_manager)
-    return;
-
-  layer_tree_host_impl_->SendManagedMemoryStats(
-      contents_texture_manager->MemoryVisibleBytes(),
-      contents_texture_manager->MemoryVisibleAndNearbyBytes(),
-      contents_texture_manager->MemoryUseBytes());
-}
-
 bool SingleThreadProxy::IsInsideDraw() { return inside_draw_; }
 
 void SingleThreadProxy::UpdateRendererCapabilitiesOnImplThread() {
@@ -340,9 +326,7 @@ void SingleThreadProxy::DidSwapBuffersCompleteOnImplThread() {
 void SingleThreadProxy::CompositeImmediately(base::TimeTicks frame_begin_time) {
   TRACE_EVENT0("cc", "SingleThreadProxy::CompositeImmediately");
   DCHECK(Proxy::IsMainThread());
-
-  if (!layer_tree_host_->InitializeOutputSurfaceIfNeeded())
-    return;
+  DCHECK(!layer_tree_host_->output_surface_lost());
 
   layer_tree_host_->AnimateLayers(frame_begin_time);
 

@@ -33,13 +33,13 @@ def _ToTestFeatures(names):
   return features
 
 
-def _ToTestApiData(names):
+def _ToTestAPIData(names):
   api_data = dict((name, [{'namespace': name, 'description': description}])
               for name, description in names)
   return api_data
 
 
-def _ToTestApiSchema(names, apis):
+def _ToTestAPISchema(names, apis):
   for name, json_file in names:
     apis['api'][json_file] = json.dumps(_TEST_API_DATA[name])
   return apis
@@ -60,7 +60,7 @@ _TEST_API_FEATURES = _ToTestFeatures([
 ])
 
 
-_TEST_API_DATA = _ToTestApiData([
+_TEST_API_DATA = _ToTestAPIData([
   ('alarms', u'<code>alarms</code>'),
   ('app.window', u'<code>app.window</code>'),
   ('browserAction', u'<code>browserAction</code>'),
@@ -90,7 +90,7 @@ _TEST_API_SCHEMA = [
 ]
 
 
-_TEST_DATA = _ToTestApiSchema(_TEST_API_SCHEMA, {
+_TEST_DATA = _ToTestAPISchema(_TEST_API_SCHEMA, {
   'api': {
     '_api_features.json': json.dumps(_TEST_API_FEATURES),
     '_manifest_features.json': '{}',
@@ -141,13 +141,11 @@ class APIListDataSourceTest(unittest.TestCase):
         'stable': [
           {
             'name': 'alarms',
-            'platforms': ['apps', 'extensions'],
             'version': 5,
             'description': u'<code>alarms</code>'
           },
           {
             'name': 'app.window',
-            'platforms': ['apps'],
             # Availability logic will look for a camelCase format filename
             # (i.e. 'app.window.html') at version 20 and below, but the
             # unix_name format above won't be found at these versions.
@@ -156,7 +154,6 @@ class APIListDataSourceTest(unittest.TestCase):
           },
           {
             'name': 'storage',
-            'platforms': ['apps', 'extensions'],
             'last': True,
             'version': 5,
             'description': u'<code>storage</code>'
@@ -164,7 +161,6 @@ class APIListDataSourceTest(unittest.TestCase):
         'dev': [
           {
             'name': 'sockets.udp',
-            'platforms': ['apps', 'extensions'],
             'last': True,
             'description': u'<code>sockets.udp</code>'
           }],
@@ -176,12 +172,10 @@ class APIListDataSourceTest(unittest.TestCase):
     self.assertEqual([
         {
           'name': 'experimental.bluetooth',
-          'platforms': ['apps'],
           'description': u'<code>experimental.bluetooth</code>'
         },
         {
           'name': 'experimental.power',
-          'platforms': ['apps', 'extensions'],
           'last': True,
           'description': u'<code>experimental.power</code>'
         }], self._api_list.get('apps').get('experimental'))
@@ -191,26 +185,22 @@ class APIListDataSourceTest(unittest.TestCase):
         'stable': [
           {
             'name': 'alarms',
-            'platforms': ['apps', 'extensions'],
             'version': 5,
             'description': u'<code>alarms</code>'
           },
           {
             'name': 'browserAction',
-            'platforms': ['extensions'],
             # See comment above for 'app.window'.
             'version': 21,
             'description': u'<code>browserAction</code>'
           },
           {
             'name': 'infobars',
-            'platforms': ['extensions'],
             'version': 5,
             'description': u'<code>infobars</code>'
           },
           {
             'name': 'storage',
-            'platforms': ['apps', 'extensions'],
             'last': True,
             'version': 5,
             'description': u'<code>storage</code>'
@@ -218,7 +208,6 @@ class APIListDataSourceTest(unittest.TestCase):
         'dev': [
           {
             'name': 'sockets.udp',
-            'platforms': ['apps', 'extensions'],
             'last': True,
             'description': u'<code>sockets.udp</code>'
           }],
@@ -230,12 +219,10 @@ class APIListDataSourceTest(unittest.TestCase):
     self.assertEqual([
         {
           'name': 'experimental.history',
-          'platforms': ['extensions'],
           'description': u'<code>experimental.history</code>'
         },
         {
           'name': 'experimental.power',
-          'platforms': ['apps', 'extensions'],
           'description': u'<code>experimental.power</code>',
           'last': True
         }], self._api_list.get('extensions').get('experimental'))

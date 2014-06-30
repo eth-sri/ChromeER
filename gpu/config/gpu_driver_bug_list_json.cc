@@ -19,7 +19,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
 {
   "name": "gpu driver bug list",
   // Please update the version number whenever you change this file.
-  "version": "5.4",
+  "version": "6.3",
   "entries": [
     {
       "id": 1,
@@ -860,24 +860,6 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       ]
     },
     {
-      "id": 67,
-      "description": "Force glFinish() after compositing on Mavericks on Intel GPU",
-      // TODO(ccameron): Get rid of this when we move to CoreAnimation.
-      "cr_bugs": [318877],
-      "os": {
-        "type": "macosx",
-        "version": {
-          "op": ">=",
-          "value": "10.9"
-        }
-      },
-      "vendor_id": "0x8086",
-      "multi_gpu_category": "active",
-      "features": [
-        "force_gl_finish_after_compositing"
-      ]
-    },
-    {
       "id": 68,
       "description": "Disable partial swaps on linux drivers",
       "cr_bugs": [339493],
@@ -963,6 +945,123 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       "vendor_id": "0x8086",
       "features": [
         "disable_d3d11"
+      ]
+    },
+)  // LONG_STRING_CONST macro
+// Avoid C2026 (string too big) error on VisualStudio.
+LONG_STRING_CONST(
+    {
+      "id": 74,
+      "cr_bugs": [278606, 382686],
+      "description": "Testing EGL sync fences was broken on most Qualcomm drivers",
+      "os": {
+        "type": "android",
+        "version": {
+          "op": "<=",
+          "value": "4.4.4"
+        }
+      },
+      "gl_vendor": {
+        "op": "beginwith",
+        "value": "Qualcomm"
+      },
+      "features": [
+        "disable_egl_khr_fence_sync"
+      ]
+    },
+    {
+      "id": 75,
+      "description": "Mali-400 support of EXT_multisampled_render_to_texture is buggy on Android < 4.3",
+      "cr_bugs": [362435],
+      "os": {
+        "type": "android",
+        "version": {
+          "op": "<",
+          "value": "4.3"
+        }
+      },
+      "gl_vendor": {
+        "op": "beginwith",
+        "value": "ARM"
+      },
+      "gl_renderer": {
+        "op": "contains",
+        "value": "Mali-400"
+      },
+      "features": [
+        "disable_multisampling"
+      ]
+    },
+    {
+      "id": 76,
+      "cr_bugs": [371530],
+      "description": "Testing EGL sync fences was broken on IMG",
+      "os": {
+        "type": "android",
+        "version": {
+          "op": "<=",
+          "value": "4.4.4"
+        }
+      },
+      "gl_vendor": {
+        "op": "beginwith",
+        "value": "Imagination Technologies"
+      },
+      "features": [
+        "disable_egl_khr_fence_sync"
+      ]
+    },
+    {
+      "id": 77,
+      "cr_bugs": [378691, 373360, 371530],
+      "description": "Testing fences was broken on Mali-400 MP drivers",
+      "os": {
+        "type": "android",
+        "version": {
+          "op": "<=",
+          "value": "4.4.4"
+        }
+      },
+      "gl_vendor": {
+        "op": "beginwith",
+        "value": "ARM"
+      },
+      "gl_renderer": {
+        "op": "beginwith",
+        "value": "Mali-400 MP"
+      },
+      "features": [
+        "disable_egl_khr_fence_sync"
+      ]
+    },
+    {
+      "id": 78,
+      "cr_bugs": [378691, 373360, 371530],
+      "description": "Testing fences was broken on Broadcom drivers",
+      "os": {
+        "type": "android",
+        "version": {
+          "op": "<=",
+          "value": "4.4.4"
+        }
+      },
+      "gl_vendor": {
+        "op": "beginwith",
+        "value": "Broadcom"
+      },
+      "features": [
+        "disable_egl_khr_fence_sync"
+      ]
+    },
+    {
+      "id": 79,
+      "cr_bugs": [371530],
+      "description": "Testing ARB sync fences is broken on MacOSX",
+      "os": {
+        "type": "macosx"
+      },
+      "features": [
+        "disable_arb_sync"
       ]
     }
   ]

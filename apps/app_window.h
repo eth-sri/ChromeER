@@ -7,7 +7,6 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "chrome/browser/extensions/extension_icon_image.h"
 #include "chrome/browser/sessions/session_id.h"
 #include "components/web_modal/web_contents_modal_dialog_manager_delegate.h"
 #include "content/public/browser/notification_observer.h"
@@ -15,6 +14,7 @@
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/console_message_level.h"
+#include "extensions/browser/extension_icon_image.h"
 #include "ui/base/ui_base_types.h"  // WindowShowState
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/rect.h"
@@ -68,6 +68,9 @@ class AppWindowContents {
 
   // Called when the native window closes.
   virtual void NativeWindowClosed() = 0;
+
+  // Called in tests when the window is shown
+  virtual void DispatchWindowShownForTests() const = 0;
 
   virtual content::WebContents* GetWebContents() const = 0;
 
@@ -355,6 +358,10 @@ class AppWindow : public content::NotificationObserver,
   // the renderer.
   void GetSerializedState(base::DictionaryValue* properties) const;
 
+  // Called by the window API when events can be sent to the window for this
+  // app.
+  void WindowEventsReady();
+
  protected:
   virtual ~AppWindow();
 
@@ -455,6 +462,10 @@ class AppWindow : public content::NotificationObserver,
   // Update the always-on-top bit in the native app window.
   void UpdateNativeAlwaysOnTop();
 
+  // Sends the onWindowShown event to the app if the window has been shown. Only
+  // has an effect in tests.
+  void SendOnWindowShownIfShown();
+
   // web_modal::WebContentsModalDialogManagerDelegate implementation.
   virtual web_modal::WebContentsModalDialogHost* GetWebContentsModalDialogHost()
       OVERRIDE;
@@ -522,6 +533,12 @@ class AppWindow : public content::NotificationObserver,
 
   // The first visually non-empty paint has completed.
   bool first_paint_complete_;
+
+  // Whether the window has been shown or not.
+  bool has_been_shown_;
+
+  // Whether events can be sent to the window.
+  bool can_send_events_;
 
   // Whether the window is hidden or not. Hidden in this context means actively
   // by the chrome.app.window API, not in an operating system context. For

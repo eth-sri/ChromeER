@@ -105,9 +105,9 @@ class MediaStreamInfoBarTest : public WebRtcTestBase {
 
 // Actual tests ---------------------------------------------------------------
 
-// Failing on ChromiumOS Debug and Win Aura, so disabling on both.
+// Failing on Win Aura, so disabling on that.
 // See http://crbug.com/263333.
-#if (defined(OS_CHROMEOS) && !defined(NDEBUG)) || defined(USE_AURA)
+#if defined(OS_WIN) && defined(USE_AURA)
 #define MAYBE_TestAllowingUserMedia DISABLED_TestAllowingUserMedia
 #else
 #define MAYBE_TestAllowingUserMedia TestAllowingUserMedia
@@ -132,9 +132,9 @@ IN_PROC_BROWSER_TEST_F(MediaStreamInfoBarTest, TestDenyingUserMediaIncognito) {
   GetUserMediaAndDeny(tab_contents);
 }
 
-// Failing on ChromiumOS Debug and Win Aura, so disabling on Aura.
+// Failing on Win Aura, so disabling on that.
 // See http://crbug.com/263333.
-#if defined(USE_AURA)
+#if defined(OS_WIN) && defined(USE_AURA)
 #define MAYBE_TestAcceptThenDenyWhichShouldBeSticky \
   DISABLED_TestAcceptThenDenyWhichShouldBeSticky
 #else
@@ -152,7 +152,7 @@ IN_PROC_BROWSER_TEST_F(MediaStreamInfoBarTest,
   content::WebContents* tab_contents = LoadTestPageInTab();
 
   GetUserMediaAndAccept(tab_contents);
-  DenyRequest(tab_contents, content::MEDIA_DEVICE_PERMISSION_DENIED);
+  GetUserMediaAndDeny(tab_contents);
 
   // Should fail with permission denied right away with no infobar popping up.
   GetUserMedia(tab_contents, kAudioVideoCallConstraints);
@@ -166,7 +166,7 @@ IN_PROC_BROWSER_TEST_F(MediaStreamInfoBarTest,
 
 // Failing on Win Aura, so disabling on that.
 // See http://crbug.com/263333.
-#if defined(USE_AURA)
+#if defined(OS_WIN) && defined(USE_AURA)
 #define MAYBE_TestAcceptIsNotSticky DISABLED_TestAcceptIsNotSticky
 #else
 #define MAYBE_TestAcceptIsNotSticky TestAcceptIsNotSticky
@@ -177,56 +177,7 @@ IN_PROC_BROWSER_TEST_F(MediaStreamInfoBarTest, MAYBE_TestAcceptIsNotSticky) {
   // If accept were sticky the second call would hang because it hangs if an
   // infobar does not pop up.
   GetUserMediaAndAccept(tab_contents);
-
-  // Because http request permissions are sticky per navigation, we need to
-  // navigate away from the current page in order to verify that the granted
-  // permissions are not permanently sticky.
-  ui_test_utils::NavigateToURLBlockUntilNavigationsComplete(browser(),
-      GURL("about:blank"), 1);
-
-  // Now navigate back to our test page.
-  ui_test_utils::NavigateToURL(browser(), test_page_url());
-  tab_contents = browser()->tab_strip_model()->GetActiveWebContents();
-
   GetUserMediaAndAccept(tab_contents);
-}
-
-// Test that accepting one getUserMedia request will not require a second
-// prompt when issuing a second getUserMedia request.
-IN_PROC_BROWSER_TEST_F(MediaStreamInfoBarTest,
-                       TestAcceptIsStickyPerNavigation) {
-  content::WebContents* tab_contents = LoadTestPageInTab();
-
-  GetUserMediaAndAccept(tab_contents);
-
-  // Before issuing the second gUM request, make sure we first stop the tracks
-  // we started with the first request. If they're still running the permissions
-  // will be active for other reasons and we won't be testing the temporary
-  // stickiness properly.
-  EXPECT_TRUE(StopLocalStream(tab_contents));
-
-  // Now no media tracks are running, so let's issue the second request.
-  GetUserMedia(tab_contents, kAudioVideoCallConstraints);
-}
-
-IN_PROC_BROWSER_TEST_F(MediaStreamInfoBarTest,
-                       TestTwoAcceptsPlusStickyPerNavigation) {
-  content::WebContents* tab_contents = LoadTestPageInTab();
-
-  // First ask for audio only and approve.
-  GetUserMediaWithSpecificConstraintsAndAccept(tab_contents,
-                                               kAudioOnlyCallConstraints);
-  EXPECT_TRUE(StopLocalStream(tab_contents));
-
-  // Next ask for video permissions.
-  // This will hang if the previous gUM call somehow gave video permissions.
-  GetUserMediaWithSpecificConstraintsAndAccept(tab_contents,
-                                               kVideoOnlyCallConstraints);
-  EXPECT_TRUE(StopLocalStream(tab_contents));
-
-  // Now ask for both audio and video and expect the call to go through without
-  // showing any UI.
-  GetUserMedia(tab_contents, kAudioVideoCallConstraints);
 }
 
 IN_PROC_BROWSER_TEST_F(MediaStreamInfoBarTest, TestDismissIsNotSticky) {
@@ -274,15 +225,8 @@ IN_PROC_BROWSER_TEST_F(MediaStreamInfoBarTest,
                                                kVideoOnlyCallConstraints);
 }
 
-#if defined(OS_CHROMEOS) && !defined(NDEBUG)
-#define MAYBE_DenyingCameraDoesNotCauseStickyDenyForMics \
-  DISABLED_DenyingCameraDoesNotCauseStickyDenyForMics
-#else
-#define MAYBE_DenyingCameraDoesNotCauseStickyDenyForMics \
-  DenyingCameraDoesNotCauseStickyDenyForMics
-#endif
 IN_PROC_BROWSER_TEST_F(MediaStreamInfoBarTest,
-                       MAYBE_DenyingCameraDoesNotCauseStickyDenyForMics) {
+                       DenyingCameraDoesNotCauseStickyDenyForMics) {
   content::WebContents* tab_contents = LoadTestPageInTab();
 
   // If camera blocking also blocked mics, the second call here would hang.

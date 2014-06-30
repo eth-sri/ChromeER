@@ -5,99 +5,96 @@
 #ifndef EXTENSIONS_RENDERER_SCRIPT_INJECTION_H_
 #define EXTENSIONS_RENDERER_SCRIPT_INJECTION_H_
 
-#include <map>
-#include <set>
-#include <string>
-
+#include "base/basictypes.h"
 #include "base/macros.h"
-#include "base/memory/scoped_ptr.h"
-#include "base/timer/elapsed_timer.h"
 #include "extensions/common/user_script.h"
-
-class GURL;
+#include "extensions/renderer/script_injector.h"
 
 namespace blink {
 class WebFrame;
 }
 
 namespace extensions {
-class UserScriptSlave;
+class Extension;
+struct ScriptsRunInfo;
 
-// This class is a wrapper around a UserScript that knows how to inject itself
-// into a frame.
+// A script wrapper which is aware of whether or not it is allowed to execute,
+// and contains the implementation to do so.
 class ScriptInjection {
  public:
-  // Map of extensions IDs to the executing script paths.
-  typedef std::map<std::string, std::set<std::string> > ExecutingScriptsMap;
+  // Return the id of the extension associated with the given world.
+  static std::string GetExtensionIdForIsolatedWorld(int world_id);
 
-  // A struct containing information about a script run.
-  struct ScriptsRunInfo {
-    ScriptsRunInfo();
-    ~ScriptsRunInfo();
+  // Remove the isolated world associated with the given extension.
+  static void RemoveIsolatedWorld(const std::string& extension_id);
 
-    // The number of CSS scripts injected.
-    size_t num_css;
-    // The number of JS scripts injected.
-    size_t num_js;
-    // A map of extension ids to executing script paths.
-    ExecutingScriptsMap executing_scripts;
-    // The elapsed time since the ScriptsRunInfo was constructed.
-    base::ElapsedTimer timer;
-
-   private:
-    DISALLOW_COPY_AND_ASSIGN(ScriptsRunInfo);
-  };
-
-  // Return the URL to use as the document url when checking permissions for
-  // script injection.
-  static GURL GetDocumentUrlForFrame(blink::WebFrame* frame);
-
-  ScriptInjection(scoped_ptr<UserScript> script,
-                  UserScriptSlave* user_script_slave);
+  ScriptInjection(scoped_ptr<ScriptInjector> injector,
+                  blink::WebFrame* web_frame,
+                  const std::string& extension_id,
+                  UserScript::RunLocation run_location,
+                  int tab_id);
   ~ScriptInjection();
 
-  // Returns true if this ScriptInjection wants to run on the given |frame| at
-  // the given |run_location| (i.e., if this script would inject either JS or
-  // CSS).
-  bool WantsToRun(blink::WebFrame* frame,
-                  UserScript::RunLocation run_location,
-                  const GURL& document_url) const;
+  // Try to inject the script at the |current_location|. This returns true if
+  // the script has either injected or will never inject (i.e., if the object
+  // is done), and false if injection is delayed (either for permission purposes
+  // or because |current_location| is not the designated |run_location_|).
+  // NOTE: |extension| may be NULL, if the extension is removed!
+  bool TryToInject(UserScript::RunLocation current_location,
+                   const Extension* extension,
+                   ScriptsRunInfo* scripts_run_info);
 
-  // Injects the script into the given |frame|, and updates |scripts_run_info|
-  // information about the run.
-  void Inject(blink::WebFrame* frame,
-              UserScript::RunLocation run_location,
-              ScriptsRunInfo* scripts_run_info) const;
+  // Called when permission for the given injection has been granted.
+  // Returns true if the injection ran.
+  bool OnPermissionGranted(const Extension* extension,
+                           ScriptsRunInfo* scripts_run_info);
 
-  const std::string& extension_id() { return extension_id_; }
+  // Accessors.
+  blink::WebFrame* web_frame() const { return web_frame_; }
+  const std::string& extension_id() const { return extension_id_; }
+  int64 request_id() const { return request_id_; }
 
  private:
-  // Returns true if the script will inject [css|js] at the given
-  // |run_location|.
-  bool ShouldInjectJS(UserScript::RunLocation run_location) const;
-  bool ShouldInjectCSS(UserScript::RunLocation run_location) const;
+  // Send a message to the browser requesting permission to execute.
+  void RequestPermission();
 
-  // Injects the [css|js] scripts into the frame, and stores the results of
-  // the run in |scripts_run_info|.
-  void InjectJS(blink::WebFrame* frame, ScriptsRunInfo* scripts_run_info) const;
-  void InjectCSS(blink::WebFrame* frame, ScriptsRunInfo* scripts_run_info)
-      const;
+  // Injects the script, optionally populating |scripts_run_info|.
+  void Inject(const Extension* extension, ScriptsRunInfo* scripts_run_info);
 
-  // The UserScript this is injecting.
-  scoped_ptr<UserScript> script_;
+  // Inject any JS scripts into the |frame|, optionally populating
+  // |execution_results|.
+  void InjectJs(const Extension* extension,
+                blink::WebFrame* frame,
+                base::ListValue* execution_results);
 
-  // The associated extension's id. This is a safe const&, since it is owned by
-  // the |user_script_|.
-  const std::string& extension_id_;
+  // Inject any CSS source into the |frame|.
+  void InjectCss(blink::WebFrame* frame);
 
-  // The associated UserScriptSlave.
-  // It's unfortunate that this is needed, but we use it to get the isolated
-  // world ids and the associated extensions.
-  // TODO(rdevlin.cronin): It would be nice to clean this up more.
-  UserScriptSlave* user_script_slave_;
+  // Notify that we will not inject, and mark it as acknowledged.
+  void NotifyWillNotInject(ScriptInjector::InjectFailureReason reason);
 
-  // True if the script is a standalone script or emulates greasemonkey.
-  bool is_standalone_or_emulate_greasemonkey_;
+  // The injector for this injection.
+  scoped_ptr<ScriptInjector> injector_;
+
+  // The (main) WebFrame into which this should inject the script.
+  blink::WebFrame* web_frame_;
+
+  // The id of the associated extension.
+  std::string extension_id_;
+
+  // The location in the document load at which we inject the script.
+  UserScript::RunLocation run_location_;
+
+  // The tab id associated with the frame.
+  int tab_id_;
+
+  // This injection's request id. This will be -1 unless the injection is
+  // currently waiting on permission.
+  int64 request_id_;
+
+  // Whether or not the injection is complete, either via injecting the script
+  // or because it will never complete.
+  bool complete_;
 
   DISALLOW_COPY_AND_ASSIGN(ScriptInjection);
 };

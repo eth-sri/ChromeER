@@ -9,17 +9,20 @@
 #include "ui/gfx/geometry/point.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/size.h"
-#include "ui/ozone/platform/dri/dri_surface.h"
 #include "ui/ozone/platform/dri/dri_util.h"
 #include "ui/ozone/platform/dri/hardware_display_controller.h"
+#include "ui/ozone/platform/dri/scanout_surface.h"
 
 namespace ui {
 
-ScreenManager::ScreenManager(DriWrapper* dri)
-    : dri_(dri), last_added_widget_(0) {
+ScreenManager::ScreenManager(
+    DriWrapper* dri, ScanoutSurfaceGenerator* surface_generator)
+    : dri_(dri), surface_generator_(surface_generator), last_added_widget_(0) {
 }
 
 ScreenManager::~ScreenManager() {
+  STLDeleteContainerPairSecondPointers(
+      controllers_.begin(), controllers_.end());
 }
 
 void ScreenManager::RemoveDisplayController(uint32_t crtc, uint32_t connector) {
@@ -39,7 +42,7 @@ bool ScreenManager::ConfigureDisplayController(uint32_t crtc,
   HardwareDisplayController* controller = NULL;
   if (it != controllers_.end()) {
     if (SameMode(mode, it->second->get_mode()))
-      return true;
+      return it->second->Enable();
 
     controller = it->second;
     controller->UnbindSurfaceFromController();
@@ -51,8 +54,8 @@ bool ScreenManager::ConfigureDisplayController(uint32_t crtc,
   }
 
   // Create a surface suitable for the current controller.
-  scoped_ptr<DriSurface> surface(
-      CreateSurface(gfx::Size(mode.hdisplay, mode.vdisplay)));
+  scoped_ptr<ScanoutSurface> surface(
+      surface_generator_->Create(gfx::Size(mode.hdisplay, mode.vdisplay)));
 
   if (!surface->Initialize()) {
     LOG(ERROR) << "Failed to initialize surface";
@@ -111,16 +114,13 @@ ScreenManager::FindDisplayController(uint32_t crtc, uint32_t connector) {
 }
 
 void ScreenManager::ForceInitializationOfPrimaryDisplay() {
-  drmModeRes* resources = drmModeGetResources(dri_->get_fd());
-  DCHECK(resources) << "Failed to get DRM resources";
   ScopedVector<HardwareDisplayControllerInfo> displays =
-      GetAvailableDisplayControllerInfos(dri_->get_fd(), resources);
-  drmModeFreeResources(resources);
+      GetAvailableDisplayControllerInfos(dri_->get_fd());
 
   CHECK_NE(0u, displays.size());
 
-  drmModePropertyRes* dpms =
-      dri_->GetProperty(displays[0]->connector(), "DPMS");
+  ScopedDrmPropertyPtr dpms(
+      dri_->GetProperty(displays[0]->connector(), "DPMS"));
   if (dpms)
     dri_->SetProperty(displays[0]->connector()->connector_id,
                       dpms->prop_id,
@@ -129,10 +129,6 @@ void ScreenManager::ForceInitializationOfPrimaryDisplay() {
   ConfigureDisplayController(displays[0]->crtc()->crtc_id,
                              displays[0]->connector()->connector_id,
                              displays[0]->connector()->modes[0]);
-}
-
-DriSurface* ScreenManager::CreateSurface(const gfx::Size& size) {
-  return new DriSurface(dri_, size);
 }
 
 }  // namespace ui

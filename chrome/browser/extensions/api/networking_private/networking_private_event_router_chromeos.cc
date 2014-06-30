@@ -6,7 +6,6 @@
 
 #include "base/json/json_writer.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/chromeos/net/network_portal_detector.h"
 #include "chrome/browser/extensions/api/networking_private/networking_private_api.h"
 #include "chrome/browser/extensions/event_router_forwarder.h"
 #include "chrome/browser/profiles/profile.h"
@@ -17,6 +16,7 @@
 #include "chromeos/network/network_state_handler_observer.h"
 #include "chromeos/network/onc/onc_signature.h"
 #include "chromeos/network/onc/onc_translator.h"
+#include "chromeos/network/portal_detector/network_portal_detector.h"
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
 #include "components/onc/onc_constants.h"
 #include "extensions/browser/extension_system.h"
@@ -143,7 +143,8 @@ void NetworkingPrivateEventRouterImpl::StartOrStopListeningForNetworkChanges() {
 void NetworkingPrivateEventRouterImpl::NetworkListChanged() {
   EventRouter* event_router = EventRouter::Get(profile_);
   NetworkStateHandler::NetworkStateList networks;
-  NetworkHandler::Get()->network_state_handler()->GetNetworkList(&networks);
+  NetworkHandler::Get()->network_state_handler()->GetVisibleNetworkList(
+      &networks);
   if (!event_router->HasEventListener(
            api::networking_private::OnNetworkListChanged::kEventName)) {
     // TODO(stevenjb): Remove logging once crbug.com/256881 is fixed
@@ -159,10 +160,7 @@ void NetworkingPrivateEventRouterImpl::NetworkListChanged() {
            networks.begin();
        iter != networks.end();
        ++iter) {
-    // TODO(gspencer): Currently the "GUID" is actually the service path. Fix
-    // this to be the real GUID once we're using
-    // ManagedNetworkConfigurationManager.
-    changes.push_back((*iter)->path());
+    changes.push_back((*iter)->guid());
   }
 
   scoped_ptr<base::ListValue> args(
@@ -185,7 +183,7 @@ void NetworkingPrivateEventRouterImpl::NetworkPropertiesUpdated(
                 network->path());
   scoped_ptr<base::ListValue> args(
       api::networking_private::OnNetworksChanged::Create(
-          std::vector<std::string>(1, network->path())));
+          std::vector<std::string>(1, network->guid())));
   scoped_ptr<Event> extension_event(new Event(
       api::networking_private::OnNetworksChanged::kEventName, args.Pass()));
   event_router->BroadcastEvent(extension_event.Pass());
@@ -194,7 +192,7 @@ void NetworkingPrivateEventRouterImpl::NetworkPropertiesUpdated(
 void NetworkingPrivateEventRouterImpl::OnPortalDetectionCompleted(
     const NetworkState* network,
     const NetworkPortalDetector::CaptivePortalState& state) {
-  const std::string path = network ? network->path() : std::string();
+  const std::string path = network ? network->guid() : std::string();
 
   EventRouter* event_router = EventRouter::Get(profile_);
   if (!event_router->HasEventListener(

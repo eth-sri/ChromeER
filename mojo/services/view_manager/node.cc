@@ -38,6 +38,15 @@ Node::Node(NodeDelegate* delegate, const NodeId& id)
 
 Node::~Node() {
   SetView(NULL);
+  // This is implicitly done during deletion of the window, but we do it here so
+  // that we're in a known state.
+  if (window_.parent())
+    window_.parent()->RemoveChild(&window_);
+}
+
+// static
+Node* Node::NodeForWindow(aura::Window* window) {
+  return window->GetProperty(kNodeKey);
 }
 
 const Node* Node::GetParent() const {
@@ -52,6 +61,13 @@ void Node::Add(Node* child) {
 
 void Node::Remove(Node* child) {
   window_.RemoveChild(&child->window_);
+}
+
+void Node::Reorder(Node* child, Node* relative, OrderDirection direction) {
+  if (direction == ORDER_ABOVE)
+    window_.StackChildAbove(child->window(), relative->window());
+  else if (direction == ORDER_BELOW)
+    window_.StackChildBelow(child->window(), relative->window());
 }
 
 const Node* Node::GetRoot() const {
@@ -79,6 +95,17 @@ std::vector<Node*> Node::GetChildren() {
 
 bool Node::Contains(const Node* node) const {
   return node && window_.Contains(&(node->window_));
+}
+
+bool Node::IsVisible() const {
+  return window_.TargetVisibility();
+}
+
+void Node::SetVisible(bool value) {
+  if (value)
+    window_.Show();
+  else
+    window_.Hide();
 }
 
 void Node::SetView(View* view) {
@@ -166,6 +193,11 @@ bool Node::HasHitTestMask() const {
 }
 
 void Node::GetHitTestMask(gfx::Path* mask) const {
+}
+
+void Node::OnEvent(ui::Event* event) {
+  if (view_)
+    delegate_->OnViewInputEvent(view_, event);
 }
 
 }  // namespace service

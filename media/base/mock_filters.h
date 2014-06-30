@@ -38,7 +38,6 @@ class MockDemuxer : public Demuxer {
   MOCK_METHOD1(Stop, void(const base::Closure& callback));
   MOCK_METHOD0(OnAudioRendererDisabled, void());
   MOCK_METHOD1(GetStream, DemuxerStream*(DemuxerStream::Type));
-  MOCK_CONST_METHOD0(GetStartTime, base::TimeDelta());
   MOCK_CONST_METHOD0(GetTimelineOffset, base::Time());
   MOCK_CONST_METHOD0(GetLiveness, Liveness());
 
@@ -76,9 +75,10 @@ class MockVideoDecoder : public VideoDecoder {
   virtual ~MockVideoDecoder();
 
   // VideoDecoder implementation.
-  MOCK_METHOD3(Initialize, void(const VideoDecoderConfig& config,
+  MOCK_METHOD4(Initialize, void(const VideoDecoderConfig& config,
                                 bool low_delay,
-                                const PipelineStatusCB&));
+                                const PipelineStatusCB& status_cb,
+                                const OutputCB& output_cb));
   MOCK_METHOD2(Decode, void(const scoped_refptr<DecoderBuffer>& buffer,
                             const DecodeCB&));
   MOCK_METHOD1(Reset, void(const base::Closure&));
@@ -95,8 +95,10 @@ class MockAudioDecoder : public AudioDecoder {
   virtual ~MockAudioDecoder();
 
   // AudioDecoder implementation.
-  MOCK_METHOD2(Initialize, void(const AudioDecoderConfig& config,
-                                const PipelineStatusCB&));
+  MOCK_METHOD3(Initialize,
+               void(const AudioDecoderConfig& config,
+                    const PipelineStatusCB& status_cb,
+                    const OutputCB& output_cb));
   MOCK_METHOD2(Decode,
                void(const scoped_refptr<DecoderBuffer>& buffer,
                     const DecodeCB&));
@@ -141,8 +143,8 @@ class MockAudioRenderer : public AudioRenderer {
   MOCK_METHOD7(Initialize, void(DemuxerStream* stream,
                                 const PipelineStatusCB& init_cb,
                                 const StatisticsCB& statistics_cb,
-                                const base::Closure& underflow_cb,
                                 const TimeCB& time_cb,
+                                const BufferingStateCB& buffering_state_cb,
                                 const base::Closure& ended_cb,
                                 const PipelineStatusCB& error_cb));
   MOCK_METHOD0(StartRendering, void());
@@ -150,7 +152,7 @@ class MockAudioRenderer : public AudioRenderer {
   MOCK_METHOD1(Flush, void(const base::Closure& callback));
   MOCK_METHOD1(Stop, void(const base::Closure& callback));
   MOCK_METHOD1(SetPlaybackRate, void(float playback_rate));
-  MOCK_METHOD2(Preroll, void(base::TimeDelta time, const PipelineStatusCB& cb));
+  MOCK_METHOD1(StartPlayingFrom, void(base::TimeDelta time));
   MOCK_METHOD1(SetVolume, void(float volume));
   MOCK_METHOD0(ResumeAfterUnderflow, void());
 

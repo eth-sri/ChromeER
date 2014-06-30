@@ -5,14 +5,16 @@
 #include "mojo/services/native_viewport/native_viewport_service.h"
 
 #include "base/macros.h"
+#include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/time/time.h"
-#include "mojo/public/cpp/bindings/allocation_scope.h"
-#include "mojo/public/interfaces/shell/shell.mojom.h"
+#include "mojo/public/cpp/application/application_delegate.h"
+#include "mojo/public/interfaces/service_provider/service_provider.mojom.h"
 #include "mojo/services/gles2/command_buffer_impl.h"
-#include "mojo/services/native_viewport/geometry_conversions.h"
 #include "mojo/services/native_viewport/native_viewport.h"
-#include "mojo/services/native_viewport/native_viewport.mojom.h"
+#include "mojo/services/public/cpp/geometry/geometry_type_converters.h"
+#include "mojo/services/public/cpp/input_events/input_events_type_converters.h"
+#include "mojo/services/public/interfaces/native_viewport/native_viewport.mojom.h"
 #include "ui/events/event.h"
 
 namespace mojo {
@@ -31,22 +33,24 @@ class NativeViewportImpl
     : public InterfaceImpl<mojo::NativeViewport>,
       public NativeViewportDelegate {
  public:
-  NativeViewportImpl(shell::Context* context)
+  NativeViewportImpl(ApplicationConnection* connection,
+                     shell::Context* context)
       : context_(context),
         widget_(gfx::kNullAcceleratedWidget),
-        waiting_for_event_ack_(false) {}
+        waiting_for_event_ack_(false),
+        weak_factory_(this) {}
   virtual ~NativeViewportImpl() {
     // Destroy the NativeViewport early on as it may call us back during
     // destruction and we want to be in a known state.
     native_viewport_.reset();
   }
 
-  virtual void Create(const Rect& bounds) OVERRIDE {
+  virtual void Create(RectPtr bounds) OVERRIDE {
     native_viewport_ =
         services::NativeViewport::Create(context_, this);
-    native_viewport_->Init(bounds);
+    native_viewport_->Init(bounds.To<gfx::Rect>());
     client()->OnCreated();
-    OnBoundsChanged(bounds);
+    OnBoundsChanged(bounds.To<gfx::Rect>());
   }
 
   virtual void Show() OVERRIDE {
@@ -63,22 +67,17 @@ class NativeViewportImpl
     native_viewport_->Close();
   }
 
-  virtual void SetBounds(const Rect& bounds) OVERRIDE {
-    gfx::Rect gfx_bounds(bounds.position().x(), bounds.position().y(),
-                         bounds.size().width(), bounds.size().height());
-    native_viewport_->SetBounds(gfx_bounds);
+  virtual void SetBounds(RectPtr bounds) OVERRIDE {
+    native_viewport_->SetBounds(bounds.To<gfx::Rect>());
   }
 
-  virtual void CreateGLES2Context(ScopedMessagePipeHandle client_handle)
-      OVERRIDE {
-    if (command_buffer_.get() || command_buffer_handle_.is_valid()) {
+  virtual void CreateGLES2Context(
+      InterfaceRequest<CommandBuffer> command_buffer_request) OVERRIDE {
+    if (command_buffer_.get() || command_buffer_request_.is_pending()) {
       LOG(ERROR) << "Can't create multiple contexts on a NativeViewport";
       return;
     }
-
-    // TODO(darin): CreateGLES2Context should accept a |CommandBufferPtr*|.
-    command_buffer_handle_ = client_handle.Pass();
-
+    command_buffer_request_ = command_buffer_request.Pass();
     CreateCommandBufferIfNeeded();
   }
 
@@ -87,7 +86,7 @@ class NativeViewportImpl
   }
 
   void CreateCommandBufferIfNeeded() {
-    if (!command_buffer_handle_.is_valid())
+    if (!command_buffer_request_.is_pending())
       return;
     DCHECK(!command_buffer_.get());
     if (widget_ == gfx::kNullAcceleratedWidget)
@@ -96,8 +95,8 @@ class NativeViewportImpl
     if (size.IsEmpty())
       return;
     command_buffer_.reset(
-        BindToPipe(new CommandBufferImpl(widget_, native_viewport_->GetSize()),
-                   command_buffer_handle_.Pass()));
+        new CommandBufferImpl(widget_, native_viewport_->GetSize()));
+    BindToRequest(command_buffer_.get(), &command_buffer_request_);
   }
 
   virtual bool OnEvent(ui::Event* ui_event) OVERRIDE {
@@ -118,38 +117,10 @@ class NativeViewportImpl
     if (waiting_for_event_ack_ && IsRateLimitedEventType(ui_event))
       return false;
 
-    AllocationScope scope;
-
-    Event::Builder event;
-    event.set_action(ui_event->type());
-    event.set_flags(ui_event->flags());
-    event.set_time_stamp(ui_event->time_stamp().ToInternalValue());
-
-    if (ui_event->IsMouseEvent() || ui_event->IsTouchEvent()) {
-      ui::LocatedEvent* located_event =
-          static_cast<ui::LocatedEvent*>(ui_event);
-      Point::Builder location;
-      location.set_x(located_event->location().x());
-      location.set_y(located_event->location().y());
-      event.set_location(location.Finish());
-    }
-
-    if (ui_event->IsTouchEvent()) {
-      ui::TouchEvent* touch_event = static_cast<ui::TouchEvent*>(ui_event);
-      TouchData::Builder touch_data;
-      touch_data.set_pointer_id(touch_event->touch_id());
-      event.set_touch_data(touch_data.Finish());
-    } else if (ui_event->IsKeyEvent()) {
-      ui::KeyEvent* key_event = static_cast<ui::KeyEvent*>(ui_event);
-      KeyData::Builder key_data;
-      key_data.set_key_code(key_event->key_code());
-      key_data.set_is_char(key_event->is_char());
-      event.set_key_data(key_data.Finish());
-    }
-
-    client()->OnEvent(event.Finish(),
-                     base::Bind(&NativeViewportImpl::AckEvent,
-                                base::Unretained(this)));
+    client()->OnEvent(
+        TypeConverter<EventPtr, ui::Event>::ConvertFrom(*ui_event),
+        base::Bind(&NativeViewportImpl::AckEvent,
+                   weak_factory_.GetWeakPtr()));
     waiting_for_event_ack_ = true;
     return false;
   }
@@ -162,8 +133,7 @@ class NativeViewportImpl
 
   virtual void OnBoundsChanged(const gfx::Rect& bounds) OVERRIDE {
     CreateCommandBufferIfNeeded();
-    AllocationScope scope;
-    client()->OnBoundsChanged(bounds);
+    client()->OnBoundsChanged(Rect::From(bounds));
   }
 
   virtual void OnDestroyed() OVERRIDE {
@@ -176,20 +146,37 @@ class NativeViewportImpl
   shell::Context* context_;
   gfx::AcceleratedWidget widget_;
   scoped_ptr<services::NativeViewport> native_viewport_;
-  ScopedMessagePipeHandle command_buffer_handle_;
+  InterfaceRequest<CommandBuffer> command_buffer_request_;
   scoped_ptr<CommandBufferImpl> command_buffer_;
   bool waiting_for_event_ack_;
+  base::WeakPtrFactory<NativeViewportImpl> weak_factory_;
 };
+
+class NVSDelegate : public ApplicationDelegate {
+ public:
+  NVSDelegate(shell::Context* context) : context_(context) {}
+  virtual ~NVSDelegate() {}
+
+  virtual bool ConfigureIncomingConnection(
+      mojo::ApplicationConnection* connection) MOJO_OVERRIDE {
+    connection->AddService<NativeViewportImpl>(context_);
+    return true;
+  }
+
+ private:
+  mojo::shell::Context* context_;
+};
+
 
 }  // namespace services
 }  // namespace mojo
 
 
-MOJO_NATIVE_VIEWPORT_EXPORT mojo::Application*
-    CreateNativeViewportService(mojo::shell::Context* context,
-                                mojo::ScopedMessagePipeHandle shell_handle) {
-  mojo::Application* app = new mojo::Application(shell_handle.Pass());
-  app->AddService<mojo::services::NativeViewportImpl>(context);
+MOJO_NATIVE_VIEWPORT_EXPORT mojo::ApplicationImpl*
+    CreateNativeViewportService(
+        mojo::shell::Context* context,
+        mojo::ScopedMessagePipeHandle service_provider_handle) {
+  mojo::ApplicationImpl* app = new mojo::ApplicationImpl(
+      new mojo::services::NVSDelegate(context), service_provider_handle.Pass());
   return app;
 }
-

@@ -43,10 +43,14 @@ config("compiler") {
     cflags += [
       "/Gy",  # Enable function-level linking.
       "/GS",  # Enable buffer security checking.
-      "/EHsc",  # Assume C functions can't throw exceptions and don't catch
-                # structured exceptions (only C++ ones).
       "/FS",  # Preserve previous PDB behavior.
     ]
+    if (is_component_build) {
+      cflags += [
+        "/EHsc",  # Assume C functions can't throw exceptions and don't catch
+                  # structured exceptions (only C++ ones).
+      ]
+    }
   } else {
     # Common GCC compiler flags setup.
     # --------------------------------
@@ -54,7 +58,6 @@ config("compiler") {
       "-fno-strict-aliasing",  # See http://crbug.com/32204
     ]
     cflags_cc += [
-      "-fno-exceptions",
       "-fno-threadsafe-statics",
       # Not exporting C++ inline functions can generally be applied anywhere
       # so we do so here. Normal function visibility is controlled by
@@ -70,7 +73,7 @@ config("compiler") {
     }
 
     # Linker warnings.
-    if (!(is_chromeos && cpu_arch == "arm")) {
+    if (!(is_chromeos && cpu_arch == "arm") && !is_mac) {
       # TODO(jochen): Enable this on chromeos on arm. http://crbug.com/356580
       ldflags += [ "-Wl,--fatal-warnings" ]
     }
@@ -84,9 +87,9 @@ config("compiler") {
 
     # CPU architecture.
     if (cpu_arch == "x64") {
-      common_mac_flags += [ "-arch x86_64" ]
+      common_mac_flags += [ "-arch", "x86_64" ]
     } else if (cpu_arch == "x86") {
-      common_mac_flags += [ "-arch i386" ]
+      common_mac_flags += [ "-arch", "i386" ]
     }
 
     cflags += common_mac_flags
@@ -102,6 +105,11 @@ config("compiler") {
   } else if (is_posix) {
     # Non-Mac Posix compiler flags setup.
     # -----------------------------------
+    if (gcc_version >= 48) {
+      cflags_cc += [
+        "-std=gnu++11",
+      ]
+    }
 
     # CPU architecture. We may or may not be doing a cross compile now, so for
     # simplicity we always explicitly set the architecture.
@@ -392,7 +400,8 @@ config("runtime_library") {
       android_stlport_root = "$android_ndk_root/sources/cxx-stl/stlport"
 
       cflags += [
-        "-I" + rebase_path("$android_stlport_root/stlport", root_build_dir)
+        "-isystem" + rebase_path("$android_stlport_root/stlport",
+                                 root_build_dir)
       ]
       lib_dirs += [ "$android_stlport_root/libs/$android_app_abi" ]
 
@@ -403,10 +412,23 @@ config("runtime_library") {
       }
     }
 
+    if (cpu_arch == "mipsel") {
+      libs += [
+        # ld linker is used for mips Android, and ld does not accept library
+        # absolute path prefixed by "-l"; Since libgcc does not exist in mips
+        # sysroot the proper library will be linked.
+        # TODO(gordanac): Remove once gold linker is used for mips Android.
+        "gcc",
+      ]
+    } else {
+      libs += [
+        # Manually link the libgcc.a that the cross compiler uses. This is
+        # absolute because the linker will look inside the sysroot if it's not.
+        rebase_path(android_libgcc_file),
+      ]
+    }
+
     libs += [
-      # Manually link the libgcc.a that the cross compiler uses. This is
-      # absolute because the linker will look inside the sysroot if it's not.
-      rebase_path(android_libgcc_file),
       "c",
       "dl",
       "m",
@@ -569,6 +591,7 @@ config("default_warnings") {
       "-Wno-missing-field-initializers",  # "struct foo f = {0};"
       "-Wno-unused-parameter",  # Unused function parameters.
     ]
+    cflags_cc = []
 
     if (is_mac) {
       cflags += [
@@ -601,6 +624,26 @@ config("default_warnings") {
         # Clang spots more unused functions.
         "-Wno-unused-function",
       ]
+
+      if (!is_mac && !is_ios) {
+        cflags_cc += [
+          "-Wno-reserved-user-defined-literal",
+        ]
+      }
+    }
+    if (gcc_version >= 48) {
+      cflags_cc += [
+        # See comment for -Wno-c++11-narrowing.
+        "-Wno-narrowing",
+        # TODO(thakis): Remove, http://crbug.com/263960
+        "-Wno-literal-suffix",
+      ]
+    }
+
+    # Suppress warnings about ABI changes on ARM (Clang doesn't give this
+    # warning).
+    if (cpu_arch == "arm" && !is_clang) {
+      cflags += [ "-Wno-psabi" ]
     }
 
     if (is_android) {
@@ -612,7 +655,7 @@ config("default_warnings") {
         "-Wno-ignored-qualifiers",
         "-Wno-type-limits",
       ]
-      cflags_cc = [
+      cflags_cc += [
         # Disabling c++0x-compat should be handled in WebKit, but
         # this currently doesn't work because gcc_version is not set
         # correctly when building with the Android build system.
@@ -703,12 +746,6 @@ if (is_win) {
       "-Wl,--gc-sections",
     ]
   }
-
-  if (is_android || is_ios) {
-    common_optimize_on_cflags += [ "-Os" ]
-  } else {
-    common_optimize_on_cflags += [ "-O2" ]
-  }
 }
 
 # Default "optimization on" config. On Windows, this favors size over speed.
@@ -718,6 +755,14 @@ config("optimize") {
   if (is_win) {
     cflags += [
       "/Os",   # favor size over speed.
+    ]
+  } else if (is_android || is_ios) {
+    cflags += [
+      "-Os",  # Favor size over speed.
+    ]
+  } else {
+    cflags += [
+      "-O2",
     ]
   }
 }
@@ -755,6 +800,15 @@ config("optimize_max") {
     cflags += [
       "/Ot",   # Favor speed over size.
       "/GL",   # Whole program optimization.
+      # Disable Warning 4702 ("Unreachable code") for the WPO/PGO builds.
+      # Probably anything that this would catch that wouldn't be caught in a
+      # normal build isn't going to actually be a bug, so the incremental value
+      # of C4702 for PGO builds is likely very small.
+      "/wd4702",
+    ]
+  } else {
+    cflags += [
+      "-O2",
     ]
   }
 }

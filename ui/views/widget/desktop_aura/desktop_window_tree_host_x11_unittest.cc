@@ -12,20 +12,17 @@
 #undef None
 
 #include "base/memory/scoped_ptr.h"
-#include "base/run_loop.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_tree_host.h"
 #include "ui/base/hit_test.h"
 #include "ui/base/x/x11_util.h"
-#include "ui/events/platform/platform_event_dispatcher.h"
-#include "ui/events/platform/platform_event_source.h"
-#include "ui/events/platform/scoped_event_dispatcher.h"
 #include "ui/events/platform/x11/x11_event_source.h"
 #include "ui/gfx/path.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/x/x11_atom_cache.h"
 #include "ui/views/test/views_test_base.h"
+#include "ui/views/test/x11_property_change_waiter.h"
 #include "ui/views/widget/desktop_aura/desktop_native_widget_aura.h"
 #include "ui/views/widget/widget_delegate.h"
 #include "ui/views/window/non_client_view.h"
@@ -34,81 +31,74 @@ namespace views {
 
 namespace {
 
-// Blocks till |window| becomes maximized.
-class MaximizeWaiter : public ui::PlatformEventDispatcher {
-  public:
-   explicit MaximizeWaiter(XID window)
-       : xwindow_(window),
-         wait_(true) {
-     const char* kAtomsToCache[] = {
-         "_NET_WM_STATE",
-         "_NET_WM_STATE_MAXIMIZED_VERT",
-         NULL
-     };
-     atom_cache_.reset(new ui::X11AtomCache(gfx::GetXDisplay(), kAtomsToCache));
+// Blocks till the window state hint, |hint|, is set or unset.
+class WMStateWaiter : public X11PropertyChangeWaiter {
+ public:
+  WMStateWaiter(XID window,
+                const char* hint,
+                bool wait_till_set)
+      : X11PropertyChangeWaiter(window, "_NET_WM_STATE"),
+        hint_(hint),
+        wait_till_set_(wait_till_set) {
 
-     // Override the dispatcher so that we get events before
-     // DesktopWindowTreeHostX11 does. We must do this because
-     // DesktopWindowTreeHostX11 stops propagation.
-     dispatcher_ = ui::PlatformEventSource::GetInstance()->
-         OverrideDispatcher(this).Pass();
-   }
+    const char* kAtomsToCache[] = {
+        hint,
+        NULL
+    };
+    atom_cache_.reset(new ui::X11AtomCache(gfx::GetXDisplay(), kAtomsToCache));
+  }
 
-   virtual ~MaximizeWaiter() {
-   }
+  virtual ~WMStateWaiter() {
+  }
 
-   void Wait() {
-     if (wait_) {
-       base::RunLoop run_loop;
-       quit_closure_ = run_loop.QuitClosure();
-       run_loop.Run();
-     }
-     dispatcher_.reset();
-   }
+ private:
+  // X11PropertyChangeWaiter:
+  virtual bool ShouldKeepOnWaiting(const ui::PlatformEvent& event) OVERRIDE {
+    std::vector<Atom> hints;
+    if (ui::GetAtomArrayProperty(xwindow(), "_NET_WM_STATE", &hints)) {
+      std::vector<Atom>::iterator it = std::find(
+          hints.begin(),
+          hints.end(),
+          atom_cache_->GetAtom(hint_));
+      bool hint_set = (it != hints.end());
+      return hint_set != wait_till_set_;
+    }
+    return true;
+  }
 
-   virtual bool CanDispatchEvent(const ui::PlatformEvent& event) OVERRIDE {
-     NOTREACHED();
-     return true;
-   }
+  scoped_ptr<ui::X11AtomCache> atom_cache_;
 
-   virtual uint32_t DispatchEvent(const ui::PlatformEvent& event) OVERRIDE {
-     if (event->type != PropertyNotify ||
-         event->xproperty.window != xwindow_ ||
-         event->xproperty.atom != atom_cache_->GetAtom("_NET_WM_STATE")) {
-       return ui::POST_DISPATCH_PERFORM_DEFAULT;
-     }
+  // The name of the hint to wait to get set or unset.
+  const char* hint_;
 
-     std::vector<Atom> wm_states;
-     if (!ui::GetAtomArrayProperty(xwindow_, "_NET_WM_STATE", &wm_states))
-       return ui::POST_DISPATCH_PERFORM_DEFAULT;
+  // Whether we are waiting for |hint| to be set or unset.
+  bool wait_till_set_;
 
-     std::vector<Atom>::iterator it = std::find(
-         wm_states.begin(),
-         wm_states.end(),
-         atom_cache_->GetAtom("_NET_WM_STATE_MAXIMIZED_VERT"));
-     if (it == wm_states.end())
-       return ui::POST_DISPATCH_PERFORM_DEFAULT;
+  DISALLOW_COPY_AND_ASSIGN(WMStateWaiter);
+};
 
-     wait_ = false;
-     if (!quit_closure_.is_null())
-       quit_closure_.Run();
-     return ui::POST_DISPATCH_PERFORM_DEFAULT;
-   }
+// Blocks till |window| gets activated.
+class ActivationWaiter : public X11PropertyChangeWaiter {
+ public:
+  explicit ActivationWaiter(XID window)
+      : X11PropertyChangeWaiter(ui::GetX11RootWindow(), "_NET_ACTIVE_WINDOW"),
+        window_(window) {
+  }
 
-   // The window we are waiting to get maximized.
-   XID xwindow_;
+  virtual ~ActivationWaiter() {
+  }
 
-   // Whether Wait() should block.
-   bool wait_;
+ private:
+  // X11PropertyChangeWaiter:
+  virtual bool ShouldKeepOnWaiting(const ui::PlatformEvent& event) OVERRIDE {
+    XID xid = 0;
+    ui::GetXIDProperty(ui::GetX11RootWindow(), "_NET_ACTIVE_WINDOW", &xid);
+    return xid != window_;
+  }
 
-   // Ends the run loop.
-   base::Closure quit_closure_;
+  XID window_;
 
-   scoped_ptr<ui::ScopedEventDispatcher> dispatcher_;
-
-   scoped_ptr<ui::X11AtomCache> atom_cache_;
-
-   DISALLOW_COPY_AND_ASSIGN(MaximizeWaiter);
+  DISALLOW_COPY_AND_ASSIGN(ActivationWaiter);
 };
 
 // A NonClientFrameView with a window mask with the bottom right corner cut out.
@@ -262,45 +252,53 @@ TEST_F(DesktopWindowTreeHostX11Test, Shape) {
   XID xid1 = widget1->GetNativeWindow()->GetHost()->GetAcceleratedWidget();
   std::vector<gfx::Rect> shape_rects = GetShapeRects(xid1);
   ASSERT_FALSE(shape_rects.empty());
-  EXPECT_TRUE(ShapeRectContainsPoint(shape_rects, 85, 5));
-  EXPECT_FALSE(ShapeRectContainsPoint(shape_rects, 95, 5));
-  EXPECT_TRUE(ShapeRectContainsPoint(shape_rects, 95, 15));
-  EXPECT_FALSE(ShapeRectContainsPoint(shape_rects, 105, 15));
+
+  // The widget was supposed to be 100x100, but the WM might have ignored this
+  // suggestion.
+  int widget_width = widget1->GetWindowBoundsInScreen().width();
+  EXPECT_TRUE(ShapeRectContainsPoint(shape_rects, widget_width - 15, 5));
+  EXPECT_FALSE(ShapeRectContainsPoint(shape_rects, widget_width - 5, 5));
+  EXPECT_TRUE(ShapeRectContainsPoint(shape_rects, widget_width - 5, 15));
+  EXPECT_FALSE(ShapeRectContainsPoint(shape_rects, widget_width + 5, 15));
 
   // Changing widget's size should update the shape.
   widget1->SetBounds(gfx::Rect(100, 100, 200, 200));
   ui::X11EventSource::GetInstance()->DispatchXEvents();
 
-  shape_rects = GetShapeRects(xid1);
-  ASSERT_FALSE(shape_rects.empty());
-  EXPECT_TRUE(ShapeRectContainsPoint(shape_rects, 85, 5));
-  EXPECT_TRUE(ShapeRectContainsPoint(shape_rects, 95, 5));
-  EXPECT_TRUE(ShapeRectContainsPoint(shape_rects, 185, 5));
-  EXPECT_FALSE(ShapeRectContainsPoint(shape_rects, 195, 5));
-  EXPECT_TRUE(ShapeRectContainsPoint(shape_rects, 195, 15));
-  EXPECT_FALSE(ShapeRectContainsPoint(shape_rects, 205, 15));
-
-  // The shape should be changed to a rectangle which fills the entire screen
-  // when |widget1| is maximized.
-  {
-    MaximizeWaiter waiter(xid1);
-    widget1->Maximize();
-    waiter.Wait();
+  if (widget1->GetWindowBoundsInScreen().width() == 200) {
+    shape_rects = GetShapeRects(xid1);
+    ASSERT_FALSE(shape_rects.empty());
+    EXPECT_TRUE(ShapeRectContainsPoint(shape_rects, 85, 5));
+    EXPECT_TRUE(ShapeRectContainsPoint(shape_rects, 95, 5));
+    EXPECT_TRUE(ShapeRectContainsPoint(shape_rects, 185, 5));
+    EXPECT_FALSE(ShapeRectContainsPoint(shape_rects, 195, 5));
+    EXPECT_TRUE(ShapeRectContainsPoint(shape_rects, 195, 15));
+    EXPECT_FALSE(ShapeRectContainsPoint(shape_rects, 205, 15));
   }
 
-  // xvfb does not support Xrandr so we cannot check the maximized window's
-  // bounds.
-  gfx::Rect maximized_bounds;
-  ui::GetWindowRect(xid1, &maximized_bounds);
+  if (ui::WmSupportsHint(ui::GetAtom("_NET_WM_STATE_MAXIMIZED_VERT"))) {
+    // The shape should be changed to a rectangle which fills the entire screen
+    // when |widget1| is maximized.
+    {
+      WMStateWaiter waiter(xid1, "_NET_WM_STATE_MAXIMIZED_VERT", true);
+      widget1->Maximize();
+      waiter.Wait();
+    }
 
-  shape_rects = GetShapeRects(xid1);
-  ASSERT_FALSE(shape_rects.empty());
-  EXPECT_TRUE(ShapeRectContainsPoint(shape_rects,
-                                     maximized_bounds.width() - 1,
-                                     5));
-  EXPECT_TRUE(ShapeRectContainsPoint(shape_rects,
-                                     maximized_bounds.width() - 1,
-                                     15));
+    // xvfb does not support Xrandr so we cannot check the maximized window's
+    // bounds.
+    gfx::Rect maximized_bounds;
+    ui::GetWindowRect(xid1, &maximized_bounds);
+
+    shape_rects = GetShapeRects(xid1);
+    ASSERT_FALSE(shape_rects.empty());
+    EXPECT_TRUE(ShapeRectContainsPoint(shape_rects,
+                                       maximized_bounds.width() - 1,
+                                       5));
+    EXPECT_TRUE(ShapeRectContainsPoint(shape_rects,
+                                       maximized_bounds.width() - 1,
+                                       15));
+  }
 
   // 2) Test setting the window shape via Widget::SetShape().
   gfx::Path shape2;
@@ -333,6 +331,167 @@ TEST_F(DesktopWindowTreeHostX11Test, Shape) {
   EXPECT_TRUE(ShapeRectContainsPoint(shape_rects, 15, 5));
   EXPECT_TRUE(ShapeRectContainsPoint(shape_rects, 95, 15));
   EXPECT_FALSE(ShapeRectContainsPoint(shape_rects, 105, 15));
+}
+
+// Test that the widget ignores changes in fullscreen state initiated by the
+// window manager (e.g. via a window manager accelerator key).
+TEST_F(DesktopWindowTreeHostX11Test, WindowManagerTogglesFullscreen) {
+  if (!ui::WmSupportsHint(ui::GetAtom("_NET_WM_STATE_FULLSCREEN")))
+    return;
+
+  scoped_ptr<Widget> widget = CreateWidget(new ShapedWidgetDelegate());
+  XID xid = widget->GetNativeWindow()->GetHost()->GetAcceleratedWidget();
+  widget->Show();
+  ui::X11EventSource::GetInstance()->DispatchXEvents();
+
+  gfx::Rect initial_bounds = widget->GetWindowBoundsInScreen();
+  {
+    WMStateWaiter waiter(xid, "_NET_WM_STATE_FULLSCREEN", true);
+    widget->SetFullscreen(true);
+    waiter.Wait();
+  }
+  EXPECT_TRUE(widget->IsFullscreen());
+
+  // Emulate the window manager exiting fullscreen via a window manager
+  // accelerator key. It should not affect the widget's fullscreen state.
+  {
+    const char* kAtomsToCache[] = {
+        "_NET_WM_STATE",
+        "_NET_WM_STATE_FULLSCREEN",
+        NULL
+    };
+    Display* display = gfx::GetXDisplay();
+    ui::X11AtomCache atom_cache(display, kAtomsToCache);
+
+    XEvent xclient;
+    memset(&xclient, 0, sizeof(xclient));
+    xclient.type = ClientMessage;
+    xclient.xclient.window = xid;
+    xclient.xclient.message_type = atom_cache.GetAtom("_NET_WM_STATE");
+    xclient.xclient.format = 32;
+    xclient.xclient.data.l[0] = 0;
+    xclient.xclient.data.l[1] = atom_cache.GetAtom("_NET_WM_STATE_FULLSCREEN");
+    xclient.xclient.data.l[2] = 0;
+    xclient.xclient.data.l[3] = 1;
+    xclient.xclient.data.l[4] = 0;
+    XSendEvent(display, DefaultRootWindow(display), False,
+               SubstructureRedirectMask | SubstructureNotifyMask,
+               &xclient);
+
+    WMStateWaiter waiter(xid, "_NET_WM_STATE_FULLSCREEN", false);
+    waiter.Wait();
+  }
+  EXPECT_TRUE(widget->IsFullscreen());
+
+  // Calling Widget::SetFullscreen(false) should clear the widget's fullscreen
+  // state and clean things up.
+  widget->SetFullscreen(false);
+  EXPECT_FALSE(widget->IsFullscreen());
+  EXPECT_EQ(initial_bounds.ToString(),
+            widget->GetWindowBoundsInScreen().ToString());
+}
+
+// Tests that the minimization information is propagated to the content window.
+TEST_F(DesktopWindowTreeHostX11Test, ToggleMinimizePropogateToContentWindow) {
+  Widget widget;
+  Widget::InitParams params = CreateParams(Widget::InitParams::TYPE_WINDOW);
+  params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+  params.native_widget = new DesktopNativeWidgetAura(&widget);
+  widget.Init(params);
+  widget.Show();
+  ui::X11EventSource::GetInstance()->DispatchXEvents();
+
+  XID xid = widget.GetNativeWindow()->GetHost()->GetAcceleratedWidget();
+  Display* display = gfx::GetXDisplay();
+
+  // Minimize by sending _NET_WM_STATE_HIDDEN
+  {
+    const char* kAtomsToCache[] = {
+        "_NET_WM_STATE",
+        "_NET_WM_STATE_HIDDEN",
+        NULL
+    };
+
+    ui::X11AtomCache atom_cache(display, kAtomsToCache);
+
+    std::vector< ::Atom> atom_list;
+    atom_list.push_back(atom_cache.GetAtom("_NET_WM_STATE_HIDDEN"));
+    ui::SetAtomArrayProperty(xid, "_NET_WM_STATE", "ATOM", atom_list);
+
+    XEvent xevent;
+    memset(&xevent, 0, sizeof(xevent));
+    xevent.type = PropertyNotify;
+    xevent.xproperty.type = PropertyNotify;
+    xevent.xproperty.send_event = 1;
+    xevent.xproperty.display = display;
+    xevent.xproperty.window = xid;
+    xevent.xproperty.atom = atom_cache.GetAtom("_NET_WM_STATE");
+    xevent.xproperty.state = 0;
+    XSendEvent(display, DefaultRootWindow(display), False,
+        SubstructureRedirectMask | SubstructureNotifyMask,
+        &xevent);
+
+    WMStateWaiter waiter(xid, "_NET_WM_STATE_HIDDEN", true);
+    waiter.Wait();
+  }
+  EXPECT_FALSE(widget.GetNativeWindow()->IsVisible());
+
+  // Show from minimized by sending _NET_WM_STATE_FOCUSED
+  {
+    const char* kAtomsToCache[] = {
+        "_NET_WM_STATE",
+        "_NET_WM_STATE_FOCUSED",
+        NULL
+    };
+
+    ui::X11AtomCache atom_cache(display, kAtomsToCache);
+
+    std::vector< ::Atom> atom_list;
+    atom_list.push_back(atom_cache.GetAtom("_NET_WM_STATE_FOCUSED"));
+    ui::SetAtomArrayProperty(xid, "_NET_WM_STATE", "ATOM", atom_list);
+
+    XEvent xevent;
+    memset(&xevent, 0, sizeof(xevent));
+    xevent.type = PropertyNotify;
+    xevent.xproperty.type = PropertyNotify;
+    xevent.xproperty.send_event = 1;
+    xevent.xproperty.display = display;
+    xevent.xproperty.window = xid;
+    xevent.xproperty.atom = atom_cache.GetAtom("_NET_WM_STATE");
+    xevent.xproperty.state = 0;
+    XSendEvent(display, DefaultRootWindow(display), False,
+        SubstructureRedirectMask | SubstructureNotifyMask,
+        &xevent);
+
+    WMStateWaiter waiter(xid, "_NET_WM_STATE_FOCUSED", true);
+    waiter.Wait();
+  }
+  EXPECT_TRUE(widget.GetNativeWindow()->IsVisible());
+}
+
+// Test that calling Widget::Deactivate() sets the widget as inactive wrt to
+// Chrome even if it not possible to deactivate the window wrt to the x server.
+// This behavior is required by several interactive_ui_tests.
+TEST_F(DesktopWindowTreeHostX11Test, Deactivate) {
+  scoped_ptr<Widget> widget(CreateWidget(NULL));
+
+  ActivationWaiter waiter(
+      widget->GetNativeWindow()->GetHost()->GetAcceleratedWidget());
+  widget->Show();
+  widget->Activate();
+  waiter.Wait();
+
+  widget->Deactivate();
+  // Regardless of whether |widget|'s X11 window eventually gets deactivated,
+  // |widget|'s "active" state should change.
+  EXPECT_FALSE(widget->IsActive());
+
+  // |widget|'s X11 window should still be active. Reactivating |widget| should
+  // update the widget's "active" state.
+  // Note: Activating a widget whose X11 window is not active does not
+  // synchronously update the widget's "active" state.
+  widget->Activate();
+  EXPECT_TRUE(widget->IsActive());
 }
 
 }  // namespace views

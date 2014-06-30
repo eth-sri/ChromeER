@@ -372,13 +372,14 @@ TEST_F(SyncNonFrontendDataTypeControllerTest, Stop) {
   EXPECT_EQ(DataTypeController::NOT_RUNNING, non_frontend_dtc_->state());
 }
 
+// Disabled due to http://crbug.com/388367
 TEST_F(SyncNonFrontendDataTypeControllerTest,
-       OnSingleDatatypeUnrecoverableError) {
+       DISABLED_OnSingleDatatypeUnrecoverableError) {
   SetStartExpectations();
   SetAssociateExpectations();
   SetActivateExpectations(DataTypeController::OK);
   EXPECT_CALL(*dtc_mock_.get(), RecordUnrecoverableError(_, "Test"));
-  EXPECT_CALL(service_, DisableBrokenDatatype(_, _, _))
+  EXPECT_CALL(service_, DisableDatatype(_, _, _))
       .WillOnce(InvokeWithoutArgs(non_frontend_dtc_.get(),
                                   &NonFrontendDataTypeController::Stop));
   SetStopExpectations();

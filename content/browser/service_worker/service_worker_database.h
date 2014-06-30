@@ -39,11 +39,14 @@ class CONTENT_EXPORT ServiceWorkerDatabase {
   explicit ServiceWorkerDatabase(const base::FilePath& path);
   ~ServiceWorkerDatabase();
 
+  // Used in UMA. A new value must be appended only.
   enum Status {
     STATUS_OK,
     STATUS_ERROR_NOT_FOUND,
+    STATUS_ERROR_IO_ERROR,
     STATUS_ERROR_CORRUPTED,
     STATUS_ERROR_FAILED,
+    STATUS_ERROR_MAX,
   };
 
   struct CONTENT_EXPORT RegistrationData {
@@ -67,6 +70,9 @@ class CONTENT_EXPORT ServiceWorkerDatabase {
   struct ResourceRecord {
     int64 resource_id;
     GURL url;
+
+    ResourceRecord() {}
+    ResourceRecord(int64 id, GURL url) : resource_id(id), url(url) {}
   };
 
   // Reads next available ids from the database. Returns OK if they are
@@ -114,7 +120,8 @@ class CONTENT_EXPORT ServiceWorkerDatabase {
   // Returns OK they are successfully written. Otherwise, returns an error.
   Status WriteRegistration(
       const RegistrationData& registration,
-      const std::vector<ResourceRecord>& resources);
+      const std::vector<ResourceRecord>& resources,
+      std::vector<int64>* newly_purgeable_resources);
 
   // Updates a registration for |registration_id| to an active state. Returns OK
   // if it's successfully updated. Otherwise, returns an error.
@@ -134,7 +141,8 @@ class CONTENT_EXPORT ServiceWorkerDatabase {
   // deleted or not found in the database. Otherwise, returns an error.
   Status DeleteRegistration(
       int64 registration_id,
-      const GURL& origin);
+      const GURL& origin,
+      std::vector<int64>* newly_purgeable_resources);
 
   // As new resources are put into the diskcache, they go into an uncommitted
   // list. When a registration is saved that refers to those ids, they're
@@ -167,14 +175,21 @@ class CONTENT_EXPORT ServiceWorkerDatabase {
   // Returns OK on success. Otherwise deletes nothing and returns an error.
   Status ClearPurgeableResourceIds(const std::set<int64>& ids);
 
+  // Moves |ids| from the uncommitted list to the purgeable list.
+  // Returns OK on success. Otherwise deletes nothing and returns an error.
+  Status PurgeUncommittedResourceIds(const std::set<int64>& ids);
+
   // Deletes all data for |origin|, namely, unique origin, registrations and
   // resource records. Resources are moved to the purgeable list. Returns OK if
   // they are successfully deleted or not found in the database. Otherwise,
   // returns an error.
-  Status DeleteAllDataForOrigin(const GURL& origin);
+  Status DeleteAllDataForOrigin(
+      const GURL& origin,
+      std::vector<int64>* newly_purgeable_resources);
 
-  bool is_disabled() const { return is_disabled_; }
-  bool was_corruption_detected() const { return was_corruption_detected_; }
+  // Completely deletes the contents of the database.
+  // Be careful using this function.
+  Status DestroyDatabase();
 
  private:
   // Opens the database at the |path_|. This is lazily called when the first
@@ -214,6 +229,7 @@ class CONTENT_EXPORT ServiceWorkerDatabase {
   // returns an error.
   Status DeleteResourceRecords(
       int64 version_id,
+      std::vector<int64>* newly_purgeable_resources,
       leveldb::WriteBatch* batch);
 
   // Reads resource ids for |id_key_prefix| from the database. Returns OK if
@@ -228,6 +244,10 @@ class CONTENT_EXPORT ServiceWorkerDatabase {
   Status WriteResourceIds(
       const char* id_key_prefix,
       const std::set<int64>& ids);
+  Status WriteResourceIdsInBatch(
+      const char* id_key_prefix,
+      const std::set<int64>& ids,
+      leveldb::WriteBatch* batch);
 
   // Deletes resource ids for |id_key_prefix| from the database. Returns OK if
   // it's successfully deleted or not found in the database. Otherwise, returns
@@ -235,6 +255,10 @@ class CONTENT_EXPORT ServiceWorkerDatabase {
   Status DeleteResourceIds(
       const char* id_key_prefix,
       const std::set<int64>& ids);
+  Status DeleteResourceIdsInBatch(
+      const char* id_key_prefix,
+      const std::set<int64>& ids,
+      leveldb::WriteBatch* batch);
 
   // Reads the current schema version from the database. If the database hasn't
   // been written anything yet, sets |db_version| to 0 and returns OK.
@@ -256,9 +280,18 @@ class CONTENT_EXPORT ServiceWorkerDatabase {
 
   bool IsOpen();
 
-  void HandleError(
+  void Disable(
       const tracked_objects::Location& from_here,
-      const leveldb::Status& status);
+      Status status);
+  void HandleOpenResult(
+      const tracked_objects::Location& from_here,
+      Status status);
+  void HandleReadResult(
+      const tracked_objects::Location& from_here,
+      Status status);
+  void HandleWriteResult(
+      const tracked_objects::Location& from_here,
+      Status status);
 
   base::FilePath path_;
   scoped_ptr<leveldb::Env> env_;
@@ -268,16 +301,12 @@ class CONTENT_EXPORT ServiceWorkerDatabase {
   int64 next_avail_resource_id_;
   int64 next_avail_version_id_;
 
-  // True if a database error has occurred (e.g. cannot read data).
-  // If true, all database accesses will fail.
-  bool is_disabled_;
-
-  // True if a database corruption was detected.
-  bool was_corruption_detected_;
-
-  // True if a database was initialized, that is, the schema version was written
-  // in the database.
-  bool is_initialized_;
+  enum State {
+    UNINITIALIZED,
+    INITIALIZED,
+    DISABLED,
+  };
+  State state_;
 
   base::SequenceChecker sequence_checker_;
 
@@ -285,6 +314,7 @@ class CONTENT_EXPORT ServiceWorkerDatabase {
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerDatabaseTest, OpenDatabase_InMemory);
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerDatabaseTest, DatabaseVersion);
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerDatabaseTest, GetNextAvailableIds);
+  FRIEND_TEST_ALL_PREFIXES(ServiceWorkerDatabaseTest, DestroyDatabase);
 
   DISALLOW_COPY_AND_ASSIGN(ServiceWorkerDatabase);
 };

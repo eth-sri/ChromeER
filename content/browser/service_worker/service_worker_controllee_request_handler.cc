@@ -10,6 +10,8 @@
 #include "content/browser/service_worker/service_worker_url_request_job.h"
 #include "content/browser/service_worker/service_worker_utils.h"
 #include "content/common/service_worker/service_worker_types.h"
+#include "net/base/load_flags.h"
+#include "net/base/net_util.h"
 #include "net/url_request/url_request.h"
 
 namespace content {
@@ -17,19 +19,34 @@ namespace content {
 ServiceWorkerControlleeRequestHandler::ServiceWorkerControlleeRequestHandler(
     base::WeakPtr<ServiceWorkerContextCore> context,
     base::WeakPtr<ServiceWorkerProviderHost> provider_host,
+    base::WeakPtr<webkit_blob::BlobStorageContext> blob_storage_context,
     ResourceType::Type resource_type)
-    : ServiceWorkerRequestHandler(context, provider_host, resource_type),
+    : ServiceWorkerRequestHandler(context,
+                                  provider_host,
+                                  blob_storage_context,
+                                  resource_type),
+      is_main_resource_load_(
+          ServiceWorkerUtils::IsMainResourceType(resource_type)),
       weak_factory_(this) {
 }
 
 ServiceWorkerControlleeRequestHandler::
     ~ServiceWorkerControlleeRequestHandler() {
+  // Navigation triggers an update to occur shortly after the page and
+  // its initial subresources load.
+  if (provider_host_ && provider_host_->active_version()) {
+    if (is_main_resource_load_)
+      provider_host_->active_version()->ScheduleUpdate();
+    else
+      provider_host_->active_version()->DeferScheduledUpdate();
+  }
 }
 
 net::URLRequestJob* ServiceWorkerControlleeRequestHandler::MaybeCreateJob(
     net::URLRequest* request,
     net::NetworkDelegate* network_delegate) {
-  if (!context_ || !provider_host_) {
+  if (!context_ || !provider_host_ ||
+      request->load_flags() & net::LOAD_BYPASS_CACHE) {
     // We can't do anything other than to fall back to network.
     job_ = NULL;
     return NULL;
@@ -52,9 +69,9 @@ net::URLRequestJob* ServiceWorkerControlleeRequestHandler::MaybeCreateJob(
   // It's for original request (A) or redirect case (B-a or B-b).
   DCHECK(!job_.get() || job_->ShouldForwardToServiceWorker());
 
-  job_ = new ServiceWorkerURLRequestJob(request, network_delegate,
-                                        provider_host_);
-  if (ServiceWorkerUtils::IsMainResourceType(resource_type_))
+  job_ = new ServiceWorkerURLRequestJob(
+      request, network_delegate, provider_host_, blob_storage_context_);
+  if (is_main_resource_load_)
     PrepareForMainResource(request->url());
   else
     PrepareForSubResource();
@@ -77,10 +94,12 @@ void ServiceWorkerControlleeRequestHandler::PrepareForMainResource(
   // The corresponding provider_host may already have associate version in
   // redirect case, unassociate it now.
   provider_host_->SetActiveVersion(NULL);
-  provider_host_->SetPendingVersion(NULL);
-  provider_host_->set_document_url(url);
+  provider_host_->SetWaitingVersion(NULL);
+
+  GURL stripped_url = net::SimplifyUrlForRequest(url);
+  provider_host_->SetDocumentUrl(stripped_url);
   context_->storage()->FindRegistrationForDocument(
-      url,
+      stripped_url,
       base::Bind(&self::DidLookupRegistrationForMainResource,
                  weak_factory_.GetWeakPtr()));
 }
@@ -95,12 +114,12 @@ ServiceWorkerControlleeRequestHandler::DidLookupRegistrationForMainResource(
     job_->FallbackToNetwork();
     return;
   }
-  // TODO(michaeln): should SetPendingVersion() even if no active version so
+  // TODO(michaeln): should SetWaitingVersion() even if no active version so
   // so the versions in the pipeline (.installing, .waiting) show up in the
   // attribute values.
   DCHECK(registration);
   provider_host_->SetActiveVersion(registration->active_version());
-  provider_host_->SetPendingVersion(registration->pending_version());
+  provider_host_->SetWaitingVersion(registration->waiting_version());
   job_->ForwardToServiceWorker();
 }
 

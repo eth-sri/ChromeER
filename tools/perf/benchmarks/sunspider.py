@@ -1,4 +1,4 @@
-# Copyright (c) 2013 The Chromium Authors. All rights reserved.
+# Copyright 2013 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 import collections
@@ -6,7 +6,7 @@ import json
 import os
 
 from metrics import power
-from telemetry import test
+from telemetry import benchmark
 from telemetry.page import page_measurement
 from telemetry.page import page_set
 
@@ -51,7 +51,7 @@ class _SunspiderMeasurement(page_measurement.PageMeasurement):
     results.Add('Total', 'ms', totals)
 
 
-class Sunspider(test.Test):
+class Sunspider(benchmark.Benchmark):
   """Apple's SunSpider JavaScript benchmark."""
   test = _SunspiderMeasurement
 

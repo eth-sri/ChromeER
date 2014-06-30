@@ -139,6 +139,10 @@ class COMPOSITOR_EXPORT Layer
   void SetBounds(const gfx::Rect& bounds);
   const gfx::Rect& bounds() const { return bounds_; }
 
+  // The offset from our parent (stored in bounds.origin()) is an integer but we
+  // may need to be at a fractional pixel offset to align properly on screen.
+  void SetSubpixelPositionOffset(const gfx::Vector2dF offset);
+
   // Return the target bounds if animator is running, or the current bounds
   // otherwise.
   gfx::Rect GetTargetBounds() const;
@@ -287,6 +291,8 @@ class COMPOSITOR_EXPORT Layer
 
   const SkRegion& damaged_region() const { return damaged_region_; }
 
+  void CompleteAllAnimations();
+
   // Suppresses painting the content by disconnecting |delegate_|.
   void SuppressPaint();
 
@@ -338,6 +344,8 @@ class COMPOSITOR_EXPORT Layer
  private:
   friend class LayerOwner;
 
+  void CollectAnimators(std::vector<scoped_refptr<LayerAnimator> >* animators);
+
   // Stacks |child| above or below |other|.  Helper method for StackAbove() and
   // StackBelow().
   void StackRelativeTo(Layer* child, Layer* other, bool above);
@@ -366,6 +374,7 @@ class COMPOSITOR_EXPORT Layer
   virtual void AddThreadedAnimation(
       scoped_ptr<cc::Animation> animation) OVERRIDE;
   virtual void RemoveThreadedAnimation(int animation_id) OVERRIDE;
+  virtual LayerAnimatorCollection* GetLayerAnimatorCollection() OVERRIDE;
 
   // Creates a corresponding composited layer for |type_|.
   void CreateWebLayer();
@@ -389,6 +398,12 @@ class COMPOSITOR_EXPORT Layer
   // be called once we have been added to a tree.
   void SendPendingThreadedAnimations();
 
+  void AddAnimatorsInTreeToCollection(LayerAnimatorCollection* collection);
+  void RemoveAnimatorsInTreeFromCollection(LayerAnimatorCollection* collection);
+
+  // Returns whether the layer has an animating LayerAnimator.
+  bool IsAnimating() const;
+
   const LayerType type_;
 
   Compositor* compositor_;
@@ -399,6 +414,7 @@ class COMPOSITOR_EXPORT Layer
   std::vector<Layer*> children_;
 
   gfx::Rect bounds_;
+  gfx::Vector2dF subpixel_position_offset_;
 
   // Visibility of this layer. See SetVisible/IsDrawn for more details.
   bool visible_;

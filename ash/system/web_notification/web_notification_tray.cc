@@ -158,9 +158,10 @@ void WorkAreaObserver::StopObserving() {
 void WorkAreaObserver::OnDisplayWorkAreaInsetsChanged() {
   UpdateShelf();
 
-  collection_->OnDisplayBoundsChanged(
+  collection_->OnDisplayMetricsChanged(
       Shell::GetScreen()->GetDisplayNearestWindow(
-          shelf_->shelf_widget()->GetNativeView()));
+          shelf_->shelf_widget()->GetNativeView()),
+      gfx::DisplayObserver::DISPLAY_METRIC_WORK_AREA);
 }
 
 void WorkAreaObserver::OnAutoHideStateChanged(ShelfAutoHideState new_state) {
@@ -304,7 +305,6 @@ WebNotificationTray::WebNotificationTray(StatusAreaWidget* status_area_widget)
   tray_container()->AddChildView(button_);
   SetContentsBackground();
   tray_container()->SetBorder(views::Border::NullBorder());
-  SetVisible(false);
   message_center_tray_.reset(new message_center::MessageCenterTray(
       this,
       message_center::MessageCenter::Get()));

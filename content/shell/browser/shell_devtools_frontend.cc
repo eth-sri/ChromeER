@@ -19,6 +19,7 @@
 #include "content/shell/browser/shell_browser_main_parts.h"
 #include "content/shell/browser/shell_content_browser_client.h"
 #include "content/shell/browser/shell_devtools_delegate.h"
+#include "content/shell/browser/webkit_test_controller.h"
 #include "content/shell/common/shell_switches.h"
 #include "net/base/filename_util.h"
 
@@ -45,7 +46,7 @@ GURL GetDevToolsPathAsURL(const std::string& settings,
 
   GURL result = net::FilePathToFileURL(dev_tools_path);
   if (!settings.empty())
-      result = GURL(base::StringPrintf("%s?settings=%s",
+      result = GURL(base::StringPrintf("%s?settings=%s&experiments=true",
                                        result.spec().c_str(),
                                        settings.c_str()));
   return result;
@@ -129,6 +130,11 @@ void ShellDevToolsFrontend::DocumentOnLoadCompletedInMainFrame() {
 void ShellDevToolsFrontend::WebContentsDestroyed() {
   DevToolsManager::GetInstance()->ClientHostClosing(frontend_host_.get());
   delete this;
+}
+
+void ShellDevToolsFrontend::RenderProcessGone(base::TerminationStatus status) {
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree))
+    WebKitTestController::Get()->DevToolsProcessCrashed();
 }
 
 void ShellDevToolsFrontend::InspectedContentsClosing() {

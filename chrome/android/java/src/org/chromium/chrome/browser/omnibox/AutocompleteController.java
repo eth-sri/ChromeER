@@ -214,10 +214,12 @@ public class AutocompleteController {
 
     @CalledByNative
     private static OmniboxSuggestion buildOmniboxSuggestion(int nativeType, int relevance,
-            int transition, String text, String description, String fillIntoEdit, String url,
-            String formattedUrl, boolean isStarred, boolean isDeletable) {
+            int transition, String text, String description, String answerContents,
+            String answerType, String fillIntoEdit, String url, String formattedUrl,
+            boolean isStarred, boolean isDeletable) {
         return new OmniboxSuggestion(nativeType, relevance, transition, text, description,
-                fillIntoEdit, url, formattedUrl, isStarred, isDeletable);
+                answerContents, answerType, fillIntoEdit, url, formattedUrl, isStarred,
+                isDeletable);
     }
 
     /**
@@ -236,6 +238,14 @@ public class AutocompleteController {
     public String updateMatchDestinationUrl(int selectedIndex, long elapsedTimeSinceInputChange) {
         return nativeUpdateMatchDestinationURL(mNativeAutocompleteControllerAndroid, selectedIndex,
                 elapsedTimeSinceInputChange);
+    }
+
+    /**
+     * @param query User input text.
+     * @return The top synchronous suggestion from the autocomplete controller.
+     */
+    public OmniboxSuggestion getTopSynchronousMatch(String query) {
+        return nativeGetTopSynchronousMatch(mNativeAutocompleteControllerAndroid, query);
     }
 
     @VisibleForTesting
@@ -257,6 +267,8 @@ public class AutocompleteController {
             int selectedIndex);
     private native String nativeUpdateMatchDestinationURL(long nativeAutocompleteControllerAndroid,
             int selectedIndex, long elapsedTimeSinceInputChange);
+    private native OmniboxSuggestion nativeGetTopSynchronousMatch(
+            long nativeAutocompleteControllerAndroid, String query);
 
     /**
      * Given a search query, this will attempt to see if the query appears to be portion of a

@@ -33,6 +33,10 @@ class ScaleGestureDetector : public GestureDetector::SimpleGestureListener {
 
     // Whether double-tap drag scaling is enabled.
     bool quick_scale_enabled;
+
+    // Minimum pinch span change before pinch occurs (in dips). See
+    // crbug.com/373318.
+    float min_pinch_update_span_delta;
   };
 
   class ScaleGestureListener {
@@ -105,7 +109,9 @@ class ScaleGestureDetector : public GestureDetector::SimpleGestureListener {
   // The TouchMajor/TouchMinor elements of a MotionEvent can flutter/jitter on
   // some hardware/driver combos. Smooth out to get kinder, gentler behavior.
   void AddTouchHistory(const MotionEvent& ev);
-  void ClearTouchHistory();
+  void ResetTouchHistory();
+
+  void ResetScaleWithSpan(float span);
 
   ScaleGestureListener* const listener_;
 

@@ -10,7 +10,7 @@
 #include "base/containers/hash_tables.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/extensions/api/bluetooth/bluetooth_api_socket.h"
+#include "chrome/browser/extensions/api/bluetooth_socket/bluetooth_api_socket.h"
 #include "chrome/common/extensions/api/bluetooth_socket.h"
 #include "device/bluetooth/bluetooth_adapter.h"
 #include "extensions/browser/api/api_resource_manager.h"
@@ -175,34 +175,6 @@ class BluetoothSocketListenUsingRfcommFunction
 
  private:
   scoped_ptr<bluetooth_socket::ListenUsingRfcomm::Params> params_;
-};
-
-class BluetoothSocketListenUsingInsecureRfcommFunction
-    : public BluetoothSocketListenFunction {
- public:
-  DECLARE_EXTENSION_FUNCTION("bluetoothSocket.listenUsingInsecureRfcomm",
-                             BLUETOOTHSOCKET_LISTENUSINGINSECURERFCOMM);
-
-  BluetoothSocketListenUsingInsecureRfcommFunction();
-
-  // BluetoothSocketListenFunction:
-  virtual int socket_id() const OVERRIDE;
-  virtual const std::string& uuid() const OVERRIDE;
-
-  virtual bool CreateParams() OVERRIDE;
-  virtual void CreateService(
-      scoped_refptr<device::BluetoothAdapter> adapter,
-      const device::BluetoothUUID& uuid,
-      const device::BluetoothAdapter::CreateServiceCallback& callback,
-      const device::BluetoothAdapter::CreateServiceErrorCallback&
-          error_callback) OVERRIDE;
-  virtual void CreateResults() OVERRIDE;
-
- protected:
-  virtual ~BluetoothSocketListenUsingInsecureRfcommFunction();
-
- private:
-  scoped_ptr<bluetooth_socket::ListenUsingInsecureRfcomm::Params> params_;
 };
 
 class BluetoothSocketListenUsingL2capFunction

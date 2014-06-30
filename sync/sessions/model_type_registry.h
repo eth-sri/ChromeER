@@ -10,10 +10,12 @@
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
+#include "base/memory/weak_ptr.h"
 #include "sync/base/sync_export.h"
 #include "sync/internal_api/public/base/model_type.h"
 #include "sync/internal_api/public/engine/model_safe_worker.h"
 #include "sync/internal_api/public/sessions/type_debug_info_observer.h"
+#include "sync/internal_api/public/sync_context.h"
 
 namespace syncer {
 
@@ -25,9 +27,10 @@ class CommitContributor;
 class DirectoryCommitContributor;
 class DirectoryUpdateHandler;
 class DirectoryTypeDebugInfoEmitter;
-class NonBlockingTypeProcessorCore;
-class NonBlockingTypeProcessor;
+class ModelTypeSyncWorkerImpl;
+class ModelTypeSyncProxyImpl;
 class UpdateHandler;
+struct DataTypeState;
 
 typedef std::map<ModelType, UpdateHandler*> UpdateHandlerMap;
 typedef std::map<ModelType, CommitContributor*> CommitContributorMap;
@@ -35,7 +38,7 @@ typedef std::map<ModelType, DirectoryTypeDebugInfoEmitter*>
     DirectoryTypeDebugInfoEmitterMap;
 
 // Keeps track of the sets of active update handlers and commit contributors.
-class SYNC_EXPORT_PRIVATE ModelTypeRegistry {
+class SYNC_EXPORT_PRIVATE ModelTypeRegistry : public SyncContext {
  public:
   // This alternative constructor does not support any directory types.
   // It is used only in tests.
@@ -45,25 +48,26 @@ class SYNC_EXPORT_PRIVATE ModelTypeRegistry {
   ModelTypeRegistry(
       const std::vector<scoped_refptr<ModelSafeWorker> >& workers,
       syncable::Directory* directory);
-  ~ModelTypeRegistry();
+  virtual ~ModelTypeRegistry();
 
   // Sets the set of enabled types.
   void SetEnabledDirectoryTypes(const ModelSafeRoutingInfo& routing_info);
 
-  // Enables an off-thread type for syncing.  Connects the given processor
-  // and its task_runner to the newly created processor core.
+  // Enables an off-thread type for syncing.  Connects the given proxy
+  // and its task_runner to the newly created worker.
   //
-  // Expects that the processor's ModelType is not currently enabled.
-  void InitializeNonBlockingType(
+  // Expects that the proxy's ModelType is not currently enabled.
+  virtual void ConnectSyncTypeToWorker(
       syncer::ModelType type,
-      scoped_refptr<base::SequencedTaskRunner> type_task_runner,
-      base::WeakPtr<NonBlockingTypeProcessor> processor);
+      const DataTypeState& data_type_state,
+      const scoped_refptr<base::SequencedTaskRunner>& type_task_runner,
+      const base::WeakPtr<ModelTypeSyncProxyImpl>& proxy) OVERRIDE;
 
   // Disables the syncing of an off-thread type.
   //
   // Expects that the type is currently enabled.
-  // Deletes the processor core associated with the type.
-  void RemoveNonBlockingType(syncer::ModelType type);
+  // Deletes the worker associated with the type.
+  virtual void DisconnectSyncWorker(syncer::ModelType type) OVERRIDE;
 
   // Gets the set of enabled types.
   ModelTypeSet GetEnabledTypes() const;
@@ -81,6 +85,8 @@ class SYNC_EXPORT_PRIVATE ModelTypeRegistry {
       syncer::TypeDebugInfoObserver* observer);
   void RequestEmitDebugInfo();
 
+  base::WeakPtr<SyncContext> AsWeakPtr();
+
  private:
   ModelTypeSet GetEnabledNonBlockingTypes() const;
   ModelTypeSet GetEnabledDirectoryTypes() const;
@@ -91,7 +97,7 @@ class SYNC_EXPORT_PRIVATE ModelTypeRegistry {
   ScopedVector<DirectoryTypeDebugInfoEmitter>
       directory_type_debug_info_emitters_;
 
-  ScopedVector<NonBlockingTypeProcessorCore> non_blocking_type_processor_cores_;
+  ScopedVector<ModelTypeSyncWorkerImpl> model_type_sync_workers_;
 
   // Maps of UpdateHandlers and CommitContributors.
   // They do not own any of the objects they point to.
@@ -120,10 +126,11 @@ class SYNC_EXPORT_PRIVATE ModelTypeRegistry {
   // guaranteed to live as long as this sync backend.
   ObserverList<TypeDebugInfoObserver> type_debug_info_observers_;
 
+  base::WeakPtrFactory<ModelTypeRegistry> weak_ptr_factory_;
+
   DISALLOW_COPY_AND_ASSIGN(ModelTypeRegistry);
 };
 
 }  // namespace syncer
 
 #endif // SYNC_ENGINE_MODEL_TYPE_REGISTRY_H_
-

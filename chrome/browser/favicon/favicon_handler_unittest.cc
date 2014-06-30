@@ -4,6 +4,7 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/favicon/favicon_handler.h"
+#include "chrome/browser/favicon/favicon_service.h"
 #include "chrome/browser/favicon/favicon_service_factory.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
@@ -41,14 +42,14 @@ void FillBitmap(int w, int h, std::vector<unsigned char>* output) {
   gfx::PNGCodec::EncodeBGRASkBitmap(bitmap, false, output);
 }
 
-void SetFaviconBitmapResult(
+void SetFaviconRawBitmapResult(
     const GURL& icon_url,
     favicon_base::IconType icon_type,
     bool expired,
-    std::vector<favicon_base::FaviconBitmapResult>* favicon_bitmap_results) {
+    std::vector<favicon_base::FaviconRawBitmapResult>* favicon_bitmap_results) {
   scoped_refptr<base::RefCountedBytes> data(new base::RefCountedBytes());
   FillBitmap(gfx::kFaviconSize, gfx::kFaviconSize, &data->data());
-  favicon_base::FaviconBitmapResult bitmap_result;
+  favicon_base::FaviconRawBitmapResult bitmap_result;
   bitmap_result.expired = expired;
   bitmap_result.bitmap_data = data;
   // Use a pixel size other than (0,0) as (0,0) has a special meaning.
@@ -59,13 +60,13 @@ void SetFaviconBitmapResult(
   favicon_bitmap_results->push_back(bitmap_result);
 }
 
-void SetFaviconBitmapResult(
+void SetFaviconRawBitmapResult(
     const GURL& icon_url,
-    std::vector<favicon_base::FaviconBitmapResult>* favicon_bitmap_results) {
-  SetFaviconBitmapResult(icon_url,
-                         favicon_base::FAVICON,
-                         false /* expired */,
-                         favicon_bitmap_results);
+    std::vector<favicon_base::FaviconRawBitmapResult>* favicon_bitmap_results) {
+  SetFaviconRawBitmapResult(icon_url,
+                            favicon_base::FAVICON,
+                            false /* expired */,
+                            favicon_bitmap_results);
 }
 
 // This class is used to save the download request for verifying with test case.
@@ -135,7 +136,7 @@ class HistoryRequestHandler {
   HistoryRequestHandler(const GURL& page_url,
                         const GURL& icon_url,
                         int icon_type,
-                        const FaviconService::FaviconResultsCallback& callback)
+                        const favicon_base::FaviconResultsCallback& callback)
       : page_url_(page_url),
         icon_url_(icon_url),
         icon_type_(icon_type),
@@ -162,8 +163,8 @@ class HistoryRequestHandler {
   const int icon_type_;
   const std::vector<unsigned char> bitmap_data_;
   const gfx::Size size_;
-  std::vector<favicon_base::FaviconBitmapResult> history_results_;
-  FaviconService::FaviconResultsCallback callback_;
+  std::vector<favicon_base::FaviconRawBitmapResult> history_results_;
+  favicon_base::FaviconResultsCallback callback_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(HistoryRequestHandler);
@@ -293,7 +294,7 @@ class TestFaviconHandler : public FaviconHandler {
       const GURL& page_url,
       const GURL& icon_url,
       favicon_base::IconType icon_type,
-      const FaviconService::FaviconResultsCallback& callback,
+      const favicon_base::FaviconResultsCallback& callback,
       base::CancelableTaskTracker* tracker) OVERRIDE {
     history_handler_.reset(new HistoryRequestHandler(page_url, icon_url,
                                                      icon_type, callback));
@@ -302,7 +303,7 @@ class TestFaviconHandler : public FaviconHandler {
   virtual void GetFaviconFromFaviconService(
       const GURL& icon_url,
       favicon_base::IconType icon_type,
-      const FaviconService::FaviconResultsCallback& callback,
+      const favicon_base::FaviconResultsCallback& callback,
       base::CancelableTaskTracker* tracker) OVERRIDE {
     history_handler_.reset(new HistoryRequestHandler(GURL(), icon_url,
                                                      icon_type, callback));
@@ -311,7 +312,7 @@ class TestFaviconHandler : public FaviconHandler {
   virtual void GetFaviconForURLFromFaviconService(
       const GURL& page_url,
       int icon_types,
-      const FaviconService::FaviconResultsCallback& callback,
+      const favicon_base::FaviconResultsCallback& callback,
       base::CancelableTaskTracker* tracker) OVERRIDE {
     history_handler_.reset(new HistoryRequestHandler(page_url, GURL(),
                                                      icon_types, callback));
@@ -492,7 +493,7 @@ TEST_F(FaviconHandlerTest, GetFaviconFromHistory) {
   EXPECT_EQ(GURL(), history_handler->icon_url_);
   EXPECT_EQ(favicon_base::FAVICON, history_handler->icon_type_);
 
-  SetFaviconBitmapResult(icon_url, &history_handler->history_results_);
+  SetFaviconRawBitmapResult(icon_url, &history_handler->history_results_);
 
   // Send history response.
   history_handler->InvokeCallback();
@@ -534,10 +535,10 @@ TEST_F(FaviconHandlerTest, DownloadFavicon) {
   EXPECT_EQ(favicon_base::FAVICON, history_handler->icon_type_);
 
   // Set icon data expired
-  SetFaviconBitmapResult(icon_url,
-                         favicon_base::FAVICON,
-                         true /* expired */,
-                         &history_handler->history_results_);
+  SetFaviconRawBitmapResult(icon_url,
+                            favicon_base::FAVICON,
+                            true /* expired */,
+                            &history_handler->history_results_);
   // Send history response.
   history_handler->InvokeCallback();
   // Verify FaviconHandler status
@@ -603,7 +604,7 @@ TEST_F(FaviconHandlerTest, UpdateAndDownloadFavicon) {
   EXPECT_EQ(favicon_base::FAVICON, history_handler->icon_type_);
 
   // Set valid icon data.
-  SetFaviconBitmapResult(icon_url, &history_handler->history_results_);
+  SetFaviconRawBitmapResult(icon_url, &history_handler->history_results_);
 
   // Send history response.
   history_handler->InvokeCallback();
@@ -684,7 +685,7 @@ TEST_F(FaviconHandlerTest, FaviconInHistoryInvalid) {
   EXPECT_EQ(favicon_base::FAVICON, history_handler->icon_type_);
 
   // Set non empty but invalid data.
-  favicon_base::FaviconBitmapResult bitmap_result;
+  favicon_base::FaviconRawBitmapResult bitmap_result;
   bitmap_result.expired = false;
   // Empty bitmap data is invalid.
   bitmap_result.bitmap_data = new base::RefCountedBytes();
@@ -755,7 +756,7 @@ TEST_F(FaviconHandlerTest, UpdateFavicon) {
   EXPECT_EQ(GURL(), history_handler->icon_url_);
   EXPECT_EQ(favicon_base::FAVICON, history_handler->icon_type_);
 
-  SetFaviconBitmapResult(icon_url, &history_handler->history_results_);
+  SetFaviconRawBitmapResult(icon_url, &history_handler->history_results_);
 
   // Send history response.
   history_handler->InvokeCallback();
@@ -787,7 +788,7 @@ TEST_F(FaviconHandlerTest, UpdateFavicon) {
   EXPECT_EQ(page_url, history_handler->page_url_);
 
   // Simulate find icon.
-  SetFaviconBitmapResult(new_icon_url, &history_handler->history_results_);
+  SetFaviconRawBitmapResult(new_icon_url, &history_handler->history_results_);
   history_handler->InvokeCallback();
 
   // Shouldn't request download favicon
@@ -890,10 +891,10 @@ TEST_F(FaviconHandlerTest, Download2ndFaviconURLCandidate) {
   download_handler->Reset();
 
   // Simulates getting a expired icon from history.
-  SetFaviconBitmapResult(new_icon_url,
-                         favicon_base::TOUCH_ICON,
-                         true /* expired */,
-                         &history_handler->history_results_);
+  SetFaviconRawBitmapResult(new_icon_url,
+                            favicon_base::TOUCH_ICON,
+                            true /* expired */,
+                            &history_handler->history_results_);
   history_handler->InvokeCallback();
 
   // Verify the download request.
@@ -1004,7 +1005,7 @@ TEST_F(FaviconHandlerTest, UpdateDuringDownloading) {
   // Reset the history_handler to verify whether favicon is request from
   // history.
   // Save the callback for late use.
-  FaviconService::FaviconResultsCallback callback = history_handler->callback_;
+  favicon_base::FaviconResultsCallback callback = history_handler->callback_;
   helper.set_history_handler(NULL);
 
   // Simulates download succeed.
@@ -1018,10 +1019,10 @@ TEST_F(FaviconHandlerTest, UpdateDuringDownloading) {
   scoped_ptr<HistoryRequestHandler> handler;
   handler.reset(new HistoryRequestHandler(
       page_url, latest_icon_url, favicon_base::TOUCH_ICON, callback));
-  SetFaviconBitmapResult(latest_icon_url,
-                         favicon_base::TOUCH_ICON,
-                         false /* expired */,
-                         &handler->history_results_);
+  SetFaviconRawBitmapResult(latest_icon_url,
+                            favicon_base::TOUCH_ICON,
+                            false /* expired */,
+                            &handler->history_results_);
   handler->InvokeCallback();
 
   // No download request.

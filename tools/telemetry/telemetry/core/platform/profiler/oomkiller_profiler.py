@@ -8,6 +8,7 @@ from telemetry.core.backends.chrome import android_browser_finder
 from telemetry.core.platform import profiler
 from telemetry.util import support_binaries
 
+from pylib.device import intent
 
 class UnableToFindApplicationException(Exception):
   """Exception when unable to find a launched application"""
@@ -34,14 +35,15 @@ class OOMKillerProfiler(profiler.Profiler):
       assert mem_consumer_path, ('Could not find memconsumer app. Please build '
                                  'memconsumer target.')
       self._browser_backend.adb.Install(mem_consumer_path)
-      self._browser_backend.adb.GoHome()
+      self._browser_backend.adb.device().GoHome()
       self._platform_backend.LaunchApplication(
           'org.chromium.memconsumer/.MemConsumer',
           '--ei memory 20')
       # Bring the browser to the foreground after launching the mem consumer
-      self._browser_backend.adb.StartActivity(browser_backend.package,
-                                              browser_backend.activity,
-                                              True)
+      self._browser_backend.adb.device().StartActivity(
+          intent.Intent(package=browser_backend.package,
+                        activity=browser_backend.activity),
+          blocking=True)
 
   @classmethod
   def name(cls):
@@ -55,7 +57,7 @@ class OOMKillerProfiler(profiler.Profiler):
 
   @classmethod
   def WillCloseBrowser(cls, browser_backend, platform_backend):
-    browser_backend.adb.CloseApplication('org.chromium.memconsumer')
+    browser_backend.adb.device().ForceStop('org.chromium.memconsumer')
 
   def CollectProfile(self):
     missing_applications = self._MissingApplications()

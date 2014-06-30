@@ -5,34 +5,32 @@
 #include "mojo/services/view_manager/root_node_manager.h"
 
 #include "base/logging.h"
-#include "mojo/services/view_manager/view_manager_connection.h"
+#include "mojo/public/cpp/application/application_connection.h"
+#include "mojo/public/interfaces/service_provider/service_provider.mojom.h"
+#include "mojo/services/public/cpp/input_events/input_events_type_converters.h"
+#include "mojo/services/view_manager/view.h"
+#include "mojo/services/view_manager/view_manager_service_impl.h"
+#include "ui/aura/client/focus_client.h"
 #include "ui/aura/env.h"
 
 namespace mojo {
 namespace view_manager {
 namespace service {
-namespace {
-
-// Id for the root node.
-const TransportConnectionSpecificNodeId kRootId = 1;
-
-// Used to identify an invalid connection.
-const TransportConnectionId kNoConnection = 0;
-
-}  // namespace
 
 RootNodeManager::ScopedChange::ScopedChange(
-    ViewManagerConnection* connection,
+    ViewManagerServiceImpl* connection,
     RootNodeManager* root,
     RootNodeManager::ChangeType change_type,
     bool is_delete_node)
     : root_(root),
-      change_type_(change_type) {
-  root_->PrepareForChange(connection, is_delete_node);
+      connection_id_(connection->id()),
+      change_type_(change_type),
+      is_delete_node_(is_delete_node) {
+  root_->PrepareForChange(this);
 }
 
 RootNodeManager::ScopedChange::~ScopedChange() {
-  root_->FinishChange(change_type_);
+  root_->FinishChange();
 }
 
 RootNodeManager::Context::Context() {
@@ -41,39 +39,66 @@ RootNodeManager::Context::Context() {
 }
 
 RootNodeManager::Context::~Context() {
+  aura::Env::DeleteInstance();
 }
 
-RootNodeManager::RootNodeManager(Shell* shell)
-    : next_connection_id_(1),
+RootNodeManager::RootNodeManager(ApplicationConnection* app_connection,
+                                 RootViewManagerDelegate* view_manager_delegate)
+    : app_connection_(app_connection),
+      next_connection_id_(1),
       next_server_change_id_(1),
-      change_source_(kNoConnection),
-      is_processing_delete_node_(false),
-      root_view_manager_(shell, this),
-      root_(this, NodeId(0, kRootId)) {
+      root_view_manager_(app_connection, this, view_manager_delegate),
+      root_(this, RootNodeId()),
+      current_change_(NULL) {
 }
 
 RootNodeManager::~RootNodeManager() {
+  aura::client::FocusClient* focus_client =
+      aura::client::GetFocusClient(root_.window());
+  focus_client->RemoveObserver(this);
+  while (!connections_created_by_connect_.empty())
+    delete *(connections_created_by_connect_.begin());
   // All the connections should have been destroyed.
   DCHECK(connection_map_.empty());
 }
 
-TransportConnectionId RootNodeManager::GetAndAdvanceNextConnectionId() {
-  const TransportConnectionId id = next_connection_id_++;
+ConnectionSpecificId RootNodeManager::GetAndAdvanceNextConnectionId() {
+  const ConnectionSpecificId id = next_connection_id_++;
   DCHECK_LT(id, next_connection_id_);
   return id;
 }
 
-void RootNodeManager::AddConnection(ViewManagerConnection* connection) {
+void RootNodeManager::AddConnection(ViewManagerServiceImpl* connection) {
   DCHECK_EQ(0u, connection_map_.count(connection->id()));
   connection_map_[connection->id()] = connection;
 }
 
-void RootNodeManager::RemoveConnection(ViewManagerConnection* connection) {
+void RootNodeManager::RemoveConnection(ViewManagerServiceImpl* connection) {
   connection_map_.erase(connection->id());
+  connections_created_by_connect_.erase(connection);
+
+  // Notify remaining connections so that they can cleanup.
+  for (ConnectionMap::const_iterator i = connection_map_.begin();
+       i != connection_map_.end(); ++i) {
+    i->second->OnViewManagerServiceImplDestroyed(connection->id());
+  }
 }
 
-ViewManagerConnection* RootNodeManager::GetConnection(
-    TransportConnectionId connection_id) {
+void RootNodeManager::EmbedRoot(const std::string& url) {
+  CHECK(connection_map_.empty());
+  Array<Id> roots(0);
+  EmbedImpl(kRootConnection, String::From(url), roots);
+}
+
+void RootNodeManager::Embed(ConnectionSpecificId creator_id,
+                            const String& url,
+                            const Array<Id>& node_ids) {
+  CHECK_GT(node_ids.size(), 0u);
+  EmbedImpl(creator_id, url, node_ids)->set_delete_on_connection_error();
+}
+
+ViewManagerServiceImpl* RootNodeManager::GetConnection(
+    ConnectionSpecificId connection_id) {
   ConnectionMap::iterator i = connection_map_.find(connection_id);
   return i == connection_map_.end() ? NULL : i->second;
 }
@@ -90,6 +115,50 @@ View* RootNodeManager::GetView(const ViewId& id) {
   return i == connection_map_.end() ? NULL : i->second->GetView(id);
 }
 
+void RootNodeManager::OnConnectionMessagedClient(ConnectionSpecificId id) {
+  if (current_change_)
+    current_change_->MarkConnectionAsMessaged(id);
+}
+
+bool RootNodeManager::DidConnectionMessageClient(
+    ConnectionSpecificId id) const {
+  return current_change_ && current_change_->DidMessageConnection(id);
+}
+
+ViewManagerServiceImpl* RootNodeManager::GetConnectionByCreator(
+    ConnectionSpecificId creator_id,
+    const std::string& url) const {
+  for (ConnectionMap::const_iterator i = connection_map_.begin();
+       i != connection_map_.end(); ++i) {
+    if (i->second->creator_id() == creator_id && i->second->url() == url)
+      return i->second;
+  }
+  return NULL;
+}
+
+void RootNodeManager::DispatchViewInputEventToWindowManager(
+    const View* view,
+    const ui::Event* event) {
+  // Input events are forwarded to the WindowManager. The WindowManager
+  // eventually calls back to us with DispatchOnViewInputEvent().
+  ViewManagerServiceImpl* connection = GetConnection(kWindowManagerConnection);
+  if (!connection)
+    return;
+  connection->client()->DispatchOnViewInputEvent(
+      ViewIdToTransportId(view->id()),
+      TypeConverter<EventPtr, ui::Event>::ConvertFrom(*event));
+}
+
+void RootNodeManager::ProcessNodeBoundsChanged(const Node* node,
+                                               const gfx::Rect& old_bounds,
+                                               const gfx::Rect& new_bounds) {
+  for (ConnectionMap::iterator i = connection_map_.begin();
+       i != connection_map_.end(); ++i) {
+    i->second->ProcessNodeBoundsChanged(node, old_bounds, new_bounds,
+                                        IsChangeSource(i->first));
+  }
+}
+
 void RootNodeManager::ProcessNodeHierarchyChanged(const Node* node,
                                                   const Node* new_parent,
                                                   const Node* old_parent) {
@@ -97,6 +166,17 @@ void RootNodeManager::ProcessNodeHierarchyChanged(const Node* node,
        i != connection_map_.end(); ++i) {
     i->second->ProcessNodeHierarchyChanged(
         node, new_parent, old_parent, next_server_change_id_,
+        IsChangeSource(i->first));
+  }
+}
+
+void RootNodeManager::ProcessNodeReorder(const Node* node,
+                                         const Node* relative_node,
+                                         const OrderDirection direction) {
+  for (ConnectionMap::iterator i = connection_map_.begin();
+       i != connection_map_.end(); ++i) {
+    i->second->ProcessNodeReorder(
+        node, relative_node, direction, next_server_change_id_,
         IsChangeSource(i->first));
   }
 }
@@ -126,21 +206,57 @@ void RootNodeManager::ProcessViewDeleted(const ViewId& view) {
   }
 }
 
-void RootNodeManager::PrepareForChange(ViewManagerConnection* connection,
-                                       bool is_delete_node) {
-  // Should only ever have one change in flight.
-  DCHECK_EQ(kNoConnection, change_source_);
-  change_source_ = connection->id();
-  is_processing_delete_node_ = is_delete_node;
+void RootNodeManager::OnWindowFocused(aura::Window* gained_focus,
+                                      aura::Window* lost_focus) {
+  Node* focused_node = gained_focus ? Node::NodeForWindow(gained_focus) : NULL;
+  Node* blurred_node = lost_focus ? Node::NodeForWindow(lost_focus) : NULL;
+  for (ConnectionMap::iterator i = connection_map_.begin();
+       i != connection_map_.end(); ++i) {
+    i->second->ProcessFocusChanged(focused_node, blurred_node,
+                                   IsChangeSource(i->first));
+  }
 }
 
-void RootNodeManager::FinishChange(ChangeType change_type) {
+void RootNodeManager::PrepareForChange(ScopedChange* change) {
+  // Should only ever have one change in flight.
+  CHECK(!current_change_);
+  current_change_ = change;
+}
+
+void RootNodeManager::FinishChange() {
   // PrepareForChange/FinishChange should be balanced.
-  DCHECK_NE(kNoConnection, change_source_);
-  change_source_ = 0;
-  is_processing_delete_node_ = false;
-  if (change_type == CHANGE_TYPE_ADVANCE_SERVER_CHANGE_ID)
+  CHECK(current_change_);
+  if (current_change_->change_type() == CHANGE_TYPE_ADVANCE_SERVER_CHANGE_ID)
     next_server_change_id_++;
+  current_change_ = NULL;
+}
+
+ViewManagerServiceImpl* RootNodeManager::EmbedImpl(
+    const ConnectionSpecificId creator_id,
+    const String& url,
+    const Array<Id>& node_ids) {
+  MessagePipe pipe;
+
+  ServiceProvider* service_provider =
+      app_connection_->ConnectToApplication(url)->GetServiceProvider();
+  service_provider->ConnectToService(
+      ViewManagerServiceImpl::Client::Name_,
+      pipe.handle1.Pass());
+
+  std::string creator_url;
+  ConnectionMap::const_iterator it = connection_map_.find(creator_id);
+  if (it != connection_map_.end())
+    creator_url = it->second->url();
+
+  ViewManagerServiceImpl* connection =
+      new ViewManagerServiceImpl(this,
+                                creator_id,
+                                creator_url,
+                                url.To<std::string>());
+  connection->SetRoots(node_ids);
+  BindToPipe(connection, pipe.handle0.Pass());
+  connections_created_by_connect_.insert(connection);
+  return connection;
 }
 
 void RootNodeManager::OnNodeHierarchyChanged(const Node* node,
@@ -154,6 +270,11 @@ void RootNodeManager::OnNodeViewReplaced(const Node* node,
                                          const View* new_view,
                                          const View* old_view) {
   ProcessNodeViewReplaced(node, new_view, old_view);
+}
+
+void RootNodeManager::OnViewInputEvent(const View* view,
+                                       const ui::Event* event) {
+  DispatchViewInputEventToWindowManager(view, event);
 }
 
 }  // namespace service

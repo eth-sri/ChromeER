@@ -5,38 +5,59 @@
 #ifndef CONTENT_BROWSER_SCREEN_ORIENTATION_SCREEN_ORIENTATION_DISPATCHER_HOST_H_
 #define CONTENT_BROWSER_SCREEN_ORIENTATION_SCREEN_ORIENTATION_DISPATCHER_HOST_H_
 
-#include "content/public/browser/browser_message_filter.h"
+#include "base/id_map.h"
+#include "content/public/browser/render_frame_host.h"
+#include "content/public/browser/web_contents_observer.h"
+#include "third_party/WebKit/public/platform/WebLockOrientationError.h"
 #include "third_party/WebKit/public/platform/WebScreenOrientationLockType.h"
 #include "third_party/WebKit/public/platform/WebScreenOrientationType.h"
 
 namespace content {
 
+class RenderFrameHost;
 class ScreenOrientationProvider;
+class WebContents;
 
-// ScreenOrientationDispatcherHost is a browser filter for Screen Orientation
-// messages and also helps dispatching messages about orientation changes to the
-// renderers.
+// ScreenOrientationDispatcherHost receives lock and unlock requests from the
+// RenderFrames and dispatch them to the ScreenOrientationProvider. It also
+// make sure that the right RenderFrame get replied for each lock request.
 class CONTENT_EXPORT ScreenOrientationDispatcherHost
-    : public BrowserMessageFilter {
+    : public WebContentsObserver {
  public:
-  ScreenOrientationDispatcherHost();
-
-  // BrowserMessageFilter
-  virtual bool OnMessageReceived(const IPC::Message&) OVERRIDE;
-
-  void OnOrientationChange(blink::WebScreenOrientationType orientation);
-
-  void SetProviderForTests(ScreenOrientationProvider* provider);
-
- private:
+  explicit ScreenOrientationDispatcherHost(WebContents* web_contents);
   virtual ~ScreenOrientationDispatcherHost();
 
-  void OnLockRequest(blink::WebScreenOrientationLockType orientations);
-  void OnUnlockRequest();
+  // WebContentsObserver
+  virtual bool OnMessageReceived(const IPC::Message&,
+                                 RenderFrameHost* render_frame_host) OVERRIDE;
 
-  static ScreenOrientationProvider* CreateProvider();
+  void NotifyLockSuccess(int request_id);
+  void NotifyLockError(int request_id, blink::WebLockOrientationError error);
+
+  void OnOrientationChange();
+
+ private:
+  void OnLockRequest(RenderFrameHost* render_frame_host,
+                     blink::WebScreenOrientationLockType orientation,
+                     int request_id);
+  void OnUnlockRequest(RenderFrameHost* render_frame_host);
+
+  // Returns a RenderFrameHost if the request_id is still valid and the
+  // associated RenderFrameHost still exists. Returns NULL otherwise.
+  RenderFrameHost* GetRenderFrameHostForRequestID(int request_id);
+
+  void ResetCurrentLock();
 
   scoped_ptr<ScreenOrientationProvider> provider_;
+
+  struct LockInformation {
+    LockInformation(int request_id, int process_id, int routing_id);
+    int request_id;
+    int process_id;
+    int routing_id;
+  };
+  // current_lock_ will be NULL if there are no current lock.
+  LockInformation* current_lock_;
 
   DISALLOW_COPY_AND_ASSIGN(ScreenOrientationDispatcherHost);
 };

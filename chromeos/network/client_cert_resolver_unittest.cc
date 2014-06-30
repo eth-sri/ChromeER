@@ -141,11 +141,12 @@ class ClientCertResolverTest : public testing::Test {
     managed_config_handler_.reset(new ManagedNetworkConfigurationHandlerImpl());
     client_cert_resolver_.reset(new ClientCertResolver());
 
-    network_profile_handler_->Init(network_state_handler_.get());
+    network_profile_handler_->Init();
     network_config_handler_->Init(network_state_handler_.get());
     managed_config_handler_->Init(network_state_handler_.get(),
                                   network_profile_handler_.get(),
-                                  network_config_handler_.get());
+                                  network_config_handler_.get(),
+                                  NULL /* network_device_handler */);
     client_cert_resolver_->Init(network_state_handler_.get(),
                                 managed_config_handler_.get());
     client_cert_resolver_->SetSlowTaskRunnerForTest(
@@ -156,13 +157,11 @@ class ClientCertResolverTest : public testing::Test {
 
   void SetupWifi() {
     const bool add_to_visible = true;
-    const bool add_to_watchlist = true;
     service_test_->AddService(kWifiStub,
                               kWifiSSID,
                               shill::kTypeWifi,
                               shill::kStateOnline,
-                              add_to_visible,
-                              add_to_watchlist);
+                              add_to_visible);
     service_test_->SetServiceProperty(
         kWifiStub, shill::kGuidProperty, base::StringValue(kWifiStub));
 

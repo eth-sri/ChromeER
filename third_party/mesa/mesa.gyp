@@ -74,10 +74,12 @@
           '-fPIC',
         ],
       }],
-      ['OS=="win"', {
-        # Pick up emulation headers not supported by Visual Studio.
-        'include_dirs': [
-          'src/include/c99',
+      ['ubsan_vptr == 1', {
+        'cflags!': [
+          # UBsan's vptr is not compatible with -fno-rtti,
+          # which is used by gallium/auxiliary/Makefile.
+          '-fsanitize=null',
+          '-fsanitize=vptr',
         ],
       }],
     ],

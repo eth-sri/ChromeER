@@ -16,7 +16,10 @@ class Top10MobilePage(page_module.Page):
     self.archive_data_file = 'data/top_10_mobile.json'
 
   def RunSmoothness(self, action_runner):
-    action_runner.RunAction(ScrollAction())
+    interaction = action_runner.BeginGestureInteraction(
+        'ScrollAction', is_smooth=True)
+    action_runner.ScrollPage()
+    interaction.End()
 
 
 class Top10MobilePageSet(page_set_module.PageSet):
@@ -27,7 +30,8 @@ class Top10MobilePageSet(page_set_module.PageSet):
     super(Top10MobilePageSet, self).__init__(
       credentials_path='data/credentials.json',
       user_agent_type='mobile',
-      archive_data_file='data/top_10_mobile.json')
+      archive_data_file='data/top_10_mobile.json',
+      bucket=page_set_module.PARTNER_BUCKET)
 
     urls_list = [
       # Why: #1 (Alexa) most visited page worldwide, picked a reasonable

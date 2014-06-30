@@ -4,6 +4,7 @@
 
 #include "ui/base/resource/resource_bundle.h"
 
+#include <limits>
 #include <vector>
 
 #include "base/big_endian.h"
@@ -82,6 +83,25 @@ void InitDefaultFontList() {
   gfx::FontList::SetDefaultFontDescription(std::string());
 #endif
 }
+
+#if defined(OS_ANDROID)
+// Returns the scale factor closest to |scale| from the full list of factors.
+// Note that it does NOT rely on the list of supported scale factors.
+// Finding the closest match is inefficient and shouldn't be done frequently.
+ScaleFactor FindClosestScaleFactorUnsafe(float scale) {
+  float smallest_diff =  std::numeric_limits<float>::max();
+  ScaleFactor closest_match = SCALE_FACTOR_100P;
+  for (int i = SCALE_FACTOR_100P; i < NUM_SCALE_FACTORS; ++i) {
+    const ScaleFactor scale_factor = static_cast<ScaleFactor>(i);
+    float diff = std::abs(GetScaleForScaleFactor(scale_factor) - scale);
+    if (diff < smallest_diff) {
+      closest_match = scale_factor;
+      smallest_diff = diff;
+    }
+  }
+  return closest_match;
+}
+#endif  // OS_ANDROID
 
 }  // namespace
 
@@ -514,6 +534,14 @@ ScaleFactor ResourceBundle::GetMaxScaleFactor() const {
 #endif
 }
 
+bool ResourceBundle::IsScaleFactorSupported(ScaleFactor scale_factor) {
+  const std::vector<ScaleFactor>& supported_scale_factors =
+      ui::GetSupportedScaleFactors();
+  return std::find(supported_scale_factors.begin(),
+                   supported_scale_factors.end(),
+                   scale_factor) != supported_scale_factors.end();
+}
+
 ResourceBundle::ResourceBundle(Delegate* delegate)
     : delegate_(delegate),
       images_and_fonts_lock_(new base::Lock),
@@ -577,7 +605,10 @@ void ResourceBundle::InitSharedInstance(Delegate* delegate) {
 #if defined(OS_WIN)
   // Must be called _after_ supported scale factors are set since it
   // uses them.
-  ui::win::InitDeviceScaleFactor();
+  // Don't initialize the device scale factor if it has already been
+  // initialized.
+  if (!gfx::win::IsDeviceScaleFactorSet())
+    ui::win::InitDeviceScaleFactor();
 #endif
 }
 

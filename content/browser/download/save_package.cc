@@ -38,12 +38,12 @@
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/resource_context.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/common/url_constants.h"
 #include "net/base/filename_util.h"
 #include "net/base/io_buffer.h"
 #include "net/base/mime_util.h"
 #include "net/url_request/url_request_context.h"
 #include "third_party/WebKit/public/web/WebPageSerializerClient.h"
+#include "url/url_constants.h"
 
 using base::Time;
 using blink::WebPageSerializerClient;
@@ -133,11 +133,7 @@ class SavePackageRequestHandle : public DownloadRequestHandleInterface {
 }  // namespace
 
 const base::FilePath::CharType SavePackage::kDefaultHtmlExtension[] =
-#if defined(OS_WIN)
-    FILE_PATH_LITERAL("htm");
-#else
     FILE_PATH_LITERAL("html");
-#endif
 
 SavePackage::SavePackage(WebContents* web_contents,
                          SavePageType save_type,
@@ -259,9 +255,9 @@ GURL SavePackage::GetUrlToBeSaved() {
   // "real" url of the page) from the NavigationEntry because it reflects its
   // origin rather than the displayed one (returned by GetURL) which may be
   // different (like having "view-source:" on the front).
-  NavigationEntry* active_entry =
-      web_contents()->GetController().GetActiveEntry();
-  return active_entry->GetURL();
+  NavigationEntry* visible_entry =
+      web_contents()->GetController().GetVisibleEntry();
+  return visible_entry->GetURL();
 }
 
 void SavePackage::Cancel(bool user_action) {
@@ -471,7 +467,7 @@ bool SavePackage::GenerateFileName(const std::string& disposition,
       file_path.RemoveExtension().BaseName().value();
   base::FilePath::StringType file_name_ext = file_path.Extension();
 
-  // If it is HTML resource, use ".htm{l,}" as its extension.
+  // If it is HTML resource, use ".html" as its extension.
   if (need_html_ext) {
     file_name_ext = FILE_PATH_LITERAL(".");
     file_name_ext.append(kDefaultHtmlExtension);
@@ -1222,7 +1218,7 @@ base::FilePath SavePackage::GetSuggestedNameForSaveAs(
   // similarly).
   if (title_ == net::FormatUrl(page_url_, accept_langs)) {
     std::string url_path;
-    if (!page_url_.SchemeIs(kDataScheme)) {
+    if (!page_url_.SchemeIs(url::kDataScheme)) {
       std::vector<std::string> url_parts;
       base::SplitString(page_url_.path(), '/', &url_parts);
       if (!url_parts.empty()) {

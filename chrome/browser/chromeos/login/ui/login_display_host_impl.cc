@@ -39,6 +39,7 @@
 #include "chrome/browser/chromeos/login/helper.h"
 #include "chrome/browser/chromeos/login/login_utils.h"
 #include "chrome/browser/chromeos/login/login_wizard.h"
+#include "chrome/browser/chromeos/login/screens/core_oobe_actor.h"
 #include "chrome/browser/chromeos/login/startup_utils.h"
 #include "chrome/browser/chromeos/login/ui/input_events_blocker.h"
 #include "chrome/browser/chromeos/login/ui/keyboard_driven_oobe_key_handler.h"
@@ -76,13 +77,18 @@
 #include "media/audio/sounds/sounds_manager.h"
 #include "ui/aura/window.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/base/ui_base_switches_util.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/layer_animation_observer.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
 #include "ui/events/event_utils.h"
+#include "ui/gfx/display.h"
 #include "ui/gfx/rect.h"
+#include "ui/gfx/screen.h"
+#include "ui/gfx/size.h"
 #include "ui/gfx/transform.h"
 #include "ui/keyboard/keyboard_controller.h"
+#include "ui/keyboard/keyboard_util.h"
 #include "ui/views/focus/focus_manager.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_delegate.h"
@@ -124,50 +130,6 @@ const char kWebUIInitPostpone[] = "postpone";
 // after the login screen is initialized. This makes sure that device policy
 // network requests are made while the system is idle waiting for user input.
 const int64 kPolicyServiceInitializationDelayMilliseconds = 100;
-
-// Determines the hardware keyboard from the given locale code
-// and the OEM layout information, and saves it to "Locale State".
-// The information will be used in InputMethodUtil::GetHardwareInputMethodId().
-void DetermineAndSaveHardwareKeyboard(const std::string& locale,
-                                      const std::string& oem_layout) {
-  chromeos::input_method::InputMethodManager* manager =
-      chromeos::input_method::InputMethodManager::Get();
-  std::string layout;
-  if (!oem_layout.empty()) {
-    // If the OEM layout information is provided, use it.
-    layout = oem_layout;
-  } else {
-    // Otherwise, determine the hardware keyboard from the locale.
-    std::vector<std::string> input_method_ids;
-    if (manager->GetInputMethodUtil()->GetInputMethodIdsFromLanguageCode(
-            locale,
-            chromeos::input_method::kKeyboardLayoutsOnly,
-            &input_method_ids)) {
-      // The output list |input_method_ids| is sorted by popularity, hence
-      // input_method_ids[0] now contains the most popular keyboard layout
-      // for the given locale.
-      layout = input_method_ids[0];
-    }
-  }
-
-  if (!layout.empty()) {
-    std::vector<std::string> layouts;
-    base::SplitString(layout, ',', &layouts);
-    manager->MigrateXkbInputMethods(&layouts);
-
-    PrefService* prefs = g_browser_process->local_state();
-    prefs->SetString(prefs::kHardwareKeyboardLayout, JoinString(layouts, ","));
-
-    // This asks the file thread to save the prefs (i.e. doesn't block).
-    // The latest values of Local State reside in memory so we can safely
-    // get the value of kHardwareKeyboardLayout even if the data is not
-    // yet saved to disk.
-    prefs->CommitPendingWrite();
-
-    manager->GetInputMethodUtil()->UpdateHardwareLayoutCache();
-    manager->SetInputMethodLoginDefault();
-  }
-}
 
 // A class to observe an implicit animation and invokes the callback after the
 // animation is completed.
@@ -282,6 +244,18 @@ class LoginWidgetDelegate : public views::WidgetDelegate {
   DISALLOW_COPY_AND_ASSIGN(LoginWidgetDelegate);
 };
 
+// Disables virtual keyboard overscroll. Login UI will scroll user pods
+// into view on JS side when virtual keyboard is shown.
+void DisableKeyboardOverscroll() {
+  keyboard::SetKeyboardOverscrollOverride(
+      keyboard::KEYBOARD_OVERSCROLL_OVERRIDE_DISABLED);
+}
+
+void ResetKeyboardOverscrollOverride() {
+  keyboard::SetKeyboardOverscrollOverride(
+      keyboard::KEYBOARD_OVERSCROLL_OVERRIDE_NONE);
+}
+
 }  // namespace
 
 namespace chromeos {
@@ -332,6 +306,7 @@ LoginDisplayHostImpl::LoginDisplayHostImpl(const gfx::Rect& background_bounds)
   }
 
   ash::Shell::GetInstance()->delegate()->AddVirtualKeyboardStateObserver(this);
+  ash::Shell::GetScreen()->AddObserver(this);
 
   // We need to listen to CLOSE_ALL_BROWSERS_REQUEST but not APP_TERMINATING
   // because/ APP_TERMINATING will never be fired as long as this keeps
@@ -434,6 +409,10 @@ LoginDisplayHostImpl::~LoginDisplayHostImpl() {
 
   ash::Shell::GetInstance()->delegate()->
       RemoveVirtualKeyboardStateObserver(this);
+  ash::Shell::GetScreen()->RemoveObserver(this);
+
+  if (login::LoginScrollIntoViewEnabled())
+    ResetKeyboardOverscrollOverride();
 
   views::FocusManager::set_arrow_key_traversal_enabled(false);
   ResetLoginWindowAndView();
@@ -530,6 +509,9 @@ AutoEnrollmentController* LoginDisplayHostImpl::GetAutoEnrollmentController() {
 void LoginDisplayHostImpl::StartWizard(
     const std::string& first_screen_name,
     scoped_ptr<base::DictionaryValue> screen_parameters) {
+  if (login::LoginScrollIntoViewEnabled())
+    DisableKeyboardOverscroll();
+
   startup_sound_honors_spoken_feedback_ = true;
   TryToPlayStartupSound();
 
@@ -574,6 +556,9 @@ AppLaunchController* LoginDisplayHostImpl::GetAppLaunchController() {
 
 void LoginDisplayHostImpl::StartUserAdding(
     const base::Closure& completion_callback) {
+  if (login::LoginScrollIntoViewEnabled())
+    DisableKeyboardOverscroll();
+
   restore_path_ = RESTORE_ADD_USER_INTO_SESSION;
   completion_callback_ = completion_callback;
   finalize_animation_type_ = ANIMATION_NONE;
@@ -606,6 +591,9 @@ void LoginDisplayHostImpl::StartUserAdding(
 
 void LoginDisplayHostImpl::StartSignInScreen(
     const LoginScreenContext& context) {
+  if (login::LoginScrollIntoViewEnabled())
+    DisableKeyboardOverscroll();
+
   startup_sound_honors_spoken_feedback_ = true;
   TryToPlayStartupSound();
 
@@ -638,7 +626,7 @@ void LoginDisplayHostImpl::StartSignInScreen(
   if (!StartupUtils::IsDeviceRegistered() && !users.empty()) {
     VLOG(1) << "Mark device registered because there are remembered users: "
             << users.size();
-    StartupUtils::MarkDeviceRegistered();
+    StartupUtils::MarkDeviceRegistered(base::Closure());
   }
 
   sign_in_controller_.reset();  // Only one controller in a time.
@@ -876,15 +864,44 @@ void LoginDisplayHostImpl::OnKeyboardBoundsChanging(
     const gfx::Rect& new_bounds) {
   if (new_bounds.IsEmpty() && !keyboard_bounds_.IsEmpty()) {
     // Keyboard has been hidden.
-    if (webui_login_display_)
-      webui_login_display_->ShowControlBar(true);
+    if (GetOobeUI()) {
+      GetOobeUI()->GetCoreOobeActor()->ShowControlBar(true);
+      if (login::LoginScrollIntoViewEnabled())
+        GetOobeUI()->GetCoreOobeActor()->SetKeyboardState(false, new_bounds);
+    }
   } else if (!new_bounds.IsEmpty() && keyboard_bounds_.IsEmpty()) {
     // Keyboard has been shown.
-    if (webui_login_display_)
-      webui_login_display_->ShowControlBar(false);
+    if (GetOobeUI()) {
+      GetOobeUI()->GetCoreOobeActor()->ShowControlBar(false);
+      if (login::LoginScrollIntoViewEnabled())
+        GetOobeUI()->GetCoreOobeActor()->SetKeyboardState(true, new_bounds);
+    }
   }
 
   keyboard_bounds_ = new_bounds;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// LoginDisplayHostImpl, gfx::DisplayObserver implementation:
+
+void LoginDisplayHostImpl::OnDisplayAdded(const gfx::Display& new_display) {
+}
+
+void LoginDisplayHostImpl::OnDisplayRemoved(const gfx::Display& old_display) {
+}
+
+void LoginDisplayHostImpl::OnDisplayMetricsChanged(const gfx::Display& display,
+                                                   uint32_t changed_metrics) {
+  if (display.id() != ash::Shell::GetScreen()->GetPrimaryDisplay().id() ||
+      !(changed_metrics & DISPLAY_METRIC_BOUNDS)) {
+    return;
+  }
+
+  if (GetOobeUI()) {
+    const gfx::Size& size = ash::Shell::GetScreen()->GetPrimaryDisplay().size();
+    GetOobeUI()->GetCoreOobeActor()->SetClientAreaSize(size.width(),
+                                                       size.height());
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -960,6 +977,8 @@ void LoginDisplayHostImpl::ShowWebUI() {
   LOG(WARNING) << "Login WebUI >> Show already initialized UI";
   login_window_->Show();
   login_view_->GetWebContents()->Focus();
+  if (::switches::IsTextInputFocusManagerEnabled())
+    login_view_->RequestFocus();
   login_view_->SetStatusAreaVisible(status_area_saved_visibility_);
   login_view_->OnPostponedShow();
 
@@ -1021,7 +1040,7 @@ void LoginDisplayHostImpl::InitLoginWindowAndView() {
   views::Widget::InitParams params(
       views::Widget::InitParams::TYPE_WINDOW_FRAMELESS);
   params.bounds = background_bounds();
-  params.show_state = ui::SHOW_STATE_MAXIMIZED;
+  params.show_state = ui::SHOW_STATE_FULLSCREEN;
   params.opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
   params.parent =
       ash::Shell::GetContainer(ash::Shell::GetPrimaryRootWindow(),
@@ -1211,17 +1230,17 @@ void ShowLoginWizard(const std::string& first_screen_name) {
   // chromeos::LanguageSwitchMenu::SwitchLanguage here before
   // EmitLoginPromptReady.
   PrefService* prefs = g_browser_process->local_state();
-  const std::string current_locale =
+  const std::string& current_locale =
       prefs->GetString(prefs::kApplicationLocale);
   VLOG(1) << "Current locale: " << current_locale;
-  std::string locale = startup_manifest->initial_locale_default();
+  const std::string& locale = startup_manifest->initial_locale_default();
 
-  std::string layout = startup_manifest->keyboard_layout();
+  const std::string& layout = startup_manifest->keyboard_layout();
   VLOG(1) << "Initial locale: " << locale << "keyboard layout " << layout;
 
   // Determine keyboard layout from OEM customization (if provided) or
   // initial locale and save it in preferences.
-  DetermineAndSaveHardwareKeyboard(locale, layout);
+  manager->SetInputMethodLoginDefaultFromVPD(locale, layout);
 
   if (!current_locale.empty() || locale.empty()) {
     ShowLoginWizardFinish(first_screen_name, startup_manifest, display_host);

@@ -35,6 +35,7 @@
 
 using ::gfx::MockGLInterface;
 using ::testing::_;
+using ::testing::AtLeast;
 using ::testing::DoAll;
 using ::testing::InSequence;
 using ::testing::Invoke;
@@ -720,6 +721,11 @@ static void CheckBeginEndQueryBadMemoryFails(GLES2DecoderTestBase* test,
     EXPECT_CALL(*gl, FenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0))
         .WillOnce(Return(kGlSync))
         .RetiresOnSaturation();
+#if DCHECK_IS_ON
+    EXPECT_CALL(*gl, IsSync(kGlSync))
+        .WillOnce(Return(GL_TRUE))
+        .RetiresOnSaturation();
+#endif
   }
 
   EndQueryEXT end_cmd;
@@ -736,6 +742,11 @@ static void CheckBeginEndQueryBadMemoryFails(GLES2DecoderTestBase* test,
         .RetiresOnSaturation();
   }
   if (query_type.type == GL_COMMANDS_COMPLETED_CHROMIUM) {
+#if DCHECK_IS_ON
+    EXPECT_CALL(*gl, IsSync(kGlSync))
+        .WillOnce(Return(GL_TRUE))
+        .RetiresOnSaturation();
+#endif
     EXPECT_CALL(*gl, ClientWaitSync(kGlSync, _, _))
         .WillOnce(Return(GL_ALREADY_SIGNALED))
         .RetiresOnSaturation();
@@ -751,8 +762,14 @@ static void CheckBeginEndQueryBadMemoryFails(GLES2DecoderTestBase* test,
   if (query_type.is_gl) {
     EXPECT_CALL(*gl, DeleteQueriesARB(1, _)).Times(1).RetiresOnSaturation();
   }
-  if (query_type.type == GL_COMMANDS_COMPLETED_CHROMIUM)
+  if (query_type.type == GL_COMMANDS_COMPLETED_CHROMIUM) {
+#if DCHECK_IS_ON
+    EXPECT_CALL(*gl, IsSync(kGlSync))
+        .WillOnce(Return(GL_TRUE))
+        .RetiresOnSaturation();
+#endif
     EXPECT_CALL(*gl, DeleteSync(kGlSync)).Times(1).RetiresOnSaturation();
+  }
   test->ResetDecoder();
 }
 
@@ -878,6 +895,11 @@ TEST_P(GLES2DecoderManualInitTest, BeginEndQueryEXTCommandsCompletedCHROMIUM) {
   EXPECT_CALL(*gl_, FenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0))
       .WillOnce(Return(kGlSync))
       .RetiresOnSaturation();
+#if DCHECK_IS_ON
+  EXPECT_CALL(*gl_, IsSync(kGlSync))
+      .WillOnce(Return(GL_TRUE))
+      .RetiresOnSaturation();
+#endif
 
   EndQueryEXT end_cmd;
   end_cmd.Init(GL_COMMANDS_COMPLETED_CHROMIUM, 1);
@@ -885,6 +907,11 @@ TEST_P(GLES2DecoderManualInitTest, BeginEndQueryEXTCommandsCompletedCHROMIUM) {
   EXPECT_EQ(GL_NO_ERROR, GetGLError());
   EXPECT_TRUE(query->pending());
 
+#if DCHECK_IS_ON
+  EXPECT_CALL(*gl_, IsSync(kGlSync))
+      .WillOnce(Return(GL_TRUE))
+      .RetiresOnSaturation();
+#endif
   EXPECT_CALL(*gl_, ClientWaitSync(kGlSync, _, _))
       .WillOnce(Return(GL_TIMEOUT_EXPIRED))
       .RetiresOnSaturation();
@@ -893,6 +920,11 @@ TEST_P(GLES2DecoderManualInitTest, BeginEndQueryEXTCommandsCompletedCHROMIUM) {
   EXPECT_TRUE(process_success);
   EXPECT_TRUE(query->pending());
 
+#if DCHECK_IS_ON
+  EXPECT_CALL(*gl_, IsSync(kGlSync))
+      .WillOnce(Return(GL_TRUE))
+      .RetiresOnSaturation();
+#endif
   EXPECT_CALL(*gl_, ClientWaitSync(kGlSync, _, _))
       .WillOnce(Return(GL_ALREADY_SIGNALED))
       .RetiresOnSaturation();
@@ -903,6 +935,11 @@ TEST_P(GLES2DecoderManualInitTest, BeginEndQueryEXTCommandsCompletedCHROMIUM) {
   QuerySync* sync = static_cast<QuerySync*>(shared_memory_address_);
   EXPECT_EQ(static_cast<GLenum>(0), static_cast<GLenum>(sync->result));
 
+#if DCHECK_IS_ON
+  EXPECT_CALL(*gl_, IsSync(kGlSync))
+      .WillOnce(Return(GL_TRUE))
+      .RetiresOnSaturation();
+#endif
   EXPECT_CALL(*gl_, DeleteSync(kGlSync)).Times(1).RetiresOnSaturation();
   ResetDecoder();
 }
@@ -1150,6 +1187,7 @@ TEST_P(GLES2DecoderManualInitTest, MemoryTrackerRenderbufferStorage) {
   InitDecoder(init);
   DoBindRenderbuffer(
       GL_RENDERBUFFER, client_renderbuffer_id_, kServiceRenderbufferId);
+  EnsureRenderbufferBound(false);
   EXPECT_CALL(*gl_, GetError())
       .WillOnce(Return(GL_NO_ERROR))
       .WillOnce(Return(GL_NO_ERROR))
@@ -1207,6 +1245,80 @@ TEST_P(GLES2DecoderManualInitTest, MemoryTrackerBufferData) {
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
   EXPECT_EQ(GL_OUT_OF_MEMORY, GetGLError());
   EXPECT_EQ(128u, memory_tracker->GetPoolSize(MemoryTracker::kManaged));
+}
+
+TEST_P(GLES2DecoderManualInitTest, ImmutableCopyTexImage2D) {
+  const GLenum kTarget = GL_TEXTURE_2D;
+  const GLint kLevel = 0;
+  const GLenum kInternalFormat = GL_RGBA;
+  const GLenum kSizedInternalFormat = GL_RGBA8;
+  const GLsizei kWidth = 4;
+  const GLsizei kHeight = 8;
+  const GLint kBorder = 0;
+  InitState init;
+  init.extensions = "GL_EXT_texture_storage";
+  init.gl_version = "3.0";
+  init.has_alpha = true;
+  init.request_alpha = true;
+  init.bind_generates_resource = true;
+  InitDecoder(init);
+  DoBindTexture(GL_TEXTURE_2D, client_texture_id_, kServiceTextureId);
+
+  // CopyTexImage2D will call arbitrary amount of GetErrors.
+  EXPECT_CALL(*gl_, GetError())
+      .Times(AtLeast(1));
+
+  EXPECT_CALL(*gl_,
+              CopyTexImage2D(
+                  kTarget, kLevel, kInternalFormat, 0, 0, kWidth, kHeight,
+                  kBorder))
+      .Times(1);
+
+  EXPECT_CALL(*gl_,
+              TexStorage2DEXT(
+                  kTarget, kLevel, kSizedInternalFormat, kWidth, kHeight))
+      .Times(1);
+  CopyTexImage2D copy_cmd;
+  copy_cmd.Init(kTarget, kLevel, kInternalFormat, 0, 0, kWidth, kHeight);
+  EXPECT_EQ(error::kNoError, ExecuteCmd(copy_cmd));
+  EXPECT_EQ(GL_NO_ERROR, GetGLError());
+
+  TexStorage2DEXT storage_cmd;
+  storage_cmd.Init(kTarget, kLevel, kSizedInternalFormat, kWidth, kHeight);
+  EXPECT_EQ(error::kNoError, ExecuteCmd(storage_cmd));
+  EXPECT_EQ(GL_NO_ERROR, GetGLError());
+
+  // This should not invoke CopyTexImage2D.
+  copy_cmd.Init(kTarget, kLevel, kInternalFormat, 0, 0, kWidth, kHeight);
+  EXPECT_EQ(error::kNoError, ExecuteCmd(copy_cmd));
+  EXPECT_EQ(GL_INVALID_OPERATION, GetGLError());
+}
+
+TEST_P(GLES2DecoderTest, LoseContextCHROMIUMValidArgs) {
+  EXPECT_CALL(*mock_decoder_, LoseContext(GL_GUILTY_CONTEXT_RESET_ARB))
+      .Times(1);
+  cmds::LoseContextCHROMIUM cmd;
+  cmd.Init(GL_GUILTY_CONTEXT_RESET_ARB, GL_GUILTY_CONTEXT_RESET_ARB);
+  EXPECT_EQ(error::kLostContext, ExecuteCmd(cmd));
+  EXPECT_EQ(GL_NO_ERROR, GetGLError());
+}
+
+TEST_P(GLES2DecoderTest, LoseContextCHROMIUMInvalidArgs0_0) {
+  EXPECT_CALL(*mock_decoder_, LoseContext(_))
+      .Times(0);
+  cmds::LoseContextCHROMIUM cmd;
+  cmd.Init(GL_NONE, GL_GUILTY_CONTEXT_RESET_ARB);
+  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
+  EXPECT_EQ(GL_INVALID_ENUM, GetGLError());
+}
+
+TEST_P(GLES2DecoderTest, LoseContextCHROMIUMInvalidArgs1_0) {
+  EXPECT_CALL(*mock_decoder_, LoseContext(_))
+      .Times(0);
+  cmds::LoseContextCHROMIUM cmd;
+  cmd.Init(GL_GUILTY_CONTEXT_RESET_ARB, GL_NONE);
+  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
+  EXPECT_EQ(GL_INVALID_ENUM, GetGLError());
 }
 
 INSTANTIATE_TEST_CASE_P(Service, GLES2DecoderTest, ::testing::Bool());

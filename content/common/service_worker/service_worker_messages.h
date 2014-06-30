@@ -31,6 +31,7 @@ IPC_STRUCT_TRAITS_BEGIN(content::ServiceWorkerFetchRequest)
   IPC_STRUCT_TRAITS_MEMBER(url)
   IPC_STRUCT_TRAITS_MEMBER(method)
   IPC_STRUCT_TRAITS_MEMBER(headers)
+  IPC_STRUCT_TRAITS_MEMBER(is_reload)
 IPC_STRUCT_TRAITS_END()
 
 IPC_ENUM_TRAITS_MAX_VALUE(content::ServiceWorkerFetchEventResult,
@@ -39,8 +40,8 @@ IPC_ENUM_TRAITS_MAX_VALUE(content::ServiceWorkerFetchEventResult,
 IPC_STRUCT_TRAITS_BEGIN(content::ServiceWorkerResponse)
   IPC_STRUCT_TRAITS_MEMBER(status_code)
   IPC_STRUCT_TRAITS_MEMBER(status_text)
-  IPC_STRUCT_TRAITS_MEMBER(method)
   IPC_STRUCT_TRAITS_MEMBER(headers)
+  IPC_STRUCT_TRAITS_MEMBER(blob_uuid)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(content::ServiceWorkerObjectInfo)
@@ -103,12 +104,14 @@ IPC_MESSAGE_ROUTED2(ServiceWorkerHostMsg_InstallEventFinished,
                     blink::WebServiceWorkerEventResult)
 IPC_MESSAGE_ROUTED2(ServiceWorkerHostMsg_ActivateEventFinished,
                     int /* request_id */,
-                    blink::WebServiceWorkerEventResult);
+                    blink::WebServiceWorkerEventResult)
 IPC_MESSAGE_ROUTED3(ServiceWorkerHostMsg_FetchEventFinished,
                     int /* request_id */,
                     content::ServiceWorkerFetchEventResult,
                     content::ServiceWorkerResponse)
 IPC_MESSAGE_ROUTED1(ServiceWorkerHostMsg_SyncEventFinished,
+                    int /* request_id */)
+IPC_MESSAGE_ROUTED1(ServiceWorkerHostMsg_PushEventFinished,
                     int /* request_id */)
 
 // Asks the browser to retrieve documents controlled by the sender
@@ -155,6 +158,13 @@ IPC_MESSAGE_CONTROL3(ServiceWorkerMsg_ServiceWorkerStateChanged,
                      int /* handle_id */,
                      blink::WebServiceWorkerState)
 
+// Tells the child process to set the waiting ServiceWorker for the given
+// provider.
+IPC_MESSAGE_CONTROL3(ServiceWorkerMsg_SetWaitingServiceWorker,
+                     int /* thread_id */,
+                     int /* provider_id */,
+                     content::ServiceWorkerObjectInfo)
+
 // Tells the child process to set the current ServiceWorker for the given
 // provider.
 IPC_MESSAGE_CONTROL3(ServiceWorkerMsg_SetCurrentServiceWorker,
@@ -181,6 +191,9 @@ IPC_MESSAGE_CONTROL2(ServiceWorkerMsg_FetchEvent,
                      content::ServiceWorkerFetchRequest)
 IPC_MESSAGE_CONTROL1(ServiceWorkerMsg_SyncEvent,
                      int /* request_id */)
+IPC_MESSAGE_CONTROL2(ServiceWorkerMsg_PushEvent,
+                     int /* request_id */,
+                     std::string /* data */)
 IPC_MESSAGE_CONTROL3(ServiceWorkerMsg_MessageToWorker,
                      base::string16 /* message */,
                      std::vector<int> /* sent_message_port_ids */,

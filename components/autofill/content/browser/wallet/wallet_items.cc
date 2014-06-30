@@ -14,7 +14,7 @@
 #include "components/autofill/core/browser/autofill_type.h"
 #include "components/autofill/core/browser/credit_card.h"
 #include "grit/component_scaled_resources.h"
-#include "grit/component_strings.h"
+#include "grit/components_strings.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/image/image.h"
@@ -245,7 +245,7 @@ bool WalletItems::HasRequiredAction(RequiredAction action) const {
 
 bool WalletItems::SupportsCard(const base::string16& card_number,
                                base::string16* message) const {
-  std::string card_type = CreditCard::GetCreditCardType(card_number);
+  const char* const card_type = CreditCard::GetCreditCardType(card_number);
 
   if (card_type == kVisaCard ||
       card_type == kMasterCard ||

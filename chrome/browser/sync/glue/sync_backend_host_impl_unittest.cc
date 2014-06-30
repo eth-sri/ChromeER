@@ -13,6 +13,7 @@
 #include "base/synchronization/waitable_event.h"
 #include "base/test/test_timeouts.h"
 #include "chrome/browser/chrome_notification_types.h"
+#include "chrome/browser/invalidation/profile_invalidation_provider_factory.h"
 #include "chrome/browser/prefs/pref_service_syncable.h"
 #include "chrome/browser/sync/glue/device_info.h"
 #include "chrome/browser/sync/glue/synced_device_tracker.h"
@@ -20,6 +21,7 @@
 #include "chrome/test/base/testing_profile.h"
 #include "chrome/test/base/testing_profile_manager.h"
 #include "components/invalidation/invalidator_storage.h"
+#include "components/invalidation/profile_invalidation_provider.h"
 #include "components/sync_driver/sync_frontend.h"
 #include "components/sync_driver/sync_prefs.h"
 #include "content/public/browser/notification_service.h"
@@ -27,6 +29,7 @@
 #include "content/public/test/test_utils.h"
 #include "google/cacheinvalidation/include/types.h"
 #include "net/url_request/test_url_fetcher_factory.h"
+#include "sync/internal_api/public/base/invalidator_state.h"
 #include "sync/internal_api/public/base/model_type.h"
 #include "sync/internal_api/public/engine/model_safe_worker.h"
 #include "sync/internal_api/public/http_bridge_network_resources.h"
@@ -37,7 +40,6 @@
 #include "sync/internal_api/public/sync_manager_factory.h"
 #include "sync/internal_api/public/test/fake_sync_manager.h"
 #include "sync/internal_api/public/util/experiments.h"
-#include "sync/notifier/invalidator_state.h"
 #include "sync/protocol/encryption.pb.h"
 #include "sync/protocol/sync_protocol_error.h"
 #include "sync/util/test_unrecoverable_error_handler.h"
@@ -158,6 +160,8 @@ class SyncBackendHostTest : public testing::Test {
     backend_.reset(new SyncBackendHostImpl(
         profile_->GetDebugName(),
         profile_,
+        invalidation::ProfileInvalidationProviderFactory::GetForProfile(
+            profile_)->GetInvalidationService(),
         sync_prefs_->AsWeakPtr(),
         base::FilePath(kTestSyncDir)));
     credentials_.email = "user@example.com";

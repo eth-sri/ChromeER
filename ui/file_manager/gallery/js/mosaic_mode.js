@@ -326,7 +326,7 @@ Mosaic.prototype.initTiles_ = function(tiles, opt_callback) {
  */
 Mosaic.prototype.initTile_ = function(tile, callback) {
   var onImageMeasured = callback;
-  this.metadataCache_.get(tile.getItem().getEntry(), Gallery.METADATA_TYPE,
+  this.metadataCache_.getOne(tile.getItem().getEntry(), Gallery.METADATA_TYPE,
       function(metadata) {
         tile.init(metadata, onImageMeasured);
       });
@@ -1707,7 +1707,7 @@ Mosaic.Tile.SMALL_IMAGE_SIZE = 160;
 /**
  * @return {Gallery.Item} The Gallery item.
  */
-Mosaic.Tile.prototype.getItem = function() { return this.item_ };
+Mosaic.Tile.prototype.getItem = function() { return this.item_; };
 
 /**
  * @return {number} Maximum content height that this tile can have.
@@ -1719,7 +1719,7 @@ Mosaic.Tile.prototype.getMaxContentHeight = function() {
 /**
  * @return {number} The aspect ratio of the tile image.
  */
-Mosaic.Tile.prototype.getAspectRatio = function() { return this.aspectRatio_ };
+Mosaic.Tile.prototype.getAspectRatio = function() { return this.aspectRatio_; };
 
 /**
  * @return {boolean} True if the tile is initialized.
@@ -1982,7 +1982,7 @@ Mosaic.Tile.prototype.layout = function(left, top, width, height) {
 
   if (this.imageLoaded_) {
     this.thumbnailLoader_.attachImage(this.wrapper_,
-                                      ThumbnailLoader.FillMode.FILL);
+                                      ThumbnailLoader.FillMode.OVER_FILL);
   }
 };
 

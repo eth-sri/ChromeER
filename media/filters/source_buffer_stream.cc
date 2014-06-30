@@ -11,6 +11,7 @@
 #include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "media/base/audio_splicer.h"
+#include "media/filters/source_buffer_platform.h"
 
 namespace media {
 
@@ -35,8 +36,8 @@ static bool AllowSameTimestamp(
 // |index| is out of range.  Otherwise returns the config ID for the fade out
 // preroll buffer at position |index|.
 static int GetConfigId(StreamParserBuffer* buffer, size_t index) {
-  return index < buffer->get_splice_buffers().size()
-             ? buffer->get_splice_buffers()[index]->GetConfigId()
+  return index < buffer->splice_buffers().size()
+             ? buffer->splice_buffers()[index]->GetConfigId()
              : buffer->GetConfigId();
 }
 
@@ -168,7 +169,9 @@ class SourceBufferRange {
 
   // Gets the timestamp for the keyframe that is after |timestamp|. If
   // there isn't a keyframe in the range after |timestamp| then kNoTimestamp()
-  // is returned.
+  // is returned. If |timestamp| is in the "gap" between the value  returned by
+  // GetStartTimestamp() and the timestamp on the first buffer in |buffers_|,
+  // then |timestamp| is returned.
   base::TimeDelta NextKeyframeTimestamp(base::TimeDelta timestamp);
 
   // Gets the timestamp for the closest keyframe that is <= |timestamp|. If
@@ -331,11 +334,6 @@ static int kDefaultBufferDurationInMs = 125;
 static base::TimeDelta kSeekToStartFudgeRoom() {
   return base::TimeDelta::FromMilliseconds(1000);
 }
-// The maximum amount of data in bytes the stream will keep in memory.
-// 12MB: approximately 5 minutes of 320Kbps content.
-// 150MB: approximately 5 minutes of 4Mbps content.
-static int kDefaultAudioMemoryLimit = 12 * 1024 * 1024;
-static int kDefaultVideoMemoryLimit = 150 * 1024 * 1024;
 
 namespace media {
 
@@ -356,10 +354,10 @@ SourceBufferStream::SourceBufferStream(const AudioDecoderConfig& audio_config,
       last_appended_buffer_is_keyframe_(false),
       last_output_buffer_timestamp_(kNoTimestamp()),
       max_interbuffer_distance_(kNoTimestamp()),
-      memory_limit_(kDefaultAudioMemoryLimit),
+      memory_limit_(kSourceBufferAudioMemoryLimit),
       config_change_pending_(false),
       splice_buffers_index_(0),
-      pre_splice_complete_(false),
+      pending_buffers_complete_(false),
       splice_frames_enabled_(splice_frames_enabled) {
   DCHECK(audio_config.IsValidConfig());
   audio_configs_.push_back(audio_config);
@@ -382,10 +380,10 @@ SourceBufferStream::SourceBufferStream(const VideoDecoderConfig& video_config,
       last_appended_buffer_is_keyframe_(false),
       last_output_buffer_timestamp_(kNoTimestamp()),
       max_interbuffer_distance_(kNoTimestamp()),
-      memory_limit_(kDefaultVideoMemoryLimit),
+      memory_limit_(kSourceBufferVideoMemoryLimit),
       config_change_pending_(false),
       splice_buffers_index_(0),
-      pre_splice_complete_(false),
+      pending_buffers_complete_(false),
       splice_frames_enabled_(splice_frames_enabled) {
   DCHECK(video_config.IsValidConfig());
   video_configs_.push_back(video_config);
@@ -409,10 +407,10 @@ SourceBufferStream::SourceBufferStream(const TextTrackConfig& text_config,
       last_appended_buffer_is_keyframe_(false),
       last_output_buffer_timestamp_(kNoTimestamp()),
       max_interbuffer_distance_(kNoTimestamp()),
-      memory_limit_(kDefaultAudioMemoryLimit),
+      memory_limit_(kSourceBufferAudioMemoryLimit),
       config_change_pending_(false),
       splice_buffers_index_(0),
-      pre_splice_complete_(false),
+      pending_buffers_complete_(false),
       splice_frames_enabled_(splice_frames_enabled) {}
 
 SourceBufferStream::~SourceBufferStream() {
@@ -503,7 +501,7 @@ bool SourceBufferStream::Append(const BufferQueue& buffers) {
     // segment, then we must make sure that we start with a keyframe.
     // This can happen if the GOP in the previous append gets destroyed
     // by a Remove() call.
-    if (!new_media_segment_ && !buffers.front()->IsKeyframe()) {
+    if (!new_media_segment_) {
       BufferQueue::const_iterator itr = buffers.begin();
 
       // Scan past all the non-keyframes.
@@ -517,13 +515,15 @@ bool SourceBufferStream::Append(const BufferQueue& buffers) {
         last_appended_buffer_timestamp_ = buffers.back()->GetDecodeTimestamp();
         last_appended_buffer_is_keyframe_ = buffers.back()->IsKeyframe();
         return true;
+      } else if (itr != buffers.begin()) {
+        // Copy the first keyframe and everything after it into
+        // |trimmed_buffers|.
+        trimmed_buffers.assign(itr, buffers.end());
+        buffers_for_new_range = &trimmed_buffers;
       }
 
-      // Copy the first keyframe and everything after it into |trimmed_buffers|.
-      trimmed_buffers.assign(itr, buffers.end());
-
-      new_range_start_time = trimmed_buffers.front()->GetDecodeTimestamp();
-      buffers_for_new_range = &trimmed_buffers;
+      new_range_start_time =
+          buffers_for_new_range->front()->GetDecodeTimestamp();
     }
 
     range_for_next_append_ =
@@ -693,8 +693,8 @@ void SourceBufferStream::ResetSeekState() {
   config_change_pending_ = false;
   last_output_buffer_timestamp_ = kNoTimestamp();
   splice_buffers_index_ = 0;
-  splice_buffer_ = NULL;
-  pre_splice_complete_ = false;
+  pending_buffer_ = NULL;
+  pending_buffers_complete_ = false;
 }
 
 bool SourceBufferStream::ShouldSeekToStartOfBuffered(
@@ -1000,7 +1000,7 @@ void SourceBufferStream::PrepareRangesForNextAppend(
   DCHECK(new_buffers.front()->splice_timestamp() !=
          new_buffers.front()->timestamp());
   const bool is_exclusive =
-      new_buffers.front()->get_splice_buffers().empty() &&
+      new_buffers.front()->splice_buffers().empty() &&
       prev_timestamp == next_timestamp &&
       AllowSameTimestamp(prev_is_keyframe, next_is_keyframe, GetType());
 
@@ -1135,23 +1135,22 @@ void SourceBufferStream::OnSetDuration(base::TimeDelta duration) {
 
 SourceBufferStream::Status SourceBufferStream::GetNextBuffer(
     scoped_refptr<StreamParserBuffer>* out_buffer) {
-  if (!splice_buffer_) {
+  if (!pending_buffer_) {
     const SourceBufferStream::Status status = GetNextBufferInternal(out_buffer);
-
-    // Just return if GetNextBufferInternal() failed or there's no fade out
-    // preroll, there's nothing else to do.
-    if (status != SourceBufferStream::kSuccess ||
-        (*out_buffer)->get_splice_buffers().empty()) {
+    if (status != SourceBufferStream::kSuccess || !SetPendingBuffer(out_buffer))
       return status;
-    }
-
-    // Fall through into splice buffer processing.
-    splice_buffers_index_ = 0;
-    splice_buffer_.swap(*out_buffer);
   }
 
-  DCHECK(splice_buffer_);
-  const BufferQueue& splice_buffers = splice_buffer_->get_splice_buffers();
+  if (!pending_buffer_->splice_buffers().empty())
+    return HandleNextBufferWithSplice(out_buffer);
+
+  DCHECK(pending_buffer_->preroll_buffer());
+  return HandleNextBufferWithPreroll(out_buffer);
+}
+
+SourceBufferStream::Status SourceBufferStream::HandleNextBufferWithSplice(
+    scoped_refptr<StreamParserBuffer>* out_buffer) {
+  const BufferQueue& splice_buffers = pending_buffer_->splice_buffers();
   const size_t last_splice_buffer_index = splice_buffers.size() - 1;
 
   // Are there any splice buffers left to hand out?  The last buffer should be
@@ -1166,17 +1165,20 @@ SourceBufferStream::Status SourceBufferStream::GetNextBuffer(
     }
 
     // Every pre splice buffer must have the same splice_timestamp().
-    DCHECK(splice_buffer_->splice_timestamp() ==
+    DCHECK(pending_buffer_->splice_timestamp() ==
            splice_buffers[splice_buffers_index_]->splice_timestamp());
+
+    // No pre splice buffers should have preroll.
+    DCHECK(!splice_buffers[splice_buffers_index_]->preroll_buffer());
 
     *out_buffer = splice_buffers[splice_buffers_index_++];
     return SourceBufferStream::kSuccess;
   }
 
   // Did we hand out the last pre-splice buffer on the previous call?
-  if (!pre_splice_complete_) {
+  if (!pending_buffers_complete_) {
     DCHECK_EQ(splice_buffers_index_, last_splice_buffer_index);
-    pre_splice_complete_ = true;
+    pending_buffers_complete_ = true;
     config_change_pending_ = true;
     DVLOG(1) << "Config change (forced for fade in of splice frame).";
     return SourceBufferStream::kConfigChange;
@@ -1186,13 +1188,32 @@ SourceBufferStream::Status SourceBufferStream::GetNextBuffer(
   // so hand out the final buffer for fade in.  Because a config change is
   // always issued prior to handing out this buffer, any changes in config id
   // have been inherently handled.
-  DCHECK(pre_splice_complete_);
+  DCHECK(pending_buffers_complete_);
   DCHECK_EQ(splice_buffers_index_, splice_buffers.size() - 1);
   DCHECK(splice_buffers.back()->splice_timestamp() == kNoTimestamp());
   *out_buffer = splice_buffers.back();
-  splice_buffer_ = NULL;
-  splice_buffers_index_ = 0;
-  pre_splice_complete_ = false;
+  pending_buffer_ = NULL;
+
+  // If the last splice buffer has preroll, hand off to the preroll handler.
+  return SetPendingBuffer(out_buffer) ? HandleNextBufferWithPreroll(out_buffer)
+                                      : SourceBufferStream::kSuccess;
+}
+
+SourceBufferStream::Status SourceBufferStream::HandleNextBufferWithPreroll(
+    scoped_refptr<StreamParserBuffer>* out_buffer) {
+  // Any config change should have already been handled.
+  DCHECK_EQ(current_config_index_, pending_buffer_->GetConfigId());
+
+  // Check if the preroll buffer has already been handed out.
+  if (!pending_buffers_complete_) {
+    pending_buffers_complete_ = true;
+    *out_buffer = pending_buffer_->preroll_buffer();
+    return SourceBufferStream::kSuccess;
+  }
+
+  // Preroll complete, hand out the final buffer.
+  *out_buffer = pending_buffer_;
+  pending_buffer_ = NULL;
   return SourceBufferStream::kSuccess;
 }
 
@@ -1428,9 +1449,9 @@ bool SourceBufferStream::UpdateVideoConfig(const VideoDecoderConfig& config) {
 void SourceBufferStream::CompleteConfigChange() {
   config_change_pending_ = false;
 
-  if (splice_buffer_) {
+  if (pending_buffer_) {
     current_config_index_ =
-        GetConfigId(splice_buffer_, splice_buffers_index_);
+        GetConfigId(pending_buffer_, splice_buffers_index_);
     return;
   }
 
@@ -1598,6 +1619,8 @@ void SourceBufferStream::DeleteAndRemoveRange(RangeList::iterator* itr) {
   if (*itr == range_for_next_append_) {
     DVLOG(1) << __FUNCTION__ << " deleting range_for_next_append_.";
     range_for_next_append_ = ranges_.end();
+    last_appended_buffer_timestamp_ = kNoTimestamp();
+    last_appended_buffer_is_keyframe_ = false;
   }
 
   delete **itr;
@@ -1637,13 +1660,19 @@ void SourceBufferStream::GenerateSpliceFrame(const BufferQueue& new_buffers) {
   if (pre_splice_buffers.front()->timestamp() >= splice_timestamp)
     return;
 
-  // If any |pre_splice_buffers| are already splices, do not generate a splice.
+  // If any |pre_splice_buffers| are already splices or preroll, do not generate
+  // a splice.
   for (size_t i = 0; i < pre_splice_buffers.size(); ++i) {
     const BufferQueue& original_splice_buffers =
-        pre_splice_buffers[i]->get_splice_buffers();
+        pre_splice_buffers[i]->splice_buffers();
     if (!original_splice_buffers.empty()) {
       DVLOG(1) << "Can't generate splice: overlapped buffers contain a "
                   "pre-existing splice.";
+      return;
+    }
+
+    if (pre_splice_buffers[i]->preroll_buffer()) {
+      DVLOG(1) << "Can't generate splice: overlapped buffers contain preroll.";
       return;
     }
   }
@@ -1676,7 +1705,7 @@ SourceBufferRange::SourceBufferRange(
       media_segment_start_time_(media_segment_start_time),
       interbuffer_distance_cb_(interbuffer_distance_cb),
       size_in_bytes_(0) {
-  DCHECK(!new_buffers.empty());
+  CHECK(!new_buffers.empty());
   DCHECK(new_buffers.front()->IsKeyframe());
   DCHECK(!interbuffer_distance_cb.is_null());
   AppendBuffersToEnd(new_buffers);
@@ -1743,6 +1772,8 @@ void SourceBufferRange::SeekToStart() {
 
 SourceBufferRange* SourceBufferRange::SplitRange(
     base::TimeDelta timestamp, bool is_exclusive) {
+  CHECK(!buffers_.empty());
+
   // Find the first keyframe after |timestamp|. If |is_exclusive|, do not
   // include keyframes at |timestamp|.
   KeyframeMap::iterator new_beginning_keyframe =
@@ -1759,13 +1790,25 @@ SourceBufferRange* SourceBufferRange::SplitRange(
   DCHECK_LT(keyframe_index, static_cast<int>(buffers_.size()));
   BufferQueue::iterator starting_point = buffers_.begin() + keyframe_index;
   BufferQueue removed_buffers(starting_point, buffers_.end());
+
+  base::TimeDelta new_range_start_timestamp = kNoTimestamp();
+  if (GetStartTimestamp() < buffers_.front()->GetDecodeTimestamp() &&
+      timestamp < removed_buffers.front()->GetDecodeTimestamp()) {
+    // The split is in the gap between |media_segment_start_time_| and
+    // the first buffer of the new range so we should set the start
+    // time of the new range to |timestamp| so we preserve part of the
+    // gap in the new range.
+    new_range_start_timestamp = timestamp;
+  }
+
   keyframe_map_.erase(new_beginning_keyframe, keyframe_map_.end());
   FreeBufferRange(starting_point, buffers_.end());
 
   // Create a new range with |removed_buffers|.
   SourceBufferRange* split_range =
       new SourceBufferRange(
-          type_, removed_buffers, kNoTimestamp(), interbuffer_distance_cb_);
+          type_, removed_buffers, new_range_start_timestamp,
+          interbuffer_distance_cb_);
 
   // If the next buffer position is now in |split_range|, update the state of
   // this range and |split_range| accordingly.
@@ -1984,7 +2027,7 @@ bool SourceBufferRange::TruncateAt(
 
   // Return if we're not deleting anything.
   if (starting_point == buffers_.end())
-    return false;
+    return buffers_.empty();
 
   // Reset the next buffer index if we will be deleting the buffer that's next
   // in sequence.
@@ -2133,6 +2176,16 @@ base::TimeDelta SourceBufferRange::NextKeyframeTimestamp(
   KeyframeMap::iterator itr = GetFirstKeyframeAt(timestamp, false);
   if (itr == keyframe_map_.end())
     return kNoTimestamp();
+
+  // If the timestamp is inside the gap between the start of the media
+  // segment and the first buffer, then just pretend there is a
+  // keyframe at the specified timestamp.
+  if (itr == keyframe_map_.begin() &&
+      timestamp > media_segment_start_time_ &&
+      timestamp < itr->first) {
+    return timestamp;
+  }
+
   return itr->first;
 }
 
@@ -2195,6 +2248,24 @@ bool SourceBufferRange::GetBuffersInRange(base::TimeDelta start,
     buffers->push_back(buffer);
   }
   return previous_size < buffers->size();
+}
+
+bool SourceBufferStream::SetPendingBuffer(
+    scoped_refptr<StreamParserBuffer>* out_buffer) {
+  DCHECK(*out_buffer);
+  DCHECK(!pending_buffer_);
+
+  const bool have_splice_buffers = !(*out_buffer)->splice_buffers().empty();
+  const bool have_preroll_buffer = !!(*out_buffer)->preroll_buffer();
+
+  if (!have_splice_buffers && !have_preroll_buffer)
+    return false;
+
+  DCHECK_NE(have_splice_buffers, have_preroll_buffer);
+  splice_buffers_index_ = 0;
+  pending_buffer_.swap(*out_buffer);
+  pending_buffers_complete_ = false;
+  return true;
 }
 
 }  // namespace media

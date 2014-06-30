@@ -12,6 +12,7 @@
 #include "chrome/browser/browser_about_handler.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/kiosk_mode/kiosk_mode_settings.h"
+#include "chrome/browser/chromeos/login/enrollment/auto_enrollment_check_screen_actor.h"
 #include "chrome/browser/chromeos/login/enrollment/enrollment_screen_actor.h"
 #include "chrome/browser/chromeos/login/lock/screen_locker.h"
 #include "chrome/browser/chromeos/login/ui/login_display_host_impl.h"
@@ -21,6 +22,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/about_ui.h"
 #include "chrome/browser/ui/webui/chromeos/login/app_launch_splash_screen_handler.h"
+#include "chrome/browser/ui/webui/chromeos/login/auto_enrollment_check_screen_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/base_screen_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/enrollment_screen_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/error_screen_handler.h"
@@ -56,20 +58,12 @@ namespace chromeos {
 
 namespace {
 
-// List of known types of OobeUI. Type added as path in chrome://oobe url, for
-// example chrome://oobe/user-adding.
-const char kOobeDisplay[] = "oobe";
-const char kLoginDisplay[] = "login";
-const char kLockDisplay[] = "lock";
-const char kUserAddingDisplay[] = "user-adding";
-const char kAppLaunchSplashDisplay[] = "app-launch-splash";
-
 const char* kKnownDisplayTypes[] = {
-  kOobeDisplay,
-  kLoginDisplay,
-  kLockDisplay,
-  kUserAddingDisplay,
-  kAppLaunchSplashDisplay
+  OobeUI::kOobeDisplay,
+  OobeUI::kLoginDisplay,
+  OobeUI::kLockDisplay,
+  OobeUI::kUserAddingDisplay,
+  OobeUI::kAppLaunchSplashDisplay
 };
 
 const char kStringsJSPath[] = "strings.js";
@@ -98,7 +92,7 @@ content::WebUIDataSource* CreateOobeUIDataSource(
     source->AddResourcePath(kDemoUserLoginJSPath, IDR_DEMO_USER_LOGIN_JS);
     return source;
   }
-  if (display_type == kOobeDisplay) {
+  if (display_type == OobeUI::kOobeDisplay) {
     source->SetDefaultResource(IDR_OOBE_HTML);
     source->AddResourcePath(kOobeJSPath, IDR_OOBE_JS);
   } else {
@@ -124,12 +118,19 @@ std::string GetDisplayType(const GURL& url) {
                 kKnownDisplayTypes + arraysize(kKnownDisplayTypes),
                 path) == kKnownDisplayTypes + arraysize(kKnownDisplayTypes)) {
     LOG(ERROR) << "Unknown display type '" << path << "'. Setting default.";
-    return kLoginDisplay;
+    return OobeUI::kLoginDisplay;
   }
   return path;
 }
 
 }  // namespace
+
+// static
+const char OobeUI::kOobeDisplay[] = "oobe";
+const char OobeUI::kLoginDisplay[] = "login";
+const char OobeUI::kLockDisplay[] = "lock";
+const char OobeUI::kUserAddingDisplay[] = "user-adding";
+const char OobeUI::kAppLaunchSplashDisplay[] = "app-launch-splash";
 
 // static
 const char OobeUI::kScreenOobeHIDDetection[] = "hid-detection";
@@ -150,6 +151,8 @@ const char OobeUI::kScreenManagedUserCreationFlow[]
                                              = "managed-user-creation";
 const char OobeUI::kScreenTermsOfService[]   = "terms-of-service";
 const char OobeUI::kScreenWrongHWID[]        = "wrong-hwid";
+const char OobeUI::kScreenAutoEnrollmentCheck[]
+                                             = "auto-enrollment-check";
 const char OobeUI::kScreenHIDDetection[]     = "hid-detection";
 const char OobeUI::kScreenAppLaunchSplash[]  = "app-launch-splash";
 const char OobeUI::kScreenConfirmPassword[]  = "confirm-password";
@@ -167,6 +170,7 @@ OobeUI::OobeUI(content::WebUI* web_ui, const GURL& url)
       autolaunch_screen_actor_(NULL),
       kiosk_enable_screen_actor_(NULL),
       wrong_hwid_screen_actor_(NULL),
+      auto_enrollment_check_screen_actor_(NULL),
       locally_managed_user_creation_screen_actor_(NULL),
       error_screen_handler_(NULL),
       signin_screen_handler_(NULL),
@@ -230,8 +234,13 @@ OobeUI::OobeUI(content::WebUI* web_ui, const GURL& url)
   wrong_hwid_screen_actor_ = wrong_hwid_screen_handler;
   AddScreenHandler(wrong_hwid_screen_handler);
 
+  AutoEnrollmentCheckScreenHandler* auto_enrollment_check_screen_handler =
+      new AutoEnrollmentCheckScreenHandler();
+  auto_enrollment_check_screen_actor_ = auto_enrollment_check_screen_handler;
+  AddScreenHandler(auto_enrollment_check_screen_handler);
+
   HIDDetectionScreenHandler* hid_detection_screen_handler =
-      new HIDDetectionScreenHandler();
+      new HIDDetectionScreenHandler(core_handler_);
   hid_detection_screen_actor_ = hid_detection_screen_handler;
   AddScreenHandler(hid_detection_screen_handler);
 
@@ -309,6 +318,10 @@ void OobeUI::HideScreen(WizardScreen* screen) {
   screen->Hide();
 }
 
+CoreOobeActor* OobeUI::GetCoreOobeActor() {
+  return core_handler_;
+}
+
 UpdateScreenActor* OobeUI::GetUpdateScreenActor() {
   return update_screen_handler_;
 }
@@ -343,6 +356,10 @@ TermsOfServiceScreenActor* OobeUI::GetTermsOfServiceScreenActor() {
 
 WrongHWIDScreenActor* OobeUI::GetWrongHWIDScreenActor() {
   return wrong_hwid_screen_actor_;
+}
+
+AutoEnrollmentCheckScreenActor* OobeUI::GetAutoEnrollmentCheckScreenActor() {
+  return auto_enrollment_check_screen_actor_;
 }
 
 HIDDetectionScreenActor* OobeUI::GetHIDDetectionScreenActor() {
@@ -418,6 +435,7 @@ void OobeUI::InitializeScreenMaps() {
       kScreenManagedUserCreationFlow;
   screen_names_[SCREEN_TERMS_OF_SERVICE] = kScreenTermsOfService;
   screen_names_[SCREEN_WRONG_HWID] = kScreenWrongHWID;
+  screen_names_[SCREEN_AUTO_ENROLLMENT_CHECK] = kScreenAutoEnrollmentCheck;
   screen_names_[SCREEN_APP_LAUNCH_SPLASH] = kScreenAppLaunchSplash;
   screen_names_[SCREEN_CONFIRM_PASSWORD] = kScreenConfirmPassword;
   screen_names_[SCREEN_FATAL_ERROR] = kScreenFatalError;

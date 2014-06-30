@@ -168,9 +168,7 @@ class NativeAppWindowCocoa : public apps::NativeAppWindow,
   content::WebContents* WebContents() const;
 
   // Returns the WindowStyleMask based on the type of window frame.
-  // Specifically, this includes NSResizableWindowMask if the window is
-  // resizable, and does not include NSTexturedBackgroundWindowMask when a
-  // native frame is used.
+  // This includes NSResizableWindowMask if the window is resizable.
   NSUInteger GetWindowStyleMask() const;
 
   void InstallView();
@@ -200,6 +198,10 @@ class NativeAppWindowCocoa : public apps::NativeAppWindow,
   bool shows_fullscreen_controls_;
 
   apps::SizeConstraints size_constraints_;
+
+  bool has_frame_color_;
+  SkColor active_frame_color_;
+  SkColor inactive_frame_color_;
 
   base::scoped_nsobject<NativeAppWindowController> window_controller_;
   NSInteger attention_request_id_;  // identifier from requestUserAttention

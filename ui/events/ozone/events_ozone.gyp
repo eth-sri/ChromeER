@@ -25,9 +25,6 @@
       'device/device_manager_manual.h',
       'device/udev/device_manager_udev.cc',
       'device/udev/device_manager_udev.h',
-      'device/udev/scoped_udev.h',
-      'event_factory_ozone.cc',
-      'event_factory_ozone.h',
       'events_ozone_export.h',
     ],
     'conditions': [
@@ -38,7 +35,7 @@
       }],
       ['use_ozone_evdev==1 and use_udev==1', {
         'dependencies': [
-          '<(DEPTH)/build/linux/system.gyp:udev',
+          '<(DEPTH)/device/udev_linux/udev.gyp:udev_linux',
         ],
       }],
     ],
@@ -48,6 +45,7 @@
     'dependencies': [
       '../../../base/base.gyp:base',
       '../../gfx/gfx.gyp:gfx',
+      '../../ozone/ozone.gyp:ozone_base',
       '../platform/events_platform.gyp:events_platform',
       'events_ozone',
     ],

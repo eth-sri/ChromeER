@@ -9,6 +9,8 @@
 #include "base/android/command_line_android.h"
 #include "base/android/content_uri_utils.h"
 #include "base/android/cpu_features.h"
+#include "base/android/event_log.h"
+#include "base/android/field_trial_list.h"
 #include "base/android/important_file_writer_android.h"
 #include "base/android/java_handler_thread.h"
 #include "base/android/jni_android.h"
@@ -34,6 +36,8 @@ static RegistrationMethod kBaseRegisteredMethods[] = {
   { "CommandLine", base::android::RegisterCommandLine },
   { "ContentUriUtils", base::RegisterContentUriUtils },
   { "CpuFeatures", base::android::RegisterCpuFeatures },
+  { "EventLog", base::android::RegisterEventLog },
+  { "FieldTrialList", base::android::RegisterFieldTrialList },
   { "ImportantFileWriterAndroid",
     base::android::RegisterImportantFileWriterAndroid },
   { "MemoryPressureListenerAndroid",

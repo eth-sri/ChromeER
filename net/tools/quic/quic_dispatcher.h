@@ -17,7 +17,6 @@
 #include "net/base/linked_hash_map.h"
 #include "net/quic/quic_blocked_writer_interface.h"
 #include "net/quic/quic_protocol.h"
-#include "net/tools/epoll_server/epoll_server.h"
 #include "net/tools/quic/quic_server_session.h"
 #include "net/tools/quic/quic_time_wait_list_manager.h"
 
@@ -51,7 +50,16 @@ class QuicDispatcherPeer;
 class DeleteSessionsAlarm;
 class QuicEpollConnectionHelper;
 
-class QuicDispatcher : public QuicServerSessionVisitor {
+class ProcessPacketInterface {
+ public:
+  virtual ~ProcessPacketInterface() {}
+  virtual void ProcessPacket(const IPEndPoint& server_address,
+                             const IPEndPoint& client_address,
+                             const QuicEncryptedPacket& packet) = 0;
+};
+
+class QuicDispatcher : public QuicServerSessionVisitor,
+                       public ProcessPacketInterface {
  public:
   // Ideally we'd have a linked_hash_set: the  boolean is unused.
   typedef linked_hash_map<QuicBlockedWriterInterface*, bool> WriteBlockedList;
@@ -62,8 +70,7 @@ class QuicDispatcher : public QuicServerSessionVisitor {
   QuicDispatcher(const QuicConfig& config,
                  const QuicCryptoServerConfig& crypto_config,
                  const QuicVersionVector& supported_versions,
-                 EpollServer* epoll_server,
-                 uint32 initial_flow_control_window_bytes);
+                 EpollServer* epoll_server);
 
   virtual ~QuicDispatcher();
 
@@ -73,7 +80,7 @@ class QuicDispatcher : public QuicServerSessionVisitor {
   // an existing session, or passing it to the TimeWaitListManager.
   virtual void ProcessPacket(const IPEndPoint& server_address,
                              const IPEndPoint& client_address,
-                             const QuicEncryptedPacket& packet);
+                             const QuicEncryptedPacket& packet) OVERRIDE;
 
   // Called when the socket becomes writable to allow queued writes to happen.
   virtual void OnCanWrite();
@@ -138,10 +145,6 @@ class QuicDispatcher : public QuicServerSessionVisitor {
     return supported_versions_;
   }
 
-  const QuicVersionVector& supported_versions_no_flow_control() const {
-    return supported_versions_no_flow_control_;
-  }
-
   const QuicVersionVector& supported_versions_no_connection_flow_control()
       const {
     return supported_versions_no_connection_flow_control_;
@@ -166,10 +169,6 @@ class QuicDispatcher : public QuicServerSessionVisitor {
   QuicEpollConnectionHelper* helper() { return helper_.get(); }
 
   QuicPacketWriter* writer() { return writer_.get(); }
-
-  const uint32 initial_flow_control_window_bytes() const {
-    return initial_flow_control_window_bytes_;
-  }
 
  private:
   class QuicFramerVisitor;
@@ -217,18 +216,12 @@ class QuicDispatcher : public QuicServerSessionVisitor {
   // skipped as necessary).
   const QuicVersionVector supported_versions_;
 
-  // Versions which do not support flow control (introduced in QUIC_VERSION_17).
-  // This is used to construct new QuicConnections when flow control is disabled
-  // via flag.
-  // TODO(rjshade): Remove this when
-  // FLAGS_enable_quic_stream_flow_control_2 is removed.
-  QuicVersionVector supported_versions_no_flow_control_;
   // Versions which do not support *connection* flow control (introduced in
   // QUIC_VERSION_19).
   // This is used to construct new QuicConnections when connection flow control
   // is disabled via flag.
   // TODO(rjshade): Remove this when
-  // FLAGS_enable_quic_connection_flow_control is removed.
+  // FLAGS_enable_quic_connection_flow_control_2 is removed.
   QuicVersionVector supported_versions_no_connection_flow_control_;
 
   // Information about the packet currently being handled.
@@ -238,10 +231,6 @@ class QuicDispatcher : public QuicServerSessionVisitor {
 
   QuicFramer framer_;
   scoped_ptr<QuicFramerVisitor> framer_visitor_;
-
-  // Initial flow control window size to advertize to peer on newly created
-  // connections.
-  const uint32 initial_flow_control_window_bytes_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicDispatcher);
 };

@@ -1062,10 +1062,10 @@ class TLSConnection(TLSRecordLayer):
     def handshakeServer(self, verifierDB=None,
                         certChain=None, privateKey=None, reqCert=False,
                         sessionCache=None, settings=None, checker=None,
-                        reqCAs = None, 
+                        reqCAs = None, reqCertTypes = None,
                         tacks=None, activationFlags=0,
                         nextProtos=None, anon=False,
-                        tlsIntolerant=None, signedCertTimestamps=None,
+                        signedCertTimestamps=None,
                         fallbackSCSV=False, ocspResponse=None):
         """Perform a handshake in the role of server.
 
@@ -1130,15 +1130,14 @@ class TLSConnection(TLSRecordLayer):
         will be sent along with a certificate request. This does not affect
         verification.        
 
+        @type reqCertTypes: list of int
+        @param reqCertTypes: A list of certificate_type values to be sent
+        along with a certificate request. This does not affect verification.
+
         @type nextProtos: list of strings.
         @param nextProtos: A list of upper layer protocols to expose to the
         clients through the Next-Protocol Negotiation Extension, 
         if they support it.
-
-        @type tlsIntolerant: (int, int) or None
-        @param tlsIntolerant: If tlsIntolerant is not None, the server will
-        simulate TLS version intolerance by returning a fatal handshake_failure
-        alert to all TLS versions tlsIntolerant or higher.
 
         @type signedCertTimestamps: str
         @param signedCertTimestamps: A SignedCertificateTimestampList (as a
@@ -1169,9 +1168,9 @@ class TLSConnection(TLSRecordLayer):
         """
         for result in self.handshakeServerAsync(verifierDB,
                 certChain, privateKey, reqCert, sessionCache, settings,
-                checker, reqCAs, 
+                checker, reqCAs, reqCertTypes,
                 tacks=tacks, activationFlags=activationFlags, 
-                nextProtos=nextProtos, anon=anon, tlsIntolerant=tlsIntolerant,
+                nextProtos=nextProtos, anon=anon,
                 signedCertTimestamps=signedCertTimestamps,
                 fallbackSCSV=fallbackSCSV, ocspResponse=ocspResponse):
             pass
@@ -1180,10 +1179,9 @@ class TLSConnection(TLSRecordLayer):
     def handshakeServerAsync(self, verifierDB=None,
                              certChain=None, privateKey=None, reqCert=False,
                              sessionCache=None, settings=None, checker=None,
-                             reqCAs=None, 
+                             reqCAs=None, reqCertTypes=None,
                              tacks=None, activationFlags=0,
                              nextProtos=None, anon=False,
-                             tlsIntolerant=None,
                              signedCertTimestamps=None,
                              fallbackSCSV=False,
                              ocspResponse=None
@@ -1203,10 +1201,9 @@ class TLSConnection(TLSRecordLayer):
             verifierDB=verifierDB, certChain=certChain,
             privateKey=privateKey, reqCert=reqCert,
             sessionCache=sessionCache, settings=settings, 
-            reqCAs=reqCAs, 
+            reqCAs=reqCAs, reqCertTypes=reqCertTypes,
             tacks=tacks, activationFlags=activationFlags, 
             nextProtos=nextProtos, anon=anon,
-            tlsIntolerant=tlsIntolerant,
             signedCertTimestamps=signedCertTimestamps,
             fallbackSCSV=fallbackSCSV,
             ocspResponse=ocspResponse)
@@ -1216,10 +1213,10 @@ class TLSConnection(TLSRecordLayer):
 
     def _handshakeServerAsyncHelper(self, verifierDB,
                              certChain, privateKey, reqCert, sessionCache,
-                             settings, reqCAs, 
+                             settings, reqCAs, reqCertTypes,
                              tacks, activationFlags, 
                              nextProtos, anon,
-                             tlsIntolerant, signedCertTimestamps, fallbackSCSV,
+                             signedCertTimestamps, fallbackSCSV,
                              ocspResponse):
 
         self._handshakeStart(client=False)
@@ -1232,6 +1229,8 @@ class TLSConnection(TLSRecordLayer):
             raise ValueError("Caller passed a privateKey but no certChain")
         if reqCAs and not reqCert:
             raise ValueError("Caller passed reqCAs but not reqCert")            
+        if reqCertTypes and not reqCert:
+            raise ValueError("Caller passed reqCertTypes but not reqCert")
         if certChain and not isinstance(certChain, X509CertChain):
             raise ValueError("Unrecognized certificate type")
         if activationFlags and not tacks:
@@ -1255,7 +1254,7 @@ class TLSConnection(TLSRecordLayer):
         # Handle ClientHello and resumption
         for result in self._serverGetClientHello(settings, certChain,\
                                             verifierDB, sessionCache,
-                                            anon, tlsIntolerant, fallbackSCSV):
+                                            anon, fallbackSCSV):
             if result in (0,1): yield result
             elif result == None:
                 self._handshakeDone(resumed=True)                
@@ -1320,7 +1319,7 @@ class TLSConnection(TLSRecordLayer):
                 assert(False)
             for result in self._serverCertKeyExchange(clientHello, serverHello, 
                                         certChain, keyExchange,
-                                        reqCert, reqCAs, cipherSuite,
+                                        reqCert, reqCAs, reqCertTypes, cipherSuite,
                                         settings, ocspResponse):
                 if result in (0,1): yield result
                 else: break
@@ -1370,7 +1369,7 @@ class TLSConnection(TLSRecordLayer):
 
 
     def _serverGetClientHello(self, settings, certChain, verifierDB,
-                                sessionCache, anon, tlsIntolerant, fallbackSCSV):
+                                sessionCache, anon, fallbackSCSV):
         #Initialize acceptable cipher suites
         cipherSuites = []
         if verifierDB:
@@ -1407,11 +1406,21 @@ class TLSConnection(TLSRecordLayer):
                 yield result
 
         #If simulating TLS intolerance, reject certain TLS versions.
-        elif (tlsIntolerant is not None and
-            clientHello.client_version >= tlsIntolerant):
-            for result in self._sendError(\
+        elif (settings.tlsIntolerant is not None and
+              clientHello.client_version >= settings.tlsIntolerant):
+            if settings.tlsIntoleranceType == "alert":
+                for result in self._sendError(\
                     AlertDescription.handshake_failure):
-                yield result
+                    yield result
+            elif settings.tlsIntoleranceType == "close":
+                self._abruptClose()
+                raise TLSUnsupportedError("Simulating version intolerance")
+            elif settings.tlsIntoleranceType == "reset":
+                self._abruptClose(reset=True)
+                raise TLSUnsupportedError("Simulating version intolerance")
+            else:
+                raise ValueError("Unknown intolerance type: '%s'" %
+                                 settings.tlsIntoleranceType)
 
         #If client's version is too high, propose my highest version
         elif clientHello.client_version > settings.maxVersion:
@@ -1597,7 +1606,7 @@ class TLSConnection(TLSRecordLayer):
 
     def _serverCertKeyExchange(self, clientHello, serverHello, 
                                 serverCertChain, keyExchange,
-                                reqCert, reqCAs, cipherSuite,
+                                reqCert, reqCAs, reqCertTypes, cipherSuite,
                                 settings, ocspResponse):
         #Send ServerHello, Certificate[, ServerKeyExchange]
         #[, CertificateRequest], ServerHelloDone
@@ -1613,11 +1622,12 @@ class TLSConnection(TLSRecordLayer):
         serverKeyExchange = keyExchange.makeServerKeyExchange()
         if serverKeyExchange is not None:
             msgs.append(serverKeyExchange)
-        if reqCert and reqCAs:
-            msgs.append(CertificateRequest().create(\
-                [ClientCertificateType.rsa_sign], reqCAs))
-        elif reqCert:
-            msgs.append(CertificateRequest())
+        if reqCert:
+            reqCAs = reqCAs or []
+            #Apple's Secure Transport library rejects empty certificate_types,
+            #so default to rsa_sign.
+            reqCertTypes = reqCertTypes or [ClientCertificateType.rsa_sign]
+            msgs.append(CertificateRequest().create(reqCertTypes, reqCAs))
         msgs.append(ServerHelloDone())
         for result in self._sendMsgs(msgs):
             yield result

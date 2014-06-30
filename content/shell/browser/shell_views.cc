@@ -6,6 +6,7 @@
 
 #include "base/command_line.h"
 #include "base/strings/utf_string_conversions.h"
+#include "content/public/browser/context_factory.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/context_menu_params.h"
@@ -411,6 +412,7 @@ class ShellWindowDelegateView : public views::WidgetDelegateView,
 
 #if defined(OS_CHROMEOS)
 wm::WMTestHelper* Shell::wm_test_helper_ = NULL;
+gfx::Screen* Shell::test_screen_ = NULL;
 #endif
 views::ViewsDelegate* Shell::views_delegate_ = NULL;
 
@@ -422,9 +424,10 @@ void Shell::PlatformInitialize(const gfx::Size& default_window_size) {
 #endif
 #if defined(OS_CHROMEOS)
   chromeos::DBusThreadManager::Initialize();
-  gfx::Screen::SetScreenInstance(
-      gfx::SCREEN_TYPE_NATIVE, aura::TestScreen::Create());
-  wm_test_helper_ = new wm::WMTestHelper(default_window_size);
+  test_screen_ = aura::TestScreen::Create(gfx::Size());
+  gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE, test_screen_);
+  wm_test_helper_ = new wm::WMTestHelper(default_window_size,
+                                         GetContextFactory());
 #else
   gfx::Screen::SetScreenInstance(
       gfx::SCREEN_TYPE_NATIVE, views::CreateDesktopScreen());
@@ -435,6 +438,10 @@ void Shell::PlatformInitialize(const gfx::Size& default_window_size) {
 void Shell::PlatformExit() {
 #if defined(OS_CHROMEOS)
   delete wm_test_helper_;
+  wm_test_helper_ = NULL;
+
+  delete test_screen_;
+  test_screen_ = NULL;
 #endif
   delete views_delegate_;
   views_delegate_ = NULL;
@@ -496,7 +503,6 @@ void Shell::PlatformCreateWindow(int width, int height) {
   views::Widget::InitParams params;
   params.bounds = gfx::Rect(0, 0, width, height);
   params.delegate = new ShellWindowDelegateView(this);
-  params.top_level = true;
   params.remove_standard_frame = true;
   window_widget_->Init(params);
 #endif

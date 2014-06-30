@@ -19,23 +19,28 @@
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/autocomplete/autocomplete_provider_listener.h"
 #include "chrome/browser/autocomplete/autocomplete_result.h"
+#include "chrome/browser/autocomplete/chrome_autocomplete_scheme_classifier.h"
 #include "chrome/browser/autocomplete/history_url_provider.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/history/history_backend.h"
 #include "chrome/browser/history/history_database.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/in_memory_url_index.h"
-#include "chrome/browser/history/url_database.h"
 #include "chrome/browser/history/url_index_private_data.h"
-#include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/bookmarks/test/bookmark_test_helpers.h"
+#include "components/history/core/browser/url_database.h"
+#include "components/metrics/proto/omnibox_event.pb.h"
+#include "components/search_engines/template_url.h"
+#include "content/public/browser/notification_service.h"
 #include "content/public/test/test_browser_thread.h"
+#include "content/public/test/test_utils.h"
 #include "sql/transaction.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -125,7 +130,7 @@ class HistoryQuickProviderTest : public testing::Test,
 
   static KeyedService* CreateTemplateURLService(
       content::BrowserContext* profile) {
-    return new TemplateURLService(static_cast<Profile*>(profile));
+    return new TemplateURLService(static_cast<Profile*>(profile), NULL);
   }
 
   virtual void SetUp();
@@ -145,6 +150,10 @@ class HistoryQuickProviderTest : public testing::Test,
                bool can_inline_top_result,
                base::string16 expected_fill_into_edit,
                base::string16 autocompletion);
+
+  history::HistoryBackend* history_backend() {
+    return history_service_->history_backend_;
+  }
 
   base::MessageLoopForUI message_loop_;
   content::TestBrowserThread ui_thread_;
@@ -173,8 +182,7 @@ void HistoryQuickProviderTest::SetUp() {
   TemplateURLServiceFactory::GetInstance()->SetTestingFactoryAndUse(
       profile_.get(), &HistoryQuickProviderTest::CreateTemplateURLService);
   FillData();
-  provider_->GetIndex()->RebuildFromHistory(
-      history_service_->history_backend_->db());
+  provider_->GetIndex()->RebuildFromHistory(history_backend()->db());
 }
 
 void HistoryQuickProviderTest::TearDown() {
@@ -190,7 +198,7 @@ void HistoryQuickProviderTest::GetTestData(size_t* data_count,
 }
 
 void HistoryQuickProviderTest::FillData() {
-  sql::Connection& db(history_service_->history_backend_->db()->GetDB());
+  sql::Connection& db(history_backend()->db()->GetDB());
   ASSERT_TRUE(db.is_open());
 
   size_t data_count = 0;
@@ -256,8 +264,9 @@ void HistoryQuickProviderTest::RunTest(const base::string16 text,
   SCOPED_TRACE(text);  // Minimal hint to query being run.
   base::MessageLoop::current()->RunUntilIdle();
   AutocompleteInput input(text, base::string16::npos, base::string16(),
-                          GURL(), AutocompleteInput::INVALID_SPEC,
-                          prevent_inline_autocomplete, false, true, true);
+                          GURL(), metrics::OmniboxEventProto::INVALID_SPEC,
+                          prevent_inline_autocomplete, false, true, true,
+                          ChromeAutocompleteSchemeClassifier(profile_.get()));
   provider_->Start(input, false);
   EXPECT_TRUE(provider_->done());
 
@@ -507,15 +516,31 @@ TEST_F(HistoryQuickProviderTest, Spans) {
 }
 
 TEST_F(HistoryQuickProviderTest, DeleteMatch) {
+  GURL test_url("http://slashdot.org/favorite_page.html");
   std::vector<std::string> expected_urls;
-  expected_urls.push_back("http://slashdot.org/favorite_page.html");
+  expected_urls.push_back(test_url.spec());
   // Fill up ac_matches_; we don't really care about the test yet.
   RunTest(ASCIIToUTF16("slashdot"), false, expected_urls, true,
           ASCIIToUTF16("slashdot.org/favorite_page.html"),
                   ASCIIToUTF16(".org/favorite_page.html"));
   EXPECT_EQ(1U, ac_matches_.size());
+  EXPECT_TRUE(history_backend()->GetURL(test_url, NULL));
   provider_->DeleteMatch(ac_matches_[0]);
-  // Verify it's no longer an indexed visit.
+
+  // Check that the underlying URL is deleted from the history DB (this implies
+  // that all visits are gone as well). Also verify that a deletion notification
+  // is sent, in response to which the secondary data stores (InMemoryDatabase,
+  // InMemoryURLIndex) will drop any data they might have pertaining to the URL.
+  // To ensure that the deletion has been propagated everywhere before we start
+  // verifying post-deletion states, first wait until we see the notification.
+  content::WindowedNotificationObserver observer(
+        chrome::NOTIFICATION_HISTORY_URLS_DELETED,
+        content::NotificationService::AllSources());
+  observer.Wait();
+  EXPECT_FALSE(history_backend()->GetURL(test_url, NULL));
+
+  // Just to be on the safe side, explicitly verify that we have deleted enough
+  // data so that we will not be serving the same result again.
   expected_urls.clear();
   RunTest(ASCIIToUTF16("slashdot"), false, expected_urls, true,
           ASCIIToUTF16("NONE EXPECTED"), base::string16());
@@ -627,7 +652,7 @@ TEST_F(HistoryQuickProviderTest, CullSearchResults) {
   data.SetURL("http://testsearch.com/?q={searchTerms}");
   TemplateURLService* template_url_service =
       TemplateURLServiceFactory::GetForProfile(profile_.get());
-  TemplateURL* template_url = new TemplateURL(profile_.get(), data);
+  TemplateURL* template_url = new TemplateURL(data);
   template_url_service->Add(template_url);
   template_url_service->SetUserSelectedDefaultSearchProvider(template_url);
   template_url_service->Load();

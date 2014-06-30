@@ -14,17 +14,14 @@
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/sequenced_task_runner_helpers.h"
-#include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/google/google_url_tracker.h"
 #include "chrome/browser/google/google_url_tracker_factory.h"
-#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/search_host_to_urls_map.h"
-#include "chrome/browser/search_engines/search_terms_data.h"
-#include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
+#include "chrome/browser/search_engines/ui_thread_search_terms_data.h"
 #include "chrome/browser/search_engines/util.h"
-#include "chrome/browser/webdata/web_data_service.h"
+#include "components/google/core/browser/google_url_tracker.h"
+#include "components/search_engines/template_url.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_process_host_observer.h"
@@ -48,7 +45,7 @@ void LoadDataOnUIThread(TemplateURLService* template_url_service,
            original_template_urls.begin();
        it != original_template_urls.end();
        ++it) {
-    template_url_copies.push_back(new TemplateURL(NULL, (*it)->data()));
+    template_url_copies.push_back(new TemplateURL((*it)->data()));
     if (*it == original_default_provider)
       default_provider_copy = template_url_copies.back();
   }
@@ -182,8 +179,7 @@ static bool IsSameOrigin(const GURL& requested_origin,
   DCHECK(requested_origin == requested_origin.GetOrigin());
   DCHECK(template_url->GetType() != TemplateURL::OMNIBOX_API_EXTENSION);
   return requested_origin ==
-      TemplateURLService::GenerateSearchURLUsingTermsData(template_url,
-          search_terms_data).GetOrigin();
+      template_url->GenerateSearchURL(search_terms_data).GetOrigin();
 }
 
 }  // namespace
@@ -287,8 +283,7 @@ void SearchProviderInstallData::SetDefault(const TemplateURL* template_url) {
   DCHECK(template_url->GetType() != TemplateURL::OMNIBOX_API_EXTENSION);
 
   IOThreadSearchTermsData search_terms_data(google_base_url_);
-  const GURL url(TemplateURLService::GenerateSearchURLUsingTermsData(
-      template_url, search_terms_data));
+  const GURL url(template_url->GenerateSearchURL(search_terms_data));
   if (!url.is_valid() || !url.has_host()) {
     default_search_origin_.clear();
     return;

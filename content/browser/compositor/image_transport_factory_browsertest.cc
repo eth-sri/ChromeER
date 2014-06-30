@@ -2,9 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "content/browser/compositor/image_transport_factory.h"
+
 #include "base/run_loop.h"
 #include "cc/output/context_provider.h"
-#include "content/browser/compositor/image_transport_factory.h"
 #include "content/browser/compositor/owned_mailbox.h"
 #include "content/public/browser/gpu_data_manager.h"
 #include "content/public/test/content_browser_test.h"
@@ -16,7 +17,7 @@
 namespace content {
 namespace {
 
-class ImageTransportFactoryBrowserTest : public ContentBrowserTest {};
+typedef ContentBrowserTest ImageTransportFactoryBrowserTest;
 
 class MockImageTransportFactoryObserver : public ImageTransportFactoryObserver {
  public:
@@ -51,7 +52,7 @@ IN_PROC_BROWSER_TEST_F(ImageTransportFactoryBrowserTest,
   EXPECT_CALL(observer, OnLostResources())
       .WillOnce(testing::InvokeWithoutArgs(&run_loop, &base::RunLoop::Quit));
 
-  ui::ContextFactory* context_factory = ui::ContextFactory::GetInstance();
+  ui::ContextFactory* context_factory = factory->GetContextFactory();
   gpu::gles2::GLES2Interface* gl =
       context_factory->SharedMainThreadContextProvider()->ContextGL();
   gl->LoseContextCHROMIUM(GL_GUILTY_CONTEXT_RESET_ARB,
@@ -65,6 +66,44 @@ IN_PROC_BROWSER_TEST_F(ImageTransportFactoryBrowserTest,
   EXPECT_TRUE(mailbox->mailbox().IsZero());
 
   factory->RemoveObserver(&observer);
+}
+
+class ImageTransportFactoryTearDownBrowserTest : public ContentBrowserTest {
+ public:
+  ImageTransportFactoryTearDownBrowserTest() {}
+
+  virtual void TearDown() {
+    if (mailbox_)
+      EXPECT_TRUE(mailbox_->mailbox().IsZero());
+    ContentBrowserTest::TearDown();
+  }
+
+ protected:
+  scoped_refptr<OwnedMailbox> mailbox_;
+};
+
+// This crashes on Mac. ImageTransportFactory is NULL unless
+// --enable-delegated-renderer is passed, and after that, we'd need to spawn a
+// renderer and get a frame before we create a browser compositor, necessary for
+// the GLHelper to not be NULL.
+// http://crbug.com/335083
+#if defined(OS_MACOSX)
+#define MAYBE_LoseOnTearDown DISABLED_LoseOnTearDown
+#else
+#define MAYBE_LoseOnTearDown LoseOnTearDown
+#endif
+// Checks that upon destruction of the ImageTransportFactory, the observer is
+// called and the created resources are reset.
+IN_PROC_BROWSER_TEST_F(ImageTransportFactoryTearDownBrowserTest,
+                       MAYBE_LoseOnTearDown) {
+  // This test doesn't make sense in software compositing mode.
+  if (!GpuDataManager::GetInstance()->CanUseGpuBrowserCompositor())
+    return;
+  ImageTransportFactory* factory = ImageTransportFactory::GetInstance();
+  GLHelper* helper = factory->GetGLHelper();
+  ASSERT_TRUE(helper);
+  mailbox_ = new OwnedMailbox(helper);
+  EXPECT_FALSE(mailbox_->mailbox().IsZero());
 }
 
 }  // anonymous namespace

@@ -13,7 +13,6 @@
 #include "ui/aura/window_tree_host_observer.h"
 
 namespace content {
-class ShellBrowserContext;
 class ShellDevToolsDelegate;
 struct MainFunctionParams;
 }
@@ -21,6 +20,7 @@ struct MainFunctionParams;
 namespace extensions {
 class ShellExtensionsBrowserClient;
 class ShellExtensionSystem;
+class ShellOmahaQueryParamsDelegate;
 }
 
 namespace views {
@@ -43,8 +43,7 @@ class ShellNetworkController;
 #endif
 
 // Handles initialization of AppShell.
-class ShellBrowserMainParts : public content::BrowserMainParts,
-                              public aura::WindowTreeHostObserver {
+class ShellBrowserMainParts : public content::BrowserMainParts {
  public:
   ShellBrowserMainParts(const content::MainFunctionParams& parameters,
                         ShellBrowserMainDelegate* browser_main_delegate);
@@ -68,9 +67,6 @@ class ShellBrowserMainParts : public content::BrowserMainParts,
   virtual void PostMainMessageLoopRun() OVERRIDE;
   virtual void PostDestroyThreads() OVERRIDE;
 
-  // aura::WindowTreeHostObserver overrides:
-  virtual void OnHostCloseRequested(const aura::WindowTreeHost* host) OVERRIDE;
-
  private:
   // Creates and initializes the ExtensionSystem.
   void CreateExtensionSystem();
@@ -84,8 +80,9 @@ class ShellBrowserMainParts : public content::BrowserMainParts,
   scoped_ptr<extensions::ShellExtensionsBrowserClient>
       extensions_browser_client_;
   scoped_ptr<net::NetLog> net_log_;
-
   scoped_ptr<content::ShellDevToolsDelegate> devtools_delegate_;
+  scoped_ptr<extensions::ShellOmahaQueryParamsDelegate>
+      omaha_query_params_delegate_;
 
   // Owned by the KeyedService system.
   extensions::ShellExtensionSystem* extension_system_;

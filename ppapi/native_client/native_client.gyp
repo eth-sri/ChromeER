@@ -113,12 +113,12 @@
             'build_newlib': 0,
             'build_irt': 1,
             'include_dirs': [
-              'lib/gl/include',
               '..',
             ],
             'link_flags': [
               '-Wl,--start-group',
               '-lirt_browser',
+              '-llatency_info_nacl',
               '-lpnacl_irt_shim_for_irt',
               '-lppapi_proxy_nacl',
               '-lppapi_ipc_nacl',

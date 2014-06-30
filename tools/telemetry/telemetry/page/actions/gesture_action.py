@@ -3,9 +3,7 @@
 # found in the LICENSE file.
 
 from telemetry.page.actions import page_action
-from telemetry.page.actions import wait
 from telemetry import decorators
-from telemetry.page.actions import action_runner
 from telemetry.web_perf import timeline_interaction_record as tir_module
 
 class GestureAction(page_action.PageAction):
@@ -14,32 +12,19 @@ class GestureAction(page_action.PageAction):
     if not hasattr(self, 'automatically_record_interaction'):
       self.automatically_record_interaction = True
 
-    if hasattr(self, 'wait_after'):
-      self.wait_action = wait.WaitAction(self.wait_after)
-    else:
-      self.wait_action = None
-
-    assert self.wait_until is None or self.wait_action is None, (
-      'gesture cannot have wait_after and wait_until at the same time.')
-
-  def RunAction(self, page, tab):
-    runner = action_runner.ActionRunner(None, tab)
-    if self.wait_action:
-      interaction_name = 'Action_%s' % self.__class__.__name__
-    else:
-      interaction_name = 'Gesture_%s' % self.__class__.__name__
-
+  def RunAction(self, tab):
+    interaction_name = 'Gesture_%s' % self.__class__.__name__
     if self.automatically_record_interaction:
-      runner.BeginInteraction(interaction_name, [tir_module.IS_SMOOTH])
-
-    self.RunGesture(page, tab)
-    if self.wait_action:
-      self.wait_action.RunAction(page, tab)
-
+      tab.ExecuteJavaScript('console.time("%s");' %
+          tir_module.TimelineInteractionRecord.GetJavaScriptMarker(
+              interaction_name, [tir_module.IS_SMOOTH]))
+    self.RunGesture(tab)
     if self.automatically_record_interaction:
-      runner.EndInteraction(interaction_name, [tir_module.IS_SMOOTH])
+      tab.ExecuteJavaScript('console.timeEnd("%s");' %
+          tir_module.TimelineInteractionRecord.GetJavaScriptMarker(
+              interaction_name, [tir_module.IS_SMOOTH]))
 
-  def RunGesture(self, page, tab):
+  def RunGesture(self, tab):
     raise NotImplementedError()
 
   @staticmethod
@@ -56,7 +41,8 @@ class GestureAction(page_action.PageAction):
     if tab.EvaluateJavaScript("""
         typeof chrome.gpuBenchmarking.gestureSourceTypeSupported ===
             'undefined'"""):
-      return True
+      return (tab.browser.platform.GetOSName() != 'mac' or
+              gesture_source_type.lower() != 'touch')
 
     return tab.EvaluateJavaScript("""
         chrome.gpuBenchmarking.gestureSourceTypeSupported(

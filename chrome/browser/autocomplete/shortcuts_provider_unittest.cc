@@ -17,19 +17,21 @@
 #include "base/prefs/pref_service.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/autocomplete/autocomplete_provider.h"
 #include "chrome/browser/autocomplete/autocomplete_provider_listener.h"
 #include "chrome/browser/autocomplete/autocomplete_result.h"
+#include "chrome/browser/autocomplete/chrome_autocomplete_scheme_classifier.h"
 #include "chrome/browser/autocomplete/shortcuts_backend.h"
 #include "chrome/browser/autocomplete/shortcuts_backend_factory.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/in_memory_url_index.h"
-#include "chrome/browser/history/url_database.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/autocomplete/autocomplete_input.h"
+#include "components/history/core/browser/url_database.h"
+#include "components/metrics/proto/omnibox_event.pb.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/test/test_browser_thread.h"
 #include "extensions/common/extension.h"
@@ -360,8 +362,9 @@ void ShortcutsProviderTest::RunTest(
     base::string16 top_result_inline_autocompletion) {
   base::MessageLoop::current()->RunUntilIdle();
   AutocompleteInput input(text, base::string16::npos, base::string16(), GURL(),
-                          AutocompleteInput::INVALID_SPEC,
-                          prevent_inline_autocomplete, false, true, true);
+                          metrics::OmniboxEventProto::INVALID_SPEC,
+                          prevent_inline_autocomplete, false, true, true,
+                          ChromeAutocompleteSchemeClassifier(&profile_));
   provider_->Start(input, false);
   EXPECT_TRUE(provider_->done());
 

@@ -14,6 +14,7 @@
 #include "cc/animation/scrollbar_animation_controller_thinning.h"
 #include "cc/base/math_util.h"
 #include "cc/base/util.h"
+#include "cc/debug/devtools_instrumentation.h"
 #include "cc/debug/traced_value.h"
 #include "cc/layers/heads_up_display_layer_impl.h"
 #include "cc/layers/layer.h"
@@ -23,6 +24,7 @@
 #include "cc/resources/ui_resource_request.h"
 #include "cc/trees/layer_tree_host_common.h"
 #include "cc/trees/layer_tree_host_impl.h"
+#include "cc/trees/occlusion_tracker.h"
 #include "ui/gfx/point_conversions.h"
 #include "ui/gfx/size_conversions.h"
 #include "ui/gfx/vector2d_conversions.h"
@@ -82,7 +84,6 @@ LayerTreeImpl::LayerTreeImpl(LayerTreeHostImpl* layer_tree_host_impl)
       min_page_scale_factor_(0),
       max_page_scale_factor_(0),
       scrolling_layer_id_from_previous_tree_(0),
-      use_gpu_rasterization_(false),
       contents_textures_purged_(false),
       requires_high_res_to_draw_(false),
       viewport_size_invalid_(false),
@@ -189,15 +190,14 @@ void LayerTreeImpl::PushPropertiesTo(LayerTreeImpl* target_tree) {
   DCHECK_EQ(ui_resource_request_queue_.size(), 0u);
 
   if (next_activation_forces_redraw_) {
-    layer_tree_host_impl_->SetFullRootLayerDamage();
+    target_tree->ForceRedrawNextActivation();
     next_activation_forces_redraw_ = false;
   }
 
   target_tree->PassSwapPromises(&swap_promise_list_);
 
-  target_tree->SetPageScaleFactorAndLimits(
-      page_scale_factor(), min_page_scale_factor(), max_page_scale_factor());
-  target_tree->SetPageScaleDelta(
+  target_tree->SetPageScaleValues(
+      page_scale_factor(), min_page_scale_factor(), max_page_scale_factor(),
       target_tree->page_scale_delta() / target_tree->sent_page_scale_delta());
   target_tree->set_sent_page_scale_delta(1);
 
@@ -216,16 +216,10 @@ void LayerTreeImpl::PushPropertiesTo(LayerTreeImpl* target_tree) {
   target_tree->set_background_color(background_color());
   target_tree->set_has_transparent_background(has_transparent_background());
 
-  target_tree->use_gpu_rasterization_ = use_gpu_rasterization();
-
   if (ContentsTexturesPurged())
     target_tree->SetContentsTexturesPurged();
   else
     target_tree->ResetContentsTexturesPurged();
-
-  // Always reset this flag on activation, as we would only have activated
-  // if we were in a good state.
-  target_tree->ResetRequiresHighResToDraw();
 
   if (ViewportSizeInvalid())
     target_tree->SetViewportSizeInvalid();
@@ -293,64 +287,62 @@ void ForceScrollbarParameterUpdateAfterScaleChange(LayerImpl* current_layer) {
 
 void LayerTreeImpl::SetPageScaleFactorAndLimits(float page_scale_factor,
     float min_page_scale_factor, float max_page_scale_factor) {
-  if (!page_scale_factor)
-    return;
+  SetPageScaleValues(page_scale_factor, min_page_scale_factor,
+      max_page_scale_factor, page_scale_delta_);
+}
 
-  if (min_page_scale_factor == min_page_scale_factor_ &&
-      max_page_scale_factor == max_page_scale_factor_ &&
-      page_scale_factor == page_scale_factor_)
-    return;
+void LayerTreeImpl::SetPageScaleDelta(float delta) {
+  SetPageScaleValues(page_scale_factor_, min_page_scale_factor_,
+      max_page_scale_factor_, delta);
+}
+
+void LayerTreeImpl::SetPageScaleValues(float page_scale_factor,
+      float min_page_scale_factor, float max_page_scale_factor,
+      float page_scale_delta) {
+  bool page_scale_changed =
+      min_page_scale_factor != min_page_scale_factor_ ||
+      max_page_scale_factor != max_page_scale_factor_ ||
+      page_scale_factor != page_scale_factor_;
 
   min_page_scale_factor_ = min_page_scale_factor;
   max_page_scale_factor_ = max_page_scale_factor;
   page_scale_factor_ = page_scale_factor;
 
+  float total = page_scale_factor_ * page_scale_delta;
+  if (min_page_scale_factor_ && total < min_page_scale_factor_)
+    page_scale_delta = min_page_scale_factor_ / page_scale_factor_;
+  else if (max_page_scale_factor_ && total > max_page_scale_factor_)
+    page_scale_delta = max_page_scale_factor_ / page_scale_factor_;
+
+  if (page_scale_delta_ == page_scale_delta && !page_scale_changed)
+    return;
+
+  if (page_scale_delta_ != page_scale_delta) {
+    page_scale_delta_ = page_scale_delta;
+
+    if (IsActiveTree()) {
+      LayerTreeImpl* pending_tree = layer_tree_host_impl_->pending_tree();
+      if (pending_tree) {
+        DCHECK_EQ(1, pending_tree->sent_page_scale_delta());
+        pending_tree->SetPageScaleDelta(
+            page_scale_delta_ / sent_page_scale_delta_);
+      }
+    }
+
+    set_needs_update_draw_properties();
+  }
+
   if (root_layer_scroll_offset_delegate_) {
     root_layer_scroll_offset_delegate_->UpdateRootLayerState(
         TotalScrollOffset(),
         TotalMaxScrollOffset(),
         ScrollableSize(),
         total_page_scale_factor(),
-        this->min_page_scale_factor(),
-        this->max_page_scale_factor());
+        min_page_scale_factor_,
+        max_page_scale_factor_);
   }
 
   ForceScrollbarParameterUpdateAfterScaleChange(page_scale_layer());
-}
-
-void LayerTreeImpl::SetPageScaleDelta(float delta) {
-  // Clamp to the current min/max limits.
-  float total = page_scale_factor_ * delta;
-  if (min_page_scale_factor_ && total < min_page_scale_factor_)
-    delta = min_page_scale_factor_ / page_scale_factor_;
-  else if (max_page_scale_factor_ && total > max_page_scale_factor_)
-    delta = max_page_scale_factor_ / page_scale_factor_;
-
-  if (delta == page_scale_delta_)
-    return;
-
-  page_scale_delta_ = delta;
-
-  if (IsActiveTree()) {
-    LayerTreeImpl* pending_tree = layer_tree_host_impl_->pending_tree();
-    if (pending_tree) {
-      DCHECK_EQ(1, pending_tree->sent_page_scale_delta());
-      pending_tree->SetPageScaleDelta(
-          page_scale_delta_ / sent_page_scale_delta_);
-    }
-  }
-
-  set_needs_update_draw_properties();
-
-  if (root_layer_scroll_offset_delegate_) {
-    root_layer_scroll_offset_delegate_->UpdateRootLayerState(
-        TotalScrollOffset(),
-        TotalMaxScrollOffset(),
-        ScrollableSize(),
-        total_page_scale_factor(),
-        min_page_scale_factor(),
-        max_page_scale_factor());
-  }
 }
 
 gfx::SizeF LayerTreeImpl::ScrollableViewportSize() const {
@@ -441,24 +433,19 @@ void LayerTreeImpl::ClearViewportLayers() {
   outer_viewport_scroll_layer_ = NULL;
 }
 
-void LayerTreeImpl::SetUseGpuRasterization(bool use_gpu) {
-  if (use_gpu == use_gpu_rasterization_)
-    return;
-
-  use_gpu_rasterization_ = use_gpu;
-  ReleaseResources();
-}
-
-void LayerTreeImpl::UpdateDrawProperties() {
-  needs_update_draw_properties_ = false;
-  render_surface_layer_list_.clear();
+bool LayerTreeImpl::UpdateDrawProperties() {
+  if (!needs_update_draw_properties_)
+    return true;
 
   // For max_texture_size.
   if (!layer_tree_host_impl_->renderer())
-    return;
+    return false;
 
   if (!root_layer())
-    return;
+    return false;
+
+  needs_update_draw_properties_ = false;
+  render_surface_layer_list_.clear();
 
   {
     TRACE_EVENT2("cc",
@@ -496,6 +483,14 @@ void LayerTreeImpl::UpdateDrawProperties() {
                  IsActiveTree(),
                  "SourceFrameNumber",
                  source_frame_number_);
+    scoped_ptr<OcclusionTracker<LayerImpl> > occlusion_tracker;
+    if (settings().use_occlusion_for_tile_prioritization) {
+      occlusion_tracker.reset(new OcclusionTracker<LayerImpl>(
+          root_layer()->render_surface()->content_rect()));
+      occlusion_tracker->set_minimum_tracking_size(
+          settings().minimum_occlusion_tracking_size);
+    }
+
     // LayerIterator is used here instead of CallFunctionForSubtree to only
     // UpdateTilePriorities on layers that will be visible (and thus have valid
     // draw properties) and not because any ordering is required.
@@ -505,22 +500,33 @@ void LayerTreeImpl::UpdateDrawProperties() {
              LayerIteratorType::Begin(&render_surface_layer_list_);
          it != end;
          ++it) {
+      if (occlusion_tracker)
+        occlusion_tracker->EnterLayer(it);
+
       LayerImpl* layer = *it;
       if (it.represents_itself())
-        layer->UpdateTilePriorities();
+        layer->UpdateTiles(occlusion_tracker.get());
 
-      if (!it.represents_contributing_render_surface())
+      if (!it.represents_contributing_render_surface()) {
+        if (occlusion_tracker)
+          occlusion_tracker->LeaveLayer(it);
         continue;
+      }
 
       if (layer->mask_layer())
-        layer->mask_layer()->UpdateTilePriorities();
+        layer->mask_layer()->UpdateTiles(occlusion_tracker.get());
       if (layer->replica_layer() && layer->replica_layer()->mask_layer())
-        layer->replica_layer()->mask_layer()->UpdateTilePriorities();
+        layer->replica_layer()->mask_layer()->UpdateTiles(
+            occlusion_tracker.get());
+
+      if (occlusion_tracker)
+        occlusion_tracker->LeaveLayer(it);
     }
   }
 
   DCHECK(!needs_update_draw_properties_) <<
       "CalcDrawProperties should not set_needs_update_draw_properties()";
+  return true;
 }
 
 const LayerImplList& LayerTreeImpl::RenderSurfaceLayerList() const {
@@ -566,15 +572,25 @@ static void DidBecomeActiveRecursive(LayerImpl* layer) {
 }
 
 void LayerTreeImpl::DidBecomeActive() {
-  if (!root_layer())
-    return;
+  if (next_activation_forces_redraw_) {
+    layer_tree_host_impl_->SetFullRootLayerDamage();
+    next_activation_forces_redraw_ = false;
+  }
 
   if (scrolling_layer_id_from_previous_tree_) {
     currently_scrolling_layer_ = LayerTreeHostCommon::FindLayerInSubtree(
-        root_layer_.get(), scrolling_layer_id_from_previous_tree_);
+        root_layer(), scrolling_layer_id_from_previous_tree_);
   }
 
-  DidBecomeActiveRecursive(root_layer());
+  // Always reset this flag on activation, as we would only have activated
+  // if we were in a good state.
+  ResetRequiresHighResToDraw();
+
+  if (root_layer())
+    DidBecomeActiveRecursive(root_layer());
+
+  devtools_instrumentation::DidActivateLayerTree(layer_tree_host_impl_->id(),
+                                                 source_frame_number_);
 }
 
 bool LayerTreeImpl::ContentsTexturesPurged() const {
@@ -747,6 +763,14 @@ LayerTreeImpl::CreateScrollbarAnimationController(LayerImpl* scrolling_layer) {
 
 void LayerTreeImpl::DidAnimateScrollOffset() {
   layer_tree_host_impl_->DidAnimateScrollOffset();
+}
+
+bool LayerTreeImpl::use_gpu_rasterization() const {
+  return layer_tree_host_impl_->use_gpu_rasterization();
+}
+
+bool LayerTreeImpl::create_low_res_tiling() const {
+  return layer_tree_host_impl_->create_low_res_tiling();
 }
 
 void LayerTreeImpl::SetNeedsRedraw() {
@@ -1098,35 +1122,33 @@ static bool PointHitsRegion(const gfx::PointF& screen_space_point,
       gfx::ToRoundedPoint(hit_test_point_in_layer_space));
 }
 
+static LayerImpl* GetNextClippingLayer(LayerImpl* layer) {
+  if (layer->scroll_parent())
+    return layer->scroll_parent();
+  if (layer->clip_parent())
+    return layer->clip_parent();
+  return layer->parent();
+}
+
 static bool PointIsClippedBySurfaceOrClipRect(
     const gfx::PointF& screen_space_point,
     LayerImpl* layer) {
-  LayerImpl* current_layer = layer;
-
   // Walk up the layer tree and hit-test any render_surfaces and any layer
   // clip rects that are active.
-  while (current_layer) {
-    if (current_layer->render_surface() &&
-        !PointHitsRect(
-            screen_space_point,
-            current_layer->render_surface()->screen_space_transform(),
-            current_layer->render_surface()->content_rect(),
-            NULL))
+  for (; layer; layer = GetNextClippingLayer(layer)) {
+    if (layer->render_surface() &&
+        !PointHitsRect(screen_space_point,
+                       layer->render_surface()->screen_space_transform(),
+                       layer->render_surface()->content_rect(),
+                       NULL))
       return true;
 
-    // Note that drawable content rects are actually in target surface space, so
-    // the transform we have to provide is the target surface's
-    // screen_space_transform.
-    LayerImpl* render_target = current_layer->render_target();
-    if (LayerClipsSubtree(current_layer) &&
-        !PointHitsRect(
-            screen_space_point,
-            render_target->render_surface()->screen_space_transform(),
-            current_layer->drawable_content_rect(),
-            NULL))
+    if (LayerClipsSubtree(layer) &&
+        !PointHitsRect(screen_space_point,
+                       layer->screen_space_transform(),
+                       gfx::Rect(layer->content_bounds()),
+                       NULL))
       return true;
-
-    current_layer = current_layer->parent();
   }
 
   // If we have finished walking all ancestors without having already exited,
@@ -1232,6 +1254,10 @@ struct HitTestVisibleScrollableOrTouchableFunctor {
 
 LayerImpl* LayerTreeImpl::FindLayerThatIsHitByPoint(
     const gfx::PointF& screen_space_point) {
+  if (!root_layer())
+    return NULL;
+  if (!UpdateDrawProperties())
+    return NULL;
   FindClosestMatchingLayerDataForRecursion data_for_recursion;
   FindClosestMatchingLayer(screen_space_point,
                            root_layer(),
@@ -1271,11 +1297,23 @@ struct FindTouchEventLayerFunctor {
 
 LayerImpl* LayerTreeImpl::FindLayerThatIsHitByPointInTouchHandlerRegion(
     const gfx::PointF& screen_space_point) {
+  if (!root_layer())
+    return NULL;
+  if (!UpdateDrawProperties())
+    return NULL;
   FindTouchEventLayerFunctor func = {screen_space_point};
   FindClosestMatchingLayerDataForRecursion data_for_recursion;
   FindClosestMatchingLayer(
       screen_space_point, root_layer(), func, &data_for_recursion);
   return data_for_recursion.closest_match;
+}
+
+void LayerTreeImpl::RegisterPictureLayerImpl(PictureLayerImpl* layer) {
+  layer_tree_host_impl_->RegisterPictureLayerImpl(layer);
+}
+
+void LayerTreeImpl::UnregisterPictureLayerImpl(PictureLayerImpl* layer) {
+  layer_tree_host_impl_->UnregisterPictureLayerImpl(layer);
 }
 
 }  // namespace cc

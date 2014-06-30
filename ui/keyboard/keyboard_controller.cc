@@ -58,6 +58,8 @@ class KeyboardContainerTargeter : public wm::MaskedWindowTargeter {
   // wm::MaskedWindowTargeter:
   virtual bool GetHitTestMask(aura::Window* window,
                               gfx::Path* mask) const OVERRIDE {
+    if (proxy_ && !proxy_->HasKeyboardWindow())
+      return true;
     gfx::Rect keyboard_bounds = proxy_ ? proxy_->GetKeyboardWindow()->bounds() :
         keyboard::DefaultKeyboardBoundsFromWindowBounds(window->bounds());
     mask->addRect(RectToSkRect(keyboard_bounds));
@@ -105,8 +107,12 @@ class KeyboardWindowDelegate : public aura::WindowDelegate {
   virtual void OnWindowDestroying(aura::Window* window) OVERRIDE {}
   virtual void OnWindowDestroyed(aura::Window* window) OVERRIDE { delete this; }
   virtual void OnWindowTargetVisibilityChanged(bool visible) OVERRIDE {}
-  virtual bool HasHitTestMask() const OVERRIDE { return true; }
+  virtual bool HasHitTestMask() const OVERRIDE {
+    return !proxy_ || proxy_->HasKeyboardWindow();
+  }
   virtual void GetHitTestMask(gfx::Path* mask) const OVERRIDE {
+    if (proxy_ && !proxy_->HasKeyboardWindow())
+      return;
     gfx::Rect keyboard_bounds = proxy_ ? proxy_->GetKeyboardWindow()->bounds() :
         keyboard::DefaultKeyboardBoundsFromWindowBounds(bounds_);
     mask->addRect(RectToSkRect(keyboard_bounds));
@@ -129,7 +135,9 @@ void ToggleTouchEventLogging(bool enable) {
   else
     command.AppendArg("0");
   VLOG(1) << "Running " << command.GetCommandLineString();
-  base::LaunchProcess(command, base::LaunchOptions(), NULL);
+  base::LaunchOptions options;
+  options.wait = true;
+  base::LaunchProcess(command, options, NULL);
 #endif
 }
 
@@ -249,20 +257,27 @@ void KeyboardController::NotifyKeyboardBoundsChanging(
       aura::Window *root_window = keyboard_window->GetRootWindow();
       while (content::RenderWidgetHost* widget = widgets->GetNextHost()) {
         content::RenderWidgetHostView* view = widget->GetView();
-        aura::Window *window = view->GetNativeView();
-        if (window != keyboard_window && window->GetRootWindow() == root_window)
-        {
-          gfx::Rect window_bounds = window->GetBoundsInScreen();
-          gfx::Rect intersect = gfx::IntersectRects(window_bounds, new_bounds);
-          int overlap = intersect.height();
-          if (overlap > 0 && overlap < window_bounds.height())
-            view->SetInsets(gfx::Insets(0, 0, overlap, 0));
-          else
-            view->SetInsets(gfx::Insets(0, 0, 0, 0));
-          // TODO(kevers): Add window observer to native window to update insets
-          // on a window move or resize.
+        // Can be NULL, e.g. if the RenderWidget is being destroyed or
+        // the render process crashed.
+        if (view) {
+          aura::Window *window = view->GetNativeView();
+          if (window != keyboard_window &&
+              window->GetRootWindow() == root_window) {
+            gfx::Rect window_bounds = window->GetBoundsInScreen();
+            gfx::Rect intersect = gfx::IntersectRects(window_bounds,
+                                                      new_bounds);
+            int overlap = intersect.height();
+            if (overlap > 0 && overlap < window_bounds.height())
+              view->SetInsets(gfx::Insets(0, 0, overlap, 0));
+            else
+              view->SetInsets(gfx::Insets(0, 0, 0, 0));
+            // TODO(kevers): Add window observer to native window to update
+            // insets on a window move or resize.
+          }
         }
       }
+    } else {
+      ResetWindowInsets();
     }
   }
 }

@@ -12,7 +12,7 @@
 #include "ui/aura/window_tree_host.h"
 #include "ui/display/chromeos/display_configurator.h"
 #include "ui/display/types/chromeos/display_snapshot.h"
-#include "ui/events/x/device_data_manager.h"
+#include "ui/events/device_data_manager.h"
 
 namespace ash {
 
@@ -182,6 +182,10 @@ void TouchTransformerController::UpdateTouchTransformer() const {
   }
 
   if (display_state == ui::MULTIPLE_DISPLAY_STATE_DUAL_EXTENDED) {
+    // TODO(miletus) : Handle the case the state is DUAL_EXTENDED but it
+    // is actually doing software mirroring.
+    if (GetDisplayManager()->software_mirroring_enabled())
+      return;
     // In extended mode, each display is associated with one root window.
     aura::Window* root1 =
         display_controller->GetRootWindowForDisplayId(display1_id);

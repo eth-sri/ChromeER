@@ -1,4 +1,4 @@
-# Copyright (c) 2012 The Chromium Authors. All rights reserved.
+# Copyright 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -14,7 +14,7 @@ Octane 2.0 consists of 17 tests, four more than Octane v1.
 import os
 
 from metrics import power
-from telemetry import test
+from telemetry import benchmark
 from telemetry.page import page_measurement
 from telemetry.page import page_set
 from telemetry.util import statistics
@@ -75,7 +75,7 @@ class _OctaneMeasurement(page_measurement.PageMeasurement):
         scalar.ScalarValue(None, 'Total.Score', 'score', total))
 
 
-class Octane(test.Test):
+class Octane(benchmark.Benchmark):
   """Google's Octane JavaScript benchmark."""
   test = _OctaneMeasurement
 

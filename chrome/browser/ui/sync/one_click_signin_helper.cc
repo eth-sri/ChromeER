@@ -27,7 +27,6 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/defaults.h"
-#include "chrome/browser/google/google_util.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
@@ -60,6 +59,7 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "components/autofill/core/common/password_form.h"
+#include "components/google/core/browser/google_util.h"
 #include "components/password_manager/core/browser/password_manager.h"
 #include "components/signin/core/browser/profile_oauth2_token_service.h"
 #include "components/signin/core/browser/signin_client.h"
@@ -414,6 +414,18 @@ bool AreWeShowingSignin(GURL url, signin::Source source, std::string email) {
        !email.empty());
 }
 
+// Gets signin scoped device id from signin client if profile is valid.
+// Otherwise returns empty string.
+std::string GetSigninScopedDeviceId(Profile* profile) {
+  std::string signin_scoped_device_id;
+  SigninClient* signin_client =
+      profile ? ChromeSigninClientFactory::GetForProfile(profile) : NULL;
+  if (signin_client) {
+    signin_scoped_device_id = signin_client->GetSigninScopedDeviceId();
+  }
+  return signin_scoped_device_id;
+}
+
 // CurrentHistoryCleaner ------------------------------------------------------
 
 // Watch a webcontents and remove URL from the history once loading is complete.
@@ -504,6 +516,7 @@ OneClickSigninHelper::StartSyncArgs::StartSyncArgs(
     const std::string& email,
     const std::string& password,
     const std::string& refresh_token,
+    const std::string& signin_scoped_device_id,
     content::WebContents* web_contents,
     bool untrusted_confirmation_required,
     signin::Source source,
@@ -515,6 +528,7 @@ OneClickSigninHelper::StartSyncArgs::StartSyncArgs(
       email(email),
       password(password),
       refresh_token(refresh_token),
+      signin_scoped_device_id(signin_scoped_device_id),
       web_contents(web_contents),
       source(source),
       callback(callback) {
@@ -649,7 +663,9 @@ void OneClickSigninHelper::SyncStarterWrapper::DisplayErrorBubble(
 void OneClickSigninHelper::SyncStarterWrapper::StartSigninOAuthHelper() {
   signin_oauth_helper_.reset(
       new SigninOAuthHelper(args_.profile->GetRequestContext(),
-                            args_.session_index, this));
+                            args_.session_index,
+                            args_.signin_scoped_device_id,
+                            this));
 }
 
 void
@@ -749,12 +765,16 @@ void OneClickSigninHelper::LogHistogramValue(
       UMA_HISTOGRAM_ENUMERATION("Signin.DevicesPageActions", action,
                                 one_click_signin::HISTOGRAM_MAX);
       break;
+    case signin::SOURCE_REAUTH:
+      UMA_HISTOGRAM_ENUMERATION("Signin.ReauthActions", action,
+                                one_click_signin::HISTOGRAM_MAX);
+      break;
     default:
       // This switch statement needs to be updated when the enum Source changes.
-      COMPILE_ASSERT(signin::SOURCE_UNKNOWN == 12,
+      COMPILE_ASSERT(signin::SOURCE_UNKNOWN == 13,
                      kSourceEnumHasChangedButNotThisSwitchStatement);
-      NOTREACHED();
-      return;
+      UMA_HISTOGRAM_ENUMERATION("Signin.UnknownActions", action,
+                                one_click_signin::HISTOGRAM_MAX);
   }
   UMA_HISTOGRAM_ENUMERATION("Signin.AllAccessPointActions", action,
                             one_click_signin::HISTOGRAM_MAX);
@@ -1105,7 +1125,7 @@ void OneClickSigninHelper::ShowInfoBarUIThread(
   // show a modal dialog asking the user to confirm.
   Profile* profile =
       Profile::FromBrowserContext(web_contents->GetBrowserContext());
-  ChromeSigninClient* signin_client =
+  SigninClient* signin_client =
       profile ? ChromeSigninClientFactory::GetForProfile(profile) : NULL;
   helper->untrusted_confirmation_required_ |=
       (signin_client && !signin_client->IsSigninProcess(child_id));
@@ -1161,6 +1181,7 @@ bool OneClickSigninHelper::HandleCrossAccountError(
       Profile::FromBrowserContext(contents->GetBrowserContext());
   std::string last_email =
       profile->GetPrefs()->GetString(prefs::kGoogleServicesLastUsername);
+  std::string signin_scoped_device_id = GetSigninScopedDeviceId(profile);
 
   if (!last_email.empty() && !gaia::AreEmailsSame(last_email, email)) {
     // If the new email address is different from the email address that
@@ -1178,7 +1199,8 @@ bool OneClickSigninHelper::HandleCrossAccountError(
         base::Bind(
             &StartExplicitSync,
             StartSyncArgs(profile, browser, auto_accept,
-                          session_index, email, password, refresh_token,
+                          session_index, email, password,
+                          refresh_token, signin_scoped_device_id,
                           contents, false /* confirmation_required */, source,
                           sync_callback),
             contents,
@@ -1306,7 +1328,7 @@ void OneClickSigninHelper::DidNavigateMainFrame(
     // sign-in process when a navigation to a non-sign-in URL occurs.
     Profile* profile =
         Profile::FromBrowserContext(web_contents()->GetBrowserContext());
-    ChromeSigninClient* signin_client =
+    SigninClient* signin_client =
         profile ? ChromeSigninClientFactory::GetForProfile(profile) : NULL;
     int process_id = web_contents()->GetRenderProcessHost()->GetID();
     if (signin_client && signin_client->IsSigninProcess(process_id))
@@ -1465,6 +1487,7 @@ void OneClickSigninHelper::DidStopLoading(
           << " auto_accept=" << auto_accept_
           << " source=" << source_;
 
+  std::string signin_scoped_device_id = GetSigninScopedDeviceId(profile);
   switch (auto_accept_) {
     case AUTO_ACCEPT_NONE:
       if (showing_signin_)
@@ -1479,7 +1502,8 @@ void OneClickSigninHelper::DidStopLoading(
       if (!do_not_start_sync_for_testing_) {
         StartSync(
             StartSyncArgs(profile, browser, auto_accept_,
-                          session_index_, email_, password_, "",
+                          session_index_, email_, password_,
+                          "", signin_scoped_device_id,
                           NULL  /* don't force sync setup in same tab */,
                           true  /* confirmation_required */, source_,
                           CreateSyncStarterCallback()),
@@ -1495,7 +1519,8 @@ void OneClickSigninHelper::DidStopLoading(
       if (!do_not_start_sync_for_testing_) {
         StartSync(
             StartSyncArgs(profile, browser, auto_accept_,
-                          session_index_, email_, password_, "",
+                          session_index_, email_, password_,
+                          "", signin_scoped_device_id,
                           NULL  /* don't force sync setup in same tab */,
                           true  /* confirmation_required */, source_,
                           CreateSyncStarterCallback()),
@@ -1541,7 +1566,8 @@ void OneClickSigninHelper::DidStopLoading(
         if (!do_not_start_sync_for_testing_) {
           StartSync(
               StartSyncArgs(profile, browser, auto_accept_,
-                            session_index_, email_, password_, "",
+                            session_index_, email_, password_,
+                            "", signin_scoped_device_id,
                             contents,
                             untrusted_confirmation_required_, source_,
                             CreateSyncStarterCallback()),

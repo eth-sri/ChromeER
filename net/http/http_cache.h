@@ -124,17 +124,16 @@ class NET_EXPORT HttpCache : public HttpTransactionFactory,
   HttpCache(const net::HttpNetworkSession::Params& params,
             BackendFactory* backend_factory);
 
-  // The disk cache is initialized lazily (by CreateTransaction) in  this case.
+  // The disk cache is initialized lazily (by CreateTransaction) in this case.
   // Provide an existing HttpNetworkSession, the cache can construct a
   // network layer with a shared HttpNetworkSession in order for multiple
   // network layers to share information (e.g. authentication data). The
   // HttpCache takes ownership of the |backend_factory|.
   HttpCache(HttpNetworkSession* session, BackendFactory* backend_factory);
 
-  // Initialize the cache from its component parts, which is useful for
-  // testing.  The lifetime of the network_layer and backend_factory are managed
-  // by the HttpCache and will be destroyed using |delete| when the HttpCache is
-  // destroyed.
+  // Initialize the cache from its component parts. The lifetime of the
+  // |network_layer| and |backend_factory| are managed by the HttpCache and
+  // will be destroyed using |delete| when the HttpCache is destroyed.
   HttpCache(HttpTransactionFactory* network_layer,
             NetLog* net_log,
             BackendFactory* backend_factory);
@@ -187,6 +186,12 @@ class NET_EXPORT HttpCache : public HttpTransactionFactory,
 
   // Initializes the Infinite Cache, if selected by the field trial.
   void InitializeInfiniteCache(const base::FilePath& path);
+
+  // Causes all transactions created after this point to effectively bypass
+  // the cache lock whenever there is lock contention.
+  void BypassLockForTest() {
+    bypass_lock_for_test_ = true;
+  }
 
   // HttpTransactionFactory implementation:
   virtual int CreateTransaction(RequestPriority priority,
@@ -355,6 +360,9 @@ class NET_EXPORT HttpCache : public HttpTransactionFactory,
   bool RemovePendingTransactionFromPendingOp(PendingOp* pending_op,
                                              Transaction* trans);
 
+  // Instantiates and sets QUIC server info factory.
+  void SetupQuicServerInfoFactory(HttpNetworkSession* session);
+
   // Resumes processing the pending list of |entry|.
   void ProcessPendingQueue(ActiveEntry* entry);
 
@@ -387,10 +395,11 @@ class NET_EXPORT HttpCache : public HttpTransactionFactory,
   // Used when lazily constructing the disk_cache_.
   scoped_ptr<BackendFactory> backend_factory_;
   bool building_backend_;
+  bool bypass_lock_for_test_;
 
   Mode mode_;
 
-  const scoped_ptr<QuicServerInfoFactoryAdaptor> quic_server_info_factory_;
+  scoped_ptr<QuicServerInfoFactoryAdaptor> quic_server_info_factory_;
 
   scoped_ptr<HttpTransactionFactory> network_layer_;
 

@@ -15,10 +15,6 @@
 
 namespace content {
 
-static bool AlwaysTrue(int process_id) {
-  return true;
-}
-
 EmbeddedWorkerTestHelper::EmbeddedWorkerTestHelper(int mock_render_process_id)
     : wrapper_(new ServiceWorkerContextWrapper(NULL)),
       next_thread_id_(0),
@@ -27,11 +23,7 @@ EmbeddedWorkerTestHelper::EmbeddedWorkerTestHelper(int mock_render_process_id)
                          base::MessageLoopProxy::current(),
                          base::MessageLoopProxy::current(),
                          NULL);
-  scoped_ptr<ServiceWorkerProcessManager> process_manager(
-      new ServiceWorkerProcessManager(wrapper_));
-  process_manager->SetProcessRefcountOpsForTest(base::Bind(AlwaysTrue),
-                                                base::Bind(AlwaysTrue));
-  wrapper_->context()->SetProcessManagerForTest(process_manager.Pass());
+  wrapper_->process_manager()->SetProcessIdForTest(mock_render_process_id);
   registry()->AddChildProcessSender(mock_render_process_id, this);
 }
 
@@ -135,10 +127,12 @@ void EmbeddedWorkerTestHelper::OnFetchEvent(
     const ServiceWorkerFetchRequest& request) {
   SimulateSend(
       new ServiceWorkerHostMsg_FetchEventFinished(
-          embedded_worker_id, request_id,
+          embedded_worker_id,
+          request_id,
           SERVICE_WORKER_FETCH_EVENT_RESULT_RESPONSE,
-          ServiceWorkerResponse(200, "OK", "GET",
-                                std::map<std::string, std::string>())));
+          ServiceWorkerResponse(200, "OK",
+                                std::map<std::string, std::string>(),
+                                std::string())));
 }
 
 void EmbeddedWorkerTestHelper::SimulateWorkerStarted(

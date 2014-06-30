@@ -14,13 +14,21 @@
 #include "base/process/process.h"
 #include "base/timer/timer.h"
 #include "content/browser/child_process_launcher.h"
+#include "content/browser/dom_storage/session_storage_namespace_impl.h"
+#include "content/browser/mojo/mojo_application_host.h"
 #include "content/browser/power_monitor_message_broadcaster.h"
 #include "content/common/content_export.h"
+#include "content/common/mojo/service_registry_impl.h"
 #include "content/public/browser/gpu_data_manager_observer.h"
 #include "content/public/browser/render_process_host.h"
 #include "ipc/ipc_channel_proxy.h"
 #include "ipc/ipc_platform_file.h"
 #include "mojo/public/cpp/bindings/interface_ptr.h"
+
+#if defined(OS_MACOSX)
+#include <IOSurface/IOSurfaceAPI.h>
+#include "base/mac/scoped_cftyperef.h"
+#endif
 
 struct ViewHostMsg_CompositorSurfaceBuffersSwapped_Params;
 
@@ -31,6 +39,7 @@ class MessageLoop;
 
 namespace gfx {
 class Size;
+struct GpuMemoryBufferHandle;
 }
 
 namespace content {
@@ -38,15 +47,15 @@ class AudioRendererHost;
 class BrowserDemuxerAndroid;
 class GpuMessageFilter;
 class MessagePortMessageFilter;
-class MojoApplicationHost;
+#if defined(ENABLE_WEBRTC)
+class P2PSocketDispatcherHost;
+#endif
 class PeerConnectionTrackerHost;
 class RendererMainThread;
-class RenderProcessHostMojoImpl;
 class RenderWidgetHelper;
 class RenderWidgetHost;
 class RenderWidgetHostImpl;
 class RenderWidgetHostViewFrameSubscriber;
-class ScreenOrientationDispatcherHost;
 class StoragePartition;
 class StoragePartitionImpl;
 
@@ -79,7 +88,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
  public:
   RenderProcessHostImpl(BrowserContext* browser_context,
                         StoragePartitionImpl* storage_partition_impl,
-                        bool is_guest);
+                        bool is_isolated_guest);
   virtual ~RenderProcessHostImpl();
 
   // RenderProcessHost implementation (public portion).
@@ -97,7 +106,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
   virtual void WidgetRestored() OVERRIDE;
   virtual void WidgetHidden() OVERRIDE;
   virtual int VisibleWidgetCount() const OVERRIDE;
-  virtual bool IsGuest() const OVERRIDE;
+  virtual bool IsIsolatedGuest() const OVERRIDE;
   virtual StoragePartition* GetStoragePartition() const OVERRIDE;
   virtual bool FastShutdownIfPossible() OVERRIDE;
   virtual void DumpHandles() OVERRIDE;
@@ -126,10 +135,15 @@ class CONTENT_EXPORT RenderProcessHostImpl
   virtual void DisableAecDump() OVERRIDE;
   virtual void SetWebRtcLogMessageCallback(
       base::Callback<void(const std::string&)> callback) OVERRIDE;
+  virtual WebRtcStopRtpDumpCallback StartRtpDump(
+      bool incoming,
+      bool outgoing,
+      const WebRtcRtpPacketCallback& packet_callback) OVERRIDE;
 #endif
   virtual void ResumeDeferredNavigation(const GlobalRequestID& request_id)
       OVERRIDE;
   virtual void NotifyTimezoneChange() OVERRIDE;
+  virtual ServiceRegistry* GetServiceRegistry() OVERRIDE;
 
   // IPC::Sender via RenderProcessHost.
   virtual bool Send(IPC::Message* msg) OVERRIDE;
@@ -167,8 +181,13 @@ class CONTENT_EXPORT RenderProcessHostImpl
   void WebRtcLogMessage(const std::string& message);
 #endif
 
-  scoped_refptr<ScreenOrientationDispatcherHost>
-      screen_orientation_dispatcher_host() const;
+  // Used to extend the lifetime of the sessions until the render view
+  // in the renderer is fully closed. This is static because its also called
+  // with mock hosts as input in test cases.
+  static void ReleaseOnCloseACK(
+      RenderProcessHost* host,
+      const SessionStorageNamespaceMap& sessions,
+      int view_route_id);
 
   // Register/unregister the host identified by the host id in the global host
   // list.
@@ -222,8 +241,8 @@ class CONTENT_EXPORT RenderProcessHostImpl
     return message_port_message_filter_;
   }
 
-  void SetIsGuestForTesting(bool is_guest) {
-    is_guest_ = is_guest;
+  void set_is_isolated_guest_for_testing(bool is_isolated_guest) {
+    is_isolated_guest_ = is_isolated_guest;
   }
 
   // Called when the existence of the other renderer process which is connected
@@ -232,18 +251,12 @@ class CONTENT_EXPORT RenderProcessHostImpl
   void IncrementWorkerRefCount();
   void DecrementWorkerRefCount();
 
-  // Establish a connection to a renderer-provided service. See
-  // content/common/mojo/mojo_service_names.h for a list of services.
-  void ConnectTo(const base::StringPiece& service_name,
-                 mojo::ScopedMessagePipeHandle handle);
+  // Call this function to resume the navigation when it was deferred
+  // immediately after receiving response headers.
+  void ResumeResponseDeferredAtStart(const GlobalRequestID& request_id);
 
-  template <typename Interface>
-  void ConnectTo(const base::StringPiece& service_name,
-                 mojo::InterfacePtr<Interface>* ptr) {
-    mojo::MessagePipe pipe;
-    ptr->Bind(pipe.handle0.Pass());
-    ConnectTo(service_name, pipe.handle1.Pass());
-  }
+  // Activates Mojo for this process. Does nothing if Mojo is already activated.
+  void EnsureMojoActivated();
 
  protected:
   // A proxy for our IPC::Channel that lives on the IO thread (see
@@ -280,6 +293,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
   void SuddenTerminationChanged(bool enabled);
   void OnUserMetricsRecordAction(const std::string& action);
   void OnSavedPageAsMHTML(int job_id, int64 mhtml_file_size);
+  void OnCloseACK(int old_route_id);
 
   // CompositorSurfaceBuffersSwapped handler when there's no RWH.
   void OnCompositorSurfaceBuffersSwappedNoHost(
@@ -305,10 +319,25 @@ class CONTENT_EXPORT RenderProcessHostImpl
   virtual void OnGpuSwitching() OVERRIDE;
 
 #if defined(ENABLE_WEBRTC)
+  void OnRegisterAecDumpConsumer(int id);
+  void OnUnregisterAecDumpConsumer(int id);
+  void RegisterAecDumpConsumerOnUIThread(int id);
+  void UnregisterAecDumpConsumerOnUIThread(int id);
+  void EnableAecDumpForId(const base::FilePath& file, int id);
   // Sends |file_for_transit| to the render process.
-  void SendAecDumpFileToRenderer(IPC::PlatformFileForTransit file_for_transit);
+  void SendAecDumpFileToRenderer(int id,
+                                 IPC::PlatformFileForTransit file_for_transit);
   void SendDisableAecDumpToRenderer();
 #endif
+
+  // GpuMemoryBuffer allocation handler.
+  void OnAllocateGpuMemoryBuffer(uint32 width,
+                                 uint32 height,
+                                 uint32 internalformat,
+                                 uint32 usage,
+                                 IPC::Message* reply);
+  void GpuMemoryBufferAllocated(IPC::Message* reply,
+                                const gfx::GpuMemoryBufferHandle& handle);
 
   scoped_ptr<MojoApplicationHost> mojo_application_host_;
   bool mojo_activation_required_;
@@ -384,7 +413,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
 
   // Indicates whether this is a RenderProcessHost of a Browser Plugin guest
   // renderer.
-  bool is_guest_;
+  bool is_isolated_guest_;
 
   // Forwards messages between WebRTCInternals in the browser process
   // and PeerConnectionTracker in the renderer process.
@@ -413,10 +442,14 @@ class CONTENT_EXPORT RenderProcessHostImpl
 
 #if defined(ENABLE_WEBRTC)
   base::Callback<void(const std::string&)> webrtc_log_message_callback_;
-#endif
 
-  // Message filter and dispatcher for screen orientation.
-  ScreenOrientationDispatcherHost* screen_orientation_dispatcher_host_;
+  scoped_refptr<P2PSocketDispatcherHost> p2p_socket_dispatcher_host_;
+
+  // Must be accessed on UI thread.
+  std::vector<int> aec_dump_consumers_;
+
+  WebRtcStopRtpDumpCallback stop_rtp_dump_callback_;
+#endif
 
   int worker_ref_count_;
 
@@ -424,6 +457,10 @@ class CONTENT_EXPORT RenderProcessHostImpl
   base::TimeTicks survive_for_worker_start_time_;
 
   base::WeakPtrFactory<RenderProcessHostImpl> weak_factory_;
+
+#if defined(OS_MACOSX)
+  base::ScopedCFTypeRef<IOSurfaceRef> last_io_surface_;
+#endif
 
   DISALLOW_COPY_AND_ASSIGN(RenderProcessHostImpl);
 };

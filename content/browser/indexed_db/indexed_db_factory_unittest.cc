@@ -28,7 +28,8 @@ namespace {
 
 class MockIDBFactory : public IndexedDBFactory {
  public:
-  MockIDBFactory(IndexedDBContextImpl* context) : IndexedDBFactory(context) {}
+  explicit MockIDBFactory(IndexedDBContextImpl* context)
+      : IndexedDBFactory(context) {}
   scoped_refptr<IndexedDBBackingStore> TestOpenBackingStore(
       const GURL& origin,
       const base::FilePath& data_directory) {
@@ -36,13 +37,15 @@ class MockIDBFactory : public IndexedDBFactory {
         blink::WebIDBDataLossNone;
     std::string data_loss_message;
     bool disk_full;
+    leveldb::Status s;
     scoped_refptr<IndexedDBBackingStore> backing_store =
         OpenBackingStore(origin,
                          data_directory,
                          NULL /* request_context */,
                          &data_loss,
                          &data_loss_message,
-                         &disk_full);
+                         &disk_full,
+                         &s);
     EXPECT_EQ(blink::WebIDBDataLossNone, data_loss);
     return backing_store;
   }
@@ -58,6 +61,8 @@ class MockIDBFactory : public IndexedDBFactory {
 
  private:
   virtual ~MockIDBFactory() {}
+
+  DISALLOW_COPY_AND_ASSIGN(MockIDBFactory);
 };
 
 }  // namespace
@@ -196,7 +201,8 @@ TEST_F(IndexedDBFactoryTest, RejectLongOrigins) {
 
 class DiskFullFactory : public IndexedDBFactory {
  public:
-  DiskFullFactory(IndexedDBContextImpl* context) : IndexedDBFactory(context) {}
+  explicit DiskFullFactory(IndexedDBContextImpl* context)
+      : IndexedDBFactory(context) {}
 
  private:
   virtual ~DiskFullFactory() {}
@@ -206,10 +212,14 @@ class DiskFullFactory : public IndexedDBFactory {
       net::URLRequestContext* request_context,
       blink::WebIDBDataLoss* data_loss,
       std::string* data_loss_message,
-      bool* disk_full) OVERRIDE {
+      bool* disk_full,
+      leveldb::Status* s) OVERRIDE {
     *disk_full = true;
+    *s = leveldb::Status::IOError("Disk is full");
     return scoped_refptr<IndexedDBBackingStore>();
   }
+
+  DISALLOW_COPY_AND_ASSIGN(DiskFullFactory);
 };
 
 class LookingForQuotaErrorMockCallbacks : public IndexedDBCallbacks {
@@ -225,6 +235,8 @@ class LookingForQuotaErrorMockCallbacks : public IndexedDBCallbacks {
  private:
   virtual ~LookingForQuotaErrorMockCallbacks() {}
   bool error_called_;
+
+  DISALLOW_COPY_AND_ASSIGN(LookingForQuotaErrorMockCallbacks);
 };
 
 TEST_F(IndexedDBFactoryTest, QuotaErrorOnDiskFull) {
@@ -421,6 +433,8 @@ TEST_F(IndexedDBFactoryTest, ForceCloseReleasesBackingStore) {
 
 class UpgradeNeededCallbacks : public MockIndexedDBCallbacks {
  public:
+  UpgradeNeededCallbacks() {}
+
   virtual void OnSuccess(scoped_ptr<IndexedDBConnection> connection,
                          const IndexedDBDatabaseMetadata& metadata) OVERRIDE {
     EXPECT_TRUE(connection_.get());
@@ -436,6 +450,9 @@ class UpgradeNeededCallbacks : public MockIndexedDBCallbacks {
 
  protected:
   virtual ~UpgradeNeededCallbacks() {}
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(UpgradeNeededCallbacks);
 };
 
 class ErrorCallbacks : public MockIndexedDBCallbacks {
@@ -450,6 +467,8 @@ class ErrorCallbacks : public MockIndexedDBCallbacks {
  private:
   virtual ~ErrorCallbacks() {}
   bool saw_error_;
+
+  DISALLOW_COPY_AND_ASSIGN(ErrorCallbacks);
 };
 
 TEST_F(IndexedDBFactoryTest, DatabaseFailedOpen) {

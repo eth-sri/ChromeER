@@ -53,7 +53,7 @@ struct SelectedFileInfo;
 
 namespace content {
 
-class BrowserMediaPlayerManager;
+class MediaWebContentsObserver;
 class ChildProcessSecurityPolicyImpl;
 class PageState;
 class RenderWidgetHostDelegate;
@@ -209,7 +209,6 @@ class CONTENT_EXPORT RenderViewHostImpl
       const WebPreferences& prefs) OVERRIDE;
   virtual void GetAudioOutputControllers(
       const GetAudioOutputControllersCallback& callback) const OVERRIDE;
-  virtual void SetWebUIHandle(mojo::ScopedMessagePipeHandle handle) OVERRIDE;
   virtual void SelectWordAroundCaret() OVERRIDE;
 
 #if defined(OS_ANDROID)
@@ -391,11 +390,13 @@ class CONTENT_EXPORT RenderViewHostImpl
   void DidCancelPopupMenu();
 #endif
 
-#if defined(OS_ANDROID)
-  BrowserMediaPlayerManager* media_player_manager() {
-    return media_player_manager_.get();
+#if defined(ENABLE_BROWSER_CDMS)
+  MediaWebContentsObserver* media_web_contents_observer() {
+    return media_web_contents_observer_.get();
   }
+#endif
 
+#if defined(OS_ANDROID)
   void DidSelectPopupMenuItems(const std::vector<int>& selected_indices);
   void DidCancelPopupMenu();
 #endif
@@ -412,7 +413,7 @@ class CONTENT_EXPORT RenderViewHostImpl
   // renderer process, and the accessibility tree it sent can be
   // retrieved using accessibility_tree_for_testing().
   void SetAccessibilityCallbackForTesting(
-      const base::Callback<void(ui::AXEvent)>& callback);
+      const base::Callback<void(ui::AXEvent, int)>& callback);
 
   // Only valid if SetAccessibilityCallbackForTesting was called and
   // the callback was run at least once. Returns a snapshot of the
@@ -437,6 +438,10 @@ class CONTENT_EXPORT RenderViewHostImpl
 
   // Whether the RVH is waiting for the unload ack from the renderer.
   bool IsWaitingForUnloadACK() const;
+
+  void OnTextSurroundingSelectionResponse(const base::string16& content,
+                                          size_t start_offset,
+                                          size_t end_offset);
 
   // Update the FrameTree to use this RenderViewHost's main frame
   // RenderFrameHost. Called when the RenderViewHost is committed.
@@ -488,16 +493,10 @@ class CONTENT_EXPORT RenderViewHostImpl
   void OnUpdateTargetURL(int32 page_id, const GURL& url);
   void OnClose();
   void OnRequestMove(const gfx::Rect& pos);
-  void OnDocumentAvailableInMainFrame();
+  void OnDocumentAvailableInMainFrame(bool uses_temporary_zoom_level);
   void OnToggleFullscreen(bool enter_fullscreen);
   void OnDidContentsPreferredSizeChange(const gfx::Size& new_size);
   void OnDidChangeScrollOffset();
-  void OnDidChangeScrollOffsetPinningForMainFrame(bool is_pinned_to_left,
-                                                  bool is_pinned_to_right);
-  void OnDidChangeNumWheelEvents(int count);
-#if defined(OS_ANDROID)
-  void OnSelectionRootBoundsChanged(const gfx::Rect& bounds);
-#endif
   void OnPasteFromSelectionClipboard();
   void OnRouteCloseEvent();
   void OnRouteMessageEvent(const ViewMsg_PostMessage_Params& params);
@@ -517,7 +516,7 @@ class CONTENT_EXPORT RenderViewHostImpl
       const std::vector<AccessibilityHostMsg_EventParams>& params);
   void OnAccessibilityLocationChanges(
       const std::vector<AccessibilityHostMsg_LocationChangeParams>& params);
-  void OnDidZoomURL(double zoom_level, bool remember, const GURL& url);
+  void OnDidZoomURL(double zoom_level, const GURL& url);
   void OnRunFileChooser(const FileChooserParams& params);
   void OnFocusedNodeTouched(bool editable);
 
@@ -610,7 +609,7 @@ class CONTENT_EXPORT RenderViewHostImpl
   bool unload_ack_is_for_cross_site_transition_;
 
   // Accessibility callback for testing.
-  base::Callback<void(ui::AXEvent)> accessibility_testing_callback_;
+  base::Callback<void(ui::AXEvent, int)> accessibility_testing_callback_;
 
   // The most recently received accessibility tree - for testing only.
   scoped_ptr<ui::AXTree> ax_tree_;
@@ -624,9 +623,9 @@ class CONTENT_EXPORT RenderViewHostImpl
   // Set to true if we requested the on screen keyboard to be displayed.
   bool virtual_keyboard_requested_;
 
-#if defined(OS_ANDROID)
-  // Manages all the android mediaplayer objects and handling IPCs for video.
-  scoped_ptr<BrowserMediaPlayerManager> media_player_manager_;
+#if defined(ENABLE_BROWSER_CDMS)
+  // Manages all the media player and CDM managers and forwards IPCs to them.
+  scoped_ptr<MediaWebContentsObserver> media_web_contents_observer_;
 #endif
 
   // Used to swap out or shutdown this RVH when the unload event is taking too

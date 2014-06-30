@@ -13,14 +13,6 @@
 #include "components/autofill/core/browser/credit_card.h"
 #include "components/autofill/core/browser/state_names.h"
 
-using base::StringPiece16;
-
-namespace {
-
-// The separator characters for SSNs.
-const base::char16 kSSNSeparators[] = {' ', '-', 0};
-
-}  // namespace
 
 namespace autofill {
 
@@ -67,7 +59,7 @@ bool IsValidCreditCardNumber(const base::string16& text) {
   // defined sizes.
   // [1] http://www.merriampark.com/anatomycc.htm
   // [2] http://en.wikipedia.org/wiki/Bank_card_number
-  const std::string type = CreditCard::GetCreditCardType(text);
+  const char* const type = CreditCard::GetCreditCardType(text);
   if (type == kAmericanExpressCard && number.size() != 15)
     return false;
   if (type == kDinersCard && number.size() != 14)
@@ -128,7 +120,7 @@ bool IsValidCreditCardSecurityCode(const base::string16& text) {
 
 bool IsValidCreditCardSecurityCode(const base::string16& code,
                                    const base::string16& number) {
-  std::string type = CreditCard::GetCreditCardType(number);
+  const char* const type = CreditCard::GetCreditCardType(number);
   size_t required_length = 3;
   if (type == kAmericanExpressCard)
     required_length = 4;
@@ -156,7 +148,7 @@ bool IsValidZip(const base::string16& text) {
 
 bool IsSSN(const base::string16& text) {
   base::string16 number_string;
-  base::RemoveChars(text, kSSNSeparators, &number_string);
+  base::RemoveChars(text, base::ASCIIToUTF16("- "), &number_string);
 
   // A SSN is of the form AAA-GG-SSSS (A = area number, G = group number, S =
   // serial number). The validation we do here is simply checking if the area,
@@ -186,8 +178,8 @@ bool IsSSN(const base::string16& text) {
     return false;
 
   int area;
-  if (!base::StringToInt(StringPiece16(number_string.begin(),
-                                       number_string.begin() + 3),
+  if (!base::StringToInt(base::StringPiece16(number_string.begin(),
+                                             number_string.begin() + 3),
                          &area)) {
     return false;
   }
@@ -198,16 +190,16 @@ bool IsSSN(const base::string16& text) {
   }
 
   int group;
-  if (!base::StringToInt(StringPiece16(number_string.begin() + 3,
-                                       number_string.begin() + 5),
+  if (!base::StringToInt(base::StringPiece16(number_string.begin() + 3,
+                                             number_string.begin() + 5),
                          &group)
       || group == 0) {
     return false;
   }
 
   int serial;
-  if (!base::StringToInt(StringPiece16(number_string.begin() + 5,
-                                       number_string.begin() + 9),
+  if (!base::StringToInt(base::StringPiece16(number_string.begin() + 5,
+                                             number_string.begin() + 9),
                          &serial)
       || serial == 0) {
     return false;

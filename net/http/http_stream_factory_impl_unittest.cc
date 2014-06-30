@@ -43,20 +43,6 @@ namespace net {
 
 namespace {
 
-class UseAlternateProtocolsScopedSetter {
- public:
-  explicit UseAlternateProtocolsScopedSetter(bool use_alternate_protocols)
-      : use_alternate_protocols_(HttpStreamFactory::use_alternate_protocols()) {
-    HttpStreamFactory::set_use_alternate_protocols(use_alternate_protocols);
-  }
-  ~UseAlternateProtocolsScopedSetter() {
-    HttpStreamFactory::set_use_alternate_protocols(use_alternate_protocols_);
-  }
-
- private:
-  bool use_alternate_protocols_;
-};
-
 class MockWebSocketHandshakeStream : public WebSocketHandshakeStreamBase {
  public:
   enum StreamType {
@@ -86,9 +72,6 @@ class MockWebSocketHandshakeStream : public WebSocketHandshakeStreamBase {
   }
   virtual int ReadResponseHeaders(const CompletionCallback& callback) OVERRIDE {
     return ERR_IO_PENDING;
-  }
-  virtual const HttpResponseInfo* GetResponseInfo() const OVERRIDE {
-    return NULL;
   }
   virtual int ReadResponseBody(IOBuffer* buf,
                                int buf_len,
@@ -962,9 +945,6 @@ TEST_P(HttpStreamFactoryTest, RequestWebSocketBasicHandshakeStream) {
       session->GetTransportSocketPool(HttpNetworkSession::NORMAL_SOCKET_POOL)));
   EXPECT_EQ(0, GetSocketPoolGroupCount(
       session->GetSSLSocketPool(HttpNetworkSession::NORMAL_SOCKET_POOL)));
-  EXPECT_EQ(1, GetSocketPoolGroupCount(
-      session->GetTransportSocketPool(
-          HttpNetworkSession::WEBSOCKET_SOCKET_POOL)));
   EXPECT_EQ(0, GetSocketPoolGroupCount(
       session->GetSSLSocketPool(HttpNetworkSession::WEBSOCKET_SOCKET_POOL)));
   EXPECT_TRUE(waiter.used_proxy_info().is_direct());
@@ -1013,9 +993,6 @@ TEST_P(HttpStreamFactoryTest, RequestWebSocketBasicHandshakeStreamOverSSL) {
       session->GetTransportSocketPool(HttpNetworkSession::NORMAL_SOCKET_POOL)));
   EXPECT_EQ(0, GetSocketPoolGroupCount(
       session->GetSSLSocketPool(HttpNetworkSession::NORMAL_SOCKET_POOL)));
-  EXPECT_EQ(1, GetSocketPoolGroupCount(
-      session->GetTransportSocketPool(
-          HttpNetworkSession::WEBSOCKET_SOCKET_POOL)));
   EXPECT_EQ(1, GetSocketPoolGroupCount(
       session->GetSSLSocketPool(HttpNetworkSession::WEBSOCKET_SOCKET_POOL)));
   EXPECT_TRUE(waiter.used_proxy_info().is_direct());
@@ -1179,9 +1156,6 @@ TEST_P(HttpStreamFactoryTest, RequestWebSocketSpdyHandshakeStreamButGetSSL) {
   EXPECT_EQ(0, GetSocketPoolGroupCount(
       session->GetSSLSocketPool(HttpNetworkSession::NORMAL_SOCKET_POOL)));
   EXPECT_EQ(1, GetSocketPoolGroupCount(
-      session->GetTransportSocketPool(
-                HttpNetworkSession::WEBSOCKET_SOCKET_POOL)));
-  EXPECT_EQ(1, GetSocketPoolGroupCount(
       session->GetSSLSocketPool(HttpNetworkSession::WEBSOCKET_SOCKET_POOL)));
   EXPECT_TRUE(waiter1.used_proxy_info().is_direct());
 }
@@ -1265,9 +1239,9 @@ TEST_P(HttpStreamFactoryTest, DISABLED_RequestWebSocketSpdyHandshakeStream) {
 
 // TODO(ricea): Re-enable once WebSocket over SPDY is implemented.
 TEST_P(HttpStreamFactoryTest, DISABLED_OrphanedWebSocketStream) {
-  UseAlternateProtocolsScopedSetter use_alternate_protocols(true);
   SpdySessionDependencies session_deps(GetParam(),
                                        ProxyService::CreateDirect());
+  session_deps.use_alternate_protocols = true;
 
   MockRead mock_read(ASYNC, OK);
   DeterministicSocketData socket_data(&mock_read, 1, NULL, 0);

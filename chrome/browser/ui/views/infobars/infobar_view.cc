@@ -107,37 +107,6 @@ views::Link* InfoBarView::CreateLink(const base::string16& text,
 }
 
 // static
-views::MenuButton* InfoBarView::CreateMenuButton(
-    const base::string16& text,
-    views::MenuButtonListener* menu_button_listener) {
-  scoped_ptr<views::TextButtonDefaultBorder> menu_button_border(
-      new views::TextButtonDefaultBorder());
-  const int kNormalImageSet[] = IMAGE_GRID(IDR_INFOBARBUTTON_NORMAL);
-  menu_button_border->set_normal_painter(
-      views::Painter::CreateImageGridPainter(kNormalImageSet));
-  const int kHotImageSet[] = IMAGE_GRID(IDR_INFOBARBUTTON_HOVER);
-  menu_button_border->set_hot_painter(
-      views::Painter::CreateImageGridPainter(kHotImageSet));
-  const int kPushedImageSet[] = IMAGE_GRID(IDR_INFOBARBUTTON_PRESSED);
-  menu_button_border->set_pushed_painter(
-      views::Painter::CreateImageGridPainter(kPushedImageSet));
-
-  views::MenuButton* menu_button = new views::MenuButton(
-      NULL, text, menu_button_listener, true);
-  menu_button->SetBorder(menu_button_border.PassAs<views::Border>());
-  menu_button->set_animate_on_state_change(false);
-  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
-  menu_button->set_menu_marker(
-      rb.GetImageNamed(IDR_INFOBARBUTTON_MENU_DROPARROW).ToImageSkia());
-  menu_button->SetEnabledColor(SK_ColorBLACK);
-  menu_button->SetHoverColor(SK_ColorBLACK);
-  menu_button->SetFontList(rb.GetFontList(ui::ResourceBundle::MediumFont));
-  menu_button->SizeToPreferredSize();
-  menu_button->SetFocusable(true);
-  return menu_button;
-}
-
-// static
 views::LabelButton* InfoBarView::CreateLabelButton(
     views::ButtonListener* listener,
     const base::string16& text) {

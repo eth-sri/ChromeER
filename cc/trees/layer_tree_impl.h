@@ -42,6 +42,7 @@ class LayerTreeSettings;
 class MemoryHistory;
 class OutputSurface;
 class PaintTimeCounter;
+class PictureLayerImpl;
 class Proxy;
 class ResourceProvider;
 class TileManager;
@@ -88,6 +89,8 @@ class CC_EXPORT LayerTreeImpl {
   scoped_ptr<ScrollbarAnimationController> CreateScrollbarAnimationController(
       LayerImpl* scrolling_layer);
   void DidAnimateScrollOffset();
+  bool use_gpu_rasterization() const;
+  bool create_low_res_tiling() const;
 
   // Tree specific methods exposed to layer-impl tree.
   // ---------------------------------------------------------------------------
@@ -152,6 +155,9 @@ class CC_EXPORT LayerTreeImpl {
   void SetPageScaleFactorAndLimits(float page_scale_factor,
       float min_page_scale_factor, float max_page_scale_factor);
   void SetPageScaleDelta(float delta);
+  void SetPageScaleValues(float page_scale_factor,
+      float min_page_scale_factor, float max_page_scale_factor,
+      float page_scale_delta);
   float total_page_scale_factor() const {
     return page_scale_factor_ * page_scale_delta_;
   }
@@ -164,12 +170,9 @@ class CC_EXPORT LayerTreeImpl {
   }
   float sent_page_scale_delta() const { return sent_page_scale_delta_; }
 
-  void SetUseGpuRasterization(bool use_gpu);
-  bool use_gpu_rasterization() const { return use_gpu_rasterization_; }
-
   // Updates draw properties and render surface layer list, as well as tile
-  // priorities.
-  void UpdateDrawProperties();
+  // priorities. Returns false if it was unable to update.
+  bool UpdateDrawProperties();
 
   void set_needs_update_draw_properties() {
     needs_update_draw_properties_ = true;
@@ -260,6 +263,9 @@ class CC_EXPORT LayerTreeImpl {
   LayerImpl* FindLayerThatIsHitByPointInTouchHandlerRegion(
       const gfx::PointF& screen_space_point);
 
+  void RegisterPictureLayerImpl(PictureLayerImpl* layer);
+  void UnregisterPictureLayerImpl(PictureLayerImpl* layer);
+
  protected:
   explicit LayerTreeImpl(LayerTreeHostImpl* layer_tree_host_impl);
   void ReleaseResourcesRecursive(LayerImpl* current);
@@ -298,7 +304,6 @@ class CC_EXPORT LayerTreeImpl {
   // List of visible layers for the most recently prepared frame.
   LayerImplList render_surface_layer_list_;
 
-  bool use_gpu_rasterization_;
   bool contents_textures_purged_;
   bool requires_high_res_to_draw_;
   bool viewport_size_invalid_;

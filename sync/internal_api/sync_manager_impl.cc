@@ -28,13 +28,13 @@
 #include "sync/internal_api/public/internal_components_factory.h"
 #include "sync/internal_api/public/read_node.h"
 #include "sync/internal_api/public/read_transaction.h"
-#include "sync/internal_api/public/sync_core_proxy.h"
+#include "sync/internal_api/public/sync_context.h"
+#include "sync/internal_api/public/sync_context_proxy.h"
 #include "sync/internal_api/public/user_share.h"
 #include "sync/internal_api/public/util/experiments.h"
 #include "sync/internal_api/public/write_node.h"
 #include "sync/internal_api/public/write_transaction.h"
-#include "sync/internal_api/sync_core.h"
-#include "sync/internal_api/sync_core_proxy_impl.h"
+#include "sync/internal_api/sync_context_proxy_impl.h"
 #include "sync/internal_api/syncapi_internal.h"
 #include "sync/internal_api/syncapi_server_connection_manager.h"
 #include "sync/notifier/invalidation_util.h"
@@ -238,13 +238,6 @@ bool SyncManagerImpl::VisiblePropertiesDiffer(
   return false;
 }
 
-void SyncManagerImpl::ThrowUnrecoverableError() {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  ReadTransaction trans(FROM_HERE, GetUserShare());
-  trans.GetWrappedTrans()->OnUnrecoverableError(
-      FROM_HERE, "Simulating unrecoverable error for testing purposes.");
-}
-
 ModelTypeSet SyncManagerImpl::InitialSyncEndedTypes() {
   return directory()->InitialSyncEndedTypes();
 }
@@ -397,15 +390,13 @@ void SyncManagerImpl::Init(
 
   model_type_registry_.reset(new ModelTypeRegistry(workers, directory()));
 
-  sync_core_.reset(new SyncCore(model_type_registry_.get()));
-
-  // Bind the SyncCore WeakPtr to this thread.  This helps us crash earlier if
-  // the pointer is misused in debug mode.
-  base::WeakPtr<SyncCore> weak_core = sync_core_->AsWeakPtr();
+  // Bind the SyncContext WeakPtr to this thread.  This helps us crash earlier
+  // if the pointer is misused in debug mode.
+  base::WeakPtr<SyncContext> weak_core = model_type_registry_->AsWeakPtr();
   weak_core.get();
 
-  sync_core_proxy_.reset(
-      new SyncCoreProxyImpl(base::MessageLoopProxy::current(), weak_core));
+  sync_context_proxy_.reset(
+      new SyncContextProxyImpl(base::MessageLoopProxy::current(), weak_core));
 
   // Build a SyncSessionContext and store the worker in it.
   DVLOG(1) << "Sync is bringing up SyncSessionContext.";
@@ -1029,9 +1020,9 @@ UserShare* SyncManagerImpl::GetUserShare() {
   return &share_;
 }
 
-syncer::SyncCoreProxy* SyncManagerImpl::GetSyncCoreProxy() {
+syncer::SyncContextProxy* SyncManagerImpl::GetSyncContextProxy() {
   DCHECK(initialized_);
-  return sync_core_proxy_.get();
+  return sync_context_proxy_.get();
 }
 
 const std::string SyncManagerImpl::cache_guid() {
@@ -1042,7 +1033,7 @@ const std::string SyncManagerImpl::cache_guid() {
 bool SyncManagerImpl::ReceivedExperiment(Experiments* experiments) {
   ReadTransaction trans(FROM_HERE, GetUserShare());
   ReadNode nigori_node(&trans);
-  if (nigori_node.InitByTagLookup(kNigoriTag) != BaseNode::INIT_OK) {
+  if (nigori_node.InitTypeRoot(NIGORI) != BaseNode::INIT_OK) {
     DVLOG(1) << "Couldn't find Nigori node.";
     return false;
   }

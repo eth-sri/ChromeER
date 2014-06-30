@@ -65,8 +65,7 @@ PasswordStoreChangeList PasswordStoreX::UpdateLoginImpl(
     const PasswordForm& form) {
   CheckMigration();
   PasswordStoreChangeList changes;
-  if (use_native_backend() && backend_->UpdateLogin(form)) {
-    changes.push_back(PasswordStoreChange(PasswordStoreChange::UPDATE, form));
+  if (use_native_backend() && backend_->UpdateLogin(form, &changes)) {
     allow_fallback_ = false;
   } else if (allow_default_store()) {
     changes = PasswordStoreDefault::UpdateLoginImpl(form);
@@ -88,26 +87,34 @@ PasswordStoreChangeList PasswordStoreX::RemoveLoginImpl(
 }
 
 PasswordStoreChangeList PasswordStoreX::RemoveLoginsCreatedBetweenImpl(
-    const base::Time& delete_begin,
-    const base::Time& delete_end) {
+    base::Time delete_begin,
+    base::Time delete_end) {
   CheckMigration();
-  vector<PasswordForm*> forms;
   PasswordStoreChangeList changes;
   if (use_native_backend() &&
-      backend_->GetLoginsCreatedBetween(delete_begin, delete_end, &forms) &&
-      backend_->RemoveLoginsCreatedBetween(delete_begin, delete_end)) {
-    for (vector<PasswordForm*>::const_iterator it = forms.begin();
-         it != forms.end(); ++it) {
-      changes.push_back(PasswordStoreChange(PasswordStoreChange::REMOVE,
-                                            **it));
-    }
+      backend_->RemoveLoginsCreatedBetween(
+          delete_begin, delete_end, &changes)) {
     LogStatsForBulkDeletion(changes.size());
     allow_fallback_ = false;
   } else if (allow_default_store()) {
     changes = PasswordStoreDefault::RemoveLoginsCreatedBetweenImpl(delete_begin,
                                                                    delete_end);
   }
-  STLDeleteElements(&forms);
+  return changes;
+}
+
+PasswordStoreChangeList PasswordStoreX::RemoveLoginsSyncedBetweenImpl(
+    base::Time delete_begin,
+    base::Time delete_end) {
+  CheckMigration();
+  PasswordStoreChangeList changes;
+  if (use_native_backend() &&
+      backend_->RemoveLoginsSyncedBetween(delete_begin, delete_end, &changes)) {
+    allow_fallback_ = false;
+  } else if (allow_default_store()) {
+    changes = PasswordStoreDefault::RemoveLoginsSyncedBetweenImpl(delete_begin,
+                                                                  delete_end);
+  }
   return changes;
 }
 

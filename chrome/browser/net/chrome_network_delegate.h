@@ -16,9 +16,11 @@
 #include "components/data_reduction_proxy/browser/data_reduction_proxy_metrics.h"
 #include "net/base/network_delegate.h"
 
+class ChromeExtensionsNetworkDelegate;
 class ClientHints;
 class CookieSettings;
 class PrefService;
+
 template<class T> class PrefMember;
 
 typedef PrefMember<bool> BooleanPrefMember;
@@ -32,6 +34,12 @@ class ConnectInterceptor;
 class Predictor;
 }
 
+namespace data_reduction_proxy {
+class DataReductionProxyAuthRequestHandler;
+class DataReductionProxyParams;
+class DataReductionProxyUsageStats;
+}
+
 namespace domain_reliability {
 class DomainReliabilityMonitor;
 }  // namespace domain_reliability
@@ -42,6 +50,7 @@ class InfoMap;
 }
 
 namespace net {
+class ProxyInfo;
 class URLRequest;
 }
 
@@ -64,20 +73,20 @@ class ChromeNetworkDelegate : public net::NetworkDelegate {
                         BooleanPrefMember* enable_referrers);
   virtual ~ChromeNetworkDelegate();
 
-  // Not inlined because we assign a scoped_refptr, which requires us to include
-  // the header file.
+  // Pass through to ChromeExtensionsNetworkDelegate::set_extension_info_map().
   void set_extension_info_map(extensions::InfoMap* extension_info_map);
 
+#if defined(ENABLE_CONFIGURATION_POLICY)
   void set_url_blacklist_manager(
       const policy::URLBlacklistManager* url_blacklist_manager) {
     url_blacklist_manager_ = url_blacklist_manager;
   }
+#endif
 
   // If |profile| is NULL or not set, events will be broadcast to all profiles,
   // otherwise they will only be sent to the specified profile.
-  void set_profile(void* profile) {
-    profile_ = profile;
-  }
+  // Also pass through to ChromeExtensionsNetworkDelegate::set_profile().
+  void set_profile(void* profile);
 
   // |profile_path| is used to locate the "Downloads" folder on Chrome OS. If it
   // is set, the location of the Downloads folder for the profile is added to
@@ -105,13 +114,32 @@ class ChromeNetworkDelegate : public net::NetworkDelegate {
   }
 
   void set_domain_reliability_monitor(
-      domain_reliability::DomainReliabilityMonitor*
-          domain_reliability_monitor) {
-    domain_reliability_monitor_ = domain_reliability_monitor;
+      domain_reliability::DomainReliabilityMonitor* monitor) {
+    domain_reliability_monitor_ = monitor;
   }
 
   void set_prerender_tracker(prerender::PrerenderTracker* prerender_tracker) {
     prerender_tracker_ = prerender_tracker;
+  }
+
+  // |data_reduction_proxy_params_| must outlive this ChromeNetworkDelegate.
+  void set_data_reduction_proxy_params(
+      data_reduction_proxy::DataReductionProxyParams* params) {
+    data_reduction_proxy_params_ = params;
+  }
+
+  // |data_reduction_proxy_usage_stats_| must outlive this
+  // ChromeNetworkDelegate.
+  void set_data_reduction_proxy_usage_stats(
+      data_reduction_proxy::DataReductionProxyUsageStats* usage_stats) {
+    data_reduction_proxy_usage_stats_ = usage_stats;
+  }
+
+  // |data_reduction_proxy_auth_request_handler_| must outlive this
+  // ChromeNetworkDelegate.
+  void set_data_reduction_proxy_auth_request_handler(
+      data_reduction_proxy::DataReductionProxyAuthRequestHandler* handler) {
+    data_reduction_proxy_auth_request_handler_ = handler;
   }
 
   // Adds the Client Hints header to HTTP requests.
@@ -153,6 +181,10 @@ class ChromeNetworkDelegate : public net::NetworkDelegate {
   virtual int OnBeforeSendHeaders(net::URLRequest* request,
                                   const net::CompletionCallback& callback,
                                   net::HttpRequestHeaders* headers) OVERRIDE;
+  virtual void OnBeforeSendProxyHeaders(
+      net::URLRequest* request,
+      const net::ProxyInfo& proxy_info,
+      net::HttpRequestHeaders* headers) OVERRIDE;
   virtual void OnSendHeaders(net::URLRequest* request,
                              const net::HttpRequestHeaders& headers) OVERRIDE;
   virtual int OnHeadersReceived(
@@ -196,12 +228,11 @@ class ChromeNetworkDelegate : public net::NetworkDelegate {
       int64 original_payload_byte_count,
       data_reduction_proxy::DataReductionProxyRequestType request_type);
 
-  scoped_refptr<extensions::EventRouterForwarder> event_router_;
+  scoped_ptr<ChromeExtensionsNetworkDelegate> extensions_delegate_;
+
   void* profile_;
   base::FilePath profile_path_;
   scoped_refptr<CookieSettings> cookie_settings_;
-
-  scoped_refptr<extensions::InfoMap> extension_info_map_;
 
   scoped_ptr<chrome_browser_net::ConnectInterceptor> connect_interceptor_;
 
@@ -211,7 +242,9 @@ class ChromeNetworkDelegate : public net::NetworkDelegate {
   BooleanPrefMember* force_google_safe_search_;
 
   // Weak, owned by our owner.
+#if defined(ENABLE_CONFIGURATION_POLICY)
   const policy::URLBlacklistManager* url_blacklist_manager_;
+#endif
   domain_reliability::DomainReliabilityMonitor* domain_reliability_monitor_;
 
   // When true, allow access to all file:// URLs.
@@ -237,6 +270,15 @@ class ChromeNetworkDelegate : public net::NetworkDelegate {
   bool first_request_;
 
   prerender::PrerenderTracker* prerender_tracker_;
+
+  // |data_reduction_proxy_params_| must outlive this ChromeNetworkDelegate.
+  data_reduction_proxy::DataReductionProxyParams* data_reduction_proxy_params_;
+  // |data_reduction_proxy_usage_stats_| must outlive this
+  // ChromeNetworkDelegate.
+  data_reduction_proxy::DataReductionProxyUsageStats*
+      data_reduction_proxy_usage_stats_;
+  data_reduction_proxy::DataReductionProxyAuthRequestHandler*
+  data_reduction_proxy_auth_request_handler_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromeNetworkDelegate);
 };

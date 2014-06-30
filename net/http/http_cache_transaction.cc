@@ -117,6 +117,15 @@ void RecordVaryHeaderHistogram(const net::HttpResponseInfo* response) {
   UMA_HISTOGRAM_ENUMERATION("HttpCache.Vary", vary, VARY_MAX);
 }
 
+void RecordNoStoreHeaderHistogram(int load_flags,
+                                  const net::HttpResponseInfo* response) {
+  if (load_flags & net::LOAD_MAIN_FRAME) {
+    UMA_HISTOGRAM_BOOLEAN(
+        "Net.MainFrameNoStore",
+        response->headers->HasHeaderValue("cache-control", "no-store"));
+  }
+}
+
 }  // namespace
 
 namespace net {
@@ -203,6 +212,7 @@ HttpCache::Transaction::Transaction(
       done_reading_(false),
       vary_mismatch_(false),
       couldnt_conditionalize_request_(false),
+      bypass_lock_for_test_(false),
       io_buf_len_(0),
       read_offset_(0),
       effective_load_flags_(0),
@@ -556,6 +566,12 @@ void HttpCache::Transaction::SetBeforeNetworkStartCallback(
   before_network_start_callback_ = callback;
 }
 
+void HttpCache::Transaction::SetBeforeProxyHeadersSentCallback(
+    const BeforeProxyHeadersSentCallback& callback) {
+  DCHECK(!network_trans_);
+  before_proxy_headers_sent_callback_ = callback;
+}
+
 int HttpCache::Transaction::ResumeNetworkStart() {
   if (network_trans_)
     return network_trans_->ResumeNetworkStart();
@@ -884,6 +900,8 @@ int HttpCache::Transaction::DoSendRequest() {
   if (rv != OK)
     return rv;
   network_trans_->SetBeforeNetworkStartCallback(before_network_start_callback_);
+  network_trans_->SetBeforeProxyHeadersSentCallback(
+      before_proxy_headers_sent_callback_);
 
   // Old load timing information, if any, is now obsolete.
   old_network_trans_load_timing_.reset();
@@ -1027,6 +1045,7 @@ int HttpCache::Transaction::DoSuccessfulSendRequest() {
   }
 
   RecordVaryHeaderHistogram(new_response);
+  RecordNoStoreHeaderHistogram(request_->load_flags, new_response);
 
   if (new_response_->headers->response_code() == 416 &&
       (request_->method == "GET" || request_->method == "POST")) {
@@ -1200,7 +1219,20 @@ int HttpCache::Transaction::DoAddToEntry() {
   net_log_.BeginEvent(NetLog::TYPE_HTTP_CACHE_ADD_TO_ENTRY);
   DCHECK(entry_lock_waiting_since_.is_null());
   entry_lock_waiting_since_ = TimeTicks::Now();
-  return cache_->AddTransactionToEntry(new_entry_, this);
+  int rv = cache_->AddTransactionToEntry(new_entry_, this);
+  if (rv == ERR_IO_PENDING) {
+    if (bypass_lock_for_test_) {
+      OnAddToEntryTimeout(entry_lock_waiting_since_);
+    } else {
+      const int kTimeoutSeconds = 20;
+      base::MessageLoop::current()->PostDelayedTask(
+          FROM_HERE,
+          base::Bind(&HttpCache::Transaction::OnAddToEntryTimeout,
+                     weak_factory_.GetWeakPtr(), entry_lock_waiting_since_),
+          TimeDelta::FromSeconds(kTimeoutSeconds));
+    }
+  }
+  return rv;
 }
 
 int HttpCache::Transaction::DoAddToEntryComplete(int result) {
@@ -1222,6 +1254,17 @@ int HttpCache::Transaction::DoAddToEntryComplete(int result) {
 
   if (result == ERR_CACHE_RACE) {
     next_state_ = STATE_INIT_ENTRY;
+    return OK;
+  }
+
+  if (result == ERR_CACHE_LOCK_TIMEOUT) {
+    // The cache is busy, bypass it for this transaction.
+    mode_ = NONE;
+    next_state_ = STATE_SEND_REQUEST;
+    if (partial_) {
+      partial_->RestoreHeaders(&custom_request_->extra_headers);
+      partial_.reset();
+    }
     return OK;
   }
 
@@ -2348,6 +2391,19 @@ int HttpCache::Transaction::OnCacheReadError(int result, bool restart) {
   }
 
   return ERR_CACHE_READ_FAILURE;
+}
+
+void HttpCache::Transaction::OnAddToEntryTimeout(base::TimeTicks start_time) {
+  if (entry_lock_waiting_since_ != start_time)
+    return;
+
+  DCHECK_EQ(next_state_, STATE_ADD_TO_ENTRY_COMPLETE);
+
+  if (!cache_)
+    return;
+
+  cache_->RemovePendingTransaction(this);
+  OnIOComplete(ERR_CACHE_LOCK_TIMEOUT);
 }
 
 void HttpCache::Transaction::DoomPartialEntry(bool delete_object) {

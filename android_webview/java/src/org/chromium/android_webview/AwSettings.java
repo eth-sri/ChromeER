@@ -96,6 +96,9 @@ public class AwSettings {
     private int mMixedContentMode = MIXED_CONTENT_NEVER_ALLOW;
     private boolean mVideoOverlayForEmbeddedVideoEnabled = false;
 
+    // Although this bit is stored on AwSettings it is actually controlled via the CookieManager.
+    private boolean mAcceptThirdPartyCookies = false;
+
     private final boolean mSupportLegacyQuirks;
 
     private final boolean mPasswordEchoEnabled;
@@ -277,11 +280,17 @@ public class AwSettings {
             if (nativeWebContents != 0) {
                 mEventHandler.bindUiThread();
                 mNativeAwSettings = nativeInit(nativeWebContents);
-                nativeUpdateEverythingLocked(mNativeAwSettings);
-                onGestureZoomSupportChanged(
-                        supportsDoubleTapZoomLocked(), supportsMultiTouchZoomLocked());
+                updateEverythingLocked();
             }
         }
+    }
+
+    private void updateEverythingLocked() {
+        assert Thread.holdsLock(mAwSettingsLock);
+        assert mNativeAwSettings != 0;
+        nativeUpdateEverythingLocked(mNativeAwSettings);
+        onGestureZoomSupportChanged(
+                supportsDoubleTapZoomLocked(), supportsMultiTouchZoomLocked());
     }
 
     /**
@@ -303,6 +312,28 @@ public class AwSettings {
     public boolean getBlockNetworkLoads() {
         synchronized (mAwSettingsLock) {
             return mBlockNetworkLoads;
+        }
+    }
+
+    /**
+     * Enable/disable third party cookies for an AwContents
+     * @param accept true if we should accept third party cookies
+     */
+    public void setAcceptThirdPartyCookies(boolean accept) {
+        synchronized (mAwSettingsLock) {
+            if (mAcceptThirdPartyCookies != accept) {
+                mAcceptThirdPartyCookies = accept;
+            }
+        }
+    }
+
+    /**
+     * Return whether third party cookies are enabled for an AwContents
+     * @return true if accept third party cookies
+     */
+    public boolean getAcceptThirdPartyCookies() {
+        synchronized (mAwSettingsLock) {
+            return mAcceptThirdPartyCookies;
         }
     }
 
@@ -1549,8 +1580,7 @@ public class AwSettings {
     @CalledByNative
     private void updateEverything() {
         synchronized (mAwSettingsLock) {
-            assert mNativeAwSettings != 0;
-            nativeUpdateEverythingLocked(mNativeAwSettings);
+            updateEverythingLocked();
         }
     }
 

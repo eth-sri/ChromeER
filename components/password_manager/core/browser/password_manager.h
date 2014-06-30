@@ -59,10 +59,11 @@ class PasswordManager : public LoginModel {
   // should always be valid when called.
   void AddSubmissionCallback(const PasswordSubmittedCallback& callback);
 
-  // Is saving new data for password autofill enabled for the current profile?
-  // For example, saving new data is disabled in Incognito mode, whereas filling
-  // data is not.
-  bool IsSavingEnabled() const;
+  // Is saving new data for password autofill enabled for the current profile
+  // and page? For example, saving new data is disabled in Incognito mode,
+  // whereas filling data is not. Also, saving data is disabled in the presence
+  // of SSL errors on a page.
+  bool IsSavingEnabledForCurrentPage() const;
 
   // Called by a PasswordFormManager when it decides a form can be autofilled
   // on the page.
@@ -94,7 +95,8 @@ class PasswordManager : public LoginModel {
 
   // Handles password forms being rendered.
   void OnPasswordFormsRendered(
-      const std::vector<autofill::PasswordForm>& visible_forms);
+      const std::vector<autofill::PasswordForm>& visible_forms,
+      bool did_stop_loading);
 
   // Handles a password form being submitted.
   virtual void OnPasswordFormSubmitted(
@@ -141,6 +143,11 @@ class PasswordManager : public LoginModel {
   // |provisional_save_manager_|.
   bool ShouldPromptUserToSavePassword() const;
 
+  // Checks for every from in |forms| whether |pending_login_managers_| already
+  // contain a manager for that form. If not, adds a manager for each such form.
+  void CreatePendingLoginManagers(
+      const std::vector<autofill::PasswordForm>& forms);
+
   // Note about how a PasswordFormManager can transition from
   // pending_login_managers_ to provisional_save_manager_ and the infobar.
   //
@@ -181,6 +188,12 @@ class PasswordManager : public LoginModel {
 
   // Callbacks to be notified when a password form has been submitted.
   std::vector<PasswordSubmittedCallback> submission_callbacks_;
+
+  // Records all visible forms seen during a page load, in all frames of the
+  // page. When the page stops loading, the password manager checks if one of
+  // the recorded forms matches the login form from the previous page
+  // (to see if the login was a failure), and clears the vector.
+  std::vector<autofill::PasswordForm> all_visible_forms_;
 
   DISALLOW_COPY_AND_ASSIGN(PasswordManager);
 };

@@ -5,6 +5,7 @@
 #ifndef CHROME_RENDERER_CHROME_RENDER_FRAME_OBSERVER_H_
 #define CHROME_RENDERER_CHROME_RENDER_FRAME_OBSERVER_H_
 
+#include "base/basictypes.h"
 #include "content/public/renderer/render_frame_observer.h"
 
 namespace gfx {

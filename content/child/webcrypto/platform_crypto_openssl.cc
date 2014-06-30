@@ -167,7 +167,7 @@ class DigestorOpenSSL : public blink::WebCryptoDigestor {
   }
 
   Status ConsumeWithStatus(const unsigned char* data, unsigned int size) {
-    crypto::OpenSSLErrStackTracer(FROM_HERE);
+    crypto::OpenSSLErrStackTracer err_tracer(FROM_HERE);
     Status error = Init();
     if (!error.IsSuccess())
       return error;
@@ -215,7 +215,7 @@ class DigestorOpenSSL : public blink::WebCryptoDigestor {
   }
 
   Status FinishInternal(unsigned char* result, unsigned int* result_size) {
-    crypto::OpenSSLErrStackTracer(FROM_HERE);
+    crypto::OpenSSLErrStackTracer err_tracer(FROM_HERE);
     Status error = Init();
     if (!error.IsSuccess())
       return error;
@@ -279,7 +279,7 @@ Status GenerateSecretKey(const blink::WebCryptoAlgorithm& algorithm,
   if (keylen_bytes == 0)
     return Status::ErrorGenerateKeyLength();
 
-  crypto::OpenSSLErrStackTracer(FROM_HERE);
+  crypto::OpenSSLErrStackTracer err_tracer(FROM_HERE);
 
   std::vector<unsigned char> random_bytes(keylen_bytes, 0);
   if (!(RAND_bytes(&random_bytes[0], keylen_bytes)))
@@ -300,10 +300,10 @@ Status GenerateSecretKey(const blink::WebCryptoAlgorithm& algorithm,
 
 Status GenerateRsaKeyPair(const blink::WebCryptoAlgorithm& algorithm,
                           bool extractable,
-                          blink::WebCryptoKeyUsageMask usage_mask,
+                          blink::WebCryptoKeyUsageMask public_key_usage_mask,
+                          blink::WebCryptoKeyUsageMask private_key_usage_mask,
                           unsigned int modulus_length_bits,
-                          const CryptoData& public_exponent,
-                          const blink::WebCryptoAlgorithm& hash,
+                          unsigned long public_exponent,
                           blink::WebCryptoKey* public_key,
                           blink::WebCryptoKey* private_key) {
   // TODO(padolph): Placeholder for OpenSSL implementation.
@@ -335,6 +335,8 @@ Status SignHmac(SymKey* key,
                 const blink::WebCryptoAlgorithm& hash,
                 const CryptoData& data,
                 std::vector<uint8>* buffer) {
+  crypto::OpenSSLErrStackTracer err_tracer(FROM_HERE);
+
   const EVP_MD* digest_algorithm = GetDigest(hash.id());
   if (!digest_algorithm)
     return Status::ErrorUnsupported();
@@ -353,8 +355,6 @@ Status SignHmac(SymKey* key,
   buffer->resize(hmac_expected_length);
   crypto::ScopedOpenSSLSafeSizeBuffer<EVP_MAX_MD_SIZE> hmac_result(
       Uint8VectorStart(buffer), hmac_expected_length);
-
-  crypto::OpenSSLErrStackTracer(FROM_HERE);
 
   unsigned int hmac_actual_length;
   unsigned char* const success = HMAC(digest_algorithm,
@@ -381,6 +381,32 @@ Status ImportRsaPublicKey(const blink::WebCryptoAlgorithm& algorithm,
   return Status::ErrorUnsupported();
 }
 
+Status ImportRsaPrivateKey(const blink::WebCryptoAlgorithm& algorithm,
+                           bool extractable,
+                           blink::WebCryptoKeyUsageMask usage_mask,
+                           const CryptoData& modulus,
+                           const CryptoData& public_exponent,
+                           const CryptoData& private_exponent,
+                           const CryptoData& prime1,
+                           const CryptoData& prime2,
+                           const CryptoData& exponent1,
+                           const CryptoData& exponent2,
+                           const CryptoData& coefficient,
+                           blink::WebCryptoKey* key) {
+  // TODO(eroman): http://crbug.com/267888
+  return Status::ErrorUnsupported();
+}
+
+const EVP_AEAD* GetAesGcmAlgorithmFromKeySize(unsigned int key_size_bytes) {
+  switch (key_size_bytes) {
+    case 16:
+      return EVP_aead_aes_128_gcm();
+    // TODO(eroman): Hook up 256-bit support when it is available.
+    default:
+      return NULL;
+  }
+}
+
 Status EncryptDecryptAesGcm(EncryptOrDecrypt mode,
                             SymKey* key,
                             const CryptoData& data,
@@ -388,21 +414,82 @@ Status EncryptDecryptAesGcm(EncryptOrDecrypt mode,
                             const CryptoData& additional_data,
                             unsigned int tag_length_bits,
                             std::vector<uint8>* buffer) {
+  crypto::OpenSSLErrStackTracer err_tracer(FROM_HERE);
+
+  DCHECK(tag_length_bits % 8 == 0);
+  const unsigned int tag_length_bytes = tag_length_bits / 8;
+
+  EVP_AEAD_CTX ctx;
+
+  const EVP_AEAD* const aead_alg =
+      GetAesGcmAlgorithmFromKeySize(key->key().size());
+  if (!aead_alg)
+    return Status::ErrorUnexpected();
+
+  if (!EVP_AEAD_CTX_init(&ctx,
+                         aead_alg,
+                         Uint8VectorStart(key->key()),
+                         key->key().size(),
+                         tag_length_bytes,
+                         NULL)) {
+    return Status::OperationError();
+  }
+
+  crypto::ScopedOpenSSL<EVP_AEAD_CTX, EVP_AEAD_CTX_cleanup> ctx_cleanup(&ctx);
+
+  ssize_t len;
+
+  if (mode == DECRYPT) {
+    if (data.byte_length() < tag_length_bytes)
+      return Status::ErrorDataTooSmall();
+
+    buffer->resize(data.byte_length() - tag_length_bytes);
+
+    len = EVP_AEAD_CTX_open(&ctx,
+                            Uint8VectorStart(buffer),
+                            buffer->size(),
+                            iv.bytes(),
+                            iv.byte_length(),
+                            data.bytes(),
+                            data.byte_length(),
+                            additional_data.bytes(),
+                            additional_data.byte_length());
+  } else {
+    // No need to check for unsigned integer overflow here (seal fails if
+    // the output buffer is too small).
+    buffer->resize(data.byte_length() + tag_length_bytes);
+
+    len = EVP_AEAD_CTX_seal(&ctx,
+                            Uint8VectorStart(buffer),
+                            buffer->size(),
+                            iv.bytes(),
+                            iv.byte_length(),
+                            data.bytes(),
+                            data.byte_length(),
+                            additional_data.bytes(),
+                            additional_data.byte_length());
+  }
+
+  if (len < 0)
+    return Status::OperationError();
+  buffer->resize(len);
+  return Status::Success();
+}
+
+Status EncryptRsaOaep(PublicKey* key,
+                      const blink::WebCryptoAlgorithm& hash,
+                      const CryptoData& label,
+                      const CryptoData& data,
+                      std::vector<uint8>* buffer) {
   // TODO(eroman): http://crbug.com/267888
   return Status::ErrorUnsupported();
 }
 
-// Guaranteed that key is valid.
-Status EncryptRsaEsPkcs1v1_5(PublicKey* key,
-                             const CryptoData& data,
-                             std::vector<uint8>* buffer) {
-  // TODO(eroman): http://crbug.com/267888
-  return Status::ErrorUnsupported();
-}
-
-Status DecryptRsaEsPkcs1v1_5(PrivateKey* key,
-                             const CryptoData& data,
-                             std::vector<uint8>* buffer) {
+Status DecryptRsaOaep(PrivateKey* key,
+                      const blink::WebCryptoAlgorithm& hash,
+                      const CryptoData& label,
+                      const CryptoData& data,
+                      std::vector<uint8>* buffer) {
   // TODO(eroman): http://crbug.com/267888
   return Status::ErrorUnsupported();
 }
@@ -462,43 +549,23 @@ Status ExportRsaPublicKey(PublicKey* key,
   return Status::ErrorUnsupported();
 }
 
-Status WrapSymKeyAesKw(SymKey* key,
-                       SymKey* wrapping_key,
-                       std::vector<uint8>* buffer) {
+Status ExportRsaPrivateKey(PrivateKey* key,
+                           std::vector<uint8>* modulus,
+                           std::vector<uint8>* public_exponent,
+                           std::vector<uint8>* private_exponent,
+                           std::vector<uint8>* prime1,
+                           std::vector<uint8>* prime2,
+                           std::vector<uint8>* exponent1,
+                           std::vector<uint8>* exponent2,
+                           std::vector<uint8>* coefficient) {
   // TODO(eroman): http://crbug.com/267888
   return Status::ErrorUnsupported();
 }
 
-Status UnwrapSymKeyAesKw(const CryptoData& wrapped_key_data,
-                         SymKey* wrapping_key,
-                         const blink::WebCryptoAlgorithm& algorithm,
-                         bool extractable,
-                         blink::WebCryptoKeyUsageMask usage_mask,
-                         blink::WebCryptoKey* key) {
-  // TODO(eroman): http://crbug.com/267888
-  return Status::ErrorUnsupported();
-}
-
-Status DecryptAesKw(SymKey* key,
-                    const CryptoData& data,
-                    std::vector<uint8>* buffer) {
-  // TODO(eroman): http://crbug.com/267888
-  return Status::ErrorUnsupported();
-}
-
-Status WrapSymKeyRsaEs(SymKey* key,
-                       PublicKey* wrapping_key,
-                       std::vector<uint8>* buffer) {
-  // TODO(eroman): http://crbug.com/267888
-  return Status::ErrorUnsupported();
-}
-
-Status UnwrapSymKeyRsaEs(const CryptoData& wrapped_key_data,
-                         PrivateKey* wrapping_key,
-                         const blink::WebCryptoAlgorithm& algorithm,
-                         bool extractable,
-                         blink::WebCryptoKeyUsageMask usage_mask,
-                         blink::WebCryptoKey* key) {
+Status EncryptDecryptAesKw(EncryptOrDecrypt mode,
+                           SymKey* key,
+                           const CryptoData& data,
+                           std::vector<uint8>* buffer) {
   // TODO(eroman): http://crbug.com/267888
   return Status::ErrorUnsupported();
 }

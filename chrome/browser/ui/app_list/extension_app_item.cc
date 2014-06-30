@@ -256,7 +256,7 @@ bool ExtensionAppItem::RunExtensionEnableFlow() {
 
   if (!extension_enable_flow_) {
     extension_enable_flow_controller_ = GetController();
-    extension_enable_flow_controller_->OnShowExtensionPrompt();
+    extension_enable_flow_controller_->OnShowChildDialog();
 
     extension_enable_flow_.reset(new ExtensionEnableFlow(
         profile_, extension_id_, this));
@@ -270,6 +270,10 @@ void ExtensionAppItem::Launch(int event_flags) {
   // |extension| could be NULL when it is being unloaded for updating.
   const Extension* extension = GetExtension();
   if (!extension)
+    return;
+
+  // Don't auto-enable apps that cannot be launched.
+  if (!extensions::util::IsAppLaunchable(extension_id_, profile_))
     return;
 
   if (RunExtensionEnableFlow())
@@ -289,7 +293,7 @@ void ExtensionAppItem::OnExtensionIconImageChanged(
 
 void ExtensionAppItem::ExtensionEnableFlowFinished() {
   extension_enable_flow_.reset();
-  extension_enable_flow_controller_->OnCloseExtensionPrompt();
+  extension_enable_flow_controller_->OnCloseChildDialog();
   extension_enable_flow_controller_ = NULL;
 
   // Automatically launch app after enabling.
@@ -298,7 +302,7 @@ void ExtensionAppItem::ExtensionEnableFlowFinished() {
 
 void ExtensionAppItem::ExtensionEnableFlowAborted(bool user_initiated) {
   extension_enable_flow_.reset();
-  extension_enable_flow_controller_->OnCloseExtensionPrompt();
+  extension_enable_flow_controller_->OnCloseChildDialog();
   extension_enable_flow_controller_ = NULL;
 }
 
@@ -306,6 +310,10 @@ void ExtensionAppItem::Activate(int event_flags) {
   // |extension| could be NULL when it is being unloaded for updating.
   const Extension* extension = GetExtension();
   if (!extension)
+    return;
+
+  // Don't auto-enable apps that cannot be launched.
+  if (!extensions::util::IsAppLaunchable(extension_id_, profile_))
     return;
 
   if (RunExtensionEnableFlow())

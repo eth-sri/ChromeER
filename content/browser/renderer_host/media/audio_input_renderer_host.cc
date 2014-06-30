@@ -17,6 +17,7 @@
 #include "content/browser/renderer_host/media/audio_input_sync_writer.h"
 #include "content/browser/renderer_host/media/media_stream_manager.h"
 #include "media/audio/audio_manager_base.h"
+#include "media/base/audio_bus.h"
 
 namespace content {
 
@@ -70,7 +71,7 @@ AudioInputRendererHost::~AudioInputRendererHost() {
 }
 
 void AudioInputRendererHost::OnChannelClosing() {
-  // Since the IPC channel is gone, close all requested audio streams.
+  // Since the IPC sender is gone, close all requested audio streams.
   DeleteEntries();
 }
 
@@ -113,9 +114,18 @@ void AudioInputRendererHost::OnError(media::AudioInputController* controller,
 }
 
 void AudioInputRendererHost::OnData(media::AudioInputController* controller,
-                                    const uint8* data,
-                                    uint32 size) {
+                                    const media::AudioBus* data) {
   NOTREACHED() << "Only low-latency mode is supported.";
+}
+
+void AudioInputRendererHost::OnLog(media::AudioInputController* controller,
+                                   const std::string& message) {
+  BrowserThread::PostTask(BrowserThread::IO,
+                          FROM_HERE,
+                          base::Bind(&AudioInputRendererHost::DoLog,
+                                     this,
+                                     make_scoped_refptr(controller),
+                                     message));
 }
 
 void AudioInputRendererHost::DoCompleteCreation(
@@ -205,6 +215,21 @@ void AudioInputRendererHost::DoHandleError(
   DeleteEntryOnError(entry, AUDIO_INPUT_CONTROLLER_ERROR);
 }
 
+void AudioInputRendererHost::DoLog(media::AudioInputController* controller,
+                                   const std::string& message) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  AudioEntry* entry = LookupByController(controller);
+  if (!entry)
+    return;
+
+  // Add stream ID and current audio level reported by AIC to native log.
+  std::string log_string =
+      base::StringPrintf("[stream_id=%d] ", entry->stream_id);
+  log_string += message;
+  MediaStreamManager::SendMessageToNativeLog(log_string);
+  DVLOG(1) << log_string;
+}
+
 bool AudioInputRendererHost::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(AudioInputRendererHost, message)
@@ -267,8 +292,9 @@ void AudioInputRendererHost::OnCreateStream(
   // Create a new AudioEntry structure.
   scoped_ptr<AudioEntry> entry(new AudioEntry());
 
-  const uint32 segment_size = (sizeof(media::AudioInputBufferParameters) +
-                               audio_params.GetBytesPerBuffer());
+  const uint32 segment_size =
+      (sizeof(media::AudioInputBufferParameters) +
+       media::AudioBus::CalculateMemorySize(audio_params));
   entry->shared_memory_segment_count = config.shared_memory_count;
 
   // Create the shared memory and share it with the renderer process
@@ -282,9 +308,8 @@ void AudioInputRendererHost::OnCreateStream(
     return;
   }
 
-  scoped_ptr<AudioInputSyncWriter> writer(
-      new AudioInputSyncWriter(&entry->shared_memory,
-                               entry->shared_memory_segment_count));
+  scoped_ptr<AudioInputSyncWriter> writer(new AudioInputSyncWriter(
+      &entry->shared_memory, entry->shared_memory_segment_count, audio_params));
 
   if (!writer->Init()) {
     SendErrorMessage(stream_id, SYNC_WRITER_INIT_FAILED);

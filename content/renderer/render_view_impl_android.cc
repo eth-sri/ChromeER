@@ -9,7 +9,6 @@
 #include "cc/trees/layer_tree_host.h"
 #include "content/common/view_messages.h"
 #include "content/renderer/gpu/render_widget_compositor.h"
-#include "third_party/WebKit/public/platform/WebRect.h"
 #include "third_party/WebKit/public/web/WebView.h"
 
 namespace content {
@@ -66,26 +65,11 @@ void RenderViewImpl::didScrollWithKeyboard(const blink::WebSize& delta) {
 }
 
 void RenderViewImpl::OnExtractSmartClipData(const gfx::Rect& rect) {
+  blink::WebString clip_text;
+  blink::WebRect clip_rect;
+  webview()->getSmartClipData(rect, clip_text, clip_rect);
   Send(new ViewHostMsg_SmartClipDataExtracted(
-      routing_id_, webview()->getSmartClipData(rect)));
-}
-
-void RenderViewImpl::GetSelectionRootBounds(gfx::Rect* bounds) const {
-  blink::WebRect bounds_webrect;
-  webview()->getSelectionRootBounds(bounds_webrect);
-  *bounds = bounds_webrect;
-}
-
-void RenderViewImpl::UpdateSelectionRootBounds() {
-  if (!webview() || handling_ime_event_)
-    return;
-
-  gfx::Rect bounds;
-  GetSelectionRootBounds(&bounds);
-  if (selection_root_rect_ != bounds) {
-    selection_root_rect_ = bounds;
-    Send(new ViewHostMsg_SelectionRootBoundsChanged(routing_id_, bounds));
-  }
+      routing_id_, clip_text, clip_rect));
 }
 
 }  // namespace content

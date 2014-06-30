@@ -26,8 +26,8 @@ CloseFile::~CloseFile() {
 }
 
 bool CloseFile::Execute(int request_id) {
-  scoped_ptr<base::ListValue> values(new base::ListValue);
-  values->AppendInteger(open_request_id_);
+  scoped_ptr<base::DictionaryValue> values(new base::DictionaryValue);
+  values->SetInteger("openRequestId", open_request_id_);
 
   return SendEvent(
       request_id,
@@ -37,11 +37,13 @@ bool CloseFile::Execute(int request_id) {
 
 void CloseFile::OnSuccess(int /* request_id */,
                           scoped_ptr<RequestValue> result,
-                          bool has_next) {
+                          bool has_more) {
   callback_.Run(base::File::FILE_OK);
 }
 
-void CloseFile::OnError(int /* request_id */, base::File::Error error) {
+void CloseFile::OnError(int /* request_id */,
+                        scoped_ptr<RequestValue> /* result */,
+                        base::File::Error error) {
   callback_.Run(error);
 }
 

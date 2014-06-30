@@ -32,11 +32,9 @@
 #include "chrome/browser/custom_handlers/protocol_handler_registry_factory.h"
 #include "chrome/browser/defaults.h"
 #include "chrome/browser/extensions/extension_creator.h"
-#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/launch_util.h"
 #include "chrome/browser/extensions/pack_extension_job.h"
 #include "chrome/browser/first_run/first_run.h"
-#include "chrome/browser/google/google_util.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/net/predictor.h"
 #include "chrome/browser/notifications/desktop_notification_service.h"
@@ -78,10 +76,10 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/extensions/extension_constants.h"
-#include "chrome/common/net/url_fixer_upper.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/installer/util/browser_distribution.h"
+#include "components/google/core/browser/google_util.h"
 #include "content/public/browser/child_process_security_policy.h"
 #include "content/public/browser/dom_storage_context.h"
 #include "content/public/browser/notification_observer.h"
@@ -90,7 +88,6 @@
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_registry.h"
-#include "extensions/browser/extension_system.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_set.h"
@@ -189,9 +186,8 @@ bool GetAppLaunchContainer(
     const Extension** out_extension,
     extensions::LaunchContainer* out_launch_container) {
 
-  ExtensionService* extensions_service = profile->GetExtensionService();
-  const Extension* extension =
-      extensions_service->GetExtensionById(app_id, false);
+  const Extension* extension = extensions::ExtensionRegistry::Get(
+      profile)->enabled_extensions().GetByID(app_id);
   // The extension with id |app_id| may have been uninstalled.
   if (!extension)
     return false;
@@ -225,7 +221,7 @@ void RecordCmdLineAppHistogram(extensions::Manifest::Type app_type) {
 
 void RecordAppLaunches(Profile* profile,
                        const std::vector<GURL>& cmd_line_urls,
-                       StartupTabs& autolaunch_tabs) {
+                       const StartupTabs& autolaunch_tabs) {
   const extensions::ExtensionSet& extensions =
       extensions::ExtensionRegistry::Get(profile)->enabled_extensions();
   for (size_t i = 0; i < cmd_line_urls.size(); ++i) {
@@ -246,12 +242,6 @@ void RecordAppLaunches(Profile* profile,
           extension->GetType());
     }
   }
-}
-
-bool IsNewTabURL(Profile* profile, const GURL& url) {
-  GURL ntp_url(chrome::kChromeUINewTabURL);
-  return url == ntp_url ||
-         (url.is_empty() && profile->GetHomePage() == ntp_url);
 }
 
 class WebContentsCloseObserver : public content::NotificationObserver {
@@ -509,7 +499,7 @@ bool StartupBrowserCreatorImpl::OpenApplicationWindow(
     ChildProcessSecurityPolicy* policy =
         ChildProcessSecurityPolicy::GetInstance();
     if (policy->IsWebSafeScheme(url.scheme()) ||
-        url.SchemeIs(content::kFileScheme)) {
+        url.SchemeIs(url::kFileScheme)) {
       const extensions::Extension* extension =
           extensions::ExtensionRegistry::Get(profile)
               ->enabled_extensions().GetAppByURL(url);
@@ -807,7 +797,7 @@ Browser* StartupBrowserCreatorImpl::OpenTabsInBrowser(
 #if defined(ENABLE_RLZ) && !defined(OS_IOS)
     if (process_startup && google_util::IsGoogleHomePageUrl(tabs[i].url)) {
       params.extra_headers = RLZTracker::GetAccessPointHttpHeader(
-          RLZTracker::CHROME_HOME_PAGE);
+          RLZTracker::ChromeHomePage());
     }
 #endif  // defined(ENABLE_RLZ) && !defined(OS_IOS)
 
@@ -844,10 +834,9 @@ void StartupBrowserCreatorImpl::AddInfoBarsIfNecessary(
   if (!browser || !profile_ || browser->tab_strip_model()->count() == 0)
     return;
 
-  if (HasPendingUncleanExit(browser->profile())) {
-    if (!command_line_.HasSwitch(switches::kEnableSessionCrashedBubble) ||
-        !ShowSessionCrashedBubble(browser))
-      SessionCrashedInfoBarDelegate::Create(browser);
+  if (HasPendingUncleanExit(browser->profile()) &&
+      !ShowSessionCrashedBubble(browser)) {
+    SessionCrashedInfoBarDelegate::Create(browser);
   }
 
   // The below info bars are only added to the first profile which is launched.
@@ -933,7 +922,8 @@ void StartupBrowserCreatorImpl::AddStartupURLs(
       // If the first URL is the NTP, replace it with the sync promo. This
       // behavior is desired because completing or skipping the sync promo
       // causes a redirect to the NTP.
-      if (!startup_urls->empty() && IsNewTabURL(profile_, startup_urls->at(0)))
+      if (!startup_urls->empty() &&
+          startup_urls->at(0) == GURL(chrome::kChromeUINewTabURL))
         startup_urls->at(0) = sync_promo_url;
       else
         startup_urls->insert(startup_urls->begin(), sync_promo_url);

@@ -36,12 +36,12 @@ void CastTransportSenderIPC::SetPacketReceiver(
 }
 
 void CastTransportSenderIPC::InitializeAudio(
-    const media::cast::transport::CastTransportAudioConfig& config) {
+    const media::cast::transport::CastTransportRtpConfig& config) {
   Send(new CastHostMsg_InitializeAudio(channel_id_, config));
 }
 
 void CastTransportSenderIPC::InitializeVideo(
-    const media::cast::transport::CastTransportVideoConfig& config) {
+    const media::cast::transport::CastTransportRtpConfig& config) {
   Send(new CastHostMsg_InitializeVideo(channel_id_, config));
 }
 
@@ -78,10 +78,14 @@ void CastTransportSenderIPC::SendRtcpFromRtpSender(
 
 void CastTransportSenderIPC::ResendPackets(
     bool is_audio,
-    const media::cast::MissingFramesAndPacketsMap& missing_packets) {
+    const media::cast::MissingFramesAndPacketsMap& missing_packets,
+    bool cancel_rtx_if_not_in_list,
+    base::TimeDelta dedupe_window) {
   Send(new CastHostMsg_ResendPackets(channel_id_,
                                      is_audio,
-                                     missing_packets));
+                                     missing_packets,
+                                     cancel_rtx_if_not_in_list,
+                                     dedupe_window));
 }
 
 void CastTransportSenderIPC::OnReceivedPacket(

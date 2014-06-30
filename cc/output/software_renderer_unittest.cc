@@ -5,7 +5,6 @@
 #include "cc/output/software_renderer.h"
 
 #include "base/run_loop.h"
-#include "cc/layers/quad_sink.h"
 #include "cc/output/compositor_frame_metadata.h"
 #include "cc/output/copy_output_request.h"
 #include "cc/output/copy_output_result.h"
@@ -52,6 +51,7 @@ class SoftwareRendererTest : public testing::Test, public RendererClient {
 
   // RendererClient implementation.
   virtual void SetFullRootLayerDamage() OVERRIDE {}
+  virtual void RunOnDemandRasterTask(Task* on_demand_raster_task) OVERRIDE {}
 
   scoped_ptr<SkBitmap> DrawAndCopyOutput(RenderPassList* list,
                                          float device_scale_factor,
@@ -112,7 +112,8 @@ TEST_F(SoftwareRendererTest, SolidColorQuad) {
                             outer_rect,
                             false,
                             1.0,
-                            SkXfermode::kSrcOver_Mode);
+                            SkXfermode::kSrcOver_Mode,
+                            0);
   scoped_ptr<SolidColorDrawQuad> outer_quad = SolidColorDrawQuad::Create();
   outer_quad->SetNew(
       shared_quad_state, outer_rect, outer_rect, SK_ColorYELLOW, false);
@@ -198,7 +199,8 @@ TEST_F(SoftwareRendererTest, TileQuad) {
                             outer_rect,
                             false,
                             1.0,
-                            SkXfermode::kSrcOver_Mode);
+                            SkXfermode::kSrcOver_Mode,
+                            0);
   scoped_ptr<TileDrawQuad> outer_quad = TileDrawQuad::Create();
   outer_quad->SetNew(shared_quad_state,
                      outer_rect,
@@ -281,7 +283,8 @@ TEST_F(SoftwareRendererTest, TileQuadVisibleRect) {
                             tile_rect,
                             false,
                             1.0,
-                            SkXfermode::kSrcOver_Mode);
+                            SkXfermode::kSrcOver_Mode,
+                            0);
   scoped_ptr<TileDrawQuad> quad = TileDrawQuad::Create();
   quad->SetNew(shared_quad_state,
                tile_rect,

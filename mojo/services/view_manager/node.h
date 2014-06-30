@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "base/logging.h"
+#include "mojo/services/public/interfaces/view_manager/view_manager.mojom.h"
 #include "mojo/services/view_manager/ids.h"
 #include "mojo/services/view_manager/view_manager_export.h"
 #include "ui/aura/window.h"
@@ -29,6 +30,8 @@ class MOJO_VIEW_MANAGER_EXPORT Node
   Node(NodeDelegate* delegate, const NodeId& id);
   virtual ~Node();
 
+  static Node* NodeForWindow(aura::Window* window);
+
   void set_view_id(const ViewId& view_id) { view_id_ = view_id; }
   const ViewId& view_id() const { return view_id_; }
 
@@ -37,7 +40,11 @@ class MOJO_VIEW_MANAGER_EXPORT Node
   void Add(Node* child);
   void Remove(Node* child);
 
+  void Reorder(Node* child, Node* relative, OrderDirection direction);
+
   aura::Window* window() { return &window_; }
+
+  const gfx::Rect& bounds() const { return window_.bounds(); }
 
   const Node* GetParent() const;
   Node* GetParent() {
@@ -53,6 +60,11 @@ class MOJO_VIEW_MANAGER_EXPORT Node
   std::vector<Node*> GetChildren();
 
   bool Contains(const Node* node) const;
+
+  // Returns true if the window is visible. This does not consider visibility
+  // of any ancestors.
+  bool IsVisible() const;
+  void SetVisible(bool value);
 
   // Sets the view associated with this node. Node does not own its View.
   void SetView(View* view);
@@ -83,6 +95,9 @@ class MOJO_VIEW_MANAGER_EXPORT Node
   virtual void OnWindowTargetVisibilityChanged(bool visible) OVERRIDE;
   virtual bool HasHitTestMask() const OVERRIDE;
   virtual void GetHitTestMask(gfx::Path* mask) const OVERRIDE;
+
+  // ui::EventHandler overrides:
+  virtual void OnEvent(ui::Event* event) OVERRIDE;
 
   NodeDelegate* delegate_;
   const NodeId id_;

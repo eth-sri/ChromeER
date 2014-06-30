@@ -9,6 +9,7 @@
 #include "base/task_runner_util.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/api/declarative/rules_registry_service.h"
+#include "chrome/browser/guest_view/web_view/web_view_constants.h"
 #include "chrome/browser/guest_view/web_view/web_view_guest.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/api/events.h"
@@ -17,6 +18,7 @@
 #include "content/public/browser/render_view_host.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/extension_api.h"
+#include "extensions/common/permissions/permissions_data.h"
 
 using extensions::api::events::Rule;
 
@@ -30,20 +32,23 @@ namespace extensions {
 namespace {
 
 const char kWebRequest[] = "declarativeWebRequest.";
-const char kWebView[] = "webview.";
 const char kWebViewExpectedError[] = "Webview event with Webview ID expected.";
 
 bool IsWebViewEvent(const std::string& event_name) {
   // Sample event names:
-  // webview.onRequest.
-  // webview.OnMessage.
-  return event_name.compare(0, strlen(kWebView), kWebView) == 0;
+  // webViewInternal.onRequest.
+  // webViewInternal.onMessage.
+  return event_name.compare(0,
+                            strlen(webview::kWebViewEventPrefix),
+                            webview::kWebViewEventPrefix) == 0;
 }
 
 std::string GetWebRequestEventName(const std::string& event_name) {
   std::string web_request_event_name(event_name);
-  if (IsWebViewEvent(web_request_event_name))
-    web_request_event_name.replace(0, strlen(kWebView), kWebRequest);
+  if (IsWebViewEvent(web_request_event_name)) {
+    web_request_event_name.replace(
+        0, strlen(webview::kWebViewEventPrefix), kWebRequest);
+  }
   return web_request_event_name;
 }
 
@@ -59,7 +64,8 @@ bool RulesFunction::HasPermission() {
   std::string event_name;
   EXTENSION_FUNCTION_VALIDATE(args_->GetString(0, &event_name));
   if (IsWebViewEvent(event_name) &&
-      extension_->HasAPIPermission(extensions::APIPermission::kWebView))
+      extension_->permissions_data()->HasAPIPermission(
+          extensions::APIPermission::kWebView))
     return true;
   Feature::Availability availability =
       ExtensionAPI::GetSharedInstance()->IsAvailable(

@@ -161,20 +161,20 @@ void BluetoothAdapterWin::DiscoveryStopped() {
   MaybePostStartDiscoveryTask();
 }
 
-void BluetoothAdapterWin::ReadLocalOutOfBandPairingData(
-    const BluetoothOutOfBandPairingDataCallback& callback,
-    const ErrorCallback& error_callback) {
-  NOTIMPLEMENTED();
-}
-
 void BluetoothAdapterWin::CreateRfcommService(
     const BluetoothUUID& uuid,
     int channel,
-    bool insecure,
     const CreateServiceCallback& callback,
     const CreateServiceErrorCallback& error_callback) {
-  // TODO(keybuk): implement.
-  NOTIMPLEMENTED();
+  scoped_refptr<BluetoothSocketWin> socket =
+      BluetoothSocketWin::CreateBluetoothSocket(
+          ui_task_runner_,
+          socket_thread_,
+          NULL,
+          net::NetLog::Source());
+  socket->Listen(this, uuid, channel,
+                 base::Bind(callback, socket),
+                 error_callback);
 }
 
 void BluetoothAdapterWin::CreateL2capService(

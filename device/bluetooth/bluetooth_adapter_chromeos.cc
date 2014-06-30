@@ -231,16 +231,9 @@ bool BluetoothAdapterChromeOS::IsDiscovering() const {
   return properties->discovering.value();
 }
 
-void BluetoothAdapterChromeOS::ReadLocalOutOfBandPairingData(
-    const BluetoothAdapter::BluetoothOutOfBandPairingDataCallback& callback,
-    const ErrorCallback& error_callback) {
-  error_callback.Run();
-}
-
 void BluetoothAdapterChromeOS::CreateRfcommService(
     const BluetoothUUID& uuid,
     int channel,
-    bool insecure,
     const CreateServiceCallback& callback,
     const CreateServiceErrorCallback& error_callback) {
   VLOG(1) << object_path_.value() << ": Creating RFCOMM service: "
@@ -255,7 +248,6 @@ void BluetoothAdapterChromeOS::CreateRfcommService(
                  BluetoothSocketChromeOS::kRfcomm,
                  uuid,
                  channel,
-                 insecure,
                  base::Bind(callback, socket),
                  error_callback);
 }
@@ -277,7 +269,6 @@ void BluetoothAdapterChromeOS::CreateL2capService(
                  BluetoothSocketChromeOS::kL2cap,
                  uuid,
                  psm,
-                 false,
                  base::Bind(callback, socket),
                  error_callback);
 }
@@ -543,8 +534,26 @@ void BluetoothAdapterChromeOS::AuthorizeService(
   DCHECK(agent_.get());
   VLOG(1) << device_path.value() << ": AuthorizeService: " << uuid;
 
-  // TODO(keybuk): implement
-  callback.Run(CANCELLED);
+  BluetoothDeviceChromeOS* device_chromeos = GetDeviceWithPath(device_path);
+  if (!device_chromeos) {
+    callback.Run(CANCELLED);
+    return;
+  }
+
+  // We always set paired devices to Trusted, so the only reason that this
+  // method call would ever be called is in the case of a race condition where
+  // our "Set('Trusted', true)" method call is still pending in the Bluetooth
+  // daemon because it's busy handling the incoming connection.
+  if (device_chromeos->IsPaired()) {
+    callback.Run(SUCCESS);
+    return;
+  }
+
+  // TODO(keybuk): reject service authorizations when not paired, determine
+  // whether this is acceptable long-term.
+  LOG(WARNING) << "Rejecting service connection from unpaired device "
+               << device_chromeos->GetAddress() << " for UUID " << uuid;
+  callback.Run(REJECTED);
 }
 
 void BluetoothAdapterChromeOS::Cancel() {

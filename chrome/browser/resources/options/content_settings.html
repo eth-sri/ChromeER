@@ -422,7 +422,7 @@
     </section>
 </if>
     <!-- Media Stream capture device filter -->
-    <section>
+    <section id="media-stream-settings">
       <div class="section-header">
         <h3 i18n-content="mediaStreamTabLabel"></h3>
         <span id="media-indicator"
@@ -581,6 +581,34 @@
         </div>
         <div class="settings-row">
           <button class="exceptions-list-button" contentType="midi-sysex"
+              i18n-content="manageExceptions"></button>
+        </div>
+      </div>
+    </section>
+    <!-- Push messaging filter -->
+    <section id="experimental-push-messaging-settings" hidden="true">
+      <h3 i18n-content="push-messaging_header"></h3>
+      <div>
+        <div class="radio">
+          <label>
+            <input type="radio" name="push-messaging" value="allow">
+            <span i18n-content="pushMessagingAllow"></span>
+          </label>
+        </div>
+        <div class="radio">
+          <label>
+            <input type="radio" name="push-messaging" value="ask">
+            <span i18n-content="pushMessagingAsk"></span>
+          </label>
+        </div>
+        <div class="radio">
+          <label>
+            <input type="radio" name="push-messaging" value="block">
+            <span i18n-content="pushMessagingBlock"></span>
+          </label>
+        </div>
+        <div class="settings-row">
+          <button class="exceptions-list-button" contentType="push-messaging"
               i18n-content="manageExceptions"></button>
         </div>
       </div>

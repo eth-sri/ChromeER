@@ -17,6 +17,8 @@
 #include "chrome/browser/search/instant_service_factory.h"
 #include "chrome/browser/search/search.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
+#include "chrome/browser/sync/profile_sync_service.h"
+#include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/ui/app_list/app_list_util.h"
 #include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/browser/ui/browser_window.h"
@@ -24,6 +26,7 @@
 #include "chrome/browser/ui/omnibox/omnibox_edit_model.h"
 #include "chrome/browser/ui/omnibox/omnibox_popup_model.h"
 #include "chrome/browser/ui/omnibox/omnibox_view.h"
+#include "chrome/browser/ui/search/instant_search_prerenderer.h"
 #include "chrome/browser/ui/search/search_ipc_router_policy_impl.h"
 #include "chrome/browser/ui/search/search_tab_helper_delegate.h"
 #include "chrome/browser/ui/tab_contents/core_tab_helper.h"
@@ -120,6 +123,16 @@ void RecordNewTabLoadTime(content::WebContents* contents) {
   core_tab_helper->set_new_tab_start_time(base::TimeTicks());
 }
 
+// Returns true if the user is signed in and full history sync is enabled,
+// and false otherwise.
+bool IsHistorySyncEnabled(Profile* profile) {
+  ProfileSyncService* sync =
+      ProfileSyncServiceFactory::GetInstance()->GetForProfile(profile);
+  return sync &&
+      sync->sync_initialized() &&
+      sync->GetActiveDataTypes().Has(syncer::HISTORY_DELETE_DIRECTIVES);
+}
+
 }  // namespace
 
 SearchTabHelper::SearchTabHelper(content::WebContents* web_contents)
@@ -171,6 +184,22 @@ void SearchTabHelper::OmniboxFocusChanged(OmniboxFocusState state,
   // a spurious oninputend when the user accepts a match in the omnibox.
   if (web_contents_->GetController().GetPendingEntry() == NULL) {
     ipc_router_.SetInputInProgress(IsInputInProgress());
+
+    InstantSearchPrerenderer* prerenderer =
+        InstantSearchPrerenderer::GetForProfile(profile());
+    if (!prerenderer || !chrome::ShouldPrerenderInstantUrlOnOmniboxFocus())
+      return;
+
+    if (state == OMNIBOX_FOCUS_NONE) {
+      prerenderer->Cancel();
+      return;
+    }
+
+    if (!IsSearchResultsPage()) {
+      prerenderer->Init(
+          web_contents_->GetController().GetSessionStorageNamespaceMap(),
+          web_contents_->GetContainerBounds().size());
+    }
   }
 }
 
@@ -214,6 +243,18 @@ void SearchTabHelper::Submit(const base::string16& text) {
 
 void SearchTabHelper::OnTabActivated() {
   ipc_router_.OnTabActivated();
+
+  OmniboxView* omnibox_view = GetOmniboxView();
+  if (chrome::ShouldPrerenderInstantUrlOnOmniboxFocus() && omnibox_view &&
+      omnibox_view->model()->has_focus()) {
+    InstantSearchPrerenderer* prerenderer =
+        InstantSearchPrerenderer::GetForProfile(profile());
+    if (prerenderer && !IsSearchResultsPage()) {
+      prerenderer->Init(
+          web_contents_->GetController().GetSessionStorageNamespaceMap(),
+          web_contents_->GetContainerBounds().size());
+    }
+  }
 }
 
 void SearchTabHelper::OnTabDeactivated() {
@@ -359,6 +400,9 @@ void SearchTabHelper::NavigationEntryCommitted(
   model_.SetVoiceSearchSupported(false);
   chrome::SetInstantSupportStateInNavigationEntry(model_.instant_support(),
                                                   entry);
+
+  if (InInstantProcess(profile(), web_contents_))
+    ipc_router_.OnNavigationEntryCommitted();
 }
 
 void SearchTabHelper::OnInstantSupportDetermined(bool supports_instant) {
@@ -523,8 +567,11 @@ void SearchTabHelper::OnChromeIdentityCheck(const base::string16& identity) {
   if (manager) {
     const base::string16 username =
         base::UTF8ToUTF16(manager->GetAuthenticatedUsername());
-    ipc_router_.SendChromeIdentityCheckResult(identity,
-                                              identity == username);
+    // The identity check only passes if the user is syncing their history.
+    // TODO(beaudoin): Change this function name and related APIs now that it's
+    // checking both the identity and the user's sync state.
+    bool matches = IsHistorySyncEnabled(profile()) && identity == username;
+    ipc_router_.SendChromeIdentityCheckResult(identity, matches);
   }
 }
 

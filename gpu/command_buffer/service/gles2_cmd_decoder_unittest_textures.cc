@@ -1204,13 +1204,13 @@ TEST_P(GLES2DecoderManualInitTest, NoDefaultTexParameterfv) {
     EXPECT_EQ(error::kNoError, ExecuteCmd(cmd1));
     EXPECT_EQ(GL_NO_ERROR, GetGLError());
 
-    TexParameterfv cmd2;
+    GLfloat data = GL_NEAREST;
+    TexParameterfvImmediate& cmd2 =
+      *GetImmediateAs<TexParameterfvImmediate>();
     cmd2.Init(GL_TEXTURE_2D,
               GL_TEXTURE_MAG_FILTER,
-              shared_memory_id_,
-              shared_memory_offset_);
-    GetSharedMemoryAs<GLfloat*>()[0] = GL_NEAREST;
-    EXPECT_EQ(error::kNoError, ExecuteCmd(cmd2));
+              &data);
+    EXPECT_EQ(error::kNoError, ExecuteImmediateCmd(cmd2, sizeof(data)));
     EXPECT_EQ(GL_INVALID_VALUE, GetGLError());
   }
 
@@ -1221,13 +1221,13 @@ TEST_P(GLES2DecoderManualInitTest, NoDefaultTexParameterfv) {
     EXPECT_EQ(error::kNoError, ExecuteCmd(cmd1));
     EXPECT_EQ(GL_NO_ERROR, GetGLError());
 
-    TexParameterfv cmd2;
+    GLfloat data = GL_NEAREST;
+    TexParameterfvImmediate& cmd2 =
+      *GetImmediateAs<TexParameterfvImmediate>();
     cmd2.Init(GL_TEXTURE_CUBE_MAP,
               GL_TEXTURE_MAG_FILTER,
-              shared_memory_id_,
-              shared_memory_offset_);
-    GetSharedMemoryAs<GLfloat*>()[0] = GL_NEAREST;
-    EXPECT_EQ(error::kNoError, ExecuteCmd(cmd2));
+              &data);
+    EXPECT_EQ(error::kNoError, ExecuteImmediateCmd(cmd2, sizeof(data)));
     EXPECT_EQ(GL_INVALID_VALUE, GetGLError());
   }
 }
@@ -1244,13 +1244,13 @@ TEST_P(GLES2DecoderManualInitTest, NoDefaultTexParameteriv) {
     EXPECT_EQ(error::kNoError, ExecuteCmd(cmd1));
     EXPECT_EQ(GL_NO_ERROR, GetGLError());
 
-    TexParameteriv cmd2;
+    GLfloat data = GL_NEAREST;
+    TexParameterfvImmediate& cmd2 =
+      *GetImmediateAs<TexParameterfvImmediate>();
     cmd2.Init(GL_TEXTURE_2D,
               GL_TEXTURE_MAG_FILTER,
-              shared_memory_id_,
-              shared_memory_offset_);
-    GetSharedMemoryAs<GLint*>()[0] = GL_NEAREST;
-    EXPECT_EQ(error::kNoError, ExecuteCmd(cmd2));
+              &data);
+    EXPECT_EQ(error::kNoError, ExecuteImmediateCmd(cmd2, sizeof(data)));
     EXPECT_EQ(GL_INVALID_VALUE, GetGLError());
   }
 
@@ -1261,13 +1261,13 @@ TEST_P(GLES2DecoderManualInitTest, NoDefaultTexParameteriv) {
     EXPECT_EQ(error::kNoError, ExecuteCmd(cmd1));
     EXPECT_EQ(GL_NO_ERROR, GetGLError());
 
-    TexParameteriv cmd2;
+    GLfloat data = GL_NEAREST;
+    TexParameterfvImmediate& cmd2 =
+      *GetImmediateAs<TexParameterfvImmediate>();
     cmd2.Init(GL_TEXTURE_CUBE_MAP,
               GL_TEXTURE_MAG_FILTER,
-              shared_memory_id_,
-              shared_memory_offset_);
-    GetSharedMemoryAs<GLint*>()[0] = GL_NEAREST;
-    EXPECT_EQ(error::kNoError, ExecuteCmd(cmd2));
+              &data);
+    EXPECT_EQ(error::kNoError, ExecuteImmediateCmd(cmd2, sizeof(data)));
     EXPECT_EQ(GL_INVALID_VALUE, GetGLError());
   }
 }
@@ -1852,8 +1852,6 @@ TEST_P(GLES2DecoderTest, TextureUsageAngleExtNotEnabledByDefault) {
 TEST_P(GLES2DecoderTest, ProduceAndConsumeTextureCHROMIUM) {
   Mailbox mailbox = Mailbox::Generate();
 
-  memcpy(shared_memory_address_, mailbox.name, sizeof(mailbox.name));
-
   DoBindTexture(GL_TEXTURE_2D, client_texture_id_, kServiceTextureId);
   DoTexImage2D(
       GL_TEXTURE_2D, 0, GL_RGBA, 3, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, 0, 0);
@@ -1865,9 +1863,11 @@ TEST_P(GLES2DecoderTest, ProduceAndConsumeTextureCHROMIUM) {
   Texture* texture = texture_ref->texture();
   EXPECT_EQ(kServiceTextureId, texture->service_id());
 
-  ProduceTextureCHROMIUM produce_cmd;
-  produce_cmd.Init(GL_TEXTURE_2D, kSharedMemoryId, kSharedMemoryOffset);
-  EXPECT_EQ(error::kNoError, ExecuteCmd(produce_cmd));
+  ProduceTextureCHROMIUMImmediate& produce_cmd =
+      *GetImmediateAs<ProduceTextureCHROMIUMImmediate>();
+  produce_cmd.Init(GL_TEXTURE_2D, mailbox.name);
+  EXPECT_EQ(error::kNoError,
+            ExecuteImmediateCmd(produce_cmd, sizeof(mailbox.name)));
   EXPECT_EQ(GL_NO_ERROR, GetGLError());
 
   // Texture didn't change.
@@ -1905,10 +1905,11 @@ TEST_P(GLES2DecoderTest, ProduceAndConsumeTextureCHROMIUM) {
       .Times(1)
       .RetiresOnSaturation();
 
-  memcpy(shared_memory_address_, mailbox.name, sizeof(mailbox.name));
-  ConsumeTextureCHROMIUM consume_cmd;
-  consume_cmd.Init(GL_TEXTURE_2D, kSharedMemoryId, kSharedMemoryOffset);
-  EXPECT_EQ(error::kNoError, ExecuteCmd(consume_cmd));
+  ConsumeTextureCHROMIUMImmediate& consume_cmd =
+      *GetImmediateAs<ConsumeTextureCHROMIUMImmediate>();
+  consume_cmd.Init(GL_TEXTURE_2D, mailbox.name);
+  EXPECT_EQ(error::kNoError,
+            ExecuteImmediateCmd(consume_cmd, sizeof(mailbox.name)));
   EXPECT_EQ(GL_NO_ERROR, GetGLError());
 
   // Texture is redefined.
@@ -1928,6 +1929,106 @@ TEST_P(GLES2DecoderTest, ProduceAndConsumeTextureCHROMIUM) {
 
   // Service ID is restored.
   EXPECT_EQ(kServiceTextureId, texture->service_id());
+}
+
+TEST_P(GLES2DecoderTest, ProduceAndConsumeDirectTextureCHROMIUM) {
+  Mailbox mailbox = Mailbox::Generate();
+
+  DoBindTexture(GL_TEXTURE_2D, client_texture_id_, kServiceTextureId);
+  DoTexImage2D(
+      GL_TEXTURE_2D, 0, GL_RGBA, 3, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, 0, 0);
+  DoTexImage2D(
+      GL_TEXTURE_2D, 1, GL_RGBA, 2, 4, 0, GL_RGBA, GL_UNSIGNED_BYTE, 0, 0);
+  TextureRef* texture_ref =
+      group().texture_manager()->GetTexture(client_texture_id_);
+  ASSERT_TRUE(texture_ref != NULL);
+  Texture* texture = texture_ref->texture();
+  EXPECT_EQ(kServiceTextureId, texture->service_id());
+
+  ProduceTextureDirectCHROMIUMImmediate& produce_cmd =
+      *GetImmediateAs<ProduceTextureDirectCHROMIUMImmediate>();
+  produce_cmd.Init(client_texture_id_, GL_TEXTURE_2D, mailbox.name);
+  EXPECT_EQ(error::kNoError,
+            ExecuteImmediateCmd(produce_cmd, sizeof(mailbox.name)));
+  EXPECT_EQ(GL_NO_ERROR, GetGLError());
+
+  // Texture didn't change.
+  GLsizei width;
+  GLsizei height;
+  GLenum type;
+  GLenum internal_format;
+
+  EXPECT_TRUE(texture->GetLevelSize(GL_TEXTURE_2D, 0, &width, &height));
+  EXPECT_EQ(3, width);
+  EXPECT_EQ(1, height);
+  EXPECT_TRUE(texture->GetLevelType(GL_TEXTURE_2D, 0, &type, &internal_format));
+  EXPECT_EQ(static_cast<GLenum>(GL_RGBA), internal_format);
+  EXPECT_EQ(static_cast<GLenum>(GL_UNSIGNED_BYTE), type);
+
+  EXPECT_TRUE(texture->GetLevelSize(GL_TEXTURE_2D, 1, &width, &height));
+  EXPECT_EQ(2, width);
+  EXPECT_EQ(4, height);
+  EXPECT_TRUE(texture->GetLevelType(GL_TEXTURE_2D, 1, &type, &internal_format));
+  EXPECT_EQ(static_cast<GLenum>(GL_RGBA), internal_format);
+  EXPECT_EQ(static_cast<GLenum>(GL_UNSIGNED_BYTE), type);
+
+  // Service ID has not changed.
+  EXPECT_EQ(kServiceTextureId, texture->service_id());
+
+  // Consume the texture into a new client ID.
+  GLuint new_texture_id = kNewClientId;
+  CreateAndConsumeTextureCHROMIUMImmediate& consume_cmd =
+      *GetImmediateAs<CreateAndConsumeTextureCHROMIUMImmediate>();
+  consume_cmd.Init(GL_TEXTURE_2D, new_texture_id, mailbox.name);
+  EXPECT_EQ(error::kNoError,
+            ExecuteImmediateCmd(consume_cmd, sizeof(mailbox.name)));
+  EXPECT_EQ(GL_NO_ERROR, GetGLError());
+
+  // Make sure the new client ID is associated with the produced service ID.
+  texture_ref = group().texture_manager()->GetTexture(new_texture_id);
+  ASSERT_TRUE(texture_ref != NULL);
+  texture = texture_ref->texture();
+  EXPECT_EQ(kServiceTextureId, texture->service_id());
+
+  DoBindTexture(GL_TEXTURE_2D, kNewClientId, kServiceTextureId);
+
+  // Texture is redefined.
+  EXPECT_TRUE(texture->GetLevelSize(GL_TEXTURE_2D, 0, &width, &height));
+  EXPECT_EQ(3, width);
+  EXPECT_EQ(1, height);
+  EXPECT_TRUE(texture->GetLevelType(GL_TEXTURE_2D, 0, &type, &internal_format));
+  EXPECT_EQ(static_cast<GLenum>(GL_RGBA), internal_format);
+  EXPECT_EQ(static_cast<GLenum>(GL_UNSIGNED_BYTE), type);
+
+  EXPECT_TRUE(texture->GetLevelSize(GL_TEXTURE_2D, 1, &width, &height));
+  EXPECT_EQ(2, width);
+  EXPECT_EQ(4, height);
+  EXPECT_TRUE(texture->GetLevelType(GL_TEXTURE_2D, 1, &type, &internal_format));
+  EXPECT_EQ(static_cast<GLenum>(GL_RGBA), internal_format);
+  EXPECT_EQ(static_cast<GLenum>(GL_UNSIGNED_BYTE), type);
+}
+
+TEST_P(GLES2DecoderTest, ProduceTextureCHROMIUMInvalidTarget) {
+  Mailbox mailbox = Mailbox::Generate();
+
+  DoBindTexture(GL_TEXTURE_CUBE_MAP, client_texture_id_, kServiceTextureId);
+  DoTexImage2D(
+      GL_TEXTURE_CUBE_MAP_POSITIVE_X, 0, GL_RGBA, 3, 1, 0, GL_RGBA,
+      GL_UNSIGNED_BYTE, 0, 0);
+  TextureRef* texture_ref =
+      group().texture_manager()->GetTexture(client_texture_id_);
+  ASSERT_TRUE(texture_ref != NULL);
+  Texture* texture = texture_ref->texture();
+  EXPECT_EQ(kServiceTextureId, texture->service_id());
+
+  ProduceTextureDirectCHROMIUMImmediate& produce_cmd =
+      *GetImmediateAs<ProduceTextureDirectCHROMIUMImmediate>();
+  produce_cmd.Init(client_texture_id_, GL_TEXTURE_2D, mailbox.name);
+  EXPECT_EQ(error::kNoError,
+            ExecuteImmediateCmd(produce_cmd, sizeof(mailbox.name)));
+
+  // ProduceTexture should fail it the texture and produce targets don't match.
+  EXPECT_EQ(GL_INVALID_OPERATION, GetGLError());
 }
 
 TEST_P(GLES2DecoderManualInitTest, DepthTextureBadArgs) {

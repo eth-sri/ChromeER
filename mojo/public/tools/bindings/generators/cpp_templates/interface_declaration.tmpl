@@ -12,6 +12,8 @@ class {{interface.client}};
 
 class {{interface.name}} {
  public:
+  static const char* Name_;
+
   typedef {{interface.name}}Proxy Proxy_;
   typedef {{interface.name}}Stub Stub_;
 
@@ -41,12 +43,6 @@ class {{interface.name}} {
 {#--- Methods #}
   virtual ~{{interface.name}}() {}
 
-{%- if interface.client %}
-  // Called once before any other method.
-  virtual void SetClient({{interface.client}}* client) = 0;
-{%- else %}
-  virtual void SetClient(mojo::NoInterface* client) {}
-{%- endif %}
 {%- for method in interface.methods %}
   virtual void {{method.name}}({{interface_macros.declare_request_params("", method)}}) = 0;
 {%- endfor %}

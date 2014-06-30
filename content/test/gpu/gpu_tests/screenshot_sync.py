@@ -5,7 +5,7 @@ import os
 
 import screenshot_sync_expectations as expectations
 
-from telemetry import test
+from telemetry import benchmark
 from telemetry.core import util
 from telemetry.page import page
 from telemetry.page import page_set
@@ -16,6 +16,7 @@ from telemetry.page.actions.all_page_actions import *
 data_path = os.path.join(
     util.GetChromiumSrcDir(), 'content', 'test', 'data', 'gpu')
 
+@benchmark.Disabled('mac')
 class _ScreenshotSyncValidator(page_test.PageTest):
   def CustomizeBrowserOptions(self, options):
     options.AppendExtraBrowserArgs('--enable-gpu-benchmarking')
@@ -27,6 +28,7 @@ class _ScreenshotSyncValidator(page_test.PageTest):
       raise page_test.Failure(message)
 
 
+@benchmark.Disabled('mac')
 class ScreenshotSyncPage(page.Page):
   def __init__(self, page_set, base_dir):
     super(ScreenshotSyncPage, self).__init__(
@@ -37,13 +39,13 @@ class ScreenshotSyncPage(page.Page):
     self.user_agent_type = 'desktop'
 
   def RunNavigateSteps(self, action_runner):
-    action_runner.RunAction(NavigateAction())
-    action_runner.RunAction(WaitAction({
-      'javascript': 'window.__testComplete',
-      'timeout': 120}))
+    action_runner.NavigateToPage(self)
+    action_runner.WaitForJavaScriptCondition(
+        'window.__testComplete', timeout_in_seconds=120)
 
 
-class ScreenshotSyncProcess(test.Test):
+@benchmark.Disabled('mac')
+class ScreenshotSyncProcess(benchmark.Benchmark):
   """Tests that screenhots are properly synchronized with the frame one which
   they were requested"""
   test = _ScreenshotSyncValidator
@@ -52,9 +54,6 @@ class ScreenshotSyncProcess(test.Test):
     return expectations.ScreenshotSyncExpectations()
 
   def CreatePageSet(self, options):
-    ps = page_set.PageSet(
-      file_path=data_path,
-      description='Test cases for screenshot synchronization',
-      serving_dirs=[''])
+    ps = page_set.PageSet(file_path=data_path, serving_dirs=[''])
     ps.AddPage(ScreenshotSyncPage(ps, ps.base_dir))
     return ps

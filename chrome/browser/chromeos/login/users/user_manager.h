@@ -7,7 +7,6 @@
 
 #include <string>
 
-#include "chrome/browser/chromeos/base/locale_util.h"
 #include "chrome/browser/chromeos/login/user_flow.h"
 #include "chrome/browser/chromeos/login/users/user.h"
 
@@ -132,7 +131,12 @@ class UserManager {
   // is sorted by last login date with the most recent user at the beginning.
   virtual const UserList& GetUsers() const = 0;
 
-  // Returns list of users admitted for logging in into multiprofile session.
+  // Returns list of users admitted for logging in into multi-profile session.
+  // Users that have a policy that prevents them from being added to the
+  // multi-profile session will still be part of this list as long as they
+  // are regular users (i.e. not a public session/supervised etc.).
+  // Returns an empty list in case when primary user is not a regular one or
+  // has a policy that prohibids it to be part of multi-profile session.
   virtual UserList GetUsersAdmittedForMultiProfile() const = 0;
 
   // Returns a list of users who are currently logged in.
@@ -312,10 +316,6 @@ class UserManager {
   // finished restoring user sessions.
   virtual bool UserSessionsRestored() const = 0;
 
-  // Returns true when the browser has crashed and restarted during the current
-  // user's session.
-  virtual bool HasBrowserRestarted() const = 0;
-
   // Returns true if data stored or cached for the user with the given user id
   // address outside that user's cryptohome (wallpaper, avatar, OAuth token
   // status, display name, display email) is to be treated as ephemeral.
@@ -341,15 +341,6 @@ class UserManager {
   // Resets user flow for user identified by |user_id|.
   virtual void ResetUserFlow(const std::string& user_id) = 0;
 
-  // Gets/sets chrome oauth client id and secret for kiosk app mode. The default
-  // values can be overridden with kiosk auth file.
-  virtual bool GetAppModeChromeClientOAuthInfo(
-      std::string* chrome_client_id,
-      std::string* chrome_client_secret) = 0;
-  virtual void SetAppModeChromeClientOAuthInfo(
-      const std::string& chrome_client_id,
-      const std::string& chrome_client_secret) = 0;
-
   virtual void AddObserver(Observer* obs) = 0;
   virtual void RemoveObserver(Observer* obs) = 0;
 
@@ -364,13 +355,6 @@ class UserManager {
   // Returns profile dir for the user identified by |user_id|.
   virtual base::FilePath GetUserProfileDir(const std::string& user_id)
       const = 0;
-
-  // Changes browser locale (selects best suitable locale from different
-  // user settings). Returns true if callback will be called.
-  virtual bool RespectLocalePreference(
-      Profile* profile,
-      const User* user,
-      scoped_ptr<locale_util::SwitchLanguageCallback> callback) const = 0;
 
  private:
   friend class ScopedUserManagerEnabler;

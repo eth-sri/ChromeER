@@ -40,6 +40,20 @@ std::string GetHostname(BaseTestServer::Type type,
   return BaseTestServer::kLocalhost;
 }
 
+std::string GetClientCertType(SSLClientCertType type) {
+  switch (type) {
+    case CLIENT_CERT_RSA_SIGN:
+      return "rsa_sign";
+    case CLIENT_CERT_DSS_SIGN:
+      return "dss_sign";
+    case CLIENT_CERT_ECDSA_SIGN:
+      return "ecdsa_sign";
+    default:
+      NOTREACHED();
+      return "";
+  }
+}
+
 void GetKeyExchangesList(int key_exchange, base::ListValue* values) {
   if (key_exchange & BaseTestServer::SSLOptions::KEY_EXCHANGE_RSA)
     values->Append(new base::StringValue("rsa"));
@@ -58,6 +72,21 @@ void GetCiphersList(int cipher, base::ListValue* values) {
     values->Append(new base::StringValue("3des"));
 }
 
+base::StringValue* GetTLSIntoleranceType(
+    BaseTestServer::SSLOptions::TLSIntoleranceType type) {
+  switch (type) {
+    case BaseTestServer::SSLOptions::TLS_INTOLERANCE_ALERT:
+      return new base::StringValue("alert");
+    case BaseTestServer::SSLOptions::TLS_INTOLERANCE_CLOSE:
+      return new base::StringValue("close");
+    case BaseTestServer::SSLOptions::TLS_INTOLERANCE_RESET:
+      return new base::StringValue("reset");
+    default:
+      NOTREACHED();
+      return new base::StringValue("");
+  }
+}
+
 }  // namespace
 
 BaseTestServer::SSLOptions::SSLOptions()
@@ -69,6 +98,7 @@ BaseTestServer::SSLOptions::SSLOptions()
       bulk_ciphers(SSLOptions::BULK_CIPHER_ANY),
       record_resume(false),
       tls_intolerant(TLS_INTOLERANT_NONE),
+      tls_intolerance_type(TLS_INTOLERANCE_ALERT),
       fallback_scsv_enabled(false),
       staple_ocsp_response(false),
       enable_npn(false) {}
@@ -83,6 +113,7 @@ BaseTestServer::SSLOptions::SSLOptions(
       bulk_ciphers(SSLOptions::BULK_CIPHER_ANY),
       record_resume(false),
       tls_intolerant(TLS_INTOLERANT_NONE),
+      tls_intolerance_type(TLS_INTOLERANCE_ALERT),
       fallback_scsv_enabled(false),
       staple_ocsp_response(false),
       enable_npn(false) {}
@@ -386,6 +417,14 @@ bool BaseTestServer::GenerateArguments(base::DictionaryValue* arguments) const {
 
     if (ssl_client_certs->GetSize())
       arguments->Set("ssl-client-ca", ssl_client_certs.release());
+
+    scoped_ptr<base::ListValue> client_cert_types(new base::ListValue());
+    for (size_t i = 0; i < ssl_options_.client_cert_types.size(); i++) {
+      client_cert_types->Append(new base::StringValue(
+          GetClientCertType(ssl_options_.client_cert_types[i])));
+    }
+    if (client_cert_types->GetSize())
+      arguments->Set("ssl-client-cert-type", client_cert_types.release());
   }
 
   if (type_ == TYPE_HTTPS) {
@@ -415,6 +454,8 @@ bool BaseTestServer::GenerateArguments(base::DictionaryValue* arguments) const {
     if (ssl_options_.tls_intolerant != SSLOptions::TLS_INTOLERANT_NONE) {
       arguments->Set("tls-intolerant",
                      new base::FundamentalValue(ssl_options_.tls_intolerant));
+      arguments->Set("tls-intolerance-type", GetTLSIntoleranceType(
+          ssl_options_.tls_intolerance_type));
     }
     if (ssl_options_.fallback_scsv_enabled)
       arguments->Set("fallback-scsv", base::Value::CreateNullValue());

@@ -55,13 +55,9 @@ class BluetoothAdapterWin : public BluetoothAdapter,
       const base::Closure& callback,
       const ErrorCallback& error_callback) OVERRIDE;
   virtual bool IsDiscovering() const OVERRIDE;
-  virtual void ReadLocalOutOfBandPairingData(
-      const BluetoothOutOfBandPairingDataCallback& callback,
-      const ErrorCallback& error_callback) OVERRIDE;
   virtual void CreateRfcommService(
       const BluetoothUUID& uuid,
       int channel,
-      bool insecure,
       const CreateServiceCallback& callback,
       const CreateServiceErrorCallback& error_callback) OVERRIDE;
   virtual void CreateL2capService(

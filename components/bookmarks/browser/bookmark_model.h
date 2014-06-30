@@ -19,22 +19,26 @@
 #include "base/synchronization/waitable_event.h"
 #include "components/bookmarks/browser/bookmark_client.h"
 #include "components/bookmarks/browser/bookmark_node.h"
-#include "components/bookmarks/browser/bookmark_service.h"
+#include "components/keyed_service/core/keyed_service.h"
 #include "ui/gfx/image/image.h"
 #include "url/gurl.h"
 
-class BookmarkExpandedStateTracker;
-class BookmarkIndex;
-class BookmarkLoadDetails;
 class BookmarkModelObserver;
-class BookmarkStorage;
-struct BookmarkMatch;
 class PrefService;
-class ScopedGroupBookmarkActions;
 
 namespace base {
 class FilePath;
 class SequencedTaskRunner;
+}
+
+namespace bookmarks {
+class BookmarkCodecTest;
+class BookmarkExpandedStateTracker;
+class BookmarkIndex;
+class BookmarkLoadDetails;
+class BookmarkStorage;
+class ScopedGroupBookmarkActions;
+struct BookmarkMatch;
 }
 
 namespace favicon_base {
@@ -55,15 +59,20 @@ class TestBookmarkClient;
 //
 // You should NOT directly create a BookmarkModel, instead go through the
 // BookmarkModelFactory.
-class BookmarkModel : public BookmarkService {
+class BookmarkModel : public KeyedService {
  public:
+  struct URLAndTitle {
+    GURL url;
+    base::string16 title;
+  };
+
   // |index_urls| says whether URLs should be stored in the BookmarkIndex
   // in addition to bookmark titles.
-  BookmarkModel(BookmarkClient* client, bool index_urls);
+  BookmarkModel(bookmarks::BookmarkClient* client, bool index_urls);
   virtual ~BookmarkModel();
 
-  // Invoked prior to destruction to release any necessary resources.
-  void Shutdown();
+  // KeyedService:
+  virtual void Shutdown() OVERRIDE;
 
   // Loads the bookmarks. This is called upon creation of the
   // BookmarkModel. You need not invoke this directly.
@@ -94,12 +103,10 @@ class BookmarkModel : public BookmarkService {
   bool is_root_node(const BookmarkNode* node) const { return node == &root_; }
 
   // Returns whether the given |node| is one of the permanent nodes - root node,
-  // 'bookmark bar' node, 'other' node or 'mobile' node.
+  // 'bookmark bar' node, 'other' node or 'mobile' node, or one of the root
+  // nodes supplied by the |client_|.
   bool is_permanent_node(const BookmarkNode* node) const {
-    return node == &root_ ||
-           node == bookmark_bar_node_ ||
-           node == other_node_ ||
-           node == mobile_node_;
+    return node && (node == &root_ || node->parent() == &root_);
   }
 
   // Returns the parent the last node was added to. This never returns NULL
@@ -125,10 +132,10 @@ class BookmarkModel : public BookmarkService {
   // recursively removes all nodes. Observers are notified immediately.
   void Remove(const BookmarkNode* parent, int index);
 
-  // Removes all the non-permanent bookmark nodes. Observers are only notified
-  // when all nodes have been removed. There is no notification for individual
-  // node removals.
-  void RemoveAll();
+  // Removes all the non-permanent bookmark nodes that are editable by the user.
+  // Observers are only notified when all nodes have been removed. There is no
+  // notification for individual node removals.
+  void RemoveAllUserBookmarks();
 
   // Moves |node| to |new_parent| and inserts it at the given |index|.
   void Move(const BookmarkNode* node,
@@ -160,28 +167,31 @@ class BookmarkModel : public BookmarkService {
   // Returns the set of nodes with the |url|.
   void GetNodesByURL(const GURL& url, std::vector<const BookmarkNode*>* nodes);
 
-  // Returns the most recently added node for the |url|. Returns NULL if |url|
-  // is not bookmarked.
-  const BookmarkNode* GetMostRecentlyAddedNodeForURL(const GURL& url);
+  // Returns the most recently added user node for the |url|; urls from any
+  // nodes that are not editable by the user are never returned by this call.
+  // Returns NULL if |url| is not bookmarked.
+  const BookmarkNode* GetMostRecentlyAddedUserNodeForURL(const GURL& url);
 
   // Returns true if there are bookmarks, otherwise returns false.
   // This method is thread safe.
   bool HasBookmarks();
 
-  // Returns true if there is a bookmark with the |url|.
-  // This method is thread safe.
-  // See BookmarkService for more details on this.
-  virtual bool IsBookmarked(const GURL& url) OVERRIDE;
+  // Returns true if the specified URL is bookmarked.
+  //
+  // If not on the main thread you *must* invoke BlockTillLoaded first.
+  bool IsBookmarked(const GURL& url);
 
-  // Returns all the bookmarked urls and their titles.
-  // This method is thread safe.
-  // See BookmarkService for more details on this.
-  virtual void GetBookmarks(
-      std::vector<BookmarkService::URLAndTitle>* urls) OVERRIDE;
+  // Returns, by reference in |bookmarks|, the set of bookmarked urls and their
+  // titles. This returns the unique set of URLs. For example, if two bookmarks
+  // reference the same URL only one entry is added not matter the titles are
+  // same or not.
+  //
+  // If not on the main thread you *must* invoke BlockTillLoaded first.
+  void GetBookmarks(std::vector<BookmarkModel::URLAndTitle>* urls);
 
-  // Blocks until loaded; this is NOT invoked on the main thread.
-  // See BookmarkService for more details on this.
-  virtual void BlockTillLoaded() OVERRIDE;
+  // Blocks until loaded. This is intended for usage on a thread other than
+  // the main thread.
+  void BlockTillLoaded();
 
   // Adds a new folder node at the specified position.
   const BookmarkNode* AddFolder(const BookmarkNode* parent,
@@ -231,10 +241,9 @@ class BookmarkModel : public BookmarkService {
 
   // Returns up to |max_count| of bookmarks containing each term from |text|
   // in either the title or the URL.
-  void GetBookmarksMatching(
-      const base::string16& text,
-      size_t max_count,
-      std::vector<BookmarkMatch>* matches);
+  void GetBookmarksMatching(const base::string16& text,
+                            size_t max_count,
+                            std::vector<bookmarks::BookmarkMatch>* matches);
 
   // Sets the store to NULL, making it so the BookmarkModel does not persist
   // any changes to disk. This is only useful during testing to speed up
@@ -246,7 +255,7 @@ class BookmarkModel : public BookmarkService {
 
   // Returns the object responsible for tracking the set of expanded nodes in
   // the bookmark editor.
-  BookmarkExpandedStateTracker* expanded_state_tracker() {
+  bookmarks::BookmarkExpandedStateTracker* expanded_state_tracker() {
     return expanded_state_tracker_.get();
   }
 
@@ -276,13 +285,12 @@ class BookmarkModel : public BookmarkService {
   void OnFaviconChanged(const std::set<GURL>& urls);
 
   // Returns the client used by this BookmarkModel.
-  BookmarkClient* client() const { return client_; }
+  bookmarks::BookmarkClient* client() const { return client_; }
 
  private:
-  friend class BookmarkCodecTest;
-  friend class BookmarkModelTest;
-  friend class BookmarkStorage;
-  friend class ScopedGroupBookmarkActions;
+  friend class bookmarks::BookmarkCodecTest;
+  friend class bookmarks::BookmarkStorage;
+  friend class bookmarks::ScopedGroupBookmarkActions;
   friend class test::TestBookmarkClient;
 
   // Used to order BookmarkNodes by URL.
@@ -305,7 +313,7 @@ class BookmarkModel : public BookmarkService {
 
   // Invoked when loading is finished. Sets |loaded_| and notifies observers.
   // BookmarkModel takes ownership of |details|.
-  void DoneLoading(scoped_ptr<BookmarkLoadDetails> details);
+  void DoneLoading(scoped_ptr<bookmarks::BookmarkLoadDetails> details);
 
   // Populates |nodes_ordered_by_url_set_| from root.
   void PopulateNodesByURL(BookmarkNode* node);
@@ -369,10 +377,10 @@ class BookmarkModel : public BookmarkService {
 
   // Creates and returns a new BookmarkLoadDetails. It's up to the caller to
   // delete the returned object.
-  scoped_ptr<BookmarkLoadDetails> CreateLoadDetails(
+  scoped_ptr<bookmarks::BookmarkLoadDetails> CreateLoadDetails(
       const std::string& accept_languages);
 
-  BookmarkClient* const client_;
+  bookmarks::BookmarkClient* const client_;
 
   // Whether the initial set of data has been loaded.
   bool loaded_;
@@ -403,9 +411,9 @@ class BookmarkModel : public BookmarkService {
   base::CancelableTaskTracker cancelable_task_tracker_;
 
   // Reads/writes bookmarks to disk.
-  scoped_refptr<BookmarkStorage> store_;
+  scoped_refptr<bookmarks::BookmarkStorage> store_;
 
-  scoped_ptr<BookmarkIndex> index_;
+  scoped_ptr<bookmarks::BookmarkIndex> index_;
 
   // True if URLs are stored in the BookmarkIndex in addition to bookmark
   // titles.
@@ -416,7 +424,7 @@ class BookmarkModel : public BookmarkService {
   // See description of IsDoingExtensiveChanges above.
   int extensive_changes_;
 
-  scoped_ptr<BookmarkExpandedStateTracker> expanded_state_tracker_;
+  scoped_ptr<bookmarks::BookmarkExpandedStateTracker> expanded_state_tracker_;
 
   DISALLOW_COPY_AND_ASSIGN(BookmarkModel);
 };

@@ -48,6 +48,7 @@ class LayerTreeImpl;
 class MemoryHistory;
 class PageScaleAnimation;
 class PaintTimeCounter;
+class PictureLayerImpl;
 class RasterWorkerPool;
 class RenderPassDrawQuad;
 class RenderingStatsInstrumentation;
@@ -88,7 +89,6 @@ class LayerTreeHostImplClient {
   virtual bool ReduceContentsTextureMemoryOnImplThread(
       size_t limit_bytes,
       int priority_cutoff) = 0;
-  virtual void SendManagedMemoryStats() = 0;
   virtual bool IsInsideDraw() = 0;
   virtual void RenewTreePriority() = 0;
   virtual void PostDelayedScrollbarFadeOnImplThread(
@@ -229,10 +229,12 @@ class CC_EXPORT LayerTreeHostImpl
 
   // RendererClient implementation.
   virtual void SetFullRootLayerDamage() OVERRIDE;
+  virtual void RunOnDemandRasterTask(Task* on_demand_raster_task) OVERRIDE;
 
   // TileManagerClient implementation.
+  virtual const std::vector<PictureLayerImpl*>& GetPictureLayers() OVERRIDE;
   virtual void NotifyReadyToActivate() OVERRIDE;
-  virtual void NotifyTileInitialized(const Tile* tile) OVERRIDE;
+  virtual void NotifyTileStateChanged(const Tile* tile) OVERRIDE;
 
   // ScrollbarAnimationControllerClient implementation.
   virtual void PostDelayedScrollbarFade(const base::Closure& start_fade,
@@ -263,6 +265,7 @@ class CC_EXPORT LayerTreeHostImpl
   void OnCanDrawStateChangedForTree();
 
   // Implementation.
+  int id() const { return id_; }
   bool CanDraw() const;
   OutputSurface* output_surface() const { return output_surface_.get(); }
 
@@ -274,6 +277,11 @@ class CC_EXPORT LayerTreeHostImpl
   virtual bool InitializeRenderer(scoped_ptr<OutputSurface> output_surface);
   bool IsContextLost();
   TileManager* tile_manager() { return tile_manager_.get(); }
+  void SetUseGpuRasterization(bool use_gpu);
+  bool use_gpu_rasterization() const { return use_gpu_rasterization_; }
+  bool create_low_res_tiling() const {
+    return settings_.create_low_res_tiling && !use_gpu_rasterization_;
+  }
   ResourcePool* resource_pool() { return resource_pool_.get(); }
   Renderer* renderer() { return renderer_.get(); }
   const RendererCapabilitiesImpl& GetRendererCapabilities() const;
@@ -288,6 +296,13 @@ class CC_EXPORT LayerTreeHostImpl
   LayerTreeImpl* pending_tree() { return pending_tree_.get(); }
   const LayerTreeImpl* pending_tree() const { return pending_tree_.get(); }
   const LayerTreeImpl* recycle_tree() const { return recycle_tree_.get(); }
+  // Returns the tree LTH synchronizes with.
+  LayerTreeImpl* sync_tree() {
+    // In impl-side painting, synchronize to the pending tree so that it has
+    // time to raster before being displayed.
+    return settings_.impl_side_painting ? pending_tree_.get()
+                                        : active_tree_.get();
+  }
   virtual void CreatePendingTree();
   virtual void UpdateVisibleTiles();
   virtual void ActivatePendingTree();
@@ -337,11 +352,6 @@ class CC_EXPORT LayerTreeHostImpl
   bool needs_animate_layers() const {
     return !animation_registrar_->active_animation_controllers().empty();
   }
-
-  void SendManagedMemoryStats(
-      size_t memory_visible_bytes,
-      size_t memory_visible_and_nearby_bytes,
-      size_t memory_use_bytes);
 
   void set_max_memory_needed_bytes(size_t bytes) {
     max_memory_needed_bytes_ = bytes;
@@ -452,6 +462,9 @@ class CC_EXPORT LayerTreeHostImpl
   void InsertSwapPromiseMonitor(SwapPromiseMonitor* monitor);
   void RemoveSwapPromiseMonitor(SwapPromiseMonitor* monitor);
 
+  void RegisterPictureLayerImpl(PictureLayerImpl* layer);
+  void UnregisterPictureLayerImpl(PictureLayerImpl* layer);
+
  protected:
   LayerTreeHostImpl(
       const LayerTreeSettings& settings,
@@ -481,17 +494,14 @@ class CC_EXPORT LayerTreeHostImpl
   Proxy* proxy_;
 
  private:
-  void CreateAndSetRenderer(
-      OutputSurface* output_surface,
-      ResourceProvider* resource_provider,
-      bool skip_gl_renderer);
-  void CreateAndSetTileManager(ResourceProvider* resource_provider,
-                               ContextProvider* context_provider,
-                               bool use_zero_copy,
-                               bool use_one_copy,
-                               bool allow_rasterize_on_demand);
+  void CreateAndSetRenderer();
+  void CreateAndSetTileManager();
+  void DestroyTileManager();
   void ReleaseTreeResources();
   void EnforceZeroBudget(bool zero_budget);
+
+  bool UseZeroCopyTextureUpload() const;
+  bool UseOneCopyTextureUpload() const;
 
   void ScrollViewportBy(gfx::Vector2dF scroll_delta);
   void AnimatePageScale(base::TimeTicks monotonic_time);
@@ -515,7 +525,6 @@ class CC_EXPORT LayerTreeHostImpl
   // the frame should be drawn.
   DrawResult CalculateRenderPasses(FrameData* frame);
 
-  bool EnsureRenderSurfaceLayerList();
   void ClearCurrentlyScrollingLayer();
 
   bool HandleMouseOverScrollbar(LayerImpl* layer_impl,
@@ -559,11 +568,15 @@ class CC_EXPORT LayerTreeHostImpl
   // free rendering - see OutputSurface::ForcedDrawToSoftwareDevice().
   scoped_ptr<ResourceProvider> resource_provider_;
   scoped_ptr<TileManager> tile_manager_;
+  bool use_gpu_rasterization_;
   scoped_ptr<RasterWorkerPool> raster_worker_pool_;
-  scoped_ptr<RasterWorkerPool> direct_raster_worker_pool_;
   scoped_ptr<ResourcePool> resource_pool_;
   scoped_ptr<ResourcePool> staging_resource_pool_;
   scoped_ptr<Renderer> renderer_;
+
+  TaskGraphRunner synchronous_task_graph_runner_;
+  TaskGraphRunner* on_demand_task_graph_runner_;
+  NamespaceToken on_demand_task_namespace_;
 
   GlobalStateThatImpactsTilePriority global_tile_state_;
 
@@ -618,9 +631,6 @@ class CC_EXPORT LayerTreeHostImpl
   // manager, if there were no limit on memory usage.
   size_t max_memory_needed_bytes_;
 
-  size_t last_sent_memory_visible_bytes_;
-  size_t last_sent_memory_visible_and_nearby_bytes_;
-  size_t last_sent_memory_use_bytes_;
   bool zero_budget_;
 
   // Viewport size passed in from the main thread, in physical pixels.  This
@@ -679,6 +689,8 @@ class CC_EXPORT LayerTreeHostImpl
   std::set<SwapPromiseMonitor*> swap_promise_monitor_;
 
   size_t transfer_buffer_memory_limit_;
+
+  std::vector<PictureLayerImpl*> picture_layers_;
 
   DISALLOW_COPY_AND_ASSIGN(LayerTreeHostImpl);
 };

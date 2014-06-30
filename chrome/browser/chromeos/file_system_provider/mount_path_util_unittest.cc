@@ -22,6 +22,7 @@
 #include "extensions/browser/extension_registry.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "webkit/browser/fileapi/external_mount_points.h"
+#include "webkit/browser/fileapi/isolated_context.h"
 
 namespace chromeos {
 namespace file_system_provider {
@@ -30,16 +31,17 @@ namespace util {
 namespace {
 
 const char kExtensionId[] = "mbflcebpggnecokmikipoihdbecnjfoj";
+const char kFileSystemId[] = "File/System/Id";
 const char kFileSystemName[] = "Camera Pictures";
 
 // Creates a FileSystemURL for tests.
-fileapi::FileSystemURL CreateFileSystemURL(Profile* profile,
-                                           const std::string& extension_id,
-                                           int file_system_id,
-                                           const base::FilePath& file_path) {
-  const std::string origin = std::string("chrome-extension://") + kExtensionId;
-  const base::FilePath mount_path =
-      util::GetMountPath(profile, extension_id, file_system_id);
+fileapi::FileSystemURL CreateFileSystemURL(
+    Profile* profile,
+    const ProvidedFileSystemInfo& file_system_info,
+    const base::FilePath& file_path) {
+  const std::string origin =
+      std::string("chrome-extension://") + file_system_info.extension_id();
+  const base::FilePath mount_path = file_system_info.mount_path();
   const fileapi::ExternalMountPoints* const mount_points =
       fileapi::ExternalMountPoints::GetSystemInstance();
   DCHECK(mount_points);
@@ -75,7 +77,7 @@ class FileSystemProviderMountPathUtilTest : public testing::Test {
     user_manager_->AddUser(profile_->GetProfileName());
     ServiceFactory::GetInstance()->SetTestingFactory(profile_, &CreateService);
     file_system_provider_service_ = Service::Get(profile_);
-    file_system_provider_service_->SetFileSystemFactoryForTests(
+    file_system_provider_service_->SetFileSystemFactoryForTesting(
         base::Bind(&FakeProvidedFileSystem::Create));
   }
 
@@ -94,23 +96,47 @@ class FileSystemProviderMountPathUtilTest : public testing::Test {
 };
 
 TEST_F(FileSystemProviderMountPathUtilTest, GetMountPath) {
-  const std::string kExtensionId = "mbflcebpggnecokmikipoihdbecnjfoj";
-  const int kFileSystemId = 1;
+  const base::FilePath result =
+      GetMountPath(profile_, kExtensionId, kFileSystemId);
+  const std::string expected =
+      "/provided/mbflcebpggnecokmikipoihdbecnjfoj:"
+      "File%2FSystem%2FId:testing-profile-hash";
+  EXPECT_EQ(expected, result.AsUTF8Unsafe());
+}
 
-  base::FilePath result = GetMountPath(profile_, kExtensionId, kFileSystemId);
-  EXPECT_EQ("/provided/mbflcebpggnecokmikipoihdbecnjfoj-1-testing-profile-hash",
-            result.AsUTF8Unsafe());
+TEST_F(FileSystemProviderMountPathUtilTest, IsFileSystemProviderLocalPath) {
+  const base::FilePath mount_path =
+      GetMountPath(profile_, kExtensionId, kFileSystemId);
+  const base::FilePath file_path =
+      base::FilePath::FromUTF8Unsafe("/hello/world.txt");
+  const base::FilePath local_file_path =
+      mount_path.Append(base::FilePath(file_path.value().substr(1)));
+
+  EXPECT_TRUE(IsFileSystemProviderLocalPath(mount_path));
+  EXPECT_TRUE(IsFileSystemProviderLocalPath(local_file_path));
+
+  EXPECT_FALSE(IsFileSystemProviderLocalPath(
+      base::FilePath::FromUTF8Unsafe("provided/hello-world/test.txt")));
+  EXPECT_FALSE(IsFileSystemProviderLocalPath(
+      base::FilePath::FromUTF8Unsafe("/provided")));
+  EXPECT_FALSE(
+      IsFileSystemProviderLocalPath(base::FilePath::FromUTF8Unsafe("/")));
+  EXPECT_FALSE(IsFileSystemProviderLocalPath(base::FilePath()));
 }
 
 TEST_F(FileSystemProviderMountPathUtilTest, Parser) {
-  const int file_system_id = file_system_provider_service_->MountFileSystem(
-      kExtensionId, kFileSystemName);
-  EXPECT_LT(0, file_system_id);
+  const bool result = file_system_provider_service_->MountFileSystem(
+      kExtensionId, kFileSystemId, kFileSystemName);
+  ASSERT_TRUE(result);
+  const ProvidedFileSystemInfo file_system_info =
+      file_system_provider_service_->GetProvidedFileSystem(kExtensionId,
+                                                           kFileSystemId)
+          ->GetFileSystemInfo();
 
   const base::FilePath kFilePath =
       base::FilePath::FromUTF8Unsafe("/hello/world.txt");
   const fileapi::FileSystemURL url =
-      CreateFileSystemURL(profile_, kExtensionId, file_system_id, kFilePath);
+      CreateFileSystemURL(profile_, file_system_info, kFilePath);
   EXPECT_TRUE(url.is_valid());
 
   FileSystemURLParser parser(url);
@@ -118,18 +144,22 @@ TEST_F(FileSystemProviderMountPathUtilTest, Parser) {
 
   ProvidedFileSystemInterface* file_system = parser.file_system();
   ASSERT_TRUE(file_system);
-  EXPECT_EQ(file_system_id, file_system->GetFileSystemInfo().file_system_id());
+  EXPECT_EQ(kFileSystemId, file_system->GetFileSystemInfo().file_system_id());
   EXPECT_EQ(kFilePath.AsUTF8Unsafe(), parser.file_path().AsUTF8Unsafe());
 }
 
 TEST_F(FileSystemProviderMountPathUtilTest, Parser_RootPath) {
-  const int file_system_id = file_system_provider_service_->MountFileSystem(
-      kExtensionId, kFileSystemName);
-  EXPECT_LT(0, file_system_id);
+  const bool result = file_system_provider_service_->MountFileSystem(
+      kExtensionId, kFileSystemId, kFileSystemName);
+  ASSERT_TRUE(result);
+  const ProvidedFileSystemInfo file_system_info =
+      file_system_provider_service_->GetProvidedFileSystem(kExtensionId,
+                                                           kFileSystemId)
+          ->GetFileSystemInfo();
 
   const base::FilePath kFilePath = base::FilePath::FromUTF8Unsafe("/");
   const fileapi::FileSystemURL url =
-      CreateFileSystemURL(profile_, kExtensionId, file_system_id, kFilePath);
+      CreateFileSystemURL(profile_, file_system_info, kFilePath);
   EXPECT_TRUE(url.is_valid());
 
   FileSystemURLParser parser(url);
@@ -137,24 +167,139 @@ TEST_F(FileSystemProviderMountPathUtilTest, Parser_RootPath) {
 
   ProvidedFileSystemInterface* file_system = parser.file_system();
   ASSERT_TRUE(file_system);
-  EXPECT_EQ(file_system_id, file_system->GetFileSystemInfo().file_system_id());
+  EXPECT_EQ(kFileSystemId, file_system->GetFileSystemInfo().file_system_id());
   EXPECT_EQ(kFilePath.AsUTF8Unsafe(), parser.file_path().AsUTF8Unsafe());
 }
 
 TEST_F(FileSystemProviderMountPathUtilTest, Parser_WrongUrl) {
-  const int file_system_id = file_system_provider_service_->MountFileSystem(
-      kExtensionId, kFileSystemName);
-  EXPECT_LT(0, file_system_id);
+  const ProvidedFileSystemInfo file_system_info(
+      kExtensionId,
+      kFileSystemId,
+      kFileSystemName,
+      GetMountPath(profile_, kExtensionId, kFileSystemId));
 
   const base::FilePath kFilePath = base::FilePath::FromUTF8Unsafe("/hello");
-  const fileapi::FileSystemURL url = CreateFileSystemURL(
-      profile_, kExtensionId, file_system_id + 1, kFilePath);
+  const fileapi::FileSystemURL url =
+      CreateFileSystemURL(profile_, file_system_info, kFilePath);
   // It is impossible to create a cracked URL for a mount point which doesn't
   // exist, therefore is will always be invalid, and empty.
   EXPECT_FALSE(url.is_valid());
 
   FileSystemURLParser parser(url);
   EXPECT_FALSE(parser.Parse());
+}
+
+TEST_F(FileSystemProviderMountPathUtilTest, Parser_IsolatedURL) {
+  const bool result = file_system_provider_service_->MountFileSystem(
+      kExtensionId, kFileSystemId, kFileSystemName);
+  ASSERT_TRUE(result);
+  const ProvidedFileSystemInfo file_system_info =
+      file_system_provider_service_->GetProvidedFileSystem(kExtensionId,
+                                                           kFileSystemId)
+          ->GetFileSystemInfo();
+
+  const base::FilePath kFilePath =
+      base::FilePath::FromUTF8Unsafe("/hello/world.txt");
+  const fileapi::FileSystemURL url =
+      CreateFileSystemURL(profile_, file_system_info, kFilePath);
+  EXPECT_TRUE(url.is_valid());
+
+  // Create an isolated URL for the original one.
+  fileapi::IsolatedContext* const isolated_context =
+      fileapi::IsolatedContext::GetInstance();
+  const std::string isolated_file_system_id =
+      isolated_context->RegisterFileSystemForPath(
+          fileapi::kFileSystemTypeProvided,
+          url.filesystem_id(),
+          url.path(),
+          NULL);
+
+  const base::FilePath isolated_virtual_path =
+      isolated_context->CreateVirtualRootPath(isolated_file_system_id)
+          .Append(kFilePath.BaseName().value());
+
+  const fileapi::FileSystemURL isolated_url =
+      isolated_context->CreateCrackedFileSystemURL(
+          url.origin(),
+          fileapi::kFileSystemTypeIsolated,
+          isolated_virtual_path);
+
+  EXPECT_TRUE(isolated_url.is_valid());
+
+  FileSystemURLParser parser(isolated_url);
+  EXPECT_TRUE(parser.Parse());
+
+  ProvidedFileSystemInterface* file_system = parser.file_system();
+  ASSERT_TRUE(file_system);
+  EXPECT_EQ(kFileSystemId, file_system->GetFileSystemInfo().file_system_id());
+  EXPECT_EQ(kFilePath.AsUTF8Unsafe(), parser.file_path().AsUTF8Unsafe());
+}
+
+TEST_F(FileSystemProviderMountPathUtilTest, LocalPathParser) {
+  const bool result = file_system_provider_service_->MountFileSystem(
+      kExtensionId, kFileSystemId, kFileSystemName);
+  ASSERT_TRUE(result);
+  const ProvidedFileSystemInfo file_system_info =
+      file_system_provider_service_->GetProvidedFileSystem(kExtensionId,
+                                                           kFileSystemId)
+          ->GetFileSystemInfo();
+
+  const base::FilePath kFilePath =
+      base::FilePath::FromUTF8Unsafe("/hello/world.txt");
+  const base::FilePath kLocalFilePath = file_system_info.mount_path().Append(
+      base::FilePath(kFilePath.value().substr(1)));
+
+  LOG(ERROR) << kLocalFilePath.value();
+  LocalPathParser parser(profile_, kLocalFilePath);
+  EXPECT_TRUE(parser.Parse());
+
+  ProvidedFileSystemInterface* file_system = parser.file_system();
+  ASSERT_TRUE(file_system);
+  EXPECT_EQ(kFileSystemId, file_system->GetFileSystemInfo().file_system_id());
+  EXPECT_EQ(kFilePath.AsUTF8Unsafe(), parser.file_path().AsUTF8Unsafe());
+}
+
+TEST_F(FileSystemProviderMountPathUtilTest, LocalPathParser_RootPath) {
+  const bool result = file_system_provider_service_->MountFileSystem(
+      kExtensionId, kFileSystemId, kFileSystemName);
+  ASSERT_TRUE(result);
+  const ProvidedFileSystemInfo file_system_info =
+      file_system_provider_service_->GetProvidedFileSystem(kExtensionId,
+                                                           kFileSystemId)
+          ->GetFileSystemInfo();
+
+  const base::FilePath kFilePath = base::FilePath::FromUTF8Unsafe("/");
+  const base::FilePath kLocalFilePath = file_system_info.mount_path();
+
+  LocalPathParser parser(profile_, kLocalFilePath);
+  EXPECT_TRUE(parser.Parse());
+
+  ProvidedFileSystemInterface* file_system = parser.file_system();
+  ASSERT_TRUE(file_system);
+  EXPECT_EQ(kFileSystemId, file_system->GetFileSystemInfo().file_system_id());
+  EXPECT_EQ(kFilePath.AsUTF8Unsafe(), parser.file_path().AsUTF8Unsafe());
+}
+
+TEST_F(FileSystemProviderMountPathUtilTest, LocalPathParser_WrongPath) {
+  {
+    const base::FilePath kFilePath = base::FilePath::FromUTF8Unsafe("/hello");
+    LocalPathParser parser(profile_, kFilePath);
+    EXPECT_FALSE(parser.Parse());
+  }
+
+  {
+    const base::FilePath kFilePath =
+        base::FilePath::FromUTF8Unsafe("/provided");
+    LocalPathParser parser(profile_, kFilePath);
+    EXPECT_FALSE(parser.Parse());
+  }
+
+  {
+    const base::FilePath kFilePath =
+        base::FilePath::FromUTF8Unsafe("provided/hello/world");
+    LocalPathParser parser(profile_, kFilePath);
+    EXPECT_FALSE(parser.Parse());
+  }
 }
 
 }  // namespace util

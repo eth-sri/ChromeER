@@ -17,11 +17,12 @@
 #include "content/public/common/url_constants.h"
 #include "content/public/test/javascript_test_observer.h"
 #include "content/public/test/test_renderer_host.h"
+#include "ppapi/shared_impl/test_harness_utils.h"
 
 using content::RenderViewHost;
 
 // This macro finesses macro expansion to do what we want.
-#define STRIP_PREFIXES(test_name) StripPrefixes(#test_name)
+#define STRIP_PREFIXES(test_name) ppapi::StripTestPrefixes(#test_name)
 // Turn the given token into a string. This allows us to use precompiler stuff
 // to turn names into DISABLED_Foo, but still pass a string to RunTest.
 #define STRINGIFY(test_name) #test_name
@@ -61,10 +62,21 @@ using content::RenderViewHost;
 #if defined(DISABLE_NACL)
 
 #define TEST_PPAPI_NACL(test_name)
+#define TEST_PPAPI_NACL_NO_PNACL(test_name)
 #define TEST_PPAPI_NACL_DISALLOWED_SOCKETS(test_name)
 #define TEST_PPAPI_NACL_WITH_SSL_SERVER(test_name)
+#define TEST_PPAPI_NACL_SUBTESTS(test_name, run_statement)
 
 #else
+
+// TODO(dmichael): Remove this macro, crbug.com/384539
+#define TEST_PPAPI_NACL_NO_PNACL(test_name) \
+    IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, test_name) { \
+      RunTestViaHTTP(STRIP_PREFIXES(test_name)); \
+    } \
+    IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_GLIBC(test_name)) { \
+      RunTestViaHTTP(STRIP_PREFIXES(test_name)); \
+    } \
 
 // NaCl based PPAPI tests
 #define TEST_PPAPI_NACL(test_name) \
@@ -80,6 +92,22 @@ using content::RenderViewHost;
     IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClNonSfiTest, \
                            MAYBE_PNACL_NONSFI(test_name)) { \
       RunTestViaHTTP(STRIP_PREFIXES(test_name)); \
+    }
+
+// NaCl based PPAPI tests
+#define TEST_PPAPI_NACL_SUBTESTS(test_name, run_statement) \
+    IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, test_name) { \
+      run_statement; \
+    } \
+    IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_GLIBC(test_name)) { \
+      run_statement; \
+    } \
+    IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, test_name) { \
+      run_statement; \
+    } \
+    IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClNonSfiTest, \
+                           MAYBE_PNACL_NONSFI(test_name)) { \
+      run_statement; \
     }
 
 // NaCl based PPAPI tests with disallowed socket API
@@ -178,8 +206,6 @@ IN_PROC_BROWSER_TEST_F(PPAPIBrokerInfoBarTest, Allowed) {
   RunTest("Broker_IsAllowedPermissionGranted");
 }
 
-TEST_PPAPI_IN_PROCESS(Console)
-TEST_PPAPI_OUT_OF_PROCESS(Console)
 TEST_PPAPI_NACL(Console)
 
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(USE_AURA)
@@ -188,15 +214,11 @@ TEST_PPAPI_NACL(Console)
 #else
 #define MAYBE_Core Core
 #endif
-TEST_PPAPI_IN_PROCESS(MAYBE_Core)
-TEST_PPAPI_OUT_OF_PROCESS(MAYBE_Core)
 TEST_PPAPI_NACL(MAYBE_Core)
 
-TEST_PPAPI_IN_PROCESS(TraceEvent)
-TEST_PPAPI_OUT_OF_PROCESS(TraceEvent)
+// Non-NaCl TraceEvent tests are in content/test/ppapi/ppapi_browsertest.cc.
 TEST_PPAPI_NACL(TraceEvent)
 
-TEST_PPAPI_OUT_OF_PROCESS(InputEvent)
 TEST_PPAPI_NACL(InputEvent)
 
 // Flaky on Linux and Windows. http://crbug.com/135403
@@ -209,49 +231,6 @@ TEST_PPAPI_NACL(InputEvent)
 TEST_PPAPI_OUT_OF_PROCESS(MAYBE_ImeInputEvent)
 TEST_PPAPI_NACL(MAYBE_ImeInputEvent)
 
-// "Instance" tests are really InstancePrivate tests. InstancePrivate is not
-// supported in NaCl, so these tests are only run trusted.
-// Also note that these tests are run separately on purpose (versus collapsed
-// in to one IN_PROC_BROWSER_TEST_F macro), because some of them have leaks
-// on purpose that will look like failures to tests that are run later.
-TEST_PPAPI_IN_PROCESS(Instance_ExecuteScript);
-TEST_PPAPI_OUT_OF_PROCESS(Instance_ExecuteScript)
-
-// We run and reload the RecursiveObjects test to ensure that the InstanceObject
-// (and others) are properly cleaned up after the first run.
-IN_PROC_BROWSER_TEST_F(PPAPITest, Instance_RecursiveObjects) {
-  RunTestAndReload("Instance_RecursiveObjects");
-}
-// TODO(dmichael): Make it work out-of-process (or at least see whether we
-//                 care).
-IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest,
-                       DISABLED_Instance_RecursiveObjects) {
-  RunTestAndReload("Instance_RecursiveObjects");
-}
-TEST_PPAPI_IN_PROCESS(Instance_LeakedObjectDestructors);
-TEST_PPAPI_OUT_OF_PROCESS(Instance_LeakedObjectDestructors);
-
-IN_PROC_BROWSER_TEST_F(PPAPITest,
-                       Instance_ExecuteScriptAtInstanceShutdown) {
-  // In other tests, we use one call to RunTest so that the tests can all run
-  // in one plugin instance. This saves time on loading the plugin (especially
-  // for NaCl). Here, we actually want to destroy the Instance, to test whether
-  // the destructor can run ExecuteScript successfully. That's why we have two
-  // separate calls to RunTest; the second one forces a navigation which
-  // destroys the instance from the prior RunTest.
-  // See test_instance_deprecated.cc for more information.
-  RunTest("Instance_SetupExecuteScriptAtInstanceShutdown");
-  RunTest("Instance_ExecuteScriptAtInstanceShutdown");
-}
-IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest,
-                       Instance_ExecuteScriptAtInstanceShutdown) {
-  // (See the comment for the in-process version of this test above)
-  RunTest("Instance_SetupExecuteScriptAtInstanceShutdown");
-  RunTest("Instance_ExecuteScriptAtInstanceShutdown");
-}
-
-TEST_PPAPI_IN_PROCESS(Graphics2D)
-TEST_PPAPI_OUT_OF_PROCESS(Graphics2D)
 // Graphics2D_Dev isn't supported in NaCl, only test the other interfaces
 // TODO(jhorwich) Enable when Graphics2D_Dev interfaces are proxied in NaCl.
 TEST_PPAPI_NACL(Graphics2D_InvalidResource)
@@ -296,21 +275,7 @@ TEST_PPAPI_IN_PROCESS(MAYBE_IN_Graphics3D)
 TEST_PPAPI_OUT_OF_PROCESS(MAYBE_OUT_Graphics3D)
 TEST_PPAPI_NACL(MAYBE_NACL_Graphics3D)
 
-TEST_PPAPI_IN_PROCESS(ImageData)
-TEST_PPAPI_OUT_OF_PROCESS(ImageData)
 TEST_PPAPI_NACL(ImageData)
-
-TEST_PPAPI_IN_PROCESS(BrowserFont)
-// crbug.com/308949
-#if defined(OS_WIN)
-#define MAYBE_OUT_BrowserFont DISABLED_BrowserFont
-#else
-#define MAYBE_OUT_BrowserFont BrowserFont
-#endif
-TEST_PPAPI_OUT_OF_PROCESS(MAYBE_OUT_BrowserFont)
-
-TEST_PPAPI_IN_PROCESS(Buffer)
-TEST_PPAPI_OUT_OF_PROCESS(Buffer)
 
 // TCPSocket and TCPSocketPrivate tests.
 #define RUN_TCPSOCKET_SUBTESTS \
@@ -603,8 +568,7 @@ TEST_PPAPI_NACL(MAYBE_URLRequest_CreateAndIsURLRequestInfo)
 
 TEST_PPAPI_IN_PROCESS_VIA_HTTP(URLRequest_SetProperty)
 TEST_PPAPI_OUT_OF_PROCESS_VIA_HTTP(URLRequest_SetProperty)
-// http://crbug.com/167150
-TEST_PPAPI_NACL(DISABLED_URLRequest_SetProperty)
+TEST_PPAPI_NACL(URLRequest_SetProperty)
 TEST_PPAPI_IN_PROCESS_VIA_HTTP(URLRequest_AppendDataToBody)
 TEST_PPAPI_OUT_OF_PROCESS_VIA_HTTP(URLRequest_AppendDataToBody)
 TEST_PPAPI_NACL(URLRequest_AppendDataToBody)
@@ -620,38 +584,11 @@ TEST_PPAPI_OUT_OF_PROCESS(PaintAggregator)
 TEST_PPAPI_NACL(PaintAggregator)
 
 // TODO(danakj): http://crbug.com/115286
-TEST_PPAPI_IN_PROCESS(DISABLED_Scrollbar)
-// http://crbug.com/89961
-TEST_PPAPI_OUT_OF_PROCESS(DISABLED_Scrollbar)
-// TODO(danakj): http://crbug.com/115286
 TEST_PPAPI_NACL(DISABLED_Scrollbar)
 
-TEST_PPAPI_IN_PROCESS(URLUtil)
-TEST_PPAPI_OUT_OF_PROCESS(URLUtil)
-
-TEST_PPAPI_IN_PROCESS(CharSet)
-TEST_PPAPI_OUT_OF_PROCESS(CharSet)
-
-TEST_PPAPI_IN_PROCESS(Crypto)
-TEST_PPAPI_OUT_OF_PROCESS(Crypto)
-
-TEST_PPAPI_IN_PROCESS(Var)
-TEST_PPAPI_OUT_OF_PROCESS(Var)
 TEST_PPAPI_NACL(Var)
 
-TEST_PPAPI_IN_PROCESS(VarResource)
-TEST_PPAPI_OUT_OF_PROCESS(VarResource)
 TEST_PPAPI_NACL(VarResource)
-
-// Flaky on mac, http://crbug.com/121107
-#if defined(OS_MACOSX)
-#define MAYBE_VarDeprecated DISABLED_VarDeprecated
-#else
-#define MAYBE_VarDeprecated VarDeprecated
-#endif
-
-TEST_PPAPI_IN_PROCESS(VarDeprecated)
-TEST_PPAPI_OUT_OF_PROCESS(MAYBE_VarDeprecated)
 
 // PostMessage tests.
 #define RUN_POSTMESSAGE_SUBTESTS \
@@ -675,16 +612,10 @@ TEST_PPAPI_OUT_OF_PROCESS(MAYBE_VarDeprecated)
 #undef PostMessage
 #endif
 
-// Flaky: crbug.com/269530
-#if defined(OS_WIN)
-#define MAYBE_PostMessage DISABLED_PostMessage
-#else
-#define MAYBE_PostMessage PostMessage
-#endif
-IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, MAYBE_PostMessage) {
+IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, PostMessage) {
   RUN_POSTMESSAGE_SUBTESTS;
 }
-IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, MAYBE_PostMessage) {
+IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, PostMessage) {
   RUN_POSTMESSAGE_SUBTESTS;
 }
 IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_GLIBC(PostMessage)) {
@@ -698,12 +629,7 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClNonSfiTest,
   RUN_POSTMESSAGE_SUBTESTS;
 }
 
-TEST_PPAPI_IN_PROCESS(Memory)
-TEST_PPAPI_OUT_OF_PROCESS(Memory)
 TEST_PPAPI_NACL(Memory)
-
-TEST_PPAPI_IN_PROCESS(VideoDecoderDev)
-TEST_PPAPI_OUT_OF_PROCESS(VideoDecoderDev)
 
 // FileIO tests.
 #define RUN_FILEIO_SUBTESTS \
@@ -1068,11 +994,17 @@ IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, Flash) {
       LIST_TEST(WebSocket_UtilityBufferedAmount) \
   )
 
-
 IN_PROC_BROWSER_TEST_F(PPAPITest, WebSocket1) {
   RUN_WEBSOCKET_SUBTESTS_1;
 }
-IN_PROC_BROWSER_TEST_F(PPAPITest, WebSocket2) {
+
+// Repeatedly flaky on Win7 Tests(1): http://crbug.com/389084
+#if defined(OS_WIN)
+#define MAYBE_WebSocket2 DISABLED_WebSocket2
+#else
+#define MAYBE_WebSocket2 WebSocket2
+#endif
+IN_PROC_BROWSER_TEST_F(PPAPITest, MAYBE_WebSocket2) {
   RUN_WEBSOCKET_SUBTESTS_2;
 }
 IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, WebSocket1) {
@@ -1218,8 +1150,8 @@ IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, View_PageHideShow) {
 
   // Make a new tab to cause the original one to hide, this should trigger the
   // next phase of the test.
-  chrome::NavigateParams params(browser(), GURL(content::kAboutBlankURL),
-                                content::PAGE_TRANSITION_LINK);
+  chrome::NavigateParams params(
+      browser(), GURL(url::kAboutBlankURL), content::PAGE_TRANSITION_LINK);
   params.disposition = NEW_FOREGROUND_TAB;
   ui_test_utils::NavigateToURL(&params);
 
@@ -1257,6 +1189,7 @@ IN_PROC_BROWSER_TEST_F(PPAPITest, InputEvent_AcceptTouchEvent) {
   RunTestViaHTTP( \
       LIST_TEST(View_SizeChange) \
       LIST_TEST(View_ClipChange) \
+      LIST_TEST(View_ScrollOffsetChange) \
   )
 
 IN_PROC_BROWSER_TEST_F(PPAPITest, View) {
@@ -1297,40 +1230,72 @@ IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, MAYBE_FlashMessageLoop) {
   RUN_FLASH_MESSAGE_LOOP_SUBTESTS;
 }
 
-TEST_PPAPI_OUT_OF_PROCESS(MediaStreamAudioTrack)
+// The compositor test timeouts sometimes, so we have to split it to two
+// subtests.
+#define RUN_COMPOSITOR_SUBTESTS_0 \
+  RunTestViaHTTP( \
+      LIST_TEST(Compositor_BindUnbind) \
+      LIST_TEST(Compositor_Release) \
+      LIST_TEST(Compositor_ReleaseUnbound) \
+      LIST_TEST(Compositor_ReleaseWithoutCommit) \
+      LIST_TEST(Compositor_ReleaseWithoutCommitUnbound) \
+  )
+
+#define RUN_COMPOSITOR_SUBTESTS_1 \
+  RunTestViaHTTP( \
+      LIST_TEST(Compositor_CommitTwoTimesWithoutChange) \
+      LIST_TEST(Compositor_CommitTwoTimesWithoutChangeUnbound) \
+      LIST_TEST(Compositor_General) \
+      LIST_TEST(Compositor_GeneralUnbound) \
+  )
+
+#if defined(OS_WIN)
+// This test fails with the test compositor which is what's used by default for
+// browser tests on Windows. Renable when the software compositor is available.
+#define MAYBE_Compositor0 DISABLED_Compositor0
+#define MAYBE_Compositor1 DISABLED_Compositor1
+#elif defined(OS_MACOSX)
+// This test fails when using the legacy software mode. Reenable when the
+// software compositor is enabled crbug.com/286038
+#define MAYBE_Compositor0 DISABLED_Compositor0
+#define MAYBE_Compositor1 DISABLED_Compositor1
+#else
+#define MAYBE_Compositor0 Compositor0
+#define MAYBE_Compositor1 Compositor1
+#endif
+
+TEST_PPAPI_NACL_SUBTESTS(MAYBE_Compositor0, RUN_COMPOSITOR_SUBTESTS_0)
+TEST_PPAPI_NACL_SUBTESTS(MAYBE_Compositor1, RUN_COMPOSITOR_SUBTESTS_1)
+
 TEST_PPAPI_NACL(MediaStreamAudioTrack)
 
-TEST_PPAPI_OUT_OF_PROCESS(MediaStreamVideoTrack)
 TEST_PPAPI_NACL(MediaStreamVideoTrack)
 
-TEST_PPAPI_IN_PROCESS(MouseCursor)
-TEST_PPAPI_OUT_OF_PROCESS(MouseCursor)
 TEST_PPAPI_NACL(MouseCursor)
 
-// PPB_NetworkProxy is not supported in-process.
-TEST_PPAPI_OUT_OF_PROCESS(NetworkProxy)
 TEST_PPAPI_NACL(NetworkProxy)
 
-TEST_PPAPI_OUT_OF_PROCESS(TrueTypeFont)
 TEST_PPAPI_NACL(TrueTypeFont)
 
+TEST_PPAPI_NACL(VideoDecoder)
+
+// VideoDestination doesn't work in content_browsertests.
 TEST_PPAPI_OUT_OF_PROCESS(VideoDestination)
 TEST_PPAPI_NACL(VideoDestination)
 
+// VideoSource doesn't work in content_browsertests.
 TEST_PPAPI_OUT_OF_PROCESS(VideoSource)
 TEST_PPAPI_NACL(VideoSource)
 
-// PPB_Printing only implemented for out of process.
+// Printing doesn't work in content_browsertests.
 TEST_PPAPI_OUT_OF_PROCESS(Printing)
 
-// PPB_MessageLoop is only supported out-of-process.
-// TODO(dmichael): Enable for NaCl with the IPC proxy. crbug.com/116317
-TEST_PPAPI_OUT_OF_PROCESS(MessageLoop_Basics)
-// MessageLoop_Post starts a thread so only run it if pepper threads are
-// enabled.
-#ifdef ENABLE_PEPPER_THREADING
-TEST_PPAPI_OUT_OF_PROCESS(MessageLoop_Post)
-#endif
+// TODO(dmichael): Make this work on PNaCl and remove the macro.
+//                 crbug.com/384539
+TEST_PPAPI_NACL_NO_PNACL(MessageHandler)
+
+TEST_PPAPI_NACL(MessageLoop_Basics)
+TEST_PPAPI_NACL(MessageLoop_Post)
 
 // Going forward, Flash APIs will only work out-of-process.
 TEST_PPAPI_OUT_OF_PROCESS(Flash_GetLocalTimeZoneOffset)

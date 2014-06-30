@@ -30,10 +30,8 @@
             'public/test/nested_message_pump_android.cc',
             'public/test/nested_message_pump_android.h',
             'test/layouttest_support.cc',
-            'test/mock_webclipboard_impl.cc',
-            'test/mock_webclipboard_impl.h',
-            'test/test_media_stream_client.cc',
-            'test/test_media_stream_client.h',
+            'test/test_media_stream_renderer_factory.cc',
+            'test/test_media_stream_renderer_factory.h',
             'test/test_video_frame_provider.cc',
             'test/test_video_frame_provider.h',
           ],
@@ -55,8 +53,6 @@
         '../ui/events/events.gyp:events_base',
         '../ui/events/events.gyp:events_test_support',
         '../ui/events/events.gyp:gesture_detection',
-        '../ui/gfx/gfx.gyp:gfx',
-        '../ui/gfx/gfx.gyp:gfx_geometry',
         '../ui/gfx/gfx.gyp:gfx_test_support',
         '../ui/resources/ui_resources.gyp:ui_resources',
         '../url/url.gyp:url_lib',
@@ -157,8 +153,6 @@
         'browser/renderer_host/compositing_iosurface_transformer_mac.h',
         'browser/renderer_host/media/mock_media_observer.cc',
         'browser/renderer_host/media/mock_media_observer.h',
-        'gpu/gpu_idirect3d9_mock_win.cc',
-        'gpu/gpu_idirect3d9_mock_win.h',
         'test/appcache_test_helper.cc',
         'test/appcache_test_helper.h',
         'test/content_browser_test_utils_internal.cc',
@@ -175,6 +169,8 @@
         'test/mock_keyboard_driver_win.h',
         'test/mock_render_process.cc',
         'test/mock_render_process.h',
+        'test/mock_webclipboard_impl.cc',
+        'test/mock_webclipboard_impl.h',
         'test/mock_webframeclient.h',
         'test/mock_weburlloader.cc',
         'test/mock_weburlloader.h',
@@ -206,8 +202,16 @@
         'test/test_render_view_host_factory.h',
         'test/test_web_contents.cc',
         'test/test_web_contents.h',
+        'test/test_webkit_platform_support.cc',
+        'test/test_webkit_platform_support.h',
         'test/web_gesture_curve_mock.cc',
         'test/web_gesture_curve_mock.h',
+        'test/webkit_support.cc',
+        'test/webkit_support.h',
+        'test/webkit_unit_test_support.cc',
+        'test/webkit_unit_test_support.h',
+        'test/web_layer_tree_view_impl_for_testing.cc',
+        'test/web_layer_tree_view_impl_for_testing.h',
         'test/weburl_loader_mock.cc',
         'test/weburl_loader_mock.h',
         'test/weburl_loader_mock_factory.cc',
@@ -262,6 +266,7 @@
             'content.gyp:content_renderer',
             'content.gyp:content_utility',
             'content.gyp:content_worker',
+            '../cc/cc.gyp:cc',
             '../cc/cc_tests.gyp:cc_test_support',
             '../media/media.gyp:media',
             '../ppapi/ppapi_internal.gyp:ppapi_host',
@@ -273,7 +278,6 @@
             '../v8/tools/gyp/v8.gyp:v8',
             '../webkit/child/webkit_child.gyp:webkit_child',
             '../webkit/common/gpu/webkit_gpu.gyp:webkit_gpu',
-            '../webkit/renderer/compositor_bindings/compositor_bindings.gyp:webkit_compositor_support',
             '../webkit/storage_browser.gyp:webkit_storage_browser',
             '../webkit/storage_common.gyp:webkit_storage_common',
           ],
@@ -359,6 +363,7 @@
         '../ui/base/ui_base.gyp:ui_base',
         '../ui/gfx/gfx.gyp:gfx',
         '../ui/gfx/gfx.gyp:gfx_geometry',
+        '../ui/gfx/ipc/gfx_ipc.gyp:gfx_ipc',
       ],
       'include_dirs': [
         '..',
@@ -391,13 +396,17 @@
         'browser/appcache/mock_appcache_storage.cc',
         'browser/appcache/mock_appcache_storage.h',
         'browser/appcache/mock_appcache_storage_unittest.cc',
+        'browser/battery_status/battery_status_service_unittest.cc',
         'browser/browser_thread_unittest.cc',
         'browser/browser_url_handler_impl_unittest.cc',
         'browser/byte_stream_unittest.cc',
         'browser/child_process_security_policy_unittest.cc',
         'browser/compositor/software_browser_compositor_output_surface_unittest.cc',
         'browser/compositor/software_output_device_ozone_unittest.cc',
+        'browser/databases_table_unittest.cc',
+        'browser/database_quota_client_unittest.cc',
         'browser/database_tracker_unittest.cc',
+        'browser/database_util_unittest.cc',
         'browser/device_sensors/data_fetcher_shared_memory_base_unittest.cc',
         'browser/device_sensors/sensor_manager_android_unittest.cc',
         'browser/devtools/embedded_worker_devtools_manager_unittest.cc',
@@ -433,10 +442,13 @@
         'browser/fileapi/file_writer_delegate_unittest.cc',
         'browser/fileapi/fileapi_message_filter_unittest.cc',
         'browser/fileapi/isolated_context_unittest.cc',
+        'browser/fileapi/local_file_stream_reader_unittest.cc',
         'browser/fileapi/local_file_stream_writer_unittest.cc',
         'browser/fileapi/local_file_util_unittest.cc',
         'browser/fileapi/mock_file_change_observer.cc',
         'browser/fileapi/mock_file_change_observer.h',
+        'browser/fileapi/mock_url_request_delegate.cc',
+        'browser/fileapi/mock_url_request_delegate.h',
         'browser/fileapi/native_file_util_unittest.cc',
         'browser/fileapi/obfuscated_file_util_unittest.cc',
         'browser/fileapi/plugin_private_file_system_backend_unittest.cc',
@@ -500,6 +512,7 @@
         'browser/media/capture/web_contents_audio_input_stream_unittest.cc',
         'browser/media/capture/web_contents_video_capture_device_unittest.cc',
         'browser/media/media_internals_unittest.cc',
+        'browser/media/midi_host_unittest.cc',
         'browser/media/webrtc_identity_store_unittest.cc',
         'browser/net/sqlite_persistent_cookie_store_unittest.cc',
         'browser/notification_service_impl_unittest.cc',
@@ -520,6 +533,7 @@
         'browser/quota/usage_tracker_unittest.cc',
         'browser/renderer_host/compositing_iosurface_transformer_mac_unittest.cc',
         'browser/renderer_host/input/gesture_event_queue_unittest.cc',
+        'browser/renderer_host/input/gesture_text_selector_unittest.cc',
         'browser/renderer_host/input/input_router_impl_unittest.cc',
         'browser/renderer_host/input/mock_input_ack_handler.cc',
         'browser/renderer_host/input/mock_input_ack_handler.h',
@@ -536,7 +550,6 @@
         'browser/renderer_host/media/media_stream_dispatcher_host_unittest.cc',
         'browser/renderer_host/media/media_stream_manager_unittest.cc',
         'browser/renderer_host/media/media_stream_ui_proxy_unittest.cc',
-        'browser/renderer_host/media/midi_host_unittest.cc',
         'browser/renderer_host/media/video_capture_buffer_pool_unittest.cc',
         'browser/renderer_host/media/video_capture_controller_unittest.cc',
         'browser/renderer_host/media/video_capture_host_unittest.cc',
@@ -558,7 +571,6 @@
         'browser/renderer_host/web_input_event_aura_unittest.cc',
         'browser/renderer_host/websocket_dispatcher_host_unittest.cc',
         'browser/resolve_proxy_msg_helper_unittest.cc',
-        'browser/screen_orientation/screen_orientation_dispatcher_host_unittest.cc',
         'browser/service_worker/embedded_worker_instance_unittest.cc',
         'browser/service_worker/embedded_worker_test_helper.cc',
         'browser/service_worker/embedded_worker_test_helper.h',
@@ -603,11 +615,13 @@
         'child/fileapi/webfilewriter_base_unittest.cc',
         'child/indexed_db/indexed_db_dispatcher_unittest.cc',
         'child/indexed_db/webidbcursor_impl_unittest.cc',
+        'child/multipart_response_delegate_unittest.cc',
         'child/npapi/plugin_lib_unittest.cc',
         'child/power_monitor_broadcast_source_unittest.cc',
         'child/resource_dispatcher_unittest.cc',
         'child/site_isolation_policy_unittest.cc',
         'child/touch_fling_gesture_curve_unittest.cc',
+        'child/web_url_loader_impl_unittest.cc',
         'child/webcrypto/shared_crypto_unittest.cc',
         'child/worker_task_runner_unittest.cc',
         'common/android/address_parser_unittest.cc',
@@ -642,6 +656,10 @@
         'renderer/android/phone_number_detector_unittest.cc',
         'renderer/battery_status/battery_status_dispatcher_unittest.cc',
         'renderer/bmp_image_decoder_unittest.cc',
+        'renderer/compositor_bindings/web_animation_unittest.cc',
+        'renderer/compositor_bindings/web_float_animation_curve_unittest.cc',
+        'renderer/compositor_bindings/web_layer_impl_fixed_bounds_unittest.cc',
+        'renderer/device_sensors/device_light_event_pump_unittest.cc',
         'renderer/device_sensors/device_motion_event_pump_unittest.cc',
         'renderer/device_sensors/device_orientation_event_pump_unittest.cc',
         'renderer/disambiguation_popup_helper_unittest.cc',
@@ -682,11 +700,6 @@
         'test/image_decoder_test.cc',
         'test/image_decoder_test.h',
         'test/run_all_unittests.cc',
-        '../webkit/browser/blob/local_file_stream_reader_unittest.cc',
-        '../webkit/browser/database/database_quota_client_unittest.cc',
-        '../webkit/browser/database/database_util_unittest.cc',
-        '../webkit/browser/database/databases_table_unittest.cc',
-        '../webkit/child/multipart_response_delegate_unittest.cc',
       ],
       'conditions': [
         ['OS == "ios"', {
@@ -708,6 +721,8 @@
             'content.gyp:content_renderer',
             'content_resources.gyp:content_resources',
             '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
+            '../cc/cc.gyp:cc',
+            '../cc/cc_tests.gyp:cc_test_support',
             '../gpu/gpu.gyp:gpu',
             '../gpu/gpu.gyp:gpu_unittest_utils',
             '../ipc/ipc.gyp:test_support_ipc',
@@ -866,7 +881,9 @@
         }],
         ['OS == "android"', {
           'sources': [
+            'browser/renderer_host/java/gin_java_method_invocation_helper_unittest.cc',
             'browser/renderer_host/java/jni_helper_unittest.cc',
+            'renderer/java/gin_java_bridge_value_converter_unittest.cc',
           ],
           'sources!': [
             'browser/geolocation/network_location_provider_unittest.cc',
@@ -902,7 +919,7 @@
         }],
         ['use_ozone==1', {
           'dependencies': [
-            '../ui/gfx/ozone/gfx_ozone.gyp:gfx_ozone',
+            '../ui/ozone/ozone.gyp:ozone_base',
           ],
         }],
       ],
@@ -977,6 +994,9 @@
             'public/test/content_browser_test_utils.h',
             'public/test/content_browser_test_utils_mac.mm',
           ],
+          'include_dirs': [
+            '<(SHARED_INTERMEDIATE_DIR)',
+          ],
           'conditions': [
             ['OS=="android"', {
               'dependencies': [
@@ -998,11 +1018,6 @@
           'sources': [
             'test/data/web_ui_test_mojo_bindings.mojom',
           ],
-          # TODO(sky): this shouldn't be necessary. It's working around a bug in
-          # gyp.
-          'variables': {
-            'mojom_base_output_dir': 'content',
-          },
           'includes': [ '../mojo/public/tools/bindings/mojom_bindings_generator.gypi' ],
           'export_dependent_settings': [
             '../mojo/mojo.gyp:mojo_cpp_bindings',
@@ -1039,6 +1054,7 @@
             '../ppapi/ppapi_internal.gyp:ppapi_ipc',
             '../ppapi/ppapi_internal.gyp:ppapi_proxy',
             '../ppapi/ppapi_internal.gyp:ppapi_shared',
+            '../ppapi/ppapi_internal.gyp:ppapi_tests',
             '../ppapi/ppapi_internal.gyp:ppapi_unittest_shared',
             '../testing/gmock.gyp:gmock',
             '../testing/gtest.gyp:gtest',
@@ -1070,17 +1086,12 @@
             'app/mojo/mojo_browsertest.cc',
             'browser/accessibility/accessibility_mode_browsertest.cc',
             'browser/accessibility/accessibility_win_browsertest.cc',
+            'browser/accessibility/android_hit_testing_browsertest.cc',
             'browser/accessibility/cross_platform_accessibility_browsertest.cc',
             'browser/accessibility/dump_accessibility_tree_browsertest.cc',
+            'browser/battery_status/battery_status_browsertest.cc',
             'browser/compositor/image_transport_factory_browsertest.cc',
             'browser/bookmarklet_browsertest.cc',
-            'browser/browser_plugin/browser_plugin_host_browsertest.cc',
-            'browser/browser_plugin/test_browser_plugin_guest.cc',
-            'browser/browser_plugin/test_browser_plugin_guest.h',
-            'browser/browser_plugin/test_browser_plugin_guest_delegate.cc',
-            'browser/browser_plugin/test_browser_plugin_guest_delegate.h',
-            'browser/browser_plugin/test_guest_manager.cc',
-            'browser/browser_plugin/test_guest_manager.h',
             'browser/child_process_security_policy_browsertest.cc',
             'browser/cross_site_transfer_browsertest.cc',
             'browser/database_browsertest.cc',
@@ -1098,13 +1109,15 @@
             'browser/gpu/compositor_util_browsertest.cc',
             'browser/gpu/gpu_ipc_browsertests.cc',
             'browser/indexed_db/indexed_db_browsertest.cc',
+            'browser/indexed_db/mock_browsertest_indexed_db_class_factory.cc',
+            'browser/indexed_db/mock_browsertest_indexed_db_class_factory.h',
             'browser/loader/resource_dispatcher_host_browsertest.cc',
             'browser/media/encrypted_media_browsertest.cc',
             'browser/media/media_browsertest.cc',
             'browser/media/media_browsertest.h',
             'browser/media/media_canplaytype_browsertest.cc',
             'browser/media/media_source_browsertest.cc',
-            'browser/media/webrtc_internals_browsertest.cc',
+            'browser/net_info_browsertest.cc',
             'browser/plugin_data_remover_impl_browsertest.cc',
             'browser/plugin_browsertest.cc',
             'browser/plugin_service_impl_browsertest.cc',
@@ -1120,6 +1133,7 @@
             'browser/site_per_process_browsertest.cc',
             'browser/speech/speech_recognition_browsertest.cc',
             'browser/tracing/tracing_controller_browsertest.cc',
+            'browser/transition_browsertest.cc',
             'browser/web_contents/opened_by_dom_browsertest.cc',
             'browser/web_contents/touch_editable_impl_aura_browsertest.cc',
             'browser/web_contents/web_contents_impl_browsertest.cc',
@@ -1154,6 +1168,9 @@
             'test/accessibility_browser_test_utils.cc',
             'test/accessibility_browser_test_utils.h',
             'test/content_browser_test_test.cc',
+            'test/ppapi/ppapi_browsertest.cc',
+            'test/ppapi/ppapi_test.cc',
+            'test/ppapi/ppapi_test.h',
             'test/webui_resource_browsertest.cc',
           ],
           'conditions': [
@@ -1196,10 +1213,6 @@
               },
               # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
               'msvs_disabled_warnings': [ 4267, ],
-            }, {  # OS!="win"
-              'sources!': [
-                'browser/accessibility/accessibility_win_browsertest.cc',
-              ],
             }],
             ['OS=="win" and win_use_allocator_shim==1', {
               'dependencies': [
@@ -1210,6 +1223,11 @@
               'sources!': [
                 'browser/accessibility/dump_accessibility_tree_browsertest.cc',
               ],
+            }],
+            ['OS!="android"', {
+              'sources!': [
+                'browser/accessibility/android_hit_testing_browsertest.cc',
+              ]
             }],
             ['OS=="android"', {
               'sources': [
@@ -1227,11 +1245,6 @@
               ],
               'sources': [
                 'renderer/external_popup_menu_browsertest.cc',
-              ],
-            }],
-            ['use_aura==1', {
-              'sources!': [
-                'browser/accessibility/accessibility_win_browsertest.cc',
               ],
             }],
             ['use_aura==1 and OS!="win"', {
@@ -1260,6 +1273,7 @@
               'sources': [
                 'browser/media/webrtc_browsertest.cc',
                 'browser/media/webrtc_getusermedia_browsertest.cc',
+                'browser/media/webrtc_internals_browsertest.cc',
                 'test/webrtc_content_browsertest_base.cc',
                 'test/webrtc_content_browsertest_base.h',
               ],
@@ -1274,7 +1288,13 @@
               'sources!': [
                 'browser/plugin_service_impl_browsertest.cc',
                 'browser/plugin_data_remover_impl_browsertest.cc',
+                'test/ppapi/ppapi_browsertest.cc',
+                'test/ppapi/ppapi_test.cc',
+                'test/ppapi/ppapi_test.h',
               ],
+              'dependencies!': [
+                '../ppapi/ppapi_internal.gyp:ppapi_tests',
+              ]
             }],
             ['input_speech==0', {
               'sources/': [
@@ -1349,28 +1369,6 @@
           ],
           'sources': [
             'common/gpu/client/gl_helper_benchmark.cc',
-          ],
-        },
-        {
-          'target_name': 'content_webkit_unit_test_support',
-          'type': 'static_library',
-          'dependencies': [
-            'test_support_content',
-          ],
-          'include_dirs': [
-            '..',
-          ],
-          'sources': [
-            'test/mock_webclipboard_impl.cc',
-            'test/mock_webclipboard_impl.h',
-            'test/test_webkit_platform_support.cc',
-            'test/test_webkit_platform_support.h',
-            'test/web_layer_tree_view_impl_for_testing.cc',
-            'test/web_layer_tree_view_impl_for_testing.h',
-            'test/webkit_support.cc',
-            'test/webkit_support.h',
-            'test/webkit_unit_test_support.cc',
-            'test/webkit_unit_test_support.h',
           ],
         },
       ],
@@ -1471,7 +1469,7 @@
           },
         ]
     }],
-    ['chromeos==1 and target_arch == "arm"', {
+    ['chromeos==1 and (target_arch == "arm" or use_x11 == 1)', {
       'targets': [
         {
           'target_name': 'video_encode_accelerator_unittest',
@@ -1490,6 +1488,17 @@
           'sources': [
             'common/gpu/media/video_accelerator_unittest_helpers.h',
             'common/gpu/media/video_encode_accelerator_unittest.cc',
+          ],
+          'include_dirs': [
+            '<(DEPTH)/third_party/libva',
+            '<(DEPTH)/third_party/libyuv',
+          ],
+          'conditions': [
+            ['use_x11==1', {
+              'dependencies': [
+                '../ui/gfx/x/gfx_x11.gyp:gfx_x11',
+              ],
+            }],
           ],
         },
       ]

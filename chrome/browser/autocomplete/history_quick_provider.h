@@ -9,11 +9,11 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/autocomplete/history_provider.h"
 #include "chrome/browser/history/history_types.h"
 #include "chrome/browser/history/in_memory_url_index.h"
+#include "components/autocomplete/autocomplete_input.h"
 
 class Profile;
 
@@ -34,8 +34,6 @@ class HistoryQuickProvider : public HistoryProvider {
   // completion performed.
   virtual void Start(const AutocompleteInput& input,
                      bool minimal_changes) OVERRIDE;
-
-  virtual void DeleteMatch(const AutocompleteMatch& match) OVERRIDE;
 
   // Disable this provider. For unit testing purposes only. This is required
   // because this provider is closely associated with the HistoryURLProvider

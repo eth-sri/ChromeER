@@ -4,9 +4,8 @@
 
 {
   'conditions': [
-    ['OS=="android"', {
-      # TODO(mef): Consider moving all Cronet Android targets into separate
-      # file. Also figure out what needs to be done for gn script.
+    ['OS=="android" and use_icu_alternatives_on_android==1', {
+      # TODO(mef): Figure out what needs to be done for gn script.
       'targets': [
         {
           'target_name': 'cronet_jni_headers',
@@ -45,6 +44,53 @@
           'includes': [ '../build/android/java_cpp_template.gypi' ],
         },
         {
+          'target_name': 'cronet_url_request_context_config_list',
+          'type': 'none',
+          'sources': [
+            'cronet/android/java/src/org/chromium/net/UrlRequestContextConfig.template',
+          ],
+          'variables': {
+            'package_name': 'org/chromium/cronet',
+            'template_deps': ['cronet/url_request_context_config_list.h'],
+          },
+          'includes': [ '../build/android/java_cpp_template.gypi' ],
+        },
+        {
+          'target_name': 'cronet_version',
+          'type': 'none',
+          # Because cronet_version generates a header, we must set the
+          # hard_dependency flag.
+          'hard_dependency': 1,
+          'actions': [
+            {
+              'action_name': 'cronet_version',
+              'variables': {
+                'lastchange_path': '<(DEPTH)/build/util/LASTCHANGE',
+                'version_py_path': '<(DEPTH)/build/util/version.py',
+                'version_path': '<(DEPTH)/chrome/VERSION',
+                'template_input_path': 'cronet/android/java/src/org/chromium/net/Version.template',
+              },
+              'inputs': [
+                '<(template_input_path)',
+                '<(version_path)',
+                '<(lastchange_path)',
+              ],
+              'outputs': [
+                '<(SHARED_INTERMEDIATE_DIR)/templates/org/chromium/cronet/Version.java',
+              ],
+              'action': [
+                'python',
+                '<(version_py_path)',
+                '-f', '<(version_path)',
+                '-f', '<(lastchange_path)',
+                '<(template_input_path)',
+                '<@(_outputs)',
+              ],
+              'message': 'Generating version information',
+            },
+          ],
+        },
+        {
           'target_name': 'libcronet',
           'type': 'shared_library',
           'dependencies': [
@@ -54,11 +100,16 @@
             '../third_party/icu/icu.gyp:icuuc',
             '../url/url.gyp:url_lib',
             'cronet_jni_headers',
+            'cronet_url_request_context_config_list',
             'cronet_url_request_error_list',
             'cronet_url_request_priority_list',
+            'cronet_version',
             '../net/net.gyp:net',
           ],
           'sources': [
+            'cronet/url_request_context_config.cc',
+            'cronet/url_request_context_config.h',
+            'cronet/url_request_context_config_list.h',
             'cronet/android/cronet_jni.cc',
             'cronet/android/org_chromium_net_UrlRequest.cc',
             'cronet/android/org_chromium_net_UrlRequest.h',
@@ -66,14 +117,15 @@
             'cronet/android/org_chromium_net_UrlRequest_priority_list.h',
             'cronet/android/org_chromium_net_UrlRequestContext.cc',
             'cronet/android/org_chromium_net_UrlRequestContext.h',
+            'cronet/android/org_chromium_net_UrlRequestContext_config_list.h',
             'cronet/android/url_request_context_peer.cc',
             'cronet/android/url_request_context_peer.h',
             'cronet/android/url_request_peer.cc',
             'cronet/android/url_request_peer.h',
+            'cronet/android/wrapped_channel_upload_element_reader.cc',
+            'cronet/android/wrapped_channel_upload_element_reader.h',
           ],
           'cflags': [
-            # TODO(mef): Figure out a good way to get version from chrome_version_info_posix.h.
-            '-DCHROMIUM_VERSION=\\"TBD\\"',
             '-DLOGGING=1',
             '-fdata-sections',
             '-ffunction-sections',
@@ -125,6 +177,13 @@
               'native_lib': 'libcronet.>(android_product_extension)',
               'java_lib': 'cronet.jar',
               'package_dir': '<(PRODUCT_DIR)/cronet',
+              'intermediate_dir': '<(SHARED_INTERMEDIATE_DIR)/cronet',
+              'jar_extract_dir': '<(intermediate_dir)/cronet_jar_extract',
+              'jar_excluded_classes': [
+                '*/BaseChromiumApp*.class',
+              ],
+              'jar_extract_stamp': '<(intermediate_dir)/jar_extract.stamp',
+              'cronet_jar_stamp': '<(intermediate_dir)/cronet_jar.stamp',
           },
           'actions': [
             {
@@ -139,14 +198,62 @@
                 '<@(_outputs)',
               ],
             },
-          ],
-          'copies': [
             {
-              'destination': '<(package_dir)/libs',
-              'files': [
+              'action_name': 'extracting from jars',
+              'inputs':  [
                 '<(PRODUCT_DIR)/lib.java/<(java_lib)',
                 '<(PRODUCT_DIR)/lib.java/base_java.jar',
                 '<(PRODUCT_DIR)/lib.java/net_java.jar',
+                '<(PRODUCT_DIR)/lib.java/url_java.jar',
+              ],
+              'outputs': ['<(jar_extract_stamp)', '<(jar_extract_dir)'],
+              'action': [
+                'python',
+                'cronet/tools/extract_from_jars.py',
+                '--classes-dir=<(jar_extract_dir)',
+                '--jars=<@(_inputs)',
+                '--stamp=<(jar_extract_stamp)',
+              ],
+            },
+            {
+              'action_name': 'jar_<(_target_name)',
+              'message': 'Creating <(_target_name) jar',
+              'inputs': [
+                '<(DEPTH)/build/android/gyp/util/build_utils.py',
+                '<(DEPTH)/build/android/gyp/util/md5_check.py',
+                '<(DEPTH)/build/android/gyp/jar.py',
+                '<(jar_extract_stamp)',
+              ],
+              'outputs': [
+                '<(package_dir)/<(java_lib)',
+                '<(cronet_jar_stamp)',
+              ],
+              'action': [
+                'python', '<(DEPTH)/build/android/gyp/jar.py',
+                '--classes-dir=<(jar_extract_dir)',
+                '--jar-path=<(package_dir)/<(java_lib)',
+                '--excluded-classes=<@(jar_excluded_classes)',
+                '--stamp=<(cronet_jar_stamp)',
+              ]
+            },
+            {
+              'action_name': 'generate licenses',
+              'inputs':  ['cronet/tools/cronet_licenses.py'] ,
+              'outputs': ['<(package_dir)/LICENSE'],
+              'action': [
+                'python',
+                '<@(_inputs)',
+                'license',
+                '<@(_outputs)',
+              ],
+            },
+          ],
+          'copies': [
+            {
+              'destination': '<(package_dir)',
+              'files': [
+                '../AUTHORS',
+                '../chrome/VERSION',
               ],
             },
           ],

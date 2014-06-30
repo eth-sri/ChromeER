@@ -23,7 +23,7 @@ namespace operations {
 namespace {
 
 const char kExtensionId[] = "mbflcebpggnecokmikipoihdbecnjfoj";
-const int kFileSystemId = 1;
+const char kFileSystemId[] = "testing-file-system";
 const int kRequestId = 2;
 const base::FilePath::CharType kFilePath[] = "/directory/blueberries.txt";
 
@@ -130,29 +130,32 @@ TEST_F(FileSystemProviderOperationsOpenFileTest, Execute) {
       extensions::api::file_system_provider::OnOpenFileRequested::kEventName,
       event->event_name);
   base::ListValue* event_args = event->event_args.get();
-  ASSERT_EQ(5u, event_args->GetSize());
+  ASSERT_EQ(1u, event_args->GetSize());
 
-  int event_file_system_id = -1;
-  EXPECT_TRUE(event_args->GetInteger(0, &event_file_system_id));
+  base::DictionaryValue* options = NULL;
+  ASSERT_TRUE(event_args->GetDictionary(0, &options));
+
+  std::string event_file_system_id;
+  EXPECT_TRUE(options->GetString("fileSystemId", &event_file_system_id));
   EXPECT_EQ(kFileSystemId, event_file_system_id);
 
   int event_request_id = -1;
-  EXPECT_TRUE(event_args->GetInteger(1, &event_request_id));
+  EXPECT_TRUE(options->GetInteger("requestId", &event_request_id));
   EXPECT_EQ(kRequestId, event_request_id);
 
   std::string event_file_path;
-  EXPECT_TRUE(event_args->GetString(2, &event_file_path));
+  EXPECT_TRUE(options->GetString("filePath", &event_file_path));
   EXPECT_EQ(kFilePath, event_file_path);
 
   std::string event_file_open_mode;
-  EXPECT_TRUE(event_args->GetString(3, &event_file_open_mode));
+  EXPECT_TRUE(options->GetString("mode", &event_file_open_mode));
   const std::string expected_file_open_mode =
       extensions::api::file_system_provider::ToString(
           extensions::api::file_system_provider::OPEN_FILE_MODE_READ);
   EXPECT_EQ(expected_file_open_mode, event_file_open_mode);
 
   bool event_create;
-  EXPECT_TRUE(event_args->GetBoolean(4, &event_create));
+  EXPECT_TRUE(options->GetBoolean("create", &event_create));
   EXPECT_FALSE(event_create);
 }
 
@@ -175,10 +178,6 @@ TEST_F(FileSystemProviderOperationsOpenFileTest, Execute_NoListener) {
 }
 
 TEST_F(FileSystemProviderOperationsOpenFileTest, OnSuccess) {
-  using extensions::api::file_system_provider::EntryMetadata;
-  using extensions::api::file_system_provider_internal::
-      OpenFileRequestedSuccess::Params;
-
   LoggingDispatchEventImpl dispatcher(true /* dispatch_reply */);
   CallbackLogger callback_logger;
 
@@ -197,7 +196,7 @@ TEST_F(FileSystemProviderOperationsOpenFileTest, OnSuccess) {
 
   open_file.OnSuccess(kRequestId,
                       scoped_ptr<RequestValue>(new RequestValue()),
-                      false /* has_next */);
+                      false /* has_more */);
   ASSERT_EQ(1u, callback_logger.events().size());
   CallbackLogger::Event* event = callback_logger.events()[0];
   EXPECT_EQ(base::File::FILE_OK, event->result());
@@ -205,10 +204,6 @@ TEST_F(FileSystemProviderOperationsOpenFileTest, OnSuccess) {
 }
 
 TEST_F(FileSystemProviderOperationsOpenFileTest, OnError) {
-  using extensions::api::file_system_provider::EntryMetadata;
-  using extensions::api::file_system_provider_internal::OpenFileRequestedError::
-      Params;
-
   LoggingDispatchEventImpl dispatcher(true /* dispatch_reply */);
   CallbackLogger callback_logger;
 
@@ -225,7 +220,9 @@ TEST_F(FileSystemProviderOperationsOpenFileTest, OnError) {
 
   EXPECT_TRUE(open_file.Execute(kRequestId));
 
-  open_file.OnError(kRequestId, base::File::FILE_ERROR_TOO_MANY_OPENED);
+  open_file.OnError(kRequestId,
+                    scoped_ptr<RequestValue>(new RequestValue()),
+                    base::File::FILE_ERROR_TOO_MANY_OPENED);
   ASSERT_EQ(1u, callback_logger.events().size());
   CallbackLogger::Event* event = callback_logger.events()[0];
   EXPECT_EQ(base::File::FILE_ERROR_TOO_MANY_OPENED, event->result());

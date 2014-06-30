@@ -1,4 +1,4 @@
-# Copyright (c) 2012 The Chromium Authors. All rights reserved.
+# Copyright 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -56,11 +56,6 @@ class Browser(object):
   @property
   def browser_type(self):
     return self._browser_backend.browser_type
-
-  @property
-  def is_content_shell(self):
-    """Returns whether this browser is a content shell, only."""
-    return self._browser_backend.is_content_shell
 
   @property
   def supports_extensions(self):

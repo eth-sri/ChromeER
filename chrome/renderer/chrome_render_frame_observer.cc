@@ -4,6 +4,7 @@
 
 #include "chrome/renderer/chrome_render_frame_observer.h"
 
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/common/prerender_messages.h"
 #include "chrome/common/print_messages.h"
 #include "chrome/common/render_messages.h"
@@ -20,13 +21,14 @@ using blink::WebElement;
 using blink::WebNode;
 
 namespace {
+
 // If the source image is null or occupies less area than
 // |thumbnail_min_area_pixels|, we return the image unmodified.  Otherwise, we
 // scale down the image so that the width and height do not exceed
 // |thumbnail_max_size_pixels|, preserving the original aspect ratio.
-SkBitmap Downscale(blink::WebImage image,
+SkBitmap Downscale(const blink::WebImage& image,
                    int thumbnail_min_area_pixels,
-                   gfx::Size thumbnail_max_size_pixels) {
+                   const gfx::Size& thumbnail_max_size_pixels) {
   if (image.isNull())
     return SkBitmap();
 
@@ -56,7 +58,8 @@ SkBitmap Downscale(blink::WebImage image,
                                        static_cast<int>(scaled_size.height()));
 }
 
-}
+}  // namespace
+
 ChromeRenderFrameObserver::ChromeRenderFrameObserver(
     content::RenderFrame* render_frame)
     : content::RenderFrameObserver(render_frame) {

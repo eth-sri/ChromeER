@@ -5,7 +5,6 @@
 from telemetry.page.actions.all_page_actions import *
 from telemetry.page import page as page_module
 from telemetry.page import page_set as page_set_module
-from telemetry.web_perf import timeline_interaction_record as tir_module
 
 
 class KeySilkCasesPage(page_module.Page):
@@ -17,14 +16,14 @@ class KeySilkCasesPage(page_module.Page):
     self.archive_data_file = 'data/key_silk_cases.json'
 
   def RunNavigateSteps(self, action_runner):
-    action_runner.RunAction(NavigateAction())
-    action_runner.RunAction(WaitAction(
-      {
-        'seconds': 2
-      }))
+    action_runner.NavigateToPage(self)
+    action_runner.Wait(2)
 
   def RunSmoothness(self, action_runner):
-    action_runner.RunAction(ScrollAction())
+    interaction = action_runner.BeginGestureInteraction(
+        'ScrollAction', is_smooth=True)
+    action_runner.ScrollPage()
+    interaction.End()
 
 
 class Page1(KeySilkCasesPage):
@@ -37,13 +36,10 @@ class Page1(KeySilkCasesPage):
       page_set=page_set)
 
   def RunSmoothness(self, action_runner):
-    action_runner.RunAction(ScrollAction(
-      {
-        'scrollable_element_function': '''
-          function(callback) {
-            callback(document.getElementById('scrollable'));
-          }'''
-      }))
+    interaction = action_runner.BeginGestureInteraction(
+        'ScrollAction', is_smooth=True)
+    action_runner.ScrollElement(selector='#scrollable')
+    interaction.End()
 
 
 class Page2(KeySilkCasesPage):
@@ -56,7 +52,7 @@ class Page2(KeySilkCasesPage):
       page_set=page_set)
 
   def RunSmoothness(self, action_runner):
-    action_runner.RunAction(WaitAction({'seconds': 2}))
+    action_runner.Wait(2)
 
 
 class Page3(KeySilkCasesPage):
@@ -73,13 +69,10 @@ class Page3(KeySilkCasesPage):
       page_set=page_set)
 
   def RunSmoothness(self, action_runner):
-    action_runner.RunAction(ScrollAction(
-      {
-        'scrollable_element_function': '''
-          function(callback) {
-            callback(document.getElementById('container'));
-          }'''
-      }))
+    interaction = action_runner.BeginGestureInteraction(
+        'ScrollAction', is_smooth=True)
+    action_runner.ScrollElement(selector='#container')
+    interaction.End()
 
 
 class Page4(KeySilkCasesPage):
@@ -91,11 +84,11 @@ class Page4(KeySilkCasesPage):
 
   def __init__(self, page_set):
     super(Page4, self).__init__(
-      url='http://jsfiddle.net/3yDKh/4/embedded/result',
+      url='http://jsfiddle.net/3yDKh/15/show/',
       page_set=page_set)
 
   def RunSmoothness(self, action_runner):
-    action_runner.RunAction(WaitAction({'seconds': 3}))
+    action_runner.Wait(3)
 
 
 class Page5(KeySilkCasesPage):
@@ -106,13 +99,13 @@ class Page5(KeySilkCasesPage):
 
   def __init__(self, page_set):
     super(Page5, self).__init__(
-      url='http://jsfiddle.net/jx5De/13/embedded/result',
+      url='http://jsfiddle.net/jx5De/14/show/',
       page_set=page_set)
 
     self.gpu_raster = True
 
   def RunSmoothness(self, action_runner):
-    action_runner.RunAction(WaitAction({'seconds': 4}))
+    action_runner.Wait(4)
 
 
 class Page6(KeySilkCasesPage):
@@ -124,11 +117,11 @@ class Page6(KeySilkCasesPage):
 
   def __init__(self, page_set):
     super(Page6, self).__init__(
-      url='http://jsfiddle.net/3yDKh/6/embedded/result',
+      url='http://jsfiddle.net/3yDKh/16/show/',
       page_set=page_set)
 
   def RunSmoothness(self, action_runner):
-    action_runner.RunAction(WaitAction({'seconds': 3}))
+    action_runner.Wait(3)
 
 
 class Page7(KeySilkCasesPage):
@@ -141,11 +134,11 @@ class Page7(KeySilkCasesPage):
 
   def __init__(self, page_set):
     super(Page7, self).__init__(
-      url='http://jsfiddle.net/R8DX9/1/embedded/result/',
+      url='http://jsfiddle.net/R8DX9/4/show/',
       page_set=page_set)
 
   def RunSmoothness(self, action_runner):
-    action_runner.RunAction(WaitAction({'seconds': 3}))
+    action_runner.Wait(3)
 
 
 class Page8(KeySilkCasesPage):
@@ -158,11 +151,11 @@ class Page8(KeySilkCasesPage):
 
   def __init__(self, page_set):
     super(Page8, self).__init__(
-      url='http://jsfiddle.net/rF9Gh/3/embedded/result/',
+      url='http://jsfiddle.net/rF9Gh/7/show/',
       page_set=page_set)
 
   def RunSmoothness(self, action_runner):
-    action_runner.RunAction(WaitAction({'seconds': 3}))
+    action_runner.Wait(3)
 
 
 class Page9(KeySilkCasesPage):
@@ -174,13 +167,13 @@ class Page9(KeySilkCasesPage):
 
   def __init__(self, page_set):
     super(Page9, self).__init__(
-      url='http://jsfiddle.net/TLXLu/2/embedded/result/',
+      url='http://jsfiddle.net/TLXLu/3/show/',
       page_set=page_set)
 
     self.gpu_raster = True
 
   def RunSmoothness(self, action_runner):
-    action_runner.RunAction(WaitAction({'seconds': 4}))
+    action_runner.Wait(4)
 
 
 class Page10(KeySilkCasesPage):
@@ -192,13 +185,13 @@ class Page10(KeySilkCasesPage):
 
   def __init__(self, page_set):
     super(Page10, self).__init__(
-      url='http://jsfiddle.net/cKB9D/6/embedded/result/',
+      url='http://jsfiddle.net/cKB9D/7/show/',
       page_set=page_set)
 
     self.gpu_raster = True
 
   def RunSmoothness(self, action_runner):
-    action_runner.RunAction(WaitAction({'seconds': 4}))
+    action_runner.Wait(4)
 
 
 class Page11(KeySilkCasesPage):
@@ -210,13 +203,13 @@ class Page11(KeySilkCasesPage):
 
   def __init__(self, page_set):
     super(Page11, self).__init__(
-      url='http://jsfiddle.net/vBQHH/10/embedded/result/',
+      url='http://jsfiddle.net/vBQHH/11/show/',
       page_set=page_set)
 
     self.gpu_raster = True
 
   def RunSmoothness(self, action_runner):
-    action_runner.RunAction(WaitAction({'seconds': 4}))
+    action_runner.Wait(4)
 
 
 class Page12(KeySilkCasesPage):
@@ -225,11 +218,11 @@ class Page12(KeySilkCasesPage):
 
   def __init__(self, page_set):
     super(Page12, self).__init__(
-      url='http://jsfiddle.net/ugkd4/9/embedded/result/',
+      url='http://jsfiddle.net/ugkd4/10/show/',
       page_set=page_set)
 
   def RunSmoothness(self, action_runner):
-    action_runner.RunAction(WaitAction({'seconds': 5}))
+    action_runner.Wait(5)
 
 
 class Page13(KeySilkCasesPage):
@@ -238,13 +231,13 @@ class Page13(KeySilkCasesPage):
 
   def __init__(self, page_set):
     super(Page13, self).__init__(
-      url='http://jsfiddle.net/xLuvC/embedded/result/',
+      url='http://jsfiddle.net/xLuvC/1/show/',
       page_set=page_set)
 
     self.gpu_raster = True
 
   def RunSmoothness(self, action_runner):
-    action_runner.RunAction(WaitAction({'seconds': 4}))
+    action_runner.Wait(4)
 
 
 class Page14(KeySilkCasesPage):
@@ -253,13 +246,13 @@ class Page14(KeySilkCasesPage):
 
   def __init__(self, page_set):
     super(Page14, self).__init__(
-      url='http://jsfiddle.net/bNp2h/1/embedded/result/',
+      url='http://jsfiddle.net/bNp2h/3/show/',
       page_set=page_set)
 
     self.gpu_raster = True
 
   def RunSmoothness(self, action_runner):
-    action_runner.RunAction(WaitAction({'seconds': 4}))
+    action_runner.Wait(4)
 
 
 class Page15(KeySilkCasesPage):
@@ -272,7 +265,7 @@ class Page15(KeySilkCasesPage):
       page_set=page_set)
 
   def RunSmoothness(self, action_runner):
-    action_runner.RunAction(WaitAction({'seconds': 5}))
+    action_runner.Wait(5)
 
 
 class Page16(KeySilkCasesPage):
@@ -283,27 +276,21 @@ class Page16(KeySilkCasesPage):
       page_set=page_set)
 
   def RunNavigateSteps(self, action_runner):
-    action_runner.RunAction(NavigateAction())
-    action_runner.RunAction(WaitAction({'seconds': 2}))
+    action_runner.NavigateToPage(self)
+    action_runner.Wait(2)
 
   def SwipeToDismiss(self, action_runner):
-    action_runner.RunAction(SwipeAction(
-      {
-        'left_start_percentage': 0.8,
-        'distance': 200,
-        'direction': 'left',
-        'top_start_percentage': 0.2,
-        'element_function': '''
-          function(callback) {
-            callback(document.getElementsByClassName('message')[2]);
-          }''',
-        'speed': 5000
-      }))
-    action_runner.BeginInteraction('Wait', [tir_module.IS_SMOOTH])
-    action_runner.RunAction(WaitAction({
-      'javascript': 'document.getElementsByClassName("message").length < 18'
-    }))
-    action_runner.EndInteraction('Wait', [tir_module.IS_SMOOTH])
+    interaction = action_runner.BeginGestureInteraction(
+        'SwipeAction', is_smooth=True)
+    action_runner.SwipeElement(
+        left_start_ratio=0.8, top_start_ratio=0.2,
+        direction='left', distance=200, speed_in_pixels_per_second=5000,
+        element_function='document.getElementsByClassName("message")[2]')
+    interaction.End()
+    interaction = action_runner.BeginInteraction('Wait', is_smooth=True)
+    action_runner.WaitForJavaScriptCondition(
+        'document.getElementsByClassName("message").length < 18')
+    interaction.End()
 
   def RunSmoothness(self, action_runner):
     self.SwipeToDismiss(action_runner)
@@ -317,40 +304,28 @@ class Page17(KeySilkCasesPage):
       page_set=page_set)
 
   def RunNavigateSteps(self, action_runner):
-    action_runner.RunAction(NavigateAction())
-    action_runner.RunAction(WaitAction({'seconds': 2}))
+    action_runner.NavigateToPage(self)
+    action_runner.Wait(2)
 
   def RunSmoothness(self, action_runner):
     self.StressHideyBars(action_runner)
 
   def StressHideyBars(self, action_runner):
-    action_runner.RunAction(ScrollAction(
-      {
-        'direction': 'down',
-        'speed': 200,
-        'scrollable_element_function': '''
-          function(callback) {
-            callback(document.getElementById('messages'));
-          }'''
-      }))
-    action_runner.RunAction(ScrollAction(
-      {
-        'direction': 'up',
-        'speed': 200,
-        'scrollable_element_function': '''
-          function(callback) {
-            callback(document.getElementById('messages'));
-          }'''
-      }))
-    action_runner.RunAction(ScrollAction(
-      {
-        'direction': 'down',
-        'speed': 200,
-        'scrollable_element_function': '''
-          function(callback) {
-            callback(document.getElementById('messages'));
-          }'''
-      }))
+    interaction = action_runner.BeginGestureInteraction(
+        'ScrollAction', is_smooth=True)
+    action_runner.ScrollElement(
+        selector='#messages', direction='down', speed_in_pixels_per_second=200)
+    interaction.End()
+    interaction = action_runner.BeginGestureInteraction(
+        'ScrollAction', is_smooth=True)
+    action_runner.ScrollElement(
+        selector='#messages', direction='up', speed_in_pixels_per_second=200)
+    interaction.End()
+    interaction = action_runner.BeginGestureInteraction(
+        'ScrollAction', is_smooth=True)
+    action_runner.ScrollElement(
+        selector='#messages', direction='down', speed_in_pixels_per_second=200)
+    interaction.End()
 
 
 class Page18(KeySilkCasesPage):
@@ -361,22 +336,19 @@ class Page18(KeySilkCasesPage):
       page_set=page_set)
 
   def RunNavigateSteps(self, action_runner):
-    action_runner.RunAction(NavigateAction())
-    action_runner.RunAction(WaitAction(
-      {
-        'seconds': 2
-      }))
+    action_runner.NavigateToPage(self)
+    action_runner.Wait(2)
 
   def RunSmoothness(self, action_runner):
     for _ in xrange(6):
       self.ToggleDrawer(action_runner)
 
   def ToggleDrawer(self, action_runner):
-    action_runner.RunAction(TapAction(
-      {
-        'selector': '#menu-button',
-        'wait_after' : {'seconds': 1}
-      }))
+    interaction = action_runner.BeginInteraction(
+        'Action_TapAction', is_smooth=True)
+    action_runner.TapElement('#menu-button')
+    action_runner.Wait(1)
+    interaction.End()
 
 
 class Page19(KeySilkCasesPage):
@@ -387,40 +359,34 @@ class Page19(KeySilkCasesPage):
       page_set=page_set)
 
   def ToggleDrawer(self, action_runner):
-    action_runner.RunAction(TapAction(
-      {
-        'selector': '#menu-button'
-      }))
-    action_runner.BeginInteraction('Wait', [tir_module.IS_SMOOTH])
-    action_runner.RunAction(WaitAction({
-      'javascript': 'document.getElementById("nav-drawer").active'
-    }))
-    action_runner.EndInteraction('Wait', [tir_module.IS_SMOOTH])
+    interaction = action_runner.BeginGestureInteraction(
+        'TapAction', is_smooth=True)
+    action_runner.TapElement('#menu-button')
+    interaction.End()
 
+    interaction = action_runner.BeginInteraction('Wait', is_smooth=True)
+    action_runner.WaitForJavaScriptCondition(
+        'document.getElementById("nav-drawer").active')
+    interaction.End()
 
   def RunNavigateSteps(self, action_runner):
-    action_runner.RunAction(NavigateAction())
-    action_runner.RunAction(WaitAction({'seconds': 2}))
+    action_runner.NavigateToPage(self)
+    action_runner.Wait(2)
     self.ToggleDrawer(action_runner)
 
   def RunSmoothness(self, action_runner):
     self.SlideDrawer(action_runner)
 
   def SlideDrawer(self, action_runner):
-    action_runner.RunAction(SwipeAction(
-      {
-        'left_start_percentage': 0.8,
-        'distance': 200,
-        'direction': 'left',
-        'top_start_percentage': 0.2,
-        'element_function': '''
-          function(callback) {
-            callback(document.getElementById('nav-drawer').children[0]);
-          }''',
-        'wait_after' : {
-          'javascript': '!document.getElementById("nav-drawer").active'
-        }
-      }))
+    interaction = action_runner.BeginInteraction(
+        'Action_SwipeAction', is_smooth=True)
+    action_runner.SwipeElement(
+        left_start_ratio=0.8, top_start_ratio=0.2,
+        direction='left', distance=200,
+        element_function='document.getElementById("nav-drawer").children[0]')
+    action_runner.WaitForJavaScriptCondition(
+        '!document.getElementById("nav-drawer").active')
+    interaction.End()
 
 
 class Page20(KeySilkCasesPage):
@@ -433,14 +399,11 @@ class Page20(KeySilkCasesPage):
       page_set=page_set)
 
   def RunSmoothness(self, action_runner):
-    action_runner.RunAction(ScrollAction(
-      {
-        'speed': 5000,
-        'scrollable_element_function': '''
-          function(callback) {
-            callback(document.getElementById('container'));
-          }'''
-      }))
+    interaction = action_runner.BeginGestureInteraction(
+        'ScrollAction', is_smooth=True)
+    action_runner.ScrollElement(
+        selector='#container', speed_in_pixels_per_second=5000)
+    interaction.End()
 
 
 class Page21(KeySilkCasesPage):
@@ -452,32 +415,27 @@ class Page21(KeySilkCasesPage):
 
   def ScrollKnowledgeCardToTop(self, action_runner):
     # scroll until the knowledge card is at the top
-    action_runner.RunAction(ScrollAction(
-      {
-        'scroll_distance_function': '''
-          function() {
+    action_runner.ScrollPage(
+      distance_expr='''
+          (function() {
             var el = document.getElementById('kno-result');
             var bound = el.getBoundingClientRect();
             return bound.top - document.body.scrollTop;
-          }
-        '''
-      }))
+          })()''')
 
   def ExpandKnowledgeCard(self, action_runner):
     # expand card
-    action_runner.RunAction(TapAction(
-      {
-        'element_function': '''
-          function(callback) {
-            callback(document.getElementsByClassName("vk_arc")[0]);
-          }''',
-        'wait_after': {'seconds': 2}
-      }))
+    interaction = action_runner.BeginInteraction(
+        'Action_TapAction', is_smooth=True)
+    action_runner.TapElement(
+        element_function='document.getElementsByClassName("vk_arc")[0]')
+    action_runner.Wait(2)
+    interaction.End()
 
 
   def RunNavigateSteps(self, action_runner):
-    action_runner.RunAction(NavigateAction())
-    action_runner.RunAction(WaitAction({'seconds': 3}))
+    action_runner.NavigateToPage(self)
+    action_runner.Wait(3)
     self.ScrollKnowledgeCardToTop(action_runner)
 
   def RunSmoothness(self, action_runner):
@@ -495,24 +453,16 @@ class Page22(KeySilkCasesPage):
     self.credentials = 'google'
 
   def RunNavigateSteps(self, action_runner):
-    action_runner.RunAction(NavigateAction())
-    action_runner.RunAction(WaitAction(
-      {
-        'javascript': 'document.getElementsByClassName("fHa").length > 0'
-      }))
-    action_runner.RunAction(WaitAction(
-      {
-        'seconds': 2
-      }))
+    action_runner.NavigateToPage(self)
+    action_runner.WaitForJavaScriptCondition(
+        'document.getElementsByClassName("fHa").length > 0')
+    action_runner.Wait(2)
 
   def RunSmoothness(self, action_runner):
-    action_runner.RunAction(ScrollAction(
-      {
-        'scrollable_element_function': '''
-          function(callback) {
-            callback(document.getElementById('mainContent'));
-          }'''
-      }))
+    interaction = action_runner.BeginGestureInteraction(
+        'ScrollAction', is_smooth=True)
+    action_runner.ScrollElement(selector='#mainContent')
+    interaction.End()
 
 
 class Page23(KeySilkCasesPage):
@@ -524,20 +474,20 @@ class Page23(KeySilkCasesPage):
 
   def __init__(self, page_set):
     super(Page23, self).__init__(
-      url='http://jsbin.com/UVIgUTa/6/quiet',
+      url='http://jsbin.com/UVIgUTa/38/quiet',
       page_set=page_set)
 
   def RunSmoothness(self, action_runner):
-    action_runner.RunAction(ScrollAction(
-      {
-        'direction': 'down',
-        'scroll_requires_touch': True,
-        'scroll_distance_function':
-          'function() { return window.innerHeight / 2; }'
-      }))
-    action_runner.BeginInteraction('Wait', [tir_module.IS_SMOOTH])
-    action_runner.RunAction(WaitAction({'seconds' : 1}))
-    action_runner.EndInteraction('Wait', [tir_module.IS_SMOOTH])
+    interaction = action_runner.BeginGestureInteraction(
+        'ScrollAction', is_smooth=True)
+    action_runner.ScrollPage(
+        distance_expr='window.innerHeight / 2',
+        direction='down',
+        use_touch=True)
+    interaction.End()
+    interaction = action_runner.BeginInteraction('Wait', is_smooth=True)
+    action_runner.Wait(1)
+    interaction.End()
 
 
 class Page24(KeySilkCasesPage):
@@ -552,24 +502,19 @@ class Page24(KeySilkCasesPage):
       page_set=page_set)
 
   def RunNavigateSteps(self, action_runner):
-    action_runner.RunAction(NavigateAction())
-    action_runner.RunAction(WaitAction(
-      {
-        'javascript': 'document.getElementById(":h") != null'
-      }))
-    action_runner.RunAction(WaitAction(
-      {
-        'seconds': 1
-      }))
+    action_runner.NavigateToPage(self)
+    action_runner.WaitForJavaScriptCondition(
+        'document.getElementById(":h") != null')
+    action_runner.Wait(1)
 
   def RunSmoothness(self, action_runner):
-    action_runner.RunAction(ScrollAction(
-      {
-        'scroll_distance_function': 'function() { return 2500; }',
-        'scrollable_element_function':
-          'function(callback) { callback(document.getElementById(":5")); }',
-        'scroll_requires_touch': True
-      }))
+    interaction = action_runner.BeginGestureInteraction(
+        'ScrollAction', is_smooth=True)
+    action_runner.ScrollElement(
+        element_function='document.getElementById(":5")',
+        distance=2500,
+        use_touch=True)
+    interaction.End()
 
 
 class Page25(KeySilkCasesPage):
@@ -580,29 +525,21 @@ class Page25(KeySilkCasesPage):
       page_set=page_set)
 
   def RunNavigateSteps(self, action_runner):
-    action_runner.RunAction(NavigateAction())
-    action_runner.RunAction(WaitAction(
-      {
-        'javascript': 'document.getElementById(":h") != null'
-      }))
-    action_runner.RunAction(WaitAction(
-      {
-        'seconds': 1
-      }))
+    action_runner.NavigateToPage(self)
+    action_runner.WaitForJavaScriptCondition(
+        'document.getElementById(":h") != null')
+    action_runner.Wait(1)
 
   def RunSmoothness(self, action_runner):
-    action_runner.RunAction(SwipeAction(
-      {
-        'distance': 100,
-        'direction': "left",
-        'element_function': '''
-          function(callback) {
-            callback(document.getElementById(':f'));
-          }'''
-      }))
-    action_runner.BeginInteraction('Wait', [tir_module.IS_SMOOTH])
-    action_runner.RunAction(WaitAction({'seconds' : 1}))
-    action_runner.EndInteraction('Wait', [tir_module.IS_SMOOTH])
+    interaction = action_runner.BeginGestureInteraction(
+        'SwipeAction', is_smooth=True)
+    action_runner.SwipeElement(
+        direction='left', distance=100,
+        element_function='document.getElementById(":f")')
+    interaction.End()
+    interaction = action_runner.BeginInteraction('Wait', is_smooth=True)
+    action_runner.Wait(1)
+    interaction.End()
 
 
 class Page26(KeySilkCasesPage):
@@ -615,21 +552,16 @@ class Page26(KeySilkCasesPage):
       page_set=page_set)
 
   def RunNavigateSteps(self, action_runner):
-    action_runner.RunAction(NavigateAction())
-    action_runner.RunAction(WaitAction(
-      {
-        'javascript': 'document.getElementsByClassName("tweet").length > 0'
-      }))
-    action_runner.RunAction(WaitAction(
-      {
-        'seconds': 1
-      }))
+    action_runner.NavigateToPage(self)
+    action_runner.WaitForJavaScriptCondition(
+        'document.getElementsByClassName("tweet").length > 0')
+    action_runner.Wait(1)
 
   def RunSmoothness(self, action_runner):
-    action_runner.RunAction(ScrollAction(
-      {
-        'scroll_distance_function': 'function() { return 5000; }'
-      }))
+    interaction = action_runner.BeginGestureInteraction(
+        'ScrollAction', is_smooth=True)
+    action_runner.ScrollPage(distance=5000)
+    interaction.End()
 
 
 class KeySilkCasesPageSet(page_set_module.PageSet):
@@ -640,7 +572,8 @@ class KeySilkCasesPageSet(page_set_module.PageSet):
     super(KeySilkCasesPageSet, self).__init__(
       credentials_path='data/credentials.json',
       user_agent_type='mobile',
-      archive_data_file='data/key_silk_cases.json')
+      archive_data_file='data/key_silk_cases.json',
+      bucket=page_set_module.PARTNER_BUCKET)
 
     self.AddPage(Page1(self))
     self.AddPage(Page2(self))

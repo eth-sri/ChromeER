@@ -31,7 +31,7 @@ void CancelOverview() {
   WindowSelectorController* controller =
       Shell::GetInstance()->window_selector_controller();
   if (controller && controller->IsSelecting())
-    controller->OnSelectionCanceled();
+    controller->OnSelectionEnded();
 }
 
 }  // namespace
@@ -48,7 +48,6 @@ MaximizeModeWindowManager::~MaximizeModeWindowManager() {
   EnableBackdropBehindTopWindowOnEachDisplay(false);
   RemoveWindowCreationObservers();
   RestoreAllWindows();
-  Shell::GetInstance()->OnMaximizeModeEnded();
 }
 
 int MaximizeModeWindowManager::GetNumberOfManagedWindows() {
@@ -115,17 +114,17 @@ void MaximizeModeWindowManager::OnWindowBoundsChanged(
   }
 }
 
-void MaximizeModeWindowManager::OnDisplayBoundsChanged(
-    const gfx::Display& display) {
-  // Nothing to do here.
-}
-
 void MaximizeModeWindowManager::OnDisplayAdded(const gfx::Display& display) {
   DisplayConfigurationChanged();
 }
 
 void MaximizeModeWindowManager::OnDisplayRemoved(const gfx::Display& display) {
   DisplayConfigurationChanged();
+}
+
+void MaximizeModeWindowManager::OnDisplayMetricsChanged(const gfx::Display&,
+                                                        uint32_t) {
+  // Nothing to do here.
 }
 
 void MaximizeModeWindowManager::OnTouchEvent(ui::TouchEvent* event) {
@@ -138,7 +137,7 @@ void MaximizeModeWindowManager::OnTouchEvent(ui::TouchEvent* event) {
     return;
 
   wm::WindowState* window_state = wm::GetWindowState(window);
-  if (!window_state->IsFullscreen())
+  if (!window_state->IsFullscreen() || window_state->in_immersive_fullscreen())
     return;
 
   // Test that the touch happened in the top or bottom lines.
@@ -163,7 +162,6 @@ MaximizeModeWindowManager::MaximizeModeWindowManager()
   MaximizeAllWindows();
   AddWindowCreationObservers();
   EnableBackdropBehindTopWindowOnEachDisplay(true);
-  Shell::GetInstance()->OnMaximizeModeStarted();
   Shell::GetScreen()->AddObserver(this);
   Shell::GetInstance()->AddShellObserver(this);
   Shell::GetInstance()->AddPreTargetHandler(this);

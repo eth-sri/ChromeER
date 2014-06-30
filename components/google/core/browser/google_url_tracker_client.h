@@ -6,8 +6,14 @@
 #define COMPONENTS_GOOGLE_GOOGLE_URL_TRACKER_CLIENT_H_
 
 #include "base/macros.h"
+#include "url/gurl.h"
 
 class GoogleURLTracker;
+class PrefService;
+
+namespace net {
+class URLRequestContextGetter;
+}
 
 // Interface by which GoogleURLTracker communicates with its embedder.
 class GoogleURLTrackerClient {
@@ -27,6 +33,16 @@ class GoogleURLTrackerClient {
   // Returns whether or not the client is currently listening for navigation
   // starts.
   virtual bool IsListeningForNavigationStart() = 0;
+
+  // Returns whether background networking is enabled.
+  virtual bool IsBackgroundNetworkingEnabled() = 0;
+
+  // Returns the PrefService that the GoogleURLTracker should use.
+  virtual PrefService* GetPrefs() = 0;
+
+  // Returns the URL request context information that the GoogleURLTracker
+  // should use.
+  virtual net::URLRequestContextGetter* GetRequestContext() = 0;
 
  protected:
   GoogleURLTracker* google_url_tracker() { return google_url_tracker_; }

@@ -164,7 +164,7 @@ gfx::NativeViewId ScreenCaptureNotificationUIViews::OnStarted(
     const base::Closure& stop_callback) {
   stop_callback_ = stop_callback;
 
-  label_->SetElideBehavior(views::Label::ELIDE_IN_MIDDLE);
+  label_->SetElideBehavior(gfx::ELIDE_MIDDLE);
   label_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
   label_->SetText(text_);
 
@@ -176,15 +176,12 @@ gfx::NativeViewId ScreenCaptureNotificationUIViews::OnStarted(
   params.opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
   params.remove_standard_frame = true;
   params.keep_on_top = true;
-  params.top_level = true;
 
-#if defined(USE_ASH)
   // TODO(sergeyu): The notification bar must be shown on the monitor that's
   // being captured. Make sure it's always the case. Currently we always capture
   // the primary monitor.
   if (ash::Shell::HasInstance())
     params.context = ash::Shell::GetPrimaryRootWindow();
-#endif
 
   widget->set_frame_type(views::Widget::FRAME_TYPE_FORCE_CUSTOM);
   widget->Init(params);

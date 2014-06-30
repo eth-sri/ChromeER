@@ -2,17 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "device/hid/hid_service_linux.h"
+
 #include <linux/hidraw.h>
 #include <sys/ioctl.h>
-
 #include <stdint.h>
 
 #include <string>
 
 #include "base/bind.h"
+#include "base/files/file.h"
 #include "base/files/file_path.h"
 #include "base/logging.h"
-#include "base/platform_file.h"
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
@@ -20,8 +21,7 @@
 #include "device/hid/hid_connection_linux.h"
 #include "device/hid/hid_device_info.h"
 #include "device/hid/hid_report_descriptor.h"
-#include "device/hid/hid_service_linux.h"
-#include "device/hid/udev_common.h"
+#include "device/udev_linux/udev.h"
 
 namespace device {
 
@@ -33,7 +33,7 @@ const char kHIDID[] = "HID_ID";
 const char kHIDName[] = "HID_NAME";
 const char kHIDUnique[] = "HID_UNIQ";
 
-} // namespace
+}  // namespace
 
 HidServiceLinux::HidServiceLinux() {
   DeviceMonitorLinux* monitor = DeviceMonitorLinux::GetInstance();
@@ -114,7 +114,7 @@ void HidServiceLinux::OnDeviceAdded(udev_device* device) {
 
   std::string dev_node;
   if (!FindHidrawDevNode(device, &dev_node)) {
-    LOG(ERROR) << "Cannot open HID device as hidraw device.";
+    LOG(ERROR) << "Cannot find device node for HID device.";
     return;
   }
 
@@ -122,14 +122,15 @@ void HidServiceLinux::OnDeviceAdded(udev_device* device) {
 
   base::File device_file(base::FilePath(dev_node), flags);
   if (!device_file.IsValid()) {
-    LOG(ERROR) << device_file.error_details();
+    LOG(ERROR) << "Cannot open '" << dev_node << "': "
+        << base::File::ErrorToString(device_file.error_details());
     return;
   }
 
   int desc_size = 0;
   int res = ioctl(device_file.GetPlatformFile(), HIDIOCGRDESCSIZE, &desc_size);
   if (res < 0) {
-    LOG(ERROR) << "HIDIOCGRDESCSIZE failed.";
+    PLOG(ERROR) << "Failed to get report descriptor size";
     device_file.Close();
     return;
   }
@@ -139,7 +140,7 @@ void HidServiceLinux::OnDeviceAdded(udev_device* device) {
 
   res = ioctl(device_file.GetPlatformFile(), HIDIOCGRDESC, &rpt_desc);
   if (res < 0) {
-    LOG(ERROR) << "HIDIOCGRDESC failed.";
+    PLOG(ERROR) << "Failed to get report descriptor";
     device_file.Close();
     return;
   }
@@ -198,4 +199,4 @@ bool HidServiceLinux::FindHidrawDevNode(udev_device* parent,
   return false;
 }
 
-} // namespace dev
+}  // namespace device

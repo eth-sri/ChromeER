@@ -48,11 +48,16 @@ TEST_F(LayerTreeImplTest, HitTestingForSingleLayer) {
       LayerImpl::Create(host_impl().active_tree(), 12345);
 
   gfx::Transform identity_matrix;
-  gfx::PointF anchor;
+  gfx::Point3F transform_origin;
   gfx::PointF position;
   gfx::Size bounds(100, 100);
-  SetLayerPropertiesForTesting(
-      root.get(), identity_matrix, anchor, position, bounds, true, false);
+  SetLayerPropertiesForTesting(root.get(),
+                               identity_matrix,
+                               transform_origin,
+                               position,
+                               bounds,
+                               true,
+                               false);
   root->SetDrawsContent(true);
 
   host_impl().SetViewportSize(root->bounds());
@@ -95,17 +100,27 @@ TEST_F(LayerTreeImplTest, HitTestingForSingleLayerAndHud) {
       HeadsUpDisplayLayerImpl::Create(host_impl().active_tree(), 11111);
 
   gfx::Transform identity_matrix;
-  gfx::PointF anchor;
+  gfx::Point3F transform_origin;
   gfx::PointF position;
   gfx::Size bounds(100, 100);
-  SetLayerPropertiesForTesting(
-      root.get(), identity_matrix, anchor, position, bounds, true, false);
+  SetLayerPropertiesForTesting(root.get(),
+                               identity_matrix,
+                               transform_origin,
+                               position,
+                               bounds,
+                               true,
+                               false);
   root->SetDrawsContent(true);
 
   // Create hud and add it as a child of root.
   gfx::Size hud_bounds(200, 200);
-  SetLayerPropertiesForTesting(
-      hud.get(), identity_matrix, anchor, position, hud_bounds, true, false);
+  SetLayerPropertiesForTesting(hud.get(),
+                               identity_matrix,
+                               transform_origin,
+                               position,
+                               hud_bounds,
+                               true,
+                               false);
   hud->SetDrawsContent(true);
 
   host_impl().active_tree()->set_hud_layer(hud.get());
@@ -157,12 +172,12 @@ TEST_F(LayerTreeImplTest, HitTestingForUninvertibleTransform) {
   ASSERT_FALSE(uninvertible_transform.IsInvertible());
 
   gfx::Transform identity_matrix;
-  gfx::PointF anchor;
+  gfx::Point3F transform_origin;
   gfx::PointF position;
   gfx::Size bounds(100, 100);
   SetLayerPropertiesForTesting(root.get(),
                                uninvertible_transform,
-                               anchor,
+                               transform_origin,
                                position,
                                bounds,
                                true,
@@ -221,13 +236,18 @@ TEST_F(LayerTreeImplTest, HitTestingForSinglePositionedLayer) {
       LayerImpl::Create(host_impl().active_tree(), 12345);
 
   gfx::Transform identity_matrix;
-  gfx::PointF anchor;
+  gfx::Point3F transform_origin;
   // this layer is positioned, and hit testing should correctly know where the
   // layer is located.
   gfx::PointF position(50.f, 50.f);
   gfx::Size bounds(100, 100);
-  SetLayerPropertiesForTesting(
-      root.get(), identity_matrix, anchor, position, bounds, true, false);
+  SetLayerPropertiesForTesting(root.get(),
+                               identity_matrix,
+                               transform_origin,
+                               position,
+                               bounds,
+                               true,
+                               false);
   root->SetDrawsContent(true);
 
   host_impl().SetViewportSize(root->bounds());
@@ -274,12 +294,12 @@ TEST_F(LayerTreeImplTest, HitTestingForSingleRotatedLayer) {
   rotation45_degrees_about_center.Translate(50.0, 50.0);
   rotation45_degrees_about_center.RotateAboutZAxis(45.0);
   rotation45_degrees_about_center.Translate(-50.0, -50.0);
-  gfx::PointF anchor;
+  gfx::Point3F transform_origin;
   gfx::PointF position;
   gfx::Size bounds(100, 100);
   SetLayerPropertiesForTesting(root.get(),
                                rotation45_degrees_about_center,
-                               anchor,
+                               transform_origin,
                                position,
                                bounds,
                                true,
@@ -342,13 +362,13 @@ TEST_F(LayerTreeImplTest, HitTestingForSinglePerspectiveLayer) {
   gfx::Transform translation_by_z;
   translation_by_z.Translate3d(0.0, 0.0, -1.0);
 
-  gfx::PointF anchor;
+  gfx::Point3F transform_origin;
   gfx::PointF position;
   gfx::Size bounds(100, 100);
   SetLayerPropertiesForTesting(
       root.get(),
       perspective_projection_about_center * translation_by_z,
-      anchor,
+      transform_origin,
       position,
       bounds,
       true,
@@ -405,11 +425,11 @@ TEST_F(LayerTreeImplTest, HitTestingForSingleLayerWithScaledContents) {
   scoped_ptr<LayerImpl> root = LayerImpl::Create(host_impl().active_tree(), 1);
 
   gfx::Transform identity_matrix;
-  gfx::PointF anchor;
+  gfx::Point3F transform_origin;
 
   SetLayerPropertiesForTesting(root.get(),
                                identity_matrix,
-                               anchor,
+                               transform_origin,
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                true,
@@ -421,7 +441,7 @@ TEST_F(LayerTreeImplTest, HitTestingForSingleLayerWithScaledContents) {
         LayerImpl::Create(host_impl().active_tree(), 12345);
     SetLayerPropertiesForTesting(test_layer.get(),
                                  identity_matrix,
-                                 anchor,
+                                 transform_origin,
                                  position,
                                  bounds,
                                  true,
@@ -484,12 +504,12 @@ TEST_F(LayerTreeImplTest, HitTestingForSimpleClippedLayer) {
   // and not the entire layer bounds. Here we just test the simple axis-aligned
   // case.
   gfx::Transform identity_matrix;
-  gfx::PointF anchor;
+  gfx::Point3F transform_origin;
 
   scoped_ptr<LayerImpl> root = LayerImpl::Create(host_impl().active_tree(), 1);
   SetLayerPropertiesForTesting(root.get(),
                                identity_matrix,
-                               anchor,
+                               transform_origin,
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                true,
@@ -503,7 +523,7 @@ TEST_F(LayerTreeImplTest, HitTestingForSimpleClippedLayer) {
     gfx::Size bounds(50, 50);
     SetLayerPropertiesForTesting(clipping_layer.get(),
                                  identity_matrix,
-                                 anchor,
+                                 transform_origin,
                                  position,
                                  bounds,
                                  true,
@@ -514,8 +534,13 @@ TEST_F(LayerTreeImplTest, HitTestingForSimpleClippedLayer) {
         LayerImpl::Create(host_impl().active_tree(), 456);
     position = gfx::PointF(-50.f, -50.f);
     bounds = gfx::Size(300, 300);
-    SetLayerPropertiesForTesting(
-        child.get(), identity_matrix, anchor, position, bounds, true, false);
+    SetLayerPropertiesForTesting(child.get(),
+                                 identity_matrix,
+                                 transform_origin,
+                                 position,
+                                 bounds,
+                                 true,
+                                 false);
     child->SetDrawsContent(true);
     clipping_layer->AddChild(child.Pass());
     root->AddChild(clipping_layer.Pass());
@@ -574,11 +599,16 @@ TEST_F(LayerTreeImplTest, HitTestingForMultiClippedRotatedLayer) {
       LayerImpl::Create(host_impl().active_tree(), 123);
 
   gfx::Transform identity_matrix;
-  gfx::PointF anchor;
+  gfx::Point3F transform_origin;
   gfx::PointF position;
   gfx::Size bounds(100, 100);
-  SetLayerPropertiesForTesting(
-      root.get(), identity_matrix, anchor, position, bounds, true, false);
+  SetLayerPropertiesForTesting(root.get(),
+                               identity_matrix,
+                               transform_origin,
+                               position,
+                               bounds,
+                               true,
+                               false);
   root->SetMasksToBounds(true);
   {
     scoped_ptr<LayerImpl> child =
@@ -590,8 +620,13 @@ TEST_F(LayerTreeImplTest, HitTestingForMultiClippedRotatedLayer) {
 
     position = gfx::PointF(10.f, 10.f);
     bounds = gfx::Size(80, 80);
-    SetLayerPropertiesForTesting(
-        child.get(), identity_matrix, anchor, position, bounds, true, false);
+    SetLayerPropertiesForTesting(child.get(),
+                                 identity_matrix,
+                                 transform_origin,
+                                 position,
+                                 bounds,
+                                 true,
+                                 false);
     child->SetMasksToBounds(true);
 
     gfx::Transform rotation45_degrees_about_corner;
@@ -604,7 +639,7 @@ TEST_F(LayerTreeImplTest, HitTestingForMultiClippedRotatedLayer) {
         gfx::Size(200, 200);  // to ensure it covers at least sqrt(2) * 100.
     SetLayerPropertiesForTesting(grand_child.get(),
                                  rotation45_degrees_about_corner,
-                                 anchor,
+                                 transform_origin,
                                  position,
                                  bounds,
                                  true,
@@ -624,7 +659,7 @@ TEST_F(LayerTreeImplTest, HitTestingForMultiClippedRotatedLayer) {
     bounds = gfx::Size(100, 100);
     SetLayerPropertiesForTesting(rotated_leaf.get(),
                                  rotated_leaf_transform,
-                                 anchor,
+                                 transform_origin,
                                  position,
                                  bounds,
                                  true,
@@ -712,12 +747,12 @@ TEST_F(LayerTreeImplTest, HitTestingForNonClippingIntermediateLayer) {
   // This test checks that hit testing code does not accidentally clip to layer
   // bounds for a layer that actually does not clip.
   gfx::Transform identity_matrix;
-  gfx::PointF anchor;
+  gfx::Point3F transform_origin;
 
   scoped_ptr<LayerImpl> root = LayerImpl::Create(host_impl().active_tree(), 1);
   SetLayerPropertiesForTesting(root.get(),
                                identity_matrix,
-                               anchor,
+                               transform_origin,
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                true,
@@ -731,7 +766,7 @@ TEST_F(LayerTreeImplTest, HitTestingForNonClippingIntermediateLayer) {
     gfx::Size bounds(50, 50);
     SetLayerPropertiesForTesting(intermediate_layer.get(),
                                  identity_matrix,
-                                 anchor,
+                                 transform_origin,
                                  position,
                                  bounds,
                                  true,
@@ -747,8 +782,13 @@ TEST_F(LayerTreeImplTest, HitTestingForNonClippingIntermediateLayer) {
         LayerImpl::Create(host_impl().active_tree(), 456);
     position = gfx::PointF(60.f, 60.f);  // 70, 70 in screen space
     bounds = gfx::Size(20, 20);
-    SetLayerPropertiesForTesting(
-        child.get(), identity_matrix, anchor, position, bounds, true, false);
+    SetLayerPropertiesForTesting(child.get(),
+                                 identity_matrix,
+                                 transform_origin,
+                                 position,
+                                 bounds,
+                                 true,
+                                 false);
     child->SetDrawsContent(true);
     intermediate_layer->AddChild(child.Pass());
     root->AddChild(intermediate_layer.Pass());
@@ -792,11 +832,16 @@ TEST_F(LayerTreeImplTest, HitTestingForMultipleLayers) {
   scoped_ptr<LayerImpl> root = LayerImpl::Create(host_impl().active_tree(), 1);
 
   gfx::Transform identity_matrix;
-  gfx::PointF anchor;
+  gfx::Point3F transform_origin;
   gfx::PointF position;
   gfx::Size bounds(100, 100);
-  SetLayerPropertiesForTesting(
-      root.get(), identity_matrix, anchor, position, bounds, true, false);
+  SetLayerPropertiesForTesting(root.get(),
+                               identity_matrix,
+                               transform_origin,
+                               position,
+                               bounds,
+                               true,
+                               false);
   root->SetDrawsContent(true);
   {
     // child 1 and child2 are initialized to overlap between x=50 and x=60.
@@ -814,14 +859,24 @@ TEST_F(LayerTreeImplTest, HitTestingForMultipleLayers) {
 
     position = gfx::PointF(10.f, 10.f);
     bounds = gfx::Size(50, 50);
-    SetLayerPropertiesForTesting(
-        child1.get(), identity_matrix, anchor, position, bounds, true, false);
+    SetLayerPropertiesForTesting(child1.get(),
+                                 identity_matrix,
+                                 transform_origin,
+                                 position,
+                                 bounds,
+                                 true,
+                                 false);
     child1->SetDrawsContent(true);
 
     position = gfx::PointF(50.f, 10.f);
     bounds = gfx::Size(50, 50);
-    SetLayerPropertiesForTesting(
-        child2.get(), identity_matrix, anchor, position, bounds, true, false);
+    SetLayerPropertiesForTesting(child2.get(),
+                                 identity_matrix,
+                                 transform_origin,
+                                 position,
+                                 bounds,
+                                 true,
+                                 false);
     child2->SetDrawsContent(true);
 
     // Remember that grand_child is positioned with respect to its parent (i.e.
@@ -831,7 +886,7 @@ TEST_F(LayerTreeImplTest, HitTestingForMultipleLayers) {
     bounds = gfx::Size(100, 50);
     SetLayerPropertiesForTesting(grand_child1.get(),
                                  identity_matrix,
-                                 anchor,
+                                 transform_origin,
                                  position,
                                  bounds,
                                  true,
@@ -916,14 +971,19 @@ TEST_F(LayerTreeImplTest, HitTestingForMultipleLayersAtVaryingDepths) {
   scoped_ptr<LayerImpl> root = LayerImpl::Create(host_impl().active_tree(), 1);
 
   gfx::Transform identity_matrix;
-  gfx::PointF anchor;
+  gfx::Point3F transform_origin;
   gfx::PointF position;
   gfx::Size bounds(100, 100);
-  SetLayerPropertiesForTesting(
-      root.get(), identity_matrix, anchor, position, bounds, true, false);
+  SetLayerPropertiesForTesting(root.get(),
+                               identity_matrix,
+                               transform_origin,
+                               position,
+                               bounds,
+                               true,
+                               false);
   root->SetDrawsContent(true);
   root->SetShouldFlattenTransform(false);
-  root->SetIs3dSorted(true);
+  root->Set3dSortingContextId(1);
   {
     // child 1 and child2 are initialized to overlap between x=50 and x=60.
     // grand_child is set to overlap both child1 and child2 between y=50 and
@@ -940,21 +1000,31 @@ TEST_F(LayerTreeImplTest, HitTestingForMultipleLayersAtVaryingDepths) {
 
     position = gfx::PointF(10.f, 10.f);
     bounds = gfx::Size(50, 50);
-    SetLayerPropertiesForTesting(
-        child1.get(), identity_matrix, anchor, position, bounds, true, false);
+    SetLayerPropertiesForTesting(child1.get(),
+                                 identity_matrix,
+                                 transform_origin,
+                                 position,
+                                 bounds,
+                                 true,
+                                 false);
     child1->SetDrawsContent(true);
     child1->SetShouldFlattenTransform(false);
-    child1->SetIs3dSorted(true);
+    child1->Set3dSortingContextId(1);
 
     position = gfx::PointF(50.f, 10.f);
     bounds = gfx::Size(50, 50);
     gfx::Transform translate_z;
     translate_z.Translate3d(0, 0, -10.f);
-    SetLayerPropertiesForTesting(
-        child2.get(), translate_z, anchor, position, bounds, true, false);
+    SetLayerPropertiesForTesting(child2.get(),
+                                 translate_z,
+                                 transform_origin,
+                                 position,
+                                 bounds,
+                                 true,
+                                 false);
     child2->SetDrawsContent(true);
     child2->SetShouldFlattenTransform(false);
-    child2->SetIs3dSorted(true);
+    child2->Set3dSortingContextId(1);
 
     // Remember that grand_child is positioned with respect to its parent (i.e.
     // child1).  In screen space, the intended position is (10, 50), with size
@@ -963,7 +1033,7 @@ TEST_F(LayerTreeImplTest, HitTestingForMultipleLayersAtVaryingDepths) {
     bounds = gfx::Size(100, 50);
     SetLayerPropertiesForTesting(grand_child1.get(),
                                  identity_matrix,
-                                 anchor,
+                                 transform_origin,
                                  position,
                                  bounds,
                                  true,
@@ -1047,6 +1117,144 @@ TEST_F(LayerTreeImplTest, HitTestingForMultipleLayersAtVaryingDepths) {
   EXPECT_EQ(4, result_layer->id());
 }
 
+TEST_F(LayerTreeImplTest, HitTestingRespectsClipParents) {
+  scoped_ptr<LayerImpl> root = LayerImpl::Create(host_impl().active_tree(), 1);
+  gfx::Transform identity_matrix;
+  gfx::Point3F transform_origin;
+  gfx::PointF position;
+  gfx::Size bounds(100, 100);
+  SetLayerPropertiesForTesting(root.get(),
+                               identity_matrix,
+                               transform_origin,
+                               position,
+                               bounds,
+                               true,
+                               false);
+  root->SetDrawsContent(true);
+  {
+    scoped_ptr<LayerImpl> child =
+        LayerImpl::Create(host_impl().active_tree(), 2);
+    scoped_ptr<LayerImpl> grand_child =
+        LayerImpl::Create(host_impl().active_tree(), 4);
+
+    position = gfx::PointF(10.f, 10.f);
+    bounds = gfx::Size(1, 1);
+    SetLayerPropertiesForTesting(child.get(),
+                                 identity_matrix,
+                                 transform_origin,
+                                 position,
+                                 bounds,
+                                 true,
+                                 false);
+    child->SetDrawsContent(true);
+    child->SetMasksToBounds(true);
+
+    position = gfx::PointF(0.f, 40.f);
+    bounds = gfx::Size(100, 50);
+    SetLayerPropertiesForTesting(grand_child.get(),
+                                 identity_matrix,
+                                 transform_origin,
+                                 position,
+                                 bounds,
+                                 true,
+                                 false);
+    grand_child->SetDrawsContent(true);
+    grand_child->SetForceRenderSurface(true);
+
+    // This should let |grand_child| "escape" |child|'s clip.
+    grand_child->SetClipParent(root.get());
+
+    child->AddChild(grand_child.Pass());
+    root->AddChild(child.Pass());
+  }
+
+  host_impl().SetViewportSize(root->bounds());
+  host_impl().active_tree()->SetRootLayer(root.Pass());
+  host_impl().active_tree()->UpdateDrawProperties();
+
+  gfx::Point test_point = gfx::Point(12, 52);
+  LayerImpl* result_layer =
+      host_impl().active_tree()->FindLayerThatIsHitByPoint(test_point);
+  ASSERT_TRUE(result_layer);
+  EXPECT_EQ(4, result_layer->id());
+}
+
+TEST_F(LayerTreeImplTest, HitTestingRespectsScrollParents) {
+  scoped_ptr<LayerImpl> root = LayerImpl::Create(host_impl().active_tree(), 1);
+  gfx::Transform identity_matrix;
+  gfx::Point3F transform_origin;
+  gfx::PointF position;
+  gfx::Size bounds(100, 100);
+  SetLayerPropertiesForTesting(root.get(),
+                               identity_matrix,
+                               transform_origin,
+                               position,
+                               bounds,
+                               true,
+                               false);
+  root->SetDrawsContent(true);
+  {
+    scoped_ptr<LayerImpl> child =
+        LayerImpl::Create(host_impl().active_tree(), 2);
+    scoped_ptr<LayerImpl> scroll_child =
+        LayerImpl::Create(host_impl().active_tree(), 3);
+    scoped_ptr<LayerImpl> grand_child =
+        LayerImpl::Create(host_impl().active_tree(), 4);
+
+    position = gfx::PointF(10.f, 10.f);
+    bounds = gfx::Size(1, 1);
+    SetLayerPropertiesForTesting(child.get(),
+                                 identity_matrix,
+                                 transform_origin,
+                                 position,
+                                 bounds,
+                                 true,
+                                 false);
+    child->SetDrawsContent(true);
+    child->SetMasksToBounds(true);
+
+    position = gfx::PointF();
+    bounds = gfx::Size(200, 200);
+    SetLayerPropertiesForTesting(scroll_child.get(),
+                                 identity_matrix,
+                                 transform_origin,
+                                 position,
+                                 bounds,
+                                 true,
+                                 false);
+    scroll_child->SetDrawsContent(true);
+
+    // This should cause scroll child and its descendants to be affected by
+    // |child|'s clip.
+    scroll_child->SetScrollParent(child.get());
+
+    SetLayerPropertiesForTesting(grand_child.get(),
+                                 identity_matrix,
+                                 transform_origin,
+                                 position,
+                                 bounds,
+                                 true,
+                                 false);
+    grand_child->SetDrawsContent(true);
+    grand_child->SetForceRenderSurface(true);
+
+    scroll_child->AddChild(grand_child.Pass());
+    root->AddChild(scroll_child.Pass());
+    root->AddChild(child.Pass());
+  }
+
+  host_impl().SetViewportSize(root->bounds());
+  host_impl().active_tree()->SetRootLayer(root.Pass());
+  host_impl().active_tree()->UpdateDrawProperties();
+
+  gfx::Point test_point = gfx::Point(12, 52);
+  LayerImpl* result_layer =
+      host_impl().active_tree()->FindLayerThatIsHitByPoint(test_point);
+  // The |test_point| should have been clipped away by |child|, the scroll
+  // parent, so the only thing that should be hit is |root|.
+  ASSERT_TRUE(result_layer);
+  ASSERT_EQ(1, result_layer->id());
+}
 TEST_F(LayerTreeImplTest, HitTestingForMultipleLayerLists) {
   //
   // The geometry is set up similarly to the previous case, but
@@ -1055,11 +1263,16 @@ TEST_F(LayerTreeImplTest, HitTestingForMultipleLayerLists) {
   scoped_ptr<LayerImpl> root = LayerImpl::Create(host_impl().active_tree(), 1);
 
   gfx::Transform identity_matrix;
-  gfx::PointF anchor;
+  gfx::Point3F transform_origin;
   gfx::PointF position;
   gfx::Size bounds(100, 100);
-  SetLayerPropertiesForTesting(
-      root.get(), identity_matrix, anchor, position, bounds, true, false);
+  SetLayerPropertiesForTesting(root.get(),
+                               identity_matrix,
+                               transform_origin,
+                               position,
+                               bounds,
+                               true,
+                               false);
   root->SetDrawsContent(true);
   {
     // child 1 and child2 are initialized to overlap between x=50 and x=60.
@@ -1077,15 +1290,25 @@ TEST_F(LayerTreeImplTest, HitTestingForMultipleLayerLists) {
 
     position = gfx::PointF(10.f, 10.f);
     bounds = gfx::Size(50, 50);
-    SetLayerPropertiesForTesting(
-        child1.get(), identity_matrix, anchor, position, bounds, true, false);
+    SetLayerPropertiesForTesting(child1.get(),
+                                 identity_matrix,
+                                 transform_origin,
+                                 position,
+                                 bounds,
+                                 true,
+                                 false);
     child1->SetDrawsContent(true);
     child1->SetForceRenderSurface(true);
 
     position = gfx::PointF(50.f, 10.f);
     bounds = gfx::Size(50, 50);
-    SetLayerPropertiesForTesting(
-        child2.get(), identity_matrix, anchor, position, bounds, true, false);
+    SetLayerPropertiesForTesting(child2.get(),
+                                 identity_matrix,
+                                 transform_origin,
+                                 position,
+                                 bounds,
+                                 true,
+                                 false);
     child2->SetDrawsContent(true);
     child2->SetForceRenderSurface(true);
 
@@ -1096,7 +1319,7 @@ TEST_F(LayerTreeImplTest, HitTestingForMultipleLayerLists) {
     bounds = gfx::Size(100, 50);
     SetLayerPropertiesForTesting(grand_child1.get(),
                                  identity_matrix,
-                                 anchor,
+                                 transform_origin,
                                  position,
                                  bounds,
                                  true,
@@ -1191,11 +1414,16 @@ TEST_F(LayerTreeImplTest, HitCheckingTouchHandlerRegionsForSingleLayer) {
 
   gfx::Transform identity_matrix;
   Region touch_handler_region(gfx::Rect(10, 10, 50, 50));
-  gfx::PointF anchor;
+  gfx::Point3F transform_origin;
   gfx::PointF position;
   gfx::Size bounds(100, 100);
-  SetLayerPropertiesForTesting(
-      root.get(), identity_matrix, anchor, position, bounds, true, false);
+  SetLayerPropertiesForTesting(root.get(),
+                               identity_matrix,
+                               transform_origin,
+                               position,
+                               bounds,
+                               true,
+                               false);
   root->SetDrawsContent(true);
 
   host_impl().SetViewportSize(root->bounds());
@@ -1274,12 +1502,12 @@ TEST_F(LayerTreeImplTest,
 
   gfx::Transform identity_matrix;
   Region touch_handler_region(gfx::Rect(10, 10, 50, 50));
-  gfx::PointF anchor;
+  gfx::Point3F transform_origin;
   gfx::PointF position;
   gfx::Size bounds(100, 100);
   SetLayerPropertiesForTesting(root.get(),
                                uninvertible_transform,
-                               anchor,
+                               transform_origin,
                                position,
                                bounds,
                                true,
@@ -1350,13 +1578,18 @@ TEST_F(LayerTreeImplTest,
 
   gfx::Transform identity_matrix;
   Region touch_handler_region(gfx::Rect(10, 10, 50, 50));
-  gfx::PointF anchor;
+  gfx::Point3F transform_origin;
   // this layer is positioned, and hit testing should correctly know where the
   // layer is located.
   gfx::PointF position(50.f, 50.f);
   gfx::Size bounds(100, 100);
-  SetLayerPropertiesForTesting(
-      root.get(), identity_matrix, anchor, position, bounds, true, false);
+  SetLayerPropertiesForTesting(root.get(),
+                               identity_matrix,
+                               transform_origin,
+                               position,
+                               bounds,
+                               true,
+                               false);
   root->SetDrawsContent(true);
   root->SetTouchEventHandlerRegion(touch_handler_region);
 
@@ -1424,11 +1657,11 @@ TEST_F(LayerTreeImplTest,
   scoped_ptr<LayerImpl> root = LayerImpl::Create(host_impl().active_tree(), 1);
 
   gfx::Transform identity_matrix;
-  gfx::PointF anchor;
+  gfx::Point3F transform_origin;
 
   SetLayerPropertiesForTesting(root.get(),
                                identity_matrix,
-                               anchor,
+                               transform_origin,
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                true,
@@ -1441,7 +1674,7 @@ TEST_F(LayerTreeImplTest,
         LayerImpl::Create(host_impl().active_tree(), 12345);
     SetLayerPropertiesForTesting(test_layer.get(),
                                  identity_matrix,
-                                 anchor,
+                                 transform_origin,
                                  position,
                                  bounds,
                                  true,
@@ -1528,11 +1761,11 @@ TEST_F(LayerTreeImplTest,
   scoped_ptr<LayerImpl> root = LayerImpl::Create(host_impl().active_tree(), 1);
 
   gfx::Transform identity_matrix;
-  gfx::PointF anchor;
+  gfx::Point3F transform_origin;
   // Set the bounds of the root layer big enough to fit the child when scaled.
   SetLayerPropertiesForTesting(root.get(),
                                identity_matrix,
-                               anchor,
+                               transform_origin,
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                true,
@@ -1545,7 +1778,7 @@ TEST_F(LayerTreeImplTest,
         LayerImpl::Create(host_impl().active_tree(), 12345);
     SetLayerPropertiesForTesting(test_layer.get(),
                                  identity_matrix,
-                                 anchor,
+                                 transform_origin,
                                  position,
                                  bounds,
                                  true,
@@ -1651,12 +1884,12 @@ TEST_F(LayerTreeImplTest, HitCheckingTouchHandlerRegionsForSimpleClippedLayer) {
   // and not the entire layer bounds. Here we just test the simple axis-aligned
   // case.
   gfx::Transform identity_matrix;
-  gfx::PointF anchor;
+  gfx::Point3F transform_origin;
 
   scoped_ptr<LayerImpl> root = LayerImpl::Create(host_impl().active_tree(), 1);
   SetLayerPropertiesForTesting(root.get(),
                                identity_matrix,
-                               anchor,
+                               transform_origin,
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                true,
@@ -1670,7 +1903,7 @@ TEST_F(LayerTreeImplTest, HitCheckingTouchHandlerRegionsForSimpleClippedLayer) {
     gfx::Size bounds(50, 50);
     SetLayerPropertiesForTesting(clipping_layer.get(),
                                  identity_matrix,
-                                 anchor,
+                                 transform_origin,
                                  position,
                                  bounds,
                                  true,
@@ -1682,8 +1915,13 @@ TEST_F(LayerTreeImplTest, HitCheckingTouchHandlerRegionsForSimpleClippedLayer) {
     Region touch_handler_region(gfx::Rect(10, 10, 50, 50));
     position = gfx::PointF(-50.f, -50.f);
     bounds = gfx::Size(300, 300);
-    SetLayerPropertiesForTesting(
-        child.get(), identity_matrix, anchor, position, bounds, true, false);
+    SetLayerPropertiesForTesting(child.get(),
+                                 identity_matrix,
+                                 transform_origin,
+                                 position,
+                                 bounds,
+                                 true,
+                                 false);
     child->SetDrawsContent(true);
     child->SetTouchEventHandlerRegion(touch_handler_region);
     clipping_layer->AddChild(child.Pass());
@@ -1741,12 +1979,12 @@ TEST_F(LayerTreeImplTest, HitCheckingTouchHandlerRegionsForSimpleClippedLayer) {
 
 TEST_F(LayerTreeImplTest, HitCheckingTouchHandlerOverlappingRegions) {
   gfx::Transform identity_matrix;
-  gfx::PointF anchor;
+  gfx::Point3F transform_origin;
 
   scoped_ptr<LayerImpl> root = LayerImpl::Create(host_impl().active_tree(), 1);
   SetLayerPropertiesForTesting(root.get(),
                                identity_matrix,
-                               anchor,
+                               transform_origin,
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                true,
@@ -1760,7 +1998,7 @@ TEST_F(LayerTreeImplTest, HitCheckingTouchHandlerOverlappingRegions) {
     gfx::Size bounds(50, 50);
     SetLayerPropertiesForTesting(touch_layer.get(),
                                  identity_matrix,
-                                 anchor,
+                                 transform_origin,
                                  position,
                                  bounds,
                                  true,
@@ -1779,7 +2017,7 @@ TEST_F(LayerTreeImplTest, HitCheckingTouchHandlerOverlappingRegions) {
     gfx::Size bounds(50, 50);
     SetLayerPropertiesForTesting(notouch_layer.get(),
                                  identity_matrix,
-                                 anchor,
+                                 transform_origin,
                                  position,
                                  bounds,
                                  true,

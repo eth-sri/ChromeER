@@ -108,7 +108,7 @@ chrome.test.runTests([
     chrome.tabs.create({url:"chrome://version"}, function(tab) {
       var debuggee = {tabId: tab.id};
       chrome.debugger.attach(debuggee, protocolVersion,
-          fail("Can not attach to the page with the \"chrome://\" scheme."));
+          fail("Cannot access a chrome:// URL"));
       chrome.tabs.remove(tab.id);
     });
   },
@@ -140,7 +140,9 @@ chrome.test.runTests([
   },
 
   function createAndDiscoverTab() {
-    function onUpdated(tabId) {
+    function onUpdated(tabId, changeInfo) {
+      if (changeInfo.status == 'loading')
+        return;
       chrome.tabs.onUpdated.removeListener(onUpdated);
       chrome.debugger.getTargets(function(targets) {
         var page = targets.filter(

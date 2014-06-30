@@ -184,12 +184,6 @@ void MediaSourceDelegate::InitializeDemuxer() {
                              false);
 }
 
-const blink::WebTimeRanges& MediaSourceDelegate::Buffered() {
-  buffered_web_time_ranges_ =
-      ConvertToWebTimeRanges(buffered_time_ranges_);
-  return buffered_web_time_ranges_;
-}
-
 blink::WebTimeRanges MediaSourceDelegate::Buffered() const {
   return ConvertToWebTimeRanges(buffered_time_ranges_);
 }
@@ -515,8 +509,7 @@ void MediaSourceDelegate::OnDemuxerInitDone(media::PipelineStatus status) {
 
   // Notify demuxer ready when both streams are not encrypted.
   is_demuxer_ready_ = true;
-  if (CanNotifyDemuxerReady())
-    NotifyDemuxerReady();
+  NotifyDemuxerReady();
 }
 
 void MediaSourceDelegate::InitAudioDecryptingDemuxerStream() {
@@ -564,8 +557,7 @@ void MediaSourceDelegate::OnAudioDecryptingDemuxerStreamInitDone(
   // Try to notify demuxer ready when audio DDS initialization finished and
   // video is not encrypted.
   is_demuxer_ready_ = true;
-  if (CanNotifyDemuxerReady())
-    NotifyDemuxerReady();
+  NotifyDemuxerReady();
 }
 
 void MediaSourceDelegate::OnVideoDecryptingDemuxerStreamInitDone(
@@ -581,8 +573,7 @@ void MediaSourceDelegate::OnVideoDecryptingDemuxerStreamInitDone(
 
   // Try to notify demuxer ready when video DDS initialization finished.
   is_demuxer_ready_ = true;
-  if (CanNotifyDemuxerReady())
-    NotifyDemuxerReady();
+  NotifyDemuxerReady();
 }
 
 void MediaSourceDelegate::OnDemuxerSeekDone(media::PipelineStatus status) {
@@ -650,15 +641,10 @@ void MediaSourceDelegate::DeleteSelf() {
   delete this;
 }
 
-bool MediaSourceDelegate::CanNotifyDemuxerReady() {
-  DCHECK(media_loop_->BelongsToCurrentThread());
-  return is_demuxer_ready_;
-}
-
 void MediaSourceDelegate::NotifyDemuxerReady() {
   DCHECK(media_loop_->BelongsToCurrentThread());
   DVLOG(1) << __FUNCTION__ << " : " << demuxer_client_id_;
-  DCHECK(CanNotifyDemuxerReady());
+  DCHECK(is_demuxer_ready_);
 
   scoped_ptr<DemuxerConfigs> configs(new DemuxerConfigs());
   GetDemuxerConfigFromStream(configs.get(), true);
@@ -751,7 +737,7 @@ base::TimeDelta MediaSourceDelegate::FindBufferedBrowserSeekTime_Locked(
 bool MediaSourceDelegate::GetDemuxerConfigFromStream(
     media::DemuxerConfigs* configs, bool is_audio) {
   DCHECK(media_loop_->BelongsToCurrentThread());
-  if (!CanNotifyDemuxerReady())
+  if (!is_demuxer_ready_)
     return false;
   if (is_audio && audio_stream_) {
     media::AudioDecoderConfig config = audio_stream_->audio_decoder_config();

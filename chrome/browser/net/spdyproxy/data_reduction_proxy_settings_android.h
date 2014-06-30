@@ -14,24 +14,31 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/prefs/pref_member.h"
 #include "components/data_reduction_proxy/browser/data_reduction_proxy_settings.h"
-
+#include "components/keyed_service/core/keyed_service.h"
 
 using base::android::ScopedJavaLocalRef;
 
+class Profile;
+
+namespace data_reduction_proxy {
+class DataReductionProxyParams;
+}
 
 // Central point for configuring the data reduction proxy on Android.
 // This object lives on the UI thread and all of its methods are expected to
 // be called from there.
 class DataReductionProxySettingsAndroid
-    : public data_reduction_proxy::DataReductionProxySettings {
+    : public data_reduction_proxy::DataReductionProxySettings,
+      public KeyedService {
  public:
-  DataReductionProxySettingsAndroid(JNIEnv* env, jobject obj);
-  // Parameter-free constructor for C++ unit tests.
-  DataReductionProxySettingsAndroid();
+  // Factory constructor.
+  DataReductionProxySettingsAndroid(
+      data_reduction_proxy::DataReductionProxyParams* params);
+
 
   virtual ~DataReductionProxySettingsAndroid();
 
-  void InitDataReductionProxySettings(JNIEnv* env, jobject obj);
+  void InitDataReductionProxySettings(Profile* profile);
 
   void BypassHostPattern(JNIEnv* env, jobject obj, jstring pattern);
   // Add a URL pattern to bypass the proxy. Wildcards
@@ -60,13 +67,10 @@ class DataReductionProxySettingsAndroid
   base::android::ScopedJavaLocalRef<jobject> GetContentLengths(JNIEnv* env,
                                                                jobject obj);
 
-  // Wrapper methods for handling auth challenges. In both of the following,
-  // a net::AuthChallengeInfo object is created from |host| and |realm| and
-  // passed in to the superclass method.
-  jboolean IsAcceptableAuthChallenge(JNIEnv* env,
-                                     jobject obj,
-                                     jstring host,
-                                     jstring realm);
+  // Determines whether the data reduction proxy is unreachable. This is
+  // done by keeping a count of requests which go through proxy vs those
+  // which should have gone through the proxy based on the config.
+  jboolean IsDataReductionProxyUnreachable(JNIEnv* env, jobject obj);
 
   ScopedJavaLocalRef<jstring> GetTokenForAuthChallenge(JNIEnv* env,
                                                        jobject obj,
@@ -82,8 +86,10 @@ class DataReductionProxySettingsAndroid
 
   // Configures the proxy settings by generating a data URL containing a PAC
   // file.
-  virtual void SetProxyConfigs(
-      bool enabled, bool restricted, bool at_startup) OVERRIDE;
+  virtual void SetProxyConfigs(bool enabled,
+                               bool alt_enabled,
+                               bool restricted,
+                               bool at_startup) OVERRIDE;
 
  private:
   friend class DataReductionProxySettingsAndroidTest;

@@ -13,7 +13,6 @@
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "ui/ozone/ozone_export.h"
 #include "ui/ozone/platform/dri/dri_wrapper.h"
 
 namespace gfx {
@@ -22,7 +21,7 @@ class Point;
 
 namespace ui {
 
-class DriSurface;
+class ScanoutSurface;
 
 // The HDCOz will handle modesettings and scannout operations for hardware
 // devices.
@@ -78,10 +77,7 @@ class DriSurface;
 // only a subset of connectors can be active independently, showing different
 // framebuffers. Though, in this case, it would be possible to have all
 // connectors active if some use the same CRTC to mirror the display.
-//
-// TODO(dnicoara) Need to have a way to detect events (such as monitor
-// connected or disconnected).
-class OZONE_EXPORT HardwareDisplayController
+class HardwareDisplayController
     : public base::SupportsWeakPtr<HardwareDisplayController> {
  public:
   HardwareDisplayController(DriWrapper* drm,
@@ -91,12 +87,15 @@ class OZONE_EXPORT HardwareDisplayController
   ~HardwareDisplayController();
 
   // Associate the HDCO with a surface implementation and initialize it.
-  bool BindSurfaceToController(scoped_ptr<DriSurface> surface,
+  bool BindSurfaceToController(scoped_ptr<ScanoutSurface> surface,
                                drmModeModeInfo mode);
 
   void UnbindSurfaceFromController();
 
-  // Unbinds the surface and disables the CRTC.
+  // Reconfigures the CRTC with the current surface and mode.
+  bool Enable();
+
+  // Disables the CRTC.
   void Disable();
 
   // Schedules the |surface_|'s framebuffer to be displayed on the next vsync
@@ -132,7 +131,7 @@ class OZONE_EXPORT HardwareDisplayController
                        unsigned int useconds);
 
   // Set the hardware cursor to show the contents of |surface|.
-  bool SetCursor(DriSurface* surface);
+  bool SetCursor(ScanoutSurface* surface);
 
   bool UnsetCursor();
 
@@ -142,7 +141,7 @@ class OZONE_EXPORT HardwareDisplayController
   const drmModeModeInfo& get_mode() const { return mode_; };
   uint32_t connector_id() const { return connector_id_; }
   uint32_t crtc_id() const { return crtc_id_; }
-  DriSurface* surface() const {
+  ScanoutSurface* surface() const {
     return surface_.get();
   };
 
@@ -160,12 +159,15 @@ class OZONE_EXPORT HardwareDisplayController
 
   uint32_t crtc_id_;
 
-  // TODO(dnicoara) Need to store all the modes.
   drmModeModeInfo mode_;
 
-  scoped_ptr<DriSurface> surface_;
+  scoped_ptr<ScanoutSurface> surface_;
 
   uint64_t time_of_last_flip_;
+
+  // Keeps track of the CRTC state. If a surface has been bound, then the value
+  // is set to false. Otherwise it is true.
+  bool is_disabled_;
 
   DISALLOW_COPY_AND_ASSIGN(HardwareDisplayController);
 };

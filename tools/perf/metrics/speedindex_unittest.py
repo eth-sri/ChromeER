@@ -10,8 +10,8 @@ import os
 import unittest
 
 from telemetry.core import bitmap
-from telemetry.core.backends.chrome import inspector_timeline_data
-from telemetry.core.timeline import model
+from telemetry.timeline import inspector_timeline_data
+from telemetry.timeline import model
 from metrics import speedindex
 
 # Sample timeline data in the json format provided by devtools.
@@ -32,9 +32,19 @@ class FakeTimelineModel(object):
   def SetAllEvents(self, events):
     self._events = events
 
-  def GetAllEvents(self):
+  def GetAllEvents(self, recursive=True):
+    assert recursive == True
     return self._events
 
+
+class FakeVideo(object):
+
+  def __init__(self, frames):
+    self._frames = frames
+
+  def GetVideoFrameIter(self):
+    for frame in self._frames:
+      yield frame
 
 class FakeBitmap(object):
 
@@ -51,7 +61,7 @@ class FakeTab(object):
   def __init__(self, video_capture_result=None):
     self._timeline_model = FakeTimelineModel()
     self._javascript_result = None
-    self._video_capture_result = video_capture_result
+    self._video_capture_result = FakeVideo(video_capture_result)
 
   @property
   def timeline_model(self):

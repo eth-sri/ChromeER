@@ -13,6 +13,7 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/path_service.h"
 #include "base/strings/string16.h"
@@ -31,6 +32,7 @@
 #include "net/http/http_auth_handler_factory.h"
 #include "net/http/http_cache.h"
 #include "net/http/http_network_layer.h"
+#include "net/http/http_network_session.h"
 #include "net/http/http_request_headers.h"
 #include "net/proxy/proxy_service.h"
 #include "net/ssl/ssl_config_service_defaults.h"
@@ -66,8 +68,17 @@ class TestURLRequestContext : public URLRequestContext {
     client_socket_factory_ = factory;
   }
 
+  void set_http_network_session_params(
+      const HttpNetworkSession::Params& params) {
+  }
+
  private:
   bool initialized_;
+
+  // Optional parameters to override default values.  Note that values that
+  // point to other objects the TestURLRequestContext creates will be
+  // overwritten.
+  scoped_ptr<HttpNetworkSession::Params> http_network_session_params_;
 
   // Not owned:
   ClientSocketFactory* client_socket_factory_;
@@ -263,6 +274,15 @@ class TestNetworkDelegate : public NetworkDelegate {
   void set_can_throttle_requests(bool val) { can_throttle_requests_ = val; }
   bool can_throttle_requests() const { return can_throttle_requests_; }
 
+  int observed_before_proxy_headers_sent_callbacks() const {
+    return observed_before_proxy_headers_sent_callbacks_;
+  }
+
+  // Last observed proxy in proxy header sent callback.
+  HostPortPair last_observed_proxy() {
+    return last_observed_proxy_;
+  }
+
  protected:
   // NetworkDelegate:
   virtual int OnBeforeURLRequest(URLRequest* request,
@@ -271,6 +291,10 @@ class TestNetworkDelegate : public NetworkDelegate {
   virtual int OnBeforeSendHeaders(URLRequest* request,
                                   const CompletionCallback& callback,
                                   HttpRequestHeaders* headers) OVERRIDE;
+  virtual void OnBeforeSendProxyHeaders(
+      net::URLRequest* request,
+      const net::ProxyInfo& proxy_info,
+      net::HttpRequestHeaders* headers) OVERRIDE;
   virtual void OnSendHeaders(URLRequest* request,
                              const HttpRequestHeaders& headers) OVERRIDE;
   virtual int OnHeadersReceived(
@@ -322,6 +346,9 @@ class TestNetworkDelegate : public NetworkDelegate {
   int blocked_get_cookies_count_;
   int blocked_set_cookie_count_;
   int set_cookie_count_;
+  int observed_before_proxy_headers_sent_callbacks_;
+  // Last observed proxy in before proxy header sent callback.
+  HostPortPair last_observed_proxy_;
 
   // NetworkDelegate callbacks happen in a particular order (e.g.
   // OnBeforeURLRequest is always called before OnBeforeSendHeaders).

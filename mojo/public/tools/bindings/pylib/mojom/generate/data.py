@@ -77,6 +77,14 @@ def LookupValue(values, name, scope):
 
   return values.get(name)
 
+def FixupExpression(module, value, scope):
+  """Translates an IDENTIFIER into a structured Value object."""
+  if isinstance(value, tuple) and value[0] == 'IDENTIFIER':
+    result = LookupValue(module.values, value[1], scope)
+    if result:
+      return result
+  return value
+
 def KindToData(kind):
   return kind.spec
 
@@ -87,6 +95,14 @@ def KindFromData(kinds, data, scope):
   if data.startswith('a:'):
     kind = mojom.Array()
     kind.kind = KindFromData(kinds, data[2:], scope)
+  elif data.startswith('r:'):
+    kind = mojom.InterfaceRequest()
+    kind.kind = KindFromData(kinds, data[2:], scope)
+  elif data.startswith('a'):
+    colon = data.find(':')
+    length = int(data[1:colon])
+    kind = mojom.FixedArray(length)
+    kind.kind = KindFromData(kinds, data[colon+1:], scope)
   else:
     kind = mojom.Kind()
   kind.spec = data
@@ -94,8 +110,8 @@ def KindFromData(kinds, data, scope):
   return kind
 
 def KindFromImport(original_kind, imported_from):
-  """Used with 'import module' - clones the kind imported from the
-  given module's namespace. Only used with Structs and Enums."""
+  """Used with 'import module' - clones the kind imported from the given
+  module's namespace. Only used with Structs, Interfaces and Enums."""
   kind = copy.deepcopy(original_kind)
   kind.imported_from = imported_from
   return kind
@@ -110,7 +126,7 @@ def ImportFromData(module, data):
 
   # Copy the struct kinds from our imports into the current module.
   for kind in import_module.kinds.itervalues():
-    if (isinstance(kind, (mojom.Struct, mojom.Enum)) and
+    if (isinstance(kind, (mojom.Struct, mojom.Enum, mojom.Interface)) and
         kind.imported_from is None):
       kind = KindFromImport(kind, import_item)
       module.kinds[kind.spec] = kind
@@ -153,19 +169,6 @@ def FieldToData(field):
   if field.default != None:
     data[istr(3, 'default')] = field.default
   return data
-
-def FixupExpression(module, value, scope):
-  if isinstance(value, (tuple, list)):
-    for i in xrange(len(value)):
-      if isinstance(value, tuple):
-        FixupExpression(module, value[i], scope)
-      else:
-        value[i] = FixupExpression(module, value[i], scope)
-  elif value:
-    result = LookupValue(module.values, value, scope)
-    if result:
-      return result
-  return value
 
 def FieldFromData(module, data, struct):
   field = mojom.Field()

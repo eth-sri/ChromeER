@@ -37,6 +37,7 @@ namespace content {
 
 class EmbeddedWorkerRegistry;
 class ServiceWorkerContextObserver;
+class ServiceWorkerContextWrapper;
 class ServiceWorkerHandle;
 class ServiceWorkerJobCoordinator;
 class ServiceWorkerProviderHost;
@@ -51,6 +52,7 @@ class ServiceWorkerStorage;
 class CONTENT_EXPORT ServiceWorkerContextCore
     : public ServiceWorkerVersion::Listener {
  public:
+  typedef base::Callback<void(ServiceWorkerStatusCode status)> StatusCallback;
   typedef base::Callback<void(ServiceWorkerStatusCode status,
                               int64 registration_id,
                               int64 version_id)> RegistrationCallback;
@@ -91,7 +93,10 @@ class CONTENT_EXPORT ServiceWorkerContextCore
       base::MessageLoopProxy* disk_cache_thread,
       quota::QuotaManagerProxy* quota_manager_proxy,
       ObserverListThreadSafe<ServiceWorkerContextObserver>* observer_list,
-      scoped_ptr<ServiceWorkerProcessManager> process_manager);
+      ServiceWorkerContextWrapper* wrapper);
+  ServiceWorkerContextCore(
+      ServiceWorkerContextCore* old_context,
+      ServiceWorkerContextWrapper* wrapper);
   virtual ~ServiceWorkerContextCore();
 
   // ServiceWorkerVersion::Listener overrides.
@@ -111,9 +116,7 @@ class CONTENT_EXPORT ServiceWorkerContextCore
                                       const GURL& source_url) OVERRIDE;
 
   ServiceWorkerStorage* storage() { return storage_.get(); }
-  ServiceWorkerProcessManager* process_manager() {
-    return process_manager_.get();
-  }
+  ServiceWorkerProcessManager* process_manager();
   EmbeddedWorkerRegistry* embedded_worker_registry() {
     return embedded_worker_registry_.get();
   }
@@ -152,17 +155,20 @@ class CONTENT_EXPORT ServiceWorkerContextCore
   void AddLiveVersion(ServiceWorkerVersion* version);
   void RemoveLiveVersion(int64 registration_id);
 
+  std::vector<ServiceWorkerRegistrationInfo> GetAllLiveRegistrationInfo();
+  std::vector<ServiceWorkerVersionInfo> GetAllLiveVersionInfo();
+
   // Returns new context-local unique ID for ServiceWorkerHandle.
   int GetNewServiceWorkerHandleId();
 
+  void ScheduleDeleteAndStartOver() const;
+
+  // Deletes all files on disk and restarts the system. This leaves the system
+  // in a disabled state until it's done.
+  void DeleteAndStartOver(const StatusCallback& callback);
+
   base::WeakPtr<ServiceWorkerContextCore> AsWeakPtr() {
     return weak_factory_.GetWeakPtr();
-  }
-
-  // Allows tests to change how processes are created.
-  void SetProcessManagerForTest(
-      scoped_ptr<ServiceWorkerProcessManager> new_process_manager) {
-    process_manager_ = new_process_manager.Pass();
   }
 
  private:
@@ -170,7 +176,7 @@ class CONTENT_EXPORT ServiceWorkerContextCore
   typedef std::map<int64, ServiceWorkerVersion*> VersionMap;
 
   ProviderMap* GetProviderMapForProcess(int process_id) {
-    return providers_.Lookup(process_id);
+    return providers_->Lookup(process_id);
   }
 
   void RegistrationComplete(const GURL& pattern,
@@ -184,11 +190,14 @@ class CONTENT_EXPORT ServiceWorkerContextCore
                               ServiceWorkerStatusCode status);
 
   base::WeakPtrFactory<ServiceWorkerContextCore> weak_factory_;
-  ProcessToProviderMap providers_;
+  // It's safe to store a raw pointer instead of a scoped_refptr to |wrapper_|
+  // because the Wrapper::Shutdown call that hops threads to destroy |this| uses
+  // Bind() to hold a reference to |wrapper_| until |this| is fully destroyed.
+  ServiceWorkerContextWrapper* wrapper_;
+  scoped_ptr<ProcessToProviderMap> providers_;
   scoped_ptr<ServiceWorkerStorage> storage_;
   scoped_refptr<EmbeddedWorkerRegistry> embedded_worker_registry_;
   scoped_ptr<ServiceWorkerJobCoordinator> job_coordinator_;
-  scoped_ptr<ServiceWorkerProcessManager> process_manager_;
   std::map<int64, ServiceWorkerRegistration*> live_registrations_;
   std::map<int64, ServiceWorkerVersion*> live_versions_;
   int next_handle_id_;

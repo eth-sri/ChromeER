@@ -121,7 +121,6 @@ void BluetoothSocketChromeOS::Listen(
     SocketType socket_type,
     const BluetoothUUID& uuid,
     int psm_or_channel,
-    bool insecure,
     const base::Closure& success_callback,
     const ErrorCompletionCallback& error_callback) {
   DCHECK(ui_task_runner()->RunsTasksOnCurrentThread());
@@ -153,9 +152,6 @@ void BluetoothSocketChromeOS::Listen(
     default:
       NOTREACHED();
   }
-
-  if (insecure)
-    options_->require_authentication.reset(new bool(false));
 
   RegisterProfile(success_callback, error_callback);
 }
@@ -476,6 +472,8 @@ void BluetoothSocketChromeOS::DoNewConnection(
 
   VLOG(1) << object_path_.value() << ": Validity check complete.";
   if (!fd->is_valid()) {
+    LOG(WARNING) << object_path_.value() << " :" << fd->value()
+                 << ": Invalid file descriptor received from Bluetooth Daemon.";
     ui_task_runner()->PostTask(FROM_HERE,
                                base::Bind(callback, REJECTED));;
     return;
@@ -502,6 +500,7 @@ void BluetoothSocketChromeOS::DoNewConnection(
     return;
   }
 
+  VLOG(2) << object_path_.value() << ": Taking descriptor, confirming success.";
   fd->TakeValue();
   ui_task_runner()->PostTask(FROM_HERE,
                              base::Bind(callback, SUCCESS));;

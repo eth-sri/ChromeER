@@ -10,15 +10,17 @@
 
 #include "base/callback.h"
 #include "base/containers/scoped_ptr_hash_map.h"
-#include "base/files/file_path.h"
-#include "base/location.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/threading/non_thread_safe.h"
-#include "chrome/browser/sync_file_system/drive_backend/sync_task.h"
+#include "base/sequence_checker.h"
 #include "chrome/browser/sync_file_system/drive_backend/task_dependency_manager.h"
 #include "chrome/browser/sync_file_system/sync_callbacks.h"
 #include "chrome/browser/sync_file_system/sync_status_code.h"
+#include "chrome/browser/sync_file_system/task_logger.h"
+
+namespace base {
+class SequencedTaskRunner;
+}
 
 namespace tracked_objects {
 class Location;
@@ -27,6 +29,7 @@ class Location;
 namespace sync_file_system {
 namespace drive_backend {
 
+class SyncTask;
 class SyncTaskToken;
 struct BlockingFactor;
 
@@ -37,9 +40,7 @@ struct BlockingFactor;
 // describes which task can run in parallel.  When a task start running as a
 // background task, SyncTaskManager checks if any running background task
 // doesn't block the new background task, and queues it up if it can't run.
-class SyncTaskManager
-    : public base::NonThreadSafe,
-      public base::SupportsWeakPtr<SyncTaskManager> {
+class SyncTaskManager : public base::SupportsWeakPtr<SyncTaskManager> {
  public:
   typedef base::Callback<void(const SyncStatusCallback& callback)> Task;
   typedef base::Callback<void(scoped_ptr<SyncTaskToken> token)> Continuation;
@@ -61,12 +62,15 @@ class SyncTaskManager
     virtual void NotifyLastOperationStatus(
         SyncStatusCode last_operation_status,
         bool last_operation_used_network) = 0;
+
+    virtual void RecordTaskLog(scoped_ptr<TaskLogger::TaskLog> task_log) = 0;
   };
 
   // Runs at most |maximum_background_tasks| parallel as background tasks.
   // If |maximum_background_tasks| is zero, all task runs as foreground task.
   SyncTaskManager(base::WeakPtr<Client> client,
-                  size_t maximum_background_task);
+                  size_t maximum_background_task,
+                  base::SequencedTaskRunner* task_runner);
   virtual ~SyncTaskManager();
 
   // This needs to be called to start task scheduling.
@@ -115,6 +119,8 @@ class SyncTaskManager
 
   bool IsRunningTask(int64 task_token_id) const;
 
+  void DetachFromSequence();
+
  private:
   struct PendingTask {
     base::Closure task;
@@ -138,6 +144,7 @@ class SyncTaskManager
   // Non-static version of UpdateBlockingFactor.
   void UpdateBlockingFactorBody(scoped_ptr<SyncTaskToken> foreground_task_token,
                                 scoped_ptr<SyncTaskToken> background_task_token,
+                                scoped_ptr<TaskLogger::TaskLog> task_log,
                                 scoped_ptr<BlockingFactor> blocking_factor,
                                 const Continuation& continuation);
 
@@ -155,7 +162,9 @@ class SyncTaskManager
   void RunTask(scoped_ptr<SyncTaskToken> token,
                scoped_ptr<SyncTask> task);
 
-  void StartNextTask();
+  // Runs a pending task as a foreground task if possible.
+  // If |token| is non-NULL, put |token| back to |token_| beforehand.
+  void MaybeStartNextForegroundTask(scoped_ptr<SyncTaskToken> token);
 
   base::WeakPtr<Client> client_;
 
@@ -184,6 +193,9 @@ class SyncTaskManager
   scoped_ptr<SyncTaskToken> token_;
 
   TaskDependencyManager dependency_manager_;
+
+  scoped_refptr<base::SequencedTaskRunner> task_runner_;
+  base::SequenceChecker sequence_checker_;
 
   DISALLOW_COPY_AND_ASSIGN(SyncTaskManager);
 };

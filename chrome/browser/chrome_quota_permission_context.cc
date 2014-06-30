@@ -9,13 +9,13 @@
 #include "base/bind.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/infobars/confirm_infobar_delegate.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/tab_contents/tab_util.h"
 #include "chrome/browser/ui/website_settings/permission_bubble_manager.h"
 #include "chrome/browser/ui/website_settings/permission_bubble_request.h"
 #include "chrome/common/pref_names.h"
+#include "components/infobars/core/confirm_infobar_delegate.h"
 #include "components/infobars/core/infobar.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_details.h"
@@ -96,7 +96,11 @@ base::string16 QuotaPermissionRequest::GetMessageText() const {
       (requested_quota_ > kRequestLargeQuotaThreshold ?
           IDS_REQUEST_LARGE_QUOTA_INFOBAR_QUESTION :
           IDS_REQUEST_QUOTA_INFOBAR_QUESTION),
-      net::FormatUrl(origin_url_, display_languages_));
+      net::FormatUrl(origin_url_, display_languages_,
+                     net::kFormatUrlOmitUsernamePassword |
+                     net::kFormatUrlOmitTrailingSlashOnBareHostname,
+                     net::UnescapeRule::SPACES, NULL, NULL, NULL)
+  );
 }
 
 base::string16 QuotaPermissionRequest::GetMessageTextFragment() const {
@@ -163,8 +167,6 @@ class RequestQuotaInfoBarDelegate : public ConfirmInfoBarDelegate {
   virtual ~RequestQuotaInfoBarDelegate();
 
   // ConfirmInfoBarDelegate:
-  virtual bool ShouldExpireInternal(
-      const NavigationDetails& details) const OVERRIDE;
   virtual base::string16 GetMessageText() const OVERRIDE;
   virtual bool Accept() OVERRIDE;
   virtual bool Cancel() OVERRIDE;
@@ -213,11 +215,6 @@ RequestQuotaInfoBarDelegate::~RequestQuotaInfoBarDelegate() {
   }
 }
 
-bool RequestQuotaInfoBarDelegate::ShouldExpireInternal(
-    const NavigationDetails& details) const {
-  return false;
-}
-
 base::string16 RequestQuotaInfoBarDelegate::GetMessageText() const {
   // If the site requested larger quota than this threshold, show a different
   // message to the user.
@@ -225,7 +222,11 @@ base::string16 RequestQuotaInfoBarDelegate::GetMessageText() const {
       (requested_quota_ > kRequestLargeQuotaThreshold ?
           IDS_REQUEST_LARGE_QUOTA_INFOBAR_QUESTION :
           IDS_REQUEST_QUOTA_INFOBAR_QUESTION),
-      net::FormatUrl(origin_url_, display_languages_));
+      net::FormatUrl(origin_url_, display_languages_,
+                     net::kFormatUrlOmitUsernamePassword |
+                     net::kFormatUrlOmitTrailingSlashOnBareHostname,
+                     net::UnescapeRule::SPACES, NULL, NULL, NULL)
+      );
 }
 
 bool RequestQuotaInfoBarDelegate::Accept() {

@@ -8,30 +8,10 @@ namespace media {
 namespace cast {
 namespace transport {
 
-namespace {
-const int kDefaultRtpMaxDelayMs = 100;
-}  // namespace
-
-RtpConfig::RtpConfig()
-    : ssrc(0),
-      max_delay_ms(kDefaultRtpMaxDelayMs),
-      payload_type(0) {}
-
-RtpConfig::~RtpConfig() {}
-
 CastTransportRtpConfig::CastTransportRtpConfig()
-    : max_outstanding_frames(-1) {}
+    : ssrc(0), rtp_payload_type(0), stored_frames(0) {}
 
 CastTransportRtpConfig::~CastTransportRtpConfig() {}
-
-CastTransportAudioConfig::CastTransportAudioConfig()
-    : codec(kOpus), frequency(0), channels(0) {}
-
-CastTransportAudioConfig::~CastTransportAudioConfig() {}
-
-CastTransportVideoConfig::CastTransportVideoConfig() : codec(kVp8) {}
-
-CastTransportVideoConfig::~CastTransportVideoConfig() {}
 
 EncodedFrame::EncodedFrame()
     : dependency(UNKNOWN_DEPENDENCY),
@@ -40,6 +20,15 @@ EncodedFrame::EncodedFrame()
       rtp_timestamp(0) {}
 
 EncodedFrame::~EncodedFrame() {}
+
+void EncodedFrame::CopyMetadataTo(EncodedFrame* dest) const {
+  DCHECK(dest);
+  dest->dependency = this->dependency;
+  dest->frame_id = this->frame_id;
+  dest->referenced_frame_id = this->referenced_frame_id;
+  dest->rtp_timestamp = this->rtp_timestamp;
+  dest->reference_time = this->reference_time;
+}
 
 RtcpSenderInfo::RtcpSenderInfo()
     : ntp_seconds(0),

@@ -21,6 +21,7 @@
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gl/gl_surface.h"
 #include "ui/views/controls/textfield/textfield.h"
+#include "ui/views/controls/textfield/textfield_test_api.h"
 #include "ui/views/test/widget_test.h"
 #include "ui/views/touchui/touch_selection_controller_impl.h"
 #include "ui/views/widget/widget.h"
@@ -161,33 +162,25 @@ class WidgetTestInteractive : public WidgetTest {
 
   virtual void SetUp() OVERRIDE {
     gfx::GLSurface::InitializeOneOffForTests();
-    base::FilePath pak_dir;
-    PathService::Get(base::DIR_MODULE, &pak_dir);
-    base::FilePath pak_file;
-    pak_file = pak_dir.Append(FILE_PATH_LITERAL("ui_test.pak"));
-    ui::ResourceBundle::InitSharedInstanceWithPakPath(pak_file);
+    ui::RegisterPathProvider();
+    base::FilePath ui_test_pak_path;
+    ASSERT_TRUE(PathService::Get(ui::UI_TEST_PAK, &ui_test_pak_path));
+    ui::ResourceBundle::InitSharedInstanceWithPakPath(ui_test_pak_path);
     WidgetTest::SetUp();
   }
 
  protected:
-  void ShowTouchSelectionQuickMenuImmediately(Textfield* textfield) {
-    DCHECK(textfield);
-    DCHECK(textfield->touch_selection_controller_);
-    TouchSelectionControllerImpl* controller =
-        static_cast<TouchSelectionControllerImpl*>(
-            textfield->touch_selection_controller_.get());
+  static void ShowQuickMenuImmediately(
+      TouchSelectionControllerImpl* controller) {
+    DCHECK(controller);
     if (controller->context_menu_timer_.IsRunning()) {
       controller->context_menu_timer_.Stop();
       controller->ContextMenuTimerFired();
     }
   }
 
-  bool TouchSelectionQuickMenuIsVisible(Textfield* textfield) {
-    DCHECK(textfield);
-    DCHECK(textfield->touch_selection_controller_);
-    TouchSelectionControllerImpl* controller =
-        static_cast<TouchSelectionControllerImpl*>(
-            textfield->touch_selection_controller_.get());
+  static bool IsQuickMenuVisible(TouchSelectionControllerImpl* controller) {
+    DCHECK(controller);
     return controller->context_menu_ && controller->context_menu_->visible();
   }
 };
@@ -768,16 +761,19 @@ TEST_F(WidgetTestInteractive, TouchSelectionQuickMenuIsNotActivated) {
   widget.Show();
   textfield->RequestFocus();
   textfield->SelectAll(true);
+  TextfieldTestApi textfield_test_api(textfield);
 
   RunPendingMessages();
 
   aura::test::EventGenerator generator(widget.GetNativeView()->GetRootWindow());
   generator.GestureTapAt(gfx::Point(10, 10));
-  ShowTouchSelectionQuickMenuImmediately(textfield);
+  ShowQuickMenuImmediately(static_cast<TouchSelectionControllerImpl*>(
+      textfield_test_api.touch_selection_controller()));
 
   EXPECT_TRUE(textfield->HasFocus());
   EXPECT_TRUE(widget.IsActive());
-  EXPECT_TRUE(TouchSelectionQuickMenuIsVisible(textfield));
+  EXPECT_TRUE(IsQuickMenuVisible(static_cast<TouchSelectionControllerImpl*>(
+      textfield_test_api.touch_selection_controller())));
 }
 
 namespace {
@@ -818,11 +814,10 @@ class WidgetCaptureTest : public ViewsTestBase {
 
   virtual void SetUp() OVERRIDE {
     gfx::GLSurface::InitializeOneOffForTests();
-    base::FilePath pak_dir;
-    PathService::Get(base::DIR_MODULE, &pak_dir);
-    base::FilePath pak_file;
-    pak_file = pak_dir.Append(FILE_PATH_LITERAL("ui_test.pak"));
-    ui::ResourceBundle::InitSharedInstanceWithPakPath(pak_file);
+    ui::RegisterPathProvider();
+    base::FilePath ui_test_pak_path;
+    ASSERT_TRUE(PathService::Get(ui::UI_TEST_PAK, &ui_test_pak_path));
+    ui::ResourceBundle::InitSharedInstanceWithPakPath(ui_test_pak_path);
     ViewsTestBase::SetUp();
   }
 
@@ -869,7 +864,6 @@ class WidgetCaptureTest : public ViewsTestBase {
     EXPECT_FALSE(widget2.GetAndClearGotCaptureLost());
   }
 
- private:
   NativeWidget* CreateNativeWidget(bool create_desktop_native_widget,
                                    Widget* widget) {
 #if !defined(OS_CHROMEOS)
@@ -879,6 +873,7 @@ class WidgetCaptureTest : public ViewsTestBase {
     return NULL;
   }
 
+ private:
   DISALLOW_COPY_AND_ASSIGN(WidgetCaptureTest);
 };
 
@@ -891,6 +886,47 @@ TEST_F(WidgetCaptureTest, Capture) {
 // See description in TestCapture(). Creates DesktopNativeWidget.
 TEST_F(WidgetCaptureTest, CaptureDesktopNativeWidget) {
   TestCapture(true);
+}
+#endif
+
+#if !defined(OS_CHROMEOS)
+// Test that a synthetic mouse exit is sent to the widget which was handling
+// mouse events when a different widget grabs capture.
+// TODO(pkotwicz): Make test pass on CrOS.
+TEST_F(WidgetCaptureTest, MouseExitOnCaptureGrab) {
+  Widget widget1;
+  Widget::InitParams params1 =
+      CreateParams(Widget::InitParams::TYPE_WINDOW_FRAMELESS);
+  params1.native_widget = CreateNativeWidget(true, &widget1);
+  params1.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+  widget1.Init(params1);
+  MouseView* mouse_view1 = new MouseView;
+  widget1.SetContentsView(mouse_view1);
+  widget1.Show();
+  widget1.SetBounds(gfx::Rect(300, 300));
+
+  Widget widget2;
+  Widget::InitParams params2 =
+      CreateParams(Widget::InitParams::TYPE_WINDOW_FRAMELESS);
+  params2.native_widget = CreateNativeWidget(true, &widget2);
+  params2.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+  widget2.Init(params2);
+  widget2.Show();
+  widget2.SetBounds(gfx::Rect(400, 0, 300, 300));
+
+  ui::MouseEvent mouse_move_event(ui::ET_MOUSE_MOVED, gfx::Point(100, 100),
+      gfx::Point(100, 100), ui::EF_NONE, ui::EF_NONE);
+  ui::EventDispatchDetails details = widget1.GetNativeWindow()->GetHost()->
+      event_processor()->OnEventFromSource(&mouse_move_event);
+  ASSERT_FALSE(details.dispatcher_destroyed);
+  EXPECT_EQ(1, mouse_view1->EnteredCalls());
+  EXPECT_EQ(0, mouse_view1->ExitedCalls());
+
+  widget2.SetCapture(NULL);
+  EXPECT_EQ(0, mouse_view1->EnteredCalls());
+  // Grabbing native capture on Windows generates a ui::ET_MOUSE_EXITED event
+  // in addition to the one generated by Chrome.
+  EXPECT_LT(0, mouse_view1->ExitedCalls());
 }
 #endif
 

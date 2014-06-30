@@ -6,6 +6,7 @@
 #define UI_EVENTS_EVENT_UTILS_H_
 
 #include "base/event_types.h"
+#include "base/memory/scoped_ptr.h"
 #include "ui/events/event_constants.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/display.h"
@@ -31,6 +32,11 @@ class Event;
 
 // Updates the list of devices for cached properties.
 EVENTS_EXPORT void UpdateDeviceList();
+
+// Returns a ui::Event wrapping a native event. Ownership of the returned value
+// is transferred to the caller.
+EVENTS_EXPORT scoped_ptr<Event> EventFromNative(
+    const base::NativeEvent& native_event);
 
 // Get the EventType from a native event.
 EVENTS_EXPORT EventType EventTypeFromNative(
@@ -74,6 +80,10 @@ EVENTS_EXPORT KeyboardCode KeyboardCodeFromNative(
 // keyboard) from a native event.  The ownership of the return value
 // is NOT trasferred to the caller.
 EVENTS_EXPORT const char* CodeFromNative(
+    const base::NativeEvent& native_event);
+
+// Returns the platform related key code. For X11, it is xksym value.
+EVENTS_EXPORT uint32 PlatformKeycodeFromNative(
     const base::NativeEvent& native_event);
 
 // Returns the flags of the button that changed during a press/release.
@@ -155,6 +165,7 @@ EVENTS_EXPORT bool IsMouseEventFromTouch(UINT message);
 // representing an extended key contains 0xE000 bits.
 EVENTS_EXPORT uint16 GetScanCodeFromLParam(LPARAM lParam);
 EVENTS_EXPORT LPARAM GetLParamFromScanCode(uint16 scan_code);
+
 #endif
 
 // Registers a custom event type.

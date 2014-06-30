@@ -13,6 +13,7 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ssl/ssl_blocking_page.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_navigator.h"
@@ -30,6 +31,7 @@
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_view_host.h"
+#include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/security_style.h"
@@ -1150,15 +1152,10 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, MAYBE_TestRunsCachedInsecureContent) {
       AuthState::DISPLAYED_INSECURE_CONTENT | AuthState::RAN_INSECURE_CONTENT);
 }
 
-#if defined(OS_WIN)
-// Flaky on Win7 debug (http://crbug.com/368280).
-#define MAYBE_TestCNInvalidStickiness DISABLED_TestCNInvalidStickiness
-#else
-#define MAYBE_TestCNInvalidStickiness TestCNInvalidStickiness
-#endif
 // This test ensures the CN invalid status does not 'stick' to a certificate
 // (see bug #1044942) and that it depends on the host-name.
-IN_PROC_BROWSER_TEST_F(SSLUITest, MAYBE_TestCNInvalidStickiness) {
+// Test if disabled due to flakiness http://crbug.com/368280 .
+IN_PROC_BROWSER_TEST_F(SSLUITest, DISABLED_TestCNInvalidStickiness) {
   ASSERT_TRUE(https_server_.Start());
   ASSERT_TRUE(https_server_mismatched_.Start());
 
@@ -1289,8 +1286,15 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, TestRedirectBadToGoodHTTPS) {
   CheckAuthenticatedState(tab, AuthState::NONE);
 }
 
+// Flaky on Linux. http://crbug.com/368280.
+#if defined(OS_LINUX)
+#define MAYBE_TestRedirectGoodToBadHTTPS DISABLED_TestRedirectGoodToBadHTTPS
+#else
+#define MAYBE_TestRedirectGoodToBadHTTPS TestRedirectGoodToBadHTTPS
+#endif
+
 // Visit a page over good https that is a redirect to a page with bad https.
-IN_PROC_BROWSER_TEST_F(SSLUITest, TestRedirectGoodToBadHTTPS) {
+IN_PROC_BROWSER_TEST_F(SSLUITest, MAYBE_TestRedirectGoodToBadHTTPS) {
   ASSERT_TRUE(https_server_.Start());
   ASSERT_TRUE(https_server_expired_.Start());
 
@@ -1325,8 +1329,15 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, TestRedirectHTTPToGoodHTTPS) {
   CheckAuthenticatedState(tab, AuthState::NONE);
 }
 
+// Flaky on Linux. http://crbug.com/368280.
+#if defined(OS_LINUX)
+#define MAYBE_TestRedirectHTTPToBadHTTPS DISABLED_TestRedirectHTTPToBadHTTPS
+#else
+#define MAYBE_TestRedirectHTTPToBadHTTPS TestRedirectHTTPToBadHTTPS
+#endif
+
 // Visit a page over http that is a redirect to a page with bad HTTPS.
-IN_PROC_BROWSER_TEST_F(SSLUITest, TestRedirectHTTPToBadHTTPS) {
+IN_PROC_BROWSER_TEST_F(SSLUITest, MAYBE_TestRedirectHTTPToBadHTTPS) {
   ASSERT_TRUE(test_server()->Start());
   ASSERT_TRUE(https_server_expired_.Start());
 
@@ -1725,9 +1736,9 @@ IN_PROC_BROWSER_TEST_F(SSLUITestIgnoreCertErrors, TestWSS) {
   EXPECT_TRUE(LowerCaseEqualsASCII(result, "pass"));
 }
 
-// Verifies that if JavaScript is disabled interstitials aren't affected.
+// Verifies that the interstitial can proceed, even if JavaScript is disabled.
 // http://crbug.com/322948
-IN_PROC_BROWSER_TEST_F(SSLUITest, InterstitialNotAffectedByContentSettings) {
+IN_PROC_BROWSER_TEST_F(SSLUITest, TestInterstitialJavaScriptProceeds) {
   browser()->profile()->GetHostContentSettingsMap()->SetDefaultContentSetting(
       CONTENT_SETTINGS_TYPE_JAVASCRIPT, CONTENT_SETTING_BLOCK);
 
@@ -1738,16 +1749,79 @@ IN_PROC_BROWSER_TEST_F(SSLUITest, InterstitialNotAffectedByContentSettings) {
   CheckAuthenticationBrokenState(
       tab, net::CERT_STATUS_DATE_INVALID, AuthState::SHOWING_INTERSTITIAL);
 
+  content::WindowedNotificationObserver observer(
+      content::NOTIFICATION_LOAD_STOP,
+      content::Source<NavigationController>(&tab->GetController()));
   InterstitialPage* interstitial_page = tab->GetInterstitialPage();
   content::RenderViewHost* interstitial_rvh =
       interstitial_page->GetRenderViewHostForTesting();
-  bool result = false;
-  ASSERT_TRUE(content::ExecuteScriptAndExtractBool(
-              interstitial_rvh,
-              "window.domAutomationController.send(true);",
-              &result));
+  int result = -1;
+  std::string javascript = base::StringPrintf(
+      "window.domAutomationController.send(%d);",
+      SSLBlockingPage::CMD_PROCEED);
+  ASSERT_TRUE(content::ExecuteScriptAndExtractInt(
+              interstitial_rvh, javascript, &result));
   // The above will hang without the fix.
-  ASSERT_TRUE(result);
+  EXPECT_EQ(1, result);
+  observer.Wait();
+  CheckAuthenticationBrokenState(
+      tab, net::CERT_STATUS_DATE_INVALID, AuthState::NONE);
+}
+
+// Verifies that the interstitial can go back, even if JavaScript is disabled.
+// http://crbug.com/322948
+IN_PROC_BROWSER_TEST_F(SSLUITest, TestInterstitialJavaScriptGoesBack) {
+  browser()->profile()->GetHostContentSettingsMap()->SetDefaultContentSetting(
+      CONTENT_SETTINGS_TYPE_JAVASCRIPT, CONTENT_SETTING_BLOCK);
+
+  ASSERT_TRUE(https_server_expired_.Start());
+  WebContents* tab = browser()->tab_strip_model()->GetActiveWebContents();
+  ui_test_utils::NavigateToURL(browser(),
+      https_server_expired_.GetURL("files/ssl/google.html"));
+  CheckAuthenticationBrokenState(
+      tab, net::CERT_STATUS_DATE_INVALID, AuthState::SHOWING_INTERSTITIAL);
+
+  content::WindowedNotificationObserver observer(
+      content::NOTIFICATION_RENDER_WIDGET_HOST_DESTROYED,
+      content::NotificationService::AllSources());
+  InterstitialPage* interstitial_page = tab->GetInterstitialPage();
+  content::RenderViewHost* interstitial_rvh =
+      interstitial_page->GetRenderViewHostForTesting();
+  int result = -1;
+  std::string javascript = base::StringPrintf(
+      "window.domAutomationController.send(%d);",
+      SSLBlockingPage::CMD_DONT_PROCEED);
+  ASSERT_TRUE(content::ExecuteScriptAndExtractInt(
+      interstitial_rvh, javascript, &result));
+  // The above will hang without the fix.
+  EXPECT_EQ(0, result);
+  observer.Wait();
+  EXPECT_EQ("about:blank", tab->GetVisibleURL().spec());
+}
+
+// Verifies that switching tabs, while showing interstitial page, will not
+// affect the visibility of the interestitial.
+// https://crbug.com/381439
+IN_PROC_BROWSER_TEST_F(SSLUITest, InterstitialNotAffectedByHideShow) {
+  ASSERT_TRUE(https_server_expired_.Start());
+  WebContents* tab = browser()->tab_strip_model()->GetActiveWebContents();
+  EXPECT_TRUE(tab->GetRenderWidgetHostView()->IsShowing());
+  ui_test_utils::NavigateToURL(
+      browser(), https_server_expired_.GetURL("files/ssl/google.html"));
+  CheckAuthenticationBrokenState(
+      tab, net::CERT_STATUS_DATE_INVALID, AuthState::SHOWING_INTERSTITIAL);
+  EXPECT_TRUE(tab->GetRenderWidgetHostView()->IsShowing());
+
+  AddTabAtIndex(0,
+                https_server_.GetURL("files/ssl/google.html"),
+                content::PAGE_TRANSITION_TYPED);
+  EXPECT_EQ(2, browser()->tab_strip_model()->count());
+  EXPECT_EQ(0, browser()->tab_strip_model()->active_index());
+  EXPECT_EQ(tab, browser()->tab_strip_model()->GetWebContentsAt(1));
+  EXPECT_FALSE(tab->GetRenderWidgetHostView()->IsShowing());
+
+  browser()->tab_strip_model()->ActivateTabAt(1, true);
+  EXPECT_TRUE(tab->GetRenderWidgetHostView()->IsShowing());
 }
 
 // TODO(jcampan): more tests to do below.

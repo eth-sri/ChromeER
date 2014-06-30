@@ -4,7 +4,9 @@
 
 #include "chrome/browser/chromeos/file_system_provider/provided_file_system.h"
 
+#include "base/debug/trace_event.h"
 #include "base/files/file.h"
+#include "chrome/browser/chromeos/file_system_provider/notification_manager.h"
 #include "chrome/browser/chromeos/file_system_provider/operations/close_file.h"
 #include "chrome/browser/chromeos/file_system_provider/operations/get_metadata.h"
 #include "chrome/browser/chromeos/file_system_provider/operations/open_file.h"
@@ -12,16 +14,27 @@
 #include "chrome/browser/chromeos/file_system_provider/operations/read_file.h"
 #include "chrome/browser/chromeos/file_system_provider/operations/unmount.h"
 #include "chrome/browser/chromeos/file_system_provider/request_manager.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/api/file_system_provider.h"
 #include "extensions/browser/event_router.h"
+
+namespace net {
+class IOBuffer;
+}  // namespace net
 
 namespace chromeos {
 namespace file_system_provider {
 
 ProvidedFileSystem::ProvidedFileSystem(
-    extensions::EventRouter* event_router,
+    Profile* profile,
     const ProvidedFileSystemInfo& file_system_info)
-    : event_router_(event_router), file_system_info_(file_system_info) {
+    : profile_(profile),
+      event_router_(extensions::EventRouter::Get(profile)),  // May be NULL.
+      file_system_info_(file_system_info),
+      notification_manager_(
+          new NotificationManager(profile_, file_system_info_)),
+      request_manager_(notification_manager_.get()),
+      weak_ptr_factory_(this) {
 }
 
 ProvidedFileSystem::~ProvidedFileSystem() {}
@@ -29,29 +42,32 @@ ProvidedFileSystem::~ProvidedFileSystem() {}
 void ProvidedFileSystem::RequestUnmount(
     const fileapi::AsyncFileUtil::StatusCallback& callback) {
   if (!request_manager_.CreateRequest(
+          REQUEST_UNMOUNT,
           scoped_ptr<RequestManager::HandlerInterface>(new operations::Unmount(
               event_router_, file_system_info_, callback)))) {
     callback.Run(base::File::FILE_ERROR_SECURITY);
   }
 }
 
-void ProvidedFileSystem::GetMetadata(
-    const base::FilePath& entry_path,
-    const fileapi::AsyncFileUtil::GetFileInfoCallback& callback) {
+void ProvidedFileSystem::GetMetadata(const base::FilePath& entry_path,
+                                     const GetMetadataCallback& callback) {
   if (!request_manager_.CreateRequest(
+          GET_METADATA,
           scoped_ptr<RequestManager::HandlerInterface>(
               new operations::GetMetadata(
                   event_router_, file_system_info_, entry_path, callback)))) {
-    callback.Run(base::File::FILE_ERROR_SECURITY, base::File::Info());
+    callback.Run(EntryMetadata(), base::File::FILE_ERROR_SECURITY);
   }
 }
 
 void ProvidedFileSystem::ReadDirectory(
     const base::FilePath& directory_path,
     const fileapi::AsyncFileUtil::ReadDirectoryCallback& callback) {
-  if (!request_manager_.CreateRequest(scoped_ptr<
-          RequestManager::HandlerInterface>(new operations::ReadDirectory(
-          event_router_, file_system_info_, directory_path, callback)))) {
+  if (!request_manager_.CreateRequest(
+          READ_DIRECTORY,
+          scoped_ptr<
+              RequestManager::HandlerInterface>(new operations::ReadDirectory(
+              event_router_, file_system_info_, directory_path, callback)))) {
     callback.Run(base::File::FILE_ERROR_SECURITY,
                  fileapi::AsyncFileUtil::EntryList(),
                  false /* has_more */);
@@ -63,7 +79,10 @@ void ProvidedFileSystem::ReadFile(int file_handle,
                                   int64 offset,
                                   int length,
                                   const ReadChunkReceivedCallback& callback) {
+  TRACE_EVENT1(
+      "file_system_provider", "ProvidedFileSystem::ReadFile", "length", length);
   if (!request_manager_.CreateRequest(
+          READ_FILE,
           make_scoped_ptr<RequestManager::HandlerInterface>(
               new operations::ReadFile(event_router_,
                                        file_system_info_,
@@ -90,6 +109,7 @@ void ProvidedFileSystem::OpenFile(const base::FilePath& file_path,
   }
 
   if (!request_manager_.CreateRequest(
+          OPEN_FILE,
           scoped_ptr<RequestManager::HandlerInterface>(
               new operations::OpenFile(event_router_,
                                        file_system_info_,
@@ -105,6 +125,7 @@ void ProvidedFileSystem::CloseFile(
     int file_handle,
     const fileapi::AsyncFileUtil::StatusCallback& callback) {
   if (!request_manager_.CreateRequest(
+          CLOSE_FILE,
           scoped_ptr<RequestManager::HandlerInterface>(
               new operations::CloseFile(
                   event_router_, file_system_info_, file_handle, callback)))) {
@@ -118,6 +139,10 @@ const ProvidedFileSystemInfo& ProvidedFileSystem::GetFileSystemInfo() const {
 
 RequestManager* ProvidedFileSystem::GetRequestManager() {
   return &request_manager_;
+}
+
+base::WeakPtr<ProvidedFileSystemInterface> ProvidedFileSystem::GetWeakPtr() {
+  return weak_ptr_factory_.GetWeakPtr();
 }
 
 }  // namespace file_system_provider

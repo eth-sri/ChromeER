@@ -4,7 +4,6 @@
 
 package org.chromium.mojo.system;
 
-
 import org.chromium.mojo.system.Core.WaitFlags;
 import org.chromium.mojo.system.DataPipe.ConsumerHandle;
 import org.chromium.mojo.system.DataPipe.ProducerHandle;
@@ -17,6 +16,17 @@ import java.util.List;
  */
 public class InvalidHandle implements UntypedHandle, MessagePipeHandle, ConsumerHandle,
         ProducerHandle, SharedBufferHandle {
+
+    /**
+     * Instance singleton.
+     */
+    public static final InvalidHandle INSTANCE = new InvalidHandle();
+
+    /**
+     * Private constructor.
+     */
+    private InvalidHandle() {
+    }
 
     /**
      * @see Handle#close()
@@ -40,6 +50,31 @@ public class InvalidHandle implements UntypedHandle, MessagePipeHandle, Consumer
     @Override
     public boolean isValid() {
         return false;
+    }
+
+    /**
+     * @see Handle#getCore()
+     */
+    @Override
+    public Core getCore() {
+        return null;
+    }
+
+    /**
+     * @see org.chromium.mojo.system.Handle#pass()
+     */
+    @Override
+    public InvalidHandle pass() {
+        return this;
+    }
+
+
+    /**
+     * @see Handle#toUntypedHandle()
+     */
+    @Override
+    public UntypedHandle toUntypedHandle() {
+        return this;
     }
 
     /**
@@ -161,7 +196,7 @@ public class InvalidHandle implements UntypedHandle, MessagePipeHandle, Consumer
      *      MessagePipeHandle.WriteFlags)
      */
     @Override
-    public void writeMessage(ByteBuffer bytes, List<Handle> handles, WriteFlags flags) {
+    public void writeMessage(ByteBuffer bytes, List<? extends Handle> handles, WriteFlags flags) {
         throw new MojoException(MojoResult.INVALID_ARGUMENT);
     }
 

@@ -17,12 +17,16 @@
 #include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "chrome/browser/autocomplete/base_search_provider.h"
-#include "chrome/browser/history/history_types.h"
-#include "chrome/browser/search_engines/template_url.h"
+#include "components/metrics/proto/omnibox_input_type.pb.h"
+#include "components/search_engines/template_url.h"
 
 class Profile;
 class SearchProviderTest;
 class TemplateURLService;
+
+namespace history {
+struct KeywordSearchTermVisit;
+}
 
 namespace net {
 class URLFetcher;
@@ -137,8 +141,9 @@ class SearchProvider : public BaseSearchProvider {
 
   // Calculates the relevance score for the keyword verbatim result (if the
   // input matches one of the profile's keyword).
-  static int CalculateRelevanceForKeywordVerbatim(AutocompleteInput::Type type,
-                                                  bool prefer_keyword);
+  static int CalculateRelevanceForKeywordVerbatim(
+      metrics::OmniboxInputType::Type type,
+      bool prefer_keyword);
 
   // AutocompleteProvider:
   virtual void Start(const AutocompleteInput& input,

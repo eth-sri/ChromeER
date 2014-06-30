@@ -11,17 +11,13 @@
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/search_engines/search_provider_install_data.h"
-#include "chrome/browser/search_engines/template_url.h"
-#include "chrome/browser/search_engines/template_url_prepopulate_data.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_test_util.h"
-#include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_pref_service_syncable.h"
 #include "chrome/test/base/testing_profile.h"
-#include "content/public/browser/notification_service.h"
-#include "content/public/browser/notification_source.h"
+#include "components/search_engines/template_url.h"
+#include "components/search_engines/template_url_prepopulate_data.h"
 #include "content/public/test/mock_render_process_host.h"
 #include "content/public/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -181,7 +177,7 @@ TemplateURL* SearchProviderInstallDataTest::AddNewTemplateURL(
   data.short_name = keyword;
   data.SetKeyword(keyword);
   data.SetURL(url);
-  TemplateURL* t_url = new TemplateURL(util_.profile(), data);
+  TemplateURL* t_url = new TemplateURL(data);
   util_.model()->Add(t_url);
   return t_url;
 }

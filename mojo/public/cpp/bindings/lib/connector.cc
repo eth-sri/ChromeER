@@ -15,7 +15,7 @@ namespace internal {
 // ----------------------------------------------------------------------------
 
 Connector::Connector(ScopedMessagePipeHandle message_pipe,
-                     MojoAsyncWaiter* waiter)
+                     const MojoAsyncWaiter* waiter)
     : error_handler_(NULL),
       waiter_(waiter),
       message_pipe_(message_pipe.Pass()),
@@ -23,27 +23,46 @@ Connector::Connector(ScopedMessagePipeHandle message_pipe,
       async_wait_id_(0),
       error_(false),
       drop_writes_(false),
-      enforce_errors_from_incoming_receiver_(true) {
+      enforce_errors_from_incoming_receiver_(true),
+      destroyed_flag_(NULL) {
   // Even though we don't have an incoming receiver, we still want to monitor
   // the message pipe to know if is closed or encounters an error.
   WaitToReadMore();
 }
 
 Connector::~Connector() {
+  if (destroyed_flag_)
+    *destroyed_flag_ = true;
+
   if (async_wait_id_)
-    waiter_->CancelWait(waiter_, async_wait_id_);
+    waiter_->CancelWait(async_wait_id_);
 }
 
 void Connector::CloseMessagePipe() {
   Close(message_pipe_.Pass());
 }
 
-ScopedMessagePipeHandle Connector::ReleaseMessagePipe() {
+ScopedMessagePipeHandle Connector::PassMessagePipe() {
   if (async_wait_id_) {
-    waiter_->CancelWait(waiter_, async_wait_id_);
+    waiter_->CancelWait(async_wait_id_);
     async_wait_id_ = 0;
   }
   return message_pipe_.Pass();
+}
+
+bool Connector::WaitForIncomingMessage() {
+  if (error_)
+    return false;
+
+  MojoResult rv = Wait(message_pipe_.get(),
+                       MOJO_HANDLE_SIGNAL_READABLE,
+                       MOJO_DEADLINE_INDEFINITE);
+  if (rv != MOJO_RESULT_OK) {
+    NotifyError();
+    return false;
+  }
+  mojo_ignore_result(ReadSingleMessage(&rv));
+  return (rv == MOJO_RESULT_OK);
 }
 
 bool Connector::Accept(Message* message) {
@@ -86,13 +105,6 @@ bool Connector::Accept(Message* message) {
   return true;
 }
 
-bool Connector::AcceptWithResponder(Message* message,
-                                    MessageReceiver* responder) {
-  // TODO(darin): Implement this!
-  assert(false);
-  return false;
-}
-
 // static
 void Connector::CallOnHandleReady(void* closure, MojoResult result) {
   Connector* self = static_cast<Connector*>(closure);
@@ -100,42 +112,80 @@ void Connector::CallOnHandleReady(void* closure, MojoResult result) {
 }
 
 void Connector::OnHandleReady(MojoResult result) {
+  assert(async_wait_id_ != 0);
   async_wait_id_ = 0;
-
-  if (result == MOJO_RESULT_OK) {
-    ReadMore();
-  } else {
-    error_ = true;
+  if (result != MOJO_RESULT_OK) {
+    NotifyError();
+    return;
   }
-
-  if (error_ && error_handler_)
-    error_handler_->OnConnectionError();
+  ReadAllAvailableMessages();
+  // At this point, this object might have been deleted. Return.
 }
 
 void Connector::WaitToReadMore() {
-  async_wait_id_ = waiter_->AsyncWait(waiter_,
-                                      message_pipe_.get().value(),
-                                      MOJO_WAIT_FLAG_READABLE,
+  async_wait_id_ = waiter_->AsyncWait(message_pipe_.get().value(),
+                                      MOJO_HANDLE_SIGNAL_READABLE,
                                       MOJO_DEADLINE_INDEFINITE,
                                       &Connector::CallOnHandleReady,
                                       this);
 }
 
-void Connector::ReadMore() {
-  while (true) {
-    bool receiver_result = false;
-    MojoResult rv =  ReadAndDispatchMessage(
-        message_pipe_.get(), incoming_receiver_, &receiver_result);
+bool Connector::ReadSingleMessage(MojoResult* read_result) {
+  bool receiver_result = false;
+
+  // Detect if |this| was destroyed during message dispatch. Allow for the
+  // possibility of re-entering ReadMore() through message dispatch.
+  bool was_destroyed_during_dispatch = false;
+  bool* previous_destroyed_flag = destroyed_flag_;
+  destroyed_flag_ = &was_destroyed_during_dispatch;
+
+  MojoResult rv = ReadAndDispatchMessage(
+      message_pipe_.get(), incoming_receiver_, &receiver_result);
+  if (read_result)
+    *read_result = rv;
+
+  if (was_destroyed_during_dispatch) {
+    if (previous_destroyed_flag)
+      *previous_destroyed_flag = true;  // Propagate flag.
+    return false;
+  }
+  destroyed_flag_ = previous_destroyed_flag;
+
+  if (rv == MOJO_RESULT_SHOULD_WAIT)
+    return true;
+
+  if (rv != MOJO_RESULT_OK ||
+      (enforce_errors_from_incoming_receiver_ && !receiver_result)) {
+    NotifyError();
+    return false;
+  }
+  return true;
+}
+
+void Connector::ReadAllAvailableMessages() {
+  while (!error_) {
+    MojoResult rv;
+
+    // Return immediately if |this| was destroyed. Do not touch any members!
+    if (!ReadSingleMessage(&rv))
+      return;
+
     if (rv == MOJO_RESULT_SHOULD_WAIT) {
       WaitToReadMore();
       break;
     }
-    if (rv != MOJO_RESULT_OK ||
-        (enforce_errors_from_incoming_receiver_ && !receiver_result)) {
-      error_ = true;
-      break;
-    }
   }
+}
+
+void Connector::NotifyError() {
+  error_ = true;
+  // The error handler might destroyed |this|. Also, after an error, all method
+  // should end early.
+  if (destroyed_flag_) {
+    *destroyed_flag_ = true;  // Propagate flag.
+  }
+  if (error_handler_)
+    error_handler_->OnConnectionError();
 }
 
 }  // namespace internal

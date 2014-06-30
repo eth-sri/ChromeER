@@ -4,6 +4,10 @@
 
 #include "components/nacl/loader/sandbox_linux/nacl_bpf_sandbox_linux.h"
 
+#include "build/build_config.h"
+
+#if defined(USE_SECCOMP_BPF)
+
 #include <errno.h>
 #include <signal.h>
 #include <sys/ptrace.h>
@@ -12,65 +16,36 @@
 #include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "base/logging.h"
-#include "build/build_config.h"
 
-#if defined(USE_SECCOMP_BPF)
 #include "content/public/common/sandbox_init.h"
 #include "sandbox/linux/seccomp-bpf/sandbox_bpf.h"
 #include "sandbox/linux/seccomp-bpf/sandbox_bpf_policy.h"
 #include "sandbox/linux/services/linux_syscalls.h"
 
-using sandbox::ErrorCode;
-using sandbox::SandboxBPF;
-using sandbox::SandboxBPFPolicy;
+#endif  // defined(USE_SECCOMP_BPF)
 
 namespace nacl {
 
+#if defined(USE_SECCOMP_BPF)
+
 namespace {
 
-// On ARM and x86_64, System V shared memory calls have each their own system
-// call, while on i386 they are multiplexed.
-#if defined(__x86_64__) || defined(__arm__)
-bool IsSystemVSharedMemory(int sysno) {
-  switch (sysno) {
-    case __NR_shmat:
-    case __NR_shmctl:
-    case __NR_shmdt:
-    case __NR_shmget:
-      return true;
-    default:
-      return false;
-  }
-}
-#endif
-
-#if defined(__i386__)
-// Big system V multiplexing system call.
-bool IsSystemVIpc(int sysno) {
-  switch (sysno) {
-    case __NR_ipc:
-      return true;
-    default:
-      return false;
-  }
-}
-#endif
-
-class NaClBPFSandboxPolicy : public SandboxBPFPolicy {
+class NaClBPFSandboxPolicy : public sandbox::SandboxBPFPolicy {
  public:
   NaClBPFSandboxPolicy()
       : baseline_policy_(content::GetBPFSandboxBaselinePolicy()) {}
   virtual ~NaClBPFSandboxPolicy() {}
 
-  virtual ErrorCode EvaluateSyscall(SandboxBPF* sandbox_compiler,
-                                    int system_call_number) const OVERRIDE;
+  virtual sandbox::ErrorCode EvaluateSyscall(
+      sandbox::SandboxBPF* sandbox_compiler,
+      int system_call_number) const OVERRIDE;
 
  private:
-  scoped_ptr<SandboxBPFPolicy> baseline_policy_;
+  scoped_ptr<sandbox::SandboxBPFPolicy> baseline_policy_;
   DISALLOW_COPY_AND_ASSIGN(NaClBPFSandboxPolicy);
 };
 
-ErrorCode NaClBPFSandboxPolicy::EvaluateSyscall(
+sandbox::ErrorCode NaClBPFSandboxPolicy::EvaluateSyscall(
     sandbox::SandboxBPF* sb, int sysno) const {
   DCHECK(baseline_policy_);
   switch (sysno) {
@@ -95,8 +70,6 @@ ErrorCode NaClBPFSandboxPolicy::EvaluateSyscall(
     // NaCl uses custom signal stacks.
     case __NR_sigaltstack:
     // Below is fairly similar to the policy for a Chromium renderer.
-    // TODO(jln): restrict ioctl() and prctl().
-    case __NR_ioctl:
 #if defined(__i386__) || defined(__x86_64__)
     case __NR_getrlimit:
 #endif
@@ -122,26 +95,16 @@ ErrorCode NaClBPFSandboxPolicy::EvaluateSyscall(
     // See crbug.com/264856 for details.
     case __NR_times:
     case __NR_uname:
-      return ErrorCode(ErrorCode::ERR_ALLOWED);
+      return sandbox::ErrorCode(sandbox::ErrorCode::ERR_ALLOWED);
+    case __NR_ioctl:
     case __NR_ptrace:
-      return ErrorCode(EPERM);
+      return sandbox::ErrorCode(EPERM);
     default:
-      // TODO(jln): look into getting rid of System V shared memory:
-      // platform_qualify/linux/sysv_shm_and_mmap.c makes it a requirement, but
-      // it may not be needed in all cases. Chromium renderers don't need
-      // System V shared memory on Aura.
-#if defined(__x86_64__) || defined(__arm__)
-      if (IsSystemVSharedMemory(sysno))
-        return ErrorCode(ErrorCode::ERR_ALLOWED);
-#elif defined(__i386__)
-      if (IsSystemVIpc(sysno))
-        return ErrorCode(ErrorCode::ERR_ALLOWED);
-#endif
       return baseline_policy_->EvaluateSyscall(sb, sysno);
   }
   NOTREACHED();
   // GCC wants this.
-  return ErrorCode(EPERM);
+  return sandbox::ErrorCode(EPERM);
 }
 
 void RunSandboxSanityChecks() {
@@ -159,14 +122,14 @@ void RunSandboxSanityChecks() {
 
 #if !defined(ARCH_CPU_MIPS_FAMILY)
 #error "Seccomp-bpf disabled on supported architecture!"
-#endif
+#endif  // !defined(ARCH_CPU_MIPS_FAMILY)
 
 #endif  // defined(USE_SECCOMP_BPF)
 
 bool InitializeBPFSandbox() {
 #if defined(USE_SECCOMP_BPF)
   bool sandbox_is_initialized = content::InitializeSandbox(
-      scoped_ptr<SandboxBPFPolicy>(new NaClBPFSandboxPolicy()));
+      scoped_ptr<sandbox::SandboxBPFPolicy>(new NaClBPFSandboxPolicy));
   if (sandbox_is_initialized) {
     RunSandboxSanityChecks();
     return true;

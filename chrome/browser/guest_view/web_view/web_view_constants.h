@@ -17,18 +17,23 @@ extern const char kEventContextMenu[];
 extern const char kEventDialog[];
 extern const char kEventExit[];
 extern const char kEventFindReply[];
+extern const char kEventFrameNameChanged[];
 extern const char kEventLoadAbort[];
 extern const char kEventLoadCommit[];
 extern const char kEventLoadProgress[];
 extern const char kEventLoadRedirect[];
 extern const char kEventLoadStart[];
 extern const char kEventLoadStop[];
+extern const char kEventMessage[];
 extern const char kEventNewWindow[];
 extern const char kEventPermissionRequest[];
 extern const char kEventResponsive[];
 extern const char kEventSizeChanged[];
 extern const char kEventUnresponsive[];
 extern const char kEventZoomChange[];
+
+// Event related constants.
+extern const char kWebViewEventPrefix[];
 
 // Parameters/properties on events.
 extern const char kContextMenuItems[];
@@ -52,6 +57,7 @@ extern const char kOldURL[];
 extern const char kPermission[];
 extern const char kPermissionTypeDialog[];
 extern const char kPermissionTypeDownload[];
+extern const char kPermissionTypeFileSystem[];
 extern const char kPermissionTypeGeolocation[];
 extern const char kPermissionTypeLoadPlugin[];
 extern const char kPermissionTypeMedia[];
@@ -91,6 +97,8 @@ extern const char kParameterUserAgentOverride[];
 // Miscellaneous.
 extern const char kMenuItemCommandId[];
 extern const char kMenuItemLabel[];
+extern const char kPersistPrefix[];
+extern const char kStoragePartitionId[];
 extern const unsigned int kMaxOutstandingPermissionRequests;
 extern const int kInvalidPermissionRequestID;
 

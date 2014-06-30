@@ -9,6 +9,7 @@
 #include "base/json/json_reader.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
+#include "base/values.h"
 #include "chrome/browser/chromeos/file_system_provider/operations/get_metadata.h"
 #include "chrome/common/extensions/api/file_system_provider.h"
 #include "chrome/common/extensions/api/file_system_provider_internal.h"
@@ -22,7 +23,8 @@ namespace operations {
 namespace {
 
 const char kExtensionId[] = "mbflcebpggnecokmikipoihdbecnjfoj";
-const int kFileSystemId = 1;
+const char kFileSystemId[] = "testing-file-system";
+const char kMimeType[] = "text/plain";
 const int kRequestId = 2;
 const base::FilePath::CharType kDirectoryPath[] = "/directory";
 
@@ -53,16 +55,16 @@ class CallbackLogger {
  public:
   class Event {
    public:
-    Event(base::File::Error result, const base::File::Info& file_info)
-        : result_(result), file_info_(file_info) {}
+    Event(const EntryMetadata& metadata, base::File::Error result)
+        : metadata_(metadata), result_(result) {}
     virtual ~Event() {}
 
+    const EntryMetadata& metadata() { return metadata_; }
     base::File::Error result() { return result_; }
-    const base::File::Info& file_info() { return file_info_; }
 
    private:
+    EntryMetadata metadata_;
     base::File::Error result_;
-    base::File::Info file_info_;
 
     DISALLOW_COPY_AND_ASSIGN(Event);
   };
@@ -70,9 +72,8 @@ class CallbackLogger {
   CallbackLogger() : weak_ptr_factory_(this) {}
   virtual ~CallbackLogger() {}
 
-  void OnGetMetadata(base::File::Error result,
-                     const base::File::Info& file_info) {
-    events_.push_back(new Event(result, file_info));
+  void OnGetMetadata(const EntryMetadata& metadata, base::File::Error result) {
+    events_.push_back(new Event(metadata, result));
   }
 
   ScopedVector<Event>& events() { return events_; }
@@ -128,19 +129,22 @@ TEST_F(FileSystemProviderOperationsGetMetadataTest, Execute) {
       extensions::api::file_system_provider::OnGetMetadataRequested::kEventName,
       event->event_name);
   base::ListValue* event_args = event->event_args.get();
-  ASSERT_EQ(3u, event_args->GetSize());
+  ASSERT_EQ(1u, event_args->GetSize());
 
-  int event_file_system_id = -1;
-  EXPECT_TRUE(event_args->GetInteger(0, &event_file_system_id));
+  base::DictionaryValue* options = NULL;
+  ASSERT_TRUE(event_args->GetDictionary(0, &options));
+
+  std::string event_file_system_id;
+  EXPECT_TRUE(options->GetString("fileSystemId", &event_file_system_id));
   EXPECT_EQ(kFileSystemId, event_file_system_id);
 
   int event_request_id = -1;
-  EXPECT_TRUE(event_args->GetInteger(1, &event_request_id));
+  EXPECT_TRUE(options->GetInteger("requestId", &event_request_id));
   EXPECT_EQ(kRequestId, event_request_id);
 
-  std::string event_directory_path;
-  EXPECT_TRUE(event_args->GetString(2, &event_directory_path));
-  EXPECT_EQ(kDirectoryPath, event_directory_path);
+  std::string event_entry_path;
+  EXPECT_TRUE(options->GetString("entryPath", &event_entry_path));
+  EXPECT_EQ(kDirectoryPath, event_entry_path);
 }
 
 TEST_F(FileSystemProviderOperationsGetMetadataTest, Execute_NoListener) {
@@ -160,7 +164,6 @@ TEST_F(FileSystemProviderOperationsGetMetadataTest, Execute_NoListener) {
 }
 
 TEST_F(FileSystemProviderOperationsGetMetadataTest, OnSuccess) {
-  using extensions::api::file_system_provider::EntryMetadata;
   using extensions::api::file_system_provider_internal::
       GetMetadataRequestedSuccess::Params;
 
@@ -183,16 +186,18 @@ TEST_F(FileSystemProviderOperationsGetMetadataTest, OnSuccess) {
   // base::Value.
   const std::string input =
       "[\n"
-      "  1,\n"  // kFileSystemId
-      "  2,\n"  // kRequestId
+      "  \"testing-file-system\",\n"  // kFileSystemId
+      "  2,\n"                        // kRequestId
       "  {\n"
       "    \"isDirectory\": false,\n"
       "    \"name\": \"blueberries.txt\",\n"
       "    \"size\": 4096,\n"
       "    \"modificationTime\": {\n"
       "      \"value\": \"Thu Apr 24 00:46:52 UTC 2014\"\n"
-      "    }\n"
-      "  }\n"
+      "    },\n"
+      "    \"mimeType\": \"text/plain\"\n"  // kMimeType
+      "  },\n"
+      "  0\n"  // execution_time
       "]\n";
 
   int json_error_code;
@@ -209,27 +214,24 @@ TEST_F(FileSystemProviderOperationsGetMetadataTest, OnSuccess) {
       RequestValue::CreateForGetMetadataSuccess(params.Pass()));
   ASSERT_TRUE(request_value.get());
 
-  const bool has_next = false;
-  get_metadata.OnSuccess(kRequestId, request_value.Pass(), has_next);
+  const bool has_more = false;
+  get_metadata.OnSuccess(kRequestId, request_value.Pass(), has_more);
 
   ASSERT_EQ(1u, callback_logger.events().size());
   CallbackLogger::Event* event = callback_logger.events()[0];
   EXPECT_EQ(base::File::FILE_OK, event->result());
 
-  const base::File::Info& file_info = event->file_info();
-  EXPECT_FALSE(file_info.is_directory);
-  EXPECT_EQ(4096, file_info.size);
+  const EntryMetadata& metadata = event->metadata();
+  EXPECT_FALSE(metadata.is_directory);
+  EXPECT_EQ(4096, metadata.size);
   base::Time expected_time;
   EXPECT_TRUE(
       base::Time::FromString("Thu Apr 24 00:46:52 UTC 2014", &expected_time));
-  EXPECT_EQ(expected_time, file_info.last_modified);
+  EXPECT_EQ(expected_time, metadata.modification_time);
+  EXPECT_EQ(kMimeType, metadata.mime_type);
 }
 
 TEST_F(FileSystemProviderOperationsGetMetadataTest, OnError) {
-  using extensions::api::file_system_provider::EntryMetadata;
-  using extensions::api::file_system_provider_internal::
-      GetMetadataRequestedError::Params;
-
   LoggingDispatchEventImpl dispatcher(true /* dispatch_reply */);
   CallbackLogger callback_logger;
 
@@ -244,7 +246,9 @@ TEST_F(FileSystemProviderOperationsGetMetadataTest, OnError) {
 
   EXPECT_TRUE(get_metadata.Execute(kRequestId));
 
-  get_metadata.OnError(kRequestId, base::File::FILE_ERROR_TOO_MANY_OPENED);
+  get_metadata.OnError(kRequestId,
+                       scoped_ptr<RequestValue>(new RequestValue()),
+                       base::File::FILE_ERROR_TOO_MANY_OPENED);
 
   ASSERT_EQ(1u, callback_logger.events().size());
   CallbackLogger::Event* event = callback_logger.events()[0];

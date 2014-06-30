@@ -12,8 +12,6 @@
 #include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/metrics/sparse_histogram.h"
-// TODO(rvargas): remove this (needed for kInvalidPlatformFileValue).
-#include "base/platform_file.h"
 #include "base/posix/eintr_wrapper.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_restrictions.h"
@@ -183,6 +181,7 @@ void File::InitializeUnsafe(const FilePath& name, uint32 flags) {
 
   if (flags & FLAG_CREATE_ALWAYS) {
     DCHECK(!open_flags);
+    DCHECK(flags & FLAG_WRITE);
     open_flags = O_CREAT | O_TRUNC;
   }
 
@@ -279,11 +278,16 @@ void File::Close() {
 int64 File::Seek(Whence whence, int64 offset) {
   base::ThreadRestrictions::AssertIOAllowed();
   DCHECK(IsValid());
-  if (offset < 0)
-    return -1;
 
+#if defined(OS_ANDROID)
+  COMPILE_ASSERT(sizeof(int64) == sizeof(off64_t), off64_t_64_bit);
+  return lseek64(file_.get(), static_cast<off64_t>(offset),
+                 static_cast<int>(whence));
+#else
+  COMPILE_ASSERT(sizeof(int64) == sizeof(off_t), off_t_64_bit);
   return lseek(file_.get(), static_cast<off_t>(offset),
                static_cast<int>(whence));
+#endif
 }
 
 int File::Read(int64 offset, char* data, int size) {

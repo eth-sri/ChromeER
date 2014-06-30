@@ -22,9 +22,7 @@
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/custom_handlers/protocol_handler_registry.h"
 #include "chrome/browser/custom_handlers/protocol_handler_registry_factory.h"
-#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_special_storage_policy.h"
-#include "chrome/browser/google/google_util.h"
 #include "chrome/browser/notifications/desktop_notification_service.h"
 #include "chrome/browser/notifications/desktop_notification_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
@@ -35,6 +33,7 @@
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/google/core/browser/google_util.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/notification_types.h"
@@ -42,8 +41,10 @@
 #include "content/public/browser/web_ui.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/page_zoom.h"
+#include "extensions/browser/extension_registry.h"
 #include "extensions/common/extension_set.h"
 #include "extensions/common/permissions/api_permission.h"
+#include "extensions/common/permissions/permissions_data.h"
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -106,6 +107,7 @@ const ContentSettingsTypeNameEntry kContentSettingsTypeGroupNames[] = {
   {CONTENT_SETTINGS_TYPE_PPAPI_BROKER, "ppapi-broker"},
   {CONTENT_SETTINGS_TYPE_AUTOMATIC_DOWNLOADS, "multiple-automatic-downloads"},
   {CONTENT_SETTINGS_TYPE_MIDI_SYSEX, "midi-sysex"},
+  {CONTENT_SETTINGS_TYPE_PUSH_MESSAGING, "push-messaging"},
 #if defined(OS_CHROMEOS)
   {CONTENT_SETTINGS_TYPE_PROTECTED_MEDIA_IDENTIFIER, "protectedContent"},
 #endif
@@ -210,7 +212,8 @@ base::DictionaryValue* GetNotificationExceptionForPage(
 template <APIPermission::ID permission>
 bool HostedAppHasPermission(
     const extensions::Extension& extension, Profile* /*profile*/) {
-    return extension.is_hosted_app() && extension.HasAPIPermission(permission);
+  return extension.is_hosted_app() &&
+         extension.permissions_data()->HasAPIPermission(permission);
 }
 
 // Add an "Allow"-entry to the list of |exceptions| for a |url_pattern| from
@@ -231,13 +234,10 @@ void AddExceptionForHostedApp(const std::string& url_pattern,
 // adds their web extent and launch URL to the |exceptions| list.
 void AddExceptionsGrantedByHostedApps(
     Profile* profile, AppFilter app_filter, base::ListValue* exceptions) {
-  const ExtensionService* extension_service = profile->GetExtensionService();
-  // After ExtensionSystem::Init has been called at the browser's start,
-  // GetExtensionService() should not return NULL, so this is safe:
-  const extensions::ExtensionSet* extensions = extension_service->extensions();
-
-  for (extensions::ExtensionSet::const_iterator extension = extensions->begin();
-       extension != extensions->end(); ++extension) {
+  const extensions::ExtensionSet& extensions =
+      extensions::ExtensionRegistry::Get(profile)->enabled_extensions();
+  for (extensions::ExtensionSet::const_iterator extension = extensions.begin();
+       extension != extensions.end(); ++extension) {
     if (!app_filter(*extension->get(), profile))
       continue;
 
@@ -396,8 +396,7 @@ void ContentSettingsHandler::GetLocalizedValues(
     { "mediaPepperFlashGlobalPrivacyURL", IDS_FLASH_GLOBAL_PRIVACY_URL },
     { "mediaPepperFlashWebsitePrivacyURL", IDS_FLASH_WEBSITE_PRIVACY_URL },
     // PPAPI broker filter.
-    // TODO(bauerb): Use IDS_PPAPI_BROKER_HEADER.
-    { "ppapi-broker_header", IDS_PPAPI_BROKER_TAB_LABEL },
+    { "ppapi-broker_header", IDS_PPAPI_BROKER_HEADER },
     { "ppapiBrokerTabLabel", IDS_PPAPI_BROKER_TAB_LABEL },
     { "ppapi_broker_allow", IDS_PPAPI_BROKER_ALLOW_RADIO },
     { "ppapi_broker_ask", IDS_PPAPI_BROKER_ASK_RADIO },
@@ -416,6 +415,11 @@ void ContentSettingsHandler::GetLocalizedValues(
     { "midiSysExAllow", IDS_MIDI_SYSEX_ALLOW_RADIO },
     { "midiSysExAsk", IDS_MIDI_SYSEX_ASK_RADIO },
     { "midiSysExBlock", IDS_MIDI_SYSEX_BLOCK_RADIO },
+    // Push messaging strings
+    { "push-messaging_header", IDS_PUSH_MESSAGES_TAB_LABEL },
+    { "pushMessagingAllow", IDS_PUSH_MESSSAGING_ALLOW_RADIO },
+    { "pushMessagingAsk", IDS_PUSH_MESSSAGING_ASK_RADIO },
+    { "pushMessagingBlock", IDS_PUSH_MESSSAGING_BLOCK_RADIO },
     { "zoomlevels_header", IDS_ZOOMLEVELS_HEADER_AND_TAB_LABEL },
     { "zoomLevelsManage", IDS_ZOOMLEVELS_MANAGE_BUTTON },
   };
@@ -459,10 +463,8 @@ void ContentSettingsHandler::GetLocalizedValues(
   RegisterTitle(localized_strings, "zoomlevels",
                 IDS_ZOOMLEVELS_HEADER_AND_TAB_LABEL);
 
-  localized_strings->SetString(
-      "exceptionsLearnMoreUrl",
-      google_util::StringAppendGoogleLocaleParam(
-          kExceptionsLearnMoreUrl));
+  localized_strings->SetString("exceptionsLearnMoreUrl",
+                               kExceptionsLearnMoreUrl);
 }
 
 void ContentSettingsHandler::InitializeHandler() {

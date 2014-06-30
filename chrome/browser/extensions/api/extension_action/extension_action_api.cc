@@ -17,7 +17,6 @@
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/extensions/extension_toolbar_model.h"
 #include "chrome/browser/extensions/location_bar_controller.h"
-#include "chrome/browser/extensions/state_store.h"
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/api/extension_action/action_info.h"
@@ -30,6 +29,7 @@
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/image_util.h"
+#include "extensions/browser/state_store.h"
 #include "extensions/common/error_utils.h"
 #include "ui/gfx/codec/png_codec.h"
 #include "ui/gfx/image/image.h"
@@ -174,8 +174,10 @@ void SetDefaultsFromValue(const base::DictionaryValue* dict,
       case INVISIBLE:
       case OBSOLETE_WANTS_ATTENTION:
         action->SetIsVisible(kDefaultTabId, false);
+        break;
       case ACTIVE:
         action->SetIsVisible(kDefaultTabId, true);
+        break;
     }
   }
 
@@ -186,7 +188,7 @@ void SetDefaultsFromValue(const base::DictionaryValue* dict,
       if (icon_value->GetString(kIconSizes[i].size_string, &str_value) &&
           StringToSkBitmap(str_value, &bitmap)) {
         CHECK(!bitmap.isNull());
-        float scale = ui::GetImageScale(kIconSizes[i].scale);
+        float scale = ui::GetScaleForScaleFactor(kIconSizes[i].scale);
         icon.AddRepresentation(gfx::ImageSkiaRep(bitmap, scale));
       }
     }
@@ -216,7 +218,7 @@ scoped_ptr<base::DictionaryValue> DefaultsToValue(ExtensionAction* action) {
   if (!icon.isNull()) {
     base::DictionaryValue* icon_value = new base::DictionaryValue();
     for (size_t i = 0; i < arraysize(kIconSizes); i++) {
-      float scale = ui::GetImageScale(kIconSizes[i].scale);
+      float scale = ui::GetScaleForScaleFactor(kIconSizes[i].scale);
       if (icon.HasRepresentation(scale)) {
         icon_value->SetString(
             kIconSizes[i].size_string,
@@ -681,7 +683,7 @@ bool ExtensionActionSetIconFunction::RunExtensionAction() {
         SkBitmap bitmap;
         EXTENSION_FUNCTION_VALIDATE(IPC::ReadParam(&pickle, &iter, &bitmap));
         CHECK(!bitmap.isNull());
-        float scale = ui::GetImageScale(kIconSizes[i].scale);
+        float scale = ui::GetScaleForScaleFactor(kIconSizes[i].scale);
         icon.AddRepresentation(gfx::ImageSkiaRep(bitmap, scale));
       }
     }

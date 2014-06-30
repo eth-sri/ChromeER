@@ -13,23 +13,14 @@
 #include "base/memory/scoped_vector.h"
 #include "base/prefs/pref_service.h"
 #include "base/time/time.h"
-#include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/search_engines/template_url.h"
-#include "chrome/browser/search_engines/template_url_prepopulate_data.h"
 #include "chrome/browser/search_engines/template_url_service.h"
-#include "chrome/browser/search_engines/template_url_service_factory.h"
-#include "content/public/browser/browser_thread.h"
+#include "components/search_engines/template_url.h"
+#include "components/search_engines/template_url_prepopulate_data.h"
 
-using content::BrowserThread;
-
-base::string16 GetDefaultSearchEngineName(Profile* profile) {
-  if (!profile) {
-    NOTREACHED();
-    return base::string16();
-  }
+base::string16 GetDefaultSearchEngineName(TemplateURLService* service) {
+  DCHECK(service);
   const TemplateURL* const default_provider =
-      TemplateURLServiceFactory::GetForProfile(profile)->
-      GetDefaultSearchProvider();
+      service->GetDefaultSearchProvider();
   if (!default_provider) {
     // TODO(cpu): bug 1187517. It is possible to have no default provider.
     // returning an empty string is a stopgap measure for the crash
@@ -39,19 +30,18 @@ base::string16 GetDefaultSearchEngineName(Profile* profile) {
   return default_provider->short_name();
 }
 
-GURL GetDefaultSearchURLForSearchTerms(Profile* profile,
+GURL GetDefaultSearchURLForSearchTerms(TemplateURLService* service,
                                        const base::string16& terms) {
-  DCHECK(profile);
-  const TemplateURL* default_provider =
-      TemplateURLServiceFactory::GetForProfile(profile)->
-      GetDefaultSearchProvider();
+  DCHECK(service);
+  const TemplateURL* default_provider = service->GetDefaultSearchProvider();
   if (!default_provider)
     return GURL();
   const TemplateURLRef& search_url = default_provider->url_ref();
-  DCHECK(search_url.SupportsReplacement());
+  DCHECK(search_url.SupportsReplacement(service->search_terms_data()));
   TemplateURLRef::SearchTermsArgs search_terms_args(terms);
   search_terms_args.append_extra_query_params = true;
-  return GURL(search_url.ReplaceSearchTerms(search_terms_args));
+  return GURL(search_url.ReplaceSearchTerms(search_terms_args,
+                                            service->search_terms_data()));
 }
 
 void RemoveDuplicatePrepopulateIDs(
@@ -59,8 +49,8 @@ void RemoveDuplicatePrepopulateIDs(
     const ScopedVector<TemplateURLData>& prepopulated_urls,
     TemplateURL* default_search_provider,
     TemplateURLService::TemplateURLVector* template_urls,
+    const SearchTermsData& search_terms_data,
     std::set<std::string>* removed_keyword_guids) {
-  DCHECK(service == NULL || BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(template_urls);
 
   // For convenience construct an ID->TemplateURL* map from |prepopulated_urls|.
@@ -107,7 +97,8 @@ void RemoveDuplicatePrepopulateIDs(
       if (default_search_provider &&
           (default_search_provider->prepopulate_id() ==
               i->second->prepopulate_id()) &&
-          default_search_provider->HasSameKeywordAs(i->second->data())) {
+          default_search_provider->HasSameKeywordAs(i->second->data(),
+                                                    search_terms_data)) {
         best = i;
         break;
       }
@@ -117,7 +108,8 @@ void RemoveDuplicatePrepopulateIDs(
       if (matched_keyword)
         continue;
       if ((prepopulated_url != prepopulated_url_map.end()) &&
-          i->second->HasSameKeywordAs(*prepopulated_url->second)) {
+          i->second->HasSameKeywordAs(*prepopulated_url->second,
+                                      search_terms_data)) {
         best = i;
         matched_keyword = true;
       } else if (i->second->id() < best->second->id()) {
@@ -194,14 +186,12 @@ ActionsFromPrepopulateData::~ActionsFromPrepopulateData() {}
 // from the DB will be added to it.  Note that this function will take
 // ownership of |prepopulated_urls| and will clear the vector.
 void MergeEnginesFromPrepopulateData(
-    Profile* profile,
     WebDataService* service,
     ScopedVector<TemplateURLData>* prepopulated_urls,
     size_t default_search_index,
     TemplateURLService::TemplateURLVector* template_urls,
     TemplateURL* default_search_provider,
     std::set<std::string>* removed_keyword_guids) {
-  DCHECK(service == NULL || BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(prepopulated_urls);
   DCHECK(template_urls);
 
@@ -236,7 +226,7 @@ void MergeEnginesFromPrepopulateData(
     // Replace the entry in |template_urls| with the updated one.
     TemplateURLService::TemplateURLVector::iterator j = std::find(
         template_urls->begin(), template_urls->end(), existing_url.get());
-    *j = new TemplateURL(profile, data);
+    *j = new TemplateURL(data);
   }
 
   // Add items.
@@ -244,7 +234,7 @@ void MergeEnginesFromPrepopulateData(
            actions.added_engines.begin();
        it != actions.added_engines.end();
        ++it) {
-    template_urls->push_back(new TemplateURL(profile, *it));
+    template_urls->push_back(new TemplateURL(*it));
   }
 }
 
@@ -318,12 +308,12 @@ ActionsFromPrepopulateData CreateActionsFromCurrentPrepopulateData(
 void GetSearchProvidersUsingKeywordResult(
     const WDTypedResult& result,
     WebDataService* service,
-    Profile* profile,
+    PrefService* prefs,
     TemplateURLService::TemplateURLVector* template_urls,
     TemplateURL* default_search_provider,
+    const SearchTermsData& search_terms_data,
     int* new_resource_keyword_version,
     std::set<std::string>* removed_keyword_guids) {
-  DCHECK(service == NULL || BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(template_urls);
   DCHECK(template_urls->empty());
   DCHECK_EQ(KEYWORDS_RESULT, result.GetType());
@@ -345,41 +335,41 @@ void GetSearchProvidersUsingKeywordResult(
     // search engine sync, since in that case that code will never be reached.
     if (DeDupeEncodings(&i->input_encodings) && service)
       service->UpdateKeyword(*i);
-    template_urls->push_back(new TemplateURL(profile, *i));
+    template_urls->push_back(new TemplateURL(*i));
   }
 
   *new_resource_keyword_version = keyword_result.builtin_keyword_version;
-  GetSearchProvidersUsingLoadedEngines(service, profile, template_urls,
+  GetSearchProvidersUsingLoadedEngines(service, prefs, template_urls,
                                        default_search_provider,
+                                       search_terms_data,
                                        new_resource_keyword_version,
                                        removed_keyword_guids);
 }
 
 void GetSearchProvidersUsingLoadedEngines(
     WebDataService* service,
-    Profile* profile,
+    PrefService* prefs,
     TemplateURLService::TemplateURLVector* template_urls,
     TemplateURL* default_search_provider,
+    const SearchTermsData& search_terms_data,
     int* resource_keyword_version,
     std::set<std::string>* removed_keyword_guids) {
-  DCHECK(service == NULL || BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(template_urls);
   DCHECK(resource_keyword_version);
-  PrefService* prefs = profile ? profile->GetPrefs() : NULL;
   size_t default_search_index;
   ScopedVector<TemplateURLData> prepopulated_urls =
       TemplateURLPrepopulateData::GetPrepopulatedEngines(prefs,
                                                          &default_search_index);
   RemoveDuplicatePrepopulateIDs(service, prepopulated_urls,
                                 default_search_provider, template_urls,
-                                removed_keyword_guids);
+                                search_terms_data, removed_keyword_guids);
 
   const int prepopulate_resource_keyword_version =
       TemplateURLPrepopulateData::GetDataVersion(prefs);
   if (*resource_keyword_version < prepopulate_resource_keyword_version) {
-    MergeEnginesFromPrepopulateData(profile, service, &prepopulated_urls,
-        default_search_index, template_urls, default_search_provider,
-        removed_keyword_guids);
+    MergeEnginesFromPrepopulateData(
+        service, &prepopulated_urls, default_search_index, template_urls,
+        default_search_provider, removed_keyword_guids);
     *resource_keyword_version = prepopulate_resource_keyword_version;
   } else {
     *resource_keyword_version = 0;

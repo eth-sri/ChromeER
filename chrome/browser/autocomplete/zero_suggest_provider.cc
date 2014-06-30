@@ -15,12 +15,11 @@
 #include "base/time/time.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier_factory.h"
-#include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/autocomplete/autocomplete_provider_listener.h"
+#include "chrome/browser/autocomplete/chrome_autocomplete_scheme_classifier.h"
 #include "chrome/browser/autocomplete/history_url_provider.h"
 #include "chrome/browser/autocomplete/search_provider.h"
-#include "chrome/browser/autocomplete/url_prefix.h"
 #include "chrome/browser/history/history_types.h"
 #include "chrome/browser/history/top_sites.h"
 #include "chrome/browser/metrics/variations/variations_http_header_provider.h"
@@ -29,9 +28,10 @@
 #include "chrome/browser/search/search.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
-#include "chrome/common/net/url_fixer_upper.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/autocomplete/autocomplete_input.h"
+#include "components/metrics/proto/omnibox_input_type.pb.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "content/public/browser/user_metrics.h"
 #include "net/base/escape.h"
@@ -93,7 +93,7 @@ void ZeroSuggestProvider::RegisterProfilePrefs(
 void ZeroSuggestProvider::Start(const AutocompleteInput& input,
                                 bool minimal_changes) {
   matches_.clear();
-  if (input.type() == AutocompleteInput::INVALID)
+  if (input.type() == metrics::OmniboxInputType::INVALID)
     return;
 
   Stop(true);
@@ -113,7 +113,7 @@ void ZeroSuggestProvider::Start(const AutocompleteInput& input,
   base::string16 prefix;
   TemplateURLRef::SearchTermsArgs search_term_args(prefix);
   GURL suggest_url(default_provider->suggestions_url_ref().ReplaceSearchTerms(
-      search_term_args));
+      search_term_args, template_url_service_->search_terms_data()));
   if (!suggest_url.is_valid())
     return;
 
@@ -124,7 +124,9 @@ void ZeroSuggestProvider::Start(const AutocompleteInput& input,
     // Update suggest_url to include the current_page_url.
     search_term_args.current_page_url = current_query_;
     suggest_url = GURL(default_provider->suggestions_url_ref().
-                       ReplaceSearchTerms(search_term_args));
+                       ReplaceSearchTerms(
+                           search_term_args,
+                           template_url_service_->search_terms_data()));
   } else if (!CanShowZeroSuggestWithoutSendingURL(suggest_url,
                                                   input.current_url())) {
     return;
@@ -208,7 +210,7 @@ const AutocompleteInput ZeroSuggestProvider::GetInput(bool is_keyword) const {
   return AutocompleteInput(
       base::string16(), base::string16::npos, base::string16(),
       GURL(current_query_), current_page_classification_, true, false, false,
-      true);
+      true, ChromeAutocompleteSchemeClassifier(profile_));
 }
 
 BaseSearchProvider::Results* ZeroSuggestProvider::GetResultsToFill(
@@ -290,7 +292,7 @@ AutocompleteMatch ZeroSuggestProvider::NavigationToMatch(
       net::kFormatUrlOmitAll, net::UnescapeRule::SPACES, NULL, NULL, NULL);
   match.fill_into_edit +=
       AutocompleteInput::FormattedStringWithEquivalentMeaning(navigation.url(),
-          match.contents);
+          match.contents, ChromeAutocompleteSchemeClassifier(profile_));
 
   AutocompleteMatch::ClassifyLocationInString(base::string16::npos, 0,
       match.contents.length(), ACMatchClassification::URL,
@@ -344,7 +346,8 @@ void ZeroSuggestProvider::ConvertResultsToAutocompleteMatches() {
   const TemplateURL* default_provider =
       template_url_service_->GetDefaultSearchProvider();
   // Fail if we can't set the clickthrough URL for query suggestions.
-  if (default_provider == NULL || !default_provider->SupportsReplacement())
+  if (default_provider == NULL || !default_provider->SupportsReplacement(
+          template_url_service_->search_terms_data()))
     return;
 
   MatchMap map;
@@ -374,9 +377,10 @@ void ZeroSuggestProvider::ConvertResultsToAutocompleteMatches() {
         profile_->GetPrefs()->GetString(prefs::kAcceptLanguages));
     for (size_t i = 0; i < most_visited_urls_.size(); i++) {
       const history::MostVisitedURL& url = most_visited_urls_[i];
-      NavigationResult nav(*this, url.url, AutocompleteMatchType::NAVSUGGEST,
-          url.title, std::string(), false, relevance, true,
-          current_query_string16, languages);
+      NavigationResult nav(*this, profile_, url.url,
+                           AutocompleteMatchType::NAVSUGGEST, url.title,
+                           std::string(), false, relevance, true,
+                           current_query_string16, languages);
       matches_.push_back(NavigationToMatch(nav));
       --relevance;
     }

@@ -16,9 +16,9 @@ class ToughCompositorPage(page_module.Page):
     self.archive_data_file = 'data/tough_compositor_cases.json'
 
   def RunNavigateSteps(self, action_runner):
-    action_runner.RunAction(NavigateAction())
+    action_runner.NavigateToPage(self)
     # TODO(epenner): Remove this wait (http://crbug.com/366933)
-    action_runner.RunAction(WaitAction({'seconds': 5}))
+    action_runner.Wait(5)
 
 class ToughCompositorScrollPage(ToughCompositorPage):
 
@@ -27,10 +27,10 @@ class ToughCompositorScrollPage(ToughCompositorPage):
 
   def RunSmoothness(self, action_runner):
     # Make the scroll longer to reduce noise.
-    scroll_down = ScrollAction()
-    scroll_down.direction = "down"
-    scroll_down.speed = 300
-    action_runner.RunAction(scroll_down)
+    interaction = action_runner.BeginGestureInteraction(
+        'ScrollAction', is_smooth=True)
+    action_runner.ScrollPage(direction='down', speed_in_pixels_per_second=300)
+    interaction.End()
 
 class ToughCompositorWaitPage(ToughCompositorPage):
 
@@ -39,7 +39,7 @@ class ToughCompositorWaitPage(ToughCompositorPage):
 
   def RunSmoothness(self, action_runner):
     # We scroll back and forth a few times to reduce noise in the tests.
-    action_runner.RunAction(WaitAction({'seconds': 10}))
+    action_runner.Wait(8)
 
 
 class ToughCompositorCasesPageSet(page_set_module.PageSet):
@@ -50,17 +50,18 @@ class ToughCompositorCasesPageSet(page_set_module.PageSet):
     super(ToughCompositorCasesPageSet, self).__init__(
       credentials_path='data/credentials.json',
       user_agent_type='mobile',
-      archive_data_file='data/tough_compositor_cases.json')
+      archive_data_file='data/tough_compositor_cases.json',
+      bucket=page_set_module.PUBLIC_BUCKET)
 
     scroll_urls_list = [
       # Why: Baseline CC scrolling page. A long page with only text. """
       'http://jsbin.com/pixavefe/1/quiet?CC_SCROLL_TEXT_ONLY',
       # Why: Baseline JS scrolling page. A long page with only text. """
-      'http://jsbin.com/wixadinu/1/quiet?JS_SCROLL_TEXT_ONLY',
+      'http://jsbin.com/wixadinu/2/quiet?JS_SCROLL_TEXT_ONLY',
       # Why: Scroll by a large number of CC layers """
       'http://jsbin.com/yakagevo/1/quiet?CC_SCROLL_200_LAYER_GRID',
       # Why: Scroll by a large number of JS layers """
-      'http://jsbin.com/jevibahi/1/quiet?JS_SCROLL_200_LAYER_GRID',
+      'http://jsbin.com/jevibahi/4/quiet?JS_SCROLL_200_LAYER_GRID',
     ]
 
     wait_urls_list = [

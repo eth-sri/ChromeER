@@ -98,11 +98,14 @@ cvox.ChromeVoxEventWatcher.shouldEchoKeys = true;
 
 
 /**
- * Whether ChromeVox is currently processing an event affecting TTS.
+ * Whether or not the next utterance should flush all previous speech.
+ * Immediately after a key down or user action, we make the next speech
+ * flush, but otherwise it's better to do a category flush, so if a single
+ * user action generates both a focus change and a live region change,
+ * both get spoken.
  * @type {boolean}
- * @private
  */
-cvox.ChromeVoxEventWatcher.processing_ = false;
+cvox.ChromeVoxEventWatcher.shouldFlushNextUtterance = false;
 
 
 /**
@@ -159,7 +162,7 @@ cvox.ChromeVoxEventWatcher.init = function(doc) {
 
   /**
    * The mutation observer we use to listen for live regions.
-   * @type {WebKitMutationObserver}
+   * @type {MutationObserver}
    * @private
    */
   cvox.ChromeVoxEventWatcher.mutationObserver_ = null;
@@ -236,7 +239,7 @@ cvox.ChromeVoxEventWatcher.secondPassThroughKeyUp_ = false;
   /**
    * The mutation observer that listens for chagnes to text controls
    * that might not send other events.
-   * @type {WebKitMutationObserver}
+   * @type {MutationObserver}
    * @private
    */
   cvox.ChromeVoxEventWatcher.textMutationObserver_ = null;
@@ -410,9 +413,10 @@ cvox.ChromeVoxEventWatcher.addEventListeners_ = function(doc) {
   cvox.ChromeVoxEventWatcher.addEventListener_(doc,
       'click', cvox.ChromeVoxEventWatcher.mouseClickEventWatcher, true);
 
-  if (typeof(WebKitMutationObserver) != 'undefined') {
-    cvox.ChromeVoxEventWatcher.mutationObserver_ = new WebKitMutationObserver(
-        cvox.ChromeVoxEventWatcher.mutationHandler);
+  if (typeof(window.WebKitMutationObserver) != 'undefined') {
+    cvox.ChromeVoxEventWatcher.mutationObserver_ =
+        new window.WebKitMutationObserver(
+            cvox.ChromeVoxEventWatcher.mutationHandler);
     var observerTarget = null;
     if (doc.documentElement) {
       observerTarget = doc.documentElement;
@@ -422,13 +426,14 @@ cvox.ChromeVoxEventWatcher.addEventListeners_ = function(doc) {
     if (observerTarget) {
       cvox.ChromeVoxEventWatcher.mutationObserver_.observe(
           observerTarget,
-          { childList: true,
+          /** @type {!MutationObserverInit} */ ({
+            childList: true,
             attributes: true,
             characterData: true,
             subtree: true,
             attributeOldValue: true,
             characterDataOldValue: true
-          });
+          }));
     }
   } else {
     cvox.ChromeVoxEventWatcher.addEventListener_(doc, 'DOMSubtreeModified',
@@ -551,7 +556,7 @@ cvox.ChromeVoxEventWatcher.mouseClickEventWatcher = function(evt) {
     cvox.Focuser.setFocus(cvox.ChromeVox.navigationManager.getCurrentNode());
     cvox.ChromeVox.tts.speak(
         cvox.ChromeVox.msgs.getMsg('element_clicked'),
-        cvox.AbstractTts.QUEUE_MODE_FLUSH,
+        cvox.ChromeVoxEventWatcher.queueMode_(),
         cvox.AbstractTts.PERSONALITY_ANNOTATION);
     var targetNode = cvox.ChromeVox.navigationManager.getCurrentNode();
     // If the targetNode has a defined onclick function, just call it directly
@@ -577,7 +582,11 @@ cvox.ChromeVoxEventWatcher.mouseClickEventWatcher = function(evt) {
  * @return {boolean} True if the default action should be performed.
  */
 cvox.ChromeVoxEventWatcher.mouseOverEventWatcher = function(evt) {
-  if (!cvox.ChromeVoxEventWatcher.focusFollowsMouse) {
+  var hasTouch = 'ontouchstart' in window;
+  var mouseoverDelayMs = cvox.ChromeVoxEventWatcher.mouseoverDelayMs;
+  if (hasTouch) {
+    mouseoverDelayMs = 0;
+  } else if (!cvox.ChromeVoxEventWatcher.focusFollowsMouse) {
     return true;
   }
 
@@ -610,13 +619,14 @@ cvox.ChromeVoxEventWatcher.mouseOverEventWatcher = function(evt) {
         if (evt.target != cvox.ChromeVoxEventWatcher.pendingMouseOverNode) {
           return;
         }
+        cvox.ChromeVoxEventWatcher.shouldFlushNextUtterance = true;
         cvox.ChromeVox.navigationManager.stopReading(true);
         var target = /** @type {Node} */(evt.target);
         cvox.Focuser.setFocus(target);
-        cvox.ApiImplementation.syncToNode(target, true,
-            cvox.AbstractTts.QUEUE_MODE_FLUSH);
+        cvox.ApiImplementation.syncToNode(
+            target, true, cvox.ChromeVoxEventWatcher.queueMode_());
         cvox.ChromeVoxEventWatcher.announcedMouseOverNode = target;
-      }, cvox.ChromeVoxEventWatcher.mouseoverDelayMs);
+      }, mouseoverDelayMs);
 
   return true;
 };
@@ -755,6 +765,8 @@ cvox.ChromeVoxEventWatcher.blurEventWatcher = function(evt) {
  * @return {boolean} True if the default action should be performed.
  */
 cvox.ChromeVoxEventWatcher.keyDownEventWatcher = function(evt) {
+  cvox.ChromeVoxEventWatcher.shouldFlushNextUtterance = true;
+
   if (cvox.ChromeVox.passThroughMode) {
     return true;
   }
@@ -764,12 +776,9 @@ cvox.ChromeVoxEventWatcher.keyDownEventWatcher = function(evt) {
   }
 
   // Store some extra ChromeVox-specific properties in the event.
-  /** @expose */
   evt.searchKeyHeld =
       cvox.ChromeVox.searchKeyHeld && cvox.ChromeVox.isActive;
-  /** @expose */
-  evt.stickyMode = cvox.ChromeVox.isStickyOn && cvox.ChromeVox.isActive;
-  /** @expose */
+  evt.stickyMode = cvox.ChromeVox.isStickyModeOn() && cvox.ChromeVox.isActive;
   evt.keyPrefix = cvox.ChromeVox.keyPrefixOn && cvox.ChromeVox.isActive;
 
   cvox.ChromeVox.keyPrefixOn = false;
@@ -968,9 +977,6 @@ cvox.ChromeVoxEventWatcher.getInitialVisibility = function() {
 cvox.ChromeVoxEventWatcher.speakLiveRegion_ = function(
     assertive, messages) {
   var queueMode = cvox.ChromeVoxEventWatcher.queueMode_();
-  if (!assertive && queueMode == cvox.AbstractTts.QUEUE_MODE_FLUSH) {
-    queueMode = cvox.AbstractTts.QUEUE_MODE_QUEUE;
-  }
   var descSpeaker = new cvox.NavigationSpeaker();
   descSpeaker.speakDescriptionArray(messages, queueMode, null);
 };
@@ -1074,16 +1080,17 @@ cvox.ChromeVoxEventWatcher.setUpTextHandler = function() {
           'click', cvox.ChromeVoxEventWatcher.changeEventWatcher, false);
       if (window.WebKitMutationObserver) {
         cvox.ChromeVoxEventWatcher.textMutationObserver_ =
-            new WebKitMutationObserver(
+            new window.WebKitMutationObserver(
                 cvox.ChromeVoxEventWatcher.onTextMutation);
         cvox.ChromeVoxEventWatcher.textMutationObserver_.observe(
             cvox.ChromeVoxEventWatcher.currentTextControl,
-            { childList: true,
+            /** @type {!MutationObserverInit} */ ({
+              childList: true,
               attributes: true,
               subtree: true,
               attributeOldValue: false,
               characterDataOldValue: false
-            });
+            }));
       }
       if (!cvox.ChromeVoxEventSuspender.areEventsSuspended()) {
         cvox.ChromeVox.navigationManager.updateSel(
@@ -1105,7 +1112,13 @@ cvox.ChromeVoxEventWatcher.setUpTextHandler = function() {
 cvox.ChromeVoxEventWatcher.handleTextChanged = function(isKeypress) {
   if (cvox.ChromeVoxEventWatcher.currentTextHandler) {
     var handler = cvox.ChromeVoxEventWatcher.currentTextHandler;
-    handler.update(isKeypress);
+    var shouldFlush = false;
+    if (isKeypress && cvox.ChromeVoxEventWatcher.shouldFlushNextUtterance) {
+      shouldFlush = true;
+      cvox.ChromeVoxEventWatcher.shouldFlushNextUtterance = false;
+    }
+    handler.update(shouldFlush);
+    cvox.ChromeVoxEventWatcher.shouldFlushNextUtterance = false;
     return true;
   }
   return false;
@@ -1183,8 +1196,9 @@ cvox.ChromeVoxEventWatcher.handleControlChanged = function(control) {
     // If focus has been set on a child of the parent control, we need to
     // sync to that node so that ChromeVox navigation will be in sync with
     // focus navigation.
-    cvox.ApiImplementation.syncToNode(control, true,
-                                      cvox.AbstractTts.QUEUE_MODE_FLUSH);
+    cvox.ApiImplementation.syncToNode(
+        control, true,
+        cvox.ChromeVoxEventWatcher.queueMode_());
     announceChange = false;
   } else if (cvox.AriaUtil.getActiveDescendant(control)) {
     cvox.ChromeVox.navigationManager.updateSelToArbitraryNode(
@@ -1294,7 +1308,7 @@ cvox.ChromeVoxEventWatcher.handleDialogFocus = function(target) {
 
       cvox.ChromeVox.tts.speak(
           cvox.ChromeVox.msgs.getMsg('exiting_dialog'),
-          cvox.AbstractTts.QUEUE_MODE_FLUSH,
+          cvox.ChromeVoxEventWatcher.queueMode_(),
           cvox.AbstractTts.PERSONALITY_ANNOTATION);
       return true;
     }
@@ -1303,7 +1317,7 @@ cvox.ChromeVoxEventWatcher.handleDialogFocus = function(target) {
       cvox.ChromeVox.navigationManager.currentDialog = dialog;
       cvox.ChromeVox.tts.speak(
           cvox.ChromeVox.msgs.getMsg('entering_dialog'),
-          cvox.AbstractTts.QUEUE_MODE_FLUSH,
+          cvox.ChromeVoxEventWatcher.queueMode_(),
           cvox.AbstractTts.PERSONALITY_ANNOTATION);
       if (role == 'alertdialog') {
         var dialogDescArray =
@@ -1336,14 +1350,19 @@ cvox.ChromeVoxEventWatcherUtil.shouldWaitToProcess = function(
 
 
 /**
- * Returns the queue mode based upon event watcher state. Currently based only
- * on if the event queue is being processed.
+ * Returns the queue mode to use for the next utterance spoken as
+ * a result of an event or navigation. The first utterance that's spoken
+ * after an explicit user action like a key press will flush, and
+ * subsequent events will return a category flush.
  * @return {number} Either QUEUE_MODE_FLUSH or QUEUE_MODE_QUEUE.
  * @private
  */
 cvox.ChromeVoxEventWatcher.queueMode_ = function() {
-  return cvox.ChromeVoxEventWatcher.processing_ ?
-      cvox.AbstractTts.QUEUE_MODE_QUEUE : cvox.AbstractTts.QUEUE_MODE_FLUSH;
+  if (cvox.ChromeVoxEventWatcher.shouldFlushNextUtterance) {
+    cvox.ChromeVoxEventWatcher.shouldFlushNextUtterance = false;
+    return cvox.AbstractTts.QUEUE_MODE_FLUSH;
+  }
+  return cvox.AbstractTts.QUEUE_MODE_CATEGORY_FLUSH;
 };
 
 
@@ -1408,9 +1427,7 @@ cvox.ChromeVoxEventWatcher.processQueue_ = function() {
   // Process the remaining events in the queue, in order.
   for (i = 0; evt = cvox.ChromeVoxEventWatcher.events_[i]; i++) {
     cvox.ChromeVoxEventWatcher.handleEvent_(evt);
-    cvox.ChromeVoxEventWatcher.processing_ = true;
   }
-  cvox.ChromeVoxEventWatcher.processing_ = false;
   cvox.ChromeVoxEventWatcher.events_ = new Array();
   cvox.ChromeVoxEventWatcher.firstUnprocessedEventTime = -1;
   cvox.ChromeVoxEventWatcher.queueProcessingScheduled_ = false;
@@ -1426,6 +1443,7 @@ cvox.ChromeVoxEventWatcher.processQueue_ = function() {
 cvox.ChromeVoxEventWatcher.handleEvent_ = function(evt) {
   switch (evt.type) {
     case 'keydown':
+    case 'input':
       cvox.ChromeVoxEventWatcher.setUpTextHandler();
       if (cvox.ChromeVoxEventWatcher.currentTextControl) {
         cvox.ChromeVoxEventWatcher.handleTextChanged(true);

@@ -99,17 +99,19 @@ class LocalVideoEncodeAcceleratorClient
 
     VideoCodecProfile output_profile = media::VIDEO_CODEC_PROFILE_UNKNOWN;
     switch (video_config.codec) {
-      case transport::kVp8:
+      case transport::CODEC_VIDEO_VP8:
         output_profile = media::VP8PROFILE_MAIN;
         break;
-      case transport::kH264:
+      case transport::CODEC_VIDEO_H264:
         output_profile = media::H264PROFILE_MAIN;
         break;
-      case transport::kFakeSoftwareVideo:
+      case transport::CODEC_VIDEO_FAKE:
         NOTREACHED() << "Fake software video encoder cannot be external";
         break;
+      default:
+        NOTREACHED() << "Video codec not specified or not supported";
+        break;
     }
-    codec_ = video_config.codec;
     max_frame_rate_ = video_config.max_frame_rate;
 
     if (!video_encode_accelerator_->Initialize(
@@ -131,9 +133,7 @@ class LocalVideoEncodeAcceleratorClient
     DCHECK(encoder_task_runner_);
     DCHECK(encoder_task_runner_->RunsTasksOnCurrentThread());
 
-    if (video_encode_accelerator_) {
-      video_encode_accelerator_.release()->Destroy();
-    }
+    video_encode_accelerator_.reset();
   }
 
   void SetBitRate(uint32 bit_rate) {
@@ -165,9 +165,7 @@ class LocalVideoEncodeAcceleratorClient
     DCHECK(encoder_task_runner_->RunsTasksOnCurrentThread());
     VLOG(1) << "ExternalVideoEncoder NotifyError: " << error;
 
-    if (video_encode_accelerator_) {
-      video_encode_accelerator_.release()->Destroy();
-    }
+    video_encode_accelerator_.reset();
     cast_environment_->PostTask(
         CastEnvironment::MAIN,
         FROM_HERE,
@@ -314,7 +312,6 @@ class LocalVideoEncodeAcceleratorClient
   const CreateVideoEncodeMemoryCallback create_video_encode_memory_cb_;
   const base::WeakPtr<ExternalVideoEncoder> weak_owner_;
   int max_frame_rate_;
-  transport::VideoCodec codec_;
   uint32 last_encoded_frame_id_;
   bool key_frame_encountered_;
   std::string stream_header_;
@@ -337,8 +334,6 @@ ExternalVideoEncoder::ExternalVideoEncoder(
       cast_environment_(cast_environment),
       encoder_active_(false),
       key_frame_requested_(false),
-      skip_next_frame_(false),
-      skip_count_(0),
       weak_factory_(this) {
   DCHECK(cast_environment_->CurrentlyOn(CastEnvironment::MAIN));
 
@@ -394,12 +389,6 @@ bool ExternalVideoEncoder::EncodeVideoFrame(
   if (!encoder_active_)
     return false;
 
-  if (skip_next_frame_) {
-    VLOG(1) << "Skip encoding frame";
-    ++skip_count_;
-    return false;
-  }
-
   encoder_task_runner_->PostTask(
       FROM_HERE,
       base::Bind(&LocalVideoEncodeAcceleratorClient::EncodeVideoFrame,
@@ -415,17 +404,19 @@ bool ExternalVideoEncoder::EncodeVideoFrame(
 
 // Inform the encoder about the new target bit rate.
 void ExternalVideoEncoder::SetBitRate(int new_bit_rate) {
+  if (!encoder_active_) {
+    // If we receive SetBitRate() before VEA creation callback is invoked,
+    // cache the new bit rate in the encoder config and use the new settings
+    // to initialize VEA.
+    video_config_.start_bitrate = new_bit_rate;
+    return;
+  }
+
   encoder_task_runner_->PostTask(
       FROM_HERE,
       base::Bind(&LocalVideoEncodeAcceleratorClient::SetBitRate,
                  video_accelerator_client_,
                  new_bit_rate));
-}
-
-// Inform the encoder to not encode the next frame.
-void ExternalVideoEncoder::SkipNextFrame(bool skip_next_frame) {
-  DCHECK(cast_environment_->CurrentlyOn(CastEnvironment::MAIN));
-  skip_next_frame_ = skip_next_frame;
 }
 
 // Inform the encoder to encode the next frame as a key frame.
@@ -437,11 +428,6 @@ void ExternalVideoEncoder::GenerateKeyFrame() {
 // Inform the encoder to only reference frames older or equal to frame_id;
 void ExternalVideoEncoder::LatestFrameIdToReference(uint32 /*frame_id*/) {
   // Do nothing not supported.
-}
-
-int ExternalVideoEncoder::NumberOfSkippedFrames() const {
-  DCHECK(cast_environment_->CurrentlyOn(CastEnvironment::MAIN));
-  return skip_count_;
 }
 
 }  //  namespace cast

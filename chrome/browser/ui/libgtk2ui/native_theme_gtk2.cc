@@ -7,6 +7,8 @@
 #include <gtk/gtk.h>
 
 #include "chrome/browser/ui/libgtk2ui/chrome_gtk_menu_subclasses.h"
+#include "chrome/browser/ui/libgtk2ui/gtk2_ui.h"
+#include "chrome/browser/ui/libgtk2ui/gtk2_util.h"
 #include "chrome/browser/ui/libgtk2ui/skia_utils_gtk2.h"
 #include "ui/gfx/color_utils.h"
 #include "ui/gfx/path.h"
@@ -104,17 +106,48 @@ NativeThemeGtk2* NativeThemeGtk2::instance() {
 
 NativeThemeGtk2::NativeThemeGtk2()
     : fake_window_(NULL),
+      fake_tooltip_(NULL),
       fake_menu_item_(NULL) {
 }
 
 NativeThemeGtk2::~NativeThemeGtk2() {
   if (fake_window_)
     gtk_widget_destroy(fake_window_);
+  if (fake_tooltip_)
+    gtk_widget_destroy(fake_tooltip_);
+
   fake_entry_.Destroy();
   fake_label_.Destroy();
   fake_button_.Destroy();
   fake_tree_.Destroy();
   fake_menu_.Destroy();
+}
+
+gfx::Size NativeThemeGtk2::GetPartSize(Part part,
+                                       State state,
+                                       const ExtraParams& extra) const {
+  if (part == kComboboxArrow)
+    return gfx::Size(12, 12);
+
+  return ui::NativeThemeBase::GetPartSize(part, state, extra);
+}
+
+void NativeThemeGtk2::Paint(SkCanvas* canvas,
+                            Part part,
+                            State state,
+                            const gfx::Rect& rect,
+                            const ExtraParams& extra) const {
+  if (rect.IsEmpty())
+    return;
+
+  switch (part) {
+    case kComboboxArrow:
+      PaintComboboxArrow(canvas, GetGtkState(state), rect);
+      return;
+
+    default:
+      NativeThemeBase::Paint(canvas, part, state, rect, extra);
+  }
 }
 
 SkColor NativeThemeGtk2::GetSystemColor(ColorId color_id) const {
@@ -223,15 +256,20 @@ GdkColor NativeThemeGtk2::GetSystemGdkColor(ColorId color_id) const {
     case kColorId_ButtonBackgroundColor:
       return GetButtonStyle()->bg[GTK_STATE_NORMAL];
     case kColorId_ButtonEnabledColor:
+    case kColorId_BlueButtonEnabledColor:
       return GetButtonStyle()->text[GTK_STATE_NORMAL];
     case kColorId_ButtonDisabledColor:
+    case kColorId_BlueButtonDisabledColor:
       return GetButtonStyle()->text[GTK_STATE_INSENSITIVE];
     case kColorId_ButtonHighlightColor:
       return GetButtonStyle()->base[GTK_STATE_SELECTED];
     case kColorId_ButtonHoverColor:
+    case kColorId_BlueButtonHoverColor:
       return GetButtonStyle()->text[GTK_STATE_PRELIGHT];
     case kColorId_ButtonHoverBackgroundColor:
       return GetButtonStyle()->bg[GTK_STATE_PRELIGHT];
+    case kColorId_BlueButtonPressedColor:
+      return GetButtonStyle()->text[GTK_STATE_ACTIVE];
 
     // Textfield
     case kColorId_TextfieldDefaultColor:
@@ -249,7 +287,9 @@ GdkColor NativeThemeGtk2::GetSystemGdkColor(ColorId color_id) const {
 
     // Tooltips
     case kColorId_TooltipBackground:
-      return GetWindowStyle()->bg[GTK_STATE_NORMAL];
+      return GetTooltipStyle()->bg[GTK_STATE_NORMAL];
+    case kColorId_TooltipText:
+      return GetTooltipStyle()->fg[GTK_STATE_NORMAL];
 
     // Trees and Tables (implemented on GTK using the same class)
     case kColorId_TableBackground:
@@ -348,7 +388,7 @@ GtkStyle* NativeThemeGtk2::GetEntryStyle() const {
   if (!fake_entry_.get()) {
     fake_entry_.Own(gtk_entry_new());
 
-    // The fake entry needs to be in the window so it can be realized sow e can
+    // The fake entry needs to be in the window so it can be realized so we can
     // use the computed parts of the style.
     gtk_container_add(GTK_CONTAINER(GetRealizedWindow()), fake_entry_.get());
     gtk_widget_realize(fake_entry_.get());
@@ -377,6 +417,15 @@ GtkStyle* NativeThemeGtk2::GetTreeStyle() const {
   return gtk_rc_get_style(fake_tree_.get());
 }
 
+GtkStyle* NativeThemeGtk2::GetTooltipStyle() const {
+  if (!fake_tooltip_) {
+    fake_tooltip_ = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+    gtk_widget_set_name(fake_tooltip_, "gtk-tooltip");
+    gtk_widget_realize(fake_tooltip_);
+  }
+  return gtk_rc_get_style(fake_tooltip_);
+}
+
 GtkStyle* NativeThemeGtk2::GetMenuStyle() const {
   if (!fake_menu_.get())
     fake_menu_.Own(gtk_menu_new());
@@ -393,6 +442,44 @@ GtkStyle* NativeThemeGtk2::GetMenuItemStyle() const {
   }
 
   return gtk_rc_get_style(fake_menu_item_);
+}
+
+void NativeThemeGtk2::PaintComboboxArrow(SkCanvas* canvas,
+                                         GtkStateType state,
+                                         const gfx::Rect& rect) const {
+  GdkPixmap* pm = gdk_pixmap_new(gtk_widget_get_window(GetRealizedWindow()),
+                                 rect.width(),
+                                 rect.height(),
+                                 -1);
+  // Paint the background.
+  gtk_paint_flat_box(GetWindowStyle(),
+                     pm,
+                     state,
+                     GTK_SHADOW_NONE,
+                     NULL,
+                     GetRealizedWindow(),
+                     NULL, 0, 0, rect.width(), rect.height());
+  gtk_paint_arrow(GetWindowStyle(),
+                  pm,
+                  state,
+                  GTK_SHADOW_NONE,
+                  NULL,
+                  GetRealizedWindow(),
+                  NULL,
+                  GTK_ARROW_DOWN,
+                  true,
+                  0, 0, rect.width(), rect.height());
+  GdkPixbuf* pb = gdk_pixbuf_get_from_drawable(NULL,
+                                               pm,
+                                               gdk_drawable_get_colormap(pm),
+                                               0, 0,
+                                               0, 0,
+                                               rect.width(), rect.height());
+  SkBitmap arrow = GdkPixbufToImageSkia(pb);
+  canvas->drawBitmap(arrow, rect.x(), rect.y());
+
+  g_object_unref(pb);
+  g_object_unref(pm);
 }
 
 }  // namespace libgtk2ui

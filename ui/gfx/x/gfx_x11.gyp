@@ -12,6 +12,7 @@
 
   'targets': [
     {
+      # GN version: //ui/gfx/x
       'target_name': 'gfx_x11',
       'type': '<(component)',
       'dependencies': [
@@ -28,6 +29,8 @@
         'x11_connection.h',
         'x11_error_tracker.cc',
         'x11_error_tracker.h',
+        'x11_switches.cc',
+        'x11_switches.h',
         'x11_types.cc',
         'x11_types.h',
       ],

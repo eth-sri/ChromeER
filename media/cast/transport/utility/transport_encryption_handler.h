@@ -37,13 +37,13 @@ class TransportEncryptionHandler : public base::NonThreadSafe {
                const base::StringPiece& ciphertext,
                std::string* plaintext);
 
-  bool initialized() const { return initialized_; }
+  bool is_activated() const { return is_activated_; }
 
  private:
   scoped_ptr<crypto::SymmetricKey> key_;
   scoped_ptr<crypto::Encryptor> encryptor_;
   std::string iv_mask_;
-  bool initialized_;
+  bool is_activated_;
 
   DISALLOW_COPY_AND_ASSIGN(TransportEncryptionHandler);
 };

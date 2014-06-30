@@ -66,6 +66,7 @@
         '../..',
       ],
       'sources': [
+        'tests/sandbox_test_runner.cc',
         'tests/sandbox_test_runner.h',
         'tests/sandbox_test_runner_function_pointer.cc',
         'tests/sandbox_test_runner_function_pointer.h',
@@ -215,6 +216,13 @@
       'include_dirs': [
         '../..',
       ],
+      # Do not use any sanitizer tools with this binary. http://crbug.com/382766
+      'cflags/': [
+        ['exclude', '-fsanitize'],
+      ],
+      'ldflags/': [
+        ['exclude', '-fsanitize'],
+      ],
     },
     { 'target_name': 'sandbox_services',
       'type': '<(component)',
@@ -256,6 +264,7 @@
       'type': 'none',
       'sources': [
         'services/android_arm_ucontext.h',
+        'services/android_futex.h',
         'services/android_ucontext.h',
         'services/android_i386_ucontext.h',
         'services/arm_linux_syscalls.h',
@@ -333,6 +342,24 @@
         ],
         'includes': [ '../../build/apk_test.gypi' ],
         }
+      ],
+    }],
+    ['test_isolation_mode != "noop"', {
+      'targets': [
+        {
+          'target_name': 'sandbox_linux_unittests_run',
+          'type': 'none',
+          'dependencies': [
+            'sandbox_linux_unittests',
+          ],
+          'includes': [
+            '../../build/isolate.gypi',
+            '../sandbox_linux_unittests.isolate',
+          ],
+          'sources': [
+            '../sandbox_linux_unittests.isolate',
+          ],
+        },
       ],
     }],
   ],

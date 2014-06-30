@@ -6,7 +6,6 @@
 
 #include "base/bind.h"
 #include "base/callback_helpers.h"
-#include "base/file_util.h"
 #include "base/files/file_path.h"
 #include "base/location.h"
 #include "base/logging.h"
@@ -195,14 +194,11 @@ class AppChildControllerImpl : public InterfaceImpl<AppChildController> {
   // |AppChildController| methods:
   virtual void StartApp(const String& app_path,
                         ScopedMessagePipeHandle service) OVERRIDE {
-    DVLOG(2) << "AppChildControllerImpl::StartApp("
-             << app_path.To<std::string>() << ", ...)";
+    DVLOG(2) << "AppChildControllerImpl::StartApp(" << app_path << ", ...)";
     DCHECK(thread_checker_.CalledOnValidThread());
 
-    // TODO(darin): Add TypeConverter for FilePath <-> mojo::String.
     unblocker_.Unblock(base::Bind(&AppChildControllerImpl::StartAppOnMainThread,
-                                  base::FilePath::FromUTF8Unsafe(
-                                      app_path.To<std::string>()),
+                                  base::FilePath::FromUTF8Unsafe(app_path),
                                   base::Passed(&service)));
   }
 
@@ -226,9 +222,6 @@ class AppChildControllerImpl : public InterfaceImpl<AppChildController> {
     // TODO(vtl): This is copied from in_process_dynamic_service_runner.cc.
     DVLOG(2) << "Loading/running Mojo app from " << app_path.value()
              << " out of process";
-
-    base::ScopedClosureRunner app_deleter(
-        base::Bind(base::IgnoreResult(&base::DeleteFile), app_path, false));
 
     do {
       base::NativeLibraryLoadError load_error;

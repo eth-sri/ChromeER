@@ -12,7 +12,6 @@
 #include "cc/test/fake_ui_resource_layer_tree_host_impl.h"
 #include "cc/test/geometry_test_utils.h"
 #include "cc/test/layer_test_common.h"
-#include "cc/test/mock_quad_culler.h"
 #include "cc/trees/single_thread_proxy.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -36,7 +35,8 @@ void NinePatchLayerLayoutTest(const gfx::Size& bitmap_size,
                               const gfx::Rect& border,
                               bool fill_center,
                               size_t expected_quad_size) {
-  MockQuadCuller quad_culler;
+  MockOcclusionTracker<LayerImpl> occlusion_tracker;
+  scoped_ptr<RenderPass> render_pass = RenderPass::Create();
   gfx::Rect visible_content_rect(layer_size);
   gfx::Rect expected_remaining(border.x(),
                                border.y(),
@@ -63,10 +63,10 @@ void NinePatchLayerLayoutTest(const gfx::Size& bitmap_size,
   layer->SetImageBounds(bitmap_size);
   layer->SetLayout(aperture_rect, border, fill_center);
   AppendQuadsData data;
-  layer->AppendQuads(&quad_culler, &data);
+  layer->AppendQuads(render_pass.get(), occlusion_tracker, &data);
 
   // Verify quad rects
-  const QuadList& quads = quad_culler.quad_list();
+  const QuadList& quads = render_pass->quad_list;
   EXPECT_EQ(expected_quad_size, quads.size());
 
   Region remaining(visible_content_rect);
@@ -228,7 +228,6 @@ TEST(NinePatchLayerImplTest, Occlusion) {
 
   NinePatchLayerImpl* nine_patch_layer_impl =
       impl.AddChildToRoot<NinePatchLayerImpl>();
-  nine_patch_layer_impl->SetAnchorPoint(gfx::PointF());
   nine_patch_layer_impl->SetBounds(layer_size);
   nine_patch_layer_impl->SetContentBounds(layer_size);
   nine_patch_layer_impl->SetDrawsContent(true);

@@ -23,12 +23,6 @@
 
 namespace chromeos {
 
-namespace {
-
-const int kPasswordClearTimeoutSec = 60;
-
-}
-
 // WebUILoginDisplay, public: --------------------------------------------------
 
 WebUILoginDisplay::~WebUILoginDisplay() {
@@ -46,7 +40,9 @@ WebUILoginDisplay::WebUILoginDisplay(LoginDisplay::Delegate* delegate)
     : LoginDisplay(delegate, gfx::Rect()),
       show_guest_(false),
       show_new_user_(false),
-      webui_handler_(NULL) {
+      webui_handler_(NULL),
+      gaia_screen_(new GaiaScreen()),
+      user_selection_screen_(new UserSelectionScreen()) {
 }
 
 void WebUILoginDisplay::ClearAndEnablePassword() {
@@ -61,7 +57,7 @@ void WebUILoginDisplay::Init(const UserList& users,
   // Testing that the delegate has been set.
   DCHECK(delegate_);
 
-  users_ = users;
+  user_selection_screen_->Init(users, show_guest);
   show_guest_ = show_guest;
   show_users_ = show_users;
   show_new_user_ = show_new_user;
@@ -72,36 +68,50 @@ void WebUILoginDisplay::Init(const UserList& users,
     activity_detector->AddObserver(this);
 }
 
-void WebUILoginDisplay::OnPreferencesChanged() {
-  if (webui_handler_)
-    webui_handler_->OnPreferencesChanged();
-}
+// ---- Common methods
+
+// ---- User selection screen methods
 
 void WebUILoginDisplay::OnBeforeUserRemoved(const std::string& username) {
-  for (UserList::iterator it = users_.begin(); it != users_.end(); ++it) {
-    if ((*it)->email() == username) {
-      users_.erase(it);
-      break;
-    }
-  }
-}
-
-void WebUILoginDisplay::OnUserImageChanged(const User& user) {
-  if (webui_handler_)
-    webui_handler_->OnUserImageChanged(user);
+  user_selection_screen_->OnBeforeUserRemoved(username);
 }
 
 void WebUILoginDisplay::OnUserRemoved(const std::string& username) {
-  if (webui_handler_)
-    webui_handler_->OnUserRemoved(username);
+  user_selection_screen_->OnUserRemoved(username);
 }
 
-void WebUILoginDisplay::OnFadeOut() {
+void WebUILoginDisplay::OnUserImageChanged(const User& user) {
+  user_selection_screen_->OnUserImageChanged(user);
 }
 
-void WebUILoginDisplay::OnLoginSuccess(const std::string& username) {
+void WebUILoginDisplay::HandleGetUsers() {
+  user_selection_screen_->HandleGetUsers();
+}
+
+const UserList& WebUILoginDisplay::GetUsers() const {
+  return user_selection_screen_->GetUsers();
+}
+
+// User selection screen, screen lock API
+
+void WebUILoginDisplay::SetAuthType(
+    const std::string& username,
+    ScreenlockBridge::LockHandler::AuthType auth_type) {
+  user_selection_screen_->SetAuthType(username, auth_type);
+}
+
+ScreenlockBridge::LockHandler::AuthType WebUILoginDisplay::GetAuthType(
+    const std::string& username) const {
+  return user_selection_screen_->GetAuthType(username);
+}
+
+// ---- Gaia screen methods
+
+// ---- Not yet classified methods
+
+void WebUILoginDisplay::OnPreferencesChanged() {
   if (webui_handler_)
-    webui_handler_->OnLoginSuccess(username);
+    webui_handler_->OnPreferencesChanged();
 }
 
 void WebUILoginDisplay::SetUIEnabled(bool is_enabled) {
@@ -110,9 +120,8 @@ void WebUILoginDisplay::SetUIEnabled(bool is_enabled) {
   // Allow this call only before user sign in or at lock screen.
   // If this call is made after new user signs in but login screen is still
   // around that would trigger a sign in extension refresh.
-  if (is_enabled &&
-      (!UserManager::Get()->IsUserLoggedIn() ||
-       ScreenLocker::default_screen_locker())) {
+  if (is_enabled && (!UserManager::Get()->IsUserLoggedIn() ||
+                     ScreenLocker::default_screen_locker())) {
     ClearAndEnablePassword();
   }
 
@@ -121,9 +130,6 @@ void WebUILoginDisplay::SetUIEnabled(bool is_enabled) {
     if (chromeos::WebUILoginView* login_view = host->GetWebUILoginView())
       login_view->SetUIEnabled(is_enabled);
   }
-}
-
-void WebUILoginDisplay::SelectPod(int index) {
 }
 
 void WebUILoginDisplay::ShowError(int error_msg_id,
@@ -209,11 +215,6 @@ void WebUILoginDisplay::ShowSigninUI(const std::string& email) {
     webui_handler_->ShowSigninUI(email);
 }
 
-void WebUILoginDisplay::ShowControlBar(bool show) {
-  if (webui_handler_)
-    webui_handler_->ShowControlBar(show);
-}
-
 // WebUILoginDisplay, NativeWindowDelegate implementation: ---------------------
 gfx::NativeWindow WebUILoginDisplay::GetNativeWindow() const {
   return parent_window();
@@ -246,28 +247,11 @@ void WebUILoginDisplay::CompleteLogin(const UserContext& user_context) {
     delegate_->CompleteLogin(user_context);
 }
 
-void WebUILoginDisplay::Login(const UserContext& user_context) {
+void WebUILoginDisplay::Login(const UserContext& user_context,
+                              const SigninSpecifics& specifics) {
   DCHECK(delegate_);
   if (delegate_)
-    delegate_->Login(user_context);
-}
-
-void WebUILoginDisplay::LoginAsRetailModeUser() {
-  DCHECK(delegate_);
-  if (delegate_)
-    delegate_->LoginAsRetailModeUser();
-}
-
-void WebUILoginDisplay::LoginAsGuest() {
-  DCHECK(delegate_);
-  if (delegate_)
-    delegate_->LoginAsGuest();
-}
-
-void WebUILoginDisplay::LoginAsPublicAccount(const std::string& username) {
-  DCHECK(delegate_);
-  if (delegate_)
-    delegate_->LoginAsPublicAccount(username);
+    delegate_->Login(user_context, specifics);
 }
 
 void WebUILoginDisplay::MigrateUserData(const std::string& old_password) {
@@ -322,6 +306,8 @@ void WebUILoginDisplay::ShowWrongHWIDScreen() {
 void WebUILoginDisplay::SetWebUIHandler(
     LoginDisplayWebUIHandler* webui_handler) {
   webui_handler_ = webui_handler;
+  gaia_screen_->SetHandler(webui_handler_);
+  user_selection_screen_->SetHandler(webui_handler_);
 }
 
 void WebUILoginDisplay::ShowSigninScreenForCreds(
@@ -331,20 +317,12 @@ void WebUILoginDisplay::ShowSigninScreenForCreds(
     webui_handler_->ShowSigninScreenForCreds(username, password);
 }
 
-const UserList& WebUILoginDisplay::GetUsers() const {
-  return users_;
-}
-
 bool WebUILoginDisplay::IsShowGuest() const {
   return show_guest_;
 }
 
 bool WebUILoginDisplay::IsShowUsers() const {
   return show_users_;
-}
-
-bool WebUILoginDisplay::IsShowNewUser() const {
-  return show_new_user_;
 }
 
 bool WebUILoginDisplay::IsSigninInProgress() const {
@@ -364,29 +342,10 @@ void WebUILoginDisplay::Signout() {
   delegate_->Signout();
 }
 
-void WebUILoginDisplay::LoginAsKioskApp(const std::string& app_id,
-                                        bool diagnostic_mode) {
-  delegate_->LoginAsKioskApp(app_id, diagnostic_mode);
-}
-
 void WebUILoginDisplay::OnUserActivity(const ui::Event* event) {
-  if (!password_clear_timer_.IsRunning())
-    StartPasswordClearTimer();
-  password_clear_timer_.Reset();
   if (delegate_)
     delegate_->ResetPublicSessionAutoLoginTimer();
 }
 
-void WebUILoginDisplay::StartPasswordClearTimer() {
-  DCHECK(!password_clear_timer_.IsRunning());
-  password_clear_timer_.Start(FROM_HERE,
-      base::TimeDelta::FromSeconds(kPasswordClearTimeoutSec), this,
-      &WebUILoginDisplay::OnPasswordClearTimerExpired);
-}
-
-void WebUILoginDisplay::OnPasswordClearTimerExpired() {
-  if (webui_handler_)
-    webui_handler_->ClearUserPodPassword();
-}
 
 }  // namespace chromeos

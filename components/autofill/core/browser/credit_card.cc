@@ -25,7 +25,7 @@
 #include "components/autofill/core/browser/validation.h"
 #include "components/autofill/core/common/form_field_data.h"
 #include "grit/component_scaled_resources.h"
-#include "grit/component_strings.h"
+#include "grit/components_strings.h"
 #include "third_party/icu/source/common/unicode/uloc.h"
 #include "third_party/icu/source/i18n/unicode/dtfmtsym.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -133,9 +133,8 @@ CreditCard::~CreditCard() {}
 
 // static
 const base::string16 CreditCard::StripSeparators(const base::string16& number) {
-  const base::char16 kSeparators[] = {'-', ' ', '\0'};
   base::string16 stripped;
-  base::RemoveChars(number, kSeparators, &stripped);
+  base::RemoveChars(number, base::ASCIIToUTF16("- "), &stripped);
   return stripped;
 }
 
@@ -186,7 +185,7 @@ int CreditCard::IconResourceId(const std::string& type) {
 }
 
 // static
-std::string CreditCard::GetCreditCardType(const base::string16& number) {
+const char* CreditCard::GetCreditCardType(const base::string16& number) {
   // Credit card number specifications taken from:
   // http://en.wikipedia.org/wiki/Credit_card_numbers,
   // http://en.wikipedia.org/wiki/List_of_Issuer_Identification_Numbers,

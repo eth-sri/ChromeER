@@ -103,19 +103,12 @@ class FakeUserManager : public UserManager {
   virtual bool IsLoggedInAsStub() const OVERRIDE;
   virtual bool IsSessionStarted() const OVERRIDE;
   virtual bool UserSessionsRestored() const OVERRIDE;
-  virtual bool HasBrowserRestarted() const OVERRIDE;
   virtual bool IsUserNonCryptohomeDataEphemeral(
       const std::string& email) const OVERRIDE;
   virtual void SetUserFlow(const std::string& email, UserFlow* flow) OVERRIDE {}
   virtual UserFlow* GetCurrentUserFlow() const OVERRIDE;
   virtual UserFlow* GetUserFlow(const std::string& email) const OVERRIDE;
   virtual void ResetUserFlow(const std::string& email) OVERRIDE {}
-  virtual bool GetAppModeChromeClientOAuthInfo(
-      std::string* chrome_client_id,
-      std::string* chrome_client_secret) OVERRIDE;
-  virtual void SetAppModeChromeClientOAuthInfo(
-      const std::string& chrome_client_id,
-      const std::string& chrome_client_secret) OVERRIDE {}
   virtual void AddObserver(Observer* obs) OVERRIDE {}
   virtual void RemoveObserver(Observer* obs) OVERRIDE {}
   virtual void AddSessionStateObserver(
@@ -126,13 +119,14 @@ class FakeUserManager : public UserManager {
   virtual bool AreLocallyManagedUsersAllowed() const OVERRIDE;
   virtual base::FilePath GetUserProfileDir(const std::string& email) const
       OVERRIDE;
-  virtual bool RespectLocalePreference(
-      Profile* profile,
-      const User* user,
-      scoped_ptr<locale_util::SwitchLanguageCallback> callback) const OVERRIDE;
 
   void set_owner_email(const std::string& owner_email) {
     owner_email_ = owner_email;
+  }
+
+  void set_multi_profile_user_controller(
+      MultiProfileUserController* controller) {
+    multi_profile_user_controller_ = controller;
   }
 
  private:
@@ -149,6 +143,7 @@ class FakeUserManager : public UserManager {
   // If set this is the active user. If empty, the first created user is the
   // active user.
   std::string active_user_id_;
+  MultiProfileUserController* multi_profile_user_controller_;
 
   DISALLOW_COPY_AND_ASSIGN(FakeUserManager);
 };

@@ -18,7 +18,7 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "chrome/test/base/web_ui_browsertest.h"
+#include "chrome/test/base/web_ui_browser_test.h"
 #include "components/signin/core/browser/profile_oauth2_token_service.h"
 #include "components/signin/core/browser/signin_manager.h"
 #include "components/signin/core/browser/signin_manager_base.h"
@@ -411,13 +411,13 @@ class LocalDiscoveryUITest : public WebUIBrowserTest {
         .Times(AnyNumber());
 
     fake_fetcher_factory().SetFakeResponse(
-        GaiaUrls::GetInstance()->people_get_url(),
+        GaiaUrls::GetInstance()->oauth_user_info_url(),
         kResponseGaiaId,
         net::HTTP_OK,
         net::URLRequestStatus::SUCCESS);
 
     EXPECT_CALL(fake_url_fetcher_creator(), OnCreateFakeURLFetcher(
-        GaiaUrls::GetInstance()->people_get_url().spec()))
+        GaiaUrls::GetInstance()->oauth_user_info_url().spec()))
         .Times(AnyNumber());
 
     ProfileOAuth2TokenService* token_service =

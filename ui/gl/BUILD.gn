@@ -3,6 +3,9 @@
 # found in the LICENSE file.
 
 import("//build/config/ui.gni")
+if (is_android) {
+  import("//build/config/android/rules.gni")
+}
 
 gl_binding_output_dir = target_gen_dir
 
@@ -10,6 +13,10 @@ config("gl_config") {
   if (use_x11) {
     defines = [ "GL_GLEXT_PROTOTYPES" ]
   }
+
+  # TODO(brettw) this should be removed and the the files using the generated
+  # GL bindings should use the path inside the gen directory.
+  include_dirs = [ gl_binding_output_dir ]
 }
 
 component("gl") {
@@ -43,6 +50,10 @@ component("gl") {
     "gl_export.h",
     "gl_fence.cc",
     "gl_fence.h",
+    "gl_fence_arb.cc",
+    "gl_fence_arb.h",
+    "gl_fence_nv.cc",
+    "gl_fence_nv.h",
     "gl_gl_api_implementation.cc",
     "gl_gl_api_implementation.h",
     "gl_image.cc",
@@ -80,8 +91,6 @@ component("gl") {
     "gl_version_info.h",
     "gpu_switching_manager.cc",
     "gpu_switching_manager.h",
-    "io_surface_support_mac.cc",
-    "io_surface_support_mac.h",
     "scoped_binders.cc",
     "scoped_binders.h",
     "scoped_make_current.cc",
@@ -110,16 +119,15 @@ component("gl") {
     "//base",
     "//base/third_party/dynamic_annotations",
     "//gpu/command_buffer/common",
+    "//third_party/mesa:mesa_headers",
     "//skia",
-    # TODO(GYP) hook up once this is converted.
-    # Also uncomment forward statement below.
-    #"//third_party/mesa:mesa_headers",
+    "//ui/events/platform",
     "//ui/gfx",
     "//ui/gfx/geometry",
   ]
 
   # TODO(GYP) hook up once this is converted.
-  #forward_dependent_configs_from = [ "//third_party/mesa:mesa_headers" ]
+  forward_dependent_configs_from = [ "//third_party/mesa:mesa_headers" ]
 
   if (is_win || is_android || is_linux) {
     sources += [
@@ -127,6 +135,8 @@ component("gl") {
       "egl_util.h",
       "gl_context_egl.cc",
       "gl_context_egl.h",
+      "gl_fence_egl.cc",
+      "gl_fence_egl.h",
       "gl_image_egl.cc",
       "gl_image_egl.h",
       "gl_surface_egl.cc",
@@ -194,13 +204,14 @@ component("gl") {
       "gl_context_cgl.h",
       "gl_image_io_surface.cc",
       "gl_image_io_surface.h",
-      "gl_surface_cgl.cc",
-      "gl_surface_cgl.h",
       "scoped_cgl.cc",
       "scoped_cgl.h",
     ]
 
-    libs = [ "OpenGL.framework" ]
+    libs = [
+      "IOSurface.framework",
+      "OpenGL.framework",
+    ]
   }
   if (is_android) {
     sources += [
@@ -218,6 +229,10 @@ component("gl") {
     ]
 
     libs = [ "android" ]
+
+    deps += [
+      ":gl_jni_headers",
+    ]
   }
   if (use_ozone) {
     sources += [
@@ -239,6 +254,8 @@ component("gl") {
 }
 
 action("generate_gl_bindings") {
+  visibility = ":*"  # Only targets in this file can see this.
+
   script = "generate_bindings.py"
 
   # TODO(brettw) make this dynamic. The GYP version calls "generate_bindings.py
@@ -283,7 +300,48 @@ action("generate_gl_bindings") {
   args = [
     "--header-paths=" +
         rebase_path("//third_party/khronos", root_build_dir) + ":" +
-        rebase_path("//third_party/mesa/src/include", root_build_dir),
+        rebase_path("//third_party/mesa/src/include", root_build_dir) + ":" +
+        rebase_path("//ui/gl", root_build_dir) + ":" +
+        rebase_path("//gpu", root_build_dir),
     rebase_path(gl_binding_output_dir, root_build_dir),
   ]
+}
+
+config("gl_unittest_utils_config") {
+  include_dirs = [ gl_binding_output_dir ]
+}
+
+source_set("gl_unittest_utils") {
+  sources = [
+    "gl_mock.h",
+    "gl_mock.cc",
+    "$gl_binding_output_dir/gl_bindings_autogen_mock.cc",
+    "$gl_binding_output_dir/gl_bindings_autogen_mock.h",
+    "$gl_binding_output_dir/gl_mock_autogen_gl.h",
+  ]
+
+  configs += [ "//third_party/khronos:khronos_headers" ]
+  direct_dependent_configs = [ ":gl_unittest_utils_config" ]
+
+  deps = [
+    ":gl",
+    "//testing/gmock",
+  ]
+}
+
+if (is_android) {
+  generate_jar_jni("surface_jni_headers") {
+    jni_package = "ui/gl"
+    classes = [ "android/view/Surface.class" ]
+  }
+
+  generate_jni("gl_jni_headers") {
+    deps = [ ":surface_jni_headers" ]
+    forward_dependent_configs_from = [ ":surface_jni_headers" ]
+    sources = [
+      "../android/java/src/org/chromium/ui/gl/SurfaceTextureListener.java",
+      "../android/java/src/org/chromium/ui/gl/SurfaceTexturePlatformWrapper.java",
+    ]
+    jni_package = "ui/gl"
+  }
 }

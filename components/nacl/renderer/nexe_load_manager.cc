@@ -26,7 +26,6 @@
 #include "content/public/renderer/renderer_ppapi_host.h"
 #include "ppapi/c/pp_bool.h"
 #include "ppapi/c/private/pp_file_handle.h"
-#include "ppapi/native_client/src/trusted/plugin/nacl_entry_points.h"
 #include "ppapi/shared_impl/ppapi_globals.h"
 #include "ppapi/shared_impl/ppapi_permissions.h"
 #include "ppapi/shared_impl/ppapi_preferences.h"
@@ -107,7 +106,7 @@ NexeLoadManager::~NexeLoadManager() {
 }
 
 void NexeLoadManager::NexeFileDidOpen(int32_t pp_error,
-                                      base::PlatformFile file,
+                                      const base::File& file,
                                       int32_t http_status,
                                       int64_t nexe_bytes_read,
                                       const std::string& url,
@@ -120,7 +119,7 @@ void NexeLoadManager::NexeFileDidOpen(int32_t pp_error,
                       "NaCl.HttpStatusCodeClass.Nexe.NotInstalledApp",
       http_status);
 
-  if (pp_error != PP_OK || file == base::kInvalidPlatformFileValue) {
+  if (pp_error != PP_OK || !file.IsValid()) {
     if (pp_error == PP_ERROR_ABORTED) {
       ReportLoadAbort();
     } else if (pp_error == PP_ERROR_NOACCESS) {

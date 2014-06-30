@@ -80,6 +80,10 @@ static const char kFormHtml[] =
     "    <OPTION value=\"CA\" selected>California</OPTION>"
     "    <OPTION value=\"TX\">Texas</OPTION>"
     "  </SELECT>"
+    "  <SELECT id=\"select-unchanged\">"
+    "    <OPTION value=\"CA\" selected>California</OPTION>"
+    "    <OPTION value=\"TX\">Texas</OPTION>"
+    "  </SELECT>"
     "  <TEXTAREA id=\"textarea\"></TEXTAREA>"
     "  <TEXTAREA id=\"textarea-nonempty\">Go&#10;away!</TEXTAREA>"
     "  <INPUT type=\"submit\" name=\"reply-send\" value=\"Send\"/>"
@@ -215,6 +219,8 @@ class FormAutofillTest : public ChromeRenderViewTest {
       EXPECT_FORM_FIELD_DATA_EQUALS(expected, fields[i]);
       // Fill the form_data for the field.
       form_data.fields[i].value = ASCIIToUTF16(field_cases[i].autofill_value);
+      // Set the is_autofilled property for the field.
+      form_data.fields[i].is_autofilled = field_cases[i].should_be_autofilled;
     }
 
     // Autofill the form using the given fill form function.
@@ -1352,6 +1358,9 @@ TEST_F(FormAutofillTest, FillForm) {
       // Select fields should be autofilled even if they already have a
       // non-empty value.
       {"select-one", "select-nonempty", "CA", "", true, "TX", "TX"},
+      // Select fields should not be autofilled if no new value is passed from
+      // autofill profile. The existing value should not be overriden.
+      {"select-one", "select-unchanged", "CA", "", false, "CA", "CA"},
       // Regular textarea elements should be autofilled.
       {"textarea", "textarea", "", "", true, "some multi-\nline value",
        "some multi-\nline value"},
@@ -1401,6 +1410,9 @@ TEST_F(FormAutofillTest, FillFormIncludingNonFocusableElements) {
       // Select fields should be autofilled even if they already have a
       // non-empty value.
       {"select-one", "select-nonempty", "CA", "", true, "TX", "TX"},
+      // Select fields should not be autofilled if no new value is passed from
+      // autofill profile. The existing value should not be overriden.
+      {"select-one", "select-unchanged", "CA", "", false, "CA", "CA"},
       // Regular textarea elements should be autofilled.
       {"textarea", "textarea", "", "", true, "some multi-\nline value",
        "some multi-\nline value"},
@@ -1443,6 +1455,9 @@ TEST_F(FormAutofillTest, PreviewForm) {
       // Select fields should be previewed even if they already have a
       // non-empty value.
       {"select-one", "select-nonempty", "CA", "", true, "TX", "TX"},
+      // Select fields should not be previewed if no suggestion is passed from
+      // autofill profile.
+      {"select-one", "select-unchanged", "CA", "", false, "", ""},
       // Normal textarea elements should be previewed.
       {"textarea", "textarea", "", "", true, "suggested multi-\nline value",
        "suggested multi-\nline value"},
@@ -2376,6 +2391,9 @@ TEST_F(FormAutofillTest, FillFormMaxLength) {
   form.fields[0].value = ASCIIToUTF16("Brother");
   form.fields[1].value = ASCIIToUTF16("Jonathan");
   form.fields[2].value = ASCIIToUTF16("brotherj@example.com");
+  form.fields[0].is_autofilled = true;
+  form.fields[1].is_autofilled = true;
+  form.fields[2].is_autofilled = true;
   FillForm(form, input_element);
 
   // Find the newly-filled form that contains the input element.
@@ -2642,6 +2660,9 @@ TEST_F(FormAutofillTest, FillFormEmptyFormNames) {
   form.fields[0].value = ASCIIToUTF16("Red");
   form.fields[1].value = ASCIIToUTF16("Yellow");
   form.fields[2].value = ASCIIToUTF16("Also Yellow");
+  form.fields[0].is_autofilled = true;
+  form.fields[1].is_autofilled = true;
+  form.fields[2].is_autofilled = true;
   FillForm(form, input_element);
 
   // Find the newly-filled form that contains the input element.
@@ -2868,6 +2889,9 @@ TEST_F(FormAutofillTest, FillFormNonEmptyField) {
   form.fields[0].value = ASCIIToUTF16("Wyatt");
   form.fields[1].value = ASCIIToUTF16("Earp");
   form.fields[2].value = ASCIIToUTF16("wyatt@example.com");
+  form.fields[0].is_autofilled = true;
+  form.fields[1].is_autofilled = true;
+  form.fields[2].is_autofilled = true;
   PreviewForm(form, input_element);
   EXPECT_EQ(2, input_element.selectionStart());
   EXPECT_EQ(5, input_element.selectionEnd());
@@ -2936,10 +2960,19 @@ TEST_F(FormAutofillTest, ClearFormWithNode) {
   form_cache.ExtractNewForms(*web_frame, &forms);
   ASSERT_EQ(1U, forms.size());
 
-  // Set the auto-filled attribute on the firstname element.
+  // Set the auto-filled attribute.
   WebInputElement firstname =
       web_frame->document().getElementById("firstname").to<WebInputElement>();
   firstname.setAutofilled(true);
+  WebInputElement lastname =
+      web_frame->document().getElementById("lastname").to<WebInputElement>();
+  lastname.setAutofilled(true);
+  WebInputElement month =
+      web_frame->document().getElementById("month").to<WebInputElement>();
+  month.setAutofilled(true);
+  WebInputElement textarea =
+      web_frame->document().getElementById("textarea").to<WebInputElement>();
+  textarea.setAutofilled(true);
 
   // Set the value of the disabled text input element.
   WebInputElement notenabled =
@@ -2979,7 +3012,7 @@ TEST_F(FormAutofillTest, ClearFormWithNode) {
   EXPECT_FORM_FIELD_DATA_EQUALS(expected, fields2[1]);
 
   expected.name = ASCIIToUTF16("noAC");
-  expected.value = base::string16();
+  expected.value = ASCIIToUTF16("one");
   expected.autocomplete_attribute = "off";
   EXPECT_FORM_FIELD_DATA_EQUALS(expected, fields2[2]);
   expected.autocomplete_attribute = std::string();  // reset
@@ -3008,7 +3041,7 @@ TEST_F(FormAutofillTest, ClearFormWithNode) {
   EXPECT_FORM_FIELD_DATA_EQUALS(expected, fields2[7]);
 
   expected.name = ASCIIToUTF16("textarea-noAC");
-  expected.value = base::string16();
+  expected.value = ASCIIToUTF16("Carrot?");
   expected.autocomplete_attribute = "off";
   EXPECT_FORM_FIELD_DATA_EQUALS(expected, fields2[8]);
   expected.autocomplete_attribute = std::string();  // reset
@@ -3040,10 +3073,16 @@ TEST_F(FormAutofillTest, ClearFormWithNodeContainingSelectOne) {
   form_cache.ExtractNewForms(*web_frame, &forms);
   ASSERT_EQ(1U, forms.size());
 
-  // Set the auto-filled attribute on the firstname element.
+  // Set the auto-filled attribute.
   WebInputElement firstname =
       web_frame->document().getElementById("firstname").to<WebInputElement>();
   firstname.setAutofilled(true);
+  WebInputElement lastname =
+      web_frame->document().getElementById("lastname").to<WebInputElement>();
+  lastname.setAutofilled(true);
+  WebInputElement state =
+      web_frame->document().getElementById("state").to<WebInputElement>();
+  state.setAutofilled(true);
 
   // Set the value of the select-one.
   WebSelectElement select_element =
@@ -3298,6 +3337,58 @@ TEST_F(FormAutofillTest, ClearPreviewedFormWithAutofilledInitiatingNode) {
   EXPECT_FALSE(phone.isAutofilled());
 }
 
+// Autofill's "Clear Form" should clear only autofilled fields
+TEST_F(FormAutofillTest, ClearOnlyAutofilledFields) {
+  // Load the form.
+  LoadHTML(
+      "<FORM name=\"TestForm\" action=\"http://buh.com\" method=\"post\">"
+      "  <INPUT type=\"text\" id=\"firstname\" value=\"Wyatt\"/>"
+      "  <INPUT type=\"text\" id=\"lastname\" value=\"Earp\"/>"
+      "  <INPUT type=\"email\" id=\"email\" value=\"wyatt@earp.com\"/>"
+      "  <INPUT type=\"tel\" id=\"phone\" value=\"650-777-9999\"/>"
+      "  <INPUT type=\"submit\" value=\"Send\"/>"
+      "</FORM>");
+
+  WebFrame* web_frame = GetMainFrame();
+  ASSERT_NE(static_cast<WebFrame*>(NULL), web_frame);
+
+  FormCache form_cache;
+  std::vector<FormData> forms;
+  form_cache.ExtractNewForms(*web_frame, &forms);
+  ASSERT_EQ(1U, forms.size());
+
+  // Set the autofilled attribute.
+  WebInputElement firstname =
+      web_frame->document().getElementById("firstname").to<WebInputElement>();
+  firstname.setAutofilled(false);
+  WebInputElement lastname =
+      web_frame->document().getElementById("lastname").to<WebInputElement>();
+  lastname.setAutofilled(true);
+  WebInputElement email =
+      web_frame->document().getElementById("email").to<WebInputElement>();
+  email.setAutofilled(true);
+  WebInputElement phone =
+      web_frame->document().getElementById("phone").to<WebInputElement>();
+  phone.setAutofilled(true);
+
+  // Clear the fields.
+  EXPECT_TRUE(form_cache.ClearFormWithElement(firstname));
+
+  // Verify only autofilled fields are cleared.
+  EXPECT_EQ(ASCIIToUTF16("Wyatt"), firstname.value());
+  EXPECT_TRUE(firstname.suggestedValue().isEmpty());
+  EXPECT_FALSE(firstname.isAutofilled());
+  EXPECT_TRUE(lastname.value().isEmpty());
+  EXPECT_TRUE(lastname.suggestedValue().isEmpty());
+  EXPECT_FALSE(lastname.isAutofilled());
+  EXPECT_TRUE(email.value().isEmpty());
+  EXPECT_TRUE(email.suggestedValue().isEmpty());
+  EXPECT_FALSE(email.isAutofilled());
+  EXPECT_TRUE(phone.value().isEmpty());
+  EXPECT_TRUE(phone.suggestedValue().isEmpty());
+  EXPECT_FALSE(phone.isAutofilled());
+}
+
 TEST_F(FormAutofillTest, FormWithNodeIsAutofilled) {
   LoadHTML("<FORM name=\"TestForm\" action=\"http://buh.com\" method=\"post\">"
            "  <INPUT type=\"text\" id=\"firstname\" value=\"Wyatt\"/>"
@@ -3477,5 +3568,4 @@ TEST_F(FormAutofillTest, SelectOneAsText) {
   expected.max_length = 0;
   EXPECT_FORM_FIELD_DATA_EQUALS(expected, fields[2]);
 }
-
 }  // namespace autofill

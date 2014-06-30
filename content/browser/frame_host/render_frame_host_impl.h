@@ -14,6 +14,7 @@
 #include "base/strings/string16.h"
 #include "base/time/time.h"
 #include "content/common/content_export.h"
+#include "content/common/mojo/service_registry_impl.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/common/javascript_message_type.h"
 #include "content/public/common/page_transition_types.h"
@@ -39,6 +40,7 @@ class RenderFrameHostDelegate;
 class RenderFrameProxyHost;
 class RenderProcessHost;
 class RenderViewHostImpl;
+class RenderWidgetHostImpl;
 struct ContextMenuParams;
 struct GlobalRequestID;
 struct Referrer;
@@ -65,6 +67,7 @@ class CONTENT_EXPORT RenderFrameHostImpl : public RenderFrameHost {
       const base::string16& javascript,
       const JavaScriptResultCallback& callback) OVERRIDE;
   virtual RenderViewHost* GetRenderViewHost() OVERRIDE;
+  virtual ServiceRegistry* GetServiceRegistry() OVERRIDE;
 
   // IPC::Sender
   virtual bool Send(IPC::Message* msg) OVERRIDE;
@@ -80,6 +83,9 @@ class CONTENT_EXPORT RenderFrameHostImpl : public RenderFrameHost {
   RenderViewHostImpl* render_view_host() { return render_view_host_; }
   RenderFrameHostDelegate* delegate() { return delegate_; }
   FrameTreeNode* frame_tree_node() { return frame_tree_node_; }
+  // TODO(nasko): The RenderWidgetHost will be owned by RenderFrameHost in
+  // the future, so update this accessor to return the right pointer.
+  RenderWidgetHostImpl* GetRenderWidgetHost();
 
   // This function is called when this is a swapped out RenderFrameHost that
   // lives in the same process as the parent frame. The
@@ -113,6 +119,10 @@ class CONTENT_EXPORT RenderFrameHostImpl : public RenderFrameHost {
       const Referrer& referrer,
       PageTransition page_transition,
       bool should_replace_current_entry);
+
+  // Called on the current RenderFrameHost when the network response is first
+  // receieved.
+  void OnDeferredAfterResponseStarted(const GlobalRequestID& global_request_id);
 
   // Tells the renderer that this RenderFrame is being swapped out for one in a
   // different renderer process.  It should run its unload handler, move to
@@ -162,6 +172,11 @@ class CONTENT_EXPORT RenderFrameHostImpl : public RenderFrameHost {
 
   // Called when an HTML5 notification is closed.
   void NotificationClosed(int notification_id);
+
+  // Sets whether there is an outstanding transition request. This is called at
+  // the start of a provisional load for the main frame, and cleared when we
+  // hear the response or commit.
+  void SetHasPendingTransitionRequest(bool has_pending_request);
 
  protected:
   friend class RenderFrameHostFactory;
@@ -225,6 +240,9 @@ class CONTENT_EXPORT RenderFrameHostImpl : public RenderFrameHost {
       int notification_id,
       const ShowDesktopNotificationHostMsgParams& params);
   void OnCancelDesktopNotification(int notification_id);
+  void OnTextSurroundingSelectionResponse(const base::string16& content,
+                                          size_t start_offset,
+                                          size_t end_offset);
   void OnDidAccessInitialDocument();
   void OnDidDisownOpener();
   void OnUpdateTitle(int32 page_id,
@@ -287,6 +305,8 @@ class CONTENT_EXPORT RenderFrameHostImpl : public RenderFrameHost {
 
   // When the last BeforeUnload message was sent.
   base::TimeTicks send_before_unload_start_time_;
+
+  ServiceRegistryImpl service_registry_;
 
   base::WeakPtrFactory<RenderFrameHostImpl> weak_ptr_factory_;
 

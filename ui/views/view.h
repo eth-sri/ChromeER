@@ -26,13 +26,13 @@
 #include "ui/compositor/layer_owner.h"
 #include "ui/events/event.h"
 #include "ui/events/event_target.h"
-#include "ui/events/event_targeter.h"
 #include "ui/gfx/geometry/r_tree.h"
 #include "ui/gfx/insets.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/vector2d.h"
 #include "ui/views/cull_set.h"
+#include "ui/views/view_targeter.h"
 #include "ui/views/views_export.h"
 
 #if defined(OS_WIN)
@@ -276,7 +276,7 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
 
   // Gets the maximum size of the view. Currently only used for sizing shell
   // windows.
-  virtual gfx::Size GetMaximumSize();
+  virtual gfx::Size GetMaximumSize() const;
 
   // Return the height necessary to display this view with the provided width.
   // View's implementation returns the value from getPreferredSize.cy.
@@ -601,6 +601,10 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   // Tests whether |rect| intersects this view's bounds.
   virtual bool HitTestRect(const gfx::Rect& rect) const;
 
+  // Returns true if this view or any of its descendants are permitted to
+  // be the target of an event.
+  virtual bool CanProcessEventsWithinSubtree() const;
+
   // Returns true if the mouse cursor is over |view| and mouse events are
   // enabled.
   bool IsMouseHovered();
@@ -715,10 +719,9 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   virtual InputMethod* GetInputMethod();
   virtual const InputMethod* GetInputMethod() const;
 
-  // Sets a new event-targeter for the view, and returns the previous
-  // event-targeter.
-  scoped_ptr<ui::EventTargeter> SetEventTargeter(
-      scoped_ptr<ui::EventTargeter> targeter);
+  // Sets a new ViewTargeter for the view, and returns the previous
+  // ViewTargeter.
+  scoped_ptr<ViewTargeter> SetEventTargeter(scoped_ptr<ViewTargeter> targeter);
 
   // Overridden from ui::EventTarget:
   virtual bool CanAcceptEvent(const ui::Event& event) OVERRIDE;
@@ -727,6 +730,8 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   virtual ui::EventTargeter* GetEventTargeter() OVERRIDE;
   virtual void ConvertEventToTarget(ui::EventTarget* target,
                                     ui::LocatedEvent* event) OVERRIDE;
+
+  ViewTargeter* targeter() const { return targeter_.get(); }
 
   // Overridden from ui::EventHandler:
   virtual void OnKeyEvent(ui::KeyEvent* event) OVERRIDE;
@@ -1242,6 +1247,8 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   friend class FocusManager;
   friend class Widget;
 
+  typedef gfx::RTree<intptr_t> BoundsTree;
+
   // Painting  -----------------------------------------------------------------
 
   enum SchedulePaintType {
@@ -1334,17 +1341,17 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
 
   // If needed, updates the bounds rectangle in paint root coordinate space
   // in the supplied RTree. Recurses to children for recomputation as well.
-  void UpdateRootBounds(gfx::RTree* bounds_tree, const gfx::Vector2d& offset);
+  void UpdateRootBounds(BoundsTree* bounds_tree, const gfx::Vector2d& offset);
 
   // Remove self and all children from the supplied bounds tree. This is used,
   // for example, when a view gets a layer and therefore becomes paint root. It
   // needs to remove all references to itself and its children from any previous
   // paint root that may have been tracking it.
-  void RemoveRootBounds(gfx::RTree* bounds_tree);
+  void RemoveRootBounds(BoundsTree* bounds_tree);
 
   // Traverse up the View hierarchy to the first ancestor that is a paint root
   // and return a pointer to its |bounds_tree_| or NULL if no tree is found.
-  gfx::RTree* GetBoundsTreeFromPaintRoot();
+  BoundsTree* GetBoundsTreeFromPaintRoot();
 
   // Transformations -----------------------------------------------------------
 
@@ -1525,7 +1532,7 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   // If this View IsPaintRoot() then this will be a pointer to a spatial data
   // structure where we will keep the bounding boxes of all our children, for
   // efficient paint damage rectangle intersection.
-  scoped_ptr<gfx::RTree> bounds_tree_;
+  scoped_ptr<BoundsTree> bounds_tree_;
 
   // Transformations -----------------------------------------------------------
 
@@ -1598,8 +1605,7 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
 
   // Input  --------------------------------------------------------------------
 
-  scoped_ptr<internal::PostEventDispatchHandler> post_dispatch_handler_;
-  scoped_ptr<ui::EventTargeter> targeter_;
+  scoped_ptr<ViewTargeter> targeter_;
 
   // Accessibility -------------------------------------------------------------
 

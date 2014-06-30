@@ -9,7 +9,7 @@ import os
 import re
 import tempfile
 
-from telemetry import test
+from telemetry import benchmark
 from telemetry.core import bitmap
 from telemetry.page import cloud_storage
 from telemetry.page import page_test
@@ -24,8 +24,8 @@ error_image_cloud_storage_bucket = 'chromium-browser-gpu-tests'
 def _CompareScreenshotSamples(screenshot, expectations, device_pixel_ratio):
   for expectation in expectations:
     location = expectation["location"]
-    x = location[0] * device_pixel_ratio
-    y = location[1] * device_pixel_ratio
+    x = int(location[0] * device_pixel_ratio)
+    y = int(location[1] * device_pixel_ratio)
 
     if x < 0 or y < 0 or x > screenshot.width or y > screenshot.height:
       raise page_test.Failure(
@@ -215,7 +215,7 @@ class ValidatorBase(page_test.PageTest):
       raise
 
 
-class TestBase(test.Test):
+class TestBase(benchmark.Benchmark):
   @classmethod
   def AddTestCommandLineArgs(cls, group):
     group.add_option('--build-revision',

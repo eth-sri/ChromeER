@@ -18,11 +18,15 @@
 #include "content/browser/frame_host/render_frame_proxy_host.h"
 #include "content/browser/renderer_host/input/input_router.h"
 #include "content/browser/renderer_host/input/timeout_monitor.h"
+#include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
+#include "content/browser/renderer_host/render_widget_host_impl.h"
+#include "content/browser/transition_request_manager.h"
 #include "content/common/desktop_notification_messages.h"
 #include "content/common/frame_messages.h"
 #include "content/common/input_messages.h"
 #include "content/common/inter_process_time_ticks_converter.h"
+#include "content/common/render_frame_setup.mojom.h"
 #include "content/common/swapped_out_messages.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
@@ -160,6 +164,16 @@ RenderFrameHostImpl::RenderFrameHostImpl(
   g_routing_id_frame_map.Get().insert(std::make_pair(
       RenderFrameHostID(GetProcess()->GetID(), routing_id_),
       this));
+
+  if (GetProcess()->GetServiceRegistry()) {
+    RenderFrameSetupPtr setup;
+    GetProcess()->GetServiceRegistry()->GetRemoteInterface(&setup);
+    mojo::IInterfaceProviderPtr service_provider;
+    setup->GetServiceProviderForFrame(routing_id_,
+                                      mojo::Get(&service_provider));
+    service_registry_.BindRemoteServiceProvider(
+        service_provider.PassMessagePipe());
+  }
 }
 
 RenderFrameHostImpl::~RenderFrameHostImpl() {
@@ -240,6 +254,11 @@ RenderViewHost* RenderFrameHostImpl::GetRenderViewHost() {
   return render_view_host_;
 }
 
+ServiceRegistry* RenderFrameHostImpl::GetServiceRegistry() {
+  static_cast<RenderProcessHostImpl*>(GetProcess())->EnsureMojoActivated();
+  return &service_registry_;
+}
+
 bool RenderFrameHostImpl::Send(IPC::Message* message) {
   if (IPC_MESSAGE_ID_CLASS(message->type()) == InputMsgStart) {
     return render_view_host_->input_router()->SendInput(
@@ -278,8 +297,10 @@ bool RenderFrameHostImpl::OnMessageReceived(const IPC::Message &msg) {
   if (delegate_->OnMessageReceived(this, msg))
     return true;
 
-  if (cross_process_frame_connector_ &&
-      cross_process_frame_connector_->OnMessageReceived(msg))
+  RenderFrameProxyHost* proxy =
+      frame_tree_node_->render_manager()->GetProxyToParent();
+  if (proxy && proxy->cross_process_frame_connector() &&
+      proxy->cross_process_frame_connector()->OnMessageReceived(msg))
     return true;
 
   bool handled = true;
@@ -321,6 +342,8 @@ bool RenderFrameHostImpl::OnMessageReceived(const IPC::Message &msg) {
                         OnShowDesktopNotification)
     IPC_MESSAGE_HANDLER(DesktopNotificationHostMsg_Cancel,
                         OnCancelDesktopNotification)
+    IPC_MESSAGE_HANDLER(FrameHostMsg_TextSurroundingSelectionResponse,
+                        OnTextSurroundingSelectionResponse)
   IPC_END_MESSAGE_MAP()
 
   return handled;
@@ -457,7 +480,7 @@ void RenderFrameHostImpl::OnNavigate(const IPC::Message& msg) {
   // should be killed.
   if (!CanCommitURL(validated_params.url)) {
     VLOG(1) << "Blocked URL " << validated_params.url.spec();
-    validated_params.url = GURL(kAboutBlankURL);
+    validated_params.url = GURL(url::kAboutBlankURL);
     RecordAction(base::UserMetricsAction("CanCommitURL_BlockedAndKilled"));
     // Kills the process.
     process->ReceivedBadMessage();
@@ -489,6 +512,10 @@ void RenderFrameHostImpl::OnNavigate(const IPC::Message& msg) {
   frame_tree_node()->navigator()->DidNavigate(this, validated_params);
 }
 
+RenderWidgetHostImpl* RenderFrameHostImpl::GetRenderWidgetHost() {
+  return static_cast<RenderWidgetHostImpl*>(render_view_host_);
+}
+
 int RenderFrameHostImpl::GetEnabledBindings() {
   return render_view_host_->GetEnabledBindings();
 }
@@ -504,6 +531,17 @@ void RenderFrameHostImpl::OnCrossSiteResponse(
       this, global_request_id, cross_site_transferring_request.Pass(),
       transfer_url_chain, referrer, page_transition,
       should_replace_current_entry);
+}
+
+void RenderFrameHostImpl::OnDeferredAfterResponseStarted(
+    const GlobalRequestID& global_request_id) {
+  frame_tree_node_->render_manager()->OnDeferredAfterResponseStarted(
+      global_request_id, this);
+
+  if (GetParent() || !delegate_->WillHandleDeferAfterResponseStarted())
+    frame_tree_node_->render_manager()->ResumeResponseDeferredAtStart();
+  else
+    delegate_->DidDeferAfterResponseStarted();
 }
 
 void RenderFrameHostImpl::SwapOut(RenderFrameProxyHost* proxy) {
@@ -698,6 +736,14 @@ void RenderFrameHostImpl::OnCancelDesktopNotification(int notification_id) {
   cancel_notification_callbacks_.erase(notification_id);
 }
 
+void RenderFrameHostImpl::OnTextSurroundingSelectionResponse(
+    const base::string16& content,
+    size_t start_offset,
+    size_t end_offset) {
+  render_view_host_->OnTextSurroundingSelectionResponse(
+      content, start_offset, end_offset);
+}
+
 void RenderFrameHostImpl::OnDidAccessInitialDocument() {
   delegate_->DidAccessInitialDocument();
 }
@@ -747,11 +793,11 @@ void RenderFrameHostImpl::Navigate(const FrameMsg_Navigate_Params& params) {
   TRACE_EVENT0("frame_host", "RenderFrameHostImpl::Navigate");
   // Browser plugin guests are not allowed to navigate outside web-safe schemes,
   // so do not grant them the ability to request additional URLs.
-  if (!GetProcess()->IsGuest()) {
+  if (!GetProcess()->IsIsolatedGuest()) {
     ChildProcessSecurityPolicyImpl::GetInstance()->GrantRequestURL(
         GetProcess()->GetID(), params.url);
-    if (params.url.SchemeIs(kDataScheme) &&
-        params.base_url_for_data_url.SchemeIs(kFileScheme)) {
+    if (params.url.SchemeIs(url::kDataScheme) &&
+        params.base_url_for_data_url.SchemeIs(url::kFileScheme)) {
       // If 'data:' is used, and we have a 'file:' base url, grant access to
       // local files.
       ChildProcessSecurityPolicyImpl::GetInstance()->GrantRequestURL(
@@ -788,7 +834,7 @@ void RenderFrameHostImpl::Navigate(const FrameMsg_Navigate_Params& params) {
   //
   // Blink doesn't send throb notifications for JavaScript URLs, so we
   // don't want to either.
-  if (!params.url.SchemeIs(kJavaScriptScheme))
+  if (!params.url.SchemeIs(url::kJavaScriptScheme))
     delegate_->DidStartLoading(this, true);
 }
 
@@ -847,7 +893,7 @@ void RenderFrameHostImpl::DispatchBeforeUnload(bool for_cross_site_transition) {
 
 void RenderFrameHostImpl::ExtendSelectionAndDelete(size_t before,
                                                    size_t after) {
-  Send(new FrameMsg_ExtendSelectionAndDelete(routing_id_, before, after));
+  Send(new InputMsg_ExtendSelectionAndDelete(routing_id_, before, after));
 }
 
 void RenderFrameHostImpl::JavaScriptDialogClosed(
@@ -894,6 +940,19 @@ void RenderFrameHostImpl::DesktopNotificationPermissionRequestDone(
     int callback_context) {
   Send(new DesktopNotificationMsg_PermissionRequestDone(
       routing_id_, callback_context));
+}
+
+void RenderFrameHostImpl::SetHasPendingTransitionRequest(
+    bool has_pending_request) {
+  BrowserThread::PostTask(
+      BrowserThread::IO,
+      FROM_HERE,
+      base::Bind(
+          &TransitionRequestManager::SetHasPendingTransitionRequest,
+          base::Unretained(TransitionRequestManager::GetInstance()),
+          GetProcess()->GetID(),
+          routing_id_,
+          has_pending_request));
 }
 
 }  // namespace content

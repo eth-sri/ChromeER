@@ -7,13 +7,19 @@
 
 #include "win8/viewer/metro_viewer_process_host.h"
 
+namespace base {
+class FilePath;
+}
+
 class ChromeMetroViewerProcessHost : public win8::MetroViewerProcessHost {
  public:
   ChromeMetroViewerProcessHost();
+  virtual ~ChromeMetroViewerProcessHost();
 
  private:
   // win8::MetroViewerProcessHost implementation
   virtual void OnChannelError() OVERRIDE;
+
   // IPC::Listener implementation
   virtual void OnChannelConnected(int32 peer_pid) OVERRIDE;
   virtual void OnSetTargetSurface(gfx::NativeViewId target_surface,

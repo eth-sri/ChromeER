@@ -12,7 +12,6 @@
 #include "base/message_loop/message_loop.h"
 #include "base/strings/string_util.h"
 #include "base/time/time.h"
-#include "content/child/child_thread.h"
 #include "content/child/ftp_directory_listing_response_delegate.h"
 #include "content/child/request_extra_data.h"
 #include "content/child/request_info.h"
@@ -58,9 +57,7 @@ using blink::WebURLLoaderClient;
 using blink::WebURLRequest;
 using blink::WebURLResponse;
 using webkit_glue::MultipartResponseDelegate;
-using webkit_glue::ResourceDevToolsInfo;
 using webkit_glue::ResourceLoaderBridge;
-using webkit_glue::ResourceResponseInfo;
 using webkit_glue::WebURLResponseExtraDataImpl;
 
 namespace content {
@@ -75,10 +72,7 @@ const char kThrottledErrorDescription[] =
 
 class HeaderFlattener : public WebHTTPHeaderVisitor {
  public:
-  explicit HeaderFlattener(int load_flags)
-      : load_flags_(load_flags),
-        has_accept_header_(false) {
-  }
+  HeaderFlattener() : has_accept_header_(false) {}
 
   virtual void visitHeader(const WebString& name, const WebString& value) {
     // Headers are latin1.
@@ -88,16 +82,6 @@ class HeaderFlattener : public WebHTTPHeaderVisitor {
     // Skip over referrer headers found in the header map because we already
     // pulled it out as a separate parameter.
     if (LowerCaseEqualsASCII(name_latin1, "referer"))
-      return;
-
-    // Skip over "Cache-Control: max-age=0" header if the corresponding
-    // load flag is already specified. FrameLoader sets both the flag and
-    // the extra header -- the extra header is redundant since our network
-    // implementation will add the necessary headers based on load flags.
-    // See http://code.google.com/p/chromium/issues/detail?id=3434.
-    if ((load_flags_ & net::LOAD_VALIDATE_CACHE) &&
-        LowerCaseEqualsASCII(name_latin1, "cache-control") &&
-        LowerCaseEqualsASCII(value_latin1, "max-age=0"))
       return;
 
     if (LowerCaseEqualsASCII(name_latin1, "accept"))
@@ -121,7 +105,6 @@ class HeaderFlattener : public WebHTTPHeaderVisitor {
   }
 
  private:
-  int load_flags_;
   std::string buffer_;
   bool has_accept_header_;
 };
@@ -220,12 +203,12 @@ net::RequestPriority ConvertWebKitPriorityToNetPriority(
 // WebURLLoaderImpl::Context --------------------------------------------------
 
 // This inner class exists since the WebURLLoader may be deleted while inside a
-// call to WebURLLoaderClient.  The bridge requires its Peer to stay alive
-// until it receives OnCompletedRequest.
+// call to WebURLLoaderClient.  Refcounting is to keep the context from being
+// deleted if it may have work to do after calling into the client.
 class WebURLLoaderImpl::Context : public base::RefCounted<Context>,
                                   public RequestPeer {
  public:
-  explicit Context(WebURLLoaderImpl* loader);
+  Context(WebURLLoaderImpl* loader, ResourceDispatcher* resource_dispatcher);
 
   WebURLLoaderClient* client() const { return client_; }
   void set_client(WebURLLoaderClient* client) { client_ = client; }
@@ -234,6 +217,8 @@ class WebURLLoaderImpl::Context : public base::RefCounted<Context>,
   void SetDefersLoading(bool value);
   void DidChangePriority(WebURLRequest::Priority new_priority,
                          int intra_priority_value);
+  bool AttachThreadedDataReceiver(
+      blink::WebThreadedDataReceiver* threaded_data_receiver);
   void Start(const WebURLRequest& request,
              SyncLoadResponse* sync_load_response);
 
@@ -267,6 +252,7 @@ class WebURLLoaderImpl::Context : public base::RefCounted<Context>,
   WebURLLoaderImpl* loader_;
   WebURLRequest request_;
   WebURLLoaderClient* client_;
+  ResourceDispatcher* resource_dispatcher_;
   WebReferrerPolicy referrer_policy_;
   scoped_ptr<ResourceLoaderBridge> bridge_;
   scoped_ptr<FtpDirectoryListingResponseDelegate> ftp_listing_delegate_;
@@ -274,22 +260,27 @@ class WebURLLoaderImpl::Context : public base::RefCounted<Context>,
   scoped_ptr<ResourceLoaderBridge> completed_bridge_;
 };
 
-WebURLLoaderImpl::Context::Context(WebURLLoaderImpl* loader)
+WebURLLoaderImpl::Context::Context(WebURLLoaderImpl* loader,
+                                   ResourceDispatcher* resource_dispatcher)
     : loader_(loader),
       client_(NULL),
+      resource_dispatcher_(resource_dispatcher),
       referrer_policy_(blink::WebReferrerPolicyDefault) {
 }
 
 void WebURLLoaderImpl::Context::Cancel() {
-  // The bridge will still send OnCompletedRequest, which will Release() us, so
-  // we don't do that here.
-  if (bridge_)
+  if (bridge_) {
     bridge_->Cancel();
+    bridge_.reset();
+  }
 
   // Ensure that we do not notify the multipart delegate anymore as it has
   // its own pointer to the client.
   if (multipart_delegate_)
     multipart_delegate_->Cancel();
+  // Ditto for the ftp delegate.
+  if (ftp_listing_delegate_)
+    ftp_listing_delegate_->Cancel();
 
   // Do not make any further calls to the client.
   client_ = NULL;
@@ -308,6 +299,14 @@ void WebURLLoaderImpl::Context::DidChangePriority(
         ConvertWebKitPriorityToNetPriority(new_priority), intra_priority_value);
 }
 
+bool WebURLLoaderImpl::Context::AttachThreadedDataReceiver(
+    blink::WebThreadedDataReceiver* threaded_data_receiver) {
+  if (bridge_)
+    return bridge_->AttachThreadedDataReceiver(threaded_data_receiver);
+
+  return false;
+}
+
 void WebURLLoaderImpl::Context::Start(const WebURLRequest& request,
                                       SyncLoadResponse* sync_load_response) {
   DCHECK(!bridge_.get());
@@ -324,7 +323,6 @@ void WebURLLoaderImpl::Context::Start(const WebURLRequest& request,
                          &sync_load_response->data,
                          &sync_load_response->error_code);
     } else {
-      AddRef();  // Balanced in OnCompletedRequest
       base::MessageLoop::current()->PostTask(
           FROM_HERE, base::Bind(&Context::HandleDataURL, this));
     }
@@ -335,11 +333,14 @@ void WebURLLoaderImpl::Context::Start(const WebURLRequest& request,
       request.httpHeaderField(WebString::fromUTF8("Referer")).latin1());
   const std::string& method = request.httpMethod().latin1();
 
-  int load_flags = net::LOAD_NORMAL;
+  int load_flags = net::LOAD_NORMAL | net::LOAD_ENABLE_LOAD_TIMING;
   switch (request.cachePolicy()) {
     case WebURLRequest::ReloadIgnoringCacheData:
       // Required by LayoutTests/http/tests/misc/refresh-headers.php
       load_flags |= net::LOAD_VALIDATE_CACHE;
+      break;
+    case WebURLRequest::ReloadBypassingCache:
+      load_flags |= net::LOAD_BYPASS_CACHE;
       break;
     case WebURLRequest::ReturnCacheDataElseLoad:
       load_flags |= net::LOAD_PREFERRING_CACHE;
@@ -349,12 +350,12 @@ void WebURLLoaderImpl::Context::Start(const WebURLRequest& request,
       break;
     case WebURLRequest::UseProtocolCachePolicy:
       break;
+    default:
+      NOTREACHED();
   }
 
   if (request.reportUploadProgress())
     load_flags |= net::LOAD_ENABLE_UPLOAD_PROGRESS;
-  if (request.reportLoadTiming())
-    load_flags |= net::LOAD_ENABLE_LOAD_TIMING;
   if (request.reportRawHeaders())
     load_flags |= net::LOAD_REPORT_RAW_HEADERS;
 
@@ -371,7 +372,7 @@ void WebURLLoaderImpl::Context::Start(const WebURLRequest& request,
     load_flags |= net::LOAD_DO_NOT_PROMPT_FOR_LOGIN;
   }
 
-  HeaderFlattener flattener(load_flags);
+  HeaderFlattener flattener;
   request.visitHTTPHeaderFields(&flattener);
 
   // TODO(brettw) this should take parameter encoding into account when
@@ -399,8 +400,7 @@ void WebURLLoaderImpl::Context::Start(const WebURLRequest& request,
   request_info.extra_data = request.extraData();
   referrer_policy_ = request.referrerPolicy();
   request_info.referrer_policy = request.referrerPolicy();
-  bridge_.reset(ChildThread::current()->resource_dispatcher()->CreateBridge(
-      request_info));
+  bridge_.reset(resource_dispatcher_->CreateBridge(request_info));
 
   if (!request.httpBody().isNull()) {
     // GET and HEAD requests shouldn't have http bodies.
@@ -458,11 +458,11 @@ void WebURLLoaderImpl::Context::Start(const WebURLRequest& request,
     return;
   }
 
-  if (bridge_->Start(this)) {
-    AddRef();  // Balanced in OnCompletedRequest
-  } else {
+  // TODO(mmenke):  This case probably never happens, anyways.  Probably should
+  // not handle this case at all.  If it's worth handling, this code currently
+  // results in the request just hanging, which should be fixed.
+  if (!bridge_->Start(this))
     bridge_.reset();
-  }
 }
 
 void WebURLLoaderImpl::Context::OnUploadProgress(uint64 position, uint64 size) {
@@ -501,6 +501,9 @@ bool WebURLLoaderImpl::Context::OnReceivedRedirect(
   new_request.setHTTPMethod(WebString::fromUTF8(new_method));
   if (new_method == method)
     new_request.setHTTPBody(request_.httpBody());
+
+  // Protect from deletion during call to willSendRequest.
+  scoped_refptr<Context> protect(this);
 
   client_->willSendRequest(loader_, new_request, response);
   request_ = new_request;
@@ -542,6 +545,9 @@ void WebURLLoaderImpl::Context::OnReceivedResponse(
     }
   }
 
+  // Prevent |this| from being destroyed if the client destroys the loader,
+  // ether in didReceiveResponse, or when the multipart/ftp delegate calls into
+  // it.
   scoped_refptr<Context> protect(this);
   client_->didReceiveResponse(loader_, response);
 
@@ -591,11 +597,17 @@ void WebURLLoaderImpl::Context::OnReceivedData(const char* data,
 
   if (ftp_listing_delegate_) {
     // The FTP listing delegate will make the appropriate calls to
-    // client_->didReceiveData and client_->didReceiveResponse.
+    // client_->didReceiveData and client_->didReceiveResponse.  Since the
+    // delegate may want to do work after sending data to the delegate, keep
+    // |this| and the delegate alive until it's finished handling the data.
+    scoped_refptr<Context> protect(this);
     ftp_listing_delegate_->OnReceivedData(data, data_length);
   } else if (multipart_delegate_) {
     // The multipart delegate will make the appropriate calls to
-    // client_->didReceiveData and client_->didReceiveResponse.
+    // client_->didReceiveData and client_->didReceiveResponse.  Since the
+    // delegate may want to do work after sending data to the delegate, keep
+    // |this| and the delegate alive until it's finished handling the data.
+    scoped_refptr<Context> protect(this);
     multipart_delegate_->OnReceivedData(data, data_length, encoded_data_length);
   } else {
     client_->didReceiveData(loader_, data, data_length, encoded_data_length);
@@ -615,6 +627,12 @@ void WebURLLoaderImpl::Context::OnCompletedRequest(
     const std::string& security_info,
     const base::TimeTicks& completion_time,
     int64 total_transfer_size) {
+  // The WebURLLoaderImpl may be deleted in any of the calls to the client or
+  // the delegates below (As they also may call in to the client).  Keep |this|
+  // alive in that case, to avoid a crash.  If that happens, the request will be
+  // cancelled and |client_| will be set to NULL.
+  scoped_refptr<Context> protect(this);
+
   if (ftp_listing_delegate_) {
     ftp_listing_delegate_->OnCompletedRequest();
     ftp_listing_delegate_.reset(NULL);
@@ -639,11 +657,6 @@ void WebURLLoaderImpl::Context::OnCompletedRequest(
           total_transfer_size);
     }
   }
-
-  // We are done with the bridge now, and so we need to release the reference
-  // to ourselves that we took on behalf of the bridge.  This may cause our
-  // destruction.
-  Release();
 }
 
 bool WebURLLoaderImpl::Context::CanHandleDataURL(const GURL& url) const {
@@ -693,8 +706,8 @@ void WebURLLoaderImpl::Context::HandleDataURL() {
 
 // WebURLLoaderImpl -----------------------------------------------------------
 
-WebURLLoaderImpl::WebURLLoaderImpl()
-    : context_(new Context(this)) {
+WebURLLoaderImpl::WebURLLoaderImpl(ResourceDispatcher* resource_dispatcher)
+    : context_(new Context(this, resource_dispatcher)) {
 }
 
 WebURLLoaderImpl::~WebURLLoaderImpl() {
@@ -874,6 +887,11 @@ void WebURLLoaderImpl::setDefersLoading(bool value) {
 void WebURLLoaderImpl::didChangePriority(WebURLRequest::Priority new_priority,
                                          int intra_priority_value) {
   context_->DidChangePriority(new_priority, intra_priority_value);
+}
+
+bool WebURLLoaderImpl::attachThreadedDataReceiver(
+    blink::WebThreadedDataReceiver* threaded_data_receiver) {
+  return context_->AttachThreadedDataReceiver(threaded_data_receiver);
 }
 
 }  // namespace content

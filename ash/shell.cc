@@ -8,9 +8,9 @@
 #include <string>
 
 #include "ash/accelerators/accelerator_controller.h"
-#include "ash/accelerators/accelerator_filter.h"
+#include "ash/accelerators/accelerator_delegate.h"
 #include "ash/accelerators/focus_manager_factory.h"
-#include "ash/accelerators/nested_dispatcher_controller.h"
+#include "ash/accelerators/nested_accelerator_delegate.h"
 #include "ash/accelerometer/accelerometer_controller.h"
 #include "ash/ash_switches.h"
 #include "ash/autoclick/autoclick_controller.h"
@@ -105,9 +105,11 @@
 #include "ui/views/focus/focus_manager_factory.h"
 #include "ui/views/widget/native_widget_aura.h"
 #include "ui/views/widget/widget.h"
+#include "ui/wm/core/accelerator_filter.h"
 #include "ui/wm/core/compound_event_filter.h"
 #include "ui/wm/core/focus_controller.h"
 #include "ui/wm/core/input_method_event_filter.h"
+#include "ui/wm/core/nested_accelerator_controller.h"
 #include "ui/wm/core/shadow_controller.h"
 #include "ui/wm/core/user_activity_detector.h"
 #include "ui/wm/core/visibility_controller.h"
@@ -465,17 +467,13 @@ void Shell::RemoveShellObserver(ShellObserver* observer) {
   observers_.RemoveObserver(observer);
 }
 
-void Shell::EnableMaximizeModeWindowManager(bool enable) {
-  if (enable && !maximize_mode_window_manager_.get()) {
-    maximize_mode_window_manager_.reset(new MaximizeModeWindowManager());
-  } else if (!enable && maximize_mode_window_manager_.get()) {
-    maximize_mode_window_manager_.reset();
-  }
+#if defined(OS_CHROMEOS)
+bool Shell::ShouldSaveDisplaySettings() {
+  return !((maximize_mode_controller_->IsMaximizeModeWindowManagerEnabled() &&
+            maximize_mode_controller_->in_set_screen_rotation()) ||
+           resolution_notification_controller_->DoesNotificationTimeout());
 }
-
-bool Shell::IsMaximizeModeWindowManagerEnabled() {
-  return maximize_mode_window_manager_.get() != NULL;
-}
+#endif
 
 void Shell::UpdateShelfVisibility() {
   RootWindowControllerList controllers = GetAllRootWindowControllers();
@@ -503,7 +501,7 @@ void Shell::SetShelfAlignment(ShelfAlignment alignment,
   }
 }
 
-ShelfAlignment Shell::GetShelfAlignment(aura::Window* root_window) {
+ShelfAlignment Shell::GetShelfAlignment(const aura::Window* root_window) {
   return GetRootWindowController(root_window)
       ->GetShelfLayoutManager()
       ->GetAlignment();
@@ -681,10 +679,10 @@ Shell::~Shell() {
   // TooltipController is deleted with the Shell so removing its references.
   RemovePreTargetHandler(tooltip_controller_.get());
 
-  // Destroy maximize window manager early on since it has some observers which
+  // Destroy maximize mode controller early on since it has some observers which
   // need to be removed.
+  maximize_mode_controller_->Shutdown();
   maximize_mode_controller_.reset();
-  maximize_mode_window_manager_.reset();
 
   // AppList needs to be released before shelf layout manager, which is
   // destroyed with shelf container in the loop below. However, app list
@@ -753,7 +751,7 @@ Shell::~Shell() {
   partial_magnification_controller_.reset();
   tooltip_controller_.reset();
   event_client_.reset();
-  nested_dispatcher_controller_.reset();
+  nested_accelerator_controller_.reset();
   toplevel_window_event_handler_.reset();
   visibility_controller_.reset();
   // |shelf_item_delegate_manager_| observes |shelf_model_|. It must be
@@ -843,18 +841,14 @@ void Shell::Init(const ShellInitParams& init_params) {
   // Shelf, and WallPaper could be created by the factory.
   views::FocusManagerFactory::Install(new AshFocusManagerFactory);
 
-  // Env creates the compositor. Historically it seems to have been implicitly
-  // initialized first by the ActivationController, but now that FocusController
-  // no longer does this we need to do it explicitly.
   aura::Env::CreateInstance(true);
+  aura::Env::GetInstance()->set_context_factory(init_params.context_factory);
 
   // The WindowModalityController needs to be at the front of the input event
   // pretarget handler list to ensure that it processes input events when modal
   // windows are active.
   window_modality_controller_.reset(
       new ::wm::WindowModalityController(this));
-
-  AddPreTargetHandler(this);
 
   env_filter_.reset(new ::wm::CompoundEventFilter);
   AddPreTargetHandler(env_filter_.get());
@@ -881,7 +875,8 @@ void Shell::Init(const ShellInitParams& init_params) {
 
   cursor_manager_.SetDisplay(GetScreen()->GetPrimaryDisplay());
 
-  nested_dispatcher_controller_.reset(new NestedDispatcherController);
+  nested_accelerator_controller_.reset(
+      new ::wm::NestedAcceleratorController(new NestedAcceleratorDelegate));
   accelerator_controller_.reset(new AcceleratorController);
   maximize_mode_controller_.reset(new MaximizeModeController());
 
@@ -893,13 +888,6 @@ void Shell::Init(const ShellInitParams& init_params) {
 #endif
 
   // The order in which event filters are added is significant.
-
-#if defined(OS_CHROMEOS)
-  // The StickyKeysController also rewrites events and must be added
-  // before observers, but after the EventRewriterEventFilter.
-  sticky_keys_controller_.reset(new StickyKeysController);
-  AddPreTargetHandler(sticky_keys_controller_.get());
-#endif
 
   // wm::UserActivityDetector passes events to observers, so let them get
   // rewritten first.
@@ -914,7 +902,8 @@ void Shell::Init(const ShellInitParams& init_params) {
       root_window->GetHost()->GetAcceleratedWidget()));
   AddPreTargetHandler(input_method_filter_.get());
 
-  accelerator_filter_.reset(new AcceleratorFilter);
+  accelerator_filter_.reset(new ::wm::AcceleratorFilter(
+      scoped_ptr< ::wm::AcceleratorDelegate>(new AcceleratorDelegate).Pass()));
   AddPreTargetHandler(accelerator_filter_.get());
 
   event_transformation_handler_.reset(new EventTransformationHandler);
@@ -932,6 +921,10 @@ void Shell::Init(const ShellInitParams& init_params) {
   // created.
 #if defined(OS_CHROMEOS)
     keyboard::InitializeKeyboard();
+#endif
+
+#if defined(OS_CHROMEOS)
+  sticky_keys_controller_.reset(new StickyKeysController);
 #endif
 
   lock_state_controller_.reset(new LockStateController);
@@ -1094,9 +1087,9 @@ void Shell::InitRootWindow(aura::Window* root_window) {
   root_window->AddPreTargetHandler(toplevel_window_event_handler_.get());
   root_window->AddPostTargetHandler(toplevel_window_event_handler_.get());
 
-  if (nested_dispatcher_controller_) {
+  if (nested_accelerator_controller_) {
     aura::client::SetDispatcherClient(root_window,
-                                      nested_dispatcher_controller_.get());
+                                      nested_accelerator_controller_.get());
   }
 }
 

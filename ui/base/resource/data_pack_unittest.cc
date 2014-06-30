@@ -21,7 +21,9 @@ class DataPackTest
 };
 
 extern const char kSamplePakContents[];
+extern const char kSampleCorruptPakContents[];
 extern const size_t kSamplePakSize;
+extern const size_t kSampleCorruptPakSize;
 
 TEST(DataPackTest, LoadFromPath) {
   base::ScopedTempDir dir;
@@ -99,9 +101,7 @@ INSTANTIATE_TEST_CASE_P(WriteUTF16, DataPackTest, ::testing::Values(
 
 TEST(DataPackTest, LoadFileWithTruncatedHeader) {
   base::FilePath data_path;
-  // TODO(tfarina): This fails on ios_dbg_simulator. Investigate and add
-  // ASSERT_TRUE to PathService::Get() call again.
-  PathService::Get(UI_DIR_TEST_DATA, &data_path);
+  ASSERT_TRUE(PathService::Get(UI_DIR_TEST_DATA, &data_path));
   data_path = data_path.AppendASCII("data_pack_unittest/truncated-header.pak");
 
   DataPack pack(SCALE_FACTOR_100P);
@@ -144,5 +144,36 @@ TEST_P(DataPackTest, Write) {
   ASSERT_TRUE(pack.GetStringPiece(15, &data));
   EXPECT_EQ(fifteen, data);
 }
+
+#if defined(OS_POSIX)
+TEST(DataPackTest, ModifiedWhileUsed) {
+  base::ScopedTempDir dir;
+  ASSERT_TRUE(dir.CreateUniqueTempDir());
+  base::FilePath data_path = dir.path().Append(FILE_PATH_LITERAL("sample.pak"));
+
+  // Dump contents into the pak file.
+  ASSERT_EQ(base::WriteFile(data_path, kSamplePakContents, kSamplePakSize),
+            static_cast<int>(kSamplePakSize));
+
+  base::File file(data_path, base::File::FLAG_OPEN | base::File::FLAG_READ);
+  ASSERT_TRUE(file.IsValid());
+
+  // Load the file through the data pack API.
+  DataPack pack(SCALE_FACTOR_100P);
+  ASSERT_TRUE(pack.LoadFromFile(file.Pass()));
+
+  base::StringPiece data;
+  ASSERT_TRUE(pack.HasResource(10));
+  ASSERT_TRUE(pack.GetStringPiece(10, &data));
+
+  ASSERT_EQ(base::WriteFile(data_path, kSampleCorruptPakContents,
+                            kSampleCorruptPakSize),
+            static_cast<int>(kSampleCorruptPakSize));
+
+  // Reading asset #10 should now fail as it extends past the end of the file.
+  ASSERT_TRUE(pack.HasResource(10));
+  ASSERT_FALSE(pack.GetStringPiece(10, &data));
+}
+#endif
 
 }  // namespace ui

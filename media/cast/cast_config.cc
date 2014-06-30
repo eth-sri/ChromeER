@@ -22,9 +22,13 @@ namespace cast {
 // these classes to centralize the logic?
 
 VideoSenderConfig::VideoSenderConfig()
-    : incoming_feedback_ssrc(0),
+    : ssrc(0),
+      incoming_feedback_ssrc(0),
       rtcp_interval(kDefaultRtcpIntervalMs),
       rtcp_mode(kRtcpReducedSize),
+      target_playout_delay(
+          base::TimeDelta::FromMilliseconds(kDefaultRtpMaxDelayMs)),
+      rtp_payload_type(0),
       use_external_encoder(false),
       width(0),
       height(0),
@@ -36,40 +40,40 @@ VideoSenderConfig::VideoSenderConfig()
       min_qp(kDefaultMinQp),
       max_frame_rate(kDefaultMaxFrameRate),
       max_number_of_video_buffers_used(kDefaultNumberOfVideoBuffers),
-      codec(transport::kVp8),
+      codec(transport::CODEC_VIDEO_VP8),
       number_of_encode_threads(1) {}
 
+VideoSenderConfig::~VideoSenderConfig() {}
+
 AudioSenderConfig::AudioSenderConfig()
-    : incoming_feedback_ssrc(0),
+    : ssrc(0),
+      incoming_feedback_ssrc(0),
       rtcp_interval(kDefaultRtcpIntervalMs),
       rtcp_mode(kRtcpReducedSize),
+      target_playout_delay(
+          base::TimeDelta::FromMilliseconds(kDefaultRtpMaxDelayMs)),
+      rtp_payload_type(0),
       use_external_encoder(false),
       frequency(0),
       channels(0),
-      bitrate(0) {}
+      bitrate(0),
+      codec(transport::CODEC_AUDIO_OPUS) {}
 
-AudioReceiverConfig::AudioReceiverConfig()
+AudioSenderConfig::~AudioSenderConfig() {}
+
+FrameReceiverConfig::FrameReceiverConfig()
     : feedback_ssrc(0),
       incoming_ssrc(0),
       rtcp_interval(kDefaultRtcpIntervalMs),
       rtcp_mode(kRtcpReducedSize),
       rtp_max_delay_ms(kDefaultRtpMaxDelayMs),
       rtp_payload_type(0),
-      use_external_decoder(false),
       frequency(0),
-      channels(0) {}
+      channels(0),
+      max_frame_rate(0),
+      codec(transport::CODEC_UNKNOWN) {}
 
-VideoReceiverConfig::VideoReceiverConfig()
-    : feedback_ssrc(0),
-      incoming_ssrc(0),
-      rtcp_interval(kDefaultRtcpIntervalMs),
-      rtcp_mode(kRtcpReducedSize),
-      rtp_max_delay_ms(kDefaultRtpMaxDelayMs),
-      rtp_payload_type(0),
-      use_external_decoder(false),
-      max_frame_rate(kDefaultMaxFrameRate),
-      decoder_faster_than_max_frame_rate(true),
-      codec(transport::kVp8) {}
+FrameReceiverConfig::~FrameReceiverConfig() {}
 
 }  // namespace cast
 }  // namespace media

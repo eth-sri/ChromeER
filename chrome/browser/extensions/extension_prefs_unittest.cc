@@ -22,6 +22,7 @@
 #include "content/public/test/mock_notification_observer.h"
 #include "extensions/browser/extension_pref_value_map.h"
 #include "extensions/browser/extension_prefs.h"
+#include "extensions/browser/install_flag.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/manifest_constants.h"
 #include "extensions/common/permissions/permission_set.h"
@@ -117,37 +118,6 @@ class ExtensionPrefsToolbarOrder : public ExtensionPrefsTest {
   ExtensionIdList list_;
 };
 TEST_F(ExtensionPrefsToolbarOrder, ToolbarOrder) {}
-
-// Tests the GetKnownDisabled/SetKnownDisabled functions.
-class ExtensionPrefsKnownDisabled : public ExtensionPrefsTest {
- public:
-  virtual void Initialize() OVERRIDE {
-    ExtensionIdSet before_set;
-    EXPECT_FALSE(prefs()->GetKnownDisabled(&before_set));
-    EXPECT_TRUE(before_set.empty());
-
-    // Initialize to an empty list and confirm that GetKnownDisabled() returns
-    // true and an empty list.
-    prefs()->SetKnownDisabled(before_set);
-    EXPECT_TRUE(prefs()->GetKnownDisabled(&before_set));
-    EXPECT_TRUE(before_set.empty());
-
-    set_.insert(prefs_.AddExtensionAndReturnId("1"));
-    set_.insert(prefs_.AddExtensionAndReturnId("2"));
-    set_.insert(prefs_.AddExtensionAndReturnId("3"));
-    prefs()->SetKnownDisabled(set_);
-  }
-
-  virtual void Verify() OVERRIDE {
-    ExtensionIdSet result;
-    EXPECT_TRUE(prefs()->GetKnownDisabled(&result));
-    ASSERT_EQ(set_, result);
-  }
-
- private:
-  ExtensionIdSet set_;
-};
-TEST_F(ExtensionPrefsKnownDisabled, KnownDisabled) {}
 
 // Tests the IsExtensionDisabled/SetExtensionState functions.
 class ExtensionPrefsExtensionState : public ExtensionPrefsTest {
@@ -484,7 +454,7 @@ class ExtensionPrefsDelayedInstallInfo : public ExtensionPrefsTest {
     ASSERT_EQ(id, extension->id());
     prefs()->SetDelayedInstallInfo(extension.get(),
                                    Extension::ENABLED,
-                                   false,
+                                   kInstallFlagNone,
                                    ExtensionPrefs::DELAY_REASON_WAIT_FOR_IDLE,
                                    syncer::StringOrdinal(),
                                    std::string());
@@ -609,7 +579,7 @@ class ExtensionPrefsFinishDelayedInstallInfo : public ExtensionPrefsTest {
     ASSERT_EQ(id_, new_extension->id());
     prefs()->SetDelayedInstallInfo(new_extension.get(),
                                    Extension::ENABLED,
-                                   false,
+                                   kInstallFlagNone,
                                    ExtensionPrefs::DELAY_REASON_WAIT_FOR_IDLE,
                                    syncer::StringOrdinal(),
                                    "Param");
@@ -648,7 +618,6 @@ class ExtensionPrefsOnExtensionInstalled : public ExtensionPrefsTest {
     EXPECT_FALSE(prefs()->IsExtensionDisabled(extension_->id()));
     prefs()->OnExtensionInstalled(extension_.get(),
                                   Extension::DISABLED,
-                                  false,
                                   syncer::StringOrdinal(),
                                   "Param");
   }
@@ -671,7 +640,6 @@ class ExtensionPrefsAppDraggedByUser : public ExtensionPrefsTest {
     EXPECT_FALSE(prefs()->WasAppDraggedByUser(extension_->id()));
     prefs()->OnExtensionInstalled(extension_.get(),
                                   Extension::ENABLED,
-                                  false,
                                   syncer::StringOrdinal(),
                                   std::string());
   }

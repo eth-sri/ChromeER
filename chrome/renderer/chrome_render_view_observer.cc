@@ -10,7 +10,6 @@
 #include "base/debug/trace_event.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
-#include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/common/chrome_constants.h"
@@ -28,7 +27,6 @@
 #include "content/public/renderer/render_frame.h"
 #include "content/public/renderer/render_view.h"
 #include "extensions/common/constants.h"
-#include "extensions/common/stack_frame.h"
 #include "net/base/data_url.h"
 #include "skia/ext/platform_canvas.h"
 #include "third_party/WebKit/public/platform/WebCString.h"
@@ -104,62 +102,6 @@ GURL StripRef(const GURL& url) {
   return url.ReplaceComponents(replacements);
 }
 
-// The delimiter for a stack trace provided by WebKit.
-const char kStackFrameDelimiter[] = "\n    at ";
-
-// Get a stack trace from a WebKit console message.
-// There are three possible scenarios:
-// 1. WebKit gives us a stack trace in |stack_trace|.
-// 2. The stack trace is embedded in the error |message| by an internal
-//    script. This will be more useful than |stack_trace|, since |stack_trace|
-//    will include the internal bindings trace, instead of a developer's code.
-// 3. No stack trace is included. In this case, we should mock one up from
-//    the given line number and source.
-// |message| will be populated with the error message only (i.e., will not
-// include any stack trace).
-extensions::StackTrace GetStackTraceFromMessage(
-    base::string16* message,
-    const base::string16& source,
-    const base::string16& stack_trace,
-    int32 line_number) {
-  extensions::StackTrace result;
-  std::vector<base::string16> pieces;
-  size_t index = 0;
-
-  if (message->find(base::UTF8ToUTF16(kStackFrameDelimiter)) !=
-          base::string16::npos) {
-    base::SplitStringUsingSubstr(*message,
-                                 base::UTF8ToUTF16(kStackFrameDelimiter),
-                                 &pieces);
-    *message = pieces[0];
-    index = 1;
-  } else if (!stack_trace.empty()) {
-    base::SplitStringUsingSubstr(stack_trace,
-                                 base::UTF8ToUTF16(kStackFrameDelimiter),
-                                 &pieces);
-  }
-
-  // If we got a stack trace, parse each frame from the text.
-  if (index < pieces.size()) {
-    for (; index < pieces.size(); ++index) {
-      scoped_ptr<extensions::StackFrame> frame =
-          extensions::StackFrame::CreateFromText(pieces[index]);
-      if (frame.get())
-        result.push_back(*frame);
-    }
-  }
-
-  if (result.empty()) {  // If we don't have a stack trace, mock one up.
-    result.push_back(
-        extensions::StackFrame(line_number,
-                               1u,  // column number
-                               source,
-                               base::string16() /* no function name */ ));
-  }
-
-  return result;
-}
-
 #if defined(OS_ANDROID)
 // Parses the DOM for a <meta> tag with a particular name.
 // |meta_tag_content| is set to the contents of the 'content' attribute.
@@ -185,7 +127,7 @@ bool RetrieveMetaTagContent(const WebFrame* main_frame,
       if (!child.isElementNode())
         continue;
       WebElement elem = child.to<WebElement>();
-      if (elem.hasTagName("meta")) {
+      if (elem.hasHTMLTagName("meta")) {
         if (elem.hasAttribute("name") && elem.hasAttribute("content")) {
           std::string name = elem.getAttribute("name").utf8();
           if (name == meta_tag_name) {
@@ -232,12 +174,14 @@ ChromeRenderViewObserver::~ChromeRenderViewObserver() {
 bool ChromeRenderViewObserver::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(ChromeRenderViewObserver, message)
+#if !defined(OS_ANDROID) && !defined(OS_IOS)
     IPC_MESSAGE_HANDLER(ChromeViewMsg_WebUIJavaScript, OnWebUIJavaScript)
-    IPC_MESSAGE_HANDLER(ChromeViewMsg_SetClientSidePhishingDetection,
-                        OnSetClientSidePhishingDetection)
+#endif
+#if defined(ENABLE_EXTENSIONS)
+    IPC_MESSAGE_HANDLER(ChromeViewMsg_SetName, OnSetName)
     IPC_MESSAGE_HANDLER(ChromeViewMsg_SetVisuallyDeemphasized,
                         OnSetVisuallyDeemphasized)
-    IPC_MESSAGE_HANDLER(ChromeViewMsg_GetFPS, OnGetFPS)
+#endif
 #if defined(OS_ANDROID)
     IPC_MESSAGE_HANDLER(ChromeViewMsg_UpdateTopControlsState,
                         OnUpdateTopControlsState)
@@ -246,6 +190,8 @@ bool ChromeRenderViewObserver::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(ChromeViewMsg_RetrieveMetaTagContent,
                         OnRetrieveMetaTagContent)
 #endif
+    IPC_MESSAGE_HANDLER(ChromeViewMsg_SetClientSidePhishingDetection,
+                        OnSetClientSidePhishingDetection)
     IPC_MESSAGE_HANDLER(ChromeViewMsg_SetWindowFeatures, OnSetWindowFeatures)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
@@ -253,10 +199,12 @@ bool ChromeRenderViewObserver::OnMessageReceived(const IPC::Message& message) {
   return handled;
 }
 
+#if !defined(OS_ANDROID) && !defined(OS_IOS)
 void ChromeRenderViewObserver::OnWebUIJavaScript(
     const base::string16& javascript) {
-  webui_javascript_ = javascript;
+  webui_javascript_.push_back(javascript);
 }
+#endif
 
 #if defined(OS_ANDROID)
 void ChromeRenderViewObserver::OnUpdateTopControlsState(
@@ -352,10 +300,16 @@ void ChromeRenderViewObserver::OnSetClientSidePhishingDetection(
     bool enable_phishing_detection) {
 #if defined(FULL_SAFE_BROWSING) && !defined(OS_CHROMEOS)
   phishing_classifier_ = enable_phishing_detection ?
-      safe_browsing::PhishingClassifierDelegate::Create(
-          render_view(), NULL) :
+      safe_browsing::PhishingClassifierDelegate::Create(render_view(), NULL) :
       NULL;
 #endif
+}
+
+#if defined(ENABLE_EXTENSIONS)
+void ChromeRenderViewObserver::OnSetName(const std::string& name) {
+  blink::WebView* web_view = render_view()->GetWebView();
+  if (web_view)
+    web_view->mainFrame()->setName(WebString::fromUTF8(name));
 }
 
 void ChromeRenderViewObserver::OnSetVisuallyDeemphasized(bool deemphasized) {
@@ -372,27 +326,25 @@ void ChromeRenderViewObserver::OnSetVisuallyDeemphasized(bool deemphasized) {
     dimmed_color_overlay_.reset();
   }
 }
-
-void ChromeRenderViewObserver::OnGetFPS() {
-  float fps = (render_view()->GetFilteredTimePerFrame() > 0.0f)?
-      1.0f / render_view()->GetFilteredTimePerFrame() : 0.0f;
-  Send(new ChromeViewHostMsg_FPS(routing_id(), fps));
-}
+#endif
 
 void ChromeRenderViewObserver::DidStartLoading() {
   if ((render_view()->GetEnabledBindings() & content::BINDINGS_POLICY_WEB_UI) &&
       !webui_javascript_.empty()) {
-    render_view()->GetMainRenderFrame()->ExecuteJavaScript(webui_javascript_);
+    for (size_t i = 0; i < webui_javascript_.size(); ++i) {
+      render_view()->GetMainRenderFrame()->ExecuteJavaScript(
+          webui_javascript_[i]);
+    }
     webui_javascript_.clear();
   }
 }
 
 void ChromeRenderViewObserver::DidStopLoading() {
   WebFrame* main_frame = render_view()->GetWebView()->mainFrame();
-  GURL osd_url = main_frame->document().openSearchDescriptionURL();
-  if (!osd_url.is_empty()) {
+  GURL osdd_url = main_frame->document().openSearchDescriptionURL();
+  if (!osdd_url.is_empty()) {
     Send(new ChromeViewHostMsg_PageHasOSDD(
-        routing_id(), render_view()->GetPageId(), osd_url,
+        routing_id(), main_frame->document().url(), osdd_url,
         search_provider::AUTODETECTED_PROVIDER));
   }
 
@@ -418,25 +370,6 @@ void ChromeRenderViewObserver::DidCommitProvisionalLoad(
       render_view()->GetPageId(),
       true,  // preliminary_capture
       base::TimeDelta::FromMilliseconds(kDelayForForcedCaptureMs));
-}
-
-void ChromeRenderViewObserver::DetailedConsoleMessageAdded(
-    const base::string16& message,
-    const base::string16& source,
-    const base::string16& stack_trace_string,
-    int32 line_number,
-    int32 severity_level) {
-  base::string16 trimmed_message = message;
-  extensions::StackTrace stack_trace = GetStackTraceFromMessage(
-      &trimmed_message,
-      source,
-      stack_trace_string,
-      line_number);
-  Send(new ChromeViewHostMsg_DetailedConsoleMessageAdded(routing_id(),
-                                                         trimmed_message,
-                                                         source,
-                                                         stack_trace,
-                                                         severity_level));
 }
 
 void ChromeRenderViewObserver::CapturePageInfoLater(int page_id,
@@ -488,7 +421,7 @@ void ChromeRenderViewObserver::CapturePageInfo(int page_id,
   UMA_HISTOGRAM_TIMES(kTranslateCaptureText,
                       base::TimeTicks::Now() - capture_begin_time);
   if (translate_helper_)
-    translate_helper_->PageCaptured(page_id, contents);
+    translate_helper_->PageCaptured(contents);
 
   // TODO(shess): Is indexing "Full text search" indexing?  In that
   // case more of this can go.
@@ -558,9 +491,8 @@ void ChromeRenderViewObserver::CaptureText(WebFrame* frame,
   // terminate the string at the last space to ensure no words are clipped.
   if (contents->size() == kMaxIndexChars) {
     size_t last_space_index = contents->find_last_of(base::kWhitespaceUTF16);
-    if (last_space_index == base::string16::npos)
-      return;  // don't index if we got a huge block of text with no spaces
-    contents->resize(last_space_index);
+    if (last_space_index != base::string16::npos)
+      contents->resize(last_space_index);
   }
 }
 
@@ -580,7 +512,7 @@ bool ChromeRenderViewObserver::HasRefreshMetaTag(WebFrame* frame) {
     if (!node.isElementNode())
       continue;
     WebElement element = node.to<WebElement>();
-    if (!element.hasTagName(tag_name))
+    if (!element.hasHTMLTagName(tag_name))
       continue;
     WebString value = element.getAttribute(attribute_name);
     if (value.isNull() || !LowerCaseEqualsASCII(value, "refresh"))

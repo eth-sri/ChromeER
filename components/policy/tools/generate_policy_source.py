@@ -35,14 +35,15 @@ class PolicyDetails:
   # TODO(joaodasilva): refactor the 'dict' type into a more generic 'json' type
   # that can also be used to represent lists of other JSON objects.
   TYPE_MAP = {
-    'dict':         ('TYPE_DICTIONARY',   'string',       'String'),
-    'external':     ('TYPE_EXTERNAL',     'string',       'String'),
-    'int':          ('TYPE_INTEGER',      'int64',        'Integer'),
-    'int-enum':     ('TYPE_INTEGER',      'int64',        'Integer'),
-    'list':         ('TYPE_LIST',         'StringList',   'StringList'),
-    'main':         ('TYPE_BOOLEAN',      'bool',         'Boolean'),
-    'string':       ('TYPE_STRING',       'string',       'String'),
-    'string-enum':  ('TYPE_STRING',       'string',       'String'),
+    'dict':             ('TYPE_DICTIONARY',   'string',       'String'),
+    'external':         ('TYPE_EXTERNAL',     'string',       'String'),
+    'int':              ('TYPE_INTEGER',      'int64',        'Integer'),
+    'int-enum':         ('TYPE_INTEGER',      'int64',        'Integer'),
+    'list':             ('TYPE_LIST',         'StringList',   'StringList'),
+    'main':             ('TYPE_BOOLEAN',      'bool',         'Boolean'),
+    'string':           ('TYPE_STRING',       'string',       'String'),
+    'string-enum':      ('TYPE_STRING',       'string',       'String'),
+    'string-enum-list': ('TYPE_LIST',         'StringList',   'StringList'),
   }
 
   class EnumItem:
@@ -420,7 +421,8 @@ class SchemaNodesGenerator:
 
     if schema['type'] == 'array':
       # Special case for lists of strings, which is a common policy type.
-      if schema['items']['type'] == 'string':
+      # The 'type' may be missing if the schema has a '$ref' attribute.
+      if schema['items'].get('type', '') == 'string':
         return self.GetStringList()
       return self.AppendSchema('TYPE_LIST',
           self.GenerateAndCollectID(schema['items'], 'items of ' + name))

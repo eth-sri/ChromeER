@@ -8,12 +8,12 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/chromeos/login/managed/locally_managed_user_creation_flow.h"
+#include "chrome/browser/chromeos/login/screens/user_selection_screen.h"
 #include "chrome/browser/chromeos/login/users/supervised_user_manager.h"
 #include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/login/users/wallpaper/wallpaper_manager.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
-#include "chrome/browser/ui/webui/chromeos/login/signin_screen_handler.h"
 #include "chrome/common/url_constants.h"
 #include "chromeos/audio/chromeos_sounds.h"
 #include "google_apis/gaia/gaia_auth_util.h"
@@ -124,13 +124,13 @@ void LocallyManagedUserCreationScreenHandler::DeclareLocalizedValues(
                IDS_CREATE_LOCALLY_MANAGED_USER_CREATED_1_TEXT_3);
 
   builder->Add("importExistingSupervisedUserTitle",
-               IDS_IMPORT_EXISTING_MANAGED_USER_TITLE);
+               IDS_IMPORT_EXISTING_SUPERVISED_USER_TITLE);
   builder->Add("importExistingSupervisedUserText",
-               IDS_IMPORT_EXISTING_MANAGED_USER_TEXT);
+               IDS_IMPORT_EXISTING_SUPERVISED_USER_TEXT);
   builder->Add("managedUserCreationFlowImportButtonTitle",
-               IDS_IMPORT_EXISTING_MANAGED_USER_OK);
+               IDS_IMPORT_EXISTING_SUPERVISED_USER_OK);
   builder->Add("importSupervisedUserLink",
-               IDS_PROFILES_IMPORT_EXISTING_MANAGED_USER_LINK);
+               IDS_PROFILES_IMPORT_EXISTING_SUPERVISED_USER_LINK);
   builder->Add("createSupervisedUserLink",
                IDS_CREATE_NEW_USER_LINK);
   builder->Add("importBubbleText", IDS_SUPERVISED_USER_IMPORT_BUBBLE_TEXT);
@@ -220,7 +220,7 @@ void LocallyManagedUserCreationScreenHandler::Show() {
       continue;
     bool is_owner = ((*it)->email() == owner);
     base::DictionaryValue* user_dict = new base::DictionaryValue();
-    SigninScreenHandler::FillUserDictionary(
+    UserSelectionScreen::FillUserDictionary(
         *it,
         is_owner,
         false /* is_signin_to_add */,

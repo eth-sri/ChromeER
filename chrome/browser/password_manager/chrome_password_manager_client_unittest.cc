@@ -11,8 +11,8 @@
 #include "chrome/test/base/testing_profile.h"
 #include "components/autofill/content/common/autofill_messages.h"
 #include "components/password_manager/content/browser/password_manager_internals_service_factory.h"
+#include "components/password_manager/core/browser/log_receiver.h"
 #include "components/password_manager/core/browser/password_manager_internals_service.h"
-#include "components/password_manager/core/browser/password_manager_logger.h"
 #include "components/password_manager/core/common/password_manager_switches.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/web_contents.h"
@@ -27,7 +27,7 @@ namespace {
 
 const char kTestText[] = "abcd1234";
 
-class MockLogReceiver : public password_manager::PasswordManagerLogger {
+class MockLogReceiver : public password_manager::LogReceiver {
  public:
   MOCK_METHOD1(LogSavePasswordProgress, void(const std::string&));
 };
@@ -43,8 +43,8 @@ class ChromePasswordManagerClientTest : public ChromeRenderViewHostTestHarness {
  protected:
   ChromePasswordManagerClient* GetClient();
 
-  // If the test IPC sink contains an AutofillMsg_ChangeLoggingState message,
-  // then copies its argument into |activation_flag| and returns true. Otherwise
+  // If the test IPC sink contains an AutofillMsg_SetLoggingState message, then
+  // copies its argument into |activation_flag| and returns true. Otherwise
   // returns false.
   bool WasLoggingActivationMessageSent(bool* activation_flag);
 
@@ -59,7 +59,7 @@ ChromePasswordManagerClientTest::ChromePasswordManagerClientTest()
 
 void ChromePasswordManagerClientTest::SetUp() {
   ChromeRenderViewHostTestHarness::SetUp();
-  ChromePasswordManagerClient::CreateForWebContentsWithAutofillManagerDelegate(
+  ChromePasswordManagerClient::CreateForWebContentsWithAutofillClient(
       web_contents(), NULL);
   service_ = password_manager::PasswordManagerInternalsServiceFactory::
       GetForBrowserContext(profile());
@@ -72,13 +72,13 @@ ChromePasswordManagerClient* ChromePasswordManagerClientTest::GetClient() {
 
 bool ChromePasswordManagerClientTest::WasLoggingActivationMessageSent(
     bool* activation_flag) {
-  const uint32 kMsgID = AutofillMsg_ChangeLoggingState::ID;
+  const uint32 kMsgID = AutofillMsg_SetLoggingState::ID;
   const IPC::Message* message =
       process()->sink().GetFirstMessageMatching(kMsgID);
   if (!message)
     return false;
   Tuple1<bool> param;
-  AutofillMsg_ChangeLoggingState::Read(message, &param);
+  AutofillMsg_SetLoggingState::Read(message, &param);
   *activation_flag = param.a;
   process()->sink().ClearMessages();
   return true;
@@ -133,6 +133,35 @@ TEST_F(ChromePasswordManagerClientTest, LogSavePasswordProgressNotifyRenderer) {
 
   service_->UnregisterReceiver(&receiver_);
   EXPECT_FALSE(client->IsLoggingActive());
+  EXPECT_TRUE(WasLoggingActivationMessageSent(&logging_active));
+  EXPECT_FALSE(logging_active);
+}
+
+TEST_F(ChromePasswordManagerClientTest, AnswerToPingsAboutLoggingState_Active) {
+  service_->RegisterReceiver(&receiver_);
+
+  process()->sink().ClearMessages();
+
+  // Ping the client for logging activity update.
+  AutofillHostMsg_PasswordAutofillAgentConstructed msg(0);
+  static_cast<IPC::Listener*>(GetClient())->OnMessageReceived(msg);
+
+  bool logging_active = false;
+  EXPECT_TRUE(WasLoggingActivationMessageSent(&logging_active));
+  EXPECT_TRUE(logging_active);
+
+  service_->UnregisterReceiver(&receiver_);
+}
+
+TEST_F(ChromePasswordManagerClientTest,
+       AnswerToPingsAboutLoggingState_Inactive) {
+  process()->sink().ClearMessages();
+
+  // Ping the client for logging activity update.
+  AutofillHostMsg_PasswordAutofillAgentConstructed msg(0);
+  static_cast<IPC::Listener*>(GetClient())->OnMessageReceived(msg);
+
+  bool logging_active = true;
   EXPECT_TRUE(WasLoggingActivationMessageSent(&logging_active));
   EXPECT_FALSE(logging_active);
 }

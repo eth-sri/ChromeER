@@ -44,6 +44,7 @@ const char* kPrefToManageType[] = {
   NULL,  // No policy for default value of PPAPI broker
   NULL,  // No policy for default value of multiple automatic downloads
   NULL,  // No policy for default value of MIDI system exclusive requests
+  NULL,  // No policy for default value of push messaging requests
 #if defined(OS_WIN)
   NULL,  // No policy for default value of "switch to desktop"
 #elif defined(OS_ANDROID) || defined(OS_CHROMEOS)
@@ -353,11 +354,12 @@ void PolicyProvider::GetAutoSelectCertificateSettingsFromPreferences(
     scoped_ptr<base::DictionaryValue> pattern_filter_pair(
         static_cast<base::DictionaryValue*>(value.release()));
     std::string pattern_str;
-    bool pattern_read = pattern_filter_pair->GetString("pattern", &pattern_str);
-    scoped_ptr<base::Value> cert_filter;
-    bool filter_read = pattern_filter_pair->Remove("filter", &cert_filter);
-    if (!pattern_read || !filter_read ||
-        !cert_filter->IsType(base::Value::TYPE_DICTIONARY)) {
+    bool pattern_read = pattern_filter_pair->GetStringWithoutPathExpansion(
+        "pattern", &pattern_str);
+    base::DictionaryValue* cert_filter = NULL;
+    pattern_filter_pair->GetDictionaryWithoutPathExpansion("filter",
+                                                           &cert_filter);
+    if (!pattern_read || !cert_filter) {
       VLOG(1) << "Ignoring invalid certificate auto select setting. Reason:"
                  " Missing pattern or filter.";
       continue;
@@ -372,11 +374,13 @@ void PolicyProvider::GetAutoSelectCertificateSettingsFromPreferences(
       continue;
     }
 
+    // Don't pass removed values from |value|, because base::Values read with
+    // JSONReader use a shared string buffer. Instead, DeepCopy here.
     value_map->SetValue(pattern,
                         ContentSettingsPattern::Wildcard(),
                         CONTENT_SETTINGS_TYPE_AUTO_SELECT_CERTIFICATE,
                         std::string(),
-                        cert_filter.release());
+                        cert_filter->DeepCopy());
   }
 }
 

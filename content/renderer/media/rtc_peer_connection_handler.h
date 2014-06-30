@@ -88,6 +88,9 @@ class CONTENT_EXPORT RTCPeerConnectionHandler
       PeerConnectionDependencyFactory* dependency_factory);
   virtual ~RTCPeerConnectionHandler();
 
+  // Destroy all existing RTCPeerConnectionHandler objects.
+  static void DestructAllHandlers();
+
   void associateWithFrame(blink::WebFrame* frame);
 
   // Initialize method only used for unit test.
@@ -208,6 +211,7 @@ class CONTENT_EXPORT RTCPeerConnectionHandler
   typedef std::map<webrtc::MediaStreamInterface*,
       content::RemoteMediaStreamImpl*> RemoteStreamMap;
   RemoteStreamMap remote_streams_;
+  scoped_refptr<webrtc::UMAObserver> uma_observer_;
 
   DISALLOW_COPY_AND_ASSIGN(RTCPeerConnectionHandler);
 };

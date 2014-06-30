@@ -25,10 +25,18 @@ function getScrollbarWidth() {
 }
 
 /**
+ * The minimum number of pixels to offset the toolbar by from the bottom and
+ * right side of the screen.
+ */
+PDFViewer.MIN_TOOLBAR_OFFSET = 15;
+
+/**
  * Creates a new PDFViewer. There should only be one of these objects per
  * document.
  */
 function PDFViewer() {
+  this.loaded = false;
+
   // The sizer element is placed behind the plugin element to cause scrollbars
   // to be displayed in the window. It is sized according to the document size
   // of the pdf and zoom level.
@@ -44,7 +52,9 @@ function PDFViewer() {
   // Create the viewport.
   this.viewport_ = new Viewport(window,
                                 this.sizer_,
-                                this.viewportChangedCallback_.bind(this),
+                                this.viewportChanged_.bind(this),
+                                this.beforeZoom_.bind(this),
+                                this.afterZoom_.bind(this),
                                 getScrollbarWidth());
 
   // Create the plugin object dynamically so we can set its src. The plugin
@@ -70,120 +80,164 @@ function PDFViewer() {
   // background page and stream details object with the details of the request.
   // Otherwise, we take the query string of the URL to indicate the URL of the
   // PDF to load. This is used for print preview in particular.
-  var streamDetails;
   if (chrome.extension.getBackgroundPage &&
       chrome.extension.getBackgroundPage()) {
-    streamDetails = chrome.extension.getBackgroundPage().popStreamDetails();
+    this.streamDetails =
+        chrome.extension.getBackgroundPage().popStreamDetails();
   }
 
-  if (!streamDetails) {
+  if (!this.streamDetails) {
     // The URL of this page will be of the form
     // "chrome-extension://<extension id>?<pdf url>". We pull out the <pdf url>
     // part here.
     var url = window.location.search.substring(1);
-    streamDetails = {
+    this.streamDetails = {
       streamUrl: url,
-      originalUrl: url
+      originalUrl: url,
+      responseHeaders: ''
     };
   }
 
-  this.plugin_.setAttribute('src', streamDetails.streamUrl);
+  this.plugin_.setAttribute('src', this.streamDetails.originalUrl);
+  this.plugin_.setAttribute('stream-url', this.streamDetails.streamUrl);
+  var headers = '';
+  for (var header in this.streamDetails.responseHeaders) {
+    headers += header + ': ' +
+        this.streamDetails.responseHeaders[header] + '\n';
+  }
+  this.plugin_.setAttribute('headers', headers);
+
   if (window.top == window)
     this.plugin_.setAttribute('full-frame', '');
   document.body.appendChild(this.plugin_);
 
-  this.setupEventListeners_(streamDetails);
+  // TODO(raymes): Remove this spurious message once crbug.com/388606 is fixed.
+  // This is a hack to initialize pepper sync scripting and avoid re-entrancy.
+  this.plugin_.postMessage({
+    type: 'viewport',
+    zoom: 1,
+    xOffset: 0,
+    yOffset: 0
+  });
+
+  // Setup the button event listeners.
+  $('fit-to-width-button').addEventListener('click',
+      this.viewport_.fitToWidth.bind(this.viewport_));
+  $('fit-to-page-button').addEventListener('click',
+      this.viewport_.fitToPage.bind(this.viewport_));
+  $('zoom-in-button').addEventListener('click',
+      this.viewport_.zoomIn.bind(this.viewport_));
+  $('zoom-out-button').addEventListener('click',
+      this.viewport_.zoomOut.bind(this.viewport_));
+  $('save-button-link').href = this.streamDetails.originalUrl;
+  $('print-button').addEventListener('click', this.print_.bind(this));
+
+  // Setup the keyboard event listener.
+  document.onkeydown = this.handleKeyEvent_.bind(this);
 }
 
 PDFViewer.prototype = {
   /**
    * @private
-   * Sets up event listeners for key shortcuts and also the UI buttons.
-   * @param {Object} streamDetails the details of the original HTTP request for
-   *     the PDF.
+   * Handle key events. These may come from the user directly or via the
+   * scripting API.
+   * @param {KeyboardEvent} e the event to handle.
    */
-  setupEventListeners_: function(streamDetails) {
-    // Setup the button event listeners.
-    $('fit-to-width-button').addEventListener('click',
-        this.viewport_.fitToWidth.bind(this.viewport_));
-    $('fit-to-page-button').addEventListener('click',
-        this.viewport_.fitToPage.bind(this.viewport_));
-    $('zoom-in-button').addEventListener('click',
-        this.viewport_.zoomIn.bind(this.viewport_));
-    $('zoom-out-button').addEventListener('click',
-        this.viewport_.zoomOut.bind(this.viewport_));
-    $('save-button-link').href = streamDetails.originalUrl;
-    $('print-button').addEventListener('click', this.print_.bind(this));
+  handleKeyEvent_: function(e) {
+    var position = this.viewport_.position;
+    // Certain scroll events may be sent from outside of the extension.
+    var fromScriptingAPI = e.type == 'scriptingKeypress';
 
-    // Setup keyboard event listeners.
-    document.onkeydown = function(e) {
-      switch (e.keyCode) {
-        case 37:  // Left arrow key.
-          // Go to the previous page if there are no horizontal scrollbars.
-          if (!this.viewport_.documentHasScrollbars().x) {
-            this.viewport_.goToPage(this.viewport_.getMostVisiblePage() - 1);
-            // Since we do the movement of the page.
-            e.preventDefault();
-          }
-          return;
-        case 33:  // Page up key.
-          // Go to the previous page if we are fit-to-page.
-          if (this.viewport_.fittingType == Viewport.FittingType.FIT_TO_PAGE) {
-            this.viewport_.goToPage(this.viewport_.getMostVisiblePage() - 1);
-            // Since we do the movement of the page.
-            e.preventDefault();
-          }
-          return;
-        case 39:  // Right arrow key.
-          // Go to the next page if there are no horizontal scrollbars.
-          if (!this.viewport_.documentHasScrollbars().x) {
-            this.viewport_.goToPage(this.viewport_.getMostVisiblePage() + 1);
-            // Since we do the movement of the page.
-            e.preventDefault();
-          }
-          return;
-        case 34:  // Page down key.
-          // Go to the next page if we are fit-to-page.
-          if (this.viewport_.fittingType == Viewport.FittingType.FIT_TO_PAGE) {
-            this.viewport_.goToPage(this.viewport_.getMostVisiblePage() + 1);
-            // Since we do the movement of the page.
-            e.preventDefault();
-          }
-          return;
-        case 187:  // +/= key.
-        case 107:  // Numpad + key.
-          if (e.ctrlKey || e.metaKey) {
-            this.viewport_.zoomIn();
-            // Since we do the zooming of the page.
-            e.preventDefault();
-          }
-          return;
-        case 189:  // -/_ key.
-        case 109:  // Numpad - key.
-          if (e.ctrlKey || e.metaKey) {
-            this.viewport_.zoomOut();
-            // Since we do the zooming of the page.
-            e.preventDefault();
-          }
-          return;
-        case 83:  // s key.
-          if (e.ctrlKey || e.metaKey) {
-            // Simulate a click on the button so that the <a download ...>
-            // attribute is used.
-            $('save-button-link').click();
-            // Since we do the saving of the page.
-            e.preventDefault();
-          }
-          return;
-        case 80:  // p key.
-          if (e.ctrlKey || e.metaKey) {
-            this.print_();
-            // Since we do the printing of the page.
-            e.preventDefault();
-          }
-          return;
-      }
-    }.bind(this);
+    switch (e.keyCode) {
+      case 33:  // Page up key.
+        // Go to the previous page if we are fit-to-page.
+        if (this.viewport_.fittingType == Viewport.FittingType.FIT_TO_PAGE) {
+          this.viewport_.goToPage(this.viewport_.getMostVisiblePage() - 1);
+          // Since we do the movement of the page.
+          e.preventDefault();
+        } else if (fromScriptingAPI) {
+          position.y -= this.viewport.size.height;
+          this.viewport.position = position;
+        }
+        return;
+      case 34:  // Page down key.
+        // Go to the next page if we are fit-to-page.
+        if (this.viewport_.fittingType == Viewport.FittingType.FIT_TO_PAGE) {
+          this.viewport_.goToPage(this.viewport_.getMostVisiblePage() + 1);
+          // Since we do the movement of the page.
+          e.preventDefault();
+        } else if (fromScriptingAPI) {
+          position.y += this.viewport.size.height;
+          this.viewport.position = position;
+        }
+        return;
+      case 37:  // Left arrow key.
+        // Go to the previous page if there are no horizontal scrollbars.
+        if (!this.viewport_.documentHasScrollbars().x) {
+          this.viewport_.goToPage(this.viewport_.getMostVisiblePage() - 1);
+          // Since we do the movement of the page.
+          e.preventDefault();
+        } else if (fromScriptingAPI) {
+          position.x -= Viewport.SCROLL_INCREMENT;
+          this.viewport.position = position;
+        }
+        return;
+      case 38:  // Up arrow key.
+        if (fromScriptingAPI) {
+          position.y -= Viewport.SCROLL_INCREMENT;
+          this.viewport.position = position;
+        }
+        return;
+      case 39:  // Right arrow key.
+        // Go to the next page if there are no horizontal scrollbars.
+        if (!this.viewport_.documentHasScrollbars().x) {
+          this.viewport_.goToPage(this.viewport_.getMostVisiblePage() + 1);
+          // Since we do the movement of the page.
+          e.preventDefault();
+        } else if (fromScriptingAPI) {
+          position.x += Viewport.SCROLL_INCREMENT;
+          this.viewport.position = position;
+        }
+        return;
+      case 40:  // Down arrow key.
+        if (fromScriptingAPI) {
+          position.y += Viewport.SCROLL_INCREMENT;
+          this.viewport.position = position;
+        }
+        return;
+      case 187:  // +/= key.
+      case 107:  // Numpad + key.
+        if (e.ctrlKey || e.metaKey) {
+          this.viewport_.zoomIn();
+          // Since we do the zooming of the page.
+          e.preventDefault();
+        }
+        return;
+      case 189:  // -/_ key.
+      case 109:  // Numpad - key.
+        if (e.ctrlKey || e.metaKey) {
+          this.viewport_.zoomOut();
+          // Since we do the zooming of the page.
+          e.preventDefault();
+        }
+        return;
+      case 83:  // s key.
+        if (e.ctrlKey || e.metaKey) {
+          // Simulate a click on the button so that the <a download ...>
+          // attribute is used.
+          $('save-button-link').click();
+          // Since we do the saving of the page.
+          e.preventDefault();
+        }
+        return;
+      case 80:  // p key.
+        if (e.ctrlKey || e.metaKey) {
+          this.print_();
+          // Since we do the printing of the page.
+          e.preventDefault();
+        }
+        return;
+    }
   },
 
   /**
@@ -215,6 +269,7 @@ PDFViewer.prototype = {
       }
     } else if (progress == 100) {
       // Document load complete.
+      this.loaded = true;
       var loadEvent = new Event('pdfload');
       window.dispatchEvent(loadEvent);
       this.sendScriptingMessage_({
@@ -257,6 +312,14 @@ PDFViewer.prototype = {
         this.pageIndicator_.initialFadeIn();
         this.toolbar_.initialFadeIn();
         break;
+      case 'email':
+        var href = 'mailto:' + message.data.to + '?cc=' + message.data.cc +
+            '&bcc=' + message.data.bcc + '&subject=' + message.data.subject +
+            '&body=' + message.data.body;
+        var w = window.open(href, '_blank', 'width=1,height=1');
+        if (w)
+          w.close();
+        break;
       case 'getAccessibilityJSONReply':
         this.sendScriptingMessage_(message.data);
         break;
@@ -274,6 +337,12 @@ PDFViewer.prototype = {
       case 'loadProgress':
         this.updateProgress_(message.data.progress);
         break;
+      case 'navigate':
+        if (message.data.newTab)
+          window.open(message.data.url);
+        else
+          window.location.href = message.data.url;
+        break;
       case 'setScrollPosition':
         var position = this.viewport_.position;
         if (message.data.x != undefined)
@@ -287,14 +356,44 @@ PDFViewer.prototype = {
         this.progressBar_.text = message.data.loadingString;
         this.errorScreen_.text = message.data.loadFailedString;
         break;
+      case 'cancelStreamUrl':
+        chrome.streamsPrivate.abort(this.streamDetails.streamUrl);
+        break;
     }
   },
 
   /**
    * @private
-   * A callback that's called when the viewport changes.
+   * A callback that's called before the zoom changes. Notify the plugin to stop
+   * reacting to scroll events while zoom is taking place to avoid flickering.
    */
-  viewportChangedCallback_: function() {
+  beforeZoom_: function() {
+    this.plugin_.postMessage({
+      type: 'stopScrolling'
+    });
+  },
+
+  /**
+   * @private
+   * A callback that's called after the zoom changes. Notify the plugin of the
+   * zoom change and to continue reacting to scroll events.
+   */
+  afterZoom_: function() {
+    var position = this.viewport_.position;
+    var zoom = this.viewport_.zoom;
+    this.plugin_.postMessage({
+      type: 'viewport',
+      zoom: zoom,
+      xOffset: position.x,
+      yOffset: position.y
+    });
+  },
+
+  /**
+   * @private
+   * A callback that's called after the viewport changes.
+   */
+  viewportChanged_: function() {
     if (!this.documentDimensions_)
       return;
 
@@ -311,8 +410,12 @@ PDFViewer.prototype = {
     var hasScrollbars = this.viewport_.documentHasScrollbars();
     var scrollbarWidth = this.viewport_.scrollbarWidth;
     // Offset the toolbar position so that it doesn't move if scrollbars appear.
-    var toolbarRight = hasScrollbars.vertical ? 0 : scrollbarWidth;
-    var toolbarBottom = hasScrollbars.horizontal ? 0 : scrollbarWidth;
+    var toolbarRight = Math.max(PDFViewer.MIN_TOOLBAR_OFFSET, scrollbarWidth);
+    var toolbarBottom = Math.max(PDFViewer.MIN_TOOLBAR_OFFSET, scrollbarWidth);
+    if (hasScrollbars.vertical)
+      toolbarRight -= scrollbarWidth;
+    if (hasScrollbars.horizontal)
+      toolbarBottom -= scrollbarWidth;
     this.toolbar_.style.right = toolbarRight + 'px';
     this.toolbar_.style.bottom = toolbarBottom + 'px';
 
@@ -325,16 +428,6 @@ PDFViewer.prototype = {
     } else {
       this.pageIndicator_.style.visibility = 'hidden';
     }
-
-    var position = this.viewport_.position;
-    var zoom = this.viewport_.zoom;
-    // Notify the plugin of the viewport change.
-    this.plugin_.postMessage({
-      type: 'viewport',
-      zoom: zoom,
-      xOffset: position.x,
-      yOffset: position.y
-    });
 
     var visiblePageDimensions = this.viewport_.getPageScreenRect(visiblePage);
     var size = this.viewport_.size;
@@ -357,6 +450,10 @@ PDFViewer.prototype = {
    */
   handleScriptingMessage_: function(message) {
     switch (message.data.type.toString()) {
+      case 'getAccessibilityJSON':
+      case 'loadPreviewPage':
+        this.plugin_.postMessage(message.data);
+        break;
       case 'resetPrintPreviewMode':
         if (!this.inPrintPreviewMode_) {
           this.inPrintPreviewMode_ = true;
@@ -387,9 +484,11 @@ PDFViewer.prototype = {
                       message.data.pageNumbers.length : 0)
         });
         break;
-      case 'loadPreviewPage':
-      case 'getAccessibilityJSON':
-        this.plugin_.postMessage(message.data);
+      case 'sendKeyEvent':
+        var e = document.createEvent('Event');
+        e.initEvent('scriptingKeypress');
+        e.keyCode = message.data.keyCode;
+        this.handleKeyEvent_(e);
         break;
     }
 

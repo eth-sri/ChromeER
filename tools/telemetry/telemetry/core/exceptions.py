@@ -1,4 +1,4 @@
-# Copyright (c) 2013 The Chromium Authors. All rights reserved.
+# Copyright 2013 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -42,6 +42,10 @@ class BrowserConnectionGoneException(BrowserGoneException):
 
 class ProcessGoneException(Exception):
   """Represents a process that no longer exists for an unknown reason."""
+
+
+class IntentionalException(Exception):
+  """Represent an exception raised by a unittest which is not printed."""
 
 
 class LoginException(Exception):

@@ -21,11 +21,13 @@
 #include "ui/app_list/search_box_model.h"
 #include "ui/app_list/views/app_list_item_view.h"
 #include "ui/app_list/views/apps_container_view.h"
+#include "ui/app_list/views/apps_grid_view.h"
 #include "ui/app_list/views/contents_switcher_view.h"
 #include "ui/app_list/views/contents_view.h"
 #include "ui/app_list/views/search_box_view.h"
 #include "ui/views/controls/textfield/textfield.h"
 #include "ui/views/layout/box_layout.h"
+#include "ui/views/layout/fill_layout.h"
 #include "ui/views/widget/widget.h"
 
 namespace app_list {
@@ -38,7 +40,31 @@ const int kInnerPadding = 1;
 // The maximum allowed time to wait for icon loading in milliseconds.
 const int kMaxIconLoadingWaitTimeInMs = 50;
 
-const int kContentsViewIndex = 1;
+// A view that holds another view and takes its preferred size. This is used for
+// wrapping the search box view so it still gets laid out while hidden. This is
+// a separate class so it can notify the main view on search box visibility
+// change.
+class SearchBoxContainerView : public views::View {
+ public:
+  SearchBoxContainerView(AppListMainView* host, SearchBoxView* search_box)
+      : host_(host), search_box_(search_box) {
+    SetLayoutManager(new views::FillLayout());
+    AddChildView(search_box);
+  }
+  virtual ~SearchBoxContainerView() {}
+
+ private:
+  // Overridden from views::View:
+  virtual void ChildVisibilityChanged(views::View* child) OVERRIDE {
+    DCHECK_EQ(search_box_, child);
+    host_->NotifySearchBoxVisibilityChanged();
+  }
+
+  AppListMainView* host_;
+  SearchBoxView* search_box_;
+
+  DISALLOW_COPY_AND_ASSIGN(SearchBoxContainerView);
+};
 
 }  // namespace
 
@@ -83,41 +109,48 @@ class AppListMainView::IconLoader : public AppListItemObserver {
 // AppListMainView:
 
 AppListMainView::AppListMainView(AppListViewDelegate* delegate,
-                                 PaginationModel* pagination_model,
+                                 int initial_apps_page,
                                  gfx::NativeView parent)
     : delegate_(delegate),
-      pagination_model_(pagination_model),
       model_(delegate->GetModel()),
       search_box_view_(NULL),
       contents_view_(NULL),
+      contents_switcher_view_(NULL),
       weak_ptr_factory_(this) {
-  // Starts icon loading early.
-  PreloadIcons(parent);
-
   SetLayoutManager(new views::BoxLayout(views::BoxLayout::kVertical,
                                         kInnerPadding,
                                         kInnerPadding,
                                         kInnerPadding));
 
   search_box_view_ = new SearchBoxView(this, delegate);
-  AddChildView(search_box_view_);
-  AddContentsView();
-  if (app_list::switches::IsExperimentalAppListEnabled())
-    AddChildView(new ContentsSwitcherView(contents_view_));
+  AddChildView(new SearchBoxContainerView(this, search_box_view_));
+  AddContentsViews();
+
+  // Switch the apps grid view to the specified page.
+  app_list::PaginationModel* pagination_model = GetAppsPaginationModel();
+  if (pagination_model->is_valid_page(initial_apps_page))
+    pagination_model->SelectPage(initial_apps_page, false);
+
+  // Starts icon loading early.
+  PreloadIcons(parent);
 }
 
-void AppListMainView::AddContentsView() {
-  contents_view_ = new ContentsView(
-      this, pagination_model_, model_, delegate_);
-  AddChildViewAt(contents_view_, kContentsViewIndex);
+void AppListMainView::AddContentsViews() {
+  contents_view_ = new ContentsView(this);
+  if (app_list::switches::IsExperimentalAppListEnabled()) {
+    contents_switcher_view_ = new ContentsSwitcherView(contents_view_);
+    contents_view_->set_contents_switcher_view(contents_switcher_view_);
+  }
+  contents_view_->InitNamedPages(model_, delegate_);
+  AddChildView(contents_view_);
+  if (contents_switcher_view_)
+    AddChildView(contents_switcher_view_);
 
   search_box_view_->set_contents_view(contents_view_);
 
-#if defined(USE_AURA)
   contents_view_->SetPaintToLayer(true);
   contents_view_->SetFillsBoundsOpaquely(false);
   contents_view_->layer()->SetMasksToBounds(true);
-#endif
 }
 
 AppListMainView::~AppListMainView() {
@@ -162,20 +195,28 @@ void AppListMainView::ModelChanged() {
   search_box_view_->ModelChanged();
   delete contents_view_;
   contents_view_ = NULL;
-  pagination_model_->SelectPage(0, false /* animate */);
-  AddContentsView();
+  if (contents_switcher_view_) {
+    delete contents_switcher_view_;
+    contents_switcher_view_ = NULL;
+  }
+  AddContentsViews();
   Layout();
 }
 
-void AppListMainView::OnContentsViewShowStateChanged() {
-  search_box_view_->SetVisible(contents_view_->show_state() !=
-                               ContentsView::SHOW_START_PAGE);
+void AppListMainView::UpdateSearchBoxVisibility() {
+  bool visible =
+      !contents_view_->IsNamedPageActive(ContentsView::NAMED_PAGE_START) ||
+      contents_view_->IsShowingSearchResults();
+  search_box_view_->SetVisible(visible);
+  if (visible && GetWidget()->IsVisible())
+    search_box_view_->search_box()->RequestFocus();
 }
 
-void AppListMainView::OnStartPageSearchButtonPressed() {
+void AppListMainView::OnStartPageSearchTextfieldChanged(
+    const base::string16& new_contents) {
   search_box_view_->SetVisible(true);
-  search_box_view_->search_box()->SetText(base::string16());
-  search_box_view_->RequestFocus();
+  search_box_view_->search_box()->SetText(new_contents);
+  search_box_view_->search_box()->RequestFocus();
 }
 
 void AppListMainView::SetDragAndDropHostOfCurrentAppList(
@@ -187,16 +228,27 @@ bool AppListMainView::ShouldCenterWindow() const {
   return delegate_->ShouldCenterWindow();
 }
 
+PaginationModel* AppListMainView::GetAppsPaginationModel() {
+  return contents_view_->apps_container_view()
+      ->apps_grid_view()
+      ->pagination_model();
+}
+
 void AppListMainView::PreloadIcons(gfx::NativeView parent) {
   float scale_factor = 1.0f;
   if (parent)
     scale_factor = ui::GetScaleFactorForNativeView(parent);
 
-  // |pagination_model| could have -1 as the initial selected page and
+  // The PaginationModel could have -1 as the initial selected page and
   // assumes first page (i.e. index 0) will be used in this case.
-  const int selected_page = std::max(0, pagination_model_->selected_page());
+  const int selected_page =
+      std::max(0, GetAppsPaginationModel()->selected_page());
 
-  const int tiles_per_page = kPreferredCols * kPreferredRows;
+  const AppsGridView* const apps_grid_view =
+      contents_view_->apps_container_view()->apps_grid_view();
+  const int tiles_per_page =
+      apps_grid_view->cols() * apps_grid_view->rows_per_page();
+
   const int start_model_index = selected_page * tiles_per_page;
   const int end_model_index =
       std::min(static_cast<int>(model_->top_level_item_list()->item_count()),
@@ -228,10 +280,11 @@ void AppListMainView::OnItemIconLoaded(IconLoader* loader) {
   }
 }
 
-void AppListMainView::ChildVisibilityChanged(views::View* child) {
+void AppListMainView::NotifySearchBoxVisibilityChanged() {
   // Repaint the AppListView's background which will repaint the background for
-  // the search box.
-  if (child == search_box_view_ && parent())
+  // the search box. This is needed because this view paints to a layer and
+  // won't propagate paints upward.
+  if (parent())
     parent()->SchedulePaint();
 }
 
@@ -254,6 +307,7 @@ void AppListMainView::QueryChanged(SearchBoxView* sender) {
   base::TrimWhitespace(model_->search_box()->text(), base::TRIM_ALL, &query);
   bool should_show_search = !query.empty();
   contents_view_->ShowSearchResults(should_show_search);
+  UpdateSearchBoxVisibility();
 
   if (should_show_search)
     delegate_->StartSearch();

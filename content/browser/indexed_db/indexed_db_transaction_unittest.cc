@@ -14,6 +14,21 @@
 
 namespace content {
 
+class AbortObserver {
+ public:
+  AbortObserver() : abort_task_called_(false) {}
+
+  void AbortTask(IndexedDBTransaction* transaction) {
+    abort_task_called_ = true;
+  }
+
+  bool abort_task_called() const { return abort_task_called_; }
+
+ private:
+  bool abort_task_called_;
+  DISALLOW_COPY_AND_ASSIGN(AbortObserver);
+};
+
 class IndexedDBTransactionTest : public testing::Test {
  public:
   IndexedDBTransactionTest() {
@@ -37,6 +52,11 @@ class IndexedDBTransactionTest : public testing::Test {
 
   void RunPostedTasks() { message_loop_.RunUntilIdle(); }
   void DummyOperation(IndexedDBTransaction* transaction) {}
+  void AbortableOperation(AbortObserver* observer,
+                          IndexedDBTransaction* transaction) {
+    transaction->ScheduleAbortTask(
+        base::Bind(&AbortObserver::AbortTask, base::Unretained(observer)));
+  }
 
  protected:
   scoped_refptr<IndexedDBFakeBackingStore> backing_store_;
@@ -48,8 +68,9 @@ class IndexedDBTransactionTest : public testing::Test {
   DISALLOW_COPY_AND_ASSIGN(IndexedDBTransactionTest);
 };
 
-class IndexedDBTransactionTestMode : public IndexedDBTransactionTest,
-  public testing::WithParamInterface<indexed_db::TransactionMode> {
+class IndexedDBTransactionTestMode
+    : public IndexedDBTransactionTest,
+      public testing::WithParamInterface<blink::WebIDBTransactionMode> {
  public:
   IndexedDBTransactionTestMode() {}
  private:
@@ -59,12 +80,12 @@ class IndexedDBTransactionTestMode : public IndexedDBTransactionTest,
 TEST_F(IndexedDBTransactionTest, Timeout) {
   const int64 id = 0;
   const std::set<int64> scope;
-  const bool commit_success = true;
+  const leveldb::Status commit_success = leveldb::Status::OK();
   scoped_refptr<IndexedDBTransaction> transaction = new IndexedDBTransaction(
       id,
       new MockIndexedDBDatabaseCallbacks(),
       scope,
-      indexed_db::TRANSACTION_READ_WRITE,
+      blink::WebIDBTransactionModeReadWrite,
       db_,
       new IndexedDBFakeBackingStore::FakeTransaction(commit_success));
   db_->TransactionCreated(transaction);
@@ -103,12 +124,12 @@ TEST_F(IndexedDBTransactionTest, Timeout) {
 TEST_F(IndexedDBTransactionTest, NoTimeoutReadOnly) {
   const int64 id = 0;
   const std::set<int64> scope;
-  const bool commit_success = true;
+  const leveldb::Status commit_success = leveldb::Status::OK();
   scoped_refptr<IndexedDBTransaction> transaction = new IndexedDBTransaction(
       id,
       new MockIndexedDBDatabaseCallbacks(),
       scope,
-      indexed_db::TRANSACTION_READ_ONLY,
+      blink::WebIDBTransactionModeReadOnly,
       db_,
       new IndexedDBFakeBackingStore::FakeTransaction(commit_success));
   db_->TransactionCreated(transaction);
@@ -132,32 +153,17 @@ TEST_F(IndexedDBTransactionTest, NoTimeoutReadOnly) {
   EXPECT_FALSE(transaction->IsTimeoutTimerRunning());
 }
 
-class AbortObserver {
- public:
-  AbortObserver() : abort_task_called_(false) {}
-
-  void AbortTask(IndexedDBTransaction* transaction) {
-    abort_task_called_ = true;
-  }
-
-  bool abort_task_called() const { return abort_task_called_; }
-
- private:
-  bool abort_task_called_;
-  DISALLOW_COPY_AND_ASSIGN(AbortObserver);
-};
-
 TEST_P(IndexedDBTransactionTestMode, ScheduleNormalTask) {
   const int64 id = 0;
   const std::set<int64> scope;
-  const bool commit_failure = false;
+  const leveldb::Status commit_success = leveldb::Status::OK();
   scoped_refptr<IndexedDBTransaction> transaction = new IndexedDBTransaction(
       id,
       new MockIndexedDBDatabaseCallbacks(),
       scope,
       GetParam(),
       db_,
-      new IndexedDBFakeBackingStore::FakeTransaction(commit_failure));
+      new IndexedDBFakeBackingStore::FakeTransaction(commit_success));
 
   EXPECT_FALSE(transaction->HasPendingTasks());
   EXPECT_TRUE(transaction->IsTaskQueueEmpty());
@@ -174,7 +180,7 @@ TEST_P(IndexedDBTransactionTestMode, ScheduleNormalTask) {
   EXPECT_TRUE(transaction->preemptive_task_queue_.empty());
 
   transaction->ScheduleTask(
-      IndexedDBDatabase::NORMAL_TASK,
+      blink::WebIDBTaskTypeNormal,
       base::Bind(&IndexedDBTransactionTest::DummyOperation,
                  base::Unretained(this)));
 
@@ -212,12 +218,12 @@ TEST_P(IndexedDBTransactionTestMode, ScheduleNormalTask) {
 TEST_F(IndexedDBTransactionTest, SchedulePreemptiveTask) {
   const int64 id = 0;
   const std::set<int64> scope;
-  const bool commit_failure = false;
+  const leveldb::Status commit_failure = leveldb::Status::Corruption("Ouch.");
   scoped_refptr<IndexedDBTransaction> transaction = new IndexedDBTransaction(
       id,
       new MockIndexedDBDatabaseCallbacks(),
       scope,
-      indexed_db::TRANSACTION_VERSION_CHANGE,
+      blink::WebIDBTransactionModeVersionChange,
       db_,
       new IndexedDBFakeBackingStore::FakeTransaction(commit_failure));
 
@@ -236,7 +242,7 @@ TEST_F(IndexedDBTransactionTest, SchedulePreemptiveTask) {
   EXPECT_TRUE(transaction->preemptive_task_queue_.empty());
 
   transaction->ScheduleTask(
-      IndexedDBDatabase::PREEMPTIVE_TASK,
+      blink::WebIDBTaskTypePreemptive,
       base::Bind(&IndexedDBTransactionTest::DummyOperation,
                  base::Unretained(this)));
   transaction->AddPreemptiveEvent();
@@ -273,7 +279,7 @@ TEST_F(IndexedDBTransactionTest, SchedulePreemptiveTask) {
 TEST_P(IndexedDBTransactionTestMode, AbortTasks) {
   const int64 id = 0;
   const std::set<int64> scope;
-  const bool commit_failure = false;
+  const leveldb::Status commit_failure = leveldb::Status::Corruption("Ouch.");
   scoped_refptr<IndexedDBTransaction> transaction = new IndexedDBTransaction(
       id,
       new MockIndexedDBDatabaseCallbacks(),
@@ -285,9 +291,9 @@ TEST_P(IndexedDBTransactionTestMode, AbortTasks) {
 
   AbortObserver observer;
   transaction->ScheduleTask(
-      base::Bind(&IndexedDBTransactionTest::DummyOperation,
-                 base::Unretained(this)),
-      base::Bind(&AbortObserver::AbortTask, base::Unretained(&observer)));
+      base::Bind(&IndexedDBTransactionTest::AbortableOperation,
+                 base::Unretained(this),
+                 base::Unretained(&observer)));
 
   // Pump the message loop so that the transaction completes all pending tasks,
   // otherwise it will defer the commit.
@@ -303,7 +309,7 @@ TEST_P(IndexedDBTransactionTestMode, AbortTasks) {
 TEST_P(IndexedDBTransactionTestMode, AbortPreemptive) {
   const int64 id = 0;
   const std::set<int64> scope;
-  const bool commit_success = true;
+  const leveldb::Status commit_success = leveldb::Status::OK();
   scoped_refptr<IndexedDBTransaction> transaction = new IndexedDBTransaction(
       id,
       new MockIndexedDBDatabaseCallbacks(),
@@ -318,7 +324,7 @@ TEST_P(IndexedDBTransactionTestMode, AbortPreemptive) {
   EXPECT_FALSE(transaction->IsTimeoutTimerRunning());
 
   transaction->ScheduleTask(
-      IndexedDBDatabase::PREEMPTIVE_TASK,
+      blink::WebIDBTaskTypePreemptive,
       base::Bind(&IndexedDBTransactionTest::DummyOperation,
                  base::Unretained(this)));
   EXPECT_EQ(0, transaction->pending_preemptive_events_);
@@ -351,11 +357,9 @@ TEST_P(IndexedDBTransactionTestMode, AbortPreemptive) {
             transaction->diagnostics().tasks_scheduled);
 }
 
-static const indexed_db::TransactionMode kTestModes[] = {
-  indexed_db::TRANSACTION_READ_ONLY,
-  indexed_db::TRANSACTION_READ_WRITE,
-  indexed_db::TRANSACTION_VERSION_CHANGE
-};
+static const blink::WebIDBTransactionMode kTestModes[] = {
+    blink::WebIDBTransactionModeReadOnly, blink::WebIDBTransactionModeReadWrite,
+    blink::WebIDBTransactionModeVersionChange};
 
 INSTANTIATE_TEST_CASE_P(IndexedDBTransactions,
                         IndexedDBTransactionTestMode,

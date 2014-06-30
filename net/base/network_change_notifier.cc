@@ -151,6 +151,11 @@ class HistogramWatcher
           UMA_HISTOGRAM_TIMES("NCN.CM.FastestRTTOnNone",
                               fastest_RTT_since_last_connection_change_);
           break;
+        case NetworkChangeNotifier::CONNECTION_BLUETOOTH:
+          UMA_HISTOGRAM_TIMES("NCN.CM.FirstReadOnBluetooth",
+                              first_byte_after_connection_change_);
+          UMA_HISTOGRAM_TIMES("NCN.CM.FastestRTTOnBluetooth",
+                              fastest_RTT_since_last_connection_change_);
       }
     }
     if (peak_kbps_since_last_connection_change_) {
@@ -183,6 +188,10 @@ class HistogramWatcher
           UMA_HISTOGRAM_COUNTS("NCN.CM.PeakKbpsOnNone",
                                peak_kbps_since_last_connection_change_);
           break;
+        case NetworkChangeNotifier::CONNECTION_BLUETOOTH:
+          UMA_HISTOGRAM_COUNTS("NCN.CM.PeakKbpsOnBluetooth",
+                               peak_kbps_since_last_connection_change_);
+          break;
       }
     }
     switch (last_connection_type_) {
@@ -213,6 +222,10 @@ class HistogramWatcher
       case NetworkChangeNotifier::CONNECTION_NONE:
         UMA_HISTOGRAM_LONG_TIMES("NCN.CM.TimeOnNone", state_duration);
         UMA_HISTOGRAM_COUNTS("NCN.CM.KBTransferedOnNone", kilobytes_read);
+        break;
+      case NetworkChangeNotifier::CONNECTION_BLUETOOTH:
+        UMA_HISTOGRAM_LONG_TIMES("NCN.CM.TimeOnBluetooth", state_duration);
+        UMA_HISTOGRAM_COUNTS("NCN.CM.KBTransferedOnBluetooth", kilobytes_read);
         break;
     }
 
@@ -540,13 +553,14 @@ const char* NetworkChangeNotifier::ConnectionTypeToString(
     "CONNECTION_2G",
     "CONNECTION_3G",
     "CONNECTION_4G",
-    "CONNECTION_NONE"
+    "CONNECTION_NONE",
+    "CONNECTION_BLUETOOTH"
   };
   COMPILE_ASSERT(
       arraysize(kConnectionTypeNames) ==
-          NetworkChangeNotifier::CONNECTION_NONE + 1,
+          NetworkChangeNotifier::CONNECTION_LAST + 1,
       ConnectionType_name_count_mismatch);
-  if (type < CONNECTION_UNKNOWN || type > CONNECTION_NONE) {
+  if (type < CONNECTION_UNKNOWN || type > CONNECTION_LAST) {
     NOTREACHED();
     return "CONNECTION_INVALID";
   }
@@ -625,6 +639,7 @@ bool NetworkChangeNotifier::IsConnectionCellular(ConnectionType type) {
     case CONNECTION_ETHERNET:
     case CONNECTION_WIFI:
     case CONNECTION_NONE:
+    case CONNECTION_BLUETOOTH:
       is_cellular = false;
       break;
   }
@@ -695,6 +710,25 @@ void NetworkChangeNotifier::RemoveNetworkChangeObserver(
   }
 }
 
+// static
+void NetworkChangeNotifier::NotifyObserversOfIPAddressChangeForTests() {
+  if (g_network_change_notifier)
+    g_network_change_notifier->NotifyObserversOfIPAddressChangeImpl();
+}
+
+// static
+void NetworkChangeNotifier::NotifyObserversOfConnectionTypeChangeForTests(
+    ConnectionType type) {
+  if (g_network_change_notifier)
+    g_network_change_notifier->NotifyObserversOfConnectionTypeChangeImpl(type);
+}
+
+// static
+void NetworkChangeNotifier::SetTestNotificationsOnly(bool test_only) {
+  if (g_network_change_notifier)
+    g_network_change_notifier->test_notifications_only_ = test_only;
+}
+
 NetworkChangeNotifier::NetworkChangeNotifier(
     const NetworkChangeCalculatorParams& params
         /*= NetworkChangeCalculatorParams()*/)
@@ -711,7 +745,8 @@ NetworkChangeNotifier::NetworkChangeNotifier(
         new ObserverListThreadSafe<NetworkChangeObserver>(
             ObserverListBase<NetworkChangeObserver>::NOTIFY_EXISTING_ONLY)),
       network_state_(new NetworkState()),
-      network_change_calculator_(new NetworkChangeCalculator(params)) {
+      network_change_calculator_(new NetworkChangeCalculator(params)),
+      test_notifications_only_(false) {
   DCHECK(!g_network_change_notifier);
   g_network_change_notifier = this;
   network_change_calculator_->Init();
@@ -726,17 +761,35 @@ NetworkChangeNotifier::GetAddressTrackerInternal() const {
 
 // static
 void NetworkChangeNotifier::NotifyObserversOfIPAddressChange() {
-  if (g_network_change_notifier) {
-    g_network_change_notifier->ip_address_observer_list_->Notify(
-        &IPAddressObserver::OnIPAddressChanged);
+  if (g_network_change_notifier &&
+      !g_network_change_notifier->test_notifications_only_) {
+    g_network_change_notifier->NotifyObserversOfIPAddressChangeImpl();
+  }
+}
+
+// static
+void NetworkChangeNotifier::NotifyObserversOfConnectionTypeChange() {
+  if (g_network_change_notifier &&
+      !g_network_change_notifier->test_notifications_only_) {
+    g_network_change_notifier->NotifyObserversOfConnectionTypeChangeImpl(
+        GetConnectionType());
+  }
+}
+
+// static
+void NetworkChangeNotifier::NotifyObserversOfNetworkChange(
+    ConnectionType type) {
+  if (g_network_change_notifier &&
+      !g_network_change_notifier->test_notifications_only_) {
+    g_network_change_notifier->NotifyObserversOfNetworkChangeImpl(type);
   }
 }
 
 // static
 void NetworkChangeNotifier::NotifyObserversOfDNSChange() {
-  if (g_network_change_notifier) {
-    g_network_change_notifier->resolver_state_observer_list_->Notify(
-        &DNSObserver::OnDNSChanged);
+  if (g_network_change_notifier &&
+      !g_network_change_notifier->test_notifications_only_) {
+    g_network_change_notifier->NotifyObserversOfDNSChangeImpl();
   }
 }
 
@@ -748,21 +801,54 @@ void NetworkChangeNotifier::SetDnsConfig(const DnsConfig& config) {
   NotifyObserversOfDNSChange();
 }
 
-void NetworkChangeNotifier::NotifyObserversOfConnectionTypeChange() {
-  if (g_network_change_notifier) {
-    g_network_change_notifier->connection_type_observer_list_->Notify(
-        &ConnectionTypeObserver::OnConnectionTypeChanged,
-        GetConnectionType());
-  }
+// static
+NetworkChangeNotifier::ConnectionType
+NetworkChangeNotifier::ConnectionTypeFromInterfaces() {
+  NetworkInterfaceList interfaces;
+  if (!GetNetworkList(&interfaces, EXCLUDE_HOST_SCOPE_VIRTUAL_INTERFACES))
+    return CONNECTION_UNKNOWN;
+  return ConnectionTypeFromInterfaceList(interfaces);
 }
 
-void NetworkChangeNotifier::NotifyObserversOfNetworkChange(
-    ConnectionType type) {
-  if (g_network_change_notifier) {
-    g_network_change_notifier->network_change_observer_list_->Notify(
-        &NetworkChangeObserver::OnNetworkChanged,
-        type);
+//static
+NetworkChangeNotifier::ConnectionType
+NetworkChangeNotifier::ConnectionTypeFromInterfaceList(
+    const NetworkInterfaceList& interfaces) {
+  bool first = true;
+  ConnectionType result = CONNECTION_UNKNOWN;
+  for (size_t i = 0; i < interfaces.size(); ++i) {
+#if defined(OS_WIN)
+    if (interfaces[i].friendly_name == "Teredo Tunneling Pseudo-Interface")
+      continue;
+#endif
+    if (first) {
+      first = false;
+      result = interfaces[i].type;
+    } else if (result != interfaces[i].type) {
+      return CONNECTION_UNKNOWN;
+    }
   }
+  return result;
+}
+
+void NetworkChangeNotifier::NotifyObserversOfIPAddressChangeImpl() {
+  ip_address_observer_list_->Notify(&IPAddressObserver::OnIPAddressChanged);
+}
+
+void NetworkChangeNotifier::NotifyObserversOfConnectionTypeChangeImpl(
+    ConnectionType type) {
+  connection_type_observer_list_->Notify(
+      &ConnectionTypeObserver::OnConnectionTypeChanged, type);
+}
+
+void NetworkChangeNotifier::NotifyObserversOfNetworkChangeImpl(
+    ConnectionType type) {
+  network_change_observer_list_->Notify(
+      &NetworkChangeObserver::OnNetworkChanged, type);
+}
+
+void NetworkChangeNotifier::NotifyObserversOfDNSChangeImpl() {
+  resolver_state_observer_list_->Notify(&DNSObserver::OnDNSChanged);
 }
 
 NetworkChangeNotifier::DisableForTest::DisableForTest()

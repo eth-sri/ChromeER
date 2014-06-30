@@ -15,7 +15,10 @@ class ToughDomMemoryCasesPage(page_module.Page):
     self.archive_data_file = 'data/tough_dom_memory_cases.json'
 
   def RunStressMemory(self, action_runner):
-    action_runner.RunAction(ScrollAction())
+    interaction = action_runner.BeginGestureInteraction(
+        'ScrollAction', is_smooth=True)
+    action_runner.ScrollPage()
+    interaction.End()
 
 class ToughDomMemoryCasesPageSet(page_set_module.PageSet):
 
@@ -27,7 +30,8 @@ class ToughDomMemoryCasesPageSet(page_set_module.PageSet):
   def __init__(self):
     super(ToughDomMemoryCasesPageSet, self).__init__(
       user_agent_type='desktop',
-      archive_data_file='data/tough_dom_memory_cases.json')
+      archive_data_file='data/tough_dom_memory_cases.json',
+      bucket=page_set_module.PARTNER_BUCKET)
 
     urls_list = [
       # pylint: disable=C0301

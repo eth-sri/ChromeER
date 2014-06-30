@@ -1,10 +1,9 @@
-# Copyright (c) 2012 The Chromium Authors. All rights reserved.
+# Copyright 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
 import collections
 import copy
-import glob
 import logging
 import optparse
 import os
@@ -15,6 +14,7 @@ import time
 
 from telemetry import decorators
 from telemetry.core import browser_finder
+from telemetry.core import browser_info
 from telemetry.core import exceptions
 from telemetry.core import util
 from telemetry.core import wpr_modes
@@ -23,9 +23,9 @@ from telemetry.page import cloud_storage
 from telemetry.page import page_filter
 from telemetry.page import page_runner_repeat
 from telemetry.page import page_test
-from telemetry.page import results_options
 from telemetry.page.actions import navigate
 from telemetry.page.actions import page_action
+from telemetry.results import results_options
 from telemetry.util import exception_formatter
 
 
@@ -41,12 +41,11 @@ class _RunState(object):
     self.repeat_state = None
 
   def StartBrowserIfNeeded(self, test, page_set, page, possible_browser,
-                           credentials_path, archive_path):
+                           credentials_path, archive_path, finder_options):
     started_browser = not self.browser
     # Create a browser.
     if not self.browser:
-      test.CustomizeBrowserOptionsForSinglePage(page,
-                                                possible_browser.finder_options)
+      test.CustomizeBrowserOptionsForSinglePage(page, finder_options)
       self.browser = possible_browser.Create()
       self.browser.credentials.credentials_path = credentials_path
 
@@ -99,9 +98,6 @@ class _RunState(object):
     if self.browser.supports_tab_control and test.close_tabs_before_run:
       # Create a tab if there's none.
       if len(self.browser.tabs) == 0:
-        # TODO(nduca/tonyg): Remove this line. Added as part of crbug.com/348337
-        # chasing.
-        logging.warning('Making a new tab\n')
         self.browser.tabs.New()
 
       # Ensure only one tab is open, unless the test is a multi-tab test.
@@ -137,7 +133,7 @@ class _RunState(object):
     is_repeating = (finder_options.page_repeat != 1 or
                     finder_options.pageset_repeat != 1)
     if is_repeating:
-      output_file = _GetSequentialFileName(output_file)
+      output_file = util.GetSequentialFileName(output_file)
     self.browser.StartProfiling(finder_options.profiler, output_file)
 
   def StopProfiling(self):
@@ -217,6 +213,10 @@ def AddCommandLineArgs(parser):
       help='Run against live sites and ignore the Web Page Replay archives.')
   parser.add_option_group(group)
 
+  parser.add_option('-d', '--also-run-disabled-tests',
+                    dest='run_disabled_tests',
+                    action='store_true', default=False,
+                    help='Ignore @Disabled and @Enabled restrictions.')
 
 def ProcessCommandLineArgs(parser, args):
   page_filter.PageFilter.ProcessCommandLineArgs(parser, args)
@@ -234,8 +234,10 @@ def ProcessCommandLineArgs(parser, args):
 def _PrepareAndRunPage(test, page_set, expectations, finder_options,
                        browser_options, page, credentials_path,
                        possible_browser, results, state):
-  if browser_options.wpr_mode != wpr_modes.WPR_RECORD:
-    possible_browser.finder_options.browser_options.wpr_mode = (
+  if finder_options.use_live_sites:
+    browser_options.wpr_mode = wpr_modes.WPR_OFF
+  elif browser_options.wpr_mode != wpr_modes.WPR_RECORD:
+    browser_options.wpr_mode = (
         wpr_modes.WPR_REPLAY
         if page.archive_path and os.path.isfile(page.archive_path)
         else wpr_modes.WPR_OFF)
@@ -251,7 +253,13 @@ def _PrepareAndRunPage(test, page_set, expectations, finder_options,
         # If we are restarting the browser for each page customize the per page
         # options for just the current page before starting the browser.
       state.StartBrowserIfNeeded(test, page_set, page, possible_browser,
-                                 credentials_path, page.archive_path)
+                                 credentials_path, page.archive_path,
+                                 finder_options)
+      if not page.CanRunOnBrowser(browser_info.BrowserInfo(state.browser)):
+        logging.info('Skip test for page %s because browser is not supported.'
+                     % page.url)
+        results_for_current_run.StopTest(page)
+        return results
 
       expectation = expectations.GetExpectationForPage(state.browser, page)
 
@@ -302,9 +310,11 @@ def _UpdatePageSetArchivesIfChanged(page_set):
     try:
       cloud_storage.GetIfChanged(
           os.path.join(page_set.base_dir, page_set.credentials_path))
-    except (cloud_storage.CredentialsError, cloud_storage.PermissionError):
-      logging.warning('Cannot retrieve credential file: %s',
-                      page_set.credentials_path)
+    except (cloud_storage.CredentialsError, cloud_storage.PermissionError,
+            cloud_storage.CloudStorageError) as e:
+      logging.warning('Cannot retrieve credential file %s due to cloud storage '
+                      'error %s', page_set.credentials_path, str(e))
+
   # Scan every serving directory for .sha1 files
   # and download them from Cloud Storage. Assume all data is public.
   all_serving_dirs = page_set.serving_dirs.copy()
@@ -322,13 +332,12 @@ def _UpdatePageSetArchivesIfChanged(page_set):
             os.path.join(dirpath, filename))
         if extension != '.sha1':
           continue
-        cloud_storage.GetIfChanged(path)
+        cloud_storage.GetIfChanged(path, page_set.bucket)
 
 
 def Run(test, page_set, expectations, finder_options):
   """Runs a given test against a given page_set with the given options."""
   results = results_options.PrepareResults(test, finder_options)
-  browser_options = finder_options.browser_options
 
   test.ValidatePageSet(page_set)
 
@@ -345,12 +354,17 @@ def Run(test, page_set, expectations, finder_options):
         '\n')
     sys.exit(-1)
 
+  browser_options = possible_browser.finder_options.browser_options
   browser_options.browser_type = possible_browser.browser_type
-  browser_options.platform = possible_browser.platform
   test.CustomizeBrowserOptions(browser_options)
 
-  if not decorators.IsEnabled(
-      test, browser_options.browser_type, possible_browser.platform):
+  should_run = decorators.IsEnabled(test, possible_browser)
+
+  should_run = should_run or finder_options.run_disabled_tests
+
+  if not should_run:
+    logging.warning('You are trying to run a disabled test.')
+    logging.warning('Pass --also-run-disabled-tests to squelch this message.')
     return results
 
   # Reorder page set based on options.
@@ -370,13 +384,12 @@ def Run(test, page_set, expectations, finder_options):
       credentials_path = None
 
   # Set up user agent.
-  if page_set.user_agent_type:
-    browser_options.browser_user_agent_type = page_set.user_agent_type
+  browser_options.browser_user_agent_type = page_set.user_agent_type or None
 
   if finder_options.profiler:
     profiler_class = profiler_finder.FindProfiler(finder_options.profiler)
-    profiler_class.CustomizeBrowserOptions(possible_browser.browser_type,
-                                           possible_browser.finder_options)
+    profiler_class.CustomizeBrowserOptions(browser_options.browser_type,
+                                           finder_options)
 
   for page in list(pages):
     if not test.CanRunForPage(page):
@@ -505,13 +518,13 @@ def _RunPage(test, page, state, expectation, results, finder_options):
   page_state = PageState(page, test.TabForPage(page, state.browser))
 
   def ProcessError():
-    logging.error('%s:', page.url)
-    exception_formatter.PrintFormattedException()
     if expectation == 'fail':
-      logging.info('Error was expected\n')
+      msg = 'Expected exception while running %s' % page.url
       results.AddSuccess(page)
     else:
+      msg = 'Exception while running %s' % page.url
       results.AddError(page, sys.exc_info())
+    exception_formatter.PrintFormattedException(msg=msg)
 
   try:
     page_state.PreparePage(test)
@@ -524,13 +537,12 @@ def _RunPage(test, page, state, expectation, results, finder_options):
     raise
   except page_test.Failure:
     if expectation == 'fail':
-      logging.info('%s:', page.url)
-      exception_formatter.PrintFormattedException()
-      logging.info('Failure was expected\n')
+      exception_formatter.PrintFormattedException(
+          msg='Expected failure while running %s' % page.url)
       results.AddSuccess(page)
     else:
-      logging.warning('%s:', page.url)
-      exception_formatter.PrintFormattedException()
+      exception_formatter.PrintFormattedException(
+          msg='Failure while running %s' % page.url)
       results.AddFailure(page, sys.exc_info())
   except (util.TimeoutException, exceptions.LoginException,
           exceptions.ProfilingException):
@@ -542,8 +554,8 @@ def _RunPage(test, page, state, expectation, results, finder_options):
   except page_action.PageActionNotSupported as e:
     results.AddSkip(page, 'Unsupported page action: %s' % e)
   except Exception:
-    logging.warning('While running %s', page.url)
-    exception_formatter.PrintFormattedException()
+    exception_formatter.PrintFormattedException(
+        msg='Unhandled exception while running %s' % page.url)
     results.AddFailure(page, sys.exc_info())
   else:
     if expectation == 'fail':
@@ -551,18 +563,6 @@ def _RunPage(test, page, state, expectation, results, finder_options):
     results.AddSuccess(page)
   finally:
     page_state.CleanUpPage(test)
-
-
-def _GetSequentialFileName(base_name):
-  """Returns the next sequential file name based on |base_name| and the
-  existing files."""
-  index = 0
-  while True:
-    output_name = '%s_%03d' % (base_name, index)
-    if not glob.glob(output_name + '.*'):
-      break
-    index = index + 1
-  return output_name
 
 
 def _WaitForThermalThrottlingIfNeeded(platform):

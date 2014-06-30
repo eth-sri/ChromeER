@@ -232,6 +232,11 @@ public class Tab implements NavigationClient {
                 for (TabObserver observer : mObservers) observer.onUrlUpdated(Tab.this);
             }
         }
+
+        @Override
+        public void visibleSSLStateChanged() {
+            for (TabObserver observer : mObservers) observer.onSSLStateUpdated(Tab.this);
+        }
     }
 
     private class TabContextMenuPopulator extends ContextMenuPopulatorWrapper {
@@ -247,8 +252,8 @@ public class Tab implements NavigationClient {
     }
 
     private class TabWebContentsObserverAndroid extends WebContentsObserverAndroid {
-        public TabWebContentsObserverAndroid(ContentViewCore contentViewCore) {
-            super(contentViewCore);
+        public TabWebContentsObserverAndroid(WebContents webContents) {
+            super(webContents);
         }
 
         @Override
@@ -274,6 +279,13 @@ public class Tab implements NavigationClient {
             for (TabObserver observer : mObservers) {
                 observer.onDidStartProvisionalLoadForFrame(Tab.this, frameId, parentFrameId,
                         isMainFrame, validatedUrl, isErrorPage, isIframeSrcdoc);
+            }
+        }
+
+        @Override
+        public void didChangeBrandColor(int color) {
+            for (TabObserver observer : mObservers) {
+                observer.onDidChangeBrandColor(color);
             }
         }
     }
@@ -324,7 +336,7 @@ public class Tab implements NavigationClient {
      * Adds a {@link TabObserver} to be notified on {@link Tab} changes.
      * @param observer The {@link TabObserver} to add.
      */
-    public final void addObserver(TabObserver observer) {
+    public void addObserver(TabObserver observer) {
         mObservers.addObserver(observer);
     }
 
@@ -332,7 +344,7 @@ public class Tab implements NavigationClient {
      * Removes a {@link TabObserver}.
      * @param observer The {@link TabObserver} to remove.
      */
-    public final void removeObserver(TabObserver observer) {
+    public void removeObserver(TabObserver observer) {
         mObservers.removeObserver(observer);
     }
 
@@ -415,7 +427,8 @@ public class Tab implements NavigationClient {
                 // Policy will be ignored for null referrer url, 0 is just a placeholder.
                 // TODO(ppi): Should we pass Referrer jobject and add JNI methods to read it from
                 //            the native?
-                params.getReferrer() != null ? params.getReferrer().getPolicy() : 0);
+                params.getReferrer() != null ? params.getReferrer().getPolicy() : 0,
+                params.getIsRendererInitiated());
 
         TraceEvent.end();
 
@@ -701,6 +714,16 @@ public class Tab implements NavigationClient {
     }
 
     /**
+     * Replaces the current NativePage with a empty stand-in for a NativePage. This can be used
+     * to reduce memory pressure.
+     */
+    public void freezeNativePage() {
+        if (mNativePage == null || mNativePage instanceof FrozenNativePage) return;
+        assert mNativePage.getView().getParent() == null : "Cannot freeze visible native page";
+        mNativePage = FrozenNativePage.freeze(mNativePage);
+    }
+
+    /**
      * Hides the current {@link NativePage}, if any, and shows the {@link ContentViewCore}'s view.
      */
     protected void showRenderedPage() {
@@ -766,8 +789,8 @@ public class Tab implements NavigationClient {
         mContentViewCore = cvc;
 
         mWebContentsDelegate = createWebContentsDelegate();
-        mWebContentsObserver = new TabWebContentsObserverAndroid(mContentViewCore);
-        mVoiceSearchTabHelper = new VoiceSearchTabHelper(mContentViewCore);
+        mWebContentsObserver = new TabWebContentsObserverAndroid(mContentViewCore.getWebContents());
+        mVoiceSearchTabHelper = new VoiceSearchTabHelper(mContentViewCore.getWebContents());
 
         if (mContentViewClient != null) mContentViewCore.setContentViewClient(mContentViewClient);
 
@@ -1048,7 +1071,6 @@ public class Tab implements NavigationClient {
         mContentViewCore.onSizeChanged(originalWidth, originalHeight, 0, 0);
         mContentViewCore.onShow();
         mContentViewCore.attachImeAdapter();
-        for (TabObserver observer : mObservers) observer.onContentChanged(this);
         destroyNativePageInternal(previousNativePage);
         for (TabObserver observer : mObservers) {
             observer.onWebContentsSwapped(this, didStartLoad, didFinishLoad);
@@ -1123,7 +1145,8 @@ public class Tab implements NavigationClient {
     private native WebContents nativeGetWebContents(long nativeTabAndroid);
     private native Profile nativeGetProfileAndroid(long nativeTabAndroid);
     private native int nativeLoadUrl(long nativeTabAndroid, String url, String extraHeaders,
-            byte[] postData, int transition, String referrerUrl, int referrerPolicy);
+            byte[] postData, int transition, String referrerUrl, int referrerPolicy,
+            boolean isRendererInitiated);
     private native int nativeGetSecurityLevel(long nativeTabAndroid);
     private native void nativeSetActiveNavigationEntryTitleForUrl(long nativeTabAndroid, String url,
             String title);

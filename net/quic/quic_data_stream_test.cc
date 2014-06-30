@@ -19,19 +19,16 @@
 
 using base::StringPiece;
 using std::min;
-using testing::_;
 using testing::AnyNumber;
 using testing::InSequence;
 using testing::Return;
 using testing::SaveArg;
 using testing::StrictMock;
+using testing::_;
 
 namespace net {
 namespace test {
 namespace {
-
-// First non-reserved client stream ID.
-const QuicStreamId kStreamId = 5;
 
 const bool kIsServer = true;
 const bool kShouldProcessData = true;
@@ -98,12 +95,12 @@ class QuicDataStreamTest : public ::testing::TestWithParam<QuicVersion> {
     connection_ = new testing::StrictMock<MockConnection>(
         kIsServer, SupportedVersions(GetParam()));
     session_.reset(new testing::StrictMock<MockSession>(connection_));
-    stream_.reset(new TestStream(kStreamId, session_.get(),
+    stream_.reset(new TestStream(kClientDataStreamId1, session_.get(),
                                  stream_should_process_data));
-    stream2_.reset(new TestStream(kStreamId + 2, session_.get(),
-                                 stream_should_process_data));
+    stream2_.reset(new TestStream(kClientDataStreamId2, session_.get(),
+                                  stream_should_process_data));
     write_blocked_list_ =
-        QuicSessionPeer::GetWriteblockedStreams(session_.get());
+        QuicSessionPeer::GetWriteBlockedStreams(session_.get());
   }
 
  protected:
@@ -140,7 +137,7 @@ TEST_P(QuicDataStreamTest, ProcessHeadersAndBody) {
   stream_->OnStreamHeaders(headers);
   EXPECT_EQ(headers, stream_->data());
   stream_->OnStreamHeadersComplete(false, headers.size());
-  QuicStreamFrame frame(kStreamId, false, 0, MakeIOVector(body));
+  QuicStreamFrame frame(kClientDataStreamId1, false, 0, MakeIOVector(body));
   stream_->OnStreamFrame(frame);
 
   EXPECT_EQ(headers + body, stream_->data());
@@ -165,7 +162,8 @@ TEST_P(QuicDataStreamTest, ProcessHeadersAndBodyFragments) {
       size_t remaining_data = body.size() - offset;
       StringPiece fragment(body.data() + offset,
                            min(fragment_size, remaining_data));
-      QuicStreamFrame frame(kStreamId, false, offset, MakeIOVector(fragment));
+      QuicStreamFrame frame(kClientDataStreamId1, false, offset,
+                            MakeIOVector(fragment));
       stream_->OnStreamFrame(frame);
     }
     ASSERT_EQ(headers + body,
@@ -188,13 +186,14 @@ TEST_P(QuicDataStreamTest, ProcessHeadersAndBodyFragmentsSplit) {
     stream_->OnStreamHeadersComplete(false, headers.size());
 
     StringPiece fragment1(body.data(), split_point);
-    QuicStreamFrame frame1(kStreamId, false, 0, MakeIOVector(fragment1));
+    QuicStreamFrame frame1(kClientDataStreamId1, false, 0,
+                           MakeIOVector(fragment1));
     stream_->OnStreamFrame(frame1);
 
     StringPiece fragment2(body.data() + split_point,
                           body.size() - split_point);
-    QuicStreamFrame frame2(
-        kStreamId, false, split_point, MakeIOVector(fragment2));
+    QuicStreamFrame frame2(kClientDataStreamId1, false, split_point,
+                           MakeIOVector(fragment2));
     stream_->OnStreamFrame(frame2);
 
     ASSERT_EQ(headers + body,
@@ -211,7 +210,7 @@ TEST_P(QuicDataStreamTest, ProcessHeadersAndBodyReadv) {
   stream_->OnStreamHeaders(headers);
   EXPECT_EQ(headers, stream_->data());
   stream_->OnStreamHeadersComplete(false, headers.size());
-  QuicStreamFrame frame(kStreamId, false, 0, MakeIOVector(body));
+  QuicStreamFrame frame(kClientDataStreamId1, false, 0, MakeIOVector(body));
   stream_->OnStreamFrame(frame);
 
   char buffer[2048];
@@ -237,9 +236,8 @@ TEST_P(QuicDataStreamTest, ProcessHeadersAndBodyIncrementalReadv) {
   stream_->OnStreamHeaders(headers);
   EXPECT_EQ(headers, stream_->data());
   stream_->OnStreamHeadersComplete(false, headers.size());
-  QuicStreamFrame frame(kStreamId, false, 0, MakeIOVector(body));
+  QuicStreamFrame frame(kClientDataStreamId1, false, 0, MakeIOVector(body));
   stream_->OnStreamFrame(frame);
-
 
   char buffer[1];
   struct iovec vec;
@@ -262,9 +260,8 @@ TEST_P(QuicDataStreamTest, ProcessHeadersUsingReadvWithMultipleIovecs) {
   stream_->OnStreamHeaders(headers);
   EXPECT_EQ(headers, stream_->data());
   stream_->OnStreamHeadersComplete(false, headers.size());
-  QuicStreamFrame frame(kStreamId, false, 0, MakeIOVector(body));
+  QuicStreamFrame frame(kClientDataStreamId1, false, 0, MakeIOVector(body));
   stream_->OnStreamFrame(frame);
-
 
   char buffer1[1];
   char buffer2[1];
@@ -288,7 +285,6 @@ TEST_P(QuicDataStreamTest, StreamFlowControlBlocked) {
   if (GetParam() < QUIC_VERSION_17) {
     return;
   }
-  ValueRestore<bool> old_flag(&FLAGS_enable_quic_stream_flow_control_2, true);
 
   Initialize(kShouldProcessData);
 
@@ -305,9 +301,9 @@ TEST_P(QuicDataStreamTest, StreamFlowControlBlocked) {
   const uint64 kOverflow = 15;
   GenerateBody(&body, kWindow + kOverflow);
 
-  EXPECT_CALL(*connection_, SendBlocked(kStreamId));
-  EXPECT_CALL(*session_, WritevData(kStreamId, _, _, _, _)).WillOnce(
-      Return(QuicConsumedData(kWindow, true)));
+  EXPECT_CALL(*connection_, SendBlocked(kClientDataStreamId1));
+  EXPECT_CALL(*session_, WritevData(kClientDataStreamId1, _, _, _, _, _))
+      .WillOnce(Return(QuicConsumedData(kWindow, true)));
   stream_->WriteOrBufferData(body, false, NULL);
 
   // Should have sent as much as possible, resulting in no send window left.
@@ -327,7 +323,6 @@ TEST_P(QuicDataStreamTest, StreamFlowControlNoWindowUpdateIfNotConsumed) {
   if (GetParam() < QUIC_VERSION_17) {
     return;
   }
-  ValueRestore<bool> old_flag(&FLAGS_enable_quic_stream_flow_control_2, true);
 
   // Don't process data - it will be buffered instead.
   Initialize(!kShouldProcessData);
@@ -352,7 +347,7 @@ TEST_P(QuicDataStreamTest, StreamFlowControlNoWindowUpdateIfNotConsumed) {
   EXPECT_EQ(headers, stream_->data());
   stream_->OnStreamHeadersComplete(false, headers.size());
 
-  QuicStreamFrame frame1(kStreamId, false, 0, MakeIOVector(body));
+  QuicStreamFrame frame1(kClientDataStreamId1, false, 0, MakeIOVector(body));
   stream_->OnStreamFrame(frame1);
   EXPECT_EQ(kWindow - (kWindow / 3), QuicFlowControllerPeer::ReceiveWindowSize(
                                          stream_->flow_controller()));
@@ -360,7 +355,8 @@ TEST_P(QuicDataStreamTest, StreamFlowControlNoWindowUpdateIfNotConsumed) {
   // Now receive another frame which results in the receive window being over
   // half full. This should all be buffered, decreasing the receive window but
   // not sending WINDOW_UPDATE.
-  QuicStreamFrame frame2(kStreamId, false, kWindow / 3, MakeIOVector(body));
+  QuicStreamFrame frame2(kClientDataStreamId1, false, kWindow / 3,
+                         MakeIOVector(body));
   stream_->OnStreamFrame(frame2);
   EXPECT_EQ(
       kWindow - (2 * kWindow / 3),
@@ -374,7 +370,6 @@ TEST_P(QuicDataStreamTest, StreamFlowControlWindowUpdate) {
   if (GetParam() < QUIC_VERSION_17) {
     return;
   }
-  ValueRestore<bool> old_flag(&FLAGS_enable_quic_stream_flow_control_2, true);
 
   Initialize(kShouldProcessData);
 
@@ -395,7 +390,7 @@ TEST_P(QuicDataStreamTest, StreamFlowControlWindowUpdate) {
   EXPECT_EQ(headers, stream_->data());
   stream_->OnStreamHeadersComplete(false, headers.size());
 
-  QuicStreamFrame frame1(kStreamId, false, 0, MakeIOVector(body));
+  QuicStreamFrame frame1(kClientDataStreamId1, false, 0, MakeIOVector(body));
   stream_->OnStreamFrame(frame1);
   EXPECT_EQ(kWindow - (kWindow / 3), QuicFlowControllerPeer::ReceiveWindowSize(
                                          stream_->flow_controller()));
@@ -404,12 +399,13 @@ TEST_P(QuicDataStreamTest, StreamFlowControlWindowUpdate) {
   // half full.  This will trigger the stream to increase its receive window
   // offset and send a WINDOW_UPDATE. The result will be again an available
   // window of kWindow bytes.
-  QuicStreamFrame frame2(kStreamId, false, kWindow / 3, MakeIOVector(body));
-  EXPECT_CALL(
-      *connection_,
-      SendWindowUpdate(kStreamId, QuicFlowControllerPeer::ReceiveWindowOffset(
-                                      stream_->flow_controller()) +
-                                      2 * kWindow / 3));
+  QuicStreamFrame frame2(kClientDataStreamId1, false, kWindow / 3,
+                         MakeIOVector(body));
+  EXPECT_CALL(*connection_,
+              SendWindowUpdate(kClientDataStreamId1,
+                               QuicFlowControllerPeer::ReceiveWindowOffset(
+                                   stream_->flow_controller()) +
+                                   2 * kWindow / 3));
   stream_->OnStreamFrame(frame2);
   EXPECT_EQ(kWindow, QuicFlowControllerPeer::ReceiveWindowSize(
                          stream_->flow_controller()));
@@ -422,8 +418,8 @@ TEST_P(QuicDataStreamTest, ConnectionFlowControlWindowUpdate) {
   if (GetParam() < QUIC_VERSION_19) {
     return;
   }
-  ValueRestore<bool> old_flag2(&FLAGS_enable_quic_stream_flow_control_2, true);
-  ValueRestore<bool> old_flag(&FLAGS_enable_quic_connection_flow_control, true);
+  ValueRestore<bool> old_flag(&FLAGS_enable_quic_connection_flow_control_2,
+                              true);
 
   Initialize(kShouldProcessData);
 
@@ -453,21 +449,22 @@ TEST_P(QuicDataStreamTest, ConnectionFlowControlWindowUpdate) {
   // WINDOW_UPDATE for either stream, nor for the connection.
   string body;
   GenerateBody(&body, kWindow / 4);
-  QuicStreamFrame frame1(kStreamId, false, 0, MakeIOVector(body));
+  QuicStreamFrame frame1(kClientDataStreamId1, false, 0, MakeIOVector(body));
   stream_->OnStreamFrame(frame1);
-  QuicStreamFrame frame2(kStreamId + 2, false, 0, MakeIOVector(body));
+  QuicStreamFrame frame2(kClientDataStreamId2, false, 0, MakeIOVector(body));
   stream2_->OnStreamFrame(frame2);
 
   // Now receive a further single byte on one stream - again this does not
   // trigger a stream WINDOW_UPDATE, but now the connection flow control window
   // is over half full and thus a connection WINDOW_UPDATE is sent.
-  EXPECT_CALL(*connection_, SendWindowUpdate(kStreamId, _)).Times(0);
-  EXPECT_CALL(*connection_, SendWindowUpdate(kStreamId + 2, _)).Times(0);
+  EXPECT_CALL(*connection_, SendWindowUpdate(kClientDataStreamId1, _)).Times(0);
+  EXPECT_CALL(*connection_, SendWindowUpdate(kClientDataStreamId2, _)).Times(0);
   EXPECT_CALL(*connection_,
               SendWindowUpdate(0, QuicFlowControllerPeer::ReceiveWindowOffset(
                                       session_->flow_controller()) +
                                       1 + kWindow / 2));
-  QuicStreamFrame frame3(kStreamId, false, (kWindow / 4), MakeIOVector("a"));
+  QuicStreamFrame frame3(kClientDataStreamId1, false, (kWindow / 4),
+                         MakeIOVector("a"));
   stream_->OnStreamFrame(frame3);
 }
 
@@ -477,7 +474,6 @@ TEST_P(QuicDataStreamTest, StreamFlowControlViolation) {
   if (GetParam() < QUIC_VERSION_17) {
     return;
   }
-  ValueRestore<bool> old_flag(&FLAGS_enable_quic_stream_flow_control_2, true);
 
   // Stream should not process data, so that data gets buffered in the
   // sequencer, triggering flow control limits.
@@ -496,8 +492,9 @@ TEST_P(QuicDataStreamTest, StreamFlowControlViolation) {
   // Receive data to overflow the window, violating flow control.
   string body;
   GenerateBody(&body, kWindow + 1);
-  QuicStreamFrame frame(kStreamId, false, 0, MakeIOVector(body));
-  EXPECT_CALL(*connection_, SendConnectionClose(QUIC_FLOW_CONTROL_ERROR));
+  QuicStreamFrame frame(kClientDataStreamId1, false, 0, MakeIOVector(body));
+  EXPECT_CALL(*connection_,
+              SendConnectionClose(QUIC_FLOW_CONTROL_RECEIVED_TOO_MUCH_DATA));
   stream_->OnStreamFrame(frame);
 }
 
@@ -508,8 +505,8 @@ TEST_P(QuicDataStreamTest, ConnectionFlowControlViolation) {
   if (GetParam() < QUIC_VERSION_19) {
     return;
   }
-  ValueRestore<bool> old_flag2(&FLAGS_enable_quic_stream_flow_control_2, true);
-  ValueRestore<bool> old_flag(&FLAGS_enable_quic_connection_flow_control, true);
+  ValueRestore<bool> old_flag(&FLAGS_enable_quic_connection_flow_control_2,
+                              true);
 
   // Stream should not process data, so that data gets buffered in the
   // sequencer, triggering flow control limits.
@@ -532,9 +529,10 @@ TEST_P(QuicDataStreamTest, ConnectionFlowControlViolation) {
   string body;
   GenerateBody(&body, kConnectionWindow + 1);
   EXPECT_LT(body.size(),  kStreamWindow);
-  QuicStreamFrame frame(kStreamId, false, 0, MakeIOVector(body));
+  QuicStreamFrame frame(kClientDataStreamId1, false, 0, MakeIOVector(body));
 
-  EXPECT_CALL(*connection_, SendConnectionClose(QUIC_FLOW_CONTROL_ERROR));
+  EXPECT_CALL(*connection_,
+              SendConnectionClose(QUIC_FLOW_CONTROL_RECEIVED_TOO_MUCH_DATA));
   stream_->OnStreamFrame(frame);
 }
 
@@ -544,7 +542,6 @@ TEST_P(QuicDataStreamTest, StreamFlowControlFinNotBlocked) {
   if (GetParam() < QUIC_VERSION_17) {
     return;
   }
-  ValueRestore<bool> old_flag(&FLAGS_enable_quic_stream_flow_control_2, true);
 
   Initialize(kShouldProcessData);
 
@@ -557,9 +554,9 @@ TEST_P(QuicDataStreamTest, StreamFlowControlFinNotBlocked) {
   string body = "";
   bool fin = true;
 
-  EXPECT_CALL(*connection_, SendBlocked(kStreamId)).Times(0);
-  EXPECT_CALL(*session_, WritevData(kStreamId, _, _, _, _)).WillOnce(
-      Return(QuicConsumedData(0, fin)));
+  EXPECT_CALL(*connection_, SendBlocked(kClientDataStreamId1)).Times(0);
+  EXPECT_CALL(*session_, WritevData(kClientDataStreamId1, _, _, _, _, _))
+      .WillOnce(Return(QuicConsumedData(0, fin)));
 
   stream_->WriteOrBufferData(body, fin, NULL);
 }

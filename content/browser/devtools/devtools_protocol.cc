@@ -27,7 +27,8 @@ enum Error {
   kErrorInvalidRequest = -32600,
   kErrorNoSuchMethod = -32601,
   kErrorInvalidParams = -32602,
-  kErrorInternalError = -32603
+  kErrorInternalError = -32603,
+  kErrorServerError = -32000
 };
 
 }  // namespace
@@ -81,6 +82,11 @@ DevToolsProtocol::Command::InvalidParamResponse(const std::string& param) {
 scoped_refptr<DevToolsProtocol::Response>
 DevToolsProtocol::Command::NoSuchMethodErrorResponse() {
   return new Response(id_, kErrorNoSuchMethod, "No such method");
+}
+
+scoped_refptr<DevToolsProtocol::Response>
+DevToolsProtocol::Command::ServerErrorResponse(const std::string& message) {
+  return new Response(id_, kErrorServerError, message);
 }
 
 scoped_refptr<DevToolsProtocol::Response>
@@ -259,11 +265,10 @@ DevToolsProtocol::ParseResponse(
   if (!response_dict->GetInteger(kIdParam, &id))
     id = kNoId;
 
-  int error_code;
-  if (!response_dict->GetInteger(kErrorCodeParam, &error_code))
-    return new Response(id, kErrorInternalError, "Invalid response");
-
-  if (error_code) {
+  const base::DictionaryValue* error_dict;
+  if (response_dict->GetDictionary(kErrorParam, &error_dict)) {
+    int error_code = kErrorInternalError;
+    response_dict->GetInteger(kErrorCodeParam, &error_code);
     std::string error_message;
     response_dict->GetString(kErrorMessageParam, &error_message);
     return new Response(id, error_code, error_message);

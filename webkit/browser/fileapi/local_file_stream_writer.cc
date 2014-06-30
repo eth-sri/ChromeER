@@ -14,12 +14,12 @@ namespace fileapi {
 
 namespace {
 
-const int kOpenFlagsForWrite = base::PLATFORM_FILE_OPEN |
-                               base::PLATFORM_FILE_WRITE |
-                               base::PLATFORM_FILE_ASYNC;
-const int kCreateFlagsForWrite = base::PLATFORM_FILE_CREATE |
-                                 base::PLATFORM_FILE_WRITE |
-                                 base::PLATFORM_FILE_ASYNC;
+const int kOpenFlagsForWrite = base::File::FLAG_OPEN |
+                               base::File::FLAG_WRITE |
+                               base::File::FLAG_ASYNC;
+const int kCreateFlagsForWrite = base::File::FLAG_CREATE |
+                                 base::File::FLAG_WRITE |
+                                 base::File::FLAG_ASYNC;
 
 }  // namespace
 
@@ -153,7 +153,7 @@ void LocalFileStreamWriter::InitiateSeek(
     return;
   }
 
-  int result = stream_impl_->Seek(net::FROM_BEGIN, initial_offset_,
+  int result = stream_impl_->Seek(base::File::FROM_BEGIN, initial_offset_,
                                   base::Bind(&LocalFileStreamWriter::DidSeek,
                                              weak_factory_.GetWeakPtr(),
                                              error_callback,

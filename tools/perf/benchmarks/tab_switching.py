@@ -2,21 +2,33 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-from telemetry import test
+from telemetry import benchmark
 
 from measurements import tab_switching
+import page_sets
 
 
-class TabSwitchingTop10(test.Test):
+@benchmark.Enabled('has tabs')
+class TabSwitchingTop10(benchmark.Benchmark):
   test = tab_switching.TabSwitching
-  page_set = 'page_sets/top_10.py'
+  page_set = page_sets.Top10PageSet
 
-class TabSwitchingFiveBlankTabs(test.Test):
+
+@benchmark.Enabled('has tabs')
+class TabSwitchingTypical25(benchmark.Benchmark):
   test = tab_switching.TabSwitching
-  page_set = 'page_sets/five_blank_pages.py'
+  page_set = page_sets.Typical25PageSet
+
+
+@benchmark.Enabled('has tabs')
+class TabSwitchingFiveBlankTabs(benchmark.Benchmark):
+  test = tab_switching.TabSwitching
+  page_set = page_sets.FiveBlankPagesPageSet
   options = {'pageset_repeat': 10}
 
-class TabSwitchingToughEnergyCases(test.Test):
+
+@benchmark.Enabled('has tabs')
+class TabSwitchingToughEnergyCases(benchmark.Benchmark):
   test = tab_switching.TabSwitching
-  page_set = 'page_sets/tough_energy_cases.py'
+  page_set = page_sets.ToughEnergyCasesPageSet
   options = {'pageset_repeat': 10}

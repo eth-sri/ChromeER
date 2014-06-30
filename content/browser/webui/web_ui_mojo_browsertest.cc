@@ -12,19 +12,22 @@
 #include "base/strings/string_util.h"
 #include "content/browser/webui/web_ui_controller_factory_registry.h"
 #include "content/public/browser/browser_context.h"
+#include "content/public/browser/render_frame_host.h"
+#include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui_controller.h"
 #include "content/public/browser/web_ui_data_source.h"
 #include "content/public/common/content_paths.h"
 #include "content/public/common/content_switches.h"
+#include "content/public/common/service_registry.h"
 #include "content/public/common/url_utils.h"
 #include "content/public/test/content_browser_test.h"
 #include "content/public/test/content_browser_test_utils.h"
+#include "content/shell/browser/shell.h"
 #include "content/test/data/web_ui_test_mojo_bindings.mojom.h"
 #include "grit/content_resources.h"
 #include "mojo/common/test/test_utils.h"
-#include "mojo/public/cpp/bindings/allocation_scope.h"
 #include "mojo/public/js/bindings/constants.h"
 
 namespace content {
@@ -40,6 +43,7 @@ bool GetResource(const std::string& id,
   if (id == mojo::kCodecModuleName ||
       id == mojo::kConnectionModuleName ||
       id == mojo::kConnectorModuleName ||
+      id == mojo::kUnicodeModuleName ||
       id == mojo::kRouterModuleName)
     return false;
 
@@ -57,9 +61,9 @@ class BrowserTargetImpl : public BrowserTarget {
  public:
   BrowserTargetImpl(mojo::ScopedMessagePipeHandle handle,
                     base::RunLoop* run_loop)
-      : renderer_(mojo::MakeProxy<RendererTarget>(handle.Pass())),
-        run_loop_(run_loop) {
-    renderer_->SetClient(this);
+      : run_loop_(run_loop) {
+    renderer_.Bind(handle.Pass());
+    renderer_.set_client(this);
   }
 
   virtual ~BrowserTargetImpl() {}
@@ -125,13 +129,18 @@ class PingTestWebUIController : public TestWebUIController {
    PingTestWebUIController(WebUI* web_ui, base::RunLoop* run_loop)
        : TestWebUIController(web_ui, run_loop) {
    }
+   virtual ~PingTestWebUIController() {}
 
   // WebUIController overrides:
   virtual void RenderViewCreated(RenderViewHost* render_view_host) OVERRIDE {
-    mojo::MessagePipe pipe;
-    browser_target_.reset(
-        new PingBrowserTargetImpl(pipe.handle0.Pass(), run_loop_));
-    render_view_host->SetWebUIHandle(pipe.handle1.Pass());
+    render_view_host->GetMainFrame()->GetServiceRegistry()->AddService(
+        "webui_controller",
+        base::Bind(&PingTestWebUIController::CreateHandler,
+                   base::Unretained(this)));
+  }
+
+  void CreateHandler(mojo::ScopedMessagePipeHandle handle) {
+    browser_target_.reset(new PingBrowserTargetImpl(handle.Pass(), run_loop_));
   }
 
  private:
@@ -212,6 +221,19 @@ IN_PROC_BROWSER_TEST_F(WebUIMojoTest, EndToEndPing) {
   // RunLoop is quit when message received from page.
   run_loop.Run();
   EXPECT_TRUE(got_message);
+
+  // Check that a second render frame in the same renderer process works
+  // correctly.
+  Shell* other_shell = CreateBrowser();
+  got_message = false;
+  base::RunLoop other_run_loop;
+  factory()->set_run_loop(&other_run_loop);
+  NavigateToURL(other_shell, test_url);
+  // RunLoop is quit when message received from page.
+  other_run_loop.Run();
+  EXPECT_TRUE(got_message);
+  EXPECT_EQ(shell()->web_contents()->GetRenderProcessHost(),
+            other_shell->web_contents()->GetRenderProcessHost());
 }
 
 }  // namespace

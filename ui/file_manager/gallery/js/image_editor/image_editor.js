@@ -235,22 +235,22 @@ ImageEditor.prototype.getCanvas = function() {
 /**
  * @return {ImageBuffer} ImageBuffer instance.
  */
-ImageEditor.prototype.getBuffer = function() { return this.buffer_ };
+ImageEditor.prototype.getBuffer = function() { return this.buffer_; };
 
 /**
  * @return {ImageView} ImageView instance.
  */
-ImageEditor.prototype.getImageView = function() { return this.imageView_ };
+ImageEditor.prototype.getImageView = function() { return this.imageView_; };
 
 /**
  * @return {Viewport} Viewport instance.
  */
-ImageEditor.prototype.getViewport = function() { return this.viewport_ };
+ImageEditor.prototype.getViewport = function() { return this.viewport_; };
 
 /**
  * @return {ImageEditor.Prompt} Prompt instance.
  */
-ImageEditor.prototype.getPrompt = function() { return this.prompt_ };
+ImageEditor.prototype.getPrompt = function() { return this.prompt_; };
 
 /**
  * Handle the toolbar controls update.
@@ -285,22 +285,24 @@ ImageEditor.Mode.prototype = {__proto__: ImageBuffer.Overlay.prototype };
 /**
  * @return {Viewport} Viewport instance.
  */
-ImageEditor.Mode.prototype.getViewport = function() { return this.viewport_ };
+ImageEditor.Mode.prototype.getViewport = function() { return this.viewport_; };
 
 /**
  * @return {ImageView} ImageView instance.
  */
-ImageEditor.Mode.prototype.getImageView = function() { return this.imageView_ };
+ImageEditor.Mode.prototype.getImageView = function() {
+  return this.imageView_;
+};
 
 /**
  * @return {string} The mode-specific message to be displayed when entering.
  */
-ImageEditor.Mode.prototype.getMessage = function() { return this.message_ };
+ImageEditor.Mode.prototype.getMessage = function() { return this.message_; };
 
 /**
  * @return {boolean} True if the mode is applicable in the current context.
  */
-ImageEditor.Mode.prototype.isApplicable = function() { return true };
+ImageEditor.Mode.prototype.isApplicable = function() { return true; };
 
 /**
  * Called once after creating the mode button.
@@ -361,7 +363,7 @@ ImageEditor.Mode.prototype.markUpdated = function() {
 /**
  * @return {boolean} True if the mode controls changed.
  */
-ImageEditor.Mode.prototype.isUpdated = function() { return this.updated_ };
+ImageEditor.Mode.prototype.isUpdated = function() { return this.updated_; };
 
 /**
  * Resets the mode to a clean state.
@@ -439,7 +441,7 @@ ImageEditor.prototype.createToolButtons = function() {
 /**
  * @return {ImageEditor.Mode} The current mode.
  */
-ImageEditor.prototype.getMode = function() { return this.currentMode_ };
+ImageEditor.prototype.getMode = function() { return this.currentMode_; };
 
 /**
  * The user clicked on the mode button.
@@ -788,7 +790,7 @@ ImageEditor.MouseControl.prototype.setDoubleTapCallback = function(callback) {
 };
 
 /**
- * Touch chancel handler.
+ * Touch cancel handler.
  */
 ImageEditor.MouseControl.prototype.onTouchCancel = function() {
   this.dragHandler_ = null;
@@ -812,7 +814,7 @@ ImageEditor.MouseControl.prototype.onTouchMove = function(e) {
     this.dragHappened_ = !tapCircle.inside(position.x, position.y);
   }
   if (this.dragHandler_ && this.dragHappened_) {
-    this.dragHandler_(position.x, position.y);
+    this.dragHandler_(position.x, position.y, e.shiftKey);
     this.lockMouse_(true);
   }
 };
@@ -860,7 +862,7 @@ ImageEditor.MouseControl.prototype.onMouseMove = function(e) {
 
   this.updateCursor_(position);
   if (this.dragHandler_) {
-    this.dragHandler_(position.x, position.y);
+    this.dragHandler_(position.x, position.y, e.shiftKey);
     this.dragHappened_ = true;
     this.lockMouse_(true);
   }
@@ -1119,7 +1121,7 @@ ImageEditor.Prompt.prototype.setTimer = function(callback, timeout) {
  *
  * @param {string} text The prompt text.
  * @param {number} timeout Timeout in ms.
- * @param {Object} formatArgs varArgs for the formatting fuction.
+ * @param {Object} formatArgs varArgs for the formatting function.
  */
 ImageEditor.Prompt.prototype.show = function(text, timeout, formatArgs) {
   this.showAt.apply(this,

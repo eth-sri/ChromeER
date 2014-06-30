@@ -63,7 +63,7 @@ class MathCalculatorImpl : public InterfaceImpl<math::Calculator> {
     return got_connection_;
   }
 
-private:
+ private:
   double total_;
   bool got_connection_;
 };
@@ -73,7 +73,11 @@ class MathCalculatorUIImpl : public math::CalculatorUI {
   explicit MathCalculatorUIImpl(math::CalculatorPtr calculator)
       : calculator_(calculator.Pass()),
         output_(0.0) {
-    calculator_->SetClient(this);
+    calculator_.set_client(this);
+  }
+
+  bool WaitForIncomingMethodCall() {
+    return calculator_.WaitForIncomingMethodCall();
   }
 
   bool encountered_error() const {
@@ -110,6 +114,85 @@ class MathCalculatorUIImpl : public math::CalculatorUI {
   double output_;
 };
 
+class SelfDestructingMathCalculatorUIImpl : public math::CalculatorUI {
+ public:
+  explicit SelfDestructingMathCalculatorUIImpl(math::CalculatorPtr calculator)
+      : calculator_(calculator.Pass()),
+        nesting_level_(0) {
+    ++num_instances_;
+    calculator_.set_client(this);
+  }
+
+  void BeginTest(bool nested) {
+    nesting_level_ = nested ? 2 : 1;
+    calculator_->Add(1.0);
+  }
+
+  static int num_instances() { return num_instances_; }
+
+ private:
+  virtual ~SelfDestructingMathCalculatorUIImpl() {
+    --num_instances_;
+  }
+
+  virtual void Output(double value) MOJO_OVERRIDE {
+    if (--nesting_level_ > 0) {
+      // Add some more and wait for re-entrant call to Output!
+      calculator_->Add(1.0);
+      RunLoop::current()->RunUntilIdle();
+    } else {
+      delete this;
+    }
+  }
+
+  math::CalculatorPtr calculator_;
+  int nesting_level_;
+  static int num_instances_;
+};
+
+// static
+int SelfDestructingMathCalculatorUIImpl::num_instances_ = 0;
+
+class ReentrantServiceImpl : public InterfaceImpl<sample::Service> {
+ public:
+  virtual ~ReentrantServiceImpl() {}
+
+  ReentrantServiceImpl()
+      : got_connection_(false), call_depth_(0), max_call_depth_(0) {}
+
+  virtual void OnConnectionEstablished() MOJO_OVERRIDE {
+    got_connection_ = true;
+  }
+
+  virtual void OnConnectionError() MOJO_OVERRIDE {
+    delete this;
+  }
+
+  bool got_connection() const {
+    return got_connection_;
+  }
+
+  int max_call_depth() { return max_call_depth_; }
+
+  virtual void Frobinate(sample::FooPtr foo,
+                         sample::Service::BazOptions baz,
+                         sample::PortPtr port) MOJO_OVERRIDE {
+    max_call_depth_ = std::max(++call_depth_, max_call_depth_);
+    if (call_depth_ == 1) {
+      EXPECT_TRUE(WaitForIncomingMethodCall());
+    }
+    call_depth_--;
+  }
+
+  virtual void GetPort(mojo::InterfaceRequest<sample::Port> port)
+      MOJO_OVERRIDE {}
+
+ private:
+  bool got_connection_;
+  int call_depth_;
+  int max_call_depth_;
+};
+
 class InterfacePtrTest : public testing::Test {
  public:
   virtual ~InterfacePtrTest() {
@@ -138,6 +221,29 @@ TEST_F(InterfacePtrTest, EndToEnd) {
 
   PumpMessages();
 
+  EXPECT_EQ(10.0, calculator_ui.GetOutput());
+}
+
+TEST_F(InterfacePtrTest, EndToEnd_Synchronous) {
+  math::CalculatorPtr calc;
+  MathCalculatorImpl* impl = BindToProxy(new MathCalculatorImpl(), &calc);
+  EXPECT_TRUE(impl->got_connection());
+
+  // Suppose this is instantiated in a process that has pipe1_.
+  MathCalculatorUIImpl calculator_ui(calc.Pass());
+
+  EXPECT_EQ(0.0, calculator_ui.GetOutput());
+
+  calculator_ui.Add(2.0);
+  EXPECT_EQ(0.0, calculator_ui.GetOutput());
+  impl->WaitForIncomingMethodCall();
+  calculator_ui.WaitForIncomingMethodCall();
+  EXPECT_EQ(2.0, calculator_ui.GetOutput());
+
+  calculator_ui.Multiply(5.0);
+  EXPECT_EQ(2.0, calculator_ui.GetOutput());
+  impl->WaitForIncomingMethodCall();
+  calculator_ui.WaitForIncomingMethodCall();
   EXPECT_EQ(10.0, calculator_ui.GetOutput());
 }
 
@@ -243,6 +349,51 @@ TEST_F(InterfacePtrTest, NoClientAttribute) {
   sample::PortPtr port;
   MessagePipe pipe;
   port.Bind(pipe.handle0.Pass());
+}
+
+TEST_F(InterfacePtrTest, DestroyInterfacePtrOnClientMethod) {
+  math::CalculatorPtr proxy;
+  BindToProxy(new MathCalculatorImpl(), &proxy);
+
+  EXPECT_EQ(0, SelfDestructingMathCalculatorUIImpl::num_instances());
+
+  SelfDestructingMathCalculatorUIImpl* impl =
+      new SelfDestructingMathCalculatorUIImpl(proxy.Pass());
+  impl->BeginTest(false);
+
+  PumpMessages();
+
+  EXPECT_EQ(0, SelfDestructingMathCalculatorUIImpl::num_instances());
+}
+
+TEST_F(InterfacePtrTest, NestedDestroyInterfacePtrOnClientMethod) {
+  math::CalculatorPtr proxy;
+  BindToProxy(new MathCalculatorImpl(), &proxy);
+
+  EXPECT_EQ(0, SelfDestructingMathCalculatorUIImpl::num_instances());
+
+  SelfDestructingMathCalculatorUIImpl* impl =
+      new SelfDestructingMathCalculatorUIImpl(proxy.Pass());
+  impl->BeginTest(true);
+
+  PumpMessages();
+
+  EXPECT_EQ(0, SelfDestructingMathCalculatorUIImpl::num_instances());
+}
+
+TEST_F(InterfacePtrTest, ReentrantWaitForIncomingMethodCall) {
+  sample::ServicePtr proxy;
+  ReentrantServiceImpl* impl = BindToProxy(new ReentrantServiceImpl(), &proxy);
+  EXPECT_TRUE(impl->got_connection());
+
+  proxy->Frobinate(
+      sample::FooPtr(), sample::Service::BAZ_REGULAR, sample::PortPtr());
+  proxy->Frobinate(
+      sample::FooPtr(), sample::Service::BAZ_REGULAR, sample::PortPtr());
+
+  PumpMessages();
+
+  EXPECT_EQ(2, impl->max_call_depth());
 }
 
 }  // namespace

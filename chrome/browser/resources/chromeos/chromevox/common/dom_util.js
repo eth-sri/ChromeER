@@ -907,6 +907,43 @@ cvox.DomUtil.getImageTitle = function(node) {
 
 
 /**
+ * Search the whole page for any aria-labelledby attributes and collect
+ * the complete set of ids they map to, so that we can skip elements that
+ * just label other elements and not double-speak them. We cache this
+ * result and then throw it away at the next event loop.
+ * @return {Object.<string, boolean>} Set of all ids that are mapped
+ *     by aria-labelledby.
+ */
+cvox.DomUtil.getLabelledByTargets = function() {
+  if (cvox.labelledByTargets) {
+    return cvox.labelledByTargets;
+  }
+
+  // Start by getting all elements with
+  // aria-labelledby on the page since that's probably a short list,
+  // then see if any of those ids overlap with an id in this element's
+  // ancestor chain.
+  var labelledByElements = document.querySelectorAll('[aria-labelledby]');
+  var labelledByTargets = {};
+  for (var i = 0; i < labelledByElements.length; ++i) {
+    var element = labelledByElements[i];
+    var attrValue = element.getAttribute('aria-labelledby');
+    var ids = attrValue.split(/ +/);
+    for (var j = 0; j < ids.length; j++) {
+      labelledByTargets[ids[j]] = true;
+    }
+  }
+  cvox.labelledByTargets = labelledByTargets;
+
+  window.setTimeout(function() {
+    cvox.labelledByTargets = null;
+  }, 0);
+
+  return labelledByTargets;
+};
+
+
+/**
  * Determines whether or not a node has content.
  *
  * @param {Node} node The node to be checked.
@@ -1046,6 +1083,34 @@ cvox.DomUtil.hasContent = function(node) {
 
   if (cvox.DomPredicates.headingPredicate([node])) {
     return true;
+  }
+
+  if (cvox.DomUtil.isFocusable(node)) {
+    return true;
+  }
+
+  // Skip anything referenced by another element on the page
+  // via aria-labelledby.
+  var labelledByTargets = cvox.DomUtil.getLabelledByTargets();
+  var enclosingNodeWithId = node;
+  while (enclosingNodeWithId) {
+    if (enclosingNodeWithId.id &&
+        labelledByTargets[enclosingNodeWithId.id]) {
+      // If we got here, some element on this page has an aria-labelledby
+      // attribute listing this node as its id. As long as that "some" element
+      // is not this element, we should return false, indicating this element
+      // should be skipped.
+      var attrValue = enclosingNodeWithId.getAttribute('aria-labelledby');
+      if (attrValue) {
+        var ids = attrValue.split(/ +/);
+        if (ids.indexOf(enclosingNodeWithId.id) == -1) {
+          return false;
+        }
+      } else {
+        return false;
+      }
+    }
+    enclosingNodeWithId = enclosingNodeWithId.parentElement;
   }
 
   var text = cvox.DomUtil.getValue(node) + ' ' + cvox.DomUtil.getName(node);
@@ -1406,9 +1471,12 @@ cvox.DomUtil.isAttachedToDocument = function(targetNode) {
  * @param {boolean} callOnClickDirectly Specifies whether or not to directly
  * invoke the onclick method if there is one.
  * @param {boolean=} opt_double True to issue a double click.
+ * @param {boolean=} opt_handleOwnEvents Whether to handle the generated
+ *     events through the normal event processing.
  */
 cvox.DomUtil.clickElem = function(
-    targetNode, shiftKey, callOnClickDirectly, opt_double) {
+    targetNode, shiftKey, callOnClickDirectly, opt_double,
+    opt_handleOwnEvents) {
   // If there is an activeDescendant of the targetNode, then that is where the
   // click should actually be targeted.
   var activeDescendant = cvox.AriaUtil.getActiveDescendant(targetNode);
@@ -1445,8 +1513,9 @@ cvox.DomUtil.clickElem = function(
   var evtType = opt_double ? 'dblclick' : 'mousedown';
   evt.initMouseEvent(evtType, true, true, document.defaultView,
                      1, 0, 0, 0, 0, false, false, shiftKey, false, 0, null);
-  // Mark any events we generate so we don't try to process our own events.
-  evt.fromCvox = true;
+  // Unless asked not to, Mark any events we generate so we don't try to
+  // process our own events.
+  evt.fromCvox = !opt_handleOwnEvents;
   try {
     targetNode.dispatchEvent(evt);
   } catch (e) {}
@@ -1454,8 +1523,7 @@ cvox.DomUtil.clickElem = function(
   evt = document.createEvent('MouseEvents');
   evt.initMouseEvent('mouseup', true, true, document.defaultView,
                      1, 0, 0, 0, 0, false, false, shiftKey, false, 0, null);
-  // Mark any events we generate so we don't try to process our own events.
-  evt.fromCvox = true;
+  evt.fromCvox = !opt_handleOwnEvents;
   try {
     targetNode.dispatchEvent(evt);
   } catch (e) {}
@@ -1463,8 +1531,7 @@ cvox.DomUtil.clickElem = function(
   evt = document.createEvent('MouseEvents');
   evt.initMouseEvent('click', true, true, document.defaultView,
                      1, 0, 0, 0, 0, false, false, shiftKey, false, 0, null);
-  // Mark any events we generate so we don't try to process our own events.
-  evt.fromCvox = true;
+  evt.fromCvox = !opt_handleOwnEvents;
   try {
     targetNode.dispatchEvent(evt);
   } catch (e) {}

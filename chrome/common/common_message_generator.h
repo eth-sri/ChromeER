@@ -9,19 +9,31 @@
 #include "chrome/common/cast_messages.h"
 #include "chrome/common/chrome_utility_messages.h"
 #include "chrome/common/extensions/chrome_extension_messages.h"
+#include "chrome/common/prefetch_messages.h"
 #include "chrome/common/prerender_messages.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/common/safe_browsing/safebrowsing_messages.h"
-#include "chrome/common/service_messages.h"
 #include "chrome/common/spellcheck_messages.h"
 #include "chrome/common/tts_messages.h"
+
+#if defined(ENABLE_EXTENSIONS)
+#include "chrome/common/extensions/chrome_utility_extensions_messages.h"
+#endif
 
 #if defined(ENABLE_MDNS)
 #include "chrome/common/local_discovery/local_discovery_messages.h"
 #endif
 
+#if defined(ENABLE_FULL_PRINTING)
+#include "chrome/common/chrome_utility_printing_messages.h"
+#endif
+
 #if defined(ENABLE_PRINTING)
 #include "chrome/common/print_messages.h"
+#endif
+
+#if defined(ENABLE_FULL_PRINTING)
+#include "chrome/common/service_messages.h"
 #endif
 
 #if defined(ENABLE_WEBRTC)

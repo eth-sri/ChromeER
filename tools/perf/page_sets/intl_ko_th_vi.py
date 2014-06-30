@@ -15,7 +15,10 @@ class IntlKoThViPage(page_module.Page):
     self.archive_data_file = 'data/intl_ko_th_vi.json'
 
   def RunSmoothness(self, action_runner):
-    action_runner.RunAction(ScrollAction())
+    interaction = action_runner.BeginGestureInteraction(
+        'ScrollAction', is_smooth=True)
+    action_runner.ScrollPage()
+    interaction.End()
 
 
 class IntlKoThViPageSet(page_set_module.PageSet):
@@ -25,7 +28,8 @@ class IntlKoThViPageSet(page_set_module.PageSet):
   def __init__(self):
     super(IntlKoThViPageSet, self).__init__(
       user_agent_type='desktop',
-      archive_data_file='data/intl_ko_th_vi.json')
+      archive_data_file='data/intl_ko_th_vi.json',
+      bucket=page_set_module.PARTNER_BUCKET)
 
     urls_list = [
       # Why: #7 site in Vietnam

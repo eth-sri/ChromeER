@@ -10,10 +10,13 @@
 #include "base/android/jni_array.h"
 #include "base/android/jni_string.h"
 #include "base/callback_helpers.h"
+#include "base/containers/hash_tables.h"
+#include "base/lazy_instance.h"
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/strings/string_util.h"
+#include "base/sys_byteorder.h"
 #include "jni/MediaDrmBridge_jni.h"
 
 #include "widevine_cdm_version.h"  // In SHARED_INTERMEDIATE_DIR.
@@ -64,15 +67,59 @@ const uint8 kWidevineUuid[16] = {
     0xED, 0xEF, 0x8B, 0xA9, 0x79, 0xD6, 0x4A, 0xCE,
     0xA3, 0xC8, 0x27, 0xDC, 0xD5, 0x1D, 0x21, 0xED };
 
-static std::vector<uint8> GetUUID(const std::string& key_system) {
-  // For security reasons, we only do exact string comparisons here - we don't
-  // try to parse the |key_system| in any way.
-  if (key_system == kWidevineKeySystem) {
-    return std::vector<uint8>(kWidevineUuid,
-                              kWidevineUuid + arraysize(kWidevineUuid));
-  }
-  return std::vector<uint8>();
+typedef std::vector<uint8> UUID;
+
+class KeySystemUuidManager {
+ public:
+  KeySystemUuidManager();
+  UUID GetUUID(const std::string& key_system);
+  void AddMapping(const std::string& key_system, const UUID& uuid);
+  std::vector<std::string> GetPlatformKeySystemNames();
+
+ private:
+  typedef base::hash_map<std::string, UUID> KeySystemUuidMap;
+
+  KeySystemUuidMap key_system_uuid_map_;
+
+  DISALLOW_COPY_AND_ASSIGN(KeySystemUuidManager);
+};
+
+KeySystemUuidManager::KeySystemUuidManager() {
+  // Widevine is always supported in Android.
+  key_system_uuid_map_[kWidevineKeySystem] =
+      UUID(kWidevineUuid, kWidevineUuid + arraysize(kWidevineUuid));
 }
+
+UUID KeySystemUuidManager::GetUUID(const std::string& key_system) {
+  KeySystemUuidMap::iterator it = key_system_uuid_map_.find(key_system);
+  if (it == key_system_uuid_map_.end())
+    return UUID();
+  return it->second;
+}
+
+void KeySystemUuidManager::AddMapping(const std::string& key_system,
+                                      const UUID& uuid) {
+  KeySystemUuidMap::iterator it = key_system_uuid_map_.find(key_system);
+  DCHECK(it == key_system_uuid_map_.end())
+      << "Shouldn't overwrite an existing key system.";
+  if (it != key_system_uuid_map_.end())
+    return;
+  key_system_uuid_map_[key_system] = uuid;
+}
+
+std::vector<std::string> KeySystemUuidManager::GetPlatformKeySystemNames() {
+  std::vector<std::string> key_systems;
+  for (KeySystemUuidMap::iterator it = key_system_uuid_map_.begin();
+       it != key_system_uuid_map_.end(); ++it) {
+    // Rule out the key system handled by Chrome explicitly.
+    if (it->first != kWidevineKeySystem)
+      key_systems.push_back(it->first);
+  }
+  return key_systems;
+}
+
+base::LazyInstance<KeySystemUuidManager>::Leaky g_key_system_uuid_manager =
+    LAZY_INSTANCE_INITIALIZER;
 
 // Tries to find a PSSH box whose "SystemId" is |uuid| in |data|, parses the
 // "Data" of the box and put it in |pssh_data|. Returns true if such a box is
@@ -82,7 +129,7 @@ static std::vector<uint8> GetUUID(const std::string& key_system) {
 // will be set in |pssh_data|.
 // 2, Only PSSH and TENC boxes are allowed in |data|. TENC boxes are skipped.
 static bool GetPsshData(const uint8* data, int data_size,
-                        const std::vector<uint8>& uuid,
+                        const UUID& uuid,
                         std::vector<uint8>* pssh_data) {
   const uint8* cur = data;
   const uint8* data_end = data + data_size;
@@ -192,7 +239,7 @@ static bool IsKeySystemSupportedWithTypeImpl(
   if (!MediaDrmBridge::IsAvailable())
     return false;
 
-  std::vector<uint8> scheme_uuid = GetUUID(key_system);
+  UUID scheme_uuid = g_key_system_uuid_manager.Get().GetUUID(key_system);
   if (scheme_uuid.empty())
     return false;
 
@@ -228,6 +275,20 @@ bool MediaDrmBridge::IsSecurityLevelSupported(const std::string& key_system,
     return false;
 
   return media_drm_bridge->SetSecurityLevel(security_level);
+}
+
+static void AddKeySystemUuidMapping(JNIEnv* env, jclass clazz,
+                                    jstring j_key_system,
+                                    jobject j_buffer) {
+  std::string key_system = ConvertJavaStringToUTF8(env, j_key_system);
+  uint8* buffer = static_cast<uint8*>(env->GetDirectBufferAddress(j_buffer));
+  UUID uuid(buffer, buffer + 16);
+  g_key_system_uuid_manager.Get().AddMapping(key_system, uuid);
+}
+
+// static
+std::vector<std::string> MediaDrmBridge::GetPlatformKeySystemNames() {
+  return g_key_system_uuid_manager.Get().GetPlatformKeySystemNames();
 }
 
 // static
@@ -271,6 +332,7 @@ MediaDrmBridge::MediaDrmBridge(const std::vector<uint8>& scheme_uuid,
 
 MediaDrmBridge::~MediaDrmBridge() {
   JNIEnv* env = AttachCurrentThread();
+  player_tracker_.NotifyCdmUnset();
   if (!j_media_drm_.is_null())
     Java_MediaDrmBridge_release(env, j_media_drm_.obj());
 }
@@ -287,7 +349,7 @@ scoped_ptr<MediaDrmBridge> MediaDrmBridge::Create(
   if (!IsAvailable())
     return media_drm_bridge.Pass();
 
-  std::vector<uint8> scheme_uuid = GetUUID(key_system);
+  UUID scheme_uuid = g_key_system_uuid_manager.Get().GetUUID(key_system);
   if (scheme_uuid.empty())
     return media_drm_bridge.Pass();
 
@@ -394,6 +456,15 @@ void MediaDrmBridge::ReleaseSession(uint32 session_id) {
   Java_MediaDrmBridge_releaseSession(env, j_media_drm_.obj(), session_id);
 }
 
+int MediaDrmBridge::RegisterPlayer(const base::Closure& new_key_cb,
+                                   const base::Closure& cdm_unset_cb) {
+  return player_tracker_.RegisterPlayer(new_key_cb, cdm_unset_cb);
+}
+
+void MediaDrmBridge::UnregisterPlayer(int registration_id) {
+  player_tracker_.UnregisterPlayer(registration_id);
+}
+
 void MediaDrmBridge::SetMediaCryptoReadyCB(const base::Closure& closure) {
   if (closure.is_null()) {
     media_crypto_ready_cb_.Reset();
@@ -433,8 +504,13 @@ void MediaDrmBridge::OnSessionMessage(JNIEnv* env,
   uint32 session_id = j_session_id;
   std::vector<uint8> message;
   JavaByteArrayToByteVector(env, j_message, &message);
-  std::string destination_url = ConvertJavaStringToUTF8(env, j_destination_url);
-  session_message_cb_.Run(session_id, message, destination_url);
+  GURL destination_gurl = GURL(ConvertJavaStringToUTF8(env, j_destination_url));
+  if (!destination_gurl.is_valid() && !destination_gurl.is_empty()) {
+    DLOG(WARNING) << "SessionMessage destination_url is invalid : "
+                  << destination_gurl.possibly_invalid_spec();
+    destination_gurl = GURL::EmptyGURL();  // Replace invalid destination_url.
+  }
+  session_message_cb_.Run(session_id, message, destination_gurl);
 }
 
 void MediaDrmBridge::OnSessionReady(JNIEnv* env,
@@ -442,6 +518,9 @@ void MediaDrmBridge::OnSessionReady(JNIEnv* env,
                                     jint j_session_id) {
   uint32 session_id = j_session_id;
   session_ready_cb_.Run(session_id);
+  // TODO(xhwang/jrummell): Move this when usableKeyIds/keyschange are
+  // implemented.
+  player_tracker_.NotifyNewKey();
 }
 
 void MediaDrmBridge::OnSessionClosed(JNIEnv* env,

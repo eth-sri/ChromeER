@@ -33,8 +33,9 @@
 #include "content/shell/renderer/shell_render_process_observer.h"
 #include "content/shell/renderer/test_runner/WebTask.h"
 #include "content/shell/renderer/test_runner/WebTestInterfaces.h"
-#include "content/shell/renderer/test_runner/WebTestRunner.h"
+#include "content/shell/renderer/test_runner/mock_screen_orientation_client.h"
 #include "content/shell/renderer/test_runner/web_test_proxy.h"
+#include "content/shell/renderer/test_runner/web_test_runner.h"
 #include "net/base/filename_util.h"
 #include "net/base/net_errors.h"
 #include "skia/ext/platform_canvas.h"
@@ -151,7 +152,7 @@ class NavigateAwayVisitor : public RenderViewVisitor {
     if (render_view == main_render_view_)
       return true;
     render_view->GetWebView()->mainFrame()->loadRequest(
-        WebURLRequest(GURL(kAboutBlankURL)));
+        WebURLRequest(GURL(url::kAboutBlankURL)));
     return true;
   }
 
@@ -201,20 +202,9 @@ void WebKitTestRunner::setEditCommand(const std::string& name,
   render_view()->SetEditCommandForNextKeyEvent(name, value);
 }
 
-void WebKitTestRunner::setGamepadData(const WebGamepads& gamepads) {
-  SetMockGamepads(gamepads);
-}
-
-void WebKitTestRunner::didConnectGamepad(
-    int index,
-    const blink::WebGamepad& gamepad) {
-  MockGamepadConnected(index, gamepad);
-}
-
-void WebKitTestRunner::didDisconnectGamepad(
-    int index,
-    const blink::WebGamepad& gamepad) {
-  MockGamepadDisconnected(index, gamepad);
+void WebKitTestRunner::setGamepadProvider(
+    RendererGamepadProvider* provider) {
+  SetMockGamepadProvider(provider);
 }
 
 void WebKitTestRunner::setDeviceMotionData(const WebDeviceMotionData& data) {
@@ -228,11 +218,21 @@ void WebKitTestRunner::setDeviceOrientationData(
 
 void WebKitTestRunner::setScreenOrientation(
     const WebScreenOrientationType& orientation) {
-  SetMockScreenOrientation(render_view(), orientation);
+  MockScreenOrientationClient* mock_client =
+      proxy()->GetScreenOrientationClientMock();
+  mock_client->UpdateDeviceOrientation(render_view()->GetWebView()->mainFrame(),
+                                       orientation);
 }
 
 void WebKitTestRunner::resetScreenOrientation() {
-  ResetMockScreenOrientation();
+  MockScreenOrientationClient* mock_client =
+      proxy()->GetScreenOrientationClientMock();
+  mock_client->ResetData();
+}
+
+void WebKitTestRunner::didChangeBatteryStatus(
+    const blink::WebBatteryStatus& status) {
+  MockBatteryStatusChanged(status);
 }
 
 void WebKitTestRunner::printMessage(const std::string& message) {
@@ -476,7 +476,7 @@ void WebKitTestRunner::testFinished() {
   WebTestInterfaces* interfaces =
       ShellRenderProcessObserver::GetInstance()->test_interfaces();
   interfaces->setTestIsRunning(false);
-  if (interfaces->testRunner()->shouldDumpBackForwardList()) {
+  if (interfaces->testRunner()->ShouldDumpBackForwardList()) {
     SyncNavigationStateVisitor visitor;
     RenderView::ForEach(&visitor);
     Send(new ShellViewHostMsg_CaptureSessionHistory(routing_id()));
@@ -617,16 +617,16 @@ void WebKitTestRunner::CaptureDump() {
       ShellRenderProcessObserver::GetInstance()->test_interfaces();
   TRACE_EVENT0("shell", "WebKitTestRunner::CaptureDump");
 
-  if (interfaces->testRunner()->shouldDumpAsAudio()) {
+  if (interfaces->testRunner()->ShouldDumpAsAudio()) {
     std::vector<unsigned char> vector_data;
-    interfaces->testRunner()->getAudioData(&vector_data);
+    interfaces->testRunner()->GetAudioData(&vector_data);
     Send(new ShellViewHostMsg_AudioDump(routing_id(), vector_data));
   } else {
     Send(new ShellViewHostMsg_TextDump(routing_id(),
                                        proxy()->CaptureTree(false)));
 
     if (test_config_.enable_pixel_dumping &&
-        interfaces->testRunner()->shouldGeneratePixelResults()) {
+        interfaces->testRunner()->ShouldGeneratePixelResults()) {
       CHECK(render_view()->GetWebView()->isAcceleratedCompositingActive());
       proxy()->CapturePixelsAsync(base::Bind(
           &WebKitTestRunner::CaptureDumpPixels, base::Unretained(this)));
@@ -701,7 +701,7 @@ void WebKitTestRunner::OnReset() {
   // Navigating to about:blank will make sure that no new loads are initiated
   // by the renderer.
   render_view()->GetWebView()->mainFrame()->loadRequest(
-      WebURLRequest(GURL(kAboutBlankURL)));
+      WebURLRequest(GURL(url::kAboutBlankURL)));
   Send(new ShellViewHostMsg_ResetDone(routing_id()));
 }
 
@@ -713,7 +713,7 @@ void WebKitTestRunner::OnNotifyDone() {
 void WebKitTestRunner::OnTryLeakDetection() {
   WebLocalFrame* main_frame =
       render_view()->GetWebView()->mainFrame()->toWebLocalFrame();
-  DCHECK_EQ(GURL(kAboutBlankURL), GURL(main_frame->document().url()));
+  DCHECK_EQ(GURL(url::kAboutBlankURL), GURL(main_frame->document().url()));
   DCHECK(!main_frame->isLoading());
 
   leak_detector_->TryLeakDetection(main_frame);

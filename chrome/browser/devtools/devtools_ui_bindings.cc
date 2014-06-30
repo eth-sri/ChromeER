@@ -17,7 +17,6 @@
 #include "chrome/browser/devtools/devtools_target_impl.h"
 #include "chrome/browser/extensions/chrome_extension_web_contents_observer.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/infobars/confirm_infobar_delegate.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/themes/theme_properties.h"
@@ -31,6 +30,7 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/manifest_url_handler.h"
 #include "chrome/common/url_constants.h"
+#include "components/infobars/core/confirm_infobar_delegate.h"
 #include "components/infobars/core/infobar.h"
 #include "content/public/browser/devtools_client_host.h"
 #include "content/public/browser/devtools_manager.h"
@@ -49,6 +49,7 @@
 #include "content/public/common/url_constants.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/extension_set.h"
+#include "extensions/common/permissions/permissions_data.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -56,10 +57,6 @@ using base::DictionaryValue;
 using content::BrowserThread;
 
 namespace {
-
-typedef std::vector<DevToolsUIBindings*> DevToolsUIBindingsList;
-base::LazyInstance<DevToolsUIBindingsList>::Leaky g_instances =
-    LAZY_INSTANCE_INITIALIZER;
 
 static const char kFrontendHostId[] = "id";
 static const char kFrontendHostMethod[] = "method";
@@ -270,7 +267,12 @@ void DevToolsUIBindings::FrontendWebContentsObserver::RenderProcessGone(
 
 void DevToolsUIBindings::FrontendWebContentsObserver::AboutToNavigateRenderView(
     content::RenderViewHost* render_view_host) {
-  content::DevToolsClientHost::SetupDevToolsFrontendClient(render_view_host);
+  content::NavigationEntry* entry =
+      web_contents()->GetController().GetActiveEntry();
+  if (devtools_bindings_->url_ == entry->GetURL())
+    content::DevToolsClientHost::SetupDevToolsFrontendClient(render_view_host);
+  else
+    delete devtools_bindings_;
 }
 
 void DevToolsUIBindings::FrontendWebContentsObserver::
@@ -279,18 +281,6 @@ void DevToolsUIBindings::FrontendWebContentsObserver::
 }
 
 // DevToolsUIBindings ---------------------------------------------------------
-
-// static
-DevToolsUIBindings* DevToolsUIBindings::GetOrCreateFor(
-    content::WebContents* web_contents) {
-  DevToolsUIBindingsList* instances = g_instances.Pointer();
-  for (DevToolsUIBindingsList::iterator it(instances->begin());
-       it != instances->end(); ++it) {
-    if ((*it)->web_contents() == web_contents)
-      return *it;
-  }
-  return new DevToolsUIBindings(web_contents);
-}
 
 // static
 GURL DevToolsUIBindings::ApplyThemeToURL(Profile* profile,
@@ -312,13 +302,14 @@ GURL DevToolsUIBindings::ApplyThemeToURL(Profile* profile,
   return GURL(url_string);
 }
 
-DevToolsUIBindings::DevToolsUIBindings(content::WebContents* web_contents)
+DevToolsUIBindings::DevToolsUIBindings(content::WebContents* web_contents,
+                                       const GURL& url)
     : profile_(Profile::FromBrowserContext(web_contents->GetBrowserContext())),
       web_contents_(web_contents),
       delegate_(new DefaultBindingsDelegate(web_contents_)),
       device_listener_enabled_(false),
+      url_(url),
       weak_factory_(this) {
-  g_instances.Get().push_back(this);
   frontend_contents_observer_.reset(new FrontendWebContentsObserver(this));
   web_contents_->GetMutableRendererPrefs()->can_accept_load_drops = false;
 
@@ -328,6 +319,10 @@ DevToolsUIBindings::DevToolsUIBindings(content::WebContents* web_contents)
   file_system_indexer_ = new DevToolsFileSystemIndexer();
   extensions::ChromeExtensionWebContentsObserver::CreateForWebContents(
       web_contents_);
+
+  web_contents_->GetController().LoadURL(
+      url, content::Referrer(),
+      content::PAGE_TRANSITION_AUTO_TOPLEVEL, std::string());
 
   // Wipe out page icon so that the default application icon is used.
   content::NavigationEntry* entry =
@@ -357,13 +352,6 @@ DevToolsUIBindings::~DevToolsUIBindings() {
 
   while (!subscribers_.empty())
     Unsubscribe(*subscribers_.begin());
-
-  // Remove self from global list.
-  DevToolsUIBindingsList* instances = g_instances.Pointer();
-  DevToolsUIBindingsList::iterator it(
-      std::find(instances->begin(), instances->end(), this));
-  DCHECK(it != instances->end());
-  instances->erase(it);
 }
 
 void DevToolsUIBindings::InspectedContentsClosing() {
@@ -609,8 +597,6 @@ void DevToolsUIBindings::Unsubscribe(const std::string& event_type) {
     return;
   }
 
-  subscribers_.erase(event_type);
-
   if (event_type == kDevicesChanged) {
     remote_targets_handler_.reset();
   } else if (event_type == kDeviceCountChanged) {
@@ -618,6 +604,8 @@ void DevToolsUIBindings::Unsubscribe(const std::string& event_type) {
   } else {
     LOG(ERROR) << "Attempt to stop unknown event listener " << event_type;
   }
+
+  subscribers_.erase(event_type);
 }
 
 void DevToolsUIBindings::EnableRemoteDeviceCounter(bool enable) {
@@ -770,10 +758,10 @@ void DevToolsUIBindings::AddDevToolsExtensionsToClient() {
             extensions::ManifestURL::GetDevToolsPage(
                 extension->get()).spec()));
     extension_info->Set("name", new base::StringValue((*extension)->name()));
-    extension_info->Set(
-        "exposeExperimentalAPIs",
-        new base::FundamentalValue((*extension)->HasAPIPermission(
-            extensions::APIPermission::kExperimental)));
+    extension_info->Set("exposeExperimentalAPIs",
+                        new base::FundamentalValue(
+                            (*extension)->permissions_data()->HasAPIPermission(
+                                extensions::APIPermission::kExperimental)));
     results.Append(extension_info);
   }
   CallClientFunction("WebInspector.addExtensions", &results, NULL, NULL);

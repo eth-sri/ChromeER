@@ -9,7 +9,6 @@
 
 #include "base/android/jni_android.h"
 #include "base/android/jni_weak_ref.h"
-#include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/i18n/rtl.h"
 #include "base/memory/scoped_ptr.h"
@@ -17,8 +16,6 @@
 #include "content/browser/renderer_host/render_widget_host_view_android.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/browser/android/content_view_core.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/gfx/rect.h"
@@ -37,7 +34,6 @@ struct MenuItem;
 
 // TODO(jrg): this is a shell.  Upstream the rest.
 class ContentViewCoreImpl : public ContentViewCore,
-                            public NotificationObserver,
                             public WebContentsObserver {
  public:
   static ContentViewCoreImpl* FromWebContents(WebContents* web_contents);
@@ -65,6 +61,11 @@ class ContentViewCoreImpl : public ContentViewCore,
   virtual float GetDpiScale() const OVERRIDE;
   virtual void PauseVideo() OVERRIDE;
   virtual void PauseOrResumeGeolocation(bool should_pause) OVERRIDE;
+  virtual void RequestTextSurroundingSelection(
+      int max_length,
+      const base::Callback<void(const base::string16& content,
+                                int start_offset,
+                                int end_offset)>& callback) OVERRIDE;
 
   // --------------------------------------------------------------------------
   // Methods called from Java via JNI
@@ -91,7 +92,8 @@ class ContentViewCoreImpl : public ContentViewCore,
       jbyteArray post_data,
       jstring base_url_for_data_url,
       jstring virtual_url_for_data_url,
-      jboolean can_load_local_resources);
+      jboolean can_load_local_resources,
+      jboolean is_renderer_initiated);
   base::android::ScopedJavaLocalRef<jstring> GetURL(JNIEnv* env, jobject) const;
   jboolean IsIncognito(JNIEnv* env, jobject obj);
   void SendOrientationChangeEvent(JNIEnv* env, jobject obj, jint orientation);
@@ -110,7 +112,12 @@ class ContentViewCoreImpl : public ContentViewCore,
                         jint pointer_id_0,
                         jint pointer_id_1,
                         jfloat touch_major_0,
-                        jfloat touch_major_1);
+                        jfloat touch_major_1,
+                        jfloat raw_pos_x,
+                        jfloat raw_pos_y,
+                        jint android_tool_type_0,
+                        jint android_tool_type_1,
+                        jint android_button_state);
   jboolean SendMouseMoveEvent(JNIEnv* env,
                               jobject obj,
                               jlong time_ms,
@@ -157,6 +164,7 @@ class ContentViewCoreImpl : public ContentViewCore,
   void ReloadIgnoringCache(JNIEnv* env, jobject obj, jboolean check_for_repost);
   void CancelPendingReload(JNIEnv* env, jobject obj);
   void ContinuePendingReload(JNIEnv* env, jobject obj);
+  void AddStyleSheetByURL(JNIEnv* env, jobject obj, jstring url);
   void ClearHistory(JNIEnv* env, jobject obj);
   void EvaluateJavaScript(JNIEnv* env,
                           jobject obj,
@@ -166,6 +174,7 @@ class ContentViewCoreImpl : public ContentViewCore,
   long GetNativeImeAdapter(JNIEnv* env, jobject obj);
   void SetFocus(JNIEnv* env, jobject obj, jboolean focused);
   void ScrollFocusedEditableNodeIntoView(JNIEnv* env, jobject obj);
+  void SelectWordAroundCaret(JNIEnv* env, jobject obj);
 
   jint GetBackgroundColor(JNIEnv* env, jobject obj);
   void SetBackgroundColor(JNIEnv* env, jobject obj, jint color);
@@ -221,13 +230,30 @@ class ContentViewCoreImpl : public ContentViewCore,
                             jint width,
                             jint height);
 
+  void SetBackgroundOpaque(JNIEnv* env, jobject jobj, jboolean opaque);
+
+  // Notifies the main frame that it can continue navigation (if it was deferred
+  // immediately at first response).
+  void ResumeResponseDeferredAtStart(JNIEnv* env, jobject obj);
+
+  void SetHasPendingNavigationTransitionForTesting(JNIEnv* env, jobject obj);
+
   jint GetCurrentRenderProcessId(JNIEnv* env, jobject obj);
 
   // --------------------------------------------------------------------------
   // Public methods that call to Java via JNI
   // --------------------------------------------------------------------------
 
-  void OnSmartClipDataExtracted(const base::string16& result);
+  // This method is invoked when the request is deferred immediately after
+  // receiving response headers.
+  void DidDeferAfterResponseStarted();
+
+  // This method is invoked when a navigation transition is detected, to
+  // determine if the embedder intends to handle it.
+  bool WillHandleDeferAfterResponseStarted();
+
+  void OnSmartClipDataExtracted(const gfx::Rect& clip_rect,
+                                const base::string16& result);
 
   // Creates a popup menu with |items|.
   // |multiple| defines if it should support multi-select.
@@ -294,6 +320,8 @@ class ContentViewCoreImpl : public ContentViewCore,
 
   void SetAccessibilityEnabledInternal(bool enabled);
 
+  void ShowSelectionHandlesAutomatically() const;
+
   // --------------------------------------------------------------------------
   // Methods called from native code
   // --------------------------------------------------------------------------
@@ -312,13 +340,10 @@ class ContentViewCoreImpl : public ContentViewCore,
   friend class ContentViewUserData;
   virtual ~ContentViewCoreImpl();
 
-  // NotificationObserver implementation.
-  virtual void Observe(int type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details) OVERRIDE;
-
   // WebContentsObserver implementation.
   virtual void RenderViewReady() OVERRIDE;
+  virtual void RenderViewHostChanged(RenderViewHost* old_host,
+                                     RenderViewHost* new_host) OVERRIDE;
   virtual void WebContentsDestroyed() OVERRIDE;
 
   // --------------------------------------------------------------------------
@@ -350,8 +375,6 @@ class ContentViewCoreImpl : public ContentViewCore,
 
   // A weak reference to the Java ContentViewCore object.
   JavaObjectWeakGlobalRef java_ref_;
-
-  NotificationRegistrar notification_registrar_;
 
   // Reference to the current WebContents used to determine how and what to
   // display in the ContentViewCore.

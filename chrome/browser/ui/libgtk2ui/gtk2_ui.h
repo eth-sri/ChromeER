@@ -17,7 +17,6 @@
 #include "chrome/browser/ui/libgtk2ui/owned_widget_gtk2.h"
 #include "ui/events/linux/text_edit_key_bindings_delegate_auralinux.h"
 #include "ui/gfx/color_utils.h"
-#include "ui/gfx/geometry/insets.h"
 #include "ui/views/linux_ui/linux_ui.h"
 #include "ui/views/window/frame_buttons.h"
 
@@ -50,18 +49,16 @@ class Gtk2UI : public views::LinuxUI {
 
   // Setters used by GConfListener:
   void SetWindowButtonOrdering(
-    const std::vector<views::FrameButton>& leading_buttons,
-    const std::vector<views::FrameButton>& trailing_buttons);
+      const std::vector<views::FrameButton>& leading_buttons,
+      const std::vector<views::FrameButton>& trailing_buttons);
   void SetNonClientMiddleClickAction(NonClientMiddleClickAction action);
 
   // Draws the GTK button border for state |gtk_state| onto a bitmap.
   SkBitmap DrawGtkButtonBorder(int gtk_state,
                                bool focused,
+                               bool call_to_action,
                                int width,
                                int height) const;
-
-  // Returns the current insets for a button.
-  gfx::Insets GetButtonInsets() const;
 
   // ui::LinuxInputMethodContextFactory:
   virtual scoped_ptr<ui::LinuxInputMethodContext> CreateInputMethodContext(
@@ -107,7 +104,7 @@ class Gtk2UI : public views::LinuxUI {
       const std::string& content_type, int size) const OVERRIDE;
   virtual scoped_ptr<views::Border> CreateNativeBorder(
       views::LabelButton* owning_button,
-      scoped_ptr<views::Border> border) OVERRIDE;
+      scoped_ptr<views::LabelButtonBorder> border) OVERRIDE;
   virtual void AddWindowButtonOrderObserver(
       views::WindowButtonOrderObserver* observer) OVERRIDE;
   virtual void RemoveWindowButtonOrderObserver(
@@ -190,9 +187,8 @@ class Gtk2UI : public views::LinuxUI {
   // entry.
   void GetSelectedEntryForegroundHSL(color_utils::HSL* tint) const;
 
-  // Create a GTK window and button and queries what "default-border" is, which
-  // corresponds with our insets.
-  void UpdateButtonInsets();
+  // Gets a color for the background of the call to action button.
+  SkColor CallToActionBgColor(int gtk_state) const;
 
   // Frees all calculated images and color data.
   void ClearAllThemeData();
@@ -228,8 +224,6 @@ class Gtk2UI : public views::LinuxUI {
   SkColor active_selection_fg_color_;
   SkColor inactive_selection_bg_color_;
   SkColor inactive_selection_fg_color_;
-
-  gfx::Insets button_insets_;
 
 #if defined(USE_GCONF)
   // Currently, the only source of window button configuration. This will

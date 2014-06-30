@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "cc/surfaces/surface.h"
+#include "cc/surfaces/surface_factory.h"
 #include "cc/surfaces/surface_manager.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gfx/size.h"
@@ -12,16 +13,17 @@ namespace {
 
 TEST(SurfaceTest, SurfaceLifetime) {
   SurfaceManager manager;
+  SurfaceFactory factory(&manager, NULL);
 
-  int surface_id = 0;
+  SurfaceId surface_id;
   {
-    Surface surface(&manager, NULL, gfx::Size(5, 5));
-    surface_id = surface.surface_id();
-    EXPECT_GT(surface_id, 0);
-    EXPECT_EQ(&surface, manager.GetSurfaceForID(surface_id));
+    surface_id = factory.Create(gfx::Size(5, 5));
+    EXPECT_TRUE(!surface_id.is_null());
+    EXPECT_TRUE(!!manager.GetSurfaceForId(surface_id));
+    factory.Destroy(surface_id);
   }
 
-  EXPECT_EQ(NULL, manager.GetSurfaceForID(surface_id));
+  EXPECT_EQ(NULL, manager.GetSurfaceForId(surface_id));
 }
 
 }  // namespace

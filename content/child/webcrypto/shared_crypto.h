@@ -160,6 +160,26 @@ CONTENT_EXPORT bool DeserializeKeyForClone(
     const CryptoData& key_data,
     blink::WebCryptoKey* key);
 
+namespace platform {
+class SymKey;
+class PublicKey;
+class PrivateKey;
+}
+
+Status ToPlatformSymKey(const blink::WebCryptoKey& key, platform::SymKey** out);
+
+Status ToPlatformPublicKey(const blink::WebCryptoKey& key,
+                           platform::PublicKey** out);
+
+Status ToPlatformPrivateKey(const blink::WebCryptoKey& key,
+                            platform::PrivateKey** out);
+
+// Returns Staus::Success() if |usages| is valid for |key_type| and |algorithm|.
+// Otherwise returns a failure
+Status CheckKeyUsages(blink::WebCryptoAlgorithmId algorithm,
+                      blink::WebCryptoKeyType key_type,
+                      blink::WebCryptoKeyUsageMask usages);
+
 }  // namespace webcrypto
 
 }  // namespace content

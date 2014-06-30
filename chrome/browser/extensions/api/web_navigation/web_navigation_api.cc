@@ -36,8 +36,6 @@ DEFINE_WEB_CONTENTS_USER_DATA_KEY(extensions::WebNavigationTabObserver);
 
 namespace extensions {
 
-#if !defined(OS_ANDROID)
-
 namespace helpers = web_navigation_api_helpers;
 namespace keys = web_navigation_api_constants;
 namespace web_navigation = api::web_navigation;
@@ -537,7 +535,7 @@ void WebNavigationTabObserver::DidFinishLoad(
   DCHECK(
       navigation_state_.GetUrl(frame_id) == validated_url ||
       (navigation_state_.GetUrl(frame_id) == GURL(content::kAboutSrcDocURL) &&
-       validated_url == GURL(content::kAboutBlankURL)))
+       validated_url == GURL(url::kAboutBlankURL)))
       << "validated URL is " << validated_url << " but we expected "
       << navigation_state_.GetUrl(frame_id);
   DCHECK_EQ(navigation_state_.IsMainFrame(frame_id), is_main_frame);
@@ -840,7 +838,5 @@ void WebNavigationAPI::OnListenerAdded(const EventListenerInfo& details) {
       Profile::FromBrowserContext(browser_context_)));
   EventRouter::Get(browser_context_)->UnregisterObserver(this);
 }
-
-#endif  // OS_ANDROID
 
 }  // namespace extensions

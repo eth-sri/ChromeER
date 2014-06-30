@@ -24,7 +24,7 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/updater/extension_updater.h"
 #include "chrome/browser/first_run/first_run_internal.h"
-#include "chrome/browser/google/google_util.h"
+#include "chrome/browser/google/google_brand.h"
 #include "chrome/browser/importer/external_process_importer_host.h"
 #include "chrome/browser/importer/importer_list.h"
 #include "chrome/browser/importer/importer_progress_observer.h"
@@ -62,6 +62,7 @@
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/browser/extension_system.h"
 #include "google_apis/gaia/gaia_auth_util.h"
 #include "url/gurl.h"
 
@@ -137,8 +138,10 @@ class FirstRunDelayedTasks : public content::NotificationObserver {
                        const content::NotificationDetails& details) OVERRIDE {
     // After processing the notification we always delete ourselves.
     if (type == chrome::NOTIFICATION_EXTENSIONS_READY) {
-      DoExtensionWork(
-          content::Source<Profile>(source).ptr()->GetExtensionService());
+      Profile* profile = content::Source<Profile>(source).ptr();
+      ExtensionService* service =
+          extensions::ExtensionSystem::Get(profile)->extension_service();
+      DoExtensionWork(service);
     }
     delete this;
   }
@@ -566,8 +569,8 @@ bool CreateSentinel() {
 #if !defined(OS_LINUX) && !defined(OS_BSD)
 bool IsOrganicFirstRun() {
   std::string brand;
-  google_util::GetBrand(&brand);
-  return google_util::IsOrganicFirstRun(brand);
+  google_brand::GetBrand(&brand);
+  return google_brand::IsOrganicFirstRun(brand);
 }
 #endif
 
@@ -619,12 +622,6 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
       GetPingDelayPrefName().c_str(),
       0,
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-}
-
-bool RemoveSentinel() {
-  base::FilePath first_run_sentinel;
-  return internal::GetFirstRunSentinelFilePath(&first_run_sentinel) &&
-      base::DeleteFile(first_run_sentinel, false);
 }
 
 bool SetShowFirstRunBubblePref(FirstRunBubbleOptions show_bubble_option) {

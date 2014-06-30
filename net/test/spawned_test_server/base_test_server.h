@@ -13,6 +13,7 @@
 #include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "net/base/host_port_pair.h"
+#include "net/ssl/ssl_client_cert_type.h"
 
 class GURL;
 
@@ -110,6 +111,14 @@ class BaseTestServer {
       TLS_INTOLERANT_TLS1_2 = 3,  // Intolerant of TLS 1.2 or higher.
     };
 
+    // Values which control how the server reacts in response to a ClientHello
+    // it is intolerant of.
+    enum TLSIntoleranceType {
+      TLS_INTOLERANCE_ALERT = 0,  // Send a handshake_failure alert.
+      TLS_INTOLERANCE_CLOSE = 1,  // Close the connection.
+      TLS_INTOLERANCE_RESET = 2,  // Send a TCP reset.
+    };
+
     // Initialize a new SSLOptions using CERT_OK as the certificate.
     SSLOptions();
 
@@ -146,6 +155,11 @@ class BaseTestServer {
     // field of the CertificateRequest.
     std::vector<base::FilePath> client_authorities;
 
+    // If |request_client_certificate| is true, an optional list of
+    // SSLClientCertType values to populate the certificate_types field of the
+    // CertificateRequest.
+    std::vector<SSLClientCertType> client_cert_types;
+
     // A bitwise-OR of KeyExchnage that should be used by the
     // HTTPS server, or KEY_EXCHANGE_ANY to indicate that all implemented
     // key exchange algorithms are acceptable.
@@ -164,6 +178,10 @@ class BaseTestServer {
     // If not TLS_INTOLERANT_NONE, the server will abort any handshake that
     // negotiates an intolerant TLS version in order to test version fallback.
     TLSIntolerantLevel tls_intolerant;
+
+    // If |tls_intolerant| is not TLS_INTOLERANT_NONE, how the server reacts to
+    // an intolerant TLS version.
+    TLSIntoleranceType tls_intolerance_type;
 
     // fallback_scsv_enabled, if true, causes the server to process the
     // TLS_FALLBACK_SCSV cipher suite. This cipher suite is sent by Chrome

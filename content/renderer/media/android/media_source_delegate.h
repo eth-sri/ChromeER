@@ -67,7 +67,6 @@ class MediaSourceDelegate : public media::DemuxerHost {
       const UpdateNetworkStateCB& update_network_state_cb,
       const DurationChangeCB& duration_change_cb);
 
-  const blink::WebTimeRanges& Buffered();
   blink::WebTimeRanges Buffered() const;
   size_t DecodedFrameCount() const;
   size_t DroppedFrameCount() const;
@@ -152,7 +151,6 @@ class MediaSourceDelegate : public media::DemuxerHost {
   void OnNeedKey(const std::string& type,
                  const std::vector<uint8>& init_data);
   void NotifyDemuxerReady();
-  bool CanNotifyDemuxerReady();
 
   void StopDemuxer();
   void InitializeDemuxer();
@@ -206,8 +204,6 @@ class MediaSourceDelegate : public media::DemuxerHost {
 
   media::PipelineStatistics statistics_;
   media::Ranges<base::TimeDelta> buffered_time_ranges_;
-  // Keep a list of buffered time ranges.
-  blink::WebTimeRanges buffered_web_time_ranges_;
 
   MediaSourceOpenedCB media_source_opened_cb_;
   media::Demuxer::NeedKeyCB need_key_cb_;

@@ -6,6 +6,7 @@
 #define CONTENT_CHILD_INDEXED_DB_INDEXED_DB_DISPATCHER_H_
 
 #include <map>
+#include <string>
 #include <vector>
 
 #include "base/gtest_prod_util.h"
@@ -17,9 +18,8 @@
 #include "ipc/ipc_sync_message_filter.h"
 #include "third_party/WebKit/public/platform/WebBlobInfo.h"
 #include "third_party/WebKit/public/platform/WebIDBCallbacks.h"
-#include "third_party/WebKit/public/platform/WebIDBCursor.h"
-#include "third_party/WebKit/public/platform/WebIDBDatabase.h"
 #include "third_party/WebKit/public/platform/WebIDBDatabaseCallbacks.h"
+#include "third_party/WebKit/public/platform/WebIDBTypes.h"
 
 struct IndexedDBDatabaseMetadata;
 struct IndexedDBMsg_CallbacksSuccessCursorContinue_Params;
@@ -117,7 +117,7 @@ class CONTENT_EXPORT IndexedDBDispatcher : public WorkerTaskRunner::Observer {
       int64 transaction_id,
       blink::WebIDBDatabaseCallbacks* database_callbacks_ptr,
       blink::WebVector<long long> object_store_ids,
-      blink::WebIDBDatabase::TransactionMode mode);
+      blink::WebIDBTransactionMode mode);
 
   void RequestIDBDatabaseGet(int32 ipc_database_id,
                              int64 transaction_id,
@@ -134,7 +134,7 @@ class CONTENT_EXPORT IndexedDBDispatcher : public WorkerTaskRunner::Observer {
       const blink::WebData& value,
       const blink::WebVector<blink::WebBlobInfo>& web_blob_info,
       const IndexedDBKey& key,
-      blink::WebIDBDatabase::PutMode put_mode,
+      blink::WebIDBPutMode put_mode,
       blink::WebIDBCallbacks* callbacks,
       const blink::WebVector<long long>& index_ids,
       const blink::WebVector<blink::WebVector<blink::WebIDBKey> >& index_keys);
@@ -144,9 +144,9 @@ class CONTENT_EXPORT IndexedDBDispatcher : public WorkerTaskRunner::Observer {
                                     int64 object_store_id,
                                     int64 index_id,
                                     const IndexedDBKeyRange& key_range,
-                                    blink::WebIDBCursor::Direction direction,
+                                    blink::WebIDBCursorDirection direction,
                                     bool key_only,
-                                    blink::WebIDBDatabase::TaskType task_type,
+                                    blink::WebIDBTaskType task_type,
                                     blink::WebIDBCallbacks* callbacks);
 
   void RequestIDBDatabaseCount(int32 ipc_database_id,
@@ -182,10 +182,10 @@ class CONTENT_EXPORT IndexedDBDispatcher : public WorkerTaskRunner::Observer {
   }
 
   template <typename T>
-  void init_params(T& params, blink::WebIDBCallbacks* callbacks_ptr) {
+  void init_params(T* params, blink::WebIDBCallbacks* callbacks_ptr) {
     scoped_ptr<blink::WebIDBCallbacks> callbacks(callbacks_ptr);
-    params.ipc_thread_id = CurrentWorkerId();
-    params.ipc_callbacks_id = pending_callbacks_.Add(callbacks.release());
+    params->ipc_thread_id = CurrentWorkerId();
+    params->ipc_callbacks_id = pending_callbacks_.Add(callbacks.release());
   }
 
   // IDBCallback message handlers.

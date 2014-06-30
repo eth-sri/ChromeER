@@ -63,15 +63,22 @@ struct JwkToWebCryptoUsage {
   const blink::WebCryptoKeyUsage webcrypto_usage;
 };
 
+// Keep this ordered according to the definition
+// order of WebCrypto's "recognized key usage
+// values".
+//
+// This is not required for spec compliance,
+// however it makes the ordering of key_ops match
+// that of WebCrypto's Key.usages.
 const JwkToWebCryptoUsage kJwkWebCryptoUsageMap[] = {
     {"encrypt", blink::WebCryptoKeyUsageEncrypt},
     {"decrypt", blink::WebCryptoKeyUsageDecrypt},
-    {"deriveKey", blink::WebCryptoKeyUsageDeriveKey},
-    // TODO(padolph): Add 'deriveBits' once supported by Blink.
     {"sign", blink::WebCryptoKeyUsageSign},
-    {"unwrapKey", blink::WebCryptoKeyUsageUnwrapKey},
     {"verify", blink::WebCryptoKeyUsageVerify},
-    {"wrapKey", blink::WebCryptoKeyUsageWrapKey}};
+    {"deriveKey", blink::WebCryptoKeyUsageDeriveKey},
+    {"deriveBits", blink::WebCryptoKeyUsageDeriveBits},
+    {"wrapKey", blink::WebCryptoKeyUsageWrapKey},
+    {"unwrapKey", blink::WebCryptoKeyUsageUnwrapKey}};
 
 // Modifies the input usage_mask by according to the key_op value.
 bool JwkKeyOpToWebCryptoUsage(const std::string& key_op,
@@ -96,8 +103,8 @@ Status GetWebCryptoUsagesFromJwkKeyOps(
       return Status::ErrorJwkPropertyWrongType(
           base::StringPrintf("key_ops[%d]", static_cast<int>(i)), "string");
     }
-    if (!JwkKeyOpToWebCryptoUsage(key_op, usage_mask))
-      return Status::ErrorJwkUnrecognizedKeyop();
+    // Unrecognized key_ops are silently skipped.
+    ignore_result(JwkKeyOpToWebCryptoUsage(key_op, usage_mask));
   }
   return Status::Success();
 }
@@ -177,6 +184,22 @@ bool CreateSecretKeyAlgorithm(const blink::WebCryptoAlgorithm& algorithm,
     default:
       return false;
   }
+}
+
+bool ContainsKeyUsages(blink::WebCryptoKeyUsageMask a,
+                       blink::WebCryptoKeyUsageMask b) {
+  return (a & b) == b;
+}
+
+bool IsAlgorithmRsa(blink::WebCryptoAlgorithmId alg_id) {
+  return alg_id == blink::WebCryptoAlgorithmIdRsaOaep ||
+         alg_id == blink::WebCryptoAlgorithmIdRsaSsaPkcs1v1_5;
+}
+
+bool IsAlgorithmAsymmetric(blink::WebCryptoAlgorithmId alg_id) {
+  // TODO(padolph): include all other asymmetric algorithms once they are
+  // defined, e.g. EC and DH.
+  return IsAlgorithmRsa(alg_id);
 }
 
 }  // namespace webcrypto

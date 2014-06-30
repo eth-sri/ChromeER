@@ -25,6 +25,7 @@
 #include "cc/trees/layer_tree_host_single_thread_client.h"
 #include "cc/trees/layer_tree_impl.h"
 #include "cc/trees/single_thread_proxy.h"
+#include "cc/trees/thread_proxy.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "ui/gfx/frame_time.h"
 #include "ui/gfx/size_conversions.h"
@@ -45,6 +46,64 @@ DrawResult TestHooks::PrepareToDrawOnThread(
 base::TimeDelta TestHooks::LowFrequencyAnimationInterval() const {
   return base::TimeDelta::FromMilliseconds(16);
 }
+
+// Adapts ThreadProxy for test. Injects test hooks for testing.
+class ThreadProxyForTest : public ThreadProxy {
+ public:
+  static scoped_ptr<Proxy> Create(
+      TestHooks* test_hooks,
+      LayerTreeHost* host,
+      scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner) {
+    return make_scoped_ptr(
+        new ThreadProxyForTest(test_hooks,
+                               host,
+                               impl_task_runner)).PassAs<Proxy>();
+  }
+
+  virtual ~ThreadProxyForTest() {}
+
+  void test() {
+    test_hooks_->Layout();
+  }
+
+ private:
+  TestHooks* test_hooks_;
+
+  virtual void ScheduledActionSendBeginMainFrame() OVERRIDE {
+    test_hooks_->ScheduledActionWillSendBeginMainFrame();
+    ThreadProxy::ScheduledActionSendBeginMainFrame();
+    test_hooks_->ScheduledActionSendBeginMainFrame();
+  }
+
+  virtual DrawResult ScheduledActionDrawAndSwapIfPossible() OVERRIDE {
+    DrawResult result = ThreadProxy::ScheduledActionDrawAndSwapIfPossible();
+    test_hooks_->ScheduledActionDrawAndSwapIfPossible();
+    return result;
+  }
+
+  virtual void ScheduledActionAnimate() OVERRIDE {
+    ThreadProxy::ScheduledActionAnimate();
+    test_hooks_->ScheduledActionAnimate();
+  }
+
+  virtual void ScheduledActionCommit() OVERRIDE {
+    ThreadProxy::ScheduledActionCommit();
+    test_hooks_->ScheduledActionCommit();
+  }
+
+  virtual void ScheduledActionBeginOutputSurfaceCreation() OVERRIDE {
+    ThreadProxy::ScheduledActionBeginOutputSurfaceCreation();
+    test_hooks_->ScheduledActionBeginOutputSurfaceCreation();
+  }
+
+  ThreadProxyForTest(
+      TestHooks* test_hooks,
+      LayerTreeHost* host,
+      scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner)
+      : ThreadProxy(host, impl_task_runner),
+        test_hooks_(test_hooks) {
+  }
+};
 
 // Adapts LayerTreeHostImpl for test. Runs real code, then invokes test hooks.
 class LayerTreeHostImplForTesting : public LayerTreeHostImpl {
@@ -100,12 +159,17 @@ class LayerTreeHostImplForTesting : public LayerTreeHostImpl {
 
   virtual void CommitComplete() OVERRIDE {
     LayerTreeHostImpl::CommitComplete();
-    test_hooks_->CommitCompleteOnThread(this);
 
+    // A few tests count the number of times pending tree is activated.
+    // When not using impl-side painting, ActivatePendingTree is not called,
+    // so call these test hooks functions explicitly so that they do need
+    // to handle non-impl-side path explicitly.
     if (!settings().impl_side_painting) {
       test_hooks_->WillActivateTreeOnThread(this);
       test_hooks_->DidActivateTreeOnThread(this);
     }
+
+    test_hooks_->CommitCompleteOnThread(this);
   }
 
   virtual DrawResult PrepareToDraw(FrameData* frame) OVERRIDE {
@@ -285,10 +349,15 @@ class LayerTreeHostForTesting : public LayerTreeHost {
       scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner) {
     scoped_ptr<LayerTreeHostForTesting> layer_tree_host(
         new LayerTreeHostForTesting(test_hooks, client, settings));
-    if (impl_task_runner.get())
-      layer_tree_host->InitializeThreaded(impl_task_runner);
-    else
-      layer_tree_host->InitializeSingleThreaded(client);
+    if (impl_task_runner.get()) {
+      layer_tree_host->InitializeForTesting(
+          ThreadProxyForTest::Create(test_hooks,
+                                     layer_tree_host.get(),
+                                     impl_task_runner));
+    } else {
+      layer_tree_host->InitializeForTesting(
+          SingleThreadProxy::Create(layer_tree_host.get(), client));
+    }
     return layer_tree_host.Pass();
   }
 
@@ -479,7 +548,6 @@ void LayerTreeTest::DoBeginTest() {
 void LayerTreeTest::SetupTree() {
   if (!layer_tree_host_->root_layer()) {
     scoped_refptr<Layer> root_layer = Layer::Create();
-    root_layer->SetAnchorPoint(gfx::PointF());
     root_layer->SetBounds(gfx::Size(1, 1));
     root_layer->SetIsDrawable(true);
     layer_tree_host_->SetRootLayer(root_layer);

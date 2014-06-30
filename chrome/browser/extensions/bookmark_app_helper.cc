@@ -11,13 +11,14 @@
 #include "chrome/browser/extensions/crx_installer.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/favicon_downloader.h"
-#include "chrome/browser/extensions/image_loader.h"
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/browser/image_loader.h"
+#include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/manifest_handlers/icons_handler.h"
 #include "extensions/common/url_pattern.h"
@@ -182,6 +183,9 @@ BookmarkAppHelper::BookmarkAppHelper(ExtensionService* service,
 
   crx_installer_->set_error_on_unsupported_requirements(true);
 
+  if (!contents)
+    return;
+
   // Add urls from the WebApplicationInfo.
   std::vector<GURL> web_app_info_icon_urls;
   for (std::vector<WebApplicationInfo::IconInfo>::const_iterator it =
@@ -203,7 +207,11 @@ BookmarkAppHelper::~BookmarkAppHelper() {}
 
 void BookmarkAppHelper::Create(const CreateBookmarkAppCallback& callback) {
   callback_ = callback;
-  favicon_downloader_->Start();
+
+  if (favicon_downloader_.get())
+    favicon_downloader_->Start();
+  else
+    OnIconsDownloaded(true, std::map<GURL, std::vector<SkBitmap> >());
 }
 
 void BookmarkAppHelper::OnIconsDownloaded(
@@ -237,6 +245,18 @@ void BookmarkAppHelper::OnIconsDownloaded(
       downloaded_icons.push_back(*bitmap_it);
     }
   }
+
+  // Add all existing icons from WebApplicationInfo.
+  for (std::vector<WebApplicationInfo::IconInfo>::const_iterator it =
+           web_app_info_.icons.begin();
+       it != web_app_info_.icons.end();
+       ++it) {
+    const SkBitmap& icon = it->data;
+    if (!icon.drawsNothing() && icon.width() == icon.height())
+      downloaded_icons.push_back(icon);
+  }
+
+  web_app_info_.icons.clear();
 
   // If there are icons that don't match the accepted icon sizes, find the
   // closest bigger icon to the accepted sizes and resize the icon to it. An
@@ -275,12 +295,8 @@ void BookmarkAppHelper::OnIconsDownloaded(
     SkColor background_color = SK_ColorBLACK;
     if (resized_bitmaps.size()) {
       color_utils::GridSampler sampler;
-      background_color = color_utils::CalculateKMeanColorOfPNG(
-          gfx::Image::CreateFrom1xBitmap(resized_bitmaps.begin()->second)
-              .As1xPNGBytes(),
-          100,
-          568,
-          &sampler);
+      background_color = color_utils::CalculateKMeanColorOfBitmap(
+          resized_bitmaps.begin()->second);
     }
 
     for (std::set<int>::const_iterator it = generate_sizes.begin();

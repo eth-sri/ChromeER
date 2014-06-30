@@ -17,7 +17,6 @@
 #include "base/metrics/histogram.h"
 #include "base/metrics/sparse_histogram.h"
 #include "base/metrics/stats_counters.h"
-#include "base/platform_file.h"
 #include "base/process/process_metrics.h"
 #include "base/rand_util.h"
 #include "base/strings/string_number_conversions.h"
@@ -27,6 +26,7 @@
 #include "base/synchronization/waitable_event.h"
 #include "base/sys_info.h"
 #include "base/time/time.h"
+#include "content/child/child_thread.h"
 #include "content/child/content_child_helpers.h"
 #include "content/child/fling_curve_configuration.h"
 #include "content/child/web_discardable_memory_impl.h"
@@ -46,11 +46,9 @@
 #include "third_party/WebKit/public/platform/WebData.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebWaitableEvent.h"
-#include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/base/layout.h"
 
 #if defined(OS_ANDROID)
-#include "base/android/sys_utils.h"
 #include "content/child/fling_animator_impl_android.h"
 #endif
 
@@ -315,6 +313,8 @@ static int ToMessageID(WebLocalizedString::Name name) {
       return IDS_RECENT_SEARCHES_NONE;
     case WebLocalizedString::SearchMenuRecentSearchesText:
       return IDS_RECENT_SEARCHES;
+    case WebLocalizedString::SelectMenuListText:
+      return IDS_FORM_SELECT_MENU_LIST_TEXT;
     case WebLocalizedString::SubmitButtonDefaultLabel:
       return IDS_FORM_SUBMIT_LABEL;
     case WebLocalizedString::ThisMonthButtonLabel:
@@ -402,7 +402,11 @@ BlinkPlatformImpl::~BlinkPlatformImpl() {
 }
 
 WebURLLoader* BlinkPlatformImpl::createURLLoader() {
-  return new WebURLLoaderImpl;
+  ChildThread* child_thread = ChildThread::current();
+  // There may be no child thread in RenderViewTests.  These tests can still use
+  // data URLs to bypass the ResourceDispatcher.
+  return new WebURLLoaderImpl(
+      child_thread ? child_thread->resource_dispatcher() : NULL);
 }
 
 WebSocketStreamHandle* BlinkPlatformImpl::createSocketStreamHandle() {
@@ -876,7 +880,7 @@ void BlinkPlatformImpl::callOnMainThread(
 }
 
 blink::WebGestureCurve* BlinkPlatformImpl::createFlingAnimationCurve(
-    int device_source,
+    blink::WebGestureDevice device_source,
     const blink::WebFloatPoint& velocity,
     const blink::WebSize& cumulative_scroll) {
 #if defined(OS_ANDROID)
@@ -885,7 +889,7 @@ blink::WebGestureCurve* BlinkPlatformImpl::createFlingAnimationCurve(
       cumulative_scroll);
 #endif
 
-  if (device_source == blink::WebGestureEvent::Touchscreen)
+  if (device_source == blink::WebGestureDeviceTouchscreen)
     return fling_curve_configuration_->CreateForTouchScreen(velocity,
                                                             cumulative_scroll);
 
@@ -919,9 +923,13 @@ WebFallbackThemeEngine* BlinkPlatformImpl::fallbackThemeEngine() {
   return &fallback_theme_engine_;
 }
 
-base::PlatformFile BlinkPlatformImpl::databaseOpenFile(
+blink::Platform::FileHandle BlinkPlatformImpl::databaseOpenFile(
     const blink::WebString& vfs_file_name, int desired_flags) {
-  return base::kInvalidPlatformFileValue;
+#if defined(OS_WIN)
+  return INVALID_HANDLE_VALUE;
+#elif defined(OS_POSIX)
+  return -1;
+#endif
 }
 
 int BlinkPlatformImpl::databaseDeleteFile(
@@ -1050,7 +1058,7 @@ BlinkPlatformImpl::allocateAndLockDiscardableMemory(size_t bytes) {
 
 size_t BlinkPlatformImpl::maxDecodedImageBytes() {
 #if defined(OS_ANDROID)
-  if (base::android::SysUtils::IsLowEndDevice()) {
+  if (base::SysInfo::IsLowEndDevice()) {
     // Limit image decoded size to 3M pixels on low end devices.
     // 4 is maximum number of bytes per pixel.
     return 3 * 1024 * 1024 * 4;

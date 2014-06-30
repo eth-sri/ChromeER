@@ -14,10 +14,13 @@
         'cast_receiver',
         'cast_transport',
         '<(DEPTH)/testing/gtest.gyp:gtest',
+        '<(DEPTH)/third_party/ffmpeg/ffmpeg.gyp:ffmpeg',
         '<(DEPTH)/third_party/libyuv/libyuv.gyp:libyuv',
         '<(DEPTH)/ui/gfx/gfx.gyp:gfx_geometry',
       ],
       'sources': [
+        'test/fake_media_source.cc',
+        'test/fake_media_source.h',
         'test/fake_single_thread_task_runner.cc',
         'test/fake_single_thread_task_runner.h',
         'test/skewed_single_thread_task_runner.cc',
@@ -67,8 +70,6 @@
       ],
       'sources': [
         '<(DEPTH)/media/base/run_all_unittests.cc',
-        'audio_receiver/audio_decoder_unittest.cc',
-        'audio_receiver/audio_receiver_unittest.cc',
         'audio_sender/audio_encoder_unittest.cc',
         'audio_sender/audio_sender_unittest.cc',
         'congestion_control/congestion_control_unittest.cc',
@@ -82,6 +83,9 @@
         'logging/receiver_time_offset_estimator_impl_unittest.cc',
         'logging/simple_event_subscriber_unittest.cc',
         'logging/stats_event_subscriber_unittest.cc',
+        'receiver/audio_decoder_unittest.cc',
+        'receiver/frame_receiver_unittest.cc',
+        'receiver/video_decoder_unittest.cc',
         'rtcp/mock_rtcp_receiver_feedback.cc',
         'rtcp/mock_rtcp_receiver_feedback.h',
         'rtcp/mock_rtcp_sender_feedback.cc',
@@ -117,12 +121,46 @@
         'transport/rtp_sender/rtp_packetizer/test/rtp_header_parser.cc',
         'transport/rtp_sender/rtp_packetizer/test/rtp_header_parser.h',
         'transport/transport/udp_transport_unittest.cc',
-        'video_receiver/video_decoder_unittest.cc',
-        'video_receiver/video_receiver_unittest.cc',
         'video_sender/external_video_encoder_unittest.cc',
         'video_sender/video_encoder_impl_unittest.cc',
         'video_sender/video_sender_unittest.cc',
       ], # source
+    },
+    {
+      'target_name': 'cast_benchmarks',
+      'type': '<(gtest_target_type)',
+      'include_dirs': [
+        '<(DEPTH)/',
+      ],
+      'dependencies': [
+        'cast_base',
+        'cast_receiver',
+        'cast_rtcp',
+        'cast_sender',
+        'cast_test_utility',
+        'cast_transport',
+        '<(DEPTH)/base/base.gyp:test_support_base',
+        '<(DEPTH)/net/net.gyp:net',
+        '<(DEPTH)/testing/gtest.gyp:gtest',
+      ],
+      'sources': [
+        'test/cast_benchmarks.cc',
+        'test/fake_single_thread_task_runner.cc',
+        'test/fake_single_thread_task_runner.h',
+        'test/fake_video_encode_accelerator.cc',
+        'test/fake_video_encode_accelerator.h',
+        'test/utility/test_util.cc',
+        'test/utility/test_util.h',
+      ], # source
+      'conditions': [
+        ['os_posix==1 and OS!="mac" and OS!="ios" and use_allocator!="none"',
+          {
+            'dependencies': [
+              '<(DEPTH)/base/allocator/allocator.gyp:allocator',
+            ],
+          }
+        ],
+      ],
     },
     {
       # This is a target for the collection of cast development tools.
@@ -188,6 +226,28 @@
       ],
       'sources': [
         '<(DEPTH)/media/cast/test/sender.cc',
+      ],
+    },
+    {
+      'target_name': 'cast_simulator',
+      'type': 'executable',
+      'include_dirs': [
+        '<(DEPTH)/',
+      ],
+      'dependencies': [
+        'cast_base',
+        'cast_sender',
+        'cast_test_utility',
+        'cast_transport',
+        '<(DEPTH)/net/net.gyp:net_test_support',
+        '<(DEPTH)/media/media.gyp:media',
+        '<(DEPTH)/testing/gtest.gyp:gtest',
+        '<(DEPTH)/third_party/ffmpeg/ffmpeg.gyp:ffmpeg',
+        '<(DEPTH)/third_party/opus/opus.gyp:opus',
+        '<(DEPTH)/ui/gfx/gfx.gyp:gfx_geometry',
+      ],
+      'sources': [
+        '<(DEPTH)/media/cast/test/simulator.cc',
       ],
     },
     {

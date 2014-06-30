@@ -13,4 +13,18 @@ interface TestClient {
   AckTest();
 };
 
+interface TestA {
+  CallB();
+  CallCFromB();
+};
+
+interface TestB {
+  B() => ();
+  CallC() => ();
+};
+
+interface TestC {
+  C() => ();
+};
+
 }

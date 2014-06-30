@@ -25,7 +25,7 @@
 #include "chrome/browser/history/page_usage_data.h"
 #include "chrome/browser/history/top_sites.h"
 #include "chrome/browser/history/top_sites_backend.h"
-#include "chrome/common/thumbnail_score.h"
+#include "components/history/core/common/thumbnail_score.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/gfx/image/image.h"
 #include "url/gurl.h"
@@ -216,8 +216,7 @@ class TopSitesImpl : public TopSites {
       const scoped_refptr<MostVisitedThumbnails>& thumbnails);
 
   // Called when history service returns a list of top URLs.
-  void OnTopSitesAvailableFromHistory(CancelableRequestProvider::Handle handle,
-                                      MostVisitedURLList data);
+  void OnTopSitesAvailableFromHistory(const MostVisitedURLList* data);
 
   scoped_refptr<TopSitesBackend> backend_;
 

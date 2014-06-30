@@ -7,6 +7,7 @@
 
 #include "build/build_config.h"
 
+#include "base/files/file.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util_proxy.h"
 #include "base/memory/ref_counted.h"
@@ -45,6 +46,7 @@ class NaClProcessHost : public content::BrowserChildProcessHostDelegate {
  public:
   // manifest_url: the URL of the manifest of the Native Client plugin being
   // executed.
+  // permissions: PPAPI permissions, to control access to private APIs.
   // render_view_id: RenderView routing id, to control access to private APIs.
   // permission_bits: controls which interfaces the NaCl plugin can use.
   // uses_irt: whether the launched process should use the IRT.
@@ -60,6 +62,8 @@ class NaClProcessHost : public content::BrowserChildProcessHostDelegate {
   // off_the_record: was the process launched from an incognito renderer?
   // profile_directory: is the path of current profile directory.
   NaClProcessHost(const GURL& manifest_url,
+                  base::File nexe_file,
+                  ppapi::PpapiPermissions permissions,
                   int render_view_id,
                   uint32 permission_bits,
                   bool uses_irt,
@@ -184,6 +188,8 @@ class NaClProcessHost : public content::BrowserChildProcessHostDelegate {
       const IPC::ChannelHandle& manifest_service_channel_handle);
 
   GURL manifest_url_;
+  base::File nexe_file_;
+
   ppapi::PpapiPermissions permissions_;
 
 #if defined(OS_WIN)

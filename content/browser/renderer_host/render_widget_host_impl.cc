@@ -26,6 +26,7 @@
 #include "cc/output/compositor_frame_ack.h"
 #include "content/browser/accessibility/accessibility_mode_helper.h"
 #include "content/browser/accessibility/browser_accessibility_state_impl.h"
+#include "content/browser/browser_plugin/browser_plugin_guest.h"
 #include "content/browser/gpu/compositor_util.h"
 #include "content/browser/gpu/gpu_process_host.h"
 #include "content/browser/gpu/gpu_process_host_ui_shim.h"
@@ -38,7 +39,6 @@
 #include "content/browser/renderer_host/input/synthetic_gesture_target.h"
 #include "content/browser/renderer_host/input/timeout_monitor.h"
 #include "content/browser/renderer_host/input/touch_emulator.h"
-#include "content/browser/renderer_host/overscroll_controller.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/renderer_host/render_widget_helper.h"
@@ -192,7 +192,8 @@ RenderWidgetHostImpl::RenderWidgetHostImpl(RenderWidgetHostDelegate* delegate,
       allow_privileged_mouse_lock_(false),
       has_touch_handler_(false),
       weak_factory_(this),
-      last_input_number_(static_cast<int64>(GetProcess()->GetID()) << 32) {
+      last_input_number_(static_cast<int64>(GetProcess()->GetID()) << 32),
+      next_browser_snapshot_id_(0) {
   CHECK(delegate_);
   if (routing_id_ == MSG_ROUTING_NONE) {
     routing_id_ = process_->GetNextRoutingID();
@@ -232,13 +233,10 @@ RenderWidgetHostImpl::RenderWidgetHostImpl(RenderWidgetHostDelegate* delegate,
 
   touch_emulator_.reset();
 
-#if defined(USE_AURA)
-  bool overscroll_enabled = CommandLine::ForCurrentProcess()->
-      GetSwitchValueASCII(switches::kOverscrollHistoryNavigation) != "0";
-  SetOverscrollControllerEnabled(overscroll_enabled);
-#endif
-
-  if (GetProcess()->IsGuest() || !CommandLine::ForCurrentProcess()->HasSwitch(
+  RenderViewHostImpl* rvh = static_cast<RenderViewHostImpl*>(
+      IsRenderView() ? RenderViewHost::From(this) : NULL);
+  if (BrowserPluginGuest::IsGuest(rvh) ||
+      !CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kDisableHangMonitor)) {
     hang_monitor_timeout_.reset(new TimeoutMonitor(
         base::Bind(&RenderWidgetHostImpl::RendererIsUnresponsive,
@@ -390,13 +388,6 @@ void RenderWidgetHostImpl::SendScreenRects() {
   waiting_for_screen_rects_ack_ = true;
 }
 
-void RenderWidgetHostImpl::SetOverscrollControllerEnabled(bool enabled) {
-  if (!enabled)
-    overscroll_controller_.reset();
-  else if (!overscroll_controller_)
-    overscroll_controller_.reset(new OverscrollController());
-}
-
 void RenderWidgetHostImpl::SuppressNextCharEvents() {
   suppress_next_char_events_ = true;
 }
@@ -452,6 +443,8 @@ bool RenderWidgetHostImpl::OnMessageReceived(const IPC::Message &msg) {
   IPC_BEGIN_MESSAGE_MAP(RenderWidgetHostImpl, msg)
     IPC_MESSAGE_HANDLER(InputHostMsg_QueueSyntheticGesture,
                         OnQueueSyntheticGesture)
+    IPC_MESSAGE_HANDLER(InputHostMsg_ImeCancelComposition,
+                        OnImeCancelComposition)
     IPC_MESSAGE_HANDLER(ViewHostMsg_RenderViewReady, OnRenderViewReady)
     IPC_MESSAGE_HANDLER(ViewHostMsg_RenderProcessGone, OnRenderProcessGone)
     IPC_MESSAGE_HANDLER(ViewHostMsg_Close, OnClose)
@@ -468,10 +461,8 @@ bool RenderWidgetHostImpl::OnMessageReceived(const IPC::Message &msg) {
     IPC_MESSAGE_HANDLER(ViewHostMsg_SetCursor, OnSetCursor)
     IPC_MESSAGE_HANDLER(ViewHostMsg_SetTouchEventEmulationEnabled,
                         OnSetTouchEventEmulationEnabled)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_TextInputTypeChanged,
-                        OnTextInputTypeChanged)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_ImeCancelComposition,
-                        OnImeCancelComposition)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_TextInputStateChanged,
+                        OnTextInputStateChanged)
     IPC_MESSAGE_HANDLER(ViewHostMsg_LockMouse, OnLockMouse)
     IPC_MESSAGE_HANDLER(ViewHostMsg_UnlockMouse, OnUnlockMouse)
     IPC_MESSAGE_HANDLER(ViewHostMsg_ShowDisambiguationPopup,
@@ -490,7 +481,7 @@ bool RenderWidgetHostImpl::OnMessageReceived(const IPC::Message &msg) {
                         OnCompositorSurfaceBuffersSwapped)
 #endif
 #if defined(OS_MACOSX) || defined(USE_AURA)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_ImeCompositionRangeChanged,
+    IPC_MESSAGE_HANDLER(InputHostMsg_ImeCompositionRangeChanged,
                         OnImeCompositionRangeChanged)
 #endif
     IPC_MESSAGE_UNHANDLED(handled = false)
@@ -581,8 +572,7 @@ void RenderWidgetHostImpl::WasResized() {
     return;
   }
 
-  gfx::Rect view_bounds = view_->GetViewBounds();
-  gfx::Size new_size(view_bounds.size());
+  gfx::Size new_size(view_->GetRequestedRendererSize());
 
   gfx::Size old_physical_backing_size = physical_backing_size_;
   physical_backing_size_ = view_->GetPhysicalBackingSize();
@@ -647,10 +637,6 @@ void RenderWidgetHostImpl::Blur() {
   // request later.
   if (IsMouseLocked())
     view_->UnlockMouse();
-
-  // If there is a pending overscroll, then that should be cancelled.
-  if (overscroll_controller_)
-    overscroll_controller_->Cancel();
 
   if (touch_emulator_)
     touch_emulator_->CancelTouch();
@@ -1177,6 +1163,13 @@ void RenderWidgetHostImpl::InvalidateScreenInfo() {
   screen_info_.reset();
 }
 
+void RenderWidgetHostImpl::GetSnapshotFromBrowser(
+    const base::Callback<void(const unsigned char*,size_t)> callback) {
+  int id = next_browser_snapshot_id_++;
+  pending_browser_snapshots_.insert(std::make_pair(id, callback));
+  Send(new ViewMsg_ForceRedraw(GetRoutingID(), id));
+}
+
 void RenderWidgetHostImpl::OnSelectionChanged(const base::string16& text,
                                               size_t offset,
                                               const gfx::Range& range) {
@@ -1208,10 +1201,7 @@ void RenderWidgetHostImpl::RendererExited(base::TerminationStatus status,
   input_router_.reset(new InputRouterImpl(
       process_, this, this, routing_id_, GetInputRouterConfigForPlatform()));
 
-  if (overscroll_controller_)
-    overscroll_controller_->Reset();
-
- // Must reset these to ensure that keyboard events work with a new renderer.
+  // Must reset these to ensure that keyboard events work with a new renderer.
   suppress_next_char_events_ = false;
 
   // Reset some fields in preparation for recovering from a crash.
@@ -1273,7 +1263,7 @@ void RenderWidgetHostImpl::ImeSetComposition(
     const std::vector<blink::WebCompositionUnderline>& underlines,
     int selection_start,
     int selection_end) {
-  Send(new ViewMsg_ImeSetComposition(
+  Send(new InputMsg_ImeSetComposition(
             GetRoutingID(), text, underlines, selection_start, selection_end));
 }
 
@@ -1281,12 +1271,12 @@ void RenderWidgetHostImpl::ImeConfirmComposition(
     const base::string16& text,
     const gfx::Range& replacement_range,
     bool keep_selection) {
-  Send(new ViewMsg_ImeConfirmComposition(
+  Send(new InputMsg_ImeConfirmComposition(
         GetRoutingID(), text, replacement_range, keep_selection));
 }
 
 void RenderWidgetHostImpl::ImeCancelComposition() {
-  Send(new ViewMsg_ImeSetComposition(GetRoutingID(), base::string16(),
+  Send(new InputMsg_ImeSetComposition(GetRoutingID(), base::string16(),
             std::vector<blink::WebCompositionUnderline>(), 0, 0));
 }
 
@@ -1629,6 +1619,9 @@ void RenderWidgetHostImpl::OnSetCursor(const WebCursor& cursor) {
 
 void RenderWidgetHostImpl::OnSetTouchEventEmulationEnabled(
     bool enabled, bool allow_pinch) {
+  if (delegate_)
+    delegate_->OnTouchEmulationEnabled(enabled);
+
   if (enabled) {
     if (!touch_emulator_)
       touch_emulator_.reset(new TouchEmulator(this));
@@ -1639,12 +1632,10 @@ void RenderWidgetHostImpl::OnSetTouchEventEmulationEnabled(
   }
 }
 
-void RenderWidgetHostImpl::OnTextInputTypeChanged(
-    ui::TextInputType type,
-    ui::TextInputMode input_mode,
-    bool can_compose_inline) {
+void RenderWidgetHostImpl::OnTextInputStateChanged(
+    const ViewHostMsg_TextInputState_Params& params) {
   if (view_)
-    view_->TextInputTypeChanged(type, input_mode, can_compose_inline);
+    view_->TextInputStateChanged(params);
 }
 
 #if defined(OS_MACOSX) || defined(USE_AURA)
@@ -1807,7 +1798,7 @@ void RenderWidgetHostImpl::IncrementInFlightEventCount() {
 }
 
 void RenderWidgetHostImpl::DecrementInFlightEventCount() {
-  DCHECK(in_flight_event_count_ >= 0);
+  DCHECK_GE(in_flight_event_count_, 0);
   // Cancel pending hung renderer checks since the renderer is responsive.
   if (decrement_in_flight_event_count() <= 0)
     StopHangMonitorTimeout();
@@ -1815,10 +1806,6 @@ void RenderWidgetHostImpl::DecrementInFlightEventCount() {
 
 void RenderWidgetHostImpl::OnHasTouchEventHandlers(bool has_handlers) {
   has_touch_handler_ = has_handlers;
-}
-
-OverscrollController* RenderWidgetHostImpl::GetOverscrollController() const {
-  return overscroll_controller_.get();
 }
 
 void RenderWidgetHostImpl::DidFlush() {
@@ -1866,10 +1853,12 @@ void RenderWidgetHostImpl::OnWheelEventAck(
         ui::INPUT_EVENT_LATENCY_TERMINATED_MOUSE_COMPONENT, 0, 0);
   }
 
-  const bool processed = (INPUT_EVENT_ACK_STATE_CONSUMED == ack_result);
-  if (!processed && !is_hidden() && view_) {
-    if (!delegate_->HandleWheelEvent(wheel_event.event))
-      view_->UnhandledWheelEvent(wheel_event.event);
+  if (!is_hidden() && view_) {
+    if (ack_result != INPUT_EVENT_ACK_STATE_CONSUMED &&
+        delegate_->HandleWheelEvent(wheel_event.event)) {
+      ack_result = INPUT_EVENT_ACK_STATE_CONSUMED;
+    }
+    view_->WheelEventAck(wheel_event.event, ack_result);
   }
 }
 
@@ -2022,6 +2011,10 @@ gfx::Point RenderWidgetHostImpl::AccessibilityOriginInScreen(
   return view_->AccessibilityOriginInScreen(bounds);
 }
 
+void RenderWidgetHostImpl::AccessibilityHitTest(const gfx::Point& point) {
+  Send(new AccessibilityMsg_HitTest(GetRoutingID(), point));
+}
+
 void RenderWidgetHostImpl::AccessibilityFatalError() {
   Send(new AccessibilityMsg_FatalError(GetRoutingID()));
   view_->SetBrowserAccessibilityManager(NULL);
@@ -2172,6 +2165,12 @@ void RenderWidgetHostImpl::ComputeTouchLatency(
 
 void RenderWidgetHostImpl::FrameSwapped(const ui::LatencyInfo& latency_info) {
   ui::LatencyInfo::LatencyComponent window_snapshot_component;
+  if (latency_info.FindLatency(ui::WINDOW_OLD_SNAPSHOT_FRAME_NUMBER_COMPONENT,
+                               GetLatencyComponentId(),
+                               &window_snapshot_component)) {
+    WindowOldSnapshotReachedScreen(
+        static_cast<int>(window_snapshot_component.sequence_number));
+  }
   if (latency_info.FindLatency(ui::WINDOW_SNAPSHOT_FRAME_NUMBER_COMPONENT,
                                GetLatencyComponentId(),
                                &window_snapshot_component)) {
@@ -2231,7 +2230,7 @@ void RenderWidgetHostImpl::WindowSnapshotAsyncCallback(
       routing_id, snapshot_id, snapshot_size, png_data->data()));
 }
 
-void RenderWidgetHostImpl::WindowSnapshotReachedScreen(int snapshot_id) {
+void RenderWidgetHostImpl::WindowOldSnapshotReachedScreen(int snapshot_id) {
   DCHECK(base::MessageLoopForUI::IsCurrent());
 
   std::vector<unsigned char> png;
@@ -2267,6 +2266,53 @@ void RenderWidgetHostImpl::WindowSnapshotReachedScreen(int snapshot_id) {
                  snapshot_size));
 }
 
+void RenderWidgetHostImpl::WindowSnapshotReachedScreen(int snapshot_id) {
+  DCHECK(base::MessageLoopForUI::IsCurrent());
+
+  gfx::Rect view_bounds = GetView()->GetViewBounds();
+  gfx::Rect snapshot_bounds(view_bounds.size());
+
+  std::vector<unsigned char> png;
+  if (ui::GrabViewSnapshot(
+      GetView()->GetNativeView(), &png, snapshot_bounds)) {
+    OnSnapshotDataReceived(snapshot_id, &png.front(), png.size());
+    return;
+  }
+
+  ui::GrabViewSnapshotAsync(
+      GetView()->GetNativeView(),
+      snapshot_bounds,
+      base::ThreadTaskRunnerHandle::Get(),
+      base::Bind(&RenderWidgetHostImpl::OnSnapshotDataReceivedAsync,
+                 weak_factory_.GetWeakPtr(),
+                 snapshot_id));
+}
+
+void RenderWidgetHostImpl::OnSnapshotDataReceived(int snapshot_id,
+                                                  const unsigned char* data,
+                                                  size_t size) {
+  // Any pending snapshots with a lower ID than the one received are considered
+  // to be implicitly complete, and returned the same snapshot data.
+  PendingSnapshotMap::iterator it = pending_browser_snapshots_.begin();
+  while(it != pending_browser_snapshots_.end()) {
+      if (it->first <= snapshot_id) {
+        it->second.Run(data, size);
+        pending_browser_snapshots_.erase(it++);
+      } else {
+        ++it;
+      }
+  }
+}
+
+void RenderWidgetHostImpl::OnSnapshotDataReceivedAsync(
+    int snapshot_id,
+    scoped_refptr<base::RefCountedBytes> png_data) {
+  if (png_data)
+    OnSnapshotDataReceived(snapshot_id, png_data->front(), png_data->size());
+  else
+    OnSnapshotDataReceived(snapshot_id, NULL, 0);
+}
+
 // static
 void RenderWidgetHostImpl::CompositorFrameDrawn(
     const std::vector<ui::LatencyInfo>& latency_info) {
@@ -2277,7 +2323,8 @@ void RenderWidgetHostImpl::CompositorFrameDrawn(
          b != latency_info[i].latency_components.end();
          ++b) {
       if (b->first.first == ui::INPUT_EVENT_LATENCY_BEGIN_RWH_COMPONENT ||
-          b->first.first == ui::WINDOW_SNAPSHOT_FRAME_NUMBER_COMPONENT) {
+          b->first.first == ui::WINDOW_SNAPSHOT_FRAME_NUMBER_COMPONENT ||
+          b->first.first == ui::WINDOW_OLD_SNAPSHOT_FRAME_NUMBER_COMPONENT) {
         // Matches with GetLatencyComponentId
         int routing_id = b->first.second & 0xffffffff;
         int process_id = (b->first.second >> 32) & 0xffffffff;
@@ -2301,7 +2348,8 @@ void RenderWidgetHostImpl::AddLatencyInfoComponentIds(
       latency_info->latency_components.begin();
   while (lc != latency_info->latency_components.end()) {
     ui::LatencyComponentType component_type = lc->first.first;
-    if (component_type == ui::WINDOW_SNAPSHOT_FRAME_NUMBER_COMPONENT) {
+    if (component_type == ui::WINDOW_SNAPSHOT_FRAME_NUMBER_COMPONENT ||
+        component_type == ui::WINDOW_OLD_SNAPSHOT_FRAME_NUMBER_COMPONENT) {
       // Generate a new component entry with the correct component ID
       ui::LatencyInfo::LatencyMap::key_type key =
           std::make_pair(component_type, GetLatencyComponentId());

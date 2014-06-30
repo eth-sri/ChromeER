@@ -29,6 +29,13 @@ _kind_to_cpp_type = {
   mojom.DOUBLE:       "double",
 }
 
+def DefaultValue(field):
+  if field.default:
+    if isinstance(field.kind, mojom.Struct):
+      assert field.default == "default"
+      return "%s::New()" % GetNameForKind(field.kind)
+    return ExpressionToText(field.default)
+  return ""
 
 def NamespaceToArray(namespace):
   return namespace.split('.') if namespace else []
@@ -37,8 +44,8 @@ def GetNameForKind(kind, internal = False):
   parts = []
   if kind.imported_from:
     parts.extend(NamespaceToArray(kind.imported_from["namespace"]))
-    if internal:
-      parts.append("internal")
+  if internal:
+    parts.append("internal")
   if kind.parent_kind:
     parts.append(kind.parent_kind.name)
   parts.append(kind.name)
@@ -47,9 +54,10 @@ def GetNameForKind(kind, internal = False):
 def GetCppType(kind):
   if isinstance(kind, mojom.Struct):
     return "%s_Data*" % GetNameForKind(kind, internal=True)
-  if isinstance(kind, mojom.Array):
+  if isinstance(kind, (mojom.Array, mojom.FixedArray)):
     return "mojo::internal::Array_Data<%s>*" % GetCppType(kind.kind)
-  if isinstance(kind, mojom.Interface):
+  if isinstance(kind, mojom.Interface) or \
+     isinstance(kind, mojom.InterfaceRequest):
     return "mojo::MessagePipeHandle"
   if isinstance(kind, mojom.Enum):
     return "int32_t"
@@ -63,23 +71,41 @@ def GetCppPodType(kind):
   return _kind_to_cpp_type[kind]
 
 def GetCppArrayArgWrapperType(kind):
-  if isinstance(kind, (mojom.Struct, mojom.Enum)):
+  if isinstance(kind, mojom.Enum):
     return GetNameForKind(kind)
-  if isinstance(kind, mojom.Array):
-    return "mojo::Array<%s >" % GetCppArrayArgWrapperType(kind.kind)
+  if isinstance(kind, mojom.Struct):
+    return "%sPtr" % GetNameForKind(kind)
+  if isinstance(kind, (mojom.Array, mojom.FixedArray)):
+    return "mojo::Array<%s> " % GetCppArrayArgWrapperType(kind.kind)
   if isinstance(kind, mojom.Interface):
     raise Exception("Arrays of interfaces not yet supported!")
+  if isinstance(kind, mojom.InterfaceRequest):
+    raise Exception("Arrays of interface requests not yet supported!")
   if kind.spec == 's':
     return "mojo::String"
+  if kind.spec == 'h':
+    return "mojo::ScopedHandle"
+  if kind.spec == 'h:d:c':
+    return "mojo::ScopedDataPipeConsumerHandle"
+  if kind.spec == 'h:d:p':
+    return "mojo::ScopedDataPipeProducerHandle"
+  if kind.spec == 'h:m':
+    return "mojo::ScopedMessagePipeHandle"
+  if kind.spec == 'h:s':
+    return "mojo::ScopedSharedBufferHandle"
   return _kind_to_cpp_type[kind]
 
 def GetCppResultWrapperType(kind):
-  if isinstance(kind, (mojom.Struct, mojom.Enum)):
+  if isinstance(kind, mojom.Enum):
     return GetNameForKind(kind)
-  if isinstance(kind, mojom.Array):
-    return "mojo::Array<%s >" % GetCppArrayArgWrapperType(kind.kind)
+  if isinstance(kind, mojom.Struct):
+    return "%sPtr" % GetNameForKind(kind)
+  if isinstance(kind, (mojom.Array, mojom.FixedArray)):
+    return "mojo::Array<%s>" % GetCppArrayArgWrapperType(kind.kind)
   if isinstance(kind, mojom.Interface):
-    return "%sPtr" % kind.name
+    return "%sPtr" % GetNameForKind(kind)
+  if isinstance(kind, mojom.InterfaceRequest):
+    return "mojo::InterfaceRequest<%s>" % GetNameForKind(kind.kind)
   if kind.spec == 's':
     return "mojo::String"
   if kind.spec == 'h':
@@ -95,25 +121,39 @@ def GetCppResultWrapperType(kind):
   return _kind_to_cpp_type[kind]
 
 def GetCppWrapperType(kind):
-  if isinstance(kind, (mojom.Struct, mojom.Enum)):
+  if isinstance(kind, mojom.Enum):
     return GetNameForKind(kind)
-  if isinstance(kind, mojom.Array):
-    return "mojo::Array<%s >" % GetCppArrayArgWrapperType(kind.kind)
+  if isinstance(kind, mojom.Struct):
+    return "%sPtr" % GetNameForKind(kind)
+  if isinstance(kind, (mojom.Array, mojom.FixedArray)):
+    return "mojo::Array<%s>" % GetCppArrayArgWrapperType(kind.kind)
   if isinstance(kind, mojom.Interface):
-    return "mojo::Passable<mojo::MessagePipeHandle>"
+    return "mojo::ScopedMessagePipeHandle"
+  if isinstance(kind, mojom.InterfaceRequest):
+    raise Exception("InterfaceRequest fields not supported!")
   if kind.spec == 's':
     return "mojo::String"
-  if generator.IsHandleKind(kind):
-    return "mojo::Passable<%s>" % _kind_to_cpp_type[kind]
+  if kind.spec == 'h':
+    return "mojo::ScopedHandle"
+  if kind.spec == 'h:d:c':
+    return "mojo::ScopedDataPipeConsumerHandle"
+  if kind.spec == 'h:d:p':
+    return "mojo::ScopedDataPipeProducerHandle"
+  if kind.spec == 'h:m':
+    return "mojo::ScopedMessagePipeHandle"
+  if kind.spec == 'h:s':
+    return "mojo::ScopedSharedBufferHandle"
   return _kind_to_cpp_type[kind]
 
 def GetCppConstWrapperType(kind):
   if isinstance(kind, mojom.Struct):
-    return "const %s&" % GetNameForKind(kind)
-  if isinstance(kind, mojom.Array):
-    return "const mojo::Array<%s >&" % GetCppArrayArgWrapperType(kind.kind)
+    return "%sPtr" % GetNameForKind(kind)
+  if isinstance(kind, (mojom.Array, mojom.FixedArray)):
+    return "mojo::Array<%s>" % GetCppArrayArgWrapperType(kind.kind)
   if isinstance(kind, mojom.Interface):
-    return "%sPtr" % kind.name
+    return "%sPtr" % GetNameForKind(kind)
+  if isinstance(kind, mojom.InterfaceRequest):
+    return "mojo::InterfaceRequest<%s>" % GetNameForKind(kind.kind)
   if isinstance(kind, mojom.Enum):
     return GetNameForKind(kind)
   if kind.spec == 's':
@@ -136,9 +176,10 @@ def GetCppFieldType(kind):
   if isinstance(kind, mojom.Struct):
     return ("mojo::internal::StructPointer<%s_Data>" %
         GetNameForKind(kind, internal=True))
-  if isinstance(kind, mojom.Array):
+  if isinstance(kind, (mojom.Array, mojom.FixedArray)):
     return "mojo::internal::ArrayPointer<%s>" % GetCppType(kind.kind)
-  if isinstance(kind, mojom.Interface):
+  if isinstance(kind, mojom.Interface) or \
+     isinstance(kind, mojom.InterfaceRequest):
     return "mojo::MessagePipeHandle"
   if isinstance(kind, mojom.Enum):
     return GetNameForKind(kind)
@@ -152,7 +193,7 @@ def IsStructWithHandles(struct):
       return True
   return False
 
-def TranslateConstants(token, module):
+def TranslateConstants(token):
   if isinstance(token, (mojom.NamedValue, mojom.EnumValue)):
     # Both variable and enum constants are constructed like:
     # Namespace::Struct::CONSTANT_NAME
@@ -165,17 +206,23 @@ def TranslateConstants(token, module):
     return "::".join(name)
   return token
 
-def ExpressionToText(value, module):
-  if value[0] != "EXPRESSION":
-    raise Exception("Expected EXPRESSION, got" + value)
-  return "".join(generator.ExpressionMapper(value,
-      lambda token: TranslateConstants(token, module)))
+def ExpressionToText(value):
+  return TranslateConstants(value)
 
 def HasCallbacks(interface):
   for method in interface.methods:
     if method.response_parameters != None:
       return True
   return False
+
+def ShouldInlineStruct(struct):
+  # TODO(darin): Base this on the size of the wrapper class.
+  if len(struct.fields) > 4:
+    return False
+  for field in struct.fields:
+    if generator.IsHandleKind(field.kind) or generator.IsObjectKind(field.kind):
+      return False
+  return True
 
 _HEADER_SIZE = 8
 
@@ -188,21 +235,26 @@ class Generator(generator.Generator):
     "cpp_result_type": GetCppResultWrapperType,
     "cpp_type": GetCppType,
     "cpp_wrapper_type": GetCppWrapperType,
+    "default_value": DefaultValue,
+    "expected_array_size": generator.ExpectedArraySize,
     "expression_to_text": ExpressionToText,
+    "get_name_for_kind": GetNameForKind,
     "get_pad": pack.GetPad,
     "has_callbacks": HasCallbacks,
+    "should_inline": ShouldInlineStruct,
+    "is_array_kind": generator.IsArrayKind,
     "is_enum_kind": generator.IsEnumKind,
+    "is_move_only_kind": generator.IsMoveOnlyKind,
     "is_handle_kind": generator.IsHandleKind,
     "is_interface_kind": generator.IsInterfaceKind,
+    "is_interface_request_kind": generator.IsInterfaceRequestKind,
     "is_object_kind": generator.IsObjectKind,
     "is_string_kind": generator.IsStringKind,
-    "is_array_kind": lambda kind: isinstance(kind, mojom.Array),
     "is_struct_with_handles": IsStructWithHandles,
     "struct_size": lambda ps: ps.GetTotalSize() + _HEADER_SIZE,
     "struct_from_method": generator.GetStructFromMethod,
     "response_struct_from_method": generator.GetResponseStructFromMethod,
     "stylize_method": generator.StudlyCapsToCamel,
-    "verify_token_type": generator.VerifyTokenType,
   }
 
   def GetJinjaExports(self):

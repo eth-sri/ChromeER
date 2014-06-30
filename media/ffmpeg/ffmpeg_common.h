@@ -19,17 +19,25 @@
 
 // Include FFmpeg header files.
 extern "C" {
+// Disable deprecated features which result in spammy compile warnings.  This
+// list of defines must mirror those in the 'defines' section of the ffmpeg.gyp
+// file or the headers below will generate different structures.
+#define FF_API_PIX_FMT_DESC 0
+#define FF_API_OLD_DECODE_AUDIO 0
+#define FF_API_DESTRUCT_PACKET 0
+#define FF_API_GET_BUFFER 0
+
 // Temporarily disable possible loss of data warning.
 // TODO(scherkus): fix and upstream the compiler warnings.
 MSVC_PUSH_DISABLE_WARNING(4244);
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
 #include <libavformat/avio.h>
-#include <libavutil/audioconvert.h>
 #include <libavutil/avutil.h>
-#include <libavutil/mathematics.h>
-#include <libavutil/log.h>
 #include <libavutil/imgutils.h>
+#include <libavutil/log.h>
+#include <libavutil/mathematics.h>
+#include <libavutil/opt.h>
 MSVC_POP_WARNING();
 }  // extern "C"
 
@@ -61,7 +69,7 @@ inline void ScopedPtrAVFreeContext::operator()(void* x) const {
 
 inline void ScopedPtrAVFreeFrame::operator()(void* x) const {
   AVFrame* frame = static_cast<AVFrame*>(x);
-  avcodec_free_frame(&frame);
+  av_frame_free(&frame);
 }
 
 // Converts an int64 timestamp in |time_base| units to a base::TimeDelta.

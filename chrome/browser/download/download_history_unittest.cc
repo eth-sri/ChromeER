@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <set>
 #include <vector>
 
 #include "base/memory/weak_ptr.h"
@@ -18,7 +17,7 @@
 #include "content/public/test/test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-#if !defined(OS_ANDROID)
+#if defined(ENABLE_EXTENSIONS)
 #include "chrome/browser/extensions/api/downloads/downloads_api.h"
 #endif
 
@@ -43,6 +42,8 @@ void CheckInfoEqual(const history::DownloadRow& left,
     EXPECT_EQ(left.url_chain[i].spec(), right.url_chain[i].spec());
   }
   EXPECT_EQ(left.referrer_url.spec(), right.referrer_url.spec());
+  EXPECT_EQ(left.mime_type, right.mime_type);
+  EXPECT_EQ(left.original_mime_type, right.original_mime_type);
   EXPECT_EQ(left.start_time.ToTimeT(), right.start_time.ToTimeT());
   EXPECT_EQ(left.end_time.ToTimeT(), right.end_time.ToTimeT());
   EXPECT_EQ(left.etag, right.etag);
@@ -238,6 +239,8 @@ class DownloadHistoryTest : public testing::Test {
           infos->at(index).target_path,
           infos->at(index).url_chain,
           infos->at(index).referrer_url,
+          infos->at(index).mime_type,
+          infos->at(index).original_mime_type,
           infos->at(index).start_time,
           infos->at(index).end_time,
           infos->at(index).etag,
@@ -351,6 +354,8 @@ class DownloadHistoryTest : public testing::Test {
              base::FilePath(path),
              url_chain,
              referrer,
+             "application/octet-stream",
+             "application/octet-stream",
              (base::Time::Now() - base::TimeDelta::FromMinutes(10)),
              (base::Time::Now() - base::TimeDelta::FromMinutes(1)),
              "Etag",
@@ -372,6 +377,8 @@ class DownloadHistoryTest : public testing::Test {
       const base::FilePath& target_path,
       const std::vector<GURL>& url_chain,
       const GURL& referrer,
+      const std::string& mime_type,
+      const std::string& original_mime_type,
       const base::Time& start_time,
       const base::Time& end_time,
       const std::string& etag,
@@ -395,6 +402,8 @@ class DownloadHistoryTest : public testing::Test {
     info->target_path = target_path;
     info->url_chain = url_chain;
     info->referrer_url = referrer;
+    info->mime_type = mime_type;
+    info->original_mime_type = original_mime_type;
     info->start_time = start_time;
     info->end_time = end_time;
     info->etag = etag;
@@ -419,8 +428,9 @@ class DownloadHistoryTest : public testing::Test {
         .WillRepeatedly(ReturnRefOfCopy(url_chain[0]));
     EXPECT_CALL(item(index), GetUrlChain())
         .WillRepeatedly(ReturnRefOfCopy(url_chain));
-    EXPECT_CALL(item(index), GetMimeType())
-        .WillRepeatedly(Return("application/octet-stream"));
+    EXPECT_CALL(item(index), GetMimeType()).WillRepeatedly(Return(mime_type));
+    EXPECT_CALL(item(index), GetOriginalMimeType()).WillRepeatedly(Return(
+        original_mime_type));
     EXPECT_CALL(item(index), GetReferrerUrl())
         .WillRepeatedly(ReturnRefOfCopy(referrer));
     EXPECT_CALL(item(index), GetStartTime()).WillRepeatedly(Return(start_time));
@@ -444,7 +454,7 @@ class DownloadHistoryTest : public testing::Test {
     EXPECT_CALL(manager(), GetDownload(id))
         .WillRepeatedly(Return(&item(index)));
     EXPECT_CALL(item(index), IsTemporary()).WillRepeatedly(Return(false));
-#if !defined(OS_ANDROID)
+#if defined(ENABLE_EXTENSIONS)
     new extensions::DownloadedByExtension(
         &item(index), by_extension_id, by_extension_name);
 #endif

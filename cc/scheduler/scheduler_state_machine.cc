@@ -383,6 +383,10 @@ bool SchedulerStateMachine::ShouldUpdateVisibleTiles() const {
   if (HasUpdatedVisibleTilesThisFrame())
     return false;
 
+  // We don't want to update visible tiles right after drawing.
+  if (HasRequestedSwapThisFrame())
+    return false;
+
   // There's no reason to check for tiles if we don't have an output surface.
   if (!HasInitializedOutputSurface())
     return false;
@@ -460,9 +464,12 @@ bool SchedulerStateMachine::ShouldSendBeginMainFrame() const {
   if (!HasInitializedOutputSurface())
     return false;
 
-  // SwapAck throttle the BeginMainFrames
+  // SwapAck throttle the BeginMainFrames unless we just swapped.
   // TODO(brianderson): Remove this restriction to improve throughput.
-  if (pending_swaps_ >= max_pending_swaps_)
+  bool just_swapped_in_deadline =
+      begin_impl_frame_state_ == BEGIN_IMPL_FRAME_STATE_INSIDE_DEADLINE &&
+      HasSwappedThisFrame();
+  if (pending_swaps_ >= max_pending_swaps_ && !just_swapped_in_deadline)
     return false;
 
   if (skip_begin_main_frame_to_reduce_latency_)

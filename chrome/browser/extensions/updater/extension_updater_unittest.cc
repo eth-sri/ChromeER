@@ -35,11 +35,11 @@
 #include "chrome/browser/extensions/updater/extension_updater.h"
 #include "chrome/browser/extensions/updater/manifest_fetch_data.h"
 #include "chrome/browser/extensions/updater/request_queue_impl.h"
-#include "chrome/browser/google/google_util.h"
-#include "chrome/browser/omaha_query_params/omaha_query_params.h"
+#include "chrome/browser/google/google_brand.h"
 #include "chrome/browser/prefs/pref_service_syncable.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/omaha_query_params/omaha_query_params.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
@@ -47,6 +47,7 @@
 #include "content/public/browser/notification_source.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "content/public/test/test_utils.h"
+#include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
@@ -276,7 +277,7 @@ int GetAuthUserQueryValue(const GURL& url) {
 class MockService : public TestExtensionService {
  public:
   explicit MockService(TestExtensionPrefs* prefs)
-      : prefs_(prefs), pending_extension_manager_(*this, &profile_) {}
+      : prefs_(prefs), pending_extension_manager_(&profile_) {}
 
   virtual ~MockService() {}
 
@@ -507,8 +508,8 @@ static void VerifyQueryAndExtractParameters(
   std::map<std::string, std::string> params;
   ExtractParameters(query, &params);
 
-  std::string omaha_params =
-      chrome::OmahaQueryParams::Get(chrome::OmahaQueryParams::CRX);
+  std::string omaha_params = omaha_query_params::OmahaQueryParams::Get(
+      omaha_query_params::OmahaQueryParams::CRX);
   std::map<std::string, std::string> expected;
   ExtractParameters(omaha_params, &expected);
 
@@ -1375,7 +1376,7 @@ class ExtensionUpdaterTest : public testing::Test {
   }
 
   void TestGalleryRequestsWithBrand(bool use_organic_brand_code) {
-    google_util::BrandForTesting brand_for_testing(
+    google_brand::BrandForTesting brand_for_testing(
         use_organic_brand_code ? "GGLS" : "TEST");
 
     // We want to test a variety of combinations of expected ping conditions for

@@ -5,12 +5,10 @@
 #ifndef COMPONENTS_TRANSLATE_CONTENT_BROWSER_CONTENT_TRANSLATE_DRIVER_H_
 #define COMPONENTS_TRANSLATE_CONTENT_BROWSER_CONTENT_TRANSLATE_DRIVER_H_
 
+#include "base/basictypes.h"
 #include "components/translate/core/browser/translate_driver.h"
 
-#include "components/translate/core/browser/language_state.h"
-
 namespace content {
-struct LoadCommittedDetails;
 class NavigationController;
 class WebContents;
 }
@@ -38,32 +36,27 @@ class ContentTranslateDriver : public TranslateDriver {
   // Sets the Observer. Calling this method is optional.
   void set_observer(Observer* observer) { observer_ = observer; }
 
-  // Must be called on navigations.
-  void DidNavigate(const content::LoadCommittedDetails& details);
-
   // TranslateDriver methods.
   virtual void OnIsPageTranslatedChanged() OVERRIDE;
   virtual void OnTranslateEnabledChanged() OVERRIDE;
   virtual bool IsLinkNavigation() OVERRIDE;
-  virtual LanguageState& GetLanguageState() OVERRIDE;
-  virtual void TranslatePage(const std::string& translate_script,
+  virtual void TranslatePage(int page_seq_no,
+                             const std::string& translate_script,
                              const std::string& source_lang,
                              const std::string& target_lang) OVERRIDE;
-  virtual void RevertTranslation() OVERRIDE;
+  virtual void RevertTranslation(int page_seq_no) OVERRIDE;
   virtual bool IsOffTheRecord() OVERRIDE;
   virtual const std::string& GetContentsMimeType() OVERRIDE;
   virtual const GURL& GetLastCommittedURL() OVERRIDE;
   virtual const GURL& GetActiveURL() OVERRIDE;
   virtual const GURL& GetVisibleURL() OVERRIDE;
   virtual bool HasCurrentPage() OVERRIDE;
-  virtual int GetCurrentPageID() OVERRIDE;
   virtual void OpenUrlInNewTab(const GURL& url) OVERRIDE;
 
  private:
   // The navigation controller of the tab we are associated with.
   content::NavigationController* navigation_controller_;
 
-  LanguageState language_state_;
   Observer* observer_;
 
   DISALLOW_COPY_AND_ASSIGN(ContentTranslateDriver);

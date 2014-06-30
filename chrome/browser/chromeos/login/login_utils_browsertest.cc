@@ -21,6 +21,7 @@
 #include "chrome/browser/chromeos/input_method/input_method_configuration.h"
 #include "chrome/browser/chromeos/input_method/mock_input_method_manager.h"
 #include "chrome/browser/chromeos/login/auth/authenticator.h"
+#include "chrome/browser/chromeos/login/auth/key.h"
 #include "chrome/browser/chromeos/login/auth/login_status_consumer.h"
 #include "chrome/browser/chromeos/login/auth/user_context.h"
 #include "chrome/browser/chromeos/login/users/user_manager.h"
@@ -28,6 +29,7 @@
 #include "chrome/browser/chromeos/policy/enterprise_install_attributes.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
+#include "chrome/browser/chromeos/settings/device_oauth2_token_service_factory.h"
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
 #include "chrome/browser/chromeos/settings/device_settings_test_helper.h"
 #include "chrome/browser/chromeos/settings/mock_owner_key_util.h"
@@ -215,6 +217,7 @@ class LoginUtilsTest : public testing::Test,
 
     SystemSaltGetter::Initialize();
     LoginState::Initialize();
+    DeviceOAuth2TokenServiceFactory::Initialize();
 
     EXPECT_CALL(mock_statistics_provider_, GetMachineStatistic(_, _))
         .WillRepeatedly(Return(false));
@@ -283,7 +286,12 @@ class LoginUtilsTest : public testing::Test,
 
     system::StatisticsProvider::SetTestProvider(NULL);
 
+    // The invalidator has to shut down before DeviceOAuth2TokenServiceFactory
+    // and the ProfileManager.
+    connector_->ShutdownInvalidator();
+
     input_method::Shutdown();
+    DeviceOAuth2TokenServiceFactory::Shutdown();
     LoginState::Shutdown();
     SystemSaltGetter::Shutdown();
 
@@ -357,7 +365,7 @@ class LoginUtilsTest : public testing::Test,
   }
 
 #if defined(ENABLE_RLZ)
-  virtual void OnRlzInitialized(Profile* profile) OVERRIDE {
+  virtual void OnRlzInitialized() OVERRIDE {
     rlz_initialized_cb_.Run();
   }
 #endif
@@ -399,19 +407,18 @@ class LoginUtilsTest : public testing::Test,
     scoped_refptr<Authenticator> authenticator =
         LoginUtils::Get()->CreateAuthenticator(this);
     UserContext user_context(username);
-    user_context.SetPassword("password");
+    user_context.SetKey(Key("password"));
     user_context.SetUserIDHash(username);
     authenticator->CompleteLogin(ProfileHelper::GetSigninProfile(),
                                  user_context);
 
-    // Setting |kHasCookies| to false prevents ProfileAuthData::Transfer from
-    // waiting for an IO task before proceeding.
-    const bool kHasCookies = false;
+    // Setting |kHasAuthCookies| to false prevents ProfileAuthData::Transfer
+    // from waiting for an IO task before proceeding.
+    const bool kHasAuthCookies = false;
     const bool kHasActiveSession = false;
     user_context.SetAuthFlow(UserContext::AUTH_FLOW_GAIA_WITHOUT_SAML);
     LoginUtils::Get()->PrepareProfile(user_context,
-                                      std::string(),
-                                      kHasCookies,
+                                      kHasAuthCookies,
                                       kHasActiveSession,
                                       this);
     device_settings_test_helper.Flush();
@@ -586,7 +593,7 @@ TEST_F(LoginUtilsTest, RlzInitialized) {
   // RLZ value for homepage access point should have been initialized.
   base::string16 rlz_string;
   EXPECT_TRUE(RLZTracker::GetAccessPointRlz(
-      RLZTracker::CHROME_HOME_PAGE, &rlz_string));
+      RLZTracker::ChromeHomePage(), &rlz_string));
   EXPECT_EQ(base::string16(), rlz_string);
 }
 #endif

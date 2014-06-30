@@ -98,9 +98,6 @@ const char kDisableLayerSquashing[] =
 const char kDisableAcceleratedVideoDecode[] =
     "disable-accelerated-video-decode";
 
-// Disables the alternate window station for the renderer.
-const char kDisableAltWinstation[]          = "disable-winsta";
-
 // Disable the ApplicationCache.
 const char kDisableApplicationCache[]       = "disable-application-cache";
 
@@ -149,12 +146,6 @@ const char kDisableFastTextAutosizing[]     = "disable-fast-text-autosizing";
 // Disable FileSystem API.
 const char kDisableFileSystem[]             = "disable-file-system";
 
-// Disables sending filters (SkImageFilter objects) between processes over IPC
-const char kDisableFiltersOverIPC[]         = "disable-filters-over-ipc";
-
-const char kDisableFixedPositionCreatesStackingContext[]
-    = "disable-fixed-position-creates-stacking-context";
-
 // Disable 3D inside of flapper.
 const char kDisableFlash3d[]                = "disable-flash-3d";
 
@@ -162,9 +153,6 @@ const char kDisableFlash3d[]                = "disable-flash-3d";
 const char kDisableFlashStage3d[]           = "disable-flash-stage3d";
 
 const char kDisableGestureTapHighlight[]    = "disable-gesture-tap-highlight";
-
-// Disable GL multisampling.
-const char kDisableGLMultisampling[]        = "disable-gl-multisampling";
 
 // Disables GPU hardware acceleration.  If software renderer is not in place,
 // then the GPU process won't launch.
@@ -258,9 +246,6 @@ const char kDisableRemoteFonts[]            = "disable-remote-fonts";
 // Turns off the accessibility in the renderer.
 const char kDisableRendererAccessibility[]  = "disable-renderer-accessibility";
 
-// Disables the new layout/paint system which paints after layout is complete.
-const char kDisableRepaintAfterLayout[]     = "disable-repaint-after-layout";
-
 // Disable the seccomp filter sandbox (seccomp-bpf) (Linux only).
 const char kDisableSeccompFilterSandbox[]   = "disable-seccomp-filter-sandbox";
 
@@ -282,16 +267,8 @@ const char kDisableSmoothScrolling[]        = "disable-smooth-scrolling";
 // Disables the use of a 3D software rasterizer.
 const char kDisableSoftwareRasterizer[]     = "disable-software-rasterizer";
 
-// Disable False Start in SSL and TLS connections.
-const char kDisableSSLFalseStart[]          = "disable-ssl-false-start";
-
 // Disable multithreaded GPU compositing of web content.
 const char kDisableThreadedCompositing[]     = "disable-threaded-compositing";
-
-// Disable accelerated overflow scrolling in corner cases (that would not be
-// handled by enable-accelerated-overflow-scroll).
-const char kDisableUniversalAcceleratedOverflowScroll[] =
-    "disable-universal-accelerated-overflow-scroll";
 
 // Don't enforce the same-origin policy. (Used by people testing their sites.)
 const char kDisableWebSecurity[]            = "disable-web-security";
@@ -399,9 +376,6 @@ const char kEnableFileCookies[]             = "enable-file-cookies";
 // Enable the fast text autosizing implementation.
 const char kEnableFastTextAutosizing[]      = "enable-fast-text-autosizing";
 
-const char kEnableFixedPositionCreatesStackingContext[]
-    = "enable-fixed-position-creates-stacking-context";
-
 // Enable Gesture Tap Highlight
 const char kEnableGestureTapHighlight[]     = "enable-gesture-tap-highlight";
 
@@ -420,23 +394,6 @@ const char kEnableLowResTiling[] = "enable-low-res-tiling";
 // See comment for kEnableCompositingForFixedPosition.
 const char kEnableHighDpiCompositingForFixedPosition[] =
      "enable-high-dpi-fixed-position-compositing";
-
-#if defined(OS_WIN)
-// Disable the Legacy Window which corresponds to the size of the WebContents.
-const char kDisableLegacyIntermediateWindow[] = "disable-legacy-window";
-
-// Enables the DirectWrite font rendering system on windows.
-const char kEnableDirectWrite[]             = "enable-direct-write";
-
-// Use high resolution timers for TimeTicks.
-const char kEnableHighResolutionTime[]      = "enable-high-resolution-time";
-
-// Enable the Win32K process mitigation policy for renderer processes which
-// prevents them from invoking user32 and gdi32 system calls which enter
-// the kernel. This is only supported on Windows 8 and beyond.
-const char kEnableWin32kRendererLockDown[]
-    = "enable_win32k_renderer_lockdown";
-#endif
 
 // Paint content on the compositor thread instead of the main thread.
 const char kEnableImplSidePainting[]        = "enable-impl-side-painting";
@@ -476,18 +433,9 @@ const char kEnablePreciseMemoryInfo[] = "enable-precise-memory-info";
 // Enable caching of pre-parsed JS script data.  See http://crbug.com/32407.
 const char kEnablePreparsedJsCaching[]      = "enable-preparsed-js-caching";
 
-// Enable privileged WebGL extensions; without this switch such extensions are
-// available only to Chrome extensions.
-const char kEnablePrivilegedWebGLExtensions[] =
-    "enable-privileged-webgl-extensions";
-
 // Enables the CSS multicol implementation that uses the regions implementation.
 const char kEnableRegionBasedColumns[] =
     "enable-region-based-columns";
-
-// Enables the new layout/paint system which paints after layout is complete.
-const char kEnableRepaintAfterLayout[] =
-    "enable-repaint-after-layout";
 
 // Enables targeted style recalculation optimizations.
 const char kEnableTargetedStyleRecalc[] =
@@ -529,10 +477,6 @@ const char kEnableStatsTable[]              = "enable-stats-table";
 // cookies on cross-site requests.
 const char kEnableStrictSiteIsolation[]     = "enable-strict-site-isolation";
 
-// Enable support for ServiceWorker. See
-// https://github.com/slightlyoff/ServiceWorker for more information.
-const char kEnableServiceWorker[]           = "enable-service-worker";
-
 // Enable support for sync events in ServiceWorkers.
 const char kEnableServiceWorkerSync[]       = "enable-service-worker-sync";
 
@@ -542,10 +486,6 @@ const char kEnableTcpFastOpen[]             = "enable-tcp-fastopen";
 
 // Enable multithreaded GPU compositing of web content.
 const char kEnableThreadedCompositing[]     = "enable-threaded-compositing";
-
-// Enable accelerated overflow scrolling in all cases.
-const char kEnableUniversalAcceleratedOverflowScroll[] =
-    "enable-universal-accelerated-overflow-scroll";
 
 // Enable screen capturing support for MediaStream API.
 const char kEnableUserMediaScreenCapturing[] =
@@ -574,6 +514,9 @@ const char kEnableWebAnimationsSVG[]        = "enable-web-animations-svg";
 // Enables WebGL extensions not yet approved by the community.
 const char kEnableWebGLDraftExtensions[] = "enable-webgl-draft-extensions";
 
+// Enables WebGL rendering into a scanout buffer for overlay support.
+const char kEnableWebGLImageChromium[] = "enable-webgl-image-chromium";
+
 // Enables Web MIDI API.
 const char kEnableWebMIDI[]                 = "enable-web-midi";
 
@@ -582,9 +525,6 @@ const char kEnableZeroCopy[]                = "enable-zero-copy";
 
 // Load NPAPI plugins from the specified directory.
 const char kExtraPluginDir[]                = "extra-plugin-dir";
-
-// Enable force_compositing_mode in layout tests.
-const char kForceCompositingMode[]          = "force-compositing-mode";
 
 // Some field trials may be randomized in the browser, and the randomly selected
 // outcome needs to be propagated to the renderer. For instance, this is used
@@ -649,6 +589,10 @@ const char kIgnoreGpuBlacklist[]            = "ignore-gpu-blacklist";
 
 // Run the GPU process as a thread in the browser process.
 const char kInProcessGPU[]                  = "in-process-gpu";
+
+// Overrides the timeout, in seconds, that a child process waits for a
+// connection from the browser before killing itself.
+const char kIPCConnectionTimeout[]          = "ipc-connection-timeout";
 
 // Specifies the flags passed to JS engine
 const char kJavaScriptFlags[]               = "js-flags";
@@ -829,9 +773,6 @@ const char kTabCaptureUpscaleQuality[]      = "tab-capture-upscale-quality";
 const char kTestingFixedHttpPort[]          = "testing-fixed-http-port";
 const char kTestingFixedHttpsPort[]         = "testing-fixed-https-port";
 
-// Runs the security test for the renderer sandbox.
-const char kTestSandbox[]                   = "test-sandbox";
-
 // Type of the current test harness ("browser" or "ui").
 const char kTestType[]                      = "test-type";
 
@@ -876,6 +817,8 @@ const char kTraceStartupDuration[]          = "trace-startup-duration";
 // all events since startup.
 const char kTraceStartupFile[]              = "trace-startup-file";
 
+// Sets the target URL for uploading tracing data.
+const char kTraceUploadURL[]                = "trace-upload-url";
 
 
 // Prioritizes the UI's command stream in the GPU process
@@ -891,6 +834,9 @@ const char kUseFakeUIForMediaStream[]     = "use-fake-ui-for-media-stream";
 
 // Set when Chromium should use a mobile user agent.
 const char kUseMobileUserAgent[] = "use-mobile-user-agent";
+
+// Use the new surfaces system to handle compositor delegation.
+const char kUseSurfaces[] = "use-surfaces";
 
 // On POSIX only: the contents of this flag are prepended to the utility
 // process command line. Useful values might be "valgrind" or "xterm -e gdb
@@ -927,12 +873,9 @@ const char kZygoteCmdPrefix[]               = "zygote-cmd-prefix";
 const char kZygoteProcess[]                 = "zygote";
 
 #if defined(ENABLE_WEBRTC)
-// Enables audio processing in a MediaStreamTrack. When this flag is on, AEC,
-// NS and AGC will be done per MediaStreamTrack instead of in PeerConnection.
-const char kEnableAudioTrackProcessing[]    = "enable-audio-track-processing";
-
-// Disables WebRTC device enumeration.
-const char kDisableDeviceEnumeration[]      = "disable-device-enumeration";
+// Disables audio processing in a MediaStreamTrack. When this flag is on, AEC,
+// NS and AGC will be done in PeerConnection instead of MediaStreamTrack.
+const char kDisableAudioTrackProcessing[]    = "disable-audio-track-processing";
 
 // Disables HW decode acceleration for WebRTC.
 const char kDisableWebRtcHWDecoding[]       = "disable-webrtc-hw-decoding";
@@ -944,18 +887,11 @@ const char kDisableWebRtcEncryption[]      = "disable-webrtc-encryption";
 // Disables HW encode acceleration for WebRTC.
 const char kDisableWebRtcHWEncoding[]       = "disable-webrtc-hw-encoding";
 
-// Enables WebRTC to open TCP server sockets.
-const char kEnableWebRtcTcpServerSocket[]   = "enable-webrtc-tcp-server-socket";
-
 // Enables VP8 HW encode acceleration for WebRTC.
 const char kEnableWebRtcHWVp8Encoding[]     = "enable-webrtc-hw-vp8-encoding";
 #endif
 
 #if defined(OS_ANDROID)
-// Disable user gesture requirement for the media element to enter fullscreen.
-const char kDisableGestureRequirementForMediaFullscreen[] =
-    "disable-gesture-requirement-for-media-fullscreen";
-
 // Disable user gesture requirement for media playback.
 const char kDisableGestureRequirementForMediaPlayback[] =
     "disable-gesture-requirement-for-media-playback";
@@ -989,6 +925,10 @@ const char kDisableWebAudio[]               = "disable-webaudio";
 #if defined(OS_CHROMEOS)
 // Disables panel fitting (used for mirror mode).
 const char kDisablePanelFitting[]           = "disable-panel-fitting";
+
+// Enables VA-API accelerated video encode.
+const char kEnableVaapiAcceleratedVideoEncode[] =
+    "enable-vaapi-accelerated-video-encode";
 #endif
 
 #if defined(OS_MACOSX) && !defined(OS_IOS)
@@ -998,6 +938,26 @@ const char kEnableCarbonInterposing[]       = "enable-carbon-interposing";
 // accelerated compositing is disabled. See http://crbug.com/122430 .
 const char kDisableCoreAnimationPlugins[] =
     "disable-core-animation-plugins";
+#endif
+
+#if defined(OS_WIN)
+// Device scale factor passed to certain processes like renderers, etc.
+const char kDeviceScaleFactor[]     = "device-scale-factor";
+
+// Disables the DirectWrite font rendering system on windows.
+const char kDisableDirectWrite[]             = "disable-direct-write";
+
+// Disable the Legacy Window which corresponds to the size of the WebContents.
+const char kDisableLegacyIntermediateWindow[] = "disable-legacy-window";
+
+// Use high resolution timers for TimeTicks.
+const char kEnableHighResolutionTime[]      = "enable-high-resolution-time";
+
+// Enable the Win32K process mitigation policy for renderer processes which
+// prevents them from invoking user32 and gdi32 system calls which enter
+// the kernel. This is only supported on Windows 8 and beyond.
+const char kEnableWin32kRendererLockDown[]
+    = "enable_win32k_renderer_lockdown";
 #endif
 
 // Don't dump stuff here, follow the same order as the header.

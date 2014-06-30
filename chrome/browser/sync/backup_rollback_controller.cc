@@ -6,20 +6,20 @@
 
 #include "base/command_line.h"
 #include "base/message_loop/message_loop.h"
-#include "chrome/browser/sync/managed_user_signin_manager_wrapper.h"
+#include "chrome/browser/sync/supervised_user_signin_manager_wrapper.h"
 #include "chrome/common/chrome_switches.h"
 #include "components/sync_driver/sync_prefs.h"
 
 namespace browser_sync {
 
-#if defined(OS_WIN) || defined(OS_LINUX) || defined(OS_MACOSX)
+#if defined(ENABLE_PRE_SYNC_BACKUP)
 // Number of rollback attempts to try before giving up.
 static const int kRollbackLimits = 3;
 #endif
 
 BackupRollbackController::BackupRollbackController(
     sync_driver::SyncPrefs* sync_prefs,
-    const ManagedUserSigninManagerWrapper* signin,
+    const SupervisedUserSigninManagerWrapper* signin,
     base::Closure start_backup,
     base::Closure start_rollback)
     : sync_prefs_(sync_prefs),
@@ -33,10 +33,15 @@ BackupRollbackController::~BackupRollbackController() {
 }
 
 void BackupRollbackController::Start(base::TimeDelta delay) {
-#if defined(OS_WIN) || defined(OS_LINUX) || defined(OS_MACOSX)
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kSyncEnableBackupRollback)) {
+#if defined(ENABLE_PRE_SYNC_BACKUP)
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kSyncDisableBackup)) {
     return;
+  }
+
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kSyncEnableRollback)) {
+    sync_prefs_->SetRemainingRollbackTries(0);
   }
 
   if (delay == base::TimeDelta()) {
@@ -52,13 +57,13 @@ void BackupRollbackController::Start(base::TimeDelta delay) {
 }
 
 void BackupRollbackController::OnRollbackReceived() {
-#if defined(OS_WIN) || defined(OS_LINUX) || defined(OS_MACOSX)
+#if defined(ENABLE_PRE_SYNC_BACKUP)
   sync_prefs_->SetRemainingRollbackTries(kRollbackLimits);
 #endif
 }
 
 void BackupRollbackController::OnRollbackDone() {
-#if defined(OS_WIN) || defined(OS_LINUX) || defined(OS_MACOSX)
+#if defined(ENABLE_PRE_SYNC_BACKUP)
   sync_prefs_->SetRemainingRollbackTries(0);
 #endif
 }

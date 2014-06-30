@@ -40,6 +40,7 @@ const char kCloseCommand[]  = "close";
 const char kReloadCommand[]  = "reload";
 const char kOpenCommand[]  = "open";
 const char kInspectBrowser[] = "inspect-browser";
+const char kLocalHost[] = "localhost";
 
 const char kDiscoverUsbDevicesEnabledCommand[] =
     "set-discover-usb-devices-enabled";
@@ -262,6 +263,12 @@ void InspectUI::InspectBrowserWithCustomFrontend(
     const std::string& source_id,
     const std::string& browser_id,
     const GURL& frontend_url) {
+  if (!frontend_url.SchemeIs(content::kChromeUIScheme) &&
+      !frontend_url.SchemeIs(content::kChromeDevToolsScheme) &&
+      frontend_url.host() != kLocalHost) {
+    return;
+  }
+
   DevToolsTargetsUIHandler* handler = FindTargetHandler(source_id);
   if (!handler)
     return;
@@ -276,20 +283,15 @@ void InspectUI::InspectBrowserWithCustomFrontend(
   WebContents* inspect_ui = web_ui()->GetWebContents();
   WebContents* front_end = inspect_ui->GetDelegate()->OpenURLFromTab(
       inspect_ui,
-      content::OpenURLParams(GURL(content::kAboutBlankURL),
-                    content::Referrer(),
-                    NEW_FOREGROUND_TAB,
-                    content::PAGE_TRANSITION_AUTO_TOPLEVEL,
-                    false));
+      content::OpenURLParams(GURL(url::kAboutBlankURL),
+                             content::Referrer(),
+                             NEW_FOREGROUND_TAB,
+                             content::PAGE_TRANSITION_AUTO_TOPLEVEL,
+                             false));
 
   // Install devtools bindings.
-  DevToolsUIBindings* bindings = DevToolsUIBindings::GetOrCreateFor(front_end);
-
-  // Navigate to a page.
-  front_end->GetController().LoadURL(
-      frontend_url, content::Referrer(),
-      content::PAGE_TRANSITION_AUTO_TOPLEVEL, std::string());
-
+  DevToolsUIBindings* bindings = new DevToolsUIBindings(front_end,
+                                                        frontend_url);
 
   // Engage remote debugging between front-end and agent host.
   content::DevToolsManager::GetInstance()->RegisterDevToolsClientHostFor(
@@ -324,8 +326,12 @@ void InspectUI::StartListeningNotifications() {
       DevToolsTargetsUIHandler::CreateForRenderers(callback));
   AddTargetUIHandler(
       DevToolsTargetsUIHandler::CreateForWorkers(callback));
-  AddTargetUIHandler(
-      DevToolsTargetsUIHandler::CreateForAdb(callback, profile));
+  if (profile->IsOffTheRecord()) {
+    ShowIncognitoWarning();
+  } else {
+    AddTargetUIHandler(
+        DevToolsTargetsUIHandler::CreateForAdb(callback, profile));
+  }
 
   port_status_serializer_.reset(
       new PortForwardingStatusSerializer(
@@ -366,7 +372,32 @@ content::WebUIDataSource* InspectUI::CreateInspectUIHTMLSource() {
   source->AddResourcePath("inspect.css", IDR_INSPECT_CSS);
   source->AddResourcePath("inspect.js", IDR_INSPECT_JS);
   source->SetDefaultResource(IDR_INSPECT_HTML);
+  source->OverrideContentSecurityPolicyFrameSrc(
+      "frame-src chrome://serviceworker-internals;");
+  serviceworker_webui_.reset(web_ui()->GetWebContents()->CreateWebUI(
+      GURL(content::kChromeUIServiceWorkerInternalsURL)));
+  serviceworker_webui_->OverrideJavaScriptFrame(
+      content::kChromeUIServiceWorkerInternalsHost);
   return source;
+}
+
+void InspectUI::RenderViewCreated(content::RenderViewHost* render_view_host) {
+  serviceworker_webui_->GetController()->RenderViewCreated(render_view_host);
+}
+
+void InspectUI::RenderViewReused(content::RenderViewHost* render_view_host) {
+  serviceworker_webui_->GetController()->RenderViewReused(render_view_host);
+}
+
+bool InspectUI::OverrideHandleWebUIMessage(const GURL& source_url,
+                                           const std::string& message,
+                                           const base::ListValue& args) {
+  if (source_url.SchemeIs(content::kChromeUIScheme) &&
+      source_url.host() == content::kChromeUIServiceWorkerInternalsHost) {
+    serviceworker_webui_->ProcessWebUIMessage(source_url, message, args);
+    return true;
+  }
+  return false;
 }
 
 void InspectUI::UpdateDiscoverUsbDevicesEnabled() {
@@ -455,4 +486,8 @@ void InspectUI::PopulateTargets(const std::string& source,
 
 void InspectUI::PopulatePortStatus(const base::Value& status) {
   web_ui()->CallJavascriptFunction("populatePortStatus", status);
+}
+
+void InspectUI::ShowIncognitoWarning() {
+  web_ui()->CallJavascriptFunction("showIncognitoWarning");
 }

@@ -433,8 +433,8 @@ void BookmarkUndoService::OnWillRemoveBookmarks(BookmarkModel* model,
   undo_manager()->AddUndoOperation(op.Pass());
 }
 
-void BookmarkUndoService::OnWillRemoveAllBookmarks(BookmarkModel* model) {
-  ScopedGroupBookmarkActions merge_removes(model);
+void BookmarkUndoService::OnWillRemoveAllUserBookmarks(BookmarkModel* model) {
+  bookmarks::ScopedGroupBookmarkActions merge_removes(model);
   for (int i = 0; i < model->root_node()->child_count(); ++i) {
     const BookmarkNode* permanent_node = model->root_node()->GetChild(i);
     for (int j = permanent_node->child_count() - 1; j >= 0; --j) {

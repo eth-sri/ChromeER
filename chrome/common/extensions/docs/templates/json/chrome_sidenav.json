@@ -384,8 +384,16 @@
                 "href": "/apps/app_storage"
               },
               {
+                "title": "Keep Users Informed",
+                "href": "/apps/inform_users"
+              },
+              {
                 "title": "Cloud Messaging",
                 "href": "/apps/cloudMessaging"
+              },
+              {
+                "title": "Rich Notifications",
+                "href": "/apps/richNotifications"
               },
               {
                 "title": "User Authentication",
@@ -430,6 +438,10 @@
               {
                 "title": "Build Apps with SenchaJS",
                 "href": "/apps/sencha_framework"
+              },
+              {
+                "title": "Game Engines",
+                "href": "/apps/game_engines"
               }
             ]
           },

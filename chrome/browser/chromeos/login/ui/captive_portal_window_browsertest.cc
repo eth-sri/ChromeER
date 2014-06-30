@@ -12,16 +12,15 @@
 #include "chrome/browser/chromeos/login/ui/captive_portal_window_proxy.h"
 #include "chrome/browser/chromeos/login/ui/login_display_host_impl.h"
 #include "chrome/browser/chromeos/login/ui/webui_login_view.h"
-#include "chrome/browser/chromeos/net/network_portal_detector.h"
 #include "chrome/browser/chromeos/net/network_portal_detector_test_impl.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chromeos/chromeos_switches.h"
+#include "chromeos/dbus/fake_shill_manager_client.h"
+#include "chromeos/network/portal_detector/network_portal_detector.h"
 
 namespace chromeos {
 
 namespace {
-
-const char kStubEthernetServicePath[] = "eth1";
 
 // Stub implementation of CaptivePortalWindowProxyDelegate, does
 // nothing and used to instantiate CaptivePortalWindowProxy.
@@ -189,9 +188,10 @@ class CaptivePortalWindowCtorDtorTest : public LoginManagerTest {
     portal_state.status = NetworkPortalDetector::CAPTIVE_PORTAL_STATUS_PORTAL;
     portal_state.response_code = 200;
     network_portal_detector_->SetDefaultNetworkPathForTesting(
-        kStubEthernetServicePath);
+        FakeShillManagerClient::kFakeEthernetNetworkPath,
+        FakeShillManagerClient::kFakeEthernetNetworkPath /* guid */);
     network_portal_detector_->SetDetectionResultsForTesting(
-        kStubEthernetServicePath, portal_state);
+        FakeShillManagerClient::kFakeEthernetNetworkPath, portal_state);
   }
 
  protected:

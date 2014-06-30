@@ -15,30 +15,12 @@
 #include "base/basictypes.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
-#include "base/message_loop/message_loop.h"
-#include "base/strings/utf_string_conversions.h"
 #include "base/sys_info.h"
-#include "content/child/child_thread.h"
-#include "content/child/npapi/plugin_instance.h"
-#include "content/child/npapi/plugin_lib.h"
 #include "content/child/site_isolation_policy.h"
-#include "content/common/view_messages.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/renderer/content_renderer_client.h"
-#include "ipc/ipc_channel.h"
-#include "ipc/ipc_message_utils.h"
-#include "skia/ext/platform_canvas.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
-#include "ui/surface/transport_dib.h"
 #include "v8/include/v8.h"
-
-#if defined(OS_MACOSX)
-#include "base/mac/mac_util.h"
-#endif
-
-#if defined(OS_ANDROID)
-#include "base/android/sys_utils.h"
-#endif
 
 namespace content {
 
@@ -61,13 +43,11 @@ RenderProcessImpl::RenderProcessImpl()
   }
 #endif
 
-#if defined(OS_ANDROID)
-  if (base::android::SysUtils::IsLowEndDevice()) {
+  if (base::SysInfo::IsLowEndDevice()) {
     std::string optimize_flag("--optimize-for-size");
     v8::V8::SetFlagsFromString(optimize_flag.c_str(),
                                static_cast<int>(optimize_flag.size()));
   }
-#endif
 
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
   if (command_line.HasSwitch(switches::kJavaScriptFlags)) {

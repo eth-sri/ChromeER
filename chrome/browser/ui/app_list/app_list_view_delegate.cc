@@ -7,12 +7,12 @@
 #include <vector>
 
 #include "base/callback.h"
+#include "base/command_line.h"
 #include "base/files/file_path.h"
 #include "base/metrics/user_metrics.h"
 #include "base/stl_util.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/search/hotword_service.h"
@@ -28,18 +28,27 @@
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/scoped_tabbed_browser_displayer.h"
 #include "chrome/browser/web_applications/web_app.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/url_constants.h"
 #include "components/signin/core/browser/signin_manager.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/page_navigator.h"
 #include "content/public/browser/user_metrics.h"
+#include "content/public/browser/web_contents.h"
+#include "extensions/browser/extension_registry.h"
+#include "extensions/common/constants.h"
 #include "grit/theme_resources.h"
 #include "ui/app_list/app_list_switches.h"
 #include "ui/app_list/app_list_view_delegate_observer.h"
 #include "ui/app_list/search_box_model.h"
 #include "ui/app_list/speech_ui_model.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/views/controls/webview/webview.h"
+
+#if defined(TOOLKIT_VIEWS)
+#include "ui/views/controls/webview/webview.h"
+#endif
 
 #if defined(USE_AURA)
 #include "ui/keyboard/keyboard_util.h"
@@ -84,14 +93,13 @@ void PopulateUsers(const ProfileInfoCache& profile_info,
   const size_t count = profile_info.GetNumberOfProfiles();
   for (size_t i = 0; i < count; ++i) {
     // Don't display managed users.
-    if (profile_info.ProfileIsManagedAtIndex(i))
+    if (profile_info.ProfileIsSupervisedAtIndex(i))
       continue;
 
     app_list::AppListViewDelegate::User user;
     user.name = profile_info.GetNameOfProfileAtIndex(i);
     user.email = profile_info.GetUserNameOfProfileAtIndex(i);
     user.profile_path = profile_info.GetPathOfProfileAtIndex(i);
-    user.signin_required = profile_info.ProfileIsSigninRequiredAtIndex(i);
     user.active = active_profile_path == user.profile_path;
     users->push_back(user);
   }
@@ -106,6 +114,9 @@ AppListViewDelegate::AppListViewDelegate(Profile* profile,
       model_(NULL),
       scoped_observer_(this) {
   CHECK(controller_);
+  // The SigninManagerFactor and the SigninManagers are observed to keep the
+  // profile switcher menu up to date, with the correct list of profiles and the
+  // correct email address (or none for signed out users) for each.
   SigninManagerFactory::GetInstance()->AddObserver(this);
 
   // Start observing all already-created SigninManagers.
@@ -138,6 +149,28 @@ AppListViewDelegate::AppListViewDelegate(Profile* profile,
   OnProfileChanged();  // sets model_
   if (service)
     service->AddObserver(this);
+
+  // Set up the custom launcher page. There is currently only a single custom
+  // page allowed, which is specified as a command-line flag. In the future,
+  // arbitrary extensions may be able to specify their own custom pages.
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
+  if (app_list::switches::IsExperimentalAppListEnabled() &&
+      command_line->HasSwitch(switches::kCustomLauncherPage)) {
+    GURL custom_launcher_page_url(
+        command_line->GetSwitchValueASCII(switches::kCustomLauncherPage));
+    if (!custom_launcher_page_url.SchemeIs(extensions::kExtensionScheme)) {
+      LOG(ERROR) << "Invalid custom launcher page URL: "
+                 << custom_launcher_page_url.possibly_invalid_spec();
+    } else {
+      content::WebContents::CreateParams params(profile_);
+      custom_page_web_contents_.reset(content::WebContents::Create(params));
+      custom_page_web_contents_->GetController().LoadURL(
+          custom_launcher_page_url,
+          content::Referrer(),
+          content::PAGE_TRANSITION_AUTO_TOPLEVEL,
+          std::string());
+    }
+  }
 }
 
 AppListViewDelegate::~AppListViewDelegate() {
@@ -205,8 +238,6 @@ void AppListViewDelegate::OnProfileChanged() {
       profile_, model_->search_box(), model_->results(),
       speech_ui_.get(), controller_));
 
-  signin_delegate_.SetProfile(profile_);
-
 #if defined(USE_ASH)
   app_sync_ui_state_watcher_.reset(new AppSyncUIStateWatcher(profile_, model_));
 #endif
@@ -248,10 +279,6 @@ app_list::AppListModel* AppListViewDelegate::GetModel() {
   return model_;
 }
 
-app_list::SigninDelegate* AppListViewDelegate::GetSigninDelegate() {
-  return &signin_delegate_;
-}
-
 app_list::SpeechUIModel* AppListViewDelegate::GetSpeechUI() {
   return speech_ui_.get();
 }
@@ -260,10 +287,9 @@ void AppListViewDelegate::GetShortcutPathForApp(
     const std::string& app_id,
     const base::Callback<void(const base::FilePath&)>& callback) {
 #if defined(OS_WIN)
-  ExtensionService* service = profile_->GetExtensionService();
-  DCHECK(service);
   const extensions::Extension* extension =
-      service->GetInstalledExtension(app_id);
+      extensions::ExtensionRegistry::Get(profile_)->GetExtensionById(
+          app_id, extensions::ExtensionRegistry::EVERYTHING);
   if (!extension) {
     callback.Run(base::FilePath());
     return;
@@ -357,10 +383,10 @@ gfx::ImageSkia AppListViewDelegate::GetWindowIcon() {
 }
 
 void AppListViewDelegate::OpenSettings() {
-  ExtensionService* service = profile_->GetExtensionService();
-  DCHECK(service);
-  const extensions::Extension* extension = service->GetInstalledExtension(
-      extension_misc::kSettingsAppId);
+  const extensions::Extension* extension =
+      extensions::ExtensionRegistry::Get(profile_)->GetExtensionById(
+          extension_misc::kSettingsAppId,
+          extensions::ExtensionRegistry::EVERYTHING);
   DCHECK(extension);
   controller_->ActivateApp(profile_,
                            extension,
@@ -434,22 +460,42 @@ void AppListViewDelegate::OnProfileNameChanged(
   OnProfileChanged();
 }
 
-content::WebContents* AppListViewDelegate::GetStartPageContents() {
+#if defined(TOOLKIT_VIEWS)
+views::View* AppListViewDelegate::CreateStartPageWebView(
+    const gfx::Size& size) {
   app_list::StartPageService* service =
       app_list::StartPageService::Get(profile_);
   if (!service)
     return NULL;
 
-  return service->GetStartPageContents();
+  content::WebContents* web_contents = service->GetStartPageContents();
+  if (!web_contents)
+    return NULL;
+
+  views::WebView* web_view = new views::WebView(
+      web_contents->GetBrowserContext());
+  web_view->SetPreferredSize(size);
+  web_view->SetWebContents(web_contents);
+  return web_view;
 }
 
-content::WebContents* AppListViewDelegate::GetSpeechRecognitionContents() {
-  app_list::StartPageService* service =
-      app_list::StartPageService::Get(profile_);
-  if (!service)
+views::View* AppListViewDelegate::CreateCustomPageWebView(
+    const gfx::Size& size) {
+  if (!custom_page_web_contents_)
     return NULL;
 
-  return service->GetSpeechRecognitionContents();
+  views::WebView* web_view = new views::WebView(
+      custom_page_web_contents_->GetBrowserContext());
+  web_view->SetPreferredSize(size);
+  web_view->SetWebContents(custom_page_web_contents_.get());
+  return web_view;
+}
+#endif
+
+bool AppListViewDelegate::IsSpeechRecognitionEnabled() {
+  app_list::StartPageService* service =
+      app_list::StartPageService::Get(profile_);
+  return service && service->GetSpeechRecognitionContents();
 }
 
 const app_list::AppListViewDelegate::Users&

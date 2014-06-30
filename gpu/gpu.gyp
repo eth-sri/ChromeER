@@ -107,7 +107,6 @@
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
         'command_buffer/command_buffer.gyp:gles2_utils',
         'command_buffer_client',
-        'gles2_implementation',
       ],
       'defines': [
         'GLES2_C_LIB_IMPLEMENTATION',
@@ -187,12 +186,9 @@
         'gpu_unittest_utils',
         'gles2_implementation_client_side_arrays',
         'gles2_cmd_helper',
-      ],
-      'defines': [
-        'GLES2_C_LIB_IMPLEMENTATION',
+        'gles2_c_lib',
       ],
       'sources': [
-        '<@(gles2_c_lib_source_files)',
         'command_buffer/client/buffer_tracker_unittest.cc',
         'command_buffer/client/client_test_helper.cc',
         'command_buffer/client/client_test_helper.h',
@@ -248,6 +244,8 @@
         'command_buffer/service/gl_surface_mock.cc',
         'command_buffer/service/gl_surface_mock.h',
         'command_buffer/service/gpu_scheduler_unittest.cc',
+        'command_buffer/service/gpu_service_test.cc',
+        'command_buffer/service/gpu_service_test.h',
         'command_buffer/service/id_manager_unittest.cc',
         'command_buffer/service/mailbox_manager_unittest.cc',
         'command_buffer/service/memory_program_cache_unittest.cc',
@@ -316,14 +314,13 @@
         'gpu_unittest_utils',
         'gles2_implementation_client_side_arrays',
         'gles2_cmd_helper',
+        'gles2_c_lib',
         #'gl_unittests',
       ],
       'defines': [
-        'GLES2_C_LIB_IMPLEMENTATION',
         'GL_GLEXT_PROTOTYPES',
       ],
       'sources': [
-        '<@(gles2_c_lib_source_files)',
         'command_buffer/tests/compressed_texture_test.cc',
         'command_buffer/tests/gl_bind_uniform_location_unittest.cc',
         'command_buffer/tests/gl_chromium_framebuffer_multisample_unittest.cc',
@@ -567,6 +564,28 @@
     ['disable_nacl!=1 and OS=="win" and target_arch=="ia32"', {
       'targets': [
         {
+          'target_name': 'command_buffer_common_win64',
+          'type': 'static_library',
+          'variables': {
+            'nacl_win64_target': 1,
+          },
+          'includes': [
+            'command_buffer_common.gypi',
+          ],
+          'dependencies': [
+            '../base/base.gyp:base_win64',
+          ],
+          'defines': [
+            '<@(nacl_win64_defines)',
+            'GPU_IMPLEMENTATION',
+          ],
+          'configurations': {
+            'Common_Base': {
+              'msvs_target_platform': 'x64',
+            },
+          },
+        },
+        {
           'target_name': 'gpu_ipc_win64',
           'type': 'static_library',
           'variables': {
@@ -578,6 +597,7 @@
           'dependencies': [
             '../base/base.gyp:base_win64',
             '../ipc/ipc.gyp:ipc_win64',
+            'command_buffer_common_win64',
           ],
           'defines': [
             '<@(nacl_win64_defines)',
@@ -605,6 +625,17 @@
           'includes': [
             '../build/apk_test.gypi',
           ],
+        },
+        {
+          'target_name': 'gpu_unittests_apk',
+          'type': 'none',
+          'dependencies': [
+            'gpu_unittests',
+          ],
+          'variables': {
+            'test_suite_name': 'gpu_unittests',
+          },
+          'includes': [ '../build/apk_test.gypi' ],
         },
       ],
     }],

@@ -62,7 +62,6 @@
 #include "chrome/browser/chromeos/login/users/supervised_user_manager.h"
 #include "chrome/browser/chromeos/login/users/user.h"
 #include "chrome/browser/chromeos/login/users/user_manager.h"
-#include "chrome/browser/chromeos/net/network_portal_detector.h"
 #include "chrome/browser/chromeos/options/network_config_view.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/policy/device_cloud_policy_manager_chromeos.h"
@@ -72,7 +71,6 @@
 #include "chrome/browser/chromeos/sim_dialog_delegate.h"
 #include "chrome/browser/chromeos/ui/choose_mobile_network_dialog.h"
 #include "chrome/browser/drive/drive_service_interface.h"
-#include "chrome/browser/google/google_util.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/ash/multi_user/multi_user_util.h"
@@ -98,6 +96,8 @@
 #include "chromeos/ime/ime_keyboard.h"
 #include "chromeos/ime/input_method_manager.h"
 #include "chromeos/login/login_state.h"
+#include "chromeos/network/portal_detector/network_portal_detector.h"
+#include "components/google/core/browser/google_util.h"
 #include "components/policy/core/common/cloud/cloud_policy_store.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_service.h"
@@ -585,11 +585,10 @@ void SystemTrayDelegateChromeOS::ShowEnterpriseInfo() {
         new chromeos::HelpAppLauncher(GetNativeWindow()));
     help_app->ShowHelpTopic(chromeos::HelpAppLauncher::HELP_ENTERPRISE);
   } else {
-    GURL url(google_util::StringAppendGoogleLocaleParam(
-        chrome::kLearnMoreEnterpriseURL));
     chrome::ScopedTabbedBrowserDisplayer displayer(
         ProfileManager::GetActiveUserProfile(), chrome::HOST_DESKTOP_TYPE_ASH);
-    chrome::ShowSingletonTab(displayer.browser(), url);
+    chrome::ShowSingletonTab(displayer.browser(),
+                             GURL(chrome::kLearnMoreEnterpriseURL));
   }
 }
 
@@ -967,12 +966,12 @@ void SystemTrayDelegateChromeOS::SetProfile(Profile* profile) {
       base::Bind(&SystemTrayDelegateChromeOS::UpdateLogoutDialogDuration,
                  base::Unretained(this)));
   user_pref_registrar_->Add(
-      prefs::kLargeCursorEnabled,
+      prefs::kAccessibilityLargeCursorEnabled,
       base::Bind(&SystemTrayDelegateChromeOS::OnAccessibilityModeChanged,
                  base::Unretained(this),
                  ash::A11Y_NOTIFICATION_NONE));
   user_pref_registrar_->Add(
-      prefs::kAutoclickEnabled,
+      prefs::kAccessibilityAutoclickEnabled,
       base::Bind(&SystemTrayDelegateChromeOS::OnAccessibilityModeChanged,
                  base::Unretained(this),
                  ash::A11Y_NOTIFICATION_NONE));

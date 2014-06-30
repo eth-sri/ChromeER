@@ -72,9 +72,15 @@ inline bool IsArchitectureArm() {
 #endif
 }
 
-bool IsAcceleratedVideoDecodeEnabled() {
+bool IsAcceleratedVideoEnabled() {
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  return !command_line.HasSwitch(switches::kDisableAcceleratedVideoDecode);
+  bool accelerated_encode_enabled = false;
+#if defined(OS_CHROMEOS)
+  accelerated_encode_enabled =
+      command_line.HasSwitch(switches::kEnableVaapiAcceleratedVideoEncode);
+#endif
+  return !command_line.HasSwitch(switches::kDisableAcceleratedVideoDecode) ||
+         accelerated_encode_enabled;
 }
 
 intptr_t GpuSIGSYS_Handler(const struct arch_seccomp_data& args,
@@ -179,6 +185,8 @@ ErrorCode GpuProcessPolicy::EvaluateSyscall(SandboxBPF* sandbox,
     // We also hit this on the linux_chromeos bot but don't yet know what
     // weird flags were involved.
     case __NR_mprotect:
+    // TODO(jln): restrict prctl.
+    case __NR_prctl:
     case __NR_sched_getaffinity:
     case __NR_sched_setaffinity:
     case __NR_setpriority:
@@ -212,9 +220,9 @@ bool GpuProcessPolicy::PreSandboxHook() {
       std::vector<std::string>());
 
   if (IsArchitectureX86_64() || IsArchitectureI386()) {
-    // Accelerated video decode dlopen()'s some shared objects
+    // Accelerated video dlopen()'s some shared objects
     // inside the sandbox, so preload them now.
-    if (IsAcceleratedVideoDecodeEnabled()) {
+    if (IsAcceleratedVideoEnabled()) {
       const char* I965DrvVideoPath = NULL;
 
       if (IsArchitectureX86_64()) {

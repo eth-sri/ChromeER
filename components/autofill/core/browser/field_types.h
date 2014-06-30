@@ -132,10 +132,14 @@ enum ServerFieldType {
   ADDRESS_HOME_DEPENDENT_LOCALITY = 81,
   ADDRESS_BILLING_DEPENDENT_LOCALITY = 82,
 
+  // The third line of the street address.
+  ADDRESS_HOME_LINE3 = 83,
+  ADDRESS_BILLING_LINE3 = 84,
+
   // No new types can be added without a corresponding change to the Autofill
   // server.
 
-  MAX_VALID_FIELD_TYPE = 83,
+  MAX_VALID_FIELD_TYPE = 85,
 };
 
 // The list of all HTML autocomplete field type hints supported by Chrome.
@@ -157,12 +161,14 @@ enum HtmlFieldType {
   HTML_TYPE_STREET_ADDRESS,
   HTML_TYPE_ADDRESS_LINE1,
   HTML_TYPE_ADDRESS_LINE2,
-  HTML_TYPE_LOCALITY,      // For U.S. addresses, corresponds to the city.
-  HTML_TYPE_REGION,        // For U.S. addresses, corresponds to the state.
-  HTML_TYPE_COUNTRY_CODE,  // The ISO 3166-1-alpha-2 country code.
-  HTML_TYPE_COUNTRY_NAME,  // The localized country name.
+  HTML_TYPE_ADDRESS_LINE3,
+  HTML_TYPE_ADDRESS_LEVEL1,  // For U.S. addresses, corresponds to the state.
+  HTML_TYPE_ADDRESS_LEVEL2,  // For U.S. addresses, corresponds to the city.
+  HTML_TYPE_ADDRESS_LEVEL3,  // An area that is more specific than LEVEL2.
+  HTML_TYPE_COUNTRY_CODE,    // The ISO 3166-1-alpha-2 country code.
+  HTML_TYPE_COUNTRY_NAME,    // The localized country name.
   HTML_TYPE_POSTAL_CODE,
-  HTML_TYPE_FULL_ADDRESS,  // The complete address, formatted for display.
+  HTML_TYPE_FULL_ADDRESS,    // The complete address, formatted for display.
 
   // Credit card types.
   HTML_TYPE_CREDIT_CARD_NAME,
@@ -184,6 +190,10 @@ enum HtmlFieldType {
 
   // Email.
   HTML_TYPE_EMAIL,
+
+  // Transaction details.
+  HTML_TYPE_TRANSACTION_AMOUNT,
+  HTML_TYPE_TRANSACTION_CURRENCY,
 
   // Variants of type hints specified in the HTML specification that are
   // inferred based on a field's 'maxlength' attribute.
@@ -216,6 +226,7 @@ enum FieldTypeGroup {
   PHONE_BILLING,
   CREDIT_CARD,
   PASSWORD_FIELD,
+  TRANSACTION,
 };
 
 typedef std::set<ServerFieldType> ServerFieldTypeSet;

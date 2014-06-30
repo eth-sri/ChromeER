@@ -16,7 +16,6 @@
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/google/google_util.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_finder.h"
@@ -25,6 +24,7 @@
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/google/core/browser/google_util.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_ui.h"
@@ -77,6 +77,10 @@ base::string16 BuildBrowserVersionString() {
   browser_version += " (";
   browser_version += version_info.LastChange();
   browser_version += ")";
+#endif
+
+#if defined(ARCH_CPU_64_BITS)
+  browser_version += " (64-bit)";
 #endif
 
   return base::UTF8ToUTF16(browser_version);
@@ -149,8 +153,7 @@ void HelpHandler::GetLocalizedValues(content::WebUIDataSource* source) {
   };
 
   static L10nResources resources[] = {
-    { "helpTitle", IDS_HELP_TITLE },
-    { "aboutTitle", IDS_ABOUT_TAB_TITLE },
+    { "aboutTitle", IDS_ABOUT_TITLE },
 #if defined(OS_CHROMEOS)
     { "aboutProductTitle", IDS_PRODUCT_OS_NAME },
 #else

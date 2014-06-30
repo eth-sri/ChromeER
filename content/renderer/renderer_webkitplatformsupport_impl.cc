@@ -7,6 +7,7 @@
 #include "base/command_line.h"
 #include "base/files/file_path.h"
 #include "base/lazy_instance.h"
+#include "base/logging.h"
 #include "base/memory/shared_memory.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/metrics/histogram.h"
@@ -32,12 +33,13 @@
 #include "content/common/gpu/client/webgraphicscontext3d_command_buffer_impl.h"
 #include "content/common/gpu/gpu_process_launch_causes.h"
 #include "content/common/mime_registry_messages.h"
-#include "content/common/screen_orientation_messages.h"
 #include "content/common/view_messages.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/webplugininfo.h"
 #include "content/public/renderer/content_renderer_client.h"
 #include "content/renderer/battery_status/battery_status_dispatcher.h"
+#include "content/renderer/battery_status/fake_battery_status_dispatcher.h"
+#include "content/renderer/device_sensors/device_light_event_pump.h"
 #include "content/renderer/device_sensors/device_motion_event_pump.h"
 #include "content/renderer/device_sensors/device_orientation_event_pump.h"
 #include "content/renderer/dom_storage/webstoragenamespace_impl.h"
@@ -50,8 +52,6 @@
 #include "content/renderer/media/webrtc/peer_connection_dependency_factory.h"
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/renderer_clipboard_client.h"
-#include "content/renderer/screen_orientation/mock_screen_orientation_controller.h"
-#include "content/renderer/screen_orientation/screen_orientation_dispatcher.h"
 #include "content/renderer/webclipboard_impl.h"
 #include "content/renderer/webgraphicscontext3d_provider_impl.h"
 #include "content/renderer/webpublicsuffixlist_impl.h"
@@ -64,6 +64,7 @@
 #include "net/base/net_util.h"
 #include "third_party/WebKit/public/platform/WebBatteryStatusListener.h"
 #include "third_party/WebKit/public/platform/WebBlobRegistry.h"
+#include "third_party/WebKit/public/platform/WebDeviceLightListener.h"
 #include "third_party/WebKit/public/platform/WebDeviceMotionListener.h"
 #include "third_party/WebKit/public/platform/WebDeviceOrientationListener.h"
 #include "third_party/WebKit/public/platform/WebFileInfo.h"
@@ -71,7 +72,6 @@
 #include "third_party/WebKit/public/platform/WebMediaStreamCenter.h"
 #include "third_party/WebKit/public/platform/WebMediaStreamCenterClient.h"
 #include "third_party/WebKit/public/platform/WebPluginListBuilder.h"
-#include "third_party/WebKit/public/platform/WebScreenOrientationListener.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
 #include "third_party/WebKit/public/platform/WebVector.h"
 #include "ui/gfx/color_profile.h"
@@ -99,7 +99,7 @@
 
 #include "base/synchronization/lock.h"
 #include "content/common/child_process_sandbox_support_impl_linux.h"
-#include "third_party/WebKit/public/platform/linux/WebFontFamily.h"
+#include "third_party/WebKit/public/platform/linux/WebFallbackFont.h"
 #include "third_party/WebKit/public/platform/linux/WebSandboxSupport.h"
 #include "third_party/icu/source/common/unicode/utf16.h"
 #endif
@@ -141,16 +141,14 @@ namespace content {
 
 namespace {
 
-static bool g_sandbox_enabled = true;
-static blink::WebGamepadListener* web_gamepad_listener = NULL;
-base::LazyInstance<WebGamepads>::Leaky g_test_gamepads =
-    LAZY_INSTANCE_INITIALIZER;
+bool g_sandbox_enabled = true;
+double g_test_device_light_data = -1;
 base::LazyInstance<blink::WebDeviceMotionData>::Leaky
     g_test_device_motion_data = LAZY_INSTANCE_INITIALIZER;
 base::LazyInstance<blink::WebDeviceOrientationData>::Leaky
     g_test_device_orientation_data = LAZY_INSTANCE_INITIALIZER;
-base::LazyInstance<MockScreenOrientationController>::Leaky
-    g_test_screen_orientation_controller = LAZY_INSTANCE_INITIALIZER;
+base::LazyInstance<FakeBatteryStatusDispatcher>::Leaky
+    g_test_battery_status_dispatcher = LAZY_INSTANCE_INITIALIZER;
 
 } // namespace
 
@@ -204,10 +202,10 @@ class RendererWebKitPlatformSupportImpl::SandboxSupport
       CGFontRef* container,
       uint32* font_id);
 #elif defined(OS_POSIX)
-  virtual void getFontFamilyForCharacter(
+  virtual void getFallbackFontForCharacter(
       blink::WebUChar32 character,
       const char* preferred_locale,
-      blink::WebFontFamily* family);
+      blink::WebFallbackFont* fallbackFont);
   virtual void getRenderStyleForStrike(
       const char* family, int sizeAndStyle, blink::WebFontRenderStyle* out);
 
@@ -216,7 +214,7 @@ class RendererWebKitPlatformSupportImpl::SandboxSupport
   // unicode code points. It needs this information frequently so we cache it
   // here.
   base::Lock unicode_font_families_mutex_;
-  std::map<int32_t, blink::WebFontFamily> unicode_font_families_;
+  std::map<int32_t, blink::WebFallbackFont> unicode_font_families_;
 #endif
 };
 #endif  // defined(OS_ANDROID)
@@ -230,7 +228,8 @@ RendererWebKitPlatformSupportImpl::RendererWebKitPlatformSupportImpl()
       sudden_termination_disables_(0),
       plugin_refresh_allowed_(true),
       child_thread_loop_(base::MessageLoopProxy::current()),
-      web_scrollbar_behavior_(new WebScrollbarBehaviorImpl) {
+      web_scrollbar_behavior_(new WebScrollbarBehaviorImpl),
+      gamepad_provider_(NULL) {
   if (g_sandbox_enabled && sandboxEnabled()) {
     sandbox_support_.reset(
         new RendererWebKitPlatformSupportImpl::SandboxSupport);
@@ -425,8 +424,7 @@ RendererWebKitPlatformSupportImpl::MimeRegistry::supportsMediaMIMEType(
     std::string key_system_ascii =
         GetUnprefixedKeySystemName(base::UTF16ToASCII(key_system));
     std::vector<std::string> strict_codecs;
-    bool strip_suffix = !net::IsStrictMediaMimeType(mime_type_ascii);
-    net::ParseCodecString(ToASCIIOrEmpty(codecs), &strict_codecs, strip_suffix);
+    net::ParseCodecString(ToASCIIOrEmpty(codecs), &strict_codecs, true);
 
     if (!IsSupportedKeySystemWithMediaMimeType(
             mime_type_ascii, strict_codecs, key_system_ascii)) {
@@ -441,14 +439,8 @@ RendererWebKitPlatformSupportImpl::MimeRegistry::supportsMediaMIMEType(
     // Check if the codecs are a perfect match.
     std::vector<std::string> strict_codecs;
     net::ParseCodecString(ToASCIIOrEmpty(codecs), &strict_codecs, false);
-    if (net::IsSupportedStrictMediaMimeType(mime_type_ascii, strict_codecs))
-      return IsSupported;
-
-    // We support the container, but no codecs were specified.
-    if (codecs.isNull())
-      return MayBeSupported;
-
-    return IsNotSupported;
+    return static_cast<WebMimeRegistry::SupportsType> (
+        net::IsSupportedStrictMediaMimeType(mime_type_ascii, strict_codecs));
   }
 
   // If we don't recognize the codec, it's possible we support it.
@@ -605,22 +597,25 @@ bool RendererWebKitPlatformSupportImpl::SandboxSupport::loadFont(
 #elif defined(OS_POSIX)
 
 void
-RendererWebKitPlatformSupportImpl::SandboxSupport::getFontFamilyForCharacter(
+RendererWebKitPlatformSupportImpl::SandboxSupport::getFallbackFontForCharacter(
     blink::WebUChar32 character,
     const char* preferred_locale,
-    blink::WebFontFamily* family) {
+    blink::WebFallbackFont* fallbackFont) {
   base::AutoLock lock(unicode_font_families_mutex_);
-  const std::map<int32_t, blink::WebFontFamily>::const_iterator iter =
+  const std::map<int32_t, blink::WebFallbackFont>::const_iterator iter =
       unicode_font_families_.find(character);
   if (iter != unicode_font_families_.end()) {
-    family->name = iter->second.name;
-    family->isBold = iter->second.isBold;
-    family->isItalic = iter->second.isItalic;
+    fallbackFont->name = iter->second.name;
+    fallbackFont->filename = iter->second.filename;
+    fallbackFont->fontconfigInterfaceId = iter->second.fontconfigInterfaceId;
+    fallbackFont->ttcIndex = iter->second.ttcIndex;
+    fallbackFont->isBold = iter->second.isBold;
+    fallbackFont->isItalic = iter->second.isItalic;
     return;
   }
 
-  GetFontFamilyForCharacter(character, preferred_locale, family);
-  unicode_font_families_.insert(std::make_pair(character, *family));
+  GetFallbackFontForCharacter(character, preferred_locale, fallbackFont);
+  unicode_font_families_.insert(std::make_pair(character, *fallbackFont));
 }
 
 void
@@ -889,19 +884,14 @@ WebBlobRegistry* RendererWebKitPlatformSupportImpl::blobRegistry() {
 //------------------------------------------------------------------------------
 
 void RendererWebKitPlatformSupportImpl::sampleGamepads(WebGamepads& gamepads) {
-  if (g_test_gamepads == 0) {
-    RenderThreadImpl::current()->gamepad_shared_memory_reader()->
-        SampleGamepads(gamepads);
-  } else {
-    gamepads = g_test_gamepads.Get();
-  }
+  DCHECK(gamepad_provider_);
+  gamepad_provider_->SampleGamepads(gamepads);
 }
 
 void RendererWebKitPlatformSupportImpl::setGamepadListener(
       blink::WebGamepadListener* listener) {
-  web_gamepad_listener = listener;
-  RenderThreadImpl::current()->gamepad_shared_memory_reader()->
-      SetGamepadListener(listener);
+  DCHECK(gamepad_provider_);
+  gamepad_provider_->SetGamepadListener(listener);
 }
 
 //------------------------------------------------------------------------------
@@ -947,28 +937,6 @@ bool RendererWebKitPlatformSupportImpl::SetSandboxEnabledForTesting(
   bool was_enabled = g_sandbox_enabled;
   g_sandbox_enabled = enable;
   return was_enabled;
-}
-
-// static
-void RendererWebKitPlatformSupportImpl::SetMockGamepadsForTesting(
-    const WebGamepads& pads) {
-  g_test_gamepads.Get() = pads;
-}
-
-// static
-void RendererWebKitPlatformSupportImpl::MockGamepadConnected(
-    int index,
-    const WebGamepad& pad) {
-  if (web_gamepad_listener)
-    web_gamepad_listener->didConnectGamepad(index, pad);
-}
-
-// static
-void RendererWebKitPlatformSupportImpl::MockGamepadDisconnected(
-    int index,
-    const WebGamepad& pad) {
-  if (web_gamepad_listener)
-    web_gamepad_listener->didDisconnectGamepad(index, pad);
 }
 
 //------------------------------------------------------------------------------
@@ -1053,6 +1021,32 @@ blink::WebString RendererWebKitPlatformSupportImpl::convertIDNToUnicode(
 
 //------------------------------------------------------------------------------
 
+void RendererWebKitPlatformSupportImpl::setDeviceLightListener(
+    blink::WebDeviceLightListener* listener) {
+  if (g_test_device_light_data < 0) {
+    if (!device_light_event_pump_) {
+      device_light_event_pump_.reset(new DeviceLightEventPump);
+      device_light_event_pump_->Attach(RenderThreadImpl::current());
+    }
+    device_light_event_pump_->SetListener(listener);
+  } else if (listener) {
+    // Testing mode: just echo the test data to the listener.
+    base::MessageLoopProxy::current()->PostTask(
+        FROM_HERE,
+        base::Bind(&blink::WebDeviceLightListener::didChangeDeviceLight,
+                   base::Unretained(listener),
+                   g_test_device_light_data));
+  }
+}
+
+// static
+void RendererWebKitPlatformSupportImpl::SetMockDeviceLightDataForTesting(
+    double data) {
+  g_test_device_light_data = data;
+}
+
+//------------------------------------------------------------------------------
+
 void RendererWebKitPlatformSupportImpl::setDeviceMotionListener(
     blink::WebDeviceMotionListener* listener) {
   if (g_test_device_motion_data == 0) {
@@ -1075,12 +1069,6 @@ void RendererWebKitPlatformSupportImpl::setDeviceMotionListener(
 void RendererWebKitPlatformSupportImpl::SetMockDeviceMotionDataForTesting(
     const blink::WebDeviceMotionData& data) {
   g_test_device_motion_data.Get() = data;
-}
-
-// static
-void RendererWebKitPlatformSupportImpl::ResetMockScreenOrientationForTesting()
-{
-  g_test_screen_orientation_controller.Get().ResetData();
 }
 
 //------------------------------------------------------------------------------
@@ -1123,54 +1111,6 @@ void RendererWebKitPlatformSupportImpl::cancelVibration() {
 
 //------------------------------------------------------------------------------
 
-void RendererWebKitPlatformSupportImpl::setScreenOrientationListener(
-    blink::WebScreenOrientationListener* listener) {
-  if (RenderThreadImpl::current() &&
-      RenderThreadImpl::current()->layout_test_mode()) {
-    // If we are in test mode, we want to fully disable the screen orientation
-    // backend in order to let Blink get tested properly, That means that screen
-    // orientation updates have to be done manually instead of from signals sent
-    // by the browser process.
-    g_test_screen_orientation_controller.Get().SetListener(listener);
-    return;
-  }
-
-  if (!screen_orientation_dispatcher_) {
-    screen_orientation_dispatcher_.reset(
-        new ScreenOrientationDispatcher(RenderThread::Get()));
-  }
-
-  screen_orientation_dispatcher_->setListener(listener);
-}
-
-void RendererWebKitPlatformSupportImpl::lockOrientation(
-    blink::WebScreenOrientationLockType orientation) {
-  if (RenderThreadImpl::current() &&
-      RenderThreadImpl::current()->layout_test_mode()) {
-    g_test_screen_orientation_controller.Get().UpdateLock(orientation);
-    return;
-  }
-  RenderThread::Get()->Send(new ScreenOrientationHostMsg_Lock(orientation));
-}
-
-void RendererWebKitPlatformSupportImpl::unlockOrientation() {
-  if (RenderThreadImpl::current() &&
-      RenderThreadImpl::current()->layout_test_mode()) {
-    g_test_screen_orientation_controller.Get().ResetLock();
-    return;
-  }
-  RenderThread::Get()->Send(new ScreenOrientationHostMsg_Unlock);
-}
-
-// static
-void RendererWebKitPlatformSupportImpl::SetMockScreenOrientationForTesting(
-    blink::WebScreenOrientationType orientation) {
-  g_test_screen_orientation_controller.Get()
-      .UpdateDeviceOrientation(orientation);
-}
-
-//------------------------------------------------------------------------------
-
 void RendererWebKitPlatformSupportImpl::queryStorageUsageAndQuota(
     const blink::WebURL& storage_partition,
     blink::WebStorageQuotaType type,
@@ -1189,11 +1129,26 @@ void RendererWebKitPlatformSupportImpl::queryStorageUsageAndQuota(
 
 void RendererWebKitPlatformSupportImpl::setBatteryStatusListener(
     blink::WebBatteryStatusListener* listener) {
+  if (RenderThreadImpl::current() &&
+      RenderThreadImpl::current()->layout_test_mode()) {
+    // If we are in test mode, we want to use a fake battery status dispatcher,
+    // which does not communicate with the browser process. Battery status
+    // changes are signalled by invoking MockBatteryStatusChangedForTesting().
+    g_test_battery_status_dispatcher.Get().SetListener(listener);
+    return;
+  }
+
   if (!battery_status_dispatcher_) {
     battery_status_dispatcher_.reset(
         new BatteryStatusDispatcher(RenderThreadImpl::current()));
   }
   battery_status_dispatcher_->SetListener(listener);
+}
+
+// static
+void RendererWebKitPlatformSupportImpl::MockBatteryStatusChangedForTesting(
+    const blink::WebBatteryStatus& status) {
+  g_test_battery_status_dispatcher.Get().PostBatteryStatusChange(status);
 }
 
 }  // namespace content

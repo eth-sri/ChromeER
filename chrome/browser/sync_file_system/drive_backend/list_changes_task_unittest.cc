@@ -57,12 +57,14 @@ class ListChangesTaskTest : public testing::Test {
 
     sync_task_manager_.reset(new SyncTaskManager(
         base::WeakPtr<SyncTaskManager::Client>(),
-        10 /* maximum_background_task */));
+        10 /* maximum_background_task */,
+        base::MessageLoopProxy::current()));
     sync_task_manager_->Initialize(SYNC_STATUS_OK);
 
     context_.reset(new SyncEngineContext(
         fake_drive_service.PassAs<drive::DriveServiceInterface>(),
         drive_uploader.Pass(),
+        NULL,
         base::MessageLoopProxy::current(),
         base::MessageLoopProxy::current(),
         base::MessageLoopProxy::current()));

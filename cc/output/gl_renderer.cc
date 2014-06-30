@@ -175,6 +175,10 @@ SamplerType SamplerTypeFromTextureTarget(GLenum target) {
 // determine when anti-aliasing is unnecessary.
 const float kAntiAliasingEpsilon = 1.0f / 1024.0f;
 
+// Block or crash if the number of pending sync queries reach this high as
+// something is seriously wrong on the service side if this happens.
+const size_t kMaxPendingSyncQueries = 16;
+
 }  // anonymous namespace
 
 class GLRenderer::ScopedUseGrContext {
@@ -246,6 +250,11 @@ class GLRenderer::SyncQuery {
     gl_->GetQueryObjectuivEXT(
         query_id_, GL_QUERY_RESULT_AVAILABLE_EXT, &available);
     return !available;
+  }
+
+  void Wait() {
+    unsigned result = 0;
+    gl_->GetQueryObjectuivEXT(query_id_, GL_QUERY_RESULT_EXT, &result);
   }
 
  private:
@@ -378,17 +387,6 @@ void GLRenderer::DidChangeVisibility() {
   context_support_->SetSurfaceVisible(visible());
 }
 
-void GLRenderer::SendManagedMemoryStats(size_t bytes_visible,
-                                        size_t bytes_visible_and_nearby,
-                                        size_t bytes_allocated) {
-  gpu::ManagedMemoryStats stats;
-  stats.bytes_required = bytes_visible;
-  stats.bytes_nice_to_have = bytes_visible_and_nearby;
-  stats.bytes_allocated = bytes_allocated;
-  stats.backbuffer_requested = !is_backbuffer_discarded_;
-  context_support_->SendManagedMemoryStats(stats);
-}
-
 void GLRenderer::ReleaseRenderPassTextures() { render_pass_textures_.clear(); }
 
 void GLRenderer::DiscardPixels(bool has_external_stencil_test,
@@ -441,6 +439,15 @@ void GLRenderer::BeginDrawingFrame(DrawingFrame* frame) {
 
   scoped_refptr<ResourceProvider::Fence> read_lock_fence;
   if (use_sync_query_) {
+    // Block until oldest sync query has passed if the number of pending queries
+    // ever reach kMaxPendingSyncQueries.
+    if (pending_sync_queries_.size() >= kMaxPendingSyncQueries) {
+      LOG(ERROR) << "Reached limit of pending sync queries.";
+
+      pending_sync_queries_.front()->Wait();
+      DCHECK(!pending_sync_queries_.front()->IsPending());
+    }
+
     while (!pending_sync_queries_.empty()) {
       if (pending_sync_queries_.front()->IsPending())
         break;
@@ -630,7 +637,7 @@ static SkBitmap ApplyImageFilter(
   };
   // Place the platform texture inside an SkBitmap.
   SkBitmap source;
-  source.setConfig(info);
+  source.setInfo(info);
   skia::RefPtr<SkGrPixelRef> pixel_ref =
       skia::AdoptRef(new SkGrPixelRef(info, texture.get()));
   source.setPixelRef(pixel_ref.get());
@@ -647,10 +654,18 @@ static SkBitmap ApplyImageFilter(
       use_gr_context->context(), desc, GrContext::kExact_ScratchTexMatch);
   skia::RefPtr<GrTexture> backing_store =
       skia::AdoptRef(scratch_texture.detach());
+  if (backing_store.get() == NULL) {
+    TRACE_EVENT_INSTANT0("cc",
+                         "ApplyImageFilter scratch texture allocation failed",
+                         TRACE_EVENT_SCOPE_THREAD);
+    return SkBitmap();
+  }
 
   // Create a device and canvas using that backing store.
-  SkGpuDevice device(use_gr_context->context(), backing_store.get());
-  SkCanvas canvas(&device);
+  skia::RefPtr<SkGpuDevice> device =
+      skia::AdoptRef(SkGpuDevice::Create(backing_store->asRenderTarget()));
+  DCHECK(device.get());
+  SkCanvas canvas(device.get());
 
   // Draw the source bitmap through the filter to the canvas.
   SkPaint paint;
@@ -668,7 +683,7 @@ static SkBitmap ApplyImageFilter(
   // GL context again.
   use_gr_context->context()->flush();
 
-  return device.accessBitmap(false);
+  return device->accessBitmap(false);
 }
 
 static SkBitmap ApplyBlendModeWithBackdrop(
@@ -734,7 +749,7 @@ static SkBitmap ApplyBlendModeWithBackdrop(
   };
   // Place the platform texture inside an SkBitmap.
   SkBitmap source;
-  source.setConfig(source_info);
+  source.setInfo(source_info);
   skia::RefPtr<SkGrPixelRef> source_pixel_ref =
       skia::AdoptRef(new SkGrPixelRef(source_info, source_texture.get()));
   source.setPixelRef(source_pixel_ref.get());
@@ -747,7 +762,7 @@ static SkBitmap ApplyBlendModeWithBackdrop(
   };
 
   SkBitmap background;
-  background.setConfig(background_info);
+  background.setInfo(background_info);
   skia::RefPtr<SkGrPixelRef> background_pixel_ref =
       skia::AdoptRef(new SkGrPixelRef(
           background_info, background_texture.get()));
@@ -765,10 +780,19 @@ static SkBitmap ApplyBlendModeWithBackdrop(
       use_gr_context->context(), desc, GrContext::kExact_ScratchTexMatch);
   skia::RefPtr<GrTexture> backing_store =
       skia::AdoptRef(scratch_texture.detach());
+  if (backing_store.get() == NULL) {
+    TRACE_EVENT_INSTANT0(
+        "cc",
+        "ApplyBlendModeWithBackdrop scratch texture allocation failed",
+        TRACE_EVENT_SCOPE_THREAD);
+    return source_bitmap_with_filters;
+  }
 
   // Create a device and canvas using that backing store.
-  SkGpuDevice device(use_gr_context->context(), backing_store.get());
-  SkCanvas canvas(&device);
+  skia::RefPtr<SkGpuDevice> device =
+      skia::AdoptRef(SkGpuDevice::Create(backing_store->asRenderTarget()));
+  DCHECK(device.get());
+  SkCanvas canvas(device.get());
 
   // Draw the source bitmap through the filter to the canvas.
   canvas.clear(SK_ColorTRANSPARENT);
@@ -782,7 +806,7 @@ static SkBitmap ApplyBlendModeWithBackdrop(
   // GL context again.
   use_gr_context->context()->flush();
 
-  return device.accessBitmap(false);
+  return device->accessBitmap(false);
 }
 
 scoped_ptr<ScopedResource> GLRenderer::GetBackgroundWithFilters(
@@ -1883,7 +1907,7 @@ void GLRenderer::DrawPictureQuad(const DrawingFrame* frame,
                                  &on_demand_tile_raster_bitmap_,
                                  quad->content_rect,
                                  quad->contents_scale));
-  RunOnDemandRasterTask(on_demand_raster_task.get());
+  client_->RunOnDemandRasterTask(on_demand_raster_task.get());
 
   uint8_t* bitmap_pixels = NULL;
   SkBitmap on_demand_tile_raster_bitmap_dest;

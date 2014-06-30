@@ -258,6 +258,7 @@ PanelLayoutManager::PanelLayoutManager(aura::Window* panel_container)
     : panel_container_(panel_container),
       in_add_window_(false),
       in_layout_(false),
+      show_callout_widgets_(true),
       dragged_panel_(NULL),
       shelf_(NULL),
       shelf_layout_manager_(NULL),
@@ -323,6 +324,13 @@ void PanelLayoutManager::ToggleMinimize(aura::Window* panel) {
     window_state->Restore();
   else
     window_state->Minimize();
+}
+
+void PanelLayoutManager::SetShowCalloutWidgets(bool show) {
+  if (show_callout_widgets_ == show)
+    return;
+  show_callout_widgets_ = show;
+  UpdateCallouts();
 }
 
 views::Widget* PanelLayoutManager::GetCalloutWidgetForPanel(
@@ -814,7 +822,7 @@ void PanelLayoutManager::UpdateCallouts() {
         panel->GetTargetBounds());
     gfx::Rect icon_bounds = shelf_->GetScreenBoundsOfItemIconForWindow(panel);
     if (icon_bounds.IsEmpty() || !panel->layer()->GetTargetVisibility() ||
-        panel == dragged_panel_) {
+        panel == dragged_panel_ || !show_callout_widgets_) {
       callout_widget->Hide();
       callout_widget->GetNativeWindow()->layer()->SetOpacity(0);
       continue;
@@ -896,6 +904,35 @@ void PanelLayoutManager::UpdateCallouts() {
 
 void PanelLayoutManager::OnKeyboardBoundsChanging(
     const gfx::Rect& keyboard_bounds) {
+  gfx::Rect parent_bounds = panel_container_->bounds();
+  int available_space = parent_bounds.height() - keyboard_bounds.height();
+  for (PanelList::iterator iter = panel_windows_.begin();
+       iter != panel_windows_.end();
+       ++iter) {
+    aura::Window* panel = iter->window;
+    wm::WindowState* panel_state = wm::GetWindowState(panel);
+    if (keyboard_bounds.height() > 0) {
+      // Save existing bounds, so that we can restore them when the keyboard
+      // hides.
+      panel_state->SaveCurrentBoundsForRestore();
+
+      gfx::Rect panel_bounds = ScreenUtil::ConvertRectToScreen(
+          panel->parent(), panel->GetTargetBounds());
+      int delta = panel_bounds.height() - available_space;
+      // Ensure panels are not pushed above the parent boundaries, shrink any
+      // panels that violate this constraint.
+      if (delta > 0) {
+        SetChildBounds(panel,
+                       gfx::Rect(panel_bounds.x(),
+                                 panel_bounds.y() + delta,
+                                 panel_bounds.width(),
+                                 panel_bounds.height() - delta));
+      }
+    } else if (panel_state->HasRestoreBounds()) {
+      // Keyboard hidden, restore original bounds if they exist.
+      SetChildBounds(panel, panel_state->GetRestoreBoundsInScreen());
+    }
+  }
   // This bounds change will have caused a change to the Shelf which does not
   // propogate automatically to this class, so manually recalculate bounds.
   OnWindowResized();

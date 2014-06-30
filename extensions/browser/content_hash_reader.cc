@@ -7,7 +7,9 @@
 #include "base/base64.h"
 #include "base/file_util.h"
 #include "base/json/json_reader.h"
+#include "base/metrics/histogram.h"
 #include "base/strings/string_util.h"
+#include "base/timer/elapsed_timer.h"
 #include "base/values.h"
 #include "crypto/sha2.h"
 #include "extensions/browser/computed_hashes.h"
@@ -33,6 +35,8 @@ ContentHashReader::ContentHashReader(const std::string& extension_id,
       relative_path_(relative_path),
       key_(key),
       status_(NOT_INITIALIZED),
+      have_verified_contents_(false),
+      have_computed_hashes_(false),
       block_size_(0) {
 }
 
@@ -40,6 +44,7 @@ ContentHashReader::~ContentHashReader() {
 }
 
 bool ContentHashReader::Init() {
+  base::ElapsedTimer timer;
   DCHECK_EQ(status_, NOT_INITIALIZED);
   status_ = FAILURE;
   base::FilePath verified_contents_path =
@@ -52,10 +57,10 @@ bool ContentHashReader::Init() {
   if (!verified_contents_->InitFrom(verified_contents_path, false) ||
       !verified_contents_->valid_signature() ||
       !verified_contents_->version().Equals(extension_version_) ||
-      verified_contents_->extension_id() != extension_id_) {
-    base::DeleteFile(verified_contents_path, false /* recursive */);
+      verified_contents_->extension_id() != extension_id_)
     return false;
-  }
+
+  have_verified_contents_ = true;
 
   base::FilePath computed_hashes_path =
       file_util::GetComputedHashesPath(extension_root_);
@@ -63,23 +68,28 @@ bool ContentHashReader::Init() {
     return false;
 
   ComputedHashes::Reader reader;
-  if (!reader.InitFromFile(computed_hashes_path) ||
-      !reader.GetHashes(relative_path_, &block_size_, &hashes_) ||
-      block_size_ % crypto::kSHA256Length != 0) {
-    base::DeleteFile(computed_hashes_path, false /* recursive */);
+  if (!reader.InitFromFile(computed_hashes_path))
     return false;
-  }
+
+  have_computed_hashes_ = true;
+
+  if (!reader.GetHashes(relative_path_, &block_size_, &hashes_) ||
+      block_size_ % crypto::kSHA256Length != 0)
+    return false;
+
+  const std::string* expected_root =
+      verified_contents_->GetTreeHashRoot(relative_path_);
+  if (!expected_root)
+    return false;
 
   std::string root =
       ComputeTreeHashRoot(hashes_, block_size_ / crypto::kSHA256Length);
-  const std::string* expected_root = NULL;
-  expected_root = verified_contents_->GetTreeHashRoot(relative_path_);
-  if (expected_root && *expected_root != root) {
-    base::DeleteFile(computed_hashes_path, false /* recursive */);
+  if (*expected_root != root)
     return false;
-  }
 
   status_ = SUCCESS;
+  UMA_HISTOGRAM_TIMES("ExtensionContentHashReader.InitLatency",
+                      timer.Elapsed());
   return true;
 }
 

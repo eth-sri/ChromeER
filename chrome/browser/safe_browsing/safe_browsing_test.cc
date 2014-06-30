@@ -118,6 +118,9 @@ class FakeSafeBrowsingService : public SafeBrowsingService {
     // Makes sure the auto update is not triggered. The tests will force the
     // update when needed.
     config.disable_auto_update = true;
+#if defined(OS_ANDROID)
+    config.disable_connection_check = true;
+#endif
     config.client_name = "browser_tests";
     return config;
   }
@@ -422,7 +425,7 @@ class SafeBrowsingServerTestHelper
       int test_step) {
     // TODO(lzheng): Remove chunk_type=add once it is not needed by the server.
     std::string path = base::StringPrintf(
-        "%s?client=chromium&appver=1.0&pver=2.2&test_step=%d&chunk_type=add",
+        "%s?client=chromium&appver=1.0&pver=3.0&test_step=%d&chunk_type=add",
         kDBVerifyPath, test_step);
     return FetchUrl(test_server.GetURL(path));
   }
@@ -432,7 +435,7 @@ class SafeBrowsingServerTestHelper
       const net::SpawnedTestServer& test_server,
       int test_step) {
     std::string path = base::StringPrintf(
-        "%s?client=chromium&appver=1.0&pver=2.2&test_step=%d",
+        "%s?client=chromium&appver=1.0&pver=3.0&test_step=%d",
         kUrlVerifyPath, test_step);
     return FetchUrl(test_server.GetURL(path));
   }
@@ -490,8 +493,9 @@ class SafeBrowsingServerTestHelper
   DISALLOW_COPY_AND_ASSIGN(SafeBrowsingServerTestHelper);
 };
 
+// TODO(shess): Disabled pending new data for third_party/safe_browsing/testing/
 IN_PROC_BROWSER_TEST_F(SafeBrowsingServerTest,
-                       SafeBrowsingServerTest) {
+                       DISABLED_SafeBrowsingServerTest) {
   LOG(INFO) << "Start test";
   ASSERT_TRUE(InitSafeBrowsingService());
 

@@ -33,6 +33,8 @@
         'cast_defines.h',
         'cast_environment.cc',
         'cast_environment.h',
+        'base/clock_drift_smoother.cc',
+        'base/clock_drift_smoother.h',
         'logging/encoding_event_subscriber.cc',
         'logging/encoding_event_subscriber.h',
         'logging/log_deserializer.cc',
@@ -64,6 +66,7 @@
       ], # source
     },
     {
+      # GN version: //media/cast/logging/proto
       'target_name': 'cast_logging_proto',
       'type': 'static_library',
       'include_dirs': [
@@ -97,13 +100,7 @@
         '<(DEPTH)/ui/gfx/gfx.gyp:gfx_geometry',
       ],
       'sources': [
-        'audio_receiver/audio_decoder.h',
-        'audio_receiver/audio_decoder.cc',
-        'audio_receiver/audio_receiver.h',
-        'audio_receiver/audio_receiver.cc',
         'cast_receiver.h',
-        'cast_receiver_impl.cc',
-        'cast_receiver_impl.h',
         'framer/cast_message_builder.cc',
         'framer/cast_message_builder.h',
         'framer/frame_buffer.cc',
@@ -112,18 +109,20 @@
         'framer/frame_id_map.h',
         'framer/framer.cc',
         'framer/framer.h',
+        'receiver/audio_decoder.cc',
+        'receiver/audio_decoder.h',
+        'receiver/cast_receiver_impl.cc',
+        'receiver/cast_receiver_impl.h',
+        'receiver/frame_receiver.cc',
+        'receiver/frame_receiver.h',
+        'receiver/video_decoder.cc',
+        'receiver/video_decoder.h',
         'rtp_receiver/receiver_stats.cc',
         'rtp_receiver/receiver_stats.h',
-        'rtp_receiver/rtp_receiver.cc',
-        'rtp_receiver/rtp_receiver.h',
         'rtp_receiver/rtp_receiver_defines.cc',
         'rtp_receiver/rtp_receiver_defines.h',
         'rtp_receiver/rtp_parser/rtp_parser.cc',
         'rtp_receiver/rtp_parser/rtp_parser.h',
-        'video_receiver/video_decoder.h',
-        'video_receiver/video_decoder.cc',
-        'video_receiver/video_receiver.h',
-        'video_receiver/video_receiver.cc',
       ], # source
     },
     {
@@ -219,10 +218,6 @@
         'transport/rtp_sender/rtp_sender.h',
         'transport/transport/udp_transport.cc',
         'transport/transport/udp_transport.h',
-        'transport/transport_audio_sender.cc',
-        'transport/transport_audio_sender.h',
-        'transport/transport_video_sender.cc',
-        'transport/transport_video_sender.h',
         'transport/utility/transport_encryption_handler.cc',
         'transport/utility/transport_encryption_handler.h',
       ], # source

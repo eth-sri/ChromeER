@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <vector>
+
 #include "chrome/browser/component_updater/test/component_updater_service_unittest.h"
 #include "base/file_util.h"
 #include "base/path_service.h"
@@ -11,6 +13,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/values.h"
 #include "chrome/browser/component_updater/component_updater_utils.h"
+#include "chrome/browser/component_updater/test/test_configurator.h"
 #include "chrome/browser/component_updater/test/test_installer.h"
 #include "chrome/common/chrome_paths.h"
 #include "content/public/browser/browser_thread.h"
@@ -32,10 +35,6 @@ using ::testing::Mock;
 
 namespace component_updater {
 
-#define POST_INTERCEPT_SCHEME "https"
-#define POST_INTERCEPT_HOSTNAME "localhost2"
-#define POST_INTERCEPT_PATH "/update2"
-
 MockServiceObserver::MockServiceObserver() {
 }
 
@@ -44,110 +43,6 @@ MockServiceObserver::~MockServiceObserver() {
 
 bool PartialMatch::Match(const std::string& actual) const {
   return actual.find(expected_) != std::string::npos;
-}
-
-TestConfigurator::TestConfigurator()
-    : initial_time_(0),
-      times_(1),
-      recheck_time_(0),
-      ondemand_time_(0),
-      cus_(NULL),
-      context_(new net::TestURLRequestContextGetter(
-          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO))) {
-}
-
-TestConfigurator::~TestConfigurator() {
-}
-
-int TestConfigurator::InitialDelay() {
-  return initial_time_;
-}
-
-int TestConfigurator::NextCheckDelay() {
-  // This is called when a new full cycle of checking for updates is going
-  // to happen. In test we normally only test one cycle so it is a good
-  // time to break from the test messageloop Run() method so the test can
-  // finish.
-  if (--times_ <= 0) {
-    quit_closure_.Run();
-    return 0;
-  }
-  return 1;
-}
-
-int TestConfigurator::StepDelay() {
-  return 0;
-}
-
-int TestConfigurator::StepDelayMedium() {
-  return NextCheckDelay();
-}
-
-int TestConfigurator::MinimumReCheckWait() {
-  return recheck_time_;
-}
-
-int TestConfigurator::OnDemandDelay() {
-  return ondemand_time_;
-}
-
-GURL TestConfigurator::UpdateUrl() {
-  return GURL(POST_INTERCEPT_SCHEME
-              "://" POST_INTERCEPT_HOSTNAME POST_INTERCEPT_PATH);
-}
-
-GURL TestConfigurator::PingUrl() {
-  return UpdateUrl();
-}
-
-std::string TestConfigurator::ExtraRequestParams() {
-  return "extra=\"foo\"";
-}
-
-size_t TestConfigurator::UrlSizeLimit() {
-  return 256;
-}
-
-net::URLRequestContextGetter* TestConfigurator::RequestContext() {
-  return context_.get();
-}
-
-// Don't use the utility process to run code out-of-process.
-bool TestConfigurator::InProcess() {
-  return true;
-}
-
-bool TestConfigurator::DeltasEnabled() const {
-  return true;
-}
-
-bool TestConfigurator::UseBackgroundDownloader() const {
-  return false;
-}
-
-// Set how many update checks are called, the default value is just once.
-void TestConfigurator::SetLoopCount(int times) {
-  times_ = times;
-}
-
-void TestConfigurator::SetRecheckTime(int seconds) {
-  recheck_time_ = seconds;
-}
-
-void TestConfigurator::SetOnDemandTime(int seconds) {
-  ondemand_time_ = seconds;
-}
-
-void TestConfigurator::SetComponentUpdateService(ComponentUpdateService* cus) {
-  cus_ = cus;
-}
-
-void TestConfigurator::SetQuitClosure(const base::Closure& quit_closure) {
-  quit_closure_ = quit_closure;
-}
-
-void TestConfigurator::SetInitialDelay(int seconds) {
-  initial_time_ = seconds;
 }
 
 InterceptorFactory::InterceptorFactory()
@@ -169,7 +64,6 @@ ComponentUpdaterTest::ComponentUpdaterTest()
   // The component updater instance under test.
   test_config_ = new TestConfigurator;
   component_updater_.reset(ComponentUpdateServiceFactory(test_config_));
-  test_config_->SetComponentUpdateService(component_updater_.get());
 
   // The test directory is chrome/test/data/components.
   PathService::Get(chrome::DIR_TEST_DATA, &test_data_dir_);
@@ -247,7 +141,7 @@ void ComponentUpdaterTest::RunThreadsUntilIdle() {
 ComponentUpdateService::Status OnDemandTester::OnDemand(
     ComponentUpdateService* cus,
     const std::string& component_id) {
-  return cus->OnDemandUpdate(component_id);
+  return cus->GetOnDemandUpdater().OnDemandUpdate(component_id);
 }
 
 // Verify that our test fixture work and the component updater can
@@ -687,10 +581,11 @@ TEST_F(ComponentUpdaterTest, OnDemandUpdate) {
           "<event eventtype=\"3\" eventresult=\"1\"/>"))
       << post_interceptor_->GetRequestsAsString();
 
-  // Also check what happens if previous check too soon.
+  // Also check what happens if previous check too soon. It works, since this
+  // direct OnDemand call does not implement a cooldown.
   test_configurator()->SetOnDemandTime(60 * 60);
   EXPECT_EQ(
-      ComponentUpdateService::kError,
+      ComponentUpdateService::kOk,
       OnDemandTester::OnDemand(component_updater(), GetCrxComponentID(com2)));
   // Okay, now reset to 0 for the other tests.
   test_configurator()->SetOnDemandTime(0);
@@ -1296,7 +1191,8 @@ content::ResourceThrottle* RequestTestResourceThrottle(
                                   &context);
 
   content::ResourceThrottle* rt =
-      cus->GetOnDemandResourceThrottle(&url_request, crx_id);
+      cus->GetOnDemandUpdater().GetOnDemandResourceThrottle(&url_request,
+                                                            crx_id);
   rt->set_controller_for_testing(controller);
   controller->SetThrottle(rt);
   return rt;
@@ -1404,6 +1300,8 @@ class CancelResourceController : public TestResourceController {
   int resume_called_;
 };
 
+// Tests the on-demand update with resource throttle, including the
+// cooldown interval between calls.
 TEST_F(ComponentUpdaterTest, ResourceThrottleLiveNoUpdate) {
   MockServiceObserver observer;
   {
@@ -1417,6 +1315,19 @@ TEST_F(ComponentUpdaterTest, ResourceThrottleLiveNoUpdate) {
         .Times(1);
     EXPECT_CALL(observer,
                 OnEvent(ServiceObserver::COMPONENT_UPDATER_SLEEPING, ""))
+        .Times(1);
+    EXPECT_CALL(observer,
+                OnEvent(ServiceObserver::COMPONENT_UPDATER_STARTED, ""))
+        .Times(1);
+    EXPECT_CALL(observer,
+                OnEvent(ServiceObserver::COMPONENT_NOT_UPDATED,
+                        "abagagagagagagagagagagagagagagag"))
+        .Times(1);
+    EXPECT_CALL(observer,
+                OnEvent(ServiceObserver::COMPONENT_UPDATER_SLEEPING, ""))
+        .Times(1);
+    EXPECT_CALL(observer,
+                OnEvent(ServiceObserver::COMPONENT_UPDATER_STARTED, ""))
         .Times(1);
   }
 
@@ -1440,23 +1351,69 @@ TEST_F(ComponentUpdaterTest, ResourceThrottleLiveNoUpdate) {
 
   EXPECT_EQ(0, post_interceptor_->GetHitCount());
 
-  CancelResourceController controller;
+  {
+    // First on-demand update check is expected to succeeded.
+    CancelResourceController controller;
 
-  BrowserThread::PostTask(
-      BrowserThread::IO,
-      FROM_HERE,
-      base::Bind(base::IgnoreResult(&RequestTestResourceThrottle),
-                 component_updater(),
-                 &controller,
-                 "abagagagagagagagagagagagagagagag"));
+    BrowserThread::PostTask(
+        BrowserThread::IO,
+        FROM_HERE,
+        base::Bind(base::IgnoreResult(&RequestTestResourceThrottle),
+                   component_updater(),
+                   &controller,
+                   "abagagagagagagagagagagagagagagag"));
 
-  RunThreads();
+    RunThreads();
 
-  EXPECT_EQ(1, post_interceptor_->GetHitCount());
-  EXPECT_EQ(0, static_cast<TestInstaller*>(com.installer)->error());
-  EXPECT_EQ(0, static_cast<TestInstaller*>(com.installer)->install_count());
+    EXPECT_EQ(1, post_interceptor_->GetHitCount());
+    EXPECT_EQ(0, static_cast<TestInstaller*>(com.installer)->error());
+    EXPECT_EQ(0, static_cast<TestInstaller*>(com.installer)->install_count());
 
-  component_updater()->Stop();
+    component_updater()->Stop();
+  }
+
+  {
+    // Second on-demand update check is expected to succeed as well, since there
+    // is no cooldown interval between calls, due to calling SetOnDemandTime.
+    test_configurator()->SetOnDemandTime(0);
+    test_configurator()->SetLoopCount(1);
+    component_updater()->Start();
+
+    CancelResourceController controller;
+
+    BrowserThread::PostTask(
+        BrowserThread::IO,
+        FROM_HERE,
+        base::Bind(base::IgnoreResult(&RequestTestResourceThrottle),
+                   component_updater(),
+                   &controller,
+                   "abagagagagagagagagagagagagagagag"));
+
+    RunThreads();
+
+    EXPECT_EQ(1, post_interceptor_->GetHitCount());
+    EXPECT_EQ(0, static_cast<TestInstaller*>(com.installer)->error());
+    EXPECT_EQ(0, static_cast<TestInstaller*>(com.installer)->install_count());
+
+    component_updater()->Stop();
+  }
+
+  {
+    // This on-demand call is expected not to trigger a component update check.
+    test_configurator()->SetOnDemandTime(1000000);
+    component_updater()->Start();
+
+    CancelResourceController controller;
+
+    BrowserThread::PostTask(
+        BrowserThread::IO,
+        FROM_HERE,
+        base::Bind(base::IgnoreResult(&RequestTestResourceThrottle),
+                   component_updater(),
+                   &controller,
+                   "abagagagagagagagagagagagagagagag"));
+    RunThreadsUntilIdle();
+  }
 }
 
 // Tests adding and removing observers.

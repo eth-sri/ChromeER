@@ -11,7 +11,7 @@ import os
 import sys
 import zipfile
 
-from telemetry import test
+from telemetry import benchmark
 from telemetry.core import command_line
 from telemetry.core import discover
 from telemetry.core import util
@@ -70,7 +70,7 @@ def FindPageSetDependencies(base_dir):
 
   # Add base_dir to path so our imports relative to base_dir will work.
   sys.path.append(base_dir)
-  tests = discover.DiscoverClasses(base_dir, base_dir, test.Test,
+  tests = discover.DiscoverClasses(base_dir, base_dir, benchmark.Benchmark,
                                    index_by_class_name=True)
 
   for test_class in tests.itervalues():
@@ -206,9 +206,16 @@ def ZipDependencies(paths, dependencies, options):
       gsutil_dependencies.add(os.path.dirname(gsutil_path))
       # Also add modules from depot_tools that are needed by gsutil.
       gsutil_dependencies.add(os.path.join(gsutil_base_dir, 'boto'))
+      gsutil_dependencies.add(os.path.join(gsutil_base_dir, 'fancy_urllib'))
       gsutil_dependencies.add(os.path.join(gsutil_base_dir, 'retry_decorator'))
       gsutil_dependencies -= FindExcludedFiles(
           set(gsutil_dependencies), options)
+
+      # Also add upload.py to the archive from depot_tools, if it is available.
+      # This allows us to post patches without requiring a full depot_tools
+      # install. There's no real point in including upload.py if we do not
+      # also have gsutil, which is why this is inside the gsutil block.
+      gsutil_dependencies.add(os.path.join(gsutil_base_dir, 'upload.py'))
 
       for path in gsutil_dependencies:
         path_in_archive = os.path.join(

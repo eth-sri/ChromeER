@@ -14,7 +14,6 @@
 #include "chrome/browser/chromeos/options/passphrase_textfield.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chromeos/login/login_state.h"
-#include "chromeos/network/favorite_state.h"
 #include "chromeos/network/network_configuration_handler.h"
 #include "chromeos/network/network_event_log.h"
 #include "chromeos/network/network_handler.h"
@@ -1366,8 +1365,8 @@ void WifiConfigView::ParseUIProperty(NetworkPropertyUIData* property_ui_data,
   const base::DictionaryValue* onc =
       onc::FindPolicyForActiveUser(network->guid(), &onc_source);
   std::string onc_tag = network->type() == shill::kTypeEthernet
-                            ? ::onc::network_config::kWiFi
-                            : ::onc::network_config::kEthernet;
+                            ? ::onc::network_config::kEthernet
+                            : ::onc::network_config::kWiFi;
   property_ui_data->ParseOncProperty(onc_source, onc, onc_tag + '.' + key);
 }
 

@@ -58,12 +58,17 @@ public interface HttpUrlRequest {
     /**
      * Sets a readable byte channel to upload as part of a POST request.
      *
+     * <p>Once {@link #start()} is called, this channel is guaranteed to be
+     * closed, either when the upload completes, or when it is canceled.
+     *
      * @param contentType MIME type of the post content or null if this is not a
      *            POST.
      * @param channel The channel to read to read upload data from if this is a
      *            POST request.
+     * @param contentLength The length of data to upload.
      */
-    void setUploadChannel(String contentType, ReadableByteChannel channel);
+    void setUploadChannel(String contentType, ReadableByteChannel channel,
+                          long contentLength);
 
     /**
      * Start executing the request.
@@ -111,6 +116,13 @@ public interface HttpUrlRequest {
      * method returns 200.
      */
     int getHttpStatusCode();
+
+    /**
+     * Returns the response header value for the given name or {@code null} if
+     * not found.
+     */
+    String getHeader(String name);
+
 
     /**
      * Returns the exception that occurred while executing the request of null

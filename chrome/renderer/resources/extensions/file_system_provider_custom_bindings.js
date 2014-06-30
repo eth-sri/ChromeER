@@ -36,6 +36,8 @@ function annotateMetadata(metadata) {
     size: metadata.size,
     modificationTime: annotateDate(metadata.modificationTime)
   };
+  if ('mimeType' in metadata)
+    result.mimeType = metadata.mimeType;
   return result;
 }
 
@@ -44,24 +46,22 @@ binding.registerCustomHook(function(bindingsAPI) {
 
   apiFunctions.setUpdateArgumentsPostValidate(
     'mount',
-    function(displayName, successCallback, errorCallback) {
+    function(options, successCallback, errorCallback) {
       // Piggyback the error callback onto the success callback,
       // so we can use the error callback later.
       successCallback.errorCallback_ = errorCallback;
-      return [displayName, successCallback];
+      return [options, successCallback];
     });
 
   apiFunctions.setCustomCallback(
     'mount',
     function(name, request, response) {
-      var fileSystemId = null;
       var domError = null;
       if (request.callback && response) {
-        fileSystemId = response[0];
         // DOMError is present only if mount() failed.
-        if (response[1]) {
+        if (response[0]) {
           // Convert a Dictionary to a DOMError.
-          domError = GetDOMError(response[1].name, response[1].message);
+          domError = GetDOMError(response[0].name, response[0].message);
           response.length = 1;
         }
 
@@ -72,17 +72,17 @@ binding.registerCustomHook(function(bindingsAPI) {
         if (domError)
           errorCallback(domError);
         else
-          successCallback(fileSystemId);
+          successCallback();
       }
     });
 
   apiFunctions.setUpdateArgumentsPostValidate(
     'unmount',
-    function(fileSystemId, successCallback, errorCallback) {
+    function(options, successCallback, errorCallback) {
       // Piggyback the error callback onto the success callback,
       // so we can use the error callback later.
       successCallback.errorCallback_ = errorCallback;
-      return [fileSystemId, successCallback];
+      return [options, successCallback];
     });
 
   apiFunctions.setCustomCallback(
@@ -112,111 +112,112 @@ binding.registerCustomHook(function(bindingsAPI) {
 eventBindings.registerArgumentMassager(
     'fileSystemProvider.onUnmountRequested',
     function(args, dispatch) {
-      var fileSystemId = args[0];
-      var requestId = args[1];
+      var executionStart = Date.now();
+      var options = args[0];
       var onSuccessCallback = function() {
         fileSystemProviderInternal.unmountRequestedSuccess(
-            fileSystemId, requestId);
+            options.fileSystemId, options.requestId,
+            Date.now() - executionStart);
       };
       var onErrorCallback = function(error) {
-        fileSystemProviderInternal.unmountRequestedError(
-          fileSystemId, requestId, error);
+        fileSystemProviderInternal.operationRequestedError(
+            options.fileSystemId, options.requestId, error,
+            Date.now() - executionStart);
       }
-      dispatch([fileSystemId, onSuccessCallback, onErrorCallback]);
+      dispatch([options, onSuccessCallback, onErrorCallback]);
     });
 
 eventBindings.registerArgumentMassager(
     'fileSystemProvider.onGetMetadataRequested',
     function(args, dispatch) {
-      var fileSystemId = args[0];
-      var requestId = args[1];
-      var entryPath = args[2];
+      var executionStart = Date.now();
+      var options = args[0];
       var onSuccessCallback = function(metadata) {
         fileSystemProviderInternal.getMetadataRequestedSuccess(
-            fileSystemId, requestId, annotateMetadata(metadata));
+            options.fileSystemId,
+            options.requestId,
+            annotateMetadata(metadata),
+            Date.now() - executionStart);
       };
       var onErrorCallback = function(error) {
-        fileSystemProviderInternal.getMetadataRequestedError(
-          fileSystemId, requestId, error);
+        fileSystemProviderInternal.operationRequestedError(
+            options.fileSystemId, options.requestId, error,
+            Date.now() - executionStart);
       }
-      dispatch([fileSystemId, entryPath, onSuccessCallback, onErrorCallback]);
+      dispatch([options, onSuccessCallback, onErrorCallback]);
     });
 
 eventBindings.registerArgumentMassager(
     'fileSystemProvider.onReadDirectoryRequested',
     function(args, dispatch) {
-      var fileSystemId = args[0];
-      var requestId = args[1];
-      var directoryPath = args[2];
+      var executionStart = Date.now();
+      var options = args[0];
       var onSuccessCallback = function(entries, hasNext) {
         var annotatedEntries = entries.map(annotateMetadata);
         fileSystemProviderInternal.readDirectoryRequestedSuccess(
-            fileSystemId, requestId, annotatedEntries, hasNext);
+            options.fileSystemId, options.requestId, annotatedEntries, hasNext,
+            Date.now() - executionStart);
       };
       var onErrorCallback = function(error) {
-        fileSystemProviderInternal.readDirectoryRequestedError(
-            fileSystemId, requestId, error);
+        fileSystemProviderInternal.operationRequestedError(
+            options.fileSystemId, options.requestId, error,
+            Date.now() - executionStart);
       }
-      dispatch([
-          fileSystemId, directoryPath, onSuccessCallback, onErrorCallback]);
+      dispatch([options, onSuccessCallback, onErrorCallback]);
     });
 
 eventBindings.registerArgumentMassager(
     'fileSystemProvider.onOpenFileRequested',
     function(args, dispatch) {
-      var fileSystemId = args[0];
-      var requestId = args[1];
-      var filePath = args[2];
-      var mode = args[3];
-      var create = args[4];
+      var executionStart = Date.now();
+      var options = args[0];
       var onSuccessCallback = function() {
-        fileSystemProviderInternal.openFileRequestedSuccess(
-            fileSystemId, requestId);
+        fileSystemProviderInternal.operationRequestedSuccess(
+            options.fileSystemId, options.requestId,
+            Date.now() - executionStart);
       };
       var onErrorCallback = function(error) {
-        fileSystemProviderInternal.openFileRequestedError(
-          fileSystemId, requestId, error);
+        fileSystemProviderInternal.operationRequestedError(
+            options.fileSystemId, options.requestId, error,
+            Date.now() - executionStart);
       }
-      dispatch([fileSystemId, requestId, filePath, mode, create,
-                onSuccessCallback, onErrorCallback]);
+      dispatch([options, onSuccessCallback, onErrorCallback]);
     });
 
 eventBindings.registerArgumentMassager(
     'fileSystemProvider.onCloseFileRequested',
     function(args, dispatch) {
-      var fileSystemId = args[0];
-      var requestId = args[1];
-      var openRequestId = args[2];
+      var executionStart = Date.now();
+      var options = args[0];
       var onSuccessCallback = function() {
-        fileSystemProviderInternal.closeFileRequestedSuccess(
-            fileSystemId, requestId);
+        fileSystemProviderInternal.operationRequestedSuccess(
+            options.fileSystemId, options.requestId,
+            Date.now() - executionStart);
       };
       var onErrorCallback = function(error) {
-        fileSystemProviderInternal.closeFileRequestedError(
-          fileSystemId, requestId, error);
+        fileSystemProviderInternal.operationRequestedError(
+            options.fileSystemId, options.requestId, error,
+            Date.now() - executionStart);
       }
-      dispatch([fileSystemId, openRequestId, openRequestId, onSuccessCallback,
-                onErrorCallback]);
+      dispatch([options, onSuccessCallback, onErrorCallback]);
     });
 
 eventBindings.registerArgumentMassager(
     'fileSystemProvider.onReadFileRequested',
     function(args, dispatch) {
-      var fileSystemId = args[0];
-      var requestId = args[1];
-      var openRequestId = args[2];
-      var offset = args[3];
-      var length = args[4];
+      var executionStart = Date.now();
+      var options = args[0];
       var onSuccessCallback = function(data, hasNext) {
         fileSystemProviderInternal.readFileRequestedSuccess(
-            fileSystemId, requestId, data, hasNext);
+            options.fileSystemId, options.requestId, data, hasNext,
+            Date.now() - executionStart);
       };
       var onErrorCallback = function(error) {
-        fileSystemProviderInternal.readFileRequestedError(
-          fileSystemId, requestId, error);
+        fileSystemProviderInternal.operationRequestedError(
+            options.fileSystemId, options.requestId, error,
+            Date.now() - executionStart);
       }
-      dispatch([fileSystemId, openRequestId, offset, length, onSuccessCallback,
-                onErrorCallback]);
+      dispatch([options, onSuccessCallback, onErrorCallback]);
     });
 
 exports.binding = binding.generate();

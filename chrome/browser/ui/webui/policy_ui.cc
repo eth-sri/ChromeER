@@ -48,7 +48,7 @@
 #include "content/public/browser/web_ui_message_handler.h"
 #include "google_apis/gaia/gaia_auth_util.h"
 #include "grit/browser_resources.h"
-#include "grit/component_strings.h"
+#include "grit/components_strings.h"
 #include "policy/policy_constants.h"
 #include "policy/proto/device_management_backend.pb.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -613,7 +613,7 @@ void PolicyUIHandler::SendPolicyNames() const {
   Profile* profile = Profile::FromWebUI(web_ui());
   policy::SchemaRegistry* registry =
       policy::SchemaRegistryServiceFactory::GetForContext(
-          profile->GetOriginalProfile());
+          profile->GetOriginalProfile())->registry();
   scoped_refptr<policy::SchemaMap> schema_map = registry->schema_map();
 
   // Add Chrome policy names.

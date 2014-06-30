@@ -155,7 +155,7 @@ std::vector<base::string16> InnerBoundedLabel::GetWrappedText(int width,
     base::string16 last =
         wrapped[lines - 1] + base::UTF8ToUTF16(gfx::kEllipsis);
     if (width > 0 && gfx::GetStringWidth(last, font_list()) > width)
-      last = gfx::ElideText(last, font_list(), width, gfx::ELIDE_AT_END);
+      last = gfx::ElideText(last, font_list(), width, gfx::ELIDE_TAIL);
     wrapped.resize(lines - 1);
     wrapped.push_back(last);
   }
@@ -198,8 +198,11 @@ int InnerBoundedLabel::GetTextFlags() {
   if (SkColorGetA(background_color()) != 0xFF)
     flags |= gfx::Canvas::NO_SUBPIXEL_RENDERING;
 
-  if (directionality_mode() ==
-      views::Label::AUTO_DETECT_DIRECTIONALITY) {
+  if (directionality_mode() == gfx::DIRECTIONALITY_FORCE_LTR) {
+    flags |= gfx::Canvas::FORCE_LTR_DIRECTIONALITY;
+  } else if (directionality_mode() == gfx::DIRECTIONALITY_FORCE_RTL) {
+    flags |= gfx::Canvas::FORCE_RTL_DIRECTIONALITY;
+  } else if (directionality_mode() == gfx::DIRECTIONALITY_FROM_TEXT) {
     base::i18n::TextDirection direction =
         base::i18n::GetFirstStrongCharacterDirection(text());
     if (direction == base::i18n::RIGHT_TO_LEFT)
@@ -333,8 +336,8 @@ void BoundedLabel::Paint(gfx::Canvas* canvas, const views::CullSet& cull_set) {
     label_->Paint(canvas, cull_set);
 }
 
-bool BoundedLabel::HitTestRect(const gfx::Rect& rect) const {
-  return label_->HitTestRect(rect);
+bool BoundedLabel::CanProcessEventsWithinSubtree() const {
+  return label_->CanProcessEventsWithinSubtree();
 }
 
 void BoundedLabel::GetAccessibleState(ui::AXViewState* state) {

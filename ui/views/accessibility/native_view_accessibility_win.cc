@@ -787,9 +787,9 @@ STDMETHODIMP NativeViewAccessibilityWin::accSelect(
 
 STDMETHODIMP NativeViewAccessibilityWin::get_accHelp(
     VARIANT var_id, BSTR* help) {
-  if (help)
-    *help = NULL;
-  return E_NOTIMPL;
+  base::string16 temp = base::UTF8ToUTF16(view_->GetClassName());
+  *help = SysAllocString(temp.c_str());
+  return S_OK;
 }
 
 STDMETHODIMP NativeViewAccessibilityWin::get_accHelpTopic(
@@ -1166,7 +1166,8 @@ STDMETHODIMP NativeViewAccessibilityWin::GetPatternProvider(
 
     if (role == ROLE_SYSTEM_TEXT) {
       DVLOG(1) << "Returning UIA text provider";
-      base::win::UIATextProvider::CreateTextProvider(true, provider);
+      base::win::UIATextProvider::CreateTextProvider(
+          state.value, true, provider);
       return S_OK;
     }
   }

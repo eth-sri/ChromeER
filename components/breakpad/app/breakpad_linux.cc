@@ -29,7 +29,6 @@
 #include "base/files/file_path.h"
 #include "base/linux_util.h"
 #include "base/path_service.h"
-#include "base/platform_file.h"
 #include "base/posix/eintr_wrapper.h"
 #include "base/posix/global_descriptors.h"
 #include "base/process/memory.h"
@@ -204,16 +203,10 @@ size_t LengthWithoutTrailingSpaces(const char* str, size_t len) {
 }
 
 void SetClientIdFromCommandLine(const CommandLine& command_line) {
-  // Get the guid and linux distro from the command line switch.
+  // Get the guid from the command line switch.
   std::string switch_value =
       command_line.GetSwitchValueASCII(switches::kEnableCrashReporter);
-  size_t separator = switch_value.find(",");
-  if (separator != std::string::npos) {
-    GetBreakpadClient()->SetClientID(switch_value.substr(0, separator));
-    base::SetLinuxDistro(switch_value.substr(separator + 1));
-  } else {
-    GetBreakpadClient()->SetClientID(switch_value);
-  }
+  GetBreakpadClient()->SetClientID(switch_value);
 }
 
 // MIME substrings.
@@ -1606,7 +1599,7 @@ void InitNonBrowserCrashReporterForAndroid(const std::string& process_type) {
     // (preventing the browser from inspecting the renderer process).
     int minidump_fd = base::GlobalDescriptors::GetInstance()->MaybeGet(
         GetBreakpadClient()->GetAndroidMinidumpDescriptor());
-    if (minidump_fd == base::kInvalidPlatformFileValue) {
+    if (minidump_fd < 0) {
       NOTREACHED() << "Could not find minidump FD, crash reporting disabled.";
     } else {
       EnableNonBrowserCrashDumping(process_type, minidump_fd);

@@ -12,6 +12,12 @@
           '../aura/aura.gyp:aura',
           '../wm/wm.gyp:wm',
         ],
+      }, {  # use_aura==0
+        'sources/': [
+          ['exclude', '^corewm/'],
+          ['exclude', '^touchui/'],
+          ['exclude', '^widget/desktop_aura/']
+        ]
       }],
     ],
   },
@@ -83,6 +89,12 @@
         'bubble/tray_bubble_view.h',
         'button_drag_utils.cc',
         'button_drag_utils.h',
+        'cocoa/bridged_content_view.h',
+        'cocoa/bridged_content_view.mm',
+        'cocoa/bridged_native_widget.h',
+        'cocoa/bridged_native_widget.mm',
+        'cocoa/views_nswindow_delegate.h',
+        'cocoa/views_nswindow_delegate.mm',
         'color_chooser/color_chooser_listener.h',
         'color_chooser/color_chooser_view.cc',
         'color_chooser/color_chooser_view.h',
@@ -108,8 +120,6 @@
         'controls/button/menu_button_listener.h',
         'controls/button/radio_button.cc',
         'controls/button/radio_button.h',
-        'controls/button/text_button.cc',
-        'controls/button/text_button.h',
         'controls/combobox/combobox.cc',
         'controls/combobox/combobox.h',
         'controls/combobox/combobox_listener.h',
@@ -182,6 +192,7 @@
         'controls/native/native_view_host.h',
         'controls/native/native_view_host_aura.cc',
         'controls/native/native_view_host_aura.h',
+        'controls/native/native_view_host_mac.cc',
         'controls/prefix_delegate.h',
         'controls/prefix_selector.cc',
         'controls/prefix_selector.h',
@@ -244,6 +255,8 @@
         'controls/tree/tree_view.h',
         'controls/tree/tree_view_controller.cc',
         'controls/tree/tree_view_controller.h',
+        'corewm/cursor_height_provider_win.cc',
+        'corewm/cursor_height_provider_win.h',
         'corewm/tooltip.h',
         'corewm/tooltip_aura.cc',
         'corewm/tooltip_aura.h',
@@ -296,6 +309,7 @@
         'linux_ui/status_icon_linux.h',
         'linux_ui/status_icon_linux.cc',
         'linux_ui/window_button_order_observer.h',
+        'linux_ui/window_button_order_provider.cc',
         'metrics.cc',
         'metrics.h',
         'metrics_aura.cc',
@@ -403,6 +417,8 @@
         'widget/native_widget_aura.cc',
         'widget/native_widget_aura.h',
         'widget/native_widget_delegate.h',
+        'widget/native_widget_mac.h',
+        'widget/native_widget_mac.mm',
         'widget/native_widget_private.h',
         'widget/tooltip_manager_aura.cc',
         'widget/tooltip_manager_aura.h',
@@ -446,6 +462,8 @@
         'window/native_frame_view.h',
         'window/non_client_view.cc',
         'window/non_client_view.h',
+        'window/window_button_order_provider.cc',
+        'window/window_button_order_provider.h',
         'window/window_resources.h',
         'window/window_shape.cc',
         'window/window_shape.h',
@@ -473,6 +491,9 @@
         ['OS=="linux" and chromeos==0', {
           'dependencies': [
             '../shell_dialogs/shell_dialogs.gyp:shell_dialogs',
+          ],
+          'sources!': [
+            'window/window_button_order_provider.cc',
           ],
         }, { # OS=="linux" and chromeos==0
           'sources/': [
@@ -531,6 +552,27 @@
             '../events/platform/x11/x11_events_platform.gyp:x11_events_platform',
           ],
         }],
+        ['use_aura==0', {
+          'sources!': [
+            'accessibility/ax_aura_obj_cache.cc',
+            'accessibility/ax_aura_obj_cache.h',
+            'accessibility/ax_aura_obj_wrapper.h',
+            'accessibility/ax_view_obj_wrapper.cc',
+            'accessibility/ax_view_obj_wrapper.h',
+            'accessibility/ax_widget_obj_wrapper.cc',
+            'accessibility/ax_widget_obj_wrapper.h',
+            'accessibility/ax_window_obj_wrapper.cc',
+            'accessibility/ax_window_obj_wrapper.h',
+            'bubble/bubble_window_targeter.cc',
+            'bubble/bubble_window_targeter.h',
+            'bubble/tray_bubble_view.cc',
+            'bubble/tray_bubble_view.h',
+            'mouse_watcher_view_host.cc',
+            'mouse_watcher_view_host.h',
+            'widget/window_reorderer.cc',
+            'widget/window_reorderer.h',
+          ],
+        }],
       ],
     }, # target_name: views
     {
@@ -553,20 +595,24 @@
         '..',
       ],
       'sources': [
+        'controls/textfield/textfield_test_api.cc',
+        'controls/textfield/textfield_test_api.h',
         'corewm/tooltip_controller_test_helper.cc',
         'corewm/tooltip_controller_test_helper.h',
         'test/capture_tracking_view.cc',
         'test/capture_tracking_view.h',
-        'test/child_modal_window.cc',
-        'test/child_modal_window.h',
-        'test/desktop_test_views_delegate.cc',
         'test/desktop_test_views_delegate.h',
+        'test/desktop_test_views_delegate_aura.cc',
+        'test/desktop_test_views_delegate_mac.mm',
         'test/menu_runner_test_api.cc',
         'test/menu_runner_test_api.h',
+        'test/slider_test_api.cc',
+        'test/slider_test_api.h',
         'test/test_views.cc',
         'test/test_views.h',
-        'test/test_views_delegate.cc',
         'test/test_views_delegate.h',
+        'test/test_views_delegate_aura.cc',
+        'test/test_views_delegate_mac.mm',
         'test/test_widget_observer.cc',
         'test/test_widget_observer.h',
         'test/ui_controls_factory_desktop_aurax11.cc',
@@ -579,6 +625,10 @@
         'test/views_test_helper_aura.h',
         'test/widget_test.cc',
         'test/widget_test.h',
+        'test/widget_test_aura.cc',
+        'test/widget_test_mac.mm',
+        'test/x11_property_change_waiter.cc',
+        'test/x11_property_change_waiter.h',
       ],
       'conditions': [
         ['chromeos==1', {
@@ -612,6 +662,7 @@
         '../compositor/compositor.gyp:compositor',
         '../compositor/compositor.gyp:compositor_test_support',
         '../events/events.gyp:events',
+        '../events/events.gyp:events_base',
         '../gfx/gfx.gyp:gfx',
         '../gfx/gfx.gyp:gfx_geometry',
         '../resources/ui_resources.gyp:ui_resources',
@@ -631,6 +682,7 @@
         'bubble/bubble_delegate_unittest.cc',
         'bubble/bubble_frame_view_unittest.cc',
         'bubble/bubble_window_targeter_unittest.cc',
+        'cocoa/bridged_native_widget_unittest.mm',
         'controls/button/blue_button_unittest.cc',
         'controls/button/custom_button_unittest.cc',
         'controls/button/image_button_unittest.cc',
@@ -674,26 +726,25 @@
         'view_model_utils_unittest.cc',
         'view_targeter_unittest.cc',
         'view_unittest.cc',
+        'view_unittest_aura.cc',
         'widget/desktop_aura/desktop_drag_drop_client_aurax11_unittest.cc',
         'widget/desktop_aura/desktop_focus_rules_unittest.cc',
         'widget/desktop_aura/desktop_native_widget_aura_unittest.cc',
         'widget/desktop_aura/desktop_screen_x11_unittest.cc',
         'widget/desktop_aura/desktop_screen_position_client_unittest.cc',
         'widget/desktop_aura/desktop_window_tree_host_x11_unittest.cc',
+        'widget/desktop_aura/x11_topmost_window_finder_unittest.cc',
         'widget/native_widget_aura_unittest.cc',
         'widget/native_widget_unittest.cc',
         'widget/root_view_unittest.cc',
         'widget/widget_unittest.cc',
         'widget/window_reorderer_unittest.cc',
+        'window/custom_frame_view_unittest.cc',
         'window/dialog_client_view_unittest.cc',
         'window/dialog_delegate_unittest.cc',
       ],
       'conditions': [
-        ['chromeos==0', {
-          'sources!': [
-            'touchui/touch_selection_controller_impl_unittest.cc',
-          ],
-        }, { # use_chromeos==1
+        ['chromeos==1', {
           'sources/': [
             ['exclude', 'ime/input_method_bridge_unittest.cc'],
             ['exclude', 'widget/desktop_aura'],
@@ -736,6 +787,7 @@
           'dependencies': [
             '../../build/linux/system.gyp:x11',
             '../../build/linux/system.gyp:xext',
+            '../events/platform/x11/x11_events_platform.gyp:x11_events_platform',
           ],
         }],
         ['use_ozone==1', {
@@ -752,6 +804,20 @@
           'dependencies': [
             '../events/platform/x11/x11_events_platform.gyp:x11_events_platform',
           ],
+        }],
+        ['OS=="mac"', {
+          # views_unittests not yet compiling on Mac. http://crbug.com/378134
+          'sources!': [
+            'bubble/bubble_window_targeter_unittest.cc',
+            'controls/button/custom_button_unittest.cc',
+            'controls/button/menu_button_unittest.cc',
+            'controls/native/native_view_host_unittest.cc',
+            'controls/menu/menu_controller_unittest.cc',
+            'ime/input_method_bridge_unittest.cc',
+            'focus/focus_manager_unittest.cc',
+            'widget/window_reorderer_unittest.cc',
+            'widget/widget_unittest.cc',
+          ]
         }],
       ],
     },  # target_name: views_unittests

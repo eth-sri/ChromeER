@@ -10,15 +10,6 @@
           'target_name': 'chromevox_third_party_resources',
           'type': 'none',
           'copies': [
-            {
-              'destination': '<(PRODUCT_DIR)/resources/chromeos/chromevox',
-              'files': [
-                'chromeVoxChromeBackgroundScript.js',
-                'chromeVoxChromeOptionsScript.js',
-                'chromeVoxChromePageScript.js',
-                'chromeVoxKbExplorerScript.js',
-              ],
-            },
             # TODO(plundblad): Some of these css files are forks of
             # cs from Chrome's web ui.  Consider consolidating those.
             {
@@ -36,18 +27,21 @@
                 'chromevox/injected/mathjax.js',
               ],
             },
-            {
-              'destination': '<(PRODUCT_DIR)/resources/chromeos/chromevox/closure',
-              'files': [
-                'third_party/closure-library/closure/goog/base.js',
+          ],
+          'conditions': [
+            ['use_migrated_chromevox==0', {
+              'copies': [
+                {
+                  'destination': '<(PRODUCT_DIR)/resources/chromeos/chromevox',
+                  'files': [
+                    'chromeVoxChromeBackgroundScript.js',
+                    'chromeVoxChromeOptionsScript.js',
+                    'chromeVoxChromePageScript.js',
+                    'chromeVoxKbExplorerScript.js',
+                  ],
+                },
               ],
-            },
-            {
-              'destination': '<(PRODUCT_DIR)/resources/chromeos/chromevox/',
-              'files': [
-                '_locales/',
-              ],
-            },
+            }],
           ],
         },
       ],

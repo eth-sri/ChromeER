@@ -5,12 +5,10 @@
 #include "content/browser/compositor/browser_compositor_output_surface.h"
 
 #include "base/bind.h"
-#include "base/command_line.h"
 #include "base/location.h"
 #include "base/strings/string_number_conversions.h"
 #include "content/browser/compositor/reflector_impl.h"
 #include "content/common/gpu/client/context_provider_command_buffer.h"
-#include "ui/compositor/compositor_switches.h"
 
 namespace content {
 
@@ -70,6 +68,14 @@ bool BrowserCompositorOutputSurface::BindToClient(
   return true;
 }
 
+void BrowserCompositorOutputSurface::OnSwapBuffersComplete() {
+  // On Mac, delay acknowledging the swap to the output surface client until
+  // it has been drawn.
+#if !defined(OS_MACOSX)
+  cc::OutputSurface::OnSwapBuffersComplete();
+#endif
+}
+
 void BrowserCompositorOutputSurface::OnUpdateVSyncParameters(
     base::TimeTicks timebase,
     base::TimeDelta interval) {
@@ -89,5 +95,11 @@ void BrowserCompositorOutputSurface::OnUpdateVSyncParametersFromGpu(
 void BrowserCompositorOutputSurface::SetReflector(ReflectorImpl* reflector) {
   reflector_ = reflector;
 }
+
+#if defined(OS_MACOSX)
+void BrowserCompositorOutputSurface::OnSurfaceDisplayed() {
+  cc::OutputSurface::OnSwapBuffersComplete();
+}
+#endif
 
 }  // namespace content

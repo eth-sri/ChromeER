@@ -3,24 +3,12 @@
 // found in the LICENSE file.
 
 #include "base/run_loop.h"
+#include "content/browser/appcache/appcache.h"
+#include "content/browser/appcache/appcache_group.h"
+#include "content/browser/appcache/appcache_response.h"
+#include "content/browser/appcache/appcache_storage.h"
 #include "content/browser/appcache/mock_appcache_service.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/browser/appcache/appcache.h"
-#include "webkit/browser/appcache/appcache_group.h"
-#include "webkit/browser/appcache/appcache_response.h"
-#include "webkit/browser/appcache/appcache_storage.h"
-
-using appcache::AppCache;
-using appcache::AppCacheEntry;
-using appcache::AppCacheGroup;
-using appcache::AppCacheStorage;
-using appcache::FALLBACK_NAMESPACE;
-using appcache::INTERCEPT_NAMESPACE;
-using appcache::kNoCacheId;
-using appcache::kNoResponseId;
-using appcache::Manifest;
-using appcache::Namespace;
-using appcache::NETWORK_NAMESPACE;
 
 namespace content {
 
@@ -30,7 +18,7 @@ class MockAppCacheStorageTest : public testing::Test {
    public:
     explicit MockStorageDelegate()
         : loaded_cache_id_(0), stored_group_success_(false),
-          obsoleted_success_(false), found_cache_id_(kNoCacheId) {
+          obsoleted_success_(false), found_cache_id_(kAppCacheNoCacheId) {
     }
 
     virtual void OnCacheLoaded(AppCache* cache, int64 cache_id) OVERRIDE {
@@ -420,9 +408,10 @@ TEST_F(MockAppCacheStorageTest, FindNoMainResponse) {
   base::RunLoop().RunUntilIdle();  // Do async task execution.
   EXPECT_EQ(url, delegate.found_url_);
   EXPECT_TRUE(delegate.found_manifest_url_.is_empty());
-  EXPECT_EQ(kNoCacheId, delegate.found_cache_id_);
-  EXPECT_EQ(kNoResponseId, delegate.found_entry_.response_id());
-  EXPECT_EQ(kNoResponseId, delegate.found_fallback_entry_.response_id());
+  EXPECT_EQ(kAppCacheNoCacheId, delegate.found_cache_id_);
+  EXPECT_EQ(kAppCacheNoResponseId, delegate.found_entry_.response_id());
+  EXPECT_EQ(kAppCacheNoResponseId,
+            delegate.found_fallback_entry_.response_id());
   EXPECT_TRUE(delegate.found_fallback_url_.is_empty());
   EXPECT_EQ(0, delegate.found_entry_.types());
   EXPECT_EQ(0, delegate.found_fallback_entry_.types());
@@ -482,10 +471,10 @@ TEST_F(MockAppCacheStorageTest, BasicFindMainFallbackResponse) {
 
   Manifest manifest;
   manifest.fallback_namespaces.push_back(
-      Namespace(FALLBACK_NAMESPACE, kFallbackNamespaceUrl1,
+      AppCacheNamespace(APPCACHE_FALLBACK_NAMESPACE, kFallbackNamespaceUrl1,
                 kFallbackEntryUrl1, false));
   manifest.fallback_namespaces.push_back(
-      Namespace(FALLBACK_NAMESPACE, kFallbackNamespaceUrl2,
+      AppCacheNamespace(APPCACHE_FALLBACK_NAMESPACE, kFallbackNamespaceUrl2,
                 kFallbackEntryUrl2, false));
 
   scoped_refptr<AppCache> cache(new AppCache(service.storage(), kCacheId));
@@ -594,7 +583,7 @@ TEST_F(MockAppCacheStorageTest, FindMainResponseExclusions) {
 
   Manifest manifest;
   manifest.online_whitelist_namespaces.push_back(
-      Namespace(NETWORK_NAMESPACE, kOnlineNamespaceUrl,
+      AppCacheNamespace(APPCACHE_NETWORK_NAMESPACE, kOnlineNamespaceUrl,
                 GURL(), false));
   scoped_refptr<AppCache> cache(new AppCache(service.storage(), kCacheId));
   cache->InitializeWithManifest(&manifest);
@@ -618,9 +607,10 @@ TEST_F(MockAppCacheStorageTest, FindMainResponseExclusions) {
   base::RunLoop().RunUntilIdle();  // Do async task execution.
   EXPECT_EQ(kEntryUrl, delegate.found_url_);
   EXPECT_TRUE(delegate.found_manifest_url_.is_empty());
-  EXPECT_EQ(kNoCacheId, delegate.found_cache_id_);
-  EXPECT_EQ(kNoResponseId, delegate.found_entry_.response_id());
-  EXPECT_EQ(kNoResponseId, delegate.found_fallback_entry_.response_id());
+  EXPECT_EQ(kAppCacheNoCacheId, delegate.found_cache_id_);
+  EXPECT_EQ(kAppCacheNoResponseId, delegate.found_entry_.response_id());
+  EXPECT_EQ(kAppCacheNoResponseId,
+            delegate.found_fallback_entry_.response_id());
   EXPECT_TRUE(delegate.found_fallback_url_.is_empty());
   EXPECT_EQ(0, delegate.found_entry_.types());
   EXPECT_EQ(0, delegate.found_fallback_entry_.types());
@@ -632,9 +622,10 @@ TEST_F(MockAppCacheStorageTest, FindMainResponseExclusions) {
   base::RunLoop().RunUntilIdle();  // Do async task execution.
   EXPECT_EQ(kOnlineNamespaceUrl, delegate.found_url_);
   EXPECT_TRUE(delegate.found_manifest_url_.is_empty());
-  EXPECT_EQ(kNoCacheId, delegate.found_cache_id_);
-  EXPECT_EQ(kNoResponseId, delegate.found_entry_.response_id());
-  EXPECT_EQ(kNoResponseId, delegate.found_fallback_entry_.response_id());
+  EXPECT_EQ(kAppCacheNoCacheId, delegate.found_cache_id_);
+  EXPECT_EQ(kAppCacheNoResponseId, delegate.found_entry_.response_id());
+  EXPECT_EQ(kAppCacheNoResponseId,
+            delegate.found_fallback_entry_.response_id());
   EXPECT_TRUE(delegate.found_fallback_url_.is_empty());
   EXPECT_EQ(0, delegate.found_entry_.types());
   EXPECT_EQ(0, delegate.found_fallback_entry_.types());

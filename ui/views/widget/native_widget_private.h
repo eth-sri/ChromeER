@@ -24,9 +24,9 @@ class OSExchangeData;
 
 namespace views {
 class InputMethod;
-class InputMethodDelegate;
 class TooltipManager;
 namespace internal {
+class InputMethodDelegate;
 
 ////////////////////////////////////////////////////////////////////////////////
 // NativeWidgetPrivate interface
@@ -228,9 +228,11 @@ class VIEWS_EXPORT NativeWidgetPrivate : public NativeWidget {
   virtual ui::NativeTheme* GetNativeTheme() const = 0;
   virtual void OnRootViewLayout() const = 0;
 
+  // Repost an unhandled event to the native widget for default OS processing.
+  virtual void RepostNativeEvent(gfx::NativeEvent native_event) = 0;
+
   // Overridden from NativeWidget:
   virtual internal::NativeWidgetPrivate* AsNativeWidgetPrivate() OVERRIDE;
-  virtual ui::EventHandler* GetEventHandler() = 0;
 };
 
 }  // namespace internal

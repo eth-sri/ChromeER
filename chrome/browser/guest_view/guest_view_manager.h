@@ -7,6 +7,7 @@
 
 #include <map>
 
+#include "base/gtest_prod_util.h"
 #include "base/lazy_instance.h"
 #include "base/macros.h"
 #include "content/public/browser/browser_plugin_guest_manager.h"
@@ -14,12 +15,17 @@
 #include "content/public/browser/web_contents.h"
 
 class GuestViewBase;
+class GuestViewManagerFactory;
 class GuestWebContentsObserver;
 class GURL;
 
 namespace content {
 class BrowserContext;
 }  // namespace content
+
+namespace guestview {
+class TestGuestViewManager;
+}  // namespace guestview
 
 class GuestViewManager : public content::BrowserPluginGuestManager,
                          public base::SupportsUserData::Data {
@@ -29,6 +35,11 @@ class GuestViewManager : public content::BrowserPluginGuestManager,
 
   static GuestViewManager* FromBrowserContext(content::BrowserContext* context);
 
+  // Overrides factory for testing. Default (NULL) value indicates regular
+  // (non-test) environment.
+  static void set_factory_for_testing(GuestViewManagerFactory* factory) {
+    GuestViewManager::factory_ = factory;
+  }
   // Returns the guest WebContents associated with the given |guest_instance_id|
   // if the provided |embedder_render_process_id| is allowed to access it.
   // If the embedder is not allowed access, the embedder will be killed, and
@@ -38,14 +49,27 @@ class GuestViewManager : public content::BrowserPluginGuestManager,
       int guest_instance_id,
       int embedder_render_process_id);
 
+  int GetNextInstanceID();
+
+  typedef base::Callback<void(content::WebContents*)>
+      WebContentsCreatedCallback;
+  void CreateGuest(
+      const std::string& view_type,
+      const std::string& embedder_extension_id,
+      int embedder_render_process_id,
+      const base::DictionaryValue& create_params,
+      const WebContentsCreatedCallback& callback);
+
+  content::WebContents* CreateGuestWithWebContentsParams(
+      const std::string& view_type,
+      const std::string& embedder_extension_id,
+      int embedder_render_process_id,
+      const content::WebContents::CreateParams& create_params);
+
+  content::SiteInstance* GetGuestSiteInstance(
+      const GURL& guest_site);
+
   // BrowserPluginGuestManager implementation.
-  virtual content::WebContents* CreateGuest(
-      content::SiteInstance* embedder_site_instance,
-      int instance_id,
-      const std::string& storage_partition_id,
-      bool persist_storage,
-      scoped_ptr<base::DictionaryValue> extra_params) OVERRIDE;
-  virtual int GetNextInstanceID() OVERRIDE;
   virtual void MaybeGetGuestByInstanceIDOrKill(
       int guest_instance_id,
       int embedder_render_process_id,
@@ -53,19 +77,17 @@ class GuestViewManager : public content::BrowserPluginGuestManager,
   virtual bool ForEachGuest(content::WebContents* embedder_web_contents,
                             const GuestCallback& callback) OVERRIDE;
 
- private:
+ protected:
   friend class GuestViewBase;
   friend class GuestWebContentsObserver;
+  friend class guestview::TestGuestViewManager;
+  FRIEND_TEST_ALL_PREFIXES(GuestViewManagerTest, AddRemove);
 
-  void AddGuest(int guest_instance_id,
-                content::WebContents* guest_web_contents);
+  // Can be overriden in tests.
+  virtual void AddGuest(int guest_instance_id,
+                        content::WebContents* guest_web_contents);
 
   void RemoveGuest(int guest_instance_id);
-
-  void AddRenderProcessHostID(int render_process_host_id);
-
-  content::SiteInstance* GetGuestSiteInstance(
-      const GURL& guest_site);
 
   content::WebContents* GetGuestByInstanceID(
       int guest_instance_id,
@@ -78,17 +100,30 @@ class GuestViewManager : public content::BrowserPluginGuestManager,
   bool CanEmbedderAccessInstanceID(int embedder_render_process_id,
                                    int guest_instance_id);
 
-  static bool CanEmbedderAccessGuest(int embedder_render_process_id,
-                                     GuestViewBase* guest);
+  // Returns true if |guest_instance_id| can be used to add a new guest to this
+  // manager.
+  // We disallow adding new guest with instance IDs that were previously removed
+  // from this manager using RemoveGuest.
+  bool CanUseGuestInstanceID(int guest_instance_id);
 
-  // Counts RenderProcessHost IDs of GuestViewBases.
-  std::multiset<int> render_process_host_id_multiset_;
+  // Static factory instance (always NULL for non-test).
+  static GuestViewManagerFactory* factory_;
 
   // Contains guests' WebContents, mapping from their instance ids.
   typedef std::map<int, content::WebContents*> GuestInstanceMap;
   GuestInstanceMap guest_web_contents_by_instance_id_;
 
   int current_instance_id_;
+
+  // Any instance ID whose number not greater than this was removed via
+  // RemoveGuest.
+  // This is used so that we don't have store all removed instance IDs in
+  // |removed_instance_ids_|.
+  int last_instance_id_removed_;
+  // The remaining instance IDs that are greater than
+  // |last_instance_id_removed_| are kept here.
+  std::set<int> removed_instance_ids_;
+
   content::BrowserContext* context_;
 
   DISALLOW_COPY_AND_ASSIGN(GuestViewManager);

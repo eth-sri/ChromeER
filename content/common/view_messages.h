@@ -14,6 +14,7 @@
 #include "content/common/content_export.h"
 #include "content/common/content_param_traits.h"
 #include "content/common/cookie_data.h"
+#include "content/common/date_time_suggestion.h"
 #include "content/common/navigation_gesture.h"
 #include "content/common/pepper_renderer_instance_data.h"
 #include "content/common/view_message_enums.h"
@@ -29,13 +30,13 @@
 #include "content/public/common/stop_find_action.h"
 #include "content/public/common/three_d_api_types.h"
 #include "content/public/common/window_container_type.h"
-#include "content/common/date_time_suggestion.h"
 #include "ipc/ipc_channel_handle.h"
 #include "ipc/ipc_message_macros.h"
 #include "ipc/ipc_platform_file.h"
 #include "media/audio/audio_parameters.h"
 #include "media/base/channel_layout.h"
 #include "media/base/media_log_event.h"
+#include "net/base/network_change_notifier.h"
 #include "third_party/WebKit/public/platform/WebFloatPoint.h"
 #include "third_party/WebKit/public/platform/WebFloatRect.h"
 #include "third_party/WebKit/public/platform/WebScreenInfo.h"
@@ -48,6 +49,7 @@
 #include "ui/base/ime/text_input_mode.h"
 #include "ui/base/ime/text_input_type.h"
 #include "ui/base/ui_base_types.h"
+#include "ui/gfx/ipc/gfx_param_traits.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/range/range.h"
 #include "ui/gfx/rect.h"
@@ -362,6 +364,9 @@ IPC_STRUCT_BEGIN(ViewHostMsg_TextInputState_Params)
   // The type of input field
   IPC_STRUCT_MEMBER(ui::TextInputType, type)
 
+  // The mode of input field
+  IPC_STRUCT_MEMBER(ui::TextInputMode, mode)
+
   // The value of the input field
   IPC_STRUCT_MEMBER(std::string, value)
 
@@ -501,8 +506,15 @@ IPC_STRUCT_END()
 
 // Messages sent from the browser to the renderer.
 
+#if defined(OS_ANDROID)
 // Tells the renderer to cancel an opened date/time dialog.
 IPC_MESSAGE_ROUTED0(ViewMsg_CancelDateTimeDialog)
+
+// Replaces a date time input field.
+IPC_MESSAGE_ROUTED1(ViewMsg_ReplaceDateTime,
+                    double /* dialog_value */)
+
+#endif
 
 // Get all savable resource links from current webpage, include main
 // frame and sub-frame.
@@ -528,10 +540,6 @@ IPC_MESSAGE_ROUTED0(ViewMsg_MouseLockLost)
 IPC_MESSAGE_ROUTED2(ViewMsg_UpdateVSyncParameters,
                     base::TimeTicks /* timebase */,
                     base::TimeDelta /* interval */)
-
-// Set the top-level frame to the provided name.
-IPC_MESSAGE_ROUTED1(ViewMsg_SetName,
-                    std::string /* frame_name */)
 
 // Sent to the RenderView when a new tab is swapped into an existing
 // tab and the histories need to be merged. The existing tab has a history of
@@ -570,6 +578,7 @@ IPC_MESSAGE_ROUTED1(ViewMsg_UpdateWebPreferences,
 IPC_MESSAGE_CONTROL0(ViewMsg_TimezoneChange)
 
 // Tells the render view to close.
+// Expects a Close_ACK message when finished.
 IPC_MESSAGE_ROUTED0(ViewMsg_Close)
 
 IPC_STRUCT_BEGIN(ViewMsg_Resize_Params)
@@ -632,10 +641,6 @@ IPC_MESSAGE_ROUTED3(ViewMsg_Find,
 IPC_MESSAGE_ROUTED1(ViewMsg_StopFinding,
                     content::StopFindAction /* action */)
 
-// Replaces a date time input field.
-IPC_MESSAGE_ROUTED1(ViewMsg_ReplaceDateTime,
-                    double /* dialog_value */)
-
 // Copies the image at location x, y to the clipboard (if there indeed is an
 // image at that location).
 IPC_MESSAGE_ROUTED2(ViewMsg_CopyImageAt,
@@ -673,12 +678,6 @@ IPC_MESSAGE_ROUTED0(ViewMsg_DisownOpener)
 IPC_MESSAGE_ROUTED1(ViewMsg_Zoom,
                     content::PageZoom /* function */)
 
-// Set the zoom level for the current main frame.  If the level actually
-// changes, a ViewHostMsg_DidZoomURL message will be sent back to the browser
-// telling it what url got zoomed and what its current zoom level is.
-IPC_MESSAGE_ROUTED1(ViewMsg_SetZoomLevel,
-                    double /* zoom_level */)
-
 // Set the zoom level for a particular url that the renderer is in the
 // process of loading.  This will be stored, to be used if the load commits
 // and ignored otherwise.
@@ -693,6 +692,11 @@ IPC_MESSAGE_CONTROL3(ViewMsg_SetZoomLevelForCurrentURL,
                      std::string /* scheme */,
                      std::string /* host */,
                      double /* zoom_level */)
+
+// Set the zoom level for a particular render view.
+IPC_MESSAGE_ROUTED2(ViewMsg_SetZoomLevelForView,
+                    bool /* uses_temporary_zoom_level */,
+                    double /* zoom_level */)
 
 // Change encoding of page in the renderer.
 IPC_MESSAGE_ROUTED1(ViewMsg_SetPageEncoding,
@@ -731,20 +735,6 @@ IPC_MESSAGE_ROUTED1(ViewMsg_SetInputMethodActive,
 IPC_MESSAGE_ROUTED0(ViewMsg_CandidateWindowShown)
 IPC_MESSAGE_ROUTED0(ViewMsg_CandidateWindowUpdated)
 IPC_MESSAGE_ROUTED0(ViewMsg_CandidateWindowHidden)
-
-// This message sends a string being composed with an input method.
-IPC_MESSAGE_ROUTED4(
-    ViewMsg_ImeSetComposition,
-    base::string16, /* text */
-    std::vector<blink::WebCompositionUnderline>, /* underlines */
-    int, /* selectiont_start */
-    int /* selection_end */)
-
-// This message confirms an ongoing composition.
-IPC_MESSAGE_ROUTED3(ViewMsg_ImeConfirmComposition,
-                    base::string16 /* text */,
-                    gfx::Range /* replacement_range */,
-                    bool /* keep_selection */)
 
 // Used to notify the render-view that we have received a target URL. Used
 // to prevent target URLs spamming the browser.
@@ -845,10 +835,10 @@ IPC_MESSAGE_ROUTED0(ViewMsg_WorkerScriptLoadFailed)
 // This message is sent only if the worker successfully loaded the script.
 IPC_MESSAGE_ROUTED0(ViewMsg_WorkerConnected)
 
-// Tells the renderer that the network state has changed and that
-// window.navigator.onLine should be updated for all WebViews.
-IPC_MESSAGE_CONTROL1(ViewMsg_NetworkStateChanged,
-                     bool /* online */)
+// Tells the renderer that the network type has changed so that navigator.onLine
+// and navigator.connection can be updated.
+IPC_MESSAGE_CONTROL1(ViewMsg_NetworkTypeChanged,
+                     net::NetworkChangeNotifier::ConnectionType /* type */)
 
 // Reply to ViewHostMsg_OpenChannelToPpapiBroker
 // Tells the renderer that the channel to the broker has been created.
@@ -895,7 +885,7 @@ IPC_MESSAGE_ROUTED3(ViewMsg_WindowSnapshotCompleted,
                     std::vector<unsigned char> /* png */)
 
 #if defined(OS_MACOSX)
-IPC_ENUM_TRAITS_MAX_VALUE(blink::ScrollerStyle, blink::ScrollerStyleOverlay);
+IPC_ENUM_TRAITS_MAX_VALUE(blink::ScrollerStyle, blink::ScrollerStyleOverlay)
 
 // Notification of a change in scrollbar appearance and/or behavior.
 IPC_MESSAGE_CONTROL5(ViewMsg_UpdateScrollbarTheme,
@@ -946,9 +936,6 @@ IPC_MESSAGE_ROUTED1(ViewMsg_BeginFrame,
 // processed on the browser side.
 IPC_MESSAGE_ROUTED0(ViewMsg_ImeEventAck)
 
-// Sent by the browser when we should pause video playback.
-IPC_MESSAGE_ROUTED0(ViewMsg_PauseVideo);
-
 // Extracts the data at the given rect, returning it through the
 // ViewHostMsg_SmartClipDataExtracted IPC.
 IPC_MESSAGE_ROUTED1(ViewMsg_ExtractSmartClipData,
@@ -991,6 +978,10 @@ IPC_MESSAGE_ROUTED2(ViewMsg_ReclaimCompositorResources,
                     cc::CompositorFrameAck /* ack */)
 
 IPC_MESSAGE_ROUTED0(ViewMsg_SelectWordAroundCaret)
+
+// Sent by the browser to ask the renderer to redraw.
+IPC_MESSAGE_ROUTED1(ViewMsg_ForceRedraw,
+                    int /* request_id */)
 
 // -----------------------------------------------------------------------------
 // Messages sent from the renderer to the browser.
@@ -1112,6 +1103,11 @@ IPC_MESSAGE_ROUTED5(ViewHostMsg_Find_Reply,
                     int /* active_match_ordinal */,
                     bool /* final_update */)
 
+// Indicates that the render view has been closed in respose to a
+// Close message.
+IPC_MESSAGE_CONTROL1(ViewHostMsg_Close_ACK,
+                     int /* old_route_id */)
+
 // Indicates that the current page has been closed, after a ClosePage
 // message.
 IPC_MESSAGE_ROUTED0(ViewHostMsg_ClosePage_ACK)
@@ -1131,7 +1127,8 @@ IPC_MESSAGE_ROUTED2(ViewHostMsg_UpdateTargetURL,
 // Sent when the document element is available for the top-level frame.  This
 // happens after the page starts loading, but before all resources are
 // finished.
-IPC_MESSAGE_ROUTED0(ViewHostMsg_DocumentAvailableInMainFrame)
+IPC_MESSAGE_ROUTED1(ViewHostMsg_DocumentAvailableInMainFrame,
+                    bool /* uses_temporary_zoom_level */)
 
 // Sent when the renderer loads a resource from its memory cache.
 // The security info is non empty if the resource was originally loaded over
@@ -1205,7 +1202,8 @@ IPC_SYNC_MESSAGE_CONTROL2_0(ViewHostMsg_DeleteCookie,
 
 // Used to check if cookies are enabled for the given URL. This may block
 // waiting for a previous SetCookie message to be processed.
-IPC_SYNC_MESSAGE_CONTROL2_1(ViewHostMsg_CookiesEnabled,
+IPC_SYNC_MESSAGE_CONTROL3_1(ViewHostMsg_CookiesEnabled,
+                            int /* render_frame_id */,
                             GURL /* url */,
                             GURL /* first_party_for_cookies */,
                             bool /* cookies_enabled */)
@@ -1290,15 +1288,6 @@ IPC_MESSAGE_ROUTED1(ViewHostMsg_DidContentsPreferredSizeChange,
 // is not sent at all when threaded compositing is enabled while
 // ViewHostMsg_DidChangeScrollOffset works properly in this case.
 IPC_MESSAGE_ROUTED0(ViewHostMsg_DidChangeScrollOffset)
-
-// Notifies that the pinned-to-side state of the content changed.
-IPC_MESSAGE_ROUTED2(ViewHostMsg_DidChangeScrollOffsetPinningForMainFrame,
-                    bool /* pinned_to_left */,
-                    bool /* pinned_to_right */)
-
-// Notifies that the number of JavaScript scroll handlers changed.
-IPC_MESSAGE_ROUTED1(ViewHostMsg_DidChangeNumWheelEvents,
-                    int /* count */)
 
 // Notifies whether there are JavaScript touch event handlers or not.
 IPC_MESSAGE_ROUTED1(ViewHostMsg_HasTouchEventHandlers,
@@ -1405,12 +1394,6 @@ IPC_MESSAGE_ROUTED3(ViewHostMsg_SelectionChanged,
 IPC_MESSAGE_ROUTED1(ViewHostMsg_SelectionBoundsChanged,
                     ViewHostMsg_SelectionBounds_Params)
 
-#if defined(OS_ANDROID)
-// Notification that the selection root bounds have changed.
-IPC_MESSAGE_ROUTED1(ViewHostMsg_SelectionRootBoundsChanged,
-                    gfx::Rect /* bounds of the selection root */)
-#endif
-
 // Asks the browser to display the file chooser.  The result is returned in a
 // ViewMsg_RunFileChooserResponse message.
 IPC_MESSAGE_ROUTED1(ViewHostMsg_RunFileChooser,
@@ -1433,47 +1416,30 @@ IPC_MESSAGE_ROUTED1(ViewHostMsg_TakeFocus,
 IPC_MESSAGE_ROUTED1(ViewHostMsg_OpenDateTimeDialog,
                     ViewHostMsg_DateTimeDialogValue_Params /* value */)
 
-IPC_MESSAGE_ROUTED3(ViewHostMsg_TextInputTypeChanged,
-                    ui::TextInputType /* TextInputType of the focused node */,
-                    ui::TextInputMode /* TextInputMode of the focused node */,
-                    bool /* can_compose_inline in the focused node */)
-
 // Required for updating text input state.
 IPC_MESSAGE_ROUTED1(ViewHostMsg_TextInputStateChanged,
                     ViewHostMsg_TextInputState_Params /* input state params */)
 
-// Required for cancelling an ongoing input method composition.
-IPC_MESSAGE_ROUTED0(ViewHostMsg_ImeCancelComposition)
-
 // Sent when the renderer changes the zoom level for a particular url, so the
-// browser can update its records.  If remember is true, then url is used to
-// update the zoom level for all pages in that site.  Otherwise, the render
-// view's id is used so that only the menu is updated.
-IPC_MESSAGE_ROUTED3(ViewHostMsg_DidZoomURL,
+// browser can update its records.  If the view is a plugin doc, then url is
+// used to update the zoom level for all pages in that site.  Otherwise, the
+// render view's id is used so that only the menu is updated.
+IPC_MESSAGE_ROUTED2(ViewHostMsg_DidZoomURL,
                     double /* zoom_level */,
-                    bool /* remember */,
                     GURL /* url */)
 
 // Updates the minimum/maximum allowed zoom percent for this tab from the
 // default values.  If |remember| is true, then the zoom setting is applied to
 // other pages in the site and is saved, otherwise it only applies to this
 // tab.
-IPC_MESSAGE_ROUTED3(ViewHostMsg_UpdateZoomLimits,
+IPC_MESSAGE_ROUTED2(ViewHostMsg_UpdateZoomLimits,
                     int /* minimum_percent */,
-                    int /* maximum_percent */,
-                    bool /* remember */)
+                    int /* maximum_percent */)
 
 // Notify the browser that this render process can or can't be suddenly
 // terminated.
 IPC_MESSAGE_CONTROL1(ViewHostMsg_SuddenTerminationChanged,
                      bool /* enabled */)
-
-// Informs the browser of updated frame names.
-IPC_MESSAGE_ROUTED3(ViewHostMsg_UpdateFrameName,
-                    int /* frame_id */,
-                    bool /* is_top_level */,
-                    std::string /* name */)
-
 
 IPC_STRUCT_BEGIN(ViewHostMsg_CompositorSurfaceBuffersSwapped_Params)
   IPC_STRUCT_MEMBER(int32, surface_id)
@@ -1685,11 +1651,9 @@ IPC_MESSAGE_ROUTED1(ViewHostMsg_SetNeedsBeginFrame,
                     bool /* enabled */)
 
 // Reply to the ViewMsg_ExtractSmartClipData message.
-// TODO(juhui24.lee@samsung.com): this should be changed to a vector of structs
-// instead of encoding the data as a string which is not allowed normally. Since
-// ths is only used in Android WebView, it's allowed temporarily.
-// http://crbug.com/330872
-IPC_MESSAGE_ROUTED1(ViewHostMsg_SmartClipDataExtracted, base::string16)
+IPC_MESSAGE_ROUTED2(ViewHostMsg_SmartClipDataExtracted,
+                    base::string16 /* result */,
+                    gfx::Rect /* rect */)
 
 #elif defined(OS_MACOSX)
 // Request that the browser load a font into shared memory for us.
@@ -1706,11 +1670,6 @@ IPC_MESSAGE_ROUTED2(ViewHostMsg_PluginFocusChanged,
 
 // Instructs the browser to start plugin IME.
 IPC_MESSAGE_ROUTED0(ViewHostMsg_StartPluginIme)
-
-// Notifies that the scrollbars-visible state of the content changed.
-IPC_MESSAGE_ROUTED2(ViewHostMsg_DidChangeScrollbarsForMainFrame,
-                    bool /* has_horizontal_scrollbar */,
-                    bool /* has_vertical_scrollbar */)
 
 #elif defined(OS_WIN)
 // Request that the given font characters be loaded by the browser so it's
@@ -1740,15 +1699,6 @@ IPC_SYNC_MESSAGE_CONTROL2_1(ViewHostMsg_AllocTransportDIB,
 // renderer is finished with them.
 IPC_MESSAGE_CONTROL1(ViewHostMsg_FreeTransportDIB,
                      TransportDIB::Id /* DIB id */)
-#endif
-
-#if defined(OS_MACOSX) || defined(USE_AURA)
-// On Mac and Aura IME can request composition character bounds
-// synchronously (see crbug.com/120597). This IPC message sends the character
-// bounds after every composition change to always have correct bound info.
-IPC_MESSAGE_ROUTED2(ViewHostMsg_ImeCompositionRangeChanged,
-                    gfx::Range /* composition range */,
-                    std::vector<gfx::Rect> /* character bounds */)
 #endif
 
 // Adding a new message? Stick to the sort order above: first platform

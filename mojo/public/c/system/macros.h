@@ -26,8 +26,24 @@
 #define MOJO_WARN_UNUSED_RESULT
 #endif
 
+#ifdef __cplusplus
+// Used to explicitly mark the return value of a function as unused. If you are
+// really sure you don't want to do anything with the return value of a function
+// that has been marked WARN_UNUSED_RESULT, wrap it with this. Example:
+//
+//   scoped_ptr<MyType> my_var = ...;
+//   if (TakeOwnership(my_var.get()) == SUCCESS)
+//     mojo_ignore_result(my_var.release());
+//
+template<typename T>
+inline void mojo_ignore_result(const T&) {
+}
+#endif
+
+// Assert things at compile time. (|msg| should be a valid identifier name.)
 // This macro is currently C++-only, but we want to use it in the C core.h.
-// Used to assert things at compile time.
+// Use like:
+//   MOJO_COMPILE_ASSERT(sizeof(Foo) == 12, Foo_has_invalid_size);
 #if __cplusplus >= 201103L
 #define MOJO_COMPILE_ASSERT(expr, msg) static_assert(expr, #msg)
 #elif defined(__cplusplus)
@@ -36,6 +52,35 @@ namespace mojo { template <bool> struct CompileAssert {}; }
     typedef ::mojo::CompileAssert<(bool(expr))> msg[bool(expr) ? 1 : -1]
 #else
 #define MOJO_COMPILE_ASSERT(expr, msg)
+#endif
+
+// Like the C++11 |alignof| operator.
+#if __cplusplus >= 201103L
+#define MOJO_ALIGNOF(type) alignof(type)
+#elif defined(__GNUC__)
+#define MOJO_ALIGNOF(type) __alignof__(type)
+#elif defined(_MSC_VER)
+// The use of |sizeof| is to work around a bug in MSVC 2010 (see
+// http://goo.gl/isH0C; supposedly fixed since then).
+#define MOJO_ALIGNOF(type) (sizeof(type) - sizeof(type) + __alignof(type))
+#else
+#error "Please define MOJO_ALIGNOF() for your compiler."
+#endif
+
+// Specify the alignment of a |struct|, etc.
+// Use like:
+//   struct MOJO_ALIGNAS(8) Foo { ... };
+// Unlike the C++11 |alignas()|, |alignment| must be an integer. It may not be a
+// type, nor can it be an expression like |MOJO_ALIGNOF(type)| (due to the
+// non-C++11 MSVS version).
+#if __cplusplus >= 201103L
+#define MOJO_ALIGNAS(alignment) alignas(alignment)
+#elif defined(__GNUC__)
+#define MOJO_ALIGNAS(alignment) __attribute__((aligned(alignment)))
+#elif defined(_MSC_VER)
+#define MOJO_ALIGNAS(alignment) __declspec(align(alignment))
+#else
+#error "Please define MOJO_ALIGNAS() for your compiler."
 #endif
 
 #endif  // MOJO_PUBLIC_C_SYSTEM_MACROS_H_

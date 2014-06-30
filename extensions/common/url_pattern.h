@@ -78,6 +78,9 @@ class URLPattern {
   // The <all_urls> string pattern.
   static const char kAllUrlsPattern[];
 
+  // Returns true if the given |scheme| is considered valid for extensions.
+  static bool IsValidSchemeForExtensions(const std::string& scheme);
+
   explicit URLPattern(int valid_schemes);
 
   // Convenience to construct a URLPattern from a string. If the string is not
@@ -176,14 +179,14 @@ class URLPattern {
     if (a.match_all_urls_ && b.match_all_urls_)
       return false;
     return a.host_.compare(b.host_) < 0;
-  };
+  }
 
   // Used for origin comparisons in a std::set.
   class EffectiveHostCompareFunctor {
    public:
     bool operator()(const URLPattern& a, const URLPattern& b) const {
       return EffectiveHostCompare(a, b);
-    };
+    }
   };
 
   // Get an error string for a ParseResult.

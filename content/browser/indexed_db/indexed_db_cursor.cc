@@ -4,6 +4,8 @@
 
 #include "content/browser/indexed_db/indexed_db_cursor.h"
 
+#include <vector>
+
 #include "base/bind.h"
 #include "base/logging.h"
 #include "content/browser/indexed_db/indexed_db_callbacks.h"
@@ -17,7 +19,7 @@ namespace content {
 IndexedDBCursor::IndexedDBCursor(
     scoped_ptr<IndexedDBBackingStore::Cursor> cursor,
     indexed_db::CursorType cursor_type,
-    IndexedDBDatabase::TaskType task_type,
+    blink::WebIDBTaskType task_type,
     IndexedDBTransaction* transaction)
     : task_type_(task_type),
       cursor_type_(cursor_type),

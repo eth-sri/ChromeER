@@ -16,7 +16,6 @@
 #include "chrome/browser/profiles/profile_info_cache_observer.h"
 #include "chrome/browser/search/hotword_client.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
-#include "chrome/browser/ui/app_list/chrome_signin_delegate.h"
 #include "chrome/browser/ui/app_list/start_page_observer.h"
 #include "components/signin/core/browser/signin_manager_base.h"
 #include "ui/app_list/app_list_view_delegate.h"
@@ -31,6 +30,10 @@ class SpeechUIModel;
 
 namespace base {
 class FilePath;
+}
+
+namespace content {
+class WebContents;
 }
 
 namespace gfx {
@@ -60,7 +63,6 @@ class AppListViewDelegate : public app_list::AppListViewDelegate,
   virtual bool ForceNativeDesktop() const OVERRIDE;
   virtual void SetProfileByPath(const base::FilePath& profile_path) OVERRIDE;
   virtual app_list::AppListModel* GetModel() OVERRIDE;
-  virtual app_list::SigninDelegate* GetSigninDelegate() OVERRIDE;
   virtual app_list::SpeechUIModel* GetSpeechUI() OVERRIDE;
   virtual void GetShortcutPathForApp(
       const std::string& app_id,
@@ -85,8 +87,11 @@ class AppListViewDelegate : public app_list::AppListViewDelegate,
   virtual void ToggleSpeechRecognition() OVERRIDE;
   virtual void ShowForProfileByPath(
       const base::FilePath& profile_path) OVERRIDE;
-  virtual content::WebContents* GetStartPageContents() OVERRIDE;
-  virtual content::WebContents* GetSpeechRecognitionContents() OVERRIDE;
+#if defined(TOOLKIT_VIEWS)
+  virtual views::View* CreateStartPageWebView(const gfx::Size& size) OVERRIDE;
+  virtual views::View* CreateCustomPageWebView(const gfx::Size& size) OVERRIDE;
+#endif
+  virtual bool IsSpeechRecognitionEnabled() OVERRIDE;
   virtual const Users& GetUsers() const OVERRIDE;
   virtual bool ShouldCenterWindow() const OVERRIDE;
   virtual void AddObserver(
@@ -139,7 +144,6 @@ class AppListViewDelegate : public app_list::AppListViewDelegate,
 
   Users users_;
 
-  ChromeSigninDelegate signin_delegate_;
 #if defined(USE_ASH)
   scoped_ptr<AppSyncUIStateWatcher> app_sync_ui_state_watcher_;
 #endif
@@ -149,6 +153,9 @@ class AppListViewDelegate : public app_list::AppListViewDelegate,
   // Used to track the SigninManagers that this instance is observing so that
   // this instance can be removed as an observer on its destruction.
   ScopedObserver<SigninManagerBase, AppListViewDelegate> scoped_observer_;
+
+  // Contents of the additional custom launcher page. May be NULL.
+  scoped_ptr<content::WebContents> custom_page_web_contents_;
 
   DISALLOW_COPY_AND_ASSIGN(AppListViewDelegate);
 };

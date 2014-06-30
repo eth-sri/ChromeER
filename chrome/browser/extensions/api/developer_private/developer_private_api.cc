@@ -28,6 +28,7 @@
 #include "chrome/browser/extensions/extension_disabled_ui.h"
 #include "chrome/browser/extensions/extension_error_reporter.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_ui_util.h"
 #include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/extensions/unpacked_installer.h"
 #include "chrome/browser/extensions/updater/extension_updater.h"
@@ -64,6 +65,7 @@
 #include "extensions/common/manifest_handlers/icons_handler.h"
 #include "extensions/common/manifest_handlers/incognito_info.h"
 #include "extensions/common/manifest_handlers/offline_enabled_info.h"
+#include "extensions/common/permissions/permissions_data.h"
 #include "extensions/common/switches.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
@@ -76,6 +78,7 @@
 #include "webkit/browser/fileapi/file_system_context.h"
 #include "webkit/browser/fileapi/file_system_operation.h"
 #include "webkit/browser/fileapi/file_system_operation_runner.h"
+#include "webkit/browser/fileapi/isolated_context.h"
 #include "webkit/common/blob/shareable_file_reference.h"
 
 using apps::AppWindow;
@@ -88,11 +91,14 @@ namespace developer_private = api::developer_private;
 
 namespace {
 
-const base::FilePath::CharType kUnpackedAppsFolder[]
-    = FILE_PATH_LITERAL("apps_target");
+const char kUnpackedAppsFolder[] = "apps_target";
+
+ExtensionService* GetExtensionService(Profile* profile) {
+  return ExtensionSystem::Get(profile)->extension_service();
+}
 
 ExtensionUpdater* GetExtensionUpdater(Profile* profile) {
-    return profile->GetExtensionService()->updater();
+  return GetExtensionService(profile)->updater();
 }
 
 GURL GetImageURLFromData(const std::string& contents) {
@@ -100,7 +106,7 @@ GURL GetImageURLFromData(const std::string& contents) {
   base::Base64Encode(contents, &contents_base64);
 
   // TODO(dvh): make use of content::kDataScheme. Filed as crbug/297301.
-  const char kDataURLPrefix[] = "data:image;base64,";
+  const char kDataURLPrefix[] = "data:;base64,";
   return GURL(kDataURLPrefix + contents_base64);
 }
 
@@ -140,6 +146,20 @@ std::string GetExtensionID(const RenderViewHost* render_view_host) {
   return render_view_host->GetSiteInstance()->GetSiteURL().host();
 }
 
+void BroadcastItemStateChanged(content::BrowserContext* browser_context,
+                               developer::EventType event_type,
+                               const std::string& item_id) {
+  developer::EventData event_data;
+  event_data.event_type = event_type;
+  event_data.item_id = item_id;
+
+  scoped_ptr<base::ListValue> args(new base::ListValue());
+  args->Append(event_data.ToValue().release());
+  scoped_ptr<Event> event(new Event(
+      developer_private::OnItemStateChanged::kEventName, args.Pass()));
+  EventRouter::Get(browser_context)->BroadcastEvent(event.Pass());
+}
+
 }  // namespace
 
 namespace AllowFileAccess = api::developer_private::AllowFileAccess;
@@ -172,22 +192,18 @@ DeveloperPrivateAPI::DeveloperPrivateAPI(content::BrowserContext* context)
 }
 
 DeveloperPrivateEventRouter::DeveloperPrivateEventRouter(Profile* profile)
-    : profile_(profile) {
-  int types[] = {chrome::NOTIFICATION_EXTENSION_INSTALLED,
-                 chrome::NOTIFICATION_EXTENSION_UNINSTALLED,
-                 chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
-                 chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
+    : extension_registry_observer_(this), profile_(profile) {
+  registrar_.Add(this,
                  chrome::NOTIFICATION_EXTENSION_VIEW_REGISTERED,
-                 chrome::NOTIFICATION_EXTENSION_VIEW_UNREGISTERED};
+                 content::Source<Profile>(profile_));
+  registrar_.Add(this,
+                 chrome::NOTIFICATION_EXTENSION_VIEW_UNREGISTERED,
+                 content::Source<Profile>(profile_));
 
-  CHECK(registrar_.IsEmpty());
-  for (size_t i = 0; i < arraysize(types); ++i) {
-    registrar_.Add(this,
-                   types[i],
-                   content::Source<Profile>(profile_));
-  }
-
+  // TODO(limasdf): Use scoped_observer instead.
   ErrorConsole::Get(profile)->AddObserver(this);
+
+  extension_registry_observer_.Add(ExtensionRegistry::Get(profile_));
 }
 
 DeveloperPrivateEventRouter::~DeveloperPrivateEventRouter() {
@@ -208,56 +224,66 @@ void DeveloperPrivateEventRouter::Observe(
     int type,
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
-  const char* event_name = NULL;
   Profile* profile = content::Source<Profile>(source).ptr();
   CHECK(profile);
   CHECK(profile_->IsSameProfile(profile));
   developer::EventData event_data;
-  const Extension* extension = NULL;
 
   switch (type) {
-    case chrome::NOTIFICATION_EXTENSION_INSTALLED:
-      event_data.event_type = developer::EVENT_TYPE_INSTALLED;
-      extension =
-          content::Details<const InstalledExtensionInfo>(details)->extension;
-      break;
-    case chrome::NOTIFICATION_EXTENSION_UNINSTALLED:
-      event_data.event_type = developer::EVENT_TYPE_UNINSTALLED;
-      extension = content::Details<const Extension>(details).ptr();
-      break;
-    case chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED:
-      event_data.event_type = developer::EVENT_TYPE_LOADED;
-      extension = content::Details<const Extension>(details).ptr();
-      break;
-    case chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED:
-      event_data.event_type = developer::EVENT_TYPE_UNLOADED;
-      extension =
-          content::Details<const UnloadedExtensionInfo>(details)->extension;
-      break;
-    case chrome::NOTIFICATION_EXTENSION_VIEW_UNREGISTERED:
+    case chrome::NOTIFICATION_EXTENSION_VIEW_UNREGISTERED: {
       event_data.event_type = developer::EVENT_TYPE_VIEW_UNREGISTERED;
       event_data.item_id = GetExtensionID(
           content::Details<const RenderViewHost>(details).ptr());
       break;
-    case chrome::NOTIFICATION_EXTENSION_VIEW_REGISTERED:
+    }
+    case chrome::NOTIFICATION_EXTENSION_VIEW_REGISTERED: {
       event_data.event_type = developer::EVENT_TYPE_VIEW_REGISTERED;
       event_data.item_id = GetExtensionID(
           content::Details<const RenderViewHost>(details).ptr());
       break;
+    }
     default:
       NOTREACHED();
       return;
   }
 
-  if (extension)
-    event_data.item_id = extension->id();
+  BroadcastItemStateChanged(profile, event_data.event_type, event_data.item_id);
+}
 
-  scoped_ptr<base::ListValue> args(new base::ListValue());
-  args->Append(event_data.ToValue().release());
+void DeveloperPrivateEventRouter::OnExtensionLoaded(
+    content::BrowserContext* browser_context,
+    const Extension* extension) {
+  DCHECK(profile_->IsSameProfile(Profile::FromBrowserContext(browser_context)));
+  BroadcastItemStateChanged(
+      browser_context, developer::EVENT_TYPE_LOADED, extension->id());
+}
 
-  event_name = developer_private::OnItemStateChanged::kEventName;
-  scoped_ptr<Event> event(new Event(event_name, args.Pass()));
-  EventRouter::Get(profile)->BroadcastEvent(event.Pass());
+void DeveloperPrivateEventRouter::OnExtensionUnloaded(
+    content::BrowserContext* browser_context,
+    const Extension* extension,
+    UnloadedExtensionInfo::Reason reason) {
+  DCHECK(profile_->IsSameProfile(Profile::FromBrowserContext(browser_context)));
+  BroadcastItemStateChanged(
+      browser_context, developer::EVENT_TYPE_UNLOADED, extension->id());
+}
+
+void DeveloperPrivateEventRouter::OnExtensionWillBeInstalled(
+    content::BrowserContext* browser_context,
+    const Extension* extension,
+    bool is_update,
+    bool from_ephemeral,
+    const std::string& old_name) {
+  DCHECK(profile_->IsSameProfile(Profile::FromBrowserContext(browser_context)));
+  BroadcastItemStateChanged(
+      browser_context, developer::EVENT_TYPE_INSTALLED, extension->id());
+}
+
+void DeveloperPrivateEventRouter::OnExtensionUninstalled(
+    content::BrowserContext* browser_context,
+    const Extension* extension) {
+  DCHECK(profile_->IsSameProfile(Profile::FromBrowserContext(browser_context)));
+  BroadcastItemStateChanged(
+      browser_context, developer::EVENT_TYPE_UNINSTALLED, extension->id());
 }
 
 void DeveloperPrivateEventRouter::OnErrorAdded(const ExtensionError* error) {
@@ -267,15 +293,8 @@ void DeveloperPrivateEventRouter::OnErrorAdded(const ExtensionError* error) {
   if (extension_ids_.find(error->extension_id()) != extension_ids_.end())
     return;
 
-  developer::EventData event_data;
-  event_data.event_type = developer::EVENT_TYPE_ERROR_ADDED;
-  event_data.item_id = error->extension_id();
-
-  scoped_ptr<base::ListValue> args(new base::ListValue);
-  args->Append(event_data.ToValue().release());
-
-  EventRouter::Get(profile_)->BroadcastEvent(scoped_ptr<Event>(new Event(
-      developer_private::OnItemStateChanged::kEventName, args.Pass())));
+  BroadcastItemStateChanged(
+      profile_, developer::EVENT_TYPE_ERROR_ADDED, error->extension_id());
 }
 
 void DeveloperPrivateAPI::SetLastUnpackedDirectory(const base::FilePath& path) {
@@ -393,7 +412,7 @@ DeveloperPrivateGetItemsInfoFunction::CreateItemInfo(const Extension& item,
         }
       }
     } else {
-      for (std::vector<extensions::InstallWarning>::const_iterator it =
+      for (std::vector<InstallWarning>::const_iterator it =
                item.install_warnings().begin();
            it != item.install_warnings().end();
            ++it) {
@@ -426,8 +445,8 @@ DeveloperPrivateGetItemsInfoFunction::CreateItemInfo(const Extension& item,
   }
 
   if (item.is_app()) {
-    info->app_launch_url.reset(new std::string(
-        extensions::AppLaunchInfo::GetFullLaunchURL(&item).spec()));
+    info->app_launch_url.reset(
+        new std::string(AppLaunchInfo::GetFullLaunchURL(&item).spec()));
   }
 
   info->may_disable = system->management_policy()->
@@ -546,7 +565,7 @@ ItemInspectViewList DeveloperPrivateGetItemsInfoFunction::
         bool extension_is_enabled) {
   ItemInspectViewList result;
   // Get the extension process's active views.
-  extensions::ProcessManager* process_manager =
+  ProcessManager* process_manager =
       ExtensionSystem::Get(GetProfile())->process_manager();
   GetInspectablePagesForExtensionProcess(
       extension,
@@ -568,7 +587,7 @@ ItemInspectViewList DeveloperPrivateGetItemsInfoFunction::
         BackgroundInfo::HasGeneratedBackgroundPage(extension)));
   }
 
-  ExtensionService* service = GetProfile()->GetExtensionService();
+  ExtensionService* service = GetExtensionService(GetProfile());
   // Repeat for the incognito process, if applicable. Don't try to get
   // app windows for incognito process.
   if (service->profile()->HasOffTheRecordProfile() &&
@@ -603,7 +622,7 @@ bool DeveloperPrivateGetItemsInfoFunction::RunAsync() {
   bool include_disabled = params->include_disabled;
   bool include_terminated = params->include_terminated;
 
-  extensions::ExtensionSet items;
+  ExtensionSet items;
 
   ExtensionRegistry* registry = ExtensionRegistry::Get(GetProfile());
 
@@ -622,8 +641,8 @@ bool DeveloperPrivateGetItemsInfoFunction::RunAsync() {
   std::map<std::string, ExtensionResource> id_to_icon;
   ItemInfoList item_list;
 
-  for (extensions::ExtensionSet::const_iterator iter = items.begin();
-       iter != items.end(); ++iter) {
+  for (ExtensionSet::const_iterator iter = items.begin(); iter != items.end();
+       ++iter) {
     const Extension& item = *iter->get();
 
     ExtensionResource item_resource =
@@ -633,7 +652,7 @@ bool DeveloperPrivateGetItemsInfoFunction::RunAsync() {
     id_to_icon[item.id()] = item_resource;
 
     // Don't show component extensions and invisible apps.
-    if (item.ShouldNotBeVisible())
+    if (ui_util::ShouldNotBeVisible(&item, GetProfile()))
       continue;
 
     item_list.push_back(make_linked_ptr<developer::ItemInfo>(
@@ -661,8 +680,9 @@ bool DeveloperPrivateAllowFileAccessFunction::RunSync() {
 
   ExtensionSystem* system = ExtensionSystem::Get(GetProfile());
   ManagementPolicy* management_policy = system->management_policy();
-  ExtensionService* service = GetProfile()->GetExtensionService();
-  const Extension* extension = service->GetInstalledExtension(params->item_id);
+  const Extension* extension =
+      ExtensionRegistry::Get(GetProfile())
+          ->GetExtensionById(params->item_id, ExtensionRegistry::EVERYTHING);
   bool result = true;
 
   if (!extension) {
@@ -688,8 +708,9 @@ bool DeveloperPrivateAllowIncognitoFunction::RunSync() {
       AllowIncognito::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
 
-  ExtensionService* service = GetProfile()->GetExtensionService();
-  const Extension* extension = service->GetInstalledExtension(params->item_id);
+  const Extension* extension =
+      ExtensionRegistry::Get(GetProfile())
+          ->GetExtensionById(params->item_id, ExtensionRegistry::EVERYTHING);
   bool result = true;
 
   if (!extension)
@@ -707,22 +728,23 @@ bool DeveloperPrivateReloadFunction::RunSync() {
   scoped_ptr<Reload::Params> params(Reload::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
 
-  ExtensionService* service = GetProfile()->GetExtensionService();
   CHECK(!params->item_id.empty());
+  ExtensionService* service = GetExtensionService(GetProfile());
   service->ReloadExtension(params->item_id);
   return true;
 }
 
 bool DeveloperPrivateShowPermissionsDialogFunction::RunSync() {
   EXTENSION_FUNCTION_VALIDATE(args_->GetString(0, &extension_id_));
-  ExtensionService* service = GetProfile()->GetExtensionService();
   CHECK(!extension_id_.empty());
   AppWindowRegistry* registry = AppWindowRegistry::Get(GetProfile());
   DCHECK(registry);
   AppWindow* app_window =
       registry->GetAppWindowForRenderViewHost(render_view_host());
   prompt_.reset(new ExtensionInstallPrompt(app_window->web_contents()));
-  const Extension* extension = service->GetInstalledExtension(extension_id_);
+  const Extension* extension =
+      ExtensionRegistry::Get(GetProfile())
+          ->GetExtensionById(extension_id_, ExtensionRegistry::EVERYTHING);
 
   if (!extension)
     return false;
@@ -730,7 +752,8 @@ bool DeveloperPrivateShowPermissionsDialogFunction::RunSync() {
   // Released by InstallUIAbort or InstallUIProceed.
   AddRef();
   std::vector<base::FilePath> retained_file_paths;
-  if (extension->HasAPIPermission(extensions::APIPermission::kFileSystem)) {
+  if (extension->permissions_data()->HasAPIPermission(
+          APIPermission::kFileSystem)) {
     std::vector<apps::SavedFileEntry> retained_file_entries =
         apps::SavedFilesService::Get(GetProfile())
             ->GetAllFileEntries(extension_id_);
@@ -746,12 +769,12 @@ DeveloperPrivateReloadFunction::~DeveloperPrivateReloadFunction() {}
 
 // This is called when the user clicks "Revoke File Access."
 void DeveloperPrivateShowPermissionsDialogFunction::InstallUIProceed() {
-  apps::SavedFilesService::Get(GetProfile())
-      ->ClearQueue(GetProfile()->GetExtensionService()->GetExtensionById(
-            extension_id_, true));
-  if (apps::AppRestoreService::Get(GetProfile())
-          ->IsAppRestorable(extension_id_))
-    apps::AppLoadService::Get(GetProfile())->RestartApplication(extension_id_);
+  Profile* profile = GetProfile();
+  const Extension* extension = ExtensionRegistry::Get(
+      profile)->GetExtensionById(extension_id_, ExtensionRegistry::EVERYTHING);
+  apps::SavedFilesService::Get(profile)->ClearQueue(extension);
+  if (apps::AppRestoreService::Get(profile)->IsAppRestorable(extension_id_))
+    apps::AppLoadService::Get(profile)->RestartApplication(extension_id_);
   SendResponse(true);
   Release();
 }
@@ -776,15 +799,15 @@ bool DeveloperPrivateEnableFunction::RunSync() {
 
   std::string extension_id = params->item_id;
 
-  ExtensionSystem* system = ExtensionSystem::Get(GetProfile());
-  ManagementPolicy* policy = system->management_policy();
-  ExtensionService* service = GetProfile()->GetExtensionService();
-
-  const Extension* extension = service->GetInstalledExtension(extension_id);
+  const Extension* extension =
+      ExtensionRegistry::Get(GetProfile())->GetExtensionById(
+          extension_id, ExtensionRegistry::EVERYTHING);
   if (!extension) {
     LOG(ERROR) << "Did not find extension with id " << extension_id;
     return false;
   }
+  ExtensionSystem* system = ExtensionSystem::Get(GetProfile());
+  ManagementPolicy* policy = system->management_policy();
   bool enable = params->enable;
   if (!policy->UserMayModifySettings(extension, NULL) ||
       (!enable && policy->MustRemainEnabled(extension, NULL)) ||
@@ -794,6 +817,7 @@ bool DeveloperPrivateEnableFunction::RunSync() {
     return false;
   }
 
+  ExtensionService* service = system->extension_service();
   if (enable) {
     ExtensionPrefs* prefs = ExtensionPrefs::Get(GetProfile());
     if (prefs->DidExtensionEscalatePermissions(extension_id)) {
@@ -837,8 +861,7 @@ void DeveloperPrivateEnableFunction::OnRequirementsChecked(
     const std::string& extension_id,
     std::vector<std::string> requirements_errors) {
   if (requirements_errors.empty()) {
-    ExtensionService* service = GetProfile()->GetExtensionService();
-    service->EnableExtension(extension_id);
+    GetExtensionService(GetProfile())->EnableExtension(extension_id);
   } else {
     ExtensionErrorReporter::GetInstance()->ReportError(
         base::UTF8ToUTF16(JoinString(requirements_errors, ' ')),
@@ -861,12 +884,8 @@ bool DeveloperPrivateInspectFunction::RunSync() {
   if (render_process_id == -1) {
     // This is a lazy background page. Identify if it is a normal
     // or incognito background page.
-    ExtensionService* service = GetProfile()->GetExtensionService();
-    if (options.incognito)
-      service = ExtensionSystem::Get(
-          service->profile()->GetOffTheRecordProfile())->extension_service();
-    const Extension* extension = service->extensions()->GetByID(
-        options.extension_id);
+    const Extension* extension = ExtensionRegistry::Get(
+        GetProfile())->enabled_extensions().GetByID(options.extension_id);
     DCHECK(extension);
     // Wakes up the background page and  opens the inspect window.
     devtools_util::InspectBackgroundPage(extension, GetProfile());
@@ -906,7 +925,7 @@ bool DeveloperPrivateLoadUnpackedFunction::RunAsync() {
 
 void DeveloperPrivateLoadUnpackedFunction::FileSelected(
     const base::FilePath& path) {
-  ExtensionService* service = GetProfile()->GetExtensionService();
+  ExtensionService* service = GetExtensionService(GetProfile());
   UnpackedInstaller::Create(service)->Load(path);
   DeveloperPrivateAPI::Get(GetProfile())->SetLastUnpackedDirectory(path);
   SendResponse(true);
@@ -1046,53 +1065,52 @@ bool DeveloperPrivateLoadDirectoryFunction::RunAsync() {
   EXTENSION_FUNCTION_VALIDATE(args_->GetString(1, &filesystem_path));
   EXTENSION_FUNCTION_VALIDATE(args_->GetString(2, &directory_url_str));
 
+  context_ = content::BrowserContext::GetStoragePartition(
+      GetProfile(), render_view_host()->GetSiteInstance())
+                 ->GetFileSystemContext();
+
   // Directory url is non empty only for syncfilesystem.
   if (directory_url_str != "") {
-    context_ = content::BrowserContext::GetStoragePartition(
-        GetProfile(), render_view_host()->GetSiteInstance())
-                   ->GetFileSystemContext();
-
     fileapi::FileSystemURL directory_url =
         context_->CrackURL(GURL(directory_url_str));
-
-    if (!directory_url.is_valid() && directory_url.type() ==
-        fileapi::kFileSystemTypeSyncable) {
+    if (!directory_url.is_valid() ||
+        directory_url.type() != fileapi::kFileSystemTypeSyncable) {
       SetError("DirectoryEntry of unsupported filesystem.");
       return false;
     }
-
-    size_t pos = 0;
-    // Parse the project directory name from the project url. The project url is
-    // expected to have project name as the suffix.
-    if ((pos = directory_url_str.rfind("/")) == std::string::npos) {
-      SetError("Invalid Directory entry.");
-      return false;
-    }
-
-    std::string project_name;
-    project_name = directory_url_str.substr(pos + 1);
-    project_base_url_ = directory_url_str.substr(0, pos + 1);
-
-    base::FilePath project_path(GetProfile()->GetPath());
-    project_path = project_path.Append(kUnpackedAppsFolder);
-    project_path = project_path.Append(
-        base::FilePath::FromUTF8Unsafe(project_name));
-
-    project_base_path_ = project_path;
-
-    content::BrowserThread::PostTask(content::BrowserThread::FILE, FROM_HERE,
-        base::Bind(&DeveloperPrivateLoadDirectoryFunction::
-                       ClearExistingDirectoryContent,
-                   this,
-                   project_base_path_));
+    return LoadByFileSystemAPI(directory_url);
   } else {
     // Check if the DirecotryEntry is the instance of chrome filesystem.
     if (!app_file_handler_util::ValidateFileEntryAndGetPath(filesystem_name,
                                                             filesystem_path,
                                                             render_view_host_,
                                                             &project_base_path_,
-                                                            &error_))
-    return false;
+                                                            &error_)) {
+      SetError("DirectoryEntry of unsupported filesystem.");
+      return false;
+    }
+
+    // Try to load using the FileSystem API backend, in case the filesystem
+    // points to a non-native local directory.
+    std::string filesystem_id;
+    bool cracked =
+        fileapi::CrackIsolatedFileSystemName(filesystem_name, &filesystem_id);
+    CHECK(cracked);
+    base::FilePath virtual_path =
+        fileapi::IsolatedContext::GetInstance()
+            ->CreateVirtualRootPath(filesystem_id)
+            .Append(base::FilePath::FromUTF8Unsafe(filesystem_path));
+    fileapi::FileSystemURL directory_url = context_->CreateCrackedFileSystemURL(
+        extensions::Extension::GetBaseURLFromExtensionId(extension_id()),
+        fileapi::kFileSystemTypeIsolated,
+        virtual_path);
+
+    if (directory_url.is_valid() &&
+        directory_url.type() != fileapi::kFileSystemTypeNativeLocal &&
+        directory_url.type() != fileapi::kFileSystemTypeRestrictedNativeLocal &&
+        directory_url.type() != fileapi::kFileSystemTypeDragged) {
+      return LoadByFileSystemAPI(directory_url);
+    }
 
     Load();
   }
@@ -1100,8 +1118,39 @@ bool DeveloperPrivateLoadDirectoryFunction::RunAsync() {
   return true;
 }
 
+bool DeveloperPrivateLoadDirectoryFunction::LoadByFileSystemAPI(
+    const fileapi::FileSystemURL& directory_url) {
+  std::string directory_url_str = directory_url.ToGURL().spec();
+
+  size_t pos = 0;
+  // Parse the project directory name from the project url. The project url is
+  // expected to have project name as the suffix.
+  if ((pos = directory_url_str.rfind("/")) == std::string::npos) {
+    SetError("Invalid Directory entry.");
+    return false;
+  }
+
+  std::string project_name;
+  project_name = directory_url_str.substr(pos + 1);
+  project_base_url_ = directory_url_str.substr(0, pos + 1);
+
+  base::FilePath project_path(GetProfile()->GetPath());
+  project_path = project_path.AppendASCII(kUnpackedAppsFolder);
+  project_path = project_path.Append(
+      base::FilePath::FromUTF8Unsafe(project_name));
+
+  project_base_path_ = project_path;
+
+  content::BrowserThread::PostTask(content::BrowserThread::FILE, FROM_HERE,
+      base::Bind(&DeveloperPrivateLoadDirectoryFunction::
+                     ClearExistingDirectoryContent,
+                 this,
+                 project_base_path_));
+  return true;
+}
+
 void DeveloperPrivateLoadDirectoryFunction::Load() {
-  ExtensionService* service = GetProfile()->GetExtensionService();
+  ExtensionService* service = GetExtensionService(GetProfile());
   UnpackedInstaller::Create(service)->Load(project_base_path_);
 
   // TODO(grv) : The unpacked installer should fire an event when complete
@@ -1114,33 +1163,29 @@ void DeveloperPrivateLoadDirectoryFunction::ClearExistingDirectoryContent(
     const base::FilePath& project_path) {
 
   // Clear the project directory before copying new files.
-  base::DeleteFile(project_path, true/*recursive*/);
+  base::DeleteFile(project_path, true /*recursive*/);
 
   pending_copy_operations_count_ = 1;
 
   content::BrowserThread::PostTask(content::BrowserThread::IO, FROM_HERE,
       base::Bind(&DeveloperPrivateLoadDirectoryFunction::
-                 ReadSyncFileSystemDirectory,
+                 ReadDirectoryByFileSystemAPI,
                  this, project_path, project_path.BaseName()));
 }
 
-void DeveloperPrivateLoadDirectoryFunction::ReadSyncFileSystemDirectory(
+void DeveloperPrivateLoadDirectoryFunction::ReadDirectoryByFileSystemAPI(
     const base::FilePath& project_path,
     const base::FilePath& destination_path) {
-
-  current_path_ = context_->CrackURL(GURL(project_base_url_)).path();
-
-  GURL project_url = GURL(project_base_url_ + destination_path.MaybeAsASCII());
-
+  GURL project_url = GURL(project_base_url_ + destination_path.AsUTF8Unsafe());
   fileapi::FileSystemURL url = context_->CrackURL(project_url);
 
   context_->operation_runner()->ReadDirectory(
       url, base::Bind(&DeveloperPrivateLoadDirectoryFunction::
-                      ReadSyncFileSystemDirectoryCb,
+                      ReadDirectoryByFileSystemAPICb,
                       this, project_path, destination_path));
 }
 
-void DeveloperPrivateLoadDirectoryFunction::ReadSyncFileSystemDirectoryCb(
+void DeveloperPrivateLoadDirectoryFunction::ReadDirectoryByFileSystemAPICb(
     const base::FilePath& project_path,
     const base::FilePath& destination_path,
     base::File::Error status,
@@ -1163,16 +1208,15 @@ void DeveloperPrivateLoadDirectoryFunction::ReadSyncFileSystemDirectoryCb(
 
   for (size_t i = 0; i < file_list.size(); ++i) {
     if (file_list[i].is_directory) {
-      ReadSyncFileSystemDirectory(project_path.Append(file_list[i].name),
-                                  destination_path.Append(file_list[i].name));
+      ReadDirectoryByFileSystemAPI(project_path.Append(file_list[i].name),
+                                   destination_path.Append(file_list[i].name));
       continue;
     }
 
-    std::string origin_url(
-        Extension::GetBaseURLFromExtensionId(extension_id()).spec());
-    fileapi::FileSystemURL url(sync_file_system::CreateSyncableFileSystemURL(
-        GURL(origin_url),
-        current_path_.Append(destination_path.Append(file_list[i].name))));
+    GURL project_url = GURL(project_base_url_ +
+        destination_path.Append(file_list[i].name).AsUTF8Unsafe());
+    fileapi::FileSystemURL url = context_->CrackURL(project_url);
+
     base::FilePath target_path = project_path;
     target_path = target_path.Append(file_list[i].name);
 
@@ -1298,7 +1342,7 @@ void DeveloperPrivateChoosePathFunction::FileSelectionCanceled() {
 DeveloperPrivateChoosePathFunction::~DeveloperPrivateChoosePathFunction() {}
 
 bool DeveloperPrivateIsProfileManagedFunction::RunSync() {
-  SetResult(new base::FundamentalValue(GetProfile()->IsManaged()));
+  SetResult(new base::FundamentalValue(GetProfile()->IsSupervised()));
   return true;
 }
 

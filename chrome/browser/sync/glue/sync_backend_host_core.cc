@@ -4,13 +4,11 @@
 
 #include "chrome/browser/sync/glue/sync_backend_host_core.h"
 
-#include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/metrics/histogram.h"
 #include "chrome/browser/sync/glue/device_info.h"
 #include "chrome/browser/sync/glue/sync_backend_registrar.h"
 #include "chrome/browser/sync/glue/synced_device_tracker.h"
-#include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
 #include "sync/internal_api/public/events/protocol_event.h"
 #include "sync/internal_api/public/http_post_provider_factory.h"
@@ -19,7 +17,7 @@
 #include "sync/internal_api/public/sessions/status_counters.h"
 #include "sync/internal_api/public/sessions/sync_session_snapshot.h"
 #include "sync/internal_api/public/sessions/update_counters.h"
-#include "sync/internal_api/public/sync_core_proxy.h"
+#include "sync/internal_api/public/sync_context_proxy.h"
 #include "sync/internal_api/public/sync_manager.h"
 #include "sync/internal_api/public/sync_manager_factory.h"
 
@@ -109,6 +107,7 @@ SyncBackendHostCore::SyncBackendHostCore(
       registrar_(NULL),
       has_sync_setup_completed_(has_sync_setup_completed),
       forward_protocol_events_(false),
+      forward_type_info_(false),
       weak_ptr_factory_(this) {
   DCHECK(backend.get());
 }
@@ -421,23 +420,6 @@ void SyncBackendHostCore::DoInitialize(
                       options->unrecoverable_error_handler.Pass(),
                       options->report_unrecoverable_error_function,
                       &stop_syncing_signal_);
-
-  // |sync_manager_| may end up being NULL here in tests (in
-  // synchronous initialization mode).
-  //
-  // TODO(akalin): Fix this behavior (see http://crbug.com/140354).
-  if (sync_manager_) {
-    // Now check the command line to see if we need to simulate an
-    // unrecoverable error for testing purpose. Note the error is thrown
-    // only if the initialization succeeded. Also it makes sense to use this
-    // flag only when restarting the browser with an account already setup. If
-    // you use this before setting up the setup would not succeed as an error
-    // would be encountered.
-    if (CommandLine::ForCurrentProcess()->HasSwitch(
-            switches::kSyncThrowUnrecoverableError)) {
-      sync_manager_->ThrowUnrecoverableError();
-    }
-  }
 }
 
 void SyncBackendHostCore::DoUpdateCredentials(
@@ -512,12 +494,11 @@ void SyncBackendHostCore::DoFinishInitialProcessControlTypes() {
                                synced_device_tracker_.get(),
                                sync_manager_->GetUserShare());
 
-  host_.Call(
-      FROM_HERE,
-      &SyncBackendHostImpl::HandleInitializationSuccessOnFrontendLoop,
-      js_backend_,
-      debug_info_listener_,
-      sync_manager_->GetSyncCoreProxy());
+  host_.Call(FROM_HERE,
+             &SyncBackendHostImpl::HandleInitializationSuccessOnFrontendLoop,
+             js_backend_,
+             debug_info_listener_,
+             sync_manager_->GetSyncContextProxy());
 
   js_backend_.Reset();
   debug_info_listener_.Reset();
@@ -577,8 +558,8 @@ void SyncBackendHostCore::DoShutdown(bool sync_disabled) {
 void SyncBackendHostCore::DoDestroySyncManager() {
   DCHECK_EQ(base::MessageLoop::current(), sync_loop_);
   if (sync_manager_) {
-    save_changes_timer_.reset();
     DisableDirectoryTypeDebugInfoForwarding();
+    save_changes_timer_.reset();
     sync_manager_->RemoveObserver(this);
     sync_manager_->ShutdownOnSyncThread();
     sync_manager_.reset();
@@ -669,6 +650,9 @@ void SyncBackendHostCore::DisableProtocolEventForwarding() {
 
 void SyncBackendHostCore::EnableDirectoryTypeDebugInfoForwarding() {
   DCHECK(sync_manager_);
+
+  forward_type_info_ = true;
+
   if (!sync_manager_->HasDirectoryTypeDebugInfoObserver(this))
     sync_manager_->RegisterDirectoryTypeDebugInfoObserver(this);
   sync_manager_->RequestEmitDebugInfo();
@@ -676,6 +660,12 @@ void SyncBackendHostCore::EnableDirectoryTypeDebugInfoForwarding() {
 
 void SyncBackendHostCore::DisableDirectoryTypeDebugInfoForwarding() {
   DCHECK(sync_manager_);
+
+  if (!forward_type_info_)
+    return;
+
+  forward_type_info_ = false;
+
   if (sync_manager_->HasDirectoryTypeDebugInfoObserver(this))
     sync_manager_->UnregisterDirectoryTypeDebugInfoObserver(this);
 }

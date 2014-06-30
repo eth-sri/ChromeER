@@ -15,7 +15,6 @@
 #include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "base/sequenced_task_runner.h"
 #include "base/stl_util.h"
@@ -23,6 +22,7 @@
 #include "base/timer/timer.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/component_updater/component_unpacker.h"
+#include "chrome/browser/component_updater/component_updater_configurator.h"
 #include "chrome/browser/component_updater/component_updater_ping_manager.h"
 #include "chrome/browser/component_updater/component_updater_utils.h"
 #include "chrome/browser/component_updater/crx_downloader.h"
@@ -53,7 +53,7 @@ bool IsVersionNewer(const Version& current, const std::string& proposed) {
 // Returns true if a differential update is available, it has not failed yet,
 // and the configuration allows it.
 bool CanTryDiffUpdate(const CrxUpdateItem* update_item,
-                      const ComponentUpdateService::Configurator& config) {
+                      const Configurator& config) {
   return HasDiffUpdate(update_item) && !update_item->diff_update_failed &&
          config.DeltasEnabled();
 }
@@ -86,12 +86,6 @@ CrxComponent::CrxComponent()
 }
 
 CrxComponent::~CrxComponent() {
-}
-
-CrxComponentInfo::CrxComponentInfo() {
-}
-
-CrxComponentInfo::~CrxComponentInfo() {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -149,9 +143,9 @@ void UnblockandReapAllThrottles(CUResourceThrottle::WeakPtrVector* throttles) {
 // only from the UI thread. The unpack and installation is done in a blocking
 // pool thread. The network requests are done in the IO thread or in the file
 // thread.
-class CrxUpdateService : public ComponentUpdateService {
+class CrxUpdateService : public ComponentUpdateService, public OnDemandUpdater {
  public:
-  explicit CrxUpdateService(ComponentUpdateService::Configurator* config);
+  explicit CrxUpdateService(Configurator* config);
   virtual ~CrxUpdateService();
 
   // Overrides for ComponentUpdateService.
@@ -160,12 +154,16 @@ class CrxUpdateService : public ComponentUpdateService {
   virtual Status Start() OVERRIDE;
   virtual Status Stop() OVERRIDE;
   virtual Status RegisterComponent(const CrxComponent& component) OVERRIDE;
-  virtual Status OnDemandUpdate(const std::string& component_id) OVERRIDE;
-  virtual void GetComponents(
-      std::vector<CrxComponentInfo>* components) OVERRIDE;
+  virtual std::vector<std::string> GetComponentIDs() const OVERRIDE;
+  virtual bool GetComponentDetails(const std::string& component_id,
+                                   CrxUpdateItem* item) const OVERRIDE;
+  virtual OnDemandUpdater& GetOnDemandUpdater() OVERRIDE;
+
+  // Overrides for OnDemandUpdater.
   virtual content::ResourceThrottle* GetOnDemandResourceThrottle(
       net::URLRequest* request,
       const std::string& crx_id) OVERRIDE;
+  virtual Status OnDemandUpdate(const std::string& component_id) OVERRIDE;
 
   // Context for a crx download url request.
   struct CRXContext {
@@ -203,6 +201,7 @@ class CrxUpdateService : public ComponentUpdateService {
                         const CrxDownloader::Result& download_result);
 
   Status OnDemandUpdateInternal(CrxUpdateItem* item);
+  Status OnDemandUpdateWithCooldown(CrxUpdateItem* item);
 
   void ProcessPendingItems();
 
@@ -235,7 +234,7 @@ class CrxUpdateService : public ComponentUpdateService {
 
   size_t ChangeItemStatus(CrxUpdateItem::Status from, CrxUpdateItem::Status to);
 
-  CrxUpdateItem* FindUpdateItemById(const std::string& id);
+  CrxUpdateItem* FindUpdateItemById(const std::string& id) const;
 
   void NotifyObservers(Observer::Events event, const std::string& id);
 
@@ -244,7 +243,9 @@ class CrxUpdateService : public ComponentUpdateService {
   void OnNewResourceThrottle(base::WeakPtr<CUResourceThrottle> rt,
                              const std::string& crx_id);
 
-  scoped_ptr<ComponentUpdateService::Configurator> config_;
+  Status GetServiceStatus(const CrxUpdateItem::Status status);
+
+  scoped_ptr<Configurator> config_;
 
   scoped_ptr<UpdateChecker> update_checker_;
 
@@ -273,10 +274,9 @@ class CrxUpdateService : public ComponentUpdateService {
 
 //////////////////////////////////////////////////////////////////////////////
 
-CrxUpdateService::CrxUpdateService(ComponentUpdateService::Configurator* config)
+CrxUpdateService::CrxUpdateService(Configurator* config)
     : config_(config),
-      ping_manager_(
-          new PingManager(config->PingUrl(), config->RequestContext())),
+      ping_manager_(new PingManager(*config)),
       blocking_task_runner_(
           BrowserThread::GetBlockingPool()->
               GetSequencedTaskRunnerWithShutdownBehavior(
@@ -396,10 +396,11 @@ void CrxUpdateService::ScheduleNextRun(StepDelayInterval step_delay) {
 }
 
 // Given a extension-like component id, find the associated component.
-CrxUpdateItem* CrxUpdateService::FindUpdateItemById(const std::string& id) {
+CrxUpdateItem* CrxUpdateService::FindUpdateItemById(
+    const std::string& id) const {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   CrxUpdateItem::FindById finder(id);
-  UpdateItems::iterator it =
+  UpdateItems::const_iterator it =
       std::find_if(work_items_.begin(), work_items_.end(), finder);
   return it != work_items_.end() ? *it : NULL;
 }
@@ -488,81 +489,50 @@ ComponentUpdateService::Status CrxUpdateService::RegisterComponent(
   uit->component = component;
 
   work_items_.push_back(uit);
+
   // If this is the first component registered we call Start to
-  // schedule the first timer.
-  if (running_ && (work_items_.size() == 1))
-    Start();
-
-  return kOk;
-}
-
-// Start the process of checking for an update, for a particular component
-// that was previously registered.
-// |component_id| is a value returned from GetCrxComponentID().
-ComponentUpdateService::Status CrxUpdateService::OnDemandUpdate(
-    const std::string& component_id) {
-  return OnDemandUpdateInternal(FindUpdateItemById(component_id));
-}
-
-ComponentUpdateService::Status CrxUpdateService::OnDemandUpdateInternal(
-    CrxUpdateItem* uit) {
-  if (!uit)
-    return kError;
-
-  // Check if the request is too soon.
-  base::TimeDelta delta = base::Time::Now() - uit->last_check;
-  if (delta < base::TimeDelta::FromSeconds(config_->OnDemandDelay()))
-    return kError;
-
-  switch (uit->status) {
-    // If the item is already in the process of being updated, there is
-    // no point in this call, so return kInProgress.
-    case CrxUpdateItem::kChecking:
-    case CrxUpdateItem::kCanUpdate:
-    case CrxUpdateItem::kDownloadingDiff:
-    case CrxUpdateItem::kDownloading:
-    case CrxUpdateItem::kUpdatingDiff:
-    case CrxUpdateItem::kUpdating:
-      return kInProgress;
-    // Otherwise the item was already checked a while back (or it is new),
-    // set its status to kNew to give it a slightly higher priority.
-    case CrxUpdateItem::kNew:
-    case CrxUpdateItem::kUpdated:
-    case CrxUpdateItem::kUpToDate:
-    case CrxUpdateItem::kNoUpdate:
-      ChangeItemState(uit, CrxUpdateItem::kNew);
-      uit->on_demand = true;
-      break;
-    case CrxUpdateItem::kLastStatus:
-      NOTREACHED() << uit->status;
-  }
-
-  // In case the current delay is long, set the timer to a shorter value
-  // to get the ball rolling.
-  if (timer_.IsRunning()) {
-    timer_.Stop();
-    timer_.Start(FROM_HERE,
-                 base::TimeDelta::FromSeconds(config_->StepDelay()),
-                 this,
-                 &CrxUpdateService::ProcessPendingItems);
+  // schedule the first timer. Otherwise, reset the timer to trigger another
+  // pass over the work items, if the component updater is sleeping, fact
+  // indicated by a running timer. If the timer is not running, it means that
+  // the service is busy updating something, and in that case, this component
+  // will be picked up at the next pass.
+  if (running_) {
+    if (work_items_.size() == 1) {
+      Start();
+    } else if (timer_.IsRunning()) {
+        timer_.Start(FROM_HERE,
+                     base::TimeDelta::FromSeconds(config_->InitialDelay()),
+                     this,
+                     &CrxUpdateService::ProcessPendingItems);
+    }
   }
 
   return kOk;
 }
 
-void CrxUpdateService::GetComponents(
-    std::vector<CrxComponentInfo>* components) {
+std::vector<std::string> CrxUpdateService::GetComponentIDs() const {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  std::vector<std::string> component_ids;
   for (UpdateItems::const_iterator it = work_items_.begin();
        it != work_items_.end();
        ++it) {
     const CrxUpdateItem* item = *it;
-    CrxComponentInfo info;
-    info.id = GetCrxComponentID(item->component);
-    info.version = item->component.version.GetString();
-    info.name = item->component.name;
-    components->push_back(info);
+    component_ids.push_back(item->id);
   }
+  return component_ids;
+}
+
+bool CrxUpdateService::GetComponentDetails(const std::string& component_id,
+                                           CrxUpdateItem* item) const {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  const CrxUpdateItem* crx_update_item(FindUpdateItemById(component_id));
+  if (crx_update_item)
+    *item = *crx_update_item;
+  return crx_update_item != NULL;
+}
+
+OnDemandUpdater& CrxUpdateService::GetOnDemandUpdater() {
+  return *this;
 }
 
 // This is the main loop of the component updater. It updates one component
@@ -658,8 +628,7 @@ bool CrxUpdateService::CheckForUpdates() {
     return false;
 
   update_checker_ =
-      UpdateChecker::Create(config_->UpdateUrl(),
-                            config_->RequestContext(),
+      UpdateChecker::Create(*config_,
                             base::Bind(&CrxUpdateService::UpdateCheckComplete,
                                        base::Unretained(this))).Pass();
   return update_checker_->CheckForUpdates(items_to_check,
@@ -1002,12 +971,83 @@ void CrxUpdateService::OnNewResourceThrottle(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   // Check if we can on-demand update, else unblock the request anyway.
   CrxUpdateItem* item = FindUpdateItemById(crx_id);
-  Status status = OnDemandUpdateInternal(item);
+  Status status = OnDemandUpdateWithCooldown(item);
   if (status == kOk || status == kInProgress) {
     item->throttles.push_back(rt);
     return;
   }
   UnblockResourceThrottle(rt);
+}
+
+// Start the process of checking for an update, for a particular component
+// that was previously registered.
+// |component_id| is a value returned from GetCrxComponentID().
+ComponentUpdateService::Status CrxUpdateService::OnDemandUpdate(
+    const std::string& component_id) {
+  return OnDemandUpdateInternal(FindUpdateItemById(component_id));
+}
+
+ComponentUpdateService::Status CrxUpdateService::OnDemandUpdateWithCooldown(
+    CrxUpdateItem* uit) {
+  if (!uit)
+    return kError;
+
+  // Check if the request is too soon.
+  base::TimeDelta delta = base::Time::Now() - uit->last_check;
+  if (delta < base::TimeDelta::FromSeconds(config_->OnDemandDelay()))
+    return kError;
+
+  return OnDemandUpdateInternal(uit);
+}
+
+ComponentUpdateService::Status CrxUpdateService::OnDemandUpdateInternal(
+    CrxUpdateItem* uit) {
+  if (!uit)
+    return kError;
+
+  Status service_status = GetServiceStatus(uit->status);
+  // If the item is already in the process of being updated, there is
+  // no point in this call, so return kInProgress.
+  if (service_status == kInProgress)
+    return service_status;
+
+  // Otherwise the item was already checked a while back (or it is new),
+  // set its status to kNew to give it a slightly higher priority.
+  ChangeItemState(uit, CrxUpdateItem::kNew);
+  uit->on_demand = true;
+
+  // In case the current delay is long, set the timer to a shorter value
+  // to get the ball rolling.
+  if (timer_.IsRunning()) {
+    timer_.Stop();
+    timer_.Start(FROM_HERE,
+                 base::TimeDelta::FromSeconds(config_->StepDelay()),
+                 this,
+                 &CrxUpdateService::ProcessPendingItems);
+  }
+
+  return kOk;
+}
+
+ComponentUpdateService::Status CrxUpdateService::GetServiceStatus(
+    CrxUpdateItem::Status status) {
+  switch (status) {
+    case CrxUpdateItem::kChecking:
+    case CrxUpdateItem::kCanUpdate:
+    case CrxUpdateItem::kDownloadingDiff:
+    case CrxUpdateItem::kDownloading:
+    case CrxUpdateItem::kUpdatingDiff:
+    case CrxUpdateItem::kUpdating:
+      return kInProgress;
+    case CrxUpdateItem::kNew:
+    case CrxUpdateItem::kUpdated:
+    case CrxUpdateItem::kUpToDate:
+    case CrxUpdateItem::kNoUpdate:
+      return kOk;
+    case CrxUpdateItem::kLastStatus:
+      NOTREACHED() << status;
+  }
+  return kError;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1047,8 +1087,7 @@ void CUResourceThrottle::Unblock() {
 
 // The component update factory. Using the component updater as a singleton
 // is the job of the browser process.
-ComponentUpdateService* ComponentUpdateServiceFactory(
-    ComponentUpdateService::Configurator* config) {
+ComponentUpdateService* ComponentUpdateServiceFactory(Configurator* config) {
   DCHECK(config);
   return new CrxUpdateService(config);
 }

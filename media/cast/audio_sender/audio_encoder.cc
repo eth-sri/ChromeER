@@ -9,14 +9,12 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/location.h"
-#include "base/logging.h"
 #include "base/stl_util.h"
 #include "base/sys_byteorder.h"
 #include "base/time/time.h"
 #include "media/base/audio_bus.h"
 #include "media/cast/cast_defines.h"
 #include "media/cast/cast_environment.h"
-#include "media/cast/logging/logging_defines.h"
 #include "third_party/opus/src/include/opus.h"
 
 namespace media {
@@ -33,28 +31,6 @@ const int kFrameDurationMillis = 1000 / kFramesPerSecond;  // No remainder!
 // coming in too slow with respect to the capture timestamps.
 const int kUnderrunThresholdMillis = 3 * kFrameDurationMillis;
 
-void LogAudioFrameEncodedEvent(
-    const scoped_refptr<media::cast::CastEnvironment>& cast_environment,
-    base::TimeTicks event_time,
-    media::cast::RtpTimestamp rtp_timestamp,
-    uint32 frame_id,
-    size_t frame_size) {
-  if (!cast_environment->CurrentlyOn(CastEnvironment::MAIN)) {
-    cast_environment->PostTask(
-        CastEnvironment::MAIN,
-        FROM_HERE,
-        base::Bind(&LogAudioFrameEncodedEvent,
-                   cast_environment, event_time,
-                   rtp_timestamp, frame_id, frame_size));
-    return;
-  }
-  cast_environment->Logging()->InsertEncodedFrameEvent(
-      event_time, media::cast::FRAME_ENCODED, media::cast::AUDIO_EVENT,
-      rtp_timestamp, frame_id,
-      static_cast<int>(frame_size), /* key_frame - unused */ false,
-      /*target_bitrate - unused*/ 0);
-}
-
 }  // namespace
 
 
@@ -68,7 +44,7 @@ class AudioEncoder::ImplBase
     : public base::RefCountedThreadSafe<AudioEncoder::ImplBase> {
  public:
   ImplBase(const scoped_refptr<CastEnvironment>& cast_environment,
-           transport::AudioCodec codec,
+           transport::Codec codec,
            int num_channels,
            int sampling_rate,
            const FrameEncodedCallback& callback)
@@ -150,11 +126,6 @@ class AudioEncoder::ImplBase
       audio_frame->reference_time = frame_capture_time_;
 
       if (EncodeFromFilledBuffer(&audio_frame->data)) {
-        LogAudioFrameEncodedEvent(cast_environment_,
-                                  cast_environment_->Clock()->NowTicks(),
-                                  audio_frame->rtp_timestamp,
-                                  audio_frame->frame_id,
-                                  audio_frame->data.size());
         cast_environment_->PostTask(
             CastEnvironment::MAIN,
             FROM_HERE,
@@ -180,7 +151,7 @@ class AudioEncoder::ImplBase
   virtual bool EncodeFromFilledBuffer(std::string* out) = 0;
 
   const scoped_refptr<CastEnvironment> cast_environment_;
-  const transport::AudioCodec codec_;
+  const transport::Codec codec_;
   const int num_channels_;
   const int samples_per_frame_;
   const FrameEncodedCallback callback_;
@@ -222,7 +193,7 @@ class AudioEncoder::OpusImpl : public AudioEncoder::ImplBase {
            int bitrate,
            const FrameEncodedCallback& callback)
       : ImplBase(cast_environment,
-                 transport::kOpus,
+                 transport::CODEC_AUDIO_OPUS,
                  num_channels,
                  sampling_rate,
                  callback),
@@ -312,7 +283,7 @@ class AudioEncoder::Pcm16Impl : public AudioEncoder::ImplBase {
             int sampling_rate,
             const FrameEncodedCallback& callback)
       : ImplBase(cast_environment,
-                 transport::kPcm16,
+                 transport::CODEC_AUDIO_PCM16,
                  num_channels,
                  sampling_rate,
                  callback),
@@ -355,24 +326,27 @@ class AudioEncoder::Pcm16Impl : public AudioEncoder::ImplBase {
 
 AudioEncoder::AudioEncoder(
     const scoped_refptr<CastEnvironment>& cast_environment,
-    const AudioSenderConfig& audio_config,
+    int num_channels,
+    int sampling_rate,
+    int bitrate,
+    transport::Codec codec,
     const FrameEncodedCallback& frame_encoded_callback)
     : cast_environment_(cast_environment) {
   // Note: It doesn't matter which thread constructs AudioEncoder, just so long
   // as all calls to InsertAudio() are by the same thread.
   insert_thread_checker_.DetachFromThread();
-  switch (audio_config.codec) {
-    case transport::kOpus:
+  switch (codec) {
+    case transport::CODEC_AUDIO_OPUS:
       impl_ = new OpusImpl(cast_environment,
-                           audio_config.channels,
-                           audio_config.frequency,
-                           audio_config.bitrate,
+                           num_channels,
+                           sampling_rate,
+                           bitrate,
                            frame_encoded_callback);
       break;
-    case transport::kPcm16:
+    case transport::CODEC_AUDIO_PCM16:
       impl_ = new Pcm16Impl(cast_environment,
-                            audio_config.channels,
-                            audio_config.frequency,
+                            num_channels,
+                            sampling_rate,
                             frame_encoded_callback);
       break;
     default:

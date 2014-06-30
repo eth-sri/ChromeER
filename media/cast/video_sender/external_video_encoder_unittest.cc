@@ -86,9 +86,9 @@ class ExternalVideoEncoderTest : public ::testing::Test {
  protected:
   ExternalVideoEncoderTest()
       : test_video_encoder_callback_(new TestVideoEncoderCallback()) {
-    video_config_.rtp_config.ssrc = 1;
+    video_config_.ssrc = 1;
     video_config_.incoming_feedback_ssrc = 2;
-    video_config_.rtp_config.payload_type = 127;
+    video_config_.rtp_payload_type = 127;
     video_config_.use_external_encoder = true;
     video_config_.width = 320;
     video_config_.height = 240;
@@ -99,7 +99,7 @@ class ExternalVideoEncoderTest : public ::testing::Test {
     video_config_.min_qp = 0;
     video_config_.max_frame_rate = 30;
     video_config_.max_number_of_video_buffers_used = 3;
-    video_config_.codec = transport::kVp8;
+    video_config_.codec = transport::CODEC_VIDEO_VP8;
     gfx::Size size(video_config_.width, video_config_.height);
     video_frame_ = media::VideoFrame::CreateFrame(
         VideoFrame::I420, size, gfx::Rect(size), size, base::TimeDelta());
@@ -153,41 +153,6 @@ TEST_F(ExternalVideoEncoderTest, EncodePattern30fpsRunningOutOfAck) {
   task_runner_->RunTasks();
 
   for (int i = 0; i < 6; ++i) {
-    capture_time += base::TimeDelta::FromMilliseconds(33);
-    test_video_encoder_callback_->SetExpectedResult(i + 1, i, capture_time);
-    EXPECT_TRUE(video_encoder_->EncodeVideoFrame(
-        video_frame_, capture_time, frame_encoded_callback));
-    task_runner_->RunTasks();
-  }
-  // We need to run the task to cleanup the GPU instance.
-  video_encoder_.reset(NULL);
-  task_runner_->RunTasks();
-}
-
-TEST_F(ExternalVideoEncoderTest, SkipNextFrame) {
-  task_runner_->RunTasks();  // Run the initializer on the correct thread.
-
-  VideoEncoder::FrameEncodedCallback frame_encoded_callback =
-      base::Bind(&TestVideoEncoderCallback::DeliverEncodedVideoFrame,
-                 test_video_encoder_callback_.get());
-
-  base::TimeTicks capture_time;
-  capture_time += base::TimeDelta::FromMilliseconds(33);
-  test_video_encoder_callback_->SetExpectedResult(0, 0, capture_time);
-  EXPECT_TRUE(video_encoder_->EncodeVideoFrame(
-      video_frame_, capture_time, frame_encoded_callback));
-  task_runner_->RunTasks();
-
-  video_encoder_->SkipNextFrame(true);
-  for (int i = 0; i < 2; ++i) {
-    capture_time += base::TimeDelta::FromMilliseconds(33);
-    EXPECT_FALSE(video_encoder_->EncodeVideoFrame(
-        video_frame_, capture_time, frame_encoded_callback));
-    task_runner_->RunTasks();
-  }
-
-  video_encoder_->SkipNextFrame(false);
-  for (int i = 0; i < 2; ++i) {
     capture_time += base::TimeDelta::FromMilliseconds(33);
     test_video_encoder_callback_->SetExpectedResult(i + 1, i, capture_time);
     EXPECT_TRUE(video_encoder_->EncodeVideoFrame(

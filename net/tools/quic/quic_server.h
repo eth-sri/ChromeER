@@ -31,8 +31,7 @@ class QuicServer : public EpollCallbackInterface {
  public:
   QuicServer();
   QuicServer(const QuicConfig& config,
-             const QuicVersionVector& supported_versions,
-             uint32 server_initial_flow_control_receive_window);
+             const QuicVersionVector& supported_versions);
 
   virtual ~QuicServer();
 
@@ -60,7 +59,7 @@ class QuicServer : public EpollCallbackInterface {
   // dropped packets, and some packets are read, it will be set to the number of
   // dropped packets.
   static bool ReadAndDispatchSinglePacket(int fd, int port,
-                                          QuicDispatcher* dispatcher,
+                                          ProcessPacketInterface* processor,
                                           uint32* packets_dropped);
 
   virtual void OnShutdown(EpollServer* eps, int fd) OVERRIDE {}
@@ -80,6 +79,18 @@ class QuicServer : public EpollCallbackInterface {
   uint32 packets_dropped() { return packets_dropped_; }
 
   int port() { return port_; }
+
+ protected:
+  virtual QuicDispatcher* CreateQuicDispatcher();
+
+  const QuicConfig& config() const { return config_; }
+  const QuicCryptoServerConfig& crypto_config() const {
+    return crypto_config_;
+  }
+  const QuicVersionVector& supported_versions() const {
+    return supported_versions_;
+  }
+  EpollServer* epoll_server() { return &epoll_server_; }
 
  private:
   friend class net::tools::test::QuicServerPeer;

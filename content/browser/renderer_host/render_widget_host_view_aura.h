@@ -35,6 +35,8 @@
 #include "ui/wm/public/activation_change_observer.h"
 #include "ui/wm/public/activation_delegate.h"
 
+struct ViewHostMsg_TextInputState_Params;
+
 namespace aura {
 class WindowTracker;
 namespace client {
@@ -69,6 +71,7 @@ namespace content {
 class LegacyRenderWidgetHostHWND;
 #endif
 
+class OverscrollController;
 class RenderFrameHostImpl;
 class RenderWidgetHostImpl;
 class RenderWidgetHostView;
@@ -128,7 +131,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   explicit RenderWidgetHostViewAura(RenderWidgetHost* host);
 
   // RenderWidgetHostView implementation.
-  virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
   virtual void InitAsChild(gfx::NativeView parent_view) OVERRIDE;
   virtual RenderWidgetHost* GetRenderWidgetHost() const OVERRIDE;
   virtual void SetSize(const gfx::Size& size) OVERRIDE;
@@ -160,9 +162,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   virtual void Blur() OVERRIDE;
   virtual void UpdateCursor(const WebCursor& cursor) OVERRIDE;
   virtual void SetIsLoading(bool is_loading) OVERRIDE;
-  virtual void TextInputTypeChanged(ui::TextInputType type,
-                                    ui::TextInputMode input_mode,
-                                    bool can_compose_inline) OVERRIDE;
+  virtual void TextInputStateChanged(
+      const ViewHostMsg_TextInputState_Params& params) OVERRIDE;
   virtual void ImeCancelComposition() OVERRIDE;
   virtual void ImeCompositionRangeChanged(
       const gfx::Range& range,
@@ -174,6 +175,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   virtual void SelectionChanged(const base::string16& text,
                                 size_t offset,
                                 const gfx::Range& range) OVERRIDE;
+  virtual gfx::Size GetRequestedRendererSize() const OVERRIDE;
   virtual void SelectionBoundsChanged(
       const ViewHostMsg_SelectionBounds_Params& params) OVERRIDE;
   virtual void ScrollOffsetChanged() OVERRIDE;
@@ -204,6 +206,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   virtual bool HasAcceleratedSurface(const gfx::Size& desired_size) OVERRIDE;
   virtual void GetScreenInfo(blink::WebScreenInfo* results) OVERRIDE;
   virtual gfx::Rect GetBoundsInRootWindow() OVERRIDE;
+  virtual void WheelEventAck(const blink::WebMouseWheelEvent& event,
+                             InputEventAckState ack_result) OVERRIDE;
   virtual void GestureEventAck(const blink::WebGestureEvent& event,
                                InputEventAckState ack_result) OVERRIDE;
   virtual void ProcessAckedTouchEvent(
@@ -211,8 +215,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
       InputEventAckState ack_result) OVERRIDE;
   virtual scoped_ptr<SyntheticGestureTarget> CreateSyntheticGestureTarget()
       OVERRIDE;
-  virtual void SetScrollOffsetPinning(
-      bool is_pinned_to_left, bool is_pinned_to_right) OVERRIDE;
+  virtual InputEventAckState FilterInputEvent(
+      const blink::WebInputEvent& input_event) OVERRIDE;
   virtual gfx::GLSurfaceHandle GetCompositingSurface() OVERRIDE;
   virtual void CreateBrowserAccessibilityManagerIfNeeded() OVERRIDE;
   virtual bool LockMouse() OVERRIDE;
@@ -257,11 +261,14 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   virtual void OnCandidateWindowShown() OVERRIDE;
   virtual void OnCandidateWindowUpdated() OVERRIDE;
   virtual void OnCandidateWindowHidden() OVERRIDE;
+  virtual bool IsEditingCommandEnabled(int command_id) OVERRIDE;
+  virtual void ExecuteEditingCommand(int command_id) OVERRIDE;
 
   // Overridden from gfx::DisplayObserver:
-  virtual void OnDisplayBoundsChanged(const gfx::Display& display) OVERRIDE;
   virtual void OnDisplayAdded(const gfx::Display& new_display) OVERRIDE;
   virtual void OnDisplayRemoved(const gfx::Display& old_display) OVERRIDE;
+  virtual void OnDisplayMetricsChanged(const gfx::Display& display,
+                                       uint32_t metrics) OVERRIDE;
 
   // Overridden from aura::WindowDelegate:
   virtual gfx::Size GetMinimumSize() const OVERRIDE;
@@ -308,8 +315,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   virtual void OnHostMoved(const aura::WindowTreeHost* host,
                            const gfx::Point& new_origin) OVERRIDE;
 
-  void OnTextInputStateChanged(const ViewHostMsg_TextInputState_Params& params);
-
 #if defined(OS_WIN)
   // Sets the cutout rects from constrained windows. These are rectangles that
   // windowed NPAPI plugins shouldn't paint in. Overwrites any previous cutout
@@ -318,12 +323,22 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
 
   // Updates the cursor clip region. Used for mouse locking.
   void UpdateMouseLockRegion();
+
+  // Notification that the LegacyRenderWidgetHostHWND was destroyed.
+  void OnLegacyWindowDestroyed();
 #endif
 
   // Method to indicate if this instance is shutting down or closing.
   // TODO(shrikant): Discuss around to see if it makes sense to add this method
   // as part of RenderWidgetHostView.
   bool IsClosing() const { return in_shutdown_; }
+
+  // Sets whether the overscroll controller should be enabled for this page.
+  void SetOverscrollControllerEnabled(bool enabled);
+
+  OverscrollController* overscroll_controller() const {
+    return overscroll_controller_.get();
+  }
 
  protected:
   virtual ~RenderWidgetHostViewAura();
@@ -336,6 +351,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
  private:
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest, SetCompositionText);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest, TouchEventState);
+  FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest,
+                           TouchEventPositionsArentRounded);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest, TouchEventSyncAsync);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest, SwapNotifiesWindow);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest,
@@ -352,11 +369,15 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
                            DestroyedAfterCopyRequest);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest,
                            VisibleViewportTest);
+  FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest,
+                           OverscrollResetsOnBlur);
 
   class WindowObserver;
   friend class WindowObserver;
 
   void UpdateCursorIfOverSelf();
+
+  void SnapToPhysicalPixelBoundary();
 
   // Set the bounds of the window and handle size changes.  Assumes the caller
   // has already adjusted the origin of |rect| to conform to whatever coordinate
@@ -543,9 +564,27 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   // over this view changes, we need this information in order to create a new
   // region for the HWND.
   PluginWindowMoves plugin_window_moves_;
+
+  // The LegacyRenderWidgetHostHWND class provides a dummy HWND which is used
+  // for accessibility, as the container for windowless plugins like
+  // Flash/Silverlight, etc and for legacy drivers for trackpoints/trackpads,
+  // etc.
+  // The LegacyRenderWidgetHostHWND instance is created during the first call
+  // to RenderWidgetHostViewAura::InternalSetBounds. The instance is destroyed
+  // when the LegacyRenderWidgetHostHWND hwnd is destroyed.
+  content::LegacyRenderWidgetHostHWND* legacy_render_widget_host_HWND_;
+
+  // Set to true if the legacy_render_widget_host_HWND_ instance was destroyed
+  // by Windows. This could happen if the browser window was destroyed by
+  // DestroyWindow for e.g. This flag helps ensure that we don't try to create
+  // the LegacyRenderWidgetHostHWND instance again as that would be a futile
+  // exercise.
+  bool legacy_window_destroyed_;
 #endif
 
   TouchEditingClient* touch_editing_client_;
+
+  scoped_ptr<OverscrollController> overscroll_controller_;
 
   gfx::Insets insets_;
 
@@ -555,14 +594,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
 
   base::WeakPtrFactory<RenderWidgetHostViewAura> weak_ptr_factory_;
 
-#if defined(OS_WIN)
-  // The LegacyRenderWidgetHostHWND class provides a dummy HWND which is used
-  // for accessibility, as the container for windowless plugins like
-  // Flash/Silverlight, etc and for legacy drivers for trackpoints/trackpads,
-  // etc.
-  scoped_ptr<content::LegacyRenderWidgetHostHWND>
-      legacy_render_widget_host_HWND_;
-#endif
   DISALLOW_COPY_AND_ASSIGN(RenderWidgetHostViewAura);
 };
 

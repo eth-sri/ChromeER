@@ -21,6 +21,7 @@
 #include "chrome/browser/sync_file_system/remote_file_sync_service.h"
 #include "chrome/browser/sync_file_system/sync_callbacks.h"
 #include "chrome/browser/sync_file_system/sync_service_state.h"
+#include "chrome/browser/sync_file_system/task_logger.h"
 #include "components/keyed_service/core/keyed_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
@@ -49,6 +50,8 @@ class SyncFileSystemService
       public base::SupportsWeakPtr<SyncFileSystemService> {
  public:
   typedef base::Callback<void(const base::ListValue&)> DumpFilesCallback;
+  typedef base::Callback<void(const RemoteFileSyncService::OriginStatusMap&)>
+      ExtensionStatusMapCallback;
 
   // KeyedService overrides.
   virtual void Shutdown() OVERRIDE;
@@ -59,7 +62,7 @@ class SyncFileSystemService
       const SyncStatusCallback& callback);
 
   SyncServiceState GetSyncServiceState();
-  void GetExtensionStatusMap(std::map<GURL, std::string>* status_map);
+  void GetExtensionStatusMap(const ExtensionStatusMapCallback& callback);
   void DumpFiles(const GURL& origin, const DumpFilesCallback& callback);
   void DumpDatabase(const DumpFilesCallback& callback);
 
@@ -71,13 +74,11 @@ class SyncFileSystemService
   void AddSyncEventObserver(SyncEventObserver* observer);
   void RemoveSyncEventObserver(SyncEventObserver* observer);
 
-  ConflictResolutionPolicy GetConflictResolutionPolicy(const GURL& origin);
-  SyncStatusCode SetConflictResolutionPolicy(const GURL& origin,
-                                             ConflictResolutionPolicy policy);
-
   LocalChangeProcessor* GetLocalChangeProcessor(const GURL& origin);
 
   void OnSyncIdle();
+
+  TaskLogger* task_logger() { return &task_logger_; }
 
  private:
   friend class SyncFileSystemServiceFactory;
@@ -112,6 +113,14 @@ class SyncFileSystemService
   void DidDumpV2Database(const DumpFilesCallback& callback,
                          scoped_ptr<base::ListValue> v1list,
                          scoped_ptr<base::ListValue> v2list);
+
+  void DidGetExtensionStatusMap(
+      const ExtensionStatusMapCallback& callback,
+      scoped_ptr<RemoteFileSyncService::OriginStatusMap> status_map);
+  void DidGetV2ExtensionStatusMap(
+      const ExtensionStatusMapCallback& callback,
+      scoped_ptr<RemoteFileSyncService::OriginStatusMap> status_map_v1,
+      scoped_ptr<RemoteFileSyncService::OriginStatusMap> status_map_v2);
 
   // Overrides sync_enabled_ setting. This should be called only by tests.
   void SetSyncEnabledForTesting(bool enabled);
@@ -177,6 +186,7 @@ class SyncFileSystemService
   // Indicates if sync is currently enabled or not.
   bool sync_enabled_;
 
+  TaskLogger task_logger_;
   ObserverList<SyncEventObserver> observers_;
 
   DISALLOW_COPY_AND_ASSIGN(SyncFileSystemService);

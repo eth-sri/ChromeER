@@ -31,7 +31,7 @@
 #include "google_apis/gcm/engine/gcm_store_impl.h"
 #include "google_apis/gcm/engine/gservices_settings.h"
 #include "google_apis/gcm/engine/mcs_client.h"
-#include "google_apis/gcm/monitoring/gcm_stats_recorder.h"
+#include "google_apis/gcm/monitoring/fake_gcm_stats_recorder.h"
 #include "net/base/host_mapping_rules.h"
 #include "net/base/net_log_logger.h"
 #include "net/cert/cert_verifier.h"
@@ -243,7 +243,7 @@ class MCSProbe {
   scoped_refptr<net::HttpNetworkSession> network_session_;
   scoped_ptr<net::ProxyService> proxy_service_;
 
-  GCMStatsRecorder recorder_;
+  FakeGCMStatsRecorder recorder_;
   scoped_ptr<GCMStore> gcm_store_;
   scoped_ptr<MCSClient> mcs_client_;
   scoped_ptr<CheckinRequest> checkin_request_;
@@ -410,7 +410,6 @@ void MCSProbe::BuildNetworkSession() {
   session_params.network_delegate = NULL;  // TODO(zea): implement?
   session_params.host_mapping_rules = host_mapping_rules_.get();
   session_params.ignore_certificate_errors = true;
-  session_params.http_pipelining_enabled = false;
   session_params.testing_fixed_http_port = 0;
   session_params.testing_fixed_https_port = 0;
   session_params.net_log = &net_log_;
@@ -433,7 +432,7 @@ void MCSProbe::CheckIn() {
   chrome_build_proto.set_chrome_version(kChromeVersion);
 
   CheckinRequest::RequestInfo request_info(
-      0, 0, std::string(), std::vector<std::string>(), chrome_build_proto);
+      0, 0, std::string(), chrome_build_proto);
 
   checkin_request_.reset(new CheckinRequest(
       GServicesSettings::DefaultCheckinURL(),

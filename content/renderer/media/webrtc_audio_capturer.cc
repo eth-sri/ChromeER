@@ -417,9 +417,6 @@ void WebRtcAudioCapturer::Stop() {
   if (audio_device_)
     audio_device_->RemoveAudioCapturer(this);
 
-  // Stop the Aec dump.
-  StopAecDump();
-
   for (TrackList::ItemList::const_iterator it = tracks.begin();
        it != tracks.end();
        ++it) {
@@ -457,7 +454,7 @@ void WebRtcAudioCapturer::Capture(media::AudioBus* audio_source,
 // CaptureCallback.
 #if defined(OS_WIN) || defined(OS_MACOSX)
   DCHECK_LE(volume, 1.0);
-#elif defined(OS_LINUX) || defined(OS_OPENBSD)
+#elif (defined(OS_LINUX) && !defined(OS_CHROMEOS)) || defined(OS_OPENBSD)
   // We have a special situation on Linux where the microphone volume can be
   // "higher than maximum". The input volume slider in the sound preference
   // allows the user to set a scaling that is higher than 100%. It means that
@@ -613,17 +610,6 @@ void WebRtcAudioCapturer::SetCapturerSourceForTesting(
   // Create a new audio stream as source which uses the new source.
   SetCapturerSource(source, params.channel_layout(),
                     static_cast<float>(params.sample_rate()));
-}
-
-void WebRtcAudioCapturer::StartAecDump(base::File aec_dump_file) {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  DCHECK(aec_dump_file.IsValid());
-  audio_processor_->StartAecDump(aec_dump_file.Pass());
-}
-
-void WebRtcAudioCapturer::StopAecDump() {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  audio_processor_->StopAecDump();
 }
 
 }  // namespace content

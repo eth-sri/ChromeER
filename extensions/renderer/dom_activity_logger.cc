@@ -53,9 +53,12 @@ void DOMActivityLogger::AttachToWorld(int world_id,
 #if defined(ENABLE_EXTENSIONS)
   // If there is no logger registered for world_id, construct a new logger
   // and register it with world_id.
-  if (!blink::hasDOMActivityLogger(world_id)) {
+  if (!blink::hasDOMActivityLogger(world_id,
+                                   WebString::fromUTF8(extension_id))) {
     DOMActivityLogger* logger = new DOMActivityLogger(extension_id);
-    blink::setDOMActivityLogger(world_id, logger);
+    blink::setDOMActivityLogger(world_id,
+                                WebString::fromUTF8(extension_id),
+                                logger);
   }
 #endif
 }
@@ -102,6 +105,19 @@ void DOMActivityLogger::logMethod(const WebString& api_name,
     AppendV8Value(api_name_utf8, argv[i], args.get());
   SendDomActionMessage(
       api_name_utf8, url, title, DomActionType::METHOD, args.Pass());
+}
+
+void DOMActivityLogger::logEvent(const WebString& event_name,
+                                 int argc,
+                                 const WebString* argv,
+                                 const WebURL& url,
+                                 const WebString& title) {
+  scoped_ptr<base::ListValue> args(new base::ListValue);
+  std::string event_name_utf8 = event_name.utf8();
+  for (int i = 0; i < argc; ++i)
+    args->Append(base::Value::CreateStringValue(argv[i]));
+  SendDomActionMessage(
+      event_name_utf8, url, title, DomActionType::METHOD, args.Pass());
 }
 
 void DOMActivityLogger::SendDomActionMessage(const std::string& api_call,

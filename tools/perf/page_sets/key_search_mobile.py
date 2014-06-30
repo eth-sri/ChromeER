@@ -16,7 +16,10 @@ class KeySearchMobilePage(page_module.Page):
     self.archive_data_file = 'data/key_search_mobile.json'
 
   def RunSmoothness(self, action_runner):
-    action_runner.RunAction(ScrollAction())
+    interaction = action_runner.BeginGestureInteraction(
+        'ScrollAction', is_smooth=True)
+    action_runner.ScrollPage()
+    interaction.End()
 
 
 class KeySearchMobilePageSet(page_set_module.PageSet):
@@ -27,7 +30,8 @@ class KeySearchMobilePageSet(page_set_module.PageSet):
     super(KeySearchMobilePageSet, self).__init__(
       credentials_path='data/credentials.json',
       user_agent_type='mobile',
-      archive_data_file='data/key_search_mobile.json')
+      archive_data_file='data/key_search_mobile.json',
+      bucket=page_set_module.PUBLIC_BUCKET)
 
     urls_list = [
       # Why: An empty page should be as snappy as possible

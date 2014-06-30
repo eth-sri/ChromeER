@@ -6,6 +6,8 @@
 #include "base/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/strings/stringprintf.h"
+#include "content/browser/appcache/appcache_database.h"
+#include "content/browser/appcache/appcache_entry.h"
 #include "sql/connection.h"
 #include "sql/meta_table.h"
 #include "sql/statement.h"
@@ -14,14 +16,6 @@
 #include "sql/transaction.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/sqlite/sqlite3.h"
-#include "webkit/browser/appcache/appcache_database.h"
-#include "webkit/browser/appcache/appcache_entry.h"
-
-using appcache::AppCacheDatabase;
-using appcache::AppCacheEntry;
-using appcache::FALLBACK_NAMESPACE;
-using appcache::INTERCEPT_NAMESPACE;
-using appcache::NETWORK_NAMESPACE;
 
 namespace {
 
@@ -962,7 +956,7 @@ TEST(AppCacheDatabaseTest, UpgradeSchema3to5) {
         kMockOrigin.Resolve(base::StringPrintf(kTargetUrlFormat, i)));
 
     EXPECT_EQ(i, fallbacks[i].cache_id);
-    EXPECT_EQ(FALLBACK_NAMESPACE, fallbacks[i].namespace_.type);
+    EXPECT_EQ(APPCACHE_FALLBACK_NAMESPACE, fallbacks[i].namespace_.type);
     EXPECT_EQ(kMockOrigin, fallbacks[i].origin);
     EXPECT_EQ(expected_namespace_url, fallbacks[i].namespace_.namespace_url);
     EXPECT_EQ(expected_target_url, fallbacks[i].namespace_.target_url);
@@ -1149,7 +1143,7 @@ TEST(AppCacheDatabaseTest, UpgradeSchema4to5) {
           kMockOrigin.Resolve(base::StringPrintf(kTargetUrlFormat, i)));
       statement.BindInt64(0, i);
       statement.BindString(1, kMockOrigin.spec().c_str());
-      statement.BindInt(2, FALLBACK_NAMESPACE);
+      statement.BindInt(2, APPCACHE_FALLBACK_NAMESPACE);
       statement.BindString(3, namespace_url.spec().c_str());
       statement.BindString(4, target_url.spec().c_str());
       ASSERT_TRUE(statement.Run());
@@ -1202,7 +1196,7 @@ TEST(AppCacheDatabaseTest, UpgradeSchema4to5) {
         kMockOrigin.Resolve(base::StringPrintf(kWhitelistUrlFormat, i)));
 
     EXPECT_EQ(i, fallbacks[i].cache_id);
-    EXPECT_EQ(FALLBACK_NAMESPACE, fallbacks[i].namespace_.type);
+    EXPECT_EQ(APPCACHE_FALLBACK_NAMESPACE, fallbacks[i].namespace_.type);
     EXPECT_EQ(kMockOrigin, fallbacks[i].origin);
     EXPECT_EQ(expected_namespace_url, fallbacks[i].namespace_.namespace_url);
     EXPECT_EQ(expected_target_url, fallbacks[i].namespace_.target_url);

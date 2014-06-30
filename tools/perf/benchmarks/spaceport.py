@@ -1,4 +1,4 @@
-# Copyright (c) 2012 The Chromium Authors. All rights reserved.
+# Copyright 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -7,7 +7,7 @@
 import logging
 import os
 
-from telemetry import test
+from telemetry import benchmark
 from telemetry.core import util
 from telemetry.page import page_measurement
 from telemetry.page import page_set
@@ -56,8 +56,8 @@ class _SpaceportMeasurement(page_measurement.PageMeasurement):
 
 
 # crbug.com/166703: This test frequently times out on Windows.
-@test.Disabled('mac', 'win')
-class Spaceport(test.Test):
+@benchmark.Disabled('mac', 'win')
+class Spaceport(benchmark.Benchmark):
   """spaceport.io's PerfMarks benchmark."""
   test = _SpaceportMeasurement
 

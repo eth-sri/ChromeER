@@ -34,9 +34,10 @@ class PackedField(object):
 
   @classmethod
   def GetSizeForKind(cls, kind):
-    if isinstance(kind, mojom.Array) or isinstance(kind, mojom.Struct):
+    if isinstance(kind, (mojom.Array, mojom.Struct, mojom.FixedArray)):
       return 8
-    if isinstance(kind, mojom.Interface):
+    if isinstance(kind, mojom.Interface) or \
+       isinstance(kind, mojom.InterfaceRequest):
       kind = mojom.MSGPIPE
     if isinstance(kind, mojom.Enum):
       # TODO(mpcomplete): what about big enums?

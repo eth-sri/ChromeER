@@ -4,7 +4,9 @@
 
 // Use the <code>chrome.app.window</code> API to create windows. Windows
 // have an optional frame with title bar and size controls. They are not
-// associated with any Chrome browser windows.
+// associated with any Chrome browser windows. See the <a
+// href="https://github.com/GoogleChrome/chrome-app-samples/tree/master/window-state">
+// Window State Sample</a> for a demonstration of these options.
 namespace app.window {
 
   // Previously named Bounds.
@@ -343,6 +345,7 @@ namespace app.window {
     [nodoc] boolean hasFrameColor;
     [nodoc] long activeFrameColor;
     [nodoc] long inactiveFrameColor;
+    [nodoc] boolean? firstShowHasHappened;
 
     // Set whether the window should stay above most other windows. Requires the
     // <code>"alwaysOnTopWindows"</code> permission.
@@ -429,5 +432,8 @@ namespace app.window {
 
     // Fired when the window is restored from being minimized or maximized.
     [nocompile] static void onRestored();
+
+    // Event for testing. Lets tests wait until a window has been shown.
+    [nocompile, nodoc] static void onWindowFirstShown();
   };
 };

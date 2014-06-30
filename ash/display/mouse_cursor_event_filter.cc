@@ -42,7 +42,12 @@ const int kIndicatorThickness = 1;
 
 // This is to disable the new mouse warp logic in case
 // it caused the problem in the branch.
+// Events from Ozone don't have a native event
+#if defined(USE_OZONE)
+bool enable_mouse_warp_in_native_coords = false;
+#else
 bool enable_mouse_warp_in_native_coords = true;
+#endif
 
 void ConvertPointFromScreenToNative(const aura::Window* root_window,
                                     gfx::Point* point) {
@@ -210,13 +215,6 @@ void MouseCursorEventFilter::OnDisplayConfigurationChanged() {
 
 void MouseCursorEventFilter::OnMouseEvent(ui::MouseEvent* event) {
   aura::Window* target = static_cast<aura::Window*>(event->target());
-  RootWindowController* rwc = GetRootWindowController(target->GetRootWindow());
-  // The root window controller is removed during the shutting down
-  // RootWindow, so don't process events futher.
-  if (!rwc) {
-    event->StopPropagation();
-    return;
-  }
 
   if (event->type() == ui::ET_MOUSE_PRESSED) {
     scale_when_drag_started_ = ui::GetDeviceScaleFactor(target->layer());
@@ -469,15 +467,12 @@ void MouseCursorEventFilter::GetSrcAndDstRootWindows(aura::Window** src_root,
 bool MouseCursorEventFilter::WarpMouseCursorIfNecessaryForTest(
     aura::Window* target_root,
     const gfx::Point& point_in_screen) {
-  if (enable_mouse_warp_in_native_coords) {
-    gfx::Point native = point_in_screen;
-    wm::ConvertPointFromScreen(target_root, &native);
-    target_root->GetHost()->ConvertPointToNativeScreen(&native);
-    return WarpMouseCursorInNativeCoords(native, point_in_screen);
-  } else {
+  if (!enable_mouse_warp_in_native_coords)
     return WarpMouseCursorInScreenCoords(target_root, point_in_screen);
-  }
-  return true;
+  gfx::Point native = point_in_screen;
+  wm::ConvertPointFromScreen(target_root, &native);
+  target_root->GetHost()->ConvertPointToNativeScreen(&native);
+  return WarpMouseCursorInNativeCoords(native, point_in_screen);
 }
 
 }  // namespace ash

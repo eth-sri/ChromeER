@@ -18,6 +18,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "chrome/browser/autocomplete/autocomplete_result.h"
+#include "chrome/browser/autocomplete/chrome_autocomplete_scheme_classifier.h"
 #include "chrome/browser/autocomplete/history_url_provider.h"
 #include "chrome/browser/history/history_database.h"
 #include "chrome/browser/history/history_service.h"
@@ -28,14 +29,14 @@
 #include "chrome/browser/omnibox/omnibox_field_trial.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search/search.h"
-#include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/common/autocomplete_match_type.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/net/url_fixer_upper.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/metrics/proto/omnibox_input_type.pb.h"
+#include "components/search_engines/template_url.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/notification_types.h"
 #include "net/base/escape.h"
@@ -65,8 +66,8 @@ void HistoryQuickProvider::Start(const AutocompleteInput& input,
     return;
 
   // Don't bother with INVALID and FORCED_QUERY.
-  if ((input.type() == AutocompleteInput::INVALID) ||
-      (input.type() == AutocompleteInput::FORCED_QUERY))
+  if ((input.type() == metrics::OmniboxInputType::INVALID) ||
+      (input.type() == metrics::OmniboxInputType::FORCED_QUERY))
     return;
 
   autocomplete_input_ = input;
@@ -89,21 +90,14 @@ void HistoryQuickProvider::Start(const AutocompleteInput& input,
   }
 }
 
-void HistoryQuickProvider::DeleteMatch(const AutocompleteMatch& match) {
-  DCHECK(match.deletable);
-  DCHECK(match.destination_url.is_valid());
-  // Delete the match from the InMemoryURLIndex.
-  GetIndex()->DeleteURL(match.destination_url);
-  DeleteMatchFromMatches(match);
-}
-
 HistoryQuickProvider::~HistoryQuickProvider() {}
 
 void HistoryQuickProvider::DoAutocomplete() {
   // Get the matching URLs from the DB.
   ScoredHistoryMatches matches = GetIndex()->HistoryItemsForTerms(
       autocomplete_input_.text(),
-      autocomplete_input_.cursor_position());
+      autocomplete_input_.cursor_position(),
+      AutocompleteProvider::kMaxMatches);
   if (matches.empty())
     return;
 
@@ -120,7 +114,7 @@ void HistoryQuickProvider::DoAutocomplete() {
   // provider won't promote the URL-what-you-typed match to first
   // for these inputs.
   const bool can_have_url_what_you_typed_match_first =
-      (autocomplete_input_.type() != AutocompleteInput::QUERY) &&
+      (autocomplete_input_.type() != metrics::OmniboxInputType::QUERY) &&
       (!autocomplete_input_.parts().username.is_nonempty() ||
        autocomplete_input_.parts().password.is_nonempty() ||
        autocomplete_input_.parts().path.is_nonempty());
@@ -221,7 +215,8 @@ void HistoryQuickProvider::DoAutocomplete() {
     // These are low-quality, difficult-to-understand matches for users, and the
     // SearchProvider should surface past queries in a better way anyway.
     if (!template_url ||
-        !template_url->IsSearchURL(history_match.url_info.url())) {
+        !template_url->IsSearchURL(history_match.url_info.url(),
+                                   template_url_service->search_terms_data())) {
       // Set max_match_score to the score we'll assign this result:
       max_match_score = std::min(max_match_score, history_match.raw_score());
       matches_.push_back(QuickMatchToACMatch(history_match, max_match_score));
@@ -251,7 +246,8 @@ AutocompleteMatch HistoryQuickProvider::QuickMatchToACMatch(
       AutocompleteInput::FormattedStringWithEquivalentMeaning(
           info.url(),
           net::FormatUrl(info.url(), languages_, format_types,
-                         net::UnescapeRule::SPACES, NULL, NULL, NULL));
+                         net::UnescapeRule::SPACES, NULL, NULL, NULL),
+          ChromeAutocompleteSchemeClassifier(profile_));
   std::vector<size_t> offsets =
       OffsetsFromTermMatches(history_match.url_matches());
   base::OffsetAdjuster::Adjustments adjustments;

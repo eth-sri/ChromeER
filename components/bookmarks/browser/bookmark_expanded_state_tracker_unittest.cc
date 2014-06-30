@@ -18,11 +18,15 @@
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+namespace bookmarks {
+
 scoped_ptr<PrefService> PrefServiceForTesting() {
   scoped_refptr<user_prefs::PrefRegistrySyncable> registry(
       new user_prefs::PrefRegistrySyncable());
   registry->RegisterListPref(prefs::kBookmarkEditorExpandedNodes,
                              new base::ListValue,
+                             user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterListPref(prefs::kManagedBookmarks,
                              user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   base::PrefServiceFactory factory;
   factory.set_user_prefs(make_scoped_refptr(new TestingPrefStore()));
@@ -92,7 +96,7 @@ TEST_F(BookmarkExpandedStateTrackerTest, SetExpandedNodes) {
   EXPECT_EQ(nodes, tracker->GetExpandedNodes());
 }
 
-TEST_F(BookmarkExpandedStateTrackerTest, RemoveAll) {
+TEST_F(BookmarkExpandedStateTrackerTest, RemoveAllUserBookmarks) {
   BookmarkExpandedStateTracker* tracker = model_->expanded_state_tracker();
 
   // Add a folder and mark it expanded.
@@ -104,7 +108,9 @@ TEST_F(BookmarkExpandedStateTrackerTest, RemoveAll) {
   // Verify that the node is present.
   EXPECT_EQ(nodes, tracker->GetExpandedNodes());
   // Call remove all.
-  model_->RemoveAll();
+  model_->RemoveAllUserBookmarks();
   // Verify node is not present.
   EXPECT_TRUE(tracker->GetExpandedNodes().empty());
 }
+
+}  // namespace bookmarks

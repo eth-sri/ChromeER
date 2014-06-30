@@ -9,10 +9,12 @@
 #include "chrome/browser/extensions/api/preference/preference_api.h"
 #include "chrome/browser/prefs/session_startup_pref.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/common/extensions/manifest_handlers/settings_overrides_handler.h"
 #include "chrome/common/pref_names.h"
+#include "components/search_engines/search_engines_pref_names.h"
+#include "components/search_engines/template_url.h"
+#include "components/search_engines/template_url_prepopulate_data.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_prefs_factory.h"
 #include "extensions/browser/extension_registry.h"
@@ -37,15 +39,44 @@ std::string SubstituteInstallParam(std::string str,
   return str;
 }
 
+// Find the prepopulated search engine with the given id.
+bool GetPrepopulatedSearchProvider(PrefService* prefs,
+                                   int prepopulated_id,
+                                   TemplateURLData* data) {
+  DCHECK(data);
+  size_t default_index;
+  ScopedVector<TemplateURLData> engines =
+      TemplateURLPrepopulateData::GetPrepopulatedEngines(prefs, &default_index);
+  for (ScopedVector<TemplateURLData>::iterator i = engines.begin();
+       i != engines.end();
+       ++i) {
+    if ((*i)->prepopulate_id == prepopulated_id) {
+      *data = **i;
+      return true;
+    }
+  }
+  return false;
+}
+
 TemplateURLData ConvertSearchProvider(
+    PrefService* prefs,
     const ChromeSettingsOverrides::Search_provider& search_provider,
     const std::string& install_parameter) {
   TemplateURLData data;
+  if (search_provider.prepopulated_id) {
+    if (!GetPrepopulatedSearchProvider(prefs, *search_provider.prepopulated_id,
+                                       &data)) {
+      VLOG(1) << "Settings Overrides API can't recognize prepopulated_id="
+          << *search_provider.prepopulated_id;
+    }
+  }
 
-  data.short_name = base::UTF8ToUTF16(search_provider.name);
-  data.SetKeyword(base::UTF8ToUTF16(search_provider.keyword));
-  data.SetURL(
-      SubstituteInstallParam(search_provider.search_url, install_parameter));
+  if (search_provider.name)
+    data.short_name = base::UTF8ToUTF16(*search_provider.name);
+  if (search_provider.keyword)
+    data.SetKeyword(base::UTF8ToUTF16(*search_provider.keyword));
+  data.SetURL(SubstituteInstallParam(search_provider.search_url,
+                                     install_parameter));
   if (search_provider.suggest_url) {
     data.suggestions_url =
         SubstituteInstallParam(*search_provider.suggest_url, install_parameter);
@@ -66,14 +97,20 @@ TemplateURLData ConvertSearchProvider(
     data.instant_url_post_params = *search_provider.instant_url_post_params;
   if (search_provider.image_url_post_params)
     data.image_url_post_params = *search_provider.image_url_post_params;
-  data.favicon_url = GURL(
-      SubstituteInstallParam(search_provider.favicon_url, install_parameter));
+  if (search_provider.favicon_url) {
+    data.favicon_url = GURL(SubstituteInstallParam(*search_provider.favicon_url,
+                                                   install_parameter));
+  }
   data.safe_for_autoreplace = false;
-  data.input_encodings.push_back(search_provider.encoding);
+  if (search_provider.encoding) {
+    data.input_encodings.clear();
+    data.input_encodings.push_back(*search_provider.encoding);
+  }
   data.date_created = base::Time();
   data.last_modified = base::Time();
   data.prepopulate_id = 0;
   if (search_provider.alternate_urls) {
+    data.alternate_urls.clear();
     for (size_t i = 0; i < search_provider.alternate_urls->size(); ++i) {
       if (!search_provider.alternate_urls->at(i).empty())
         data.alternate_urls.push_back(SubstituteInstallParam(
@@ -196,10 +233,12 @@ void SettingsOverridesAPI::OnExtensionUnloaded(
     }
     if (settings->search_engine) {
       DCHECK(url_service_);
-      if (url_service_->loaded())
-        url_service_->RemoveExtensionControlledTURL(extension->id());
-      else
+      if (url_service_->loaded()) {
+        url_service_->RemoveExtensionControlledTURL(
+            extension->id(), TemplateURL::NORMAL_CONTROLLED_BY_EXTENSION);
+      } else {
         pending_extensions_.erase(extension);
+      }
     }
   }
 }
@@ -225,17 +264,17 @@ void SettingsOverridesAPI::RegisterSearchProvider(
   const SettingsOverrides* settings = SettingsOverrides::Get(extension);
   DCHECK(settings);
   DCHECK(settings->search_engine);
-  scoped_ptr<AssociatedExtensionInfo> info(new AssociatedExtensionInfo);
-  info->extension_id = extension->id();
+  scoped_ptr<TemplateURL::AssociatedExtensionInfo> info(
+      new TemplateURL::AssociatedExtensionInfo(
+          TemplateURL::NORMAL_CONTROLLED_BY_EXTENSION, extension->id()));
   info->wants_to_be_default_engine = settings->search_engine->is_default;
   ExtensionPrefs* prefs = ExtensionPrefs::Get(profile_);
   info->install_time = prefs->GetInstallTime(extension->id());
   std::string install_parameter = prefs->GetInstallParam(extension->id());
-  TemplateURLData data =
-      ConvertSearchProvider(*settings->search_engine, install_parameter);
+  TemplateURLData data = ConvertSearchProvider(
+      profile_->GetPrefs(), *settings->search_engine, install_parameter);
   data.show_in_default_list = info->wants_to_be_default_engine;
-  url_service_->AddExtensionControlledTURL(new TemplateURL(profile_, data),
-                                           info.Pass());
+  url_service_->AddExtensionControlledTURL(new TemplateURL(data), info.Pass());
 }
 
 template <>

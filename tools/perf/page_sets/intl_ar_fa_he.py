@@ -15,7 +15,10 @@ class IntlArFaHePage(page_module.Page):
     self.archive_data_file = 'data/intl_ar_fa_he.json'
 
   def RunSmoothness(self, action_runner):
-    action_runner.RunAction(ScrollAction())
+    interaction = action_runner.BeginGestureInteraction(
+        'ScrollAction', is_smooth=True)
+    action_runner.ScrollPage()
+    interaction.End()
 
 
 class IntlArFaHePageSet(page_set_module.PageSet):
@@ -25,7 +28,8 @@ class IntlArFaHePageSet(page_set_module.PageSet):
   def __init__(self):
     super(IntlArFaHePageSet, self).__init__(
       user_agent_type='desktop',
-      archive_data_file='data/intl_ar_fa_he.json')
+      archive_data_file='data/intl_ar_fa_he.json',
+      bucket=page_set_module.PARTNER_BUCKET)
 
     urls_list = [
       'http://msn.co.il/',

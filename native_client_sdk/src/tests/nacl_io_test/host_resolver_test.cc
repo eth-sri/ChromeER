@@ -89,7 +89,7 @@ TEST_F(HostResolverTest, Getaddrinfo_Numeric) {
   struct sockaddr_in* in;
   struct addrinfo hints;
 
-  // Numberic only
+  // Numeric only
   memset(&hints, 0, sizeof(hints));
   hints.ai_family = AF_INET;
   hints.ai_socktype = SOCK_STREAM;
@@ -104,6 +104,34 @@ TEST_F(HostResolverTest, Getaddrinfo_Numeric) {
   ASSERT_EQ(expected_addr, in->sin_addr.s_addr);
   ASSERT_EQ(NULL_INFO, ai->ai_next);
 
+  ki_freeaddrinfo(ai);
+}
+
+TEST_F(HostResolverTest, Getaddrinfo_NumericService) {
+  struct addrinfo* ai = NULL;
+  struct sockaddr_in* in;
+  struct addrinfo hints;
+
+  memset(&hints, 0, sizeof(hints));
+  hints.ai_family = AF_INET;
+  hints.ai_socktype = SOCK_STREAM;
+
+  ASSERT_EQ(0, ki_getaddrinfo("1.2.3.4", "0", &hints, &ai));
+  ASSERT_NE(NULL_INFO, ai);
+  ASSERT_NE(NULL_ADDR, ai->ai_addr);
+  in = (struct sockaddr_in*)ai->ai_addr;
+  uint16_t expected_port = htons(0);
+  ASSERT_EQ(expected_port, in->sin_port);
+  ASSERT_EQ(NULL_INFO, ai->ai_next);
+  ki_freeaddrinfo(ai);
+
+  ASSERT_EQ(0, ki_getaddrinfo("1.2.3.4", "65000", &hints, &ai));
+  ASSERT_NE(NULL_INFO, ai);
+  ASSERT_NE(NULL_ADDR, ai->ai_addr);
+  in = (struct sockaddr_in*)ai->ai_addr;
+  expected_port = htons(65000);
+  ASSERT_EQ(expected_port, in->sin_port);
+  ASSERT_EQ(NULL_INFO, ai->ai_next);
   ki_freeaddrinfo(ai);
 }
 
@@ -160,6 +188,7 @@ TEST_F(HostResolverTest, Getaddrinfo_Passive_Any) {
   // ai_family in the hints, so we should get muplitple
   // results back for the different families.
   struct addrinfo* ai = NULL;
+  struct addrinfo* ai_orig = NULL;
   struct sockaddr_in* in;
   struct sockaddr_in6* in6;
   struct addrinfo hints;
@@ -172,6 +201,7 @@ TEST_F(HostResolverTest, Getaddrinfo_Passive_Any) {
   hints.ai_flags = AI_PASSIVE;
   hints.ai_socktype = SOCK_DGRAM;
   ASSERT_EQ(0, ki_getaddrinfo(NULL, "22", &hints, &ai));
+  ai_orig = ai;
   ASSERT_NE(NULL_INFO, ai);
   int count = 0;
   bool got_v4 = false;
@@ -206,6 +236,8 @@ TEST_F(HostResolverTest, Getaddrinfo_Passive_Any) {
   ASSERT_EQ(2, count);
   ASSERT_TRUE(got_v4);
   ASSERT_TRUE(got_v6);
+
+  ki_freeaddrinfo(ai_orig);
 }
 
 TEST_F(FakeHostResolverTest, Getaddrinfo_Lookup) {

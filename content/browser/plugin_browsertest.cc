@@ -64,9 +64,6 @@ class PluginTest : public ContentBrowserTest {
                       KEY_WRITE) == ERROR_SUCCESS) {
         regkey.CreateKey(L"BROWSER_TESTS.EXE", KEY_READ);
       }
-    } else if (strcmp(test_info->name(), "FlashSecurity") == 0) {
-      command_line->AppendSwitchASCII(switches::kTestSandbox,
-                                      "security_tests.dll");
     }
 #elif defined(OS_MACOSX)
     base::FilePath plugin_dir;
@@ -381,7 +378,8 @@ IN_PROC_BROWSER_TEST_F(PluginTest, MAYBE(GetURLRequestFailWrite)) {
 }
 
 #if defined(OS_WIN)
-IN_PROC_BROWSER_TEST_F(PluginTest, MAYBE(EnsureScriptingWorksInDestroy)) {
+// Flaky on Windows x86.  http://crbug.com/388245
+IN_PROC_BROWSER_TEST_F(PluginTest, DISABLED_EnsureScriptingWorksInDestroy) {
   LoadAndWait(GetURL("ensure_scripting_works_in_destroy.html"));
 }
 

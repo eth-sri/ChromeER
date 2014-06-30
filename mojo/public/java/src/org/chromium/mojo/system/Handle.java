@@ -33,4 +33,21 @@ public interface Handle extends Closeable {
      */
     public boolean isValid();
 
+    /**
+     * Converts this handle into an {@link UntypedHandle}, invalidating this handle.
+     */
+    public UntypedHandle toUntypedHandle();
+
+    /**
+     * Returns the {@link Core} implementation for this handle. Can be null if this handle is
+     * invalid.
+     */
+    public Core getCore();
+
+    /**
+     * Passes ownership of the handle from this handle to the newly created Handle object,
+     * invalidating this handle object in the process.
+     */
+    public Handle pass();
+
 }

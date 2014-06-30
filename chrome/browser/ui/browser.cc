@@ -56,7 +56,6 @@
 #include "chrome/browser/favicon/favicon_tab_helper.h"
 #include "chrome/browser/file_select_helper.h"
 #include "chrome/browser/first_run/first_run.h"
-#include "chrome/browser/google/google_url_tracker.h"
 #include "chrome/browser/history/top_sites.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/infobars/simple_alert_infobar_delegate.h"
@@ -83,9 +82,9 @@
 #include "chrome/browser/tab_contents/tab_util.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/themes/theme_service_factory.h"
-#include "chrome/browser/translate/translate_tab_helper.h"
+#include "chrome/browser/translate/chrome_translate_client.h"
 #include "chrome/browser/ui/app_modal_dialogs/javascript_dialog_manager.h"
-#include "chrome/browser/ui/autofill/tab_autofill_manager_delegate.h"
+#include "chrome/browser/ui/autofill/chrome_autofill_client.h"
 #include "chrome/browser/ui/blocked_content/popup_blocker_tab_helper.h"
 #include "chrome/browser/ui/bookmarks/bookmark_tab_helper.h"
 #include "chrome/browser/ui/bookmarks/bookmark_utils.h"
@@ -143,13 +142,13 @@
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/custom_handlers/protocol_handler.h"
-#include "chrome/common/net/url_fixer_upper.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/profiling.h"
 #include "chrome/common/search_types.h"
 #include "chrome/common/url_constants.h"
 #include "components/bookmarks/browser/bookmark_model.h"
 #include "components/bookmarks/browser/bookmark_utils.h"
+#include "components/google/core/browser/google_url_tracker.h"
 #include "components/startup_metric_utils/startup_metric_utils.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "content/public/browser/devtools_manager.h"
@@ -378,7 +377,8 @@ Browser::Browser(const CreateParams& params)
                  content::Source<Profile>(profile_->GetOriginalProfile()));
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
                  content::Source<Profile>(profile_->GetOriginalProfile()));
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNINSTALLED,
+  registrar_.Add(this,
+                 chrome::NOTIFICATION_EXTENSION_UNINSTALLED_DEPRECATED,
                  content::Source<Profile>(profile_->GetOriginalProfile()));
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_PROCESS_TERMINATED,
                  content::NotificationService::AllSources());
@@ -770,15 +770,6 @@ void Browser::WindowFullscreenStateChanged() {
   UpdateBookmarkBarState(BOOKMARK_BAR_STATE_CHANGE_TOGGLE_FULLSCREEN);
 }
 
-void Browser::VisibleSSLStateChanged(content::WebContents* web_contents) {
-  // When the current tab's SSL state changes, we need to update the URL
-  // bar to reflect the new state.
-  DCHECK(web_contents);
-  if (tab_strip_model_->GetActiveWebContents() == web_contents)
-    UpdateToolbar(false);
-}
-
-
 ///////////////////////////////////////////////////////////////////////////////
 // Browser, Assorted browser commands:
 
@@ -1042,8 +1033,7 @@ void Browser::ActiveTabChanged(WebContents* old_contents,
   if (instant_controller_)
     instant_controller_->ActiveTabChanged();
 
-  autofill::TabAutofillManagerDelegate::FromWebContents(new_contents)->
-      TabActivated();
+  autofill::ChromeAutofillClient::FromWebContents(new_contents)->TabActivated();
   SearchTabHelper::FromWebContents(new_contents)->OnTabActivated();
 }
 
@@ -1333,6 +1323,14 @@ void Browser::NavigationStateChanged(const WebContents* source,
   if (changed_flags & (content::INVALIDATE_TYPE_URL |
                        content::INVALIDATE_TYPE_LOAD))
     command_controller_->TabStateChanged();
+}
+
+void Browser::VisibleSSLStateChanged(const WebContents* source) {
+  // When the current tab's SSL state changes, we need to update the URL
+  // bar to reflect the new state.
+  DCHECK(source);
+  if (tab_strip_model_->GetActiveWebContents() == source)
+    UpdateToolbar(false);
 }
 
 void Browser::AddNewContents(WebContents* source,
@@ -1942,7 +1940,7 @@ void Browser::Observe(int type,
           IDC_BOOKMARK_ALL_TABS,
           !chrome::ShouldRemoveBookmarkOpenPagesUI(profile_));
     // fallthrough
-    case chrome::NOTIFICATION_EXTENSION_UNINSTALLED:
+    case chrome::NOTIFICATION_EXTENSION_UNINSTALLED_DEPRECATED:
       // During window creation on Windows we may end up calling into
       // SHAppBarMessage, which internally spawns a nested message loop. This
       // makes it possible for us to end up here before window creation has
@@ -2195,9 +2193,9 @@ void Browser::SetAsDelegate(WebContents* web_contents, Browser* delegate) {
   SearchEngineTabHelper::FromWebContents(web_contents)->set_delegate(delegate);
   SearchTabHelper::FromWebContents(web_contents)->set_delegate(delegate);
   ZoomController::FromWebContents(web_contents)->set_observer(delegate);
-  TranslateTabHelper* translate_tab_helper =
-      TranslateTabHelper::FromWebContents(web_contents);
-  translate_tab_helper->translate_driver().set_observer(
+  ChromeTranslateClient* chrome_translate_client =
+      ChromeTranslateClient::FromWebContents(web_contents);
+  chrome_translate_client->translate_driver().set_observer(
       delegate ? delegate->translate_driver_observer_.get() : NULL);
 }
 

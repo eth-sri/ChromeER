@@ -10,8 +10,8 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
-#include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
+#include "chrome/browser/autocomplete/chrome_autocomplete_scheme_classifier.h"
 #include "chrome/browser/command_updater.h"
 #include "chrome/browser/search/search.h"
 #include "chrome/browser/ui/omnibox/omnibox_edit_controller.h"
@@ -22,6 +22,7 @@
 #include "chrome/browser/ui/views/omnibox/omnibox_popup_contents_view.h"
 #include "chrome/browser/ui/views/settings_api_bubble_helper_views.h"
 #include "chrome/browser/ui/views/website_settings/website_settings_popup_view.h"
+#include "components/autocomplete/autocomplete_input.h"
 #include "components/bookmarks/browser/bookmark_node_data.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/common/constants.h"
@@ -43,7 +44,6 @@
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/compositor/layer.h"
 #include "ui/events/event.h"
-#include "ui/gfx/animation/slide_animation.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/font_list.h"
 #include "ui/gfx/selection_model.h"
@@ -177,14 +177,6 @@ void OmniboxViewViews::Init() {
   chromeos::input_method::InputMethodManager::Get()->
       AddCandidateWindowObserver(this);
 #endif
-
-  fade_in_animation_.reset(new gfx::SlideAnimation(this));
-  fade_in_animation_->SetTweenType(gfx::Tween::LINEAR);
-  fade_in_animation_->SetSlideDuration(300);
-}
-
-void OmniboxViewViews::FadeIn() {
-  fade_in_animation_->Show();
 }
 
 void OmniboxViewViews::SaveStateToTab(content::WebContents* tab) {
@@ -225,7 +217,7 @@ void OmniboxViewViews::OnTabChanged(const content::WebContents* web_contents) {
 }
 
 void OmniboxViewViews::Update() {
-  if (chrome::ShouldDisplayOriginChip() || chrome::ShouldDisplayOriginChipV2())
+  if (chrome::ShouldDisplayOriginChip())
     set_placeholder_text(GetHintText());
 
   const ToolbarModel::SecurityLevel old_security_level = security_level_;
@@ -335,6 +327,10 @@ void OmniboxViewViews::OnNativeThemeChanged(const ui::NativeTheme* theme) {
 }
 
 void OmniboxViewViews::ExecuteCommand(int command_id, int event_flags) {
+  // In the base class, touch text selection is deactivated when a command is
+  // executed. Since we are not always calling the base class implementation
+  // here, we need to deactivate touch text selection here, too.
+  DestroyTouchSelection();
   switch (command_id) {
     // These commands don't invoke the popup via OnBefore/AfterPossibleChange().
     case IDS_PASTE_AND_GO:
@@ -566,10 +562,9 @@ void OmniboxViewViews::ShowImeIfNeeded() {
 }
 
 void OmniboxViewViews::OnMatchOpened(const AutocompleteMatch& match,
-                                     Profile* profile,
-                                     content::WebContents* web_contents) const {
+                                     content::WebContents* web_contents) {
   extensions::MaybeShowExtensionControlledSearchNotification(
-      profile, web_contents, match);
+      profile(), web_contents, match);
 }
 
 int OmniboxViewViews::GetOmniboxTextLength() const {
@@ -585,7 +580,8 @@ void OmniboxViewViews::EmphasizeURLComponents() {
   // be treated as a search or a navigation, and is the same method the Paste
   // And Go system uses.
   url::Component scheme, host;
-  AutocompleteInput::ParseForEmphasizeComponents(text(), &scheme, &host);
+  AutocompleteInput::ParseForEmphasizeComponents(
+      text(), ChromeAutocompleteSchemeClassifier(profile()), &scheme, &host);
   bool grey_out_url = text().substr(scheme.begin, scheme.len) ==
       base::UTF8ToUTF16(extensions::kExtensionScheme);
   bool grey_base = model()->CurrentTextIsURL() &&
@@ -797,17 +793,6 @@ void OmniboxViewViews::GetAccessibleState(ui::AXViewState* state) {
   state->role = ui::AX_ROLE_TEXT_FIELD;
 }
 
-void OmniboxViewViews::OnPaint(gfx::Canvas* canvas) {
-  if (fade_in_animation_->is_animating()) {
-    canvas->SaveLayerAlpha(static_cast<uint8>(
-        fade_in_animation_->CurrentValueBetween(0, 255)));
-    views::Textfield::OnPaint(canvas);
-    canvas->Restore();
-  } else {
-    views::Textfield::OnPaint(canvas);
-  }
-}
-
 void OmniboxViewViews::OnFocus() {
   views::Textfield::OnFocus();
   // TODO(oshima): Get control key state.
@@ -864,14 +849,6 @@ bool OmniboxViewViews::IsCommandIdEnabled(int command_id) const {
 
 base::string16 OmniboxViewViews::GetSelectionClipboardText() const {
   return SanitizeTextForPaste(Textfield::GetSelectionClipboardText());
-}
-
-void OmniboxViewViews::AnimationProgressed(const gfx::Animation* animation) {
-  SchedulePaint();
-}
-
-void OmniboxViewViews::AnimationEnded(const gfx::Animation* animation) {
-  fade_in_animation_->Reset();
 }
 
 #if defined(OS_CHROMEOS)
@@ -968,7 +945,7 @@ void OmniboxViewViews::OnWriteDragData(ui::OSExchangeData* data) {
     if (is_all_selected)
       model()->GetDataForURLExport(&url, &title, &favicon);
     button_drag_utils::SetURLAndDragImage(url, title, favicon.AsImageSkia(),
-                                          data, GetWidget());
+                                          NULL, data, GetWidget());
     data->SetURL(url, title);
   }
 }
@@ -1026,8 +1003,7 @@ void OmniboxViewViews::UpdateContextMenu(ui::SimpleMenuModel* menu_contents) {
 
   menu_contents->AddSeparator(ui::NORMAL_SEPARATOR);
 
-  if (chrome::IsQueryExtractionEnabled() || chrome::ShouldDisplayOriginChip() ||
-      chrome::ShouldDisplayOriginChipV2()) {
+  if (chrome::IsQueryExtractionEnabled() || chrome::ShouldDisplayOriginChip()) {
     int select_all_position = menu_contents->GetIndexOfCommandId(
         IDS_APP_SELECT_ALL);
     DCHECK_GE(select_all_position, 0);

@@ -6,6 +6,8 @@ package org.chromium.content.browser;
 
 import org.chromium.base.CalledByNative;
 import org.chromium.base.JNINamespace;
+import org.chromium.base.ThreadUtils;
+import org.chromium.content_public.browser.WebContents;
 
 /**
  * This class receives callbacks that act as hooks for various a native web contents events related
@@ -15,8 +17,9 @@ import org.chromium.base.JNINamespace;
 public abstract class WebContentsObserverAndroid {
     private long mNativeWebContentsObserverAndroid;
 
-    public WebContentsObserverAndroid(ContentViewCore contentViewCore) {
-        mNativeWebContentsObserverAndroid = nativeInit(contentViewCore.getNativeContentViewCore());
+    public WebContentsObserverAndroid(WebContents webContents) {
+        ThreadUtils.assertOnUiThread();
+        mNativeWebContentsObserverAndroid = nativeInit(webContents);
     }
 
     @CalledByNative
@@ -55,12 +58,12 @@ public abstract class WebContentsObserverAndroid {
      * @param url The validated url for the page.
      * @param baseUrl The validated base url for the page.
      * @param isNavigationToDifferentPage Whether the main frame navigated to a different page.
-     * @param isNavigationInPage Whether the main frame navigation did not cause changes to the
-     *                           document (for example scrolling to a named anchor or PopState).
+     * @param isFragmentNavigation Whether the main frame navigation did not cause changes to the
+     *                             document (for example scrolling to a named anchor or PopState).
      */
     @CalledByNative
     public void didNavigateMainFrame(String url, String baseUrl,
-            boolean isNavigationToDifferentPage, boolean isNavigationInPage) {
+            boolean isNavigationToDifferentPage, boolean isFragmentNavigation) {
     }
 
     /**
@@ -126,17 +129,18 @@ public abstract class WebContentsObserverAndroid {
     }
 
     /**
+     * Notifies that the document has finished loading for the given frame.
+     * @param frameId A positive, non-zero integer identifying the navigating frame.
+     */
+    @CalledByNative
+    public void documentLoadedInFrame(long frameId) {
+    }
+
+    /**
      * Notifies that a navigation entry has been committed.
      */
     @CalledByNative
     public void navigationEntryCommitted() {
-    }
-
-    /**
-     * Invoked when visible SSL state changes.
-     */
-    @CalledByNative
-    public void didChangeVisibleSSLState() {
     }
 
     /**
@@ -154,6 +158,14 @@ public abstract class WebContentsObserverAndroid {
     }
 
     /**
+     * Called when the brand color was changed.
+     * @param color the new color in ARGB format
+     */
+    @CalledByNative
+    public void didChangeBrandColor(int color) {
+    }
+
+    /**
      * Destroy the corresponding native object.
      */
     @CalledByNative
@@ -164,6 +176,6 @@ public abstract class WebContentsObserverAndroid {
         }
     }
 
-    private native long nativeInit(long contentViewCorePtr);
+    private native long nativeInit(WebContents webContents);
     private native void nativeDestroy(long nativeWebContentsObserverAndroid);
 }

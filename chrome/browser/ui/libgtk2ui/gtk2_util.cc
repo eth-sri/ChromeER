@@ -104,7 +104,7 @@ int EventFlagsFromGdkState(guint state) {
 }
 
 void SetGtkTransientForAura(GtkWidget* dialog, aura::Window* parent) {
-  if (!parent)
+  if (!parent || !parent->GetHost())
     return;
 
   gtk_widget_realize(dialog);
@@ -128,6 +128,17 @@ aura::Window* GetAuraTransientParent(GtkWidget* dialog) {
 
 void ClearAuraTransientParent(GtkWidget* dialog) {
   g_object_set_data(G_OBJECT(dialog), kAuraTransientParent, NULL);
+}
+
+GtkStateType GetGtkState(ui::NativeTheme::State state) {
+  switch (state) {
+    case ui::NativeTheme::kDisabled: return GTK_STATE_INSENSITIVE;
+    case ui::NativeTheme::kHovered:  return GTK_STATE_PRELIGHT;
+    case ui::NativeTheme::kNormal:   return GTK_STATE_NORMAL;
+    case ui::NativeTheme::kPressed:  return GTK_STATE_ACTIVE;
+    case ui::NativeTheme::kMaxState: NOTREACHED() << "Unknown state: " << state;
+  }
+  return GTK_STATE_NORMAL;
 }
 
 }  // namespace libgtk2ui

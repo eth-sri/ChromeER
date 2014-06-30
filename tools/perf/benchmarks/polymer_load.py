@@ -3,11 +3,12 @@
 # found in the LICENSE file.
 
 from measurements import polymer_load
-from telemetry import test
+import page_sets
+from telemetry import benchmark
 
 
-class PolymerLoadPica(test.Test):
-  """Measures time to polymer-ready for PICA
-  """
+@benchmark.Disabled
+class PolymerLoadPica(benchmark.Benchmark):
+  """Measures time to polymer-ready for PICA."""
   test = polymer_load.PolymerLoadMeasurement
-  page_set = 'page_sets/pica.py'
+  page_set = page_sets.PicaPageSet

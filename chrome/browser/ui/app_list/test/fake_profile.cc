@@ -56,41 +56,7 @@ FakeProfile::GetMediaRequestContextForStoragePartition(
   return NULL;
 }
 
-void FakeProfile::RequestMidiSysExPermission(
-    int render_process_id,
-    int render_view_id,
-    int bridge_id,
-    const GURL& requesting_frame,
-    bool user_gesture,
-    const MidiSysExPermissionCallback& callback) {
-}
-
-void FakeProfile::CancelMidiSysExPermissionRequest(
-    int render_process_id,
-    int render_view_id,
-    int bridge_id,
-    const GURL& requesting_frame) {
-}
-
-void FakeProfile::RequestProtectedMediaIdentifierPermission(
-    int render_process_id,
-    int render_view_id,
-    int bridge_id,
-    int group_id,
-    const GURL& requesting_frame,
-    const ProtectedMediaIdentifierPermissionCallback& callback) {
-}
-
-void FakeProfile::CancelProtectedMediaIdentifierPermissionRequests(
-    int group_id) {
-}
-
 content::ResourceContext* FakeProfile::GetResourceContext() {
-  return NULL;
-}
-
-content::GeolocationPermissionContext*
-FakeProfile::GetGeolocationPermissionContext() {
   return NULL;
 }
 
@@ -99,6 +65,10 @@ content::BrowserPluginGuestManager* FakeProfile::GetGuestManager() {
 }
 
 quota::SpecialStoragePolicy* FakeProfile::GetSpecialStoragePolicy() {
+  return NULL;
+}
+
+content::PushMessagingService* FakeProfile::GetPushMessagingService() {
   return NULL;
 }
 
@@ -121,7 +91,7 @@ Profile* FakeProfile::GetOriginalProfile() {
   return this;
 }
 
-bool FakeProfile::IsManaged() {
+bool FakeProfile::IsSupervised() {
   return false;
 }
 
@@ -130,10 +100,6 @@ history::TopSites* FakeProfile::GetTopSites() {
 }
 
 history::TopSites* FakeProfile::GetTopSitesWithoutCreating() {
-  return NULL;
-}
-
-ExtensionService* FakeProfile::GetExtensionService() {
   return NULL;
 }
 
@@ -175,7 +141,7 @@ base::Time FakeProfile::GetStartTime() const {
 
 net::URLRequestContextGetter* FakeProfile::CreateRequestContext(
     content::ProtocolHandlerMap* protocol_handlers,
-    content::ProtocolHandlerScopedVector protocol_interceptors) {
+    content::URLRequestInterceptorScopedVector request_interceptors) {
   return NULL;
 }
 
@@ -184,7 +150,7 @@ FakeProfile::CreateRequestContextForStoragePartition(
     const base::FilePath& partition_path,
     bool in_memory,
     content::ProtocolHandlerMap* protocol_handlers,
-    content::ProtocolHandlerScopedVector protocol_interceptors) {
+    content::URLRequestInterceptorScopedVector request_interceptors) {
   return NULL;
 }
 
@@ -209,13 +175,12 @@ chrome_browser_net::Predictor* FakeProfile::GetNetworkPredictor() {
   return NULL;
 }
 
-void FakeProfile::ClearNetworkingHistorySince(
-    base::Time time,
-    const base::Closure& completion) {
+DevToolsNetworkController* FakeProfile::GetDevToolsNetworkController() {
+  return NULL;
 }
 
-void FakeProfile::ClearDomainReliabilityMonitor(
-    domain_reliability::DomainReliabilityClearMode mode,
+void FakeProfile::ClearNetworkingHistorySince(
+    base::Time time,
     const base::Closure& completion) {
 }
 

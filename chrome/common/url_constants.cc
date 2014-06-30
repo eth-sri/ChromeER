@@ -56,8 +56,6 @@ const char kChromeUIInspectURL[] = "chrome://inspect/";
 const char kChromeUIInstantURL[] = "chrome://instant/";
 const char kChromeUIInvalidationsURL[] = "chrome://invalidations/";
 const char kChromeUIIPCURL[] = "chrome://ipc/";
-const char kChromeUIManagedUserPassphrasePageURL[] =
-    "chrome://managed-user-passphrase/";
 const char kChromeUIMemoryRedirectURL[] = "chrome://memory-redirect/";
 const char kChromeUIMemoryURL[] = "chrome://memory/";
 const char kChromeUIMetroFlowURL[] = "chrome://make-metro/";
@@ -77,11 +75,12 @@ const char kChromeUIQuitURL[] = "chrome://quit/";
 const char kChromeUIRestartURL[] = "chrome://restart/";
 const char kChromeUISettingsURL[] = "chrome://settings/";
 const char kChromeUISettingsFrameURL[] = "chrome://settings-frame/";
+const char kChromeUISSLClientCertificateSelectorURL[] = "chrome://select-cert/";
 const char kChromeUISuggestions[] = "chrome://suggestions/";
 const char kChromeUISuggestionsInternalsURL[] =
     "chrome://suggestions-internals/";
-const char kChromeUISSLClientCertificateSelectorURL[] = "chrome://select-cert/";
-const char kChromeUITaskManagerURL[] = "chrome://tasks/";
+const char kChromeUISupervisedUserPassphrasePageURL[] =
+    "chrome://managed-user-passphrase/";
 const char kChromeUITermsURL[] = "chrome://terms/";
 const char kChromeUIThemeURL[] = "chrome://theme/";
 const char kChromeUIThumbnailURL[] = "chrome://thumb/";
@@ -193,7 +192,6 @@ const char kChromeUIInstantHost[] = "instant";
 const char kChromeUIInvalidationsHost[] = "invalidations";
 const char kChromeUIIPCHost[] = "ipc";
 const char kChromeUIKillHost[] = "kill";
-const char kChromeUIManagedUserPassphrasePageHost[] = "managed-user-passphrase";
 const char kChromeUIMemoryHost[] = "memory";
 const char kChromeUIMemoryInternalsHost[] = "memory-internals";
 const char kChromeUIMemoryRedirectHost[] = "memory-redirect";
@@ -222,10 +220,12 @@ const char kChromeUISettingsHost[] = "settings";
 const char kChromeUISettingsFrameHost[] = "settings-frame";
 const char kChromeUIShorthangHost[] = "shorthang";
 const char kChromeUISignInInternalsHost[] = "signin-internals";
-const char kChromeUISuggestionsHost[] = "suggestions";
-const char kChromeUISuggestionsInternalsHost[] = "suggestions-internals";
 const char kChromeUISSLClientCertificateSelectorHost[] = "select-cert";
 const char kChromeUIStatsHost[] = "stats";
+const char kChromeUISuggestionsHost[] = "suggestions";
+const char kChromeUISuggestionsInternalsHost[] = "suggestions-internals";
+const char kChromeUISupervisedUserPassphrasePageHost[] =
+    "managed-user-passphrase";
 const char kChromeUISyncHost[] = "sync";
 const char kChromeUISyncFileSystemInternalsHost[] = "syncfs-internals";
 const char kChromeUISyncInternalsHost[] = "sync-internals";
@@ -280,6 +280,7 @@ const char kChromeUINetworkHost[] = "network";
 const char kChromeUIOobeHost[] = "oobe";
 const char kChromeUIOSCreditsHost[] = "os-credits";
 const char kChromeUIPowerHost[] = "power";
+const char kChromeUIProvidedFileSystemsHost[] = "provided-file-systems";
 const char kChromeUIProxySettingsHost[] = "proxy-settings";
 const char kChromeUIRotateHost[] = "rotate";
 const char kChromeUIScreenlockIconHost[] = "screenlock-icon";
@@ -320,13 +321,13 @@ const char kExtensionsSubPage[] = "extensions";
 const char kHandlerSettingsSubPage[] = "handlers";
 const char kImportDataSubPage[] = "importData";
 const char kLanguageOptionsSubPage[] = "languages";
-const char kManagedUserSettingsSubPage[] = "managedUser";
 const char kManageProfileSubPage[] = "manageProfile";
 const char kPasswordManagerSubPage[] = "passwords";
 const char kResetProfileSettingsSubPage[] = "resetProfileSettings";
 const char kSearchEnginesSubPage[] = "searchEngines";
 const char kSearchSubPage[] = "search";
 const char kSearchUsersSubPage[] = "search#Users";
+const char kSupervisedUserSettingsSubPage[] = "managedUser";
 const char kSyncSetupSubPage[] = "syncSetup";
 #if defined(OS_CHROMEOS)
 const char kInternetOptionsSubPage[] = "internet";
@@ -567,12 +568,15 @@ const char* const kChromeHostURLs[] = {
   kChromeUINetInternalsHost,
   kChromeUINewTabHost,
   kChromeUIOmniboxHost,
+  kChromeUIPasswordManagerInternalsHost,
   kChromeUIPredictorsHost,
   kChromeUIProfilerHost,
   kChromeUISignInInternalsHost,
   kChromeUIStatsHost,
+  kChromeUISuggestionsHost,
   kChromeUISyncInternalsHost,
   kChromeUITermsHost,
+  kChromeUIThumbnailListHost,
   kChromeUITranslateInternalsHost,
   kChromeUIUserActionsHost,
   kChromeUIVersionHost,

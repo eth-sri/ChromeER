@@ -69,9 +69,7 @@ NativeWidget* CreateNativeWidget(NativeWidget* native_widget,
 // WidgetDelegate is supplied.
 class DefaultWidgetDelegate : public WidgetDelegate {
  public:
-  DefaultWidgetDelegate(Widget* widget, bool can_activate)
-      : widget_(widget),
-        can_activate_(can_activate) {
+  explicit DefaultWidgetDelegate(Widget* widget) : widget_(widget) {
   }
   virtual ~DefaultWidgetDelegate() {}
 
@@ -85,9 +83,6 @@ class DefaultWidgetDelegate : public WidgetDelegate {
   virtual const Widget* GetWidget() const OVERRIDE {
     return widget_;
   }
-  virtual bool CanActivate() const OVERRIDE {
-    return can_activate_;
-  }
   virtual bool ShouldAdvanceFocusToTopLevelWidget() const OVERRIDE {
     // In most situations where a Widget is used without a delegate the Widget
     // is used as a container, so that we want focus to advance to the top-level
@@ -97,7 +92,6 @@ class DefaultWidgetDelegate : public WidgetDelegate {
 
  private:
   Widget* widget_;
-  bool can_activate_;
 
   DISALLOW_COPY_AND_ASSIGN(DefaultWidgetDelegate);
 };
@@ -116,7 +110,7 @@ Widget::InitParams::InitParams()
       visible_on_all_workspaces(false),
       ownership(NATIVE_WIDGET_OWNS_WIDGET),
       mirror_origin_in_rtl(false),
-      has_dropshadow(false),
+      shadow_type(SHADOW_TYPE_DEFAULT),
       remove_standard_frame(false),
       use_system_default_icon(false),
       show_state(ui::SHOW_STATE_DEFAULT),
@@ -124,7 +118,6 @@ Widget::InitParams::InitParams()
       parent(NULL),
       native_widget(NULL),
       desktop_window_tree_host(NULL),
-      top_level(false),
       layer_type(aura::WINDOW_LAYER_TEXTURED),
       context(NULL),
       force_show_in_taskbar(false) {
@@ -133,7 +126,7 @@ Widget::InitParams::InitParams()
 Widget::InitParams::InitParams(Type type)
     : type(type),
       delegate(NULL),
-      child(type == TYPE_CONTROL),
+      child(false),
       opacity(INFER_OPACITY),
       accept_events(true),
       activatable(ACTIVATABLE_DEFAULT),
@@ -141,7 +134,7 @@ Widget::InitParams::InitParams(Type type)
       visible_on_all_workspaces(false),
       ownership(NATIVE_WIDGET_OWNS_WIDGET),
       mirror_origin_in_rtl(false),
-      has_dropshadow(false),
+      shadow_type(SHADOW_TYPE_DEFAULT),
       remove_standard_frame(false),
       use_system_default_icon(false),
       show_state(ui::SHOW_STATE_DEFAULT),
@@ -149,7 +142,6 @@ Widget::InitParams::InitParams(Type type)
       parent(NULL),
       native_widget(NULL),
       desktop_window_tree_host(NULL),
-      top_level(false),
       layer_type(aura::WINDOW_LAYER_TEXTURED),
       context(NULL),
       force_show_in_taskbar(false) {
@@ -208,7 +200,6 @@ Widget* Widget::CreateWindowWithBounds(WidgetDelegate* delegate,
   Widget::InitParams params;
   params.bounds = bounds;
   params.delegate = delegate;
-  params.top_level = true;
   widget->Init(params);
   return widget;
 }
@@ -247,22 +238,6 @@ Widget* Widget::CreateWindowWithContextAndBounds(WidgetDelegate* delegate,
   params.delegate = delegate;
   params.context = context;
   params.bounds = bounds;
-  widget->Init(params);
-  return widget;
-}
-
-// static
-Widget* Widget::CreateWindowAsFramelessChild(WidgetDelegate* widget_delegate,
-                                             gfx::NativeView parent) {
-  views::Widget* widget = new views::Widget;
-
-  views::Widget::InitParams params;
-  params.delegate = widget_delegate;
-  params.child = true;
-  params.parent = parent;
-  params.remove_standard_frame = true;
-  params.opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
-
   widget->Init(params);
   return widget;
 }
@@ -338,25 +313,8 @@ void Widget::Init(const InitParams& in_params) {
   TRACE_EVENT0("views", "Widget::Init");
   InitParams params = in_params;
 
-  is_top_level_ = params.top_level ||
-      (!params.child &&
-       params.type != InitParams::TYPE_CONTROL &&
-       params.type != InitParams::TYPE_TOOLTIP);
-  params.top_level = is_top_level_;
-
-  if (params.activatable != InitParams::ACTIVATABLE_DEFAULT) {
-    can_activate_ = (params.activatable == InitParams::ACTIVATABLE_YES);
-  } else if (params.type != InitParams::TYPE_CONTROL &&
-             params.type != InitParams::TYPE_POPUP &&
-             params.type != InitParams::TYPE_MENU &&
-             params.type != InitParams::TYPE_TOOLTIP &&
-             params.type != InitParams::TYPE_DRAG) {
-    can_activate_ = true;
-    params.activatable = InitParams::ACTIVATABLE_YES;
-  } else {
-    can_activate_ = false;
-    params.activatable = InitParams::ACTIVATABLE_NO;
-  }
+  params.child |= (params.type == InitParams::TYPE_CONTROL);
+  is_top_level_ = !params.child;
 
   if (params.opacity == views::Widget::InitParams::INFER_OPACITY &&
       params.type != views::Widget::InitParams::TYPE_WINDOW &&
@@ -369,8 +327,25 @@ void Widget::Init(const InitParams& in_params) {
   if (params.opacity == views::Widget::InitParams::INFER_OPACITY)
     params.opacity = views::Widget::InitParams::OPAQUE_WINDOW;
 
+  bool can_activate = false;
+  if (params.activatable != InitParams::ACTIVATABLE_DEFAULT) {
+    can_activate = (params.activatable == InitParams::ACTIVATABLE_YES);
+  } else if (params.type != InitParams::TYPE_CONTROL &&
+             params.type != InitParams::TYPE_POPUP &&
+             params.type != InitParams::TYPE_MENU &&
+             params.type != InitParams::TYPE_TOOLTIP &&
+             params.type != InitParams::TYPE_DRAG) {
+    can_activate = true;
+    params.activatable = InitParams::ACTIVATABLE_YES;
+  } else {
+    can_activate = false;
+    params.activatable = InitParams::ACTIVATABLE_NO;
+  }
+
   widget_delegate_ = params.delegate ?
-      params.delegate : new DefaultWidgetDelegate(this, can_activate_);
+      params.delegate : new DefaultWidgetDelegate(this);
+  widget_delegate_->set_can_activate(can_activate);
+
   ownership_ = params.ownership;
   native_widget_ = CreateNativeWidget(params.native_widget, this)->
                    AsNativeWidgetPrivate();
@@ -381,7 +356,6 @@ void Widget::Init(const InitParams& in_params) {
         internal::NativeWidgetPrivate::IsMouseButtonDown();
   }
   native_widget_->InitNativeWidget(params);
-  observer_manager_.Add(GetNativeTheme());
   if (RequiresNonClientView(params.type)) {
     non_client_view_ = new NonClientView;
     non_client_view_->SetFrameView(CreateNonClientFrameView());
@@ -403,6 +377,9 @@ void Widget::Init(const InitParams& in_params) {
     SetContentsView(params.delegate->GetContentsView());
     SetInitialBoundsForFramelessWindow(params.bounds);
   }
+  // This must come after SetContentsView() or it might not be able to find
+  // the correct NativeTheme (on Linux). See http://crbug.com/384492
+  observer_manager_.Add(GetNativeTheme());
   native_widget_initialized_ = true;
 }
 
@@ -1019,7 +996,7 @@ bool Widget::IsDialogBox() const {
 }
 
 bool Widget::CanActivate() const {
-  return can_activate_ && widget_delegate_->CanActivate();
+  return widget_delegate_->CanActivate();
 }
 
 bool Widget::IsInactiveRenderingDisabled() const {
@@ -1039,6 +1016,19 @@ void Widget::OnNativeWidgetActivationChanged(bool active) {
 
   FOR_EACH_OBSERVER(WidgetObserver, observers_,
                     OnWidgetActivationChanged(this, active));
+
+  // During window creation, the widget gets focused without activation, and in
+  // that case, the focus manager cannot set the appropriate text input client
+  // because the widget is not active.  Thus we have to notify the focus manager
+  // not only when the focus changes but also when the widget gets activated.
+  // See crbug.com/377479 for details.
+  views::FocusManager* focus_manager = GetFocusManager();
+  if (focus_manager) {
+    if (active)
+      focus_manager->FocusTextInputClient(focus_manager->GetFocusedView());
+    else
+      focus_manager->BlurTextInputClient(focus_manager->GetFocusedView());
+  }
 
   if (IsVisible() && non_client_view())
     non_client_view()->frame_view()->SchedulePaint();
@@ -1096,18 +1086,19 @@ void Widget::OnNativeWidgetDestroyed() {
   native_widget_destroyed_ = true;
 }
 
-gfx::Size Widget::GetMinimumSize() {
+gfx::Size Widget::GetMinimumSize() const {
   return non_client_view_ ? non_client_view_->GetMinimumSize() : gfx::Size();
 }
 
-gfx::Size Widget::GetMaximumSize() {
+gfx::Size Widget::GetMaximumSize() const {
   return non_client_view_ ? non_client_view_->GetMaximumSize() : gfx::Size();
 }
 
 void Widget::OnNativeWidgetMove() {
   widget_delegate_->OnWidgetMove();
-  if (GetRootView()->GetFocusManager()) {
-    View* focused_view = GetRootView()->GetFocusManager()->GetFocusedView();
+  View* root = GetRootView();
+  if (root && root->GetFocusManager()) {
+    View* focused_view = root->GetFocusManager()->GetFocusedView();
     if (focused_view && focused_view->GetInputMethod())
       focused_view->GetInputMethod()->OnCaretBoundsChanged(focused_view);
   }
@@ -1117,14 +1108,15 @@ void Widget::OnNativeWidgetMove() {
 }
 
 void Widget::OnNativeWidgetSizeChanged(const gfx::Size& new_size) {
-  root_view_->SetSize(new_size);
-
-  if (GetRootView()->GetFocusManager()) {
-    View* focused_view = GetRootView()->GetFocusManager()->GetFocusedView();
-    if (focused_view && focused_view->GetInputMethod())
-      focused_view->GetInputMethod()->OnCaretBoundsChanged(focused_view);
+  View* root = GetRootView();
+  if (root) {
+    root->SetSize(new_size);
+    if (root->GetFocusManager()) {
+      View* focused_view = GetRootView()->GetFocusManager()->GetFocusedView();
+      if (focused_view && focused_view->GetInputMethod())
+        focused_view->GetInputMethod()->OnCaretBoundsChanged(focused_view);
+    }
   }
-
   // Size changed notifications can fire prior to full initialization
   // i.e. during session restore.  Avoid saving session state during these
   // startup procedures.

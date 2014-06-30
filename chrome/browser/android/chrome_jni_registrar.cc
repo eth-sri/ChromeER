@@ -16,12 +16,12 @@
 #include "chrome/browser/android/dev_tools_server.h"
 #include "chrome/browser/android/dom_distiller/feedback_reporter_android.h"
 #include "chrome/browser/android/favicon_helper.h"
-#include "chrome/browser/android/field_trial_helper.h"
 #include "chrome/browser/android/foreign_session_helper.h"
 #include "chrome/browser/android/intent_helper.h"
 #include "chrome/browser/android/logo_bridge.h"
 #include "chrome/browser/android/most_visited_sites.h"
 #include "chrome/browser/android/new_tab_page_prefs.h"
+#include "chrome/browser/android/omnibox/answers_image_bridge.h"
 #include "chrome/browser/android/omnibox/autocomplete_controller_android.h"
 #include "chrome/browser/android/omnibox/omnibox_prerender.h"
 #include "chrome/browser/android/password_authentication_manager.h"
@@ -38,6 +38,7 @@
 #include "chrome/browser/android/url_utilities.h"
 #include "chrome/browser/android/voice_search_tab_helper.h"
 #include "chrome/browser/autofill/android/personal_data_manager_android.h"
+#include "chrome/browser/dom_distiller/tab_utils_android.h"
 #include "chrome/browser/history/android/sqlite_cursor.h"
 #include "chrome/browser/invalidation/invalidation_controller_android.h"
 #include "chrome/browser/lifetime/application_lifetime_android.h"
@@ -96,6 +97,7 @@ static base::android::RegistrationMethod kChromeRegisteredMethods[] = {
   { "AccountManagementScreenHelper", AccountManagementScreenHelper::Register },
   { "AndroidProfileOAuth2TokenService",
     AndroidProfileOAuth2TokenService::Register },
+  { "AnswersImageBridge", RegisterAnswersImageBridge },
   { "AppBannerManager", banners::RegisterAppBannerManager },
   { "ApplicationLifetime", RegisterApplicationLifetimeAndroid },
   { "AutocompleteControllerAndroid", RegisterAutocompleteControllerAndroid },
@@ -124,12 +126,12 @@ static base::android::RegistrationMethod kChromeRegisteredMethods[] = {
   { "ContextMenuHelper", RegisterContextMenuHelper },
   { "DataReductionProxySettings", DataReductionProxySettingsAndroid::Register },
   { "DevToolsServer", RegisterDevToolsServer },
+  { "DomDistillerTabUtils", RegisterDomDistillerTabUtils },
   { "ExternalPrerenderRequestHandler",
       prerender::ExternalPrerenderHandlerAndroid::
       RegisterExternalPrerenderHandlerAndroid },
   { "FaviconHelper", FaviconHelper::RegisterFaviconHelper },
   { "FeedbackReporter", dom_distiller::android::RegisterFeedbackReporter },
-  { "FieldTrialHelper", RegisterFieldTrialHelper },
   { "ForeignSessionHelper",
     ForeignSessionHelper::RegisterForeignSessionHelper },
   { "InfoBarContainer", RegisterInfoBarContainer },
@@ -174,7 +176,7 @@ static base::android::RegistrationMethod kChromeRegisteredMethods[] = {
     WebsiteSettingsPopupAndroid::RegisterWebsiteSettingsPopupAndroid },
 #if defined(ENABLE_PRINTING) && !defined(ENABLE_FULL_PRINTING)
   { "PrintingContext",
-      printing::PrintingContextAndroid::RegisterPrintingContext},
+    printing::PrintingContextAndroid::RegisterPrintingContext},
 #endif
 };
 

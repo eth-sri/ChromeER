@@ -4,6 +4,8 @@
 
 #include "ash/wm/maximize_mode/maximize_mode_window_manager.h"
 
+#include <string>
+
 #include "ash/root_window_controller.h"
 #include "ash/screen_util.h"
 #include "ash/shelf/shelf_layout_manager.h"
@@ -11,6 +13,7 @@
 #include "ash/switchable_windows.h"
 #include "ash/test/ash_test_base.h"
 #include "ash/test/shell_test_api.h"
+#include "ash/wm/maximize_mode/maximize_mode_controller.h"
 #include "ash/wm/mru_window_tracker.h"
 #include "ash/wm/overview/window_selector_controller.h"
 #include "ash/wm/window_properties.h"
@@ -79,20 +82,22 @@ class MaximizeModeWindowManagerTest : public test::AshTestBase {
   // Create the Maximized mode window manager.
   ash::MaximizeModeWindowManager* CreateMaximizeModeWindowManager() {
     EXPECT_FALSE(maximize_mode_window_manager());
-    Shell::GetInstance()->EnableMaximizeModeWindowManager(true);
+    Shell::GetInstance()->maximize_mode_controller()->
+        EnableMaximizeModeWindowManager(true);
     return maximize_mode_window_manager();
   }
 
   // Destroy the maximized mode window manager.
   void DestroyMaximizeModeWindowManager() {
-    Shell::GetInstance()->EnableMaximizeModeWindowManager(false);
+    Shell::GetInstance()->maximize_mode_controller()->
+        EnableMaximizeModeWindowManager(false);
     EXPECT_FALSE(maximize_mode_window_manager());
   }
 
   // Get the maximze window manager.
   ash::MaximizeModeWindowManager* maximize_mode_window_manager() {
-    test::ShellTestApi test_api(Shell::GetInstance());
-    return test_api.maximize_mode_window_manager();
+    return Shell::GetInstance()->maximize_mode_controller()->
+        maximize_mode_window_manager_.get();
   }
 
   // Resize our desktop.
@@ -735,7 +740,8 @@ TEST_F(MaximizeModeWindowManagerTest, TestMinimize) {
                                   rect));
   wm::WindowState* window_state = wm::GetWindowState(window.get());
   EXPECT_EQ(rect.ToString(), window->bounds().ToString());
-  ash::Shell::GetInstance()->EnableMaximizeModeWindowManager(true);
+  ash::Shell::GetInstance()->maximize_mode_controller()->
+      EnableMaximizeModeWindowManager(true);
   EXPECT_TRUE(window_state->IsMaximized());
   EXPECT_FALSE(window_state->IsMinimized());
   EXPECT_TRUE(window->IsVisible());
@@ -750,7 +756,8 @@ TEST_F(MaximizeModeWindowManagerTest, TestMinimize) {
   EXPECT_FALSE(window_state->IsMinimized());
   EXPECT_TRUE(window->IsVisible());
 
-  ash::Shell::GetInstance()->EnableMaximizeModeWindowManager(false);
+  ash::Shell::GetInstance()->maximize_mode_controller()->
+      EnableMaximizeModeWindowManager(false);
   EXPECT_FALSE(window_state->IsMaximized());
   EXPECT_FALSE(window_state->IsMinimized());
   EXPECT_TRUE(window->IsVisible());
@@ -950,7 +957,8 @@ TEST_F(MaximizeModeWindowManagerTest, TryToDesktopSizeDragUnmaximizable) {
 
   // 2. Check that turning on the manager will stop allowing the window from
   // dragging.
-  ash::Shell::GetInstance()->EnableMaximizeModeWindowManager(true);
+  ash::Shell::GetInstance()->maximize_mode_controller()->
+      EnableMaximizeModeWindowManager(true);
   gfx::Rect center_bounds(window->bounds());
   EXPECT_NE(rect.origin().ToString(), center_bounds.origin().ToString());
   generator.MoveMouseTo(gfx::Point(center_bounds.x() + 1,
@@ -961,7 +969,8 @@ TEST_F(MaximizeModeWindowManagerTest, TryToDesktopSizeDragUnmaximizable) {
   generator.ReleaseLeftButton();
   EXPECT_EQ(center_bounds.x(), window->bounds().x());
   EXPECT_EQ(center_bounds.y(), window->bounds().y());
-  ash::Shell::GetInstance()->EnableMaximizeModeWindowManager(false);
+  ash::Shell::GetInstance()->maximize_mode_controller()->
+      EnableMaximizeModeWindowManager(false);
 
   // 3. Releasing the mazimize manager again will restore the window to its
   // previous bounds and
@@ -1151,6 +1160,71 @@ TEST_F(MaximizeModeWindowManagerTest, ExitFullScreenWithEdgeTouchAtBottom) {
       gfx::Point(100, Shell::GetPrimaryRootWindow()->bounds().bottom() - 1));
   EXPECT_FALSE(foreground_window_state->IsFullscreen());
   EXPECT_TRUE(background_window_state->IsFullscreen());
+
+  DestroyMaximizeModeWindowManager();
+}
+
+// Test that an edge swipe from the top on an immersive mode window will not end
+// full screen mode.
+TEST_F(MaximizeModeWindowManagerTest, NoExitImmersiveModeWithEdgeSwipeFromTop) {
+  scoped_ptr<aura::Window> window(CreateWindow(ui::wm::WINDOW_TYPE_NORMAL,
+                                  gfx::Rect(10, 10, 200, 50)));
+  wm::WindowState* window_state = wm::GetWindowState(window.get());
+  wm::ActivateWindow(window.get());
+  CreateMaximizeModeWindowManager();
+
+  // Fullscreen the window.
+  wm::WMEvent event(wm::WM_EVENT_TOGGLE_FULLSCREEN);
+  window_state->OnWMEvent(&event);
+  EXPECT_TRUE(window_state->IsFullscreen());
+  EXPECT_FALSE(window_state->in_immersive_fullscreen());
+  EXPECT_EQ(window.get(), wm::GetActiveWindow());
+
+  window_state->set_in_immersive_fullscreen(true);
+
+  // Do an edge swipe top into screen.
+  aura::test::EventGenerator generator(Shell::GetPrimaryRootWindow());
+  generator.GestureScrollSequence(gfx::Point(50, 0),
+                                  gfx::Point(50, 100),
+                                  base::TimeDelta::FromMilliseconds(20),
+                                  10);
+
+  // It should have not exited full screen or immersive mode.
+  EXPECT_TRUE(window_state->IsFullscreen());
+  EXPECT_TRUE(window_state->in_immersive_fullscreen());
+
+  DestroyMaximizeModeWindowManager();
+}
+
+// Test that an edge swipe from the bottom will not end immersive mode.
+TEST_F(MaximizeModeWindowManagerTest,
+       NoExitImmersiveModeWithEdgeSwipeFromBottom) {
+  scoped_ptr<aura::Window> window(CreateWindow(ui::wm::WINDOW_TYPE_NORMAL,
+                                               gfx::Rect(10, 10, 200, 50)));
+  wm::WindowState* window_state = wm::GetWindowState(window.get());
+  wm::ActivateWindow(window.get());
+  CreateMaximizeModeWindowManager();
+
+  // Fullscreen the window.
+  wm::WMEvent event(wm::WM_EVENT_TOGGLE_FULLSCREEN);
+  window_state->OnWMEvent(&event);
+  EXPECT_TRUE(window_state->IsFullscreen());
+  EXPECT_FALSE(window_state->in_immersive_fullscreen());
+  EXPECT_EQ(window.get(), wm::GetActiveWindow());
+  window_state->set_in_immersive_fullscreen(true);
+  EXPECT_TRUE(window_state->in_immersive_fullscreen());
+
+  // Do an edge swipe bottom into screen.
+  aura::test::EventGenerator generator(Shell::GetPrimaryRootWindow());
+  int y = Shell::GetPrimaryRootWindow()->bounds().bottom();
+  generator.GestureScrollSequence(gfx::Point(50, y),
+                                  gfx::Point(50, y - 100),
+                                  base::TimeDelta::FromMilliseconds(20),
+                                  10);
+
+  // The window should still be full screen and immersive.
+  EXPECT_TRUE(window_state->IsFullscreen());
+  EXPECT_TRUE(window_state->in_immersive_fullscreen());
 
   DestroyMaximizeModeWindowManager();
 }

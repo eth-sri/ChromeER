@@ -13,6 +13,8 @@
       "compositor_unittests",
       "crypto_unittests",
       "dbus_unittests",
+      "display_unittests",
+      "extensions_unittests",
       "gcm_unit_tests",
       "gfx_unittests",
       "google_apis_unittests",
@@ -37,7 +39,6 @@
       "sql_unittests",
       "browser_tests",
       "content_browsertests",
-      "webkit_compositor_bindings_unittests",
       "mojo_apps_js_unittests",
       "mojo_common_unittests",
       "mojo_js_unittests",
@@ -46,6 +47,7 @@
       "mojo_public_system_unittests",
       "mojo_public_utility_unittests",
       "mojo_service_manager_unittests",
+      "mojo_shell_tests",
       "mojo_system_unittests",
       "nacl_loader_unittests"
     ]
@@ -64,6 +66,8 @@
       "compositor_unittests",
       "crypto_unittests",
       "dbus_unittests",
+      "display_unittests",
+      "extensions_unittests",
       "gcm_unit_tests",
       "gfx_unittests",
       "google_apis_unittests",
@@ -88,7 +92,6 @@
       "sql_unittests",
       "browser_tests",
       "content_browsertests",
-      "webkit_compositor_bindings_unittests",
       "mojo_apps_js_unittests",
       "mojo_common_unittests",
       "mojo_js_unittests",
@@ -97,6 +100,7 @@
       "mojo_public_system_unittests",
       "mojo_public_utility_unittests",
       "mojo_service_manager_unittests",
+      "mojo_shell_tests",
       "mojo_system_unittests",
       "nacl_loader_unittests"
     ]
@@ -115,6 +119,8 @@
       "compositor_unittests",
       "crypto_unittests",
       "dbus_unittests",
+      "display_unittests",
+      "extensions_unittests",
       "gcm_unit_tests",
       "gfx_unittests",
       "google_apis_unittests",
@@ -139,7 +145,6 @@
       "sql_unittests",
       "browser_tests",
       "content_browsertests",
-      "webkit_compositor_bindings_unittests",
       "mojo_apps_js_unittests",
       "mojo_common_unittests",
       "mojo_js_unittests",
@@ -148,6 +153,7 @@
       "mojo_public_system_unittests",
       "mojo_public_utility_unittests",
       "mojo_service_manager_unittests",
+      "mojo_shell_tests",
       "mojo_system_unittests",
       "nacl_loader_unittests"
     ]
@@ -166,6 +172,8 @@
       "compositor_unittests",
       "crypto_unittests",
       "dbus_unittests",
+      "display_unittests",
+      "extensions_unittests",
       "gcm_unit_tests",
       "gfx_unittests",
       "google_apis_unittests",
@@ -190,7 +198,6 @@
       "sql_unittests",
       "browser_tests",
       "content_browsertests",
-      "webkit_compositor_bindings_unittests",
       "mojo_apps_js_unittests",
       "mojo_common_unittests",
       "mojo_js_unittests",
@@ -199,8 +206,49 @@
       "mojo_public_system_unittests",
       "mojo_public_utility_unittests",
       "mojo_service_manager_unittests",
+      "mojo_shell_tests",
       "mojo_system_unittests",
       "nacl_loader_unittests"
+    ]
+  },
+  "Linux ARM Cross-Compile": {
+    "compile_targets": [
+      "browser_tests_run"
+    ],
+    "gtest_tests": [
+      "browser_tests"
+    ]
+  },
+  "Chromium Linux MSan": {
+    "gtest_tests": [
+      "base_unittests",
+      "browser_tests",
+      "cacheinvalidation_unittests",
+      "cc_unittests",
+      "content_browsertests",
+      "content_unittests",
+      "crypto_unittests",
+      "device_unittests",
+      "gpu_unittests",
+      "interactive_ui_tests",
+      "ipc_tests",
+      "jingle_unittests",
+      "media_unittests",
+      "net_unittests",
+      "ppapi_unittests",
+      "printing_unittests",
+      "remoting_unittests",
+      "sandbox_linux_unittests",
+      "sql_unittests",
+      "sync_unit_tests",
+      "ui_unittests",
+      "unit_tests",
+      "url_unittests"
+    ]
+  },
+  "Chromium Linux MSan (browser tests)": {
+    "gtest_tests": [
+      "browser_tests"
     ]
   }
 }

@@ -30,6 +30,7 @@
 #include "components/storage_monitor/media_storage_util.h"
 #include "components/storage_monitor/storage_monitor.h"
 #include "content/public/browser/browser_thread.h"
+#include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/pref_names.h"
 #include "extensions/common/extension.h"
@@ -95,10 +96,12 @@ int NumberExtensionsUsingMediaGalleries(Profile* profile) {
   const extensions::ExtensionSet* extensions = extension_service->extensions();
   for (extensions::ExtensionSet::const_iterator i = extensions->begin();
        i != extensions->end(); ++i) {
-    if (extensions::PermissionsData::HasAPIPermission(
-            *i, extensions::APIPermission::kMediaGalleries) ||
-        extensions::PermissionsData::HasAPIPermission(
-            *i, extensions::APIPermission::kMediaGalleriesPrivate)) {
+    const extensions::PermissionsData* permissions_data =
+        (*i)->permissions_data();
+    if (permissions_data->HasAPIPermission(
+            extensions::APIPermission::kMediaGalleries) ||
+        permissions_data->HasAPIPermission(
+            extensions::APIPermission::kMediaGalleriesPrivate)) {
       count++;
     }
   }
@@ -276,8 +279,8 @@ base::DictionaryValue* CreateGalleryPrefInfoDictionary(
 bool HasAutoDetectedGalleryPermission(const extensions::Extension& extension) {
   extensions::MediaGalleriesPermission::CheckParam param(
       extensions::MediaGalleriesPermission::kAllAutoDetectedPermission);
-  return extensions::PermissionsData::CheckAPIPermissionWithParam(
-      &extension, extensions::APIPermission::kMediaGalleries, &param);
+  return extension.permissions_data()->CheckAPIPermissionWithParam(
+      extensions::APIPermission::kMediaGalleries, &param);
 }
 
 // Retrieves the MediaGalleryPermission from the given dictionary; DCHECKs on
@@ -665,6 +668,18 @@ bool MediaGalleriesPreferences::LookUpGalleryByPath(
     const base::FilePath& path,
     MediaGalleryPrefInfo* gallery_info) const {
   DCHECK(IsInitialized());
+
+  // First check if the path matches an imported gallery.
+  for (MediaGalleriesPrefInfoMap::const_iterator it =
+           known_galleries_.begin(); it != known_galleries_.end(); ++it) {
+    const std::string& device_id = it->second.device_id;
+    if (iapps::PathIndicatesIPhotoLibrary(device_id, path) ||
+        iapps::PathIndicatesITunesLibrary(device_id, path)) {
+      *gallery_info = it->second;
+      return true;
+    }
+  }
+
   StorageInfo info;
   base::FilePath relative_path;
   if (!MediaStorageUtil::GetDeviceInfoFromPath(path, &info, &relative_path)) {
@@ -1028,7 +1043,8 @@ MediaGalleryPrefIdSet MediaGalleriesPreferences::GalleriesForExtension(
     } else {
       MediaGalleriesPrefInfoMap::const_iterator gallery =
           known_galleries_.find(it->pref_id);
-      DCHECK(gallery != known_galleries_.end());
+      // TODO(tommycli): Change to DCHECK after fixing http://crbug.com/374330.
+      CHECK(gallery != known_galleries_.end());
       if (!gallery->second.IsBlackListedType()) {
         result.insert(it->pref_id);
       } else {

@@ -275,9 +275,6 @@ class BrowserOptionsHandler
   // Callback for "requestHotwordAvailable" message.
   void HandleRequestHotwordAvailable(const base::ListValue* args);
 
-  // Callback for "requestHotwordSetupRetry" message.
-  void HandleRequestHotwordSetupRetry(const base::ListValue* args);
-
   // Callback for "launchEasyUnlockSetup" message.
   void HandleLaunchEasyUnlockSetup(const base::ListValue* args);
 
@@ -296,9 +293,6 @@ class BrowserOptionsHandler
   // Called when the user confirmed factory reset. Chrome will
   // initiate asynchronous file operation and then log out.
   void PerformFactoryResetRestart(const base::ListValue* args);
-
-  // Called when the consumer management enroll button is clicked.
-  void HandleEnrollConsumerManagement(const base::ListValue* args);
 #endif
 
   // Setup the visibility for the metrics reporting setting.

@@ -71,6 +71,10 @@
         'gl_export.h',
         'gl_fence.cc',
         'gl_fence.h',
+        'gl_fence_arb.cc',
+        'gl_fence_arb.h',
+        'gl_fence_nv.cc',
+        'gl_fence_nv.h',
         'gl_gl_api_implementation.cc',
         'gl_gl_api_implementation.h',
         'gl_image.cc',
@@ -114,8 +118,6 @@
         'gl_version_info.h',
         'gpu_switching_manager.cc',
         'gpu_switching_manager.h',
-        'io_surface_support_mac.cc',
-        'io_surface_support_mac.h',
         'scoped_binders.cc',
         'scoped_binders.h',
         'scoped_make_current.cc',
@@ -138,7 +140,7 @@
           'variables': {
             'generator_path': 'generate_bindings.py',
             # Prefer khronos EGL/GLES headers by listing that path first.
-            'header_paths': '../../third_party/khronos:../../third_party/mesa/src/include',
+            'header_paths': '../../third_party/khronos:../../third_party/mesa/src/include:.:../../gpu',
           },
           'inputs': [
             '<(generator_path)',
@@ -179,6 +181,8 @@
             'egl_util.h',
             'gl_context_egl.cc',
             'gl_context_egl.h',
+            'gl_fence_egl.cc',
+            'gl_fence_egl.h',
             'gl_image_egl.cc',
             'gl_image_egl.h',
             'gl_surface_egl.cc',
@@ -222,6 +226,7 @@
             '<(DEPTH)/build/linux/system.gyp:x11',
             '<(DEPTH)/build/linux/system.gyp:xcomposite',
             '<(DEPTH)/build/linux/system.gyp:xext',
+            '<(DEPTH)/ui/events/platform/events_platform.gyp:events_platform',
             '<(DEPTH)/ui/gfx/x/gfx_x11.gyp:gfx_x11',
           ],
         }],
@@ -260,13 +265,12 @@
             'gl_context_cgl.h',
             'gl_image_io_surface.cc',
             'gl_image_io_surface.h',
-            'gl_surface_cgl.cc',
-            'gl_surface_cgl.h',
             'scoped_cgl.cc',
             'scoped_cgl.h',
           ],
           'link_settings': {
             'libraries': [
+              '$(SDKROOT)/System/Library/Frameworks/IOSurface.framework',
               '$(SDKROOT)/System/Library/Frameworks/OpenGL.framework',
             ],
           },
@@ -299,8 +303,8 @@
         }],
         ['use_ozone==1', {
           'dependencies': [
-            '../gfx/ozone/gfx_ozone.gyp:gfx_ozone',
             '../ozone/ozone.gyp:ozone',
+            '../ozone/ozone.gyp:ozone_base',
           ],
         }],
         ['OS=="android" and android_webview_build==0', {

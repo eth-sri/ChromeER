@@ -98,7 +98,7 @@ cr.define('local_discovery', function() {
 
       this.registerButton = fillDeviceDescription(
         this.domElement,
-        this.info.human_readable_name,
+        this.info.display_name,
         this.info.description,
         this.info.type,
         loadTimeData.getString('serviceRegister'),
@@ -130,7 +130,7 @@ cr.define('local_discovery', function() {
       recordUmaEvent(DEVICES_PAGE_EVENTS.REGISTER_CLICKED);
       $('register-message').textContent = loadTimeData.getStringF(
         'registerConfirmMessage',
-        this.info.human_readable_name);
+        this.info.display_name);
       $('register-continue-button').onclick = this.register.bind(this);
       showRegisterOverlay();
     },
@@ -604,6 +604,13 @@ cr.define('local_discovery', function() {
     $('register-overlay-login-button').addEventListener(
       'click',
       registerOverlayLoginButtonClicked);
+
+    if (loadTimeData.valueExists('backButtonURL')) {
+      $('back-button').hidden = false;
+      $('back-button').addEventListener('click', function() {
+        window.location.href = loadTimeData.getString('backButtonURL');
+      });
+    }
 
     updateVisibility();
     document.addEventListener('visibilitychange', updateVisibility, false);

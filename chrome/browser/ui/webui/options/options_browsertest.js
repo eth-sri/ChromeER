@@ -287,15 +287,11 @@ TEST_F('OptionsWebUITest', 'emptySelectedIndexesDoesntCrash', function() {
   setTimeout(testDone);
 });
 
-// Flaky on win. See http://crbug.com/315250
-GEN('#if defined(OS_WIN)');
-GEN('#define MAYBE_OverlayShowDoesntShift DISABLED_OverlayShowDoesntShift');
-GEN('#else');
-GEN('#define MAYBE_OverlayShowDoesntShift OverlayShowDoesntShift');
-GEN('#endif  // defined(OS_WIN)');
+// This test turns out to be flaky on all platforms.
+// See http://crbug.com/315250.
 
 // An overlay's position should remain the same as it shows.
-TEST_F('OptionsWebUITest', 'MAYBE_OverlayShowDoesntShift', function() {
+TEST_F('OptionsWebUITest', 'DISABLED_OverlayShowDoesntShift', function() {
   var overlayName = 'startup';
   var overlay = $('startup-overlay');
   var frozenPages = document.getElementsByClassName('frozen');  // Gets updated.
@@ -636,6 +632,21 @@ TEST_F('OptionsWebUIExtendedTest', 'CloseOverlay', function() {
   });
 });
 
+// Test that closing an overlay that did not push history when opening does not
+// again push history.
+TEST_F('OptionsWebUIExtendedTest', 'CloseOverlayNoHistory', function() {
+  // Open the do not track confirmation prompt.
+  OptionsPage.showPageByName('doNotTrackConfirm', false);
+
+  // Opening the prompt does not add to the history.
+  this.verifyHistory_([''], function() {
+    // Close the overlay.
+    OptionsPage.closeOverlay();
+    // Still no history changes.
+    this.verifyHistory_([''], testDone);
+  }.bind(this));
+});
+
 // Make sure an overlay isn't closed (even temporarily) when another overlay is
 // opened on top.
 TEST_F('OptionsWebUIExtendedTest', 'OverlayAboveNoReset', function() {
@@ -766,4 +777,25 @@ TEST_F('OptionsWebUIExtendedTest', 'SupervisingUsers', function() {
       testDone();
     });
   });
+});
+
+/**
+ * TestFixture that loads the options page at a bogus URL.
+ * @extends {OptionsWebUIExtendedTest}
+ * @constructor
+ */
+function OptionsWebUIRedirectTest() {
+  OptionsWebUIExtendedTest.call(this);
+}
+
+OptionsWebUIRedirectTest.prototype = {
+  __proto__: OptionsWebUIExtendedTest.prototype,
+
+  /** @override */
+  browsePreload: 'chrome://settings-frame/nonexistantPage',
+};
+
+TEST_F('OptionsWebUIRedirectTest', 'TestURL', function() {
+  assertEquals('chrome://settings-frame/', document.location.href);
+  this.verifyHistory_([''], testDone);
 });

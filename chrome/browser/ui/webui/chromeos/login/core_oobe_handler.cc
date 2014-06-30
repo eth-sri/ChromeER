@@ -5,11 +5,13 @@
 #include "chrome/browser/ui/webui/chromeos/login/core_oobe_handler.h"
 
 #include "ash/magnifier/magnifier_constants.h"
+#include "ash/shell.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
 #include "chrome/browser/chromeos/accessibility/magnification_manager.h"
+#include "chrome/browser/chromeos/login/helper.h"
 #include "chrome/browser/chromeos/login/ui/login_display_host_impl.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
@@ -23,6 +25,10 @@
 #include "chromeos/chromeos_constants.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
+#include "ui/gfx/display.h"
+#include "ui/gfx/screen.h"
+#include "ui/gfx/size.h"
+#include "ui/keyboard/keyboard_controller.h"
 
 namespace {
 
@@ -103,6 +109,8 @@ void CoreOobeHandler::Initialize() {
   version_info_updater_.StartUpdate(false);
 #endif
   UpdateDeviceRequisition();
+  UpdateKeyboardState();
+  UpdateClientAreaSize();
 }
 
 void CoreOobeHandler::RegisterMessages() {
@@ -160,8 +168,11 @@ void CoreOobeHandler::ShowDeviceResetScreen() {
       wizard_controller->AdvanceToScreen(WizardController::kResetScreenName);
     } else {
       scoped_ptr<base::DictionaryValue> params(new base::DictionaryValue());
-      LoginDisplayHostImpl::default_host()->StartWizard(
-          WizardController::kResetScreenName, params.Pass());
+      DCHECK(LoginDisplayHostImpl::default_host());
+      if (LoginDisplayHostImpl::default_host()) {
+        LoginDisplayHostImpl::default_host()->StartWizard(
+            WizardController::kResetScreenName, params.Pass());
+      }
     }
   }
 }
@@ -180,10 +191,6 @@ void CoreOobeHandler::ClearUserPodPassword() {
 
 void CoreOobeHandler::RefocusCurrentPod() {
   CallJS("refocusCurrentPod");
-}
-
-void CoreOobeHandler::OnLoginSuccess(const std::string& username) {
-  CallJS("onLoginSuccess", username);
 }
 
 void CoreOobeHandler::ShowPasswordChangedScreen(bool show_password_error) {
@@ -212,6 +219,14 @@ void CoreOobeHandler::ReloadContent(const base::DictionaryValue& dictionary) {
 
 void CoreOobeHandler::ShowControlBar(bool show) {
   CallJS("showControlBar", show);
+}
+
+void CoreOobeHandler::SetKeyboardState(bool shown, const gfx::Rect& bounds) {
+  CallJS("setKeyboardState", shown, bounds.width(), bounds.height());
+}
+
+void CoreOobeHandler::SetClientAreaSize(int width, int height) {
+  CallJS("setClientAreaSize", width, height);
 }
 
 void CoreOobeHandler::HandleInitialized() {
@@ -345,6 +360,23 @@ void CoreOobeHandler::UpdateDeviceRequisition() {
          connector->GetDeviceCloudPolicyManager()->GetDeviceRequisition());
 }
 
+void CoreOobeHandler::UpdateKeyboardState() {
+  if (!login::LoginScrollIntoViewEnabled())
+    return;
+
+  keyboard::KeyboardController* keyboard_controller =
+      keyboard::KeyboardController::GetInstance();
+  if (keyboard_controller) {
+    gfx::Rect bounds = keyboard_controller->current_keyboard_bounds();
+    SetKeyboardState(!bounds.IsEmpty(), bounds);
+  }
+}
+
+void CoreOobeHandler::UpdateClientAreaSize() {
+  const gfx::Size& size = ash::Shell::GetScreen()->GetPrimaryDisplay().size();
+  SetClientAreaSize(size.width(), size.height());
+}
+
 void CoreOobeHandler::OnAccessibilityStatusChanged(
     const AccessibilityStatusEventDetails& details) {
   if (details.notification_type == ACCESSIBILITY_MANAGER_SHUTDOWN)
@@ -364,6 +396,14 @@ void CoreOobeHandler::HandleHeaderBarVisible() {
   LoginDisplayHost* login_display_host = LoginDisplayHostImpl::default_host();
   if (login_display_host)
     login_display_host->SetStatusAreaVisible(true);
+}
+
+void CoreOobeHandler::InitDemoModeDetection() {
+  demo_mode_detector_.InitDetection();
+}
+
+void CoreOobeHandler::StopDemoModeDetection() {
+  demo_mode_detector_.StopDetection();
 }
 
 }  // namespace chromeos

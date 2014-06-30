@@ -7,6 +7,7 @@ import glob
 import heapq
 import logging
 import os
+import os.path
 import shutil
 import subprocess as subprocess
 import sys
@@ -27,7 +28,7 @@ class DesktopBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
   def __init__(self, browser_options, executable, flash_path, is_content_shell,
                browser_directory, output_profile_path, extensions_to_load):
     super(DesktopBrowserBackend, self).__init__(
-        is_content_shell=is_content_shell,
+        supports_tab_control=not is_content_shell,
         supports_extensions=not is_content_shell,
         browser_options=browser_options,
         output_profile_path=output_profile_path,
@@ -42,13 +43,10 @@ class DesktopBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
     if not self._executable:
       raise Exception('Cannot create browser, no executable found!')
 
+    assert not flash_path or os.path.exists(flash_path)
     self._flash_path = flash_path
-    if (browser_options.warn_if_no_flash
-        and self._flash_path and not os.path.exists(self._flash_path)):
-      logging.warning(('Could not find flash at %s. Running without flash.\n\n'
-                       'To fix this see http://go/read-src-internal') %
-                      self._flash_path)
-      self._flash_path = None
+
+    self._is_content_shell = is_content_shell
 
     if len(extensions_to_load) > 0 and is_content_shell:
       raise browser_backend.ExtensionsNotSupportedException(
@@ -73,12 +71,26 @@ class DesktopBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
         self._tmp_profile_dir = tempfile.mkdtemp()
       profile_dir = self._profile_dir or self.browser_options.profile_dir
       if profile_dir:
-        if self.is_content_shell:
+        if self._is_content_shell:
           logging.critical('Profiles cannot be used with content shell')
           sys.exit(1)
         logging.info("Using profile directory:'%s'." % profile_dir)
         shutil.rmtree(self._tmp_profile_dir)
         shutil.copytree(profile_dir, self._tmp_profile_dir)
+    if self.browser_options.use_devtools_active_port:
+      # No matter whether we're using an existing profile directory or
+      # creating a new one, always delete the well-known file containing
+      # the active DevTools port number.
+      port_file = self._GetDevToolsActivePortPath()
+      if os.path.isfile(port_file):
+        try:
+          os.remove(port_file)
+        except Exception as e:
+          logging.critical('Unable to remove DevToolsActivePort file: %s' % e)
+          sys.exit(1)
+
+  def _GetDevToolsActivePortPath(self):
+    return os.path.join(self.profile_directory, 'DevToolsActivePort')
 
   def _GetCrashServicePipeName(self):
     # Ensure a unique pipe name by using the name of the temp dir.
@@ -124,15 +136,42 @@ class DesktopBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
     if not self.IsBrowserRunning():
       raise exceptions.ProcessGoneException(
           "Return code: %d" % self._proc.returncode)
+    if self.browser_options.use_devtools_active_port:
+      # The Telemetry user selected the new code path to start DevTools on
+      # an ephemeral port. Wait for the well-known file containing the port
+      # number to exist.
+      port_file = self._GetDevToolsActivePortPath()
+      if not os.path.isfile(port_file):
+        # File isn't ready yet. Return false. Will retry.
+        return False
+      # Attempt to avoid reading the file until it's populated.
+      got_port = False
+      try:
+        if os.stat(port_file).st_size > 0:
+          with open(port_file) as f:
+            port_string = f.read()
+            self._port = int(port_string)
+            logging.info('Discovered ephemeral port %s' % self._port)
+            got_port = True
+      except Exception:
+        # Both stat and open can throw exceptions.
+        pass
+      if not got_port:
+        # File isn't ready yet. Return false. Will retry.
+        return False
     return super(DesktopBrowserBackend, self).HasBrowserFinishedLaunching()
 
   def GetBrowserStartupArgs(self):
     args = super(DesktopBrowserBackend, self).GetBrowserStartupArgs()
-    self._port = util.GetUnreservedAvailableLocalPort()
+    if self.browser_options.use_devtools_active_port:
+      self._port = 0
+    else:
+      self._port = util.GetUnreservedAvailableLocalPort()
+    logging.info('Requested remote debugging port: %d' % self._port)
     args.append('--remote-debugging-port=%i' % self._port)
     args.append('--enable-crash-reporter-for-testing')
     args.append('--use-mock-keychain')
-    if not self.is_content_shell:
+    if not self._is_content_shell:
       args.append('--window-size=1280,1024')
       if self._flash_path:
         args.append('--ppapi-flash-path=%s' % self._flash_path)
@@ -144,7 +183,7 @@ class DesktopBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
     # Make sure _profile_dir hasn't already been set.
     assert self._profile_dir is None
 
-    if self.is_content_shell:
+    if self._is_content_shell:
       logging.critical('Profile creation cannot be used with content shell')
       sys.exit(1)
 
@@ -172,7 +211,6 @@ class DesktopBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
 
     try:
       self._WaitForBrowserToComeUp()
-      self._PostBrowserStartupInitialization()
     except:
       self.Close()
       raise

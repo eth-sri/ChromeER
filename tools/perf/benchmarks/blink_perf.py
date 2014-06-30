@@ -1,10 +1,10 @@
-# Copyright (c) 2013 The Chromium Authors. All rights reserved.
+# Copyright 2013 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
 import os
 
-from telemetry import test
+from telemetry import benchmark
 from telemetry.core import util
 from telemetry.page import page_measurement
 from telemetry.page import page_set
@@ -93,7 +93,7 @@ class _BlinkPerfMeasurement(page_measurement.PageMeasurement):
     print log
 
 
-class BlinkPerfAll(test.Test):
+class BlinkPerfAll(benchmark.Benchmark):
   tag = 'all'
   test = _BlinkPerfMeasurement
 
@@ -102,7 +102,9 @@ class BlinkPerfAll(test.Test):
         'third_party', 'WebKit', 'PerformanceTests')
     return _CreatePageSetFromPath(path)
 
-class BlinkPerfAnimation(test.Test):
+
+@benchmark.Disabled
+class BlinkPerfAnimation(benchmark.Benchmark):
   tag = 'animation'
   test = _BlinkPerfMeasurement
 

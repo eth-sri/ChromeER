@@ -13,13 +13,14 @@
 #include "base/prefs/pref_registry_simple.h"
 #include "base/prefs/pref_service.h"
 #include "base/sys_info.h"
+#include "base/task_runner_util.h"
 #include "base/timer/elapsed_timer.h"
 #include "base/version.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/metrics/metrics_state_manager.h"
-#include "chrome/browser/network_time/network_time_tracker.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
+#include "components/metrics/metrics_state_manager.h"
+#include "components/network_time/network_time_tracker.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/variations/proto/variations_seed.pb.h"
 #include "components/variations/variations_seed_processor.h"
@@ -36,6 +37,10 @@
 #include "net/url_request/url_request_status.h"
 #include "ui/base/device_form_factor.h"
 #include "url/gurl.h"
+
+#if !defined(OS_ANDROID) && !defined(OS_IOS) && !defined(OS_CHROMEOS)
+#include "chrome/browser/upgrade_detector_impl.h"
+#endif
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/settings/cros_settings.h"
@@ -107,6 +112,21 @@ std::string GetPlatformString() {
 #else
 #error Unknown platform
 #endif
+}
+
+// Gets the version number to use for variations seed simulation. Must be called
+// on a thread where IO is allowed.
+base::Version GetVersionForSimulation() {
+#if !defined(OS_ANDROID) && !defined(OS_IOS) && !defined(OS_CHROMEOS)
+  const base::Version installed_version =
+      UpgradeDetectorImpl::GetCurrentlyInstalledVersion();
+  if (installed_version.IsValid())
+    return installed_version;
+#endif  // !defined(OS_ANDROID) && !defined(OS_IOS) && !defined(OS_CHROMEOS)
+
+  // TODO(asvitkine): Get the version that will be used on restart instead of
+  // the current version on Android, iOS and ChromeOS.
+  return base::Version(chrome::VersionInfo().Version());
 }
 
 // Gets the restrict parameter from |policy_pref_service| or from Chrome OS
@@ -209,8 +229,8 @@ VariationsService::VariationsService(
       seed_store_(local_state),
       create_trials_from_seed_called_(false),
       initial_request_completed_(false),
-      resource_request_allowed_notifier_(
-          new ResourceRequestAllowedNotifier) {
+      resource_request_allowed_notifier_(new ResourceRequestAllowedNotifier),
+      weak_ptr_factory_(this) {
   resource_request_allowed_notifier_->Init(this);
 }
 
@@ -224,7 +244,8 @@ VariationsService::VariationsService(
       seed_store_(local_state),
       create_trials_from_seed_called_(false),
       initial_request_completed_(false),
-      resource_request_allowed_notifier_(notifier) {
+      resource_request_allowed_notifier_(notifier),
+      weak_ptr_factory_(this) {
   resource_request_allowed_notifier_->Init(this);
 }
 
@@ -288,6 +309,14 @@ void VariationsService::StartRepeatedVariationsSeedFetch() {
   request_scheduler_->Start();
 }
 
+void VariationsService::AddObserver(Observer* observer) {
+  observer_list_.AddObserver(observer);
+}
+
+void VariationsService::RemoveObserver(Observer* observer) {
+  observer_list_.RemoveObserver(observer);
+}
+
 // TODO(rkaplow): Handle this and the similar event in metrics_service by
 // observing an 'OnAppEnterForeground' event in RequestScheduler instead of
 // requiring the frontend code to notify each service individually. Since the
@@ -295,6 +324,16 @@ void VariationsService::StartRepeatedVariationsSeedFetch() {
 // know details of this anymore.
 void VariationsService::OnAppEnterForeground() {
   request_scheduler_->OnAppEnterForeground();
+}
+
+#if defined(OS_WIN)
+void VariationsService::StartGoogleUpdateRegistrySync() {
+  registry_syncer_.RequestRegistrySync();
+}
+#endif
+
+void VariationsService::SetCreateTrialsFromSeedCalledForTesting(bool called) {
+  create_trials_from_seed_called_ = called;
 }
 
 // static
@@ -319,16 +358,6 @@ GURL VariationsService::GetVariationsServerURL(
 
   DCHECK(server_url.is_valid());
   return server_url;
-}
-
-#if defined(OS_WIN)
-void VariationsService::StartGoogleUpdateRegistrySync() {
-  registry_syncer_.RequestRegistrySync();
-}
-#endif
-
-void VariationsService::SetCreateTrialsFromSeedCalledForTesting(bool called) {
-  create_trials_from_seed_called_ = called;
 }
 
 // static
@@ -404,9 +433,9 @@ void VariationsService::DoActualFetch() {
 void VariationsService::StoreSeed(const std::string& seed_data,
                                   const std::string& seed_signature,
                                   const base::Time& date_fetched) {
-  VariationsSeed seed;
+  scoped_ptr<VariationsSeed> seed(new VariationsSeed);
   if (!seed_store_.StoreSeedData(seed_data, seed_signature, date_fetched,
-                                 &seed)) {
+                                 seed.get())) {
     return;
   }
   RecordLastFetchTime();
@@ -416,35 +445,12 @@ void VariationsService::StoreSeed(const std::string& seed_data,
   if (!state_manager_)
     return;
 
-  const base::ElapsedTimer timer;
-
-  // TODO(asvitkine): Get the version that will be used on restart instead of
-  // the current version (i.e. if an update has been downloaded).
-  const chrome::VersionInfo current_version_info;
-  if (!current_version_info.is_valid())
-    return;
-
-  const base::Version current_version(current_version_info.Version());
-  if (!current_version.IsValid())
-    return;
-
-  scoped_ptr<const base::FieldTrial::EntropyProvider> entropy_provider =
-      state_manager_->CreateEntropyProvider();
-  VariationsSeedSimulator seed_simulator(*entropy_provider);
-
-  VariationsSeedSimulator::Result result = seed_simulator.SimulateSeedStudies(
-      seed, g_browser_process->GetApplicationLocale(),
-      GetReferenceDateForExpiryChecks(local_state_), current_version,
-      GetChannelForVariations(), GetCurrentFormFactor(), GetHardwareClass());
-
-  UMA_HISTOGRAM_COUNTS_100("Variations.SimulateSeed.NormalChanges",
-                           result.normal_group_change_count);
-  UMA_HISTOGRAM_COUNTS_100("Variations.SimulateSeed.KillBestEffortChanges",
-                           result.kill_best_effort_group_change_count);
-  UMA_HISTOGRAM_COUNTS_100("Variations.SimulateSeed.KillCriticalChanges",
-                           result.kill_critical_group_change_count);
-
-  UMA_HISTOGRAM_TIMES("Variations.SimulateSeed.Duration", timer.Elapsed());
+  base::PostTaskAndReplyWithResult(
+      content::BrowserThread::GetBlockingPool(),
+      FROM_HERE,
+      base::Bind(&GetVersionForSimulation),
+      base::Bind(&VariationsService::PerformSimulationWithVersion,
+                 weak_ptr_factory_.GetWeakPtr(), base::Passed(&seed)));
 }
 
 void VariationsService::FetchVariationsSeed() {
@@ -459,6 +465,17 @@ void VariationsService::FetchVariationsSeed() {
   }
 
   DoActualFetch();
+}
+
+void VariationsService::NotifyObservers(
+    const VariationsSeedSimulator::Result& result) {
+  if (result.kill_critical_group_change_count > 0) {
+    FOR_EACH_OBSERVER(Observer, observer_list_,
+                      OnExperimentChangesDetected(Observer::CRITICAL));
+  } else if (result.kill_best_effort_group_change_count > 0) {
+    FOR_EACH_OBSERVER(Observer, observer_list_,
+                      OnExperimentChangesDetected(Observer::BEST_EFFORT));
+  }
 }
 
 void VariationsService::OnURLFetchComplete(const net::URLFetcher* source) {
@@ -544,6 +561,35 @@ void VariationsService::OnResourceRequestsAllowed() {
   // This service must have created a scheduler in order for this to be called.
   DCHECK(request_scheduler_.get());
   request_scheduler_->Reset();
+}
+
+void VariationsService::PerformSimulationWithVersion(
+    scoped_ptr<VariationsSeed> seed,
+    const base::Version& version) {
+  if (version.IsValid())
+    return;
+
+  const base::ElapsedTimer timer;
+
+  scoped_ptr<const base::FieldTrial::EntropyProvider> entropy_provider =
+      state_manager_->CreateEntropyProvider();
+  VariationsSeedSimulator seed_simulator(*entropy_provider);
+
+  VariationsSeedSimulator::Result result = seed_simulator.SimulateSeedStudies(
+      *seed, g_browser_process->GetApplicationLocale(),
+      GetReferenceDateForExpiryChecks(local_state_), version,
+      GetChannelForVariations(), GetCurrentFormFactor(), GetHardwareClass());
+
+  UMA_HISTOGRAM_COUNTS_100("Variations.SimulateSeed.NormalChanges",
+                           result.normal_group_change_count);
+  UMA_HISTOGRAM_COUNTS_100("Variations.SimulateSeed.KillBestEffortChanges",
+                           result.kill_best_effort_group_change_count);
+  UMA_HISTOGRAM_COUNTS_100("Variations.SimulateSeed.KillCriticalChanges",
+                           result.kill_critical_group_change_count);
+
+  UMA_HISTOGRAM_TIMES("Variations.SimulateSeed.Duration", timer.Elapsed());
+
+  NotifyObservers(result);
 }
 
 void VariationsService::RecordLastFetchTime() {

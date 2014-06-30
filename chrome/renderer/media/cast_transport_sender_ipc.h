@@ -30,9 +30,9 @@ class CastTransportSenderIPC
       const media::cast::transport::PacketReceiverCallback& packet_callback)
       OVERRIDE;
   virtual void InitializeAudio(
-      const media::cast::transport::CastTransportAudioConfig& config) OVERRIDE;
+      const media::cast::transport::CastTransportRtpConfig& config) OVERRIDE;
   virtual void InitializeVideo(
-      const media::cast::transport::CastTransportVideoConfig& config) OVERRIDE;
+      const media::cast::transport::CastTransportRtpConfig& config) OVERRIDE;
   virtual void InsertCodedAudioFrame(
       const media::cast::transport::EncodedFrame& audio_frame) OVERRIDE;
   virtual void InsertCodedVideoFrame(
@@ -47,7 +47,9 @@ class CastTransportSenderIPC
       const std::string& c_name) OVERRIDE;
   virtual void ResendPackets(
       bool is_audio,
-      const media::cast::transport::MissingFramesAndPacketsMap& missing_packets)
+      const media::cast::transport::MissingFramesAndPacketsMap& missing_packets,
+      bool cancel_rtx_if_not_in_list,
+      base::TimeDelta dedupe_window)
       OVERRIDE;
 
   void OnReceivedPacket(const media::cast::transport::Packet& packet);

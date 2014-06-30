@@ -40,6 +40,46 @@ namespace test {
 class QuicCryptoServerConfigPeer;
 }  // namespace test
 
+enum HandshakeFailureReason {
+  HANDSHAKE_OK = 0,
+
+  // Failure reasons for an invalid client nonce in CHLO.
+  //
+  // TODO(rtenneti): Implement capturing of error from strike register.
+  CLIENT_NONCE_UNKNOWN_FAILURE = 100,
+  // Invalid client nonce. A possible reason, client nonce had incorrect length.
+  CLIENT_NONCE_INVALID_FAILURE,
+
+  // Failure reasons for an invalid server nonce in CHLO.
+  SERVER_NONCE_INVALID_FAILURE = 200,  // Nonce had incorrect length.
+  SERVER_NONCE_DECRYPTION_FAILURE,     // Unbox of nonce failed.
+  SERVER_NONCE_NOT_UNIQUE_FAILURE,     // Nonce is not unique.
+
+  // Failure reasons for an invalid server config in CHLO.
+  //
+  // Missing Server config id (kSCID) tag.
+  SERVER_CONFIG_INCHOATE_HELLO_FAILURE = 300,
+  // GetConfigWithScid couldn't find the Server config id (kSCID).
+  SERVER_CONFIG_UNKNOWN_CONFIG_FAILURE,
+
+  // Failure reasons for an invalid source-address token.
+  //
+  // Missing Source-address token (kSourceAddressTokenTag) tag.
+  SOURCE_ADDRESS_TOKEN_INVALID_FAILURE = 400,
+  // Unbox of Source-address token failed.
+  SOURCE_ADDRESS_TOKEN_DECRYPTION_FAILURE,
+  // Couldn't parse the unbox'ed Source-address token.
+  SOURCE_ADDRESS_TOKEN_PARSE_FAILURE,
+  // Source-address token is for a different IP address.
+  SOURCE_ADDRESS_TOKEN_DIFFERENT_IP_ADDRESS_FAILURE,
+  // The difference between the time in source-address token and |now| is more
+  // than |source_address_token_future_secs_|.
+  SOURCE_ADDRESS_TOKEN_CLOCK_SKEW_FAILURE,
+  // The difference between the time in source-address token and |now| is more
+  // than |source_address_token_lifetime_secs_|.
+  SOURCE_ADDRESS_TOKEN_EXPIRED_FAILURE,
+};
+
 // Hook that allows application code to subscribe to primary config changes.
 class PrimaryConfigChangedCallback {
  public:
@@ -204,7 +244,6 @@ class NET_EXPORT_PRIVATE QuicCryptoServerConfig {
       IPEndPoint client_address,
       QuicVersion version,
       const QuicVersionVector& supported_versions,
-      uint32 initial_flow_control_window_bytes,
       const QuicClock* clock,
       QuicRandom* rand,
       QuicCryptoNegotiatedParameters* params,
@@ -386,13 +425,13 @@ class NET_EXPORT_PRIVATE QuicCryptoServerConfig {
                                     QuicRandom* rand,
                                     QuicWallTime now) const;
 
-  // ValidateSourceAddressToken returns true if the source address token in
-  // |token| is a valid and timely token for the IP address |ip| given that the
-  // current time is |now|.
-  bool ValidateSourceAddressToken(const Config& config,
-                                  base::StringPiece token,
-                                  const IPEndPoint& ip,
-                                  QuicWallTime now) const;
+  // ValidateSourceAddressToken returns HANDSHAKE_OK if the source address token
+  // in |token| is a valid and timely token for the IP address |ip| given that
+  // the current time is |now|. Otherwise it returns the reason for failure.
+  HandshakeFailureReason ValidateSourceAddressToken(const Config& config,
+                                                    base::StringPiece token,
+                                                    const IPEndPoint& ip,
+                                                    QuicWallTime now) const;
 
   // NewServerNonce generates and encrypts a random nonce.
   std::string NewServerNonce(QuicRandom* rand, QuicWallTime now) const;
@@ -400,10 +439,11 @@ class NET_EXPORT_PRIVATE QuicCryptoServerConfig {
   // ValidateServerNonce decrypts |token| and verifies that it hasn't been
   // previously used and is recent enough that it is plausible that it was part
   // of a very recently provided rejection ("recent" will be on the order of
-  // 10-30 seconds). If so, it records that it has been used and returns true.
-  // Otherwise it returns false.
-  bool ValidateServerNonce(base::StringPiece echoed_server_nonce,
-                           QuicWallTime now) const;
+  // 10-30 seconds). If so, it records that it has been used and returns
+  // HANDSHAKE_OK. Otherwise it returns the reason for failure.
+  HandshakeFailureReason ValidateServerNonce(
+      base::StringPiece echoed_server_nonce,
+      QuicWallTime now) const;
 
   // replay_protection_ controls whether the server enforces that handshakes
   // aren't replays.

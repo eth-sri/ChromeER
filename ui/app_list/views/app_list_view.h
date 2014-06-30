@@ -26,8 +26,6 @@ class AppListViewDelegate;
 class AppListViewObserver;
 class HideViewAnimationObserver;
 class PaginationModel;
-class SigninDelegate;
-class SigninView;
 class SpeechView;
 
 // AppListView is the top-level view and controller of app list UI. It creates
@@ -43,7 +41,7 @@ class APP_LIST_EXPORT AppListView : public views::BubbleDelegateView,
   // Initializes the widget and use a given |anchor| plus an |anchor_offset| for
   // positioning.
   void InitAsBubbleAttachedToAnchor(gfx::NativeView parent,
-                                    PaginationModel* pagination_model,
+                                    int initial_apps_page,
                                     views::View* anchor,
                                     const gfx::Vector2d& anchor_offset,
                                     views::BubbleBorder::Arrow arrow,
@@ -52,7 +50,7 @@ class APP_LIST_EXPORT AppListView : public views::BubbleDelegateView,
   // Initializes the widget and use a fixed |anchor_point_in_screen| for
   // positioning.
   void InitAsBubbleAtFixedLocation(gfx::NativeView parent,
-                                   PaginationModel* pagination_model,
+                                   int initial_apps_page,
                                    const gfx::Point& anchor_point_in_screen,
                                    views::BubbleBorder::Arrow arrow,
                                    bool border_accepts_events);
@@ -107,9 +105,12 @@ class APP_LIST_EXPORT AppListView : public views::BubbleDelegateView,
 
   AppListMainView* app_list_main_view() { return app_list_main_view_; }
 
+  // Gets the PaginationModel owned by this view's apps grid.
+  PaginationModel* GetAppsPaginationModel();
+
  private:
   void InitAsBubbleInternal(gfx::NativeView parent,
-                            PaginationModel* pagination_model,
+                            int initial_apps_page,
                             views::BubbleBorder::Arrow arrow,
                             bool border_accepts_events,
                             const gfx::Vector2d& anchor_offset);
@@ -141,12 +142,9 @@ class APP_LIST_EXPORT AppListView : public views::BubbleDelegateView,
   virtual void OnSpeechRecognitionStateChanged(
       SpeechRecognitionState new_state) OVERRIDE;
 
-  SigninDelegate* GetSigninDelegate();
-
   scoped_ptr<AppListViewDelegate> delegate_;
 
   AppListMainView* app_list_main_view_;
-  SigninView* signin_view_;
   SpeechView* speech_view_;
 
   ObserverList<AppListViewObserver> observers_;

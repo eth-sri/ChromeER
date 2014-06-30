@@ -161,7 +161,6 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
   virtual void Stop(const base::Closure& callback) OVERRIDE;
   virtual void Seek(base::TimeDelta time, const PipelineStatusCB&  cb) OVERRIDE;
   virtual DemuxerStream* GetStream(DemuxerStream::Type type) OVERRIDE;
-  virtual base::TimeDelta GetStartTime() const OVERRIDE;
   virtual base::Time GetTimelineOffset() const OVERRIDE;
   virtual Liveness GetLiveness() const OVERRIDE;
 
@@ -192,16 +191,13 @@ class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
 
   // Registers a new |id| to use for AppendData() calls. |type| indicates
   // the MIME type for the data that we intend to append for this ID.
-  // |use_legacy_frame_processor| determines which of LegacyFrameProcessor or
-  // FrameProcessor to use to process parsed frames from AppendData() calls.
   // kOk is returned if the demuxer has enough resources to support another ID
   //    and supports the format indicated by |type|.
   // kNotSupported is returned if |type| is not a supported format.
   // kReachedIdLimit is returned if the demuxer cannot handle another ID right
   //    now.
   Status AddId(const std::string& id, const std::string& type,
-               std::vector<std::string>& codecs,
-               const bool use_legacy_frame_processor);
+               std::vector<std::string>& codecs);
 
   // Removed an ID & associated resources that were previously added with
   // AddId().

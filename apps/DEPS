@@ -17,7 +17,7 @@ include_rules = [
   # Temporary allowed includes.
   # TODO(benwells): remove these (http://crbug.com/159366)
   "+chrome/browser/chrome_notification_types.h",
-  "+chrome/browser/chromeos/drive",
+  "+chrome/browser/chromeos/file_manager/filesystem_api_util.h",
   "+chrome/browser/chromeos/login/users/user_manager.h",
   "+chrome/browser/lifetime/application_lifetime.h",
   "+chrome/browser/profiles",
@@ -32,7 +32,6 @@ include_rules = [
   "+chrome/browser/extensions/api/file_handlers/app_file_handler_util.h",
   "+chrome/browser/extensions/api/file_system/file_system_api.h",
   "+chrome/browser/extensions/chrome_extension_web_contents_observer.h",
-  "+chrome/browser/extensions/extension_icon_image.h",
   "+chrome/browser/extensions/suggest_permission_util.h",
   "+chrome/browser/extensions/unpacked_installer.h",
   "+chrome/common/extensions/api/app_window.h",

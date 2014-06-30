@@ -13,21 +13,37 @@
 #include "ios/public/test/fake_profile_oauth2_token_service_ios_provider.h"
 #endif
 
+namespace {
+
+// Helper for testing.
+const int kInvalidProcessId = -1;
+}
+
 TestSigninClient::TestSigninClient()
     : request_context_(new net::TestURLRequestContextGetter(
-          base::MessageLoopProxy::current())) {
+          base::MessageLoopProxy::current())),
+      pref_service_(NULL) {
   LoadDatabase();
 }
 
+TestSigninClient::TestSigninClient(PrefService* pref_service)
+    : pref_service_(pref_service) {}
+
 TestSigninClient::~TestSigninClient() {}
 
-PrefService* TestSigninClient::GetPrefs() { return NULL; }
+PrefService* TestSigninClient::GetPrefs() {
+  return pref_service_;
+}
 
 scoped_refptr<TokenWebData> TestSigninClient::GetDatabase() {
   return database_;
 }
 
 bool TestSigninClient::CanRevokeCredentials() { return true; }
+
+std::string TestSigninClient::GetSigninScopedDeviceId() {
+  return std::string();
+}
 
 net::URLRequestContextGetter* TestSigninClient::GetURLRequestContext() {
   return request_context_;
@@ -71,3 +87,23 @@ TestSigninClient::GetIOSProviderAsFake() {
   return iosProvider_.get();
 }
 #endif
+
+void TestSigninClient::SetSigninProcess(int process_id) {
+  if (process_id == signin_host_id_)
+    return;
+  DLOG_IF(WARNING, signin_host_id_ != kInvalidProcessId)
+      << "Replacing in-use signin process.";
+  signin_host_id_ = process_id;
+}
+
+void TestSigninClient::ClearSigninProcess() {
+  signin_host_id_ = kInvalidProcessId;
+}
+
+bool TestSigninClient::IsSigninProcess(int process_id) const {
+  return process_id == signin_host_id_;
+}
+
+bool TestSigninClient::HasSigninProcess() const {
+  return signin_host_id_ != kInvalidProcessId;
+}

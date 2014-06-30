@@ -39,7 +39,6 @@
 #include "chrome/browser/chromeos/policy/device_local_account.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
-#include "chrome/browser/google/google_util.h"
 #include "chrome/browser/prefs/session_startup_pref.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
@@ -50,6 +49,7 @@
 #include "chromeos/dbus/power_manager_client.h"
 #include "chromeos/dbus/session_manager_client.h"
 #include "chromeos/settings/cros_settings_names.h"
+#include "components/google/core/browser/google_util.h"
 #include "components/policy/core/common/policy_service.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
@@ -131,6 +131,7 @@ ExistingUserController::ExistingUserController(LoginDisplayHost* host)
       offline_failed_(false),
       is_login_in_progress_(false),
       password_changed_(false),
+      auth_mode_(LoginPerformer::AUTH_MODE_EXTENSION),
       do_auto_enrollment_(false),
       signin_screen_ready_(false),
       network_state_helper_(new login::NetworkStateHelper) {
@@ -159,6 +160,10 @@ ExistingUserController::ExistingUserController(LoginDisplayHost* host)
                  base::Unretained(this)));
   allow_guest_subscription_ = cros_settings_->AddSettingsObserver(
       kAccountsPrefAllowGuest,
+      base::Bind(&ExistingUserController::DeviceSettingsChanged,
+                 base::Unretained(this)));
+  allow_supervised_user_subscription_ = cros_settings_->AddSettingsObserver(
+      kAccountsPrefSupervisedUsersEnabled,
       base::Bind(&ExistingUserController::DeviceSettingsChanged,
                  base::Unretained(this)));
   users_subscription_ = cros_settings_->AddSettingsObserver(
@@ -308,8 +313,8 @@ void ExistingUserController::CancelPasswordChangedFlow() {
 
 void ExistingUserController::CreateAccount() {
   content::RecordAction(base::UserMetricsAction("Login.CreateAccount"));
-  guest_mode_url_ =
-      google_util::AppendGoogleLocaleParam(GURL(kCreateAccountURL));
+  guest_mode_url_ = google_util::AppendGoogleLocaleParam(
+      GURL(kCreateAccountURL), g_browser_process->GetApplicationLocale());
   LoginAsGuest();
 }
 
@@ -377,7 +382,28 @@ bool ExistingUserController::IsSigninInProgress() const {
   return is_login_in_progress_;
 }
 
-void ExistingUserController::Login(const UserContext& user_context) {
+void ExistingUserController::Login(const UserContext& user_context,
+                                   const SigninSpecifics& specifics) {
+  if (user_context.GetUserType() == User::USER_TYPE_GUEST) {
+    if (!specifics.guest_mode_url.empty()) {
+      guest_mode_url_ = GURL(specifics.guest_mode_url);
+      if (specifics.guest_mode_url_append_locale)
+        guest_mode_url_ = google_util::AppendGoogleLocaleParam(
+            guest_mode_url_, g_browser_process->GetApplicationLocale());
+    }
+    LoginAsGuest();
+    return;
+  } else if (user_context.GetUserType() == User::USER_TYPE_PUBLIC_ACCOUNT) {
+    LoginAsPublicAccount(user_context.GetUserID());
+    return;
+  } else if (user_context.GetUserType() == User::USER_TYPE_RETAIL_MODE) {
+    LoginAsRetailModeUser();
+    return;
+  } else if (user_context.GetUserType() == User::USER_TYPE_KIOSK_APP) {
+    LoginAsKioskApp(user_context.GetUserID(), specifics.kiosk_diagnostic_mode);
+    return;
+  }
+
   if (!user_context.HasCredentials())
     return;
 
@@ -568,11 +594,6 @@ void ExistingUserController::OnSigninScreenReady() {
   StartPublicSessionAutoLoginTimer();
 }
 
-void ExistingUserController::OnUserSelected(const std::string& username) {
-  login_performer_.reset(NULL);
-  num_login_attempts_ = 0;
-}
-
 void ExistingUserController::OnStartEnterpriseEnrollment() {
   if (KioskAppManager::Get()->IsConsumerKioskDeviceWithAutoLaunch()) {
     LOG(WARNING) << "Enterprise enrollment is not available after kiosk auto "
@@ -609,7 +630,6 @@ void ExistingUserController::SetDisplayEmail(const std::string& email) {
 void ExistingUserController::ShowWrongHWIDScreen() {
   scoped_ptr<base::DictionaryValue> params;
   host_->StartWizard(WizardController::kWrongHWIDScreenName, params.Pass());
-  login_display_->OnFadeOut();
 }
 
 void ExistingUserController::Signout() {
@@ -654,26 +674,22 @@ void ExistingUserController::ShowEnrollmentScreen(bool is_auto_enrollment,
   }
   host_->StartWizard(WizardController::kEnrollmentScreenName,
                      params.Pass());
-  login_display_->OnFadeOut();
 }
 
 void ExistingUserController::ShowResetScreen() {
   scoped_ptr<base::DictionaryValue> params;
   host_->StartWizard(WizardController::kResetScreenName, params.Pass());
-  login_display_->OnFadeOut();
 }
 
 void ExistingUserController::ShowKioskEnableScreen() {
   scoped_ptr<base::DictionaryValue> params;
   host_->StartWizard(WizardController::kKioskEnableScreenName, params.Pass());
-  login_display_->OnFadeOut();
 }
 
 void ExistingUserController::ShowKioskAutolaunchScreen() {
   scoped_ptr<base::DictionaryValue> params;
   host_->StartWizard(WizardController::kKioskAutolaunchScreenName,
                      params.Pass());
-  login_display_->OnFadeOut();
 }
 
 void ExistingUserController::ShowTPMError() {
@@ -755,18 +771,19 @@ void ExistingUserController::OnLoginSuccess(const UserContext& user_context) {
   offline_failed_ = false;
   login_display_->set_signin_completed(true);
 
+  // Login performer will be gone so cache this value to use
+  // once profile is loaded.
+  password_changed_ = login_performer_->password_changed();
+  auth_mode_ = login_performer_->auth_mode();
+
   UserManager::Get()->GetUserFlow(user_context.GetUserID())->
       HandleLoginSuccess(user_context);
 
   StopPublicSessionAutoLoginTimer();
 
-  const bool has_cookies =
+  const bool has_auth_cookies =
       login_performer_->auth_mode() == LoginPerformer::AUTH_MODE_EXTENSION &&
       user_context.GetAuthCode().empty();
-
-  // Login performer will be gone so cache this value to use
-  // once profile is loaded.
-  password_changed_ = login_performer_->password_changed();
 
   // LoginPerformer instance will delete itself once online auth result is OK.
   // In case of failure it'll bring up ScreenLock and ask for
@@ -776,17 +793,18 @@ void ExistingUserController::OnLoginSuccess(const UserContext& user_context) {
   login_performer_->set_delegate(NULL);
   ignore_result(login_performer_.release());
 
+  // Update user's displayed email.
+  if (!display_email_.empty()) {
+    UserManager::Get()->SaveUserDisplayEmail(user_context.GetUserID(),
+                                             display_email_);
+    display_email_.clear();
+  }
+
   // Will call OnProfilePrepared() in the end.
   LoginUtils::Get()->PrepareProfile(user_context,
-                                    display_email_,
-                                    has_cookies,
+                                    has_auth_cookies,
                                     false,          // Start session for user.
                                     this);
-
-  display_email_.clear();
-
-  // Notify LoginDisplay to allow it provide visual feedback to user.
-  login_display_->OnLoginSuccess(user_context.GetUserID());
 }
 
 void ExistingUserController::OnProfilePrepared(Profile* profile) {
@@ -811,7 +829,7 @@ void ExistingUserController::OnProfilePrepared(Profile* profile) {
     // Mark the device as registered., i.e. the second part of OOBE as
     // completed.
     if (!StartupUtils::IsDeviceRegistered())
-      StartupUtils::MarkDeviceRegistered();
+      StartupUtils::MarkDeviceRegistered(base::Closure());
 
     if (CommandLine::ForCurrentProcess()->HasSwitch(
           chromeos::switches::kOobeSkipPostLogin)) {
@@ -827,7 +845,6 @@ void ExistingUserController::OnProfilePrepared(Profile* profile) {
   // Inform |login_status_consumer_| about successful login.
   if (login_status_consumer_)
     login_status_consumer_->OnLoginSuccess(UserContext());
-  login_display_->OnFadeOut();
 }
 
 void ExistingUserController::OnOffTheRecordLoginSuccess() {
@@ -836,7 +853,7 @@ void ExistingUserController::OnOffTheRecordLoginSuccess() {
 
   // Mark the device as registered., i.e. the second part of OOBE as completed.
   if (!StartupUtils::IsDeviceRegistered())
-    StartupUtils::MarkDeviceRegistered();
+    StartupUtils::MarkDeviceRegistered(base::Closure());
 
   LoginUtils::Get()->CompleteOffTheRecordLogin(guest_mode_url_);
 
@@ -938,6 +955,20 @@ void ExistingUserController::DeviceSettingsChanged() {
 void ExistingUserController::ActivateWizard(const std::string& screen_name) {
   scoped_ptr<base::DictionaryValue> params;
   host_->StartWizard(screen_name, params.Pass());
+}
+
+LoginPerformer::AuthorizationMode ExistingUserController::auth_mode() const {
+  if (login_performer_)
+    return login_performer_->auth_mode();
+
+  return auth_mode_;
+}
+
+bool ExistingUserController::password_changed() const {
+  if (login_performer_)
+    return login_performer_->password_changed();
+
+  return password_changed_;
 }
 
 void ExistingUserController::ConfigurePublicSessionAutoLogin() {

@@ -32,7 +32,6 @@
 #include "third_party/WebKit/public/web/WebStorageEventDispatcher.h"
 #include "v8/include/v8.h"
 #include "webkit/browser/database/vfs_backend.h"
-#include "webkit/renderer/compositor_bindings/web_compositor_support_impl.h"
 
 #if defined(OS_MACOSX)
 #include "base/mac/mac_util.h"
@@ -216,7 +215,7 @@ blink::WebCompositorSupport* TestWebKitPlatformSupport::compositorSupport() {
 }
 
 blink::WebGestureCurve* TestWebKitPlatformSupport::createFlingAnimationCurve(
-    int device_source,
+    blink::WebGestureDevice device_source,
     const blink::WebFloatPoint& velocity,
     const blink::WebSize& cumulative_scroll) {
   // Caller will retain and release.
@@ -271,12 +270,6 @@ TestWebKitPlatformSupport::createLayerTreeViewForTesting() {
 
   view->Initialize();
   return view.release();
-}
-
-blink::WebLayerTreeView*
-TestWebKitPlatformSupport::createLayerTreeViewForTesting(TestViewType type) {
-  DCHECK_EQ(TestViewTypeUnitTest, type);
-  return createLayerTreeViewForTesting();
 }
 
 blink::WebData TestWebKitPlatformSupport::readFromFile(

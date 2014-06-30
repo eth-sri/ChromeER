@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -32,7 +32,8 @@ ImageEncoder.registerMetadataEncoder = function(constructor, mimeType) {
  * @return {ImageEncoder.MetadataEncoder} Created metadata encoder.
  */
 ImageEncoder.createMetadataEncoder = function(metadata) {
-  var constructor = ImageEncoder.metadataEncoders[metadata.mimeType] ||
+  var constructor =
+      (metadata && ImageEncoder.metadataEncoders[metadata.mimeType]) ||
       ImageEncoder.MetadataEncoder;
   return new constructor(metadata);
 };
@@ -208,6 +209,7 @@ ImageEncoder.MetadataEncoder.prototype.setThumbnailData =
     function(canvas, quality) {
   this.metadata_.thumbnailURL =
       canvas.toDataURL(this.metadata_.mimeType, quality);
+  delete this.metadata_.thumbnailTransform;
 };
 
 /**
@@ -216,7 +218,7 @@ ImageEncoder.MetadataEncoder.prototype.setThumbnailData =
  * @return {Object} An object with from and to properties.
  */
 ImageEncoder.MetadataEncoder.prototype.
-    findInsertionRange = function(encodedImage) { return {from: 0, to: 0} };
+    findInsertionRange = function(encodedImage) { return {from: 0, to: 0}; };
 
 /**
  * Return serialized metadata ready to write to an image file.

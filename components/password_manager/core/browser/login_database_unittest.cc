@@ -29,6 +29,11 @@ PasswordStoreChangeList AddChangeForForm(const PasswordForm& form) {
                                                      form));
 }
 
+PasswordStoreChangeList UpdateChangeForForm(const PasswordForm& form) {
+  return PasswordStoreChangeList(1, PasswordStoreChange(
+      PasswordStoreChange::UPDATE, form));
+}
+
 }  // namespace
 
 // Serialization routines for vectors implemented in login_database.cc.
@@ -78,7 +83,7 @@ class LoginDatabaseTest : public testing::Test {
     html_form.scheme = PasswordForm::SCHEME_HTML;
     html_form.date_created = now;
 
-    // Add them and make sure it is there.
+    // Add them and make sure they are there.
     EXPECT_EQ(AddChangeForForm(non_html_auth), db_.AddLogin(non_html_auth));
     EXPECT_EQ(AddChangeForForm(html_form), db_.AddLogin(html_form));
     EXPECT_TRUE(db_.GetAutofillableLogins(&result.get()));
@@ -92,6 +97,11 @@ class LoginDatabaseTest : public testing::Test {
     // This shouldn't match anything.
     EXPECT_TRUE(db_.GetLogins(second_non_html_auth, &result.get()));
     EXPECT_EQ(0U, result.size());
+
+    // non-html auth still matches again itself.
+    EXPECT_TRUE(db_.GetLogins(non_html_auth, &result.get()));
+    ASSERT_EQ(1U, result.size());
+    EXPECT_EQ(result[0]->signon_realm, "http://example.com/Realm");
 
     // Clear state.
     db_.RemoveLoginsCreatedBetween(now, base::Time());
@@ -125,19 +135,21 @@ TEST_F(LoginDatabaseTest, Logins) {
   form.times_used = 1;
   form.form_data.name = ASCIIToUTF16("form_name");
   form.form_data.method = ASCIIToUTF16("POST");
+  form.date_synced = base::Time::Now();
 
   // Add it and make sure it is there and that all the fields were retrieved
   // correctly.
   EXPECT_EQ(AddChangeForForm(form), db_.AddLogin(form));
   EXPECT_TRUE(db_.GetAutofillableLogins(&result));
-  EXPECT_EQ(1U, result.size());
+  ASSERT_EQ(1U, result.size());
   FormsAreEqual(form, *result[0]);
   delete result[0];
   result.clear();
 
   // Match against an exact copy.
   EXPECT_TRUE(db_.GetLogins(form, &result));
-  EXPECT_EQ(1U, result.size());
+  ASSERT_EQ(1U, result.size());
+  FormsAreEqual(form, *result[0]);
   delete result[0];
   result.clear();
 
@@ -214,9 +226,7 @@ TEST_F(LoginDatabaseTest, Logins) {
 
   // We update, and check to make sure it matches the
   // old form, and there is only one record.
-  int rows_changed = 0;
-  EXPECT_TRUE(db_.UpdateLogin(form6, &rows_changed));
-  EXPECT_EQ(1, rows_changed);
+  EXPECT_EQ(UpdateChangeForForm(form6), db_.UpdateLogin(form6));
   // matches
   EXPECT_TRUE(db_.GetLogins(form5, &result));
   EXPECT_EQ(1U, result.size());
@@ -567,9 +577,11 @@ TEST_F(LoginDatabaseTest, TestPublicSuffixDomainMatchingRegexp) {
   EXPECT_EQ(0U, result.size());
 }
 
-static bool AddTimestampedLogin(LoginDatabase* db, std::string url,
+static bool AddTimestampedLogin(LoginDatabase* db,
+                                std::string url,
                                 const std::string& unique_string,
-                                const base::Time& time) {
+                                const base::Time& time,
+                                bool date_is_creation) {
   // Example password form.
   PasswordForm form;
   form.origin = GURL(url + std::string("/LoginAuth"));
@@ -578,7 +590,10 @@ static bool AddTimestampedLogin(LoginDatabase* db, std::string url,
   form.password_element = ASCIIToUTF16(unique_string);
   form.submit_element = ASCIIToUTF16("signIn");
   form.signon_realm = url;
-  form.date_created = time;
+  if (date_is_creation)
+    form.date_created = time;
+  else
+    form.date_synced = time;
   return db->AddLogin(form) == AddChangeForForm(form);
 }
 
@@ -600,11 +615,11 @@ TEST_F(LoginDatabaseTest, ClearPrivateData_SavedPasswords) {
   base::TimeDelta one_day = base::TimeDelta::FromDays(1);
 
   // Create one with a 0 time.
-  EXPECT_TRUE(AddTimestampedLogin(&db_, "1", "foo1", base::Time()));
+  EXPECT_TRUE(AddTimestampedLogin(&db_, "1", "foo1", base::Time(), true));
   // Create one for now and +/- 1 day.
-  EXPECT_TRUE(AddTimestampedLogin(&db_, "2", "foo2", now - one_day));
-  EXPECT_TRUE(AddTimestampedLogin(&db_, "3", "foo3", now));
-  EXPECT_TRUE(AddTimestampedLogin(&db_, "4", "foo4", now + one_day));
+  EXPECT_TRUE(AddTimestampedLogin(&db_, "2", "foo2", now - one_day, true));
+  EXPECT_TRUE(AddTimestampedLogin(&db_, "3", "foo3", now, true));
+  EXPECT_TRUE(AddTimestampedLogin(&db_, "4", "foo4", now + one_day, true));
 
   // Verify inserts worked.
   EXPECT_TRUE(db_.GetAutofillableLogins(&result));
@@ -632,6 +647,49 @@ TEST_F(LoginDatabaseTest, ClearPrivateData_SavedPasswords) {
   EXPECT_EQ(0U, result.size());
 }
 
+TEST_F(LoginDatabaseTest, RemoveLoginsSyncedBetween) {
+  ScopedVector<autofill::PasswordForm> result;
+
+  base::Time now = base::Time::Now();
+  base::TimeDelta one_day = base::TimeDelta::FromDays(1);
+
+  // Create one with a 0 time.
+  EXPECT_TRUE(AddTimestampedLogin(&db_, "1", "foo1", base::Time(), false));
+  // Create one for now and +/- 1 day.
+  EXPECT_TRUE(AddTimestampedLogin(&db_, "2", "foo2", now - one_day, false));
+  EXPECT_TRUE(AddTimestampedLogin(&db_, "3", "foo3", now, false));
+  EXPECT_TRUE(AddTimestampedLogin(&db_, "4", "foo4", now + one_day, false));
+
+  // Verify inserts worked.
+  EXPECT_TRUE(db_.GetAutofillableLogins(&result.get()));
+  EXPECT_EQ(4U, result.size());
+  result.clear();
+
+  // Get everything from today's date and on.
+  EXPECT_TRUE(db_.GetLoginsSyncedBetween(now, base::Time(), &result.get()));
+  ASSERT_EQ(2U, result.size());
+  EXPECT_EQ("3", result[0]->signon_realm);
+  EXPECT_EQ("4", result[1]->signon_realm);
+  result.clear();
+
+  // Delete everything from today's date and on.
+  db_.RemoveLoginsSyncedBetween(now, base::Time());
+
+  // Should have deleted half of what we inserted.
+  EXPECT_TRUE(db_.GetAutofillableLogins(&result.get()));
+  ASSERT_EQ(2U, result.size());
+  EXPECT_EQ("1", result[0]->signon_realm);
+  EXPECT_EQ("2", result[1]->signon_realm);
+  result.clear();
+
+  // Delete with 0 date (should delete all).
+  db_.RemoveLoginsSyncedBetween(base::Time(), now);
+
+  // Verify nothing is left.
+  EXPECT_TRUE(db_.GetAutofillableLogins(&result.get()));
+  EXPECT_EQ(0U, result.size());
+}
+
 TEST_F(LoginDatabaseTest, BlacklistedLogins) {
   std::vector<PasswordForm*> result;
 
@@ -651,6 +709,7 @@ TEST_F(LoginDatabaseTest, BlacklistedLogins) {
   form.preferred = true;
   form.blacklisted_by_user = true;
   form.scheme = PasswordForm::SCHEME_HTML;
+  form.date_synced = base::Time::Now();
   EXPECT_EQ(AddChangeForForm(form), db_.AddLogin(form));
 
   // Get all non-blacklisted logins (should be none).
@@ -659,12 +718,14 @@ TEST_F(LoginDatabaseTest, BlacklistedLogins) {
 
   // GetLogins should give the blacklisted result.
   EXPECT_TRUE(db_.GetLogins(form, &result));
-  EXPECT_EQ(1U, result.size());
+  ASSERT_EQ(1U, result.size());
+  FormsAreEqual(form, *result[0]);
   ClearResults(&result);
 
   // So should GetAllBlacklistedLogins.
   EXPECT_TRUE(db_.GetBlacklistLogins(&result));
-  EXPECT_EQ(1U, result.size());
+  ASSERT_EQ(1U, result.size());
+  FormsAreEqual(form, *result[0]);
   ClearResults(&result);
 }
 
@@ -748,7 +809,8 @@ TEST_F(LoginDatabaseTest, UpdateIncompleteCredentials) {
   completed_form.username_element = encountered_form.username_element;
   completed_form.password_element = encountered_form.password_element;
   completed_form.submit_element = encountered_form.submit_element;
-  EXPECT_TRUE(db_.UpdateLogin(completed_form, NULL));
+  EXPECT_EQ(AddChangeForForm(completed_form), db_.AddLogin(completed_form));
+  EXPECT_TRUE(db_.RemoveLogin(incomplete_form));
 
   // Get matches for encountered_form again.
   EXPECT_TRUE(db_.GetLogins(encountered_form, &result));
@@ -787,6 +849,9 @@ TEST_F(LoginDatabaseTest, UpdateOverlappingCredentials) {
   complete_form.username_element = ASCIIToUTF16("username_element");
   complete_form.password_element = ASCIIToUTF16("password_element");
   complete_form.submit_element = ASCIIToUTF16("submit");
+
+  // An update fails because the primary key for |complete_form| is different.
+  EXPECT_EQ(PasswordStoreChangeList(), db_.UpdateLogin(complete_form));
   EXPECT_EQ(AddChangeForForm(complete_form), db_.AddLogin(complete_form));
 
   // Make sure both passwords exist.
@@ -797,19 +862,23 @@ TEST_F(LoginDatabaseTest, UpdateOverlappingCredentials) {
 
   // Simulate the user changing their password.
   complete_form.password_value = ASCIIToUTF16("new_password");
-  EXPECT_TRUE(db_.UpdateLogin(complete_form, NULL));
+  complete_form.date_synced = base::Time::Now();
+  EXPECT_EQ(UpdateChangeForForm(complete_form), db_.UpdateLogin(complete_form));
 
-  // Only one updated form should exist now.
+  // Both still exist now.
   EXPECT_TRUE(db_.GetAutofillableLogins(&result.get()));
-  ASSERT_EQ(1U, result.size());
+  ASSERT_EQ(2U, result.size());
 
-  PasswordForm expected_form(complete_form);
 #if defined(OS_MACOSX) && !defined(OS_IOS)
   // On Mac, passwords are not stored in login database, instead they're in
   // the keychain.
-  expected_form.password_value.clear();
+  complete_form.password_value.clear();
+  incomplete_form.password_value.clear();
 #endif  // OS_MACOSX && !OS_IOS
-  EXPECT_EQ(expected_form, *result[0]);
+  if (result[0]->username_element.empty())
+    std::swap(result[0], result[1]);
+  EXPECT_EQ(complete_form, *result[0]);
+  EXPECT_EQ(incomplete_form, *result[1]);
 }
 
 TEST_F(LoginDatabaseTest, DoubleAdd) {

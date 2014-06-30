@@ -5,6 +5,7 @@
 #ifndef CHROME_BROWSER_PROFILES_PROFILE_IO_DATA_H_
 #define CHROME_BROWSER_PROFILES_PROFILE_IO_DATA_H_
 
+#include <map>
 #include <string>
 
 #include "base/basictypes.h"
@@ -21,20 +22,23 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/storage_partition_descriptor.h"
 #include "chrome/common/content_settings_types.h"
+#include "components/data_reduction_proxy/browser/data_reduction_proxy_usage_stats.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/resource_context.h"
 #include "net/cookies/cookie_monster.h"
+#include "net/http/http_cache.h"
 #include "net/http/http_network_session.h"
 #include "net/url_request/url_request_job_factory.h"
 
 class ChromeHttpUserAgentSettings;
 class ChromeNetworkDelegate;
 class CookieSettings;
+class DevToolsNetworkController;
 class HostContentSettingsMap;
-class ManagedModeURLFilter;
 class MediaDeviceIDSalt;
 class ProtocolHandlerRegistry;
 class SigninNamesOnIOThread;
+class SupervisedUserURLFilter;
 
 namespace extensions {
 class InfoMap;
@@ -97,8 +101,9 @@ class ProfileIOData {
   // Initializes the ProfileIOData object and primes the RequestContext
   // generation. Must be called prior to any of the Get*() methods other than
   // GetResouceContext or GetMetricsEnabledStateOnIOThread.
-  void Init(content::ProtocolHandlerMap* protocol_handlers,
-            content::ProtocolHandlerScopedVector protocol_interceptors) const;
+  void Init(
+      content::ProtocolHandlerMap* protocol_handlers,
+      content::URLRequestInterceptorScopedVector request_interceptors) const;
 
   ChromeURLRequestContext* GetMainRequestContext() const;
   ChromeURLRequestContext* GetMediaRequestContext() const;
@@ -109,7 +114,7 @@ class ProfileIOData {
       scoped_ptr<ProtocolHandlerRegistry::JobInterceptorFactory>
           protocol_handler_interceptor,
       content::ProtocolHandlerMap* protocol_handlers,
-      content::ProtocolHandlerScopedVector protocol_interceptors) const;
+      content::URLRequestInterceptorScopedVector request_interceptors) const;
   ChromeURLRequestContext* GetIsolatedMediaRequestContext(
       ChromeURLRequestContext* app_context,
       const StoragePartitionDescriptor& partition_descriptor) const;
@@ -165,6 +170,10 @@ class ProfileIOData {
     return &safe_browsing_enabled_;
   }
 
+  BooleanPrefMember* data_reduction_proxy_enabled() const {
+    return &data_reduction_proxy_enabled_;
+  }
+
   BooleanPrefMember* printing_enabled() const {
     return &printing_enabled_;
   }
@@ -177,11 +186,20 @@ class ProfileIOData {
     return &signin_allowed_;
   }
 
+  // TODO(bnc): remove per https://crbug.com/334602.
   BooleanPrefMember* network_prediction_enabled() const {
     return &network_prediction_enabled_;
   }
 
+  IntegerPrefMember* network_prediction_options() const {
+    return &network_prediction_options_;
+  }
+
   content::ResourceContext::SaltCallback GetMediaDeviceIDSalt() const;
+
+  DevToolsNetworkController* network_controller() const {
+    return network_controller_.get();
+  }
 
   net::TransportSecurityState* transport_security_state() const {
     return transport_security_state_.get();
@@ -210,8 +228,8 @@ class ProfileIOData {
 #endif
 
 #if defined(ENABLE_MANAGED_USERS)
-  const ManagedModeURLFilter* managed_mode_url_filter() const {
-    return managed_mode_url_filter_.get();
+  const SupervisedUserURLFilter* supervised_user_url_filter() const {
+    return supervised_user_url_filter_.get();
   }
 #endif
 
@@ -291,7 +309,7 @@ class ProfileIOData {
     scoped_ptr<net::ProxyConfigService> proxy_config_service;
 
 #if defined(ENABLE_MANAGED_USERS)
-    scoped_refptr<const ManagedModeURLFilter> managed_mode_url_filter;
+    scoped_refptr<const SupervisedUserURLFilter> supervised_user_url_filter;
 #endif
 
 #if defined(OS_CHROMEOS)
@@ -313,9 +331,18 @@ class ProfileIOData {
   void InitializeOnUIThread(Profile* profile);
   void ApplyProfileParamsToContext(ChromeURLRequestContext* context) const;
 
+#if defined(OS_ANDROID)
+#if defined(SPDY_PROXY_AUTH_ORIGIN)
+  void SetDataReductionProxyUsageStatsOnIOThread(IOThread* io_thread,
+                                                 Profile* profile);
+  void SetDataReductionProxyUsageStatsOnUIThread(Profile* profile,
+      data_reduction_proxy::DataReductionProxyUsageStats* usage_stats);
+#endif
+#endif
+
   scoped_ptr<net::URLRequestJobFactory> SetUpJobFactoryDefaults(
       scoped_ptr<net::URLRequestJobFactoryImpl> job_factory,
-      content::ProtocolHandlerScopedVector protocol_interceptors,
+      content::URLRequestInterceptorScopedVector request_interceptors,
       scoped_ptr<ProtocolHandlerRegistry::JobInterceptorFactory>
           protocol_handler_interceptor,
       net::NetworkDelegate* network_delegate,
@@ -361,11 +388,15 @@ class ProfileIOData {
   // URLRequests may be accessing.
   void DestroyResourceContext();
 
-  // Fills in fields of params using values from main_request_context_ and the
-  // IOThread associated with profile_params.
-  void PopulateNetworkSessionParams(
+  // Creates network session and main network transaction factory.
+  scoped_ptr<net::HttpCache> CreateMainHttpFactory(
       const ProfileParams* profile_params,
-      net::HttpNetworkSession::Params* params) const;
+      net::HttpCache::BackendFactory* main_backend) const;
+
+  // Creates network transaction factory.
+  scoped_ptr<net::HttpCache> CreateHttpFactory(
+      net::HttpNetworkSession* shared_session,
+      net::HttpCache::BackendFactory* backend) const;
 
   void SetCookieSettingsForTesting(CookieSettings* cookie_settings);
 
@@ -418,7 +449,8 @@ class ProfileIOData {
   virtual void InitializeInternal(
       ProfileParams* profile_params,
       content::ProtocolHandlerMap* protocol_handlers,
-      content::ProtocolHandlerScopedVector protocol_interceptors) const = 0;
+      content::URLRequestInterceptorScopedVector
+          request_interceptors) const = 0;
 
   // Initializes the RequestContext for extensions.
   virtual void InitializeExtensionsRequestContext(
@@ -431,7 +463,8 @@ class ProfileIOData {
       scoped_ptr<ProtocolHandlerRegistry::JobInterceptorFactory>
           protocol_handler_interceptor,
       content::ProtocolHandlerMap* protocol_handlers,
-      content::ProtocolHandlerScopedVector protocol_interceptors) const = 0;
+      content::URLRequestInterceptorScopedVector
+          request_interceptors) const = 0;
 
   // Does an on-demand initialization of a media RequestContext for the given
   // isolated app.
@@ -449,7 +482,8 @@ class ProfileIOData {
       scoped_ptr<ProtocolHandlerRegistry::JobInterceptorFactory>
           protocol_handler_interceptor,
       content::ProtocolHandlerMap* protocol_handlers,
-      content::ProtocolHandlerScopedVector protocol_interceptors) const = 0;
+      content::URLRequestInterceptorScopedVector
+          request_interceptors) const = 0;
   virtual ChromeURLRequestContext*
       AcquireIsolatedMediaRequestContext(
           ChromeURLRequestContext* app_context,
@@ -500,10 +534,12 @@ class ProfileIOData {
   mutable BooleanPrefMember enable_do_not_track_;
   mutable BooleanPrefMember force_safesearch_;
   mutable BooleanPrefMember safe_browsing_enabled_;
+  mutable BooleanPrefMember data_reduction_proxy_enabled_;
   mutable BooleanPrefMember printing_enabled_;
   mutable BooleanPrefMember sync_disabled_;
   mutable BooleanPrefMember signin_allowed_;
   mutable BooleanPrefMember network_prediction_enabled_;
+  mutable IntegerPrefMember network_prediction_options_;
   // TODO(marja): Remove session_startup_pref_ if no longer needed.
   mutable IntegerPrefMember session_startup_pref_;
   mutable BooleanPrefMember quick_check_enabled_;
@@ -560,8 +596,11 @@ class ProfileIOData {
       chrome_http_user_agent_settings_;
 
 #if defined(ENABLE_MANAGED_USERS)
-  mutable scoped_refptr<const ManagedModeURLFilter> managed_mode_url_filter_;
+  mutable scoped_refptr<const SupervisedUserURLFilter>
+      supervised_user_url_filter_;
 #endif
+
+  mutable scoped_ptr<DevToolsNetworkController> network_controller_;
 
   // TODO(jhawkins): Remove once crbug.com/102004 is fixed.
   bool initialized_on_UI_thread_;

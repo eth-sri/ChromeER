@@ -11,8 +11,8 @@
 #include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/files/file_util_proxy.h"
+#include "base/files/scoped_file.h"
 #include "base/json/json_string_value_serializer.h"
-#include "base/memory/scoped_handle.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/numerics/safe_conversions.h"
@@ -24,6 +24,7 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_utility_messages.h"
+#include "chrome/common/extensions/chrome_utility_extensions_messages.h"
 #include "chrome/common/extensions/extension_file_util.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/utility_process_host.h"
@@ -420,7 +421,7 @@ void SandboxedUnpacker::OnUnpackExtensionFailed(const base::string16& error) {
 }
 
 bool SandboxedUnpacker::ValidateSignature() {
-  ScopedStdioHandle file(base::OpenFile(crx_path_, "rb"));
+  base::ScopedFILE file(base::OpenFile(crx_path_, "rb"));
 
   if (!file.get()) {
     // Could not open crx file for reading.

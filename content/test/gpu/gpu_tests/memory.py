@@ -2,15 +2,16 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 import memory_expectations
+import page_sets
 
-from telemetry import test
+from telemetry import benchmark
 from telemetry.page import page_test
-from telemetry.core.timeline import counter
-from telemetry.core.timeline import model
+from telemetry.timeline import counter
+from telemetry.timeline import model
 
-MEMORY_LIMIT_MB = 256
-SINGLE_TAB_LIMIT_MB = 128
-WIGGLE_ROOM_MB = 4
+MEMORY_LIMIT_MB = 192
+SINGLE_TAB_LIMIT_MB = 192
+WIGGLE_ROOM_MB = 8
 
 test_harness_script = r"""
   var domAutomationController = {};
@@ -82,17 +83,19 @@ class _MemoryValidator(page_test.PageTest):
         '--force-gpu-mem-available-mb=%s' % MEMORY_LIMIT_MB)
 
   def WillNavigateToPage(self, page, tab):
-    custom_categories = ['webkit.console', 'gpu']
+    # FIXME: Remove webkit.console when blink.console lands in chromium and the
+    # ref builds are updated. crbug.com/386847
+    custom_categories = ['webkit.console', 'blink.console', 'gpu']
     tab.browser.StartTracing(','.join(custom_categories), 60)
 
   def _FormatException(self, low_or_high, mb_used):
     return 'Memory allocation too %s (was %d MB, should be %d MB +/- %d MB)' % (
       low_or_high, mb_used, SINGLE_TAB_LIMIT_MB, WIGGLE_ROOM_MB)
 
-class Memory(test.Test):
+class Memory(benchmark.Benchmark):
   """Tests GPU memory limits"""
   test = _MemoryValidator
-  page_set = 'page_sets/memory_tests.py'
+  page_set = page_sets.MemoryTestsPageSet
 
   def CreateExpectations(self, page_set):
     return memory_expectations.MemoryExpectations()

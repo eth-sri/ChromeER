@@ -3,7 +3,7 @@
 # found in the LICENSE file.
 import os
 
-from telemetry import test as test_module
+from telemetry import benchmark as benchmark_module
 from telemetry.core import exceptions
 from telemetry.core import util
 from telemetry.page import page
@@ -137,9 +137,9 @@ class WebGLContextLostFromGPUProcessExitPage(page.Page):
     self.force_garbage_collection = False
 
   def RunNavigateSteps(self, action_runner):
-    action_runner.RunAction(NavigateAction())
-    action_runner.RunAction(WaitAction(
-      {'javascript': 'window.domAutomationController._loaded'}))
+    action_runner.NavigateToPage(self)
+    action_runner.WaitForJavaScriptCondition(
+        'window.domAutomationController._loaded')
 
 
 class WebGLContextLostFromLoseContextExtensionPage(page.Page):
@@ -154,9 +154,9 @@ class WebGLContextLostFromLoseContextExtensionPage(page.Page):
     self.force_garbage_collection = False
 
   def RunNavigateSteps(self, action_runner):
-    action_runner.RunAction(NavigateAction())
-    action_runner.RunAction(WaitAction(
-      {'javascript': 'window.domAutomationController._finished'}))
+    action_runner.NavigateToPage(self)
+    action_runner.WaitForJavaScriptCondition(
+        'window.domAutomationController._finished')
 
 class WebGLContextLostFromQuantityPage(page.Page):
   def __init__(self, page_set, base_dir):
@@ -170,11 +170,11 @@ class WebGLContextLostFromQuantityPage(page.Page):
     self.force_garbage_collection = True
 
   def RunNavigateSteps(self, action_runner):
-    action_runner.RunAction(NavigateAction())
-    action_runner.RunAction(WaitAction(
-      {'javascript': 'window.domAutomationController._loaded'}))
+    action_runner.NavigateToPage(self)
+    action_runner.WaitForJavaScriptCondition(
+        'window.domAutomationController._loaded')
 
-class ContextLost(test_module.Test):
+class ContextLost(benchmark_module.Benchmark):
   enabled = True
   test = _ContextLostValidator
   # For the record, this would have been another way to get the pages
@@ -183,12 +183,9 @@ class ContextLost(test_module.Test):
   def CreatePageSet(self, options):
     ps = page_set.PageSet(
       file_path=data_path,
-      description='Test cases for real and synthetic context lost events',
       user_agent_type='desktop',
       serving_dirs=set(['']))
     ps.AddPage(WebGLContextLostFromGPUProcessExitPage(ps, ps.base_dir))
     ps.AddPage(WebGLContextLostFromLoseContextExtensionPage(ps, ps.base_dir))
     ps.AddPage(WebGLContextLostFromQuantityPage(ps, ps.base_dir))
     return ps
-
-

@@ -82,13 +82,16 @@ TEST_F(CastTransportHostFilterTest, SimpleMessages) {
   CastHostMsg_New new_msg(kChannelId, receive_endpoint_);
   FakeSend(new_msg);
 
-  media::cast::transport::CastTransportAudioConfig audio_config;
+  media::cast::transport::CastTransportRtpConfig audio_config;
+  audio_config.stored_frames = 10;
   CastHostMsg_InitializeAudio init_audio_msg(kChannelId, audio_config);
   FakeSend(init_audio_msg);
 
-  media::cast::transport::CastTransportVideoConfig video_config;
+  media::cast::transport::CastTransportRtpConfig video_config;
+  video_config.stored_frames = 10;
   CastHostMsg_InitializeVideo init_video_msg(kChannelId, video_config);
   FakeSend(init_video_msg);
+
   media::cast::transport::EncodedFrame audio_frame;
   audio_frame.dependency = media::cast::transport::EncodedFrame::KEY;
   audio_frame.frame_id = 1;
@@ -127,9 +130,9 @@ TEST_F(CastTransportHostFilterTest, SimpleMessages) {
 
   media::cast::MissingFramesAndPacketsMap missing_packets;
   missing_packets[1].insert(4);
-  missing_packets[3].insert(7);
+  missing_packets[1].insert(7);
   CastHostMsg_ResendPackets resend_msg(
-      kChannelId, false, missing_packets);
+      kChannelId, false, missing_packets, true, base::TimeDelta());
   FakeSend(resend_msg);
 
   CastHostMsg_Delete delete_msg(kChannelId);

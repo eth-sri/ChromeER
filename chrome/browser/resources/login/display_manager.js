@@ -14,6 +14,7 @@
 /** @const */ var SCREEN_OOBE_RESET = 'reset';
 /** @const */ var SCREEN_OOBE_ENROLLMENT = 'oauth-enrollment';
 /** @const */ var SCREEN_OOBE_KIOSK_ENABLE = 'kiosk-enable';
+/** @const */ var SCREEN_OOBE_AUTO_ENROLLMENT_CHECK = 'auto-enrollment-check';
 /** @const */ var SCREEN_GAIA_SIGNIN = 'gaia-signin';
 /** @const */ var SCREEN_ACCOUNT_PICKER = 'account-picker';
 /** @const */ var SCREEN_USER_IMAGE_PICKER = 'user-image';
@@ -97,7 +98,8 @@ cr.define('cr.ui.login', function() {
    */
   var SCREEN_GROUPS = [[SCREEN_OOBE_NETWORK,
                         SCREEN_OOBE_EULA,
-                        SCREEN_OOBE_UPDATE]
+                        SCREEN_OOBE_UPDATE,
+                        SCREEN_OOBE_AUTO_ENROLLMENT_CHECK]
                       ];
   /**
    * Group of screens (screen IDs) where factory-reset screen invocation is
@@ -110,6 +112,7 @@ cr.define('cr.ui.login', function() {
     SCREEN_OOBE_EULA,
     SCREEN_OOBE_UPDATE,
     SCREEN_OOBE_ENROLLMENT,
+    SCREEN_OOBE_AUTO_ENROLLMENT_CHECK,
     SCREEN_GAIA_SIGNIN,
     SCREEN_ACCOUNT_PICKER,
     SCREEN_KIOSK_ENABLE,
@@ -173,6 +176,24 @@ cr.define('cr.ui.login', function() {
     forceKeyboardFlow_: false,
 
     /**
+     * Whether virtual keyboard is shown.
+     * @type {boolean}
+     */
+    virtualKeyboardShown_: false,
+
+    /**
+     * Virtual keyboard width.
+     * @type {number}
+     */
+    virtualKeyboardWidth_: 0,
+
+    /**
+     * Virtual keyboard height.
+     * @type {number}
+     */
+    virtualKeyboardHeight_: 0,
+
+    /**
      * Type of UI.
      * @type {string}
      */
@@ -223,6 +244,39 @@ cr.define('cr.ui.login', function() {
 
     set headerHidden(hidden) {
       $('login-header-bar').hidden = hidden;
+    },
+
+    /**
+     * Virtual keyboard state (hidden/shown).
+     * @param {boolean} hidden Whether keyboard is shown.
+     */
+    get virtualKeyboardShown() {
+      return this.virtualKeyboardShown_;
+    },
+
+    set virtualKeyboardShown(shown) {
+      this.virtualKeyboardShown_ = shown;
+    },
+
+    /**
+     * Sets the current size of the virtual keyboard.
+     * @param {number} width keyboard width
+     * @param {number} height keyboard height
+     */
+    setVirtualKeyboardSize: function(width, height) {
+      this.virtualKeyboardWidth_ = width;
+      this.virtualKeyboardHeight_ = height;
+    },
+
+    /**
+     * Sets the current size of the client area (display size).
+     * @param {number} width client area width
+     * @param {number} height client area height
+     */
+    setClientAreaSize: function(width, height) {
+      var clientArea = $('outer-container');
+      var bottom = parseInt(window.getComputedStyle(clientArea).bottom);
+      clientArea.style.minHeight = cr.ui.toCssPx(height - bottom);
     },
 
     /**
@@ -920,6 +974,10 @@ cr.define('cr.ui.login', function() {
   DisplayManager.clearErrors = function() {
     $('bubble').hide();
     this.errorMessageWasShownForTesting_ = false;
+
+    var bubbles = document.querySelectorAll('.bubble-shown');
+    for (var i = 0; i < bubbles.length; ++i)
+      bubbles[i].classList.remove('bubble-shown');
   };
 
   /**

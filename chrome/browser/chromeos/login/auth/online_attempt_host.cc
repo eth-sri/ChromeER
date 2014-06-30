@@ -5,12 +5,11 @@
 #include "chrome/browser/chromeos/login/auth/online_attempt_host.h"
 
 #include "base/bind.h"
-#include "base/sha1.h"
 #include "chrome/browser/chromeos/login/auth/auth_attempt_state.h"
 #include "chrome/browser/chromeos/login/auth/online_attempt.h"
 #include "chrome/browser/chromeos/login/auth/user_context.h"
 #include "chrome/browser/chromeos/login/users/user.h"
-#include "chrome/browser/profiles/profile.h"
+#include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 
 namespace chromeos {
@@ -22,15 +21,12 @@ OnlineAttemptHost::~OnlineAttemptHost() {
   Reset();
 }
 
-void OnlineAttemptHost::Check(Profile* profile,
+void OnlineAttemptHost::Check(content::BrowserContext* auth_context,
                               const UserContext& user_context) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
-  std::string attempt_hash = base::SHA1HashString(
-      user_context.GetUserID() + "\n" + user_context.GetPassword());
-  if (attempt_hash != current_attempt_hash_) {
+  if (user_context != current_attempt_user_context_) {
     Reset();
-    current_attempt_hash_ = attempt_hash;
-    current_username_ = user_context.GetUserID();
+    current_attempt_user_context_ = user_context;
 
     state_.reset(new AuthAttemptState(user_context,
                                       User::USER_TYPE_REGULAR,
@@ -38,15 +34,14 @@ void OnlineAttemptHost::Check(Profile* profile,
                                       false,    // online_complete
                                       false));  // user_is_new
     online_attempt_.reset(new OnlineAttempt(state_.get(), this));
-    online_attempt_->Initiate(profile);
+    online_attempt_->Initiate(auth_context);
   }
 }
 
 void OnlineAttemptHost::Reset() {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
   online_attempt_.reset(NULL);
-  current_attempt_hash_.clear();
-  current_username_.clear();
+  current_attempt_user_context_ = UserContext();
 }
 
 void OnlineAttemptHost::Resolve() {
@@ -64,7 +59,7 @@ void OnlineAttemptHost::Resolve() {
 
 void OnlineAttemptHost::ResolveOnUIThread(bool success) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
-  delegate_->OnChecked(current_username_, success);
+  delegate_->OnChecked(current_attempt_user_context_.GetUserID(), success);
   Reset();
 }
 

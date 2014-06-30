@@ -5,6 +5,7 @@
 #include "content/browser/service_worker/service_worker_context_wrapper.h"
 
 #include "base/files/file_path.h"
+#include "base/logging.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "content/browser/service_worker/service_worker_context_core.h"
 #include "content/browser/service_worker/service_worker_context_observer.h"
@@ -18,7 +19,7 @@ ServiceWorkerContextWrapper::ServiceWorkerContextWrapper(
     BrowserContext* browser_context)
     : observer_list_(
           new ObserverListThreadSafe<ServiceWorkerContextObserver>()),
-      browser_context_(browser_context) {
+      process_manager_(new ServiceWorkerProcessManager(browser_context)) {
 }
 
 ServiceWorkerContextWrapper::~ServiceWorkerContextWrapper() {
@@ -39,16 +40,18 @@ void ServiceWorkerContextWrapper::Init(
 }
 
 void ServiceWorkerContextWrapper::Shutdown() {
-  if (!BrowserThread::CurrentlyOn(BrowserThread::IO)) {
-    DCHECK_CURRENTLY_ON(BrowserThread::UI);
-    browser_context_ = NULL;
-    BrowserThread::PostTask(
-        BrowserThread::IO, FROM_HERE,
-        base::Bind(&ServiceWorkerContextWrapper::Shutdown, this));
-    return;
-  }
-  // Breaks the reference cycle through ServiceWorkerProcessManager.
-  context_core_.reset();
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  process_manager_->Shutdown();
+  BrowserThread::PostTask(
+      BrowserThread::IO,
+      FROM_HERE,
+      base::Bind(&ServiceWorkerContextWrapper::ShutdownOnIO, this));
+}
+
+void ServiceWorkerContextWrapper::DeleteAndStartOver() {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  context_core_->DeleteAndStartOver(
+      base::Bind(&ServiceWorkerContextWrapper::DidDeleteAndStartOver, this));
 }
 
 ServiceWorkerContextCore* ServiceWorkerContextWrapper::context() {
@@ -121,6 +124,11 @@ void ServiceWorkerContextWrapper::UnregisterServiceWorker(
       base::Bind(&FinishUnregistrationOnIO, continuation));
 }
 
+void ServiceWorkerContextWrapper::Terminate() {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  process_manager_->Shutdown();
+}
+
 void ServiceWorkerContextWrapper::AddObserver(
     ServiceWorkerContextObserver* observer) {
   observer_list_->AddObserver(observer);
@@ -149,13 +157,28 @@ void ServiceWorkerContextWrapper::InitInternal(
     return;
   }
   DCHECK(!context_core_);
-  context_core_.reset(new ServiceWorkerContextCore(
-      user_data_directory,
-      database_task_runner,
-      disk_cache_thread,
-      quota_manager_proxy,
-      observer_list_,
-      make_scoped_ptr(new ServiceWorkerProcessManager(this))));
+  context_core_.reset(new ServiceWorkerContextCore(user_data_directory,
+                                                   database_task_runner,
+                                                   disk_cache_thread,
+                                                   quota_manager_proxy,
+                                                   observer_list_,
+                                                   this));
+}
+
+void ServiceWorkerContextWrapper::ShutdownOnIO() {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  context_core_.reset();
+}
+
+void ServiceWorkerContextWrapper::DidDeleteAndStartOver(
+    ServiceWorkerStatusCode status) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  if (status != SERVICE_WORKER_OK) {
+    context_core_.reset();
+    return;
+  }
+  context_core_.reset(new ServiceWorkerContextCore(context_core_.get(), this));
+  DVLOG(1) << "Restarted ServiceWorkerContextCore successfully.";
 }
 
 }  // namespace content

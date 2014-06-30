@@ -26,7 +26,7 @@
 #include "components/autofill/core/browser/phone_number_i18n.h"
 #include "components/autofill/core/common/autofill_constants.h"
 #include "content/public/browser/web_ui.h"
-#include "grit/component_strings.h"
+#include "grit/components_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/libaddressinput_strings.h"
 #include "third_party/libaddressinput/chromium/cpp/include/libaddressinput/address_ui.h"
@@ -333,6 +333,12 @@ void AutofillOptionsHandler::RegisterMessages() {
   personal_data_ = autofill::PersonalDataManagerFactory::GetForProfile(
       Profile::FromWebUI(web_ui()));
 
+#if defined(OS_MACOSX) && !defined(OS_IOS)
+  web_ui()->RegisterMessageCallback(
+      "accessAddressBook",
+      base::Bind(&AutofillOptionsHandler::AccessAddressBook,
+                 base::Unretained(this)));
+#endif  // defined(OS_MACOSX) && !defined(OS_IOS)
   web_ui()->RegisterMessageCallback(
       "removeData",
       base::Bind(&AutofillOptionsHandler::RemoveData,
@@ -436,6 +442,12 @@ void AutofillOptionsHandler::LoadAutofillData() {
   web_ui()->CallJavascriptFunction("AutofillOptions.setCreditCardList",
                                    credit_cards);
 }
+
+#if defined(OS_MACOSX) && !defined(OS_IOS)
+void AutofillOptionsHandler::AccessAddressBook(const base::ListValue* args) {
+  personal_data_->AccessAddressBook();
+}
+#endif  // defined(OS_MACOSX) && !defined(OS_IOS)
 
 void AutofillOptionsHandler::RemoveData(const base::ListValue* args) {
   DCHECK(IsPersonalDataLoaded());

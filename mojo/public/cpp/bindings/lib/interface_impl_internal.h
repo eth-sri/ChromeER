@@ -9,6 +9,7 @@
 #include "mojo/public/cpp/bindings/interface_ptr.h"
 #include "mojo/public/cpp/bindings/lib/filter_chain.h"
 #include "mojo/public/cpp/bindings/lib/message_header_validator.h"
+#include "mojo/public/cpp/environment/environment.h"
 #include "mojo/public/cpp/system/macros.h"
 
 namespace mojo {
@@ -29,7 +30,6 @@ class InterfaceImplState : public ErrorHandler {
 
   explicit InterfaceImplState(InterfaceImplBase<Interface>* instance)
       : router_(NULL),
-        client_(NULL),
         proxy_(NULL) {
     assert(instance);
     stub_.set_sink(instance);
@@ -45,14 +45,14 @@ class InterfaceImplState : public ErrorHandler {
 
   void BindProxy(
       InterfacePtr<Interface>* ptr,
-      MojoAsyncWaiter* waiter = GetDefaultAsyncWaiter()) {
+      const MojoAsyncWaiter* waiter = Environment::GetDefaultAsyncWaiter()) {
     MessagePipe pipe;
     ptr->Bind(pipe.handle0.Pass(), waiter);
     Bind(pipe.handle1.Pass(), waiter);
   }
 
   void Bind(ScopedMessagePipeHandle handle,
-            MojoAsyncWaiter* waiter) {
+            const MojoAsyncWaiter* waiter) {
     assert(!router_);
 
     FilterChain filters;
@@ -66,14 +66,16 @@ class InterfaceImplState : public ErrorHandler {
 
     proxy_ = new typename Client::Proxy_(router_);
 
-    instance()->SetClient(proxy_);
     instance()->OnConnectionEstablished();
   }
 
-  Router* router() { return router_; }
+  bool WaitForIncomingMethodCall() {
+    assert(router_);
+    return router_->WaitForIncomingMessage();
+  }
 
-  void set_client(Client* client) { client_ = client; }
-  Client* client() { return client_; }
+  Router* router() { return router_; }
+  Client* client() { return proxy_; }
 
  private:
   InterfaceImplBase<Interface>* instance() {
@@ -85,7 +87,6 @@ class InterfaceImplState : public ErrorHandler {
   }
 
   Router* router_;
-  Client* client_;
   typename Client::Proxy_* proxy_;
   typename Interface::Stub_ stub_;
 

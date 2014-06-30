@@ -6,24 +6,48 @@
 
 #include "content/browser/screen_orientation/screen_orientation_provider.h"
 #include "content/common/screen_orientation_messages.h"
+#include "content/public/browser/render_frame_host.h"
+#include "content/public/browser/render_process_host.h"
+#include "content/public/browser/render_view_host.h"
+#include "content/public/browser/render_widget_host.h"
+#include "content/public/browser/web_contents.h"
+#include "third_party/WebKit/public/platform/WebScreenInfo.h"
 
 namespace content {
 
-ScreenOrientationDispatcherHost::ScreenOrientationDispatcherHost()
-  : BrowserMessageFilter(ScreenOrientationMsgStart) {
-  if (!provider_.get())
-    provider_.reset(CreateProvider());
+ScreenOrientationDispatcherHost::LockInformation::LockInformation(
+    int request_id, int process_id, int routing_id)
+    : request_id(request_id),
+      process_id(process_id),
+      routing_id(routing_id) {
+}
+
+ScreenOrientationDispatcherHost::ScreenOrientationDispatcherHost(
+    WebContents* web_contents)
+  : WebContentsObserver(web_contents),
+    current_lock_(NULL) {
+  provider_.reset(ScreenOrientationProvider::Create(this, web_contents));
 }
 
 ScreenOrientationDispatcherHost::~ScreenOrientationDispatcherHost() {
+  ResetCurrentLock();
+}
+
+void ScreenOrientationDispatcherHost::ResetCurrentLock() {
+  if (current_lock_) {
+    delete current_lock_;
+    current_lock_ = 0;
+  }
 }
 
 bool ScreenOrientationDispatcherHost::OnMessageReceived(
-    const IPC::Message& message) {
+    const IPC::Message& message,
+    RenderFrameHost* render_frame_host) {
   bool handled = true;
 
-  IPC_BEGIN_MESSAGE_MAP(ScreenOrientationDispatcherHost, message)
-    IPC_MESSAGE_HANDLER(ScreenOrientationHostMsg_Lock, OnLockRequest)
+  IPC_BEGIN_MESSAGE_MAP_WITH_PARAM(ScreenOrientationDispatcherHost, message,
+                                   render_frame_host)
+    IPC_MESSAGE_HANDLER(ScreenOrientationHostMsg_LockRequest, OnLockRequest)
     IPC_MESSAGE_HANDLER(ScreenOrientationHostMsg_Unlock, OnUnlockRequest)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
@@ -31,36 +55,86 @@ bool ScreenOrientationDispatcherHost::OnMessageReceived(
   return handled;
 }
 
-void ScreenOrientationDispatcherHost::OnOrientationChange(
-    blink::WebScreenOrientationType orientation) {
-  Send(new ScreenOrientationMsg_OrientationChange(orientation));
+RenderFrameHost*
+ScreenOrientationDispatcherHost::GetRenderFrameHostForRequestID(
+    int request_id) {
+  if (!current_lock_ || current_lock_->request_id != request_id)
+    return NULL;
+
+  return RenderFrameHost::FromID(current_lock_->process_id,
+                                 current_lock_->routing_id);
 }
 
-void ScreenOrientationDispatcherHost::SetProviderForTests(
-    ScreenOrientationProvider* provider) {
-  provider_.reset(provider);
+void ScreenOrientationDispatcherHost::NotifyLockSuccess(int request_id) {
+  RenderFrameHost* render_frame_host =
+      GetRenderFrameHostForRequestID(request_id);
+  if (!render_frame_host)
+    return;
+
+  DCHECK(web_contents()->GetRenderViewHost());
+
+  RenderWidgetHost* rwh = web_contents()->GetRenderViewHost();
+  blink::WebScreenInfo screen_info;
+  rwh->GetWebScreenInfo(&screen_info);
+
+  render_frame_host->Send(new ScreenOrientationMsg_LockSuccess(
+      render_frame_host->GetRoutingID(),
+      request_id,
+      screen_info.orientationAngle,
+      screen_info.orientationType));
+  ResetCurrentLock();
+}
+
+void ScreenOrientationDispatcherHost::NotifyLockError(
+    int request_id, blink::WebLockOrientationError error) {
+  RenderFrameHost* render_frame_host =
+      GetRenderFrameHostForRequestID(request_id);
+  if (!render_frame_host)
+    return;
+
+  render_frame_host->Send(new ScreenOrientationMsg_LockError(
+      render_frame_host->GetRoutingID(), request_id, error));
+  ResetCurrentLock();
+}
+
+void ScreenOrientationDispatcherHost::OnOrientationChange() {
+  if (provider_)
+    provider_->OnOrientationChange();
 }
 
 void ScreenOrientationDispatcherHost::OnLockRequest(
-    blink::WebScreenOrientationLockType orientation) {
-  if (!provider_.get())
-    return;
+    RenderFrameHost* render_frame_host,
+    blink::WebScreenOrientationLockType orientation,
+    int request_id) {
+  if (current_lock_) {
+    NotifyLockError(current_lock_->request_id,
+                    blink::WebLockOrientationErrorCanceled);
+  }
 
-  provider_->LockOrientation(orientation);
+  current_lock_ = new LockInformation(request_id,
+                                      render_frame_host->GetProcess()->GetID(),
+                                      render_frame_host->GetRoutingID());
+
+  if (!provider_) {
+    NotifyLockError(request_id,
+                    blink::WebLockOrientationErrorNotAvailable);
+    return;
+  }
+
+  provider_->LockOrientation(request_id, orientation);
 }
 
-void ScreenOrientationDispatcherHost::OnUnlockRequest() {
+void ScreenOrientationDispatcherHost::OnUnlockRequest(
+    RenderFrameHost* render_frame_host) {
+  if (current_lock_) {
+    NotifyLockError(current_lock_->request_id,
+                    blink::WebLockOrientationErrorCanceled);
+  }
+
   if (!provider_.get())
     return;
 
   provider_->UnlockOrientation();
 }
-
-#if !defined(OS_ANDROID)
-// static
-ScreenOrientationProvider* ScreenOrientationDispatcherHost::CreateProvider() {
-  return NULL;
-}
-#endif
 
 }  // namespace content

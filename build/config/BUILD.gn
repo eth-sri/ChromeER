@@ -12,6 +12,12 @@ declare_args() {
   # that is normally turned on for Debug builds. These are generally useful for
   # catching bugs but in some cases may cause conflicts or excessive slowness.
   disable_iterator_debugging = false
+
+  # Set to true to not store any build metadata (this isn't working yet but
+  # this flag will help us to get there). See http://crbug.com/314403.
+  # TODO(sebmarchand): Update this comment once this flag guarantee that
+  #     there's no build metadata in the build artifacts.
+  dont_embed_build_metadata = false
 }
 
 # TODO(brettw) Most of these should be removed. Instead of global feature
@@ -31,7 +37,6 @@ config("feature_flags") {
       "ENABLE_NOTIFICATIONS",
       "ENABLE_EGLIMAGE=1",
       "ENABLE_TASK_MANAGER=1",
-      "ENABLE_EXTENSIONS=1",
       "ENABLE_PLUGIN_INSTALLATION=1",
       "ENABLE_SESSION_SERVICE=1",
       "ENABLE_THEMES=1",
@@ -70,6 +75,9 @@ config("feature_flags") {
   }
   if (enable_spellcheck) {
     defines += [ "ENABLE_SPELLCHECK=1" ]
+  }
+  if (dont_embed_build_metadata) {
+    defines += [ "DONT_EMBED_BUILD_METADATA" ]
   }
   if (use_udev) {
     # TODO(brettw) should probably be "=1".
@@ -125,6 +133,15 @@ config("feature_flags") {
   }
   if (enable_webrtc) {
     defines += [ "ENABLE_WEBRTC=1" ]
+  }
+  if (disable_ftp_support) {
+    defines += [ "DISABLE_FTP_SUPPORT=1" ]
+  }
+  if (!enable_nacl) {
+    defines += [ "DISABLE_NACL" ]
+  }
+  if (enable_extensions) {
+    defines += [ "ENABLE_EXTENSIONS=1" ]
   }
 }
 

@@ -71,6 +71,7 @@ int QuicHttpStream::InitializeStream(const HttpRequestInfo* request_info,
 
   stream_net_log_ = stream_net_log;
   request_info_ = request_info;
+  request_time_ = base::Time::Now();
   priority_ = priority;
 
   int rv = stream_request_.StartRequest(
@@ -121,12 +122,9 @@ int QuicHttpStream::SendRequest(const HttpRequestHeaders& request_headers,
     // was being called even if we didn't yet allocate raw_request_body_buf_.
     //   && (request_body_stream_->size() ||
     //       request_body_stream_->is_chunked()))
-    //
-    // Use kMaxPacketSize as the buffer size, since the request
-    // body data is written with this size at a time.
-    // TODO(rch): use a smarter value since we can't write an entire
-    // packet due to overhead.
-    raw_request_body_buf_ = new IOBufferWithSize(kMaxPacketSize);
+    // Use 10 packets as the body buffer size to give enough space to
+    // help ensure we don't often send out partial packets.
+    raw_request_body_buf_ = new IOBufferWithSize(10 * kMaxPacketSize);
     // The request body buffer is empty at first.
     request_body_buf_ = new DrainableIOBuffer(raw_request_body_buf_.get(), 0);
   }
@@ -164,10 +162,6 @@ int QuicHttpStream::ReadResponseHeaders(const CompletionCallback& callback) {
   CHECK(callback_.is_null());
   callback_ = callback;
   return ERR_IO_PENDING;
-}
-
-const HttpResponseInfo* QuicHttpStream::GetResponseInfo() const {
-  return response_info_;
 }
 
 int QuicHttpStream::ReadResponseBody(
@@ -546,6 +540,8 @@ int QuicHttpStream::ParseResponseHeaders() {
       .Init(*request_info_, *response_info_->headers.get());
   response_info_->was_npn_negotiated = true;
   response_info_->npn_negotiated_protocol = "quic/1+spdy/3";
+  response_info_->response_time = base::Time::Now();
+  response_info_->request_time = request_time_;
   response_headers_received_ = true;
 
   return OK;

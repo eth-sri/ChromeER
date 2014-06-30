@@ -61,8 +61,7 @@ class CONTENT_EXPORT NavigatorDelegate {
 
   // Handles post-navigation tasks in navigation BEFORE the entry has been
   // committed to the NavigationController.
-  virtual void DidNavigateMainFramePreCommit(
-      const FrameHostMsg_DidCommitProvisionalLoad_Params& params) {}
+  virtual void DidNavigateMainFramePreCommit(bool navigation_is_within_page) {}
 
   // Handles post-navigation tasks in navigation AFTER the entry has been
   // committed to the NavigationController. Note that the NavigationEntry is
@@ -77,7 +76,7 @@ class CONTENT_EXPORT NavigatorDelegate {
       const FrameHostMsg_DidCommitProvisionalLoad_Params& params) {}
 
   virtual void SetMainFrameMimeType(const std::string& mime_type) {}
-  virtual bool CanOverscrollContent();
+  virtual bool CanOverscrollContent() const;
 
   // Notification to the Navigator embedder that navigation state has
   // changed. This method corresponds to

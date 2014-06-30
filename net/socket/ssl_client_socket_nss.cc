@@ -969,6 +969,7 @@ SSLClientSocketNSS::Core::~Core() {
     PR_Close(nss_fd_);
     nss_fd_ = NULL;
   }
+  nss_bufs_ = NULL;
 }
 
 bool SSLClientSocketNSS::Core::Init(PRFileDesc* socket,
@@ -2143,7 +2144,12 @@ int SSLClientSocketNSS::Core::BufferSend() {
   const char* buf1;
   const char* buf2;
   unsigned int len1, len2;
-  memio_GetWriteParams(nss_bufs_, &buf1, &len1, &buf2, &len2);
+  if (memio_GetWriteParams(nss_bufs_, &buf1, &len1, &buf2, &len2)) {
+    // It is important this return synchronously to prevent spinning infinitely
+    // in the off-thread NSS case. The error code itself is ignored, so just
+    // return ERR_ABORTED. See https://crbug.com/381160.
+    return ERR_ABORTED;
+  }
   const unsigned int len = len1 + len2;
 
   int rv = 0;
@@ -2636,7 +2642,7 @@ int SSLClientSocketNSS::Core::DoGetDomainBoundCert(const std::string& host) {
   DCHECK(OnNetworkTaskRunner());
 
   if (detached_)
-    return ERR_FAILED;
+    return ERR_ABORTED;
 
   weak_net_log_->BeginEvent(NetLog::TYPE_SSL_GET_DOMAIN_BOUND_CERT);
 

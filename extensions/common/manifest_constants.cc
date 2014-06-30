@@ -8,6 +8,7 @@ namespace extensions {
 
 namespace manifest_keys {
 
+const char kAboutPage[] = "about_page";
 const char kAllFrames[] = "all_frames";
 const char kAltKey[] = "altKey";
 const char kApp[] = "app";
@@ -43,10 +44,8 @@ const char kExternallyConnectable[] = "externally_connectable";
 const char kFileAccessList[] = "file_access";
 const char kFileFilters[] = "file_filters";
 const char kFileBrowserHandlers[] = "file_browser_handlers";
-const char kMediaGalleriesHandlers[] = "media_galleries_handlers";
 const char kFileHandlers[] = "file_handlers";
 const char kFileHandlerExtensions[] = "extensions";
-const char kFileHandlerTitle[] = "title";
 const char kFileHandlerTypes[] = "types";
 const char kGlobal[] = "global";
 const char kHideBookmarkButton[] = "hide_bookmark_button";
@@ -269,6 +268,9 @@ const char kExperimentalFlagRequired[] =
     "Loading extensions with 'experimental' permission is turned off by "
     "default. You can enable 'Experimental Extension APIs' "
     "by visiting chrome://flags.";
+const char kInvalidAboutPage[] = "Invalid value for 'about_page'.";
+const char kInvalidAboutPageExpectRelativePath[] =
+    "Invalid value for 'about_page'. Value must be a relative path.";
 const char kInvalidAllFrames[] =
     "Invalid value for 'content_scripts[*].all_frames'.";
 const char kInvalidBackground[] =
@@ -343,8 +345,6 @@ const char kInvalidFileAccessValue[] =
     "Invalid value for 'file_access[*]'.";
 const char kInvalidFileBrowserHandler[] =
     "Invalid value for 'file_browser_handlers'.";
-const char kInvalidMediaGalleriesHandler[] =
-    "Invalid value for 'media_galleries_handlers'.";
 const char kInvalidFileFiltersList[] =
     "Invalid value for 'file_filters'.";
 const char kInvalidFileFilterValue[] =
@@ -359,8 +359,6 @@ const char kInvalidFileHandlerExtensionElement[] =
     "Invalid value for 'file_handlers[*].extensions[*]'.";
 const char kInvalidFileHandlerNoTypeOrExtension[] =
     "'file_handlers[*]' must contain a non-empty 'types' or 'extensions'.";
-const char kInvalidFileHandlerTitle[] =
-    "Invalid value for 'file_handlers[*].title'.";
 const char kInvalidFileHandlerType[] =
     "Invalid value for 'file_handlers[*].types'.";
 const char kInvalidFileHandlerTypeElement[] =
@@ -568,6 +566,9 @@ const char kInvalidSandboxedPagesCSP[] =
     "Invalid value for 'sandbox.content_security_policy'.";
 const char kInvalidScriptBadge[] =
     "Invalid value for 'script_badge'.";
+const char kInvalidSearchEngineMissingKeys[] =
+    "Missing mandatory parameters for "
+    "'chrome_settings_overrides.search_provider'.";
 const char kInvalidSearchEngineURL[] =
     "Invalid URL [*] for 'chrome_settings_overrides.search_provider'.";
 const char kInvalidServiceWorkerScript[] =
@@ -713,8 +714,8 @@ const char kScriptBadgeTitleIgnored[] =
     "default_title specified in script_badge manifest section will not be "
     "used.";
 const char kServiceWorkerRequiresFlag[] =
-    "Service worker features require --enable-service-worker command-line "
-    "flag.";
+    "Service worker features require "
+    "--enable-experimental-web-platform-features command-line flag.";
 const char kUnrecognizedManifestKey[] = "Unrecognized manifest key '*'.";
 const char kUnrecognizedManifestProperty[] =
     "Unrecognized property '*' of manifest key '*'.";

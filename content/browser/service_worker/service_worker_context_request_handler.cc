@@ -17,8 +17,12 @@ namespace content {
 ServiceWorkerContextRequestHandler::ServiceWorkerContextRequestHandler(
     base::WeakPtr<ServiceWorkerContextCore> context,
     base::WeakPtr<ServiceWorkerProviderHost> provider_host,
+    base::WeakPtr<webkit_blob::BlobStorageContext> blob_storage_context,
     ResourceType::Type resource_type)
-    : ServiceWorkerRequestHandler(context, provider_host, resource_type),
+    : ServiceWorkerRequestHandler(context,
+                                  provider_host,
+                                  blob_storage_context,
+                                  resource_type),
       version_(provider_host_->running_hosted_version()) {
   DCHECK(provider_host_->IsHostToRunningServiceWorker());
 }
@@ -50,8 +54,12 @@ net::URLRequestJob* ServiceWorkerContextRequestHandler::MaybeCreateJob(
     int64 response_id = context_->storage()->NewResourceId();
     if (response_id == kInvalidServiceWorkerResponseId)
       return NULL;
-    return new ServiceWorkerWriteToCacheJob(
-        request, network_delegate, context_, version_, response_id);
+    return new ServiceWorkerWriteToCacheJob(request,
+                                            network_delegate,
+                                            resource_type_,
+                                            context_,
+                                            version_,
+                                            response_id);
   }
 
   int64 response_id = kInvalidServiceWorkerResponseId;

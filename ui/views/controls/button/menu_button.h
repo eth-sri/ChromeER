@@ -10,7 +10,7 @@
 #include "base/strings/string16.h"
 #include "base/time/time.h"
 #include "ui/views/background.h"
-#include "ui/views/controls/button/text_button.h"
+#include "ui/views/controls/button/label_button.h"
 
 namespace views {
 
@@ -23,7 +23,7 @@ class MenuButtonListener;
 //  A button that shows a menu when the left mouse button is pushed
 //
 ////////////////////////////////////////////////////////////////////////////////
-class VIEWS_EXPORT MenuButton : public TextButton {
+class VIEWS_EXPORT MenuButton : public LabelButton {
  public:
   static const char kViewClassName[];
 
@@ -50,12 +50,10 @@ class VIEWS_EXPORT MenuButton : public TextButton {
   // Activate the button (called when the button is pressed).
   virtual bool Activate();
 
-  // Overridden from TextButton for the potential use of a drop marker.
-  virtual void PaintButton(gfx::Canvas* canvas, PaintButtonMode mode) OVERRIDE;
-
   // Overridden from View:
   virtual gfx::Size GetPreferredSize() const OVERRIDE;
   virtual const char* GetClassName() const OVERRIDE;
+  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
   virtual bool OnMousePressed(const ui::MouseEvent& event) OVERRIDE;
   virtual void OnMouseReleased(const ui::MouseEvent& event) OVERRIDE;
   virtual void OnMouseExited(const ui::MouseEvent& event) OVERRIDE;
@@ -68,6 +66,9 @@ class VIEWS_EXPORT MenuButton : public TextButton {
   // Paint the menu marker image.
   void PaintMenuMarker(gfx::Canvas* canvas);
 
+  // Overridden from LabelButton:
+  virtual gfx::Rect GetChildAreaBounds() OVERRIDE;
+
   // True if the menu is currently visible.
   bool menu_visible_;
 
@@ -75,8 +76,6 @@ class VIEWS_EXPORT MenuButton : public TextButton {
   gfx::Point menu_offset_;
 
  private:
-  friend class TextButtonBackground;
-
   // Compute the maximum X coordinate for the current screen. MenuButtons
   // use this to make sure a menu is never shown off screen.
   int GetMaximumScreenXCoordinate();
@@ -95,8 +94,7 @@ class VIEWS_EXPORT MenuButton : public TextButton {
   // Whether or not we're showing a drop marker.
   bool show_menu_marker_;
 
-  // The down arrow used to differentiate the menu button from normal
-  // text buttons.
+  // The down arrow used to differentiate the menu button from normal buttons.
   const gfx::ImageSkia* menu_marker_;
 
   // If non-null the destuctor sets this to true. This is set while the menu is

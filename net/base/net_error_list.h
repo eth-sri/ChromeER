@@ -96,7 +96,7 @@ NET_ERROR(SOCKET_IS_CONNECTED, -23)
 
 // The request was blocked because the forced reenrollment check is still
 // pending. This error can only occur on ChromeOS.
-// The error can be emitted by code in c/b/policy/policy_helpers.cc.
+// The error can be emitted by code in chrome/browser/policy/policy_helpers.cc.
 NET_ERROR(BLOCKED_ENROLLMENT_CHECK_PENDING, -24)
 
 // A connection was closed (corresponding to a TCP FIN).
@@ -570,8 +570,9 @@ NET_ERROR(SPDY_SERVER_REFUSED_STREAM, -351)
 // SPDY server didn't respond to the PING message.
 NET_ERROR(SPDY_PING_FAILED, -352)
 
-// The request couldn't be completed on an HTTP pipeline. Client should retry.
-NET_ERROR(PIPELINE_EVICTION, -353)
+// Obsolete.  Kept here to avoid reuse, as the old error can still appear on
+// histograms.
+// NET_ERROR(PIPELINE_EVICTION, -353)
 
 // The HTTP response body transferred fewer bytes than were advertised by the
 // Content-Length header when the connection is closed.
@@ -593,6 +594,21 @@ NET_ERROR(QUIC_HANDSHAKE_FAILED, -358)
 
 // An https resource was requested over an insecure QUIC connection.
 NET_ERROR(REQUEST_FOR_SECURE_RESOURCE_OVER_INSECURE_QUIC, -359)
+
+// Transport security is inadequate for the SPDY version.
+NET_ERROR(SPDY_INADEQUATE_TRANSPORT_SECURITY, -360)
+
+// The peer violated SPDY flow control.
+NET_ERROR(SPDY_FLOW_CONTROL_ERROR, -361)
+
+// The peer sent an improperly sized SPDY frame.
+NET_ERROR(SPDY_FRAME_SIZE_ERROR, -362)
+
+// Decoding or encoding of compressed SPDY headers failed.
+NET_ERROR(SPDY_COMPRESSION_ERROR, -363)
+
+// Proxy Auth Requested without a valid Client Socket Handle.
+NET_ERROR(PROXY_AUTH_REQUESTED_WITH_NO_CONNECTION, -364)
 
 // The cache does not have the requested entry.
 NET_ERROR(CACHE_MISS, -400)
@@ -628,6 +644,9 @@ NET_ERROR(CACHE_CHECKSUM_READ_FAILURE, -407)
 // attempts to read from the cache. It is an internal error, returned by the
 // SimpleCache backend, but not by any URLRequest methods or members.
 NET_ERROR(CACHE_CHECKSUM_MISMATCH, -408)
+
+// Internal error code for the HTTP cache. The cache lock timeout has fired.
+NET_ERROR(CACHE_LOCK_TIMEOUT, -409)
 
 // The server's response was insecure (e.g. there was a cert error).
 NET_ERROR(INSECURE_RESPONSE, -501)
@@ -715,6 +734,9 @@ NET_ERROR(SELF_SIGNED_CERT_GENERATION_FAILED, -713)
 
 // The certificate database changed in some way.
 NET_ERROR(CERT_DATABASE_CHANGED, -714)
+
+// Failure to import Channel ID.
+NET_ERROR(CHANNEL_ID_IMPORT_FAILED, -715)
 
 // DNS error codes.
 

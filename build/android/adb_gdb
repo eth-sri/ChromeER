@@ -16,7 +16,7 @@ PROGNAME=$(basename "$0")
 PROGDIR=$(dirname "$0")
 
 # Location of Chromium-top-level sources.
-CHROMIUM_SRC=$(cd "$PROGDIR"/../.. && pwd 2>/dev/null)
+CHROMIUM_SRC=$(cd "$PROGDIR"/../.. >/dev/null && pwd 2>/dev/null)
 
 # Location of Chromium out/ directory.
 if [ -z "$CHROMIUM_OUT_DIR" ]; then
@@ -320,6 +320,7 @@ Valid options:
   --su-prefix=<prefix>  Prepend <prefix> to 'adb shell' commands that are
                         run by this script. This can be useful to use
                         the 'su' program on rooted production devices.
+                        e.g. --su-prefix="su -c"
 
   --pull-libs           Force system libraries extraction.
   --no-pull-libs        Do not extract any system library.
@@ -472,11 +473,11 @@ get_ndk_toolchain_prebuilt () {
   local SUBPATH="$3"
   local NAME="$(get_arch_toolchain_prefix $ARCH)"
   local FILE TARGET
-  FILE=$NDK_DIR/toolchains/$NAME-4.6/prebuilt/$SUBPATH
+  FILE=$NDK_DIR/toolchains/$NAME-4.8/prebuilt/$SUBPATH
   if [ ! -f "$FILE" ]; then
-    FILE=$NDK_DIR/toolchains/$NAME-4.8/prebuilt/$SUBPATH
+    FILE=$NDK_DIR/toolchains/$NAME-4.9/prebuilt/$SUBPATH
     if [ ! -f "$FILE" ]; then
-      FILE=$NDK_DIR/toolchains/$NAME-4.4.3/prebuilt/$SUBPATH
+      FILE=$NDK_DIR/toolchains/$NAME-4.6/prebuilt/$SUBPATH
       if [ ! -f "$FILE" ]; then
         FILE=
       fi
@@ -852,7 +853,7 @@ if [ "$SU_PREFIX" ]; then
     cat $SU_PREFIX_TEST_LOG
     exit 1
   fi
-  COMMAND_PREFIX=$SU_PREFIX
+  COMMAND_PREFIX="$SU_PREFIX"
 else
   SHELL_UID=$(adb shell cat /proc/self/status | \
               awk '$1 == "Uid:" { print $2; }')
@@ -991,6 +992,6 @@ if [ "$VERBOSE" -gt 0 ]; then
   echo "### END $COMMANDS"
 fi
 
-log "Launching gdb client: $GDB $GDBARGS -x $COMMANDS"
-$GDB $GDBARGS -x $COMMANDS &&
+log "Launching gdb client: $GDB $GDB_ARGS -x $COMMANDS"
+$GDB $GDB_ARGS -x $COMMANDS &&
 rm -f "$GDBSERVER_PIDFILE"

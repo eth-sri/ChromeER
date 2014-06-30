@@ -103,6 +103,9 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
   // Notify the ResourceDispatcherHostImpl of a resource context destruction.
   void RemoveResourceContext(ResourceContext* context);
 
+  // Resumes a request that deferred at response start.
+  void ResumeResponseDeferredAtStart(const GlobalRequestID& id);
+
   // Force cancels any pending requests for the given |context|. This is
   // necessary to ensure that before |context| goes away, all requests
   // for it are dead.
@@ -210,10 +213,13 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
       const DownloadUrlParameters::OnStartedCallback& started_cb);
 
   // Must be called after the ResourceRequestInfo has been created
-  // and associated with the request.
+  // and associated with the request.  If |payload| is set to a non-empty value,
+  // the value will be sent to the old resource handler instead of cancelling
+  // it, except on HTTP errors.
   scoped_ptr<ResourceHandler> MaybeInterceptAsStream(
       net::URLRequest* request,
-      ResourceResponse* response);
+      ResourceResponse* response,
+      std::string* payload);
 
   void ClearSSLClientAuthHandlerForRequest(net::URLRequest* request);
 

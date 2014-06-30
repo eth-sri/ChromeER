@@ -18,6 +18,7 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/search_engines/util.h"
 #include "chrome/browser/ui/ash/ash_init.h"
 #include "chrome/browser/ui/browser.h"
@@ -34,6 +35,7 @@
 #include "content/public/browser/web_contents.h"
 #include "ui/aura/remote_window_tree_host_win.h"
 #include "ui/gfx/win/dpi.h"
+#include "ui/metro_viewer/metro_viewer_messages.h"
 #include "url/gurl.h"
 
 namespace {
@@ -71,6 +73,9 @@ ChromeMetroViewerProcessHost::ChromeMetroViewerProcessHost()
           content::BrowserThread::GetMessageLoopProxyForThread(
               content::BrowserThread::IO)) {
   chrome::IncrementKeepAliveCount();
+}
+
+ChromeMetroViewerProcessHost::~ChromeMetroViewerProcessHost() {
 }
 
 void ChromeMetroViewerProcessHost::OnChannelError() {
@@ -147,7 +152,8 @@ void ChromeMetroViewerProcessHost::OnOpenURL(const base::string16& url) {
 void ChromeMetroViewerProcessHost::OnHandleSearchRequest(
     const base::string16& search_string) {
   GURL url(GetDefaultSearchURLForSearchTerms(
-      ProfileManager::GetActiveUserProfile(), search_string));
+      TemplateURLServiceFactory::GetForProfile(
+          ProfileManager::GetActiveUserProfile()), search_string));
   if (url.is_valid())
     OpenURL(url);
 }

@@ -18,6 +18,7 @@
 #include "content/public/common/javascript_message_type.h"
 #include "content/public/common/page_state.h"
 #include "ipc/ipc_message_macros.h"
+#include "ui/gfx/ipc/gfx_param_traits.h"
 #include "url/gurl.h"
 
 #undef IPC_MESSAGE_EXPORT
@@ -331,19 +332,6 @@ IPC_MESSAGE_ROUTED2(FrameMsg_SetEditableSelectionOffsets,
                     int /* start */,
                     int /* end */)
 
-// Sets the text composition to be between the given start and end offsets in
-// the currently focused editable field.
-IPC_MESSAGE_ROUTED3(FrameMsg_SetCompositionFromExistingText,
-    int /* start */,
-    int /* end */,
-    std::vector<blink::WebCompositionUnderline> /* underlines */)
-
-// Deletes the current selection plus the specified number of characters before
-// and after the selection or caret.
-IPC_MESSAGE_ROUTED2(FrameMsg_ExtendSelectionAndDelete,
-                    int /* before */,
-                    int /* after */)
-
 // Tells the renderer to reload the frame, optionally ignoring the cache while
 // doing so.
 IPC_MESSAGE_ROUTED1(FrameMsg_Reload,
@@ -358,6 +346,15 @@ IPC_MESSAGE_ROUTED1(FrameMsg_DidEndColorChooser, unsigned)
 // Notifies the corresponding RenderFrameProxy object to replace itself with the
 // RenderFrame object it is associated with.
 IPC_MESSAGE_ROUTED0(FrameMsg_DeleteProxy)
+
+// Request the text surrounding the selection with a |max_length|. The response
+// will be sent via FrameHostMsg_TextSurroundingSelectionResponse.
+IPC_MESSAGE_ROUTED1(FrameMsg_TextSurroundingSelectionRequest,
+                    size_t /* max_length */)
+
+// Tells the renderer to insert a link to the specified stylesheet. This is
+// needed to support navigation transitions.
+IPC_MESSAGE_ROUTED1(FrameMsg_AddStyleSheetByURL, std::string)
 
 // -----------------------------------------------------------------------------
 // Messages sent from the renderer to the browser.
@@ -608,6 +605,22 @@ IPC_MESSAGE_ROUTED3(FrameHostMsg_MediaPlayingNotification,
 
 IPC_MESSAGE_ROUTED1(FrameHostMsg_MediaPausedNotification,
                     int64 /* player_cookie, distinguishes instances */)
+
+// Notify browser the brand color has been changed.
+IPC_MESSAGE_ROUTED1(FrameHostMsg_DidChangeBrandColor,
+                    SkColor /* brand_color */)
+
+// Response for FrameMsg_TextSurroundingSelectionRequest, |startOffset| and
+// |endOffset| are the offsets of the selection in the returned |content|.
+IPC_MESSAGE_ROUTED3(FrameHostMsg_TextSurroundingSelectionResponse,
+                    base::string16,  /* content */
+                    size_t, /* startOffset */
+                    size_t /* endOffset */)
+
+// Notifies the browser that the renderer has a pending navigation transition.
+IPC_MESSAGE_CONTROL2(FrameHostMsg_SetHasPendingTransitionRequest,
+                     int /* render_frame_id */,
+                     bool /* is_transition */)
 
 // Start a new EventRacer log.
 IPC_SYNC_MESSAGE_ROUTED0_1(FrameHostMsg_CreateEventRacerLog, int32/* routing id */)

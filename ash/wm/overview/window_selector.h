@@ -22,10 +22,7 @@
 namespace aura {
 class RootWindow;
 class Window;
-namespace client {
-class CursorClient;
-}  // namespace client
-}  // namespace aura
+}
 
 namespace gfx {
 class Rect;
@@ -39,6 +36,7 @@ namespace ash {
 class WindowSelectorDelegate;
 class WindowSelectorItem;
 class WindowSelectorTest;
+class WindowGrid;
 
 // The WindowSelector shows a grid of all of your windows, allowing to select
 // one by clicking or tapping on it.
@@ -48,6 +46,13 @@ class ASH_EXPORT WindowSelector
       public aura::WindowObserver,
       public aura::client::ActivationChangeObserver {
  public:
+  enum Direction {
+    LEFT,
+    UP,
+    RIGHT,
+    DOWN
+  };
+
   typedef std::vector<aura::Window*> WindowList;
   typedef ScopedVector<WindowSelectorItem> WindowSelectorItemList;
 
@@ -55,28 +60,23 @@ class ASH_EXPORT WindowSelector
                  WindowSelectorDelegate* delegate);
   virtual ~WindowSelector();
 
-  // Choose |window| from the available windows to select.
-  void SelectWindow(aura::Window* window);
-
   // Cancels window selection.
   void CancelSelection();
 
+  // Called when the last window selector item from a grid is deleted.
+  void OnGridEmpty(WindowGrid* grid);
+
   // ui::EventHandler:
   virtual void OnKeyEvent(ui::KeyEvent* event) OVERRIDE;
-  virtual void OnMouseEvent(ui::MouseEvent* event) OVERRIDE;
-  virtual void OnScrollEvent(ui::ScrollEvent* event) OVERRIDE;
-  virtual void OnTouchEvent(ui::TouchEvent* event) OVERRIDE;
 
   // gfx::DisplayObserver:
-  virtual void OnDisplayBoundsChanged(const gfx::Display& display) OVERRIDE;
   virtual void OnDisplayAdded(const gfx::Display& display) OVERRIDE;
   virtual void OnDisplayRemoved(const gfx::Display& display) OVERRIDE;
+  virtual void OnDisplayMetricsChanged(const gfx::Display& display,
+                                       uint32_t metrics) OVERRIDE;
 
   // aura::WindowObserver:
   virtual void OnWindowAdded(aura::Window* new_window) OVERRIDE;
-  virtual void OnWindowBoundsChanged(aura::Window* window,
-                                     const gfx::Rect& old_bounds,
-                                     const gfx::Rect& new_bounds) OVERRIDE;
   virtual void OnWindowDestroying(aura::Window* window) OVERRIDE;
 
   // aura::client::ActivationChangeObserver:
@@ -92,29 +92,18 @@ class ASH_EXPORT WindowSelector
   // Begins positioning windows such that all windows are visible on the screen.
   void StartOverview();
 
-  // Position all of the windows based on the current selection mode.
+  // Position all of the windows in the overview.
   void PositionWindows(bool animate);
-  // Position all of the windows from |root_window| on |root_window|.
-  void PositionWindowsFromRoot(aura::Window* root_window, bool animate);
 
-  // Resets the stored window from RemoveFocusAndSetRestoreWindow to NULL. If
-  // Hide and track all hidden windows not in overview.
+  // Hide and track all hidden windows not in the overview item list.
   void HideAndTrackNonOverviewWindows();
 
   // |focus|, restores focus to the stored window.
   void ResetFocusRestoreWindow(bool focus);
 
-  // Returns the target of |event| or NULL if the event is not targeted at
-  // any of the windows in the selector.
-  aura::Window* GetEventTarget(ui::LocatedEvent* event);
-
-  // Returns the top-level window selected by targeting |window| or NULL if
-  // no overview window was found for |window|.
-  aura::Window* GetTargetedWindow(aura::Window* window);
-
-  // The collection of items in the overview wrapped by a helper class which
-  // restores their state and helps transform them to other root windows.
-  ScopedVector<WindowSelectorItem> windows_;
+  // Helper function that moves the selection widget to |direction| on the
+  // corresponding window grid.
+  void Move(Direction direction);
 
   // Tracks observed windows.
   std::set<aura::Window*> observed_windows_;
@@ -132,15 +121,26 @@ class ASH_EXPORT WindowSelector
   // used to prevent handling the resulting expected activation.
   bool ignore_activations_;
 
-  // The cursor client used to lock the current cursor during overview.
-  aura::client::CursorClient* cursor_client_;
-
-  // The time when overview was started.
-  base::Time overview_start_time_;
+  // List of all the window overview grids, one for each root window.
+  ScopedVector<WindowGrid> grid_list_;
 
   // Tracks windows which were hidden because they were not part of the
   // overview.
   aura::WindowTracker hidden_windows_;
+
+  // Tracks the index of the root window the selection widget is in.
+  size_t selected_grid_index_;
+
+  // The following variables are used for metric collection purposes. All of
+  // them refer to this particular overview session and are not cumulative:
+  // The time when overview was started.
+  base::Time overview_start_time_;
+
+  // The number of arrow key presses.
+  size_t num_key_presses_;
+
+  // The number of items in the overview.
+  size_t num_items_;
 
   DISALLOW_COPY_AND_ASSIGN(WindowSelector);
 };

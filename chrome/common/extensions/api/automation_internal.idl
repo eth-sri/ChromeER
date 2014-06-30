@@ -56,9 +56,9 @@ namespace automationInternal {
   // All possible actions that can be performed on automation nodes.
   enum ActionType {
     focus,
-    do_default,
-    make_visible,
-    set_selection
+    doDefault,
+    makeVisible,
+    setSelection
   };
 
   // Arguments required for all actions supplied to performAction.
@@ -83,9 +83,10 @@ namespace automationInternal {
   callback EnableDesktopCallback = void();
 
   interface Functions {
-    // Enable automation of the active tab and retrieves its routing id for use
-    // in future updates.
-    static void enableCurrentTab(EnableTabCallback callback);
+    // Enable automation of the tab with the given id, or the active tab if no
+    // tab id is given, and retrieves its process and routing ids for use in
+    // future updates.
+    static void enableTab(optional long tabId, EnableTabCallback callback);
 
     // Enables desktop automation.
     static void enableDesktop(EnableDesktopCallback callback);
@@ -98,5 +99,7 @@ namespace automationInternal {
   interface Events {
     // Fired when an accessibility event occurs
     static void onAccessibilityEvent(AXEventParams update);
+
+    static void onAccessibilityTreeDestroyed(long processID, long routingID);
   };
 };

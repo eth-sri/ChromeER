@@ -176,7 +176,8 @@ bool MediaCodecBridge::IsKnownUnaccelerated(const std::string& mime_type,
       // It would be nice if MediaCodecInfo externalized some notion of
       // HW-acceleration but it doesn't. Android Media guidance is that the
       // prefix below is always used for SW decoders, so that's what we use.
-      return StartsWithASCII(codecs_info[i].name, "OMX.google.", true);
+      if (!StartsWithASCII(codecs_info[i].name, "OMX.google.", true))
+        return false;
     }
   }
   return true;
@@ -716,7 +717,8 @@ VideoCodecBridge* VideoCodecBridge::CreateEncoder(const VideoCodec& codec,
 VideoCodecBridge::VideoCodecBridge(const std::string& mime,
                                    bool is_secure,
                                    MediaCodecDirection direction)
-    : MediaCodecBridge(mime, is_secure, direction) {}
+    : MediaCodecBridge(mime, is_secure, direction),
+      adaptive_playback_supported_for_testing_(-1) {}
 
 void VideoCodecBridge::SetVideoBitrate(int bps) {
   JNIEnv* env = AttachCurrentThread();
@@ -726,6 +728,16 @@ void VideoCodecBridge::SetVideoBitrate(int bps) {
 void VideoCodecBridge::RequestKeyFrameSoon() {
   JNIEnv* env = AttachCurrentThread();
   Java_MediaCodecBridge_requestKeyFrameSoon(env, media_codec());
+}
+
+bool VideoCodecBridge::IsAdaptivePlaybackSupported(int width, int height) {
+  if (adaptive_playback_supported_for_testing_ == 0)
+    return false;
+  else if (adaptive_playback_supported_for_testing_ > 0)
+    return true;
+  JNIEnv* env = AttachCurrentThread();
+  return Java_MediaCodecBridge_isAdaptivePlaybackSupported(
+      env, media_codec(), width, height);
 }
 
 bool MediaCodecBridge::RegisterMediaCodecBridge(JNIEnv* env) {

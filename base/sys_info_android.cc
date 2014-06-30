@@ -6,19 +6,21 @@
 
 #include <sys/system_properties.h>
 
+#include "base/android/sys_utils.h"
+#include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/stringprintf.h"
+#include "base/sys_info_internal.h"
 
 namespace {
 
 // Default version of Android to fall back to when actual version numbers
-// cannot be acquired.
-// TODO(dfalcantara): Keep this reasonably up to date with the latest publicly
-//                    available version of Android.
-const int kDefaultAndroidMajorVersion = 4;
-const int kDefaultAndroidMinorVersion = 3;
+// cannot be acquired. This is an obviously invalid version number. Code
+// doing version comparison should treat it as so and fail all comparisons.
+const int kDefaultAndroidMajorVersion = 0;
+const int kDefaultAndroidMinorVersion = 0;
 const int kDefaultAndroidBugfixVersion = 0;
 
 // Parse out the OS version numbers from the system properties.
@@ -161,6 +163,15 @@ int SysInfo::DalvikHeapSizeMB() {
 int SysInfo::DalvikHeapGrowthLimitMB() {
   static int heap_growth_limit = GetDalvikHeapGrowthLimitMB();
   return heap_growth_limit;
+}
+
+static base::LazyInstance<
+    base::internal::LazySysInfoValue<bool,
+        android::SysUtils::IsLowEndDeviceFromJni> >::Leaky
+    g_lazy_low_end_device = LAZY_INSTANCE_INITIALIZER;
+
+bool SysInfo::IsLowEndDevice() {
+  return g_lazy_low_end_device.Get().value();
 }
 
 

@@ -23,6 +23,7 @@
 #include "base/thread_task_runner_handle.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/timer/hi_res_timer_manager.h"
+#include "content/browser/battery_status/battery_status_service.h"
 #include "content/browser/browser_thread_impl.h"
 #include "content/browser/device_sensors/device_inertial_sensor_service.h"
 #include "content/browser/download/save_file_manager.h"
@@ -67,6 +68,7 @@
 #endif
 
 #if defined(USE_AURA)
+#include "content/public/browser/context_factory.h"
 #include "ui/aura/env.h"
 #endif
 
@@ -83,6 +85,7 @@
 #endif
 
 #if defined(OS_MACOSX) && !defined(OS_IOS)
+#include "content/browser/bootstrap_sandbox_mac.h"
 #include "content/browser/theme_helper_mac.h"
 #endif
 
@@ -368,6 +371,12 @@ void BrowserMainLoop::EarlyInitialization() {
   if (parts_)
     parts_->PreEarlyInitialization();
 
+#if defined(OS_MACOSX)
+  // We use quite a few file descriptors for our IPC, and the default limit on
+  // the Mac is low (256), so bump it up.
+  base::SetFdLimit(1024);
+#endif
+
 #if defined(OS_WIN)
   net::EnsureWinsockInit();
 #endif
@@ -510,7 +519,6 @@ void BrowserMainLoop::MainMessageLoopStart() {
 }
 
 int BrowserMainLoop::PreCreateThreads() {
-
   if (parts_) {
     TRACE_EVENT0("startup",
         "BrowserMainLoop::CreateThreads:PreCreateThreads");
@@ -590,7 +598,6 @@ void BrowserMainLoop::CreateStartupTasks() {
 int BrowserMainLoop::CreateThreads() {
   TRACE_EVENT0("startup", "BrowserMainLoop::CreateThreads");
 
-  base::Thread::Options default_options;
   base::Thread::Options io_message_loop_options;
   io_message_loop_options.message_loop_type = base::MessageLoop::TYPE_IO;
   base::Thread::Options ui_message_loop_options;
@@ -605,7 +612,7 @@ int BrowserMainLoop::CreateThreads() {
        thread_id < BrowserThread::ID_COUNT;
        ++thread_id) {
     scoped_ptr<BrowserProcessSubThread>* thread_to_start = NULL;
-    base::Thread::Options* options = &default_options;
+    base::Thread::Options options;
 
     switch (thread_id) {
       case BrowserThread::DB:
@@ -613,6 +620,7 @@ int BrowserMainLoop::CreateThreads() {
             "BrowserMainLoop::CreateThreads:start",
             "Thread", "BrowserThread::DB");
         thread_to_start = &db_thread_;
+        options.timer_slack = base::TIMER_SLACK_MAXIMUM;
         break;
       case BrowserThread::FILE_USER_BLOCKING:
         TRACE_EVENT_BEGIN1("startup",
@@ -629,30 +637,33 @@ int BrowserMainLoop::CreateThreads() {
         // On Windows, the FILE thread needs to be have a UI message loop
         // which pumps messages in such a way that Google Update can
         // communicate back to us.
-        options = &ui_message_loop_options;
+        options = ui_message_loop_options;
 #else
-        options = &io_message_loop_options;
+        options = io_message_loop_options;
 #endif
+        options.timer_slack = base::TIMER_SLACK_MAXIMUM;
         break;
       case BrowserThread::PROCESS_LAUNCHER:
         TRACE_EVENT_BEGIN1("startup",
             "BrowserMainLoop::CreateThreads:start",
             "Thread", "BrowserThread::PROCESS_LAUNCHER");
         thread_to_start = &process_launcher_thread_;
+        options.timer_slack = base::TIMER_SLACK_MAXIMUM;
         break;
       case BrowserThread::CACHE:
         TRACE_EVENT_BEGIN1("startup",
             "BrowserMainLoop::CreateThreads:start",
             "Thread", "BrowserThread::CACHE");
         thread_to_start = &cache_thread_;
-        options = &io_message_loop_options;
+        options = io_message_loop_options;
+        options.timer_slack = base::TIMER_SLACK_MAXIMUM;
         break;
       case BrowserThread::IO:
         TRACE_EVENT_BEGIN1("startup",
             "BrowserMainLoop::CreateThreads:start",
             "Thread", "BrowserThread::IO");
         thread_to_start = &io_thread_;
-        options = &io_message_loop_options;
+        options = io_message_loop_options;
         break;
       case BrowserThread::UI:
       case BrowserThread::ID_COUNT:
@@ -665,13 +676,12 @@ int BrowserMainLoop::CreateThreads() {
 
     if (thread_to_start) {
       (*thread_to_start).reset(new BrowserProcessSubThread(id));
-      (*thread_to_start)->StartWithOptions(*options);
+      (*thread_to_start)->StartWithOptions(options);
     } else {
       NOTREACHED();
     }
 
     TRACE_EVENT_END0("startup", "BrowserMainLoop::CreateThreads:start");
-
   }
   created_threads_ = true;
   return result_code_;
@@ -878,6 +888,10 @@ void BrowserMainLoop::ShutdownThreadsAndCleanUp() {
     DeviceInertialSensorService::GetInstance()->Shutdown();
   }
   {
+    TRACE_EVENT0("shutdown", "BrowserMainLoop::Subsystem:BatteryStatusService");
+    BatteryStatusService::GetInstance()->Shutdown();
+  }
+  {
     TRACE_EVENT0("shutdown", "BrowserMainLoop::Subsystem:DeleteDataSources");
     URLDataManager::DeleteDataSources();
   }
@@ -921,16 +935,20 @@ int BrowserMainLoop::BrowserThreadsStarted() {
 #if !defined(OS_IOS)
   HistogramSynchronizer::GetInstance();
 
+  bool initialize_gpu_data_manager = true;
 #if defined(OS_ANDROID)
   // On Android, GLSurface::InitializeOneOff() must be called before initalizing
   // the GpuDataManagerImpl as it uses the GL bindings. crbug.com/326295
-  if (!gfx::GLSurface::InitializeOneOff())
-    LOG(FATAL) << "GLSurface::InitializeOneOff failed";
+  if (!gfx::GLSurface::InitializeOneOff()) {
+    LOG(ERROR) << "GLSurface::InitializeOneOff failed";
+    initialize_gpu_data_manager = false;
+  }
 #endif
 
   // Initialize the GpuDataManager before we set up the MessageLoops because
   // otherwise we'll trigger the assertion about doing IO on the UI thread.
-  GpuDataManagerImpl::GetInstance()->Initialize();
+  if (initialize_gpu_data_manager)
+    GpuDataManagerImpl::GetInstance()->Initialize();
 
   bool always_uses_gpu = true;
   bool established_gpu_channel = false;
@@ -942,6 +960,12 @@ int BrowserMainLoop::BrowserThreadsStarted() {
     }
     BrowserGpuChannelHostFactory::Initialize(established_gpu_channel);
     ImageTransportFactory::Initialize();
+#if defined(USE_AURA)
+    if (aura::Env::GetInstance()) {
+      aura::Env::GetInstance()->set_context_factory(
+          content::GetContextFactory());
+    }
+#endif
   }
 #elif defined(OS_ANDROID)
   established_gpu_channel = true;
@@ -1020,7 +1044,13 @@ int BrowserMainLoop::BrowserThreadsStarted() {
 
 #if defined(OS_MACOSX)
   ThemeHelperMac::GetInstance();
-#endif
+  if (ShouldEnableBootstrapSandbox()) {
+    TRACE_EVENT0("startup",
+        "BrowserMainLoop::BrowserThreadsStarted:BootstrapSandbox");
+    CHECK(GetBootstrapSandbox());
+  }
+#endif  // defined(OS_MACOSX)
+
 #endif  // !defined(OS_IOS)
 
   return result_code_;
@@ -1035,19 +1065,13 @@ bool BrowserMainLoop::InitializeToolkit() {
   // (Need to add InitializeToolkit stage to BrowserParts).
   // See also GTK setup in EarlyInitialization, above, and associated comments.
 
-#if defined(TOOLKIT_GTK)
-  // It is important for this to happen before the first run dialog, as it
-  // styles the dialog as well.
-  gfx::InitRCStyles();
-#endif
-
 #if defined(OS_WIN)
   // Init common control sex.
   INITCOMMONCONTROLSEX config;
   config.dwSize = sizeof(config);
   config.dwICC = ICC_WIN95_CLASSES;
   if (!InitCommonControlsEx(&config))
-    LOG_GETLASTERROR(FATAL);
+    PLOG(FATAL);
 #endif
 
 #if defined(USE_AURA)

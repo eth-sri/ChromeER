@@ -28,7 +28,7 @@
 #include "content/public/common/ssl_status.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/renderer/render_view.h"
-#include "grit/component_strings.h"
+#include "grit/components_strings.h"
 #include "net/cert/cert_status_flags.h"
 #include "third_party/WebKit/public/platform/WebRect.h"
 #include "third_party/WebKit/public/platform/WebURLRequest.h"
@@ -150,6 +150,7 @@ AutofillAgent::~AutofillAgent() {}
 bool AutofillAgent::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(AutofillAgent, message)
+    IPC_MESSAGE_HANDLER(AutofillMsg_Ping, OnPing)
     IPC_MESSAGE_HANDLER(AutofillMsg_FillForm, OnFillForm)
     IPC_MESSAGE_HANDLER(AutofillMsg_PreviewForm, OnPreviewForm)
     IPC_MESSAGE_HANDLER(AutofillMsg_FieldTypePredictionsAvailable,
@@ -161,8 +162,10 @@ bool AutofillAgent::OnMessageReceived(const IPC::Message& message) {
                         OnPreviewFieldWithValue)
     IPC_MESSAGE_HANDLER(AutofillMsg_AcceptDataListSuggestion,
                         OnAcceptDataListSuggestion)
-    IPC_MESSAGE_HANDLER(AutofillMsg_AcceptPasswordAutofillSuggestion,
-                        OnAcceptPasswordAutofillSuggestion)
+    IPC_MESSAGE_HANDLER(AutofillMsg_FillPasswordSuggestion,
+                        OnFillPasswordSuggestion)
+    IPC_MESSAGE_HANDLER(AutofillMsg_PreviewPasswordSuggestion,
+                        OnPreviewPasswordSuggestion)
     IPC_MESSAGE_HANDLER(AutofillMsg_RequestAutocompleteResult,
                         OnRequestAutocompleteResult)
     IPC_MESSAGE_UNHANDLED(handled = false)
@@ -252,8 +255,11 @@ void AutofillAgent::DidChangeScrollOffset(WebLocalFrame*) {
 void AutofillAgent::didRequestAutocomplete(
     const WebFormElement& form,
     const blink::WebAutocompleteParams& details) {
-  // TODO(estade): honor |details|.
+  didRequestAutocomplete(form);
+}
 
+void AutofillAgent::didRequestAutocomplete(
+    const WebFormElement& form) {
   // Disallow the dialog over non-https or broken https, except when the
   // ignore SSL flag is passed. See http://crbug.com/272512.
   // TODO(palmer): this should be moved to the browser process after frames
@@ -276,7 +282,10 @@ void AutofillAgent::didRequestAutocomplete(
   } else if (!WebFormElementToFormData(form,
                                        WebFormControlElement(),
                                        REQUIRE_AUTOCOMPLETE,
-                                       EXTRACT_OPTIONS,
+                                       static_cast<ExtractMask>(
+                                           EXTRACT_VALUE |
+                                           EXTRACT_OPTION_TEXT |
+                                           EXTRACT_OPTIONS),
                                        &form_data,
                                        NULL)) {
     error_message = "failed to parse form.";
@@ -287,6 +296,7 @@ void AutofillAgent::didRequestAutocomplete(
         WebConsoleMessage::LevelLog,
         WebString(base::ASCIIToUTF16("requestAutocomplete: ") +
                       base::ASCIIToUTF16(error_message)));
+    form.document().frame()->addMessageToConsole(console_message);
     WebFormElement(form).finishRequestAutocomplete(
         WebFormElement::AutocompleteResultErrorDisabled);
     return;
@@ -449,6 +459,10 @@ void AutofillAgent::OnFillForm(int query_id, const FormData& form) {
                                                    base::TimeTicks::Now()));
 }
 
+void AutofillAgent::OnPing() {
+  Send(new AutofillHostMsg_PingAck(routing_id()));
+}
+
 void AutofillAgent::OnPreviewForm(int query_id, const FormData& form) {
   if (!render_view()->GetWebView() || query_id != autofill_query_id_)
     return;
@@ -494,10 +508,19 @@ void AutofillAgent::OnAcceptDataListSuggestion(const base::string16& value) {
   AcceptDataListSuggestion(value);
 }
 
-void AutofillAgent::OnAcceptPasswordAutofillSuggestion(
+void AutofillAgent::OnFillPasswordSuggestion(const base::string16& username,
+                                             const base::string16& password) {
+  bool handled = password_autofill_agent_->FillSuggestion(
+      element_,
+      username,
+      password);
+  DCHECK(handled);
+}
+
+void AutofillAgent::OnPreviewPasswordSuggestion(
     const base::string16& username,
     const base::string16& password) {
-  bool handled = password_autofill_agent_->AcceptSuggestion(
+  bool handled = password_autofill_agent_->PreviewSuggestion(
       element_,
       username,
       password);

@@ -11,18 +11,20 @@
 
 #include "base/android/scoped_java_ref.h"
 #include "content/browser/renderer_host/java/java_type.h"
+#include "content/common/content_export.h"
 
 namespace content {
 
 // Wrapper around java.lang.reflect.Method. This class must be used on a single
 // thread only.
-class JavaMethod {
+class CONTENT_EXPORT JavaMethod {
  public:
   explicit JavaMethod(const base::android::JavaRef<jobject>& method);
   ~JavaMethod();
 
   const std::string& name() const { return name_; }
   size_t num_parameters() const;
+  bool is_static() const;
   const JavaType& parameter_type(size_t index) const;
   const JavaType& return_type() const;
   jmethodID id() const;
@@ -37,6 +39,7 @@ class JavaMethod {
   mutable size_t num_parameters_;
   mutable std::vector<JavaType> parameter_types_;
   mutable JavaType return_type_;
+  mutable bool is_static_;
   mutable jmethodID id_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(JavaMethod);

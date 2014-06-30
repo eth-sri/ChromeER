@@ -81,7 +81,6 @@ class WebLayer;
 namespace content {
 class InputRouter;
 class MockRenderWidgetHost;
-class OverscrollController;
 class RenderWidgetHostDelegate;
 class RenderWidgetHostViewBase;
 class SyntheticGestureController;
@@ -190,7 +189,13 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   virtual gfx::Rect AccessibilityGetViewBounds() const OVERRIDE;
   virtual gfx::Point AccessibilityOriginInScreen(const gfx::Rect& bounds)
       const OVERRIDE;
+  virtual void AccessibilityHitTest(const gfx::Point& point) OVERRIDE;
   virtual void AccessibilityFatalError() OVERRIDE;
+
+  // Forces redraw in the renderer and when the update reaches the browser
+  // grabs snapshot from the compositor. Returns PNG-encoded snapshot.
+  void GetSnapshotFromBrowser(
+      const base::Callback<void(const unsigned char*,size_t)> callback);
 
   const NativeWebKeyboardEvent* GetLastKeyboardEvent() const;
 
@@ -255,6 +260,8 @@ class CONTENT_EXPORT RenderWidgetHostImpl
 
   // Whether pausing may be useful.
   bool CanPauseForPendingResizeOrRepaints();
+
+  bool resize_ack_pending_for_testing() { return resize_ack_pending_; }
 
   // Wait for a surface matching the size of the widget's view, possibly
   // blocking until the renderer sends a new frame.
@@ -471,13 +478,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // Update the renderer's cache of the screen rect of the view and window.
   void SendScreenRects();
 
-  OverscrollController* overscroll_controller() const {
-    return overscroll_controller_.get();
-  }
-
-  // Sets whether the overscroll controller should be enabled for this page.
-  void SetOverscrollControllerEnabled(bool enabled);
-
   // Suppreses future char events until a keydown. See
   // suppress_next_char_events_.
   void SuppressNextCharEvents();
@@ -585,9 +585,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   int increment_in_flight_event_count() { return ++in_flight_event_count_; }
   int decrement_in_flight_event_count() { return --in_flight_event_count_; }
 
-  // Returns whether an overscroll gesture is in progress.
-  bool IsInOverscrollGesture() const;
-
   // The View associated with the RenderViewHost. The lifetime of this object
   // is associated with the lifetime of the Render process. If the Renderer
   // crashes, its View is destroyed and this pointer becomes NULL, even though
@@ -637,9 +634,9 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   virtual void OnBlur();
   void OnSetCursor(const WebCursor& cursor);
   void OnSetTouchEventEmulationEnabled(bool enabled, bool allow_pinch);
-  void OnTextInputTypeChanged(ui::TextInputType type,
-                              ui::TextInputMode input_mode,
-                              bool can_compose_inline);
+  void OnTextInputStateChanged(
+      const ViewHostMsg_TextInputState_Params& params);
+
 #if defined(OS_MACOSX) || defined(USE_AURA)
   void OnImeCompositionRangeChanged(
       const gfx::Range& range,
@@ -683,7 +680,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   virtual void IncrementInFlightEventCount() OVERRIDE;
   virtual void DecrementInFlightEventCount() OVERRIDE;
   virtual void OnHasTouchEventHandlers(bool has_handlers) OVERRIDE;
-  virtual OverscrollController* GetOverscrollController() const OVERRIDE;
   virtual void DidFlush() OVERRIDE;
   virtual void DidOverscroll(const DidOverscrollParams& params) OVERRIDE;
 
@@ -704,7 +700,17 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // which may get in recursive loops).
   void DelayedAutoResized();
 
+  void WindowOldSnapshotReachedScreen(int snapshot_id);
+
   void WindowSnapshotReachedScreen(int snapshot_id);
+
+  void OnSnapshotDataReceived(int snapshot_id,
+                              const unsigned char* png,
+                              size_t size);
+
+  void OnSnapshotDataReceivedAsync(
+      int snapshot_id,
+      scoped_refptr<base::RefCountedBytes> png_data);
 
   // Send a message to the renderer process to change the accessibility mode.
   void SetAccessibilityMode(AccessibilityMode AccessibilityMode);
@@ -865,8 +871,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // Receives and handles all input events.
   scoped_ptr<InputRouter> input_router_;
 
-  scoped_ptr<OverscrollController> overscroll_controller_;
-
   scoped_ptr<TimeoutMonitor> hang_monitor_timeout_;
 
 #if defined(OS_WIN)
@@ -874,6 +878,11 @@ class CONTENT_EXPORT RenderWidgetHostImpl
 #endif
 
   int64 last_input_number_;
+
+  int next_browser_snapshot_id_;
+  typedef std::map<int,
+      base::Callback<void(const unsigned char*, size_t)> > PendingSnapshotMap;
+  PendingSnapshotMap pending_browser_snapshots_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderWidgetHostImpl);
 };

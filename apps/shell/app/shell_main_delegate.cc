@@ -8,6 +8,7 @@
 #include "apps/shell/browser/shell_content_browser_client.h"
 #include "apps/shell/common/shell_content_client.h"
 #include "apps/shell/renderer/shell_content_renderer_client.h"
+#include "apps/shell/renderer/shell_renderer_main_delegate.h"
 #include "base/command_line.h"
 #include "base/files/file_path.h"
 #include "base/logging.h"
@@ -73,12 +74,25 @@ content::ContentBrowserClient* ShellMainDelegate::CreateContentBrowserClient() {
 
 content::ContentRendererClient*
 ShellMainDelegate::CreateContentRendererClient() {
-  renderer_client_.reset(new ShellContentRendererClient);
+  renderer_client_.reset(
+      new ShellContentRendererClient(CreateShellRendererMainDelegate()));
   return renderer_client_.get();
 }
 
 ShellBrowserMainDelegate* ShellMainDelegate::CreateShellBrowserMainDelegate() {
   return new DefaultShellBrowserMainDelegate();
+}
+
+scoped_ptr<ShellRendererMainDelegate>
+ShellMainDelegate::CreateShellRendererMainDelegate() {
+  return scoped_ptr<ShellRendererMainDelegate>();
+}
+
+void ShellMainDelegate::InitializeResourceBundle() {
+  base::FilePath pak_dir;
+  PathService::Get(base::DIR_MODULE, &pak_dir);
+  ui::ResourceBundle::InitSharedInstanceWithPakPath(
+      pak_dir.AppendASCII("app_shell.pak"));
 }
 
 // static
@@ -90,13 +104,6 @@ bool ShellMainDelegate::ProcessNeedsResourceBundle(
          process_type == switches::kZygoteProcess ||
          process_type == switches::kRendererProcess ||
          process_type == switches::kUtilityProcess;
-}
-
-void ShellMainDelegate::InitializeResourceBundle() {
-  base::FilePath pak_dir;
-  PathService::Get(base::DIR_MODULE, &pak_dir);
-  ui::ResourceBundle::InitSharedInstanceWithPakPath(
-      pak_dir.AppendASCII("app_shell.pak"));
 }
 
 }  // namespace apps

@@ -6,6 +6,7 @@
 #define UI_AURA_WINDOW_OBSERVER_H_
 
 #include "base/basictypes.h"
+#include "base/strings/string16.h"
 #include "ui/aura/aura_export.h"
 
 namespace gfx {
@@ -30,6 +31,8 @@ class AURA_EXPORT WindowObserver {
     HierarchyChangePhase phase;
     Window* receiver;   // The window receiving the notification.
   };
+
+  WindowObserver();
 
   // Called when a window is added or removed. Notifications are sent to the
   // following hierarchies in this order:
@@ -110,8 +113,26 @@ class AURA_EXPORT WindowObserver {
   virtual void OnWindowRemovingFromRootWindow(Window* window,
                                               Window* new_root) {}
 
+  // Called when the window title has changed.
+  virtual void OnWindowTitleChanged(Window* window) {}
+
  protected:
-  virtual ~WindowObserver() {}
+  virtual ~WindowObserver();
+
+ private:
+  friend class Window;
+
+  // Called when this is added as an observer on |window|.
+  void OnObservingWindow(Window* window);
+
+  // Called when this is removed from the observers on |window|.
+  void OnUnobservingWindow(Window* window);
+
+  // Tracks the number of windows being observed to track down
+  // http://crbug.com/365364.
+  int observing_;
+
+  DISALLOW_COPY_AND_ASSIGN(WindowObserver);
 };
 
 }  // namespace aura

@@ -24,6 +24,21 @@ class GESTURE_DETECTION_EXPORT MotionEvent {
     ACTION_POINTER_UP,
   };
 
+  enum ToolType {
+    TOOL_TYPE_UNKNOWN,
+    TOOL_TYPE_FINGER,
+    TOOL_TYPE_STYLUS,
+    TOOL_TYPE_MOUSE,
+  };
+
+  enum ButtonType {
+    BUTTON_PRIMARY = 1 << 0,
+    BUTTON_SECONDARY = 1 << 1,
+    BUTTON_TERTIARY = 1 << 2,
+    BUTTON_BACK = 1 << 3,
+    BUTTON_FORWARD = 1 << 4,
+  };
+
   // The implementer promises that |GetPointerId()| will never exceed this.
   enum { MAX_POINTER_ID = 31 };
 
@@ -38,6 +53,8 @@ class GESTURE_DETECTION_EXPORT MotionEvent {
   virtual int GetPointerId(size_t pointer_index) const = 0;
   virtual float GetX(size_t pointer_index) const = 0;
   virtual float GetY(size_t pointer_index) const = 0;
+  virtual float GetRawX(size_t pointer_index) const = 0;
+  virtual float GetRawY(size_t pointer_index) const = 0;
   virtual float GetTouchMajor(size_t pointer_index) const = 0;
   virtual float GetPressure(size_t pointer_index) const = 0;
   virtual base::TimeTicks GetEventTime() const = 0;
@@ -51,6 +68,8 @@ class GESTURE_DETECTION_EXPORT MotionEvent {
                                size_t historical_index) const = 0;
   virtual float GetHistoricalY(size_t pointer_index,
                                size_t historical_index) const = 0;
+  virtual ToolType GetToolType(size_t pointer_index) const = 0;
+  virtual int GetButtonState() const = 0;
 
   virtual scoped_ptr<MotionEvent> Clone() const = 0;
   virtual scoped_ptr<MotionEvent> Cancel() const = 0;
@@ -58,8 +77,10 @@ class GESTURE_DETECTION_EXPORT MotionEvent {
   // Utility accessor methods for convenience.
   float GetX() const { return GetX(0); }
   float GetY() const { return GetY(0); }
-  float GetRawX() const { return GetX(); }
-  float GetRawY() const { return GetY(); }
+  float GetRawX() const { return GetRawX(0); }
+  float GetRawY() const { return GetRawY(0); }
+  float GetRawOffsetX() const { return GetRawX() - GetX(); }
+  float GetRawOffsetY() const { return GetRawY() - GetY(); }
   float GetTouchMajor() const { return GetTouchMajor(0); }
   float GetPressure() const { return GetPressure(0); }
 };

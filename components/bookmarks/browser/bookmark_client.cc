@@ -6,6 +6,8 @@
 
 #include "base/logging.h"
 
+namespace bookmarks {
+
 bool BookmarkClient::PreferTouchIcon() {
   return false;
 }
@@ -14,7 +16,7 @@ base::CancelableTaskTracker::TaskId BookmarkClient::GetFaviconImageForURL(
     const GURL& page_url,
     int icon_types,
     int desired_size_in_dip,
-    const FaviconImageCallback& callback,
+    const favicon_base::FaviconImageCallback& callback,
     base::CancelableTaskTracker* tracker) {
   return base::CancelableTaskTracker::kBadTaskId;
 }
@@ -28,3 +30,5 @@ void BookmarkClient::GetTypedCountForNodes(
     NodeTypedCountPairs* node_typed_count_pairs) {
   NOTREACHED();
 }
+
+}  // namespace bookmarks

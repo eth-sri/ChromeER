@@ -48,11 +48,9 @@
 #include "content/common/frame_messages.h"
 #include "content/common/input_messages.h"
 #include "content/common/inter_process_time_ticks_converter.h"
-#include "content/common/mojo/mojo_service_names.h"
 #include "content/common/speech_recognition_messages.h"
 #include "content/common/swapped_out_messages.h"
 #include "content/common/view_messages.h"
-#include "content/common/web_ui_setup.mojom.h"
 #include "content/public/browser/ax_event_notification_details.h"
 #include "content/public/browser/browser_accessibility_state.h"
 #include "content/public/browser/browser_context.h"
@@ -72,7 +70,6 @@
 #include "content/public/common/context_menu_params.h"
 #include "content/public/common/drop_data.h"
 #include "content/public/common/result_codes.h"
-#include "content/public/common/url_constants.h"
 #include "content/public/common/url_utils.h"
 #include "net/base/filename_util.h"
 #include "net/base/net_util.h"
@@ -87,14 +84,17 @@
 #include "ui/gfx/native_widget_types.h"
 #include "ui/native_theme/native_theme_switches.h"
 #include "ui/shell_dialogs/selected_file_info.h"
+#include "url/url_constants.h"
 #include "webkit/browser/fileapi/isolated_context.h"
 
 #if defined(OS_MACOSX)
 #include "content/browser/renderer_host/popup_menu_helper_mac.h"
-#elif defined(OS_ANDROID)
-#include "content/browser/media/android/browser_media_player_manager.h"
 #elif defined(OS_WIN)
 #include "base/win/win_util.h"
+#endif
+
+#if defined(ENABLE_BROWSER_CDMS)
+#include "content/browser/media/media_web_contents_observer.h"
 #endif
 
 using base::TimeDelta;
@@ -223,8 +223,8 @@ RenderViewHostImpl::RenderViewHostImpl(
                    GetProcess()->GetID(), GetRoutingID()));
   }
 
-#if defined(OS_ANDROID)
-  media_player_manager_.reset(BrowserMediaPlayerManager::Create(this));
+#if defined(ENABLE_BROWSER_CDMS)
+  media_web_contents_observer_.reset(new MediaWebContentsObserver(this));
 #endif
 
   unload_event_monitor_timeout_.reset(new TimeoutMonitor(base::Bind(
@@ -314,7 +314,7 @@ bool RenderViewHostImpl::CreateRenderView(
 
   // If it's enabled, tell the renderer to set up the Javascript bindings for
   // sending messages back to the browser.
-  if (GetProcess()->IsGuest())
+  if (GetProcess()->IsIsolatedGuest())
     DCHECK_EQ(0, enabled_bindings_);
   Send(new ViewMsg_AllowBindings(GetRoutingID(), enabled_bindings_));
   // Let our delegate know that we created a RenderView.
@@ -385,10 +385,6 @@ WebPreferences RenderViewHostImpl::GetWebkitPrefs(const GURL& url) {
       GpuProcessHost::gpu_enabled() &&
       !command_line.HasSwitch(switches::kDisableFlashStage3d);
 
-  prefs.gl_multisampling_enabled =
-      !command_line.HasSwitch(switches::kDisableGLMultisampling);
-  prefs.privileged_webgl_extensions_enabled =
-      command_line.HasSwitch(switches::kEnablePrivilegedWebGLExtensions);
   prefs.site_specific_quirks_enabled =
       !command_line.HasSwitch(switches::kDisableSiteSpecificQuirks);
   prefs.allow_file_access_from_file_urls =
@@ -412,8 +408,6 @@ WebPreferences RenderViewHostImpl::GetWebkitPrefs(const GURL& url) {
       !command_line.HasSwitch(switches::kDisableDeferredFilters);
   prefs.container_culling_enabled =
       command_line.HasSwitch(switches::kEnableContainerCulling);
-  prefs.lazy_layout_enabled =
-      command_line.HasSwitch(switches::kEnableExperimentalWebPlatformFeatures);
   prefs.region_based_columns_enabled =
       command_line.HasSwitch(switches::kEnableRegionBasedColumns);
 
@@ -462,10 +456,9 @@ WebPreferences RenderViewHostImpl::GetWebkitPrefs(const GURL& url) {
     prefs.javascript_enabled = true;
   }
 
-  prefs.is_online = !net::NetworkChangeNotifier::IsOffline();
-
-  prefs.fixed_position_creates_stacking_context = !command_line.HasSwitch(
-      switches::kDisableFixedPositionCreatesStackingContext);
+  prefs.connection_type = net::NetworkChangeNotifier::GetConnectionType();
+  prefs.is_online =
+      prefs.connection_type != net::NetworkChangeNotifier::CONNECTION_NONE;
 
   prefs.gesture_tap_highlight_enabled = !command_line.HasSwitch(
       switches::kDisableGestureTapHighlight);
@@ -661,27 +654,6 @@ void RenderViewHostImpl::SetHasPendingCrossSiteRequest(
       GetProcess()->GetID(), GetRoutingID(), has_pending_request);
 }
 
-void RenderViewHostImpl::SetWebUIHandle(mojo::ScopedMessagePipeHandle handle) {
-  // Never grant any bindings to browser plugin guests.
-  if (GetProcess()->IsGuest()) {
-    NOTREACHED() << "Never grant bindings to a guest process.";
-    return;
-  }
-
-  if ((enabled_bindings_ & BINDINGS_POLICY_WEB_UI) == 0) {
-    NOTREACHED() << "You must grant bindings before setting the handle";
-    return;
-  }
-
-  DCHECK(renderer_initialized_);
-
-  WebUISetupPtr web_ui_setup;
-  static_cast<RenderProcessHostImpl*>(GetProcess())->ConnectTo(
-      kRendererService_WebUISetup, &web_ui_setup);
-
-  web_ui_setup->SetWebUIHandle(GetRoutingID(), handle.Pass());
-}
-
 #if defined(OS_ANDROID)
 void RenderViewHostImpl::ActivateNearestFindResult(int request_id,
                                                    float x,
@@ -769,7 +741,8 @@ void RenderViewHostImpl::DragTargetDragEnter(
 
     std::string register_name;
     std::string filesystem_id = isolated_context->RegisterFileSystemForPath(
-        file_system_url.type(), file_system_url.path(), &register_name);
+        file_system_url.type(), file_system_url.filesystem_id(),
+        file_system_url.path(), &register_name);
     policy->GrantReadFileSystem(renderer_id, filesystem_id);
 
     // Note: We are using the origin URL provided by the sender here. It may be
@@ -826,7 +799,7 @@ RenderFrameHost* RenderViewHostImpl::GetMainFrame() {
 
 void RenderViewHostImpl::AllowBindings(int bindings_flags) {
   // Never grant any bindings to browser plugin guests.
-  if (GetProcess()->IsGuest()) {
+  if (GetProcess()->IsIsolatedGuest()) {
     NOTREACHED() << "Never grant bindings to a guest process.";
     return;
   }
@@ -992,10 +965,6 @@ bool RenderViewHostImpl::OnMessageReceived(const IPC::Message& msg) {
                         OnDidContentsPreferredSizeChange)
     IPC_MESSAGE_HANDLER(ViewHostMsg_DidChangeScrollOffset,
                         OnDidChangeScrollOffset)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_DidChangeScrollOffsetPinningForMainFrame,
-                        OnDidChangeScrollOffsetPinningForMainFrame)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_DidChangeNumWheelEvents,
-                        OnDidChangeNumWheelEvents)
     IPC_MESSAGE_HANDLER(ViewHostMsg_RouteCloseEvent,
                         OnRouteCloseEvent)
     IPC_MESSAGE_HANDLER(ViewHostMsg_RouteMessageEvent, OnRouteMessageEvent)
@@ -1005,10 +974,6 @@ bool RenderViewHostImpl::OnMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(ViewHostMsg_TakeFocus, OnTakeFocus)
     IPC_MESSAGE_HANDLER(ViewHostMsg_FocusedNodeChanged, OnFocusedNodeChanged)
     IPC_MESSAGE_HANDLER(ViewHostMsg_ClosePage_ACK, OnClosePageACK)
-#if defined(OS_ANDROID)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_SelectionRootBoundsChanged,
-                        OnSelectionRootBoundsChanged)
-#endif
     IPC_MESSAGE_HANDLER(ViewHostMsg_DidZoomURL, OnDidZoomURL)
 #if defined(OS_MACOSX) || defined(OS_ANDROID)
     IPC_MESSAGE_HANDLER(ViewHostMsg_ShowPopup, OnShowPopup)
@@ -1045,6 +1010,15 @@ void RenderViewHostImpl::Shutdown() {
       opener->increment_in_flight_event_count();
     }
     run_modal_opener_id_ = MSG_ROUTING_NONE;
+  }
+
+  // We can't release the SessionStorageNamespace until our peer
+  // in the renderer has wound down.
+  if (GetProcess()->HasConnection()) {
+    RenderProcessHostImpl::ReleaseOnCloseACK(
+        GetProcess(),
+        delegate_->GetSessionStorageNamespaceMap(),
+        GetRoutingID());
   }
 
   RenderWidgetHostImpl::Shutdown();
@@ -1186,8 +1160,18 @@ void RenderViewHostImpl::OnRequestMove(const gfx::Rect& pos) {
   Send(new ViewMsg_Move_ACK(GetRoutingID()));
 }
 
-void RenderViewHostImpl::OnDocumentAvailableInMainFrame() {
+void RenderViewHostImpl::OnDocumentAvailableInMainFrame(
+    bool uses_temporary_zoom_level) {
   delegate_->DocumentAvailableInMainFrame(this);
+
+  if (!uses_temporary_zoom_level)
+    return;
+
+  HostZoomMapImpl* host_zoom_map = static_cast<HostZoomMapImpl*>(
+      HostZoomMap::GetForBrowserContext(GetProcess()->GetBrowserContext()));
+  host_zoom_map->SetTemporaryZoomLevel(GetProcess()->GetID(),
+                                       GetRoutingID(),
+                                       host_zoom_map->GetDefaultZoomLevel());
 }
 
 void RenderViewHostImpl::OnToggleFullscreen(bool enter_fullscreen) {
@@ -1211,24 +1195,6 @@ void RenderViewHostImpl::OnDidChangeScrollOffset() {
   if (view_)
     view_->ScrollOffsetChanged();
 }
-
-void RenderViewHostImpl::OnDidChangeScrollOffsetPinningForMainFrame(
-    bool is_pinned_to_left, bool is_pinned_to_right) {
-  if (view_)
-    view_->SetScrollOffsetPinning(is_pinned_to_left, is_pinned_to_right);
-}
-
-void RenderViewHostImpl::OnDidChangeNumWheelEvents(int count) {
-}
-
-#if defined(OS_ANDROID)
-void RenderViewHostImpl::OnSelectionRootBoundsChanged(
-    const gfx::Rect& bounds) {
-  if (view_) {
-    view_->SelectionRootBoundsChanged(bounds);
-  }
-}
-#endif
 
 void RenderViewHostImpl::OnRouteCloseEvent() {
   // Have the delegate route this to the active RenderViewHost.
@@ -1257,7 +1223,7 @@ void RenderViewHostImpl::OnStartDragging(
       ChildProcessSecurityPolicyImpl::GetInstance();
 
   // Allow drag of Javascript URLs to enable bookmarklet drag to bookmark bar.
-  if (!filtered_data.url.SchemeIs(kJavaScriptScheme))
+  if (!filtered_data.url.SchemeIs(url::kJavaScriptScheme))
     process->FilterURL(true, &filtered_data.url);
   process->FilterURL(false, &filtered_data.html_base_url);
   // Filter out any paths that the renderer didn't have access to. This prevents
@@ -1448,6 +1414,15 @@ bool RenderViewHostImpl::IsWaitingForUnloadACK() const {
          rvh_state_ == STATE_PENDING_SWAP_OUT;
 }
 
+void RenderViewHostImpl::OnTextSurroundingSelectionResponse(
+    const base::string16& content,
+    size_t start_offset,
+    size_t end_offset) {
+  if (!view_)
+    return;
+  view_->OnTextSurroundingSelectionResponse(content, start_offset, end_offset);
+}
+
 void RenderViewHostImpl::ExitFullscreen() {
   RejectMouseLockOrUnlockIfNecessary();
   // Notify delegate_ and renderer of fullscreen state change.
@@ -1466,7 +1441,7 @@ void RenderViewHostImpl::DisownOpener() {
 }
 
 void RenderViewHostImpl::SetAccessibilityCallbackForTesting(
-    const base::Callback<void(ui::AXEvent)>& callback) {
+    const base::Callback<void(ui::AXEvent, int)>& callback) {
   accessibility_testing_callback_ = callback;
 }
 
@@ -1577,7 +1552,7 @@ void RenderViewHostImpl::OnAccessibilityEvents(
       ax_tree_.reset(new ui::AXTree(param.update));
     else
       CHECK(ax_tree_->Unserialize(param.update)) << ax_tree_->error();
-    accessibility_testing_callback_.Run(param.event_type);
+    accessibility_testing_callback_.Run(param.event_type, param.id);
   }
 }
 
@@ -1596,17 +1571,14 @@ void RenderViewHostImpl::OnAccessibilityLocationChanges(
 }
 
 void RenderViewHostImpl::OnDidZoomURL(double zoom_level,
-                                      bool remember,
                                       const GURL& url) {
   HostZoomMapImpl* host_zoom_map = static_cast<HostZoomMapImpl*>(
       HostZoomMap::GetForBrowserContext(GetProcess()->GetBrowserContext()));
-  if (remember) {
-    host_zoom_map->
-        SetZoomLevelForHost(net::GetHostOrSpecFromURL(url), zoom_level);
-  } else {
-    host_zoom_map->SetTemporaryZoomLevel(
-        GetProcess()->GetID(), GetRoutingID(), zoom_level);
-  }
+
+  host_zoom_map->SetZoomLevelForView(GetProcess()->GetID(),
+                                     GetRoutingID(),
+                                     zoom_level,
+                                     net::GetHostOrSpecFromURL(url));
 }
 
 void RenderViewHostImpl::OnRunFileChooser(const FileChooserParams& params) {

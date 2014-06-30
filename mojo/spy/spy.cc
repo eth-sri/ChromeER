@@ -49,9 +49,9 @@ class MessageProcessor :
     std::vector<mojo::MessagePipeHandle> pipes;
     pipes.push_back(client.get());
     pipes.push_back(interceptor.get());
-    std::vector<MojoWaitFlags> wait_flags;
-    wait_flags.push_back(MOJO_WAIT_FLAG_READABLE);
-    wait_flags.push_back(MOJO_WAIT_FLAG_READABLE);
+    std::vector<MojoHandleSignals> handle_signals;
+    handle_signals.push_back(MOJO_HANDLE_SIGNAL_READABLE);
+    handle_signals.push_back(MOJO_HANDLE_SIGNAL_READABLE);
 
     scoped_ptr<char[]> mbuf(new char[kMessageBufSize]);
     scoped_ptr<MojoHandle[]> hbuf(new MojoHandle[kHandleBufSize]);
@@ -64,7 +64,7 @@ class MessageProcessor :
     // 4- Write the message to opposite port.
 
     for (;;) {
-      int r = WaitMany(pipes, wait_flags, MOJO_DEADLINE_INDEFINITE);
+      int r = WaitMany(pipes, handle_signals, MOJO_DEADLINE_INDEFINITE);
       if ((r < 0) || (r > 1)) {
         last_result_ = r;
         break;
@@ -90,7 +90,7 @@ class MessageProcessor :
 
       mojo::MessagePipeHandle write_handle = (r == 0) ? pipes[1] : pipes[0];
       if (!CheckResult(Wait(write_handle,
-                            MOJO_WAIT_FLAG_WRITABLE,
+                            MOJO_HANDLE_SIGNAL_WRITABLE,
                             MOJO_DEADLINE_INDEFINITE)))
         break;
 
@@ -126,29 +126,32 @@ class MessageProcessor :
 // In charge of intercepting access to the service manager.
 class SpyInterceptor : public mojo::ServiceManager::Interceptor {
  private:
-  virtual mojo::ScopedMessagePipeHandle OnConnectToClient(
-    const GURL& url, mojo::ScopedMessagePipeHandle real_client) OVERRIDE {
+  virtual mojo::ServiceProviderPtr OnConnectToClient(
+    const GURL& url, mojo::ServiceProviderPtr real_client) OVERRIDE {
       if (!MustIntercept(url))
         return real_client.Pass();
 
       // You can get an invalid handle if the app (or service) is
       // created by unconventional means, for example the command line.
-      if (!real_client.is_valid())
+      if (!real_client.get())
         return real_client.Pass();
 
       mojo::ScopedMessagePipeHandle faux_client;
       mojo::ScopedMessagePipeHandle interceptor;
-      CreateMessagePipe(&faux_client, &interceptor);
+      CreateMessagePipe(NULL, &faux_client, &interceptor);
 
       scoped_refptr<MessageProcessor> processor = new MessageProcessor();
+      mojo::ScopedMessagePipeHandle real_handle = real_client.PassMessagePipe();
       base::WorkerPool::PostTask(
           FROM_HERE,
           base::Bind(&MessageProcessor::Start,
                      processor,
-                     base::Passed(&real_client), base::Passed(&interceptor)),
+                     base::Passed(&real_handle), base::Passed(&interceptor)),
           true);
 
-      return faux_client.Pass();
+      mojo::ServiceProviderPtr faux_provider;
+      faux_provider.Bind(faux_client.Pass());
+      return faux_provider.Pass();
   }
 
   bool MustIntercept(const GURL& url) {

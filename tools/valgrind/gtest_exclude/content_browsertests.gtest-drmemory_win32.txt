@@ -75,3 +75,7 @@ SRC_ClearKey/EncryptedMediaTest.FrameSizeChangeVideo/0
 IndexedDBBrowserTest.ConnectionsClosedOnTabClose
 ResourceFetcherTests.ResourceFetcher404
 ResourceFetcherTests.ResourceFetcherPost
+OutOfProcessPPAPITest.MediaStreamAudioTrack
+# crbug.com/389132
+WebRtcBrowserTests/WebRtcBrowserTest.TwoCallsWithAecDump/0
+WebRtcBrowserTests/WebRtcBrowserTest.TwoCallsWithAecDump/1

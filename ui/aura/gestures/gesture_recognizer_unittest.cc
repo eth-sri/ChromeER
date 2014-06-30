@@ -138,6 +138,7 @@ class GestureEventConsumeDelegate : public TestWindowDelegate {
     tap_count_ = 0;
     scale_ = 0;
     flags_ = 0;
+    latency_info_.Clear();
   }
 
   const std::vector<ui::EventType>& events() const { return events_; };
@@ -187,6 +188,7 @@ class GestureEventConsumeDelegate : public TestWindowDelegate {
   const gfx::Rect& bounding_box() const { return bounding_box_; }
   int tap_count() const { return tap_count_; }
   int flags() const { return flags_; }
+  const ui::LatencyInfo& latency_info() const { return latency_info_; }
 
   void WaitUntilReceivedGesture(ui::EventType type) {
     wait_until_event_ = type;
@@ -198,6 +200,7 @@ class GestureEventConsumeDelegate : public TestWindowDelegate {
     events_.push_back(gesture->type());
     bounding_box_ = gesture->details().bounding_box();
     flags_ = gesture->flags();
+    latency_info_ = *gesture->latency();
     switch (gesture->type()) {
       case ui::ET_GESTURE_TAP:
         tap_location_ = gesture->location();
@@ -262,7 +265,7 @@ class GestureEventConsumeDelegate : public TestWindowDelegate {
       case ui::ET_GESTURE_SHOW_PRESS:
         show_press_ = true;
         break;
-      case ui::ET_GESTURE_MULTIFINGER_SWIPE:
+      case ui::ET_GESTURE_SWIPE:
         swipe_left_ = gesture->details().swipe_left();
         swipe_right_ = gesture->details().swipe_right();
         swipe_up_ = gesture->details().swipe_up();
@@ -322,6 +325,7 @@ class GestureEventConsumeDelegate : public TestWindowDelegate {
   gfx::Rect bounding_box_;
   int tap_count_;
   int flags_;
+  ui::LatencyInfo latency_info_;
 
   ui::EventType wait_until_event_;
 
@@ -681,17 +685,16 @@ class GestureRecognizerTest : public AuraTestBase,
 
   virtual void SetUp() OVERRIDE {
     // TODO(tdresser): Once unified GR has landed, only run these tests once.
-    if (UsingUnifiedGR()) {
-      CommandLine::ForCurrentProcess()->AppendSwitch(
-          switches::kUseUnifiedGestureDetector);
-    }
+    CommandLine::ForCurrentProcess()->AppendSwitchASCII(
+        switches::kUnifiedGestureDetector,
+        UsingUnifiedGR() ? switches::kUnifiedGestureDetectorEnabled
+                         : switches::kUnifiedGestureDetectorDisabled);
 
     AuraTestBase::SetUp();
-  }
-
-  virtual void TearDown() OVERRIDE {
-    AuraTestBase::TearDown();
-    RunAllPendingInMessageLoop();
+    ui::GestureConfiguration::set_min_touch_down_duration_in_seconds_for_click(
+        0.001);
+    ui::GestureConfiguration::set_show_press_delay_in_ms(2);
+    ui::GestureConfiguration::set_long_press_time_in_seconds(0.003);
   }
 
   DISALLOW_COPY_AND_ASSIGN(GestureRecognizerTest);
@@ -1326,6 +1329,9 @@ TEST_P(GestureRecognizerTest, GestureEventNonRailFling) {
 
 // Check that appropriate touch events generate long press events
 TEST_P(GestureRecognizerTest, GestureEventLongPress) {
+  ui::GestureConfiguration::set_max_touch_down_duration_in_seconds_for_click(
+      0.0025);
+
   scoped_ptr<GestureEventConsumeDelegate> delegate(
       new GestureEventConsumeDelegate());
   const int kWindowWidth = 123;
@@ -1377,7 +1383,6 @@ TEST_P(GestureRecognizerTest, GestureEventLongPressCancelledByScroll) {
   scoped_ptr<GestureEventConsumeDelegate> delegate(
       new GestureEventConsumeDelegate());
   TimedEvents tes;
-  ui::GestureConfiguration::set_long_press_time_in_seconds(.01);
   const int kWindowWidth = 123;
   const int kWindowHeight = 45;
   const int kTouchId = 6;
@@ -1421,6 +1426,8 @@ TEST_P(GestureRecognizerTest, GestureEventLongPressCancelledByScroll) {
 
 // Check that appropriate touch events generate long tap events
 TEST_P(GestureRecognizerTest, GestureEventLongTap) {
+  ui::GestureConfiguration::set_max_touch_down_duration_in_seconds_for_click(
+      0.0025);
   scoped_ptr<GestureEventConsumeDelegate> delegate(
       new GestureEventConsumeDelegate());
   const int kWindowWidth = 123;
@@ -1473,7 +1480,6 @@ TEST_P(GestureRecognizerTest, GestureEventLongPressCancelledBySecondTap) {
   scoped_ptr<GestureEventConsumeDelegate> delegate(
       new GestureEventConsumeDelegate());
   TimedEvents tes;
-  ui::GestureConfiguration::set_long_press_time_in_seconds(.01);
   const int kWindowWidth = 300;
   const int kWindowHeight = 400;
   const int kTouchId1 = 8;
@@ -3366,11 +3372,6 @@ TEST_P(GestureRecognizerTest, GestureEventScrollTouchMovePartialConsumed) {
 
 // Check that appropriate touch events generate double tap gesture events.
 TEST_P(GestureRecognizerTest, GestureEventDoubleTap) {
-  // TODO(tdresser): enable this test with unified GR once double / triple tap
-  // gestures work. See crbug.com/357270.
-  if (UsingUnifiedGR())
-    return;
-
   scoped_ptr<GestureEventConsumeDelegate> delegate(
       new GestureEventConsumeDelegate());
   const int kWindowWidth = 123;
@@ -3412,11 +3413,6 @@ TEST_P(GestureRecognizerTest, GestureEventDoubleTap) {
 
 // Check that appropriate touch events generate triple tap gesture events.
 TEST_P(GestureRecognizerTest, GestureEventTripleTap) {
-  // TODO(tdresser): enable this test with unified GR once double / triple tap
-  // gestures work. See crbug.com/357270.
-  if (UsingUnifiedGR())
-    return;
-
   scoped_ptr<GestureEventConsumeDelegate> delegate(
       new GestureEventConsumeDelegate());
   const int kWindowWidth = 123;
@@ -3457,17 +3453,35 @@ TEST_P(GestureRecognizerTest, GestureEventTripleTap) {
                           kTouchId, tes.LeapForward(50));
   DispatchEventUsingWindowDispatcher(&release3);
 
+  // Third, Fourth and Fifth Taps. Taps after the third should have their
+  // |tap_count| wrap around back to 1.
+  for (int i = 3; i < 5; ++i) {
+    ui::TouchEvent press3(ui::ET_TOUCH_PRESSED,
+                          gfx::Point(102, 206),
+                          kTouchId,
+                          tes.LeapForward(200));
+    DispatchEventUsingWindowDispatcher(&press3);
+    ui::TouchEvent release3(ui::ET_TOUCH_RELEASED,
+                            gfx::Point(102, 206),
+                            kTouchId,
+                            tes.LeapForward(50));
+    DispatchEventUsingWindowDispatcher(&release3);
 
-  EXPECT_TRUE(delegate->tap());
-  EXPECT_TRUE(delegate->tap_down());
-  EXPECT_FALSE(delegate->tap_cancel());
-  EXPECT_TRUE(delegate->begin());
-  EXPECT_TRUE(delegate->end());
-  EXPECT_FALSE(delegate->scroll_begin());
-  EXPECT_FALSE(delegate->scroll_update());
-  EXPECT_FALSE(delegate->scroll_end());
+    EXPECT_TRUE(delegate->tap());
+    EXPECT_TRUE(delegate->tap_down());
+    EXPECT_FALSE(delegate->tap_cancel());
+    EXPECT_TRUE(delegate->begin());
+    EXPECT_TRUE(delegate->end());
+    EXPECT_FALSE(delegate->scroll_begin());
+    EXPECT_FALSE(delegate->scroll_update());
+    EXPECT_FALSE(delegate->scroll_end());
 
-  EXPECT_EQ(3, delegate->tap_count());
+    // The behavior for the Aura GR is incorrect.
+    if (UsingUnifiedGR())
+      EXPECT_EQ(1 + (i % 3), delegate->tap_count());
+    else
+      EXPECT_EQ(3, delegate->tap_count());
+  }
 }
 
 // Check that we don't get a double tap when the two taps are far apart.
@@ -4267,8 +4281,63 @@ TEST_P(GestureRecognizerTest, GestureEventFlagsPassedFromTouchEvent) {
   EXPECT_NE(default_flags, delegate->flags());
 }
 
-// TODO - re-enable these tests once memory management issues have been sorted
-// out. See crbug.com/371990.
+// Test that latency info is passed through to the gesture event.
+TEST_P(GestureRecognizerTest, LatencyPassedFromTouchEvent) {
+  scoped_ptr<GestureEventConsumeDelegate> delegate(
+      new GestureEventConsumeDelegate());
+  TimedEvents tes;
+  const int kWindowWidth = 123;
+  const int kWindowHeight = 45;
+  const int kTouchId = 6;
+
+  const base::TimeTicks time_original = base::TimeTicks::FromInternalValue(100);
+  const base::TimeTicks time_ui = base::TimeTicks::FromInternalValue(200);
+  const base::TimeTicks time_acked = base::TimeTicks::FromInternalValue(300);
+
+  gfx::Rect bounds(100, 200, kWindowWidth, kWindowHeight);
+  scoped_ptr<aura::Window> window(CreateTestWindowWithDelegate(
+      delegate.get(), -1234, bounds, root_window()));
+
+  delegate->Reset();
+
+  ui::TouchEvent press1(ui::ET_TOUCH_PRESSED, gfx::Point(101, 201),
+                        kTouchId, tes.Now());
+
+  // Ensure the only components around are the ones we add.
+  press1.latency()->Clear();
+
+  press1.latency()->AddLatencyNumberWithTimestamp(
+      ui::INPUT_EVENT_LATENCY_ORIGINAL_COMPONENT, 0, 0, time_original, 1);
+
+  press1.latency()->AddLatencyNumberWithTimestamp(
+      ui::INPUT_EVENT_LATENCY_UI_COMPONENT, 0, 0, time_ui, 1);
+
+  press1.latency()->AddLatencyNumberWithTimestamp(
+      ui::INPUT_EVENT_LATENCY_ACKED_TOUCH_COMPONENT, 0, 0, time_acked, 1);
+
+  DispatchEventUsingWindowDispatcher(&press1);
+  EXPECT_TRUE(delegate->tap_down());
+
+  ui::LatencyInfo::LatencyComponent component;
+
+  EXPECT_EQ(3U, delegate->latency_info().latency_components.size());
+  ASSERT_TRUE(delegate->latency_info().FindLatency(
+      ui::INPUT_EVENT_LATENCY_ORIGINAL_COMPONENT, 0, &component));
+  EXPECT_EQ(time_original, component.event_time);
+
+  ASSERT_TRUE(delegate->latency_info().FindLatency(
+      ui::INPUT_EVENT_LATENCY_UI_COMPONENT, 0, &component));
+  EXPECT_EQ(time_ui, component.event_time);
+
+  ASSERT_TRUE(delegate->latency_info().FindLatency(
+      ui::INPUT_EVENT_LATENCY_ACKED_TOUCH_COMPONENT, 0, &component));
+  EXPECT_EQ(time_acked, component.event_time);
+
+  delegate->WaitUntilReceivedGesture(ui::ET_GESTURE_SHOW_PRESS);
+  EXPECT_TRUE(delegate->show_press());
+  EXPECT_EQ(0U, delegate->latency_info().latency_components.size());
+}
+
 INSTANTIATE_TEST_CASE_P(GestureRecognizer,
                         GestureRecognizerTest,
                         ::testing::Bool());

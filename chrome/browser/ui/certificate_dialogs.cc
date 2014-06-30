@@ -16,8 +16,10 @@
 #include "chrome/common/net/x509_certificate_model.h"
 #include "content/public/browser/browser_thread.h"
 #include "grit/generated_resources.h"
+#include "net/base/filename_util.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/shell_dialogs/select_file_dialog.h"
+#include "url/gurl.h"
 
 using content::BrowserThread;
 using content::WebContents;
@@ -48,8 +50,11 @@ std::string WrapAt64(const std::string &str) {
 }
 
 std::string GetBase64String(net::X509Certificate::OSCertHandle cert) {
+  std::string der_cert;
+  if (!net::X509Certificate::GetDEREncoded(cert, &der_cert))
+    return std::string();
   std::string base64;
-  base::Base64Encode(x509_certificate_model::GetDerString(cert), &base64);
+  base::Base64Encode(der_cert, &base64);
   return "-----BEGIN CERTIFICATE-----\r\n" +
       WrapAt64(base64) +
       "-----END CERTIFICATE-----\r\n";
@@ -84,10 +89,14 @@ Exporter::Exporter(WebContents* web_contents,
 
   // TODO(mattm): should this default to some directory?
   // Maybe SavePackage::GetSaveDirPreference? (Except that it's private.)
-  base::FilePath suggested_path("certificate");
   std::string cert_title = x509_certificate_model::GetTitle(cert);
-  if (!cert_title.empty())
-    suggested_path = base::FilePath(cert_title);
+  base::FilePath suggested_path =
+      net::GenerateFileName(GURL::EmptyGURL(),  // url
+                            std::string(),      // content_disposition
+                            std::string(),      // referrer_charset
+                            cert_title,         // suggested_name
+                            std::string(),      // mime_type
+                            "certificate");     // default_name
 
   ShowCertSelectFileDialog(select_file_dialog_.get(),
                            ui::SelectFileDialog::SELECT_SAVEAS_FILE,
@@ -114,7 +123,7 @@ void Exporter::FileSelected(const base::FilePath& path, int index,
         data += GetBase64String(cert_chain_list_[i]);
       break;
     case 3:
-      data = x509_certificate_model::GetDerString(cert_chain_list_[0]);
+      net::X509Certificate::GetDEREncoded(cert_chain_list_[0], &data);
       break;
     case 4:
       data = x509_certificate_model::GetCMSString(cert_chain_list_, 0, 1);

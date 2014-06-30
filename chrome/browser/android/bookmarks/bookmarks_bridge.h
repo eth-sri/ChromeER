@@ -11,8 +11,8 @@
 #include "base/android/jni_weak_ref.h"
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "chrome/browser/android/bookmarks/managed_bookmarks_shim.h"
 #include "chrome/browser/android/bookmarks/partner_bookmarks_shim.h"
+#include "chrome/browser/bookmarks/chrome_bookmark_client.h"
 #include "components/bookmarks/browser/base_bookmark_model_observer.h"
 
 class Profile;
@@ -21,13 +21,46 @@ class Profile;
 // bookmark page. This fetches the bookmarks, title, urls, folder
 // hierarchy.
 class BookmarksBridge : public BaseBookmarkModelObserver,
-                        public ManagedBookmarksShim::Observer,
                         public PartnerBookmarksShim::Observer {
  public:
   BookmarksBridge(JNIEnv* env, jobject obj, jobject j_profile);
   void Destroy(JNIEnv*, jobject);
 
   static bool RegisterBookmarksBridge(JNIEnv* env);
+
+  base::android::ScopedJavaLocalRef<jobject> GetBookmarkByID(
+      JNIEnv* env,
+      jobject obj,
+      jlong id,
+      jint type);
+
+  void GetPermanentNodeIDs(JNIEnv* env,
+                           jobject obj,
+                           jobject j_result_obj);
+
+  void GetChildIDs(JNIEnv* env,
+                   jobject obj,
+                   jlong id,
+                   jint type,
+                   jboolean get_folders,
+                   jboolean get_bookmarks,
+                   jobject j_result_obj);
+
+  void GetAllBookmarkIDsOrderedByCreationDate(JNIEnv* env,
+                                              jobject obj,
+                                              jobject j_result_obj);
+
+  void SetBookmarkTitle(JNIEnv* env,
+                        jobject obj,
+                        jlong id,
+                        jint type,
+                        jstring title);
+
+  void SetBookmarkUrl(JNIEnv* env,
+                      jobject obj,
+                      jlong id,
+                      jint type,
+                      jstring url);
 
   void GetBookmarksForFolder(JNIEnv* env,
                              jobject obj,
@@ -61,8 +94,10 @@ class BookmarksBridge : public BaseBookmarkModelObserver,
       jobject j_result_obj);
   const BookmarkNode* GetNodeByID(long node_id, int type);
   const BookmarkNode* GetFolderWithFallback(long folder_id, int type);
-  // Returns true if |node| can be modified by the user.
+  // Returns whether |node| can be modified by the user.
   bool IsEditable(const BookmarkNode* node) const;
+  // Returns whether |node| is a managed bookmark.
+  bool IsManaged(const BookmarkNode* node) const;
   const BookmarkNode* GetParentNode(const BookmarkNode* node);
   int GetBookmarkType(const BookmarkNode* node);
   base::string16 GetTitle(const BookmarkNode* node) const;
@@ -74,7 +109,7 @@ class BookmarksBridge : public BaseBookmarkModelObserver,
   // Override BaseBookmarkModelObserver.
   // Called when there are changes to the bookmark model that don't trigger
   // any of the other callback methods. For example, this is called when
-  // managed or partner bookmarks change.
+  // partner bookmarks change.
   virtual void BookmarkModelChanged() OVERRIDE;
   virtual void BookmarkModelLoaded(BookmarkModel* model,
                                    bool ids_reassigned) OVERRIDE;
@@ -99,9 +134,6 @@ class BookmarksBridge : public BaseBookmarkModelObserver,
   virtual void ExtensiveBookmarkChangesBeginning(BookmarkModel* model) OVERRIDE;
   virtual void ExtensiveBookmarkChangesEnded(BookmarkModel* model) OVERRIDE;
 
-  // Override ManagedBookmarksShim::Observer
-  virtual void OnManagedBookmarksChanged() OVERRIDE;
-
   // Override PartnerBookmarksShim::Observer
   virtual void PartnerShimChanged(PartnerBookmarksShim* shim) OVERRIDE;
   virtual void PartnerShimLoaded(PartnerBookmarksShim* shim) OVERRIDE;
@@ -110,8 +142,7 @@ class BookmarksBridge : public BaseBookmarkModelObserver,
   Profile* profile_;
   JavaObjectWeakGlobalRef weak_java_ref_;
   BookmarkModel* bookmark_model_;  // weak
-
-  scoped_ptr<ManagedBookmarksShim> managed_bookmarks_shim_;
+  ChromeBookmarkClient* client_;   // weak
 
   // Information about the Partner bookmarks (must check for IsLoaded()).
   // This is owned by profile.

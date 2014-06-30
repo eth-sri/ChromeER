@@ -22,7 +22,6 @@
 #include "net/socket/socket_test_util.h"
 #include "net/udp/datagram_client_socket.h"
 
-using net::test::kInitialFlowControlWindowForTest;
 using testing::_;
 
 namespace net {
@@ -34,8 +33,7 @@ const uint16 kServerPort = 80;
 
 class TestPacketWriter : public QuicDefaultPacketWriter {
  public:
-  TestPacketWriter(QuicVersion version) : version_(version) {
-  }
+  TestPacketWriter(QuicVersion version) : version_(version) {}
 
   // QuicPacketWriter
   virtual WriteResult WritePacket(
@@ -73,8 +71,9 @@ class QuicClientSessionTest : public ::testing::TestWithParam<QuicVersion> {
                  make_scoped_ptr((QuicServerInfo*)NULL),
                  QuicServerId(kServerHostname, kServerPort, false,
                               PRIVACY_MODE_DISABLED),
-                 DefaultQuicConfig(), kInitialFlowControlWindowForTest,
-                 &crypto_config_, &net_log_) {
+                 DefaultQuicConfig(), &crypto_config_,
+                 base::MessageLoop::current()->message_loop_proxy().get(),
+                 &net_log_) {
     session_.config()->SetDefaults();
     crypto_config_.SetDefaults();
   }

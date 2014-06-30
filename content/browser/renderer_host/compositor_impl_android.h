@@ -6,6 +6,7 @@
 #define CONTENT_BROWSER_RENDERER_HOST_COMPOSITOR_IMPL_ANDROID_H_
 
 #include "base/basictypes.h"
+#include "base/cancelable_callback.h"
 #include "base/compiler_specific.h"
 #include "base/containers/scoped_ptr_hash_map.h"
 #include "base/memory/scoped_ptr.h"
@@ -13,6 +14,7 @@
 #include "cc/resources/ui_resource_client.h"
 #include "cc/trees/layer_tree_host_client.h"
 #include "cc/trees/layer_tree_host_single_thread_client.h"
+#include "content/browser/android/ui_resource_provider_impl.h"
 #include "content/browser/renderer_host/image_transport_factory_android.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/android/compositor.h"
@@ -23,14 +25,13 @@ class SkBitmap;
 struct ANativeWindow;
 
 namespace cc {
-class InputHandlerClient;
 class Layer;
 class LayerTreeHost;
 }
 
 namespace content {
 class CompositorClient;
-class GraphicsContext;
+class UIResourceProvider;
 
 // -----------------------------------------------------------------------------
 // Browser-side compositor that manages a tree of content and UI layers.
@@ -63,16 +64,8 @@ class CONTENT_EXPORT CompositorImpl
   virtual void setDeviceScaleFactor(float factor) OVERRIDE;
   virtual void SetWindowBounds(const gfx::Size& size) OVERRIDE;
   virtual void SetHasTransparentBackground(bool flag) OVERRIDE;
-  virtual bool CompositeAndReadback(
-      void *pixels, const gfx::Rect& rect) OVERRIDE;
   virtual void SetNeedsComposite() OVERRIDE;
-  virtual cc::UIResourceId GenerateUIResource(const SkBitmap& bitmap,
-                                              bool is_transient) OVERRIDE;
-  virtual cc::UIResourceId GenerateCompressedUIResource(const gfx::Size& size,
-                                                        void* pixels,
-                                                        bool is_transient)
-      OVERRIDE;
-  virtual void DeleteUIResource(cc::UIResourceId resource_id) OVERRIDE;
+  virtual UIResourceProvider& GetUIResourceProvider() OVERRIDE;
 
   // LayerTreeHostClient implementation.
   virtual void WillBeginMainFrame(int frame_id) OVERRIDE {}
@@ -104,19 +97,44 @@ class CONTENT_EXPORT CompositorImpl
       scoped_ptr<cc::CopyOutputRequest> request) OVERRIDE;
   virtual void OnVSync(base::TimeTicks frame_time,
                        base::TimeDelta vsync_period) OVERRIDE;
+  virtual void SetNeedsAnimate() OVERRIDE;
 
-  void PostComposite(base::TimeDelta delay);
   enum CompositingTrigger {
+    DO_NOT_COMPOSITE,
     COMPOSITE_IMMEDIATELY,
-    COMPOSITE_ON_VSYNC
+    COMPOSITE_EVENTUALLY,
   };
+  void PostComposite(CompositingTrigger trigger);
   void Composite(CompositingTrigger trigger);
+
+  bool WillCompositeThisFrame() const {
+    return current_composite_task_ &&
+           !current_composite_task_->callback().is_null();
+  }
+  bool DidCompositeThisFrame() const {
+    return current_composite_task_ &&
+           current_composite_task_->callback().is_null();
+  }
+  bool WillComposite() const {
+    return WillCompositeThisFrame() ||
+           composite_on_vsync_trigger_ != DO_NOT_COMPOSITE;
+  }
+  void CancelComposite() {
+    DCHECK(WillComposite());
+    if (WillCompositeThisFrame())
+      current_composite_task_->Cancel();
+    current_composite_task_.reset();
+    composite_on_vsync_trigger_ = DO_NOT_COMPOSITE;
+    will_composite_immediately_ = false;
+  }
   cc::UIResourceId GenerateUIResourceFromUIResourceBitmap(
       const cc::UIResourceBitmap& bitmap,
       bool is_transient);
+  void OnGpuChannelEstablished();
 
   scoped_refptr<cc::Layer> root_layer_;
   scoped_ptr<cc::LayerTreeHost> host_;
+  content::UIResourceProviderImpl ui_resource_provider_;
 
   gfx::Size size_;
   bool has_transparent_background_;
@@ -126,10 +144,6 @@ class CONTENT_EXPORT CompositorImpl
   int surface_id_;
 
   CompositorClient* client_;
-
-  typedef base::ScopedPtrHashMap<cc::UIResourceId, cc::UIResourceClient>
-      UIResourceMap;
-  UIResourceMap ui_resource_map_;
 
   gfx::NativeWindow root_window_;
 
@@ -144,18 +158,24 @@ class CONTENT_EXPORT CompositorImpl
   // explicit request.
   bool needs_composite_;
 
-  // When SetNeedsComposite() is getting called, we will try to schedule
-  // regularly during vsync.
-  bool should_composite_on_vsync_;
+  // Whether we need to update animations on the next composite.
+  bool needs_animate_;
 
-  // Whether we composited already in the current vsync interval.
-  bool did_composite_this_frame_;
+  // Whether we posted a task and are about to composite.
+  bool will_composite_immediately_;
+
+  // How we should schedule Composite during the next vsync.
+  CompositingTrigger composite_on_vsync_trigger_;
+
+  // The Composite operation scheduled for the current vsync interval.
+  scoped_ptr<base::CancelableClosure> current_composite_task_;
 
   // The number of SwapBuffer calls that have not returned and ACK'd from
   // the GPU thread.
   unsigned int pending_swapbuffers_;
 
   base::TimeDelta vsync_period_;
+  base::TimeTicks last_vsync_;
 
   base::WeakPtrFactory<CompositorImpl> weak_factory_;
 

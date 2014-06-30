@@ -197,7 +197,7 @@ bool VerifiedContents::InitFrom(const base::FilePath& path,
 const std::string* VerifiedContents::GetTreeHashRoot(
     const base::FilePath& relative_path) {
   std::map<base::FilePath, std::string>::const_iterator i =
-      root_hashes_.find(relative_path);
+      root_hashes_.find(relative_path.NormalizePathSeparatorsTo('/'));
   if (i == root_hashes_.end())
     return NULL;
   return &i->second;

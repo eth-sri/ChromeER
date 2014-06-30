@@ -21,7 +21,6 @@
 #include "chrome/browser/chromeos/customization_document.h"
 #include "chrome/browser/chromeos/input_method/input_method_util.h"
 #include "chrome/browser/chromeos/login/users/user_manager.h"
-#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/profiles/profile.h"
@@ -36,7 +35,7 @@
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
-#include "extensions/browser/extension_system.h"
+#include "extensions/browser/extension_registry.h"
 #include "extensions/common/extension.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
@@ -49,10 +48,10 @@ namespace {
 // see: crbug.com/240586
 
 bool IsBlacklisted(const std::string& language_code) {
-  return language_code == "si"; // Sinhala
+  return language_code == "si";  // Sinhala
 }
 
-} // namespace
+}  // namespace
 
 namespace chromeos {
 namespace options {
@@ -119,9 +118,11 @@ void CrosLanguageOptionsHandler::GetLocalizedValues(
 
   input_method::InputMethodDescriptors ext_ime_descriptors;
   manager->GetInputMethodExtensions(&ext_ime_descriptors);
-  localized_strings->Set("extensionImeList",
-                         ConvertInputMethodDescriptosToIMEList(
-                             ext_ime_descriptors));
+
+  base::ListValue* ext_ime_list = ConvertInputMethodDescriptorsToIMEList(
+      ext_ime_descriptors);
+  AddImeProvider(ext_ime_list);
+  localized_strings->Set("extensionImeList", ext_ime_list);
 
   ComponentExtensionIMEManager* component_extension_manager =
       input_method::InputMethodManager::Get()
@@ -129,7 +130,7 @@ void CrosLanguageOptionsHandler::GetLocalizedValues(
   if (component_extension_manager->IsInitialized()) {
     localized_strings->Set(
         "componentExtensionImeList",
-        ConvertInputMethodDescriptosToIMEList(
+        ConvertInputMethodDescriptorsToIMEList(
             component_extension_manager->GetAllIMEAsInputMethodDescriptor()));
     composition_extension_appended_ = true;
   } else {
@@ -157,6 +158,7 @@ void CrosLanguageOptionsHandler::RegisterMessages() {
                  base::Unretained(this)));
 }
 
+// static
 base::ListValue* CrosLanguageOptionsHandler::GetInputMethodList(
     const input_method::InputMethodDescriptors& descriptors) {
   input_method::InputMethodManager* manager =
@@ -418,7 +420,7 @@ base::ListValue* CrosLanguageOptionsHandler::GetUILanguageList(
 }
 
 base::ListValue*
-    CrosLanguageOptionsHandler::ConvertInputMethodDescriptosToIMEList(
+    CrosLanguageOptionsHandler::ConvertInputMethodDescriptorsToIMEList(
         const input_method::InputMethodDescriptors& descriptors) {
   scoped_ptr<base::ListValue> ime_ids_list(new base::ListValue());
   for (size_t i = 0; i < descriptors.size(); ++i) {
@@ -519,7 +521,7 @@ void CrosLanguageOptionsHandler::OnImeComponentExtensionInitialized() {
 
   DCHECK(manager->IsInitialized());
   scoped_ptr<base::ListValue> ime_list(
-      ConvertInputMethodDescriptosToIMEList(
+      ConvertInputMethodDescriptorsToIMEList(
           manager->GetAllIMEAsInputMethodDescriptor()));
   web_ui()->CallJavascriptFunction(
       "options.LanguageOptions.onComponentManagerInitialized",
@@ -542,12 +544,32 @@ void CrosLanguageOptionsHandler::InitializePage() {
   }
 
   scoped_ptr<base::ListValue> ime_list(
-      ConvertInputMethodDescriptosToIMEList(
+      ConvertInputMethodDescriptorsToIMEList(
           component_extension_manager->GetAllIMEAsInputMethodDescriptor()));
   web_ui()->CallJavascriptFunction(
       "options.LanguageOptions.onComponentManagerInitialized",
       *ime_list);
   composition_extension_appended_ = true;
+}
+
+void CrosLanguageOptionsHandler::AddImeProvider(base::ListValue* list) {
+  Profile* profile = Profile::FromWebUI(web_ui());
+  const extensions::ExtensionSet& enabled_extensions =
+      extensions::ExtensionRegistry::Get(profile)->enabled_extensions();
+  for (size_t i = 0; i < list->GetSize(); ++i) {
+    base::DictionaryValue* entry;
+    list->GetDictionary(i, &entry);
+
+    std::string input_method_id;
+    entry->GetString("id", &input_method_id);
+
+    std::string extension_id =
+        extension_ime_util::GetExtensionIDFromInputMethodID(input_method_id);
+    const extensions::Extension* extension =
+        enabled_extensions.GetByID(extension_id);
+    if (extension)
+      entry->SetString("extensionName", extension->name());
+  }
 }
 
 }  // namespace options

@@ -46,18 +46,33 @@ cr.define('options', function() {
     },
 
     /**
-     * Assigns a value to the error message and updates the hidden state
-     * and whether the disabled section is disabled or not.
-     * @param {string} errorMsg The error message to be displayed. If none,
-     *                          there is no error.
+     * Returns the current error.
+     * @return {string} The error message to be displayed. May be undefined if
+     *     there is no error.
      */
-    set errorText(errorMsg) {
+    get errorText() {
+      return this.errorText_;
+    },
+
+    /**
+     * Checks for errors and records them.
+     * @param {string} errorMsg The error message to be displayed. May be
+     *     undefined if there is no error.
+     */
+    setError: function(errorMsg) {
       this.setAttribute('controlled-by', 'policy');
       this.errorText_ = errorMsg;
-      if (errorMsg)
+    },
+
+    /**
+     * Changes the display to be visible if there are errors and disables
+     * the section.
+     */
+    updateBasedOnError: function() {
+      if (this.errorText_)
         this.hidden = false;
       if (this.disabledOnErrorSection_)
-        this.disabledOnErrorSection_.disabled = (errorMsg ? true : false);
+        this.disabledOnErrorSection_.disabled = !!this.errorText_;
     },
 
     /**
@@ -76,43 +91,23 @@ cr.define('options', function() {
 
       var self = this;
       // Create the DOM tree for the bubble content.
-      var action = document.createElement('button');
-      action.classList.add('default-button');
-      action.classList.add('controlled-setting-bubble-action');
-      action.textContent = loadTimeData.getString('hotwordRetryDownloadButton');
-      action.addEventListener('click', function(event) {
-        self.retryDownload_();
-      });
-
-      var buttonStrip = document.createElement('div');
-      buttonStrip.classList.add('button-strip');
-      buttonStrip.reversed = true;
-      buttonStrip.appendChild(action);
-
-      var actionContainer = document.createElement('div');
-      actionContainer.classList.add('action-area');
-      actionContainer.appendChild(buttonStrip);
-
       var closeButton = document.createElement('div');
       closeButton.classList.add('close-button');
 
       var text = document.createElement('p');
-      text.textContent = this.errorText_;
+      text.innerHTML = this.errorText_;
+
+      var textDiv = document.createElement('div');
+      textDiv.appendChild(text);
 
       var container = document.createElement('div');
       container.appendChild(closeButton);
-      container.appendChild(text);
-      container.appendChild(actionContainer);
+      container.appendChild(textDiv);
 
       var content = document.createElement('div');
       content.appendChild(container);
 
       OptionsPage.showBubble(content, this.image, this, this.location);
-    },
-
-    retryDownload_: function() {
-      chrome.send('requestHotwordSetupRetry');
-      OptionsPage.hideBubble();
     },
   };
 

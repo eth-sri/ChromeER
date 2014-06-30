@@ -14,7 +14,7 @@ second depending on the test. Final Score is computed by calculating geometric
 mean of individual tests scores.
 """
 
-from telemetry import test
+from telemetry import benchmark
 from telemetry.page import page_measurement
 from telemetry.page import page_set
 from telemetry.util import statistics
@@ -68,7 +68,8 @@ class _PeaceKeeperMeasurement(page_measurement.PageMeasurement):
         scalar.ScalarValue(None, 'Total.Score', 'score', total))
 
 
-class PeaceKeeperBenchmark(test.Test):
+@benchmark.Disabled
+class PeaceKeeperBenchmark(benchmark.Benchmark):
   """A base class for Peackeeper benchmarks."""
   test = _PeaceKeeperMeasurement
 
@@ -78,11 +79,7 @@ class PeaceKeeperBenchmark(test.Test):
     if not hasattr(self, 'test_param'):
       raise NotImplementedError('test_param not in PeaceKeeper benchmark.')
 
-    # The docstring of benchmark classes may also be used as a description
-    # when 'run_benchmarks list' is run.
-    description = self.__doc__ or 'PeaceKeeper Benchmark'
     ps = page_set.PageSet(
-      description=description,
       archive_data_file='../page_sets/data/peacekeeper_%s.json' % self.tag,
       make_javascript_deterministic=False)
     for test_name in self.test_param:
@@ -93,6 +90,7 @@ class PeaceKeeperBenchmark(test.Test):
     return ps
 
 
+@benchmark.Disabled
 class PeaceKeeperRender(PeaceKeeperBenchmark):
   """PeaceKeeper rendering benchmark suite.
 
@@ -108,6 +106,7 @@ class PeaceKeeperRender(PeaceKeeperBenchmark):
                ]
 
 
+@benchmark.Disabled
 class PeaceKeeperData(PeaceKeeperBenchmark):
   """PeaceKeeper Data operations benchmark suite.
 
@@ -127,6 +126,7 @@ class PeaceKeeperData(PeaceKeeperBenchmark):
                ]
 
 
+@benchmark.Disabled
 class PeaceKeeperDom(PeaceKeeperBenchmark):
   """PeaceKeeper DOM operations benchmark suite.
 
@@ -167,6 +167,7 @@ class PeaceKeeperDom(PeaceKeeperBenchmark):
                ]
 
 
+@benchmark.Disabled
 class PeaceKeeperTextParsing(PeaceKeeperBenchmark):
   """PeaceKeeper Text Parsing benchmark suite.
 
@@ -196,6 +197,7 @@ class PeaceKeeperTextParsing(PeaceKeeperBenchmark):
                ]
 
 
+@benchmark.Disabled
 class PeaceKeeperHTML5Canvas(PeaceKeeperBenchmark):
   """PeaceKeeper HTML5 Canvas benchmark suite.
 
@@ -213,6 +215,7 @@ class PeaceKeeperHTML5Canvas(PeaceKeeperBenchmark):
                ]
 
 
+@benchmark.Disabled
 class PeaceKeeperHTML5Capabilities(PeaceKeeperBenchmark):
   """PeaceKeeper HTML5 Capabilities benchmark suite.
 

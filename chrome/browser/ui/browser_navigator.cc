@@ -13,7 +13,6 @@
 #include "chrome/browser/browser_about_handler.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/tab_helper.h"
-#include "chrome/browser/google/google_url_tracker.h"
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/prerender/prerender_manager.h"
 #include "chrome/browser/prerender/prerender_manager_factory.h"
@@ -34,6 +33,7 @@
 #include "chrome/browser/web_applications/web_app.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/google/core/browser/google_url_tracker.h"
 #include "content/public/browser/browser_url_handler.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_service.h"
@@ -592,17 +592,9 @@ void Navigate(NavigateParams* params) {
   // we are supposed to target a new tab; unless it's a singleton that already
   // exists.
   if (!params->target_contents && singleton_index < 0) {
-    GURL url;
-    if (params->url.is_empty()) {
-      url = params->browser->profile()->GetHomePage();
-      params->transition = content::PageTransitionFromInt(
-          params->transition | content::PAGE_TRANSITION_HOME_PAGE);
-    } else {
-      url = params->url;
-    }
-
+    DCHECK(!params->url.is_empty());
     if (params->disposition != CURRENT_TAB) {
-      params->target_contents = CreateTargetContents(*params, url);
+      params->target_contents = CreateTargetContents(*params, params->url);
 
       // This function takes ownership of |params->target_contents| until it
       // is added to a TabStripModel.
@@ -620,7 +612,7 @@ void Navigate(NavigateParams* params) {
     // sessionStorage namespace could not match, so prerender will use the
     // asynchronous codepath and still swap.
     DCHECK(params->target_contents);
-    swapped_in_prerender = SwapInPrerender(url, params);
+    swapped_in_prerender = SwapInPrerender(params->url, params);
 
     if (user_initiated)
       params->target_contents->UserGestureDone();
@@ -628,11 +620,11 @@ void Navigate(NavigateParams* params) {
     if (!swapped_in_prerender) {
       // Try to handle non-navigational URLs that popup dialogs and such, these
       // should not actually navigate.
-      if (!HandleNonNavigationAboutURL(url)) {
+      if (!HandleNonNavigationAboutURL(params->url)) {
         // Perform the actual navigation, tracking whether it came from the
         // renderer.
 
-        LoadURLInContents(params->target_contents, url, params);
+        LoadURLInContents(params->target_contents, params->url, params);
         // For prerender bookkeeping purposes, record that this pending navigate
         // originated from chrome::Navigate.
         content::NavigationEntry* entry =

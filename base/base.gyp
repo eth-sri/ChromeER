@@ -532,7 +532,6 @@
         'os_compat_android_unittest.cc',
         'path_service_unittest.cc',
         'pickle_unittest.cc',
-        'platform_file_unittest.cc',
         'posix/file_descriptor_shuffle_unittest.cc',
         'posix/unix_domain_socket_linux_unittest.cc',
         'power_monitor/power_monitor_unittest.cc',
@@ -578,6 +577,7 @@
         'strings/sys_string_conversions_unittest.cc',
         'strings/utf_offset_string_conversions_unittest.cc',
         'strings/utf_string_conversions_unittest.cc',
+        'supports_user_data_unittest.cc',
         'sync_socket_unittest.cc',
         'synchronization/cancellation_flag_unittest.cc',
         'synchronization/condition_variable_unittest.cc',
@@ -999,12 +999,15 @@
             '../third_party/libc++/libc++.gyp:libcxx_proxy',
           ],
         }],
+        ['tsan==1', {
+          'sources': [
+            'debug/tsan_suppressions.cc',
+          ],
+        }],
       ],
-      'cflags!': [
-        '-fsanitize=address',
-        '-fsanitize=thread',
-        '-fsanitize=memory',
-        '-fsanitize-memory-track-origins',
+      'cflags/': [
+        ['exclude', '-fsanitize='],
+        ['exclude', '-fsanitize-'],
       ],
       'direct_dependent_settings': {
         'ldflags': [
@@ -1276,6 +1279,8 @@
             'android/java/src/org/chromium/base/CommandLine.java',
             'android/java/src/org/chromium/base/ContentUriUtils.java',
             'android/java/src/org/chromium/base/CpuFeatures.java',
+            'android/java/src/org/chromium/base/EventLog.java',
+            'android/java/src/org/chromium/base/FieldTrialList.java',
             'android/java/src/org/chromium/base/ImportantFileWriterAndroid.java',
             'android/java/src/org/chromium/base/library_loader/LibraryLoader.java',
             'android/java/src/org/chromium/base/MemoryPressureListener.java',
@@ -1415,8 +1420,15 @@
               'sources': [
                 'android/linker/linker_jni.cc',
               ],
+              # The crazy linker is never instrumented.
+              'cflags!': [
+                '-finstrument-functions',
+              ],
               'dependencies': [
-                '<(android_ndk_root)/crazy_linker.gyp:crazy_linker',
+                # The NDK contains the crazy_linker here:
+                #   '<(android_ndk_root)/crazy_linker.gyp:crazy_linker'
+                # However, we use our own fork.  See bug 384700.
+                '../third_party/android_crazy_linker/crazy_linker.gyp:crazy_linker',
               ],
             }],
           ],

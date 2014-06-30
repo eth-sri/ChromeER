@@ -8,10 +8,10 @@
 #include "chrome/browser/extensions/extension_browsertest.h"
 #include "chrome/browser/prefs/session_startup_pref.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/common/pref_names.h"
+#include "components/search_engines/template_url.h"
 
 namespace {
 
@@ -108,6 +108,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, OverrideSettings) {
             extension_provider->alternate_urls());
   EXPECT_EQ(std::vector<std::string>(1, "UTF-8"),
             extension_provider->input_encodings());
+  EXPECT_EQ(default_provider->new_tab_url(), extension_provider->new_tab_url());
 
   UnloadExtension(extension->id());
   EXPECT_EQ("http://google.com/", prefs->GetString(prefs::kHomePage));

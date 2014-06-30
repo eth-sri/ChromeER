@@ -58,9 +58,7 @@
       'variables': {
         'isolate_dependency_tracked': [
           '<(PRODUCT_DIR)/<(version_full).manifest',
-          '<(PRODUCT_DIR)/D3DCompiler_43.dll',
           '<(PRODUCT_DIR)/chrome.dll',
-          '<(PRODUCT_DIR)/chrome_child.dll',
           '<(PRODUCT_DIR)/chrome_elf.dll',
           '<(PRODUCT_DIR)/d3dcompiler_46.dll',
           '<(PRODUCT_DIR)/ffmpegsumo.dll',
@@ -73,8 +71,15 @@
         ],
       },
     }],
+    ['OS=="win" and component=="static_library"', {
+      'variables': {
+        'isolate_dependency_tracked': [
+          '<(PRODUCT_DIR)/chrome_child.dll',
+        ],
+      },
+    }],
   ],
   'includes': [
-    '../third_party/icu/icu.isolate',
+    '../base/base.isolate',
   ],
 }

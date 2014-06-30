@@ -14,6 +14,7 @@
 #include "base/task_runner_util.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "base/values.h"
+#include "chrome/browser/chromeos/login/auth/key.h"
 #include "chrome/browser/chromeos/login/auth/mount_manager.h"
 #include "chrome/browser/chromeos/login/auth/user_context.h"
 #include "chrome/browser/chromeos/login/managed/locally_managed_user_constants.h"
@@ -44,7 +45,7 @@ bool StoreManagedUserFiles(const std::string& token,
     // If running on desktop, cryptohome stub does not create home directory.
     base::CreateDirectory(base_path);
   }
-  base::FilePath token_file = base_path.Append(kManagedUserTokenFilename);
+  base::FilePath token_file = base_path.Append(kSupervisedUserTokenFilename);
   int bytes = base::WriteFile(token_file, token.c_str(), token.length());
   return bytes >= 0;
 }
@@ -151,7 +152,7 @@ void ManagedUserCreationControllerNew::StartCreationImpl() {
   creation_context_->local_user_id = manager->GenerateUserId();
   if (creation_context_->creation_type == NEW_USER) {
     creation_context_->sync_user_id =
-        ManagedUserRegistrationUtility::GenerateNewManagedUserId();
+        SupervisedUserRegistrationUtility::GenerateNewSupervisedUserId();
   }
 
   manager->SetCreationTransactionUserId(creation_context_->local_user_id);
@@ -200,16 +201,18 @@ void ManagedUserCreationControllerNew::StartCreationImpl() {
       this,
       &ManagedUserCreationControllerNew::CreationTimedOut);
   authenticator_ = new ExtendedAuthenticator(this);
-  authenticator_->HashPasswordWithSalt(
-      creation_context_->master_key,
-      base::Bind(&ManagedUserCreationControllerNew::OnPasswordHashingSuccess,
+  UserContext user_context;
+  user_context.SetKey(Key(creation_context_->master_key));
+  authenticator_->TransformKeyIfNeeded(
+      user_context,
+      base::Bind(&ManagedUserCreationControllerNew::OnKeyTransformedIfNeeded,
                  weak_factory_.GetWeakPtr()));
 }
 
-void ManagedUserCreationControllerNew::OnPasswordHashingSuccess(
-    const std::string& password_hash) {
+void ManagedUserCreationControllerNew::OnKeyTransformedIfNeeded(
+    const UserContext& user_context) {
   VLOG(1) << " Phase 2.1 : Got hashed master key";
-  creation_context_->salted_master_key = password_hash;
+  creation_context_->salted_master_key = user_context.GetKey()->GetSecret();
 
   // Create home dir with two keys.
   std::vector<cryptohome::KeyDefinition> keys;
@@ -260,18 +263,21 @@ void ManagedUserCreationControllerNew::OnMountSuccess(
 
   // Plain text password, hashed and salted with individual salt.
   // It can be used for mounting homedir, and can be replaced only when signed.
-  cryptohome::KeyDefinition password_key(creation_context_->salted_password,
-                                         kCryptohomeManagedUserKeyLabel,
-                                         kCryptohomeManagedUserKeyPrivileges);
+  cryptohome::KeyDefinition password_key(
+      creation_context_->salted_password,
+      kCryptohomeSupervisedUserKeyLabel,
+      kCryptohomeSupervisedUserKeyPrivileges);
   base::Base64Decode(creation_context_->encryption_key,
                      &password_key.encryption_key);
   base::Base64Decode(creation_context_->signature_key,
                      &password_key.signature_key);
 
+  Key key(Key::KEY_TYPE_SALTED_PBKDF2_AES256_1234,
+          std::string(),  // The salt is stored elsewhere.
+          creation_context_->salted_master_key);
+  key.SetLabel(kCryptohomeMasterKeyLabel);
   UserContext context(creation_context_->local_user_id);
-  context.SetPassword(creation_context_->salted_master_key);
-  context.SetDoesNeedPasswordHashing(false);
-  context.SetKeyLabel(kCryptohomeMasterKeyLabel);
+  context.SetKey(key);
   context.SetIsUsingOAuth(false);
 
   authenticator_->AddKey(
@@ -299,11 +305,11 @@ void ManagedUserCreationControllerNew::OnAddKeySuccess() {
     consumer_->OnLongCreationWarning();
 
   creation_context_->registration_utility =
-      ManagedUserRegistrationUtility::Create(
+      SupervisedUserRegistrationUtility::Create(
           creation_context_->manager_profile);
 
-  ManagedUserRegistrationInfo info(creation_context_->display_name,
-                                   creation_context_->avatar_index);
+  SupervisedUserRegistrationInfo info(creation_context_->display_name,
+                                      creation_context_->avatar_index);
   info.master_key = creation_context_->master_key;
   info.password_signature_key = creation_context_->signature_key;
   info.password_encryption_key = creation_context_->encryption_key;

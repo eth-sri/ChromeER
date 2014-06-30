@@ -12,6 +12,7 @@
 #include "base/debug/trace_event.h"
 #include "base/file_util.h"
 #include "base/hash.h"
+#include "base/metrics/field_trial.h"
 #include "base/path_service.h"
 #include "base/process/launch.h"
 #include "base/strings/string_util.h"
@@ -28,6 +29,7 @@
 #include "sandbox/win/src/sandbox.h"
 #include "sandbox/win/src/sandbox_nt_util.h"
 #include "sandbox/win/src/win_utils.h"
+#include "ui/gfx/win/dpi.h"
 
 static sandbox::BrokerServices* g_broker_services = NULL;
 static sandbox::TargetServices* g_target_services = NULL;
@@ -41,10 +43,13 @@ namespace {
 // For more information about how this list is generated, and how to get off
 // of it, see:
 // https://sites.google.com/a/chromium.org/dev/Home/third-party-developers
+// If the size of this list exceeds 64, change kTroublesomeDllsMaxCount.
 const wchar_t* const kTroublesomeDlls[] = {
   L"adialhk.dll",                 // Kaspersky Internet Security.
   L"acpiz.dll",                   // Unknown.
   L"akinsofthook32.dll",          // Akinsoft Software Engineering.
+  L"assistant_x64.dll",           // Unknown.
+  L"avcuf64.dll",                 // Bit Defender Internet Security x64.
   L"avgrsstx.dll",                // AVG 8.
   L"babylonchromepi.dll",         // Babylon translator.
   L"btkeyind.dll",                // Widcomm Bluetooth.
@@ -330,7 +335,6 @@ bool AddGenericPolicy(sandbox::TargetPolicy* policy) {
 #endif  // NDEBUG
 
   AddGenericDllEvictionPolicy(policy);
-
   return true;
 }
 
@@ -357,11 +361,9 @@ bool AddPolicyForSandboxedProcess(sandbox::TargetPolicy* policy) {
   policy->SetTokenLevel(initial_token, sandbox::USER_LOCKDOWN);
   // Prevents the renderers from manipulating low-integrity processes.
   policy->SetDelayedIntegrityLevel(sandbox::INTEGRITY_LEVEL_UNTRUSTED);
+  policy->SetIntegrityLevel(sandbox::INTEGRITY_LEVEL_LOW);
 
-  bool use_winsta = !CommandLine::ForCurrentProcess()->HasSwitch(
-                        switches::kDisableAltWinstation);
-
-  if (sandbox::SBOX_ALL_OK !=  policy->SetAlternateDesktop(use_winsta)) {
+  if (sandbox::SBOX_ALL_OK !=  policy->SetAlternateDesktop(true)) {
     DLOG(WARNING) << "Failed to apply desktop security to the renderer";
   }
 
@@ -496,10 +498,14 @@ void SetJobLevel(const CommandLine& cmd_line,
                  sandbox::JobLevel job_level,
                  uint32 ui_exceptions,
                  sandbox::TargetPolicy* policy) {
-  if (ShouldSetJobLevel(cmd_line))
+  if (ShouldSetJobLevel(cmd_line)) {
+#ifdef _WIN64
+    policy->SetJobMemoryLimit(4ULL * 1024 * 1024 * 1024);
+#endif
     policy->SetJobLevel(job_level, ui_exceptions);
-  else
+  } else {
     policy->SetJobLevel(sandbox::JOB_NONE, 0);
+  }
 }
 
 // TODO(jschuh): Need get these restrictions applied to NaCl and Pepper.
@@ -561,11 +567,33 @@ bool InitTargetServices(sandbox::TargetServices* target_services) {
 bool ShouldUseDirectWrite() {
   // If the flag is currently on, and we're on Win7 or above, we enable
   // DirectWrite. Skia does not require the additions to DirectWrite in QFE
-  // 2670838, so a Win7 check is sufficient. We do not currently attempt to
-  // support Vista, where SP2 and the Platform Update are required.
+  // 2670838, but a simple 'better than XP' check is not enough.
+  if (base::win::GetVersion() < base::win::VERSION_WIN7)
+    return false;
+
+  base::win::OSInfo::VersionNumber os_version =
+      base::win::OSInfo::GetInstance()->version_number();
+  if ((os_version.major == 6) && (os_version.minor == 1)) {
+    // We can't use DirectWrite for pre-release versions of Windows 7.
+    if (os_version.build < 7600)
+      return false;
+  }
+
+  // If forced off, don't use it.
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  return command_line.HasSwitch(switches::kEnableDirectWrite) &&
-         base::win::GetVersion() >= base::win::VERSION_WIN7;
+  if (command_line.HasSwitch(switches::kDisableDirectWrite))
+    return false;
+
+#if !defined(NACL_WIN64)
+  // Can't use GDI on HiDPI.
+  if (gfx::GetDPIScale() > 1.0f)
+    return true;
+#endif
+
+  // Otherwise, check the field trial.
+  const std::string group_name =
+      base::FieldTrialList::FindFullName("DirectWrite");
+  return group_name != "Disabled";
 }
 
 base::ProcessHandle StartSandboxedProcess(
@@ -610,8 +638,13 @@ base::ProcessHandle StartSandboxedProcess(
      type_str == switches::kRendererProcess &&
      browser_command_line.HasSwitch(
         switches::kEnableWin32kRendererLockDown)) {
-   mitigations |= sandbox::MITIGATION_WIN32K_DISABLE;
- }
+    if (policy->AddRule(sandbox::TargetPolicy::SUBSYS_WIN32K_LOCKDOWN,
+                        sandbox::TargetPolicy::FAKE_USER_GDI_INIT,
+                        NULL) != sandbox::SBOX_ALL_OK) {
+      return 0;
+    }
+    mitigations |= sandbox::MITIGATION_WIN32K_DISABLE;
+  }
 
   if (policy->SetProcessMitigations(mitigations) != sandbox::SBOX_ALL_OK)
     return 0;

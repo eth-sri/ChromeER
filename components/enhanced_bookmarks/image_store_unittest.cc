@@ -5,6 +5,7 @@
 #include "components/enhanced_bookmarks/image_store.h"
 
 #include "base/files/scoped_temp_dir.h"
+#include "base/strings/string_number_conversions.h"
 #include "components/enhanced_bookmarks/image_store_util.h"
 #include "components/enhanced_bookmarks/persistent_image_store.h"
 #include "components/enhanced_bookmarks/test_image_store.h"
@@ -14,21 +15,26 @@
 
 namespace {
 
-const SkBitmap CreateBitmap(int width, int height, int a, int r, int g, int b) {
+gfx::Image CreateImage(int width, int height, int a, int r, int g, int b) {
   SkBitmap bitmap;
   bitmap.allocN32Pixels(width, height);
   bitmap.eraseARGB(a, r, g, b);
-  return bitmap;
+  gfx::Image image(gfx::Image::CreateFrom1xBitmap(bitmap));
+
+#if defined(OS_IOS)
+  // Make sure the image has a kImageRepCocoaTouch.
+  image.ToUIImage();
+#endif  // defined(OS_IOS)
+
+  return image;
 }
 
 gfx::Image GenerateWhiteImage() {
-  return gfx::Image::CreateFrom1xBitmap(
-      CreateBitmap(42, 24, 255, 255, 255, 255));
+  return CreateImage(42, 24, 255, 255, 255, 255);
 }
 
 gfx::Image GenerateBlackImage(int width, int height) {
-  return gfx::Image::CreateFrom1xBitmap(
-      CreateBitmap(width, height, 255, 0, 0, 0));
+  return CreateImage(width, height, 255, 0, 0, 0);
 }
 
 gfx::Image GenerateBlackImage() {
@@ -43,17 +49,17 @@ bool CompareImages(const gfx::Image& image_1, const gfx::Image& image_2) {
   if (image_1.IsEmpty() || image_2.IsEmpty())
     return false;
 
-  scoped_refptr<base::RefCountedMemory> image_1_png =
+  scoped_refptr<base::RefCountedMemory> image_1_bytes =
       enhanced_bookmarks::BytesForImage(image_1);
-  scoped_refptr<base::RefCountedMemory> image_2_png =
+  scoped_refptr<base::RefCountedMemory> image_2_bytes =
       enhanced_bookmarks::BytesForImage(image_2);
 
-  if (image_1_png->size() != image_2_png->size())
+  if (image_1_bytes->size() != image_2_bytes->size())
     return false;
 
-  return !memcmp(image_1_png->front(),
-                 image_2_png->front(),
-                 image_1_png->size());
+  return !memcmp(image_1_bytes->front(),
+                 image_2_bytes->front(),
+                 image_1_bytes->size());
 }
 
 // Factory functions for creating instances of the implementations.
@@ -215,6 +221,35 @@ TYPED_TEST(ImageStoreUnitTest, Persistence) {
     this->store_->GetAllPageUrls(&all_urls);
     EXPECT_EQ(0u, all_urls.size());
     EXPECT_FALSE(this->store_->HasKey(GURL("foo://bar")));
+  }
+}
+
+TYPED_TEST(ImageStoreUnitTest, GetSize) {
+  gfx::Image src_image = GenerateBlackImage();
+  const GURL url("foo://bar");
+  const GURL image_url("a.jpg");
+
+  int64 size = 0;
+  if (this->use_persistent_store()) {
+    // File shouldn't exist before we actually start using it since we do lazy
+    // initialization.
+    EXPECT_EQ(this->store_->GetStoreSizeInBytes(), -1);
+  } else {
+    EXPECT_LE(this->store_->GetStoreSizeInBytes(), 1024);
+  }
+  for (int i = 0; i < 100; ++i) {
+    this->store_->Insert(
+        GURL(url.spec() + '/' + base::IntToString(i)), image_url, src_image);
+    EXPECT_GE(this->store_->GetStoreSizeInBytes(), size);
+    size = this->store_->GetStoreSizeInBytes();
+  }
+
+  if (this->use_persistent_store()) {
+    EXPECT_GE(this->store_->GetStoreSizeInBytes(),  90 * 1024); //  90kb
+    EXPECT_LE(this->store_->GetStoreSizeInBytes(), 200 * 1024); // 200kb
+  } else {
+    EXPECT_GE(this->store_->GetStoreSizeInBytes(), 400 * 1024); // 400kb
+    EXPECT_LE(this->store_->GetStoreSizeInBytes(), 500 * 1024); // 500kb
   }
 }
 

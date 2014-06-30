@@ -300,7 +300,9 @@ bool VaapiVideoDecodeAccelerator::Initialize(media::VideoCodecProfile profile,
   }
 
   vaapi_wrapper_ = VaapiWrapper::Create(
-      profile, x_display_,
+      VaapiWrapper::kDecode,
+      profile,
+      x_display_,
       base::Bind(&ReportToUMA, content::VaapiH264Decoder::VAAPI_ERROR));
 
   if (!vaapi_wrapper_.get()) {
@@ -895,15 +897,13 @@ void VaapiVideoDecodeAccelerator::Cleanup() {
   client_ptr_factory_.reset();
   weak_this_factory_.InvalidateWeakPtrs();
 
+  // Signal all potential waiters on the decoder_thread_, let them early-exit,
+  // as we've just moved to the kDestroying state, and wait for all tasks
+  // to finish.
+  input_ready_.Signal();
+  surfaces_available_.Signal();
   {
     base::AutoUnlock auto_unlock(lock_);
-    // Post a dummy task to the decoder_thread_ to ensure it is drained.
-    base::WaitableEvent waiter(false, false);
-    decoder_thread_proxy_->PostTask(FROM_HERE, base::Bind(
-        &base::WaitableEvent::Signal, base::Unretained(&waiter)));
-    input_ready_.Signal();
-    surfaces_available_.Signal();
-    waiter.Wait();
     decoder_thread_.Stop();
   }
 
@@ -914,6 +914,10 @@ void VaapiVideoDecodeAccelerator::Destroy() {
   DCHECK_EQ(message_loop_, base::MessageLoop::current());
   Cleanup();
   delete this;
+}
+
+bool VaapiVideoDecodeAccelerator::CanDecodeOnIOThread() {
+  return false;
 }
 
 }  // namespace content

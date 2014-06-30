@@ -2,15 +2,15 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-from telemetry import test
+import page_sets
+from telemetry import benchmark
 from telemetry.page import page_measurement
 
 
 class _ServiceWorkerMeasurement(page_measurement.PageMeasurement):
   def CustomizeBrowserOptions(self, options):
     options.AppendExtraBrowserArgs([
-        '--enable-experimental-web-platform-features',
-        '--enable-service-worker'
+        '--enable-experimental-web-platform-features'
       ])
 
   def MeasurePage(self, _, tab, results):
@@ -20,6 +20,7 @@ class _ServiceWorkerMeasurement(page_measurement.PageMeasurement):
       results.Add(key, value['units'], value['value'])
 
 
-class ServiceWorkerPerfTest(test.Test):
+@benchmark.Disabled
+class ServiceWorkerPerfTest(benchmark.Benchmark):
   test = _ServiceWorkerMeasurement
-  page_set = 'page_sets/service_worker.py'
+  page_set = page_sets.ServiceWorkerPageSet

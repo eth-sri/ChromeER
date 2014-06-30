@@ -77,6 +77,14 @@ class LexerTest(unittest.TestCase):
                       _MakeLexTokenForKeyword("interface"))
     self.assertEquals(self._SingleTokenForInput("enum"),
                       _MakeLexTokenForKeyword("enum"))
+    self.assertEquals(self._SingleTokenForInput("const"),
+                      _MakeLexTokenForKeyword("const"))
+    self.assertEquals(self._SingleTokenForInput("true"),
+                      _MakeLexTokenForKeyword("true"))
+    self.assertEquals(self._SingleTokenForInput("false"),
+                      _MakeLexTokenForKeyword("false"))
+    self.assertEquals(self._SingleTokenForInput("default"),
+                      _MakeLexTokenForKeyword("default"))
 
   def testValidIdentifiers(self):
     """Tests identifiers."""
@@ -115,8 +123,6 @@ class LexerTest(unittest.TestCase):
                       _MakeLexToken("ORDINAL", "@123"))
     self.assertEquals(self._SingleTokenForInput("456"),
                       _MakeLexToken("INT_CONST_DEC", "456"))
-    self.assertEquals(self._SingleTokenForInput("0765"),
-                      _MakeLexToken("INT_CONST_OCT", "0765"))
     self.assertEquals(self._SingleTokenForInput("0x01aB2eF3"),
                       _MakeLexToken("INT_CONST_HEX", "0x01aB2eF3"))
     self.assertEquals(self._SingleTokenForInput("123.456"),
@@ -129,22 +135,8 @@ class LexerTest(unittest.TestCase):
                       _MakeLexToken("PLUS", "+"))
     self.assertEquals(self._SingleTokenForInput("-"),
                       _MakeLexToken("MINUS", "-"))
-    self.assertEquals(self._SingleTokenForInput("*"),
-                      _MakeLexToken("TIMES", "*"))
-    self.assertEquals(self._SingleTokenForInput("/"),
-                      _MakeLexToken("DIVIDE", "/"))
-    self.assertEquals(self._SingleTokenForInput("%"),
-                      _MakeLexToken("MOD", "%"))
-    self.assertEquals(self._SingleTokenForInput("|"),
-                      _MakeLexToken("OR", "|"))
-    self.assertEquals(self._SingleTokenForInput("~"),
-                      _MakeLexToken("NOT", "~"))
-    self.assertEquals(self._SingleTokenForInput("^"),
-                      _MakeLexToken("XOR", "^"))
-    self.assertEquals(self._SingleTokenForInput("<<"),
-                      _MakeLexToken("LSHIFT", "<<"))
-    self.assertEquals(self._SingleTokenForInput(">>"),
-                      _MakeLexToken("RSHIFT", ">>"))
+    self.assertEquals(self._SingleTokenForInput("&"),
+                      _MakeLexToken("AMP", "&"))
     self.assertEquals(self._SingleTokenForInput("="),
                       _MakeLexToken("EQUALS", "="))
     self.assertEquals(self._SingleTokenForInput("=>"),

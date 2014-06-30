@@ -15,7 +15,9 @@
 #include "base/prefs/pref_service.h"
 #include "base/prefs/pref_service_factory.h"
 #include "components/autofill/core/common/autofill_pref_names.h"
+#include "components/data_reduction_proxy/browser/data_reduction_proxy_auth_request_handler.h"
 #include "components/data_reduction_proxy/browser/data_reduction_proxy_config_service.h"
+#include "components/data_reduction_proxy/browser/data_reduction_proxy_params.h"
 #include "components/data_reduction_proxy/browser/data_reduction_proxy_prefs.h"
 #include "components/data_reduction_proxy/browser/data_reduction_proxy_settings.h"
 #include "components/user_prefs/user_prefs.h"
@@ -27,6 +29,7 @@
 
 using base::FilePath;
 using content::BrowserThread;
+using data_reduction_proxy::DataReductionProxyAuthRequestHandler;
 using data_reduction_proxy::DataReductionProxySettings;
 
 namespace android_webview {
@@ -94,21 +97,26 @@ void AwBrowserContext::SetDataReductionProxyEnabled(bool enabled) {
 
 void AwBrowserContext::PreMainMessageLoopRun() {
   cookie_store_ = CreateCookieStore(this);
-  DataReductionProxySettings::SetAllowed(true);
-  DataReductionProxySettings::SetPromoAllowed(false);
+#if defined(SPDY_PROXY_AUTH_ORIGIN)
   data_reduction_proxy_settings_.reset(
-      new DataReductionProxySettings());
-  data_reduction_proxy_settings_->set_fallback_allowed(false);
+      new DataReductionProxySettings(
+          new data_reduction_proxy::DataReductionProxyParams(
+              data_reduction_proxy::DataReductionProxyParams::kAllowed)));
+  data_reduction_proxy_auth_request_handler_.reset(
+      new DataReductionProxyAuthRequestHandler(
+          data_reduction_proxy_settings_->params()));
+#endif
 
   url_request_context_getter_ =
       new AwURLRequestContextGetter(GetPath(), cookie_store_.get());
 
-  scoped_ptr<data_reduction_proxy::DataReductionProxyConfigurator>
-      configurator(new data_reduction_proxy::DataReductionProxyConfigTracker(
-          url_request_context_getter_->proxy_config_service(),
-          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO)));
-  data_reduction_proxy_settings_->SetProxyConfigurator(configurator.Pass());
-
+  if (data_reduction_proxy_settings_.get()) {
+    scoped_ptr<data_reduction_proxy::DataReductionProxyConfigurator>
+        configurator(new data_reduction_proxy::DataReductionProxyConfigTracker(
+            url_request_context_getter_->proxy_config_service(),
+            BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO)));
+    data_reduction_proxy_settings_->SetProxyConfigurator(configurator.Pass());
+  }
   visitedlink_master_.reset(
       new visitedlink::VisitedLinkMaster(this, this, false));
   visitedlink_master_->Init();
@@ -123,14 +131,16 @@ void AwBrowserContext::AddVisitedURLs(const std::vector<GURL>& urls) {
 }
 
 net::URLRequestContextGetter* AwBrowserContext::CreateRequestContext(
-    content::ProtocolHandlerMap* protocol_handlers) {
+    content::ProtocolHandlerMap* protocol_handlers,
+    content::URLRequestInterceptorScopedVector request_interceptors) {
   // This function cannot actually create the request context because
   // there is a reentrant dependency on GetResourceContext() via
   // content::StoragePartitionImplMap::Create(). This is not fixable
   // until http://crbug.com/159193. Until then, assert that the context
   // has already been allocated and just handle setting the protocol_handlers.
   DCHECK(url_request_context_getter_);
-  url_request_context_getter_->SetProtocolHandlers(protocol_handlers);
+  url_request_context_getter_->SetHandlersAndInterceptors(
+      protocol_handlers, request_interceptors.Pass());
   return url_request_context_getter_;
 }
 
@@ -138,7 +148,8 @@ net::URLRequestContextGetter*
 AwBrowserContext::CreateRequestContextForStoragePartition(
     const base::FilePath& partition_path,
     bool in_memory,
-    content::ProtocolHandlerMap* protocol_handlers) {
+    content::ProtocolHandlerMap* protocol_handlers,
+    content::URLRequestInterceptorScopedVector request_interceptors) {
   NOTREACHED();
   return NULL;
 }
@@ -156,6 +167,11 @@ AwFormDatabaseService* AwBrowserContext::GetFormDatabaseService() {
 
 DataReductionProxySettings* AwBrowserContext::GetDataReductionProxySettings() {
   return data_reduction_proxy_settings_.get();
+}
+
+DataReductionProxyAuthRequestHandler*
+AwBrowserContext::GetDataReductionProxyAuthRequestHandler() {
+  return data_reduction_proxy_auth_request_handler_.get();
 }
 
 // Create user pref service for autofill functionality.
@@ -183,13 +199,15 @@ void AwBrowserContext::CreateUserPrefServiceIfNecessary() {
 
   user_prefs::UserPrefs::Set(this, user_pref_service_.get());
 
-  data_reduction_proxy_settings_->InitDataReductionProxySettings(
-      user_pref_service_.get(),
-      user_pref_service_.get(),
-      GetRequestContext());
+  if (data_reduction_proxy_settings_.get()) {
+    data_reduction_proxy_settings_->InitDataReductionProxySettings(
+        user_pref_service_.get(),
+        user_pref_service_.get(),
+        GetRequestContext());
 
-  data_reduction_proxy_settings_->SetDataReductionProxyEnabled(
-      data_reduction_proxy_enabled_);
+    data_reduction_proxy_settings_->SetDataReductionProxyEnabled(
+        data_reduction_proxy_enabled_);
+  }
 }
 
 base::FilePath AwBrowserContext::GetPath() const {
@@ -213,41 +231,6 @@ AwBrowserContext::GetRequestContextForRenderProcess(
 
 net::URLRequestContextGetter* AwBrowserContext::GetMediaRequestContext() {
   return GetRequestContext();
-}
-
-void AwBrowserContext::RequestMidiSysExPermission(
-      int render_process_id,
-      int render_view_id,
-      int bridge_id,
-      const GURL& requesting_frame,
-      bool user_gesture,
-      const MidiSysExPermissionCallback& callback) {
-  // TODO(toyoshim): Android WebView is not supported yet.
-  // See http://crbug.com/339767.
-  callback.Run(false);
-}
-
-void AwBrowserContext::CancelMidiSysExPermissionRequest(
-    int render_process_id,
-    int render_view_id,
-    int bridge_id,
-    const GURL& requesting_frame) {
-}
-
-void AwBrowserContext::RequestProtectedMediaIdentifierPermission(
-    int render_process_id,
-    int render_view_id,
-    int bridge_id,
-    int group_id,
-    const GURL& requesting_frame,
-    const ProtectedMediaIdentifierPermissionCallback& callback) {
-  NOTIMPLEMENTED();
-  callback.Run(false);
-}
-
-void AwBrowserContext::CancelProtectedMediaIdentifierPermissionRequests(
-    int group_id) {
-  NOTIMPLEMENTED();
 }
 
 net::URLRequestContextGetter*
@@ -277,21 +260,17 @@ AwBrowserContext::GetDownloadManagerDelegate() {
   return &download_manager_delegate_;
 }
 
-content::GeolocationPermissionContext*
-AwBrowserContext::GetGeolocationPermissionContext() {
-  if (!geolocation_permission_context_.get()) {
-    geolocation_permission_context_ =
-        native_factory_->CreateGeolocationPermission(this);
-  }
-  return geolocation_permission_context_.get();
-}
-
 content::BrowserPluginGuestManager* AwBrowserContext::GetGuestManager() {
   return NULL;
 }
 
 quota::SpecialStoragePolicy* AwBrowserContext::GetSpecialStoragePolicy() {
   // Intentionally returning NULL as 'Extensions' and 'Apps' not supported.
+  return NULL;
+}
+
+content::PushMessagingService* AwBrowserContext::GetPushMessagingService() {
+  // TODO(johnme): Support push messaging in WebView.
   return NULL;
 }
 

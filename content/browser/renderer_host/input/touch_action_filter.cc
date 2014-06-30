@@ -46,7 +46,7 @@ bool TouchActionFilter::FilterGestureEvent(WebGestureEvent* gesture_event) {
       break;
 
     case WebInputEvent::GestureFlingStart:
-      if (gesture_event->sourceDevice != WebGestureEvent::Touchscreen)
+      if (gesture_event->sourceDevice != blink::WebGestureDeviceTouchscreen)
         break;
       if (!drop_scroll_gesture_events_) {
         if (allowed_touch_action_ == TOUCH_ACTION_PAN_X)
@@ -154,8 +154,8 @@ void TouchActionFilter::OnSetTouchAction(TouchAction touch_action) {
 }
 
 void TouchActionFilter::ResetTouchAction() {
-  DCHECK(!drop_scroll_gesture_events_);
-  DCHECK(!drop_pinch_gesture_events_);
+  // Note that resetting the action mid-sequence is tolerated. Gestures that had
+  // their begin event(s) suppressed will be suppressed until the next sequence.
   allowed_touch_action_ = TOUCH_ACTION_AUTO;
 }
 

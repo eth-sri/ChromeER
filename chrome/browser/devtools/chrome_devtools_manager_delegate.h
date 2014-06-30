@@ -7,7 +7,12 @@
 
 #include "base/compiler_specific.h"
 #include "base/macros.h"
+#include "base/memory/ref_counted.h"
+#include "chrome/browser/devtools/devtools_protocol.h"
 #include "content/public/browser/devtools_manager_delegate.h"
+
+class DevToolsNetworkConditions;
+class Profile;
 
 class ChromeDevToolsManagerDelegate : public content::DevToolsManagerDelegate {
  public:
@@ -17,11 +22,23 @@ class ChromeDevToolsManagerDelegate : public content::DevToolsManagerDelegate {
   // content::DevToolsManagerDelegate overrides:
   virtual void Inspect(content::BrowserContext* browser_context,
                        content::DevToolsAgentHost* agent_host) OVERRIDE;
+  virtual void DevToolsAgentStateChanged(content::DevToolsAgentHost* agent_host,
+                                         bool attached) OVERRIDE;
   virtual base::DictionaryValue* HandleCommand(
       content::DevToolsAgentHost* agent_host,
       base::DictionaryValue* command_dict) OVERRIDE;
 
  private:
+  Profile* GetProfile(content::DevToolsAgentHost* agent_host);
+
+  scoped_ptr<DevToolsProtocol::Response> EmulateNetworkConditions(
+      content::DevToolsAgentHost* agent_host,
+      DevToolsProtocol::Command* command);
+
+  void UpdateNetworkState(
+      content::DevToolsAgentHost* agent_host,
+      const scoped_refptr<DevToolsNetworkConditions> conditions);
+
   DISALLOW_COPY_AND_ASSIGN(ChromeDevToolsManagerDelegate);
 };
 

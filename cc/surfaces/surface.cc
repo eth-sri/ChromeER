@@ -5,25 +5,37 @@
 #include "cc/surfaces/surface.h"
 
 #include "cc/output/compositor_frame.h"
-#include "cc/surfaces/surface_manager.h"
+#include "cc/surfaces/surface_factory.h"
 
 namespace cc {
 
-Surface::Surface(SurfaceManager* manager,
-                 SurfaceClient* client,
-                 const gfx::Size& size)
-    : manager_(manager),
-      client_(client),
-      size_(size) {
-  surface_id_ = manager_->RegisterAndAllocateIDForSurface(this);
+Surface::Surface(SurfaceId id, const gfx::Size& size, SurfaceFactory* factory)
+    : surface_id_(id), size_(size), factory_(factory) {
 }
 
 Surface::~Surface() {
-  manager_->DeregisterSurface(surface_id_);
+  if (current_frame_) {
+    ReturnedResourceArray current_resources;
+    TransferableResource::ReturnResources(
+        current_frame_->delegated_frame_data->resource_list,
+        &current_resources);
+    factory_->UnrefResources(current_resources);
+  }
 }
 
 void Surface::QueueFrame(scoped_ptr<CompositorFrame> frame) {
+  scoped_ptr<CompositorFrame> previous_frame = current_frame_.Pass();
   current_frame_ = frame.Pass();
+  factory_->ReceiveFromChild(
+      current_frame_->delegated_frame_data->resource_list);
+
+  if (previous_frame) {
+    ReturnedResourceArray previous_resources;
+    TransferableResource::ReturnResources(
+        previous_frame->delegated_frame_data->resource_list,
+        &previous_resources);
+    factory_->UnrefResources(previous_resources);
+  }
 }
 
 CompositorFrame* Surface::GetEligibleFrame() { return current_frame_.get(); }

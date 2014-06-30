@@ -11,11 +11,13 @@
 #include "base/strings/string_util.h"
 #include "base/values.h"
 #include "components/bookmarks/browser/bookmark_model.h"
-#include "grit/component_strings.h"
+#include "grit/components_strings.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "url/gurl.h"
 
 using base::Time;
+
+namespace bookmarks {
 
 const char* BookmarkCodec::kRootsKey = "roots";
 const char* BookmarkCodec::kRootFolderNameKey = "bookmark_bar";
@@ -487,3 +489,5 @@ void BookmarkCodec::FinalizeChecksum() {
   base::MD5Final(&digest, &md5_context_);
   computed_checksum_ = base::MD5DigestToBase16(digest);
 }
+
+}  // namespace bookmarks

@@ -14,6 +14,7 @@
 #include "base/bind_helpers.h"
 #include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/scoped_file.h"
 #include "base/format_macros.h"
 #include "base/linux_util.h"
 #include "base/logging.h"
@@ -30,7 +31,7 @@
 #include "components/breakpad/app/breakpad_linux_impl.h"
 #include "content/public/browser/browser_thread.h"
 
-#if defined(OS_ANDROID)
+#if defined(OS_ANDROID) && !defined(__LP64__)
 #include <sys/linux-syscalls.h>
 
 #define SYS_read __NR_read
@@ -195,7 +196,7 @@ void CrashHandlerHostLinux::OnFileCanReadWithoutBlocking(int fd) {
   msg.msg_controllen = kControlMsgSize;
 
   const ssize_t msg_size = HANDLE_EINTR(recvmsg(browser_socket_, &msg, 0));
-  if (msg_size != expected_msg_size) {
+  if (msg_size < 0) {
     LOG(ERROR) << "Error reading from death signal socket. Crash dumping"
                << " is disabled."
                << " msg_size:" << msg_size
@@ -203,9 +204,46 @@ void CrashHandlerHostLinux::OnFileCanReadWithoutBlocking(int fd) {
     file_descriptor_watcher_.StopWatchingFileDescriptor();
     return;
   }
+  const bool bad_message = (msg_size != expected_msg_size ||
+                            msg.msg_controllen != kControlMsgSize ||
+                            msg.msg_flags & ~MSG_TRUNC);
+  base::ScopedFD signal_fd;
+  pid_t crashing_pid = -1;
+  if (msg.msg_controllen > 0) {
+    // Walk the control payload and extract the file descriptor and
+    // validated pid.
+    for (struct cmsghdr *hdr = CMSG_FIRSTHDR(&msg); hdr;
+         hdr = CMSG_NXTHDR(&msg, hdr)) {
+      if (hdr->cmsg_level != SOL_SOCKET)
+        continue;
+      if (hdr->cmsg_type == SCM_RIGHTS) {
+        const size_t len = hdr->cmsg_len -
+            (((uint8_t*)CMSG_DATA(hdr)) - (uint8_t*)hdr);
+        DCHECK_EQ(0U, len % sizeof(int));
+        const size_t num_fds = len / sizeof(int);
+        if (num_fds != kNumFDs) {
+          // A nasty process could try and send us too many descriptors and
+          // force a leak.
+          LOG(ERROR) << "Death signal contained wrong number of descriptors;"
+                     << " num_fds:" << num_fds;
+          for (size_t i = 0; i < num_fds; ++i)
+            close(reinterpret_cast<int*>(CMSG_DATA(hdr))[i]);
+          return;
+        }
+        DCHECK(!signal_fd.is_valid());
+        int fd = reinterpret_cast<int*>(CMSG_DATA(hdr))[0];
+        DCHECK_GE(fd, 0);  // The kernel should never send a negative fd.
+        signal_fd.reset(fd);
+      } else if (hdr->cmsg_type == SCM_CREDENTIALS) {
+        DCHECK_EQ(-1, crashing_pid);
+        const struct ucred *cred =
+            reinterpret_cast<struct ucred*>(CMSG_DATA(hdr));
+        crashing_pid = cred->pid;
+      }
+    }
+  }
 
-  if (msg.msg_controllen != kControlMsgSize ||
-      msg.msg_flags & ~MSG_TRUNC) {
+  if (bad_message) {
     LOG(ERROR) << "Received death signal message with the wrong size;"
                << " msg.msg_controllen:" << msg.msg_controllen
                << " msg.msg_flags:" << msg.msg_flags
@@ -213,42 +251,9 @@ void CrashHandlerHostLinux::OnFileCanReadWithoutBlocking(int fd) {
                << " kControlMsgSize:" << kControlMsgSize;
     return;
   }
-
-  // Walk the control payload an extract the file descriptor and validated pid.
-  pid_t crashing_pid = -1;
-  int signal_fd = -1;
-  for (struct cmsghdr *hdr = CMSG_FIRSTHDR(&msg); hdr;
-       hdr = CMSG_NXTHDR(&msg, hdr)) {
-    if (hdr->cmsg_level != SOL_SOCKET)
-      continue;
-    if (hdr->cmsg_type == SCM_RIGHTS) {
-      const size_t len = hdr->cmsg_len -
-          (((uint8_t*)CMSG_DATA(hdr)) - (uint8_t*)hdr);
-      DCHECK_EQ(0U, len % sizeof(int));
-      const size_t num_fds = len / sizeof(int);
-      if (num_fds != kNumFDs) {
-        // A nasty process could try and send us too many descriptors and
-        // force a leak.
-        LOG(ERROR) << "Death signal contained wrong number of descriptors;"
-                   << " num_fds:" << num_fds;
-        for (size_t i = 0; i < num_fds; ++i)
-          close(reinterpret_cast<int*>(CMSG_DATA(hdr))[i]);
-        return;
-      } else {
-        signal_fd = reinterpret_cast<int*>(CMSG_DATA(hdr))[0];
-      }
-    } else if (hdr->cmsg_type == SCM_CREDENTIALS) {
-      const struct ucred *cred =
-          reinterpret_cast<struct ucred*>(CMSG_DATA(hdr));
-      crashing_pid = cred->pid;
-    }
-  }
-
-  if (crashing_pid == -1 || signal_fd == -1) {
+  if (crashing_pid == -1 || !signal_fd.is_valid()) {
     LOG(ERROR) << "Death signal message didn't contain all expected control"
                << " messages";
-    if (signal_fd >= 0)
-      close(signal_fd);
     return;
   }
 
@@ -300,14 +305,6 @@ void CrashHandlerHostLinux::OnFileCanReadWithoutBlocking(int fd) {
   process_type_str[info->process_type_length] = '\0';
   info->process_type = process_type_str;
 
-  std::string distro = base::GetLinuxDistro();
-  info->distro_length = distro.length();
-  // Freed in CrashDumpTask().
-  char* distro_str = new char[info->distro_length + 1];
-  distro.copy(distro_str, info->distro_length);
-  distro_str[info->distro_length] = '\0';
-  info->distro = distro_str;
-
   // Memory released from scoped_ptrs below are also freed in CrashDumpTask().
   info->crash_keys = crash_keys.release();
 #if defined(ADDRESS_SANITIZER)
@@ -334,7 +331,7 @@ void CrashHandlerHostLinux::OnFileCanReadWithoutBlocking(int fd) {
                  base::Passed(&info),
                  base::Passed(&crash_context),
                  crashing_pid,
-                 signal_fd));
+                 signal_fd.release()));
 }
 
 void CrashHandlerHostLinux::WriteDumpFile(scoped_ptr<BreakpadInfo> info,
@@ -343,6 +340,16 @@ void CrashHandlerHostLinux::WriteDumpFile(scoped_ptr<BreakpadInfo> info,
                                           int signal_fd) {
   DCHECK(BrowserThread::GetBlockingPool()->IsRunningSequenceOnCurrentThread(
       worker_pool_token_));
+
+  // Set |info->distro| here because base::GetLinuxDistro() needs to run on a
+  // blocking thread.
+  std::string distro = base::GetLinuxDistro();
+  info->distro_length = distro.length();
+  // Freed in CrashDumpTask().
+  char* distro_str = new char[info->distro_length + 1];
+  distro.copy(distro_str, info->distro_length);
+  distro_str[info->distro_length] = '\0';
+  info->distro = distro_str;
 
   base::FilePath dumps_path("/tmp");
   PathService::Get(base::DIR_TEMP, &dumps_path);

@@ -14,11 +14,11 @@
 #include "base/sequenced_task_runner.h"
 #include "base/single_thread_task_runner.h"
 #include "base/thread_task_runner_handle.h"
+#include "sync/internal_api/public/base/invalidator_state.h"
 #include "sync/internal_api/public/http_post_provider_factory.h"
 #include "sync/internal_api/public/internal_components_factory.h"
 #include "sync/internal_api/public/util/weak_handle.h"
 #include "sync/notifier/invalidator.h"
-#include "sync/notifier/invalidator_state.h"
 #include "sync/notifier/object_id_invalidation_map.h"
 #include "sync/syncable/directory.h"
 #include "sync/test/fake_sync_encryption_handler.h"
@@ -107,10 +107,6 @@ void FakeSyncManager::Init(
                         WeakHandle<JsBackend>(),
                         WeakHandle<DataTypeDebugInfoListener>(),
                         true, initial_sync_ended_types_));
-}
-
-void FakeSyncManager::ThrowUnrecoverableError() {
-  NOTIMPLEMENTED();
 }
 
 ModelTypeSet FakeSyncManager::InitialSyncEndedTypes() {
@@ -218,8 +214,8 @@ UserShare* FakeSyncManager::GetUserShare() {
   return test_user_share_.user_share();
 }
 
-syncer::SyncCoreProxy* FakeSyncManager::GetSyncCoreProxy() {
-  return &null_sync_core_proxy_;
+syncer::SyncContextProxy* FakeSyncManager::GetSyncContextProxy() {
+  return &null_sync_context_proxy_;
 }
 
 const std::string FakeSyncManager::cache_guid() {

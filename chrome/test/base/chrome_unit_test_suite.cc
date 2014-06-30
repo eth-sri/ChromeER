@@ -9,10 +9,12 @@
 #include "base/metrics/stats_table.h"
 #include "base/strings/stringprintf.h"
 #include "chrome/browser/chrome_content_browser_client.h"
+#include "chrome/browser/omaha_query_params/chrome_omaha_query_params_delegate.h"
 #include "chrome/common/chrome_content_client.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/utility/chrome_content_utility_client.h"
+#include "components/omaha_query_params/omaha_query_params.h"
 #include "content/public/common/content_paths.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -49,7 +51,7 @@ class ChromeUnitTestSuiteInitializer : public testing::EmptyTestEventListener {
 #if !defined(OS_IOS)
     browser_content_client_.reset(new chrome::ChromeContentBrowserClient());
     content::SetBrowserClientForTesting(browser_content_client_.get());
-    utility_content_client_.reset(new chrome::ChromeContentUtilityClient());
+    utility_content_client_.reset(new ChromeContentUtilityClient());
     content::SetUtilityClientForTesting(utility_content_client_.get());
 #endif
 
@@ -74,7 +76,7 @@ class ChromeUnitTestSuiteInitializer : public testing::EmptyTestEventListener {
   // TODO(ios): Bring this back once ChromeContentBrowserClient is building.
 #if !defined(OS_IOS)
   scoped_ptr<chrome::ChromeContentBrowserClient> browser_content_client_;
-  scoped_ptr<chrome::ChromeContentUtilityClient> utility_content_client_;
+  scoped_ptr<ChromeContentUtilityClient> utility_content_client_;
 #endif
 
   DISALLOW_COPY_AND_ASSIGN(ChromeUnitTestSuiteInitializer);
@@ -144,6 +146,9 @@ void ChromeUnitTestSuite::InitializeProviders() {
       ChromeWebUIControllerFactory::GetInstance());
 
   gfx::GLSurface::InitializeOneOffForTests();
+
+  omaha_query_params::OmahaQueryParams::SetDelegate(
+      ChromeOmahaQueryParamsDelegate::GetInstance());
 #endif
 }
 

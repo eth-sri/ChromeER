@@ -16,8 +16,9 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/sys_info.h"
+#include "content/browser/indexed_db/indexed_db_class_factory.h"
 #include "content/browser/indexed_db/leveldb/leveldb_comparator.h"
-#include "content/browser/indexed_db/leveldb/leveldb_iterator.h"
+#include "content/browser/indexed_db/leveldb/leveldb_iterator_impl.h"
 #include "content/browser/indexed_db/leveldb/leveldb_write_batch.h"
 #include "third_party/leveldatabase/env_chromium.h"
 #include "third_party/leveldatabase/env_idb.h"
@@ -124,8 +125,10 @@ class LockImpl : public LevelDBLock {
  private:
   leveldb::Env* env_;
   leveldb::FileLock* lock_;
+
+  DISALLOW_COPY_AND_ASSIGN(LockImpl);
 };
-}
+}  // namespace
 
 scoped_ptr<LevelDBLock> LevelDBDatabase::LockForTesting(
     const base::FilePath& file_name) {
@@ -188,7 +191,7 @@ static void ParseAndHistogramIOErrorDetails(const std::string& histogram_name,
   std::string error_histogram_name(histogram_name);
 
   if (result == leveldb_env::METHOD_AND_PFE) {
-    DCHECK(error < 0);
+    DCHECK_LT(error, 0);
     error_histogram_name.append(std::string(".PFE.") +
                                 leveldb_env::MethodIDToString(method));
     base::LinearHistogram::FactoryGet(
@@ -213,7 +216,7 @@ static void ParseAndHistogramCorruptionDetails(
     const std::string& histogram_name,
     const leveldb::Status& status) {
   int error = leveldb_env::GetCorruptionCode(status);
-  DCHECK(error >= 0);
+  DCHECK_GE(error, 0);
   std::string corruption_histogram_name(histogram_name);
   corruption_histogram_name.append(".Corruption");
   const int kNumPatterns = leveldb_env::GetNumCorruptionCodes();
@@ -372,75 +375,6 @@ leveldb::Status LevelDBDatabase::Write(const LevelDBWriteBatch& write_batch) {
   return s;
 }
 
-namespace {
-class IteratorImpl : public LevelDBIterator {
- public:
-  virtual ~IteratorImpl() {}
-
-  virtual bool IsValid() const OVERRIDE;
-  virtual leveldb::Status SeekToLast() OVERRIDE;
-  virtual leveldb::Status Seek(const StringPiece& target) OVERRIDE;
-  virtual leveldb::Status Next() OVERRIDE;
-  virtual leveldb::Status Prev() OVERRIDE;
-  virtual StringPiece Key() const OVERRIDE;
-  virtual StringPiece Value() const OVERRIDE;
-
- private:
-  friend class content::LevelDBDatabase;
-  explicit IteratorImpl(scoped_ptr<leveldb::Iterator> iterator);
-  void CheckStatus();
-
-  scoped_ptr<leveldb::Iterator> iterator_;
-};
-}
-
-IteratorImpl::IteratorImpl(scoped_ptr<leveldb::Iterator> it)
-    : iterator_(it.Pass()) {}
-
-void IteratorImpl::CheckStatus() {
-  const leveldb::Status& s = iterator_->status();
-  if (!s.ok())
-    LOG(ERROR) << "LevelDB iterator error: " << s.ToString();
-}
-
-bool IteratorImpl::IsValid() const { return iterator_->Valid(); }
-
-leveldb::Status IteratorImpl::SeekToLast() {
-  iterator_->SeekToLast();
-  CheckStatus();
-  return iterator_->status();
-}
-
-leveldb::Status IteratorImpl::Seek(const StringPiece& target) {
-  iterator_->Seek(MakeSlice(target));
-  CheckStatus();
-  return iterator_->status();
-}
-
-leveldb::Status IteratorImpl::Next() {
-  DCHECK(IsValid());
-  iterator_->Next();
-  CheckStatus();
-  return iterator_->status();
-}
-
-leveldb::Status IteratorImpl::Prev() {
-  DCHECK(IsValid());
-  iterator_->Prev();
-  CheckStatus();
-  return iterator_->status();
-}
-
-StringPiece IteratorImpl::Key() const {
-  DCHECK(IsValid());
-  return MakeStringPiece(iterator_->key());
-}
-
-StringPiece IteratorImpl::Value() const {
-  DCHECK(IsValid());
-  return MakeStringPiece(iterator_->value());
-}
-
 scoped_ptr<LevelDBIterator> LevelDBDatabase::CreateIterator(
     const LevelDBSnapshot* snapshot) {
   leveldb::ReadOptions read_options;
@@ -449,7 +383,8 @@ scoped_ptr<LevelDBIterator> LevelDBDatabase::CreateIterator(
   read_options.snapshot = snapshot ? snapshot->snapshot_ : 0;
 
   scoped_ptr<leveldb::Iterator> i(db_->NewIterator(read_options));
-  return scoped_ptr<LevelDBIterator>(new IteratorImpl(i.Pass()));
+  return scoped_ptr<LevelDBIterator>(
+      IndexedDBClassFactory::Get()->CreateIteratorImpl(i.Pass()));
 }
 
 const LevelDBComparator* LevelDBDatabase::Comparator() const {

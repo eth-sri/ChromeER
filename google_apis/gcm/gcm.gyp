@@ -69,11 +69,6 @@
         'engine/registration_request.h',
         'engine/unregistration_request.cc',
         'engine/unregistration_request.h',
-        'gcm_client.cc',
-        'gcm_client.h',
-        'gcm_client_impl.cc',
-        'gcm_client_impl.h',
-        'monitoring/gcm_stats_recorder.cc',
         'monitoring/gcm_stats_recorder.h',
         'protocol/android_checkin.proto',
         'protocol/checkin.proto',
@@ -83,6 +78,34 @@
         '../../build/protoc.gypi'
       ],
     },
+
+    # The test support library that is needed to test gcm.
+    {
+      'target_name': 'gcm_test_support',
+      'type': 'static_library',
+      'include_dirs': [
+        '..',
+      ],
+      'export_dependent_settings': [
+        '../../third_party/protobuf/protobuf.gyp:protobuf_lite'
+      ],
+      'dependencies': [
+        '../../base/base.gyp:base',
+        '../../testing/gtest.gyp:gtest',
+        '../../third_party/protobuf/protobuf.gyp:protobuf_lite',
+        'gcm',
+      ],
+      'sources': [
+        'base/fake_encryptor.cc',
+        'base/fake_encryptor.h',
+        'engine/fake_connection_factory.cc',
+        'engine/fake_connection_factory.h',
+        'engine/fake_connection_handler.cc',
+        'engine/fake_connection_handler.h',
+        'monitoring/fake_gcm_stats_recorder.cc',
+        'monitoring/fake_gcm_stats_recorder.h',
+      ],
+    },    
 
     # A standalone MCS (mobile connection server) client.
     {
@@ -97,11 +120,10 @@
         '../../net/net.gyp:net',
         '../../net/net.gyp:net_test_support',
         '../../third_party/protobuf/protobuf.gyp:protobuf_lite',
-        'gcm'
+        'gcm',
+        'gcm_test_support'
       ],
       'sources': [
-        'base/fake_encryptor.cc',
-        'base/fake_encryptor.h',
         'tools/mcs_probe.cc',
       ],
     },
@@ -124,29 +146,23 @@
         '../../net/net.gyp:net_test_support',
         '../../testing/gtest.gyp:gtest',
         '../../third_party/protobuf/protobuf.gyp:protobuf_lite',
-        'gcm'
+        'mcs_probe',
+        'gcm',
+        'gcm_test_support'
       ],
       'sources': [
-        'base/fake_encryptor.cc',
-        'base/fake_encryptor.h',
         'base/mcs_message_unittest.cc',
         'base/mcs_util_unittest.cc',
         'base/socket_stream_unittest.cc',
         'engine/checkin_request_unittest.cc',
         'engine/connection_factory_impl_unittest.cc',
         'engine/connection_handler_impl_unittest.cc',
-        'engine/fake_connection_factory.cc',
-        'engine/fake_connection_factory.h',
-        'engine/fake_connection_handler.cc',
-        'engine/fake_connection_handler.h',
         'engine/gcm_store_impl_unittest.cc',
         'engine/gservices_settings_unittest.cc',
         'engine/heartbeat_manager_unittest.cc',
         'engine/mcs_client_unittest.cc',
         'engine/registration_request_unittest.cc',
         'engine/unregistration_request_unittest.cc',
-        'gcm_client_impl_unittest.cc',
-        'monitoring/gcm_stats_recorder_unittest.cc'
       ]
     },
   ],

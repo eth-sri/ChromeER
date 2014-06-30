@@ -23,10 +23,9 @@
 #include "ppapi/cpp/graphics_2d.h"
 #include "ppapi/cpp/image_data.h"
 #include "ppapi/cpp/input_event.h"
+#include "ppapi/cpp/instance.h"
 #include "ppapi/cpp/private/find_private.h"
-#include "ppapi/cpp/private/instance_private.h"
 #include "ppapi/cpp/private/uma_private.h"
-#include "ppapi/cpp/private/var_private.h"
 #include "ppapi/cpp/url_loader.h"
 #include "ppapi/utility/completion_callback_factory.h"
 
@@ -36,7 +35,7 @@ class TextInput_Dev;
 
 namespace chrome_pdf {
 
-class OutOfProcessInstance : public pp::InstancePrivate,
+class OutOfProcessInstance : public pp::Instance,
                              public pp::Find_Private,
                              public pp::Printing_Dev,
                              public pp::Selection_Dev,
@@ -54,7 +53,6 @@ class OutOfProcessInstance : public pp::InstancePrivate,
   virtual void HandleMessage(const pp::Var& message) OVERRIDE;
   virtual bool HandleInputEvent(const pp::InputEvent& event) OVERRIDE;
   virtual void DidChangeView(const pp::View& view) OVERRIDE;
-  virtual pp::Var GetInstanceObject() OVERRIDE;
 
   // pp::Find_Private implementation.
   virtual bool StartFind(const std::string& text, bool case_sensitive) OVERRIDE;
@@ -206,6 +204,9 @@ class OutOfProcessInstance : public pp::InstancePrivate,
   // Load the next available preview page into the blank page.
   void LoadAvailablePreviewPage();
 
+  // Bound the given scroll offset to the document.
+  pp::Point BoundScrollOffsetToDocument(const pp::Point& scroll_offset);
+
   pp::ImageData image_data_;
   // Used when the plugin is embedded in a page and we have to create the loader
   // ourself.
@@ -285,10 +286,6 @@ class OutOfProcessInstance : public pp::InstancePrivate,
   DocumentLoadState document_load_state_;
   DocumentLoadState preview_document_load_state_;
 
-  // JavaScript interface to control this instance.
-  // This wraps a PDFScriptableObject in a pp::Var.
-  pp::VarPrivate instance_object_;
-
   // A UMA resource for histogram reporting.
   pp::UMAPrivate uma_;
 
@@ -328,6 +325,16 @@ class OutOfProcessInstance : public pp::InstancePrivate,
   // Whether the plugin has received a viewport changed message. Nothing should
   // be painted until this is received.
   bool received_viewport_message_;
+
+  // If true, this means we told the RenderView that we're starting a network
+  // request so that it can start the throbber. We will tell it again once the
+  // document finishes loading.
+  bool did_call_start_loading_;
+
+  // If this is true, then don't scroll the plugin in response to DidChangeView
+  // messages. This will be true when the extension page is in the process of
+  // zooming the plugin so that flickering doesn't occur while zooming.
+  bool stop_scrolling_;
 
   // The callback for receiving the password from the page.
   scoped_ptr<pp::CompletionCallbackWithOutput<pp::Var> > password_callback_;

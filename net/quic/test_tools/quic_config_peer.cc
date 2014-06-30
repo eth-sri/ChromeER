@@ -27,5 +27,25 @@ void QuicConfigPeer::SetReceivedInitialFlowControlWindow(QuicConfig* config,
   config->initial_flow_control_window_bytes_.SetReceivedValue(window_bytes);
 }
 
+// static
+void QuicConfigPeer::SetReceivedInitialStreamFlowControlWindow(
+    QuicConfig* config, uint32 window_bytes) {
+  config->initial_stream_flow_control_window_bytes_.SetReceivedValue(
+      window_bytes);
+}
+
+// static
+void QuicConfigPeer::SetReceivedInitialSessionFlowControlWindow(
+    QuicConfig* config, uint32 window_bytes) {
+  config->initial_session_flow_control_window_bytes_.SetReceivedValue(
+      window_bytes);
+}
+
+// static
+void QuicConfigPeer::SetReceivedConnectionOptions(QuicConfig* config,
+                                                  const QuicTagVector options) {
+  config->connection_options_.SetReceivedValues(options);
+}
+
 }  // namespace test
 }  // namespace net

@@ -4,7 +4,10 @@
 
 #include "components/cronet/android/url_request_context_peer.h"
 
+#include "base/bind.h"
 #include "base/file_util.h"
+#include "base/single_thread_task_runner.h"
+#include "components/cronet/url_request_context_config.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_log_logger.h"
 #include "net/cert/cert_verifier.h"
@@ -112,15 +115,14 @@ namespace cronet {
 URLRequestContextPeer::URLRequestContextPeer(
     URLRequestContextPeerDelegate* delegate,
     std::string user_agent,
-    int logging_level,
-    const char* version) {
+    int logging_level) {
   delegate_ = delegate;
   user_agent_ = user_agent;
   logging_level_ = logging_level;
-  version_ = version;
 }
 
-void URLRequestContextPeer::Initialize() {
+void URLRequestContextPeer::Initialize(
+    scoped_ptr<URLRequestContextConfig> config) {
   network_thread_ = new base::Thread("network");
   base::Thread::Options options;
   options.message_loop_type = base::MessageLoop::TYPE_IO;
@@ -128,15 +130,19 @@ void URLRequestContextPeer::Initialize() {
 
   GetNetworkTaskRunner()->PostTask(
       FROM_HERE,
-      base::Bind(&URLRequestContextPeer::InitializeURLRequestContext, this));
+      base::Bind(&URLRequestContextPeer::InitializeURLRequestContext,
+                 this,
+                 Passed(&config)));
 }
 
-void URLRequestContextPeer::InitializeURLRequestContext() {
+void URLRequestContextPeer::InitializeURLRequestContext(
+    scoped_ptr<URLRequestContextConfig> config) {
+  // TODO(mmenke):  Add method to have the builder enable SPDY.
   net::URLRequestContextBuilder context_builder;
   context_builder.set_network_delegate(new BasicNetworkDelegate());
   context_builder.set_proxy_config_service(
       new net::ProxyConfigServiceFixed(net::ProxyConfig()));
-  context_builder.DisableHttpCache();
+  config->ConfigureURLRequestContextBuilder(&context_builder);
 
   context_.reset(context_builder.Build());
 
@@ -145,8 +151,6 @@ void URLRequestContextPeer::InitializeURLRequestContext() {
     context_->net_log()->AddThreadSafeObserver(net_log_observer_.get(),
                                                net::NetLog::LOG_ALL_BUT_BYTES);
   }
-
-  net::HttpStreamFactory::EnableNpnSpdy31();
 
   delegate_->OnContextInitialized(this);
 }
@@ -157,6 +161,7 @@ URLRequestContextPeer::~URLRequestContextPeer() {
     net_log_observer_.reset();
   }
   StopNetLog();
+  // TODO(mef): Ensure that |network_thread_| is destroyed properly.
 }
 
 const std::string& URLRequestContextPeer::GetUserAgent(const GURL& url) const {

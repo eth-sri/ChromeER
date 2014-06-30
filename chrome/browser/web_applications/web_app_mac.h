@@ -12,7 +12,16 @@
 #include "base/files/file_path.h"
 #include "base/gtest_prod_util.h"
 #include "chrome/browser/web_applications/web_app.h"
-#include "chrome/common/extensions/file_handler_info.h"
+#include "extensions/common/manifest_handlers/file_handler_info.h"
+
+namespace base {
+class CommandLine;
+}
+
+// Whether to enable update and launch of app shims in tests. (Normally shims
+// are never created or launched in tests). Note that update only creates
+// internal shim bundles, i.e. it does not create new shims in ~/Applications.
+extern bool g_app_shims_allow_update_and_launch_in_tests;
 
 namespace web_app {
 
@@ -22,6 +31,9 @@ base::FilePath GetAppInstallPath(const ShortcutInfo& shortcut_info);
 
 // If necessary, launch the shortcut for an app.
 void MaybeLaunchShortcut(const ShortcutInfo& shortcut_info);
+
+// Rebuild the shortcut and relaunch it.
+bool MaybeRebuildShortcut(const base::CommandLine& command_line);
 
 // Creates a shortcut for a web application. The shortcut is a stub app
 // that simply loads the browser framework and runs the given app.

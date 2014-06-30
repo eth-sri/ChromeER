@@ -26,7 +26,7 @@ MockRenderProcessHost::MockRenderProcessHost(BrowserContext* browser_context)
       prev_routing_id_(0),
       fast_shutdown_started_(false),
       deletion_callback_called_(false),
-      is_guest_(false) {
+      is_isolated_guest_(false) {
   // Child process security operations can't be unit tested unless we add
   // ourselves as an existing child process.
   ChildProcessSecurityPolicyImpl::GetInstance()->Add(GetID());
@@ -101,8 +101,8 @@ int MockRenderProcessHost::VisibleWidgetCount() const {
   return 1;
 }
 
-bool MockRenderProcessHost::IsGuest() const {
-  return is_guest_;
+bool MockRenderProcessHost::IsIsolatedGuest() const {
+  return is_isolated_guest_;
 }
 
 StoragePartition* MockRenderProcessHost::GetStoragePartition() const {
@@ -223,6 +223,10 @@ void MockRenderProcessHost::ResumeRequestsForView(int route_id) {
 void MockRenderProcessHost::NotifyTimezoneChange() {
 }
 
+ServiceRegistry* MockRenderProcessHost::GetServiceRegistry() {
+  return NULL;
+}
+
 void MockRenderProcessHost::FilterURL(bool empty_allowed, GURL* url) {
   RenderProcessHostImpl::FilterURL(this, empty_allowed, url);
 }
@@ -236,6 +240,14 @@ void MockRenderProcessHost::DisableAecDump() {
 
 void MockRenderProcessHost::SetWebRtcLogMessageCallback(
     base::Callback<void(const std::string&)> callback) {
+}
+
+RenderProcessHost::WebRtcStopRtpDumpCallback
+MockRenderProcessHost::StartRtpDump(
+    bool incoming,
+    bool outgoing,
+    const WebRtcRtpPacketCallback& packet_callback) {
+  return WebRtcStopRtpDumpCallback();
 }
 #endif
 

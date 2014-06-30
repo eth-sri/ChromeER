@@ -9,6 +9,7 @@
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/common/gpu/image_transport_surface.h"
 #include "content/public/common/page_state.h"
+#include "content/renderer/compositor_bindings/web_layer_impl.h"
 #include "content/renderer/history_entry.h"
 #include "content/renderer/history_serialization.h"
 #include "content/renderer/render_frame_impl.h"
@@ -18,7 +19,7 @@
 #include "content/shell/renderer/test_runner/TestCommon.h"
 #include "content/shell/renderer/test_runner/web_frame_test_proxy.h"
 #include "content/shell/renderer/test_runner/web_test_proxy.h"
-#include "content/test/test_media_stream_client.h"
+#include "third_party/WebKit/public/platform/WebBatteryStatus.h"
 #include "third_party/WebKit/public/platform/WebDeviceMotionData.h"
 #include "third_party/WebKit/public/platform/WebDeviceOrientationData.h"
 #include "third_party/WebKit/public/platform/WebGamepads.h"
@@ -28,6 +29,7 @@
 #include "content/browser/renderer_host/popup_menu_helper_mac.h"
 #endif
 
+using blink::WebBatteryStatus;
 using blink::WebDeviceMotionData;
 using blink::WebDeviceOrientationData;
 using blink::WebGamepad;
@@ -66,8 +68,6 @@ RenderFrameImpl* CreateWebFrameTestProxy(
   FrameProxy* render_frame_proxy = new FrameProxy(render_view, routing_id);
   render_frame_proxy->set_base_proxy(GetWebTestProxyBase(render_view));
 
-  UseMockMediaStreams(render_frame_proxy);
-
   return render_frame_proxy;
 }
 
@@ -81,16 +81,9 @@ void EnableWebTestProxyCreation(
   RenderFrameImpl::InstallCreateHook(CreateWebFrameTestProxy);
 }
 
-void SetMockGamepads(const WebGamepads& pads) {
-  RendererWebKitPlatformSupportImpl::SetMockGamepadsForTesting(pads);
-}
-
-void MockGamepadConnected(int index, const WebGamepad& pad) {
-  RendererWebKitPlatformSupportImpl::MockGamepadConnected(index, pad);
-}
-
-void MockGamepadDisconnected(int index, const WebGamepad& pad) {
-  RendererWebKitPlatformSupportImpl::MockGamepadDisconnected(index, pad);
+void SetMockGamepadProvider(RendererGamepadProvider* provider) {
+  RenderThreadImpl::current()->webkit_platform_support()->
+      set_gamepad_provider(provider);
 }
 
 void SetMockDeviceMotionData(const WebDeviceMotionData& data) {
@@ -102,19 +95,8 @@ void SetMockDeviceOrientationData(const WebDeviceOrientationData& data) {
       SetMockDeviceOrientationDataForTesting(data);
 }
 
-void SetMockScreenOrientation(
-    RenderView* render_view,
-    const blink::WebScreenOrientationType& orientation) {
-  static_cast<RenderViewImpl*>(render_view)
-      ->SetScreenOrientationForTesting(orientation);
-  // FIXME(ostap): Remove this when blink side gets updated.
-  RendererWebKitPlatformSupportImpl::
-      SetMockScreenOrientationForTesting(orientation);
-}
-
-void ResetMockScreenOrientation()
-{
-  RendererWebKitPlatformSupportImpl::ResetMockScreenOrientationForTesting();
+void MockBatteryStatusChanged(const WebBatteryStatus& status) {
+  RendererWebKitPlatformSupportImpl::MockBatteryStatusChangedForTesting(status);
 }
 
 void EnableRendererLayoutTestMode() {
@@ -240,13 +222,6 @@ void DisableAutoResizeMode(RenderView* render_view, const WebSize& new_size) {
       DisableAutoResizeForTesting(new_size);
 }
 
-void UseMockMediaStreams(RenderFrame* render_frame) {
-  RenderFrameImpl* render_frame_impl = static_cast<RenderFrameImpl*>(
-      render_frame);
-  render_frame_impl->SetMediaStreamClientForTesting(
-      new TestMediaStreamClient(render_frame_impl));
-}
-
 struct ToLower {
   base::char16 operator()(base::char16 c) { return tolower(c); }
 };
@@ -307,6 +282,10 @@ std::string DumpBackForwardList(std::vector<PageState>& page_state,
   }
   result.append("===============================================\n");
   return result;
+}
+
+blink::WebLayer* InstantiateWebLayer(scoped_refptr<cc::TextureLayer> layer) {
+  return new WebLayerImpl(layer);
 }
 
 }  // namespace content

@@ -30,8 +30,12 @@ void ServiceWorkerUnregisterJob::AddCallback(
 void ServiceWorkerUnregisterJob::Start() {
   context_->storage()->FindRegistrationForPattern(
       pattern_,
-      base::Bind(&ServiceWorkerUnregisterJob::DeleteExistingRegistration,
+      base::Bind(&ServiceWorkerUnregisterJob::OnRegistrationFound,
                  weak_factory_.GetWeakPtr()));
+}
+
+void ServiceWorkerUnregisterJob::Abort() {
+  CompleteInternal(SERVICE_WORKER_ERROR_ABORT);
 }
 
 bool ServiceWorkerUnregisterJob::Equals(ServiceWorkerRegisterJobBase* job) {
@@ -44,38 +48,55 @@ RegistrationJobType ServiceWorkerUnregisterJob::GetType() {
   return ServiceWorkerRegisterJobBase::UNREGISTRATION;
 }
 
-void ServiceWorkerUnregisterJob::DeleteExistingRegistration(
+void ServiceWorkerUnregisterJob::OnRegistrationFound(
     ServiceWorkerStatusCode status,
     const scoped_refptr<ServiceWorkerRegistration>& registration) {
-  if (status == SERVICE_WORKER_OK) {
-    DCHECK(registration);
-    // TODO(michaeln): Deactivate the live registration object and
-    // eventually call storage->DeleteVersionResources()
-    // when the version no longer has any controllees.
-    context_->storage()->DeleteRegistration(
-        registration->id(),
-        registration->script_url().GetOrigin(),
-        base::Bind(&ServiceWorkerUnregisterJob::Complete,
-                   weak_factory_.GetWeakPtr()));
-    return;
-  }
-
   if (status == SERVICE_WORKER_ERROR_NOT_FOUND) {
     DCHECK(!registration);
     Complete(SERVICE_WORKER_OK);
     return;
   }
 
-  Complete(status);
+  if (status != SERVICE_WORKER_OK) {
+    Complete(status);
+    return;
+  }
+
+  DCHECK(registration);
+  DeleteRegistration(registration);
+}
+
+void ServiceWorkerUnregisterJob::DeleteRegistration(
+    const scoped_refptr<ServiceWorkerRegistration>& registration) {
+  // TODO(nhiroki): When we've implemented the installing version, terminate and
+  // set it to redundant here as per spec.
+
+  if (registration->waiting_version()) {
+    registration->waiting_version()->SetStatus(
+        ServiceWorkerVersion::REDUNDANT);
+  }
+
+  // TODO(michaeln): Eventually call storage->DeleteVersionResources() when the
+  // version no longer has any controllees.
+  context_->storage()->DeleteRegistration(
+      registration->id(),
+      registration->script_url().GetOrigin(),
+      base::Bind(&ServiceWorkerUnregisterJob::Complete,
+                 weak_factory_.GetWeakPtr()));
 }
 
 void ServiceWorkerUnregisterJob::Complete(ServiceWorkerStatusCode status) {
+  CompleteInternal(status);
+  context_->job_coordinator()->FinishJob(pattern_, this);
+}
+
+void ServiceWorkerUnregisterJob::CompleteInternal(
+    ServiceWorkerStatusCode status) {
   for (std::vector<UnregistrationCallback>::iterator it = callbacks_.begin();
        it != callbacks_.end();
        ++it) {
     it->Run(status);
   }
-  context_->job_coordinator()->FinishJob(pattern_, this);
 }
 
 }  // namespace content

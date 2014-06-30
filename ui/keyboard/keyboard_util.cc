@@ -28,9 +28,8 @@ const char kKeyUp[] = "keyup";
 
 void SendProcessKeyEvent(ui::EventType type,
                          aura::WindowTreeHost* host) {
-  ui::TranslatedKeyEvent event(type == ui::ET_KEY_PRESSED,
-                               ui::VKEY_PROCESSKEY,
-                               ui::EF_NONE);
+  ui::KeyEvent event(type, ui::VKEY_PROCESSKEY, ui::EF_NONE, false);
+  event.SetTranslated(true);
   ui::EventDispatchDetails details =
       host->event_processor()->OnEventFromSource(&event);
   CHECK(!details.dispatcher_destroyed);
@@ -44,6 +43,12 @@ bool g_accessibility_keyboard_enabled = false;
 base::LazyInstance<GURL> g_override_content_url = LAZY_INSTANCE_INITIALIZER;
 
 bool g_touch_keyboard_enabled = false;
+
+keyboard::KeyboardOverscrolOverride g_keyboard_overscroll_override =
+    keyboard::KEYBOARD_OVERSCROLL_OVERRIDE_NONE;
+
+keyboard::KeyboardShowOverride g_keyboard_show_override =
+    keyboard::KEYBOARD_SHOW_OVERRIDE_NONE;
 
 }  // namespace
 
@@ -95,11 +100,18 @@ std::string GetKeyboardLayout() {
 }
 
 bool IsKeyboardEnabled() {
-  return g_accessibility_keyboard_enabled ||
-      CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableVirtualKeyboard) ||
-      IsKeyboardUsabilityExperimentEnabled() ||
-      g_touch_keyboard_enabled;
+  // Accessibility setting prioritized over policy setting.
+  if (g_accessibility_keyboard_enabled)
+    return true;
+  // Policy strictly disables showing a virtual keyboard.
+  if (g_keyboard_show_override == keyboard::KEYBOARD_SHOW_OVERRIDE_DISABLED)
+    return false;
+  // Check if any of the flags are enabled.
+  return CommandLine::ForCurrentProcess()->HasSwitch(
+             switches::kEnableVirtualKeyboard) ||
+         IsKeyboardUsabilityExperimentEnabled() ||
+         g_touch_keyboard_enabled ||
+         (g_keyboard_show_override == keyboard::KEYBOARD_SHOW_OVERRIDE_ENABLED);
 }
 
 bool IsKeyboardUsabilityExperimentEnabled() {
@@ -110,15 +122,32 @@ bool IsKeyboardUsabilityExperimentEnabled() {
 bool IsKeyboardOverscrollEnabled() {
   if (!IsKeyboardEnabled())
     return false;
+
   // Users of the accessibility on-screen keyboard are likely to be using mouse
   // input, which may interfere with overscrolling.
   if (g_accessibility_keyboard_enabled)
     return false;
+
+  // If overscroll enabled override is set, use it instead. Currently
+  // login / out-of-box disable keyboard overscroll. http://crbug.com/363635
+  if (g_keyboard_overscroll_override != KEYBOARD_OVERSCROLL_OVERRIDE_NONE) {
+    return g_keyboard_overscroll_override ==
+        KEYBOARD_OVERSCROLL_OVERRIDE_ENABLED;
+  }
+
   if (CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kDisableVirtualKeyboardOverscroll)) {
     return false;
   }
   return true;
+}
+
+void SetKeyboardOverscrollOverride(KeyboardOverscrolOverride override) {
+  g_keyboard_overscroll_override = override;
+}
+
+void SetKeyboardShowOverride(KeyboardShowOverride override) {
+  g_keyboard_show_override = override;
 }
 
 bool IsInputViewEnabled() {
@@ -128,6 +157,14 @@ bool IsInputViewEnabled() {
     return false;
   // Default value if no command line flags specified.
   return true;
+}
+
+bool IsExperimentalInputViewEnabled() {
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kEnableExperimentalInputViewFeatures)) {
+    return true;
+  }
+  return false;
 }
 
 bool InsertText(const base::string16& text, aura::Window* root_window) {

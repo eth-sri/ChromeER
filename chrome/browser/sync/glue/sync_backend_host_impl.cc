@@ -8,13 +8,12 @@
 #include "base/logging.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/invalidation/invalidation_service_factory.h"
-#include "chrome/browser/network_time/network_time_tracker.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync/glue/sync_backend_host_core.h"
 #include "chrome/browser/sync/glue/sync_backend_registrar.h"
 #include "chrome/common/chrome_switches.h"
 #include "components/invalidation/invalidation_service.h"
+#include "components/network_time/network_time_tracker.h"
 #include "components/sync_driver/sync_frontend.h"
 #include "components/sync_driver/sync_prefs.h"
 #include "content/public/browser/browser_thread.h"
@@ -68,6 +67,7 @@ void UpdateNetworkTime(const base::Time& network_time,
 SyncBackendHostImpl::SyncBackendHostImpl(
     const std::string& name,
     Profile* profile,
+    invalidation::InvalidationService* invalidator,
     const base::WeakPtr<sync_driver::SyncPrefs>& sync_prefs,
     const base::FilePath& sync_folder)
     : frontend_loop_(base::MessageLoop::current()),
@@ -77,11 +77,9 @@ SyncBackendHostImpl::SyncBackendHostImpl(
       sync_prefs_(sync_prefs),
       frontend_(NULL),
       cached_passphrase_type_(syncer::IMPLICIT_PASSPHRASE),
-      invalidator_(
-          invalidation::InvalidationServiceFactory::GetForProfile(profile)),
+      invalidator_(invalidator),
       invalidation_handler_registered_(false),
       weak_ptr_factory_(this) {
-  CHECK(invalidator_);
   core_ = new SyncBackendHostCore(
       name_,
       profile_->GetPath().Append(sync_folder),
@@ -147,7 +145,7 @@ void SyncBackendHostImpl::Initialize(
           base::Bind(&UpdateNetworkTime),
           core_->GetRequestContextCancelationSignal()),
       credentials,
-      invalidator_->GetInvalidatorClientId(),
+      invalidator_ ? invalidator_->GetInvalidatorClientId() : "",
       sync_manager_factory.Pass(),
       delete_sync_data_folder,
       sync_prefs_->GetEncryptionBootstrapToken(),
@@ -258,7 +256,7 @@ void SyncBackendHostImpl::StopSyncingForShutdown() {
   notification_registrar_.RemoveAll();
 
   // Stop non-blocking sync types from sending any more requests to the syncer.
-  sync_core_proxy_.reset();
+  sync_context_proxy_.reset();
 
   DCHECK(registrar_->sync_thread()->IsRunning());
 
@@ -349,8 +347,15 @@ void SyncBackendHostImpl::ConfigureDataTypes(
       GetDataTypesInState(FATAL, config_state_map);
   syncer::ModelTypeSet crypto_types =
       GetDataTypesInState(CRYPTO, config_state_map);
+  syncer::ModelTypeSet unready_types =
+      GetDataTypesInState(UNREADY, config_state_map);
   disabled_types.PutAll(fatal_types);
+
+  // TODO(zea): These types won't be fully purged if they are subsequently
+  // disabled by the user. Fix that. See crbug.com/386778
   disabled_types.PutAll(crypto_types);
+  disabled_types.PutAll(unready_types);
+
   syncer::ModelTypeSet active_types =
       GetDataTypesInState(CONFIGURE_ACTIVE, config_state_map);
   syncer::ModelTypeSet clean_first_types =
@@ -394,6 +399,7 @@ void SyncBackendHostImpl::ConfigureDataTypes(
   syncer::ModelTypeSet inactive_types =
       GetDataTypesInState(CONFIGURE_INACTIVE, config_state_map);
   types_to_purge.RemoveAll(inactive_types);
+  types_to_purge.RemoveAll(unready_types);
 
   // If a type has already been disabled and unapplied or journaled, it will
   // not be part of the |types_to_purge| set, and therefore does not need
@@ -453,8 +459,11 @@ syncer::UserShare* SyncBackendHostImpl::GetUserShare() const {
   return core_->sync_manager()->GetUserShare();
 }
 
-scoped_ptr<syncer::SyncCoreProxy> SyncBackendHostImpl::GetSyncCoreProxy() {
-  return scoped_ptr<syncer::SyncCoreProxy>(sync_core_proxy_->Clone());
+scoped_ptr<syncer::SyncContextProxy>
+SyncBackendHostImpl::GetSyncContextProxy() {
+  return sync_context_proxy_.get() ? scoped_ptr<syncer::SyncContextProxy>(
+                                         sync_context_proxy_->Clone())
+                                   : scoped_ptr<syncer::SyncContextProxy>();
 }
 
 SyncBackendHostImpl::Status SyncBackendHostImpl::GetDetailedStatus() {
@@ -486,7 +495,8 @@ base::Time SyncBackendHostImpl::GetExplicitPassphraseTime() const {
 
 bool SyncBackendHostImpl::IsCryptographerReady(
     const syncer::BaseTransaction* trans) const {
-  return initialized() && trans->GetCryptographer()->is_ready();
+  return initialized() && trans->GetCryptographer() &&
+      trans->GetCryptographer()->is_ready();
 }
 
 void SyncBackendHostImpl::GetModelSafeRoutingInfo(
@@ -594,9 +604,11 @@ void SyncBackendHostImpl::FinishConfigureDataTypesOnFrontendLoop(
   if (!frontend_)
     return;
 
-  invalidator_->UpdateRegisteredInvalidationIds(
-      this,
-      ModelTypeSetToObjectIdSet(enabled_types));
+  if (invalidator_) {
+    invalidator_->UpdateRegisteredInvalidationIds(
+        this,
+        ModelTypeSetToObjectIdSet(enabled_types));
+  }
 
   if (!ready_task.is_null())
     ready_task.Run(succeeded_configuration_types, failed_configuration_types);
@@ -634,22 +646,25 @@ void SyncBackendHostImpl::HandleInitializationSuccessOnFrontendLoop(
     const syncer::WeakHandle<syncer::JsBackend> js_backend,
     const syncer::WeakHandle<syncer::DataTypeDebugInfoListener>
         debug_info_listener,
-    syncer::SyncCoreProxy* sync_core_proxy) {
+    syncer::SyncContextProxy* sync_context_proxy) {
   DCHECK_EQ(base::MessageLoop::current(), frontend_loop_);
 
-  sync_core_proxy_ = sync_core_proxy->Clone();
+  if (sync_context_proxy)
+    sync_context_proxy_ = sync_context_proxy->Clone();
 
   if (!frontend_)
     return;
 
   initialized_ = true;
 
-  invalidator_->RegisterInvalidationHandler(this);
-  invalidation_handler_registered_ = true;
+  if (invalidator_) {
+    invalidator_->RegisterInvalidationHandler(this);
+    invalidation_handler_registered_ = true;
 
-  // Fake a state change to initialize the SyncManager's cached invalidator
-  // state.
-  OnInvalidatorStateChange(invalidator_->GetInvalidatorState());
+    // Fake a state change to initialize the SyncManager's cached invalidator
+    // state.
+    OnInvalidatorStateChange(invalidator_->GetInvalidatorState());
+  }
 
   // Start forwarding refresh requests to the SyncManager
   notification_registrar_.Add(this, chrome::NOTIFICATION_SYNC_REFRESH_LOCAL,

@@ -6,12 +6,12 @@
 #include "base/strings/string16.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_test_util.h"
 #include "chrome/browser/ui/search_engines/keyword_editor_controller.h"
 #include "chrome/browser/ui/search_engines/template_url_table_model.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/search_engines/template_url.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/models/table_model_observer.h"
 
@@ -249,7 +249,7 @@ TEST_F(KeywordEditorControllerTest, MutateTemplateURLService) {
   TemplateURLData data;
   data.short_name = ASCIIToUTF16("b");
   data.SetKeyword(ASCIIToUTF16("a"));
-  TemplateURL* turl = new TemplateURL(util()->profile(), data);
+  TemplateURL* turl = new TemplateURL(data);
   util()->model()->Add(turl);
 
   // Table model should have updated.

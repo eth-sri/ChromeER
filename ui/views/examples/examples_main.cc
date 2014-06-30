@@ -53,7 +53,6 @@ int main(int argc, char** argv) {
   // The ContextFactory must exist before any Compositors are created.
   scoped_ptr<ui::InProcessContextFactory> context_factory(
       new ui::InProcessContextFactory());
-  ui::ContextFactory::SetInstance(context_factory.get());
 
   base::MessageLoopForUI message_loop;
 
@@ -66,6 +65,7 @@ int main(int argc, char** argv) {
   ui::ResourceBundle::InitSharedInstanceWithPakPath(ui_test_pak_path);
 
   aura::Env::CreateInstance(true);
+  aura::Env::GetInstance()->set_context_factory(context_factory.get());
 
   ui::InitializeInputMethodForTesting();
 

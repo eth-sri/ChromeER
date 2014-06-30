@@ -28,6 +28,10 @@ class GestureDetector {
     base::TimeDelta showpress_timeout;
     base::TimeDelta double_tap_timeout;
 
+    // The minimum duration between the first tap's up event and the second
+    // tap's down event for an interaction to be considered a double-tap.
+    base::TimeDelta double_tap_min_time;
+
     // Distance a touch can wander before a scroll will occur (in dips).
     float touch_slop;
 
@@ -157,6 +161,7 @@ class GestureDetector {
   bool IsConsideredDoubleTap(const MotionEvent& first_down,
                              const MotionEvent& first_up,
                              const MotionEvent& second_down) const;
+  bool HandleSwipeIfNeeded(const MotionEvent& up, float vx, float vy);
 
   class TimeoutGestureHandler;
   scoped_ptr<TimeoutGestureHandler> timeout_handler_;
@@ -173,6 +178,7 @@ class GestureDetector {
   float min_swipe_direction_component_ratio_;
   base::TimeDelta double_tap_timeout_;
   base::TimeDelta two_finger_tap_timeout_;
+  base::TimeDelta double_tap_min_time_;
 
   bool still_down_;
   bool defer_confirm_single_tap_;

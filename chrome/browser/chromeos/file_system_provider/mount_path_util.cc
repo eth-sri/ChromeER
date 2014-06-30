@@ -7,7 +7,7 @@
 #include <vector>
 
 #include "base/stl_util.h"
-#include "base/strings/string_number_conversions.h"
+#include "base/strings/stringprintf.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/file_system_provider/provided_file_system.h"
 #include "chrome/browser/chromeos/file_system_provider/service.h"
@@ -32,17 +32,49 @@ const base::FilePath::CharType kProvidedMountPointRoot[] =
 
 }  // namespace
 
+// Escapes the file system id so it can be used as a file/directory name.
+// This is based on net/base/escape.cc: net::(anonymous namespace)::Escape
+std::string EscapeFileSystemId(const std::string& file_system_id) {
+  std::string escaped;
+  for (size_t i = 0; i < file_system_id.size(); ++i) {
+    const char c = file_system_id[i];
+    if (c == '%' || c == '.' || c == '/') {
+      base::StringAppendF(&escaped, "%%%02X", c);
+    } else {
+      escaped.push_back(c);
+    }
+  }
+  return escaped;
+}
+
 base::FilePath GetMountPath(Profile* profile,
-                            std::string extension_id,
-                            int file_system_id) {
+                            const std::string& extension_id,
+                            const std::string& file_system_id) {
   chromeos::User* const user =
       chromeos::UserManager::IsInitialized()
           ? chromeos::UserManager::Get()->GetUserByProfile(
                 profile->GetOriginalProfile())
           : NULL;
-  const std::string user_suffix = user ? "-" + user->username_hash() : "";
+  const std::string safe_file_system_id = EscapeFileSystemId(file_system_id);
+  const std::string username_suffix = user ? user->username_hash() : "";
   return base::FilePath(kProvidedMountPointRoot).AppendASCII(
-      extension_id + "-" + base::IntToString(file_system_id) + user_suffix);
+      extension_id + ":" + safe_file_system_id + ":" + username_suffix);
+}
+
+bool IsFileSystemProviderLocalPath(const base::FilePath& local_path) {
+  std::vector<base::FilePath::StringType> components;
+  local_path.GetComponents(&components);
+
+  if (components.size() < 3)
+    return false;
+
+  if (components[0] != FILE_PATH_LITERAL("/"))
+    return false;
+
+  if (components[1] != kProvidedMountPointRoot + 1 /* no leading slash */)
+    return false;
+
+  return true;
 }
 
 FileSystemURLParser::FileSystemURLParser(const fileapi::FileSystemURL& url)
@@ -70,23 +102,25 @@ bool FileSystemURLParser::Parse() {
       continue;
     }
 
-    Service* service = Service::Get(original_profile);
+    Service* const service = Service::Get(original_profile);
     if (!service)
       continue;
 
-    ProvidedFileSystemInterface* file_system =
+    ProvidedFileSystemInterface* const file_system =
         service->GetProvidedFileSystem(url_.filesystem_id());
     if (!file_system)
       continue;
 
-    // Strip the mount point name from the virtual path, to extract the file
-    // path within the provided file system.
+    // Strip the mount path name from the local path, to extract the file path
+    // within the provided file system.
     file_system_ = file_system;
     std::vector<base::FilePath::StringType> components;
-    url_.virtual_path().GetComponents(&components);
-    DCHECK_LT(0u, components.size());
+    url_.path().GetComponents(&components);
+    if (components.size() < 3)
+      return false;
+
     file_path_ = base::FilePath::FromUTF8Unsafe("/");
-    for (size_t i = 1; i < components.size(); ++i) {
+    for (size_t i = 3; i < components.size(); ++i) {
       // TODO(mtomasz): This could be optimized, to avoid unnecessary copies.
       file_path_ = file_path_.Append(components[i]);
     }
@@ -96,6 +130,48 @@ bool FileSystemURLParser::Parse() {
 
   // Nothing has been found.
   return false;
+}
+
+LocalPathParser::LocalPathParser(Profile* profile,
+                                 const base::FilePath& local_path)
+    : profile_(profile), local_path_(local_path), file_system_(NULL) {
+}
+
+LocalPathParser::~LocalPathParser() {
+}
+
+bool LocalPathParser::Parse() {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+
+  if (!IsFileSystemProviderLocalPath(local_path_))
+    return false;
+
+  std::vector<base::FilePath::StringType> components;
+  local_path_.GetComponents(&components);
+
+  if (components.size() < 3)
+    return false;
+
+  const std::string mount_point_name = components[2];
+
+  Service* const service = Service::Get(profile_);
+  if (!service)
+    return false;
+
+  ProvidedFileSystemInterface* const file_system =
+      service->GetProvidedFileSystem(mount_point_name);
+  if (!file_system)
+    return false;
+
+  // Strip the mount point path from the virtual path, to extract the file
+  // path within the provided file system.
+  file_system_ = file_system;
+  file_path_ = base::FilePath::FromUTF8Unsafe("/");
+  for (size_t i = 3; i < components.size(); ++i) {
+    file_path_ = file_path_.Append(components[i]);
+  }
+
+  return true;
 }
 
 }  // namespace util

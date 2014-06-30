@@ -5,8 +5,8 @@
 #include "media/base/android/media_player_android.h"
 
 #include "base/logging.h"
+#include "media/base/android/media_drm_bridge.h"
 #include "media/base/android/media_player_manager.h"
-#include "media/base/media_keys.h"
 
 namespace media {
 
@@ -14,11 +14,13 @@ MediaPlayerAndroid::MediaPlayerAndroid(
     int player_id,
     MediaPlayerManager* manager,
     const RequestMediaResourcesCB& request_media_resources_cb,
-    const ReleaseMediaResourcesCB& release_media_resources_cb)
+    const ReleaseMediaResourcesCB& release_media_resources_cb,
+    const GURL& frame_url)
     : request_media_resources_cb_(request_media_resources_cb),
       release_media_resources_cb_(release_media_resources_cb),
       player_id_(player_id),
-      manager_(manager) {
+      manager_(manager),
+      frame_url_(frame_url) {
 }
 
 MediaPlayerAndroid::~MediaPlayerAndroid() {}
@@ -31,13 +33,9 @@ GURL MediaPlayerAndroid::GetFirstPartyForCookies() {
   return GURL();
 }
 
-void MediaPlayerAndroid::SetCdm(MediaKeys* cdm) {
-  // Not all players support CDMs. Do nothing by default.
-  return;
-}
-
-void MediaPlayerAndroid::OnKeyAdded() {
-  // Not all players care about the decryption key. Do nothing by default.
+void MediaPlayerAndroid::SetCdm(BrowserCdm* /* cdm */) {
+  // Players that support EME should override this.
+  NOTREACHED() << "EME not supported on base MediaPlayerAndroid class.";
   return;
 }
 

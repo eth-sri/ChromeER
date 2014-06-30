@@ -55,7 +55,6 @@ scoped_ptr<gpu::GLInProcessContext> CreateOffscreenContext(
 }
 
 scoped_ptr<gpu::GLInProcessContext> CreateContext(
-    scoped_refptr<gfx::GLSurface> surface,
     scoped_refptr<gpu::InProcessCommandBuffer::Service> service,
     gpu::GLInProcessContext* share_context) {
   const gfx::GpuPreference gpu_preference = gfx::PreferDiscreteGpu;
@@ -64,20 +63,12 @@ scoped_ptr<gpu::GLInProcessContext> CreateContext(
       GetDefaultAttribs(), &in_process_attribs);
   in_process_attribs.lose_context_when_out_of_memory = 1;
 
-
-  bool is_offscreen = false;
-  gfx::Size size(1, 1);
-  if (surface) {
-    is_offscreen = surface->IsOffscreen();
-    size = surface->GetSize();
-  }
-
   scoped_ptr<gpu::GLInProcessContext> context(
       gpu::GLInProcessContext::Create(service,
-                                      surface,
-                                      is_offscreen,
+                                      NULL /* surface */,
+                                      false /* is_offscreen */,
                                       gfx::kNullAcceleratedWidget,
-                                      size,
+                                      gfx::Size(1, 1),
                                       share_context,
                                       false /* share_resources */,
                                       in_process_attribs,
@@ -177,26 +168,29 @@ scoped_refptr<ContextProviderWebContext> SynchronousCompositorFactoryImpl::
 }
 
 scoped_refptr<cc::ContextProvider> SynchronousCompositorFactoryImpl::
-    CreateOnscreenContextProviderForCompositorThread(
-        scoped_refptr<gfx::GLSurface> surface) {
-  DCHECK(surface);
+    CreateOnscreenContextProviderForCompositorThread() {
   DCHECK(service_);
 
   if (!share_context_.get())
-    share_context_ = CreateContext(NULL, service_, NULL);
+    share_context_ = CreateContext(service_, NULL);
   return webkit::gpu::ContextProviderInProcess::Create(
-      WrapContext(CreateContext(surface, service_, share_context_.get())),
-      "Compositor-Onscreen");
+      WrapContext(CreateContext(service_, share_context_.get())),
+      "Child-Compositor");
+}
+
+gpu::GLInProcessContext* SynchronousCompositorFactoryImpl::GetShareContext() {
+  DCHECK(share_context_.get());
+  return share_context_.get();
 }
 
 scoped_refptr<StreamTextureFactory>
-SynchronousCompositorFactoryImpl::CreateStreamTextureFactory(int view_id) {
+SynchronousCompositorFactoryImpl::CreateStreamTextureFactory(int frame_id) {
   scoped_refptr<StreamTextureFactorySynchronousImpl> factory(
       StreamTextureFactorySynchronousImpl::Create(
           base::Bind(
               &SynchronousCompositorFactoryImpl::TryCreateStreamTextureFactory,
               base::Unretained(this)),
-          view_id));
+          frame_id));
   return factory;
 }
 
@@ -235,7 +229,7 @@ SynchronousCompositorFactoryImpl::TryCreateStreamTextureFactory() {
     DCHECK(share_context_.get());
 
     video_context_provider_ = new VideoContextProvider(
-        CreateContext(NULL, service_, share_context_.get()));
+        CreateContext(service_, share_context_.get()));
   }
   return video_context_provider_;
 }

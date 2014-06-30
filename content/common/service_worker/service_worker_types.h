@@ -36,15 +36,16 @@ const static int64 kInvalidServiceWorkerResponseId = -1;
 // we'll probably want to have response struct/class too.
 struct CONTENT_EXPORT ServiceWorkerFetchRequest {
   ServiceWorkerFetchRequest();
-  ServiceWorkerFetchRequest(
-      const GURL& url,
-      const std::string& method,
-      const std::map<std::string, std::string>& headers);
+  ServiceWorkerFetchRequest(const GURL& url,
+                            const std::string& method,
+                            const std::map<std::string, std::string>& headers,
+                            bool is_reload);
   ~ServiceWorkerFetchRequest();
 
   GURL url;
   std::string method;
   std::map<std::string, std::string> headers;
+  bool is_reload;
 };
 
 // Indicates how the service worker handled a fetch event.
@@ -61,14 +62,14 @@ struct CONTENT_EXPORT ServiceWorkerResponse {
   ServiceWorkerResponse();
   ServiceWorkerResponse(int status_code,
                         const std::string& status_text,
-                        const std::string& method,
-                        const std::map<std::string, std::string>& headers);
+                        const std::map<std::string, std::string>& headers,
+                        const std::string& blob_uuid);
   ~ServiceWorkerResponse();
 
   int status_code;
   std::string status_text;
-  std::string method;
   std::map<std::string, std::string> headers;
+  std::string blob_uuid;
 };
 
 // Represents initialization info for a WebServiceWorker object.

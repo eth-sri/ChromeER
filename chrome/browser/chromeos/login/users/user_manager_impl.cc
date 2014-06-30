@@ -8,6 +8,7 @@
 #include <set>
 
 #include "ash/multi_profile_uma.h"
+#include "base/base_paths.h"
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
@@ -16,6 +17,7 @@
 #include "base/format_macros.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
+#include "base/path_service.h"
 #include "base/prefs/pref_registry_simple.h"
 #include "base/prefs/pref_service.h"
 #include "base/prefs/scoped_user_pref_update.h"
@@ -26,45 +28,40 @@
 #include "base/sys_info.h"
 #include "base/threading/worker_pool.h"
 #include "base/values.h"
-#include "chrome/browser/app_mode/app_mode_utils.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/chromeos/base/locale_util.h"
 #include "chrome/browser/chromeos/login/auth/user_context.h"
 #include "chrome/browser/chromeos/login/demo_mode/demo_app_launcher.h"
-#include "chrome/browser/chromeos/login/login_utils.h"
+#include "chrome/browser/chromeos/login/session/session_manager.h"
 #include "chrome/browser/chromeos/login/signin/auth_sync_observer.h"
 #include "chrome/browser/chromeos/login/signin/auth_sync_observer_factory.h"
-#include "chrome/browser/chromeos/login/ui/login_display.h"
 #include "chrome/browser/chromeos/login/users/avatar/user_image_manager_impl.h"
 #include "chrome/browser/chromeos/login/users/multi_profile_user_controller.h"
 #include "chrome/browser/chromeos/login/users/remove_user_delegate.h"
 #include "chrome/browser/chromeos/login/users/supervised_user_manager_impl.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
-#include "chrome/browser/chromeos/net/network_portal_detector.h"
-#include "chrome/browser/chromeos/net/network_portal_detector_strategy.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/policy/device_local_account.h"
 #include "chrome/browser/chromeos/profiles/multiprofiles_session_aborted_dialog.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/session_length_limiter.h"
-#include "chrome/browser/managed_mode/chromeos/managed_user_password_service_factory.h"
-#include "chrome/browser/managed_mode/chromeos/manager_password_service_factory.h"
-#include "chrome/browser/net/nss_context.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/browser/profiles/profiles_state.h"
+#include "chrome/browser/supervised_user/chromeos/manager_password_service_factory.h"
+#include "chrome/browser/supervised_user/chromeos/supervised_user_password_service_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/common/chrome_constants.h"
+#include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/crash_keys.h"
 #include "chrome/common/pref_names.h"
-#include "chromeos/cert_loader.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/cryptohome/async_method_caller.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/login/login_state.h"
+#include "chromeos/network/portal_detector/network_portal_detector.h"
+#include "chromeos/network/portal_detector/network_portal_detector_strategy.h"
 #include "chromeos/settings/cros_settings_names.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
@@ -176,15 +173,6 @@ void ResolveLocale(
       base::Bind(on_resolve_callback, resolved_locale));
 }
 
-// Callback to GetNSSCertDatabaseForProfile. It starts CertLoader using the
-// provided NSS database. It must be called for primary user only.
-void OnGetNSSCertDatabaseForUser(net::NSSCertDatabase* database) {
-  if (!CertLoader::IsInitialized())
-    return;
-
-  CertLoader::Get()->StartWithNSSDB(database);
-}
-
 }  // namespace
 
 // static
@@ -231,10 +219,6 @@ UserManagerImpl::UserManagerImpl()
       kAccountsPrefDeviceLocalAccounts,
       base::Bind(&UserManagerImpl::RetrieveTrustedDevicePolicies,
                  base::Unretained(this)));
-  supervised_users_subscription_ = cros_settings_->AddSettingsObserver(
-      kAccountsPrefSupervisedUsersEnabled,
-      base::Bind(&UserManagerImpl::RetrieveTrustedDevicePolicies,
-                 base::Unretained(this)));
   multi_profile_user_controller_.reset(new MultiProfileUserController(
       this, g_browser_process->local_state()));
 
@@ -275,7 +259,6 @@ UserManagerImpl::~UserManagerImpl() {
 void UserManagerImpl::Shutdown() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   local_accounts_subscription_.reset();
-  supervised_users_subscription_.reset();
   // Stop the session length limiter.
   session_length_limiter_.reset();
 
@@ -317,13 +300,13 @@ const UserList& UserManagerImpl::GetUsers() const {
 }
 
 UserList UserManagerImpl::GetUsersAdmittedForMultiProfile() const {
-  // Supervised users are not allowed to use multi profile.
+  // Supervised users are not allowed to use multi-profiles.
   if (logged_in_users_.size() == 1 &&
-      GetPrimaryUser()->GetType() != User::USER_TYPE_REGULAR)
+      GetPrimaryUser()->GetType() != User::USER_TYPE_REGULAR) {
     return UserList();
+  }
 
   UserList result;
-  int num_users_allowed = 0;
   const UserList& users = GetUsers();
   for (UserList::const_iterator it = users.begin(); it != users.end(); ++it) {
     if ((*it)->GetType() == User::USER_TYPE_REGULAR && !(*it)->is_logged_in()) {
@@ -337,19 +320,14 @@ UserList UserManagerImpl::GetUsersAdmittedForMultiProfile() const {
 
       // Users with a policy that prevents them being added to a session will be
       // shown in login UI but will be grayed out.
+      // Same applies to owner account (see http://crbug.com/385034).
       if (check == MultiProfileUserController::ALLOWED ||
-          check == MultiProfileUserController::NOT_ALLOWED_POLICY_FORBIDS) {
+          check == MultiProfileUserController::NOT_ALLOWED_POLICY_FORBIDS ||
+          check == MultiProfileUserController::NOT_ALLOWED_OWNER_AS_SECONDARY) {
         result.push_back(*it);
-        if (check == MultiProfileUserController::ALLOWED)
-          num_users_allowed++;
       }
     }
   }
-
-  // We only show multi-profiles sign in UI if there's at least one user that
-  // is allowed to be added to the session.
-  if (!num_users_allowed)
-    result.clear();
 
   return result;
 }
@@ -839,78 +817,6 @@ void UserManagerImpl::UpdateUserAccountData(
   UpdateUserAccountLocale(user_id, account_data.locale());
 }
 
-// TODO(alemate): http://crbug.com/288941 : Respect preferred language list in
-// the Google user profile.
-//
-// Returns true if callback will be called.
-bool UserManagerImpl::RespectLocalePreference(
-    Profile* profile,
-    const User* user,
-    scoped_ptr<locale_util::SwitchLanguageCallback> callback) const {
-  if (g_browser_process == NULL)
-    return false;
-  if ((user == NULL) || (user != GetPrimaryUser()) ||
-      (!user->is_profile_created()))
-    return false;
-
-  // In case of Multi Profile mode we don't apply profile locale because it is
-  // unsafe.
-  if (GetLoggedInUsers().size() != 1)
-    return false;
-  const PrefService* prefs = profile->GetPrefs();
-  if (prefs == NULL)
-    return false;
-
-  std::string pref_locale;
-  const std::string pref_app_locale =
-      prefs->GetString(prefs::kApplicationLocale);
-  const std::string pref_bkup_locale =
-      prefs->GetString(prefs::kApplicationLocaleBackup);
-
-  pref_locale = pref_app_locale;
-  if (pref_locale.empty())
-    pref_locale = pref_bkup_locale;
-
-  const std::string* account_locale = NULL;
-  if (pref_locale.empty() && user->has_gaia_account()) {
-    if (user->GetAccountLocale() == NULL)
-      return false;  // wait until Account profile is loaded.
-    account_locale = user->GetAccountLocale();
-    pref_locale = *account_locale;
-  }
-  const std::string global_app_locale =
-      g_browser_process->GetApplicationLocale();
-  if (pref_locale.empty())
-    pref_locale = global_app_locale;
-  DCHECK(!pref_locale.empty());
-  LOG(WARNING) << "RespectLocalePreference: "
-               << "app_locale='" << pref_app_locale << "', "
-               << "bkup_locale='" << pref_bkup_locale << "', "
-               << (account_locale != NULL
-                       ? (std::string("account_locale='") + (*account_locale) +
-                          "'. ")
-                       : (std::string("account_locale - unused. ")))
-               << " Selected '" << pref_locale << "'";
-  profile->ChangeAppLocale(pref_locale, Profile::APP_LOCALE_CHANGED_VIA_LOGIN);
-
-  // Here we don't enable keyboard layouts for normal users. Input methods
-  // are set up when the user first logs in. Then the user may customize the
-  // input methods.  Hence changing input methods here, just because the user's
-  // UI language is different from the login screen UI language, is not
-  // desirable. Note that input method preferences are synced, so users can use
-  // their farovite input methods as soon as the preferences are synced.
-  //
-  // For Guest mode, user locale preferences will never get initialized.
-  // So input methods should be enabled somewhere.
-  const bool enable_layouts = UserManager::Get()->IsLoggedInAsGuest();
-  locale_util::SwitchLanguage(pref_locale,
-                              enable_layouts,
-                              false /* login_layouts_only */,
-                              callback.Pass());
-
-  return true;
-}
-
 void UserManagerImpl::StopPolicyObserverForTesting() {
   avatar_policy_observer_.reset();
   wallpaper_policy_observer_.reset();
@@ -939,7 +845,7 @@ void UserManagerImpl::Observe(int type,
           !IsLoggedInAsGuest() &&
           !IsLoggedInAsKioskApp()) {
         if (IsLoggedInAsLocallyManagedUser())
-          ManagedUserPasswordServiceFactory::GetForProfile(profile);
+          SupervisedUserPasswordServiceFactory::GetForProfile(profile);
         if (IsLoggedInAsRegularUser())
           ManagerPasswordServiceFactory::GetForProfile(profile);
 
@@ -949,18 +855,6 @@ void UserManagerImpl::Observe(int type,
           sync_observer->StartObserving();
           multi_profile_user_controller_->StartObserving(profile);
         }
-      }
-
-      // Now that the user profile has been initialized and
-      // |GetNSSCertDatabaseForProfile| is safe to be used, get the NSS cert
-      // database for the primary user and start certificate loader with it.
-      if (IsUserLoggedIn() &&
-          GetPrimaryUser() &&
-          profile == GetProfileByUser(GetPrimaryUser()) &&
-          CertLoader::IsInitialized() &&
-          base::SysInfo::IsRunningOnChromeOS()) {
-        GetNSSCertDatabaseForProfile(profile,
-                                     base::Bind(&OnGetNSSCertDatabaseForUser));
       }
       break;
     }
@@ -1020,6 +914,9 @@ void UserManagerImpl::OnExternalDataFetched(const std::string& policy,
 }
 
 void UserManagerImpl::OnPolicyUpdated(const std::string& user_id) {
+  const User* user = FindUserInList(user_id);
+  if (!user || user->GetType() != User::USER_TYPE_PUBLIC_ACCOUNT)
+    return;
   UpdatePublicAccountDisplayName(user_id);
   NotifyUserListChanged();
 }
@@ -1117,13 +1014,6 @@ bool UserManagerImpl::UserSessionsRestored() const {
   return user_sessions_restored_;
 }
 
-bool UserManagerImpl::HasBrowserRestarted() const {
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
-  return base::SysInfo::IsRunningOnChromeOS() &&
-         command_line->HasSwitch(switches::kLoginUser) &&
-         !command_line->HasSwitch(switches::kLoginPassword);
-}
-
 bool UserManagerImpl::IsUserNonCryptohomeDataEphemeral(
     const std::string& user_id) const {
   // Data belonging to the guest, retail mode and stub users is always
@@ -1157,7 +1047,8 @@ bool UserManagerImpl::IsUserNonCryptohomeDataEphemeral(
   //    enabled.
   //    - or -
   // b) The browser is restarting after a crash.
-  return AreEphemeralUsersEnabled() || HasBrowserRestarted();
+  return AreEphemeralUsersEnabled() ||
+      SessionManager::GetInstance()->HasBrowserRestarted();
 }
 
 void UserManagerImpl::AddObserver(UserManager::Observer* obs) {
@@ -1198,7 +1089,7 @@ void UserManagerImpl::OnProfilePrepared(Profile* profile) {
     // users once it is fully multi-profile aware. http://crbug.com/238987
     // For now if we have other user pending sessions they'll override OAuth
     // session restore for previous users.
-    LoginUtils::Get()->RestoreAuthenticationSession(profile);
+    SessionManager::GetInstance()->RestoreAuthenticationSession(profile);
   }
 
   // Restore other user sessions if any.
@@ -1287,7 +1178,7 @@ void UserManagerImpl::EnsureUsersLoaded() {
 
 void UserManagerImpl::RetrieveTrustedDevicePolicies() {
   ephemeral_users_enabled_ = false;
-  owner_email_ = "";
+  owner_email_.clear();
 
   // Schedule a callback if device policy has not yet been verified.
   if (CrosSettingsProvider::TRUSTED != cros_settings_->PrepareTrustedValues(
@@ -1551,6 +1442,21 @@ void UserManagerImpl::RetailModeUserLoggedIn() {
 void UserManagerImpl::NotifyOnLogin() {
   CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
+  // Override user homedir, check for ProfileManager being initialized as
+  // it may not exist in unit tests.
+  if (g_browser_process->profile_manager()) {
+    if (GetLoggedInUsers().size() == 1) {
+      base::FilePath homedir = ProfileHelper::GetProfilePathByUserIdHash(
+          primary_user_->username_hash());
+      // This path has been either created by cryptohome (on real Chrome OS
+      // device) or by ProfileManager (on chromeos=1 desktop builds).
+      PathService::OverrideAndCreateIfNeeded(base::DIR_HOME,
+                                             homedir,
+                                             true /* path is absolute */,
+                                             false /* don't create */);
+    }
+  }
+
   UpdateNumberOfUsers();
   NotifyActiveUserHashChanged(active_user_->username_hash());
   NotifyActiveUserChanged(active_user_);
@@ -1563,18 +1469,7 @@ void UserManagerImpl::NotifyOnLogin() {
       content::Source<UserManager>(this),
       content::Details<const User>(active_user_));
 
-  // Owner must be first user in session. DeviceSettingsService can't deal with
-  // multiple user and will mix up ownership, crbug.com/230018.
-  if (GetLoggedInUsers().size() == 1) {
-    // Indicate to DeviceSettingsService that the owner key may have become
-    // available.
-    DeviceSettingsService::Get()->SetUsername(active_user_->email());
-
-    if (NetworkPortalDetector::IsInitialized()) {
-      NetworkPortalDetector::Get()->SetStrategy(
-          PortalDetectorStrategy::STRATEGY_ID_SESSION);
-    }
-  }
+  SessionManager::GetInstance()->PerformPostUserLoggedInActions();
 }
 
 User::OAuthTokenStatus UserManagerImpl::LoadUserOAuthStatus(
@@ -1832,36 +1727,11 @@ void UserManagerImpl::ResetUserFlow(const std::string& user_id) {
   }
 }
 
-bool UserManagerImpl::GetAppModeChromeClientOAuthInfo(
-    std::string* chrome_client_id, std::string* chrome_client_secret) {
-  if (!chrome::IsRunningInForcedAppMode() ||
-      chrome_client_id_.empty() ||
-      chrome_client_secret_.empty()) {
-    return false;
-  }
-
-  *chrome_client_id = chrome_client_id_;
-  *chrome_client_secret = chrome_client_secret_;
-  return true;
-}
-
-void UserManagerImpl::SetAppModeChromeClientOAuthInfo(
-    const std::string& chrome_client_id,
-    const std::string& chrome_client_secret) {
-  if (!chrome::IsRunningInForcedAppMode())
-    return;
-
-  chrome_client_id_ = chrome_client_id;
-  chrome_client_secret_ = chrome_client_secret;
-}
-
 bool UserManagerImpl::AreLocallyManagedUsersAllowed() const {
   bool locally_managed_users_allowed = false;
   cros_settings_->GetBoolean(kAccountsPrefSupervisedUsersEnabled,
                              &locally_managed_users_allowed);
-  policy::BrowserPolicyConnectorChromeOS* connector =
-      g_browser_process->platform_part()->browser_policy_connector_chromeos();
-  return locally_managed_users_allowed || !connector->IsEnterpriseManaged();
+  return locally_managed_users_allowed;
 }
 
 base::FilePath UserManagerImpl::GetUserProfileDir(
@@ -1949,7 +1819,12 @@ void UserManagerImpl::UpdateLoginState() {
   else
     login_user_type = LoginState::LOGGED_IN_USER_REGULAR;
 
-  LoginState::Get()->SetLoggedInState(logged_in_state, login_user_type);
+  if (primary_user_) {
+    LoginState::Get()->SetLoggedInStateAndPrimaryUser(
+        logged_in_state, login_user_type, primary_user_->username_hash());
+  } else {
+    LoginState::Get()->SetLoggedInState(logged_in_state, login_user_type);
+  }
 }
 
 void UserManagerImpl::SetLRUUser(User* user) {
@@ -2020,8 +1895,7 @@ void UserManagerImpl::RestorePendingUserSessions() {
     user_context.SetIsUsingOAuth(false);
     // Will call OnProfilePrepared() once profile has been loaded.
     LoginUtils::Get()->PrepareProfile(user_context,
-                                      std::string(),  // display_email
-                                      false,          // has_cookies
+                                      false,          // has_auth_cookies
                                       true,           // has_active_session
                                       this);
   } else {

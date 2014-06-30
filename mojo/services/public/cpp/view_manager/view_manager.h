@@ -5,60 +5,48 @@
 #ifndef MOJO_SERVICES_PUBLIC_CPP_VIEW_MANAGER_VIEW_MANAGER_H_
 #define MOJO_SERVICES_PUBLIC_CPP_VIEW_MANAGER_VIEW_MANAGER_H_
 
-#include <map>
+#include <string>
+#include <vector>
 
-#include "base/basictypes.h"
-#include "base/memory/scoped_ptr.h"
-#include "mojo/public/cpp/bindings/callback.h"
-#include "mojo/services/public/cpp/view_manager/view_tree_node.h"
+#include "mojo/services/public/cpp/view_manager/types.h"
+#include "mojo/services/public/interfaces/input_events/input_events.mojom.h"
 
 namespace mojo {
-class Shell;
+class ApplicationConnection;
 namespace view_manager {
 
+class Node;
 class View;
-class ViewManagerSynchronizer;
-class ViewTreeNode;
+class ViewEventDispatcher;
+class ViewManagerDelegate;
 
-// Approximately encapsulates the View Manager service.
-// Owns a synchronizer that keeps a client model in sync with the service.
-// Owned by the creator.
-//
-// TODO: displays
 class ViewManager {
  public:
-  explicit ViewManager(Shell* shell);
-  ~ViewManager();
+  // Delegate is owned by the caller.
+  static void ConfigureIncomingConnection(ApplicationConnection* connection,
+                                          ViewManagerDelegate* delegate);
 
-  // Connects to the View Manager service. This method must be called before
-  // using any other View Manager lib class or function.
-  // Blocks on establishing the connection and subsequently receiving a node
-  // tree from the service.
-  // TODO(beng): blocking is currently achieved by running a nested runloop,
-  //             which will dispatch all messages on all pipes while blocking.
-  //             we should instead wait on the client pipe receiving a
-  //             connection established message.
-  // TODO(beng): this method could optionally not block if supplied a callback.
-  void Init();
+  // Sets the event dispatcher. Can only be called by the app rendering to the
+  // root Node of the hierarchy.
+  virtual void SetEventDispatcher(ViewEventDispatcher* dispatcher) = 0;
 
-  ViewTreeNode* tree() { return tree_; }
+  // Dispatches the supplied event to the specified View. Can be called only
+  // by the application that called SetEventDispatcher().
+  virtual void DispatchEvent(View* target, EventPtr event) = 0;
 
-  ViewTreeNode* GetNodeById(TransportNodeId id);
-  View* GetViewById(TransportViewId id);
+  // Returns the URL of the application that embedded this application.
+  virtual const std::string& GetEmbedderURL() const = 0;
 
- private:
-  friend class ViewManagerPrivate;
-  typedef std::map<TransportNodeId, ViewTreeNode*> IdToNodeMap;
-  typedef std::map<TransportViewId, View*> IdToViewMap;
+  // Returns all root nodes known to this connection.
+  virtual const std::vector<Node*>& GetRoots() const = 0;
 
-  Shell* shell_;
-  scoped_ptr<ViewManagerSynchronizer> synchronizer_;
-  ViewTreeNode* tree_;
+  // Returns a Node or View known to this connection.
+  virtual Node* GetNodeById(Id id) = 0;
+  virtual View* GetViewById(Id id) = 0;
 
-  IdToNodeMap nodes_;
-  IdToViewMap views_;
+ protected:
+  virtual ~ViewManager() {}
 
-  DISALLOW_COPY_AND_ASSIGN(ViewManager);
 };
 
 }  // namespace view_manager

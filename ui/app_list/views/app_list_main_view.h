@@ -26,6 +26,7 @@ class AppListItem;
 class AppListModel;
 class AppListViewDelegate;
 class ApplicationDragAndDropHost;
+class ContentsSwitcherView;
 class ContentsView;
 class PaginationModel;
 class SearchBoxView;
@@ -39,7 +40,7 @@ class APP_LIST_EXPORT AppListMainView : public views::View,
  public:
   // Takes ownership of |delegate|.
   explicit AppListMainView(AppListViewDelegate* delegate,
-                           PaginationModel* pagination_model,
+                           int initial_apps_page,
                            gfx::NativeView parent);
   virtual ~AppListMainView();
 
@@ -53,9 +54,9 @@ class APP_LIST_EXPORT AppListMainView : public views::View,
 
   void ModelChanged();
 
-  void OnContentsViewShowStateChanged();
+  void UpdateSearchBoxVisibility();
 
-  void OnStartPageSearchButtonPressed();
+  void OnStartPageSearchTextfieldChanged(const base::string16& new_contents);
 
   SearchBoxView* search_box_view() const { return search_box_view_; }
 
@@ -65,14 +66,25 @@ class APP_LIST_EXPORT AppListMainView : public views::View,
       ApplicationDragAndDropHost* drag_and_drop_host);
 
   ContentsView* contents_view() const { return contents_view_; }
+  ContentsSwitcherView* contents_switcher_view() const {
+    return contents_switcher_view_;
+  }
+  AppListModel* model() { return model_; }
 
   // Returns true if the app list should be centered and in landscape mode.
   bool ShouldCenterWindow() const;
 
+  // Called when the search box's visibility is changed.
+  void NotifySearchBoxVisibilityChanged();
+
  private:
   class IconLoader;
 
-  void AddContentsView();
+  // Adds the ContentsView and the ContentsSwitcherView.
+  void AddContentsViews();
+
+  // Gets the PaginationModel owned by the AppsGridView.
+  PaginationModel* GetAppsPaginationModel();
 
   // Loads icon image for the apps in the selected page of |pagination_model_|.
   // |parent| is used to determine the image scale factor to use.
@@ -83,9 +95,6 @@ class APP_LIST_EXPORT AppListMainView : public views::View,
 
   // Invoked from an IconLoader when icon loading is finished.
   void OnItemIconLoaded(IconLoader* loader);
-
-  // Overridden from views::View:
-  virtual void ChildVisibilityChanged(views::View* child) OVERRIDE;
 
   // Overridden from AppsGridViewDelegate:
   virtual void ActivateApp(AppListItem* item, int event_flags) OVERRIDE;
@@ -101,11 +110,13 @@ class APP_LIST_EXPORT AppListMainView : public views::View,
   virtual void OnResultUninstalled(SearchResult* result) OVERRIDE;
 
   AppListViewDelegate* delegate_;  // Owned by parent view (AppListView).
-  PaginationModel* pagination_model_;  // Owned by AppListController.
   AppListModel* model_;  // Unowned; ownership is handled by |delegate_|.
 
   SearchBoxView* search_box_view_;  // Owned by views hierarchy.
   ContentsView* contents_view_;  // Owned by views hierarchy.
+
+  // Owned by views hierarchy. NULL in the non-experimental app list.
+  ContentsSwitcherView* contents_switcher_view_;
 
   // A timer that fires when maximum allowed time to wait for icon loading has
   // passed.

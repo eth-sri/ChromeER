@@ -14,6 +14,7 @@
 #include "base/prefs/pref_service.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
+#include "components/bookmarks/browser/bookmark_client.h"
 #include "components/bookmarks/browser/bookmark_model.h"
 #include "components/bookmarks/browser/scoped_group_bookmark_actions.h"
 #include "components/bookmarks/common/bookmark_pref_names.h"
@@ -24,6 +25,7 @@
 #include "url/gurl.h"
 
 using base::Time;
+using bookmarks::BookmarkClient;
 
 namespace {
 
@@ -178,7 +180,7 @@ void CopyToClipboard(BookmarkModel* model,
       WriteToClipboard(ui::CLIPBOARD_TYPE_COPY_PASTE);
 
   if (remove_nodes) {
-    ScopedGroupBookmarkActions group_cut(model);
+    bookmarks::ScopedGroupBookmarkActions group_cut(model);
     for (size_t i = 0; i < filtered_nodes.size(); ++i) {
       int index = filtered_nodes[i]->parent()->GetIndexOf(filtered_nodes[i]);
       if (index > -1)
@@ -199,17 +201,17 @@ void PasteFromClipboard(BookmarkModel* model,
 
   if (index == -1)
     index = parent->child_count();
-  ScopedGroupBookmarkActions group_paste(model);
+  bookmarks::ScopedGroupBookmarkActions group_paste(model);
   CloneBookmarkNode(model, bookmark_data.elements, parent, index, true);
 }
 
-bool CanPasteFromClipboard(const BookmarkNode* node) {
-  if (!node)
+bool CanPasteFromClipboard(BookmarkModel* model, const BookmarkNode* node) {
+  if (!node || !model->client()->CanBeEditedByUser(node))
     return false;
   return BookmarkNodeData::ClipboardContainsBookmarks();
 }
 
-std::vector<const BookmarkNode*> GetMostRecentlyModifiedFolders(
+std::vector<const BookmarkNode*> GetMostRecentlyModifiedUserFolders(
     BookmarkModel* model,
     size_t max_count) {
   std::vector<const BookmarkNode*> nodes;
@@ -218,6 +220,8 @@ std::vector<const BookmarkNode*> GetMostRecentlyModifiedFolders(
 
   while (iterator.has_next()) {
     const BookmarkNode* parent = iterator.Next();
+    if (!model->client()->CanBeEditedByUser(parent))
+      continue;
     if (parent->is_folder() && parent->date_folder_modified() > Time()) {
       if (max_count == 0) {
         nodes.push_back(parent);
@@ -242,7 +246,7 @@ std::vector<const BookmarkNode*> GetMostRecentlyModifiedFolders(
 
     for (int i = 0; i < root_node->child_count(); ++i) {
       const BookmarkNode* node = root_node->GetChild(i);
-      if (node->IsVisible() &&
+      if (node->IsVisible() && model->client()->CanBeEditedByUser(node) &&
           std::find(nodes.begin(), nodes.end(), node) == nodes.end()) {
         nodes.push_back(node);
 
@@ -331,6 +335,10 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
       prefs::kShowAppsShortcutInBookmarkBar,
       true,
       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kShowManagedBookmarksInBookmarkBar,
+      true,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
 }
 
 const BookmarkNode* GetParentForNewNodes(
@@ -376,11 +384,8 @@ void DeleteBookmarkFolders(BookmarkModel* model,
 void AddIfNotBookmarked(BookmarkModel* model,
                         const GURL& url,
                         const base::string16& title) {
-  std::vector<const BookmarkNode*> bookmarks;
-  model->GetNodesByURL(url, &bookmarks);
-  if (!bookmarks.empty())
-    return;  // Nothing to do, a bookmark with that url already exists.
-
+  if (IsBookmarkedByUser(model, url))
+    return;  // Nothing to do, a user bookmark with that url already exists.
   model->client()->RecordAction(base::UserMetricsAction("BookmarkAdded"));
   const BookmarkNode* parent = model->GetParentForNewNodes();
   model->AddURL(parent, parent->child_count(), title, url);
@@ -390,11 +395,11 @@ void RemoveAllBookmarks(BookmarkModel* model, const GURL& url) {
   std::vector<const BookmarkNode*> bookmarks;
   model->GetNodesByURL(url, &bookmarks);
 
-  // Remove all the bookmarks.
+  // Remove all the user bookmarks.
   for (size_t i = 0; i < bookmarks.size(); ++i) {
     const BookmarkNode* node = bookmarks[i];
     int index = node->parent()->GetIndexOf(node);
-    if (index > -1)
+    if (index > -1 && model->client()->CanBeEditedByUser(node))
       model->Remove(node->parent(), index);
   }
 }
@@ -413,6 +418,25 @@ base::string16 CleanUpUrlForMatching(
 
 base::string16 CleanUpTitleForMatching(const base::string16& title) {
   return base::i18n::ToLower(title.substr(0u, kCleanedUpTitleMaxLength));
+}
+
+bool CanAllBeEditedByUser(BookmarkClient* client,
+                          const std::vector<const BookmarkNode*>& nodes) {
+  for (size_t i = 0; i < nodes.size(); ++i) {
+    if (!client->CanBeEditedByUser(nodes[i]))
+      return false;
+  }
+  return true;
+}
+
+bool IsBookmarkedByUser(BookmarkModel* model, const GURL& url) {
+  std::vector<const BookmarkNode*> nodes;
+  model->GetNodesByURL(url, &nodes);
+  for (size_t i = 0; i < nodes.size(); ++i) {
+    if (model->client()->CanBeEditedByUser(nodes[i]))
+      return true;
+  }
+  return false;
 }
 
 }  // namespace bookmark_utils

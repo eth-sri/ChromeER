@@ -7,12 +7,14 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
+#include "base/supports_user_data.h"
 #include "ui/aura/aura_export.h"
 #include "ui/events/event_handler.h"
 #include "ui/events/event_target.h"
 #include "ui/gfx/point.h"
 
 namespace ui {
+class ContextFactory;
 class PlatformEventSource;
 }
 namespace aura {
@@ -27,7 +29,7 @@ class Window;
 class WindowTreeHost;
 
 // A singleton object that tracks general state within Aura.
-class AURA_EXPORT Env : public ui::EventTarget {
+class AURA_EXPORT Env : public ui::EventTarget, public base::SupportsUserData {
  public:
   // Creates the single Env instance (if it hasn't been created yet). If
   // |create_event_source| is true a PlatformEventSource is created.
@@ -58,6 +60,11 @@ class AURA_EXPORT Env : public ui::EventTarget {
   // Whether any touch device is currently down.
   bool is_touch_down() const { return is_touch_down_; }
   void set_touch_down(bool value) { is_touch_down_ = value; }
+
+  void set_context_factory(ui::ContextFactory* context_factory) {
+    context_factory_ = context_factory;
+  }
+  ui::ContextFactory* context_factory() { return context_factory_; }
 
  private:
   friend class test::EnvTestHelper;
@@ -94,6 +101,8 @@ class AURA_EXPORT Env : public ui::EventTarget {
 
   scoped_ptr<InputStateLookup> input_state_lookup_;
   scoped_ptr<ui::PlatformEventSource> event_source_;
+
+  ui::ContextFactory* context_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(Env);
 };

@@ -18,11 +18,12 @@ import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 
 import org.chromium.android_webview.permission.AwPermissionRequest;
-import org.chromium.content.browser.ContentViewCore;
 import org.chromium.content.browser.WebContentsObserverAndroid;
+import org.chromium.content_public.browser.WebContents;
 import org.chromium.net.NetError;
 
 import java.security.Principal;
+import java.util.HashMap;
 
 /**
  * Base-class that an AwContents embedder derives from to receive callbacks.
@@ -55,13 +56,16 @@ public abstract class AwContentsClient {
     }
 
     class AwWebContentsObserver extends WebContentsObserverAndroid {
-        public AwWebContentsObserver(ContentViewCore contentViewCore) {
-            super(contentViewCore);
+        public AwWebContentsObserver(WebContents webContents) {
+            super(webContents);
         }
 
         @Override
         public void didFinishLoad(long frameId, String validatedUrl, boolean isMainFrame) {
-            if (isMainFrame) {
+            String unreachableWebDataUrl = AwContentsStatics.getUnreachableWebDataUrl();
+            boolean isErrorUrl =
+                    unreachableWebDataUrl != null && unreachableWebDataUrl.equals(validatedUrl);
+            if (isMainFrame && !isErrorUrl) {
                 AwContentsClient.this.onPageFinished(validatedUrl);
             }
         }
@@ -69,7 +73,10 @@ public abstract class AwContentsClient {
         @Override
         public void didFailLoad(boolean isProvisionalLoad,
                 boolean isMainFrame, int errorCode, String description, String failingUrl) {
-            if (isMainFrame) {
+            String unreachableWebDataUrl = AwContentsStatics.getUnreachableWebDataUrl();
+            boolean isErrorUrl =
+                    unreachableWebDataUrl != null && unreachableWebDataUrl.equals(failingUrl);
+            if (isMainFrame && !isErrorUrl) {
                 if (errorCode != NetError.ERR_ABORTED) {
                     // This error code is generated for the following reasons:
                     // - WebView.stopLoading is called,
@@ -89,10 +96,10 @@ public abstract class AwContentsClient {
 
         @Override
         public void didNavigateMainFrame(String url, String baseUrl,
-                boolean isNavigationToDifferentPage, boolean isNavigationInPage) {
+                boolean isNavigationToDifferentPage, boolean isFragmentNavigation) {
             // This is here to emulate the Classic WebView firing onPageFinished for main frame
             // navigations where only the hash fragment changes.
-            if (isNavigationInPage) {
+            if (isFragmentNavigation) {
                 AwContentsClient.this.onPageFinished(url);
             }
         }
@@ -104,11 +111,11 @@ public abstract class AwContentsClient {
 
     }
 
-    final void installWebContentsObserver(ContentViewCore contentViewCore) {
+    final void installWebContentsObserver(WebContents webContents) {
         if (mWebContentsObserver != null) {
             mWebContentsObserver.detachFromWebContents();
         }
-        mWebContentsObserver = new AwWebContentsObserver(contentViewCore);
+        mWebContentsObserver = new AwWebContentsObserver(webContents);
     }
 
     final AwContentsClientCallbackHelper getCallbackHelper() {
@@ -145,13 +152,30 @@ public abstract class AwContentsClient {
         public boolean capture;
     }
 
+    /**
+     * Parameters for the {@link AwContentsClient#shouldInterceptRequest} method.
+     */
+    public static class ShouldInterceptRequestParams {
+        // Url of the request.
+        public String url;
+        // Is this for the main frame or a child iframe?
+        public boolean isMainFrame;
+        // Was a gesture associated with the request? Don't trust can easily be spoofed.
+        public boolean hasUserGesture;
+        // Method used (GET/POST/OPTIONS)
+        public String method;
+        // Headers that would have been sent to server.
+        public HashMap<String, String> requestHeaders;
+    }
+
     public abstract void getVisitedHistory(ValueCallback<String[]> callback);
 
     public abstract void doUpdateVisitedHistory(String url, boolean isReload);
 
     public abstract void onProgressChanged(int progress);
 
-    public abstract InterceptedRequestData shouldInterceptRequest(String url);
+    public abstract AwWebResourceResponse shouldInterceptRequest(
+            ShouldInterceptRequestParams params);
 
     public abstract boolean shouldOverrideKeyEvent(KeyEvent event);
 

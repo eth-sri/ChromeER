@@ -90,6 +90,16 @@ float MotionEventWeb::GetY(size_t pointer_index) const {
   return event_.touches[pointer_index].position.y;
 }
 
+float MotionEventWeb::GetRawX(size_t pointer_index) const {
+  DCHECK_LT(pointer_index, GetPointerCount());
+  return event_.touches[pointer_index].screenPosition.x;
+}
+
+float MotionEventWeb::GetRawY(size_t pointer_index) const {
+  DCHECK_LT(pointer_index, GetPointerCount());
+  return event_.touches[pointer_index].screenPosition.y;
+}
+
 float MotionEventWeb::GetTouchMajor(size_t pointer_index) const {
   DCHECK_LT(pointer_index, GetPointerCount());
   // TODO(jdduke): We should be a bit more careful about axes here.
@@ -131,6 +141,17 @@ float MotionEventWeb::GetHistoricalY(size_t pointer_index,
                                      size_t historical_index) const {
   NOTIMPLEMENTED();
   return 0.f;
+}
+
+ui::MotionEvent::ToolType MotionEventWeb::GetToolType(
+    size_t pointer_index) const {
+  NOTIMPLEMENTED();
+  return TOOL_TYPE_UNKNOWN;
+}
+
+int MotionEventWeb::GetButtonState() const {
+  NOTIMPLEMENTED();
+  return 0;
 }
 
 scoped_ptr<ui::MotionEvent> MotionEventWeb::Clone() const {

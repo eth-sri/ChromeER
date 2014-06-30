@@ -6,7 +6,6 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/command_line.h"
 #include "base/prefs/pref_service.h"
 #include "base/prefs/scoped_user_pref_update.h"
 #include "base/strings/string_number_conversions.h"
@@ -87,21 +86,21 @@ void ManageProfileHandler::GetLocalizedValues(
         IDS_PROFILES_MANAGE_DUPLICATE_NAME_ERROR },
     { "manageProfilesIconLabel", IDS_PROFILES_MANAGE_ICON_LABEL },
     { "manageProfilesExistingSupervisedUser",
-        IDS_PROFILES_CREATE_EXISTING_MANAGED_USER_ERROR },
+        IDS_PROFILES_CREATE_EXISTING_SUPERVISED_USER_ERROR },
     { "manageProfilesManagedSignedInLabel",
-        IDS_PROFILES_CREATE_MANAGED_SIGNED_IN_LABEL },
+        IDS_PROFILES_CREATE_SUPERVISED_SIGNED_IN_LABEL },
     { "manageProfilesManagedNotSignedInLabel",
-        IDS_PROFILES_CREATE_MANAGED_NOT_SIGNED_IN_LABEL },
+        IDS_PROFILES_CREATE_SUPERVISED_NOT_SIGNED_IN_LABEL },
     { "manageProfilesManagedAccountDetailsOutOfDate",
-        IDS_PROFILES_CREATE_MANAGED_ACCOUNT_DETAILS_OUT_OF_DATE_LABEL },
+        IDS_PROFILES_CREATE_SUPERVISED_ACCOUNT_DETAILS_OUT_OF_DATE_LABEL },
     { "manageProfilesManagedSignInAgainLink",
-        IDS_PROFILES_CREATE_MANAGED_ACCOUNT_SIGN_IN_AGAIN_LINK },
+        IDS_PROFILES_CREATE_SUPERVISED_SIGN_IN_AGAIN_LINK },
     { "manageProfilesManagedNotSignedInLink",
-        IDS_PROFILES_CREATE_MANAGED_NOT_SIGNED_IN_LINK },
+        IDS_PROFILES_CREATE_SUPERVISED_NOT_SIGNED_IN_LINK },
     { "deleteProfileTitle", IDS_PROFILES_DELETE_TITLE },
     { "deleteProfileOK", IDS_PROFILES_DELETE_OK_BUTTON_LABEL },
     { "deleteProfileMessage", IDS_PROFILES_DELETE_MESSAGE },
-    { "deleteManagedProfileAddendum", IDS_PROFILES_DELETE_MANAGED_ADDENDUM },
+    { "deleteManagedProfileAddendum", IDS_PROFILES_DELETE_SUPERVISED_ADDENDUM },
     { "disconnectManagedProfileTitle",
         IDS_PROFILES_DISCONNECT_MANAGED_PROFILE_TITLE },
     { "disconnectManagedProfileOK",
@@ -113,9 +112,9 @@ void ManageProfileHandler::GetLocalizedValues(
     { "createProfileShortcutButton", IDS_PROFILES_CREATE_SHORTCUT_BUTTON },
     { "removeProfileShortcutButton", IDS_PROFILES_REMOVE_SHORTCUT_BUTTON },
     { "importExistingManagedUserLink",
-        IDS_PROFILES_IMPORT_EXISTING_MANAGED_USER_LINK },
+        IDS_PROFILES_IMPORT_EXISTING_SUPERVISED_USER_LINK },
     { "signInToImportManagedUsers",
-        IDS_PROFILES_IMPORT_MANAGED_USER_NOT_SIGNED_IN },
+        IDS_PROFILES_IMPORT_SUPERVISED_USER_NOT_SIGNED_IN },
   };
 
   RegisterStrings(localized_strings, resources, arraysize(resources));
@@ -137,8 +136,8 @@ void ManageProfileHandler::InitializeHandler() {
   Profile* profile = Profile::FromWebUI(web_ui());
   pref_change_registrar_.Init(profile->GetPrefs());
   pref_change_registrar_.Add(
-      prefs::kManagedUserCreationAllowed,
-      base::Bind(&ManageProfileHandler::OnCreateManagedUserPrefChange,
+      prefs::kSupervisedUserCreationAllowed,
+      base::Bind(&ManageProfileHandler::OnCreateSupervisedUserPrefChange,
                  base::Unretained(this)));
   ProfileSyncService* service =
       ProfileSyncServiceFactory::GetForProfile(profile);
@@ -149,7 +148,7 @@ void ManageProfileHandler::InitializeHandler() {
 
 void ManageProfileHandler::InitializePage() {
   SendExistingProfileNames();
-  OnCreateManagedUserPrefChange();
+  OnCreateSupervisedUserPrefChange();
 }
 
 void ManageProfileHandler::RegisterMessages() {
@@ -181,6 +180,13 @@ void ManageProfileHandler::RegisterMessages() {
                  base::Unretained(this)));
   web_ui()->RegisterMessageCallback("removeProfileShortcut",
       base::Bind(&ManageProfileHandler::RemoveProfileShortcut,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("refreshGaiaPicture",
+      base::Bind(&ManageProfileHandler::RefreshGaiaPicture,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "showDisconnectManagedProfileDialog",
+      base::Bind(&ManageProfileHandler::ShowDisconnectManagedProfileDialog,
                  base::Unretained(this)));
 }
 
@@ -310,6 +316,14 @@ void ManageProfileHandler::SendExistingProfileNames() {
       "ManageProfileOverlay.receiveExistingProfileNames", profile_name_dict);
 }
 
+void ManageProfileHandler::ShowDisconnectManagedProfileDialog(
+    const base::ListValue* args) {
+  base::DictionaryValue replacements;
+  GenerateSignedinUserSpecificStrings(&replacements);
+  web_ui()->CallJavascriptFunction(
+      "ManageProfileOverlay.showDisconnectManagedProfileDialog", replacements);
+}
+
 void ManageProfileHandler::SetProfileIconAndName(const base::ListValue* args) {
   DCHECK(args);
 
@@ -355,7 +369,7 @@ void ManageProfileHandler::SetProfileIconAndName(const base::ListValue* args) {
   }
   ProfileMetrics::LogProfileUpdate(profile_file_path);
 
-  if (profile->IsManaged())
+  if (profile->IsSupervised())
     return;
 
   base::string16 new_profile_name;
@@ -465,17 +479,13 @@ void ManageProfileHandler::RequestCreateProfileUpdate(
                                    base::StringValue(username),
                                    base::FundamentalValue(has_error));
 
-  base::DictionaryValue replacements;
-  GenerateSignedinUserSpecificStrings(&replacements);
-  web_ui()->CallJavascriptFunction("loadTimeData.overrideValues", replacements);
-
-  OnCreateManagedUserPrefChange();
+  OnCreateSupervisedUserPrefChange();
 }
 
-void ManageProfileHandler::OnCreateManagedUserPrefChange() {
+void ManageProfileHandler::OnCreateSupervisedUserPrefChange() {
   PrefService* prefs = Profile::FromWebUI(web_ui())->GetPrefs();
   base::FundamentalValue allowed(
-      prefs->GetBoolean(prefs::kManagedUserCreationAllowed));
+      prefs->GetBoolean(prefs::kSupervisedUserCreationAllowed));
   web_ui()->CallJavascriptFunction(
       "CreateProfileOverlay.updateManagedUsersAllowed", allowed);
 }
@@ -518,6 +528,10 @@ void ManageProfileHandler::RemoveProfileShortcut(const base::ListValue* args) {
 
   // Update the UI buttons.
   OnHasProfileShortcuts(false);
+}
+
+void ManageProfileHandler::RefreshGaiaPicture(const base::ListValue* args) {
+  profiles::UpdateGaiaProfilePhotoIfNeeded(Profile::FromWebUI(web_ui()));
 }
 
 }  // namespace options

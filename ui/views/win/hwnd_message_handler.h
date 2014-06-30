@@ -60,7 +60,7 @@ const int WM_NCUAHDRAWFRAME = 0xAF;
 // IsMsgHandled() from a member function to a define that checks if the weak
 // factory is still valid in addition to the member. Together these allow for
 // |this| to be deleted during dispatch.
-#define IsMsgHandled() !ref.get() || msg_handled_
+#define IsMsgHandled() !weak_factory_.GetWeakPtr().get() || msg_handled_
 
 #define BEGIN_SAFE_MSG_MAP_EX(the_class) \
  private: \
@@ -78,10 +78,12 @@ const int WM_NCUAHDRAWFRAME = 0xAF;
                             LPARAM l_param, \
                             LRESULT& l_result, \
                             DWORD msg_map_id = 0) { \
+    base::WeakPtr<HWNDMessageHandler> ref(weak_factory_.GetWeakPtr()); \
     BOOL old_msg_handled = msg_handled_; \
     BOOL ret = _ProcessWindowMessage(hwnd, msg, w_param, l_param, l_result, \
                                      msg_map_id); \
-    msg_handled_ = old_msg_handled; \
+    if (ref.get()) \
+      msg_handled_ = old_msg_handled; \
     return ret; \
   } \
   BOOL _ProcessWindowMessage(HWND hWnd, \
@@ -130,7 +132,10 @@ class VIEWS_EXPORT HWNDMessageHandler :
   void GetWindowPlacement(gfx::Rect* bounds,
                           ui::WindowShowState* show_state) const;
 
-  void SetBounds(const gfx::Rect& bounds_in_pixels);
+  // Sets the bounds of the HWND to |bounds_in_pixels|. If the HWND size is not
+  // changed, |force_size_changed| determines if we should pretend it is.
+  void SetBounds(const gfx::Rect& bounds_in_pixels, bool force_size_changed);
+
   void SetSize(const gfx::Size& size);
   void CenterWindow(const gfx::Size& size);
 
@@ -213,21 +218,31 @@ class VIEWS_EXPORT HWNDMessageHandler :
   // Overridden from WindowEventTarget
   virtual LRESULT HandleMouseMessage(unsigned int message,
                                      WPARAM w_param,
-                                     LPARAM l_param) OVERRIDE;
+                                     LPARAM l_param,
+                                     bool* handled) OVERRIDE;
   virtual LRESULT HandleKeyboardMessage(unsigned int message,
                                         WPARAM w_param,
-                                        LPARAM l_param) OVERRIDE;
+                                        LPARAM l_param,
+                                        bool* handled) OVERRIDE;
   virtual LRESULT HandleTouchMessage(unsigned int message,
                                      WPARAM w_param,
-                                     LPARAM l_param) OVERRIDE;
+                                     LPARAM l_param,
+                                     bool* handled) OVERRIDE;
 
   virtual LRESULT HandleScrollMessage(unsigned int message,
                                       WPARAM w_param,
-                                      LPARAM l_param) OVERRIDE;
+                                      LPARAM l_param,
+                                      bool* handled) OVERRIDE;
 
   virtual LRESULT HandleNcHitTestMessage(unsigned int message,
                                          WPARAM w_param,
-                                         LPARAM l_param) OVERRIDE;
+                                         LPARAM l_param,
+                                         bool* handled) OVERRIDE;
+
+  virtual LRESULT HandleSysCommand(unsigned int message,
+                                   WPARAM w_param,
+                                   LPARAM l_param,
+                                   bool* handled);
 
   // Returns the auto-hide edges of the appbar. See
   // ViewsDelegate::GetAppbarAutohideEdges() for details. If the edges change,

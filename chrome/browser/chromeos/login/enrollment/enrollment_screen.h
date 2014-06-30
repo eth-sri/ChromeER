@@ -9,6 +9,7 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/gtest_prod_util.h"
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/chromeos/login/enrollment/enrollment_screen_actor.h"
 #include "chrome/browser/chromeos/login/screens/wizard_screen.h"
@@ -52,6 +53,8 @@ class EnrollmentScreen
   }
 
  private:
+  FRIEND_TEST_ALL_PREFIXES(EnrollmentScreenTest, TestSuccess);
+
   // Starts the Lockbox storage process.
   void WriteInstallAttributesData();
 
@@ -61,6 +64,10 @@ class EnrollmentScreen
   // Handles enrollment completion. Logs a UMA sample and requests the actor to
   // show the specified enrollment status.
   void ReportEnrollmentStatus(policy::EnrollmentStatus status);
+
+  // Shows successful enrollment status after all enrollment related file
+  // operations are completed.
+  void ShowEnrollmentStatusOnSuccess(const policy::EnrollmentStatus& status);
 
   // Logs a UMA event in the kMetricEnrollment histogram. If auto-enrollment is
   // on |sample| is ignored and a kMetricEnrollmentAutoFailed sample is logged

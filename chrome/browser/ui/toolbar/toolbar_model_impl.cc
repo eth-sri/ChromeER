@@ -9,9 +9,8 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier_factory.h"
-#include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
-#include "chrome/browser/google/google_util.h"
+#include "chrome/browser/autocomplete/chrome_autocomplete_scheme_classifier.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search/search.h"
 #include "chrome/browser/ssl/ssl_error_info.h"
@@ -20,6 +19,8 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/autocomplete/autocomplete_input.h"
+#include "components/google/core/browser/google_util.h"
 #include "content/public/browser/cert_store.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
@@ -95,19 +96,6 @@ ToolbarModel::SecurityLevel ToolbarModelImpl::GetSecurityLevelForWebContents(
   }
 }
 
-// static
-base::string16 ToolbarModelImpl::GetEVCertName(
-    const net::X509Certificate& cert) {
-  // EV are required to have an organization name and country.
-  DCHECK(!cert.subject().organization_names.empty());
-  DCHECK(!cert.subject().country_name.empty());
-
-  return l10n_util::GetStringFUTF16(
-      IDS_SECURE_CONNECTION_EV,
-      base::UTF8ToUTF16(cert.subject().organization_names[0]),
-      base::UTF8ToUTF16(cert.subject().country_name));
-}
-
 // ToolbarModelImpl Implementation.
 base::string16 ToolbarModelImpl::GetText() const {
   base::string16 search_terms(GetSearchTerms(false));
@@ -117,10 +105,10 @@ base::string16 ToolbarModelImpl::GetText() const {
   if (WouldOmitURLDueToOriginChip())
     return base::string16();
 
-  return GetFormattedURL();
+  return GetFormattedURL(NULL);
 }
 
-base::string16 ToolbarModelImpl::GetFormattedURL() const {
+base::string16 ToolbarModelImpl::GetFormattedURL(size_t* prefix_end) const {
   std::string languages;  // Empty if we don't have a |navigation_controller|.
   Profile* profile = GetProfile();
   if (profile)
@@ -134,7 +122,8 @@ base::string16 ToolbarModelImpl::GetFormattedURL() const {
   // the space.
   return AutocompleteInput::FormattedStringWithEquivalentMeaning(
       url, net::FormatUrl(url, languages, net::kFormatUrlOmitAll,
-                          net::UnescapeRule::NORMAL, NULL, NULL, NULL));
+                          net::UnescapeRule::NORMAL, NULL, prefix_end, NULL),
+      ChromeAutocompleteSchemeClassifier(profile));
 }
 
 base::string16 ToolbarModelImpl::GetCorpusNameForMobile() const {
@@ -165,7 +154,7 @@ GURL ToolbarModelImpl::GetURL() const {
       return ShouldDisplayURL() ? entry->GetVirtualURL() : GURL();
   }
 
-  return GURL(content::kAboutBlankURL);
+  return GURL(url::kAboutBlankURL);
 }
 
 bool ToolbarModelImpl::WouldPerformSearchTermReplacement(
@@ -186,14 +175,9 @@ int ToolbarModelImpl::GetIcon() const {
     // button nor origin chip are present to indicate the security state.
     return (chrome::GetDisplaySearchButtonConditions() ==
         chrome::DISPLAY_SEARCH_BUTTON_NEVER) &&
-        !chrome::ShouldDisplayOriginChipV2() ?
+        !chrome::ShouldDisplayOriginChip() ?
             IDR_OMNIBOX_SEARCH_SECURED : IDR_OMNIBOX_SEARCH;
   }
-
-  // When the original site chip experiment is running, the icon in the location
-  // bar, when not the search icon, should be the page icon.
-  if (chrome::ShouldDisplayOriginChip())
-    return GetIconForSecurityLevel(NONE);
 
   return GetIconForSecurityLevel(GetSecurityLevel(false));
 }
@@ -212,13 +196,22 @@ int ToolbarModelImpl::GetIconForSecurityLevel(SecurityLevel level) const {
 }
 
 base::string16 ToolbarModelImpl::GetEVCertName() const {
-  DCHECK_EQ(EV_SECURE, GetSecurityLevel(false));
-  scoped_refptr<net::X509Certificate> cert;
+  if (GetSecurityLevel(false) != EV_SECURE)
+    return base::string16();
+
   // Note: Navigation controller and active entry are guaranteed non-NULL or
   // the security level would be NONE.
+  scoped_refptr<net::X509Certificate> cert;
   content::CertStore::GetInstance()->RetrieveCert(
       GetNavigationController()->GetVisibleEntry()->GetSSL().cert_id, &cert);
-  return GetEVCertName(*cert.get());
+
+  // EV are required to have an organization name and country.
+  DCHECK(!cert->subject().organization_names.empty());
+  DCHECK(!cert->subject().country_name.empty());
+  return l10n_util::GetStringFUTF16(
+      IDS_SECURE_CONNECTION_EV,
+      base::UTF8ToUTF16(cert->subject().organization_names[0]),
+      base::UTF8ToUTF16(cert->subject().country_name));
 }
 
 bool ToolbarModelImpl::ShouldDisplayURL() const {
@@ -285,10 +278,10 @@ bool ToolbarModelImpl::WouldOmitURLDueToOriginChip() const {
   if (chrome::ShouldDisplayOriginChip())
     return true;
 
-  const chrome::OriginChipV2Condition chip_condition =
-      chrome::GetOriginChipV2Condition();
-  return (chip_condition != chrome::ORIGIN_CHIP_V2_DISABLED) &&
-      ((chip_condition != chrome::ORIGIN_CHIP_V2_ON_SRP) ||
+  const chrome::OriginChipCondition chip_condition =
+      chrome::GetOriginChipCondition();
+  return (chip_condition == chrome::ORIGIN_CHIP_ALWAYS) ||
+      ((chip_condition == chrome::ORIGIN_CHIP_ON_SRP) &&
        WouldPerformSearchTermReplacement(false));
 }
 

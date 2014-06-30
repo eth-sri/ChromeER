@@ -54,6 +54,7 @@
 #include "content/browser/streams/stream_registry.h"
 #include "content/browser/worker_host/worker_service_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
+#include "content/common/appcache_interfaces.h"
 #include "content/common/resource_messages.h"
 #include "content/common/resource_request_body.h"
 #include "content/common/ssl_status_serialization.h"
@@ -70,7 +71,6 @@
 #include "content/public/browser/user_metrics.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/process_type.h"
-#include "content/public/common/url_constants.h"
 #include "ipc/ipc_message_macros.h"
 #include "ipc/ipc_message_start.h"
 #include "net/base/auth.h"
@@ -88,13 +88,13 @@
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_job_factory.h"
+#include "url/url_constants.h"
 #include "webkit/common/blob/blob_data.h"
 #include "webkit/browser/blob/blob_data_handle.h"
 #include "webkit/browser/blob/blob_storage_context.h"
 #include "webkit/browser/blob/blob_url_request_job_factory.h"
 #include "webkit/browser/fileapi/file_permission_policy.h"
 #include "webkit/browser/fileapi/file_system_context.h"
-#include "webkit/common/appcache/appcache_interfaces.h"
 #include "webkit/common/blob/shareable_file_reference.h"
 
 using base::Time;
@@ -310,6 +310,13 @@ bool IsValidatedSCT(
   return sct_status.status == net::ct::SCT_STATUS_OK;
 }
 
+webkit_blob::BlobStorageContext* GetBlobStorageContext(
+    ResourceMessageFilter* filter) {
+  if (!filter->blob_storage_context())
+    return NULL;
+  return filter->blob_storage_context()->context();
+}
+
 }  // namespace
 
 // static
@@ -378,6 +385,17 @@ void ResourceDispatcherHostImpl::RemoveResourceContext(
     ResourceContext* context) {
   CHECK(ContainsKey(active_resource_contexts_, context));
   active_resource_contexts_.erase(context);
+}
+
+void ResourceDispatcherHostImpl::ResumeResponseDeferredAtStart(
+    const GlobalRequestID& id) {
+  ResourceLoader* loader = GetLoader(id);
+  if (loader) {
+    // The response we were meant to resume could have already been canceled.
+    ResourceRequestInfoImpl* info = loader->GetRequestInfo();
+    if (info->cross_site_handler())
+      info->cross_site_handler()->ResumeResponseDeferredAtStart(id.request_id);
+  }
 }
 
 void ResourceDispatcherHostImpl::CancelRequestsForContext(
@@ -533,7 +551,7 @@ DownloadInterruptReason ResourceDispatcherHostImpl::BeginDownload(
       CreateRequestInfo(child_id, route_id, true, context);
   extra_info->AssociateWithRequest(request.get());  // Request takes ownership.
 
-  if (request->url().SchemeIs(kBlobScheme)) {
+  if (request->url().SchemeIs(url::kBlobScheme)) {
     ChromeBlobStorageContext* blob_context =
         GetChromeBlobStorageContextForResourceContext(context);
     webkit_blob::BlobProtocolHandler::SetRequestedBlobDataHandle(
@@ -601,18 +619,17 @@ ResourceDispatcherHostImpl::CreateResourceHandlerForDownload(
 
 scoped_ptr<ResourceHandler>
 ResourceDispatcherHostImpl::MaybeInterceptAsStream(net::URLRequest* request,
-                                                   ResourceResponse* response) {
+                                                   ResourceResponse* response,
+                                                   std::string* payload) {
   ResourceRequestInfoImpl* info = ResourceRequestInfoImpl::ForRequest(request);
   const std::string& mime_type = response->head.mime_type;
 
   GURL origin;
-  std::string target_id;
   if (!delegate_ ||
-      !delegate_->ShouldInterceptResourceAsStream(info->GetContext(),
-                                                  request->url(),
+      !delegate_->ShouldInterceptResourceAsStream(request,
                                                   mime_type,
                                                   &origin,
-                                                  &target_id)) {
+                                                  payload)) {
     return scoped_ptr<ResourceHandler>();
   }
 
@@ -626,15 +643,11 @@ ResourceDispatcherHostImpl::MaybeInterceptAsStream(net::URLRequest* request,
 
   info->set_is_stream(true);
   delegate_->OnStreamCreated(
-      info->GetContext(),
-      info->GetChildID(),
-      info->GetRouteID(),
-      target_id,
+      request,
       handler->stream()->CreateHandle(
           request->url(),
           mime_type,
-          response->head.headers),
-      request->GetExpectedContentSize());
+          response->head.headers));
   return handler.PassAs<ResourceHandler>();
 }
 
@@ -1050,12 +1063,9 @@ void ResourceDispatcherHostImpl::BeginRequest(
 
   // Resolve elements from request_body and prepare upload data.
   if (request_data.request_body.get()) {
-    webkit_blob::BlobStorageContext* blob_context = NULL;
-    if (filter_->blob_storage_context())
-      blob_context = filter_->blob_storage_context()->context();
     new_request->set_upload(UploadDataStreamBuilder::Build(
         request_data.request_body.get(),
-        blob_context,
+        GetBlobStorageContext(filter_),
         filter_->file_system_context(),
         BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE)
             .get()));
@@ -1091,7 +1101,7 @@ void ResourceDispatcherHostImpl::BeginRequest(
   // Request takes ownership.
   extra_info->AssociateWithRequest(new_request.get());
 
-  if (new_request->url().SchemeIs(kBlobScheme)) {
+  if (new_request->url().SchemeIs(url::kBlobScheme)) {
     // Hang on to a reference to ensure the blob is not released prior
     // to the job being started.
     webkit_blob::BlobProtocolHandler::SetRequestedBlobDataHandle(
@@ -1104,6 +1114,7 @@ void ResourceDispatcherHostImpl::BeginRequest(
   ServiceWorkerRequestHandler::InitializeHandler(
       new_request.get(),
       filter_->service_worker_context(),
+      GetBlobStorageContext(filter_),
       child_id,
       request_data.service_worker_provider_id,
       request_data.resource_type);
@@ -1338,11 +1349,6 @@ void ResourceDispatcherHostImpl::BeginSaveFile(
   base::debug::Alias(url_buf);
   CHECK(ContainsKey(active_resource_contexts_, context));
 
-  scoped_ptr<ResourceHandler> handler(
-      new SaveFileResourceHandler(child_id,
-                                  route_id,
-                                  url,
-                                  save_file_manager_.get()));
   request_id_--;
 
   const net::URLRequestContext* request_context = context->GetRequestContext();
@@ -1374,6 +1380,13 @@ void ResourceDispatcherHostImpl::BeginSaveFile(
   ResourceRequestInfoImpl* extra_info =
       CreateRequestInfo(child_id, route_id, false, context);
   extra_info->AssociateWithRequest(request.get());  // Request takes ownership.
+
+  scoped_ptr<ResourceHandler> handler(
+      new SaveFileResourceHandler(request.get(),
+                                  child_id,
+                                  route_id,
+                                  url,
+                                  save_file_manager_.get()));
 
   BeginRequestInternal(request.Pass(), handler.Pass());
 }
@@ -1643,8 +1656,7 @@ void ResourceDispatcherHostImpl::BeginRequestInternal(
     request->CancelWithError(net::ERR_INSUFFICIENT_RESOURCES);
 
     bool defer = false;
-    handler->OnResponseCompleted(info->GetRequestID(), request->status(),
-                                 std::string(), &defer);
+    handler->OnResponseCompleted(request->status(), std::string(), &defer);
     if (defer) {
       // TODO(darin): The handler is not ready for us to kill the request. Oops!
       NOTREACHED();

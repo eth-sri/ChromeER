@@ -15,7 +15,9 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "content/public/test/browser_test_utils.h"
 #include "extensions/common/feature_switch.h"
+#include "extensions/common/switches.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -31,15 +33,13 @@ const char kBackgroundScriptSource[] =
     "var listener = function(tabId) {\n"
     "  chrome.tabs.onUpdated.removeListener(listener);\n"
     "  chrome.tabs.executeScript(tabId, {\n"
-    "    code: \"chrome.test.sendMessage('inject succeeded');\"\n"
+    "    code: \"chrome.test.sendMessage('inject succeeded');\",\n"
     "  });"
-    "  chrome.test.sendMessage('inject attempted');\n"
     "};\n"
     "chrome.tabs.onUpdated.addListener(listener);";
 const char kContentScriptSource[] =
     "chrome.test.sendMessage('inject succeeded');";
 
-const char kInjectAttempted[] = "inject attempted";
 const char kInjectSucceeded[] = "inject succeeded";
 
 enum InjectionType {
@@ -57,34 +57,50 @@ enum RequiresConsent {
   DOES_NOT_REQUIRE_CONSENT
 };
 
+// Runs all pending tasks in the renderer associated with |web_contents|.
+// Returns true on success.
+bool RunAllPendingInRenderer(content::WebContents* web_contents) {
+  // This is slight hack to achieve a RunPendingInRenderer() method. Since IPCs
+  // are sent synchronously, anything started prior to this method will finish
+  // before this method returns (as content::ExecuteScript() is synchronous).
+  return content::ExecuteScript(web_contents, "1 == 1;");
+}
+
 }  // namespace
 
 class ActiveScriptControllerBrowserTest : public ExtensionBrowserTest {
  public:
-  ActiveScriptControllerBrowserTest()
-      : feature_override_(FeatureSwitch::scripts_require_action(),
-                          FeatureSwitch::OVERRIDE_ENABLED) {}
+  ActiveScriptControllerBrowserTest() {}
 
+  virtual void SetUpCommandLine(base::CommandLine* command_line) OVERRIDE;
   virtual void CleanUpOnMainThread() OVERRIDE;
 
   // Returns an extension with the given |host_type| and |injection_type|. If
   // one already exists, the existing extension will be returned. Othewrwise,
   // one will be created.
   // This could potentially return NULL if LoadExtension() fails.
-  const Extension* GetOrCreateExtension(HostType host_type,
-                                        InjectionType injection_type);
+  const Extension* CreateExtension(HostType host_type,
+                                   InjectionType injection_type);
 
  private:
-  FeatureSwitch::ScopedOverride feature_override_;
   ScopedVector<TestExtensionDir> test_extension_dirs_;
   std::vector<const Extension*> extensions_;
 };
+
+void ActiveScriptControllerBrowserTest::SetUpCommandLine(
+    base::CommandLine* command_line) {
+  ExtensionBrowserTest::SetUpCommandLine(command_line);
+  // We append the actual switch to the commandline because it needs to be
+  // passed over to the renderer, which a FeatureSwitch::ScopedOverride will
+  // not do.
+  command_line->AppendSwitch(switches::kEnableScriptsRequireAction);
+}
 
 void ActiveScriptControllerBrowserTest::CleanUpOnMainThread() {
   test_extension_dirs_.clear();
 }
 
-const Extension* ActiveScriptControllerBrowserTest::GetOrCreateExtension(
+const Extension* ActiveScriptControllerBrowserTest::CreateExtension(
     HostType host_type, InjectionType injection_type) {
   std::string name =
       base::StringPrintf(
@@ -92,13 +108,6 @@ const Extension* ActiveScriptControllerBrowserTest::GetOrCreateExtension(
           injection_type == CONTENT_SCRIPT ?
               "content_script" : "execute_script",
           host_type == ALL_HOSTS ? "all_hosts" : "explicit_hosts");
-
-  for (std::vector<const Extension*>::const_iterator iter = extensions_.begin();
-       iter != extensions_.end();
-       ++iter) {
-    if ((*iter)->name() == name)
-      return *iter;
-  }
 
   const char* permission_scheme =
       host_type == ALL_HOSTS ? kAllHostsScheme : kExplicitHostsScheme;
@@ -190,10 +199,6 @@ class ActiveScriptTester {
   // All of these extensions should inject a script (either through content
   // scripts or through chrome.tabs.executeScript()) that sends a message with
   // the |kInjectSucceeded| message.
-  linked_ptr<ExtensionTestMessageListener> inject_attempt_listener_;
-
-  // After trying to inject the script, extensions sending the script via
-  // chrome.tabs.executeScript() send a |kInjectAttempted| message.
   linked_ptr<ExtensionTestMessageListener> inject_success_listener_;
 };
 
@@ -207,13 +212,9 @@ ActiveScriptTester::ActiveScriptTester(const std::string& name,
       browser_(browser),
       requires_consent_(requires_consent),
       type_(type),
-      inject_attempt_listener_(
-          new ExtensionTestMessageListener(kInjectAttempted,
-                                           false /* won't reply */)),
       inject_success_listener_(
           new ExtensionTestMessageListener(kInjectSucceeded,
                                            false /* won't reply */)) {
-  inject_attempt_listener_->set_extension_id(extension->id());
   inject_success_listener_->set_extension_id(extension->id());
 }
 
@@ -224,13 +225,14 @@ testing::AssertionResult ActiveScriptTester::Verify() {
   if (!extension_)
     return testing::AssertionFailure() << "Could not load extension: " << name_;
 
-  // If it's not a content script, the Extension lets us know when it has
-  // attempted to inject the script.
-  // This means there is a potential for a race condition with content scripts;
-  // however, since they are all injected at document_start, this shouldn't be
-  // a problem. If these tests start failing, though, that might be it.
-  if (type_ == EXECUTE_SCRIPT)
-    inject_attempt_listener_->WaitUntilSatisfied();
+  content::WebContents* web_contents =
+      browser_ ? browser_->tab_strip_model()->GetActiveWebContents() : NULL;
+  if (!web_contents)
+    return testing::AssertionFailure() << "No web contents.";
+
+  // Give the extension plenty of time to inject.
+  if (!RunAllPendingInRenderer(web_contents))
+    return testing::AssertionFailure() << "Could not run pending in renderer.";
 
   // Make sure all running tasks are complete.
   content::RunAllPendingInMessageLoop();
@@ -266,10 +268,7 @@ testing::AssertionResult ActiveScriptTester::Verify() {
 
   // Otherwise, we don't have permission, and have to grant it. Ensure the
   // script has *not* already executed.
-  // Currently, it's okay for content scripts to execute, because we don't
-  // block them.
-  // TODO(rdevlin.cronin): Fix this.
-  if (inject_success_listener_->was_satisfied() && type_ != CONTENT_SCRIPT) {
+  if (inject_success_listener_->was_satisfied()) {
     return testing::AssertionFailure() <<
         name_ << "'s script ran without permission.";
   }
@@ -316,7 +315,7 @@ ExtensionAction* ActiveScriptTester::GetAction() {
 }
 
 IN_PROC_BROWSER_TEST_F(ActiveScriptControllerBrowserTest,
-                       ActiveScriptsAreDisplayed) {
+                       ActiveScriptsAreDisplayedAndDelayExecution) {
   base::FilePath active_script_path =
       test_data_dir_.AppendASCII("active_script");
 
@@ -337,33 +336,120 @@ IN_PROC_BROWSER_TEST_F(ActiveScriptControllerBrowserTest,
   ActiveScriptTester testers[] = {
       ActiveScriptTester(
           kExtensionNames[0],
-          GetOrCreateExtension(ALL_HOSTS, EXECUTE_SCRIPT),
+          CreateExtension(ALL_HOSTS, EXECUTE_SCRIPT),
           browser(),
           REQUIRES_CONSENT,
           EXECUTE_SCRIPT),
       ActiveScriptTester(
           kExtensionNames[1],
-          GetOrCreateExtension(EXPLICIT_HOSTS, EXECUTE_SCRIPT),
+          CreateExtension(EXPLICIT_HOSTS, EXECUTE_SCRIPT),
           browser(),
           DOES_NOT_REQUIRE_CONSENT,
           EXECUTE_SCRIPT),
       ActiveScriptTester(
           kExtensionNames[2],
-          GetOrCreateExtension(ALL_HOSTS, CONTENT_SCRIPT),
+          CreateExtension(ALL_HOSTS, CONTENT_SCRIPT),
           browser(),
           REQUIRES_CONSENT,
           CONTENT_SCRIPT),
       ActiveScriptTester(
           kExtensionNames[3],
-          GetOrCreateExtension(EXPLICIT_HOSTS, CONTENT_SCRIPT),
+          CreateExtension(EXPLICIT_HOSTS, CONTENT_SCRIPT),
           browser(),
           DOES_NOT_REQUIRE_CONSENT,
           CONTENT_SCRIPT),
   };
 
   // Navigate to an URL (which matches the explicit host specified in the
-  // extension content_scripts_explicit_hosts). All three extensions should
+  // extension content_scripts_explicit_hosts). All four extensions should
   // inject the script.
+  ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
+  ui_test_utils::NavigateToURL(
+      browser(), embedded_test_server()->GetURL("/extensions/test_file.html"));
+
+  for (size_t i = 0u; i < arraysize(testers); ++i)
+    EXPECT_TRUE(testers[i].Verify()) << kExtensionNames[i];
+}
+
+// Test that removing an extension with pending injections a) removes the
+// pending injections for that extension, and b) does not affect pending
+// injections for other extensions.
+IN_PROC_BROWSER_TEST_F(ActiveScriptControllerBrowserTest,
+                       RemoveExtensionWithPendingInjections) {
+  // Load up two extensions, each with content scripts.
+  const Extension* extension1 = CreateExtension(ALL_HOSTS, CONTENT_SCRIPT);
+  ASSERT_TRUE(extension1);
+  const Extension* extension2 = CreateExtension(ALL_HOSTS, CONTENT_SCRIPT);
+  ASSERT_TRUE(extension2);
+
+  ASSERT_NE(extension1->id(), extension2->id());
+
+  content::WebContents* web_contents =
+      browser()->tab_strip_model()->GetActiveWebContents();
+  ASSERT_TRUE(web_contents);
+  ActiveScriptController* active_script_controller =
+      ActiveScriptController::GetForWebContents(web_contents);
+  ASSERT_TRUE(active_script_controller);
+
+  ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
+  ui_test_utils::NavigateToURL(
+      browser(), embedded_test_server()->GetURL("/extensions/test_file.html"));
+
+  // Both extensions should have pending requests.
+  EXPECT_TRUE(active_script_controller->GetActionForExtension(extension1));
+  EXPECT_TRUE(active_script_controller->GetActionForExtension(extension2));
+
+  // Unload one of the extensions.
+  UnloadExtension(extension2->id());
+
+  EXPECT_TRUE(RunAllPendingInRenderer(web_contents));
+
+  // We should have pending requests for extension1, but not the removed
+  // extension2.
+  EXPECT_TRUE(active_script_controller->GetActionForExtension(extension1));
+  EXPECT_FALSE(active_script_controller->GetActionForExtension(extension2));
+
+  // We should still be able to run the request for extension1.
+  ExtensionTestMessageListener inject_success_listener(
+      new ExtensionTestMessageListener(kInjectSucceeded,
+                                       false /* won't reply */));
+  inject_success_listener.set_extension_id(extension1->id());
+  active_script_controller->OnClicked(extension1);
+  inject_success_listener.WaitUntilSatisfied();
+}
+
+// A version of the test with the flag off, in order to test that everything
+// still works as expected.
+class FlagOffActiveScriptControllerBrowserTest
+    : public ActiveScriptControllerBrowserTest {
+ private:
+  // Simply don't append the flag.
+  virtual void SetUpCommandLine(base::CommandLine* command_line) OVERRIDE {
+    ExtensionBrowserTest::SetUpCommandLine(command_line);
+  }
+};
+
+IN_PROC_BROWSER_TEST_F(FlagOffActiveScriptControllerBrowserTest,
+                       ScriptsExecuteWhenFlagAbsent) {
+  const char* kExtensionNames[] = {
+    "content_scripts_all_hosts",
+    "inject_scripts_all_hosts",
+  };
+  ActiveScriptTester testers[] = {
+    ActiveScriptTester(
+          kExtensionNames[0],
+          CreateExtension(ALL_HOSTS, CONTENT_SCRIPT),
+          browser(),
+          DOES_NOT_REQUIRE_CONSENT,
+          CONTENT_SCRIPT),
+      ActiveScriptTester(
+          kExtensionNames[1],
+          CreateExtension(ALL_HOSTS, EXECUTE_SCRIPT),
+          browser(),
+          DOES_NOT_REQUIRE_CONSENT,
+          EXECUTE_SCRIPT),
+  };
+
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
   ui_test_utils::NavigateToURL(
       browser(), embedded_test_server()->GetURL("/extensions/test_file.html"));

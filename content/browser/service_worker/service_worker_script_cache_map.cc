@@ -5,14 +5,18 @@
 #include "content/browser/service_worker/service_worker_script_cache_map.h"
 
 #include "base/logging.h"
+#include "content/browser/service_worker/service_worker_context_core.h"
+#include "content/browser/service_worker/service_worker_storage.h"
 #include "content/browser/service_worker/service_worker_version.h"
 #include "content/common/service_worker/service_worker_types.h"
 
 namespace content {
 
 ServiceWorkerScriptCacheMap::ServiceWorkerScriptCacheMap(
-    ServiceWorkerVersion* owner)
+    ServiceWorkerVersion* owner,
+    base::WeakPtr<ServiceWorkerContextCore> context)
     : owner_(owner),
+      context_(context),
       has_error_(false) {
 }
 
@@ -31,7 +35,7 @@ void ServiceWorkerScriptCacheMap::NotifyStartedCaching(
   DCHECK_EQ(kInvalidServiceWorkerResponseId, Lookup(url));
   DCHECK(owner_->status() == ServiceWorkerVersion::NEW);
   resource_ids_[url] = resource_id;
-  // TODO(michaeln): Add resource id to the uncommitted list.
+  context_->storage()->StoreUncommittedReponseId(resource_id);
 }
 
 void ServiceWorkerScriptCacheMap::NotifyFinishedCaching(
@@ -39,9 +43,9 @@ void ServiceWorkerScriptCacheMap::NotifyFinishedCaching(
   DCHECK_NE(kInvalidServiceWorkerResponseId, Lookup(url));
   DCHECK(owner_->status() == ServiceWorkerVersion::NEW);
   if (!success) {
+    context_->storage()->DoomUncommittedResponse(Lookup(url));
     has_error_ = true;
     resource_ids_.erase(url);
-    // TODO(michaeln): Doom the resource id.
   }
 }
 
@@ -50,8 +54,8 @@ void ServiceWorkerScriptCacheMap::GetResources(
   DCHECK(resources->empty());
   for (ResourceIDMap::const_iterator it = resource_ids_.begin();
        it != resource_ids_.end(); ++it) {
-    ServiceWorkerDatabase::ResourceRecord record = { it->second, it->first };
-    resources->push_back(record);
+    resources->push_back(
+        ServiceWorkerDatabase::ResourceRecord(it->second, it->first));
   }
 }
 

@@ -290,8 +290,32 @@ class SourceBufferStreamTest : public testing::Test {
         break;
 
       ss << buffer->GetDecodeTimestamp().InMilliseconds();
-      if (buffer->IsKeyframe())
+
+      // Handle preroll buffers.
+      if (EndsWith(timestamps[i], "P", true)) {
+        ASSERT_TRUE(buffer->IsKeyframe());
+        scoped_refptr<StreamParserBuffer> preroll_buffer;
+        preroll_buffer.swap(buffer);
+
+        // When a preroll buffer is encountered we should be able to request one
+        // more buffer.  The first buffer should match the timestamp and config
+        // of the second buffer, except that its discard_padding() should be its
+        // duration.
+        ASSERT_EQ(SourceBufferStream::kSuccess,
+                  stream_->GetNextBuffer(&buffer));
+        ASSERT_EQ(buffer->GetConfigId(), preroll_buffer->GetConfigId());
+        ASSERT_EQ(buffer->track_id(), preroll_buffer->track_id());
+        ASSERT_EQ(buffer->timestamp(), preroll_buffer->timestamp());
+        ASSERT_EQ(buffer->GetDecodeTimestamp(),
+                  preroll_buffer->GetDecodeTimestamp());
+        ASSERT_EQ(kInfiniteDuration(), preroll_buffer->discard_padding().first);
+        ASSERT_EQ(base::TimeDelta(), preroll_buffer->discard_padding().second);
+        ASSERT_TRUE(buffer->IsKeyframe());
+
+        ss << "P";
+      } else if (buffer->IsKeyframe()) {
         ss << "K";
+      }
 
       // Until the last splice frame is seen, indicated by a matching timestamp,
       // all buffers must have the same splice_timestamp().
@@ -419,6 +443,7 @@ class SourceBufferStreamTest : public testing::Test {
     BufferQueue buffers;
     for (size_t i = 0; i < timestamps.size(); i++) {
       bool is_keyframe = false;
+      bool has_preroll = false;
       bool last_splice_frame = false;
       // Handle splice frame starts.
       if (StartsWithASCII(timestamps[i], "S(", true)) {
@@ -446,6 +471,13 @@ class SourceBufferStreamTest : public testing::Test {
         // Remove the "K" off of the token.
         timestamps[i] = timestamps[i].substr(0, timestamps[i].length() - 1);
       }
+      // Handle preroll buffers.
+      if (EndsWith(timestamps[i], "P", true)) {
+        is_keyframe = true;
+        has_preroll = true;
+        // Remove the "P" off of the token.
+        timestamps[i] = timestamps[i].substr(0, timestamps[i].length() - 1);
+      }
 
       int time_in_ms;
       CHECK(base::StringToInt(timestamps[i], &time_in_ms));
@@ -460,6 +492,16 @@ class SourceBufferStreamTest : public testing::Test {
       if (accurate_durations_)
         buffer->set_duration(frame_duration_);
       buffer->SetDecodeTimestamp(timestamp);
+
+      // Simulate preroll buffers by just generating another buffer and sticking
+      // it as the preroll.
+      if (has_preroll) {
+        scoped_refptr<StreamParserBuffer> preroll_buffer =
+            StreamParserBuffer::CopyFrom(
+                &kDataA, kDataSize, is_keyframe, DemuxerStream::AUDIO, 0);
+        preroll_buffer->set_duration(frame_duration_);
+        buffer->SetPrerollBuffer(preroll_buffer);
+      }
 
       if (splice_frame) {
         if (!pre_splice_buffers.empty()) {
@@ -3469,6 +3511,33 @@ TEST_F(SourceBufferStreamTest, Remove_GOPBeingAppended) {
   CheckExpectedBuffers("240K 270 300");
 }
 
+TEST_F(SourceBufferStreamTest, Remove_WholeGOPBeingAppended) {
+  Seek(0);
+  NewSegmentAppend("0K 30 60 90");
+  CheckExpectedRangesByTimestamp("{ [0,120) }");
+
+  // Remove the keyframe of the current GOP being appended.
+  RemoveInMs(0, 30, 120);
+  CheckExpectedRangesByTimestamp("{ }");
+
+  // Continue appending the current GOP.
+  AppendBuffers("210 240");
+
+  CheckExpectedRangesByTimestamp("{ }");
+
+  // Append the beginning of the next GOP.
+  AppendBuffers("270K 300");
+
+  // Verify that the new range is started at the
+  // beginning of the next GOP.
+  CheckExpectedRangesByTimestamp("{ [270,330) }");
+
+  // Verify the buffers in the ranges.
+  CheckNoNextBuffer();
+  SeekToTimestamp(base::TimeDelta::FromMilliseconds(270));
+  CheckExpectedBuffers("270K 300");
+}
+
 TEST_F(SourceBufferStreamTest,
        Remove_PreviousAppendDestroyedAndOverwriteExistingRange) {
   SeekToTimestamp(base::TimeDelta::FromMilliseconds(90));
@@ -3491,6 +3560,36 @@ TEST_F(SourceBufferStreamTest,
   // remove.
   NewSegmentAppend("90K 121 151");
   CheckExpectedBuffers("90K 121 151");
+}
+
+TEST_F(SourceBufferStreamTest, Remove_GapAtBeginningOfMediaSegment) {
+  Seek(0);
+
+  // Append a media segment that has a gap at the beginning of it.
+  NewSegmentAppend(base::TimeDelta::FromMilliseconds(0),
+                   "30K 60 90 120K 150");
+  CheckExpectedRangesByTimestamp("{ [0,180) }");
+
+  // Remove the gap that doesn't contain any buffers.
+  RemoveInMs(0, 10, 180);
+  CheckExpectedRangesByTimestamp("{ [10,180) }");
+
+  // Verify we still get the first buffer still since only part of
+  // the gap was removed.
+  // TODO(acolwell/wolenetz): Consider not returning a buffer at this
+  // point since the current seek position has been explicitly
+  // removed but didn't happen to remove any buffers.
+  // http://crbug.com/384016
+  CheckExpectedBuffers("30K");
+
+  // Remove a range that includes the first GOP.
+  RemoveInMs(0, 60, 180);
+
+  // Verify that no buffer is returned because the current buffer
+  // position has been removed.
+  CheckNoNextBuffer();
+
+  CheckExpectedRangesByTimestamp("{ [120,180) }");
 }
 
 TEST_F(SourceBufferStreamTest, Text_Append_SingleRange) {
@@ -3746,6 +3845,22 @@ TEST_F(SourceBufferStreamTest, Audio_SpliceFrame_NoTinySplices) {
   NewSegmentAppend("1K");
   CheckExpectedRangesByTimestamp("{ [0,3) }");
   CheckExpectedBuffers("0K 1K");
+  CheckNoNextBuffer();
+}
+
+TEST_F(SourceBufferStreamTest, Audio_SpliceFrame_Preroll) {
+  SetAudioStream();
+  Seek(0);
+  NewSegmentAppend("0K 2K 4K 6K 8K 10K 12K");
+  NewSegmentAppend("11P 13K 15K 17K");
+  CheckExpectedBuffers("0K 2K 4K 6K 8K 10K 12K C 11P 13K 15K 17K");
+  CheckNoNextBuffer();
+}
+
+TEST_F(SourceBufferStreamTest, Audio_PrerollFrame) {
+  Seek(0);
+  NewSegmentAppend("0K 3P 6K");
+  CheckExpectedBuffers("0K 3P 6K");
   CheckNoNextBuffer();
 }
 

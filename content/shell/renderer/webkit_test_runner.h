@@ -22,6 +22,7 @@ class SkBitmap;
 class SkCanvas;
 
 namespace blink {
+class WebBatteryStatus;
 class WebDeviceMotionData;
 class WebDeviceOrientationData;
 struct WebRect;
@@ -54,11 +55,7 @@ class WebKitTestRunner : public RenderViewObserver,
   virtual void clearEditCommand() OVERRIDE;
   virtual void setEditCommand(const std::string& name,
                               const std::string& value) OVERRIDE;
-  virtual void setGamepadData(const blink::WebGamepads& gamepads) OVERRIDE;
-  virtual void didConnectGamepad(int index,
-                                const blink::WebGamepad& gamepad) OVERRIDE;
-  virtual void didDisconnectGamepad(int index,
-                                   const blink::WebGamepad& gamepad) OVERRIDE;
+  virtual void setGamepadProvider(RendererGamepadProvider*) OVERRIDE;
   virtual void setDeviceMotionData(
       const blink::WebDeviceMotionData& data) OVERRIDE;
   virtual void setDeviceOrientationData(
@@ -66,6 +63,8 @@ class WebKitTestRunner : public RenderViewObserver,
   virtual void setScreenOrientation(
       const blink::WebScreenOrientationType& orientation) OVERRIDE;
   virtual void resetScreenOrientation() OVERRIDE;
+  virtual void didChangeBatteryStatus(
+      const blink::WebBatteryStatus& status) OVERRIDE;
   virtual void printMessage(const std::string& message) OVERRIDE;
   virtual void postTask(WebTask* task) OVERRIDE;
   virtual void postDelayedTask(WebTask* task, long long ms) OVERRIDE;

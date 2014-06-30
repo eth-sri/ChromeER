@@ -75,9 +75,9 @@ def calc_inputs(locale):
                 'platform_locale_settings_%s.pak' % locale))
 
   #e.g. '<(SHARED_INTERMEDIATE_DIR)/components/strings/
-  # component_strings_da.pak',
+  # components_strings_da.pak',
   inputs.append(os.path.join(SHARE_INT_DIR, 'components', 'strings',
-                'component_strings_%s.pak' % locale))
+                'components_strings_%s.pak' % locale))
 
   if USE_ASH:
     #e.g. '<(SHARED_INTERMEDIATE_DIR)/ash/strings/ash_strings_da.pak',
@@ -114,6 +114,11 @@ def calc_inputs(locale):
     # libaddressinput_strings_da.pak',
     inputs.append(os.path.join(SHARE_INT_DIR, 'third_party', 'libaddressinput',
                                'libaddressinput_strings_%s.pak' % locale))
+
+    #e.g. '<(SHARED_INTERMEDIATE_DIR)/grit/libaddressinput/
+    # address_input_strings_da.pak',
+    inputs.append(os.path.join(SHARE_INT_DIR, 'grit', 'libaddressinput',
+                               'address_input_strings_%s.pak' % locale))
 
   #e.g. '<(grit_out_dir)/google_chrome_strings_da.pak'
   #     or

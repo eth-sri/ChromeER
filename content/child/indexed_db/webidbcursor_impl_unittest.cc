@@ -28,7 +28,7 @@ namespace {
 
 class MockDispatcher : public IndexedDBDispatcher {
  public:
-  MockDispatcher(ThreadSafeSender* thread_safe_sender)
+  explicit MockDispatcher(ThreadSafeSender* thread_safe_sender)
       : IndexedDBDispatcher(thread_safe_sender),
         prefetch_calls_(0),
         last_prefetch_count_(0),
@@ -103,7 +103,6 @@ class MockContinueCallbacks : public WebIDBCallbacks {
                          const WebIDBKey& primaryKey,
                          const WebData& value,
                          const WebVector<WebBlobInfo>& webBlobInfo) OVERRIDE {
-
     if (key_)
       *key_ = IndexedDBKeyBuilder::Build(key);
     if (webBlobInfo_)
@@ -139,8 +138,13 @@ class WebIDBCursorImplTest : public testing::Test {
   DISALLOW_COPY_AND_ASSIGN(WebIDBCursorImplTest);
 };
 
-TEST_F(WebIDBCursorImplTest, PrefetchTest) {
-
+// Fails under Linux ASAN: crbug.com/389647
+#if defined(OS_LINUX)
+#define MAYBE_PrefetchTest DISABLED_PrefetchTest
+#else
+#define MAYBE_PrefetchTest PrefetchTest
+#endif
+TEST_F(WebIDBCursorImplTest, MAYBE_PrefetchTest) {
   const int64 transaction_id = 1;
   {
     WebIDBCursorImpl cursor(WebIDBCursorImpl::kInvalidCursorId,
@@ -164,7 +168,6 @@ TEST_F(WebIDBCursorImplTest, PrefetchTest) {
     int last_prefetch_count = 0;
     for (int repetitions = 0; repetitions < kPrefetchRepetitions;
          ++repetitions) {
-
       // Initiate the prefetch
       cursor.continueFunction(null_key_, new MockContinueCallbacks());
       EXPECT_EQ(continue_calls, dispatcher_->continue_calls());
@@ -211,8 +214,13 @@ TEST_F(WebIDBCursorImplTest, PrefetchTest) {
             WebIDBCursorImpl::kInvalidCursorId);
 }
 
-TEST_F(WebIDBCursorImplTest, AdvancePrefetchTest) {
-
+// Fails under Linux ASAN: crbug.com/389647
+#if defined(OS_LINUX)
+#define MAYBE_AdvancePrefetchTest DISABLED_AdvancePrefetchTest
+#else
+#define MAYBE_AdvancePrefetchTest AdvancePrefetchTest
+#endif
+TEST_F(WebIDBCursorImplTest, MAYBE_AdvancePrefetchTest) {
   const int64 transaction_id = 1;
   WebIDBCursorImpl cursor(WebIDBCursorImpl::kInvalidCursorId,
                           transaction_id,

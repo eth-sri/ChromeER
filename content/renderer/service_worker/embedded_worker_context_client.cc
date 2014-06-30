@@ -7,6 +7,8 @@
 #include "base/lazy_instance.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/pickle.h"
+#include "base/strings/string16.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_local.h"
 #include "content/child/request_extra_data.h"
 #include "content/child/service_worker/service_worker_network_provider.h"
@@ -97,9 +99,6 @@ EmbeddedWorkerContextClient::EmbeddedWorkerContextClient(
 }
 
 EmbeddedWorkerContextClient::~EmbeddedWorkerContextClient() {
-  // g_worker_client_tls.Pointer()->Get() could be NULL if this gets
-  // deleted before workerContextStarted() is called.
-  g_worker_client_tls.Pointer()->Set(NULL);
 }
 
 bool EmbeddedWorkerContextClient::OnMessageReceived(
@@ -119,6 +118,10 @@ void EmbeddedWorkerContextClient::Send(IPC::Message* message) {
 
 blink::WebURL EmbeddedWorkerContextClient::scope() const {
   return service_worker_scope_;
+}
+
+void EmbeddedWorkerContextClient::didPauseAfterDownload() {
+  Send(new EmbeddedWorkerHostMsg_DidPauseAfterDownload(embedded_worker_id_));
 }
 
 void EmbeddedWorkerContextClient::getClients(
@@ -143,6 +146,8 @@ void EmbeddedWorkerContextClient::workerContextStarted(
   worker_task_runner_ = new WorkerThreadTaskRunner(
       WorkerTaskRunner::Instance()->CurrentWorkerId());
   DCHECK_NE(0, WorkerTaskRunner::Instance()->CurrentWorkerId());
+  // g_worker_client_tls.Pointer()->Get() could return NULL if this context
+  // gets deleted before workerContextStarted() is called.
   DCHECK(g_worker_client_tls.Pointer()->Get() == NULL);
   DCHECK(!script_context_);
   g_worker_client_tls.Pointer()->Set(this);
@@ -164,9 +169,15 @@ void EmbeddedWorkerContextClient::willDestroyWorkerContext() {
   // worker_task_runner_->RunsTasksOnCurrentThread() returns false
   // (while we're still on the worker thread).
   script_context_.reset();
+
+  // This also lets the message filter stop dispatching messages to
+  // this client.
+  g_worker_client_tls.Pointer()->Set(NULL);
 }
 
 void EmbeddedWorkerContextClient::workerContextDestroyed() {
+  DCHECK(g_worker_client_tls.Pointer()->Get() == NULL);
+
   // Now we should be able to free the WebEmbeddedWorker container on the
   // main thread.
   main_thread_proxy_->PostTask(
@@ -240,10 +251,18 @@ void EmbeddedWorkerContextClient::didHandleFetchEvent(
     int request_id,
     const blink::WebServiceWorkerResponse& web_response) {
   DCHECK(script_context_);
-  ServiceWorkerResponse response(web_response.statusCode(),
+  std::map<std::string, std::string> headers;
+  const blink::WebVector<blink::WebString>& header_keys =
+      web_response.getHeaderKeys();
+  for (size_t i = 0; i < header_keys.size(); ++i) {
+    const base::string16& key = header_keys[i];
+    headers[base::UTF16ToUTF8(key)] =
+        base::UTF16ToUTF8(web_response.getHeader(key));
+  }
+  ServiceWorkerResponse response(web_response.status(),
                                  web_response.statusText().utf8(),
-                                 web_response.method().utf8(),
-                                 std::map<std::string, std::string>());
+                                 headers,
+                                 web_response.blobUUID().utf8());
   script_context_->DidHandleFetchEvent(
       request_id, SERVICE_WORKER_FETCH_EVENT_RESULT_RESPONSE, response);
 }

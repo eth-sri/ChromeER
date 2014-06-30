@@ -13,6 +13,7 @@
 #include "content/browser/indexed_db/indexed_db_backing_store.h"
 #include "content/browser/indexed_db/indexed_db_database.h"
 #include "content/common/indexed_db/indexed_db_key_range.h"
+#include "third_party/WebKit/public/platform/WebIDBTypes.h"
 
 namespace content {
 
@@ -23,7 +24,7 @@ class CONTENT_EXPORT IndexedDBCursor
  public:
   IndexedDBCursor(scoped_ptr<IndexedDBBackingStore::Cursor> cursor,
                   indexed_db::CursorType cursor_type,
-                  IndexedDBDatabase::TaskType task_type,
+                  blink::WebIDBTaskType task_type,
                   IndexedDBTransaction* transaction);
 
   void Advance(uint32 count, scoped_refptr<IndexedDBCallbacks> callbacks);
@@ -59,7 +60,7 @@ class CONTENT_EXPORT IndexedDBCursor
 
   ~IndexedDBCursor();
 
-  IndexedDBDatabase::TaskType task_type_;
+  blink::WebIDBTaskType task_type_;
   indexed_db::CursorType cursor_type_;
   const scoped_refptr<IndexedDBTransaction> transaction_;
 
@@ -69,6 +70,8 @@ class CONTENT_EXPORT IndexedDBCursor
   scoped_ptr<IndexedDBBackingStore::Cursor> saved_cursor_;
 
   bool closed_;
+
+  DISALLOW_COPY_AND_ASSIGN(IndexedDBCursor);
 };
 
 }  // namespace content

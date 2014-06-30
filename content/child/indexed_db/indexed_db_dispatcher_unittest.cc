@@ -39,16 +39,22 @@ class MockCallbacks : public WebIDBCallbacks {
 
  private:
   bool error_seen_;
+
+  DISALLOW_COPY_AND_ASSIGN(MockCallbacks);
 };
 
 class MockDispatcher : public IndexedDBDispatcher {
  public:
-  MockDispatcher(ThreadSafeSender* sender) : IndexedDBDispatcher(sender) {}
+  explicit MockDispatcher(ThreadSafeSender* sender)
+      : IndexedDBDispatcher(sender) {}
 
   virtual bool Send(IPC::Message* msg) OVERRIDE {
     delete msg;
     return true;
   }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(MockDispatcher);
 };
 
 }  // namespace
@@ -87,7 +93,7 @@ TEST_F(IndexedDBDispatcherTest, ValueSizeTest) {
                                    value,
                                    web_blob_info,
                                    key,
-                                   WebIDBDatabase::AddOrUpdate,
+                                   blink::WebIDBPutModeAddOrUpdate,
                                    &callbacks,
                                    WebVector<long long>(),
                                    WebVector<WebVector<WebIDBKey> >());
@@ -116,7 +122,7 @@ TEST_F(IndexedDBDispatcherTest, KeyAndValueSizeTest) {
                                    value,
                                    web_blob_info,
                                    key,
-                                   WebIDBDatabase::AddOrUpdate,
+                                   blink::WebIDBPutModeAddOrUpdate,
                                    &callbacks,
                                    WebVector<long long>(),
                                    WebVector<WebVector<WebIDBKey> >());
@@ -128,7 +134,8 @@ namespace {
 
 class CursorCallbacks : public WebIDBCallbacks {
  public:
-  CursorCallbacks(scoped_ptr<WebIDBCursor>* cursor) : cursor_(cursor) {}
+  explicit CursorCallbacks(scoped_ptr<WebIDBCursor>* cursor)
+      : cursor_(cursor) {}
 
   virtual void onSuccess(const WebData&,
                          const WebVector<WebBlobInfo>&) OVERRIDE {}
@@ -142,6 +149,8 @@ class CursorCallbacks : public WebIDBCallbacks {
 
  private:
   scoped_ptr<WebIDBCursor>* cursor_;
+
+  DISALLOW_COPY_AND_ASSIGN(CursorCallbacks);
 };
 
 }  // namespace
@@ -151,7 +160,8 @@ TEST_F(IndexedDBDispatcherTest, CursorTransactionId) {
   const int64 transaction_id = 1234;
   const int64 object_store_id = 2;
   const int32 index_id = 3;
-  const WebIDBCursor::Direction direction = WebIDBCursor::Next;
+  const blink::WebIDBCursorDirection direction =
+      blink::WebIDBCursorDirectionNext;
   const bool key_only = false;
 
   MockDispatcher dispatcher(thread_safe_sender_.get());
@@ -169,7 +179,7 @@ TEST_F(IndexedDBDispatcherTest, CursorTransactionId) {
                                             IndexedDBKeyRange(),
                                             direction,
                                             key_only,
-                                            blink::WebIDBDatabase::NormalTask,
+                                            blink::WebIDBTaskTypeNormal,
                                             new CursorCallbacks(&cursor));
 
     // Verify that the transaction id was captured.
@@ -210,7 +220,7 @@ TEST_F(IndexedDBDispatcherTest, CursorTransactionId) {
                                             IndexedDBKeyRange(),
                                             direction,
                                             key_only,
-                                            blink::WebIDBDatabase::NormalTask,
+                                            blink::WebIDBTaskTypeNormal,
                                             new CursorCallbacks(&cursor));
 
     // Verify that the transaction id was captured.
@@ -248,6 +258,8 @@ class MockCursor : public WebIDBCursorImpl {
 
  private:
   int reset_count_;
+
+  DISALLOW_COPY_AND_ASSIGN(MockCursor);
 };
 
 }  // namespace

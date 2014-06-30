@@ -38,6 +38,9 @@ void _sanitizer_options_link_helper() { }
 //     output routines) arguments.
 //   use_sigaltstack=1 - handle signals on an alternate signal stack. Useful
 //     for stack overflow detection.
+//   strip_path_prefix=Release/../../ - prefixes up to and including this
+//     substring will be stripped from source file paths in symbolized reports
+//     (if symbolize=true, which is set when running with LeakSanitizer).
 #if defined(OS_LINUX)
 #if defined(GOOGLE_CHROME_BUILD)
 // Default AddressSanitizer options for the official build. These do not affect
@@ -45,17 +48,19 @@ void _sanitizer_options_link_helper() { }
 // Chromium builds.
 const char kAsanDefaultOptions[] =
     "legacy_pthread_cond=1 malloc_context_size=5 strict_memcmp=0 "
-    "symbolize=false check_printf=1 use_sigaltstack=1 detect_leaks=0";
+    "symbolize=false check_printf=1 use_sigaltstack=1 detect_leaks=0 "
+    "strip_path_prefix=Release/../../ ";
 #else
 // Default AddressSanitizer options for buildbots and non-official builds.
 const char *kAsanDefaultOptions =
     "strict_memcmp=0 symbolize=false check_printf=1 use_sigaltstack=1 "
-    "detect_leaks=0";
+    "detect_leaks=0 strip_path_prefix=Release/../../ ";
 #endif  // GOOGLE_CHROME_BUILD
 
 #elif defined(OS_MACOSX)
 const char *kAsanDefaultOptions =
-    "strict_memcmp=0 replace_intrin=0 check_printf=1 use_sigaltstack=1";
+    "strict_memcmp=0 replace_intrin=0 check_printf=1 use_sigaltstack=1 "
+    "strip_path_prefix=Release/../../ ";
 #endif  // OS_LINUX
 
 #if defined(OS_LINUX) || defined(OS_MACOSX)
@@ -75,7 +80,19 @@ const char *__asan_default_options() {
 // Default options for ThreadSanitizer in various configurations:
 //   detect_deadlocks=1 - enable deadlock (lock inversion) detection.
 //   second_deadlock_stack=1 - more verbose deadlock reports.
-const char kTsanDefaultOptions[] = "detect_deadlocks=1 second_deadlock_stack=1";
+//   report_signal_unsafe=0 - do not report async-signal-unsafe functions
+//     called from signal handlers.
+//   report_thread_leaks=0 - do not report unjoined threads at the end of
+//     the program execution.
+//   print_suppressions=1 - print the list of matched suppressions.
+//   history_size=7 - make the history buffer proportional to 2^7 (the maximum
+//     value) to keep more stack traces.
+//   strip_path_prefix=Release/../../ - prefixes up to and including this
+//     substring will be stripped from source file paths in symbolized reports.
+const char kTsanDefaultOptions[] =
+    "detect_deadlocks=1 second_deadlock_stack=1 report_signal_unsafe=0 "
+    "report_thread_leaks=0 print_suppressions=1 history_size=7 "
+    "strip_path_prefix=Release/../../ ";
 
 extern "C"
 __attribute__((no_sanitize_thread))
@@ -85,6 +102,18 @@ __attribute__((visibility("default")))
 __attribute__((used))
 const char *__tsan_default_options() {
   return kTsanDefaultOptions;
+}
+
+extern "C" char kTSanDefaultSuppressions[];
+
+extern "C"
+__attribute__((no_sanitize_thread))
+__attribute__((visibility("default")))
+// The function isn't referenced from the executable itself. Make sure it isn't
+// stripped by the linker.
+__attribute__((used))
+const char *__tsan_default_suppressions() {
+  return kTSanDefaultSuppressions;
 }
 
 #endif  // THREAD_SANITIZER && OS_LINUX

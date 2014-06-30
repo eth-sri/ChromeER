@@ -11,12 +11,12 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/sync/test/integration/profile_sync_service_harness.h"
 #include "chrome/browser/sync/test/integration/sync_datatype_helper.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
+#include "components/search_engines/template_url.h"
 
 using sync_datatype_helper::test;
 
@@ -204,7 +204,7 @@ TemplateURL* CreateTestTemplateURL(Profile* profile,
   data.last_modified = base::Time::FromTimeT(100);
   data.prepopulate_id = 999999;
   data.sync_guid = sync_guid;
-  return new TemplateURL(profile, data);
+  return new TemplateURL(data);
 }
 
 void AddSearchEngine(int profile_index, int seed) {

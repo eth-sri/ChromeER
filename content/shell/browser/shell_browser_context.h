@@ -48,41 +48,19 @@ class ShellBrowserContext : public BrowserContext {
       GetMediaRequestContextForStoragePartition(
           const base::FilePath& partition_path,
           bool in_memory) OVERRIDE;
-  virtual void RequestMidiSysExPermission(
-      int render_process_id,
-      int render_view_id,
-      int bridge_id,
-      const GURL& requesting_frame,
-      bool user_gesture,
-      const MidiSysExPermissionCallback& callback) OVERRIDE;
-  virtual void CancelMidiSysExPermissionRequest(
-      int render_process_id,
-      int render_view_id,
-      int bridge_id,
-      const GURL& requesting_frame) OVERRIDE;
-  virtual void RequestProtectedMediaIdentifierPermission(
-      int render_process_id,
-      int render_view_id,
-      int bridge_id,
-      int group_id,
-      const GURL& requesting_frame,
-      const ProtectedMediaIdentifierPermissionCallback& callback) OVERRIDE;
-  virtual void CancelProtectedMediaIdentifierPermissionRequests(
-      int group_id) OVERRIDE;
   virtual ResourceContext* GetResourceContext() OVERRIDE;
-  virtual GeolocationPermissionContext*
-      GetGeolocationPermissionContext() OVERRIDE;
   virtual BrowserPluginGuestManager* GetGuestManager() OVERRIDE;
   virtual quota::SpecialStoragePolicy* GetSpecialStoragePolicy() OVERRIDE;
+  virtual PushMessagingService* GetPushMessagingService() OVERRIDE;
 
   net::URLRequestContextGetter* CreateRequestContext(
       ProtocolHandlerMap* protocol_handlers,
-      ProtocolHandlerScopedVector protocol_interceptors);
+      URLRequestInterceptorScopedVector request_interceptors);
   net::URLRequestContextGetter* CreateRequestContextForStoragePartition(
       const base::FilePath& partition_path,
       bool in_memory,
       ProtocolHandlerMap* protocol_handlers,
-      ProtocolHandlerScopedVector protocol_interceptors);
+      URLRequestInterceptorScopedVector request_interceptors);
 
  private:
   class ShellResourceContext;

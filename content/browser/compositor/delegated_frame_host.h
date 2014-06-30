@@ -88,6 +88,7 @@ class CONTENT_EXPORT DelegatedFrameHost
   void WasHidden();
   void WasShown();
   void WasResized();
+  gfx::Size GetRequestedRendererSize() const;
   void AddedToWindow();
   void RemovingFromWindow();
   void CopyFromCompositingSurface(
@@ -109,12 +110,10 @@ class CONTENT_EXPORT DelegatedFrameHost
   cc::DelegatedFrameProvider* FrameProviderForTesting() const {
     return frame_provider_.get();
   }
-  gfx::Size CurrentFrameSizeInDIPForTesting() const {
-    return current_frame_size_in_dip_;
-  }
   void OnCompositingDidCommitForTesting(ui::Compositor* compositor) {
     OnCompositingDidCommit(compositor);
   }
+  bool ShouldCreateResizeLockForTesting() { return ShouldCreateResizeLock(); }
 
  private:
   friend class DelegatedFrameHostClient;
@@ -233,6 +232,7 @@ class CONTENT_EXPORT DelegatedFrameHost
   // True after a delegated frame has been skipped, until a frame is not
   // skipped.
   bool skipped_frames_;
+  std::vector<ui::LatencyInfo> skipped_latency_info_list_;
 
   // Holds delegated resources that have been given to a DelegatedFrameProvider,
   // and gives back resources when they are no longer in use for return to the
@@ -272,7 +272,6 @@ class CONTENT_EXPORT DelegatedFrameHost
   // Subscriber that listens to frame presentation events.
   scoped_ptr<RenderWidgetHostViewFrameSubscriber> frame_subscriber_;
   std::vector<scoped_refptr<OwnedMailbox> > idle_frame_subscriber_textures_;
-  std::set<OwnedMailbox*> active_frame_subscriber_textures_;
 
   // YUV readback pipeline.
   scoped_ptr<content::ReadbackYUVInterface>

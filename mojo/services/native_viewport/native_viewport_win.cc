@@ -5,6 +5,7 @@
 #include "mojo/services/native_viewport/native_viewport.h"
 
 #include "ui/events/event.h"
+#include "ui/events/event_utils.h"
 #include "ui/gfx/win/msg_util.h"
 #include "ui/gfx/win/window_impl.h"
 
@@ -20,7 +21,14 @@ gfx::Rect GetWindowBoundsForClientBounds(DWORD style, DWORD ex_style,
   wr.right = bounds.x() + bounds.width();
   wr.bottom = bounds.y() + bounds.height();
   AdjustWindowRectEx(&wr, style, FALSE, ex_style);
-  return gfx::Rect(wr.left, wr.top, wr.right - wr.left, wr.bottom - wr.top);
+
+  // Make sure to keep the window onscreen, as AdjustWindowRectEx() may have
+  // moved part of it offscreen.
+  gfx::Rect window_bounds(wr.left, wr.top,
+                          wr.right - wr.left, wr.bottom - wr.top);
+  window_bounds.set_x(std::max(0, window_bounds.x()));
+  window_bounds.set_y(std::max(0, window_bounds.y()));
+  return window_bounds;
 }
 
 }
@@ -104,6 +112,8 @@ class NativeViewportWin : public gfx::WindowImpl,
     MSG msg = { hwnd(), message, w_param, l_param, 0,
                 { CR_GET_X_LPARAM(l_param), CR_GET_Y_LPARAM(l_param) } };
     ui::MouseEvent event(msg);
+    if (ui::IsMouseEventFromTouch(message))
+      event.set_flags(event.flags() | ui::EF_FROM_TOUCH);
     SetMsgHandled(delegate_->OnEvent(&event));
     return 0;
   }
@@ -136,8 +146,11 @@ class NativeViewportWin : public gfx::WindowImpl,
   void OnWindowPosChanged(WINDOWPOS* window_pos) {
     if (!(window_pos->flags & SWP_NOSIZE) ||
         !(window_pos->flags & SWP_NOMOVE)) {
-      delegate_->OnBoundsChanged(gfx::Rect(window_pos->x, window_pos->y,
-                                           window_pos->cx, window_pos->cy));
+      RECT cr;
+      GetClientRect(hwnd(), &cr);
+      delegate_->OnBoundsChanged(
+          gfx::Rect(window_pos->x, window_pos->y,
+                    cr.right - cr.left, cr.bottom - cr.top));
     }
   }
 

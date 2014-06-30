@@ -67,10 +67,6 @@ class CC_EXPORT GLRenderer : public DirectRenderer {
 
   virtual bool IsContextLost() OVERRIDE;
 
-  virtual void SendManagedMemoryStats(size_t bytes_visible,
-                                      size_t bytes_visible_and_nearby,
-                                      size_t bytes_allocated) OVERRIDE;
-
   static void DebugGLCall(gpu::gles2::GLES2Interface* gl,
                           const char* command,
                           const char* file,
@@ -395,9 +391,6 @@ class CC_EXPORT GLRenderer : public DirectRenderer {
 
   gpu::gles2::GLES2Interface* gl_;
   gpu::ContextSupport* context_support_;
-
-  skia::RefPtr<GrContext> gr_context_;
-  skia::RefPtr<SkCanvas> sk_canvas_;
 
   TextureMailboxDeleter* texture_mailbox_deleter_;
 

@@ -15,7 +15,10 @@ class Typical25Page(page_module.Page):
     self.archive_data_file = 'data/typical_25.json'
 
   def RunSmoothness(self, action_runner):
-    action_runner.RunAction(ScrollAction())
+    interaction = action_runner.BeginGestureInteraction(
+        'ScrollAction', is_smooth=True)
+    action_runner.ScrollPage()
+    interaction.End()
 
 
 class Typical25PageSet(page_set_module.PageSet):
@@ -25,7 +28,8 @@ class Typical25PageSet(page_set_module.PageSet):
   def __init__(self):
     super(Typical25PageSet, self).__init__(
       user_agent_type='desktop',
-      archive_data_file='data/typical_25.json')
+      archive_data_file='data/typical_25.json',
+      bucket=page_set_module.PARTNER_BUCKET)
 
     urls_list = [
       # Why: Alexa games #48

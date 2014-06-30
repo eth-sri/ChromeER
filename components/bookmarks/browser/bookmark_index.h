@@ -14,8 +14,11 @@
 #include "base/strings/string16.h"
 #include "components/query_parser/query_parser.h"
 
-class BookmarkClient;
 class BookmarkNode;
+
+namespace bookmarks {
+
+class BookmarkClient;
 struct BookmarkMatch;
 
 // BookmarkIndex maintains an index of the titles and URLs of bookmarks for
@@ -116,5 +119,7 @@ class BookmarkIndex {
 
   DISALLOW_COPY_AND_ASSIGN(BookmarkIndex);
 };
+
+}  // namespace bookmarks
 
 #endif  // COMPONENTS_BOOKMARKS_BROWSER_BOOKMARK_INDEX_H_

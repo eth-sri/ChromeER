@@ -24,7 +24,7 @@ namespace test {
 
 void AddTestSurfaceQuad(TestRenderPass* pass,
                         const gfx::Size& surface_size,
-                        int surface_id) {
+                        SurfaceId surface_id) {
   gfx::Transform content_to_target_transform;
   gfx::Size content_bounds = surface_size;
   gfx::Rect visible_content_rect = gfx::Rect(surface_size);
@@ -40,7 +40,8 @@ void AddTestSurfaceQuad(TestRenderPass* pass,
                             clip_rect,
                             is_clipped,
                             opacity,
-                            blend_mode);
+                            blend_mode,
+                            0);
 
   scoped_ptr<SurfaceDrawQuad> surface_quad = SurfaceDrawQuad::Create();
   gfx::Rect quad_rect = gfx::Rect(surface_size);
@@ -60,7 +61,8 @@ void AddTestRenderPassQuad(TestRenderPass* pass,
                        output_rect,
                        false,
                        1,
-                       SkXfermode::kSrcOver_Mode);
+                       SkXfermode::kSrcOver_Mode,
+                       0);
   scoped_ptr<RenderPassDrawQuad> quad = RenderPassDrawQuad::Create();
   quad->SetNew(shared_state,
                output_rect,
@@ -141,29 +143,6 @@ void TestPassesMatchExpectations(Pass* expected_passes,
     RenderPass* pass = passes->at(i);
     TestPassMatchesExpectations(expected_passes[i], pass);
   }
-}
-
-void SubmitFrame(Pass* passes, size_t pass_count, Surface* surface) {
-  RenderPassList pass_list;
-  AddPasses(&pass_list, gfx::Rect(surface->size()), passes, pass_count);
-
-  scoped_ptr<DelegatedFrameData> frame_data(new DelegatedFrameData);
-  pass_list.swap(frame_data->render_pass_list);
-
-  scoped_ptr<CompositorFrame> frame(new CompositorFrame);
-  frame->delegated_frame_data = frame_data.Pass();
-
-  surface->QueueFrame(frame.Pass());
-}
-
-void QueuePassAsFrame(scoped_ptr<RenderPass> pass, Surface* surface) {
-  scoped_ptr<DelegatedFrameData> delegated_frame_data(new DelegatedFrameData);
-  delegated_frame_data->render_pass_list.push_back(pass.Pass());
-
-  scoped_ptr<CompositorFrame> child_frame(new CompositorFrame);
-  child_frame->delegated_frame_data = delegated_frame_data.Pass();
-
-  surface->QueueFrame(child_frame.Pass());
 }
 
 }  // namespace test

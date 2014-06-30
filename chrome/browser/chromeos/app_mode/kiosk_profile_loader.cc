@@ -160,8 +160,7 @@ void KioskProfileLoader::OnLoginSuccess(const UserContext& user_context)  {
   if (context.GetUserID() == UserManager::kGuestUserName)
     context.SetUserID(DemoAppLauncher::kDemoUserName);
   LoginUtils::Get()->PrepareProfile(context,
-                                    std::string(),  // display email
-                                    false,  // has_cookies
+                                    false,  // has_auth_cookies
                                     false,  // has_active_session
                                     this);
 }

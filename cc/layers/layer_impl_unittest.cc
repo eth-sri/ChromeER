@@ -4,6 +4,7 @@
 
 #include "cc/layers/layer_impl.h"
 
+#include "cc/layers/painted_scrollbar_layer_impl.h"
 #include "cc/output/filter_operation.h"
 #include "cc/output/filter_operations.h"
 #include "cc/test/fake_impl_proxy.h"
@@ -121,6 +122,7 @@ TEST(LayerImplTest, VerifyLayerChangesAreTrackedProperly) {
   EXPECT_FALSE(grand_child->LayerPropertyChanged());
 
   gfx::PointF arbitrary_point_f = gfx::PointF(0.125f, 0.25f);
+  gfx::Point3F arbitrary_point_3f = gfx::Point3F(0.125f, 0.25f, 0.f);
   float arbitrary_number = 0.352f;
   gfx::Size arbitrary_size = gfx::Size(111, 222);
   gfx::Point arbitrary_point = gfx::Point(333, 444);
@@ -142,8 +144,8 @@ TEST(LayerImplTest, VerifyLayerChangesAreTrackedProperly) {
   EXECUTE_AND_VERIFY_ONLY_LAYER_CHANGED(root->SetBounds(arbitrary_size));
 
   // Changing these properties affects the entire subtree of layers.
-  EXECUTE_AND_VERIFY_SUBTREE_CHANGED(root->SetAnchorPoint(arbitrary_point_f));
-  EXECUTE_AND_VERIFY_SUBTREE_CHANGED(root->SetAnchorPointZ(arbitrary_number));
+  EXECUTE_AND_VERIFY_SUBTREE_CHANGED(
+      root->SetTransformOrigin(arbitrary_point_3f));
   EXECUTE_AND_VERIFY_SUBTREE_CHANGED(root->SetFilters(arbitrary_filters));
   EXECUTE_AND_VERIFY_SUBTREE_CHANGED(root->SetFilters(FilterOperations()));
   EXECUTE_AND_VERIFY_SUBTREE_CHANGED(
@@ -154,7 +156,7 @@ TEST(LayerImplTest, VerifyLayerChangesAreTrackedProperly) {
       root->SetReplicaLayer(LayerImpl::Create(host_impl.active_tree(), 10)));
   EXECUTE_AND_VERIFY_SUBTREE_CHANGED(root->SetPosition(arbitrary_point_f));
   EXECUTE_AND_VERIFY_SUBTREE_CHANGED(root->SetShouldFlattenTransform(false));
-  EXECUTE_AND_VERIFY_SUBTREE_CHANGED(root->SetIs3dSorted(true));
+  EXECUTE_AND_VERIFY_SUBTREE_CHANGED(root->Set3dSortingContextId(1));
   EXECUTE_AND_VERIFY_SUBTREE_CHANGED(
       root->SetDoubleSided(false));  // constructor initializes it to "true".
   EXECUTE_AND_VERIFY_SUBTREE_CHANGED(root->ScrollBy(arbitrary_vector2d));
@@ -202,15 +204,13 @@ TEST(LayerImplTest, VerifyLayerChangesAreTrackedProperly) {
   // After setting all these properties already, setting to the exact same
   // values again should not cause any change.
   EXECUTE_AND_VERIFY_SUBTREE_DID_NOT_CHANGE(
-      root->SetAnchorPoint(arbitrary_point_f));
-  EXECUTE_AND_VERIFY_SUBTREE_DID_NOT_CHANGE(
-      root->SetAnchorPointZ(arbitrary_number));
+      root->SetTransformOrigin(arbitrary_point_3f));
   EXECUTE_AND_VERIFY_SUBTREE_DID_NOT_CHANGE(root->SetMasksToBounds(true));
   EXECUTE_AND_VERIFY_SUBTREE_DID_NOT_CHANGE(
       root->SetPosition(arbitrary_point_f));
   EXECUTE_AND_VERIFY_SUBTREE_DID_NOT_CHANGE(
       root->SetShouldFlattenTransform(false));
-  EXECUTE_AND_VERIFY_SUBTREE_DID_NOT_CHANGE(root->SetIs3dSorted(true));
+  EXECUTE_AND_VERIFY_SUBTREE_DID_NOT_CHANGE(root->Set3dSortingContextId(1));
   EXECUTE_AND_VERIFY_SUBTREE_DID_NOT_CHANGE(
       root->SetTransform(arbitrary_transform));
   EXECUTE_AND_VERIFY_SUBTREE_DID_NOT_CHANGE(
@@ -296,7 +296,6 @@ TEST(LayerImplTest, VerifyNeedsUpdateDrawProperties) {
       layer->SetScrollOffset(arbitrary_vector2d));
 
   // Unrelated functions, always set to new values, always set needs update.
-  VERIFY_NEEDS_UPDATE_DRAW_PROPERTIES(layer->SetAnchorPointZ(arbitrary_number));
   VERIFY_NEEDS_UPDATE_DRAW_PROPERTIES(
       layer->SetMaskLayer(LayerImpl::Create(host_impl.active_tree(), 4)));
   VERIFY_NEEDS_UPDATE_DRAW_PROPERTIES(layer->SetMasksToBounds(true));
@@ -305,7 +304,7 @@ TEST(LayerImplTest, VerifyNeedsUpdateDrawProperties) {
       layer->SetReplicaLayer(LayerImpl::Create(host_impl.active_tree(), 5)));
   VERIFY_NEEDS_UPDATE_DRAW_PROPERTIES(layer->SetPosition(arbitrary_point_f));
   VERIFY_NEEDS_UPDATE_DRAW_PROPERTIES(layer->SetShouldFlattenTransform(false));
-  VERIFY_NEEDS_UPDATE_DRAW_PROPERTIES(layer->SetIs3dSorted(true));
+  VERIFY_NEEDS_UPDATE_DRAW_PROPERTIES(layer->Set3dSortingContextId(1));
 
   VERIFY_NEEDS_UPDATE_DRAW_PROPERTIES(
       layer->SetDoubleSided(false));  // constructor initializes it to "true".
@@ -325,14 +324,12 @@ TEST(LayerImplTest, VerifyNeedsUpdateDrawProperties) {
 
   // Unrelated functions, set to the same values, no needs update.
   VERIFY_NO_NEEDS_UPDATE_DRAW_PROPERTIES(
-      layer->SetAnchorPointZ(arbitrary_number));
-  VERIFY_NO_NEEDS_UPDATE_DRAW_PROPERTIES(
       layer->SetIsRootForIsolatedGroup(true));
   VERIFY_NO_NEEDS_UPDATE_DRAW_PROPERTIES(layer->SetFilters(arbitrary_filters));
   VERIFY_NO_NEEDS_UPDATE_DRAW_PROPERTIES(layer->SetMasksToBounds(true));
   VERIFY_NO_NEEDS_UPDATE_DRAW_PROPERTIES(layer->SetContentsOpaque(true));
   VERIFY_NO_NEEDS_UPDATE_DRAW_PROPERTIES(layer->SetPosition(arbitrary_point_f));
-  VERIFY_NO_NEEDS_UPDATE_DRAW_PROPERTIES(layer->SetIs3dSorted(true));
+  VERIFY_NO_NEEDS_UPDATE_DRAW_PROPERTIES(layer->Set3dSortingContextId(1));
   VERIFY_NO_NEEDS_UPDATE_DRAW_PROPERTIES(
       layer->SetDoubleSided(false));  // constructor initializes it to "true".
   VERIFY_NO_NEEDS_UPDATE_DRAW_PROPERTIES(
@@ -436,6 +433,8 @@ class LayerImplScrollTest : public testing::Test {
   LayerImpl* layer() {
     return host_impl_.active_tree()->root_layer()->children()[0];
   }
+
+  LayerTreeImpl* tree() { return host_impl_.active_tree(); }
 
  private:
   FakeImplProxy proxy_;
@@ -661,6 +660,31 @@ TEST_F(LayerImplScrollTest, DISABLED_ScrollUserUnscrollableLayer) {
 
   EXPECT_VECTOR_EQ(gfx::Vector2dF(0, 8.5f), unscrolled);
   EXPECT_VECTOR_EQ(gfx::Vector2dF(30.5f, 5), layer()->TotalScrollOffset());
+}
+
+TEST_F(LayerImplScrollTest, SetNewScrollbarParameters) {
+  gfx::Vector2d scroll_offset(10, 5);
+  layer()->SetScrollOffset(scroll_offset);
+
+  scoped_ptr<PaintedScrollbarLayerImpl> vertical_scrollbar(
+      PaintedScrollbarLayerImpl::Create(tree(), 100, VERTICAL));
+  vertical_scrollbar->SetScrollLayerAndClipLayerByIds(
+      layer()->id(), tree()->root_layer()->id());
+
+  int expected_vertical_maximum =
+      layer()->bounds().height() - tree()->root_layer()->bounds().height();
+  EXPECT_EQ(expected_vertical_maximum, vertical_scrollbar->maximum());
+  EXPECT_EQ(scroll_offset.y(), vertical_scrollbar->current_pos());
+
+  scoped_ptr<PaintedScrollbarLayerImpl> horizontal_scrollbar(
+      PaintedScrollbarLayerImpl::Create(tree(), 101, HORIZONTAL));
+  horizontal_scrollbar->SetScrollLayerAndClipLayerByIds(
+      layer()->id(), tree()->root_layer()->id());
+
+  int expected_horizontal_maximum =
+      layer()->bounds().width() - tree()->root_layer()->bounds().width();
+  EXPECT_EQ(expected_horizontal_maximum, horizontal_scrollbar->maximum());
+  EXPECT_EQ(scroll_offset.x(), horizontal_scrollbar->current_pos());
 }
 
 }  // namespace

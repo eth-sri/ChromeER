@@ -159,6 +159,9 @@ class VIEWS_EXPORT Combobox : public MenuDelegate,
   int GetDisclosureArrowLeftPadding() const;
   int GetDisclosureArrowRightPadding() const;
 
+  // Returns the size of the disclosure arrow.
+  gfx::Size ArrowSize() const;
+
   // Handles the clicking event.
   void HandleClickEvent();
 
@@ -182,9 +185,6 @@ class VIEWS_EXPORT Combobox : public MenuDelegate,
 
   // A helper used to select entries by keyboard input.
   scoped_ptr<PrefixSelector> selector_;
-
-  // The disclosure arrow next to the currently selected item from the list.
-  const gfx::ImageSkia* disclosure_arrow_;
 
   // Responsible for showing the context menu.
   scoped_ptr<MenuRunner> dropdown_list_menu_runner_;

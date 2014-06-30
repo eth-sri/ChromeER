@@ -11,7 +11,7 @@
 #include "components/autofill/core/browser/autofill_profile.h"
 #include "components/autofill/core/browser/credit_card.h"
 #include "components/autofill/core/browser/field_types.h"
-#include "grit/component_strings.h"
+#include "grit/components_strings.h"
 #include "third_party/libaddressinput/chromium/cpp/include/libaddressinput/address_data.h"
 #include "third_party/libaddressinput/chromium/cpp/include/libaddressinput/address_field.h"
 #include "third_party/libaddressinput/chromium/cpp/include/libaddressinput/address_ui.h"
@@ -194,18 +194,6 @@ bool FieldForType(ServerFieldType server_type,
     default:
       return false;
   }
-}
-
-bool CountryIsFullySupported(const std::string& country_code) {
-  DCHECK_EQ(2U, country_code.size());
-  std::vector< ::i18n::addressinput::AddressUiComponent> components =
-      ::i18n::addressinput::BuildComponents(
-          country_code, g_browser_process->GetApplicationLocale(), NULL);
-  for (size_t i = 0; i < components.size(); ++i) {
-    if (components[i].field == ::i18n::addressinput::DEPENDENT_LOCALITY)
-      return false;
-  }
-  return true;
 }
 
 }  // namespace i18ninput

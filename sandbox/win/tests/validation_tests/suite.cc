@@ -112,6 +112,7 @@ TEST(ValidationSuite, TestRegistry) {
 TEST(ValidationSuite, TestDesktop) {
   TestRunner runner;
   runner.GetPolicy()->SetAlternateDesktop(true);
+  runner.GetPolicy()->SetIntegrityLevel(INTEGRITY_LEVEL_LOW);
   EXPECT_EQ(SBOX_TEST_DENIED, runner.RunTest(L"OpenInteractiveDesktop NULL"));
   EXPECT_EQ(SBOX_TEST_DENIED, runner.RunTest(L"SwitchToSboxDesktop NULL"));
 }
@@ -129,7 +130,7 @@ TEST(ValidationSuite, TestAlternateDesktop) {
   wchar_t command[1024] = {0};
   runner.SetTimeout(3600000);
   runner.GetPolicy()->SetAlternateDesktop(true);
-  runner.GetPolicy()->SetDelayedIntegrityLevel(INTEGRITY_LEVEL_UNTRUSTED);
+  runner.GetPolicy()->SetIntegrityLevel(INTEGRITY_LEVEL_LOW);
   base::string16 desktop_name = runner.GetPolicy()->GetAlternateDesktop();
   desktop_name = desktop_name.substr(desktop_name.find('\\') + 1);
   wsprintf(command, L"OpenAlternateDesktop %lS", desktop_name.c_str());
@@ -215,6 +216,27 @@ TEST(ValidationSuite, TestThread) {
 
   wsprintf(command, L"OpenThreadCmd %d", ::GetCurrentThreadId());
   EXPECT_EQ(SBOX_TEST_DENIED, runner.RunTest(command));
+}
+
+// Tests if an over-limit allocation will be denied.
+TEST(ValidationSuite, TestMemoryLimit) {
+  TestRunner runner;
+  wchar_t command[1024] = {0};
+  const int kAllocationSize = 256 * 1024 * 1024;
+
+  wsprintf(command, L"AllocateCmd %d", kAllocationSize);
+  runner.GetPolicy()->SetJobMemoryLimit(kAllocationSize);
+  EXPECT_EQ(SBOX_FATAL_MEMORY_EXCEEDED, runner.RunTest(command));
+}
+
+// Tests a large allocation will succeed absent limits.
+TEST(ValidationSuite, TestMemoryNoLimit) {
+  TestRunner runner;
+  wchar_t command[1024] = {0};
+  const int kAllocationSize = 256 * 1024 * 1024;
+
+  wsprintf(command, L"AllocateCmd %d", kAllocationSize);
+  EXPECT_EQ(SBOX_TEST_SUCCEEDED, runner.RunTest(command));
 }
 
 }  // namespace sandbox

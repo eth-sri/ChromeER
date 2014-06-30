@@ -23,6 +23,8 @@ class NetLogLogger;
 
 namespace cronet {
 
+struct URLRequestContextConfig;
+
 // Implementation of the Chromium NetLog observer interface.
 class NetLogObserver : public net::NetLog::ThreadSafeObserver {
  public:
@@ -54,15 +56,12 @@ class URLRequestContextPeer : public net::URLRequestContextGetter {
 
   URLRequestContextPeer(URLRequestContextPeerDelegate* delegate,
                         std::string user_agent,
-                        int log_level,
-                        const char* version);
-  void Initialize();
+                        int log_level);
+  void Initialize(scoped_ptr<URLRequestContextConfig> config);
 
   const std::string& GetUserAgent(const GURL& url) const;
 
   int logging_level() const { return logging_level_; }
-
-  const char* version() const { return version_; }
 
   // net::URLRequestContextGetter implementation:
   virtual net::URLRequestContext* GetURLRequestContext() OVERRIDE;
@@ -76,7 +75,6 @@ class URLRequestContextPeer : public net::URLRequestContextGetter {
   scoped_refptr<URLRequestContextPeerDelegate> delegate_;
   scoped_ptr<net::URLRequestContext> context_;
   int logging_level_;
-  const char* version_;
   std::string user_agent_;
   base::Thread* network_thread_;
   scoped_ptr<net::NetworkChangeNotifier> network_change_notifier_;
@@ -86,7 +84,7 @@ class URLRequestContextPeer : public net::URLRequestContextGetter {
   virtual ~URLRequestContextPeer();
 
   // Initializes |context_| on the IO thread.
-  void InitializeURLRequestContext();
+  void InitializeURLRequestContext(scoped_ptr<URLRequestContextConfig> config);
 
   DISALLOW_COPY_AND_ASSIGN(URLRequestContextPeer);
 };

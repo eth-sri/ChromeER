@@ -37,7 +37,7 @@ const CGFloat kLabelTextBottomSpacing = 4;
 - (id)initWithFrame:(NSRect)frameRect {
   if ((self = [super initWithFrame:frameRect])) {
     [self setBezelStyle:NSSmallSquareBezelStyle];
-    [self setTitle:l10n_util::GetNSString(IDS_MANAGED_USER_AVATAR_LABEL)];
+    [self setTitle:l10n_util::GetNSString(IDS_SUPERVISED_USER_AVATAR_LABEL)];
     [self setFont:[NSFont labelFontOfSize:12.0]];
     // Increase the frame by the size of the label to be displayed.
     NSSize textSize = [[self cell] labelTextSize];
@@ -64,7 +64,7 @@ const CGFloat kLabelTextBottomSpacing = 4;
 }
 
 - (void)drawBezelWithFrame:(NSRect)frame inView:(NSView*)controlView {
-  ui::NinePartImageIds imageIds = IMAGE_GRID(IDR_MANAGED_USER_LABEL);
+  ui::NinePartImageIds imageIds = IMAGE_GRID(IDR_SUPERVISED_USER_LABEL);
   ui::DrawNinePartImage(frame, imageIds, NSCompositeSourceOver, 1.0, true);
 }
 
@@ -82,7 +82,7 @@ const CGFloat kLabelTextBottomSpacing = 4;
   ui::ThemeProvider* themeProvider = [[controlView window] themeProvider];
   if (themeProvider) {
     NSColor* textColor = themeProvider->GetNSColor(
-        ThemeProperties::COLOR_MANAGED_USER_LABEL);
+        ThemeProperties::COLOR_SUPERVISED_USER_LABEL);
     [themedTitle addAttribute:NSForegroundColorAttributeName
                         value:textColor
                         range:NSMakeRange(0, title.length)];
@@ -97,7 +97,7 @@ const CGFloat kLabelTextBottomSpacing = 4;
     // Draw the label button background using the color provided by
     // |themeProvider|. First paint the border.
     NSColor* borderColor = themeProvider->GetNSColor(
-        ThemeProperties::COLOR_MANAGED_USER_LABEL_BORDER);
+        ThemeProperties::COLOR_SUPERVISED_USER_LABEL_BORDER);
     if ([self isHighlighted]) {
       borderColor = [borderColor blendedColorWithFraction:0.5
                                                   ofColor:[NSColor blackColor]];
@@ -115,7 +115,7 @@ const CGFloat kLabelTextBottomSpacing = 4;
 
     // Now paint the background.
     NSColor* backgroundColor = themeProvider->GetNSColor(
-        ThemeProperties::COLOR_MANAGED_USER_LABEL_BACKGROUND);
+        ThemeProperties::COLOR_SUPERVISED_USER_LABEL_BACKGROUND);
     if ([self isHighlighted]) {
       backgroundColor =
           [backgroundColor blendedColorWithFraction:0.5

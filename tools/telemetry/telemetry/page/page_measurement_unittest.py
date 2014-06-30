@@ -1,11 +1,12 @@
-# Copyright (c) 2012 The Chromium Authors. All rights reserved.
+# Copyright 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
 import json
 import os
 
-from telemetry import test
+from telemetry import benchmark
+from telemetry.core import exceptions
 from telemetry.core import wpr_modes
 from telemetry.page import page as page_module
 from telemetry.page import page_measurement
@@ -17,7 +18,7 @@ from telemetry.unittest import options_for_unittests
 
 class MeasurementThatFails(page_measurement.PageMeasurement):
   def MeasurePage(self, page, tab, results):
-    raise page_measurement.MeasurementFailure('Intentional failure.')
+    raise exceptions.IntentionalException
 
 class MeasurementThatHasDefaults(page_measurement.PageMeasurement):
   def AddCommandLineArgs(self, parser):
@@ -103,7 +104,7 @@ class PageMeasurementUnitTest(
 
   # This test is disabled because it runs against live sites, and needs to be
   # fixed. crbug.com/179038
-  @test.Disabled
+  @benchmark.Disabled
   def testRecordAndReplay(self):
     test_archive = '/tmp/google.wpr'
     google_url = 'http://www.google.com/'

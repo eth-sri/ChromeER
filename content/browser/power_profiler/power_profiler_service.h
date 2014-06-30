@@ -25,7 +25,8 @@ class CONTENT_EXPORT PowerProfilerService {
   void AddObserver(PowerProfilerObserver* observer);
   void RemoveObserver(PowerProfilerObserver* observer);
 
-  bool IsAvailable();
+  bool IsAvailable() const;
+  std::string GetAccuracyLevel() const;
 
   virtual ~PowerProfilerService();
 
@@ -64,7 +65,7 @@ class CONTENT_EXPORT PowerProfilerService {
   Status status_;
 
   // Sampling period of power data measurement.
-  const base::TimeDelta sample_period_;
+  base::TimeDelta sample_period_;
   ObserverList<PowerProfilerObserver> observers_;
 
   scoped_ptr<PowerDataProvider> data_provider_;

@@ -15,7 +15,10 @@ class KeyDesktopSitesPage(page_module.Page):
     self.archive_data_file = 'data/key_desktop_sites.json'
 
   def RunSmoothness(self, action_runner):
-    action_runner.RunAction(ScrollAction())
+    interaction = action_runner.BeginGestureInteraction(
+        'ScrollAction', is_smooth=True)
+    action_runner.ScrollPage()
+    interaction.End()
 
 
 class FacebookPage(KeyDesktopSitesPage):
@@ -44,12 +47,13 @@ class GmailPage(KeyDesktopSitesPage):
     self.credentials = 'google'
 
   def RunSmoothness(self, action_runner):
-    action_runner.RunAction(ScrollAction())
-    action_runner.RunAction(WaitAction(
-      {
-        'javascript':
-        'window.gmonkey !== undefined && document.getElementById("gb") !== null'
-      }))
+    interaction = action_runner.BeginGestureInteraction(
+        'ScrollAction', is_smooth=True)
+    action_runner.ScrollPage()
+    interaction.End()
+    action_runner.WaitForJavaScriptCondition(
+        'window.gmonkey !== undefined && '
+        'document.getElementById("gb") !== null')
 
 
 class GoogleCalendarPage(KeyDesktopSitesPage):
@@ -80,12 +84,12 @@ class GoogleDrivePage(KeyDesktopSitesPage):
     self.credentials = 'google'
 
   def RunSmoothness(self, action_runner):
-    action_runner.RunAction(ScrollAction())
-    action_runner.RunAction(WaitAction(
-      {
-        'javascript':
-        'document.getElementsByClassName("doclistview-list").length'
-      }))
+    interaction = action_runner.BeginGestureInteraction(
+        'ScrollAction', is_smooth=True)
+    action_runner.ScrollPage()
+    interaction.End()
+    action_runner.WaitForJavaScriptCondition(
+        'document.getElementsByClassName("doclistview-list").length')
 
 
 class GoogleDocPage(KeyDesktopSitesPage):
@@ -103,12 +107,12 @@ class GoogleDocPage(KeyDesktopSitesPage):
     self.credentials = 'google'
 
   def RunSmoothness(self, action_runner):
-    action_runner.RunAction(ScrollAction())
-    action_runner.RunAction(WaitAction(
-      {
-        'javascript':
-        'document.getElementsByClassName("kix-appview-editor").length'
-      }))
+    interaction = action_runner.BeginGestureInteraction(
+        'ScrollAction', is_smooth=True)
+    action_runner.ScrollPage()
+    interaction.End()
+    action_runner.WaitForJavaScriptCondition(
+        'document.getElementsByClassName("kix-appview-editor").length')
 
 
 class KeyDesktopSitesPageSet(page_set_module.PageSet):
@@ -118,7 +122,8 @@ class KeyDesktopSitesPageSet(page_set_module.PageSet):
   def __init__(self):
     super(KeyDesktopSitesPageSet, self).__init__(
       credentials_path='data/credentials.json',
-      archive_data_file='data/key_desktop_sites.json')
+      archive_data_file='data/key_desktop_sites.json',
+      bucket=page_set_module.PARTNER_BUCKET)
 
     self.AddPage(FacebookPage(self))
     self.AddPage(GmailPage(self))

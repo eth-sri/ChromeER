@@ -7,8 +7,8 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/devtools/devtools_window.h"
-#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
+#include "chrome/browser/guest_view/guest_view_base.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_iterator.h"
 #include "chrome/browser/ui/webui/extensions/extension_icon_source.h"
@@ -20,7 +20,10 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/extension_host.h"
+#include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/browser/process_manager.h"
+#include "extensions/common/constants.h"
 
 using content::BrowserThread;
 using content::DevToolsAgentHost;
@@ -34,6 +37,8 @@ const char kTargetTypeApp[] = "app";
 const char kTargetTypeBackgroundPage[] = "background_page";
 const char kTargetTypePage[] = "page";
 const char kTargetTypeWorker[] = "worker";
+const char kTargetTypeWebView[] = "webview";
+const char kTargetTypeIFrame[] = "iframe";
 const char kTargetTypeOther[] = "other";
 
 // RenderViewHostTarget --------------------------------------------------------
@@ -66,9 +71,11 @@ RenderViewHostTarget::RenderViewHostTarget(RenderViewHost* rvh, bool is_tab)
   content::RenderFrameHost* rfh = rvh->GetMainFrame();
   if (rfh->IsCrossProcessSubframe()) {
     set_url(rfh->GetLastCommittedURL());
-    set_type(kTargetTypeOther);
+    set_type(kTargetTypeIFrame);
     // TODO(kaznacheev) Try setting the title when the frame navigation
     // refactoring is done.
+    RenderViewHost* parent_rvh = rfh->GetParent()->GetRenderViewHost();
+    set_parent_id(DevToolsAgentHost::GetOrCreateFor(parent_rvh)->GetId());
     return;
   }
 
@@ -80,36 +87,50 @@ RenderViewHostTarget::RenderViewHostTarget(RenderViewHost* rvh, bool is_tab)
     set_favicon_url(entry->GetFavicon().url);
   set_last_activity_time(web_contents->GetLastActiveTime());
 
+  GuestViewBase* guest = GuestViewBase::FromWebContents(web_contents);
+  WebContents* guest_contents = guest ? guest->embedder_web_contents() : NULL;
+  RenderViewHost* guest_parent_rvh =
+      guest_contents ? guest_contents->GetRenderViewHost() : NULL;
+  if (guest_parent_rvh) {
+    set_type(kTargetTypeWebView);
+    set_parent_id(DevToolsAgentHost::GetOrCreateFor(guest_parent_rvh)->GetId());
+    return;
+  }
+
   if (is_tab) {
     set_type(kTargetTypePage);
     tab_id_ = extensions::ExtensionTabUtil::GetTabId(web_contents);
-  } else {
-    Profile* profile =
-        Profile::FromBrowserContext(web_contents->GetBrowserContext());
-    if (profile) {
-      ExtensionService* extension_service = profile->GetExtensionService();
-      const extensions::Extension* extension = extension_service->
-          extensions()->GetByID(GetURL().host());
-      if (extension) {
-        set_title(extension->name());
-        extensions::ExtensionHost* extension_host =
-            extensions::ExtensionSystem::Get(profile)->process_manager()->
-                GetBackgroundHostForExtension(extension->id());
-        if (extension_host &&
-            extension_host->host_contents() == web_contents) {
-          set_type(kTargetTypeBackgroundPage);
-          extension_id_ = extension->id();
-        } else if (extension->is_hosted_app()
-            || extension->is_legacy_packaged_app()
-            || extension->is_platform_app()) {
-          set_type(kTargetTypeApp);
-        }
-        set_favicon_url(extensions::ExtensionIconSource::GetIconURL(
-            extension, extension_misc::EXTENSION_ICON_SMALLISH,
-            ExtensionIconSet::MATCH_BIGGER, false, NULL));
-      }
-    }
+    return;
   }
+
+  const extensions::Extension* extension = extensions::ExtensionRegistry::Get(
+      web_contents->GetBrowserContext())->enabled_extensions().GetByID(
+          GetURL().host());
+  if (!extension)
+    return;
+
+  Profile* profile =
+      Profile::FromBrowserContext(web_contents->GetBrowserContext());
+  if (!profile)
+    return;
+  extensions::ExtensionSystem* extension_system =
+      extensions::ExtensionSystem::Get(profile);
+  set_title(extension->name());
+  extensions::ExtensionHost* extension_host =
+      extension_system->process_manager()->GetBackgroundHostForExtension(
+          extension->id());
+  if (extension_host &&
+      extension_host->host_contents() == web_contents) {
+    set_type(kTargetTypeBackgroundPage);
+    extension_id_ = extension->id();
+  } else if (extension->is_hosted_app()
+             || extension->is_legacy_packaged_app()
+             || extension->is_platform_app()) {
+    set_type(kTargetTypeApp);
+  }
+  set_favicon_url(extensions::ExtensionIconSource::GetIconURL(
+      extension, extension_misc::EXTENSION_ICON_SMALLISH,
+      ExtensionIconSet::MATCH_BIGGER, false, NULL));
 }
 
 bool RenderViewHostTarget::Activate() const {
@@ -201,8 +222,13 @@ void WorkerTarget::Inspect(Profile* profile) const {
 DevToolsTargetImpl::~DevToolsTargetImpl() {
 }
 
-DevToolsTargetImpl::DevToolsTargetImpl(DevToolsAgentHost* agent_host)
+DevToolsTargetImpl::DevToolsTargetImpl(
+    scoped_refptr<DevToolsAgentHost> agent_host)
     : agent_host_(agent_host) {
+}
+
+std::string DevToolsTargetImpl::GetParentId() const {
+  return parent_id_;
 }
 
 std::string DevToolsTargetImpl::GetId() const {
@@ -262,7 +288,7 @@ std::string DevToolsTargetImpl::GetExtensionId() const {
   return std::string();
 }
 
-void DevToolsTargetImpl::Inspect(Profile*) const {
+void DevToolsTargetImpl::Inspect(Profile* /*profile*/) const {
 }
 
 void DevToolsTargetImpl::Reload() const {

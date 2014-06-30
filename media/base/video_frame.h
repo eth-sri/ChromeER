@@ -57,7 +57,8 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
     NATIVE_TEXTURE = 6,  // Native texture.  Pixel-format agnostic.
     YV12J = 7,  // JPEG color range version of YV12
     NV12 = 8,  // 12bpp 1x1 Y plane followed by an interleaved 2x2 UV plane.
-    FORMAT_MAX = NV12,  // Must always be equal to largest entry logged.
+    YV24 = 9,  // 24bpp YUV planar, no subsampling.
+    FORMAT_MAX = YV24,  // Must always be equal to largest entry logged.
   };
 
   // Returns the name of a Format as a string.
@@ -113,6 +114,7 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
   // and plane count as given by |format|.  The shared memory handle of the
   // backing allocation, if present, can be passed in with |handle|.  When the
   // frame is destroyed, |no_longer_needed_cb.Run()| will be called.
+  // Returns NULL on failure.
   static scoped_refptr<VideoFrame> WrapExternalPackedMemory(
       Format format,
       const gfx::Size& coded_size,
@@ -135,6 +137,7 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
   // directly to a hardware device and/or to another process, or can also be
   // mapped via mmap() for CPU access.
   // When the frame is destroyed, |no_longer_needed_cb.Run()| will be called.
+  // Returns NULL on failure.
   static scoped_refptr<VideoFrame> WrapExternalDmabufs(
       Format format,
       const gfx::Size& coded_size,

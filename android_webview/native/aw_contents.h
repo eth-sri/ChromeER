@@ -10,6 +10,7 @@
 #include <string>
 #include <utility>
 
+#include "android_webview/browser/aw_browser_permission_request_delegate.h"
 #include "android_webview/browser/browser_view_renderer.h"
 #include "android_webview/browser/browser_view_renderer_client.h"
 #include "android_webview/browser/find_helper.h"
@@ -57,7 +58,8 @@ class AwContents : public FindHelper::Listener,
                    public IconHelper::Listener,
                    public AwRenderViewHostExtClient,
                    public BrowserViewRendererClient,
-                   public PermissionRequestHandlerClient {
+                   public PermissionRequestHandlerClient,
+                   public AwBrowserPermissionRequestDelegate {
  public:
   // Returns the AwContents instance associated with |web_contents|, or NULL.
   static AwContents* FromWebContents(content::WebContents* web_contents);
@@ -132,9 +134,6 @@ class AwContents : public FindHelper::Listener,
 
   void DrawGL(AwDrawGLInfo* draw_info);
 
-  // Geolocation API support
-  void ShowGeolocationPrompt(const GURL& origin, base::Callback<void(bool)>);
-  void HideGeolocationPrompt(const GURL& origin);
   void InvokeGeolocationCallback(JNIEnv* env,
                                  jobject obj,
                                  jboolean value,
@@ -154,11 +153,27 @@ class AwContents : public FindHelper::Listener,
                               jstring origin,
                               jlong resources);
 
+  // AwBrowserPermissionRequestDelegate implementation.
+  virtual void RequestProtectedMediaIdentifierPermission(
+      const GURL& origin,
+      const base::Callback<void(bool)>& callback) OVERRIDE;
+  virtual void CancelProtectedMediaIdentifierPermissionRequests(
+      const GURL& origin) OVERRIDE;
+  virtual void RequestGeolocationPermission(
+      const GURL& origin,
+      const base::Callback<void(bool)>& callback) OVERRIDE;
+  virtual void CancelGeolocationPermissionRequests(
+      const GURL& origin) OVERRIDE;
+
+
   // Find-in-page API and related methods.
   void FindAllAsync(JNIEnv* env, jobject obj, jstring search_string);
   void FindNext(JNIEnv* env, jobject obj, jboolean forward);
   void ClearMatches(JNIEnv* env, jobject obj);
   FindHelper* GetFindHelper();
+
+  // Per WebView Cookie Policy
+  bool AllowThirdPartyCookies();
 
   // FindHelper::Listener implementation.
   virtual void OnFindResultReceived(int active_ordinal,
@@ -205,8 +220,8 @@ class AwContents : public FindHelper::Listener,
                           jint height_dip);
   void SetSaveFormData(bool enabled);
 
-  // Sets the java delegate
-  void SetAwAutofillManagerDelegate(jobject delegate);
+  // Sets the java client
+  void SetAwAutofillClient(jobject client);
 
   void SetJsOnlineProperty(JNIEnv* env, jobject obj, jboolean network_up);
   void TrimMemory(JNIEnv* env, jobject obj, jint level, jboolean visible);
@@ -216,8 +231,10 @@ class AwContents : public FindHelper::Listener,
   void InitAutofillIfNecessary(bool enabled);
 
   void InitializeHardwareDrawIfNeeded();
-  void InitializeHardwareDrawOnRenderThread();
-  void ReleaseHardwareDrawOnRenderThread();
+
+  // Geolocation API support
+  void ShowGeolocationPrompt(const GURL& origin, base::Callback<void(bool)>);
+  void HideGeolocationPrompt(const GURL& origin);
 
   JavaObjectWeakGlobalRef java_ref_;
   scoped_ptr<content::WebContents> web_contents_;
@@ -240,6 +257,7 @@ class AwContents : public FindHelper::Listener,
   // The first element in the list is always the currently pending request.
   std::list<OriginCallback> pending_geolocation_prompts_;
 
+  base::Lock render_thread_lock_;
   GLViewRendererManager::Key renderer_manager_key_;
 
   DISALLOW_COPY_AND_ASSIGN(AwContents);

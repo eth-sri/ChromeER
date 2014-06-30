@@ -55,7 +55,6 @@ class SYNC_EXPORT_PRIVATE SyncRollbackManagerBase :
       ReportUnrecoverableErrorFunction
           report_unrecoverable_error_function,
       CancelationSignal* cancelation_signal) OVERRIDE;
-  virtual void ThrowUnrecoverableError() OVERRIDE;
   virtual ModelTypeSet InitialSyncEndedTypes() OVERRIDE;
   virtual ModelTypeSet GetTypesWithEmptyProgressMarkerToken(
       ModelTypeSet types) OVERRIDE;
@@ -87,7 +86,7 @@ class SYNC_EXPORT_PRIVATE SyncRollbackManagerBase :
   virtual SyncEncryptionHandler* GetEncryptionHandler() OVERRIDE;
   virtual void RefreshTypes(ModelTypeSet types) OVERRIDE;
   virtual std::string GetOwnerName() const OVERRIDE;
-  virtual SyncCoreProxy* GetSyncCoreProxy() OVERRIDE;
+  virtual SyncContextProxy* GetSyncContextProxy() OVERRIDE;
   virtual ScopedVector<ProtocolEvent> GetBufferedProtocolEvents()
       OVERRIDE;
   virtual scoped_ptr<base::ListValue> GetAllNodesForType(

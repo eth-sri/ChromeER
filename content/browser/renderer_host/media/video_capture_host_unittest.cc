@@ -309,7 +309,7 @@ class VideoCaptureHostTest : public testing::Test {
 
     CloseSession();
 
-    // Simulate closing the IPC channel.
+    // Simulate closing the IPC sender.
     host_->OnChannelClosing();
 
     // Release the reference to the mock object. The object will be destructed
@@ -336,7 +336,8 @@ class VideoCaptureHostTest : public testing::Test {
           browser_context_.GetResourceContext()->GetMediaDeviceIDSalt(),
           page_request_id,
           MEDIA_DEVICE_VIDEO_CAPTURE,
-          security_origin);
+          security_origin,
+          true);
       EXPECT_CALL(stream_requester_, DevicesEnumerated(render_view_id,
                                                        page_request_id,
                                                        label,

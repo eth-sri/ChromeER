@@ -5,35 +5,37 @@
 #ifndef CC_SURFACES_SURFACE_H_
 #define CC_SURFACES_SURFACE_H_
 
+#include "base/containers/hash_tables.h"
 #include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
+#include "cc/surfaces/surface_id.h"
 #include "cc/surfaces/surfaces_export.h"
 #include "ui/gfx/size.h"
 
 namespace cc {
 class CompositorFrame;
 class SurfaceManager;
-class SurfaceClient;
+class SurfaceFactory;
+class SurfaceResourceHolder;
 
 class CC_SURFACES_EXPORT Surface {
  public:
-  Surface(SurfaceManager* manager,
-          SurfaceClient* client,
-          const gfx::Size& size);
+  Surface(SurfaceId id, const gfx::Size& size, SurfaceFactory* factory);
   ~Surface();
 
   const gfx::Size& size() const { return size_; }
-  int surface_id() const { return surface_id_; }
+  SurfaceId surface_id() const { return surface_id_; }
 
   void QueueFrame(scoped_ptr<CompositorFrame> frame);
   // Returns the most recent frame that is eligible to be rendered.
   CompositorFrame* GetEligibleFrame();
 
+  SurfaceFactory* factory() { return factory_; }
+
  private:
-  SurfaceManager* manager_;
-  SurfaceClient* client_;
+  SurfaceId surface_id_;
   gfx::Size size_;
-  int surface_id_;
+  SurfaceFactory* factory_;
   // TODO(jamesr): Support multiple frames in flight.
   scoped_ptr<CompositorFrame> current_frame_;
 

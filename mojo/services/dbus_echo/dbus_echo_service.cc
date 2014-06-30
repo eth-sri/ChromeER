@@ -9,8 +9,8 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
-#include "mojo/common/channel_init.h"
 #include "mojo/dbus/dbus_external_service.h"
+#include "mojo/embedder/channel_init.h"
 #include "mojo/embedder/embedder.h"
 #include "mojo/public/cpp/environment/environment.h"
 #include "mojo/services/dbus_echo/echo.mojom.h"
@@ -18,14 +18,14 @@
 namespace {
 class EchoServiceImpl : public mojo::InterfaceImpl<mojo::EchoService> {
  public:
-  EchoServiceImpl() {}
+  explicit EchoServiceImpl(mojo::ApplicationConnection* connection) {}
   virtual ~EchoServiceImpl() {}
 
  protected:
   virtual void Echo(
       const mojo::String& in_to_echo,
       const mojo::Callback<void(mojo::String)>& callback) OVERRIDE {
-    DVLOG(1) << "Asked to echo " << in_to_echo.To<std::string>();
+    DVLOG(1) << "Asked to echo " << in_to_echo;
     callback.Run(in_to_echo);
   }
 };
@@ -35,7 +35,7 @@ const char kServiceName[] = "org.chromium.EchoService";
 
 int main(int argc, char** argv) {
   base::AtExitManager exit_manager;
-  CommandLine::Init(argc, argv);
+  base::CommandLine::Init(argc, argv);
 
   logging::LoggingSettings settings;
   settings.logging_dest = logging::LOG_TO_SYSTEM_DEBUG_LOG;
@@ -45,7 +45,6 @@ int main(int argc, char** argv) {
                        false,    // Timestamp
                        false);   // Tick count
 
-  mojo::Environment env;
   mojo::embedder::Init();
 
   base::MessageLoopForIO message_loop;

@@ -49,9 +49,8 @@ class MOJO_SYSTEM_IMPL_EXPORT RawChannel {
   class MOJO_SYSTEM_IMPL_EXPORT Delegate {
    public:
     enum FatalError {
-      FATAL_ERROR_UNKNOWN = 0,
-      FATAL_ERROR_FAILED_READ,
-      FATAL_ERROR_FAILED_WRITE
+      FATAL_ERROR_READ = 0,
+      FATAL_ERROR_WRITE
     };
 
     // Called when a message is read. This may call |Shutdown()| (on the
@@ -64,10 +63,10 @@ class MOJO_SYSTEM_IMPL_EXPORT RawChannel {
     // being viable. This may call |Shutdown()| (on the |RawChannel()|), but
     // must not destroy it.
     //
-    // For each raw channel, at most one |FATAL_ERROR_FAILED_READ| and at most
-    // one |FATAL_ERROR_FAILED_WRITE| notification will be issued (both may be
-    // issued). After a |OnFatalError(FATAL_ERROR_FAILED_READ)|, there will be
-    // no further calls to |OnReadMessage()|.
+    // For each raw channel, at most one |FATAL_ERROR_READ| and at most one
+    // |FATAL_ERROR_WRITE| notification will be issued (both may be issued).
+    // After a |OnFatalError(FATAL_ERROR_READ)|, there will be no further calls
+    // to |OnReadMessage()|.
     virtual void OnFatalError(FatalError fatal_error) = 0;
 
    protected:
@@ -89,8 +88,10 @@ class MOJO_SYSTEM_IMPL_EXPORT RawChannel {
   // This must be called (on the I/O thread) before this object is destroyed.
   void Shutdown();
 
-  // Writes the given message (or schedules it to be written). This is
-  // thread-safe. Returns true on success.
+  // Writes the given message (or schedules it to be written). |message| must
+  // have no |Dispatcher|s still attached (i.e.,
+  // |SerializeAndCloseDispatchers()| should have been called). This method is
+  // thread-safe and may be called from any thread. Returns true on success.
   bool WriteMessage(scoped_ptr<MessageInTransit> message);
 
   // Returns true if the write buffer is empty (i.e., all messages written using
@@ -185,14 +186,38 @@ class MOJO_SYSTEM_IMPL_EXPORT RawChannel {
 
   RawChannel();
 
+  // Must be called on the I/O thread WITHOUT |write_lock_| held.
+  void OnReadCompleted(bool result, size_t bytes_read);
+  // Must be called on the I/O thread WITHOUT |write_lock_| held.
+  void OnWriteCompleted(bool result,
+                        size_t platform_handles_written,
+                        size_t bytes_written);
+
   base::MessageLoopForIO* message_loop_for_io() { return message_loop_for_io_; }
   base::Lock& write_lock() { return write_lock_; }
 
-  // Only accessed on the I/O thread.
-  ReadBuffer* read_buffer();
+  // Should only be called on the I/O thread.
+  ReadBuffer* read_buffer() { return read_buffer_.get(); }
 
-  // Only accessed under |write_lock_|.
-  WriteBuffer* write_buffer_no_lock();
+  // Only called under |write_lock_|.
+  WriteBuffer* write_buffer_no_lock() {
+    write_lock_.AssertAcquired();
+    return write_buffer_.get();
+  }
+
+  // Adds |message| to the write message queue. Implementation subclasses may
+  // override this to add any additional "control" messages needed. This is
+  // called (on any thread) with |write_lock_| held.
+  virtual void EnqueueMessageNoLock(scoped_ptr<MessageInTransit> message);
+
+  // Handles any control messages targeted to the |RawChannel| (or
+  // implementation subclass). Implementation subclasses may override this to
+  // handle any implementation-specific control messages, but should call
+  // |RawChannel::OnReadMessageForRawChannel()| for any remaining messages.
+  // Returns true on success and false on error (e.g., invalid control message).
+  // This is only called on the I/O thread.
+  virtual bool OnReadMessageForRawChannel(
+      const MessageInTransit::View& message_view);
 
   // Reads into |read_buffer()|.
   // This class guarantees that:
@@ -248,13 +273,6 @@ class MOJO_SYSTEM_IMPL_EXPORT RawChannel {
   virtual void OnShutdownNoLock(
       scoped_ptr<ReadBuffer> read_buffer,
       scoped_ptr<WriteBuffer> write_buffer) = 0;
-
-  // Must be called on the I/O thread WITHOUT |write_lock_| held.
-  void OnReadCompleted(bool result, size_t bytes_read);
-  // Must be called on the I/O thread WITHOUT |write_lock_| held.
-  void OnWriteCompleted(bool result,
-                        size_t platform_handles_written,
-                        size_t bytes_written);
 
  private:
   // Calls |delegate_->OnFatalError(fatal_error)|. Must be called on the I/O

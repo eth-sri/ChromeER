@@ -6,11 +6,14 @@
 
 #include "apps/app_shim/extension_app_shim_handler_mac.h"
 #include "base/command_line.h"
+#include "base/mac/foundation_util.h"
 #include "base/mac/mac_util.h"
+#include "base/mac/sdk_forward_declarations.h"
 #include "base/strings/sys_string_conversions.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/cocoa/browser_window_utils.h"
 #import "chrome/browser/ui/cocoa/chrome_event_processing_window.h"
+#import "chrome/browser/ui/cocoa/custom_frame_view.h"
 #include "chrome/browser/ui/cocoa/extensions/extension_keybinding_registry_cocoa.h"
 #include "chrome/browser/ui/cocoa/extensions/extension_view_mac.h"
 #import "chrome/browser/ui/cocoa/nsview_additions.h"
@@ -19,6 +22,7 @@
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/common/extension.h"
+#include "skia/ext/skia_utils_mac.h"
 #include "third_party/skia/include/core/SkRegion.h"
 #include "ui/gfx/skia_util.h"
 
@@ -43,22 +47,8 @@ using apps::AppWindow;
 
 @interface NSWindow (NSPrivateApis)
 - (void)setBottomCornerRounded:(BOOL)rounded;
+- (BOOL)_isTitleHidden;
 @end
-
-// Replicate specific 10.7 SDK declarations for building with prior SDKs.
-#if !defined(MAC_OS_X_VERSION_10_7) || \
-    MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_7
-
-@interface NSWindow (LionSDKDeclarations)
-- (void)toggleFullScreen:(id)sender;
-@end
-
-enum {
-  NSWindowCollectionBehaviorFullScreenPrimary = 1 << 7,
-  NSFullScreenWindowMask = 1 << 14
-};
-
-#endif  // MAC_OS_X_VERSION_10_7
 
 namespace {
 
@@ -220,11 +210,61 @@ std::vector<gfx::Rect> CalculateNonDraggableRegions(
 @interface ShellNSWindow : ChromeEventProcessingWindow
 @end
 @implementation ShellNSWindow
+
+- (instancetype)initWithContentRect:(NSRect)contentRect
+                          styleMask:(NSUInteger)windowStyle
+                            backing:(NSBackingStoreType)bufferingType
+                              defer:(BOOL)deferCreation {
+  if ((self = [super initWithContentRect:contentRect
+                               styleMask:windowStyle
+                                 backing:bufferingType
+                                   defer:deferCreation])) {
+    if ([self respondsToSelector:@selector(setTitleVisibility:)])
+      self.titleVisibility = NSWindowTitleHidden;
+  }
+
+  return self;
+}
+
+// Similar to ChromeBrowserWindow, don't draw the title, but allow it to be seen
+// in menus, Expose, etc.
+- (BOOL)_isTitleHidden {
+  // Only intervene with 10.6-10.9.
+  if ([self respondsToSelector:@selector(setTitleVisibility:)])
+    return [super _isTitleHidden];
+  else
+    return YES;
+}
+
+- (void)drawCustomFrameRect:(NSRect)frameRect forView:(NSView*)view {
+  // Make the background color of the content area white. We can't just call
+  // -setBackgroundColor as that causes the title bar to be drawn in a solid
+  // color.
+  NSRect rect = [self contentRectForFrameRect:frameRect];
+  [[NSColor whiteColor] set];
+  NSRectFill(rect);
+
+  // Draw the native title bar. We remove the content area since the native
+  // implementation draws a gray background.
+  rect.origin.y = NSMaxY(rect);
+  rect.size.height = CGFLOAT_MAX;
+  rect = NSIntersectionRect(rect, frameRect);
+
+  [NSBezierPath clipRect:rect];
+  [super drawCustomFrameRect:frameRect
+                     forView:view];
+}
+
 @end
 
-@interface ShellCustomFrameNSWindow : ShellNSWindow
+@interface ShellCustomFrameNSWindow : ShellNSWindow {
+ @private
+  base::scoped_nsobject<NSColor> color_;
+  base::scoped_nsobject<NSColor> inactiveColor_;
+}
 
-- (void)drawCustomFrameRect:(NSRect)rect forView:(NSView*)view;
+- (void)setColor:(NSColor*)color
+    inactiveColor:(NSColor*)inactiveColor;
 
 @end
 
@@ -242,17 +282,27 @@ std::vector<gfx::Rect> CalculateNonDraggableRegions(
   [[NSBezierPath bezierPathWithRoundedRect:[view bounds]
                                    xRadius:cornerRadius
                                    yRadius:cornerRadius] addClip];
-  [[NSColor whiteColor] set];
+  if ([self isMainWindow] || [self isKeyWindow])
+    [color_ set];
+  else
+    [inactiveColor_ set];
   NSRectFill(rect);
+}
+
+- (void)setColor:(NSColor*)color
+    inactiveColor:(NSColor*)inactiveColor {
+  color_.reset([color retain]);
+  inactiveColor_.reset([inactiveColor retain]);
 }
 
 @end
 
-@interface ShellFramelessNSWindow : ShellCustomFrameNSWindow
-
+@interface ShellFramelessNSWindow : ShellNSWindow
 @end
 
 @implementation ShellFramelessNSWindow
+
+- (void)drawCustomFrameRect:(NSRect)rect forView:(NSView*)view {}
 
 + (NSRect)frameRectForContentRect:(NSRect)contentRect
                         styleMask:(NSUInteger)mask {
@@ -304,17 +354,17 @@ NativeAppWindowCocoa::NativeAppWindowCocoa(
       is_resizable_(params.resizable),
       shows_resize_controls_(true),
       shows_fullscreen_controls_(true),
+      has_frame_color_(params.has_frame_color),
+      active_frame_color_(params.active_frame_color),
+      inactive_frame_color_(params.inactive_frame_color),
       attention_request_id_(0) {
   Observe(WebContents());
 
   base::scoped_nsobject<NSWindow> window;
   Class window_class;
   if (has_frame_) {
-    bool should_use_native_frame =
-        CommandLine::ForCurrentProcess()->HasSwitch(
-            switches::kAppsUseNativeFrame);
-    window_class = should_use_native_frame ?
-        [ShellNSWindow class] : [ShellCustomFrameNSWindow class];
+    window_class = has_frame_color_ ?
+        [ShellCustomFrameNSWindow class] : [ShellNSWindow class];
   } else {
     window_class = [ShellFramelessNSWindow class];
   }
@@ -335,6 +385,11 @@ NativeAppWindowCocoa::NativeAppWindowCocoa(
     name = extension->name();
   [window setTitle:base::SysUTF8ToNSString(name)];
   [[window contentView] cr_setWantsLayer:YES];
+  if (has_frame_ && has_frame_color_) {
+    [base::mac::ObjCCastStrict<ShellCustomFrameNSWindow>(window)
+             setColor:gfx::SkColorToSRGBNSColor(active_frame_color_)
+        inactiveColor:gfx::SkColorToSRGBNSColor(inactive_frame_color_)];
+  }
 
   if (base::mac::IsOSSnowLeopard() &&
       [window respondsToSelector:@selector(setBottomCornerRounded:)])
@@ -373,14 +428,10 @@ NativeAppWindowCocoa::NativeAppWindowCocoa(
 
 NSUInteger NativeAppWindowCocoa::GetWindowStyleMask() const {
   NSUInteger style_mask = NSTitledWindowMask | NSClosableWindowMask |
-                          NSMiniaturizableWindowMask;
+                          NSMiniaturizableWindowMask |
+                          NSTexturedBackgroundWindowMask;
   if (shows_resize_controls_)
     style_mask |= NSResizableWindowMask;
-  if (!has_frame_ ||
-      !CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kAppsUseNativeFrame)) {
-    style_mask |= NSTexturedBackgroundWindowMask;
-  }
   return style_mask;
 }
 
@@ -718,18 +769,15 @@ bool NativeAppWindowCocoa::IsFrameless() const {
 }
 
 bool NativeAppWindowCocoa::HasFrameColor() const {
-  // TODO(benwells): Implement this.
-  return false;
+  return has_frame_color_;
 }
 
 SkColor NativeAppWindowCocoa::ActiveFrameColor() const {
-  // TODO(benwells): Implement this.
-  return SkColor();
+  return active_frame_color_;
 }
 
 SkColor NativeAppWindowCocoa::InactiveFrameColor() const {
-  // TODO(benwells): Implement this.
-  return SkColor();
+  return inactive_frame_color_;
 }
 
 gfx::Insets NativeAppWindowCocoa::GetFrameInsets() const {
@@ -923,7 +971,8 @@ void NativeAppWindowCocoa::SetContentSizeConstraints(
     // Set the window to participate in Lion Fullscreen mode. Setting this flag
     // has no effect on Snow Leopard or earlier. UI controls for fullscreen are
     // only shown for apps that have unbounded size.
-    SetFullScreenCollectionBehavior(window(), shows_fullscreen_controls_);
+    if (base::mac::IsOSLionOrLater())
+      SetFullScreenCollectionBehavior(window(), shows_fullscreen_controls_);
   }
 
   if (has_frame_) {

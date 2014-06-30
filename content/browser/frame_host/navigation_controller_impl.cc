@@ -37,11 +37,11 @@
 #include "content/public/browser/user_metrics.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_constants.h"
-#include "content/public/common/url_constants.h"
 #include "net/base/escape.h"
 #include "net/base/mime_util.h"
 #include "net/base/net_util.h"
 #include "skia/ext/platform_canvas.h"
+#include "url/url_constants.h"
 
 namespace content {
 namespace {
@@ -104,24 +104,30 @@ void ConfigureEntriesForRestore(
   }
 }
 
-// See NavigationController::IsURLInPageNavigation for how this works and why.
+// There are two general cases where a navigation is in page:
+// 1. A fragment navigation, in which the url is kept the same except for the
+//    reference fragment.
+// 2. A history API navigation (pushState and replaceState). This case is
+//    always in-page, but the urls are not guaranteed to match excluding the
+//    fragment. The relevant spec allows pushState/replaceState to any URL on
+//    the same origin.
+// However, due to reloads, even identical urls are *not* guaranteed to be
+// in-page navigations, we have to trust the renderer almost entirely.
+// The one thing we do know is that cross-origin navigations will *never* be
+// in-page. Therefore, trust the renderer if the URLs are on the same origin,
+// and assume the renderer is malicious if a cross-origin navigation claims to
+// be in-page.
 bool AreURLsInPageNavigation(const GURL& existing_url,
                              const GURL& new_url,
                              bool renderer_says_in_page,
-                             NavigationType navigation_type) {
-  if (existing_url == new_url)
-    return renderer_says_in_page;
-
-  if (!new_url.has_ref()) {
-    // When going back from the ref URL to the non ref one the navigation type
-    // is IN_PAGE.
-    return navigation_type == NAVIGATION_TYPE_IN_PAGE;
-  }
-
-  url::Replacements<char> replacements;
-  replacements.ClearRef();
-  return existing_url.ReplaceComponents(replacements) ==
-      new_url.ReplaceComponents(replacements);
+                             RenderFrameHost* rfh) {
+  WebPreferences prefs = rfh->GetRenderViewHost()->GetWebkitPreferences();
+  bool is_same_origin = existing_url.is_empty() ||
+                        existing_url.GetOrigin() == new_url.GetOrigin() ||
+                        !prefs.web_security_enabled;
+  if (!is_same_origin && renderer_says_in_page)
+      rfh->GetProcess()->ReceivedBadMessage();
+  return is_same_origin && renderer_says_in_page;
 }
 
 // Determines whether or not we should be carrying over a user agent override
@@ -338,9 +344,9 @@ void NavigationControllerImpl::ReloadInternal(bool check_for_repost,
     // instance, and should not be treated as a cross-site reload.
     SiteInstanceImpl* site_instance = entry->site_instance();
     // Permit reloading guests without further checks.
-    bool is_guest = site_instance && site_instance->HasProcess() &&
-                    site_instance->GetProcess()->IsGuest();
-    if (!is_guest && site_instance &&
+    bool is_isolated_guest = site_instance && site_instance->HasProcess() &&
+        site_instance->GetProcess()->IsIsolatedGuest();
+    if (!is_isolated_guest && site_instance &&
         site_instance->HasWrongProcessForURL(entry->GetURL())) {
       // Create a navigation entry that resembles the current one, but do not
       // copy page id, site instance, content state, or timestamp.
@@ -664,7 +670,7 @@ void NavigationControllerImpl::LoadURLWithParams(const LoadURLParams& params) {
       }
       break;
     case LOAD_TYPE_DATA:
-      if (!params.url.SchemeIs(kDataScheme)) {
+      if (!params.url.SchemeIs(url::kDataScheme)) {
         NOTREACHED() << "Data load must use data scheme.";
         return;
       }
@@ -766,8 +772,8 @@ bool NavigationControllerImpl::RendererDidNavigate(
   details->type = ClassifyNavigation(rfh, params);
 
   // is_in_page must be computed before the entry gets committed.
-  details->is_in_page = IsURLInPageNavigation(
-      params.url, params.was_within_same_page, details->type);
+  details->is_in_page = AreURLsInPageNavigation(rfh->GetLastCommittedURL(),
+      params.url, params.was_within_same_page, rfh);
 
   switch (details->type) {
     case NAVIGATION_TYPE_NEW_PAGE:
@@ -986,8 +992,7 @@ NavigationType NavigationControllerImpl::ClassifyNavigation(
   // navigations that don't actually navigate, but it can happen when there is
   // an encoding override (it always sends a navigation request).
   if (AreURLsInPageNavigation(existing_entry->GetURL(), params.url,
-                              params.was_within_same_page,
-                              NAVIGATION_TYPE_UNKNOWN)) {
+                              params.was_within_same_page, rfh)) {
     return NAVIGATION_TYPE_IN_PAGE;
   }
 
@@ -1056,6 +1061,12 @@ void NavigationControllerImpl::RendererDidNavigateToNewPage(
   new_entry->SetPostID(params.post_id);
   new_entry->SetOriginalRequestURL(params.original_request_url);
   new_entry->SetIsOverridingUserAgent(params.is_overriding_user_agent);
+
+  // history.pushState() is classified as a navigation to a new page, but
+  // sets was_within_same_page to true. In this case, we already have the
+  // title available, so set it immediately.
+  if (params.was_within_same_page && GetLastCommittedEntry())
+    new_entry->SetTitle(GetLastCommittedEntry()->GetTitle());
 
   DCHECK(!params.history_list_was_cleared || !replace_entry);
   // The browser requested to clear the session history when it initiated the
@@ -1168,6 +1179,9 @@ void NavigationControllerImpl::RendererDidNavigateInPage(
   if (existing_entry->update_virtual_url_with_url())
     UpdateVirtualURLToURL(existing_entry, params.url);
 
+  existing_entry->SetHasPostData(params.is_post);
+  existing_entry->SetPostID(params.post_id);
+
   // This replaces the existing entry since the page ID didn't change.
   *did_replace_entry = true;
 
@@ -1244,10 +1258,10 @@ int NavigationControllerImpl::GetIndexOfEntry(
 bool NavigationControllerImpl::IsURLInPageNavigation(
     const GURL& url,
     bool renderer_says_in_page,
-    NavigationType navigation_type) const {
+    RenderFrameHost* rfh) const {
   NavigationEntry* last_committed = GetLastCommittedEntry();
   return last_committed && AreURLsInPageNavigation(
-      last_committed->GetURL(), url, renderer_says_in_page, navigation_type);
+      last_committed->GetURL(), url, renderer_says_in_page, rfh);
 }
 
 void NavigationControllerImpl::CopyStateFrom(

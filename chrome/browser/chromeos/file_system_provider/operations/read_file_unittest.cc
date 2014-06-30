@@ -6,10 +6,10 @@
 
 #include "base/files/file.h"
 #include "base/files/file_path.h"
-#include "base/json/json_reader.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
+#include "base/values.h"
 #include "chrome/browser/chromeos/file_system_provider/operations/read_file.h"
 #include "chrome/common/extensions/api/file_system_provider.h"
 #include "chrome/common/extensions/api/file_system_provider_internal.h"
@@ -24,7 +24,7 @@ namespace operations {
 namespace {
 
 const char kExtensionId[] = "mbflcebpggnecokmikipoihdbecnjfoj";
-const int kFileSystemId = 1;
+const char kFileSystemId[] = "testing-file-system";
 const int kRequestId = 2;
 const int kFileHandle = 3;
 const int kOffset = 10;
@@ -57,17 +57,17 @@ class CallbackLogger {
  public:
   class Event {
    public:
-    Event(int chunk_length, bool has_next, base::File::Error result)
-        : chunk_length_(chunk_length), has_next_(has_next), result_(result) {}
+    Event(int chunk_length, bool has_more, base::File::Error result)
+        : chunk_length_(chunk_length), has_more_(has_more), result_(result) {}
     virtual ~Event() {}
 
     int chunk_length() const { return chunk_length_; }
-    bool has_next() const { return has_next_; }
+    bool has_more() const { return has_more_; }
     base::File::Error result() const { return result_; }
 
    private:
     int chunk_length_;
-    bool has_next_;
+    bool has_more_;
     base::File::Error result_;
 
     DISALLOW_COPY_AND_ASSIGN(Event);
@@ -76,8 +76,8 @@ class CallbackLogger {
   CallbackLogger() : weak_ptr_factory_(this) {}
   virtual ~CallbackLogger() {}
 
-  void OnReadFile(int chunk_length, bool has_next, base::File::Error result) {
-    events_.push_back(new Event(chunk_length, has_next, result));
+  void OnReadFile(int chunk_length, bool has_more, base::File::Error result) {
+    events_.push_back(new Event(chunk_length, has_more, result));
   }
 
   ScopedVector<Event>& events() { return events_; }
@@ -138,26 +138,29 @@ TEST_F(FileSystemProviderOperationsReadFileTest, Execute) {
       extensions::api::file_system_provider::OnReadFileRequested::kEventName,
       event->event_name);
   base::ListValue* event_args = event->event_args.get();
-  ASSERT_EQ(5u, event_args->GetSize());
+  ASSERT_EQ(1u, event_args->GetSize());
 
-  int event_file_system_id = -1;
-  EXPECT_TRUE(event_args->GetInteger(0, &event_file_system_id));
+  base::DictionaryValue* options = NULL;
+  ASSERT_TRUE(event_args->GetDictionary(0, &options));
+
+  std::string event_file_system_id;
+  EXPECT_TRUE(options->GetString("fileSystemId", &event_file_system_id));
   EXPECT_EQ(kFileSystemId, event_file_system_id);
 
   int event_request_id = -1;
-  EXPECT_TRUE(event_args->GetInteger(1, &event_request_id));
+  EXPECT_TRUE(options->GetInteger("requestId", &event_request_id));
   EXPECT_EQ(kRequestId, event_request_id);
 
   int event_file_handle = -1;
-  EXPECT_TRUE(event_args->GetInteger(2, &event_file_handle));
+  EXPECT_TRUE(options->GetInteger("openRequestId", &event_file_handle));
   EXPECT_EQ(kFileHandle, event_file_handle);
 
   double event_offset = -1;
-  EXPECT_TRUE(event_args->GetDouble(3, &event_offset));
+  EXPECT_TRUE(options->GetDouble("offset", &event_offset));
   EXPECT_EQ(kOffset, static_cast<double>(event_offset));
 
   int event_length = -1;
-  EXPECT_TRUE(event_args->GetInteger(4, &event_length));
+  EXPECT_TRUE(options->GetInteger("length", &event_length));
   EXPECT_EQ(kLength, event_length);
 }
 
@@ -181,7 +184,6 @@ TEST_F(FileSystemProviderOperationsReadFileTest, Execute_NoListener) {
 }
 
 TEST_F(FileSystemProviderOperationsReadFileTest, OnSuccess) {
-  using extensions::api::file_system_provider::EntryMetadata;
   using extensions::api::file_system_provider_internal::
       ReadFileRequestedSuccess::Params;
 
@@ -202,47 +204,35 @@ TEST_F(FileSystemProviderOperationsReadFileTest, OnSuccess) {
 
   EXPECT_TRUE(read_file.Execute(kRequestId));
 
-  // Sample input as JSON. Keep in sync with file_system_provider_api.idl.
-  // As for now, it is impossible to create *::Params class directly, not from
-  // base::Value.
-  const std::string input =
-      "[\n"
-      "  1,\n"          // kFileSystemId
-      "  2,\n"          // kRequestId
-      "  \"ABCDE\",\n"  // 5 bytes
-      "  false\n"       // has_next
-      "]\n";
+  const std::string data = "ABCDE";
+  const bool has_more = false;
+  const int execution_time = 0;
 
-  int json_error_code;
-  std::string json_error_msg;
-  scoped_ptr<base::Value> value(base::JSONReader::ReadAndReturnError(
-      input, base::JSON_PARSE_RFC, &json_error_code, &json_error_msg));
-  ASSERT_TRUE(value.get()) << json_error_msg;
+  base::ListValue value_as_list;
+  value_as_list.Set(0, new base::StringValue(kFileSystemId));
+  value_as_list.Set(1, new base::FundamentalValue(kRequestId));
+  value_as_list.Set(
+      2, base::BinaryValue::CreateWithCopiedBuffer(data.c_str(), data.size()));
+  value_as_list.Set(3, new base::FundamentalValue(has_more));
+  value_as_list.Set(4, new base::FundamentalValue(execution_time));
 
-  base::ListValue* value_as_list;
-  ASSERT_TRUE(value->GetAsList(&value_as_list));
-  scoped_ptr<Params> params(Params::Create(*value_as_list));
+  scoped_ptr<Params> params(Params::Create(value_as_list));
   ASSERT_TRUE(params.get());
   scoped_ptr<RequestValue> request_value(
       RequestValue::CreateForReadFileSuccess(params.Pass()));
   ASSERT_TRUE(request_value.get());
 
-  const bool has_next = false;
-  read_file.OnSuccess(kRequestId, request_value.Pass(), has_next);
+  read_file.OnSuccess(kRequestId, request_value.Pass(), has_more);
 
   ASSERT_EQ(1u, callback_logger.events().size());
   CallbackLogger::Event* event = callback_logger.events()[0];
   EXPECT_EQ(kLength, event->chunk_length());
-  EXPECT_FALSE(event->has_next());
-  EXPECT_EQ("ABCDE", std::string(io_buffer_->data() + kOffset, kLength));
+  EXPECT_FALSE(event->has_more());
+  EXPECT_EQ(data, std::string(io_buffer_->data(), kLength));
   EXPECT_EQ(base::File::FILE_OK, event->result());
 }
 
 TEST_F(FileSystemProviderOperationsReadFileTest, OnError) {
-  using extensions::api::file_system_provider::EntryMetadata;
-  using extensions::api::file_system_provider_internal::ReadFileRequestedError::
-      Params;
-
   LoggingDispatchEventImpl dispatcher(true /* dispatch_reply */);
   CallbackLogger callback_logger;
 
@@ -260,7 +250,9 @@ TEST_F(FileSystemProviderOperationsReadFileTest, OnError) {
 
   EXPECT_TRUE(read_file.Execute(kRequestId));
 
-  read_file.OnError(kRequestId, base::File::FILE_ERROR_TOO_MANY_OPENED);
+  read_file.OnError(kRequestId,
+                    scoped_ptr<RequestValue>(new RequestValue()),
+                    base::File::FILE_ERROR_TOO_MANY_OPENED);
 
   ASSERT_EQ(1u, callback_logger.events().size());
   CallbackLogger::Event* event = callback_logger.events()[0];

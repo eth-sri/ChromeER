@@ -322,14 +322,6 @@ enum NotificationType {
 
   // Non-history storage services --------------------------------------------
 
-  // Sent when a TemplateURL is removed from the model. The source is the
-  // Profile, and the details the id of the TemplateURL being removed.
-  NOTIFICATION_TEMPLATE_URL_REMOVED,
-
-  // Sent when the prefs relating to the default search engine have changed due
-  // to policy.  Source and details are unused.
-  NOTIFICATION_DEFAULT_SEARCH_POLICY_CHANGED,
-
   // The state of a web resource has been changed. A resource may have been
   // added, removed, or altered. Source is WebResourceService, and the
   // details are NoDetails.
@@ -388,11 +380,6 @@ enum NotificationType {
   // unloaded and reloaded. The source is a Profile.
   NOTIFICATION_EXTENSIONS_READY,
 
-  // Sent when an extension icon being displayed in the location bar is updated.
-  // The source is the Profile and the details are the WebContents for
-  // the tab.
-  NOTIFICATION_EXTENSION_LOCATION_BAR_UPDATED,
-
   // DEPRECATED: Use ExtensionRegistry::AddObserver instead.
   //
   // Sent when a new extension is loaded. The details are an Extension, and
@@ -418,17 +405,21 @@ enum NotificationType {
   // UpdatedExtensionPermissionsInfo, and the source is a Profile.
   NOTIFICATION_EXTENSION_PERMISSIONS_UPDATED,
 
+  // DEPRECATED: Use ExtensionRegistry::AddObserver instead.
+  //
   // Sent when new extensions are installed, or existing extensions are updated.
   // The details are an InstalledExtensionInfo, and the source is a Profile.
-  NOTIFICATION_EXTENSION_INSTALLED,
+  NOTIFICATION_EXTENSION_INSTALLED_DEPRECATED,
 
   // An error occured during extension install. The details are a string with
   // details about why the install failed.
   NOTIFICATION_EXTENSION_INSTALL_ERROR,
 
+  // DEPRECATED: Use ExtensionRegistry::AddObserver instead.
+  //
   // Sent when an extension has been uninstalled. The details are an Extension,
   // and the source is a Profile.
-  NOTIFICATION_EXTENSION_UNINSTALLED,
+  NOTIFICATION_EXTENSION_UNINSTALLED_DEPRECATED,
 
   // Sent when an extension uninstall is not allowed because the extension is
   // not user manageable.  The details are an Extension, and the source is a

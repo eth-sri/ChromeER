@@ -24,6 +24,7 @@
 #include "net/spdy/spdy_session.h"
 #include "net/spdy/spdy_session_pool.h"
 #include "net/spdy/spdy_stream.h"
+#include "net/url_request/url_request_job_factory_impl.h"
 
 namespace net {
 
@@ -50,8 +51,8 @@ void ParseUrl(base::StringPiece url, std::string* scheme, std::string* host,
 
 }  // namespace
 
-std::vector<NextProto> SpdyNextProtos() {
-  std::vector<NextProto> next_protos;
+NextProtoVector SpdyNextProtos() {
+  NextProtoVector next_protos;
   for (int i = kProtoMinimumVersion; i <= kProtoMaximumVersion; ++i) {
     next_protos.push_back(static_cast<NextProto>(i));
   }
@@ -245,7 +246,8 @@ class PriorityGetter : public BufferedSpdyFramerVisitorInterface {
   virtual void OnWindowUpdate(SpdyStreamId stream_id,
                               uint32 delta_window_size) OVERRIDE {}
   virtual void OnPushPromise(SpdyStreamId stream_id,
-                             SpdyStreamId promised_stream_id) OVERRIDE {}
+                             SpdyStreamId promised_stream_id,
+                             const SpdyHeaderBlock& headers) OVERRIDE {}
 
  private:
   SpdyPriority priority_;
@@ -357,6 +359,10 @@ SpdySessionDependencies::SpdySessionDependencies(NextProto protocol)
       protocol(protocol),
       stream_initial_recv_window_size(kSpdyStreamInitialWindowSize),
       time_func(&base::TimeTicks::Now),
+      force_spdy_over_ssl(false),
+      force_spdy_always(false),
+      use_alternate_protocols(false),
+      enable_websocket_over_spdy(false),
       net_log(NULL) {
   DCHECK(next_proto_is_spdy(protocol)) << "Invalid protocol: " << protocol;
 
@@ -387,6 +393,10 @@ SpdySessionDependencies::SpdySessionDependencies(
       protocol(protocol),
       stream_initial_recv_window_size(kSpdyStreamInitialWindowSize),
       time_func(&base::TimeTicks::Now),
+      force_spdy_over_ssl(false),
+      force_spdy_always(false),
+      use_alternate_protocols(false),
+      enable_websocket_over_spdy(false),
       net_log(NULL) {
   DCHECK(next_proto_is_spdy(protocol)) << "Invalid protocol: " << protocol;
 }
@@ -441,12 +451,19 @@ net::HttpNetworkSession::Params SpdySessionDependencies::CreateSessionParams(
   params.spdy_stream_initial_recv_window_size =
       session_deps->stream_initial_recv_window_size;
   params.time_func = session_deps->time_func;
+  params.next_protos = session_deps->next_protos;
   params.trusted_spdy_proxy = session_deps->trusted_spdy_proxy;
+  params.force_spdy_over_ssl = session_deps->force_spdy_over_ssl;
+  params.force_spdy_always = session_deps->force_spdy_always;
+  params.use_alternate_protocols = session_deps->use_alternate_protocols;
+  params.enable_websocket_over_spdy = session_deps->enable_websocket_over_spdy;
   params.net_log = session_deps->net_log;
   return params;
 }
 
-SpdyURLRequestContext::SpdyURLRequestContext(NextProto protocol)
+SpdyURLRequestContext::SpdyURLRequestContext(NextProto protocol,
+                                             bool force_spdy_over_ssl,
+                                             bool force_spdy_always)
     : storage_(this) {
   DCHECK(next_proto_is_spdy(protocol)) << "Invalid protocol: " << protocol;
 
@@ -459,6 +476,7 @@ SpdyURLRequestContext::SpdyURLRequestContext(NextProto protocol)
       host_resolver()));
   storage_.set_http_server_properties(
       scoped_ptr<HttpServerProperties>(new HttpServerPropertiesImpl()));
+  storage_.set_job_factory(new URLRequestJobFactoryImpl());
   net::HttpNetworkSession::Params params;
   params.client_socket_factory = &socket_factory_;
   params.host_resolver = host_resolver();
@@ -471,6 +489,8 @@ SpdyURLRequestContext::SpdyURLRequestContext(NextProto protocol)
   params.enable_spdy_compression = false;
   params.enable_spdy_ping_based_connection_checking = false;
   params.spdy_default_protocol = protocol;
+  params.force_spdy_over_ssl = force_spdy_over_ssl;
+  params.force_spdy_always = force_spdy_always;
   params.http_server_properties = http_server_properties();
   scoped_refptr<HttpNetworkSession> network_session(
       new HttpNetworkSession(params));
@@ -789,8 +809,8 @@ SpdyFrame* SpdyTestUtil::ConstructSpdyControlFrame(
     SpdyFrameType type,
     SpdyControlFlags flags,
     SpdyStreamId associated_stream_id) const {
-  EXPECT_GE(type, FIRST_CONTROL_TYPE);
-  EXPECT_LE(type, LAST_CONTROL_TYPE);
+  EXPECT_GE(type, DATA);
+  EXPECT_LE(type, PRIORITY);
   const SpdyHeaderInfo header_info = {
     type,
     stream_id,
@@ -892,6 +912,13 @@ SpdyFrame* SpdyTestUtil::ConstructSpdyGoAway(
   return CreateFramer(false)->SerializeFrame(go_ir);
 }
 
+SpdyFrame* SpdyTestUtil::ConstructSpdyGoAway(SpdyStreamId last_good_stream_id,
+                                             SpdyGoAwayStatus status,
+                                             const std::string& desc) const {
+  SpdyGoAwayIR go_ir(last_good_stream_id, status, desc);
+  return CreateFramer(false)->SerializeFrame(go_ir);
+}
+
 SpdyFrame* SpdyTestUtil::ConstructSpdyWindowUpdate(
     const SpdyStreamId stream_id, uint32 delta_window_size) const {
   SpdyWindowUpdateIR update_ir(stream_id, delta_window_size);
@@ -903,7 +930,7 @@ SpdyFrame* SpdyTestUtil::ConstructSpdyWindowUpdate(
 SpdyFrame* SpdyTestUtil::ConstructSpdyRstStream(
     SpdyStreamId stream_id,
     SpdyRstStreamStatus status) const {
-  SpdyRstStreamIR rst_ir(stream_id, status, "RST");
+  SpdyRstStreamIR rst_ir(stream_id, status, "");
   return CreateFramer(false)->SerializeRstStream(rst_ir);
 }
 
@@ -912,20 +939,9 @@ SpdyFrame* SpdyTestUtil::ConstructSpdyGet(
     bool compressed,
     SpdyStreamId stream_id,
     RequestPriority request_priority) const {
-  const SpdyHeaderInfo header_info = {
-    SYN_STREAM,
-    stream_id,
-    0,                   // associated stream ID
-    ConvertRequestPriorityToSpdyPriority(request_priority, spdy_version_),
-    0,                   // credential slot
-    CONTROL_FLAG_FIN,
-    compressed,
-    RST_STREAM_INVALID,  // status
-    NULL,                // data
-    0,                   // length
-    DATA_FLAG_NONE
-  };
-  return ConstructSpdyFrame(header_info, ConstructGetHeaderBlock(url));
+  scoped_ptr<SpdyHeaderBlock> block(ConstructGetHeaderBlock(url));
+  return ConstructSpdySyn(
+      stream_id, *block, request_priority, compressed, true);
 }
 
 SpdyFrame* SpdyTestUtil::ConstructSpdyGet(const char* const extra_headers[],
@@ -934,19 +950,15 @@ SpdyFrame* SpdyTestUtil::ConstructSpdyGet(const char* const extra_headers[],
                                           int stream_id,
                                           RequestPriority request_priority,
                                           bool direct) const {
-  SpdySynStreamIR syn_stream(stream_id);
-  syn_stream.set_priority(
-      ConvertRequestPriorityToSpdyPriority(request_priority, spdy_version_));
-  syn_stream.set_fin(true);
-  syn_stream.SetHeader(GetMethodKey(), "GET");
-  syn_stream.SetHeader(GetHostKey(), "www.google.com");
-  syn_stream.SetHeader(GetSchemeKey(), "http");
-  syn_stream.SetHeader(GetPathKey(), (is_spdy2() && !direct) ?
-                       "http://www.google.com/" : "/");
-  MaybeAddVersionHeader(&syn_stream);
-  AppendToHeaderBlock(extra_headers, extra_header_count,
-                      syn_stream.mutable_name_value_block());
-  return CreateFramer(compressed)->SerializeFrame(syn_stream);
+  SpdyHeaderBlock block;
+  block[GetMethodKey()] = "GET";
+  block[GetPathKey()] =
+      (is_spdy2() && !direct) ? "http://www.google.com/" : "/";
+  block[GetHostKey()] = "www.google.com";
+  block[GetSchemeKey()] = "http";
+  MaybeAddVersionHeader(&block);
+  AppendToHeaderBlock(extra_headers, extra_header_count, &block);
+  return ConstructSpdySyn(stream_id, block, request_priority, compressed, true);
 }
 
 SpdyFrame* SpdyTestUtil::ConstructSpdyConnect(
@@ -954,16 +966,13 @@ SpdyFrame* SpdyTestUtil::ConstructSpdyConnect(
     int extra_header_count,
     int stream_id,
     RequestPriority priority) const {
-  SpdySynStreamIR syn_stream(stream_id);
-  syn_stream.set_priority(
-      ConvertRequestPriorityToSpdyPriority(priority, spdy_version_));
-  syn_stream.SetHeader(GetMethodKey(), "CONNECT");
-  syn_stream.SetHeader(GetPathKey(), "www.google.com:443");
-  syn_stream.SetHeader(GetHostKey(), "www.google.com");
-  MaybeAddVersionHeader(&syn_stream);
-  AppendToHeaderBlock(extra_headers, extra_header_count,
-                      syn_stream.mutable_name_value_block());
-  return CreateFramer(false)->SerializeFrame(syn_stream);
+  SpdyHeaderBlock block;
+  block[GetMethodKey()] = "CONNECT";
+  block[GetPathKey()] = "www.google.com:443";
+  block[GetHostKey()] = "www.google.com";
+  MaybeAddVersionHeader(&block);
+  AppendToHeaderBlock(extra_headers, extra_header_count, &block);
+  return ConstructSpdySyn(stream_id, block, priority, false, false);
 }
 
 SpdyFrame* SpdyTestUtil::ConstructSpdyPush(const char* const extra_headers[],
@@ -971,21 +980,41 @@ SpdyFrame* SpdyTestUtil::ConstructSpdyPush(const char* const extra_headers[],
                                            int stream_id,
                                            int associated_stream_id,
                                            const char* url) {
-  scoped_ptr<SpdyHeaderBlock> headers(new SpdyHeaderBlock());
-  (*headers)["hello"] = "bye";
-  (*headers)[GetStatusKey()] = "200 OK";
-  if (include_version_header()) {
-    (*headers)[GetVersionKey()] = "HTTP/1.1";
+  if (spdy_version() < SPDY4) {
+    SpdySynStreamIR syn_stream(stream_id);
+    syn_stream.set_associated_to_stream_id(associated_stream_id);
+    syn_stream.SetHeader("hello", "bye");
+    syn_stream.SetHeader(GetStatusKey(), "200 OK");
+    syn_stream.SetHeader(GetVersionKey(), "HTTP/1.1");
+    AddUrlToHeaderBlock(url, syn_stream.mutable_name_value_block());
+    AppendToHeaderBlock(extra_headers,
+                        extra_header_count,
+                        syn_stream.mutable_name_value_block());
+    return CreateFramer(false)->SerializeFrame(syn_stream);
+  } else {
+    SpdyPushPromiseIR push_promise(associated_stream_id, stream_id);
+    AddUrlToHeaderBlock(url, push_promise.mutable_name_value_block());
+    scoped_ptr<SpdyFrame> push_promise_frame(
+        CreateFramer(false)->SerializeFrame(push_promise));
+
+    SpdyHeadersIR headers(stream_id);
+    headers.SetHeader("hello", "bye");
+    headers.SetHeader(GetStatusKey(), "200 OK");
+    AppendToHeaderBlock(
+        extra_headers, extra_header_count, headers.mutable_name_value_block());
+    scoped_ptr<SpdyFrame> headers_frame(
+        CreateFramer(false)->SerializeFrame(headers));
+
+    int joint_data_size = push_promise_frame->size() + headers_frame->size();
+    scoped_ptr<char[]> data(new char[joint_data_size]);
+    const SpdyFrame* frames[2] = {
+        push_promise_frame.get(), headers_frame.get(),
+    };
+    int combined_size =
+        CombineFrames(frames, arraysize(frames), data.get(), joint_data_size);
+    DCHECK_EQ(combined_size, joint_data_size);
+    return new SpdyFrame(data.release(), joint_data_size, true);
   }
-  AddUrlToHeaderBlock(url, headers.get());
-  AppendToHeaderBlock(extra_headers, extra_header_count, headers.get());
-  return ConstructSpdyControlFrame(headers.Pass(),
-                                   false,
-                                   stream_id,
-                                   LOWEST,
-                                   SYN_STREAM,
-                                   CONTROL_FLAG_NONE,
-                                   associated_stream_id);
 }
 
 SpdyFrame* SpdyTestUtil::ConstructSpdyPush(const char* const extra_headers[],
@@ -995,22 +1024,60 @@ SpdyFrame* SpdyTestUtil::ConstructSpdyPush(const char* const extra_headers[],
                                            const char* url,
                                            const char* status,
                                            const char* location) {
-  scoped_ptr<SpdyHeaderBlock> headers(new SpdyHeaderBlock());
-  (*headers)["hello"] = "bye";
-  (*headers)[GetStatusKey()] = status;
-  if (include_version_header()) {
-    (*headers)[GetVersionKey()] = "HTTP/1.1";
+  if (spdy_version() < SPDY4) {
+    SpdySynStreamIR syn_stream(stream_id);
+    syn_stream.set_associated_to_stream_id(associated_stream_id);
+    syn_stream.SetHeader("hello", "bye");
+    syn_stream.SetHeader(GetStatusKey(), status);
+    syn_stream.SetHeader(GetVersionKey(), "HTTP/1.1");
+    syn_stream.SetHeader("location", location);
+    AddUrlToHeaderBlock(url, syn_stream.mutable_name_value_block());
+    AppendToHeaderBlock(extra_headers,
+                        extra_header_count,
+                        syn_stream.mutable_name_value_block());
+    return CreateFramer(false)->SerializeFrame(syn_stream);
+  } else {
+    SpdyPushPromiseIR push_promise(associated_stream_id, stream_id);
+    AddUrlToHeaderBlock(url, push_promise.mutable_name_value_block());
+    scoped_ptr<SpdyFrame> push_promise_frame(
+        CreateFramer(false)->SerializeFrame(push_promise));
+
+    SpdyHeadersIR headers(stream_id);
+    headers.SetHeader("hello", "bye");
+    headers.SetHeader(GetStatusKey(), status);
+    headers.SetHeader("location", location);
+    AppendToHeaderBlock(
+        extra_headers, extra_header_count, headers.mutable_name_value_block());
+    scoped_ptr<SpdyFrame> headers_frame(
+        CreateFramer(false)->SerializeFrame(headers));
+
+    int joint_data_size = push_promise_frame->size() + headers_frame->size();
+    scoped_ptr<char[]> data(new char[joint_data_size]);
+    const SpdyFrame* frames[2] = {
+        push_promise_frame.get(), headers_frame.get(),
+    };
+    int combined_size =
+        CombineFrames(frames, arraysize(frames), data.get(), joint_data_size);
+    DCHECK_EQ(combined_size, joint_data_size);
+    return new SpdyFrame(data.release(), joint_data_size, true);
   }
-  (*headers)["location"] = location;
-  AddUrlToHeaderBlock(url, headers.get());
-  AppendToHeaderBlock(extra_headers, extra_header_count, headers.get());
-  return ConstructSpdyControlFrame(headers.Pass(),
-                                   false,
-                                   stream_id,
-                                   LOWEST,
-                                   SYN_STREAM,
-                                   CONTROL_FLAG_NONE,
-                                   associated_stream_id);
+}
+
+SpdyFrame* SpdyTestUtil::ConstructInitialSpdyPushFrame(
+    scoped_ptr<SpdyHeaderBlock> headers,
+    int stream_id,
+    int associated_stream_id) {
+  if (spdy_version() < SPDY4) {
+    SpdySynStreamIR syn_stream(stream_id);
+    syn_stream.set_associated_to_stream_id(associated_stream_id);
+    SetPriority(LOWEST, &syn_stream);
+    syn_stream.set_name_value_block(*headers);
+    return CreateFramer(false)->SerializeFrame(syn_stream);
+  } else {
+    SpdyPushPromiseIR push_promise(associated_stream_id, stream_id);
+    push_promise.set_name_value_block(*headers);
+    return CreateFramer(false)->SerializeFrame(push_promise);
+  }
 }
 
 SpdyFrame* SpdyTestUtil::ConstructSpdyPushHeaders(
@@ -1025,18 +1092,54 @@ SpdyFrame* SpdyTestUtil::ConstructSpdyPushHeaders(
   return CreateFramer(false)->SerializeFrame(headers);
 }
 
+SpdyFrame* SpdyTestUtil::ConstructSpdySyn(int stream_id,
+                                          const SpdyHeaderBlock& block,
+                                          RequestPriority priority,
+                                          bool compressed,
+                                          bool fin) const {
+  if (protocol_ < kProtoSPDY4) {
+    SpdySynStreamIR syn_stream(stream_id);
+    syn_stream.set_name_value_block(block);
+    syn_stream.set_priority(
+        ConvertRequestPriorityToSpdyPriority(priority, spdy_version()));
+    syn_stream.set_fin(fin);
+    return CreateFramer(compressed)->SerializeFrame(syn_stream);
+  } else {
+    SpdyHeadersIR headers(stream_id);
+    headers.set_name_value_block(block);
+    headers.set_has_priority(true);
+    headers.set_priority(
+        ConvertRequestPriorityToSpdyPriority(priority, spdy_version()));
+    headers.set_fin(fin);
+    return CreateFramer(compressed)->SerializeFrame(headers);
+  }
+}
+
+SpdyFrame* SpdyTestUtil::ConstructSpdyReply(int stream_id,
+                                            const SpdyHeaderBlock& headers) {
+  if (protocol_ < kProtoSPDY4) {
+    SpdySynReplyIR syn_reply(stream_id);
+    syn_reply.set_name_value_block(headers);
+    return CreateFramer(false)->SerializeFrame(syn_reply);
+  } else {
+    SpdyHeadersIR reply(stream_id);
+    reply.set_name_value_block(headers);
+    return CreateFramer(false)->SerializeFrame(reply);
+  }
+}
+
 SpdyFrame* SpdyTestUtil::ConstructSpdySynReplyError(
     const char* const status,
     const char* const* const extra_headers,
     int extra_header_count,
     int stream_id) {
-  SpdySynReplyIR syn_reply(stream_id);
-  syn_reply.SetHeader("hello", "bye");
-  syn_reply.SetHeader(GetStatusKey(), status);
-  MaybeAddVersionHeader(&syn_reply);
-  AppendToHeaderBlock(extra_headers, extra_header_count,
-                      syn_reply.mutable_name_value_block());
-  return CreateFramer(false)->SerializeFrame(syn_reply);
+  SpdyHeaderBlock block;
+  block["hello"] = "bye";
+  block[GetStatusKey()] = status;
+  MaybeAddVersionHeader(&block);
+  AppendToHeaderBlock(extra_headers, extra_header_count, &block);
+
+  return ConstructSpdyReply(stream_id, block);
 }
 
 SpdyFrame* SpdyTestUtil::ConstructSpdyGetSynReplyRedirect(int stream_id) {
@@ -1055,13 +1158,13 @@ SpdyFrame* SpdyTestUtil::ConstructSpdyGetSynReply(
     const char* const extra_headers[],
     int extra_header_count,
     int stream_id) {
-  SpdySynReplyIR syn_reply(stream_id);
-  syn_reply.SetHeader("hello", "bye");
-  syn_reply.SetHeader(GetStatusKey(), "200");
-  MaybeAddVersionHeader(&syn_reply);
-  AppendToHeaderBlock(extra_headers, extra_header_count,
-                      syn_reply.mutable_name_value_block());
-  return CreateFramer(false)->SerializeFrame(syn_reply);
+  SpdyHeaderBlock block;
+  block["hello"] = "bye";
+  block[GetStatusKey()] = "200";
+  MaybeAddVersionHeader(&block);
+  AppendToHeaderBlock(extra_headers, extra_header_count, &block);
+
+  return ConstructSpdyReply(stream_id, block);
 }
 
 SpdyFrame* SpdyTestUtil::ConstructSpdyPost(const char* url,
@@ -1070,49 +1173,30 @@ SpdyFrame* SpdyTestUtil::ConstructSpdyPost(const char* url,
                                            RequestPriority priority,
                                            const char* const extra_headers[],
                                            int extra_header_count) {
-  const SpdyHeaderInfo kSynStartHeader = {
-    SYN_STREAM,
-    stream_id,
-    0,                      // Associated stream ID
-    ConvertRequestPriorityToSpdyPriority(priority, spdy_version_),
-    kSpdyCredentialSlotUnused,
-    CONTROL_FLAG_NONE,
-    false,                  // Compressed
-    RST_STREAM_INVALID,
-    NULL,                   // Data
-    0,                      // Length
-    DATA_FLAG_NONE
-  };
-  return ConstructSpdyFrame(
-      kSynStartHeader, ConstructPostHeaderBlock(url, content_length));
+  scoped_ptr<SpdyHeaderBlock> block(
+      ConstructPostHeaderBlock(url, content_length));
+  AppendToHeaderBlock(extra_headers, extra_header_count, block.get());
+  return ConstructSpdySyn(stream_id, *block, priority, false, false);
 }
 
 SpdyFrame* SpdyTestUtil::ConstructChunkedSpdyPost(
     const char* const extra_headers[],
     int extra_header_count) {
-  SpdySynStreamIR syn_stream(1);
-  syn_stream.SetHeader(GetMethodKey(), "POST");
-  syn_stream.SetHeader(GetPathKey(), "/");
-  syn_stream.SetHeader(GetHostKey(), "www.google.com");
-  syn_stream.SetHeader(GetSchemeKey(), "http");
-  MaybeAddVersionHeader(&syn_stream);
-  SetPriority(LOWEST, &syn_stream);
-  AppendToHeaderBlock(extra_headers, extra_header_count,
-                      syn_stream.mutable_name_value_block());
-  return CreateFramer(false)->SerializeFrame(syn_stream);
+  SpdyHeaderBlock block;
+  block[GetMethodKey()] = "POST";
+  block[GetPathKey()] = "/";
+  block[GetHostKey()] = "www.google.com";
+  block[GetSchemeKey()] = "http";
+  MaybeAddVersionHeader(&block);
+  AppendToHeaderBlock(extra_headers, extra_header_count, &block);
+  return ConstructSpdySyn(1, block, LOWEST, false, false);
 }
 
 SpdyFrame* SpdyTestUtil::ConstructSpdyPostSynReply(
     const char* const extra_headers[],
     int extra_header_count) {
-  SpdySynReplyIR syn_reply(1);
-  syn_reply.SetHeader("hello", "bye");
-  syn_reply.SetHeader(GetStatusKey(), "200");
-  syn_reply.SetHeader(GetPathKey(), "/index.php");
-  MaybeAddVersionHeader(&syn_reply);
-  AppendToHeaderBlock(extra_headers, extra_header_count,
-                      syn_reply.mutable_name_value_block());
-  return CreateFramer(false)->SerializeFrame(syn_reply);
+  // TODO(jgraettinger): Remove this method.
+  return ConstructSpdyGetSynReply(NULL, 0, 1);
 }
 
 SpdyFrame* SpdyTestUtil::ConstructSpdyBodyFrame(int stream_id, bool fin) {
@@ -1217,6 +1301,12 @@ void SpdyTestUtil::MaybeAddVersionHeader(
     SpdyFrameWithNameValueBlockIR* frame_ir) const {
   if (include_version_header()) {
     frame_ir->SetHeader(GetVersionKey(), "HTTP/1.1");
+  }
+}
+
+void SpdyTestUtil::MaybeAddVersionHeader(SpdyHeaderBlock* block) const {
+  if (include_version_header()) {
+    (*block)[GetVersionKey()] = "HTTP/1.1";
   }
 }
 

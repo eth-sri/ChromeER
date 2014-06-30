@@ -150,8 +150,10 @@ void WindowTreeHost::OnCursorVisibilityChanged(bool show) {
   // visible because that can only happen in response to a mouse event, which
   // will trigger its own mouse enter.
   if (!show) {
-    dispatcher()->DispatchMouseExitAtPoint(
+    ui::EventDispatchDetails details = dispatcher()->DispatchMouseExitAtPoint(
         dispatcher()->GetLastMouseLocationInRoot());
+    if (details.dispatcher_destroyed)
+      return;
   }
 
   OnCursorVisibilityChangedNative(show);
@@ -198,8 +200,11 @@ void WindowTreeHost::DestroyDispatcher() {
 
 void WindowTreeHost::CreateCompositor(
     gfx::AcceleratedWidget accelerated_widget) {
-  compositor_.reset(new ui::Compositor(GetAcceleratedWidget()));
-  DCHECK(compositor_.get());
+  DCHECK(Env::GetInstance());
+  ui::ContextFactory* context_factory = Env::GetInstance()->context_factory();
+  DCHECK(context_factory);
+  compositor_.reset(
+      new ui::Compositor(GetAcceleratedWidget(), context_factory));
   // TODO(beng): I think this setup should probably all move to a "accelerated
   // widget available" function.
   if (!dispatcher()) {

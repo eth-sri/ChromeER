@@ -402,13 +402,12 @@ void HistoryMenuBridge::CreateMenu() {
   history_service_->QueryHistory(
       base::string16(),
       options,
-      &cancelable_request_consumer_,
       base::Bind(&HistoryMenuBridge::OnVisitedHistoryResults,
-                 base::Unretained(this)));
+                 base::Unretained(this)),
+      &cancelable_task_tracker_);
 }
 
 void HistoryMenuBridge::OnVisitedHistoryResults(
-    CancelableRequestProvider::Handle handle,
     history::QueryResults* results) {
   NSMenu* menu = HistoryMenu();
   ClearMenuSection(menu, kVisited);
@@ -456,12 +455,13 @@ HistoryMenuBridge::HistoryItem* HistoryMenuBridge::HistoryItemForTab(
 void HistoryMenuBridge::GetFaviconForHistoryItem(HistoryItem* item) {
   FaviconService* service =
       FaviconServiceFactory::GetForProfile(profile_, Profile::EXPLICIT_ACCESS);
-  base::CancelableTaskTracker::TaskId task_id = service->GetFaviconImageForURL(
-      FaviconService::FaviconForURLParams(
-          item->url, favicon_base::FAVICON, gfx::kFaviconSize),
-      base::Bind(
-          &HistoryMenuBridge::GotFaviconData, base::Unretained(this), item),
-      &cancelable_task_tracker_);
+  base::CancelableTaskTracker::TaskId task_id =
+      service->GetFaviconImageForPageURL(
+          FaviconService::FaviconForPageURLParams(
+              item->url, favicon_base::FAVICON, gfx::kFaviconSize),
+          base::Bind(
+              &HistoryMenuBridge::GotFaviconData, base::Unretained(this), item),
+          &cancelable_task_tracker_);
   item->icon_task_id = task_id;
   item->icon_requested = true;
 }

@@ -23,7 +23,7 @@ namespace operations {
 namespace {
 
 const char kExtensionId[] = "mbflcebpggnecokmikipoihdbecnjfoj";
-const int kFileSystemId = 1;
+const char kFileSystemId[] = "testing-file-system";
 const int kRequestId = 2;
 const int kOpenRequestId = 3;
 
@@ -109,18 +109,21 @@ TEST_F(FileSystemProviderOperationsCloseFileTest, Execute) {
       extensions::api::file_system_provider::OnCloseFileRequested::kEventName,
       event->event_name);
   base::ListValue* event_args = event->event_args.get();
-  ASSERT_EQ(3u, event_args->GetSize());
+  ASSERT_EQ(1u, event_args->GetSize());
 
-  int event_file_system_id = -1;
-  EXPECT_TRUE(event_args->GetInteger(0, &event_file_system_id));
+  base::DictionaryValue* options = NULL;
+  ASSERT_TRUE(event_args->GetDictionary(0, &options));
+
+  std::string event_file_system_id;
+  EXPECT_TRUE(options->GetString("fileSystemId", &event_file_system_id));
   EXPECT_EQ(kFileSystemId, event_file_system_id);
 
   int event_request_id = -1;
-  EXPECT_TRUE(event_args->GetInteger(1, &event_request_id));
+  EXPECT_TRUE(options->GetInteger("requestId", &event_request_id));
   EXPECT_EQ(kRequestId, event_request_id);
 
   int event_open_request_id = -1;
-  EXPECT_TRUE(event_args->GetInteger(2, &event_open_request_id));
+  EXPECT_TRUE(options->GetInteger("openRequestId", &event_open_request_id));
   EXPECT_EQ(kOpenRequestId, event_open_request_id);
 }
 
@@ -141,10 +144,6 @@ TEST_F(FileSystemProviderOperationsCloseFileTest, Execute_NoListener) {
 }
 
 TEST_F(FileSystemProviderOperationsCloseFileTest, OnSuccess) {
-  using extensions::api::file_system_provider::EntryMetadata;
-  using extensions::api::file_system_provider_internal::
-      CloseFileRequestedSuccess::Params;
-
   LoggingDispatchEventImpl dispatcher(true /* dispatch_reply */);
   CallbackLogger callback_logger;
 
@@ -161,16 +160,12 @@ TEST_F(FileSystemProviderOperationsCloseFileTest, OnSuccess) {
 
   close_file.OnSuccess(kRequestId,
                        scoped_ptr<RequestValue>(new RequestValue()),
-                       false /* has_next */);
+                       false /* has_more */);
   ASSERT_EQ(1u, callback_logger.events().size());
   EXPECT_EQ(base::File::FILE_OK, callback_logger.events()[0]);
 }
 
 TEST_F(FileSystemProviderOperationsCloseFileTest, OnError) {
-  using extensions::api::file_system_provider::EntryMetadata;
-  using extensions::api::file_system_provider_internal::
-      CloseFileRequestedError::Params;
-
   LoggingDispatchEventImpl dispatcher(true /* dispatch_reply */);
   CallbackLogger callback_logger;
 
@@ -185,7 +180,9 @@ TEST_F(FileSystemProviderOperationsCloseFileTest, OnError) {
 
   EXPECT_TRUE(close_file.Execute(kRequestId));
 
-  close_file.OnError(kRequestId, base::File::FILE_ERROR_TOO_MANY_OPENED);
+  close_file.OnError(kRequestId,
+                     scoped_ptr<RequestValue>(new RequestValue()),
+                     base::File::FILE_ERROR_TOO_MANY_OPENED);
   ASSERT_EQ(1u, callback_logger.events().size());
   EXPECT_EQ(base::File::FILE_ERROR_TOO_MANY_OPENED,
             callback_logger.events()[0]);

@@ -6,8 +6,8 @@
 
 #include <algorithm>
 
-#include "cc/layers/quad_sink.h"
 #include "cc/quads/solid_color_draw_quad.h"
+#include "cc/trees/occlusion_tracker.h"
 
 namespace cc {
 
@@ -22,12 +22,16 @@ scoped_ptr<LayerImpl> SolidColorLayerImpl::CreateLayerImpl(
   return SolidColorLayerImpl::Create(tree_impl, id()).PassAs<LayerImpl>();
 }
 
-void SolidColorLayerImpl::AppendQuads(QuadSink* quad_sink,
-                                      AppendQuadsData* append_quads_data) {
-  SharedQuadState* shared_quad_state = quad_sink->CreateSharedQuadState();
+void SolidColorLayerImpl::AppendQuads(
+    RenderPass* render_pass,
+    const OcclusionTracker<LayerImpl>& occlusion_tracker,
+    AppendQuadsData* append_quads_data) {
+  SharedQuadState* shared_quad_state =
+      render_pass->CreateAndAppendSharedQuadState();
   PopulateSharedQuadState(shared_quad_state);
 
-  AppendDebugBorderQuad(quad_sink, shared_quad_state, append_quads_data);
+  AppendDebugBorderQuad(
+      render_pass, content_bounds(), shared_quad_state, append_quads_data);
 
   // We create a series of smaller quads instead of just one large one so that
   // the culler can reduce the total pixels drawn.
@@ -39,7 +43,7 @@ void SolidColorLayerImpl::AppendQuads(QuadSink* quad_sink,
                           y,
                           std::min(width - x, tile_size_),
                           std::min(height - y, tile_size_));
-      gfx::Rect visible_quad_rect = quad_sink->UnoccludedContentRect(
+      gfx::Rect visible_quad_rect = occlusion_tracker.UnoccludedContentRect(
           quad_rect, draw_properties().target_space_transform);
       if (visible_quad_rect.IsEmpty())
         continue;
@@ -50,7 +54,7 @@ void SolidColorLayerImpl::AppendQuads(QuadSink* quad_sink,
                    visible_quad_rect,
                    background_color(),
                    false);
-      quad_sink->Append(quad.PassAs<DrawQuad>());
+      render_pass->AppendDrawQuad(quad.PassAs<DrawQuad>());
     }
   }
 }

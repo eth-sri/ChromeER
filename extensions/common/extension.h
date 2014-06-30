@@ -23,8 +23,6 @@
 #include "extensions/common/extension_resource.h"
 #include "extensions/common/install_warning.h"
 #include "extensions/common/manifest.h"
-#include "extensions/common/permissions/api_permission.h"
-#include "extensions/common/url_pattern.h"
 #include "extensions/common/url_pattern_set.h"
 #include "ui/base/accelerators/accelerator.h"
 #include "ui/gfx/size.h"
@@ -43,10 +41,9 @@ class ImageSkia;
 }
 
 namespace extensions {
-class PermissionsData;
-class APIPermissionSet;
-class ManifestPermissionSet;
 class PermissionSet;
+class PermissionsData;
+class PermissionsParser;
 
 // Uniquely identifies an Extension, using 32 characters from the alphabet
 // 'a'-'p'.  An empty string represents "no extension".
@@ -95,8 +92,8 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
     DISABLE_UNSUPPORTED_REQUIREMENT = 1 << 3,
     DISABLE_SIDELOAD_WIPEOUT = 1 << 4,
     DISABLE_UNKNOWN_FROM_SYNC = 1 << 5,
-    DISABLE_PERMISSIONS_CONSENT = 1 << 6,  // Unused - abandoned experiment.
-    DISABLE_KNOWN_DISABLED = 1 << 7,
+    // DISABLE_PERMISSIONS_CONSENT = 1 << 6,  // Deprecated.
+    // DISABLE_KNOWN_DISABLED = 1 << 7,  // Deprecated.
     DISABLE_NOT_VERIFIED = 1 << 8,  // Disabled because we could not verify
                                     // the install.
     DISABLE_GREYLIST = 1 << 9,
@@ -165,8 +162,7 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
     // Unused - was part of an abandoned experiment.
     REQUIRE_PERMISSIONS_CONSENT = 1 << 8,
 
-    // |IS_EPHEMERAL| identifies ephemeral apps (experimental), which are not
-    // permanently installed.
+    // Unused - this flag has been moved to ExtensionPrefs.
     IS_EPHEMERAL = 1 << 9,
 
     // |WAS_INSTALLED_BY_OEM| installed by an OEM (e.g on Chrome OS) and should
@@ -250,12 +246,6 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   // Returns the base extension url for a given |extension_id|.
   static GURL GetBaseURLFromExtensionId(const ExtensionId& extension_id);
 
-  // DEPRECATED: These methods have been moved to PermissionsData.
-  // TODO(rdevlin.cronin): remove these once all calls have been updated.
-  bool HasAPIPermission(APIPermission::ID permission) const;
-  bool HasAPIPermission(const std::string& permission_name) const;
-  scoped_refptr<const PermissionSet> GetActivePermissions() const;
-
   // Whether context menu should be shown for page and browser actions.
   bool ShowConfigureContextMenus() const;
 
@@ -310,7 +300,11 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   bool converted_from_user_script() const {
     return converted_from_user_script_;
   }
-  PermissionsData* permissions_data() { return permissions_data_.get(); }
+  PermissionsParser* permissions_parser() { return permissions_parser_.get(); }
+  const PermissionsParser* permissions_parser() const {
+    return permissions_parser_.get();
+  }
+
   const PermissionsData* permissions_data() const {
     return permissions_data_.get();
   }
@@ -340,7 +334,6 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   bool was_installed_by_oem() const {
     return (creation_flags_ & WAS_INSTALLED_BY_OEM) != 0;
   }
-  bool is_ephemeral() const { return (creation_flags_ & IS_EPHEMERAL) != 0; }
 
   // App-related.
   bool is_app() const;
@@ -430,6 +423,12 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   // Defines the set of URLs in the extension's web content.
   URLPatternSet extent_;
 
+  // The parser for the manifest's permissions. This is NULL anytime not during
+  // initialization.
+  // TODO(rdevlin.cronin): This doesn't really belong here.
+  scoped_ptr<PermissionsParser> permissions_parser_;
+
+  // The active permissions for the extension.
   scoped_ptr<PermissionsData> permissions_data_;
 
   // Any warnings that occurred when trying to create/parse the extension.
@@ -510,12 +509,17 @@ struct InstalledExtensionInfo {
   // True if the extension is being updated; false if it is being installed.
   bool is_update;
 
+  // True if the extension was previously installed ephemerally and is now
+  // a regular installed extension.
+  bool from_ephemeral;
+
   // The name of the extension prior to this update. Will be empty if
   // |is_update| is false.
   std::string old_name;
 
   InstalledExtensionInfo(const Extension* extension,
                          bool is_update,
+                         bool from_ephemeral,
                          const std::string& old_name);
 };
 

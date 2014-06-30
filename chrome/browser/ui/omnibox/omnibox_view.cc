@@ -12,11 +12,11 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/search/search.h"
-#include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/ui/omnibox/omnibox_edit_controller.h"
 #include "chrome/browser/ui/toolbar/toolbar_model.h"
+#include "components/search_engines/template_url.h"
 #include "grit/generated_resources.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -24,7 +24,7 @@
 // static
 base::string16 OmniboxView::StripJavascriptSchemas(const base::string16& text) {
   const base::string16 kJsPrefix(
-      base::ASCIIToUTF16(content::kJavaScriptScheme) + base::ASCIIToUTF16(":"));
+      base::ASCIIToUTF16(url::kJavaScriptScheme) + base::ASCIIToUTF16(":"));
   base::string16 out(text);
   while (StartsWith(out, kJsPrefix, false)) {
     base::TrimWhitespace(out.substr(kJsPrefix.length()), base::TRIM_LEADING,
@@ -88,20 +88,15 @@ OmniboxView::~OmniboxView() {
 }
 
 void OmniboxView::HandleOriginChipMouseRelease() {
-  // HIDE_ON_MOUSE_RELEASE only hides if there isn't any current text in the
-  // Omnibox (e.g. search terms).
-  if ((chrome::GetOriginChipV2Condition() ==
-       chrome::ORIGIN_CHIP_V2_HIDE_ON_MOUSE_RELEASE) &&
-      controller()->GetToolbarModel()->GetText().empty()) {
+  // Only hide if there isn't any current text in the Omnibox (e.g. search
+  // terms).
+  if (controller()->GetToolbarModel()->GetText().empty())
     controller()->HideOriginChip();
-  }
 }
 
 void OmniboxView::OnDidKillFocus() {
-  if (chrome::ShouldDisplayOriginChipV2() &&
-      !model()->user_input_in_progress()) {
+  if (chrome::ShouldDisplayOriginChip() && !model()->user_input_in_progress())
     controller()->ShowOriginChip();
-  }
 }
 
 void OmniboxView::OpenMatch(const AutocompleteMatch& match,
@@ -114,7 +109,7 @@ void OmniboxView::OpenMatch(const AutocompleteMatch& match,
     return;
   model_->OpenMatch(
       match, disposition, alternate_nav_url, pasted_text, selected_line);
-  OnMatchOpened(match, model_->profile(), controller_->GetWebContents());
+  OnMatchOpened(match, controller_->GetWebContents());
 }
 
 bool OmniboxView::IsEditingOrEmpty() const {
@@ -212,8 +207,8 @@ bool OmniboxView::IsIndicatingQueryRefinement() const {
 }
 
 void OmniboxView::OnMatchOpened(const AutocompleteMatch& match,
-                                Profile* profile,
-                                content::WebContents* web_contents) const {}
+                                content::WebContents* web_contents) {
+}
 
 OmniboxView::OmniboxView(Profile* profile,
                          OmniboxEditController* controller,

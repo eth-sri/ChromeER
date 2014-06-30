@@ -27,7 +27,6 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/defaults.h"
 #include "chrome/browser/extensions/app_icon_loader_impl.h"
-#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/extensions/launch_util.h"
 #include "chrome/browser/favicon/favicon_tab_helper.h"
@@ -70,7 +69,9 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/extension_prefs.h"
+#include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/browser/extension_util.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_resource.h"
 #include "extensions/common/manifest_handlers/icons_handler.h"
@@ -445,6 +446,9 @@ void ChromeLauncherController::Init() {
   if (ash::Shell::HasInstance()) {
     SetShelfAutoHideBehaviorFromPrefs();
     SetShelfAlignmentFromPrefs();
+#if defined(OS_CHROMEOS)
+    SetVirtualKeyboardBehaviorFromPrefs();
+#endif  // defined(OS_CHROMEOS)
     PrefServiceSyncable* prefs = PrefServiceSyncable::FromProfile(profile_);
     if (!prefs->FindPreference(prefs::kShelfAlignmentLocal)->HasUserSetting() ||
         !prefs->FindPreference(prefs::kShelfAutoHideBehaviorLocal)->
@@ -577,6 +581,34 @@ bool ChromeLauncherController::IsPinnable(ash::ShelfID id) const {
            type == ash::TYPE_PLATFORM_APP ||
            type == ash::TYPE_WINDOWED_APP) &&
           CanPin());
+}
+
+void ChromeLauncherController::Install(ash::ShelfID id) {
+  if (!HasItemController(id))
+    return;
+
+  std::string app_id = GetAppIDForShelfID(id);
+  if (extensions::util::IsExtensionInstalledPermanently(app_id, profile_))
+    return;
+
+  LauncherItemController* controller = id_to_item_controller_map_[id];
+  if (controller->type() == LauncherItemController::TYPE_APP) {
+    AppWindowLauncherItemController* app_window_controller =
+        static_cast<AppWindowLauncherItemController*>(controller);
+    app_window_controller->InstallApp();
+  }
+}
+
+bool ChromeLauncherController::CanInstall(ash::ShelfID id) {
+  int index = model_->ItemIndexByID(id);
+  if (index == -1)
+    return false;
+
+  ash::ShelfItemType type = model_->items()[index].type;
+  if (type != ash::TYPE_PLATFORM_APP)
+    return false;
+
+  return extensions::util::IsEphemeralApp(GetAppIDForShelfID(id), profile_);
 }
 
 void ChromeLauncherController::LockV1AppWithID(
@@ -806,9 +838,10 @@ void ChromeLauncherController::SetLaunchType(
   if (!HasItemController(id))
     return;
 
-  extensions::SetLaunchType(profile_->GetExtensionService(),
-                            id_to_item_controller_map_[id]->app_id(),
-                            launch_type);
+  extensions::SetLaunchType(
+      extensions::ExtensionSystem::Get(profile_)->extension_service(),
+      id_to_item_controller_map_[id]->app_id(),
+      launch_type);
 }
 
 void ChromeLauncherController::UnpinAppWithID(const std::string& app_id) {
@@ -907,9 +940,8 @@ ash::ShelfAutoHideBehavior ChromeLauncherController::GetShelfAutoHideBehavior(
 
 bool ChromeLauncherController::CanUserModifyShelfAutoHideBehavior(
     aura::Window* root_window) const {
-  return !ash::Shell::GetInstance()->IsMaximizeModeWindowManagerEnabled() &&
-      profile_->GetPrefs()->FindPreference(
-          prefs::kShelfAutoHideBehaviorLocal)->IsUserModifiable();
+  return profile_->GetPrefs()->
+      FindPreference(prefs::kShelfAutoHideBehaviorLocal)->IsUserModifiable();
 }
 
 void ChromeLauncherController::ToggleShelfAutoHideBehavior(
@@ -1001,9 +1033,8 @@ void ChromeLauncherController::SetRefocusURLPatternForTest(ash::ShelfID id,
 
 const Extension* ChromeLauncherController::GetExtensionForAppID(
     const std::string& app_id) const {
-  // Some unit tests do not have a real extension.
-  return (profile_->GetExtensionService()) ?
-      profile_->GetExtensionService()->GetInstalledExtension(app_id) : NULL;
+  return extensions::ExtensionRegistry::Get(profile_)->GetExtensionById(
+      app_id, extensions::ExtensionRegistry::EVERYTHING);
 }
 
 void ChromeLauncherController::ActivateWindowOrMinimizeIfActive(
@@ -1100,6 +1131,9 @@ void ChromeLauncherController::ActiveUserChanged(
   SetShelfAlignmentFromPrefs();
   SetShelfAutoHideBehaviorFromPrefs();
   SetShelfBehaviorsFromPrefs();
+#if defined(OS_CHROMEOS)
+  SetVirtualKeyboardBehaviorFromPrefs();
+#endif  // defined(OS_CHROMEOS)
   // Restore the order of running, but unpinned applications for the activated
   // user.
   RestoreUnpinnedRunningApplicationOrder(user_email);
@@ -1682,8 +1716,23 @@ void ChromeLauncherController::SetShelfBehaviorsFromPrefs() {
   SetShelfAlignmentFromPrefs();
 }
 
+#if defined(OS_CHROMEOS)
+void ChromeLauncherController::SetVirtualKeyboardBehaviorFromPrefs() {
+  const PrefService* service = profile_->GetPrefs();
+  if (!service->HasPrefPath(prefs::kTouchVirtualKeyboardEnabled)) {
+    keyboard::SetKeyboardShowOverride(keyboard::KEYBOARD_SHOW_OVERRIDE_NONE);
+  } else {
+    const bool enabled = service->GetBoolean(
+        prefs::kTouchVirtualKeyboardEnabled);
+    keyboard::SetKeyboardShowOverride(
+        enabled ? keyboard::KEYBOARD_SHOW_OVERRIDE_ENABLED
+                : keyboard::KEYBOARD_SHOW_OVERRIDE_DISABLED);
+  }
+}
+#endif //  defined(OS_CHROMEOS)
+
 ash::ShelfItemStatus ChromeLauncherController::GetAppState(
-    const::std::string& app_id) {
+    const std::string& app_id) {
   ash::ShelfItemStatus status = ash::STATUS_CLOSED;
   for (WebContentsToAppIDMap::iterator it = web_contents_to_app_id_.begin();
        it != web_contents_to_app_id_.end();
@@ -2002,6 +2051,12 @@ void ChromeLauncherController::AttachProfile(Profile* profile) {
       prefs::kShelfPreferences,
       base::Bind(&ChromeLauncherController::SetShelfBehaviorsFromPrefs,
                  base::Unretained(this)));
+#if defined(OS_CHROMEOS)
+  pref_change_registrar_.Add(
+      prefs::kTouchVirtualKeyboardEnabled,
+      base::Bind(&ChromeLauncherController::SetVirtualKeyboardBehaviorFromPrefs,
+                 base::Unretained(this)));
+#endif  // defined(OS_CHROMEOS)
 }
 
 void ChromeLauncherController::ReleaseProfile() {

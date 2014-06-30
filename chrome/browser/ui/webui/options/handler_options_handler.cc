@@ -13,8 +13,8 @@
 #include "base/values.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/custom_handlers/protocol_handler_registry_factory.h"
-#include "chrome/browser/google/google_util.h"
 #include "chrome/browser/profiles/profile.h"
+#include "components/google/core/browser/google_util.h"
 #include "content/public/browser/web_ui.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -53,9 +53,8 @@ void HandlerOptionsHandler::GetLocalizedValues(
                 IDS_HANDLER_OPTIONS_WINDOW_TITLE);
   RegisterStrings(localized_strings, resources, arraysize(resources));
 
-  localized_strings->SetString(
-      "handlers_learn_more_url",
-      google_util::StringAppendGoogleLocaleParam(kHandlersLearnMoreUrl));
+  localized_strings->SetString("handlers_learn_more_url",
+                               kHandlersLearnMoreUrl);
 }
 
 void HandlerOptionsHandler::InitializeHandler() {

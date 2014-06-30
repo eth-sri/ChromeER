@@ -18,6 +18,7 @@
 #include "base/time/time.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/renderer/chrome_content_renderer_client.h"
+#include "components/data_reduction_proxy/common/data_reduction_proxy_headers.h"
 #include "content/public/common/content_constants.h"
 #include "content/public/renderer/document_state.h"
 #include "content/public/renderer/render_thread.h"
@@ -141,16 +142,9 @@ URLPattern::SchemeMasks GetSupportedSchemeType(const GURL& url) {
 }
 
 // Helper function to check for string in 'via' header. Returns true if
-// |via_value| is one of the values listed in the Via header and the response
-// was fetched via a proxy.
+// |via_value| is one of the values listed in the Via header.
 bool ViaHeaderContains(WebFrame* frame, const std::string& via_value) {
   const char kViaHeaderName[] = "Via";
-
-  DocumentState* document_state =
-      DocumentState::FromDataSource(frame->dataSource());
-  if (!document_state->was_fetched_via_proxy())
-    return false;
-
   std::vector<std::string> values;
   // Multiple via headers have already been coalesced and hence each value
   // separated by a comma corresponds to a proxy. The value added by a proxy is
@@ -183,7 +177,7 @@ bool DataReductionProxyWasUsed(WebFrame* frame) {
   std::replace(headers.begin(), headers.end(), '\n', '\0');
   scoped_refptr<net::HttpResponseHeaders> response_headers(
       new net::HttpResponseHeaders(headers));
-  return response_headers->IsDataReductionProxyResponse();
+  return data_reduction_proxy::HasDataReductionProxyViaHeader(response_headers);
 }
 
 // Returns true if the provided URL is a referrer string that came from
@@ -227,12 +221,17 @@ int GetQueryStringBasedExperiment(const GURL& referrer) {
   return kNoExperiment;
 }
 
-void DumpPerformanceTiming(const WebPerformance& performance,
-                           DocumentState* document_state,
-                           bool data_reduction_proxy_was_used,
-                           bool came_from_websearch,
-                           int websearch_chrome_joint_experiment_id,
-                           bool is_preview) {
+void DumpHistograms(const WebPerformance& performance,
+                    DocumentState* document_state,
+                    bool data_reduction_proxy_was_used,
+                    bool came_from_websearch,
+                    int websearch_chrome_joint_experiment_id,
+                    bool is_preview) {
+  // This function records new histograms based on the Navigation Timing
+  // records. As such, the histograms should not depend on the deprecated timing
+  // information collected in DocumentState. However, here for some reason we
+  // check if document_state->request_time() is null. TODO(ppi): find out why
+  // and remove DocumentState from the parameter list.
   Time request = document_state->request_time();
 
   Time navigation_start = Time::FromDoubleT(performance.navigationStart());
@@ -464,56 +463,17 @@ enum AbandonType {
   ABANDON_TYPE_MAX = 0x10
 };
 
-}  // namespace
-
-PageLoadHistograms::PageLoadHistograms(content::RenderView* render_view)
-    : content::RenderViewObserver(render_view),
-      cross_origin_access_count_(0),
-      same_origin_access_count_(0) {
-}
-
-void PageLoadHistograms::Dump(WebFrame* frame) {
-  // We only dump histograms for main frames.
-  // In the future, it may be interesting to tag subframes and dump them too.
-  if (!frame || frame->parent())
-    return;
-
-  // Only dump for supported schemes.
-  URLPattern::SchemeMasks scheme_type =
-      GetSupportedSchemeType(frame->document().url());
-  if (scheme_type == 0)
-    return;
-
-  // Ignore multipart requests.
-  if (frame->dataSource()->response().isMultipartPayload())
-    return;
-
-  DocumentState* document_state =
-      DocumentState::FromDataSource(frame->dataSource());
-
-  bool data_reduction_proxy_was_used = DataReductionProxyWasUsed(frame);
-  bool came_from_websearch =
-      IsFromGoogleSearchResult(frame->document().url(),
-                               GURL(frame->document().referrer()));
-  int websearch_chrome_joint_experiment_id = kNoExperiment;
-  bool is_preview = false;
-  if (came_from_websearch) {
-    websearch_chrome_joint_experiment_id =
-        GetQueryStringBasedExperiment(GURL(frame->document().referrer()));
-    is_preview = ViaHeaderContains(frame, "1.1 Google Instant Proxy Preview");
-  }
-
-  // Times based on the Web Timing metrics.
-  // http://www.w3.org/TR/navigation-timing/
-  // TODO(tonyg, jar): We are in the process of vetting these metrics against
-  // the existing ones. Once we understand any differences, we will standardize
-  // on a single set of metrics.
-  DumpPerformanceTiming(frame->performance(), document_state,
-                        data_reduction_proxy_was_used,
-                        came_from_websearch,
-                        websearch_chrome_joint_experiment_id,
-                        is_preview);
-
+// These histograms are based on the timing information collected in
+// DocumentState. They should be transitioned to equivalents based on the
+// Navigation Timing records (see DumpPerformanceTiming()) or dropped if not
+// needed. Please do not add new metrics based on DocumentState.
+void DumpDeprecatedHistograms(const WebPerformance& performance,
+                              DocumentState* document_state,
+                              bool data_reduction_proxy_was_used,
+                              bool came_from_websearch,
+                              int websearch_chrome_joint_experiment_id,
+                              bool is_preview,
+                              URLPattern::SchemeMasks scheme_type) {
   // If we've already dumped, do nothing.
   // This simple bool works because we only dump for the main frame.
   if (document_state->load_histograms_recorded())
@@ -528,7 +488,7 @@ void PageLoadHistograms::Dump(WebFrame* frame) {
   // The PLT.MissingStart histogram should help us troubleshoot and then we can
   // remove this.
   Time navigation_start =
-      Time::FromDoubleT(frame->performance().navigationStart());
+      Time::FromDoubleT(performance.navigationStart());
   int missing_start_type = 0;
   missing_start_type |= start.is_null() ? START_MISSING : 0;
   missing_start_type |= commit.is_null() ? COMMIT_MISSING : 0;
@@ -547,9 +507,8 @@ void PageLoadHistograms::Dump(WebFrame* frame) {
 
   // TODO(tonyg, jar): We suspect a bug in abandonment counting, this temporary
   // histogram should help us to troubleshoot.
-  Time load_event_start =
-      Time::FromDoubleT(frame->performance().loadEventStart());
-  Time load_event_end = Time::FromDoubleT(frame->performance().loadEventEnd());
+  Time load_event_start = Time::FromDoubleT(performance.loadEventStart());
+  Time load_event_end = Time::FromDoubleT(performance.loadEventEnd());
   int abandon_type = 0;
   abandon_type |= finish_doc.is_null() ? FINISH_DOC_MISSING : 0;
   abandon_type |= finish_all_loads.is_null() ? FINISH_ALL_LOADS_MISSING : 0;
@@ -724,163 +683,31 @@ void PageLoadHistograms::Dump(WebFrame* frame) {
                   begin_to_finish_all_loads);
   }
 
-  // TODO(mpcomplete): remove the extension-related histograms after we collect
-  // enough data. http://crbug.com/100411
-  const bool use_adblock_histogram =
-      ChromeContentRendererClient::IsAdblockInstalled();
-  if (use_adblock_histogram) {
+  const bool use_webrequest_histogram =
+      ChromeContentRendererClient::WasWebRequestUsedBySomeExtensions();
+  if (use_webrequest_histogram) {
     UMA_HISTOGRAM_ENUMERATION(
-        "PLT.Abandoned_ExtensionAdblock",
+        "PLT.Abandoned_ExtensionWebRequest",
         abandoned_page ? 1 : 0, 2);
     switch (load_type) {
       case DocumentState::NORMAL_LOAD:
         PLT_HISTOGRAM(
-            "PLT.BeginToFinish_NormalLoad_ExtensionAdblock",
+            "PLT.BeginToFinish_NormalLoad_ExtensionWebRequest",
             begin_to_finish_all_loads);
         break;
       case DocumentState::LINK_LOAD_NORMAL:
         PLT_HISTOGRAM(
-            "PLT.BeginToFinish_LinkLoadNormal_ExtensionAdblock",
+            "PLT.BeginToFinish_LinkLoadNormal_ExtensionWebRequest",
             begin_to_finish_all_loads);
         break;
       case DocumentState::LINK_LOAD_RELOAD:
         PLT_HISTOGRAM(
-            "PLT.BeginToFinish_LinkLoadReload_ExtensionAdblock",
+            "PLT.BeginToFinish_LinkLoadReload_ExtensionWebRequest",
             begin_to_finish_all_loads);
         break;
       case DocumentState::LINK_LOAD_CACHE_STALE_OK:
         PLT_HISTOGRAM(
-            "PLT.BeginToFinish_LinkLoadStaleOk_ExtensionAdblock",
-            begin_to_finish_all_loads);
-        break;
-      default:
-        break;
-    }
-  }
-
-  const bool use_adblockplus_histogram =
-      ChromeContentRendererClient::IsAdblockPlusInstalled();
-  if (use_adblockplus_histogram) {
-    UMA_HISTOGRAM_ENUMERATION(
-        "PLT.Abandoned_ExtensionAdblockPlus",
-        abandoned_page ? 1 : 0, 2);
-    switch (load_type) {
-      case DocumentState::NORMAL_LOAD:
-        PLT_HISTOGRAM(
-            "PLT.BeginToFinish_NormalLoad_ExtensionAdblockPlus",
-            begin_to_finish_all_loads);
-        break;
-      case DocumentState::LINK_LOAD_NORMAL:
-        PLT_HISTOGRAM(
-            "PLT.BeginToFinish_LinkLoadNormal_ExtensionAdblockPlus",
-            begin_to_finish_all_loads);
-        break;
-      case DocumentState::LINK_LOAD_RELOAD:
-        PLT_HISTOGRAM(
-            "PLT.BeginToFinish_LinkLoadReload_ExtensionAdblockPlus",
-            begin_to_finish_all_loads);
-        break;
-      case DocumentState::LINK_LOAD_CACHE_STALE_OK:
-        PLT_HISTOGRAM(
-            "PLT.BeginToFinish_LinkLoadStaleOk_ExtensionAdblockPlus",
-            begin_to_finish_all_loads);
-        break;
-      default:
-        break;
-    }
-  }
-
-  const bool use_webrequest_adblock_histogram =
-      ChromeContentRendererClient::IsAdblockWithWebRequestInstalled();
-  if (use_webrequest_adblock_histogram) {
-    UMA_HISTOGRAM_ENUMERATION(
-        "PLT.Abandoned_ExtensionWebRequestAdblock",
-        abandoned_page ? 1 : 0, 2);
-    switch (load_type) {
-      case DocumentState::NORMAL_LOAD:
-        PLT_HISTOGRAM(
-            "PLT.BeginToFinish_NormalLoad_ExtensionWebRequestAdblock",
-            begin_to_finish_all_loads);
-        break;
-      case DocumentState::LINK_LOAD_NORMAL:
-        PLT_HISTOGRAM(
-            "PLT.BeginToFinish_LinkLoadNormal_ExtensionWebRequestAdblock",
-            begin_to_finish_all_loads);
-        break;
-      case DocumentState::LINK_LOAD_RELOAD:
-        PLT_HISTOGRAM(
-            "PLT.BeginToFinish_LinkLoadReload_ExtensionWebRequestAdblock",
-            begin_to_finish_all_loads);
-        break;
-      case DocumentState::LINK_LOAD_CACHE_STALE_OK:
-        PLT_HISTOGRAM(
-            "PLT.BeginToFinish_LinkLoadStaleOk_ExtensionWebRequestAdblock",
-            begin_to_finish_all_loads);
-        break;
-      default:
-        break;
-    }
-  }
-
-  const bool use_webrequest_adblockplus_histogram =
-      ChromeContentRendererClient::
-          IsAdblockPlusWithWebRequestInstalled();
-  if (use_webrequest_adblockplus_histogram) {
-    UMA_HISTOGRAM_ENUMERATION(
-        "PLT.Abandoned_ExtensionWebRequestAdblockPlus",
-        abandoned_page ? 1 : 0, 2);
-    switch (load_type) {
-      case DocumentState::NORMAL_LOAD:
-        PLT_HISTOGRAM(
-            "PLT.BeginToFinish_NormalLoad_ExtensionWebRequestAdblockPlus",
-            begin_to_finish_all_loads);
-        break;
-      case DocumentState::LINK_LOAD_NORMAL:
-        PLT_HISTOGRAM(
-            "PLT.BeginToFinish_LinkLoadNormal_ExtensionWebRequestAdblockPlus",
-            begin_to_finish_all_loads);
-        break;
-      case DocumentState::LINK_LOAD_RELOAD:
-        PLT_HISTOGRAM(
-            "PLT.BeginToFinish_LinkLoadReload_ExtensionWebRequestAdblockPlus",
-            begin_to_finish_all_loads);
-        break;
-      case DocumentState::LINK_LOAD_CACHE_STALE_OK:
-        PLT_HISTOGRAM(
-            "PLT.BeginToFinish_LinkLoadStaleOk_ExtensionWebRequestAdblockPlus",
-            begin_to_finish_all_loads);
-        break;
-      default:
-        break;
-    }
-  }
-
-  const bool use_webrequest_other_histogram =
-      ChromeContentRendererClient::
-          IsOtherExtensionWithWebRequestInstalled();
-  if (use_webrequest_other_histogram) {
-    UMA_HISTOGRAM_ENUMERATION(
-        "PLT.Abandoned_ExtensionWebRequestOther",
-        abandoned_page ? 1 : 0, 2);
-    switch (load_type) {
-      case DocumentState::NORMAL_LOAD:
-        PLT_HISTOGRAM(
-            "PLT.BeginToFinish_NormalLoad_ExtensionWebRequestOther",
-            begin_to_finish_all_loads);
-        break;
-      case DocumentState::LINK_LOAD_NORMAL:
-        PLT_HISTOGRAM(
-            "PLT.BeginToFinish_LinkLoadNormal_ExtensionWebRequestOther",
-            begin_to_finish_all_loads);
-        break;
-      case DocumentState::LINK_LOAD_RELOAD:
-        PLT_HISTOGRAM(
-            "PLT.BeginToFinish_LinkLoadReload_ExtensionWebRequestOther",
-            begin_to_finish_all_loads);
-        break;
-      case DocumentState::LINK_LOAD_CACHE_STALE_OK:
-        PLT_HISTOGRAM(
-            "PLT.BeginToFinish_LinkLoadStaleOk_ExtensionWebRequestOther",
+            "PLT.BeginToFinish_LinkLoadStaleOk_ExtensionWebRequest",
             begin_to_finish_all_loads);
         break;
       default:
@@ -938,12 +765,61 @@ void PageLoadHistograms::Dump(WebFrame* frame) {
                                 abandoned_page ? 1 : 0, 2);
     }
   }
+}
 
-  // Site isolation metrics.
-  UMA_HISTOGRAM_COUNTS("SiteIsolation.PageLoadsWithCrossSiteFrameAccess",
-                       cross_origin_access_count_);
-  UMA_HISTOGRAM_COUNTS("SiteIsolation.PageLoadsWithSameSiteFrameAccess",
-                       same_origin_access_count_);
+}  // namespace
+
+PageLoadHistograms::PageLoadHistograms(content::RenderView* render_view)
+    : content::RenderViewObserver(render_view) {
+}
+
+void PageLoadHistograms::Dump(WebFrame* frame) {
+  // We only dump histograms for main frames.
+  // In the future, it may be interesting to tag subframes and dump them too.
+  if (!frame || frame->parent())
+    return;
+
+  // Only dump for supported schemes.
+  URLPattern::SchemeMasks scheme_type =
+      GetSupportedSchemeType(frame->document().url());
+  if (scheme_type == 0)
+    return;
+
+  // Ignore multipart requests.
+  if (frame->dataSource()->response().isMultipartPayload())
+    return;
+
+  DocumentState* document_state =
+      DocumentState::FromDataSource(frame->dataSource());
+
+  bool data_reduction_proxy_was_used = DataReductionProxyWasUsed(frame);
+  bool came_from_websearch =
+      IsFromGoogleSearchResult(frame->document().url(),
+                               GURL(frame->document().referrer()));
+  int websearch_chrome_joint_experiment_id = kNoExperiment;
+  bool is_preview = false;
+  if (came_from_websearch) {
+    websearch_chrome_joint_experiment_id =
+        GetQueryStringBasedExperiment(GURL(frame->document().referrer()));
+    is_preview = ViaHeaderContains(frame, "1.1 Google Instant Proxy Preview");
+  }
+
+  // Metrics based on the timing information recorded for the Navigation Timing
+  // API - http://www.w3.org/TR/navigation-timing/.
+  DumpHistograms(frame->performance(), document_state,
+                 data_reduction_proxy_was_used,
+                 came_from_websearch,
+                 websearch_chrome_joint_experiment_id,
+                 is_preview);
+
+  // Old metrics based on the timing information stored in DocumentState. These
+  // are deprecated and should go away.
+  DumpDeprecatedHistograms(frame->performance(), document_state,
+                           data_reduction_proxy_was_used,
+                           came_from_websearch,
+                           websearch_chrome_joint_experiment_id,
+                           is_preview,
+                           scheme_type);
 
   // Log the PLT to the info log.
   LogPageLoadTime(document_state, frame->dataSource());
@@ -960,11 +836,6 @@ void PageLoadHistograms::Dump(WebFrame* frame) {
       content::kHistogramSynchronizerReservedSequenceNumber);
 }
 
-void PageLoadHistograms::ResetCrossFramePropertyAccess() {
-  cross_origin_access_count_ = 0;
-  same_origin_access_count_ = 0;
-}
-
 void PageLoadHistograms::FrameWillClose(WebFrame* frame) {
   Dump(frame);
 }
@@ -974,7 +845,6 @@ void PageLoadHistograms::ClosePage() {
   // called when a page is destroyed. page_load_histograms_.Dump() is safe
   // to call multiple times for the same frame, but it will simplify things.
   Dump(render_view()->GetWebView()->mainFrame());
-  ResetCrossFramePropertyAccess();
 }
 
 void PageLoadHistograms::LogPageLoadTime(const DocumentState* document_state,

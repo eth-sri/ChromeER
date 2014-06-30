@@ -18,6 +18,7 @@ examples/api/socket/*
 examples/api/url_loader/*
 examples/api/var_array_buffer/*
 examples/api/var_dictionary/*
+examples/api/video_decode/*
 examples/api/websocket/*
 examples/button_close.png
 examples/button_close_hover.png
@@ -29,7 +30,7 @@ examples/demo/life/*
 examples/demo/life_simd/*
 [win]examples/demo/make.bat
 examples/demo/Makefile
-examples/demo/nacl_io/*
+examples/demo/nacl_io_demo/*
 examples/demo/pi_generator/*
 examples/demo/voronoi/*
 examples/favicon.ico
@@ -99,6 +100,7 @@ include/win/sys/poll.h
 [linux]lib/${PLATFORM}_host/Debug/libppapi_cpp_private.a
 [linux]lib/${PLATFORM}_host/Debug/libppapi_gles2.a
 [linux]lib/${PLATFORM}_host/Debug/libppapi_simple.a
+[linux]lib/${PLATFORM}_host/Debug/libsdk_util.a
 [linux]lib/${PLATFORM}_host/Release/libgmock.a
 [linux]lib/${PLATFORM}_host/Release/libgtest.a
 [linux]lib/${PLATFORM}_host/Release/libjsoncpp.a
@@ -108,6 +110,7 @@ include/win/sys/poll.h
 [linux]lib/${PLATFORM}_host/Release/libppapi_cpp_private.a
 [linux]lib/${PLATFORM}_host/Release/libppapi_gles2.a
 [linux]lib/${PLATFORM}_host/Release/libppapi_simple.a
+[linux]lib/${PLATFORM}_host/Release/libsdk_util.a
 [win]lib/${PLATFORM}_x86_32_host/Debug/gmock.lib
 [win]lib/${PLATFORM}_x86_32_host/Debug/gtest.lib
 [win]lib/${PLATFORM}_x86_32_host/Debug/jsoncpp.lib
@@ -306,7 +309,6 @@ toolchain/${PLATFORM}_arm_newlib/arm-nacl/include/nacl/nacl_dyncode.h
 toolchain/${PLATFORM}_arm_newlib/arm-nacl/include/nacl/nacl_exception.h
 toolchain/${PLATFORM}_arm_newlib/arm-nacl/include/nacl/nacl_minidump.h
 toolchain/${PLATFORM}_arm_newlib/arm-nacl/include/nacl/nacl_startup.h
-toolchain/${PLATFORM}_arm_newlib/arm-nacl/include/nacl/nacl_thread.h
 toolchain/${PLATFORM}_arm_newlib/arm-nacl/include/pthread.h
 toolchain/${PLATFORM}_arm_newlib/arm-nacl/include/semaphore.h
 toolchain/${PLATFORM}_arm_newlib/arm-nacl/lib/crti.o
@@ -329,7 +331,6 @@ toolchain/${PLATFORM}_pnacl/sdk/include/nacl/nacl_dyncode.h
 toolchain/${PLATFORM}_pnacl/sdk/include/nacl/nacl_exception.h
 toolchain/${PLATFORM}_pnacl/sdk/include/nacl/nacl_minidump.h
 toolchain/${PLATFORM}_pnacl/sdk/include/nacl/nacl_startup.h
-toolchain/${PLATFORM}_pnacl/sdk/include/nacl/nacl_thread.h
 toolchain/${PLATFORM}_pnacl/sdk/include/pthread.h
 toolchain/${PLATFORM}_pnacl/sdk/include/semaphore.h
 toolchain/${PLATFORM}_pnacl/sdk/lib/libminidump_generator.a
@@ -350,7 +351,6 @@ toolchain/${PLATFORM}_x86_glibc/x86_64-nacl/include/nacl/nacl_dyncode.h
 toolchain/${PLATFORM}_x86_glibc/x86_64-nacl/include/nacl/nacl_exception.h
 toolchain/${PLATFORM}_x86_glibc/x86_64-nacl/include/nacl/nacl_minidump.h
 toolchain/${PLATFORM}_x86_glibc/x86_64-nacl/include/nacl/nacl_startup.h
-toolchain/${PLATFORM}_x86_glibc/x86_64-nacl/include/nacl/nacl_thread.h
 toolchain/${PLATFORM}_x86_glibc/x86_64-nacl/lib/libminidump_generator.a
 toolchain/${PLATFORM}_x86_glibc/x86_64-nacl/lib/libminidump_generator.so
 toolchain/${PLATFORM}_x86_glibc/x86_64-nacl/lib/libnacl.a
@@ -384,7 +384,6 @@ toolchain/${PLATFORM}_x86_newlib/x86_64-nacl/include/nacl/nacl_dyncode.h
 toolchain/${PLATFORM}_x86_newlib/x86_64-nacl/include/nacl/nacl_exception.h
 toolchain/${PLATFORM}_x86_newlib/x86_64-nacl/include/nacl/nacl_minidump.h
 toolchain/${PLATFORM}_x86_newlib/x86_64-nacl/include/nacl/nacl_startup.h
-toolchain/${PLATFORM}_x86_newlib/x86_64-nacl/include/nacl/nacl_thread.h
 toolchain/${PLATFORM}_x86_newlib/x86_64-nacl/include/pthread.h
 toolchain/${PLATFORM}_x86_newlib/x86_64-nacl/include/semaphore.h
 toolchain/${PLATFORM}_x86_newlib/x86_64-nacl/lib/crti.o

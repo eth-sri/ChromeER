@@ -14,16 +14,16 @@
 #include "base/time/time.h"
 #include "cc/base/cc_export.h"
 #include "cc/output/begin_frame_args.h"
+#include "cc/scheduler/delay_based_time_source.h"
 #include "cc/scheduler/draw_result.h"
 #include "cc/scheduler/scheduler_settings.h"
 #include "cc/scheduler/scheduler_state_machine.h"
-#include "cc/scheduler/time_source.h"
-#include "cc/trees/layer_tree_host.h"
+
+namespace base {
+class SingleThreadTaskRunner;
+}
 
 namespace cc {
-
-class Thread;
-class SyntheticBeginFrameSource;
 
 class SchedulerClient {
  public:
@@ -94,9 +94,6 @@ class CC_EXPORT Scheduler {
   void DidManageTiles();
   void DidLoseOutputSurface();
   void DidCreateAndInitializeOutputSurface();
-  bool HasInitializedOutputSurface() const {
-    return state_machine_.HasInitializedOutputSurface();
-  }
 
   bool CommitPending() const { return state_machine_.CommitPending(); }
   bool RedrawPending() const { return state_machine_.RedrawPending(); }
@@ -143,29 +140,41 @@ class CC_EXPORT Scheduler {
     state_machine_.SetContinuousPainting(continuous_painting);
   }
 
- private:
+ protected:
+  class CC_EXPORT SyntheticBeginFrameSource : public TimeSourceClient {
+   public:
+    SyntheticBeginFrameSource(Scheduler* scheduler,
+                              base::SingleThreadTaskRunner* task_runner);
+    virtual ~SyntheticBeginFrameSource();
+
+    // Updates the phase and frequency of the timer.
+    void CommitVSyncParameters(base::TimeTicks timebase,
+                               base::TimeDelta interval);
+
+    // Activates future BeginFrames and, if activating, pushes the most
+    // recently missed BeginFrame to the back of a retroactive queue.
+    void SetNeedsBeginFrame(bool needs_begin_frame,
+                            std::deque<BeginFrameArgs>* begin_retro_frame_args);
+
+    bool IsActive() const;
+
+    // TimeSourceClient implementation of OnTimerTick triggers a BeginFrame.
+    virtual void OnTimerTick() OVERRIDE;
+
+    scoped_ptr<base::Value> AsValue() const;
+
+   private:
+    BeginFrameArgs CreateSyntheticBeginFrameArgs(base::TimeTicks frame_time);
+
+    Scheduler* scheduler_;
+    scoped_refptr<DelayBasedTimeSource> time_source_;
+  };
+
   Scheduler(
       SchedulerClient* client,
       const SchedulerSettings& scheduler_settings,
       int layer_tree_host_id,
       const scoped_refptr<base::SingleThreadTaskRunner>& impl_task_runner);
-
-  base::TimeTicks AdjustedBeginImplFrameDeadline(
-      const BeginFrameArgs& args,
-      base::TimeDelta draw_duration_estimate) const;
-  void ScheduleBeginImplFrameDeadline(base::TimeTicks deadline);
-  void SetupNextBeginFrameIfNeeded();
-  void PostBeginRetroFrameIfNeeded();
-  void SetupNextBeginFrameWhenVSyncThrottlingEnabled(bool needs_begin_frame);
-  void SetupNextBeginFrameWhenVSyncThrottlingDisabled(bool needs_begin_frame);
-  void SetupPollingMechanisms(bool needs_begin_frame);
-  void DrawAndSwapIfPossible();
-  void ProcessScheduledActions();
-
-  bool CanCommitAndActivateBeforeDeadline() const;
-  void AdvanceCommitStateIfPossible();
-
-  bool IsBeginMainFrameSentOrStarted() const;
 
   const SchedulerSettings settings_;
   SchedulerClient* client_;
@@ -181,7 +190,6 @@ class CC_EXPORT Scheduler {
   std::deque<BeginFrameArgs> begin_retro_frame_args_;
   BeginFrameArgs begin_impl_frame_args_;
 
-  void SetupSyntheticBeginFrames();
   scoped_ptr<SyntheticBeginFrameSource> synthetic_begin_frame_source_;
 
   base::Closure begin_retro_frame_closure_;
@@ -197,6 +205,23 @@ class CC_EXPORT Scheduler {
   SchedulerStateMachine state_machine_;
   bool inside_process_scheduled_actions_;
   SchedulerStateMachine::Action inside_action_;
+
+ private:
+  base::TimeTicks AdjustedBeginImplFrameDeadline(
+      const BeginFrameArgs& args,
+      base::TimeDelta draw_duration_estimate) const;
+  void ScheduleBeginImplFrameDeadline(base::TimeTicks deadline);
+  void SetupNextBeginFrameIfNeeded();
+  void PostBeginRetroFrameIfNeeded();
+  void SetupNextBeginFrameWhenVSyncThrottlingEnabled(bool needs_begin_frame);
+  void SetupNextBeginFrameWhenVSyncThrottlingDisabled(bool needs_begin_frame);
+  void SetupPollingMechanisms(bool needs_begin_frame);
+  void DrawAndSwapIfPossible();
+  void ProcessScheduledActions();
+  bool CanCommitAndActivateBeforeDeadline() const;
+  void AdvanceCommitStateIfPossible();
+  bool IsBeginMainFrameSentOrStarted() const;
+  void SetupSyntheticBeginFrames();
 
   base::WeakPtrFactory<Scheduler> weak_factory_;
 

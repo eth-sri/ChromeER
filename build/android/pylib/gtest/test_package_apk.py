@@ -16,6 +16,7 @@ from pylib import android_commands
 from pylib import constants
 from pylib import pexpect
 from pylib.device import device_errors
+from pylib.device import intent
 from pylib.gtest.test_package import TestPackage
 
 
@@ -55,7 +56,7 @@ class TestPackageApk(TestPackage):
     return '/data/data/' + self._package_info.package + '/files/test.fifo'
 
   def _ClearFifo(self, device):
-    device.old_interface.RunShellCommand('rm -f ' + self._GetFifo())
+    device.RunShellCommand('rm -f ' + self._GetFifo())
 
   def _WatchFifo(self, device, timeout, logfile=None):
     for i in range(10):
@@ -71,23 +72,28 @@ class TestPackageApk(TestPackage):
     return pexpect.spawn('adb', args, timeout=timeout, logfile=logfile)
 
   def _StartActivity(self, device):
-    device.old_interface.StartActivity(
-        self._package_info.package,
-        self._package_info.activity,
+    device.StartActivity(
+        intent.Intent(package=self._package_info.package,
+                      activity=self._package_info.activity,
+                      action='android.intent.action.MAIN'),
         # No wait since the runner waits for FIFO creation anyway.
-        wait_for_completion=False,
-        action='android.intent.action.MAIN',
+        blocking=False,
         force_stop=True)
 
   #override
   def ClearApplicationState(self, device):
-    device.old_interface.ClearApplicationState(self._package_info.package)
+    device.ClearApplicationState(self._package_info.package)
     # Content shell creates a profile on the sdscard which accumulates cache
     # files over time.
     if self.suite_name == 'content_browsertests':
-      device.old_interface.RunShellCommand(
-          'rm -r %s/content_shell' % device.old_interface.GetExternalStorage(),
-          timeout_time=60 * 2)
+      try:
+        device.RunShellCommand(
+            'rm -r %s/content_shell' % device.GetExternalStoragePath(),
+            timeout=60 * 2)
+      except device_errors.CommandFailedError:
+        # TODO(jbudorick) Handle this exception appropriately once the
+        #                 conversions are done.
+        pass
 
   #override
   def CreateCommandLineFileOnDevice(self, device, test_filter, test_arguments):
@@ -126,5 +132,4 @@ class TestPackageApk(TestPackage):
   #override
   def Install(self, device):
     self.tool.CopyFiles()
-    device.old_interface.ManagedInstall(
-        self.suite_path, False, package_name=self._package_info.package)
+    device.Install(self.suite_path)

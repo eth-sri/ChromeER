@@ -16,6 +16,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
+#include "base/sequence_checker.h"
 #include "base/values.h"
 #include "chrome/browser/sync_file_system/drive_backend/tracker_id_set.h"
 #include "chrome/browser/sync_file_system/sync_callbacks.h"
@@ -49,17 +50,8 @@ namespace drive_backend {
 class FileDetails;
 class FileMetadata;
 class FileTracker;
-class MetadataDatabaseIndex;
+class MetadataDatabaseIndexInterface;
 class ServiceMetadata;
-
-struct DatabaseContents {
-  scoped_ptr<ServiceMetadata> service_metadata;
-  ScopedVector<FileMetadata> file_metadata;
-  ScopedVector<FileTracker> file_trackers;
-
-  DatabaseContents();
-  ~DatabaseContents();
-};
 
 // MetadataDatabase holds and maintains a LevelDB instance and its indexes,
 // which holds 1)ServiceMetadata, 2)FileMetadata and 3)FileTracker.
@@ -365,7 +357,6 @@ class MetadataDatabase {
       scoped_ptr<CreateParam> create_param,
       const CreateCallback& callback);
   SyncStatusCode InitializeOnFileTaskRunner();
-  void BuildIndexes(DatabaseContents* contents);
 
   // Database manipulation methods.
   void RegisterTrackerAsAppRoot(const std::string& app_id,
@@ -424,6 +415,8 @@ class MetadataDatabase {
                                   const std::string& file_id,
                                   leveldb::WriteBatch* batch);
 
+  void DetachFromSequence();
+
   scoped_refptr<base::SequencedTaskRunner> worker_task_runner_;
   scoped_refptr<base::SequencedTaskRunner> file_task_runner_;
   base::FilePath database_path_;
@@ -433,9 +426,11 @@ class MetadataDatabase {
   scoped_ptr<ServiceMetadata> service_metadata_;
   int64 largest_known_change_id_;
 
-  scoped_ptr<MetadataDatabaseIndex> index_;
+  scoped_ptr<MetadataDatabaseIndexInterface> index_;
 
   base::WeakPtrFactory<MetadataDatabase> weak_ptr_factory_;
+
+  base::SequenceChecker worker_sequence_checker_;
 
   DISALLOW_COPY_AND_ASSIGN(MetadataDatabase);
 };

@@ -9,9 +9,12 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/metrics/histogram.h"
 #include "base/stl_util.h"
+#include "chrome/browser/extensions/active_tab_permission_granter.h"
 #include "chrome/browser/extensions/extension_action.h"
+#include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/extensions/location_bar_controller.h"
 #include "chrome/browser/extensions/tab_helper.h"
+#include "chrome/browser/sessions/session_id.h"
 #include "chrome/common/extensions/api/extension_action/action_info.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
@@ -70,8 +73,14 @@ ActiveScriptController* ActiveScriptController::GetForWebContents(
 bool ActiveScriptController::RequiresUserConsentForScriptInjection(
     const Extension* extension) {
   CHECK(extension);
-  if (!PermissionsData::RequiresActionForScriptExecution(extension))
+  if (!extension->permissions_data()->RequiresActionForScriptExecution(
+          extension,
+          SessionID::IdForTab(web_contents()),
+          web_contents()->GetVisibleURL()) ||
+      util::AllowedScriptingOnAllUrls(extension->id(),
+                                      web_contents()->GetBrowserContext())) {
     return false;
+  }
 
   // If the feature is not enabled, we automatically allow all extensions to
   // run scripts.
@@ -95,8 +104,17 @@ void ActiveScriptController::RequestScriptInjection(
     LocationBarController::NotifyChange(web_contents());
 }
 
+void ActiveScriptController::OnActiveTabPermissionGranted(
+    const Extension* extension) {
+  RunPendingForExtension(extension);
+}
+
 void ActiveScriptController::OnAdInjectionDetected(
-    const std::vector<std::string> ad_injectors) {
+    const std::set<std::string>& ad_injectors) {
+  // We're only interested in data if there are ad injectors detected.
+  if (ad_injectors.empty())
+    return;
+
   size_t num_preventable_ad_injectors =
       base::STLSetIntersection<std::set<std::string> >(
           ad_injectors, permitted_extensions_).size();
@@ -139,17 +157,37 @@ ExtensionAction* ActiveScriptController::GetActionForExtension(
 
 LocationBarController::Action ActiveScriptController::OnClicked(
     const Extension* extension) {
+  DCHECK(ContainsKey(pending_requests_, extension->id()));
+  RunPendingForExtension(extension);
+  return LocationBarController::ACTION_NONE;
+}
+
+void ActiveScriptController::OnNavigated() {
+  LogUMA();
+  permitted_extensions_.clear();
+  pending_requests_.clear();
+}
+
+void ActiveScriptController::OnExtensionUnloaded(const Extension* extension) {
+  PendingRequestMap::iterator iter = pending_requests_.find(extension->id());
+  if (iter != pending_requests_.end())
+    pending_requests_.erase(iter);
+}
+
+void ActiveScriptController::RunPendingForExtension(
+    const Extension* extension) {
   DCHECK(extension);
   PendingRequestMap::iterator iter =
       pending_requests_.find(extension->id());
-  DCHECK(iter != pending_requests_.end());
+  if (iter == pending_requests_.end())
+    return;
 
   content::NavigationEntry* visible_entry =
       web_contents()->GetController().GetVisibleEntry();
   // Refuse to run if there's no visible entry, because we have no idea of
   // determining if it's the proper page. This should rarely, if ever, happen.
   if (!visible_entry)
-    return LocationBarController::ACTION_NONE;
+    return;
 
   int page_id = visible_entry->GetPageID();
 
@@ -160,6 +198,13 @@ LocationBarController::Action ActiveScriptController::OnClicked(
   PendingRequestList requests;
   iter->second.swap(requests);
   pending_requests_.erase(extension->id());
+
+  // Clicking to run the extension counts as granting it permission to run on
+  // the given tab.
+  // The extension may already have active tab at this point, but granting
+  // it twice is essentially a no-op.
+  TabHelper::FromWebContents(web_contents())->
+      active_tab_permission_granter()->GrantIfRequested(extension);
 
   // Run all pending injections for the given extension.
   for (PendingRequestList::iterator request = requests.begin();
@@ -172,19 +217,12 @@ LocationBarController::Action ActiveScriptController::OnClicked(
 
   // Inform the location bar that the action is now gone.
   LocationBarController::NotifyChange(web_contents());
-
-  return LocationBarController::ACTION_NONE;
 }
 
-void ActiveScriptController::OnNavigated() {
-  LogUMA();
-  permitted_extensions_.clear();
-  pending_requests_.clear();
-}
-
-void ActiveScriptController::OnNotifyExtensionScriptExecution(
+void ActiveScriptController::OnRequestScriptInjectionPermission(
     const std::string& extension_id,
-    int page_id) {
+    int page_id,
+    int request_id) {
   if (!Extension::IdIsValid(extension_id)) {
     NOTREACHED() << "'" << extension_id << "' is not a valid id.";
     return;
@@ -198,18 +236,43 @@ void ActiveScriptController::OnNotifyExtensionScriptExecution(
   if (!extension)
     return;
 
-  // Right now, we allow all content scripts to execute, but notify the
-  // controller of them.
-  // TODO(rdevlin.cronin): Fix this in a future CL.
-  if (RequiresUserConsentForScriptInjection(extension))
-    RequestScriptInjection(extension, page_id, base::Bind(&base::DoNothing));
+  // If the request id is -1, that signals that the content script has already
+  // ran (because this feature is not enabled). Add the extension to the list of
+  // permitted extensions (for metrics), and return immediately.
+  if (request_id == -1) {
+    DCHECK(!enabled_);
+    permitted_extensions_.insert(extension->id());
+    return;
+  }
+
+  if (RequiresUserConsentForScriptInjection(extension)) {
+    // This base::Unretained() is safe, because the callback is only invoked by
+    // this object.
+    RequestScriptInjection(
+        extension,
+        page_id,
+        base::Bind(&ActiveScriptController::PermitScriptInjection,
+                   base::Unretained(this),
+                   request_id));
+  } else {
+    PermitScriptInjection(request_id);
+  }
+}
+
+void ActiveScriptController::PermitScriptInjection(int request_id) {
+  content::RenderViewHost* render_view_host =
+      web_contents()->GetRenderViewHost();
+  if (render_view_host) {
+    render_view_host->Send(new ExtensionMsg_PermitScriptInjection(
+        render_view_host->GetRoutingID(), request_id));
+  }
 }
 
 bool ActiveScriptController::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(ActiveScriptController, message)
-    IPC_MESSAGE_HANDLER(ExtensionHostMsg_NotifyExtensionScriptExecution,
-                        OnNotifyExtensionScriptExecution)
+    IPC_MESSAGE_HANDLER(ExtensionHostMsg_RequestScriptInjectionPermission,
+                        OnRequestScriptInjectionPermission)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;

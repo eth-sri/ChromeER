@@ -952,9 +952,7 @@ bool Directory::InitialSyncEndedForType(ModelType type) {
 bool Directory::InitialSyncEndedForType(
     BaseTransaction* trans, ModelType type) {
   // True iff the type's root node has been received and applied.
-  syncable::Entry entry(trans,
-                        syncable::GET_BY_SERVER_TAG,
-                        ModelTypeToRootTag(type));
+  syncable::Entry entry(trans, syncable::GET_TYPE_ROOT, type);
   return entry.good() && entry.GetBaseVersion() != CHANGES_VERSION;
 }
 
@@ -1446,6 +1444,11 @@ void Directory::AppendChildHandles(const ScopedKernelLock& lock,
     DCHECK_EQ(parent_id, (*i)->ref(PARENT_ID));
     result->push_back((*i)->ref(META_HANDLE));
   }
+}
+
+void Directory::UnmarkDirtyEntry(WriteTransaction* trans, Entry* entry) {
+  CHECK(trans);
+  entry->kernel_->clear_dirty(&kernel_->dirty_metahandles);
 }
 
 }  // namespace syncable

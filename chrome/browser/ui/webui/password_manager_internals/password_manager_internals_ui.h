@@ -5,26 +5,31 @@
 #ifndef CHROME_BROWSER_UI_WEBUI_PASSWORD_MANAGER_INTERNALS_PASSWORD_MANAGER_INTERNALS_UI_H_
 #define CHROME_BROWSER_UI_WEBUI_PASSWORD_MANAGER_INTERNALS_PASSWORD_MANAGER_INTERNALS_UI_H_
 
-#include "components/password_manager/core/browser/password_manager_logger.h"
+#include "components/password_manager/core/browser/log_receiver.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_ui_controller.h"
 
-class PasswordManagerInternalsUI
-    : public content::WebUIController,
-      public content::WebContentsObserver,
-      public password_manager::PasswordManagerLogger {
+class PasswordManagerInternalsUI : public content::WebUIController,
+                                   public content::WebContentsObserver,
+                                   public password_manager::LogReceiver {
  public:
   explicit PasswordManagerInternalsUI(content::WebUI* web_ui);
   virtual ~PasswordManagerInternalsUI();
 
   // WebContentsObserver implementation.
+  virtual void DidStartLoading(
+      content::RenderViewHost* render_view_host) OVERRIDE;
   virtual void DidStopLoading(
       content::RenderViewHost* render_view_host) OVERRIDE;
 
-  // PasswordManagerLogger implementation.
+  // LogReceiver implementation.
   virtual void LogSavePasswordProgress(const std::string& text) OVERRIDE;
 
  private:
+  // If currently registered with PasswordManagerInternalsService, unregisters
+  // |this|. Otherwise this is a no-op.
+  void UnregisterFromLoggingService();
+
   // Whether |this| registered as a log receiver with the
   // PasswordManagerInternalsService.
   bool registered_with_logging_service_;

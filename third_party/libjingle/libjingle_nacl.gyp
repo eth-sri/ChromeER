@@ -51,7 +51,6 @@
         }
       },
       'include_dirs': [
-        '../testing/gtest/include',
         './<(libjingle_source)',
       ],
       'includes': ['libjingle_common.gypi', ],
@@ -64,7 +63,7 @@
         'include_dirs': [
           './overrides',
           './<(libjingle_source)',
-          '../../testing/gtest/include',
+          '../../third_party/webrtc/overrides',
           '../../third_party',
           '../../third_party/webrtc',
         ],

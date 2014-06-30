@@ -14,18 +14,18 @@
 #include "base/strings/string16.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 
-class Profile;
+class PrefService;
 class TemplateURL;
 class WDTypedResult;
 class WebDataService;
 
 // Returns the short name of the default search engine, or the empty string if
-// none is set. |profile| may be NULL.
-base::string16 GetDefaultSearchEngineName(Profile* profile);
+// none is set.
+base::string16 GetDefaultSearchEngineName(TemplateURLService* service);
 
 // Returns a GURL that searches for |terms| using the default search engine of
-// |profile|.
-GURL GetDefaultSearchURLForSearchTerms(Profile* profile,
+// |service|.
+GURL GetDefaultSearchURLForSearchTerms(TemplateURLService* service,
                                        const base::string16& terms);
 
 // Returns matching URL from |template_urls| or NULL.
@@ -92,9 +92,10 @@ ActionsFromPrepopulateData CreateActionsFromCurrentPrepopulateData(
 void GetSearchProvidersUsingKeywordResult(
     const WDTypedResult& result,
     WebDataService* service,
-    Profile* profile,
+    PrefService* prefs,
     TemplateURLService::TemplateURLVector* template_urls,
     TemplateURL* default_search_provider,
+    const SearchTermsData& search_terms_data,
     int* new_resource_keyword_version,
     std::set<std::string>* removed_keyword_guids);
 
@@ -107,9 +108,10 @@ void GetSearchProvidersUsingKeywordResult(
 // set as in GetSearchProvidersUsingKeywordResult().
 void GetSearchProvidersUsingLoadedEngines(
     WebDataService* service,
-    Profile* profile,
+    PrefService* prefs,
     TemplateURLService::TemplateURLVector* template_urls,
     TemplateURL* default_search_provider,
+    const SearchTermsData& search_terms_data,
     int* resource_keyword_version,
     std::set<std::string>* removed_keyword_guids);
 
@@ -128,6 +130,7 @@ void RemoveDuplicatePrepopulateIDs(
     const ScopedVector<TemplateURLData>& prepopulated_urls,
     TemplateURL* default_search_provider,
     TemplateURLService::TemplateURLVector* template_urls,
+    const SearchTermsData& search_terms_data,
     std::set<std::string>* removed_keyword_guids);
 
 #endif  // CHROME_BROWSER_SEARCH_ENGINES_UTIL_H_

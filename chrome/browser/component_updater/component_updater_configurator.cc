@@ -11,11 +11,10 @@
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
 #include "base/strings/string_util.h"
-#include "base/win/windows_version.h"
 #include "build/build_config.h"
-#include "chrome/browser/component_updater/component_patcher.h"
 #include "chrome/common/chrome_switches.h"
 #include "net/url_request/url_request_context_getter.h"
+#include "url/gurl.h"
 
 namespace component_updater {
 
@@ -87,25 +86,25 @@ std::string GetSwitchArgument(const std::vector<std::string>& vec,
 
 }  // namespace
 
-class ChromeConfigurator : public ComponentUpdateService::Configurator {
+class ChromeConfigurator : public Configurator {
  public:
   ChromeConfigurator(const CommandLine* cmdline,
                      net::URLRequestContextGetter* url_request_getter);
 
   virtual ~ChromeConfigurator() {}
 
-  virtual int InitialDelay() OVERRIDE;
+  virtual int InitialDelay() const OVERRIDE;
   virtual int NextCheckDelay() OVERRIDE;
-  virtual int StepDelay() OVERRIDE;
+  virtual int StepDelay() const OVERRIDE;
   virtual int StepDelayMedium() OVERRIDE;
-  virtual int MinimumReCheckWait() OVERRIDE;
-  virtual int OnDemandDelay() OVERRIDE;
-  virtual GURL UpdateUrl() OVERRIDE;
-  virtual GURL PingUrl() OVERRIDE;
-  virtual std::string ExtraRequestParams() OVERRIDE;
-  virtual size_t UrlSizeLimit() OVERRIDE;
-  virtual net::URLRequestContextGetter* RequestContext() OVERRIDE;
-  virtual bool InProcess() OVERRIDE;
+  virtual int MinimumReCheckWait() const OVERRIDE;
+  virtual int OnDemandDelay() const OVERRIDE;
+  virtual GURL UpdateUrl() const OVERRIDE;
+  virtual GURL PingUrl() const OVERRIDE;
+  virtual std::string ExtraRequestParams() const OVERRIDE;
+  virtual size_t UrlSizeLimit() const OVERRIDE;
+  virtual net::URLRequestContextGetter* RequestContext() const OVERRIDE;
+  virtual bool InProcess() const OVERRIDE;
   virtual bool DeltasEnabled() const OVERRIDE;
   virtual bool UseBackgroundDownloader() const OVERRIDE;
 
@@ -152,7 +151,7 @@ ChromeConfigurator::ChromeConfigurator(
     extra_info_ += "testrequest=\"1\"";
 }
 
-int ChromeConfigurator::InitialDelay() {
+int ChromeConfigurator::InitialDelay() const {
   return fast_update_ ? 1 : (6 * kDelayOneMinute);
 }
 
@@ -164,39 +163,39 @@ int ChromeConfigurator::StepDelayMedium() {
   return fast_update_ ? 3 : (15 * kDelayOneMinute);
 }
 
-int ChromeConfigurator::StepDelay() {
+int ChromeConfigurator::StepDelay() const {
   return fast_update_ ? 1 : 1;
 }
 
-int ChromeConfigurator::MinimumReCheckWait() {
+int ChromeConfigurator::MinimumReCheckWait() const {
   return fast_update_ ? 30 : (6 * kDelayOneHour);
 }
 
-int ChromeConfigurator::OnDemandDelay() {
+int ChromeConfigurator::OnDemandDelay() const {
   return fast_update_ ? 2 : (30 * kDelayOneMinute);
 }
 
-GURL ChromeConfigurator::UpdateUrl() {
+GURL ChromeConfigurator::UpdateUrl() const {
   return GURL(url_source_);
 }
 
-GURL ChromeConfigurator::PingUrl() {
+GURL ChromeConfigurator::PingUrl() const {
   return pings_enabled_ ? GURL(kPingUrl) : GURL();
 }
 
-std::string ChromeConfigurator::ExtraRequestParams() {
+std::string ChromeConfigurator::ExtraRequestParams() const {
   return extra_info_;
 }
 
-size_t ChromeConfigurator::UrlSizeLimit() {
+size_t ChromeConfigurator::UrlSizeLimit() const {
   return 1024ul;
 }
 
-net::URLRequestContextGetter* ChromeConfigurator::RequestContext() {
+net::URLRequestContextGetter* ChromeConfigurator::RequestContext() const {
   return url_request_getter_;
 }
 
-bool ChromeConfigurator::InProcess() {
+bool ChromeConfigurator::InProcess() const {
   return false;
 }
 
@@ -208,7 +207,7 @@ bool ChromeConfigurator::UseBackgroundDownloader() const {
   return background_downloads_enabled_;
 }
 
-ComponentUpdateService::Configurator* MakeChromeComponentUpdaterConfigurator(
+Configurator* MakeChromeComponentUpdaterConfigurator(
     const CommandLine* cmdline,
     net::URLRequestContextGetter* context_getter) {
   return new ChromeConfigurator(cmdline, context_getter);

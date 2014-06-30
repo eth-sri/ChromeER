@@ -44,6 +44,7 @@
 #include "ash/system/web_notification/web_notification_tray.h"
 #include "ash/touch/touch_hud_debug.h"
 #include "ash/volume_control_delegate.h"
+#include "ash/wm/maximize_mode/maximize_mode_controller.h"
 #include "ash/wm/mru_window_tracker.h"
 #include "ash/wm/overview/window_selector_controller.h"
 #include "ash/wm/partial_screenshot_view.h"
@@ -71,7 +72,6 @@
 #include "ui/views/widget/widget.h"
 
 #if defined(OS_CHROMEOS)
-#include "ash/session/session_state_delegate.h"
 #include "ash/system/chromeos/keyboard_brightness_controller.h"
 #include "base/sys_info.h"
 #include "chromeos/ime/ime_keyboard.h"
@@ -229,7 +229,7 @@ bool HandleNewWindow() {
   return true;
 }
 
-bool HandleNextIme(ImeControlDelegate* ime_control_delegate,
+void HandleNextIme(ImeControlDelegate* ime_control_delegate,
                    ui::EventType previous_event_type,
                    ui::KeyboardCode previous_key_code) {
   // This check is necessary e.g. not to process the Shift+Alt+
@@ -247,12 +247,11 @@ bool HandleNextIme(ImeControlDelegate* ime_control_delegate,
       previous_key_code != ui::VKEY_SPACE) {
     // We totally ignore this accelerator.
     // TODO(mazda): Fix crbug.com/158217
-    return false;
+    return;
   }
   base::RecordAction(UserMetricsAction("Accel_Next_Ime"));
   if (ime_control_delegate)
-    return ime_control_delegate->HandleNextIme();
-  return false;
+    ime_control_delegate->HandleNextIme();
 }
 
 bool HandleOpenFeedbackPage() {
@@ -509,7 +508,8 @@ bool HandleWindowSnap(int action) {
   // http://crbug.com/135487.
   if (!window_state ||
       window_state->window()->type() != ui::wm::WINDOW_TYPE_NORMAL ||
-      window_state->IsFullscreen()) {
+      window_state->IsFullscreen() ||
+      !window_state->CanSnap()) {
     return false;
   }
 
@@ -596,9 +596,10 @@ bool HandleToggleTouchViewTesting() {
   // TODO(skuhne): This is only temporary! Remove this!
   if (CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kAshEnableTouchViewTesting)) {
-    Shell* shell = Shell::GetInstance();
-    shell->EnableMaximizeModeWindowManager(
-        !shell->IsMaximizeModeWindowManagerEnabled());
+    MaximizeModeController* controller = Shell::GetInstance()->
+        maximize_mode_controller();
+    controller->EnableMaximizeModeWindowManager(
+        !controller->IsMaximizeModeWindowManagerEnabled());
     return true;
   }
   return false;
@@ -743,21 +744,20 @@ bool HandlePrintUIHierarchies() {
   return true;
 }
 
+class AutoSet {
+ public:
+  AutoSet(ui::Accelerator* scoped, ui::Accelerator new_value)
+      : scoped_(scoped), new_value_(new_value) {}
+  ~AutoSet() { *scoped_ = new_value_; }
+
+ private:
+  ui::Accelerator* scoped_;
+  const ui::Accelerator new_value_;
+
+  DISALLOW_COPY_AND_ASSIGN(AutoSet);
+};
+
 }  // namespace
-
-////////////////////////////////////////////////////////////////////////////////
-// AcceleratorControllerContext, public:
-
-AcceleratorControllerContext::AcceleratorControllerContext() {
-  current_accelerator_.set_type(ui::ET_UNKNOWN);
-  previous_accelerator_.set_type(ui::ET_UNKNOWN);
-}
-
-void AcceleratorControllerContext::UpdateContext(
-    const ui::Accelerator& accelerator) {
-  previous_accelerator_ = current_accelerator_;
-  current_accelerator_ = accelerator;
-}
 
 ////////////////////////////////////////////////////////////////////////////////
 // AcceleratorController, public:
@@ -771,6 +771,7 @@ AcceleratorController::~AcceleratorController() {
 }
 
 void AcceleratorController::Init() {
+  previous_accelerator_.set_type(ui::ET_UNKNOWN);
   for (size_t i = 0; i < kActionsAllowedAtLoginOrLockScreenLength; ++i) {
     actions_allowed_at_login_screen_.insert(
         kActionsAllowedAtLoginOrLockScreen[i]);
@@ -825,6 +826,8 @@ void AcceleratorController::UnregisterAll(ui::AcceleratorTarget* target) {
 }
 
 bool AcceleratorController::Process(const ui::Accelerator& accelerator) {
+  AutoSet auto_set(&previous_accelerator_, accelerator);
+
   if (ime_control_delegate_) {
     return accelerator_manager_->Process(
         ime_control_delegate_->RemapAccelerator(accelerator));
@@ -889,18 +892,15 @@ bool AcceleratorController::PerformAction(int action,
   // empty Accelerator() instance as the second argument. Such events
   // should never be suspended.
   const bool gesture_event = key_code == ui::VKEY_UNKNOWN;
-
   // Ignore accelerators invoked as repeated (while holding a key for a long
   // time, if their handling is nonrepeatable.
   if (nonrepeatable_actions_.find(action) != nonrepeatable_actions_.end() &&
-      context_.repeated() && !gesture_event) {
+      accelerator.IsRepeat() && !gesture_event) {
     return true;
   }
   // Type of the previous accelerator. Used by NEXT_IME and DISABLE_CAPS_LOCK.
-  const ui::EventType previous_event_type =
-    context_.previous_accelerator().type();
-  const ui::KeyboardCode previous_key_code =
-    context_.previous_accelerator().key_code();
+  const ui::EventType previous_event_type = previous_accelerator_.type();
+  const ui::KeyboardCode previous_key_code = previous_accelerator_.key_code();
 
   // You *MUST* return true when some action is performed. Otherwise, this
   // function might be called *twice*, via BrowserView::PreHandleKeyboardEvent
@@ -1033,8 +1033,11 @@ bool AcceleratorController::PerformAction(int action,
     case SHOW_TASK_MANAGER:
       return HandleShowTaskManager();
     case NEXT_IME:
-      return HandleNextIme(
+      HandleNextIme(
           ime_control_delegate_.get(), previous_event_type, previous_key_code);
+      // NEXT_IME is bound to Alt-Shift key up event. To be consistent with
+      // Windows behavior, do not consume the key event here.
+      return false;
     case PREVIOUS_IME:
       return HandlePreviousIme(ime_control_delegate_.get(), accelerator);
     case PRINT_UI_HIERARCHIES:

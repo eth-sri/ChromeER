@@ -64,6 +64,9 @@ class Lexer(object):
     'INTERFACE',
     'ENUM',
     'CONST',
+    'TRUE',
+    'FALSE',
+    'DEFAULT',
   )
 
   keyword_map = {}
@@ -79,7 +82,7 @@ class Lexer(object):
 
     # Constants
     'ORDINAL',
-    'INT_CONST_DEC', 'INT_CONST_OCT', 'INT_CONST_HEX',
+    'INT_CONST_DEC', 'INT_CONST_HEX',
     'FLOAT_CONST',
     'CHAR_CONST',
 
@@ -87,8 +90,9 @@ class Lexer(object):
     'STRING_LITERAL',
 
     # Operators
-    'PLUS', 'MINUS', 'TIMES', 'DIVIDE', 'MOD',
-    'OR', 'AND', 'NOT', 'XOR', 'LSHIFT', 'RSHIFT',
+    'MINUS',
+    'PLUS',
+    'AMP',
 
     # Assignment
     'EQUALS',
@@ -117,10 +121,9 @@ class Lexer(object):
 
   # integer constants (K&R2: A.2.5.1)
   decimal_constant = '0|([1-9][0-9]*)'
-  octal_constant = '0[0-7]+'
   hex_constant = hex_prefix+hex_digits
-
-  bad_octal_constant = '0[0-7]*[89]'
+  # Don't allow octal constants (even invalid octal).
+  octal_constant_disallowed = '0[0-9]+'
 
   # character constants (K&R2: A.2.5.2)
   # Note: a-zA-Z and '.-~^_!=&;,' are allowed as escape chars to support #line
@@ -173,17 +176,9 @@ class Lexer(object):
     t.lexer.lineno += len(t.value)
 
   # Operators
-  t_PLUS              = r'\+'
   t_MINUS             = r'-'
-  t_TIMES             = r'\*'
-  t_DIVIDE            = r'/'
-  t_MOD               = r'%'
-  t_OR                = r'\|'
-  t_AND               = r'&'
-  t_NOT               = r'~'
-  t_XOR               = r'\^'
-  t_LSHIFT            = r'<<'
-  t_RSHIFT            = r'>>'
+  t_PLUS              = r'\+'
+  t_AMP               = r'&'
 
   # =
   t_EQUALS            = r'='
@@ -219,14 +214,10 @@ class Lexer(object):
   def t_INT_CONST_HEX(self, t):
     return t
 
-  @TOKEN(bad_octal_constant)
-  def t_BAD_CONST_OCT(self, t):
-    msg = "Invalid octal constant"
+  @TOKEN(octal_constant_disallowed)
+  def t_OCTAL_CONSTANT_DISALLOWED(self, t):
+    msg = "Octal values not allowed"
     self._error(msg, t)
-
-  @TOKEN(octal_constant)
-  def t_INT_CONST_OCT(self, t):
-    return t
 
   @TOKEN(decimal_constant)
   def t_INT_CONST_DEC(self, t):
@@ -279,8 +270,8 @@ class Lexer(object):
   # Ignore C and C++ style comments
   def t_COMMENT(self, t):
     r'(/\*(.|\n)*?\*/)|(//.*(\n[ \t]*//.*)*)'
-    pass
+    t.lexer.lineno += t.value.count("\n")
 
   def t_error(self, t):
-    msg = 'Illegal character %s' % repr(t.value[0])
+    msg = "Illegal character %s" % repr(t.value[0])
     self._error(msg, t)

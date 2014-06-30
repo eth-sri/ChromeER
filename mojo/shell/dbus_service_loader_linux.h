@@ -10,7 +10,6 @@
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "mojo/public/cpp/system/core.h"
-#include "mojo/public/interfaces/shell/shell.mojom.h"
 #include "mojo/service_manager/service_loader.h"
 #include "mojo/shell/keep_alive.h"
 #include "url/gurl.h"
@@ -64,7 +63,7 @@ class DBusServiceLoader : public ServiceLoader {
   // "/org/chromium/MojoImpl".
   virtual void LoadService(ServiceManager* manager,
                            const GURL& url,
-                           ScopedMessagePipeHandle service_handle) OVERRIDE;
+                           ScopedMessagePipeHandle shell_handle) OVERRIDE;
 
   virtual void OnServiceError(ServiceManager* manager, const GURL& url)
       OVERRIDE;

@@ -1,12 +1,18 @@
-# Copyright (c) 2012 The Chromium Authors. All rights reserved.
+# Copyright 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-"""Runs Facebook's JSGameBench benchmark."""
+"""Runs Facebook's JSGameBench benchmark.
+
+As of May 14, 2014, JSGameBench is no longer maintained. See README.md:
+https://github.com/facebookarchive/jsgamebench
+
+The benchmark is kept here for historical purposes but is disabled on the bots.
+"""
 
 import os
 
-from telemetry import test
+from telemetry import benchmark
 from telemetry.page import page_measurement
 from telemetry.page import page_set
 
@@ -25,8 +31,8 @@ class _JsgamebenchMeasurement(page_measurement.PageMeasurement):
     results.Add('Score', 'score (bigger is better)', result)
 
 
-@test.Disabled('linux')  # crbug.com/365237
-class Jsgamebench(test.Test):
+@benchmark.Disabled
+class Jsgamebench(benchmark.Benchmark):
   """Counts how many animating sprites can move around on the screen at once."""
   test = _JsgamebenchMeasurement
 

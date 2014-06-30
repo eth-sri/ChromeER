@@ -19,8 +19,12 @@
 #include "components/query_parser/snippet.h"
 #include "third_party/icu/source/common/unicode/normalizer2.h"
 
+using bookmarks::BookmarkClient;
+
 typedef BookmarkClient::NodeTypedCountPair NodeTypedCountPair;
 typedef BookmarkClient::NodeTypedCountPairs NodeTypedCountPairs;
+
+namespace bookmarks {
 
 namespace {
 
@@ -363,3 +367,5 @@ void BookmarkIndex::UnregisterNode(const base::string16& term,
   if (i->second.empty())
     index_.erase(i);
 }
+
+}  // namespace bookmarks

@@ -525,13 +525,24 @@ void HWNDMessageHandler::GetWindowPlacement(
   }
 }
 
-void HWNDMessageHandler::SetBounds(const gfx::Rect& bounds_in_pixels) {
+void HWNDMessageHandler::SetBounds(const gfx::Rect& bounds_in_pixels,
+                                   bool force_size_changed) {
   LONG style = GetWindowLong(hwnd(), GWL_STYLE);
   if (style & WS_MAXIMIZE)
     SetWindowLong(hwnd(), GWL_STYLE, style & ~WS_MAXIMIZE);
+
+  gfx::Size old_size = GetClientAreaBounds().size();
   SetWindowPos(hwnd(), NULL, bounds_in_pixels.x(), bounds_in_pixels.y(),
                bounds_in_pixels.width(), bounds_in_pixels.height(),
                SWP_NOACTIVATE | SWP_NOZORDER);
+
+  // If HWND size is not changed, we will not receive standard size change
+  // notifications. If |force_size_changed| is |true|, we should pretend size is
+  // changed.
+  if (old_size == bounds_in_pixels.size() && force_size_changed) {
+    delegate_->HandleClientSizeChanged(GetClientAreaBounds().size());
+    ResetWindowRegion(false, true);
+  }
 }
 
 void HWNDMessageHandler::SetSize(const gfx::Size& size) {
@@ -924,35 +935,60 @@ LRESULT HWNDMessageHandler::OnWndProc(UINT message,
 
 LRESULT HWNDMessageHandler::HandleMouseMessage(unsigned int message,
                                                WPARAM w_param,
-                                               LPARAM l_param) {
+                                               LPARAM l_param,
+                                               bool* handled) {
   // Don't track forwarded mouse messages. We expect the caller to track the
   // mouse.
-  return HandleMouseEventInternal(message, w_param, l_param, false);
+  LRESULT ret = HandleMouseEventInternal(message, w_param, l_param, false);
+  *handled = IsMsgHandled();
+  return ret;
 }
 
 LRESULT HWNDMessageHandler::HandleTouchMessage(unsigned int message,
                                                WPARAM w_param,
-                                               LPARAM l_param) {
-  return OnTouchEvent(message, w_param, l_param);
+                                               LPARAM l_param,
+                                               bool* handled) {
+  LRESULT ret = OnTouchEvent(message, w_param, l_param);
+  *handled = IsMsgHandled();
+  return ret;
 }
 
 LRESULT HWNDMessageHandler::HandleKeyboardMessage(unsigned int message,
                                                   WPARAM w_param,
-                                                  LPARAM l_param) {
-  return OnKeyEvent(message, w_param, l_param);
+                                                  LPARAM l_param,
+                                                  bool* handled) {
+  LRESULT ret = OnKeyEvent(message, w_param, l_param);
+  *handled = IsMsgHandled();
+  return ret;
 }
 
 LRESULT HWNDMessageHandler::HandleScrollMessage(unsigned int message,
                                                 WPARAM w_param,
-                                                LPARAM l_param) {
-  return OnScrollMessage(message, w_param, l_param);
+                                                LPARAM l_param,
+                                                bool* handled) {
+  LRESULT ret = OnScrollMessage(message, w_param, l_param);
+  *handled = IsMsgHandled();
+  return ret;
 }
 
 LRESULT HWNDMessageHandler::HandleNcHitTestMessage(unsigned int message,
                                                    WPARAM w_param,
-                                                   LPARAM l_param) {
-  return OnNCHitTest(
+                                                   LPARAM l_param,
+                                                   bool* handled) {
+  LRESULT ret = OnNCHitTest(
       gfx::Point(CR_GET_X_LPARAM(l_param), CR_GET_Y_LPARAM(l_param)));
+  *handled = IsMsgHandled();
+  return ret;
+}
+
+LRESULT HWNDMessageHandler::HandleSysCommand(unsigned int message,
+                                             WPARAM w_param,
+                                             LPARAM l_param,
+                                             bool* handled) {
+  OnSysCommand(static_cast<UINT>(w_param),
+               gfx::Point(CR_GET_X_LPARAM(l_param), CR_GET_Y_LPARAM(l_param)));
+  *handled = IsMsgHandled();
+  return 0;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1057,8 +1093,7 @@ bool HWNDMessageHandler::GetClientAreaInsets(gfx::Insets* insets) const {
   if (IsMaximized()) {
     // Windows automatically adds a standard width border to all sides when a
     // window is maximized.
-    int border_thickness =
-        GetSystemMetrics(SM_CXSIZEFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER);
+    int border_thickness = GetSystemMetrics(SM_CXSIZEFRAME);
     if (remove_standard_frame_)
       border_thickness -= 1;
     *insets = gfx::Insets(
@@ -1406,8 +1441,12 @@ LRESULT HWNDMessageHandler::OnGetObject(UINT message,
                                         LPARAM l_param) {
   LRESULT reference_result = static_cast<LRESULT>(0L);
 
+  // Only the lower 32 bits of l_param are valid when checking the object id
+  // because it sometimes gets sign-extended incorrectly (but not always).
+  DWORD obj_id = static_cast<DWORD>(static_cast<DWORD_PTR>(l_param));
+
   // Accessibility readers will send an OBJID_CLIENT message
-  if (OBJID_CLIENT == l_param) {
+  if (OBJID_CLIENT == obj_id) {
     // Retrieve MSAA dispatch object for the root view.
     base::win::ScopedComPtr<IAccessible> root(
         delegate_->GetNativeViewAccessible());
@@ -1726,10 +1765,8 @@ LRESULT HWNDMessageHandler::OnNCHitTest(const gfx::Point& point) {
         // the vertical scrollar down arrow would be drawn.
         // We check if the hittest coordinates lie in this region and if yes
         // we return HTCLIENT.
-        int border_width = ::GetSystemMetrics(SM_CXSIZEFRAME) +
-                           GetSystemMetrics(SM_CXPADDEDBORDER);
-        int border_height = ::GetSystemMetrics(SM_CYSIZEFRAME) +
-                            GetSystemMetrics(SM_CXPADDEDBORDER);
+        int border_width = ::GetSystemMetrics(SM_CXSIZEFRAME);
+        int border_height = ::GetSystemMetrics(SM_CYSIZEFRAME);
         int scroll_width = ::GetSystemMetrics(SM_CXVSCROLL);
         int scroll_height = ::GetSystemMetrics(SM_CYVSCROLL);
         RECT window_rect;
@@ -1941,6 +1978,9 @@ LRESULT HWNDMessageHandler::OnSetCursor(UINT message,
     case HTCLIENT:
       SetCursor(current_cursor_);
       return 1;
+    case LOWORD(HTERROR):  // Use HTERROR's LOWORD value for valid comparison.
+      SetMsgHandled(FALSE);
+      break;
     default:
       // Use the default value, IDC_ARROW.
       break;
@@ -2079,10 +2119,8 @@ LRESULT HWNDMessageHandler::OnTouchEvent(UINT message,
     TouchEvents touch_events;
     for (int i = 0; i < num_points; ++i) {
       POINT point;
-      point.x = TOUCH_COORD_TO_PIXEL(input[i].x) /
-                gfx::win::GetUndocumentedDPITouchScale();
-      point.y = TOUCH_COORD_TO_PIXEL(input[i].y) /
-                gfx::win::GetUndocumentedDPITouchScale();
+      point.x = TOUCH_COORD_TO_PIXEL(input[i].x);
+      point.y = TOUCH_COORD_TO_PIXEL(input[i].y);
 
       if (base::win::GetVersion() == base::win::VERSION_WIN7) {
         // Windows 7 sends touch events for touches in the non-client area,
@@ -2192,8 +2230,7 @@ void HWNDMessageHandler::OnWindowPosChanging(WINDOWPOS* window_pos) {
           new_window_rect = monitor_rect;
         } else if (IsMaximized()) {
           new_window_rect = work_area;
-          int border_thickness = GetSystemMetrics(SM_CXSIZEFRAME) +
-                                 GetSystemMetrics(SM_CXPADDEDBORDER);
+          int border_thickness = GetSystemMetrics(SM_CXSIZEFRAME);
           new_window_rect.Inset(-border_thickness, -border_thickness);
         } else {
           new_window_rect = gfx::Rect(window_rect);

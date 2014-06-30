@@ -128,7 +128,10 @@ void BuildCommitItem(
   } else {
     new_parent_id = meta_entry.GetParentId();
   }
-  sync_entry->set_parent_id_string(SyncableIdToProto(new_parent_id));
+
+  if (meta_entry.ShouldMaintainHierarchy()) {
+    sync_entry->set_parent_id_string(SyncableIdToProto(new_parent_id));
+  }
 
   // If our parent has changed, send up the old one so the server
   // can correctly deal with multiple parents.
@@ -182,6 +185,10 @@ void BuildCommitItem(
   // Deletion is final on the server, let's move things and then delete them.
   if (meta_entry.GetIsDel()) {
     sync_entry->set_deleted(true);
+
+    sync_pb::EntitySpecifics type_only_specifics;
+    AddDefaultFieldValue(meta_entry.GetModelType(),
+                         sync_entry->mutable_specifics());
   } else {
     SetEntrySpecifics(meta_entry, sync_entry);
   }

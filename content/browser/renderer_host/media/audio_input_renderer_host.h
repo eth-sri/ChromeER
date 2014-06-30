@@ -117,8 +117,9 @@ class CONTENT_EXPORT AudioInputRendererHost
   virtual void OnError(media::AudioInputController* controller,
       media::AudioInputController::ErrorCode error_code) OVERRIDE;
   virtual void OnData(media::AudioInputController* controller,
-                      const uint8* data,
-                      uint32 size) OVERRIDE;
+                      const media::AudioBus* data) OVERRIDE;
+  virtual void OnLog(media::AudioInputController* controller,
+                     const std::string& message) OVERRIDE;
 
  private:
   // TODO(henrika): extend test suite (compare AudioRenderHost)
@@ -165,6 +166,10 @@ class CONTENT_EXPORT AudioInputRendererHost
   // Handle error coming from audio stream.
   void DoHandleError(media::AudioInputController* controller,
       media::AudioInputController::ErrorCode error_code);
+
+  // Log audio level of captured audio stream.
+  void DoLog(media::AudioInputController* controller,
+             const std::string& message);
 
   // Send an error message to the renderer.
   void SendErrorMessage(int stream_id, ErrorCode error_code);

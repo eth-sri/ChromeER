@@ -177,12 +177,7 @@ bool DownloadStoredProperly(
 
 const base::FilePath::CharType kTestDir[] = FILE_PATH_LITERAL("save_page");
 
-static const char kAppendedExtension[] =
-#if defined(OS_WIN)
-    ".htm";
-#else
-    ".html";
-#endif
+static const char kAppendedExtension[] = ".html";
 
 // Loosely based on logic in DownloadTestObserver.
 class DownloadItemCreatedObserver : public DownloadManager::Observer {
@@ -624,7 +619,7 @@ IN_PROC_BROWSER_TEST_F(SavePageBrowserTest,
 }
 
 IN_PROC_BROWSER_TEST_F(SavePageBrowserTest, NoSave) {
-  ui_test_utils::NavigateToURL(browser(), GURL(content::kAboutBlankURL));
+  ui_test_utils::NavigateToURL(browser(), GURL(url::kAboutBlankURL));
   EXPECT_FALSE(chrome::CanSavePage(browser()));
 }
 

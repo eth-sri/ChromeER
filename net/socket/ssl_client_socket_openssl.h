@@ -16,6 +16,7 @@
 #include "net/socket/client_socket_handle.h"
 #include "net/socket/ssl_client_socket.h"
 #include "net/ssl/server_bound_cert_service.h"
+#include "net/ssl/ssl_client_cert_type.h"
 #include "net/ssl/ssl_config_service.h"
 
 // Avoid including misc OpenSSL headers, i.e.:
@@ -109,6 +110,8 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
 
   bool DoTransportIO();
   int DoHandshake();
+  int DoChannelIDLookup();
+  int DoChannelIDLookupComplete(int result);
   int DoVerifyCert(int result);
   int DoVerifyCertComplete(int result);
   void DoConnectCallback(int result);
@@ -134,10 +137,6 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
   // Callback from the SSL layer that indicates the remote server is requesting
   // a certificate for this client.
   int ClientCertRequestCallback(SSL* ssl, X509** x509, EVP_PKEY** pkey);
-
-  // Callback from the SSL layer that indicates the remote server supports TLS
-  // Channel IDs.
-  void ChannelIDRequestCallback(SSL* ssl, EVP_PKEY** pkey);
 
   // CertVerifyCallback is called to verify the server's certificates. We do
   // verification after the handshake so this function only enforces that the
@@ -197,6 +196,9 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
   // List of DER-encoded X.509 DistinguishedName of certificate authorities
   // allowed by the server.
   std::vector<std::string> cert_authorities_;
+  // List of SSLClientCertType values for client certificates allowed by the
+  // server.
+  std::vector<SSLClientCertType> cert_key_types_;
 
   CertVerifier* const cert_verifier_;
   scoped_ptr<SingleRequestCertVerifier> verifier_;
@@ -222,6 +224,8 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
   enum State {
     STATE_NONE,
     STATE_HANDSHAKE,
+    STATE_CHANNEL_ID_LOOKUP,
+    STATE_CHANNEL_ID_LOOKUP_COMPLETE,
     STATE_VERIFY_CERT,
     STATE_VERIFY_CERT_COMPLETE,
   };
@@ -232,8 +236,6 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
   // Written by the |server_bound_cert_service_|.
   std::string channel_id_private_key_;
   std::string channel_id_cert_;
-  // The return value of the last call to |server_bound_cert_service_|.
-  int channel_id_request_return_value_;
   // True if channel ID extension was negotiated.
   bool channel_id_xtn_negotiated_;
   // The request handle for |server_bound_cert_service_|.

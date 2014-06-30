@@ -18,6 +18,7 @@ class SelLdrLauncherChrome : public nacl::SelLdrLauncherBase {
   virtual void Start(PP_Instance instance,
                      bool main_service_runtime,
                      const char* url,
+                     const PP_NaClFileInfo* file_info,
                      bool uses_irt,
                      bool uses_ppapi,
                      bool uses_nonsfi_mode,
@@ -25,8 +26,6 @@ class SelLdrLauncherChrome : public nacl::SelLdrLauncherBase {
                      bool enable_dyncode_syscalls,
                      bool enable_exception_handling,
                      bool enable_crash_throttling,
-                     const PPP_ManifestService* manifest_service_interface,
-                     void* manifest_service_user_data,
                      pp::CompletionCallback callback);
 };
 

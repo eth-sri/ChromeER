@@ -143,27 +143,14 @@ struct PP_PNaClOptions {
 typedef void PP_OpenResourceCompletionCallback([inout] mem_t user_data,
                                                [in] PP_FileHandle file_handle);
 
-/* ManifestService to support irt_open_resource() function.
- * All functions of the service should have PP_Bool return value. It represents
- * whether the service is still alive or not. Trivially Quit() should always
- * return false. However, other functions also can return false.
- * Once false is called, as the service has been destructed, all functions
- * should never be called afterwords.
- */
-interface PPP_ManifestService {
-  /* Called when ManifestService should be destructed. */
-  PP_Bool Quit([inout] mem_t user_data);
+/* Corresponds to NaClFileInfo in
+ * native_client/src/trusted/validator/nacl_file_info.h */
+struct PP_NaClFileInfo {
+  PP_FileHandle handle;
 
-  /* Called when PPAPI initialization in the NaCl plugin is finished. */
-  PP_Bool StartupInitializationComplete([inout] mem_t user_data);
-
-  /* Called when irt_open_resource() is invoked in the NaCl plugin.
-   * Upon completion, callback will be invoked with given callback_user_data
-   * and the result file handle (or PP_kInvalidFileHandle on error). */
-  PP_Bool OpenResource([inout] mem_t user_data,
-                       [in] str_t entry_key,
-                       [in] PP_OpenResourceCompletionCallback callback,
-                       [inout] mem_t callback_user_data);
+  /* See NaClFileToken comment in nacl_file_info.h */
+  uint64_t token_lo;
+  uint64_t token_hi;
 };
 
 /* PPB_NaCl_Private */
@@ -175,6 +162,9 @@ interface PPB_NaCl_Private {
    * indicates that the nexe run by sel_ldr will use the PPAPI APIs.
    * This implies that LaunchSelLdr is run from the main thread.  If a nexe
    * does not need PPAPI, then it can run off the main thread.
+   * The |nexe_file_info| is currently used only in non-SFI mode. It is the
+   * file handle for the main nexe file, which should be initially loaded.
+   * LaunchSelLdr takes the ownership of the file handle.
    * The |uses_irt| flag indicates whether the IRT should be loaded in this
    * NaCl process.  This is true for ABI stable nexes.
    * The |uses_nonsfi_mode| flag indicates whether or not nonsfi-mode should
@@ -190,6 +180,7 @@ interface PPB_NaCl_Private {
   void LaunchSelLdr([in] PP_Instance instance,
                     [in] PP_Bool main_service_runtime,
                     [in] str_t alleged_url,
+                    [in] PP_NaClFileInfo nexe_file_info,
                     [in] PP_Bool uses_irt,
                     [in] PP_Bool uses_ppapi,
                     [in] PP_Bool uses_nonsfi_mode,
@@ -197,8 +188,6 @@ interface PPB_NaCl_Private {
                     [in] PP_Bool enable_dyncode_syscalls,
                     [in] PP_Bool enable_exception_handling,
                     [in] PP_Bool enable_crash_throttling,
-                    [in] PPP_ManifestService manifest_service_interface,
-                    [inout] mem_t manifest_service_user_data,
                     [out] mem_t imc_handle,
                     [in] PP_CompletionCallback callback);
 
@@ -230,10 +219,10 @@ interface PPB_NaCl_Private {
                                 [in] uint32_t desired_access,
                                 [in] uint32_t options);
 
-  /* Returns a read-only file descriptor of a file rooted in the Pnacl
-   * component directory, or an invalid handle on failure.
+  /* Returns a read-only file descriptor for a url for pnacl translator tools,
+   * or an invalid handle on failure.
    */
-  PP_FileHandle GetReadonlyPnaclFd([in] str_t filename);
+  PP_FileHandle GetReadonlyPnaclFd([in] str_t url);
 
   /* This creates a temporary file that will be deleted by the time
    * the last handle is closed (or earlier on POSIX systems), and
@@ -279,17 +268,10 @@ interface PPB_NaCl_Private {
    * the plugin.)
    */
   void ReportTranslationFinished([in] PP_Instance instance,
-                                 [in] PP_Bool success);
-
-  /* Opens a NaCl executable file in the application's extension directory
-   * corresponding to the file URL and returns a file descriptor, or an invalid
-   * handle on failure. |metadata| is left unchanged on failure.
-   */
-  PP_FileHandle OpenNaClExecutable([in] PP_Instance instance,
-                                   [in] str_t file_url,
-                                   [out] uint64_t file_token_lo,
-                                   [out] uint64_t file_token_hi);
-
+                                 [in] PP_Bool success,
+                                 [in] int32_t opt_level,
+                                 [in] int64_t pexe_size,
+                                 [in] int64_t compile_time_us);
 
   /* Dispatch a progress event on the DOM element where the given instance is
    * embedded.
@@ -310,8 +292,7 @@ interface PPB_NaCl_Private {
   /* Report an error that occured while attempting to load a nexe. */
   void ReportLoadError([in] PP_Instance instance,
                        [in] PP_NaClError error,
-                       [in] str_t error_message,
-                       [in] str_t console_message);
+                       [in] str_t error_message);
 
   /* Reports that loading a nexe was aborted. */
   void ReportLoadAbort([in] PP_Instance instance);
@@ -343,9 +324,6 @@ interface PPB_NaCl_Private {
   /* Returns the NaCl readiness status for this instance. */
   PP_NaClReadyState GetNaClReadyState([in] PP_Instance instance);
 
-  /* Returns true if the plugin is an installed app. */
-  PP_Bool GetIsInstalled([in] PP_Instance instance);
-
   /* Returns the exit status of the plugin process. */
   int32_t GetExitStatus([in] PP_Instance instance);
 
@@ -365,16 +343,11 @@ interface PPB_NaCl_Private {
   /* Returns the size of the nexe. */
   int64_t GetNexeSize([in] PP_Instance instance);
 
-  /* Performs accounting for requesting the NaCl manifest at the given URL. */
+  /* Requests the NaCl manifest specified in the plugin arguments. */
   void RequestNaClManifest([in] PP_Instance instance,
-                           [in] str_t manifest_url,
-                           [out] int32_t manifest_id,
                            [in] PP_CompletionCallback callback);
 
   PP_Var GetManifestBaseURL([in] PP_Instance instance);
-
-  PP_Bool ResolvesRelativeToPluginBaseUrl([in] PP_Instance instance,
-                                          [in] str_t url);
 
   /* Processes the NaCl manifest once it's been retrieved.
    * TODO(teravest): Move the rest of the supporting logic out of the trusted
@@ -383,27 +356,12 @@ interface PPB_NaCl_Private {
   void ProcessNaClManifest([in] PP_Instance instance,
                            [in] str_t program_url);
 
-  /* Returns the manifest url as passed as a plugin argument. */
-  PP_Var GetManifestURLArgument([in] PP_Instance instance);
-
   PP_Bool DevInterfacesEnabled([in] PP_Instance instance);
 
-  int32_t CreatePnaclManifest([in] PP_Instance instance);
-
-  void DestroyManifest([in] PP_Instance instance,
-                       [in] int32_t manifest_id);
-
   PP_Bool GetManifestProgramURL([in] PP_Instance instance,
-                                [in] int32_t manifest_id,
                                 [out] PP_Var full_url,
                                 [out] PP_PNaClOptions pnacl_options,
                                 [out] PP_Bool uses_nonsfi_mode);
-
-  PP_Bool ManifestResolveKey([in] PP_Instance instance,
-                             [in] int32_t manifest_id,
-                             [in] str_t key,
-                             [out] PP_Var full_url,
-                             [out] PP_PNaClOptions pnacl_options);
 
   /* Returns the filenames for the llc and ld tools, parsing that information
    * from the file given in |filename|.
@@ -425,10 +383,43 @@ interface PPB_NaCl_Private {
   void PostMessageToJavaScript([in] PP_Instance instance,
                                [in] str_t message);
 
-  /* Downloads the .nexe file at the given URL to a file, and sets |handle|
-   * to a handle to a file containing its contents. */
+  /* Downloads the .nexe file at the given URL to a file, and sets |file_info|
+   * to information for a handle to a file containing its contents.
+   * If metadata for identity-based validation caching is available
+   * then it sets token information in |file_info| (otherwise left untouched).
+   */
   void DownloadNexe([in] PP_Instance instance,
                     [in] str_t url,
-                    [out] PP_FileHandle handle,
+                    [out] PP_NaClFileInfo file_info,
                     [in] PP_CompletionCallback callback);
+
+  /* Reports the status of sel_ldr for UMA reporting.
+   * |max_status| has to be provided because the implementation of this
+   * interface can't access the NaClErrorCode enum.
+   */
+  void ReportSelLdrStatus([in] PP_Instance instance,
+                          [in] int32_t load_status,
+                          [in] int32_t max_status);
+
+  /* Logs time taken by an operation to UMA histograms.
+   * This function is safe to call on any thread.
+   */
+  void LogTranslateTime([in] str_t histogram_name,
+                        [in] int64_t time_us);
+
+  /* Opens a manifest entry for the given instance. If this is for a helper
+   * process, we consult our internal pnacl.json instead of the user-supplied
+   * NMF.
+   * Fails for files which require PNaCl translation.
+   */
+  void OpenManifestEntry([in] PP_Instance instance,
+                         [in] PP_Bool is_helper_process,
+                         [in] str_t key,
+                         [out] PP_NaClFileInfo file_info,
+                         [in] PP_CompletionCallback callback);
+
+  /* Sets the start time for PNaCl downloading and translation to the current
+   * time.
+   */
+  void SetPNaClStartTime([in] PP_Instance instance);
 };

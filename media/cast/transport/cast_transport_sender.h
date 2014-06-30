@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// This is the main interface for the cast transport sender. The cast sender
-// handles the cast pipeline from encoded frames (both audio and video), to
-// encryption, packetization and transport.
+// This is the main interface for the cast transport sender.  It accepts encoded
+// frames (both audio and video), encrypts their encoded data, packetizes them
+// and feeds them into a transport (e.g., UDP).
 
 // Construction of the Cast Sender and the Cast Transport Sender should be done
 // in the following order:
@@ -65,9 +65,8 @@ class CastTransportSender : public base::NonThreadSafe {
   // Audio/Video initialization.
   // Encoded frames cannot be transmitted until the relevant initialize method
   // is called. Usually called by CastSender.
-  virtual void InitializeAudio(const CastTransportAudioConfig& config) = 0;
-
-  virtual void InitializeVideo(const CastTransportVideoConfig& config) = 0;
+  virtual void InitializeAudio(const CastTransportRtpConfig& config) = 0;
+  virtual void InitializeVideo(const CastTransportRtpConfig& config) = 0;
 
   // Sets the Cast packet receiver. Should be called after creation on the
   // Cast sender. Packets won't be received until this function is called.
@@ -92,9 +91,18 @@ class CastTransportSender : public base::NonThreadSafe {
                                      const std::string& c_name) = 0;
 
   // Retransmission request.
+  // |missing_packets| includes the list of frames and packets in each
+  // frame to be re-transmitted.
+  // If |cancel_rtx_if_not_in_list| is used as an optimization to cancel
+  // pending re-transmission requests of packets not listed in
+  // |missing_packets|. If the requested packet(s) were sent recently
+  // (how long is specified by |dedupe_window|) then this re-transmit
+  // will be ignored.
   virtual void ResendPackets(
       bool is_audio,
-      const MissingFramesAndPacketsMap& missing_packets) = 0;
+      const MissingFramesAndPacketsMap& missing_packets,
+      bool cancel_rtx_if_not_in_list,
+      base::TimeDelta dedupe_window) = 0;
 };
 
 }  // namespace transport

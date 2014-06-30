@@ -29,18 +29,14 @@ class CrossSiteResourceHandler : public LayeredResourceHandler {
   virtual ~CrossSiteResourceHandler();
 
   // ResourceHandler implementation:
-  virtual bool OnRequestRedirected(int request_id,
-                                   const GURL& new_url,
+  virtual bool OnRequestRedirected(const GURL& new_url,
                                    ResourceResponse* response,
                                    bool* defer) OVERRIDE;
-  virtual bool OnResponseStarted(int request_id,
-                                 ResourceResponse* response,
+  virtual bool OnResponseStarted(ResourceResponse* response,
                                  bool* defer) OVERRIDE;
-  virtual bool OnReadCompleted(int request_id,
-                               int bytes_read,
+  virtual bool OnReadCompleted(int bytes_read,
                                bool* defer) OVERRIDE;
-  virtual void OnResponseCompleted(int request_id,
-                                   const net::URLRequestStatus& status,
+  virtual void OnResponseCompleted(const net::URLRequestStatus& status,
                                    const std::string& security_info,
                                    bool* defer) OVERRIDE;
 
@@ -53,11 +49,18 @@ class CrossSiteResourceHandler : public LayeredResourceHandler {
   CONTENT_EXPORT static void SetLeakRequestsForTesting(
       bool leak_requests_for_testing);
 
+  // Navigations are deferred at OnResponseStarted to parse out any navigation
+  // transition link headers, and give the navigation transition (if it exists)
+  // a chance to run.
+  void ResumeResponseDeferredAtStart(int request_id);
+
+  // Returns whether the handler is deferred.
+  bool did_defer_for_testing() const { return did_defer_; }
+
  private:
   // Prepare to render the cross-site response in a new RenderViewHost, by
   // telling the old RenderViewHost to run its onunload handler.
-  void StartCrossSiteTransition(int request_id,
-                                ResourceResponse* response,
+  void StartCrossSiteTransition(ResourceResponse* response,
                                 bool should_transfer);
 
   // Defer the navigation to the UI thread to check whether transfer is required
@@ -65,6 +68,12 @@ class CrossSiteResourceHandler : public LayeredResourceHandler {
   bool DeferForNavigationPolicyCheck(ResourceRequestInfoImpl* info,
                                      ResourceResponse* response,
                                      bool* defer);
+
+  bool OnNavigationTransitionResponseStarted(ResourceResponse* response,
+                                             bool* defer);
+
+  bool OnNormalResponseStarted(ResourceResponse* response,
+                               bool* defer);
 
   void ResumeOrTransfer(bool is_transfer);
   void ResumeIfDeferred();

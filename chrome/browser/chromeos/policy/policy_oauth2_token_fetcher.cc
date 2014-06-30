@@ -58,8 +58,6 @@ void PolicyOAuth2TokenFetcher::StartFetchingAccessToken() {
   std::vector<std::string> scopes;
   scopes.push_back(GaiaConstants::kDeviceManagementServiceOAuth);
   scopes.push_back(GaiaConstants::kOAuthWrapBridgeUserInfoScope);
-  scopes.push_back(GaiaConstants::kGoogleUserInfoEmail);
-  scopes.push_back(GaiaConstants::kGoogleUserInfoProfile);
   access_token_fetcher_.reset(
       new OAuth2AccessTokenFetcherImpl(this,
                                        system_context_getter_.get(),
@@ -73,7 +71,6 @@ void PolicyOAuth2TokenFetcher::StartFetchingAccessToken() {
 void PolicyOAuth2TokenFetcher::OnClientOAuthSuccess(
     const GaiaAuthConsumer::ClientOAuthResult& oauth2_tokens) {
   VLOG(1) << "OAuth2 tokens for policy fetching succeeded.";
-  oauth2_tokens_ = oauth2_tokens;
   oauth2_refresh_token_ = oauth2_tokens.refresh_token;
   retry_count_ = 0;
   StartFetchingAccessToken();

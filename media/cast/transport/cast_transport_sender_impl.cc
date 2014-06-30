@@ -7,6 +7,7 @@
 #include "base/single_thread_task_runner.h"
 #include "media/cast/transport/cast_transport_config.h"
 #include "media/cast/transport/cast_transport_defines.h"
+#include "net/base/net_util.h"
 
 namespace media {
 namespace cast {
@@ -56,6 +57,7 @@ CastTransportSenderImpl::CastTransportSenderImpl(
              transport_task_runner),
       rtcp_builder_(&pacer_),
       raw_events_callback_(raw_events_callback) {
+  DCHECK(clock_);
   if (!raw_events_callback_.is_null()) {
     DCHECK(raw_events_callback_interval > base::TimeDelta());
     event_subscriber_.reset(new SimpleEventSubscriber);
@@ -65,6 +67,11 @@ CastTransportSenderImpl::CastTransportSenderImpl(
                             this,
                             &CastTransportSenderImpl::SendRawEvents);
   }
+  if (transport_) {
+    // The default DSCP value for cast is AF41. Which gives it a higher
+    // priority over other traffic.
+    transport_->SetDscp(net::DSCP_AF41);
+  }
 }
 
 CastTransportSenderImpl::~CastTransportSenderImpl() {
@@ -73,25 +80,39 @@ CastTransportSenderImpl::~CastTransportSenderImpl() {
 }
 
 void CastTransportSenderImpl::InitializeAudio(
-    const CastTransportAudioConfig& config) {
-  pacer_.RegisterAudioSsrc(config.rtp.config.ssrc);
-  audio_sender_.reset(new TransportAudioSender(
-      config, clock_, transport_task_runner_, &pacer_));
-  if (audio_sender_->initialized())
-    status_callback_.Run(TRANSPORT_AUDIO_INITIALIZED);
-  else
+    const CastTransportRtpConfig& config) {
+  LOG_IF(WARNING, config.aes_key.empty() || config.aes_iv_mask.empty())
+      << "Unsafe to send audio with encryption DISABLED.";
+  if (!audio_encryptor_.Initialize(config.aes_key, config.aes_iv_mask)) {
     status_callback_.Run(TRANSPORT_AUDIO_UNINITIALIZED);
+    return;
+  }
+  audio_sender_.reset(new RtpSender(clock_, transport_task_runner_, &pacer_));
+  if (audio_sender_->Initialize(config)) {
+    pacer_.RegisterAudioSsrc(config.ssrc);
+    status_callback_.Run(TRANSPORT_AUDIO_INITIALIZED);
+  } else {
+    audio_sender_.reset();
+    status_callback_.Run(TRANSPORT_AUDIO_UNINITIALIZED);
+  }
 }
 
 void CastTransportSenderImpl::InitializeVideo(
-    const CastTransportVideoConfig& config) {
-  pacer_.RegisterVideoSsrc(config.rtp.config.ssrc);
-  video_sender_.reset(new TransportVideoSender(
-      config, clock_, transport_task_runner_, &pacer_));
-  if (video_sender_->initialized())
-    status_callback_.Run(TRANSPORT_VIDEO_INITIALIZED);
-  else
+    const CastTransportRtpConfig& config) {
+  LOG_IF(WARNING, config.aes_key.empty() || config.aes_iv_mask.empty())
+      << "Unsafe to send video with encryption DISABLED.";
+  if (!video_encryptor_.Initialize(config.aes_key, config.aes_iv_mask)) {
     status_callback_.Run(TRANSPORT_VIDEO_UNINITIALIZED);
+    return;
+  }
+  video_sender_.reset(new RtpSender(clock_, transport_task_runner_, &pacer_));
+  if (video_sender_->Initialize(config)) {
+    pacer_.RegisterVideoSsrc(config.ssrc);
+    status_callback_.Run(TRANSPORT_VIDEO_INITIALIZED);
+  } else {
+    video_sender_.reset();
+    status_callback_.Run(TRANSPORT_VIDEO_UNINITIALIZED);
+  }
 }
 
 void CastTransportSenderImpl::SetPacketReceiver(
@@ -99,16 +120,35 @@ void CastTransportSenderImpl::SetPacketReceiver(
   transport_->StartReceiving(packet_receiver);
 }
 
+namespace {
+void EncryptAndSendFrame(const EncodedFrame& frame,
+                         TransportEncryptionHandler* encryptor,
+                         RtpSender* sender) {
+  if (encryptor->is_activated()) {
+    EncodedFrame encrypted_frame;
+    frame.CopyMetadataTo(&encrypted_frame);
+    if (encryptor->Encrypt(frame.frame_id, frame.data, &encrypted_frame.data)) {
+      sender->SendFrame(encrypted_frame);
+    } else {
+      LOG(ERROR) << "Encryption failed.  Not sending frame with ID "
+                 << frame.frame_id;
+    }
+  } else {
+    sender->SendFrame(frame);
+  }
+}
+}  // namespace
+
 void CastTransportSenderImpl::InsertCodedAudioFrame(
     const EncodedFrame& audio_frame) {
   DCHECK(audio_sender_) << "Audio sender uninitialized";
-  audio_sender_->SendFrame(audio_frame);
+  EncryptAndSendFrame(audio_frame, &audio_encryptor_, audio_sender_.get());
 }
 
 void CastTransportSenderImpl::InsertCodedVideoFrame(
     const EncodedFrame& video_frame) {
   DCHECK(video_sender_) << "Video sender uninitialized";
-  video_sender_->SendFrame(video_frame);
+  EncryptAndSendFrame(video_frame, &video_encryptor_, video_sender_.get());
 }
 
 void CastTransportSenderImpl::SendRtcpFromRtpSender(
@@ -139,13 +179,19 @@ void CastTransportSenderImpl::SendRtcpFromRtpSender(
 
 void CastTransportSenderImpl::ResendPackets(
     bool is_audio,
-    const MissingFramesAndPacketsMap& missing_packets) {
+    const MissingFramesAndPacketsMap& missing_packets,
+    bool cancel_rtx_if_not_in_list,
+    base::TimeDelta dedupe_window) {
   if (is_audio) {
     DCHECK(audio_sender_) << "Audio sender uninitialized";
-    audio_sender_->ResendPackets(missing_packets);
+    audio_sender_->ResendPackets(missing_packets,
+                                 cancel_rtx_if_not_in_list,
+                                 dedupe_window);
   } else {
     DCHECK(video_sender_) << "Video sender uninitialized";
-    video_sender_->ResendPackets(missing_packets);
+    video_sender_->ResendPackets(missing_packets,
+                                 cancel_rtx_if_not_in_list,
+                                 dedupe_window);
   }
 }
 

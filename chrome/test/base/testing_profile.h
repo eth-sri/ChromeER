@@ -18,10 +18,6 @@ namespace content {
 class MockResourceContext;
 }
 
-namespace extensions {
-class ExtensionPrefs;
-}
-
 namespace history {
 class TopSites;
 }
@@ -45,8 +41,6 @@ class BrowserContextDependencyManager;
 class ExtensionSpecialStoragePolicy;
 class HostContentSettingsMap;
 class PrefServiceSyncable;
-class ProfileSyncService;
-class TemplateURLService;
 class TestingPrefServiceSyncable;
 
 class TestingProfile : public Profile {
@@ -106,9 +100,9 @@ class TestingProfile : public Profile {
     // Makes the Profile being built a guest profile.
     void SetGuestSession();
 
-    // Sets the managed user ID (which is empty by default). If it is set to a
-    // non-empty string, the profile is managed.
-    void SetManagedUserId(const std::string& managed_user_id);
+    // Sets the supervised user ID (which is empty by default). If it is set to
+    // a non-empty string, the profile is supervised.
+    void SetSupervisedUserId(const std::string& supervised_user_id);
 
     // Sets the PolicyService to be used by this profile.
     void SetPolicyService(scoped_ptr<policy::PolicyService> policy_service);
@@ -127,7 +121,7 @@ class TestingProfile : public Profile {
     Delegate* delegate_;
     bool incognito_;
     bool guest_session_;
-    std::string managed_user_id_;
+    std::string supervised_user_id_;
     scoped_ptr<policy::PolicyService> policy_service_;
     TestingFactories testing_factories_;
 
@@ -155,7 +149,7 @@ class TestingProfile : public Profile {
                  scoped_ptr<PrefServiceSyncable> prefs,
                  bool incognito,
                  bool guest_session,
-                 const std::string& managed_user_id,
+                 const std::string& supervised_user_id,
                  scoped_ptr<policy::PolicyService> policy_service,
                  const TestingFactories& factories);
 
@@ -217,14 +211,13 @@ class TestingProfile : public Profile {
   virtual net::URLRequestContextGetter* GetRequestContext() OVERRIDE;
   virtual net::URLRequestContextGetter* CreateRequestContext(
       content::ProtocolHandlerMap* protocol_handlers,
-      content::ProtocolHandlerScopedVector protocol_interceptors) OVERRIDE;
+      content::URLRequestInterceptorScopedVector request_interceptors) OVERRIDE;
   virtual net::URLRequestContextGetter* GetRequestContextForRenderProcess(
       int renderer_child_id) OVERRIDE;
   virtual content::ResourceContext* GetResourceContext() OVERRIDE;
-  virtual content::GeolocationPermissionContext*
-      GetGeolocationPermissionContext() OVERRIDE;
   virtual content::BrowserPluginGuestManager* GetGuestManager() OVERRIDE;
   virtual quota::SpecialStoragePolicy* GetSpecialStoragePolicy() OVERRIDE;
+  virtual content::PushMessagingService* GetPushMessagingService() OVERRIDE;
 
   virtual TestingProfile* AsTestingProfile() OVERRIDE;
 
@@ -256,8 +249,7 @@ class TestingProfile : public Profile {
   virtual void DestroyOffTheRecordProfile() OVERRIDE {}
   virtual bool HasOffTheRecordProfile() OVERRIDE;
   virtual Profile* GetOriginalProfile() OVERRIDE;
-  virtual bool IsManaged() OVERRIDE;
-  virtual ExtensionService* GetExtensionService() OVERRIDE;
+  virtual bool IsSupervised() OVERRIDE;
   void SetExtensionSpecialStoragePolicy(
       ExtensionSpecialStoragePolicy* extension_special_storage_policy);
   virtual ExtensionSpecialStoragePolicy*
@@ -281,45 +273,16 @@ class TestingProfile : public Profile {
       GetMediaRequestContextForStoragePartition(
           const base::FilePath& partition_path,
           bool in_memory) OVERRIDE;
-  virtual void RequestMidiSysExPermission(
-      int render_process_id,
-      int render_view_id,
-      int bridge_id,
-      const GURL& requesting_frame,
-      bool user_gesture,
-      const MidiSysExPermissionCallback& callback) OVERRIDE;
-  virtual void CancelMidiSysExPermissionRequest(
-        int render_process_id,
-        int render_view_id,
-        int bridge_id,
-        const GURL& requesting_frame) OVERRIDE;
-  virtual void RequestProtectedMediaIdentifierPermission(
-      int render_process_id,
-      int render_view_id,
-      int bridge_id,
-      int group_id,
-      const GURL& requesting_frame,
-      const ProtectedMediaIdentifierPermissionCallback& callback) OVERRIDE;
-  virtual void CancelProtectedMediaIdentifierPermissionRequests(
-      int group_id) OVERRIDE;
   virtual net::URLRequestContextGetter* CreateRequestContextForStoragePartition(
       const base::FilePath& partition_path,
       bool in_memory,
       content::ProtocolHandlerMap* protocol_handlers,
-      content::ProtocolHandlerScopedVector protocol_interceptors) OVERRIDE;
+      content::URLRequestInterceptorScopedVector request_interceptors) OVERRIDE;
   virtual net::SSLConfigService* GetSSLConfigService() OVERRIDE;
   virtual HostContentSettingsMap* GetHostContentSettingsMap() OVERRIDE;
-  virtual std::wstring GetName();
-  virtual void SetName(const std::wstring& name) {}
-  virtual std::wstring GetID();
-  virtual void SetID(const std::wstring& id);
   void set_last_session_exited_cleanly(bool value) {
     last_session_exited_cleanly_ = value;
   }
-  virtual void MergeResourceString(int message_id,
-                                   std::wstring* output_string) {}
-  virtual void MergeResourceInteger(int message_id, int* output_value) {}
-  virtual void MergeResourceBoolean(int message_id, bool* output_value) {}
   virtual bool IsSameProfile(Profile *p) OVERRIDE;
   virtual base::Time GetStartTime() const OVERRIDE;
   virtual base::FilePath last_selected_directory() OVERRIDE;
@@ -346,11 +309,9 @@ class TestingProfile : public Profile {
   void BlockUntilHistoryProcessesPendingRequests();
 
   virtual chrome_browser_net::Predictor* GetNetworkPredictor() OVERRIDE;
+  virtual DevToolsNetworkController* GetDevToolsNetworkController() OVERRIDE;
   virtual void ClearNetworkingHistorySince(
       base::Time time,
-      const base::Closure& completion) OVERRIDE;
-  virtual void ClearDomainReliabilityMonitor(
-      domain_reliability::DomainReliabilityClearMode mode,
       const base::Closure& completion) OVERRIDE;
   virtual GURL GetHomePage() OVERRIDE;
 
@@ -387,8 +348,6 @@ class TestingProfile : public Profile {
   // request context. Currently, only the CookieMonster is hooked up.
   scoped_refptr<net::URLRequestContextGetter> extensions_request_context_;
 
-  std::wstring id_;
-
   bool incognito_;
   bool force_incognito_;
   scoped_ptr<Profile> incognito_profile_;
@@ -396,7 +355,7 @@ class TestingProfile : public Profile {
 
   bool guest_session_;
 
-  std::string managed_user_id_;
+  std::string supervised_user_id_;
 
   // Did the last session exit cleanly? Default is true.
   bool last_session_exited_cleanly_;

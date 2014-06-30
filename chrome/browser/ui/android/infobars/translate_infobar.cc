@@ -7,17 +7,17 @@
 #include "base/android/jni_android.h"
 #include "base/android/jni_array.h"
 #include "base/android/jni_weak_ref.h"
-#include "chrome/browser/translate/translate_infobar_delegate.h"
+#include "chrome/browser/translate/chrome_translate_client.h"
+#include "components/translate/core/browser/translate_infobar_delegate.h"
 #include "grit/generated_resources.h"
 #include "jni/TranslateInfoBarDelegate_jni.h"
 #include "ui/base/l10n/l10n_util.h"
 
+// ChromeTranslateClient
+// ----------------------------------------------------------
 
-// TranslateInfoBarDelegate ---------------------------------------------------
-
-// static
-scoped_ptr<infobars::InfoBar> TranslateInfoBarDelegate::CreateInfoBar(
-    scoped_ptr<TranslateInfoBarDelegate> delegate) {
+scoped_ptr<infobars::InfoBar> ChromeTranslateClient::CreateInfoBar(
+    scoped_ptr<TranslateInfoBarDelegate> delegate) const {
   return scoped_ptr<infobars::InfoBar>(new TranslateInfoBar(delegate.Pass()));
 }
 
@@ -106,11 +106,10 @@ void TranslateInfoBar::ApplyTranslateOptions(JNIEnv* env,
 
 void TranslateInfoBar::TransferOwnership(TranslateInfoBar* destination,
                                          translate::TranslateStep new_type) {
-  int new_target_language = destination->GetDelegate()->target_language_index();
   JNIEnv* env = base::android::AttachCurrentThread();
   if (Java_TranslateInfoBarDelegate_changeTranslateInfoBarTypeAndPointer(
       env, java_translate_delegate_.obj(),
-      reinterpret_cast<intptr_t>(destination), new_type, new_target_language)) {
+      reinterpret_cast<intptr_t>(destination), new_type)) {
     ReassignJavaInfoBar(destination);
     destination->SetJavaDelegate(java_translate_delegate_.Release());
   }

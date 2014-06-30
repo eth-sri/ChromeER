@@ -9,7 +9,8 @@ if (is_android) {
   import("//build/config/android/rules.gni")
 }
 
-component("ui_base") {
+component("base") {
+  output_name = "ui_base"
   sources = [
     "accelerators/accelerator.cc",
     "accelerators/accelerator.h",
@@ -194,11 +195,7 @@ component("ui_base") {
     "text/bytes_formatting.h",
     "theme_provider.cc",
     "theme_provider.h",
-    "touch/touch_device.cc",
     "touch/touch_device.h",
-    "touch/touch_device_android.cc",
-    "touch/touch_device_ozone.cc",
-    "touch/touch_device_win.cc",
     "touch/touch_editing_controller.cc",
     "touch/touch_editing_controller.h",
     "touch/touch_enabled.cc",
@@ -215,11 +212,10 @@ component("ui_base") {
     "ui_base_export.h",
     "view_prop.cc",
     "view_prop.h",
-    # TODO(tfarina): Uncomment these when http://crbug.com/367591 is fixed.
     "webui/jstemplate_builder.cc",
     "webui/jstemplate_builder.h",
-    #"webui/web_ui_util.cc",
-    #"webui/web_ui_util.h",
+    "webui/web_ui_util.cc",
+    "webui/web_ui_util.h",
     "win/accessibility_ids_win.h",
     "win/accessibility_misc_utils.cc",
     "win/accessibility_misc_utils.h",
@@ -251,18 +247,25 @@ component("ui_base") {
     "window_open_disposition.cc",
     "window_open_disposition.h",
     "work_area_watcher_observer.h",
-    "x/selection_owner.cc",
-    "x/selection_owner.h",
-    "x/selection_requestor.cc",
-    "x/selection_requestor.h",
-    "x/selection_utils.cc",
-    "x/selection_utils.h",
     "x/x11_menu_list.cc",
     "x/x11_menu_list.h",
     "x/x11_util.cc",
     "x/x11_util.h",
     "x/x11_util_internal.h",
   ]
+
+  if (is_win) {
+    sources += [ "touch/touch_device_win.cc" ]
+  } else if (is_android) {
+    sources += [ "touch/touch_device_android.cc" ]
+  } else if (use_ozone) {
+    sources += [ "touch/touch_device_ozone.cc" ]
+  } else if (use_aura && use_x11) { 
+    sources += [ "touch/touch_device_aurax11.cc" ]
+  } else {
+    # Empty implementation for all other cases.
+    sources += [ "touch/touch_device.cc" ]
+  }
 
   defines = [ "UI_BASE_IMPLEMENTATION" ]
 
@@ -274,6 +277,7 @@ component("ui_base") {
     "//net",
     "//skia",
     "//third_party/icu",
+    "//ui/events:events_base",
     "//ui/resources",
     "//ui/resources:unscaled_resources",
     "//ui/strings",
@@ -294,6 +298,17 @@ component("ui_base") {
     ]
   }
 
+  if (use_x11 && use_aura) {
+    sources += [
+      "x/selection_owner.cc",
+      "x/selection_owner.h",
+      "x/selection_requestor.cc",
+      "x/selection_requestor.h",
+      "x/selection_utils.cc",
+      "x/selection_utils.h",
+    ]
+  }
+
   if (use_aura) {
     deps += [
       "//ui/events",
@@ -302,12 +317,16 @@ component("ui_base") {
     sources -= [
       "cursor/cursor.cc",
       "cursor/cursor.h",
-      "x/selection_owner.cc",
-      "x/selection_owner.h",
-      "x/selection_requestor.cc",
-      "x/selection_requestor.h",
-      "x/selection_utils.cc",
-      "x/selection_utils.h",
+      "dragdrop/drag_utils_aura.cc",
+    ]
+  }
+  if (!use_x11) {
+    sources -= [
+      "x/x11_menu_list.cc",
+      "x/x11_menu_list.h",
+      "x/x11_util.cc",
+      "x/x11_util.h",
+      "x/x11_util_internal.h",
     ]
   }
 
@@ -350,18 +369,12 @@ component("ui_base") {
       "dragdrop/os_exchange_data_provider_aura.cc",
       "dragdrop/os_exchange_data_provider_aura.h",
     ]
-    sources -= [
-      "touch/touch_device.cc",
-    ]
   }
 
   libs = []
   if (is_win) {
     deps += [
       "//third_party/wtl",
-    ]
-    sources -= [
-      "touch/touch_device.cc",
     ]
     cflags = [
       "/wd4267",  # TODO(jschuh): C4267: http://crbug.com/167187 size_t -> int.
@@ -405,7 +418,7 @@ component("ui_base") {
     libs += [
       "Accelerate.framework",
       "AudioUnit.framework",
-      "CoreView.framework",
+      "CoreVideo.framework",
     ]
   }
 
@@ -426,7 +439,6 @@ component("ui_base") {
         "cursor/cursor_loader_x11.cc",
         "cursor/cursor_loader_x11.h",
         "cursor/cursor_x11.cc",
-        "touch/touch_device_aurax11.cc",
       ]
       if (!is_chromeos) {
         # These Aura X11 files aren't used on ChromeOS.
@@ -459,7 +471,6 @@ component("ui_base") {
       "models/button_menu_item_model.cc",
       "models/dialog_model.cc",
       "theme_provider.cc",
-      "touch/touch_device.cc",
       "touch/touch_editing_controller.cc",
       "ui_base_types.cc",
     ]

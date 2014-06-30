@@ -15,7 +15,10 @@ class IntlHiRuPage(page_module.Page):
     self.archive_data_file = 'data/intl_hi_ru.json'
 
   def RunSmoothness(self, action_runner):
-    action_runner.RunAction(ScrollAction())
+    interaction = action_runner.BeginGestureInteraction(
+        'ScrollAction', is_smooth=True)
+    action_runner.ScrollPage()
+    interaction.End()
 
 
 class IntlHiRuPageSet(page_set_module.PageSet):
@@ -25,7 +28,8 @@ class IntlHiRuPageSet(page_set_module.PageSet):
   def __init__(self):
     super(IntlHiRuPageSet, self).__init__(
       user_agent_type='desktop',
-      archive_data_file='data/intl_hi_ru.json')
+      archive_data_file='data/intl_hi_ru.json',
+      bucket=page_set_module.PARTNER_BUCKET)
 
     urls_list = [
       # Why: #12 site in Russia

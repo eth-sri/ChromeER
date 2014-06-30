@@ -26,7 +26,7 @@ class ListValue;
 
 namespace chromeos {
 
-class FavoriteState;
+class NetworkState;
 class NetworkTypePattern;
 
 // Struct for passing wifi access point data.
@@ -91,21 +91,23 @@ CHROMEOS_EXPORT std::string FormattedMacAddress(
 CHROMEOS_EXPORT bool ParseCellularScanResults(
     const base::ListValue& list, std::vector<CellularScanResult>* scan_results);
 
-// Retrieves the ONC state dictionary for |favorite| using GetStateProperties.
+// Retrieves the ONC state dictionary for |network| using GetStateProperties.
 // This includes properties from the corresponding NetworkState if it exists.
-CHROMEOS_EXPORT scoped_ptr<base::DictionaryValue> TranslateFavoriteStateToONC(
-    const FavoriteState* favorite);
+CHROMEOS_EXPORT scoped_ptr<base::DictionaryValue> TranslateNetworkStateToONC(
+    const NetworkState* network);
 
 // Retrieves the list of network services by passing |pattern|,
 // |configured_only|, and |visible_only| to NetworkStateHandler::
 // GetNetworkListByType(). Translates the result into a list of ONC
 // dictionaries using TranslateShillServiceToONCPart. |limit| is used to limit
-// the number of results.
+// the number of results. If |debugging_properties| is true then also include
+// additional debugging properties (used in release code for chrome://network).
 CHROMEOS_EXPORT scoped_ptr<base::ListValue> TranslateNetworkListToONC(
     NetworkTypePattern pattern,
     bool configured_only,
     bool visible_only,
-    int limit);
+    int limit,
+    bool debugging_properties);
 
 }  // namespace network_util
 }  // namespace chromeos

@@ -59,8 +59,13 @@ class TestRtcpTransport : public transport::PacedPacketSender {
     return false;
   }
   virtual bool ResendPackets(
-      const transport::SendPacketVector& packets) OVERRIDE {
+      const transport::SendPacketVector& packets,
+      base::TimeDelta dedupe_window) OVERRIDE {
     return false;
+  }
+
+  virtual void CancelSendingPacket(
+      const transport::PacketKey& packet_key) OVERRIDE {
   }
 
   void SetExpectedRtcpPacket(scoped_ptr<Packet> packet) {

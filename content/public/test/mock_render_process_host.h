@@ -47,7 +47,7 @@ class MockRenderProcessHost : public RenderProcessHost {
   virtual void WidgetRestored() OVERRIDE;
   virtual void WidgetHidden() OVERRIDE;
   virtual int VisibleWidgetCount() const OVERRIDE;
-  virtual bool IsGuest() const OVERRIDE;
+  virtual bool IsIsolatedGuest() const OVERRIDE;
   virtual StoragePartition* GetStoragePartition() const OVERRIDE;
   virtual void AddWord(const base::string16& word);
   virtual bool FastShutdownIfPossible() OVERRIDE;
@@ -77,10 +77,15 @@ class MockRenderProcessHost : public RenderProcessHost {
   virtual void DisableAecDump() OVERRIDE;
   virtual void SetWebRtcLogMessageCallback(
       base::Callback<void(const std::string&)> callback) OVERRIDE;
+  virtual WebRtcStopRtpDumpCallback StartRtpDump(
+      bool incoming,
+      bool outgoing,
+      const WebRtcRtpPacketCallback& packet_callback) OVERRIDE;
 #endif
   virtual void ResumeDeferredNavigation(const GlobalRequestID& request_id)
       OVERRIDE;
   virtual void NotifyTimezoneChange() OVERRIDE;
+  virtual ServiceRegistry* GetServiceRegistry() OVERRIDE;
 
   // IPC::Sender via RenderProcessHost.
   virtual bool Send(IPC::Message* msg) OVERRIDE;
@@ -97,8 +102,8 @@ class MockRenderProcessHost : public RenderProcessHost {
 
   int GetActiveViewCount();
 
-  void SetIsGuest(bool is_guest) {
-    is_guest_ = is_guest;
+  void set_is_isolated_guest(bool is_isolated_guest) {
+    is_isolated_guest_ = is_isolated_guest;
   }
 
  private:
@@ -115,7 +120,7 @@ class MockRenderProcessHost : public RenderProcessHost {
   IDMap<IPC::Listener> listeners_;
   bool fast_shutdown_started_;
   bool deletion_callback_called_;
-  bool is_guest_;
+  bool is_isolated_guest_;
 
   DISALLOW_COPY_AND_ASSIGN(MockRenderProcessHost);
 };

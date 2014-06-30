@@ -9,6 +9,7 @@
 #include "base/files/file_path.h"
 #include "base/memory/weak_ptr.h"
 #include "content/public/browser/browser_message_filter.h"
+#include "ppapi/shared_impl/ppapi_permissions.h"
 
 class GURL;
 
@@ -50,6 +51,9 @@ class NaClHostMessageFilter : public content::BrowserMessageFilter {
 
   void OnLaunchNaCl(const NaClLaunchParams& launch_params,
                     IPC::Message* reply_msg);
+  void LaunchNaClContinuation(const nacl::NaClLaunchParams& launch_params,
+                              IPC::Message* reply_msg,
+                              ppapi::PpapiPermissions permissions);
   void OnGetReadonlyPnaclFd(const std::string& filename,
                             IPC::Message* reply_msg);
   void OnNaClCreateTemporaryFile(IPC::Message* reply_msg);
@@ -65,7 +69,7 @@ class NaClHostMessageFilter : public content::BrowserMessageFilter {
   void SyncReturnTemporaryFile(IPC::Message* reply_msg,
                                base::File file);
   void AsyncReturnTemporaryFile(int pp_instance,
-                                base::PlatformFile fd,
+                                const base::File& file,
                                 bool is_hit);
   void OnNaClDebugEnabledForURL(const GURL& nmf_url, bool* should_debug);
 

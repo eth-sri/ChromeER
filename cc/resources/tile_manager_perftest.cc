@@ -76,12 +76,11 @@ class FakeRasterizerImpl : public Rasterizer, public RasterizerTaskClient {
 base::LazyInstance<FakeRasterizerImpl> g_fake_rasterizer =
     LAZY_INSTANCE_INITIALIZER;
 
-class TileManagerPerfTest : public testing::Test, public TileManagerClient {
+class TileManagerPerfTest : public testing::Test {
  public:
   TileManagerPerfTest()
       : memory_limit_policy_(ALLOW_ANYTHING),
         max_tiles_(10000),
-        ready_to_activate_(false),
         id_(7),
         proxy_(base::MessageLoopProxy::current()),
         host_impl_(ImplSidePaintingSettings(10000),
@@ -116,8 +115,7 @@ class TileManagerPerfTest : public testing::Test, public TileManagerClient {
   virtual void InitializeRenderer() {
     host_impl_.InitializeRenderer(
         FakeOutputSurface::Create3d().PassAs<OutputSurface>());
-    tile_manager()->SetRasterizersForTesting(g_fake_rasterizer.Pointer(),
-                                             g_fake_rasterizer.Pointer());
+    tile_manager()->SetRasterizerForTesting(g_fake_rasterizer.Pointer());
   }
 
   void SetupDefaultTrees(const gfx::Size& layer_bounds) {
@@ -279,7 +277,7 @@ class TileManagerPerfTest : public testing::Test, public TileManagerClient {
     do {
       host_impl_.UpdateCurrentFrameTime();
       for (unsigned i = 0; i < layers.size(); ++i)
-        layers[i]->UpdateTilePriorities();
+        layers[i]->UpdateTiles(NULL);
 
       GlobalStateThatImpactsTilePriority global_state(GlobalStateForTest());
       tile_manager()->ManageTiles(global_state);
@@ -292,10 +290,6 @@ class TileManagerPerfTest : public testing::Test, public TileManagerClient {
         "manage_tiles", "", test_name, timer_.LapsPerSecond(), "runs/s", true);
   }
 
-  // TileManagerClient implementation.
-  virtual void NotifyReadyToActivate() OVERRIDE { ready_to_activate_ = true; }
-  virtual void NotifyTileInitialized(const Tile* tile) OVERRIDE {}
-
   TileManager* tile_manager() { return host_impl_.tile_manager(); }
 
  protected:
@@ -304,7 +298,6 @@ class TileManagerPerfTest : public testing::Test, public TileManagerClient {
   TestSharedBitmapManager shared_bitmap_manager_;
   TileMemoryLimitPolicy memory_limit_policy_;
   int max_tiles_;
-  bool ready_to_activate_;
   int id_;
   FakeImplProxy proxy_;
   FakeLayerTreeHostImpl host_impl_;

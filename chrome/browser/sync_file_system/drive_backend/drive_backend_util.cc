@@ -9,6 +9,7 @@
 #include "base/memory/scoped_vector.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "chrome/browser/drive/drive_api_util.h"
 #include "chrome/browser/sync_file_system/drive_backend/drive_backend_constants.h"
 #include "chrome/browser/sync_file_system/drive_backend/metadata_database.pb.h"
@@ -182,23 +183,6 @@ std::string GetMimeTypeFromTitle(const base::FilePath& title) {
   return mime_type;
 }
 
-scoped_ptr<google_apis::ResourceEntry> GetOldestCreatedFolderResource(
-    ScopedVector<google_apis::ResourceEntry> candidates) {
-  scoped_ptr<google_apis::ResourceEntry> oldest;
-  for (size_t i = 0; i < candidates.size(); ++i) {
-    google_apis::ResourceEntry* entry = candidates[i];
-    if (!entry->is_folder() || entry->deleted())
-      continue;
-
-    if (!oldest || oldest->published_time() > entry->published_time()) {
-      oldest.reset(entry);
-      candidates[i] = NULL;
-    }
-  }
-
-  return oldest.Pass();
-}
-
 SyncStatusCode GDataErrorCodeToSyncStatusCode(
     google_apis::GDataErrorCode error) {
   // NOTE: Please update DriveFileSyncService::UpdateServiceState when you add
@@ -270,6 +254,12 @@ scoped_ptr<FileTracker> CloneFileTracker(const FileTracker* obj) {
   if (!obj)
     return scoped_ptr<FileTracker>();
   return scoped_ptr<FileTracker>(new FileTracker(*obj));
+}
+
+std::string RemovePrefix(const std::string& str, const std::string& prefix) {
+  if (StartsWithASCII(str, prefix, true))
+    return str.substr(prefix.size());
+  return str;
 }
 
 }  // namespace drive_backend

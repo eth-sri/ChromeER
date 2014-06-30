@@ -6,9 +6,10 @@
 
 #include "base/auto_reset.h"
 #include "chrome/browser/autocomplete/autocomplete_controller.h"
-#include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/autocomplete/autocomplete_provider.h"
+#include "components/autocomplete/autocomplete_input.h"
+#include "components/metrics/proto/omnibox_event.pb.h"
 #include "url/gurl.h"
 
 // static
@@ -22,9 +23,11 @@ const int AutocompleteClassifier::kDefaultOmniboxProviders =
     AutocompleteProvider::TYPE_SHORTCUTS |
     AutocompleteProvider::TYPE_ZERO_SUGGEST;
 
-AutocompleteClassifier::AutocompleteClassifier(Profile* profile)
-    : controller_(new AutocompleteController(profile, NULL,
-                                             kDefaultOmniboxProviders)),
+AutocompleteClassifier::AutocompleteClassifier(
+    scoped_ptr<AutocompleteController> controller,
+    scoped_ptr<AutocompleteSchemeClassifier> scheme_classifier)
+    : controller_(controller.Pass()),
+      scheme_classifier_(scheme_classifier.Pass()),
       inside_classify_(false) {
 }
 
@@ -37,7 +40,7 @@ void AutocompleteClassifier::Classify(
     const base::string16& text,
     bool prefer_keyword,
     bool allow_exact_keyword_match,
-    AutocompleteInput::PageClassification page_classification,
+    metrics::OmniboxEventProto::PageClassification page_classification,
     AutocompleteMatch* match,
     GURL* alternate_nav_url) {
   DCHECK(!inside_classify_);
@@ -45,7 +48,7 @@ void AutocompleteClassifier::Classify(
   controller_->Start(AutocompleteInput(
       text, base::string16::npos, base::string16(), GURL(),
       page_classification, true, prefer_keyword,
-      allow_exact_keyword_match, false));
+      allow_exact_keyword_match, false, *scheme_classifier_));
   DCHECK(controller_->done());
   const AutocompleteResult& result = controller_->result();
   if (result.empty()) {

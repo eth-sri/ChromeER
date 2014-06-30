@@ -44,6 +44,19 @@ class IndexedDBFakeBackingStore : public IndexedDBBackingStore {
                                             const IndexedDBKeyPath&,
                                             bool auto_increment) OVERRIDE;
 
+  virtual leveldb::Status DeleteObjectStore(Transaction* transaction,
+                                            int64 database_id,
+                                            int64 object_store_id) OVERRIDE;
+
+  virtual leveldb::Status PutRecord(
+      IndexedDBBackingStore::Transaction* transaction,
+      int64 database_id,
+      int64 object_store_id,
+      const IndexedDBKey& key,
+      IndexedDBValue& value,
+      ScopedVector<webkit_blob::BlobDataHandle>* handles,
+      RecordIdentifier* record) OVERRIDE;
+
   virtual leveldb::Status ClearObjectStore(Transaction*,
                                            int64 database_id,
                                            int64 object_store_id) OVERRIDE;
@@ -90,20 +103,19 @@ class IndexedDBFakeBackingStore : public IndexedDBBackingStore {
                                                 const RecordIdentifier&)
       OVERRIDE;
   virtual void ReportBlobUnused(int64 database_id, int64 blob_key) OVERRIDE;
-
   virtual scoped_ptr<Cursor> OpenObjectStoreKeyCursor(
       Transaction* transaction,
       int64 database_id,
       int64 object_store_id,
       const IndexedDBKeyRange& key_range,
-      indexed_db::CursorDirection,
+      blink::WebIDBCursorDirection,
       leveldb::Status*) OVERRIDE;
   virtual scoped_ptr<Cursor> OpenObjectStoreCursor(
       Transaction* transaction,
       int64 database_id,
       int64 object_store_id,
       const IndexedDBKeyRange& key_range,
-      indexed_db::CursorDirection,
+      blink::WebIDBCursorDirection,
       leveldb::Status*) OVERRIDE;
   virtual scoped_ptr<Cursor> OpenIndexKeyCursor(
       Transaction* transaction,
@@ -111,30 +123,36 @@ class IndexedDBFakeBackingStore : public IndexedDBBackingStore {
       int64 object_store_id,
       int64 index_id,
       const IndexedDBKeyRange& key_range,
-      indexed_db::CursorDirection,
+      blink::WebIDBCursorDirection,
       leveldb::Status*) OVERRIDE;
   virtual scoped_ptr<Cursor> OpenIndexCursor(Transaction* transaction,
                                              int64 database_id,
                                              int64 object_store_id,
                                              int64 index_id,
                                              const IndexedDBKeyRange& key_range,
-                                             indexed_db::CursorDirection,
+                                             blink::WebIDBCursorDirection,
                                              leveldb::Status*) OVERRIDE;
 
   class FakeTransaction : public IndexedDBBackingStore::Transaction {
    public:
-    FakeTransaction(bool result);
+    explicit FakeTransaction(leveldb::Status phase_two_result);
     virtual void Begin() OVERRIDE;
-    virtual leveldb::Status Commit() OVERRIDE;
+    virtual leveldb::Status CommitPhaseOne(
+        scoped_refptr<BlobWriteCallback>) OVERRIDE;
+    virtual leveldb::Status CommitPhaseTwo() OVERRIDE;
     virtual void Rollback() OVERRIDE;
 
    private:
-    bool result_;
+    leveldb::Status result_;
+
+    DISALLOW_COPY_AND_ASSIGN(FakeTransaction);
   };
 
  protected:
   friend class base::RefCounted<IndexedDBFakeBackingStore>;
   virtual ~IndexedDBFakeBackingStore();
+
+  DISALLOW_COPY_AND_ASSIGN(IndexedDBFakeBackingStore);
 };
 
 }  // namespace content

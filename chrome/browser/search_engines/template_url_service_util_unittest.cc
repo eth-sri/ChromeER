@@ -5,9 +5,10 @@
 #include "base/memory/scoped_vector.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/util.h"
+#include "components/search_engines/search_terms_data.h"
+#include "components/search_engines/template_url.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace {
@@ -30,7 +31,7 @@ scoped_ptr<TemplateURL> CreatePrepopulateTemplateURL(int prepopulate_id,
                                                      const std::string& keyword,
                                                      TemplateURLID id) {
   return make_scoped_ptr(new TemplateURL(
-      NULL, *CreatePrepopulateTemplateURLData(prepopulate_id, keyword, id)));
+      *CreatePrepopulateTemplateURLData(prepopulate_id, keyword, id)));
 }
 
 };  // namespace
@@ -87,7 +88,7 @@ TEST(TemplateURLServiceUtilTest, RemoveDuplicatePrepopulateIDs) {
       CreatePrepopulateTemplateURL(3, "loser6", 15).release());
 
   RemoveDuplicatePrepopulateIDs(NULL, prepopulated_turls, default_turl,
-      &local_turls, NULL);
+                                &local_turls, SearchTermsData(), NULL);
 
   // Verify that the expected local TURLs survived the process.
   EXPECT_EQ(local_turls.size(),

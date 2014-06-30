@@ -12,6 +12,7 @@ import tempfile
 from pylib import cmd_helper
 from pylib import constants
 from pylib import pexpect
+from pylib.device import device_errors
 from pylib.gtest.test_package import TestPackage
 
 
@@ -62,18 +63,29 @@ class TestPackageExecutable(TestPackage):
     #     /code/chrome if GCOV_PREFIX_STRIP=3
     try:
       depth = os.environ['NATIVE_COVERAGE_DEPTH_STRIP']
+      export_string = ('export GCOV_PREFIX="%s/gcov"\n' %
+                       device.GetExternalStoragePath())
+      export_string += 'export GCOV_PREFIX_STRIP=%s\n' % depth
+      return export_string
     except KeyError:
       logging.info('NATIVE_COVERAGE_DEPTH_STRIP is not defined: '
                    'No native coverage.')
       return ''
-    export_string = ('export GCOV_PREFIX="%s/gcov"\n' %
-                     device.old_interface.GetExternalStorage())
-    export_string += 'export GCOV_PREFIX_STRIP=%s\n' % depth
-    return export_string
+    except device_errors.CommandFailedError:
+      logging.info('No external storage found: No native coverage.')
+      return ''
 
   #override
   def ClearApplicationState(self, device):
-    device.old_interface.KillAllBlocking(self.suite_name, 30)
+    try:
+      # We don't expect the executable to be running, so we don't attempt
+      # to retry on failure.
+      device.KillAll(self.suite_name, blocking=True, timeout=30, retries=0)
+    except device_errors.CommandFailedError:
+      # KillAll raises an exception if it can't find a process with the given
+      # name. We only care that there is no process with the given name, so
+      # we can safely eat the exception.
+      pass
 
   #override
   def CreateCommandLineFileOnDevice(self, device, test_filter, test_arguments):
@@ -102,7 +114,7 @@ class TestPackageExecutable(TestPackage):
 
   #override
   def GetAllTests(self, device):
-    all_tests = device.old_interface.RunShellCommand(
+    all_tests = device.RunShellCommand(
         '%s %s/%s --gtest_list_tests' %
         (self.tool.GetTestWrapper(),
          constants.TEST_EXECUTABLE_DIR,

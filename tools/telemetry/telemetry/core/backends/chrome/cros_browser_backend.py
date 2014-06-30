@@ -19,7 +19,7 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
   def __init__(self, browser_type, browser_options, cri, is_guest,
                extensions_to_load):
     super(CrOSBrowserBackend, self).__init__(
-        is_content_shell=False, supports_extensions=not is_guest,
+        supports_tab_control=True, supports_extensions=not is_guest,
         browser_options=browser_options,
         output_profile_path=None, extensions_to_load=extensions_to_load)
 
@@ -48,8 +48,8 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
     # Note that we also perform this copy locally to ensure that
     # the owner of the extensions is set to chronos.
     for e in extensions_to_load:
-      output = cri.RunCmdOnDevice(['mktemp', '-d', '/tmp/extension_XXXXX'])
-      extension_dir = output[0].rstrip()
+      extension_dir = cri.RunCmdOnDevice(
+          ['mktemp', '-d', '/tmp/extension_XXXXX'])[0].rstrip()
       cri.PushFile(e.path, extension_dir)
       cri.Chown(extension_dir)
       e.local_path = os.path.join(extension_dir, os.path.basename(e.path))
@@ -67,8 +67,6 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
                    self.profile_directory)
       cri.Chown(self.profile_directory)
 
-    self._SetBranchNumber(self._GetChromeVersion())
-
   def GetBrowserStartupArgs(self):
     args = super(CrOSBrowserBackend, self).GetBrowserStartupArgs()
     args.extend([
@@ -79,8 +77,6 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
             # Disables the start page, as well as other external apps that can
             # steal focus or make measurements inconsistent.
             '--disable-default-apps',
-            # Skip user image selection screen, and post login screens.
-            '--oobe-skip-postlogin',
             # Allow devtools to connect to chrome.
             '--remote-debugging-port=%i' % self._remote_debugging_port,
             # Open a maximized window.
@@ -88,14 +84,11 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
             # Debug logging.
             '--vmodule=*/chromeos/net/*=2,*/chromeos/login/*=2'])
 
-    return args
+    if not self.browser_options.gaia_login:
+      # Skip user image selection screen, and post login screens.
+      args.append('--oobe-skip-postlogin')
 
-  def _GetChromeVersion(self):
-    result = util.WaitFor(self._cri.GetChromeProcess, timeout=30)
-    assert result and result['path']
-    (version, _) = self._cri.RunCmdOnDevice([result['path'], '--version'])
-    assert version
-    return version
+    return args
 
   @property
   def pid(self):
@@ -145,7 +138,6 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
 
     # Wait for oobe.
     self._WaitForBrowserToComeUp(wait_for_extensions=False)
-    self._PostBrowserStartupInitialization()
     util.WaitFor(lambda: self.oobe_exists, 10)
 
     if self.browser_options.auto_login:

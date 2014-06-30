@@ -10,8 +10,15 @@ import org.chromium.base.ThreadUtils;
 import java.text.NumberFormat;
 import java.util.Locale;
 
+/**
+ * Entry point to manage all data reduction proxy configuration details.
+ */
 public class DataReductionProxySettings {
 
+    /**
+     * Data structure to hold the original content length before data reduction and the received
+     * content length after data reduction.
+     */
     public static class ContentLengths {
         private final long mOriginal;
         private final long mReceived;
@@ -37,6 +44,9 @@ public class DataReductionProxySettings {
 
     private static DataReductionProxySettings sSettings;
 
+    /**
+     * Returns a singleton instance of the settings object.
+     */
     public static DataReductionProxySettings getInstance() {
         ThreadUtils.assertOnUiThread();
         if (sSettings == null) {
@@ -52,14 +62,6 @@ public class DataReductionProxySettings {
         // DataReductionProxySettings is a singleton that lives forever and there's no clean
         // shutdown of Chrome on Android
         mNativeDataReductionProxySettings = nativeInit();
-        initDataReductionProxySettings();
-    }
-
-    /**
-     * Initializes the data reduction proxy at Chrome startup.
-     */
-    public void initDataReductionProxySettings() {
-        nativeInitDataReductionProxySettings(mNativeDataReductionProxySettings);
     }
 
     /**
@@ -135,30 +137,6 @@ public class DataReductionProxySettings {
     }
 
     /**
-     * Returns true if the host and realm (as passed in to Tab.onReceivedHttpAuthRequest()) are such
-     * that a authentication token can be generated. The host must match one of the configured proxy
-     * hosts, and the realm must be prefixed with the authentication realm string used by the data
-     * reduction proxies.
-     * @param host The host requesting authentication.
-     * @param realm The authentication realm.
-     * @return True if host and realm can be authenticated.
-     */
-    public boolean isAcceptableAuthChallenge(String host, String realm) {
-        return nativeIsAcceptableAuthChallenge(mNativeDataReductionProxySettings, host, realm);
-    }
-
-    /**
-     * Returns an authentication token for the data reduction proxy. If the token cannot be
-     * generated, an empty string is returned.
-     * @param host The host requesting authentication.
-     * @param realm The authentication realm.
-     * @return The generated token.
-     */
-    public String getTokenForAuthChallenge(String host, String realm) {
-        return nativeGetTokenForAuthChallenge(mNativeDataReductionProxySettings, host, realm);
-    }
-
-    /**
      * Retrieves the history of daily totals of bytes that would have been
      * received if no data reducing mechanism had been applied.
      * @return The history of daily totals
@@ -177,6 +155,14 @@ public class DataReductionProxySettings {
     }
 
     /**
+     * Determines if the data reduction proxy is currently unreachable.
+     * @return true if the data reduction proxy is unreachable.
+     */
+    public boolean isDataReductionProxyUnreachable() {
+        return nativeIsDataReductionProxyUnreachable(mNativeDataReductionProxySettings);
+    }
+
+    /**
      * @return The data reduction settings as a string percentage.
      */
     public String getContentLengthPercentSavings() {
@@ -191,8 +177,6 @@ public class DataReductionProxySettings {
     }
 
     private native long nativeInit();
-    private native void nativeInitDataReductionProxySettings(
-            long nativeDataReductionProxySettingsAndroid);
     private native void nativeBypassHostPattern(
             long nativeDataReductionProxySettingsAndroid, String pattern);
     private native void nativeBypassURLPattern(
@@ -213,12 +197,10 @@ public class DataReductionProxySettings {
             long nativeDataReductionProxySettingsAndroid);
     private native ContentLengths nativeGetContentLengths(
             long nativeDataReductionProxySettingsAndroid);
-    private native boolean nativeIsAcceptableAuthChallenge(
-            long nativeDataReductionProxySettingsAndroid, String host, String realm);
-    private native String nativeGetTokenForAuthChallenge(
-            long nativeDataReductionProxySettingsAndroid, String host, String realm);
     private native long[] nativeGetDailyOriginalContentLengths(
             long nativeDataReductionProxySettingsAndroid);
     private native long[] nativeGetDailyReceivedContentLengths(
+            long nativeDataReductionProxySettingsAndroid);
+    private native boolean nativeIsDataReductionProxyUnreachable(
             long nativeDataReductionProxySettingsAndroid);
 }

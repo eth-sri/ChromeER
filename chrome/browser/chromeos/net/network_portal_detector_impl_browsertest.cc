@@ -9,13 +9,13 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/login/login_manager_test.h"
 #include "chrome/browser/chromeos/login/startup_utils.h"
-#include "chrome/browser/chromeos/net/network_portal_detector.h"
 #include "chrome/browser/chromeos/net/network_portal_detector_impl.h"
-#include "chrome/browser/chromeos/net/network_portal_detector_strategy.h"
 #include "chrome/browser/chromeos/net/network_portal_detector_test_utils.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/shill_service_client.h"
+#include "chromeos/network/portal_detector/network_portal_detector.h"
+#include "chromeos/network/portal_detector/network_portal_detector_strategy.h"
 #include "components/captive_portal/captive_portal_testing_utils.h"
 #include "content/public/test/test_utils.h"
 #include "dbus/object_path.h"
@@ -109,8 +109,7 @@ class NetworkPortalDetectorImplBrowserTest
                              kWifi,
                              shill::kTypeEthernet,
                              shill::kStateIdle,
-                             true /* add_to_visible */,
-                             true /* add_to_watchlist */);
+                             true /* add_to_visible */);
     DBusThreadManager::Get()->GetShillServiceClient()->SetProperty(
         dbus::ObjectPath(kWifi),
         shill::kStateProperty,
@@ -173,13 +172,13 @@ IN_PROC_BROWSER_TEST_F(NetworkPortalDetectorImplBrowserTest,
   ASSERT_EQ(PortalDetectorStrategy::STRATEGY_ID_SESSION, strategy()->Id());
 
   // No notification until portal detection is completed.
-  ASSERT_FALSE(message_center()->HasNotification(kNotificationId));
+  ASSERT_FALSE(message_center()->FindVisibleNotificationById(kNotificationId));
   RestartDetection();
   CompleteURLFetch(net::OK, 200, NULL);
 
   // Check that wifi is marked as behind the portal and that notification
   // is displayed.
-  ASSERT_TRUE(message_center()->HasNotification(kNotificationId));
+  ASSERT_TRUE(message_center()->FindVisibleNotificationById(kNotificationId));
   ASSERT_EQ(NetworkPortalDetector::CAPTIVE_PORTAL_STATUS_PORTAL,
             NetworkPortalDetector::Get()->GetCaptivePortalState(kWifi).status);
 

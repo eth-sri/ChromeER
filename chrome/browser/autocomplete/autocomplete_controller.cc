@@ -27,7 +27,8 @@
 #include "chrome/browser/omnibox/omnibox_field_trial.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search/search.h"
-#include "chrome/browser/search_engines/template_url.h"
+#include "chrome/browser/search_engines/ui_thread_search_terms_data.h"
+#include "components/search_engines/template_url.h"
 #include "content/public/browser/notification_service.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
@@ -50,9 +51,11 @@ void AutocompleteMatchToAssistedQuery(
 
   // If provider is TYPE_ZERO_SUGGEST, set the subtype accordingly.
   // Type will be set in the switch statement below where we'll enter one of
-  // SEARCH_SUGGEST or NAVSUGGEST.
+  // SEARCH_SUGGEST or NAVSUGGEST. This subtype indicates context-aware zero
+  // suggest.
   if (provider &&
-      (provider->type() == AutocompleteProvider::TYPE_ZERO_SUGGEST)) {
+      (provider->type() == AutocompleteProvider::TYPE_ZERO_SUGGEST) &&
+      (match != AutocompleteMatchType::SEARCH_SUGGEST_PERSONALIZED)) {
     DCHECK((match == AutocompleteMatchType::SEARCH_SUGGEST) ||
            (match == AutocompleteMatchType::NAVSUGGEST));
     *subtype = 66;
@@ -73,11 +76,15 @@ void AutocompleteMatchToAssistedQuery(
       return;
     }
     case AutocompleteMatchType::SEARCH_SUGGEST_PERSONALIZED: {
-      *subtype = 35;
+      *subtype = 39;
       return;
     }
     case AutocompleteMatchType::SEARCH_SUGGEST_PROFILE: {
       *subtype = 44;
+      return;
+    }
+    case AutocompleteMatchType::SEARCH_SUGGEST_ANSWER: {
+      *subtype = 70;
       return;
     }
     case AutocompleteMatchType::NAVSUGGEST: {
@@ -416,8 +423,8 @@ void AutocompleteController::UpdateMatchDestinationURL(
       (zero_suggest_provider_ &&
        zero_suggest_provider_->field_trial_triggered_in_session()),
       input_.current_page_classification());
-  match->destination_url =
-      GURL(template_url->url_ref().ReplaceSearchTerms(search_terms_args));
+  match->destination_url = GURL(template_url->url_ref().ReplaceSearchTerms(
+      search_terms_args, UIThreadSearchTermsData(profile_)));
 }
 
 void AutocompleteController::UpdateResult(
@@ -604,7 +611,7 @@ void AutocompleteController::UpdateAssistedQueryStats(
                            selected_index.c_str(),
                            autocompletions.c_str());
     match->destination_url = GURL(template_url->url_ref().ReplaceSearchTerms(
-        *match->search_terms_args));
+        *match->search_terms_args, UIThreadSearchTermsData(profile_)));
   }
 }
 

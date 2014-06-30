@@ -5,6 +5,7 @@
 #ifndef CONTENT_BROWSER_SERVICE_WORKER_SERVICE_WORKER_VERSION_H_
 #define CONTENT_BROWSER_SERVICE_WORKER_SERVICE_WORKER_VERSION_H_
 
+#include <string>
 #include <vector>
 
 #include "base/basictypes.h"
@@ -67,9 +68,8 @@ class CONTENT_EXPORT ServiceWorkerVersion
     INSTALLED,   // Install event is finished and is ready to be activated.
     ACTIVATING,  // Activate event is dispatched and being handled.
     ACTIVE,      // Activation is finished and can run as active.
-    DEACTIVATED, // The version is no longer running as active, due to
-                 // unregistration or replace. (TODO(kinuko): we may need
-                 // different states for different termination sequences)
+    REDUNDANT,   // The version is no longer running as active, due to
+                 // unregistration or replace.
   };
 
   class Listener {
@@ -98,6 +98,7 @@ class CONTENT_EXPORT ServiceWorkerVersion
   int64 version_id() const { return version_id_; }
   int64 registration_id() const { return registration_id_; }
   const GURL& script_url() const { return script_url_; }
+  const GURL& scope() const { return scope_; }
   RunningStatus running_status() const {
     return static_cast<RunningStatus>(embedded_worker_->status());
   }
@@ -123,11 +124,22 @@ class CONTENT_EXPORT ServiceWorkerVersion
   // This returns OK (success) if the worker is already running.
   void StartWorkerWithCandidateProcesses(
       const std::vector<int>& potential_process_ids,
+      bool pause_after_download,
       const StatusCallback& callback);
 
-  // Starts an embedded worker for this version.
+  // Stops an embedded worker for this version.
   // This returns OK (success) if the worker is already stopped.
   void StopWorker(const StatusCallback& callback);
+
+  // Schedules an update to be run 'soon'.
+  void ScheduleUpdate();
+
+  // If an update is scheduled but not yet started, this resets the timer
+  // delaying the start time by a 'small' amount.
+  void DeferScheduledUpdate();
+
+  // Starts an update now.
+  void StartUpdate();
 
   // Sends an IPC message to the worker.
   // If the worker is not running this first tries to start it by
@@ -174,6 +186,14 @@ class CONTENT_EXPORT ServiceWorkerVersion
   // This must be called when the status() is ACTIVE.
   void DispatchSyncEvent(const StatusCallback& callback);
 
+  // Sends push event to the associated embedded worker and asynchronously calls
+  // |callback| when it errors out or it gets response from the worker to notify
+  // completion.
+  //
+  // This must be called when the status() is ACTIVE.
+  void DispatchPushEvent(const StatusCallback& callback,
+                         const std::string& data);
+
   // These are expected to be called when a renderer process host for the
   // same-origin as for this ServiceWorkerVersion is created.  The added
   // processes are used to run an in-renderer embedded worker.
@@ -186,8 +206,8 @@ class CONTENT_EXPORT ServiceWorkerVersion
   // Adds and removes |provider_host| as a controllee of this ServiceWorker.
   void AddControllee(ServiceWorkerProviderHost* provider_host);
   void RemoveControllee(ServiceWorkerProviderHost* provider_host);
-  void AddPendingControllee(ServiceWorkerProviderHost* provider_host);
-  void RemovePendingControllee(ServiceWorkerProviderHost* provider_host);
+  void AddWaitingControllee(ServiceWorkerProviderHost* provider_host);
+  void RemoveWaitingControllee(ServiceWorkerProviderHost* provider_host);
 
   // Returns if it has controllee.
   bool HasControllee() const { return !controllee_map_.empty(); }
@@ -237,6 +257,7 @@ class CONTENT_EXPORT ServiceWorkerVersion
                             ServiceWorkerFetchEventResult result,
                             const ServiceWorkerResponse& response);
   void OnSyncEventFinished(int request_id);
+  void OnPushEventFinished(int request_id);
   void OnPostMessageToDocument(int client_id,
                                const base::string16& message,
                                const std::vector<int>& sent_message_port_ids);
@@ -258,6 +279,7 @@ class CONTENT_EXPORT ServiceWorkerVersion
   IDMap<StatusCallback, IDMapOwnPointer> install_callbacks_;
   IDMap<FetchCallback, IDMapOwnPointer> fetch_callbacks_;
   IDMap<StatusCallback, IDMapOwnPointer> sync_callbacks_;
+  IDMap<StatusCallback, IDMapOwnPointer> push_callbacks_;
 
   ControlleeMap controllee_map_;
   ControlleeByIDMap controllee_by_id_;
@@ -265,6 +287,7 @@ class CONTENT_EXPORT ServiceWorkerVersion
   ObserverList<Listener> listeners_;
   ServiceWorkerScriptCacheMap script_cache_map_;
   base::OneShotTimer<ServiceWorkerVersion> stop_worker_timer_;
+  base::OneShotTimer<ServiceWorkerVersion> update_timer_;
 
   base::WeakPtrFactory<ServiceWorkerVersion> weak_factory_;
 

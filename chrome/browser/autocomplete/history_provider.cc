@@ -8,7 +8,6 @@
 
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/autocomplete/autocomplete_provider_listener.h"
 #include "chrome/browser/history/history_service.h"
@@ -16,6 +15,7 @@
 #include "chrome/browser/history/in_memory_url_index_types.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/url_constants.h"
+#include "components/autocomplete/autocomplete_input.h"
 #include "url/url_util.h"
 
 void HistoryProvider::DeleteMatch(const AutocompleteMatch& match) {
@@ -26,10 +26,13 @@ void HistoryProvider::DeleteMatch(const AutocompleteMatch& match) {
   HistoryService* const history_service =
       HistoryServiceFactory::GetForProfile(profile_, Profile::EXPLICIT_ACCESS);
 
-  // Delete the match from the history DB.
+  // Delete the underlying URL along with all its visits from the history DB.
+  // The resulting HISTORY_URLS_DELETED notification will also cause all caches
+  // and indices to drop any data they might have stored pertaining to the URL.
   DCHECK(history_service);
   DCHECK(match.destination_url.is_valid());
   history_service->DeleteURL(match.destination_url);
+
   DeleteMatchFromMatches(match);
 }
 

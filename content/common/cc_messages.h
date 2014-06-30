@@ -25,9 +25,11 @@
 #include "cc/resources/resource_format.h"
 #include "cc/resources/returned_resource.h"
 #include "cc/resources/transferable_resource.h"
+#include "cc/surfaces/surface_id.h"
 #include "content/common/content_export.h"
 #include "gpu/ipc/gpu_command_buffer_traits.h"
 #include "ipc/ipc_message_macros.h"
+#include "ui/gfx/ipc/gfx_param_traits.h"
 
 #ifndef CONTENT_COMMON_CC_MESSAGES_H_
 #define CONTENT_COMMON_CC_MESSAGES_H_
@@ -139,6 +141,10 @@ IPC_STRUCT_TRAITS_BEGIN(cc::RenderPass::Id)
   IPC_STRUCT_TRAITS_MEMBER(index)
 IPC_STRUCT_TRAITS_END()
 
+IPC_STRUCT_TRAITS_BEGIN(cc::SurfaceId)
+IPC_STRUCT_TRAITS_MEMBER(id)
+IPC_STRUCT_TRAITS_END()
+
 IPC_STRUCT_TRAITS_BEGIN(cc::DrawQuad)
   IPC_STRUCT_TRAITS_MEMBER(material)
   IPC_STRUCT_TRAITS_MEMBER(rect)
@@ -233,6 +239,7 @@ IPC_STRUCT_TRAITS_BEGIN(cc::SharedQuadState)
   IPC_STRUCT_TRAITS_MEMBER(is_clipped)
   IPC_STRUCT_TRAITS_MEMBER(opacity)
   IPC_STRUCT_TRAITS_MEMBER(blend_mode)
+  IPC_STRUCT_TRAITS_MEMBER(sorting_context_id)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(cc::TransferableResource)
@@ -241,6 +248,7 @@ IPC_STRUCT_TRAITS_BEGIN(cc::TransferableResource)
   IPC_STRUCT_TRAITS_MEMBER(filter)
   IPC_STRUCT_TRAITS_MEMBER(size)
   IPC_STRUCT_TRAITS_MEMBER(mailbox_holder)
+  IPC_STRUCT_TRAITS_MEMBER(is_repeated)
   IPC_STRUCT_TRAITS_MEMBER(is_software)
 IPC_STRUCT_TRAITS_END()
 

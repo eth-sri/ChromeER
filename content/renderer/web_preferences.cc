@@ -5,6 +5,8 @@
 #include "content/public/renderer/web_preferences.h"
 
 #include "base/strings/utf_string_conversions.h"
+#include "content/renderer/net_info_helper.h"
+#include "third_party/WebKit/public/platform/WebConnectionType.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
 #include "third_party/WebKit/public/web/WebKit.h"
@@ -183,11 +185,6 @@ void ApplyWebPreferences(const WebPreferences& prefs, WebView* web_view) {
   // Disable GL multisampling if requested on command line.
   settings->setOpenGLMultisamplingEnabled(prefs.gl_multisampling_enabled);
 
-  // Enable privileged WebGL extensions for Chrome extensions or if requested
-  // on command line.
-  settings->setPrivilegedWebGLExtensionsEnabled(
-      prefs.privileged_webgl_extensions_enabled);
-
   // Enable WebGL errors to the JS console if requested.
   settings->setWebGLErrorsToConsoleEnabled(
       prefs.webgl_errors_to_console_enabled);
@@ -261,15 +258,11 @@ void ApplyWebPreferences(const WebPreferences& prefs, WebView* web_view) {
 
   settings->setRegionBasedColumnsEnabled(prefs.region_based_columns_enabled);
 
-  WebRuntimeFeatures::enableLazyLayout(prefs.lazy_layout_enabled);
   WebRuntimeFeatures::enableTouch(prefs.touch_enabled);
   settings->setMaxTouchPoints(prefs.pointer_events_max_touch_points);
   settings->setDeviceSupportsTouch(prefs.device_supports_touch);
   settings->setDeviceSupportsMouse(prefs.device_supports_mouse);
   settings->setEnableTouchAdjustment(prefs.touch_adjustment_enabled);
-
-  settings->setFixedPositionCreatesStackingContext(
-      prefs.fixed_position_creates_stacking_context);
 
   settings->setDeferredImageDecodingEnabled(
       prefs.deferred_image_decoding_enabled);
@@ -333,6 +326,8 @@ void ApplyWebPreferences(const WebPreferences& prefs, WebView* web_view) {
 #endif
 
   WebNetworkStateNotifier::setOnLine(prefs.is_online);
+  WebNetworkStateNotifier::setWebConnectionType(
+      NetConnectionTypeToWebConnectionType(prefs.connection_type));
   settings->setPinchVirtualViewportEnabled(
       prefs.pinch_virtual_viewport_enabled);
 
@@ -340,9 +335,6 @@ void ApplyWebPreferences(const WebPreferences& prefs, WebView* web_view) {
       prefs.pinch_overlay_scrollbar_thickness);
   settings->setUseSolidColorScrollbars(prefs.use_solid_color_scrollbars);
   settings->setCompositorTouchHitTesting(prefs.compositor_touch_hit_testing);
-
-  settings->setThreadedHTMLParser(true);
-  settings->setUseThreadedHTMLParserForDataURLs(true);
 }
 
 }  // namespace content

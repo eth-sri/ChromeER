@@ -5,20 +5,21 @@
 {
   'rules': [
     {
-      'rule_name': 'Generate C++ source files from mojom files',
+      'rule_name': '<(_target_name)_mojom_bindings_generator',
       'extension': 'mojom',
       'variables': {
-        # TODO(sky): uncomment this once gyp bug fixed and remove explicit
-        # setting everywhere
-        # 'mojom_base_output_dir':
-        #      '<!(python <(DEPTH)/build/inverse_depth.py <(DEPTH))',
+        'mojom_base_output_dir':
+             '<!(python <(DEPTH)/build/inverse_depth.py <(DEPTH))',
         'mojom_bindings_generator':
             '<(DEPTH)/mojo/public/tools/bindings/mojom_bindings_generator.py',
+        'java_out_dir': '<(PRODUCT_DIR)/java_mojo/<(_target_name)/src',
+        'mojom_import_args%': [
+	  '-I<(DEPTH)'
+        ],
       },
       'inputs': [
         '<(mojom_bindings_generator)',
         '<(DEPTH)/mojo/public/tools/bindings/generators/cpp_templates/enum_declaration.tmpl',
-        '<(DEPTH)/mojo/public/tools/bindings/generators/cpp_templates/enum_traits.tmpl',
         '<(DEPTH)/mojo/public/tools/bindings/generators/cpp_templates/interface_declaration.tmpl',
         '<(DEPTH)/mojo/public/tools/bindings/generators/cpp_templates/interface_definition.tmpl',
         '<(DEPTH)/mojo/public/tools/bindings/generators/cpp_templates/interface_macros.tmpl',
@@ -30,17 +31,28 @@
         '<(DEPTH)/mojo/public/tools/bindings/generators/cpp_templates/module.h.tmpl',
         '<(DEPTH)/mojo/public/tools/bindings/generators/cpp_templates/module-internal.h.tmpl',
         '<(DEPTH)/mojo/public/tools/bindings/generators/cpp_templates/params_definition.tmpl',
-        '<(DEPTH)/mojo/public/tools/bindings/generators/cpp_templates/struct_builder_definition.tmpl',
         '<(DEPTH)/mojo/public/tools/bindings/generators/cpp_templates/struct_declaration.tmpl',
         '<(DEPTH)/mojo/public/tools/bindings/generators/cpp_templates/struct_definition.tmpl',
-        '<(DEPTH)/mojo/public/tools/bindings/generators/cpp_templates/struct_destructor.tmpl',
         '<(DEPTH)/mojo/public/tools/bindings/generators/cpp_templates/struct_macros.tmpl',
+        '<(DEPTH)/mojo/public/tools/bindings/generators/cpp_templates/struct_serialization_declaration.tmpl',
+        '<(DEPTH)/mojo/public/tools/bindings/generators/cpp_templates/struct_serialization_definition.tmpl',
         '<(DEPTH)/mojo/public/tools/bindings/generators/cpp_templates/wrapper_class_declaration.tmpl',
+        '<(DEPTH)/mojo/public/tools/bindings/generators/cpp_templates/wrapper_class_definition.tmpl',
+        '<(DEPTH)/mojo/public/tools/bindings/generators/java_templates/constant_definition.tmpl',
+        '<(DEPTH)/mojo/public/tools/bindings/generators/java_templates/constants.java.tmpl',
+        '<(DEPTH)/mojo/public/tools/bindings/generators/java_templates/enum_definition.tmpl',
+        '<(DEPTH)/mojo/public/tools/bindings/generators/java_templates/enum.java.tmpl',
+        '<(DEPTH)/mojo/public/tools/bindings/generators/java_templates/header.java.tmpl',
+        '<(DEPTH)/mojo/public/tools/bindings/generators/java_templates/interface.java.tmpl',
+        '<(DEPTH)/mojo/public/tools/bindings/generators/java_templates/interface_definition.tmpl',
+        '<(DEPTH)/mojo/public/tools/bindings/generators/java_templates/struct_definition.tmpl',
+        '<(DEPTH)/mojo/public/tools/bindings/generators/java_templates/struct.java.tmpl',
         '<(DEPTH)/mojo/public/tools/bindings/generators/js_templates/enum_definition.tmpl',
         '<(DEPTH)/mojo/public/tools/bindings/generators/js_templates/interface_definition.tmpl',
         '<(DEPTH)/mojo/public/tools/bindings/generators/js_templates/module.js.tmpl',
         '<(DEPTH)/mojo/public/tools/bindings/generators/js_templates/struct_definition.tmpl',
         '<(DEPTH)/mojo/public/tools/bindings/generators/mojom_cpp_generator.py',
+        '<(DEPTH)/mojo/public/tools/bindings/generators/mojom_java_generator.py',
         '<(DEPTH)/mojo/public/tools/bindings/generators/mojom_js_generator.py',
         '<(DEPTH)/mojo/public/tools/bindings/pylib/mojom/__init__.py',
         '<(DEPTH)/mojo/public/tools/bindings/pylib/mojom/error.py',
@@ -67,7 +79,9 @@
         './<(RULE_INPUT_DIRNAME)/<(RULE_INPUT_ROOT).mojom',
         '--use_chromium_bundled_pylibs',
         '-d', '<(DEPTH)',
+        '<@(mojom_import_args)',
         '-o', '<(SHARED_INTERMEDIATE_DIR)/<(mojom_base_output_dir)/<(RULE_INPUT_DIRNAME)',
+        '--java_output_directory=<(java_out_dir)',
       ],
       'message': 'Generating Mojo bindings from <(RULE_INPUT_DIRNAME)/<(RULE_INPUT_ROOT).mojom',
       'process_outputs_as_sources': 1,
@@ -82,6 +96,11 @@
       '<(DEPTH)',
       '<(SHARED_INTERMEDIATE_DIR)',
     ],
+    'variables': {
+      'generated_src_dirs': [
+        '<(PRODUCT_DIR)/java_mojo/<(_target_name)/src',
+      ],
+    },
   },
   'hard_dependency': 1,
 }

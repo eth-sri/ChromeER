@@ -32,7 +32,6 @@
 #include "ui/surface/transport_dib.h"
 
 #if defined(OS_MACOSX)
-#include "base/mac/scoped_cftyperef.h"
 #include "content/common/mac/font_loader.h"
 #endif
 
@@ -51,11 +50,6 @@ namespace base {
 class ProcessMetrics;
 class SharedMemory;
 class TaskRunner;
-}
-
-namespace gfx {
-class Rect;
-struct GpuMemoryBufferHandle;
 }
 
 namespace media {
@@ -87,7 +81,6 @@ class RenderMessageFilter : public BrowserMessageFilter {
  public:
   // Create the filter.
   RenderMessageFilter(int render_process_id,
-                      bool is_guest,
                       PluginServiceImpl * plugin_service,
                       BrowserContext* browser_context,
                       net::URLRequestContextGetter* request_context,
@@ -149,7 +142,8 @@ class RenderMessageFilter : public BrowserMessageFilter {
                        IPC::Message* reply_msg);
   void OnDeleteCookie(const GURL& url,
                       const std::string& cookieName);
-  void OnCookiesEnabled(const GURL& url,
+  void OnCookiesEnabled(int render_frame_id,
+                        const GURL& url,
                         const GURL& first_party_for_cookies,
                         bool* cookies_enabled);
 
@@ -215,9 +209,12 @@ class RenderMessageFilter : public BrowserMessageFilter {
   // in the renderer on POSIX due to the sandbox.
   void OnAllocateSharedMemory(uint32 buffer_size,
                               base::SharedMemoryHandle* handle);
+  void AllocateSharedBitmapOnFileThread(uint32 buffer_size,
+                                        const cc::SharedBitmapId& id,
+                                        IPC::Message* reply_msg);
   void OnAllocateSharedBitmap(uint32 buffer_size,
                               const cc::SharedBitmapId& id,
-                              base::SharedMemoryHandle* handle);
+                              IPC::Message* reply_msg);
   void OnAllocatedSharedBitmap(size_t buffer_size,
                                const base::SharedMemoryHandle& handle,
                                const cc::SharedBitmapId& id);
@@ -273,11 +270,8 @@ class RenderMessageFilter : public BrowserMessageFilter {
                             uint32_t data_size);
 #endif
 
-  void OnAllocateGpuMemoryBuffer(uint32 width,
-                                 uint32 height,
-                                 uint32 internalformat,
-                                 uint32 usage,
-                                 gfx::GpuMemoryBufferHandle* handle);
+  void OnSetHasPendingTransitionRequest(int render_frame_id,
+                                        bool is_transition);
 
   // Cached resource request dispatcher host and plugin service, guaranteed to
   // be non-null if Init succeeds. We do not own the objects, they are managed
@@ -305,8 +299,6 @@ class RenderMessageFilter : public BrowserMessageFilter {
 
   int render_process_id_;
 
-  bool is_guest_;
-
   std::set<OpenChannelToNpapiPluginCallback*> plugin_host_clients_;
 
   // Records the last time we sampled CPU usage of the renderer process.
@@ -318,10 +310,6 @@ class RenderMessageFilter : public BrowserMessageFilter {
 
   media::AudioManager* audio_manager_;
   MediaInternals* media_internals_;
-
-#if defined(OS_MACOSX)
-  base::ScopedCFTypeRef<CFTypeRef> last_io_surface_;
-#endif
 
   DISALLOW_COPY_AND_ASSIGN(RenderMessageFilter);
 };

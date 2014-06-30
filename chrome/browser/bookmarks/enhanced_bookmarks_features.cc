@@ -29,7 +29,7 @@ std::string GetEnhancedBookmarksExtensionIdFromFinch() {
 // Returns true if enhanced bookmarks experiment is enabled from Finch.
 bool IsEnhancedBookmarksExperimentEnabledFromFinch() {
   std::string ext_id = GetEnhancedBookmarksExtensionIdFromFinch();
-  extensions::FeatureProvider* feature_provider =
+  const extensions::FeatureProvider* feature_provider =
       extensions::FeatureProvider::GetPermissionFeatures();
   extensions::Feature* feature = feature_provider->GetFeature("metricsPrivate");
   return feature && feature->IsIdInWhitelist(ext_id);
@@ -42,11 +42,11 @@ bool GetBookmarksExperimentExtensionID(const PrefService* user_prefs,
   BookmarksExperimentState bookmarks_experiment_state =
       static_cast<BookmarksExperimentState>(user_prefs->GetInteger(
           sync_driver::prefs::kEnhancedBookmarksExperimentEnabled));
-  if (bookmarks_experiment_state == kBookmarksExperimentEnabledFromFinch) {
+  if (bookmarks_experiment_state == BOOKMARKS_EXPERIMENT_ENABLED_FROM_FINCH) {
     *extension_id = GetEnhancedBookmarksExtensionIdFromFinch();
     return !extension_id->empty();
   }
-  if (bookmarks_experiment_state == kBookmarksExperimentEnabled) {
+  if (bookmarks_experiment_state == BOOKMARKS_EXPERIMENT_ENABLED) {
     *extension_id = user_prefs->GetString(
         sync_driver::prefs::kEnhancedBookmarksExtensionId);
     return !extension_id->empty();
@@ -55,16 +55,25 @@ bool GetBookmarksExperimentExtensionID(const PrefService* user_prefs,
   return false;
 }
 
-void UpdateBookmarksExperimentState(PrefService* user_prefs,
-                                    PrefService* local_state,
-                                    bool user_signed_in) {
+void UpdateBookmarksExperimentState(
+    PrefService* user_prefs,
+    PrefService* local_state,
+    bool user_signed_in,
+    BookmarksExperimentState experiment_enabled_from_sync) {
+ PrefService* flags_storage = local_state;
+#if defined(OS_CHROMEOS)
+  // Chrome OS is using user prefs for flags storage.
+  flags_storage = user_prefs;
+#endif
+
   BookmarksExperimentState bookmarks_experiment_state_before =
       static_cast<BookmarksExperimentState>(user_prefs->GetInteger(
           sync_driver::prefs::kEnhancedBookmarksExperimentEnabled));
   // If user signed out, clear possible previous state.
   if (!user_signed_in) {
-    bookmarks_experiment_state_before = kNoBookmarksExperiment;
-    ForceFinchBookmarkExperimentIfNeeded(local_state, kNoBookmarksExperiment);
+    bookmarks_experiment_state_before = BOOKMARKS_EXPERIMENT_NONE;
+    ForceFinchBookmarkExperimentIfNeeded(flags_storage,
+        BOOKMARKS_EXPERIMENT_NONE);
   }
 
   // kEnhancedBookmarksExperiment flag could have values "", "1" and "0".
@@ -73,82 +82,86 @@ void UpdateBookmarksExperimentState(PrefService* user_prefs,
                      switches::kEnhancedBookmarksExperiment) == "0";
 
   BookmarksExperimentState bookmarks_experiment_new_state =
-      kNoBookmarksExperiment;
-  bool enabled_from_finch = false;
-  if (IsEnhancedBookmarksExperimentEnabledFromFinch()) {
-    enabled_from_finch = !user_signed_in;
-    if (user_signed_in) {
-      bookmarks_experiment_new_state =
-          kBookmarksExperimentEnabledFromFinchUserSignedIn;
-    }
-  }
+      BOOKMARKS_EXPERIMENT_NONE;
 
-  if (enabled_from_finch) {
+  if (IsEnhancedBookmarksExperimentEnabledFromFinch() && !user_signed_in) {
     if (opt_out) {
       // Experiment enabled but user opted out.
-      bookmarks_experiment_new_state = kBookmarksExperimentOptOutFromFinch;
+      bookmarks_experiment_new_state = BOOKMARKS_EXPERIMENT_OPT_OUT_FROM_FINCH;
     } else {
       // Experiment enabled.
-      bookmarks_experiment_new_state = kBookmarksExperimentEnabledFromFinch;
+      bookmarks_experiment_new_state = BOOKMARKS_EXPERIMENT_ENABLED_FROM_FINCH;
     }
-  } else if (bookmarks_experiment_state_before == kBookmarksExperimentEnabled) {
+  } else if (experiment_enabled_from_sync == BOOKMARKS_EXPERIMENT_ENABLED) {
+    // Experiment enabled from Chrome sync.
     if (opt_out) {
       // Experiment enabled but user opted out.
-      bookmarks_experiment_new_state = kBookmarksExperimentEnabledUserOptOut;
+      bookmarks_experiment_new_state =
+          BOOKMARKS_EXPERIMENT_ENABLED_USER_OPT_OUT;
     } else {
-      bookmarks_experiment_new_state = kBookmarksExperimentEnabled;
+      // Experiment enabled.
+      bookmarks_experiment_new_state = BOOKMARKS_EXPERIMENT_ENABLED;
+    }
+  } else if (experiment_enabled_from_sync == BOOKMARKS_EXPERIMENT_NONE) {
+    // Experiment is not enabled from Chrome sync.
+    bookmarks_experiment_new_state = BOOKMARKS_EXPERIMENT_NONE;
+  } else if (bookmarks_experiment_state_before ==
+             BOOKMARKS_EXPERIMENT_ENABLED) {
+    if (opt_out) {
+      // Experiment enabled but user opted out.
+      bookmarks_experiment_new_state =
+          BOOKMARKS_EXPERIMENT_ENABLED_USER_OPT_OUT;
+    } else {
+      bookmarks_experiment_new_state = BOOKMARKS_EXPERIMENT_ENABLED;
     }
   } else if (bookmarks_experiment_state_before ==
-             kBookmarksExperimentEnabledUserOptOut) {
+             BOOKMARKS_EXPERIMENT_ENABLED_USER_OPT_OUT) {
     if (opt_out) {
-      bookmarks_experiment_new_state = kBookmarksExperimentEnabledUserOptOut;
+      bookmarks_experiment_new_state =
+          BOOKMARKS_EXPERIMENT_ENABLED_USER_OPT_OUT;
     } else {
       // User opted in again.
-      bookmarks_experiment_new_state = kBookmarksExperimentEnabled;
+      bookmarks_experiment_new_state = BOOKMARKS_EXPERIMENT_ENABLED;
     }
   }
 
   UMA_HISTOGRAM_ENUMERATION("EnhancedBookmarks.SyncExperimentState",
                             bookmarks_experiment_new_state,
-                            kBookmarksExperimentEnumSize);
+                            BOOKMARKS_EXPERIMENT_ENUM_SIZE);
   user_prefs->SetInteger(
       sync_driver::prefs::kEnhancedBookmarksExperimentEnabled,
       bookmarks_experiment_new_state);
-  if (bookmarks_experiment_state_before != bookmarks_experiment_new_state)
-    ForceFinchBookmarkExperimentIfNeeded(local_state,
-                                         bookmarks_experiment_new_state);
+  ForceFinchBookmarkExperimentIfNeeded(flags_storage,
+                                       bookmarks_experiment_new_state);
 }
 
 void ForceFinchBookmarkExperimentIfNeeded(
-    PrefService* local_state,
+    PrefService* flags_storage,
     BookmarksExperimentState bookmarks_experiment_state) {
-// Chrome OS doesnt use local storage for experiments flags.
-#if !defined(OS_CHROMEOS)
-  if (!local_state)
+  if (!flags_storage)
     return;
-  ListPrefUpdate update(local_state, prefs::kEnabledLabsExperiments);
+  ListPrefUpdate update(flags_storage, prefs::kEnabledLabsExperiments);
   base::ListValue* experiments_list = update.Get();
   if (!experiments_list)
     return;
   size_t index;
-  if (bookmarks_experiment_state == kNoBookmarksExperiment) {
+  if (bookmarks_experiment_state == BOOKMARKS_EXPERIMENT_NONE) {
     experiments_list->Remove(
         base::StringValue(switches::kManualEnhancedBookmarks), &index);
     experiments_list->Remove(
         base::StringValue(switches::kManualEnhancedBookmarksOptout), &index);
-  } else if (bookmarks_experiment_state == kBookmarksExperimentEnabled) {
+  } else if (bookmarks_experiment_state == BOOKMARKS_EXPERIMENT_ENABLED) {
     experiments_list->Remove(
         base::StringValue(switches::kManualEnhancedBookmarksOptout), &index);
     experiments_list->AppendIfNotPresent(
         new base::StringValue(switches::kManualEnhancedBookmarks));
   } else if (bookmarks_experiment_state ==
-                 kBookmarksExperimentEnabledUserOptOut) {
+                 BOOKMARKS_EXPERIMENT_ENABLED_USER_OPT_OUT) {
     experiments_list->Remove(
         base::StringValue(switches::kManualEnhancedBookmarks), &index);
     experiments_list->AppendIfNotPresent(
         new base::StringValue(switches::kManualEnhancedBookmarksOptout));
   }
-#endif
 }
 
 bool IsEnhancedBookmarksExperimentEnabled() {
@@ -160,6 +173,22 @@ bool IsEnhancedBookmarksExperimentEnabled() {
 
   return IsEnhancedBookmarksExperimentEnabledFromFinch();
 }
+
+#if defined(OS_ANDROID)
+bool IsEnhancedBookmarkImageFetchingEnabled() {
+  if (IsEnhancedBookmarksExperimentEnabled())
+    return true;
+
+  // Salient images are collected from visited bookmarked pages even if the
+  // enhanced bookmark feature is turned off. This is to have some images
+  // available so that in the future, when the feature is turned on, the user
+  // experience is not a big list of flat colors. However as a precautionary
+  // measure it is possible to disable this collection of images from finch.
+  std::string disable_fetching = chrome_variations::GetVariationParamValue(
+      kFieldTrialName, "DisableImagesFetching");
+  return disable_fetching.empty();
+}
+#endif
 
 bool IsEnableDomDistillerSet() {
   if (CommandLine::ForCurrentProcess()->

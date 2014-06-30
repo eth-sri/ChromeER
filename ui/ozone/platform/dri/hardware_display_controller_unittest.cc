@@ -47,7 +47,7 @@ void HardwareDisplayControllerTest::TearDown() {
 }
 
 TEST_F(HardwareDisplayControllerTest, CheckStateAfterSurfaceIsBound) {
-  scoped_ptr<ui::DriSurface> surface(
+  scoped_ptr<ui::ScanoutSurface> surface(
       new ui::MockDriSurface(drm_.get(), kDefaultModeSize));
 
   EXPECT_TRUE(surface->Initialize());
@@ -57,7 +57,7 @@ TEST_F(HardwareDisplayControllerTest, CheckStateAfterSurfaceIsBound) {
 }
 
 TEST_F(HardwareDisplayControllerTest, CheckStateAfterPageFlip) {
-  scoped_ptr<ui::DriSurface> surface(
+  scoped_ptr<ui::ScanoutSurface> surface(
       new ui::MockDriSurface(drm_.get(), kDefaultModeSize));
 
   EXPECT_TRUE(surface->Initialize());
@@ -70,7 +70,7 @@ TEST_F(HardwareDisplayControllerTest, CheckStateAfterPageFlip) {
 TEST_F(HardwareDisplayControllerTest, CheckStateIfModesetFails) {
   drm_->set_set_crtc_expectation(false);
 
-  scoped_ptr<ui::DriSurface> surface(
+  scoped_ptr<ui::ScanoutSurface> surface(
       new ui::MockDriSurface(drm_.get(), kDefaultModeSize));
 
   EXPECT_TRUE(surface->Initialize());
@@ -82,11 +82,31 @@ TEST_F(HardwareDisplayControllerTest, CheckStateIfModesetFails) {
 TEST_F(HardwareDisplayControllerTest, CheckStateIfPageFlipFails) {
   drm_->set_page_flip_expectation(false);
 
-  scoped_ptr<ui::DriSurface> surface(
+  scoped_ptr<ui::ScanoutSurface> surface(
       new ui::MockDriSurface(drm_.get(), kDefaultModeSize));
 
   EXPECT_TRUE(surface->Initialize());
   EXPECT_TRUE(controller_->BindSurfaceToController(surface.Pass(),
                                                    kDefaultMode));
   EXPECT_FALSE(controller_->SchedulePageFlip());
+}
+
+TEST_F(HardwareDisplayControllerTest, VerifyNoDRMCallsWhenDisabled) {
+  scoped_ptr<ui::ScanoutSurface> surface(
+      new ui::MockDriSurface(drm_.get(), kDefaultModeSize));
+
+  EXPECT_TRUE(surface->Initialize());
+  EXPECT_TRUE(controller_->BindSurfaceToController(surface.Pass(),
+                                                   kDefaultMode));
+  controller_->Disable();
+  EXPECT_TRUE(controller_->SchedulePageFlip());
+  EXPECT_EQ(0, drm_->get_page_flip_call_count());
+
+  surface.reset(new ui::MockDriSurface(drm_.get(), kDefaultModeSize));
+
+  EXPECT_TRUE(surface->Initialize());
+  EXPECT_TRUE(controller_->BindSurfaceToController(surface.Pass(),
+                                                   kDefaultMode));
+  EXPECT_TRUE(controller_->SchedulePageFlip());
+  EXPECT_EQ(1, drm_->get_page_flip_call_count());
 }

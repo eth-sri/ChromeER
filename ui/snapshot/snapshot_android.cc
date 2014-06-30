@@ -10,6 +10,10 @@
 #include "ui/base/android/view_android.h"
 #include "ui/base/android/window_android.h"
 #include "ui/base/android/window_android_compositor.h"
+#include "ui/gfx/display.h"
+#include "ui/gfx/geometry/point_conversions.h"
+#include "ui/gfx/geometry/rect_conversions.h"
+#include "ui/gfx/screen.h"
 #include "ui/snapshot/snapshot_async.h"
 
 namespace ui {
@@ -34,7 +38,21 @@ static void MakeAsyncCopyRequest(
     const cc::CopyOutputRequest::CopyOutputRequestCallback& callback) {
   scoped_ptr<cc::CopyOutputRequest> request =
       cc::CopyOutputRequest::CreateBitmapRequest(callback);
-  request->set_area(source_rect);
+
+  const gfx::Display& display =
+      gfx::Screen::GetNativeScreen()->GetPrimaryDisplay();
+  float device_scale_factor = display.device_scale_factor();
+  gfx::Rect source_rect_in_pixel =
+      gfx::ToEnclosingRect(gfx::ScaleRect(source_rect, device_scale_factor));
+
+  // Account for the toolbar offset.
+  gfx::Vector2dF offset = window->content_offset();
+  gfx::Rect adjusted_source_rect(gfx::ToRoundedPoint(
+      gfx::PointF(source_rect_in_pixel.x() + offset.x(),
+                  source_rect_in_pixel.y() + offset.y())),
+      source_rect_in_pixel.size());
+
+  request->set_area(adjusted_source_rect);
   window->GetCompositor()->RequestCopyOfOutputOnRootLayer(request.Pass());
 }
 

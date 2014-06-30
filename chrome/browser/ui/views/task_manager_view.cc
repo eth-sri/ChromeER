@@ -41,8 +41,8 @@
 #include "ui/views/window/dialog_delegate.h"
 
 #if defined(USE_ASH)
+#include "ash/shelf/shelf_util.h"
 #include "ash/wm/window_util.h"
-#include "chrome/browser/ui/ash/launcher/launcher_item_util.h"
 #include "grit/ash_resources.h"
 #endif
 
@@ -318,9 +318,6 @@ void TaskManagerView::Init() {
   columns_.push_back(ui::TableColumn(IDS_TASK_MANAGER_WEBCORE_CSS_CACHE_COLUMN,
                                      ui::TableColumn::RIGHT, -1, 0));
   columns_.back().sortable = true;
-  columns_.push_back(ui::TableColumn(IDS_TASK_MANAGER_FPS_COLUMN,
-                                     ui::TableColumn::RIGHT, -1, 0));
-  columns_.back().sortable = true;
   columns_.push_back(ui::TableColumn(IDS_TASK_MANAGER_VIDEO_MEMORY_COLUMN,
                                      ui::TableColumn::RIGHT, -1, 0));
   columns_.back().sortable = true;
@@ -499,8 +496,9 @@ void TaskManagerView::Show(Browser* browser) {
     focus_manager->SetFocusedView(instance_->tab_table_);
 
 #if defined(USE_ASH)
-  CreateShelfItemForDialog(IDR_ASH_SHELF_ICON_TASK_MANAGER,
-                           instance_->GetWidget()->GetNativeWindow());
+  ash::SetShelfItemDetailsForDialogWindow(
+      instance_->GetWidget()->GetNativeWindow(),
+      IDR_ASH_SHELF_ICON_TASK_MANAGER);
 #endif
 }
 

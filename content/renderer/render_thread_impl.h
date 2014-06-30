@@ -20,6 +20,8 @@
 #include "content/common/content_export.h"
 #include "content/common/gpu/client/gpu_channel_host.h"
 #include "content/public/renderer/render_thread.h"
+#include "net/base/network_change_notifier.h"
+#include "third_party/WebKit/public/platform/WebConnectionType.h"
 #include "ui/gfx/native_widget_types.h"
 
 #if defined(OS_MACOSX)
@@ -72,6 +74,7 @@ class GrContextForWebGraphicsContext3D;
 namespace content {
 
 class AppCacheDispatcher;
+class AecDumpMessageFilter;
 class AudioInputMessageFilter;
 class AudioMessageFilter;
 class AudioRendererMixerManager;
@@ -88,6 +91,7 @@ class InputHandlerManager;
 class MediaStreamCenter;
 class PeerConnectionDependencyFactory;
 class MidiMessageFilter;
+class NetInfoDispatcher;
 class P2PSocketDispatcher;
 class PeerConnectionTracker;
 class RendererDemuxerAndroid;
@@ -162,6 +166,7 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   virtual void PreCacheFont(const LOGFONT& log_font) OVERRIDE;
   virtual void ReleaseCachedFonts() OVERRIDE;
 #endif
+  virtual ServiceRegistry* GetServiceRegistry() OVERRIDE;
 
   // Synchronously establish a channel to the GPU plugin if not previously
   // established or if it has been lost (for example if the GPU plugin crashed).
@@ -186,6 +191,11 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   }
   void set_layout_test_mode(bool layout_test_mode) {
     layout_test_mode_ = layout_test_mode;
+  }
+
+  RendererWebKitPlatformSupportImpl* webkit_platform_support() const {
+    DCHECK(webkit_platform_support_);
+    return webkit_platform_support_.get();
   }
 
   IPC::ForwardingMessageFilter* compositor_output_surface_filter() const {
@@ -391,6 +401,9 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   void AddEmbeddedWorkerRoute(int32 routing_id, IPC::Listener* listener);
   void RemoveEmbeddedWorkerRoute(int32 routing_id);
 
+  void RegisterPendingRenderFrameConnect(int routing_id,
+                                         mojo::ScopedMessagePipeHandle handle);
+
  private:
   // ChildThread
   virtual bool OnControlMessageReceived(const IPC::Message& msg) OVERRIDE;
@@ -416,11 +429,6 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
       unsigned internalformat,
       unsigned usage) OVERRIDE;
 
-  // mojo::ShellClient implementation:
-  virtual void AcceptConnection(
-      const mojo::String& service_name,
-      mojo::ScopedMessagePipeHandle message_pipe) OVERRIDE;
-
   void Init();
 
   void OnSetZoomLevelForCurrentURL(const std::string& scheme,
@@ -429,7 +437,7 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   void OnCreateNewView(const ViewMsg_New_Params& params);
   void OnTransferBitmap(const SkBitmap& bitmap, int resource_id);
   void OnPurgePluginListCache(bool reload_pages);
-  void OnNetworkStateChanged(bool online);
+  void OnNetworkTypeChanged(net::NetworkChangeNotifier::ConnectionType type);
   void OnGetAccessibilityTree();
   void OnTempCrashWithData(const GURL& data);
   void OnUpdateTimezone();
@@ -472,7 +480,7 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
 #endif
   scoped_refptr<DevToolsAgentFilter> devtools_agent_message_filter_;
 
-  scoped_ptr<PeerConnectionDependencyFactory> media_stream_factory_;
+  scoped_ptr<PeerConnectionDependencyFactory> peer_connection_factory_;
 
   // This is used to communicate to the browser process the status
   // of all the peer connections created in the renderer.
@@ -483,6 +491,12 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
 
   // Used on the render thread.
   scoped_ptr<VideoCaptureImplManager> vc_manager_;
+
+  // Used for communicating registering AEC dump consumers with the browser and
+  // receving AEC dump file handles when AEC dump is enabled. An AEC dump is
+  // diagnostic audio data for WebRTC stored locally when enabled by the user in
+  // chrome://webrtc-internals.
+  scoped_refptr<AecDumpMessageFilter> aec_dump_message_filter_;
 
   // The count of RenderWidgets running through this thread.
   int widget_count_;
@@ -562,6 +576,8 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   bool is_distance_field_text_enabled_;
   bool is_zero_copy_enabled_;
   bool is_one_copy_enabled_;
+
+  std::map<int, mojo::MessagePipeHandle> pending_render_frame_connects_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderThreadImpl);
 };

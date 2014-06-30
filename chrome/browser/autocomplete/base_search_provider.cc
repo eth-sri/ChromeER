@@ -13,7 +13,9 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_provider_listener.h"
-#include "chrome/browser/autocomplete/url_prefix.h"
+#include "chrome/browser/autocomplete/chrome_autocomplete_scheme_classifier.h"
+#include "chrome/browser/bitmap_fetcher/bitmap_fetcher_service.h"
+#include "chrome/browser/bitmap_fetcher/bitmap_fetcher_service_factory.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/omnibox/omnibox_field_trial.h"
@@ -21,15 +23,19 @@
 #include "chrome/browser/search/instant_service.h"
 #include "chrome/browser/search/instant_service_factory.h"
 #include "chrome/browser/search/search.h"
-#include "chrome/browser/search_engines/template_url.h"
-#include "chrome/browser/search_engines/template_url_prepopulate_data.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
+#include "chrome/browser/search_engines/ui_thread_search_terms_data.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
-#include "chrome/common/net/url_fixer_upper.h"
 #include "chrome/common/pref_names.h"
+#include "components/autocomplete/url_prefix.h"
+#include "components/metrics/proto/omnibox_event.pb.h"
+#include "components/metrics/proto/omnibox_input_type.pb.h"
+#include "components/search_engines/template_url.h"
+#include "components/search_engines/template_url_prepopulate_data.h"
 #include "components/sync_driver/sync_prefs.h"
+#include "components/url_fixer/url_fixer.h"
 #include "content/public/common/url_constants.h"
 #include "net/base/escape.h"
 #include "net/base/net_util.h"
@@ -38,6 +44,8 @@
 #include "net/url_request/url_fetcher.h"
 #include "net/url_request/url_fetcher_delegate.h"
 #include "url/gurl.h"
+
+using metrics::OmniboxEventProto;
 
 namespace {
 
@@ -139,13 +147,14 @@ AutocompleteMatch BaseSearchProvider::CreateSearchSuggestion(
     const base::string16& suggestion,
     AutocompleteMatchType::Type type,
     bool from_keyword_provider,
-    const TemplateURL* template_url) {
+    const TemplateURL* template_url,
+    const SearchTermsData& search_terms_data) {
   return CreateSearchSuggestion(
       NULL, AutocompleteInput(), BaseSearchProvider::SuggestResult(
           suggestion, type, suggestion, base::string16(), base::string16(),
           base::string16(), base::string16(), std::string(), std::string(),
           from_keyword_provider, 0, false, false, base::string16()),
-      template_url, 0, 0, false, false);
+      template_url, search_terms_data, 0, 0, false, false);
 }
 
 void BaseSearchProvider::Stop(bool clear_cached_results) {
@@ -337,13 +346,14 @@ int BaseSearchProvider::SuggestResult::CalculateRelevance(
     bool keyword_provider_requested) const {
   if (!from_keyword_provider_ && keyword_provider_requested)
     return 100;
-  return ((input.type() == AutocompleteInput::URL) ? 300 : 600);
+  return ((input.type() == metrics::OmniboxInputType::URL) ? 300 : 600);
 }
 
 // BaseSearchProvider::NavigationResult ----------------------------------------
 
 BaseSearchProvider::NavigationResult::NavigationResult(
     const AutocompleteProvider& provider,
+    Profile* profile,
     const GURL& url,
     AutocompleteMatchType::Type type,
     const base::string16& description,
@@ -353,15 +363,12 @@ BaseSearchProvider::NavigationResult::NavigationResult(
     bool relevance_from_server,
     const base::string16& input_text,
     const std::string& languages)
-    : Result(from_keyword_provider,
-             relevance,
-             relevance_from_server,
-             type,
+    : Result(from_keyword_provider, relevance, relevance_from_server, type,
              deletion_url),
       url_(url),
       formatted_url_(AutocompleteInput::FormattedStringWithEquivalentMeaning(
-          url,
-          provider.StringForURLDisplay(url, true, false))),
+          url, provider.StringForURLDisplay(url, true, false),
+          ChromeAutocompleteSchemeClassifier(profile))),
       description_(description) {
   DCHECK(url_.is_valid());
   CalculateAndClassifyMatchContents(true, input_text, languages);
@@ -463,8 +470,8 @@ void BaseSearchProvider::SetDeletionURL(const std::string& deletion_url,
       TemplateURLServiceFactory::GetForProfile(profile_);
   if (!template_service)
     return;
-  GURL url = TemplateURLService::GenerateSearchURL(
-      template_service->GetDefaultSearchProvider());
+  GURL url = template_service->GetDefaultSearchProvider()->GenerateSearchURL(
+      template_service->search_terms_data());
   url = url.GetOrigin().Resolve(deletion_url);
   if (url.is_valid()) {
     match->RecordAdditionalInfo(BaseSearchProvider::kDeletionUrlKey,
@@ -481,6 +488,7 @@ AutocompleteMatch BaseSearchProvider::CreateSearchSuggestion(
     const AutocompleteInput& input,
     const SuggestResult& suggestion,
     const TemplateURL* template_url,
+    const SearchTermsData& search_terms_data,
     int accepted_suggestion,
     int omnibox_start_margin,
     bool append_extra_query_params,
@@ -518,7 +526,7 @@ AutocompleteMatch BaseSearchProvider::CreateSearchSuggestion(
   // When the user forced a query, we need to make sure all the fill_into_edit
   // values preserve that property.  Otherwise, if the user starts editing a
   // suggestion, non-Search results will suddenly appear.
-  if (input.type() == AutocompleteInput::FORCED_QUERY)
+  if (input.type() == metrics::OmniboxInputType::FORCED_QUERY)
     match.fill_into_edit.assign(base::ASCIIToUTF16("?"));
   if (suggestion.from_keyword_provider())
     match.fill_into_edit.append(match.keyword + base::char16(' '));
@@ -531,7 +539,7 @@ AutocompleteMatch BaseSearchProvider::CreateSearchSuggestion(
   match.fill_into_edit.append(suggestion.suggestion());
 
   const TemplateURLRef& search_url = template_url->url_ref();
-  DCHECK(search_url.SupportsReplacement());
+  DCHECK(search_url.SupportsReplacement(search_terms_data));
   match.search_terms_args.reset(
       new TemplateURLRef::SearchTermsArgs(suggestion.suggestion()));
   match.search_terms_args->original_query = input.text();
@@ -546,7 +554,8 @@ AutocompleteMatch BaseSearchProvider::CreateSearchSuggestion(
   // so the AutocompleteController can properly de-dupe; the controller will
   // eventually overwrite it before it reaches the user.
   match.destination_url =
-      GURL(search_url.ReplaceSearchTerms(*match.search_terms_args.get()));
+      GURL(search_url.ReplaceSearchTerms(*match.search_terms_args.get(),
+                                         search_terms_data));
 
   // Search results don't look like URLs.
   match.transition = suggestion.from_keyword_provider() ?
@@ -580,7 +589,7 @@ scoped_ptr<base::Value> BaseSearchProvider::DeserializeJsonData(
 bool BaseSearchProvider::ZeroSuggestEnabled(
     const GURL& suggest_url,
     const TemplateURL* template_url,
-    AutocompleteInput::PageClassification page_classification,
+    OmniboxEventProto::PageClassification page_classification,
     Profile* profile) {
   if (!OmniboxFieldTrial::InZeroSuggestFieldTrial())
     return false;
@@ -594,9 +603,9 @@ bool BaseSearchProvider::ZeroSuggestEnabled(
   // TODO(hfung): Experiment with showing MostVisited zero suggest on NTP
   // under the conditions described in crbug.com/305366.
   if ((page_classification ==
-       AutocompleteInput::INSTANT_NTP_WITH_FAKEBOX_AS_STARTING_FOCUS) ||
+       OmniboxEventProto::INSTANT_NTP_WITH_FAKEBOX_AS_STARTING_FOCUS) ||
       (page_classification ==
-       AutocompleteInput::INSTANT_NTP_WITH_OMNIBOX_AS_STARTING_FOCUS))
+       OmniboxEventProto::INSTANT_NTP_WITH_OMNIBOX_AS_STARTING_FOCUS))
     return false;
 
   // Don't run if there's no profile or in incognito mode.
@@ -610,9 +619,11 @@ bool BaseSearchProvider::ZeroSuggestEnabled(
 
   // Only make the request if we know that the provider supports zero suggest
   // (currently only the prepopulated Google provider).
-  if (template_url == NULL || !template_url->SupportsReplacement() ||
-      TemplateURLPrepopulateData::GetEngineType(*template_url) !=
-      SEARCH_ENGINE_GOOGLE)
+  UIThreadSearchTermsData search_terms_data(profile);
+  if (template_url == NULL ||
+      !template_url->SupportsReplacement(search_terms_data) ||
+      TemplateURLPrepopulateData::GetEngineType(
+          *template_url, search_terms_data) != SEARCH_ENGINE_GOOGLE)
     return false;
 
   return true;
@@ -623,7 +634,7 @@ bool BaseSearchProvider::CanSendURL(
     const GURL& current_page_url,
     const GURL& suggest_url,
     const TemplateURL* template_url,
-    AutocompleteInput::PageClassification page_classification,
+    OmniboxEventProto::PageClassification page_classification,
     Profile* profile) {
   if (!ZeroSuggestEnabled(suggest_url, template_url, page_classification,
                           profile))
@@ -718,7 +729,8 @@ void BaseSearchProvider::AddMatchToMap(const SuggestResult& result,
 
   AutocompleteMatch match = CreateSearchSuggestion(
       this, GetInput(result.from_keyword_provider()), result,
-      GetTemplateURL(result.from_keyword_provider()), accepted_suggestion,
+      GetTemplateURL(result.from_keyword_provider()),
+      UIThreadSearchTermsData(profile_), accepted_suggestion,
       omnibox_start_margin, ShouldAppendExtraParams(result),
       in_app_list_);
   if (!match.destination_url.is_valid())
@@ -853,7 +865,8 @@ bool BaseSearchProvider::ParseSuggestResults(const base::Value& root_val,
   std::string type;
   int relevance = GetDefaultResultRelevance();
   // Prohibit navsuggest in FORCED_QUERY mode.  Users wants queries, not URLs.
-  const bool allow_navsuggest = input.type() != AutocompleteInput::FORCED_QUERY;
+  const bool allow_navsuggest =
+      input.type() != metrics::OmniboxInputType::FORCED_QUERY;
   const std::string languages(
       profile_->GetPrefs()->GetString(prefs::kAcceptLanguages));
   const base::string16& trimmed_input =
@@ -881,15 +894,16 @@ bool BaseSearchProvider::ParseSuggestResults(const base::Value& root_val,
     if ((match_type == AutocompleteMatchType::NAVSUGGEST) ||
         (match_type == AutocompleteMatchType::NAVSUGGEST_PERSONALIZED)) {
       // Do not blindly trust the URL coming from the server to be valid.
-      GURL url(URLFixerUpper::FixupURL(
-          base::UTF16ToUTF8(suggestion), std::string()));
+      GURL url(
+          url_fixer::FixupURL(base::UTF16ToUTF8(suggestion), std::string()));
       if (url.is_valid() && allow_navsuggest) {
         base::string16 title;
         if (descriptions != NULL)
           descriptions->GetString(index, &title);
         results->navigation_results.push_back(NavigationResult(
-            *this, url, match_type, title, deletion_url, is_keyword_result,
-            relevance, relevances != NULL, input.text(), languages));
+            *this, profile_, url, match_type, title, deletion_url,
+            is_keyword_result, relevance, relevances != NULL, input.text(),
+            languages));
       }
     } else {
       base::string16 match_contents = suggestion;
@@ -913,6 +927,8 @@ bool BaseSearchProvider::ParseSuggestResults(const base::Value& root_val,
           // Extract Answers, if provided.
           const base::DictionaryValue* answer_json = NULL;
           if (suggestion_detail->GetDictionary("ansa", &answer_json)) {
+            match_type = AutocompleteMatchType::SEARCH_SUGGEST_ANSWER;
+            PrefetchAnswersImages(answer_json);
             std::string contents;
             base::JSONWriter::Write(answer_json, &contents);
             answer_contents = base::UTF8ToUTF16(contents);
@@ -933,6 +949,33 @@ bool BaseSearchProvider::ParseSuggestResults(const base::Value& root_val,
   }
   SortResults(is_keyword_result, relevances, results);
   return true;
+}
+
+void BaseSearchProvider::PrefetchAnswersImages(
+    const base::DictionaryValue* answer_json) {
+  DCHECK(answer_json);
+  const base::ListValue* lines = NULL;
+  answer_json->GetList("l", &lines);
+  if (!lines || lines->GetSize() == 0)
+    return;
+
+  BitmapFetcherService* image_service =
+      BitmapFetcherServiceFactory::GetForBrowserContext(profile_);
+  DCHECK(image_service);
+
+  for (size_t line = 0; line < lines->GetSize(); ++line) {
+    const base::DictionaryValue* imageLine = NULL;
+    lines->GetDictionary(line, &imageLine);
+    if (!imageLine)
+      continue;
+    const base::DictionaryValue* imageData = NULL;
+    imageLine->GetDictionary("i", &imageData);
+    if (!imageData)
+      continue;
+    std::string imageUrl;
+    imageData->GetString("d", &imageUrl);
+    image_service->Prefetch(GURL(imageUrl));
+  }
 }
 
 void BaseSearchProvider::SortResults(bool is_keyword,

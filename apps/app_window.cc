@@ -31,6 +31,7 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/resource_dispatcher_host.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/common/content_switches.h"
 #include "content/public/common/media_stream_request.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
@@ -40,6 +41,7 @@
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_messages.h"
 #include "extensions/common/manifest_handlers/icons_handler.h"
+#include "extensions/common/permissions/permissions_data.h"
 #include "grit/theme_resources.h"
 #include "third_party/skia/include/core/SkRegion.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -155,6 +157,8 @@ AppWindow::CreateParams::CreateParams()
     : window_type(AppWindow::WINDOW_TYPE_DEFAULT),
       frame(AppWindow::FRAME_CHROME),
       has_frame_color(false),
+      active_frame_color(SK_ColorBLACK),
+      inactive_frame_color(SK_ColorBLACK),
       transparent_background(false),
       creator_process_id(0),
       state(ui::SHOW_STATE_DEFAULT),
@@ -238,6 +242,8 @@ AppWindow::AppWindow(BrowserContext* context,
       fullscreen_types_(FULLSCREEN_TYPE_NONE),
       show_on_first_paint_(false),
       first_paint_complete_(false),
+      has_been_shown_(false),
+      can_send_events_(false),
       is_hidden_(false),
       cached_always_on_top_(false) {
   extensions::ExtensionsBrowserClient* client =
@@ -320,7 +326,7 @@ void AppWindow::Init(const GURL& url,
                  content::NotificationService::AllSources());
   // Update the app menu if an ephemeral app becomes installed.
   registrar_.Add(this,
-                 chrome::NOTIFICATION_EXTENSION_INSTALLED,
+                 chrome::NOTIFICATION_EXTENSION_INSTALLED_DEPRECATED,
                  content::Source<content::BrowserContext>(
                      client->GetOriginalContext(browser_context_)));
 
@@ -429,7 +435,8 @@ bool AppWindow::PreHandleKeyboardEvent(
   if (event.windowsKeyCode == ui::VKEY_ESCAPE &&
       (fullscreen_types_ != FULLSCREEN_TYPE_NONE) &&
       ((fullscreen_types_ & FULLSCREEN_TYPE_FORCED) == 0) &&
-      !extension->HasAPIPermission(APIPermission::kOverrideEscFullscreen)) {
+      !extension->permissions_data()->HasAPIPermission(
+          APIPermission::kOverrideEscFullscreen)) {
     Restore();
     return true;
   }
@@ -538,22 +545,21 @@ gfx::Rect AppWindow::GetClientBounds() const {
 }
 
 base::string16 AppWindow::GetTitle() const {
-  base::string16 title;
   const extensions::Extension* extension = GetExtension();
   if (!extension)
-    return title;
+    return base::string16();
 
   // WebContents::GetTitle() will return the page's URL if there's no <title>
   // specified. However, we'd prefer to show the name of the extension in that
   // case, so we directly inspect the NavigationEntry's title.
+  base::string16 title;
   if (!web_contents() || !web_contents()->GetController().GetActiveEntry() ||
       web_contents()->GetController().GetActiveEntry()->GetTitle().empty()) {
     title = base::UTF8ToUTF16(extension->name());
   } else {
     title = web_contents()->GetTitle();
   }
-  const base::char16 kBadChars[] = {'\n', 0};
-  base::RemoveChars(title, kBadChars, &title);
+  base::RemoveChars(title, base::ASCIIToUTF16("\n"), &title);
   return title;
 }
 
@@ -698,6 +704,9 @@ void AppWindow::Show(ShowType show_type) {
       break;
   }
   AppWindowRegistry::Get(browser_context_)->AppWindowShown(this);
+
+  has_been_shown_ = true;
+  SendOnWindowShownIfShown();
 }
 
 void AppWindow::Hide() {
@@ -727,6 +736,11 @@ void AppWindow::SetAlwaysOnTop(bool always_on_top) {
 }
 
 bool AppWindow::IsAlwaysOnTop() const { return cached_always_on_top_; }
+
+void AppWindow::WindowEventsReady() {
+  can_send_events_ = true;
+  SendOnWindowShownIfShown();
+}
 
 void AppWindow::GetSerializedState(base::DictionaryValue* properties) const {
   DCHECK(properties);
@@ -884,6 +898,15 @@ void AppWindow::UpdateNativeAlwaysOnTop() {
   }
 }
 
+void AppWindow::SendOnWindowShownIfShown() {
+  if (!can_send_events_ || !has_been_shown_)
+    return;
+
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kTestType)) {
+    app_window_contents_->DispatchWindowShownForTests();
+  }
+}
+
 void AppWindow::CloseContents(WebContents* contents) {
   native_app_window_->Close();
 }
@@ -971,7 +994,7 @@ void AppWindow::Observe(int type,
         native_app_window_->Close();
       break;
     }
-    case chrome::NOTIFICATION_EXTENSION_INSTALLED: {
+    case chrome::NOTIFICATION_EXTENSION_INSTALLED_DEPRECATED: {
       const extensions::Extension* installed_extension =
           content::Details<const extensions::InstalledExtensionInfo>(details)
               ->extension;

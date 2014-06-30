@@ -10,7 +10,7 @@ class ScrollBounceAction(GestureAction):
   def __init__(self, attributes=None):
     super(ScrollBounceAction, self).__init__(attributes)
 
-  def WillRunAction(self, page, tab):
+  def WillRunAction(self, tab):
     for js_file in ['gesture_common.js', 'scroll_bounce.js']:
       with open(os.path.join(os.path.dirname(__file__), js_file)) as f:
         js = f.read()
@@ -39,7 +39,7 @@ class ScrollBounceAction(GestureAction):
         window.__scrollBounceAction = new __ScrollBounceAction(%s);"""
         % (done_callback))
 
-  def RunGesture(self, page, tab):
+  def RunGesture(self, tab):
     left_start_percentage = 0.5
     top_start_percentage = 0.5
     direction = 'down'
@@ -68,7 +68,7 @@ class ScrollBounceAction(GestureAction):
       overscroll = self.overscroll
     if hasattr(self, 'repeat_count'):
       repeat_count = self.repeat_count
-    if hasattr(self, 'speed'):
+    if hasattr(self, 'speed_in_pixels_per_second'):
       speed = self.speed
     if hasattr(self, 'element_function'):
       tab.ExecuteJavaScript("""
@@ -109,13 +109,3 @@ class ScrollBounceAction(GestureAction):
            speed))
 
     tab.WaitForJavaScriptExpression('window.__scrollBounceActionDone', 60)
-
-  def CanBeBound(self):
-    return True
-
-  def BindMeasurementJavaScript(self, tab, start_js, stop_js):
-    # Make the scroll bounce action start and stop measurement automatically.
-    tab.ExecuteJavaScript("""
-        window.__scrollBounceAction.beginMeasuringHook = function() { %s };
-        window.__scrollBounceAction.endMeasuringHook = function() { %s };
-    """ % (start_js, stop_js))

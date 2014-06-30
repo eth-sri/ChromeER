@@ -82,9 +82,12 @@ class AutofillAgent : public content::RenderViewObserver,
   virtual void textFieldDidReceiveKeyDown(
       const blink::WebInputElement& element,
       const blink::WebKeyboardEvent& event);
+  // TODO(estade): remove.
   virtual void didRequestAutocomplete(
       const blink::WebFormElement& form,
       const blink::WebAutocompleteParams& details);
+  virtual void didRequestAutocomplete(
+      const blink::WebFormElement& form);
   virtual void setIgnoreTextChanges(bool ignore);
   virtual void didAssociateFormControls(
       const blink::WebVector<blink::WebNode>& nodes);
@@ -94,6 +97,7 @@ class AutofillAgent : public content::RenderViewObserver,
   void OnFieldTypePredictionsAvailable(
       const std::vector<FormDataPredictions>& forms);
   void OnFillForm(int query_id, const FormData& form);
+  void OnPing();
   void OnPreviewForm(int query_id, const FormData& form);
 
   // For external Autofill selection.
@@ -102,8 +106,10 @@ class AutofillAgent : public content::RenderViewObserver,
   void OnFillFieldWithValue(const base::string16& value);
   void OnPreviewFieldWithValue(const base::string16& value);
   void OnAcceptDataListSuggestion(const base::string16& value);
-  void OnAcceptPasswordAutofillSuggestion(const base::string16& username,
-                                          const base::string16& password);
+  void OnFillPasswordSuggestion(const base::string16& username,
+                                const base::string16& password);
+  void OnPreviewPasswordSuggestion(const base::string16& username,
+                                   const base::string16& password);
 
   // Called when interactive autocomplete finishes. |message| is printed to
   // the console if non-empty.

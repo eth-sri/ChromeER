@@ -10,7 +10,8 @@ define('mojo/apps/js/test/js_to_cpp_unittest', [
   'mojo/public/js/bindings/core',
 ], function (console, jsToCpp, connection, connector, core) {
   var retainedConnection;
-  var senderData;
+  var sampleData;
+  var sampleMessage;
   var BAD_VALUE = 13;
   var DATA_PIPE_PARAMS = {
     flags: core.CREATE_DATA_PIPE_OPTIONS_FLAG_NONE,
@@ -29,14 +30,12 @@ define('mojo/apps/js/test/js_to_cpp_unittest', [
     this.cppSide_.pingResponse();
   };
 
-  JsSideConnection.prototype.echo = function (numIterations, list) {
-    var arg = list.item;
+  JsSideConnection.prototype.echo = function (numIterations, arg) {
     var dataPipe1;
     var dataPipe2;
     var i;
     var messagePipe1;
     var messagePipe2;
-    var resultList;
     var specialArg;
 
     // Ensure expected negative values are negative.
@@ -70,15 +69,12 @@ define('mojo/apps/js/test/js_to_cpp_unittest', [
       specialArg.data_handle = dataPipe2.consumerHandle;
       specialArg.message_handle = messagePipe2.handle1;
 
-      writeDataPipe(dataPipe1, senderData);
-      writeDataPipe(dataPipe2, senderData);
+      writeDataPipe(dataPipe1, sampleData);
+      writeDataPipe(dataPipe2, sampleData);
+      writeMessagePipe(messagePipe1, sampleMessage);
+      writeMessagePipe(messagePipe2, sampleMessage);
 
-      resultList = new jsToCpp.EchoArgsList();
-      resultList.next = new jsToCpp.EchoArgsList();
-      resultList.item = specialArg;
-      resultList.next.item = arg;
-
-      this.cppSide_.echoResponse(resultList);
+      this.cppSide_.echoResponse(createEchoArgsList(specialArg, arg));
 
       core.close(dataPipe1.producerHandle);
       core.close(dataPipe2.producerHandle);
@@ -92,8 +88,8 @@ define('mojo/apps/js/test/js_to_cpp_unittest', [
     var iteration = 0;
     var dataPipe;
     var messagePipe;
-    var stopSignalled = false;
     var proto = connector.Connector.prototype;
+    var stopSignalled = false;
 
     proto.realAccept = proto.accept;
     proto.accept = function (message) {
@@ -113,10 +109,53 @@ define('mojo/apps/js/test/js_to_cpp_unittest', [
     while (!stopSignalled) {
       dataPipe = core.createDataPipe(DATA_PIPE_PARAMS);
       messagePipe = core.createMessagePipe();
-      writeDataPipe(dataPipe, senderData);
+      writeDataPipe(dataPipe, sampleData);
+      writeMessagePipe(messagePipe, sampleMessage);
       arg.data_handle = dataPipe.consumerHandle;
       arg.message_handle = messagePipe.handle1;
-      this.cppSide_.bitFlipResponse(arg);
+
+      this.cppSide_.bitFlipResponse(createEchoArgsList(arg));
+
+      core.close(dataPipe.producerHandle);
+      core.close(messagePipe.handle0);
+      iteration += 1;
+    }
+
+    proto.accept = proto.realAccept;
+    proto.realAccept = null;
+    this.cppSide_.testFinished();
+  };
+
+  JsSideConnection.prototype.backPointer = function (arg) {
+    var iteration = 0;
+    var dataPipe;
+    var messagePipe;
+    var proto = connector.Connector.prototype;
+    var stopSignalled = false;
+
+    proto.realAccept = proto.accept;
+    proto.accept = function (message) {
+      var delta = 8 * (1 + iteration % 32);
+      var offset = 8 * ((iteration / 32) | 0);
+      if (offset < message.buffer.arrayBuffer.byteLength - 4) {
+        message.buffer.dataView.setUint32(offset, 0x100000000 - delta, true);
+        message.buffer.dataView.setUint32(offset + 4, 0xffffffff, true);
+        return this.realAccept(message);
+      }
+      stopSignalled = true;
+      return false;
+    };
+
+    while (!stopSignalled) {
+      dataPipe = core.createDataPipe(DATA_PIPE_PARAMS);
+      messagePipe = core.createMessagePipe();
+      writeDataPipe(dataPipe, sampleData);
+      writeMessagePipe(messagePipe, sampleMessage);
+      arg.data_handle = dataPipe.consumerHandle;
+      arg.message_handle = messagePipe.handle1;
+
+      this.cppSide_.backPointerResponse(createEchoArgsList(arg));
+
       core.close(dataPipe.producerHandle);
       core.close(messagePipe.handle0);
       iteration += 1;
@@ -132,22 +171,49 @@ define('mojo/apps/js/test/js_to_cpp_unittest', [
       pipe.producerHandle, data, core.WRITE_DATA_FLAG_ALL_OR_NONE);
 
     if (writeResult.result != core.RESULT_OK) {
-      console.log('ERROR: Write result was ' + writeResult.result);
+      console.log('ERROR: Data pipe write result was ' + writeResult.result);
       return false;
     }
     if (writeResult.numBytes != data.length) {
-      console.log('ERROR: Write length was ' + writeResult.numBytes);
+      console.log('ERROR: Data pipe write length was ' + writeResult.numBytes);
       return false;
     }
     return true;
   }
 
+  function writeMessagePipe(pipe, arrayBuffer) {
+    var result = core.writeMessage(pipe.handle0, arrayBuffer, [], 0);
+    if (result != core.RESULT_OK) {
+      console.log('ERROR: Message pipe write result was ' + result);
+      return false;
+    }
+    return true;
+  }
+
+  function createEchoArgsListElement(item, next) {
+    var list = new jsToCpp.EchoArgsList();
+    list.item = item;
+    list.next = next;
+    return list;
+  }
+
+  function createEchoArgsList() {
+    var genuineArray = Array.prototype.slice.call(arguments);
+    return genuineArray.reduceRight(function (previous, current) {
+      return createEchoArgsListElement(current, previous);
+    }, null);
+  }
+
   return function(handle) {
     var i;
-    senderData = new Uint8Array(DATA_PIPE_PARAMS.capacityNumBytes);
-    for (i = 0; i < senderData.length; ++i)
-      senderData[i] = i;
-
+    sampleData = new Uint8Array(DATA_PIPE_PARAMS.capacityNumBytes);
+    for (i = 0; i < sampleData.length; ++i) {
+      sampleData[i] = i;
+    }
+    sampleMessage = new Uint8Array(DATA_PIPE_PARAMS.capacityNumBytes);
+    for (i = 0; i < sampleMessage.length; ++i) {
+      sampleMessage[i] = 255 - i;
+    }
     retainedConnection = new connection.Connection(handle, JsSideConnection,
                                                    jsToCpp.CppSideProxy);
   };

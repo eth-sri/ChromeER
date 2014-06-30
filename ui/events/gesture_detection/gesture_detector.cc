@@ -42,6 +42,7 @@ GestureDetector::Config::Config()
     : longpress_timeout(base::TimeDelta::FromMilliseconds(500)),
       showpress_timeout(base::TimeDelta::FromMilliseconds(180)),
       double_tap_timeout(base::TimeDelta::FromMilliseconds(300)),
+      double_tap_min_time(base::TimeDelta::FromMilliseconds(40)),
       touch_slop(8),
       double_tap_slop(100),
       minimum_fling_velocity(50),
@@ -187,9 +188,9 @@ GestureDetector::GestureDetector(
       last_focus_y_(0),
       down_focus_x_(0),
       down_focus_y_(0),
-  longpress_enabled_(true),
-  swipe_enabled_(false),
-  two_finger_tap_enabled_(false) {
+      longpress_enabled_(true),
+      swipe_enabled_(false),
+      two_finger_tap_enabled_(false) {
   DCHECK(listener_);
   Init(config);
 }
@@ -272,29 +273,7 @@ bool GestureDetector::OnTouchEvent(const MotionEvent& ev) {
         vy_total += vy2;
       }
 
-      if (swipe_enabled_ && (vx_total || vy_total)) {
-        float vx = vx_total / count;
-        float vy = vy_total / count;
-        float vx_abs = std::abs(vx);
-        float vy_abs = std::abs(vy);
-
-        if (vx_abs < min_swipe_velocity_)
-          vx_abs = vx = 0;
-        if (vy_abs < min_swipe_velocity_)
-          vy_abs = vy = 0;
-
-        // Note that the ratio will be 0 if both velocites are below the min.
-        float ratio = vx_abs > vy_abs ? vx_abs / std::max(vy_abs, 0.001f)
-                                      : vy_abs / std::max(vx_abs, 0.001f);
-        if (ratio > min_swipe_direction_component_ratio_) {
-          if (vx_abs > vy_abs)
-            vy = 0;
-          else
-            vx = 0;
-
-          handled = listener_->OnSwipe(*current_down_event_, ev, vx, vy);
-        }
-      }
+      handled = HandleSwipeIfNeeded(ev, vx_total / count, vy_total / count);
 
       if (two_finger_tap_allowed_for_gesture_ && ev.GetPointerCount() == 2 &&
           (ev.GetEventTime() - secondary_pointer_down_event_->GetEventTime() <=
@@ -433,6 +412,8 @@ bool GestureDetector::OnTouchEvent(const MotionEvent& ev) {
             handled = listener_->OnFling(
                 *current_down_event_, ev, velocity_x, velocity_y);
           }
+
+          handled |= HandleSwipeIfNeeded(ev, velocity_x, velocity_y);
         }
 
         previous_up_event_ = ev.Clone();
@@ -481,6 +462,8 @@ void GestureDetector::Init(const Config& config) {
   double_tap_touch_slop_square_ = double_tap_touch_slop * double_tap_touch_slop;
   double_tap_slop_square_ = double_tap_slop * double_tap_slop;
   double_tap_timeout_ = config.double_tap_timeout;
+  double_tap_min_time_ = config.double_tap_min_time;
+  DCHECK(double_tap_min_time_ < double_tap_timeout_);
   min_fling_velocity_ = config.minimum_fling_velocity;
   max_fling_velocity_ = config.maximum_fling_velocity;
 
@@ -519,14 +502,9 @@ void GestureDetector::OnTapTimeout() {
 }
 
 void GestureDetector::Cancel() {
-  timeout_handler_->Stop();
+  CancelTaps();
   velocity_tracker_.Clear();
-  is_double_tapping_ = false;
   still_down_ = false;
-  always_in_tap_region_ = false;
-  always_in_bigger_tap_region_ = false;
-  defer_confirm_single_tap_ = false;
-  in_longpress_ = false;
 }
 
 void GestureDetector::CancelTaps() {
@@ -545,13 +523,41 @@ bool GestureDetector::IsConsideredDoubleTap(
   if (!always_in_bigger_tap_region_)
     return false;
 
-  if (second_down.GetEventTime() - first_up.GetEventTime() >
-      double_tap_timeout_)
+  const base::TimeDelta delta_time =
+      second_down.GetEventTime() - first_up.GetEventTime();
+  if (delta_time < double_tap_min_time_ || delta_time > double_tap_timeout_)
     return false;
 
   const float delta_x = first_down.GetX() - second_down.GetX();
   const float delta_y = first_down.GetY() - second_down.GetY();
   return (delta_x * delta_x + delta_y * delta_y < double_tap_slop_square_);
+}
+
+bool GestureDetector::HandleSwipeIfNeeded(const MotionEvent& up,
+                                          float vx,
+                                          float vy) {
+  if (!swipe_enabled_ || (!vx && !vy))
+    return false;
+  float vx_abs = std::abs(vx);
+  float vy_abs = std::abs(vy);
+
+  if (vx_abs < min_swipe_velocity_)
+    vx_abs = vx = 0;
+  if (vy_abs < min_swipe_velocity_)
+    vy_abs = vy = 0;
+
+  // Note that the ratio will be 0 if both velocites are below the min.
+  float ratio = vx_abs > vy_abs ? vx_abs / std::max(vy_abs, 0.001f)
+                                : vy_abs / std::max(vx_abs, 0.001f);
+
+  if (ratio < min_swipe_direction_component_ratio_)
+    return false;
+
+  if (vx_abs > vy_abs)
+    vy = 0;
+  else
+    vx = 0;
+  return listener_->OnSwipe(*current_down_event_, up, vx, vy);
 }
 
 }  // namespace ui

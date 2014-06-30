@@ -17,6 +17,7 @@
 #include "base/path_service.h"
 #include "base/pending_task.h"
 #include "base/strings/string_util.h"
+#include "base/sys_info.h"
 #include "base/threading/platform_thread.h"
 #include "base/time/time.h"
 #include "base/timer/hi_res_timer_manager.h"
@@ -34,7 +35,6 @@
 #include "ui/base/ui_base_switches.h"
 
 #if defined(OS_ANDROID)
-#include "base/android/sys_utils.h"
 #include "third_party/skia/include/core/SkGraphics.h"
 #endif  // OS_ANDROID
 
@@ -120,8 +120,6 @@ int RendererMain(const MainFunctionParams& parameters) {
   base::debug::TraceLog::GetInstance()->SetProcessSortIndex(
       kTraceEventRendererProcessSortIndex);
 
-  base::PlatformThread::Sleep(base::TimeDelta::FromSeconds(10));
-
   const CommandLine& parsed_command_line = parameters.command_line;
 
 #if defined(OS_MACOSX)
@@ -143,7 +141,7 @@ int RendererMain(const MainFunctionParams& parameters) {
 #if defined(OS_ANDROID)
   const int kMB = 1024 * 1024;
   size_t font_cache_limit =
-      base::android::SysUtils::IsLowEndDevice() ? kMB : 8 * kMB;
+      base::SysInfo::IsLowEndDevice() ? kMB : 8 * kMB;
   SkGraphics::SetFontCacheLimit(font_cache_limit);
 #endif
 
@@ -180,10 +178,7 @@ int RendererMain(const MainFunctionParams& parameters) {
 
   base::PlatformThread::SetName("CrRendererMain");
 
-  platform.PlatformInitialize();
-
   bool no_sandbox = parsed_command_line.HasSwitch(switches::kNoSandbox);
-  platform.InitSandboxTests(no_sandbox);
 
   // Initialize histogram statistics gathering system.
   base::StatisticsRecorder::Initialize();
@@ -202,6 +197,9 @@ int RendererMain(const MainFunctionParams& parameters) {
         std::set<std::string>());
     DCHECK(result);
   }
+
+  // PlatformInitialize uses FieldTrials, so this must happen later.
+  platform.PlatformInitialize();
 
 #if defined(ENABLE_PLUGINS)
   // Load pepper plugins before engaging the sandbox.
@@ -240,8 +238,6 @@ int RendererMain(const MainFunctionParams& parameters) {
 #endif
 
     base::HighResolutionTimerManager hi_res_timer_manager;
-
-    platform.RunSandboxTests(no_sandbox);
 
     startup_timer.Stop();  // End of Startup Time Measurement.
 

@@ -4,54 +4,23 @@
 
 #include "athena/screen/public/screen_manager.h"
 
+#include "athena/common/fill_layout_manager.h"
+#include "athena/input/public/accelerator_manager.h"
 #include "athena/screen/background_controller.h"
+#include "athena/screen/screen_accelerator_handler.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
+#include "ui/aura/client/screen_position_client.h"
 #include "ui/aura/client/window_tree_client.h"
 #include "ui/aura/layout_manager.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_tree_host.h"
+#include "ui/wm/core/capture_controller.h"
 
 namespace athena {
 namespace {
 
 ScreenManager* instance = NULL;
-
-// TODO(oshima): There seems to be a couple of private implementation which does
-// the same.
-// Consider consolidating and reuse it.
-class FillLayoutManager : public aura::LayoutManager {
- public:
-  explicit FillLayoutManager(aura::Window* container) : container_(container) {
-    DCHECK(container_);
-  }
-
-  // aura::LayoutManager:
-  virtual void OnWindowResized() OVERRIDE {
-    gfx::Rect full_bounds = gfx::Rect(container_->bounds().size());
-    for (aura::Window::Windows::const_iterator iter =
-             container_->children().begin();
-         iter != container_->children().end();
-         ++iter) {
-      SetChildBoundsDirect(*iter, full_bounds);
-    }
-  }
-  virtual void OnWindowAddedToLayout(aura::Window* child) OVERRIDE {
-    SetChildBoundsDirect(child, (gfx::Rect(container_->bounds().size())));
-  }
-  virtual void OnWillRemoveWindowFromLayout(aura::Window* child) OVERRIDE {}
-  virtual void OnWindowRemovedFromLayout(aura::Window* child) OVERRIDE {}
-  virtual void OnChildWindowVisibilityChanged(aura::Window* child,
-                                              bool visible) OVERRIDE {}
-  virtual void SetChildBounds(aura::Window* child,
-                              const gfx::Rect& requested_bounds) OVERRIDE {
-    // Ignore SetBounds request.
-  }
-
- private:
-  aura::Window* container_;
-
-  DISALLOW_COPY_AND_ASSIGN(FillLayoutManager);
-};
 
 class AthenaWindowTreeClient : public aura::client::WindowTreeClient {
  public:
@@ -73,7 +42,44 @@ class AthenaWindowTreeClient : public aura::client::WindowTreeClient {
   DISALLOW_COPY_AND_ASSIGN(AthenaWindowTreeClient);
 };
 
-aura::Window* CreateContainer(aura::Window* parent, const std::string& name) {
+class AthenaScreenPositionClient : public aura::client::ScreenPositionClient {
+ public:
+  AthenaScreenPositionClient() {
+  }
+  virtual ~AthenaScreenPositionClient() {
+  }
+
+ private:
+  // aura::client::ScreenPositionClient:
+  virtual void ConvertPointToScreen(const aura::Window* window,
+                                    gfx::Point* point) OVERRIDE {
+    const aura::Window* root = window->GetRootWindow();
+    aura::Window::ConvertPointToTarget(window, root, point);
+  }
+
+  virtual void ConvertPointFromScreen(const aura::Window* window,
+                                      gfx::Point* point) OVERRIDE {
+    const aura::Window* root = window->GetRootWindow();
+    aura::Window::ConvertPointToTarget(root, window, point);
+  }
+
+  virtual void ConvertHostPointToScreen(aura::Window* window,
+                                        gfx::Point* point) OVERRIDE {
+    // TODO(oshima): Implement this when adding multiple display support.
+    NOTREACHED();
+  }
+
+  virtual void SetBounds(aura::Window* window,
+                         const gfx::Rect& bounds,
+                         const gfx::Display& display) OVERRIDE {
+    window->SetBounds(bounds);
+  }
+
+  DISALLOW_COPY_AND_ASSIGN(AthenaScreenPositionClient);
+};
+
+aura::Window* CreateContainerInternal(aura::Window* parent,
+                                      const std::string& name) {
   aura::Window* container = new aura::Window(NULL);
   container->Init(aura::WINDOW_LAYER_NOT_DRAWN);
   container->SetName(name);
@@ -90,31 +96,52 @@ class ScreenManagerImpl : public ScreenManager {
   void Init();
 
  private:
-  // Screenmanager:
-  virtual aura::Window* GetContainerWindow() OVERRIDE { return container_; }
+  // ScreenManager:
+  virtual aura::Window* CreateDefaultContainer(
+      const std::string& name) OVERRIDE;
+  virtual aura::Window* CreateContainer(const std::string& name) OVERRIDE;
   virtual aura::Window* GetContext() OVERRIDE { return root_window_; }
   virtual void SetBackgroundImage(const gfx::ImageSkia& image) OVERRIDE;
 
   aura::Window* root_window_;
-  // A container used for apps/web windows.
-  aura::Window* container_;
   aura::Window* background_window_;
+
   scoped_ptr<BackgroundController> background_controller_;
   scoped_ptr<aura::client::WindowTreeClient> window_tree_client_;
+  scoped_ptr<AcceleratorHandler> accelerator_handler_;
+  scoped_ptr< ::wm::ScopedCaptureClient> capture_client_;
+  scoped_ptr<aura::client::ScreenPositionClient> screen_position_client_;
 
   DISALLOW_COPY_AND_ASSIGN(ScreenManagerImpl);
 };
 
 void ScreenManagerImpl::Init() {
   root_window_->SetLayoutManager(new FillLayoutManager(root_window_));
-  background_window_ = CreateContainer(root_window_, "AthenaBackground");
+  background_window_ =
+      CreateContainerInternal(root_window_, "AthenaBackground");
   background_window_->SetLayoutManager(
       new FillLayoutManager(background_window_));
   background_controller_.reset(new BackgroundController(background_window_));
-  container_ = CreateContainer(root_window_, "AthenaContainer");
 
-  window_tree_client_.reset(new AthenaWindowTreeClient(container_));
+  capture_client_.reset(new ::wm::ScopedCaptureClient(root_window_));
+  accelerator_handler_.reset(new ScreenAcceleratorHandler(root_window_));
+}
+
+aura::Window* ScreenManagerImpl::CreateDefaultContainer(
+    const std::string& name) {
+  aura::Window* container = CreateContainerInternal(root_window_, name);
+  window_tree_client_.reset(new AthenaWindowTreeClient(container));
   aura::client::SetWindowTreeClient(root_window_, window_tree_client_.get());
+
+  screen_position_client_.reset(new AthenaScreenPositionClient());
+  aura::client::SetScreenPositionClient(root_window_,
+                                        screen_position_client_.get());
+
+  return container;
+}
+
+aura::Window* ScreenManagerImpl::CreateContainer(const std::string& name) {
+  return CreateContainerInternal(root_window_, name);
 }
 
 void ScreenManagerImpl::SetBackgroundImage(const gfx::ImageSkia& image) {
@@ -129,6 +156,7 @@ ScreenManagerImpl::ScreenManagerImpl(aura::Window* root_window)
 }
 
 ScreenManagerImpl::~ScreenManagerImpl() {
+  aura::client::SetScreenPositionClient(root_window_, NULL);
   aura::client::SetWindowTreeClient(root_window_, NULL);
   instance = NULL;
 }

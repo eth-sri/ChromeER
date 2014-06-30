@@ -10,7 +10,6 @@
 #include "cc/test/fake_impl_proxy.h"
 #include "cc/test/fake_layer_tree_host_impl.h"
 #include "cc/test/layer_test_common.h"
-#include "cc/test/mock_quad_culler.h"
 #include "cc/trees/single_thread_proxy.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -75,9 +74,9 @@ class TiledLayerImplTest : public testing::Test {
     layer->draw_properties().visible_content_rect = visible_content_rect;
     layer->SetBounds(layer_size);
 
-    MockQuadCuller quad_culler(render_pass);
+    MockOcclusionTracker<LayerImpl> occlusion_tracker;
     AppendQuadsData data;
-    layer->AppendQuads(&quad_culler, &data);
+    layer->AppendQuads(render_pass, occlusion_tracker, &data);
   }
 
  protected:
@@ -97,13 +96,15 @@ TEST_F(TiledLayerImplTest, EmptyQuadList) {
   {
     scoped_ptr<TiledLayerImpl> layer =
         CreateLayer(tile_size, layer_size, LayerTilingData::NO_BORDER_TEXELS);
-    MockQuadCuller quad_culler;
+    MockOcclusionTracker<LayerImpl> occlusion_tracker;
+    scoped_ptr<RenderPass> render_pass = RenderPass::Create();
+
     AppendQuadsData data;
     EXPECT_TRUE(layer->WillDraw(DRAW_MODE_HARDWARE, NULL));
-    layer->AppendQuads(&quad_culler, &data);
+    layer->AppendQuads(render_pass.get(), occlusion_tracker, &data);
     layer->DidDraw(NULL);
     unsigned num_tiles = num_tiles_x * num_tiles_y;
-    EXPECT_EQ(quad_culler.quad_list().size(), num_tiles);
+    EXPECT_EQ(render_pass->quad_list.size(), num_tiles);
   }
 
   // Layer with empty visible layer rect produces no quads
@@ -112,7 +113,9 @@ TEST_F(TiledLayerImplTest, EmptyQuadList) {
         CreateLayer(tile_size, layer_size, LayerTilingData::NO_BORDER_TEXELS);
     layer->draw_properties().visible_content_rect = gfx::Rect();
 
-    MockQuadCuller quad_culler;
+    MockOcclusionTracker<LayerImpl> occlusion_tracker;
+    scoped_ptr<RenderPass> render_pass = RenderPass::Create();
+
     EXPECT_FALSE(layer->WillDraw(DRAW_MODE_HARDWARE, NULL));
   }
 
@@ -124,12 +127,14 @@ TEST_F(TiledLayerImplTest, EmptyQuadList) {
     gfx::Rect outside_bounds(-100, -100, 50, 50);
     layer->draw_properties().visible_content_rect = outside_bounds;
 
-    MockQuadCuller quad_culler;
+    MockOcclusionTracker<LayerImpl> occlusion_tracker;
+    scoped_ptr<RenderPass> render_pass = RenderPass::Create();
+
     AppendQuadsData data;
     EXPECT_TRUE(layer->WillDraw(DRAW_MODE_HARDWARE, NULL));
-    layer->AppendQuads(&quad_culler, &data);
+    layer->AppendQuads(render_pass.get(), occlusion_tracker, &data);
     layer->DidDraw(NULL);
-    EXPECT_EQ(quad_culler.quad_list().size(), 0u);
+    EXPECT_EQ(render_pass->quad_list.size(), 0u);
   }
 
   // Layer with skips draw produces no quads
@@ -138,10 +143,12 @@ TEST_F(TiledLayerImplTest, EmptyQuadList) {
         CreateLayer(tile_size, layer_size, LayerTilingData::NO_BORDER_TEXELS);
     layer->set_skips_draw(true);
 
-    MockQuadCuller quad_culler;
+    MockOcclusionTracker<LayerImpl> occlusion_tracker;
+    scoped_ptr<RenderPass> render_pass = RenderPass::Create();
+
     AppendQuadsData data;
-    layer->AppendQuads(&quad_culler, &data);
-    EXPECT_EQ(quad_culler.quad_list().size(), 0u);
+    layer->AppendQuads(render_pass.get(), occlusion_tracker, &data);
+    EXPECT_EQ(render_pass->quad_list.size(), 0u);
   }
 }
 
@@ -157,14 +164,16 @@ TEST_F(TiledLayerImplTest, Checkerboarding) {
 
   // No checkerboarding
   {
-    MockQuadCuller quad_culler;
+    MockOcclusionTracker<LayerImpl> occlusion_tracker;
+    scoped_ptr<RenderPass> render_pass = RenderPass::Create();
+
     AppendQuadsData data;
-    layer->AppendQuads(&quad_culler, &data);
-    EXPECT_EQ(quad_culler.quad_list().size(), 4u);
+    layer->AppendQuads(render_pass.get(), occlusion_tracker, &data);
+    EXPECT_EQ(render_pass->quad_list.size(), 4u);
     EXPECT_EQ(0u, data.num_missing_tiles);
 
-    for (size_t i = 0; i < quad_culler.quad_list().size(); ++i)
-      EXPECT_EQ(quad_culler.quad_list()[i]->material, DrawQuad::TILED_CONTENT);
+    for (size_t i = 0; i < render_pass->quad_list.size(); ++i)
+      EXPECT_EQ(render_pass->quad_list[i]->material, DrawQuad::TILED_CONTENT);
   }
 
   for (int i = 0; i < num_tiles_x; ++i)
@@ -173,13 +182,15 @@ TEST_F(TiledLayerImplTest, Checkerboarding) {
 
   // All checkerboarding
   {
-    MockQuadCuller quad_culler;
+    MockOcclusionTracker<LayerImpl> occlusion_tracker;
+    scoped_ptr<RenderPass> render_pass = RenderPass::Create();
+
     AppendQuadsData data;
-    layer->AppendQuads(&quad_culler, &data);
+    layer->AppendQuads(render_pass.get(), occlusion_tracker, &data);
     EXPECT_LT(0u, data.num_missing_tiles);
-    EXPECT_EQ(quad_culler.quad_list().size(), 4u);
-    for (size_t i = 0; i < quad_culler.quad_list().size(); ++i)
-      EXPECT_NE(quad_culler.quad_list()[i]->material, DrawQuad::TILED_CONTENT);
+    EXPECT_EQ(render_pass->quad_list.size(), 4u);
+    for (size_t i = 0; i < render_pass->quad_list.size(); ++i)
+      EXPECT_NE(render_pass->quad_list[i]->material, DrawQuad::TILED_CONTENT);
   }
 }
 
@@ -317,7 +328,6 @@ TEST_F(TiledLayerImplTest, Occlusion) {
   LayerTestCommon::LayerImplTest impl;
 
   TiledLayerImpl* tiled_layer = impl.AddChildToRoot<TiledLayerImpl>();
-  tiled_layer->SetAnchorPoint(gfx::PointF());
   tiled_layer->SetBounds(layer_bounds);
   tiled_layer->SetContentBounds(layer_bounds);
   tiled_layer->SetDrawsContent(true);

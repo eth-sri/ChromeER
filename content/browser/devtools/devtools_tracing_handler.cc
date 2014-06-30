@@ -55,6 +55,9 @@ DevToolsTracingHandler::DevToolsTracingHandler(
   RegisterCommandHandler(devtools::Tracing::end::kName,
                          base::Bind(&DevToolsTracingHandler::OnEnd,
                                     base::Unretained(this)));
+  RegisterCommandHandler(devtools::Tracing::getCategories::kName,
+                         base::Bind(&DevToolsTracingHandler::OnGetCategories,
+                                    base::Unretained(this)));
 }
 
 DevToolsTracingHandler::~DevToolsTracingHandler() {
@@ -200,12 +203,46 @@ void DevToolsTracingHandler::OnBufferUsage(float usage) {
 scoped_refptr<DevToolsProtocol::Response>
 DevToolsTracingHandler::OnEnd(
     scoped_refptr<DevToolsProtocol::Command> command) {
-  buffer_usage_poll_timer_.reset();
-  TracingController::GetInstance()->DisableRecording(
-      base::FilePath(),
+  DisableRecording(
       base::Bind(&DevToolsTracingHandler::BeginReadingRecordingResult,
                  weak_factory_.GetWeakPtr()));
   return command->SuccessResponse(NULL);
+}
+
+void DevToolsTracingHandler::DisableRecording(
+    const TracingController::TracingFileResultCallback& callback) {
+  buffer_usage_poll_timer_.reset();
+  TracingController::GetInstance()->DisableRecording(base::FilePath(),
+                                                     callback);
+}
+
+void DevToolsTracingHandler::OnClientDetached() {
+    DisableRecording();
+}
+
+scoped_refptr<DevToolsProtocol::Response>
+DevToolsTracingHandler::OnGetCategories(
+    scoped_refptr<DevToolsProtocol::Command> command) {
+  TracingController::GetInstance()->GetCategories(
+      base::Bind(&DevToolsTracingHandler::OnCategoriesReceived,
+                 weak_factory_.GetWeakPtr(),
+                 command));
+  return command->AsyncResponsePromise();
+}
+
+void DevToolsTracingHandler::OnCategoriesReceived(
+    scoped_refptr<DevToolsProtocol::Command> command,
+    const std::set<std::string>& category_set) {
+  base::DictionaryValue* response = new base::DictionaryValue;
+  base::ListValue* category_list = new base::ListValue;
+  for (std::set<std::string>::const_iterator it = category_set.begin();
+       it != category_set.end(); ++it) {
+    category_list->AppendString(*it);
+  }
+
+  response->Set(devtools::Tracing::getCategories::kResponseCategories,
+                category_list);
+  SendAsyncResponse(command->SuccessResponse(response));
 }
 
 }  // namespace content

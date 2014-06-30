@@ -18,9 +18,9 @@
 #include "chrome/browser/ui/autofill/autofill_dialog_i18n_input.h"
 #include "chrome/browser/ui/autofill/autofill_dialog_view.h"
 #include "chrome/browser/ui/autofill/autofill_dialog_view_tester.h"
+#include "chrome/browser/ui/autofill/chrome_autofill_client.h"
 #include "chrome/browser/ui/autofill/data_model_wrapper.h"
 #include "chrome/browser/ui/autofill/mock_address_validator.h"
-#include "chrome/browser/ui/autofill/tab_autofill_manager_delegate.h"
 #include "chrome/browser/ui/autofill/test_generated_credit_card_bubble_controller.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
@@ -83,9 +83,10 @@ using testing::Return;
 using testing::_;
 using ::i18n::addressinput::AddressValidator;
 
-void MockCallback(AutofillManagerDelegate::RequestAutocompleteResult,
+void MockCallback(AutofillClient::RequestAutocompleteResult,
                   const base::string16& message,
-                  const FormStructure*) {}
+                  const FormStructure*) {
+}
 
 class MockAutofillMetrics : public AutofillMetrics {
  public:
@@ -403,9 +404,9 @@ class AutofillDialogControllerTest : public InProcessBrowserTest {
   AutofillDialogControllerImpl* SetUpHtmlAndInvoke(
       const std::string& form_inner_html) {
     content::WebContents* contents = GetActiveWebContents();
-    TabAutofillManagerDelegate* delegate =
-        TabAutofillManagerDelegate::FromWebContents(contents);
-    CHECK(!delegate->GetDialogControllerForTesting());
+    ChromeAutofillClient* client =
+        ChromeAutofillClient::FromWebContents(contents);
+    CHECK(!client->GetDialogControllerForTesting());
 
     ui_test_utils::NavigateToURL(
         browser(), GURL(std::string("data:text/html,") +
@@ -462,7 +463,7 @@ class AutofillDialogControllerTest : public InProcessBrowserTest {
     InitiateDialog();
     AutofillDialogControllerImpl* controller =
         static_cast<AutofillDialogControllerImpl*>(
-            delegate->GetDialogControllerForTesting());
+            client->GetDialogControllerForTesting());
     return controller;
   }
 
@@ -488,11 +489,11 @@ class AutofillDialogControllerTest : public InProcessBrowserTest {
 
     InitiateDialog();
 
-    TabAutofillManagerDelegate* delegate =
-        TabAutofillManagerDelegate::FromWebContents(contents);
+    ChromeAutofillClient* client =
+        ChromeAutofillClient::FromWebContents(contents);
     AutofillDialogControllerImpl* controller =
         static_cast<AutofillDialogControllerImpl*>(
-            delegate->GetDialogControllerForTesting());
+            client->GetDialogControllerForTesting());
     return !!controller;
   }
 
@@ -1187,7 +1188,7 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, SimulateSuccessfulSignIn) {
 
   sign_in_contents->GetDelegate()->OpenURLFromTab(sign_in_contents, params);
 
-  EXPECT_CALL(*controller()->GetTestingWalletClient(), GetWalletItems());
+  EXPECT_CALL(*controller()->GetTestingWalletClient(), GetWalletItems(_, _));
   continue_page_observer.Wait();
   content::RunAllPendingInMessageLoop();
 
@@ -1263,7 +1264,7 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, AddAccount) {
                                 true);
   sign_in_contents->GetDelegate()->OpenURLFromTab(sign_in_contents, params);
 
-  EXPECT_CALL(*controller()->GetTestingWalletClient(), GetWalletItems());
+  EXPECT_CALL(*controller()->GetTestingWalletClient(), GetWalletItems(_, _));
   continue_page_observer.Wait();
   content::RunAllPendingInMessageLoop();
 
@@ -1415,15 +1416,15 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest,
 IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, RefreshOnManageTabClose) {
   ASSERT_TRUE(browser()->is_type_tabbed());
 
-  // GetWalletItems() is called when controller() is created in SetUp().
-  EXPECT_CALL(*controller()->GetTestingWalletClient(), GetWalletItems());
+  // GetWalletItems(_, _) is called when controller() is created in SetUp().
+  EXPECT_CALL(*controller()->GetTestingWalletClient(), GetWalletItems(_, _));
   controller()->OnDidFetchWalletCookieValue(std::string());
   controller()->OnDidGetWalletItems(
       wallet::GetTestWalletItems(wallet::AMEX_DISALLOWED));
 
   content::WebContents* dialog_invoker = controller()->GetWebContents();
-  TabAutofillManagerDelegate::FromWebContents(dialog_invoker)->
-      SetDialogControllerForTesting(controller()->AsWeakPtr());
+  ChromeAutofillClient::FromWebContents(dialog_invoker)
+      ->SetDialogControllerForTesting(controller()->AsWeakPtr());
 
   // Open a new tab by selecting "Manage my shipping details..." in Wallet mode.
   EXPECT_EQ(1, browser()->tab_strip_model()->count());
@@ -1434,7 +1435,7 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, RefreshOnManageTabClose) {
   // Closing the tab opened by "Manage my shipping details..." should refresh
   // the dialog.
   controller()->ClearLastWalletItemsFetchTimestampForTesting();
-  EXPECT_CALL(*controller()->GetTestingWalletClient(), GetWalletItems());
+  EXPECT_CALL(*controller()->GetTestingWalletClient(), GetWalletItems(_, _));
   GetActiveWebContents()->Close();
 }
 
@@ -1737,6 +1738,20 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, RulesLoaded) {
   // Cancelling the dialog causes additional validation to see if the user
   // cancelled with invalid fields, so verify and clear here.
   testing::Mock::VerifyAndClearExpectations(controller()->GetMockValidator());
+}
+
+IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest,
+                       TransactionAmount) {
+  std::string html(
+      "<input type='number' step='0.01'"
+      "   autocomplete='transaction-amount' value='24'>"
+      "<input autocomplete='transaction-currency' value='USD'>"
+      "<input autocomplete='cc-csc'>");
+  AutofillDialogControllerImpl* controller = SetUpHtmlAndInvoke(html);
+  ASSERT_TRUE(controller);
+
+  EXPECT_EQ(ASCIIToUTF16("24"), controller->transaction_amount_);
+  EXPECT_EQ(ASCIIToUTF16("USD"), controller->transaction_currency_);
 }
 
 }  // namespace autofill

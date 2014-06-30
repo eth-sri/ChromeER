@@ -24,6 +24,7 @@
 #include "content/browser/loader/resource_message_filter.h"
 #include "content/browser/loader/resource_request_info_impl.h"
 #include "content/browser/worker_host/worker_service_impl.h"
+#include "content/common/appcache_interfaces.h"
 #include "content/common/child_process_host_impl.h"
 #include "content/common/resource_messages.h"
 #include "content/common/view_messages.h"
@@ -45,11 +46,11 @@
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_job.h"
+#include "net/url_request/url_request_job_factory.h"
 #include "net/url_request/url_request_simple_job.h"
 #include "net/url_request/url_request_test_job.h"
 #include "net/url_request/url_request_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/common/appcache/appcache_interfaces.h"
 #include "webkit/common/blob/shareable_file_reference.h"
 
 // TODO(eroman): Write unit tests for SafeBrowsing that exercise
@@ -138,7 +139,7 @@ static ResourceHostMsg_Request CreateResourceRequest(
   request.origin_pid = 0;
   request.resource_type = type;
   request.request_context = 0;
-  request.appcache_host_id = appcache::kNoHostId;
+  request.appcache_host_id = kAppCacheNoHostId;
   request.download_to_file = false;
   request.is_main_frame = true;
   request.parent_is_main_frame = false;
@@ -460,6 +461,66 @@ class URLRequestBigJob : public net::URLRequestSimpleJob {
   }
 };
 
+class ResourceDispatcherHostTest;
+
+class TestURLRequestJobFactory : public net::URLRequestJobFactory {
+ public:
+  explicit TestURLRequestJobFactory(ResourceDispatcherHostTest* test_fixture)
+      : test_fixture_(test_fixture),
+        delay_start_(false),
+        delay_complete_(false),
+        network_start_notification_(false),
+        url_request_jobs_created_count_(0) {
+  }
+
+  void HandleScheme(const std::string& scheme) {
+    supported_schemes_.insert(scheme);
+  }
+
+  int url_request_jobs_created_count() const {
+    return url_request_jobs_created_count_;
+  }
+
+  void SetDelayedStartJobGeneration(bool delay_job_start) {
+    delay_start_ = delay_job_start;
+  }
+
+  void SetDelayedCompleteJobGeneration(bool delay_job_complete) {
+    delay_complete_ = delay_job_complete;
+  }
+
+  void SetNetworkStartNotificationJobGeneration(bool notification) {
+    network_start_notification_ = notification;
+  }
+
+  virtual net::URLRequestJob* MaybeCreateJobWithProtocolHandler(
+      const std::string& scheme,
+      net::URLRequest* request,
+      net::NetworkDelegate* network_delegate) const OVERRIDE;
+
+  virtual bool IsHandledProtocol(const std::string& scheme) const OVERRIDE {
+    return supported_schemes_.count(scheme) > 0;
+  }
+
+  virtual bool IsHandledURL(const GURL& url) const OVERRIDE {
+    return supported_schemes_.count(url.scheme()) > 0;
+  }
+
+  virtual bool IsSafeRedirectTarget(const GURL& location) const OVERRIDE {
+    return false;
+  }
+
+ private:
+  ResourceDispatcherHostTest* test_fixture_;
+  bool delay_start_;
+  bool delay_complete_;
+  bool network_start_notification_;
+  mutable int url_request_jobs_created_count_;
+  std::set<std::string> supported_schemes_;
+
+  DISALLOW_COPY_AND_ASSIGN(TestURLRequestJobFactory);
+};
+
 // Associated with an URLRequest to determine if the URLRequest gets deleted.
 class TestUserData : public base::SupportsUserData::Data {
  public:
@@ -601,7 +662,7 @@ class TestResourceDispatcherHostDelegate
   virtual void RequestBeginning(
       net::URLRequest* request,
       ResourceContext* resource_context,
-      appcache::AppCacheService* appcache_service,
+      AppCacheService* appcache_service,
       ResourceType::Type resource_type,
       int child_id,
       int route_id,
@@ -663,9 +724,12 @@ class ResourceDispatcherHostTest : public testing::Test,
     BrowserContext::EnsureResourceContextInitialized(browser_context_.get());
     base::RunLoop().RunUntilIdle();
     filter_ = MakeForwardingFilter();
-    ResourceContext* resource_context = browser_context_->GetResourceContext();
-    resource_context->GetRequestContext()->set_network_delegate(
-        &network_delegate_);
+    // TODO(cbentzel): Better way to get URLRequestContext?
+    net::URLRequestContext* request_context =
+        browser_context_->GetResourceContext()->GetRequestContext();
+    job_factory_.reset(new TestURLRequestJobFactory(this));
+    request_context->set_job_factory(job_factory_.get());
+    request_context->set_network_delegate(&network_delegate_);
   }
 
   // IPC::Sender implementation
@@ -688,32 +752,17 @@ class ResourceDispatcherHostTest : public testing::Test,
   }
 
  protected:
+  friend class TestURLRequestJobFactory;
+
   // testing::Test
   virtual void SetUp() OVERRIDE {
-    DCHECK(!test_fixture_);
-    test_fixture_ = this;
     ChildProcessSecurityPolicyImpl::GetInstance()->Add(0);
-    net::URLRequest::Deprecated::RegisterProtocolFactory(
-        "test",
-        &ResourceDispatcherHostTest::Factory);
-    EnsureTestSchemeIsAllowed();
-    delay_start_ = false;
-    delay_complete_ = false;
-    network_start_notification_ = false;
-    url_request_jobs_created_count_ = 0;
+    HandleScheme("test");
   }
 
   virtual void TearDown() {
-    net::URLRequest::Deprecated::RegisterProtocolFactory("test", NULL);
-    if (!scheme_.empty())
-      net::URLRequest::Deprecated::RegisterProtocolFactory(
-          scheme_, old_factory_);
-
     EXPECT_TRUE(URLRequestTestDelayedStartJob::DelayedStartQueueEmpty());
     URLRequestTestDelayedStartJob::ClearQueue();
-
-    DCHECK(test_fixture_ == this);
-    test_fixture_ = NULL;
 
     for (std::set<int>::iterator it = child_ids_.begin();
          it != child_ids_.end(); ++it) {
@@ -775,10 +824,6 @@ class ResourceDispatcherHostTest : public testing::Test,
       policy->RegisterWebSafeScheme(scheme);
   }
 
-  void EnsureTestSchemeIsAllowed() {
-    EnsureSchemeIsAllowed("test");
-  }
-
   // Sets a particular response for any request from now on. To switch back to
   // the default bahavior, pass an empty |headers|. |headers| should be raw-
   // formatted (NULLs instead of EOLs).
@@ -797,62 +842,8 @@ class ResourceDispatcherHostTest : public testing::Test,
 
   // Intercepts requests for the given protocol.
   void HandleScheme(const std::string& scheme) {
-    DCHECK(scheme_.empty());
-    DCHECK(!old_factory_);
-    scheme_ = scheme;
-    old_factory_ = net::URLRequest::Deprecated::RegisterProtocolFactory(
-        scheme_, &ResourceDispatcherHostTest::Factory);
+    job_factory_->HandleScheme(scheme);
     EnsureSchemeIsAllowed(scheme);
-  }
-
-  // Our own net::URLRequestJob factory.
-  static net::URLRequestJob* Factory(net::URLRequest* request,
-                                     net::NetworkDelegate* network_delegate,
-                                     const std::string& scheme) {
-    url_request_jobs_created_count_++;
-    if (test_fixture_->response_headers_.empty()) {
-      if (delay_start_) {
-        return new URLRequestTestDelayedStartJob(request, network_delegate);
-      } else if (delay_complete_) {
-        return new URLRequestTestDelayedCompletionJob(request,
-                                                      network_delegate);
-      } else if (network_start_notification_) {
-        return new URLRequestTestDelayedNetworkJob(request, network_delegate);
-      } else if (scheme == "big-job") {
-        return new URLRequestBigJob(request, network_delegate);
-      } else {
-        return new net::URLRequestTestJob(request, network_delegate);
-      }
-    } else {
-      if (delay_start_) {
-        return new URLRequestTestDelayedStartJob(
-            request, network_delegate,
-            test_fixture_->response_headers_, test_fixture_->response_data_,
-            false);
-      } else if (delay_complete_) {
-        return new URLRequestTestDelayedCompletionJob(
-            request, network_delegate,
-            test_fixture_->response_headers_, test_fixture_->response_data_,
-            false);
-      } else {
-        return new net::URLRequestTestJob(
-            request, network_delegate,
-            test_fixture_->response_headers_, test_fixture_->response_data_,
-            false);
-      }
-    }
-  }
-
-  void SetDelayedStartJobGeneration(bool delay_job_start) {
-    delay_start_ = delay_job_start;
-  }
-
-  void SetDelayedCompleteJobGeneration(bool delay_job_complete) {
-    delay_complete_ = delay_job_complete;
-  }
-
-  void SetNetworkStartNotificationJobGeneration(bool notification) {
-    network_start_notification_ = notification;
   }
 
   void GenerateDataReceivedACK(const IPC::Message& msg) {
@@ -886,6 +877,7 @@ class ResourceDispatcherHostTest : public testing::Test,
 
   content::TestBrowserThreadBundle thread_bundle_;
   scoped_ptr<TestBrowserContext> browser_context_;
+  scoped_ptr<TestURLRequestJobFactory> job_factory_;
   scoped_refptr<ForwardingFilter> filter_;
   net::TestNetworkDelegate network_delegate_;
   ResourceDispatcherHostImpl host_;
@@ -897,18 +889,7 @@ class ResourceDispatcherHostTest : public testing::Test,
   bool send_data_received_acks_;
   std::set<int> child_ids_;
   scoped_ptr<base::RunLoop> wait_for_request_complete_loop_;
-  static ResourceDispatcherHostTest* test_fixture_;
-  static bool delay_start_;
-  static bool delay_complete_;
-  static bool network_start_notification_;
-  static int url_request_jobs_created_count_;
 };
-// Static.
-ResourceDispatcherHostTest* ResourceDispatcherHostTest::test_fixture_ = NULL;
-bool ResourceDispatcherHostTest::delay_start_ = false;
-bool ResourceDispatcherHostTest::delay_complete_ = false;
-bool ResourceDispatcherHostTest::network_start_notification_ = false;
-int ResourceDispatcherHostTest::url_request_jobs_created_count_ = 0;
 
 void ResourceDispatcherHostTest::MakeTestRequest(int render_view_id,
                                                  int request_id,
@@ -1369,7 +1350,7 @@ TEST_F(ResourceDispatcherHostTest, CancelInResourceThrottleWillStartRequest) {
   CheckRequestCompleteErrorCode(msgs[0][0], net::ERR_ABORTED);
 
   // Make sure URLRequest is never started.
-  EXPECT_EQ(0, url_request_jobs_created_count_);
+  EXPECT_EQ(0, job_factory_->url_request_jobs_created_count());
 }
 
 TEST_F(ResourceDispatcherHostTest, PausedStartError) {
@@ -1378,7 +1359,7 @@ TEST_F(ResourceDispatcherHostTest, PausedStartError) {
   delegate.set_flags(DEFER_PROCESSING_RESPONSE);
   host_.SetDelegate(&delegate);
 
-  SetDelayedStartJobGeneration(true);
+  job_factory_->SetDelayedStartJobGeneration(true);
   MakeTestRequest(0, 1, net::URLRequestTestJob::test_url_error());
   CompleteStartRequest(1);
 
@@ -1396,7 +1377,7 @@ TEST_F(ResourceDispatcherHostTest, ThrottleNetworkStart) {
   delegate.set_flags(DEFER_NETWORK_START);
   host_.SetDelegate(&delegate);
 
-  SetNetworkStartNotificationJobGeneration(true);
+  job_factory_->SetNetworkStartNotificationJobGeneration(true);
   MakeTestRequest(0, 1, net::URLRequestTestJob::test_url_2());
 
   // Should have deferred for network start.
@@ -2106,7 +2087,7 @@ TEST_F(ResourceDispatcherHostTest, IgnoreCancelForDownloads) {
   response_data.resize(1025, ' ');
 
   SetResponse(raw_headers, response_data);
-  SetDelayedCompleteJobGeneration(true);
+  job_factory_->SetDelayedCompleteJobGeneration(true);
   HandleScheme("http");
 
   MakeTestRequestWithResourceType(filter_.get(), render_view_id, request_id,
@@ -2141,7 +2122,7 @@ TEST_F(ResourceDispatcherHostTest, CancelRequestsForContext) {
   response_data.resize(1025, ' ');
 
   SetResponse(raw_headers, response_data);
-  SetDelayedCompleteJobGeneration(true);
+  job_factory_->SetDelayedCompleteJobGeneration(true);
   HandleScheme("http");
 
   MakeTestRequestWithResourceType(filter_.get(), render_view_id, request_id,
@@ -2619,7 +2600,7 @@ TEST_F(ResourceDispatcherHostTest, DataSentBeforeDetach) {
   response_data.resize(kAllocSize, ' ');
 
   SetResponse(raw_headers, response_data);
-  SetDelayedCompleteJobGeneration(true);
+  job_factory_->SetDelayedCompleteJobGeneration(true);
   HandleScheme("http");
 
   MakeTestRequestWithResourceType(filter_.get(), render_view_id, request_id,
@@ -2906,6 +2887,44 @@ TEST_F(ResourceDispatcherHostTest, DownloadToFile) {
   EXPECT_FALSE(base::PathExists(response_head.download_file_path));
   EXPECT_FALSE(ChildProcessSecurityPolicyImpl::GetInstance()->CanReadFile(
       filter_->child_id(), response_head.download_file_path));
+}
+
+net::URLRequestJob* TestURLRequestJobFactory::MaybeCreateJobWithProtocolHandler(
+      const std::string& scheme,
+      net::URLRequest* request,
+      net::NetworkDelegate* network_delegate) const {
+  url_request_jobs_created_count_++;
+  if (test_fixture_->response_headers_.empty()) {
+    if (delay_start_) {
+      return new URLRequestTestDelayedStartJob(request, network_delegate);
+    } else if (delay_complete_) {
+      return new URLRequestTestDelayedCompletionJob(request,
+                                                    network_delegate);
+    } else if (network_start_notification_) {
+      return new URLRequestTestDelayedNetworkJob(request, network_delegate);
+    } else if (scheme == "big-job") {
+      return new URLRequestBigJob(request, network_delegate);
+    } else {
+      return new net::URLRequestTestJob(request, network_delegate);
+    }
+  } else {
+    if (delay_start_) {
+      return new URLRequestTestDelayedStartJob(
+          request, network_delegate,
+          test_fixture_->response_headers_, test_fixture_->response_data_,
+          false);
+    } else if (delay_complete_) {
+      return new URLRequestTestDelayedCompletionJob(
+          request, network_delegate,
+          test_fixture_->response_headers_, test_fixture_->response_data_,
+          false);
+    } else {
+      return new net::URLRequestTestJob(
+          request, network_delegate,
+          test_fixture_->response_headers_, test_fixture_->response_data_,
+          false);
+    }
+  }
 }
 
 }  // namespace content

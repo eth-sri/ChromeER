@@ -142,10 +142,15 @@ void Layer::SetCompositor(Compositor* compositor) {
   DCHECK(!compositor || !compositor_);
   DCHECK(!compositor || compositor->root_layer() == this);
   DCHECK(!parent_);
+  if (compositor_) {
+    RemoveAnimatorsInTreeFromCollection(
+        compositor_->layer_animator_collection());
+  }
   compositor_ = compositor;
   if (compositor) {
     OnDeviceScaleFactorChanged(compositor->device_scale_factor());
     SendPendingThreadedAnimations();
+    AddAnimatorsInTreeToCollection(compositor_->layer_animator_collection());
   }
 }
 
@@ -159,15 +164,21 @@ void Layer::Add(Layer* child) {
   child->OnDeviceScaleFactorChanged(device_scale_factor_);
   if (GetCompositor())
     child->SendPendingThreadedAnimations();
+  LayerAnimatorCollection* collection = GetLayerAnimatorCollection();
+  if (collection)
+    child->AddAnimatorsInTreeToCollection(collection);
 }
 
 void Layer::Remove(Layer* child) {
   // Current bounds are used to calculate offsets when layers are reparented.
   // Stop (and complete) an ongoing animation to update the bounds immediately.
-  if (child->GetAnimator()) {
-    child->GetAnimator()->StopAnimatingProperty(
-        ui::LayerAnimationElement::BOUNDS);
-  }
+  LayerAnimator* child_animator = child->animator_;
+  if (child_animator)
+    child_animator->StopAnimatingProperty(ui::LayerAnimationElement::BOUNDS);
+  LayerAnimatorCollection* collection = GetLayerAnimatorCollection();
+  if (collection)
+    child->RemoveAnimatorsInTreeFromCollection(collection);
+
   std::vector<Layer*>::iterator i =
       std::find(children_.begin(), children_.end(), child);
   DCHECK(i != children_.end());
@@ -230,6 +241,11 @@ gfx::Transform Layer::GetTargetTransform() const {
 
 void Layer::SetBounds(const gfx::Rect& bounds) {
   GetAnimator()->SetBounds(bounds);
+}
+
+void Layer::SetSubpixelPositionOffset(const gfx::Vector2dF offset) {
+  subpixel_position_offset_ = offset;
+  RecomputePosition();
 }
 
 gfx::Rect Layer::GetTargetBounds() const {
@@ -465,9 +481,8 @@ void Layer::SwitchToLayer(scoped_refptr<cc::Layer> new_layer) {
   // TODO(piman): delegated_renderer_layer_ cleanup.
 
   cc_layer_->RemoveAllChildren();
-  if (parent_) {
-    DCHECK(parent_->cc_layer_);
-    parent_->cc_layer_->ReplaceChild(cc_layer_, new_layer);
+  if (cc_layer_->parent()) {
+    cc_layer_->parent()->ReplaceChild(cc_layer_, new_layer);
   }
   cc_layer_->SetLayerClient(NULL);
   cc_layer_->RemoveLayerAnimationEventObserver(this);
@@ -487,7 +502,7 @@ void Layer::SwitchToLayer(scoped_refptr<cc::Layer> new_layer) {
     cc_layer_->AddChild(children_[i]->cc_layer_);
   }
   cc_layer_->SetLayerClient(this);
-  cc_layer_->SetAnchorPoint(gfx::PointF());
+  cc_layer_->SetTransformOrigin(gfx::Point3F());
   cc_layer_->SetContentsOpaque(fills_bounds_opaquely_);
   cc_layer_->SetForceRenderSurface(force_render_surface_);
   cc_layer_->SetIsDrawable(type_ != LAYER_NOT_DRAWN);
@@ -606,6 +621,13 @@ void Layer::SendDamagedRects() {
     children_[i]->SendDamagedRects();
 }
 
+void Layer::CompleteAllAnimations() {
+  std::vector<scoped_refptr<LayerAnimator> > animators;
+  CollectAnimators(&animators);
+  std::for_each(animators.begin(), animators.end(),
+                std::mem_fun(&LayerAnimator::StopAnimating));
+}
+
 void Layer::SuppressPaint() {
   if (!delegate_)
     return;
@@ -688,6 +710,15 @@ scoped_refptr<base::debug::ConvertableToTraceFormat> Layer::TakeDebugInfo() {
 void Layer::OnAnimationStarted(const cc::AnimationEvent& event) {
   if (animator_.get())
     animator_->OnThreadedAnimationStarted(event);
+}
+
+void Layer::CollectAnimators(
+    std::vector<scoped_refptr<LayerAnimator> >* animators) {
+  if (IsAnimating())
+    animators->push_back(animator_);
+  std::for_each(children_.begin(), children_.end(),
+                std::bind2nd(std::mem_fun(&Layer::CollectAnimators),
+                             animators));
 }
 
 void Layer::StackRelativeTo(Layer* child, Layer* other, bool above) {
@@ -874,6 +905,11 @@ void Layer::RemoveThreadedAnimation(int animation_id) {
       pending_threaded_animations_.end());
 }
 
+LayerAnimatorCollection* Layer::GetLayerAnimatorCollection() {
+  Compositor* compositor = GetCompositor();
+  return compositor ? compositor->layer_animator_collection() : NULL;
+}
+
 void Layer::SendPendingThreadedAnimations() {
   for (cc::ScopedPtrVector<cc::Animation>::iterator it =
            pending_threaded_animations_.begin();
@@ -898,7 +934,7 @@ void Layer::CreateWebLayer() {
       content_layer_ = cc::ContentLayer::Create(this);
     cc_layer_ = content_layer_.get();
   }
-  cc_layer_->SetAnchorPoint(gfx::PointF());
+  cc_layer_->SetTransformOrigin(gfx::Point3F());
   cc_layer_->SetContentsOpaque(true);
   cc_layer_->SetIsDrawable(type_ != LAYER_NOT_DRAWN);
   cc_layer_->AddLayerAnimationEventObserver(this);
@@ -922,13 +958,40 @@ void Layer::RecomputeDrawsContentAndUVRect() {
     texture_layer_->SetUV(uv_top_left, uv_bottom_right);
   } else if (delegated_renderer_layer_.get()) {
     size.SetToMin(frame_size_in_dip_);
-    delegated_renderer_layer_->SetDisplaySize(frame_size_in_dip_);
   }
   cc_layer_->SetBounds(size);
 }
 
 void Layer::RecomputePosition() {
-  cc_layer_->SetPosition(gfx::PointF(bounds_.x(), bounds_.y()));
+  cc_layer_->SetPosition(bounds_.origin() + subpixel_position_offset_);
+}
+
+void Layer::AddAnimatorsInTreeToCollection(
+    LayerAnimatorCollection* collection) {
+  DCHECK(collection);
+  if (IsAnimating())
+    animator_->AddToCollection(collection);
+  std::for_each(
+      children_.begin(),
+      children_.end(),
+      std::bind2nd(std::mem_fun(&Layer::AddAnimatorsInTreeToCollection),
+                   collection));
+}
+
+void Layer::RemoveAnimatorsInTreeFromCollection(
+    LayerAnimatorCollection* collection) {
+  DCHECK(collection);
+  if (IsAnimating())
+    animator_->RemoveFromCollection(collection);
+  std::for_each(
+      children_.begin(),
+      children_.end(),
+      std::bind2nd(std::mem_fun(&Layer::RemoveAnimatorsInTreeFromCollection),
+                   collection));
+}
+
+bool Layer::IsAnimating() const {
+  return animator_ && animator_->is_animating();
 }
 
 }  // namespace ui

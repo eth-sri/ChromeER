@@ -5,6 +5,7 @@
 #ifndef SYNC_API_ATTACHMENTS_ATTACHMENT_ID_H_
 #define SYNC_API_ATTACHMENTS_ATTACHMENT_ID_H_
 
+#include <set>
 #include <string>
 #include <vector>
 
@@ -45,7 +46,7 @@ class SYNC_EXPORT AttachmentId {
  private:
   // Necessary since we forward-declare sync_pb::AttachmentIdProto; see comments
   // in immutable.h.
-  struct ImmutableAttachmentIdProtoTraits {
+  struct SYNC_EXPORT ImmutableAttachmentIdProtoTraits {
     typedef sync_pb::AttachmentIdProto* Wrapper;
     static void InitializeWrapper(Wrapper* wrapper);
     static void DestroyWrapper(Wrapper* wrapper);
@@ -65,6 +66,7 @@ class SYNC_EXPORT AttachmentId {
 };
 
 typedef std::vector<AttachmentId> AttachmentIdList;
+typedef std::set<AttachmentId> AttachmentIdSet;
 
 }  // namespace syncer
 

@@ -19,7 +19,9 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
+#include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/pref_names.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/plugin_service.h"
@@ -56,13 +58,17 @@
 #include "grit/chromium_strings.h"
 #endif
 
+using content::BrowserThread;
+
 namespace extensions {
 
 namespace {
 
 static bool enable_background_extensions_during_testing = false;
 
-std::string LookupWebstoreName() {
+int LookupWebstoreNameStringId() {
+  // TODO(sashab): Remove code; this experiment isn't used anymore. See
+  // crbug.com/388143.
   const char kWebStoreNameFieldTrialName[] = "WebStoreName";
   const char kStoreControl[] = "StoreControl";
   const char kWebStore[] = "WebStore";
@@ -83,7 +89,7 @@ std::string LookupWebstoreName() {
       base::FieldTrialList::FindFullName(kWebStoreNameFieldTrialName);
   NameMap::iterator it = names.find(field_trial_name);
   int string_id = it == names.end() ? names[kStoreControl] : it->second;
-  return l10n_util::GetStringUTF8(string_id);
+  return string_id;
 }
 
 std::string GenerateId(const base::DictionaryValue* manifest,
@@ -95,6 +101,19 @@ std::string GenerateId(const base::DictionaryValue* manifest,
   std::string id = id_util::GenerateId(id_input);
   return id;
 }
+
+#if defined(OS_CHROMEOS)
+scoped_ptr<base::DictionaryValue>
+LoadManifestOnFileThread(
+    const base::FilePath& chromevox_path, const char* manifest_filename) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::FILE);
+  std::string error;
+  scoped_ptr<base::DictionaryValue> manifest(
+      file_util::LoadManifest(chromevox_path, manifest_filename, &error));
+  CHECK(manifest) << error;
+  return manifest.Pass();
+}
+#endif  // defined(OS_CHROMEOS)
 
 }  // namespace
 
@@ -116,7 +135,8 @@ ComponentLoader::ComponentLoader(ExtensionServiceInterface* extension_service,
     : profile_prefs_(profile_prefs),
       local_state_(local_state),
       browser_context_(browser_context),
-      extension_service_(extension_service) {}
+      extension_service_(extension_service),
+      weak_factory_(this) {}
 
 ComponentLoader::~ComponentLoader() {
   ClearAllRegistered();
@@ -279,12 +299,17 @@ void ComponentLoader::AddFileManagerExtension() {
   if (command_line->HasSwitch(switches::kFileManagerExtensionPath)) {
     base::FilePath filemgr_extension_path(
         command_line->GetSwitchValuePath(switches::kFileManagerExtensionPath));
-    Add(IDR_FILEMANAGER_MANIFEST, filemgr_extension_path);
+    AddWithNameAndDescription(IDR_FILEMANAGER_MANIFEST,
+                              filemgr_extension_path,
+                              IDS_FILEMANAGER_APP_NAME,
+                              IDS_FILEMANAGER_APP_DESCRIPTION);
     return;
   }
 #endif  // NDEBUG
-  Add(IDR_FILEMANAGER_MANIFEST,
-      base::FilePath(FILE_PATH_LITERAL("file_manager")));
+  AddWithNameAndDescription(IDR_FILEMANAGER_MANIFEST,
+                            base::FilePath(FILE_PATH_LITERAL("file_manager")),
+                            IDS_FILEMANAGER_APP_NAME,
+                            IDS_FILEMANAGER_APP_DESCRIPTION);
 #endif  // defined(OS_CHROMEOS)
 }
 
@@ -328,16 +353,38 @@ void ComponentLoader::AddNetworkSpeechSynthesisExtension() {
 }
 
 #if defined(OS_CHROMEOS)
-std::string ComponentLoader::AddChromeVoxExtension() {
-  const CommandLine* command_line = CommandLine::ForCurrentProcess();
-  int idr = command_line->HasSwitch(chromeos::switches::kGuestSession) ?
-      IDR_CHROMEVOX_GUEST_MANIFEST : IDR_CHROMEVOX_MANIFEST;
+void ComponentLoader::AddChromeVoxExtension(
+    const base::Closure& done_cb) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  base::FilePath resources_path;
+  PathService::Get(chrome::DIR_RESOURCES, &resources_path);
+  base::FilePath chromevox_path =
+      resources_path.Append(extension_misc::kChromeVoxExtensionPath);
 
-  // TODO(dtseng): Guest mode manifest for ChromeVox Next pending work to
-  // generate manifests.
-  if (command_line->HasSwitch(chromeos::switches::kEnableChromeVoxNext))
-    idr = IDR_CHROMEVOX2_MANIFEST;
-  return Add(idr, base::FilePath(extension_misc::kChromeVoxExtensionPath));
+  const CommandLine* command_line = CommandLine::ForCurrentProcess();
+  const char* manifest_filename =
+      command_line->HasSwitch(chromeos::switches::kGuestSession) ?
+      extension_misc::kChromeVoxGuestManifestFilename :
+          extension_misc::kChromeVoxManifestFilename;
+  BrowserThread::PostTaskAndReplyWithResult(
+      BrowserThread::FILE,
+      FROM_HERE,
+      base::Bind(&LoadManifestOnFileThread, chromevox_path, manifest_filename),
+      base::Bind(&ComponentLoader::AddChromeVoxExtensionWithManifest,
+                 weak_factory_.GetWeakPtr(),
+                 chromevox_path,
+                 done_cb));
+}
+
+void ComponentLoader::AddChromeVoxExtensionWithManifest(
+    const base::FilePath& chromevox_path,
+    const base::Closure& done_cb,
+    scoped_ptr<base::DictionaryValue> manifest) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  std::string extension_id = Add(manifest.release(), chromevox_path);
+  CHECK_EQ(extension_misc::kChromeVoxExtensionId, extension_id);
+  if (!done_cb.is_null())
+    done_cb.Run();
 }
 
 std::string ComponentLoader::AddChromeOsSpeechSynthesisExtension() {
@@ -351,9 +398,11 @@ std::string ComponentLoader::AddChromeOsSpeechSynthesisExtension() {
 }
 #endif
 
-void ComponentLoader::AddWithName(int manifest_resource_id,
-                                  const base::FilePath& root_directory,
-                                  const std::string& name) {
+void ComponentLoader::AddWithNameAndDescription(
+    int manifest_resource_id,
+    const base::FilePath& root_directory,
+    int name_string_id,
+    int description_string_id) {
   std::string manifest_contents =
       ResourceBundle::GetSharedInstance().GetRawDataResource(
           manifest_resource_id).as_string();
@@ -363,17 +412,20 @@ void ComponentLoader::AddWithName(int manifest_resource_id,
   base::DictionaryValue* manifest = ParseManifest(manifest_contents);
 
   if (manifest) {
-    // Update manifest to use a proper name.
-    manifest->SetString(manifest_keys::kName, name);
+    manifest->SetString(manifest_keys::kName,
+                        l10n_util::GetStringUTF8(name_string_id));
+    manifest->SetString(manifest_keys::kDescription,
+                        l10n_util::GetStringUTF8(description_string_id));
     Add(manifest, root_directory);
   }
 }
 
 void ComponentLoader::AddChromeApp() {
 #if defined(ENABLE_APP_LIST)
-  AddWithName(IDR_CHROME_APP_MANIFEST,
-              base::FilePath(FILE_PATH_LITERAL("chrome_app")),
-              l10n_util::GetStringUTF8(IDS_SHORT_PRODUCT_NAME));
+  AddWithNameAndDescription(IDR_CHROME_APP_MANIFEST,
+                            base::FilePath(FILE_PATH_LITERAL("chrome_app")),
+                            IDS_SHORT_PRODUCT_NAME,
+                            IDS_CHROME_SHORTCUT_DESCRIPTION);
 #endif
 }
 
@@ -384,9 +436,10 @@ void ComponentLoader::AddKeyboardApp() {
 }
 
 void ComponentLoader::AddWebStoreApp() {
-  AddWithName(IDR_WEBSTORE_MANIFEST,
-              base::FilePath(FILE_PATH_LITERAL("web_store")),
-              LookupWebstoreName());
+  AddWithNameAndDescription(IDR_WEBSTORE_MANIFEST,
+                            base::FilePath(FILE_PATH_LITERAL("web_store")),
+                            LookupWebstoreNameStringId(),
+                            IDS_WEBSTORE_APP_DESCRIPTION);
 }
 
 // static
@@ -469,10 +522,11 @@ void ComponentLoader::AddDefaultComponentExtensionsWithBackgroundPages(
 #if defined(OS_CHROMEOS) && defined(GOOGLE_CHROME_BUILD)
   // Since this is a v2 app it has a background page.
   if (!command_line->HasSwitch(chromeos::switches::kDisableGeniusApp)) {
-    AddWithName(IDR_GENIUS_APP_MANIFEST,
-                base::FilePath(FILE_PATH_LITERAL(
-                    "/usr/share/chromeos-assets/genius_app")),
-                l10n_util::GetStringUTF8(IDS_GENIUS_APP_NAME));
+    AddWithNameAndDescription(IDR_GENIUS_APP_MANIFEST,
+                              base::FilePath(FILE_PATH_LITERAL(
+                                  "/usr/share/chromeos-assets/genius_app")),
+                              IDS_GENIUS_APP_NAME,
+                              IDS_GENIUS_APP_DESCRIPTION);
   }
 #endif
 
@@ -519,10 +573,8 @@ void ComponentLoader::AddDefaultComponentExtensionsWithBackgroundPages(
           base::FilePath(FILE_PATH_LITERAL("chromeos/wallpaper_manager")));
     }
 
-    if (!command_line->HasSwitch(chromeos::switches::kDisableFirstRunUI)) {
-      Add(IDR_FIRST_RUN_DIALOG_MANIFEST,
-          base::FilePath(FILE_PATH_LITERAL("chromeos/first_run/app")));
-    }
+    Add(IDR_FIRST_RUN_DIALOG_MANIFEST,
+        base::FilePath(FILE_PATH_LITERAL("chromeos/first_run/app")));
 
     Add(IDR_NETWORK_CONFIGURATION_MANIFEST,
         base::FilePath(FILE_PATH_LITERAL("chromeos/network_configuration")));
@@ -536,7 +588,7 @@ void ComponentLoader::AddDefaultComponentExtensionsWithBackgroundPages(
   // Load ChromeVox extension now if spoken feedback is enabled.
   if (chromeos::AccessibilityManager::Get() &&
       chromeos::AccessibilityManager::Get()->IsSpokenFeedbackEnabled()) {
-    AddChromeVoxExtension();
+    AddChromeVoxExtension(base::Closure());
   }
 #endif  // defined(OS_CHROMEOS)
 

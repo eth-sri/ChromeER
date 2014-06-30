@@ -102,7 +102,7 @@ void CastTransportHostFilter::OnDelete(int32 channel_id) {
 
 void CastTransportHostFilter::OnInitializeAudio(
     int32 channel_id,
-    const media::cast::transport::CastTransportAudioConfig& config) {
+    const media::cast::transport::CastTransportRtpConfig& config) {
   media::cast::transport::CastTransportSender* sender =
       id_map_.Lookup(channel_id);
   if (sender) {
@@ -115,7 +115,7 @@ void CastTransportHostFilter::OnInitializeAudio(
 
 void CastTransportHostFilter::OnInitializeVideo(
     int32 channel_id,
-    const media::cast::transport::CastTransportVideoConfig& config) {
+    const media::cast::transport::CastTransportRtpConfig& config) {
   media::cast::transport::CastTransportSender* sender =
       id_map_.Lookup(channel_id);
   if (sender) {
@@ -178,11 +178,14 @@ void CastTransportHostFilter::OnSendRtcpFromRtpSender(
 void CastTransportHostFilter::OnResendPackets(
     int32 channel_id,
     bool is_audio,
-    const media::cast::MissingFramesAndPacketsMap& missing_packets) {
+    const media::cast::MissingFramesAndPacketsMap& missing_packets,
+    bool cancel_rtx_if_not_in_list,
+    base::TimeDelta dedupe_window) {
   media::cast::transport::CastTransportSender* sender =
       id_map_.Lookup(channel_id);
   if (sender) {
-    sender->ResendPackets(is_audio, missing_packets);
+    sender->ResendPackets(
+        is_audio, missing_packets, cancel_rtx_if_not_in_list, dedupe_window);
   } else {
     DVLOG(1)
         << "CastTransportHostFilter::OnResendPackets on non-existing channel";

@@ -6,8 +6,10 @@
 
 #include <algorithm>
 
+#include "base/metrics/histogram.h"
 #include "base/stl_util.h"
 #include "base/task_runner_util.h"
+#include "base/timer/elapsed_timer.h"
 #include "content/public/browser/browser_thread.h"
 #include "crypto/secure_hash.h"
 #include "crypto/sha2.h"
@@ -19,6 +21,21 @@ namespace {
 
 ContentVerifyJob::TestDelegate* g_test_delegate = NULL;
 
+class ScopedElapsedTimer {
+ public:
+  ScopedElapsedTimer(base::TimeDelta* total) : total_(total) { DCHECK(total_); }
+
+  ~ScopedElapsedTimer() { *total_ += timer.Elapsed(); }
+
+ private:
+  // Some total amount of time we should add our elapsed time to at
+  // destruction.
+  base::TimeDelta* total_;
+
+  // A timer for how long this object has been alive.
+  base::ElapsedTimer timer;
+};
+
 }  // namespace
 
 ContentVerifyJob::ContentVerifyJob(ContentHashReader* hash_reader,
@@ -29,13 +46,16 @@ ContentVerifyJob::ContentVerifyJob(ContentHashReader* hash_reader,
       current_block_(0),
       current_hash_byte_count_(0),
       hash_reader_(hash_reader),
-      failure_callback_(failure_callback) {
+      failure_callback_(failure_callback),
+      failed_(false) {
   // It's ok for this object to be constructed on a different thread from where
   // it's used.
   thread_checker_.DetachFromThread();
 }
 
 ContentVerifyJob::~ContentVerifyJob() {
+  UMA_HISTOGRAM_COUNTS("ExtensionContentVerifyJob.TimeSpentUS",
+                       time_spent_.InMicroseconds());
 }
 
 void ContentVerifyJob::Start() {
@@ -48,7 +68,10 @@ void ContentVerifyJob::Start() {
 }
 
 void ContentVerifyJob::BytesRead(int count, const char* data) {
+  ScopedElapsedTimer timer(&time_spent_);
   DCHECK(thread_checker_.CalledOnValidThread());
+  if (failed_)
+    return;
   if (g_test_delegate) {
     FailureReason reason =
         g_test_delegate->BytesRead(hash_reader_->extension_id(), count, data);
@@ -75,6 +98,7 @@ void ContentVerifyJob::BytesRead(int count, const char* data) {
     int bytes_to_hash =
         std::min(hash_reader_->block_size() - current_hash_byte_count_,
                  count - bytes_added);
+    DCHECK(bytes_to_hash > 0);
     current_hash_->Update(data + bytes_added, bytes_to_hash);
     bytes_added += bytes_to_hash;
     current_hash_byte_count_ += bytes_to_hash;
@@ -82,13 +106,19 @@ void ContentVerifyJob::BytesRead(int count, const char* data) {
 
     // If we finished reading a block worth of data, finish computing the hash
     // for it and make sure the expected hash matches.
-    if (current_hash_byte_count_ == hash_reader_->block_size())
-      FinishBlock();
+    if (current_hash_byte_count_ == hash_reader_->block_size() &&
+        !FinishBlock()) {
+      DispatchFailureCallback(HASH_MISMATCH);
+      return;
+    }
   }
 }
 
 void ContentVerifyJob::DoneReading() {
+  ScopedElapsedTimer timer(&time_spent_);
   DCHECK(thread_checker_.CalledOnValidThread());
+  if (failed_)
+    return;
   if (g_test_delegate) {
     FailureReason reason =
         g_test_delegate->DoneReading(hash_reader_->extension_id());
@@ -98,31 +128,36 @@ void ContentVerifyJob::DoneReading() {
     }
   }
   done_reading_ = true;
-  if (hashes_ready_)
-    FinishBlock();
+  if (hashes_ready_ && !FinishBlock())
+    DispatchFailureCallback(HASH_MISMATCH);
 }
 
-void ContentVerifyJob::FinishBlock() {
+bool ContentVerifyJob::FinishBlock() {
   if (current_hash_byte_count_ <= 0)
-    return;
+    return true;
   std::string final(crypto::kSHA256Length, 0);
   current_hash_->Finish(string_as_array(&final), final.size());
 
   const std::string* expected_hash = NULL;
-  if (!hash_reader_->GetHashForBlock(current_block_, &expected_hash))
-    return DispatchFailureCallback(HASH_MISMATCH);
-
-  if (*expected_hash != final)
-    return DispatchFailureCallback(HASH_MISMATCH);
+  if (!hash_reader_->GetHashForBlock(current_block_, &expected_hash) ||
+      *expected_hash != final)
+    return false;
 
   current_hash_.reset();
   current_hash_byte_count_ = 0;
   current_block_++;
+  return true;
 }
 
 void ContentVerifyJob::OnHashesReady(bool success) {
-  if (!success && !g_test_delegate)
-    return DispatchFailureCallback(NO_HASHES);
+  if (!success && !g_test_delegate) {
+    if (hash_reader_->have_verified_contents() &&
+        hash_reader_->have_computed_hashes())
+      DispatchFailureCallback(NO_HASHES_FOR_FILE);
+    else
+      DispatchFailureCallback(MISSING_ALL_HASHES);
+    return;
+  }
 
   hashes_ready_ = true;
   if (!queue_.empty()) {
@@ -130,8 +165,11 @@ void ContentVerifyJob::OnHashesReady(bool success) {
     queue_.swap(tmp);
     BytesRead(tmp.size(), string_as_array(&tmp));
   }
-  if (done_reading_)
-    FinishBlock();
+  if (done_reading_) {
+    ScopedElapsedTimer timer(&time_spent_);
+    if (!FinishBlock())
+      DispatchFailureCallback(HASH_MISMATCH);
+  }
 }
 
 // static
@@ -140,7 +178,12 @@ void ContentVerifyJob::SetDelegateForTests(TestDelegate* delegate) {
 }
 
 void ContentVerifyJob::DispatchFailureCallback(FailureReason reason) {
+  DCHECK(!failed_);
+  failed_ = true;
   if (!failure_callback_.is_null()) {
+    VLOG(1) << "job failed for " << hash_reader_->extension_id() << " "
+            << hash_reader_->relative_path().MaybeAsASCII()
+            << " reason:" << reason;
     failure_callback_.Run(reason);
     failure_callback_.Reset();
   }

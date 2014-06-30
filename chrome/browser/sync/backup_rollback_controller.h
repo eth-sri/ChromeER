@@ -8,7 +8,7 @@
 #include "base/callback.h"
 #include "base/memory/weak_ptr.h"
 
-class ManagedUserSigninManagerWrapper;
+class SupervisedUserSigninManagerWrapper;
 
 namespace sync_driver {
 class SyncPrefs;
@@ -18,11 +18,12 @@ namespace browser_sync {
 
 // BackupRollbackController takes two closures for starting backup/rollback
 // process. It calls the closures according to user's signin status or
-// received rollback command.
+// received rollback command. Backup is not run when user signed in, even when
+// sync is not running.
 class BackupRollbackController {
  public:
   BackupRollbackController(sync_driver::SyncPrefs* sync_prefs,
-                           const ManagedUserSigninManagerWrapper* signin,
+                           const SupervisedUserSigninManagerWrapper* signin,
                            base::Closure start_backup,
                            base::Closure start_rollback);
   ~BackupRollbackController();
@@ -44,10 +45,10 @@ class BackupRollbackController {
 
   sync_driver::SyncPrefs* sync_prefs_;
 
-  // Use ManagedUserSigninManagerWrapper instead of SigninManagerBase because
-  // SigninManagerBase could return non-empty user name for managed user, which
-  // would cause backup to trumpet normal sync for managed user.
-  const ManagedUserSigninManagerWrapper* signin_;
+  // Use SupervisedUserSigninManagerWrapper instead of SigninManagerBase because
+  // SigninManagerBase could return non-empty user name for supervised user,
+  // which would cause backup to trumpet normal sync for supervised user.
+  const SupervisedUserSigninManagerWrapper* signin_;
 
   base::Closure start_backup_;
   base::Closure start_rollback_;

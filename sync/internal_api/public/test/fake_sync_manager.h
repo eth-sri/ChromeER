@@ -10,9 +10,8 @@
 #include "base/memory/ref_counted.h"
 #include "base/observer_list.h"
 #include "sync/internal_api/public/sync_manager.h"
-#include "sync/internal_api/public/test/null_sync_core_proxy.h"
+#include "sync/internal_api/public/test/null_sync_context_proxy.h"
 #include "sync/internal_api/public/test/test_user_share.h"
-#include "sync/notifier/invalidator_registrar.h"
 
 namespace base {
 class SequencedTaskRunner;
@@ -97,7 +96,6 @@ class FakeSyncManager : public SyncManager {
       scoped_ptr<UnrecoverableErrorHandler> unrecoverable_error_handler,
       ReportUnrecoverableErrorFunction report_unrecoverable_error_function,
       CancelationSignal* cancelation_signal) OVERRIDE;
-  virtual void ThrowUnrecoverableError() OVERRIDE;
   virtual ModelTypeSet InitialSyncEndedTypes() OVERRIDE;
   virtual ModelTypeSet GetTypesWithEmptyProgressMarkerToken(
       ModelTypeSet types) OVERRIDE;
@@ -120,7 +118,7 @@ class FakeSyncManager : public SyncManager {
   virtual void SaveChanges() OVERRIDE;
   virtual void ShutdownOnSyncThread() OVERRIDE;
   virtual UserShare* GetUserShare() OVERRIDE;
-  virtual syncer::SyncCoreProxy* GetSyncCoreProxy() OVERRIDE;
+  virtual syncer::SyncContextProxy* GetSyncContextProxy() OVERRIDE;
   virtual const std::string cache_guid() OVERRIDE;
   virtual bool ReceivedExperiment(Experiments* experiments) OVERRIDE;
   virtual bool HasUnsyncedItems() OVERRIDE;
@@ -158,9 +156,6 @@ class FakeSyncManager : public SyncManager {
   // The set of types that have been enabled.
   ModelTypeSet enabled_types_;
 
-  // Faked invalidator state.
-  InvalidatorRegistrar registrar_;
-
   // The types for which a refresh was most recently requested.
   ModelTypeSet last_refresh_request_types_;
 
@@ -171,7 +166,7 @@ class FakeSyncManager : public SyncManager {
 
   TestUserShare test_user_share_;
 
-  NullSyncCoreProxy null_sync_core_proxy_;
+  NullSyncContextProxy null_sync_context_proxy_;
 
   DISALLOW_COPY_AND_ASSIGN(FakeSyncManager);
 };

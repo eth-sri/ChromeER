@@ -14,25 +14,14 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "webkit/browser/appcache/appcache.h"
-#include "webkit/browser/appcache/appcache_disk_cache.h"
-#include "webkit/browser/appcache/appcache_group.h"
-#include "webkit/browser/appcache/appcache_response.h"
-#include "webkit/browser/appcache/appcache_storage.h"
-
-using appcache::AppCache;
-using appcache::AppCacheDiskCache;
-using appcache::AppCacheEntry;
-using appcache::AppCacheGroup;
-using appcache::AppCacheInfoCollection;
-using appcache::AppCacheResponseReader;
-using appcache::AppCacheResponseWriter;
-using appcache::AppCacheService;
-using appcache::AppCacheStorage;
-using appcache::kNoCacheId;
+#include "content/browser/appcache/appcache.h"
+#include "content/browser/appcache/appcache_disk_cache.h"
+#include "content/browser/appcache/appcache_group.h"
+#include "content/browser/appcache/appcache_response.h"
+#include "content/browser/appcache/appcache_storage.h"
 
 namespace content {
-FORWARD_DECLARE_TEST(AppCacheServiceTest, DeleteAppCachesForOrigin);
+FORWARD_DECLARE_TEST(AppCacheServiceImplTest, DeleteAppCachesForOrigin);
 FORWARD_DECLARE_TEST(MockAppCacheStorageTest, BasicFindMainResponse);
 FORWARD_DECLARE_TEST(MockAppCacheStorageTest,
                      BasicFindMainFallbackResponse);
@@ -48,7 +37,7 @@ FORWARD_DECLARE_TEST(MockAppCacheStorageTest, StoreExistingGroup);
 FORWARD_DECLARE_TEST(MockAppCacheStorageTest,
                      StoreExistingGroupExistingCache);
 class AppCacheRequestHandlerTest;
-class AppCacheServiceTest;
+class AppCacheServiceImplTest;
 class MockAppCacheStorageTest;
 
 // For use in unit tests.
@@ -57,7 +46,7 @@ class MockAppCacheStorageTest;
 // somewhat in parallel.
 class MockAppCacheStorage : public AppCacheStorage {
  public:
-  explicit MockAppCacheStorage(AppCacheService* service);
+  explicit MockAppCacheStorage(AppCacheServiceImpl* service);
   virtual ~MockAppCacheStorage();
 
   virtual void GetAllInfo(Delegate* delegate) OVERRIDE;
@@ -92,7 +81,7 @@ class MockAppCacheStorage : public AppCacheStorage {
 
  private:
   friend class AppCacheRequestHandlerTest;
-  friend class AppCacheServiceTest;
+  friend class AppCacheServiceImplTest;
   friend class AppCacheUpdateJobTest;
   friend class MockAppCacheStorageTest;
 
@@ -188,7 +177,7 @@ class MockAppCacheStorage : public AppCacheStorage {
     simulate_find_sub_resource_ = true;
     simulated_found_entry_ = entry;
     simulated_found_fallback_entry_ = fallback_entry;
-    simulated_found_cache_id_ = kNoCacheId;  // N/A to sub resource loads
+    simulated_found_cache_id_ = kAppCacheNoCacheId; // N/A to sub resource loads
     simulated_found_manifest_url_ = GURL();  // N/A to sub resource loads
     simulated_found_group_id_ = 0;  // N/A to sub resource loads
     simulated_found_network_namespace_ = network_namespace;
@@ -243,7 +232,7 @@ class MockAppCacheStorage : public AppCacheStorage {
                            StoreExistingGroup);
   FRIEND_TEST_ALL_PREFIXES(MockAppCacheStorageTest,
                            StoreExistingGroupExistingCache);
-  FRIEND_TEST_ALL_PREFIXES(AppCacheServiceTest,
+  FRIEND_TEST_ALL_PREFIXES(AppCacheServiceImplTest,
                            DeleteAppCachesForOrigin);
 
   DISALLOW_COPY_AND_ASSIGN(MockAppCacheStorage);

@@ -17,7 +17,8 @@ namespace chromeos {
 
 FakeUserManager::FakeUserManager()
     : supervised_user_manager_(new FakeSupervisedUserManager),
-      primary_user_(NULL) {}
+      primary_user_(NULL),
+      multi_profile_user_controller_(NULL) {}
 
 FakeUserManager::~FakeUserManager() {
   // Can't use STLDeleteElements because of the private destructor of User.
@@ -124,7 +125,7 @@ void FakeUserManager::SaveUserDisplayName(
 }
 
 MultiProfileUserController* FakeUserManager::GetMultiProfileUserController() {
-  return NULL;
+  return multi_profile_user_controller_;
 }
 
 SupervisedUserManager* FakeUserManager::GetSupervisedUserManager() {
@@ -153,6 +154,11 @@ bool FakeUserManager::IsKnownUser(const std::string& email) const {
 }
 
 const User* FakeUserManager::FindUser(const std::string& email) const {
+  const UserList& users = GetUsers();
+  for (UserList::const_iterator it = users.begin(); it != users.end(); ++it) {
+    if ((*it)->email() == email)
+      return *it;
+  }
   return NULL;
 }
 
@@ -257,10 +263,6 @@ bool FakeUserManager::UserSessionsRestored() const {
   return false;
 }
 
-bool FakeUserManager::HasBrowserRestarted() const {
-  return false;
-}
-
 bool FakeUserManager::IsUserNonCryptohomeDataEphemeral(
     const std::string& email) const {
   return false;
@@ -274,12 +276,6 @@ UserFlow* FakeUserManager::GetUserFlow(const std::string& email) const {
   return NULL;
 }
 
-bool FakeUserManager::GetAppModeChromeClientOAuthInfo(
-    std::string* chrome_client_id,
-    std::string* chrome_client_secret) {
-  return false;
-}
-
 bool FakeUserManager::AreLocallyManagedUsersAllowed() const {
   return true;
 }
@@ -287,13 +283,6 @@ bool FakeUserManager::AreLocallyManagedUsersAllowed() const {
 base::FilePath FakeUserManager::GetUserProfileDir(
     const std::string&email) const {
   return base::FilePath();
-}
-
-bool FakeUserManager::RespectLocalePreference(
-    Profile* profile,
-    const User* user,
-    scoped_ptr<locale_util::SwitchLanguageCallback> callback) const {
-  return false;
 }
 
 }  // namespace chromeos

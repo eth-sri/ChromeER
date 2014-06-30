@@ -6,7 +6,7 @@ import logging
 import os
 import unittest
 
-from telemetry import test
+from telemetry import benchmark
 from telemetry.core import util
 from telemetry.core.platform import mac_platform_backend
 from telemetry.core.platform import platform_backend
@@ -14,7 +14,7 @@ from telemetry.core.platform.power_monitor import powermetrics_power_monitor
 
 
 class PowerMetricsPowerMonitorTest(unittest.TestCase):
-  @test.Enabled('mac')
+  @benchmark.Enabled('mac')
   def testCanMonitorPowerUsage(self):
     backend = mac_platform_backend.MacPlatformBackend()
     power_monitor = powermetrics_power_monitor.PowerMetricsPowerMonitor(backend)
@@ -24,13 +24,13 @@ class PowerMetricsPowerMonitorTest(unittest.TestCase):
     self.assertEqual(power_monitor.CanMonitorPower(), mavericks_or_later,
         "Error checking powermetrics availability: '%s'" % '|'.join(os.uname()))
 
-  @test.Enabled('mac')
+  @benchmark.Enabled('mac')
   def testParseEmptyPowerMetricsOutput(self):
     # Important to handle zero length powermetrics outout - crbug.com/353250 .
     self.assertIsNone(powermetrics_power_monitor.PowerMetricsPowerMonitor.
         ParsePowerMetricsOutput(''))
 
-  @test.Enabled('mac')
+  @benchmark.Enabled('mac')
   def testParsePowerMetricsOutput(self):
     def getOutput(output_file):
       test_data_path = os.path.join(util.GetUnittestDataDir(), output_file)
@@ -48,7 +48,6 @@ class PowerMetricsPowerMonitorTest(unittest.TestCase):
     # Supported hardware reports power samples and energy consumption.
     result = getOutput('powermetrics_output.output')
 
-    self.assertTrue(len(result['power_samples_mw']) > 1)
     self.assertTrue(result['energy_consumption_mwh'] > 0)
 
     # Verify that all component entries exist in output.
@@ -59,5 +58,4 @@ class PowerMetricsPowerMonitorTest(unittest.TestCase):
 
     # Unsupported hardware doesn't.
     result = getOutput('powermetrics_output_unsupported_hardware.output')
-    self.assertNotIn('power_samples_mw', result)
     self.assertNotIn('energy_consumption_mwh', result)

@@ -5,16 +5,18 @@
 #include "chrome/browser/sync/test_profile_sync_service.h"
 
 #include "chrome/browser/chrome_notification_types.h"
+#include "chrome/browser/invalidation/profile_invalidation_provider_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/sync/glue/sync_backend_host.h"
 #include "chrome/browser/sync/glue/sync_backend_host_core.h"
-#include "chrome/browser/sync/managed_user_signin_manager_wrapper.h"
 #include "chrome/browser/sync/profile_sync_components_factory.h"
 #include "chrome/browser/sync/profile_sync_components_factory_mock.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
+#include "chrome/browser/sync/supervised_user_signin_manager_wrapper.h"
 #include "chrome/browser/sync/test/test_http_bridge_factory.h"
+#include "components/invalidation/profile_invalidation_provider.h"
 #include "components/signin/core/browser/signin_manager.h"
 #include "sync/internal_api/public/test/sync_manager_factory_for_profile_sync_test.h"
 #include "sync/internal_api/public/test/test_internal_components_factory.h"
@@ -30,11 +32,12 @@ namespace browser_sync {
 
 SyncBackendHostForProfileSyncTest::SyncBackendHostForProfileSyncTest(
     Profile* profile,
+    invalidation::InvalidationService* invalidator,
     const base::WeakPtr<sync_driver::SyncPrefs>& sync_prefs,
     base::Closure callback)
     : browser_sync::SyncBackendHostImpl(
-        profile->GetDebugName(), profile, sync_prefs,
-        base::FilePath(FILE_PATH_LITERAL("test"))),
+        profile->GetDebugName(), profile, invalidator,
+        sync_prefs, base::FilePath(FILE_PATH_LITERAL("test"))),
       callback_(callback) {}
 
 SyncBackendHostForProfileSyncTest::~SyncBackendHostForProfileSyncTest() {}
@@ -103,11 +106,13 @@ TestProfileSyncService::TestProfileSyncService(
     SigninManagerBase* signin,
     ProfileOAuth2TokenService* oauth2_token_service,
     browser_sync::ProfileSyncServiceStartBehavior behavior)
-    : ProfileSyncService(factory,
-                         profile,
-                         new ManagedUserSigninManagerWrapper(profile, signin),
-                         oauth2_token_service,
-                         behavior) {
+    : ProfileSyncService(
+          factory,
+          profile,
+          make_scoped_ptr(new SupervisedUserSigninManagerWrapper(profile,
+                                                                 signin)),
+          oauth2_token_service,
+          behavior) {
   SetSyncSetupCompleted();
 }
 
@@ -142,10 +147,12 @@ TestProfileSyncService* TestProfileSyncService::BuildAutoStartAsyncInit(
   // TODO(tim): Convert to a fake instead of mock.
   EXPECT_CALL(*components,
               CreateSyncBackendHost(testing::_,testing::_, testing::_,
-                                    testing::_)).
+                                    testing::_, testing::_)).
       WillOnce(testing::Return(
           new browser_sync::SyncBackendHostForProfileSyncTest(
               profile,
+              invalidation::ProfileInvalidationProviderFactory::GetForProfile(
+                  profile)->GetInvalidationService(),
               sync_service->sync_prefs_.AsWeakPtr(),
               callback)));
   return sync_service;

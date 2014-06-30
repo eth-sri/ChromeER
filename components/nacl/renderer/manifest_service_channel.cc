@@ -22,10 +22,13 @@ ManifestServiceChannel::ManifestServiceChannel(
     base::WaitableEvent* waitable_event)
     : connected_callback_(connected_callback),
       delegate_(delegate.Pass()),
-      channel_(new IPC::SyncChannel(
-          handle, IPC::Channel::MODE_CLIENT, this,
+      channel_(IPC::SyncChannel::Create(
+          handle,
+          IPC::Channel::MODE_CLIENT,
+          this,
           content::RenderThread::Get()->GetIOMessageLoopProxy(),
-          true, waitable_event)),
+          true,
+          waitable_event)),
       weak_ptr_factory_(this) {
 }
 
@@ -82,13 +85,13 @@ void ManifestServiceChannel::OnOpenResource(
 
 #if !defined(OS_WIN)
 void ManifestServiceChannel::DidOpenResource(
-    IPC::Message* reply, const base::PlatformFile& platform_file) {
+    IPC::Message* reply, base::File file) {
   // Here, PlatformFileForTransit is alias of base::FileDescriptor.
   PpapiHostMsg_OpenResource::WriteReplyParams(
       reply,
       ppapi::proxy::SerializedHandle(
           ppapi::proxy::SerializedHandle::FILE,
-          base::FileDescriptor(platform_file, true)));
+          base::FileDescriptor(file.Pass())));
   Send(reply);
 }
 #endif

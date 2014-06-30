@@ -7,7 +7,6 @@
 #include "base/command_line.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/content_settings/tab_specific_content_settings.h"
-#include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/favicon/favicon_tab_helper.h"
 #include "chrome/browser/history/history_tab_helper.h"
 #include "chrome/browser/infobars/infobar_service.h"
@@ -15,10 +14,9 @@
 #include "chrome/browser/password_manager/chrome_password_manager_client.h"
 #include "chrome/browser/prerender/prerender_tab_helper.h"
 #include "chrome/browser/sessions/session_tab_helper.h"
-#include "chrome/browser/ssl/ssl_tab_helper.h"
 #include "chrome/browser/tab_contents/navigation_metrics_recorder.h"
-#include "chrome/browser/translate/translate_tab_helper.h"
-#include "chrome/browser/ui/autofill/tab_autofill_manager_delegate.h"
+#include "chrome/browser/translate/chrome_translate_client.h"
+#include "chrome/browser/ui/autofill/chrome_autofill_client.h"
 #include "chrome/browser/ui/blocked_content/popup_blocker_tab_helper.h"
 #include "chrome/browser/ui/bookmarks/bookmark_tab_helper.h"
 #include "chrome/browser/ui/find_bar/find_tab_helper.h"
@@ -29,6 +27,7 @@
 #include "chrome/common/chrome_switches.h"
 #include "components/autofill/content/browser/content_autofill_driver.h"
 #include "components/autofill/core/browser/autofill_manager.h"
+#include "components/dom_distiller/content/web_contents_main_frame_observer.h"
 #include "components/password_manager/core/browser/password_manager.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/view_type_utils.h"
@@ -41,7 +40,6 @@
 #include "chrome/browser/extensions/api/web_navigation/web_navigation_api.h"
 #include "chrome/browser/extensions/chrome_extension_web_contents_observer.h"
 #include "chrome/browser/net/predictor_tab_helper.h"
-#include "chrome/browser/network_time/navigation_time_helper.h"
 #include "chrome/browser/plugins/plugin_observer.h"
 #include "chrome/browser/safe_browsing/safe_browsing_tab_observer.h"
 #include "chrome/browser/thumbnails/thumbnail_tab_helper.h"
@@ -64,8 +62,12 @@
 #include "chrome/browser/captive_portal/captive_portal_tab_helper.h"
 #endif
 
+#if defined(ENABLE_EXTENSIONS)
+#include "chrome/browser/extensions/tab_helper.h"
+#endif
+
 #if defined(ENABLE_MANAGED_USERS)
-#include "chrome/browser/managed_mode/managed_mode_navigation_observer.h"
+#include "chrome/browser/supervised_user/supervised_user_navigation_observer.h"
 #endif
 
 #if defined(ENABLE_PRINTING)
@@ -113,19 +115,18 @@ void TabHelpers::AttachTabHelpers(WebContents* web_contents) {
 
   // --- Common tab helpers ---
 
-  autofill::TabAutofillManagerDelegate::CreateForWebContents(web_contents);
+  autofill::ChromeAutofillClient::CreateForWebContents(web_contents);
   autofill::ContentAutofillDriver::CreateForWebContentsAndDelegate(
       web_contents,
-      autofill::TabAutofillManagerDelegate::FromWebContents(web_contents),
+      autofill::ChromeAutofillClient::FromWebContents(web_contents),
       g_browser_process->GetApplicationLocale(),
       autofill::AutofillManager::ENABLE_AUTOFILL_DOWNLOAD_MANAGER);
   BookmarkTabHelper::CreateForWebContents(web_contents);
   chrome_browser_net::NetErrorTabHelper::CreateForWebContents(web_contents);
-  ChromePasswordManagerClient::CreateForWebContentsWithAutofillManagerDelegate(
+  ChromePasswordManagerClient::CreateForWebContentsWithAutofillClient(
       web_contents,
-      autofill::TabAutofillManagerDelegate::FromWebContents(web_contents));
+      autofill::ChromeAutofillClient::FromWebContents(web_contents));
   CoreTabHelper::CreateForWebContents(web_contents);
-  extensions::TabHelper::CreateForWebContents(web_contents);
   FaviconTabHelper::CreateForWebContents(web_contents);
   FindTabHelper::CreateForWebContents(web_contents);
   HistoryTabHelper::CreateForWebContents(web_contents);
@@ -138,9 +139,8 @@ void TabHelpers::AttachTabHelpers(WebContents* web_contents) {
       web_contents,
       ChromePasswordManagerClient::GetManagerFromWebContents(web_contents));
   SearchTabHelper::CreateForWebContents(web_contents);
-  SSLTabHelper::CreateForWebContents(web_contents);
   TabSpecificContentSettings::CreateForWebContents(web_contents);
-  TranslateTabHelper::CreateForWebContents(web_contents);
+  ChromeTranslateClient::CreateForWebContents(web_contents);
 
   // --- Platform-specific tab helpers ---
 
@@ -155,7 +155,6 @@ void TabHelpers::AttachTabHelpers(WebContents* web_contents) {
   extensions::WebNavigationTabObserver::CreateForWebContents(web_contents);
   HungPluginTabHelper::CreateForWebContents(web_contents);
   ManagePasswordsUIController::CreateForWebContents(web_contents);
-  NavigationTimeHelper::CreateForWebContents(web_contents);
   PDFTabHelper::CreateForWebContents(web_contents);
   PermissionBubbleManager::CreateForWebContents(web_contents);
   PluginObserver::CreateForWebContents(web_contents);
@@ -178,8 +177,12 @@ void TabHelpers::AttachTabHelpers(WebContents* web_contents) {
   CaptivePortalTabHelper::CreateForWebContents(web_contents);
 #endif
 
+#if defined(ENABLE_EXTENSIONS)
+  extensions::TabHelper::CreateForWebContents(web_contents);
+#endif
+
 #if defined(ENABLE_MANAGED_USERS)
-  ManagedModeNavigationObserver::CreateForWebContents(web_contents);
+  SupervisedUserNavigationObserver::CreateForWebContents(web_contents);
 #endif
 
 #if defined(ENABLE_PRINTING) && !defined(OS_ANDROID)
@@ -190,6 +193,12 @@ void TabHelpers::AttachTabHelpers(WebContents* web_contents) {
   printing::PrintViewManagerBasic::CreateForWebContents(web_contents);
 #endif  // defined(ENABLE_FULL_PRINTING)
 #endif  // defined(ENABLE_PRINTING) && !defined(OS_ANDROID)
+
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableDomDistiller)) {
+    dom_distiller::WebContentsMainFrameObserver::CreateForWebContents(
+        web_contents);
+  }
 
 #if defined(ENABLE_ONE_CLICK_SIGNIN)
   // If this is not an incognito window, setup to handle one-click login.

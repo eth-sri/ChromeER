@@ -25,6 +25,7 @@ class CONTENT_EXPORT ServiceWorkerControlleeRequestHandler
   ServiceWorkerControlleeRequestHandler(
       base::WeakPtr<ServiceWorkerContextCore> context,
       base::WeakPtr<ServiceWorkerProviderHost> provider_host,
+      base::WeakPtr<webkit_blob::BlobStorageContext> blob_storage_context,
       ResourceType::Type resource_type);
   virtual ~ServiceWorkerControlleeRequestHandler();
 
@@ -45,6 +46,7 @@ class CONTENT_EXPORT ServiceWorkerControlleeRequestHandler
   // For sub resource case.
   void PrepareForSubResource();
 
+  bool is_main_resource_load_;
   scoped_refptr<ServiceWorkerURLRequestJob> job_;
   base::WeakPtrFactory<ServiceWorkerControlleeRequestHandler> weak_factory_;
 

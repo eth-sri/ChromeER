@@ -13,10 +13,10 @@
 #include "base/prefs/pref_service.h"
 #include "base/strings/string16.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/test/base/testing_pref_service_syncable.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/search_engines/template_url.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 class DefaultSearchPrefMigrationTest : public testing::Test {
@@ -62,7 +62,7 @@ scoped_ptr<TemplateURL> DefaultSearchPrefMigrationTest::CreateKeyword(
   data.short_name = base::ASCIIToUTF16(short_name);
   data.SetKeyword(base::ASCIIToUTF16(keyword));
   data.SetURL(url);
-  scoped_ptr<TemplateURL> t_url(new TemplateURL(profile(), data));
+  scoped_ptr<TemplateURL> t_url(new TemplateURL(data));
   return t_url.Pass();
 }
 
@@ -150,7 +150,7 @@ TEST_F(DefaultSearchPrefMigrationTest,
       *default_search_manager()->GetDefaultSearchEngine(&source));
   EXPECT_EQ(DefaultSearchManager::FROM_FALLBACK, source);
 
-  TemplateURL prepopulated_turl(profile(), prepopulated_default);
+  TemplateURL prepopulated_turl(prepopulated_default);
 
   // Store a value in the legacy location.
   TemplateURLService::SaveDefaultSearchProviderToPrefs(&prepopulated_turl,

@@ -1455,12 +1455,6 @@ name=bug_145244
 *!WebCore::StyleSheetContents::requestImportedStyleSheets
 
 UNINITIALIZED READ
-name=bug_158510
-*!WebCore::RenderTable::layout
-...
-*!WebCore::RenderBlock::layout
-
-UNINITIALIZED READ
 name=bug_159005
 *!WebCore::RenderMarquee::updateMarqueeStyle
 *!WebCore::RenderLayer::styleChanged
@@ -2063,14 +2057,6 @@ blink_web.dll!WebCore::FrameView::updateLayoutAndStyleForPainting
 blink_web.dll!WebCore::PageAnimator::updateLayoutAndStyleForPainting
 
 UNINITIALIZED READ
-name=bug_364675
-blink_web.dll!WebCore::AutoTableLayout::layout
-blink_web.dll!WebCore::RenderTable::layout
-blink_web.dll!...
-blink_web.dll!WebCore::RenderBlockFlow::layoutBlockFlow
-blink_web.dll!WebCore::RenderBlockFlow::layoutBlock
-
-UNINITIALIZED READ
 name=bug_365101
 *!device::BluetoothAdapterWin::AdapterStateChanged
 
@@ -2145,7 +2131,7 @@ name=bug_371991
 system call NtWriteFile parameter #5
 KERNELBASE.dll!WriteFile
 KERNEL32.dll!WriteFile*
-ipc.dll!IPC::Channel::ChannelImpl::ProcessOutgoingMessages
+*!IPC::Channel*::ProcessOutgoingMessages
 
 UNINITIALIZED READ
 name=bug_372254
@@ -2163,14 +2149,47 @@ name=bug_374105a
 gpu.dll!gpu::gles2::ShaderTranslatorCache::GetTranslator
 gpu.dll!gpu::gles2::GLES2DecoderImpl::InitializeShaderTranslator
 gpu.dll!gpu::gles2::GLES2DecoderImpl::Initialize
-gpu.dll!gpu::InProcessCommandBuffer::InitializeOnGpuThread
 
 UNINITIALIZED READ
 name=bug_374105b
 ...
-gpu.dll!gpu::gles2::ShaderTranslator::GetStringForOptionsThatWouldEffectCompilation
+gpu.dll!gpu::gles2::ShaderTranslator::GetStringForOptionsThatWouldAffectCompilation
 *!gpu::gles2::ShaderTranslatorTest_OptionsString_Test::TestBody
 
 UNINITIALIZED READ
-name=bug_313788
-*!ToolbarOriginChipView::Update
+name=bug_374410
+*!ui::NativeThemeWin::PaintScrollbarTrack
+*!ui::NativeThemeWin::PaintDirect
+
+UNINITIALIZED READ
+name=bug_377728
+...
+*!Hunspell::suggest
+*!HunspellEngine::FillSuggestionList
+*!SpellcheckLanguage::SpellCheckWord
+*!SpellCheck::SpellCheckWord
+
+UNINITIALIZED READ
+name=bug_387373
+*!blink::WebEmbeddedWorkerImpl::startWorkerContext
+*!content::EmbeddedWorkerDispatcher::OnStartWorker
+*!EmbeddedWorkerMsg_StartWorker::Dispatch<>
+
+UNINITIALIZED READ
+name=bug_389263
+*!BrowserView::ShowAvatarBubbleFromAvatarButton
+*!OpaqueBrowserFrameView::ButtonPressed
+*!views::Button::NotifyClick
+*!ProfileChooserViewBrowserTest::OpenProfileChooserView
+
+UNADDRESSABLE ACCESS
+name=bug_389132
+content.dll!crypto_kernel_do_load_cipher_type
+content.dll!crypto_kernel_load_cipher_type
+content.dll!crypto_kernel_init
+content.dll!cricket::SrtpSession::SetKey
+content.dll!cricket::SrtpSession::SetSend
+content.dll!cricket::SrtpFilter::SetRtpParams
+content.dll!cricket::BaseChannel::SetupDtlsSrtp
+content.dll!cricket::BaseChannel::ChannelWritable_w
+content.dll!cricket::BaseChannel::OnWritableState

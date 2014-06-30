@@ -18,6 +18,15 @@ import sys
 import textwrap
 import zipfile
 
+CHROMIUM_SRC = os.path.join(
+    os.path.dirname(__file__), os.pardir, os.pardir, os.pardir)
+BUILD_ANDROID_GYP = os.path.join(
+    CHROMIUM_SRC, 'build', 'android', 'gyp')
+
+sys.path.append(BUILD_ANDROID_GYP)
+
+from util import build_utils
+
 
 class ParseError(Exception):
   """Exception thrown when we can't parse the input file."""
@@ -162,6 +171,19 @@ class JniParams(object):
     JniParams._package = '/'.join(fully_qualified_class.split('/')[:-1])
 
   @staticmethod
+  def AddAdditionalImport(class_name):
+    assert class_name.endswith('.class')
+    raw_class_name = class_name[:-len('.class')]
+    if '.' in raw_class_name:
+      raise SyntaxError('%s cannot be used in @JNIAdditionalImport. '
+                        'Only import unqualified outer classes.' % class_name)
+    new_import = 'L%s/%s' % (JniParams._package, raw_class_name)
+    if new_import in JniParams._imports:
+      raise SyntaxError('Do not use JNIAdditionalImport on an already '
+                        'imported class: %s' % (new_import.replace('/', '.')))
+    JniParams._imports += [new_import]
+
+  @staticmethod
   def ExtractImportsAndInnerClasses(contents):
     if not JniParams._package:
       raise RuntimeError('SetFullyQualifiedClass must be called before '
@@ -179,17 +201,10 @@ class JniParams(object):
                                      inner]
 
     re_additional_imports = re.compile(
-        r'@JNIAdditionalImport\((?P<class_name>\w+?)\.class\)')
+        r'@JNIAdditionalImport\(\s*{?(?P<class_names>.*?)}?\s*\)')
     for match in re.finditer(re_additional_imports, contents):
-      class_name = match.group('class_name')
-      if '.' in class_name:
-        raise SyntaxError('*.class cannot be used in @JNIAdditionalImport. '
-                          'Only import unqualified outer classes.' % class_name)
-      new_import = 'L%s/%s' % (JniParams._package, class_name)
-      if new_import in JniParams._imports:
-        raise SyntaxError('Do not use JNIAdditionalImport on an already '
-                          'imported class: %s' % (new_import.replace('/', '.')))
-      JniParams._imports += [new_import]
+      for class_name in match.group('class_names').split(','):
+        JniParams.AddAdditionalImport(class_name.strip())
 
   @staticmethod
   def ParseJavaPSignature(signature_line):
@@ -331,8 +346,11 @@ class JniParams(object):
   def RemapClassName(class_name):
     """Remaps class names using the jarjar mapping table."""
     for old, new in JniParams._remappings:
-      if old in class_name:
+      if old.endswith('**') and old[:-2] in class_name:
+        return class_name.replace(old[:-2], new, 1)
+      if '*' not in old and class_name.endswith(old):
         return class_name.replace(old, new, 1)
+
     return class_name
 
   @staticmethod
@@ -340,17 +358,26 @@ class JniParams(object):
     """Parse jarjar mappings from a string."""
     JniParams._remappings = []
     for line in mappings.splitlines():
-      keyword, src, dest = line.split()
-      if keyword != 'rule':
+      rule = line.split()
+      if rule[0] != 'rule':
         continue
-      assert src.endswith('.**')
-      src = src[:-2].replace('.', '/')
+      _, src, dest = rule
+      src = src.replace('.', '/')
       dest = dest.replace('.', '/')
-      if dest.endswith('@0'):
-        JniParams._remappings.append((src, dest[:-2] + src))
+      if src.endswith('**'):
+        src_real_name = src[:-2]
       else:
-        assert dest.endswith('@1')
+        assert not '*' in src
+        src_real_name = src
+
+      if dest.endswith('@0'):
+        JniParams._remappings.append((src, dest[:-2] + src_real_name))
+      elif dest.endswith('@1'):
+        assert '**' in src
         JniParams._remappings.append((src, dest[:-2]))
+      else:
+        assert not '@' in dest
+        JniParams._remappings.append((src, dest))
 
 
 def ExtractJNINamespace(contents):
@@ -402,6 +429,7 @@ def GetStaticCastForReturnType(return_type):
                'short[]': 'jshortArray',
                'int[]': 'jintArray',
                'long[]': 'jlongArray',
+               'float[]': 'jfloatArray',
                'double[]': 'jdoubleArray' }
   ret = type_map.get(return_type, None)
   if ret:
@@ -1332,7 +1360,9 @@ declarations and print the header file to stdout (or a file).
 See SampleForTests.java for more details.
   """
   option_parser = optparse.OptionParser(usage=usage)
-  option_parser.add_option('-j', dest='jar_file',
+  build_utils.AddDepfileOption(option_parser)
+
+  option_parser.add_option('-j', '--jar_file', dest='jar_file',
                            help='Extract the list of input files from'
                            ' a specified jar file.'
                            ' Uses javap to extract the methods from a'
@@ -1405,6 +1435,11 @@ See SampleForTests.java for more details.
     with open(options.jarjar) as f:
       JniParams.SetJarJarMappings(f.read())
   GenerateJNIHeader(input_file, output_file, options)
+
+  if options.depfile:
+    build_utils.WriteDepfile(
+        options.depfile,
+        build_utils.GetPythonDependencies())
 
 
 if __name__ == '__main__':

@@ -6,11 +6,11 @@
 
 #include "base/command_line.h"
 #include "components/invalidation/invalidation_service_util.h"
+#include "components/invalidation/p2p_invalidator.h"
 #include "google_apis/gaia/identity_provider.h"
 #include "jingle/notifier/base/notifier_options.h"
 #include "jingle/notifier/listener/push_client.h"
 #include "net/url_request/url_request_context_getter.h"
-#include "sync/notifier/p2p_invalidator.h"
 
 namespace net {
 class URLRequestContextGetter;
@@ -39,10 +39,6 @@ P2PInvalidationService::~P2PInvalidationService() {
 void P2PInvalidationService::UpdateCredentials(const std::string& username,
                                                const std::string& password) {
   invalidator_->UpdateCredentials(username, password);
-}
-
-void P2PInvalidationService::Shutdown() {
-  invalidator_.reset();
 }
 
 void P2PInvalidationService::RegisterInvalidationHandler(

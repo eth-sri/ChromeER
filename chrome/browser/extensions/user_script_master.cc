@@ -14,20 +14,22 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_util.h"
-#include "chrome/browser/extensions/image_loader.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/api/i18n/default_locale_handler.h"
 #include "chrome/common/extensions/manifest_handlers/content_scripts_handler.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_process_host.h"
+#include "extensions/browser/component_extension_resource_manager.h"
 #include "extensions/browser/content_verifier.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/browser/extensions_browser_client.h"
 #include "extensions/common/file_util.h"
 #include "extensions/common/message_bundle.h"
 #include "ui/base/resource/resource_bundle.h"
 
 using content::BrowserThread;
+using extensions::ExtensionsBrowserClient;
 
 namespace extensions {
 
@@ -201,7 +203,8 @@ static bool LoadScriptContent(const std::string& extension_id,
       ExtensionResource::SYMLINKS_MUST_RESOLVE_WITHIN_ROOT);
   if (path.empty()) {
     int resource_id;
-    if (extensions::ImageLoader::IsComponentExtensionResource(
+    if (ExtensionsBrowserClient::Get()->GetComponentExtensionResourceManager()->
+        IsComponentExtensionResource(
             script_file->extension_root(), script_file->relative_path(),
             &resource_id)) {
       const ResourceBundle& rb = ResourceBundle::GetSharedInstance();
@@ -389,8 +392,11 @@ void UserScriptMaster::NewScriptsAvailable(
     for (content::RenderProcessHost::iterator i(
             content::RenderProcessHost::AllHostsIterator());
          !i.IsAtEnd(); i.Advance()) {
-      SendUpdate(i.GetCurrentValue(), shared_memory_.get());
+      SendUpdate(i.GetCurrentValue(),
+                 shared_memory_.get(),
+                 changed_extensions_);
     }
+    changed_extensions_.clear();
 
     content::NotificationService::current()->Notify(
         chrome::NOTIFICATION_USER_SCRIPTS_UPDATED,
@@ -421,6 +427,7 @@ void UserScriptMaster::OnExtensionLoaded(
     user_scripts_.back().set_incognito_enabled(incognito_enabled);
   }
   if (extensions_service_ready_) {
+    changed_extensions_.insert(extension->id());
     if (script_reloader_.get()) {
       pending_load_ = true;
     } else {
@@ -443,6 +450,7 @@ void UserScriptMaster::OnExtensionUnloaded(
       new_user_scripts.push_back(*iter);
   }
   user_scripts_ = new_user_scripts;
+  changed_extensions_.insert(extension->id());
   if (script_reloader_.get()) {
     pending_load_ = true;
   } else {
@@ -466,8 +474,11 @@ void UserScriptMaster::Observe(int type,
           process->GetBrowserContext());
       if (!profile_->IsSameProfile(profile))
         return;
-      if (ScriptsReady())
-        SendUpdate(process, GetSharedMemory());
+      if (ScriptsReady()) {
+        SendUpdate(process,
+                   GetSharedMemory(),
+                   std::set<std::string>());  // Include all extensions.
+      }
       break;
     }
     default:
@@ -490,10 +501,12 @@ void UserScriptMaster::StartLoad() {
   script_reloader_->StartLoad(user_scripts_, extensions_info_);
 }
 
-void UserScriptMaster::SendUpdate(content::RenderProcessHost* process,
-                                  base::SharedMemory* shared_memory) {
+void UserScriptMaster::SendUpdate(
+    content::RenderProcessHost* process,
+    base::SharedMemory* shared_memory,
+    const std::set<std::string>& changed_extensions) {
   // Don't allow injection of content scripts into <webview>.
-  if (process->IsGuest())
+  if (process->IsIsolatedGuest())
     return;
 
   Profile* profile = Profile::FromBrowserContext(process->GetBrowserContext());
@@ -511,8 +524,10 @@ void UserScriptMaster::SendUpdate(content::RenderProcessHost* process,
   if (!shared_memory->ShareToProcess(handle, &handle_for_process))
     return;  // This can legitimately fail if the renderer asserts at startup.
 
-  if (base::SharedMemory::IsHandleValid(handle_for_process))
-    process->Send(new ExtensionMsg_UpdateUserScripts(handle_for_process));
+  if (base::SharedMemory::IsHandleValid(handle_for_process)) {
+    process->Send(new ExtensionMsg_UpdateUserScripts(handle_for_process,
+                                                     changed_extensions));
+  }
 }
 
 }  // namespace extensions

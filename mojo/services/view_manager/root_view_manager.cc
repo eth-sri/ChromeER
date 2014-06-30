@@ -5,18 +5,87 @@
 #include "mojo/services/view_manager/root_view_manager.h"
 
 #include "base/auto_reset.h"
-#include "mojo/aura/screen_mojo.h"
-#include "mojo/aura/window_tree_host_mojo.h"
-#include "mojo/public/cpp/shell/connect.h"
-#include "mojo/public/interfaces/shell/shell.mojom.h"
+#include "base/scoped_observer.h"
+#include "mojo/public/cpp/application/application_connection.h"
 #include "mojo/services/view_manager/root_node_manager.h"
+#include "mojo/services/view_manager/root_view_manager_delegate.h"
+#include "mojo/services/view_manager/screen_impl.h"
+#include "mojo/services/view_manager/window_tree_host_impl.h"
 #include "ui/aura/client/default_capture_client.h"
+#include "ui/aura/client/focus_change_observer.h"
+#include "ui/aura/client/focus_client.h"
 #include "ui/aura/client/window_tree_client.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_observer.h"
 
 namespace mojo {
 namespace view_manager {
 namespace service {
+
+// TODO(sky): revisit this, we may need a more sophisticated FocusClient
+// implementation.
+class FocusClientImpl : public aura::client::FocusClient,
+                        public aura::WindowObserver {
+ public:
+  FocusClientImpl()
+      : focused_window_(NULL),
+        observer_manager_(this) {
+  }
+  virtual ~FocusClientImpl() {}
+
+ private:
+  // Overridden from aura::client::FocusClient:
+  virtual void AddObserver(aura::client::FocusChangeObserver* observer)
+      OVERRIDE {
+    observers_.AddObserver(observer);
+  }
+  virtual void RemoveObserver(aura::client::FocusChangeObserver* observer)
+      OVERRIDE {
+    observers_.RemoveObserver(observer);
+  }
+  virtual void FocusWindow(aura::Window* window) OVERRIDE {
+    if (window && !window->CanFocus())
+      return;
+    if (window == focused_window_)
+      return;
+    if (focused_window_)
+      observer_manager_.Remove(focused_window_);
+    aura::Window* old_focused_window = focused_window_;
+    focused_window_ = window;
+    if (focused_window_)
+      observer_manager_.Add(focused_window_);
+
+    FOR_EACH_OBSERVER(aura::client::FocusChangeObserver,
+                      observers_,
+                      OnWindowFocused(focused_window_, old_focused_window));
+    aura::client::FocusChangeObserver* observer =
+        aura::client::GetFocusChangeObserver(old_focused_window);
+    if (observer)
+      observer->OnWindowFocused(focused_window_, old_focused_window);
+    observer = aura::client::GetFocusChangeObserver(focused_window_);
+    if (observer)
+      observer->OnWindowFocused(focused_window_, old_focused_window);
+  }
+  virtual void ResetFocusWithinActiveWindow(aura::Window* window) OVERRIDE {
+    if (!window->Contains(focused_window_))
+      FocusWindow(window);
+  }
+  virtual aura::Window* GetFocusedWindow() OVERRIDE {
+    return focused_window_;
+  }
+
+  // Overridden from WindowObserver:
+  virtual void OnWindowDestroying(aura::Window* window) OVERRIDE {
+    DCHECK_EQ(window, focused_window_);
+    FocusWindow(NULL);
+  }
+
+  aura::Window* focused_window_;
+  ScopedObserver<aura::Window, aura::WindowObserver> observer_manager_;
+  ObserverList<aura::client::FocusChangeObserver> observers_;
+
+  DISALLOW_COPY_AND_ASSIGN(FocusClientImpl);
+};
 
 class WindowTreeClientImpl : public aura::client::WindowTreeClient {
  public:
@@ -47,15 +116,18 @@ class WindowTreeClientImpl : public aura::client::WindowTreeClient {
   DISALLOW_COPY_AND_ASSIGN(WindowTreeClientImpl);
 };
 
-RootViewManager::RootViewManager(Shell* shell, RootNodeManager* root_node)
-    : shell_(shell),
+RootViewManager::RootViewManager(ApplicationConnection* app_connection,
+                                 RootNodeManager* root_node,
+                                 RootViewManagerDelegate* delegate)
+    : delegate_(delegate),
       root_node_manager_(root_node),
       in_setup_(false) {
-  screen_.reset(ScreenMojo::Create());
+  screen_.reset(ScreenImpl::Create());
   gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE, screen_.get());
   NativeViewportPtr viewport;
-  ConnectTo(shell, "mojo:mojo_native_viewport_service", &viewport);
-  window_tree_host_.reset(new WindowTreeHostMojo(
+  app_connection->ConnectToService(
+      "mojo:mojo_native_viewport_service", &viewport);
+  window_tree_host_.reset(new WindowTreeHostImpl(
         viewport.Pass(),
         gfx::Rect(800, 600),
         base::Bind(&RootViewManager::OnCompositorCreated,
@@ -80,7 +152,14 @@ void RootViewManager::OnCompositorCreated() {
   window_tree_client_.reset(
       new WindowTreeClientImpl(window_tree_host_->window()));
 
+  focus_client_.reset(new FocusClientImpl());
+  aura::client::SetFocusClient(window_tree_host_->window(),
+                               focus_client_.get());
+  focus_client_->AddObserver(root_node_manager_);
+
   window_tree_host_->Show();
+
+  delegate_->OnRootViewManagerWindowTreeHostCreated();
 }
 
 }  // namespace service

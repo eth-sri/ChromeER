@@ -13,9 +13,9 @@
     reportTestSuccess();
   });
 
-  function getSources() {
-    MediaStreamTrack.getSources(function(devices) {
-      document.title = 'Sources Available';
+  function getMediaDevices() {
+    navigator.getMediaDevices(function(devices) {
+      document.title = 'Media devices available';
       sendValueToTest(JSON.stringify(devices));
     });
   }
@@ -173,7 +173,7 @@
           function(stream) {
             displayIntoVideoElement(stream,
                                     function() {
-                                      stopBothVideoTracksAndVerify(stream); 
+                                      stopBothVideoTracksAndVerify(stream);
                                     },
                                     'local-view-2');
           },
@@ -183,10 +183,82 @@
     var stopBothVideoTracksAndVerify = function(streamPlayingInLocalView2) {
       streamPlayingInLocalView2.getVideoTracks()[0].stop();
       waitForVideoToStop('local-view-2');
-      // Make sure the video track in gLocalStream is still playing in 
+      // Make sure the video track in gLocalStream is still playing in
       // 'local-view1' and then stop it.
       displayAndDetectVideo(gLocalStream, stopVideoTrack);
     };
+  }
+
+  function twoGetUserMedia(constraints1,
+                           constraints2) {
+    var result="";
+    navigator.webkitGetUserMedia(
+        constraints1,
+        function(stream) {
+          displayDetectAndAnalyzeVideoInElement(
+              stream,
+              function(aspectRatio) {
+                result = aspectRatio;
+                requestSecondGetUserMedia();
+               },
+              'local-view');
+        },
+        failedCallback);
+    var requestSecondGetUserMedia = function() {
+      navigator.webkitGetUserMedia(
+          constraints2,
+          function(stream) {
+            displayDetectAndAnalyzeVideoInElement(
+                stream,
+                function(aspectRatio) {
+                  result = result + '-' + aspectRatio;
+                  sendValueToTest(result);
+                },
+                'local-view-2');
+          },
+          failedCallback);
+    }
+  }
+
+  // Calls GetUserMedia twice and verify that the frame rate is as expected for 
+  // both streams.
+  function twoGetUserMediaAndVerifyFrameRate(constraints1,
+                                             constraints2,
+                                             expected_frame_rate1,
+                                             expected_frame_rate2) {
+    addExpectedEvent();
+    addExpectedEvent();
+    var validateFrameRateCallback = function (success) {
+      if (!success)
+        failTest("Failed to validate frameRate.");
+      eventOccured();
+    };
+
+    navigator.webkitGetUserMedia(
+        constraints1,
+        function(stream) {
+          requestSecondGetUserMedia();
+          plugStreamIntoVideoElement(stream, 'local-view');
+          detectVideoPlaying('local-view', 
+              function() {
+                validateFrameRate('local-view', expected_frame_rate1,
+                    validateFrameRateCallback);
+              });
+        },
+        failedCallback);
+    var requestSecondGetUserMedia = function() {
+      navigator.webkitGetUserMedia(
+          constraints2,
+          function(stream) {
+            plugStreamIntoVideoElement(stream, 'local-view-2');
+            detectVideoPlaying('local-view-2', 
+                function() {
+                  validateFrameRate('local-view-2', expected_frame_rate2,
+                      validateFrameRateCallback);
+                });
+          },
+          failedCallback);
+    }
   }
 
   function failedCallback(error) {
@@ -209,8 +281,17 @@
   }
 
   function displayDetectAndAnalyzeVideo(stream) {
-    plugStreamIntoVideoElement(stream, 'local-view');
-    analyzeVideo();
+    displayDetectAndAnalyzeVideoInElement(stream,
+        function(aspectRatio) {
+          sendValueToTest(aspectRatio);
+        },
+        'local-view');
+  }
+
+  function displayDetectAndAnalyzeVideoInElement(
+      stream, callback, videoElement) {
+    plugStreamIntoVideoElement(stream, videoElement);
+    detectAspectRatio(callback, videoElement);
   }
 
   function createAndRenderClone(stream) {
@@ -239,12 +320,6 @@
 
   function waitAndStopVideoTrack(waitTimeInSeconds) {
     setTimeout(stopVideoTrack, waitTimeInSeconds * 1000);
-  }
-
-  function analyzeVideo() {
-    detectAspectRatio(function(aspectRatio) {
-      sendValueToTest(aspectRatio);
-    });
   }
 
   // This test make sure multiple video renderers can be created for the same
@@ -304,9 +379,9 @@
   // pixels are not the same along the X and Y axis.
   // The result of the analysis is sent back to the test as a string on the
   // format "w=xxx:h=yyy".
-  function detectAspectRatio(callback) {
-    var videoElement = $('local-view');
-    var canvas = $('local-view-canvas');
+  function detectAspectRatio(callback, videoElementName) {
+    var videoElement = $(videoElementName);
+    var canvas = $(videoElementName + '-canvas');
 
     var maxLightGreenPixelsX = 0;
     var maxLightGreenPixelsY = 0;
@@ -351,12 +426,13 @@
 
       if (++iterations > maxIterations) {
         clearInterval(detectorInterval);
-        // Allow maxLightGreenPixelsY = maxLightGreenPixelsX +-1 due to 
+        // Allow maxLightGreenPixelsY = maxLightGreenPixelsX +-1 due to
         // possible subpixel rendering on Mac and Android.
         if (maxLightGreenPixelsY > maxLightGreenPixelsX + 1 ||
             maxLightGreenPixelsY < maxLightGreenPixelsX -1 ||
             maxLightGreenPixelsY == 0 ||
-            maxLightGreenPixelsX == width || maxLightGreenPixelsY == height) {
+            maxLightGreenPixelsX == width / 2 ||
+            maxLightGreenPixelsY == height / 2) {
           failTest("Aspect ratio corrupted. X " + maxLightGreenPixelsX  +
             " Y " + maxLightGreenPixelsY);
         }

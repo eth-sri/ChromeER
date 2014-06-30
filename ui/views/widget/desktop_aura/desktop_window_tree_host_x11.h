@@ -26,6 +26,10 @@ class ImageSkia;
 class ImageSkiaRep;
 }
 
+namespace ui {
+class EventHandler;
+}
+
 namespace views {
 class DesktopDragDropClientAuraX11;
 class DesktopDispatcherClient;
@@ -73,6 +77,9 @@ class VIEWS_EXPORT DesktopWindowTreeHostX11
 
   void AddObserver(views::DesktopWindowTreeHostObserverX11* observer);
   void RemoveObserver(views::DesktopWindowTreeHostObserverX11* observer);
+
+  // Swaps the current handler for events in the non client view with |handler|.
+  void SwapNonClientEventHandler(scoped_ptr<ui::EventHandler> handler);
 
   // Deallocates the internal list of open windows.
   static void CleanUpWindowList();
@@ -157,7 +164,7 @@ class VIEWS_EXPORT DesktopWindowTreeHostX11
   // Overridden frm ui::EventSource
   virtual ui::EventProcessor* GetEventProcessor() OVERRIDE;
 
-private:
+ private:
   // Initializes our X11 surface to draw on. This method performs all
   // initialization related to talking to the X11 server.
   void InitX11Window(const Widget::InitParams& params);
@@ -171,6 +178,9 @@ private:
 
   // Called when |xwindow_|'s _NET_FRAME_EXTENTS property is updated.
   void OnFrameExtentsUpdated();
+
+  // Updates |xwindow_|'s _NET_WM_USER_TIME if |xwindow_| is active.
+  void UpdateWMUserTime(const ui::PlatformEvent& event);
 
   // Sends a message to the x11 window manager, enabling or disabling the
   // states |state1| and |state2|.
@@ -215,6 +225,9 @@ private:
 
   void SetWindowTransparency();
 
+  // Relayout the widget's client and non-client views.
+  void Relayout();
+
   // ui::PlatformEventDispatcher:
   virtual bool CanDispatchEvent(const ui::PlatformEvent& event) OVERRIDE;
   virtual uint32_t DispatchEvent(const ui::PlatformEvent& event) OVERRIDE;
@@ -251,8 +264,7 @@ private:
   // The window manager state bits.
   std::set< ::Atom> window_properties_;
 
-  // Local flag for fullscreen state to avoid a state mismatch between
-  // server and local window_properties_ during app-initiated fullscreen.
+  // Whether |xwindow_| was requested to be fullscreen via SetFullscreen().
   bool is_fullscreen_;
 
   // True if the window should stay on top of most other windows.
@@ -271,7 +283,7 @@ private:
   // Current Aura cursor.
   gfx::NativeCursor current_cursor_;
 
-  scoped_ptr<X11WindowEventFilter> x11_window_event_filter_;
+  scoped_ptr<ui::EventHandler> x11_non_client_event_filter_;
   scoped_ptr<X11DesktopWindowMoveClient> x11_window_move_client_;
 
   // TODO(beng): Consider providing an interface to DesktopNativeWidgetAura

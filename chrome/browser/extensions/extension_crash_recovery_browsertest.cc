@@ -18,11 +18,13 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/result_codes.h"
+#include "content/public/common/url_constants.h"
 #include "extensions/browser/extension_host.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/process_manager.h"
 #include "extensions/browser/process_map.h"
+#include "extensions/common/constants.h"
 #include "ui/message_center/message_center.h"
 #include "ui/message_center/notification_list.h"
 
@@ -46,7 +48,8 @@ class ExtensionCrashRecoveryTestBase : public ExtensionBrowserTest {
   virtual size_t CountBalloons() = 0;
 
   ExtensionService* GetExtensionService() {
-    return browser()->profile()->GetExtensionService();
+    return extensions::ExtensionSystem::Get(browser()->profile())->
+        extension_service();
   }
 
   extensions::ProcessManager* GetProcessManager() {
@@ -125,8 +128,7 @@ class ExtensionCrashRecoveryTestBase : public ExtensionBrowserTest {
   std::string second_extension_id_;
 };
 
-class MAYBE_ExtensionCrashRecoveryTest
-    : public ExtensionCrashRecoveryTestBase {
+class MAYBE_ExtensionCrashRecoveryTest : public ExtensionCrashRecoveryTestBase {
  protected:
   virtual void AcceptNotification(size_t index) OVERRIDE {
     message_center::MessageCenter* message_center =
@@ -134,8 +136,8 @@ class MAYBE_ExtensionCrashRecoveryTest
     ASSERT_GT(message_center->NotificationCount(), index);
     message_center::NotificationList::Notifications::reverse_iterator it =
         message_center->GetVisibleNotifications().rbegin();
-    for (size_t i=0; i < index; ++i)
-      it++;
+    for (size_t i = 0; i < index; ++i)
+      ++it;
     std::string id = (*it)->id();
     message_center->ClickOnNotification(id);
     WaitForExtensionLoad();
@@ -147,7 +149,8 @@ class MAYBE_ExtensionCrashRecoveryTest
     ASSERT_GT(message_center->NotificationCount(), index);
     message_center::NotificationList::Notifications::reverse_iterator it =
         message_center->GetVisibleNotifications().rbegin();
-    for (size_t i=0; i < index; i++) { it++; }
+    for (size_t i = 0; i < index; ++i)
+      ++it;
     ASSERT_TRUE(g_browser_process->notification_ui_manager()->
         CancelById((*it)->id()));
   }
@@ -528,9 +531,10 @@ IN_PROC_BROWSER_TEST_F(MAYBE_ExtensionCrashRecoveryTest,
 
   // Open a tab extension.
   chrome::NewTab(browser());
-  ui_test_utils::NavigateToURL(
-      browser(),
-      GURL("chrome-extension://" + first_extension_id_ + "/background.html"));
+  ui_test_utils::NavigateToURL(browser(),
+                               GURL(std::string(extensions::kExtensionScheme) +
+                                   url::kStandardSchemeSeparator +
+                                   first_extension_id_ + "/background.html"));
 
   const int tabs_before = tab_strip->count();
   CrashExtension(first_extension_id_);

@@ -6,7 +6,6 @@
 
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
-#include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
 #include "content/public/common/content_switches.h"
 #include "content/renderer/media/media_stream_audio_processor_options.h"
@@ -65,13 +64,19 @@ class MediaStreamAudioProcessor::MediaStreamAudioConverter
     // |MediaStreamAudioProcessor::capture_converter_|.
     thread_checker_.DetachFromThread();
     audio_converter_.AddInput(this);
+
     // Create and initialize audio fifo and audio bus wrapper.
     // The size of the FIFO should be at least twice of the source buffer size
-    // or twice of the sink buffer size.
+    // or twice of the sink buffer size. Also, FIFO needs to have enough space
+    // to store pre-processed data before passing the data to
+    // webrtc::AudioProcessing, which requires 10ms as packet size.
+    int max_frame_size = std::max(source_params_.frames_per_buffer(),
+                                  sink_params_.frames_per_buffer());
     int buffer_size = std::max(
-        kMaxNumberOfBuffersInFifo * source_params_.frames_per_buffer(),
-        kMaxNumberOfBuffersInFifo * sink_params_.frames_per_buffer());
+        kMaxNumberOfBuffersInFifo * max_frame_size,
+        kMaxNumberOfBuffersInFifo * source_params_.sample_rate() / 100);
     fifo_.reset(new media::AudioFifo(source_params_.channels(), buffer_size));
+
     // TODO(xians): Use CreateWrapper to save one memcpy.
     audio_wrapper_ = media::AudioBus::Create(sink_params_.channels(),
                                              sink_params_.frames_per_buffer());
@@ -157,10 +162,8 @@ class MediaStreamAudioProcessor::MediaStreamAudioConverter
 };
 
 bool MediaStreamAudioProcessor::IsAudioTrackProcessingEnabled() {
-  const std::string group_name =
-      base::FieldTrialList::FindFullName("MediaStreamAudioTrackProcessing");
-  return group_name == "Enabled" || CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kEnableAudioTrackProcessing);
+  return !CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kDisableAudioTrackProcessing);
 }
 
 MediaStreamAudioProcessor::MediaStreamAudioProcessor(
@@ -174,10 +177,22 @@ MediaStreamAudioProcessor::MediaStreamAudioProcessor(
   capture_thread_checker_.DetachFromThread();
   render_thread_checker_.DetachFromThread();
   InitializeAudioProcessingModule(constraints, effects);
+  if (IsAudioTrackProcessingEnabled()) {
+    aec_dump_message_filter_ = AecDumpMessageFilter::Get();
+    // In unit tests not creating a message filter, |aec_dump_message_filter_|
+    // will be NULL. We can just ignore that. Other unit tests and browser tests
+    // ensure that we do get the filter when we should.
+    if (aec_dump_message_filter_)
+      aec_dump_message_filter_->AddDelegate(this);
+  }
 }
 
 MediaStreamAudioProcessor::~MediaStreamAudioProcessor() {
   DCHECK(main_thread_checker_.CalledOnValidThread());
+  if (aec_dump_message_filter_) {
+    aec_dump_message_filter_->RemoveDelegate(this);
+    aec_dump_message_filter_ = NULL;
+  }
   StopAudioProcessing();
 }
 
@@ -235,15 +250,28 @@ const media::AudioParameters& MediaStreamAudioProcessor::OutputFormat() const {
   return capture_converter_->sink_parameters();
 }
 
-void MediaStreamAudioProcessor::StartAecDump(base::File aec_dump_file) {
+void MediaStreamAudioProcessor::OnAecDumpFile(
+    const IPC::PlatformFileForTransit& file_handle) {
+  DCHECK(main_thread_checker_.CalledOnValidThread());
+
+  base::File file = IPC::PlatformFileForTransitToFile(file_handle);
+  DCHECK(file.IsValid());
+
   if (audio_processing_)
-    StartEchoCancellationDump(audio_processing_.get(),
-                              aec_dump_file.TakePlatformFile());
+    StartEchoCancellationDump(audio_processing_.get(), file.Pass());
+  else
+    file.Close();
 }
 
-void MediaStreamAudioProcessor::StopAecDump() {
+void MediaStreamAudioProcessor::OnDisableAecDump() {
+  DCHECK(main_thread_checker_.CalledOnValidThread());
   if (audio_processing_)
     StopEchoCancellationDump(audio_processing_.get());
+}
+
+void MediaStreamAudioProcessor::OnIpcClosing() {
+  DCHECK(main_thread_checker_.CalledOnValidThread());
+  aec_dump_message_filter_ = NULL;
 }
 
 void MediaStreamAudioProcessor::OnPlayoutData(media::AudioBus* audio_bus,
@@ -492,7 +520,7 @@ void MediaStreamAudioProcessor::StopAudioProcessing() {
   if (!audio_processing_.get())
     return;
 
-  StopAecDump();
+  StopEchoCancellationDump(audio_processing_.get());
 
   if (playout_data_source_)
     playout_data_source_->RemovePlayoutSink(this);

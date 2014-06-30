@@ -190,7 +190,7 @@ TEST_P(SpdySessionTest, InitialReadError) {
   CreateDeterministicNetworkSession();
 
   base::WeakPtr<SpdySession> session = TryCreateFakeSpdySessionExpectingFailure(
-      spdy_session_pool_, key_, ERR_FAILED);
+      spdy_session_pool_, key_, ERR_CONNECTION_CLOSED);
   EXPECT_TRUE(session);
   // Flush the read.
   base::RunLoop().RunUntilIdle();
@@ -282,8 +282,7 @@ TEST_P(SpdySessionTest, PendingStreamCancellingAnother) {
   EXPECT_EQ(ERR_ABORTED, callback1.WaitForResult());
 }
 
-// A session receiving a GOAWAY frame with no active streams should
-// immediately close.
+// A session receiving a GOAWAY frame with no active streams should close.
 TEST_P(SpdySessionTest, GoAwayWithNoActiveStreams) {
   session_deps_.host_resolver->set_synchronous_mode(true);
 
@@ -307,9 +306,8 @@ TEST_P(SpdySessionTest, GoAwayWithNoActiveStreams) {
 
   // Read and process the GOAWAY frame.
   data.RunFor(1);
-
   EXPECT_FALSE(HasSpdySession(spdy_session_pool_, key_));
-
+  base::RunLoop().RunUntilIdle();
   EXPECT_TRUE(session == NULL);
 }
 
@@ -409,12 +407,13 @@ TEST_P(SpdySessionTest, GoAwayWithActiveStreams) {
   EXPECT_EQ(NULL, spdy_stream2.get());
   EXPECT_TRUE(session->IsStreamActive(1));
 
-  EXPECT_FALSE(session->IsClosed());
+  EXPECT_TRUE(session->IsGoingAway());
 
   // Should close the session.
   spdy_stream1->Close();
   EXPECT_EQ(NULL, spdy_stream1.get());
 
+  base::MessageLoop::current()->RunUntilIdle();
   EXPECT_TRUE(session == NULL);
 }
 
@@ -489,13 +488,12 @@ TEST_P(SpdySessionTest, GoAwayTwice) {
   EXPECT_FALSE(session->IsStreamActive(3));
   EXPECT_EQ(NULL, spdy_stream2.get());
   EXPECT_TRUE(session->IsStreamActive(1));
-
-  EXPECT_FALSE(session->IsClosed());
+  EXPECT_TRUE(session->IsGoingAway());
 
   // Read and process the second GOAWAY frame, which should close the
   // session.
   data.RunFor(1);
-
+  base::MessageLoop::current()->RunUntilIdle();
   EXPECT_TRUE(session == NULL);
 }
 
@@ -568,12 +566,79 @@ TEST_P(SpdySessionTest, GoAwayWithActiveStreamsThenClose) {
   EXPECT_FALSE(session->IsStreamActive(3));
   EXPECT_EQ(NULL, spdy_stream2.get());
   EXPECT_TRUE(session->IsStreamActive(1));
-
-  EXPECT_FALSE(session->IsClosed());
+  EXPECT_TRUE(session->IsGoingAway());
 
   session->CloseSessionOnError(ERR_ABORTED, "Aborting session");
-
   EXPECT_EQ(NULL, spdy_stream1.get());
+
+  base::MessageLoop::current()->RunUntilIdle();
+  EXPECT_TRUE(session == NULL);
+}
+
+// Process a joint read buffer which causes the session to begin draining, and
+// then processes a GOAWAY. The session should gracefully drain. Regression test
+// for crbug.com/379469
+TEST_P(SpdySessionTest, GoAwayWhileDraining) {
+  session_deps_.host_resolver->set_synchronous_mode(true);
+
+  scoped_ptr<SpdyFrame> req(
+      spdy_util_.ConstructSpdyGet(NULL, 0, false, 1, MEDIUM, true));
+  MockWrite writes[] = {
+      CreateMockWrite(*req, 0),
+  };
+
+  scoped_ptr<SpdyFrame> resp(spdy_util_.ConstructSpdyGetSynReply(NULL, 0, 1));
+  scoped_ptr<SpdyFrame> goaway(spdy_util_.ConstructSpdyGoAway(1));
+  scoped_ptr<SpdyFrame> body(spdy_util_.ConstructSpdyBodyFrame(1, true));
+  size_t joint_size = goaway->size() * 2 + body->size();
+
+  // Compose interleaved |goaway| and |body| frames into a single read.
+  scoped_ptr<char[]> buffer(new char[joint_size]);
+  {
+    size_t out = 0;
+    memcpy(&buffer[out], goaway->data(), goaway->size());
+    out += goaway->size();
+    memcpy(&buffer[out], body->data(), body->size());
+    out += body->size();
+    memcpy(&buffer[out], goaway->data(), goaway->size());
+    out += goaway->size();
+    ASSERT_EQ(out, joint_size);
+  }
+  SpdyFrame joint_frames(buffer.get(), joint_size, false);
+
+  MockRead reads[] = {
+      CreateMockRead(*resp, 1), CreateMockRead(joint_frames, 2),
+      MockRead(ASYNC, 0, 3)  // EOF
+  };
+
+  MockConnect connect_data(SYNCHRONOUS, OK);
+  DeterministicSocketData data(
+      reads, arraysize(reads), writes, arraysize(writes));
+  data.set_connect_data(connect_data);
+  session_deps_.deterministic_socket_factory->AddSocketDataProvider(&data);
+
+  CreateDeterministicNetworkSession();
+  base::WeakPtr<SpdySession> session =
+      CreateInsecureSpdySession(http_session_, key_, BoundNetLog());
+
+  GURL url(kDefaultURL);
+  base::WeakPtr<SpdyStream> spdy_stream = CreateStreamSynchronously(
+      SPDY_REQUEST_RESPONSE_STREAM, session, url, MEDIUM, BoundNetLog());
+  test::StreamDelegateDoNothing delegate(spdy_stream);
+  spdy_stream->SetDelegate(&delegate);
+
+  scoped_ptr<SpdyHeaderBlock> headers(
+      spdy_util_.ConstructGetHeaderBlock(url.spec()));
+  spdy_stream->SendRequestHeaders(headers.Pass(), NO_MORE_DATA_TO_SEND);
+  EXPECT_TRUE(spdy_stream->HasUrlFromHeaders());
+
+  data.RunFor(3);
+  base::MessageLoop::current()->RunUntilIdle();
+
+  // Stream and session closed gracefully.
+  EXPECT_TRUE(delegate.StreamIsClosed());
+  EXPECT_EQ(OK, delegate.WaitForClose());
+  EXPECT_EQ(kUploadData, delegate.TakeReceivedData());
   EXPECT_TRUE(session == NULL);
 }
 
@@ -702,7 +767,7 @@ TEST_P(SpdySessionTest, SynStreamAfterGoAway) {
   // Read and process the SYN_STREAM frame, the subsequent RST_STREAM,
   // and EOF.
   data.RunFor(3);
-
+  base::MessageLoop::current()->RunUntilIdle();
   EXPECT_TRUE(session == NULL);
 }
 
@@ -761,7 +826,7 @@ TEST_P(SpdySessionTest, NetworkChangeWithActiveStreams) {
   // pre-existing stream is still active.
   EXPECT_FALSE(HasSpdySession(spdy_session_pool_, key_));
 
-  EXPECT_FALSE(session->IsClosed());
+  EXPECT_TRUE(session->IsGoingAway());
 
   EXPECT_TRUE(session->IsStreamActive(1));
 
@@ -770,6 +835,7 @@ TEST_P(SpdySessionTest, NetworkChangeWithActiveStreams) {
 #endif
   EXPECT_EQ(NULL, spdy_stream.get());
 
+  base::MessageLoop::current()->RunUntilIdle();
   EXPECT_TRUE(session == NULL);
 }
 
@@ -1042,6 +1108,7 @@ TEST_P(SpdySessionTest, StreamIdSpaceExhausted) {
   EXPECT_EQ(kUploadData, delegate2.TakeReceivedData());
 
   // Session was destroyed.
+  base::MessageLoop::current()->RunUntilIdle();
   EXPECT_FALSE(session.get());
 }
 
@@ -1195,6 +1262,7 @@ TEST_P(SpdySessionTest, DeleteExpiredPushStreams) {
 
   // Read and process EOF.
   data.RunFor(1);
+  base::MessageLoop::current()->RunUntilIdle();
   EXPECT_TRUE(session == NULL);
 }
 
@@ -1203,14 +1271,18 @@ TEST_P(SpdySessionTest, FailedPing) {
 
   MockConnect connect_data(SYNCHRONOUS, OK);
   MockRead reads[] = {
-    MockRead(ASYNC, 0, 0, 0)  // EOF
+      MockRead(SYNCHRONOUS, ERR_IO_PENDING)  // Stall forever.
   };
   scoped_ptr<SpdyFrame> write_ping(spdy_util_.ConstructSpdyPing(1, false));
-  DeterministicSocketData data(reads, arraysize(reads), NULL, 0);
+  scoped_ptr<SpdyFrame> goaway(
+      spdy_util_.ConstructSpdyGoAway(0, GOAWAY_PROTOCOL_ERROR, "Failed ping."));
+  MockWrite writes[] = {CreateMockWrite(*write_ping), CreateMockWrite(*goaway)};
+  StaticSocketDataProvider data(
+      reads, arraysize(reads), writes, arraysize(writes));
   data.set_connect_data(connect_data);
-  session_deps_.deterministic_socket_factory->AddSocketDataProvider(&data);
+  session_deps_.socket_factory->AddSocketDataProvider(&data);
 
-  CreateDeterministicNetworkSession();
+  CreateNetworkSession();
 
   base::WeakPtr<SpdySession> session =
       CreateInsecureSpdySession(http_session_, key_, BoundNetLog());
@@ -1232,7 +1304,7 @@ TEST_P(SpdySessionTest, FailedPing) {
   EXPECT_TRUE(session->check_ping_status_pending());
 
   // Assert session is not closed.
-  EXPECT_FALSE(session->IsClosed());
+  EXPECT_TRUE(session->IsAvailable());
   EXPECT_LT(0u, session->num_active_streams() + session->num_created_streams());
   EXPECT_TRUE(HasSpdySession(spdy_session_pool_, key_));
 
@@ -1241,6 +1313,7 @@ TEST_P(SpdySessionTest, FailedPing) {
   base::TimeTicks now = base::TimeTicks::Now();
   session->last_activity_time_ = now - base::TimeDelta::FromSeconds(1);
   session->CheckPingStatus(now);
+  base::MessageLoop::current()->RunUntilIdle();
 
   EXPECT_TRUE(session == NULL);
   EXPECT_FALSE(HasSpdySession(spdy_session_pool_, key_));
@@ -1304,6 +1377,11 @@ TEST_P(SpdySessionTest, OnSettings) {
   EXPECT_EQ(OK, stream_releaser.WaitForResult());
 
   data.RunFor(1);
+  if (spdy_util_.spdy_version() >= SPDY4) {
+    // Allow the SETTINGS+ACK to write, so the session finishes draining.
+    data.RunFor(1);
+  }
+  base::MessageLoop::current()->RunUntilIdle();
   EXPECT_TRUE(session == NULL);
 }
 
@@ -1583,7 +1661,7 @@ TEST_P(SpdySessionTest, Initialize) {
   EXPECT_NE(log.bound().source().id, socket_source.id);
 }
 
-TEST_P(SpdySessionTest, CloseSessionOnError) {
+TEST_P(SpdySessionTest, NetLogOnSessionGoaway) {
   session_deps_.host_resolver->set_synchronous_mode(true);
 
   MockConnect connect_data(SYNCHRONOUS, OK);
@@ -1620,6 +1698,53 @@ TEST_P(SpdySessionTest, CloseSessionOnError) {
       entries, 0,
       net::NetLog::TYPE_SPDY_SESSION_CLOSE,
       net::NetLog::PHASE_NONE);
+
+  if (pos < static_cast<int>(entries.size())) {
+    CapturingNetLog::CapturedEntry entry = entries[pos];
+    int error_code = 0;
+    ASSERT_TRUE(entry.GetNetErrorCode(&error_code));
+    EXPECT_EQ(OK, error_code);
+  } else {
+    ADD_FAILURE();
+  }
+}
+
+TEST_P(SpdySessionTest, NetLogOnSessionEOF) {
+  session_deps_.host_resolver->set_synchronous_mode(true);
+
+  MockConnect connect_data(SYNCHRONOUS, OK);
+  MockRead reads[] = {
+      MockRead(SYNCHRONOUS, 0, 0)  // EOF
+  };
+
+  StaticSocketDataProvider data(reads, arraysize(reads), NULL, 0);
+  data.set_connect_data(connect_data);
+  session_deps_.socket_factory->AddSocketDataProvider(&data);
+
+  CreateNetworkSession();
+
+  CapturingBoundNetLog log;
+  base::WeakPtr<SpdySession> session =
+      CreateInsecureSpdySession(http_session_, key_, log.bound());
+  EXPECT_TRUE(HasSpdySession(spdy_session_pool_, key_));
+
+  // Flush the read completion task.
+  base::MessageLoop::current()->RunUntilIdle();
+
+  EXPECT_FALSE(HasSpdySession(spdy_session_pool_, key_));
+  EXPECT_TRUE(session == NULL);
+
+  // Check that the NetLog was filled reasonably.
+  net::CapturingNetLog::CapturedEntryList entries;
+  log.GetEntries(&entries);
+  EXPECT_LT(0u, entries.size());
+
+  // Check that we logged SPDY_SESSION_CLOSE correctly.
+  int pos =
+      net::ExpectLogContainsSomewhere(entries,
+                                      0,
+                                      net::NetLog::TYPE_SPDY_SESSION_CLOSE,
+                                      net::NetLog::PHASE_NONE);
 
   if (pos < static_cast<int>(entries.size())) {
     CapturingNetLog::CapturedEntry entry = entries[pos];
@@ -1857,6 +1982,7 @@ TEST_P(SpdySessionTest, CloseSessionWithTwoCreatedSelfClosingStreams) {
   EXPECT_TRUE(delegate1.StreamIsClosed());
   EXPECT_TRUE(delegate2.StreamIsClosed());
 
+  base::MessageLoop::current()->RunUntilIdle();
   EXPECT_TRUE(session == NULL);
 }
 
@@ -1930,6 +2056,7 @@ TEST_P(SpdySessionTest, CloseSessionWithTwoCreatedMutuallyClosingStreams) {
   EXPECT_TRUE(delegate1.StreamIsClosed());
   EXPECT_TRUE(delegate2.StreamIsClosed());
 
+  base::MessageLoop::current()->RunUntilIdle();
   EXPECT_TRUE(session == NULL);
 }
 
@@ -2011,6 +2138,7 @@ TEST_P(SpdySessionTest, CloseSessionWithTwoActivatedSelfClosingStreams) {
   EXPECT_TRUE(delegate1.StreamIsClosed());
   EXPECT_TRUE(delegate2.StreamIsClosed());
 
+  base::MessageLoop::current()->RunUntilIdle();
   EXPECT_TRUE(session == NULL);
 }
 
@@ -2094,6 +2222,7 @@ TEST_P(SpdySessionTest, CloseSessionWithTwoActivatedMutuallyClosingStreams) {
   EXPECT_TRUE(delegate1.StreamIsClosed());
   EXPECT_TRUE(delegate2.StreamIsClosed());
 
+  base::MessageLoop::current()->RunUntilIdle();
   EXPECT_TRUE(session == NULL);
 }
 
@@ -2108,7 +2237,7 @@ class SessionClosingDelegate : public test::StreamDelegateDoNothing {
   virtual ~SessionClosingDelegate() {}
 
   virtual void OnClose(int status) OVERRIDE {
-    session_to_close_->CloseSessionOnError(ERR_ABORTED, "Aborted");
+    session_to_close_->CloseSessionOnError(ERR_SPDY_PROTOCOL_ERROR, "Error");
   }
 
  private:
@@ -2124,12 +2253,19 @@ TEST_P(SpdySessionTest, CloseActivatedStreamThatClosesSession) {
 
   scoped_ptr<SpdyFrame> req(
       spdy_util_.ConstructSpdyGet(NULL, 0, false, 1, MEDIUM, true));
+  scoped_ptr<SpdyFrame> rst(
+      spdy_util_.ConstructSpdyRstStream(1, RST_STREAM_CANCEL));
+  scoped_ptr<SpdyFrame> goaway(
+      spdy_util_.ConstructSpdyGoAway(0, GOAWAY_PROTOCOL_ERROR, "Error"));
+  // The GOAWAY has higher-priority than the RST_STREAM, and is written first
+  // despite being queued second.
   MockWrite writes[] = {
-    CreateMockWrite(*req, 0),
+      CreateMockWrite(*req, 0), CreateMockWrite(*goaway, 1),
+      CreateMockWrite(*rst, 2),
   };
 
   MockRead reads[] = {
-    MockRead(ASYNC, 0, 1)  // EOF
+      MockRead(ASYNC, 0, 3)  // EOF
   };
   DeterministicSocketData data(reads, arraysize(reads),
                                writes, arraysize(writes));
@@ -2168,6 +2304,9 @@ TEST_P(SpdySessionTest, CloseActivatedStreamThatClosesSession) {
 
   EXPECT_EQ(NULL, spdy_stream.get());
   EXPECT_TRUE(delegate.StreamIsClosed());
+
+  data.RunFor(2);  // Write the RST_STREAM & GOAWAY.
+  base::MessageLoop::current()->RunUntilIdle();
   EXPECT_TRUE(session == NULL);
 }
 
@@ -4308,6 +4447,7 @@ TEST_P(SpdySessionTest, SendWindowSizeIncreaseWithDeletedSession) {
   // Close the session (since we can't do it from within the delegate
   // method, since it's in the stream's loop).
   session->CloseSessionOnError(ERR_CONNECTION_CLOSED, "Closing session");
+  base::RunLoop().RunUntilIdle();
   EXPECT_TRUE(session == NULL);
 
   EXPECT_FALSE(HasSpdySession(spdy_session_pool_, key_));
@@ -4324,31 +4464,133 @@ TEST_P(SpdySessionTest, SendWindowSizeIncreaseWithDeletedSession) {
   EXPECT_TRUE(data.at_write_eof());
 }
 
+TEST_P(SpdySessionTest, GoAwayOnSessionFlowControlError) {
+  if (GetParam() < kProtoSPDY31)
+    return;
+
+  MockConnect connect_data(SYNCHRONOUS, OK);
+
+  scoped_ptr<SpdyFrame> req(
+      spdy_util_.ConstructSpdyGet(NULL, 0, false, 1, LOWEST, true));
+  scoped_ptr<SpdyFrame> goaway(spdy_util_.ConstructSpdyGoAway(
+      0,
+      GOAWAY_FLOW_CONTROL_ERROR,
+      "delta_window_size is 6 in DecreaseRecvWindowSize, which is larger than "
+      "the receive window size of 1"));
+  MockWrite writes[] = {
+      CreateMockWrite(*req, 0), CreateMockWrite(*goaway, 3),
+  };
+
+  scoped_ptr<SpdyFrame> resp(spdy_util_.ConstructSpdyGetSynReply(NULL, 0, 1));
+  scoped_ptr<SpdyFrame> body(spdy_util_.ConstructSpdyBodyFrame(1, true));
+  MockRead reads[] = {
+      CreateMockRead(*resp, 1), CreateMockRead(*body, 2),
+  };
+
+  DeterministicSocketData data(
+      reads, arraysize(reads), writes, arraysize(writes));
+  data.set_connect_data(connect_data);
+  session_deps_.deterministic_socket_factory->AddSocketDataProvider(&data);
+
+  CreateDeterministicNetworkSession();
+
+  base::WeakPtr<SpdySession> session =
+      CreateInsecureSpdySession(http_session_, key_, BoundNetLog());
+
+  GURL url(kDefaultURL);
+  base::WeakPtr<SpdyStream> spdy_stream = CreateStreamSynchronously(
+      SPDY_REQUEST_RESPONSE_STREAM, session, url, LOWEST, BoundNetLog());
+  ASSERT_TRUE(spdy_stream.get() != NULL);
+  test::StreamDelegateDoNothing delegate(spdy_stream);
+  spdy_stream->SetDelegate(&delegate);
+
+  scoped_ptr<SpdyHeaderBlock> headers(
+      spdy_util_.ConstructGetHeaderBlock(url.spec()));
+  spdy_stream->SendRequestHeaders(headers.Pass(), NO_MORE_DATA_TO_SEND);
+
+  data.RunFor(1);  // Write request.
+
+  // Put session on the edge of overflowing it's recv window.
+  session->session_recv_window_size_ = 1;
+
+  // Read response headers & body. Body overflows the session window, and a
+  // goaway is written.
+  data.RunFor(3);
+  base::MessageLoop::current()->RunUntilIdle();
+
+  EXPECT_EQ(ERR_SPDY_FLOW_CONTROL_ERROR, delegate.WaitForClose());
+  EXPECT_TRUE(session == NULL);
+}
+
+TEST_P(SpdySessionTest, SplitHeaders) {
+  GURL kStreamUrl("http://www.google.com/foo.dat");
+  SpdyHeaderBlock headers;
+  spdy_util_.AddUrlToHeaderBlock(kStreamUrl.spec(), &headers);
+  headers["alpha"] = "beta";
+
+  SpdyHeaderBlock request_headers;
+  SpdyHeaderBlock response_headers;
+
+  SplitPushedHeadersToRequestAndResponse(
+      headers, spdy_util_.spdy_version(), &request_headers, &response_headers);
+
+  SpdyHeaderBlock::const_iterator it = response_headers.find("alpha");
+  std::string alpha_val =
+      (it == response_headers.end()) ? std::string() : it->second;
+  EXPECT_EQ("beta", alpha_val);
+
+  GURL request_url =
+      GetUrlFromHeaderBlock(request_headers, spdy_util_.spdy_version(), true);
+  EXPECT_EQ(kStreamUrl, request_url);
+}
+
 TEST(MapFramerErrorToProtocolError, MapsValues) {
-  CHECK_EQ(SPDY_ERROR_INVALID_CONTROL_FRAME,
-           MapFramerErrorToProtocolError(
-               SpdyFramer::SPDY_INVALID_CONTROL_FRAME));
-  CHECK_EQ(SPDY_ERROR_INVALID_DATA_FRAME_FLAGS,
-           MapFramerErrorToProtocolError(
-               SpdyFramer::SPDY_INVALID_DATA_FRAME_FLAGS));
-  CHECK_EQ(SPDY_ERROR_GOAWAY_FRAME_CORRUPT,
-           MapFramerErrorToProtocolError(
-               SpdyFramer::SPDY_GOAWAY_FRAME_CORRUPT));
+  CHECK_EQ(
+      SPDY_ERROR_INVALID_CONTROL_FRAME,
+      MapFramerErrorToProtocolError(SpdyFramer::SPDY_INVALID_CONTROL_FRAME));
+  CHECK_EQ(
+      SPDY_ERROR_INVALID_DATA_FRAME_FLAGS,
+      MapFramerErrorToProtocolError(SpdyFramer::SPDY_INVALID_DATA_FRAME_FLAGS));
+  CHECK_EQ(
+      SPDY_ERROR_GOAWAY_FRAME_CORRUPT,
+      MapFramerErrorToProtocolError(SpdyFramer::SPDY_GOAWAY_FRAME_CORRUPT));
   CHECK_EQ(SPDY_ERROR_UNEXPECTED_FRAME,
-           MapFramerErrorToProtocolError(
-               SpdyFramer::SPDY_UNEXPECTED_FRAME));
+           MapFramerErrorToProtocolError(SpdyFramer::SPDY_UNEXPECTED_FRAME));
+}
+
+TEST(MapFramerErrorToNetError, MapsValue) {
+  CHECK_EQ(ERR_SPDY_PROTOCOL_ERROR,
+           MapFramerErrorToNetError(SpdyFramer::SPDY_INVALID_CONTROL_FRAME));
+  CHECK_EQ(ERR_SPDY_COMPRESSION_ERROR,
+           MapFramerErrorToNetError(SpdyFramer::SPDY_COMPRESS_FAILURE));
+  CHECK_EQ(ERR_SPDY_COMPRESSION_ERROR,
+           MapFramerErrorToNetError(SpdyFramer::SPDY_DECOMPRESS_FAILURE));
+  CHECK_EQ(
+      ERR_SPDY_FRAME_SIZE_ERROR,
+      MapFramerErrorToNetError(SpdyFramer::SPDY_CONTROL_PAYLOAD_TOO_LARGE));
 }
 
 TEST(MapRstStreamStatusToProtocolError, MapsValues) {
   CHECK_EQ(STATUS_CODE_PROTOCOL_ERROR,
-           MapRstStreamStatusToProtocolError(
-               RST_STREAM_PROTOCOL_ERROR));
+           MapRstStreamStatusToProtocolError(RST_STREAM_PROTOCOL_ERROR));
   CHECK_EQ(STATUS_CODE_FRAME_SIZE_ERROR,
-           MapRstStreamStatusToProtocolError(
-               RST_STREAM_FRAME_SIZE_ERROR));
+           MapRstStreamStatusToProtocolError(RST_STREAM_FRAME_SIZE_ERROR));
   CHECK_EQ(STATUS_CODE_ENHANCE_YOUR_CALM,
-           MapRstStreamStatusToProtocolError(
-               RST_STREAM_ENHANCE_YOUR_CALM));
+           MapRstStreamStatusToProtocolError(RST_STREAM_ENHANCE_YOUR_CALM));
+}
+
+TEST(MapNetErrorToGoAwayStatus, MapsValue) {
+  CHECK_EQ(GOAWAY_INADEQUATE_SECURITY,
+           MapNetErrorToGoAwayStatus(ERR_SPDY_INADEQUATE_TRANSPORT_SECURITY));
+  CHECK_EQ(GOAWAY_FLOW_CONTROL_ERROR,
+           MapNetErrorToGoAwayStatus(ERR_SPDY_FLOW_CONTROL_ERROR));
+  CHECK_EQ(GOAWAY_PROTOCOL_ERROR,
+           MapNetErrorToGoAwayStatus(ERR_SPDY_PROTOCOL_ERROR));
+  CHECK_EQ(GOAWAY_COMPRESSION_ERROR,
+           MapNetErrorToGoAwayStatus(ERR_SPDY_COMPRESSION_ERROR));
+  CHECK_EQ(GOAWAY_FRAME_SIZE_ERROR,
+           MapNetErrorToGoAwayStatus(ERR_SPDY_FRAME_SIZE_ERROR));
+  CHECK_EQ(GOAWAY_PROTOCOL_ERROR, MapNetErrorToGoAwayStatus(ERR_UNEXPECTED));
 }
 
 }  // namespace net

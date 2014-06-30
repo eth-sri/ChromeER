@@ -18,7 +18,7 @@
 #include "url/gurl.h"
 
 #if defined(ENABLE_MANAGED_USERS)
-#include "chrome/browser/managed_mode/managed_user_constants.h"
+#include "chrome/browser/supervised_user/supervised_user_constants.h"
 #endif
 
 #if defined(OS_CHROMEOS)
@@ -117,13 +117,20 @@ bool ChromeSigninClient::CanRevokeCredentials() {
 #else
   // Don't allow revoking credentials for supervised users.
   // See http://crbug.com/332032
-  if (profile_->IsManaged()) {
+  if (profile_->IsSupervised()) {
     LOG(ERROR) << "Attempt to revoke supervised user refresh "
                << "token detected, ignoring.";
     return false;
   }
 #endif
   return true;
+}
+
+std::string ChromeSigninClient::GetSigninScopedDeviceId() {
+  // TODO(pavely): crbug/382968. In the future this method will read
+  // SigninScopedDeviceId from prefs, generating new one if it doesn't exist.
+  // For now it returns empty string to maintain existing behavior.
+  return std::string();
 }
 
 net::URLRequestContextGetter* ChromeSigninClient::GetURLRequestContext() {

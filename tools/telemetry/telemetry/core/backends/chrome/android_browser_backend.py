@@ -17,6 +17,8 @@ from telemetry.core.backends import browser_backend
 from telemetry.core.backends.chrome import chrome_browser_backend
 from telemetry.core.forwarders import android_forwarder
 
+from pylib.device import intent
+
 
 class AndroidBrowserBackendSettings(object):
 
@@ -33,18 +35,16 @@ class AndroidBrowserBackendSettings(object):
     raise NotImplementedError()
 
   def RemoveProfile(self):
-    files = self.adb.RunShellCommandWithSU('ls "%s"' % self.profile_dir)
+    files = self.adb.device().RunShellCommand(
+        'ls "%s"' % self.profile_dir, as_root=True)
     # Don't delete lib, since it is created by the installer.
     paths = ['"%s/%s"' % (self.profile_dir, f) for f in files if f != 'lib']
-    self.adb.RunShellCommandWithSU('rm -r %s' % ' '.join(paths))
+    self.adb.device().RunShellCommand('rm -r %s' % ' '.join(paths),
+                                      as_root=True)
 
   def PushProfile(self, _):
     logging.critical('Profiles cannot be overriden with current configuration')
     sys.exit(1)
-
-  @property
-  def is_content_shell(self):
-    return False
 
   @property
   def profile_dir(self):
@@ -91,16 +91,18 @@ class ChromeBackendSettings(AndroidBrowserBackendSettings):
 
     self.adb.device().old_interface.EfficientDeviceDirectoryCopy(
         saved_profile_location, self.profile_dir)
-    dumpsys = self.adb.RunShellCommand('dumpsys package %s' % self.package)
+    dumpsys = self.adb.device().RunShellCommand(
+        'dumpsys package %s' % self.package)
     id_line = next(line for line in dumpsys if 'userId=' in line)
     uid = re.search('\d+', id_line).group()
-    files = self.adb.RunShellCommandWithSU('ls "%s"' % self.profile_dir)
+    files = self.adb.device().RunShellCommand(
+        'ls "%s"' % self.profile_dir, as_root=True)
     files.remove('lib')
     paths = ['%s/%s' % (self.profile_dir, f) for f in files]
     for path in paths:
       extended_path = '%s %s/* %s/*/* %s/*/*/*' % (path, path, path, path)
-      self.adb.RunShellCommand('chown %s.%s %s' %
-                             (uid, uid, extended_path))
+      self.adb.device().RunShellCommand(
+          'chown %s.%s %s' % (uid, uid, extended_path))
 
 class ContentShellBackendSettings(AndroidBrowserBackendSettings):
   def __init__(self, adb, package):
@@ -115,10 +117,6 @@ class ContentShellBackendSettings(AndroidBrowserBackendSettings):
   def GetDevtoolsRemotePort(self):
     return 'localabstract:content_shell_devtools_remote'
 
-  @property
-  def is_content_shell(self):
-    return True
-
 
 class ChromeShellBackendSettings(AndroidBrowserBackendSettings):
   def __init__(self, adb, package):
@@ -132,10 +130,6 @@ class ChromeShellBackendSettings(AndroidBrowserBackendSettings):
 
   def GetDevtoolsRemotePort(self):
     return 'localabstract:chrome_shell_devtools_remote'
-
-  @property
-  def is_content_shell(self):
-    return True
 
 
 class WebviewBackendSettings(AndroidBrowserBackendSettings):
@@ -176,7 +170,7 @@ class AndroidBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
   def __init__(self, browser_options, backend_settings, use_rndis_forwarder,
                output_profile_path, extensions_to_load):
     super(AndroidBrowserBackend, self).__init__(
-        is_content_shell=backend_settings.is_content_shell,
+        supports_tab_control=backend_settings.supports_tab_control,
         supports_extensions=False, browser_options=browser_options,
         output_profile_path=output_profile_path,
         extensions_to_load=extensions_to_load)
@@ -194,7 +188,7 @@ class AndroidBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
     self._port = adb_commands.AllocateTestServerPort()
 
     # Kill old browser.
-    self._adb.CloseApplication(self._backend_settings.package)
+    self._adb.device().ForceStop(self._backend_settings.package)
 
     if self._adb.device().old_interface.CanAccessProtectedFileContents():
       if self.browser_options.profile_dir:
@@ -215,8 +209,8 @@ class AndroidBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
     # Set the debug app if needed.
     if self._adb.IsUserBuild():
       logging.debug('User build device, setting debug app')
-      self._adb.RunShellCommand('am set-debug-app --persistent %s' %
-                                self._backend_settings.package)
+      self._adb.device().RunShellCommand(
+          'am set-debug-app --persistent %s' % self._backend_settings.package)
 
   def _SetUpCommandLine(self):
     def QuoteIfNeeded(arg):
@@ -272,7 +266,7 @@ class AndroidBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
 
   def Start(self):
     self._SetUpCommandLine()
-    self._adb.RunShellCommand('logcat -c')
+    self._adb.device().RunShellCommand('logcat -c')
     if self.browser_options.startup_url:
       url = self.browser_options.startup_url
     elif self.browser_options.profile_dir:
@@ -282,19 +276,17 @@ class AndroidBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
       # startup with the NTP can lead to race conditions with Telemetry
       url = 'about:blank'
     self._adb.device().old_interface.DismissCrashDialogIfNeeded()
-    self._adb.StartActivity(self._backend_settings.package,
-                            self._backend_settings.activity,
-                            True,
-                            None,
-                            None,
-                            url)
+    self._adb.device().StartActivity(
+        intent.Intent(package=self._backend_settings.package,
+                      activity=self._backend_settings.activity,
+                      action=None, data=url, category=None),
+        blocking=True)
 
     self._adb.Forward('tcp:%d' % self._port,
                       self._backend_settings.GetDevtoolsRemotePort())
 
     try:
       self._WaitForBrowserToComeUp()
-      self._PostBrowserStartupInitialization()
     except exceptions.BrowserGoneException:
       logging.critical('Failed to connect to browser.')
       if not self._adb.device().old_interface.CanAccessProtectedFileContents():
@@ -359,16 +351,12 @@ class AndroidBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
   def activity(self):
     return self._backend_settings.activity
 
-  @property
-  def supports_tab_control(self):
-    return self._backend_settings.supports_tab_control
-
   def __del__(self):
     self.Close()
 
   def Close(self):
     super(AndroidBrowserBackend, self).Close()
-    self._adb.CloseApplication(self._backend_settings.package)
+    self._adb.device().ForceStop(self._backend_settings.package)
 
     if self._output_profile_path:
       logging.info("Pulling profile directory from device: '%s'->'%s'.",
@@ -378,7 +366,7 @@ class AndroidBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
       # pulled down is really needed e.g. .pak files.
       if not os.path.exists(self._output_profile_path):
         os.makedirs(self._output_profile_pathame)
-      files = self.adb.RunShellCommandWithSU(
+      files = self.adb.device().RunShellCommand(
           'ls "%s"' % self._backend_settings.profile_dir)
       for f in files:
         # Don't pull lib, since it is created by the installer.
@@ -400,7 +388,7 @@ class AndroidBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
     return local_port
 
   def GetStandardOutput(self):
-    return '\n'.join(self._adb.RunShellCommand('logcat -d -t 500'))
+    return '\n'.join(self._adb.device().RunShellCommand('logcat -d -t 500'))
 
   def GetStackTrace(self):
     def Decorate(title, content):

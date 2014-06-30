@@ -1,4 +1,4 @@
-# Copyright (c) 2012 The Chromium Authors. All rights reserved.
+# Copyright 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -7,7 +7,7 @@
 import os
 
 from metrics import power
-from telemetry import test
+from telemetry import benchmark
 from telemetry.page import page_measurement
 from telemetry.page import page_set
 
@@ -49,7 +49,7 @@ decodeURIComponent(formElement.value.split("?")[1]);
     results.Add('Total', 'ms', total)
 
 
-class Kraken(test.Test):
+class Kraken(benchmark.Benchmark):
   """Mozilla's Kraken JavaScript benchmark."""
   test = _KrakenMeasurement
 

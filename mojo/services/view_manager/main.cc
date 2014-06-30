@@ -2,33 +2,37 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/at_exit.h"
-#include "base/command_line.h"
-#include "base/message_loop/message_loop.h"
-#include "mojo/public/cpp/shell/application.h"
-#include "mojo/services/view_manager/root_node_manager.h"
-#include "mojo/services/view_manager/view_manager_connection.h"
+#include "mojo/public/cpp/application/application_connection.h"
+#include "mojo/public/cpp/application/application_delegate.h"
+#include "mojo/services/view_manager/view_manager_init_service_impl.h"
 
-#if defined(WIN32)
-#if !defined(CDECL)
-#define CDECL __cdecl)
-#endif
-#define VIEW_MANAGER_EXPORT __declspec(dllexport)
-#else
-#define CDECL
-#define VIEW_MANAGER_EXPORT __attribute__((visibility("default")))
-#endif
+namespace mojo {
+namespace view_manager {
+namespace service {
 
-extern "C" VIEW_MANAGER_EXPORT MojoResult CDECL MojoMain(
-    MojoHandle shell_handle) {
-  CommandLine::Init(0, NULL);
-  base::AtExitManager at_exit;
-  base::MessageLoop loop;
-  mojo::Application app(shell_handle);
-  mojo::view_manager::service::RootNodeManager root_node_manager(app.shell());
-  app.AddService<mojo::view_manager::service::ViewManagerConnection>(
-      &root_node_manager);
-  loop.Run();
+class ViewManagerApp : public ApplicationDelegate {
+ public:
+  ViewManagerApp() {}
+  virtual ~ViewManagerApp() {}
 
-  return MOJO_RESULT_OK;
+  virtual bool ConfigureIncomingConnection(ApplicationConnection* connection)
+      MOJO_OVERRIDE {
+    // TODO(sky): this needs some sort of authentication as well as making sure
+    // we only ever have one active at a time.
+    connection->AddService<ViewManagerInitServiceImpl>();
+    return true;
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(ViewManagerApp);
+};
+
+}  // namespace service
+}  // namespace view_manager
+
+// static
+ApplicationDelegate* ApplicationDelegate::Create() {
+  return new mojo::view_manager::service::ViewManagerApp();
 }
+
+}  // namespace mojo

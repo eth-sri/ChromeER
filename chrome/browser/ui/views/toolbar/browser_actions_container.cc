@@ -40,6 +40,7 @@
 #include "ui/gfx/animation/slide_animation.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/geometry/rect.h"
+#include "ui/views/controls/button/label_button_border.h"
 #include "ui/views/controls/resize_area.h"
 #include "ui/views/metrics.h"
 #include "ui/views/painter.h"
@@ -55,6 +56,35 @@ const int kItemSpacing = ToolbarView::kStandardSpacing;
 
 // Horizontal spacing before the chevron (if visible).
 const int kChevronSpacing = kItemSpacing - 2;
+
+// A version of MenuButton with almost empty insets to fit properly on the
+// toolbar.
+class ChevronMenuButton : public views::MenuButton {
+ public:
+  ChevronMenuButton(views::ButtonListener* listener,
+                    const base::string16& text,
+                    views::MenuButtonListener* menu_button_listener,
+                    bool show_menu_marker)
+      : views::MenuButton(listener,
+                          text,
+                          menu_button_listener,
+                          show_menu_marker) {
+  }
+
+  virtual ~ChevronMenuButton() {}
+
+  virtual scoped_ptr<views::LabelButtonBorder> CreateDefaultBorder() const
+      OVERRIDE {
+    // The chevron resource was designed to not have any insets.
+    scoped_ptr<views::LabelButtonBorder> border =
+        views::MenuButton::CreateDefaultBorder();
+    border->set_insets(gfx::Insets());
+    return border.Pass();
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(ChevronMenuButton);
+};
 
 }  // namespace
 
@@ -97,8 +127,7 @@ BrowserActionsContainer::BrowserActionsContainer(Browser* browser,
   resize_area_ = new views::ResizeArea(this);
   AddChildView(resize_area_);
 
-  chevron_ = new views::MenuButton(NULL, base::string16(), this, false);
-  chevron_->SetBorder(views::Border::NullBorder());
+  chevron_ = new ChevronMenuButton(NULL, base::string16(), this, false);
   chevron_->EnableCanvasFlippingForRTLUI(true);
   chevron_->SetAccessibleName(
       l10n_util::GetStringUTF16(IDS_ACCNAME_EXTENSIONS_CHEVRON));
@@ -185,6 +214,13 @@ size_t BrowserActionsContainer::VisibleBrowserActions() const {
       ++visible_actions;
   }
   return visible_actions;
+}
+
+size_t BrowserActionsContainer::VisibleBrowserActionsAfterAnimation() const {
+  if (!animating())
+    return VisibleBrowserActions();
+
+  return WidthToIconCount(animation_target_size_);
 }
 
 void BrowserActionsContainer::ExecuteExtensionCommand(
@@ -420,7 +456,7 @@ void BrowserActionsContainer::WriteDragDataForView(View* sender,
     if (button == sender) {
       // Set the dragging image for the icon.
       gfx::ImageSkia badge(browser_action_views_[i]->GetIconWithBadge());
-      drag_utils::SetDragImageOnDataObject(badge, button->size(),
+      drag_utils::SetDragImageOnDataObject(badge,
                                            press_pt.OffsetFromOrigin(),
                                            data);
 
@@ -675,7 +711,7 @@ void BrowserActionsContainer::BrowserActionAdded(const Extension* extension,
   if (!ShouldDisplayBrowserAction(extension))
     return;
 
-  size_t visible_actions = VisibleBrowserActions();
+  size_t visible_actions = VisibleBrowserActionsAfterAnimation();
 
   // Add the new browser action to the vector and the view hierarchy.
   if (profile_->IsOffTheRecord())
@@ -707,7 +743,7 @@ void BrowserActionsContainer::BrowserActionRemoved(const Extension* extension) {
   if (popup_ && popup_->host()->extension() == extension)
     HidePopup();
 
-  size_t visible_actions = VisibleBrowserActions();
+  size_t visible_actions = VisibleBrowserActionsAfterAnimation();
   for (BrowserActionViews::iterator i(browser_action_views_.begin());
        i != browser_action_views_.end(); ++i) {
     if ((*i)->button()->extension() == extension) {
@@ -775,11 +811,8 @@ void BrowserActionsContainer::HighlightModeChanged(bool is_highlighting) {
 
 void BrowserActionsContainer::LoadImages() {
   ui::ThemeProvider* tp = GetThemeProvider();
-  chevron_->SetIcon(*tp->GetImageSkiaNamed(IDR_BROWSER_ACTIONS_OVERFLOW));
-  chevron_->SetHoverIcon(*tp->GetImageSkiaNamed(
-      IDR_BROWSER_ACTIONS_OVERFLOW_H));
-  chevron_->SetPushedIcon(*tp->GetImageSkiaNamed(
-      IDR_BROWSER_ACTIONS_OVERFLOW_P));
+  chevron_->SetImage(views::Button::STATE_NORMAL,
+                     *tp->GetImageSkiaNamed(IDR_BROWSER_ACTIONS_OVERFLOW));
 
   const int kImages[] = IMAGE_GRID(IDR_DEVELOPER_MODE_HIGHLIGHT);
   highlight_painter_.reset(views::Painter::CreateImageGridPainter(kImages));
@@ -873,7 +906,6 @@ void BrowserActionsContainer::SaveDesiredSizeAndAnimate(
   // always at least as wide as in an incognito window.
   if (!profile_->IsOffTheRecord())
     model_->SetVisibleIconCount(num_visible_icons);
-
   int target_size = IconCountToWidth(num_visible_icons,
       num_visible_icons < browser_action_views_.size());
   if (!disable_animations_during_testing_) {

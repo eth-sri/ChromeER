@@ -8,7 +8,7 @@
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/string_number_conversions.h"
-#include "chrome/browser/sync/managed_user_signin_manager_wrapper.h"
+#include "chrome/browser/sync/supervised_user_signin_manager_wrapper.h"
 #include "chrome/common/chrome_switches.h"
 #include "components/signin/core/browser/profile_oauth2_token_service.h"
 #include "components/sync_driver/sync_prefs.h"
@@ -38,7 +38,7 @@ StartupController::StartupController(
     ProfileSyncServiceStartBehavior start_behavior,
     const ProfileOAuth2TokenService* token_service,
     const sync_driver::SyncPrefs* sync_prefs,
-    const ManagedUserSigninManagerWrapper* signin,
+    const SupervisedUserSigninManagerWrapper* signin,
     base::Closure start_backend)
     : received_start_request_(false),
       setup_in_progress_(false),
@@ -56,7 +56,7 @@ StartupController::StartupController(
     int timeout = kDeferredInitFallbackSeconds;
     if (base::StringToInt(CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
             switches::kSyncDeferredStartupTimeoutSeconds), &timeout)) {
-      DCHECK_GE(0, timeout);
+      DCHECK_GE(timeout, 0);
       DVLOG(2) << "Sync StartupController overriding startup timeout to "
                << timeout << " seconds.";
       fallback_timeout_ = base::TimeDelta::FromSeconds(timeout);

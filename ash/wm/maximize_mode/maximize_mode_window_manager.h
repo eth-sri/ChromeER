@@ -22,8 +22,8 @@ class TouchEvent;
 }
 
 namespace ash {
+class MaximizeModeController;
 class MaximizeModeWindowState;
-class Shell;
 
 // A window manager which - when created - will force all windows into maximized
 // mode. Exception are panels and windows which cannot be maximized.
@@ -56,17 +56,17 @@ class ASH_EXPORT MaximizeModeWindowManager : public aura::WindowObserver,
                                      const gfx::Rect& old_bounds,
                                      const gfx::Rect& new_bounds) OVERRIDE;
 
-  // aura::DisplayObserver overrides:
-  virtual void OnDisplayBoundsChanged(
-      const gfx::Display& display) OVERRIDE;
+  // gfx::DisplayObserver overrides:
   virtual void OnDisplayAdded(const gfx::Display& display) OVERRIDE;
   virtual void OnDisplayRemoved(const gfx::Display& display) OVERRIDE;
+  virtual void OnDisplayMetricsChanged(const gfx::Display& display,
+                                       uint32_t metrics) OVERRIDE;
 
   // ui::EventHandler override:
   virtual void OnTouchEvent(ui::TouchEvent* event) OVERRIDE;
 
  protected:
-  friend class ash::Shell;
+  friend class MaximizeModeController;
 
   // The object should only be created by the ash::Shell.
   MaximizeModeWindowManager();

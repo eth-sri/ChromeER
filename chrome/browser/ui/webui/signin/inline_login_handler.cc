@@ -47,7 +47,8 @@ void InlineLoginHandler::HandleInitializeMessage(const base::ListValue* args) {
   const GURL& current_url = web_ui()->GetWebContents()->GetURL();
   signin::Source source = signin::GetSourceForPromoURL(current_url);
   if (source == signin::SOURCE_AVATAR_BUBBLE_ADD_ACCOUNT ||
-      source == signin::SOURCE_AVATAR_BUBBLE_SIGN_IN) {
+      source == signin::SOURCE_AVATAR_BUBBLE_SIGN_IN ||
+      source == signin::SOURCE_REAUTH) {
     // Drop the leading slash in the path.
     params.SetString(
         "gaiaPath",
@@ -56,10 +57,12 @@ void InlineLoginHandler::HandleInitializeMessage(const base::ListValue* args) {
 
   params.SetString(
       "continueUrl",
-      signin::GetLandingURL("source", static_cast<int>(source)).spec());
+      signin::GetLandingURL(signin::kSignInPromoQueryKeySource,
+                            static_cast<int>(source)).spec());
 
   std::string default_email;
-  if (source != signin::SOURCE_AVATAR_BUBBLE_ADD_ACCOUNT) {
+  if (source != signin::SOURCE_AVATAR_BUBBLE_ADD_ACCOUNT &&
+      source != signin::SOURCE_REAUTH) {
     default_email = Profile::FromWebUI(web_ui())->GetPrefs()->GetString(
         prefs::kGoogleServicesLastUsername);
   } else {
@@ -75,9 +78,10 @@ void InlineLoginHandler::HandleInitializeMessage(const base::ListValue* args) {
     params.SetString("frameUrl", frame_url);
 
   std::string is_constrained;
-  net::GetValueForKeyInQuery(current_url, "constrained", &is_constrained);
+  net::GetValueForKeyInQuery(
+      current_url, signin::kSignInPromoQueryKeyConstrained, &is_constrained);
   if (!is_constrained.empty())
-    params.SetString("constrained", is_constrained);
+    params.SetString(signin::kSignInPromoQueryKeyConstrained, is_constrained);
 
   // TODO(rogerta): this needs to be passed on to gaia somehow.
   std::string read_only_email;
@@ -104,9 +108,18 @@ void InlineLoginHandler::HandleSwitchToFullTabMessage(
   GURL main_frame_url(web_contents->GetURL());
   main_frame_url = net::AppendOrReplaceQueryParameter(
       main_frame_url, "frameUrl", base::UTF16ToASCII(url_str));
+
+  // Adds extra parameters to the signin URL so that Chrome will close the tab
+  // and show the account management view of the avatar menu upon completion.
+  main_frame_url = net::AppendOrReplaceQueryParameter(
+      main_frame_url, signin::kSignInPromoQueryKeyAutoClose, "1");
+  main_frame_url = net::AppendOrReplaceQueryParameter(
+      main_frame_url, signin::kSignInPromoQueryKeyShowAccountManagement, "1");
+
   chrome::NavigateParams params(
       Profile::FromWebUI(web_ui()),
-      net::AppendOrReplaceQueryParameter(main_frame_url, "constrained", "0"),
+      net::AppendOrReplaceQueryParameter(
+          main_frame_url, signin::kSignInPromoQueryKeyConstrained, "0"),
       content::PAGE_TRANSITION_AUTO_TOPLEVEL);
   chrome::Navigate(&params);
 

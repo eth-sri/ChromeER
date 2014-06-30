@@ -42,17 +42,14 @@ QuicServer::QuicServer()
       overflow_supported_(false),
       use_recvmmsg_(false),
       crypto_config_(kSourceAddressTokenSecret, QuicRandom::GetInstance()),
-      supported_versions_(QuicSupportedVersions()),
-      server_initial_flow_control_receive_window_(
-          kServerInitialFlowControlWindow) {
+      supported_versions_(QuicSupportedVersions()) {
   // Use hardcoded crypto parameters for now.
   config_.SetDefaults();
   Initialize();
 }
 
 QuicServer::QuicServer(const QuicConfig& config,
-                       const QuicVersionVector& supported_versions,
-                       uint32 server_initial_flow_control_receive_window)
+                       const QuicVersionVector& supported_versions)
     : port_(0),
       fd_(-1),
       packets_dropped_(0),
@@ -60,9 +57,7 @@ QuicServer::QuicServer(const QuicConfig& config,
       use_recvmmsg_(false),
       config_(config),
       crypto_config_(kSourceAddressTokenSecret, QuicRandom::GetInstance()),
-      supported_versions_(supported_versions),
-      server_initial_flow_control_receive_window_(
-          server_initial_flow_control_receive_window) {
+      supported_versions_(supported_versions) {
   Initialize();
 }
 
@@ -80,6 +75,9 @@ void QuicServer::Initialize() {
       crypto_config_.AddDefaultConfig(
           QuicRandom::GetInstance(), &clock,
           QuicCryptoServerConfig::ConfigOptions()));
+
+  // Set flow control options in the config.
+  config_.SetInitialCongestionWindowToSend(kServerInitialFlowControlWindow);
 }
 
 QuicServer::~QuicServer() {
@@ -164,15 +162,18 @@ bool QuicServer::Listen(const IPEndPoint& address) {
   }
 
   epoll_server_.RegisterFD(fd_, this, kEpollFlags);
-  dispatcher_.reset(new QuicDispatcher(
-      config_,
-      crypto_config_,
-      supported_versions_,
-      &epoll_server_,
-      server_initial_flow_control_receive_window_));
+  dispatcher_.reset(CreateQuicDispatcher());
   dispatcher_->Initialize(fd_);
 
   return true;
+}
+
+QuicDispatcher* QuicServer::CreateQuicDispatcher() {
+  return new QuicDispatcher(
+      config_,
+      crypto_config_,
+      supported_versions_,
+      &epoll_server_);
 }
 
 void QuicServer::WaitForEvents() {
@@ -214,7 +215,7 @@ void QuicServer::OnEvent(int fd, EpollEvent* event) {
 /* static */
 bool QuicServer::ReadAndDispatchSinglePacket(int fd,
                                              int port,
-                                             QuicDispatcher* dispatcher,
+                                             ProcessPacketInterface* processor,
                                              uint32* packets_dropped) {
   // Allocate some extra space so we can send an error if the client goes over
   // the limit.
@@ -234,7 +235,7 @@ bool QuicServer::ReadAndDispatchSinglePacket(int fd,
   QuicEncryptedPacket packet(buf, bytes_read, false);
 
   IPEndPoint server_address(server_ip, port);
-  dispatcher->ProcessPacket(server_address, client_address, packet);
+  processor->ProcessPacket(server_address, client_address, packet);
 
   return true;
 }

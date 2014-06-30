@@ -18,6 +18,7 @@ class ContentRendererClient;
 
 namespace apps {
 class ShellBrowserMainDelegate;
+class ShellRendererMainDelegate;
 
 class ShellMainDelegate : public content::ContentMainDelegate {
  public:
@@ -35,13 +36,17 @@ class ShellMainDelegate : public content::ContentMainDelegate {
   // The created object is owned by ShellBrowserMainParts.
   virtual ShellBrowserMainDelegate* CreateShellBrowserMainDelegate();
 
+  // The returned object is owned by ShellContentRendererClient.
+  virtual scoped_ptr<ShellRendererMainDelegate>
+      CreateShellRendererMainDelegate();
+
+  // Initializes the resource bundle and resources.pak.
+  virtual void InitializeResourceBundle();
+
  private:
   // |process_type| is zygote, renderer, utility, etc. Returns true if the
   // process needs data from resources.pak.
   static bool ProcessNeedsResourceBundle(const std::string& process_type);
-
-  // Initializes the resource bundle and resources.pak.
-  static void InitializeResourceBundle();
 
   scoped_ptr<content::ContentClient> content_client_;
   scoped_ptr<content::ContentBrowserClient> browser_client_;

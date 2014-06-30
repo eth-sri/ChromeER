@@ -29,7 +29,7 @@
 #include "components/policy/core/common/policy_map.h"
 #include "components/policy/core/common/schema.h"
 #include "crypto/sha2.h"
-#include "grit/component_strings.h"
+#include "grit/components_strings.h"
 #include "policy/policy_constants.h"
 #include "url/gurl.h"
 
@@ -346,9 +346,9 @@ void ScreenMagnifierPolicyHandler::ApplyPolicySettings(
   const base::Value* value = policies.GetValue(policy_name());
   int value_in_range;
   if (value && EnsureInRange(value, &value_in_range, NULL)) {
-    prefs->SetValue(prefs::kScreenMagnifierEnabled,
+    prefs->SetValue(prefs::kAccessibilityScreenMagnifierEnabled,
                     new base::FundamentalValue(value_in_range != 0));
-    prefs->SetValue(prefs::kScreenMagnifierType,
+    prefs->SetValue(prefs::kAccessibilityScreenMagnifierType,
                     new base::FundamentalValue(value_in_range));
   }
 }

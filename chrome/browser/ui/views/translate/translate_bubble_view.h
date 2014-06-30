@@ -9,7 +9,7 @@
 #include <string>
 
 #include "base/basictypes.h"
-#include "chrome/browser/translate/translate_tab_helper.h"
+#include "chrome/browser/translate/chrome_translate_client.h"
 #include "chrome/browser/ui/translate/language_combobox_model.h"
 #include "chrome/browser/ui/translate/translate_bubble_model.h"
 #include "components/translate/core/common/translate_errors.h"
@@ -27,6 +27,10 @@ class GridLayout;
 class LabelButton;
 class Link;
 class View;
+}
+
+namespace ui {
+class SimpleComboboxModel;
 }
 
 class TranslateBubbleView : public views::BubbleDelegateView,
@@ -169,6 +173,7 @@ class TranslateBubbleView : public views::BubbleDelegateView,
   views::View* error_view_;
   views::View* advanced_view_;
 
+  scoped_ptr<ui::SimpleComboboxModel> denial_combobox_model_;
   scoped_ptr<LanguageComboboxModel> source_language_combobox_model_;
   scoped_ptr<LanguageComboboxModel> target_language_combobox_model_;
 

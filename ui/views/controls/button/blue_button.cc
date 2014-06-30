@@ -11,8 +11,7 @@
 
 namespace {
 
-// Default text and shadow colors for the blue button.
-const SkColor kBlueButtonTextColor = SK_ColorWHITE;
+// Default shadow color for the blue button.
 const SkColor kBlueButtonShadowColor = SkColorSetRGB(0x53, 0x8C, 0xEA);
 
 }  // namespace
@@ -34,10 +33,18 @@ BlueButton::~BlueButton() {}
 void BlueButton::ResetColorsFromNativeTheme() {
   LabelButton::ResetColorsFromNativeTheme();
   if (!gfx::IsInvertedColorScheme()) {
-    for (size_t state = STATE_NORMAL; state < STATE_COUNT; ++state)
-      SetTextColor(static_cast<ButtonState>(state), kBlueButtonTextColor);
-    label()->SetShadowColors(kBlueButtonShadowColor, kBlueButtonShadowColor);
-    label()->SetShadowOffset(0, 1);
+    SetTextColor(STATE_NORMAL, GetNativeTheme()->
+        GetSystemColor(ui::NativeTheme::kColorId_BlueButtonEnabledColor));
+    SetTextColor(STATE_HOVERED, GetNativeTheme()->
+        GetSystemColor(ui::NativeTheme::kColorId_BlueButtonHoverColor));
+    SetTextColor(STATE_PRESSED, GetNativeTheme()->
+        GetSystemColor(ui::NativeTheme::kColorId_BlueButtonPressedColor));
+    SetTextColor(STATE_DISABLED, GetNativeTheme()->
+        GetSystemColor(ui::NativeTheme::kColorId_BlueButtonDisabledColor));
+
+    // TODO(estade): this is not great on system themes.
+    label()->set_shadows(gfx::ShadowValues(1,
+        gfx::ShadowValue(gfx::Point(0, 1), 0, kBlueButtonShadowColor)));
   }
 }
 
@@ -45,7 +52,7 @@ const char* BlueButton::GetClassName() const {
   return BlueButton::kViewClassName;
 }
 
-scoped_ptr<Border> BlueButton::CreateDefaultBorder() const {
+scoped_ptr<LabelButtonBorder> BlueButton::CreateDefaultBorder() const {
   // Insets for splitting the images.
   const gfx::Insets insets(5, 5, 5, 5);
   scoped_ptr<LabelButtonBorder> button_border(new LabelButtonBorder(style()));
@@ -66,7 +73,7 @@ scoped_ptr<Border> BlueButton::CreateDefaultBorder() const {
       *rb.GetImageSkiaNamed(IDR_BLUE_BUTTON_FOCUSED_PRESSED), insets));
   button_border->SetPainter(true, STATE_DISABLED, Painter::CreateImagePainter(
       *rb.GetImageSkiaNamed(IDR_BLUE_BUTTON_DISABLED), insets));
-  return button_border.PassAs<Border>();
+  return button_border.Pass();
 }
 
 }  // namespace views

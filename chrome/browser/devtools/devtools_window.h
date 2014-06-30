@@ -9,6 +9,7 @@
 #include "chrome/browser/devtools/devtools_toggle_action.h"
 #include "chrome/browser/devtools/devtools_ui_bindings.h"
 #include "content/public/browser/web_contents_delegate.h"
+#include "content/public/browser/web_contents_observer.h"
 
 class Browser;
 class BrowserWindow;
@@ -28,6 +29,16 @@ class PrefRegistrySyncable;
 class DevToolsWindow : public DevToolsUIBindings::Delegate,
                        public content::WebContentsDelegate {
  public:
+  class ObserverWithAccessor : public content::WebContentsObserver {
+   public:
+    explicit ObserverWithAccessor(content::WebContents* web_contents);
+    virtual ~ObserverWithAccessor();
+    content::WebContents* GetWebContents();
+
+   private:
+    DISALLOW_COPY_AND_ASSIGN(ObserverWithAccessor);
+  };
+
   static const char kDevToolsApp[];
 
   virtual ~DevToolsWindow();
@@ -45,13 +56,16 @@ class DevToolsWindow : public DevToolsUIBindings::Delegate,
   static DevToolsWindow* GetInstanceForInspectedWebContents(
       content::WebContents* inspected_web_contents);
 
-  // Return the DevToolsWindow for the given WebContents if one exists and is
-  // docked, otherwise NULL. This method will return only fully initialized
-  // window ready to be presented in UI.
+  // Return the docked DevTools WebContents for the given inspected WebContents
+  // if one exists and should be shown in browser window, otherwise NULL.
+  // This method will return only fully initialized window ready to be
+  // presented in UI.
+  // If |out_strategy| is not NULL, it will contain resizing strategy.
   // For immediately-ready-to-use but maybe not yet fully initialized DevTools
   // use |GetInstanceForInspectedRenderViewHost| instead.
-  static DevToolsWindow* GetDockedInstanceForInspectedTab(
-      content::WebContents* inspected_tab);
+  static content::WebContents* GetInTabWebContents(
+      content::WebContents* inspected_tab,
+      DevToolsContentsResizingStrategy* out_strategy);
 
   static bool IsDevToolsWindow(content::RenderViewHost* window_rvh);
 
@@ -89,18 +103,8 @@ class DevToolsWindow : public DevToolsUIBindings::Delegate,
   static void InspectElement(
       content::RenderViewHost* inspected_rvh, int x, int y);
 
-  content::WebContents* web_contents() { return web_contents_; }
-
-  Browser* browser() { return browser_; }  // For tests.
-
-  // Inspected WebContents is placed over DevTools WebContents in docked mode.
-  // The following method returns the resizing strategy of inspected
-  // WebContents relative to DevTools WebContents.
-  const DevToolsContentsResizingStrategy& GetContentsResizingStrategy() const;
-
-  // Minimum size of the docked DevTools WebContents. This includes
-  // the overlaying inspected WebContents size.
-  gfx::Size GetMinimumSize() const;
+  Browser* browser_for_test() { return browser_; }
+  content::WebContents* web_contents_for_test() { return main_web_contents_; }
 
   // Sets closure to be called after load is done. If already loaded, calls
   // closure immediately.
@@ -223,8 +227,6 @@ class DevToolsWindow : public DevToolsUIBindings::Delegate,
   static DevToolsWindow* FindDevToolsWindow(content::DevToolsAgentHost*);
   static DevToolsWindow* AsDevToolsWindow(content::RenderViewHost*);
   static DevToolsWindow* CreateDevToolsWindowForWorker(Profile* profile);
-  static bool FindInspectedBrowserAndTabIndex(
-      content::WebContents* inspected_web_contents, Browser**, int* tab);
   static DevToolsWindow* ToggleDevToolsWindow(
       content::RenderViewHost* inspected_rvh,
       bool force_open,
@@ -241,6 +243,11 @@ class DevToolsWindow : public DevToolsUIBindings::Delegate,
                               const gfx::Rect& initial_pos,
                               bool user_gesture,
                               bool* was_blocked) OVERRIDE;
+  virtual void WebContentsCreated(content::WebContents* source_contents,
+                                  int opener_render_frame_id,
+                                  const base::string16& frame_name,
+                                  const GURL& target_url,
+                                  content::WebContents* new_contents) OVERRIDE;
   virtual void CloseContents(content::WebContents* source) OVERRIDE;
   virtual void ContentsZoomChange(bool zoom_in) OVERRIDE;
   virtual void BeforeUnloadFired(content::WebContents* tab,
@@ -291,13 +298,14 @@ class DevToolsWindow : public DevToolsUIBindings::Delegate,
   void LoadCompleted();
   void SetIsDockedAndShowImmediatelyForTest(bool is_docked);
   void UpdateBrowserToolbar();
+  void UpdateBrowserWindow();
   content::WebContents* GetInspectedWebContents();
 
-  class InspectedWebContentsObserver;
-  scoped_ptr<InspectedWebContentsObserver> inspected_contents_observer_;
+  scoped_ptr<ObserverWithAccessor> inspected_contents_observer_;
 
   Profile* profile_;
-  content::WebContents* web_contents_;
+  content::WebContents* main_web_contents_;
+  content::WebContents* toolbox_web_contents_;
   DevToolsUIBindings* bindings_;
   Browser* browser_;
   bool is_docked_;

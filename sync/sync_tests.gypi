@@ -38,10 +38,18 @@
         'test/engine/fake_model_worker.h',
         'test/engine/fake_sync_scheduler.cc',
         'test/engine/fake_sync_scheduler.h',
+        'test/engine/injectable_sync_context_proxy.cc',
+        'test/engine/injectable_sync_context_proxy.h',
         'test/engine/mock_connection_manager.cc',
         'test/engine/mock_connection_manager.h',
+        'test/engine/mock_model_type_sync_proxy.cc',
+        'test/engine/mock_model_type_sync_proxy.h',
+        'test/engine/mock_model_type_sync_worker.cc',
+        'test/engine/mock_model_type_sync_worker.h',
         'test/engine/mock_update_handler.cc',
         'test/engine/mock_update_handler.h',
+        'test/engine/single_type_mock_server.cc',
+        'test/engine/single_type_mock_server.h',
         'test/engine/test_directory_setter_upper.cc',
         'test/engine/test_directory_setter_upper.h',
         'test/engine/test_id_factory.h',
@@ -159,14 +167,6 @@
         'sync',
       ],
       'sources': [
-        'notifier/fake_invalidation_handler.cc',
-        'notifier/fake_invalidation_handler.h',
-        'notifier/fake_invalidation_state_tracker.cc',
-        'notifier/fake_invalidation_state_tracker.h',
-        'notifier/fake_invalidator.cc',
-        'notifier/fake_invalidator.h',
-        'notifier/invalidator_test_template.cc',
-        'notifier/invalidator_test_template.h',
         'notifier/unacked_invalidation_set_test_util.cc',
         'notifier/unacked_invalidation_set_test_util.h',
         'internal_api/public/base/object_id_invalidation_map_test_util.h',
@@ -200,13 +200,13 @@
         'internal_api/public/base/invalidation_test_util.cc',
         'internal_api/public/base/invalidation_test_util.h',
         'internal_api/public/test/fake_sync_manager.h',
-        'internal_api/public/test/null_sync_core_proxy.h',
+        'internal_api/public/test/null_sync_context_proxy.h',
         'internal_api/public/test/sync_manager_factory_for_profile_sync_test.h',
         'internal_api/public/test/test_entry_factory.h',
         'internal_api/public/test/test_internal_components_factory.h',
         'internal_api/public/test/test_user_share.h',
         'internal_api/test/fake_sync_manager.cc',
-        'internal_api/test/null_sync_core_proxy.cc',
+        'internal_api/test/null_sync_context_proxy.cc',
         'internal_api/test/sync_manager_factory_for_profile_sync_test.cc',
         'internal_api/test/sync_manager_for_profile_sync_test.cc',
         'internal_api/test/sync_manager_for_profile_sync_test.h',
@@ -286,6 +286,7 @@
           '..',
         ],
         'sources': [
+          'internal_api/public/base/attachment_id_proto_unittest.cc',
           'internal_api/public/base/cancelation_signal_unittest.cc',
           'internal_api/public/base/enum_set_unittest.cc',
           'internal_api/public/base/node_ordinal_unittest.cc',
@@ -298,7 +299,11 @@
           'engine/backoff_delay_provider_unittest.cc',
           'engine/directory_commit_contribution_unittest.cc',
           'engine/directory_update_handler_unittest.cc',
+          'engine/entity_tracker_unittest.cc',
           'engine/get_updates_processor_unittest.cc',
+          'engine/model_type_entity_unittest.cc',
+          'engine/model_type_sync_proxy_impl_unittest.cc',
+          'engine/model_type_sync_worker_impl_unittest.cc',
           'engine/sync_scheduler_unittest.cc',
           'engine/syncer_proto_util_unittest.cc',
           'engine/syncer_unittest.cc',
@@ -372,18 +377,9 @@
         'conditions': [
           ['OS != "android"', {
             'sources': [
-              'notifier/fake_invalidator_unittest.cc',
-              'notifier/gcm_network_channel_unittest.cc',
-              'notifier/invalidation_notifier_unittest.cc',
-              'notifier/invalidator_registrar_unittest.cc',
-              'notifier/non_blocking_invalidator_unittest.cc',
               'notifier/object_id_invalidation_map_unittest.cc',
-              'notifier/p2p_invalidator_unittest.cc',
-              'notifier/push_client_channel_unittest.cc',
               'notifier/registration_manager_unittest.cc',
               'notifier/single_object_invalidation_set_unittest.cc',
-              'notifier/sync_invalidation_listener_unittest.cc',
-              'notifier/sync_system_resources_unittest.cc',
               'notifier/unacked_invalidation_set_unittest.cc',
             ],
           }],
@@ -402,6 +398,7 @@
       'suppress_wildcard': 1,
       'dependencies': [
         '../base/base.gyp:base',
+        '../google_apis/google_apis.gyp:google_apis_test_support',
         '../net/net.gyp:net',
         '../net/net.gyp:net_test_support',
         '../testing/gmock.gyp:gmock',
@@ -425,7 +422,9 @@
           '..',
         ],
         'sources': [
+          'internal_api/attachments/attachment_downloader_impl_unittest.cc',
           'internal_api/attachments/attachment_uploader_impl_unittest.cc',
+          'internal_api/attachments/fake_attachment_downloader_unittest.cc',
           'internal_api/attachments/fake_attachment_store_unittest.cc',
           'internal_api/attachments/fake_attachment_uploader_unittest.cc',
           'internal_api/debug_info_event_listener_unittest.cc',
@@ -437,7 +436,7 @@
           'internal_api/public/change_record_unittest.cc',
           'internal_api/public/sessions/sync_session_snapshot_unittest.cc',
           'internal_api/sync_backup_manager_unittest.cc',
-          'internal_api/sync_core_proxy_impl_unittest.cc',
+          'internal_api/sync_context_proxy_impl_unittest.cc',
           'internal_api/sync_encryption_handler_impl_unittest.cc',
           'internal_api/sync_manager_impl_unittest.cc',
           'internal_api/sync_rollback_manager_base_unittest.cc',
@@ -484,6 +483,7 @@
         'sources': [
           'api/attachments/attachment_unittest.cc',
           'api/attachments/attachment_id_unittest.cc',
+          'api/attachments/attachment_service_impl_unittest.cc',
           'api/attachments/attachment_service_proxy_unittest.cc',
           'api/sync_change_unittest.cc',
           'api/sync_data_unittest.cc',
@@ -567,29 +567,6 @@
   'conditions': [
     ['OS != "ios"', {
       'targets': [
-        {
-          'target_name': 'sync_tools_helper',
-          'type': 'static_library',
-          'defines': [
-            'SYNC_IMPLEMENTATION',
-          ],
-          'include_dirs': [
-            '..',
-          ],
-          'dependencies': [
-            '../base/base.gyp:base',
-            'sync',
-          ],
-          'export_dependent_settings': [
-            '../base/base.gyp:base',
-            'sync',
-          ],
-          'sources': [
-            'tools/null_invalidation_state_tracker.cc',
-            'tools/null_invalidation_state_tracker.h',
-          ],
-        },
-
         # A tool that can be used to launch a python sync server instance.
         {
           'target_name': 'run_sync_testserver',
@@ -603,47 +580,6 @@
           ],
           'sources': [
             'tools/testserver/run_sync_testserver.cc',
-          ],
-        },
-
-        # A tool to listen to sync notifications and print them out.
-        {
-          'target_name': 'sync_listen_notifications',
-          'type': 'executable',
-          'defines': [
-            'SYNC_TEST',
-          ],
-          'dependencies': [
-            '../base/base.gyp:base',
-            '../jingle/jingle.gyp:notifier',
-            '../net/net.gyp:net',
-            '../net/net.gyp:net_test_support',
-            'sync',
-            'sync_tools_helper',
-          ],
-          'sources': [
-            'tools/sync_listen_notifications.cc',
-          ],
-        },
-
-        # A standalone command-line sync client.
-        {
-          'target_name': 'sync_client',
-          'type': 'executable',
-          'defines': [
-            'SYNC_TEST',
-          ],
-          'dependencies': [
-            '../base/base.gyp:base',
-            '../jingle/jingle.gyp:notifier',
-            '../net/net.gyp:net',
-            '../net/net.gyp:net_test_support',
-            'sync',
-            'sync_tools_helper',
-            'test_support_sync_core'
-          ],
-          'sources': [
-            'tools/sync_client.cc',
           ],
         },
       ],

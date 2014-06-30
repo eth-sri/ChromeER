@@ -6,6 +6,7 @@
 """Makes sure that all files contain proper licensing information."""
 
 
+import json
 import optparse
 import os.path
 import subprocess
@@ -30,6 +31,7 @@ Examples:
 
 
 WHITELISTED_LICENSES = [
+    'Anti-Grain Geometry',
     'Apache (v2.0)',
     'Apache (v2.0) BSD (2 clause)',
     'Apache (v2.0) GPL (v2)',
@@ -53,6 +55,8 @@ WHITELISTED_LICENSES = [
     'BSD-like MIT/X11 (BSD like)',
 
     'BSL (v1.0)',
+    'FreeType (BSD like)',
+    'FreeType (BSD like) with patent clause',
     'GPL (v2) LGPL (v2.1 or later)',
     'GPL (v2 or later) with Bison parser exception',
     'GPL (v2 or later) with libtool exception',
@@ -152,6 +156,11 @@ PATH_SPECIFIC_WHITELISTED_LICENSES = {
 
     # http://crbug.com/333508
     'third_party/clang_format/script': [
+        'UNKNOWN',
+    ],
+
+    # http://crbug.com/333508
+    'buildtools/clang_format/script': [
         'UNKNOWN',
     ],
 
@@ -258,9 +267,6 @@ PATH_SPECIFIC_WHITELISTED_LICENSES = {
     'third_party/ocmock/OCMock': [  # http://crbug.com/98454
         'UNKNOWN',
     ],
-    'third_party/pdfium': [  # http://crbug.com/374943
-        'UNKNOWN',
-    ],
     'third_party/ply/__init__.py': [
         'UNKNOWN',
     ],
@@ -293,11 +299,6 @@ PATH_SPECIFIC_WHITELISTED_LICENSES = {
         'GPL (v2 or later)',
     ],
     'third_party/sqlite': [
-        'UNKNOWN',
-    ],
-
-    # https://code.google.com/p/colorama/issues/detail?id=44
-    'tools/swarming_client/third_party/colorama': [
         'UNKNOWN',
     ],
 
@@ -422,8 +423,8 @@ def check_licenses(options, args):
     return 1
 
   used_suppressions = set()
+  errors = []
 
-  success = True
   for line in stdout.splitlines():
     filename, license = line.split(':', 1)
     filename = os.path.relpath(filename.strip(), options.base_directory)
@@ -452,21 +453,16 @@ def check_licenses(options, args):
         used_suppressions.update(set(matched_prefixes))
         continue
 
-    print "'%s' has non-whitelisted license '%s'" % (filename, license)
-    success = False
+    errors.append({'filename': filename, 'license': license})
 
-  if success:
-    print "\nSUCCESS\n"
+  if options.json:
+    with open(options.json, 'w') as f:
+      json.dump(errors, f)
 
-    if not len(args):
-      unused_suppressions = set(
-        PATH_SPECIFIC_WHITELISTED_LICENSES.keys()).difference(used_suppressions)
-      if unused_suppressions:
-        print "\nNOTE: unused suppressions detected:\n"
-        print '\n'.join(unused_suppressions)
-
-    return 0
-  else:
+  if errors:
+    for error in errors:
+      print "'%s' has non-whitelisted license '%s'" % (
+          error['filename'], error['license'])
     print "\nFAILED\n"
     print "Please read",
     print "http://www.chromium.org/developers/adding-3rd-party-libraries"
@@ -480,6 +476,18 @@ def check_licenses(options, args):
     # would be distracting and make the important points easier to miss.
 
     return 1
+
+  print "\nSUCCESS\n"
+
+  if not len(args):
+    unused_suppressions = set(
+        PATH_SPECIFIC_WHITELISTED_LICENSES.iterkeys()).difference(
+            used_suppressions)
+    if unused_suppressions:
+      print "\nNOTE: unused suppressions detected:\n"
+      print '\n'.join(unused_suppressions)
+
+  return 0
 
 
 def main():
@@ -497,6 +505,7 @@ def main():
                            action='store_true',
                            default=False,
                            help='Ignore path-specific license whitelist.')
+  option_parser.add_option('--json', help='Path to JSON output file')
   options, args = option_parser.parse_args()
   return check_licenses(options, args)
 

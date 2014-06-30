@@ -40,6 +40,23 @@ DONE_MESSAGE_GOOD_MIN = 'You are probably looking for a change made after %s ' \
 DONE_MESSAGE_GOOD_MAX = 'You are probably looking for a change made after %s ' \
                         '(known bad), but no later than %s (first known good).'
 
+CHROMIUM_GITHASH_TO_SVN_URL = (
+    'https://chromium.googlesource.com/chromium/src/+/%s?format=json')
+BLINK_GITHASH_TO_SVN_URL = (
+    'https://chromium.googlesource.com/chromium/blink/+/%s?format=json')
+GITHASH_TO_SVN_URL = { 'chromium': CHROMIUM_GITHASH_TO_SVN_URL,
+                       'blink': BLINK_GITHASH_TO_SVN_URL }
+# Search pattern to be matched in the json output from
+# CHROMIUM_GITHASH_TO_SVN_URL to get the chromium revision (svn revision).
+CHROMIUM_SEARCH_PATTERN = (
+    r'.*git-svn-id: svn://svn.chromium.org/chrome/trunk/src@(\d+) ')
+# Search pattern to be matched in the json output from
+# BLINK_GITHASH_TO_SVN_URL to get the blink revision (svn revision).
+BLINK_SEARCH_PATTERN = (
+    r'.*git-svn-id: svn://svn.chromium.org/blink/trunk@(\d+) ')
+SEARCH_PATTERN = { 'chromium': CHROMIUM_SEARCH_PATTERN,
+                   'blink': BLINK_SEARCH_PATTERN }
+
 ###############################################################################
 
 import json
@@ -62,7 +79,7 @@ class PathContext(object):
   """A PathContext is used to carry the information used to construct URLs and
   paths when dealing with the storage server and archives."""
   def __init__(self, base_url, platform, good_revision, bad_revision,
-               is_official, is_aura, flash_path = None, pdf_path = None):
+               is_official, is_aura, flash_path = None):
     super(PathContext, self).__init__()
     # Store off the input parameters.
     self.base_url = base_url
@@ -72,7 +89,11 @@ class PathContext(object):
     self.is_official = is_official
     self.is_aura = is_aura
     self.flash_path = flash_path
-    self.pdf_path = pdf_path
+    # Dictionary which stores svn revision number as key and it's
+    # corresponding git hash as value. This data is populated in
+    # _FetchAndParse and used later in GetDownloadURL while downloading
+    # the build.
+    self.githash_svn_dict = {}
 
     # The name of the ZIP file in a revision directory on the server.
     self.archive_name = None
@@ -141,6 +162,8 @@ class PathContext(object):
           OFFICIAL_BASE_URL, revision, self._listing_platform_dir,
           self.archive_name)
     else:
+      if str(revision) in self.githash_svn_dict:
+        revision = self.githash_svn_dict[str(revision)]
       return "%s/%s%s/%s" % (self.base_url, self._listing_platform_dir,
                              revision, self.archive_name)
 
@@ -170,6 +193,14 @@ class PathContext(object):
       next-marker is not None, then the listing is a partial listing and another
       fetch should be performed with next-marker being the marker= GET
       parameter."""
+      def _GetDepotName():
+        if self.base_url == CHROMIUM_BASE_URL:
+          return 'chromium'
+        elif self.base_url == WEBKIT_BASE_URL:
+          return 'blink'
+        else:
+          return 'chromium'
+
       handle = urllib.urlopen(url)
       document = ElementTree.parse(handle)
 
@@ -188,7 +219,6 @@ class PathContext(object):
       is_truncated = document.find(namespace + 'IsTruncated')
       if is_truncated is not None and is_truncated.text.lower() == 'true':
         next_marker = document.find(namespace + 'NextMarker').text
-
       # Get a list of all the revisions.
       all_prefixes = document.findall(namespace + 'CommonPrefixes/' +
                                       namespace + 'Prefix')
@@ -196,25 +226,50 @@ class PathContext(object):
       # |_listing_platform_dir/revision/|. Strip off the platform dir and the
       # trailing slash to just have a number.
       revisions = []
+      githash_svn_dict = {}
       for prefix in all_prefixes:
         revnum = prefix.text[prefix_len:-1]
         try:
-          revnum = int(revnum)
-          revisions.append(revnum)
+          if not revnum.isdigit():
+            git_hash = revnum
+            revnum = self.GetSVNRevisionFromGitHash(git_hash, _GetDepotName())
+            githash_svn_dict[revnum] = git_hash
+          if revnum is not None:
+            revnum = int(revnum)
+            revisions.append(revnum)
         except ValueError:
           pass
-      return (revisions, next_marker)
+      return (revisions, next_marker, githash_svn_dict)
 
     # Fetch the first list of revisions.
-    (revisions, next_marker) = _FetchAndParse(self.GetListingURL())
-
+    (revisions, next_marker, self.githash_svn_dict) =\
+        _FetchAndParse(self.GetListingURL())
     # If the result list was truncated, refetch with the next marker. Do this
     # until an entire directory listing is done.
     while next_marker:
       next_url = self.GetListingURL(next_marker)
-      (new_revisions, next_marker) = _FetchAndParse(next_url)
+      (new_revisions, next_marker, new_dict) = _FetchAndParse(next_url)
       revisions.extend(new_revisions)
+      self.githash_svn_dict.update(new_dict)
     return revisions
+
+  def GetSVNRevisionFromGitHash(self, git_sha1, depot='chromium'):
+    json_url = GITHASH_TO_SVN_URL[depot] % git_sha1
+    try:
+      response = urllib.urlopen(json_url)
+    except urllib.HTTPError as error:
+      msg = 'HTTP Error %d for %s' % (error.getcode(), git_sha1)
+      return None
+    data = json.loads(response.read()[4:])
+    if 'message' in data:
+      message = data['message'].split('\n')
+      message = [line for line in message if line.strip()]
+      search_pattern = re.compile(SEARCH_PATTERN[depot])
+      result = search_pattern.search(message[len(message)-1])
+      if result:
+        return result.group(1)
+    print 'Failed to get svn revision number for %s' % git_sha1
+    return None
 
   def GetRevList(self):
     """Gets the list of revision numbers between self.good_revision and
@@ -363,7 +418,7 @@ def RunRevision(context, revision, zipfile, profile, num_runs, command, args):
   # Run the build as many times as specified.
   testargs = ['--user-data-dir=%s' % profile] + args
   # The sandbox must be run as root on Official Chrome, so bypass it.
-  if ((context.is_official or context.flash_path or context.pdf_path) and
+  if ((context.is_official or context.flash_path) and
       context.platform.startswith('linux')):
     testargs.append('--no-sandbox')
   if context.flash_path:
@@ -372,10 +427,6 @@ def RunRevision(context, revision, zipfile, profile, num_runs, command, args):
     # be correct. Instead of requiring the user of the script to figure out and
     # pass the correct version we just spoof it.
     testargs.append('--ppapi-flash-version=99.9.999.999')
-
-  if context.pdf_path:
-    shutil.copy(context.pdf_path, os.path.dirname(context.GetLaunchPath()))
-    testargs.append('--enable-print-preview')
 
   runcommand = []
   for token in shlex.split(command):
@@ -469,7 +520,6 @@ def Bisect(base_url,
            try_args=(),
            profile=None,
            flash_path=None,
-           pdf_path=None,
            interactive=True,
            evaluate=AskIsGoodBuild):
   """Given known good and known bad revisions, run a binary search on all
@@ -506,7 +556,7 @@ def Bisect(base_url,
     profile = 'profile'
 
   context = PathContext(base_url, platform, good_rev, bad_rev,
-                        official_builds, is_aura, flash_path, pdf_path)
+                        official_builds, is_aura, flash_path)
   cwd = os.getcwd()
 
   print "Downloading list of known revisions..."
@@ -678,13 +728,23 @@ def GetBlinkDEPSRevisionForChromiumRevision(rev):
 def GetBlinkRevisionForChromiumRevision(self, rev):
   """Returns the blink revision that was in REVISIONS file at
   chromium revision |rev|."""
-  file_url = "%s/%s%d/REVISIONS" % (self.base_url,
+  def _IsRevisionNumber(revision):
+    if isinstance(revision, int):
+      return True
+    else:
+      return revision.isdigit()
+  if str(rev) in self.githash_svn_dict:
+    rev = self.githash_svn_dict[str(rev)]
+  file_url = "%s/%s%s/REVISIONS" % (self.base_url,
                                     self._listing_platform_dir, rev)
   url = urllib.urlopen(file_url)
   data = json.loads(url.read())
   url.close()
   if 'webkit_revision' in data:
-    return data['webkit_revision']
+    blink_rev = data['webkit_revision']
+    if not _IsRevisionNumber(blink_rev):
+      blink_rev = self.GetSVNRevisionFromGitHash(blink_rev, 'blink')
+    return blink_rev
   else:
     raise Exception('Could not get blink revision for cr rev %d' % rev)
 
@@ -694,7 +754,6 @@ def FixChromiumRevForBlink(revisions_final, revisions, self, rev):
   blink snapshots point to tip of tree blink.
   Note: The revisions_final variable might get modified to include
   additional revisions."""
-
   blink_deps_rev = GetBlinkDEPSRevisionForChromiumRevision(rev)
 
   while (GetBlinkRevisionForChromiumRevision(self, rev) > blink_deps_rev):
@@ -755,12 +814,6 @@ def main():
                     'binary to be used in this bisection (e.g. ' +
                     'on Windows C:\...\pepflashplayer.dll and on Linux ' +
                     '/opt/google/chrome/PepperFlash/libpepflashplayer.so).')
-  parser.add_option('-d', '--pdf_path', type = 'str',
-                    help = 'Absolute path to a recent PDF pluggin ' +
-                    'binary to be used in this bisection (e.g. ' +
-                    'on Windows C:\...\pdf.dll and on Linux ' +
-                    '/opt/google/chrome/libpdf.so). Option also enables ' +
-                    'print preview.')
   parser.add_option('-g', '--good', type = 'str',
                     help = 'A good revision to start bisection. ' +
                     'May be earlier or later than the bad revision. ' +
@@ -831,11 +884,6 @@ def main():
     msg = 'Could not find Flash binary at %s' % flash_path
     assert os.path.exists(flash_path), msg
 
-  if opts.pdf_path:
-    pdf_path = opts.pdf_path
-    msg = 'Could not find PDF binary at %s' % pdf_path
-    assert os.path.exists(pdf_path), msg
-
   if opts.official_builds:
     good_rev = LooseVersion(good_rev)
     bad_rev = LooseVersion(bad_rev)
@@ -852,7 +900,7 @@ def main():
   (min_chromium_rev, max_chromium_rev) = Bisect(
       base_url, opts.archive, opts.official_builds, opts.aura, good_rev,
       bad_rev, opts.times, opts.command, args, opts.profile, opts.flash_path,
-      opts.pdf_path, not opts.not_interactive)
+      not opts.not_interactive)
 
   # Get corresponding blink revisions.
   try:

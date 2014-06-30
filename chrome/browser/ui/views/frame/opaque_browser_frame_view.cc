@@ -12,6 +12,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/profiles/profiles_state.h"
+#include "chrome/browser/signin/signin_header_helper.h"
 #include "chrome/browser/themes/theme_properties.h"
 #include "chrome/browser/ui/views/frame/browser_frame.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
@@ -140,9 +141,7 @@ OpaqueBrowserFrameView::OpaqueBrowserFrameView(BrowserFrame* frame,
       gfx::FontList(BrowserFrame::GetTitleFontList()));
   window_title_->SetVisible(browser_view->ShouldShowWindowTitle());
   window_title_->SetEnabledColor(SK_ColorWHITE);
-  // TODO(msw): Use a transparent background color as a workaround to use the
-  // gfx::Canvas::NO_SUBPIXEL_RENDERING flag and avoid some visual artifacts.
-  window_title_->SetBackgroundColor(0x00000000);
+  window_title_->set_subpixel_rendering_enabled(false);
   window_title_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
   window_title_->set_id(VIEW_ID_WINDOW_TITLE);
   AddChildView(window_title_);
@@ -351,7 +350,8 @@ void OpaqueBrowserFrameView::ButtonPressed(views::Button* sender,
     frame()->Close();
   } else if (sender == new_avatar_button()) {
     browser_view()->ShowAvatarBubbleFromAvatarButton(
-        BrowserWindow::AVATAR_BUBBLE_MODE_DEFAULT);
+        BrowserWindow::AVATAR_BUBBLE_MODE_DEFAULT,
+        signin::ManageAccountsParams());
   }
 }
 

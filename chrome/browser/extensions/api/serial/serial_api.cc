@@ -85,27 +85,11 @@ bool SerialGetDevicesFunction::Prepare() {
 void SerialGetDevicesFunction::Work() {
   DCHECK_CURRENTLY_ON(BrowserThread::FILE);
 
-  device::SerialDeviceInfoList devices;
   scoped_ptr<device::SerialDeviceEnumerator> enumerator =
       device::SerialDeviceEnumerator::Create();
-  enumerator->GetDevices(&devices);
-
-  std::vector<linked_ptr<serial::DeviceInfo> > out_devices;
-  for (device::SerialDeviceInfoList::const_iterator iter = devices.begin();
-       iter != devices.end();
-       ++iter) {
-    linked_ptr<device::SerialDeviceInfo> device = *iter;
-    linked_ptr<serial::DeviceInfo> info(new serial::DeviceInfo);
-    info->path = device->path;
-    if (device->vendor_id)
-      info->vendor_id.reset(new int(static_cast<int>(*device->vendor_id)));
-    if (device->product_id)
-      info->product_id.reset(new int(static_cast<int>(*device->product_id)));
-    info->display_name.reset(device->display_name.release());
-    out_devices.push_back(info);
-  }
-
-  results_ = serial::GetDevices::Results::Create(out_devices);
+  mojo::Array<device::SerialDeviceInfoPtr> devices = enumerator->GetDevices();
+  results_ = serial::GetDevices::Results::Create(
+      devices.To<std::vector<linked_ptr<serial::DeviceInfo> > >());
 }
 
 SerialConnectFunction::SerialConnectFunction() {}
@@ -152,7 +136,6 @@ void SerialConnectFunction::OnConnected(bool success) {
 
   if (success) {
     if (!connection_->Configure(*params_->options.get())) {
-      connection_->Close();
       delete connection_;
       connection_ = NULL;
     }
@@ -178,7 +161,6 @@ void SerialConnectFunction::FinishConnect() {
       serial_event_dispatcher_->PollConnection(extension_->id(), id);
       results_ = serial::Connect::Results::Create(info);
     } else {
-      connection_->Close();
       RemoveSerialConnection(id);
       error_ = kErrorConnectFailed;
     }
@@ -229,7 +211,6 @@ void SerialDisconnectFunction::Work() {
     error_ = kErrorSerialConnectionNotFound;
     return;
   }
-  connection->Close();
   RemoveSerialConnection(params_->connection_id);
   results_ = serial::Disconnect::Results::Create(true);
 }
@@ -425,3 +406,24 @@ void SerialSetControlSignalsFunction::Work() {
 }  // namespace api
 
 }  // namespace extensions
+
+namespace mojo {
+
+// static
+linked_ptr<extensions::api::serial::DeviceInfo>
+TypeConverter<device::SerialDeviceInfoPtr,
+              linked_ptr<extensions::api::serial::DeviceInfo> >::
+    ConvertTo(const device::SerialDeviceInfoPtr& device) {
+  linked_ptr<extensions::api::serial::DeviceInfo> info(
+      new extensions::api::serial::DeviceInfo);
+  info->path = device->path;
+  if (device->has_vendor_id)
+    info->vendor_id.reset(new int(static_cast<int>(device->vendor_id)));
+  if (device->has_product_id)
+    info->product_id.reset(new int(static_cast<int>(device->product_id)));
+  if (device->display_name)
+    info->display_name.reset(new std::string(device->display_name));
+  return info;
+}
+
+}  // namespace mojo

@@ -6,25 +6,15 @@
 
 namespace content {
 
-const char kAboutScheme[] = "about";
-const char kBlobScheme[] = "blob";
-
 // Before adding new chrome schemes please check with security@chromium.org.
 // There are security implications associated with introducing new schemes.
 const char kChromeDevToolsScheme[] = "chrome-devtools";
 const char kChromeUIScheme[] = "chrome";
-const char kDataScheme[] = "data";
-const char kFileScheme[] = "file";
-const char kFileSystemScheme[] = "filesystem";
-const char kFtpScheme[] = "ftp";
 const char kGuestScheme[] = "chrome-guest";
-const char kJavaScriptScheme[] = "javascript";
-const char kMailToScheme[] = "mailto";
 const char kMetadataScheme[] = "metadata";
 const char kSwappedOutScheme[] = "swappedout";
 const char kViewSourceScheme[] = "view-source";
 
-const char kAboutBlankURL[] = "about:blank";
 const char kAboutSrcDocURL[] = "about:srcdoc";
 
 const char kChromeUIAppCacheInternalsHost[] = "appcache-internals";
@@ -50,8 +40,8 @@ const char kChromeUIHangURL[] = "chrome://hang";
 const char kChromeUIKillURL[] = "chrome://kill";
 const char kChromeUIPpapiFlashCrashURL[] = "chrome://ppapiflashcrash";
 const char kChromeUIPpapiFlashHangURL[] = "chrome://ppapiflashhang";
-
-const char kStandardSchemeSeparator[] = "://";
+const char kChromeUIServiceWorkerInternalsURL[] =
+    "chrome://serviceworker-internals";
 
 // This error URL is loaded in normal web renderer processes, so it should not
 // have a chrome:// scheme that might let it be confused with a WebUI page.

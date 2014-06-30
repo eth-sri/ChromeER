@@ -20,6 +20,9 @@ class MetricsProvider {
   MetricsProvider() {}
   virtual ~MetricsProvider() {}
 
+  // Called when a new MetricsLog is created.
+  virtual void OnDidCreateMetricsLog() {}
+
   // Called when metrics recording has been enabled.
   virtual void OnRecordingEnabled() {}
 
@@ -34,12 +37,15 @@ class MetricsProvider {
   // directly into |stability_proto| fields or by logging stability histograms
   // via the UMA_STABILITY_HISTOGRAM_ENUMERATION() macro.
   virtual void ProvideStabilityMetrics(
-      SystemProfileProto_Stability* stability_proto) {}
+      SystemProfileProto* system_profile_proto) {}
 
   // Provides general metrics that are neither system profile nor stability
   // metrics.
   virtual void ProvideGeneralMetrics(
       ChromeUserMetricsExtension* uma_proto) {}
+
+  // TODO(asvitkine): Remove this method. http://crbug.com/379148
+  virtual void RecordCurrentState() {}
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MetricsProvider);

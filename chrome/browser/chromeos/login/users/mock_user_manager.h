@@ -65,7 +65,6 @@ class MockUserManager : public UserManager {
   MOCK_CONST_METHOD0(IsLoggedInAsStub, bool(void));
   MOCK_CONST_METHOD0(IsSessionStarted, bool(void));
   MOCK_CONST_METHOD0(UserSessionsRestored, bool(void));
-  MOCK_CONST_METHOD0(HasBrowserRestarted, bool(void));
   MOCK_CONST_METHOD1(IsUserNonCryptohomeDataEphemeral,
                      bool(const std::string&));
   MOCK_METHOD1(AddObserver, void(UserManager::Observer*));
@@ -78,10 +77,6 @@ class MockUserManager : public UserManager {
   MOCK_METHOD2(SetUserFlow, void(const std::string&, UserFlow*));
   MOCK_METHOD1(ResetUserFlow, void(const std::string&));
 
-  MOCK_METHOD2(GetAppModeChromeClientOAuthInfo, bool(std::string*,
-                                                     std::string*));
-  MOCK_METHOD2(SetAppModeChromeClientOAuthInfo, void(const std::string&,
-                                                     const std::string&));
   MOCK_CONST_METHOD0(AreLocallyManagedUsersAllowed, bool(void));
   MOCK_CONST_METHOD1(GetUserProfileDir,
                      base::FilePath(const std::string& email));
@@ -105,10 +100,6 @@ class MockUserManager : public UserManager {
 
   virtual UserFlow* GetCurrentUserFlow() const OVERRIDE;
   virtual UserFlow* GetUserFlow(const std::string&) const OVERRIDE;
-  virtual bool RespectLocalePreference(
-      Profile* profile,
-      const User* user,
-      scoped_ptr<locale_util::SwitchLanguageCallback> callback) const OVERRIDE;
 
   // Sets a new User instance. Users previously created by this MockUserManager
   // become invalid.

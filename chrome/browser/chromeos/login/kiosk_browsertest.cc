@@ -452,6 +452,9 @@ class KioskTest : public OobeBaseTest {
   }
 
   void RunAppLaunchNetworkDownTest() {
+    mock_user_manager()->SetActiveUser(kTestOwnerEmail);
+    AppLaunchSigninScreen::SetUserManagerForTesting(mock_user_manager());
+
     // Mock network could be configured with owner's password.
     ScopedCanConfigureNetwork can_configure_network(true, true);
 
@@ -465,8 +468,6 @@ class KioskTest : public OobeBaseTest {
     JsExpect("$('splash-config-network').hidden == false");
 
     // Set up fake user manager with an owner for the test.
-    mock_user_manager()->SetActiveUser(kTestOwnerEmail);
-    AppLaunchSigninScreen::SetUserManagerForTesting(mock_user_manager());
     static_cast<LoginDisplayHostImpl*>(LoginDisplayHostImpl::default_host())
         ->GetOobeUI()->ShowOobeUI(false);
 
@@ -477,7 +478,7 @@ class KioskTest : public OobeBaseTest {
     lock_screen_waiter.Wait();
 
     // There should be only one owner pod on this screen.
-    JsExpect("$('pod-row').isSinglePod");
+    JsExpect("$('pod-row').alwaysFocusSinglePod");
 
     // A network error screen should be shown after authenticating.
     OobeScreenWaiter error_screen_waiter(OobeDisplay::SCREEN_ERROR_MESSAGE);
@@ -1133,7 +1134,7 @@ class KioskHiddenWebUITest : public KioskTest,
     KioskTest::SetUpOnMainThread();
     ash::Shell::GetInstance()->desktop_background_controller()
         ->AddObserver(this);
-    StartupUtils::MarkDeviceRegistered();
+    StartupUtils::MarkDeviceRegistered(base::Closure());
   }
 
   virtual void TearDownOnMainThread() OVERRIDE {

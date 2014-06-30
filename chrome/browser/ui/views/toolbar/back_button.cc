@@ -26,8 +26,7 @@ void BackButton::SetLeadingMargin(int margin) {
 
   UpdateThemedBorder();
 
-  // Similarly fiddle the focus border. Value consistent with LabelButton
-  // and TextButton.
+  // Similarly fiddle the focus border. Value consistent with LabelButton.
   // TODO(gbillock): Refactor this magic number somewhere global to views,
   // probably a FocusBorder constant.
   const int kFocusRectInset = 3;
@@ -38,14 +37,16 @@ void BackButton::SetLeadingMargin(int margin) {
   InvalidateLayout();
 }
 
-scoped_ptr<views::Border> BackButton::CreateDefaultBorder() const {
+scoped_ptr<views::LabelButtonBorder> BackButton::CreateDefaultBorder() const {
+  scoped_ptr<views::LabelButtonBorder> border =
+      ToolbarButton::CreateDefaultBorder();
+
   // Adjust border insets to follow the margin change,
   // which will be reflected in where the border is painted
   // through |GetThemePaintRect|.
-  scoped_ptr<views::LabelButtonBorder> border(
-      new views::LabelButtonBorder(style()));
   const gfx::Insets insets(border->GetInsets());
   border->set_insets(gfx::Insets(insets.top(), insets.left() + margin_leading_,
                                  insets.bottom(), insets.right()));
-  return border.PassAs<views::Border>();
+
+  return border.Pass();
 }

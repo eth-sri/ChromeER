@@ -11,14 +11,15 @@
 
 #include "base/callback.h"
 #include "base/observer_list_threadsafe.h"
+#include "base/scoped_observer.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/thread.h"
 #include "chrome/browser/extensions/activity_log/activity_actions.h"
 #include "chrome/browser/extensions/activity_log/activity_log_policy.h"
-#include "chrome/browser/extensions/install_observer.h"
 #include "chrome/browser/extensions/tab_helper.h"
 #include "extensions/browser/api_activity_monitor.h"
 #include "extensions/browser/browser_context_keyed_api_factory.h"
+#include "extensions/browser/extension_registry_observer.h"
 #include "extensions/common/dom_action_types.h"
 
 class Profile;
@@ -33,16 +34,21 @@ class PrefRegistrySyncable;
 
 namespace extensions {
 class Extension;
-class InstallTracker;
+class ExtensionRegistry;
 
 // A utility for tracing interesting activity for each extension.
 // It writes to an ActivityDatabase on a separate thread to record the activity.
 // Each profile has different extensions, so we keep a different database for
 // each profile.
+//
+// TODO(thestig) Remove ENABLE_EXTENSIONS checks when ActivityLog is no longer
+// built on platforms that do not support extensions.
 class ActivityLog : public BrowserContextKeyedAPI,
                     public ApiActivityMonitor,
+#if defined(ENABLE_EXTENSIONS)
                     public TabHelper::ScriptExecutionObserver,
-                    public InstallObserver {
+#endif
+                    public ExtensionRegistryObserver {
  public:
   // Observers can listen for activity events. There is probably only one
   // observer: the activityLogPrivate API.
@@ -81,14 +87,19 @@ class ActivityLog : public BrowserContextKeyedAPI,
       const base::Callback
           <void(scoped_ptr<std::vector<scoped_refptr<Action> > >)>& callback);
 
-  // Extension::InstallObserver
+  // ExtensionRegistryObserver.
   // We keep track of whether the whitelisted extension is installed; if it is,
   // we want to recompute whether to have logging enabled.
-  virtual void OnExtensionLoaded(const Extension* extension) OVERRIDE;
-  virtual void OnExtensionUnloaded(const Extension* extension) OVERRIDE;
-  virtual void OnExtensionUninstalled(const Extension* extension) OVERRIDE;
+  virtual void OnExtensionLoaded(content::BrowserContext* browser_context,
+                                 const Extension* extension) OVERRIDE;
+  virtual void OnExtensionUnloaded(
+      content::BrowserContext* browser_context,
+      const Extension* extension,
+      UnloadedExtensionInfo::Reason reason) OVERRIDE;
+  virtual void OnExtensionUninstalled(content::BrowserContext* browser_context,
+                                      const Extension* extension) OVERRIDE;
 
-  // ApiActivityMonitor
+  // ApiActivityMonitor.
   virtual void OnApiEventDispatched(
       const std::string& extension_id,
       const std::string& event_name,
@@ -97,9 +108,6 @@ class ActivityLog : public BrowserContextKeyedAPI,
       const std::string& extension_id,
       const std::string& api_name,
       scoped_ptr<base::ListValue> event_args) OVERRIDE;
-
-  // KeyedService
-  virtual void Shutdown() OVERRIDE;
 
   static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
 
@@ -137,10 +145,11 @@ class ActivityLog : public BrowserContextKeyedAPI,
   // --enable-extension-activity-logging flag is set.
   bool IsDatabaseEnabled();
 
-  // Delayed initialization of Install Tracker which waits until after the
+  // Delayed initialization of ExtensionRegistry which waits until after the
   // ExtensionSystem/ExtensionService are done with their own setup.
-  void InitInstallTracker();
+  void StartObserving();
 
+#if defined(ENABLE_EXTENSIONS)
   // TabHelper::ScriptExecutionObserver implementation.
   // Fires when a ContentScript is executed.
   virtual void OnScriptsExecuted(
@@ -148,6 +157,7 @@ class ActivityLog : public BrowserContextKeyedAPI,
       const ExecutingScriptsMap& extension_ids,
       int32 page_id,
       const GURL& on_url) OVERRIDE;
+#endif
 
   // At the moment, ActivityLog will use only one policy for summarization.
   // These methods are used to choose and set the most appropriate policy.
@@ -195,7 +205,9 @@ class ActivityLog : public BrowserContextKeyedAPI,
 
   // Used to track whether the whitelisted extension is installed. If it's
   // added or removed, enabled_ may change.
-  InstallTracker* tracker_;
+  ScopedObserver<extensions::ExtensionRegistry,
+                 extensions::ExtensionRegistryObserver>
+      extension_registry_observer_;
 
   // Set if the watchdog app is installed and enabled. Maintained by
   // kWatchdogExtensionActive pref variable. Since there are multiple valid

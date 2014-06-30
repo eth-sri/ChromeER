@@ -11,7 +11,8 @@
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/defaults.h"
 #include "chrome/browser/history/history_service_factory.h"
-#include "chrome/browser/invalidation/invalidation_service_factory.h"
+#include "chrome/browser/invalidation/profile_invalidation_provider_factory.h"
+#include "chrome/browser/notifications/sync_notifier/chrome_notifier_service_factory.h"
 #include "chrome/browser/password_manager/password_store_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
@@ -21,10 +22,10 @@
 #include "chrome/browser/signin/about_signin_internals_factory.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
-#include "chrome/browser/sync/managed_user_signin_manager_wrapper.h"
 #include "chrome/browser/sync/profile_sync_components_factory_impl.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/startup_controller.h"
+#include "chrome/browser/sync/supervised_user_signin_manager_wrapper.h"
 #include "chrome/browser/themes/theme_service_factory.h"
 #include "chrome/browser/ui/global_error/global_error_service_factory.h"
 #include "chrome/browser/webdata/web_data_service_factory.h"
@@ -34,6 +35,7 @@
 #include "components/signin/core/browser/signin_manager.h"
 #include "extensions/browser/extension_system_provider.h"
 #include "extensions/browser/extensions_browser_client.h"
+#include "url/gurl.h"
 
 // static
 ProfileSyncServiceFactory* ProfileSyncServiceFactory::GetInstance() {
@@ -65,7 +67,7 @@ ProfileSyncServiceFactory::ProfileSyncServiceFactory()
       extensions::ExtensionsBrowserClient::Get()->GetExtensionSystemFactory());
   DependsOn(GlobalErrorServiceFactory::GetInstance());
   DependsOn(HistoryServiceFactory::GetInstance());
-  DependsOn(invalidation::InvalidationServiceFactory::GetInstance());
+  DependsOn(invalidation::ProfileInvalidationProviderFactory::GetInstance());
   DependsOn(PasswordStoreFactory::GetInstance());
   DependsOn(ProfileOAuth2TokenServiceFactory::GetInstance());
   DependsOn(SigninManagerFactory::GetInstance());
@@ -74,6 +76,9 @@ ProfileSyncServiceFactory::ProfileSyncServiceFactory()
   DependsOn(ThemeServiceFactory::GetInstance());
 #endif
   DependsOn(WebDataServiceFactory::GetInstance());
+#if defined(ENABLE_EXTENSIONS)
+  DependsOn(notifier::ChromeNotifierServiceFactory::GetInstance());
+#endif
 
   // The following have not been converted to KeyedServices yet,
   // and for now they are explicitly destroyed after the
@@ -101,6 +106,19 @@ KeyedService* ProfileSyncServiceFactory::BuildServiceInstanceFor(
   // once http://crbug.com/171406 has been fixed.
   AboutSigninInternalsFactory::GetForProfile(profile);
 
+  const GURL sync_service_url =
+      ProfileSyncService::GetSyncServiceURL(*CommandLine::ForCurrentProcess());
+
+  scoped_ptr<SupervisedUserSigninManagerWrapper> signin_wrapper(
+      new SupervisedUserSigninManagerWrapper(profile, signin));
+  std::string account_id = signin_wrapper->GetAccountIdToUse();
+  OAuth2TokenService::ScopeSet scope_set;
+  scope_set.insert(signin_wrapper->GetSyncScopeToUse());
+  ProfileOAuth2TokenService* token_service =
+      ProfileOAuth2TokenServiceFactory::GetForProfile(profile);
+  net::URLRequestContextGetter* url_request_context_getter =
+      profile->GetRequestContext();
+
   // TODO(tim): Currently, AUTO/MANUAL settings refer to the *first* time sync
   // is set up and *not* a browser restart for a manual-start platform (where
   // sync has already been set up, and should be able to start without user
@@ -112,10 +130,15 @@ KeyedService* ProfileSyncServiceFactory::BuildServiceInstanceFor(
                                         : browser_sync::MANUAL_START;
   ProfileSyncService* pss = new ProfileSyncService(
       new ProfileSyncComponentsFactoryImpl(profile,
-                                           CommandLine::ForCurrentProcess()),
+                                           CommandLine::ForCurrentProcess(),
+                                           sync_service_url,
+                                           account_id,
+                                           scope_set,
+                                           token_service,
+                                           url_request_context_getter),
       profile,
-      new ManagedUserSigninManagerWrapper(profile, signin),
-      ProfileOAuth2TokenServiceFactory::GetForProfile(profile),
+      signin_wrapper.Pass(),
+      token_service,
       behavior);
 
   pss->factory()->RegisterDataTypes(pss);

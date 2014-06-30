@@ -17,10 +17,9 @@
 #include "chromeos/dbus/shill_manager_client.h"
 #include "chromeos/dbus/shill_profile_client.h"
 #include "chromeos/dbus/shill_service_client.h"
-#include "chromeos/network/favorite_state.h"
 #include "chromeos/network/network_state.h"
+#include "chromeos/network/network_state_handler.h"
 #include "chromeos/network/network_state_handler_observer.h"
-#include "chromeos/network/shill_property_util.h"
 #include "dbus/object_path.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
@@ -32,10 +31,10 @@ void ErrorCallbackFunction(const std::string& error_name,
   LOG(ERROR) << "Shill Error: " << error_name << " : " << error_message;
 }
 
-const std::string kShillManagerClientStubDefaultService = "eth1";
-const std::string kShillManagerClientStubDefaultWifi = "wifi1";
-const std::string kShillManagerClientStubWifi2 = "wifi2";
-const std::string kShillManagerClientStubCellular = "cellular1";
+const std::string kShillManagerClientStubDefaultService = "/service/eth1";
+const std::string kShillManagerClientStubDefaultWifi = "/service/wifi1";
+const std::string kShillManagerClientStubWifi2 = "/service/wifi2";
+const std::string kShillManagerClientStubCellular = "/service/cellular1";
 
 using chromeos::NetworkState;
 using chromeos::NetworkStateHandler;
@@ -45,29 +44,35 @@ class TestObserver : public chromeos::NetworkStateHandlerObserver {
   explicit TestObserver(NetworkStateHandler* handler)
       : handler_(handler),
         device_list_changed_count_(0),
+        device_count_(0),
+        network_list_changed_count_(0),
         network_count_(0),
-        default_network_change_count_(0),
-        favorite_count_(0) {
+        default_network_change_count_(0) {
   }
 
   virtual ~TestObserver() {
   }
 
   virtual void DeviceListChanged() OVERRIDE {
+    NetworkStateHandler::DeviceStateList devices;
+    handler_->GetDeviceList(&devices);
+    device_count_ = devices.size();
     ++device_list_changed_count_;
   }
 
   virtual void NetworkListChanged() OVERRIDE {
     NetworkStateHandler::NetworkStateList networks;
-    handler_->GetNetworkList(&networks);
+    handler_->GetNetworkListByType(chromeos::NetworkTypePattern::Default(),
+                                   false /* configured_only */,
+                                   false /* visible_only */,
+                                   0 /* no limit */,
+                                   &networks);
     network_count_ = networks.size();
     if (network_count_ == 0) {
       default_network_ = "";
       default_network_connection_state_ = "";
     }
-    NetworkStateHandler::FavoriteStateList favorites;
-    handler_->GetFavoriteList(&favorites);
-    favorite_count_ = favorites.size();
+    ++network_list_changed_count_;
   }
 
   virtual void DefaultNetworkChanged(const NetworkState* network) OVERRIDE {
@@ -91,19 +96,22 @@ class TestObserver : public chromeos::NetworkStateHandlerObserver {
   }
 
   size_t device_list_changed_count() { return device_list_changed_count_; }
+  size_t device_count() { return device_count_; }
+  size_t network_list_changed_count() { return network_list_changed_count_; }
   size_t network_count() { return network_count_; }
   size_t default_network_change_count() {
     return default_network_change_count_;
   }
-  void reset_network_change_count() {
-    DVLOG(1) << "ResetNetworkChangeCount";
+  void reset_change_counts() {
+    DVLOG(1) << "=== RESET CHANGE COUNTS ===";
     default_network_change_count_ = 0;
+    device_list_changed_count_ = 0;
+    network_list_changed_count_ = 0;
   }
   std::string default_network() { return default_network_; }
   std::string default_network_connection_state() {
     return default_network_connection_state_;
   }
-  size_t favorite_count() { return favorite_count_; }
 
   int PropertyUpdatesForService(const std::string& service_path) {
     return property_updates_[service_path];
@@ -121,11 +129,12 @@ class TestObserver : public chromeos::NetworkStateHandlerObserver {
  private:
   NetworkStateHandler* handler_;
   size_t device_list_changed_count_;
+  size_t device_count_;
+  size_t network_list_changed_count_;
   size_t network_count_;
   size_t default_network_change_count_;
   std::string default_network_;
   std::string default_network_connection_state_;
-  size_t favorite_count_;
   std::map<std::string, int> property_updates_;
   std::map<std::string, int> connection_state_changes_;
   std::map<std::string, std::string> network_connection_state_;
@@ -149,8 +158,13 @@ class NetworkStateHandlerTest : public testing::Test {
   virtual void SetUp() OVERRIDE {
     // Initialize DBusThreadManager with a stub implementation.
     DBusThreadManager::InitializeWithStub();
-    SetupNetworkStateHandler();
+    SetupDefaultShillState();
+    network_state_handler_.reset(new NetworkStateHandler);
+    test_observer_.reset(new TestObserver(network_state_handler_.get()));
+    network_state_handler_->AddObserver(test_observer_.get(), FROM_HERE);
+    network_state_handler_->InitShillPropertyHandler();
     message_loop_.RunUntilIdle();
+    test_observer_->reset_change_counts();
   }
 
   virtual void TearDown() OVERRIDE {
@@ -160,22 +174,13 @@ class NetworkStateHandlerTest : public testing::Test {
     DBusThreadManager::Shutdown();
   }
 
-  void SetupNetworkStateHandler() {
-    SetupDefaultShillState();
-    network_state_handler_.reset(new NetworkStateHandler);
-    test_observer_.reset(new TestObserver(network_state_handler_.get()));
-    network_state_handler_->AddObserver(test_observer_.get(), FROM_HERE);
-    network_state_handler_->InitShillPropertyHandler();
-  }
-
  protected:
   void AddService(const std::string& service_path,
                   const std::string& name,
                   const std::string& type,
                   const std::string& state) {
     service_test_->AddService(service_path, name, type, state,
-                              true /* add_to_visible */,
-                              true /* add_to_watchlist */);
+                              true /* add_to_visible */);
   }
 
   void SetupDefaultShillState() {
@@ -204,26 +209,24 @@ class NetworkStateHandlerTest : public testing::Test {
     ASSERT_TRUE(service_test_);
     service_test_->ClearServices();
     AddService(kShillManagerClientStubDefaultService,
-               kShillManagerClientStubDefaultService,
+               "eth1",
                shill::kTypeEthernet,
                shill::kStateOnline);
     AddService(kShillManagerClientStubDefaultWifi,
-               kShillManagerClientStubDefaultWifi,
+               "wifi1",
                shill::kTypeWifi,
                shill::kStateOnline);
     AddService(kShillManagerClientStubWifi2,
-               kShillManagerClientStubWifi2,
+               "wifi2",
                shill::kTypeWifi,
                shill::kStateIdle);
     AddService(kShillManagerClientStubCellular,
-               kShillManagerClientStubCellular,
+               "cellular1",
                shill::kTypeCellular,
                shill::kStateIdle);
   }
 
   void UpdateManagerProperties() {
-    message_loop_.RunUntilIdle();
-    network_state_handler_->UpdateManagerProperties();
     message_loop_.RunUntilIdle();
   }
 
@@ -240,16 +243,19 @@ class NetworkStateHandlerTest : public testing::Test {
 };
 
 TEST_F(NetworkStateHandlerTest, NetworkStateHandlerStub) {
-  // Ensure that the network list is the expected size.
+  // Ensure that the device and network list are the expected size.
+  const size_t kNumShillManagerClientStubImplDevices = 2;
+  EXPECT_EQ(kNumShillManagerClientStubImplDevices,
+            test_observer_->device_count());
   const size_t kNumShillManagerClientStubImplServices = 4;
   EXPECT_EQ(kNumShillManagerClientStubImplServices,
             test_observer_->network_count());
   // Ensure that the first stub network is the default network.
   EXPECT_EQ(kShillManagerClientStubDefaultService,
             test_observer_->default_network());
+  ASSERT_TRUE(network_state_handler_->DefaultNetwork());
   EXPECT_EQ(kShillManagerClientStubDefaultService,
-            network_state_handler_->ConnectedNetworkByType(
-                NetworkTypePattern::Default())->path());
+            network_state_handler_->DefaultNetwork()->path());
   EXPECT_EQ(kShillManagerClientStubDefaultService,
             network_state_handler_->ConnectedNetworkByType(
                 NetworkTypePattern::Ethernet())->path());
@@ -267,35 +273,153 @@ TEST_F(NetworkStateHandlerTest, NetworkStateHandlerStub) {
             test_observer_->default_network_connection_state());
 }
 
+TEST_F(NetworkStateHandlerTest, GetNetworkList) {
+  // Ensure that the network list is the expected size.
+  const size_t kNumShillManagerClientStubImplServices = 4;
+  EXPECT_EQ(kNumShillManagerClientStubImplServices,
+            test_observer_->network_count());
+  // Add a non-visible network to the profile.
+  const std::string profile = "/profile/profile1";
+  const std::string wifi_favorite_path = "/service/wifi_faviorite";
+  service_test_->AddService(wifi_favorite_path, "wifi_faviorite",
+                            shill::kTypeWifi, shill::kStateIdle,
+                            false /* add_to_visible */);
+  profile_test_->AddProfile(profile, "" /* userhash */);
+  EXPECT_TRUE(profile_test_->AddService(profile, wifi_favorite_path));
+  UpdateManagerProperties();
+  message_loop_.RunUntilIdle();
+  EXPECT_EQ(kNumShillManagerClientStubImplServices + 1,
+            test_observer_->network_count());
+
+  // Get all networks.
+  NetworkStateHandler::NetworkStateList networks;
+  network_state_handler_->GetNetworkListByType(NetworkTypePattern::Default(),
+                                               false /* configured_only */,
+                                               false /* visible_only */,
+                                               0 /* no limit */,
+                                               &networks);
+  EXPECT_EQ(kNumShillManagerClientStubImplServices + 1, networks.size());
+  // Limit number of results.
+  network_state_handler_->GetNetworkListByType(NetworkTypePattern::Default(),
+                                               false /* configured_only */,
+                                               false /* visible_only */,
+                                               2 /* limit */,
+                                               &networks);
+  EXPECT_EQ(2u, networks.size());
+  // Get all wifi networks.
+  network_state_handler_->GetNetworkListByType(NetworkTypePattern::WiFi(),
+                                               false /* configured_only */,
+                                               false /* visible_only */,
+                                               0 /* no limit */,
+                                               &networks);
+  EXPECT_EQ(3u, networks.size());
+  // Get visible networks.
+  network_state_handler_->GetNetworkListByType(NetworkTypePattern::Default(),
+                                               false /* configured_only */,
+                                               true /* visible_only */,
+                                               0 /* no limit */,
+                                               &networks);
+  EXPECT_EQ(kNumShillManagerClientStubImplServices, networks.size());
+  network_state_handler_->GetVisibleNetworkList(&networks);
+  EXPECT_EQ(kNumShillManagerClientStubImplServices, networks.size());
+  // Get configured (profile) networks.
+  network_state_handler_->GetNetworkListByType(NetworkTypePattern::Default(),
+                                               true /* configured_only */,
+                                               false /* visible_only */,
+                                               0 /* no limit */,
+                                               &networks);
+  EXPECT_EQ(1u, networks.size());
+}
+
+TEST_F(NetworkStateHandlerTest, NetworkListChanged) {
+  size_t stub_network_count = test_observer_->network_count();
+  // Set up two additional visible networks.
+  const std::string wifi3 = "/service/wifi3";
+  const std::string wifi4 = "/service/wifi4";
+  service_test_->SetServiceProperties(
+      wifi3, "wifi3_guid", "wifi3",
+      shill::kTypeWifi, shill::kStateIdle, true /* visible */);
+  service_test_->SetServiceProperties(
+      wifi4, "wifi4_guid", "wifi4",
+      shill::kTypeWifi, shill::kStateIdle, true /* visible */);
+  // Add the services to the Manager. Only notify when the second service is
+  // added.
+  manager_test_->AddManagerService(wifi3, false);
+  manager_test_->AddManagerService(wifi4, true);
+  UpdateManagerProperties();
+  // Expect two service updates and one list update.
+  EXPECT_EQ(stub_network_count + 2, test_observer_->network_count());
+  EXPECT_EQ(1, test_observer_->PropertyUpdatesForService(wifi3));
+  EXPECT_EQ(1, test_observer_->PropertyUpdatesForService(wifi4));
+  EXPECT_EQ(1u, test_observer_->network_list_changed_count());
+}
+
+TEST_F(NetworkStateHandlerTest, GetVisibleNetworks) {
+  // Ensure that the network list is the expected size.
+  const size_t kNumShillManagerClientStubImplServices = 4;
+  EXPECT_EQ(kNumShillManagerClientStubImplServices,
+            test_observer_->network_count());
+  // Add a non-visible network to the profile.
+  const std::string profile = "/profile/profile1";
+  const std::string wifi_favorite_path = "/service/wifi_faviorite";
+  service_test_->AddService(wifi_favorite_path, "wifi_faviorite",
+                            shill::kTypeWifi, shill::kStateIdle,
+                            false /* add_to_visible */);
+  message_loop_.RunUntilIdle();
+  EXPECT_EQ(kNumShillManagerClientStubImplServices + 1,
+            test_observer_->network_count());
+
+  // Get visible networks.
+  NetworkStateHandler::NetworkStateList networks;
+  network_state_handler_->GetVisibleNetworkList(&networks);
+  EXPECT_EQ(kNumShillManagerClientStubImplServices, networks.size());
+
+  // Change the visible state of a network.
+  DBusThreadManager::Get()->GetShillServiceClient()->SetProperty(
+      dbus::ObjectPath(kShillManagerClientStubWifi2),
+      shill::kVisibleProperty, base::FundamentalValue(false),
+      base::Bind(&base::DoNothing), base::Bind(&ErrorCallbackFunction));
+  message_loop_.RunUntilIdle();
+  network_state_handler_->GetVisibleNetworkList(&networks);
+  EXPECT_EQ(kNumShillManagerClientStubImplServices - 1, networks.size());
+}
+
 TEST_F(NetworkStateHandlerTest, TechnologyChanged) {
-  // There may be several manager changes during initialization.
-  size_t initial_changed_count = test_observer_->device_list_changed_count();
-  // Disable a technology.
+  // Disable a technology. Will immediately set the state to AVAILABLE and
+  // notify observers.
   network_state_handler_->SetTechnologyEnabled(
-      NetworkTypePattern::Wimax(), false, network_handler::ErrorCallback());
-  EXPECT_NE(
-      NetworkStateHandler::TECHNOLOGY_ENABLED,
-      network_state_handler_->GetTechnologyState(NetworkTypePattern::Wimax()));
-  EXPECT_EQ(initial_changed_count + 1,
-            test_observer_->device_list_changed_count());
-  // Enable a technology.
+      NetworkTypePattern::WiFi(), false, network_handler::ErrorCallback());
+  EXPECT_EQ(1u, test_observer_->device_list_changed_count());
+  EXPECT_EQ(
+      NetworkStateHandler::TECHNOLOGY_AVAILABLE,
+      network_state_handler_->GetTechnologyState(NetworkTypePattern::WiFi()));
+
+  // Run the message loop. An additional notification will be received when
+  // Shill updates the enabled technologies. The state should remain AVAILABLE.
+  test_observer_->reset_change_counts();
+  message_loop_.RunUntilIdle();
+  EXPECT_EQ(1u, test_observer_->device_list_changed_count());
+  EXPECT_EQ(
+      NetworkStateHandler::TECHNOLOGY_AVAILABLE,
+      network_state_handler_->GetTechnologyState(NetworkTypePattern::WiFi()));
+
+  // Enable a technology. Will immediately set the state to ENABLING and
+  // notify observers.
+  test_observer_->reset_change_counts();
   network_state_handler_->SetTechnologyEnabled(
-      NetworkTypePattern::Wimax(), true, network_handler::ErrorCallback());
-  // The technology state should immediately change to ENABLING and we should
-  // receive a manager changed callback.
-  EXPECT_EQ(initial_changed_count + 2,
-            test_observer_->device_list_changed_count());
+      NetworkTypePattern::WiFi(), true, network_handler::ErrorCallback());
+  EXPECT_EQ(1u, test_observer_->device_list_changed_count());
   EXPECT_EQ(
       NetworkStateHandler::TECHNOLOGY_ENABLING,
-      network_state_handler_->GetTechnologyState(NetworkTypePattern::Wimax()));
+      network_state_handler_->GetTechnologyState(NetworkTypePattern::WiFi()));
+
+  // Run the message loop. State should change to ENABLED.
+  test_observer_->reset_change_counts();
   message_loop_.RunUntilIdle();
-  // Ensure we receive 2 manager changed callbacks when the technology becomes
-  // avalable and enabled.
-  EXPECT_EQ(initial_changed_count + 4,
-            test_observer_->device_list_changed_count());
+  EXPECT_EQ(1u, test_observer_->device_list_changed_count());
   EXPECT_EQ(
       NetworkStateHandler::TECHNOLOGY_ENABLED,
-      network_state_handler_->GetTechnologyState(NetworkTypePattern::Wimax()));
+      network_state_handler_->GetTechnologyState(NetworkTypePattern::WiFi()));
 }
 
 TEST_F(NetworkStateHandlerTest, TechnologyState) {
@@ -367,24 +491,17 @@ TEST_F(NetworkStateHandlerTest, GetState) {
   EXPECT_TRUE(profile_test_->AddService(profile, wifi_path));
   UpdateManagerProperties();
 
-  // Ensure that a NetworkState and corresponding FavoriteState exist.
+  // Ensure that a NetworkState exists.
   const NetworkState* wifi_network =
-      network_state_handler_->GetNetworkState(wifi_path);
-  ASSERT_TRUE(wifi_network);
-  const FavoriteState* wifi_favorite =
-      network_state_handler_->GetFavoriteStateFromServicePath(
+      network_state_handler_->GetNetworkStateFromServicePath(
           wifi_path, true /* configured_only */);
-  ASSERT_TRUE(wifi_favorite);
-  EXPECT_EQ(wifi_network->path(), wifi_favorite->path());
-
-  // Ensure that we are notified that a Favorite was added.
-  EXPECT_EQ(1u, test_observer_->favorite_count());
+  ASSERT_TRUE(wifi_network);
 
   // Test looking up by GUID.
-  ASSERT_FALSE(wifi_favorite->guid().empty());
-  const FavoriteState* wifi_favorite_guid =
-      network_state_handler_->GetFavoriteStateFromGuid(wifi_favorite->guid());
-  EXPECT_EQ(wifi_favorite, wifi_favorite_guid);
+  ASSERT_FALSE(wifi_network->guid().empty());
+  const NetworkState* wifi_network_guid =
+      network_state_handler_->GetNetworkStateFromGuid(wifi_network->guid());
+  EXPECT_EQ(wifi_network, wifi_network_guid);
 
   // Remove the service, verify that there is no longer a NetworkState for it.
   service_test_->RemoveService(wifi_path);
@@ -414,8 +531,8 @@ TEST_F(NetworkStateHandlerTest, DefaultServiceDisconnected) {
   const std::string eth1 = kShillManagerClientStubDefaultService;
   const std::string wifi1 = kShillManagerClientStubDefaultWifi;
 
+  EXPECT_EQ(0u, test_observer_->default_network_change_count());
   // Disconnect ethernet.
-  test_observer_->reset_network_change_count();
   base::StringValue connection_state_idle_value(shill::kStateIdle);
   service_test_->SetServiceProperty(eth1, shill::kStateProperty,
                                     connection_state_idle_value);
@@ -426,7 +543,7 @@ TEST_F(NetworkStateHandlerTest, DefaultServiceDisconnected) {
   EXPECT_EQ(wifi1, test_observer_->default_network());
 
   // Disconnect wifi.
-  test_observer_->reset_network_change_count();
+  test_observer_->reset_change_counts();
   service_test_->SetServiceProperty(wifi1, shill::kStateProperty,
                                     connection_state_idle_value);
   message_loop_.RunUntilIdle();
@@ -448,7 +565,7 @@ TEST_F(NetworkStateHandlerTest, DefaultServiceConnected) {
   EXPECT_EQ(std::string(), test_observer_->default_network());
 
   // Connect ethernet, should become the default network.
-  test_observer_->reset_network_change_count();
+  test_observer_->reset_change_counts();
   base::StringValue connection_state_ready_value(shill::kStateReady);
   service_test_->SetServiceProperty(eth1, shill::kStateProperty,
                                     connection_state_ready_value);
@@ -465,7 +582,6 @@ TEST_F(NetworkStateHandlerTest, DefaultServiceChanged) {
   EXPECT_EQ(eth1, test_observer_->default_network());
 
   // Change the default network by changing Manager.DefaultService.
-  test_observer_->reset_network_change_count();
   const std::string wifi1 = kShillManagerClientStubDefaultWifi;
   base::StringValue wifi1_value(wifi1);
   manager_test_->SetManagerProperty(
@@ -475,7 +591,7 @@ TEST_F(NetworkStateHandlerTest, DefaultServiceChanged) {
   EXPECT_EQ(1u, test_observer_->default_network_change_count());
 
   // Change the state of the default network.
-  test_observer_->reset_network_change_count();
+  test_observer_->reset_change_counts();
   base::StringValue connection_state_ready_value(shill::kStateReady);
   service_test_->SetServiceProperty(wifi1, shill::kStateProperty,
                                    connection_state_ready_value);
@@ -486,7 +602,7 @@ TEST_F(NetworkStateHandlerTest, DefaultServiceChanged) {
 
   // Updating a property on the default network should trigger
   // a default network change.
-  test_observer_->reset_network_change_count();
+  test_observer_->reset_change_counts();
   DBusThreadManager::Get()->GetShillServiceClient()->SetProperty(
       dbus::ObjectPath(wifi1),
       shill::kSecurityProperty, base::StringValue("TestSecurity"),
@@ -495,7 +611,7 @@ TEST_F(NetworkStateHandlerTest, DefaultServiceChanged) {
   EXPECT_EQ(1u, test_observer_->default_network_change_count());
 
   // No default network updates for signal strength changes.
-  test_observer_->reset_network_change_count();
+  test_observer_->reset_change_counts();
   DBusThreadManager::Get()->GetShillServiceClient()->SetProperty(
       dbus::ObjectPath(wifi1),
       shill::kSignalStrengthProperty, base::FundamentalValue(32),
@@ -517,7 +633,7 @@ TEST_F(NetworkStateHandlerTest, RequestUpdate) {
 
 TEST_F(NetworkStateHandlerTest, NetworkGuidInProfile) {
   const std::string profile = "/profile/profile1";
-  const std::string wifi_path = "wifi_with_guid";
+  const std::string wifi_path = "/service/wifi_with_guid";
   const std::string wifi_guid = "WIFI_GUID";
   const bool is_service_configured = true;
 
@@ -529,22 +645,15 @@ TEST_F(NetworkStateHandlerTest, NetworkGuidInProfile) {
       shill::kTypeWifi,
       shill::kStateOnline,
       "" /* ipconfig_path */,
-      true /* add_to_visible */,
-      true /* add_to_watchlist */);
+      true /* add_to_visible */);
   profile_test_->AddProfile(profile, "" /* userhash */);
   EXPECT_TRUE(profile_test_->AddService(profile, wifi_path));
   UpdateManagerProperties();
 
-  // Verify that a FavoriteState exists with a matching GUID.
-  const FavoriteState* favorite =
-      network_state_handler_->GetFavoriteStateFromServicePath(
-          wifi_path, is_service_configured);
-  ASSERT_TRUE(favorite);
-  EXPECT_EQ(wifi_guid, favorite->guid());
-
-  // Verify that a NetworkState exists with the same GUID.
+  // Verify that a NetworkState exists with a matching GUID.
   const NetworkState* network =
-      network_state_handler_->GetNetworkState(wifi_path);
+      network_state_handler_->GetNetworkStateFromServicePath(
+          wifi_path, is_service_configured);
   ASSERT_TRUE(network);
   EXPECT_EQ(wifi_guid, network->guid());
 
@@ -557,38 +666,27 @@ TEST_F(NetworkStateHandlerTest, NetworkGuidInProfile) {
   // the NetworkState was created with the same GUID.
   AddService(wifi_path, wifi_path, shill::kTypeWifi, shill::kStateOnline);
   UpdateManagerProperties();
-  network = network_state_handler_->GetNetworkState(wifi_path);
+  network = network_state_handler_->GetNetworkStateFromServicePath(
+      wifi_path, is_service_configured);
   ASSERT_TRUE(network);
   EXPECT_EQ(wifi_guid, network->guid());
-
-  // Also verify FavoriteState (mostly to test the stub behavior).
-  favorite = network_state_handler_->GetFavoriteStateFromServicePath(
-      wifi_path, is_service_configured);
-  ASSERT_TRUE(favorite);
-  EXPECT_EQ(wifi_guid, favorite->guid());
 }
 
 TEST_F(NetworkStateHandlerTest, NetworkGuidNotInProfile) {
-  const std::string wifi_path = "wifi_with_guid";
+  const std::string wifi_path = "/service/wifi_with_guid";
   const bool is_service_configured = false;
 
   // Add a network without adding it to a profile.
   AddService(wifi_path, wifi_path, shill::kTypeWifi, shill::kStateOnline);
   UpdateManagerProperties();
 
-  // Verify that a FavoriteState exists with an assigned GUID.
-  const FavoriteState* favorite =
-      network_state_handler_->GetFavoriteStateFromServicePath(
-          wifi_path, is_service_configured);
-  ASSERT_TRUE(favorite);
-  std::string wifi_guid = favorite->guid();
-  EXPECT_FALSE(wifi_guid.empty());
-
-  // Verify that a NetworkState exists with the same GUID.
+  // Verify that a NetworkState exists with an assigned GUID.
   const NetworkState* network =
-      network_state_handler_->GetNetworkState(wifi_path);
+      network_state_handler_->GetNetworkStateFromServicePath(
+          wifi_path, is_service_configured);
   ASSERT_TRUE(network);
-  EXPECT_EQ(wifi_guid, network->guid());
+  std::string wifi_guid = network->guid();
+  EXPECT_FALSE(wifi_guid.empty());
 
   // Remove the service (simulating a network going out of range).
   service_test_->RemoveService(wifi_path);
@@ -599,15 +697,10 @@ TEST_F(NetworkStateHandlerTest, NetworkGuidNotInProfile) {
   // the NetworkState was created with the same GUID.
   AddService(wifi_path, wifi_path, shill::kTypeWifi, shill::kStateOnline);
   UpdateManagerProperties();
-  network = network_state_handler_->GetNetworkState(wifi_path);
+  network = network_state_handler_->GetNetworkStateFromServicePath(
+      wifi_path, is_service_configured);
   ASSERT_TRUE(network);
   EXPECT_EQ(wifi_guid, network->guid());
-
-  // Also verify FavoriteState (mostly to test the stub behavior).
-  favorite = network_state_handler_->GetFavoriteStateFromServicePath(
-      wifi_path, is_service_configured);
-  ASSERT_TRUE(favorite);
-  EXPECT_EQ(wifi_guid, favorite->guid());
 }
 
 }  // namespace chromeos

@@ -9,14 +9,8 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "third_party/skia/include/core/SkBitmap.h"
-#include "ui/gfx/ozone/surface_factory_ozone.h"
-#include "ui/ozone/ozone_export.h"
-
-typedef struct _drmModeModeInfo drmModeModeInfo;
-
-namespace gfx {
-class SurfaceOzoneCanvas;
-}
+#include "ui/ozone/platform/dri/hardware_cursor_delegate.h"
+#include "ui/ozone/public/surface_factory_ozone.h"
 
 namespace ui {
 
@@ -24,11 +18,13 @@ class DriSurface;
 class DriWrapper;
 class HardwareDisplayController;
 class ScreenManager;
+class SurfaceOzoneCanvas;
 
 // SurfaceFactoryOzone implementation on top of DRM/KMS using dumb buffers.
 // This implementation is used in conjunction with the software rendering
 // path.
-class OZONE_EXPORT DriSurfaceFactory : public gfx::SurfaceFactoryOzone {
+class DriSurfaceFactory : public ui::SurfaceFactoryOzone,
+                          public HardwareCursorDelegate {
  public:
   static const gfx::AcceleratedWidget kDefaultWidgetHandle;
 
@@ -41,7 +37,7 @@ class OZONE_EXPORT DriSurfaceFactory : public gfx::SurfaceFactoryOzone {
 
   virtual gfx::AcceleratedWidget GetAcceleratedWidget() OVERRIDE;
 
-  virtual scoped_ptr<gfx::SurfaceOzoneCanvas> CreateCanvasForWidget(
+  virtual scoped_ptr<ui::SurfaceOzoneCanvas> CreateCanvasForWidget(
       gfx::AcceleratedWidget w) OVERRIDE;
 
   virtual bool LoadEGLGLES2Bindings(
@@ -50,16 +46,14 @@ class OZONE_EXPORT DriSurfaceFactory : public gfx::SurfaceFactoryOzone {
 
   gfx::Size GetWidgetSize(gfx::AcceleratedWidget w);
 
-  void SetHardwareCursor(gfx::AcceleratedWidget window,
-                         const SkBitmap& image,
-                         const gfx::Point& location);
+  // HardwareCursorDelegate:
+  virtual void SetHardwareCursor(gfx::AcceleratedWidget window,
+                                 const SkBitmap& image,
+                                 const gfx::Point& location) OVERRIDE;
+  virtual void MoveHardwareCursor(gfx::AcceleratedWidget window,
+                                  const gfx::Point& location) OVERRIDE;
 
-  void MoveHardwareCursor(gfx::AcceleratedWidget window,
-                          const gfx::Point& location);
-
-  void UnsetHardwareCursor(gfx::AcceleratedWidget window);
-
- private:
+ protected:
   // Draw the last set cursor & update the cursor plane.
   void ResetCursor(gfx::AcceleratedWidget w);
 

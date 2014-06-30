@@ -115,6 +115,7 @@ aura::Window* GetTooltipTarget(const ui::MouseEvent& event,
 
 TooltipController::TooltipController(scoped_ptr<Tooltip> tooltip)
     : tooltip_window_(NULL),
+      tooltip_id_(NULL),
       tooltip_window_at_mouse_press_(NULL),
       tooltip_(tooltip.Pass()),
       tooltips_enabled_(true) {
@@ -186,7 +187,14 @@ void TooltipController::OnMouseEvent(ui::MouseEvent* event) {
     case ui::ET_MOUSE_MOVED:
     case ui::ET_MOUSE_DRAGGED: {
       curr_mouse_loc_ = event->location();
-      aura::Window* target = GetTooltipTarget(*event, &curr_mouse_loc_);
+      aura::Window* target = NULL;
+      // Avoid a call to gfx::Screen::GetWindowAtScreenPoint() since it can be
+      // very expensive on X11 in cases when the tooltip is hidden anyway.
+      if (tooltips_enabled_ &&
+          !aura::Env::GetInstance()->IsMouseButtonDown() &&
+          !IsDragDropInProgress()) {
+        target = GetTooltipTarget(*event, &curr_mouse_loc_);
+      }
       SetTooltipWindow(target);
       if (tooltip_timer_.IsRunning())
         tooltip_timer_.Reset();
@@ -275,12 +283,19 @@ void TooltipController::UpdateIfRequired() {
     tooltip_window_at_mouse_press_ = NULL;
   }
 
+  // If the uniqueness indicator is different from the previously encountered
+  // one, we should force tooltip update
+  const void* tooltip_id = aura::client::GetTooltipId(tooltip_window_);
+  bool ids_differ = false;
+  ids_differ = tooltip_id_ != tooltip_id;
+  tooltip_id_ = tooltip_id;
+
   // We add the !tooltip_->IsVisible() below because when we come here from
   // TooltipTimerFired(), the tooltip_text may not have changed but we still
   // want to update the tooltip because the timer has fired.
   // If we come here from UpdateTooltip(), we have already checked for tooltip
   // visibility and this check below will have no effect.
-  if (tooltip_text_ != tooltip_text || !tooltip_->IsVisible()) {
+  if (tooltip_text_ != tooltip_text || !tooltip_->IsVisible() || ids_differ) {
     tooltip_shown_timer_.Stop();
     tooltip_text_ = tooltip_text;
     base::string16 trimmed_text(tooltip_text_);

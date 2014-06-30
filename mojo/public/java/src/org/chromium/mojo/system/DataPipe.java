@@ -21,6 +21,11 @@ public interface DataPipe {
         private static final int FLAG_MAY_DISCARD = 1 << 0;
 
         /**
+         * Immutable flag with not bit set.
+         */
+        public static final CreateFlags NONE = CreateFlags.none().immutable();
+
+        /**
          * Dedicated constructor.
          *
          * @param flags initial value of the flags.
@@ -117,6 +122,11 @@ public interface DataPipe {
         private static final int FLAG_ALL_OR_NONE = 1 << 0;
 
         /**
+         * Immutable flag with not bit set.
+         */
+        public static final WriteFlags NONE = WriteFlags.none().immutable();
+
+        /**
          * Dedicated constructor.
          *
          * @param flags initial value of the flags.
@@ -151,6 +161,11 @@ public interface DataPipe {
         private static final int FLAG_NONE = 0;
         private static final int FLAG_ALL_OR_NONE = 1 << 0;
         private static final int FLAG_QUERY = 1 << 2;
+
+        /**
+         * Immutable flag with not bit set.
+         */
+        public static final ReadFlags NONE = ReadFlags.none().immutable();
 
         /**
          * Dedicated constructor.
@@ -196,6 +211,12 @@ public interface DataPipe {
      * Handle for the producer part of a data pipe.
      */
     public static interface ProducerHandle extends Handle {
+
+        /**
+         * @see org.chromium.mojo.system.Handle#pass()
+         */
+        @Override
+        public ProducerHandle pass();
 
         /**
          * Writes the given data to the data pipe producer. |elements| points to data; the buffer
@@ -257,6 +278,12 @@ public interface DataPipe {
     public static interface ConsumerHandle extends Handle {
 
         /**
+         * @see org.chromium.mojo.system.Handle#pass()
+         */
+        @Override
+        public ConsumerHandle pass();
+
+       /**
          * Discards data on the data pie consumer. This method discards up to |numBytes| (which
          * again be a multiple of the element size) bytes of data, returning the amount actually
          * discarded. if |flags| has |allOrNone|, it will either discard exactly |numBytes| bytes of

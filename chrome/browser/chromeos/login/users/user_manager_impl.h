@@ -116,7 +116,6 @@ class UserManagerImpl
   virtual bool IsLoggedInAsStub() const OVERRIDE;
   virtual bool IsSessionStarted() const OVERRIDE;
   virtual bool UserSessionsRestored() const OVERRIDE;
-  virtual bool HasBrowserRestarted() const OVERRIDE;
   virtual bool IsUserNonCryptohomeDataEphemeral(
       const std::string& user_id) const OVERRIDE;
   virtual void AddObserver(UserManager::Observer* obs) OVERRIDE;
@@ -131,12 +130,6 @@ class UserManagerImpl
   virtual UserFlow* GetUserFlow(const std::string& user_id) const OVERRIDE;
   virtual void SetUserFlow(const std::string& user_id, UserFlow* flow) OVERRIDE;
   virtual void ResetUserFlow(const std::string& user_id) OVERRIDE;
-  virtual bool GetAppModeChromeClientOAuthInfo(
-      std::string* chrome_client_id,
-      std::string* chrome_client_secret) OVERRIDE;
-  virtual void SetAppModeChromeClientOAuthInfo(
-      const std::string& chrome_client_id,
-      const std::string& chrome_client_secret) OVERRIDE;
   virtual bool AreLocallyManagedUsersAllowed() const OVERRIDE;
   virtual base::FilePath GetUserProfileDir(
       const std::string& user_id) const OVERRIDE;
@@ -158,11 +151,6 @@ class UserManagerImpl
   // policy::DeviceLocalAccountPolicyService::Observer implementation.
   virtual void OnPolicyUpdated(const std::string& user_id) OVERRIDE;
   virtual void OnDeviceLocalAccountsChanged() OVERRIDE;
-
-  virtual bool RespectLocalePreference(
-      Profile* profile,
-      const User* user,
-      scoped_ptr<locale_util::SwitchLanguageCallback> callback) const OVERRIDE;
 
   void StopPolicyObserverForTesting();
 
@@ -432,10 +420,6 @@ class UserManagerImpl
   // been read from trusted device policy yet.
   std::string owner_email_;
 
-  // Chrome oauth client id and secret - override values for kiosk mode.
-  std::string chrome_client_id_;
-  std::string chrome_client_secret_;
-
   content::NotificationRegistrar registrar_;
 
   ObserverList<UserManager::Observer> observer_list_;
@@ -471,8 +455,6 @@ class UserManagerImpl
 
   scoped_ptr<CrosSettings::ObserverSubscription>
       local_accounts_subscription_;
-  scoped_ptr<CrosSettings::ObserverSubscription>
-      supervised_users_subscription_;
 
   scoped_ptr<MultiProfileUserController> multi_profile_user_controller_;
 

@@ -8,54 +8,39 @@
 #include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/run_loop.h"
-#include "base/threading/thread.h"
-#include "mojo/public/cpp/environment/environment.h"
-#include "mojo/public/interfaces/shell/shell.mojom.h"
+#include "mojo/public/interfaces/service_provider/service_provider.mojom.h"
+#include "mojo/service_manager/service_loader.h"
+#include "mojo/shell/context.h"
 
-namespace base {
-class MessageLoopProxy;
-class RunLoop;
-}
+class GURL;
 
 namespace mojo {
+
+class ServiceLoader;
+
 namespace shell {
 
-// ShellTestHelper is useful for tests to establish a connection to the Shell.
-// ShellTestHelper does this by spawning a thread and connecting. Invoke Init()
-// to do this. Once done, shell() returns the handle to the Shell.
+// ShellTestHelper is useful for tests to establish a connection to the
+// ServiceProvider. Invoke Init() to establish the connection. Once done,
+// service_provider() returns the handle to the ServiceProvider.
 class ShellTestHelper {
  public:
-  struct State;
-
   ShellTestHelper();
   ~ShellTestHelper();
 
   void Init();
 
-  // Returns a handle to the Shell. ShellTestHelper owns the shell.
-  Shell* shell() { return shell_.get(); }
+  // Returns a handle to the ServiceManager. ShellTestHelper owns the
+  // ServiceProvider.
+  ServiceManager* service_manager() { return context_->service_manager(); }
+
+  // Sets a ServiceLoader for the specified URL. |loader| is ultimately used on
+  // the thread this class spawns.
+  void SetLoaderForURL(scoped_ptr<ServiceLoader> loader, const GURL& url);
 
  private:
-  class TestShellClient;
-
-  // Invoked once connection has been established.
-  void OnShellStarted();
-
-  Environment environment_;
-
-  base::Thread shell_thread_;
-
-  // If non-null we're in Init() and waiting for connection.
-  scoped_ptr<base::RunLoop> run_loop_;
-
-  // See comment in declaration for details.
-  State* state_;
-
-  // Client interface for the shell.
-  scoped_ptr<TestShellClient> shell_client_;
-
-  ShellPtr shell_;
-
+  scoped_ptr<Context> context_;
+  scoped_ptr<ServiceManager::TestAPI> test_api_;
   DISALLOW_COPY_AND_ASSIGN(ShellTestHelper);
 };
 

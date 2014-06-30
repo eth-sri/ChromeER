@@ -7,44 +7,37 @@
 #include <utility>
 
 #include "base/strings/stringprintf.h"
+#include "chrome/browser/local_discovery/gcd_constants.h"
 #include "components/cloud_devices/common/cloud_devices_urls.h"
 
 namespace local_discovery {
 
-CloudDeviceList::CloudDeviceList(net::URLRequestContextGetter* request_context,
-                                 OAuth2TokenService* token_service,
-                                 const std::string& account_id,
-                                 CloudDeviceListDelegate* delegate)
-    : request_context_(request_context),
-      delegate_(delegate),
-      api_flow_(request_context_,
-                token_service,
-                account_id,
-                cloud_devices::GetCloudDevicesRelativeURL("devices"),
-                this) {
+namespace {
+const char kKindDevicesList[] = "clouddevices#devicesListResponse";
+}
+
+CloudDeviceList::CloudDeviceList(CloudDeviceListDelegate* delegate)
+    : delegate_(delegate) {
 }
 
 CloudDeviceList::~CloudDeviceList() {
 }
 
-void CloudDeviceList::Start() {
-  api_flow_.Start();
-}
-
-void CloudDeviceList::OnGCDAPIFlowError(GCDBaseApiFlow* flow,
-                                        GCDBaseApiFlow::Status status) {
+void CloudDeviceList::OnGCDAPIFlowError(GCDApiFlow::Status status) {
   delegate_->OnDeviceListUnavailable();
 }
 
-void CloudDeviceList::OnGCDAPIFlowComplete(GCDBaseApiFlow* flow,
-                                           const base::DictionaryValue* value) {
-  const base::ListValue* devices;
+void CloudDeviceList::OnGCDAPIFlowComplete(const base::DictionaryValue& value) {
+  std::string kind;
+  value.GetString(kGCDKeyKind, &kind);
 
-  if (!value->GetList("devices", &devices)) {
+  const base::ListValue* devices = NULL;
+  if (kind != kKindDevicesList || !value.GetList("devices", &devices)) {
     delegate_->OnDeviceListUnavailable();
     return;
   }
 
+  std::vector<CloudDeviceListDelegate::Device> result;
   for (base::ListValue::const_iterator i = devices->begin();
        i != devices->end(); i++) {
     base::DictionaryValue* device;
@@ -53,35 +46,35 @@ void CloudDeviceList::OnGCDAPIFlowComplete(GCDBaseApiFlow* flow,
     if (!(*i)->GetAsDictionary(&device))
       continue;
 
-    if (!FillDeviceDetails(device, &details))
+    if (!FillDeviceDetails(*device, &details))
       continue;
 
-    device_list_.push_back(details);
+    result.push_back(details);
   }
 
-  delegate_->OnDeviceListReady();
+  delegate_->OnDeviceListReady(result);
 }
 
-bool CloudDeviceList::GCDIsCloudPrint() {
-  return false;
+GURL CloudDeviceList::GetURL() {
+  return cloud_devices::GetCloudDevicesRelativeURL("devices");
 }
 
 bool CloudDeviceList::FillDeviceDetails(
-    const base::DictionaryValue* device_value,
+    const base::DictionaryValue& device_value,
     CloudDeviceListDelegate::Device* details) {
-  if (!device_value->GetString("id", &details->id))
+  if (!device_value.GetString("id", &details->id))
     return false;
 
-  if (!device_value->GetString("displayName", &details->display_name) &&
-      !device_value->GetString("systemName", &details->display_name)) {
+  if (!device_value.GetString("displayName", &details->display_name) &&
+      !device_value.GetString("systemName", &details->display_name)) {
     return false;
   }
 
-  if (!device_value->GetString("deviceKind", &details->type))
+  if (!device_value.GetString("deviceKind", &details->type))
     return false;
 
   // Non-essential.
-  device_value->GetString("description", &details->description);
+  device_value.GetString("description", &details->description);
 
   return true;
 }

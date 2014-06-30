@@ -8,12 +8,10 @@
 #include "base/bind.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/run_loop.h"
+#include "content/browser/appcache/appcache_quota_client.h"
 #include "content/browser/appcache/mock_appcache_service.h"
 #include "net/base/net_errors.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/browser/appcache/appcache_quota_client.h"
-
-using appcache::AppCacheQuotaClient;
 
 namespace content {
 
@@ -277,7 +275,7 @@ TEST_F(AppCacheQuotaClientTest, DeleteOriginData) {
   Call_NotifyAppCacheReady(client);
 
   // Perm deletions are short circuited in the Client and
-  // should not reach the AppCacheService.
+  // should not reach the AppCacheServiceImpl.
   EXPECT_EQ(quota::kQuotaStatusOk,
             DeleteOriginData(client, kPerm, kOriginA));
   EXPECT_EQ(0, mock_service_.delete_called_count());

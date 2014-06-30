@@ -24,6 +24,7 @@
 #include "content/public/browser/render_widget_host_iterator.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/bindings_policy.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/browser/process_manager.h"
 #include "extensions/browser/process_map.h"
 #include "extensions/browser/view_type_utils.h"
@@ -204,8 +205,6 @@ void MemoryDetails::CollectChildInfoOnUIThread() {
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
   const pid_t zygote_pid = content::ZygoteHost::GetInstance()->GetPid();
-  const pid_t sandbox_helper_pid =
-      content::ZygoteHost::GetInstance()->GetSandboxHelperPid();
 #endif
 
   ProcessData* const chrome_browser = ChromeBrowser();
@@ -230,14 +229,14 @@ void MemoryDetails::CollectChildInfoOnUIThread() {
         continue;
       }
       process.process_type = content::PROCESS_TYPE_RENDERER;
-      Profile* profile =
-          Profile::FromBrowserContext(
-              render_process_host->GetBrowserContext());
-      ExtensionService* extension_service = profile->GetExtensionService();
+      content::BrowserContext* context =
+          render_process_host->GetBrowserContext();
+      ExtensionService* extension_service =
+          extensions::ExtensionSystem::Get(context)->extension_service();
       extensions::ProcessMap* extension_process_map = NULL;
       // No extensions on Android. So extension_service can be NULL.
       if (extension_service)
-          extension_process_map = extensions::ProcessMap::Get(profile);
+        extension_process_map = extensions::ProcessMap::Get(context);
 
       // The RenderProcessHost may host multiple WebContentses.  Any
       // of them which contain diagnostics information make the whole
@@ -339,8 +338,6 @@ void MemoryDetails::CollectChildInfoOnUIThread() {
 #if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
     if (process.pid == zygote_pid) {
       process.process_type = content::PROCESS_TYPE_ZYGOTE;
-    } else if (process.pid == sandbox_helper_pid) {
-      process.process_type = content::PROCESS_TYPE_SANDBOX_HELPER;
     }
 #endif
   }
@@ -482,7 +479,6 @@ void MemoryDetails::UpdateHistograms() {
 #if defined(OS_CHROMEOS)
   UpdateSwapHistograms();
 #endif
-
 }
 
 #if defined(OS_CHROMEOS)

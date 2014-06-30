@@ -14,7 +14,6 @@
 #include "base/metrics/statistics_recorder.h"
 #include "base/run_loop.h"
 #include "chrome/browser/chromeos/net/network_portal_detector_impl.h"
-#include "chrome/browser/chromeos/net/network_portal_detector_strategy.h"
 #include "chrome/browser/chromeos/net/network_portal_detector_test_utils.h"
 #include "chrome/test/base/testing_profile.h"
 #include "chromeos/chromeos_switches.h"
@@ -23,7 +22,7 @@
 #include "chromeos/dbus/shill_service_client.h"
 #include "chromeos/network/network_state.h"
 #include "chromeos/network/network_state_handler.h"
-#include "chromeos/network/shill_property_util.h"
+#include "chromeos/network/portal_detector/network_portal_detector_strategy.h"
 #include "components/captive_portal/captive_portal_detector.h"
 #include "components/captive_portal/captive_portal_testing_utils.h"
 #include "content/public/test/test_browser_thread_bundle.h"
@@ -239,31 +238,26 @@ class NetworkPortalDetectorImplTest
         DBusThreadManager::Get()->GetShillServiceClient()->GetTestInterface();
     service_test->ClearServices();
     const bool add_to_visible = true;
-    const bool add_to_watchlist = true;
     service_test->AddService(kStubEthernet,
                              kStubEthernet,
                              shill::kTypeEthernet,
                              shill::kStateIdle,
-                             add_to_visible,
-                             add_to_watchlist);
+                             add_to_visible);
     service_test->AddService(kStubWireless1,
                              kStubWireless1,
                              shill::kTypeWifi,
                              shill::kStateIdle,
-                             add_to_visible,
-                             add_to_watchlist);
+                             add_to_visible);
     service_test->AddService(kStubWireless2,
                              kStubWireless2,
                              shill::kTypeWifi,
                              shill::kStateIdle,
-                             add_to_visible,
-                             add_to_watchlist);
+                             add_to_visible);
     service_test->AddService(kStubCellular,
                              kStubCellular,
                              shill::kTypeCellular,
                              shill::kStateIdle,
-                             add_to_visible,
-                             add_to_watchlist);
+                             add_to_visible);
   }
 
   void SetupNetworkHandler() {

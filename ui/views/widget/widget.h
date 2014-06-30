@@ -180,6 +180,15 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
       WIDGET_OWNS_NATIVE_WIDGET
     };
 
+    enum ShadowType {
+      SHADOW_TYPE_DEFAULT,  // Use default shadow setting. It will be one of
+                            // the settings below depending on InitParams::type
+                            // and the native widget's type.
+      SHADOW_TYPE_NONE,     // Don't draw any shadow.
+      SHADOW_TYPE_DROP,     // Draw a drop shadow that emphasizes Z-order
+                            // relationship to other windows.
+    };
+
     InitParams();
     explicit InitParams(Type type);
     ~InitParams();
@@ -200,7 +209,7 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
     bool visible_on_all_workspaces;
     Ownership ownership;
     bool mirror_origin_in_rtl;
-    bool has_dropshadow;
+    ShadowType shadow_type;
     // Specifies that the system default caption and icon should not be
     // rendered, and that the client area should be equivalent to the window
     // area. Only used on some platforms (Windows and Linux).
@@ -226,10 +235,6 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
     // TODO(beng): Figure out if there's a better way to expose this, e.g. get
     // rid of NW subclasses and do this all via message handling.
     DesktopWindowTreeHost* desktop_window_tree_host;
-    // Whether this window is intended to be a toplevel window with no
-    // attachment to any other window. (This may be a transient window if
-    // |parent| is set.)
-    bool top_level;
     // Only used by NativeWidgetAura. Specifies the type of layer for the
     // aura::Window. Default is WINDOW_LAYER_TEXTURED.
     aura::WindowLayerType layer_type;
@@ -279,10 +284,6 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
   static Widget* CreateWindowWithContextAndBounds(WidgetDelegate* delegate,
                                                   gfx::NativeView context,
                                                   const gfx::Rect& bounds);
-
-  // Creates an undecorated child window Widget parented to |parent|.
-  static Widget* CreateWindowAsFramelessChild(WidgetDelegate* widget_delegate,
-                                              gfx::NativeView parent);
 
   // Closes all Widgets that aren't identified as "secondary widgets". Called
   // during application shutdown when the last non-secondary widget is closed.
@@ -745,8 +746,8 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
   virtual void OnNativeWidgetCreated(bool desktop_widget) OVERRIDE;
   virtual void OnNativeWidgetDestroying() OVERRIDE;
   virtual void OnNativeWidgetDestroyed() OVERRIDE;
-  virtual gfx::Size GetMinimumSize() OVERRIDE;
-  virtual gfx::Size GetMaximumSize() OVERRIDE;
+  virtual gfx::Size GetMinimumSize() const OVERRIDE;
+  virtual gfx::Size GetMaximumSize() const OVERRIDE;
   virtual void OnNativeWidgetMove() OVERRIDE;
   virtual void OnNativeWidgetSizeChanged(const gfx::Size& new_size) OVERRIDE;
   virtual void OnNativeWidgetBeginUserBoundsChange() OVERRIDE;
@@ -881,9 +882,6 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
   // The restored bounds used for the initial show. This is only used if
   // |saved_show_state_| is maximized.
   gfx::Rect initial_restored_bounds_;
-
-  // True if the widget can be activated.
-  bool can_activate_;
 
   // Focus is automatically set to the view provided by the delegate
   // when the widget is shown. Set this value to false to override

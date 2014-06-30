@@ -16,7 +16,7 @@
 #include "base/values.h"
 #include "components/autofill/content/browser/wallet/full_wallet.h"
 #include "components/autofill/content/browser/wallet/wallet_items.h"
-#include "components/autofill/core/browser/autofill_manager_delegate.h"
+#include "components/autofill/core/browser/autofill_client.h"
 #include "components/autofill/core/browser/autofill_metrics.h"
 #include "net/url_request/url_fetcher_delegate.h"
 #include "testing/gtest/include/gtest/gtest_prod.h"
@@ -80,6 +80,8 @@ class WalletClient : public net::URLFetcherDelegate {
                                            // KYC_REFER or KYC_FAIL).
     UNSUPPORTED_MERCHANT,               // Merchant is blacklisted due to
                                         // compliance violation.
+    SPENDING_LIMIT_EXCEEDED,            // The desired transaction amount was
+                                        // over Wallet's limit.
 
     // API errors --------------------------------------------------------------
     // Request was very malformed or sent to the wrong endpoint.
@@ -145,7 +147,8 @@ class WalletClient : public net::URLFetcherDelegate {
   // GetWalletItems retrieves the user's online wallet. The WalletItems
   // returned may require additional action such as presenting legal documents
   // to the user to be accepted.
-  virtual void GetWalletItems();
+  virtual void GetWalletItems(const base::string16& amount,
+                              const base::string16& currency);
 
   // The GetWalletItems call to the Online Wallet backend may require the user
   // to accept various legal documents before a FullWallet can be generated.

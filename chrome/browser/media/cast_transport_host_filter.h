@@ -36,10 +36,10 @@ class CastTransportHostFilter : public content::BrowserMessageFilter {
   // Forwarding functions.
   void OnInitializeAudio(
       int32 channel_id,
-      const media::cast::transport::CastTransportAudioConfig& config);
+      const media::cast::transport::CastTransportRtpConfig& config);
   void OnInitializeVideo(
       int32 channel_id,
-      const media::cast::transport::CastTransportVideoConfig& config);
+      const media::cast::transport::CastTransportRtpConfig& config);
   void OnInsertCodedAudioFrame(
       int32 channel_id,
       const media::cast::transport::EncodedFrame& audio_frame);
@@ -53,7 +53,9 @@ class CastTransportHostFilter : public content::BrowserMessageFilter {
   void OnResendPackets(
       int32 channel_id,
       bool is_audio,
-      const media::cast::MissingFramesAndPacketsMap& missing_packets);
+      const media::cast::MissingFramesAndPacketsMap& missing_packets,
+      bool cancel_rtx_if_not_in_list,
+      base::TimeDelta dedupe_window);
   void OnNew(
       int32 channel_id,
       const net::IPEndPoint& remote_end_point);

@@ -13,7 +13,6 @@
 #include "base/guid.h"
 #include "base/i18n/case_conversion.h"
 #include "base/strings/string_util.h"
-#include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/autocomplete/autocomplete_result.h"
 #include "chrome/browser/autocomplete/base_search_provider.h"
@@ -23,8 +22,10 @@
 #include "chrome/browser/history/shortcuts_database.h"
 #include "chrome/browser/omnibox/omnibox_log.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/search_engines/ui_thread_search_terms_data.h"
 #include "chrome/common/autocomplete_match_type.h"
 #include "chrome/common/chrome_constants.h"
+#include "components/autocomplete/autocomplete_input.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
@@ -147,7 +148,8 @@ history::ShortcutsDatabase::Shortcut::MatchCore
           BaseSearchProvider::CreateSearchSuggestion(
               match.search_terms_args->search_terms, match_type,
               (match.transition == content::PAGE_TRANSITION_KEYWORD),
-              match.GetTemplateURL(profile, false)) :
+              match.GetTemplateURL(profile, false),
+              UIThreadSearchTermsData(profile)) :
           match;
   return history::ShortcutsDatabase::Shortcut::MatchCore(
       normalized_match.fill_into_edit, normalized_match.destination_url,

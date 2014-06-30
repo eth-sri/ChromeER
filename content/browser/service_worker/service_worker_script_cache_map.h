@@ -2,19 +2,21 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CONTENT_BROWSER_SERVICE_WORKER_SERVICE_SCRIPT_CACHE_MAP_H_
-#define CONTENT_BROWSER_SERVICE_WORKER_SERVICE_SCRIPT_CACHE_MAP_H_
+#ifndef CONTENT_BROWSER_SERVICE_WORKER_SERVICE_WORKER_SCRIPT_CACHE_MAP_H_
+#define CONTENT_BROWSER_SERVICE_WORKER_SERVICE_WORKER_SCRIPT_CACHE_MAP_H_
 
 #include <map>
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/memory/weak_ptr.h"
 #include "content/browser/service_worker/service_worker_database.h"
 
 class GURL;
 
 namespace content {
 
+class ServiceWorkerContextCore;
 class ServiceWorkerVersion;
 
 // Class that maintains the mapping between urls and a resource id
@@ -42,10 +44,13 @@ class ServiceWorkerScriptCacheMap {
 
   // The version objects owns its script cache and provides a rawptr to it.
   friend class ServiceWorkerVersion;
-  explicit ServiceWorkerScriptCacheMap(ServiceWorkerVersion* owner);
+  ServiceWorkerScriptCacheMap(
+      ServiceWorkerVersion* owner,
+      base::WeakPtr<ServiceWorkerContextCore> context);
   ~ServiceWorkerScriptCacheMap();
 
   ServiceWorkerVersion* owner_;
+  base::WeakPtr<ServiceWorkerContextCore> context_;
   ResourceIDMap resource_ids_;
   bool has_error_;
 
@@ -54,4 +59,4 @@ class ServiceWorkerScriptCacheMap {
 
 }  // namespace content
 
-#endif  // CONTENT_BROWSER_SERVICE_WORKER_SERVICE_SCRIPT_CACHE_MAP_H_
+#endif  // CONTENT_BROWSER_SERVICE_WORKER_SERVICE_WORKER_SCRIPT_CACHE_MAP_H_

@@ -34,6 +34,7 @@ from lexer import Lexer
 
 
 _MAX_ORDINAL_VALUE = 0xffffffff
+_MAX_ARRAY_SIZE = 0xffffffff
 
 
 def _ListFromConcat(*items):
@@ -121,9 +122,14 @@ class Parser(object):
       p[0] = _ListFromConcat(p[1], p[3])
 
   def p_attribute(self, p):
-    """attribute : NAME EQUALS expression
+    """attribute : NAME EQUALS evaled_literal
                  | NAME EQUALS NAME"""
     p[0] = ('ATTRIBUTE', p[1], p[3])
+
+  def p_evaled_literal(self, p):
+    """evaled_literal : literal"""
+    # 'eval' the literal to strip the quotes.
+    p[0] = eval(p[1])
 
   def p_struct(self, p):
     """struct : attribute_section STRUCT NAME LBRACE struct_body RBRACE SEMI"""
@@ -138,12 +144,11 @@ class Parser(object):
       p[0] = _ListFromConcat(p[1], p[2])
 
   def p_field(self, p):
-    """field : typename NAME default ordinal SEMI"""
-    p[0] = ('FIELD', p[1], p[2], p[4], p[3])
+    """field : typename NAME ordinal default SEMI"""
+    p[0] = ('FIELD', p[1], p[2], p[3], p[4])
 
   def p_default(self, p):
-    """default : EQUALS expression
-               | EQUALS expression_object
+    """default : EQUALS constant
                | """
     if len(p) > 2:
       p[0] = p[2]
@@ -188,7 +193,9 @@ class Parser(object):
 
   def p_typename(self, p):
     """typename : basictypename
-                | array"""
+                | array
+                | fixed_array
+                | interfacerequest"""
     p[0] = p[1]
 
   def p_basictypename(self, p):
@@ -216,6 +223,19 @@ class Parser(object):
   def p_array(self, p):
     """array : typename LBRACKET RBRACKET"""
     p[0] = p[1] + "[]"
+
+  def p_fixed_array(self, p):
+    """fixed_array : typename LBRACKET INT_CONST_DEC RBRACKET"""
+    value = int(p[3])
+    if value == 0 or value > _MAX_ARRAY_SIZE:
+      raise ParseError(self.filename, "Fixed array size %d invalid" % value,
+                       lineno=p.lineno(1),
+                       snippet=self._GetSnippet(p.lineno(1)))
+    p[0] = p[1] + "[" + p[3] + "]"
+
+  def p_interfacerequest(self, p):
+    """interfacerequest : identifier AMP"""
+    p[0] = p[1] + "&"
 
   def p_ordinal(self, p):
     """ordinal : ORDINAL
@@ -245,109 +265,50 @@ class Parser(object):
 
   def p_enum_field(self, p):
     """enum_field : NAME
-                  | NAME EQUALS expression"""
+                  | NAME EQUALS constant"""
     if len(p) == 2:
       p[0] = ('ENUM_FIELD', p[1], None)
     else:
       p[0] = ('ENUM_FIELD', p[1], p[3])
 
   def p_const(self, p):
-    """const : CONST typename NAME EQUALS expression SEMI"""
+    """const : CONST typename NAME EQUALS constant SEMI"""
     p[0] = ('CONST', p[2], p[3], p[5])
 
-  ### Expressions ###
-
-  def p_expression_object(self, p):
-    """expression_object : expression_array
-                         | LBRACE expression_object_elements RBRACE """
-    if len(p) < 3:
-      p[0] = p[1]
-    else:
-      p[0] = ('OBJECT', p[2])
-
-  def p_expression_object_elements(self, p):
-    """expression_object_elements : expression_object
-                                  | expression_object COMMA expression_object_elements
-                                  | """
-    if len(p) == 2:
-      p[0] = _ListFromConcat(p[1])
-    elif len(p) > 3:
-      p[0] = _ListFromConcat(p[1], p[3])
-
-  def p_expression_array(self, p):
-    """expression_array : expression
-                        | LBRACKET expression_array_elements RBRACKET """
-    if len(p) < 3:
-      p[0] = p[1]
-    else:
-      p[0] = ('ARRAY', p[2])
-
-  def p_expression_array_elements(self, p):
-    """expression_array_elements : expression_object
-                                 | expression_object COMMA expression_array_elements
-                                 | """
-    if len(p) == 2:
-      p[0] = _ListFromConcat(p[1])
-    elif len(p) > 3:
-      p[0] = _ListFromConcat(p[1], p[3])
-
-  # TODO(vtl): This is now largely redundant.
-  def p_expression(self, p):
-    """expression : binary_expression"""
-    p[0] = ('EXPRESSION', p[1])
-
-  # PLY lets us specify precedence of operators, but since we don't actually
-  # evaluate them, we don't need that here.
-  # TODO(vtl): We're going to need to evaluate them.
-  def p_binary_expression(self, p):
-    """binary_expression : unary_expression
-                         | binary_expression binary_operator \
-                               binary_expression"""
-    p[0] = _ListFromConcat(*p[1:])
-
-  def p_binary_operator(self, p):
-    """binary_operator : TIMES
-                       | DIVIDE
-                       | MOD
-                       | PLUS
-                       | MINUS
-                       | RSHIFT
-                       | LSHIFT
-                       | AND
-                       | OR
-                       | XOR"""
+  def p_constant(self, p):
+    """constant : literal
+                | identifier_wrapped"""
     p[0] = p[1]
 
-  def p_unary_expression(self, p):
-    """unary_expression : primary_expression
-                        | unary_operator expression"""
-    p[0] = _ListFromConcat(*p[1:])
-
-  def p_unary_operator(self, p):
-    """unary_operator : PLUS
-                      | MINUS
-                      | NOT"""
-    p[0] = p[1]
-
-  def p_primary_expression(self, p):
-    """primary_expression : constant
-                          | identifier
-                          | LPAREN expression RPAREN"""
-    p[0] = _ListFromConcat(*p[1:])
+  def p_identifier_wrapped(self, p):
+    """identifier_wrapped : identifier"""
+    p[0] = ('IDENTIFIER', p[1])
 
   def p_identifier(self, p):
     """identifier : NAME
                   | NAME DOT identifier"""
     p[0] = ''.join(p[1:])
 
-  def p_constant(self, p):
-    """constant : INT_CONST_DEC
-                | INT_CONST_OCT
-                | INT_CONST_HEX
-                | FLOAT_CONST
-                | CHAR_CONST
-                | STRING_LITERAL"""
-    p[0] = _ListFromConcat(*p[1:])
+  def p_literal(self, p):
+    """literal : number
+               | CHAR_CONST
+               | TRUE
+               | FALSE
+               | DEFAULT
+               | STRING_LITERAL"""
+    p[0] = p[1]
+
+  def p_number(self, p):
+    """number : digits
+              | PLUS digits
+              | MINUS digits"""
+    p[0] = ''.join(p[1:])
+
+  def p_digits(self, p):
+    """digits : INT_CONST_DEC
+              | INT_CONST_HEX
+              | FLOAT_CONST"""
+    p[0] = p[1]
 
   def p_error(self, e):
     if e is None:

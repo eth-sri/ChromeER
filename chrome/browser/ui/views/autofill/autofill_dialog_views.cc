@@ -67,9 +67,6 @@
 #include "ui/views/window/dialog_client_view.h"
 #include "ui/views/window/non_client_view.h"
 
-using web_modal::WebContentsModalDialogManager;
-using web_modal::WebContentsModalDialogManagerDelegate;
-
 namespace autofill {
 
 namespace {
@@ -510,8 +507,7 @@ void AutofillDialogViews::AccountChooser::Update() {
   gfx::Image icon = delegate_->AccountChooserImage();
   image_->SetImage(icon.AsImageSkia());
   menu_button_->SetText(delegate_->AccountChooserText());
-  // This allows the button to shrink if the new text is smaller.
-  menu_button_->ClearMaxTextSize();
+  menu_button_->set_min_size(gfx::Size());
 
   bool show_link = !delegate_->MenuModelForAccountChooser();
   menu_button_->SetVisible(!show_link);
@@ -649,7 +645,7 @@ void AutofillDialogViews::OverlayView::OnPaint(gfx::Canvas* canvas) {
   gfx::Path window_mask;
   window_mask.addRoundRect(gfx::RectToSkRect(rect),
                            kCornerRadius, kCornerRadius);
-  canvas->ClipPath(window_mask);
+  canvas->ClipPath(window_mask, false);
 
   OnPaintBackground(canvas);
 
@@ -1241,18 +1237,7 @@ void AutofillDialogViews::Show() {
   UpdateNotificationArea();
   UpdateButtonStripExtraView();
 
-  // Ownership of |contents_| is handed off by this call. The widget will take
-  // care of deleting itself after calling DeleteDelegate().
-  WebContentsModalDialogManager* web_contents_modal_dialog_manager =
-      WebContentsModalDialogManager::FromWebContents(
-          delegate_->GetWebContents());
-  WebContentsModalDialogManagerDelegate* modal_delegate =
-      web_contents_modal_dialog_manager->delegate();
-  DCHECK(modal_delegate);
-  window_ = views::Widget::CreateWindowAsFramelessChild(
-      this, modal_delegate->GetWebContentsModalDialogHost()->GetHostView());
-  web_contents_modal_dialog_manager->ShowModalDialog(
-      window_->GetNativeView());
+  window_ = ShowWebModalDialogViews(this, delegate_->GetWebContents());
   focus_manager_ = window_->GetFocusManager();
   focus_manager_->AddFocusChangeListener(this);
 
@@ -1536,6 +1521,10 @@ void AutofillDialogViews::OnNativeThemeChanged(
   legal_document_view_->SetDefaultStyle(default_style);
 }
 
+ui::ModalType AutofillDialogViews::GetModalType() const {
+  return ui::MODAL_TYPE_CHILD;
+}
+
 base::string16 AutofillDialogViews::GetWindowTitle() const {
   base::string16 title = delegate_->DialogTitle();
   // Hack alert: we don't want the dialog to jiggle when a title is added or
@@ -1808,7 +1797,7 @@ gfx::Size AutofillDialogViews::GetMinimumSignInViewSize() const {
 
 gfx::Size AutofillDialogViews::GetMaximumSignInViewSize() const {
   web_modal::WebContentsModalDialogHost* dialog_host =
-      WebContentsModalDialogManager::FromWebContents(
+      web_modal::WebContentsModalDialogManager::FromWebContents(
           delegate_->GetWebContents())->delegate()->
               GetWebContentsModalDialogHost();
 
@@ -2330,7 +2319,7 @@ void AutofillDialogViews::ContentsPreferredSizeChanged() {
   if (GetWidget() && delegate_ && delegate_->GetWebContents()) {
     UpdateWebContentsModalDialogPosition(
         GetWidget(),
-        WebContentsModalDialogManager::FromWebContents(
+        web_modal::WebContentsModalDialogManager::FromWebContents(
             delegate_->GetWebContents())->delegate()->
                 GetWebContentsModalDialogHost());
     SetBoundsRect(bounds());

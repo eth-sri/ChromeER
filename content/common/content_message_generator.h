@@ -14,6 +14,7 @@
 #include "content/common/clipboard_messages.h"
 #include "content/common/database_messages.h"
 #include "content/common/desktop_notification_messages.h"
+#include "content/common/device_sensors/device_light_messages.h"
 #include "content/common/device_sensors/device_motion_messages.h"
 #include "content/common/device_sensors/device_orientation_messages.h"
 #include "content/common/devtools_messages.h"
@@ -32,7 +33,10 @@
 #include "content/common/indexed_db/indexed_db_messages.h"
 #include "content/common/input_messages.h"
 #include "content/common/java_bridge_messages.h"
+#include "content/common/media/aec_dump_messages.h"
 #include "content/common/media/audio_messages.h"
+// TODO(xhwang): Move this to a new ifdef block.
+#include "content/common/media/cdm_messages.h"
 #include "content/common/media/media_stream_messages.h"
 #include "content/common/media/media_stream_track_metrics_host_messages.h"
 #include "content/common/media/midi_messages.h"
@@ -63,6 +67,5 @@
 
 #if defined(OS_ANDROID)
 #include "content/common/gin_java_bridge_messages.h"
-#include "content/common/media/cdm_messages.h"
 #include "content/common/media/media_player_messages_android.h"
 #endif  // defined(OS_ANDROID)

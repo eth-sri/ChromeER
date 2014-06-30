@@ -2,8 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 import gpu_process_expectations as expectations
+import page_sets
 
-from telemetry import test
+from telemetry import benchmark
 from telemetry.page import page_set
 from telemetry.page import page_test
 
@@ -32,10 +33,10 @@ class _GpuProcessValidator(page_test.PageTest):
     if not has_gpu_process:
       raise page_test.Failure('No GPU process detected')
 
-class GpuProcess(test.Test):
+class GpuProcess(benchmark.Benchmark):
   """Tests that accelerated content triggers the creation of a GPU process"""
   test = _GpuProcessValidator
-  page_set = 'page_sets/gpu_process_tests.py'
+  page_set = page_sets.GpuProcessTestsPageSet
 
   def CreateExpectations(self, page_set):
     return expectations.GpuProcessExpectations()

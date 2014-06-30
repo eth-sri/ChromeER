@@ -13,15 +13,18 @@
 #include <sys/uio.h>
 #include <unistd.h>
 
-#include <vector>
+#include <deque>
 
 #include "base/file_util.h"
 #include "base/files/file_path.h"
 #include "base/files/scoped_file.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/logging.h"
 #include "base/macros.h"
 #include "mojo/common/test/test_utils.h"
 #include "mojo/embedder/platform_channel_utils_posix.h"
+#include "mojo/embedder/platform_handle.h"
+#include "mojo/embedder/platform_handle_vector.h"
 #include "mojo/embedder/scoped_platform_handle.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -117,16 +120,21 @@ TEST_F(PlatformChannelPairPosixTest, SendReceiveData) {
     WaitReadable(client_handle.get());
 
     char buf[10000] = {};
-    ScopedPlatformHandleVectorPtr received_handles;
+    std::deque<PlatformHandle> received_handles;
     ssize_t result = PlatformChannelRecvmsg(client_handle.get(), buf,
                                             sizeof(buf), &received_handles);
     EXPECT_EQ(static_cast<ssize_t>(send_string.size()), result);
     EXPECT_EQ(send_string, std::string(buf, static_cast<size_t>(result)));
-    EXPECT_FALSE(received_handles);
+    EXPECT_TRUE(received_handles.empty());
   }
 }
 
 TEST_F(PlatformChannelPairPosixTest, SendReceiveFDs) {
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+
+  static const char kHello[] = "hello";
+
   PlatformChannelPair channel_pair;
   ScopedPlatformHandle server_handle = channel_pair.PassServerHandle().Pass();
   ScopedPlatformHandle client_handle = channel_pair.PassClientHandle().Pass();
@@ -135,34 +143,39 @@ TEST_F(PlatformChannelPairPosixTest, SendReceiveFDs) {
     // Make |i| files, with the j-th file consisting of j copies of the digit i.
     PlatformHandleVector platform_handles;
     for (size_t j = 1; j <= i; j++) {
-      base::FilePath ignored;
-      base::ScopedFILE fp(base::CreateAndOpenTemporaryFile(&ignored));
+      base::FilePath unused;
+      base::ScopedFILE fp(
+          base::CreateAndOpenTemporaryFileInDir(temp_dir.path(), &unused));
       ASSERT_TRUE(fp);
-      fwrite(std::string(j, '0' + i).data(), 1, j, fp.get());
+      ASSERT_EQ(j, fwrite(std::string(j, '0' + i).data(), 1, j, fp.get()));
       platform_handles.push_back(
           test::PlatformHandleFromFILE(fp.Pass()).release());
       ASSERT_TRUE(platform_handles.back().is_valid());
     }
 
-    // Send the FDs.
-    EXPECT_TRUE(PlatformChannelSendHandles(server_handle.get(),
-                                           &platform_handles[0],
-                                           platform_handles.size()));
+    // Send the FDs (+ "hello").
+    struct iovec iov = { const_cast<char*>(kHello), sizeof(kHello) };
+    // We assume that the |sendmsg()| actually sends all the data.
+    EXPECT_EQ(static_cast<ssize_t>(sizeof(kHello)),
+              PlatformChannelSendmsgWithHandles(server_handle.get(), &iov, 1,
+                                                &platform_handles[0],
+                                                platform_handles.size()));
 
     WaitReadable(client_handle.get());
 
-    char buf[100] = { 'a' };
-    ScopedPlatformHandleVectorPtr received_handles;
-    EXPECT_EQ(1, PlatformChannelRecvmsg(client_handle.get(), buf, sizeof(buf),
-                                        &received_handles));
-    EXPECT_EQ('\0', buf[0]);
-    ASSERT_TRUE(received_handles);
-    EXPECT_EQ(i, received_handles->size());
+    char buf[100] = {};
+    std::deque<PlatformHandle> received_handles;
+    // We assume that the |recvmsg()| actually reads all the data.
+    EXPECT_EQ(static_cast<ssize_t>(sizeof(kHello)),
+              PlatformChannelRecvmsg(client_handle.get(), buf, sizeof(buf),
+                                     &received_handles));
+    EXPECT_STREQ(kHello, buf);
+    EXPECT_EQ(i, received_handles.size());
 
-    for (size_t j = 0; j < received_handles->size(); j++) {
+    for (size_t j = 0; !received_handles.empty(); j++) {
       base::ScopedFILE fp(test::FILEFromPlatformHandle(
-          ScopedPlatformHandle((*received_handles)[j]), "rb"));
-      (*received_handles)[j] = PlatformHandle();
+          ScopedPlatformHandle(received_handles.front()), "rb"));
+      received_handles.pop_front();
       ASSERT_TRUE(fp);
       rewind(fp.get());
       char read_buf[100];
@@ -174,6 +187,11 @@ TEST_F(PlatformChannelPairPosixTest, SendReceiveFDs) {
 }
 
 TEST_F(PlatformChannelPairPosixTest, AppendReceivedFDs) {
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+
+  static const char kHello[] = "hello";
+
   PlatformChannelPair channel_pair;
   ScopedPlatformHandle server_handle = channel_pair.PassServerHandle().Pass();
   ScopedPlatformHandle client_handle = channel_pair.PassClientHandle().Pass();
@@ -181,40 +199,46 @@ TEST_F(PlatformChannelPairPosixTest, AppendReceivedFDs) {
   const std::string file_contents("hello world");
 
   {
-    base::FilePath ignored;
-    base::ScopedFILE fp(base::CreateAndOpenTemporaryFile(&ignored));
+    base::FilePath unused;
+    base::ScopedFILE fp(base::CreateAndOpenTemporaryFileInDir(temp_dir.path(),
+                                                              &unused));
     ASSERT_TRUE(fp);
-    fwrite(file_contents.data(), 1, file_contents.size(), fp.get());
+    ASSERT_EQ(file_contents.size(),
+              fwrite(file_contents.data(), 1, file_contents.size(), fp.get()));
     PlatformHandleVector platform_handles;
     platform_handles.push_back(
         test::PlatformHandleFromFILE(fp.Pass()).release());
     ASSERT_TRUE(platform_handles.back().is_valid());
 
-    // Send the FD.
-    EXPECT_TRUE(PlatformChannelSendHandles(server_handle.get(),
-                                           &platform_handles[0],
-                                           platform_handles.size()));
+    // Send the FD (+ "hello").
+    struct iovec iov = { const_cast<char*>(kHello), sizeof(kHello) };
+    // We assume that the |sendmsg()| actually sends all the data.
+    EXPECT_EQ(static_cast<ssize_t>(sizeof(kHello)),
+              PlatformChannelSendmsgWithHandles(server_handle.get(), &iov, 1,
+                                                &platform_handles[0],
+                                                platform_handles.size()));
   }
 
   WaitReadable(client_handle.get());
 
-  // Start with an invalid handle in the vector.
-  ScopedPlatformHandleVectorPtr handles(new PlatformHandleVector());
-  handles->push_back(PlatformHandle());
+  // Start with an invalid handle in the deque.
+  std::deque<PlatformHandle> received_handles;
+  received_handles.push_back(PlatformHandle());
 
-  char buf[100] = { 'a' };
-  EXPECT_EQ(1, PlatformChannelRecvmsg(client_handle.get(), buf, sizeof(buf),
-                                      &handles));
-  EXPECT_EQ('\0', buf[0]);
-  ASSERT_TRUE(handles);
-  ASSERT_EQ(2u, handles->size());
-  EXPECT_FALSE((*handles)[0].is_valid());
-  EXPECT_TRUE((*handles)[1].is_valid());
+  char buf[100] = {};
+  // We assume that the |recvmsg()| actually reads all the data.
+  EXPECT_EQ(static_cast<ssize_t>(sizeof(kHello)),
+            PlatformChannelRecvmsg(client_handle.get(), buf, sizeof(buf),
+                                   &received_handles));
+  EXPECT_STREQ(kHello, buf);
+  ASSERT_EQ(2u, received_handles.size());
+  EXPECT_FALSE(received_handles[0].is_valid());
+  EXPECT_TRUE(received_handles[1].is_valid());
 
   {
     base::ScopedFILE fp(test::FILEFromPlatformHandle(
-        ScopedPlatformHandle((*handles)[1]), "rb"));
-    (*handles)[1] = PlatformHandle();
+        ScopedPlatformHandle(received_handles[1]), "rb"));
+    received_handles[1] = PlatformHandle();
     ASSERT_TRUE(fp);
     rewind(fp.get());
     char read_buf[100];

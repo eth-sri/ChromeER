@@ -88,6 +88,8 @@ PasswordManager::~PasswordManager() {
 }
 
 void PasswordManager::SetFormHasGeneratedPassword(const PasswordForm& form) {
+  DCHECK(IsSavingEnabledForCurrentPage());
+
   for (ScopedVector<PasswordFormManager>::iterator iter =
            pending_login_managers_.begin();
        iter != pending_login_managers_.end();
@@ -100,8 +102,7 @@ void PasswordManager::SetFormHasGeneratedPassword(const PasswordForm& form) {
   // If there is no corresponding PasswordFormManager, we create one. This is
   // not the common case, and should only happen when there is a bug in our
   // ability to detect forms.
-  bool ssl_valid = (form.origin.SchemeIsSecure() &&
-                    !driver_->DidLastPageLoadEncounterSSLErrors());
+  bool ssl_valid = form.origin.SchemeIsSecure();
   PasswordFormManager* manager =
       new PasswordFormManager(this, client_, driver_, form, ssl_valid);
   pending_login_managers_.push_back(manager);
@@ -109,12 +110,13 @@ void PasswordManager::SetFormHasGeneratedPassword(const PasswordForm& form) {
   // TODO(gcasto): Add UMA stats to track this.
 }
 
-bool PasswordManager::IsSavingEnabled() const {
-  return *password_manager_enabled_ && !driver_->IsOffTheRecord();
+bool PasswordManager::IsSavingEnabledForCurrentPage() const {
+  return *password_manager_enabled_ && !driver_->IsOffTheRecord() &&
+         !driver_->DidLastPageLoadEncounterSSLErrors();
 }
 
 void PasswordManager::ProvisionallySavePassword(const PasswordForm& form) {
-  bool is_saving_enabled = IsSavingEnabled();
+  bool is_saving_enabled = IsSavingEnabledForCurrentPage();
 
   scoped_ptr<BrowserSavePasswordProgressLogger> logger;
   if (client_->IsLoggingActive()) {
@@ -123,6 +125,8 @@ void PasswordManager::ProvisionallySavePassword(const PasswordForm& form) {
     logger->LogPasswordForm(Logger::STRING_PROVISIONALLY_SAVE_PASSWORD_FORM,
                             form);
     logger->LogBoolean(Logger::STRING_IS_SAVING_ENABLED, is_saving_enabled);
+    logger->LogBoolean(Logger::STRING_SSL_ERRORS_PRESENT,
+                       driver_->DidLastPageLoadEncounterSSLErrors());
   }
 
   if (!is_saving_enabled) {
@@ -306,9 +310,19 @@ void PasswordManager::OnPasswordFormSubmitted(
 
 void PasswordManager::OnPasswordFormsParsed(
     const std::vector<PasswordForm>& forms) {
-  // Ask the SSLManager for current security.
-  bool had_ssl_error = driver_->DidLastPageLoadEncounterSSLErrors();
+  CreatePendingLoginManagers(forms);
+}
 
+void PasswordManager::CreatePendingLoginManagers(
+    const std::vector<PasswordForm>& forms) {
+  // Don't try to autofill or save passwords in the presence of SSL errors.
+  if (driver_->DidLastPageLoadEncounterSSLErrors())
+    return;
+
+  // Copy the weak pointers to the currently known login managers for comparison
+  // against the newly added.
+  std::vector<PasswordFormManager*> old_login_managers(
+      pending_login_managers_.get());
   for (std::vector<PasswordForm>::const_iterator iter = forms.begin();
        iter != forms.end();
        ++iter) {
@@ -316,8 +330,18 @@ void PasswordManager::OnPasswordFormsParsed(
     // SpdyProxy authentication, as indicated by the realm.
     if (EndsWith(iter->signon_realm, kSpdyProxyRealm, true))
       continue;
+    bool old_manager_found = false;
+    for (std::vector<PasswordFormManager*>::const_iterator old_manager =
+             old_login_managers.begin();
+         !old_manager_found && old_manager != old_login_managers.end();
+         ++old_manager) {
+      old_manager_found |= (*old_manager)->DoesManage(
+          *iter, PasswordFormManager::ACTION_MATCH_REQUIRED);
+    }
+    if (old_manager_found)
+      continue;  // The current form is already managed.
 
-    bool ssl_valid = iter->origin.SchemeIsSecure() && !had_ssl_error;
+    bool ssl_valid = iter->origin.SchemeIsSecure();
     PasswordFormManager* manager =
         new PasswordFormManager(this, client_, driver_, *iter, ssl_valid);
     pending_login_managers_.push_back(manager);
@@ -340,7 +364,9 @@ bool PasswordManager::ShouldPromptUserToSavePassword() const {
 }
 
 void PasswordManager::OnPasswordFormsRendered(
-    const std::vector<PasswordForm>& visible_forms) {
+    const std::vector<PasswordForm>& visible_forms,
+    bool did_stop_loading) {
+  CreatePendingLoginManagers(visible_forms);
   scoped_ptr<BrowserSavePasswordProgressLogger> logger;
   if (client_->IsLoggingActive()) {
     logger.reset(new BrowserSavePasswordProgressLogger(client_));
@@ -355,47 +381,59 @@ void PasswordManager::OnPasswordFormsRendered(
     return;
   }
 
-  DCHECK(IsSavingEnabled());
+  DCHECK(IsSavingEnabledForCurrentPage());
 
   if (logger) {
     logger->LogNumber(Logger::STRING_NUMBER_OF_VISIBLE_FORMS,
                       visible_forms.size());
   }
 
+  // Record all visible forms from the frame.
+  all_visible_forms_.insert(all_visible_forms_.end(),
+                            visible_forms.begin(),
+                            visible_forms.end());
+
   // If we see the login form again, then the login failed.
-  for (size_t i = 0; i < visible_forms.size(); ++i) {
-    // TODO(vabr): The similarity check is just action equality for now. If it
-    // becomes more complex, it may make sense to consider modifying and using
-    // PasswordFormManager::DoesManage for it.
-    if (visible_forms[i].action.is_valid() &&
-        provisional_save_manager_->pending_credentials().action ==
-            visible_forms[i].action) {
-      if (logger) {
-        logger->LogPasswordForm(Logger::STRING_PASSWORD_FORM_REAPPEARED,
-                                visible_forms[i]);
-        logger->LogMessage(Logger::STRING_DECISION_DROP);
+  if (did_stop_loading) {
+    for (size_t i = 0; i < all_visible_forms_.size(); ++i) {
+      // TODO(vabr): The similarity check is just action equality for now. If it
+      // becomes more complex, it may make sense to consider modifying and using
+      // PasswordFormManager::DoesManage for it.
+      if (all_visible_forms_[i].action.is_valid() &&
+          provisional_save_manager_->pending_credentials().action ==
+              all_visible_forms_[i].action) {
+        if (logger) {
+          logger->LogPasswordForm(Logger::STRING_PASSWORD_FORM_REAPPEARED,
+                                  visible_forms[i]);
+          logger->LogMessage(Logger::STRING_DECISION_DROP);
+        }
+        provisional_save_manager_->SubmitFailed();
+        provisional_save_manager_.reset();
+        // Clear all_visible_forms_ once we found the match.
+        all_visible_forms_.clear();
+        return;
       }
-      provisional_save_manager_->SubmitFailed();
-      provisional_save_manager_.reset();
-      return;
     }
-  }
 
-  // Looks like a successful login attempt. Either show an infobar or
-  // automatically save the login data. We prompt when the user hasn't already
-  // given consent, either through previously accepting the infobar or by having
-  // the browser generate the password.
-  provisional_save_manager_->SubmitPassed();
+    // Clear all_visible_forms_ after checking all the visible forms.
+    all_visible_forms_.clear();
 
-  if (ShouldPromptUserToSavePassword()) {
-    if (logger)
-      logger->LogMessage(Logger::STRING_DECISION_ASK);
-    client_->PromptUserToSavePassword(provisional_save_manager_.release());
-  } else {
-    if (logger)
-      logger->LogMessage(Logger::STRING_DECISION_SAVE);
-    provisional_save_manager_->Save();
-    provisional_save_manager_.reset();
+    // Looks like a successful login attempt. Either show an infobar or
+    // automatically save the login data. We prompt when the user hasn't
+    // already given consent, either through previously accepting the infobar
+    // or by having the browser generate the password.
+    provisional_save_manager_->SubmitPassed();
+
+    if (ShouldPromptUserToSavePassword()) {
+      if (logger)
+        logger->LogMessage(Logger::STRING_DECISION_ASK);
+      client_->PromptUserToSavePassword(provisional_save_manager_.release());
+    } else {
+      if (logger)
+        logger->LogMessage(Logger::STRING_DECISION_SAVE);
+      provisional_save_manager_->Save();
+      provisional_save_manager_.reset();
+    }
   }
 }
 

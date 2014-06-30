@@ -36,8 +36,12 @@
     'ext/bitmap_platform_device_win.h',
     'ext/convolver.cc',
     'ext/convolver.h',
+    'ext/directwrite_keepalive_win.cc',
+    'ext/directwrite_keepalive_win.h',
     'ext/event_tracer_impl.cc',
     'ext/event_tracer_impl.h',
+    'ext/fontmgr_default_win.cc',
+    'ext/fontmgr_default_win.h',
     'ext/google_logging.cc',
     'ext/image_operations.cc',
     'ext/image_operations.h',
@@ -111,6 +115,12 @@
     [ 'OS != "android" and (OS != "linux" or use_cairo==1)', {
       'sources!': [
         'ext/bitmap_platform_device_skia.cc',
+      ],
+    }],
+    ['OS=="win"', {
+      'include_dirs': [
+        '../third_party/skia/include/utils/win',
+        '../third_party/skia/src/utils/win',
       ],
     }],
   ],

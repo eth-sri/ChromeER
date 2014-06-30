@@ -51,6 +51,7 @@
               '<(SHARED_INTERMEDIATE_DIR)/chrome/generated_resources_en-US.pak',
               '<(SHARED_INTERMEDIATE_DIR)/chrome/renderer_resources_100_percent.pak',
               '<(SHARED_INTERMEDIATE_DIR)/content/shell_resources.pak',
+              '<(SHARED_INTERMEDIATE_DIR)/extensions/extensions_renderer_resources.pak',
               '<(SHARED_INTERMEDIATE_DIR)/extensions/extensions_resources.pak',
               '<(SHARED_INTERMEDIATE_DIR)/extensions/strings/extensions_strings_en-US.pak',
               '<(SHARED_INTERMEDIATE_DIR)/ui/app_locale_settings/app_locale_settings_en-US.pak',
@@ -73,6 +74,7 @@
         '<(DEPTH)/apps/shell/common/api/api.gyp:shell_api',
         '<(DEPTH)/base/base.gyp:base',
         '<(DEPTH)/base/base.gyp:base_prefs_test_support',
+        '<(DEPTH)/components/components.gyp:omaha_query_params',
         '<(DEPTH)/components/components.gyp:pref_registry',
         '<(DEPTH)/components/components.gyp:user_prefs',
         '<(DEPTH)/content/content.gyp:content',
@@ -88,7 +90,6 @@
         '<(DEPTH)/skia/skia.gyp:skia',
         '<(DEPTH)/third_party/WebKit/public/blink.gyp:blink',
         '<(DEPTH)/ui/wm/wm.gyp:wm',
-        '<(DEPTH)/ui/wm/wm.gyp:wm_test_support',
         '<(DEPTH)/v8/tools/gyp/v8.gyp:v8',
       ],
       'include_dirs': [
@@ -103,10 +104,13 @@
         'browser/api/shell/shell_api.h',
         'browser/default_shell_browser_main_delegate.cc',
         'browser/default_shell_browser_main_delegate.h',
+        'browser/default_shell_app_window_controller.cc',
+        'browser/default_shell_app_window_controller.h',
         'browser/shell_app_sorting.cc',
         'browser/shell_app_sorting.h',
         'browser/shell_app_window.cc',
         'browser/shell_app_window.h',
+        'browser/shell_app_window_controller.h',
         'browser/shell_browser_context.cc',
         'browser/shell_browser_context.h',
         'browser/shell_browser_main_delegate.h',
@@ -126,14 +130,16 @@
         'browser/shell_extensions_browser_client.h',
         'browser/shell_network_controller_chromeos.cc',
         'browser/shell_network_controller_chromeos.h',
+        'browser/shell_omaha_query_params_delegate.cc',
+        'browser/shell_omaha_query_params_delegate.h',
         'browser/shell_runtime_api_delegate.cc',
         'browser/shell_runtime_api_delegate.h',
-        'common/shell_app_runtime.cc',
-        'common/shell_app_runtime.h',
         'common/shell_content_client.cc',
         'common/shell_content_client.h',
         'common/shell_extensions_client.cc',
         'common/shell_extensions_client.h',
+        'common/switches.h',
+        'common/switches.cc',
         'renderer/shell_content_renderer_client.cc',
         'renderer/shell_content_renderer_client.h',
         'renderer/shell_custom_bindings.cc',
@@ -143,6 +149,7 @@
         'renderer/shell_dispatcher_delegate.h',
         'renderer/shell_extensions_renderer_client.cc',
         'renderer/shell_extensions_renderer_client.h',
+        'renderer/shell_renderer_main_delegate.h',
       ],
       'conditions': [
         ['chromeos==1', {
@@ -175,7 +182,6 @@
               'SubSystem': '2',  # Set /SUBSYSTEM:WINDOWS
             },
           },
-          'msvs_large_pdb': 1,
           'dependencies': [
             '<(DEPTH)/sandbox/sandbox.gyp:sandbox',
           ],
@@ -197,7 +203,6 @@
       'defines': [
         'HAS_OUT_OF_PROC_TEST_RUNNER',
       ],
-      'msvs_large_pdb': 1,
       'sources': [
         # TODO(yoz): Refactor once we have a second test target.
         'browser/shell_browsertest.cc',

@@ -20,6 +20,7 @@
 #include "content/browser/renderer_host/delegated_frame_evictor.h"
 #include "content/browser/renderer_host/image_transport_factory_android.h"
 #include "content/browser/renderer_host/ime_adapter_android.h"
+#include "content/browser/renderer_host/input/gesture_text_selector.h"
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/common/content_export.h"
 #include "gpu/command_buffer/common/mailbox.h"
@@ -65,7 +66,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
       public ImageTransportFactoryAndroidObserver,
       public ui::GestureProviderClient,
       public ui::WindowAndroidObserver,
-      public DelegatedFrameEvictorClient {
+      public DelegatedFrameEvictorClient,
+      public GestureTextSelectorClient {
  public:
   RenderWidgetHostViewAndroid(RenderWidgetHostImpl* widget,
                               ContentViewCoreImpl* content_view_core);
@@ -100,9 +102,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   virtual float GetOverdrawBottomHeight() const OVERRIDE;
   virtual void UpdateCursor(const WebCursor& cursor) OVERRIDE;
   virtual void SetIsLoading(bool is_loading) OVERRIDE;
-  virtual void TextInputTypeChanged(ui::TextInputType type,
-                                    ui::TextInputMode input_mode,
-                                    bool can_compose_inline) OVERRIDE;
+  virtual void TextInputStateChanged(
+      const ViewHostMsg_TextInputState_Params& params) OVERRIDE;
   virtual void ImeCancelComposition() OVERRIDE;
   virtual void FocusedNodeChanged(bool is_editable_node) OVERRIDE;
   virtual void RenderProcessGone(base::TerminationStatus status,
@@ -114,7 +115,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
                                 const gfx::Range& range) OVERRIDE;
   virtual void SelectionBoundsChanged(
       const ViewHostMsg_SelectionBounds_Params& params) OVERRIDE;
-  virtual void SelectionRootBoundsChanged(const gfx::Rect& bounds) OVERRIDE;
   virtual void ScrollOffsetChanged() OVERRIDE;
   virtual void AcceleratedSurfaceInitialized(int host_id,
                                              int route_id) OVERRIDE;
@@ -143,10 +143,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   virtual gfx::GLSurfaceHandle GetCompositingSurface() OVERRIDE;
   virtual void ProcessAckedTouchEvent(const TouchEventWithLatencyInfo& touch,
                                       InputEventAckState ack_result) OVERRIDE;
-  virtual void SetScrollOffsetPinning(
-      bool is_pinned_to_left, bool is_pinned_to_right) OVERRIDE;
-  virtual void UnhandledWheelEvent(
-      const blink::WebMouseWheelEvent& event) OVERRIDE;
   virtual InputEventAckState FilterInputEvent(
       const blink::WebInputEvent& input_event) OVERRIDE;
   virtual void OnSetNeedsFlushInput() OVERRIDE;
@@ -166,6 +162,9 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
       OVERRIDE;
   virtual void LockCompositingSurface() OVERRIDE;
   virtual void UnlockCompositingSurface() OVERRIDE;
+  virtual void OnTextSurroundingSelectionResponse(const base::string16& content,
+                                                  size_t start_offset,
+                                                  size_t end_offset) OVERRIDE;
 
   // cc::DelegatedFrameResourceCollectionClient implementation.
   virtual void UnusedResourcesAreAvailable() OVERRIDE;
@@ -177,9 +176,9 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   virtual void OnCompositingDidCommit() OVERRIDE;
   virtual void OnAttachCompositor() OVERRIDE {}
   virtual void OnDetachCompositor() OVERRIDE;
-  virtual void OnWillDestroyWindow() OVERRIDE;
   virtual void OnVSync(base::TimeTicks frame_time,
                        base::TimeDelta vsync_period) OVERRIDE;
+  virtual void OnAnimate(base::TimeTicks begin_frame_time) OVERRIDE;
 
   // ImageTransportFactoryAndroidObserver implementation.
   virtual void OnLostResources() OVERRIDE;
@@ -188,6 +187,12 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   virtual void EvictDelegatedFrame() OVERRIDE;
 
   virtual SkBitmap::Config PreferredReadbackFormat() OVERRIDE;
+
+  // GestureTextSelectorClient implementation.
+  virtual void ShowSelectionHandlesAutomatically() OVERRIDE;
+  virtual void SelectRange(float x1, float y1, float x2, float y2) OVERRIDE;
+  virtual void Unselect() OVERRIDE;
+  virtual void LongPress(base::TimeTicks time, float x, float y) OVERRIDE;
 
   // Non-virtual methods
   void SetContentViewCore(ContentViewCoreImpl* content_view_core);
@@ -198,11 +203,11 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   void SendMouseWheelEvent(const blink::WebMouseWheelEvent& event);
   void SendGestureEvent(const blink::WebGestureEvent& event);
 
-  void OnTextInputStateChanged(const ViewHostMsg_TextInputState_Params& params);
   void OnDidChangeBodyBackgroundColor(SkColor color);
   void OnStartContentIntent(const GURL& content_url);
   void OnSetNeedsBeginFrame(bool enabled);
-  void OnSmartClipDataExtracted(const base::string16& result);
+  void OnSmartClipDataExtracted(const base::string16& result,
+                                const gfx::Rect rect);
 
   bool OnTouchEvent(const ui::MotionEvent& event);
   void ResetGestureDetection();
@@ -227,6 +232,12 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
       const cc::CompositorFrameMetadata& frame_metadata);
 
   void SetOverlayVideoMode(bool enabled);
+
+  typedef base::Callback<
+      void(const base::string16& content, int start_offset, int end_offset)>
+      TextSurroundingSelectionCallback;
+  void SetTextSurroundingSelectionCallback(
+      const TextSurroundingSelectionCallback& callback);
 
  private:
   void RunAckCallbacks();
@@ -287,7 +298,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   void SetNeedsAnimate();
   bool Animate(base::TimeTicks frame_time);
 
-
   // The model object.
   RenderWidgetHostImpl* host_;
 
@@ -314,6 +324,9 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   // The most recent content size that was pushed to the texture layer.
   gfx::Size content_size_in_layer_;
 
+  // The device scale of the last received frame.
+  float device_scale_factor_;
+
   // The output surface id of the last received frame.
   uint32_t last_output_surface_id_;
 
@@ -329,6 +342,9 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   // Provides gesture synthesis given a stream of touch events (derived from
   // Android MotionEvent's) and touch event acks.
   ui::FilteredGestureProvider gesture_provider_;
+
+  // Handles gesture based text selection
+  GestureTextSelector gesture_text_selector_;
 
   bool flush_input_requested_;
 
@@ -353,6 +369,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   };
 
   scoped_ptr<LastFrameInfo> last_frame_info_;
+
+  TextSurroundingSelectionCallback text_surrounding_selection_callback_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderWidgetHostViewAndroid);
 };

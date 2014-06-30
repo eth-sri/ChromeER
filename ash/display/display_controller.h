@@ -14,6 +14,7 @@
 #include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "base/time/time.h"
 #include "ui/aura/window.h"
@@ -147,11 +148,11 @@ class ASH_EXPORT DisplayController : public gfx::DisplayObserver,
   // Sets the work area's |insets| to the display assigned to |window|.
   bool UpdateWorkAreaOfDisplayNearestWindow(const aura::Window* window,
                                             const gfx::Insets& insets);
-  // aura::DisplayObserver overrides:
-  virtual void OnDisplayBoundsChanged(
-      const gfx::Display& display) OVERRIDE;
+  // gfx::DisplayObserver overrides:
   virtual void OnDisplayAdded(const gfx::Display& display) OVERRIDE;
   virtual void OnDisplayRemoved(const gfx::Display& display) OVERRIDE;
+  virtual void OnDisplayMetricsChanged(const gfx::Display& display,
+                                       uint32_t metrics) OVERRIDE;
 
   // aura::WindowTreeHostObserver overrides:
   virtual void OnHostResized(const aura::WindowTreeHost* host) OVERRIDE;
@@ -176,6 +177,8 @@ class ASH_EXPORT DisplayController : public gfx::DisplayObserver,
       const AshWindowTreeHostInitParams& params);
 
   void OnFadeOutForSwapDisplayFinished();
+
+  void SetMirrorModeAfterAnimation(bool mirror);
 
   void UpdateHostWindowNames();
 
@@ -220,6 +223,8 @@ class ASH_EXPORT DisplayController : public gfx::DisplayObserver,
   // restore the cursor location when display configuration
   // changed.
   gfx::Point cursor_location_in_native_coords_for_restore_;
+
+  base::WeakPtrFactory<DisplayController> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(DisplayController);
 };
