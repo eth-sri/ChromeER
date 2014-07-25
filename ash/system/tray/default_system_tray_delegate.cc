@@ -71,17 +71,17 @@ const base::string16 DefaultSystemTrayDelegate::GetEnterpriseMessage() const {
 }
 
 const std::string
-DefaultSystemTrayDelegate::GetLocallyManagedUserManager() const {
+DefaultSystemTrayDelegate::GetSupervisedUserManager() const {
   return std::string();
 }
 
 const base::string16
-DefaultSystemTrayDelegate::GetLocallyManagedUserManagerName()
+DefaultSystemTrayDelegate::GetSupervisedUserManagerName()
     const {
   return base::string16();
 }
 
-const base::string16 DefaultSystemTrayDelegate::GetLocallyManagedUserMessage()
+const base::string16 DefaultSystemTrayDelegate::GetSupervisedUserMessage()
     const {
   return base::string16();
 }
@@ -145,7 +145,7 @@ void DefaultSystemTrayDelegate::ShowPublicAccountInfo() {
 void DefaultSystemTrayDelegate::ShowEnterpriseInfo() {
 }
 
-void DefaultSystemTrayDelegate::ShowLocallyManagedUserInfo() {
+void DefaultSystemTrayDelegate::ShowSupervisedUserInfo() {
 }
 
 void DefaultSystemTrayDelegate::ShowUserLogin() {
@@ -285,11 +285,6 @@ int DefaultSystemTrayDelegate::GetSystemTrayMenuWidth() {
 }
 
 void DefaultSystemTrayDelegate::ActiveUserWasChanged() {
-}
-
-bool DefaultSystemTrayDelegate::IsNetworkBehindCaptivePortal(
-    const std::string& /* service_path */) const {
-  return false;
 }
 
 bool DefaultSystemTrayDelegate::IsSearchKeyMappedToCapsLock() {

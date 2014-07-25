@@ -13,10 +13,20 @@
       'dependencies': [
         '../athena.gyp:athena_lib',
         '../athena.gyp:athena_content_lib',
-        '../resources/athena_resources.gyp:athena_resources',
+        '../resources/athena_resources.gyp:athena_pak',
         '../../apps/shell/app_shell.gyp:app_shell_lib',
+	# debug_widow.cc depends on this. Remove this once debug_window
+	# is removed.
         '../../ash/ash_resources.gyp:ash_resources',
         '../../chromeos/chromeos.gyp:power_manager_proto',
+        '../../components/components.gyp:autocomplete',
+        '../../components/components.gyp:component_metrics_proto',
+        '../../components/components.gyp:history_core_browser',
+        # infobars_test_support is required to declare some symbols used in the
+        # search_engines and its dependencies. See crbug.com/386171
+        # TODO(mukai): declare those symbols for Athena.
+        '../../components/components.gyp:infobars_test_support',
+        '../../components/components.gyp:search_engines',
         '../../skia/skia.gyp:skia',
         '../../ui/accessibility/accessibility.gyp:ax_gen',
         '../../ui/app_list/app_list.gyp:app_list',

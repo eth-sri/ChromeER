@@ -104,6 +104,11 @@ jboolean DataReductionProxySettingsAndroid::IsDataReductionProxyPromoAllowed(
   return params()->promo_allowed();
 }
 
+jboolean DataReductionProxySettingsAndroid::IsIncludedInAltFieldTrial(
+    JNIEnv* env, jobject obj) {
+  return DataReductionProxyParams::IsIncludedInAlternativeFieldTrial();
+}
+
 ScopedJavaLocalRef<jstring>
 DataReductionProxySettingsAndroid::GetDataReductionProxyOrigin(
     JNIEnv* env, jobject obj) {
@@ -195,7 +200,7 @@ void DataReductionProxySettingsAndroid::SetProxyConfigs(
 
   LogProxyState(enabled, restricted, at_startup);
 
-  if (enabled) {
+  if (enabled && !params()->holdback()) {
     if (alternative_enabled) {
       configurator()->Enable(restricted,
                        !params()->fallback_allowed(),

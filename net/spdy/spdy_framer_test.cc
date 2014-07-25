@@ -266,7 +266,7 @@ class TestSpdyVisitor : public SpdyFramerVisitorInterface,
         header_buffer_(new char[kDefaultHeaderBufferSize]),
         header_buffer_length_(0),
         header_buffer_size_(kDefaultHeaderBufferSize),
-        header_stream_id_(-1),
+        header_stream_id_(static_cast<SpdyStreamId>(-1)),
         header_control_type_(DATA),
         header_buffer_valid_(false) {}
 
@@ -2987,7 +2987,7 @@ TEST_P(SpdyFramerTest, CreatePriority) {
   SpdyFramer framer(spdy_version_);
 
   const char kDescription[] = "PRIORITY frame";
-  const char kType = static_cast<unsigned char>(
+  const unsigned char kType = static_cast<unsigned char>(
       SpdyConstants::SerializeFrameType(spdy_version_, PRIORITY));
   const unsigned char kFrameData[] = {
       0x00, 0x05, kType, 0x00,
@@ -3197,7 +3197,7 @@ TEST_P(SpdyFramerTest, TooLargeHeadersFrameUsesContinuation) {
   EXPECT_TRUE(visitor.header_buffer_valid_);
   EXPECT_EQ(0, visitor.error_count_);
   EXPECT_EQ(1, visitor.headers_frame_count_);
-  EXPECT_EQ(1, visitor.continuation_count_);
+  EXPECT_EQ(16, visitor.continuation_count_);
   EXPECT_EQ(1, visitor.zero_length_control_frame_header_data_count_);
 }
 
@@ -3226,7 +3226,7 @@ TEST_P(SpdyFramerTest, TooLargePushPromiseFrameUsesContinuation) {
   EXPECT_TRUE(visitor.header_buffer_valid_);
   EXPECT_EQ(0, visitor.error_count_);
   EXPECT_EQ(1, visitor.push_promise_frame_count_);
-  EXPECT_EQ(1, visitor.continuation_count_);
+  EXPECT_EQ(16, visitor.continuation_count_);
   EXPECT_EQ(1, visitor.zero_length_control_frame_header_data_count_);
 }
 
@@ -4875,7 +4875,6 @@ TEST_P(SpdyFramerTest, ContinuationFrameFlags) {
     EXPECT_CALL(visitor, OnHeaders(42, 0, false));
     EXPECT_CALL(visitor, OnControlFrameHeaderData(42, _, _))
           .WillRepeatedly(testing::Return(true));
-    EXPECT_CALL(debug_visitor, OnSendCompressedFrame(42, CONTINUATION, _, _));
 
     SpdyHeadersIR headers_ir(42);
     headers_ir.SetHeader("foo", "bar");

@@ -28,7 +28,6 @@
 #include "chrome/browser/chromeos/customization_document.h"
 #include "chrome/browser/chromeos/first_run/first_run.h"
 #include "chrome/browser/chromeos/kiosk_mode/kiosk_mode_settings.h"
-#include "chrome/browser/chromeos/login/auth/user_context.h"
 #include "chrome/browser/chromeos/login/helper.h"
 #include "chrome/browser/chromeos/login/login_utils.h"
 #include "chrome/browser/chromeos/login/startup_utils.h"
@@ -48,9 +47,12 @@
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/power_manager_client.h"
 #include "chromeos/dbus/session_manager_client.h"
+#include "chromeos/login/auth/user_context.h"
+#include "chromeos/login/user_names.h"
 #include "chromeos/settings/cros_settings_names.h"
 #include "components/google/core/browser/google_util.h"
 #include "components/policy/core/common/policy_service.h"
+#include "components/user_manager/user_type.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
@@ -122,7 +124,7 @@ ExistingUserController* ExistingUserController::current_controller_ = NULL;
 // ExistingUserController, public:
 
 ExistingUserController::ExistingUserController(LoginDisplayHost* host)
-    : login_status_consumer_(NULL),
+    : auth_status_consumer_(NULL),
       host_(host),
       login_display_(host_->CreateLoginDisplay(this)),
       num_login_attempts_(0),
@@ -196,17 +198,18 @@ void ExistingUserController::UpdateLoginDisplay(const UserList& users) {
                              &show_users_on_signin);
   for (UserList::const_iterator it = users.begin(); it != users.end(); ++it) {
     // TODO(xiyuan): Clean user profile whose email is not in whitelist.
-    bool meets_locally_managed_requirements =
-        (*it)->GetType() != User::USER_TYPE_LOCALLY_MANAGED ||
-        UserManager::Get()->AreLocallyManagedUsersAllowed();
+    bool meets_supervised_requirements =
+        (*it)->GetType() != user_manager::USER_TYPE_SUPERVISED ||
+        UserManager::Get()->AreSupervisedUsersAllowed();
     bool meets_whitelist_requirements =
         LoginUtils::IsWhitelisted((*it)->email(), NULL) ||
-        (*it)->GetType() != User::USER_TYPE_REGULAR;
+        (*it)->GetType() != user_manager::USER_TYPE_REGULAR;
 
     // Public session accounts are always shown on login screen.
-    bool meets_show_users_requirements = show_users_on_signin ||
-        (*it)->GetType() == User::USER_TYPE_PUBLIC_ACCOUNT;
-    if (meets_locally_managed_requirements &&
+    bool meets_show_users_requirements =
+        show_users_on_signin ||
+        (*it)->GetType() == user_manager::USER_TYPE_PUBLIC_ACCOUNT;
+    if (meets_supervised_requirements &&
         meets_whitelist_requirements &&
         meets_show_users_requirements) {
       filtered_users.push_back(*it);
@@ -384,7 +387,7 @@ bool ExistingUserController::IsSigninInProgress() const {
 
 void ExistingUserController::Login(const UserContext& user_context,
                                    const SigninSpecifics& specifics) {
-  if (user_context.GetUserType() == User::USER_TYPE_GUEST) {
+  if (user_context.GetUserType() == user_manager::USER_TYPE_GUEST) {
     if (!specifics.guest_mode_url.empty()) {
       guest_mode_url_ = GURL(specifics.guest_mode_url);
       if (specifics.guest_mode_url_append_locale)
@@ -393,13 +396,15 @@ void ExistingUserController::Login(const UserContext& user_context,
     }
     LoginAsGuest();
     return;
-  } else if (user_context.GetUserType() == User::USER_TYPE_PUBLIC_ACCOUNT) {
+  } else if (user_context.GetUserType() ==
+             user_manager::USER_TYPE_PUBLIC_ACCOUNT) {
     LoginAsPublicAccount(user_context.GetUserID());
     return;
-  } else if (user_context.GetUserType() == User::USER_TYPE_RETAIL_MODE) {
+  } else if (user_context.GetUserType() ==
+             user_manager::USER_TYPE_RETAIL_MODE) {
     LoginAsRetailModeUser();
     return;
-  } else if (user_context.GetUserType() == User::USER_TYPE_KIOSK_APP) {
+  } else if (user_context.GetUserType() == user_manager::USER_TYPE_KIOSK_APP) {
     LoginAsKioskApp(user_context.GetUserID(), specifics.kiosk_diagnostic_mode);
     return;
   }
@@ -448,8 +453,8 @@ void ExistingUserController::PerformLogin(
 
   is_login_in_progress_ = true;
   if (gaia::ExtractDomainName(user_context.GetUserID()) ==
-          UserManager::kLocallyManagedUserDomain) {
-    login_performer_->LoginAsLocallyManagedUser(user_context);
+      chromeos::login::kSupervisedUserDomain) {
+    login_performer_->LoginAsSupervisedUser(user_context);
   } else {
     login_performer_->PerformLogin(user_context, auth_mode);
   }
@@ -568,7 +573,7 @@ void ExistingUserController::LoginAsPublicAccount(
   // If there is no public account with the given |username|, logging in is not
   // possible.
   const User* user = UserManager::Get()->FindUser(username);
-  if (!user || user->GetType() != User::USER_TYPE_PUBLIC_ACCOUNT) {
+  if (!user || user->GetType() != user_manager::USER_TYPE_PUBLIC_ACCOUNT) {
     // Re-enable clicking on other windows.
     login_display_->SetUIEnabled(true);
     StartPublicSessionAutoLoginTimer();
@@ -701,7 +706,7 @@ void ExistingUserController::ShowTPMError() {
 // ExistingUserController, LoginPerformer::Delegate implementation:
 //
 
-void ExistingUserController::OnLoginFailure(const LoginFailure& failure) {
+void ExistingUserController::OnAuthFailure(const AuthFailure& failure) {
   is_login_in_progress_ = false;
   offline_failed_ = true;
 
@@ -714,7 +719,7 @@ void ExistingUserController::OnLoginFailure(const LoginFailure& failure) {
     return;
   }
 
-  if (failure.reason() == LoginFailure::OWNER_REQUIRED) {
+  if (failure.reason() == AuthFailure::OWNER_REQUIRED) {
     ShowError(IDS_LOGIN_ERROR_OWNER_REQUIRED, error);
     content::BrowserThread::PostDelayedTask(
         content::BrowserThread::UI, FROM_HERE,
@@ -722,7 +727,7 @@ void ExistingUserController::OnLoginFailure(const LoginFailure& failure) {
                    base::Unretained(DBusThreadManager::Get()->
                                     GetSessionManagerClient())),
         base::TimeDelta::FromMilliseconds(kSafeModeRestartUiDelayMs));
-  } else if (failure.reason() == LoginFailure::TPM_ERROR) {
+  } else if (failure.reason() == AuthFailure::TPM_ERROR) {
     ShowTPMError();
   } else if (!online_succeeded_for_.empty()) {
     ShowGaiaPasswordChanged(online_succeeded_for_);
@@ -738,7 +743,7 @@ void ExistingUserController::OnLoginFailure(const LoginFailure& failure) {
         ShowError(IDS_LOGIN_ERROR_OFFLINE_FAILED_NETWORK_NOT_CONNECTED, error);
     } else {
       // TODO(nkostylev): Cleanup rest of ClientLogin related code.
-      if (failure.reason() == LoginFailure::NETWORK_AUTH_FAILED &&
+      if (failure.reason() == AuthFailure::NETWORK_AUTH_FAILED &&
           failure.error().state() ==
               GoogleServiceAuthError::HOSTED_NOT_ALLOWED) {
         ShowError(IDS_LOGIN_ERROR_AUTHENTICATING_HOSTED, error);
@@ -759,14 +764,14 @@ void ExistingUserController::OnLoginFailure(const LoginFailure& failure) {
   // attempt.
   UserManager::Get()->ResetUserFlow(last_login_attempt_username_);
 
-  if (login_status_consumer_)
-    login_status_consumer_->OnLoginFailure(failure);
+  if (auth_status_consumer_)
+    auth_status_consumer_->OnAuthFailure(failure);
 
   // Clear the recorded displayed email so it won't affect any future attempts.
   display_email_.clear();
 }
 
-void ExistingUserController::OnLoginSuccess(const UserContext& user_context) {
+void ExistingUserController::OnAuthSuccess(const UserContext& user_context) {
   is_login_in_progress_ = false;
   offline_failed_ = false;
   login_display_->set_signin_completed(true);
@@ -813,7 +818,7 @@ void ExistingUserController::OnProfilePrepared(Profile* profile) {
 
   UserManager* user_manager = UserManager::Get();
   if (user_manager->IsCurrentUserNew() &&
-      user_manager->IsLoggedInAsLocallyManagedUser()) {
+      user_manager->IsLoggedInAsSupervisedUser()) {
     // Supervised users should launch into empty desktop on first run.
     CommandLine::ForCurrentProcess()->AppendSwitch(::switches::kSilentLaunch);
   }
@@ -842,12 +847,12 @@ void ExistingUserController::OnProfilePrepared(Profile* profile) {
     LoginUtils::Get()->DoBrowserLaunch(profile, host_);
     host_ = NULL;
   }
-  // Inform |login_status_consumer_| about successful login.
-  if (login_status_consumer_)
-    login_status_consumer_->OnLoginSuccess(UserContext());
+  // Inform |auth_status_consumer_| about successful login.
+  if (auth_status_consumer_)
+    auth_status_consumer_->OnAuthSuccess(UserContext());
 }
 
-void ExistingUserController::OnOffTheRecordLoginSuccess() {
+void ExistingUserController::OnOffTheRecordAuthSuccess() {
   is_login_in_progress_ = false;
   offline_failed_ = false;
 
@@ -857,8 +862,8 @@ void ExistingUserController::OnOffTheRecordLoginSuccess() {
 
   LoginUtils::Get()->CompleteOffTheRecordLogin(guest_mode_url_);
 
-  if (login_status_consumer_)
-    login_status_consumer_->OnOffTheRecordLoginSuccess();
+  if (auth_status_consumer_)
+    auth_status_consumer_->OnOffTheRecordAuthSuccess();
 }
 
 void ExistingUserController::OnPasswordChangeDetected() {
@@ -890,8 +895,8 @@ void ExistingUserController::OnPasswordChangeDetected() {
   // doing this.  See http://crosbug.com/9115 http://crosbug.com/7792
   login_display_->ShowPasswordChangedDialog(show_invalid_old_password_error);
 
-  if (login_status_consumer_)
-    login_status_consumer_->OnPasswordChangeDetected();
+  if (auth_status_consumer_)
+    auth_status_consumer_->OnPasswordChangeDetected();
 
   display_email_.clear();
 }
@@ -906,9 +911,9 @@ void ExistingUserController::WhiteListCheckFailed(const std::string& email) {
   login_display_->SetUIEnabled(true);
   login_display_->ShowSigninUI(email);
 
-  if (login_status_consumer_) {
-    login_status_consumer_->OnLoginFailure(LoginFailure(
-          LoginFailure::WHITELIST_CHECK_FAILED));
+  if (auth_status_consumer_) {
+    auth_status_consumer_->OnAuthFailure(
+        AuthFailure(AuthFailure::WHITELIST_CHECK_FAILED));
   }
 
   display_email_.clear();
@@ -990,7 +995,7 @@ void ExistingUserController::ConfigurePublicSessionAutoLogin() {
 
   const User* user =
       UserManager::Get()->FindUser(public_session_auto_login_username_);
-  if (!user || user->GetType() != User::USER_TYPE_PUBLIC_ACCOUNT)
+  if (!user || user->GetType() != user_manager::USER_TYPE_PUBLIC_ACCOUNT)
     public_session_auto_login_username_.clear();
 
   if (!cros_settings_->GetInteger(
@@ -1055,7 +1060,8 @@ void ExistingUserController::InitializeStartUrls() const {
   const base::ListValue *urls;
   UserManager* user_manager = UserManager::Get();
   bool can_show_getstarted_guide =
-      user_manager->GetActiveUser()->GetType() == User::USER_TYPE_REGULAR &&
+      user_manager->GetActiveUser()->GetType() ==
+          user_manager::USER_TYPE_REGULAR &&
       !user_manager->IsCurrentUserNonCryptohomeDataEphemeral();
   if (user_manager->IsLoggedInAsDemoUser()) {
     if (CrosSettings::Get()->GetList(kStartUpUrls, &urls)) {
@@ -1128,7 +1134,7 @@ void ExistingUserController::ShowError(int error_id,
     if (num_login_attempts_ > 1) {
       const User* user =
           UserManager::Get()->FindUser(last_login_attempt_username_);
-      if (user && (user->GetType() == User::USER_TYPE_LOCALLY_MANAGED))
+      if (user && (user->GetType() == user_manager::USER_TYPE_SUPERVISED))
         error_id = IDS_LOGIN_ERROR_AUTHENTICATING_2ND_TIME_SUPERVISED;
     }
   }

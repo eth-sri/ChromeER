@@ -24,14 +24,15 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/login/helper.h"
-#include "chrome/browser/chromeos/login/users/avatar/default_user_images.h"
-#include "chrome/browser/chromeos/login/users/avatar/user_image.h"
 #include "chrome/browser/chromeos/login/users/avatar/user_image_sync_observer.h"
 #include "chrome/browser/chromeos/login/users/user_manager.h"
-#include "chrome/browser/chromeos/policy/device_local_account_policy_service.h"
+#include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/profiles/profile_downloader.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/chrome_paths.h"
+#include "components/user_manager/user_image/default_user_images.h"
+#include "components/user_manager/user_image/user_image.h"
+#include "components/user_manager/user_type.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "policy/policy_constants.h"
@@ -146,19 +147,20 @@ int ImageIndexToHistogramIndex(int image_index) {
   switch (image_index) {
     case User::kExternalImageIndex:
       // TODO(ivankr): Distinguish this from selected from file.
-      return kHistogramImageFromCamera;
+      return user_manager::kHistogramImageFromCamera;
     case User::kProfileImageIndex:
-      return kHistogramImageFromProfile;
+      return user_manager::kHistogramImageFromProfile;
     default:
       return image_index;
   }
 }
 
-bool SaveImage(const UserImage& user_image, const base::FilePath& image_path) {
-  UserImage safe_image;
-  const UserImage::RawImage* encoded_image = NULL;
+bool SaveImage(const user_manager::UserImage& user_image,
+               const base::FilePath& image_path) {
+  user_manager::UserImage safe_image;
+  const user_manager::UserImage::RawImage* encoded_image = NULL;
   if (!user_image.is_safe_format()) {
-    safe_image = UserImage::CreateAndEncode(user_image.image());
+    safe_image = user_manager::UserImage::CreateAndEncode(user_image.image());
     encoded_image = &safe_image.raw_image();
     UMA_HISTOGRAM_MEMORY_KB("UserImage.RecodedJpegSize", encoded_image->size());
   } else if (user_image.has_raw_image()) {
@@ -215,7 +217,7 @@ class UserImageManagerImpl::Job {
 
   // Saves the |user_image| to disk and sets the user image in local
   // state to that image. Also updates the user with the new image.
-  void SetToImage(int image_index, const UserImage& user_image);
+  void SetToImage(int image_index, const user_manager::UserImage& user_image);
 
   // Decodes the JPEG image |data|, crops and resizes the image, saves
   // it to disk and sets the user image in local state to that image.
@@ -234,7 +236,7 @@ class UserImageManagerImpl::Job {
 
  private:
   // Called back after an image has been loaded from disk.
-  void OnLoadImageDone(bool save, const UserImage& user_image);
+  void OnLoadImageDone(bool save, const user_manager::UserImage& user_image);
 
   // Updates the user object with |user_image_|.
   void UpdateUser();
@@ -271,7 +273,7 @@ class UserImageManagerImpl::Job {
   GURL image_url_;
   base::FilePath image_path_;
 
-  UserImage user_image_;
+  user_manager::UserImage user_image_;
 
   base::WeakPtrFactory<Job> weak_factory_;
 
@@ -297,9 +299,10 @@ void UserImageManagerImpl::Job::LoadImage(base::FilePath image_path,
   image_url_ = image_url;
   image_path_ = image_path;
 
-  if (image_index_ >= 0 && image_index_ < kDefaultImagesCount) {
+  if (image_index_ >= 0 && image_index_ < user_manager::kDefaultImagesCount) {
     // Load one of the default images. This happens synchronously.
-    user_image_ = UserImage(GetDefaultImage(image_index_));
+    user_image_ =
+        user_manager::UserImage(user_manager::GetDefaultImage(image_index_));
     UpdateUser();
     NotifyJobDone();
   } else if (image_index_ == User::kExternalImageIndex ||
@@ -325,18 +328,20 @@ void UserImageManagerImpl::Job::SetToDefaultImage(int default_image_index) {
   run_ = true;
 
   DCHECK_LE(0, default_image_index);
-  DCHECK_GT(kDefaultImagesCount, default_image_index);
+  DCHECK_GT(user_manager::kDefaultImagesCount, default_image_index);
 
   image_index_ = default_image_index;
-  user_image_ = UserImage(GetDefaultImage(image_index_));
+  user_image_ =
+      user_manager::UserImage(user_manager::GetDefaultImage(image_index_));
 
   UpdateUser();
   UpdateLocalState();
   NotifyJobDone();
 }
 
-void UserImageManagerImpl::Job::SetToImage(int image_index,
-                                           const UserImage& user_image) {
+void UserImageManagerImpl::Job::SetToImage(
+    int image_index,
+    const user_manager::UserImage& user_image) {
   DCHECK(!run_);
   run_ = true;
 
@@ -391,8 +396,9 @@ void UserImageManagerImpl::Job::SetToPath(const base::FilePath& path,
                                                   true));
 }
 
-void UserImageManagerImpl::Job::OnLoadImageDone(bool save,
-                                                const UserImage& user_image) {
+void UserImageManagerImpl::Job::OnLoadImageDone(
+    bool save,
+    const user_manager::UserImage& user_image) {
   user_image_ = user_image;
   UpdateUser();
   if (save)
@@ -517,9 +523,10 @@ void UserImageManagerImpl::LoadUserImage() {
 
   int image_index = User::kInvalidImageIndex;
   image_properties->GetInteger(kImageIndexNodeName, &image_index);
-  if (image_index >= 0 && image_index < kDefaultImagesCount) {
-    user->SetImage(UserImage(GetDefaultImage(image_index)),
-                   image_index);
+  if (image_index >= 0 && image_index < user_manager::kDefaultImagesCount) {
+    user->SetImage(
+        user_manager::UserImage(user_manager::GetDefaultImage(image_index)),
+        image_index);
     return;
   }
 
@@ -559,7 +566,7 @@ void UserImageManagerImpl::UserLoggedIn(bool user_is_new,
   } else {
     UMA_HISTOGRAM_ENUMERATION("UserImage.LoggedIn",
                               ImageIndexToHistogramIndex(user->image_index()),
-                              kHistogramImagesCount);
+                              user_manager::kHistogramImagesCount);
 
     if (!IsUserImageManaged() && user_needs_migration_) {
       const base::DictionaryValue* prefs_images_unsafe =
@@ -624,7 +631,8 @@ void UserImageManagerImpl::SaveUserDefaultImageIndex(int default_image_index) {
   job_->SetToDefaultImage(default_image_index);
 }
 
-void UserImageManagerImpl::SaveUserImage(const UserImage& user_image) {
+void UserImageManagerImpl::SaveUserImage(
+    const user_manager::UserImage& user_image) {
   if (IsUserImageManaged())
     return;
   job_.reset(new Job(this));
@@ -645,9 +653,10 @@ void UserImageManagerImpl::SaveUserImageFromProfileImage() {
   // stub image (gray avatar).
   job_.reset(new Job(this));
   job_->SetToImage(User::kProfileImageIndex,
-                   downloaded_profile_image_.isNull() ?
-                       UserImage() :
-                       UserImage::CreateAndEncode(downloaded_profile_image_));
+                   downloaded_profile_image_.isNull()
+                       ? user_manager::UserImage()
+                       : user_manager::UserImage::CreateAndEncode(
+                             downloaded_profile_image_));
   // If no profile image has been downloaded yet, ensure that a download is
   // started.
   if (downloaded_profile_image_.isNull())
@@ -724,7 +733,7 @@ int UserImageManagerImpl::GetDesiredImageSideLength() const {
 }
 
 Profile* UserImageManagerImpl::GetBrowserProfile() {
-  return user_manager_->GetProfileByUser(GetUser());
+  return ProfileHelper::Get()->GetProfileByUser(GetUser());
 }
 
 std::string UserImageManagerImpl::GetCachedPictureURL() const {
@@ -846,8 +855,9 @@ bool UserImageManagerImpl::IsUserImageManaged() const {
 
 void UserImageManagerImpl::SetInitialUserImage() {
   // Choose a random default image.
-  SaveUserDefaultImageIndex(base::RandInt(kFirstDefaultImageIndex,
-                                          kDefaultImagesCount - 1));
+  SaveUserDefaultImageIndex(
+      base::RandInt(user_manager::kFirstDefaultImageIndex,
+                    user_manager::kDefaultImagesCount - 1));
 }
 
 void UserImageManagerImpl::TryToInitDownloadedProfileImage() {
@@ -946,7 +956,7 @@ void UserImageManagerImpl::OnJobDone() {
   image_properties->GetInteger(kImageIndexNodeName, &image_index);
   UMA_HISTOGRAM_ENUMERATION("UserImage.Migration",
                             ImageIndexToHistogramIndex(image_index),
-                            kHistogramImagesCount);
+                            user_manager::kHistogramImagesCount);
 
   std::string image_path;
   image_properties->GetString(kImagePathNodeName, &image_path);
@@ -998,7 +1008,8 @@ bool UserImageManagerImpl::IsUserLoggedInAndRegular() const {
   const User* user = GetUser();
   if (!user)
     return false;
-  return user->is_logged_in() && user->GetType() == User::USER_TYPE_REGULAR;
+  return user->is_logged_in() &&
+         user->GetType() == user_manager::USER_TYPE_REGULAR;
 }
 
 }  // namespace chromeos

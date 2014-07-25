@@ -140,15 +140,15 @@ class ASH_EXPORT SystemTrayDelegate {
   // Returns notification for enterprise enrolled devices.
   virtual const base::string16 GetEnterpriseMessage() const = 0;
 
-  // Returns the display email of user that manages current
-  // locally managed user.
-  virtual const std::string GetLocallyManagedUserManager() const = 0;
+  // Returns the display email of the user that manages the current supervised
+  // user.
+  virtual const std::string GetSupervisedUserManager() const = 0;
 
-  // Returns the name of user that manages current locally managed user.
-  virtual const base::string16 GetLocallyManagedUserManagerName() const = 0;
+  // Returns the name of the user that manages the current supervised user.
+  virtual const base::string16 GetSupervisedUserManagerName() const = 0;
 
-  // Returns notification for locally managed users.
-  virtual const base::string16 GetLocallyManagedUserMessage() const = 0;
+  // Returns the notification for supervised users.
+  virtual const base::string16 GetSupervisedUserMessage() const = 0;
 
   // Returns whether a system upgrade is available.
   virtual bool SystemShouldUpgrade() const = 0;
@@ -206,8 +206,8 @@ class ASH_EXPORT SystemTrayDelegate {
   // Shows information about enterprise enrolled devices.
   virtual void ShowEnterpriseInfo() = 0;
 
-  // Shows information about locally managed users.
-  virtual void ShowLocallyManagedUserInfo() = 0;
+  // Shows information about supervised users.
+  virtual void ShowSupervisedUserInfo() = 0;
 
   // Shows login UI to add other users to this session.
   virtual void ShowUserLogin() = 0;
@@ -332,10 +332,6 @@ class ASH_EXPORT SystemTrayDelegate {
   // to be switched to the new user.
   // Note: This will happen after SessionStateObserver::ActiveUserChanged fires.
   virtual void ActiveUserWasChanged() = 0;
-
-  // Returns true when |network| is behind captive portal.
-  virtual bool IsNetworkBehindCaptivePortal(
-      const std::string& service_path) const = 0;
 
   // Returns true when the Search key is configured to be treated as Caps Lock.
   virtual bool IsSearchKeyMappedToCapsLock() = 0;

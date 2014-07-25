@@ -61,7 +61,6 @@
         '../ui/gl/gl.gyp:gl',
         '../url/url.gyp:url_lib',
         '../v8/tools/gyp/v8.gyp:v8',
-        '../webkit/common/webkit_common.gyp:webkit_common',
         '../webkit/storage_browser.gyp:webkit_storage_browser',
         '../webkit/webkit_resources.gyp:webkit_resources',
       ],
@@ -173,8 +172,6 @@
         'shell/renderer/shell_render_process_observer.h',
         'shell/renderer/shell_render_view_observer.cc',
         'shell/renderer/shell_render_view_observer.h',
-        'shell/renderer/test_runner/MockColorChooser.cpp',
-        'shell/renderer/test_runner/MockColorChooser.h',
         'shell/renderer/test_runner/MockSpellCheck.cpp',
         'shell/renderer/test_runner/MockSpellCheck.h',
         'shell/renderer/test_runner/MockWebMIDIAccessor.cpp',
@@ -198,14 +195,14 @@
         'shell/renderer/test_runner/WebTestInterfaces.h',
         'shell/renderer/test_runner/WebTestThemeEngineMac.h',
         'shell/renderer/test_runner/WebTestThemeEngineMac.mm',
-        'shell/renderer/test_runner/WebTestThemeEngineMock.cpp',
-        'shell/renderer/test_runner/WebTestThemeEngineMock.h',
         'shell/renderer/test_runner/accessibility_controller.cc',
         'shell/renderer/test_runner/accessibility_controller.h',
         'shell/renderer/test_runner/event_sender.cc',
         'shell/renderer/test_runner/event_sender.h',
         'shell/renderer/test_runner/gamepad_controller.cc',
         'shell/renderer/test_runner/gamepad_controller.h',
+        'shell/renderer/test_runner/mock_color_chooser.cc',
+        'shell/renderer/test_runner/mock_color_chooser.h',
         'shell/renderer/test_runner/mock_constraints.cc',
         'shell/renderer/test_runner/mock_constraints.h',
         'shell/renderer/test_runner/mock_grammar_check.cc',
@@ -216,6 +213,8 @@
         'shell/renderer/test_runner/mock_web_audio_device.h',
         'shell/renderer/test_runner/mock_web_push_client.cc',
         'shell/renderer/test_runner/mock_web_push_client.h',
+        'shell/renderer/test_runner/mock_web_theme_engine.cc',
+        'shell/renderer/test_runner/mock_web_theme_engine.h',
         'shell/renderer/test_runner/mock_web_user_media_client.cc',
         'shell/renderer/test_runner/mock_web_user_media_client.h',
         'shell/renderer/test_runner/mock_webrtc_data_channel_handler.cc',
@@ -412,6 +411,8 @@
             'files': [
               'shell/renderer/test_runner/resources/fonts/AHEM____.TTF',
               'shell/renderer/test_runner/resources/fonts/fonts.conf',
+              '../third_party/gardiner_mod/GardinerModBug.ttf',
+              '../third_party/gardiner_mod/GardinerModCat.ttf',
             ]
           }],
         }],
@@ -462,10 +463,10 @@
               '<(SHARED_INTERMEDIATE_DIR)/content/browser/tracing/tracing_resources.pak',
               '<(SHARED_INTERMEDIATE_DIR)/content/shell_resources.pak',
               '<(SHARED_INTERMEDIATE_DIR)/net/net_resources.pak',
-              '<(SHARED_INTERMEDIATE_DIR)/ui/app_locale_settings/app_locale_settings_en-US.pak',
-              '<(SHARED_INTERMEDIATE_DIR)/ui/ui_resources/ui_resources_100_percent.pak',
-              '<(SHARED_INTERMEDIATE_DIR)/ui/ui_resources/webui_resources.pak',
-              '<(SHARED_INTERMEDIATE_DIR)/ui/ui_strings/ui_strings_en-US.pak',
+              '<(SHARED_INTERMEDIATE_DIR)/ui/resources/ui_resources_100_percent.pak',
+              '<(SHARED_INTERMEDIATE_DIR)/ui/resources/webui_resources.pak',
+              '<(SHARED_INTERMEDIATE_DIR)/ui/strings/app_locale_settings_en-US.pak',
+              '<(SHARED_INTERMEDIATE_DIR)/ui/strings/ui_strings_en-US.pak',
               '<(SHARED_INTERMEDIATE_DIR)/webkit/blink_resources.pak',
               '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_resources_100_percent.pak',
               '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_strings_en-US.pak',
@@ -517,9 +518,6 @@
         'INFOPLIST_FILE': 'shell/app/app-Info.plist',
       },
       'msvs_settings': {
-        'VCLinkerTool': {
-          'SubSystem': '2',  # Set /SUBSYSTEM:WINDOWS
-        },
         'VCManifestTool': {
           'AdditionalManifestFiles': [
             'shell/app/shell.exe.manifest',
@@ -551,6 +549,13 @@
             '../sandbox/sandbox.gyp:sandbox',
           ],
         }],  # OS=="win"
+        ['OS=="win" and asan==0', {
+          'msvs_settings': {
+            'VCLinkerTool': {
+              'SubSystem': '2',  # Set /SUBSYSTEM:WINDOWS
+            },
+          },
+        }],  # OS=="win" and asan==0
         ['OS=="mac"', {
           'product_name': '<(content_shell_product_name)',
           'dependencies!': [
@@ -1030,11 +1035,6 @@
                 'additional_input_paths': [
                   '<(PRODUCT_DIR)/icudtl.dat',
                 ],
-              }],
-              ['component != "shared_library" and target_arch != "arm64" and target_arch != "x64" and profiling_full_stack_frames != 1', {
-                # Only enable the chromium linker on regular builds, since the
-                # component build crashes on Android 4.4. See b/11379966
-                'use_chromium_linker': '1',
               }],
             ],
           },

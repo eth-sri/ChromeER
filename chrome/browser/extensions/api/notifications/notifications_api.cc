@@ -86,12 +86,9 @@ bool NotificationBitmapToGfxImage(
   if (rgba_data_length != rgba_area * BYTES_PER_PIXEL)
     return false;
 
-  // Now configure the bitmap with the sanitized dimensions.
   SkBitmap bitmap;
-  bitmap.setConfig(SkBitmap::kARGB_8888_Config, width, height);
-
-  // Allocate the actual backing store.
-  if (!bitmap.allocPixels())
+  // Allocate the actual backing store with the sanitized dimensions.
+  if (!bitmap.allocN32Pixels(width, height))
     return false;
 
   // Ensure that our bitmap and our data now refer to the same number of pixels.
@@ -288,6 +285,16 @@ bool NotificationsApiFunction::CreateNotification(
 
   // Then, handle any optional data that's been provided.
   message_center::RichNotificationData optional_fields;
+  if (options->app_icon_mask_url.get()) {
+    if (!NotificationBitmapToGfxImage(image_scale,
+                                      bitmap_sizes.app_icon_mask_size,
+                                      options->app_icon_mask_bitmap.get(),
+                                      &optional_fields.small_image)) {
+      SetError(kUnableToDecodeIconError);
+      return false;
+    }
+  }
+
   if (options->priority.get())
     optional_fields.priority = *options->priority;
 
@@ -403,6 +410,14 @@ bool NotificationsApiFunction::UpdateNotification(
     NotificationBitmapToGfxImage(
         image_scale, bitmap_sizes.icon_size, options->icon_bitmap.get(), &icon);
     notification->set_icon(icon);
+  }
+
+  gfx::Image app_icon_mask;
+  if (NotificationBitmapToGfxImage(image_scale,
+                                   bitmap_sizes.app_icon_mask_size,
+                                   options->app_icon_mask_bitmap.get(),
+                                   &app_icon_mask)) {
+    notification->set_small_image(app_icon_mask);
   }
 
   if (options->priority)

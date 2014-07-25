@@ -8,15 +8,15 @@
 #include "content/public/common/page_transition_types.h"
 
 class GURL;
-struct WebPreferences;
 
 namespace content {
 
 class BrowserContext;
-struct Referrer;
 class RenderViewHost;
 class SiteInstance;
 class WebContents;
+struct Referrer;
+struct WebPreferences;
 
 // This interface allows embedders of content/ to write tests that depend on a
 // test version of WebContents.  This interface can be retrieved from any
@@ -86,8 +86,8 @@ class WebContentsTester {
       const Referrer& referrer,
       PageTransition transition) = 0;
 
-  // Promote GetWebkitPrefs to public.
-  virtual WebPreferences TestGetWebkitPrefs() = 0;
+  // Promote ComputeWebkitPrefs to public.
+  virtual WebPreferences TestComputeWebkitPrefs() = 0;
 };
 
 }  // namespace content

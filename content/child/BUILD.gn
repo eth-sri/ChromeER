@@ -18,7 +18,7 @@ source_set("child") {
     "//base",
     "//components/tracing",
     "//mojo/environment:chromium",
-    "//mojo/public/interfaces/interface_provider",
+    "//mojo/public/interfaces/service_provider",
     "//skia",
     "//third_party/icu",
     "//ui/base",
@@ -107,8 +107,10 @@ source_set("child") {
   }
 
   if (!use_openssl) {
-    sources -= [ "webcrypto/platform_crypto_openssl.cc" ]
+    sources += rebase_path(content_child_gypi_values.webcrypto_nss_sources,
+                           ".", "//content")
   } else {
-    sources -= [ "webcrypto/platform_crypto_nss.cc" ]
+    sources += rebase_path(content_child_gypi_values.webcrypto_openssl_sources,
+                           ".", "//content")
   }
 }

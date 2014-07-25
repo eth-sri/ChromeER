@@ -6,3 +6,9 @@ CountryRulesAggregatorTest.ValidRulesets
 ExampleAddressValidatorTest.examples
 RetrieverTest.*
 FakeDownloaderTest.*
+
+# Test crashes - http://crbug.com/395169
+AddressInputHelperTest.*
+
+# Crashes: http://crbug.com/396203
+AddressNormalizerTest.*

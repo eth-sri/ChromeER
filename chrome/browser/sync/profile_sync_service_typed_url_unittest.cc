@@ -113,8 +113,9 @@ class HistoryServiceMock : public HistoryService {
  public:
   explicit HistoryServiceMock(history::HistoryClient* client, Profile* profile)
       : HistoryService(client, profile) {}
-  MOCK_METHOD2(ScheduleDBTask, void(history::HistoryDBTask*,
-                                    CancelableRequestConsumerBase*));
+  MOCK_METHOD2(ScheduleDBTask,
+               void(scoped_refptr<history::HistoryDBTask>,
+                    base::CancelableTaskTracker*));
   MOCK_METHOD0(Shutdown, void());
 
   void ShutdownBaseService() {
@@ -141,7 +142,7 @@ class TestTypedUrlModelAssociator : public TypedUrlModelAssociator {
   TestTypedUrlModelAssociator(
       ProfileSyncService* sync_service,
       history::HistoryBackend* history_backend,
-      browser_sync::DataTypeErrorHandler* error_handler) :
+      sync_driver::DataTypeErrorHandler* error_handler) :
       TypedUrlModelAssociator(sync_service, history_backend, error_handler) {}
 
  protected:
@@ -151,17 +152,14 @@ class TestTypedUrlModelAssociator : public TypedUrlModelAssociator {
 };
 
 void RunOnDBThreadCallback(HistoryBackend* backend,
-                           history::HistoryDBTask* task) {
+                           scoped_refptr<history::HistoryDBTask> task) {
   task->RunOnDBThread(backend, NULL);
 }
 
 ACTION_P2(RunTaskOnDBThread, thread, backend) {
-  // ScheduleDBTask takes ownership of its task argument, so we
-  // should, too.
-  scoped_refptr<history::HistoryDBTask> task(arg0);
   thread->message_loop()->PostTask(
-      FROM_HERE, base::Bind(&RunOnDBThreadCallback, base::Unretained(backend),
-                            task));
+      FROM_HERE,
+      base::Bind(&RunOnDBThreadCallback, base::Unretained(backend), arg0));
 }
 
 ACTION_P2(ShutdownHistoryService, thread, service) {
@@ -350,7 +348,7 @@ class ProfileSyncServiceTypedUrlTest : public AbstractProfileSyncServiceTest {
   TestingProfile* profile_;
   scoped_refptr<HistoryBackendMock> history_backend_;
   HistoryServiceMock* history_service_;
-  browser_sync::DataTypeErrorHandlerMock error_handler_;
+  sync_driver::DataTypeErrorHandlerMock error_handler_;
 };
 
 void AddTypedUrlEntries(ProfileSyncServiceTypedUrlTest* test,

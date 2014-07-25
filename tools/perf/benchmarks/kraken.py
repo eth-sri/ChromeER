@@ -10,6 +10,8 @@ from metrics import power
 from telemetry import benchmark
 from telemetry.page import page_measurement
 from telemetry.page import page_set
+from telemetry.value import list_of_scalar_values
+from telemetry.value import scalar
 
 
 def _Mean(l):
@@ -19,10 +21,13 @@ def _Mean(l):
 class _KrakenMeasurement(page_measurement.PageMeasurement):
   def __init__(self):
     super(_KrakenMeasurement, self).__init__()
-    self._power_metric = power.PowerMetric()
+    self._power_metric = None
 
   def CustomizeBrowserOptions(self, options):
     power.PowerMetric.CustomizeBrowserOptions(options)
+
+  def WillStartBrowser(self, browser):
+    self._power_metric = power.PowerMetric(browser)
 
   def DidNavigateToPage(self, page, tab):
     self._power_metric.Start(page, tab)
@@ -44,9 +49,14 @@ decodeURIComponent(formElement.value.split("?")[1]);
     for key in result_dict:
       if key == 'v':
         continue
-      results.Add(key, 'ms', result_dict[key], data_type='unimportant')
+      results.AddValue(list_of_scalar_values.ListOfScalarValues(
+          results.current_page, key, 'ms', result_dict[key], important=False))
       total += _Mean(result_dict[key])
-    results.Add('Total', 'ms', total)
+
+    # TODO(tonyg/nednguyen): This measurement shouldn't calculate Total. The
+    # results system should do that for us.
+    results.AddValue(scalar.ScalarValue(
+        results.current_page, 'Total', 'ms', total))
 
 
 class Kraken(benchmark.Benchmark):

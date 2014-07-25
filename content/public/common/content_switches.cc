@@ -122,10 +122,6 @@ const char kDisableDelegatedRenderer[]      = "disable-delegated-renderer";
 // Disables desktop notifications (default enabled on windows).
 const char kDisableDesktopNotifications[]   = "disable-desktop-notifications";
 
-// Disables experimental navigator content utils implementation.
-const char kDisableNavigatorContentUtils[]  =
-      "disable-navigator-content-utils";
-
 // Handles URL requests by NPAPI plugins through the renderer.
 const char kDisableDirectNPAPIRequests[]    = "disable-direct-npapi-requests";
 
@@ -151,8 +147,6 @@ const char kDisableFlash3d[]                = "disable-flash-3d";
 
 // Disable Stage3D inside of flapper.
 const char kDisableFlashStage3d[]           = "disable-flash-stage3d";
-
-const char kDisableGestureTapHighlight[]    = "disable-gesture-tap-highlight";
 
 // Disables GPU hardware acceleration.  If software renderer is not in place,
 // then the GPU process won't launch.
@@ -255,7 +249,7 @@ const char kDisableSessionStorage[]         = "disable-session-storage";
 // Disable the setuid sandbox (Linux only).
 const char kDisableSetuidSandbox[]          = "disable-setuid-sandbox";
 
-// Enable shared workers. Functionality not yet complete.
+// Disable shared workers.
 const char kDisableSharedWorkers[]          = "disable-shared-workers";
 
 // Disables site-specific tailoring to compatibility issues in WebKit.
@@ -376,9 +370,6 @@ const char kEnableFileCookies[]             = "enable-file-cookies";
 // Enable the fast text autosizing implementation.
 const char kEnableFastTextAutosizing[]      = "enable-fast-text-autosizing";
 
-// Enable Gesture Tap Highlight
-const char kEnableGestureTapHighlight[]     = "enable-gesture-tap-highlight";
-
 // Enables TRACE for GL calls in the renderer.
 const char kEnableGpuClientTracing[]        = "enable-gpu-client-tracing";
 
@@ -484,8 +475,8 @@ const char kEnableServiceWorkerSync[]       = "enable-service-worker-sync";
 // SYN packet.
 const char kEnableTcpFastOpen[]             = "enable-tcp-fastopen";
 
-// Enable multithreaded GPU compositing of web content.
-const char kEnableThreadedCompositing[]     = "enable-threaded-compositing";
+// Enabled threaded compositing for layout tests.
+const char kEnableThreadedCompositing[] = "enable-threaded-compositing";
 
 // Enable screen capturing support for MediaStream API.
 const char kEnableUserMediaScreenCapturing[] =
@@ -562,15 +553,14 @@ const char kGpuLauncher[]                   = "gpu-launcher";
 // Makes this process a GPU sub-process.
 const char kGpuProcess[]                    = "gpu-process";
 
-// Allow shmat system call in GPU sandbox.
+// Allows shmat() system call in the GPU sandbox.
 const char kGpuSandboxAllowSysVShm[]        = "gpu-sandbox-allow-sysv-shm";
 
 // Makes GPU sandbox failures fatal.
 const char kGpuSandboxFailuresFatal[]       = "gpu-sandbox-failures-fatal";
 
-// Allow GPU sandbox to start later
-const char kGpuSandboxStartAfterInitialization[] =
-    "gpu-sandbox-start-after-initialization";
+// Starts the GPU sandbox before creating a GL context.
+const char kGpuSandboxStartEarly[]          = "gpu-sandbox-start-early";
 
 // Causes the GPU process to display a dialog on launch.
 const char kGpuStartupDialog[]              = "gpu-startup-dialog";
@@ -932,8 +922,6 @@ const char kEnableVaapiAcceleratedVideoEncode[] =
 #endif
 
 #if defined(OS_MACOSX) && !defined(OS_IOS)
-const char kEnableCarbonInterposing[]       = "enable-carbon-interposing";
-
 // Disables support for Core Animation plugins. This is triggered when
 // accelerated compositing is disabled. See http://crbug.com/122430 .
 const char kDisableCoreAnimationPlugins[] =

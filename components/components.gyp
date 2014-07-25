@@ -17,6 +17,7 @@
     'breakpad.gypi',
     'captive_portal.gypi',
     'cloud_devices.gypi',
+    'component_updater.gypi',
     'cronet.gypi',
     'data_reduction_proxy.gypi',
     'dom_distiller.gypi',
@@ -43,7 +44,7 @@
     'pref_registry.gypi',
     'query_parser.gypi',
     'rappor.gypi',
-    'search_engines.gypi',
+    'search.gypi',
     'search_provider_logos.gypi',
     'signin.gypi',
     'startup_metric_utils.gypi',
@@ -77,9 +78,20 @@
         'usb_service.gypi',
       ]
     }],
+    ['chromeos == 1', {
+      'includes': [
+        'pairing.gypi',
+      ],
+    }],
     ['OS == "win" or OS == "mac"', {
       'includes': [
         'wifi.gypi',
+      ],
+    }],
+    ['use_ash==1', {
+      'includes': [
+        'session_manager.gypi',
+        'user_manager.gypi',
       ],
     }],
     ['android_webview_build == 0', {
@@ -87,6 +99,7 @@
       # introduced.
       'includes': [
         'gcm_driver.gypi',
+        'search_engines.gypi',
         'sync_driver.gypi',
         'invalidation.gypi',
       ],

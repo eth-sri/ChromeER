@@ -103,8 +103,8 @@ GLES2DecoderTestBase::GLES2DecoderTestBase()
       cached_color_mask_blue_(true),
       cached_color_mask_alpha_(true),
       cached_depth_mask_(true),
-      cached_stencil_front_mask_(0xFFFFFFFFU),
-      cached_stencil_back_mask_(0xFFFFFFFFU) {
+      cached_stencil_front_mask_(static_cast<GLuint>(-1)),
+      cached_stencil_back_mask_(static_cast<GLuint>(-1)) {
   memset(immediate_buffer_, 0xEE, sizeof(immediate_buffer_));
 }
 
@@ -168,7 +168,6 @@ void GLES2DecoderTestBase::InitDecoderWithCommandLine(
     feature_info = new FeatureInfo(*command_line);
   group_ = scoped_refptr<ContextGroup>(
       new ContextGroup(NULL,
-                       NULL,
                        memory_tracker_,
                        new ShaderTranslatorCache,
                        feature_info.get(),
@@ -730,8 +729,8 @@ void GLES2DecoderTestBase::SetupExpectationsForDepthMask(bool mask) {
   }
 }
 
-void GLES2DecoderTestBase::SetupExpectationsForStencilMask(uint32 front_mask,
-                                                           uint32 back_mask) {
+void GLES2DecoderTestBase::SetupExpectationsForStencilMask(GLuint front_mask,
+                                                           GLuint back_mask) {
   if (ignore_cached_state_for_test_ ||
       cached_stencil_front_mask_ != front_mask) {
     cached_stencil_front_mask_ = front_mask;

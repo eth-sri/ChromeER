@@ -688,7 +688,11 @@ ui::NativeTheme* NativeWidgetAura::GetNativeTheme() const {
 #endif
 }
 
-void NativeWidgetAura::OnRootViewLayout() const {
+void NativeWidgetAura::OnRootViewLayout() {
+}
+
+bool NativeWidgetAura::IsTranslucentWindowOpacitySupported() const {
+  return true;
 }
 
 void NativeWidgetAura::RepostNativeEvent(gfx::NativeEvent native_event) {
@@ -1141,11 +1145,6 @@ void NativeWidgetPrivate::ReparentNativeView(gfx::NativeView native_view,
 // static
 bool NativeWidgetPrivate::IsMouseButtonDown() {
   return aura::Env::GetInstance()->IsMouseButtonDown();
-}
-
-// static
-bool NativeWidgetPrivate::IsTouchDown() {
-  return aura::Env::GetInstance()->is_touch_down();
 }
 
 // static

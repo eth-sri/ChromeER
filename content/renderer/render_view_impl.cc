@@ -62,12 +62,12 @@
 #include "content/public/common/three_d_api_types.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/common/url_utils.h"
+#include "content/public/common/web_preferences.h"
 #include "content/public/renderer/content_renderer_client.h"
 #include "content/public/renderer/document_state.h"
 #include "content/public/renderer/navigation_state.h"
 #include "content/public/renderer/render_view_observer.h"
 #include "content/public/renderer/render_view_visitor.h"
-#include "content/public/renderer/web_preferences.h"
 #include "content/renderer/accessibility/renderer_accessibility.h"
 #include "content/renderer/accessibility/renderer_accessibility_complete.h"
 #include "content/renderer/accessibility/renderer_accessibility_focus_only.h"
@@ -87,12 +87,11 @@
 #include "content/renderer/input/input_handler_manager.h"
 #include "content/renderer/internal_document_state_data.h"
 #include "content/renderer/media/audio_device_factory.h"
-#include "content/renderer/media/media_stream_dispatcher.h"
 #include "content/renderer/media/video_capture_impl_manager.h"
 #include "content/renderer/media/webrtc/peer_connection_dependency_factory.h"
 #include "content/renderer/memory_benchmarking_extension.h"
 #include "content/renderer/mhtml_generator.h"
-#include "content/renderer/push_messaging_dispatcher.h"
+#include "content/renderer/net_info_helper.h"
 #include "content/renderer/render_frame_impl.h"
 #include "content/renderer/render_frame_proxy.h"
 #include "content/renderer/render_process.h"
@@ -124,6 +123,7 @@
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "net/http/http_util.h"
 #include "third_party/WebKit/public/platform/WebCString.h"
+#include "third_party/WebKit/public/platform/WebConnectionType.h"
 #include "third_party/WebKit/public/platform/WebDragData.h"
 #include "third_party/WebKit/public/platform/WebHTTPBody.h"
 #include "third_party/WebKit/public/platform/WebImage.h"
@@ -159,9 +159,11 @@
 #include "third_party/WebKit/public/web/WebHistoryItem.h"
 #include "third_party/WebKit/public/web/WebInputElement.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
+#include "third_party/WebKit/public/web/WebKit.h"
 #include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "third_party/WebKit/public/web/WebMediaPlayerAction.h"
 #include "third_party/WebKit/public/web/WebNavigationPolicy.h"
+#include "third_party/WebKit/public/web/WebNetworkStateNotifier.h"
 #include "third_party/WebKit/public/web/WebNodeList.h"
 #include "third_party/WebKit/public/web/WebPageSerializer.h"
 #include "third_party/WebKit/public/web/WebPlugin.h"
@@ -169,6 +171,7 @@
 #include "third_party/WebKit/public/web/WebPluginContainer.h"
 #include "third_party/WebKit/public/web/WebPluginDocument.h"
 #include "third_party/WebKit/public/web/WebRange.h"
+#include "third_party/WebKit/public/web/WebRuntimeFeatures.h"
 #include "third_party/WebKit/public/web/WebScriptSource.h"
 #include "third_party/WebKit/public/web/WebSearchableFormData.h"
 #include "third_party/WebKit/public/web/WebSecurityOrigin.h"
@@ -179,6 +182,8 @@
 #include "third_party/WebKit/public/web/WebView.h"
 #include "third_party/WebKit/public/web/WebWindowFeatures.h"
 #include "third_party/WebKit/public/web/default/WebRenderTheme.h"
+#include "third_party/icu/source/common/unicode/uchar.h"
+#include "third_party/icu/source/common/unicode/uscript.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/ui_base_switches_util.h"
 #include "ui/events/latency_info.h"
@@ -189,7 +194,6 @@
 #include "ui/gfx/size_conversions.h"
 #include "ui/shell_dialogs/selected_file_info.h"
 #include "v8/include/v8.h"
-#include "webkit/child/weburlresponse_extradata_impl.h"
 
 #if defined(OS_ANDROID)
 #include <cpu-features.h>
@@ -300,9 +304,10 @@ using blink::WebVector;
 using blink::WebView;
 using blink::WebWidget;
 using blink::WebWindowFeatures;
+using blink::WebNetworkStateNotifier;
+using blink::WebRuntimeFeatures;
 using base::Time;
 using base::TimeDelta;
-using webkit_glue::WebURLResponseExtraDataImpl;
 
 #if defined(OS_ANDROID)
 using blink::WebContentDetectionResult;
@@ -609,6 +614,87 @@ WebDragData DropDataToWebDragData(const DropData& drop_data) {
   return result;
 }
 
+typedef void (*SetFontFamilyWrapper)(blink::WebSettings*,
+                                     const base::string16&,
+                                     UScriptCode);
+
+void SetStandardFontFamilyWrapper(WebSettings* settings,
+                                  const base::string16& font,
+                                  UScriptCode script) {
+  settings->setStandardFontFamily(font, script);
+}
+
+void SetFixedFontFamilyWrapper(WebSettings* settings,
+                               const base::string16& font,
+                               UScriptCode script) {
+  settings->setFixedFontFamily(font, script);
+}
+
+void SetSerifFontFamilyWrapper(WebSettings* settings,
+                               const base::string16& font,
+                               UScriptCode script) {
+  settings->setSerifFontFamily(font, script);
+}
+
+void SetSansSerifFontFamilyWrapper(WebSettings* settings,
+                                   const base::string16& font,
+                                   UScriptCode script) {
+  settings->setSansSerifFontFamily(font, script);
+}
+
+void SetCursiveFontFamilyWrapper(WebSettings* settings,
+                                 const base::string16& font,
+                                 UScriptCode script) {
+  settings->setCursiveFontFamily(font, script);
+}
+
+void SetFantasyFontFamilyWrapper(WebSettings* settings,
+                                 const base::string16& font,
+                                 UScriptCode script) {
+  settings->setFantasyFontFamily(font, script);
+}
+
+void SetPictographFontFamilyWrapper(WebSettings* settings,
+                                    const base::string16& font,
+                                    UScriptCode script) {
+  settings->setPictographFontFamily(font, script);
+}
+
+// If |scriptCode| is a member of a family of "similar" script codes, returns
+// the script code in that family that is used by WebKit for font selection
+// purposes.  For example, USCRIPT_KATAKANA_OR_HIRAGANA and USCRIPT_JAPANESE are
+// considered equivalent for the purposes of font selection.  WebKit uses the
+// script code USCRIPT_KATAKANA_OR_HIRAGANA.  So, if |scriptCode| is
+// USCRIPT_JAPANESE, the function returns USCRIPT_KATAKANA_OR_HIRAGANA.  WebKit
+// uses different scripts than the ones in Chrome pref names because the version
+// of ICU included on certain ports does not have some of the newer scripts.  If
+// |scriptCode| is not a member of such a family, returns |scriptCode|.
+UScriptCode GetScriptForWebSettings(UScriptCode scriptCode) {
+  switch (scriptCode) {
+    case USCRIPT_HIRAGANA:
+    case USCRIPT_KATAKANA:
+    case USCRIPT_JAPANESE:
+      return USCRIPT_KATAKANA_OR_HIRAGANA;
+    case USCRIPT_KOREAN:
+      return USCRIPT_HANGUL;
+    default:
+      return scriptCode;
+  }
+}
+
+void ApplyFontsFromMap(const ScriptFontFamilyMap& map,
+                       SetFontFamilyWrapper setter,
+                       WebSettings* settings) {
+  for (ScriptFontFamilyMap::const_iterator it = map.begin(); it != map.end();
+       ++it) {
+    int32 script = u_getPropertyValueEnum(UCHAR_SCRIPT, (it->first).c_str());
+    if (script >= 0 && script < USCRIPT_CODE_LIMIT) {
+      UScriptCode code = static_cast<UScriptCode>(script);
+      (*setter)(settings, it->second, GetScriptForWebSettings(code));
+    }
+  }
+}
+
 }  // namespace
 
 RenderViewImpl::RenderViewImpl(RenderViewImplParams* params)
@@ -637,9 +723,7 @@ RenderViewImpl::RenderViewImpl(RenderViewImplParams* params)
       top_controls_constraints_(cc::BOTH),
 #endif
       has_scrolled_focused_editable_node_into_rect_(false),
-      push_messaging_dispatcher_(NULL),
       speech_recognition_dispatcher_(NULL),
-      media_stream_dispatcher_(NULL),
       browser_plugin_manager_(NULL),
       devtools_agent_(NULL),
       accessibility_mode_(AccessibilityModeOff),
@@ -679,9 +763,8 @@ void RenderViewImpl::Initialize(RenderViewImplParams* params) {
 
   if (params->proxy_routing_id != MSG_ROUTING_NONE) {
     CHECK(params->swapped_out);
-    RenderFrameProxy* proxy =
-        RenderFrameProxy::CreateFrameProxy(params->proxy_routing_id,
-                                           params->main_frame_routing_id);
+    RenderFrameProxy* proxy = RenderFrameProxy::CreateProxyToReplaceFrame(
+        main_render_frame_.get(), params->proxy_routing_id);
     main_render_frame_->set_render_frame_proxy(proxy);
   }
 
@@ -761,11 +844,6 @@ void RenderViewImpl::Initialize(RenderViewImplParams* params) {
     webview()->setOpenedByDOM();
 
   OnSetRendererPrefs(params->renderer_prefs);
-
-#if defined(ENABLE_WEBRTC)
-  if (!media_stream_dispatcher_)
-    media_stream_dispatcher_ = new MediaStreamDispatcher(this);
-#endif
 
   new MHTMLGenerator(this);
 #if defined(OS_MACOSX)
@@ -885,6 +963,226 @@ void RenderView::ForEach(RenderViewVisitor* visitor) {
     if (!visitor->Visit(it->second))
       return;
   }
+}
+
+/*static*/
+void RenderView::ApplyWebPreferences(const WebPreferences& prefs,
+                                     WebView* web_view) {
+  WebSettings* settings = web_view->settings();
+  ApplyFontsFromMap(prefs.standard_font_family_map,
+                    SetStandardFontFamilyWrapper, settings);
+  ApplyFontsFromMap(prefs.fixed_font_family_map,
+                    SetFixedFontFamilyWrapper, settings);
+  ApplyFontsFromMap(prefs.serif_font_family_map,
+                    SetSerifFontFamilyWrapper, settings);
+  ApplyFontsFromMap(prefs.sans_serif_font_family_map,
+                    SetSansSerifFontFamilyWrapper, settings);
+  ApplyFontsFromMap(prefs.cursive_font_family_map,
+                    SetCursiveFontFamilyWrapper, settings);
+  ApplyFontsFromMap(prefs.fantasy_font_family_map,
+                    SetFantasyFontFamilyWrapper, settings);
+  ApplyFontsFromMap(prefs.pictograph_font_family_map,
+                    SetPictographFontFamilyWrapper, settings);
+  settings->setDefaultFontSize(prefs.default_font_size);
+  settings->setDefaultFixedFontSize(prefs.default_fixed_font_size);
+  settings->setMinimumFontSize(prefs.minimum_font_size);
+  settings->setMinimumLogicalFontSize(prefs.minimum_logical_font_size);
+  settings->setDefaultTextEncodingName(
+      base::ASCIIToUTF16(prefs.default_encoding));
+  settings->setJavaScriptEnabled(prefs.javascript_enabled);
+  settings->setWebSecurityEnabled(prefs.web_security_enabled);
+  settings->setJavaScriptCanOpenWindowsAutomatically(
+      prefs.javascript_can_open_windows_automatically);
+  settings->setLoadsImagesAutomatically(prefs.loads_images_automatically);
+  settings->setImagesEnabled(prefs.images_enabled);
+  settings->setPluginsEnabled(prefs.plugins_enabled);
+  settings->setDOMPasteAllowed(prefs.dom_paste_enabled);
+  settings->setNeedsSiteSpecificQuirks(prefs.site_specific_quirks_enabled);
+  settings->setShrinksStandaloneImagesToFit(
+      prefs.shrinks_standalone_images_to_fit);
+  settings->setUsesEncodingDetector(prefs.uses_universal_detector);
+  settings->setTextAreasAreResizable(prefs.text_areas_are_resizable);
+  settings->setAllowScriptsToCloseWindows(prefs.allow_scripts_to_close_windows);
+  settings->setDownloadableBinaryFontsEnabled(prefs.remote_fonts_enabled);
+  settings->setJavaScriptCanAccessClipboard(
+      prefs.javascript_can_access_clipboard);
+  WebRuntimeFeatures::enableXSLT(prefs.xslt_enabled);
+  settings->setXSSAuditorEnabled(prefs.xss_auditor_enabled);
+  settings->setDNSPrefetchingEnabled(prefs.dns_prefetching_enabled);
+  settings->setLocalStorageEnabled(prefs.local_storage_enabled);
+  settings->setSyncXHRInDocumentsEnabled(prefs.sync_xhr_in_documents_enabled);
+  WebRuntimeFeatures::enableDatabase(prefs.databases_enabled);
+  settings->setOfflineWebApplicationCacheEnabled(
+      prefs.application_cache_enabled);
+  settings->setCaretBrowsingEnabled(prefs.caret_browsing_enabled);
+  settings->setHyperlinkAuditingEnabled(prefs.hyperlink_auditing_enabled);
+  settings->setCookieEnabled(prefs.cookie_enabled);
+  settings->setNavigateOnDragDrop(prefs.navigate_on_drag_drop);
+
+  settings->setJavaEnabled(prefs.java_enabled);
+
+  // By default, allow_universal_access_from_file_urls is set to false and thus
+  // we mitigate attacks from local HTML files by not granting file:// URLs
+  // universal access. Only test shell will enable this.
+  settings->setAllowUniversalAccessFromFileURLs(
+      prefs.allow_universal_access_from_file_urls);
+  settings->setAllowFileAccessFromFileURLs(
+      prefs.allow_file_access_from_file_urls);
+
+  // Enable the web audio API if requested on the command line.
+  settings->setWebAudioEnabled(prefs.webaudio_enabled);
+
+  // Enable experimental WebGL support if requested on command line
+  // and support is compiled in.
+  settings->setExperimentalWebGLEnabled(prefs.experimental_webgl_enabled);
+
+  // Disable GL multisampling if requested on command line.
+  settings->setOpenGLMultisamplingEnabled(prefs.gl_multisampling_enabled);
+
+  // Enable WebGL errors to the JS console if requested.
+  settings->setWebGLErrorsToConsoleEnabled(
+      prefs.webgl_errors_to_console_enabled);
+
+  // Uses the mock theme engine for scrollbars.
+  settings->setMockScrollbarsEnabled(prefs.mock_scrollbars_enabled);
+
+  settings->setLayerSquashingEnabled(prefs.layer_squashing_enabled);
+
+  // Enable gpu-accelerated 2d canvas if requested on the command line.
+  settings->setAccelerated2dCanvasEnabled(prefs.accelerated_2d_canvas_enabled);
+
+  settings->setMinimumAccelerated2dCanvasSize(
+      prefs.minimum_accelerated_2d_canvas_size);
+
+  // Disable antialiasing for 2d canvas if requested on the command line.
+  settings->setAntialiased2dCanvasEnabled(
+      !prefs.antialiased_2d_canvas_disabled);
+
+  // Set MSAA sample count for 2d canvas if requested on the command line (or
+  // default value if not).
+  settings->setAccelerated2dCanvasMSAASampleCount(
+      prefs.accelerated_2d_canvas_msaa_sample_count);
+
+  // Enable deferred filter rendering if requested on the command line.
+  settings->setDeferredFiltersEnabled(prefs.deferred_filters_enabled);
+
+  // Enable container culling if requested on the command line.
+  settings->setContainerCullingEnabled(prefs.container_culling_enabled);
+
+  // Enabling accelerated layers from the command line enabled accelerated
+  // Video.
+  settings->setAcceleratedCompositingForVideoEnabled(
+      prefs.accelerated_compositing_for_video_enabled);
+
+  // WebGL and accelerated 2D canvas are always gpu composited.
+  settings->setAcceleratedCompositingForCanvasEnabled(
+      prefs.experimental_webgl_enabled || prefs.accelerated_2d_canvas_enabled);
+
+  settings->setAsynchronousSpellCheckingEnabled(
+      prefs.asynchronous_spell_checking_enabled);
+  settings->setUnifiedTextCheckerEnabled(prefs.unified_textchecker_enabled);
+
+  for (WebInspectorPreferences::const_iterator it =
+           prefs.inspector_settings.begin();
+       it != prefs.inspector_settings.end();
+       ++it) {
+    web_view->setInspectorSetting(WebString::fromUTF8(it->first),
+                                  WebString::fromUTF8(it->second));
+  }
+
+  // Tabs to link is not part of the settings. WebCore calls
+  // ChromeClient::tabsToLinks which is part of the glue code.
+  web_view->setTabsToLinks(prefs.tabs_to_links);
+
+  settings->setAllowDisplayOfInsecureContent(
+      prefs.allow_displaying_insecure_content);
+  settings->setAllowRunningOfInsecureContent(
+      prefs.allow_running_insecure_content);
+  settings->setPasswordEchoEnabled(prefs.password_echo_enabled);
+  settings->setShouldPrintBackgrounds(prefs.should_print_backgrounds);
+  settings->setShouldClearDocumentBackground(
+      prefs.should_clear_document_background);
+  settings->setEnableScrollAnimator(prefs.enable_scroll_animator);
+
+  settings->setRegionBasedColumnsEnabled(prefs.region_based_columns_enabled);
+
+  WebRuntimeFeatures::enableTouch(prefs.touch_enabled);
+  settings->setMaxTouchPoints(prefs.pointer_events_max_touch_points);
+  settings->setDeviceSupportsTouch(prefs.device_supports_touch);
+  settings->setDeviceSupportsMouse(prefs.device_supports_mouse);
+  settings->setEnableTouchAdjustment(prefs.touch_adjustment_enabled);
+
+  settings->setDeferredImageDecodingEnabled(
+      prefs.deferred_image_decoding_enabled);
+  settings->setShouldRespectImageOrientation(
+      prefs.should_respect_image_orientation);
+
+  settings->setUnsafePluginPastingEnabled(false);
+  settings->setEditingBehavior(
+      static_cast<WebSettings::EditingBehavior>(prefs.editing_behavior));
+
+  settings->setSupportsMultipleWindows(prefs.supports_multiple_windows);
+
+  settings->setViewportEnabled(prefs.viewport_enabled);
+  settings->setLoadWithOverviewMode(prefs.initialize_at_minimum_page_scale);
+  settings->setViewportMetaEnabled(prefs.viewport_meta_enabled);
+  settings->setMainFrameResizesAreOrientationChanges(
+      prefs.main_frame_resizes_are_orientation_changes);
+
+  settings->setSmartInsertDeleteEnabled(prefs.smart_insert_delete_enabled);
+
+  settings->setSpatialNavigationEnabled(prefs.spatial_navigation_enabled);
+
+  settings->setSelectionIncludesAltImageText(true);
+
+#if defined(OS_ANDROID)
+  settings->setAllowCustomScrollbarInMainFrame(false);
+  settings->setTextAutosizingEnabled(prefs.text_autosizing_enabled);
+  settings->setAccessibilityFontScaleFactor(prefs.font_scale_factor);
+  settings->setDeviceScaleAdjustment(prefs.device_scale_adjustment);
+  web_view->setIgnoreViewportTagScaleLimits(prefs.force_enable_zoom);
+  settings->setAutoZoomFocusedNodeToLegibleScale(true);
+  settings->setDoubleTapToZoomEnabled(prefs.double_tap_to_zoom_enabled);
+  settings->setMediaControlsOverlayPlayButtonEnabled(true);
+  settings->setMediaPlaybackRequiresUserGesture(
+      prefs.user_gesture_required_for_media_playback);
+  settings->setDefaultVideoPosterURL(
+        base::ASCIIToUTF16(prefs.default_video_poster_url.spec()));
+  settings->setSupportDeprecatedTargetDensityDPI(
+      prefs.support_deprecated_target_density_dpi);
+  settings->setUseLegacyBackgroundSizeShorthandBehavior(
+      prefs.use_legacy_background_size_shorthand_behavior);
+  settings->setWideViewportQuirkEnabled(prefs.wide_viewport_quirk);
+  settings->setUseWideViewport(prefs.use_wide_viewport);
+  settings->setViewportMetaLayoutSizeQuirk(
+      prefs.viewport_meta_layout_size_quirk);
+  settings->setViewportMetaMergeContentQuirk(
+      prefs.viewport_meta_merge_content_quirk);
+  settings->setViewportMetaNonUserScalableQuirk(
+      prefs.viewport_meta_non_user_scalable_quirk);
+  settings->setViewportMetaZeroValuesQuirk(
+      prefs.viewport_meta_zero_values_quirk);
+  settings->setClobberUserAgentInitialScaleQuirk(
+      prefs.clobber_user_agent_initial_scale_quirk);
+  settings->setIgnoreMainFrameOverflowHiddenQuirk(
+      prefs.ignore_main_frame_overflow_hidden_quirk);
+  settings->setReportScreenSizeInPhysicalPixelsQuirk(
+      prefs.report_screen_size_in_physical_pixels_quirk);
+  settings->setMainFrameClipsContent(false);
+  settings->setShrinksStandaloneImagesToFit(false);
+  settings->setShrinksViewportContentToFit(true);
+#endif
+
+  WebNetworkStateNotifier::setOnLine(prefs.is_online);
+  WebNetworkStateNotifier::setWebConnectionType(
+      NetConnectionTypeToWebConnectionType(prefs.connection_type));
+  settings->setPinchVirtualViewportEnabled(
+      prefs.pinch_virtual_viewport_enabled);
+
+  settings->setPinchOverlayScrollbarThickness(
+      prefs.pinch_overlay_scrollbar_thickness);
+  settings->setUseSolidColorScrollbars(prefs.use_solid_color_scrollbars);
+  settings->setCompositorTouchHitTesting(prefs.compositor_touch_hit_testing);
 }
 
 /*static*/
@@ -1413,7 +1711,7 @@ WebView* RenderViewImpl::createView(WebLocalFrame* creator,
   int32 routing_id = MSG_ROUTING_NONE;
   int32 main_frame_routing_id = MSG_ROUTING_NONE;
   int32 surface_id = 0;
-  int64 cloned_session_storage_namespace_id;
+  int64 cloned_session_storage_namespace_id = 0;
 
   RenderThread::Get()->Send(
       new ViewHostMsg_CreateWindow(params,
@@ -1619,7 +1917,8 @@ void RenderViewImpl::showValidationMessage(
     }
   }
   Send(new ViewHostMsg_ShowValidationMessage(
-    routing_id(), anchor_in_root_view, wrapped_main_text, wrapped_sub_text));
+      routing_id(), AdjustValidationMessageAnchor(anchor_in_root_view),
+      wrapped_main_text, wrapped_sub_text));
 }
 
 void RenderViewImpl::hideValidationMessage() {
@@ -1628,8 +1927,8 @@ void RenderViewImpl::hideValidationMessage() {
 
 void RenderViewImpl::moveValidationMessage(
     const blink::WebRect& anchor_in_root_view) {
-  Send(new ViewHostMsg_MoveValidationMessage(routing_id(),
-                                             anchor_in_root_view));
+  Send(new ViewHostMsg_MoveValidationMessage(
+      routing_id(), AdjustValidationMessageAnchor(anchor_in_root_view)));
 }
 
 void RenderViewImpl::setStatusText(const WebString& text) {
@@ -2263,10 +2562,6 @@ int RenderViewImpl::GetRoutingID() const {
   return routing_id_;
 }
 
-int RenderViewImpl::GetPageId() const {
-  return page_id_;
-}
-
 gfx::Size RenderViewImpl::GetSize() const {
   return size();
 }
@@ -2655,6 +2950,22 @@ void RenderViewImpl::OnPostMessageEvent(
                                       base::MessageLoopProxy::current().get());
   }
 
+  WebSerializedScriptValue serialized_script_value;
+  if (params.is_data_raw_string) {
+    v8::HandleScope handle_scope(blink::mainThreadIsolate());
+    v8::Local<v8::Context> context = frame->mainWorldScriptContext();
+    v8::Context::Scope context_scope(context);
+    V8ValueConverterImpl converter;
+    converter.SetDateAllowed(true);
+    converter.SetRegExpAllowed(true);
+    scoped_ptr<base::Value> value(new base::StringValue(params.data));
+    v8::Handle<v8::Value> result_value = converter.ToV8Value(value.get(),
+                                                             context);
+    serialized_script_value = WebSerializedScriptValue::serialize(result_value);
+  } else {
+    serialized_script_value = WebSerializedScriptValue::fromString(params.data);
+  }
+
   // Create an event with the message.  The final parameter to initMessageEvent
   // is the last event ID, which is not used with postMessage.
   WebDOMEvent event = frame->document().createEvent("MessageEvent");
@@ -2662,7 +2973,7 @@ void RenderViewImpl::OnPostMessageEvent(
   msg_event.initMessageEvent("message",
                              // |canBubble| and |cancellable| are always false
                              false, false,
-                             WebSerializedScriptValue::fromString(params.data),
+                             serialized_script_value,
                              params.source_origin, source_frame, "", channels);
 
   // We must pass in the target_origin to do the security check on this side,
@@ -3011,6 +3322,7 @@ void RenderViewImpl::OnMoveOrResizeStarted() {
 }
 
 void RenderViewImpl::OnResize(const ViewMsg_Resize_Params& params) {
+  TRACE_EVENT0("renderer", "RenderViewImpl::OnResize");
   if (webview()) {
     webview()->hidePopups();
     if (send_preferred_size_changes_) {
@@ -3083,13 +3395,6 @@ void RenderViewImpl::DidFlushPaint() {
   if (!main_frame->provisionalDataSource()) {
     WebDataSource* ds = main_frame->dataSource();
     DocumentState* document_state = DocumentState::FromDataSource(ds);
-    InternalDocumentStateData* data =
-        InternalDocumentStateData::FromDocumentState(document_state);
-    if (data->did_first_visually_non_empty_layout() &&
-        !data->did_first_visually_non_empty_paint()) {
-      data->set_did_first_visually_non_empty_paint(true);
-      Send(new ViewHostMsg_DidFirstVisuallyNonEmptyPaint(routing_id_));
-    }
 
     // TODO(jar): The following code should all be inside a method, probably in
     // NavigatorState.
@@ -3576,7 +3881,7 @@ void RenderViewImpl::SetScreenMetricsEmulationParameters(
     float device_scale_factor,
     const gfx::Point& root_layer_offset,
     float root_layer_scale) {
-  if (webview()) {
+  if (webview() && compositor()) {
     webview()->setCompositorDeviceScaleFactorOverride(device_scale_factor);
     webview()->setRootLayerTransform(
         blink::WebSize(root_layer_offset.x(), root_layer_offset.y()),
@@ -3629,8 +3934,6 @@ void RenderViewImpl::zoomLimitsChanged(double minimum_level,
 void RenderViewImpl::zoomLevelChanged() {
   double zoom_level = webview()->zoomLevel();
 
-  FOR_EACH_OBSERVER(RenderViewObserver, observers_, ZoomLevelChanged());
-
   // Do not send empty URLs to the browser when we are just setting the default
   // zoom level (from RendererPreferences) before the first navigation.
   if (!webview()->mainFrame()->document().url().isEmpty()) {
@@ -3667,6 +3970,20 @@ void RenderViewImpl::registerProtocolHandler(const WebString& scheme,
                                                user_gesture));
 }
 
+void RenderViewImpl::unregisterProtocolHandler(const WebString& scheme,
+                                               const WebURL& base_url,
+                                               const WebURL& url) {
+  bool user_gesture = WebUserGestureIndicator::isProcessingUserGesture();
+  GURL base(base_url);
+  GURL absolute_url = base.Resolve(base::UTF16ToUTF8(url.string()));
+  if (base.GetOrigin() != absolute_url.GetOrigin())
+    return;
+  Send(new ViewHostMsg_UnregisterProtocolHandler(routing_id_,
+                                                 base::UTF16ToUTF8(scheme),
+                                                 absolute_url,
+                                                 user_gesture));
+}
+
 blink::WebPageVisibilityState RenderViewImpl::visibilityState() const {
   blink::WebPageVisibilityState current_state = is_hidden() ?
       blink::WebPageVisibilityStateHidden :
@@ -3681,9 +3998,9 @@ blink::WebPageVisibilityState RenderViewImpl::visibilityState() const {
 }
 
 blink::WebPushClient* RenderViewImpl::webPushClient() {
-  if (!push_messaging_dispatcher_)
-    push_messaging_dispatcher_ = new PushMessagingDispatcher(this);
-  return push_messaging_dispatcher_;
+  // TODO(mvanouwerkerk): Remove this method once the Push API code in Blink
+  // has also switched over to Frame.
+  return main_render_frame_->pushClient();
 }
 
 void RenderViewImpl::draggableRegionsChanged() {

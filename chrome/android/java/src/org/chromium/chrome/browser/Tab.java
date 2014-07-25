@@ -168,6 +168,11 @@ public class Tab implements NavigationClient {
         public void onSaveImageToClipboard(String url) {
             mClipboard.setHTMLText("<img src=\"" + url + "\">", url, url);
         }
+
+        @Override
+        public String getPageUrl() {
+            return getUrl();
+        }
     }
 
     /**
@@ -283,9 +288,9 @@ public class Tab implements NavigationClient {
         }
 
         @Override
-        public void didChangeBrandColor(int color) {
+        public void didChangeThemeColor(int color) {
             for (TabObserver observer : mObservers) {
-                observer.onDidChangeBrandColor(color);
+                observer.onDidChangeThemeColor(color);
             }
         }
     }

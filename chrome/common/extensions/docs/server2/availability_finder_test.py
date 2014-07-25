@@ -7,9 +7,7 @@ import sys
 import unittest
 
 import api_schema_graph
-from availability_finder import (AvailabilityFinder,
-                                 AvailabilityInfo,
-                                 _GetNamespaceFromFilename)
+from availability_finder import AvailabilityFinder, AvailabilityInfo
 from branch_utility import BranchUtility, ChannelInfo
 from compiled_file_system import CompiledFileSystem
 from fake_host_file_system_provider import FakeHostFileSystemProvider
@@ -73,23 +71,6 @@ class AvailabilityFinderTest(unittest.TestCase):
         # The earliest version represented with the tabs' test data is 13.
         self._branch_utility.GetStableChannelInfo(13),
         stat_paths)
-
-  def testGetNamespaceFromFilename(self):
-    # Test simple name
-    self.assertEqual('storage', _GetNamespaceFromFilename('storage'))
-    # Test multi-word names
-    self.assertEqual('contextMenus',
-                     _GetNamespaceFromFilename('contextMenus'))
-    self.assertEqual('app.window', _GetNamespaceFromFilename('app_window'))
-    # Test devtools API
-    self.assertEqual('devtools.inspectedWindow',
-                     _GetNamespaceFromFilename('devtools/inspectedWindow'))
-    # Test experimental API
-    self.assertEqual('experimental.infobars',
-                     _GetNamespaceFromFilename('experimental_infobars'))
-    # Test experimental API in devtools
-    self.assertEqual('experimental.devtools.audits',
-                     _GetNamespaceFromFilename('devtools/experimental_audits'))
 
   def testGraphOptimization(self):
     for platform in GetPlatforms():
@@ -207,112 +188,95 @@ class AvailabilityFinderTest(unittest.TestCase):
               only_on='apps')
 
   def testGetAPINodeAvailability(self):
+    def assertEquals(found, channel_info, actual, scheduled=None):
+      lookup_result = api_schema_graph.LookupResult
+      if channel_info is None:
+        self.assertEquals(lookup_result(found, None), actual)
+      else:
+        self.assertEquals(lookup_result(found, AvailabilityInfo(channel_info,
+            scheduled=scheduled)), actual)
+
     for platform in GetPlatforms():
       # Allow the LookupResult constructions below to take just one line.
-      lookup_result = api_schema_graph.LookupResult
-      availability_graph = self._create_availability_finder(
+      avail_finder = self._create_availability_finder(
           self._node_fs_creator,
           self._node_fs_iterator,
-          platform).GetAPINodeAvailability('tabs')
+          platform)
+      tabs_graph = avail_finder.GetAPINodeAvailability('tabs')
+      fake_tabs_graph = avail_finder.GetAPINodeAvailability('fakeTabs')
 
-      self.assertEquals(
-          lookup_result(True, self._branch_utility.GetChannelInfo('trunk')),
-          availability_graph.Lookup('tabs', 'properties',
-                                    'fakeTabsProperty3'))
-      self.assertEquals(
-          lookup_result(True, self._branch_utility.GetChannelInfo('dev')),
-          availability_graph.Lookup('tabs', 'events', 'onActivated',
-                                    'parameters', 'activeInfo', 'properties',
-                                    'windowId'))
-      self.assertEquals(
-          lookup_result(True, self._branch_utility.GetChannelInfo('dev')),
-          availability_graph.Lookup('tabs', 'events', 'onUpdated', 'parameters',
-                                    'tab'))
-      self.assertEquals(
-          lookup_result(True, self._branch_utility.GetChannelInfo('beta')),
-          availability_graph.Lookup('tabs', 'events','onActivated'))
-      self.assertEquals(
-          lookup_result(True, self._branch_utility.GetChannelInfo('beta')),
-          availability_graph.Lookup('tabs', 'functions', 'get', 'parameters',
-                                    'tabId'))
-      self.assertEquals(
-          lookup_result(True, self._branch_utility.GetChannelInfo('stable')),
-          availability_graph.Lookup('tabs', 'types', 'InjectDetails',
-                                    'properties', 'code'))
-      self.assertEquals(
-          lookup_result(True, self._branch_utility.GetChannelInfo('stable')),
-          availability_graph.Lookup('tabs', 'types', 'InjectDetails',
-                                    'properties', 'file'))
-      self.assertEquals(
-          lookup_result(True, self._branch_utility.GetStableChannelInfo(25)),
-          availability_graph.Lookup('tabs', 'types', 'InjectDetails'))
+      assertEquals(True, self._branch_utility.GetChannelInfo('trunk'),
+          tabs_graph.Lookup('tabs', 'properties', 'fakeTabsProperty3'))
+      assertEquals(True, self._branch_utility.GetChannelInfo('dev'),
+          tabs_graph.Lookup('tabs', 'events', 'onActivated', 'parameters',
+              'activeInfo', 'properties', 'windowId'))
+      assertEquals(True, self._branch_utility.GetChannelInfo('dev'),
+          tabs_graph.Lookup('tabs', 'events', 'onUpdated', 'parameters', 'tab'))
+      assertEquals(True, self._branch_utility.GetChannelInfo('beta'),
+          tabs_graph.Lookup('tabs', 'events', 'onActivated'))
+      assertEquals(True, self._branch_utility.GetChannelInfo('beta'),
+          tabs_graph.Lookup('tabs', 'functions', 'get', 'parameters', 'tabId'))
+      assertEquals(True, self._branch_utility.GetChannelInfo('stable'),
+          tabs_graph.Lookup('tabs', 'types', 'InjectDetails', 'properties',
+              'code'))
+      assertEquals(True, self._branch_utility.GetChannelInfo('stable'),
+          tabs_graph.Lookup('tabs', 'types', 'InjectDetails', 'properties',
+              'file'))
+      assertEquals(True, self._branch_utility.GetStableChannelInfo(25),
+          tabs_graph.Lookup('tabs', 'types', 'InjectDetails'))
+
+      # Test inlined type.
+      assertEquals(True, self._branch_utility.GetChannelInfo('trunk'),
+          tabs_graph.Lookup('tabs', 'types', 'InlinedType'))
+
+      # Test implicitly inlined type.
+      assertEquals(True, self._branch_utility.GetStableChannelInfo(25),
+          fake_tabs_graph.Lookup('fakeTabs', 'types',
+              'WasImplicitlyInlinedType'))
 
       # Nothing new in version 24 or 23.
 
-      self.assertEquals(
-          lookup_result(True, self._branch_utility.GetStableChannelInfo(22)),
-          availability_graph.Lookup('tabs', 'types', 'Tab', 'properties',
-                                    'windowId'))
-      self.assertEquals(
-          lookup_result(True, self._branch_utility.GetStableChannelInfo(21)),
-          availability_graph.Lookup('tabs', 'types', 'Tab', 'properties',
-                                    'selected'))
+      assertEquals(True, self._branch_utility.GetStableChannelInfo(22),
+          tabs_graph.Lookup('tabs', 'types', 'Tab', 'properties', 'windowId'))
+      assertEquals(True, self._branch_utility.GetStableChannelInfo(21),
+          tabs_graph.Lookup('tabs', 'types', 'Tab', 'properties', 'selected'))
 
       # Nothing new in version 20.
 
-      self.assertEquals(
-          lookup_result(True, self._branch_utility.GetStableChannelInfo(19)),
-          availability_graph.Lookup('tabs', 'functions', 'getCurrent'))
-      self.assertEquals(
-          lookup_result(True, self._branch_utility.GetStableChannelInfo(18)),
-          availability_graph.Lookup('tabs', 'types', 'Tab', 'properties',
-                                    'index'))
-      self.assertEquals(
-          lookup_result(True, self._branch_utility.GetStableChannelInfo(17)),
-          availability_graph.Lookup('tabs', 'events', 'onUpdated', 'parameters',
-                                    'changeInfo'))
+      assertEquals(True, self._branch_utility.GetStableChannelInfo(19),
+          tabs_graph.Lookup('tabs', 'functions', 'getCurrent'))
+      assertEquals(True, self._branch_utility.GetStableChannelInfo(18),
+          tabs_graph.Lookup('tabs', 'types', 'Tab', 'properties', 'index'))
+      assertEquals(True, self._branch_utility.GetStableChannelInfo(17),
+          tabs_graph.Lookup('tabs', 'events', 'onUpdated', 'parameters',
+              'changeInfo'))
 
       # Nothing new in version 16.
 
-      self.assertEquals(
-          lookup_result(True, self._branch_utility.GetStableChannelInfo(15)),
-          availability_graph.Lookup('tabs', 'properties',
-                                    'fakeTabsProperty2'))
+      assertEquals(True, self._branch_utility.GetStableChannelInfo(15),
+          tabs_graph.Lookup('tabs', 'properties', 'fakeTabsProperty2'))
 
       # Everything else is available at the API's release, version 14 here.
-      self.assertEquals(
-          lookup_result(True, self._branch_utility.GetStableChannelInfo(14)),
-          availability_graph.Lookup('tabs', 'types', 'Tab'))
-      self.assertEquals(
-          lookup_result(True, self._branch_utility.GetStableChannelInfo(14)),
-          availability_graph.Lookup('tabs', 'types', 'Tab',
-                                    'properties', 'url'))
-      self.assertEquals(
-          lookup_result(True, self._branch_utility.GetStableChannelInfo(14)),
-          availability_graph.Lookup('tabs', 'properties',
-                                    'fakeTabsProperty1'))
-      self.assertEquals(
-          lookup_result(True, self._branch_utility.GetStableChannelInfo(14)),
-          availability_graph.Lookup('tabs', 'functions', 'get', 'parameters',
-                                    'callback'))
-      self.assertEquals(
-          lookup_result(True, self._branch_utility.GetStableChannelInfo(14)),
-          availability_graph.Lookup('tabs', 'events', 'onUpdated'))
+      assertEquals(True, self._branch_utility.GetStableChannelInfo(14),
+          tabs_graph.Lookup('tabs', 'types', 'Tab'))
+      assertEquals(True, self._branch_utility.GetStableChannelInfo(14),
+          tabs_graph.Lookup('tabs', 'types', 'Tab', 'properties', 'url'))
+      assertEquals(True, self._branch_utility.GetStableChannelInfo(14),
+          tabs_graph.Lookup('tabs', 'properties', 'fakeTabsProperty1'))
+      assertEquals(True, self._branch_utility.GetStableChannelInfo(14),
+          tabs_graph.Lookup('tabs', 'functions', 'get', 'parameters',
+              'callback'))
+      assertEquals(True, self._branch_utility.GetStableChannelInfo(14),
+          tabs_graph.Lookup('tabs', 'events', 'onUpdated'))
 
       # Test things that aren't available.
-      self.assertEqual(lookup_result(False, None),
-                       availability_graph.Lookup('tabs', 'types',
-                                                 'UpdateInfo'))
-      self.assertEqual(lookup_result(False, None),
-                       availability_graph.Lookup('tabs', 'functions', 'get',
-                                                 'parameters', 'callback',
-                                                 'parameters', 'tab', 'id'))
-      self.assertEqual(lookup_result(False, None),
-                       availability_graph.Lookup('functions'))
-      self.assertEqual(lookup_result(False, None),
-                       availability_graph.Lookup('events', 'onActivated',
-                                                 'parameters', 'activeInfo',
-                                                 'tabId'))
+      assertEquals(False, None, tabs_graph.Lookup('tabs', 'types',
+          'UpdateInfo'))
+      assertEquals(False, None, tabs_graph.Lookup('tabs', 'functions', 'get',
+          'parameters', 'callback', 'parameters', 'tab', 'id'))
+      assertEquals(False, None, tabs_graph.Lookup('functions'))
+      assertEquals(False, None, tabs_graph.Lookup('events', 'onActivated',
+          'parameters', 'activeInfo', 'tabId'))
 
 
 if __name__ == '__main__':

@@ -14,6 +14,7 @@
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/autocomplete/chrome_autocomplete_scheme_classifier.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/omnibox/omnibox_field_trial.h"
 #include "chrome/browser/search/search.h"
 #include "chrome/browser/ui/cocoa/location_bar/autocomplete_text_field_cell.h"
 #import "chrome/browser/ui/cocoa/location_bar/autocomplete_text_field_editor.h"
@@ -210,17 +211,8 @@ void OmniboxViewMac::OnTabChanged(const WebContents* web_contents) {
 }
 
 void OmniboxViewMac::Update() {
-  if (chrome::ShouldDisplayOriginChip()) {
-    NSDictionary* placeholder_attributes = @{
-      NSFontAttributeName : GetFieldFont(gfx::Font::NORMAL),
-      NSForegroundColorAttributeName : [NSColor disabledControlTextColor]
-    };
-    base::scoped_nsobject<NSMutableAttributedString> placeholder_text(
-        [[NSMutableAttributedString alloc]
-            initWithString:base::SysUTF16ToNSString(GetHintText())
-                attributes:placeholder_attributes]);
-    [[field_ cell] setPlaceholderAttributedString:placeholder_text];
-  }
+  UpdatePlaceholderText();
+
   if (model()->UpdatePermanentText()) {
     // Something visibly changed.  Re-enable URL replacement.
     controller()->GetToolbarModel()->set_url_replacement_enabled(true);
@@ -239,6 +231,21 @@ void OmniboxViewMac::Update() {
     // security level.  Dig in and figure out why this isn't a no-op
     // that should go away.
     EmphasizeURLComponents();
+  }
+}
+
+void OmniboxViewMac::UpdatePlaceholderText() {
+  if (chrome::ShouldDisplayOriginChip() ||
+      OmniboxFieldTrial::DisplayHintTextWhenPossible()) {
+    NSDictionary* placeholder_attributes = @{
+      NSFontAttributeName : GetFieldFont(gfx::Font::NORMAL),
+      NSForegroundColorAttributeName : [NSColor disabledControlTextColor]
+    };
+    base::scoped_nsobject<NSMutableAttributedString> placeholder_text(
+        [[NSMutableAttributedString alloc]
+            initWithString:base::SysUTF16ToNSString(GetHintText())
+                attributes:placeholder_attributes]);
+    [[field_ cell] setPlaceholderAttributedString:placeholder_text];
   }
 }
 

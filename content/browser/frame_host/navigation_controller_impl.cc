@@ -46,7 +46,7 @@
 namespace content {
 namespace {
 
-const int kInvalidateAll = 0xFFFFFFFF;
+const unsigned kInvalidateAll = 0xFFFFFFFF;
 
 // Invoked when entries have been pruned, or removed. For example, if the
 // current entries are [google, digg, yahoo], with the current entry google,
@@ -123,6 +123,13 @@ bool AreURLsInPageNavigation(const GURL& existing_url,
                              RenderFrameHost* rfh) {
   WebPreferences prefs = rfh->GetRenderViewHost()->GetWebkitPreferences();
   bool is_same_origin = existing_url.is_empty() ||
+                        // TODO(japhet): We should only permit navigations
+                        // originating from about:blank to be in-page if the
+                        // about:blank is the first document that frame loaded.
+                        // We don't have sufficient information to identify
+                        // that case at the moment, so always allow about:blank
+                        // for now.
+                        existing_url == GURL(url::kAboutBlankURL) ||
                         existing_url.GetOrigin() == new_url.GetOrigin() ||
                         !prefs.web_security_enabled;
   if (!is_same_origin && renderer_says_in_page)
@@ -140,7 +147,7 @@ bool ShouldKeepOverride(const NavigationEntry* last_entry) {
 
 // NavigationControllerImpl ----------------------------------------------------
 
-const size_t kMaxEntryCountForTestingNotSet = -1;
+const size_t kMaxEntryCountForTestingNotSet = static_cast<size_t>(-1);
 
 // static
 size_t NavigationControllerImpl::max_entry_count_for_testing_ =

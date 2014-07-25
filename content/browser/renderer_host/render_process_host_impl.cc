@@ -111,7 +111,6 @@
 #include "content/common/child_process_messages.h"
 #include "content/common/content_switches_internal.h"
 #include "content/common/gpu/client/gpu_memory_buffer_impl.h"
-#include "content/common/gpu/client/gpu_memory_buffer_impl_shm.h"
 #include "content/common/gpu/gpu_messages.h"
 #include "content/common/mojo/mojo_messages.h"
 #include "content/common/resource_messages.h"
@@ -131,6 +130,7 @@
 #include "content/public/common/content_constants.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/process_type.h"
+#include "content/public/common/resource_type.h"
 #include "content/public/common/result_codes.h"
 #include "content/public/common/sandboxed_process_launcher_delegate.h"
 #include "content/public/common/url_constants.h"
@@ -148,7 +148,6 @@
 #include "ui/gl/gl_switches.h"
 #include "ui/native_theme/native_theme_switches.h"
 #include "webkit/browser/fileapi/sandbox_file_system_backend.h"
-#include "webkit/common/resource_type.h"
 
 #if defined(OS_ANDROID)
 #include "content/browser/media/android/browser_demuxer_android.h"
@@ -394,15 +393,22 @@ size_t RenderProcessHost::GetMaxRendererProcessCount() {
   if (g_max_renderer_count_override)
     return g_max_renderer_count_override;
 
-  // Defines the maximum number of renderer processes according to the
-  // amount of installed memory as reported by the OS. The calculation
-  // assumes that you want the renderers to use half of the installed
-  // RAM and assuming that each WebContents uses ~40MB.
-  // If you modify this assumption, you need to adjust the
-  // ThirtyFourTabs test to match the expected number of processes.
+#if defined(OS_ANDROID)
+  // On Android we don't maintain a limit of renderer process hosts - we are
+  // happy with keeping a lot of these, as long as the number of live renderer
+  // processes remains reasonable, and on Android the OS takes care of that.
+  return std::numeric_limits<size_t>::max();
+#endif
+
+  // On other platforms, we calculate the maximum number of renderer process
+  // hosts according to the amount of installed memory as reported by the OS.
+  // The calculation assumes that you want the renderers to use half of the
+  // installed RAM and assuming that each WebContents uses ~40MB.  If you modify
+  // this assumption, you need to adjust the ThirtyFourTabs test to match the
+  // expected number of processes.
   //
-  // With the given amounts of installed memory below on a 32-bit CPU,
-  // the maximum renderer count will roughly be as follows:
+  // With the given amounts of installed memory below on a 32-bit CPU, the
+  // maximum renderer count will roughly be as follows:
   //
   //   128 MB -> 3
   //   512 MB -> 6
@@ -653,6 +659,8 @@ bool RenderProcessHostImpl::Init() {
     GpuDataManagerImpl::GetInstance()->AddObserver(this);
   }
 
+  power_monitor_broadcaster_.Init();
+
   is_initialized_ = true;
   return true;
 }
@@ -883,7 +891,8 @@ void RenderProcessHostImpl::CreateMessageFilters() {
     AddFilter(new MemoryBenchmarkMessageFilter());
 #endif
   AddFilter(new VibrationMessageFilter());
-  AddFilter(new PushMessagingMessageFilter(GetID()));
+  AddFilter(new PushMessagingMessageFilter(
+      GetID(), storage_partition_impl_->GetServiceWorkerContext()));
   AddFilter(new BatteryStatusMessageFilter());
 }
 
@@ -949,19 +958,6 @@ void RenderProcessHostImpl::RemoveObserver(
   observers_.RemoveObserver(observer);
 }
 
-bool RenderProcessHostImpl::WaitForBackingStoreMsg(
-    int render_widget_id,
-    const base::TimeDelta& max_delay,
-    IPC::Message* msg) {
-  // The post task to this thread with the process id could be in queue, and we
-  // don't want to dispatch a message before then since it will need the handle.
-  if (child_process_launcher_.get() && child_process_launcher_->IsStarting())
-    return false;
-
-  return widget_helper_->WaitForBackingStoreMsg(render_widget_id,
-                                                max_delay, msg);
-}
-
 void RenderProcessHostImpl::ReceivedBadMessage() {
   CommandLine* command_line = CommandLine::ForCurrentProcess();
   if (command_line->HasSwitch(switches::kDisableKillAfterBadIPC))
@@ -1014,9 +1010,6 @@ StoragePartition* RenderProcessHostImpl::GetStoragePartition() const {
 static void AppendCompositorCommandLineFlags(CommandLine* command_line) {
   if (IsPinchVirtualViewportEnabled())
     command_line->AppendSwitch(cc::switches::kEnablePinchVirtualViewport);
-
-  if (IsThreadedCompositingEnabled())
-    command_line->AppendSwitch(switches::kEnableThreadedCompositing);
 
   if (IsDelegatedRendererEnabled())
     command_line->AppendSwitch(switches::kEnableDelegatedRenderer);
@@ -1119,6 +1112,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kDisableSeccompFilterSandbox,
     switches::kDisableSessionStorage,
     switches::kDisableSharedWorkers,
+    switches::kDisableThreadedCompositing,
     switches::kDisableTouchAdjustment,
     switches::kDisableTouchDragDrop,
     switches::kDisableTouchEditing,
@@ -1155,15 +1149,16 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kEnablePreparsedJsCaching,
     switches::kEnableSeccompFilterSandbox,
     switches::kEnableSkiaBenchmarking,
+    switches::kEnableSmoothScrolling,
     switches::kEnableSpeechSynthesis,
     switches::kEnableStatsTable,
     switches::kEnableStrictSiteIsolation,
     switches::kEnableTargetedStyleRecalc,
+    switches::kEnableThreadedCompositing,
     switches::kEnableTouchDragDrop,
     switches::kEnableTouchEditing,
     switches::kEnableViewport,
     switches::kEnableViewportMeta,
-    switches::kMainFrameResizesAreOrientationChanges,
     switches::kEnableVtune,
     switches::kEnableWebAnimationsSVG,
     switches::kEnableWebGLDraftExtensions,
@@ -1176,6 +1171,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kIPCConnectionTimeout,
     switches::kJavaScriptFlags,
     switches::kLoggingLevel,
+    switches::kMainFrameResizesAreOrientationChanges,
     switches::kMaxUntiledLayerWidth,
     switches::kMaxUntiledLayerHeight,
     switches::kMemoryMetrics,
@@ -1403,13 +1399,6 @@ bool RenderProcessHostImpl::OnMessageReceived(const IPC::Message& msg) {
       reply->set_reply_error();
       Send(reply);
     }
-
-    // If this is a SwapBuffers, we need to ack it if we're not going to handle
-    // it so that the GPU process doesn't get stuck in unscheduled state.
-    IPC_BEGIN_MESSAGE_MAP(RenderProcessHostImpl, msg)
-      IPC_MESSAGE_HANDLER(ViewHostMsg_CompositorSurfaceBuffersSwapped,
-                          OnCompositorSurfaceBuffersSwappedNoHost)
-    IPC_END_MESSAGE_MAP()
     return true;
   }
   return listener->OnMessageReceived(msg);
@@ -2140,20 +2129,6 @@ void RenderProcessHostImpl::OnSavedPageAsMHTML(int job_id, int64 data_size) {
   MHTMLGenerationManager::GetInstance()->MHTMLGenerated(job_id, data_size);
 }
 
-void RenderProcessHostImpl::OnCompositorSurfaceBuffersSwappedNoHost(
-      const ViewHostMsg_CompositorSurfaceBuffersSwapped_Params& params) {
-  TRACE_EVENT0("renderer_host",
-               "RenderWidgetHostImpl::OnCompositorSurfaceBuffersSwappedNoHost");
-  if (!ui::LatencyInfo::Verify(params.latency_info,
-                               "ViewHostMsg_CompositorSurfaceBuffersSwapped"))
-    return;
-  AcceleratedSurfaceMsg_BufferPresented_Params ack_params;
-  ack_params.sync_point = 0;
-  RenderWidgetHostImpl::AcknowledgeBufferPresent(params.route_id,
-                                                 params.gpu_process_host_id,
-                                                 ack_params);
-}
-
 void RenderProcessHostImpl::OnGpuSwitching() {
   // We are updating all widgets including swapped out ones.
   scoped_ptr<RenderWidgetHostIterator> widgets(
@@ -2167,7 +2142,7 @@ void RenderProcessHostImpl::OnGpuSwitching() {
       continue;
 
     RenderViewHost* rvh = RenderViewHost::From(widget);
-    rvh->UpdateWebkitPreferences(rvh->GetWebkitPreferences());
+    rvh->OnWebkitPreferencesChanged();
   }
 }
 

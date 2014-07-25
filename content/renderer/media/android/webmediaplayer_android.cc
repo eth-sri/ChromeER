@@ -72,12 +72,29 @@ const char* kMediaEme = "Media.EME.";
 void OnReleaseTexture(
     const scoped_refptr<content::StreamTextureFactory>& factories,
     uint32 texture_id,
-    const std::vector<uint32>& release_sync_points) {
+    uint32 release_sync_point) {
   GLES2Interface* gl = factories->ContextGL();
-  for (size_t i = 0; i < release_sync_points.size(); i++)
-    gl->WaitSyncPointCHROMIUM(release_sync_points[i]);
+  gl->WaitSyncPointCHROMIUM(release_sync_point);
   gl->DeleteTextures(1, &texture_id);
 }
+
+class SyncPointClientImpl : public media::VideoFrame::SyncPointClient {
+ public:
+  explicit SyncPointClientImpl(
+      blink::WebGraphicsContext3D* web_graphics_context)
+      : web_graphics_context_(web_graphics_context) {}
+  virtual ~SyncPointClientImpl() {}
+  virtual uint32 InsertSyncPoint() OVERRIDE {
+    return web_graphics_context_->insertSyncPoint();
+  }
+  virtual void WaitSyncPoint(uint32 sync_point) OVERRIDE {
+    web_graphics_context_->waitSyncPoint(sync_point);
+  }
+
+ private:
+  blink::WebGraphicsContext3D* web_graphics_context_;
+};
+
 }  // namespace
 
 namespace content {
@@ -108,12 +125,9 @@ WebMediaPlayerAndroid::WebMediaPlayerAndroid(
       texture_id_(0),
       stream_id_(0),
       is_playing_(false),
-      playing_started_(false),
       needs_establish_peer_(true),
       stream_texture_proxy_initialized_(false),
       has_size_info_(false),
-      has_media_metadata_(false),
-      has_media_info_(false),
       stream_texture_factory_(factory),
       needs_external_surface_(false),
       video_frame_provider_client_(NULL),
@@ -190,13 +204,9 @@ void WebMediaPlayerAndroid::load(LoadType load_type,
       return;
   }
 
-  has_media_metadata_ = false;
-  has_media_info_ = false;
-
+  url_ = url;
   int demuxer_client_id = 0;
   if (player_type_ != MEDIA_PLAYER_TYPE_URL) {
-    has_media_info_ = true;
-
     RendererDemuxerAndroid* demuxer =
         RenderThreadImpl::current()->renderer_demuxer();
     demuxer_client_id = demuxer->GetNextDemuxerClientID();
@@ -220,6 +230,7 @@ void WebMediaPlayerAndroid::load(LoadType load_type,
                      weak_factory_.GetWeakPtr()),
           base::Bind(&WebMediaPlayerAndroid::OnDurationChanged,
                      weak_factory_.GetWeakPtr()));
+      InitializePlayer(demuxer_client_id);
     }
   } else {
     info_loader_.reset(
@@ -236,12 +247,6 @@ void WebMediaPlayerAndroid::load(LoadType load_type,
     info_loader_->Start(frame_);
   }
 
-  url_ = url;
-  GURL first_party_url = frame_->document().firstPartyForCookies();
-  player_manager_->Initialize(
-      player_type_, player_id_, url, first_party_url, demuxer_client_id,
-      frame_->document().url());
-
   if (player_manager_->ShouldEnterFullscreen(frame_))
     player_manager_->EnterFullscreen(player_id_, frame_);
 
@@ -257,17 +262,9 @@ void WebMediaPlayerAndroid::DidLoadMediaInfo(MediaInfoLoader::Status status) {
     return;
   }
 
-  has_media_info_ = true;
-  if (has_media_metadata_ &&
-      ready_state_ != WebMediaPlayer::ReadyStateHaveEnoughData) {
-    UpdateReadyState(WebMediaPlayer::ReadyStateHaveMetadata);
-    UpdateReadyState(WebMediaPlayer::ReadyStateHaveEnoughData);
-  }
-  // Android doesn't start fetching resources until an implementation-defined
-  // event (e.g. playback request) occurs. Sets the network state to IDLE
-  // if play is not requested yet.
-  if (!playing_started_)
-    UpdateNetworkState(WebMediaPlayer::NetworkStateIdle);
+  InitializePlayer(0);
+
+  UpdateNetworkState(WebMediaPlayer::NetworkStateIdle);
 }
 
 void WebMediaPlayerAndroid::play() {
@@ -291,7 +288,6 @@ void WebMediaPlayerAndroid::play() {
     player_manager_->Start(player_id_);
   UpdatePlayingState(true);
   UpdateNetworkState(WebMediaPlayer::NetworkStateLoading);
-  playing_started_ = true;
 }
 
 void WebMediaPlayerAndroid::pause() {
@@ -506,15 +502,12 @@ bool WebMediaPlayerAndroid::copyVideoTextureToPlatformTexture(
     cached_stream_texture_size_ = natural_size_;
   }
 
-  uint32 source_texture = web_graphics_context->createTexture();
   web_graphics_context->waitSyncPoint(mailbox_holder->sync_point);
 
   // Ensure the target of texture is set before copyTextureCHROMIUM, otherwise
   // an invalid texture target may be used for copy texture.
-  web_graphics_context->bindTexture(mailbox_holder->texture_target,
-                                    source_texture);
-  web_graphics_context->consumeTextureCHROMIUM(mailbox_holder->texture_target,
-                                               mailbox_holder->mailbox.name);
+  uint32 source_texture = web_graphics_context->createAndConsumeTextureCHROMIUM(
+      mailbox_holder->texture_target, mailbox_holder->mailbox.name);
 
   // The video is stored in an unmultiplied format, so premultiply if
   // necessary.
@@ -533,13 +526,11 @@ bool WebMediaPlayerAndroid::copyVideoTextureToPlatformTexture(
   web_graphics_context->pixelStorei(GL_UNPACK_PREMULTIPLY_ALPHA_CHROMIUM,
                                     false);
 
-  if (mailbox_holder->texture_target == GL_TEXTURE_EXTERNAL_OES)
-    web_graphics_context->bindTexture(GL_TEXTURE_EXTERNAL_OES, 0);
-  else
-    web_graphics_context->bindTexture(GL_TEXTURE_2D, texture);
   web_graphics_context->deleteTexture(source_texture);
   web_graphics_context->flush();
-  video_frame->AppendReleaseSyncPoint(web_graphics_context->insertSyncPoint());
+
+  SyncPointClientImpl client(web_graphics_context);
+  video_frame->UpdateReleaseSyncPoint(&client);
   return true;
 }
 
@@ -613,9 +604,7 @@ void WebMediaPlayerAndroid::OnMediaMetadataChanged(
     }
   }
 
-  has_media_metadata_ = true;
-  if (has_media_info_ &&
-      ready_state_ != WebMediaPlayer::ReadyStateHaveEnoughData) {
+  if (ready_state_ != WebMediaPlayer::ReadyStateHaveEnoughData) {
     UpdateReadyState(WebMediaPlayer::ReadyStateHaveMetadata);
     UpdateReadyState(WebMediaPlayer::ReadyStateHaveEnoughData);
   }
@@ -765,11 +754,8 @@ void WebMediaPlayerAndroid::OnDisconnectedFromRemoteDevice() {
 }
 
 void WebMediaPlayerAndroid::OnDidEnterFullscreen() {
-  if (!player_manager_->IsInFullscreen(frame_)) {
-    frame_->view()->willEnterFullScreen();
-    frame_->view()->didEnterFullScreen();
+  if (!player_manager_->IsInFullscreen(frame_))
     player_manager_->DidEnterFullscreen(frame_);
-  }
 }
 
 void WebMediaPlayerAndroid::OnDidExitFullscreen() {
@@ -786,8 +772,6 @@ void WebMediaPlayerAndroid::OnDidExitFullscreen() {
     player_manager_->RequestExternalSurface(player_id_, last_computed_rect_);
 #endif  // defined(VIDEO_HOLE)
 
-  frame_->view()->willExitFullScreen();
-  frame_->view()->didExitFullScreen();
   player_manager_->DidExitFullscreen();
   client_->repaint();
 }
@@ -875,13 +859,22 @@ void WebMediaPlayerAndroid::ReleaseMediaResources() {
       break;
   }
   player_manager_->ReleaseResources(player_id_);
-  OnPlayerReleased();
+  if (!needs_external_surface_)
+    SetNeedsEstablishPeer(true);
 }
 
 void WebMediaPlayerAndroid::OnDestruct() {
   NOTREACHED() << "WebMediaPlayer should be destroyed before any "
                   "RenderFrameObserver::OnDestruct() gets called when "
                   "the RenderFrame goes away.";
+}
+
+void WebMediaPlayerAndroid::InitializePlayer(
+    int demuxer_client_id) {
+  GURL first_party_url = frame_->document().firstPartyForCookies();
+  player_manager_->Initialize(
+      player_type_, player_id_, url_, first_party_url, demuxer_client_id,
+      frame_->document().url());
 }
 
 void WebMediaPlayerAndroid::Pause(bool is_media_related_action) {
@@ -908,9 +901,7 @@ void WebMediaPlayerAndroid::DrawRemotePlaybackText(
       static_cast<int>(video_size_css_px.height() * device_scale_factor));
 
   SkBitmap bitmap;
-  bitmap.setConfig(
-      SkBitmap::kARGB_8888_Config, canvas_size.width(), canvas_size.height());
-  bitmap.allocPixels();
+  bitmap.allocN32Pixels(canvas_size.width(), canvas_size.height());
 
   // Create the canvas and draw the "Casting to <Chromecast>" text on it.
   SkCanvas canvas(bitmap);
@@ -1030,11 +1021,9 @@ void WebMediaPlayerAndroid::ReallocateVideoFrame() {
 #endif  // defined(VIDEO_HOLE)
   } else if (!is_remote_ && texture_id_) {
     GLES2Interface* gl = stream_texture_factory_->ContextGL();
-    GLuint texture_id_ref = 0;
-    gl->GenTextures(1, &texture_id_ref);
     GLuint texture_target = kGLTextureExternalOES;
-    gl->BindTexture(texture_target, texture_id_ref);
-    gl->ConsumeTextureCHROMIUM(texture_target, texture_mailbox_.name);
+    GLuint texture_id_ref = gl->CreateAndConsumeTextureCHROMIUM(
+        texture_target, texture_mailbox_.name);
     gl->Flush();
     GLuint texture_mailbox_sync_point = gl->InsertSyncPointCHROMIUM();
 
@@ -1543,10 +1532,6 @@ void WebMediaPlayerAndroid::enterFullscreen() {
     player_manager_->EnterFullscreen(player_id_, frame_);
     SetNeedsEstablishPeer(false);
   }
-}
-
-void WebMediaPlayerAndroid::exitFullscreen() {
-  player_manager_->ExitFullscreen(player_id_);
 }
 
 bool WebMediaPlayerAndroid::canEnterFullscreen() const {

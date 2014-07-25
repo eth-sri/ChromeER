@@ -16,8 +16,6 @@
 #include "chromeos/ime/input_method_manager.h"
 #include "ui/gfx/point.h"
 
-class PrefRegistrySimple;
-
 namespace chromeos {
 
 class CoreOobeActor;
@@ -61,9 +59,6 @@ class NetworkScreenHandler : public NetworkScreenActor,
   virtual void InputMethodChanged(input_method::InputMethodManager* manager,
                                   bool show_message) OVERRIDE;
 
-  // Registers the preference for derelict state.
-  static void RegisterPrefs(PrefRegistrySimple* registry);
-
   // Reloads localized contents.
   void ReloadLocalizedContent();
 
@@ -89,14 +84,6 @@ class NetworkScreenHandler : public NetworkScreenActor,
 
   // Callback when the system timezone settings is changed.
   void OnSystemTimezoneChanged();
-
-  // Returns available languages. Caller gets the ownership. Note, it does
-  // depend on the current locale.
-  base::ListValue* GetLanguageList();
-
-  // Returns available input methods. Caller gets the ownership. Note, it does
-  // depend on the current locale.
-  static base::ListValue* GetInputMethods();
 
   // Returns available timezones. Caller gets the ownership.
   static base::ListValue* GetTimezoneList();

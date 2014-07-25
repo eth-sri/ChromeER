@@ -8,7 +8,6 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
-#include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/search_engines/template_url_service_test_util.h"
 #include "chrome/browser/search_engines/ui_thread_search_terms_data.h"
@@ -17,6 +16,8 @@
 #include "components/search_engines/search_engines_pref_names.h"
 #include "components/search_engines/template_url.h"
 #include "components/search_engines/template_url_prepopulate_data.h"
+#include "components/search_engines/template_url_service.h"
+#include "components/search_engines/template_url_service_client.h"
 #include "net/base/net_util.h"
 #include "sync/api/sync_change_processor_wrapper_for_test.h"
 #include "sync/api/sync_error_factory.h"
@@ -156,12 +157,12 @@ class TemplateURLServiceSyncTest : public testing::Test {
   virtual void SetUp() OVERRIDE;
   virtual void TearDown() OVERRIDE;
 
-  TemplateURLService* model() { return test_util_a_.model(); }
+  TemplateURLService* model() { return test_util_a_->model(); }
   // For readability, we redefine an accessor for Model A for use in tests that
   // involve syncing two models.
-  TemplateURLService* model_a() { return test_util_a_.model(); }
+  TemplateURLService* model_a() { return test_util_a_->model(); }
   TemplateURLService* model_b() { return model_b_.get(); }
-  TestingProfile* profile_a() { return test_util_a_.profile(); }
+  TestingProfile* profile_a() { return test_util_a_->profile(); }
   TestChangeProcessor* processor() { return sync_processor_.get(); }
   scoped_ptr<syncer::SyncChangeProcessor> PassProcessor();
   scoped_ptr<syncer::SyncErrorFactory> CreateAndPassSyncErrorFactory();
@@ -209,7 +210,7 @@ class TemplateURLServiceSyncTest : public testing::Test {
 
  protected:
   // We keep two TemplateURLServices to test syncing between them.
-  TemplateURLServiceTestUtil test_util_a_;
+  scoped_ptr<TemplateURLServiceTestUtil> test_util_a_;
   scoped_ptr<TestingProfile> profile_b_;
   scoped_ptr<TemplateURLService> model_b_;
 
@@ -227,20 +228,23 @@ TemplateURLServiceSyncTest::TemplateURLServiceSyncTest()
 
 void TemplateURLServiceSyncTest::SetUp() {
   DefaultSearchManager::SetFallbackSearchEnginesDisabledForTesting(true);
-  test_util_a_.SetUp();
+  test_util_a_.reset(new TemplateURLServiceTestUtil);
   // Use ChangeToLoadState() instead of VerifyLoad() so we don't actually pull
   // in the prepopulate data, which the sync tests don't care about (and would
   // just foul them up).
-  test_util_a_.ChangeModelToLoadState();
+  test_util_a_->ChangeModelToLoadState();
   profile_b_.reset(new TestingProfile);
   TemplateURLServiceFactory::GetInstance()->
       RegisterUserPrefsOnBrowserContextForTest(profile_b_.get());
-  model_b_.reset(new TemplateURLService(profile_b_.get(), NULL));
+  model_b_.reset(new TemplateURLService(
+      profile_b_->GetPrefs(), scoped_ptr<SearchTermsData>(
+          new UIThreadSearchTermsData(profile_b_.get())), NULL,
+      scoped_ptr<TemplateURLServiceClient>(), NULL, NULL, base::Closure()));
   model_b_->Load();
 }
 
 void TemplateURLServiceSyncTest::TearDown() {
-  test_util_a_.TearDown();
+  test_util_a_.reset();
   DefaultSearchManager::SetFallbackSearchEnginesDisabledForTesting(false);
 }
 
@@ -1657,7 +1661,7 @@ TEST_F(TemplateURLServiceSyncTest, SyncWithManagedDefaultSearch) {
   const char kAlternateURL[] =
       "http://manageddefault.com/search#t={searchTerms}";
   const char kSearchTermsReplacementKey[] = "espv";
-  test_util_a_.SetManagedDefaultSearchPreferences(true, kName, kName,
+  test_util_a_->SetManagedDefaultSearchPreferences(true, kName, kName,
       kSearchURL, std::string(), kIconURL, kEncodings, kAlternateURL,
       kSearchTermsReplacementKey);
   const TemplateURL* dsp_turl = model()->GetDefaultSearchProvider();
@@ -1688,7 +1692,7 @@ TEST_F(TemplateURLServiceSyncTest, SyncWithManagedDefaultSearch) {
   // from Sync.
   const TemplateURL* expected_default =
       model()->GetTemplateURLForGUID("newdefault");
-  test_util_a_.RemoveManagedDefaultSearchPreferences();
+  test_util_a_->RemoveManagedDefaultSearchPreferences();
 
   EXPECT_EQ(expected_default, model()->GetDefaultSearchProvider());
 }
@@ -1842,7 +1846,7 @@ TEST_F(TemplateURLServiceSyncTest, PreSyncUpdates) {
   // Merge the prepopulate search engines.
   base::Time pre_merge_time = base::Time::Now();
   base::RunLoop().RunUntilIdle();
-  test_util_a_.ResetModel(true);
+  test_util_a_->ResetModel(true);
 
   // The newly added search engine should have been safely merged, with an
   // updated time.
@@ -1891,7 +1895,7 @@ TEST_F(TemplateURLServiceSyncTest, PreSyncUpdates) {
 TEST_F(TemplateURLServiceSyncTest, SyncBaseURLs) {
   // Verify that bringing in a remote TemplateURL that uses Google base URLs
   // causes it to get a local keyword that matches the local base URL.
-  test_util_a_.SetGoogleBaseURL(GURL("http://google.com/"));
+  test_util_a_->SetGoogleBaseURL(GURL("http://google.com/"));
   syncer::SyncDataList initial_data;
   scoped_ptr<TemplateURL> turl(CreateTestTemplateURL(
       ASCIIToUTF16("google.co.uk"), "{google:baseURL}search?q={searchTerms}",
@@ -1916,7 +1920,7 @@ TEST_F(TemplateURLServiceSyncTest, SyncBaseURLs) {
 
   // A local change to the Google base URL should update the keyword and
   // generate a sync change.
-  test_util_a_.SetGoogleBaseURL(GURL("http://google.co.in/"));
+  test_util_a_->SetGoogleBaseURL(GURL("http://google.co.in/"));
   EXPECT_EQ(ASCIIToUTF16("google.co.in"), synced_turl->keyword());
   EXPECT_EQ(1U, processor()->change_list_size());
   ASSERT_TRUE(processor()->contains_guid("guid"));

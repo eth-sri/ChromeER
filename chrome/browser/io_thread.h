@@ -15,6 +15,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/prefs/pref_member.h"
 #include "base/time/time.h"
+#include "chrome/browser/net/chrome_network_delegate.h"
 #include "chrome/browser/net/ssl_config_service_manager.h"
 #include "components/data_reduction_proxy/browser/data_reduction_proxy_auth_request_handler.h"
 #include "components/data_reduction_proxy/browser/data_reduction_proxy_params.h"
@@ -154,8 +155,10 @@ class IOThread : public content::BrowserThreadDelegate {
     // |system_cookie_store| and |system_server_bound_cert_service| are shared
     // between |proxy_script_fetcher_context| and |system_request_context|.
     scoped_refptr<net::CookieStore> system_cookie_store;
+#if defined(ENABLE_EXTENSIONS)
     scoped_refptr<extensions::EventRouterForwarder>
         extension_event_router_forwarder;
+#endif
     scoped_ptr<net::HostMappingRules> host_mapping_rules;
     scoped_ptr<net::HttpUserAgentSettings> http_user_agent_settings;
     bool ignore_certificate_errors;
@@ -173,6 +176,7 @@ class IOThread : public content::BrowserThreadDelegate {
     Optional<bool> force_spdy_always;
     std::set<net::HostPortPair> forced_spdy_exclusions;
     Optional<bool> use_alternate_protocols;
+    Optional<double> alternate_protocol_probability_threshold;
     Optional<bool> enable_websocket_over_spdy;
 
     Optional<bool> enable_quic;
@@ -195,6 +199,7 @@ class IOThread : public content::BrowserThreadDelegate {
         data_reduction_proxy_usage_stats;
     scoped_ptr<data_reduction_proxy::DataReductionProxyAuthRequestHandler>
         data_reduction_proxy_auth_request_handler;
+    ChromeNetworkDelegate::OnResolveProxyHandler on_resolve_proxy_handler;
   };
 
   // |net_log| must either outlive the IOThread or be NULL.
@@ -273,6 +278,11 @@ class IOThread : public content::BrowserThreadDelegate {
   //                                specifies a different value via SETTINGS.
   void EnableSpdy(const std::string& mode);
 
+  // Configures available SPDY protocol versions from the given trial.
+  // Used only if no command-line configuration was present.
+  static void ConfigureSpdyFromTrial(const std::string& spdy_trial_group,
+                                     Globals* globals);
+
   // Global state must be initialized on the IO thread, then this
   // method must be invoked on the UI thread.
   void InitSystemRequestContext();
@@ -297,6 +307,13 @@ class IOThread : public content::BrowserThreadDelegate {
   // well as the QUIC field trial group.
   void ConfigureQuic(const base::CommandLine& command_line);
 
+  extensions::EventRouterForwarder* extension_event_router_forwarder() {
+#if defined(ENABLE_EXTENSIONS)
+    return extension_event_router_forwarder_;
+#else
+    return NULL;
+#endif
+  }
   // Configures QUIC options in |globals| based on the flags in |command_line|
   // as well as the QUIC field trial group and parameters.
   static void ConfigureQuicGlobals(
@@ -361,13 +378,21 @@ class IOThread : public content::BrowserThreadDelegate {
   static net::QuicTagVector ParseQuicConnectionOptions(
       const std::string& connection_options);
 
+  // Returns the alternate protocol probability threshold specified by
+  // any flags in |command_line| or |quic_trial_params|.
+  static double GetAlternateProtocolProbabilityThreshold(
+      const base::CommandLine& command_line,
+      const VariationParameters& quic_trial_params);
+
   // The NetLog is owned by the browser process, to allow logging from other
   // threads during shutdown, but is used most frequently on the IOThread.
   ChromeNetLog* net_log_;
 
+#if defined(ENABLE_EXTENSIONS)
   // The extensions::EventRouterForwarder allows for sending events to
   // extensions from the IOThread.
   extensions::EventRouterForwarder* extension_event_router_forwarder_;
+#endif
 
   // These member variables are basically global, but their lifetimes are tied
   // to the IOThread.  IOThread owns them all, despite not using scoped_ptr.

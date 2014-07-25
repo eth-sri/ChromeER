@@ -4,6 +4,7 @@
 
 #include "mojo/services/view_manager/view_manager_init_service_impl.h"
 
+#include "base/bind.h"
 #include "mojo/public/interfaces/service_provider/service_provider.mojom.h"
 #include "mojo/services/view_manager/ids.h"
 #include "mojo/services/view_manager/view_manager_service_impl.h"
@@ -19,7 +20,11 @@ ViewManagerInitServiceImpl::ConnectParams::~ConnectParams() {}
 
 ViewManagerInitServiceImpl::ViewManagerInitServiceImpl(
     ApplicationConnection* connection)
-    : root_node_manager_(connection, this),
+    : root_node_manager_(
+          connection,
+          this,
+          base::Bind(&ViewManagerInitServiceImpl::OnNativeViewportDeleted,
+                     base::Unretained(this))),
       is_tree_host_ready_(false) {
 }
 
@@ -39,11 +44,8 @@ void ViewManagerInitServiceImpl::MaybeEmbedRoot(
 void ViewManagerInitServiceImpl::EmbedRoot(
     const String& url,
     const Callback<void(bool)>& callback) {
-  if (connect_params_.get()) {
-    DVLOG(1) << "Ignoring second connect";
-    callback.Run(false);
-    return;
-  }
+  // TODO(beng): This means you can only have one EmbedRoot in flight at a time.
+  //             Keep a vector of these around instead.
   connect_params_.reset(new ConnectParams);
   connect_params_->url = url.To<std::string>();
   connect_params_->callback = callback;
@@ -53,8 +55,15 @@ void ViewManagerInitServiceImpl::EmbedRoot(
 void ViewManagerInitServiceImpl::OnRootViewManagerWindowTreeHostCreated() {
   DCHECK(!is_tree_host_ready_);
   is_tree_host_ready_ = true;
-  if (connect_params_.get())
+  if (connect_params_)
     MaybeEmbedRoot(connect_params_->url, connect_params_->callback);
+}
+
+void ViewManagerInitServiceImpl::OnNativeViewportDeleted() {
+  // TODO(beng): Should not have to rely on implementation detail of
+  //             InterfaceImpl to close the connection. Instead should simply
+  //             be able to delete this object.
+  internal_state()->router()->CloseMessagePipe();
 }
 
 }  // namespace service

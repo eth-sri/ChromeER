@@ -62,6 +62,12 @@
           'nacl_load_test.html',
         ],
       },
+      # We only need the pexe for this test. However, build_pnacl_newlib: 1
+      # will also translate that pexe into a nexe, so add the shim
+      # just in case of a race condition.
+      'dependencies': [
+        '<(DEPTH)/ppapi/native_client/src/untrusted/pnacl_irt_shim/pnacl_irt_shim.gyp:aot',
+      ],
     },
     {
       'target_name': 'exit_status_test',
@@ -79,6 +85,9 @@
           'exit_status/pm_exit_status_test.html',
         ],
       },
+      'dependencies': [
+        '<(DEPTH)/ppapi/native_client/src/untrusted/pnacl_irt_shim/pnacl_irt_shim.gyp:aot',
+      ],
     },
     {
       'target_name': 'extension_validation_cache',
@@ -130,6 +139,9 @@
           'sysconf_nprocessors_onln/sysconf_nprocessors_onln_test.html',
         ],
       },
+      'dependencies': [
+        '<(DEPTH)/ppapi/native_client/src/untrusted/pnacl_irt_shim/pnacl_irt_shim.gyp:aot',
+      ],
     },
     {
       'target_name': 'ppapi_test_lib',
@@ -202,6 +214,7 @@
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
         '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
+        '<(DEPTH)/ppapi/native_client/src/untrusted/pnacl_irt_shim/pnacl_irt_shim.gyp:aot',
         '<(DEPTH)/ppapi/ppapi_nacl.gyp:ppapi_cpp_lib',
         'ppapi_test_lib',
       ],
@@ -380,6 +393,7 @@
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
         '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
+        '<(DEPTH)/ppapi/native_client/src/untrusted/pnacl_irt_shim/pnacl_irt_shim.gyp:aot',
         '<(DEPTH)/ppapi/ppapi_nacl.gyp:ppapi_cpp_lib',
         'ppapi_test_lib',
       ],
@@ -408,6 +422,7 @@
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
         '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
+        '<(DEPTH)/ppapi/native_client/src/untrusted/pnacl_irt_shim/pnacl_irt_shim.gyp:aot',
         '<(DEPTH)/ppapi/ppapi_nacl.gyp:ppapi_cpp_lib',
         'ppapi_test_lib',
       ],
@@ -436,6 +451,7 @@
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
         '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
+        '<(DEPTH)/ppapi/native_client/src/untrusted/pnacl_irt_shim/pnacl_irt_shim.gyp:aot',
         '<(DEPTH)/ppapi/ppapi_nacl.gyp:ppapi_cpp_lib',
         'ppapi_test_lib',
       ],
@@ -464,6 +480,7 @@
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
         '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
+        '<(DEPTH)/ppapi/native_client/src/untrusted/pnacl_irt_shim/pnacl_irt_shim.gyp:aot',
         '<(DEPTH)/ppapi/ppapi_nacl.gyp:ppapi_cpp_lib',
         'ppapi_test_lib',
       ],
@@ -492,6 +509,7 @@
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
         '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
+        '<(DEPTH)/ppapi/native_client/src/untrusted/pnacl_irt_shim/pnacl_irt_shim.gyp:aot',
         '<(DEPTH)/ppapi/ppapi_nacl.gyp:ppapi_cpp_lib',
         'ppapi_test_lib',
       ],
@@ -522,6 +540,7 @@
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
         '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
+        '<(DEPTH)/ppapi/native_client/src/untrusted/pnacl_irt_shim/pnacl_irt_shim.gyp:aot',
         '<(DEPTH)/ppapi/ppapi_nacl.gyp:ppapi_cpp_lib',
       ],
     },
@@ -713,6 +732,7 @@
         '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
         '<(DEPTH)/native_client/src/untrusted/nacl/nacl.gyp:nacl_exception_lib',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
+        '<(DEPTH)/ppapi/native_client/src/untrusted/pnacl_irt_shim/pnacl_irt_shim.gyp:aot',
         '<(DEPTH)/ppapi/ppapi_nacl.gyp:ppapi_cpp_lib',
         'ppapi_test_lib',
       ],
@@ -756,6 +776,7 @@
         '<(DEPTH)/native_client/tools.gyp:prep_toolchain',
         '<(DEPTH)/ppapi/ppapi_nacl.gyp:ppapi_cpp_lib',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
+        '<(DEPTH)/ppapi/native_client/src/untrusted/pnacl_irt_shim/pnacl_irt_shim.gyp:aot',
         '<(DEPTH)/native_client/src/shared/srpc/srpc.gyp:srpc_lib',
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
         '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
@@ -1004,6 +1025,7 @@
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
         '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
+        '<(DEPTH)/ppapi/native_client/src/untrusted/pnacl_irt_shim/pnacl_irt_shim.gyp:aot',
         '<(DEPTH)/ppapi/ppapi_nacl.gyp:ppapi_cpp_lib',
         'ppapi_test_lib',
       ],
@@ -1035,6 +1057,7 @@
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
         '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
+        '<(DEPTH)/ppapi/native_client/src/untrusted/pnacl_irt_shim/pnacl_irt_shim.gyp:aot',
         '<(DEPTH)/ppapi/ppapi_nacl.gyp:ppapi_cpp_lib',
         'ppapi_test_lib',
       ],
@@ -1067,6 +1090,7 @@
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
         '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
+        '<(DEPTH)/ppapi/native_client/src/untrusted/pnacl_irt_shim/pnacl_irt_shim.gyp:aot',
         '<(DEPTH)/ppapi/ppapi_nacl.gyp:ppapi_cpp_lib',
         'ppapi_test_lib',
       ],
@@ -1139,6 +1163,11 @@
 
             # Stack-Smashing protector does not work with libc-free context.
             '-fno-stack-protector',
+            # Optimizers may translate the original code to code which
+            # requires builtin functions and/or relocations. Specifically,
+            # the LLVM's optimizer translates for-loop based zero
+            # clear to memset.
+            '-O0',
           ],
           'cflags!': [
             # We filter these out because release_extra_cflags or another
@@ -1148,14 +1177,28 @@
             '-fstack-protector-all',
             '-fprofile-generate',
             '-finstrument-functions',
+            '-O2',
+            # ARM GCC emits symbols like __aeabi_unwind_cpp_pr0 in
+            # .exidx sections with this flag.
+            '-funwind-tables',
           ],
           'ldflags': [
             '-nostdlib',
             '-shared',
+            # This binary cannot relocate itself, so we should have no
+            # undefined references left.
+            '-Wl,--no-undefined',
           ],
           'ldflags!': [
             # Explicitly remove the -pthread flag to avoid a link time warning.
             '-pthread',
+          ],
+          # Do not use any sanitizers tools, which require a few symbols.
+          'cflags/': [
+            ['exclude', '-fsanitize'],
+          ],
+          'ldflags/': [
+            ['exclude', '-fsanitize'],
           ],
           'defines': [
             # The code depends on NaCl's headers. This is a macro for them.

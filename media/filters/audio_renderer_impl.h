@@ -22,12 +22,14 @@
 #include <deque>
 
 #include "base/gtest_prod_util.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/synchronization/lock.h"
 #include "media/base/audio_decoder.h"
 #include "media/base/audio_renderer.h"
 #include "media/base/audio_renderer_sink.h"
 #include "media/base/decryptor.h"
+#include "media/base/time_source.h"
 #include "media/filters/audio_renderer_algorithm.h"
 #include "media/filters/decoder_stream.h"
 
@@ -46,6 +48,7 @@ class DecryptingDemuxerStream;
 
 class MEDIA_EXPORT AudioRendererImpl
     : public AudioRenderer,
+      public TimeSource,
       NON_EXPORTED_BASE(public AudioRendererSink::RenderCallback) {
  public:
   // |task_runner| is the thread on which AudioRendererImpl will execute.
@@ -64,6 +67,13 @@ class MEDIA_EXPORT AudioRendererImpl
       AudioHardwareConfig* hardware_params);
   virtual ~AudioRendererImpl();
 
+  // TimeSource implementation.
+  virtual void StartTicking() OVERRIDE;
+  virtual void StopTicking() OVERRIDE;
+  virtual void SetPlaybackRate(float rate) OVERRIDE;
+  virtual void SetMediaTime(base::TimeDelta time) OVERRIDE;
+  virtual base::TimeDelta CurrentMediaTime() OVERRIDE;
+
   // AudioRenderer implementation.
   virtual void Initialize(DemuxerStream* stream,
                           const PipelineStatusCB& init_cb,
@@ -72,19 +82,10 @@ class MEDIA_EXPORT AudioRendererImpl
                           const BufferingStateCB& buffering_state_cb,
                           const base::Closure& ended_cb,
                           const PipelineStatusCB& error_cb) OVERRIDE;
-  virtual void StartRendering() OVERRIDE;
-  virtual void StopRendering() OVERRIDE;
+  virtual TimeSource* GetTimeSource() OVERRIDE;
   virtual void Flush(const base::Closure& callback) OVERRIDE;
-  virtual void Stop(const base::Closure& callback) OVERRIDE;
-  virtual void SetPlaybackRate(float rate) OVERRIDE;
-  virtual void StartPlayingFrom(base::TimeDelta timestamp) OVERRIDE;
+  virtual void StartPlaying() OVERRIDE;
   virtual void SetVolume(float volume) OVERRIDE;
-
-  // Allows injection of a custom time callback for non-realtime testing.
-  typedef base::Callback<base::TimeTicks()> NowCB;
-  void set_now_cb_for_testing(const NowCB& now_cb) {
-    now_cb_ = now_cb;
-  }
 
  private:
   friend class AudioRendererImplTest;
@@ -102,7 +103,7 @@ class MEDIA_EXPORT AudioRendererImpl
   //         |
   //         V            Decoders reset
   //      kFlushed <------------------ kFlushing
-  //         | StartPlayingFrom()         ^
+  //         | StartPlaying()             ^
   //         |                            |
   //         |                            | Flush()
   //         `---------> kPlaying --------'
@@ -111,8 +112,7 @@ class MEDIA_EXPORT AudioRendererImpl
     kInitializing,
     kFlushing,
     kFlushed,
-    kPlaying,
-    kStopped,
+    kPlaying
   };
 
   // Callback from the audio decoder delivering decoded audio samples.
@@ -126,11 +126,6 @@ class MEDIA_EXPORT AudioRendererImpl
   // Helper functions for AudioDecoder::Status values passed to
   // DecodedAudioReady().
   void HandleAbortedReadOrDecodeError(bool is_decode_error);
-
-  // Estimate earliest time when current buffer can stop playing.
-  void UpdateEarliestEndTime_Locked(int frames_filled,
-                                    const base::TimeDelta& playback_delay,
-                                    const base::TimeTicks& time_now);
 
   void StartRendering_Locked();
   void StopRendering_Locked();
@@ -208,7 +203,7 @@ class MEDIA_EXPORT AudioRendererImpl
   // may deadlock between |task_runner_| and the audio callback thread.
   scoped_refptr<media::AudioRendererSink> sink_;
 
-  AudioBufferStream audio_buffer_stream_;
+  scoped_ptr<AudioBufferStream> audio_buffer_stream_;
 
   // Interface to the hardware audio params.
   const AudioHardwareConfig* const hardware_config_;
@@ -226,14 +221,12 @@ class MEDIA_EXPORT AudioRendererImpl
   // Callback provided to Flush().
   base::Closure flush_cb_;
 
-  // Typically calls base::TimeTicks::Now() but can be overridden by a test.
-  NowCB now_cb_;
-
   // After Initialize() has completed, all variables below must be accessed
   // under |lock_|. ------------------------------------------------------------
   base::Lock lock_;
 
   // Algorithm for scaling audio.
+  float playback_rate_;
   scoped_ptr<AudioRendererAlgorithm> algorithm_;
 
   // Simple state tracking variable.
@@ -256,23 +249,6 @@ class MEDIA_EXPORT AudioRendererImpl
   scoped_ptr<AudioClock> audio_clock_;
 
   base::TimeDelta start_timestamp_;
-
-  // We're supposed to know amount of audio data OS or hardware buffered, but
-  // that is not always so -- on my Linux box
-  // AudioBuffersState::hardware_delay_bytes never reaches 0.
-  //
-  // As a result we cannot use it to find when stream ends. If we just ignore
-  // buffered data we will notify host that stream ended before it is actually
-  // did so, I've seen it done ~140ms too early when playing ~150ms file.
-  //
-  // Instead of trying to invent OS-specific solution for each and every OS we
-  // are supporting, use simple workaround: every time we fill the buffer we
-  // remember when it should stop playing, and do not assume that buffer is
-  // empty till that time. Workaround is not bulletproof, as we don't exactly
-  // know when that particular data would start playing, but it is much better
-  // than nothing.
-  base::TimeTicks earliest_end_time_;
-  size_t total_frames_filled_;
 
   // End variables which must be accessed under |lock_|. ----------------------
 

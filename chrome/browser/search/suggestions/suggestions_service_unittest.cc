@@ -13,12 +13,11 @@
 #include "base/metrics/field_trial.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/history/history_types.h"
 #include "chrome/browser/search/suggestions/blacklist_store.h"
+#include "chrome/browser/search/suggestions/image_manager.h"
 #include "chrome/browser/search/suggestions/proto/suggestions.pb.h"
 #include "chrome/browser/search/suggestions/suggestions_service_factory.h"
 #include "chrome/browser/search/suggestions/suggestions_store.h"
-#include "chrome/test/base/testing_profile.h"
 #include "components/variations/entropy_provider.h"
 #include "components/variations/variations_associated_data.h"
 #include "content/public/test/test_browser_thread_bundle.h"
@@ -34,6 +33,7 @@ using testing::DoAll;
 using ::testing::Eq;
 using ::testing::Return;
 using testing::SetArgPointee;
+using ::testing::NiceMock;
 using ::testing::StrictMock;
 using ::testing::_;
 
@@ -87,8 +87,6 @@ MATCHER_P(EqualsProto, message, "") {
 
 namespace suggestions {
 
-namespace {
-
 scoped_ptr<SuggestionsProfile> CreateSuggestionsProfile() {
   scoped_ptr<SuggestionsProfile> profile(new SuggestionsProfile());
   ChromeSuggestion* suggestion = profile->add_suggestions();
@@ -104,12 +102,12 @@ class MockSuggestionsStore : public suggestions::SuggestionsStore {
   MOCK_METHOD0(ClearSuggestions, void());
 };
 
-class MockThumbnailManager : public suggestions::ThumbnailManager {
+class MockImageManager : public suggestions::ImageManager {
  public:
-  MockThumbnailManager() : suggestions::ThumbnailManager(NULL) {}
-  virtual ~MockThumbnailManager() {}
-  MOCK_METHOD1(InitializeThumbnailMap, void(const SuggestionsProfile&));
-  MOCK_METHOD2(GetPageThumbnail,
+  MockImageManager() {}
+  virtual ~MockImageManager() {}
+  MOCK_METHOD1(Initialize, void(const SuggestionsProfile&));
+  MOCK_METHOD2(GetImageForURL,
                void(const GURL&,
                     base::Callback<void(const GURL&, const SkBitmap*)>));
 };
@@ -121,8 +119,6 @@ class MockBlacklistStore : public suggestions::BlacklistStore {
   MOCK_METHOD1(RemoveUrl, bool(const GURL&));
   MOCK_METHOD1(FilterSuggestions, void(SuggestionsProfile*));
 };
-
-}  // namespace
 
 class SuggestionsServiceTest : public testing::Test {
  public:
@@ -147,10 +143,14 @@ class SuggestionsServiceTest : public testing::Test {
         suggestions_empty_data_count_(0),
         factory_(NULL, base::Bind(&CreateURLFetcher)),
         mock_suggestions_store_(NULL),
-        mock_thumbnail_manager_(NULL) {
-    profile_ = profile_builder_.Build();
-  }
+        mock_thumbnail_manager_(NULL) {}
+
   virtual ~SuggestionsServiceTest() {}
+
+  virtual void SetUp() OVERRIDE {
+    request_context_ =
+        new net::TestURLRequestContextGetter(base::MessageLoopProxy::current());
+  }
 
   // Enables the "ChromeSuggestions.Group1" field trial.
   void EnableFieldTrial(const std::string& url,
@@ -182,21 +182,15 @@ class SuggestionsServiceTest : public testing::Test {
     field_trial_->group();
   }
 
-  SuggestionsService* CreateSuggestionsService() {
-    SuggestionsServiceFactory* suggestions_service_factory =
-        SuggestionsServiceFactory::GetInstance();
-    return suggestions_service_factory->GetForProfile(profile_.get());
-  }
-
   // Should not be called more than once per test since it stashes the
   // SuggestionsStore in |mock_suggestions_store_|.
   SuggestionsService* CreateSuggestionsServiceWithMocks() {
     mock_suggestions_store_ = new StrictMock<MockSuggestionsStore>();
-    mock_thumbnail_manager_ = new StrictMock<MockThumbnailManager>();
+    mock_thumbnail_manager_ = new NiceMock<MockImageManager>();
     mock_blacklist_store_ = new MockBlacklistStore();
     return new SuggestionsService(
-        profile_.get(), scoped_ptr<SuggestionsStore>(mock_suggestions_store_),
-        scoped_ptr<ThumbnailManager>(mock_thumbnail_manager_),
+        request_context_, scoped_ptr<SuggestionsStore>(mock_suggestions_store_),
+        scoped_ptr<ImageManager>(mock_thumbnail_manager_),
         scoped_ptr<BlacklistStore>(mock_blacklist_store_));
   }
 
@@ -256,27 +250,17 @@ class SuggestionsServiceTest : public testing::Test {
   net::FakeURLFetcherFactory factory_;
   // Only used if the SuggestionsService is built with mocks. Not owned.
   MockSuggestionsStore* mock_suggestions_store_;
-  MockThumbnailManager* mock_thumbnail_manager_;
+  MockImageManager* mock_thumbnail_manager_;
   MockBlacklistStore* mock_blacklist_store_;
+  scoped_refptr<net::TestURLRequestContextGetter> request_context_;
 
  private:
   content::TestBrowserThreadBundle thread_bundle_;
   scoped_ptr<base::FieldTrialList> field_trial_list_;
   scoped_refptr<base::FieldTrial> field_trial_;
-  TestingProfile::Builder profile_builder_;
-  scoped_ptr<TestingProfile> profile_;
 
   DISALLOW_COPY_AND_ASSIGN(SuggestionsServiceTest);
 };
-
-TEST_F(SuggestionsServiceTest, ServiceBeingCreated) {
-  // Field trial not enabled.
-  EXPECT_TRUE(CreateSuggestionsService() == NULL);
-
-  // Field trial enabled.
-  EnableFieldTrial("", "", "", "", false);
-  EXPECT_TRUE(CreateSuggestionsService() != NULL);
-}
 
 TEST_F(SuggestionsServiceTest, IsControlGroup) {
   // Field trial enabled.

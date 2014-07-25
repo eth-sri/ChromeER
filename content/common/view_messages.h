@@ -435,7 +435,7 @@ IPC_STRUCT_BEGIN(ViewMsg_New_Params)
   IPC_STRUCT_MEMBER(content::RendererPreferences, renderer_preferences)
 
   // Preferences for this view.
-  IPC_STRUCT_MEMBER(WebPreferences, web_preferences)
+  IPC_STRUCT_MEMBER(content::WebPreferences, web_preferences)
 
   // The ID of the view to be created.
   IPC_STRUCT_MEMBER(int32, view_id)
@@ -485,9 +485,12 @@ IPC_STRUCT_BEGIN(ViewMsg_New_Params)
 IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(ViewMsg_PostMessage_Params)
+  // Whether the data format is supplied as serialized script value, or as
+  // a simple string. If it is a raw string, must be converted from string to a
+  // WebSerializedScriptValue in renderer.
+  IPC_STRUCT_MEMBER(bool, is_data_raw_string)
   // The serialized script value.
   IPC_STRUCT_MEMBER(base::string16, data)
-
   // When sent to the browser, this is the routing ID of the source frame in
   // the source process.  The browser replaces it with the routing ID of the
   // equivalent (swapped out) frame in the destination process.
@@ -572,7 +575,7 @@ IPC_MESSAGE_ROUTED1(ViewMsg_SetRendererPrefs,
 
 // This passes a set of webkit preferences down to the renderer.
 IPC_MESSAGE_ROUTED1(ViewMsg_UpdateWebPreferences,
-                    WebPreferences)
+                    content::WebPreferences)
 
 // Informs the renderer that the timezone has changed.
 IPC_MESSAGE_CONTROL0(ViewMsg_TimezoneChange)
@@ -1139,7 +1142,7 @@ IPC_MESSAGE_ROUTED5(ViewHostMsg_DidLoadResourceFromMemoryCache,
                     std::string  /* security info */,
                     std::string  /* http method */,
                     std::string  /* mime type */,
-                    ResourceType::Type /* resource type */)
+                    content::ResourceType::Type /* resource type */)
 
 // Sent when the renderer displays insecure content in a secure page.
 IPC_MESSAGE_ROUTED0(ViewHostMsg_DidDisplayInsecureContent)
@@ -1441,26 +1444,11 @@ IPC_MESSAGE_ROUTED2(ViewHostMsg_UpdateZoomLimits,
 IPC_MESSAGE_CONTROL1(ViewHostMsg_SuddenTerminationChanged,
                      bool /* enabled */)
 
-IPC_STRUCT_BEGIN(ViewHostMsg_CompositorSurfaceBuffersSwapped_Params)
-  IPC_STRUCT_MEMBER(int32, surface_id)
-  IPC_STRUCT_MEMBER(uint64, surface_handle)
-  IPC_STRUCT_MEMBER(int32, route_id)
-  IPC_STRUCT_MEMBER(gfx::Size, size)
-  IPC_STRUCT_MEMBER(float, scale_factor)
-  IPC_STRUCT_MEMBER(int32, gpu_process_host_id)
-  IPC_STRUCT_MEMBER(std::vector<ui::LatencyInfo>, latency_info)
-IPC_STRUCT_END()
-
-// This message is synthesized by GpuProcessHost to pass through a swap message
-// to the RenderWidgetHelper. This allows GetBackingStore to block for either a
-// software or GPU frame.
-IPC_MESSAGE_ROUTED1(
-    ViewHostMsg_CompositorSurfaceBuffersSwapped,
-    ViewHostMsg_CompositorSurfaceBuffersSwapped_Params /* params */)
-
-IPC_MESSAGE_ROUTED2(ViewHostMsg_SwapCompositorFrame,
-                    uint32 /* output_surface_id */,
-                    cc::CompositorFrame /* frame */)
+IPC_MESSAGE_ROUTED3(
+    ViewHostMsg_SwapCompositorFrame,
+    uint32 /* output_surface_id */,
+    cc::CompositorFrame /* frame */,
+    std::vector<IPC::Message> /* messages_to_deliver_with_frame */)
 
 // Sent by the compositor when a flinging animation is stopped.
 IPC_MESSAGE_ROUTED0(ViewHostMsg_DidStopFlinging)
@@ -1491,6 +1479,12 @@ IPC_MESSAGE_ROUTED4(ViewHostMsg_RegisterProtocolHandler,
                     std::string /* scheme */,
                     GURL /* url */,
                     base::string16 /* title */,
+                    bool /* user_gesture */)
+
+// Unregister the registered handler for URL requests with the given scheme.
+IPC_MESSAGE_ROUTED3(ViewHostMsg_UnregisterProtocolHandler,
+                    std::string /* scheme */,
+                    GURL /* url */,
                     bool /* user_gesture */)
 
 // Stores new inspector setting in the profile.
@@ -1574,10 +1568,6 @@ IPC_MESSAGE_ROUTED0(ViewHostMsg_WillInsertBody)
 IPC_MESSAGE_ROUTED1(ViewHostMsg_UpdateFaviconURL,
                     std::vector<content::FaviconURL> /* candidates */)
 
-// Sent once a paint happens after the first non empty layout. In other words
-// after the page has painted something.
-IPC_MESSAGE_ROUTED0(ViewHostMsg_DidFirstVisuallyNonEmptyPaint)
-
 // Sent by the renderer to the browser to start a vibration with the given
 // duration.
 IPC_MESSAGE_CONTROL1(ViewHostMsg_Vibrate,
@@ -1651,8 +1641,9 @@ IPC_MESSAGE_ROUTED1(ViewHostMsg_SetNeedsBeginFrame,
                     bool /* enabled */)
 
 // Reply to the ViewMsg_ExtractSmartClipData message.
-IPC_MESSAGE_ROUTED2(ViewHostMsg_SmartClipDataExtracted,
-                    base::string16 /* result */,
+IPC_MESSAGE_ROUTED3(ViewHostMsg_SmartClipDataExtracted,
+                    base::string16 /* text */,
+                    base::string16 /* html */,
                     gfx::Rect /* rect */)
 
 #elif defined(OS_MACOSX)

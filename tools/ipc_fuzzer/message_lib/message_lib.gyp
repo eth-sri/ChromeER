@@ -8,9 +8,12 @@
     'message_lib_deps': [
       '../../../base/base.gyp:base',
       '../../../chrome/chrome.gyp:common',
+      '../../../components/nacl.gyp:nacl_common',
+      '../../../content/content.gyp:content_child',
       '../../../ipc/ipc.gyp:ipc',
-      '../../../media/cast/cast.gyp:cast_transport',
+      '../../../media/cast/cast.gyp:cast_net',
       '../../../ppapi/ppapi_internal.gyp:ppapi_ipc',
+      '../../../remoting/remoting.gyp:remoting_host',
       '../../../skia/skia.gyp:skia',
       '../../../third_party/libjingle/libjingle.gyp:libjingle',
       '../../../third_party/mt19937ar/mt19937ar.gyp:mt19937ar',

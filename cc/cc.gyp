@@ -8,6 +8,7 @@
   },
   'targets': [
     {
+      # GN version: //cc
       'target_name': 'cc',
       'type': '<(component)',
       'dependencies': [
@@ -31,6 +32,7 @@
         'CC_IMPLEMENTATION=1',
       ],
       'sources': [
+        # Note: file list duplicated in GN build.
         'animation/animation.cc',
         'animation/animation.h',
         'animation/animation_curve.cc',
@@ -140,6 +142,9 @@
         'input/input_handler.h',
         'input/page_scale_animation.cc',
         'input/page_scale_animation.h',
+        'input/layer_selection_bound.cc',
+        'input/layer_selection_bound.h',
+        'input/selection_bound_type.h',
         'input/top_controls_manager.cc',
         'input/top_controls_manager.h',
         'input/top_controls_manager_client.h',
@@ -295,6 +300,8 @@
         'output/software_output_device.h',
         'output/software_renderer.cc',
         'output/software_renderer.h',
+        'output/viewport_selection_bound.cc',
+        'output/viewport_selection_bound.h',
         'quads/checkerboard_draw_quad.cc',
         'quads/checkerboard_draw_quad.h',
         'quads/content_draw_quad_base.cc',
@@ -331,8 +338,8 @@
         'resources/bitmap_skpicture_content_layer_updater.h',
         'resources/content_layer_updater.cc',
         'resources/content_layer_updater.h',
-        'resources/direct_raster_worker_pool.cc',
-        'resources/direct_raster_worker_pool.h',
+        'resources/gpu_raster_worker_pool.cc',
+        'resources/gpu_raster_worker_pool.h',
         'resources/image_layer_updater.cc',
         'resources/image_layer_updater.h',
         'resources/image_raster_worker_pool.cc',
@@ -395,6 +402,8 @@
         'resources/resource_update_queue.cc',
         'resources/resource_update_queue.h',
         'resources/returned_resource.h',
+        'resources/scoped_gpu_raster.cc',
+        'resources/scoped_gpu_raster.h',
         'resources/scoped_resource.cc',
         'resources/scoped_resource.h',
         'resources/scoped_ui_resource.cc',
@@ -438,8 +447,6 @@
         'scheduler/scheduler_settings.h',
         'scheduler/scheduler_state_machine.cc',
         'scheduler/scheduler_state_machine.h',
-        'scheduler/time_source.h',
-        'test/mock_occlusion_tracker.h',
         'trees/blocking_task_runner.cc',
         'trees/blocking_task_runner.h',
         'trees/damage_tracker.cc',
@@ -474,6 +481,7 @@
       'msvs_disabled_warnings': [ 4267, ],
     },
     {
+      # GN version: //cc/surfaces
       'target_name': 'cc_surfaces',
       'type': '<(component)',
       'dependencies': [
@@ -488,6 +496,7 @@
         'CC_SURFACES_IMPLEMENTATION=1',
       ],
       'sources': [
+        # Note: file list duplicated in GN build.
         'surfaces/display.cc',
         'surfaces/display.h',
         'surfaces/display_client.h',
@@ -499,6 +508,8 @@
         'surfaces/surface_factory.h',
         'surfaces/surface_factory_client.h',
         'surfaces/surface_id.h',
+        'surfaces/surface_id_allocator.cc',
+        'surfaces/surface_id_allocator.h',
         'surfaces/surface_manager.cc',
         'surfaces/surface_manager.h',
         'surfaces/surface_resource_holder.cc',

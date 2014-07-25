@@ -207,7 +207,7 @@ void FakeMediaSource::Start(scoped_refptr<AudioFrameInput> audio_frame_input,
   }
 
   // Send transcoding streams.
-  audio_algo_.Initialize(playback_rate_, audio_params_);
+  audio_algo_.Initialize(audio_params_);
   audio_algo_.FlushBuffers();
   audio_fifo_input_bus_ =
       AudioBus::Create(
@@ -240,7 +240,7 @@ void FakeMediaSource::SendNextFakeFrame() {
   if (start_time_.is_null())
     start_time_ = now;
 
-  base::TimeDelta video_time = VideoFrameTime(video_frame_count_);
+  base::TimeDelta video_time = VideoFrameTime(++video_frame_count_);
   video_frame->set_timestamp(video_time);
   video_frame_input_->InsertRawVideoFrame(video_frame,
                                           start_time_ + video_time);
@@ -476,7 +476,8 @@ void FakeMediaSource::DecodeAudio(ScopedAVPacket packet) {
       kAudioPacketsPerSecond;
   while (frames_needed_to_scale <= audio_algo_.frames_buffered()) {
     if (!audio_algo_.FillBuffer(audio_fifo_input_bus_.get(),
-                                audio_fifo_input_bus_->frames())) {
+                                audio_fifo_input_bus_->frames(),
+                                playback_rate_)) {
       // Nothing can be scaled. Decode some more.
       return;
     }

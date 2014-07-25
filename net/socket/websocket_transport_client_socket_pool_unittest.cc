@@ -37,7 +37,7 @@ namespace {
 
 const int kMaxSockets = 32;
 const int kMaxSocketsPerGroup = 6;
-const net::RequestPriority kDefaultPriority = LOW;
+const RequestPriority kDefaultPriority = LOW;
 
 // RunLoop doesn't support this natively but it is easy to emulate.
 void RunLoopForTimePeriod(base::TimeDelta period) {
@@ -1059,6 +1059,30 @@ TEST_F(WebSocketTransportClientSocketPoolTest,
   for (int i = 0; i < kMaxSockets; ++i) {
     EXPECT_EQ(ERR_FAILED, request(i)->WaitForResult());
   }
+}
+
+// Sockets that have had ownership transferred to a ClientSocketHandle should
+// not be affected by FlushWithError.
+TEST_F(WebSocketTransportClientSocketPoolTest,
+       FlushWithErrorDoesNotAffectHandedOutSockets) {
+  host_resolver_->set_synchronous_mode(true);
+  MockTransportClientSocketFactory::ClientSocketType socket_types[] = {
+      MockTransportClientSocketFactory::MOCK_CLIENT_SOCKET,
+      MockTransportClientSocketFactory::MOCK_STALLED_CLIENT_SOCKET};
+  client_socket_factory_.set_client_socket_types(socket_types,
+                                                 arraysize(socket_types));
+  EXPECT_EQ(OK, StartRequest("a", kDefaultPriority));
+  // Socket has been "handed out".
+  EXPECT_TRUE(request(0)->handle()->socket());
+
+  EXPECT_EQ(ERR_IO_PENDING, StartRequest("a", kDefaultPriority));
+  // Now we have one socket handed out, and one pending.
+  pool_.FlushWithError(ERR_FAILED);
+  EXPECT_EQ(ERR_FAILED, request(1)->WaitForResult());
+  // Socket owned by ClientSocketHandle is unaffected:
+  EXPECT_TRUE(request(0)->handle()->socket());
+  // Return it to the pool (which deletes it).
+  request(0)->handle()->Reset();
 }
 
 }  // namespace

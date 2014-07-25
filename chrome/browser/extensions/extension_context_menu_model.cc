@@ -23,6 +23,7 @@
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/management_policy.h"
+#include "extensions/browser/uninstall_reason.h"
 #include "extensions/common/extension.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
@@ -144,8 +145,10 @@ void ExtensionContextMenuModel::ExecuteCommand(int command_id,
 
 void ExtensionContextMenuModel::ExtensionUninstallAccepted() {
   if (GetExtension()) {
-    extensions::ExtensionSystem::Get(profile_)->extension_service()->
-        UninstallExtension(extension_id_, false, NULL);
+    extensions::ExtensionSystem::Get(profile_)
+        ->extension_service()
+        ->UninstallExtension(
+            extension_id_, extensions::UNINSTALL_REASON_USER_INITIATED, NULL);
   }
   Release();
 }

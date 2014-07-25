@@ -68,9 +68,6 @@ bool AwMainDelegate::BasicStartupComplete(int* exit_code) {
   // File system API not supported (requires some new API; internal bug 6930981)
   cl->AppendSwitch(switches::kDisableFileSystem);
 
-  // Fullscreen video with subtitle is not yet supported.
-  cl->AppendSwitch(switches::kDisableOverlayFullscreenVideoSubtitle);
-
 #if defined(VIDEO_HOLE)
   // Support EME/L1 with hole-punching.
   cl->AppendSwitch(switches::kMediaDrmEnableNonCompositing);
@@ -78,6 +75,7 @@ bool AwMainDelegate::BasicStartupComplete(int* exit_code) {
 
   // WebRTC hardware decoding is not supported, internal bug 15075307
   cl->AppendSwitch(switches::kDisableWebRtcHWDecoding);
+
   return false;
 }
 

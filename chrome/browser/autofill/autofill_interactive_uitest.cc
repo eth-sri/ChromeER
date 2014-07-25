@@ -1007,7 +1007,7 @@ IN_PROC_BROWSER_TEST_F(AutofillInteractiveTest, AutofillAfterTranslate) {
   infobar_observer.Wait();
   InfoBarService* infobar_service =
       InfoBarService::FromWebContents(GetWebContents());
-  TranslateInfoBarDelegate* delegate =
+  translate::TranslateInfoBarDelegate* delegate =
       infobar_service->infobar_at(0)->delegate()->AsTranslateInfoBarDelegate();
   ASSERT_TRUE(delegate);
   EXPECT_EQ(translate::TRANSLATE_STEP_BEFORE_TRANSLATE,
@@ -1034,7 +1034,13 @@ IN_PROC_BROWSER_TEST_F(AutofillInteractiveTest, AutofillAfterTranslate) {
 // The high level key presses execute the following: Select the first text
 // field, invoke the autofill popup list, select the first profile within the
 // list, and commit to the profile to populate the form.
-IN_PROC_BROWSER_TEST_F(AutofillInteractiveTest, ComparePhoneNumbers) {
+// Flakily times out on windows. http://crbug.com/390564
+#if defined(OS_WIN)
+#define MAYBE_ComparePhoneNumbers DISABLED_ComparePhoneNumbers
+#else
+#define MAYBE_ComparePhoneNumbers ComparePhoneNumbers
+#endif
+IN_PROC_BROWSER_TEST_F(AutofillInteractiveTest, MAYBE_ComparePhoneNumbers) {
   ASSERT_TRUE(test_server()->Start());
 
   AutofillProfile profile;

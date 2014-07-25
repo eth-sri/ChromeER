@@ -209,8 +209,8 @@ void RendererOverridesHandler::InnerSwapCompositorFrame() {
   cc::CompositorFrameMetadata& metadata = last_compositor_frame_metadata_;
 
   float page_scale = metadata.page_scale_factor;
-  gfx::SizeF viewport_size_dip = gfx::ScaleSize(metadata.viewport_size,
-                                                page_scale);
+  gfx::SizeF viewport_size_dip = gfx::ScaleSize(
+      metadata.scrollable_viewport_size, page_scale);
 
   float total_bar_height_dip = metadata.location_bar_content_translation.y() +
                                    metadata.overdraw_bottom_height;
@@ -264,7 +264,7 @@ void RendererOverridesHandler::InnerSwapCompositorFrame() {
         base::Bind(&RendererOverridesHandler::ScreencastFrameCaptured,
                    weak_factory_.GetWeakPtr(),
                    format, quality, last_compositor_frame_metadata_),
-        SkBitmap::kARGB_8888_Config);
+        kN32_SkColorType);
   }
 }
 
@@ -326,7 +326,7 @@ RendererOverridesHandler::PageHandleJavaScriptDialog(
   base::DictionaryValue* params = command->params();
   const char* paramAccept =
       devtools::Page::handleJavaScriptDialog::kParamAccept;
-  bool accept;
+  bool accept = false;
   if (!params || !params->GetBoolean(paramAccept, &accept))
     return command->InvalidParamResponse(paramAccept);
   base::string16 prompt_override;
@@ -370,7 +370,8 @@ RendererOverridesHandler::PageNavigate(
     if (web_contents) {
       web_contents->GetController()
           .LoadURL(gurl, Referrer(), PAGE_TRANSITION_TYPED, std::string());
-      return command->SuccessResponse(new base::DictionaryValue());
+      // Fall through into the renderer.
+      return NULL;
     }
   }
   return command->InternalErrorResponse("No WebContents to navigate");
@@ -433,10 +434,9 @@ RendererOverridesHandler::PageGetNavigationHistory(
 scoped_refptr<DevToolsProtocol::Response>
 RendererOverridesHandler::PageNavigateToHistoryEntry(
     scoped_refptr<DevToolsProtocol::Command> command) {
-  int entry_id;
-
   base::DictionaryValue* params = command->params();
   const char* param = devtools::Page::navigateToHistoryEntry::kParamEntryId;
+  int entry_id = 0;
   if (!params || !params->GetInteger(param, &entry_id)) {
     return command->InvalidParamResponse(param);
   }
@@ -608,14 +608,14 @@ void RendererOverridesHandler::ScreencastFrameCaptured(
     viewport->SetDouble(devtools::DOM::Rect::kParamY,
                         metadata.root_scroll_offset.y());
     viewport->SetDouble(devtools::DOM::Rect::kParamWidth,
-                        metadata.viewport_size.width());
+                        metadata.scrollable_viewport_size.width());
     viewport->SetDouble(devtools::DOM::Rect::kParamHeight,
-                        metadata.viewport_size.height());
+                        metadata.scrollable_viewport_size.height());
     response_metadata->Set(
         devtools::Page::ScreencastFrameMetadata::kParamViewport, viewport);
 
-    gfx::SizeF viewport_size_dip = gfx::ScaleSize(metadata.viewport_size,
-                                                  metadata.page_scale_factor);
+    gfx::SizeF viewport_size_dip = gfx::ScaleSize(
+        metadata.scrollable_viewport_size, metadata.page_scale_factor);
     response_metadata->SetDouble(
         devtools::Page::ScreencastFrameMetadata::kParamDeviceWidth,
         viewport_size_dip.width());
@@ -980,8 +980,8 @@ RendererOverridesHandler::InputDispatchGestureEvent(
   event.globalY = event.y;
 
   if (type == "scrollUpdate") {
-    int dx;
-    int dy;
+    int dx = 0;
+    int dy = 0;
     if (!params->GetInteger(
             devtools::Input::dispatchGestureEvent::kParamDeltaX, &dx) ||
         !params->GetInteger(

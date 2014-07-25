@@ -26,6 +26,7 @@
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/browser/uninstall_reason.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_set.h"
 #include "grit/theme_resources.h"
@@ -117,6 +118,10 @@ gfx::Image ThemeService::GetImageNamed(int id) const {
     image = rb_.GetNativeImageNamed(id);
 
   return image;
+}
+
+bool ThemeService::IsSystemThemeDistinctFromDefaultTheme() const {
+  return false;
 }
 
 bool ThemeService::UsingSystemTheme() const {
@@ -247,7 +252,7 @@ void ThemeService::Observe(int type,
           content::Source<Profile>(profile_));
       OnExtensionServiceReady();
       break;
-    case chrome::NOTIFICATION_EXTENSION_INSTALLED_DEPRECATED: {
+    case chrome::NOTIFICATION_EXTENSION_WILL_BE_INSTALLED_DEPRECATED: {
       // The theme may be initially disabled. Wait till it is loaded (if ever).
       Details<const extensions::InstalledExtensionInfo> installed_details(
           details);
@@ -366,8 +371,10 @@ void ThemeService::RemoveUnusedThemes(bool ignore_infobars) {
   // are installed but not loaded because they are blacklisted by a management
   // policy provider.
 
-  for (size_t i = 0; i < remove_list.size(); ++i)
-    service->UninstallExtension(remove_list[i], false, NULL);
+  for (size_t i = 0; i < remove_list.size(); ++i) {
+    service->UninstallExtension(
+        remove_list[i], extensions::UNINSTALL_REASON_ORPHANED_THEME, NULL);
+  }
 }
 
 void ThemeService::UseDefaultTheme() {
@@ -500,7 +507,7 @@ void ThemeService::OnExtensionServiceReady() {
   }
 
   registrar_.Add(this,
-                 chrome::NOTIFICATION_EXTENSION_INSTALLED_DEPRECATED,
+                 chrome::NOTIFICATION_EXTENSION_WILL_BE_INSTALLED_DEPRECATED,
                  content::Source<Profile>(profile_));
   registrar_.Add(this,
                  chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,

@@ -30,12 +30,12 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/page_transition_types.h"
 #include "content/public/common/renderer_preferences.h"
+#include "content/public/common/resource_type.h"
 #include "content/public/common/three_d_api_types.h"
 #include "net/base/load_states.h"
 #include "third_party/WebKit/public/web/WebDragOperation.h"
 #include "ui/gfx/rect_f.h"
 #include "ui/gfx/size.h"
-#include "webkit/common/resource_type.h"
 
 struct BrowserPluginHostMsg_ResizeGuest_Params;
 struct ViewHostMsg_DateTimeDialogValue_Params;
@@ -283,8 +283,6 @@ class CONTENT_EXPORT WebContentsImpl
   virtual void UserGestureDone() OVERRIDE;
   virtual void SetClosedByUserGesture(bool value) OVERRIDE;
   virtual bool GetClosedByUserGesture() const OVERRIDE;
-  virtual int GetZoomPercent(bool* enable_increment,
-                             bool* enable_decrement) const OVERRIDE;
   virtual void ViewSource() OVERRIDE;
   virtual void ViewFrameSource(const GURL& url,
                                const PageState& page_state) OVERRIDE;
@@ -311,9 +309,8 @@ class CONTENT_EXPORT WebContentsImpl
 #elif defined(OS_MACOSX)
   virtual void SetAllowOverlappingViews(bool overlapping) OVERRIDE;
   virtual bool GetAllowOverlappingViews() OVERRIDE;
-  virtual void SetOverlayView(WebContents* overlay,
-                              const gfx::Point& offset) OVERRIDE;
-  virtual void RemoveOverlayView() OVERRIDE;
+  virtual void SetAllowOtherViews(bool allow) OVERRIDE;
+  virtual bool GetAllowOtherViews() OVERRIDE;
 #endif
 
   // Implementation of PageNavigator.
@@ -392,7 +389,7 @@ class CONTENT_EXPORT WebContentsImpl
                                    const base::string16& source_id) OVERRIDE;
   virtual RendererPreferences GetRendererPrefs(
       BrowserContext* browser_context) const OVERRIDE;
-  virtual WebPreferences GetWebkitPrefs() OVERRIDE;
+  virtual WebPreferences ComputeWebkitPrefs() OVERRIDE;
   virtual void OnUserGesture() OVERRIDE;
   virtual void OnIgnoredUIEvent() OVERRIDE;
   virtual void RendererUnresponsive(RenderViewHost* render_view_host,
@@ -453,7 +450,6 @@ class CONTENT_EXPORT WebContentsImpl
 
   virtual void DidStartProvisionalLoad(
       RenderFrameHostImpl* render_frame_host,
-      int parent_routing_id,
       const GURL& validated_url,
       bool is_error_page,
       bool is_iframe_srcdoc) OVERRIDE;
@@ -471,8 +467,6 @@ class CONTENT_EXPORT WebContentsImpl
       const GURL& validated_target_url) OVERRIDE;
   virtual void DidCommitProvisionalLoad(
       RenderFrameHostImpl* render_frame_host,
-      const base::string16& frame_unique_name,
-      bool is_main_frame,
       const GURL& url,
       PageTransition transition_type) OVERRIDE;
   virtual void DidNavigateMainFramePreCommit(
@@ -708,7 +702,7 @@ class CONTENT_EXPORT WebContentsImpl
                          const IPC::Message& message);
 
   // IPC message handlers.
-  void OnBrandColorChanged(SkColor brand_color);
+  void OnThemeColorChanged(SkColor theme_color);
   void OnDidLoadResourceFromMemoryCache(const GURL& url,
                                         const std::string& security_info,
                                         const std::string& http_request,
@@ -717,6 +711,7 @@ class CONTENT_EXPORT WebContentsImpl
   void OnDidDisplayInsecureContent();
   void OnDidRunInsecureContent(const std::string& security_origin,
                                const GURL& target_url);
+  void OnDidDetectXSS(int32 page_id, const GURL& url, bool blocked_entire_page);
   void OnDocumentLoadedInFrame();
   void OnDidFinishLoad(const GURL& url);
   void OnDidStartLoading(bool to_different_document);
@@ -731,6 +726,9 @@ class CONTENT_EXPORT WebContentsImpl
                                  const GURL& url,
                                  const base::string16& title,
                                  bool user_gesture);
+  void OnUnregisterProtocolHandler(const std::string& protocol,
+                                   const GURL& url,
+                                   bool user_gesture);
   void OnFindReply(int request_id,
                    int number_of_matches,
                    const gfx::Rect& selection_rect,
@@ -876,8 +874,7 @@ class CONTENT_EXPORT WebContentsImpl
   // Helper function to invoke WebContentsDelegate::GetSizeForNewRenderView().
   gfx::Size GetSizeForNewRenderView();
 
-  void OnFrameRemoved(RenderViewHostImpl* render_view_host,
-                      int frame_routing_id);
+  void OnFrameRemoved(RenderFrameHost* render_frame_host);
 
   // Helper method that's called whenever |preferred_size_| or
   // |preferred_size_for_capture_| changes, to propagate the new value to the

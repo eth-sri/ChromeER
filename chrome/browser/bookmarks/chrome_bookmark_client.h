@@ -9,7 +9,6 @@
 
 #include "base/deferred_sequenced_task_runner.h"
 #include "base/macros.h"
-#include "base/memory/ref_counted.h"
 #include "components/bookmarks/browser/base_bookmark_model_observer.h"
 #include "components/bookmarks/browser/bookmark_client.h"
 #include "components/policy/core/browser/managed_bookmarks_tracker.h"
@@ -43,10 +42,9 @@ class ChromeBookmarkClient : public bookmarks::BookmarkClient,
 
   // bookmarks::BookmarkClient:
   virtual bool PreferTouchIcon() OVERRIDE;
-  virtual base::CancelableTaskTracker::TaskId GetFaviconImageForURL(
+  virtual base::CancelableTaskTracker::TaskId GetFaviconImageForPageURL(
       const GURL& page_url,
-      int icon_types,
-      int desired_size_in_dip,
+      favicon_base::IconType type,
       const favicon_base::FaviconImageCallback& callback,
       base::CancelableTaskTracker* tracker) OVERRIDE;
   virtual bool SupportsTypedCountForNodes() OVERRIDE;
@@ -83,8 +81,7 @@ class ChromeBookmarkClient : public bookmarks::BookmarkClient,
 
   // Helper for GetLoadExtraNodesCallback().
   static bookmarks::BookmarkPermanentNodeList LoadExtraNodes(
-      const scoped_refptr<base::DeferredSequencedTaskRunner>& profile_io_runner,
-      BookmarkPermanentNode* managed_node,
+      scoped_ptr<BookmarkPermanentNode> managed_node,
       scoped_ptr<base::ListValue> initial_managed_bookmarks,
       int64* next_node_id);
 

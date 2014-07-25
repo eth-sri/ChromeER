@@ -80,7 +80,7 @@ source_set("browser") {
       "$root_gen_dir/webkit/grit/devtools_resources_map.cc",
       "$root_gen_dir/webkit/grit/devtools_resources_map.h",
       "$root_gen_dir/content/browser/tracing/grit/tracing_resources.h",
-      "$root_gen_dir/ui/ui_resources/grit/webui_resources_map.cc",
+      "$root_gen_dir/ui/resources/grit/webui_resources_map.cc",
       "$root_gen_dir/content/browser/devtools/devtools_protocol_constants.cc",
       "$root_gen_dir/content/browser/devtools/devtools_protocol_constants.h",
     ], ".")
@@ -90,9 +90,9 @@ source_set("browser") {
       "//content/browser/devtools:resources",
       "//content/common:mojo_bindings",
       "//cc",
-      "//cc:cc_surfaces",
+      "//cc/surfaces",
       "//mojo/public/cpp/bindings",
-      "//mojo/public/interfaces/interface_provider",
+      "//mojo/public/interfaces/service_provider",
       "//mojo/public/js/bindings",
       "//net:http_server",
       "//third_party/icu",
@@ -100,7 +100,6 @@ source_set("browser") {
       "//third_party/libyuv",
       "//ui/resources",
       "//ui/surface",
-      "//ui/webui/resources",
       "//webkit:resources",
       "//webkit:strings",
       "//webkit/browser:storage",
@@ -135,7 +134,7 @@ source_set("browser") {
     sources += [ "gamepad/gamepad_platform_data_fetcher.cc" ]
   }
 
-  if (enable_printing != 0) {
+  if (printing_mode != 0) {
     deps += [ "//printing" ]
   }
 
@@ -325,6 +324,7 @@ source_set("browser") {
 
   if (is_chromeos) {
     sources -= [
+      "battery_status/battery_status_manager_default.cc",
       "geolocation/wifi_data_provider_linux.cc",
       "power_save_blocker_ozone.cc",
       "power_save_blocker_x11.cc",
@@ -378,7 +378,7 @@ source_set("browser") {
     deps += [ "//ui/compositor" ]
   }
 
-  if (enable_speech_input) {
+  if (enable_web_speech) {
     deps += [
       "//third_party/flac",
       "//third_party/speex",

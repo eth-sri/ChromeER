@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+var USER_MEDIA_TAB_ID = 'user-media-tab-id';
+
 var tabView = null;
 var ssrcInfoManager = null;
 var peerConnectionUpdateTable = null;
@@ -61,14 +63,15 @@ var PeerConnectionRecord = (function() {
     },
 
     /**
-     * @param {string} type The type of the update.
-     * @param {string} value The value of the update.
+     * @param {!Object} update The object contains keys "time", "type", and
+     *   "value".
      */
-    addUpdate: function(type, value) {
+    addUpdate: function(update) {
+      var time = new Date(parseInt(update.time));
       this.record_.updateLog.push({
-        time: (new Date()).toLocaleString(),
-        type: type,
-        value: value,
+        time: time.toLocaleString(),
+        type: update.type,
+        value: update.value,
       });
     },
   };
@@ -137,6 +140,21 @@ function extractSsrcInfo(data) {
 
 
 /**
+ * A helper function for appending a child element to |parent|.
+ *
+ * @param {!Element} parent The parent element.
+ * @param {string} tag The child element tag.
+ * @param {string} text The textContent of the new DIV.
+ * @return {!Element} the new DIV element.
+ */
+function appendChildWithText(parent, tag, text) {
+  var child = document.createElement(tag);
+  child.textContent = text;
+  parent.appendChild(child);
+  return child;
+}
+
+/**
  * Helper for adding a peer connection update.
  *
  * @param {Element} peerConnectionElement
@@ -146,8 +164,7 @@ function addPeerConnectionUpdate(peerConnectionElement, update) {
   peerConnectionUpdateTable.addPeerConnectionUpdate(peerConnectionElement,
                                                     update);
   extractSsrcInfo(update);
-  peerConnectionDataStore[peerConnectionElement.id].addUpdate(
-      update.type, update.value);
+  peerConnectionDataStore[peerConnectionElement.id].addUpdate(update);
 }
 
 
@@ -186,7 +203,7 @@ function addPeerConnection(data) {
 
   var peerConnectionElement = $(id);
   if (!peerConnectionElement) {
-    peerConnectionElement = tabView.addTab(id, data.url);
+    peerConnectionElement = tabView.addTab(id, data.url + ' [' + id + ']');
   }
   peerConnectionElement.innerHTML =
       '<p>' + data.url + ' ' + data.servers + ' ' + data.constraints +
@@ -258,8 +275,26 @@ function addStats(data) {
  *     origin {string}, audio {string}, video {string}.
  */
 function addGetUserMedia(data) {
-  // TODO(jiayl): add the getUserMedia info to the tabbed UI.
   userMediaRequests.push(data);
+
+  if (!$(USER_MEDIA_TAB_ID)) {
+    tabView.addTab(USER_MEDIA_TAB_ID, 'GetUserMedia Requests');
+  }
+
+  var requestDiv = document.createElement('div');
+  requestDiv.className = 'user-media-request-div-class';
+  requestDiv.rid = data.rid;
+  $(USER_MEDIA_TAB_ID).appendChild(requestDiv);
+
+  appendChildWithText(requestDiv, 'div', 'Caller origin: ' + data.origin);
+  appendChildWithText(requestDiv, 'div', 'Caller process id: ' + data.pid);
+  appendChildWithText(requestDiv, 'span', 'Audio Constraints').style.fontWeight
+      = 'bold';
+  appendChildWithText(requestDiv, 'div', data.audio);
+
+  appendChildWithText(requestDiv, 'span', 'Video Constraints').style.fontWeight
+      = 'bold';
+  appendChildWithText(requestDiv, 'div', data.video);
 }
 
 
@@ -269,11 +304,19 @@ function addGetUserMedia(data) {
  * @param {!Object} data The object containing rid {number}, the render id.
  */
 function removeGetUserMediaForRenderer(data) {
-  // TODO(jiayl): remove the getUserMedia info from the tabbed UI.
   for (var i = userMediaRequests.length - 1; i >= 0; --i) {
     if (userMediaRequests[i].rid == data.rid)
       userMediaRequests.splice(i, 1);
   }
+
+  var requests = $(USER_MEDIA_TAB_ID).childNodes;
+  for (var i = 0; i < requests.length; ++i) {
+    if (requests[i].rid == data.rid)
+      $(USER_MEDIA_TAB_ID).removeChild(requests[i]);
+
+  }
+  if ($(USER_MEDIA_TAB_ID).childNodes.length == 0)
+    tabView.removeTab(USER_MEDIA_TAB_ID);
 }
 
 

@@ -472,7 +472,9 @@ void SoftwareRenderer::DrawTextureQuad(const DrawingFrame* frame,
 
 void SoftwareRenderer::DrawTileQuad(const DrawingFrame* frame,
                                     const TileDrawQuad* quad) {
-  DCHECK(!output_surface_->ForcedDrawToSoftwareDevice());
+  // |resource_provider_| can be NULL in resourceless software draws, which
+  // should never produce tile quads in the first place.
+  DCHECK(resource_provider_);
   DCHECK(IsSoftwareResource(quad->resource_id));
 
   ResourceProvider::ScopedReadLockSoftware lock(resource_provider_,
@@ -615,9 +617,8 @@ void SoftwareRenderer::CopyCurrentRenderPassToBitmap(
   gfx::Rect window_copy_rect = MoveFromDrawToWindowSpace(copy_rect);
 
   scoped_ptr<SkBitmap> bitmap(new SkBitmap);
-  bitmap->setConfig(SkBitmap::kARGB_8888_Config,
-                    window_copy_rect.width(),
-                    window_copy_rect.height());
+  bitmap->setInfo(SkImageInfo::MakeN32Premul(window_copy_rect.width(),
+                                             window_copy_rect.height()));
   current_canvas_->readPixels(
       bitmap.get(), window_copy_rect.x(), window_copy_rect.y());
 

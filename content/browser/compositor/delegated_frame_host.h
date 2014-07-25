@@ -95,7 +95,7 @@ class CONTENT_EXPORT DelegatedFrameHost
       const gfx::Rect& src_subrect,
       const gfx::Size& dst_size,
       const base::Callback<void(bool, const SkBitmap&)>& callback,
-      const SkBitmap::Config config);
+      const SkColorType color_type);
   void CopyFromCompositingSurfaceToVideoFrame(
       const gfx::Rect& src_subrect,
       const scoped_refptr<media::VideoFrame>& target,
@@ -105,6 +105,7 @@ class CONTENT_EXPORT DelegatedFrameHost
   void BeginFrameSubscription(
       scoped_ptr<RenderWidgetHostViewFrameSubscriber> subscriber);
   void EndFrameSubscription();
+  bool HasFrameSubscriber() const { return frame_subscriber_; }
 
   // Exposed for tests.
   cc::DelegatedFrameProvider* FrameProviderForTesting() const {
@@ -172,17 +173,17 @@ class CONTENT_EXPORT DelegatedFrameHost
   // of the copy.
   static void CopyFromCompositingSurfaceHasResult(
       const gfx::Size& dst_size_in_pixel,
-      const SkBitmap::Config config,
+      const SkColorType color_type,
       const base::Callback<void(bool, const SkBitmap&)>& callback,
       scoped_ptr<cc::CopyOutputResult> result);
   static void PrepareTextureCopyOutputResult(
       const gfx::Size& dst_size_in_pixel,
-      const SkBitmap::Config config,
+      const SkColorType color_type,
       const base::Callback<void(bool, const SkBitmap&)>& callback,
       scoped_ptr<cc::CopyOutputResult> result);
   static void PrepareBitmapCopyOutputResult(
       const gfx::Size& dst_size_in_pixel,
-      const SkBitmap::Config config,
+      const SkColorType color_type,
       const base::Callback<void(bool, const SkBitmap&)>& callback,
       scoped_ptr<cc::CopyOutputResult> result);
   static void CopyFromCompositingSurfaceHasResultForVideo(

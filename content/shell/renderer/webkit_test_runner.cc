@@ -22,6 +22,7 @@
 #include "base/time/time.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
+#include "content/public/common/web_preferences.h"
 #include "content/public/renderer/render_view.h"
 #include "content/public/renderer/render_view_visitor.h"
 #include "content/public/test/layouttest_support.h"
@@ -63,7 +64,6 @@
 #include "third_party/WebKit/public/web/WebTestingSupport.h"
 #include "third_party/WebKit/public/web/WebView.h"
 #include "ui/gfx/rect.h"
-#include "webkit/common/webpreferences.h"
 
 using blink::Platform;
 using blink::WebArrayBufferView;
@@ -205,6 +205,10 @@ void WebKitTestRunner::setEditCommand(const std::string& name,
 void WebKitTestRunner::setGamepadProvider(
     RendererGamepadProvider* provider) {
   SetMockGamepadProvider(provider);
+}
+
+void WebKitTestRunner::setDeviceLightData(const double data) {
+  SetMockDeviceLightData(data);
 }
 
 void WebKitTestRunner::setDeviceMotionData(const WebDeviceMotionData& data) {

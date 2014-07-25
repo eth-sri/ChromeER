@@ -30,7 +30,6 @@
 #include "base/thread_task_runner_handle.h"
 #include "base/threading/thread.h"
 #include "base/time/time.h"
-#include "chrome/browser/autocomplete/history_url_provider.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/history/download_row.h"
@@ -86,6 +85,12 @@ void RunWithFaviconResult(
 void RunWithQueryURLResult(const HistoryService::QueryURLCallback& callback,
                            const history::QueryURLResult* result) {
   callback.Run(result->success, result->row, result->visits);
+}
+
+void RunWithVisibleVisitCountToHostResult(
+    const HistoryService::GetVisibleVisitCountToHostCallback& callback,
+    const history::VisibleVisitCountToHostResult* result) {
+  callback.Run(result->success, result->count, result->first_visit);
 }
 
 // Extract history::URLRows into GURLs for VisitedLinkMaster.
@@ -346,7 +351,8 @@ void HistoryService::SetKeywordSearchTermsForURL(const GURL& url,
 void HistoryService::DeleteAllSearchTermsForKeyword(KeywordID keyword_id) {
   DCHECK(thread_checker_.CalledOnValidThread());
 
-  in_memory_backend_->DeleteAllSearchTermsForKeyword(keyword_id);
+  if (in_memory_backend_)
+    in_memory_backend_->DeleteAllSearchTermsForKeyword(keyword_id);
 
   ScheduleAndForget(PRIORITY_UI,
                     &HistoryBackend::DeleteAllSearchTermsForKeyword,
@@ -372,13 +378,21 @@ void HistoryService::URLsNoLongerBookmarked(const std::set<GURL>& urls) {
                     urls);
 }
 
-void HistoryService::ScheduleDBTask(history::HistoryDBTask* task,
-                                    CancelableRequestConsumerBase* consumer) {
+void HistoryService::ScheduleDBTask(scoped_refptr<history::HistoryDBTask> task,
+                                    base::CancelableTaskTracker* tracker) {
   DCHECK(thread_checker_.CalledOnValidThread());
-  history::HistoryDBTaskRequest* request = new history::HistoryDBTaskRequest(
-      base::Bind(&history::HistoryDBTask::DoneRunOnMainThread, task));
-  request->value = task;  // The value is the task to execute.
-  Schedule(PRIORITY_UI, &HistoryBackend::ProcessDBTask, consumer, request);
+  base::CancelableTaskTracker::IsCanceledCallback is_canceled;
+  tracker->NewTrackedTaskId(&is_canceled);
+  // Use base::ThreadTaskRunnerHandler::Get() to get a message loop proxy to
+  // the current message loop so that we can forward the call to the method
+  // HistoryDBTask::DoneRunOnMainThread in the correct thread.
+  thread_->message_loop_proxy()->PostTask(
+      FROM_HERE,
+      base::Bind(&HistoryBackend::ProcessDBTask,
+                 history_backend_.get(),
+                 task,
+                 base::ThreadTaskRunnerHandle::Get(),
+                 is_canceled));
 }
 
 void HistoryService::FlushForTest(const base::Closure& flushed) {
@@ -806,13 +820,23 @@ base::CancelableTaskTracker::TaskId HistoryService::QueryRedirectsTo(
                                    base::Bind(callback, base::Owned(result)));
 }
 
-HistoryService::Handle HistoryService::GetVisibleVisitCountToHost(
+base::CancelableTaskTracker::TaskId HistoryService::GetVisibleVisitCountToHost(
     const GURL& url,
-    CancelableRequestConsumerBase* consumer,
-    const GetVisibleVisitCountToHostCallback& callback) {
+    const GetVisibleVisitCountToHostCallback& callback,
+    base::CancelableTaskTracker* tracker) {
   DCHECK(thread_checker_.CalledOnValidThread());
-  return Schedule(PRIORITY_UI, &HistoryBackend::GetVisibleVisitCountToHost,
-      consumer, new history::GetVisibleVisitCountToHostRequest(callback), url);
+  history::VisibleVisitCountToHostResult* result =
+      new history::VisibleVisitCountToHostResult();
+  return tracker->PostTaskAndReply(
+      thread_->message_loop_proxy().get(),
+      FROM_HERE,
+      base::Bind(&HistoryBackend::GetVisibleVisitCountToHost,
+                 history_backend_.get(),
+                 url,
+                 base::Unretained(result)),
+      base::Bind(&RunWithVisibleVisitCountToHostResult,
+                 callback,
+                 base::Owned(result)));
 }
 
 base::CancelableTaskTracker::TaskId HistoryService::QueryMostVisitedURLs(
@@ -833,18 +857,24 @@ base::CancelableTaskTracker::TaskId HistoryService::QueryMostVisitedURLs(
       base::Bind(callback, base::Owned(result)));
 }
 
-HistoryService::Handle HistoryService::QueryFilteredURLs(
+base::CancelableTaskTracker::TaskId HistoryService::QueryFilteredURLs(
     int result_count,
     const history::VisitFilter& filter,
     bool extended_info,
-    CancelableRequestConsumerBase* consumer,
-    const QueryFilteredURLsCallback& callback) {
+    const QueryFilteredURLsCallback& callback,
+    base::CancelableTaskTracker* tracker) {
   DCHECK(thread_checker_.CalledOnValidThread());
-  return Schedule(PRIORITY_NORMAL,
-                  &HistoryBackend::QueryFilteredURLs,
-                  consumer,
-                  new history::QueryFilteredURLsRequest(callback),
-                  result_count, filter, extended_info);
+  history::FilteredURLList* result = new history::FilteredURLList();
+  return tracker->PostTaskAndReply(
+      thread_->message_loop_proxy().get(),
+      FROM_HERE,
+      base::Bind(&HistoryBackend::QueryFilteredURLs,
+                 history_backend_.get(),
+                 result_count,
+                 filter,
+                 extended_info,
+                 base::Unretained(result)),
+      base::Bind(callback, base::Owned(result)));
 }
 
 void HistoryService::Observe(int type,
@@ -891,7 +921,9 @@ void HistoryService::RebuildTable(
 
 bool HistoryService::Init(const base::FilePath& history_dir, bool no_db) {
   DCHECK(thread_checker_.CalledOnValidThread());
-  if (!thread_->Start()) {
+  base::Thread::Options options;
+  options.timer_slack = base::TIMER_SLACK_MAXIMUM;
+  if (!thread_->StartWithOptions(options)) {
     Cleanup();
     return false;
   }
@@ -933,11 +965,11 @@ bool HistoryService::Init(const base::FilePath& history_dir, bool no_db) {
   return true;
 }
 
-void HistoryService::ScheduleAutocomplete(HistoryURLProvider* provider,
-                                          HistoryURLProviderParams* params) {
+void HistoryService::ScheduleAutocomplete(const base::Callback<
+    void(history::HistoryBackend*, history::URLDatabase*)>& callback) {
   DCHECK(thread_checker_.CalledOnValidThread());
-  ScheduleAndForget(PRIORITY_UI, &HistoryBackend::ScheduleAutocomplete,
-                    scoped_refptr<HistoryURLProvider>(provider), params);
+  ScheduleAndForget(
+      PRIORITY_UI, &HistoryBackend::ScheduleAutocomplete, callback);
 }
 
 void HistoryService::ScheduleTask(SchedulePriority priority,

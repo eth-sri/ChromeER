@@ -125,7 +125,9 @@ class TestSession : public QuicSession {
       : QuicSession(connection,
                     DefaultQuicConfig()),
         crypto_stream_(this),
-        writev_consumes_all_data_(false) {}
+        writev_consumes_all_data_(false) {
+    InitializeSession();
+  }
 
   virtual TestCryptoStream* GetCryptoStream() OVERRIDE {
     return &crypto_stream_;
@@ -631,7 +633,7 @@ TEST_P(QuicSessionTest, MultipleRstStreamsCauseSingleConnectionClose) {
 TEST_P(QuicSessionTest, HandshakeUnblocksFlowControlBlockedStream) {
   // Test that if a stream is flow control blocked, then on receipt of the SHLO
   // containing a suitable send window offset, the stream becomes unblocked.
-  if (version() < QUIC_VERSION_17) {
+  if (version() <= QUIC_VERSION_16) {
     return;
   }
 
@@ -864,7 +866,7 @@ TEST_P(QuicSessionTest, ConnectionFlowControlAccountingRstAfterRst) {
 TEST_P(QuicSessionTest, FlowControlWithInvalidFinalOffset) {
   // Test that if we receive a stream RST with a highest byte offset that
   // violates flow control, that we close the connection.
-  if (version() < QUIC_VERSION_17) {
+  if (version() <= QUIC_VERSION_16) {
     return;
   }
   ValueRestore<bool> old_flag(&FLAGS_enable_quic_connection_flow_control_2,
@@ -904,9 +906,9 @@ TEST_P(QuicSessionTest, VersionNegotiationDisablesFlowControl) {
   EXPECT_TRUE(stream->flow_controller()->IsEnabled());
   EXPECT_TRUE(session_.flow_controller()->IsEnabled());
 
-  // Version 17 implies that stream flow control is enabled, but connection
+  // Version 18 implies that stream flow control is enabled, but connection
   // level is disabled.
-  session_.OnSuccessfulVersionNegotiation(QUIC_VERSION_17);
+  session_.OnSuccessfulVersionNegotiation(QUIC_VERSION_18);
   EXPECT_FALSE(session_.flow_controller()->IsEnabled());
   EXPECT_TRUE(stream->flow_controller()->IsEnabled());
 

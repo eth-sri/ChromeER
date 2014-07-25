@@ -848,7 +848,7 @@ void IndexedDBDatabase::PutOperation(scoped_ptr<PutOperationParams> params,
                                 id(),
                                 params->object_store_id,
                                 *key,
-                                params->value,
+                                &params->value,
                                 &params->handles,
                                 &record_identifier);
   if (!s.ok()) {
@@ -1603,10 +1603,8 @@ void IndexedDBDatabase::RunVersionChangeTransaction(
                                             requested_version);
       }
     }
-    // TODO(jsbell): Remove the call to OnBlocked and instead wait
-    // until the frontend tells us that all the "versionchange" events
-    // have been delivered.  http://crbug.com/100123
-    callbacks->OnBlocked(metadata_.int_version);
+    // OnBlocked will be fired at the request when one of the other
+    // connections acks that the OnVersionChange was ignored.
 
     DCHECK(!pending_run_version_change_transaction_call_);
     pending_run_version_change_transaction_call_.reset(new PendingUpgradeCall(
@@ -1650,10 +1648,9 @@ void IndexedDBDatabase::DeleteDatabase(
       (*it)->callbacks()->OnVersionChange(
           metadata_.int_version, IndexedDBDatabaseMetadata::NO_INT_VERSION);
     }
-    // TODO(jsbell): Only fire OnBlocked if there are open
-    // connections after the VersionChangeEvents are received, not
-    // just set up to fire.  http://crbug.com/100123
-    callbacks->OnBlocked(metadata_.int_version);
+    // OnBlocked will be fired at the request when one of the other
+    // connections acks that the OnVersionChange was ignored.
+
     pending_delete_calls_.push_back(new PendingDeleteCall(callbacks));
     return;
   }
@@ -1700,6 +1697,19 @@ void IndexedDBDatabase::ForceClose() {
   }
   DCHECK(connections_.empty());
 }
+
+void IndexedDBDatabase::VersionChangeIgnored() {
+  if (pending_run_version_change_transaction_call_)
+    pending_run_version_change_transaction_call_->callbacks()->OnBlocked(
+        metadata_.int_version);
+
+  for (PendingDeleteCallList::iterator it = pending_delete_calls_.begin();
+       it != pending_delete_calls_.end();
+       ++it) {
+    (*it)->callbacks()->OnBlocked(metadata_.int_version);
+  }
+}
+
 
 void IndexedDBDatabase::Close(IndexedDBConnection* connection, bool forced) {
   DCHECK(connections_.count(connection));

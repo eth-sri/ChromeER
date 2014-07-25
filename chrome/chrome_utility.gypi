@@ -119,7 +119,7 @@
         '<@(chrome_utility_sources)',
       ],
       'conditions': [
-        ['use_openssl==1', {
+        ['OS!="win" and OS!="mac" and use_openssl==1', {
           'sources!': [
             'utility/importer/nss_decryptor.cc',
           ]
@@ -181,6 +181,9 @@
             'utility/local_discovery/service_discovery_message_handler.cc',
             'utility/local_discovery/service_discovery_message_handler.h',
           ]
+        }],
+        ['safe_browsing==1', {
+          'defines': [ 'FULL_SAFE_BROWSING' ],
         }],
       ],
       # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.

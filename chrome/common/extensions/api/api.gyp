@@ -15,15 +15,7 @@
     # These duplicate other lists and are the only ones used on Android. They
     # should be eliminated. See crbug.com/305852.
     'android_schema_files': [
-      'activity_log_private.json',
-      'file_system.idl',
       'manifest_types.json',
-      'sync_file_system.idl',
-      'tab_capture.idl',
-      'tabs.json',
-      'types.json',
-      'web_navigation.json',
-      'windows.json',
     ],
 
     # These are used everywhere except Android.
@@ -58,6 +50,7 @@
       'dial.idl',
       'downloads.idl',
       'downloads_internal.idl',
+      'easy_unlock_private.idl',
       'echo_private.json',
       'enterprise_platform_keys_private.json',
       'events.json',
@@ -93,12 +86,10 @@
       'omnibox.json',
       'page_capture.json',
       'permissions.json',
-      'power.idl',
       'preferences_private.json',
       'push_messaging.idl',
       'reading_list_private.json',
       'screenlock_private.idl',
-      'serial.idl',
       'sessions.json',
       'signed_in_devices.idl',
       'streams_private.idl',
@@ -221,7 +212,6 @@
         # include generated headers from these targets.
         # TODO(brettw) this should be made unnecessary if possible.
         '<(DEPTH)/components/components.gyp:component_metrics_proto',
-        '<(DEPTH)/device/serial/serial.gyp:device_serial',
 
         '<(DEPTH)/content/content.gyp:content_browser',
         '<(DEPTH)/skia/skia.gyp:skia',

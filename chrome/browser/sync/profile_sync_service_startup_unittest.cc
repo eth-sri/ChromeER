@@ -35,10 +35,10 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-using browser_sync::DataTypeManager;
-using browser_sync::DataTypeManagerMock;
 using browser_sync::SyncBackendHostMock;
 using content::BrowserThread;
+using sync_driver::DataTypeManager;
+using sync_driver::DataTypeManagerMock;
 using testing::_;
 using testing::AnyNumber;
 using testing::DoAll;
@@ -99,7 +99,8 @@ class ProfileSyncServiceStartupTest : public testing::Test {
   static KeyedService* BuildService(content::BrowserContext* browser_context) {
     Profile* profile = static_cast<Profile*>(browser_context);
     return new ProfileSyncService(
-        new ProfileSyncComponentsFactoryMock(),
+        scoped_ptr<ProfileSyncComponentsFactory>(
+            new ProfileSyncComponentsFactoryMock()),
         profile,
         make_scoped_ptr(new SupervisedUserSigninManagerWrapper(
             profile, SigninManagerFactory::GetForProfile(profile))),
@@ -183,7 +184,8 @@ class ProfileSyncServiceStartupCrosTest : public ProfileSyncServiceStartupTest {
         ProfileOAuth2TokenServiceFactory::GetForProfile(profile);
     EXPECT_FALSE(signin->GetAuthenticatedUsername().empty());
     return new ProfileSyncService(
-        new ProfileSyncComponentsFactoryMock(),
+        scoped_ptr<ProfileSyncComponentsFactory>(
+            new ProfileSyncComponentsFactoryMock()),
         profile,
         make_scoped_ptr(new SupervisedUserSigninManagerWrapper(profile,
                                                                signin)),

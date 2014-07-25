@@ -817,7 +817,7 @@ base::Value* DecodeIntegerValue(google::protobuf::int64 value) {
     return NULL;
   }
 
-  return base::Value::CreateIntegerValue(static_cast<int>(value));
+  return new base::FundamentalValue(static_cast<int>(value));
 }
 
 base::ListValue* DecodeStringList(const em::StringList& string_list) {
@@ -825,7 +825,7 @@ base::ListValue* DecodeStringList(const em::StringList& string_list) {
   RepeatedPtrField<std::string>::const_iterator entry;
   for (entry = string_list.entries().begin();
        entry != string_list.entries().end(); ++entry) {
-    list_value->Append(base::Value::CreateStringValue(*entry));
+    list_value->AppendString(*entry);
   }
   return list_value;
 }
@@ -856,11 +856,11 @@ CPP_FOOT = '''}
 
 def _CreateValue(type, arg):
   if type == 'TYPE_BOOLEAN':
-    return 'base::Value::CreateBooleanValue(%s)' % arg
+    return 'new base::FundamentalValue(%s)' % arg
   elif type == 'TYPE_INTEGER':
     return 'DecodeIntegerValue(%s)' % arg
   elif type == 'TYPE_STRING':
-    return 'base::Value::CreateStringValue(%s)' % arg
+    return 'new base::StringValue(%s)' % arg
   elif type == 'TYPE_LIST':
     return 'DecodeStringList(%s)' % arg
   elif type == 'TYPE_DICTIONARY' or type == 'TYPE_EXTERNAL':

@@ -13,9 +13,9 @@
 #include "mojo/services/public/cpp/view_manager/lib/view_private.h"
 #include "mojo/services/public/cpp/view_manager/node_observer.h"
 #include "mojo/services/public/cpp/view_manager/util.h"
-#include "mojo/services/public/cpp/view_manager/view_event_dispatcher.h"
 #include "mojo/services/public/cpp/view_manager/view_manager_delegate.h"
 #include "mojo/services/public/cpp/view_manager/view_observer.h"
+#include "mojo/services/public/cpp/view_manager/window_manager_delegate.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/codec/png_codec.h"
 
@@ -93,13 +93,11 @@ class RootObserver : public NodeObserver {
 
  private:
   // Overridden from NodeObserver:
-  virtual void OnNodeDestroy(Node* node,
-                             DispositionChangePhase phase) OVERRIDE {
+  virtual void OnNodeDestroyed(Node* node) OVERRIDE {
     DCHECK_EQ(node, root_);
-    if (phase != NodeObserver::DISPOSITION_CHANGED)
-      return;
     static_cast<ViewManagerClientImpl*>(
         NodePrivate(root_).view_manager())->RemoveRoot(root_);
+    node->RemoveObserver(this);
     delete this;
   }
 
@@ -135,12 +133,15 @@ class ViewManagerTransaction {
 
   ViewManagerService* service() { return client_->service_; }
 
-  Id GetAndAdvanceNextServerChangeId() {
-    return client_->next_server_change_id_++;
-  }
-
+  // TODO(sky): nuke this and covert all to new one, then rename
+  // ActionCompletedCallbackWithErrorCode to ActionCompletedCallback.
   base::Callback<void(bool)> ActionCompletedCallback() {
     return base::Bind(&ViewManagerTransaction::OnActionCompleted,
+                      base::Unretained(this));
+  }
+
+  base::Callback<void(ErrorCode)> ActionCompletedCallbackWithErrorCode() {
+    return base::Bind(&ViewManagerTransaction::OnActionCompletedWithErrorCode,
                       base::Unretained(this));
   }
 
@@ -148,6 +149,11 @@ class ViewManagerTransaction {
   // General callback to be used for commits to the service.
   void OnActionCompleted(bool success) {
     DoActionCompleted(success);
+    client_->RemoveFromPendingQueue(this);
+  }
+
+  void OnActionCompletedWithErrorCode(ErrorCode error_code) {
+    DoActionCompleted(error_code == ERROR_CODE_NONE);
     client_->RemoveFromPendingQueue(this);
   }
 
@@ -211,7 +217,7 @@ class CreateNodeTransaction : public ViewManagerTransaction {
  private:
   // Overridden from ViewManagerTransaction:
   virtual void DoCommit() OVERRIDE {
-    service()->CreateNode(node_id_, ActionCompletedCallback());
+    service()->CreateNode(node_id_, ActionCompletedCallbackWithErrorCode());
   }
   virtual void DoActionCompleted(bool success) OVERRIDE {
     // TODO(beng): Failure means we tried to create with an extant id for this
@@ -236,9 +242,7 @@ class DestroyNodeTransaction : public ViewManagerTransaction {
  private:
   // Overridden from ViewManagerTransaction:
   virtual void DoCommit() OVERRIDE {
-    service()->DeleteNode(node_id_,
-                          GetAndAdvanceNextServerChangeId(),
-                          ActionCompletedCallback());
+    service()->DeleteNode(node_id_, ActionCompletedCallback());
   }
   virtual void DoActionCompleted(bool success) OVERRIDE {
     // TODO(beng): recovery?
@@ -262,10 +266,7 @@ class AddChildTransaction : public ViewManagerTransaction {
  private:
   // Overridden from ViewManagerTransaction:
   virtual void DoCommit() OVERRIDE {
-    service()->AddNode(parent_id_,
-                       child_id_,
-                       GetAndAdvanceNextServerChangeId(),
-                       ActionCompletedCallback());
+    service()->AddNode(parent_id_, child_id_, ActionCompletedCallback());
   }
 
   virtual void DoActionCompleted(bool success) OVERRIDE {
@@ -289,10 +290,7 @@ class RemoveChildTransaction : public ViewManagerTransaction {
  private:
   // Overridden from ViewManagerTransaction:
   virtual void DoCommit() OVERRIDE {
-    service()->RemoveNodeFromParent(
-        child_id_,
-        GetAndAdvanceNextServerChangeId(),
-        ActionCompletedCallback());
+    service()->RemoveNodeFromParent(child_id_, ActionCompletedCallback());
   }
 
   virtual void DoActionCompleted(bool success) OVERRIDE {
@@ -323,7 +321,6 @@ class ReorderNodeTransaction : public ViewManagerTransaction {
     service()->ReorderNode(node_id_,
                            relative_id_,
                            direction_,
-                           GetAndAdvanceNextServerChangeId(),
                            ActionCompletedCallback());
   }
 
@@ -468,9 +465,7 @@ class EmbedTransaction : public ViewManagerTransaction {
  private:
   // Overridden from ViewManagerTransaction:
   virtual void DoCommit() OVERRIDE {
-    std::vector<Id> ids;
-    ids.push_back(node_id_);
-    service()->Embed(url_, Array<Id>::From(ids), ActionCompletedCallback());
+    service()->Embed(url_, node_id_, ActionCompletedCallback());
   }
   virtual void DoActionCompleted(bool success) OVERRIDE {
     // TODO(beng): recovery?
@@ -533,9 +528,8 @@ ViewManagerClientImpl::ViewManagerClientImpl(ApplicationConnection* connection,
     : connected_(false),
       connection_id_(0),
       next_id_(1),
-      next_server_change_id_(0),
       delegate_(delegate),
-      dispatcher_(NULL) {}
+      window_manager_delegate_(NULL) {}
 
 ViewManagerClientImpl::~ViewManagerClientImpl() {
   while (!nodes_.empty()) {
@@ -552,6 +546,7 @@ ViewManagerClientImpl::~ViewManagerClientImpl() {
     else
       views_.erase(it);
   }
+  delegate_->OnViewManagerDisconnected(this);
 }
 
 Id ViewManagerClientImpl::CreateNode() {
@@ -681,14 +676,14 @@ void ViewManagerClientImpl::RemoveView(Id view_id) {
 ////////////////////////////////////////////////////////////////////////////////
 // ViewManagerClientImpl, ViewManager implementation:
 
-void ViewManagerClientImpl::SetEventDispatcher(
-    ViewEventDispatcher* dispatcher) {
+void ViewManagerClientImpl::SetWindowManagerDelegate(
+    WindowManagerDelegate* window_manager_delegate) {
   CHECK(NULL != GetNodeById(1));
-  dispatcher_ = dispatcher;
+  window_manager_delegate_ = window_manager_delegate;
 }
 
 void ViewManagerClientImpl::DispatchEvent(View* target, EventPtr event) {
-  CHECK(dispatcher_);
+  CHECK(window_manager_delegate_);
   service_->DispatchOnViewInputEvent(target->id(), event.Pass());
 }
 
@@ -723,24 +718,17 @@ void ViewManagerClientImpl::OnConnectionEstablished() {
 void ViewManagerClientImpl::OnViewManagerConnectionEstablished(
     ConnectionSpecificId connection_id,
     const String& creator_url,
-    Id next_server_change_id,
     Array<NodeDataPtr> nodes) {
   connected_ = true;
   connection_id_ = connection_id;
   creator_url_ = TypeConverter<String, std::string>::ConvertFrom(creator_url);
-  next_server_change_id_ = next_server_change_id;
 
   DCHECK(pending_transactions_.empty());
   AddRoot(BuildNodeTree(this, nodes));
 }
 
-void ViewManagerClientImpl::OnRootsAdded(Array<NodeDataPtr> nodes) {
+void ViewManagerClientImpl::OnRootAdded(Array<NodeDataPtr> nodes) {
   AddRoot(BuildNodeTree(this, nodes));
-}
-
-void ViewManagerClientImpl::OnServerChangeIdAdvanced(
-    Id next_server_change_id) {
-  next_server_change_id_ = next_server_change_id;
 }
 
 void ViewManagerClientImpl::OnNodeBoundsChanged(Id node_id,
@@ -755,10 +743,7 @@ void ViewManagerClientImpl::OnNodeHierarchyChanged(
     Id node_id,
     Id new_parent_id,
     Id old_parent_id,
-    Id server_change_id,
     mojo::Array<NodeDataPtr> nodes) {
-  next_server_change_id_ = server_change_id + 1;
-
   BuildNodeTree(this, nodes);
 
   Node* new_parent = GetNodeById(new_parent_id);
@@ -772,20 +757,14 @@ void ViewManagerClientImpl::OnNodeHierarchyChanged(
 
 void ViewManagerClientImpl::OnNodeReordered(Id node_id,
                                             Id relative_node_id,
-                                            OrderDirection direction,
-                                            Id server_change_id) {
-  next_server_change_id_ = server_change_id + 1;
-
+                                            OrderDirection direction) {
   Node* node = GetNodeById(node_id);
   Node* relative_node = GetNodeById(relative_node_id);
-  if (node && relative_node) {
+  if (node && relative_node)
     NodePrivate(node).LocalReorder(relative_node, direction);
-  }
 }
 
-void ViewManagerClientImpl::OnNodeDeleted(Id node_id, Id server_change_id) {
-  next_server_change_id_ = server_change_id + 1;
-
+void ViewManagerClientImpl::OnNodeDeleted(Id node_id) {
   Node* node = GetNodeById(node_id);
   if (node)
     NodePrivate(node).LocalDestroy();
@@ -845,9 +824,13 @@ void ViewManagerClientImpl::OnFocusChanged(Id gained_focus_id,
   }
 }
 
+void ViewManagerClientImpl::EmbedRoot(const String& url) {
+  window_manager_delegate_->EmbedRoot(url);
+}
+
 void ViewManagerClientImpl::DispatchOnViewInputEvent(Id view_id,
                                                      EventPtr event) {
-  dispatcher_->DispatchEvent(GetViewById(view_id), event.Pass());
+  window_manager_delegate_->DispatchEvent(GetViewById(view_id), event.Pass());
 }
 
 ////////////////////////////////////////////////////////////////////////////////

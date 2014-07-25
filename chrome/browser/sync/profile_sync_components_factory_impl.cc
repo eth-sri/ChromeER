@@ -16,7 +16,6 @@
 #include "chrome/browser/prefs/pref_model_associator.h"
 #include "chrome/browser/prefs/pref_service_syncable.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/sync/glue/autofill_data_type_controller.h"
@@ -28,6 +27,7 @@
 #include "chrome/browser/sync/glue/extension_backed_data_type_controller.h"
 #include "chrome/browser/sync/glue/extension_data_type_controller.h"
 #include "chrome/browser/sync/glue/extension_setting_data_type_controller.h"
+#include "chrome/browser/sync/glue/local_device_info_provider_impl.h"
 #include "chrome/browser/sync/glue/password_data_type_controller.h"
 #include "chrome/browser/sync/glue/search_engine_data_type_controller.h"
 #include "chrome/browser/sync/glue/sync_backend_host.h"
@@ -52,6 +52,7 @@
 #include "components/autofill/core/browser/webdata/autofill_webdata_service.h"
 #include "components/dom_distiller/core/dom_distiller_service.h"
 #include "components/password_manager/core/browser/password_store.h"
+#include "components/search_engines/template_url_service.h"
 #include "components/signin/core/browser/signin_manager.h"
 #include "components/sync_driver/data_type_manager_impl.h"
 #include "components/sync_driver/data_type_manager_observer.h"
@@ -103,26 +104,26 @@ using browser_sync::BookmarkChangeProcessor;
 using browser_sync::BookmarkDataTypeController;
 using browser_sync::BookmarkModelAssociator;
 using browser_sync::ChromeReportUnrecoverableError;
-using browser_sync::DataTypeController;
-using browser_sync::DataTypeErrorHandler;
-using browser_sync::DataTypeManager;
-using browser_sync::DataTypeManagerImpl;
-using browser_sync::DataTypeManagerObserver;
 using browser_sync::ExtensionBackedDataTypeController;
 using browser_sync::ExtensionDataTypeController;
 using browser_sync::ExtensionSettingDataTypeController;
 using browser_sync::PasswordDataTypeController;
-using browser_sync::ProxyDataTypeController;
 using browser_sync::SearchEngineDataTypeController;
 using browser_sync::SessionDataTypeController;
-using browser_sync::SharedChangeProcessor;
 using browser_sync::SyncBackendHost;
 using browser_sync::ThemeDataTypeController;
 using browser_sync::TypedUrlChangeProcessor;
 using browser_sync::TypedUrlDataTypeController;
 using browser_sync::TypedUrlModelAssociator;
-using browser_sync::UIDataTypeController;
 using content::BrowserThread;
+using sync_driver::DataTypeController;
+using sync_driver::DataTypeErrorHandler;
+using sync_driver::DataTypeManager;
+using sync_driver::DataTypeManagerImpl;
+using sync_driver::DataTypeManagerObserver;
+using sync_driver::ProxyDataTypeController;
+using sync_driver::SharedChangeProcessor;
+using sync_driver::UIDataTypeController;
 
 namespace {
 
@@ -150,8 +151,6 @@ ProfileSyncComponentsFactoryImpl::ProfileSyncComponentsFactoryImpl(
     Profile* profile,
     CommandLine* command_line,
     const GURL& sync_service_url,
-    const std::string& account_id,
-    const OAuth2TokenService::ScopeSet& scope_set,
     OAuth2TokenService* token_service,
     net::URLRequestContextGetter* url_request_context_getter)
     : profile_(profile),
@@ -160,8 +159,6 @@ ProfileSyncComponentsFactoryImpl::ProfileSyncComponentsFactoryImpl(
       web_data_service_(WebDataServiceFactory::GetAutofillWebDataForProfile(
           profile_, Profile::EXPLICIT_ACCESS)),
       sync_service_url_(sync_service_url),
-      account_id_(account_id),
-      scope_set_(scope_set),
       token_service_(token_service),
       url_request_context_getter_(url_request_context_getter),
       weak_factory_(this) {
@@ -189,7 +186,9 @@ void ProfileSyncComponentsFactoryImpl::DisableBrokenType(
     const tracked_objects::Location& from_here,
     const std::string& message) {
   ProfileSyncService* p = ProfileSyncServiceFactory::GetForProfile(profile_);
-  p->DisableDatatype(type, from_here, message);
+  syncer::SyncError error(
+      from_here, syncer::SyncError::DATATYPE_ERROR, message, type);
+  p->DisableDatatype(error);
 }
 
 DataTypeController::DisableTypeCallback
@@ -254,7 +253,11 @@ void ProfileSyncComponentsFactoryImpl::RegisterCommonDataTypes(
          syncer::PROXY_TABS));
     pss->RegisterDataTypeController(
         new SessionDataTypeController(
-            this, profile_, MakeDisableCallbackFor(syncer::SESSIONS)));
+            this,
+            profile_,
+            pss->GetSyncedWindowDelegatesGetter(),
+            pss->GetLocalDeviceInfoProvider(),
+            MakeDisableCallbackFor(syncer::SESSIONS)));
   }
 
   // Favicon sync is enabled by default. Register unless explicitly disabled.
@@ -447,10 +450,10 @@ DataTypeManager* ProfileSyncComponentsFactoryImpl::CreateDataTypeManager(
     const syncer::WeakHandle<syncer::DataTypeDebugInfoListener>&
         debug_info_listener,
     const DataTypeController::TypeMap* controllers,
-    const browser_sync::DataTypeEncryptionHandler* encryption_handler,
+    const sync_driver::DataTypeEncryptionHandler* encryption_handler,
     SyncBackendHost* backend,
     DataTypeManagerObserver* observer,
-    browser_sync::FailedDataTypesHandler* failed_data_types_handler) {
+    sync_driver::FailedDataTypesHandler* failed_data_types_handler) {
   return new DataTypeManagerImpl(base::Bind(ChromeReportUnrecoverableError),
                                  debug_info_listener,
                                  controllers,
@@ -469,6 +472,12 @@ ProfileSyncComponentsFactoryImpl::CreateSyncBackendHost(
     const base::FilePath& sync_folder) {
   return new browser_sync::SyncBackendHostImpl(name, profile, invalidator,
                                                sync_prefs, sync_folder);
+}
+
+scoped_ptr<browser_sync::LocalDeviceInfoProvider>
+ProfileSyncComponentsFactoryImpl::CreateLocalDeviceInfoProvider() {
+  return scoped_ptr<browser_sync::LocalDeviceInfoProvider>(
+      new browser_sync::LocalDeviceInfoProviderImpl());
 }
 
 base::WeakPtr<syncer::SyncableService> ProfileSyncComponentsFactoryImpl::
@@ -626,37 +635,46 @@ OAuth2TokenService* TokenServiceProvider::GetTokenService() {
 
 scoped_ptr<syncer::AttachmentService>
 ProfileSyncComponentsFactoryImpl::CreateAttachmentService(
+    const syncer::UserShare& user_share,
     syncer::AttachmentService::Delegate* delegate) {
-  scoped_ptr<OAuth2TokenServiceRequest::TokenServiceProvider>
-      token_service_provider(new TokenServiceProvider(
-          content::BrowserThread::GetMessageLoopProxyForThread(
-              content::BrowserThread::UI),
-          token_service_));
-
-  // TODO(maniscalco): Use shared (one per profile) thread-safe instances of
-  // AttachmentUploader and AttachmentDownloader instead of creating a new one
-  // per AttachmentService (bug 369536).
-  scoped_ptr<syncer::AttachmentUploader> attachment_uploader(
-      new syncer::AttachmentUploaderImpl(sync_service_url_,
-                                         url_request_context_getter_,
-                                         account_id_,
-                                         scope_set_,
-                                         token_service_provider.Pass()));
-
-  token_service_provider.reset(new TokenServiceProvider(
-      content::BrowserThread::GetMessageLoopProxyForThread(
-          content::BrowserThread::UI),
-      token_service_));
-  scoped_ptr<syncer::AttachmentDownloader> attachment_downloader(
-      syncer::AttachmentDownloader::Create(sync_service_url_,
-                                           url_request_context_getter_,
-                                           account_id_,
-                                           scope_set_,
-                                           token_service_provider.Pass()));
 
   scoped_ptr<syncer::AttachmentStore> attachment_store(
       new syncer::FakeAttachmentStore(
           BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE)));
+
+  scoped_ptr<syncer::AttachmentUploader> attachment_uploader;
+  scoped_ptr<syncer::AttachmentDownloader> attachment_downloader;
+  // Only construct an AttachmentUploader and AttachmentDownload if we have sync
+  // credentials. We may not have sync credentials because there may not be a
+  // signed in sync user (e.g. sync is running in "backup" mode).
+  if (!user_share.sync_credentials.email.empty() &&
+      !user_share.sync_credentials.scope_set.empty()) {
+    scoped_ptr<OAuth2TokenServiceRequest::TokenServiceProvider>
+        token_service_provider(new TokenServiceProvider(
+            content::BrowserThread::GetMessageLoopProxyForThread(
+                content::BrowserThread::UI),
+            token_service_));
+    // TODO(maniscalco): Use shared (one per profile) thread-safe instances of
+    // AttachmentUploader and AttachmentDownloader instead of creating a new one
+    // per AttachmentService (bug 369536).
+    attachment_uploader.reset(new syncer::AttachmentUploaderImpl(
+        sync_service_url_,
+        url_request_context_getter_,
+        user_share.sync_credentials.email,
+        user_share.sync_credentials.scope_set,
+        token_service_provider.Pass()));
+
+    token_service_provider.reset(new TokenServiceProvider(
+        content::BrowserThread::GetMessageLoopProxyForThread(
+            content::BrowserThread::UI),
+        token_service_));
+    attachment_downloader = syncer::AttachmentDownloader::Create(
+        sync_service_url_,
+        url_request_context_getter_,
+        user_share.sync_credentials.email,
+        user_share.sync_credentials.scope_set,
+        token_service_provider.Pass());
+  }
 
   scoped_ptr<syncer::AttachmentService> attachment_service(
       new syncer::AttachmentServiceImpl(attachment_store.Pass(),
@@ -670,7 +688,7 @@ ProfileSyncComponentsFactoryImpl::CreateAttachmentService(
 ProfileSyncComponentsFactory::SyncComponents
     ProfileSyncComponentsFactoryImpl::CreateBookmarkSyncComponents(
         ProfileSyncService* profile_sync_service,
-        DataTypeErrorHandler* error_handler) {
+        sync_driver::DataTypeErrorHandler* error_handler) {
   BookmarkModel* bookmark_model =
       BookmarkModelFactory::GetForProfile(profile_sync_service->profile());
   syncer::UserShare* user_share = profile_sync_service->GetUserShare();
@@ -697,7 +715,7 @@ ProfileSyncComponentsFactory::SyncComponents
     ProfileSyncComponentsFactoryImpl::CreateTypedUrlSyncComponents(
         ProfileSyncService* profile_sync_service,
         history::HistoryBackend* history_backend,
-        browser_sync::DataTypeErrorHandler* error_handler) {
+        sync_driver::DataTypeErrorHandler* error_handler) {
   TypedUrlModelAssociator* model_associator =
       new TypedUrlModelAssociator(profile_sync_service,
                                   history_backend,

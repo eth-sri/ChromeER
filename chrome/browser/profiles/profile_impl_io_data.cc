@@ -24,7 +24,7 @@
 #include "chrome/browser/net/chrome_network_delegate.h"
 #include "chrome/browser/net/connect_interceptor.h"
 #include "chrome/browser/net/cookie_store_util.h"
-#include "chrome/browser/net/http_server_properties_manager.h"
+#include "chrome/browser/net/http_server_properties_manager_factory.h"
 #include "chrome/browser/net/predictor.h"
 #include "chrome/browser/net/sqlite_server_bound_cert_store.h"
 #include "chrome/browser/profiles/profile.h"
@@ -45,6 +45,7 @@
 #include "net/base/sdch_manager.h"
 #include "net/ftp/ftp_network_layer.h"
 #include "net/http/http_cache.h"
+#include "net/http/http_server_properties_manager.h"
 #include "net/ssl/server_bound_cert_service.h"
 #include "net/url_request/url_request_job_factory_impl.h"
 #include "webkit/browser/quota/special_storage_policy.h"
@@ -95,15 +96,13 @@ ProfileImplIOData::Handle::~Handle() {
 #if defined(OS_CHROMEOS)
     save_prefs = !chromeos::ProfileHelper::IsSigninProfile(profile_);
 #endif
-    if (save_prefs) {
-      io_data_->predictor_->SaveStateForNextStartupAndTrim(
-          profile_->GetPrefs());
-    }
+    if (save_prefs)
+      io_data_->predictor_->SaveStateForNextStartupAndTrim();
     io_data_->predictor_->ShutdownOnUIThread();
   }
 
   if (io_data_->http_server_properties_manager_)
-    io_data_->http_server_properties_manager_->ShutdownOnUIThread();
+    io_data_->http_server_properties_manager_->ShutdownOnPrefThread();
   io_data_->ShutdownOnUIThread();
 }
 
@@ -185,7 +184,8 @@ ProfileImplIOData::Handle::CreateMainRequestContextGetter(
       ->InitNetworkPredictor(profile_->GetPrefs(),
                              local_state,
                              io_thread,
-                             main_request_context_getter_.get());
+                             main_request_context_getter_.get(),
+                             io_data_);
 
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_PROFILE_URL_REQUEST_CONTEXT_GETTER_INITIALIZED,
@@ -313,7 +313,8 @@ void ProfileImplIOData::Handle::LazyInitialize() const {
   initialized_ = true;
   PrefService* pref_service = profile_->GetPrefs();
   io_data_->http_server_properties_manager_ =
-      new chrome_browser_net::HttpServerPropertiesManager(pref_service);
+      chrome_browser_net::HttpServerPropertiesManagerFactory::CreateManager(
+          pref_service);
   io_data_->set_http_server_properties(
       scoped_ptr<net::HttpServerProperties>(
           io_data_->http_server_properties_manager_));
@@ -377,7 +378,7 @@ void ProfileImplIOData::InitializeInternal(
   ApplyProfileParamsToContext(main_context);
 
   if (http_server_properties_manager_)
-    http_server_properties_manager_->InitializeOnIOThread();
+    http_server_properties_manager_->InitializeOnNetworkThread();
 
   main_context->set_transport_security_state(transport_security_state());
 

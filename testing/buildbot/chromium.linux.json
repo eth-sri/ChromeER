@@ -1,6 +1,7 @@
 {
   "Linux Tests": {
     "gtest_tests": [
+      "accessibility_unittests",
       "app_list_unittests",
       "aura_unittests",
       "interactive_ui_tests",
@@ -14,6 +15,7 @@
       "crypto_unittests",
       "dbus_unittests",
       "display_unittests",
+      "extensions_unittests",
       "gcm_unit_tests",
       "gfx_unittests",
       "google_apis_unittests",
@@ -55,6 +57,7 @@
   },
   "Linux GTK Tests": {
     "gtest_tests": [
+      "accessibility_unittests",
       "interactive_ui_tests",
       "base_unittests",
       "cacheinvalidation_unittests",
@@ -92,6 +95,7 @@
       "mojo_public_system_unittests",
       "mojo_public_utility_unittests",
       "mojo_service_manager_unittests",
+      "mojo_shell_tests",
       "mojo_system_unittests",
       "nacl_loader_unittests"
     ]
@@ -106,6 +110,7 @@
   },
   "Linux Tests (dbg)(2)(32)": {
     "gtest_tests": [
+      "accessibility_unittests",
       "app_list_unittests",
       "aura_unittests",
       "interactive_ui_tests",
@@ -147,6 +152,7 @@
       "mojo_public_system_unittests",
       "mojo_public_utility_unittests",
       "mojo_service_manager_unittests",
+      "mojo_shell_tests",
       "mojo_system_unittests",
       "mojo_view_manager_unittests",
       "nacl_loader_unittests"
@@ -162,6 +168,7 @@
   },
   "Linux Tests (dbg)(2)": {
     "gtest_tests": [
+      "accessibility_unittests",
       "app_list_unittests",
       "aura_unittests",
       "interactive_ui_tests",
@@ -204,6 +211,7 @@
       "mojo_public_system_unittests",
       "mojo_public_utility_unittests",
       "mojo_service_manager_unittests",
+      "mojo_shell_tests",
       "mojo_system_unittests",
       "mojo_view_manager_unittests",
       "nacl_loader_unittests"
@@ -211,6 +219,7 @@
   },
   "Linux Clang (dbg)": {
     "gtest_tests": [
+      "accessibility_unittests",
       "base_unittests",
       "components_unittests",
       "crypto_unittests",
@@ -232,6 +241,7 @@
       "mojo_public_system_unittests",
       "mojo_public_utility_unittests",
       "mojo_service_manager_unittests",
+      "mojo_shell_tests",
       "mojo_system_unittests",
       "mojo_view_manager_unittests",
       "nacl_loader_unittests"

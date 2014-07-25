@@ -194,7 +194,7 @@ void BookmarksBridge::GetAllBookmarkIDsOrderedByCreationDate(
     for (int i = 0; i < (*folder_iter)->child_count(); ++i) {
       const BookmarkNode* child = (*folder_iter)->GetChild(i);
       if (!IsFolderAvailable(child) || !IsReachable(child))
-        return;
+        continue;
 
       if (child->is_folder()) {
         insert_iter = folders.insert(insert_iter, child);
@@ -396,7 +396,8 @@ const BookmarkNode* BookmarksBridge::GetNodeByID(long node_id, int type) {
     node = partner_bookmarks_shim_->GetNodeByID(
         static_cast<int64>(node_id));
   } else {
-    node = GetBookmarkNodeByID(bookmark_model_, static_cast<int64>(node_id));
+    node = bookmarks::GetBookmarkNodeByID(bookmark_model_,
+                                          static_cast<int64>(node_id));
   }
   return node;
 }

@@ -5,15 +5,17 @@
 #ifndef CONTENT_BROWSER_SERVICE_WORKER_SERVICE_WORKER_WRITE_TO_CACHE_JOB_H_
 #define CONTENT_BROWSER_SERVICE_WORKER_SERVICE_WORKER_WRITE_TO_CACHE_JOB_H_
 
+#include <string>
+
 #include "base/memory/weak_ptr.h"
 #include "content/browser/service_worker/service_worker_disk_cache.h"
 #include "content/browser/service_worker/service_worker_version.h"
 #include "content/common/content_export.h"
 #include "content/common/service_worker/service_worker_status_code.h"
 #include "content/common/service_worker/service_worker_types.h"
+#include "content/public/common/resource_type.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_job.h"
-#include "webkit/common/resource_type.h"
 
 namespace content {
 

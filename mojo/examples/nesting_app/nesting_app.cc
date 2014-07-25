@@ -4,6 +4,7 @@
 
 #include "base/basictypes.h"
 #include "base/bind.h"
+#include "base/message_loop/message_loop.h"
 #include "base/strings/stringprintf.h"
 #include "mojo/examples/window_manager/window_manager.mojom.h"
 #include "mojo/public/cpp/application/application_connection.h"
@@ -71,7 +72,7 @@ class NestingApp : public ApplicationDelegate,
     connection->ConnectToService(&window_manager_);
     connection->AddService<Navigator>(this);
     // TODO(davemoore): Is this ok?
-    if (!navigator_.get()) {
+    if (!navigator_) {
       connection->ConnectToApplication(
           kEmbeddedAppURL)->ConnectToService(&navigator_);
     }
@@ -94,6 +95,9 @@ class NestingApp : public ApplicationDelegate,
 
     NavigateChild();
   }
+  virtual void OnViewManagerDisconnected(ViewManager* view_manager) OVERRIDE {
+    base::MessageLoop::current()->Quit();
+  }
 
   // Overridden from ViewObserver:
   virtual void OnViewInputEvent(View* view, const EventPtr& event) OVERRIDE {
@@ -102,11 +106,7 @@ class NestingApp : public ApplicationDelegate,
   }
 
   // Overridden from NodeObserver:
-  virtual void OnNodeDestroy(
-      Node* node,
-      NodeObserver::DispositionChangePhase phase) OVERRIDE {
-    if (phase != NodeObserver::DISPOSITION_CHANGED)
-      return;
+  virtual void OnNodeDestroyed(Node* node) OVERRIDE {
     // TODO(beng): reap views & child nodes.
     nested_ = NULL;
   }

@@ -57,6 +57,7 @@ namespace fileSystemProvider {
   dictionary MountOptions {
     DOMString fileSystemId;
     DOMString displayName;
+    [nodoc] boolean? writable;
   };
 
   // Options for the <code>unmount()</code> method.
@@ -90,7 +91,6 @@ namespace fileSystemProvider {
     long requestId;
     DOMString filePath;
     OpenFileMode mode;
-    boolean create;
   };
 
   // Options for the <code>onCloseFileRequested()</code> event.
@@ -107,6 +107,30 @@ namespace fileSystemProvider {
     long openRequestId;
     double offset;
     double length;
+  };
+
+  // Options for the <code>onCreateDirectoryRequested()</code> event.
+  dictionary CreateDirectoryRequestedOptions {
+    DOMString fileSystemId;
+    long requestId;
+    DOMString directoryPath;
+    boolean exclusive;
+    boolean recursive;
+  };
+
+  // Options for the <code>onDeleteEntryRequested()</code> event.
+  dictionary DeleteEntryRequestedOptions {
+    DOMString fileSystemId;
+    long requestId;
+    DOMString entryPath;
+    boolean recursive;
+  };
+
+  // Options for the <code>onCreateFileRequested()</code> event.
+  dictionary CreateFileRequestedOptions {
+    DOMString fileSystemId;
+    long requestId;
+    DOMString filePath;
   };
 
   // Callback to receive the result of mount() function.
@@ -195,9 +219,8 @@ namespace fileSystemProvider {
         EntriesCallback successCallback,
         ProviderErrorCallback errorCallback);
 
-    // Raised when opening a file at <code>filePath</code> is requested.
-    // If <code>create</code> is set to <code>true</code> and the file does not
-    // exist, then it should be created.
+    // Raised when opening a file at <code>filePath</code> is requested. If the
+    // file does not exist, then the operation must fail.
     [maxListeners=1] static void onOpenFileRequested(
         OpenFileRequestedOptions options,
         ProviderSuccessCallback successCallback,
@@ -217,6 +240,31 @@ namespace fileSystemProvider {
     [maxListeners=1] static void onReadFileRequested(
         ReadFileRequestedOptions options,
         FileDataCallback successCallback,
+        ProviderErrorCallback errorCallback);
+
+    // Raised when creating a directory is requested. If <code>exclusive</code>
+    // is set to true, then the operation must fail if the target directory
+    // already exists. If <code>recursive</code> is true, then all of the
+    // missing directories on the directory path must be created.
+    [maxListeners=1, nodoc] static void onCreateDirectoryRequested(
+        CreateDirectoryRequestedOptions options,
+        ProviderSuccessCallback successCallback,
+        ProviderErrorCallback errorCallback);
+
+    // Raised when deleting an entry is requested. If <code>recursive</code> is
+    // true, and the entry is a directory, then all of the entries inside
+    // must be recursively deleted as well.
+    [maxListeners=1, nodoc] static void onDeleteEntryRequested(
+        DeleteEntryRequestedOptions options,
+        ProviderSuccessCallback successCallback,
+        ProviderErrorCallback errorCallback);
+
+    // Raised when creating a file is requested. If the file already exists,
+    // then <code>errorCallback</code> must be called with the <code>EXISTS
+    // </code> error code.
+    [maxListeners=1, nodoc] static void onCreateFileRequested(
+        CreateFileRequestedOptions options,
+        ProviderSuccessCallback successCallback,
         ProviderErrorCallback errorCallback);
   };
 };

@@ -47,7 +47,6 @@
 #include "chrome/browser/search/hotword_service.h"
 #include "chrome/browser/search/hotword_service_factory.h"
 #include "chrome/browser/search/search.h"
-#include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/signin/easy_unlock.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
@@ -70,7 +69,9 @@
 #include "chrome/common/url_constants.h"
 #include "chromeos/chromeos_switches.h"
 #include "components/search_engines/template_url.h"
+#include "components/search_engines/template_url_service.h"
 #include "components/signin/core/browser/signin_manager.h"
+#include "components/user_manager/user_type.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/download_manager.h"
 #include "content/public/browser/navigation_controller.h"
@@ -108,6 +109,7 @@
 #include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/login/users/wallpaper/wallpaper_manager.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
+#include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/reset/metrics.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/system/timezone_util.h"
@@ -312,6 +314,7 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
     { "sectionTitleSearch", IDS_OPTIONS_DEFAULTSEARCH_GROUP_NAME },
     { "sectionTitleStartup", IDS_OPTIONS_STARTUP_GROUP_NAME },
     { "sectionTitleSync", IDS_SYNC_OPTIONS_GROUP_NAME },
+    { "sectionTitleVoice", IDS_OPTIONS_VOICE_GROUP_NAME },
     { "spellingConfirmMessage", IDS_CONTENT_CONTEXT_SPELLING_BUBBLE_TEXT },
     { "spellingConfirmEnable", IDS_CONTENT_CONTEXT_SPELLING_BUBBLE_ENABLE },
     { "spellingConfirmDisable", IDS_CONTENT_CONTEXT_SPELLING_BUBBLE_DISABLE },
@@ -502,8 +505,8 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
   std::string username = profile->GetProfileName();
   if (username.empty()) {
     chromeos::User* user =
-        chromeos::UserManager::Get()->GetUserByProfile(profile);
-    if (user && (user->GetType() != chromeos::User::USER_TYPE_GUEST))
+        chromeos::ProfileHelper::Get()->GetUserByProfile(profile);
+    if (user && (user->GetType() != user_manager::USER_TYPE_GUEST))
       username = user->email();
 
   }
@@ -616,6 +619,10 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
   values->SetBoolean("showSetDefault", ShouldShowSetDefaultBrowser());
 
   values->SetBoolean("allowAdvancedSettings", ShouldAllowAdvancedSettings());
+
+  values->SetBoolean("websiteSettingsManagerEnabled",
+                     CommandLine::ForCurrentProcess()->HasSwitch(
+                         switches::kEnableWebsiteSettingsManager));
 }
 
 #if defined(ENABLE_FULL_PRINTING)
@@ -895,7 +902,7 @@ void BrowserOptionsHandler::InitializePage() {
       g_browser_process->platform_part()->browser_policy_connector_chromeos();
   if (!connector->IsEnterpriseManaged() &&
       !chromeos::UserManager::Get()->IsLoggedInAsGuest() &&
-      !chromeos::UserManager::Get()->IsLoggedInAsLocallyManagedUser()) {
+      !chromeos::UserManager::Get()->IsLoggedInAsSupervisedUser()) {
     web_ui()->CallJavascriptFunction(
         "BrowserOptions.enableFactoryResetSection");
   }

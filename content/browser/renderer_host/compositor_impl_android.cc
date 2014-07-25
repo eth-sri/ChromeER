@@ -341,9 +341,14 @@ UIResourceProvider& CompositorImpl::GetUIResourceProvider() {
 }
 
 void CompositorImpl::SetRootLayer(scoped_refptr<cc::Layer> root_layer) {
-  root_layer_->RemoveAllChildren();
-  if (root_layer)
+  if (subroot_layer_) {
+    subroot_layer_->RemoveFromParent();
+    subroot_layer_ = NULL;
+  }
+  if (root_layer) {
+    subroot_layer_ = root_layer;
     root_layer_->AddChild(root_layer);
+  }
 }
 
 void CompositorImpl::SetWindowSurface(ANativeWindow* window) {
@@ -419,7 +424,11 @@ void CompositorImpl::SetVisible(bool visible) {
         command_line->HasSwitch(cc::switches::kUIShowFPSCounter);
 
     host_ = cc::LayerTreeHost::CreateSingleThreaded(
-        this, this, HostSharedBitmapManager::current(), settings);
+        this,
+        this,
+        HostSharedBitmapManager::current(),
+        settings,
+        base::MessageLoopProxy::current());
     host_->SetRootLayer(root_layer_);
 
     host_->SetVisible(true);

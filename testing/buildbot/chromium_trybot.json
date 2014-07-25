@@ -24,6 +24,10 @@
     "cc_unittests",
     "chromedriver_unittests",
     {
+      "test": "chromevox_tests",
+      "chromium_configs": ["chromium_chromeos", "chromium_chromeos_clang"]
+    },
+    {
       "test": "chrome_elf_unittests",
       "platforms": ["win"]
     },
@@ -36,8 +40,18 @@
       "test": "courgette_unittests",
       "platforms": ["win"]
     },
-    "content_browsertests",
-    "content_unittests",
+    {
+      "test": "content_browsertests",
+      "swarming": {
+        "can_use_on_swarming_builders": true
+      }
+    },
+    {
+      "test": "content_unittests",
+      "swarming": {
+        "can_use_on_swarming_builders": true
+      }
+    },
     "crypto_unittests",
     {
       "test": "dbus_unittests",
@@ -182,9 +196,14 @@
     "chrome/test/data/.*",
     "content/test/data/.*",
     "DEPS",
-    "testing/buildbot/.*"
+    "testing/buildbot/.*",
+    "tools/perf/.*",
+    "tools/telemetry/.*",
+    "tools/whitespace.txt"
   ],
 
   "filter_builders": [
+    "linux_chromium_clang_dbg",
+    "mac_chromium_rel"
   ]
 }

@@ -431,8 +431,8 @@ void CheckDuplicateHandle(HANDLE handle) {
       kDuplicateHandleWarning;
 
   if (0 == _wcsicmp(type_info->Name.Buffer, L"Process")) {
-    const ACCESS_MASK kDangerousMask = ~(PROCESS_QUERY_LIMITED_INFORMATION |
-                                         SYNCHRONIZE);
+    const ACCESS_MASK kDangerousMask =
+        ~static_cast<DWORD>(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE);
     CHECK(!(basic_info.GrantedAccess & kDangerousMask)) <<
         kDuplicateHandleWarning;
   }
@@ -739,6 +739,7 @@ base::ProcessHandle StartSandboxedProcess(
     delegate->PostSpawnTarget(target.process_handle());
 
   ResumeThread(target.thread_handle());
+  TRACE_EVENT_END_ETW("StartProcessWithAccess", 0, type_str);
   return target.TakeProcessHandle();
 }
 

@@ -10,6 +10,7 @@
 #include <X11/extensions/XInput2.h>
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
+#include <X11/XKBlib.h>
 
 #include "base/logging.h"
 #include "base/memory/singleton.h"
@@ -42,43 +43,55 @@ class XModifierStateWatcher{
     return Singleton<XModifierStateWatcher>::get();
   }
 
-  void UpdateStateFromEvent(const base::NativeEvent& native_event) {
+  int StateFromKeyboardCode(ui::KeyboardCode keyboard_code) {
+    switch (keyboard_code) {
+      case ui::VKEY_CONTROL:
+        return ControlMask;
+      case ui::VKEY_SHIFT:
+        return ShiftMask;
+      case ui::VKEY_MENU:
+        return Mod1Mask;
+      case ui::VKEY_CAPITAL:
+        return LockMask;
+      default:
+        return 0;
+    }
+  }
+
+  void UpdateStateFromXEvent(const base::NativeEvent& native_event) {
+    ui::KeyboardCode keyboard_code = ui::KeyboardCodeFromNative(native_event);
+    unsigned int mask = StateFromKeyboardCode(keyboard_code);
     // Floating device can't access the modifer state from master device.
     // We need to track the states of modifier keys in a singleton for
     // floating devices such as touch screen. Issue 106426 is one example
     // of why we need the modifier states for floating device.
-    state_ = native_event->xkey.state;
-    // master_state is the state before key press. We need to track the
-    // state after key press for floating device. Currently only ctrl,
-    // shift, alt and caps lock keys are tracked.
-    ui::KeyboardCode keyboard_code = ui::KeyboardCodeFromNative(native_event);
-    unsigned int mask = 0;
-
-    switch (keyboard_code) {
-      case ui::VKEY_CONTROL: {
-        mask = ControlMask;
+    switch (native_event->type) {
+      case KeyPress:
+        state_ = native_event->xkey.state | mask;
         break;
-      }
-      case ui::VKEY_SHIFT: {
-        mask = ShiftMask;
+      case KeyRelease:
+        state_ = native_event->xkey.state & ~mask;
         break;
-      }
-      case ui::VKEY_MENU: {
-        mask = Mod1Mask;
-        break;
-      }
-      case ui::VKEY_CAPITAL: {
-        mask = LockMask;
+      case GenericEvent: {
+        XIDeviceEvent* xievent =
+            static_cast<XIDeviceEvent*>(native_event->xcookie.data);
+        switch (xievent->evtype) {
+          case XI_KeyPress:
+            state_ = xievent->mods.effective |= mask;
+            break;
+          case XI_KeyRelease:
+            state_ = xievent->mods.effective &= ~mask;
+            break;
+          default:
+            NOTREACHED();
+            break;
+        }
         break;
       }
       default:
+        NOTREACHED();
         break;
     }
-
-    if (native_event->type == KeyPress)
-      state_ |= mask;
-    else
-      state_ &= ~mask;
   }
 
   // Returns the current modifer state in master device. It only contains the
@@ -176,10 +189,24 @@ int GetEventFlagsFromXKeyEvent(XEvent* xevent) {
 #endif
 
   return GetEventFlagsFromXState(xevent->xkey.state) |
+      (xevent->xkey.send_event ? ui::EF_FINAL : 0) |
       (IsKeypadKey(XLookupKeysym(&xevent->xkey, 0)) ? ui::EF_NUMPAD_KEY : 0) |
       (IsFunctionKey(XLookupKeysym(&xevent->xkey, 0)) ?
           ui::EF_FUNCTION_KEY : 0) |
       ime_fabricated_flag;
+}
+
+int GetEventFlagsFromXGenericEvent(XEvent* xevent) {
+  DCHECK(xevent->type == GenericEvent);
+  XIDeviceEvent* xievent = static_cast<XIDeviceEvent*>(xevent->xcookie.data);
+  DCHECK((xievent->evtype == XI_KeyPress) ||
+         (xievent->evtype == XI_KeyRelease));
+  return GetEventFlagsFromXState(xievent->mods.effective) |
+         (xevent->xkey.send_event ? ui::EF_FINAL : 0) |
+         (IsKeypadKey(
+              XkbKeycodeToKeysym(xievent->display, xievent->detail, 0, 0))
+              ? ui::EF_NUMPAD_KEY
+              : 0);
 }
 
 // Get the event flag for the button in XButtonEvent. During a ButtonPress
@@ -344,20 +371,23 @@ EventType EventTypeFromNative(const base::NativeEvent& native_event) {
         }
         case XI_Motion: {
           bool is_cancel;
-          if (GetFlingData(native_event, NULL, NULL, NULL, NULL, &is_cancel)) {
+          DeviceDataManagerX11* devices = DeviceDataManagerX11::GetInstance();
+          if (GetFlingData(native_event, NULL, NULL, NULL, NULL, &is_cancel))
             return is_cancel ? ET_SCROLL_FLING_CANCEL : ET_SCROLL_FLING_START;
-          } else if (DeviceDataManagerX11::GetInstance()->IsScrollEvent(
-              native_event)) {
-            return IsTouchpadEvent(native_event) ? ET_SCROLL : ET_MOUSEWHEEL;
-          } else if (DeviceDataManagerX11::GetInstance()->IsCMTMetricsEvent(
-              native_event)) {
-            return ET_UMA_DATA;
-          } else if (GetButtonMaskForX2Event(xievent)) {
-            return ET_MOUSE_DRAGGED;
-          } else {
-            return ET_MOUSE_MOVED;
+          if (devices->IsScrollEvent(native_event)) {
+            return devices->IsTouchpadXInputEvent(native_event) ? ET_SCROLL
+                                                                : ET_MOUSEWHEEL;
           }
+          if (devices->IsCMTMetricsEvent(native_event))
+            return ET_UMA_DATA;
+          if (GetButtonMaskForX2Event(xievent))
+            return ET_MOUSE_DRAGGED;
+          return ET_MOUSE_MOVED;
         }
+        case XI_KeyPress:
+          return ET_KEY_PRESSED;
+        case XI_KeyRelease:
+          return ET_KEY_RELEASED;
       }
     }
     default:
@@ -370,7 +400,7 @@ int EventFlagsFromNative(const base::NativeEvent& native_event) {
   switch (native_event->type) {
     case KeyPress:
     case KeyRelease: {
-      XModifierStateWatcher::GetInstance()->UpdateStateFromEvent(native_event);
+      XModifierStateWatcher::GetInstance()->UpdateStateFromXEvent(native_event);
       return GetEventFlagsFromXKeyEvent(native_event);
     }
     case ButtonPress:
@@ -406,7 +436,7 @@ int EventFlagsFromNative(const base::NativeEvent& native_event) {
           const bool touch =
               TouchFactory::GetInstance()->IsTouchDevice(xievent->sourceid);
           int flags = GetButtonMaskForX2Event(xievent) |
-              GetEventFlagsFromXState(xievent->mods.effective);
+                      GetEventFlagsFromXState(xievent->mods.effective);
           if (touch) {
             flags |= GetEventFlagsFromXState(
                 XModifierStateWatcher::GetInstance()->state());
@@ -419,8 +449,14 @@ int EventFlagsFromNative(const base::NativeEvent& native_event) {
           return flags;
         }
         case XI_Motion:
-           return GetButtonMaskForX2Event(xievent) |
-                  GetEventFlagsFromXState(xievent->mods.effective);
+          return GetButtonMaskForX2Event(xievent) |
+                 GetEventFlagsFromXState(xievent->mods.effective);
+        case XI_KeyPress:
+        case XI_KeyRelease: {
+          XModifierStateWatcher::GetInstance()->UpdateStateFromXEvent(
+              native_event);
+          return GetEventFlagsFromXGenericEvent(native_event);
+        }
       }
     }
   }
@@ -545,8 +581,37 @@ const char* CodeFromNative(const base::NativeEvent& native_event) {
 }
 
 uint32 PlatformKeycodeFromNative(const base::NativeEvent& native_event) {
-  KeySym keysym;
-  XLookupString(&native_event->xkey, NULL, 0, &keysym, NULL);
+  XKeyEvent* xkey = NULL;
+  XEvent xkey_from_xi2;
+  switch (native_event->type) {
+    case KeyPress:
+    case KeyRelease:
+      xkey = &native_event->xkey;
+      break;
+    case GenericEvent: {
+      XIDeviceEvent* xievent =
+          static_cast<XIDeviceEvent*>(native_event->xcookie.data);
+      switch (xievent->evtype) {
+        case XI_KeyPress:
+        case XI_KeyRelease:
+          // Build an XKeyEvent corresponding to the XI2 event,
+          // so that we can call XLookupString on it.
+          InitXKeyEventFromXIDeviceEvent(*native_event, &xkey_from_xi2);
+          xkey = &xkey_from_xi2.xkey;
+          break;
+        default:
+          NOTREACHED();
+          break;
+      }
+      break;
+    }
+    default:
+      NOTREACHED();
+      break;
+  }
+  KeySym keysym = XK_VoidSymbol;
+  if (xkey)
+    XLookupString(xkey, NULL, 0, &keysym, NULL);
   return keysym;
 }
 
@@ -741,10 +806,6 @@ bool GetGestureTimes(const base::NativeEvent& native_event,
   DeviceDataManagerX11::GetInstance()->GetGestureTimes(
       native_event, start_time, end_time);
   return true;
-}
-
-bool IsTouchpadEvent(const base::NativeEvent& event) {
-  return DeviceDataManagerX11::GetInstance()->IsTouchpadXInputEvent(event);
 }
 
 }  // namespace ui

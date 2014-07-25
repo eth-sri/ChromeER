@@ -73,8 +73,6 @@ void SelectXInput2EventsForRootWindow(XDisplay* display, ::Window root_window) {
   memset(mask, 0, sizeof(mask));
 
   XISetMask(mask, XI_HierarchyChanged);
-  XISetMask(mask, XI_KeyPress);
-  XISetMask(mask, XI_KeyRelease);
 
   XIEventMask evmask;
   evmask.deviceid = XIAllDevices;
@@ -417,10 +415,8 @@ uint32_t WindowTreeHostX11::DispatchEvent(const ui::PlatformEvent& event) {
       compositor()->ScheduleRedrawRect(damage_rect);
       break;
     }
-
     case FocusOut:
-      if (xev->xfocus.mode != NotifyGrab)
-        OnHostLostWindowCapture();
+      OnHostLostWindowCapture();
       break;
     case ConfigureNotify: {
       DCHECK_EQ(xwindow_, xev->xconfigure.event);
@@ -609,10 +605,6 @@ void WindowTreeHostX11::PostNativeEvent(
   XFlush(xdisplay_);
 }
 
-void WindowTreeHostX11::OnDeviceScaleFactorChanged(
-    float device_scale_factor) {
-}
-
 void WindowTreeHostX11::SetCursorNative(gfx::NativeCursor cursor) {
   if (cursor == current_cursor_)
     return;
@@ -690,6 +682,12 @@ void WindowTreeHostX11::DispatchXI2Event(const base::NativeEvent& event) {
     case ui::ET_SCROLL: {
       ui::ScrollEvent scrollev(xev);
       SendEventToProcessor(&scrollev);
+      break;
+    }
+    case ui::ET_KEY_PRESSED:
+    case ui::ET_KEY_RELEASED: {
+      ui::KeyEvent key_event(xev, false);
+      SendEventToProcessor(&key_event);
       break;
     }
     case ui::ET_UMA_DATA:

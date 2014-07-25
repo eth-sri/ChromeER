@@ -26,7 +26,6 @@
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/omnibox/omnibox_field_trial.h"
-#include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
@@ -41,6 +40,7 @@
 #include "components/search_engines/search_engine_type.h"
 #include "components/search_engines/search_engines_switches.h"
 #include "components/search_engines/template_url.h"
+#include "components/search_engines/template_url_service.h"
 #include "components/signin/core/browser/signin_manager.h"
 #include "components/sync_driver/pref_names.h"
 #include "components/variations/entropy_provider.h"
@@ -818,34 +818,57 @@ TEST_F(SearchProviderTest, ScoreNewerSearchesHigher) {
 }
 
 // An autocompleted multiword search should not be replaced by a different
-// autocompletion while the user is still typing a valid prefix.
+// autocompletion while the user is still typing a valid prefix unless the
+// user has typed the prefix as a query before.
 TEST_F(SearchProviderTest, DontReplacePreviousAutocompletion) {
   GURL term_url_a(AddSearchToHistory(default_t_url_,
-                                     ASCIIToUTF16("four searches aaa"), 2));
+                                     ASCIIToUTF16("four searches aaa"), 3));
   GURL term_url_b(AddSearchToHistory(default_t_url_,
                                      ASCIIToUTF16("four searches bbb"), 1));
+  GURL term_url_c(AddSearchToHistory(default_t_url_,
+                                     ASCIIToUTF16("four searches"), 1));
   profile_.BlockUntilHistoryProcessesPendingRequests();
 
   AutocompleteMatch wyt_match;
   ASSERT_NO_FATAL_FAILURE(QueryForInputAndSetWYTMatch(ASCIIToUTF16("fo"),
                                                       &wyt_match));
-  ASSERT_EQ(3u, provider_->matches().size());
+  ASSERT_EQ(4u, provider_->matches().size());
   AutocompleteMatch term_match_a;
   EXPECT_TRUE(FindMatchWithDestination(term_url_a, &term_match_a));
   AutocompleteMatch term_match_b;
   EXPECT_TRUE(FindMatchWithDestination(term_url_b, &term_match_b));
+  AutocompleteMatch term_match_c;
+  EXPECT_TRUE(FindMatchWithDestination(term_url_c, &term_match_c));
   EXPECT_GT(term_match_a.relevance, wyt_match.relevance);
+  // We don't care about the relative order of b and c.
   EXPECT_GT(wyt_match.relevance, term_match_b.relevance);
+  EXPECT_GT(wyt_match.relevance, term_match_c.relevance);
   EXPECT_TRUE(term_match_a.allowed_to_be_default_match);
   EXPECT_TRUE(term_match_b.allowed_to_be_default_match);
+  EXPECT_TRUE(term_match_c.allowed_to_be_default_match);
   EXPECT_TRUE(wyt_match.allowed_to_be_default_match);
 
   ASSERT_NO_FATAL_FAILURE(QueryForInputAndSetWYTMatch(ASCIIToUTF16("four se"),
                                                       &wyt_match));
+  ASSERT_EQ(4u, provider_->matches().size());
+  EXPECT_TRUE(FindMatchWithDestination(term_url_a, &term_match_a));
+  EXPECT_TRUE(FindMatchWithDestination(term_url_b, &term_match_b));
+  EXPECT_TRUE(FindMatchWithDestination(term_url_c, &term_match_c));
+  EXPECT_GT(term_match_a.relevance, wyt_match.relevance);
+  EXPECT_GT(wyt_match.relevance, term_match_b.relevance);
+  EXPECT_GT(wyt_match.relevance, term_match_c.relevance);
+  EXPECT_TRUE(term_match_a.allowed_to_be_default_match);
+  EXPECT_TRUE(term_match_b.allowed_to_be_default_match);
+  EXPECT_TRUE(term_match_c.allowed_to_be_default_match);
+  EXPECT_TRUE(wyt_match.allowed_to_be_default_match);
+
+  // For the exact previously-issued query, the what-you-typed match should win.
+  ASSERT_NO_FATAL_FAILURE(
+      QueryForInputAndSetWYTMatch(ASCIIToUTF16("four searches"), &wyt_match));
   ASSERT_EQ(3u, provider_->matches().size());
   EXPECT_TRUE(FindMatchWithDestination(term_url_a, &term_match_a));
   EXPECT_TRUE(FindMatchWithDestination(term_url_b, &term_match_b));
-  EXPECT_GT(term_match_a.relevance, wyt_match.relevance);
+  EXPECT_GT(wyt_match.relevance, term_match_a.relevance);
   EXPECT_GT(wyt_match.relevance, term_match_b.relevance);
   EXPECT_TRUE(term_match_a.allowed_to_be_default_match);
   EXPECT_TRUE(term_match_b.allowed_to_be_default_match);
@@ -896,8 +919,9 @@ TEST_F(SearchProviderTest, KeywordOrderingAndDescriptions) {
   AddSearchToHistory(keyword_t_url_, ASCIIToUTF16("term2"), 1);
   profile_.BlockUntilHistoryProcessesPendingRequests();
 
-  AutocompleteController controller(&profile_, NULL,
-      AutocompleteProvider::TYPE_SEARCH);
+  AutocompleteController controller(&profile_,
+      TemplateURLServiceFactory::GetForProfile(&profile_),
+      NULL, AutocompleteProvider::TYPE_SEARCH);
   controller.Start(AutocompleteInput(
       ASCIIToUTF16("k t"), base::string16::npos, base::string16(), GURL(),
       metrics::OmniboxEventProto::INVALID_SPEC, false, false, true, true,
@@ -2205,18 +2229,6 @@ TEST_F(SearchProviderTest, NavigationInline) {
     { "http://www.abc.com/a", "http://www.abc.com",
                               "http://www.abc.com",  std::string(), false,
                                                                     false },
-    { "http://www.abc.com",   "https://www.abc.com",
-                              "https://www.abc.com", std::string(), false,
-                                                                    false },
-    { "http://abc.com",       "ftp://abc.com",
-                              "ftp://abc.com",       std::string(), false,
-                                                                    false },
-    { "https://www.abc.com",  "http://www.abc.com",
-                                     "www.abc.com",  std::string(), false,
-                                                                    false },
-    { "ftp://abc.com",        "http://abc.com",
-                                     "abc.com",      std::string(), false,
-                                                                    false },
 
     // Do not inline matches with invalid input prefixes; trim http as needed.
     { "ttp",              "http://www.abc.com",
@@ -2260,6 +2272,13 @@ TEST_F(SearchProviderTest, NavigationInline) {
                               "www.abc.com",      std::string(), true,  true },
     { "abc.com ",      "http://www.abc.com/bar",
                               "www.abc.com/bar",  "/bar",        false, false },
+
+    // A suggestion that's equivalent to what the input gets fixed up to
+    // should be inlined.
+    { "abc.com:",      "http://abc.com/",
+                              "abc.com",      "", true, true },
+    { "abc.com:",      "http://www.abc.com",
+                              "www.abc.com",  "", true, true },
 
     // Inline matches when the input is a leading substring of the scheme.
     { "h",             "http://www.abc.com",
@@ -2358,7 +2377,7 @@ TEST_F(SearchProviderTest, NavigationInline) {
     QueryForInput(ASCIIToUTF16(cases[i].input), false, false);
     AutocompleteMatch match(
         provider_->NavigationToMatch(SearchProvider::NavigationResult(
-            *provider_.get(), &profile_, GURL(cases[i].url),
+            ChromeAutocompleteSchemeClassifier(&profile_), GURL(cases[i].url),
             AutocompleteMatchType::NAVSUGGEST, base::string16(), std::string(),
             false, 0, false, ASCIIToUTF16(cases[i].input), std::string())));
     EXPECT_EQ(ASCIIToUTF16(cases[i].inline_autocompletion),
@@ -2371,7 +2390,7 @@ TEST_F(SearchProviderTest, NavigationInline) {
     QueryForInput(ASCIIToUTF16(cases[i].input), true, false);
     AutocompleteMatch match_prevent_inline(
         provider_->NavigationToMatch(SearchProvider::NavigationResult(
-            *provider_.get(), &profile_, GURL(cases[i].url),
+            ChromeAutocompleteSchemeClassifier(&profile_), GURL(cases[i].url),
             AutocompleteMatchType::NAVSUGGEST, base::string16(), std::string(),
             false, 0, false, ASCIIToUTF16(cases[i].input), std::string())));
     EXPECT_EQ(ASCIIToUTF16(cases[i].inline_autocompletion),
@@ -2388,7 +2407,8 @@ TEST_F(SearchProviderTest, NavigationInlineSchemeSubstring) {
   const base::string16 input(ASCIIToUTF16("ht"));
   const base::string16 url(ASCIIToUTF16("http://a.com"));
   const SearchProvider::NavigationResult result(
-      *provider_.get(), &profile_, GURL(url), AutocompleteMatchType::NAVSUGGEST,
+      ChromeAutocompleteSchemeClassifier(&profile_), GURL(url),
+      AutocompleteMatchType::NAVSUGGEST,
       base::string16(), std::string(), false, 0, false, input, std::string());
 
   // Check the offset and strings when inline autocompletion is allowed.
@@ -2412,7 +2432,8 @@ TEST_F(SearchProviderTest, NavigationInlineDomainClassify) {
   QueryForInput(ASCIIToUTF16("w"), false, false);
   AutocompleteMatch match(
       provider_->NavigationToMatch(SearchProvider::NavigationResult(
-          *provider_.get(), &profile_, GURL("http://www.wow.com"),
+          ChromeAutocompleteSchemeClassifier(&profile_),
+          GURL("http://www.wow.com"),
           AutocompleteMatchType::NAVSUGGEST, base::string16(), std::string(),
           false, 0, false, ASCIIToUTF16("w"), std::string())));
   EXPECT_EQ(ASCIIToUTF16("ow.com"), match.inline_autocompletion);

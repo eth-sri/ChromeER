@@ -57,6 +57,11 @@
       "http://*/*", "https://*/*", "chrome-extension://*/*", "file://*/*"
     ]
   },
+  "appViewInternal": {
+    "internal": true,
+    "channel": "dev",
+    "contexts": ["blessed_extension", "unblessed_extension"]
+  },
   "app.window": {
     "channel": "stable",
     "contexts": ["blessed_extension"],
@@ -67,7 +72,7 @@
     "noparent": true,
     "internal": true,
     "channel": "stable",
-    "contexts": ["blessed_extension", "unblessed_extension", "content_script"]
+    "contexts": ["blessed_extension"]
   },
   "app.currentWindowInternal.setShape": {
     "dependencies": ["permission:app.window.shape"],
@@ -274,7 +279,11 @@
   "downloadsInternal": {
     "internal": true,
     "channel": "stable",
-    "contexts": ["blessed_extension", "unblessed_extension", "content_script"]
+    "contexts": ["blessed_extension"]
+  },
+  "easyUnlockPrivate": {
+    "dependencies": ["permission:easyUnlockPrivate"],
+    "contexts": ["blessed_extension"]
   },
   "echoPrivate": {
     "dependencies": ["permission:echoPrivate"],
@@ -423,7 +432,9 @@
       "nckgahadagoaajjgafhacjanaoiihapd",
       "ljclpkphhpbpinifbeabbhlfddcpfdde",
       "ppleadejekpmccmnpjdimmlfljlkdfej",
-      "eggnbpckecmjlblplehfpjjdhhidfdoj"
+      "eggnbpckecmjlblplehfpjjdhhidfdoj",
+      "jfjjdfefebklmdbmenmlehlopoocnoeh",
+      "knipolnnllmklapflnccelgolnpehhpl"
     ]
   },
   "hid": {
@@ -567,10 +578,6 @@
     "extension_types": ["extension", "legacy_packaged_app", "platform_app"],
     "contexts": ["blessed_extension"]
   },
-  "power": {
-    "dependencies": ["permission:power"],
-    "contexts": ["blessed_extension"]
-  },
   "preferencesPrivate": {
     "dependencies": ["permission:preferencesPrivate"],
     "contexts": ["blessed_extension"]
@@ -675,6 +682,18 @@
     "channel": "stable",
     "extension_types": ["extension", "legacy_packaged_app"],
     "contexts": ["blessed_extension"]
+  },
+  "tabs.setZoom": {
+    "channel": "dev"
+  },
+  "tabs.getZoom": {
+    "channel": "dev"
+  },
+  "tabs.setZoomSettings": {
+    "channel": "dev"
+  },
+  "tabs.getZoomSettings": {
+    "channel": "dev"
   },
   "terminalPrivate": {
     "dependencies": ["permission:terminalPrivate"],

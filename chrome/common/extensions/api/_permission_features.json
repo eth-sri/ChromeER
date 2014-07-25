@@ -51,6 +51,10 @@
       "5107DE9024C329EEA9C9A72D94C16723790C6422"  // Apps Developer Tool Dev.
     ]
   },
+  "appview": {
+    "channel": "dev",
+    "extension_types": ["platform_app"]
+  },
   "alarms": {
     "channel": "stable",
     "extension_types": ["extension", "legacy_packaged_app", "platform_app"],
@@ -180,6 +184,7 @@
   "bluetoothPrivate": {
     "channel": "stable",
     "extension_types": ["platform_app"],
+    "platforms": ["chromeos", "win", "mac"],
     "whitelist": [
       "1C93BD3CF875F4A73C0B2A163BB8FBDA8B8B3D80",  // http://crbug.com/387169
       "A3BC37E2148AC4E99BE4B16AF9D42DD1E592BBBE",  // http://crbug.com/387169
@@ -345,8 +350,10 @@
         "8C0B1873FFFB65E4D0F4D772879F7304CEF125C2",  // Apps Editor old.
         // TODO(grv) : clean up once after publish.
         "FA0501B579070BB9CBD4FCAEC8CB0EDF22BA2F04", // Apps Editor published.
-        "4A4EA121622FCA3D78ED2AB534197F43D7189EE0", // Spark nightly build
-        "9FDE6E7F06FCFA11D9A05041C7FF6D8AE662F5D1"  // Spark release
+        "4A4EA121622FCA3D78ED2AB534197F43D7189EE0", // Spark nightly build.
+        "9FDE6E7F06FCFA11D9A05041C7FF6D8AE662F5D1", // Spark release.
+        "50B4A905D522C06E27CA6D099E3E54BDA1F152C5", // Spark Beta channel.
+        "BA0C8BB92084C9741312D90D3EA882526853455F"  // Spark dev channel.
     ]
   },
   "devtools": {
@@ -389,6 +396,11 @@
       "F155646B5D1CA545F7E1E4E20D573DFDD44C2540",  // Google Cast Beta
       "16CA7A47AAE4BE49B1E75A6B960C3875E945B264"   // Google Cast Stable
     ]
+  },
+  "easyUnlockPrivate": {
+    "channel": "stable",
+    "extension_types": ["platform_app"],
+    "location": "component"
   },
   "enterprise.platformKeys": {
     "channel": "stable",
@@ -582,7 +594,11 @@
     "platforms": ["chromeos"],
     "whitelist": [
       "AFA728615D3A82D4017BDECEE86978543194D198",  // http://crbug.com/387999
-      "0C0426C12F94156F330FFAF346A976BA8878DE78"   // http://crbug.com/387999
+      "0C0426C12F94156F330FFAF346A976BA8878DE78",  // http://crbug.com/387999
+      "1C93BD3CF875F4A73C0B2A163BB8FBDA8B8B3D80",  // http://crbug.com/389230
+      "A3BC37E2148AC4E99BE4B16AF9D42DD1E592BBBE",  // http://crbug.com/389230
+      "E703483CEF33DEC18B4B6DD84B5C776FB9182BDB",  // http://crbug.com/389230
+      "307E96539209F95A1A8740C713E6998A73657D96"   // http://crbug.com/389230
     ]
   },
   "location": [
@@ -790,12 +806,6 @@
     "channel": "stable",
     "extension_types": ["extension", "legacy_packaged_app"]
   },
-  "power": {
-    "channel": "stable",
-    "extension_types": [
-      "extension", "legacy_packaged_app", "platform_app"
-    ]
-  },
   "preferencesPrivate": {
     "channel": "stable",
     "extension_types": [
@@ -875,16 +885,20 @@
       "312745D9BF916161191143F6490085EEA0434997"   // Google Talk debug
     ]
   },
-  "screenlockPrivate": {
+  "screenlockPrivate": [{
+    "platforms": ["chromeos"],
+    "channel": "stable",
+    "extension_types": ["platform_app"],
+    "location": "component"
+  }, {
+    "platforms": ["mac", "win", "linux"],
     "channel": "stable",
     "extension_types": ["platform_app"],
     "whitelist": [
       "lkegkdgachcnekllcdfkijonogckdnjo",  // API test
-      "190C131D270994E7330E9A3CD48224061CB10E2D",  // dogfood 1
-      "7FDDD1C0CB0052596657FDEC92841D509DC8D404",  // dogfood 2
-      "E13990DC5440B6E270503DA27A35762F423725C3"   // dogfood 3
+      "E13990DC5440B6E270503DA27A35762F423725C3"   // dogfood
     ]
-  },
+  }],
   "screensaver": {
     "channel": "stable",
     "extension_types": ["legacy_packaged_app", "hosted_app", "platform_app"]

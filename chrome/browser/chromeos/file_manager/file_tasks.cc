@@ -16,7 +16,7 @@
 #include "chrome/browser/chromeos/file_manager/file_browser_handlers.h"
 #include "chrome/browser/chromeos/file_manager/fileapi_util.h"
 #include "chrome/browser/chromeos/file_manager/open_util.h"
-#include "chrome/browser/chromeos/fileapi/file_system_backend.h"
+#include "chrome/browser/drive/drive_api_util.h"
 #include "chrome/browser/drive/drive_app_registry.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/extensions/extension_util.h"
@@ -24,15 +24,15 @@
 #include "chrome/browser/ui/webui/extensions/extension_icon_source.h"
 #include "chrome/common/extensions/api/file_browser_handlers/file_browser_handler.h"
 #include "chrome/common/extensions/api/file_browser_private.h"
+#include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/pref_names.h"
 #include "chromeos/chromeos_switches.h"
 #include "extensions/browser/extension_host.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/browser/extension_util.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension_set.h"
-#include "google_apis/drive/gdata_wapi_parser.h"
-#include "webkit/browser/fileapi/file_system_context.h"
 #include "webkit/browser/fileapi/file_system_url.h"
 
 using extensions::Extension;
@@ -89,11 +89,10 @@ const size_t kDriveTaskExtensionPrefixLength =
 bool ContainsGoogleDocument(const PathAndMimeTypeSet& path_mime_set) {
   for (PathAndMimeTypeSet::const_iterator iter = path_mime_set.begin();
        iter != path_mime_set.end(); ++iter) {
-    if (google_apis::ResourceEntry::ClassifyEntryKindByFileExtension(
-            iter->first) &
-        google_apis::ResourceEntry::KIND_OF_GOOGLE_DOCUMENT) {
+    std::string extension =
+        base::FilePath(iter->first.Extension()).AsUTF8Unsafe();
+    if (drive::util::IsHostedDocumentByExtension(extension))
       return true;
-    }
   }
   return false;
 }
@@ -128,6 +127,29 @@ void ChooseSuitableGalleryHandler(std::vector<FullTaskDescriptor>* task_list) {
       }
     }
   }
+}
+
+// Returns true if the given task is a handler by built-in apps like Files.app
+// itself or QuickOffice etc. They are used as the initial default app.
+bool IsFallbackFileHandler(const file_tasks::TaskDescriptor& task) {
+  if (task.task_type != file_tasks::TASK_TYPE_FILE_BROWSER_HANDLER &&
+      task.task_type != file_tasks::TASK_TYPE_FILE_HANDLER)
+    return false;
+
+  const char* kBuiltInApps[] = {
+    kFileManagerAppId,
+    kVideoPlayerAppId,
+    kGalleryAppId,
+    extension_misc::kQuickOfficeComponentExtensionId,
+    extension_misc::kQuickOfficeInternalExtensionId,
+    extension_misc::kQuickOfficeExtensionId,
+  };
+
+  for (size_t i = 0; i < arraysize(kBuiltInApps); ++i) {
+    if (task.app_id == kBuiltInApps[i])
+      return true;
+  }
+  return false;
 }
 
 }  // namespace
@@ -211,10 +233,6 @@ std::string MakeTaskID(const std::string& app_id,
                             action_id.c_str());
 }
 
-std::string MakeDriveAppTaskId(const std::string& app_id) {
-  return MakeTaskID(app_id, TASK_TYPE_DRIVE_APP, kDriveAppActionID);
-}
-
 std::string TaskDescriptorToId(const TaskDescriptor& task_descriptor) {
   return MakeTaskID(task_descriptor.app_id,
                     task_descriptor.task_type,
@@ -288,9 +306,8 @@ bool ExecuteFileTask(Profile* profile,
         done);
   } else if (task.task_type == TASK_TYPE_FILE_HANDLER) {
     std::vector<base::FilePath> paths;
-    for (size_t i = 0; i != file_urls.size(); ++i) {
+    for (size_t i = 0; i != file_urls.size(); ++i)
       paths.push_back(file_urls[i].path());
-    }
     apps::LaunchPlatformAppWithFileHandler(
         profile, extension, task.action_id, paths);
     if (!done.is_null())
@@ -382,6 +399,10 @@ void FindFileHandlerTasks(
 
     // We don't support using hosted apps to open files.
     if (!extension->is_platform_app())
+      continue;
+
+    // Ephemeral apps cannot be file handlers.
+    if (extensions::util::IsEphemeralApp(extension->id(), profile))
       continue;
 
     if (profile->IsOffTheRecord() &&
@@ -520,8 +541,7 @@ void ChooseAndSetDefaultTask(const PrefService& pref_service,
   for (size_t i = 0; i < tasks->size(); ++i) {
     FullTaskDescriptor* task = &tasks->at(i);
     DCHECK(!task->is_default());
-    if (file_browser_handlers::IsFallbackFileBrowserHandler(
-            task->task_descriptor())) {
+    if (IsFallbackFileHandler(task->task_descriptor())) {
       task->set_is_default(true);
       return;
     }

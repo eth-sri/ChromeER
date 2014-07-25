@@ -32,6 +32,12 @@ std::string RequestTypeToString(RequestType type) {
       return "CLOSE_FILE";
     case READ_FILE:
       return "READ_FILE";
+    case CREATE_DIRECTORY:
+      return "CREATE_DIRECTORY";
+    case DELETE_ENTRY:
+      return "DELETE_ENTRY";
+    case CREATE_FILE:
+      return "CREATE_FILE";
     case TESTING:
       return "TESTING";
   }

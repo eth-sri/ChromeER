@@ -16,15 +16,13 @@ from telemetry.core.forwarders import cros_forwarder
 
 
 class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
-  def __init__(self, browser_type, browser_options, cri, is_guest,
-               extensions_to_load):
+  def __init__(self, browser_options, cri, is_guest, extensions_to_load):
     super(CrOSBrowserBackend, self).__init__(
         supports_tab_control=True, supports_extensions=not is_guest,
         browser_options=browser_options,
         output_profile_path=None, extensions_to_load=extensions_to_load)
 
     # Initialize fields so that an explosion during init doesn't break in Close.
-    self._browser_type = browser_type
     self._cri = cri
     self._is_guest = is_guest
     self._forwarder = None
@@ -73,7 +71,6 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
             '--enable-smooth-scrolling',
             '--enable-threaded-compositing',
             '--enable-per-tile-painting',
-            '--force-compositing-mode',
             # Disables the start page, as well as other external apps that can
             # steal focus or make measurements inconsistent.
             '--disable-default-apps',
@@ -81,12 +78,13 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
             '--remote-debugging-port=%i' % self._remote_debugging_port,
             # Open a maximized window.
             '--start-maximized',
+            # Skip user image selection screen, and post login screens.
+            '--oobe-skip-postlogin',
             # Debug logging.
             '--vmodule=*/chromeos/net/*=2,*/chromeos/login/*=2'])
 
     if not self.browser_options.gaia_login:
-      # Skip user image selection screen, and post login screens.
-      args.append('--oobe-skip-postlogin')
+      args.append('--disable-gaia-services')
 
     return args
 

@@ -292,7 +292,7 @@ bool RenderViewHostImpl::CreateRenderView(
   ViewMsg_New_Params params;
   params.renderer_preferences =
       delegate_->GetRendererPrefs(GetProcess()->GetBrowserContext());
-  params.web_preferences = delegate_->GetWebkitPrefs();
+  params.web_preferences = GetWebkitPreferences();
   params.view_id = GetRoutingID();
   params.main_frame_routing_id = main_frame_routing_id_;
   params.surface_id = surface_id();
@@ -333,7 +333,7 @@ void RenderViewHostImpl::SyncRendererPrefs() {
                                         GetProcess()->GetBrowserContext())));
 }
 
-WebPreferences RenderViewHostImpl::GetWebkitPrefs(const GURL& url) {
+WebPreferences RenderViewHostImpl::ComputeWebkitPrefs(const GURL& url) {
   TRACE_EVENT0("browser", "RenderViewHostImpl::GetWebkitPrefs");
   WebPreferences prefs;
 
@@ -459,9 +459,6 @@ WebPreferences RenderViewHostImpl::GetWebkitPrefs(const GURL& url) {
   prefs.connection_type = net::NetworkChangeNotifier::GetConnectionType();
   prefs.is_online =
       prefs.connection_type != net::NetworkChangeNotifier::CONNECTION_NONE;
-
-  prefs.gesture_tap_highlight_enabled = !command_line.HasSwitch(
-      switches::kDisableGestureTapHighlight);
 
   prefs.number_of_cpu_cores = base::SysInfo::NumberOfProcessors();
 
@@ -1430,7 +1427,10 @@ void RenderViewHostImpl::ExitFullscreen() {
 }
 
 WebPreferences RenderViewHostImpl::GetWebkitPreferences() {
-  return delegate_->GetWebkitPrefs();
+  if (!web_preferences_.get()) {
+    OnWebkitPreferencesChanged();
+  }
+  return *web_preferences_;
 }
 
 void RenderViewHostImpl::DisownOpener() {
@@ -1446,7 +1446,12 @@ void RenderViewHostImpl::SetAccessibilityCallbackForTesting(
 }
 
 void RenderViewHostImpl::UpdateWebkitPreferences(const WebPreferences& prefs) {
+  web_preferences_.reset(new WebPreferences(prefs));
   Send(new ViewMsg_UpdateWebPreferences(GetRoutingID(), prefs));
+}
+
+void RenderViewHostImpl::OnWebkitPreferencesChanged() {
+  UpdateWebkitPreferences(delegate_->ComputeWebkitPrefs());
 }
 
 void RenderViewHostImpl::GetAudioOutputControllers(
@@ -1525,7 +1530,8 @@ void RenderViewHostImpl::OnAccessibilityEvents(
     std::vector<AXEventNotificationDetails> details;
     for (unsigned int i = 0; i < params.size(); ++i) {
       const AccessibilityHostMsg_EventParams& param = params[i];
-      AXEventNotificationDetails detail(param.update.nodes,
+      AXEventNotificationDetails detail(param.update.node_id_to_clear,
+                                        param.update.nodes,
                                         param.event_type,
                                         param.id,
                                         GetProcess()->GetID(),

@@ -27,6 +27,7 @@
 #include "cc/resources/single_release_callback.h"
 #include "cc/trees/layer_tree_host.h"
 #include "content/browser/accessibility/browser_accessibility_manager_android.h"
+#include "content/browser/android/composited_touch_handle_drawable.h"
 #include "content/browser/android/content_view_core_impl.h"
 #include "content/browser/android/in_process/synchronous_compositor_impl.h"
 #include "content/browser/android/overscroll_glow.h"
@@ -40,6 +41,7 @@
 #include "content/browser/renderer_host/dip_util.h"
 #include "content/browser/renderer_host/image_transport_factory_android.h"
 #include "content/browser/renderer_host/input/synthetic_gesture_target_android.h"
+#include "content/browser/renderer_host/input/touch_selection_controller.h"
 #include "content/browser/renderer_host/input/web_input_event_builders_android.h"
 #include "content/browser/renderer_host/input/web_input_event_util.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
@@ -127,7 +129,8 @@ OverscrollGlow::DisplayParameters CreateOverscrollDisplayParameters(
   // the viewport and offset by the distance of each viewport edge to the
   // respective content edge.
   OverscrollGlow::DisplayParameters params;
-  params.size = gfx::ScaleSize(frame_metadata.viewport_size, scale_factor);
+  params.size = gfx::ScaleSize(
+      frame_metadata.scrollable_viewport_size, scale_factor);
   params.edge_offsets[EdgeEffect::EDGE_TOP] =
       -frame_metadata.root_scroll_offset.y() * scale_factor;
   params.edge_offsets[EdgeEffect::EDGE_LEFT] =
@@ -135,11 +138,11 @@ OverscrollGlow::DisplayParameters CreateOverscrollDisplayParameters(
   params.edge_offsets[EdgeEffect::EDGE_BOTTOM] =
       (frame_metadata.root_layer_size.height() -
        frame_metadata.root_scroll_offset.y() -
-       frame_metadata.viewport_size.height()) * scale_factor;
+       frame_metadata.scrollable_viewport_size.height()) * scale_factor;
   params.edge_offsets[EdgeEffect::EDGE_RIGHT] =
       (frame_metadata.root_layer_size.width() -
        frame_metadata.root_scroll_offset.x() -
-       frame_metadata.viewport_size.width()) * scale_factor;
+       frame_metadata.scrollable_viewport_size.width()) * scale_factor;
   params.device_scale_factor = frame_metadata.device_scale_factor;
 
   return params;
@@ -159,7 +162,8 @@ bool HasFixedPageScale(const cc::CompositorFrameMetadata& frame_metadata) {
 
 bool HasMobileViewport(const cc::CompositorFrameMetadata& frame_metadata) {
   float window_width_dip =
-      frame_metadata.page_scale_factor * frame_metadata.viewport_size.width();
+      frame_metadata.page_scale_factor *
+          frame_metadata.scrollable_viewport_size.width();
   float content_width_css = frame_metadata.root_layer_size.width();
   return content_width_css <= window_width_dip + kMobileViewportWidthEpsilon;
 }
@@ -189,6 +193,8 @@ RenderWidgetHostViewAndroid::RenderWidgetHostViewAndroid(
       overscroll_effect_(OverscrollGlow::Create(overscroll_effect_enabled_)),
       gesture_provider_(CreateGestureProviderConfig(), this),
       gesture_text_selector_(this),
+      touch_scrolling_(false),
+      potentially_active_fling_count_(0),
       flush_input_requested_(false),
       accelerated_surface_route_id_(0),
       using_synchronous_compositor_(SynchronousCompositorImpl::FromID(
@@ -291,7 +297,7 @@ void RenderWidgetHostViewAndroid::SetBounds(const gfx::Rect& rect) {
 
 void RenderWidgetHostViewAndroid::GetScaledContentBitmap(
     float scale,
-    SkBitmap::Config bitmap_config,
+    SkColorType color_type,
     gfx::Rect src_subrect,
     const base::Callback<void(bool, const SkBitmap&)>& result_callback) {
   if (!IsSurfaceAvailableForCopy()) {
@@ -311,7 +317,7 @@ void RenderWidgetHostViewAndroid::GetScaledContentBitmap(
   gfx::Size dst_size(
       gfx::ToCeiledSize(gfx::ScaleSize(bounds, scale / device_scale_factor)));
   CopyFromCompositingSurface(
-      src_subrect, dst_size, result_callback, bitmap_config);
+      src_subrect, dst_size, result_callback, color_type);
 }
 
 bool RenderWidgetHostViewAndroid::HasValidFrame() const {
@@ -546,16 +552,21 @@ void RenderWidgetHostViewAndroid::OnStartContentIntent(
 }
 
 void RenderWidgetHostViewAndroid::OnSmartClipDataExtracted(
-    const base::string16& result,
+    const base::string16& text,
+    const base::string16& html,
     const gfx::Rect rect) {
   if (content_view_core_)
-    content_view_core_->OnSmartClipDataExtracted(rect, result);
+    content_view_core_->OnSmartClipDataExtracted(text, html, rect);
 }
 
 bool RenderWidgetHostViewAndroid::OnTouchEvent(
     const ui::MotionEvent& event) {
   if (!host_)
     return false;
+
+  if (selection_controller_ &&
+      selection_controller_->WillHandleTouchEvent(event))
+    return true;
 
   if (!gesture_provider_.OnTouchEvent(event))
     return false;
@@ -576,6 +587,12 @@ bool RenderWidgetHostViewAndroid::OnTouchEvent(
   return true;
 }
 
+bool RenderWidgetHostViewAndroid::OnTouchHandleEvent(
+    const ui::MotionEvent& event) {
+  return selection_controller_ &&
+         selection_controller_->WillHandleTouchEvent(event);
+}
+
 void RenderWidgetHostViewAndroid::ResetGestureDetection() {
   const ui::MotionEvent* current_down_event =
       gesture_provider_.GetCurrentDownEvent();
@@ -585,6 +602,10 @@ void RenderWidgetHostViewAndroid::ResetGestureDetection() {
   scoped_ptr<ui::MotionEvent> cancel_event = current_down_event->Cancel();
   DCHECK(cancel_event);
   OnTouchEvent(*cancel_event);
+
+  touch_scrolling_ = false;
+  potentially_active_fling_count_ = 0;
+  OnContentScrollingChange();
 }
 
 void RenderWidgetHostViewAndroid::SetDoubleTapSupportEnabled(bool enabled) {
@@ -602,6 +623,8 @@ void RenderWidgetHostViewAndroid::ImeCancelComposition() {
 
 void RenderWidgetHostViewAndroid::FocusedNodeChanged(bool is_editable_node) {
   ime_adapter_android_.FocusedNodeChanged(is_editable_node);
+  if (selection_controller_)
+    selection_controller_->OnSelectionEditable(is_editable_node);
 }
 
 void RenderWidgetHostViewAndroid::RenderProcessGone(
@@ -647,9 +670,34 @@ void RenderWidgetHostViewAndroid::SelectionChanged(const base::string16& text,
 
 void RenderWidgetHostViewAndroid::SelectionBoundsChanged(
     const ViewHostMsg_SelectionBounds_Params& params) {
-  if (content_view_core_) {
-    content_view_core_->OnSelectionBoundsChanged(params);
+  if (!selection_controller_)
+    return;
+
+  gfx::RectF anchor_rect(params.anchor_rect);
+  gfx::RectF focus_rect(params.focus_rect);
+  if (params.is_anchor_first)
+    std::swap(anchor_rect, focus_rect);
+
+  TouchHandleOrientation anchor_orientation(TOUCH_HANDLE_ORIENTATION_UNDEFINED);
+  TouchHandleOrientation focus_orientation(TOUCH_HANDLE_ORIENTATION_UNDEFINED);
+  if (params.anchor_rect == params.focus_rect) {
+    if (params.anchor_rect.x() && params.anchor_rect.y())
+      anchor_orientation = focus_orientation = TOUCH_HANDLE_CENTER;
+  } else {
+    anchor_orientation = params.anchor_dir == blink::WebTextDirectionRightToLeft
+                             ? TOUCH_HANDLE_LEFT
+                             : TOUCH_HANDLE_RIGHT;
+    focus_orientation = params.focus_dir == blink::WebTextDirectionRightToLeft
+                            ? TOUCH_HANDLE_RIGHT
+                            : TOUCH_HANDLE_LEFT;
   }
+
+  selection_controller_->OnSelectionBoundsChanged(anchor_rect,
+                                                  anchor_orientation,
+                                                  true,
+                                                  focus_rect,
+                                                  focus_orientation,
+                                                  true);
 }
 
 void RenderWidgetHostViewAndroid::ScrollOffsetChanged() {
@@ -664,8 +712,8 @@ void RenderWidgetHostViewAndroid::CopyFromCompositingSurface(
     const gfx::Rect& src_subrect,
     const gfx::Size& dst_size,
     const base::Callback<void(bool, const SkBitmap&)>& callback,
-    const SkBitmap::Config bitmap_config) {
-  if (!IsReadbackConfigSupported(bitmap_config)) {
+    const SkColorType color_type) {
+  if (!IsReadbackConfigSupported(color_type)) {
     callback.Run(false, SkBitmap());
     return;
   }
@@ -684,7 +732,7 @@ void RenderWidgetHostViewAndroid::CopyFromCompositingSurface(
 
   if (using_synchronous_compositor_) {
     SynchronousCopyContents(src_subrect_in_pixel, dst_size_in_pixel, callback,
-                            bitmap_config);
+                            color_type);
     UMA_HISTOGRAM_TIMES("Compositing.CopyFromSurfaceTimeSynchronous",
                         base::TimeTicks::Now() - start_time);
     return;
@@ -711,7 +759,7 @@ void RenderWidgetHostViewAndroid::CopyFromCompositingSurface(
       base::Bind(&RenderWidgetHostViewAndroid::
                      PrepareTextureCopyOutputResultForDelegatedReadback,
                  dst_size_in_pixel,
-                 bitmap_config,
+                 color_type,
                  start_time,
                  readback_layer,
                  callback));
@@ -895,6 +943,8 @@ void RenderWidgetHostViewAndroid::InternalSwapCompositorFrame(
   SwapDelegatedFrame(output_surface_id, frame->delegated_frame_data.Pass());
   frame_evictor_->SwappedFrame(!host_->is_hidden());
 
+  // As the metadata update may trigger view invalidation, always call it after
+  // any potential compositor scheduling.
   OnFrameMetadataUpdated(frame->metadata);
 }
 
@@ -951,11 +1001,52 @@ void RenderWidgetHostViewAndroid::SetOverlayVideoMode(bool enabled) {
     layer_->SetContentsOpaque(!enabled);
 }
 
+bool RenderWidgetHostViewAndroid::SupportsAnimation() const {
+  // The synchronous (WebView) compositor does not have a proper browser
+  // compositor with which to drive animations.
+  return !using_synchronous_compositor_;
+}
+
+void RenderWidgetHostViewAndroid::SetNeedsAnimate() {
+  DCHECK(content_view_core_);
+  DCHECK(!using_synchronous_compositor_);
+  content_view_core_->GetWindowAndroid()->SetNeedsAnimate();
+}
+
+void RenderWidgetHostViewAndroid::MoveCaret(const gfx::PointF& position) {
+  MoveCaret(gfx::Point(position.x(), position.y()));
+}
+
+void RenderWidgetHostViewAndroid::SelectBetweenCoordinates(
+    const gfx::PointF& start,
+    const gfx::PointF& end) {
+  DCHECK(content_view_core_);
+  content_view_core_->SelectBetweenCoordinates(start, end);
+}
+
+void RenderWidgetHostViewAndroid::OnSelectionEvent(
+    SelectionEventType event,
+    const gfx::PointF& position) {
+  DCHECK(content_view_core_);
+  content_view_core_->OnSelectionEvent(event, position);
+}
+
+scoped_ptr<TouchHandleDrawable> RenderWidgetHostViewAndroid::CreateDrawable() {
+  DCHECK(content_view_core_);
+  if (using_synchronous_compositor_)
+    return content_view_core_->CreatePopupTouchHandleDrawable();
+
+  return scoped_ptr<TouchHandleDrawable>(new CompositedTouchHandleDrawable(
+      content_view_core_->GetLayer(),
+      content_view_core_->GetDpiScale(),
+      content_view_core_->GetContext().obj()));
+}
+
 void RenderWidgetHostViewAndroid::SynchronousCopyContents(
     const gfx::Rect& src_subrect_in_pixel,
     const gfx::Size& dst_size_in_pixel,
     const base::Callback<void(bool, const SkBitmap&)>& callback,
-    const SkBitmap::Config config) {
+    const SkColorType color_type) {
   SynchronousCompositor* compositor =
       SynchronousCompositorImpl::FromID(host_->GetProcess()->GetID(),
                                         host_->GetRoutingID());
@@ -965,10 +1056,10 @@ void RenderWidgetHostViewAndroid::SynchronousCopyContents(
   }
 
   SkBitmap bitmap;
-  bitmap.setConfig(config,
-                   dst_size_in_pixel.width(),
-                   dst_size_in_pixel.height());
-  bitmap.allocPixels();
+  bitmap.allocPixels(SkImageInfo::Make(dst_size_in_pixel.width(),
+                                       dst_size_in_pixel.height(),
+                                       color_type,
+                                       kPremul_SkAlphaType));
   SkCanvas canvas(bitmap);
   canvas.scale(
       (float)dst_size_in_pixel.width() / (float)src_subrect_in_pixel.width(),
@@ -991,6 +1082,7 @@ void RenderWidgetHostViewAndroid::OnFrameMetadataUpdated(
 
   if (!content_view_core_)
     return;
+
   // All offsets and sizes are in CSS pixels.
   content_view_core_->UpdateFrameInfo(
       frame_metadata.root_scroll_offset,
@@ -998,7 +1090,7 @@ void RenderWidgetHostViewAndroid::OnFrameMetadataUpdated(
       gfx::Vector2dF(frame_metadata.min_page_scale_factor,
                      frame_metadata.max_page_scale_factor),
       frame_metadata.root_layer_size,
-      frame_metadata.viewport_size,
+      frame_metadata.scrollable_viewport_size,
       frame_metadata.location_bar_offset,
       frame_metadata.location_bar_content_translation,
       frame_metadata.overdraw_bottom_height);
@@ -1037,6 +1129,7 @@ void RenderWidgetHostViewAndroid::AttachLayers() {
 void RenderWidgetHostViewAndroid::RemoveLayers() {
   if (!content_view_core_)
     return;
+
   if (!layer_.get())
     return;
 
@@ -1044,12 +1137,20 @@ void RenderWidgetHostViewAndroid::RemoveLayers() {
   overscroll_effect_->Disable();
 }
 
-void RenderWidgetHostViewAndroid::SetNeedsAnimate() {
-  content_view_core_->GetWindowAndroid()->SetNeedsAnimate();
+bool RenderWidgetHostViewAndroid::Animate(base::TimeTicks frame_time) {
+  bool needs_animate = overscroll_effect_->Animate(frame_time);
+  if (selection_controller_)
+    needs_animate |= selection_controller_->Animate(frame_time);
+  return needs_animate;
 }
 
-bool RenderWidgetHostViewAndroid::Animate(base::TimeTicks frame_time) {
-  return overscroll_effect_->Animate(frame_time);
+void RenderWidgetHostViewAndroid::OnContentScrollingChange() {
+  if (selection_controller_)
+    selection_controller_->SetTemporarilyHidden(IsContentScrolling());
+}
+
+bool RenderWidgetHostViewAndroid::IsContentScrolling() const {
+  return touch_scrolling_ || potentially_active_fling_count_ > 0;
 }
 
 void RenderWidgetHostViewAndroid::AcceleratedSurfacePostSubBuffer(
@@ -1108,12 +1209,47 @@ void RenderWidgetHostViewAndroid::ProcessAckedTouchEvent(
 void RenderWidgetHostViewAndroid::GestureEventAck(
     const blink::WebGestureEvent& event,
     InputEventAckState ack_result) {
+  switch (event.type) {
+    case blink::WebInputEvent::GestureScrollBegin:
+      touch_scrolling_ = true;
+      potentially_active_fling_count_ = 0;
+      OnContentScrollingChange();
+      break;
+    case blink::WebInputEvent::GestureScrollEnd:
+      touch_scrolling_ = false;
+      OnContentScrollingChange();
+      break;
+    case blink::WebInputEvent::GestureFlingStart:
+      touch_scrolling_ = false;
+      if (ack_result == INPUT_EVENT_ACK_STATE_CONSUMED)
+        ++potentially_active_fling_count_;
+      OnContentScrollingChange();
+      break;
+    default:
+      break;
+  }
+
   if (content_view_core_)
     content_view_core_->OnGestureEventAck(event, ack_result);
 }
 
 InputEventAckState RenderWidgetHostViewAndroid::FilterInputEvent(
     const blink::WebInputEvent& input_event) {
+  if (selection_controller_) {
+    switch (input_event.type) {
+      case blink::WebInputEvent::GestureLongPress:
+      case blink::WebInputEvent::GestureLongTap:
+        selection_controller_->ShowInsertionHandleAutomatically();
+        selection_controller_->ShowSelectionHandlesAutomatically();
+        break;
+      case blink::WebInputEvent::GestureTap:
+        selection_controller_->ShowInsertionHandleAutomatically();
+        break;
+      default:
+        break;
+    }
+  }
+
   if (content_view_core_ &&
       content_view_core_->FilterInputEvent(input_event))
     return INPUT_EVENT_ACK_STATE_CONSUMED;
@@ -1221,6 +1357,11 @@ void RenderWidgetHostViewAndroid::MoveCaret(const gfx::Point& point) {
     host_->MoveCaret(point);
 }
 
+void RenderWidgetHostViewAndroid::HideTextHandles() {
+  if (selection_controller_)
+    selection_controller_->HideAndDisallowAutomaticShowing();
+}
+
 SkColor RenderWidgetHostViewAndroid::GetCachedBackgroundColor() const {
   return cached_background_color_;
 }
@@ -1245,6 +1386,11 @@ void RenderWidgetHostViewAndroid::DidOverscroll(
 }
 
 void RenderWidgetHostViewAndroid::DidStopFlinging() {
+  if (potentially_active_fling_count_) {
+    --potentially_active_fling_count_;
+    OnContentScrollingChange();
+  }
+
   if (content_view_core_)
     content_view_core_->DidStopFlinging();
 }
@@ -1259,6 +1405,7 @@ void RenderWidgetHostViewAndroid::SetContentViewCore(
 
   bool resize = false;
   if (content_view_core != content_view_core_) {
+    selection_controller_.reset();
     ReleaseLocksOnSurface();
     resize = true;
   }
@@ -1274,15 +1421,22 @@ void RenderWidgetHostViewAndroid::SetContentViewCore(
   }
 
   AttachLayers();
-  if (content_view_core_ && !using_synchronous_compositor_) {
+
+  if (!content_view_core_)
+    return;
+
+  if (!using_synchronous_compositor_) {
     content_view_core_->GetWindowAndroid()->AddObserver(this);
     observing_root_window_ = true;
     if (needs_begin_frame_)
       content_view_core_->GetWindowAndroid()->RequestVSyncUpdate();
   }
 
-  if (resize && content_view_core_)
+  if (resize)
     WasResized();
+
+  if (!selection_controller_)
+    selection_controller_.reset(new TouchSelectionController(this));
 }
 
 void RenderWidgetHostViewAndroid::RunAckCallbacks() {
@@ -1355,20 +1509,20 @@ void RenderWidgetHostViewAndroid::OnLostResources() {
 void
 RenderWidgetHostViewAndroid::PrepareTextureCopyOutputResultForDelegatedReadback(
     const gfx::Size& dst_size_in_pixel,
-    const SkBitmap::Config config,
+    const SkColorType color_type,
     const base::TimeTicks& start_time,
     scoped_refptr<cc::Layer> readback_layer,
     const base::Callback<void(bool, const SkBitmap&)>& callback,
     scoped_ptr<cc::CopyOutputResult> result) {
   readback_layer->RemoveFromParent();
   PrepareTextureCopyOutputResult(
-      dst_size_in_pixel, config, start_time, callback, result.Pass());
+      dst_size_in_pixel, color_type, start_time, callback, result.Pass());
 }
 
 // static
 void RenderWidgetHostViewAndroid::PrepareTextureCopyOutputResult(
     const gfx::Size& dst_size_in_pixel,
-    const SkBitmap::Config bitmap_config,
+    const SkColorType color_type,
     const base::TimeTicks& start_time,
     const base::Callback<void(bool, const SkBitmap&)>& callback,
     scoped_ptr<cc::CopyOutputResult> result) {
@@ -1379,11 +1533,10 @@ void RenderWidgetHostViewAndroid::PrepareTextureCopyOutputResult(
     return;
 
   scoped_ptr<SkBitmap> bitmap(new SkBitmap);
-  bitmap->setConfig(bitmap_config,
-                    dst_size_in_pixel.width(),
-                    dst_size_in_pixel.height(),
-                    0, kOpaque_SkAlphaType);
-  if (!bitmap->allocPixels())
+  if (!bitmap->allocPixels(SkImageInfo::Make(dst_size_in_pixel.width(),
+                                             dst_size_in_pixel.height(),
+                                             color_type,
+                                             kOpaque_SkAlphaType)))
     return;
 
   ImageTransportFactoryAndroid* factory =
@@ -1413,7 +1566,7 @@ void RenderWidgetHostViewAndroid::PrepareTextureCopyOutputResult(
       gfx::Rect(result->size()),
       dst_size_in_pixel,
       pixels,
-      bitmap_config,
+      color_type,
       base::Bind(&CopyFromCompositingSurfaceFinished,
                  callback,
                  base::Passed(&release_callback),
@@ -1424,29 +1577,29 @@ void RenderWidgetHostViewAndroid::PrepareTextureCopyOutputResult(
 }
 
 bool RenderWidgetHostViewAndroid::IsReadbackConfigSupported(
-    SkBitmap::Config bitmap_config) {
+    SkColorType color_type) {
   ImageTransportFactoryAndroid* factory =
       ImageTransportFactoryAndroid::GetInstance();
   GLHelper* gl_helper = factory->GetGLHelper();
   if (!gl_helper)
     return false;
-  return gl_helper->IsReadbackConfigSupported(bitmap_config);
+  return gl_helper->IsReadbackConfigSupported(color_type);
 }
 
-SkBitmap::Config RenderWidgetHostViewAndroid::PreferredReadbackFormat() {
+SkColorType RenderWidgetHostViewAndroid::PreferredReadbackFormat() {
   // Define the criteria here. If say the 16 texture readback is
   // supported we should go with that (this degrades quality)
   // or stick back to the default format.
   if (base::SysInfo::IsLowEndDevice()) {
-    if (IsReadbackConfigSupported(SkBitmap::kRGB_565_Config))
-      return SkBitmap::kRGB_565_Config;
+    if (IsReadbackConfigSupported(kRGB_565_SkColorType))
+      return kRGB_565_SkColorType;
   }
-  return SkBitmap::kARGB_8888_Config;
+  return kN32_SkColorType;
 }
 
 void RenderWidgetHostViewAndroid::ShowSelectionHandlesAutomatically() {
-  if (content_view_core_)
-    content_view_core_->ShowSelectionHandlesAutomatically();
+  if (selection_controller_)
+    selection_controller_->ShowSelectionHandlesAutomatically();
 }
 
 void RenderWidgetHostViewAndroid::SelectRange(
@@ -1480,7 +1633,7 @@ void RenderWidgetHostViewBase::GetDefaultScreenInfo(
   results->deviceScaleFactor = display.device_scale_factor();
   results->orientationAngle = display.RotationAsDegree();
   results->orientationType =
-      RenderWidgetHostViewBase::GetOrientationTypeFromDisplay(display);
+      RenderWidgetHostViewBase::GetOrientationTypeForMobile(display);
   gfx::DeviceDisplayInfo info;
   results->depth = info.GetBitsPerPixel();
   results->depthPerComponent = info.GetBitsPerComponent();

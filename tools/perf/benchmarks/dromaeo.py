@@ -9,22 +9,28 @@ from metrics import power
 from telemetry import benchmark
 from telemetry.page import page_measurement
 from telemetry.page import page_set
+from telemetry.value import scalar
 
 
 class _DromaeoMeasurement(page_measurement.PageMeasurement):
   def __init__(self):
     super(_DromaeoMeasurement, self).__init__()
-    self._power_metric = power.PowerMetric()
+    self._power_metric = None
 
   def CustomizeBrowserOptions(self, options):
     power.PowerMetric.CustomizeBrowserOptions(options)
+
+  def WillStartBrowser(self, browser):
+    self._power_metric = power.PowerMetric(browser)
 
   def DidNavigateToPage(self, page, tab):
     self._power_metric.Start(page, tab)
 
   def MeasurePage(self, page, tab, results):
     tab.WaitForJavaScriptExpression(
-        'window.document.getElementById("pause").value == "Run"', 60)
+        'window.document.getElementById("pause") &&' +
+        'window.document.getElementById("pause").value == "Run"',
+        120)
 
     # Start spying on POST request that will report benchmark results, and
     # intercept result data.
@@ -66,22 +72,22 @@ class _DromaeoMeasurement(page_measurement.PageMeasurement):
 
     suffix = page.url[page.url.index('?') + 1 :]
     def AddResult(name, value):
-      data_type = 'unimportant'
+      important = False
       if name == suffix:
-        data_type = 'default'
-
-      results.Add(Escape(name), 'run/s', value, data_type=data_type)
+        important = True
+      results.AddValue(scalar.ScalarValue(
+          results.current_page, Escape(name), 'runs/s', value, important))
 
     aggregated = {}
     for data in score:
       AddResult('%s/%s' % (data['collection'], data['name']),
                 data['mean'])
 
-      escaped_top_name = data['collection'].split('-', 1)[0]
-      AggregateData(aggregated, escaped_top_name, data['mean'])
+      top_name = data['collection'].split('-', 1)[0]
+      AggregateData(aggregated, top_name, data['mean'])
 
-      escaped_collection = data['collection']
-      AggregateData(aggregated, escaped_collection, data['mean'])
+      collection_name = data['collection']
+      AggregateData(aggregated, collection_name, data['mean'])
 
     for key, value in aggregated.iteritems():
       AddResult(key, math.exp(value['sum'] / value['count']))
@@ -112,7 +118,6 @@ class DromaeoDomCoreAttr(_DromaeoBenchmark):
   query_param = 'dom-attr'
 
 
-@benchmark.Disabled('xp')  # crbug.com/323782
 class DromaeoDomCoreModify(_DromaeoBenchmark):
   """Dromaeo DOMCore modify JavaScript benchmark."""
   tag = 'domcoremodify'

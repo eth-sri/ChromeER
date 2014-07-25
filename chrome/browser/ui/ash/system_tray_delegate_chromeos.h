@@ -65,10 +65,9 @@ class SystemTrayDelegateChromeOS
   virtual void ChangeProfilePicture() OVERRIDE;
   virtual const std::string GetEnterpriseDomain() const OVERRIDE;
   virtual const base::string16 GetEnterpriseMessage() const OVERRIDE;
-  virtual const std::string GetLocallyManagedUserManager() const OVERRIDE;
-  virtual const base::string16 GetLocallyManagedUserManagerName()
-      const OVERRIDE;
-  virtual const base::string16 GetLocallyManagedUserMessage() const OVERRIDE;
+  virtual const std::string GetSupervisedUserManager() const OVERRIDE;
+  virtual const base::string16 GetSupervisedUserManagerName() const OVERRIDE;
+  virtual const base::string16 GetSupervisedUserMessage() const OVERRIDE;
   virtual bool SystemShouldUpgrade() const OVERRIDE;
   virtual base::HourClockType GetHourClockType() const OVERRIDE;
   virtual void ShowSettings() OVERRIDE;
@@ -86,7 +85,7 @@ class SystemTrayDelegateChromeOS
   virtual void ShowAccessibilityHelp() OVERRIDE;
   virtual void ShowAccessibilitySettings() OVERRIDE;
   virtual void ShowPublicAccountInfo() OVERRIDE;
-  virtual void ShowLocallyManagedUserInfo() OVERRIDE;
+  virtual void ShowSupervisedUserInfo() OVERRIDE;
   virtual void ShowEnterpriseInfo() OVERRIDE;
   virtual void ShowUserLogin() OVERRIDE;
   virtual bool ShowSpringChargerReplacementDialog() OVERRIDE;
@@ -132,8 +131,6 @@ class SystemTrayDelegateChromeOS
       OVERRIDE;
   virtual int GetSystemTrayMenuWidth() OVERRIDE;
   virtual void ActiveUserWasChanged() OVERRIDE;
-  virtual bool IsNetworkBehindCaptivePortal(
-      const std::string& service_path) const OVERRIDE;
   virtual bool IsSearchKeyMappedToCapsLock() OVERRIDE;
   virtual ash::tray::UserAccountsDelegate* GetUserAccountsDelegate(
       const std::string& user_id) OVERRIDE;

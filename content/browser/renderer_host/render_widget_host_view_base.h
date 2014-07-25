@@ -160,7 +160,7 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   virtual void AccessibilityShowMenu(int acc_obj_id);
   virtual gfx::Point AccessibilityOriginInScreen(const gfx::Rect& bounds);
 
-  virtual SkBitmap::Config PreferredReadbackFormat();
+  virtual SkColorType PreferredReadbackFormat();
 
   // Informs that the focused DOM node has changed.
   virtual void FocusedNodeChanged(bool is_editable_node) {}
@@ -260,7 +260,7 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
       const gfx::Rect& src_subrect,
       const gfx::Size& dst_size,
       const base::Callback<void(bool, const SkBitmap&)>& callback,
-      const SkBitmap::Config config) = 0;
+      const SkColorType color_type) = 0;
 
   // Copies a given subset of the compositing surface's content into a YV12
   // VideoFrame, and invokes a callback with a success/fail parameter. |target|
@@ -309,8 +309,12 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   // returned only if the accelerated surface size matches.
   virtual bool HasAcceleratedSurface(const gfx::Size& desired_size) = 0;
 
-  // Returns the orientation type based on the current display state.
-  static blink::WebScreenOrientationType GetOrientationTypeFromDisplay(
+  // Compute the orientation type of the display assuming it is a mobile device.
+  static blink::WebScreenOrientationType GetOrientationTypeForMobile(
+      const gfx::Display& display);
+
+  // Compute the orientation type of the display assuming it is a desktop.
+  static blink::WebScreenOrientationType GetOrientationTypeForDesktop(
       const gfx::Display& display);
 
   virtual void GetScreenInfo(blink::WebScreenInfo* results) = 0;

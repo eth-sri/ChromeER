@@ -7,8 +7,8 @@
 
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/common/page_transition_types.h"
+#include "content/public/common/web_preferences.h"
 #include "content/public/test/web_contents_tester.h"
-#include "webkit/common/webpreferences.h"
 
 class SiteInstanceImpl;
 
@@ -42,7 +42,7 @@ class TestWebContents : public WebContentsImpl, public WebContentsTester {
                                            const GURL& url,
                                            const Referrer& referrer,
                                            PageTransition transition) OVERRIDE;
-  virtual WebPreferences TestGetWebkitPrefs() OVERRIDE;
+  virtual WebPreferences TestComputeWebkitPrefs() OVERRIDE;
 
   TestRenderViewHost* pending_test_rvh() const;
 

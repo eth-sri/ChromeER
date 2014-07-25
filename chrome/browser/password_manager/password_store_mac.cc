@@ -15,6 +15,7 @@
 #include "base/logging.h"
 #include "base/mac/mac_logging.h"
 #include "base/mac/mac_util.h"
+#include "base/memory/scoped_vector.h"
 #include "base/message_loop/message_loop.h"
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
@@ -865,7 +866,8 @@ PasswordStoreMac::PasswordStoreMac(
 PasswordStoreMac::~PasswordStoreMac() {}
 
 bool PasswordStoreMac::Init(
-    const syncer::SyncableService::StartSyncFlare& flare) {
+    const syncer::SyncableService::StartSyncFlare& flare,
+    const std::string& sync_username) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
   thread_.reset(new base::Thread("Chrome_PasswordStore_Thread"));
 
@@ -873,7 +875,7 @@ bool PasswordStoreMac::Init(
     thread_.reset(NULL);
     return false;
   }
-  return password_manager::PasswordStore::Init(flare);
+  return password_manager::PasswordStore::Init(flare, sync_username);
 }
 
 void PasswordStoreMac::Shutdown() {
@@ -891,8 +893,8 @@ PasswordStoreMac::GetBackgroundTaskRunner() {
   return (thread_.get()) ? thread_->message_loop_proxy() : NULL;
 }
 
-void PasswordStoreMac::ReportMetricsImpl() {
-  login_metadata_db_->ReportMetrics();
+void PasswordStoreMac::ReportMetricsImpl(const std::string& sync_username) {
+  login_metadata_db_->ReportMetrics(sync_username);
 }
 
 PasswordStoreChangeList PasswordStoreMac::AddLoginImpl(
@@ -959,24 +961,12 @@ PasswordStoreChangeList PasswordStoreMac::RemoveLoginsCreatedBetweenImpl(
     base::Time delete_begin,
     base::Time delete_end) {
   PasswordStoreChangeList changes;
-  std::vector<PasswordForm*> forms;
+  ScopedVector<PasswordForm> forms;
   if (login_metadata_db_->GetLoginsCreatedBetween(delete_begin, delete_end,
-                                                  &forms)) {
+                                                  &forms.get())) {
     if (login_metadata_db_->RemoveLoginsCreatedBetween(delete_begin,
                                                        delete_end)) {
-      // We can't delete from the Keychain by date because we may be sharing
-      // items with database entries that weren't in the delete range. Instead,
-      // we find all the Keychain items we own but aren't using any more and
-      // delete those.
-      std::vector<PasswordForm*> orphan_keychain_forms =
-          GetUnusedKeychainForms();
-      // This is inefficient, since we have to re-look-up each keychain item
-      // one at a time to delete it even though the search step already had a
-      // list of Keychain item references. If this turns out to be noticeably
-      // slow we'll need to rearchitect to allow the search and deletion steps
-      // to share.
-      RemoveKeychainForms(orphan_keychain_forms);
-      STLDeleteElements(&orphan_keychain_forms);
+      RemoveKeychainForms(forms.get());
 
       for (std::vector<PasswordForm*>::const_iterator it = forms.begin();
            it != forms.end(); ++it) {
@@ -993,24 +983,12 @@ PasswordStoreChangeList PasswordStoreMac::RemoveLoginsSyncedBetweenImpl(
     base::Time delete_begin,
     base::Time delete_end) {
   PasswordStoreChangeList changes;
-  std::vector<PasswordForm*> forms;
+  ScopedVector<PasswordForm> forms;
   if (login_metadata_db_->GetLoginsSyncedBetween(
-          delete_begin, delete_end, &forms)) {
+          delete_begin, delete_end, &forms.get())) {
     if (login_metadata_db_->RemoveLoginsSyncedBetween(delete_begin,
                                                       delete_end)) {
-      // We can't delete from the Keychain by date because we may be sharing
-      // items with database entries that weren't in the delete range. Instead,
-      // we find all the Keychain items we own but aren't using any more and
-      // delete those.
-      std::vector<PasswordForm*> orphan_keychain_forms =
-          GetUnusedKeychainForms();
-      // This is inefficient, since we have to re-look-up each keychain item
-      // one at a time to delete it even though the search step already had a
-      // list of Keychain item references. If this turns out to be noticeably
-      // slow we'll need to rearchitect to allow the search and deletion steps
-      // to share.
-      RemoveKeychainForms(orphan_keychain_forms);
-      STLDeleteElements(&orphan_keychain_forms);
+      RemoveKeychainForms(forms.get());
 
       for (std::vector<PasswordForm*>::const_iterator it = forms.begin();
            it != forms.end();
@@ -1144,27 +1122,6 @@ bool PasswordStoreMac::DatabaseHasFormMatchingKeychainForm(
   }
   STLDeleteElements(&database_forms);
   return has_match;
-}
-
-std::vector<PasswordForm*> PasswordStoreMac::GetUnusedKeychainForms() {
-  std::vector<PasswordForm*> database_forms;
-  login_metadata_db_->GetAutofillableLogins(&database_forms);
-
-  MacKeychainPasswordFormAdapter owned_keychain_adapter(keychain_.get());
-  owned_keychain_adapter.SetFindsOnlyOwnedItems(true);
-  std::vector<PasswordForm*> owned_keychain_forms =
-      owned_keychain_adapter.GetAllPasswordFormPasswords();
-
-  // Run a merge; anything left in owned_keychain_forms when we are done no
-  // longer has a matching database entry.
-  std::vector<PasswordForm*> merged_forms;
-  internal_keychain_helpers::MergePasswordForms(&owned_keychain_forms,
-                                                &database_forms,
-                                                &merged_forms);
-  STLDeleteElements(&merged_forms);
-  STLDeleteElements(&database_forms);
-
-  return owned_keychain_forms;
 }
 
 void PasswordStoreMac::RemoveDatabaseForms(

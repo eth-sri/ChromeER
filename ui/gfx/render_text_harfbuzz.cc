@@ -16,10 +16,12 @@
 #include "third_party/skia/include/core/SkColor.h"
 #include "third_party/skia/include/core/SkTypeface.h"
 #include "ui/gfx/canvas.h"
+#include "ui/gfx/font_fallback.h"
+#include "ui/gfx/font_render_params.h"
 #include "ui/gfx/utf16_indexing.h"
 
 #if defined(OS_WIN)
-#include "ui/gfx/font_smoothing_win.h"
+#include "ui/gfx/font_fallback_win.h"
 #endif
 
 namespace gfx {
@@ -267,10 +269,9 @@ hb_font_t* CreateHarfBuzzFont(SkTypeface* skia_face, int text_size) {
   }
 
   hb_font_t* harfbuzz_font = hb_font_create(face_cache->first);
-  // TODO(ckocagil): Investigate whether disabling hinting here has any effect
-  // on text quality.
-  int upem = hb_face_get_upem(face_cache->first);
-  hb_font_set_scale(harfbuzz_font, upem, upem);
+
+  const int scale = SkScalarToFixed(text_size);
+  hb_font_set_scale(harfbuzz_font, scale, scale);
   FontData* hb_font_data = new FontData(&face_cache->second);
   hb_font_data->paint_.setTypeface(skia_face);
   hb_font_data->paint_.setTextSize(text_size);
@@ -409,7 +410,7 @@ TextRunHarfBuzz::TextRunHarfBuzz()
       is_rtl(false),
       level(0),
       script(USCRIPT_INVALID_CODE),
-      glyph_count(-1),
+      glyph_count(static_cast<size_t>(-1)),
       font_size(0),
       font_style(0),
       strike(false),
@@ -467,14 +468,12 @@ Range TextRunHarfBuzz::CharRangeToGlyphRange(const Range& char_range) const {
   return Range(first, glyph_count);
 }
 
-// Returns whether the given shaped run contains any missing glyphs.
-bool TextRunHarfBuzz::HasMissingGlyphs() const {
+size_t TextRunHarfBuzz::CountMissingGlyphs() const {
   static const int kMissingGlyphId = 0;
-  for (size_t i = 0; i < glyph_count; ++i) {
-    if (glyphs[i] == kMissingGlyphId)
-      return true;
-  }
-  return false;
+  size_t missing = 0;
+  for (size_t i = 0; i < glyph_count; ++i)
+    missing += (glyphs[i] == kMissingGlyphId) ? 1 : 0;
+  return missing;
 }
 
 int TextRunHarfBuzz::GetGlyphXBoundary(size_t text_index, bool trailing) const {
@@ -777,35 +776,31 @@ void RenderTextHarfBuzz::EnsureLayout() {
 
 void RenderTextHarfBuzz::DrawVisualText(Canvas* canvas) {
   DCHECK(!needs_layout_);
-
-  int current_x = 0;
-
   internal::SkiaTextRenderer renderer(canvas);
   ApplyFadeEffects(&renderer);
   ApplyTextShadows(&renderer);
 
-#if defined(OS_WIN)
-  bool smoothing_enabled;
-  bool cleartype_enabled;
-  GetCachedFontSmoothingSettings(&smoothing_enabled, &cleartype_enabled);
-  // Note that |cleartype_enabled| corresponds to Skia's |enable_lcd_text|.
-  renderer.SetFontSmoothingSettings(
-      smoothing_enabled, cleartype_enabled && !background_is_transparent(),
-      smoothing_enabled /* subpixel_positioning */);
+#if defined(OS_WIN) || defined(OS_LINUX)
+  renderer.SetFontRenderParams(
+      font_list().GetPrimaryFont().GetFontRenderParams(),
+      background_is_transparent());
 #endif
 
   ApplyCompositionAndSelectionStyles();
 
+  int current_x = 0;
   const Vector2d line_offset = GetLineOffset(0);
-
   for (size_t i = 0; i < runs_.size(); ++i) {
     const internal::TextRunHarfBuzz& run = *runs_[visual_to_logical_[i]];
     renderer.SetTypeface(run.skia_face.get());
     renderer.SetTextSize(run.font_size);
 
-    canvas->Save();
     Vector2d origin = line_offset + Vector2d(current_x, lines()[0].baseline);
-    canvas->Translate(origin);
+    scoped_ptr<SkPoint[]> positions(new SkPoint[run.glyph_count]);
+    for (size_t j = 0; j < run.glyph_count; ++j) {
+      positions[j] = run.positions[j];
+      positions[j].offset(SkIntToScalar(origin.x()), SkIntToScalar(origin.y()));
+    }
 
     for (BreakList<SkColor>::const_iterator it =
              colors().GetBreak(run.range.start());
@@ -821,17 +816,16 @@ void RenderTextHarfBuzz::DrawVisualText(Canvas* canvas) {
         continue;
 
       renderer.SetForegroundColor(it->second);
-      renderer.DrawPosText(&run.positions[colored_glyphs.start()],
+      renderer.DrawPosText(&positions[colored_glyphs.start()],
                            &run.glyphs[colored_glyphs.start()],
                            colored_glyphs.length());
       int width = (colored_glyphs.end() == run.glyph_count ? run.width :
               run.positions[colored_glyphs.end()].x()) -
           run.positions[colored_glyphs.start()].x();
-      renderer.DrawDecorations(0, 0, width, run.underline, run.strike,
-                               run.diagonal_strike);
+      renderer.DrawDecorations(origin.x(), origin.y(), width, run.underline,
+                               run.strike, run.diagonal_strike);
     }
 
-    canvas->Restore();
     current_x += run.width;
   }
 
@@ -957,13 +951,54 @@ void RenderTextHarfBuzz::ItemizeText() {
 }
 
 void RenderTextHarfBuzz::ShapeRun(internal::TextRunHarfBuzz* run) {
-  const base::string16& text = GetLayoutText();
-  // TODO(ckocagil|yukishiino): Implement font fallback.
   const Font& primary_font = font_list().GetPrimaryFont();
-  run->skia_face = internal::CreateSkiaTypeface(primary_font.GetFontName(),
-                                                run->font_style);
+  const std::string primary_font_name = primary_font.GetFontName();
   run->font_size = primary_font.GetFontSize();
 
+  // Try shaping with |primary_font|.
+  ShapeRunWithFont(run, primary_font_name);
+  size_t best_font_missing = run->CountMissingGlyphs();
+  if (best_font_missing == 0)
+    return;
+  std::string best_font = primary_font_name;
+
+#if defined(OS_WIN)
+  Font uniscribe_font;
+  const base::char16* run_text = &(GetLayoutText()[run->range.start()]);
+  if (GetUniscribeFallbackFont(primary_font, run_text, run->range.length(),
+                               &uniscribe_font)) {
+    ShapeRunWithFont(run, uniscribe_font.GetFontName());
+    size_t current_missing = run->CountMissingGlyphs();
+    if (current_missing == 0)
+      return;
+    if (current_missing < best_font_missing) {
+      best_font_missing = current_missing;
+      best_font = uniscribe_font.GetFontName();
+    }
+  }
+#endif
+
+  // Try shaping with the fonts in the fallback list except the first, which is
+  // |primary_font|.
+  std::vector<std::string> fonts = GetFallbackFontFamilies(primary_font_name);
+  for (size_t i = 1; i < fonts.size(); ++i) {
+    ShapeRunWithFont(run, fonts[i]);
+    size_t current_missing = run->CountMissingGlyphs();
+    if (current_missing == 0)
+      return;
+    if (current_missing < best_font_missing) {
+      best_font_missing = current_missing;
+      best_font = fonts[i];
+    }
+  }
+
+  ShapeRunWithFont(run, best_font);
+}
+
+void RenderTextHarfBuzz::ShapeRunWithFont(internal::TextRunHarfBuzz* run,
+                                          const std::string& font_family) {
+  const base::string16& text = GetLayoutText();
+  run->skia_face = internal::CreateSkiaTypeface(font_family, run->font_style);
   hb_font_t* harfbuzz_font = CreateHarfBuzzFont(run->skia_face.get(),
                                                 run->font_size);
 
@@ -985,12 +1020,13 @@ void RenderTextHarfBuzz::ShapeRun(internal::TextRunHarfBuzz* run) {
   // Populate the run fields with the resulting glyph data in the buffer.
   unsigned int glyph_count = 0;
   hb_glyph_info_t* infos = hb_buffer_get_glyph_infos(buffer, &glyph_count);
-  hb_glyph_position_t* hb_positions = hb_buffer_get_glyph_positions(buffer,
-                                                                    NULL);
   run->glyph_count = glyph_count;
+  hb_glyph_position_t* hb_positions =
+      hb_buffer_get_glyph_positions(buffer, NULL);
   run->glyphs.reset(new uint16[run->glyph_count]);
   run->glyph_to_char.reset(new uint32[run->glyph_count]);
   run->positions.reset(new SkPoint[run->glyph_count]);
+  run->width = 0;
   for (size_t i = 0; i < run->glyph_count; ++i) {
     run->glyphs[i] = infos[i].codepoint;
     run->glyph_to_char[i] = infos[i].cluster;
@@ -998,7 +1034,7 @@ void RenderTextHarfBuzz::ShapeRun(internal::TextRunHarfBuzz* run) {
         SkScalarRoundToInt(SkFixedToScalar(hb_positions[i].x_offset));
     const int y_offset =
         SkScalarRoundToInt(SkFixedToScalar(hb_positions[i].y_offset));
-    run->positions[i].set(run->width + x_offset, y_offset);
+    run->positions[i].set(run->width + x_offset, -y_offset);
     run->width +=
         SkScalarRoundToInt(SkFixedToScalar(hb_positions[i].x_advance));
   }

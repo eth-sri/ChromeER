@@ -32,11 +32,15 @@ const char kChromeUICloudPrintResourcesURL[] = "chrome://cloudprintresources/";
 const char kChromeUIComponentsURL[] = "chrome://components/";
 const char kChromeUIConflictsURL[] = "chrome://conflicts/";
 const char kChromeUIConstrainedHTMLTestURL[] = "chrome://constrained-test/";
+const char kChromeUIContextualSearchPromoURL[] =
+    "chrome://contextual-search-promo";
 const char kChromeUICrashesURL[] = "chrome://crashes/";
 const char kChromeUICreditsURL[] = "chrome://credits/";
 const char kChromeUIDevicesURL[] = "chrome://devices/";
 const char kChromeUIDevToolsURL[] =
     "chrome-devtools://devtools/bundled/devtools.html";
+const char kChromeUIDomainReliabilityInternalsURL[] =
+    "chrome://domain-reliability-internals/";
 const char kChromeUIDownloadsURL[] = "chrome://downloads/";
 const char kChromeUIEditSearchEngineDialogURL[] = "chrome://editsearchengine/";
 const char kChromeUIExtensionIconURL[] = "chrome://extension-icon/";
@@ -89,6 +93,7 @@ const char kChromeUIUberURL[] = "chrome://chrome/";
 const char kChromeUIUberFrameURL[] = "chrome://uber-frame/";
 const char kChromeUIUserActionsURL[] = "chrome://user-actions/";
 const char kChromeUIVersionURL[] = "chrome://version/";
+const char kChromeUIVoiceSearchURL[] = "chrome://voicesearch/";
 
 #if defined(OS_ANDROID)
 const char kChromeUINativeNewTabURL[] = "chrome-native://newtab/";
@@ -160,6 +165,7 @@ const char kChromeUICloudPrintResourcesHost[] = "cloudprintresources";
 const char kChromeUICloudPrintSetupHost[] = "cloudprintsetup";
 const char kChromeUIConflictsHost[] = "conflicts";
 const char kChromeUIConstrainedHTMLTestHost[] = "constrained-test";
+const char kChromeUIContextualSearchPromoHost[] = "contextual-search-promo";
 const char kChromeUICrashesHost[] = "crashes";
 const char kChromeUICrashHost[] = "crash";
 const char kChromeUICreditsHost[] = "credits";
@@ -169,6 +175,8 @@ const char kChromeUIDevToolsHost[] = "devtools";
 const char kChromeUIDevToolsBundledPath[] = "bundled";
 const char kChromeUIDevToolsRemotePath[] = "remote";
 const char kChromeUIDNSHost[] = "dns";
+const char kChromeUIDomainReliabilityInternalsHost[] =
+    "domain-reliability-internals";
 const char kChromeUIDownloadsHost[] = "downloads";
 const char kChromeUIDriveInternalsHost[] = "drive-internals";
 const char kChromeUIEditSearchEngineDialogHost[] = "editsearchengine";
@@ -243,6 +251,7 @@ const char kChromeUIUberFrameHost[] = "uber-frame";
 const char kChromeUIUberHost[] = "chrome";
 const char kChromeUIUserActionsHost[] = "user-actions";
 const char kChromeUIVersionHost[] = "version";
+const char kChromeUIVoiceSearchHost[] = "voicesearch";
 const char kChromeUIWorkersHost[] = "workers";
 
 const char kChromeUIScreenshotPath[] = "screenshots";
@@ -580,6 +589,7 @@ const char* const kChromeHostURLs[] = {
   kChromeUITranslateInternalsHost,
   kChromeUIUserActionsHost,
   kChromeUIVersionHost,
+  kChromeUIVoiceSearchHost,
   content::kChromeUIAccessibilityHost,
   content::kChromeUIAppCacheInternalsHost,
   content::kChromeUIBlobInternalsHost,
@@ -658,6 +668,7 @@ const size_t kNumberOfChromeHostURLs = arraysize(kChromeHostURLs);
 
 const char* const kChromeDebugURLs[] = {
   content::kChromeUICrashURL,
+  content::kChromeUIDumpURL,
   content::kChromeUIKillURL,
   content::kChromeUIHangURL,
   content::kChromeUIShorthangURL,

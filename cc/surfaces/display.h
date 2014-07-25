@@ -26,24 +26,22 @@ class ResourceProvider;
 class SharedBitmapManager;
 class Surface;
 class SurfaceAggregator;
+class SurfaceIdAllocator;
 class SurfaceFactory;
 class SurfaceManager;
 
 // A Display produces a surface that can be used to draw to a physical display
-// (OutputSurface). Since a surface is a fixed size and displays can resize, a
-// Display may create/destroy surfaces over its lifetime. Frames submitted to a
-// display's surface will have their resources returned through the factory's
-// client.
+// (OutputSurface). The client is responsible for creating and sizing the
+// surface IDs used to draw into the display and deciding when to draw.
 class CC_SURFACES_EXPORT Display : public OutputSurfaceClient,
                                    public RendererClient {
  public:
   Display(DisplayClient* client,
           SurfaceManager* manager,
-          SurfaceFactory* factory,
           SharedBitmapManager* bitmap_manager);
   virtual ~Display();
 
-  void Resize(const gfx::Size& new_size);
+  void Resize(SurfaceId id, const gfx::Size& new_size);
   bool Draw();
 
   SurfaceId CurrentSurfaceId();
@@ -63,7 +61,7 @@ class CC_SURFACES_EXPORT Display : public OutputSurfaceClient,
       const gfx::Transform& transform,
       const gfx::Rect& viewport,
       const gfx::Rect& clip,
-      bool valid_for_tile_management) OVERRIDE {}
+      bool resourceless_software_draw) OVERRIDE {}
   virtual void SetMemoryPolicy(const ManagedMemoryPolicy& policy) OVERRIDE {}
   virtual void SetTreeActivationCallback(
       const base::Closure& callback) OVERRIDE {}
@@ -78,7 +76,6 @@ class CC_SURFACES_EXPORT Display : public OutputSurfaceClient,
   DisplayClient* client_;
   SurfaceManager* manager_;
   SharedBitmapManager* bitmap_manager_;
-  SurfaceFactory* factory_;
   SurfaceId current_surface_id_;
   gfx::Size current_surface_size_;
   LayerTreeSettings settings_;

@@ -66,14 +66,12 @@
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/profiles/profile_metrics.h"
 #include "chrome/browser/safe_browsing/safe_browsing_service.h"
-#include "chrome/browser/search_engines/template_url_fetcher.h"
 #include "chrome/browser/services/gcm/gcm_profile_service.h"
 #include "chrome/browser/services/gcm/gcm_profile_service_factory.h"
 #include "chrome/browser/services/gcm/push_messaging_service_impl.h"
 #include "chrome/browser/sessions/session_service_factory.h"
 #include "chrome/browser/ui/startup/startup_browser_creator.h"
 #include "chrome/browser/ui/webui/extensions/extension_icon_source.h"
-#include "chrome/browser/webdata/web_data_service.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths_internal.h"
 #include "chrome/common/chrome_switches.h"
@@ -327,16 +325,13 @@ void ProfileImpl::RegisterProfilePrefs(
       prefs::kProfileAvatarIndex,
       -1,
       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
-  registry->RegisterStringPref(prefs::kSupervisedUserId,
-                               std::string(),
-                               user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterStringPref(
+      prefs::kSupervisedUserId,
+      std::string(),
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   registry->RegisterStringPref(prefs::kProfileName,
                                std::string(),
                                user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
-  registry->RegisterBooleanPref(
-      prefs::kProfileIsSupervised,
-      false,
-      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
   registry->RegisterStringPref(prefs::kHomePage,
                                std::string(),
                                user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
@@ -404,6 +399,7 @@ ProfileImpl::ProfileImpl(
   const CommandLine* command_line = CommandLine::ForCurrentProcess();
   predictor_ = chrome_browser_net::Predictor::CreatePredictor(
       !command_line->HasSwitch(switches::kDisablePreconnect),
+      !command_line->HasSwitch(switches::kDnsPrefetchDisable),
       g_browser_process->profile_manager() == NULL);
 
   // If we are creating the profile synchronously, then we should load the
@@ -858,10 +854,10 @@ void ProfileImpl::OnPrefsLoaded(bool success) {
   prefs_->SetBoolean(prefs::kSessionExitedCleanly, true);
 
 #if defined(OS_ANDROID) && defined(FULL_SAFE_BROWSING)
-  // Force safe browsing to false in the case we need to roll back for users
-  // enrolled in Finch trial before.
+  // Clear safe browsing setting in the case we need to roll back
+  // for users enrolled in Finch trial before.
   if (!SafeBrowsingService::IsEnabledByFieldTrial())
-    prefs_->SetBoolean(prefs::kSafeBrowsingEnabled, false);
+    prefs_->ClearPref(prefs::kSafeBrowsingEnabled);
 #endif
 
   g_browser_process->profile_manager()->InitProfileUserPrefs(this);
@@ -1079,12 +1075,10 @@ void ProfileImpl::OnZoomLevelChanged(
   double level = change.zoom_level;
   DictionaryPrefUpdate update(prefs_.get(), prefs::kPerHostZoomLevels);
   base::DictionaryValue* host_zoom_dictionary = update.Get();
-  if (content::ZoomValuesEqual(level, host_zoom_map->GetDefaultZoomLevel())) {
+  if (content::ZoomValuesEqual(level, host_zoom_map->GetDefaultZoomLevel()))
     host_zoom_dictionary->RemoveWithoutPathExpansion(change.host, NULL);
-  } else {
-    host_zoom_dictionary->SetWithoutPathExpansion(
-        change.host, base::Value::CreateDoubleValue(level));
-  }
+  else
+    host_zoom_dictionary->SetDoubleWithoutPathExpansion(change.host, level);
 }
 
 #if defined(ENABLE_SESSION_SERVICE)
@@ -1172,7 +1166,7 @@ void ProfileImpl::ChangeAppLocale(
   local_state->SetString(prefs::kApplicationLocale, new_locale);
 
   if (chromeos::UserManager::Get()->GetOwnerEmail() ==
-      chromeos::UserManager::Get()->GetUserByProfile(this)->email())
+      chromeos::ProfileHelper::Get()->GetUserByProfile(this)->email())
     local_state->SetString(prefs::kOwnerLocale, new_locale);
 }
 
@@ -1186,7 +1180,7 @@ void ProfileImpl::InitChromeOSPreferences() {
   chromeos_preferences_.reset(new chromeos::Preferences());
   chromeos_preferences_->Init(
       PrefServiceSyncable::FromProfile(this),
-      chromeos::UserManager::Get()->GetUserByProfile(this));
+      chromeos::ProfileHelper::Get()->GetUserByProfile(this));
 }
 
 #endif  // defined(OS_CHROMEOS)

@@ -22,6 +22,7 @@
 #include "chrome/browser/extensions/extension_special_storage_policy.h"
 #include "chrome/browser/extensions/extension_system_factory.h"
 #include "chrome/browser/extensions/test_extension_system.h"
+#include "chrome/browser/favicon/chrome_favicon_client_factory.h"
 #include "chrome/browser/favicon/favicon_service.h"
 #include "chrome/browser/favicon/favicon_service_factory.h"
 #include "chrome/browser/history/chrome_history_client.h"
@@ -45,7 +46,6 @@
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/profiles/storage_partition_descriptor.h"
 #include "chrome/browser/search_engines/template_url_fetcher_factory.h"
-#include "chrome/browser/webdata/web_data_service.h"
 #include "chrome/browser/webdata/web_data_service_factory.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_switches.h"
@@ -138,7 +138,9 @@ class TestExtensionURLRequestContext : public net::URLRequestContext {
     set_cookie_store(cookie_monster);
   }
 
-  virtual ~TestExtensionURLRequestContext() {}
+  virtual ~TestExtensionURLRequestContext() {
+    AssertNoURLRequests();
+  }
 };
 
 class TestExtensionURLRequestContextGetter
@@ -426,7 +428,9 @@ TestingProfile::~TestingProfile() {
 }
 
 static KeyedService* BuildFaviconService(content::BrowserContext* profile) {
-  return new FaviconService(static_cast<Profile*>(profile));
+  FaviconClient* favicon_client =
+      ChromeFaviconClientFactory::GetForProfile(static_cast<Profile*>(profile));
+  return new FaviconService(static_cast<Profile*>(profile), favicon_client);
 }
 
 void TestingProfile::CreateFaviconService() {
@@ -846,8 +850,8 @@ void TestingProfile::BlockUntilHistoryProcessesPendingRequests() {
   DCHECK(history_service);
   DCHECK(base::MessageLoop::current());
 
-  CancelableRequestConsumer consumer;
-  history_service->ScheduleDBTask(new QuittingHistoryDBTask(), &consumer);
+  base::CancelableTaskTracker tracker;
+  history_service->ScheduleDBTask(new QuittingHistoryDBTask(), &tracker);
   base::MessageLoop::current()->Run();
 }
 

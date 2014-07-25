@@ -15,6 +15,7 @@
 #include "chrome/browser/chromeos/drive/drive.pb.h"
 #include "chrome/browser/chromeos/drive/fake_free_disk_space_getter.h"
 #include "chrome/browser/chromeos/drive/file_cache.h"
+#include "chrome/browser/chromeos/drive/file_change.h"
 #include "chrome/browser/chromeos/drive/file_system/move_operation.h"
 #include "chrome/browser/chromeos/drive/file_system/operation_observer.h"
 #include "chrome/browser/chromeos/drive/file_system/remove_operation.h"
@@ -97,8 +98,8 @@ class SyncClientTestDriveService : public ::drive::FakeDriveService {
 
 class DummyOperationObserver : public file_system::OperationObserver {
   // OperationObserver override:
-  virtual void OnDirectoryChangedByOperation(
-      const base::FilePath& path) OVERRIDE {}
+  virtual void OnFileChangedByOperation(
+      const FileChange& changed_files) OVERRIDE {}
 };
 
 }  // namespace
@@ -477,7 +478,6 @@ TEST_F(SyncClientTest, Dependencies) {
 
   // Start syncing the child first.
   sync_client_->AddUpdateTask(ClientContext(USER_INITIATED), local_id2);
-  base::RunLoop().RunUntilIdle();
   // Start syncing the parent later.
   sync_client_->AddUpdateTask(ClientContext(USER_INITIATED), local_id1);
   base::RunLoop().RunUntilIdle();
@@ -487,6 +487,39 @@ TEST_F(SyncClientTest, Dependencies) {
   EXPECT_EQ(ResourceEntry::CLEAN, entry1.metadata_edit_state());
   EXPECT_EQ(FILE_ERROR_OK, metadata_->GetResourceEntryById(local_id2, &entry2));
   EXPECT_EQ(ResourceEntry::CLEAN, entry2.metadata_edit_state());
+}
+
+TEST_F(SyncClientTest, WaitForUpdateTaskToComplete) {
+  // Create a directory locally.
+  const base::FilePath kPath(FILE_PATH_LITERAL("drive/root/dir1"));
+
+  ResourceEntry parent;
+  EXPECT_EQ(FILE_ERROR_OK,
+            metadata_->GetResourceEntryByPath(kPath.DirName(), &parent));
+
+  ResourceEntry entry;
+  entry.set_parent_local_id(parent.local_id());
+  entry.set_title(kPath.BaseName().AsUTF8Unsafe());
+  entry.mutable_file_info()->set_is_directory(true);
+  entry.set_metadata_edit_state(ResourceEntry::DIRTY);
+  std::string local_id;
+  EXPECT_EQ(FILE_ERROR_OK, metadata_->AddEntry(entry, &local_id));
+
+  // Sync task is not yet avialable.
+  FileError error = FILE_ERROR_FAILED;
+  EXPECT_FALSE(sync_client_->WaitForUpdateTaskToComplete(
+      local_id, google_apis::test_util::CreateCopyResultCallback(&error)));
+
+  // Start syncing the directory and wait for it to complete.
+  sync_client_->AddUpdateTask(ClientContext(USER_INITIATED), local_id);
+
+  EXPECT_TRUE(sync_client_->WaitForUpdateTaskToComplete(
+      local_id, google_apis::test_util::CreateCopyResultCallback(&error)));
+
+  base::RunLoop().RunUntilIdle();
+
+  // The callback is called.
+  EXPECT_EQ(FILE_ERROR_OK, error);
 }
 
 }  // namespace internal

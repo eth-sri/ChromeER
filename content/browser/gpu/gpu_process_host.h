@@ -19,6 +19,7 @@
 #include "content/common/content_export.h"
 #include "content/common/gpu/gpu_memory_uma_stats.h"
 #include "content/common/gpu/gpu_process_launch_causes.h"
+#include "content/common/gpu/gpu_result_codes.h"
 #include "content/public/browser/browser_child_process_host_delegate.h"
 #include "content/public/browser/gpu_data_manager.h"
 #include "gpu/command_buffer/common/constants.h"
@@ -30,9 +31,6 @@
 #include "url/gurl.h"
 
 struct GPUCreateCommandBufferConfig;
-struct GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params;
-struct GpuHostMsg_AcceleratedSurfacePostSubBuffer_Params;
-struct GpuHostMsg_AcceleratedSurfaceRelease_Params;
 
 namespace gfx {
 struct GpuMemoryBufferHandle;
@@ -63,9 +61,8 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   typedef base::Callback<void(const IPC::ChannelHandle&, const gpu::GPUInfo&)>
       EstablishChannelCallback;
 
-  typedef base::Callback<void(bool)> CreateCommandBufferCallback;
-
-  typedef base::Callback<void(const gfx::Size)> CreateImageCallback;
+  typedef base::Callback<void(CreateCommandBufferResult)>
+      CreateCommandBufferCallback;
 
   typedef base::Callback<void(const gfx::GpuMemoryBufferHandle& handle)>
       CreateGpuMemoryBufferCallback;
@@ -110,6 +107,7 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   // and GPUInfo, we call the callback.
   void EstablishGpuChannel(int client_id,
                            bool share_context,
+                           bool allow_future_sync_points,
                            const EstablishChannelCallback& callback);
 
   // Tells the GPU process to create a new command buffer that draws into the
@@ -122,21 +120,15 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
       int route_id,
       const CreateCommandBufferCallback& callback);
 
-  // Tells the GPU process to create a new image using the given window.
-  void CreateImage(
-      gfx::PluginWindowHandle window,
-      int client_id,
-      int image_id,
-      const CreateImageCallback& callback);
-
-    // Tells the GPU process to delete image.
-  void DeleteImage(int client_id, int image_id, int sync_point);
-
+  // Tells the GPU process to create a new GPU memory buffer using the given
+  // handle.
   void CreateGpuMemoryBuffer(const gfx::GpuMemoryBufferHandle& handle,
                              const gfx::Size& size,
                              unsigned internalformat,
                              unsigned usage,
                              const CreateGpuMemoryBufferCallback& callback);
+
+  // Tells the GPU process to destroy GPU memory buffer.
   void DestroyGpuMemoryBuffer(const gfx::GpuMemoryBufferHandle& handle,
                               int sync_point);
 
@@ -171,9 +163,8 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   // Message handlers.
   void OnInitialized(bool result, const gpu::GPUInfo& gpu_info);
   void OnChannelEstablished(const IPC::ChannelHandle& channel_handle);
-  void OnCommandBufferCreated(bool succeeded);
+  void OnCommandBufferCreated(CreateCommandBufferResult result);
   void OnDestroyCommandBuffer(int32 surface_id);
-  void OnImageCreated(const gfx::Size size);
   void OnGpuMemoryBufferCreated(const gfx::GpuMemoryBufferHandle& handle);
   void OnDidCreateOffscreenContext(const GURL& url);
   void OnDidLoseContext(bool offscreen,
@@ -182,8 +173,7 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   void OnDidDestroyOffscreenContext(const GURL& url);
   void OnGpuMemoryUmaStatsReceived(const GPUMemoryUmaStats& stats);
 #if defined(OS_MACOSX)
-  void OnAcceleratedSurfaceBuffersSwapped(
-      const GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params& params);
+  void OnAcceleratedSurfaceBuffersSwapped(const IPC::Message& message);
 #endif
 
   void CreateChannelCache(int32 client_id);
@@ -208,9 +198,6 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
 
   // The pending create command buffer requests we need to reply to.
   std::queue<CreateCommandBufferCallback> create_command_buffer_requests_;
-
-  // The pending create image requests we need to reply to.
-  std::queue<CreateImageCallback> create_image_requests_;
 
   // The pending create gpu memory buffer requests we need to reply to.
   std::queue<CreateGpuMemoryBufferCallback> create_gpu_memory_buffer_requests_;

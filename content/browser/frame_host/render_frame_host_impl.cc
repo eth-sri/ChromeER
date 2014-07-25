@@ -8,6 +8,7 @@
 #include "base/containers/hash_tables.h"
 #include "base/lazy_instance.h"
 #include "base/metrics/user_metrics_action.h"
+#include "base/time/time.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/frame_host/cross_process_frame_connector.h"
 #include "content/browser/frame_host/cross_site_transferring_request.h"
@@ -167,8 +168,8 @@ RenderFrameHostImpl::RenderFrameHostImpl(
 
   if (GetProcess()->GetServiceRegistry()) {
     RenderFrameSetupPtr setup;
-    GetProcess()->GetServiceRegistry()->GetRemoteInterface(&setup);
-    mojo::IInterfaceProviderPtr service_provider;
+    GetProcess()->GetServiceRegistry()->ConnectToRemoteService(&setup);
+    mojo::ServiceProviderPtr service_provider;
     setup->GetServiceProviderForFrame(routing_id_,
                                       mojo::Get(&service_provider));
     service_registry_.BindRemoteServiceProvider(
@@ -336,6 +337,8 @@ bool RenderFrameHostImpl::OnMessageReceived(const IPC::Message &msg) {
     IPC_MESSAGE_HANDLER(FrameHostMsg_DidDisownOpener, OnDidDisownOpener)
     IPC_MESSAGE_HANDLER(FrameHostMsg_UpdateTitle, OnUpdateTitle)
     IPC_MESSAGE_HANDLER(FrameHostMsg_UpdateEncoding, OnUpdateEncoding)
+    IPC_MESSAGE_HANDLER(FrameHostMsg_BeginNavigation,
+                        OnBeginNavigation)
     IPC_MESSAGE_HANDLER(DesktopNotificationHostMsg_RequestPermission,
                         OnRequestDesktopNotificationPermission)
     IPC_MESSAGE_HANDLER(DesktopNotificationHostMsg_Show,
@@ -404,10 +407,8 @@ void RenderFrameHostImpl::OnDocumentOnLoadCompleted() {
 }
 
 void RenderFrameHostImpl::OnDidStartProvisionalLoadForFrame(
-    int parent_routing_id,
     const GURL& url) {
-  frame_tree_node_->navigator()->DidStartProvisionalLoad(
-      this, parent_routing_id, url);
+  frame_tree_node_->navigator()->DidStartProvisionalLoad(this, url);
 }
 
 void RenderFrameHostImpl::OnDidFailProvisionalLoadWithError(
@@ -776,6 +777,13 @@ void RenderFrameHostImpl::OnUpdateEncoding(const std::string& encoding_name) {
   delegate_->UpdateEncoding(this, encoding_name);
 }
 
+void RenderFrameHostImpl::OnBeginNavigation(
+    const FrameHostMsg_BeginNavigation_Params& params) {
+#if defined(USE_BROWSER_SIDE_NAVIGATION)
+  frame_tree_node()->render_manager()->OnBeginNavigation(params);
+#endif
+}
+
 void RenderFrameHostImpl::SetPendingShutdown(const base::Closure& on_swap_out) {
   render_view_host_->SetPendingShutdown(on_swap_out);
 }
@@ -847,6 +855,7 @@ void RenderFrameHostImpl::NavigateToURL(const GURL& url) {
   params.url = url;
   params.transition = PAGE_TRANSITION_LINK;
   params.navigation_type = FrameMsg_Navigate_Type::NORMAL;
+  params.browser_navigation_start = base::TimeTicks::Now();
   Navigate(params);
 }
 

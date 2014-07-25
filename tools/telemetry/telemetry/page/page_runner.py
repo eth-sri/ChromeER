@@ -19,13 +19,13 @@ from telemetry.core import exceptions
 from telemetry.core import util
 from telemetry.core import wpr_modes
 from telemetry.core.platform.profiler import profiler_finder
-from telemetry.page import cloud_storage
 from telemetry.page import page_filter
 from telemetry.page import page_runner_repeat
 from telemetry.page import page_test
 from telemetry.page.actions import navigate
 from telemetry.page.actions import page_action
 from telemetry.results import results_options
+from telemetry.util import cloud_storage
 from telemetry.util import exception_formatter
 
 
@@ -247,7 +247,6 @@ def _PrepareAndRunPage(test, page_set, expectations, finder_options,
     tries -= 1
     try:
       results_for_current_run = copy.copy(results)
-      results_for_current_run.StartTest(page)
       if test.RestartBrowserBeforeEachPage() or page.startup_url:
         state.StopBrowser()
         # If we are restarting the browser for each page customize the per page
@@ -258,7 +257,6 @@ def _PrepareAndRunPage(test, page_set, expectations, finder_options,
       if not page.CanRunOnBrowser(browser_info.BrowserInfo(state.browser)):
         logging.info('Skip test for page %s because browser is not supported.'
                      % page.url)
-        results_for_current_run.StopTest(page)
         return results
 
       expectation = expectations.GetExpectationForPage(state.browser, page)
@@ -277,7 +275,7 @@ def _PrepareAndRunPage(test, page_set, expectations, finder_options,
           logging.error('Aborting multi-tab test after tab %s crashed',
                         page.url)
           raise
-        logging.warning(e)
+        logging.warning(str(e))
         state.StopBrowser()
 
       if finder_options.profiler:
@@ -285,8 +283,6 @@ def _PrepareAndRunPage(test, page_set, expectations, finder_options,
 
       if (test.StopBrowserAfterPage(state.browser, page)):
         state.StopBrowser()
-
-      results_for_current_run.StopTest(page)
 
       if state.first_page[page]:
         state.first_page[page] = False
@@ -301,7 +297,7 @@ def _PrepareAndRunPage(test, page_set, expectations, finder_options,
       if test.is_multi_tab_test:
         logging.error('Aborting multi-tab test after browser crashed')
         raise
-      logging.warning(e)
+      logging.warning(str(e))
 
 
 def _UpdatePageSetArchivesIfChanged(page_set):
@@ -393,8 +389,10 @@ def Run(test, page_set, expectations, finder_options):
 
   for page in list(pages):
     if not test.CanRunForPage(page):
+      results.StartTest(page)
       logging.debug('Skipping test: it cannot run for %s', page.url)
       results.AddSkip(page, 'Test cannot run')
+      results.StopTest(page)
       pages.remove(page)
 
   if not pages:
@@ -414,18 +412,18 @@ def Run(test, page_set, expectations, finder_options):
         state.repeat_state.WillRunPage()
         test.WillRunPageRepeats(page)
         while state.repeat_state.ShouldRepeatPage():
-          results = _PrepareAndRunPage(
-              test, page_set, expectations, finder_options, browser_options,
-              page, credentials_path, possible_browser, results, state)
-          state.repeat_state.DidRunPage()
+          results.StartTest(page)
+          try:
+            results = _PrepareAndRunPage(
+                test, page_set, expectations, finder_options, browser_options,
+                page, credentials_path, possible_browser, results, state)
+          finally:
+            state.repeat_state.DidRunPage()
+            results.StopTest(page)
         test.DidRunPageRepeats(page)
         if (not test.max_failures is None and
             len(results.failures) > test.max_failures):
           logging.error('Too many failures. Aborting.')
-          test.RequestExit()
-        if (not test.max_errors is None and
-            len(results.errors) > test.max_errors):
-          logging.error('Too many errors. Aborting.')
           test.RequestExit()
         if test.IsExiting():
           break
@@ -500,7 +498,7 @@ def _CheckArchives(page_set, pages, results):
 
   for page in pages_missing_archive_path + pages_missing_archive_data:
     results.StartTest(page)
-    results.AddErrorMessage(page, 'Page set archive doesn\'t exist.')
+    results.AddFailureMessage(page, 'Page set archive doesn\'t exist.')
     results.StopTest(page)
 
   return [page for page in pages if page not in
@@ -523,7 +521,7 @@ def _RunPage(test, page, state, expectation, results, finder_options):
       results.AddSuccess(page)
     else:
       msg = 'Exception while running %s' % page.url
-      results.AddError(page, sys.exc_info())
+      results.AddFailure(page, sys.exc_info())
     exception_formatter.PrintFormattedException(msg=msg)
 
   try:

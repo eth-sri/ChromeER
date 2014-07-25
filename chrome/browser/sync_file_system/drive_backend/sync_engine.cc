@@ -8,6 +8,7 @@
 
 #include "base/bind.h"
 #include "base/metrics/histogram.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "base/time/time.h"
 #include "base/values.h"
@@ -175,7 +176,7 @@ scoped_ptr<SyncEngine> SyncEngine::CreateForBrowserContext(
       content::BrowserThread::GetBlockingPool();
 
   scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner =
-      base::MessageLoopProxy::current();
+      base::ThreadTaskRunnerHandle::Get();
   scoped_refptr<base::SequencedTaskRunner> worker_task_runner =
       worker_pool->GetSequencedTaskRunnerWithShutdownBehavior(
           worker_pool->GetSequenceToken(),
@@ -577,14 +578,20 @@ void SyncEngine::SetSyncEnabled(bool sync_enabled) {
                  sync_enabled));
 }
 
-void SyncEngine::PromoteDemotedChanges() {
-  if (!sync_worker_)
+void SyncEngine::PromoteDemotedChanges(const base::Closure& callback) {
+  if (!sync_worker_) {
+    callback.Run();
     return;
+  }
+
+  base::Closure relayed_callback = RelayCallbackToCurrentThread(
+      FROM_HERE, callback_tracker_.Register(callback, callback));
 
   worker_task_runner_->PostTask(
       FROM_HERE,
       base::Bind(&SyncWorkerInterface::PromoteDemotedChanges,
-                 base::Unretained(sync_worker_.get())));
+                 base::Unretained(sync_worker_.get()),
+                 relayed_callback));
 }
 
 void SyncEngine::ApplyLocalChange(

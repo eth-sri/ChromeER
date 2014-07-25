@@ -25,6 +25,7 @@
 #include "extensions/browser/install_flag.h"
 #include "extensions/browser/management_policy.h"
 #include "extensions/browser/process_manager.h"
+#include "extensions/browser/uninstall_reason.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_set.h"
 #include "extensions/common/manifest.h"
@@ -158,7 +159,8 @@ class ExtensionService
   // Attempts to uninstall an extension from a given ExtensionService. Returns
   // true iff the target extension exists.
   static bool UninstallExtensionHelper(ExtensionService* extensions_service,
-                                       const std::string& extension_id);
+                                       const std::string& extension_id,
+                                       extensions::UninstallReason reason);
 
   // Constructor stores pointers to |profile| and |extension_prefs| but
   // ownership remains at caller.
@@ -237,17 +239,17 @@ class ExtensionService
 
   // Reloads the specified extension, sending the onLaunched() event to it if it
   // currently has any window showing.
+  // Allows noisy failures.
   void ReloadExtension(const std::string& extension_id);
 
+  // Suppresses noisy failures.
+  void ReloadExtensionWithQuietFailure(const std::string& extension_id);
+
   // Uninstalls the specified extension. Callers should only call this method
-  // with extensions that exist. |external_uninstall| is a magical parameter
-  // that is only used to send information to ExtensionPrefs, which external
-  // callers should never set to true.
-  //
-  // TODO(aa): Remove |external_uninstall| -- this information should be passed
-  // to ExtensionPrefs some other way.
+  // with extensions that exist. |reason| lets the caller specify why the
+  // extension is uninstalled.
   virtual bool UninstallExtension(const std::string& extension_id,
-                                  bool external_uninstall,
+                                  extensions::UninstallReason reason,
                                   base::string16* error);
 
   // Enables the extension.  If the extension is already enabled, does
@@ -312,13 +314,6 @@ class ExtensionService
 
   // Changes sequenced task runner for crx installation tasks to |task_runner|.
   void SetFileTaskRunnerForTesting(base::SequencedTaskRunner* task_runner);
-
-  // Checks if there are any new external extensions to notify the user about.
-  void UpdateExternalExtensionAlert();
-
-  // Given a (presumably just-installed) extension id, mark that extension as
-  // acknowledged.
-  void AcknowledgeExternalExtension(const std::string& id);
 
   // Postpone installations so that we don't have to worry about race
   // conditions.
@@ -442,6 +437,11 @@ class ExtensionService
 
 
  private:
+  // Reloads the specified extension, sending the onLaunched() event to it if it
+  // currently has any window showing. |be_noisy| determines whether noisy
+  // failures are allowed for unpacked extension installs.
+  void ReloadExtensionImpl(const std::string& extension_id, bool be_noisy);
+
   // content::NotificationObserver implementation:
   virtual void Observe(int type,
                        const content::NotificationSource& source,
@@ -470,11 +470,6 @@ class ExtensionService
   // Called once all external providers are ready. Checks for unclaimed
   // external extensions.
   void OnAllExternalProvidersReady();
-
-  // Returns true if this extension is an external one that has yet to be
-  // marked as acknowledged.
-  bool IsUnacknowledgedExternalExtension(
-      const extensions::Extension* extension);
 
   // Return true if the sync type of |extension| matches |type|.
   void OnExtensionInstallPrefChanged();

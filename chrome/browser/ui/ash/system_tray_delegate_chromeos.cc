@@ -66,6 +66,7 @@
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/policy/device_cloud_policy_manager_chromeos.h"
 #include "chrome/browser/chromeos/profiles/multiprofiles_intro_dialog.h"
+#include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/set_time_dialog.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/sim_dialog_delegate.h"
@@ -99,6 +100,7 @@
 #include "chromeos/network/portal_detector/network_portal_detector.h"
 #include "components/google/core/browser/google_util.h"
 #include "components/policy/core/common/cloud/cloud_policy_store.h"
+#include "components/user_manager/user_type.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/user_metrics.h"
@@ -405,8 +407,8 @@ ash::user::LoginStatus SystemTrayDelegateChromeOS::GetUserLoginStatus() const {
       return ash::user::LOGGED_IN_RETAIL_MODE;
     case LoginState::LOGGED_IN_USER_PUBLIC_ACCOUNT:
       return ash::user::LOGGED_IN_PUBLIC;
-    case LoginState::LOGGED_IN_USER_LOCALLY_MANAGED:
-      return ash::user::LOGGED_IN_LOCALLY_MANAGED;
+    case LoginState::LOGGED_IN_USER_SUPERVISED:
+      return ash::user::LOGGED_IN_SUPERVISED;
     case LoginState::LOGGED_IN_USER_KIOSK_APP:
       return ash::user::LOGGED_IN_KIOSK_APP;
   }
@@ -431,29 +433,28 @@ const base::string16 SystemTrayDelegateChromeOS::GetEnterpriseMessage() const {
                                     base::UTF8ToUTF16(GetEnterpriseDomain()));
 }
 
-const std::string SystemTrayDelegateChromeOS::GetLocallyManagedUserManager()
-    const {
-  if (GetUserLoginStatus() != ash::user::LOGGED_IN_LOCALLY_MANAGED)
+const std::string SystemTrayDelegateChromeOS::GetSupervisedUserManager() const {
+  if (GetUserLoginStatus() != ash::user::LOGGED_IN_SUPERVISED)
     return std::string();
   return UserManager::Get()->GetSupervisedUserManager()->GetManagerDisplayEmail(
       chromeos::UserManager::Get()->GetActiveUser()->email());
 }
 
 const base::string16
-SystemTrayDelegateChromeOS::GetLocallyManagedUserManagerName() const {
-  if (GetUserLoginStatus() != ash::user::LOGGED_IN_LOCALLY_MANAGED)
+SystemTrayDelegateChromeOS::GetSupervisedUserManagerName() const {
+  if (GetUserLoginStatus() != ash::user::LOGGED_IN_SUPERVISED)
     return base::string16();
   return UserManager::Get()->GetSupervisedUserManager()->GetManagerDisplayName(
       chromeos::UserManager::Get()->GetActiveUser()->email());
 }
 
-const base::string16 SystemTrayDelegateChromeOS::GetLocallyManagedUserMessage()
+const base::string16 SystemTrayDelegateChromeOS::GetSupervisedUserMessage()
     const {
-  if (GetUserLoginStatus() != ash::user::LOGGED_IN_LOCALLY_MANAGED)
+  if (GetUserLoginStatus() != ash::user::LOGGED_IN_SUPERVISED)
     return base::string16();
   return l10n_util::GetStringFUTF16(
       IDS_USER_IS_LOCALLY_MANAGED_BY_NOTICE,
-      base::UTF8ToUTF16(GetLocallyManagedUserManager()));
+      base::UTF8ToUTF16(GetSupervisedUserManager()));
 }
 
 bool SystemTrayDelegateChromeOS::SystemShouldUpgrade() const {
@@ -572,7 +573,7 @@ void SystemTrayDelegateChromeOS::ShowPublicAccountInfo() {
   chrome::ShowPolicy(displayer.browser());
 }
 
-void SystemTrayDelegateChromeOS::ShowLocallyManagedUserInfo() {
+void SystemTrayDelegateChromeOS::ShowSupervisedUserInfo() {
   // TODO(antrim): find out what should we show in this case.
   // http://crbug.com/229762
 }
@@ -599,7 +600,7 @@ void SystemTrayDelegateChromeOS::ShowUserLogin() {
 
   // Only regular users could add other users to current session.
   if (UserManager::Get()->GetActiveUser()->GetType() !=
-      User::USER_TYPE_REGULAR) {
+      user_manager::USER_TYPE_REGULAR) {
     return;
   }
 
@@ -899,13 +900,6 @@ void SystemTrayDelegateChromeOS::ActiveUserWasChanged() {
   GetSystemTrayNotifier()->NotifyUserUpdate();
 }
 
-bool SystemTrayDelegateChromeOS::IsNetworkBehindCaptivePortal(
-    const std::string& service_path) const {
-  NetworkPortalDetector::CaptivePortalState state =
-      NetworkPortalDetector::Get()->GetCaptivePortalState(service_path);
-  return state.status == NetworkPortalDetector::CAPTIVE_PORTAL_STATUS_PORTAL;
-}
-
 bool SystemTrayDelegateChromeOS::IsSearchKeyMappedToCapsLock() {
   return search_key_mapped_to_ == input_method::kCapsLockKey;
 }
@@ -915,7 +909,7 @@ SystemTrayDelegateChromeOS::GetUserAccountsDelegate(
     const std::string& user_id) {
   if (!accounts_delegates_.contains(user_id)) {
     const User* user = UserManager::Get()->FindUser(user_id);
-    Profile* user_profile = UserManager::Get()->GetProfileByUser(user);
+    Profile* user_profile = ProfileHelper::Get()->GetProfileByUser(user);
     CHECK(user_profile);
     accounts_delegates_.set(
         user_id,

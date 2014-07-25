@@ -135,9 +135,9 @@ void VideoDecoderShim::DecoderImpl::Initialize(
     decoder_ = ffmpeg_video_decoder.Pass();
   }
   max_decodes_at_decoder_ = decoder_->GetMaxDecodeRequests();
-  // We can use base::Unretained() safely in decoder callbacks because we call
-  // VideoDecoder::Stop() before deletion. Stop() guarantees there will be no
-  // outstanding callbacks after it returns.
+  // We can use base::Unretained() safely in decoder callbacks because
+  // |decoder_| is owned by DecoderImpl. During Stop(), the |decoder_| will be
+  // destroyed and all outstanding callbacks will be fired.
   decoder_->Initialize(
       config,
       true /* low_delay */,
@@ -178,7 +178,7 @@ void VideoDecoderShim::DecoderImpl::Stop() {
   // again.
   while (!pending_decodes_.empty())
     pending_decodes_.pop();
-  decoder_->Stop();
+  decoder_.reset();
   // This instance is deleted once we exit this scope.
 }
 
@@ -385,12 +385,9 @@ void VideoDecoderShim::AssignPictureBuffers(
   GLuint num_textures = base::checked_cast<GLuint>(buffers.size());
   std::vector<uint32_t> local_texture_ids(num_textures);
   gpu::gles2::GLES2Interface* gles2 = context_provider_->ContextGL();
-  gles2->GenTextures(num_textures, &local_texture_ids.front());
   for (uint32_t i = 0; i < num_textures; i++) {
-    gles2->ActiveTexture(GL_TEXTURE0);
-    gles2->BindTexture(GL_TEXTURE_2D, local_texture_ids[i]);
-    gles2->ConsumeTextureCHROMIUM(GL_TEXTURE_2D,
-                                  pending_texture_mailboxes_[i].name);
+    local_texture_ids[i] = gles2->CreateAndConsumeTextureCHROMIUM(
+        GL_TEXTURE_2D, pending_texture_mailboxes_[i].name);
     // Map the plugin texture id to the local texture id.
     uint32_t plugin_texture_id = buffers[i].texture_id();
     texture_id_map_[plugin_texture_id] = local_texture_ids[i];
@@ -556,12 +553,6 @@ void VideoDecoderShim::OnResetComplete() {
   // Dismiss any old textures now.
   while (!textures_to_dismiss_.empty())
     DismissTexture(*textures_to_dismiss_.begin());
-  // Make all textures available.
-  for (TextureIdMap::const_iterator it = texture_id_map_.begin();
-       it != texture_id_map_.end();
-       ++it) {
-    available_textures_.insert(it->first);
-  }
 
   state_ = DECODING;
   host_->NotifyResetDone();

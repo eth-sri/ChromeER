@@ -42,7 +42,6 @@
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/profiles/profiles_state.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
-#include "chrome/browser/search_engines/util.h"
 #include "chrome/browser/ui/app_list/app_list_service.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_dialogs.h"
@@ -58,6 +57,7 @@
 #include "chrome/common/url_constants.h"
 #include "chrome/installer/util/browser_distribution.h"
 #include "components/google/core/browser/google_util.h"
+#include "components/search_engines/util.h"
 #include "components/signin/core/common/profile_management_switches.h"
 #include "components/url_fixer/url_fixer.h"
 #include "content/public/browser/browser_thread.h"
@@ -330,9 +330,7 @@ bool StartupBrowserCreator::LaunchBrowser(
   profile_launch_observer.Get().AddLaunched(profile);
 
 #if defined(OS_CHROMEOS)
-  g_browser_process->platform_part()->profile_helper()->ProfileStartup(
-      profile,
-      process_startup);
+  chromeos::ProfileHelper::Get()->ProfileStartup(profile, process_startup);
 #endif
   return true;
 }
@@ -535,10 +533,8 @@ bool StartupBrowserCreator::ProcessCmdLineImpl(
 
 #if defined(OS_CHROMEOS)
   // The browser will be launched after the user logs in.
-  if (command_line.HasSwitch(chromeos::switches::kLoginManager) ||
-      command_line.HasSwitch(chromeos::switches::kLoginPassword)) {
+  if (command_line.HasSwitch(chromeos::switches::kLoginManager))
     silent_launch = true;
-  }
 
   if (chrome::IsRunningInAppMode() &&
       command_line.HasSwitch(switches::kAppId)) {

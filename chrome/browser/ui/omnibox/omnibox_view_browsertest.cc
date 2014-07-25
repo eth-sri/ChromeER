@@ -17,12 +17,11 @@
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_window.h"
-#include "chrome/browser/ui/omnibox/location_bar.h"
+#include "chrome/browser/ui/location_bar/location_bar.h"
 #include "chrome/browser/ui/omnibox/omnibox_popup_model.h"
 #include "chrome/browser/ui/omnibox/omnibox_view.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
@@ -38,6 +37,7 @@
 #include "components/bookmarks/browser/bookmark_utils.h"
 #include "components/bookmarks/test/bookmark_test_helpers.h"
 #include "components/search_engines/template_url.h"
+#include "components/search_engines/template_url_service.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_contents.h"
 #include "net/dns/mock_host_resolver.h"
@@ -292,7 +292,7 @@ class OmniboxViewTest : public InProcessBrowserTest,
                                         entry.typed_count, time, false,
                                         history::SOURCE_BROWSED);
     if (entry.starred)
-      bookmark_utils::AddIfNotBookmarked(bookmark_model, url, base::string16());
+      bookmarks::AddIfNotBookmarked(bookmark_model, url, base::string16());
     // Wait at least for the AddPageWithDetails() call to finish.
     {
       content::NotificationRegistrar registrar;

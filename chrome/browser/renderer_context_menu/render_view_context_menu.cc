@@ -42,7 +42,6 @@
 #include "chrome/browser/renderer_context_menu/spellchecker_submenu_observer.h"
 #include "chrome/browser/renderer_context_menu/spelling_menu_observer.h"
 #include "chrome/browser/search/search.h"
-#include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/spellchecker/spellcheck_host_metrics.h"
 #include "chrome/browser/spellchecker/spellcheck_service.h"
@@ -66,6 +65,7 @@
 #include "components/google/core/browser/google_util.h"
 #include "components/metrics/proto/omnibox_input_type.pb.h"
 #include "components/search_engines/template_url.h"
+#include "components/search_engines/template_url_service.h"
 #include "components/translate/core/browser/translate_download_manager.h"
 #include "components/translate/core/browser/translate_manager.h"
 #include "components/translate/core/browser/translate_prefs.h"
@@ -205,12 +205,14 @@ const struct UmaEnumCommandIdPair {
   { 56, IDC_SPELLCHECK_LANGUAGES_FIRST },
   { 57, IDC_CONTENT_CONTEXT_SEARCHWEBFORIMAGE },
   { 58, IDC_SPELLCHECK_SUGGESTION_0 },
+  { 59, IDC_SPELLCHECK_ADD_TO_DICTIONARY },
+  { 60, IDC_SPELLPANEL_TOGGLE },
   // Add new items here and use |enum_id| from the next line.
-  { 59, 0 },  // Must be the last. Increment |enum_id| when new IDC was added.
+  { 61, 0 },  // Must be the last. Increment |enum_id| when new IDC was added.
 };
 
 // Collapses large ranges of ids before looking for UMA enum.
-int CollapleCommandsForUMA(int id) {
+int CollapseCommandsForUMA(int id) {
   if (id >= IDC_CONTENT_CONTEXT_CUSTOM_FIRST &&
       id <= IDC_CONTENT_CONTEXT_CUSTOM_LAST) {
     return IDC_CONTENT_CONTEXT_CUSTOM_FIRST;
@@ -241,7 +243,7 @@ int CollapleCommandsForUMA(int id) {
 
 // Returns UMA enum value for command specified by |id| or -1 if not found.
 int FindUMAEnumValueForCommand(int id) {
-  id = CollapleCommandsForUMA(id);
+  id = CollapseCommandsForUMA(id);
   const size_t kMappingSize = arraysize(kUmaEnumToControlId);
   for (size_t i = 0; i < kMappingSize; ++i) {
     if (kUmaEnumToControlId[i].control_id == id) {
@@ -853,9 +855,8 @@ void RenderViewContextMenu::AppendAudioItems() {
 void RenderViewContextMenu::AppendCanvasItems() {
   menu_model_.AddItemWithStringId(IDC_CONTENT_CONTEXT_SAVEIMAGEAS,
                                   IDS_CONTENT_CONTEXT_SAVEIMAGEAS);
-
-  // TODO(zino): We should support 'copy image' for canvas.
-  // http://crbug.com/369092
+  menu_model_.AddItemWithStringId(IDC_CONTENT_CONTEXT_COPYIMAGE,
+                                  IDS_CONTENT_CONTEXT_COPYIMAGE);
 }
 
 void RenderViewContextMenu::AppendVideoItems() {
@@ -921,7 +922,7 @@ void RenderViewContextMenu::AppendPageItems() {
 
   if (TranslateService::IsTranslatableURL(params_.page_url)) {
     std::string locale = g_browser_process->GetApplicationLocale();
-    locale = TranslateDownloadManager::GetLanguageCode(locale);
+    locale = translate::TranslateDownloadManager::GetLanguageCode(locale);
     base::string16 language =
         l10n_util::GetDisplayNameForLocale(locale, locale, true);
     menu_model_.AddItem(
@@ -1180,7 +1181,8 @@ bool RenderViewContextMenu::IsCommandIdEnabled(int id) const {
       std::string original_lang =
           chrome_translate_client->GetLanguageState().original_language();
       std::string target_lang = g_browser_process->GetApplicationLocale();
-      target_lang = TranslateDownloadManager::GetLanguageCode(target_lang);
+      target_lang =
+          translate::TranslateDownloadManager::GetLanguageCode(target_lang);
       // Note that we intentionally enable the menu even if the original and
       // target languages are identical.  This is to give a way to user to
       // translate a page that might contains text fragments in a different
@@ -1191,7 +1193,8 @@ bool RenderViewContextMenu::IsCommandIdEnabled(int id) const {
              !source_web_contents_->GetInterstitialPage() &&
              // There are some application locales which can't be used as a
              // target language for translation.
-             TranslateDownloadManager::IsSupportedLanguage(target_lang) &&
+             translate::TranslateDownloadManager::IsSupportedLanguage(
+                 target_lang) &&
              // Disable on the Instant Extended NTP.
              !chrome::IsInstantNTP(source_web_contents_);
     }
@@ -1512,6 +1515,7 @@ void RenderViewContextMenu::ExecuteCommand(int id, int event_flags) {
       dl_params->set_referrer(
           content::Referrer(referrer, params_.referrer_policy));
       dl_params->set_referrer_encoding(params_.frame_charset);
+      dl_params->set_suggested_name(params_.suggested_filename);
       dl_params->set_prompt(true);
       dlm->DownloadUrl(dl_params.Pass());
       break;
@@ -1733,14 +1737,15 @@ void RenderViewContextMenu::ExecuteCommand(int id, int event_flags) {
       std::string original_lang =
           chrome_translate_client->GetLanguageState().original_language();
       std::string target_lang = g_browser_process->GetApplicationLocale();
-      target_lang = TranslateDownloadManager::GetLanguageCode(target_lang);
+      target_lang =
+          translate::TranslateDownloadManager::GetLanguageCode(target_lang);
       // Since the user decided to translate for that language and site, clears
       // any preferences for not translating them.
-      scoped_ptr<TranslatePrefs> prefs(
+      scoped_ptr<translate::TranslatePrefs> prefs(
           ChromeTranslateClient::CreateTranslatePrefs(profile_->GetPrefs()));
       prefs->UnblockLanguage(original_lang);
       prefs->RemoveSiteFromBlacklist(params_.page_url.HostNoBrackets());
-      TranslateManager* manager =
+      translate::TranslateManager* manager =
           chrome_translate_client->GetTranslateManager();
       DCHECK(manager);
       manager->TranslatePage(original_lang, target_lang, true);

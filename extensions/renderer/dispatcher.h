@@ -173,12 +173,12 @@ class Dispatcher : public content::RenderProcessObserver,
       const ExtensionsClient::ScriptingWhitelist& extension_ids);
   void OnSetSystemFont(const std::string& font_family,
                        const std::string& font_size);
-  void OnShouldSuspend(const std::string& extension_id, int sequence_id);
+  void OnShouldSuspend(const std::string& extension_id, uint64 sequence_id);
   void OnSuspend(const std::string& extension_id);
   void OnTransferBlobs(const std::vector<std::string>& blob_uuids);
   void OnUnloaded(const std::string& id);
   void OnUpdatePermissions(const ExtensionMsg_UpdatePermissions_Params& params);
-  void OnUpdateTabSpecificPermissions(int page_id,
+  void OnUpdateTabSpecificPermissions(const GURL& url,
                                       int tab_id,
                                       const std::string& extension_id,
                                       const URLPatternSet& origin_set);
@@ -192,10 +192,7 @@ class Dispatcher : public content::RenderProcessObserver,
   void UpdateActiveExtensions();
 
   // Sets up the host permissions for |extension|.
-  void InitOriginPermissions(const Extension* extension);
-  void UpdateOriginPermissions(UpdatedExtensionPermissionsInfo::Reason reason,
-                               const Extension* extension,
-                               const URLPatternSet& origins);
+  void UpdateOriginPermissions(const Extension* extension);
 
   // Enable custom element whitelist in Apps.
   void EnableCustomElementWhiteList();

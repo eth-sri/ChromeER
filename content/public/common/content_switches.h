@@ -53,7 +53,6 @@ CONTENT_EXPORT extern const char kDisableFastTextAutosizing[];
 CONTENT_EXPORT extern const char kDisableFileSystem[];
 CONTENT_EXPORT extern const char kDisableFlash3d[];
 CONTENT_EXPORT extern const char kDisableFlashStage3d[];
-CONTENT_EXPORT extern const char kDisableGestureTapHighlight[];
 CONTENT_EXPORT extern const char kDisableGpu[];
 CONTENT_EXPORT extern const char kDisableGpuCompositing[];
 extern const char kDisableGpuProcessCrashLimit[];
@@ -72,7 +71,6 @@ extern const char kDisableKillAfterBadIPC[];
 CONTENT_EXPORT extern const char kDisableLocalStorage[];
 CONTENT_EXPORT extern const char kDisableLogging[];
 CONTENT_EXPORT extern const char kDisableMediaSource[];
-extern const char kDisableNavigatorContentUtils[];
 extern const char kDisablePepper3d[];
 CONTENT_EXPORT extern const char kDisablePinch[];
 CONTENT_EXPORT extern const char kDisablePlugins[];
@@ -110,7 +108,6 @@ CONTENT_EXPORT extern const char kEnableExperimentalCanvasFeatures[];
 CONTENT_EXPORT extern const char kEnableExperimentalWebPlatformFeatures[];
 CONTENT_EXPORT extern const char kEnableFastTextAutosizing[];
 CONTENT_EXPORT extern const char kEnableFileCookies[];
-CONTENT_EXPORT extern const char kEnableGestureTapHighlight[];
 extern const char kEnableGpuClientTracing[];
 CONTENT_EXPORT extern const char kEnableGpuRasterization[];
 CONTENT_EXPORT extern const char kEnableLowResTiling[];
@@ -161,7 +158,7 @@ extern const char kGpuLauncher[];
 CONTENT_EXPORT extern const char kGpuProcess[];
 CONTENT_EXPORT extern const char kGpuSandboxAllowSysVShm[];
 CONTENT_EXPORT extern const char kGpuSandboxFailuresFatal[];
-CONTENT_EXPORT extern const char kGpuSandboxStartAfterInitialization[];
+CONTENT_EXPORT extern const char kGpuSandboxStartEarly[];
 CONTENT_EXPORT extern const char kGpuStartupDialog[];
 extern const char kGpuVendorID[];
 CONTENT_EXPORT extern const char kHostResolverRules[];
@@ -271,7 +268,6 @@ CONTENT_EXPORT extern const char kEnableVaapiAcceleratedVideoEncode[];
 #endif
 
 #if defined(OS_MACOSX) && !defined(OS_IOS)
-extern const char kEnableCarbonInterposing[];
 extern const char kDisableCoreAnimationPlugins[];
 #endif
 

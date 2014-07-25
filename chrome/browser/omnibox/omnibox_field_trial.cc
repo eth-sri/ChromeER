@@ -14,10 +14,10 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/time/time.h"
-#include "chrome/browser/search/search.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/variations/variation_ids.h"
 #include "components/metrics/proto/omnibox_event.pb.h"
+#include "components/search/search.h"
 #include "components/variations/active_field_trials.h"
 #include "components/variations/metrics_util.h"
 #include "components/variations/variations_associated_data.h"
@@ -325,7 +325,7 @@ void OmniboxFieldTrial::GetDemotionsByType(
   if (demotion_rule.empty() &&
       (current_page_classification ==
        OmniboxEventProto::INSTANT_NTP_WITH_FAKEBOX_AS_STARTING_FOCUS))
-    demotion_rule = "1:61,2:61,3:61,4:61,12:61";
+    demotion_rule = "1:61,2:61,3:61,4:61,16:61";
 
   // The value of the DemoteByType rule is a comma-separated list of
   // {ResultType + ":" + Number} where ResultType is an AutocompleteMatchType::
@@ -430,6 +430,12 @@ bool OmniboxFieldTrial::AddUWYTMatchEvenIfPromotedURLs() {
       kAddUWYTMatchEvenIfPromotedURLsRule) == "true";
 }
 
+bool OmniboxFieldTrial::DisplayHintTextWhenPossible() {
+  return chrome_variations::GetVariationParamValue(
+      kBundledExperimentFieldTrialName,
+      kDisplayHintTextWhenPossibleRule) == "true";
+}
+
 const char OmniboxFieldTrial::kBundledExperimentFieldTrialName[] =
     "OmniboxBundledExperimentV1";
 const char OmniboxFieldTrial::kShortcutsScoringMaxRelevanceRule[] =
@@ -448,6 +454,8 @@ const char OmniboxFieldTrial::kDisableInliningRule[] = "DisableInlining";
 const char OmniboxFieldTrial::kAnswersInSuggestRule[] = "AnswersInSuggest";
 const char OmniboxFieldTrial::kAddUWYTMatchEvenIfPromotedURLsRule[] =
     "AddUWYTMatchEvenIfPromotedURLs";
+const char OmniboxFieldTrial::kDisplayHintTextWhenPossibleRule[] =
+    "DisplayHintTextWhenPossible";
 
 const char OmniboxFieldTrial::kHUPNewScoringEnabledParam[] =
     "HUPExperimentalScoringEnabled";

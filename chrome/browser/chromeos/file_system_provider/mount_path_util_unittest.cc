@@ -2,12 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "chrome/browser/chromeos/file_system_provider/mount_path_util.h"
+
 #include <string>
 
 #include "base/files/file.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/chromeos/file_system_provider/fake_provided_file_system.h"
-#include "chrome/browser/chromeos/file_system_provider/mount_path_util.h"
 #include "chrome/browser/chromeos/file_system_provider/provided_file_system_interface.h"
 #include "chrome/browser/chromeos/file_system_provider/service.h"
 #include "chrome/browser/chromeos/file_system_provider/service_factory.h"
@@ -32,7 +33,7 @@ namespace {
 
 const char kExtensionId[] = "mbflcebpggnecokmikipoihdbecnjfoj";
 const char kFileSystemId[] = "File/System/Id";
-const char kFileSystemName[] = "Camera Pictures";
+const char kDisplayName[] = "Camera Pictures";
 
 // Creates a FileSystemURL for tests.
 fileapi::FileSystemURL CreateFileSystemURL(
@@ -126,7 +127,7 @@ TEST_F(FileSystemProviderMountPathUtilTest, IsFileSystemProviderLocalPath) {
 
 TEST_F(FileSystemProviderMountPathUtilTest, Parser) {
   const bool result = file_system_provider_service_->MountFileSystem(
-      kExtensionId, kFileSystemId, kFileSystemName);
+      kExtensionId, kFileSystemId, kDisplayName, false /* writable */);
   ASSERT_TRUE(result);
   const ProvidedFileSystemInfo file_system_info =
       file_system_provider_service_->GetProvidedFileSystem(kExtensionId,
@@ -150,7 +151,7 @@ TEST_F(FileSystemProviderMountPathUtilTest, Parser) {
 
 TEST_F(FileSystemProviderMountPathUtilTest, Parser_RootPath) {
   const bool result = file_system_provider_service_->MountFileSystem(
-      kExtensionId, kFileSystemId, kFileSystemName);
+      kExtensionId, kFileSystemId, kDisplayName, false /* writable */);
   ASSERT_TRUE(result);
   const ProvidedFileSystemInfo file_system_info =
       file_system_provider_service_->GetProvidedFileSystem(kExtensionId,
@@ -175,7 +176,8 @@ TEST_F(FileSystemProviderMountPathUtilTest, Parser_WrongUrl) {
   const ProvidedFileSystemInfo file_system_info(
       kExtensionId,
       kFileSystemId,
-      kFileSystemName,
+      kDisplayName,
+      false /* writable */,
       GetMountPath(profile_, kExtensionId, kFileSystemId));
 
   const base::FilePath kFilePath = base::FilePath::FromUTF8Unsafe("/hello");
@@ -191,7 +193,7 @@ TEST_F(FileSystemProviderMountPathUtilTest, Parser_WrongUrl) {
 
 TEST_F(FileSystemProviderMountPathUtilTest, Parser_IsolatedURL) {
   const bool result = file_system_provider_service_->MountFileSystem(
-      kExtensionId, kFileSystemId, kFileSystemName);
+      kExtensionId, kFileSystemId, kDisplayName, false /* writable */);
   ASSERT_TRUE(result);
   const ProvidedFileSystemInfo file_system_info =
       file_system_provider_service_->GetProvidedFileSystem(kExtensionId,
@@ -237,7 +239,7 @@ TEST_F(FileSystemProviderMountPathUtilTest, Parser_IsolatedURL) {
 
 TEST_F(FileSystemProviderMountPathUtilTest, LocalPathParser) {
   const bool result = file_system_provider_service_->MountFileSystem(
-      kExtensionId, kFileSystemId, kFileSystemName);
+      kExtensionId, kFileSystemId, kDisplayName, false /* writable */);
   ASSERT_TRUE(result);
   const ProvidedFileSystemInfo file_system_info =
       file_system_provider_service_->GetProvidedFileSystem(kExtensionId,
@@ -261,7 +263,7 @@ TEST_F(FileSystemProviderMountPathUtilTest, LocalPathParser) {
 
 TEST_F(FileSystemProviderMountPathUtilTest, LocalPathParser_RootPath) {
   const bool result = file_system_provider_service_->MountFileSystem(
-      kExtensionId, kFileSystemId, kFileSystemName);
+      kExtensionId, kFileSystemId, kDisplayName, false /* writable */);
   ASSERT_TRUE(result);
   const ProvidedFileSystemInfo file_system_info =
       file_system_provider_service_->GetProvidedFileSystem(kExtensionId,

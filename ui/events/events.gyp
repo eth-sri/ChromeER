@@ -8,18 +8,21 @@
   },
   'targets': [
     {
+      # GN version: //ui/events:dom4_keycode_converter
       'target_name': 'dom4_keycode_converter',
       'type': 'static_library',
       'dependencies': [
         '<(DEPTH)/base/base.gyp:base',
       ],
       'sources': [
+        # Note: sources list duplicated in GN build.
         'keycodes/dom4/keycode_converter.cc',
         'keycodes/dom4/keycode_converter.h',
         'keycodes/dom4/keycode_converter_data.h',
       ],
     },
     {
+      # GN version: //ui/events:events_base
       'target_name': 'events_base',
       'type': '<(component)',
       'dependencies': [
@@ -34,6 +37,7 @@
         'EVENTS_BASE_IMPLEMENTATION',
       ],
       'sources': [
+        # Note: sources list duplicated in GN build.
         'device_data_manager.cc',
         'device_data_manager.h',
         'event_constants.h',
@@ -77,6 +81,7 @@
       ],
     },
     {
+      # GN version: //ui/events
       'target_name': 'events',
       'type': '<(component)',
       'dependencies': [
@@ -92,6 +97,7 @@
         'EVENTS_IMPLEMENTATION',
       ],
       'sources': [
+        # Note: sources list duplicated in GN build.
         'cocoa/cocoa_event_utils.h',
         'cocoa/cocoa_event_utils.mm',
         'cocoa/events_mac.mm',
@@ -177,6 +183,7 @@
       ],
     },
     {
+      # GN version: //ui/events:gesture_detection
       'target_name': 'gesture_detection',
       'type': '<(component)',
       'dependencies': [
@@ -190,6 +197,7 @@
         'GESTURE_DETECTION_IMPLEMENTATION',
       ],
       'sources': [
+        # Note: sources list duplicated in GN build.
         'gesture_detection/bitset_32.h',
         'gesture_detection/filtered_gesture_provider.cc',
         'gesture_detection/filtered_gesture_provider.h',
@@ -226,6 +234,7 @@
       ],
     },
     {
+      # GN version: //ui/events:test_support
       'target_name': 'events_test_support',
       'type': 'static_library',
       'dependencies': [
@@ -235,8 +244,11 @@
         'platform/events_platform.gyp:events_platform',
       ],
       'sources': [
+        # Note: sources list duplicated in GN build.
         'test/cocoa_test_event_utils.h',
         'test/cocoa_test_event_utils.mm',
+        'test/event_generator.cc',
+        'test/event_generator.h',
         'test/events_test_utils.cc',
         'test/events_test_utils.h',
         'test/events_test_utils_x11.cc',
@@ -263,9 +275,17 @@
           # The cocoa files don't apply to iOS.
           'sources/': [['exclude', 'cocoa']],
         }],
+        ['OS == "android"', {
+          'sources!': [
+            # Event generator not yet ported to Android.
+            'test/event_generator.cc',
+            'test/event_generator.h',
+          ],
+        }],
       ],
     },
     {
+      # GN vesrion: //ui/events:events_unittests
       'target_name': 'events_unittests',
       'type': '<(gtest_target_type)',
       'dependencies': [
@@ -274,6 +294,7 @@
         '<(DEPTH)/base/base.gyp:test_support_base',
         '<(DEPTH)/skia/skia.gyp:skia',
         '<(DEPTH)/testing/gtest.gyp:gtest',
+        '../gfx/gfx.gyp:gfx',
         '../gfx/gfx.gyp:gfx_geometry',
         '../gfx/gfx.gyp:gfx_test_support',
         'dom4_keycode_converter',
@@ -284,6 +305,7 @@
         'platform/events_platform.gyp:events_platform',
       ],
       'sources': [
+        # Note: sources list duplicated in GN build.
         'cocoa/events_mac_unittest.mm',
         'event_dispatcher_unittest.cc',
         'event_processor_unittest.cc',
@@ -292,6 +314,7 @@
         'gestures/motion_event_aura_unittest.cc',
         'gestures/velocity_calculator_unittest.cc',
         'gesture_detection/bitset_32_unittest.cc',
+        'gesture_detection/gesture_event_data_packet_unittest.cc',
         'gesture_detection/gesture_provider_unittest.cc',
         'gesture_detection/velocity_tracker_unittest.cc',
         'gesture_detection/touch_disposition_gesture_filter_unittest.cc',

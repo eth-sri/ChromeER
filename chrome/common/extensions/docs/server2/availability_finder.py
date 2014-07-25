@@ -6,9 +6,11 @@ import posixpath
 
 from api_schema_graph import APISchemaGraph
 from branch_utility import BranchUtility, ChannelInfo
+from compiled_file_system import CompiledFileSystem, SingleFile, Unicode
 from extensions_paths import API_PATHS, JSON_TEMPLATES
 from features_bundle import FeaturesBundle
 from file_system import FileNotFoundError
+from schema_util import ProcessSchema
 from third_party.json_schema_compiler.memoize import memoize
 from third_party.json_schema_compiler.model import UnixName
 
@@ -24,26 +26,6 @@ _ORIGINAL_FEATURES_MIN_VERSION = 20
 _EXTENSION_API_MAX_VERSION = 17
 # The earliest version for which we have SVN data.
 _SVN_MIN_VERSION = 5
-
-
-def _GetNamespaceFromFilename(api_name):
-  '''API names passed in from the templates follow a different naming
-  convention than the actual API namespace names. Convert |api_name|
-  to its proper namespace name.
-  '''
-  # Devtools APIs are located in a devtools/ directory
-  # (e.g. devtools/panels.json). The namespace will be devtools.panels.
-  if 'devtools/' in api_name:
-    api_name = api_name.replace('/', '.')
-  # Experimental API filenames have a 'experimental_' prefixed to them (e.g.
-  # devtools/experimental_audits.json). The namespace always has
-  # 'experimental.' prefixed to it (e.g. experimental.devtools.audits).
-  if 'experimental_' in api_name:
-    api_name = 'experimental.' + api_name.replace('experimental_', '')
-  # API filenames use '_'s as separators; the separator for namespaces is
-  # always a '.'.
-  api_name = api_name.replace('_', '.')
-  return api_name
 
 
 def _GetChannelFromFeatures(api_name, features):
@@ -162,6 +144,21 @@ class AvailabilityFinder(object):
     return AvailabilityInfo(
         self._branch_utility.GetChannelInfo(api_info['channel']))
 
+  @memoize
+  def _CreateAPISchemaFileSystem(self, file_system):
+    '''Creates a CompiledFileSystem for parsing raw JSON or IDL API schema
+    data and formatting it so that it can be used to create APISchemaGraphs.
+    '''
+    # When processing the API schemas, we retain inlined types in the schema
+    # so that there are not missing nodes in the APISchemaGraphs when trying
+    # to lookup availability.
+    def process_schema(path, data):
+      return ProcessSchema(path, data, retain_inlined_types=True)
+    return self._compiled_fs_factory.Create(file_system,
+                                            SingleFile(Unicode(process_schema)),
+                                            CompiledFileSystem,
+                                            category='api-schema')
+
   def _GetAPISchema(self, api_name, file_system, version):
     '''Searches |file_system| for |api_name|'s API schema data, and processes
     and returns it if found.
@@ -171,7 +168,7 @@ class AvailabilityFinder(object):
       # No file for the API could be found in the given |file_system|.
       return None
 
-    schema_fs = self._compiled_fs_factory.ForAPISchema(file_system)
+    schema_fs = self._CreateAPISchemaFileSystem(file_system)
     api_schemas = schema_fs.GetFromFile(api_filename).Get()
     matching_schemas = [api for api in api_schemas
                         if api['namespace'] == api_name]
@@ -205,7 +202,7 @@ class AvailabilityFinder(object):
       # The _api_features.json file first appears in version 28 and should be
       # the most reliable for finding API availability.
       available_channel = _GetChannelFromAPIFeatures(api_name,
-                                                          features_bundle)
+                                                     features_bundle)
     if version >= _ORIGINAL_FEATURES_MIN_VERSION:
       # The _permission_features.json and _manifest_features.json files are
       # present in Chrome 20 and onwards. Use these if no information could be
@@ -319,7 +316,6 @@ class AvailabilityFinder(object):
     '''Returns an APISchemaGraph annotated with each node's availability (the
     ChannelInfo at the oldest channel it's available in).
     '''
-    api_name = _GetNamespaceFromFilename(api_name)
     availability_graph = self._node_level_object_store.Get(api_name).Get()
     if availability_graph is not None:
       return availability_graph
@@ -369,7 +365,7 @@ class AvailabilityFinder(object):
                                                           file_system,
                                                           channel_info.version))
         availability_graph.Update(version_graph.Subtract(availability_graph),
-                                  annotation=channel_info)
+                                  annotation=AvailabilityInfo(channel_info))
 
       previous.stat = version_stat
       previous.graph = version_graph
@@ -382,5 +378,9 @@ class AvailabilityFinder(object):
         self.GetAPIAvailability(api_name).channel_info,
         update_availability_graph)
 
+    # TODO(ahernandez): There are currently no API nodes that have a
+    # scheduled availability. https://codereview.chromium.org/400833002/
+    # should be implemented when there is a need to determine scheduled
+    # availability at the object level.
     self._node_level_object_store.Set(api_name, availability_graph)
     return availability_graph

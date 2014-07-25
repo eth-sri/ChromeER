@@ -14,7 +14,7 @@
 #include "base/logging.h"
 #include "base/path_service.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/chrome_paths.h"
+#include "components/component_updater/component_updater_paths.h"
 #include "components/translate/content/browser/data_file_browser_cld_data_provider.h"
 #include "content/public/browser/browser_thread.h"
 #include "net/ssl/ssl_config_service.h"
@@ -89,7 +89,7 @@ bool CldComponentInstallerTraits::VerifyInstallation(
 
 base::FilePath CldComponentInstallerTraits::GetBaseDirectory() const {
   base::FilePath result;
-  PathService::Get(chrome::DIR_COMPONENT_CLD2, &result);
+  PathService::Get(DIR_COMPONENT_CLD2, &result);
   return result;
 }
 
@@ -103,6 +103,10 @@ std::string CldComponentInstallerTraits::GetName() const {
 }
 
 void RegisterCldComponent(ComponentUpdateService* cus) {
+  // This log line is to help with determining which kind of provider has been
+  // configured. See also: chrome://translate-internals
+  VLOG(1) << "Registering CLD component with the component update service";
+
   scoped_ptr<ComponentInstallerTraits> traits(
       new CldComponentInstallerTraits());
   // |cus| will take ownership of |installer| during installer->Register(cus).

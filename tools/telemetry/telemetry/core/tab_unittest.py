@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import logging
+import tempfile
 
 from telemetry import benchmark
 from telemetry.core import bitmap
@@ -28,7 +29,7 @@ class FakePlatform(object):
 
   def StopVideoCapture(self):
     self._is_video_capture_running = False
-    return video.Video(None)
+    return video.Video(tempfile.NamedTemporaryFile())
 
   def SetFullPerformanceModeEnabled(self, enabled):
     pass
@@ -107,6 +108,7 @@ class TabTest(tab_test_case.TabTestCase):
         break
     self.assertTrue(found_video_start_event)
 
+  @benchmark.Enabled('has tabs')
   def testGetRendererThreadFromTabId(self):
     self.assertEquals(self._tab.url, 'about:blank')
     # Create 3 tabs. The third tab is closed before we call StartTracing.
@@ -150,9 +152,10 @@ class TabTest(tab_test_case.TabTestCase):
 
 
 class GpuTabTest(tab_test_case.TabTestCase):
-  def setUp(self):
-    self._extra_browser_args = ['--enable-gpu-benchmarking']
-    super(GpuTabTest, self).setUp()
+  @classmethod
+  def setUpClass(cls):
+    cls._extra_browser_args = ['--enable-gpu-benchmarking']
+    super(GpuTabTest, cls).setUpClass()
 
   # Test flaky on mac: http://crbug.com/358664
   @benchmark.Disabled('android', 'mac')

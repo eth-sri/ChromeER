@@ -31,8 +31,8 @@ class TrackedPreferenceValidationDelegate;
 namespace chromeos {
 class KioskTest;
 class LocaleChangeGuard;
-class ManagedUserTestBase;
 class Preferences;
+class SupervisedUserTestBase;
 }
 #endif
 
@@ -143,13 +143,13 @@ class ProfileImpl : public Profile {
  private:
 #if defined(OS_CHROMEOS)
   friend class chromeos::KioskTest;
-  friend class chromeos::ManagedUserTestBase;
+  friend class chromeos::SupervisedUserTestBase;
 #endif
   friend class Profile;
   friend class BetterSessionRestoreCrashTest;
   FRIEND_TEST_ALL_PREFIXES(StartupBrowserCreatorTest,
                            ProfilesLaunchedAfterCrash);
-  FRIEND_TEST_ALL_PREFIXES(ProfileBrowserTest, ProfileReadmeCreated);
+  FRIEND_TEST_ALL_PREFIXES(ProfileBrowserTest, DISABLED_ProfileReadmeCreated);
   FRIEND_TEST_ALL_PREFIXES(ProfileBrowserTest,
                            ProfileDeletedBeforeReadmeCreated);
 

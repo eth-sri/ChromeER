@@ -208,7 +208,10 @@ TEST(IndexedDBDatabaseTest, PendingDelete) {
   scoped_refptr<MockDeleteCallbacks> request2(new MockDeleteCallbacks());
   db->DeleteDatabase(request2);
 
+  EXPECT_FALSE(request2->blocked_called());
+  db->VersionChangeIgnored();
   EXPECT_TRUE(request2->blocked_called());
+
   EXPECT_FALSE(backing_store->HasOneRef());  // local and db
 
   db->Close(request1->connection(), true /* forced */);

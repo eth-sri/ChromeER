@@ -116,7 +116,8 @@ cr.define('options', function() {
           this.updateAdvancedSettingsExpander_.bind(this));
 
       if (cr.isChromeOS) {
-        UIAccountTweaks.applyGuestModeVisibility(document);
+        UIAccountTweaks.applyGuestSessionVisibility(document);
+        UIAccountTweaks.applyPublicSessionVisibility(document);
         if (loadTimeData.getBoolean('secondaryUser'))
           $('secondary-user-banner').hidden = false;
       }
@@ -433,6 +434,14 @@ cr.define('options', function() {
         $('easy-unlock-section').hidden = false;
         $('easy-unlock-setup-button').onclick = function(event) {
           chrome.send('launchEasyUnlockSetup');
+        };
+      }
+
+      // Website Settings section.
+      if (loadTimeData.getBoolean('websiteSettingsManagerEnabled')) {
+        $('website-settings-section').hidden = false;
+        $('website-management-button').onclick = function(event) {
+          OptionsPage.navigateToPage('websiteSettings');
         };
       }
 
@@ -930,7 +939,9 @@ cr.define('options', function() {
       // TODO(estade): can this just be textContent?
       $('sync-status-text').innerHTML = syncData.statusText;
       var statusSet = syncData.statusText.length != 0;
-      $('sync-overview').hidden = statusSet;
+      $('sync-overview').hidden =
+          statusSet ||
+          (cr.isChromeOS && UIAccountTweaks.loggedInAsPublicAccount());
       $('sync-status').hidden = !statusSet;
 
       $('sync-action-link').textContent = syncData.actionLinkText;

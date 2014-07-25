@@ -21,6 +21,7 @@
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_types.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/browser/uninstall_reason.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/manifest_constants.h"
 #include "extensions/common/permissions/api_permission.h"
@@ -81,11 +82,11 @@ static scoped_refptr<Extension> CreateExtensionBase(
   base::ListValue* permissions = new base::ListValue();
   manifest.Set(extensions::manifest_keys::kPermissions, permissions);
   if (background_permission) {
-    permissions->Append(base::Value::CreateStringValue("background"));
+    permissions->Append(new base::StringValue("background"));
   }
   if (push_messaging == PUSH_MESSAGING_PERMISSION ||
       push_messaging == PUSH_MESSAGING_BUT_NOT_BACKGROUND) {
-    permissions->Append(base::Value::CreateStringValue("pushMessaging"));
+    permissions->Append(new base::StringValue("pushMessaging"));
   }
 
   std::string error;
@@ -211,23 +212,28 @@ TEST_F(BackgroundApplicationListModelTest, MAYBE_ExplicitTest) {
 
   // Remove in FIFO order.
   ASSERT_FALSE(IsBackgroundApp(*ext1.get()));
-  service->UninstallExtension(ext1->id(), false, NULL);
+  service->UninstallExtension(
+      ext1->id(), extensions::UNINSTALL_REASON_FOR_TESTING, NULL);
   ASSERT_EQ(4U, service->extensions()->size());
   ASSERT_EQ(2U, model->size());
   ASSERT_TRUE(IsBackgroundApp(*bgapp1.get()));
-  service->UninstallExtension(bgapp1->id(), false, NULL);
+  service->UninstallExtension(
+      bgapp1->id(), extensions::UNINSTALL_REASON_FOR_TESTING, NULL);
   ASSERT_EQ(3U, service->extensions()->size());
   ASSERT_EQ(1U, model->size());
   ASSERT_FALSE(IsBackgroundApp(*ext2.get()));
-  service->UninstallExtension(ext2->id(), false, NULL);
+  service->UninstallExtension(
+      ext2->id(), extensions::UNINSTALL_REASON_FOR_TESTING, NULL);
   ASSERT_EQ(2U, service->extensions()->size());
   ASSERT_EQ(1U, model->size());
   ASSERT_TRUE(IsBackgroundApp(*bgapp2.get()));
-  service->UninstallExtension(bgapp2->id(), false, NULL);
+  service->UninstallExtension(
+      bgapp2->id(), extensions::UNINSTALL_REASON_FOR_TESTING, NULL);
   ASSERT_EQ(1U, service->extensions()->size());
   ASSERT_EQ(0U, model->size());
   ASSERT_FALSE(IsBackgroundApp(*ext3.get()));
-  service->UninstallExtension(ext3->id(), false, NULL);
+  service->UninstallExtension(
+      ext3->id(), extensions::UNINSTALL_REASON_FOR_TESTING, NULL);
   ASSERT_EQ(0U, service->extensions()->size());
   ASSERT_EQ(0U, model->size());
 }
@@ -278,7 +284,8 @@ TEST_F(BackgroundApplicationListModelTest, PushMessagingTest) {
   ASSERT_EQ(2U, model->size());
   // Need to remove ext2 because it uses same id as bgapp3.
   ASSERT_FALSE(IsBackgroundApp(*ext2.get()));
-  service->UninstallExtension(ext2->id(), false, NULL);
+  service->UninstallExtension(
+      ext2->id(), extensions::UNINSTALL_REASON_FOR_TESTING, NULL);
   ASSERT_EQ(3U, service->extensions()->size());
   ASSERT_EQ(2U, model->size());
   ASSERT_TRUE(IsBackgroundApp(*bgapp3.get()));
@@ -288,19 +295,23 @@ TEST_F(BackgroundApplicationListModelTest, PushMessagingTest) {
 
   // Remove in FIFO order.
   ASSERT_FALSE(IsBackgroundApp(*ext1.get()));
-  service->UninstallExtension(ext1->id(), false, NULL);
+  service->UninstallExtension(
+      ext1->id(), extensions::UNINSTALL_REASON_FOR_TESTING, NULL);
   ASSERT_EQ(3U, service->extensions()->size());
   ASSERT_EQ(3U, model->size());
   ASSERT_TRUE(IsBackgroundApp(*bgapp1.get()));
-  service->UninstallExtension(bgapp1->id(), false, NULL);
+  service->UninstallExtension(
+      bgapp1->id(), extensions::UNINSTALL_REASON_FOR_TESTING, NULL);
   ASSERT_EQ(2U, service->extensions()->size());
   ASSERT_EQ(2U, model->size());
   ASSERT_TRUE(IsBackgroundApp(*bgapp2.get()));
-  service->UninstallExtension(bgapp2->id(), false, NULL);
+  service->UninstallExtension(
+      bgapp2->id(), extensions::UNINSTALL_REASON_FOR_TESTING, NULL);
   ASSERT_EQ(1U, service->extensions()->size());
   ASSERT_EQ(1U, model->size());
   ASSERT_TRUE(IsBackgroundApp(*bgapp3.get()));
-  service->UninstallExtension(bgapp3->id(), false, NULL);
+  service->UninstallExtension(
+      bgapp3->id(), extensions::UNINSTALL_REASON_FOR_TESTING, NULL);
   ASSERT_EQ(0U, service->extensions()->size());
   ASSERT_EQ(0U, model->size());
 }
@@ -417,7 +428,8 @@ void RemoveExtension(ExtensionService* service,
     extensions->erase(cursor);
     --*count;
     ASSERT_EQ(*count, extensions->size());
-    service->UninstallExtension(extension->id(), false, NULL);
+    service->UninstallExtension(
+        extension->id(), extensions::UNINSTALL_REASON_FOR_TESTING, NULL);
     ASSERT_EQ(*count, service->extensions()->size());
     ASSERT_EQ(*expected, model->size());
   }

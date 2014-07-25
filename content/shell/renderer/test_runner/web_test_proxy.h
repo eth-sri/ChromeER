@@ -116,6 +116,8 @@ class WebTestProxyBase : public blink::WebCompositeAndReadbackAsyncCallback {
   std::string CaptureTree(bool debug_render_tree);
   void CapturePixelsForPrinting(
       const base::Callback<void(const SkBitmap&)>& callback);
+  void CopyImageAtAndCapturePixels(
+      int x, int y, const base::Callback<void(const SkBitmap&)>& callback);
   void CapturePixelsAsync(
       const base::Callback<void(const SkBitmap&)>& callback);
 
@@ -346,9 +348,6 @@ class WebTestProxy : public Base, public WebTestProxyBase {
   virtual void setStatusText(const blink::WebString& text) {
     WebTestProxyBase::SetStatusText(text);
     Base::setStatusText(text);
-  }
-  virtual blink::WebUserMediaClient* userMediaClient() {
-    return WebTestProxyBase::GetUserMediaClient();
   }
   virtual void printPage(blink::WebLocalFrame* frame) {
     WebTestProxyBase::PrintPage(frame);

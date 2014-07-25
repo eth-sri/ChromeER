@@ -35,13 +35,13 @@ typedef std::map<std::string, int> IsolatedWorldMap;
 base::LazyInstance<IsolatedWorldMap> g_isolated_worlds =
     LAZY_INSTANCE_INITIALIZER;
 
-const int kInvalidRequestId = -1;
+const int64 kInvalidRequestId = -1;
 
 // The id of the next pending injection.
 int64 g_next_pending_id = 0;
 
-bool ShouldDelayForPermission() {
-  return FeatureSwitch::scripts_require_action()->IsEnabled();
+bool ShouldNotifyBrowserOfInjections() {
+  return !FeatureSwitch::scripts_require_action()->IsEnabled();
 }
 
 // Append all the child frames of |parent_frame| to |frames_vector|.
@@ -120,7 +120,7 @@ ScriptInjection::ScriptInjection(
       extension_id_(extension_id),
       run_location_(run_location),
       tab_id_(tab_id),
-      request_id_(-1),
+      request_id_(kInvalidRequestId),
       complete_(false) {
 }
 
@@ -135,7 +135,7 @@ bool ScriptInjection::TryToInject(UserScript::RunLocation current_location,
   if (current_location < run_location_)
     return false;  // Wait for the right location.
 
-  if (request_id_ != -1)
+  if (request_id_ != kInvalidRequestId)
     return false;  // We're waiting for permission right now, try again later.
 
   if (!extension) {
@@ -145,15 +145,13 @@ bool ScriptInjection::TryToInject(UserScript::RunLocation current_location,
 
   switch (injector_->CanExecuteOnFrame(
       extension, web_frame_, tab_id_, web_frame_->top()->document().url())) {
-    case ScriptInjector::DENY_ACCESS:
+    case PermissionsData::ACCESS_DENIED:
       NotifyWillNotInject(ScriptInjector::NOT_ALLOWED);
       return true;  // We're done.
-    case ScriptInjector::REQUEST_ACCESS:
+    case PermissionsData::ACCESS_WITHHELD:
       RequestPermission();
-      if (ShouldDelayForPermission())
-        return false;  // Wait around for permission.
-      // else fall through
-    case ScriptInjector::ALLOW_ACCESS:
+      return false;  // Wait around for permission.
+    case PermissionsData::ACCESS_ALLOWED:
       Inject(extension, scripts_run_info);
       return true;  // We're done!
   }
@@ -178,14 +176,14 @@ void ScriptInjection::RequestPermission() {
   content::RenderView* render_view =
       content::RenderView::FromWebView(web_frame()->top()->view());
 
-  // If the feature to delay for permission isn't enabled, then just send an
+  // If we are just notifying the browser of the injection, then send an
   // invalid request (which is treated like a notification).
-  request_id_ =
-      ShouldDelayForPermission() ? g_next_pending_id++ : kInvalidRequestId;
+  request_id_ = ShouldNotifyBrowserOfInjections() ? kInvalidRequestId
+                                                  : g_next_pending_id++;
   render_view->Send(new ExtensionHostMsg_RequestScriptInjectionPermission(
       render_view->GetRoutingID(),
       extension_id_,
-      render_view->GetPageId(),
+      injector_->script_type(),
       request_id_));
 }
 
@@ -200,6 +198,9 @@ void ScriptInjection::Inject(const Extension* extension,
   DCHECK(extension);
   DCHECK(scripts_run_info);
   DCHECK(!complete_);
+
+  if (ShouldNotifyBrowserOfInjections())
+    RequestPermission();
 
   std::vector<blink::WebFrame*> frame_vector;
   frame_vector.push_back(web_frame_);
@@ -226,11 +227,11 @@ void ScriptInjection::Inject(const Extension* extension,
     // extension might only have access to a subset of them.
     // For child frames, we just skip ones the extension doesn't have access
     // to and carry on.
-    // Note: we don't consider REQUEST_ACCESS because there is nowhere to
+    // Note: we don't consider ACCESS_WITHHELD because there is nowhere to
     // surface a request for a child frame.
     // TODO(rdevlin.cronin): We should ask for permission somehow.
     if (injector_->CanExecuteOnFrame(extension, frame, tab_id_, top_url) ==
-        ScriptInjector::DENY_ACCESS) {
+        PermissionsData::ACCESS_DENIED) {
       DCHECK(frame->parent());
       continue;
     }

@@ -42,9 +42,19 @@ class NativeWidgetViewManager : public views::NativeWidgetAura,
   // WindowTreeHostMojoDelegate:
   virtual void CompositorContentsChanged(const SkBitmap& bitmap) OVERRIDE;
 
+  // view_manager::NodeObserver:
+  virtual void OnNodeDestroyed(view_manager::Node* node) OVERRIDE;
+  virtual void OnNodeActiveViewChanged(view_manager::Node* node,
+                                       view_manager::View* old_view,
+                                       view_manager::View* new_view) OVERRIDE;
+  virtual void OnNodeBoundsChanged(view_manager::Node* node,
+                                   const gfx::Rect& old_bounds,
+                                   const gfx::Rect& new_bounds) OVERRIDE;
+
   // view_manager::ViewObserver
   virtual void OnViewInputEvent(view_manager::View* view,
                                 const EventPtr& event) OVERRIDE;
+  virtual void OnViewDestroyed(view_manager::View* view) OVERRIDE;
 
   scoped_ptr<WindowTreeHostMojo> window_tree_host_;
 
@@ -53,6 +63,7 @@ class NativeWidgetViewManager : public views::NativeWidgetAura,
   scoped_ptr<ui::internal::InputMethodDelegate> ime_filter_;
 
   view_manager::Node* node_;
+  view_manager::View* view_;
 
   scoped_ptr<wm::ScopedCaptureClient> capture_client_;
 

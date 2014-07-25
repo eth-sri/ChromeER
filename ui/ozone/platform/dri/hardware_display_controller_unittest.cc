@@ -5,11 +5,10 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "ui/ozone/platform/dri/dri_buffer.h"
-#include "ui/ozone/platform/dri/dri_surface.h"
 #include "ui/ozone/platform/dri/dri_wrapper.h"
 #include "ui/ozone/platform/dri/hardware_display_controller.h"
-#include "ui/ozone/platform/dri/test/mock_dri_surface.h"
 #include "ui/ozone/platform/dri/test/mock_dri_wrapper.h"
+#include "ui/ozone/public/native_pixmap.h"
 
 namespace {
 
@@ -18,6 +17,24 @@ const drmModeModeInfo kDefaultMode =
     {0, 6, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, {'\0'}};
 
 const gfx::Size kDefaultModeSize(kDefaultMode.hdisplay, kDefaultMode.vdisplay);
+const gfx::SizeF kDefaultModeSizeF(1.0, 1.0);
+
+class MockScanoutBuffer : public ui::ScanoutBuffer {
+ public:
+  MockScanoutBuffer(const gfx::Size& size) : size_(size) {}
+
+  // ScanoutBuffer:
+  virtual uint32_t GetFramebufferId() const OVERRIDE {return 0; }
+  virtual uint32_t GetHandle() const OVERRIDE { return 0; }
+  virtual gfx::Size GetSize() const OVERRIDE { return size_; }
+
+ private:
+  virtual ~MockScanoutBuffer() {}
+
+  gfx::Size size_;
+
+  DISALLOW_COPY_AND_ASSIGN(MockScanoutBuffer);
+};
 
 }  // namespace
 
@@ -46,67 +63,97 @@ void HardwareDisplayControllerTest::TearDown() {
   drm_.reset();
 }
 
-TEST_F(HardwareDisplayControllerTest, CheckStateAfterSurfaceIsBound) {
-  scoped_ptr<ui::ScanoutSurface> surface(
-      new ui::MockDriSurface(drm_.get(), kDefaultModeSize));
+TEST_F(HardwareDisplayControllerTest, CheckModesettingResult) {
+  ui::OverlayPlane plane(scoped_refptr<ui::ScanoutBuffer>(
+      new MockScanoutBuffer(kDefaultModeSize)));
 
-  EXPECT_TRUE(surface->Initialize());
-  EXPECT_TRUE(controller_->BindSurfaceToController(surface.Pass(),
-                                                   kDefaultMode));
-  EXPECT_TRUE(controller_->surface() != NULL);
+  EXPECT_TRUE(controller_->Modeset(plane, kDefaultMode));
+  EXPECT_FALSE(plane.buffer->HasOneRef());
 }
 
 TEST_F(HardwareDisplayControllerTest, CheckStateAfterPageFlip) {
-  scoped_ptr<ui::ScanoutSurface> surface(
-      new ui::MockDriSurface(drm_.get(), kDefaultModeSize));
+  ui::OverlayPlane plane1(scoped_refptr<ui::ScanoutBuffer>(
+      new MockScanoutBuffer(kDefaultModeSize)));
 
-  EXPECT_TRUE(surface->Initialize());
-  EXPECT_TRUE(controller_->BindSurfaceToController(surface.Pass(),
-                                                   kDefaultMode));
-  EXPECT_TRUE(controller_->SchedulePageFlip());
-  EXPECT_TRUE(controller_->surface() != NULL);
+  EXPECT_TRUE(controller_->Modeset(plane1, kDefaultMode));
+
+  ui::OverlayPlane plane2(scoped_refptr<ui::ScanoutBuffer>(
+      new MockScanoutBuffer(kDefaultModeSize)));
+  EXPECT_TRUE(controller_->SchedulePageFlip(
+      std::vector<ui::OverlayPlane>(1, plane2)));
+  controller_->WaitForPageFlipEvent();
+  EXPECT_TRUE(plane1.buffer->HasOneRef());
+  EXPECT_FALSE(plane2.buffer->HasOneRef());
+
+  EXPECT_EQ(1, drm_->get_page_flip_call_count());
+  EXPECT_EQ(0, drm_->get_overlay_flip_call_count());
 }
 
 TEST_F(HardwareDisplayControllerTest, CheckStateIfModesetFails) {
   drm_->set_set_crtc_expectation(false);
 
-  scoped_ptr<ui::ScanoutSurface> surface(
-      new ui::MockDriSurface(drm_.get(), kDefaultModeSize));
+  ui::OverlayPlane plane(scoped_refptr<ui::ScanoutBuffer>(new MockScanoutBuffer(
+      kDefaultModeSize)));
 
-  EXPECT_TRUE(surface->Initialize());
-  EXPECT_FALSE(controller_->BindSurfaceToController(surface.Pass(),
-                                                    kDefaultMode));
-  EXPECT_EQ(NULL, controller_->surface());
+  EXPECT_FALSE(controller_->Modeset(plane, kDefaultMode));
+  EXPECT_TRUE(plane.buffer->HasOneRef());
 }
 
 TEST_F(HardwareDisplayControllerTest, CheckStateIfPageFlipFails) {
   drm_->set_page_flip_expectation(false);
 
-  scoped_ptr<ui::ScanoutSurface> surface(
-      new ui::MockDriSurface(drm_.get(), kDefaultModeSize));
+  ui::OverlayPlane plane1(scoped_refptr<ui::ScanoutBuffer>(
+      new MockScanoutBuffer(kDefaultModeSize)));
 
-  EXPECT_TRUE(surface->Initialize());
-  EXPECT_TRUE(controller_->BindSurfaceToController(surface.Pass(),
-                                                   kDefaultMode));
-  EXPECT_FALSE(controller_->SchedulePageFlip());
+  EXPECT_TRUE(controller_->Modeset(plane1, kDefaultMode));
+
+  ui::OverlayPlane plane2(scoped_refptr<ui::ScanoutBuffer>(
+      new MockScanoutBuffer(kDefaultModeSize)));
+  EXPECT_FALSE(controller_->SchedulePageFlip(
+      std::vector<ui::OverlayPlane>(1, plane2)));
+  EXPECT_FALSE(plane1.buffer->HasOneRef());
+  EXPECT_TRUE(plane2.buffer->HasOneRef());
 }
 
 TEST_F(HardwareDisplayControllerTest, VerifyNoDRMCallsWhenDisabled) {
-  scoped_ptr<ui::ScanoutSurface> surface(
-      new ui::MockDriSurface(drm_.get(), kDefaultModeSize));
+  ui::OverlayPlane plane1(scoped_refptr<ui::ScanoutBuffer>(
+      new MockScanoutBuffer(kDefaultModeSize)));
 
-  EXPECT_TRUE(surface->Initialize());
-  EXPECT_TRUE(controller_->BindSurfaceToController(surface.Pass(),
-                                                   kDefaultMode));
+  EXPECT_TRUE(controller_->Modeset(plane1, kDefaultMode));
   controller_->Disable();
-  EXPECT_TRUE(controller_->SchedulePageFlip());
+  ui::OverlayPlane plane2(scoped_refptr<ui::ScanoutBuffer>(
+      new MockScanoutBuffer(kDefaultModeSize)));
+  EXPECT_TRUE(controller_->SchedulePageFlip(
+      std::vector<ui::OverlayPlane>(1, plane2)));
+  controller_->WaitForPageFlipEvent();
   EXPECT_EQ(0, drm_->get_page_flip_call_count());
 
-  surface.reset(new ui::MockDriSurface(drm_.get(), kDefaultModeSize));
-
-  EXPECT_TRUE(surface->Initialize());
-  EXPECT_TRUE(controller_->BindSurfaceToController(surface.Pass(),
-                                                   kDefaultMode));
-  EXPECT_TRUE(controller_->SchedulePageFlip());
+  EXPECT_TRUE(controller_->Modeset(plane1, kDefaultMode));
+  EXPECT_TRUE(controller_->SchedulePageFlip(
+      std::vector<ui::OverlayPlane>(1, plane2)));
+  controller_->WaitForPageFlipEvent();
   EXPECT_EQ(1, drm_->get_page_flip_call_count());
+}
+
+TEST_F(HardwareDisplayControllerTest, CheckOverlayPresent) {
+  ui::OverlayPlane plane1(scoped_refptr<ui::ScanoutBuffer>(
+      new MockScanoutBuffer(kDefaultModeSize)));
+  ui::OverlayPlane plane2(
+      scoped_refptr<ui::ScanoutBuffer>(new MockScanoutBuffer(kDefaultModeSize)),
+      1,
+      gfx::OVERLAY_TRANSFORM_NONE,
+      gfx::Rect(kDefaultModeSize),
+      gfx::RectF(kDefaultModeSizeF));
+  plane2.overlay_plane = 1;  // Force association with a plane.
+
+  EXPECT_TRUE(controller_->Modeset(plane1, kDefaultMode));
+
+  std::vector<ui::OverlayPlane> overlays;
+  overlays.push_back(plane1);
+  overlays.push_back(plane2);
+
+  EXPECT_TRUE(controller_->SchedulePageFlip(overlays));
+  controller_->WaitForPageFlipEvent();
+  EXPECT_EQ(1, drm_->get_page_flip_call_count());
+  EXPECT_EQ(1, drm_->get_overlay_flip_call_count());
 }

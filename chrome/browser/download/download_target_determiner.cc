@@ -36,6 +36,10 @@
 #include "content/public/common/webplugininfo.h"
 #endif
 
+#if defined(OS_WIN)
+#include "chrome/browser/ui/pdf/adobe_reader_info_win.h"
+#endif
+
 using content::BrowserThread;
 using content::DownloadItem;
 
@@ -50,7 +54,6 @@ const base::FilePath::CharType kCrdownloadSuffix[] =
 // midnight.
 void VisitCountsToVisitedBefore(
     const base::Callback<void(bool)>& callback,
-    HistoryService::Handle unused_handle,
     bool found_visits,
     int count,
     base::Time first_visit) {
@@ -59,7 +62,12 @@ void VisitCountsToVisitedBefore(
       (first_visit.LocalMidnight() < base::Time::Now().LocalMidnight()));
 }
 
-} // namespace
+#if defined(OS_WIN)
+// Keeps track of whether Adobe Reader is up to date.
+bool g_is_adobe_reader_up_to_date_ = false;
+#endif
+
+}  // namespace
 
 DownloadTargetInfo::DownloadTargetInfo()
     : is_filetype_handled_safely(false) {}
@@ -133,6 +141,9 @@ void DownloadTargetDeterminer::DoLoop() {
         break;
       case STATE_DETERMINE_IF_HANDLED_SAFELY_BY_BROWSER:
         result = DoDetermineIfHandledSafely();
+        break;
+      case STATE_DETERMINE_IF_ADOBE_READER_UP_TO_DATE:
+        result = DoDetermineIfAdobeReaderUpToDate();
         break;
       case STATE_CHECK_DOWNLOAD_URL:
         result = DoCheckDownloadUrl();
@@ -450,8 +461,8 @@ void IsHandledBySafePlugin(content::ResourceContext* resource_context,
       BrowserThread::UI, FROM_HERE, base::Bind(callback, is_handled_safely));
 }
 
-} // namespace
-#endif  // ENABLE_PLUGINS
+}  // namespace
+#endif  // defined(ENABLE_PLUGINS)
 
 DownloadTargetDeterminer::Result
     DownloadTargetDeterminer::DoDetermineIfHandledSafely() {
@@ -460,7 +471,7 @@ DownloadTargetDeterminer::Result
   DCHECK(!local_path_.empty());
   DCHECK(!is_filetype_handled_safely_);
 
-  next_state_ = STATE_CHECK_DOWNLOAD_URL;
+  next_state_ = STATE_DETERMINE_IF_ADOBE_READER_UP_TO_DATE;
 
   if (mime_type_.empty())
     return CONTINUE;
@@ -488,14 +499,51 @@ DownloadTargetDeterminer::Result
 #endif
 }
 
+#if defined(ENABLE_PLUGINS)
 void DownloadTargetDeterminer::DetermineIfHandledSafelyDone(
     bool is_handled_safely) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DVLOG(20) << "Is file type handled safely: " << is_filetype_handled_safely_;
-  DCHECK_EQ(STATE_CHECK_DOWNLOAD_URL, next_state_);
+  DCHECK_EQ(STATE_DETERMINE_IF_ADOBE_READER_UP_TO_DATE, next_state_);
   is_filetype_handled_safely_ = is_handled_safely;
   DoLoop();
 }
+#endif
+
+DownloadTargetDeterminer::Result
+    DownloadTargetDeterminer::DoDetermineIfAdobeReaderUpToDate() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  next_state_ = STATE_CHECK_DOWNLOAD_URL;
+
+#if defined(OS_WIN)
+  if (!local_path_.MatchesExtension(FILE_PATH_LITERAL(".pdf")))
+    return CONTINUE;
+  if (!IsAdobeReaderDefaultPDFViewer())
+    return CONTINUE;
+
+  base::PostTaskAndReplyWithResult(
+      BrowserThread::GetBlockingPool(),
+      FROM_HERE,
+      base::Bind(&::IsAdobeReaderUpToDate),
+      base::Bind(&DownloadTargetDeterminer::DetermineIfAdobeReaderUpToDateDone,
+                 weak_ptr_factory_.GetWeakPtr()));
+  return QUIT_DOLOOP;
+#else
+  return CONTINUE;
+#endif
+}
+
+#if defined(OS_WIN)
+void DownloadTargetDeterminer::DetermineIfAdobeReaderUpToDateDone(
+    bool adobe_reader_up_to_date) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DVLOG(20) << "Is Adobe Reader Up To Date: " << adobe_reader_up_to_date;
+  DCHECK_EQ(STATE_CHECK_DOWNLOAD_URL, next_state_);
+  g_is_adobe_reader_up_to_date_ = adobe_reader_up_to_date;
+  DoLoop();
+}
+#endif
 
 DownloadTargetDeterminer::Result
     DownloadTargetDeterminer::DoCheckDownloadUrl() {
@@ -546,10 +594,13 @@ DownloadTargetDeterminer::Result
 
       if (history_service && download_->GetReferrerUrl().is_valid()) {
         history_service->GetVisibleVisitCountToHost(
-            download_->GetReferrerUrl(), &history_consumer_,
-            base::Bind(&VisitCountsToVisitedBefore, base::Bind(
-                &DownloadTargetDeterminer::CheckVisitedReferrerBeforeDone,
-                weak_ptr_factory_.GetWeakPtr())));
+            download_->GetReferrerUrl(),
+            base::Bind(
+                &VisitCountsToVisitedBefore,
+                base::Bind(
+                    &DownloadTargetDeterminer::CheckVisitedReferrerBeforeDone,
+                    weak_ptr_factory_.GetWeakPtr())),
+            &history_tracker_);
         return QUIT_DOLOOP;
       }
     }
@@ -826,3 +877,10 @@ base::FilePath DownloadTargetDeterminer::GetCrDownloadPath(
     const base::FilePath& suggested_path) {
   return base::FilePath(suggested_path.value() + kCrdownloadSuffix);
 }
+
+#if defined(OS_WIN)
+// static
+bool DownloadTargetDeterminer::IsAdobeReaderUpToDate() {
+  return g_is_adobe_reader_up_to_date_;
+}
+#endif

@@ -26,6 +26,7 @@
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/browser/uninstall_reason.h"
 #include "extensions/common/extension.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
@@ -52,8 +53,11 @@ class AsyncUninstaller : public extensions::ExtensionUninstallDialog::Delegate {
 
   // ExtensionUninstallDialog::Delegate:
   virtual void ExtensionUninstallAccepted() OVERRIDE {
-    extensions::ExtensionSystem::Get(profile_)->extension_service()->
-        UninstallExtension(extension_->id(), false, NULL);
+    extensions::ExtensionSystem::Get(profile_)
+        ->extension_service()
+        ->UninstallExtension(extension_->id(),
+                             extensions::UNINSTALL_REASON_USER_INITIATED,
+                             NULL);
   }
   virtual void ExtensionUninstallCanceled() OVERRIDE {}
 

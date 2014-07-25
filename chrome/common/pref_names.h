@@ -350,7 +350,6 @@ extern const char kImportSavedPasswords[];
 
 extern const char kProfileAvatarIndex[];
 extern const char kProfileName[];
-extern const char kProfileIsSupervised[];
 extern const char kSupervisedUserId[];
 
 extern const char kProfileGAIAInfoUpdateTime[];
@@ -455,7 +454,6 @@ extern const char kStabilityPluginInstances[];
 extern const char kStabilityPluginCrashes[];
 extern const char kStabilityPluginLoadingErrors[];
 
-extern const char kInstallDate[];
 extern const char kUninstallMetricsPageLoadCount[];
 extern const char kUninstallLastLaunchTimeSec[];
 extern const char kUninstallLastObservedRunTimeSec[];
@@ -472,6 +470,9 @@ extern const char kMemoryCacheSize[];
 extern const char kDownloadDefaultDirectory[];
 extern const char kDownloadExtensionsToOpen[];
 extern const char kDownloadDirUpgraded[];
+#if defined(OS_WIN)
+extern const char kOpenPdfDownloadInAdobeReader[];
+#endif
 
 extern const char kSaveFileDefaultDirectory[];
 extern const char kSaveFileType[];
@@ -516,6 +517,7 @@ extern const char kDisableExtensions[];
 extern const char kDisablePluginFinder[];
 
 extern const char kNtpAppPageNames[];
+extern const char kNtpCollapsedCurrentlyOpenTabs[];
 extern const char kNtpCollapsedForeignSessions[];
 extern const char kNtpCollapsedRecentlyClosedTabs[];
 extern const char kNtpCollapsedSnapshotDocument[];
@@ -667,6 +669,7 @@ extern const char kInitialLocale[];
 extern const char kOobeComplete[];
 extern const char kOobeScreenPending[];
 extern const char kDeviceRegistered[];
+extern const char kEnrollmentRecoveryRequired[];
 extern const char kUsedPolicyCertificates[];
 extern const char kServerBackedDeviceState[];
 extern const char kCustomizationDefaultWallpaperURL[];
@@ -725,13 +728,7 @@ extern const char kMessageCenterShowedFirstRunBalloon[];
 extern const char kMessageCenterShowIcon[];
 extern const char kMessageCenterForcedOnTaskbar[];
 
-extern const char kRecoveryComponentVersion[];
-extern const char kComponentUpdaterState[];
 extern const char kAttemptedToEnableAutoupdate[];
-
-#if defined(OS_WIN)
-extern const char kSwReporterExecuteTryCount[];
-#endif
 
 extern const char kMediaGalleriesUniqueId[];
 extern const char kMediaGalleriesRememberedGalleries[];

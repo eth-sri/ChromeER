@@ -43,6 +43,7 @@
 #include "extensions/browser/extension_host.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/browser/uninstall_reason.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension_set.h"
 #include "sync/api/string_ordinal.h"
@@ -551,7 +552,8 @@ void ExtensionBrowserTest::UnloadExtension(const std::string& extension_id) {
 void ExtensionBrowserTest::UninstallExtension(const std::string& extension_id) {
   ExtensionService* service = extensions::ExtensionSystem::Get(
       profile())->extension_service();
-  service->UninstallExtension(extension_id, false, NULL);
+  service->UninstallExtension(
+      extension_id, extensions::UNINSTALL_REASON_FOR_TESTING, NULL);
 }
 
 void ExtensionBrowserTest::DisableExtension(const std::string& extension_id) {

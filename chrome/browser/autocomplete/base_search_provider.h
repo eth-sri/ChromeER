@@ -135,10 +135,6 @@ class BaseSearchProvider : public AutocompleteProvider,
 
     const std::string& deletion_url() const { return deletion_url_; }
 
-    // Returns if this result is inlineable against the current input |input|.
-    // Non-inlineable results are stale.
-    virtual bool IsInlineable(const base::string16& input) const = 0;
-
     // Returns the default relevance value for this result (which may
     // be left over from a previous omnibox input) given the current
     // input and whether the current input caused a keyword provider
@@ -213,7 +209,6 @@ class BaseSearchProvider : public AutocompleteProvider,
                                const base::string16& input_text);
 
     // Result:
-    virtual bool IsInlineable(const base::string16& input) const OVERRIDE;
     virtual int CalculateRelevance(
         const AutocompleteInput& input,
         bool keyword_provider_requested) const OVERRIDE;
@@ -248,9 +243,7 @@ class BaseSearchProvider : public AutocompleteProvider,
 
   class NavigationResult : public Result {
    public:
-    // |provider| and |profile| are both used to compute |formatted_url_|.
-    NavigationResult(const AutocompleteProvider& provider,
-                     Profile* profile,
+    NavigationResult(const AutocompleteSchemeClassifier& scheme_classifier,
                      const GURL& url,
                      AutocompleteMatchType::Type type,
                      const base::string16& description,
@@ -276,7 +269,6 @@ class BaseSearchProvider : public AutocompleteProvider,
                                            const std::string& languages);
 
     // Result:
-    virtual bool IsInlineable(const base::string16& input) const OVERRIDE;
     virtual int CalculateRelevance(
         const AutocompleteInput& input,
         bool keyword_provider_requested) const OVERRIDE;
@@ -344,8 +336,7 @@ class BaseSearchProvider : public AutocompleteProvider,
   //
   // |input| is also necessary for various other details, like whether we should
   // allow inline autocompletion and what the transition type should be.
-  // |accepted_suggestion| and |omnibox_start_margin| are used to generate
-  // Assisted Query Stats.
+  // |accepted_suggestion| is used to generate Assisted Query Stats.
   // |append_extra_query_params| should be set if |template_url| is the default
   // search engine, so the destination URL will contain any
   // command-line-specified query params.
@@ -357,7 +348,6 @@ class BaseSearchProvider : public AutocompleteProvider,
       const TemplateURL* template_url,
       const SearchTermsData& search_terms_data,
       int accepted_suggestion,
-      int omnibox_start_margin,
       bool append_extra_query_params,
       bool from_app_list);
 
@@ -491,6 +481,9 @@ class BaseSearchProvider : public AutocompleteProvider,
   // Updates |matches_| from the latest results; applies calculated relevances
   // if suggested relevances cause undesriable behavior. Updates |done_|.
   virtual void UpdateMatches() = 0;
+
+  AutocompleteProviderListener* listener_;
+  Profile* profile_;
 
   // Whether a field trial, if any, has triggered in the most recent
   // autocomplete query. This field is set to true only if the suggestion

@@ -852,7 +852,6 @@ bool WebFormElementToFormData(
     return false;
 
   form->name = GetFormIdentifier(form_element);
-  form->method = form_element.method();
   form->origin = frame->document().url();
   form->action = frame->document().completeURL(form_element.action());
   form->user_submitted = form_element.wasUserSubmitted();
@@ -909,7 +908,7 @@ bool WebFormElementToFormData(
   // element's name as a key into the <name, FormFieldData> map to find the
   // previously created FormFieldData and set the FormFieldData's label to the
   // label.firstChild().nodeValue() of the label element.
-  WebElementCollection labels = form_element.getElementsByTagName(kLabel);
+  WebElementCollection labels = form_element.getElementsByHTMLTagName(kLabel);
   DCHECK(!labels.isNull());
   for (WebElement item = labels.firstItem(); !item.isNull();
        item = labels.nextItem()) {

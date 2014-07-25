@@ -14,8 +14,10 @@
 #include "base/task_runner.h"
 #include "base/test/test_simple_task_runner.h"
 #include "content/browser/indexed_db/indexed_db_context_impl.h"
+#include "content/browser/indexed_db/indexed_db_factory_impl.h"
 #include "content/browser/indexed_db/indexed_db_leveldb_coding.h"
 #include "content/browser/indexed_db/indexed_db_value.h"
+#include "content/browser/indexed_db/leveldb/leveldb_factory.h"
 #include "content/public/test/mock_special_storage_policy.h"
 #include "net/url_request/url_request_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -172,10 +174,10 @@ class TestableIndexedDBBackingStore : public IndexedDBBackingStore {
   DISALLOW_COPY_AND_ASSIGN(TestableIndexedDBBackingStore);
 };
 
-class TestIDBFactory : public IndexedDBFactory {
+class TestIDBFactory : public IndexedDBFactoryImpl {
  public:
   explicit TestIDBFactory(IndexedDBContextImpl* idb_context)
-      : IndexedDBFactory(idb_context) {}
+      : IndexedDBFactoryImpl(idb_context) {}
 
   scoped_refptr<TestableIndexedDBBackingStore> OpenBackingStoreForTest(
       const GURL& origin,
@@ -372,7 +374,7 @@ TEST_F(IndexedDBBackingStoreTest, PutGetConsistency) {
     ScopedVector<webkit_blob::BlobDataHandle> handles;
     IndexedDBBackingStore::RecordIdentifier record;
     leveldb::Status s = backing_store_->PutRecord(
-        &transaction1, 1, 1, m_key1, m_value1, &handles, &record);
+        &transaction1, 1, 1, m_key1, &m_value1, &handles, &record);
     EXPECT_TRUE(s.ok());
     scoped_refptr<TestCallback> callback(new TestCallback());
     EXPECT_TRUE(transaction1.CommitPhaseOne(callback).ok());
@@ -407,7 +409,7 @@ TEST_F(IndexedDBBackingStoreTest, PutGetConsistencyWithBlobs) {
                                           1,
                                           1,
                                           m_key3,
-                                          m_value3,
+                                          &m_value3,
                                           &handles,
                                           &record).ok());
     scoped_refptr<TestCallback> callback(new TestCallback());
@@ -492,28 +494,28 @@ TEST_F(IndexedDBBackingStoreTest, DeleteRange) {
                                             1,
                                             i + 1,
                                             key0,
-                                            value0,
+                                            &value0,
                                             &handles,
                                             &record).ok());
       EXPECT_TRUE(backing_store_->PutRecord(&transaction1,
                                             1,
                                             i + 1,
                                             key1,
-                                            value1,
+                                            &value1,
                                             &handles,
                                             &record).ok());
       EXPECT_TRUE(backing_store_->PutRecord(&transaction1,
                                             1,
                                             i + 1,
                                             key2,
-                                            value2,
+                                            &value2,
                                             &handles,
                                             &record).ok());
       EXPECT_TRUE(backing_store_->PutRecord(&transaction1,
                                             1,
                                             i + 1,
                                             key3,
-                                            value3,
+                                            &value3,
                                             &handles,
                                             &record).ok());
       scoped_refptr<TestCallback> callback(new TestCallback());
@@ -582,28 +584,28 @@ TEST_F(IndexedDBBackingStoreTest, DeleteRangeEmptyRange) {
                                             1,
                                             i + 1,
                                             key0,
-                                            value0,
+                                            &value0,
                                             &handles,
                                             &record).ok());
       EXPECT_TRUE(backing_store_->PutRecord(&transaction1,
                                             1,
                                             i + 1,
                                             key1,
-                                            value1,
+                                            &value1,
                                             &handles,
                                             &record).ok());
       EXPECT_TRUE(backing_store_->PutRecord(&transaction1,
                                             1,
                                             i + 1,
                                             key2,
-                                            value2,
+                                            &value2,
                                             &handles,
                                             &record).ok());
       EXPECT_TRUE(backing_store_->PutRecord(&transaction1,
                                             1,
                                             i + 1,
                                             key3,
-                                            value3,
+                                            &value3,
                                             &handles,
                                             &record).ok());
       scoped_refptr<TestCallback> callback(new TestCallback());
@@ -641,7 +643,7 @@ TEST_F(IndexedDBBackingStoreTest, LiveBlobJournal) {
                                           1,
                                           1,
                                           m_key3,
-                                          m_value3,
+                                          &m_value3,
                                           &handles,
                                           &record).ok());
     scoped_refptr<TestCallback> callback(new TestCallback());
@@ -720,7 +722,7 @@ TEST_F(IndexedDBBackingStoreTest, HighIds) {
                                                   high_database_id,
                                                   high_object_store_id,
                                                   m_key1,
-                                                  m_value1,
+                                                  &m_value1,
                                                   &handles,
                                                   &record);
     EXPECT_TRUE(s.ok());
@@ -809,23 +811,23 @@ TEST_F(IndexedDBBackingStoreTest, InvalidIds) {
                                                 database_id,
                                                 KeyPrefix::kInvalidId,
                                                 m_key1,
-                                                m_value1,
+                                                &m_value1,
                                                 &handles,
                                                 &record);
   EXPECT_FALSE(s.ok());
   s = backing_store_->PutRecord(
-      &transaction1, database_id, 0, m_key1, m_value1, &handles, &record);
+      &transaction1, database_id, 0, m_key1, &m_value1, &handles, &record);
   EXPECT_FALSE(s.ok());
   s = backing_store_->PutRecord(&transaction1,
                                 KeyPrefix::kInvalidId,
                                 object_store_id,
                                 m_key1,
-                                m_value1,
+                                &m_value1,
                                 &handles,
                                 &record);
   EXPECT_FALSE(s.ok());
   s = backing_store_->PutRecord(
-      &transaction1, 0, object_store_id, m_key1, m_value1, &handles, &record);
+      &transaction1, 0, object_store_id, m_key1, &m_value1, &handles, &record);
   EXPECT_FALSE(s.ok());
 
   s = backing_store_->GetRecord(

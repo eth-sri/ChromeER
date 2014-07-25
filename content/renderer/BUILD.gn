@@ -29,7 +29,7 @@ source_set("renderer") {
     "//gin",
     "//mojo/environment:chromium",
     "//mojo/public/js/bindings",
-    "//mojo/public/interfaces/interface_provider",
+    "//mojo/public/interfaces/service_provider",
     "//net",
     "//skia",
     "//third_party/icu",
@@ -95,10 +95,12 @@ source_set("renderer") {
     ]
   } else {
     sources -= [
-      "java/java_bridge_channel.cc",
-      "java/java_bridge_channel.h",
-      "java/java_bridge_dispatcher.cc",
-      "java/java_bridge_dispatcher.h",
+      "java/gin_java_bridge_dispatcher.cc",
+      "java/gin_java_bridge_dispatcher.h",
+      "java/gin_java_bridge_object.cc",
+      "java/gin_java_bridge_object.h",
+      "java/gin_java_bridge_value_converter.cc",
+      "java/gin_java_bridge_value_converter.h",
     ]
   }
 
@@ -148,10 +150,9 @@ source_set("renderer") {
         content_renderer_gypi_values.private_renderer_plugin_sources,
         ".", "//content")
     deps += [
-      # TODO(GYP)
-      #"//ppapi/ppapi_internal.gyp:ppapi_host",
-      #"//ppapi/ppapi_internal.gyp:ppapi_proxy",
-      #"//ppapi/ppapi_internal.gyp:ppapi_shared",
+      "//ppapi:ppapi_host",
+      "//ppapi:ppapi_proxy",
+      "//ppapi:ppapi_shared",
     ]
   } else {
     # These files are in the WebRTC list, but also require plugins.

@@ -9,22 +9,22 @@
  *
  * @param {HTMLElement} container The container element.
  * @param {Viewport} viewport The viewport.
- * @param {MetadataCache} metadataCache The metadataCache.
  * @constructor
+ * @extends {ImageBuffer.Overlay}
  */
-function ImageView(container, viewport, metadataCache) {
+function ImageView(container, viewport) {
+  ImageBuffer.Overlay.call(this);
+
   this.container_ = container;
   this.viewport_ = viewport;
   this.document_ = container.ownerDocument;
   this.contentGeneration_ = 0;
   this.displayedContentGeneration_ = 0;
-  this.displayedViewportGeneration_ = 0;
 
-  this.imageLoader_ = new ImageUtil.ImageLoader(this.document_, metadataCache);
+  this.imageLoader_ = new ImageUtil.ImageLoader(this.document_);
   // We have a separate image loader for prefetch which does not get cancelled
   // when the selection changes.
-  this.prefetchLoader_ = new ImageUtil.ImageLoader(
-      this.document_, metadataCache);
+  this.prefetchLoader_ = new ImageUtil.ImageLoader(this.document_);
 
   // The content cache is used for prefetching the next image when going
   // through the images sequentially. The real life photos can be large
@@ -45,12 +45,6 @@ function ImageView(container, viewport, metadataCache) {
    * @private
    */
   this.screenImage_ = null;
-
-  this.localImageTransformFetcher_ = function(entry, callback) {
-    metadataCache.getOne(entry, 'fetchedMedia', function(fetchedMedia) {
-      callback(fetchedMedia.imageTransform);
-    });
-  };
 }
 
 /**
@@ -97,68 +91,36 @@ ImageView.LOAD_TYPE_TOTAL = 5;
 ImageView.prototype = {__proto__: ImageBuffer.Overlay.prototype};
 
 /**
- * Draws below overlays with the default zIndex.
- * @return {number} Z-index.
+ * @override
  */
-ImageView.prototype.getZIndex = function() { return -1 };
+ImageView.prototype.getZIndex = function() { return -1; };
 
 /**
- * Draws the image on screen.
+ * @override
  */
 ImageView.prototype.draw = function() {
   if (!this.contentCanvas_)  // Do nothing if the image content is not set.
     return;
-
-  var forceRepaint = false;
-
-  if (this.displayedViewportGeneration_ !==
-      this.viewport_.getCacheGeneration()) {
-    this.displayedViewportGeneration_ = this.viewport_.getCacheGeneration();
-
-    this.setupDeviceBuffer(this.screenImage_);
-
-    forceRepaint = true;
-  }
-
-  if (forceRepaint ||
+  if (this.setupDeviceBuffer(this.screenImage_) ||
       this.displayedContentGeneration_ !== this.contentGeneration_) {
     this.displayedContentGeneration_ = this.contentGeneration_;
-
     ImageUtil.trace.resetTimer('paint');
-    this.paintDeviceRect(this.viewport_.getDeviceClipped(),
-        this.contentCanvas_, this.viewport_.getImageClipped());
+    this.paintDeviceRect(this.contentCanvas_, new Rect(this.contentCanvas_));
     ImageUtil.trace.reportTimer('paint');
   }
 };
 
 /**
- * @param {number} x X pointer position.
- * @param {number} y Y pointer position.
- * @param {boolean} mouseDown True if mouse is down.
- * @return {string} CSS cursor style.
+ * Applies the viewport change that does not affect the screen cache size (zoom
+ * change or offset change) with animation.
  */
-ImageView.prototype.getCursorStyle = function(x, y, mouseDown) {
-  // Indicate that the image is draggable.
-  if (this.viewport_.isClipped() &&
-      this.viewport_.getScreenClipped().inside(x, y))
-    return 'move';
-
-  return null;
-};
-
-/**
- * @param {number} x X pointer position.
- * @param {number} y Y pointer position.
- * @return {function} The closure to call on drag.
- */
-ImageView.prototype.getDragHandler = function(x, y) {
-  var cursor = this.getCursorStyle(x, y);
-  if (cursor === 'move') {
-    // Return the handler that drags the entire image.
-    return this.viewport_.createOffsetSetter(x, y);
+ImageView.prototype.applyViewportChange = function() {
+  if (this.screenImage_) {
+    this.setTransform(
+        this.screenImage_,
+        new ImageView.Effect.None(),
+        ImageView.Effect.DEFAULT_DURATION);
   }
-
-  return null;
 };
 
 /**
@@ -203,22 +165,22 @@ ImageView.prototype.getContentRevision = function() {
  * Copies an image fragment from a full resolution canvas to a device resolution
  * canvas.
  *
- * @param {Rect} deviceRect Rectangle in the device coordinates.
- * @param {HTMLCanvasElement} canvas Full resolution canvas.
- * @param {Rect} imageRect Rectangle in the full resolution canvas.
+ * @param {HTMLCanvasElement} canvas Canvas containing whole image. The canvas
+ *     may not be full resolution (scaled).
+ * @param {Rect} imageRect Rectangle region of the canvas to be rendered.
  */
-ImageView.prototype.paintDeviceRect = function(deviceRect, canvas, imageRect) {
-  // Map screen canvas (0,0) to (deviceBounds.left, deviceBounds.top)
-  var deviceBounds = this.viewport_.getDeviceClipped();
-  deviceRect = deviceRect.shift(-deviceBounds.left, -deviceBounds.top);
+ImageView.prototype.paintDeviceRect = function(canvas, imageRect) {
+  // Map the rectangle in full resolution image to the rectangle in the device
+  // canvas.
+  var deviceBounds = this.viewport_.getDeviceBounds();
+  var scaleX = deviceBounds.width / canvas.width;
+  var scaleY = deviceBounds.height / canvas.height;
+  var deviceRect = new Rect(
+      imageRect.left * scaleX,
+      imageRect.top * scaleY,
+      imageRect.width * scaleX,
+      imageRect.height * scaleY);
 
-  // The source canvas may have different physical size than the image size
-  // set at the viewport. Adjust imageRect accordingly.
-  var bounds = this.viewport_.getImageBounds();
-  var scaleX = canvas.width / bounds.width;
-  var scaleY = canvas.height / bounds.height;
-  imageRect = new Rect(imageRect.left * scaleX, imageRect.top * scaleY,
-                       imageRect.width * scaleX, imageRect.height * scaleY);
   Rect.drawImage(
       this.screenImage_.getContext('2d'), canvas, deviceRect, imageRect);
 };
@@ -240,22 +202,31 @@ ImageView.prototype.createOverlayCanvas = function() {
  * Sets up the canvas as a buffer in the device resolution.
  *
  * @param {HTMLCanvasElement} canvas The buffer canvas.
+ * @return {boolean} True if the canvas needs to be rendered.
  */
 ImageView.prototype.setupDeviceBuffer = function(canvas) {
-  var deviceRect = this.viewport_.getDeviceClipped();
-
   // Set the canvas position and size in device pixels.
-  if (canvas.width !== deviceRect.width)
+  var deviceRect = this.viewport_.getDeviceBounds();
+  var needRepaint = false;
+  if (canvas.width !== deviceRect.width) {
     canvas.width = deviceRect.width;
-
-  if (canvas.height !== deviceRect.height)
+    needRepaint = true;
+  }
+  if (canvas.height !== deviceRect.height) {
     canvas.height = deviceRect.height;
+    needRepaint = true;
+  }
 
-  canvas.style.left = deviceRect.left + 'px';
-  canvas.style.top = deviceRect.top + 'px';
+  // Center the image.
+  var imageBounds = this.viewport_.getImageElementBoundsOnScreen();
+  canvas.style.left = imageBounds.left + 'px';
+  canvas.style.top = imageBounds.top + 'px';
+  canvas.style.width = imageBounds.width + 'px';
+  canvas.style.height = imageBounds.height + 'px';
 
-  // Scale the canvas down to screen pixels.
   this.setTransform(canvas);
+
+  return needRepaint;
 };
 
 /**
@@ -286,16 +257,18 @@ ImageView.prototype.cancelLoad = function() {
  * Loads the thumbnail first, then replaces it with the main image.
  * Takes into account the image orientation encoded in the metadata.
  *
- * @param {FileEntry} entry Image entry.
- * @param {Object} metadata Metadata.
+ * @param {Gallery.Item} item Gallery item to be loaded.
  * @param {Object} effect Transition effect object.
  * @param {function(number} displayCallback Called when the image is displayed
  *   (possibly as a prevew).
  * @param {function(number} loadCallback Called when the image is fully loaded.
  *   The parameter is the load type.
  */
-ImageView.prototype.load = function(entry, metadata, effect,
-                                    displayCallback, loadCallback) {
+ImageView.prototype.load =
+    function(item, effect, displayCallback, loadCallback) {
+  var entry = item.getEntry();
+  var metadata = item.getMetadata() || {};
+
   if (effect) {
     // Skip effects when reloading repeatedly very quickly.
     var time = Date.now();
@@ -305,8 +278,6 @@ ImageView.prototype.load = function(entry, metadata, effect,
     }
     this.lastLoadTime_ = time;
   }
-
-  metadata = metadata || {};
 
   ImageUtil.metrics.startInterval(ImageUtil.getMetricName('DisplayTime'));
 
@@ -396,8 +367,7 @@ ImageView.prototype.load = function(entry, metadata, effect,
     self.prefetchLoader_.cancel();  // The prefetch was doing something useless.
 
     self.imageLoader_.load(
-        contentEntry,
-        self.localImageTransformFetcher_,
+        item,
         displayMainImage.bind(null, loadType, previewShown),
         delay);
   }
@@ -434,11 +404,12 @@ ImageView.prototype.load = function(entry, metadata, effect,
 
 /**
  * Prefetches an image.
- * @param {FileEntry} entry The image entry.
+ * @param {Gallery.Item} item The image item.
  * @param {number} delay Image load delay in ms.
  */
-ImageView.prototype.prefetch = function(entry, delay) {
+ImageView.prototype.prefetch = function(item, delay) {
   var self = this;
+  var entry = item.getEntry();
   function prefetchDone(canvas) {
     if (canvas.width)
       self.contentCache_.putItem(entry, canvas);
@@ -452,11 +423,7 @@ ImageView.prototype.prefetch = function(entry, delay) {
     // strain on memory.
     this.contentCache_.evictLRU();
 
-    this.prefetchLoader_.load(
-        entry,
-        this.localImageTransformFetcher_,
-        prefetchDone,
-        delay);
+    this.prefetchLoader_.load(item, prefetchDone, delay);
   }
 };
 
@@ -516,8 +483,6 @@ ImageView.prototype.replaceContent_ = function(
   this.viewport_.setImageSize(
       opt_width || this.contentCanvas_.width,
       opt_height || this.contentCanvas_.height);
-  this.viewport_.fitImage();
-  this.viewport_.update();
   this.draw();
 
   this.container_.appendChild(this.screenImage_);
@@ -638,9 +603,8 @@ ImageView.prototype.setTransform = function(element, opt_effect, opt_duration) {
  * @return {ImageView.Effect.Zoom} Zoom effect object.
  */
 ImageView.prototype.createZoomEffect = function(screenRect) {
-  return new ImageView.Effect.Zoom(
-      this.viewport_.screenToDeviceRect(screenRect),
-      null /* use viewport */,
+  return new ImageView.Effect.ZoomToScreen(
+      screenRect,
       ImageView.MODE_TRANSITION_DURATION);
 };
 
@@ -656,21 +620,17 @@ ImageView.prototype.createZoomEffect = function(screenRect) {
  */
 ImageView.prototype.replaceAndAnimate = function(
     canvas, imageCropRect, rotate90) {
-  var oldScale = this.viewport_.getScale();
-  var deviceCropRect = imageCropRect && this.viewport_.screenToDeviceRect(
-        this.viewport_.imageToScreenRect(imageCropRect));
-
+  var oldImageBounds = {
+    width: this.viewport_.getImageBounds().width,
+    height: this.viewport_.getImageBounds().height
+  };
   var oldScreenImage = this.screenImage_;
   this.replaceContent_(canvas);
   var newScreenImage = this.screenImage_;
-
-  // Display the new canvas, initially transformed.
-  var deviceFullRect = this.viewport_.getDeviceClipped();
-
   var effect = rotate90 ?
-      new ImageView.Effect.Rotate(
-          oldScale / this.viewport_.getScale(), -rotate90) :
-      new ImageView.Effect.Zoom(deviceCropRect, deviceFullRect);
+      new ImageView.Effect.Rotate(rotate90 > 0) :
+      new ImageView.Effect.Zoom(
+          oldImageBounds.width, oldImageBounds.height, imageCropRect);
 
   this.setTransform(newScreenImage, effect, 0 /* instant */);
 
@@ -695,26 +655,20 @@ ImageView.prototype.replaceAndAnimate = function(
  * @return {number} Animation duration.
  */
 ImageView.prototype.animateAndReplace = function(canvas, imageCropRect) {
-  var deviceFullRect = this.viewport_.getDeviceClipped();
-  var oldScale = this.viewport_.getScale();
-
   var oldScreenImage = this.screenImage_;
   this.replaceContent_(canvas);
   var newScreenImage = this.screenImage_;
-
-  var deviceCropRect = this.viewport_.screenToDeviceRect(
-        this.viewport_.imageToScreenRect(imageCropRect));
-
   var setFade = ImageUtil.setAttribute.bind(null, newScreenImage, 'fade');
   setFade(true);
   oldScreenImage.parentNode.insertBefore(newScreenImage, oldScreenImage);
+  var effect = new ImageView.Effect.Zoom(
+      this.viewport_.getImageBounds().width,
+      this.viewport_.getImageBounds().height,
+      imageCropRect);
 
-  var effect = new ImageView.Effect.Zoom(deviceCropRect, deviceFullRect);
   // Animate to the transformed state.
   this.setTransform(oldScreenImage, effect);
-
   setTimeout(setFade.bind(null, false), 0);
-
   setTimeout(function() {
     if (oldScreenImage.parentNode)
       oldScreenImage.parentNode.removeChild(oldScreenImage);
@@ -722,7 +676,6 @@ ImageView.prototype.animateAndReplace = function(canvas, imageCropRect) {
 
   return effect.getSafeInterval();
 };
-
 
 /**
  * Generic cache with a limited capacity and LRU eviction.
@@ -864,25 +817,23 @@ ImageView.Effect.prototype.getSafeInterval = function() {
 ImageView.Effect.prototype.getTiming = function() { return this.timing_; };
 
 /**
- * @param {HTMLCanvasElement} element Element.
- * @return {number} Preferred pixel ration to use with this element.
- * @private
+ * Obtains the CSS transformation string of the effect.
+ * @param {DOMCanvas} element Canvas element to be applied the transforamtion.
+ * @param {Viewport} viewport Current viewport.
+ * @return CSS transformation description.
  */
-ImageView.Effect.getPixelRatio_ = function(element) {
-  if (element.constructor.name === 'HTMLCanvasElement')
-    return Viewport.getDevicePixelRatio();
-  else
-    return 1;
+ImageView.Effect.prototype.transform = function(element, viewport) {
+  throw new Error('Not implemented.');
 };
 
 /**
- * Default effect. It is not a no-op as it needs to adjust a canvas scale
- * for devicePixelRatio.
+ * Default effect.
  *
  * @constructor
+ * @extends {ImageView.Effect}
  */
 ImageView.Effect.None = function() {
-  ImageView.Effect.call(this, 0);
+  ImageView.Effect.call(this, 0, 'easy-out');
 };
 
 /**
@@ -892,11 +843,11 @@ ImageView.Effect.None.prototype = { __proto__: ImageView.Effect.prototype };
 
 /**
  * @param {HTMLCanvasElement} element Element.
+ * @param {Viewport} viewport Current viewport.
  * @return {string} Transform string.
  */
-ImageView.Effect.None.prototype.transform = function(element) {
-  var ratio = ImageView.Effect.getPixelRatio_(element);
-  return 'scale(' + (1 / ratio) + ')';
+ImageView.Effect.None.prototype.transform = function(element, viewport) {
+  return viewport.getTransformation();
 };
 
 /**
@@ -905,109 +856,108 @@ ImageView.Effect.None.prototype.transform = function(element) {
  * @param {number} direction -1 for left, 1 for right.
  * @param {boolean=} opt_slow True if slow (as in slideshow).
  * @constructor
+ * @extends {ImageView.Effect}
  */
 ImageView.Effect.Slide = function Slide(direction, opt_slow) {
   ImageView.Effect.call(this,
-      opt_slow ? 800 : ImageView.Effect.DEFAULT_DURATION, 'ease-in-out');
+      opt_slow ? 800 : ImageView.Effect.DEFAULT_DURATION, 'ease-out');
   this.direction_ = direction;
   this.slow_ = opt_slow;
   this.shift_ = opt_slow ? 100 : 40;
   if (this.direction_ < 0) this.shift_ = -this.shift_;
 };
 
-/**
- * Inherits from ImageView.Effect.
- */
 ImageView.Effect.Slide.prototype = { __proto__: ImageView.Effect.prototype };
 
 /**
- * @return {ImageView.Effect.Slide} Reverse Slide effect.
+ * Reverses the slide effect.
+ * @return {ImageView.Effect.Slide} Reversed effect.
  */
 ImageView.Effect.Slide.prototype.getReverse = function() {
   return new ImageView.Effect.Slide(-this.direction_, this.slow_);
 };
 
 /**
- * @param {HTMLCanvasElement} element Element.
- * @return {string} Transform string.
+ * @override
  */
-ImageView.Effect.Slide.prototype.transform = function(element) {
-  var ratio = ImageView.Effect.getPixelRatio_(element);
-  return 'scale(' + (1 / ratio) + ') translate(' + this.shift_ + 'px, 0px)';
+ImageView.Effect.Slide.prototype.transform = function(element, viewport) {
+  return viewport.getShiftTransformation(this.shift_);
 };
 
 /**
  * Zoom effect.
  *
- * Animates the original rectangle to the target rectangle. Both parameters
- * should be given in device coordinates (accounting for devicePixelRatio).
+ * Animates the original rectangle to the target rectangle.
  *
- * @param {Rect} deviceTargetRect Target rectangle.
- * @param {Rect=} opt_deviceOriginalRect Original rectangle. If omitted,
- *     the full viewport will be used at the time of |transform| call.
- * @param {number=} opt_duration Duration in ms.
+ * @param {number} previousImageWidth Width of the full resolution image.
+ * @param {number} previousImageHeight Hieght of the full resolution image.
+ * @param {Rect} imageCropRect Crop rectangle in the full resolution image.
+ * @param {number=} opt_duration Duration of the effect.
  * @constructor
+ * @extends {ImageView.Effect}
  */
 ImageView.Effect.Zoom = function(
-    deviceTargetRect, opt_deviceOriginalRect, opt_duration) {
+    previousImageWidth, previousImageHeight, imageCropRect, opt_duration) {
   ImageView.Effect.call(this,
-      opt_duration || ImageView.Effect.DEFAULT_DURATION);
-  this.target_ = deviceTargetRect;
-  this.original_ = opt_deviceOriginalRect;
+      opt_duration || ImageView.Effect.DEFAULT_DURATION, 'ease-out');
+  this.previousImageWidth_ = previousImageWidth;
+  this.previousImageHeight_ = previousImageHeight;
+  this.imageCropRect_ = imageCropRect;
 };
 
-/**
- * Inherits from ImageView.Effect.
- */
 ImageView.Effect.Zoom.prototype = { __proto__: ImageView.Effect.prototype };
 
 /**
- * @param {HTMLCanvasElement} element Element.
- * @param {Viewport} viewport Viewport.
- * @return {string} Transform string.
+ * @override
  */
 ImageView.Effect.Zoom.prototype.transform = function(element, viewport) {
-  if (!this.original_)
-    this.original_ = viewport.getDeviceClipped();
-
-  var ratio = ImageView.Effect.getPixelRatio_(element);
-
-  var dx = (this.target_.left + this.target_.width / 2) -
-           (this.original_.left + this.original_.width / 2);
-  var dy = (this.target_.top + this.target_.height / 2) -
-           (this.original_.top + this.original_.height / 2);
-
-  var scaleX = this.target_.width / this.original_.width;
-  var scaleY = this.target_.height / this.original_.height;
-
-  return 'translate(' + (dx / ratio) + 'px,' + (dy / ratio) + 'px) ' +
-    'scaleX(' + (scaleX / ratio) + ') scaleY(' + (scaleY / ratio) + ')';
+  return viewport.getInverseTransformForCroppedImage(
+      this.previousImageWidth_, this.previousImageHeight_, this.imageCropRect_);
 };
 
 /**
- * Rotate effect.
+ * Effect to zoom to a screen rectangle.
  *
- * @param {number} scale Scale.
- * @param {number} rotate90 Rotation in 90 degrees increments.
+ * @param {Rect} screenRect Rectangle in the application window's coordinate.
+ * @param {number=} opt_duration Duration of effect.
  * @constructor
+ * @extends {ImageView.Effect}
  */
-ImageView.Effect.Rotate = function(scale, rotate90) {
-  ImageView.Effect.call(this, ImageView.Effect.DEFAULT_DURATION);
-  this.scale_ = scale;
-  this.rotate90_ = rotate90;
+ImageView.Effect.ZoomToScreen = function(screenRect, opt_duration) {
+  ImageView.Effect.call(this, opt_duration);
+  this.screenRect_ = screenRect;
+};
+
+ImageView.Effect.ZoomToScreen.prototype = {
+  __proto__: ImageView.Effect.prototype
 };
 
 /**
- * Inherits from ImageView.Effect.
+ * @override
  */
+ImageView.Effect.ZoomToScreen.prototype.transform = function(
+    element, viewport) {
+  return viewport.getScreenRectTransformForImage(this.screenRect_);
+};
+
+/**
+ * Rotation effect.
+ *
+ * @param {boolean} orientation Orientation of rotation. True is for clockwise
+ *     and false is for counterclockwise.
+ * @constructor
+ * @extends {ImageView.Effect}
+ */
+ImageView.Effect.Rotate = function(orientation) {
+  ImageView.Effect.call(this, ImageView.Effect.DEFAULT_DURATION);
+  this.orientation_ = orientation;
+};
+
 ImageView.Effect.Rotate.prototype = { __proto__: ImageView.Effect.prototype };
 
 /**
- * @param {HTMLCanvasElement} element Element.
- * @return {string} Transform string.
+ * @override
  */
-ImageView.Effect.Rotate.prototype.transform = function(element) {
-  var ratio = ImageView.Effect.getPixelRatio_(element);
-  return 'rotate(' + (this.rotate90_ * 90) + 'deg) ' +
-         'scale(' + (this.scale_ / ratio) + ')';
+ImageView.Effect.Rotate.prototype.transform = function(element, viewport) {
+  return viewport.getInverseTransformForRotatedImage(this.orientation_);
 };

@@ -35,6 +35,7 @@ namespace gles2 {
 class ContextGroup;
 class ErrorState;
 class GLES2Util;
+class ImageManager;
 class Logger;
 class QueryManager;
 class VertexArrayManager;
@@ -58,6 +59,11 @@ class GPU_EXPORT GLES2Decoder : public base::SupportsWeakPtr<GLES2Decoder>,
  public:
   typedef error::Error Error;
   typedef base::Callback<bool(uint32 id)> WaitSyncPointCallback;
+
+  // The default stencil mask, which has all bits set.  This really should be a
+  // GLuint, but we can't #include gl_bindings.h in this file without causing
+  // macro redefinitions.
+  static const unsigned int kDefaultStencilMask;
 
   // Creates a decoder.
   static GLES2Decoder* Create(ContextGroup* group);
@@ -160,6 +166,9 @@ class GPU_EXPORT GLES2Decoder : public base::SupportsWeakPtr<GLES2Decoder>,
 
   // Gets the VertexArrayManager for this context.
   virtual VertexArrayManager* GetVertexArrayManager() = 0;
+
+  // Gets the ImageManager for this context.
+  virtual ImageManager* GetImageManager() = 0;
 
   // Process any pending queries. Returns false if there are no pending queries.
   virtual bool ProcessPendingQueries() = 0;

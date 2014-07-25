@@ -21,6 +21,7 @@
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/search/search.h"
+#include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "components/history/core/browser/url_database.h"
 #include "components/metrics/proto/omnibox_event.pb.h"
 #include "components/search_engines/template_url.h"
@@ -93,10 +94,10 @@ class TypeConverter<AutocompleteMatchMojoPtr, AutocompleteMatch> {
 
 template <>
 class TypeConverter<AutocompleteResultsForProviderMojoPtr,
-                    AutocompleteProvider*> {
+                    scoped_refptr<AutocompleteProvider> > {
  public:
   static AutocompleteResultsForProviderMojoPtr ConvertFrom(
-      const AutocompleteProvider* input) {
+      const scoped_refptr<AutocompleteProvider>& input) {
     AutocompleteResultsForProviderMojoPtr result(
         AutocompleteResultsForProviderMojo::New());
     result->provider_name = input->GetName();
@@ -139,7 +140,7 @@ void OmniboxUIHandler::OnResultChanged(bool default_match_changed) {
   }
   result->results_by_provider =
       mojo::Array<AutocompleteResultsForProviderMojoPtr>::From(
-          *controller_->providers());
+          controller_->providers());
   client()->HandleNewAutocompleteResult(result.Pass());
 }
 
@@ -180,6 +181,8 @@ void OmniboxUIHandler::StartOmniboxQuery(const mojo::String& input_string,
 }
 
 void OmniboxUIHandler::ResetController() {
-  controller_.reset(new AutocompleteController(profile_, this,
+  controller_.reset(new AutocompleteController(profile_,
+          TemplateURLServiceFactory::GetForProfile(profile_),
+          this,
           AutocompleteClassifier::kDefaultOmniboxProviders));
 }

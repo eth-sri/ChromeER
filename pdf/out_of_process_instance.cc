@@ -629,11 +629,7 @@ void OutOfProcessInstance::OnPaint(
   if (first_paint_) {
     first_paint_ = false;
     pp::Rect rect = pp::Rect(pp::Point(), image_data_.size());
-    unsigned int color = kBackgroundColorA << 24 |
-                         kBackgroundColorR << 16 |
-                         kBackgroundColorG << 8 |
-                         kBackgroundColorB;
-    FillRect(rect, color);
+    FillRect(rect, kBackgroundColor);
     ready->push_back(PaintManager::ReadyRect(rect, image_data_, true));
   }
 
@@ -724,12 +720,10 @@ void OutOfProcessInstance::CalculateBackgroundParts() {
 
   // Add the left, right, and bottom rectangles.  Note: we assume only
   // horizontal centering.
-  BackgroundPart part;
-  part.color = kBackgroundColorA << 24 |
-               kBackgroundColorR << 16 |
-               kBackgroundColorG << 8 |
-               kBackgroundColorB;
-  part.location = pp::Rect(0, 0, left_width, bottom);
+  BackgroundPart part = {
+    pp::Rect(0, 0, left_width, bottom),
+    kBackgroundColor
+  };
   if (!part.location.IsEmpty())
     background_parts_.push_back(part);
   part.location = pp::Rect(right_start, 0, right_width, bottom);
@@ -750,11 +744,11 @@ int OutOfProcessInstance::GetDocumentPixelHeight() const {
       ceil(document_size_.height() * zoom_ * device_scale_));
 }
 
-void OutOfProcessInstance::FillRect(const pp::Rect& rect, unsigned int color) {
+void OutOfProcessInstance::FillRect(const pp::Rect& rect, uint32 color) {
   DCHECK(!image_data_.is_null() || rect.IsEmpty());
-  unsigned int* buffer_start = static_cast<unsigned int*>(image_data_.data());
+  uint32* buffer_start = static_cast<uint32*>(image_data_.data());
   int stride = image_data_.stride();
-  unsigned int* ptr = buffer_start + rect.y() * stride / 4 + rect.x();
+  uint32* ptr = buffer_start + rect.y() * stride / 4 + rect.x();
   int height = rect.height();
   int width = rect.width();
   for (int y = 0; y < height; ++y) {
@@ -831,6 +825,11 @@ void OutOfProcessInstance::NavigateTo(const std::string& url,
   // Skip the code below so an empty URL does not turn into "http://", which
   // will cause GURL to fail a DCHECK.
   if (!url_copy.empty()) {
+    // If |url_copy| starts with '#', then it's for the same URL with a
+    // different URL fragment.
+    if (url_copy[0] == '#') {
+      url_copy = url_ + url_copy;
+    }
     // If there's no scheme, add http.
     if (url_copy.find("://") == std::string::npos &&
         url_copy.find("mailto:") == std::string::npos) {
@@ -840,6 +839,7 @@ void OutOfProcessInstance::NavigateTo(const std::string& url,
     if (url_copy.find("http://") != 0 &&
         url_copy.find("https://") != 0 &&
         url_copy.find("ftp://") != 0 &&
+        url_copy.find("file://") != 0 &&
         url_copy.find("mailto:") != 0) {
       return;
     }
@@ -847,6 +847,7 @@ void OutOfProcessInstance::NavigateTo(const std::string& url,
     if (url_copy == "http://" ||
         url_copy == "https://" ||
         url_copy == "ftp://" ||
+        url_copy == "file://" ||
         url_copy == "mailto:") {
       return;
     }

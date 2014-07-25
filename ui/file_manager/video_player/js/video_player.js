@@ -25,16 +25,29 @@ function FullWindowVideoControls(
   this.updateStyle();
   window.addEventListener('resize', this.updateStyle.wrap(this));
   document.addEventListener('keydown', function(e) {
-    if (e.keyIdentifier == 'U+0020') {  // Space
-      this.togglePlayStateWithFeedback();
-      e.preventDefault();
+    switch (e.keyIdentifier) {
+      case 'U+0020': // Space
+      case 'MediaPlayPause':
+        this.togglePlayStateWithFeedback();
+        break;
+      case 'U+001B': // Escape
+        util.toggleFullScreen(
+            chrome.app.window.current(),
+            false);  // Leave the full screen mode.
+        break;
+      case 'Right':
+      case 'MediaNextTrack':
+        player.advance_(1);
+        break;
+      case 'Left':
+      case 'MediaPreviousTrack':
+        player.advance_(0);
+        break;
+      case 'MediaStop':
+        // TODO: Define "Stop" behavior.
+        break;
     }
-    if (e.keyIdentifier == 'U+001B') {  // Escape
-      util.toggleFullScreen(
-          chrome.app.window.current(),
-          false);  // Leave the full screen mode.
-      e.preventDefault();
-    }
+    e.preventDefault();
   }.wrap(this));
 
   // TODO(mtomasz): Simplify. crbug.com/254318.
@@ -105,6 +118,15 @@ FullWindowVideoControls.prototype.toggleFullScreen_ = function() {
 };
 
 /**
+ * Media completion handler.
+ */
+FullWindowVideoControls.prototype.onMediaComplete = function() {
+  VideoControls.prototype.onMediaComplete.apply(this, arguments);
+  if (!this.getMedia().loop)
+    player.advance_(1);
+};
+
+/**
  * @constructor
  */
 function VideoPlayer() {
@@ -112,6 +134,8 @@ function VideoPlayer() {
   this.videoElement_ = null;
   this.videos_ = null;
   this.currentPos_ = 0;
+
+  this.currentCast_ = null;
 
   Object.seal(this);
 }
@@ -164,6 +188,18 @@ VideoPlayer.prototype.prepare = function(videos) {
       event.stopPropagation();
     }.wrap(null));
   closeButton.addEventListener('mousedown', preventDefault);
+
+  var castButton = document.querySelector('.cast-button');
+  cr.ui.decorate(castButton, cr.ui.MenuButton);
+  castButton.addEventListener(
+    'click',
+    function(event) {
+      event.stopPropagation();
+    }.wrap(null));
+  castButton.addEventListener('mousedown', preventDefault);
+
+  var menu = document.querySelector('#cast-menu');
+  cr.ui.decorate(menu, cr.ui.Menu);
 
   this.controls_ = new FullWindowVideoControls(
       document.querySelector('#video-player'),
@@ -238,11 +274,24 @@ VideoPlayer.prototype.loadVideo_ = function(url, title, opt_callback) {
   this.controls.inactivityWatcher.disabled = false;
   this.controls.decodeErrorOccured = false;
 
-  this.videoElement_ = document.createElement('video');
-  document.querySelector('#video-container').appendChild(this.videoElement_);
-  this.controls.attachMedia(this.videoElement_);
+  if (this.currentCast_) {
+    videoPlayerElement.setAttribute('casting', true);
+    this.videoElement_ = new CastVideoElement();
+    this.controls.attachMedia(this.videoElement_);
 
-  this.videoElement_.src = url;
+    document.querySelector('#cast-name-label').textContent =
+        loadTimeData.getString('VIDEO_PLAYER_PLAYING_ON');;
+    document.querySelector('#cast-name').textContent = this.currentCast_.name;
+  } else {
+    videoPlayerElement.removeAttribute('casting');
+
+    this.videoElement_ = document.createElement('video');
+    document.querySelector('#video-container').appendChild(this.videoElement_);
+
+    this.controls.attachMedia(this.videoElement_);
+    this.videoElement_.src = url;
+  }
+
   this.videoElement_.load();
 
   if (opt_callback) {
@@ -270,7 +319,7 @@ VideoPlayer.prototype.playFirstVideo = function() {
  */
 VideoPlayer.prototype.unloadVideo = function() {
   // Detach the previous video element, if exists.
-  if (this.videoElement_)
+  if (this.videoElement_ && this.videoElement_.parentNode)
     this.videoElement_.parentNode.removeChild(this.videoElement_);
   this.videoElement_ = null;
 };
@@ -280,26 +329,22 @@ VideoPlayer.prototype.unloadVideo = function() {
  * @private
  */
 VideoPlayer.prototype.onFirstVideoReady_ = function() {
-  // TODO: chrome.app.window soon will be able to resize the content area.
-  // Until then use approximate title bar height.
-  var TITLE_HEIGHT = 33;
-
   var videoWidth = this.videoElement_.videoWidth;
   var videoHeight = this.videoElement_.videoHeight;
 
   var aspect = videoWidth / videoHeight;
   var newWidth = videoWidth;
-  var newHeight = videoHeight + TITLE_HEIGHT;
+  var newHeight = videoHeight;
 
   var shrinkX = newWidth / window.screen.availWidth;
   var shrinkY = newHeight / window.screen.availHeight;
   if (shrinkX > 1 || shrinkY > 1) {
     if (shrinkY > shrinkX) {
       newHeight = newHeight / shrinkY;
-      newWidth = (newHeight - TITLE_HEIGHT) * aspect;
+      newWidth = newHeight * aspect;
     } else {
       newWidth = newWidth / shrinkX;
-      newHeight = newWidth / aspect + TITLE_HEIGHT;
+      newHeight = newWidth / aspect;
     }
   }
 
@@ -347,6 +392,54 @@ VideoPlayer.prototype.advance_ = function(direction) {
 VideoPlayer.prototype.reloadCurrentVideo_ = function(opt_callback) {
   var currentVideo = this.videos_[this.currentPos_];
   this.loadVideo_(currentVideo.fileUrl, currentVideo.entry.name, opt_callback);
+};
+
+/**
+ * Invokes when a menuitem in the cast menu is selected.
+ * @param {Object} cast Selected element in the list of casts.
+ */
+VideoPlayer.prototype.onCastSelected_ = function(cast) {
+  // If the selected item is same as the current item, do nothing.
+  if ((this.currentCast_ && this.currentCast_.name) === (cast && cast.name))
+    return;
+
+  this.currentCast_ = cast || null;
+  this.reloadCurrentVideo_();
+};
+
+/**
+ * Set the list of casts.
+ * @param {Array.<Object>} casts List of casts.
+ */
+VideoPlayer.prototype.setCastList = function(casts) {
+  var button = document.querySelector('.cast-button');
+  var menu = document.querySelector('#cast-menu');
+  menu.innerHTML = '';
+
+  // TODO(yoshiki): Handle the case that the current cast disapears.
+
+  if (casts.length === 0) {
+    button.classList.add('hidden');
+    if (!this.currentCast_) {
+      this.currentCast_ = null;
+      this.reloadCurrentVideo_();
+    }
+    return;
+  }
+
+  var item = new cr.ui.MenuItem();
+  item.label = loadTimeData.getString('VIDEO_PLAYER_PLAY_THIS_COMPUTER');
+  item.addEventListener('activate', this.onCastSelected_.wrap(this, null));
+  menu.appendChild(item);
+
+  for (var i = 0; i < casts.length; i++) {
+    var item = new cr.ui.MenuItem();
+    item.label = casts[i].name;
+    item.addEventListener('activate',
+                          this.onCastSelected_.wrap(this, casts[i]));
+    menu.appendChild(item);
+  }
+  button.classList.remove('hidden');
 };
 
 /**

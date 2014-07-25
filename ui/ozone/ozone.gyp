@@ -15,6 +15,7 @@
   },
   'targets': [
     {
+      # GN version: //ui/ozone:ozone_base
       'target_name': 'ozone_base',
       'type': '<(component)',
       'dependencies': [
@@ -34,6 +35,7 @@
         'public/gpu_platform_support.h',
         'public/gpu_platform_support_host.cc',
         'public/gpu_platform_support_host.h',
+        'public/native_pixmap.h',
         'public/overlay_candidates_ozone.cc',
         'public/overlay_candidates_ozone.h',
         'public/surface_factory_ozone.cc',
@@ -43,6 +45,7 @@
       ],
     },
     {
+      # GN version: //ui/ozone
       'target_name': 'ozone',
       'type': '<(component)',
       'dependencies': [
@@ -82,22 +85,32 @@
         # common/chromeos files are excluded automatically when building with
         # chromeos=0, by exclusion rules in filename_rules.gypi due to the
         # 'chromeos' folder name.
+        'common/chromeos/display_mode_proxy.cc',
+        'common/chromeos/display_mode_proxy.h',
+        'common/chromeos/display_snapshot_proxy.cc',
+        'common/chromeos/display_snapshot_proxy.h',
+        'common/chromeos/display_util.cc',
+        'common/chromeos/display_util.h',
         'common/chromeos/native_display_delegate_ozone.cc',
         'common/chromeos/native_display_delegate_ozone.h',
         'common/chromeos/touchscreen_device_manager_ozone.cc',
         'common/chromeos/touchscreen_device_manager_ozone.h',
         'common/gpu/ozone_gpu_message_generator.cc',
         'common/gpu/ozone_gpu_message_generator.h',
-        'ozone_platform.cc',
-        'ozone_platform.h',
-        'ozone_switches.cc',
-        'ozone_switches.h',
+        'common/gpu/ozone_gpu_message_params.cc',
+        'common/gpu/ozone_gpu_message_params.h',
+        'common/gpu/ozone_gpu_messages.h',
+        'public/ozone_platform.cc',
+        'public/ozone_platform.h',
+        'public/ozone_switches.cc',
+        'public/ozone_switches.h',
         'platform_selection.cc',
         'platform_selection.h',
         '<@(external_ozone_platform_files)',
       ],
       'actions': [
         {
+          # GN version: //ui/ozone:generate_ozone_platform_list
           'action_name': 'generate_ozone_platform_list',
           'variables': {
             'generator_path': 'generate_ozone_platform_list.py',
@@ -121,6 +134,7 @@
           ],
         },
         {
+          # GN version: //ui/ozone:generate_constructor_list
           'action_name': 'generate_constructor_list',
           'variables': {
             'generator_path': 'generate_constructor_list.py',
@@ -139,7 +153,7 @@
             '--output_cc=<(constructor_list_cc_file)',
             '--namespace=ui',
             '--typename=OzonePlatform',
-            '--include="ui/ozone/ozone_platform.h"'
+            '--include="ui/ozone/public/ozone_platform.h"'
           ],
         },
       ],

@@ -29,6 +29,7 @@ from telemetry import benchmark
 from telemetry.core import util
 from telemetry.page import page_measurement
 from telemetry.page import page_set
+from telemetry.value import scalar
 
 _V8_COUNTER_NAMES = [
     'V8.OsMemoryAllocated',
@@ -38,8 +39,12 @@ class _IndexedDbMeasurement(page_measurement.PageMeasurement):
   def __init__(self, *args, **kwargs):
     super(_IndexedDbMeasurement, self).__init__(*args, **kwargs)
     self._memory_metric = None
-    self._power_metric = power.PowerMetric()
+    self._power_metric = None
     self._v8_object_stats_metric = None
+
+  def WillStartBrowser(self, browser):
+    """Initialize metrics once right before the browser has been launched."""
+    self._power_metric = power.PowerMetric(browser)
 
   def DidStartBrowser(self, browser):
     """Initialize metrics once right after the browser has been launched."""
@@ -72,9 +77,13 @@ class _IndexedDbMeasurement(page_measurement.PageMeasurement):
       if key == 'OverallTestDuration':
         continue
       msec = float(result_dict[key])
-      results.Add(key, 'ms', msec, data_type='unimportant')
+      results.AddValue(scalar.ScalarValue(
+          results.current_page, key, 'ms', msec, important=False))
+
       total += msec
-    results.Add('Total Perf', 'ms', total)
+    results.AddValue(scalar.ScalarValue(
+        results.current_page, 'Total Perf', 'ms', total))
+
 
   def CustomizeBrowserOptions(self, options):
     memory.MemoryMetric.CustomizeBrowserOptions(options)

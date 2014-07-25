@@ -91,10 +91,11 @@ HardwareRenderer::HardwareRenderer(SharedRendererState* state)
   // Webview does not own the surface so should not clear it.
   settings.should_clear_root_render_pass = false;
 
-  layer_tree_host_ =
-      cc::LayerTreeHost::CreateSingleThreaded(this, this, NULL, settings);
+  layer_tree_host_ = cc::LayerTreeHost::CreateSingleThreaded(
+      this, this, NULL, settings, NULL);
   layer_tree_host_->SetRootLayer(root_layer_);
   layer_tree_host_->SetLayerTreeHostClientReady();
+  layer_tree_host_->set_has_transparent_background(true);
 }
 
 HardwareRenderer::~HardwareRenderer() {

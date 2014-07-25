@@ -607,7 +607,7 @@ FileTable.prototype.updateListItemsMetadata = function(type, entries) {
       var cell = cells[i];
       var listItem = this.list_.getListItemAncestor(cell);
       var entry = this.dataModel.item(listItem.listIndex);
-      if (entry && (entry.toURL() in entries))
+      if (entry && urls.indexOf(entry.toURL()) !== -1)
         callback.call(this, cell, entry, listItem);
     }
   }.bind(this);
@@ -840,6 +840,8 @@ filelist.updateListItemDriveProps = function(li, driveProps) {
 
   if (driveProps.customIconUrl)
     iconDiv.style.backgroundImage = 'url(' + driveProps.customIconUrl + ')';
+  else
+    iconDiv.style.backgroundImage = '';  // Back to the default image.
 
   if (li.classList.contains('directory'))
     iconDiv.classList.toggle('shared', driveProps.shared);

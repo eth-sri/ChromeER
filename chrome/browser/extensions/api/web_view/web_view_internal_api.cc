@@ -9,6 +9,7 @@
 #include "chrome/browser/extensions/api/context_menus/context_menus_api.h"
 #include "chrome/browser/extensions/api/context_menus/context_menus_api_helpers.h"
 #include "chrome/browser/extensions/tab_helper.h"
+#include "chrome/browser/guest_view/web_view/web_view_permission_helper.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/api/web_view_internal.h"
 #include "content/public/browser/render_process_host.h"
@@ -322,13 +323,12 @@ WebViewInternalExecuteScriptFunction::WebViewInternalExecuteScriptFunction() {
 
 void WebViewInternalExecuteScriptFunction::OnExecuteCodeFinished(
     const std::string& error,
-    int32 on_page_id,
     const GURL& on_url,
     const base::ListValue& result) {
   if (error.empty())
     SetResult(result.DeepCopy());
   WebViewInternalExecuteCodeFunction::OnExecuteCodeFinished(
-      error, on_page_id, on_url, result);
+      error, on_url, result);
 }
 
 WebViewInternalInsertCSSFunction::WebViewInternalInsertCSSFunction() {
@@ -405,7 +405,7 @@ bool WebViewInternalGetZoomFunction::RunAsyncSafe(WebViewGuest* guest) {
   EXTENSION_FUNCTION_VALIDATE(params.get());
 
   double zoom_factor = guest->GetZoom();
-  SetResult(base::Value::CreateDoubleValue(zoom_factor));
+  SetResult(new base::FundamentalValue(zoom_factor));
   SendResponse(true);
   return true;
 }
@@ -506,13 +506,14 @@ bool WebViewInternalSetPermissionFunction::RunAsyncSafe(WebViewGuest* guest) {
       webview::SetPermission::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
 
-  WebViewGuest::PermissionResponseAction action = WebViewGuest::DEFAULT;
+  WebViewPermissionHelper::PermissionResponseAction action =
+      WebViewPermissionHelper::DEFAULT;
   switch (params->action) {
     case Params::ACTION_ALLOW:
-      action = WebViewGuest::ALLOW;
+      action = WebViewPermissionHelper::ALLOW;
       break;
     case Params::ACTION_DENY:
-      action = WebViewGuest::DENY;
+      action = WebViewPermissionHelper::DENY;
       break;
     case Params::ACTION_DEFAULT:
       break;
@@ -524,13 +525,18 @@ bool WebViewInternalSetPermissionFunction::RunAsyncSafe(WebViewGuest* guest) {
   if (params->user_input)
     user_input = *params->user_input;
 
-  WebViewGuest::SetPermissionResult result =
-      guest->SetPermission(params->request_id, action, user_input);
+  WebViewPermissionHelper* web_view_permission_helper =
+      WebViewPermissionHelper:: FromWebContents(guest->guest_web_contents());
 
-  EXTENSION_FUNCTION_VALIDATE(result != WebViewGuest::SET_PERMISSION_INVALID);
+  WebViewPermissionHelper::SetPermissionResult result =
+      web_view_permission_helper->SetPermission(
+          params->request_id, action, user_input);
 
-  SetResult(base::Value::CreateBooleanValue(
-      result == WebViewGuest::SET_PERMISSION_ALLOWED));
+  EXTENSION_FUNCTION_VALIDATE(
+      result != WebViewPermissionHelper::SET_PERMISSION_INVALID);
+
+  SetResult(new base::FundamentalValue(
+      result == WebViewPermissionHelper::SET_PERMISSION_ALLOWED));
   SendResponse(true);
   return true;
 }

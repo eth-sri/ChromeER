@@ -258,6 +258,12 @@ class GestureProviderTest : public testing::Test, public GestureProviderClient {
     SetUpWithConfig(config);
   }
 
+  void SetMaxGestureBoundsLength(float max_gesture_bound_length) {
+    GestureProvider::Config config = GetDefaultConfig();
+    config.max_gesture_bounds_length = max_gesture_bound_length;
+    SetUpWithConfig(config);
+  }
+
   bool HasDownEvent() const { return gesture_provider_->current_down_event(); }
 
  protected:
@@ -1558,7 +1564,7 @@ TEST_F(GestureProviderTest, PinchZoom) {
 }
 
 // Verify that no accidental pinching occurs if the touch size is large relative
-// to the min scaling span.
+// to the min scaling span when the touch major value is used in scaling.
 TEST_F(GestureProviderTest, NoPinchZoomWithFatFinger) {
   base::TimeTicks event_time = base::TimeTicks::Now();
   const float kFatFingerSize = GetMinScalingSpan() * 3.f;
@@ -1597,6 +1603,22 @@ TEST_F(GestureProviderTest, NoPinchZoomWithFatFinger) {
   event.SetTouchMajor(kFatFingerSize * 5.f);
   EXPECT_TRUE(gesture_provider_->OnTouchEvent(event));
   EXPECT_EQ(1U, GetReceivedGestureCount());
+
+  event = ObtainMotionEvent(event_time + kOneSecond * 4,
+                            MotionEvent::ACTION_MOVE,
+                            kFakeCoordX + 50.f,
+                            kFakeCoordY - 25.f);
+  event.SetTouchMajor(kFatFingerSize * 10.f);
+  EXPECT_TRUE(gesture_provider_->OnTouchEvent(event));
+  EXPECT_FALSE(HasReceivedGesture(ET_GESTURE_PINCH_BEGIN));
+
+  event = ObtainMotionEvent(event_time + kOneSecond * 4,
+                            MotionEvent::ACTION_MOVE,
+                            kFakeCoordX + 100.f,
+                            kFakeCoordY - 50.f);
+  event.SetTouchMajor(kFatFingerSize * 5.f);
+  EXPECT_TRUE(gesture_provider_->OnTouchEvent(event));
+  EXPECT_FALSE(HasReceivedGesture(ET_GESTURE_PINCH_BEGIN));
 }
 
 // Verify that multi-finger swipe sends the proper event sequence.
@@ -2293,6 +2315,32 @@ TEST_F(GestureProviderTest, MinGestureBoundsLength) {
   EXPECT_EQ(kMinGestureBoundsLength,
             GetMostRecentGestureEvent().details.bounding_box_f().width());
   EXPECT_EQ(kMinGestureBoundsLength,
+            GetMostRecentGestureEvent().details.bounding_box_f().height());
+}
+
+TEST_F(GestureProviderTest, MaxGestureBoundsLength) {
+  const float kMaxGestureBoundsLength = kMockTouchRadius / 10.f;
+  SetMaxGestureBoundsLength(kMaxGestureBoundsLength);
+  gesture_provider_->SetDoubleTapSupportForPlatformEnabled(false);
+
+  base::TimeTicks event_time = base::TimeTicks::Now();
+  MockMotionEvent event =
+      ObtainMotionEvent(event_time, MotionEvent::ACTION_DOWN);
+  EXPECT_TRUE(gesture_provider_->OnTouchEvent(event));
+
+  EXPECT_EQ(ET_GESTURE_TAP_DOWN, GetMostRecentGestureEventType());
+  EXPECT_EQ(kMaxGestureBoundsLength,
+            GetMostRecentGestureEvent().details.bounding_box_f().width());
+  EXPECT_EQ(kMaxGestureBoundsLength,
+            GetMostRecentGestureEvent().details.bounding_box_f().height());
+
+  event =
+      ObtainMotionEvent(event_time + kOneMicrosecond, MotionEvent::ACTION_UP);
+  EXPECT_TRUE(gesture_provider_->OnTouchEvent(event));
+  EXPECT_EQ(ET_GESTURE_TAP, GetMostRecentGestureEventType());
+  EXPECT_EQ(kMaxGestureBoundsLength,
+            GetMostRecentGestureEvent().details.bounding_box_f().width());
+  EXPECT_EQ(kMaxGestureBoundsLength,
             GetMostRecentGestureEvent().details.bounding_box_f().height());
 }
 

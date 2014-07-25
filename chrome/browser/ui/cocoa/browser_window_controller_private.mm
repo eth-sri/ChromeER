@@ -36,6 +36,8 @@
 #import "chrome/browser/ui/cocoa/tabs/tab_strip_controller.h"
 #import "chrome/browser/ui/cocoa/tabs/tab_strip_view.h"
 #import "chrome/browser/ui/cocoa/toolbar/toolbar_controller.h"
+#import "chrome/browser/ui/cocoa/version_independent_window.h"
+#import "chrome/browser/ui/cocoa/website_settings/permission_bubble_cocoa.h"
 #include "chrome/browser/ui/fullscreen/fullscreen_controller.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_switches.h"
@@ -565,13 +567,10 @@ willPositionSheet:(NSWindow*)sheet
     [tabStripView removeFromSuperview];
   }
 
-  // Ditto for the content view.
-  base::scoped_nsobject<NSView> contentView(
-      [[sourceWindow contentView] retain]);
   // Disable autoresizing of subviews while we move views around. This prevents
   // spurious renderer resizes.
-  [contentView setAutoresizesSubviews:NO];
-  [contentView removeFromSuperview];
+  [self.chromeContentView setAutoresizesSubviews:NO];
+  [self.chromeContentView removeFromSuperview];
 
   // Have to do this here, otherwise later calls can crash because the window
   // has no delegate.
@@ -583,8 +582,11 @@ willPositionSheet:(NSWindow*)sheet
   // drawOverlayRect:].  I'm pretty convinced this is an Apple bug, but there is
   // no visual impact.  I have been unable to tickle it away with other window
   // or view manipulation Cocoa calls.  Stack added to suppressions_mac.txt.
-  [contentView setAutoresizesSubviews:YES];
-  [destWindow setContentView:contentView];
+  [self.chromeContentView setAutoresizesSubviews:YES];
+  [[destWindow contentView] addSubview:self.chromeContentView
+                            positioned:NSWindowBelow
+                            relativeTo:nil];
+  self.chromeContentView.frame = [[destWindow contentView] bounds];
 
   // Move the incognito badge if present.
   if ([self shouldShowAvatar]) {
@@ -592,13 +594,13 @@ willPositionSheet:(NSWindow*)sheet
 
     [avatarButtonView removeFromSuperview];
     [avatarButtonView setHidden:YES];  // Will be shown in layout.
-    [[[destWindow contentView] superview] addSubview: avatarButtonView];
+    [[destWindow cr_windowView] addSubview:avatarButtonView];
   }
 
   // Add the tab strip after setting the content view and moving the incognito
   // badge (if any), so that the tab strip will be on top (in the z-order).
   if ([self hasTabStrip])
-    [[[destWindow contentView] superview] addSubview:tabStripView];
+    [[destWindow cr_windowView] addSubview:tabStripView];
 
   [sourceWindow setWindowController:nil];
   [self setWindow:destWindow];
@@ -634,6 +636,18 @@ willPositionSheet:(NSWindow*)sheet
   [self enableBarVisibilityUpdates];
 }
 
+- (void)permissionBubbleWindowWillClose:(NSNotification*)notification {
+  DCHECK(permissionBubbleCocoa_);
+
+  NSNotificationCenter* center = [NSNotificationCenter defaultCenter];
+  [center removeObserver:self
+                    name:NSWindowWillCloseNotification
+                  object:[notification object]];
+  [self releaseBarVisibilityForOwner:[notification object]
+                       withAnimation:YES
+                               delay:YES];
+}
+
 - (void)setPresentationModeInternal:(BOOL)presentationMode
                       forceDropdown:(BOOL)forceDropdown {
   if (presentationMode == [self inPresentationMode])
@@ -647,9 +661,36 @@ willPositionSheet:(NSWindow*)sheet
     BOOL showDropdown = !fullscreen_for_tab &&
         !kiosk_mode &&
         (forceDropdown || [self floatingBarHasFocus]);
-    NSView* contentView = [[self window] contentView];
     presentationModeController_.reset(
         [[PresentationModeController alloc] initWithBrowserController:self]);
+
+    if (permissionBubbleCocoa_ && permissionBubbleCocoa_->IsVisible()) {
+      DCHECK(permissionBubbleCocoa_->window());
+      // A visible permission bubble will force the dropdown to remain visible.
+      [self lockBarVisibilityForOwner:permissionBubbleCocoa_->window()
+                        withAnimation:NO
+                                delay:NO];
+      showDropdown = YES;
+      // Register to be notified when the permission bubble is closed, to
+      // allow fullscreen to hide the dropdown.
+      NSNotificationCenter* center = [NSNotificationCenter defaultCenter];
+      [center addObserver:self
+                 selector:@selector(permissionBubbleWindowWillClose:)
+                     name:NSWindowWillCloseNotification
+                   object:permissionBubbleCocoa_->window()];
+    }
+    if (showDropdown) {
+      // Turn on layered mode for the window's root view for the entry
+      // animation.  Without this, the OS fullscreen animation for entering
+      // fullscreen mode does not correctly draw the tab strip.
+      // It will be turned off (set back to NO) when the animation finishes,
+      // in -windowDidEnterFullScreen:.
+      // Leaving wantsLayer on for the duration of presentation mode causes
+      // performance issues when the dropdown is animated in/out.  It also does
+      // not seem to be required for the exit animation.
+      [[[self window] cr_windowView] setWantsLayer:YES];
+    }
+    NSView* contentView = [[self window] contentView];
     [presentationModeController_ enterPresentationModeForContentView:contentView
                                  showDropdown:showDropdown];
   } else {
@@ -776,7 +817,7 @@ willPositionSheet:(NSWindow*)sheet
   if (enteringFullscreen_)
     return;
 
-  [presentationModeController_ ensureOverlayHiddenWithAnimation:NO delay:NO];
+  [self hideOverlayIfPossibleWithAnimation:NO delay:NO];
 
   if (fullscreenBubbleType_ == FEB_TYPE_NONE ||
       fullscreenBubbleType_ == FEB_TYPE_BROWSER_FULLSCREEN_EXIT_INSTRUCTION) {
@@ -851,7 +892,7 @@ willPositionSheet:(NSWindow*)sheet
     for (NSWindow* window in [[NSApplication sharedApplication] windows]) {
       if ([window
               isKindOfClass:NSClassFromString(@"NSToolbarFullScreenWindow")]) {
-        [window.contentView setHidden:YES];
+        [[window contentView] setHidden:YES];
       }
     }
   }
@@ -870,6 +911,7 @@ willPositionSheet:(NSWindow*)sheet
 
   [self showFullscreenExitBubbleIfNecessary];
   browser_->WindowFullscreenStateChanged();
+  [[[self window] cr_windowView] setWantsLayer:NO];
 }
 
 - (void)windowWillExitFullScreen:(NSNotification*)notification {
@@ -924,12 +966,19 @@ willPositionSheet:(NSWindow*)sheet
   [presentationModeController_ cancelAnimationAndTimers];
 }
 
+- (void)hideOverlayIfPossibleWithAnimation:(BOOL)animation delay:(BOOL)delay {
+  if (!barVisibilityUpdatesEnabled_ || [barVisibilityLocks_ count])
+    return;
+  [presentationModeController_ ensureOverlayHiddenWithAnimation:animation
+                                                          delay:delay];
+}
+
 - (CGFloat)toolbarDividerOpacity {
   return [bookmarkBarController_ toolbarDividerOpacity];
 }
 
 - (void)updateSubviewZOrder:(BOOL)inPresentationMode {
-  NSView* contentView = [[self window] contentView];
+  NSView* contentView = self.chromeContentView;
   NSView* toolbarView = [toolbarController_ view];
 
   if (inPresentationMode) {

@@ -3,7 +3,7 @@
  * found in the LICENSE file.
  */
 
-/* From private/ppb_nacl_private.idl modified Thu Jun 26 14:23:46 2014. */
+/* From private/ppb_nacl_private.idl modified Wed Jul  9 11:09:04 2014. */
 
 #ifndef PPAPI_C_PRIVATE_PPB_NACL_PRIVATE_H_
 #define PPAPI_C_PRIVATE_PPB_NACL_PRIVATE_H_
@@ -256,10 +256,11 @@ struct PPB_NaCl_Private_1_0 {
                                    PP_FileHandle* target_handle,
                                    uint32_t desired_access,
                                    uint32_t options);
-  /* Returns a read-only file descriptor for a url for pnacl translator tools,
-   * or an invalid handle on failure.
+  /* Returns a read-only (but executable) file descriptor / file info for
+   * a url for pnacl translator tools. Returns an invalid handle on failure.
    */
-  PP_FileHandle (*GetReadonlyPnaclFd)(const char* url);
+  void (*GetReadExecPnaclFd)(const char* url,
+                             struct PP_NaClFileInfo* out_file_info);
   /* This creates a temporary file that will be deleted by the time
    * the last handle is closed (or earlier on POSIX systems), and
    * returns a posix handle to that temporary file.
@@ -315,7 +316,6 @@ struct PPB_NaCl_Private_1_0 {
                         uint64_t total_bytes);
   /* Report that the nexe loaded successfully. */
   void (*ReportLoadSuccess)(PP_Instance instance,
-                            const char* url,
                             uint64_t loaded_bytes,
                             uint64_t total_bytes);
   /* Report an error that occured while attempting to load a nexe. */
@@ -369,11 +369,8 @@ struct PPB_NaCl_Private_1_0 {
                                    struct PP_Var* full_url,
                                    struct PP_PNaClOptions* pnacl_options,
                                    PP_Bool* uses_nonsfi_mode);
-  /* Returns the filenames for the llc and ld tools, parsing that information
-   * from the file given in |filename|.
-   */
+  /* Returns the filenames for the llc and ld tools. */
   PP_Bool (*GetPnaclResourceInfo)(PP_Instance instance,
-                                  const char* filename,
                                   struct PP_Var* llc_tool_name,
                                   struct PP_Var* ld_tool_name);
   /* PP_Var string of attributes describing the CPU features supported

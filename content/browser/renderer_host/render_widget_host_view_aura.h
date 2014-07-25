@@ -183,7 +183,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
       const gfx::Rect& src_subrect,
       const gfx::Size& dst_size,
       const base::Callback<void(bool, const SkBitmap&)>& callback,
-      const SkBitmap::Config config) OVERRIDE;
+      const SkColorType color_type) OVERRIDE;
   virtual void CopyFromCompositingSurfaceToVideoFrame(
       const gfx::Rect& src_subrect,
       const scoped_refptr<media::VideoFrame>& target,
@@ -336,6 +336,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   // Sets whether the overscroll controller should be enabled for this page.
   void SetOverscrollControllerEnabled(bool enabled);
 
+  void SnapToPhysicalPixelBoundary();
+
   OverscrollController* overscroll_controller() const {
     return overscroll_controller_.get();
   }
@@ -345,7 +347,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
 
   // Exposed for tests.
   aura::Window* window() { return window_; }
-  virtual SkBitmap::Config PreferredReadbackFormat() OVERRIDE;
+  virtual SkColorType PreferredReadbackFormat() OVERRIDE;
   virtual DelegatedFrameHost* GetDelegatedFrameHost() const OVERRIDE;
 
  private:
@@ -376,8 +378,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   friend class WindowObserver;
 
   void UpdateCursorIfOverSelf();
-
-  void SnapToPhysicalPixelBoundary();
 
   // Set the bounds of the window and handle size changes.  Assumes the caller
   // has already adjusted the origin of |rect| to conform to whatever coordinate

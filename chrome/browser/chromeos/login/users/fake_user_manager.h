@@ -10,9 +10,9 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/chromeos/login/user_flow.h"
-#include "chrome/browser/chromeos/login/users/avatar/user_image.h"
 #include "chrome/browser/chromeos/login/users/user.h"
 #include "chrome/browser/chromeos/login/users/user_manager.h"
+#include "components/user_manager/user_image/user_image.h"
 
 namespace chromeos {
 
@@ -31,11 +31,11 @@ class FakeUserManager : public UserManager {
   // Create and add a kiosk app user.
   void AddKioskAppUser(const std::string& kiosk_app_username);
 
-   // Calculates the user name hash and calls UserLoggedIn to login a user.
-   void LoginUser(const std::string& email);
+  // Create and add a public account user.
+  const User* AddPublicAccountUser(const std::string& email);
 
-   // Associates |profile| with |user|, for GetProfileByUser().
-   void SetProfileForUser(const User* user, Profile* profile);
+  // Calculates the user name hash and calls UserLoggedIn to login a user.
+  void LoginUser(const std::string& email);
 
   // UserManager overrides.
   virtual const UserList& GetUsers() const OVERRIDE;
@@ -66,18 +66,15 @@ class FakeUserManager : public UserManager {
   virtual UserList GetUnlockUsers() const OVERRIDE;
   virtual const std::string& GetOwnerEmail() OVERRIDE;
   virtual void SessionStarted() OVERRIDE {}
-  virtual void RestoreActiveSessions() OVERRIDE {}
   virtual void RemoveUser(const std::string& email,
       RemoveUserDelegate* delegate) OVERRIDE {}
-  virtual void RemoveUserFromList(const std::string& email) OVERRIDE {}
+  virtual void RemoveUserFromList(const std::string& email) OVERRIDE;
   virtual bool IsKnownUser(const std::string& email) const OVERRIDE;
   virtual const User* FindUser(const std::string& email) const OVERRIDE;
   virtual User* FindUserAndModify(const std::string& email) OVERRIDE;
   virtual const User* GetLoggedInUser() const OVERRIDE;
   virtual User* GetLoggedInUser() OVERRIDE;
   virtual const User* GetPrimaryUser() const OVERRIDE;
-  virtual Profile* GetProfileByUser(const User* profile) const OVERRIDE;
-  virtual User* GetUserByProfile(Profile* profile) const OVERRIDE;
   virtual void SaveUserOAuthStatus(
       const std::string& username,
       User::OAuthTokenStatus oauth_token_status) OVERRIDE {}
@@ -98,11 +95,10 @@ class FakeUserManager : public UserManager {
   virtual bool IsLoggedInAsDemoUser() const OVERRIDE;
   virtual bool IsLoggedInAsPublicAccount() const OVERRIDE;
   virtual bool IsLoggedInAsGuest() const OVERRIDE;
-  virtual bool IsLoggedInAsLocallyManagedUser() const OVERRIDE;
+  virtual bool IsLoggedInAsSupervisedUser() const OVERRIDE;
   virtual bool IsLoggedInAsKioskApp() const OVERRIDE;
   virtual bool IsLoggedInAsStub() const OVERRIDE;
   virtual bool IsSessionStarted() const OVERRIDE;
-  virtual bool UserSessionsRestored() const OVERRIDE;
   virtual bool IsUserNonCryptohomeDataEphemeral(
       const std::string& email) const OVERRIDE;
   virtual void SetUserFlow(const std::string& email, UserFlow* flow) OVERRIDE {}
@@ -116,9 +112,7 @@ class FakeUserManager : public UserManager {
   virtual void RemoveSessionStateObserver(
       UserSessionStateObserver* obs) OVERRIDE {}
   virtual void NotifyLocalStateChanged() OVERRIDE {}
-  virtual bool AreLocallyManagedUsersAllowed() const OVERRIDE;
-  virtual base::FilePath GetUserProfileDir(const std::string& email) const
-      OVERRIDE;
+  virtual bool AreSupervisedUsersAllowed() const OVERRIDE;
 
   void set_owner_email(const std::string& owner_email) {
     owner_email_ = owner_email;
@@ -138,7 +132,6 @@ class FakeUserManager : public UserManager {
   UserList logged_in_users_;
   std::string owner_email_;
   User* primary_user_;
-  std::map<const User*, Profile*> user_to_profile_;
 
   // If set this is the active user. If empty, the first created user is the
   // active user.

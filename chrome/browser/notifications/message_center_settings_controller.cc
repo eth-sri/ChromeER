@@ -271,15 +271,11 @@ void MessageCenterSettingsController::GetNotifierList(
         name,
         notification_service->IsNotifierEnabled(notifier_id)));
     patterns_[name] = iter->primary_pattern;
-    FaviconService::FaviconForPageURLParams favicon_params(
-        url,
-        favicon_base::FAVICON | favicon_base::TOUCH_ICON,
-        message_center::kSettingsIconSize);
     // Note that favicon service obtains the favicon from history. This means
     // that it will fail to obtain the image if there are no history data for
     // that URL.
     favicon_service->GetFaviconImageForPageURL(
-        favicon_params,
+        url,
         base::Bind(&MessageCenterSettingsController::OnFaviconLoaded,
                    base::Unretained(this),
                    url),
@@ -457,7 +453,7 @@ void MessageCenterSettingsController::CreateNotifierGroupForGuestLogin() {
     return;
 
   chromeos::User* user = user_manager->GetActiveUser();
-  Profile* profile = user_manager->GetProfileByUser(user);
+  Profile* profile = chromeos::ProfileHelper::Get()->GetProfileByUser(user);
   DCHECK(profile);
   notifier_groups_.push_back(
       new message_center::ProfileNotifierGroup(gfx::Image(user->GetImage()),
@@ -494,7 +490,7 @@ void MessageCenterSettingsController::RebuildNotifierGroups() {
     // UserManager may not exist in some tests.
     if (chromeos::UserManager::IsInitialized()) {
       chromeos::UserManager* user_manager = chromeos::UserManager::Get();
-      if (user_manager->GetUserByProfile(group->profile()) !=
+      if (chromeos::ProfileHelper::Get()->GetUserByProfile(group->profile()) !=
           user_manager->GetActiveUser()) {
         continue;
       }
@@ -516,10 +512,10 @@ void MessageCenterSettingsController::RebuildNotifierGroups() {
       chromeos::UserManager::Get()->IsLoggedInAsGuest()) {
     // Do not invoke CreateNotifierGroupForGuestLogin() directly. In some tests,
     // this method may be called before the primary profile is created, which
-    // means user_manager->GetProfileByUser() will create a new primary profile.
-    // But creating a primary profile causes an Observe() before registreing it
-    // as the primary one, which causes this method which causes another
-    // creating a primary profile, and causes an infinite loop.
+    // means ProfileHelper::Get()->GetProfileByUser() will create a new primary
+    // profile. But creating a primary profile causes an Observe() before
+    // registering it as the primary one, which causes this method which causes
+    // another creating a primary profile, and causes an infinite loop.
     // Thus, it would be better to delay creating group for guest login.
     base::MessageLoopProxy::current()->PostTask(
         FROM_HERE,

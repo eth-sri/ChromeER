@@ -5,13 +5,59 @@
 #include "ui/ozone/platform/dri/dri_wrapper.h"
 
 #include <fcntl.h>
+#include <sys/mman.h>
 #include <unistd.h>
 #include <xf86drm.h>
 #include <xf86drmMode.h>
 
 #include "base/logging.h"
+#include "third_party/skia/include/core/SkImageInfo.h"
+#include "ui/ozone/platform/dri/dri_util.h"
 
 namespace ui {
+
+namespace {
+
+uint32_t ToFixedPoint(double v) {
+  // This returns a number in a 16-bit.16-bit fixed point.
+  return v * 65536.0;
+}
+
+bool DrmCreateDumbBuffer(int fd,
+                         const SkImageInfo& info,
+                         uint32_t* handle,
+                         uint32_t* stride) {
+  struct drm_mode_create_dumb request;
+  memset(&request, 0, sizeof(request));
+  request.width = info.width();
+  request.height = info.height();
+  request.bpp = info.bytesPerPixel() << 3;
+  request.flags = 0;
+
+  if (drmIoctl(fd, DRM_IOCTL_MODE_CREATE_DUMB, &request) < 0) {
+    VLOG(2) << "Cannot create dumb buffer (" << errno << ") "
+            << strerror(errno);
+    return false;
+  }
+
+  // The driver may choose to align the last row as well. We don't care about
+  // the last alignment bits since they aren't used for display purposes, so
+  // just check that the expected size is <= to what the driver allocated.
+  DCHECK_LE(info.getSafeSize(request.pitch), request.size);
+
+  *handle = request.handle;
+  *stride = request.pitch;
+  return true;
+}
+
+void DrmDestroyDumbBuffer(int fd, uint32_t handle) {
+  struct drm_mode_destroy_dumb destroy_request;
+  memset(&destroy_request, 0, sizeof(destroy_request));
+  destroy_request.handle = handle;
+  drmIoctl(fd, DRM_IOCTL_MODE_DESTROY_DUMB, &destroy_request);
+}
+
+}  // namespace
 
 DriWrapper::DriWrapper(const char* device_path) {
   fd_ = open(device_path, O_RDWR | O_CLOEXEC);
@@ -86,6 +132,27 @@ bool DriWrapper::PageFlip(uint32_t crtc_id,
                           data);
 }
 
+bool DriWrapper::PageFlipOverlay(uint32_t crtc_id,
+                                 uint32_t framebuffer,
+                                 const gfx::Rect& location,
+                                 const gfx::RectF& source,
+                                 int overlay_plane) {
+  CHECK(fd_ >= 0);
+  return !drmModeSetPlane(fd_,
+                          overlay_plane,
+                          crtc_id,
+                          framebuffer,
+                          0,
+                          location.x(),
+                          location.y(),
+                          location.width(),
+                          location.height(),
+                          ToFixedPoint(source.x()),
+                          ToFixedPoint(source.y()),
+                          ToFixedPoint(source.width()),
+                          ToFixedPoint(source.height()));
+}
+
 ScopedDrmFramebufferPtr DriWrapper::GetFramebuffer(uint32_t framebuffer) {
   CHECK(fd_ >= 0);
   return ScopedDrmFramebufferPtr(drmModeGetFB(fd_, framebuffer));
@@ -131,20 +198,46 @@ ScopedDrmPropertyBlobPtr DriWrapper::GetPropertyBlob(
 
 bool DriWrapper::SetCursor(uint32_t crtc_id,
                            uint32_t handle,
-                           uint32_t width,
-                           uint32_t height) {
+                           const gfx::Size& size) {
   CHECK(fd_ >= 0);
-  return !drmModeSetCursor(fd_, crtc_id, handle, width, height);
+  return !drmModeSetCursor(fd_, crtc_id, handle, size.width(), size.height());
 }
 
-bool DriWrapper::MoveCursor(uint32_t crtc_id, int x, int y) {
+bool DriWrapper::MoveCursor(uint32_t crtc_id, const gfx::Point& point) {
   CHECK(fd_ >= 0);
-  return !drmModeMoveCursor(fd_, crtc_id, x, y);
+  return !drmModeMoveCursor(fd_, crtc_id, point.x(), point.y());
 }
 
 void DriWrapper::HandleEvent(drmEventContext& event) {
   CHECK(fd_ >= 0);
   drmHandleEvent(fd_, &event);
 }
+
+bool DriWrapper::CreateDumbBuffer(const SkImageInfo& info,
+                                  uint32_t* handle,
+                                  uint32_t* stride,
+                                  void** pixels) {
+  CHECK(fd_ >= 0);
+
+  if (!DrmCreateDumbBuffer(fd_, info, handle, stride))
+    return false;
+
+  if (!MapDumbBuffer(fd_, *handle, info.getSafeSize(*stride), pixels)) {
+    DrmDestroyDumbBuffer(fd_, *handle);
+    return false;
+  }
+
+  return true;
+}
+
+void DriWrapper::DestroyDumbBuffer(const SkImageInfo& info,
+                                   uint32_t handle,
+                                   uint32_t stride,
+                                   void* pixels) {
+  CHECK(fd_ >= 0);
+  munmap(pixels, info.getSafeSize(stride));
+  DrmDestroyDumbBuffer(fd_, handle);
+}
+
 
 }  // namespace ui

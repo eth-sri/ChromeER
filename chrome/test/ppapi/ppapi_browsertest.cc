@@ -994,7 +994,13 @@ IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, Flash) {
       LIST_TEST(WebSocket_UtilityBufferedAmount) \
   )
 
-IN_PROC_BROWSER_TEST_F(PPAPITest, WebSocket1) {
+// Repeatedly flaky on WinXP Tests(1): http://crbug.com/389084
+#if defined(OS_WIN)
+#define MAYBE_WebSocket1 DISABLED_WebSocket1
+#else
+#define MAYBE_WebSocket1 WebSocket1
+#endif
+IN_PROC_BROWSER_TEST_F(PPAPITest, MAYBE_WebSocket1) {
   RUN_WEBSOCKET_SUBTESTS_1;
 }
 
@@ -1007,10 +1013,10 @@ IN_PROC_BROWSER_TEST_F(PPAPITest, WebSocket1) {
 IN_PROC_BROWSER_TEST_F(PPAPITest, MAYBE_WebSocket2) {
   RUN_WEBSOCKET_SUBTESTS_2;
 }
-IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, WebSocket1) {
+IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, MAYBE_WebSocket1) {
   RUN_WEBSOCKET_SUBTESTS_1;
 }
-IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, WebSocket2) {
+IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, MAYBE_WebSocket2) {
   RUN_WEBSOCKET_SUBTESTS_2;
 }
 IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, WebSocket1) {
@@ -1028,7 +1034,13 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_GLIBC(WebSocket2)) {
 IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, WebSocket1) {
   RUN_WEBSOCKET_SUBTESTS_1;
 }
-IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, WebSocket2) {
+// Flaky on XP Tests (3): http://crbug.com/389084
+#if defined(OS_WIN)
+#define MAYBE_WebSocket2 DISABLED_WebSocket2
+#else
+#define MAYBE_WebSocket2 WebSocket2
+#endif
+IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, MAYBE_WebSocket2) {
   RUN_WEBSOCKET_SUBTESTS_2;
 }
 IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClNonSfiTest,
@@ -1134,7 +1146,7 @@ IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, View_CreateInvisible) {
 }
 
 // This test messes with tab visibility so is custom.
-IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, View_PageHideShow) {
+IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, DISABLED_View_PageHideShow) {
   // The plugin will be loaded in the foreground tab and will send us a message.
   PPAPITestMessageHandler handler;
   content::JavascriptTestObserver observer(

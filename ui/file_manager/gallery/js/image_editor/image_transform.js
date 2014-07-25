@@ -77,6 +77,38 @@ ImageEditor.Mode.Crop.prototype.setUp = function() {
 };
 
 /**
+ * @override
+ */
+ImageEditor.Mode.Crop.prototype.createTools = function(toolbar) {
+  var aspects = {
+    GALLERY_ASPECT_RATIO_1_1: 1 / 1,
+    GALLERY_ASPECT_RATIO_6_4: 6 / 4,
+    GALLERY_ASPECT_RATIO_7_5: 7 / 5,
+    GALLERY_ASPECT_RATIO_16_9: 16 / 9
+  };
+  for (name in aspects) {
+    toolbar.addButton(
+        name,
+        name,
+        function(aspect, event) {
+          var button = event.target;
+          if (button.classList.contains('selected')) {
+            button.classList.remove('selected');
+            this.cropRect_.fixedAspectRatio = null;
+          } else {
+            var selectedButtons =
+                toolbar.element.querySelectorAll('button.selected');
+            for (var i = 0; i < selectedButtons.length; i++) {
+              selectedButtons[i].classList.remove('selected');
+            }
+            button.classList.add('selected');
+            this.cropRect_.fixedAspectRatio = aspect;
+          }
+        }.bind(this, aspects[name]));
+  }
+};
+
+/**
  * Handles resizing of the window and updates the crop rectangle.
  * @private
  */
@@ -96,7 +128,7 @@ ImageEditor.Mode.Crop.prototype.reset = function() {
  * Updates the position of DOM elements.
  */
 ImageEditor.Mode.Crop.prototype.positionDOM = function() {
-  var screenClipped = this.viewport_.getScreenClipped();
+  var screenClipped = this.viewport_.getImageBoundsOnScreenClipped();
 
   var screenCrop = this.viewport_.imageToScreenRect(this.cropRect_.getRect());
   var delta = ImageEditor.Mode.Crop.MOUSE_GRAB_RADIUS;
@@ -158,7 +190,8 @@ ImageEditor.Mode.Crop.prototype.getCommand = function() {
  * Creates default (initial) crop.
  */
 ImageEditor.Mode.Crop.prototype.createDefaultCrop = function() {
-  var rect = new Rect(this.getViewport().getImageClipped());
+  var rect = this.getViewport().screenToImageRect(
+      new Rect(this.getViewport().getImageBoundsOnScreenClipped()));
   rect = rect.inflate(
       -Math.round(rect.width / 6), -Math.round(rect.height / 6));
   this.cropRect_ = new DraggableRect(rect, this.getViewport());
@@ -246,6 +279,13 @@ function DraggableRect(rect, viewport) {
    * @private
    */
   this.dragMode_ = null;
+
+  /**
+   * Fixed aspect ratio.
+   * The aspect ratio is not fixed when null.
+   * @type {?number}
+   */
+  this.fixedAspectRatio = null;
 
   Object.seal(this);
 }
@@ -426,7 +466,8 @@ DraggableRect.prototype.getDragHandler = function(
   var initialY = this.viewport_.screenToImageY(initialScreenY);
   var initialWidth = this.bounds_.right - this.bounds_.left;
   var initialHeight = this.bounds_.bottom - this.bounds_.top;
-  var clipRect = this.viewport_.getImageClipped();
+  var clipRect = this.viewport_.screenToImageRect(
+      this.viewport_.getImageBoundsOnScreenClipped());
   if (!clipRect.inside(initialX, initialY))
     return null;
 
@@ -501,7 +542,9 @@ DraggableRect.prototype.getDragHandler = function(
       }
 
       // Update aspect ratio.
-      if (shiftKey)
+      if (this.fixedAspectRatio)
+        this.forceAspectRatio(this.fixedAspectRatio, clipRect);
+      else if (shiftKey)
         this.forceAspectRatio(initialWidth / initialHeight, clipRect);
     }.bind(this);
   }
@@ -516,10 +559,7 @@ DraggableRect.prototype.getDragHandler = function(
  * @return {ImageBuffer.DoubleTapAction} Double tap action.
  */
 DraggableRect.prototype.getDoubleTapAction = function(x, y, touch) {
-  x = this.viewport_.screenToImageX(x);
-  y = this.viewport_.screenToImageY(y);
-
-  var clipRect = this.viewport_.getImageClipped();
+  var clipRect = this.viewport_.getImageBoundsOnScreenClipped();
   if (clipRect.inside(x, y))
     return ImageBuffer.DoubleTapAction.COMMIT;
   else

@@ -5,6 +5,7 @@
 {
   'targets': [
     {
+      # GN version: //components/history/core/browser
       'target_name': 'history_core_browser',
       'type': 'static_library',
       'include_dirs': [
@@ -19,8 +20,11 @@
         'query_parser',
       ],
       'sources': [
+        # Note: sources list duplicated in GN build.
         'history/core/browser/history_client.cc',
         'history/core/browser/history_client.h',
+        'history/core/browser/history_match.cc',
+        'history/core/browser/history_match.h',
         'history/core/browser/in_memory_database.cc',
         'history/core/browser/in_memory_database.h',
         'history/core/browser/keyword_id.h',
@@ -33,6 +37,7 @@
       ],
     },
     {
+      # GN version: //components/history/core/common
       'target_name': 'history_core_common',
       'type': 'static_library',
       'include_dirs': [
@@ -42,11 +47,13 @@
         '../base/base.gyp:base',
       ],
       'sources': [
+        # Note: sources list duplicated in GN build.
         'history/core/common/thumbnail_score.cc',
         'history/core/common/thumbnail_score.h',
       ],
     },
     {
+      # GN version: //components/history/core/test
       'target_name': 'history_core_test_support',
       'type': 'static_library',
       'include_dirs': [
@@ -58,6 +65,7 @@
         '../url/url.gyp:url_lib',
       ],
       'sources': [
+        # Note: sources list duplicated in GN build.
         'history/core/test/history_client_fake_bookmarks.cc',
         'history/core/test/history_client_fake_bookmarks.h',
       ],

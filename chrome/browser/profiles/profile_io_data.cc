@@ -97,6 +97,7 @@
 #if defined(OS_ANDROID)
 #include "chrome/browser/net/spdyproxy/data_reduction_proxy_settings_android.h"
 #include "chrome/browser/net/spdyproxy/data_reduction_proxy_settings_factory_android.h"
+#include "components/data_reduction_proxy/common/data_reduction_proxy_switches.h"
 #endif  // defined(OS_ANDROID)
 
 #if defined(OS_CHROMEOS)
@@ -108,6 +109,7 @@
 #include "chrome/browser/chromeos/policy/policy_cert_service.h"
 #include "chrome/browser/chromeos/policy/policy_cert_service_factory.h"
 #include "chrome/browser/chromeos/policy/policy_cert_verifier.h"
+#include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chromeos/dbus/cryptohome_client.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
@@ -227,7 +229,7 @@ class DebugDevToolsInterceptor : public net::URLRequestInterceptor {
 //
 //  ProfileIOData::InitializeOnUIThread
 //                   |
-// chromeos::UserManager::GetUserByProfile
+//  ProfileHelper::Get()->GetUserByProfile()
 //                   \---------------------------------------v
 //                                                 StartNSSInitOnIOThread
 //                                                           |
@@ -287,20 +289,21 @@ void StartTPMSlotInitializationOnIOThread(const std::string& username,
 
 void StartNSSInitOnIOThread(const std::string& username,
                             const std::string& username_hash,
-                            const base::FilePath& path,
-                            bool is_primary_user) {
+                            const base::FilePath& path) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   DVLOG(1) << "Starting NSS init for " << username
-           << "  hash:" << username_hash
-           << "  is_primary_user:" << is_primary_user;
+           << "  hash:" << username_hash;
 
-  if (!crypto::InitializeNSSForChromeOSUser(
-           username, username_hash, is_primary_user, path)) {
-    // If the user already exists in nss_util's map, it is already initialized
-    // or in the process of being initialized. In either case, there's no need
-    // to do anything.
+  // Make sure NSS is initialized for the user.
+  crypto::InitializeNSSForChromeOSUser(username, username_hash, path);
+
+  // Check if it's OK to initialize TPM for the user before continuing. This
+  // may not be the case if the TPM slot initialization was previously
+  // requested for the same user.
+  if (!crypto::ShouldInitializeTPMForChromeOSUser(username_hash))
     return;
-  }
+
+  crypto::WillInitializeTPMForChromeOSUser(username_hash);
 
   if (crypto::IsTPMTokenEnabledForNSS()) {
     if (crypto::IsTPMTokenReady(base::Bind(
@@ -357,21 +360,23 @@ void ProfileIOData::InitializeOnUIThread(Profile* profile) {
 #if defined(OS_CHROMEOS)
   chromeos::UserManager* user_manager = chromeos::UserManager::Get();
   if (user_manager) {
-    chromeos::User* user = user_manager->GetUserByProfile(profile);
-    if (user) {
+    chromeos::User* user =
+        chromeos::ProfileHelper::Get()->GetUserByProfile(profile);
+    // No need to initialize NSS for users with empty username hash:
+    // Getters for a user's NSS slots always return NULL slot if the user's
+    // username hash is empty, even when the NSS is not initialized for the
+    // user.
+    if (user && !user->username_hash().empty()) {
       params->username_hash = user->username_hash();
-      bool is_primary_user = (user_manager->GetPrimaryUser() == user);
+      DCHECK(!params->username_hash.empty());
       BrowserThread::PostTask(BrowserThread::IO,
                               FROM_HERE,
                               base::Bind(&StartNSSInitOnIOThread,
                                          user->email(),
                                          user->username_hash(),
-                                         profile->GetPath(),
-                                         is_primary_user));
+                                         profile->GetPath()));
     }
   }
-  if (params->username_hash.empty())
-    LOG(WARNING) << "no username_hash";
 #endif
 
   params->profile = profile;
@@ -532,7 +537,9 @@ void ProfileIOData::MediaRequestContext::SetHttpTransactionFactory(
   set_http_transaction_factory(http_factory_.get());
 }
 
-ProfileIOData::MediaRequestContext::~MediaRequestContext() {}
+ProfileIOData::MediaRequestContext::~MediaRequestContext() {
+  AssertNoURLRequests();
+}
 
 ProfileIOData::AppRequestContext::AppRequestContext() {
 }
@@ -555,7 +562,9 @@ void ProfileIOData::AppRequestContext::SetJobFactory(
   set_job_factory(job_factory_.get());
 }
 
-ProfileIOData::AppRequestContext::~AppRequestContext() {}
+ProfileIOData::AppRequestContext::~AppRequestContext() {
+  AssertNoURLRequests();
+}
 
 ProfileIOData::ProfileParams::ProfileParams()
     : io_thread(NULL),
@@ -835,6 +844,14 @@ bool ProfileIOData::GetMetricsEnabledStateOnIOThread() const {
 #endif  // defined(OS_CHROMEOS)
 }
 
+#if defined(OS_ANDROID)
+bool ProfileIOData::IsDataReductionProxyEnabled() const {
+  return data_reduction_proxy_enabled_.GetValue() ||
+         CommandLine::ForCurrentProcess()->HasSwitch(
+            data_reduction_proxy::switches::kEnableDataReductionProxy);
+}
+#endif
+
 base::WeakPtr<net::HttpServerProperties>
 ProfileIOData::http_server_properties() const {
   return http_server_properties_->GetWeakPtr();
@@ -985,7 +1002,11 @@ void ProfileIOData::Init(
 
   ChromeNetworkDelegate* network_delegate =
       new ChromeNetworkDelegate(
+#if defined(ENABLE_EXTENSIONS)
           io_thread_globals->extension_event_router_forwarder.get(),
+#else
+          NULL,
+#endif
           &enable_referrers_);
   network_delegate->set_data_reduction_proxy_params(
       io_thread_globals->data_reduction_proxy_params.get());
@@ -993,6 +1014,8 @@ void ProfileIOData::Init(
       io_thread_globals->data_reduction_proxy_usage_stats.get());
   network_delegate->set_data_reduction_proxy_auth_request_handler(
       io_thread_globals->data_reduction_proxy_auth_request_handler.get());
+  network_delegate->set_on_resolve_proxy_handler(
+      io_thread_globals->on_resolve_proxy_handler);
   if (command_line.HasSwitch(switches::kEnableClientHints))
     network_delegate->SetEnableClientHints();
   network_delegate->set_extension_info_map(
@@ -1169,7 +1192,9 @@ void ProfileIOData::ShutdownOnUIThread() {
   enable_metrics_.Destroy();
 #endif
   safe_browsing_enabled_.Destroy();
+#if defined(OS_ANDROID)
   data_reduction_proxy_enabled_.Destroy();
+#endif
   printing_enabled_.Destroy();
   sync_disabled_.Destroy();
   signin_allowed_.Destroy();

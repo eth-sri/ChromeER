@@ -8,11 +8,16 @@
 #include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "extensions/renderer/script_injection.h"
+#include "url/gurl.h"
 
 struct ExtensionMsg_ExecuteCode_Params;
 
 namespace blink {
 class WebFrame;
+}
+
+namespace content {
+class RenderView;
 }
 
 namespace extensions {
@@ -27,6 +32,7 @@ class ProgrammaticScriptInjector : public ScriptInjector {
 
  private:
   // ScriptInjector implementation.
+  virtual UserScript::InjectionType script_type() const OVERRIDE;
   virtual bool ShouldExecuteInChildFrames() const OVERRIDE;
   virtual bool ShouldExecuteInMainWorld() const OVERRIDE;
   virtual bool IsUserGesture() const OVERRIDE;
@@ -35,10 +41,11 @@ class ProgrammaticScriptInjector : public ScriptInjector {
       UserScript::RunLocation run_location) const OVERRIDE;
   virtual bool ShouldInjectCss(
       UserScript::RunLocation run_location) const OVERRIDE;
-  virtual AccessType CanExecuteOnFrame(const Extension* extension,
-                                       blink::WebFrame* web_frame,
-                                       int tab_id,
-                                       const GURL& top_url) const OVERRIDE;
+  virtual PermissionsData::AccessType CanExecuteOnFrame(
+      const Extension* extension,
+      blink::WebFrame* web_frame,
+      int tab_id,
+      const GURL& top_url) const OVERRIDE;
   virtual std::vector<blink::WebScriptSource> GetJsSources(
       UserScript::RunLocation run_location) const OVERRIDE;
   virtual std::vector<std::string> GetCssSources(
@@ -59,8 +66,11 @@ class ProgrammaticScriptInjector : public ScriptInjector {
   // The parameters for injecting the script.
   scoped_ptr<ExtensionMsg_ExecuteCode_Params> params_;
 
-  // The web frame into which we are injecting.
-  blink::WebFrame* web_frame_;
+  // The url of the frame into which we are injecting.
+  GURL url_;
+
+  // The RenderView to which we send the response upon completion.
+  content::RenderView* render_view_;
 
   // The results of the script execution.
   scoped_ptr<base::ListValue> results_;

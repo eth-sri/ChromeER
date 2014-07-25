@@ -7,6 +7,7 @@
 
 #include <string>
 
+#include "base/callback_forward.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/time/time.h"
@@ -18,6 +19,7 @@ struct PrintHostMsg_DidGetPreviewPageCount_Params;
 struct PrintHostMsg_RequestPrintPreview_Params;
 
 namespace base {
+class FilePath;
 class RefCountedBytes;
 }
 
@@ -153,6 +155,13 @@ class PrintPreviewUI : public ConstrainedWebDialogUI {
   };
 
   static void SetDelegateForTesting(TestingDelegate* delegate);
+
+  // Allows for tests to set a file path to print a PDF to. This also initiates
+  // the printing without having to click a button on the print preview dialog.
+  void SetSelectedFileForTesting(const base::FilePath& path);
+
+  // Passes |closure| to PrintPreviewHandler::SetPdfSavedClosureForTesting().
+  void SetPdfSavedClosureForTesting(const base::Closure& closure);
 
  private:
   friend class PrintPreviewHandlerTest;

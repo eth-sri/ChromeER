@@ -1040,7 +1040,7 @@ TEST_F(RenderTextTest, SelectAll) {
   EXPECT_EQ(was_rtl, base::i18n::IsRTL());
 }
 
-  TEST_F(RenderTextTest, MoveCursorLeftRightWithSelection) {
+TEST_F(RenderTextTest, MoveCursorLeftRightWithSelection) {
   scoped_ptr<RenderText> render_text(RenderText::CreateInstance());
   render_text->SetText(WideToUTF16(L"abc\x05d0\x05d1\x05d2"));
   // Left arrow on select ranging (6, 4).
@@ -1078,6 +1078,42 @@ TEST_F(RenderTextTest, SelectAll) {
   EXPECT_EQ(Range(4, 6), render_text->selection());
   render_text->MoveCursor(CHARACTER_BREAK, CURSOR_RIGHT, false);
   EXPECT_EQ(Range(4), render_text->selection());
+}
+
+TEST_F(RenderTextTest, CenteredDisplayOffset) {
+  scoped_ptr<RenderText> render_text(RenderText::CreateInstance());
+  render_text->SetText(ASCIIToUTF16("abcdefghij"));
+  render_text->SetHorizontalAlignment(ALIGN_CENTER);
+
+  const int kEnlargement = 10;
+  const int content_width = render_text->GetContentWidth();
+  Rect display_rect(0, 0, content_width / 2,
+                    render_text->font_list().GetHeight());
+  render_text->SetDisplayRect(display_rect);
+
+  // Move the cursor to the beginning of the text and, by checking the cursor
+  // bounds, make sure no empty space is to the left of the text.
+  render_text->SetCursorPosition(0);
+  EXPECT_EQ(display_rect.x(), render_text->GetUpdatedCursorBounds().x());
+
+  // Widen the display rect and, by checking the cursor bounds, make sure no
+  // empty space is introduced to the left of the text.
+  display_rect.Inset(0, 0, -kEnlargement, 0);
+  render_text->SetDisplayRect(display_rect);
+  EXPECT_EQ(display_rect.x(), render_text->GetUpdatedCursorBounds().x());
+
+  // Move the cursor to the end of the text and, by checking the cursor bounds,
+  // make sure no empty space is to the right of the text.
+  render_text->SetCursorPosition(render_text->text().length());
+  EXPECT_EQ(display_rect.right(),
+            render_text->GetUpdatedCursorBounds().right());
+
+  // Widen the display rect and, by checking the cursor bounds, make sure no
+  // empty space is introduced to the right of the text.
+  display_rect.Inset(0, 0, -kEnlargement, 0);
+  render_text->SetDisplayRect(display_rect);
+  EXPECT_EQ(display_rect.right(),
+            render_text->GetUpdatedCursorBounds().right());
 }
 #endif  // !defined(OS_MACOSX)
 
@@ -1265,6 +1301,18 @@ TEST_F(RenderTextTest, StringSizeSanity) {
   const Size string_size = render_text->GetStringSize();
   EXPECT_GT(string_size.width(), 0);
   EXPECT_GT(string_size.height(), 0);
+}
+
+TEST_F(RenderTextTest, StringSizeLongStrings) {
+  scoped_ptr<RenderText> render_text(RenderText::CreateInstance());
+  Size previous_string_size;
+  for (size_t length = 10; length < 1000000; length *= 10) {
+    render_text->SetText(base::string16(length, 'a'));
+    const Size string_size = render_text->GetStringSize();
+    EXPECT_GT(string_size.width(), previous_string_size.width());
+    EXPECT_GT(string_size.height(), 0);
+    previous_string_size = string_size;
+  }
 }
 
 // TODO(asvitkine): This test fails because PlatformFontMac uses point font
@@ -1486,6 +1534,80 @@ TEST_F(RenderTextTest, GetTextOffsetHorizontalDefaultInRTL) {
   Vector2d offset = render_text->GetLineOffset(0);
   EXPECT_EQ(kEnlargement, offset.x());
   SetRTL(was_rtl);
+}
+
+TEST_F(RenderTextTest, SetDisplayOffset) {
+  scoped_ptr<RenderText> render_text(RenderText::CreateInstance());
+  render_text->SetText(ASCIIToUTF16("abcdefg"));
+  render_text->SetFontList(FontList("Arial, 13px"));
+
+  const Size font_size(render_text->GetContentWidth(),
+                       render_text->font_list().GetHeight());
+  const int kEnlargement = 10;
+
+  // Set display width |kEnlargement| pixels greater than content width and test
+  // different possible situations. In this case the only possible display
+  // offset is zero.
+  Rect display_rect(font_size);
+  display_rect.Inset(0, 0, -kEnlargement, 0);
+  render_text->SetDisplayRect(display_rect);
+
+  struct {
+    HorizontalAlignment alignment;
+    int offset;
+  } small_content_cases[] = {
+    { ALIGN_LEFT, -kEnlargement },
+    { ALIGN_LEFT, 0 },
+    { ALIGN_LEFT, kEnlargement },
+    { ALIGN_RIGHT, -kEnlargement },
+    { ALIGN_RIGHT, 0 },
+    { ALIGN_RIGHT, kEnlargement },
+    { ALIGN_CENTER, -kEnlargement },
+    { ALIGN_CENTER, 0 },
+    { ALIGN_CENTER, kEnlargement },
+  };
+
+  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(small_content_cases); i++) {
+    render_text->SetHorizontalAlignment(small_content_cases[i].alignment);
+    render_text->SetDisplayOffset(small_content_cases[i].offset);
+    EXPECT_EQ(0, render_text->GetUpdatedDisplayOffset().x());
+  }
+
+  // Set display width |kEnlargement| pixels less than content width and test
+  // different possible situations.
+  display_rect = Rect(font_size);
+  display_rect.Inset(0, 0, kEnlargement, 0);
+  render_text->SetDisplayRect(display_rect);
+
+  struct {
+    HorizontalAlignment alignment;
+    int offset;
+    int expected_offset;
+  } large_content_cases[] = {
+    // When text is left-aligned, display offset can be in range
+    // [-kEnlargement, 0].
+    { ALIGN_LEFT, -2 * kEnlargement, -kEnlargement },
+    { ALIGN_LEFT, -kEnlargement / 2, -kEnlargement / 2 },
+    { ALIGN_LEFT, kEnlargement, 0 },
+    // When text is right-aligned, display offset can be in range
+    // [0, kEnlargement].
+    { ALIGN_RIGHT, -kEnlargement, 0 },
+    { ALIGN_RIGHT, kEnlargement / 2, kEnlargement / 2 },
+    { ALIGN_RIGHT, 2 * kEnlargement, kEnlargement },
+    // When text is center-aligned, display offset can be in range
+    // [-kEnlargement / 2 - 1, (kEnlargement - 1) / 2].
+    { ALIGN_CENTER, -kEnlargement, -kEnlargement / 2 - 1 },
+    { ALIGN_CENTER, -kEnlargement / 4, -kEnlargement / 4 },
+    { ALIGN_CENTER, kEnlargement / 4, kEnlargement / 4 },
+    { ALIGN_CENTER, kEnlargement, (kEnlargement - 1) / 2 },
+  };
+
+  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(large_content_cases); i++) {
+    render_text->SetHorizontalAlignment(large_content_cases[i].alignment);
+    render_text->SetDisplayOffset(large_content_cases[i].offset);
+    EXPECT_EQ(large_content_cases[i].expected_offset,
+              render_text->GetUpdatedDisplayOffset().x());
+  }
 }
 
 TEST_F(RenderTextTest, SameFontForParentheses) {

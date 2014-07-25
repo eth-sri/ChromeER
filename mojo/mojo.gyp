@@ -16,11 +16,42 @@
   'variables': {
     'chromium_code': 1,
     'mojo_shell_debug_url%': "",
+    'conditions': [
+      #
+      # The following mojo_system-prefixed variables are used to express a
+      # dependency on the mojo system APIs.
+      #
+      # In a component == "shared_library" build, everything can link against
+      # mojo_system_impl because it is built as a shared library. However, in a
+      # component != "shared_library" build, mojo_system_impl is linked into an
+      # executable (e.g., mojo_shell), and must be injected into other shared
+      # libraries (i.e., Mojo Apps) that need the mojo system API.
+      #
+      # For component targets, add <(mojo_system_for_component) to your
+      # dependencies section.  For loadable module targets (e.g., a Mojo App),
+      # add <(mojo_system_for_loadable_module) to your dependencies section.
+      #
+      # NOTE: component != "shared_library" implies that we are generating a
+      # static library, and in that case, it is expected that the target
+      # listing the component as a dependency will specify either mojo_system
+      # or mojo_system_impl to link against. This enables multiple targets to
+      # link against the same component library without having to agree on
+      # which Mojo system library they are using.
+      #
+      ['component=="shared_library"', {
+        'mojo_system_for_component': "mojo_system_impl",
+        'mojo_system_for_loadable_module': "mojo_system_impl",
+      }, {
+        'mojo_system_for_component': "mojo_none",
+        'mojo_system_for_loadable_module': "mojo_system",
+      }],
+    ],
   },
   'includes': [
     'mojo_apps.gypi',
     'mojo_examples.gypi',
     'mojo_public.gypi',
+    'mojo_public_tests.gypi',
     'mojo_services.gypi',
   ],
   'targets': [
@@ -44,7 +75,6 @@
         'mojo_network_service',
         'mojo_pepper_container_app',
         'mojo_png_viewer',
-        'mojo_profile_service',
         'mojo_public_application_unittests',
         'mojo_public_test_utils',
         'mojo_public_bindings_unittests',
@@ -58,10 +88,17 @@
         'mojo_shell',
         'mojo_shell_lib',
         'mojo_shell_tests',
+        'mojo_surfaces_app',
+        'mojo_surfaces_child_app',
+        'mojo_surfaces_lib',
+        'mojo_surfaces_lib_unittests',
+        'mojo_surfaces_app',
+        'mojo_surfaces_service',
         'mojo_system',
         'mojo_system_impl',
         'mojo_system_unittests',
-        'mojo_test_service',
+        'mojo_test_app',
+        'mojo_test_request_tracker_app',
         'mojo_utility',
         'mojo_view_manager_lib',
         'mojo_view_manager_lib_unittests',
@@ -73,6 +110,8 @@
             'mojo_aura_demo',
             'mojo_aura_demo_init',
             'mojo_browser',
+            'mojo_core_window_manager',
+            'mojo_core_window_manager_unittests',
             'mojo_demo_launcher',
             'mojo_embedded_app',
             'mojo_keyboard',
@@ -99,6 +138,10 @@
           ],
         }],
       ]
+    },
+    {
+      'target_name': 'mojo_none',
+      'type': 'none',
     },
     {
       'target_name': 'mojo_external_service_bindings',
@@ -295,7 +338,7 @@
         'mojo_gles2',
         'mojo_gles2_bindings',
         'mojo_environment_chromium',
-        'mojo_system_impl',
+        '<(mojo_system_for_component)',
       ],
       'defines': [
         'MOJO_GLES2_IMPL_IMPLEMENTATION',
@@ -330,12 +373,12 @@
       ],
       'dependencies': [
         '../base/base.gyp:base',
+        '../url/url.gyp:url_lib',
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
-        'mojo_system_impl',
+        '<(mojo_system_for_component)',
       ],
       'export_dependent_settings': [
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
-        'mojo_system_impl',
       ],
       'sources': [
         'common/common_type_converters.cc',
@@ -375,6 +418,7 @@
         '../base/base.gyp:base',
         '../base/base.gyp:base_message_loop_tests',
         '../testing/gtest.gyp:gtest',
+        '../url/url.gyp:url_lib',
         'mojo_cpp_bindings',
         'mojo_environment_chromium',
         'mojo_common_lib',
@@ -394,14 +438,13 @@
       'target_name': 'mojo_environment_chromium',
       'type': 'static_library',
       'dependencies': [
-        'mojo_common_lib',
         'mojo_environment_chromium_impl',
       ],
       'sources': [
         'environment/environment.cc',
         # TODO(vtl): This is kind of ugly. (See TODO in logging.h.)
         "public/cpp/environment/logging.h",
-        "public/cpp/environment/lib/logging.h",
+        "public/cpp/environment/lib/logging.cc",
       ],
       'include_dirs': [
         '..',
@@ -420,7 +463,8 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
-        'mojo_common_lib'
+        'mojo_common_lib',
+        '<(mojo_system_for_component)',
       ],
       'sources': [
         'environment/default_async_waiter_impl.cc',
@@ -447,7 +491,7 @@
         'mojo_common_lib',
         'mojo_environment_chromium',
         'mojo_service_provider_bindings',
-        'mojo_system_impl',
+        '<(mojo_system_for_component)',
       ],
       'sources': [
         'service_manager/background_service_loader.cc',
@@ -472,9 +516,17 @@
         '../url/url.gyp:url_lib',
         'mojo_service_manager',
       ],
+      'variables': {
+        'mojom_base_output_dir': 'mojo',
+      },
+      'includes': [ 'public/tools/bindings/mojom_bindings_generator.gypi' ],
       'sources': [
+        'spy/public/spy.mojom',
+        'spy/common.h',
         'spy/spy.cc',
         'spy/spy.h',
+        'spy/spy_server_impl.h',
+        'spy/spy_server_impl.cc',
         'spy/websocket_server.cc',
         'spy/websocket_server.h',
       ],
@@ -489,11 +541,11 @@
         '../net/net.gyp:net',
         '../url/url.gyp:url_lib',
         'mojo_application',
+        'mojo_common_lib',
         'mojo_external_service_bindings',
         'mojo_gles2_impl',
         'mojo_native_viewport_service',
         'mojo_network_bindings',
-        'mojo_profile_service',
         'mojo_service_manager',
         'mojo_service_provider_bindings',
         'mojo_spy',
@@ -527,8 +579,6 @@
         'shell/mojo_url_resolver.h',
         'shell/out_of_process_dynamic_service_runner.cc',
         'shell/out_of_process_dynamic_service_runner.h',
-        'shell/profile_service_loader.cc',
-        'shell/profile_service_loader.h',
         'shell/run.cc',
         'shell/run.h',
         'shell/switches.cc',
@@ -537,6 +587,8 @@
         'shell/task_runners.h',
         'shell/test_child_process.cc',
         'shell/test_child_process.h',
+        'shell/ui_service_loader_android.cc',
+        'shell/ui_service_loader_android.h',
         'shell/view_manager_loader.cc',
         'shell/view_manager_loader.h',
       ],
@@ -545,6 +597,15 @@
           'dependencies': [
             '../build/linux/system.gyp:dbus',
             '../dbus/dbus.gyp:dbus',
+          ],
+        }],
+        ['OS=="android"', {
+          'dependencies': [
+            'mojo_network_service_lib',
+          ],
+          'sources': [
+            'shell/network_service_loader.cc',
+            'shell/network_service_loader.h',
           ],
         }],
         ['use_aura==1', {
@@ -608,6 +669,7 @@
       'type': '<(gtest_target_type)',
       'dependencies': [
         '../base/base.gyp:base',
+        '../base/base.gyp:base_i18n',
         '../base/base.gyp:test_support_base',
         '../testing/gtest.gyp:gtest',
         # TODO(vtl): We don't currently need this, but I imagine we will soon.
@@ -618,7 +680,8 @@
         'mojo_service_manager',
         'mojo_shell_lib',
         'mojo_system_impl',
-        'mojo_test_service',
+        'mojo_test_app',
+        'mojo_test_request_tracker_app',
         'mojo_test_service_bindings',
       ],
       'sources': [

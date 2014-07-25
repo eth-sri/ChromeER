@@ -23,6 +23,7 @@
 #include "chrome/test/base/testing_profile.h"
 #include "extensions/browser/app_sorting.h"
 #include "extensions/browser/extension_prefs.h"
+#include "extensions/browser/uninstall_reason.h"
 #include "extensions/common/extension_set.h"
 #include "extensions/common/manifest.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -196,7 +197,8 @@ TEST_F(ExtensionAppModelBuilderTest, DisableAndEnable) {
 }
 
 TEST_F(ExtensionAppModelBuilderTest, Uninstall) {
-  service_->UninstallExtension(kPackagedApp2Id, false, NULL);
+  service_->UninstallExtension(
+      kPackagedApp2Id, extensions::UNINSTALL_REASON_FOR_TESTING, NULL);
   EXPECT_EQ(std::string("Packaged App 1,Hosted App"),
             GetModelContent(model_.get()));
 
@@ -211,7 +213,8 @@ TEST_F(ExtensionAppModelBuilderTest, UninstallTerminatedApp) {
   // Simulate an app termination.
   service_->TrackTerminatedExtensionForTest(app);
 
-  service_->UninstallExtension(kPackagedApp2Id, false, NULL);
+  service_->UninstallExtension(
+      kPackagedApp2Id, extensions::UNINSTALL_REASON_FOR_TESTING, NULL);
   EXPECT_EQ(std::string("Packaged App 1,Hosted App"),
             GetModelContent(model_.get()));
 
@@ -288,7 +291,7 @@ TEST_F(ExtensionAppModelBuilderTest, InvalidOrdinal) {
   scoped_prefs->UpdateExtensionPref(
       kHostedAppId,
       "page_ordinal",
-      base::Value::CreateStringValue("a corrupted ordinal"));
+      new base::StringValue("a corrupted ordinal"));
 
   // This should not assert or crash.
   CreateBuilder();

@@ -26,8 +26,12 @@ struct NavigationDetails {
 struct ResponseDetails {
   // TODO(beng): consider providing access to URLRequest too. Currently it is
   //             not possible to obtain from the URLLoader.
+
   mojo.URLResponse response;
-  handle<data_pipe_consumer> response_body_stream;
+
+  // The URLLoader instance that generated the response. This must be kept
+  // alive until the response body has been completely consumed.
+  mojo.URLLoader loader;
 };
 
 // Embedders that support navigation of implement this interface.

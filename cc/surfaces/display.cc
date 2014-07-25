@@ -14,29 +14,20 @@
 #include "cc/surfaces/display_client.h"
 #include "cc/surfaces/surface.h"
 #include "cc/surfaces/surface_aggregator.h"
-#include "cc/surfaces/surface_factory.h"
 
 namespace cc {
 
 Display::Display(DisplayClient* client,
                  SurfaceManager* manager,
-                 SurfaceFactory* factory,
                  SharedBitmapManager* bitmap_manager)
-    : client_(client),
-      manager_(manager),
-      bitmap_manager_(bitmap_manager),
-      factory_(factory) {
+    : client_(client), manager_(manager), bitmap_manager_(bitmap_manager) {
 }
 
 Display::~Display() {
 }
 
-void Display::Resize(const gfx::Size& size) {
-  if (size == current_surface_size_)
-    return;
-  if (!current_surface_id_.is_null())
-    factory_->Destroy(current_surface_id_);
-  current_surface_id_ = factory_->Create(size);
+void Display::Resize(SurfaceId id, const gfx::Size& size) {
+  current_surface_id_ = id;
   current_surface_size_ = size;
 }
 
@@ -102,11 +93,16 @@ bool Display::Draw() {
   TRACE_EVENT0("cc", "Display::Draw");
   DelegatedFrameData* frame_data = frame->delegated_frame_data.get();
 
+  // Only reshape when we know we are going to draw. Otherwise, the reshape
+  // can leave the window at the wrong size if we never draw and the proper
+  // viewport size is never set.
+  output_surface_->Reshape(current_surface_size_, 1.f);
   float device_scale_factor = 1.0f;
   gfx::Rect device_viewport_rect = gfx::Rect(current_surface_size_);
   gfx::Rect device_clip_rect = device_viewport_rect;
   bool disable_picture_quad_image_filtering = false;
 
+  renderer_->DecideRenderPassAllocationsForFrame(frame_data->render_pass_list);
   renderer_->DrawFrame(&frame_data->render_pass_list,
                        device_scale_factor,
                        device_viewport_rect,

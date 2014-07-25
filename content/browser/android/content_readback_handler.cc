@@ -54,7 +54,7 @@ void ContentReadbackHandler::GetContentBitmap(JNIEnv* env,
                                               jobject obj,
                                               jint readback_id,
                                               jfloat scale,
-                                              jobject config,
+                                              jobject color_type,
                                               jfloat x,
                                               jfloat y,
                                               jfloat width,
@@ -69,8 +69,9 @@ void ContentReadbackHandler::GetContentBitmap(JNIEnv* env,
                  weak_factory_.GetWeakPtr(),
                  readback_id);
 
+  SkColorType sk_color_type = gfx::ConvertToSkiaColorType(color_type);
   view->GetScaledContentBitmap(
-      scale, config, gfx::Rect(x, y, width, height), result_callback);
+      scale, sk_color_type, gfx::Rect(x, y, width, height), result_callback);
 }
 
 void ContentReadbackHandler::GetCompositorBitmap(JNIEnv* env,

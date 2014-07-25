@@ -21,10 +21,9 @@
         '../../ui/base/ui_base.gyp:ui_base',
         '../../ui/gfx/gfx.gyp:gfx',
         '../../ui/gfx/gfx.gyp:gfx_geometry',
-        '../../webkit/common/webkit_common.gyp:webkit_common',
         '../../webkit/storage_browser.gyp:webkit_storage_browser',
         '../../webkit/storage_common.gyp:webkit_storage_common',
-        '../../third_party/openssl/openssl.gyp:openssl',
+        '../../third_party/boringssl/boringssl.gyp:boringssl',
         'android_webview_native_jni',
       ],
       'include_dirs': [
@@ -36,6 +35,8 @@
         'android_protocol_handler.h',
         'android_webview_jni_registrar.cc',
         'android_webview_jni_registrar.h',
+        'aw_assets.cc',
+        'aw_assets.h',
         'aw_autofill_client.cc',
         'aw_autofill_client.h',
         'aw_browser_dependency_factory.cc',
@@ -126,6 +127,7 @@
       'type': 'none',
       'sources': [
           '../java/src/org/chromium/android_webview/AndroidProtocolHandler.java',
+          '../java/src/org/chromium/android_webview/AwAssets.java',
           '../java/src/org/chromium/android_webview/AwAutofillClient.java',
           '../java/src/org/chromium/android_webview/AwContents.java',
           '../java/src/org/chromium/android_webview/AwContentsClientBridge.java',

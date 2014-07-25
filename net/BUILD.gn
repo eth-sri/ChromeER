@@ -5,8 +5,14 @@
 import("//build/config/crypto.gni")
 import("//build/config/features.gni")
 import("//build/config/ui.gni")
-import("//tools/grit/grit_rule.gni")
 import("//url/config.gni")
+
+# TODO(cjhopman): //build/config/android/rules.gni also imports grit_rule.gni.
+# Currently, that file can't be imported multiple times.  Make this always
+# imported when http://crbug.com/393704 is fixed.
+if (!is_android) {
+  import("//tools/grit/grit_rule.gni")
+}
 
 if (is_android) {
   import("//build/config/android/config.gni")
@@ -85,6 +91,7 @@ component("net") {
    ":net_resources",
     "//base",
     "//base:i18n",
+    "//base:prefs",
     "//base/third_party/dynamic_annotations",
     "//crypto",
     "//crypto:platform",
@@ -435,6 +442,8 @@ component("net") {
   if (is_win) {
     sources -= [
       "http/http_auth_handler_ntlm_portable.cc",
+      "socket/socket_libevent.cc",
+      "socket/socket_libevent.h",
       "socket/tcp_socket_libevent.cc",
       "socket/tcp_socket_libevent.h",
       "udp/udp_socket_libevent.cc",
@@ -514,13 +523,9 @@ component("net") {
 
     if (!is_android_webview_build) {
       deps += [ ":net_jni_headers" ]
-
-      # The net/android/keystore_openssl.cc source file needs to access an
-      # OpenSSL-internal header.
-      include_dirs = [ "//third_party/openssl" ]
     }
   }
-  
+
   if (use_icu_alternatives_on_android) {
     deps -= [
       "//base:i18n",
@@ -630,6 +635,7 @@ source_set("test_support") {
     "socket/socket_test_util.h",
     "test/cert_test_util.cc",
     "test/cert_test_util.h",
+    "test/cert_test_util_nss.cc",
     "test/ct_test_util.cc",
     "test/ct_test_util.h",
     "test/embedded_test_server/embedded_test_server.cc",
@@ -698,6 +704,12 @@ source_set("test_support") {
     ]
   }
 
+  if (!use_nss_certs) {
+    sources -= [
+      "test/cert_test_util_nss.cc",
+    ]
+  }
+
   forward_dependent_configs_from = deps
 }
 
@@ -752,6 +764,8 @@ if (use_v8_in_net) {
       "//url",
       "//v8",
     ]
+
+    forward_dependent_configs_from = [ ":net" ]
   }
 }
 
@@ -906,7 +920,7 @@ if (is_linux) {
       ":epoll_server",
       ":net",
       "//base",
-      "//third_party/openssl",
+      "//third_party/boringssl",
     ]
   }
 
@@ -925,7 +939,7 @@ if (is_linux) {
       ":test_support",
       "//testing/gtest",
       "//testing/gmock",
-      "//third_party/openssl",
+      "//third_party/boringssl",
     ]
   }
 
@@ -976,7 +990,7 @@ if (is_linux) {
       "//base",
       "//base/third_party/dynamic_annotations",
       "//crypto",
-      "//third_party/openssl",
+      "//third_party/boringssl",
       "//url",
     ]
   }
@@ -987,7 +1001,7 @@ if (is_linux) {
       ":quic_base",
       ":net",
       "//base",
-      "//third_party/openssl",
+      "//third_party/boringssl",
     ]
   }
 }
@@ -1041,7 +1055,6 @@ source_set("quic_tools") {
     "quic/quic_time_wait_list_manager.h",
   ]
   deps = [
-    ":balsa",
     ":net",
     "//base",
     "//base/third_party/dynamic_annotations",
@@ -1062,6 +1075,7 @@ test("net_unittests") {
     ":test_support",
     "//base",
     "//base:i18n",
+    "//base:prefs_test_support",
     "//base/allocator",
     "//base/third_party/dynamic_annotations",
     "//crypto",
@@ -1085,7 +1099,6 @@ test("net_unittests") {
 
   if (is_chromeos) {
     sources -= [
-      "base/network_change_notifier_linux_unittest.cc",
       "proxy/proxy_config_service_linux_unittest.cc",
     ]
   }
@@ -1317,7 +1330,7 @@ executable("quic_server") {
     ":quic_tools",
     ":net",
     "//base",
-    "//third_party/openssl",
+    "//third_party/boringssl",
   ]
 }
 

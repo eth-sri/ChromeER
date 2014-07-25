@@ -3,47 +3,24 @@
 // found in the LICENSE file.
 
 #include "base/at_exit.h"
-#include "base/bind.h"
+#include "base/base_paths.h"
 #include "base/command_line.h"
 #include "base/files/file_path.h"
 #include "base/message_loop/message_loop.h"
+#include "base/path_service.h"
 #include "mojo/public/cpp/application/application_connection.h"
 #include "mojo/public/cpp/application/application_delegate.h"
 #include "mojo/public/cpp/application/application_impl.h"
-#include "mojo/public/cpp/bindings/interface_ptr.h"
-#include "mojo/public/interfaces/service_provider/service_provider.mojom.h"
 #include "mojo/services/network/network_context.h"
 #include "mojo/services/network/network_service_impl.h"
-#include "mojo/services/public/interfaces/profile/profile_service.mojom.h"
-
-namespace {
-
-void OnPathReceived(base::FilePath* path, const mojo::String& path_as_string) {
-  DCHECK(!path_as_string.is_null());
-#if defined(OS_POSIX)
-  *path = base::FilePath(path_as_string);
-#elif defined(OS_WIN)
-  *path = base::FilePath::FromUTF8Unsafe(path_as_string);
-#else
-#error Not implemented
-#endif
-}
-
-}  // namespace
 
 class Delegate : public mojo::ApplicationDelegate {
  public:
   Delegate() {}
 
   virtual void Initialize(mojo::ApplicationImpl* app) MOJO_OVERRIDE {
-    mojo::InterfacePtr<mojo::ProfileService> profile_service;
-    app->ConnectToService("mojo:profile_service", &profile_service);
     base::FilePath base_path;
-    profile_service->GetPath(mojo::ProfileService::DIR_TEMP,
-                             base::Bind(&OnPathReceived,
-                                        base::Unretained(&base_path)));
-    profile_service.WaitForIncomingMethodCall();
-    DCHECK(!base_path.value().empty());
+    CHECK(PathService::Get(base::DIR_TEMP, &base_path));
     base_path = base_path.Append(FILE_PATH_LITERAL("network_service"));
     context_.reset(new mojo::NetworkContext(base_path));
   }
@@ -62,15 +39,26 @@ class Delegate : public mojo::ApplicationDelegate {
 extern "C" APPLICATION_EXPORT MojoResult CDECL MojoMain(
     MojoHandle shell_handle) {
   base::CommandLine::Init(0, NULL);
+#if !defined(COMPONENT_BUILD)
   base::AtExitManager at_exit;
+#endif
 
-  // The IO message loop allows us to use net::URLRequest on this thread.
-  base::MessageLoopForIO loop;
-
+  // The Delegate owns the NetworkContext, which needs to outlive
+  // MessageLoopForIO. Destruction of the message loop will serve to
+  // invalidate connections made to network services (URLLoader) and cause
+  // the service instances to be cleaned up as a result of observing pipe
+  // errors. This is important as ~URLRequestContext asserts that no out-
+  // standing URLRequests exist.
   Delegate delegate;
-  mojo::ApplicationImpl app(
-      &delegate, mojo::MakeScopedHandle(mojo::MessagePipeHandle(shell_handle)));
+  {
+    // The IO message loop allows us to use net::URLRequest on this thread.
+    base::MessageLoopForIO loop;
 
-  loop.Run();
+    mojo::ApplicationImpl app(
+        &delegate,
+        mojo::MakeScopedHandle(mojo::MessagePipeHandle(shell_handle)));
+
+    loop.Run();
+  }
   return MOJO_RESULT_OK;
 }

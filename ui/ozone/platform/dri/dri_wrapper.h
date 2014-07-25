@@ -8,10 +8,15 @@
 #include <stdint.h>
 
 #include "base/macros.h"
+#include "ui/gfx/overlay_transform.h"
+#include "ui/gfx/rect.h"
+#include "ui/gfx/rect_f.h"
 #include "ui/ozone/platform/dri/scoped_drm_types.h"
 
 typedef struct _drmEventContext drmEventContext;
 typedef struct _drmModeModeInfo drmModeModeInfo;
+
+struct SkImageInfo;
 
 namespace ui {
 
@@ -67,6 +72,15 @@ class DriWrapper {
   // will receive when processing the pageflip event.
   virtual bool PageFlip(uint32_t crtc_id, uint32_t framebuffer, void* data);
 
+  // Schedule an overlay to be show during the page flip for CRTC |crtc_id|.
+  // |source| location from |framebuffer| will be shown on overlay
+  // |overlay_plane|, in the bounds specified by |location| on the screen.
+  virtual bool PageFlipOverlay(uint32_t crtc_id,
+                               uint32_t framebuffer,
+                               const gfx::Rect& location,
+                               const gfx::RectF& source,
+                               int overlay_plane);
+
   // Returns the property with name |name| associated with |connector|. Returns
   // NULL if property not found. If the returned value is valid, it must be
   // released using FreeProperty().
@@ -90,14 +104,23 @@ class DriWrapper {
   // cursor size pointed by |handle|.
   virtual bool SetCursor(uint32_t crtc_id,
                          uint32_t handle,
-                         uint32_t width,
-                         uint32_t height);
+                         const gfx::Size& size);
 
 
   // Move the cursor on CRTC |crtc_id| to (x, y);
-  virtual bool MoveCursor(uint32_t crtc_id, int x, int y);
+  virtual bool MoveCursor(uint32_t crtc_id, const gfx::Point& point);
 
   virtual void HandleEvent(drmEventContext& event);
+
+  virtual bool CreateDumbBuffer(const SkImageInfo& info,
+                                uint32_t* handle,
+                                uint32_t* stride,
+                                void** pixels);
+
+  virtual void DestroyDumbBuffer(const SkImageInfo& info,
+                                 uint32_t handle,
+                                 uint32_t stride,
+                                 void* pixels);
 
   int get_fd() const { return fd_; }
 

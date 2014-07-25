@@ -50,6 +50,7 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "components/bookmarks/browser/bookmark_model.h"
+#include "components/metrics/metrics_service.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/page_navigator.h"
@@ -170,7 +171,6 @@ class BookmarkButtonBase : public views::LabelButton {
   BookmarkButtonBase(views::ButtonListener* listener,
                      const base::string16& title)
       : LabelButton(listener, title) {
-    SetDirectionalityMode(gfx::DIRECTIONALITY_FROM_TEXT);
     SetElideBehavior(kElideBehavior);
     show_animation_.reset(new gfx::SlideAnimation(this));
     if (!animations_enabled) {
@@ -281,7 +281,6 @@ class BookmarkFolderButton : public views::MenuButton {
                        views::MenuButtonListener* menu_button_listener,
                        bool show_menu_marker)
       : MenuButton(listener, title, menu_button_listener, show_menu_marker) {
-    SetDirectionalityMode(gfx::DIRECTIONALITY_FROM_TEXT);
     SetElideBehavior(kElideBehavior);
     show_animation_.reset(new gfx::SlideAnimation(this));
     if (!animations_enabled) {
@@ -1002,8 +1001,7 @@ void BookmarkBarView::BookmarkMenuControllerDeleted(
 }
 
 void BookmarkBarView::ShowImportDialog() {
-  int64 install_time =
-      g_browser_process->local_state()->GetInt64(prefs::kInstallDate);
+  int64 install_time = g_browser_process->metrics_service()->GetInstallDate();
   int64 time_from_install = base::Time::Now().ToTimeT() - install_time;
   if (bookmark_bar_state_ == BookmarkBar::SHOW) {
     UMA_HISTOGRAM_COUNTS("Import.ShowDialog.FromBookmarkBarView",
@@ -1235,9 +1233,9 @@ void BookmarkBarView::OnMenuButtonClicked(views::View* view,
 
   RecordBookmarkFolderOpen(GetBookmarkLaunchLocation());
   bookmark_menu_ = new BookmarkMenuController(
-      browser_, page_navigator_, GetWidget(), node, start_index);
+      browser_, page_navigator_, GetWidget(), node, start_index, false);
   bookmark_menu_->set_observer(this);
-  bookmark_menu_->RunMenuAt(this, false);
+  bookmark_menu_->RunMenuAt(this);
 }
 
 void BookmarkBarView::ButtonPressed(views::Button* sender,
@@ -1598,10 +1596,10 @@ void BookmarkBarView::ShowDropFolderForNode(const BookmarkNode* node) {
     start_index = GetFirstHiddenNodeIndex();
 
   drop_info_->is_menu_showing = true;
-  bookmark_drop_menu_ = new BookmarkMenuController(browser_,
-      page_navigator_, GetWidget(), node, start_index);
+  bookmark_drop_menu_ = new BookmarkMenuController(
+      browser_, page_navigator_, GetWidget(), node, start_index, true);
   bookmark_drop_menu_->set_observer(this);
-  bookmark_drop_menu_->RunMenuAt(this, true);
+  bookmark_drop_menu_->RunMenuAt(this);
 }
 
 void BookmarkBarView::StopShowFolderDropMenuTimer() {

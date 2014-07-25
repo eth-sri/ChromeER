@@ -33,6 +33,8 @@ std::vector<APIPermissionInfo*> ChromeAPIPermissions::GetAllPermissions()
     const {
   APIPermissionInfo::InitInfo permissions_to_register[] = {
       // Register permissions for all extension types.
+      {APIPermission::kAppView, "appview",
+       APIPermissionInfo::kFlagCannotBeOptional},
       {APIPermission::kBackground, "background"},
       {APIPermission::kClipboardRead, "clipboardRead",
        APIPermissionInfo::kFlagNone, IDS_EXTENSION_PROMPT_WARNING_CLIPBOARD,
@@ -54,6 +56,7 @@ std::vector<APIPermissionInfo*> ChromeAPIPermissions::GetAllPermissions()
        IDS_EXTENSION_PROMPT_WARNING_DOWNLOADS_OPEN,
        PermissionMessage::kDownloadsOpen},
       {APIPermission::kDownloadsShelf, "downloads.shelf"},
+      {APIPermission::kEasyUnlockPrivate, "easyUnlockPrivate"},
       {APIPermission::kIdentity, "identity"},
       {APIPermission::kIdentityEmail, "identity.email",
        APIPermissionInfo::kFlagNone,
@@ -127,7 +130,6 @@ std::vector<APIPermissionInfo*> ChromeAPIPermissions::GetAllPermissions()
        APIPermissionInfo::kFlagNone,
        IDS_EXTENSION_PROMPT_WARNING_NATIVE_MESSAGING,
        PermissionMessage::kNativeMessaging},
-      {APIPermission::kPower, "power"},
       {APIPermission::kPrivacy, "privacy", APIPermissionInfo::kFlagNone,
        IDS_EXTENSION_PROMPT_WARNING_PRIVACY, PermissionMessage::kPrivacy},
       {APIPermission::kProcesses, "processes", APIPermissionInfo::kFlagNone,

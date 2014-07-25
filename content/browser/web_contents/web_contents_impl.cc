@@ -84,6 +84,7 @@
 #include "content/public/common/result_codes.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/common/url_utils.h"
+#include "content/public/common/web_preferences.h"
 #include "net/base/mime_util.h"
 #include "net/base/net_util.h"
 #include "net/http/http_cache.h"
@@ -94,7 +95,6 @@
 #include "ui/gfx/display.h"
 #include "ui/gfx/screen.h"
 #include "ui/gl/gl_switches.h"
-#include "webkit/common/webpreferences.h"
 
 #if defined(OS_ANDROID)
 #include "content/browser/android/content_view_core_impl.h"
@@ -506,8 +506,9 @@ bool WebContentsImpl::OnMessageReceived(RenderViewHost* render_view_host,
     IPC_MESSAGE_HANDLER(FrameHostMsg_PluginCrashed, OnPluginCrashed)
     IPC_MESSAGE_HANDLER(FrameHostMsg_DomOperationResponse,
                         OnDomOperationResponse)
-    IPC_MESSAGE_HANDLER(FrameHostMsg_DidChangeBrandColor,
-                        OnBrandColorChanged)
+    IPC_MESSAGE_HANDLER(FrameHostMsg_DidChangeThemeColor,
+                        OnThemeColorChanged)
+    IPC_MESSAGE_HANDLER(FrameHostMsg_DidDetectXSS, OnDidDetectXSS)
     IPC_MESSAGE_HANDLER(FrameHostMsg_DidFinishDocumentLoad,
                         OnDocumentLoadedInFrame)
     IPC_MESSAGE_HANDLER(FrameHostMsg_DidFinishLoad, OnDidFinishLoad)
@@ -523,6 +524,8 @@ bool WebContentsImpl::OnMessageReceived(RenderViewHost* render_view_host,
                         OnMediaPlayingNotification)
     IPC_MESSAGE_HANDLER(FrameHostMsg_MediaPausedNotification,
                         OnMediaPausedNotification)
+    IPC_MESSAGE_HANDLER(FrameHostMsg_DidFirstVisuallyNonEmptyPaint,
+                        OnFirstVisuallyNonEmptyPaint)
     IPC_MESSAGE_HANDLER(ViewHostMsg_DidLoadResourceFromMemoryCache,
                         OnDidLoadResourceFromMemoryCache)
     IPC_MESSAGE_HANDLER(ViewHostMsg_DidDisplayInsecureContent,
@@ -534,6 +537,8 @@ bool WebContentsImpl::OnMessageReceived(RenderViewHost* render_view_host,
     IPC_MESSAGE_HANDLER(ViewHostMsg_EnumerateDirectory, OnEnumerateDirectory)
     IPC_MESSAGE_HANDLER(ViewHostMsg_RegisterProtocolHandler,
                         OnRegisterProtocolHandler)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_UnregisterProtocolHandler,
+                        OnUnregisterProtocolHandler)
     IPC_MESSAGE_HANDLER(ViewHostMsg_Find_Reply, OnFindReply)
     IPC_MESSAGE_HANDLER(ViewHostMsg_AppCacheAccessed, OnAppCacheAccessed)
     IPC_MESSAGE_HANDLER(ViewHostMsg_WebUISend, OnWebUISend)
@@ -543,8 +548,6 @@ bool WebContentsImpl::OnMessageReceived(RenderViewHost* render_view_host,
                                 OnBrowserPluginMessage(message))
     IPC_MESSAGE_HANDLER(ImageHostMsg_DidDownloadImage, OnDidDownloadImage)
     IPC_MESSAGE_HANDLER(ViewHostMsg_UpdateFaviconURL, OnUpdateFaviconURL)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_DidFirstVisuallyNonEmptyPaint,
-                        OnFirstVisuallyNonEmptyPaint)
     IPC_MESSAGE_HANDLER(ViewHostMsg_ShowValidationMessage,
                         OnShowValidationMessage)
     IPC_MESSAGE_HANDLER(ViewHostMsg_HideValidationMessage,
@@ -2208,18 +2211,6 @@ bool WebContentsImpl::GetClosedByUserGesture() const {
   return closed_by_user_gesture_;
 }
 
-int WebContentsImpl::GetZoomPercent(bool* enable_increment,
-                                    bool* enable_decrement) const {
-  *enable_decrement = *enable_increment = false;
-  // Calculate the zoom percent from the factor. Round up to the nearest whole
-  // number.
-  int percent = static_cast<int>(
-      ZoomLevelToZoomFactor(HostZoomMap::GetZoomLevel(this)) * 100 + 0.5);
-  *enable_decrement = percent > minimum_zoom_percent_;
-  *enable_increment = percent < maximum_zoom_percent_;
-  return percent;
-}
-
 void WebContentsImpl::ViewSource() {
   if (!delegate_)
     return;
@@ -2332,22 +2323,17 @@ void WebContentsImpl::SetFocusToLocationBar(bool select_all) {
 
 void WebContentsImpl::DidStartProvisionalLoad(
     RenderFrameHostImpl* render_frame_host,
-    int parent_routing_id,
     const GURL& validated_url,
     bool is_error_page,
     bool is_iframe_srcdoc) {
-  bool is_main_frame = render_frame_host->frame_tree_node()->IsMainFrame();
-
   // Notify observers about the start of the provisional load.
-  int render_frame_id = render_frame_host->GetRoutingID();
-  RenderViewHost* render_view_host = render_frame_host->render_view_host();
-  FOR_EACH_OBSERVER(WebContentsObserver, observers_,
-                    DidStartProvisionalLoadForFrame(
-                        render_frame_id, parent_routing_id, is_main_frame,
-                        validated_url, is_error_page, is_iframe_srcdoc,
-                        render_view_host));
+  FOR_EACH_OBSERVER(
+      WebContentsObserver,
+      observers_,
+      DidStartProvisionalLoadForFrame(
+          render_frame_host, validated_url, is_error_page, is_iframe_srcdoc));
 
-  if (is_main_frame) {
+  if (!render_frame_host->GetParent()) {
     FOR_EACH_OBSERVER(
         WebContentsObserver,
         observers_,
@@ -2360,19 +2346,12 @@ void WebContentsImpl::DidFailProvisionalLoadWithError(
     RenderFrameHostImpl* render_frame_host,
     const FrameHostMsg_DidFailProvisionalLoadWithError_Params& params) {
   GURL validated_url(params.url);
-  int render_frame_id = render_frame_host->GetRoutingID();
-  bool is_main_frame = render_frame_host->frame_tree_node()->IsMainFrame();
-  RenderViewHost* render_view_host = render_frame_host->render_view_host();
-  FOR_EACH_OBSERVER(
-      WebContentsObserver,
-      observers_,
-      DidFailProvisionalLoad(render_frame_id,
-                             params.frame_unique_name,
-                             is_main_frame,
-                             validated_url,
-                             params.error_code,
-                             params.error_description,
-                             render_view_host));
+  FOR_EACH_OBSERVER(WebContentsObserver,
+                    observers_,
+                    DidFailProvisionalLoad(render_frame_host,
+                                           validated_url,
+                                           params.error_code,
+                                           params.error_description));
 }
 
 void WebContentsImpl::DidFailLoadWithError(
@@ -2380,12 +2359,10 @@ void WebContentsImpl::DidFailLoadWithError(
     const GURL& url,
     int error_code,
     const base::string16& error_description) {
-  int render_frame_id = render_frame_host->GetRoutingID();
-  bool is_main_frame = render_frame_host->frame_tree_node()->IsMainFrame();
-  RenderViewHost* render_view_host = render_frame_host->render_view_host();
-  FOR_EACH_OBSERVER(WebContentsObserver, observers_,
-                    DidFailLoad(render_frame_id, url, is_main_frame, error_code,
-                                error_description, render_view_host));
+  FOR_EACH_OBSERVER(
+      WebContentsObserver,
+      observers_,
+      DidFailLoad(render_frame_host, url, error_code, error_description));
 }
 
 void WebContentsImpl::NotifyChangedNavigationState(
@@ -2450,22 +2427,13 @@ void WebContentsImpl::DidRedirectProvisionalLoad(
 
 void WebContentsImpl::DidCommitProvisionalLoad(
     RenderFrameHostImpl* render_frame_host,
-    const base::string16& frame_unique_name,
-    bool is_main_frame,
     const GURL& url,
     PageTransition transition_type) {
-  int render_frame_id = render_frame_host->GetRoutingID();
-  RenderViewHost* render_view_host = render_frame_host->render_view_host();
   // Notify observers about the commit of the provisional load.
-  FOR_EACH_OBSERVER(
-      WebContentsObserver,
-      observers_,
-      DidCommitProvisionalLoadForFrame(render_frame_id,
-                                       frame_unique_name,
-                                       is_main_frame,
-                                       url,
-                                       transition_type,
-                                       render_view_host));
+  FOR_EACH_OBSERVER(WebContentsObserver,
+                    observers_,
+                    DidCommitProvisionalLoadForFrame(
+                        render_frame_host, url, transition_type));
 }
 
 void WebContentsImpl::DidNavigateMainFramePreCommit(
@@ -2544,9 +2512,9 @@ bool WebContentsImpl::CanOverscrollContent() const {
   return false;
 }
 
-void WebContentsImpl::OnBrandColorChanged(SkColor brand_color) {
+void WebContentsImpl::OnThemeColorChanged(SkColor theme_color) {
   FOR_EACH_OBSERVER(WebContentsObserver, observers_,
-                    DidChangeBrandColor(brand_color));
+                    DidChangeThemeColor(theme_color));
 }
 
 void WebContentsImpl::OnDidLoadResourceFromMemoryCache(
@@ -2611,17 +2579,33 @@ void WebContentsImpl::OnDidRunInsecureContent(
       GetController().GetBrowserContext());
 }
 
+
+void WebContentsImpl::OnDidDetectXSS(int32 page_id,
+                                     const GURL& url,
+                                     bool blocked_entire_page) {
+  if (!blocked_entire_page)
+    return;
+
+  int entry_index = controller_.GetEntryIndexWithPageID(
+      GetRenderViewHost()->GetSiteInstance(), page_id);
+  if (entry_index < 0)
+    return;
+
+  NavigationEntryImpl* entry = NavigationEntryImpl::FromNavigationEntry(
+      controller_.GetEntryAtIndex(entry_index));
+  if (!entry)
+    return;
+
+  entry->set_xss_detected(true);
+}
+
 void WebContentsImpl::OnDocumentLoadedInFrame() {
   CHECK(render_frame_message_source_);
   CHECK(!render_view_message_source_);
   RenderFrameHostImpl* rfh =
       static_cast<RenderFrameHostImpl*>(render_frame_message_source_);
-
-  int render_frame_id = rfh->GetRoutingID();
-  RenderViewHost* render_view_host = rfh->render_view_host();
-  FOR_EACH_OBSERVER(WebContentsObserver,
-                    observers_,
-                    DocumentLoadedInFrame(render_frame_id, render_view_host));
+  FOR_EACH_OBSERVER(
+      WebContentsObserver, observers_, DocumentLoadedInFrame(rfh));
 }
 
 void WebContentsImpl::OnDidFinishLoad(
@@ -2639,12 +2623,8 @@ void WebContentsImpl::OnDidFinishLoad(
 
   RenderFrameHostImpl* rfh =
       static_cast<RenderFrameHostImpl*>(render_frame_message_source_);
-  int render_frame_id = rfh->GetRoutingID();
-  RenderViewHost* render_view_host = rfh->render_view_host();
-  bool is_main_frame = rfh->frame_tree_node()->IsMainFrame();
-  FOR_EACH_OBSERVER(WebContentsObserver, observers_,
-                    DidFinishLoad(render_frame_id, validated_url,
-                                  is_main_frame, render_view_host));
+  FOR_EACH_OBSERVER(
+      WebContentsObserver, observers_, DidFinishLoad(rfh, validated_url));
 }
 
 void WebContentsImpl::OnDidStartLoading(bool to_different_document) {
@@ -2767,6 +2747,20 @@ void WebContentsImpl::OnRegisterProtocolHandler(const std::string& protocol,
     return;
 
   delegate_->RegisterProtocolHandler(this, protocol, url, user_gesture);
+}
+
+void WebContentsImpl::OnUnregisterProtocolHandler(const std::string& protocol,
+                                                  const GURL& url,
+                                                  bool user_gesture) {
+  if (!delegate_)
+    return;
+
+  ChildProcessSecurityPolicyImpl* policy =
+      ChildProcessSecurityPolicyImpl::GetInstance();
+  if (policy->IsPseudoScheme(protocol))
+    return;
+
+  delegate_->UnregisterProtocolHandler(this, protocol, url, user_gesture);
 }
 
 void WebContentsImpl::OnFindReply(int request_id,
@@ -3437,6 +3431,9 @@ void WebContentsImpl::RenderViewTerminated(RenderViewHost* rvh,
   if (dialog_manager_)
     dialog_manager_->CancelActiveAndPendingDialogs(this);
 
+  if (delegate_)
+    delegate_->HideValidationMessage(this);
+
   SetIsLoading(rvh, false, true, NULL);
   NotifyDisconnected();
   SetIsCrashed(status, error_code);
@@ -3739,7 +3736,7 @@ bool WebContentsImpl::AddMessageToConsole(int32 level,
                                         source_id);
 }
 
-WebPreferences WebContentsImpl::GetWebkitPrefs() {
+WebPreferences WebContentsImpl::ComputeWebkitPrefs() {
   // We want to base the page config off of the actual URL, rather than the
   // virtual URL.
   // TODO(nasko): Investigate how to remove the GetActiveEntry usage here,
@@ -3747,7 +3744,7 @@ WebPreferences WebContentsImpl::GetWebkitPrefs() {
   GURL url = controller_.GetActiveEntry()
       ? controller_.GetActiveEntry()->GetURL() : GURL::EmptyGURL();
 
-  return GetRenderManager()->current_host()->GetWebkitPrefs(url);
+  return GetRenderManager()->current_host()->ComputeWebkitPrefs(url);
 }
 
 int WebContentsImpl::CreateSwappedOutRenderView(
@@ -4022,14 +4019,12 @@ bool WebContentsImpl::GetAllowOverlappingViews() {
   return view_->GetAllowOverlappingViews();
 }
 
-void WebContentsImpl::SetOverlayView(WebContents* overlay,
-                                     const gfx::Point& offset) {
-  view_->SetOverlayView(static_cast<WebContentsImpl*>(overlay)->GetView(),
-                        offset);
+void WebContentsImpl::SetAllowOtherViews(bool allow) {
+  view_->SetAllowOtherViews(allow);
 }
 
-void WebContentsImpl::RemoveOverlayView() {
-  view_->RemoveOverlayView();
+bool WebContentsImpl::GetAllowOtherViews() {
+  return view_->GetAllowOtherViews();
 }
 
 #endif
@@ -4128,11 +4123,9 @@ gfx::Size WebContentsImpl::GetSizeForNewRenderView() {
   return size;
 }
 
-void WebContentsImpl::OnFrameRemoved(
-    RenderViewHostImpl* render_view_host,
-    int frame_routing_id) {
-   FOR_EACH_OBSERVER(WebContentsObserver, observers_,
-                     FrameDetached(render_view_host, frame_routing_id));
+void WebContentsImpl::OnFrameRemoved(RenderFrameHost* render_frame_host) {
+  FOR_EACH_OBSERVER(
+      WebContentsObserver, observers_, FrameDetached(render_frame_host));
 }
 
 void WebContentsImpl::OnPreferredSizeChanged(const gfx::Size& old_size) {

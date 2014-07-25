@@ -16,6 +16,18 @@ declare_args() {
   android_full_debug = false
 }
 
+# default_include_dirs ---------------------------------------------------------
+#
+# This is a separate config so that third_party code (which would not use the
+# source root and might have conflicting versions of some headers) can remove
+# this and specify their own include paths.
+config("default_include_dirs") {
+  include_dirs = [
+    "//",
+    root_gen_dir,
+  ]
+}
+
 # compiler ---------------------------------------------------------------------
 #
 # Base compiler configuration.
@@ -29,9 +41,6 @@ config("compiler") {
   cflags_cc = []
   ldflags = []
   defines = []
-  include_dirs = []
-
-  include_dirs += [ "//", root_gen_dir ]
 
   # In general, Windows is totally different, but all the other builds share
   # some common GCC configuration. This section sets up Windows and the common
@@ -442,6 +451,8 @@ config("runtime_library") {
 # Toggles between higher and lower warnings for code that is (or isn't)
 # part of Chromium.
 
+# TODO: -Werror and /WX should always be on, independent of chromium_code
+# http://crbug.com/393046
 config("chromium_code") {
   if (is_win) {
     cflags = [
@@ -451,7 +462,6 @@ config("chromium_code") {
   } else {
     cflags = [
       "-Wall",
-      "-Werror",
 
       # GCC turns on -Wsign-compare for C++ under -Wall, but clang doesn't,
       # so we specify it explicitly.
@@ -459,6 +469,11 @@ config("chromium_code") {
       # http://code.google.com/p/chromium/issues/detail?id=90453
       "-Wsign-compare",
     ]
+    if (!is_linux) {
+      # TODO: Add this unconditionally once linux builds without warnings with
+      # clang in the gn build.
+      cflags += [ "-Werror" ]
+    }
 
     # In Chromium code, we define __STDC_foo_MACROS in order to get the
     # C99 macros on Mac and Linux.

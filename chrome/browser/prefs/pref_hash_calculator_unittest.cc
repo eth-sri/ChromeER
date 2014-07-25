@@ -81,13 +81,12 @@ TEST(PrefHashCalculatorTest, CatchHashChanges) {
   static const char kDeviceId[] = "test_device_id1";
 
   scoped_ptr<base::Value> null_value(base::Value::CreateNullValue());
-  scoped_ptr<base::Value> bool_value(base::Value::CreateBooleanValue(false));
-  scoped_ptr<base::Value> int_value(
-      base::Value::CreateIntegerValue(1234567890));
+  scoped_ptr<base::Value> bool_value(new base::FundamentalValue(false));
+  scoped_ptr<base::Value> int_value(new base::FundamentalValue(1234567890));
   scoped_ptr<base::Value> double_value(
-      base::Value::CreateDoubleValue(123.0987654321));
-  scoped_ptr<base::Value> string_value(base::Value::CreateStringValue(
-      "testing with special chars:\n<>{}:^^@#$\\/"));
+      new base::FundamentalValue(123.0987654321));
+  scoped_ptr<base::Value> string_value(
+      new base::StringValue("testing with special chars:\n<>{}:^^@#$\\/"));
 
   // For legacy reasons, we have to support pruning of empty lists/dictionaries
   // and nested empty ists/dicts in the hash generation algorithm.

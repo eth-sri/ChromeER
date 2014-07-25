@@ -720,8 +720,9 @@ bool ExtensionPrefs::HasWipeoutBeenAcknowledged(
 void ExtensionPrefs::SetWipeoutAcknowledged(
     const std::string& extension_id,
     bool value) {
-  UpdateExtensionPref(extension_id, kPrefWipeoutAcknowledged,
-                      value ? base::Value::CreateBooleanValue(value) : NULL);
+  UpdateExtensionPref(extension_id,
+                      kPrefWipeoutAcknowledged,
+                      value ? new base::FundamentalValue(value) : NULL);
 }
 
 bool ExtensionPrefs::HasSettingsApiBubbleBeenAcknowledged(
@@ -735,7 +736,7 @@ void ExtensionPrefs::SetSettingsApiBubbleBeenAcknowledged(
     bool value) {
   UpdateExtensionPref(extension_id,
                       kPrefSettingsBubbleAcknowledged,
-                      value ? base::Value::CreateBooleanValue(value) : NULL);
+                      value ? new base::FundamentalValue(value) : NULL);
 }
 
 bool ExtensionPrefs::HasNtpOverriddenBubbleBeenAcknowledged(
@@ -748,7 +749,7 @@ void ExtensionPrefs::SetNtpOverriddenBubbleBeenAcknowledged(
     bool value) {
   UpdateExtensionPref(extension_id,
                       kPrefNtpBubbleAcknowledged,
-                      value ? base::Value::CreateBooleanValue(value) : NULL);
+                      value ? new base::FundamentalValue(value) : NULL);
 }
 
 bool ExtensionPrefs::HasProxyOverriddenBubbleBeenAcknowledged(
@@ -761,7 +762,7 @@ void ExtensionPrefs::SetProxyOverriddenBubbleBeenAcknowledged(
     bool value) {
   UpdateExtensionPref(extension_id,
                       kPrefProxyBubbleAcknowledged,
-                      value ? base::Value::CreateBooleanValue(value) : NULL);
+                      value ? new base::FundamentalValue(value) : NULL);
 }
 
 bool ExtensionPrefs::SetAlertSystemFirstRun() {
@@ -1004,7 +1005,7 @@ void ExtensionPrefs::MigratePermissions(const ExtensionIdList& extension_ids) {
     // An extension's granted permissions need to be migrated if the
     // full_access bit is present. This bit was always present in the previous
     // scheme and is never present now.
-    bool full_access;
+    bool full_access = false;
     const base::DictionaryValue* ext = GetExtensionPref(*ext_id);
     if (!ext || !ext->GetBoolean(kPrefOldGrantedFullAccess, &full_access))
       continue;
@@ -1237,9 +1238,14 @@ void ExtensionPrefs::OnExtensionInstalled(
                              install_flags,
                              install_parameter,
                              extension_dict);
-  FinishExtensionInfoPrefs(extension->id(), install_time,
-                           extension->RequiresSortOrdinal(),
-                           page_ordinal, extension_dict);
+
+  bool requires_sort_ordinal = extension->RequiresSortOrdinal() &&
+                               (install_flags & kInstallFlagIsEphemeral) == 0;
+  FinishExtensionInfoPrefs(extension->id(),
+                           install_time,
+                           requires_sort_ordinal,
+                           page_ordinal,
+                           extension_dict);
 }
 
 void ExtensionPrefs::OnExtensionUninstalled(const std::string& extension_id,
@@ -1287,7 +1293,7 @@ BlacklistState ExtensionPrefs::GetExtensionBlacklistState(
   if (IsExtensionBlacklisted(extension_id))
     return BLACKLISTED_MALWARE;
   const base::DictionaryValue* ext_prefs = GetExtensionPref(extension_id);
-  int int_value;
+  int int_value = 0;
   if (ext_prefs && ext_prefs->GetInteger(kPrefBlacklistState, &int_value))
     return static_cast<BlacklistState>(int_value);
 
@@ -1452,7 +1458,8 @@ void ExtensionPrefs::SetDelayedInstallInfo(
   // Add transient data that is needed by FinishDelayedInstallInfo(), but
   // should not be in the final extension prefs. All entries here should have
   // a corresponding Remove() call in FinishDelayedInstallInfo().
-  if (extension->RequiresSortOrdinal()) {
+  if (extension->RequiresSortOrdinal() &&
+      (install_flags & kInstallFlagIsEphemeral) == 0) {
     extension_dict->SetString(
         kPrefSuggestedPageOrdinal,
         page_ordinal.IsValid() ? page_ordinal.ToInternalValue()
@@ -1972,7 +1979,12 @@ void ExtensionPrefs::RegisterProfilePrefs(
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   registry->RegisterListPref(pref_names::kKnownDisabled,
                              user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-#if defined(TOOLKIT_VIEWS)
+#if defined(OS_MACOSX)
+  registry->RegisterDoublePref(
+      pref_names::kBrowserActionContainerWidth,
+      0,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+#else
   registry->RegisterIntegerPref(
       pref_names::kBrowserActionContainerWidth,
       0,

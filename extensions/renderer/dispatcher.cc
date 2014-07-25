@@ -271,7 +271,7 @@ void Dispatcher::DidCreateScriptContext(
   // Initialize origin permissions for content scripts, which can't be
   // initialized in |OnActivateExtension|.
   if (context_type == Feature::CONTENT_SCRIPT_CONTEXT)
-    InitOriginPermissions(extension);
+    UpdateOriginPermissions(extension);
 
   {
     scoped_ptr<ModuleSystem> module_system(
@@ -325,20 +325,31 @@ void Dispatcher::WillReleaseScriptContext(
 }
 
 void Dispatcher::DidCreateDocumentElement(blink::WebFrame* frame) {
-  if (IsWithinPlatformApp()) {
-    // WebKit doesn't let us define an additional user agent stylesheet, so we
-    // insert the default platform app stylesheet into all documents that are
-    // loaded in each app.
+  // Note: use GetEffectiveDocumentURL not just frame->document()->url()
+  // so that this also injects the stylesheet on about:blank frames that
+  // are hosted in the extension process.
+  GURL effective_document_url = ScriptContext::GetEffectiveDocumentURL(
+      frame, frame->document().url(), true /* match_about_blank */);
+  const Extension* extension =
+      extensions_.GetExtensionOrAppByURL(effective_document_url);
+
+  if (extension &&
+      (extension->is_extension() || extension->is_platform_app())) {
+    int resource_id =
+        extension->is_platform_app() ? IDR_PLATFORM_APP_CSS : IDR_EXTENSION_CSS;
     std::string stylesheet = ResourceBundle::GetSharedInstance()
-                                 .GetRawDataResource(IDR_PLATFORM_APP_CSS)
+                                 .GetRawDataResource(resource_id)
                                  .as_string();
     ReplaceFirstSubstringAfterOffset(
         &stylesheet, 0, "$FONTFAMILY", system_font_family_);
     ReplaceFirstSubstringAfterOffset(
         &stylesheet, 0, "$FONTSIZE", system_font_size_);
+
+    // Blink doesn't let us define an additional user agent stylesheet, so
+    // we insert the default platform app or extension stylesheet into all
+    // documents that are loaded in each app or extension.
     frame->document().insertStyleSheet(WebString::fromUTF8(stylesheet));
   }
-
   content_watcher_->DidCreateDocumentElement(frame);
 }
 
@@ -506,7 +517,7 @@ void Dispatcher::WebKitInitialized() {
     const Extension* extension = extensions_.GetByID(*iter);
     CHECK(extension);
 
-    InitOriginPermissions(extension);
+    UpdateOriginPermissions(extension);
   }
 
   EnableCustomElementWhiteList();
@@ -565,7 +576,7 @@ void Dispatcher::OnActivateExtension(const std::string& extension_id) {
     extensions::DOMActivityLogger::AttachToWorld(
         extensions::DOMActivityLogger::kMainWorldId, extension_id);
 
-    InitOriginPermissions(extension);
+    UpdateOriginPermissions(extension);
   }
 
   UpdateActiveExtensions();
@@ -678,7 +689,7 @@ void Dispatcher::OnSetSystemFont(const std::string& font_family,
 }
 
 void Dispatcher::OnShouldSuspend(const std::string& extension_id,
-                                 int sequence_id) {
+                                 uint64 sequence_id) {
   RenderThread::Get()->Send(
       new ExtensionHostMsg_ShouldSuspendAck(extension_id, sequence_id));
 }
@@ -732,48 +743,27 @@ void Dispatcher::OnUnloaded(const std::string& id) {
 
 void Dispatcher::OnUpdatePermissions(
     const ExtensionMsg_UpdatePermissions_Params& params) {
-  int reason_id = params.reason_id;
-  const std::string& extension_id = params.extension_id;
-  const APIPermissionSet& apis = params.apis;
-  const ManifestPermissionSet& manifest_permissions =
-      params.manifest_permissions;
-  const URLPatternSet& explicit_hosts = params.explicit_hosts;
-  const URLPatternSet& scriptable_hosts = params.scriptable_hosts;
-
-  const Extension* extension = extensions_.GetByID(extension_id);
+  const Extension* extension = extensions_.GetByID(params.extension_id);
   if (!extension)
     return;
 
-  scoped_refptr<const PermissionSet> delta = new PermissionSet(
-      apis, manifest_permissions, explicit_hosts, scriptable_hosts);
-  scoped_refptr<const PermissionSet> old_active =
-      extension->permissions_data()->active_permissions();
-  UpdatedExtensionPermissionsInfo::Reason reason =
-      static_cast<UpdatedExtensionPermissionsInfo::Reason>(reason_id);
+  scoped_refptr<const PermissionSet> active =
+      params.active_permissions.ToPermissionSet();
+  scoped_refptr<const PermissionSet> withheld =
+      params.withheld_permissions.ToPermissionSet();
 
-  const PermissionSet* new_active = NULL;
-  switch (reason) {
-    case UpdatedExtensionPermissionsInfo::ADDED:
-      new_active = PermissionSet::CreateUnion(old_active.get(), delta.get());
-      break;
-    case UpdatedExtensionPermissionsInfo::REMOVED:
-      new_active =
-          PermissionSet::CreateDifference(old_active.get(), delta.get());
-      break;
-  }
-
-  extension->permissions_data()->SetActivePermissions(new_active);
-  UpdateOriginPermissions(reason, extension, explicit_hosts);
+  extension->permissions_data()->SetPermissions(active, withheld);
+  UpdateOriginPermissions(extension);
   UpdateBindings(extension->id());
 }
 
 void Dispatcher::OnUpdateTabSpecificPermissions(
-    int page_id,
+    const GURL& url,
     int tab_id,
     const std::string& extension_id,
     const URLPatternSet& origin_set) {
   delegate_->UpdateTabSpecificPermissions(
-      this, page_id, tab_id, extension_id, origin_set);
+      this, url, tab_id, extension_id, origin_set);
 }
 
 void Dispatcher::OnUsingWebRequestAPI(bool webrequest_used) {
@@ -792,21 +782,14 @@ void Dispatcher::UpdateActiveExtensions() {
   delegate_->OnActiveExtensionsUpdated(active_extensions);
 }
 
-void Dispatcher::InitOriginPermissions(const Extension* extension) {
+void Dispatcher::UpdateOriginPermissions(const Extension* extension) {
+  const URLPatternSet& hosts =
+      extension->permissions_data()->GetEffectiveHostPermissions();
+  WebSecurityPolicy::resetOriginAccessWhitelists();
   delegate_->InitOriginPermissions(extension,
                                    IsExtensionActive(extension->id()));
-  UpdateOriginPermissions(
-      UpdatedExtensionPermissionsInfo::ADDED,
-      extension,
-      extension->permissions_data()->GetEffectiveHostPermissions());
-}
-
-void Dispatcher::UpdateOriginPermissions(
-    UpdatedExtensionPermissionsInfo::Reason reason,
-    const Extension* extension,
-    const URLPatternSet& origins) {
-  for (URLPatternSet::const_iterator i = origins.begin(); i != origins.end();
-       ++i) {
+  for (URLPatternSet::const_iterator iter = hosts.begin(); iter != hosts.end();
+       ++iter) {
     const char* schemes[] = {
         url::kHttpScheme,
         url::kHttpsScheme,
@@ -815,14 +798,12 @@ void Dispatcher::UpdateOriginPermissions(
         url::kFtpScheme,
     };
     for (size_t j = 0; j < arraysize(schemes); ++j) {
-      if (i->MatchesScheme(schemes[j])) {
-        ((reason == UpdatedExtensionPermissionsInfo::REMOVED)
-             ? WebSecurityPolicy::removeOriginAccessWhitelistEntry
-             : WebSecurityPolicy::addOriginAccessWhitelistEntry)(
+      if (iter->MatchesScheme(schemes[j])) {
+        WebSecurityPolicy::addOriginAccessWhitelistEntry(
             extension->url(),
             WebString::fromUTF8(schemes[j]),
-            WebString::fromUTF8(i->host()),
-            i->match_subdomains());
+            WebString::fromUTF8(iter->host()),
+            iter->match_subdomains());
       }
     }
   }
@@ -830,7 +811,9 @@ void Dispatcher::UpdateOriginPermissions(
 
 void Dispatcher::EnableCustomElementWhiteList() {
   blink::WebCustomElement::addEmbedderCustomElementName("webview");
-  blink::WebCustomElement::addEmbedderCustomElementName("browser-plugin");
+  blink::WebCustomElement::addEmbedderCustomElementName("appview");
+  blink::WebCustomElement::addEmbedderCustomElementName("appplugin");
+  blink::WebCustomElement::addEmbedderCustomElementName("browserplugin");
 }
 
 void Dispatcher::UpdateBindings(const std::string& extension_id) {

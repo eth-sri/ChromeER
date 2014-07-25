@@ -19,7 +19,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
 {
   "name": "gpu driver bug list",
   // Please update the version number whenever you change this file.
-  "version": "6.3",
+  "version": "6.6",
   "entries": [
     {
       "id": 1,
@@ -248,20 +248,6 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       },
       "features": [
         "exit_on_context_lost"
-      ]
-    },
-    {
-      "id": 18,
-      "description": "Everything except async + NPOT + multiple-of-8 textures are brutally slow for Imagination drivers",
-      "os": {
-        "type": "android"
-      },
-      "gl_vendor": {
-        "op": "beginwith",
-        "value": "Imagination"
-      },
-      "features": [
-        "enable_chromium_fast_npot_mo8_textures"
       ]
     },
     {
@@ -1062,6 +1048,59 @@ LONG_STRING_CONST(
       },
       "features": [
         "disable_arb_sync"
+      ]
+    },
+    {
+      "id": 82,
+      "description": "PBO mappings segfault on certain older Qualcomm drivers",
+      "cr_bugs": [394510],
+      "os": {
+        "type": "android",
+        "version": {
+          "op": "<",
+          "value": "4.3"
+        }
+      },
+      "gl_vendor": {
+        "op": "beginwith",
+        "value": "Qualcomm"
+      },
+      "features": [
+        "disable_async_readpixels"
+      ]
+    },
+    {
+      "id": 83,
+      "cr_bugs": [393810],
+      "description": "Shader vec/mat construction is buggy on Linux",
+      "os": {
+        "type": "linux"
+      },
+      "features": [
+        "scalarize_vec_and_mat_constructor_args"
+      ]
+    },
+    {
+      "id": 84,
+      "cr_bugs": [393810],
+      "description": "Shader vec/mat construction is buggy on Linux",
+      "os": {
+        "type": "chromeos"
+      },
+      "features": [
+        "scalarize_vec_and_mat_constructor_args"
+      ]
+    },
+    {
+      "id": 85,
+      "cr_bugs": [393810],
+      "description": "Shader vec/mat construction is buggy on Mac NVIDIA",
+      "os": {
+        "type": "macosx"
+      },
+      "vendor_id": "0x10de",
+      "features": [
+        "scalarize_vec_and_mat_constructor_args"
       ]
     }
   ]

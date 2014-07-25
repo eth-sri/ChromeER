@@ -28,9 +28,9 @@
 #include "components/nacl/renderer/manifest_downloader.h"
 #include "components/nacl/renderer/manifest_service_channel.h"
 #include "components/nacl/renderer/nexe_load_manager.h"
+#include "components/nacl/renderer/platform_info.h"
 #include "components/nacl/renderer/pnacl_translation_resource_host.h"
 #include "components/nacl/renderer/progress_event.h"
-#include "components/nacl/renderer/sandbox_arch.h"
 #include "components/nacl/renderer/trusted_plugin_channel.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
@@ -530,20 +530,31 @@ std::string PnaclComponentURLToFilename(const std::string& url) {
   return r;
 }
 
-PP_FileHandle GetReadonlyPnaclFd(const char* url) {
+PP_FileHandle GetReadonlyPnaclFd(const char* url,
+                                 bool is_executable,
+                                 uint64_t* nonce_lo,
+                                 uint64_t* nonce_hi) {
   std::string filename = PnaclComponentURLToFilename(url);
   IPC::PlatformFileForTransit out_fd = IPC::InvalidPlatformFileForTransit();
   IPC::Sender* sender = content::RenderThread::Get();
   DCHECK(sender);
   if (!sender->Send(new NaClHostMsg_GetReadonlyPnaclFD(
-          std::string(filename),
-          &out_fd))) {
+          std::string(filename), is_executable,
+          &out_fd, nonce_lo, nonce_hi))) {
     return PP_kInvalidFileHandle;
   }
   if (out_fd == IPC::InvalidPlatformFileForTransit()) {
     return PP_kInvalidFileHandle;
   }
   return IPC::PlatformFileForTransitToPlatformFile(out_fd);
+}
+
+void GetReadExecPnaclFd(const char* url,
+                        PP_NaClFileInfo* out_file_info) {
+  *out_file_info = kInvalidNaClFileInfo;
+  out_file_info->handle = GetReadonlyPnaclFd(url, true /* is_executable */,
+                                             &out_file_info->token_lo,
+                                             &out_file_info->token_hi);
 }
 
 PP_FileHandle CreateTemporaryFile(PP_Instance instance) {
@@ -574,6 +585,19 @@ int32_t GetNumberOfProcessors() {
 
 PP_Bool PPIsNonSFIModeEnabled() {
   return PP_FromBool(IsNonSFIModeEnabled());
+}
+
+void GetNexeFdContinuation(scoped_refptr<ppapi::TrackedCallback> callback,
+                           PP_Bool* out_is_hit,
+                           PP_FileHandle* out_handle,
+                           int32_t pp_error,
+                           bool is_hit,
+                           PP_FileHandle handle) {
+  if (pp_error == PP_OK) {
+    *out_is_hit = PP_FromBool(is_hit);
+    *out_handle = handle;
+  }
+  callback->PostRun(pp_error);
 }
 
 int32_t GetNexeFd(PP_Instance instance,
@@ -634,9 +658,7 @@ int32_t GetNexeFd(PP_Instance instance,
       GetRoutingID(instance),
       instance,
       cache_info,
-      is_hit,
-      handle,
-      enter.callback());
+      base::Bind(&GetNexeFdContinuation, enter.callback(), is_hit, handle));
 
   return enter.SetResult(PP_OK_COMPLETIONPENDING);
 }
@@ -688,6 +710,8 @@ PP_FileHandle OpenNaClExecutable(PP_Instance instance,
 
   content::PepperPluginInstance* plugin_instance =
       content::PepperPluginInstance::Get(instance);
+  if (!plugin_instance)
+    return PP_kInvalidFileHandle;
   // IMPORTANT: Make sure the document can request the given URL. If we don't
   // check, a malicious app could probe the extension system. This enforces a
   // same-origin policy which prevents the app from requesting resources from
@@ -733,12 +757,14 @@ void DispatchEvent(PP_Instance instance,
 }
 
 void ReportLoadSuccess(PP_Instance instance,
-                       const char* url,
                        uint64_t loaded_bytes,
                        uint64_t total_bytes) {
   NexeLoadManager* load_manager = GetNexeLoadManager(instance);
-  if (load_manager)
-    load_manager->ReportLoadSuccess(url, loaded_bytes, total_bytes);
+  if (load_manager) {
+    load_manager->ReportLoadSuccess(load_manager->program_url(),
+                                    loaded_bytes,
+                                    total_bytes);
+  }
 }
 
 void ReportLoadError(PP_Instance instance,
@@ -1100,15 +1126,18 @@ bool ManifestResolveKey(PP_Instance instance,
 }
 
 PP_Bool GetPNaClResourceInfo(PP_Instance instance,
-                             const char* filename,
                              PP_Var* llc_tool_name,
                              PP_Var* ld_tool_name) {
+  static const char kFilename[] = "chrome://pnacl-translator/pnacl.json";
   NexeLoadManager* load_manager = GetNexeLoadManager(instance);
   DCHECK(load_manager);
   if (!load_manager)
     return PP_FALSE;
 
-  base::File file(GetReadonlyPnaclFd(filename));
+  uint64_t nonce_lo = 0;
+  uint64_t nonce_hi = 0;
+  base::File file(GetReadonlyPnaclFd(kFilename, false /* is_executable */,
+                                     &nonce_lo, &nonce_hi));
   if (!file.IsValid()) {
     load_manager->ReportLoadError(
         PP_NACL_ERROR_PNACL_RESOURCE_FETCH,
@@ -1123,14 +1152,14 @@ PP_Bool GetPNaClResourceInfo(PP_Instance instance,
     load_manager->ReportLoadError(
         PP_NACL_ERROR_PNACL_RESOURCE_FETCH,
         std::string("GetPNaClResourceInfo, GetFileInfo failed for: ") +
-            filename);
+            kFilename);
     return PP_FALSE;
   }
 
   if (file_info.size > 1 << 20) {
     load_manager->ReportLoadError(
         PP_NACL_ERROR_PNACL_RESOURCE_FETCH,
-        std::string("GetPNaClResourceInfo, file too large: ") + filename);
+        std::string("GetPNaClResourceInfo, file too large: ") + kFilename);
     return PP_FALSE;
   }
 
@@ -1139,7 +1168,7 @@ PP_Bool GetPNaClResourceInfo(PP_Instance instance,
     load_manager->ReportLoadError(
         PP_NACL_ERROR_PNACL_RESOURCE_FETCH,
         std::string("GetPNaClResourceInfo, couldn't allocate for: ") +
-            filename);
+            kFilename);
     return PP_FALSE;
   }
 
@@ -1147,7 +1176,7 @@ PP_Bool GetPNaClResourceInfo(PP_Instance instance,
   if (rc < 0) {
     load_manager->ReportLoadError(
         PP_NACL_ERROR_PNACL_RESOURCE_FETCH,
-        std::string("GetPNaClResourceInfo, reading failed for: ") + filename);
+        std::string("GetPNaClResourceInfo, reading failed for: ") + kFilename);
     return PP_FALSE;
   }
 
@@ -1190,54 +1219,8 @@ PP_Bool GetPNaClResourceInfo(PP_Instance instance,
   return PP_TRUE;
 }
 
-// Helper to std::accumulate that creates a comma-separated list from the input.
-std::string CommaAccumulator(const std::string &lhs, const std::string &rhs) {
-  if (lhs.empty())
-    return rhs;
-  return lhs + "," + rhs;
-}
-
 PP_Var GetCpuFeatureAttrs() {
-  // PNaCl's translator from pexe to nexe can be told exactly what
-  // capabilities the user's machine has because the pexe to nexe
-  // translation is specific to the machine, and CPU information goes
-  // into the translation cache. This allows the translator to generate
-  // faster code.
-  //
-  // Care must be taken to avoid instructions which aren't supported by
-  // the NaCl sandbox. Ideally the translator would do this, but there's
-  // no point in not doing the whitelist here.
-  //
-  // TODO(jfb) Some features are missing, either because the NaCl
-  //           sandbox doesn't support them, because base::CPU doesn't
-  //           detect them, or because they don't help vector shuffles
-  //           (and we omit them because it simplifies testing). Add the
-  //           other features.
-  //
-  // TODO(jfb) The following is x86-specific. The base::CPU class
-  //           doesn't handle other architectures very well, and we
-  //           should at least detect the presence of ARM's integer
-  //           divide.
-  std::vector<std::string> attrs;
-  base::CPU cpu;
-
-  // On x86, SSE features are ordered: the most recent one implies the
-  // others. Care is taken here to only specify the latest SSE version,
-  // whereas non-SSE features don't follow this model: POPCNT is
-  // effectively always implied by SSE4.2 but has to be specified
-  // separately.
-  //
-  // TODO: AVX2, AVX, SSE 4.2.
-  if (cpu.has_sse41()) attrs.push_back("+sse4.1");
-  // TODO: SSE 4A, SSE 4.
-  else if (cpu.has_ssse3()) attrs.push_back("+ssse3");
-  // TODO: SSE 3
-  else if (cpu.has_sse2()) attrs.push_back("+sse2");
-
-  // TODO: AES, POPCNT, LZCNT, ...
-
-  return ppapi::StringVar::StringToPPVar(std::accumulate(
-      attrs.begin(), attrs.end(), std::string(), CommaAccumulator));
+  return ppapi::StringVar::StringToPPVar(GetCpuFeatures());
 }
 
 void PostMessageToJavaScriptMainThread(PP_Instance instance,
@@ -1434,7 +1417,11 @@ void DownloadFile(PP_Instance instance,
   // Handle special PNaCl support files which are installed on the user's
   // machine.
   if (url.find(kPNaClTranslatorBaseUrl, 0) == 0) {
-    PP_FileHandle handle = GetReadonlyPnaclFd(url.c_str());
+    PP_NaClFileInfo file_info = kInvalidNaClFileInfo;
+    PP_FileHandle handle = GetReadonlyPnaclFd(url.c_str(),
+                                              false /* is_executable */,
+                                              &file_info.token_lo,
+                                              &file_info.token_hi);
     if (handle == PP_kInvalidFileHandle) {
       base::MessageLoop::current()->PostTask(
           FROM_HERE,
@@ -1443,12 +1430,7 @@ void DownloadFile(PP_Instance instance,
                      kInvalidNaClFileInfo));
       return;
     }
-    // TODO(ncbray): enable the fast loading and validation paths for this type
-    // of file.
-    PP_NaClFileInfo file_info;
     file_info.handle = handle;
-    file_info.token_lo = 0;
-    file_info.token_hi = 0;
     base::MessageLoop::current()->PostTask(
         FROM_HERE,
         base::Bind(callback, static_cast<int32_t>(PP_OK), file_info));
@@ -1587,7 +1569,7 @@ const PPB_NaCl_Private nacl_interface = {
   &UrandomFD,
   &Are3DInterfacesDisabled,
   &BrokerDuplicateHandle,
-  &GetReadonlyPnaclFd,
+  &GetReadExecPnaclFd,
   &CreateTemporaryFile,
   &GetNumberOfProcessors,
   &PPIsNonSFIModeEnabled,

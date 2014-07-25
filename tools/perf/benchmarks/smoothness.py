@@ -22,13 +22,12 @@ class SmoothnessToughCanvasCases(benchmark.Benchmark):
   page_set = page_sets.ToughCanvasCasesPageSet
 
 
-@benchmark.Disabled  # crbug.com/373812
+@benchmark.Disabled('android', 'mac')  # crbug.com/373812
 class SmoothnessToughWebGLCases(benchmark.Benchmark):
   test = smoothness.Smoothness
   page_set = page_sets.ToughWebglCasesPageSet
 
 
-@benchmark.Disabled
 class SmoothnessMaps(benchmark.Benchmark):
   test = smoothness.Smoothness
   page_set = page_sets.MapsPageSet
@@ -67,7 +66,8 @@ class SmoothnessFastPathKeySilkCases(benchmark.Benchmark):
     silk_flags.CustomizeBrowserOptionsForFastPath(options)
 
 
-@benchmark.Disabled('android')  # crbug.com/363783
+# GPU rasterization does not work on J devices
+@benchmark.Disabled('j')
 class SmoothnessGpuRasterizationTop25(benchmark.Benchmark):
   """Measures rendering statistics for the top 25 with GPU rasterization
   """
@@ -78,7 +78,8 @@ class SmoothnessGpuRasterizationTop25(benchmark.Benchmark):
     silk_flags.CustomizeBrowserOptionsForGpuRasterization(options)
 
 
-@benchmark.Disabled('android')  # crbug.com/363783
+# GPU rasterization does not work on J devices
+@benchmark.Disabled('j')
 class SmoothnessGpuRasterizationKeyMobileSites(benchmark.Benchmark):
   """Measures rendering statistics for the key mobile sites with GPU
   rasterization
@@ -115,6 +116,15 @@ class SmoothnessFastPathGpuRasterizationKeySilkCases(
 
 
 @benchmark.Enabled('android')
+class SmoothnessSimpleMobilePages(benchmark.Benchmark):
+  """Measures rendering statistics for pinch-zooming into the tough pinch zoom
+  cases
+  """
+  test = smoothness.Smoothness
+  page_set = page_sets.SimpleMobileSitesPageSet
+
+
+@benchmark.Enabled('android')
 class SmoothnessToughPinchZoomCases(benchmark.Benchmark):
   """Measures rendering statistics for pinch-zooming into the tough pinch zoom
   cases
@@ -123,7 +133,6 @@ class SmoothnessToughPinchZoomCases(benchmark.Benchmark):
   page_set = page_sets.ToughPinchZoomCasesPageSet
 
 
-@benchmark.Disabled  # crbug.com/370725
 class SmoothnessPolymer(benchmark.Benchmark):
   """Measures rendering statistics for Polymer cases.
   """
@@ -131,7 +140,6 @@ class SmoothnessPolymer(benchmark.Benchmark):
   page_set = page_sets.PolymerPageSet
 
 
-@benchmark.Disabled  # crbug.com/370725
 class SmoothnessFastPathPolymer(benchmark.Benchmark):
   """Measures rendering statistics for the Polymer cases without GPU
   rasterization using bleeding edge rendering fast paths.
@@ -142,8 +150,8 @@ class SmoothnessFastPathPolymer(benchmark.Benchmark):
   def CustomizeBrowserOptions(self, options):
     silk_flags.CustomizeBrowserOptionsForFastPath(options)
 
-
-@benchmark.Disabled  # crbug.com/370725
+# GPU rasterization does not work on J devices
+@benchmark.Disabled('j')
 class SmoothnessGpuRasterizationPolymer(benchmark.Benchmark):
   """Measures rendering statistics for the Polymer cases with GPU rasterization
   """
@@ -154,7 +162,6 @@ class SmoothnessGpuRasterizationPolymer(benchmark.Benchmark):
     silk_flags.CustomizeBrowserOptionsForGpuRasterization(options)
 
 
-@benchmark.Disabled  # crbug.com/370725
 class SmoothnessFastPathGpuRasterizationPolymer(
     SmoothnessGpuRasterizationPolymer):
   """Measures rendering statistics for the Polymer cases with GPU rasterization

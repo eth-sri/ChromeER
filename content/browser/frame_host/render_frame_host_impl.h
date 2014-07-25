@@ -23,6 +23,7 @@
 class GURL;
 struct FrameHostMsg_DidFailProvisionalLoadWithError_Params;
 struct FrameHostMsg_OpenURL_Params;
+struct FrameHostMsg_BeginNavigation_Params;
 struct FrameMsg_Navigate_Params;
 
 namespace base {
@@ -204,8 +205,7 @@ class CONTENT_EXPORT RenderFrameHostImpl : public RenderFrameHost {
   void OnFrameFocused();
   void OnOpenURL(const FrameHostMsg_OpenURL_Params& params);
   void OnDocumentOnLoadCompleted();
-  void OnDidStartProvisionalLoadForFrame(int parent_routing_id,
-                                         const GURL& url);
+  void OnDidStartProvisionalLoadForFrame(const GURL& url);
   void OnDidFailProvisionalLoadWithError(
       const FrameHostMsg_DidFailProvisionalLoadWithError_Params& params);
   void OnDidFailLoadWithError(
@@ -249,6 +249,8 @@ class CONTENT_EXPORT RenderFrameHostImpl : public RenderFrameHost {
                      const base::string16& title,
                      blink::WebTextDirection title_direction);
   void OnUpdateEncoding(const std::string& encoding);
+  void OnBeginNavigation(
+      const FrameHostMsg_BeginNavigation_Params& params);
 
   // Returns whether the given URL is allowed to commit in the current process.
   // This is a more conservative check than RenderProcessHost::FilterURL, since

@@ -29,6 +29,7 @@ class _MSEMeasurement(page_measurement.PageMeasurement):
                 value=float(metrics[m]), important=True))
 
 
+@benchmark.Disabled('android')
 class Media(benchmark.Benchmark):
   """Obtains media metrics for key user scenarios."""
   test = media.Media
@@ -43,6 +44,7 @@ class MediaNetworkSimulation(benchmark.Benchmark):
 
 
 @benchmark.Enabled('android')
+@benchmark.Disabled('l')
 class MediaAndroid(benchmark.Benchmark):
   """Obtains media metrics for key user scenarios on Android."""
   test = media.Media

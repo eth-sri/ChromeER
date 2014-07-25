@@ -53,9 +53,9 @@ import zipfile
 
 sys.path.append(os.path.join(os.path.dirname(__file__), 'telemetry'))
 
-import bisect_utils
-import post_perf_builder_job as bisect_builder
-from telemetry.page import cloud_storage
+from auto_bisect import bisect_utils
+from auto_bisect import post_perf_builder_job as bisect_builder
+from telemetry.util import cloud_storage
 
 # The additional repositories that might need to be bisected.
 # If the repository has any dependant repositories (such as skia/src needs
@@ -182,6 +182,72 @@ new file mode 100644
 BISECT_MODE_MEAN = 'mean'
 BISECT_MODE_STD_DEV = 'std_dev'
 BISECT_MODE_RETURN_CODE = 'return_code'
+
+# The perf dashboard specifically looks for the string
+# "Estimated Confidence: 95%" to decide whether or not
+# to cc the author(s). If you change this, please update the perf
+# dashboard as well.
+RESULTS_BANNER = """
+===== BISECT JOB RESULTS =====
+Status: %(status)s
+
+Test Command: %(command)s
+Test Metric: %(metrics)s
+Relative Change: %(change)s
+Estimated Confidence: %(confidence)d%%"""
+
+# The perf dashboard specifically looks for the string
+# "Author  : " to parse out who to cc on a bug. If you change the
+# formatting here, please update the perf dashboard as well.
+RESULTS_REVISION_INFO = """
+===== SUSPECTED CL(s) =====
+Subject : %(subject)s
+Author  : %(author)s%(email_info)s%(commit_info)s
+Commit  : %(cl)s
+Date    : %(cl_date)s"""
+
+REPRO_STEPS_LOCAL = """
+==== INSTRUCTIONS TO REPRODUCE ====
+To run locally:
+$%(command)s"""
+
+REPRO_STEPS_TRYJOB = """
+To reproduce on Performance trybot:
+1. Create new git branch or check out existing branch.
+2. Edit tools/run-perf-test.cfg (instructions in file) or \
+third_party/WebKit/Tools/run-perf-test.cfg.
+  a) Take care to strip any src/ directories from the head of \
+relative path names.
+  b) On desktop, only --browser=release is supported, on android \
+--browser=android-chromium-testshell.
+  c) Test command to use: %(command)s
+3. Upload your patch. --bypass-hooks is necessary to upload the changes you \
+committed locally to run-perf-test.cfg.
+   Note: *DO NOT* commit run-perf-test.cfg changes to the project repository.
+   $ git cl upload --bypass-hooks
+4. Send your try job to the tryserver. \
+[Please make sure to use appropriate bot to reproduce]
+   $ git cl try -m tryserver.chromium.perf -b <bot>
+
+For more details please visit \nhttps://sites.google.com/a/chromium.org/dev/\
+developers/performance-try-bots"""
+
+RESULTS_THANKYOU = """
+===== THANK YOU FOR CHOOSING BISECT AIRLINES =====
+Visit http://www.chromium.org/developers/core-principles for Chrome's policy
+on perf regressions.
+Contact chrome-perf-dashboard-team with any questions or suggestions about
+bisecting.
+.                   .------.
+.     .---.         \       \==)
+.     |PERF\         \       \\
+.     |     ---------'-------'-----------.
+.     . 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 `-.
+.     \______________.-------._______________)
+.                   /       /
+.                  /       /
+.                 /       /==)
+.                ._______."""
 
 
 def _AddAdditionalDepotInfo(depot_info):
@@ -642,7 +708,7 @@ def CheckRunGit(command, cwd=None):
   return output
 
 
-def SetBuildSystemDefault(build_system, use_goma):
+def SetBuildSystemDefault(build_system, use_goma, goma_dir):
   """Sets up any environment variables needed to build with the specified build
   system.
 
@@ -671,6 +737,8 @@ def SetBuildSystemDefault(build_system, use_goma):
   if use_goma:
     os.environ['GYP_DEFINES'] = '%s %s' % (os.getenv('GYP_DEFINES', ''),
                                               'use_goma=1')
+    if goma_dir:
+      os.environ['GYP_DEFINES'] += ' gomadir=%s' % goma_dir
 
 
 def BuildWithMake(threads, targets, build_type='Release'):
@@ -759,7 +827,8 @@ class Builder(object):
           raise RuntimeError(
               'Path to visual studio could not be determined.')
       else:
-        SetBuildSystemDefault(opts.build_preference, opts.use_goma)
+        SetBuildSystemDefault(opts.build_preference, opts.use_goma,
+                              opts.goma_dir)
     else:
       if not opts.build_preference:
         if 'ninja' in os.getenv('GYP_GENERATORS'):
@@ -767,7 +836,7 @@ class Builder(object):
         else:
           opts.build_preference = 'make'
 
-      SetBuildSystemDefault(opts.build_preference, opts.use_goma)
+      SetBuildSystemDefault(opts.build_preference, opts.use_goma, opts.goma_dir)
 
     if not bisect_utils.SetupPlatformBuildEnvironment(opts):
       raise RuntimeError('Failed to set platform environment.')
@@ -2167,6 +2236,27 @@ class BisectPerformanceMetrics(object):
   def _IsBisectModeStandardDeviation(self):
     return self.opts.bisect_mode in [BISECT_MODE_STD_DEV]
 
+  def GetCompatibleCommand(self, command_to_run, revision):
+    # Prior to crrev.com/274857 *only* android-chromium-testshell
+    # Then until crrev.com/276628 *both* (android-chromium-testshell and
+    # android-chrome-shell) work. After that rev 276628 *only*
+    # android-chrome-shell works. bisect-perf-reggresion.py script should
+    # handle these cases and set appropriate browser type based on revision.
+    if self.opts.target_platform in ['android', 'android-chrome']:
+      svn_revision = self.source_control.SVNFindRev(revision)
+      cmd_re = re.compile('--browser=(?P<browser_type>\S+)')
+      matches = cmd_re.search(command_to_run)
+      if IsStringInt(svn_revision) and matches:
+        cmd_browser = matches.group('browser_type')
+        if svn_revision <= 274857 and cmd_browser == 'android-chrome-shell':
+          return command_to_run.replace(cmd_browser,
+                                        'android-chromium-testshell')
+        elif (svn_revision >= 276628 and
+              cmd_browser == 'android-chromium-testshell'):
+          return command_to_run.replace(cmd_browser,
+                                        'android-chrome-shell')
+    return command_to_run
+
   def RunPerformanceTestAndParseResults(
       self, command_to_run, metric, reset_on_first_run=False,
       upload_on_last_run=False, results_label=None):
@@ -2548,6 +2638,8 @@ class BisectPerformanceMetrics(object):
         start_build_time = time.time()
         if self.BuildCurrentRevision(depot, revision):
           after_build_time = time.time()
+          # Hack to support things that got changed.
+          command_to_run = self.GetCompatibleCommand(command_to_run, revision)
           results = self.RunPerformanceTestAndParseResults(command_to_run,
                                                            metric)
           # Restore build output directory once the tests are done, to avoid
@@ -3205,19 +3297,45 @@ class BisectPerformanceMetrics(object):
     # dashboard as well.
     print 'Confidence in Bisection Results: %d%%' % results_dict['confidence']
 
-  def _PrintBanner(self, results_dict):
-    print
-    print " __o_\___          Aw Snap! We hit a speed bump!"
-    print "=-O----O-'__.~.___________________________________"
-    print
-    if self._IsBisectModeReturnCode():
-      print ('Bisect reproduced a change in return codes while running the '
-          'performance test.')
+  def _ConfidenceLevelStatus(self, results_dict):
+    if not results_dict['confidence']:
+      return None
+    confidence_status = 'Successful with %(level)s confidence%(warning)s.'
+    if results_dict['confidence'] >= 95:
+      level = 'high'
     else:
-      print ('Bisect reproduced a %.02f%% (+-%.02f%%) change in the '
-          '%s metric.' % (results_dict['regression_size'],
-          results_dict['regression_std_err'], '/'.join(self.opts.metric)))
-    self._PrintConfidence(results_dict)
+      level = 'low'
+    warning = ' and warnings'
+    if not self.warnings:
+      warning = ''
+    return confidence_status % {'level': level, 'warning': warning}
+
+  def _PrintThankYou(self):
+    print RESULTS_THANKYOU
+
+  def _PrintBanner(self, results_dict):
+    if self._IsBisectModeReturnCode():
+      metrics = 'N/A'
+      change = 'Yes'
+    else:
+      metrics = '/'.join(self.opts.metric)
+      change = '%.02f%% (+/-%.02f%%)' % (
+          results_dict['regression_size'], results_dict['regression_std_err'])
+
+    if results_dict['culprit_revisions'] and results_dict['confidence']:
+      status = self._ConfidenceLevelStatus(results_dict)
+    else:
+      status = 'Failure, could not reproduce.'
+      change = 'Bisect could not reproduce a change.'
+
+    print RESULTS_BANNER % {
+        'status': status,
+        'command': self.opts.command,
+        'metrics': metrics,
+        'change': change,
+        'confidence': results_dict['confidence'],
+        }
+
 
   def _PrintFailedBanner(self, results_dict):
     print
@@ -3243,25 +3361,23 @@ class BisectPerformanceMetrics(object):
     return ''
 
   def _PrintRevisionInfo(self, cl, info, depot=None):
-    # The perf dashboard specifically looks for the string
-    # "Author  : " to parse out who to cc on a bug. If you change the
-    # formatting here, please update the perf dashboard as well.
-    print
-    print 'Subject : %s' % info['subject']
-    print 'Author  : %s' % info['author']
+    email_info = ''
     if not info['email'].startswith(info['author']):
-      print 'Email   : %s' % info['email']
+      email_info = '\nEmail   : %s' % info['email']
     commit_link = self._GetViewVCLinkFromDepotAndHash(cl, depot)
     if commit_link:
-      print 'Link    : %s' % commit_link
+      commit_info = '\nLink    : %s' % commit_link
     else:
-      print
-      print 'Failed to parse svn revision from body:'
-      print
-      print info['body']
-      print
-    print 'Commit  : %s' % cl
-    print 'Date    : %s' % info['date']
+      commit_info = ('\nFailed to parse svn revision from body:\n%s' %
+                     info['body'])
+    print RESULTS_REVISION_INFO % {
+        'subject': info['subject'],
+        'author': info['author'],
+        'email_info': email_info,
+        'commit_info': commit_info,
+        'cl': cl,
+        'cl_date': info['date']
+        }
 
   def _PrintTableRow(self, column_widths, row_data):
     assert len(column_widths) == len(row_data)
@@ -3315,9 +3431,9 @@ class BisectPerformanceMetrics(object):
       final_step=True):
     print
     if final_step:
-      print 'Tested commits:'
+      print '===== TESTED COMMITS ====='
     else:
-      print 'Partial results:'
+      print '===== PARTIAL RESULTS ====='
     self._PrintTestedCommitsHeader()
     state = 0
     for current_id, current_data in revision_data_sorted:
@@ -3351,12 +3467,12 @@ class BisectPerformanceMetrics(object):
         self._PrintTestedCommitsEntry(current_data, cl_link, state_str)
 
   def _PrintReproSteps(self):
-    print
-    print 'To reproduce locally:'
-    print '$ ' + self.opts.command
+    command = '$ ' + self.opts.command
     if bisect_utils.IsTelemetryCommand(self.opts.command):
-      print
-      print 'Also consider passing --profiler=list to see available profilers.'
+      command += ('\nAlso consider passing --profiler=list to see available '
+                  'profilers.')
+    print REPRO_STEPS_LOCAL % {'command': command}
+    print REPRO_STEPS_TRYJOB % {'command': command}
 
   def _PrintOtherRegressions(self, other_regressions, revision_data):
     print
@@ -3410,7 +3526,7 @@ class BisectPerformanceMetrics(object):
     print
     print 'WARNINGS:'
     for w in set(self.warnings):
-      print '  !!! %s' % w
+      print '  ! %s' % w
 
   def _FindOtherRegressions(self, revision_data_sorted, bad_greater_than_good):
     other_regressions = []
@@ -3611,26 +3727,23 @@ class BisectPerformanceMetrics(object):
       # bugs. If you change this, please update the perf dashboard as well.
       bisect_utils.OutputAnnotationStepStart('Results')
 
+    self._PrintBanner(results_dict)
+    self._PrintWarnings()
+
     if results_dict['culprit_revisions'] and results_dict['confidence']:
-      self._PrintBanner(results_dict)
       for culprit in results_dict['culprit_revisions']:
         cl, info, depot = culprit
         self._PrintRevisionInfo(cl, info, depot)
-      self._PrintReproSteps()
       if results_dict['other_regressions']:
         self._PrintOtherRegressions(results_dict['other_regressions'],
                                     revision_data)
-    else:
-      self._PrintFailedBanner(results_dict)
-      self._PrintReproSteps()
-
     self._PrintTestedCommitsTable(revision_data_sorted,
                                   results_dict['first_working_revision'],
                                   results_dict['last_broken_revision'],
                                   results_dict['confidence'])
     self._PrintStepTime(revision_data_sorted)
-    self._PrintWarnings()
-
+    self._PrintReproSteps()
+    self._PrintThankYou()
     if self.opts.output_buildbot_annotations:
       bisect_utils.OutputAnnotationStepClosed()
 
@@ -3708,6 +3821,7 @@ class BisectOptions(object):
     self.good_revision = None
     self.bad_revision = None
     self.use_goma = None
+    self.goma_dir = None
     self.cros_board = None
     self.cros_remote_ip = None
     self.repeat_test_count = 20
@@ -3833,6 +3947,9 @@ class BisectOptions(object):
                      action="store_true",
                      help='Add a bunch of extra threads for goma, and enable '
                      'goma')
+    group.add_option('--goma_dir',
+                     help='Path to goma tools (or system default if not '
+                     'specified).')
     group.add_option('--output_buildbot_annotations',
                      action="store_true",
                      help='Add extra annotation output for buildbot.')

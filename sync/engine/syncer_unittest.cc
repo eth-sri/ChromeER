@@ -47,6 +47,7 @@
 #include "sync/syncable/syncable_write_transaction.h"
 #include "sync/test/engine/fake_model_worker.h"
 #include "sync/test/engine/mock_connection_manager.h"
+#include "sync/test/engine/mock_nudge_handler.h"
 #include "sync/test/engine/test_directory_setter_upper.h"
 #include "sync/test/engine/test_id_factory.h"
 #include "sync/test/engine/test_syncable_utils.h"
@@ -294,7 +295,8 @@ class SyncerTest : public testing::Test,
     ModelSafeRoutingInfo routing_info;
     GetModelSafeRoutingInfo(&routing_info);
 
-    model_type_registry_.reset(new ModelTypeRegistry(workers_, directory()));
+    model_type_registry_.reset(
+        new ModelTypeRegistry(workers_, directory(), &mock_nudge_handler_));
     model_type_registry_->RegisterDirectoryTypeDebugInfoObserver(
         &debug_info_cache_);
 
@@ -584,6 +586,7 @@ class SyncerTest : public testing::Test,
 
   scoped_ptr<SyncSession> session_;
   TypeDebugInfoCache debug_info_cache_;
+  MockNudgeHandler mock_nudge_handler_;
   scoped_ptr<ModelTypeRegistry> model_type_registry_;
   scoped_ptr<SyncSessionContext> context_;
   bool saw_syncer_event_;
@@ -1034,6 +1037,10 @@ TEST_F(SyncerTest, TestPurgeWhileUnsynced) {
   // Similar to above, but throw a purge operation into the mix. Bug 49278.
   syncable::Id pref_node_id = TestIdFactory::MakeServer("Tim");
   {
+    directory()->SetDownloadProgress(BOOKMARKS,
+                                     syncable::BuildProgress(BOOKMARKS));
+    directory()->SetDownloadProgress(PREFERENCES,
+                                     syncable::BuildProgress(PREFERENCES));
     WriteTransaction wtrans(FROM_HERE, UNITTEST, directory());
     MutableEntry parent(&wtrans, CREATE, BOOKMARKS, wtrans.root_id(), "Pete");
     ASSERT_TRUE(parent.good());
@@ -1083,6 +1090,8 @@ TEST_F(SyncerTest, TestPurgeWhileUnsynced) {
 TEST_F(SyncerTest, TestPurgeWhileUnapplied) {
   // Similar to above, but for unapplied items. Bug 49278.
   {
+    directory()->SetDownloadProgress(BOOKMARKS,
+                                     syncable::BuildProgress(BOOKMARKS));
     WriteTransaction wtrans(FROM_HERE, UNITTEST, directory());
     MutableEntry parent(&wtrans, CREATE, BOOKMARKS, wtrans.root_id(), "Pete");
     ASSERT_TRUE(parent.good());
@@ -1108,6 +1117,8 @@ TEST_F(SyncerTest, TestPurgeWhileUnapplied) {
 
 TEST_F(SyncerTest, TestPurgeWithJournal) {
   {
+    directory()->SetDownloadProgress(BOOKMARKS,
+                                     syncable::BuildProgress(BOOKMARKS));
     WriteTransaction wtrans(FROM_HERE, UNITTEST, directory());
     MutableEntry parent(&wtrans, syncable::CREATE, BOOKMARKS, wtrans.root_id(),
                         "Pete");

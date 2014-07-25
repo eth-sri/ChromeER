@@ -476,7 +476,7 @@ class TileManagerTileIteratorTest : public testing::Test {
   }
 
   void ActivateTree() {
-    host_impl_.ActivatePendingTree();
+    host_impl_.ActivateSyncTree();
     CHECK(!host_impl_.pending_tree());
     pending_layer_ = NULL;
     active_layer_ = static_cast<FakePictureLayerImpl*>(
@@ -539,7 +539,7 @@ class TileManagerTileIteratorTest : public testing::Test {
 
 TEST_F(TileManagerTileIteratorTest, PairedPictureLayers) {
   host_impl_.CreatePendingTree();
-  host_impl_.ActivatePendingTree();
+  host_impl_.ActivateSyncTree();
   host_impl_.CreatePendingTree();
 
   LayerTreeImpl* active_tree = host_impl_.active_tree();
@@ -629,8 +629,10 @@ TEST_F(TileManagerTileIteratorTest, RasterTileIterator) {
 
   // Invalidate the pending tree.
   pending_layer_->set_invalidation(invalidation);
-  pending_layer_->HighResTiling()->Invalidate(invalidation);
-  pending_layer_->LowResTiling()->Invalidate(invalidation);
+  pending_layer_->HighResTiling()->UpdateTilesToCurrentPile(
+      invalidation, gfx::Size(1000, 1000));
+  pending_layer_->LowResTiling()->UpdateTilesToCurrentPile(
+      invalidation, gfx::Size(1000, 1000));
 
   active_layer_->ResetAllTilesPriorities();
   pending_layer_->ResetAllTilesPriorities();
@@ -830,8 +832,10 @@ TEST_F(TileManagerTileIteratorTest, EvictionTileIterator) {
 
   // Invalidate the pending tree.
   pending_layer_->set_invalidation(invalidation);
-  pending_layer_->HighResTiling()->Invalidate(invalidation);
-  pending_layer_->LowResTiling()->Invalidate(invalidation);
+  pending_layer_->HighResTiling()->UpdateTilesToCurrentPile(
+      invalidation, gfx::Size(1000, 1000));
+  pending_layer_->LowResTiling()->UpdateTilesToCurrentPile(
+      invalidation, gfx::Size(1000, 1000));
 
   active_layer_->ResetAllTilesPriorities();
   pending_layer_->ResetAllTilesPriorities();
@@ -954,6 +958,158 @@ TEST_F(TileManagerTileIteratorTest, EvictionTileIterator) {
 
   EXPECT_EQ(tile_count, new_content_tiles.size());
   EXPECT_EQ(all_tiles, new_content_tiles);
+}
+
+#if defined(OS_WIN)
+#define MAYBE_EvictionTileIteratorWithOcclusion \
+  DISABLED_EvictionTileIteratorWithOcclusion
+#else
+#define MAYBE_EvictionTileIteratorWithOcclusion \
+  EvictionTileIteratorWithOcclusion
+#endif
+TEST_F(TileManagerTileIteratorTest, MAYBE_EvictionTileIteratorWithOcclusion) {
+  gfx::Size tile_size(102, 102);
+  gfx::Size layer_bounds(1000, 1000);
+
+  scoped_refptr<FakePicturePileImpl> pending_pile =
+      FakePicturePileImpl::CreateFilledPile(tile_size, layer_bounds);
+  SetupPendingTree(pending_pile);
+  pending_layer_->CreateDefaultTilingsAndTiles();
+
+  scoped_ptr<FakePictureLayerImpl> pending_child =
+      FakePictureLayerImpl::CreateWithPile(
+          host_impl_.pending_tree(), 2, pending_pile);
+  pending_layer_->AddChild(pending_child.PassAs<LayerImpl>());
+
+  FakePictureLayerImpl* pending_child_layer =
+      static_cast<FakePictureLayerImpl*>(pending_layer_->children()[0]);
+  pending_child_layer->SetDrawsContent(true);
+  pending_child_layer->DoPostCommitInitializationIfNeeded();
+  pending_child_layer->CreateDefaultTilingsAndTiles();
+
+  TileManager* tile_manager = TileManagerTileIteratorTest::tile_manager();
+  EXPECT_TRUE(tile_manager);
+
+  std::vector<TileManager::PairedPictureLayer> paired_layers;
+  tile_manager->GetPairedPictureLayers(&paired_layers);
+  EXPECT_EQ(2u, paired_layers.size());
+
+  std::set<Tile*> all_tiles;
+  size_t tile_count = 0;
+  for (TileManager::RasterTileIterator raster_it(tile_manager,
+                                                 NEW_CONTENT_TAKES_PRIORITY);
+       raster_it;
+       ++raster_it) {
+    ++tile_count;
+    EXPECT_TRUE(*raster_it);
+    all_tiles.insert(*raster_it);
+  }
+  EXPECT_EQ(tile_count, all_tiles.size());
+  EXPECT_EQ(34u, tile_count);
+
+  pending_layer_->ResetAllTilesPriorities();
+
+  // Renew all of the tile priorities.
+  gfx::Rect viewport(layer_bounds);
+  pending_layer_->HighResTiling()->UpdateTilePriorities(
+      PENDING_TREE,
+      viewport,
+      1.0f,
+      1.0,
+      NULL,
+      pending_layer_->render_target(),
+      pending_layer_->draw_transform());
+  pending_layer_->LowResTiling()->UpdateTilePriorities(
+      PENDING_TREE,
+      viewport,
+      1.0f,
+      1.0,
+      NULL,
+      pending_layer_->render_target(),
+      pending_layer_->draw_transform());
+  pending_child_layer->HighResTiling()->UpdateTilePriorities(
+      PENDING_TREE,
+      viewport,
+      1.0f,
+      1.0,
+      NULL,
+      pending_child_layer->render_target(),
+      pending_child_layer->draw_transform());
+  pending_child_layer->LowResTiling()->UpdateTilePriorities(
+      PENDING_TREE,
+      viewport,
+      1.0f,
+      1.0,
+      NULL,
+      pending_child_layer->render_target(),
+      pending_child_layer->draw_transform());
+
+  // Populate all tiles directly from the tilings.
+  all_tiles.clear();
+  std::vector<Tile*> pending_high_res_tiles =
+      pending_layer_->HighResTiling()->AllTilesForTesting();
+  for (size_t i = 0; i < pending_high_res_tiles.size(); ++i)
+    all_tiles.insert(pending_high_res_tiles[i]);
+
+  std::vector<Tile*> pending_low_res_tiles =
+      pending_layer_->LowResTiling()->AllTilesForTesting();
+  for (size_t i = 0; i < pending_low_res_tiles.size(); ++i)
+    all_tiles.insert(pending_low_res_tiles[i]);
+
+  // Set all tiles on the pending_child_layer as occluded on the pending tree.
+  std::vector<Tile*> pending_child_high_res_tiles =
+      pending_child_layer->HighResTiling()->AllTilesForTesting();
+  for (size_t i = 0; i < pending_child_high_res_tiles.size(); ++i) {
+    pending_child_high_res_tiles[i]->set_is_occluded(PENDING_TREE, true);
+    all_tiles.insert(pending_child_high_res_tiles[i]);
+  }
+
+  std::vector<Tile*> pending_child_low_res_tiles =
+      pending_child_layer->LowResTiling()->AllTilesForTesting();
+  for (size_t i = 0; i < pending_child_low_res_tiles.size(); ++i) {
+    pending_child_low_res_tiles[i]->set_is_occluded(PENDING_TREE, true);
+    all_tiles.insert(pending_child_low_res_tiles[i]);
+  }
+
+  tile_manager->InitializeTilesWithResourcesForTesting(
+      std::vector<Tile*>(all_tiles.begin(), all_tiles.end()));
+
+  // Verify occlusion is considered by EvictionTileIterator.
+  TreePriority tree_priority = NEW_CONTENT_TAKES_PRIORITY;
+  size_t occluded_count = 0u;
+  Tile* last_tile = NULL;
+  for (TileManager::EvictionTileIterator it(tile_manager, tree_priority); it;
+       ++it) {
+    Tile* tile = *it;
+    if (!last_tile)
+      last_tile = tile;
+
+    bool tile_is_occluded = tile->is_occluded_for_tree_priority(tree_priority);
+
+    // The only way we will encounter an occluded tile after an unoccluded
+    // tile is if the priorty bin decreased, the tile is required for
+    // activation, or the scale changed.
+    if (tile_is_occluded) {
+      occluded_count++;
+
+      bool last_tile_is_occluded =
+          last_tile->is_occluded_for_tree_priority(tree_priority);
+      if (!last_tile_is_occluded) {
+        TilePriority::PriorityBin tile_priority_bin =
+            tile->priority_for_tree_priority(tree_priority).priority_bin;
+        TilePriority::PriorityBin last_tile_priority_bin =
+            last_tile->priority_for_tree_priority(tree_priority).priority_bin;
+
+        EXPECT_TRUE((tile_priority_bin < last_tile_priority_bin) ||
+                    tile->required_for_activation() ||
+                    (tile->contents_scale() != last_tile->contents_scale()));
+      }
+    }
+    last_tile = tile;
+  }
+  size_t expected_occluded_count =
+      pending_child_high_res_tiles.size() + pending_child_low_res_tiles.size();
+  EXPECT_EQ(expected_occluded_count, occluded_count);
 }
 }  // namespace
 }  // namespace cc

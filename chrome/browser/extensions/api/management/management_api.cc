@@ -44,6 +44,7 @@
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/management_policy.h"
+#include "extensions/browser/uninstall_reason.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/error_utils.h"
 #include "extensions/common/extension.h"
@@ -53,7 +54,6 @@
 #include "extensions/common/permissions/permission_set.h"
 #include "extensions/common/permissions/permissions_data.h"
 #include "extensions/common/url_pattern.h"
-#include "ui/gfx/favicon_size.h"
 
 using base::IntToString;
 using content::BrowserThread;
@@ -647,10 +647,8 @@ void ManagementUninstallFunctionBase::Finish(bool should_uninstall) {
                                               extension_id_);
       SendResponse(false);
     } else {
-      bool success =
-          service()->UninstallExtension(extension_id_,
-                                        false, /* external uninstall */
-                                        NULL);
+      bool success = service()->UninstallExtension(
+          extension_id_, extensions::UNINSTALL_REASON_MANAGEMENT_API, NULL);
 
       // TODO set error_ if !success
       SendResponse(success);
@@ -915,8 +913,7 @@ bool ManagementGenerateAppForLinkFunction::RunAsync() {
   launch_url_ = launch_url;
 
   favicon_service->GetFaviconImageForPageURL(
-      FaviconService::FaviconForPageURLParams(
-          launch_url, favicon_base::FAVICON, gfx::kFaviconSize),
+      launch_url,
       base::Bind(&ManagementGenerateAppForLinkFunction::OnFaviconForApp, this),
       &cancelable_task_tracker_);
 
@@ -949,13 +946,15 @@ void ManagementEventRouter::OnExtensionUnloaded(
 
 void ManagementEventRouter::OnExtensionInstalled(
     content::BrowserContext* browser_context,
-    const Extension* extension) {
+    const Extension* extension,
+    bool is_update) {
   BroadcastEvent(extension, management::OnInstalled::kEventName);
 }
 
 void ManagementEventRouter::OnExtensionUninstalled(
     content::BrowserContext* browser_context,
-    const Extension* extension) {
+    const Extension* extension,
+    extensions::UninstallReason reason) {
   BroadcastEvent(extension, management::OnUninstalled::kEventName);
 }
 

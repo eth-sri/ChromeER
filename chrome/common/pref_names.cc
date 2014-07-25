@@ -325,10 +325,10 @@ const char kIncognitoModeAvailability[] = "incognito.mode_availability";
 const char kSearchSuggestEnabled[] = "search.suggest_enabled";
 
 #if defined(OS_ANDROID)
-// Integer indicating the Contextual Search enabled state.
-// -1 - opt-out (disabled)
-//  0 - undecided
-//  1 - opt-in (enabled)
+// String indicating the Contextual Search enabled state.
+// "false" - opt-out (disabled)
+// "" (empty string) - undecided
+// "true" - opt-in (enabled)
 const char kContextualSearchEnabled[] = "search.contextual_search_enabled";
 #endif
 
@@ -1101,9 +1101,6 @@ const char kImportSavedPasswords[] = "import_saved_passwords";
 const char kProfileAvatarIndex[] = "profile.avatar_index";
 const char kProfileName[] = "profile.name";
 
-// Whether the profile is supervised. Deprecated, use kSupervisedUserId below.
-const char kProfileIsSupervised[] = "profile.is_managed";
-
 // The supervised user ID.
 const char kSupervisedUserId[] = "profile.managed_user_id";
 
@@ -1372,9 +1369,7 @@ const char kStabilityPluginLoadingErrors[] = "loading_errors";
 
 // The keys below are strictly increasing counters over the lifetime of
 // a chrome installation. They are (optionally) sent up to the uninstall
-// survey in the event of uninstallation. The installation date is used by some
-// opt-in services such as Wallet and UMA.
-const char kInstallDate[] = "uninstall_metrics.installation_date2";
+// survey in the event of uninstallation.
 const char kUninstallMetricsPageLoadCount[] =
     "uninstall_metrics.page_load_count";
 const char kUninstallLastLaunchTimeSec[] =
@@ -1416,6 +1411,12 @@ const char kDownloadDefaultDirectory[] = "download.default_directory";
 // Boolean that records if the download directory was changed by an
 // upgrade a unsafe location to a safe location.
 const char kDownloadDirUpgraded[] = "download.directory_upgrade";
+
+#if defined(OS_WIN)
+// Whether downloaded PDFs should be opened in Adobe Acrobat Reader.
+const char kOpenPdfDownloadInAdobeReader[] =
+    "download.open_pdf_in_adobe_reader";
+#endif
 
 // String which specifies where to save html files to by default.
 const char kSaveFileDefaultDirectory[] = "savefile.default_directory";
@@ -1520,6 +1521,9 @@ const char kDisablePluginFinder[] = "plugins.disable_plugin_finder";
 
 // Customized app page names that appear on the New Tab Page.
 const char kNtpAppPageNames[] = "ntp.app_page_names";
+
+// Keeps track of currently open tabs collapsed state in the Other Devices menu.
+const char kNtpCollapsedCurrentlyOpenTabs[] = "ntp.collapsed_open_tabs";
 
 // Keeps track of which sessions are collapsed in the Other Devices menu.
 const char kNtpCollapsedForeignSessions[] = "ntp.collapsed_foreign_sessions";
@@ -1870,6 +1874,10 @@ const char kOobeScreenPending[] = "OobeScreenPending";
 // A boolean pref of the device registered flag (second part after first login).
 const char kDeviceRegistered[] = "DeviceRegistered";
 
+// Boolean pref to signal corrupted enrollment to force the device through
+// enrollment recovery flow upon next boot.
+const char kEnrollmentRecoveryRequired[] = "EnrollmentRecoveryRequired";
+
 // List of usernames that used certificates pushed by policy before.
 // This is used to prevent these users from joining multiprofile sessions.
 const char kUsedPolicyCertificates[] = "policy.used_policy_certificates";
@@ -2087,27 +2095,12 @@ const char kCustomHandlersEnabled[] = "custom_handlers.enabled";
 // by the cloud policy subsystem.
 const char kDevicePolicyRefreshRate[] = "policy.device_refresh_rate";
 
-// String that represents the recovery component last downloaded version. This
-// takes the usual 'a.b.c.d' notation.
-const char kRecoveryComponentVersion[] = "recovery_component.version";
-
-// String that stores the component updater last known state. This is used for
-// troubleshooting.
-const char kComponentUpdaterState[] = "component_updater.state";
-
 // A boolean where true means that the browser has previously attempted to
 // enable autoupdate and failed, so the next out-of-date browser start should
 // not prompt the user to enable autoupdate, it should offer to reinstall Chrome
 // instead.
 const char kAttemptedToEnableAutoupdate[] =
     "browser.attempted_to_enable_autoupdate";
-
-#if defined(OS_WIN)
-// The number of attempts left to execute the SwReporter. This starts at the max
-// number of retries allowed, and goes down as attempts are made and is cleared
-// back to 0 when it successfully completes.
-const char kSwReporterExecuteTryCount[] = "software_reporter.execute_try_count";
-#endif
 
 // The next media gallery ID to assign.
 const char kMediaGalleriesUniqueId[] = "media_galleries.gallery_id";

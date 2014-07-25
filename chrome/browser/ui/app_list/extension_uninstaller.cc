@@ -8,6 +8,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/app_list/app_list_controller_delegate.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/browser/uninstall_reason.h"
 #include "extensions/common/extension.h"
 
 ExtensionUninstaller::ExtensionUninstaller(
@@ -42,9 +43,8 @@ void ExtensionUninstaller::ExtensionUninstallAccepted() {
   const extensions::Extension* extension =
       service->GetInstalledExtension(app_id_);
   if (extension) {
-    service->UninstallExtension(app_id_,
-                                false, /* external_uninstall*/
-                                NULL);
+    service->UninstallExtension(
+        app_id_, extensions::UNINSTALL_REASON_USER_INITIATED, NULL);
   }
   controller_->OnCloseChildDialog();
   CleanUp();

@@ -27,6 +27,8 @@ class NativeDisplayDelegateDri
                            DeviceManager* device_manager);
   virtual ~NativeDisplayDelegateDri();
 
+  DisplaySnapshot* FindDisplaySnapshot(int64_t id);
+
   // NativeDisplayDelegate overrides:
   virtual void Initialize() OVERRIDE;
   virtual void GrabServer() OVERRIDE;

@@ -34,6 +34,7 @@
 #include "content/public/common/renderer_preferences.h"
 #include "content/public/common/stop_find_action.h"
 #include "content/public/common/top_controls_state.h"
+#include "content/public/common/web_preferences.h"
 #include "content/public/renderer/render_view.h"
 #include "content/renderer/mouse_lock_dispatcher.h"
 #include "content/renderer/render_frame_impl.h"
@@ -56,7 +57,6 @@
 #include "third_party/WebKit/public/web/WebViewClient.h"
 #include "ui/base/window_open_disposition.h"
 #include "ui/surface/transport_dib.h"
-#include "webkit/common/webpreferences.h"
 
 #if defined(OS_ANDROID)
 #include "content/renderer/android/content_detector.h"
@@ -120,10 +120,6 @@ namespace ui {
 struct SelectedFileInfo;
 }
 
-namespace webkit_glue {
-class WebURLResponseExtraDataImpl;
-}
-
 namespace content {
 class BrowserPluginManager;
 class DevToolsAgent;
@@ -133,11 +129,10 @@ class FaviconHelper;
 class HistoryController;
 class HistoryEntry;
 class ImageResourceFetcher;
-class MediaStreamDispatcher;
 class MouseLockDispatcher;
 class NavigationState;
 class PepperPluginInstanceImpl;
-class PushMessagingDispatcher;
+class RenderViewImplTest;
 class RenderViewObserver;
 class RenderViewTest;
 class RendererAccessibility;
@@ -220,11 +215,6 @@ class CONTENT_EXPORT RenderViewImpl
   }
 
   RenderFrameImpl* main_render_frame() { return main_render_frame_.get(); }
-
-  // TODO(jam): move to RenderFrameImpl
-  MediaStreamDispatcher* media_stream_dispatcher() {
-    return media_stream_dispatcher_;
-  }
 
   AccessibilityMode accessibility_mode() {
     return accessibility_mode_;
@@ -451,6 +441,9 @@ class CONTENT_EXPORT RenderViewImpl
                                        const blink::WebURL& base_url,
                                        const blink::WebURL& url,
                                        const blink::WebString& title);
+  virtual void unregisterProtocolHandler(const blink::WebString& scheme,
+                                         const blink::WebURL& base_url,
+                                         const blink::WebURL& url);
   virtual blink::WebPageVisibilityState visibilityState() const;
   virtual blink::WebPushClient* webPushClient();
   virtual void draggableRegionsChanged();
@@ -480,7 +473,6 @@ class CONTENT_EXPORT RenderViewImpl
   virtual bool Send(IPC::Message* message) OVERRIDE;
   virtual RenderFrame* GetMainRenderFrame() OVERRIDE;
   virtual int GetRoutingID() const OVERRIDE;
-  virtual int GetPageId() const OVERRIDE;
   virtual gfx::Size GetSize() const OVERRIDE;
   virtual WebPreferences& GetWebkitPreferences() OVERRIDE;
   virtual void SetWebkitPreferences(const WebPreferences& preferences) OVERRIDE;
@@ -578,6 +570,7 @@ class CONTENT_EXPORT RenderViewImpl
   friend class ExternalPopupMenuTest;
   friend class PepperDeviceTest;
   friend class RendererAccessibilityTest;
+  friend class RenderViewImplTest;
   friend class RenderViewTest;
 
   // TODO(nasko): Temporarily friend RenderFrameImpl, so we don't duplicate
@@ -1039,15 +1032,9 @@ class CONTENT_EXPORT RenderViewImpl
   // along with the RenderView automatically.  This is why we just store
   // weak references.
 
-  // The push messaging dispatcher attached to this view, lazily initialized.
-  PushMessagingDispatcher* push_messaging_dispatcher_;
-
   // The speech recognition dispatcher attached to this view, lazily
   // initialized.
   SpeechRecognitionDispatcher* speech_recognition_dispatcher_;
-
-  // MediaStream dispatcher attached to this view; lazily initialized.
-  MediaStreamDispatcher* media_stream_dispatcher_;
 
   // BrowserPluginManager attached to this view; lazily initialized.
   scoped_refptr<BrowserPluginManager> browser_plugin_manager_;

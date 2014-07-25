@@ -13,6 +13,7 @@
     'internal_ozone_platforms': [
       'dri',
     ],
+    'use_drm_atomic_flip%': 0,
   },
   'targets': [
     {
@@ -54,6 +55,8 @@
         'dri_util.h',
         'dri_vsync_provider.cc',
         'dri_vsync_provider.h',
+        'dri_window.cc',
+        'dri_window.h',
         'dri_wrapper.cc',
         'dri_wrapper.h',
         'hardware_display_controller.cc',
@@ -64,10 +67,18 @@
         'scoped_drm_types.h',
         'screen_manager.cc',
         'screen_manager.h',
-        'scanout_surface.h',
+        'scanout_buffer.h',
         'virtual_terminal_manager.cc',
         'virtual_terminal_manager.h',
       ],
+      'conditions': [
+        ['use_drm_atomic_flip==1', {
+          'sources': [
+            'hardware_display_plane.cc',
+            'hardware_display_plane.h',
+          ],
+        }],
+      ],      
     },
     {
       'target_name': 'ozone_platform_dri_unittests',
@@ -89,12 +100,8 @@
           'dri_surface_unittest.cc',
           'hardware_display_controller_unittest.cc',
           'screen_manager_unittest.cc',
-          'test/mock_dri_surface.cc',
-          'test/mock_dri_surface.h',
           'test/mock_dri_wrapper.cc',
           'test/mock_dri_wrapper.h',
-          'test/mock_surface_generator.cc',
-          'test/mock_surface_generator.h',
         ],
       },
     },

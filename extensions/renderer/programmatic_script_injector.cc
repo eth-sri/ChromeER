@@ -18,7 +18,6 @@
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebScriptSource.h"
-#include "url/gurl.h"
 
 namespace extensions {
 
@@ -26,12 +25,18 @@ ProgrammaticScriptInjector::ProgrammaticScriptInjector(
     const ExtensionMsg_ExecuteCode_Params& params,
     blink::WebFrame* web_frame)
     : params_(new ExtensionMsg_ExecuteCode_Params(params)),
-      web_frame_(web_frame),
+      url_(ScriptContext::GetDataSourceURLForFrame(web_frame)),
+      render_view_(content::RenderView::FromWebView(web_frame->view())),
       results_(new base::ListValue()),
       finished_(false) {
 }
 
 ProgrammaticScriptInjector::~ProgrammaticScriptInjector() {
+}
+
+UserScript::InjectionType ProgrammaticScriptInjector::script_type()
+    const {
+  return UserScript::PROGRAMMATIC_SCRIPT;
 }
 
 bool ProgrammaticScriptInjector::ShouldExecuteInChildFrames() const {
@@ -60,7 +65,7 @@ bool ProgrammaticScriptInjector::ShouldInjectCss(
   return GetRunLocation() == run_location && !params_->is_javascript;
 }
 
-ScriptInjector::AccessType ProgrammaticScriptInjector::CanExecuteOnFrame(
+PermissionsData::AccessType ProgrammaticScriptInjector::CanExecuteOnFrame(
     const Extension* extension,
     blink::WebFrame* frame,
     int tab_id,
@@ -68,23 +73,17 @@ ScriptInjector::AccessType ProgrammaticScriptInjector::CanExecuteOnFrame(
   GURL effective_document_url = ScriptContext::GetEffectiveDocumentURL(
       frame, frame->document().url(), params_->match_about_blank);
   if (params_->is_web_view) {
-    return effective_document_url == params_->webview_src ? ALLOW_ACCESS
-                                                          : DENY_ACCESS;
+    return effective_document_url == params_->webview_src
+               ? PermissionsData::ACCESS_ALLOWED
+               : PermissionsData::ACCESS_DENIED;
   }
 
-  if (!extension->permissions_data()->CanAccessPage(extension,
-                                                    effective_document_url,
-                                                    top_url,
-                                                    tab_id,
-                                                    -1,  // no process ID.
-                                                    NULL /* ignore error */)) {
-    return DENY_ACCESS;
-  }
-
-  return extension->permissions_data()->RequiresActionForScriptExecution(
-             extension, tab_id, effective_document_url)
-             ? REQUEST_ACCESS
-             : ALLOW_ACCESS;
+  return extension->permissions_data()->GetPageAccess(extension,
+                                                      effective_document_url,
+                                                      top_url,
+                                                      tab_id,
+                                                      -1,  // no process ID.
+                                                      NULL /* ignore error */);
 }
 
 std::vector<blink::WebScriptSource> ProgrammaticScriptInjector::GetJsSources(
@@ -118,9 +117,8 @@ void ProgrammaticScriptInjector::OnWillNotInject(InjectFailureReason reason) {
   std::string error;
   switch (reason) {
     case NOT_ALLOWED:
-      error = ErrorUtils::FormatErrorMessage(
-          manifest_errors::kCannotAccessPage,
-          GURL(web_frame_->document().url()).spec());
+      error = ErrorUtils::FormatErrorMessage(manifest_errors::kCannotAccessPage,
+                                             url_.spec());
       break;
     case EXTENSION_REMOVED:  // no special error here.
     case WONT_INJECT:
@@ -137,14 +135,11 @@ void ProgrammaticScriptInjector::Finish(const std::string& error) {
   DCHECK(!finished_);
   finished_ = true;
 
-  content::RenderView* render_view =
-      content::RenderView::FromWebView(web_frame_->view());
-  render_view->Send(new ExtensionHostMsg_ExecuteCodeFinished(
-      render_view->GetRoutingID(),
+  render_view_->Send(new ExtensionHostMsg_ExecuteCodeFinished(
+      render_view_->GetRoutingID(),
       params_->request_id,
       error,
-      render_view->GetPageId(),
-      ScriptContext::GetDataSourceURLForFrame(web_frame_),
+      url_,
       *results_));
 }
 

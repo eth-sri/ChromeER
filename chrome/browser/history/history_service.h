@@ -42,11 +42,9 @@ class AndroidHistoryProviderService;
 #endif
 
 class GURL;
-class HistoryURLProvider;
 class PageUsageData;
 class PageUsageRequest;
 class Profile;
-struct HistoryURLProviderParams;
 struct ImportedFaviconUsage;
 
 namespace base {
@@ -290,21 +288,20 @@ class HistoryService : public CancelableRequestProvider,
       const QueryRedirectsCallback& callback,
       base::CancelableTaskTracker* tracker);
 
-  typedef base::Callback<
-      void(Handle,
-           bool,        // Were we able to determine the # of visits?
-           int,         // Number of visits.
-           base::Time)> // Time of first visit. Only set if bool
-                        // is true and int is > 0.
-      GetVisibleVisitCountToHostCallback;
-
   // Requests the number of user-visible visits (i.e. no redirects or subframes)
   // to all urls on the same scheme/host/port as |url|.  This is only valid for
   // HTTP and HTTPS URLs.
-  Handle GetVisibleVisitCountToHost(
+  typedef base::Callback<
+      void(bool,         // Were we able to determine the # of visits?
+           int,          // Number of visits.
+           base::Time)>  // Time of first visit. Only set if bool
+                         // is true and int is > 0.
+      GetVisibleVisitCountToHostCallback;
+
+  base::CancelableTaskTracker::TaskId GetVisibleVisitCountToHost(
       const GURL& url,
-      CancelableRequestConsumerBase* consumer,
-      const GetVisibleVisitCountToHostCallback& callback);
+      const GetVisibleVisitCountToHostCallback& callback,
+      base::CancelableTaskTracker* tracker);
 
   // Request the |result_count| most visited URLs and the chain of
   // redirects leading to each of these URLs. |days_back| is the
@@ -324,15 +321,15 @@ class HistoryService : public CancelableRequestProvider,
   // more expensive as additional data points are added in future changes, and
   // not useful in most cases. Set |extended_info| to true only if you
   // explicitly require the additional data.
-  typedef base::Callback<void(Handle, const history::FilteredURLList&)>
+  typedef base::Callback<void(const history::FilteredURLList*)>
       QueryFilteredURLsCallback;
 
-  Handle QueryFilteredURLs(
+  base::CancelableTaskTracker::TaskId QueryFilteredURLs(
       int result_count,
       const history::VisitFilter& filter,
       bool extended_info,
-      CancelableRequestConsumerBase* consumer,
-      const QueryFilteredURLsCallback& callback);
+      const QueryFilteredURLsCallback& callback,
+      base::CancelableTaskTracker* tracker);
 
   // Database management operations --------------------------------------------
 
@@ -447,8 +444,8 @@ class HistoryService : public CancelableRequestProvider,
 
   // Schedules a HistoryDBTask for running on the history backend thread. See
   // HistoryDBTask for details on what this does.
-  virtual void ScheduleDBTask(history::HistoryDBTask* task,
-                              CancelableRequestConsumerBase* consumer);
+  virtual void ScheduleDBTask(scoped_refptr<history::HistoryDBTask> task,
+                              base::CancelableTaskTracker* tracker);
 
   // Adds or removes observers for the VisitDatabase.
   void AddVisitDatabaseObserver(history::VisitDatabaseObserver* observer);
@@ -562,8 +559,8 @@ class HistoryService : public CancelableRequestProvider,
   // Called by the HistoryURLProvider class to schedule an autocomplete, it
   // will be called back on the internal history thread with the history
   // database so it can query. See history_autocomplete.cc for a diagram.
-  void ScheduleAutocomplete(HistoryURLProvider* provider,
-                            HistoryURLProviderParams* params);
+  void ScheduleAutocomplete(const base::Callback<
+      void(history::HistoryBackend*, history::URLDatabase*)>& callback);
 
   // Broadcasts the given notification. This is called by the backend so that
   // the notification will be broadcast on the main thread.
@@ -628,7 +625,7 @@ class HistoryService : public CancelableRequestProvider,
   // |icon_types| will be searched and so on.
   // If no icon is larger than |minimum_size_in_pixel|, the largest one of all
   // icon types in |icon_types| is returned.
-  // This feature is especially useful when some types of icon is perfered as
+  // This feature is especially useful when some types of icon is preferred as
   // long as its size is larger than a specific value.
   base::CancelableTaskTracker::TaskId GetLargestFaviconForURL(
       const GURL& page_url,
