@@ -25,7 +25,7 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 
-const char kJsScreenPath[] = "login.LocallyManagedUserCreationScreen";
+const char kJsScreenPath[] = "login.SupervisedUserCreationScreen";
 
 namespace chromeos {
 
@@ -49,84 +49,84 @@ SupervisedUserCreationScreenHandler::~SupervisedUserCreationScreenHandler() {
 void SupervisedUserCreationScreenHandler::DeclareLocalizedValues(
     LocalizedValuesBuilder* builder) {
   builder->Add(
-      "managedUserCreationFlowRetryButtonTitle",
-      IDS_CREATE_LOCALLY_MANAGED_USER_CREATION_ERROR_RETRY_BUTTON_TITLE);
+      "supervisedUserCreationFlowRetryButtonTitle",
+      IDS_CREATE_SUPERVISED_USER_CREATION_ERROR_RETRY_BUTTON_TITLE);
   builder->Add(
-      "managedUserCreationFlowCancelButtonTitle",
-      IDS_CREATE_LOCALLY_MANAGED_USER_CREATION_ERROR_CANCEL_BUTTON_TITLE);
+      "supervisedUserCreationFlowCancelButtonTitle",
+      IDS_CREATE_SUPERVISED_USER_CREATION_ERROR_CANCEL_BUTTON_TITLE);
   builder->Add(
-      "managedUserCreationFlowGotitButtonTitle",
-       IDS_CREATE_LOCALLY_MANAGED_USER_CREATION_GOT_IT_BUTTON_TITLE);
+      "supervisedUserCreationFlowGotitButtonTitle",
+       IDS_CREATE_SUPERVISED_USER_CREATION_GOT_IT_BUTTON_TITLE);
 
-  builder->Add("createManagedUserIntroTextTitle",
-               IDS_CREATE_LOCALLY_MANAGED_INTRO_TEXT_TITLE);
-  builder->Add("createManagedUserIntroAlternateText",
-               IDS_CREATE_LOCALLY_MANAGED_INTRO_ALTERNATE_TEXT);
-  builder->Add("createManagedUserIntroText1",
-               IDS_CREATE_LOCALLY_MANAGED_INTRO_TEXT_1);
-  builder->Add("createManagedUserIntroManagerItem1",
-               IDS_CREATE_LOCALLY_MANAGED_INTRO_MANAGER_ITEM_1);
-  builder->Add("createManagedUserIntroManagerItem2",
-               IDS_CREATE_LOCALLY_MANAGED_INTRO_MANAGER_ITEM_2);
-  builder->Add("createManagedUserIntroManagerItem3",
-               IDS_CREATE_LOCALLY_MANAGED_INTRO_MANAGER_ITEM_3);
-  builder->Add("createManagedUserIntroText2",
-               IDS_CREATE_LOCALLY_MANAGED_INTRO_TEXT_2);
-  builder->AddF("createManagedUserIntroText3",
-               IDS_CREATE_LOCALLY_MANAGED_INTRO_TEXT_3,
+  builder->Add("createSupervisedUserIntroTextTitle",
+               IDS_CREATE_SUPERVISED_INTRO_TEXT_TITLE);
+  builder->Add("createSupervisedUserIntroAlternateText",
+               IDS_CREATE_SUPERVISED_INTRO_ALTERNATE_TEXT);
+  builder->Add("createSupervisedUserIntroText1",
+               IDS_CREATE_SUPERVISED_INTRO_TEXT_1);
+  builder->Add("createSupervisedUserIntroManagerItem1",
+               IDS_CREATE_SUPERVISED_INTRO_MANAGER_ITEM_1);
+  builder->Add("createSupervisedUserIntroManagerItem2",
+               IDS_CREATE_SUPERVISED_INTRO_MANAGER_ITEM_2);
+  builder->Add("createSupervisedUserIntroManagerItem3",
+               IDS_CREATE_SUPERVISED_INTRO_MANAGER_ITEM_3);
+  builder->Add("createSupervisedUserIntroText2",
+               IDS_CREATE_SUPERVISED_INTRO_TEXT_2);
+  builder->AddF("createSupervisedUserIntroText3",
+               IDS_CREATE_SUPERVISED_INTRO_TEXT_3,
                base::UTF8ToUTF16(chrome::kSupervisedUserManagementDisplayURL));
 
-  builder->Add("createManagedUserPickManagerTitle",
-               IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_PICK_MANAGER_TITLE);
-  builder->AddF("createManagedUserPickManagerTitleExplanation",
-               IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_PICK_MANAGER_EXPLANATION,
+  builder->Add("createSupervisedUserPickManagerTitle",
+               IDS_CREATE_SUPERVISED_USER_CREATE_PICK_MANAGER_TITLE);
+  builder->AddF("createSupervisedUserPickManagerTitleExplanation",
+               IDS_CREATE_SUPERVISED_USER_CREATE_PICK_MANAGER_EXPLANATION,
                base::UTF8ToUTF16(chrome::kSupervisedUserManagementDisplayURL));
-  builder->Add("createManagedUserManagerPasswordHint",
-               IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_MANAGER_PASSWORD_HINT);
-  builder->Add("createManagedUserWrongManagerPasswordText",
-               IDS_CREATE_LOCALLY_MANAGED_USER_MANAGER_PASSWORD_ERROR);
+  builder->Add("createSupervisedUserManagerPasswordHint",
+               IDS_CREATE_SUPERVISED_USER_CREATE_MANAGER_PASSWORD_HINT);
+  builder->Add("createSupervisedUserWrongManagerPasswordText",
+               IDS_CREATE_SUPERVISED_USER_MANAGER_PASSWORD_ERROR);
 
-  builder->Add("createManagedUserNameTitle",
-               IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_ACCOUNT_NAME_TITLE);
-  builder->Add("createManagedUserNameAccessibleTitle",
-               IDS_CREATE_LOCALLY_MANAGED_USER_SETUP_ACCESSIBLE_TITLE);
-  builder->Add("createManagedUserNameExplanation",
-               IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_ACCOUNT_NAME_EXPLANATION);
-  builder->Add("createManagedUserNameHint",
-               IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_ACCOUNT_NAME_HINT);
-  builder->Add("createManagedUserPasswordTitle",
-               IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_PASSWORD_TITLE);
-  builder->Add("createManagedUserPasswordExplanation",
-               IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_PASSWORD_EXPLANATION);
-  builder->Add("createManagedUserPasswordHint",
-               IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_PASSWORD_HINT);
-  builder->Add("createManagedUserPasswordConfirmHint",
-               IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_PASSWORD_CONFIRM_HINT);
-  builder->Add("managedUserCreationFlowProceedButtonTitle",
-               IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_CONTINUE_BUTTON_TEXT);
-  builder->Add("managedUserCreationFlowStartButtonTitle",
-               IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_START_BUTTON_TEXT);
-  builder->Add("managedUserCreationFlowPrevButtonTitle",
-               IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_PREVIOUS_BUTTON_TEXT);
-  builder->Add("managedUserCreationFlowNextButtonTitle",
-               IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_NEXT_BUTTON_TEXT);
-  builder->Add("managedUserCreationFlowHandleErrorButtonTitle",
-               IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_HANDLE_ERROR_BUTTON_TEXT);
-  builder->Add("createManagedUserPasswordMismatchError",
-               IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_PASSWORD_MISMATCH_ERROR);
+  builder->Add("createSupervisedUserNameTitle",
+               IDS_CREATE_SUPERVISED_USER_CREATE_ACCOUNT_NAME_TITLE);
+  builder->Add("createSupervisedUserNameAccessibleTitle",
+               IDS_CREATE_SUPERVISED_USER_SETUP_ACCESSIBLE_TITLE);
+  builder->Add("createSupervisedUserNameExplanation",
+               IDS_CREATE_SUPERVISED_USER_CREATE_ACCOUNT_NAME_EXPLANATION);
+  builder->Add("createSupervisedUserNameHint",
+               IDS_CREATE_SUPERVISED_USER_CREATE_ACCOUNT_NAME_HINT);
+  builder->Add("createSupervisedUserPasswordTitle",
+               IDS_CREATE_SUPERVISED_USER_CREATE_PASSWORD_TITLE);
+  builder->Add("createSupervisedUserPasswordExplanation",
+               IDS_CREATE_SUPERVISED_USER_CREATE_PASSWORD_EXPLANATION);
+  builder->Add("createSupervisedUserPasswordHint",
+               IDS_CREATE_SUPERVISED_USER_CREATE_PASSWORD_HINT);
+  builder->Add("createSupervisedUserPasswordConfirmHint",
+               IDS_CREATE_SUPERVISED_USER_CREATE_PASSWORD_CONFIRM_HINT);
+  builder->Add("supervisedUserCreationFlowProceedButtonTitle",
+               IDS_CREATE_SUPERVISED_USER_CREATE_CONTINUE_BUTTON_TEXT);
+  builder->Add("supervisedUserCreationFlowStartButtonTitle",
+               IDS_CREATE_SUPERVISED_USER_CREATE_START_BUTTON_TEXT);
+  builder->Add("supervisedUserCreationFlowPrevButtonTitle",
+               IDS_CREATE_SUPERVISED_USER_CREATE_PREVIOUS_BUTTON_TEXT);
+  builder->Add("supervisedUserCreationFlowNextButtonTitle",
+               IDS_CREATE_SUPERVISED_USER_CREATE_NEXT_BUTTON_TEXT);
+  builder->Add("supervisedUserCreationFlowHandleErrorButtonTitle",
+               IDS_CREATE_SUPERVISED_USER_CREATE_HANDLE_ERROR_BUTTON_TEXT);
+  builder->Add("createSupervisedUserPasswordMismatchError",
+               IDS_CREATE_SUPERVISED_USER_CREATE_PASSWORD_MISMATCH_ERROR);
 
-  builder->Add("createManagedUserCreatedText1",
-               IDS_CREATE_LOCALLY_MANAGED_USER_CREATED_1_TEXT_1);
-  builder->Add("createManagedUserCreatedText2",
-               IDS_CREATE_LOCALLY_MANAGED_USER_CREATED_1_TEXT_2);
-  builder->Add("createManagedUserCreatedText3",
-               IDS_CREATE_LOCALLY_MANAGED_USER_CREATED_1_TEXT_3);
+  builder->Add("createSupervisedUserCreatedText1",
+               IDS_CREATE_SUPERVISED_USER_CREATED_1_TEXT_1);
+  builder->Add("createSupervisedUserCreatedText2",
+               IDS_CREATE_SUPERVISED_USER_CREATED_1_TEXT_2);
+  builder->Add("createSupervisedUserCreatedText3",
+               IDS_CREATE_SUPERVISED_USER_CREATED_1_TEXT_3);
 
   builder->Add("importExistingSupervisedUserTitle",
                IDS_IMPORT_EXISTING_SUPERVISED_USER_TITLE);
   builder->Add("importExistingSupervisedUserText",
                IDS_IMPORT_EXISTING_SUPERVISED_USER_TEXT);
-  builder->Add("managedUserCreationFlowImportButtonTitle",
+  builder->Add("supervisedUserCreationFlowImportButtonTitle",
                IDS_IMPORT_EXISTING_SUPERVISED_USER_OK);
   builder->Add("importSupervisedUserLink",
                IDS_PROFILES_IMPORT_EXISTING_SUPERVISED_USER_LINK);
@@ -157,25 +157,25 @@ void SupervisedUserCreationScreenHandler::DeclareLocalizedValues(
 void SupervisedUserCreationScreenHandler::Initialize() {}
 
 void SupervisedUserCreationScreenHandler::RegisterMessages() {
-  AddCallback("finishLocalManagedUserCreation",
+  AddCallback("finishLocalSupervisedUserCreation",
               &SupervisedUserCreationScreenHandler::
                   HandleFinishLocalSupervisedUserCreation);
-  AddCallback("abortLocalManagedUserCreation",
+  AddCallback("abortLocalSupervisedUserCreation",
               &SupervisedUserCreationScreenHandler::
                   HandleAbortLocalSupervisedUserCreation);
-  AddCallback("checkLocallyManagedUserName",
+  AddCallback("checkSupervisedUserName",
               &SupervisedUserCreationScreenHandler::
                   HandleCheckSupervisedUserName);
-  AddCallback("authenticateManagerInLocallyManagedUserCreationFlow",
+  AddCallback("authenticateManagerInSupervisedUserCreationFlow",
               &SupervisedUserCreationScreenHandler::
                   HandleAuthenticateManager);
-  AddCallback("specifyLocallyManagedUserCreationFlowUserData",
+  AddCallback("specifySupervisedUserCreationFlowUserData",
               &SupervisedUserCreationScreenHandler::
                   HandleCreateSupervisedUser);
-  AddCallback("managerSelectedOnLocallyManagedUserCreationFlow",
+  AddCallback("managerSelectedOnSupervisedUserCreationFlow",
               &SupervisedUserCreationScreenHandler::
                   HandleManagerSelected);
-  AddCallback("userSelectedForImportInManagedUserCreationFlow",
+  AddCallback("userSelectedForImportInSupervisedUserCreationFlow",
               &SupervisedUserCreationScreenHandler::
                   HandleImportUserSelected);
   AddCallback("importSupervisedUser",
@@ -209,11 +209,13 @@ void SupervisedUserCreationScreenHandler::PrepareToShow() {}
 void SupervisedUserCreationScreenHandler::Show() {
   scoped_ptr<base::DictionaryValue> data(new base::DictionaryValue());
   scoped_ptr<base::ListValue> users_list(new base::ListValue());
-  const UserList& users = UserManager::Get()->GetUsers();
+  const user_manager::UserList& users = UserManager::Get()->GetUsers();
   std::string owner;
   chromeos::CrosSettings::Get()->GetString(chromeos::kDeviceOwner, &owner);
 
-  for (UserList::const_iterator it = users.begin(); it != users.end(); ++it) {
+  for (user_manager::UserList::const_iterator it = users.begin();
+       it != users.end();
+       ++it) {
     if ((*it)->GetType() != user_manager::USER_TYPE_REGULAR)
       continue;
     bool is_owner = ((*it)->email() == owner);
@@ -221,8 +223,9 @@ void SupervisedUserCreationScreenHandler::Show() {
     UserSelectionScreen::FillUserDictionary(
         *it,
         is_owner,
-        false /* is_signin_to_add */,
+        false, /* is_signin_to_add */
         ScreenlockBridge::LockHandler::OFFLINE_PASSWORD,
+        NULL, /* public_session_recommended_locales */
         user_dict);
     users_list->Append(user_dict);
   }
@@ -300,18 +303,18 @@ void SupervisedUserCreationScreenHandler::HandleCheckSupervisedUserName(
   std::string user_id;
   if (NULL != UserManager::Get()->GetSupervisedUserManager()->
           FindByDisplayName(base::CollapseWhitespace(name, true))) {
-    CallJS("managedUserNameError", name,
+    CallJS("supervisedUserNameError", name,
            l10n_util::GetStringUTF16(
-               IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_USERNAME_ALREADY_EXISTS));
+               IDS_CREATE_SUPERVISED_USER_CREATE_USERNAME_ALREADY_EXISTS));
   } else if (net::EscapeForHTML(name) != name) {
-    CallJS("managedUserNameError", name,
+    CallJS("supervisedUserNameError", name,
            l10n_util::GetStringUTF16(
-               IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_ILLEGAL_USERNAME));
+               IDS_CREATE_SUPERVISED_USER_CREATE_ILLEGAL_USERNAME));
   } else if (delegate_ && delegate_->FindUserByDisplayName(
                  base::CollapseWhitespace(name, true), &user_id)) {
-    CallJS("managedUserSuggestImport", name, user_id);
+    CallJS("supervisedUserSuggestImport", name, user_id);
   } else {
-    CallJS("managedUserNameOk", name);
+    CallJS("supervisedUserNameOk", name);
   }
 }
 
@@ -324,28 +327,28 @@ void SupervisedUserCreationScreenHandler::HandleCreateSupervisedUser(
       base::CollapseWhitespace(new_raw_user_name, true);
   if (NULL != UserManager::Get()->GetSupervisedUserManager()->
           FindByDisplayName(new_user_name)) {
-    CallJS("managedUserNameError", new_user_name,
+    CallJS("supervisedUserNameError", new_user_name,
            l10n_util::GetStringFUTF16(
-               IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_USERNAME_ALREADY_EXISTS,
+               IDS_CREATE_SUPERVISED_USER_CREATE_USERNAME_ALREADY_EXISTS,
                new_user_name));
     return;
   }
   if (net::EscapeForHTML(new_user_name) != new_user_name) {
-    CallJS("managedUserNameError", new_user_name,
+    CallJS("supervisedUserNameError", new_user_name,
            l10n_util::GetStringUTF16(
-               IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_ILLEGAL_USERNAME));
+               IDS_CREATE_SUPERVISED_USER_CREATE_ILLEGAL_USERNAME));
     return;
   }
 
   if (new_user_password.length() == 0) {
     CallJS("showPasswordError",
            l10n_util::GetStringUTF16(
-               IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_PASSWORD_TOO_SHORT));
+               IDS_CREATE_SUPERVISED_USER_CREATE_PASSWORD_TOO_SHORT));
     return;
   }
 
   ShowStatusMessage(true /* progress */, l10n_util::GetStringUTF16(
-      IDS_CREATE_LOCALLY_MANAGED_USER_CREATION_CREATION_PROGRESS_MESSAGE));
+      IDS_CREATE_SUPERVISED_USER_CREATION_CREATION_PROGRESS_MESSAGE));
 
   delegate_->CreateSupervisedUser(new_user_name, new_user_password);
 }
@@ -356,7 +359,7 @@ void SupervisedUserCreationScreenHandler::HandleImportSupervisedUser(
     return;
 
   ShowStatusMessage(true /* progress */, l10n_util::GetStringUTF16(
-      IDS_CREATE_LOCALLY_MANAGED_USER_CREATION_CREATION_PROGRESS_MESSAGE));
+      IDS_CREATE_SUPERVISED_USER_CREATION_CREATION_PROGRESS_MESSAGE));
 
   delegate_->ImportSupervisedUser(user_id);
 }
@@ -369,7 +372,7 @@ void SupervisedUserCreationScreenHandler::
     return;
 
   ShowStatusMessage(true /* progress */, l10n_util::GetStringUTF16(
-      IDS_CREATE_LOCALLY_MANAGED_USER_CREATION_CREATION_PROGRESS_MESSAGE));
+      IDS_CREATE_SUPERVISED_USER_CREATION_CREATION_PROGRESS_MESSAGE));
 
   delegate_->ImportSupervisedUserWithPassword(user_id, password);
 }
@@ -450,7 +453,7 @@ void SupervisedUserCreationScreenHandler::SetCameraPresent(bool present) {
 
 void SupervisedUserCreationScreenHandler::ShowExistingSupervisedUsers(
     const base::ListValue* users) {
-  CallJS("setExistingManagedUsers", *users);
+  CallJS("setExistingSupervisedUsers", *users);
 }
 
 }  // namespace chromeos

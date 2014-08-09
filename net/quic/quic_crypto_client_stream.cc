@@ -97,8 +97,6 @@ QuicCryptoClientStream::~QuicCryptoClientStream() {
 
 void QuicCryptoClientStream::OnHandshakeMessage(
     const CryptoHandshakeMessage& message) {
-  DVLOG(1) << "Client: Received " << message.DebugString();
-
   QuicCryptoStream::OnHandshakeMessage(message);
 
   if (message.tag() == kSCUP) {
@@ -180,8 +178,12 @@ void QuicCryptoClientStream::DoHandshakeLoop(
     next_state_ = STATE_IDLE;
     switch (state) {
       case STATE_INITIALIZE: {
-        if (!cached->IsEmpty() && !cached->proof_valid() &&
-            !cached->signature().empty() && server_id_.is_https()) {
+        if (!cached->IsEmpty() && !cached->signature().empty() &&
+            server_id_.is_https()) {
+          // Note that we verify the proof even if the cached proof is valid.
+          // This allows us to respond to CA trust changes or certificate
+          // expiration because it may have been a while since we last verified
+          // the proof.
           DCHECK(crypto_config_->proof_verifier());
           // If the cached state needs to be verified, do it now.
           next_state_ = STATE_VERIFY_PROOF;
@@ -221,7 +223,6 @@ void QuicCryptoClientStream::DoHandshakeLoop(
           }
           out.set_minimum_size(max_packet_size - kFramingOverhead);
           next_state_ = STATE_RECV_REJ;
-          DVLOG(1) << "Client: Sending " << out.DebugString();
           SendHandshakeMessage(out);
           return;
         }
@@ -244,15 +245,12 @@ void QuicCryptoClientStream::DoHandshakeLoop(
           CloseConnectionWithDetails(error, error_details);
           return;
         }
-        // TODO(wtc): a temporary change to measure the performance penalty of
-        // pooling connections less often if channel ID is used.
-        // channel_id_sent_ = (channel_id_key_.get() != NULL);
+        channel_id_sent_ = (channel_id_key_.get() != NULL);
         if (cached->proof_verify_details()) {
           client_session()->OnProofVerifyDetailsAvailable(
               *cached->proof_verify_details());
         }
         next_state_ = STATE_RECV_SHLO;
-        DVLOG(1) << "Client: Sending " << out.DebugString();
         SendHandshakeMessage(out);
         // Be prepared to decrypt with the new server write key.
         session()->connection()->SetAlternativeDecrypter(
@@ -288,7 +286,7 @@ void QuicCryptoClientStream::DoHandshakeLoop(
         }
         error = crypto_config_->ProcessRejection(
             *in, session()->connection()->clock()->WallNow(), cached,
-            &crypto_negotiated_params_, &error_details);
+            server_id_.is_https(), &crypto_negotiated_params_, &error_details);
         if (error != QUIC_NO_ERROR) {
           CloseConnectionWithDetails(error, error_details);
           return;
@@ -298,6 +296,11 @@ void QuicCryptoClientStream::DoHandshakeLoop(
             // We don't check the certificates for insecure QUIC connections.
             SetCachedProofValid(cached);
           } else if (!cached->signature().empty()) {
+            // Note that we only verify the proof if the cached proof is not
+            // valid. If the cached proof is valid here, someone else must have
+            // just added the server config to the cache and verified the proof,
+            // so we can assume no CA trust changes or certificate expiration
+            // has happened since then.
             next_state_ = STATE_VERIFY_PROOF;
             break;
           }

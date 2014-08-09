@@ -14,9 +14,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "chrome/browser/chromeos/login/auth/mock_url_fetchers.h"
-#include "chrome/browser/chromeos/login/auth/test_attempt_state.h"
 #include "chrome/browser/chromeos/login/users/fake_user_manager.h"
-#include "chrome/browser/chromeos/login/users/user.h"
 #include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/ownership/owner_settings_service.h"
 #include "chrome/browser/chromeos/ownership/owner_settings_service_factory.h"
@@ -35,10 +33,12 @@
 #include "chromeos/dbus/fake_dbus_thread_manager.h"
 #include "chromeos/login/auth/key.h"
 #include "chromeos/login/auth/mock_auth_status_consumer.h"
+#include "chromeos/login/auth/test_attempt_state.h"
 #include "chromeos/login/auth/user_context.h"
+#include "components/user_manager/user.h"
 #include "content/public/test/test_browser_thread_bundle.h"
-#include "crypto/nss_util.h"
 #include "crypto/nss_util_internal.h"
+#include "crypto/scoped_test_nss_chromeos_user.h"
 #include "google_apis/gaia/mock_url_fetcher_factory.h"
 #include "net/base/net_errors.h"
 #include "net/url_request/url_request_status.h"
@@ -124,7 +124,8 @@ class ParallelAuthenticatorTest : public testing::Test {
         owner_key_util_(new MockOwnerKeyUtil) {
     user_context_.SetKey(Key("fakepass"));
     user_context_.SetUserIDHash("me_nowhere_com_hash");
-    const User* user = user_manager_->AddUser(user_context_.GetUserID());
+    const user_manager::User* user =
+        user_manager_->AddUser(user_context_.GetUserID());
     profile_.set_profile_name(user_context_.GetUserID());
 
     ProfileHelper::Get()->SetUserToProfileMappingForTesting(user, &profile_);

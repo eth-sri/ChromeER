@@ -176,6 +176,7 @@ WebMediaPlayerImpl::WebMediaPlayerImpl(
           RenderThreadImpl::current()->GetMediaThreadMessageLoopProxy()),
       media_log_(new RenderMediaLog()),
       pipeline_(media_loop_, media_log_.get()),
+      load_type_(LoadTypeURL),
       opaque_(false),
       paused_(true),
       seeking_(false),
@@ -615,18 +616,6 @@ bool WebMediaPlayerImpl::copyVideoTextureToPlatformTexture(
   if (mailbox_holder->texture_target != GL_TEXTURE_2D)
     return false;
 
-  // Since this method changes which texture is bound to the TEXTURE_2D target,
-  // ideally it would restore the currently-bound texture before returning.
-  // The cost of getIntegerv is sufficiently high, however, that we want to
-  // avoid it in user builds. As a result assume (below) that |texture| is
-  // bound when this method is called, and only verify this fact when
-  // DCHECK_IS_ON.
-#if DCHECK_IS_ON
-  GLint bound_texture = 0;
-  web_graphics_context->getIntegerv(GL_TEXTURE_BINDING_2D, &bound_texture);
-  DCHECK_EQ(static_cast<GLuint>(bound_texture), texture);
-#endif
-
   web_graphics_context->waitSyncPoint(mailbox_holder->sync_point);
   uint32 source_texture = web_graphics_context->createAndConsumeTextureCHROMIUM(
       GL_TEXTURE_2D, mailbox_holder->mailbox.name);
@@ -898,13 +887,6 @@ void WebMediaPlayerImpl::setContentDecryptionModule(
     base::ResetAndReturn(&decryptor_ready_cb_).Run(web_cdm_->GetDecryptor());
 }
 
-void WebMediaPlayerImpl::InvalidateOnMainThread() {
-  DCHECK(main_loop_->BelongsToCurrentThread());
-  TRACE_EVENT0("media", "WebMediaPlayerImpl::InvalidateOnMainThread");
-
-  client_->repaint();
-}
-
 void WebMediaPlayerImpl::OnPipelineSeeked(bool time_changed,
                                           PipelineStatus status) {
   DVLOG(1) << __FUNCTION__ << "(" << time_changed << ", " << status << ")";
@@ -942,10 +924,6 @@ void WebMediaPlayerImpl::OnPipelineError(PipelineStatus error) {
     // Any error that occurs before reaching ReadyStateHaveMetadata should
     // be considered a format error.
     SetNetworkState(WebMediaPlayer::NetworkStateFormatError);
-
-    // TODO(scherkus): This should be handled by HTMLMediaElement and controls
-    // should know when to invalidate themselves http://crbug.com/337015
-    InvalidateOnMainThread();
     return;
   }
 
@@ -953,10 +931,6 @@ void WebMediaPlayerImpl::OnPipelineError(PipelineStatus error) {
 
   if (error == media::PIPELINE_ERROR_DECRYPT)
     EmeUMAHistogramCounts(current_key_system_, "DecryptError", 1);
-
-  // TODO(scherkus): This should be handled by HTMLMediaElement and controls
-  // should know when to invalidate themselves http://crbug.com/337015
-  InvalidateOnMainThread();
 }
 
 void WebMediaPlayerImpl::OnPipelineMetadata(
@@ -977,10 +951,6 @@ void WebMediaPlayerImpl::OnPipelineMetadata(
     video_weblayer_->setOpaque(opaque_);
     client_->setWebLayer(video_weblayer_.get());
   }
-
-  // TODO(scherkus): This should be handled by HTMLMediaElement and controls
-  // should know when to invalidate themselves http://crbug.com/337015
-  InvalidateOnMainThread();
 }
 
 void WebMediaPlayerImpl::OnPipelineBufferingStateChanged(
@@ -999,10 +969,6 @@ void WebMediaPlayerImpl::OnPipelineBufferingStateChanged(
   // Blink expects a timeChanged() in response to a seek().
   if (should_notify_time_changed_)
     client_->timeChanged();
-
-  // TODO(scherkus): This should be handled by HTMLMediaElement and controls
-  // should know when to invalidate themselves http://crbug.com/337015
-  InvalidateOnMainThread();
 }
 
 void WebMediaPlayerImpl::OnDemuxerOpened() {
@@ -1107,10 +1073,6 @@ void WebMediaPlayerImpl::DataSourceInitialized(bool success) {
 
   if (!success) {
     SetNetworkState(WebMediaPlayer::NetworkStateFormatError);
-
-    // TODO(scherkus): This should be handled by HTMLMediaElement and controls
-    // should know when to invalidate themselves http://crbug.com/337015
-    InvalidateOnMainThread();
     return;
   }
 

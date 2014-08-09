@@ -67,6 +67,8 @@ class AccessibilityEventRouterViews : public content::NotificationObserver {
                            TestFocusNotification);
   FRIEND_TEST_ALL_PREFIXES(AccessibilityEventRouterViewsTest,
                            MenuIndexAndCountForInvisibleMenu);
+  FRIEND_TEST_ALL_PREFIXES(AccessibilityEventRouterViewsTest,
+                           AccessibilityFocusableView);
 
   AccessibilityEventRouterViews();
   virtual ~AccessibilityEventRouterViews();
@@ -88,11 +90,19 @@ class AccessibilityEventRouterViews : public content::NotificationObserver {
       views::View* view,
       ui::AXEvent event,
       Profile* profile);
+  static void SendStaticTextNotification(
+      views::View* view,
+      ui::AXEvent event,
+      Profile* profile);
   static void SendLinkNotification(
       views::View* view,
       ui::AXEvent event,
       Profile* profile);
   static void SendMenuNotification(
+      views::View* view,
+      ui::AXEvent event,
+      Profile* profile);
+  static void SendTabNotification(
       views::View* view,
       ui::AXEvent event,
       Profile* profile);

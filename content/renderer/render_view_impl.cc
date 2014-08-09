@@ -157,6 +157,7 @@
 #include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebGlyphCache.h"
 #include "third_party/WebKit/public/web/WebHistoryItem.h"
+#include "third_party/WebKit/public/web/WebHitTestResult.h"
 #include "third_party/WebKit/public/web/WebInputElement.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "third_party/WebKit/public/web/WebKit.h"
@@ -206,7 +207,6 @@
 #include "skia/ext/platform_canvas.h"
 #include "third_party/WebKit/public/platform/WebFloatPoint.h"
 #include "third_party/WebKit/public/platform/WebFloatRect.h"
-#include "third_party/WebKit/public/web/WebHitTestResult.h"
 #include "ui/gfx/rect_f.h"
 
 #elif defined(OS_WIN)
@@ -460,11 +460,6 @@ static bool ShouldUseAcceleratedFixedRootBackground(float device_scale_factor) {
     return true;
 
   return DeviceScaleEnsuresTextQuality(device_scale_factor);
-}
-
-static bool ShouldUseExpandedHeuristicsForGpuRasterization() {
-  return base::FieldTrialList::FindFullName(
-             "GpuRasterizationExpandedContentWhitelist") == "Enabled";
 }
 
 static FaviconURL::IconType ToFaviconType(blink::WebIconURL::Type type) {
@@ -726,8 +721,6 @@ RenderViewImpl::RenderViewImpl(RenderViewImplParams* params)
       speech_recognition_dispatcher_(NULL),
       browser_plugin_manager_(NULL),
       devtools_agent_(NULL),
-      accessibility_mode_(AccessibilityModeOff),
-      renderer_accessibility_(NULL),
       mouse_lock_dispatcher_(NULL),
 #if defined(OS_ANDROID)
       expected_content_intent_id_(0),
@@ -760,13 +753,6 @@ void RenderViewImpl::Initialize(RenderViewImplParams* params) {
   // RenderFrameImpl::frameDetached().
   WebLocalFrame* web_frame = WebLocalFrame::create(main_render_frame_.get());
   main_render_frame_->SetWebFrame(web_frame);
-
-  if (params->proxy_routing_id != MSG_ROUTING_NONE) {
-    CHECK(params->swapped_out);
-    RenderFrameProxy* proxy = RenderFrameProxy::CreateProxyToReplaceFrame(
-        main_render_frame_.get(), params->proxy_routing_id);
-    main_render_frame_->set_render_frame_proxy(proxy);
-  }
 
   webwidget_ = WebView::create(this);
   webwidget_mouse_lock_target_.reset(new WebWidgetLockTarget(webwidget_));
@@ -819,15 +805,27 @@ void RenderViewImpl::Initialize(RenderViewImplParams* params) {
       ShouldUseAcceleratedFixedRootBackground(device_scale_factor_));
   webview()->settings()->setCompositedScrollingForFramesEnabled(
       ShouldUseCompositedScrollingForFrames(device_scale_factor_));
-  webview()->settings()->setUseExpandedHeuristicsForGpuRasterization(
-      ShouldUseExpandedHeuristicsForGpuRasterization());
 
   ApplyWebPreferences(webkit_preferences_, webview());
 
   webview()->settings()->setAllowConnectingInsecureWebSocket(
       command_line.HasSwitch(switches::kAllowInsecureWebSocketFromHttpsOrigin));
 
-  webview()->setMainFrame(main_render_frame_->GetWebFrame());
+  RenderFrameProxy* proxy = NULL;
+  if (params->proxy_routing_id != MSG_ROUTING_NONE) {
+    CHECK(params->swapped_out);
+    proxy = RenderFrameProxy::CreateProxyToReplaceFrame(
+        main_render_frame_.get(), params->proxy_routing_id);
+    main_render_frame_->set_render_frame_proxy(proxy);
+  }
+
+  // In --site-per-process, just use the WebRemoteFrame as the main frame.
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kSitePerProcess) &&
+      proxy) {
+    webview()->setMainFrame(proxy->web_frame());
+  } else {
+    webview()->setMainFrame(main_render_frame_->GetWebFrame());
+  }
   main_render_frame_->Initialize();
 
   if (switches::IsTouchDragDropEnabled())
@@ -860,9 +858,6 @@ void RenderViewImpl::Initialize(RenderViewImplParams* params) {
 
   history_controller_.reset(new HistoryController(this));
 
-  // Create renderer_accessibility_ if needed.
-  OnSetAccessibilityMode(params->accessibility_mode);
-
   new IdleUserDetector(this);
 
   if (command_line.HasSwitch(switches::kDomAutomationController))
@@ -884,7 +879,7 @@ void RenderViewImpl::Initialize(RenderViewImplParams* params) {
 
   // If we are initially swapped out, navigate to kSwappedOutURL.
   // This ensures we are in a unique origin that others cannot script.
-  if (is_swapped_out_)
+  if (is_swapped_out_ && webview()->mainFrame()->isWebLocalFrame())
     NavigateToSwappedOutURL(webview()->mainFrame());
 }
 
@@ -1069,15 +1064,6 @@ void RenderView::ApplyWebPreferences(const WebPreferences& prefs,
   // Enable container culling if requested on the command line.
   settings->setContainerCullingEnabled(prefs.container_culling_enabled);
 
-  // Enabling accelerated layers from the command line enabled accelerated
-  // Video.
-  settings->setAcceleratedCompositingForVideoEnabled(
-      prefs.accelerated_compositing_for_video_enabled);
-
-  // WebGL and accelerated 2D canvas are always gpu composited.
-  settings->setAcceleratedCompositingForCanvasEnabled(
-      prefs.experimental_webgl_enabled || prefs.accelerated_2d_canvas_enabled);
-
   settings->setAsynchronousSpellCheckingEnabled(
       prefs.asynchronous_spell_checking_enabled);
   settings->setUnifiedTextCheckerEnabled(prefs.unified_textchecker_enabled);
@@ -1126,6 +1112,8 @@ void RenderView::ApplyWebPreferences(const WebPreferences& prefs,
   settings->setViewportEnabled(prefs.viewport_enabled);
   settings->setLoadWithOverviewMode(prefs.initialize_at_minimum_page_scale);
   settings->setViewportMetaEnabled(prefs.viewport_meta_enabled);
+  settings->setUseExpandedHeuristicsForGpuRasterization(
+      prefs.use_expanded_heuristics_for_gpu_rasterization);
   settings->setMainFrameResizesAreOrientationChanges(
       prefs.main_frame_resizes_are_orientation_changes);
 
@@ -1140,6 +1128,8 @@ void RenderView::ApplyWebPreferences(const WebPreferences& prefs,
   settings->setTextAutosizingEnabled(prefs.text_autosizing_enabled);
   settings->setAccessibilityFontScaleFactor(prefs.font_scale_factor);
   settings->setDeviceScaleAdjustment(prefs.device_scale_adjustment);
+  settings->setDisallowFullscreenForNonMediaElements(
+      prefs.disallow_fullscreen_for_non_media_elements);
   web_view->setIgnoreViewportTagScaleLimits(prefs.force_enable_zoom);
   settings->setAutoZoomFocusedNodeToLegibleScale(true);
   settings->setDoubleTapToZoomEnabled(prefs.double_tap_to_zoom_enabled);
@@ -1182,7 +1172,6 @@ void RenderView::ApplyWebPreferences(const WebPreferences& prefs,
   settings->setPinchOverlayScrollbarThickness(
       prefs.pinch_overlay_scrollbar_thickness);
   settings->setUseSolidColorScrollbars(prefs.use_solid_color_scrollbars);
-  settings->setCompositorTouchHitTesting(prefs.compositor_touch_hit_testing);
 }
 
 /*static*/
@@ -1202,8 +1191,7 @@ RenderViewImpl* RenderViewImpl::Create(
     bool hidden,
     bool never_visible,
     int32 next_page_id,
-    const blink::WebScreenInfo& screen_info,
-    AccessibilityMode accessibility_mode) {
+    const blink::WebScreenInfo& screen_info) {
   DCHECK(routing_id != MSG_ROUTING_NONE);
   RenderViewImplParams params(opener_id,
                               window_was_created_with_opener,
@@ -1220,8 +1208,7 @@ RenderViewImpl* RenderViewImpl::Create(
                               hidden,
                               never_visible,
                               next_page_id,
-                              screen_info,
-                              accessibility_mode);
+                              screen_info);
   RenderViewImpl* render_view = NULL;
   if (g_create_render_view_impl)
     render_view = g_create_render_view_impl(&params);
@@ -1337,7 +1324,7 @@ bool RenderViewImpl::HasIMETextFocus() {
 
 bool RenderViewImpl::OnMessageReceived(const IPC::Message& message) {
   WebFrame* main_frame = webview() ? webview()->mainFrame() : NULL;
-  if (main_frame)
+  if (main_frame && main_frame->isWebLocalFrame())
     GetContentClient()->SetActiveURL(main_frame->document().url());
 
   ObserverListBase<RenderViewObserver>::Iterator it(observers_);
@@ -1409,7 +1396,6 @@ bool RenderViewImpl::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(ViewMsg_SetHistoryLengthAndPrune,
                         OnSetHistoryLengthAndPrune)
     IPC_MESSAGE_HANDLER(ViewMsg_EnableViewSourceMode, OnEnableViewSourceMode)
-    IPC_MESSAGE_HANDLER(ViewMsg_SetAccessibilityMode, OnSetAccessibilityMode)
     IPC_MESSAGE_HANDLER(ViewMsg_DisownOpener, OnDisownOpener)
     IPC_MESSAGE_HANDLER(ViewMsg_ReleaseDisambiguationPopupBitmap,
                         OnReleaseDisambiguationPopupBitmap)
@@ -1645,9 +1631,11 @@ void RenderViewImpl::GetWindowSnapshot(const WindowSnapshotCallback& callback) {
 
 void RenderViewImpl::OnForceRedraw(int id) {
   ui::LatencyInfo latency_info;
-  latency_info.AddLatencyNumber(ui::WINDOW_SNAPSHOT_FRAME_NUMBER_COMPONENT,
-                                0,
-                                id);
+  if (id) {
+    latency_info.AddLatencyNumber(ui::WINDOW_SNAPSHOT_FRAME_NUMBER_COMPONENT,
+                                  0,
+                                  id);
+  }
   scoped_ptr<cc::SwapPromiseMonitor> latency_info_swap_promise_monitor;
   if (RenderWidgetCompositor* rwc = compositor()) {
     latency_info_swap_promise_monitor =
@@ -1751,8 +1739,7 @@ WebView* RenderViewImpl::createView(WebLocalFrame* creator,
       params.disposition == NEW_BACKGROUND_TAB,  // hidden
       never_visible,
       1,  // next_page_id
-      screen_info_,
-      accessibility_mode_);
+      screen_info_);
   view->opened_by_user_gesture_ = params.user_gesture;
 
   // Record whether the creator frame is trying to suppress the opener field.
@@ -2036,6 +2023,9 @@ void RenderViewImpl::focusedNodeChanged(const WebNode& node) {
   Send(new ViewHostMsg_FocusedNodeChanged(routing_id_, IsEditableNode(node)));
 
   FOR_EACH_OBSERVER(RenderViewObserver, observers_, FocusedNodeChanged(node));
+
+  // TODO(dmazzoni): this should be part of RenderFrameObserver.
+  main_render_frame()->FocusedNodeChanged(node);
 }
 
 void RenderViewImpl::didUpdateLayout() {
@@ -2068,9 +2058,7 @@ int RenderViewImpl::historyForwardListCount() {
 
 void RenderViewImpl::postAccessibilityEvent(
     const WebAXObject& obj, blink::WebAXEvent event) {
-  if (renderer_accessibility_) {
-    renderer_accessibility_->HandleWebAccessibilityEvent(obj, event);
-  }
+  main_render_frame()->HandleWebAccessibilityEvent(obj, event);
 }
 
 void RenderViewImpl::didUpdateInspectorSetting(const WebString& key,
@@ -2186,9 +2174,16 @@ void RenderViewImpl::didHandleGestureEvent(
     bool event_cancelled) {
   RenderWidget::didHandleGestureEvent(event, event_cancelled);
 
+  if (!event_cancelled) {
+    FOR_EACH_OBSERVER(
+        RenderViewObserver, observers_, DidHandleGestureEvent(event));
+  }
+
   if (event.type != blink::WebGestureEvent::GestureTap)
     return;
 
+  // TODO(estade): hit test the event against focused node to make sure
+  // the tap actually hit the focused node.
   blink::WebTextInputType text_input_type =
       GetWebView()->textInputInfo().type;
 
@@ -2275,6 +2270,7 @@ void RenderViewImpl::didCreateDataSource(WebLocalFrame* frame,
 
   // Carry over the user agent override flag, if it exists.
   if (content_initiated && webview() && webview()->mainFrame() &&
+      webview()->mainFrame()->isWebLocalFrame() &&
       webview()->mainFrame()->dataSource()) {
     DocumentState* old_document_state =
         DocumentState::FromDataSource(webview()->mainFrame()->dataSource());
@@ -2310,9 +2306,9 @@ void RenderViewImpl::didCreateDataSource(WebLocalFrame* frame,
       const WebURLRequest& original_request = ds->originalRequest();
       const GURL referrer(
           original_request.httpHeaderField(WebString::fromUTF8("Referer")));
-      if (!referrer.is_empty() &&
-          DocumentState::FromDataSource(
-              old_frame->dataSource())->was_prefetcher()) {
+      if (!referrer.is_empty() && old_frame->isWebLocalFrame() &&
+          DocumentState::FromDataSource(old_frame->dataSource())
+              ->was_prefetcher()) {
         for (; old_frame; old_frame = old_frame->traverseNext(false)) {
           WebDataSource* old_frame_ds = old_frame->dataSource();
           if (old_frame_ds && referrer == GURL(old_frame_ds->request().url())) {
@@ -2616,6 +2612,13 @@ bool RenderViewImpl::IsEditableNode(const WebNode& node) const {
   return false;
 }
 
+bool RenderViewImpl::NodeContainsPoint(const WebNode& node,
+                                       const gfx::Point& point) const {
+  blink::WebHitTestResult hit_test =
+      webview()->hitTestResultAt(WebPoint(point.x(), point.y()));
+  return node.containsIncludingShadowDOM(hit_test.node());
+}
+
 bool RenderViewImpl::ShouldDisplayScrollbars(int width, int height) const {
   return (!send_preferred_size_changes_ ||
           (disable_scrollbars_size_limit_.width() <= width ||
@@ -2653,7 +2656,8 @@ blink::WebPlugin* RenderViewImpl::GetWebPluginForFind() {
     return NULL;
 
   WebFrame* main_frame = webview()->mainFrame();
-  if (main_frame->document().isPluginDocument())
+  if (main_frame->isWebLocalFrame() &&
+      main_frame->document().isPluginDocument())
     return webview()->mainFrame()->document().to<WebPluginDocument>().plugin();
 
 #if defined(ENABLE_PLUGINS)
@@ -3174,7 +3178,8 @@ void RenderViewImpl::OnSetRendererPrefs(
 
   // If the zoom level for this page matches the old zoom default, and this
   // is not a plugin, update the zoom level to match the new default.
-  if (webview() && !webview()->mainFrame()->document().isPluginDocument() &&
+  if (webview() && webview()->mainFrame()->isWebLocalFrame() &&
+      !webview()->mainFrame()->document().isPluginDocument() &&
       !ZoomValuesEqual(old_zoom_level,
                        renderer_preferences_.default_zoom_level) &&
       ZoomValuesEqual(webview()->zoomLevel(), old_zoom_level)) {
@@ -3286,7 +3291,8 @@ void RenderViewImpl::NavigateToSwappedOutURL(blink::WebFrame* frame) {
   CHECK(is_swapped_out_ || rf->is_swapped_out());
   GURL swappedOutURL(kSwappedOutURL);
   WebURLRequest request(swappedOutURL);
-  frame->loadRequest(request);
+  if (frame->isWebLocalFrame())
+    frame->loadRequest(request);
 }
 
 void RenderViewImpl::OnClosePage() {
@@ -3389,6 +3395,11 @@ void RenderViewImpl::DidFlushPaint() {
     return;
 
   WebFrame* main_frame = webview()->mainFrame();
+  for (WebFrame* frame = main_frame; frame;
+       frame = frame->traverseNext(false)) {
+    if (frame->isWebLocalFrame())
+      main_frame = frame;
+  }
 
   // If we have a provisional frame we are between the start and commit stages
   // of loading and we don't want to save stats.
@@ -3410,7 +3421,19 @@ void RenderViewImpl::DidFlushPaint() {
 }
 
 gfx::Vector2d RenderViewImpl::GetScrollOffset() {
-  WebSize scroll_offset = webview()->mainFrame()->scrollOffset();
+  WebFrame* main_frame = webview()->mainFrame();
+  for (WebFrame* frame = main_frame; frame;
+       frame = frame->traverseNext(false)) {
+    // TODO(nasko): This is a hack for the case in which the top-level
+    // frame is being rendered in another process. It will not
+    // behave correctly for out of process iframes.
+    if (frame->isWebLocalFrame()) {
+      main_frame = frame;
+      break;
+    }
+  }
+
+  WebSize scroll_offset = main_frame->scrollOffset();
   return gfx::Vector2d(scroll_offset.width, scroll_offset.height);
 }
 
@@ -3424,25 +3447,6 @@ void RenderViewImpl::OnSetBackgroundOpaque(bool opaque) {
     webview()->setIsTransparent(!opaque);
   if (compositor_)
     compositor_->setHasTransparentBackground(!opaque);
-}
-
-void RenderViewImpl::OnSetAccessibilityMode(AccessibilityMode new_mode) {
-  if (accessibility_mode_ == new_mode)
-    return;
-  accessibility_mode_ = new_mode;
-  if (renderer_accessibility_) {
-    delete renderer_accessibility_;
-    renderer_accessibility_ = NULL;
-  }
-  if (accessibility_mode_ == AccessibilityModeOff)
-    return;
-
-  if (accessibility_mode_ & AccessibilityModeFlagFullTree)
-    renderer_accessibility_ = new RendererAccessibilityComplete(this);
-#if !defined(OS_ANDROID)
-  else
-    renderer_accessibility_ = new RendererAccessibilityFocusOnly(this);
-#endif
 }
 
 void RenderViewImpl::OnSetActive(bool active) {
@@ -3564,6 +3568,8 @@ void RenderViewImpl::OnWasHidden() {
 #if defined(OS_ANDROID) && defined(ENABLE_WEBRTC)
   RenderThreadImpl::current()->video_capture_impl_manager()->
       SuspendDevices(true);
+  if (speech_recognition_dispatcher_)
+    speech_recognition_dispatcher_->AbortAllRecognitions();
 #endif
 
   if (webview())
@@ -3614,7 +3620,7 @@ void RenderViewImpl::OnWasShown(bool needs_repainting) {
 
 GURL RenderViewImpl::GetURLForGraphicsContext3D() {
   DCHECK(webview());
-  if (webview()->mainFrame())
+  if (webview()->mainFrame()->isWebLocalFrame())
     return GURL(webview()->mainFrame()->document().url());
   else
     return GURL("chrome://gpu/RenderViewImpl::CreateGraphicsContext3D");
@@ -4108,11 +4114,14 @@ void RenderViewImpl::DidHideExternalPopupMenu() {
 }
 #endif
 
-void RenderViewImpl::OnShowContextMenu(const gfx::Point& location) {
-  context_menu_source_type_ = ui::MENU_SOURCE_TOUCH_EDIT_MENU;
-  touch_editing_context_menu_location_ = location;
+void RenderViewImpl::OnShowContextMenu(
+    ui::MenuSourceType source_type, const gfx::Point& location) {
+  context_menu_source_type_ = source_type;
+  has_host_context_menu_location_ = true;
+  host_context_menu_location_ = location;
   if (webview())
     webview()->showContextMenu();
+  has_host_context_menu_location_ = false;
 }
 
 void RenderViewImpl::OnEnableViewSourceMode() {
@@ -4139,10 +4148,12 @@ bool RenderViewImpl::didTapMultipleTargets(
     const WebVector<WebRect>& target_rects) {
   // Never show a disambiguation popup when accessibility is enabled,
   // as this interferes with "touch exploration".
-  bool matchesAccessibilityModeComplete =
-      (accessibility_mode_ & AccessibilityModeComplete) ==
-      AccessibilityModeComplete;
-  if (matchesAccessibilityModeComplete)
+  AccessibilityMode accessibility_mode =
+      main_render_frame()->accessibility_mode();
+  bool matches_accessibility_mode_complete =
+      (accessibility_mode & AccessibilityModeComplete) ==
+          AccessibilityModeComplete;
+  if (matches_accessibility_mode_complete)
     return false;
 
   gfx::Rect finger_rect(

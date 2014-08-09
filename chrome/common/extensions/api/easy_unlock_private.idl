@@ -63,11 +63,24 @@
   // Callback for crypto methods that return a single array buffer.
   callback DataCallback = void(optional ArrayBuffer data);
 
+  // An empty callback used purely for signalling success vs. failure.
+  callback EmptyCallback = void();
+
+  // Callback for the getStrings() method.
+  callback GetStringsCallback = void(object strings);
+
   // Callback for method that generates an encryption key pair.
   callback KeyPairCallback = void(optional ArrayBuffer public_key,
                                   optional ArrayBuffer private_key);
 
   interface Functions {
+    // Gets localized strings required to render the API.
+    //
+    // |callback| : Called with a dictionary mapping names to resource strings.
+    // TODO(isherman): This is essentially copied from identity_private.idl.
+    //                 Perhaps this should be extracted to a common API instead?
+    static void getStrings(GetStringsCallback callback);
+
     // Generates a ECDSA key pair for P256 curve.
     // Public key will be in format recognized by secure wire transport protocol
     // used by Easy Unlock app. Otherwise, the exact format for both key should
@@ -121,5 +134,16 @@
         ArrayBuffer key,
         UnwrapSecureMessageOptions options,
         DataCallback callback);
+
+    // Connects to the SDP service on a device, given just the device's
+    // Bluetooth address. This function is useful as a faster alternative to
+    // Bluetooth discovery, when you already know the remote device's Bluetooth
+    // address. A successful call to this function has the side-effect of
+    // registering the device with the Bluetooth daemon, making it available for
+    // future outgoing connections.
+    // |deviceAddress|: The Bluetooth address of the device to connect to.
+    // |callback|: Called to indicate success or failure.
+    static void seekBluetoothDeviceByAddress(DOMString deviceAddress,
+                                             optional EmptyCallback callback);
   };
 };

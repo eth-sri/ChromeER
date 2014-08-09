@@ -25,6 +25,7 @@ class ServiceWorkerRegistrationTest : public testing::Test {
         new ServiceWorkerContextCore(base::FilePath(),
                                      base::MessageLoopProxy::current(),
                                      base::MessageLoopProxy::current(),
+                                     base::MessageLoopProxy::current(),
                                      NULL,
                                      NULL,
                                      NULL));
@@ -69,7 +70,7 @@ class ServiceWorkerRegistrationTest : public testing::Test {
 };
 
 TEST_F(ServiceWorkerRegistrationTest, SetAndUnsetVersions) {
-  const GURL kScope("http://www.example.not/*");
+  const GURL kScope("http://www.example.not/");
   const GURL kScript("http://www.example.not/service_worker.js");
   int64 kRegistrationId = 1L;
   scoped_refptr<ServiceWorkerRegistration> registration =

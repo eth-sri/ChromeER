@@ -112,6 +112,8 @@ public class ContentViewCore
     private static final int IS_LONG_TAP = 2;
 
     // These values are obtained from Samsung.
+    // TODO(changwan): refactor SPen related code into a separate class. See
+    // http://crbug.com/398169.
     private static final int SPEN_ACTION_DOWN = 211;
     private static final int SPEN_ACTION_UP = 212;
     private static final int SPEN_ACTION_MOVE = 213;
@@ -232,14 +234,31 @@ public class ContentViewCore
     public interface NavigationTransitionDelegate {
         /**
          * Called when the navigation is deferred immediately after the response started.
+         *
+         * @param enteringColor The background color of the entering document, as a String
+         *                      representing a legal CSS color value. This is inserted into
+         *                      the transition layer's markup after the entering stylesheets
+         *                      have been applied.
          */
-        public void didDeferAfterResponseStarted();
+        public void didDeferAfterResponseStarted(String enteringColor);
 
         /**
          * Called when a navigation transition has been detected, and we need to check
          * if it's supported.
          */
         public boolean willHandleDeferAfterResponseStarted();
+
+        /**
+         * Called when the navigation is deferred immediately after the response
+         * started.
+         */
+        public void addEnteringStylesheetToTransition(String stylesheet);
+
+        /**
+         * Notifies that a navigation transition is started for a given frame.
+         * @param frameId A positive, non-zero integer identifying the navigating frame.
+         */
+        public void didStartNavigationTransitionForFrame(long frameId);
     }
 
     private final Context mContext;
@@ -362,6 +381,10 @@ public class ContentViewCore
     // Offsets for the events that passes through this ContentViewCore.
     private float mCurrentTouchOffsetX;
     private float mCurrentTouchOffsetY;
+
+    // Offsets for smart clip
+    private int mSmartClipOffsetX;
+    private int mSmartClipOffsetY;
 
     // Whether the ContentViewCore requires the WebContents to be fullscreen in order to lock the
     // screen orientation.
@@ -541,11 +564,12 @@ public class ContentViewCore
         return new ImeAdapter(mInputMethodManagerWrapper,
                 new ImeAdapter.ImeAdapterDelegate() {
                     @Override
-                    public void onImeEvent(boolean isFinish) {
-                        getContentViewClient().onImeEvent();
-                        if (!isFinish) {
-                            hideTextHandles();
+                    public void onImeEvent() {
+                        if (mPopupZoomer.isShowing()) {
+                            mPopupZoomer.hide(true);
                         }
+                        getContentViewClient().onImeEvent();
+                        hideTextHandles();
                     }
 
                     @Override
@@ -793,6 +817,7 @@ public class ContentViewCore
         unregisterAccessibilityContentObserver();
         mGestureStateListeners.clear();
         ScreenOrientationListener.getInstance().removeObserver(this);
+        mPositionObserver.clearListener();
     }
 
     private void unregisterAccessibilityContentObserver() {
@@ -1111,7 +1136,12 @@ public class ContentViewCore
 
     // End FrameLayout overrides.
 
-    private static boolean isSPenSupported(Context context) {
+    /**
+     * TODO(changwan): refactor SPen related code into a separate class. See
+     * http://crbug.com/398169.
+     * @return Whether SPen is supported on the device.
+     */
+    public static boolean isSPenSupported(Context context) {
         if (sIsSPenSupported == null)
             sIsSPenSupported = detectSPenSupport(context);
         return sIsSPenSupported.booleanValue();
@@ -1130,7 +1160,16 @@ public class ContentViewCore
         return false;
     }
 
-    private static int convertSPenEventAction(int eventActionMasked) {
+    /**
+     * Convert SPen event action into normal event action.
+     * TODO(changwan): refactor SPen related code into a separate class. See
+     * http://crbug.com/398169.
+     *
+     * @param eventActionMasked Input event action. It is assumed that it is masked as the values
+                                cannot be ORed.
+     * @return Event action after the conversion
+     */
+    public static int convertSPenEventAction(int eventActionMasked) {
         // S-Pen support: convert to normal stylus event handling
         switch (eventActionMasked) {
             case SPEN_ACTION_DOWN:
@@ -1683,6 +1722,8 @@ public class ContentViewCore
         if (!gainFocus) {
             hideImeIfNeeded();
             cancelRequestToScrollFocusedEditableNodeIntoView();
+            hidePastePopup();
+            hideTextHandles();
         }
         if (mNativeContentViewCore != 0) nativeSetFocus(mNativeContentViewCore, gainFocus);
     }
@@ -2235,7 +2276,7 @@ public class ContentViewCore
             float viewportWidth, float viewportHeight,
             float controlsOffsetYCss, float contentOffsetYCss,
             float overdrawBottomHeightCss) {
-        TraceEvent.instant("ContentViewCore:updateFrameInfo");
+        TraceEvent.begin("ContentViewCore:updateFrameInfo");
         // Adjust contentWidth/Height to be always at least as big as
         // the actual viewport (as set by onSizeChanged).
         final float deviceScale = mRenderCoordinates.getDeviceScaleFactor();
@@ -2300,6 +2341,7 @@ public class ContentViewCore
         if (mBrowserAccessibilityManager != null) {
             mBrowserAccessibilityManager.notifyFrameInfoInitialized();
         }
+        TraceEvent.end("ContentViewCore:updateFrameInfo");
     }
 
     @CalledByNative
@@ -2426,6 +2468,7 @@ public class ContentViewCore
     @SuppressWarnings("unused")
     @CalledByNative
     private void showPastePopup(int xDip, int yDip) {
+        if (!mHasInsertion) return;
         final float contentOffsetYPix = mRenderCoordinates.getContentOffsetYPix();
         getPastePopup().showAt(
             (int) mRenderCoordinates.fromDipToPix(xDip),
@@ -2980,8 +3023,24 @@ public class ContentViewCore
 
     public void extractSmartClipData(int x, int y, int width, int height) {
         if (mNativeContentViewCore != 0) {
+            x += mSmartClipOffsetX;
+            y += mSmartClipOffsetY;
             nativeExtractSmartClipData(mNativeContentViewCore, x, y, width, height);
         }
+    }
+
+    /**
+     * Set offsets for smart clip.
+     *
+     * <p>This should be called if there is a viewport change introduced by,
+     * e.g., show and hide of a location bar.
+     *
+     * @param offsetX Offset for X position.
+     * @param offsetY Offset for Y position.
+     */
+    public void setSmartClipOffsets(int offsetX, int offsetY) {
+        mSmartClipOffsetX = offsetX;
+        mSmartClipOffsetY = offsetY;
     }
 
     @CalledByNative
@@ -3002,9 +3061,16 @@ public class ContentViewCore
     }
 
     @CalledByNative
-    private void didDeferAfterResponseStarted() {
+    private void didDeferAfterResponseStarted(String enteringColor) {
         if (mNavigationTransitionDelegate != null ) {
-            mNavigationTransitionDelegate.didDeferAfterResponseStarted();
+            mNavigationTransitionDelegate.didDeferAfterResponseStarted(enteringColor);
+        }
+    }
+
+    @CalledByNative
+    public void didStartNavigationTransitionForFrame(long frameId) {
+        if (mNavigationTransitionDelegate != null ) {
+            mNavigationTransitionDelegate.didStartNavigationTransitionForFrame(frameId);
         }
     }
 
@@ -3022,6 +3088,13 @@ public class ContentViewCore
 
     public void setNavigationTransitionDelegate(NavigationTransitionDelegate delegate) {
         mNavigationTransitionDelegate = delegate;
+    }
+
+    @CalledByNative
+    private void addEnteringStylesheetToTransition(String stylesheet) {
+        if (mNavigationTransitionDelegate != null ) {
+            mNavigationTransitionDelegate.addEnteringStylesheetToTransition(stylesheet);
+        }
     }
 
     /**

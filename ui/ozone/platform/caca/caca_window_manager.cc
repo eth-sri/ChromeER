@@ -124,7 +124,6 @@ CacaWindowManager::~CacaWindowManager() {
 bool CacaWindowManager::LoadEGLGLES2Bindings(
     AddGLLibraryCallback add_gl_library,
     SetGLGetProcAddressProcCallback set_gl_get_proc_address) {
-  NOTREACHED();
   return false;
 }
 
@@ -134,7 +133,8 @@ scoped_ptr<ui::SurfaceOzoneCanvas> CacaWindowManager::CreateCanvasForWidget(
   DCHECK(window);
 
   scoped_ptr<CacaSurface> canvas(new CacaSurface(window));
-  CHECK(canvas->Initialize());
+  bool initialized = canvas->Initialize();
+  DCHECK(initialized);
   return canvas.PassAs<ui::SurfaceOzoneCanvas>();
 }
 

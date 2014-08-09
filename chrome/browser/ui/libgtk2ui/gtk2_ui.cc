@@ -32,6 +32,7 @@
 #include "chrome/browser/ui/libgtk2ui/skia_utils_gtk2.h"
 #include "chrome/browser/ui/libgtk2ui/unity_service.h"
 #include "chrome/browser/ui/libgtk2ui/x11_input_method_context_impl_gtk2.h"
+#include "grit/component_scaled_resources.h"
 #include "grit/theme_resources.h"
 #include "grit/ui_resources.h"
 #include "printing/printing_context_linux.h"
@@ -62,6 +63,13 @@
 //
 // - Render and inject the omnibox background.
 // - Make sure to test with a light on dark theme, too.
+
+// Work around a header bug:
+// linux/debian_wheezy_i386-sysroot/usr/include/linux/stddef.h redefines NULL
+// to 0, which breaks -Wsentinel. Get back the normal definition of NULL.
+// TODO(thakis): Remove this once we update sysroots.
+#define __need_NULL
+#include <stddef.h>
 
 namespace libgtk2ui {
 

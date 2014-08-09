@@ -192,6 +192,7 @@
     { "name": "checkout.google.com", "include_subdomains": true, "mode": "force-https", "pins": "google" },
     { "name": "chrome.google.com", "include_subdomains": true, "mode": "force-https", "pins": "google" },
     { "name": "docs.google.com", "include_subdomains": true, "mode": "force-https", "pins": "google" },
+    { "name": "domains.google.com", "include_subdomains": true, "mode": "force-https", "pins": "google" },
     { "name": "sites.google.com", "include_subdomains": true, "mode": "force-https", "pins": "google" },
     { "name": "spreadsheets.google.com", "include_subdomains": true, "mode": "force-https", "pins": "google" },
     { "name": "appengine.google.com", "include_subdomains": true, "mode": "force-https", "pins": "google" },
@@ -820,6 +821,14 @@
     { "name": "code-poets.co.uk", "include_subdomains": true, "mode": "force-https" },
     { "name": "jackyyf.com", "mode": "force-https" },
     { "name": "flynn.io", "include_subdomains": true, "mode": "force-https" },
+    { "name": "hackerone.com", "include_subdomains": true, "mode": "force-https" },
+    { "name": "hackerone-user-content.com", "include_subdomains": true, "mode": "force-https" },
+    { "name": "gamesdepartment.co.uk", "mode": "force-https" },
+    { "name": "www.gamesdepartment.co.uk", "include_subdomains": true, "mode": "force-https" },
+    { "name": "schokokeks.org", "mode": "force-https" },
+    { "name": "www.schokokeks.org", "include_subdomains": true, "mode": "force-https" },
+    { "name": "config.schokokeks.org", "include_subdomains": true, "mode": "force-https" },
+    { "name": "webmail.schokokeks.org", "include_subdomains": true, "mode": "force-https" },
 
     // Entries that are only valid if the client supports SNI.
     { "name": "gmail.com", "mode": "force-https", "pins": "google", "snionly": true },
@@ -829,6 +838,8 @@
     { "name": "google-analytics.com", "include_subdomains": true, "pins": "google", "snionly": true },
     { "name": "googlegroups.com", "include_subdomains": true, "pins": "google", "snionly": true },
     { "name": "mykolab.com", "include_subdomains": true, "mode": "force-https", "snionly": true },
-    { "name": "semenkovich.com", "include_subdomains": true, "mode": "force-https", "snionly": true }
+    { "name": "semenkovich.com", "include_subdomains": true, "mode": "force-https", "snionly": true },
+    { "name": "rme.li", "mode": "force-https", "snionly": true },
+    { "name": "www.rme.li", "mode": "force-https", "snionly": true }
   ]
 }

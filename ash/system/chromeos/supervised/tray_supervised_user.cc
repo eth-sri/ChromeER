@@ -7,6 +7,7 @@
 #include "ash/shell.h"
 #include "ash/system/chromeos/label_tray_view.h"
 #include "ash/system/system_notifier.h"
+#include "ash/system/tray/system_tray_delegate.h"
 #include "ash/system/tray/system_tray_notifier.h"
 #include "ash/system/tray/tray_notification_view.h"
 #include "ash/system/user/login_status.h"
@@ -50,7 +51,7 @@ views::View* TraySupervisedUser::CreateDefaultView(
   if (status != ash::user::LOGGED_IN_SUPERVISED)
     return NULL;
 
-  tray_view_ = new LabelTrayView(this, IDR_AURA_UBER_TRAY_MANAGED_USER);
+  tray_view_ = new LabelTrayView(this, IDR_AURA_UBER_TRAY_SUPERVISED_USER);
   UpdateMessage();
   return tray_view_;
 }
@@ -83,7 +84,7 @@ void TraySupervisedUser::CreateOrUpdateNotification(
           kNotificationId,
           base::string16() /* no title */,
           new_message,
-          bundle.GetImageNamed(IDR_AURA_UBER_TRAY_MANAGED_USER),
+          bundle.GetImageNamed(IDR_AURA_UBER_TRAY_SUPERVISED_USER),
           system_notifier::kNotifierSupervisedUser,
           base::Closure() /* null callback */));
   message_center::MessageCenter::Get()->AddNotification(notification.Pass());

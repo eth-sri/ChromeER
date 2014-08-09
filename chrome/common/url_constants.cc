@@ -58,6 +58,7 @@ const char kChromeUIHistoryFrameURL[] = "chrome://history-frame/";
 const char kChromeUIIdentityInternalsURL[] = "chrome://identity-internals/";
 const char kChromeUIInspectURL[] = "chrome://inspect/";
 const char kChromeUIInstantURL[] = "chrome://instant/";
+const char kChromeUIInterstitialURL[] = "chrome://interstitials/";
 const char kChromeUIInvalidationsURL[] = "chrome://invalidations/";
 const char kChromeUIIPCURL[] = "chrome://ipc/";
 const char kChromeUIMemoryRedirectURL[] = "chrome://memory-redirect/";
@@ -197,6 +198,7 @@ const char kChromeUIHistoryFrameHost[] = "history-frame";
 const char kChromeUIIdentityInternalsHost[] = "identity-internals";
 const char kChromeUIInspectHost[] = "inspect";
 const char kChromeUIInstantHost[] = "instant";
+const char kChromeUIInterstitialHost[] = "interstitials";
 const char kChromeUIInvalidationsHost[] = "invalidations";
 const char kChromeUIIPCHost[] = "ipc";
 const char kChromeUIKillHost[] = "kill";
@@ -363,6 +365,9 @@ const char kPasswordManagerLearnMoreURL[] =
 #else
     "https://support.google.com/chrome/?p=settings_password";
 #endif
+
+const char kPasswordManagerAccountDashboardURL[] =
+    "https://passwords.google.com/settings/passwords";
 
 const char kExtensionControlledSettingLearnMoreURL[] =
     "https://support.google.com/chrome/?p=ui_settings_api_extension";
@@ -693,8 +698,6 @@ const char kChromeSearchRemoteNtpHost[] = "remote-ntp";
 
 const char kChromeSearchMostVisitedHost[] = "most-visited";
 const char kChromeSearchMostVisitedUrl[] = "chrome-search://most-visited/";
-
-const char kDomDistillerScheme[] = "chrome-distiller";
 
 // Google SafeSearch query parameters.
 const char kSafeSearchSafeParameter[] = "safe=active";

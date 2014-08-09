@@ -5,6 +5,7 @@
 #include "chrome/browser/ui/webui/print_preview/print_preview_ui.h"
 
 #include <map>
+#include <vector>
 
 #include "base/id_map.h"
 #include "base/lazy_instance.h"
@@ -20,6 +21,7 @@
 #include "chrome/browser/printing/background_printing_manager.h"
 #include "chrome/browser/printing/print_preview_data_service.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/webui/metrics_handler.h"
 #include "chrome/browser/ui/webui/print_preview/print_preview_handler.h"
 #include "chrome/browser/ui/webui/theme_source.h"
 #include "chrome/common/print_messages.h"
@@ -383,6 +385,8 @@ PrintPreviewUI::PrintPreviewUI(content::WebUI* web_ui)
   handler_ = new PrintPreviewHandler();
   web_ui->AddMessageHandler(handler_);
 
+  web_ui->AddMessageHandler(new MetricsHandler());
+
   g_print_preview_request_id_map.Get().Set(id_, -1);
 }
 
@@ -609,8 +613,11 @@ void PrintPreviewUI::OnReloadPrintersList() {
   web_ui()->CallJavascriptFunction("reloadPrintersList");
 }
 
-void PrintPreviewUI::OnPrintPreviewScalingDisabled() {
-  web_ui()->CallJavascriptFunction("printScalingDisabledForSourcePDF");
+void PrintPreviewUI::OnSetOptionsFromDocument(
+    const PrintHostMsg_SetOptionsFromDocument_Params& params) {
+  // Notify WebUI that print scaling is disabled
+  if (params.is_scaling_disabled)
+    web_ui()->CallJavascriptFunction("printScalingDisabledForSourcePDF");
 }
 
 // static

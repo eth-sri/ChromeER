@@ -481,6 +481,9 @@ TouchEvent::TouchEvent(const base::NativeEvent& native_event)
       1);
 
   latency()->AddLatencyNumber(INPUT_EVENT_LATENCY_UI_COMPONENT, 0, 0);
+
+  if (type() == ET_TOUCH_PRESSED)
+    IncrementTouchIdRefCount(native_event);
 }
 
 TouchEvent::TouchEvent(EventType type,
@@ -573,13 +576,13 @@ bool KeyEvent::IsRepeated(const KeyEvent& event) {
   return false;
 }
 
-KeyEvent::KeyEvent(const base::NativeEvent& native_event, bool is_char)
+KeyEvent::KeyEvent(const base::NativeEvent& native_event)
     : Event(native_event,
             EventTypeFromNative(native_event),
             EventFlagsFromNative(native_event)),
       key_code_(KeyboardCodeFromNative(native_event)),
       code_(CodeFromNative(native_event)),
-      is_char_(is_char),
+      is_char_(IsCharFromNative(native_event)),
       platform_keycode_(PlatformKeycodeFromNative(native_event)),
       character_(0) {
   if (IsRepeated(*this))
@@ -592,11 +595,10 @@ KeyEvent::KeyEvent(const base::NativeEvent& native_event, bool is_char)
 
 KeyEvent::KeyEvent(EventType type,
                    KeyboardCode key_code,
-                   int flags,
-                   bool is_char)
+                   int flags)
     : Event(type, EventTimeForNow(), flags),
       key_code_(key_code),
-      is_char_(is_char),
+      is_char_(false),
       platform_keycode_(0),
       character_(GetCharacterFromKeyCode(key_code, flags)) {
 }
@@ -604,17 +606,24 @@ KeyEvent::KeyEvent(EventType type,
 KeyEvent::KeyEvent(EventType type,
                    KeyboardCode key_code,
                    const std::string& code,
-                   int flags,
-                   bool is_char)
+                   int flags)
     : Event(type, EventTimeForNow(), flags),
       key_code_(key_code),
       code_(code),
-      is_char_(is_char),
+      is_char_(false),
       platform_keycode_(0),
       character_(GetCharacterFromKeyCode(key_code, flags)) {
 }
 
-uint16 KeyEvent::GetCharacter() const {
+KeyEvent::KeyEvent(base::char16 character, KeyboardCode key_code, int flags)
+    : Event(ET_KEY_PRESSED, EventTimeForNow(), flags),
+      key_code_(key_code),
+      code_(""),
+      is_char_(true),
+      character_(character) {
+}
+
+base::char16 KeyEvent::GetCharacter() const {
   if (character_)
     return character_;
 

@@ -55,6 +55,7 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/l10n/time_format.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/base/webui/web_ui_util.h"
 
 #if defined(ENABLE_EXTENSIONS)
 #include "chrome/browser/extensions/activity_log/activity_log.h"
@@ -188,7 +189,7 @@ content::WebUIDataSource* CreateHistoryUIHTMLSource(Profile* profile) {
   source->SetDefaultResource(IDR_HISTORY_HTML);
   source->SetUseJsonJSFormatV2();
   source->DisableDenyXFrameOptions();
-  source->AddBoolean("isManagedProfile", profile->IsSupervised());
+  source->AddBoolean("isSupervisedProfile", profile->IsSupervised());
   source->AddBoolean("showDeleteVisitUI", !profile->IsSupervised());
 
   return source;

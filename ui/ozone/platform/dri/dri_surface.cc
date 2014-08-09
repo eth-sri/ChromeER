@@ -23,7 +23,9 @@ scoped_refptr<DriBuffer> AllocateBuffer(DriWrapper* dri,
                                         const gfx::Size& size) {
   scoped_refptr<DriBuffer> buffer(new DriBuffer(dri));
   SkImageInfo info = SkImageInfo::MakeN32Premul(size.width(), size.height());
-  CHECK(buffer->Initialize(info)) << "Failed to create drm buffer.";
+
+  bool initialized = buffer->Initialize(info);
+  DCHECK(initialized) << "Failed to create drm buffer.";
 
   return buffer;
 }
@@ -63,8 +65,8 @@ void DriSurface::ResizeCanvas(const gfx::Size& viewport_size) {
 }
 
 void DriSurface::PresentCanvas(const gfx::Rect& damage) {
-  CHECK(base::MessageLoopForUI::IsCurrent());
-  CHECK(buffers_[front_buffer_ ^ 1]);
+  DCHECK(base::MessageLoopForUI::IsCurrent());
+  DCHECK(buffers_[front_buffer_ ^ 1]);
 
   if (!controller_)
     return;
@@ -73,8 +75,8 @@ void DriSurface::PresentCanvas(const gfx::Rect& damage) {
       1, OverlayPlane(buffers_[front_buffer_ ^ 1]));
 
   UpdateNativeSurface(damage);
-  if (controller_->SchedulePageFlip(planes))
-    controller_->WaitForPageFlipEvent();
+  controller_->SchedulePageFlip(planes);
+  controller_->WaitForPageFlipEvent();
 
   // Update our front buffer pointer.
   front_buffer_ ^= 1;

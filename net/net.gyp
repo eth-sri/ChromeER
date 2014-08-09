@@ -277,14 +277,17 @@
               'quic/crypto/p256_key_exchange_openssl.cc',
               'quic/crypto/scoped_evp_aead_ctx.cc',
               'quic/crypto/scoped_evp_aead_ctx.h',
-              'socket/openssl_ssl_util.cc',
-              'socket/openssl_ssl_util.h',
               'socket/ssl_client_socket_openssl.cc',
               'socket/ssl_client_socket_openssl.h',
               'socket/ssl_server_socket_openssl.cc',
               'socket/ssl_server_socket_openssl.h',
               'socket/ssl_session_cache_openssl.cc',
               'socket/ssl_session_cache_openssl.h',
+              'ssl/openssl_platform_key_mac.cc',
+              'ssl/openssl_platform_key_win.cc',
+              'ssl/openssl_platform_key.h',
+              'ssl/openssl_ssl_util.cc',
+              'ssl/openssl_ssl_util.h',
             ],
           },
         ],
@@ -537,6 +540,7 @@
         '../base/base.gyp:base_prefs_test_support',
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
         '../crypto/crypto.gyp:crypto',
+        '../crypto/crypto.gyp:crypto_test_support',
         '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
         '../third_party/zlib/zlib.gyp:zlib',
@@ -784,7 +788,9 @@
               # The following tests are disabled because they don't apply to
               # iOS.
               # OS is not "linux" or "freebsd" or "openbsd".
-              'socket/unix_domain_socket_posix_unittest.cc',
+              'socket/unix_domain_client_socket_posix_unittest.cc',
+              'socket/unix_domain_listen_socket_posix_unittest.cc',
+              'socket/unix_domain_server_socket_posix_unittest.cc',
 
               # See bug http://crbug.com/344533.
               'disk_cache/blockfile/index_table_v3_unittest.cc',

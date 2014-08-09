@@ -4,10 +4,10 @@
 
 #include "ui/ozone/platform/dri/gbm_surface_factory.h"
 
-#include <EGL/egl.h>
 #include <gbm.h>
 
 #include "base/files/file_path.h"
+#include "third_party/khronos/EGL/egl.h"
 #include "ui/ozone/platform/dri/gbm_buffer.h"
 #include "ui/ozone/platform/dri/gbm_surface.h"
 #include "ui/ozone/platform/dri/gbm_surfaceless.h"
@@ -33,7 +33,7 @@ void GbmSurfaceFactory::InitializeGpu(
 }
 
 intptr_t GbmSurfaceFactory::GetNativeDisplay() {
-  CHECK(state_ == INITIALIZED);
+  DCHECK(state_ == INITIALIZED);
   return reinterpret_cast<intptr_t>(device_);
 }
 
@@ -94,7 +94,7 @@ bool GbmSurfaceFactory::LoadEGLGLES2Bindings(
 
 scoped_ptr<SurfaceOzoneEGL> GbmSurfaceFactory::CreateEGLSurfaceForWidget(
     gfx::AcceleratedWidget widget) {
-  CHECK(state_ == INITIALIZED);
+  DCHECK(state_ == INITIALIZED);
   ResetCursor(widget);
 
   if (allow_surfaceless_) {

@@ -35,13 +35,6 @@ cr.define('print_preview', function() {
     this.userInfo_ = new print_preview.UserInfo();
 
     /**
-     * Metrics object used to report usage statistics.
-     * @type {!print_preview.Metrics}
-     * @private
-     */
-    this.metrics_ = new print_preview.Metrics();
-
-    /**
      * Application state.
      * @type {!print_preview.AppState}
      * @private
@@ -61,7 +54,7 @@ cr.define('print_preview', function() {
      * @private
      */
     this.destinationStore_ = new print_preview.DestinationStore(
-        this.nativeLayer_, this.userInfo_, this.appState_, this.metrics_);
+        this.nativeLayer_, this.userInfo_, this.appState_);
 
     /**
      * Storage of the print ticket used to create the print job.
@@ -86,7 +79,7 @@ cr.define('print_preview', function() {
      * @private
      */
     this.destinationSearch_ = new print_preview.DestinationSearch(
-        this.destinationStore_, this.userInfo_, this.metrics_);
+        this.destinationStore_, this.userInfo_);
     this.addChild(this.destinationSearch_);
 
     /**
@@ -170,7 +163,8 @@ cr.define('print_preview', function() {
      * @type {!print_preview.AdvancedSettings}
      * @private
      */
-    this.advancedSettings_ = new print_preview.AdvancedSettings(this.metrics_);
+    this.advancedSettings_ = new print_preview.AdvancedSettings(
+        this.printTicketStore_);
     this.addChild(this.advancedSettings_);
 
     /**
@@ -572,8 +566,8 @@ cr.define('print_preview', function() {
 
       $('document-title').innerText = settings.documentTitle;
       setIsVisible($('system-dialog-link'),
-                   !settings.hidePrintWithSystemDialogLink);
-      setIsVisible($('cloud-print-dialog-link'), !settings.isInAppKioskMode);
+                   !settings.hidePrintWithSystemDialogLink &&
+                   !settings.isInAppKioskMode);
     },
 
     /**
@@ -777,8 +771,6 @@ cr.define('print_preview', function() {
      * @private
      */
      onCloudPrintRegisterPromoClick_: function(e) {
-       this.metrics_.incrementDestinationSearchBucket(
-         print_preview.Metrics.DestinationSearchBucket.REGISTER_PROMO_SELECTED);
        var devicesUrl = 'chrome://devices/register?id=' + e.destination.id;
        this.nativeLayer_.startForceOpenNewTab(devicesUrl);
        this.destinationStore_.waitForRegister(e.destination.id);
@@ -794,20 +786,14 @@ cr.define('print_preview', function() {
       // Escape key closes the dialog.
       if (e.keyCode == 27 && !e.shiftKey && !e.ctrlKey && !e.altKey &&
           !e.metaKey) {
-        if (this.destinationSearch_.getIsVisible()) {
-          this.destinationSearch_.setIsVisible(false);
-          this.metrics_.incrementDestinationSearchBucket(
-              print_preview.Metrics.DestinationSearchBucket.CANCELED);
-        } else {
-          <if expr="toolkit_views">
-          // On the toolkit_views environment, ESC key is handled by C++-side
-          // instead of JS-side.
-          return;
-          </if>
-          <if expr="not toolkit_views">
-          this.close_();
-          </if>
-        }
+        <if expr="toolkit_views">
+        // On the toolkit_views environment, ESC key is handled by C++-side
+        // instead of JS-side.
+        return;
+        </if>
+        <if expr="not toolkit_views">
+        this.close_();
+        </if>
         e.preventDefault();
         return;
       }
@@ -823,7 +809,7 @@ cr.define('print_preview', function() {
       }
 
       if (e.keyCode == 13 /*enter*/ &&
-          !this.destinationSearch_.getIsVisible() &&
+          !document.querySelector('.overlay:not([hidden])') &&
           this.destinationStore_.selectedDestination &&
           this.printTicketStore_.isTicketValid()) {
         assert(this.uiState_ == PrintPreview.UiState_.READY,
@@ -862,8 +848,6 @@ cr.define('print_preview', function() {
       this.destinationStore_.startLoadCloudDestinations();
       this.destinationStore_.startLoadLocalDestinations();
       this.destinationStore_.startLoadPrivetDestinations();
-      this.metrics_.incrementDestinationSearchBucket(
-          print_preview.Metrics.DestinationSearchBucket.SHOWN);
     },
 
     /**
@@ -1099,8 +1083,8 @@ cr.define('print_preview', function() {
       setIsVisible(this.getChildElement('#no-destinations-promo'),
                    isPromoVisible);
       if (isPromoVisible) {
-        this.metrics_.incrementGcpPromoBucket(
-            print_preview.Metrics.GcpPromoBucket.SHOWN);
+        new print_preview.GcpPromoMetricsContext().record(
+            print_preview.Metrics.GcpPromoBucket.PROMO_SHOWN);
       }
     },
 
@@ -1110,8 +1094,8 @@ cr.define('print_preview', function() {
      * @private
      */
     onNoDestinationsPromoClose_: function() {
-      this.metrics_.incrementGcpPromoBucket(
-          print_preview.Metrics.GcpPromoBucket.DISMISSED);
+      new print_preview.GcpPromoMetricsContext().record(
+          print_preview.Metrics.GcpPromoBucket.PROMO_CLOSED);
       setIsVisible(this.getChildElement('#no-destinations-promo'), false);
       this.appState_.persistIsGcpPromoDismissed(true);
     },
@@ -1122,8 +1106,8 @@ cr.define('print_preview', function() {
      * @private
      */
     onNoDestinationsPromoClick_: function() {
-      this.metrics_.incrementGcpPromoBucket(
-          print_preview.Metrics.GcpPromoBucket.CLICKED);
+      new print_preview.GcpPromoMetricsContext().record(
+          print_preview.Metrics.GcpPromoBucket.PROMO_CLICKED);
       this.appState_.persistIsGcpPromoDismissed(true);
       window.open(this.cloudPrintInterface_.baseUrl + '?user=' +
                   this.userInfo_.activeUser + '#printers');
@@ -1138,6 +1122,7 @@ cr.define('print_preview', function() {
 });
 
 // Pull in all other scripts in a single shot.
+<include src="common/overlay.js"/>
 <include src="common/search_box.js"/>
 
 <include src="data/page_number_set.js"/>
@@ -1188,6 +1173,7 @@ cr.define('print_preview', function() {
 <include src="settings/destination_settings.js"/>
 <include src="settings/other_options_settings.js"/>
 <include src="settings/advanced_settings/advanced_settings.js"/>
+<include src="settings/advanced_settings/advanced_settings_item.js"/>
 
 <include src="previewarea/margin_control.js"/>
 <include src="previewarea/margin_control_container.js"/>

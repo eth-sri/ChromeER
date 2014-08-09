@@ -5577,6 +5577,8 @@ TEST_F(LayerTreeHostImplTest, ForcedDrawToSoftwareDeviceBasicRender) {
   host_impl_->SetExternalDrawConstraints(external_transform,
                                          external_viewport,
                                          external_clip,
+                                         external_viewport,
+                                         external_transform,
                                          resourceless_software_draw);
 
   EXPECT_EQ(0, software_device->frames_began_);
@@ -5610,6 +5612,8 @@ TEST_F(LayerTreeHostImplTest,
   host_impl_->SetExternalDrawConstraints(external_transform,
                                          external_viewport,
                                          external_clip,
+                                         external_viewport,
+                                         external_transform,
                                          resourceless_software_draw);
 
   // SolidColorLayerImpl will be drawn.
@@ -6654,6 +6658,8 @@ TEST_F(LayerTreeHostImplTest, ExternalTransformReflectedInNextDraw) {
   host_impl_->SetExternalDrawConstraints(external_transform,
                                          external_viewport,
                                          external_clip,
+                                         external_viewport,
+                                         external_transform,
                                          resourceless_software_draw);
   DrawFrame();
   EXPECT_TRANSFORMATION_MATRIX_EQ(
@@ -6663,6 +6669,8 @@ TEST_F(LayerTreeHostImplTest, ExternalTransformReflectedInNextDraw) {
   host_impl_->SetExternalDrawConstraints(external_transform,
                                          external_viewport,
                                          external_clip,
+                                         external_viewport,
+                                         external_transform,
                                          resourceless_software_draw);
   DrawFrame();
   EXPECT_TRANSFORMATION_MATRIX_EQ(
@@ -6709,6 +6717,102 @@ TEST_F(LayerTreeHostImplTest, ScrollAnimated) {
 
   EXPECT_EQ(gfx::Vector2dF(0, 100), scrolling_layer->TotalScrollOffset());
   EXPECT_EQ(NULL, host_impl_->CurrentlyScrollingLayer());
+}
+
+TEST_F(LayerTreeHostImplTest, GetPictureLayerImplPairs) {
+  host_impl_->CreatePendingTree();
+  host_impl_->ActivateSyncTree();
+  host_impl_->CreatePendingTree();
+
+  LayerTreeImpl* active_tree = host_impl_->active_tree();
+  LayerTreeImpl* pending_tree = host_impl_->pending_tree();
+  EXPECT_NE(active_tree, pending_tree);
+
+  scoped_ptr<FakePictureLayerImpl> active_layer =
+      FakePictureLayerImpl::Create(active_tree, 10);
+  scoped_ptr<FakePictureLayerImpl> pending_layer =
+      FakePictureLayerImpl::Create(pending_tree, 10);
+
+  std::vector<PictureLayerImpl::Pair> layer_pairs;
+  host_impl_->GetPictureLayerImplPairs(&layer_pairs);
+
+  EXPECT_EQ(2u, layer_pairs.size());
+  if (layer_pairs[0].active) {
+    EXPECT_EQ(active_layer.get(), layer_pairs[0].active);
+    EXPECT_EQ(NULL, layer_pairs[0].pending);
+  } else {
+    EXPECT_EQ(pending_layer.get(), layer_pairs[0].pending);
+    EXPECT_EQ(NULL, layer_pairs[0].active);
+  }
+
+  if (layer_pairs[1].active) {
+    EXPECT_EQ(active_layer.get(), layer_pairs[1].active);
+    EXPECT_EQ(NULL, layer_pairs[1].pending);
+  } else {
+    EXPECT_EQ(pending_layer.get(), layer_pairs[1].pending);
+    EXPECT_EQ(NULL, layer_pairs[1].active);
+  }
+
+  active_layer->set_twin_layer(pending_layer.get());
+  pending_layer->set_twin_layer(active_layer.get());
+
+  layer_pairs.clear();
+  host_impl_->GetPictureLayerImplPairs(&layer_pairs);
+  EXPECT_EQ(1u, layer_pairs.size());
+
+  EXPECT_EQ(active_layer.get(), layer_pairs[0].active);
+  EXPECT_EQ(pending_layer.get(), layer_pairs[0].pending);
+}
+
+TEST_F(LayerTreeHostImplTest, DidBecomeActive) {
+  host_impl_->CreatePendingTree();
+  host_impl_->ActivateSyncTree();
+  host_impl_->CreatePendingTree();
+
+  LayerTreeImpl* pending_tree = host_impl_->pending_tree();
+
+  scoped_ptr<FakePictureLayerImpl> pending_layer =
+      FakePictureLayerImpl::Create(pending_tree, 10);
+  pending_layer->DoPostCommitInitializationIfNeeded();
+  FakePictureLayerImpl* raw_pending_layer = pending_layer.get();
+  pending_tree->SetRootLayer(pending_layer.PassAs<LayerImpl>());
+  ASSERT_EQ(raw_pending_layer, pending_tree->root_layer());
+
+  EXPECT_EQ(0u, raw_pending_layer->did_become_active_call_count());
+  pending_tree->DidBecomeActive();
+  EXPECT_EQ(1u, raw_pending_layer->did_become_active_call_count());
+
+  scoped_ptr<FakePictureLayerImpl> mask_layer =
+      FakePictureLayerImpl::Create(pending_tree, 11);
+  mask_layer->DoPostCommitInitializationIfNeeded();
+  FakePictureLayerImpl* raw_mask_layer = mask_layer.get();
+  raw_pending_layer->SetMaskLayer(mask_layer.PassAs<LayerImpl>());
+  ASSERT_EQ(raw_mask_layer, raw_pending_layer->mask_layer());
+
+  EXPECT_EQ(1u, raw_pending_layer->did_become_active_call_count());
+  EXPECT_EQ(0u, raw_mask_layer->did_become_active_call_count());
+  pending_tree->DidBecomeActive();
+  EXPECT_EQ(2u, raw_pending_layer->did_become_active_call_count());
+  EXPECT_EQ(1u, raw_mask_layer->did_become_active_call_count());
+
+  scoped_ptr<FakePictureLayerImpl> replica_layer =
+      FakePictureLayerImpl::Create(pending_tree, 12);
+  scoped_ptr<FakePictureLayerImpl> replica_mask_layer =
+      FakePictureLayerImpl::Create(pending_tree, 13);
+  replica_mask_layer->DoPostCommitInitializationIfNeeded();
+  FakePictureLayerImpl* raw_replica_mask_layer = replica_mask_layer.get();
+  replica_layer->SetMaskLayer(replica_mask_layer.PassAs<LayerImpl>());
+  raw_pending_layer->SetReplicaLayer(replica_layer.PassAs<LayerImpl>());
+  ASSERT_EQ(raw_replica_mask_layer,
+            raw_pending_layer->replica_layer()->mask_layer());
+
+  EXPECT_EQ(2u, raw_pending_layer->did_become_active_call_count());
+  EXPECT_EQ(1u, raw_mask_layer->did_become_active_call_count());
+  EXPECT_EQ(0u, raw_replica_mask_layer->did_become_active_call_count());
+  pending_tree->DidBecomeActive();
+  EXPECT_EQ(3u, raw_pending_layer->did_become_active_call_count());
+  EXPECT_EQ(2u, raw_mask_layer->did_become_active_call_count());
+  EXPECT_EQ(1u, raw_replica_mask_layer->did_become_active_call_count());
 }
 
 }  // namespace

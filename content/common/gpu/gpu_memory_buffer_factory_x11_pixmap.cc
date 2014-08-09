@@ -31,7 +31,7 @@ void GpuMemoryBufferFactoryX11Pixmap::DestroyGpuMemoryBuffer(
 }
 
 scoped_refptr<gfx::GLImage>
-GpuMemoryBufferFactoryX11Pixmap::AcquireImageForGpuMemoryBuffer(
+GpuMemoryBufferFactoryX11Pixmap::CreateImageForGpuMemoryBuffer(
     const gfx::GpuMemoryBufferId& id,
     const gfx::Size& size,
     unsigned internalformat) {
@@ -39,12 +39,10 @@ GpuMemoryBufferFactoryX11Pixmap::AcquireImageForGpuMemoryBuffer(
   X11PixmapMap::iterator it = pixmaps_.find(key);
   if (it == pixmaps_.end())
     return scoped_refptr<gfx::GLImage>();
-  XID pixmap = it->second;
-  pixmaps_.erase(it);
 
   scoped_refptr<gfx::GLImageGLX> image(
       new gfx::GLImageGLX(size, internalformat));
-  if (!image->Initialize(pixmap))
+  if (!image->Initialize(it->second))
     return scoped_refptr<gfx::GLImage>();
 
   return image;

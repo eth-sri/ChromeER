@@ -218,7 +218,11 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   virtual InputEventAckState FilterInputEvent(
       const blink::WebInputEvent& input_event) OVERRIDE;
   virtual gfx::GLSurfaceHandle GetCompositingSurface() OVERRIDE;
-  virtual void CreateBrowserAccessibilityManagerIfNeeded() OVERRIDE;
+  virtual BrowserAccessibilityManager* CreateBrowserAccessibilityManager(
+      BrowserAccessibilityDelegate* delegate) OVERRIDE;
+  virtual gfx::AcceleratedWidget AccessibilityGetAcceleratedWidget() OVERRIDE;
+  virtual gfx::NativeViewAccessible AccessibilityGetNativeViewAccessible()
+      OVERRIDE;
   virtual bool LockMouse() OVERRIDE;
   virtual void UnlockMouse() OVERRIDE;
   virtual void OnSwapCompositorFrame(
@@ -373,11 +377,17 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
                            VisibleViewportTest);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest,
                            OverscrollResetsOnBlur);
+  FRIEND_TEST_ALL_PREFIXES(WebContentsViewAuraTest,
+                           WebContentsViewReparent);
 
   class WindowObserver;
   friend class WindowObserver;
 
   void UpdateCursorIfOverSelf();
+
+  // Tracks whether SnapToPhysicalPixelBoundary() has been called.
+  bool has_snapped_to_boundary() { return has_snapped_to_boundary_; }
+  void ResetHasSnappedToBoundary() { has_snapped_to_boundary_ = false; }
 
   // Set the bounds of the window and handle size changes.  Assumes the caller
   // has already adjusted the origin of |rect| to conform to whatever coordinate
@@ -581,6 +591,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   // exercise.
   bool legacy_window_destroyed_;
 #endif
+
+  bool has_snapped_to_boundary_;
 
   TouchEditingClient* touch_editing_client_;
 

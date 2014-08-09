@@ -16,11 +16,16 @@ class GL_EXPORT GLImageAndroidNativeBuffer : public GLImageEGL {
   bool Initialize(EGLClientBuffer native_buffer);
 
   // Overridden from GLImage:
-  virtual void Destroy() OVERRIDE;
+  virtual void Destroy(bool have_context) OVERRIDE;
   virtual bool BindTexImage(unsigned target) OVERRIDE;
   virtual void WillUseTexImage() OVERRIDE;
   virtual void DidUseTexImage() OVERRIDE;
   virtual void SetReleaseAfterUse() OVERRIDE;
+  virtual bool ScheduleOverlayPlane(gfx::AcceleratedWidget widget,
+                                    int z_order,
+                                    OverlayTransform transform,
+                                    const Rect& bounds_rect,
+                                    const RectF& crop_rect) OVERRIDE;
 
  protected:
   virtual ~GLImageAndroidNativeBuffer();

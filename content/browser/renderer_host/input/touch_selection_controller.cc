@@ -12,6 +12,7 @@ namespace content {
 TouchSelectionController::TouchSelectionController(
     TouchSelectionControllerClient* client)
     : client_(client),
+      last_input_event_type_(INPUT_EVENT_TYPE_NONE),
       start_orientation_(TOUCH_HANDLE_ORIENTATION_UNDEFINED),
       start_visible_(false),
       end_orientation_(TOUCH_HANDLE_ORIENTATION_UNDEFINED),
@@ -20,11 +21,11 @@ TouchSelectionController::TouchSelectionController(
       activate_insertion_automatically_(false),
       is_selection_active_(false),
       activate_selection_automatically_(false),
+      selection_empty_(false),
       selection_editable_(false),
-      selection_editable_for_last_update_(false),
       temporarily_hidden_(false) {
   DCHECK(client_);
-  HideAndDisallowAutomaticShowing();
+  HideAndDisallowShowingAutomatically();
 }
 
 TouchSelectionController::~TouchSelectionController() {
@@ -43,8 +44,7 @@ void TouchSelectionController::OnSelectionBoundsChanged(
   if (start_rect_ == start_rect && end_rect_ == end_rect &&
       start_orientation_ == start_orientation &&
       end_orientation_ == end_orientation && start_visible_ == start_visible &&
-      end_visible_ == end_visible &&
-      selection_editable_ == selection_editable_for_last_update_)
+      end_visible_ == end_visible)
     return;
 
   start_rect_ = start_rect;
@@ -53,7 +53,6 @@ void TouchSelectionController::OnSelectionBoundsChanged(
   end_rect_ = end_rect;
   end_orientation_ = end_orientation;
   end_visible_ = end_visible;
-  selection_editable_for_last_update_ = selection_editable_;
 
   const bool is_selection_dragging =
       is_selection_active_ && (start_selection_handle_->is_dragging() ||
@@ -82,12 +81,12 @@ void TouchSelectionController::OnSelectionBoundsChanged(
     return;
   }
 
-  if (start_orientation_ == TOUCH_HANDLE_CENTER) {
+  if (start_orientation_ == TOUCH_HANDLE_CENTER && selection_editable_) {
     OnInsertionChanged();
     return;
   }
 
-  HideAndDisallowAutomaticShowing();
+  HideAndDisallowShowingAutomatically();
 }
 
 bool TouchSelectionController::WillHandleTouchEvent(
@@ -100,30 +99,40 @@ bool TouchSelectionController::WillHandleTouchEvent(
   if (is_selection_active_) {
     DCHECK(start_selection_handle_);
     DCHECK(end_selection_handle_);
-    return start_selection_handle_->WillHandleTouchEvent(event) ||
-           end_selection_handle_->WillHandleTouchEvent(event);
+    if (start_selection_handle_->is_dragging())
+      return start_selection_handle_->WillHandleTouchEvent(event);
+
+    if (end_selection_handle_->is_dragging())
+      return end_selection_handle_->WillHandleTouchEvent(event);
+
+    const gfx::PointF event_pos(event.GetX(), event.GetY());
+    if ((event_pos - GetStartPosition()).LengthSquared() <=
+        (event_pos - GetEndPosition()).LengthSquared())
+      return start_selection_handle_->WillHandleTouchEvent(event);
+    else
+      return end_selection_handle_->WillHandleTouchEvent(event);
   }
 
   return false;
 }
 
-void TouchSelectionController::ShowInsertionHandleAutomatically() {
-  if (activate_insertion_automatically_)
-    return;
-  activate_insertion_automatically_ = true;
-  if (!is_insertion_active_ && !is_selection_active_)
-    ResetCachedValues();
+void TouchSelectionController::OnLongPressEvent() {
+  last_input_event_type_ = LONG_PRESS;
+  ShowSelectionHandlesAutomatically();
+  ShowInsertionHandleAutomatically();
+  ResetCachedValuesIfInactive();
 }
 
-void TouchSelectionController::ShowSelectionHandlesAutomatically() {
-  if (activate_selection_automatically_)
-    return;
-  activate_selection_automatically_ = true;
-  if (!is_insertion_active_ && !is_selection_active_)
-    ResetCachedValues();
+void TouchSelectionController::OnTapEvent() {
+  last_input_event_type_ = TAP;
+  activate_selection_automatically_ = false;
+  DeactivateSelection();
+  ShowInsertionHandleAutomatically();
+  ResetCachedValuesIfInactive();
 }
 
-void TouchSelectionController::HideAndDisallowAutomaticShowing() {
+void TouchSelectionController::HideAndDisallowShowingAutomatically() {
+  last_input_event_type_ = INPUT_EVENT_TYPE_NONE;
   DeactivateInsertion();
   DeactivateSelection();
   activate_insertion_automatically_ = false;
@@ -148,8 +157,16 @@ void TouchSelectionController::OnSelectionEditable(bool editable) {
   if (selection_editable_ == editable)
     return;
   selection_editable_ = editable;
+  ResetCachedValuesIfInactive();
   if (!selection_editable_)
     DeactivateInsertion();
+}
+
+void TouchSelectionController::OnSelectionEmpty(bool empty) {
+  if (selection_empty_ == empty)
+    return;
+  selection_empty_ = empty;
+  ResetCachedValuesIfInactive();
 }
 
 bool TouchSelectionController::Animate(base::TimeTicks frame_time) {
@@ -209,10 +226,29 @@ scoped_ptr<TouchHandleDrawable> TouchSelectionController::CreateDrawable() {
   return client_->CreateDrawable();
 }
 
+void TouchSelectionController::ShowInsertionHandleAutomatically() {
+  if (activate_insertion_automatically_)
+    return;
+  activate_insertion_automatically_ = true;
+  ResetCachedValuesIfInactive();
+}
+
+void TouchSelectionController::ShowSelectionHandlesAutomatically() {
+  if (activate_selection_automatically_)
+    return;
+  activate_selection_automatically_ = true;
+  ResetCachedValuesIfInactive();
+}
+
 void TouchSelectionController::OnInsertionChanged() {
   DeactivateSelection();
 
-  if (!activate_insertion_automatically_ || !selection_editable_)
+  if (last_input_event_type_ == TAP && selection_empty_) {
+    HideAndDisallowShowingAutomatically();
+    return;
+  }
+
+  if (!activate_insertion_automatically_)
     return;
 
   const bool was_active = is_insertion_active_;
@@ -300,14 +336,15 @@ void TouchSelectionController::DeactivateSelection() {
   client_->OnSelectionEvent(SELECTION_CLEARED, gfx::PointF());
 }
 
-void TouchSelectionController::ResetCachedValues() {
+void TouchSelectionController::ResetCachedValuesIfInactive() {
+  if (is_selection_active_ || is_insertion_active_)
+    return;
   start_rect_ = gfx::RectF();
   end_rect_ = gfx::RectF();
   start_orientation_ = TOUCH_HANDLE_ORIENTATION_UNDEFINED;
   end_orientation_ = TOUCH_HANDLE_ORIENTATION_UNDEFINED;
   start_visible_ = false;
   end_visible_ = false;
-  selection_editable_for_last_update_ = false;
 }
 
 gfx::PointF TouchSelectionController::GetStartPosition() const {

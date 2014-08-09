@@ -56,9 +56,9 @@
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/timezone/timezone_provider.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
+#include "chrome/browser/metrics/metrics_reporting_state.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/browser/ui/options/options_util.h"
 #include "chrome/browser/ui/webui/chromeos/login/signin_screen_handler.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/pref_names.h"
@@ -159,7 +159,7 @@ const char WizardController::kAutoEnrollmentCheckScreenName[] =
   "auto-enrollment-check";
 const char WizardController::kWrongHWIDScreenName[] = "wrong-hwid";
 const char WizardController::kSupervisedUserCreationScreenName[] =
-  "locally-managed-user-creation-flow";
+  "supervised-user-creation-flow";
 const char WizardController::kAppLaunchSplashScreenName[] =
   "app-launch-splash";
 const char WizardController::kHIDDetectionScreenName[] = "hid-detection";
@@ -589,7 +589,7 @@ void WizardController::SkipToLoginForTesting(
   VLOG(1) << "SkipToLoginForTesting.";
   StartupUtils::MarkEulaAccepted();
   PerformPostEulaActions();
-  OnOOBECompleted();
+  OnAutoEnrollmentCheckCompleted();
 }
 
 void WizardController::AddObserver(Observer* observer) {
@@ -658,7 +658,7 @@ void WizardController::OnEulaAccepted() {
   time_eula_accepted_ = base::Time::Now();
   StartupUtils::MarkEulaAccepted();
   bool uma_enabled =
-      OptionsUtil::ResolveMetricsReportingEnabled(usage_statistics_reporting_);
+      ResolveMetricsReportingEnabled(usage_statistics_reporting_);
 
   CrosSettings::Get()->SetBoolean(kStatsReportingPref, uma_enabled);
   if (uma_enabled) {
@@ -780,7 +780,7 @@ void WizardController::OnAutoEnrollmentDone() {
   ResumeLoginScreen();
 }
 
-void WizardController::OnOOBECompleted() {
+void WizardController::OnAutoEnrollmentCheckCompleted() {
   if (ShouldAutoStartEnrollment() || enrollment_recovery_) {
     ShowEnrollmentScreen();
   } else {
@@ -910,6 +910,15 @@ void WizardController::SetStatusAreaVisible(bool visible) {
   host_->SetStatusAreaVisible(visible);
 }
 
+void WizardController::OnHIDScreenNecessityCheck(bool screen_needed) {
+  if (!oobe_display_)
+    return;
+  if (screen_needed)
+    ShowHIDDetectionScreen();
+  else
+    ShowNetworkScreen();
+}
+
 void WizardController::AdvanceToScreen(const std::string& screen_name) {
   if (screen_name == kNetworkScreenName) {
     ShowNetworkScreen();
@@ -948,10 +957,15 @@ void WizardController::AdvanceToScreen(const std::string& screen_name) {
   } else if (screen_name != kTestNoScreenName) {
     if (is_out_of_box_) {
       time_oobe_started_ = base::Time::Now();
-      if (CanShowHIDDetectionScreen())
-        ShowHIDDetectionScreen();
-      else
+      if (CanShowHIDDetectionScreen()) {
+        base::Callback<void(bool)> on_check = base::Bind(
+            &WizardController::OnHIDScreenNecessityCheck,
+            weak_factory_.GetWeakPtr());
+        oobe_display_->GetHIDDetectionScreenActor()->CheckIsScreenRequired(
+            on_check);
+      } else {
         ShowNetworkScreen();
+      }
     } else {
       ShowLoginScreen(LoginScreenContext());
     }
@@ -1001,7 +1015,7 @@ void WizardController::OnExit(ExitCodes exit_code) {
       if (skip_update_enroll_after_eula_)
         ShowEnrollmentScreen();
       else
-        OnOOBECompleted();
+        OnAutoEnrollmentCheckCompleted();
       break;
     case ENTERPRISE_ENROLLMENT_COMPLETED:
       OnEnrollmentDone();

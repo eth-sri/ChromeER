@@ -343,9 +343,7 @@ TestLauncher::TestLauncher(TestLauncherDelegate* launcher_delegate,
 
     // Enable test retries by default for bots. This can be still overridden
     // from command line using --test-launcher-retry-limit flag.
-    // TODO(sergeyberezin): decrease retry_limit_ back to 3 when the
-    // ignorer_bot is deployed to automatically disable flaky tests.
-    retry_limit_ = 12;
+    retry_limit_ = 3;
   } else {
     // Default to serial test execution if not running on a bot. This makes it
     // possible to disable stdio redirection and can still be overridden with
@@ -578,6 +576,12 @@ void TestLauncher::OnTestFinished(const TestResult& result) {
   test_started_count_ += retry_started_count;
 }
 
+// static
+std::string TestLauncher::FormatFullTestName(const std::string& test_case_name,
+                                             const std::string& test_name) {
+  return test_case_name + "." + test_name;
+}
+
 bool TestLauncher::Init() {
   const CommandLine* command_line = CommandLine::ForCurrentProcess();
 
@@ -787,9 +791,8 @@ void TestLauncher::RunTests() {
     const testing::TestCase* test_case = unit_test->GetTestCase(i);
     for (int j = 0; j < test_case->total_test_count(); ++j) {
       const testing::TestInfo* test_info = test_case->GetTestInfo(j);
-      std::string test_name = test_info->test_case_name();
-      test_name.append(".");
-      test_name.append(test_info->name());
+      std::string test_name = FormatFullTestName(
+          test_info->test_case_name(), test_info->name());
 
       results_tracker_.AddTest(test_name);
 

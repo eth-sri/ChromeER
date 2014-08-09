@@ -202,10 +202,11 @@ TEST_F(ProfileManagerTest, LoggedInProfileDir) {
   scoped_ptr<chromeos::MockUserManager> mock_user_manager;
   mock_user_manager.reset(new chromeos::MockUserManager());
   mock_user_manager->SetActiveUser("user@gmail.com");
-  chromeos::User* active_user = mock_user_manager->GetActiveUser();
-  profile_manager->Observe(chrome::NOTIFICATION_LOGIN_USER_CHANGED,
-                           content::NotificationService::AllSources(),
-                           content::Details<const chromeos::User>(active_user));
+  user_manager::User* active_user = mock_user_manager->GetActiveUser();
+  profile_manager->Observe(
+      chrome::NOTIFICATION_LOGIN_USER_CHANGED,
+      content::NotificationService::AllSources(),
+      content::Details<const user_manager::User>(active_user));
   base::FilePath expected_logged_in(profile_dir);
   EXPECT_EQ(expected_logged_in.value(),
             profile_manager->GetInitialProfileDir().value());
@@ -983,8 +984,7 @@ TEST_F(ProfileManagerTest, ProfileDisplayNameResetsDefaultName) {
     return;
 
   // The command line is reset at the end of every test by the test suite.
-  switches::EnableNewProfileManagementForTesting(
-      CommandLine::ForCurrentProcess());
+  switches::EnableNewAvatarMenuForTesting(CommandLine::ForCurrentProcess());
 
   ProfileManager* profile_manager = g_browser_process->profile_manager();
   ProfileInfoCache& cache = profile_manager->GetProfileInfoCache();
@@ -1022,8 +1022,7 @@ TEST_F(ProfileManagerTest, ProfileDisplayNamePreservesCustomName) {
     return;
 
   // The command line is reset at the end of every test by the test suite.
-  switches::EnableNewProfileManagementForTesting(
-      CommandLine::ForCurrentProcess());
+  switches::EnableNewAvatarMenuForTesting(CommandLine::ForCurrentProcess());
 
   ProfileManager* profile_manager = g_browser_process->profile_manager();
   ProfileInfoCache& cache = profile_manager->GetProfileInfoCache();
@@ -1068,8 +1067,7 @@ TEST_F(ProfileManagerTest, ProfileDisplayNamePreservesSignedInName) {
     return;
 
   // The command line is reset at the end of every test by the test suite.
-  switches::EnableNewProfileManagementForTesting(
-      CommandLine::ForCurrentProcess());
+  switches::EnableNewAvatarMenuForTesting(CommandLine::ForCurrentProcess());
 
   ProfileManager* profile_manager = g_browser_process->profile_manager();
   ProfileInfoCache& cache = profile_manager->GetProfileInfoCache();

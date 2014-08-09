@@ -6,6 +6,7 @@
 
 #include <limits>
 
+#include "athena/common/container_priorities.h"
 #include "athena/home/app_list_view_delegate.h"
 #include "athena/home/bottom_home_view.h"
 #include "athena/home/minimized_home.h"
@@ -24,8 +25,11 @@
 #include "ui/views/layout/box_layout.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_delegate.h"
+#include "ui/wm/core/shadow.h"
 #include "ui/wm/core/visibility_controller.h"
 #include "ui/wm/core/window_animations.h"
+#include "ui/wm/public/activation_change_observer.h"
+#include "ui/wm/public/activation_client.h"
 
 namespace athena {
 namespace {
@@ -98,14 +102,14 @@ class HomeCardView : public views::WidgetDelegateView {
   HomeCardView(app_list::AppListViewDelegate* view_delegate,
                aura::Window* container,
                MinimizedHomeDragDelegate* minimized_delegate) {
-    set_background(views::Background::CreateSolidBackground(SK_ColorWHITE));
-
     bottom_view_ = new BottomHomeView(view_delegate);
     AddChildView(bottom_view_);
 
     main_view_ = new app_list::AppListMainView(
         view_delegate, 0 /* initial_apps_page */, container);
     AddChildView(main_view_);
+    main_view_->set_background(
+        views::Background::CreateSolidBackground(SK_ColorWHITE));
 
     minimized_view_ = CreateMinimizedHome(minimized_delegate);
     AddChildView(minimized_view_);
@@ -120,6 +124,12 @@ class HomeCardView : public views::WidgetDelegateView {
       contents_view->SetActivePage(contents_view->GetPageIndexForNamedPage(
           app_list::ContentsView::NAMED_PAGE_START));
     }
+
+    if (state != HomeCard::VISIBLE_BOTTOM)
+      shadow_.reset();
+    // Do not create the shadow yet. Instead, create it in OnWidgetMove(), to
+    // make sure that widget has been resized correctly (because the size of the
+    // shadow depends on the size of the widget).
   }
 
   // views::View:
@@ -138,6 +148,19 @@ class HomeCardView : public views::WidgetDelegateView {
 
  private:
   // views::WidgetDelegate:
+  virtual void OnWidgetMove() OVERRIDE {
+    if (bottom_view_->visible() && !shadow_) {
+      aura::Window* window = GetWidget()->GetNativeWindow();
+      shadow_.reset(new wm::Shadow());
+      shadow_->Init(wm::Shadow::STYLE_ACTIVE);
+      shadow_->SetContentBounds(gfx::Rect(window->bounds().size()));
+      shadow_->layer()->SetVisible(true);
+
+      ui::Layer* layer = window->layer();
+      layer->Add(shadow_->layer());
+    }
+  }
+
   virtual views::View* GetContentsView() OVERRIDE {
     return this;
   }
@@ -145,6 +168,7 @@ class HomeCardView : public views::WidgetDelegateView {
   app_list::AppListMainView* main_view_;
   BottomHomeView* bottom_view_;
   views::View* minimized_view_;
+  scoped_ptr<wm::Shadow> shadow_;
 
   DISALLOW_COPY_AND_ASSIGN(HomeCardView);
 };
@@ -153,7 +177,8 @@ class HomeCardImpl : public HomeCard,
                      public AcceleratorHandler,
                      public HomeCardLayoutManager::Delegate,
                      public MinimizedHomeDragDelegate,
-                     public WindowManagerObserver {
+                     public WindowManagerObserver,
+                     public aura::client::ActivationChangeObserver {
  public:
   explicit HomeCardImpl(AppModelBuilder* model_builder);
   virtual ~HomeCardImpl();
@@ -168,6 +193,7 @@ class HomeCardImpl : public HomeCard,
 
   // Overridden from HomeCard:
   virtual void SetState(State state) OVERRIDE;
+  virtual State GetState() OVERRIDE;
   virtual void RegisterSearchProvider(
       app_list::SearchProvider* search_provider) OVERRIDE;
   virtual void UpdateVirtualKeyboardBounds(
@@ -178,10 +204,11 @@ class HomeCardImpl : public HomeCard,
   virtual bool OnAcceleratorFired(int command_id,
                                   const ui::Accelerator& accelerator) OVERRIDE {
     DCHECK_EQ(COMMAND_SHOW_HOME_CARD, command_id);
-    if (state_ == HIDDEN)
+
+    if (state_ == VISIBLE_CENTERED && original_state_ != VISIBLE_BOTTOM)
+      SetState(VISIBLE_MINIMIZED);
+    else if (state_ == VISIBLE_MINIMIZED)
       SetState(VISIBLE_CENTERED);
-    else
-      SetState(HIDDEN);
     return true;
   }
 
@@ -207,7 +234,7 @@ class HomeCardImpl : public HomeCard,
 
   virtual int GetHorizontalMargin() const OVERRIDE {
     CHECK_NE(HIDDEN, state_);
-    const int kHomeCardHorizontalMargin = 50;
+    const int kHomeCardHorizontalMargin = 100;
     return state_ == VISIBLE_BOTTOM ? kHomeCardHorizontalMargin : 0;
   }
 
@@ -232,6 +259,15 @@ class HomeCardImpl : public HomeCard,
     SetState(VISIBLE_MINIMIZED);
   }
 
+  // aura::client::ActivationChangeObserver:
+  virtual void OnWindowActivated(aura::Window* gained_active,
+                                 aura::Window* lost_active) OVERRIDE {
+    if (state_ != HIDDEN &&
+        gained_active != home_card_widget_->GetNativeWindow()) {
+      SetState(VISIBLE_MINIMIZED);
+    }
+  }
+
   scoped_ptr<AppModelBuilder> model_builder_;
 
   HomeCard::State state_;
@@ -244,6 +280,7 @@ class HomeCardImpl : public HomeCard,
   HomeCardView* home_card_view_;
   scoped_ptr<AppListViewDelegate> view_delegate_;
   HomeCardLayoutManager* layout_manager_;
+  aura::client::ActivationClient* activation_client_;  // Not owned
 
   // Right now HomeCard allows only one search provider.
   // TODO(mukai): port app-list's SearchController and Mixer.
@@ -254,11 +291,12 @@ class HomeCardImpl : public HomeCard,
 
 HomeCardImpl::HomeCardImpl(AppModelBuilder* model_builder)
     : model_builder_(model_builder),
-      state_(VISIBLE_MINIMIZED),
+      state_(HIDDEN),
       original_state_(VISIBLE_MINIMIZED),
       home_card_widget_(NULL),
       home_card_view_(NULL),
-      layout_manager_(NULL) {
+      layout_manager_(NULL),
+      activation_client_(NULL) {
   DCHECK(!instance);
   instance = this;
   WindowManager::GetInstance()->AddObserver(this);
@@ -267,11 +305,16 @@ HomeCardImpl::HomeCardImpl(AppModelBuilder* model_builder)
 HomeCardImpl::~HomeCardImpl() {
   DCHECK(instance);
   WindowManager::GetInstance()->RemoveObserver(this);
+  if (activation_client_)
+    activation_client_->RemoveObserver(this);
   home_card_widget_->CloseNow();
   instance = NULL;
 }
 
 void HomeCardImpl::SetState(HomeCard::State state) {
+  if (state_ == state)
+    return;
+
   // Update |state_| before changing the visibility of the widgets, so that
   // LayoutManager callbacks get the correct state.
   state_ = state;
@@ -279,10 +322,17 @@ void HomeCardImpl::SetState(HomeCard::State state) {
   if (state_ == HIDDEN) {
     home_card_widget_->Hide();
   } else {
-    home_card_widget_->Show();
+    if (state_ == VISIBLE_CENTERED)
+      home_card_widget_->Show();
+    else
+      home_card_widget_->ShowInactive();
     home_card_view_->SetState(state);
     layout_manager_->Layout();
   }
+}
+
+HomeCard::State HomeCardImpl::GetState() {
+  return state_;
 }
 
 void HomeCardImpl::RegisterSearchProvider(
@@ -307,7 +357,7 @@ void HomeCardImpl::UpdateVirtualKeyboardBounds(
 
 void HomeCardImpl::Init() {
   InstallAccelerators();
-  ScreenManager::ContainerParams params("HomeCardContainer");
+  ScreenManager::ContainerParams params("HomeCardContainer", CP_HOME_CARD);
   params.can_activate_children = true;
   aura::Window* container = ScreenManager::Get()->CreateContainer(params);
   layout_manager_ = new HomeCardLayoutManager(this);
@@ -330,6 +380,11 @@ void HomeCardImpl::Init() {
 
   SetState(VISIBLE_MINIMIZED);
   home_card_view_->Layout();
+
+  activation_client_ =
+      aura::client::GetActivationClient(container->GetRootWindow());
+  if (activation_client_)
+    activation_client_->AddObserver(this);
 }
 
 void HomeCardImpl::InstallAccelerators() {

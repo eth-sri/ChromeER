@@ -18,10 +18,6 @@
 #include "base/timer/timer.h"
 #include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
 #include "chrome/browser/chromeos/login/screens/screen_observer.h"
-#include "chrome/browser/chromeos/login/screens/wizard_screen.h"
-#include "chrome/browser/chromeos/policy/auto_enrollment_client.h"
-#include "ui/gfx/rect.h"
-#include "url/gurl.h"
 
 class PrefRegistrySimple;
 class PrefService;
@@ -205,6 +201,9 @@ class WizardController : public ScreenObserver {
   // Resumes a pending login screen.
   void ResumeLoginScreen();
 
+  // Invokes corresponding first OOBE screen.
+  void OnHIDScreenNecessityCheck(bool screen_needed);
+
   // Exit handlers:
   void OnHIDDetectionCompleted();
   void OnNetworkConnected();
@@ -223,7 +222,7 @@ class WizardController : public ScreenObserver {
   void OnKioskAutolaunchConfirmed();
   void OnKioskEnableCompleted();
   void OnWrongHWIDWarningSkipped();
-  void OnOOBECompleted();
+  void OnAutoEnrollmentCheckCompleted();
   void OnTermsOfServiceDeclined();
   void OnTermsOfServiceAccepted();
   void OnControllerPairingFinished();

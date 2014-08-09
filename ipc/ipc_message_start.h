@@ -105,6 +105,7 @@ enum IPCMessageStart {
   AecDumpMsgStart,
   OzoneGpuMsgStart,
   ChromeUtilityExtensionsMsgStart,
+  PlatformNotificationMsgStart,
   EventRacerMsgStart,
   LastIPCMsgStart  // Must come last.
 };

@@ -125,7 +125,8 @@ class KeySystems {
   friend struct base::DefaultLazyInstanceTraits<KeySystems>;
 
   struct KeySystemProperties {
-    KeySystemProperties() : use_aes_decryptor(false) {}
+    KeySystemProperties()
+        : use_aes_decryptor(false), supported_codecs(EME_CODEC_NONE) {}
 
     bool use_aes_decryptor;
 #if defined(ENABLE_PEPPER_CDMS)
@@ -209,14 +210,14 @@ KeySystems::KeySystems() : needs_update_(true) {
 }
 
 void KeySystems::UpdateIfNeeded() {
-#if defined(WIDEVINE_CDM_AVAILABLE) && defined(WIDEVINE_CDM_IS_COMPONENT)
+#if defined(WIDEVINE_CDM_AVAILABLE)
   DCHECK(thread_checker_.CalledOnValidThread());
   if (!needs_update_)
     return;
 
   // The update could involve a sync IPC to the browser process. Use a minimum
   // update interval to avoid unnecessary frequent IPC to the browser.
-  static const int kMinUpdateIntervalInSeconds = 5;
+  static const int kMinUpdateIntervalInSeconds = 1;
   base::Time now = base::Time::Now();
   if (now - last_update_time_ <
       base::TimeDelta::FromSeconds(kMinUpdateIntervalInSeconds)) {

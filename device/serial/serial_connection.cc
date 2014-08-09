@@ -10,7 +10,6 @@ namespace device {
 
 SerialConnection::SerialConnection(scoped_refptr<SerialIoHandler> io_handler)
     : io_handler_(io_handler) {
-  // TODO(sammc): Call io_handler_->Initialize() once we support send and recv.
 }
 
 SerialConnection::~SerialConnection() {
@@ -40,10 +39,6 @@ void SerialConnection::GetControlSignals(
 
 void SerialConnection::Flush(const mojo::Callback<void(bool)>& callback) {
   callback.Run(io_handler_->Flush());
-}
-
-void SerialConnection::OnConnectionError() {
-  delete this;
 }
 
 }  // namespace device

@@ -242,7 +242,7 @@ class AccessibilityManagerTest : public InProcessBrowserTest {
     default_autoclick_delay_ = GetAutoclickDelay();
   }
 
-  virtual void CleanUpOnMainThread() OVERRIDE {
+  virtual void TearDownOnMainThread() OVERRIDE {
     AccessibilityManager::SetBrailleControllerForTest(NULL);
   }
 
@@ -619,12 +619,6 @@ IN_PROC_BROWSER_TEST_P(AccessibilityManagerUserTypeTest, BrailleWhenLoggedIn) {
   const char* user_name = GetParam();
   UserManager::Get()->UserLoggedIn(user_name, user_name, true);
   UserManager::Get()->SessionStarted();
-  // The |ComponentExtensionIMEManager| defers some initialization to the
-  // |FILE| thread.  We need to wait for that to finish before continuing.
-  InputMethodManager* imm = InputMethodManager::Get();
-  while (!imm->GetComponentExtensionIMEManager()->IsInitialized()) {
-    content::RunAllPendingInMessageLoop(BrowserThread::FILE);
-  }
   // This object watches for IME preference changes and reflects those in
   // the IME framework state.
   chromeos::Preferences prefs;

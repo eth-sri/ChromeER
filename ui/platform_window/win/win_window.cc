@@ -102,6 +102,10 @@ void WinWindow::Minimize() {}
 
 void WinWindow::Restore() {}
 
+void WinWindow::SetCursor(PlatformCursor cursor) {}
+
+void WinWindow::MoveCursorTo(const gfx::Point& location) {}
+
 LRESULT WinWindow::OnMouseRange(UINT message, WPARAM w_param, LPARAM l_param) {
   MSG msg = { hwnd(), message, w_param, l_param, 0,
               { CR_GET_X_LPARAM(l_param), CR_GET_Y_LPARAM(l_param) } };
@@ -123,7 +127,7 @@ LRESULT WinWindow::OnCaptureChanged(UINT message,
 
 LRESULT WinWindow::OnKeyEvent(UINT message, WPARAM w_param, LPARAM l_param) {
   MSG msg = { hwnd(), message, w_param, l_param };
-  KeyEvent event(msg, message == WM_CHAR);
+  KeyEvent event(msg);
   delegate_->DispatchEvent(&event);
   SetMsgHandled(event.handled());
   return 0;

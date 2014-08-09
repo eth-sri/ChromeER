@@ -37,6 +37,22 @@ class RsaSsaImplementation : public RsaHashedAlgorithm {
       : RsaHashedAlgorithm(blink::WebCryptoKeyUsageVerify,
                            blink::WebCryptoKeyUsageSign) {}
 
+  virtual const char* GetJwkAlgorithm(
+      const blink::WebCryptoAlgorithmId hash) const OVERRIDE {
+    switch (hash) {
+      case blink::WebCryptoAlgorithmIdSha1:
+        return "RS1";
+      case blink::WebCryptoAlgorithmIdSha256:
+        return "RS256";
+      case blink::WebCryptoAlgorithmIdSha384:
+        return "RS384";
+      case blink::WebCryptoAlgorithmIdSha512:
+        return "RS512";
+      default:
+        return NULL;
+    }
+  }
+
   virtual Status Sign(const blink::WebCryptoAlgorithm& algorithm,
                       const blink::WebCryptoKey& key,
                       const CryptoData& data,
@@ -89,23 +105,19 @@ class RsaSsaImplementation : public RsaHashedAlgorithm {
     if (status.IsError())
       return status;
 
-    if (1 != EVP_DigestVerifyInit(ctx.get(), NULL, digest, NULL, public_key))
+    if (!EVP_DigestVerifyInit(ctx.get(), NULL, digest, NULL, public_key))
       return Status::OperationError();
 
-    if (1 !=
-        EVP_DigestVerifyUpdate(ctx.get(), data.bytes(), data.byte_length())) {
+    if (!EVP_DigestVerifyUpdate(ctx.get(), data.bytes(), data.byte_length())) {
       return Status::OperationError();
     }
 
-    // This function takes a non-const pointer to the signature, however does
-    // not mutate it, so casting is safe.
-    // Also note that the return value can be:
+    // Note that the return value can be:
     //   1 --> Success
     //   0 --> Verification failed
     //  <0 --> Operation error
-    int rv = EVP_DigestVerifyFinal(ctx.get(),
-                                   const_cast<uint8_t*>(signature.bytes()),
-                                   signature.byte_length());
+    int rv = EVP_DigestVerifyFinal(
+        ctx.get(), signature.bytes(), signature.byte_length());
     *signature_match = rv == 1;
     return rv >= 0 ? Status::Success() : Status::OperationError();
   }

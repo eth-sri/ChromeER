@@ -12,6 +12,7 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
+#include "base/debug/trace_event_argument.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/stl_util.h"
@@ -376,6 +377,8 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
     if (sync_tree->ContentsTexturesPurged())
       sync_tree->ResetContentsTexturesPurged();
   }
+
+  sync_tree->set_has_ever_been_drawn(false);
 
   micro_benchmark_controller_.ScheduleImplBenchmarks(host_impl);
 }
@@ -1151,10 +1154,10 @@ void LayerTreeHost::UpdateTopControlsState(TopControlsState constraints,
                  animate));
 }
 
-scoped_ptr<base::Value> LayerTreeHost::AsValue() const {
-  scoped_ptr<base::DictionaryValue> state(new base::DictionaryValue());
-  state->Set("proxy", proxy_->AsValue().release());
-  return state.PassAs<base::Value>();
+void LayerTreeHost::AsValueInto(base::debug::TracedValue* state) const {
+  state->BeginDictionary("proxy");
+  proxy_->AsValueInto(state);
+  state->EndDictionary();
 }
 
 void LayerTreeHost::AnimateLayers(base::TimeTicks monotonic_time) {

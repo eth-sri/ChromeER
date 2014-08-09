@@ -96,12 +96,13 @@ const char kEnableNetworkPortalNotification[] =
 // Enables activation of voice search by saying 'Ok Google'.
 const char kEnableOkGoogleVoiceSearch[] = "enable-ok-google-voice-search";
 
-// Enables using screenshots in tests.
-const char kEnableScreenshotTesting[] = "enable-screenshot-testing";
-
 // Enables touchpad three-finger-click as middle button.
 const char kEnableTouchpadThreeFingerClick[]
     = "enable-touchpad-three-finger-click";
+
+// Enables using screenshots in tests and seets mode.
+const char kEnableScreenshotTestingWithMode[] =
+    "enable-screenshot-testing-with-mode";
 
 // Enable Kiosk mode for ChromeOS. Note this switch refers to retail mode rather
 // than the kiosk app mode.
@@ -203,11 +204,12 @@ const char kOobeGuestSession[] = "oobe-guest-session";
 // See FakeDBusThreadManager::ParsePowerCommandLineSwitch for full details.
 const char kPowerStub[] = "power-stub";
 
-// Specifies network stub behavior. If this switch is not specified,
-// ethernet, wifi and vpn are enabled by default, and transitions occur
-// instantaneously. Multiple options can be comma separated (no spaces).
+// Overrides network stub behavior. By default, ethernet, wifi and vpn are
+// enabled, and transitions occur instantaneously. Multiple options can be
+// comma separated (no spaces). Note: all options are in the format 'foo=x'.
 // See FakeShillManagerClient::SetInitialNetworkState for implementation.
 // Examples:
+//  'clear=1' - Clears all default configurations
 //  'wifi=on' - A wifi network is initially connected ('1' also works)
 //  'wifi=off' - Wifi networks are all initially disconnected ('0' also works)
 //  'wifi=disabled' - Wifi is initially disabled
@@ -239,12 +241,15 @@ const char kEnableFirstRunUITransitions[] = "enable-first-run-ui-transitions";
 // Forces first-run UI to be shown for every login.
 const char kForceFirstRunUI[] = "force-first-run-ui";
 
-// Turns on screenshot testing and specifies the directory where the
-// golden screenshots are stored.
-const char kScreenshotDestinationDir[] = "screenshot-destination-dir";
-
 // Enables testing for auto update UI.
 const char kTestAutoUpdateUI[] = "test-auto-update-ui";
+
+// Screenshot testing: specifies the directory where the golden screenshots are
+// stored.
+const char kGoldenScreenshotsDir[] = "golden-screenshots-dir";
+
+// Screenshot testing: specifies the directoru where artifacts will be stored.
+const char kArtifactsDir[] = "artifacts-dir";
 
 }  // namespace switches
 }  // namespace chromeos

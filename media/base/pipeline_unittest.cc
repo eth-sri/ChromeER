@@ -122,7 +122,7 @@ class PipelineTest : public ::testing::Test {
     if (!pipeline_ || !pipeline_->IsRunning())
       return;
 
-    ExpectStop();
+    ExpectDemuxerStop();
 
     // The mock demuxer doesn't stop the fake text track stream,
     // so just stop it manually.
@@ -132,10 +132,16 @@ class PipelineTest : public ::testing::Test {
     }
 
     // Expect a stop callback if we were started.
-    EXPECT_CALL(callbacks_, OnStop());
+    ExpectPipelineStopAndDestroyPipeline();
     pipeline_->Stop(base::Bind(&CallbackHelper::OnStop,
                                base::Unretained(&callbacks_)));
     message_loop_.RunUntilIdle();
+  }
+
+  void OnDemuxerError() {
+    // Cast because OnDemuxerError is private in Pipeline.
+    static_cast<DemuxerHost*>(pipeline_.get())
+        ->OnDemuxerError(PIPELINE_ERROR_ABORT);
   }
 
  protected:
@@ -192,7 +198,7 @@ class PipelineTest : public ::testing::Test {
                               TextTrackConfig(kTextSubtitles, "", "", ""));
   }
 
-  // Sets up expectations on the callback and initializes the pipeline.  Called
+  // Sets up expectations on the callback and initializes the pipeline. Called
   // after tests have set expectations any filters they wish to use.
   void StartPipeline(PipelineStatus start_status) {
     EXPECT_CALL(callbacks_, OnStart(start_status));
@@ -308,9 +314,20 @@ class PipelineTest : public ::testing::Test {
     EXPECT_EQ(seek_time, pipeline_->GetMediaTime());
   }
 
-  void ExpectStop() {
+  void DestroyPipeline() {
+    pipeline_.reset();
+  }
+
+  void ExpectDemuxerStop() {
     if (demuxer_)
       EXPECT_CALL(*demuxer_, Stop(_)).WillOnce(RunClosure<0>());
+  }
+
+  void ExpectPipelineStopAndDestroyPipeline() {
+    // After the Pipeline is stopped, it could be destroyed any time. Always
+    // destroy the pipeline immediately after OnStop() to test this.
+    EXPECT_CALL(callbacks_, OnStop())
+        .WillOnce(Invoke(this, &PipelineTest::DestroyPipeline));
   }
 
   MOCK_METHOD2(OnAddTextTrack, void(const TextTrackConfig&,
@@ -395,12 +412,64 @@ TEST_F(PipelineTest, NeverInitializes) {
                    base::Unretained(&callbacks_)));
   message_loop_.RunUntilIdle();
 
-
   // Because our callback will get executed when the test tears down, we'll
   // verify that nothing has been called, then set our expectation for the call
   // made during tear down.
   Mock::VerifyAndClear(&callbacks_);
   EXPECT_CALL(callbacks_, OnStart(PIPELINE_OK));
+}
+
+TEST_F(PipelineTest, StopWithoutStart) {
+  ExpectPipelineStopAndDestroyPipeline();
+  pipeline_->Stop(
+      base::Bind(&CallbackHelper::OnStop, base::Unretained(&callbacks_)));
+  message_loop_.RunUntilIdle();
+}
+
+TEST_F(PipelineTest, StartThenStopImmediately) {
+  EXPECT_CALL(*demuxer_, Initialize(_, _, _))
+      .WillOnce(RunCallback<1>(PIPELINE_OK));
+  EXPECT_CALL(*demuxer_, Stop(_))
+      .WillOnce(RunClosure<0>());
+
+  EXPECT_CALL(callbacks_, OnStart(_));
+
+  pipeline_->Start(
+      filter_collection_.Pass(),
+      base::Bind(&CallbackHelper::OnEnded, base::Unretained(&callbacks_)),
+      base::Bind(&CallbackHelper::OnError, base::Unretained(&callbacks_)),
+      base::Bind(&CallbackHelper::OnStart, base::Unretained(&callbacks_)),
+      base::Bind(&CallbackHelper::OnMetadata, base::Unretained(&callbacks_)),
+      base::Bind(&CallbackHelper::OnBufferingStateChange,
+                 base::Unretained(&callbacks_)),
+      base::Bind(&CallbackHelper::OnDurationChange,
+                 base::Unretained(&callbacks_)));
+
+  // Expect a stop callback if we were started.
+  ExpectPipelineStopAndDestroyPipeline();
+  pipeline_->Stop(
+      base::Bind(&CallbackHelper::OnStop, base::Unretained(&callbacks_)));
+  message_loop_.RunUntilIdle();
+}
+
+TEST_F(PipelineTest, DemuxerErrorDuringStop) {
+  CreateAudioStream();
+  MockDemuxerStreamVector streams;
+  streams.push_back(audio_stream());
+
+  SetDemuxerExpectations(&streams);
+  SetAudioRendererExpectations(audio_stream());
+
+  StartPipeline(PIPELINE_OK);
+
+  EXPECT_CALL(*demuxer_, Stop(_))
+      .WillOnce(DoAll(InvokeWithoutArgs(this, &PipelineTest::OnDemuxerError),
+                      RunClosure<0>()));
+  ExpectPipelineStopAndDestroyPipeline();
+
+  pipeline_->Stop(
+      base::Bind(&CallbackHelper::OnStop, base::Unretained(&callbacks_)));
+  message_loop_.RunUntilIdle();
 }
 
 TEST_F(PipelineTest, URLNotFound) {
@@ -515,12 +584,35 @@ TEST_F(PipelineTest, Seek) {
   // Initialize then seek!
   StartPipeline(PIPELINE_OK);
 
-  message_loop_.RunUntilIdle();
-
   // Every filter should receive a call to Seek().
   base::TimeDelta expected = base::TimeDelta::FromSeconds(2000);
   ExpectSeek(expected, false);
   DoSeek(expected);
+}
+
+TEST_F(PipelineTest, SeekAfterError) {
+  CreateAudioStream();
+  MockDemuxerStreamVector streams;
+  streams.push_back(audio_stream());
+
+  SetDemuxerExpectations(&streams, base::TimeDelta::FromSeconds(3000));
+  SetAudioRendererExpectations(audio_stream());
+
+  // Initialize then seek!
+  StartPipeline(PIPELINE_OK);
+
+  EXPECT_CALL(*demuxer_, Stop(_))
+      .WillOnce(RunClosure<0>());
+  EXPECT_CALL(callbacks_, OnError(_));
+
+  static_cast<DemuxerHost*>(pipeline_.get())
+      ->OnDemuxerError(PIPELINE_ERROR_ABORT);
+  message_loop_.RunUntilIdle();
+
+  pipeline_->Seek(
+      base::TimeDelta::FromMilliseconds(100),
+      base::Bind(&CallbackHelper::OnSeek, base::Unretained(&callbacks_)));
+  message_loop_.RunUntilIdle();
 }
 
 TEST_F(PipelineTest, SetVolume) {
@@ -810,11 +902,7 @@ TEST_F(PipelineTest, AudioTimeUpdateDuringSeek) {
   EXPECT_EQ(pipeline_->GetMediaTime(), new_time);
 }
 
-static void DeletePipeline(scoped_ptr<Pipeline> pipeline) {
-  // |pipeline| will go out of scope.
-}
-
-TEST_F(PipelineTest, DeleteAfterStop) {
+TEST_F(PipelineTest, DestroyAfterStop) {
   CreateAudioStream();
   MockDemuxerStreamVector streams;
   streams.push_back(audio_stream());
@@ -822,10 +910,11 @@ TEST_F(PipelineTest, DeleteAfterStop) {
   SetAudioRendererExpectations(audio_stream());
   StartPipeline(PIPELINE_OK);
 
-  ExpectStop();
+  ExpectDemuxerStop();
 
-  Pipeline* pipeline = pipeline_.get();
-  pipeline->Stop(base::Bind(&DeletePipeline, base::Passed(&pipeline_)));
+  ExpectPipelineStopAndDestroyPipeline();
+  pipeline_->Stop(
+      base::Bind(&CallbackHelper::OnStop, base::Unretained(&callbacks_)));
   message_loop_.RunUntilIdle();
 }
 
@@ -849,6 +938,39 @@ TEST_F(PipelineTest, Underflow) {
   base::TimeDelta expected = base::TimeDelta::FromSeconds(5);
   ExpectSeek(expected, true);
   DoSeek(expected);
+}
+
+static void PostTimeCB(base::MessageLoop* message_loop,
+                       const AudioRenderer::TimeCB& time_cb) {
+  base::TimeDelta new_time = base::TimeDelta::FromMilliseconds(100);
+  message_loop->PostTask(FROM_HERE, base::Bind(time_cb, new_time, new_time));
+}
+
+TEST_F(PipelineTest, TimeUpdateAfterStop) {
+  CreateAudioStream();
+  CreateVideoStream();
+  MockDemuxerStreamVector streams;
+  streams.push_back(audio_stream());
+  streams.push_back(video_stream());
+
+  SetDemuxerExpectations(&streams);
+  SetAudioRendererExpectations(audio_stream());
+  SetVideoRendererExpectations(video_stream());
+  StartPipeline(PIPELINE_OK);
+
+  // Double post here! This is a hack to simulate the case where TimeCB is
+  // posted during ~AudioRenderer(), which is triggered in Pipeline::DoStop.
+  // Since we can't EXPECT_CALL the dtor and Pipeline::DoStop() is posted
+  // as well, we need to post twice here.
+  message_loop_.PostTask(
+      FROM_HERE, base::Bind(&PostTimeCB, &message_loop_, audio_time_cb_));
+
+  EXPECT_CALL(*demuxer_, Stop(_)).WillOnce(RunClosure<0>());
+
+  ExpectPipelineStopAndDestroyPipeline();
+  pipeline_->Stop(
+      base::Bind(&CallbackHelper::OnStop, base::Unretained(&callbacks_)));
+  message_loop_.RunUntilIdle();
 }
 
 class PipelineTeardownTest : public PipelineTest {
@@ -925,7 +1047,7 @@ class PipelineTeardownTest : public PipelineTest {
         EXPECT_CALL(*demuxer_, Initialize(_, _, _))
             .WillOnce(DoAll(Stop(pipeline_.get(), stop_cb),
                             RunCallback<1>(PIPELINE_OK)));
-        EXPECT_CALL(callbacks_, OnStop());
+        ExpectPipelineStopAndDestroyPipeline();
       } else {
         status = DEMUXER_ERROR_COULD_NOT_OPEN;
         EXPECT_CALL(*demuxer_, Initialize(_, _, _))
@@ -948,7 +1070,7 @@ class PipelineTeardownTest : public PipelineTest {
         EXPECT_CALL(*audio_renderer_, Initialize(_, _, _, _, _, _, _))
             .WillOnce(DoAll(Stop(pipeline_.get(), stop_cb),
                             RunCallback<1>(PIPELINE_OK)));
-        EXPECT_CALL(callbacks_, OnStop());
+        ExpectPipelineStopAndDestroyPipeline();
       } else {
         status = PIPELINE_ERROR_INITIALIZATION_FAILED;
         EXPECT_CALL(*audio_renderer_, Initialize(_, _, _, _, _, _, _))
@@ -968,7 +1090,7 @@ class PipelineTeardownTest : public PipelineTest {
         EXPECT_CALL(*video_renderer_, Initialize(_, _, _, _, _, _, _, _, _, _))
             .WillOnce(DoAll(Stop(pipeline_.get(), stop_cb),
                             RunCallback<2>(PIPELINE_OK)));
-        EXPECT_CALL(callbacks_, OnStop());
+        ExpectPipelineStopAndDestroyPipeline();
       } else {
         status = PIPELINE_ERROR_INITIALIZATION_FAILED;
         EXPECT_CALL(*video_renderer_, Initialize(_, _, _, _, _, _, _, _, _, _))
@@ -1013,7 +1135,7 @@ class PipelineTeardownTest : public PipelineTest {
     EXPECT_CALL(callbacks_, OnSeek(status));
 
     if (status == PIPELINE_OK) {
-      EXPECT_CALL(callbacks_, OnStop());
+      ExpectPipelineStopAndDestroyPipeline();
     }
 
     pipeline_->Seek(base::TimeDelta::FromSeconds(10), base::Bind(
@@ -1082,7 +1204,7 @@ class PipelineTeardownTest : public PipelineTest {
 
     switch (stop_or_error) {
       case kStop:
-        EXPECT_CALL(callbacks_, OnStop());
+        ExpectPipelineStopAndDestroyPipeline();
         pipeline_->Stop(base::Bind(
             &CallbackHelper::OnStop, base::Unretained(&callbacks_)));
         break;
@@ -1093,7 +1215,8 @@ class PipelineTeardownTest : public PipelineTest {
         break;
 
       case kErrorAndStop:
-        EXPECT_CALL(callbacks_, OnStop());
+        EXPECT_CALL(callbacks_, OnError(PIPELINE_ERROR_READ));
+        ExpectPipelineStopAndDestroyPipeline();
         pipeline_->SetErrorForTesting(PIPELINE_ERROR_READ);
         pipeline_->Stop(base::Bind(
             &CallbackHelper::OnStop, base::Unretained(&callbacks_)));

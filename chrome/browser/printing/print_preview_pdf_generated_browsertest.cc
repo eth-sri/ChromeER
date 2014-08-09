@@ -368,7 +368,7 @@ class PrintPreviewPdfGeneratedBrowserTest : public InProcessBrowserTest {
 
     ASSERT_GT(num_pages, 0);
     double max_width_in_pixels =
-        ConvertPointsToPixelDouble(max_width_in_points);
+        ConvertUnitDouble(max_width_in_points, kPointsPerInch, kDpi);
 
     for (int i = 0; i < num_pages; ++i) {
       double width_in_points, height_in_points;
@@ -378,8 +378,10 @@ class PrintPreviewPdfGeneratedBrowserTest : public InProcessBrowserTest {
                                       &width_in_points,
                                       &height_in_points));
 
-      double width_in_pixels = ConvertPointsToPixelDouble(width_in_points);
-      double height_in_pixels = ConvertPointsToPixelDouble(height_in_points);
+      double width_in_pixels = ConvertUnitDouble(
+          width_in_points, kPointsPerInch, kDpi);
+      double height_in_pixels = ConvertUnitDouble(
+          height_in_points, kPointsPerInch, kDpi);
 
       // The image will be rotated if |width_in_pixels| is greater than
       // |height_in_pixels|. This is because the page will be rotated to fit
@@ -644,24 +646,18 @@ IN_PROC_BROWSER_TEST_F(PrintPreviewPdfGeneratedBrowserTest,
   InitPdfFunctions();
   SetupStdinAndSavePath();
 
-  // There is no way to determine how many tests are to be run ahead of time
-  // without undesirable changes to the layout test framework. However, that is
-  // ok since whenever all the tests have been run, the layout test framework
-  // calls SIGKILL on this process, ending the test. This will end the while
-  // loop and cause the test to clean up after itself. For this to work, the
-  // browsertest must be run with '--single_process' not '--single-process.'
   while (true) {
     std::string input;
-    std::getline(std::cin, input);
-    if (input.empty()) {
-      while (std::cin.eof()) {
+    while (input.empty()) {
+      std::getline(std::cin, input);
+      if (std::cin.eof())
         std::cin.clear();
-        std::getline(std::cin, input);
-        if (!input.empty()) {
-          break;
-        }
-      }
     }
+
+    // If the layout test framework sends "QUIT" to this test, that means there
+    // are no more tests for this instance to run and it should quit.
+    if (input == "QUIT")
+      break;
 
     base::FilePath::StringType file_extension = FILE_PATH_LITERAL(".pdf");
     base::FilePath::StringType cmd;

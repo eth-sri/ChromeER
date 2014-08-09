@@ -135,7 +135,6 @@ class PepperPluginInstanceImpl;
 class RenderViewImplTest;
 class RenderViewObserver;
 class RenderViewTest;
-class RendererAccessibility;
 class RendererDateTimePicker;
 class RendererWebColorChooserImpl;
 class SpeechRecognitionDispatcher;
@@ -181,8 +180,7 @@ class CONTENT_EXPORT RenderViewImpl
                                 bool hidden,
                                 bool never_visible,
                                 int32 next_page_id,
-                                const blink::WebScreenInfo& screen_info,
-                                AccessibilityMode accessibility_mode);
+                                const blink::WebScreenInfo& screen_info);
 
   // Used by content_layouttest_support to hook into the creation of
   // RenderViewImpls.
@@ -215,14 +213,6 @@ class CONTENT_EXPORT RenderViewImpl
   }
 
   RenderFrameImpl* main_render_frame() { return main_render_frame_.get(); }
-
-  AccessibilityMode accessibility_mode() {
-    return accessibility_mode_;
-  }
-
-  RendererAccessibility* renderer_accessibility() {
-    return renderer_accessibility_;
-  }
 
   MouseLockDispatcher* mouse_lock_dispatcher() {
     return mouse_lock_dispatcher_;
@@ -479,6 +469,8 @@ class CONTENT_EXPORT RenderViewImpl
   virtual blink::WebView* GetWebView() OVERRIDE;
   virtual blink::WebElement GetFocusedElement() const OVERRIDE;
   virtual bool IsEditableNode(const blink::WebNode& node) const OVERRIDE;
+  virtual bool NodeContainsPoint(const blink::WebNode& node,
+                                 const gfx::Point& point) const OVERRIDE;
   virtual bool ShouldDisplayScrollbars(int width, int height) const OVERRIDE;
   virtual int GetEnabledBindings() const OVERRIDE;
   virtual bool GetContentStateImmediately() const OVERRIDE;
@@ -569,9 +561,9 @@ class CONTENT_EXPORT RenderViewImpl
   // For unit tests.
   friend class ExternalPopupMenuTest;
   friend class PepperDeviceTest;
-  friend class RendererAccessibilityTest;
   friend class RenderViewImplTest;
   friend class RenderViewTest;
+  friend class RendererAccessibilityTest;
 
   // TODO(nasko): Temporarily friend RenderFrameImpl, so we don't duplicate
   // utility functions needed in both classes, while we move frame specific
@@ -595,7 +587,6 @@ class CONTENT_EXPORT RenderViewImpl
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, OnHandleKeyboardEvent);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, OnImeTypeChanged);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, OnNavStateChanged);
-  FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, OnSetAccessibilityMode);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, OnSetTextDirection);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, OnUpdateWebPreferences);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest,
@@ -674,7 +665,8 @@ class CONTENT_EXPORT RenderViewImpl
   void OnCancelDownload(int32 download_id);
   void OnClearFocusedElement();
   void OnClosePage();
-  void OnShowContextMenu(const gfx::Point& location);
+  void OnShowContextMenu(ui::MenuSourceType source_type,
+                         const gfx::Point& location);
   void OnCopyImageAt(int x, int y);
   void OnSaveImageAt(int x, int y);
   void OnDeterminePageLanguage();
@@ -720,7 +712,6 @@ class CONTENT_EXPORT RenderViewImpl
   void OnPostMessageEvent(const ViewMsg_PostMessage_Params& params);
   void OnReleaseDisambiguationPopupBitmap(const cc::SharedBitmapId& id);
   void OnResetPageEncodingToDefault();
-  void OnSetAccessibilityMode(AccessibilityMode new_mode);
   void OnSetActive(bool active);
   void OnSetBackgroundOpaque(bool opaque);
   void OnExitFullscreen();
@@ -1040,13 +1031,6 @@ class CONTENT_EXPORT RenderViewImpl
   scoped_refptr<BrowserPluginManager> browser_plugin_manager_;
 
   DevToolsAgent* devtools_agent_;
-
-  // The current accessibility mode.
-  AccessibilityMode accessibility_mode_;
-
-  // Only valid if |accessibility_mode_| is anything other than
-  // AccessibilityModeOff.
-  RendererAccessibility* renderer_accessibility_;
 
   // Mouse Lock dispatcher attached to this view.
   MouseLockDispatcher* mouse_lock_dispatcher_;

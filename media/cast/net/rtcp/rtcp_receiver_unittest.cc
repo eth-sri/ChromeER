@@ -23,7 +23,6 @@ static const uint32 kSourceSsrc = 0x40506;
 static const uint32 kUnknownSsrc = 0xDEAD;
 static const base::TimeDelta kTargetDelay =
     base::TimeDelta::FromMilliseconds(100);
-static const std::string kCName("test@10.1.1.1");
 
 namespace {
 
@@ -90,7 +89,7 @@ class RtcpMessageVerification : public MockRtcpReceiverFeedback {
     ++packet_it;
     EXPECT_EQ(kLostPacketId3, *packet_it);
     ++frame_it;
-    EXPECT_EQ(frame_it, cast_message.missing_frames_and_packets.end());
+    EXPECT_TRUE(frame_it == cast_message.missing_frames_and_packets.end());
     called_on_received_cast_message_ = true;
   }
 
@@ -121,7 +120,8 @@ class RtcpReceiverTest : public ::testing::Test {
  protected:
   RtcpReceiverTest()
       : testing_clock_(new base::SimpleTestTickClock()),
-        task_runner_(new test::FakeSingleThreadTaskRunner(testing_clock_)),
+        task_runner_(new test::FakeSingleThreadTaskRunner(
+            testing_clock_.get())),
         rtcp_receiver_(new RtcpReceiver(&mock_receiver_feedback_,
                                         kSourceSsrc)) {
     EXPECT_CALL(mock_receiver_feedback_, OnReceivedSenderReport(_)).Times(0);
@@ -158,7 +158,7 @@ class RtcpReceiverTest : public ::testing::Test {
     rtcp_receiver_->IncomingRtcpPacket(&rtcp_parser);
   }
 
-  base::SimpleTestTickClock* testing_clock_;  // Owned by CastEnvironment.
+  scoped_ptr<base::SimpleTestTickClock> testing_clock_;
   scoped_refptr<test::FakeSingleThreadTaskRunner> task_runner_;
   MockRtcpReceiverFeedback mock_receiver_feedback_;
   scoped_ptr<RtcpReceiver> rtcp_receiver_;
@@ -268,7 +268,6 @@ TEST_F(RtcpReceiverTest, InjectSenderReportPacketWithDlrr) {
   p.AddXrUnknownBlock();
   p.AddXrExtendedDlrrBlock(kSenderSsrc);
   p.AddXrUnknownBlock();
-  p.AddSdesCname(kSenderSsrc, kCName);
 
   // Expected to be ignored since the source ssrc does not match our
   // local ssrc.
@@ -320,7 +319,6 @@ TEST_F(RtcpReceiverTest, InjectReceiverReportPacketWithIntraFrameRequest) {
   TestRtcpPacketBuilder p1;
   p1.AddRr(kSenderSsrc, 1);
   p1.AddRb(kUnknownSsrc);
-  p1.AddPli(kSenderSsrc, kUnknownSsrc);
 
   // Expected to be ignored since the source ssrc does not match our
   // local ssrc.
@@ -332,7 +330,6 @@ TEST_F(RtcpReceiverTest, InjectReceiverReportPacketWithIntraFrameRequest) {
   TestRtcpPacketBuilder p2;
   p2.AddRr(kSenderSsrc, 1);
   p2.AddRb(kSourceSsrc);
-  p2.AddPli(kSenderSsrc, kSourceSsrc);
 
   // Expected to be pass through since the sender ssrc match our local ssrc.
   InjectRtcpPacket(p2.Data(), p2.Length());

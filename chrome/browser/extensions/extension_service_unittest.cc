@@ -59,6 +59,8 @@
 #include "chrome/browser/extensions/unpacked_installer.h"
 #include "chrome/browser/extensions/updater/extension_updater.h"
 #include "chrome/browser/prefs/pref_service_syncable.h"
+#include "chrome/browser/supervised_user/supervised_user_service.h"
+#include "chrome/browser/supervised_user/supervised_user_service_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/common/chrome_constants.h"
@@ -470,20 +472,22 @@ class ExtensionServiceTest : public extensions::ExtensionServiceTestBase,
             false),
         expected_extensions_count_(0) {
     registrar_.Add(this,
-                   chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
-                   content::NotificationService::AllSources());
-    registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
+                   extensions::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
                    content::NotificationService::AllSources());
     registrar_.Add(this,
-                   chrome::NOTIFICATION_EXTENSION_WILL_BE_INSTALLED_DEPRECATED,
+                   extensions::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
                    content::NotificationService::AllSources());
+    registrar_.Add(
+        this,
+        extensions::NOTIFICATION_EXTENSION_WILL_BE_INSTALLED_DEPRECATED,
+        content::NotificationService::AllSources());
   }
 
   virtual void Observe(int type,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE {
     switch (type) {
-      case chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED: {
+      case extensions::NOTIFICATION_EXTENSION_LOADED_DEPRECATED: {
         const Extension* extension =
             content::Details<const Extension>(details).ptr();
         loaded_.push_back(make_scoped_refptr(extension));
@@ -493,7 +497,7 @@ class ExtensionServiceTest : public extensions::ExtensionServiceTestBase,
         break;
       }
 
-      case chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED: {
+      case extensions::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED: {
         UnloadedExtensionInfo* unloaded_info =
             content::Details<UnloadedExtensionInfo>(details).ptr();
         const Extension* e = unloaded_info->extension;
@@ -508,7 +512,7 @@ class ExtensionServiceTest : public extensions::ExtensionServiceTestBase,
         loaded_.erase(i);
         break;
       }
-      case chrome::NOTIFICATION_EXTENSION_WILL_BE_INSTALLED_DEPRECATED: {
+      case extensions::NOTIFICATION_EXTENSION_WILL_BE_INSTALLED_DEPRECATED: {
         const extensions::InstalledExtensionInfo* installed_info =
             content::Details<const extensions::InstalledExtensionInfo>(details)
                 .ptr();
@@ -665,7 +669,7 @@ class ExtensionServiceTest : public extensions::ExtensionServiceTestBase,
     installer->set_install_source(install_location);
 
     content::WindowedNotificationObserver observer(
-        chrome::NOTIFICATION_CRX_INSTALLER_DONE,
+        extensions::NOTIFICATION_CRX_INSTALLER_DONE,
         content::NotificationService::AllSources());
     installer->InstallCrx(crx_path);
     observer.Wait();
@@ -742,6 +746,7 @@ class ExtensionServiceTest : public extensions::ExtensionServiceTestBase,
     FAILED,
     UPDATED,
     INSTALLED,
+    DISABLED,
     ENABLED
   };
 
@@ -772,6 +777,18 @@ class ExtensionServiceTest : public extensions::ExtensionServiceTestBase,
            *installer;
   }
 
+  void PackCRXAndUpdateExtension(const std::string& id,
+                                 const base::FilePath& dir_path,
+                                 const base::FilePath& pem_path,
+                                 UpdateState expected_state) {
+    base::ScopedTempDir temp_dir;
+    EXPECT_TRUE(temp_dir.CreateUniqueTempDir());
+    base::FilePath crx_path = temp_dir.path().AppendASCII("temp.crx");
+
+    PackCRX(dir_path, pem_path, crx_path);
+    UpdateExtension(id, crx_path, expected_state);
+  }
+
   void UpdateExtension(const std::string& id,
                        const base::FilePath& in_path,
                        UpdateState expected_state) {
@@ -791,7 +808,7 @@ class ExtensionServiceTest : public extensions::ExtensionServiceTestBase,
 
     extensions::CrxInstaller* installer = NULL;
     content::WindowedNotificationObserver observer(
-        chrome::NOTIFICATION_CRX_INSTALLER_DONE,
+        extensions::NOTIFICATION_CRX_INSTALLER_DONE,
         base::Bind(&IsCrxInstallerDone, &installer));
     service()->UpdateExtension(id, path, true, &installer);
 
@@ -862,7 +879,10 @@ class ExtensionServiceTest : public extensions::ExtensionServiceTestBase,
           service(), id, extensions::UNINSTALL_REASON_FOR_TESTING));
     } else {
       EXPECT_TRUE(service()->UninstallExtension(
-          id, extensions::UNINSTALL_REASON_FOR_TESTING, NULL));
+          id,
+          extensions::UNINSTALL_REASON_FOR_TESTING,
+          base::Bind(&base::DoNothing),
+          NULL));
     }
     --expected_extensions_count_;
 
@@ -1102,7 +1122,7 @@ class ExtensionServiceTest : public extensions::ExtensionServiceTestBase,
       installer->set_allow_silent_install(true);
 
     content::WindowedNotificationObserver observer(
-        chrome::NOTIFICATION_CRX_INSTALLER_DONE,
+        extensions::NOTIFICATION_CRX_INSTALLER_DONE,
         content::Source<extensions::CrxInstaller>(installer));
 
     installer->InstallCrx(crx_path);
@@ -1484,7 +1504,7 @@ TEST_F(ExtensionServiceTest, InstallingExternalExtensionWithFlags) {
   // Register and install an external extension.
   Version version("1.0.0.0");
   content::WindowedNotificationObserver observer(
-      chrome::NOTIFICATION_CRX_INSTALLER_DONE,
+      extensions::NOTIFICATION_CRX_INSTALLER_DONE,
       content::NotificationService::AllSources());
   if (service()->OnExternalExtensionFileFound(good_crx,
                                               &version,
@@ -1519,7 +1539,7 @@ TEST_F(ExtensionServiceTest, UninstallingExternalExtensions) {
   // Install an external extension.
   Version version("1.0.0.0");
   content::WindowedNotificationObserver observer(
-      chrome::NOTIFICATION_CRX_INSTALLER_DONE,
+      extensions::NOTIFICATION_CRX_INSTALLER_DONE,
       content::NotificationService::AllSources());
   if (service()->OnExternalExtensionFileFound(good_crx,
                                               &version,
@@ -1617,7 +1637,7 @@ TEST_F(ExtensionServiceTest, FailOnWrongId) {
   // Install an external extension with an ID from the external
   // source that is not equal to the ID in the extension manifest.
   content::WindowedNotificationObserver observer(
-      chrome::NOTIFICATION_CRX_INSTALLER_DONE,
+      extensions::NOTIFICATION_CRX_INSTALLER_DONE,
       content::NotificationService::AllSources());
   service()->OnExternalExtensionFileFound(wrong_id,
                                           &version,
@@ -1631,7 +1651,7 @@ TEST_F(ExtensionServiceTest, FailOnWrongId) {
 
   // Try again with the right ID. Expect success.
   content::WindowedNotificationObserver observer2(
-      chrome::NOTIFICATION_CRX_INSTALLER_DONE,
+      extensions::NOTIFICATION_CRX_INSTALLER_DONE,
       content::NotificationService::AllSources());
   if (service()->OnExternalExtensionFileFound(correct_id,
                                               &version,
@@ -1654,7 +1674,7 @@ TEST_F(ExtensionServiceTest, FailOnWrongVersion) {
   // source that is not equal to the version in the extension manifest.
   Version wrong_version("1.2.3.4");
   content::WindowedNotificationObserver observer(
-      chrome::NOTIFICATION_CRX_INSTALLER_DONE,
+      extensions::NOTIFICATION_CRX_INSTALLER_DONE,
       content::NotificationService::AllSources());
   service()->OnExternalExtensionFileFound(good_crx,
                                           &wrong_version,
@@ -1670,7 +1690,7 @@ TEST_F(ExtensionServiceTest, FailOnWrongVersion) {
   service()->pending_extension_manager()->Remove(good_crx);
   Version correct_version("1.0.0.0");
   content::WindowedNotificationObserver observer2(
-      chrome::NOTIFICATION_CRX_INSTALLER_DONE,
+      extensions::NOTIFICATION_CRX_INSTALLER_DONE,
       content::NotificationService::AllSources());
   if (service()->OnExternalExtensionFileFound(good_crx,
                                               &correct_version,
@@ -2796,9 +2816,8 @@ TEST_F(ExtensionServiceTest, LoadExtensionsWithPlugins) {
   service()->set_show_extensions_prompts(true);
 
   // Start by canceling any install prompts.
-  CommandLine::ForCurrentProcess()->AppendSwitchASCII(
-      switches::kAppsGalleryInstallAutoConfirmForTests,
-      "cancel");
+  ExtensionInstallPrompt::g_auto_confirm_for_tests =
+      ExtensionInstallPrompt::CANCEL;
 
   // The extension that has a plugin should not install.
   extensions::UnpackedInstaller::Create(service())
@@ -2821,9 +2840,8 @@ TEST_F(ExtensionServiceTest, LoadExtensionsWithPlugins) {
   EXPECT_TRUE(registry()->enabled_extensions().Contains(good2));
 
   // The plugin extension should install if we accept the dialog.
-  CommandLine::ForCurrentProcess()->AppendSwitchASCII(
-      switches::kAppsGalleryInstallAutoConfirmForTests,
-      "accept");
+  ExtensionInstallPrompt::g_auto_confirm_for_tests =
+      ExtensionInstallPrompt::ACCEPT;
 
   ExtensionErrorReporter::GetInstance()->ClearErrors();
   extensions::UnpackedInstaller::Create(service())
@@ -2846,9 +2864,8 @@ TEST_F(ExtensionServiceTest, LoadExtensionsWithPlugins) {
 
   // We should be able to reload the extension without getting another prompt.
   loaded_.clear();
-  CommandLine::ForCurrentProcess()->AppendSwitchASCII(
-      switches::kAppsGalleryInstallAutoConfirmForTests,
-      "cancel");
+  ExtensionInstallPrompt::g_auto_confirm_for_tests =
+      ExtensionInstallPrompt::CANCEL;
 
   service()->ReloadExtension(good1);
   base::RunLoop().RunUntilIdle();
@@ -3682,7 +3699,7 @@ TEST_F(ExtensionServiceTest, PolicyInstalledExtensionsWhitelisted) {
   // Reloading extensions should find our externally registered extension
   // and install it.
   content::WindowedNotificationObserver observer(
-      chrome::NOTIFICATION_CRX_INSTALLER_DONE,
+      extensions::NOTIFICATION_CRX_INSTALLER_DONE,
       content::NotificationService::AllSources());
   service()->CheckForExternalUpdates();
   observer.Wait();
@@ -3742,8 +3759,11 @@ TEST_F(ExtensionServiceTest, ManagementPolicyProhibitsLoadFromPrefs) {
 
   const Extension* extension =
       (registry()->enabled_extensions().begin())->get();
-  EXPECT_TRUE(service()->UninstallExtension(
-      extension->id(), extensions::UNINSTALL_REASON_FOR_TESTING, NULL));
+  EXPECT_TRUE(
+      service()->UninstallExtension(extension->id(),
+                                    extensions::UNINSTALL_REASON_FOR_TESTING,
+                                    base::Bind(&base::DoNothing),
+                                    NULL));
   EXPECT_EQ(0u, registry()->enabled_extensions().size());
 
   // Ensure we cannot load it if management policy prohibits installation.
@@ -3790,8 +3810,11 @@ TEST_F(ExtensionServiceTest, ManagementPolicyProhibitsUninstall) {
   GetManagementPolicy()->RegisterProvider(&provider);
 
   // Attempt to uninstall it.
-  EXPECT_FALSE(service()->UninstallExtension(
-      good_crx, extensions::UNINSTALL_REASON_FOR_TESTING, NULL));
+  EXPECT_FALSE(
+      service()->UninstallExtension(good_crx,
+                                    extensions::UNINSTALL_REASON_FOR_TESTING,
+                                    base::Bind(&base::DoNothing),
+                                    NULL));
 
   EXPECT_EQ(1u, registry()->enabled_extensions().size());
   EXPECT_TRUE(service()->GetExtensionById(good_crx, false));
@@ -3872,7 +3895,7 @@ TEST_F(ExtensionServiceTest, MAYBE_ExternalExtensionAutoAcknowledgement) {
   // Providers are set up. Let them run.
   int count = 2;
   content::WindowedNotificationObserver observer(
-      chrome::NOTIFICATION_CRX_INSTALLER_DONE,
+      extensions::NOTIFICATION_CRX_INSTALLER_DONE,
       base::Bind(&WaitForCountNotificationsCallback, &count));
   service()->CheckForExternalUpdates();
 
@@ -3914,7 +3937,7 @@ TEST_F(ExtensionServiceTest, DefaultAppsInstall) {
 
   ASSERT_EQ(0u, registry()->enabled_extensions().size());
   content::WindowedNotificationObserver observer(
-      chrome::NOTIFICATION_CRX_INSTALLER_DONE,
+      extensions::NOTIFICATION_CRX_INSTALLER_DONE,
       content::NotificationService::AllSources());
   service()->CheckForExternalUpdates();
   observer.Wait();
@@ -4335,9 +4358,14 @@ TEST_F(ExtensionServiceTest, ClearExtensionData) {
   EXPECT_TRUE(base::DirectoryExists(idb_path));
 
   // Uninstall the extension.
-  service()->UninstallExtension(
-      good_crx, extensions::UNINSTALL_REASON_FOR_TESTING, NULL);
-  base::RunLoop().RunUntilIdle();
+  base::RunLoop run_loop;
+  ASSERT_TRUE(
+      service()->UninstallExtension(good_crx,
+                                    extensions::UNINSTALL_REASON_FOR_TESTING,
+                                    run_loop.QuitClosure(),
+                                    NULL));
+  // The data deletion happens on the IO thread.
+  run_loop.Run();
 
   // Check that the cookie is gone.
   cookie_monster->GetAllCookiesForURLAsync(
@@ -4528,8 +4556,10 @@ TEST_F(ExtensionServiceTest, DISABLED_LoadExtension) {
   // Test uninstall.
   std::string id = loaded_[0]->id();
   EXPECT_FALSE(unloaded_id_.length());
-  service()->UninstallExtension(
-      id, extensions::UNINSTALL_REASON_FOR_TESTING, NULL);
+  service()->UninstallExtension(id,
+                                extensions::UNINSTALL_REASON_FOR_TESTING,
+                                base::Bind(&base::DoNothing),
+                                NULL);
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(id, unloaded_id_);
   ASSERT_EQ(0u, loaded_.size());
@@ -4595,7 +4625,7 @@ void ExtensionServiceTest::TestExternalProvider(
   // Reloading extensions should find our externally registered extension
   // and install it.
   content::WindowedNotificationObserver observer(
-      chrome::NOTIFICATION_CRX_INSTALLER_DONE,
+      extensions::NOTIFICATION_CRX_INSTALLER_DONE,
       content::NotificationService::AllSources());
   service()->CheckForExternalUpdates();
   observer.Wait();
@@ -4625,7 +4655,7 @@ void ExtensionServiceTest::TestExternalProvider(
 
   loaded_.clear();
   content::WindowedNotificationObserver observer_2(
-      chrome::NOTIFICATION_CRX_INSTALLER_DONE,
+      extensions::NOTIFICATION_CRX_INSTALLER_DONE,
       content::NotificationService::AllSources());
   service()->CheckForExternalUpdates();
   observer_2.Wait();
@@ -4641,8 +4671,10 @@ void ExtensionServiceTest::TestExternalProvider(
   std::string id = loaded_[0]->id();
   bool no_uninstall =
       GetManagementPolicy()->MustRemainEnabled(loaded_[0].get(), NULL);
-  service()->UninstallExtension(
-      id, extensions::UNINSTALL_REASON_FOR_TESTING, NULL);
+  service()->UninstallExtension(id,
+                                extensions::UNINSTALL_REASON_FOR_TESTING,
+                                base::Bind(&base::DoNothing),
+                                NULL);
   base::RunLoop().RunUntilIdle();
 
   base::FilePath install_path = extensions_install_dir().AppendASCII(id);
@@ -4666,7 +4698,7 @@ void ExtensionServiceTest::TestExternalProvider(
 
     loaded_.clear();
     content::WindowedNotificationObserver observer(
-        chrome::NOTIFICATION_CRX_INSTALLER_DONE,
+        extensions::NOTIFICATION_CRX_INSTALLER_DONE,
         content::NotificationService::AllSources());
     service()->CheckForExternalUpdates();
     observer.Wait();
@@ -4695,7 +4727,7 @@ void ExtensionServiceTest::TestExternalProvider(
     // Now test the case where user uninstalls and then the extension is removed
     // from the external provider.
     content::WindowedNotificationObserver observer(
-        chrome::NOTIFICATION_CRX_INSTALLER_DONE,
+        extensions::NOTIFICATION_CRX_INSTALLER_DONE,
         content::NotificationService::AllSources());
     provider->UpdateOrAddExtension(good_crx, "1.0.0.1", source_path);
     service()->CheckForExternalUpdates();
@@ -4706,8 +4738,10 @@ void ExtensionServiceTest::TestExternalProvider(
 
     // User uninstalls.
     loaded_.clear();
-    service()->UninstallExtension(
-        id, extensions::UNINSTALL_REASON_FOR_TESTING, NULL);
+    service()->UninstallExtension(id,
+                                  extensions::UNINSTALL_REASON_FOR_TESTING,
+                                  base::Bind(&base::DoNothing),
+                                  NULL);
     base::RunLoop().RunUntilIdle();
     ASSERT_EQ(0u, loaded_.size());
 
@@ -4846,7 +4880,7 @@ TEST_F(ExtensionServiceTest, MultipleExternalUpdateCheck) {
   // Two checks for external updates should find the extension, and install it
   // once.
   content::WindowedNotificationObserver observer(
-      chrome::NOTIFICATION_CRX_INSTALLER_DONE,
+      extensions::NOTIFICATION_CRX_INSTALLER_DONE,
       content::NotificationService::AllSources());
   provider->set_visit_count(0);
   service()->CheckForExternalUpdates();
@@ -5094,7 +5128,8 @@ TEST_F(ExtensionServiceTest, LoadAndRelocalizeExtensions) {
 class ExtensionsReadyRecorder : public content::NotificationObserver {
  public:
   ExtensionsReadyRecorder() : ready_(false) {
-    registrar_.Add(this, chrome::NOTIFICATION_EXTENSIONS_READY,
+    registrar_.Add(this,
+                   extensions::NOTIFICATION_EXTENSIONS_READY_DEPRECATED,
                    content::NotificationService::AllSources());
   }
 
@@ -5106,7 +5141,7 @@ class ExtensionsReadyRecorder : public content::NotificationObserver {
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE {
     switch (type) {
-      case chrome::NOTIFICATION_EXTENSIONS_READY:
+      case extensions::NOTIFICATION_EXTENSIONS_READY_DEPRECATED:
         ready_ = true;
         break;
       default:
@@ -6084,7 +6119,104 @@ TEST_F(ExtensionServiceTest, ProcessSyncDataNotInstalled) {
   // TODO(akalin): Figure out a way to test |info.ShouldAllowInstall()|.
 }
 
-TEST_F(ExtensionServiceTest, SyncUninstallForSupervisedUser) {
+TEST_F(ExtensionServiceTest, SupervisedUser_InstallOnlyAllowedByCustodian) {
+  ExtensionServiceInitParams params = CreateDefaultInitParams();
+  params.profile_is_supervised = true;
+  InitializeExtensionService(params);
+
+  SupervisedUserService* supervised_user_service =
+      SupervisedUserServiceFactory::GetForProfile(profile());
+  GetManagementPolicy()->RegisterProvider(supervised_user_service);
+
+  base::FilePath path1 = data_dir().AppendASCII("good.crx");
+  base::FilePath path2 = data_dir().AppendASCII("good2048.crx");
+  const Extension* extensions[] = {
+    InstallCRX(path1, INSTALL_FAILED),
+    InstallCRX(path2, INSTALL_NEW, Extension::WAS_INSTALLED_BY_CUSTODIAN)
+  };
+
+  // Only the extension with the "installed by custodian" flag should have been
+  // installed and enabled.
+  EXPECT_FALSE(extensions[0]);
+  ASSERT_TRUE(extensions[1]);
+  EXPECT_TRUE(registry()->enabled_extensions().Contains(extensions[1]->id()));
+}
+
+TEST_F(ExtensionServiceTest, SupervisedUser_UpdateWithoutPermissionIncrease) {
+  ExtensionServiceInitParams params = CreateDefaultInitParams();
+  params.profile_is_supervised = true;
+  InitializeExtensionService(params);
+
+  SupervisedUserService* supervised_user_service =
+      SupervisedUserServiceFactory::GetForProfile(profile());
+  GetManagementPolicy()->RegisterProvider(supervised_user_service);
+
+  base::FilePath base_path = data_dir().AppendASCII("autoupdate");
+  base::FilePath pem_path = base_path.AppendASCII("key.pem");
+
+  base::FilePath path = base_path.AppendASCII("v1");
+  const Extension* extension =
+      PackAndInstallCRX(path, pem_path, INSTALL_NEW,
+                        Extension::WAS_INSTALLED_BY_CUSTODIAN);
+  // The extension must now be installed and enabled.
+  ASSERT_TRUE(extension);
+  ASSERT_TRUE(registry()->enabled_extensions().Contains(extension->id()));
+
+  // Save the id, as the extension object will be destroyed during updating.
+  std::string id = extension->id();
+
+  std::string old_version = extension->VersionString();
+
+  // Update to a new version.
+  path = base_path.AppendASCII("v2");
+  PackCRXAndUpdateExtension(id, path, pem_path, ENABLED);
+
+  // The extension should still be there and enabled.
+  extension = registry()->enabled_extensions().GetByID(id);
+  ASSERT_TRUE(extension);
+  // The version should have changed.
+  EXPECT_NE(extension->VersionString(), old_version);
+}
+
+TEST_F(ExtensionServiceTest, SupervisedUser_UpdateWithPermissionIncrease) {
+  ExtensionServiceInitParams params = CreateDefaultInitParams();
+  params.profile_is_supervised = true;
+  InitializeExtensionService(params);
+
+  SupervisedUserService* supervised_user_service =
+      SupervisedUserServiceFactory::GetForProfile(profile());
+  GetManagementPolicy()->RegisterProvider(supervised_user_service);
+
+  base::FilePath base_path = data_dir().AppendASCII("permissions_increase");
+  base::FilePath pem_path = base_path.AppendASCII("permissions.pem");
+
+  base::FilePath path = base_path.AppendASCII("v1");
+  const Extension* extension =
+      PackAndInstallCRX(path, pem_path, INSTALL_NEW,
+                        Extension::WAS_INSTALLED_BY_CUSTODIAN);
+  // The extension must now be installed and enabled.
+  ASSERT_TRUE(extension);
+  ASSERT_TRUE(registry()->enabled_extensions().Contains(extension->id()));
+
+  // Save the id, as the extension object will be destroyed during updating.
+  std::string id = extension->id();
+
+  std::string old_version = extension->VersionString();
+
+  // Update to a new version with increased permissions.
+  path = base_path.AppendASCII("v2");
+  PackCRXAndUpdateExtension(id, path, pem_path, DISABLED);
+
+  // The extension should still be there, but disabled.
+  EXPECT_FALSE(registry()->enabled_extensions().Contains(id));
+  extension = registry()->disabled_extensions().GetByID(id);
+  ASSERT_TRUE(extension);
+  // The version should have changed.
+  EXPECT_NE(extension->VersionString(), old_version);
+}
+
+TEST_F(ExtensionServiceTest,
+       SupervisedUser_SyncUninstallByCustodianSkipsPolicy) {
   InitializeEmptyExtensionService();
   InitializeExtensionSyncService();
   extension_sync_service()->MergeDataAndStartSyncing(
@@ -6097,7 +6229,7 @@ TEST_F(ExtensionServiceTest, SyncUninstallForSupervisedUser) {
   // Install two extensions.
   base::FilePath path1 = data_dir().AppendASCII("good.crx");
   base::FilePath path2 = data_dir().AppendASCII("good2048.crx");
-  const Extension* extensions[2] = {
+  const Extension* extensions[] = {
     InstallCRX(path1, INSTALL_NEW),
     InstallCRX(path2, INSTALL_NEW, Extension::WAS_INSTALLED_BY_CUSTODIAN)
   };
@@ -6109,7 +6241,7 @@ TEST_F(ExtensionServiceTest, SyncUninstallForSupervisedUser) {
 
   // Create a sync deletion for each extension.
   syncer::SyncChangeList change_list;
-  for (int i = 0; i < 2; i++) {
+  for (size_t i = 0; i < arraysize(extensions); i++) {
     const std::string& id = extensions[i]->id();
     sync_pb::EntitySpecifics specifics;
     sync_pb::ExtensionSpecifics* ext_specifics = specifics.mutable_extension();
@@ -6125,7 +6257,7 @@ TEST_F(ExtensionServiceTest, SyncUninstallForSupervisedUser) {
   }
 
   // Save the extension ids, as uninstalling destroys the Extension instance.
-  std::string extension_ids[2] = {
+  std::string extension_ids[] = {
     extensions[0]->id(),
     extensions[1]->id()
   };
@@ -6134,11 +6266,12 @@ TEST_F(ExtensionServiceTest, SyncUninstallForSupervisedUser) {
   extension_sync_service()->ProcessSyncChanges(FROM_HERE, change_list);
 
   // Uninstalling the extension without installed_by_custodian should have been
-  // blocked by policy.
-  EXPECT_TRUE(service()->GetExtensionById(extension_ids[0], true));
+  // blocked by policy, so it should still be there.
+  EXPECT_TRUE(registry()->enabled_extensions().Contains(extension_ids[0]));
 
   // But installed_by_custodian should result in bypassing the policy check.
-  EXPECT_FALSE(service()->GetExtensionById(extension_ids[1], true));
+  EXPECT_FALSE(
+      registry()->GenerateInstalledExtensionsSet()->Contains(extension_ids[1]));
 }
 
 TEST_F(ExtensionServiceTest, InstallPriorityExternalUpdateUrl) {
@@ -6236,7 +6369,7 @@ TEST_F(ExtensionServiceTest, InstallPriorityExternalLocalFile) {
   {
     // Simulate an external source adding the extension as INTERNAL.
     content::WindowedNotificationObserver observer(
-        chrome::NOTIFICATION_CRX_INSTALLER_DONE,
+        extensions::NOTIFICATION_CRX_INSTALLER_DONE,
         content::NotificationService::AllSources());
     EXPECT_TRUE(service()->OnExternalExtensionFileFound(kGoodId,
                                                         &older_version,
@@ -6252,7 +6385,7 @@ TEST_F(ExtensionServiceTest, InstallPriorityExternalLocalFile) {
   {
     // Simulate an external source adding the extension as EXTERNAL_PREF.
     content::WindowedNotificationObserver observer(
-        chrome::NOTIFICATION_CRX_INSTALLER_DONE,
+        extensions::NOTIFICATION_CRX_INSTALLER_DONE,
         content::NotificationService::AllSources());
     EXPECT_TRUE(service()->OnExternalExtensionFileFound(kGoodId,
                                                         &older_version,
@@ -6288,7 +6421,7 @@ TEST_F(ExtensionServiceTest, InstallPriorityExternalLocalFile) {
   {
     // Now the registry adds the extension.
     content::WindowedNotificationObserver observer(
-        chrome::NOTIFICATION_CRX_INSTALLER_DONE,
+        extensions::NOTIFICATION_CRX_INSTALLER_DONE,
         content::NotificationService::AllSources());
     EXPECT_TRUE(
         service()->OnExternalExtensionFileFound(kGoodId,
@@ -6605,7 +6738,7 @@ TEST_F(ExtensionSourcePriorityTest, PendingExternalFileOverSync) {
 
   // Install pending extension from sync.
   content::WindowedNotificationObserver observer(
-      chrome::NOTIFICATION_CRX_INSTALLER_DONE,
+      extensions::NOTIFICATION_CRX_INSTALLER_DONE,
       content::NotificationService::AllSources());
   EXPECT_TRUE(AddPendingSyncInstall());
   ASSERT_EQ(Manifest::INTERNAL, GetPendingLocation());
@@ -6664,7 +6797,7 @@ TEST_F(ExtensionSourcePriorityTest, InstallExternalBlocksSyncRequest) {
   // Before the CRX installer runs, Sync requests that the same extension
   // be installed. Should fail, because an external source is pending.
   content::WindowedNotificationObserver observer(
-      chrome::NOTIFICATION_CRX_INSTALLER_DONE,
+      extensions::NOTIFICATION_CRX_INSTALLER_DONE,
       content::NotificationService::AllSources());
   ASSERT_FALSE(AddPendingSyncInstall());
 
@@ -6711,7 +6844,7 @@ TEST_F(ExtensionServiceTest, ExternalInstallGlobalError) {
       hosted_app, "1.0.0.0", data_dir().AppendASCII("hosted_app.crx"));
 
   content::WindowedNotificationObserver observer(
-      chrome::NOTIFICATION_CRX_INSTALLER_DONE,
+      extensions::NOTIFICATION_CRX_INSTALLER_DONE,
       content::NotificationService::AllSources());
   service()->CheckForExternalUpdates();
   observer.Wait();
@@ -6724,7 +6857,7 @@ TEST_F(ExtensionServiceTest, ExternalInstallGlobalError) {
       page_action, "1.0.0.0", data_dir().AppendASCII("page_action.crx"));
 
   content::WindowedNotificationObserver observer2(
-      chrome::NOTIFICATION_CRX_INSTALLER_DONE,
+      extensions::NOTIFICATION_CRX_INSTALLER_DONE,
       content::NotificationService::AllSources());
   service()->CheckForExternalUpdates();
   observer2.Wait();
@@ -6746,7 +6879,7 @@ TEST_F(ExtensionServiceTest, ExternalInstallInitiallyDisabled) {
       page_action, "1.0.0.0", data_dir().AppendASCII("page_action.crx"));
 
   content::WindowedNotificationObserver observer(
-      chrome::NOTIFICATION_CRX_INSTALLER_DONE,
+      extensions::NOTIFICATION_CRX_INSTALLER_DONE,
       content::NotificationService::AllSources());
   service()->CheckForExternalUpdates();
   observer.Wait();
@@ -6789,7 +6922,7 @@ TEST_F(ExtensionServiceTest, MAYBE_ExternalInstallMultiple) {
 
   int count = 3;
   content::WindowedNotificationObserver observer(
-      chrome::NOTIFICATION_CRX_INSTALLER_DONE,
+      extensions::NOTIFICATION_CRX_INSTALLER_DONE,
       base::Bind(&WaitForCountNotificationsCallback, &count));
   service()->CheckForExternalUpdates();
   observer.Wait();
@@ -6841,7 +6974,7 @@ TEST_F(ExtensionServiceTest, ExternalInstallUpdatesFromWebstoreOldProfile) {
   provider->UpdateOrAddExtension(updates_from_webstore, "1", crx_path);
 
   content::WindowedNotificationObserver observer(
-      chrome::NOTIFICATION_CRX_INSTALLER_DONE,
+      extensions::NOTIFICATION_CRX_INSTALLER_DONE,
       content::NotificationService::AllSources());
   service()->CheckForExternalUpdates();
   observer.Wait();
@@ -6870,7 +7003,7 @@ TEST_F(ExtensionServiceTest, ExternalInstallUpdatesFromWebstoreNewProfile) {
   provider->UpdateOrAddExtension(updates_from_webstore, "1", crx_path);
 
   content::WindowedNotificationObserver observer(
-      chrome::NOTIFICATION_CRX_INSTALLER_DONE,
+      extensions::NOTIFICATION_CRX_INSTALLER_DONE,
       content::NotificationService::AllSources());
   service()->CheckForExternalUpdates();
   observer.Wait();
@@ -6902,7 +7035,7 @@ TEST_F(ExtensionServiceTest, ExternalInstallClickToRemove) {
   provider->UpdateOrAddExtension(updates_from_webstore, "1", crx_path);
 
   content::WindowedNotificationObserver observer(
-      chrome::NOTIFICATION_CRX_INSTALLER_DONE,
+      extensions::NOTIFICATION_CRX_INSTALLER_DONE,
       content::NotificationService::AllSources());
   service_->CheckForExternalUpdates();
   observer.Wait();
@@ -6944,7 +7077,7 @@ TEST_F(ExtensionServiceTest, ExternalInstallClickToKeep) {
   provider->UpdateOrAddExtension(updates_from_webstore, "1", crx_path);
 
   content::WindowedNotificationObserver observer(
-      chrome::NOTIFICATION_CRX_INSTALLER_DONE,
+      extensions::NOTIFICATION_CRX_INSTALLER_DONE,
       content::NotificationService::AllSources());
   service_->CheckForExternalUpdates();
   observer.Wait();
@@ -6995,7 +7128,7 @@ TEST_F(ExtensionServiceTest, InstallBlacklistedExtension) {
 
   // Extension was installed but not loaded.
   EXPECT_TRUE(notifications.CheckNotifications(
-      chrome::NOTIFICATION_EXTENSION_WILL_BE_INSTALLED_DEPRECATED));
+      extensions::NOTIFICATION_EXTENSION_WILL_BE_INSTALLED_DEPRECATED));
   EXPECT_TRUE(service()->GetInstalledExtension(id));
 
   EXPECT_FALSE(registry()->enabled_extensions().Contains(id));

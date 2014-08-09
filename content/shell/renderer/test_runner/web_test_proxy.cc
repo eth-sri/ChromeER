@@ -10,9 +10,6 @@
 #include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/strings/stringprintf.h"
-#include "content/shell/renderer/test_runner/MockWebSpeechRecognizer.h"
-#include "content/shell/renderer/test_runner/SpellCheckClient.h"
-#include "content/shell/renderer/test_runner/TestCommon.h"
 #include "content/shell/renderer/test_runner/TestInterfaces.h"
 #include "content/shell/renderer/test_runner/TestPlugin.h"
 #include "content/shell/renderer/test_runner/WebTestDelegate.h"
@@ -22,7 +19,9 @@
 #include "content/shell/renderer/test_runner/mock_color_chooser.h"
 #include "content/shell/renderer/test_runner/mock_screen_orientation_client.h"
 #include "content/shell/renderer/test_runner/mock_web_push_client.h"
+#include "content/shell/renderer/test_runner/mock_web_speech_recognizer.h"
 #include "content/shell/renderer/test_runner/mock_web_user_media_client.h"
+#include "content/shell/renderer/test_runner/spell_check_client.h"
 #include "content/shell/renderer/test_runner/test_runner.h"
 #include "content/shell/renderer/test_runner/web_test_runner.h"
 // FIXME: Including platform_canvas.h here is a layering violation.
@@ -330,9 +329,9 @@ void WebTestProxyBase::SetInterfaces(WebTestInterfaces* interfaces) {
 
 void WebTestProxyBase::SetDelegate(WebTestDelegate* delegate) {
   delegate_ = delegate;
-  spellcheck_->setDelegate(delegate);
+  spellcheck_->SetDelegate(delegate);
   if (speech_recognizer_.get())
-    speech_recognizer_->setDelegate(delegate);
+    speech_recognizer_->SetDelegate(delegate);
 }
 
 blink::WebView* WebTestProxyBase::GetWebView() const {
@@ -584,7 +583,7 @@ blink::WebMIDIClientMock* WebTestProxyBase::GetMIDIClientMock() {
 MockWebSpeechRecognizer* WebTestProxyBase::GetSpeechRecognizerMock() {
   if (!speech_recognizer_.get()) {
     speech_recognizer_.reset(new MockWebSpeechRecognizer());
-    speech_recognizer_->setDelegate(delegate_);
+    speech_recognizer_->SetDelegate(delegate_);
   }
   return speech_recognizer_.get();
 }
@@ -1198,20 +1197,15 @@ void WebTestProxyBase::LocationChangeDone(blink::WebFrame* frame) {
 }
 
 blink::WebNavigationPolicy WebTestProxyBase::DecidePolicyForNavigation(
-    blink::WebLocalFrame* frame,
-    blink::WebDataSource::ExtraData* data,
-    const blink::WebURLRequest& request,
-    blink::WebNavigationType type,
-    blink::WebNavigationPolicy default_policy,
-    bool is_redirect) {
+    const blink::WebFrameClient::NavigationPolicyInfo& info) {
   blink::WebNavigationPolicy result;
   if (!test_interfaces_->testRunner()->policyDelegateEnabled())
-    return default_policy;
+    return info.defaultPolicy;
 
   delegate_->printMessage(std::string("Policy delegate: attempt to load ") +
-                          URLDescription(request.url()) +
+                          URLDescription(info.urlRequest.url()) +
                           " with navigation type '" +
-                          WebNavigationTypeToString(type) + "'\n");
+                          WebNavigationTypeToString(info.navigationType) + "'\n");
   if (test_interfaces_->testRunner()->policyDelegateIsPermissive())
     result = blink::WebNavigationPolicyCurrentTab;
   else

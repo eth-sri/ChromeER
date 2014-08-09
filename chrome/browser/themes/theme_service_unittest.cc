@@ -48,7 +48,7 @@ class ThemeServiceTest : public extensions::ExtensionServiceTestBase {
     scoped_refptr<extensions::UnpackedInstaller> installer(
         extensions::UnpackedInstaller::Create(service_));
     content::WindowedNotificationObserver observer(
-        chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
+        extensions::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
         content::Source<Profile>(profile_.get()));
     installer->Load(temp_dir);
     observer.Wait();
@@ -66,8 +66,8 @@ class ThemeServiceTest : public extensions::ExtensionServiceTestBase {
   void UpdateUnpackedTheme(const std::string& extension_id) {
     int updated_notification =
         service_->IsExtensionEnabled(extension_id)
-            ? chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED
-            : chrome::NOTIFICATION_EXTENSION_UPDATE_DISABLED;
+            ? extensions::NOTIFICATION_EXTENSION_LOADED_DEPRECATED
+            : extensions::NOTIFICATION_EXTENSION_UPDATE_DISABLED;
 
     const base::FilePath& path =
         service_->GetInstalledExtension(extension_id)->path();
@@ -120,8 +120,10 @@ TEST_F(ThemeServiceTest, ThemeInstallUninstall) {
   EXPECT_EQ(extension_id, theme_service->GetThemeID());
 
   // Now uninstall the extension, should revert to the default theme.
-  service_->UninstallExtension(
-      extension_id, extensions::UNINSTALL_REASON_FOR_TESTING, NULL);
+  service_->UninstallExtension(extension_id,
+                               extensions::UNINSTALL_REASON_FOR_TESTING,
+                               base::Bind(&base::DoNothing),
+                               NULL);
   EXPECT_TRUE(theme_service->UsingDefaultTheme());
 }
 

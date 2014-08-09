@@ -13,10 +13,10 @@
       ],
       'includes': [ 'public/tools/bindings/mojom_bindings_generator.gypi' ],
       'export_dependent_settings': [
-        'mojo_cpp_bindings',
+        'mojo_base.gyp:mojo_cpp_bindings',
       ],
       'dependencies': [
-        'mojo_cpp_bindings',
+        'mojo_base.gyp:mojo_cpp_bindings',
       ],
     },
     {
@@ -28,14 +28,14 @@
         '../third_party/WebKit/public/blink.gyp:blink',
         '../ui/native_theme/native_theme.gyp:native_theme',
         '../url/url.gyp:url_lib',
-        'mojo_application',
-        'mojo_common_lib',
-        'mojo_cpp_bindings',
-        'mojo_environment_chromium',
+        'mojo_base.gyp:mojo_common_lib',
+        'mojo_base.gyp:mojo_cpp_bindings',
+        'mojo_base.gyp:mojo_environment_chromium',
+        'mojo_base.gyp:mojo_utility',
+        'mojo_base.gyp:mojo_application_chromium',
         'mojo_navigation_bindings',
         'mojo_network_bindings',
         'mojo_launcher_bindings',
-        'mojo_utility',
         'mojo_view_manager_lib',
         '<(mojo_system_for_loadable_module)',
       ],
@@ -66,6 +66,7 @@
       ],
     },
     {
+      # GN version: //mojo/services/public/cpp/input_events
       'target_name': 'mojo_input_events_lib',
       'type': '<(component)',
       'defines': [
@@ -75,7 +76,7 @@
         '../base/base.gyp:base',
         '../ui/events/events.gyp:events',
         '../ui/gfx/gfx.gyp:gfx_geometry',
-        'mojo_environment_chromium',
+        'mojo_base.gyp:mojo_environment_chromium',
         'mojo_input_events_bindings',
         'mojo_geometry_bindings',
         'mojo_geometry_lib',
@@ -88,7 +89,7 @@
       ],
     },
     {
-      # GN version: //mojo/services/public/interfaces/input_events:bindings
+      # GN version: //mojo/services/public/interfaces/input_events
       'target_name': 'mojo_input_events_bindings',
       'type': 'static_library',
       'sources': [
@@ -96,15 +97,15 @@
       ],
       'includes': [ 'public/tools/bindings/mojom_bindings_generator.gypi' ],
       'export_dependent_settings': [
-        'mojo_cpp_bindings',
+        'mojo_base.gyp:mojo_cpp_bindings',
       ],
       'dependencies': [
-        'mojo_cpp_bindings',
+        'mojo_base.gyp:mojo_cpp_bindings',
         'mojo_geometry_bindings',
       ],
     },
     {
-      # GN version: //mojo/services/public/interfaces/geometry:bindings
+      # GN version: //mojo/services/public/interfaces/geometry
       'target_name': 'mojo_geometry_bindings',
       'type': 'static_library',
       'sources': [
@@ -112,13 +113,14 @@
       ],
       'includes': [ 'public/tools/bindings/mojom_bindings_generator.gypi' ],
       'dependencies': [
-        'mojo_cpp_bindings',
+        'mojo_base.gyp:mojo_cpp_bindings',
       ],
       'export_dependent_settings': [
-        'mojo_cpp_bindings',
+        'mojo_base.gyp:mojo_cpp_bindings',
       ],
     },
     {
+      # GN version: //mojo/services/public/cpp/geometry
       'target_name': 'mojo_geometry_lib',
       'type': '<(component)',
       'defines': [
@@ -128,7 +130,7 @@
         '../skia/skia.gyp:skia',
         '../ui/gfx/gfx.gyp:gfx',
         '../ui/gfx/gfx.gyp:gfx_geometry',
-        'mojo_environment_chromium',
+        'mojo_base.gyp:mojo_environment_chromium',
         'mojo_geometry_bindings',
         '<(mojo_system_for_component)',
       ],
@@ -154,7 +156,7 @@
         '../gpu/gpu.gyp:gpu',
         '../ui/gfx/gfx.gyp:gfx',
         '../ui/gfx/gfx.gyp:gfx_geometry',
-        'mojo_environment_chromium',
+        'mojo_base.gyp:mojo_environment_chromium',
         'mojo_geometry_lib',
         'mojo_surfaces_bindings',
         '<(mojo_system_for_component)',
@@ -182,9 +184,9 @@
         '../ui/gfx/gfx.gyp:gfx',
         '../ui/gfx/gfx.gyp:gfx_geometry',
         '../ui/gfx/gfx.gyp:gfx_test_support',
-        'mojo_environment_chromium',
+        'mojo_base.gyp:mojo_environment_chromium',
+        'mojo_base.gyp:mojo_run_all_unittests',
         'mojo_geometry_lib',
-        'mojo_run_all_unittests',
         'mojo_surfaces_bindings',
         'mojo_surfaces_lib',
       ],
@@ -193,6 +195,7 @@
       ],
     },
     {
+      # GN version: //mojo/public/gles2
       'target_name': 'mojo_gles2',
       'type': 'shared_library',
       'defines': [
@@ -243,14 +246,15 @@
       ],
       'includes': [ 'public/tools/bindings/mojom_bindings_generator.gypi' ],
       'export_dependent_settings': [
-        'mojo_cpp_bindings',
+        'mojo_base.gyp:mojo_cpp_bindings',
       ],
       'dependencies': [
+        'mojo_base.gyp:mojo_cpp_bindings',
         '../gpu/gpu.gyp:command_buffer_common',
-        'mojo_cpp_bindings',
       ],
     },
     {
+      # GN version: //mojo/services/gles2
       'target_name': 'mojo_gles2_service',
       'type': 'static_library',
       'dependencies': [
@@ -270,7 +274,7 @@
       ],
     },
     {
-      # GN version: //mojo/services/public/interfaces/native_viewport:bindings
+      # GN version: //mojo/services/public/interfaces/native_viewport
       'target_name': 'mojo_native_viewport_bindings',
       'type': 'static_library',
       'sources': [
@@ -278,16 +282,17 @@
       ],
       'includes': [ 'public/tools/bindings/mojom_bindings_generator.gypi' ],
       'export_dependent_settings': [
-        'mojo_cpp_bindings',
+        'mojo_base.gyp:mojo_cpp_bindings',
       ],
       'dependencies': [
+        'mojo_base.gyp:mojo_cpp_bindings',
         'mojo_geometry_bindings',
         'mojo_gles2_bindings',
         'mojo_input_events_bindings',
-        'mojo_cpp_bindings',
       ],
     },
     {
+      # GN version: //mojo/services/native_viewport
       'target_name': 'mojo_native_viewport_service',
       # This is linked directly into the embedder, so we make it a component.
       'type': '<(component)',
@@ -296,9 +301,9 @@
         '../ui/events/events.gyp:events',
         '../ui/gfx/gfx.gyp:gfx',
         '../ui/gfx/gfx.gyp:gfx_geometry',
-        'mojo_application',
-        'mojo_common_lib',
-        'mojo_environment_chromium',
+        'mojo_base.gyp:mojo_common_lib',
+        'mojo_base.gyp:mojo_environment_chromium',
+        'mojo_base.gyp:mojo_application_chromium',
         'mojo_geometry_bindings',
         'mojo_geometry_lib',
         'mojo_gles2_service',
@@ -328,7 +333,7 @@
         }],
         ['OS=="android"', {
           'dependencies': [
-            'mojo_jni_headers',
+            'mojo_base.gyp:mojo_jni_headers',
           ],
         }],
         ['OS=="win"', {
@@ -344,7 +349,7 @@
       ],
     },
     {
-      # GN version: //mojo/services/public/interfaces/navigation:bindings
+      # GN version: //mojo/services/public/interfaces/navigation
       'target_name': 'mojo_navigation_bindings',
       'type': 'static_library',
       'sources': [
@@ -352,15 +357,31 @@
       ],
       'includes': [ 'public/tools/bindings/mojom_bindings_generator.gypi' ],
       'export_dependent_settings': [
-        'mojo_cpp_bindings',
+        'mojo_base.gyp:mojo_cpp_bindings',
       ],
       'dependencies': [
-        'mojo_cpp_bindings',
+        'mojo_base.gyp:mojo_cpp_bindings',
         'mojo_network_bindings',
       ],
     },
     {
-      # GN version: //mojo/services/public/interfaces/network:bindings
+      # GN version: //mojo/services/public/interfaces/content_handler
+      'target_name': 'mojo_content_handler_bindings',
+      'type': 'static_library',
+      'sources': [
+        'services/public/interfaces/content_handler/content_handler.mojom',
+      ],
+      'includes': [ 'public/tools/bindings/mojom_bindings_generator.gypi' ],
+      'export_dependent_settings': [
+        'mojo_base.gyp:mojo_cpp_bindings',
+      ],
+      'dependencies': [
+        'mojo_base.gyp:mojo_cpp_bindings',
+        'mojo_network_bindings',
+      ],
+    },
+    {
+      # GN version: //mojo/services/public/interfaces/network
       'target_name': 'mojo_network_bindings',
       'type': 'static_library',
       'sources': [
@@ -371,22 +392,23 @@
       ],
       'includes': [ 'public/tools/bindings/mojom_bindings_generator.gypi' ],
       'export_dependent_settings': [
-        'mojo_cpp_bindings',
+        'mojo_base.gyp:mojo_cpp_bindings',
       ],
       'dependencies': [
-        'mojo_cpp_bindings',
+        'mojo_base.gyp:mojo_cpp_bindings',
       ],
     },
     {
+      # GN version: //mojo/services/network
       'target_name': 'mojo_network_service_lib',
       'type': 'static_library',
       'dependencies': [
         '../base/base.gyp:base',
         '../net/net.gyp:net',
         '../url/url.gyp:url_lib',
-        'mojo_application',
-        'mojo_common_lib',
-        'mojo_environment_chromium',
+        'mojo_base.gyp:mojo_common_lib',
+        'mojo_base.gyp:mojo_environment_chromium',
+        'mojo_base.gyp:mojo_application_chromium',
         'mojo_network_bindings',
       ],
       'export_dependent_settings': [
@@ -420,21 +442,22 @@
     },
     {
       'target_name': 'mojo_surfaces_service',
-      'type': 'shared_library',
+      'type': 'loadable_module',
       'dependencies': [
         '../base/base.gyp:base',
         '../cc/cc.gyp:cc',
         '../cc/cc.gyp:cc_surfaces',
         '../ui/gfx/gfx.gyp:gfx_geometry',
-        'mojo_application',
+        'mojo_base.gyp:mojo_environment_chromium',
+        'mojo_base.gyp:mojo_system_impl',
+        'mojo_base.gyp:mojo_application_chromium',
         'mojo_cc_support',
-        'mojo_environment_chromium',
         'mojo_geometry_bindings',
         'mojo_geometry_lib',
         'mojo_gles2',
         'mojo_surfaces_bindings',
         'mojo_surfaces_lib',
-        'mojo_system_impl',
+        '<(mojo_system_for_loadable_module)',
       ],
       'sources': [
         'services/surfaces/surfaces_impl.cc',
@@ -445,6 +468,7 @@
       ],
     },
     {
+      # GN version: //mojo/services/public/cpp/view_manager:common
       'target_name': 'mojo_view_manager_common',
       'type': 'static_library',
       'sources': [
@@ -452,7 +476,7 @@
       ],
     },
     {
-      # GN version: //mojo/services/public/interfaces/launcher:bindings
+      # GN version: //mojo/services/public/interfaces/launcher
       'target_name': 'mojo_launcher_bindings',
       'type': 'static_library',
       'sources': [
@@ -460,10 +484,10 @@
       ],
       'includes': [ 'public/tools/bindings/mojom_bindings_generator.gypi' ],
       'export_dependent_settings': [
-        'mojo_cpp_bindings',
+        'mojo_base.gyp:mojo_cpp_bindings',
       ],
       'dependencies': [
-        'mojo_cpp_bindings',
+        'mojo_base.gyp:mojo_cpp_bindings',
         'mojo_navigation_bindings',
       ],
     },
@@ -473,9 +497,9 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../url/url.gyp:url_lib',
-        'mojo_application',
-        'mojo_cpp_bindings',
-        'mojo_environment_chromium',
+        'mojo_base.gyp:mojo_cpp_bindings',
+        'mojo_base.gyp:mojo_environment_chromium',
+        'mojo_base.gyp:mojo_application_chromium',
         'mojo_launcher_bindings',
         'mojo_network_bindings',
         '<(mojo_system_for_loadable_module)',
@@ -486,7 +510,7 @@
       ],
     },
     {
-      # GN version: //mojo/services/public/interfaces/view_manager:bindings
+      # GN version: //mojo/services/public/interfaces/view_manager
       'target_name': 'mojo_view_manager_bindings',
       'type': 'static_library',
       'sources': [
@@ -495,15 +519,16 @@
       ],
       'includes': [ 'public/tools/bindings/mojom_bindings_generator.gypi' ],
       'export_dependent_settings': [
-        'mojo_cpp_bindings',
+        'mojo_base.gyp:mojo_cpp_bindings',
       ],
       'dependencies': [
-        'mojo_cpp_bindings',
+        'mojo_base.gyp:mojo_cpp_bindings',
         'mojo_geometry_bindings',
         'mojo_input_events_bindings',
       ],
     },
     {
+      # GN version: //mojo/services/public/cpp/view_manager
       'target_name': 'mojo_view_manager_lib',
       'type': 'static_library',
       'dependencies': [
@@ -512,10 +537,10 @@
         '../ui/events/events.gyp:events',
         '../ui/gfx/gfx.gyp:gfx',
         '../ui/gfx/gfx.gyp:gfx_geometry',
-        'mojo_application',
+        'mojo_base.gyp:mojo_application_chromium',
+        'mojo_base.gyp:mojo_application_bindings',
         'mojo_geometry_bindings',
         'mojo_geometry_lib',
-        'mojo_service_provider_bindings',
         'mojo_view_manager_bindings',
         'mojo_view_manager_common',
       ],
@@ -527,12 +552,14 @@
         'services/public/cpp/view_manager/lib/view.cc',
         'services/public/cpp/view_manager/lib/view_private.cc',
         'services/public/cpp/view_manager/lib/view_private.h',
+        'services/public/cpp/view_manager/lib/view_manager_client_factory.cc',
         'services/public/cpp/view_manager/lib/view_manager_client_impl.cc',
         'services/public/cpp/view_manager/lib/view_manager_client_impl.h',
         'services/public/cpp/view_manager/node.h',
         'services/public/cpp/view_manager/node_observer.h',
         'services/public/cpp/view_manager/view.h',
         'services/public/cpp/view_manager/view_manager.h',
+        'services/public/cpp/view_manager/view_manager_client_factory.h',
         'services/public/cpp/view_manager/view_manager_delegate.h',
         'services/public/cpp/view_manager/view_observer.h',
         'services/public/cpp/view_manager/window_manager_delegate.h',
@@ -550,7 +577,7 @@
         '../testing/gtest.gyp:gtest',
         '../ui/gfx/gfx.gyp:gfx',
         '../ui/gfx/gfx.gyp:gfx_test_support',
-        'mojo_environment_chromium',
+        'mojo_base.gyp:mojo_environment_chromium',
         'mojo_geometry_bindings',
         'mojo_geometry_lib',
         'mojo_shell_test_support',
@@ -569,13 +596,13 @@
           ],
         }, {  # use_aura==0
           'dependencies': [
-            'mojo_run_all_unittests',
+            'mojo_base.gyp:mojo_run_all_unittests',
           ],
         }],
       ],
     },
     {
-      # GN version: //mojo/services/public/interfaces/surfaces:bindings
+      # GN version: //mojo/services/public/interfaces/surfaces
       'target_name': 'mojo_surfaces_bindings',
       'type': 'static_library',
       'sources': [
@@ -585,10 +612,10 @@
       ],
       'includes': [ 'public/tools/bindings/mojom_bindings_generator.gypi' ],
       'export_dependent_settings': [
-        'mojo_cpp_bindings',
+        'mojo_base.gyp:mojo_cpp_bindings',
       ],
       'dependencies': [
-        'mojo_cpp_bindings',
+        'mojo_base.gyp:mojo_cpp_bindings',
         'mojo_geometry_bindings',
         'mojo_native_viewport_bindings',
       ],
@@ -604,21 +631,22 @@
       ],
       'includes': [ 'public/tools/bindings/mojom_bindings_generator.gypi' ],
       'export_dependent_settings': [
-        'mojo_cpp_bindings',
+        'mojo_base.gyp:mojo_cpp_bindings',
       ],
       'dependencies': [
-        'mojo_cpp_bindings',
+        'mojo_base.gyp:mojo_cpp_bindings',
       ],
     },
     {
+      # GN version: //mojo/services/test_service
       'target_name': 'mojo_test_app',
       'type': 'loadable_module',
       'dependencies': [
         '../base/base.gyp:base',
-        'mojo_application',
-        'mojo_environment_standalone',
+        'mojo_base.gyp:mojo_environment_standalone',
+        'mojo_base.gyp:mojo_utility',
+        'mojo_base.gyp:mojo_application_standalone',
         'mojo_test_service_bindings',
-        'mojo_utility',
         '<(mojo_system_for_loadable_module)',
       ],
       'sources': [
@@ -634,14 +662,15 @@
       ],
     },
     {
+      # GN version: //mojo/services/test_service:request_tracker
       'target_name': 'mojo_test_request_tracker_app',
       'type': 'loadable_module',
       'dependencies': [
         '../base/base.gyp:base',
-        'mojo_application',
-        'mojo_environment_standalone',
+        'mojo_base.gyp:mojo_environment_standalone',
+        'mojo_base.gyp:mojo_utility',
+        'mojo_base.gyp:mojo_application_standalone',
         'mojo_test_service_bindings',
-        'mojo_utility',
         '<(mojo_system_for_loadable_module)',
       ],
       'sources': [
@@ -657,7 +686,7 @@
       ],
     },
     {
-      # GN version: //mojo/services/public/interfaces/window_manager:core_bindings
+      # GN version: //mojo/services/public/interfaces/window_manager
       'target_name': 'mojo_core_window_manager_bindings',
       'type': 'static_library',
       'sources': [
@@ -665,10 +694,10 @@
       ],
       'includes': [ 'public/tools/bindings/mojom_bindings_generator.gypi' ],
       'export_dependent_settings': [
-        'mojo_cpp_bindings',
+        'mojo_base.gyp:mojo_cpp_bindings',
       ],
       'dependencies': [
-        'mojo_cpp_bindings',
+        'mojo_base.gyp:mojo_cpp_bindings',
       ],
     },
   ],
@@ -676,6 +705,7 @@
     ['use_aura==1', {
       'targets': [
         {
+          # GN version: //mojo/services/view_manager
           'target_name': 'mojo_view_manager',
           'type': '<(component)',
           'dependencies': [
@@ -691,10 +721,10 @@
             '../ui/gfx/gfx.gyp:gfx_geometry',
             '../ui/gl/gl.gyp:gl',
             '../webkit/common/gpu/webkit_gpu.gyp:webkit_gpu',
-            'mojo_application',
+            'mojo_base.gyp:mojo_common_lib',
+            'mojo_base.gyp:mojo_environment_chromium',
+            'mojo_base.gyp:mojo_application_chromium',
             'mojo_cc_support',
-            'mojo_common_lib',
-            'mojo_environment_chromium',
             'mojo_geometry_bindings',
             'mojo_geometry_lib',
             'mojo_gles2',
@@ -707,6 +737,12 @@
           ],
           'sources': [
             'public/cpp/application/lib/mojo_main_chromium.cc',
+            'services/view_manager/access_policy.h',
+            'services/view_manager/access_policy_delegate.h',
+            'services/view_manager/default_access_policy.cc',
+            'services/view_manager/default_access_policy.h',
+            'services/view_manager/window_manager_access_policy.cc',
+            'services/view_manager/window_manager_access_policy.h',
             'services/view_manager/ids.h',
             'services/view_manager/main.cc',
             'services/view_manager/node.cc',
@@ -722,6 +758,8 @@
             'services/view_manager/view.cc',
             'services/view_manager/view.h',
             'services/view_manager/view_manager_export.h',
+            'services/view_manager/view_manager_init_service_context.cc',
+            'services/view_manager/view_manager_init_service_context.h',
             'services/view_manager/view_manager_init_service_impl.cc',
             'services/view_manager/view_manager_init_service_impl.h',
             'services/view_manager/view_manager_service_impl.cc',
@@ -773,15 +811,15 @@
             '../ui/aura/aura.gyp:aura',
             '../ui/gfx/gfx.gyp:gfx_geometry',
             '../ui/gl/gl.gyp:gl',
-            'mojo_application',
-            'mojo_environment_chromium',
+            'mojo_base.gyp:mojo_system_impl',
+            'mojo_base.gyp:mojo_environment_chromium',
+            'mojo_base.gyp:mojo_application_chromium',
             'mojo_geometry_bindings',
             'mojo_geometry_lib',
             'mojo_input_events_bindings',
             'mojo_input_events_lib',
             'mojo_service_manager',
             'mojo_shell_test_support',
-            'mojo_system_impl',
             'mojo_view_manager_bindings',
             'mojo_view_manager_common',
             'mojo_view_manager_run_unittests',
@@ -800,28 +838,38 @@
           'includes': [ 'build/package_app.gypi' ],
         },
         {
-          'target_name': 'mojo_core_window_manager',
-          'type': 'loadable_module',
+          'target_name': 'mojo_core_window_manager_lib',
+          'type': 'static_library',
           'dependencies': [
             '../base/base.gyp:base',
             '../ui/base/ui_base.gyp:ui_base',
             '../ui/gfx/gfx.gyp:gfx',
             '../ui/gfx/gfx.gyp:gfx_geometry',
             '../ui/wm/wm.gyp:wm',
-            'mojo_application',
+            'mojo_base.gyp:mojo_common_lib',
+            'mojo_base.gyp:mojo_environment_chromium',
+            'mojo_base.gyp:mojo_application_chromium',
             'mojo_aura_support',
-            'mojo_common_lib',
             'mojo_core_window_manager_bindings',
-            'mojo_environment_chromium',
             'mojo_view_manager_lib',
-            '<(mojo_system_for_loadable_module)',
           ],
           'sources': [
-            'public/cpp/application/lib/mojo_main_chromium.cc',
             'services/window_manager/window_manager_app.cc',
             'services/window_manager/window_manager_app.h',
             'services/window_manager/window_manager_service_impl.cc',
             'services/window_manager/window_manager_service_impl.h',
+          ],
+        },
+        {
+          'target_name': 'mojo_core_window_manager',
+          'type': 'loadable_module',
+          'dependencies': [
+            'mojo_core_window_manager_lib',
+            '<(mojo_system_for_loadable_module)',
+          ],
+          'sources': [
+            'public/cpp/application/lib/mojo_main_chromium.cc',
+            'services/window_manager/main.cc',
           ],
         },
         {
@@ -831,11 +879,11 @@
             '../base/base.gyp:test_support_base',
             '../testing/gtest.gyp:gtest',
             '../ui/gl/gl.gyp:gl',
+            'mojo_base.gyp:mojo_system_impl',
+            'mojo_base.gyp:mojo_environment_chromium',
             'mojo_core_window_manager_bindings',
-            'mojo_environment_chromium',
             'mojo_service_manager',
             'mojo_shell_test_support',
-            'mojo_system_impl',
             'mojo_view_manager_bindings',
             'mojo_view_manager_lib',
           ],
@@ -868,12 +916,12 @@
             '../base/base.gyp:base',
             '../build/linux/system.gyp:dbus',
             '../dbus/dbus.gyp:dbus',
-            'mojo_application',
-            'mojo_common_lib',
+            'mojo_base.gyp:mojo_common_lib',
+            'mojo_base.gyp:mojo_environment_chromium',
+            'mojo_base.gyp:mojo_system_impl',
+            'mojo_base.gyp:mojo_application_chromium',
             'mojo_dbus_service',
             'mojo_echo_bindings',
-            'mojo_environment_chromium',
-            'mojo_system_impl',
           ],
           'sources': [
             'services/dbus_echo/dbus_echo_service.cc',

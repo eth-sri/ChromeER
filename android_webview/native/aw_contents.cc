@@ -342,6 +342,12 @@ jlong AwContents::GetAwDrawGLViewContext(JNIEnv* env, jobject obj) {
 }
 
 void AwContents::DrawGL(AwDrawGLInfo* draw_info) {
+  if (draw_info->mode == AwDrawGLInfo::kModeSync) {
+    if (hardware_renderer_)
+      hardware_renderer_->CommitFrame();
+    return;
+  }
+
   {
     GLViewRendererManager* manager = GLViewRendererManager::GetInstance();
     base::AutoLock lock(render_thread_lock_);
@@ -358,19 +364,28 @@ void AwContents::DrawGL(AwDrawGLInfo* draw_info) {
 
   if (shared_renderer_state_.IsInsideHardwareRelease()) {
     hardware_renderer_.reset();
+    // Flush the idle queue in tear down.
+    DeferredGpuCommandService::GetInstance()->PerformIdleWork(true);
+    DCHECK(!DeferredGpuCommandService::GetInstance()->HasIdleWork());
     return;
   }
 
-  if (draw_info->mode != AwDrawGLInfo::kModeDraw)
+  if (draw_info->mode != AwDrawGLInfo::kModeDraw) {
+    if (draw_info->mode == AwDrawGLInfo::kModeProcess) {
+      DeferredGpuCommandService::GetInstance()->PerformIdleWork(true);
+    }
     return;
+  }
 
   if (!hardware_renderer_) {
     hardware_renderer_.reset(new HardwareRenderer(&shared_renderer_state_));
+    hardware_renderer_->CommitFrame();
   }
 
   hardware_renderer_->DrawGL(state_restore.stencil_enabled(),
                              state_restore.framebuffer_binding_ext(),
                              draw_info);
+  DeferredGpuCommandService::GetInstance()->PerformIdleWork(false);
 }
 
 namespace {
@@ -737,6 +752,11 @@ void AwContents::PostInvalidate() {
   ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
   if (!obj.is_null())
     Java_AwContents_postInvalidateOnAnimation(env, obj.obj());
+}
+
+void AwContents::UpdateParentDrawConstraints() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  browser_view_renderer_.UpdateParentDrawConstraints();
 }
 
 void AwContents::OnNewPicture() {

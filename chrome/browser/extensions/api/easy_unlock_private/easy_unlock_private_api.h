@@ -8,12 +8,63 @@
 #include <string>
 
 #include "base/basictypes.h"
+#include "extensions/browser/browser_context_keyed_api_factory.h"
 #include "extensions/browser/extension_function.h"
 
 // Implementations for chrome.easyUnlockPrivate API functions.
 
+namespace content {
+class BrowserContext;
+}
+
 namespace extensions {
 namespace api {
+
+namespace easy_unlock {
+struct SeekDeviceResult;
+}  // easy_unlock
+
+class EasyUnlockPrivateCryptoDelegate;
+
+class EasyUnlockPrivateAPI : public BrowserContextKeyedAPI {
+ public:
+  static BrowserContextKeyedAPIFactory<EasyUnlockPrivateAPI>*
+      GetFactoryInstance();
+
+  explicit EasyUnlockPrivateAPI(content::BrowserContext* context);
+  virtual ~EasyUnlockPrivateAPI();
+
+  EasyUnlockPrivateCryptoDelegate* crypto_delegate() {
+    return crypto_delegate_.get();
+  }
+
+ private:
+  friend class BrowserContextKeyedAPIFactory<EasyUnlockPrivateAPI>;
+
+  // BrowserContextKeyedAPI implementation.
+  static const char* service_name() { return "EasyUnlockPrivate"; }
+
+  scoped_ptr<EasyUnlockPrivateCryptoDelegate> crypto_delegate_;
+
+  DISALLOW_COPY_AND_ASSIGN(EasyUnlockPrivateAPI);
+};
+
+class EasyUnlockPrivateGetStringsFunction : public SyncExtensionFunction {
+ public:
+  EasyUnlockPrivateGetStringsFunction();
+
+ protected:
+  virtual ~EasyUnlockPrivateGetStringsFunction();
+
+  // SyncExtensionFunction:
+  virtual bool RunSync() OVERRIDE;
+
+ private:
+  DECLARE_EXTENSION_FUNCTION("easyUnlockPrivate.getStrings",
+                             EASYUNLOCKPRIVATE_GETSTRINGS)
+
+  DISALLOW_COPY_AND_ASSIGN(EasyUnlockPrivateGetStringsFunction);
+};
 
 class EasyUnlockPrivatePerformECDHKeyAgreementFunction
     : public AsyncExtensionFunction {
@@ -82,6 +133,26 @@ class EasyUnlockPrivateUnwrapSecureMessageFunction
 
   DECLARE_EXTENSION_FUNCTION("easyUnlockPrivate.unwrapSecureMessage",
                              EASYUNLOCKPRIVATE_UNWRAPSECUREMESSAGE)
+};
+
+class EasyUnlockPrivateSeekBluetoothDeviceByAddressFunction
+    : public AsyncExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("easyUnlockPrivate.seekBluetoothDeviceByAddress",
+                             EASYUNLOCKPRIVATE_SEEKBLUETOOTHDEVICEBYADDRESS)
+  EasyUnlockPrivateSeekBluetoothDeviceByAddressFunction();
+
+ private:
+  virtual ~EasyUnlockPrivateSeekBluetoothDeviceByAddressFunction();
+
+  // AsyncExtensionFunction:
+  virtual bool RunAsync() OVERRIDE;
+
+  // Callback that is called when the seek operation succeeds.
+  void OnSeekCompleted(const easy_unlock::SeekDeviceResult& seek_result);
+
+  DISALLOW_COPY_AND_ASSIGN(
+      EasyUnlockPrivateSeekBluetoothDeviceByAddressFunction);
 };
 
 }  // namespace api

@@ -453,7 +453,8 @@ QuicStreamFactory::QuicStreamFactory(
     ClientSocketFactory* client_socket_factory,
     base::WeakPtr<HttpServerProperties> http_server_properties,
     CertVerifier* cert_verifier,
-    ServerBoundCertService* server_bound_cert_service,
+    ChannelIDService* channel_id_service,
+    TransportSecurityState* transport_security_state,
     QuicCryptoClientStreamFactory* quic_crypto_client_stream_factory,
     QuicRandom* random_generator,
     QuicClock* clock,
@@ -484,13 +485,10 @@ QuicStreamFactory::QuicStreamFactory(
   crypto_config_.set_user_agent_id(user_agent_id);
   crypto_config_.AddCanonicalSuffix(".c.youtube.com");
   crypto_config_.AddCanonicalSuffix(".googlevideo.com");
-  crypto_config_.SetProofVerifier(new ProofVerifierChromium(cert_verifier));
-  // TODO(wtc): a temporary change to investigate the performance degradation
-  // caused by Channel ID lookup.
-#if 0
+  crypto_config_.SetProofVerifier(
+      new ProofVerifierChromium(cert_verifier, transport_security_state));
   crypto_config_.SetChannelIDSource(
-      new ChannelIDSourceChromium(server_bound_cert_service));
-#endif
+      new ChannelIDSourceChromium(channel_id_service));
   base::CPU cpu;
   if (cpu.has_aesni() && cpu.has_avx())
     crypto_config_.PreferAesGcm();
@@ -833,9 +831,13 @@ int QuicStreamFactory::CreateSession(
         clock_.get(), random_generator_));
   }
 
-  QuicConnection* connection =
-      new QuicConnection(connection_id, addr, helper_.get(), writer.get(),
-                         false, supported_versions_);
+  QuicConnection* connection = new QuicConnection(connection_id,
+                                                  addr,
+                                                  helper_.get(),
+                                                  writer.get(),
+                                                  false  /* owns_writer */,
+                                                  false  /* is_server */,
+                                                  supported_versions_);
   writer->SetConnection(connection);
   connection->set_max_packet_length(max_packet_length_);
 

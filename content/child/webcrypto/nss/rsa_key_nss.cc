@@ -5,7 +5,6 @@
 #include "content/child/webcrypto/nss/rsa_key_nss.h"
 
 #include "base/logging.h"
-#include "base/numerics/safe_math.h"
 #include "content/child/webcrypto/crypto_data.h"
 #include "content/child/webcrypto/jwk.h"
 #include "content/child/webcrypto/nss/key_nss.h"
@@ -21,27 +20,6 @@ namespace content {
 namespace webcrypto {
 
 namespace {
-
-// Converts a (big-endian) WebCrypto BigInteger, with or without leading zeros,
-// to unsigned long.
-bool BigIntegerToLong(const uint8_t* data,
-                      unsigned int data_size,
-                      unsigned long* result) {
-  // TODO(eroman): Fix handling of empty biginteger. http://crubg.com/373552
-  if (data_size == 0)
-    return false;
-
-  *result = 0;
-  for (size_t i = 0; i < data_size; ++i) {
-    size_t reverse_i = data_size - i - 1;
-
-    if (reverse_i >= sizeof(unsigned long) && data[i])
-      return false;  // Too large for a long.
-
-    *result |= data[i] << 8 * reverse_i;
-  }
-  return true;
-}
 
 bool CreatePublicKeyAlgorithm(const blink::WebCryptoAlgorithm& algorithm,
                               SECKEYPublicKey* key,
@@ -293,22 +271,18 @@ void AddAttribute(CK_ATTRIBUTE_TYPE type,
   templ->push_back(attribute);
 }
 
-// Helper to optionally add an attribute to a template, if the provided data is
-// non-empty.
-void AddOptionalAttribute(CK_ATTRIBUTE_TYPE type,
-                          const CryptoData& data,
-                          std::vector<CK_ATTRIBUTE>* templ) {
-  if (!data.byte_length())
-    return;
+void AddAttribute(CK_ATTRIBUTE_TYPE type,
+                  const CryptoData& data,
+                  std::vector<CK_ATTRIBUTE>* templ) {
   CK_ATTRIBUTE attribute = {type, const_cast<unsigned char*>(data.bytes()),
                             data.byte_length()};
   templ->push_back(attribute);
 }
 
-void AddOptionalAttribute(CK_ATTRIBUTE_TYPE type,
-                          const std::string& data,
-                          std::vector<CK_ATTRIBUTE>* templ) {
-  AddOptionalAttribute(type, CryptoData(data), templ);
+void AddAttribute(CK_ATTRIBUTE_TYPE type,
+                  const std::string& data,
+                  std::vector<CK_ATTRIBUTE>* templ) {
+  AddAttribute(type, CryptoData(data), templ);
 }
 
 Status ExportKeyPkcs8Nss(SECKEYPrivateKey* key, std::vector<uint8_t>* buffer) {
@@ -388,10 +362,10 @@ Status ImportRsaPrivateKey(const blink::WebCryptoAlgorithm& algorithm,
   AddAttribute(CKA_SENSITIVE, &ck_false, sizeof(ck_false), &key_template);
   AddAttribute(CKA_PRIVATE, &ck_false, sizeof(ck_false), &key_template);
 
-  // Required properties.
-  AddOptionalAttribute(CKA_MODULUS, params.n, &key_template);
-  AddOptionalAttribute(CKA_PUBLIC_EXPONENT, params.e, &key_template);
-  AddOptionalAttribute(CKA_PRIVATE_EXPONENT, params.d, &key_template);
+  // Required properties by JWA.
+  AddAttribute(CKA_MODULUS, params.n, &key_template);
+  AddAttribute(CKA_PUBLIC_EXPONENT, params.e, &key_template);
+  AddAttribute(CKA_PRIVATE_EXPONENT, params.d, &key_template);
 
   // Manufacture a CKA_ID so the created key can be retrieved later as a
   // SECKEYPrivateKey using FindKeyByKeyID(). Unfortunately there isn't a more
@@ -420,15 +394,16 @@ Status ImportRsaPrivateKey(const blink::WebCryptoAlgorithm& algorithm,
   //      marked sensitive) then this will break things.
   SECItem modulus_item = MakeSECItemForBuffer(CryptoData(params.n));
   crypto::ScopedSECItem object_id(PK11_MakeIDFromPubKey(&modulus_item));
-  AddOptionalAttribute(
+  AddAttribute(
       CKA_ID, CryptoData(object_id->data, object_id->len), &key_template);
 
-  // Optional properties (all of these will have been specified or none).
-  AddOptionalAttribute(CKA_PRIME_1, params.p, &key_template);
-  AddOptionalAttribute(CKA_PRIME_2, params.q, &key_template);
-  AddOptionalAttribute(CKA_EXPONENT_1, params.dp, &key_template);
-  AddOptionalAttribute(CKA_EXPONENT_2, params.dq, &key_template);
-  AddOptionalAttribute(CKA_COEFFICIENT, params.qi, &key_template);
+  // Optional properties by JWA, however guaranteed to be present by Chromium's
+  // implementation.
+  AddAttribute(CKA_PRIME_1, params.p, &key_template);
+  AddAttribute(CKA_PRIME_2, params.q, &key_template);
+  AddAttribute(CKA_EXPONENT_1, params.dp, &key_template);
+  AddAttribute(CKA_EXPONENT_2, params.dq, &key_template);
+  AddAttribute(CKA_COEFFICIENT, params.qi, &key_template);
 
   crypto::ScopedPK11Slot slot(PK11_GetInternalSlot());
 
@@ -579,30 +554,20 @@ Status RsaHashedAlgorithm::GenerateKeyPair(
     blink::WebCryptoKeyUsageMask private_usage_mask,
     blink::WebCryptoKey* public_key,
     blink::WebCryptoKey* private_key) const {
-  const blink::WebCryptoRsaHashedKeyGenParams* params =
-      algorithm.rsaHashedKeyGenParams();
-
-  if (!params->modulusLengthBits())
-    return Status::ErrorGenerateRsaZeroModulus();
-
-  unsigned long public_exponent = 0;
-  if (!BigIntegerToLong(params->publicExponent().data(),
-                        params->publicExponent().size(),
-                        &public_exponent) ||
-      (public_exponent != 3 && public_exponent != 65537)) {
-    return Status::ErrorGenerateKeyPublicExponent();
-  }
+  unsigned int public_exponent = 0;
+  unsigned int modulus_length_bits = 0;
+  Status status = GetRsaKeyGenParameters(algorithm.rsaHashedKeyGenParams(),
+                                         &public_exponent,
+                                         &modulus_length_bits);
+  if (status.IsError())
+    return status;
 
   crypto::ScopedPK11Slot slot(PK11_GetInternalKeySlot());
   if (!slot)
     return Status::OperationError();
 
   PK11RSAGenParams rsa_gen_params;
-  // keySizeInBits is a signed type, don't pass in a negative value.
-  base::CheckedNumeric<int> signed_modulus(params->modulusLengthBits());
-  if (!signed_modulus.IsValid())
-    return Status::OperationError();
-  rsa_gen_params.keySizeInBits = signed_modulus.ValueOrDie();
+  rsa_gen_params.keySizeInBits = modulus_length_bits;
   rsa_gen_params.pe = public_exponent;
 
   const CK_FLAGS operation_flags_mask =
@@ -633,7 +598,7 @@ Status RsaHashedAlgorithm::GenerateKeyPair(
     return Status::ErrorUnexpected();
 
   std::vector<uint8_t> spki_data;
-  Status status = ExportKeySpkiNss(sec_public_key, &spki_data);
+  status = ExportKeySpkiNss(sec_public_key, &spki_data);
   if (status.IsError())
     return status;
 

@@ -21,7 +21,7 @@
       'type': 'static_library',
       'dependencies': [
         '../../base/base.gyp:base',
-        '../../build/linux/system.gyp:dridrm',
+        '../../build/linux/system.gyp:libdrm',
         '../../skia/skia.gyp:skia',
         '../base/ui_base.gyp:ui_base',
         '../display/display.gyp:display_types',
@@ -41,6 +41,8 @@
         'chromeos/display_snapshot_dri.h',
         'chromeos/native_display_delegate_dri.cc',
         'chromeos/native_display_delegate_dri.h',
+        'crtc_state.cc',
+        'crtc_state.h',
         'cursor_factory_evdev_dri.cc',
         'cursor_factory_evdev_dri.h',
         'dri_console_buffer.cc',
@@ -76,6 +78,8 @@
           'sources': [
             'hardware_display_plane.cc',
             'hardware_display_plane.h',
+            'hardware_display_plane_manager.cc',
+            'hardware_display_plane_manager.h',
           ],
         }],
       ],      
@@ -84,13 +88,13 @@
       'target_name': 'ozone_platform_dri_unittests',
       'type': 'none',
       'dependencies': [
-        '../../build/linux/system.gyp:dridrm',
+        '../../build/linux/system.gyp:libdrm',
         '../../skia/skia.gyp:skia',
         '../gfx/gfx.gyp:gfx_geometry',
         'ozone_platform_dri',
       ],
       'export_dependent_settings': [
-        '../../build/linux/system.gyp:dridrm',
+        '../../build/linux/system.gyp:libdrm',
         '../../skia/skia.gyp:skia',
         '../gfx/gfx.gyp:gfx_geometry',
       ],

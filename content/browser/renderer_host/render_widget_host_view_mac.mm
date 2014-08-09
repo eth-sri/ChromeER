@@ -28,6 +28,8 @@
 #include "base/sys_info.h"
 #import "content/browser/accessibility/browser_accessibility_cocoa.h"
 #include "content/browser/accessibility/browser_accessibility_manager_mac.h"
+#import "content/browser/cocoa/system_hotkey_helper_mac.h"
+#import "content/browser/cocoa/system_hotkey_map.h"
 #include "content/browser/compositor/resize_lock.h"
 #include "content/browser/frame_host/frame_tree.h"
 #include "content/browser/frame_host/frame_tree_node.h"
@@ -70,6 +72,7 @@
 #include "ui/compositor/compositor.h"
 #include "ui/compositor/layer.h"
 #include "ui/gfx/display.h"
+#include "ui/gfx/frame_time.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/rect_conversions.h"
 #include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
@@ -95,6 +98,17 @@ using blink::WebInputEventFactory;
 using blink::WebMouseEvent;
 using blink::WebMouseWheelEvent;
 using blink::WebGestureEvent;
+
+namespace {
+
+// Whether a keyboard event has been reserved by OSX.
+BOOL EventIsReservedBySystem(NSEvent* event) {
+  content::SystemHotkeyHelperMac* helper =
+      content::SystemHotkeyHelperMac::GetInstance();
+  return helper->map()->IsEventReserved(event);
+}
+
+}  // namespace
 
 // These are not documented, so use only after checking -respondsToSelector:.
 @interface NSApplication (UndocumentedSpeechMethods)
@@ -413,8 +427,8 @@ RenderWidgetHostImpl* RenderWidgetHostViewMac::GetHost() {
 
 void RenderWidgetHostViewMac::SchedulePaintInRect(
     const gfx::Rect& damage_rect_in_dip) {
-  if (browser_compositor_view_)
-    browser_compositor_view_->GetCompositor()->ScheduleFullRedraw();
+  DCHECK(GetLayer());
+  GetLayer()->SchedulePaint(damage_rect_in_dip);
 }
 
 bool RenderWidgetHostViewMac::IsVisible() {
@@ -851,12 +865,13 @@ void RenderWidgetHostViewMac::SendVSyncParametersToRenderer() {
   if (!render_widget_host_ || !display_link_)
     return;
 
-  base::TimeTicks timebase;
-  base::TimeDelta interval;
-  if (!display_link_->GetVSyncParameters(&timebase, &interval))
+  if (!display_link_->GetVSyncParameters(&vsync_timebase_, &vsync_interval_)) {
+    vsync_timebase_ = base::TimeTicks();
+    vsync_interval_ = base::TimeDelta();
     return;
+  }
 
-  render_widget_host_->UpdateVSyncParameters(timebase, interval);
+  render_widget_host_->UpdateVSyncParameters(vsync_timebase_, vsync_interval_);
 }
 
 void RenderWidgetHostViewMac::UpdateBackingStoreScaleFactor() {
@@ -881,6 +896,11 @@ void RenderWidgetHostViewMac::WasShown() {
 
   render_widget_host_->WasShown();
   software_frame_manager_->SetVisibility(true);
+
+  // If there is not a frame being currently drawn, kick one, so that the below
+  // pause will have a frame to wait on.
+  if (IsDelegatedRendererEnabled())
+    render_widget_host_->ScheduleComposite();
 
   // Call setNeedsDisplay before pausing for new frames to come in -- if any
   // do, and are drawn, then the needsDisplay bit will be cleared.
@@ -1410,6 +1430,7 @@ void RenderWidgetHostViewMac::PluginImeCompositionCompleted(
 
 void RenderWidgetHostViewMac::CompositorSwapBuffers(
     IOSurfaceID surface_handle,
+    const gfx::Rect& damage_rect,
     const gfx::Size& size,
     float surface_scale_factor,
     const std::vector<ui::LatencyInfo>& latency_info) {
@@ -1468,11 +1489,20 @@ void RenderWidgetHostViewMac::CompositorSwapBuffers(
   // current context afterward.
   bool frame_was_captured = false;
   if (frame_subscriber_) {
-    const base::TimeTicks present_time = base::TimeTicks::Now();
+    const base::TimeTicks now = gfx::FrameTime::Now();
+    base::TimeTicks present_time;
+    if (vsync_timebase_.is_null() || vsync_interval_ <= base::TimeDelta()) {
+      present_time = now;
+    } else {
+      const int64 intervals_elapsed = (now - vsync_timebase_) / vsync_interval_;
+      present_time = vsync_timebase_ +
+          (intervals_elapsed + 1) * vsync_interval_;
+    }
+
     scoped_refptr<media::VideoFrame> frame;
     RenderWidgetHostViewFrameSubscriber::DeliverFrameCallback callback;
-    if (frame_subscriber_->ShouldCaptureFrame(present_time,
-                                              &frame, &callback)) {
+    if (frame_subscriber_->ShouldCaptureFrame(
+            damage_rect, present_time, &frame, &callback)) {
       // Flush the context that updated the IOSurface, to ensure that the
       // context that does the copy picks up the correct version.
       {
@@ -1728,6 +1758,7 @@ void RenderWidgetHostViewMac::AcceleratedSurfaceBuffersSwapped(
           params.surface_handle);
 
       CompositorSwapBuffers(io_surface_id,
+                            gfx::Rect(),
                             params.size,
                             params.scale_factor,
                             params.latency_info);
@@ -1772,15 +1803,17 @@ void RenderWidgetHostViewMac::AcceleratedSurfacePostSubBuffer(
                     gpu_host_id,
                     compositing_iosurface_ ?
                         compositing_iosurface_->GetRendererID() : 0);
-  CompositorSwapBuffers(IOSurfaceIDFromSurfaceHandle(params.surface_handle),
-                        params.surface_size,
-                        params.surface_scale_factor,
-                        params.latency_info);
+  CompositorSwapBuffers(
+      IOSurfaceIDFromSurfaceHandle(params.surface_handle),
+      gfx::Rect(params.x, params.y, params.width, params.height),
+      params.surface_size,
+      params.surface_scale_factor,
+      params.latency_info);
 }
 
 void RenderWidgetHostViewMac::AcceleratedSurfaceSuspend() {
-  if (compositing_iosurface_)
-    compositing_iosurface_->UnrefIOSurface();
+  if (render_widget_host_->is_hidden())
+    DestroyCompositedIOSurfaceAndLayer();
 }
 
 void RenderWidgetHostViewMac::AcceleratedSurfaceRelease() {
@@ -1789,6 +1822,8 @@ void RenderWidgetHostViewMac::AcceleratedSurfaceRelease() {
 
 bool RenderWidgetHostViewMac::HasAcceleratedSurface(
       const gfx::Size& desired_size) {
+  if (browser_compositor_view_)
+    return browser_compositor_view_->HasFrameOfSize(desired_size);
   if (compositing_iosurface_) {
     return compositing_iosurface_->HasIOSurface() &&
            (desired_size.IsEmpty() ||
@@ -2048,14 +2083,13 @@ void RenderWidgetHostViewMac::SetBackgroundOpaque(bool opaque) {
     render_widget_host_->SetBackgroundOpaque(opaque);
 }
 
-void RenderWidgetHostViewMac::CreateBrowserAccessibilityManagerIfNeeded() {
-  if (!GetBrowserAccessibilityManager()) {
-    SetBrowserAccessibilityManager(
-        new BrowserAccessibilityManagerMac(
-            cocoa_view_,
-            BrowserAccessibilityManagerMac::GetEmptyDocument(),
-            render_widget_host_));
-  }
+BrowserAccessibilityManager*
+    RenderWidgetHostViewMac::CreateBrowserAccessibilityManager(
+        BrowserAccessibilityDelegate* delegate) {
+  return new BrowserAccessibilityManagerMac(
+      cocoa_view_,
+      BrowserAccessibilityManagerMac::GetEmptyDocument(),
+      delegate);
 }
 
 gfx::Point RenderWidgetHostViewMac::AccessibilityOriginInScreen(
@@ -2070,33 +2104,9 @@ gfx::Point RenderWidgetHostViewMac::AccessibilityOriginInScreen(
   return gfx::Point(originInScreen.x, originInScreen.y);
 }
 
-void RenderWidgetHostViewMac::OnAccessibilitySetFocus(int accObjId) {
-  // Immediately set the focused item even though we have not officially set
-  // focus on it as VoiceOver expects to get the focused item after this
-  // method returns.
-  BrowserAccessibilityManager* manager = GetBrowserAccessibilityManager();
-  if (manager)
-    manager->SetFocus(manager->GetFromID(accObjId), false);
-}
-
-void RenderWidgetHostViewMac::AccessibilityShowMenu(int accObjId) {
-  BrowserAccessibilityManager* manager = GetBrowserAccessibilityManager();
-  if (!manager)
-    return;
-  BrowserAccessibilityCocoa* obj =
-      manager->GetFromID(accObjId)->ToBrowserAccessibilityCocoa();
-
-  // Performs a right click copying WebKit's
-  // accessibilityPerformShowMenuAction.
-  NSPoint objOrigin = [obj origin];
-  NSSize size = [[obj size] sizeValue];
-  gfx::Point origin = AccessibilityOriginInScreen(
-      gfx::Rect(objOrigin.x, objOrigin.y, size.width, size.height));
-  NSPoint location = NSMakePoint(origin.x(), origin.y());
+void RenderWidgetHostViewMac::AccessibilityShowMenu(const gfx::Point& point) {
+  NSPoint location = NSMakePoint(point.x(), point.y());
   location = [[cocoa_view_ window] convertScreenToBase:location];
-  location.x += size.width/2;
-  location.y += size.height/2;
-
   NSEvent* fakeRightClick = [NSEvent
                           mouseEventWithType:NSRightMouseDown
                                     location:location
@@ -2110,8 +2120,6 @@ void RenderWidgetHostViewMac::AccessibilityShowMenu(int accObjId) {
 
   [cocoa_view_ mouseEvent:fakeRightClick];
 }
-
-
 
 void RenderWidgetHostViewMac::SetTextInputActive(bool active) {
   if (active) {
@@ -2184,11 +2192,6 @@ void RenderWidgetHostViewMac::PauseForPendingResizeOrRepaintsAndDraw() {
   if (!render_widget_host_ || render_widget_host_->is_hidden())
     return;
 
-  // Synchronized resizing does not yet work with browser compositor.
-  // http://crbug.com/388005
-  if (IsDelegatedRendererEnabled())
-    return;
-
   // Pausing for one view prevents others from receiving frames.
   // This may lead to large delays, causing overlaps. See crbug.com/352020.
   if (!allow_pause_for_resize_or_repaint_)
@@ -2200,13 +2203,17 @@ void RenderWidgetHostViewMac::PauseForPendingResizeOrRepaintsAndDraw() {
   SendPendingSwapAck();
 
   // Wait for a frame of the right size to come in.
+  if (browser_compositor_view_)
+    browser_compositor_view_->BeginPumpingFrames();
   render_widget_host_->PauseForPendingResizeOrRepaints();
+  if (browser_compositor_view_)
+    browser_compositor_view_->EndPumpingFrames();
 
   // Immediately draw any frames that haven't been drawn yet. This is necessary
   // to keep the window and the window's contents in sync.
   [cocoa_view_ displayIfNeeded];
   [software_layer_ displayIfNeeded];
-  [compositing_iosurface_layer_ displayIfNeeded];
+  [compositing_iosurface_layer_ displayIfNeededAndAck];
 }
 
 void RenderWidgetHostViewMac::LayoutLayers() {
@@ -2250,8 +2257,7 @@ void RenderWidgetHostViewMac::LayoutLayers() {
       // displayed. Calling displayIfNeeded will ensure that the right size
       // frame is drawn to the screen.
       // http://crbug.com/350817
-      [compositing_iosurface_layer_ setNeedsDisplay];
-      [compositing_iosurface_layer_ displayIfNeeded];
+      [compositing_iosurface_layer_ setNeedsDisplayAndDisplayAndAck];
     }
   }
 }
@@ -2578,6 +2584,10 @@ void RenderWidgetHostViewMac::OnDisplayMetricsChanged(
   if ([[self window] firstResponder] != self)
     return NO;
 
+  // If the event is reserved by the system, then do not pass it to web content.
+  if (EventIsReservedBySystem(theEvent))
+    return NO;
+
   // If we return |NO| from this function, cocoa will send the key event to
   // the menu and only if the menu does not process the event to |keyDown:|. We
   // want to send the event to a renderer _before_ sending it to the menu, so
@@ -2625,6 +2635,19 @@ void RenderWidgetHostViewMac::OnDisplayMetricsChanged(
 
 - (void)keyEvent:(NSEvent*)theEvent wasKeyEquivalent:(BOOL)equiv {
   TRACE_EVENT0("browser", "RenderWidgetHostViewCocoa::keyEvent");
+
+  // If the user changes the system hotkey mapping after Chrome has been
+  // launched, then it is possible that a formerly reserved system hotkey is no
+  // longer reserved. The hotkey would have skipped the renderer, but would
+  // also have not been handled by the system. If this is the case, immediately
+  // return.
+  // TODO(erikchen): SystemHotkeyHelperMac should use the File System Events
+  // api to monitor changes to system hotkeys. This logic will have to be
+  // updated.
+  // http://crbug.com/383558.
+  if (EventIsReservedBySystem(theEvent))
+    return;
+
   DCHECK([theEvent type] != NSKeyDown ||
          !equiv == !([theEvent modifierFlags] & NSCommandKeyMask));
 
@@ -3206,7 +3229,7 @@ void RenderWidgetHostViewMac::OnDisplayMetricsChanged(
 
 - (id)accessibilityAttributeValue:(NSString *)attribute {
   BrowserAccessibilityManager* manager =
-      renderWidgetHostView_->GetBrowserAccessibilityManager();
+      renderWidgetHostView_->GetHost()->GetRootBrowserAccessibilityManager();
 
   // Contents specifies document view of RenderWidgetHostViewCocoa provided by
   // BrowserAccessibilityManager. Children includes all subviews in addition to
@@ -3231,25 +3254,28 @@ void RenderWidgetHostViewMac::OnDisplayMetricsChanged(
 }
 
 - (id)accessibilityHitTest:(NSPoint)point {
-  if (!renderWidgetHostView_->GetBrowserAccessibilityManager())
+  BrowserAccessibilityManager* manager =
+      renderWidgetHostView_->GetHost()->GetRootBrowserAccessibilityManager();
+  if (!manager)
     return self;
   NSPoint pointInWindow = [[self window] convertScreenToBase:point];
   NSPoint localPoint = [self convertPoint:pointInWindow fromView:nil];
   localPoint.y = NSHeight([self bounds]) - localPoint.y;
-  BrowserAccessibilityCocoa* root = renderWidgetHostView_->
-      GetBrowserAccessibilityManager()->
-          GetRoot()->ToBrowserAccessibilityCocoa();
+  BrowserAccessibilityCocoa* root =
+      manager->GetRoot()->ToBrowserAccessibilityCocoa();
   id obj = [root accessibilityHitTest:localPoint];
   return obj;
 }
 
 - (BOOL)accessibilityIsIgnored {
-  return !renderWidgetHostView_->GetBrowserAccessibilityManager();
+  BrowserAccessibilityManager* manager =
+      renderWidgetHostView_->GetHost()->GetRootBrowserAccessibilityManager();
+  return !manager;
 }
 
 - (NSUInteger)accessibilityGetIndexOf:(id)child {
   BrowserAccessibilityManager* manager =
-      renderWidgetHostView_->GetBrowserAccessibilityManager();
+      renderWidgetHostView_->GetHost()->GetRootBrowserAccessibilityManager();
   // Only child is root.
   if (manager &&
       manager->GetRoot()->ToBrowserAccessibilityCocoa() == child) {
@@ -3261,7 +3287,7 @@ void RenderWidgetHostViewMac::OnDisplayMetricsChanged(
 
 - (id)accessibilityFocusedUIElement {
   BrowserAccessibilityManager* manager =
-      renderWidgetHostView_->GetBrowserAccessibilityManager();
+      renderWidgetHostView_->GetHost()->GetRootBrowserAccessibilityManager();
   if (manager) {
     BrowserAccessibility* focused_item = manager->GetFocus(NULL);
     DCHECK(focused_item);

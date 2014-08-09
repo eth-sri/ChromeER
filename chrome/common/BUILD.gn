@@ -14,12 +14,20 @@ gypi_values = exec_script(
 #              (generate_common_resources action)
 grit("resources") {
   source = "common_resources.grd"
+  outputs = [
+    "grit/common_resources.h",
+    "common_resources.pak",
+  ]
 }
 
 # GYP version: chrome/chrome_resources.gyp:chrome_resources
 #              (generate_extensions_api_resources action)
 grit("extensions_api_resources") {
   source = "extensions_api_resources.grd"
+  outputs = [
+    "grit/extensions_api_resources.h",
+    "extensions_api_resources.pak",
+  ]
 }
 
 # GYP version: chrome/chrome_common.gyp:common
@@ -42,6 +50,7 @@ static_library("common") {
     "//chrome/common/net",
     "//chrome/common/safe_browsing:proto",
     "//components/cloud_devices/common",
+    "//components/content_settings/core/common",
     "//components/json_schema",
     "//components/metrics",
     "//components/policy:policy_component_common",
@@ -105,11 +114,16 @@ static_library("common") {
       sources -= [
         "extensions/api/networking_private/networking_private_crypto_nss.cc",
       ]
+      # networking_private_crypto_openssl.cc depends on boringssl.
+      deps += [
+        "//third_party/boringssl",
+      ]
     } else {
       sources -= [
         "extensions/api/networking_private/networking_private_crypto_openssl.cc",
       ]
     }
+    deps += [ "//breakpad:client" ]
   }
   if (is_mac) {
     sources += rebase_path(
@@ -160,13 +174,9 @@ static_library("common") {
     sources -= [
       "badge_util.cc",
       "chrome_version_info_posix.cc",
-      "extensions/api/extension_action/browser_action_handler.cc",
-      "extensions/api/extension_action/page_action_handler.cc",
-      "extensions/api/spellcheck/spellcheck_handler.cc",
       "extensions/manifest_handlers/minimum_chrome_version_checker.cc",
       "icon_with_badge_image_source.cc",
       "media_galleries/metadata_types.h",
-      "net/url_util.cc",
       "spellcheck_common.cc",
     ]
   } else {
@@ -190,12 +200,11 @@ static_library("common") {
 
   if (is_mac) {
     sources -= [
-      "child_process_logging_posix.cc",
       "chrome_version_info_posix.cc",
     ]
     deps += [
       "//third_party/mach_override",
-      #'../third_party/google_toolbox_for_mac/google_toolbox_for_mac.gyp:google_toolbox_for_mac',  TODO(GYP)
+      "//third_party/google_toolbox_for_mac",
     ]
   }
 

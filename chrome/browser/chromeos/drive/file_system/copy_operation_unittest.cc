@@ -40,12 +40,7 @@ class CopyOperationTest : public OperationTestBase {
   virtual void SetUp() OVERRIDE {
    OperationTestBase::SetUp();
    operation_.reset(new CopyOperation(
-       blocking_task_runner(),
-       observer(),
-       scheduler(),
-       metadata(),
-       cache(),
-       util::GetIdentityResourceIdCanonicalizer()));
+       blocking_task_runner(), delegate(), scheduler(), metadata(), cache()));
   }
 
   scoped_ptr<CopyOperation> operation_;
@@ -76,12 +71,12 @@ TEST_F(CopyOperationTest, TransferFileFromLocalToRemote_RegularFile) {
   // TransferFileFromLocalToRemote stores a copy of the local file in the cache,
   // marks it dirty and requests the observer to upload the file.
   EXPECT_EQ(FILE_ERROR_OK, GetLocalResourceEntry(remote_dest_path, &entry));
-  EXPECT_EQ(1U, observer()->updated_local_ids().count(entry.local_id()));
+  EXPECT_EQ(1U, delegate()->updated_local_ids().count(entry.local_id()));
   EXPECT_TRUE(entry.file_specific_info().cache_state().is_present());
   EXPECT_TRUE(entry.file_specific_info().cache_state().is_dirty());
 
-  EXPECT_EQ(1U, observer()->get_changed_files().size());
-  EXPECT_TRUE(observer()->get_changed_files().count(remote_dest_path));
+  EXPECT_EQ(1U, delegate()->get_changed_files().size());
+  EXPECT_TRUE(delegate()->get_changed_files().count(remote_dest_path));
 }
 
 TEST_F(CopyOperationTest, TransferFileFromLocalToRemote_Overwrite) {
@@ -108,12 +103,12 @@ TEST_F(CopyOperationTest, TransferFileFromLocalToRemote_Overwrite) {
   // TransferFileFromLocalToRemote stores a copy of the local file in the cache,
   // marks it dirty and requests the observer to upload the file.
   EXPECT_EQ(FILE_ERROR_OK, GetLocalResourceEntry(remote_dest_path, &entry));
-  EXPECT_EQ(1U, observer()->updated_local_ids().count(entry.local_id()));
+  EXPECT_EQ(1U, delegate()->updated_local_ids().count(entry.local_id()));
   EXPECT_TRUE(entry.file_specific_info().cache_state().is_present());
   EXPECT_TRUE(entry.file_specific_info().cache_state().is_dirty());
 
-  EXPECT_EQ(1U, observer()->get_changed_files().size());
-  EXPECT_TRUE(observer()->get_changed_files().count(remote_dest_path));
+  EXPECT_EQ(1U, delegate()->get_changed_files().size());
+  EXPECT_TRUE(delegate()->get_changed_files().count(remote_dest_path));
 }
 
 TEST_F(CopyOperationTest,
@@ -126,8 +121,8 @@ TEST_F(CopyOperationTest,
   // matches "drive/root/Document 1 excludeDir-test".
   ASSERT_TRUE(util::CreateGDocFile(
       local_src_path,
-      GURL("https://3_document_self_link/document:5_document_resource_id"),
-      "document:5_document_resource_id"));
+      GURL("https://3_document_self_link/5_document_resource_id"),
+      "5_document_resource_id"));
 
   ResourceEntry entry;
   ASSERT_EQ(FILE_ERROR_NOT_FOUND,
@@ -144,10 +139,10 @@ TEST_F(CopyOperationTest,
 
   EXPECT_EQ(FILE_ERROR_OK, GetLocalResourceEntry(remote_dest_path, &entry));
 
-  EXPECT_EQ(1U, observer()->get_changed_files().size());
-  EXPECT_TRUE(observer()->get_changed_files().count(remote_dest_path));
+  EXPECT_EQ(1U, delegate()->get_changed_files().size());
+  EXPECT_TRUE(delegate()->get_changed_files().count(remote_dest_path));
   // New copy is created.
-  EXPECT_NE("document:5_document_resource_id", entry.resource_id());
+  EXPECT_NE("5_document_resource_id", entry.resource_id());
 }
 
 TEST_F(CopyOperationTest, TransferFileFromLocalToRemote_OrphanHostedDocument) {
@@ -159,8 +154,8 @@ TEST_F(CopyOperationTest, TransferFileFromLocalToRemote_OrphanHostedDocument) {
   // matches "drive/other/Orphan Document".
   ASSERT_TRUE(util::CreateGDocFile(
       local_src_path,
-      GURL("https://3_document_self_link/document:orphan_doc_1"),
-      "document:orphan_doc_1"));
+      GURL("https://3_document_self_link/orphan_doc_1"),
+      "orphan_doc_1"));
 
   ResourceEntry entry;
   ASSERT_EQ(FILE_ERROR_NOT_FOUND,
@@ -177,12 +172,12 @@ TEST_F(CopyOperationTest, TransferFileFromLocalToRemote_OrphanHostedDocument) {
 
   EXPECT_EQ(FILE_ERROR_OK, GetLocalResourceEntry(remote_dest_path, &entry));
   EXPECT_EQ(ResourceEntry::DIRTY, entry.metadata_edit_state());
-  EXPECT_TRUE(observer()->updated_local_ids().count(entry.local_id()));
+  EXPECT_TRUE(delegate()->updated_local_ids().count(entry.local_id()));
 
-  EXPECT_EQ(1U, observer()->get_changed_files().size());
-  EXPECT_TRUE(observer()->get_changed_files().count(remote_dest_path));
+  EXPECT_EQ(1U, delegate()->get_changed_files().size());
+  EXPECT_TRUE(delegate()->get_changed_files().count(remote_dest_path));
   // The original document got new parent.
-  EXPECT_EQ("document:orphan_doc_1", entry.resource_id());
+  EXPECT_EQ("orphan_doc_1", entry.resource_id());
 }
 
 TEST_F(CopyOperationTest, TransferFileFromLocalToRemote_NewHostedDocument) {
@@ -221,8 +216,8 @@ TEST_F(CopyOperationTest, TransferFileFromLocalToRemote_NewHostedDocument) {
 
   EXPECT_EQ(FILE_ERROR_OK, GetLocalResourceEntry(remote_dest_path, &entry));
 
-  EXPECT_EQ(1U, observer()->get_changed_files().size());
-  EXPECT_TRUE(observer()->get_changed_files().count(remote_dest_path));
+  EXPECT_EQ(1U, delegate()->get_changed_files().size());
+  EXPECT_TRUE(delegate()->get_changed_files().count(remote_dest_path));
   // The original document got new parent.
   EXPECT_EQ(new_gdoc_entry->file_id(), entry.resource_id());
 }
@@ -244,7 +239,7 @@ TEST_F(CopyOperationTest, CopyNotExistingFile) {
 
   EXPECT_EQ(FILE_ERROR_NOT_FOUND, GetLocalResourceEntry(src_path, &entry));
   EXPECT_EQ(FILE_ERROR_NOT_FOUND, GetLocalResourceEntry(dest_path, &entry));
-  EXPECT_TRUE(observer()->get_changed_files().empty());
+  EXPECT_TRUE(delegate()->get_changed_files().empty());
 }
 
 TEST_F(CopyOperationTest, CopyFileToNonExistingDirectory) {
@@ -266,7 +261,7 @@ TEST_F(CopyOperationTest, CopyFileToNonExistingDirectory) {
 
   EXPECT_EQ(FILE_ERROR_OK, GetLocalResourceEntry(src_path, &entry));
   EXPECT_EQ(FILE_ERROR_NOT_FOUND, GetLocalResourceEntry(dest_path, &entry));
-  EXPECT_TRUE(observer()->get_changed_files().empty());
+  EXPECT_TRUE(delegate()->get_changed_files().empty());
 }
 
 // Test the case where the parent of the destination path is an existing file,
@@ -292,7 +287,7 @@ TEST_F(CopyOperationTest, CopyFileToInvalidPath) {
 
   EXPECT_EQ(FILE_ERROR_OK, GetLocalResourceEntry(src_path, &entry));
   EXPECT_EQ(FILE_ERROR_NOT_FOUND, GetLocalResourceEntry(dest_path, &entry));
-  EXPECT_TRUE(observer()->get_changed_files().empty());
+  EXPECT_TRUE(delegate()->get_changed_files().empty());
 }
 
 TEST_F(CopyOperationTest, CopyDirtyFile) {
@@ -334,10 +329,10 @@ TEST_F(CopyOperationTest, CopyDirtyFile) {
   EXPECT_EQ(FILE_ERROR_OK, GetLocalResourceEntry(dest_path, &dest_entry));
   EXPECT_EQ(ResourceEntry::DIRTY, dest_entry.metadata_edit_state());
 
-  EXPECT_EQ(1u, observer()->updated_local_ids().size());
-  EXPECT_TRUE(observer()->updated_local_ids().count(dest_entry.local_id()));
-  EXPECT_EQ(1u, observer()->get_changed_files().size());
-  EXPECT_TRUE(observer()->get_changed_files().count(dest_path));
+  EXPECT_EQ(1u, delegate()->updated_local_ids().size());
+  EXPECT_TRUE(delegate()->updated_local_ids().count(dest_entry.local_id()));
+  EXPECT_EQ(1u, delegate()->get_changed_files().size());
+  EXPECT_TRUE(delegate()->get_changed_files().count(dest_path));
 
   // Copied cache file should be dirty.
   EXPECT_TRUE(dest_entry.file_specific_info().cache_state().is_dirty());
@@ -379,10 +374,10 @@ TEST_F(CopyOperationTest, CopyFileOverwriteFile) {
   ResourceEntry new_dest_entry;
   EXPECT_EQ(FILE_ERROR_OK, GetLocalResourceEntry(dest_path, &new_dest_entry));
 
-  EXPECT_EQ(1u, observer()->updated_local_ids().size());
-  EXPECT_TRUE(observer()->updated_local_ids().count(old_dest_entry.local_id()));
-  EXPECT_EQ(1u, observer()->get_changed_files().size());
-  EXPECT_TRUE(observer()->get_changed_files().count(dest_path));
+  EXPECT_EQ(1u, delegate()->updated_local_ids().size());
+  EXPECT_TRUE(delegate()->updated_local_ids().count(old_dest_entry.local_id()));
+  EXPECT_EQ(1u, delegate()->get_changed_files().size());
+  EXPECT_TRUE(delegate()->get_changed_files().count(dest_path));
 }
 
 TEST_F(CopyOperationTest, CopyFileOverwriteDirectory) {
@@ -472,7 +467,7 @@ TEST_F(CopyOperationTest, WaitForSyncComplete) {
   // This should result in waiting for the directory to sync.
   std::string waited_local_id;
   FileOperationCallback pending_callback;
-  observer()->set_wait_for_sync_complete_handler(
+  delegate()->set_wait_for_sync_complete_handler(
       base::Bind(&CopyWaitForSyncCompleteArguments,
                  &waited_local_id, &pending_callback));
 

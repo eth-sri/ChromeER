@@ -67,6 +67,7 @@ class FontRenderParamsTest : public testing::Test {
     CHECK(temp_dir_.CreateUniqueTempDir());
     original_font_delegate_ = LinuxFontDelegate::instance();
     LinuxFontDelegate::SetInstance(&test_font_delegate_);
+    ClearFontRenderParamsCacheForTest();
   }
 
   virtual ~FontRenderParamsTest() {
@@ -98,7 +99,8 @@ TEST_F(FontRenderParamsTest, Default) {
       kFontconfigMatchFooter +
       kFontconfigFileFooter));
 
-  FontRenderParams params = GetDefaultFontRenderParams();
+  FontRenderParams params = GetFontRenderParams(
+      FontRenderParamsQuery(true), NULL);
   EXPECT_TRUE(params.antialiasing);
   EXPECT_FALSE(params.autohinter);
   EXPECT_TRUE(params.use_bitmaps);
@@ -131,25 +133,24 @@ TEST_F(FontRenderParamsTest, Size) {
 
   // The defaults should be used when the supplied size isn't matched by the
   // second or third blocks.
-  int pixel_size = 12;
-  FontRenderParams params = GetCustomFontRenderParams(
-      false, NULL, &pixel_size, NULL, NULL, NULL);
+  FontRenderParamsQuery query(false);
+  query.pixel_size = 12;
+  FontRenderParams params = GetFontRenderParams(query, NULL);
   EXPECT_TRUE(params.antialiasing);
   EXPECT_EQ(FontRenderParams::HINTING_FULL, params.hinting);
   EXPECT_EQ(FontRenderParams::SUBPIXEL_RENDERING_NONE,
             params.subpixel_rendering);
 
-  pixel_size = 10;
-  params = GetCustomFontRenderParams(
-      false, NULL, &pixel_size, NULL, NULL, NULL);
+  query.pixel_size = 10;
+  params = GetFontRenderParams(query, NULL);
   EXPECT_FALSE(params.antialiasing);
   EXPECT_EQ(FontRenderParams::HINTING_FULL, params.hinting);
   EXPECT_EQ(FontRenderParams::SUBPIXEL_RENDERING_NONE,
             params.subpixel_rendering);
 
-  int point_size = 20;
-  params = GetCustomFontRenderParams(
-      false, NULL, NULL, &point_size, NULL, NULL);
+  query.pixel_size = 0;
+  query.point_size = 20;
+  params = GetFontRenderParams(query, NULL);
   EXPECT_TRUE(params.antialiasing);
   EXPECT_EQ(FontRenderParams::HINTING_SLIGHT, params.hinting);
   EXPECT_EQ(FontRenderParams::SUBPIXEL_RENDERING_RGB,
@@ -158,18 +159,19 @@ TEST_F(FontRenderParamsTest, Size) {
 
 TEST_F(FontRenderParamsTest, Style) {
   ASSERT_TRUE(LoadSystemFont("arial.ttf"));
-  // Load a config that disables antialiasing for bold text and disables
+  // Load a config that disables subpixel rendering for bold text and disables
   // hinting for italic text.
   ASSERT_TRUE(LoadConfigDataIntoFontconfig(temp_dir_.path(),
       std::string(kFontconfigFileHeader) +
       kFontconfigMatchHeader +
       CreateFontconfigEditStanza("antialias", "bool", "true") +
       CreateFontconfigEditStanza("hinting", "bool", "true") +
-      CreateFontconfigEditStanza("hintstyle", "const", "hintfull") +
+      CreateFontconfigEditStanza("hintstyle", "const", "hintslight") +
+      CreateFontconfigEditStanza("rgba", "const", "rgb") +
       kFontconfigMatchFooter +
       kFontconfigMatchHeader +
       CreateFontconfigTestStanza("weight", "eq", "const", "bold") +
-      CreateFontconfigEditStanza("antialias", "bool", "false") +
+      CreateFontconfigEditStanza("rgba", "const", "none") +
       kFontconfigMatchFooter +
       kFontconfigMatchHeader +
       CreateFontconfigTestStanza("slant", "eq", "const", "italic") +
@@ -177,29 +179,30 @@ TEST_F(FontRenderParamsTest, Style) {
       kFontconfigMatchFooter +
       kFontconfigFileFooter));
 
-  int style = Font::NORMAL;
-  FontRenderParams params = GetCustomFontRenderParams(
-      false, NULL, NULL, NULL, &style, NULL);
-  EXPECT_TRUE(params.antialiasing);
-  EXPECT_EQ(FontRenderParams::HINTING_FULL, params.hinting);
+  FontRenderParamsQuery query(false);
+  query.style = Font::NORMAL;
+  FontRenderParams params = GetFontRenderParams(query, NULL);
+  EXPECT_EQ(FontRenderParams::HINTING_SLIGHT, params.hinting);
+  EXPECT_EQ(FontRenderParams::SUBPIXEL_RENDERING_RGB,
+            params.subpixel_rendering);
 
-  style = Font::BOLD;
-  params = GetCustomFontRenderParams(
-      false, NULL, NULL, NULL, &style, NULL);
-  EXPECT_FALSE(params.antialiasing);
-  EXPECT_EQ(FontRenderParams::HINTING_FULL, params.hinting);
+  query.style = Font::BOLD;
+  params = GetFontRenderParams(query, NULL);
+  EXPECT_EQ(FontRenderParams::HINTING_SLIGHT, params.hinting);
+  EXPECT_EQ(FontRenderParams::SUBPIXEL_RENDERING_NONE,
+            params.subpixel_rendering);
 
-  style = Font::ITALIC;
-  params = GetCustomFontRenderParams(
-      false, NULL, NULL, NULL, &style, NULL);
-  EXPECT_TRUE(params.antialiasing);
+  query.style = Font::ITALIC;
+  params = GetFontRenderParams(query, NULL);
   EXPECT_EQ(FontRenderParams::HINTING_NONE, params.hinting);
+  EXPECT_EQ(FontRenderParams::SUBPIXEL_RENDERING_RGB,
+            params.subpixel_rendering);
 
-  style = Font::BOLD | Font::ITALIC;
-  params = GetCustomFontRenderParams(
-      false, NULL, NULL, NULL, &style, NULL);
-  EXPECT_FALSE(params.antialiasing);
+  query.style = Font::BOLD | Font::ITALIC;
+  params = GetFontRenderParams(query, NULL);
   EXPECT_EQ(FontRenderParams::HINTING_NONE, params.hinting);
+  EXPECT_EQ(FontRenderParams::SUBPIXEL_RENDERING_NONE,
+            params.subpixel_rendering);
 }
 
 TEST_F(FontRenderParamsTest, Scalable) {
@@ -217,8 +220,8 @@ TEST_F(FontRenderParamsTest, Scalable) {
       kFontconfigFileFooter));
 
   // Check that we specifically ask how scalable fonts should be rendered.
-  FontRenderParams params = GetCustomFontRenderParams(
-      false, NULL, NULL, NULL, NULL, NULL);
+  FontRenderParams params = GetFontRenderParams(
+      FontRenderParamsQuery(false), NULL);
   EXPECT_TRUE(params.antialiasing);
 }
 
@@ -236,14 +239,38 @@ TEST_F(FontRenderParamsTest, UseBitmaps) {
       kFontconfigMatchFooter +
       kFontconfigFileFooter));
 
-  FontRenderParams params = GetCustomFontRenderParams(
-      false, NULL, NULL, NULL, NULL, NULL);
+  FontRenderParamsQuery query(false);
+  FontRenderParams params = GetFontRenderParams(query, NULL);
   EXPECT_FALSE(params.use_bitmaps);
 
-  const int pixel_size = 5;
-  params = GetCustomFontRenderParams(
-      false, NULL, &pixel_size, NULL, NULL, NULL);
+  query.pixel_size = 5;
+  params = GetFontRenderParams(query, NULL);
   EXPECT_TRUE(params.use_bitmaps);
+}
+
+TEST_F(FontRenderParamsTest, ForceFullHintingWhenAntialiasingIsDisabled) {
+  // Load a config that disables antialiasing and hinting while requesting
+  // subpixel rendering.
+  ASSERT_TRUE(LoadSystemFont("arial.ttf"));
+  ASSERT_TRUE(LoadConfigDataIntoFontconfig(temp_dir_.path(),
+      std::string(kFontconfigFileHeader) +
+      kFontconfigMatchHeader +
+      CreateFontconfigEditStanza("antialias", "bool", "false") +
+      CreateFontconfigEditStanza("hinting", "bool", "false") +
+      CreateFontconfigEditStanza("hintstyle", "const", "hintnone") +
+      CreateFontconfigEditStanza("rgba", "const", "rgb") +
+      kFontconfigMatchFooter +
+      kFontconfigFileFooter));
+
+  // Full hinting should be forced. See the comment in GetFontRenderParams() for
+  // more information.
+  FontRenderParams params = GetFontRenderParams(
+      FontRenderParamsQuery(false), NULL);
+  EXPECT_FALSE(params.antialiasing);
+  EXPECT_EQ(FontRenderParams::HINTING_FULL, params.hinting);
+  EXPECT_EQ(FontRenderParams::SUBPIXEL_RENDERING_NONE,
+            params.subpixel_rendering);
+  EXPECT_FALSE(params.subpixel_positioning);
 }
 
 TEST_F(FontRenderParamsTest, OnlySetConfiguredValues) {
@@ -264,8 +291,8 @@ TEST_F(FontRenderParamsTest, OnlySetConfiguredValues) {
       kFontconfigFileFooter));
 
   // The subpixel rendering setting from the delegate should make it through.
-  FontRenderParams params = GetCustomFontRenderParams(
-      false, NULL, NULL, NULL, NULL, NULL);
+  FontRenderParams params = GetFontRenderParams(
+      FontRenderParamsQuery(false), NULL);
   EXPECT_EQ(system_params.subpixel_rendering, params.subpixel_rendering);
 }
 
@@ -277,19 +304,58 @@ TEST_F(FontRenderParamsTest, NoFontconfigMatch) {
   system_params.subpixel_rendering = FontRenderParams::SUBPIXEL_RENDERING_RGB;
   test_font_delegate_.set_params(system_params);
 
-  std::vector<std::string> families;
-  families.push_back("Arial");
-  families.push_back("Times New Roman");
-  const int pixel_size = 10;
+  FontRenderParamsQuery query(false);
+  query.families.push_back("Arial");
+  query.families.push_back("Times New Roman");
+  query.pixel_size = 10;
   std::string suggested_family;
-  FontRenderParams params = GetCustomFontRenderParams(
-      false, &families, &pixel_size, NULL, NULL, &suggested_family);
+  FontRenderParams params = GetFontRenderParams(query, &suggested_family);
 
   // The system params and the first requested family should be returned.
   EXPECT_EQ(system_params.antialiasing, params.antialiasing);
   EXPECT_EQ(system_params.hinting, params.hinting);
   EXPECT_EQ(system_params.subpixel_rendering, params.subpixel_rendering);
+  EXPECT_EQ(query.families[0], suggested_family);
+}
+
+TEST_F(FontRenderParamsTest, MissingFamily) {
+  // With Arial and Verdana installed, request (in order) Helvetica, Arial, and
+  // Verdana and check that Arial is returned.
+  ASSERT_TRUE(LoadSystemFont("arial.ttf"));
+  ASSERT_TRUE(LoadSystemFont("verdana.ttf"));
+  FontRenderParamsQuery query(false);
+  query.families.push_back("Helvetica");
+  query.families.push_back("Arial");
+  query.families.push_back("Verdana");
+  std::string suggested_family;
+  GetFontRenderParams(query, &suggested_family);
   EXPECT_EQ("Arial", suggested_family);
+}
+
+TEST_F(FontRenderParamsTest, SubstituteFamily) {
+  // Configure Fontconfig to use Verdana for both Helvetica and Arial.
+  ASSERT_TRUE(LoadSystemFont("arial.ttf"));
+  ASSERT_TRUE(LoadSystemFont("verdana.ttf"));
+  ASSERT_TRUE(LoadConfigDataIntoFontconfig(temp_dir_.path(),
+      std::string(kFontconfigFileHeader) +
+      CreateFontconfigAliasStanza("Helvetica", "Verdana") +
+      kFontconfigMatchHeader +
+      CreateFontconfigTestStanza("family", "eq", "string", "Arial") +
+      CreateFontconfigEditStanza("family", "string", "Verdana") +
+      kFontconfigMatchFooter +
+      kFontconfigFileFooter));
+
+  FontRenderParamsQuery query(false);
+  query.families.push_back("Helvetica");
+  std::string suggested_family;
+  GetFontRenderParams(query, &suggested_family);
+  EXPECT_EQ("Verdana", suggested_family);
+
+  query.families.clear();
+  query.families.push_back("Arial");
+  suggested_family.clear();
+  GetFontRenderParams(query, &suggested_family);
+  EXPECT_EQ("Verdana", suggested_family);
 }
 
 }  // namespace gfx

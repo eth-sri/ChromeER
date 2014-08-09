@@ -49,8 +49,6 @@ void CompleteFindSoon(
   RunSoon(from_here, base::Bind(callback, status, registration));
 }
 
-const base::FilePath::CharType kServiceWorkerDirectory[] =
-    FILE_PATH_LITERAL("Service Worker");
 const base::FilePath::CharType kDatabaseName[] =
     FILE_PATH_LITERAL("Database");
 const base::FilePath::CharType kDiskCacheName[] =
@@ -209,6 +207,15 @@ ServiceWorkerStorage::InitialData::InitialData()
 }
 
 ServiceWorkerStorage::InitialData::~InitialData() {
+}
+
+ServiceWorkerStorage::
+DidDeleteRegistrationParams::DidDeleteRegistrationParams()
+    : registration_id(kInvalidServiceWorkerRegistrationId) {
+}
+
+ServiceWorkerStorage::
+DidDeleteRegistrationParams::~DidDeleteRegistrationParams() {
 }
 
 ServiceWorkerStorage::~ServiceWorkerStorage() {
@@ -466,6 +473,11 @@ void ServiceWorkerStorage::DeleteRegistration(
   if (!has_checked_for_stale_resources_)
     DeleteStaleResources();
 
+  DidDeleteRegistrationParams params;
+  params.registration_id = registration_id;
+  params.origin = origin;
+  params.callback = callback;
+
   database_task_runner_->PostTask(
       FROM_HERE,
       base::Bind(&DeleteRegistrationFromDB,
@@ -473,12 +485,14 @@ void ServiceWorkerStorage::DeleteRegistration(
                  base::MessageLoopProxy::current(),
                  registration_id, origin,
                  base::Bind(&ServiceWorkerStorage::DidDeleteRegistration,
-                            weak_factory_.GetWeakPtr(), origin, callback)));
+                            weak_factory_.GetWeakPtr(), params)));
 
-  // TODO(michaeln): Either its instance should also be
-  // removed from liveregistrations map or the live object
-  // should marked as deleted in some way and not 'findable'
-  // thereafter.
+  // The registration should no longer be findable.
+  pending_deletions_.insert(registration_id);
+  ServiceWorkerRegistration* registration =
+      context_->GetLiveRegistration(registration_id);
+  if (registration)
+    registration->set_is_deleted();
 }
 
 scoped_ptr<ServiceWorkerResponseReader>
@@ -632,13 +646,15 @@ ServiceWorkerStorage::ServiceWorkerStorage(
 base::FilePath ServiceWorkerStorage::GetDatabasePath() {
   if (path_.empty())
     return base::FilePath();
-  return path_.Append(kServiceWorkerDirectory).Append(kDatabaseName);
+  return path_.Append(ServiceWorkerContextCore::kServiceWorkerDirectory)
+      .Append(kDatabaseName);
 }
 
 base::FilePath ServiceWorkerStorage::GetDiskCachePath() {
   if (path_.empty())
     return base::FilePath();
-  return path_.Append(kServiceWorkerDirectory).Append(kDiskCacheName);
+  return path_.Append(ServiceWorkerContextCore::kServiceWorkerDirectory)
+      .Append(kDiskCacheName);
 }
 
 bool ServiceWorkerStorage::LazyInitialize(const base::Closure& callback) {
@@ -702,7 +718,7 @@ void ServiceWorkerStorage::DidFindRegistrationForDocument(
     const ResourceList& resources,
     ServiceWorkerDatabase::Status status) {
   if (status == ServiceWorkerDatabase::STATUS_OK) {
-    callback.Run(SERVICE_WORKER_OK, GetOrCreateRegistration(data, resources));
+    ReturnFoundRegistration(callback, data, resources);
     return;
   }
 
@@ -728,7 +744,7 @@ void ServiceWorkerStorage::DidFindRegistrationForPattern(
     const ResourceList& resources,
     ServiceWorkerDatabase::Status status) {
   if (status == ServiceWorkerDatabase::STATUS_OK) {
-    callback.Run(SERVICE_WORKER_OK, GetOrCreateRegistration(data, resources));
+    ReturnFoundRegistration(callback, data, resources);
     return;
   }
 
@@ -752,8 +768,7 @@ void ServiceWorkerStorage::DidFindRegistrationForId(
     const ResourceList& resources,
     ServiceWorkerDatabase::Status status) {
   if (status == ServiceWorkerDatabase::STATUS_OK) {
-    callback.Run(SERVICE_WORKER_OK,
-                 GetOrCreateRegistration(data, resources));
+    ReturnFoundRegistration(callback, data, resources);
     return;
   }
 
@@ -767,6 +782,20 @@ void ServiceWorkerStorage::DidFindRegistrationForId(
   ScheduleDeleteAndStartOver();
   callback.Run(DatabaseStatusToStatusCode(status),
                scoped_refptr<ServiceWorkerRegistration>());
+}
+
+void ServiceWorkerStorage::ReturnFoundRegistration(
+    const FindRegistrationCallback& callback,
+    const ServiceWorkerDatabase::RegistrationData& data,
+    const ResourceList& resources) {
+  scoped_refptr<ServiceWorkerRegistration> registration =
+      GetOrCreateRegistration(data, resources);
+  if (registration->is_deleted()) {
+    // It's past the point of no return and no longer findable.
+    callback.Run(SERVICE_WORKER_ERROR_NOT_FOUND, NULL);
+    return;
+  }
+  callback.Run(SERVICE_WORKER_OK, registration);
 }
 
 void ServiceWorkerStorage::DidGetAllRegistrations(
@@ -863,20 +892,20 @@ void ServiceWorkerStorage::DidUpdateToActiveState(
 }
 
 void ServiceWorkerStorage::DidDeleteRegistration(
-    const GURL& origin,
-    const StatusCallback& callback,
+    const DidDeleteRegistrationParams& params,
     bool origin_is_deletable,
     int64 version_id,
     const std::vector<int64>& newly_purgeable_resources,
     ServiceWorkerDatabase::Status status) {
+  pending_deletions_.erase(params.registration_id);
   if (status != ServiceWorkerDatabase::STATUS_OK) {
     ScheduleDeleteAndStartOver();
-    callback.Run(DatabaseStatusToStatusCode(status));
+    params.callback.Run(DatabaseStatusToStatusCode(status));
     return;
   }
   if (origin_is_deletable)
-    registered_origins_.erase(origin);
-  callback.Run(SERVICE_WORKER_OK);
+    registered_origins_.erase(params.origin);
+  params.callback.Run(SERVICE_WORKER_OK);
 
   if (!context_ || !context_->GetLiveVersion(version_id))
     StartPurgingResources(newly_purgeable_resources);
@@ -893,6 +922,10 @@ ServiceWorkerStorage::GetOrCreateRegistration(
 
   registration = new ServiceWorkerRegistration(
       data.scope, data.script, data.registration_id, context_);
+  if (pending_deletions_.find(data.registration_id) !=
+      pending_deletions_.end()) {
+    registration->set_is_deleted();
+  }
   scoped_refptr<ServiceWorkerVersion> version =
       context_->GetLiveVersion(data.version_id);
   if (!version) {
@@ -900,10 +933,6 @@ ServiceWorkerStorage::GetOrCreateRegistration(
     version->SetStatus(data.is_active ?
         ServiceWorkerVersion::ACTIVATED : ServiceWorkerVersion::INSTALLED);
     version->script_cache_map()->SetResources(resources);
-
-    // TODO(michaeln): need to activate a waiting version  that wasn't
-    // actrivated in an earlier session, maybe test for this condition
-    // (waitingversion and no activeversion) when navigating to a page?
   }
 
   if (version->status() == ServiceWorkerVersion::ACTIVATED)

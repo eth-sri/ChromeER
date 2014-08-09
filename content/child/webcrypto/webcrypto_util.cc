@@ -6,6 +6,7 @@
 
 #include "base/base64.h"
 #include "base/logging.h"
+#include "base/stl_util.h"
 #include "base/strings/stringprintf.h"
 #include "content/child/webcrypto/status.h"
 #include "third_party/WebKit/public/platform/WebCryptoAlgorithm.h"
@@ -16,17 +17,30 @@ namespace content {
 
 namespace webcrypto {
 
-const uint8_t* Uint8VectorStart(const std::vector<uint8_t>& data) {
-  if (data.empty())
-    return NULL;
-  return &data[0];
+namespace {
+
+// Converts a (big-endian) WebCrypto BigInteger, with or without leading zeros,
+// to unsigned int.
+bool BigIntegerToUint(const uint8_t* data,
+                      unsigned int data_size,
+                      unsigned int* result) {
+  // TODO(eroman): Fix handling of empty biginteger. http://crbug.com/373552
+  if (data_size == 0)
+    return false;
+
+  *result = 0;
+  for (size_t i = 0; i < data_size; ++i) {
+    size_t reverse_i = data_size - i - 1;
+
+    if (reverse_i >= sizeof(*result) && data[i])
+      return false;  // Too large for a uint.
+
+    *result |= data[i] << 8 * reverse_i;
+  }
+  return true;
 }
 
-uint8_t* Uint8VectorStart(std::vector<uint8_t>* data) {
-  if (data->empty())
-    return NULL;
-  return &(*data)[0];
-}
+}  // namespace
 
 // This function decodes unpadded 'base64url' encoded data, as described in
 // RFC4648 (http://www.ietf.org/rfc/rfc4648.txt) Section 5. To do this, first
@@ -54,7 +68,7 @@ std::string Base64EncodeUrlSafe(const base::StringPiece& input) {
 
 std::string Base64EncodeUrlSafe(const std::vector<uint8_t>& input) {
   const base::StringPiece string_piece(
-      reinterpret_cast<const char*>(Uint8VectorStart(input)), input.size());
+      reinterpret_cast<const char*>(vector_as_array(&input)), input.size());
   return Base64EncodeUrlSafe(string_piece);
 }
 
@@ -257,6 +271,34 @@ Status CheckKeyCreationUsages(blink::WebCryptoKeyUsageMask all_possible_usages,
                               blink::WebCryptoKeyUsageMask actual_usages) {
   if (!ContainsKeyUsages(all_possible_usages, actual_usages))
     return Status::ErrorCreateKeyBadUsages();
+  return Status::Success();
+}
+
+Status GetRsaKeyGenParameters(
+    const blink::WebCryptoRsaHashedKeyGenParams* params,
+    unsigned int* public_exponent,
+    unsigned int* modulus_length_bits) {
+  *modulus_length_bits = params->modulusLengthBits();
+
+  // Limit key sizes to those supported by NSS:
+  //   * Multiple of 8 bits
+  //   * 256 bits to 16K bits
+  if (*modulus_length_bits < 256 || *modulus_length_bits > 16384 ||
+      (*modulus_length_bits % 8) != 0) {
+    return Status::ErrorGenerateRsaUnsupportedModulus();
+  }
+
+  if (!BigIntegerToUint(params->publicExponent().data(),
+                        params->publicExponent().size(),
+                        public_exponent)) {
+    return Status::ErrorGenerateKeyPublicExponent();
+  }
+
+  // OpenSSL hangs when given bad public exponents, whereas NSS simply fails. To
+  // avoid feeding OpenSSL data that will hang use a whitelist.
+  if (*public_exponent != 3 && *public_exponent != 65537)
+    return Status::ErrorGenerateKeyPublicExponent();
+
   return Status::Success();
 }
 

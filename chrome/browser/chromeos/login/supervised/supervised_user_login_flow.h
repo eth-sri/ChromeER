@@ -9,8 +9,8 @@
 #include "base/compiler_specific.h"
 #include "base/memory/weak_ptr.h"
 #include "base/strings/string16.h"
-#include "chrome/browser/chromeos/login/auth/extended_authenticator.h"
 #include "chrome/browser/chromeos/login/user_flow.h"
+#include "chromeos/login/auth/extended_authenticator.h"
 #include "chromeos/login/auth/user_context.h"
 
 namespace chromeos {
@@ -30,8 +30,8 @@ class SupervisedUserLoginFlow
   virtual bool HandleLoginFailure(const AuthFailure& failure) OVERRIDE;
   virtual void HandleLoginSuccess(const UserContext& context) OVERRIDE;
   virtual bool HandlePasswordChangeDetected() OVERRIDE;
-  virtual void HandleOAuthTokenStatusChange(User::OAuthTokenStatus status)
-      OVERRIDE;
+  virtual void HandleOAuthTokenStatusChange(
+      user_manager::User::OAuthTokenStatus status) OVERRIDE;
   virtual void LaunchExtraSteps(Profile* profile) OVERRIDE;
 
   // ExtendedAuthenticator::NewAuthStatusConsumer overrides.

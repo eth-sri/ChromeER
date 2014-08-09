@@ -74,6 +74,7 @@ class TemplateURLRef {
 
     struct ContextualSearchParams {
       ContextualSearchParams();
+      // TODO(jeremycho): Delete constructor once Clank no longer depends on it.
       ContextualSearchParams(const int version,
                              const size_t start,
                              const size_t end,
@@ -81,6 +82,14 @@ class TemplateURLRef {
                              const std::string& content,
                              const std::string& base_page_url,
                              const std::string& encoding);
+      ContextualSearchParams(const int version,
+                             const size_t start,
+                             const size_t end,
+                             const std::string& selection,
+                             const std::string& content,
+                             const std::string& base_page_url,
+                             const std::string& encoding,
+                             const bool resolve);
       ~ContextualSearchParams();
 
       // The version of contextual search.
@@ -103,6 +112,11 @@ class TemplateURLRef {
 
       // The encoding of content.
       std::string encoding;
+
+      // If true, the server will generate a search term based on the user
+      // selection and context.  Otherwise the user selection will be used as-is
+      // as the search term.
+      bool resolve;
     };
 
     // The search terms (query).
@@ -573,6 +587,12 @@ class TemplateURL {
   const TemplateURLRef& new_tab_url_ref() const { return new_tab_url_ref_; }
   const TemplateURLRef& contextual_search_url_ref() const {
     return contextual_search_url_ref_;
+  }
+
+  // This setter shouldn't be used except by TemplateURLService and
+  // TemplateURLServiceClient implementations.
+  void set_extension_info(scoped_ptr<AssociatedExtensionInfo> extension_info) {
+    extension_info_ = extension_info.Pass();
   }
 
   // Returns true if |url| supports replacement.

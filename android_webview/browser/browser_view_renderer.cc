@@ -74,7 +74,17 @@ class TracedValue : public base::debug::ConvertableToTraceFormat {
 }  // namespace
 
 // static
-void BrowserViewRenderer::CalculateTileMemoryPolicy() {
+void BrowserViewRenderer::CalculateTileMemoryPolicy(bool use_zero_copy) {
+  if (!use_zero_copy) {
+    // Use chrome's default tile size, which varies from 256 to 512.
+    // Be conservative here and use the smallest tile size possible.
+    g_tile_area = 256 * 256;
+
+    // Also use a high tile limit since there are no file descriptor issues.
+    GlobalTileManager::GetInstance()->SetTileLimit(1000);
+    return;
+  }
+
   CommandLine* cl = CommandLine::ForCurrentProcess();
   const char kDefaultTileSize[] = "384";
 
@@ -259,14 +269,29 @@ bool BrowserViewRenderer::OnDrawHardware(jobject java_canvas) {
   draw_gl_input->width = width_;
   draw_gl_input->height = height_;
 
-  gfx::Transform transform;
+  parent_draw_constraints_ = shared_renderer_state_->ParentDrawConstraints();
   gfx::Size surface_size(width_, height_);
   gfx::Rect viewport(surface_size);
-  // TODO(boliu): Should really be |last_on_draw_global_visible_rect_|.
-  // See crbug.com/372073.
   gfx::Rect clip = viewport;
-  scoped_ptr<cc::CompositorFrame> frame = compositor_->DemandDrawHw(
-      surface_size, transform, viewport, clip);
+  gfx::Transform transform_for_tile_priority =
+      parent_draw_constraints_.transform;
+
+  // If the WebView is on a layer, WebView does not know what transform is
+  // applied onto the layer so global visible rect does not make sense here.
+  // In this case, just use the surface rect for tiling.
+  gfx::Rect viewport_rect_for_tile_priority;
+  if (parent_draw_constraints_.is_layer)
+    viewport_rect_for_tile_priority = parent_draw_constraints_.surface_rect;
+  else
+    viewport_rect_for_tile_priority = last_on_draw_global_visible_rect_;
+
+  scoped_ptr<cc::CompositorFrame> frame =
+      compositor_->DemandDrawHw(surface_size,
+                                gfx::Transform(),
+                                viewport,
+                                clip,
+                                viewport_rect_for_tile_priority,
+                                transform_for_tile_priority);
   if (!frame.get())
     return false;
 
@@ -277,6 +302,14 @@ bool BrowserViewRenderer::OnDrawHardware(jobject java_canvas) {
   shared_renderer_state_->SetDrawGLInput(draw_gl_input.Pass());
   DidComposite();
   return client_->RequestDrawGL(java_canvas, false);
+}
+
+void BrowserViewRenderer::UpdateParentDrawConstraints() {
+  // Post an invalidate if the parent draw constraints are stale and there is
+  // no pending invalidate.
+  if (!parent_draw_constraints_.Equals(
+          shared_renderer_state_->ParentDrawConstraints()))
+    EnsureContinuousInvalidation(true);
 }
 
 void BrowserViewRenderer::ReturnUnusedResource(scoped_ptr<DrawGLInput> input) {
@@ -306,13 +339,19 @@ bool BrowserViewRenderer::OnDrawSoftware(jobject java_canvas) {
     return false;
   }
 
+  // TODO(hush): right now webview size is passed in as the auxiliary bitmap
+  // size, which might hurt performace (only for software draws with auxiliary
+  // bitmap). For better performance, get global visible rect, transform it
+  // from screen space to view space, then intersect with the webview in
+  // viewspace.  Use the resulting rect as the auxiliary
+  // bitmap.
   return BrowserViewRendererJavaHelper::GetInstance()
       ->RenderViaAuxilaryBitmapIfNeeded(
-            java_canvas,
-            last_on_draw_scroll_offset_,
-            gfx::Rect(width_, height_),
-            base::Bind(&BrowserViewRenderer::CompositeSW,
-                       base::Unretained(this)));
+          java_canvas,
+          last_on_draw_scroll_offset_,
+          gfx::Size(width_, height_),
+          base::Bind(&BrowserViewRenderer::CompositeSW,
+                     base::Unretained(this)));
 }
 
 skia::RefPtr<SkPicture> BrowserViewRenderer::CapturePicture(int width,

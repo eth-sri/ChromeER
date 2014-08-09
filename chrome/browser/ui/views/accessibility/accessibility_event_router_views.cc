@@ -226,8 +226,14 @@ void AccessibilityEventRouterViews::DispatchAccessibilityEvent(
   case ui::AX_ROLE_SLIDER:
     SendSliderNotification(view, type, profile);
     break;
+  case ui::AX_ROLE_STATIC_TEXT:
+    SendStaticTextNotification(view, type, profile);
+    break;
   case ui::AX_ROLE_TREE:
     SendTreeNotification(view, type, profile);
+    break;
+  case ui::AX_ROLE_TAB:
+    SendTabNotification(view, type, profile);
     break;
   case ui::AX_ROLE_TREE_ITEM:
     SendTreeItemNotification(view, type, profile);
@@ -245,11 +251,36 @@ void AccessibilityEventRouterViews::DispatchAccessibilityEvent(
 }
 
 // static
+void AccessibilityEventRouterViews::SendTabNotification(
+    views::View* view,
+    ui::AXEvent event,
+    Profile* profile) {
+  ui::AXViewState state;
+  view->GetAccessibleState(&state);
+  if (state.index == -1)
+    return;
+  std::string name = base::UTF16ToUTF8(state.name);
+  std::string context = GetViewContext(view);
+  AccessibilityTabInfo info(profile, name, context, state.index, state.count);
+  SendControlAccessibilityNotification(event, &info);
+}
+
+// static
 void AccessibilityEventRouterViews::SendButtonNotification(
     views::View* view,
     ui::AXEvent event,
     Profile* profile) {
   AccessibilityButtonInfo info(
+      profile, GetViewName(view), GetViewContext(view));
+  SendControlAccessibilityNotification(event, &info);
+}
+
+// static
+void AccessibilityEventRouterViews::SendStaticTextNotification(
+    views::View* view,
+    ui::AXEvent event,
+    Profile* profile) {
+  AccessibilityStaticTextInfo info(
       profile, GetViewName(view), GetViewContext(view));
   SendControlAccessibilityNotification(event, &info);
 }
@@ -573,8 +604,10 @@ std::string AccessibilityEventRouterViews::RecursiveGetStaticText(
 // static
 views::View* AccessibilityEventRouterViews::FindFirstAccessibleAncestor(
     views::View* view) {
-  while (view->parent() && !view->IsAccessibilityFocusable()) {
-    view = view->parent();
-  }
+  views::View* temp_view = view;
+  while (temp_view->parent() && !temp_view->IsAccessibilityFocusable())
+    temp_view = temp_view->parent();
+  if (temp_view->IsAccessibilityFocusable())
+    return temp_view;
   return view;
 }

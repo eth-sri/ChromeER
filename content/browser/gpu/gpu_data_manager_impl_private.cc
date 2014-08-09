@@ -696,6 +696,12 @@ void GpuDataManagerImplPrivate::UpdateRendererWebPrefs(
           switches::kDisableAcceleratedVideoDecode)) {
     prefs->pepper_accelerated_video_decode_enabled = true;
   }
+
+  if (!IsFeatureBlacklisted(
+          gpu::GPU_FEATURE_TYPE_GPU_RASTERIZATION_EXPANDED_HEURISTICS) ||
+      base::FieldTrialList::FindFullName(
+          "GpuRasterizationExpandedContentWhitelist") == "Enabled")
+    prefs->use_expanded_heuristics_for_gpu_rasterization = true;
 }
 
 void GpuDataManagerImplPrivate::DisableHardwareAcceleration() {
@@ -757,6 +763,7 @@ void GpuDataManagerImplPrivate::ProcessCrashed(
     return;
   }
   {
+    gpu_info_.process_crash_count = GpuProcessHost::gpu_crash_count();
     GpuDataManagerImpl::UnlockedSession session(owner_);
     observer_list_->Notify(
         &GpuDataManagerObserver::OnGpuProcessCrashed, exit_code);

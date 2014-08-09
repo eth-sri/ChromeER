@@ -23,6 +23,7 @@
             # directory that are then linked into the final content_unittests.
             'auto_login_parser/auto_login_parser_unittest.cc',
             'autocomplete/autocomplete_input_unittest.cc',
+            'autocomplete/autocomplete_match_unittest.cc',
             'autofill/content/browser/content_autofill_driver_unittest.cc',
             'autofill/content/browser/request_autocomplete_manager_unittest.cc',
             'autofill/content/browser/wallet/full_wallet_unittest.cc',
@@ -186,6 +187,9 @@
             'storage_monitor/storage_monitor_mac_unittest.mm',
             'storage_monitor/storage_monitor_unittest.cc',
             'storage_monitor/storage_monitor_win_unittest.cc',
+            'suggestions/blacklist_store_unittest.cc',
+            'suggestions/suggestions_service_unittest.cc',
+            'suggestions/suggestions_store_unittest.cc',
             'sync_driver/non_ui_data_type_controller_unittest.cc',
             'sync_driver/data_type_manager_impl_unittest.cc',
             'sync_driver/generic_change_processor_unittest.cc',
@@ -220,6 +224,7 @@
             'variations/variations_seed_simulator_unittest.cc',
             'visitedlink/test/visitedlink_unittest.cc',
             'web_modal/web_contents_modal_dialog_manager_unittest.cc',
+            'webdata/common/web_database_migration_unittest.cc',
           ],
           'include_dirs': [
             '..',
@@ -367,6 +372,9 @@
             'components.gyp:signin_core_browser_test_support',
             '../google_apis/google_apis.gyp:google_apis_test_support',
 
+            # Dependencies of suggestions
+            'components.gyp:suggestions',
+
             # Dependencies of sync_driver
             'components.gyp:sync_driver_test_support',
 
@@ -497,6 +505,12 @@
               ],
             }],
             ['disable_nacl==0', {
+              'includes': [
+                'nacl/nacl_defines.gypi',
+              ],
+              'defines': [
+                '<@(nacl_defines)',
+              ],
               'sources': [
                 'nacl/browser/nacl_file_host_unittest.cc',
                 'nacl/browser/nacl_process_host_unittest.cc',
@@ -567,6 +581,20 @@
                 'invalidation/sync_system_resources_unittest.cc',
                 'invalidation/ticl_invalidation_service_unittest.cc',
                 'invalidation/unacked_invalidation_set_unittest.cc',
+              ],
+            }],
+            ['OS != "ios" and OS != "android"', {
+              'sources': [
+                'copresence/handlers/audio/audio_directive_handler_unittest.cc',
+                'copresence/handlers/audio/audio_directive_list_unittest.cc',
+                'copresence/mediums/audio/audio_player_unittest.cc',
+                'copresence/mediums/audio/audio_recorder_unittest.cc',
+                'copresence/timed_map_unittest.cc',
+              ],
+              'dependencies': [
+                # Dependencies for copresence.
+                'components.gyp:copresence',
+                'components.gyp:copresence_test_support',
               ],
             }],
             ['chromeos==1', {
@@ -761,7 +789,7 @@
             'components.gyp:autofill_content_browser',
             'components.gyp:dom_distiller_content',
             'components.gyp:dom_distiller_core',
-            'components.gyp:pref_registry_test_support', 
+            'components.gyp:pref_registry_test_support',
             'components_resources.gyp:components_resources',
             '../content/content.gyp:content_common',
             '../content/content.gyp:content_gpu',
@@ -824,15 +852,15 @@
                 # their various targets (net.gyp:net_resources, etc.),
                 # but that causes errors in other targets when
                 # resulting .res files get referenced multiple times.
+                '<(SHARED_INTERMEDIATE_DIR)/blink/public/resources/blink_resources.rc',
                 '<(SHARED_INTERMEDIATE_DIR)/net/net_resources.rc',
-                '<(SHARED_INTERMEDIATE_DIR)/webkit/blink_resources.rc',
                 '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_strings_en-US.rc',
               ],
               'dependencies': [
                 '<(DEPTH)/net/net.gyp:net_resources',
+                '<(DEPTH)/third_party/WebKit/public/blink_resources.gyp:blink_resources',
                 '<(DEPTH)/third_party/iaccessible2/iaccessible2.gyp:iaccessible2',
                 '<(DEPTH)/third_party/isimpledom/isimpledom.gyp:isimpledom',
-                '<(DEPTH)/webkit/webkit_resources.gyp:webkit_strings',
                 '<(DEPTH)/webkit/webkit_resources.gyp:webkit_resources',
               ],
               'configurations': {

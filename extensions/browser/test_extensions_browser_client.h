@@ -22,6 +22,9 @@ class TestExtensionsBrowserClient : public ExtensionsBrowserClient {
   void set_process_manager_delegate(ProcessManagerDelegate* delegate) {
     process_manager_delegate_ = delegate;
   }
+  void set_extension_system_factory(ExtensionSystemProvider* factory) {
+    extension_system_factory_ = factory;
+  }
 
   // Associates an incognito context with |main_context_|.
   void SetIncognitoContext(content::BrowserContext* incognito_context);
@@ -67,6 +70,7 @@ class TestExtensionsBrowserClient : public ExtensionsBrowserClient {
   virtual scoped_ptr<ExtensionHostDelegate> CreateExtensionHostDelegate()
       OVERRIDE;
   virtual bool DidVersionUpdate(content::BrowserContext* context) OVERRIDE;
+  virtual void PermitExternalProtocolHandler() OVERRIDE;
   virtual scoped_ptr<AppSorting> CreateAppSorting() OVERRIDE;
   virtual bool IsRunningInForcedAppMode() OVERRIDE;
   virtual ApiActivityMonitor* GetApiActivityMonitor(
@@ -78,6 +82,7 @@ class TestExtensionsBrowserClient : public ExtensionsBrowserClient {
       content::BrowserContext* context) const OVERRIDE;
   virtual ComponentExtensionResourceManager*
   GetComponentExtensionResourceManager() OVERRIDE;
+  virtual net::NetLog* GetNetLog() OVERRIDE;
 
  private:
   content::BrowserContext* main_context_;       // Not owned.
@@ -85,6 +90,9 @@ class TestExtensionsBrowserClient : public ExtensionsBrowserClient {
 
   // Not owned, defaults to NULL.
   ProcessManagerDelegate* process_manager_delegate_;
+
+  // Not owned, defaults to NULL.
+  ExtensionSystemProvider* extension_system_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(TestExtensionsBrowserClient);
 };

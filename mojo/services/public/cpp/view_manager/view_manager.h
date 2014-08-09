@@ -13,19 +13,17 @@
 
 namespace mojo {
 class ApplicationConnection;
-namespace view_manager {
-
 class Node;
 class View;
 class ViewManagerDelegate;
 class WindowManagerDelegate;
 
+// Encapsulates a connection to the view manager service.
+// A unique connection is made for every unique embed path for an app. e.g. for
+// app B embed by the following paths: A->B, A->C->B - there are two connections
+// and thus two instances of this class.
 class ViewManager {
  public:
-  // Delegate is owned by the caller.
-  static void ConfigureIncomingConnection(ApplicationConnection* connection,
-                                          ViewManagerDelegate* delegate);
-
   // Sets the window manager delegate. Can only be called by the app embedded at
   // the service root node.
   virtual void SetWindowManagerDelegate(
@@ -50,7 +48,6 @@ class ViewManager {
 
 };
 
-}  // namespace view_manager
 }  // namespace mojo
 
 #endif  // MOJO_SERVICES_PUBLIC_CPP_VIEW_MANAGER_VIEW_MANAGER_H_

@@ -484,27 +484,28 @@ blink::WebPopupType RenderWidgetHostViewBase::GetPopupType() {
 }
 
 BrowserAccessibilityManager*
-    RenderWidgetHostViewBase::GetBrowserAccessibilityManager() const {
-  return browser_accessibility_manager_.get();
+RenderWidgetHostViewBase::CreateBrowserAccessibilityManager(
+    BrowserAccessibilityDelegate* delegate) {
+  NOTREACHED();
+  return NULL;
 }
 
-void RenderWidgetHostViewBase::CreateBrowserAccessibilityManagerIfNeeded() {
-}
-
-void RenderWidgetHostViewBase::SetBrowserAccessibilityManager(
-    BrowserAccessibilityManager* manager) {
-  browser_accessibility_manager_.reset(manager);
-}
-
-void RenderWidgetHostViewBase::OnAccessibilitySetFocus(int acc_obj_id) {
-}
-
-void RenderWidgetHostViewBase::AccessibilityShowMenu(int acc_obj_id) {
+void RenderWidgetHostViewBase::AccessibilityShowMenu(const gfx::Point& point) {
 }
 
 gfx::Point RenderWidgetHostViewBase::AccessibilityOriginInScreen(
     const gfx::Rect& bounds) {
   return bounds.origin();
+}
+
+gfx::AcceleratedWidget
+    RenderWidgetHostViewBase::AccessibilityGetAcceleratedWidget() {
+  return gfx::kNullAcceleratedWidget;
+}
+
+gfx::NativeViewAccessible
+    RenderWidgetHostViewBase::AccessibilityGetNativeViewAccessible() {
+  return NULL;
 }
 
 void RenderWidgetHostViewBase::UpdateScreenInfo(gfx::NativeView view) {
@@ -617,9 +618,9 @@ RenderWidgetHostViewBase::GetOrientationTypeForMobile(
   // Whether the device's natural orientation is portrait.
   bool natural_portrait = false;
   if (angle == 0 || angle == 180) // The device is in its natural orientation.
-    natural_portrait = bounds.height() > bounds.width();
+    natural_portrait = bounds.height() >= bounds.width();
   else
-    natural_portrait = bounds.height() < bounds.width();
+    natural_portrait = bounds.height() <= bounds.width();
 
   switch (angle) {
   case 0:
@@ -649,7 +650,7 @@ RenderWidgetHostViewBase::GetOrientationTypeForDesktop(
 
   int angle = display.RotationAsDegree();
   const gfx::Rect& bounds = display.bounds();
-  bool is_portrait = bounds.height() > bounds.width();
+  bool is_portrait = bounds.height() >= bounds.width();
 
   if (is_portrait && primary_portrait_angle == -1)
     primary_portrait_angle = angle;

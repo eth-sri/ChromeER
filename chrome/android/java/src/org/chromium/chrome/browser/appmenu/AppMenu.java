@@ -37,7 +37,7 @@ import java.util.List;
  */
 public class AppMenu implements OnItemClickListener, OnKeyListener {
     /** Whether or not to show the software menu button in the menu. */
-    private static final boolean SHOW_SW_MENU_BUTTON = false;
+    private static final boolean SHOW_SW_MENU_BUTTON = true;
 
     private static final float LAST_ITEM_SHOW_FRACTION = 0.5f;
 
@@ -45,7 +45,6 @@ public class AppMenu implements OnItemClickListener, OnKeyListener {
     private final int mItemRowHeight;
     private final int mItemDividerHeight;
     private final int mVerticalFadeDistance;
-    private final int mAdditionalVerticalOffset;
     private ListPopupWindow mPopup;
     private AppMenuAdapter mAdapter;
     private AppMenuHandler mHandler;
@@ -72,7 +71,6 @@ public class AppMenu implements OnItemClickListener, OnKeyListener {
         mItemDividerHeight = itemDividerHeight;
         assert mItemDividerHeight >= 0;
 
-        mAdditionalVerticalOffset = res.getDimensionPixelSize(R.dimen.menu_vertical_offset);
         mVerticalFadeDistance = res.getDimensionPixelSize(R.dimen.menu_vertical_fade_distance);
     }
 
@@ -86,9 +84,10 @@ public class AppMenu implements OnItemClickListener, OnKeyListener {
      *                            button)
      * @param screenRotation      Current device screen rotation.
      * @param visibleDisplayFrame The display area rect in which AppMenu is supposed to fit in.
+     * @param screenHeight        Current device screen height.
      */
     void show(Context context, View anchorView, boolean isByHardwareButton, int screenRotation,
-            Rect visibleDisplayFrame) {
+            Rect visibleDisplayFrame, int screenHeight) {
         mPopup = new ListPopupWindow(context, null, android.R.attr.popupMenuStyle);
         mPopup.setModal(true);
         mPopup.setAnchorView(anchorView);
@@ -105,7 +104,13 @@ public class AppMenu implements OnItemClickListener, OnKeyListener {
 
         // Need to explicitly set the background here.  Relying on it being set in the style caused
         // an incorrectly drawn background.
-        mPopup.setBackgroundDrawable(context.getResources().getDrawable(R.drawable.menu_bg));
+        if (isByHardwareButton) {
+            mPopup.setBackgroundDrawable(context.getResources().getDrawable(R.drawable.menu_bg));
+        } else {
+            mPopup.setBackgroundDrawable(
+                    context.getResources().getDrawable(R.drawable.edge_menu_bg));
+            mPopup.setAnimationStyle(R.style.OverflowMenuAnim);
+        }
 
         Rect bgPadding = new Rect();
         mPopup.getBackground().getPadding(bgPadding);
@@ -136,7 +141,7 @@ public class AppMenu implements OnItemClickListener, OnKeyListener {
                 this, menuItems, LayoutInflater.from(context), showMenuButton);
         mPopup.setAdapter(mAdapter);
 
-        setMenuHeight(menuItems.size(), visibleDisplayFrame);
+        setMenuHeight(menuItems.size(), visibleDisplayFrame, screenHeight);
         setPopupOffset(mPopup, mCurrentScreenRotation, visibleDisplayFrame);
         mPopup.setOnItemClickListener(this);
         mPopup.show();
@@ -165,6 +170,7 @@ public class AppMenu implements OnItemClickListener, OnKeyListener {
         popup.getBackground().getPadding(paddingRect);
         int[] anchorLocation = new int[2];
         popup.getAnchorView().getLocationInWindow(anchorLocation);
+        int anchorHeight = popup.getAnchorView().getHeight();
 
         // If we have a hardware menu button, locate the app menu closer to the estimated
         // hardware menu button location.
@@ -187,11 +193,11 @@ public class AppMenu implements OnItemClickListener, OnKeyListener {
             popup.setHorizontalOffset(horizontalOffset);
             // The menu is displayed above the anchored view, so shift the menu up by the top
             // padding of the background.
-            popup.setVerticalOffset(mAdditionalVerticalOffset - paddingRect.bottom);
+            popup.setVerticalOffset(-paddingRect.bottom);
         } else {
-            // The menu is displayed below the anchored view, so shift the menu up by the top
-            // padding of the background.
-            popup.setVerticalOffset(mAdditionalVerticalOffset - paddingRect.top);
+            // The menu is displayed over and below the anchored view, so shift the menu up by the
+            // height of the anchor view.
+            popup.setVerticalOffset(-anchorHeight);
         }
     }
 
@@ -258,15 +264,20 @@ public class AppMenu implements OnItemClickListener, OnKeyListener {
         return mPopup;
     }
 
-    private void setMenuHeight(int numMenuItems, Rect appDimensions) {
+    private void setMenuHeight(int numMenuItems, Rect appDimensions, int screenHeight) {
         assert mPopup.getAnchorView() != null;
         View anchorView = mPopup.getAnchorView();
         int[] anchorViewLocation = new int[2];
         anchorView.getLocationOnScreen(anchorViewLocation);
         anchorViewLocation[1] -= appDimensions.top;
+        int anchorViewImpactHeight = mIsByHardwareButton ? anchorView.getHeight() : 0;
 
+        // Set appDimensions.height() for abnormal anchorViewLocation.
+        if (anchorViewLocation[1] > screenHeight) {
+            anchorViewLocation[1] = appDimensions.height();
+        }
         int availableScreenSpace = Math.max(anchorViewLocation[1],
-                appDimensions.height() - anchorViewLocation[1] - anchorView.getHeight());
+                appDimensions.height() - anchorViewLocation[1] - anchorViewImpactHeight);
 
         Rect padding = new Rect();
         mPopup.getBackground().getPadding(padding);

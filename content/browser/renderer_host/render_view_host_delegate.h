@@ -51,7 +51,6 @@ class SessionStorageNamespace;
 class SiteInstance;
 class WebContents;
 class WebContentsImpl;
-struct AXEventNotificationDetails;
 struct FileChooserParams;
 struct GlobalRequestID;
 struct NativeWebKeyboardEvent;
@@ -140,9 +139,9 @@ class CONTENT_EXPORT RenderViewHostDelegate {
   virtual RendererPreferences GetRendererPrefs(
       BrowserContext* browser_context) const = 0;
 
-  // Computes a WebPreferences object that will be used by the renderer
+  // Returns a WebPreferences object that will be used by the renderer
   // associated with the owning render view host.
-  virtual WebPreferences ComputeWebkitPrefs();
+  virtual WebPreferences GetWebkitPrefs();
 
   // Notification the user has made a gesture while focus was on the
   // page. This is used to avoid uninitiated user downloads (aka carpet
@@ -283,10 +282,6 @@ class CONTENT_EXPORT RenderViewHostDelegate {
   // TODO(ajwong): Remove once the main frame RenderFrameHost is no longer
   // created by the RenderViewHost.
   virtual FrameTree* GetFrameTree();
-
-  // Invoked when an accessibility event is received from the renderer.
-  virtual void AccessibilityEventReceived(
-      const std::vector<AXEventNotificationDetails>& details) {}
 
  protected:
   virtual ~RenderViewHostDelegate() {}

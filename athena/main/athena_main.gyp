@@ -14,7 +14,7 @@
         '../athena.gyp:athena_lib',
         '../athena.gyp:athena_content_lib',
         '../resources/athena_resources.gyp:athena_pak',
-        '../../apps/shell/app_shell.gyp:app_shell_lib',
+        '../resources/athena_resources.gyp:athena_resources',
 	# debug_widow.cc depends on this. Remove this once debug_window
 	# is removed.
         '../../ash/ash_resources.gyp:ash_resources',
@@ -27,10 +27,13 @@
         # TODO(mukai): declare those symbols for Athena.
         '../../components/components.gyp:infobars_test_support',
         '../../components/components.gyp:search_engines',
+        '../../extensions/shell/app_shell.gyp:app_shell_lib',
         '../../skia/skia.gyp:skia',
         '../../ui/accessibility/accessibility.gyp:ax_gen',
         '../../ui/app_list/app_list.gyp:app_list',
+        '../../ui/chromeos/ui_chromeos.gyp:ui_chromeos',
         '../../ui/keyboard/keyboard.gyp:keyboard',
+        '../../ui/native_theme/native_theme.gyp:native_theme',
         '../../ui/views/views.gyp:views',
         '../../url/url.gyp:url_lib',
       ],
@@ -44,6 +47,8 @@
         'athena_launcher.h',
         'debug/debug_window.cc',
         'debug/debug_window.h',
+        'debug/network_selector.cc',
+        'debug/network_selector.h',
         'url_search_provider.cc',
         'url_search_provider.h',
         'athena_main.cc',
@@ -62,9 +67,9 @@
         '../../ui/aura/aura.gyp:aura',
         '../../ui/compositor/compositor.gyp:compositor_test_support',
         '../../ui/gfx/gfx.gyp:gfx',
-        '../../ui/resources/ui_resources.gyp:ui_test_pak',
         '../athena.gyp:athena_lib',
         '../athena.gyp:athena_test_support',
+        '../resources/athena_resources.gyp:athena_pak',
       ],
       'sources': [
         'athena_shell.cc',

@@ -19,7 +19,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
 {
   "name": "gpu driver bug list",
   // Please update the version number whenever you change this file.
-  "version": "6.6",
+  "version": "6.9",
   "entries": [
     {
       "id": 1,
@@ -649,6 +649,11 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       "os": {
         "type": "android"
       },
+      "gl_type": "gles",
+      "gl_version": {
+        "op": "<",
+        "value": "3.1"
+      },
       "gl_vendor": {
         "op": "beginwith",
         "value": "NVIDIA"
@@ -1070,37 +1075,15 @@ LONG_STRING_CONST(
       ]
     },
     {
-      "id": 83,
-      "cr_bugs": [393810],
-      "description": "Shader vec/mat construction is buggy on Linux",
+      "id": 86,
+      "description": "Disable use of Direct3D 11 on Matrox video cards",
+      "cr_bugs": [395861],
       "os": {
-        "type": "linux"
+        "type": "win"
       },
+      "vendor_id": "0x102b",
       "features": [
-        "scalarize_vec_and_mat_constructor_args"
-      ]
-    },
-    {
-      "id": 84,
-      "cr_bugs": [393810],
-      "description": "Shader vec/mat construction is buggy on Linux",
-      "os": {
-        "type": "chromeos"
-      },
-      "features": [
-        "scalarize_vec_and_mat_constructor_args"
-      ]
-    },
-    {
-      "id": 85,
-      "cr_bugs": [393810],
-      "description": "Shader vec/mat construction is buggy on Mac NVIDIA",
-      "os": {
-        "type": "macosx"
-      },
-      "vendor_id": "0x10de",
-      "features": [
-        "scalarize_vec_and_mat_constructor_args"
+        "disable_d3d11"
       ]
     }
   ]

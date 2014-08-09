@@ -57,6 +57,12 @@ VideoRendererImpl::~VideoRendererImpl() {
 
   if (!thread_.is_null())
     base::PlatformThread::Join(thread_);
+
+  if (!init_cb_.is_null())
+    base::ResetAndReturn(&init_cb_).Run(PIPELINE_ERROR_ABORT);
+
+  if (!flush_cb_.is_null())
+    base::ResetAndReturn(&flush_cb_).Run();
 }
 
 void VideoRendererImpl::Flush(const base::Closure& callback) {
@@ -196,7 +202,7 @@ void VideoRendererImpl::ThreadMain() {
       if (received_end_of_stream_) {
         if (!rendered_end_of_stream_) {
           rendered_end_of_stream_ = true;
-          ended_cb_.Run();
+          task_runner_->PostTask(FROM_HERE, ended_cb_);
         }
       } else {
         buffering_state_ = BUFFERING_HAVE_NOTHING;
@@ -338,6 +344,7 @@ bool VideoRendererImpl::HaveEnoughData_Locked() {
 }
 
 void VideoRendererImpl::TransitionToHaveEnough_Locked() {
+  DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK_EQ(buffering_state_, BUFFERING_HAVE_NOTHING);
 
   if (received_end_of_stream_)
@@ -366,6 +373,7 @@ void VideoRendererImpl::TransitionToHaveEnough_Locked() {
 
 void VideoRendererImpl::AddReadyFrame_Locked(
     const scoped_refptr<VideoFrame>& frame) {
+  DCHECK(task_runner_->BelongsToCurrentThread());
   lock_.AssertAcquired();
   DCHECK(!frame->end_of_stream());
 
@@ -448,7 +456,7 @@ void VideoRendererImpl::UpdateStatsAndWait_Locked(
     PipelineStatistics statistics;
     statistics.video_frames_decoded = frames_decoded_;
     statistics.video_frames_dropped = frames_dropped_;
-    statistics_cb_.Run(statistics);
+    task_runner_->PostTask(FROM_HERE, base::Bind(statistics_cb_, statistics));
 
     frames_decoded_ = 0;
     frames_dropped_ = 0;

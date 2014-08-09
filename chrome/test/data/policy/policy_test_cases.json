@@ -121,6 +121,19 @@
     ]
   },
 
+  "NetworkPredictionOptions": {
+    "os": ["win", "linux", "mac", "chromeos"],
+    "can_be_recommended": true,
+    "test_policy": { "NetworkPredictionOptions": 2 },
+    "pref_mappings": [
+      { "pref": "dns_prefetching.enabled",
+        "indicator_tests": [
+          { "policy": { "NetworkPredictionOptions": 2 } }
+        ]
+      }
+    ]
+  },
+
   "DisableSpdy": {
     "os": ["win", "linux", "mac", "chromeos"],
     "test_policy": { "DisableSpdy": true },
@@ -2134,6 +2147,19 @@
     ]
   },
 
+  "EasyUnlockAllowed": {
+    "os": ["chromeos"],
+    "test_policy": { "EasyUnlockAllowed": false },
+    "pref_mappings": [
+      { "pref": "easy_unlock.allowed" }
+    ]
+  },
+
+  "SessionLocales": {
+    "os": ["chromeos"],
+    "can_be_recommended": true
+  },
+
   "----- Chrome OS device policies ---------------------------------------": {},
 
   "DevicePolicyRefreshRate": {
@@ -2312,6 +2338,9 @@
   },
 
   "AutoCleanUpStrategy": {
+  },
+
+  "DeviceTransferSAMLCookies": {
   },
 
   "----- Chrome Frame policies -------------------------------------------": {},

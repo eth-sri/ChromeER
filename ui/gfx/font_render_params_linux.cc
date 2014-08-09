@@ -5,7 +5,12 @@
 #include "ui/gfx/font_render_params.h"
 
 #include "base/command_line.h"
+#include "base/containers/mru_cache.h"
+#include "base/hash.h"
 #include "base/logging.h"
+#include "base/macros.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "ui/gfx/font.h"
 #include "ui/gfx/linux_font_delegate.h"
 #include "ui/gfx/switches.h"
@@ -15,6 +20,13 @@
 namespace gfx {
 
 namespace {
+
+// Should cache entries by dropped by the next call to GetFontRenderParams()?
+// Used for tests.
+bool g_clear_cache_for_test = false;
+
+// Number of recent GetFontRenderParams() results to cache.
+const size_t kCacheSize = 10;
 
 // Converts Fontconfig FC_HINT_STYLE to FontRenderParams::Hinting.
 FontRenderParams::Hinting ConvertFontconfigHintStyle(int hint_style) {
@@ -38,12 +50,8 @@ FontRenderParams::SubpixelRendering ConvertFontconfigRgba(int rgba) {
 }
 
 // Queries Fontconfig for rendering settings and updates |params_out| and
-// |family_out| (if non-NULL). Returns false on failure. See
-// GetCustomFontRenderParams() for descriptions of arguments.
-bool QueryFontconfig(const std::vector<std::string>* family_list,
-                     const int* pixel_size,
-                     const int* point_size,
-                     const int* style,
+// |family_out| (if non-NULL). Returns false on failure.
+bool QueryFontconfig(const FontRenderParamsQuery& query,
                      FontRenderParams* params_out,
                      std::string* family_out) {
   FcPattern* pattern = FcPatternCreate();
@@ -51,22 +59,20 @@ bool QueryFontconfig(const std::vector<std::string>* family_list,
 
   FcPatternAddBool(pattern, FC_SCALABLE, FcTrue);
 
-  if (family_list) {
-    for (std::vector<std::string>::const_iterator it = family_list->begin();
-         it != family_list->end(); ++it) {
-      FcPatternAddString(
-          pattern, FC_FAMILY, reinterpret_cast<const FcChar8*>(it->c_str()));
-    }
+  for (std::vector<std::string>::const_iterator it = query.families.begin();
+       it != query.families.end(); ++it) {
+    FcPatternAddString(
+        pattern, FC_FAMILY, reinterpret_cast<const FcChar8*>(it->c_str()));
   }
-  if (pixel_size)
-    FcPatternAddDouble(pattern, FC_PIXEL_SIZE, *pixel_size);
-  if (point_size)
-    FcPatternAddInteger(pattern, FC_SIZE, *point_size);
-  if (style) {
+  if (query.pixel_size > 0)
+    FcPatternAddDouble(pattern, FC_PIXEL_SIZE, query.pixel_size);
+  if (query.point_size > 0)
+    FcPatternAddInteger(pattern, FC_SIZE, query.point_size);
+  if (query.style >= 0) {
     FcPatternAddInteger(pattern, FC_SLANT,
-        (*style & Font::ITALIC) ? FC_SLANT_ITALIC : FC_SLANT_ROMAN);
+        (query.style & Font::ITALIC) ? FC_SLANT_ITALIC : FC_SLANT_ROMAN);
     FcPatternAddInteger(pattern, FC_WEIGHT,
-        (*style & Font::BOLD) ? FC_WEIGHT_BOLD : FC_WEIGHT_NORMAL);
+        (query.style & Font::BOLD) ? FC_WEIGHT_BOLD : FC_WEIGHT_NORMAL);
   }
 
   FcConfigSubstitute(NULL, pattern, FcMatchPattern);
@@ -120,58 +126,78 @@ bool QueryFontconfig(const std::vector<std::string>* family_list,
   return true;
 }
 
-// Returns the system's default settings.
-FontRenderParams LoadDefaults(bool for_web_contents) {
-  return GetCustomFontRenderParams(
-      for_web_contents, NULL, NULL, NULL, NULL, NULL);
+// Serialize |query| into a string and hash it to a value suitable for use as a
+// cache key.
+uint32 HashFontRenderParamsQuery(const FontRenderParamsQuery& query) {
+  return base::Hash(base::StringPrintf("%d|%d|%d|%d|%s",
+      query.for_web_contents, query.pixel_size, query.point_size, query.style,
+      JoinString(query.families, ',').c_str()));
 }
 
 }  // namespace
 
-const FontRenderParams& GetDefaultFontRenderParams() {
-  static FontRenderParams default_params = LoadDefaults(false);
-  return default_params;
-}
+FontRenderParams GetFontRenderParams(const FontRenderParamsQuery& query,
+                                     std::string* family_out) {
+  typedef base::MRUCache<uint32, FontRenderParams> Cache;
+  CR_DEFINE_STATIC_LOCAL(Cache, cache, (kCacheSize));
 
-const FontRenderParams& GetDefaultWebKitFontRenderParams() {
-  static FontRenderParams default_params = LoadDefaults(true);
-  return default_params;
-}
+  if (g_clear_cache_for_test) {
+    cache.Clear();
+    g_clear_cache_for_test = false;
+  }
 
-FontRenderParams GetCustomFontRenderParams(
-    bool for_web_contents,
-    const std::vector<std::string>* family_list,
-    const int* pixel_size,
-    const int* point_size,
-    const int* style,
-    std::string* family_out) {
-  if (family_out)
+  const uint32 hash = HashFontRenderParamsQuery(query);
+  if (!family_out) {
+    // The family returned by Fontconfig isn't part of FontRenderParams, so we
+    // can only return a value from the cache if it wasn't requested.
+    Cache::const_iterator it = cache.Get(hash);
+    if (it != cache.end()) {
+      DVLOG(1) << "Returning cached params for " << hash;
+      return it->second;
+    }
+  } else {
     family_out->clear();
+  }
+  DVLOG(1) << "Computing params for " << hash
+           << (family_out ? " (family requested)" : "");
 
   // Start with the delegate's settings, but let Fontconfig have the final say.
   FontRenderParams params;
   const LinuxFontDelegate* delegate = LinuxFontDelegate::instance();
   if (delegate)
     params = delegate->GetDefaultFontRenderParams();
-  QueryFontconfig(
-      family_list, pixel_size, point_size, style, &params, family_out);
+  QueryFontconfig(query, &params, family_out);
 
-  // Fontconfig doesn't support configuring subpixel positioning; check a flag.
-  params.subpixel_positioning = CommandLine::ForCurrentProcess()->HasSwitch(
-      for_web_contents ?
-      switches::kEnableWebkitTextSubpixelPositioning :
-      switches::kEnableBrowserTextSubpixelPositioning);
+  if (!params.antialiasing) {
+    // Cairo forces full hinting when antialiasing is disabled, since anything
+    // less than that looks awful; do the same here. Requesting subpixel
+    // rendering or positioning doesn't make sense either.
+    params.hinting = FontRenderParams::HINTING_FULL;
+    params.subpixel_rendering = FontRenderParams::SUBPIXEL_RENDERING_NONE;
+    params.subpixel_positioning = false;
+  } else {
+    // Fontconfig doesn't support configuring subpixel positioning; check a
+    // flag.
+    params.subpixel_positioning = CommandLine::ForCurrentProcess()->HasSwitch(
+        query.for_web_contents ?
+        switches::kEnableWebkitTextSubpixelPositioning :
+        switches::kEnableBrowserTextSubpixelPositioning);
 
-  // To enable subpixel positioning, we need to disable hinting.
-  if (params.subpixel_positioning)
-    params.hinting = FontRenderParams::HINTING_NONE;
+    // To enable subpixel positioning, we need to disable hinting.
+    if (params.subpixel_positioning)
+      params.hinting = FontRenderParams::HINTING_NONE;
+  }
 
   // Use the first family from the list if Fontconfig didn't suggest a family.
-  if (family_out && family_out->empty() &&
-      family_list && !family_list->empty())
-    *family_out = (*family_list)[0];
+  if (family_out && family_out->empty() && !query.families.empty())
+    *family_out = query.families[0];
 
+  cache.Put(hash, params);
   return params;
+}
+
+void ClearFontRenderParamsCacheForTest() {
+  g_clear_cache_for_test = true;
 }
 
 }  // namespace gfx

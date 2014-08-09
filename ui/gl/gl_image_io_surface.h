@@ -20,7 +20,7 @@ class GL_EXPORT GLImageIOSurface : public GLImage {
   bool Initialize(const gfx::GpuMemoryBufferHandle& handle);
 
   // Overridden from GLImage:
-  virtual void Destroy() OVERRIDE {}
+  virtual void Destroy(bool have_context) OVERRIDE;
   virtual gfx::Size GetSize() OVERRIDE;
   virtual bool BindTexImage(unsigned target) OVERRIDE;
   virtual void ReleaseTexImage(unsigned target) OVERRIDE {}
@@ -28,6 +28,11 @@ class GL_EXPORT GLImageIOSurface : public GLImage {
   virtual void DidUseTexImage() OVERRIDE {}
   virtual void WillModifyTexImage() OVERRIDE {}
   virtual void DidModifyTexImage() OVERRIDE {}
+  virtual bool ScheduleOverlayPlane(gfx::AcceleratedWidget widget,
+                                    int z_order,
+                                    OverlayTransform transform,
+                                    const Rect& bounds_rect,
+                                    const RectF& crop_rect) OVERRIDE;
 
  protected:
   virtual ~GLImageIOSurface();

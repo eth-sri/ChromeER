@@ -9,13 +9,14 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/chromeos/login/users/user.h"
 #include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/ownership/owner_settings_service_factory.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/settings/session_manager_operation.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chromeos/dbus/dbus_thread_manager.h"
 #include "components/policy/core/common/cloud/cloud_policy_constants.h"
+#include "components/user_manager/user.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
@@ -227,6 +228,11 @@ OwnerSettingsService::OwnerSettingsService(Profile* profile)
     TPMTokenLoader::Get()->AddObserver(this);
   }
 
+  if (DBusThreadManager::IsInitialized() &&
+      DBusThreadManager::Get()->GetSessionManagerClient()) {
+    DBusThreadManager::Get()->GetSessionManagerClient()->AddObserver(this);
+  }
+
   registrar_.Add(this,
                  chrome::NOTIFICATION_PROFILE_CREATED,
                  content::Source<Profile>(profile_));
@@ -236,6 +242,11 @@ OwnerSettingsService::~OwnerSettingsService() {
   DCHECK(thread_checker_.CalledOnValidThread());
   if (TPMTokenLoader::IsInitialized())
     TPMTokenLoader::Get()->RemoveObserver(this);
+
+  if (DBusThreadManager::IsInitialized() &&
+      DBusThreadManager::Get()->GetSessionManagerClient()) {
+    DBusThreadManager::Get()->GetSessionManagerClient()->RemoveObserver(this);
+  }
 }
 
 bool OwnerSettingsService::IsOwner() {
@@ -340,6 +351,12 @@ void OwnerSettingsService::OnTPMTokenReady() {
   ReloadPrivateKey();
 }
 
+void OwnerSettingsService::OwnerKeySet(bool success) {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  if (success)
+    ReloadPrivateKey();
+}
+
 // static
 void OwnerSettingsService::IsOwnerForSafeModeAsync(
     const std::string& user_id,
@@ -410,7 +427,7 @@ void OwnerSettingsService::OnPrivateKeyLoaded(
 
   std::vector<IsOwnerCallback> is_owner_callbacks;
   is_owner_callbacks.swap(pending_is_owner_callbacks_);
-  const bool is_owner = private_key_.get() && private_key_->key();
+  const bool is_owner = IsOwner();
   for (std::vector<IsOwnerCallback>::iterator it(is_owner_callbacks.begin());
        it != is_owner_callbacks.end();
        ++it) {

@@ -1083,17 +1083,17 @@ void TabStrip::MaybeStartDrag(
   // Use MOVE_VISIBILE_TABS in the following conditions:
   // . Mouse event generated from touch and the left button is down (the right
   //   button corresponds to a long press, which we want to reorder).
-  // . Gesture begin and control key isn't down.
+  // . Gesture tap down and control key isn't down.
   // . Real mouse event and control is down. This is mostly for testing.
   DCHECK(event.type() == ui::ET_MOUSE_PRESSED ||
-         event.type() == ui::ET_GESTURE_BEGIN);
+         event.type() == ui::ET_GESTURE_TAP_DOWN);
   if (touch_layout_ &&
       ((event.type() == ui::ET_MOUSE_PRESSED &&
         (((event.flags() & ui::EF_FROM_TOUCH) &&
           static_cast<const ui::MouseEvent&>(event).IsLeftMouseButton()) ||
          (!(event.flags() & ui::EF_FROM_TOUCH) &&
           static_cast<const ui::MouseEvent&>(event).IsControlDown()))) ||
-       (event.type() == ui::ET_GESTURE_BEGIN && !event.IsControlDown()))) {
+       (event.type() == ui::ET_GESTURE_TAP_DOWN && !event.IsControlDown()))) {
     move_behavior = TabDragController::MOVE_VISIBILE_TABS;
   }
 
@@ -1184,6 +1184,12 @@ bool TabStrip::ShouldPaintTab(const Tab* tab, gfx::Rect* clip) {
 
 bool TabStrip::IsImmersiveStyle() const {
   return immersive_style_;
+}
+
+void TabStrip::UpdateTabAccessibilityState(const Tab* tab,
+                                           ui::AXViewState* state) {
+  state->count = tab_count();
+  state->index = GetModelIndexOfTab(tab);
 }
 
 void TabStrip::MouseMovedOutOfHost() {
@@ -2674,7 +2680,7 @@ void TabStrip::OnGestureEvent(ui::GestureEvent* event) {
       ContinueDrag(this, *event);
       break;
 
-    case ui::ET_GESTURE_BEGIN:
+    case ui::ET_GESTURE_TAP_DOWN:
       EndDrag(END_DRAG_CANCEL);
       break;
 
@@ -2683,7 +2689,7 @@ void TabStrip::OnGestureEvent(ui::GestureEvent* event) {
       DCHECK_NE(-1, active_index);
       Tab* active_tab = tab_at(active_index);
       TouchUMA::GestureActionType action = TouchUMA::GESTURE_TABNOSWITCH_TAP;
-      if (active_tab->tab_activated_with_last_gesture_begin())
+      if (active_tab->tab_activated_with_last_tap_down())
         action = TouchUMA::GESTURE_TABSWITCH_TAP;
       TouchUMA::RecordGestureAction(action);
       break;

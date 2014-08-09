@@ -720,12 +720,18 @@ TEST_F(ExtensionMessageBubbleTest, MAYBE_SettingsApiControllerTest) {
     EXPECT_FALSE(prefs->HasSettingsApiBubbleBeenAcknowledged(kId3));
 
     // Clean up after ourselves.
-    service_->UninstallExtension(
-        kId1, extensions::UNINSTALL_REASON_FOR_TESTING, NULL);
-    service_->UninstallExtension(
-        kId2, extensions::UNINSTALL_REASON_FOR_TESTING, NULL);
-    service_->UninstallExtension(
-        kId3, extensions::UNINSTALL_REASON_FOR_TESTING, NULL);
+    service_->UninstallExtension(kId1,
+                                 extensions::UNINSTALL_REASON_FOR_TESTING,
+                                 base::Bind(&base::DoNothing),
+                                 NULL);
+    service_->UninstallExtension(kId2,
+                                 extensions::UNINSTALL_REASON_FOR_TESTING,
+                                 base::Bind(&base::DoNothing),
+                                 NULL);
+    service_->UninstallExtension(kId3,
+                                 extensions::UNINSTALL_REASON_FOR_TESTING,
+                                 base::Bind(&base::DoNothing),
+                                 NULL);
   }
 }
 
@@ -822,12 +828,18 @@ TEST_F(ExtensionMessageBubbleTest, MAYBE_NtpOverriddenControllerTest) {
   EXPECT_FALSE(prefs->HasNtpOverriddenBubbleBeenAcknowledged(kId3));
 
   // Clean up after ourselves.
-  service_->UninstallExtension(
-      kId1, extensions::UNINSTALL_REASON_FOR_TESTING, NULL);
-  service_->UninstallExtension(
-      kId2, extensions::UNINSTALL_REASON_FOR_TESTING, NULL);
-  service_->UninstallExtension(
-      kId3, extensions::UNINSTALL_REASON_FOR_TESTING, NULL);
+  service_->UninstallExtension(kId1,
+                               extensions::UNINSTALL_REASON_FOR_TESTING,
+                               base::Bind(&base::DoNothing),
+                               NULL);
+  service_->UninstallExtension(kId2,
+                               extensions::UNINSTALL_REASON_FOR_TESTING,
+                               base::Bind(&base::DoNothing),
+                               NULL);
+  service_->UninstallExtension(kId3,
+                               extensions::UNINSTALL_REASON_FOR_TESTING,
+                               base::Bind(&base::DoNothing),
+                               NULL);
 }
 
 void SetInstallTime(const std::string& extension_id,
@@ -841,7 +853,8 @@ void SetInstallTime(const std::string& extension_id,
 
 // The feature this is meant to test is only implemented on Windows.
 #if defined(OS_WIN)
-#define MAYBE_ProxyOverriddenControllerTest ProxyOverriddenControllerTest
+// http://crbug.com/397426
+#define MAYBE_ProxyOverriddenControllerTest DISABLED_ProxyOverriddenControllerTest
 #else
 #define MAYBE_ProxyOverriddenControllerTest DISABLED_ProxyOverriddenControllerTest
 #endif
@@ -945,12 +958,18 @@ TEST_F(ExtensionMessageBubbleTest, MAYBE_ProxyOverriddenControllerTest) {
   EXPECT_FALSE(prefs->HasProxyOverriddenBubbleBeenAcknowledged(kId3));
 
   // Clean up after ourselves.
-  service_->UninstallExtension(
-      kId1, extensions::UNINSTALL_REASON_FOR_TESTING, NULL);
-  service_->UninstallExtension(
-      kId2, extensions::UNINSTALL_REASON_FOR_TESTING, NULL);
-  service_->UninstallExtension(
-      kId3, extensions::UNINSTALL_REASON_FOR_TESTING, NULL);
+  service_->UninstallExtension(kId1,
+                               extensions::UNINSTALL_REASON_FOR_TESTING,
+                               base::Bind(&base::DoNothing),
+                               NULL);
+  service_->UninstallExtension(kId2,
+                               extensions::UNINSTALL_REASON_FOR_TESTING,
+                               base::Bind(&base::DoNothing),
+                               NULL);
+  service_->UninstallExtension(kId3,
+                               extensions::UNINSTALL_REASON_FOR_TESTING,
+                               base::Bind(&base::DoNothing),
+                               NULL);
 }
 
 }  // namespace extensions

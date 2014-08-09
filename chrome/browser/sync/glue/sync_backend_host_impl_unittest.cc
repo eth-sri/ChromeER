@@ -20,6 +20,7 @@
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
 #include "chrome/test/base/testing_profile_manager.h"
+#include "components/invalidation/invalidator_state.h"
 #include "components/invalidation/invalidator_storage.h"
 #include "components/invalidation/profile_invalidation_provider.h"
 #include "components/sync_driver/sync_frontend.h"
@@ -30,7 +31,6 @@
 #include "google/cacheinvalidation/include/types.h"
 #include "google_apis/gaia/gaia_constants.h"
 #include "net/url_request/test_url_fetcher_factory.h"
-#include "sync/internal_api/public/base/invalidator_state.h"
 #include "sync/internal_api/public/base/model_type.h"
 #include "sync/internal_api/public/engine/model_safe_worker.h"
 #include "sync/internal_api/public/http_bridge_network_resources.h"
@@ -192,7 +192,7 @@ class SyncBackendHostTest : public testing::Test {
   virtual void TearDown() OVERRIDE {
     if (backend_) {
       backend_->StopSyncingForShutdown();
-      backend_->Shutdown(SyncBackendHost::STOP);
+      backend_->Shutdown(syncer::STOP_SYNC);
     }
     backend_.reset();
     sync_prefs_.reset();
@@ -714,7 +714,7 @@ TEST_F(SyncBackendHostTest, AttemptForwardLocalRefreshRequestLate) {
   fake_manager_->WaitForSyncThread();
   EXPECT_FALSE(types.Equals(fake_manager_->GetLastRefreshRequestTypes()));
 
-  backend_->Shutdown(SyncBackendHost::STOP);
+  backend_->Shutdown(syncer::STOP_SYNC);
   backend_.reset();
 }
 

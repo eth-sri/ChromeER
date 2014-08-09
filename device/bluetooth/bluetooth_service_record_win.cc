@@ -130,7 +130,7 @@ BluetoothServiceRecordWin::BluetoothServiceRecordWin(
       name_(name),
       uuid_(gatt_uuid),
       supports_rfcomm_(false),
-      rfcomm_channel_(-1) {
+      rfcomm_channel_(0xFF) {
   // Bluetooth 2.0
   if (sdp_bytes.size() > 0) {
     LPBYTE blob_data = const_cast<LPBYTE>(&sdp_bytes[0]);
@@ -150,6 +150,13 @@ BluetoothServiceRecordWin::BluetoothServiceRecordWin(
       ExtractUuid(uuid_data, &uuid_);
     }
   }
+}
+
+bool BluetoothServiceRecordWin::IsEqual(
+    const BluetoothServiceRecordWin& other) {
+  return device_address_ == other.device_address_ && name_ == other.name_ &&
+         uuid_ == other.uuid_ && supports_rfcomm_ == other.supports_rfcomm_ &&
+         rfcomm_channel_ == other.rfcomm_channel_;
 }
 
 }  // namespace device

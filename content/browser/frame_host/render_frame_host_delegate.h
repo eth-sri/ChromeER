@@ -5,11 +5,19 @@
 #ifndef CONTENT_BROWSER_FRAME_HOST_RENDER_FRAME_HOST_DELEGATE_H_
 #define CONTENT_BROWSER_FRAME_HOST_RENDER_FRAME_HOST_DELEGATE_H_
 
+#include <vector>
+
 #include "base/basictypes.h"
 #include "base/i18n/rtl.h"
 #include "content/common/content_export.h"
+#include "content/common/frame_message_enums.h"
 #include "content/public/common/javascript_message_type.h"
 #include "content/public/common/media_stream_request.h"
+#include "net/http/http_response_headers.h"
+
+#if defined(OS_WIN)
+#include "ui/gfx/native_widget_types.h"
+#endif
 
 class GURL;
 
@@ -20,6 +28,7 @@ class Message;
 namespace content {
 class RenderFrameHost;
 class WebContents;
+struct AXEventNotificationDetails;
 struct ContextMenuParams;
 
 // An interface implemented by an object interested in knowing about the state
@@ -58,7 +67,9 @@ class CONTENT_EXPORT RenderFrameHostDelegate {
 
   // Notification that the navigation on the main frame is blocked waiting
   // for transition to occur.
-  virtual void DidDeferAfterResponseStarted() {}
+  virtual void DidDeferAfterResponseStarted(
+      const scoped_refptr<net::HttpResponseHeaders>& headers,
+      const GURL& url) {}
 
   // Used to query whether the navigation transition will be handled.
   virtual bool WillHandleDeferAfterResponseStarted();
@@ -118,6 +129,18 @@ class CONTENT_EXPORT RenderFrameHostDelegate {
   virtual void RequestMediaAccessPermission(
       const MediaStreamRequest& request,
       const MediaResponseCallback& callback);
+
+  // Get the accessibility mode for the WebContents that owns this frame.
+  virtual AccessibilityMode GetAccessibilityMode() const;
+
+  // Invoked when an accessibility event is received from the renderer.
+  virtual void AccessibilityEventReceived(
+      const std::vector<AXEventNotificationDetails>& details) {}
+
+#if defined(OS_WIN)
+  // Returns the frame's parent's NativeViewAccessible.
+  virtual gfx::NativeViewAccessible GetParentNativeViewAccessible();
+#endif
 
  protected:
   virtual ~RenderFrameHostDelegate() {}

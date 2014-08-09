@@ -74,8 +74,7 @@
         'base/text/bytes_formatting_unittest.cc',
         'base/view_prop_unittest.cc',
         'base/webui/web_ui_util_unittest.cc',
-        'gfx/canvas_unittest_mac.mm',
-        'gfx/platform_font_mac_unittest.mm',
+        'base/x/selection_requestor_unittest.cc',
       ],
       'include_dirs': [
         '../',
@@ -110,6 +109,7 @@
           'sources': [
             'base/dragdrop/os_exchange_data_win_unittest.cc',
             'base/win/hwnd_subclass_unittest.cc',
+            'base/win/open_file_name_win_unittest.cc',
             'gfx/color_profile_win_unittest.cc',
             'gfx/font_fallback_win_unittest.cc',
             'gfx/icon_util_unittest.cc',
@@ -178,7 +178,6 @@
           'dependencies': [
             '../third_party/mozilla/mozilla.gyp:mozilla',
             'events/events.gyp:events_test_support',
-            'gfx/gfx.gyp:gfx_test_support',
             'ui_unittests_bundle',
           ],
           'conditions': [
@@ -216,6 +215,7 @@
           ],
           'sources!': [
             'base/dragdrop/os_exchange_data_provider_aurax11_unittest.cc',
+            'base/x/selection_requestor_unittest.cc',
           ],
         }],
         ['chromeos==0 or use_x11==0', {

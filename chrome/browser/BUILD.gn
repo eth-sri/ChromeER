@@ -5,6 +5,7 @@
 import("//build/config/crypto.gni")
 import("//build/config/features.gni")
 import("//build/config/ui.gni")
+import("//components/nacl/nacl_defines.gni")
 import("//tools/grit/grit_rule.gni")
 
 about_credits_file = "$target_gen_dir/about_credits.html"
@@ -37,7 +38,6 @@ static_library("browser") {
     "//chrome/browser/history:in_memory_url_index_cache_proto",
     "//chrome/browser/net:cert_logger_proto",
     "//chrome/browser/net:probe_message_proto",
-    "//chrome/browser/search/suggestions/proto",
     "//chrome/browser/ui",
     "//chrome/common",
     "//chrome/common/net",
@@ -45,6 +45,7 @@ static_library("browser") {
     "//components/autofill/core/browser",
     "//components/captive_portal",
     "//components/cloud_devices/common",
+    "//components/content_settings/core/common",
     "//components/data_reduction_proxy/browser",
     "//components/domain_reliability",
     "//components/favicon_base",
@@ -63,6 +64,7 @@ static_library("browser") {
     "//components/signin/core/browser",
     "//components/startup_metric_utils",
     "//components/strings",
+    "//components/suggestions",
     "//components/translate/core/browser",
     "//components/translate/core/common",
     "//components/url_fixer",
@@ -128,8 +130,7 @@ static_library("browser") {
     #        # chrome/browser/metrics/variations/generate_resources_map.py
     #        '<(SHARED_INTERMEDIATE_DIR)/chrome/browser/metrics/variations/generated_resources_map.cc',
 
-    # TODO(GYP) Also add these nacl_defines to direct dependents.
-    #defines = nacl_defines
+    defines = nacl_defines
 
     # TODO(GYP) remove this when the real webrtc target is used below.
     configs += [ "//content:webrtc_stub_config" ]
@@ -468,7 +469,7 @@ static_library("browser") {
 
   if (is_mac) {
     deps += [
-      #"../third_party/google_toolbox_for_mac/google_toolbox_for_mac.gyp:google_toolbox_for_mac",  TODO(GYP)
+      "//third_party/google_toolbox_for_mac",
       #"../third_party/mozilla/mozilla.gyp:mozilla",  TODO(GYP)
     ]
     libs += [
@@ -504,7 +505,6 @@ static_library("browser") {
       "//third_party/wtl",
       #"chrome_process_finder",  TODO(GYP)
       #"installer_util_strings",  TODO(GYP)
-      #"launcher_support",  TODO(GYP)
       #"../chrome/chrome.gyp:chrome_version_header",  TODO(GYP)
       #"../chrome_elf/chrome_elf.gyp:chrome_elf",  TODO(GYP)
       #"../chrome_elf/chrome_elf.gyp:chrome_elf_constants",  TODO(GYP)
@@ -525,7 +525,7 @@ static_library("browser") {
     # Non-Windows.
     sources += rebase_path(gypi_values.chrome_browser_non_win_sources,
                            ".", "//chrome")
-    if (use_aura) {
+    if (toolkit_views) {
       deps += [
         #"../ui/views/controls/webview/webview.gyp:webview",  TODO(GYP)
         #"../ui/views/views.gyp:views",  TODO(GYP)

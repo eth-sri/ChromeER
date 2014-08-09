@@ -39,6 +39,8 @@
       'browser/extensions/chrome_app_sorting.h',
       'browser/extensions/chrome_component_extension_resource_manager.cc',
       'browser/extensions/chrome_component_extension_resource_manager.h',
+      'browser/extensions/chrome_content_browser_client_extensions_part.cc',
+      'browser/extensions/chrome_content_browser_client_extensions_part.h',
       'browser/extensions/chrome_extension_function.cc',
       'browser/extensions/chrome_extension_function.h',
       'browser/extensions/chrome_extension_host_delegate.cc',
@@ -244,6 +246,8 @@
       'browser/extensions/shared_module_service.h',
       'browser/extensions/standard_management_policy_provider.cc',
       'browser/extensions/standard_management_policy_provider.h',
+      'browser/extensions/state_store_notification_observer.cc',
+      'browser/extensions/state_store_notification_observer.h',
       'browser/extensions/startup_helper.cc',
       'browser/extensions/startup_helper.h',
       'browser/extensions/suggest_permission_util.cc',
@@ -323,6 +327,7 @@
       'browser/extensions/updater/local_extension_cache.h',
     ],
     'chrome_browser_extensions_non_chromeos_sources': [
+      'browser/extensions/api/easy_unlock_private/easy_unlock_private_crypto_delegate_stub.cc',
       'browser/extensions/api/feedback_private/feedback_service_nonchromeos.cc',
       'browser/extensions/api/image_writer_private/operation_nonchromeos.cc',
       'browser/extensions/api/image_writer_private/removable_storage_provider_linux.cc',
@@ -332,8 +337,6 @@
       'browser/apps/app_launch_for_metro_restart_win.h',
       'browser/apps/app_url_redirector.cc',
       'browser/apps/app_url_redirector.h',
-      'browser/apps/chrome_apps_client.cc',
-      'browser/apps/chrome_apps_client.h',
       'browser/apps/ephemeral_app_launcher.cc',
       'browser/apps/ephemeral_app_launcher.h',
       'browser/apps/ephemeral_app_service_factory.cc',
@@ -350,6 +353,8 @@
       'browser/apps/shortcut_manager.h',
       'browser/apps/shortcut_manager_factory.cc',
       'browser/apps/shortcut_manager_factory.h',
+      'browser/copresence/chrome_whispernet_client.cc',
+      'browser/copresence/chrome_whispernet_client.h',
       'browser/extensions/active_script_controller.cc',
       'browser/extensions/active_script_controller.h',
       'browser/extensions/active_tab_permission_granter.cc',
@@ -450,13 +455,6 @@
       'browser/extensions/api/browsing_data/browsing_data_api.h',
       'browser/extensions/api/capture_web_contents_function.cc',
       'browser/extensions/api/capture_web_contents_function.h',
-      'browser/extensions/api/cast_channel/cast_auth_util.h',
-      'browser/extensions/api/cast_channel/cast_channel_api.cc',
-      'browser/extensions/api/cast_channel/cast_channel_api.h',
-      'browser/extensions/api/cast_channel/cast_message_util.cc',
-      'browser/extensions/api/cast_channel/cast_message_util.h',
-      'browser/extensions/api/cast_channel/cast_socket.cc',
-      'browser/extensions/api/cast_channel/cast_socket.h',
       'browser/extensions/api/chrome_extensions_api_client.cc',
       'browser/extensions/api/chrome_extensions_api_client.h',
       'browser/extensions/api/cloud_print_private/cloud_print_private_api.cc',
@@ -487,6 +485,8 @@
       'browser/extensions/api/cookies/cookies_api_constants.h',
       'browser/extensions/api/cookies/cookies_helpers.cc',
       'browser/extensions/api/cookies/cookies_helpers.h',
+      'browser/extensions/api/copresence_private/copresence_private_api.cc',
+      'browser/extensions/api/copresence_private/copresence_private_api.h',
       'browser/extensions/api/debugger/debugger_api.cc',
       'browser/extensions/api/debugger/debugger_api.h',
       'browser/extensions/api/debugger/debugger_api_constants.cc',
@@ -545,8 +545,17 @@
       'browser/extensions/api/downloads_internal/downloads_internal_api.h',
       'browser/extensions/api/easy_unlock_private/easy_unlock_private_api.h',
       'browser/extensions/api/easy_unlock_private/easy_unlock_private_api.cc',
+      'browser/extensions/api/easy_unlock_private/easy_unlock_private_bluetooth_util.h',
+      'browser/extensions/api/easy_unlock_private/easy_unlock_private_bluetooth_util.cc',
+      'browser/extensions/api/easy_unlock_private/easy_unlock_private_bluetooth_util_chromeos.cc',
+      'browser/extensions/api/easy_unlock_private/easy_unlock_private_crypto_delegate.h',
+      'browser/extensions/api/easy_unlock_private/easy_unlock_private_crypto_delegate_chromeos.cc',
       'browser/extensions/api/execute_code_function.cc',
       'browser/extensions/api/execute_code_function.h',
+      'browser/extensions/api/experience_sampling_private/experience_sampling.cc',
+      'browser/extensions/api/experience_sampling_private/experience_sampling.h',
+      'browser/extensions/api/experience_sampling_private/experience_sampling_private_api.cc',
+      'browser/extensions/api/experience_sampling_private/experience_sampling_private_api.h',
       'browser/extensions/api/extension_action/extension_action_api.cc',
       'browser/extensions/api/extension_action/extension_action_api.h',
       'browser/extensions/api/extension_action/extension_page_actions_api_constants.cc',
@@ -570,12 +579,6 @@
       'browser/extensions/api/gcm/gcm_api.h',
       'browser/extensions/api/guest_view/guest_view_internal_api.cc',
       'browser/extensions/api/guest_view/guest_view_internal_api.h',
-      'browser/extensions/api/hid/hid_api.cc',
-      'browser/extensions/api/hid/hid_api.h',
-      'browser/extensions/api/hid/hid_connection_resource.cc',
-      'browser/extensions/api/hid/hid_connection_resource.h',
-      'browser/extensions/api/hid/hid_device_manager.cc',
-      'browser/extensions/api/hid/hid_device_manager.h',
       'browser/extensions/api/history/history_api.cc',
       'browser/extensions/api/history/history_api.h',
       'browser/extensions/api/hotword_private/hotword_private_api.cc',
@@ -699,6 +702,8 @@
       'browser/extensions/api/networking_private/networking_private_event_router_factory.h',
       'browser/extensions/api/networking_private/networking_private_factory_chromeos.cc',
       'browser/extensions/api/networking_private/networking_private_factory_chromeos.h',
+      'browser/extensions/api/notification_provider/notification_provider_api.cc',
+      'browser/extensions/api/notification_provider/notification_provider_api.h',
       'browser/extensions/api/notifications/notifications_api.cc',
       'browser/extensions/api/notifications/notifications_api.h',
       'browser/extensions/api/omnibox/omnibox_api.cc',
@@ -882,6 +887,8 @@
       'browser/extensions/extension_infobar_delegate.h',
       'browser/extensions/extension_install_ui.cc',
       'browser/extensions/extension_install_ui.h',
+      'browser/extensions/extension_install_ui_util.cc',
+      'browser/extensions/extension_install_ui_util.h',
       'browser/extensions/extension_tab_util.cc',
       'browser/extensions/extension_tab_util.h',
       'browser/extensions/menu_manager.cc',
@@ -922,8 +929,6 @@
       'browser/extensions/api/networking_private/networking_private_credentials_getter_mac.cc',
       'browser/extensions/api/networking_private/networking_private_credentials_getter_win.cc',
       'browser/extensions/api/networking_private/networking_private_event_router.h',
-      'browser/extensions/api/networking_private/networking_private_event_router_factory.cc',
-      'browser/extensions/api/networking_private/networking_private_event_router_factory.h',
       'browser/extensions/api/networking_private/networking_private_event_router_nonchromeos.cc',
       'browser/extensions/api/networking_private/networking_private_service_client.cc',
       'browser/extensions/api/networking_private/networking_private_service_client.h',
@@ -962,7 +967,6 @@
       # have the same dependencies. Once browser_extensions is untangled from
       # browser, then we can clean up these dependencies.
       'dependencies': [
-        'cast_channel_proto',
         'chrome_resources.gyp:chrome_extra_resources',
         'chrome_resources.gyp:chrome_resources',
         'chrome_resources.gyp:chrome_strings',
@@ -1150,7 +1154,6 @@
         }],
         ['OS=="win"', {
           'dependencies': [
-            'launcher_support',
             '../third_party/iaccessible2/iaccessible2.gyp:iaccessible2',
             '../third_party/isimpledom/isimpledom.gyp:isimpledom',
           ],
@@ -1183,16 +1186,6 @@
             'browser/extensions/api/system_display/display_info_provider_aura.cc',
           ],
         }],
-        ['use_openssl==1', {
-          'sources': [
-            'browser/extensions/api/cast_channel/cast_auth_util_openssl.cc',
-          ],
-        }, {
-          'sources': [
-            # cast_auth_util_nss.cc uses NSS functions.
-            'browser/extensions/api/cast_channel/cast_auth_util_nss.cc',
-          ],
-        }],
         ['OS=="android"', {
           'sources': [
             '<@(chrome_browser_extensions_android_sources)',
@@ -1204,18 +1197,6 @@
           ],
         }]
       ],
-    },
-    {
-      # Protobuf compiler / generator for chrome.cast.channel-related protocol buffers.
-      # GN version: //chrome/browser/extensions/api/cast_channel:cast_channel_proto
-      'target_name': 'cast_channel_proto',
-      'type': 'static_library',
-      'sources': [ 'browser/extensions/api/cast_channel/cast_channel.proto' ],
-      'variables': {
-          'proto_in_dir': 'browser/extensions/api/cast_channel',
-          'proto_out_dir': 'chrome/browser/extensions/api/cast_channel',
-      },
-      'includes': [ '../build/protoc.gypi' ]
     },
   ],
 }

@@ -58,10 +58,6 @@ CommandBufferImpl::~CommandBufferImpl() {
   }
 }
 
-void CommandBufferImpl::OnConnectionError() {
-  // TODO(darin): How should we handle this error?
-}
-
 void CommandBufferImpl::Initialize(
     CommandBufferSyncClientPtr sync_client,
     mojo::ScopedSharedBufferHandle shared_state) {
@@ -174,21 +170,10 @@ void CommandBufferImpl::Echo(const Callback<void()>& callback) {
   callback.Run();
 }
 
-void CommandBufferImpl::RequestAnimationFrames() {
-  timer_.Start(FROM_HERE,
-               base::TimeDelta::FromMilliseconds(16),
-               this,
-               &CommandBufferImpl::DrawAnimationFrame);
-}
-
-void CommandBufferImpl::CancelAnimationFrames() { timer_.Stop(); }
-
 void CommandBufferImpl::OnParseError() {
   gpu::CommandBuffer::State state = command_buffer_->GetLastState();
   client()->LostContext(state.context_lost_reason);
 }
-
-void CommandBufferImpl::DrawAnimationFrame() { client()->DrawAnimationFrame(); }
 
 void CommandBufferImpl::OnResize(gfx::Size size, float scale_factor) {
   surface_->Resize(size);

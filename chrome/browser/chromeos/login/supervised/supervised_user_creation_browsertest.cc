@@ -30,10 +30,10 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/test_utils.h"
-#include "sync/api/attachments/attachment_service_proxy_for_test.h"
 #include "sync/api/fake_sync_change_processor.h"
 #include "sync/api/sync_change.h"
 #include "sync/api/sync_error_factory_mock.h"
+#include "sync/internal_api/public/attachments/attachment_service_proxy_for_test.h"
 #include "sync/protocol/sync.pb.h"
 
 using testing::_;
@@ -98,7 +98,7 @@ IN_PROC_BROWSER_TEST_F(SupervisedUserCreationTest,
                        DISABLED_PRE_PRE_CreateAndRemoveSupervisedUser) {
   StartFlowLoginAsManager();
   FillNewUserData(kTestSupervisedUserDisplayName);
-  StartUserCreation("managed-user-creation-next-button",
+  StartUserCreation("supervised-user-creation-next-button",
                     kTestSupervisedUserDisplayName);
 }
 
@@ -121,7 +121,7 @@ IN_PROC_BROWSER_TEST_F(SupervisedUserOwnerCreationTest,
                        DISABLED_PRE_PRE_CreateAndRemoveSupervisedUser) {
   StartFlowLoginAsManager();
   FillNewUserData(kTestSupervisedUserDisplayName);
-  StartUserCreation("managed-user-creation-next-button",
+  StartUserCreation("supervised-user-creation-next-button",
                     kTestSupervisedUserDisplayName);
 }
 
@@ -148,7 +148,7 @@ IN_PROC_BROWSER_TEST_F(SupervisedUserTransactionCleanupTest,
   EXPECT_CALL(*mock_homedir_methods_, MountEx(_, _, _, _)).Times(1);
   EXPECT_CALL(*mock_homedir_methods_, AddKeyEx(_, _, _, _, _)).Times(1);
 
-  JSEval("$('managed-user-creation-next-button').click()");
+  JSEval("$('supervised-user-creation-next-button').click()");
 
   testing::Mock::VerifyAndClearExpectations(mock_homedir_methods_);
 

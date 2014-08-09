@@ -68,7 +68,6 @@
 
 #define IPC_MESSAGE_START ViewMsgStart
 
-IPC_ENUM_TRAITS(AccessibilityMode)
 IPC_ENUM_TRAITS(blink::WebMediaPlayerAction::Type)
 IPC_ENUM_TRAITS(blink::WebPluginAction::Type)
 IPC_ENUM_TRAITS(blink::WebPopupType)
@@ -79,14 +78,15 @@ IPC_ENUM_TRAITS(content::FileChooserParams::Mode)
 IPC_ENUM_TRAITS(content::MenuItem::Type)
 IPC_ENUM_TRAITS(content::NavigationGesture)
 IPC_ENUM_TRAITS(content::PageZoom)
-IPC_ENUM_TRAITS(content::RendererPreferencesHintingEnum)
-IPC_ENUM_TRAITS(content::RendererPreferencesSubpixelRenderingEnum)
+IPC_ENUM_TRAITS(gfx::FontRenderParams::Hinting)
+IPC_ENUM_TRAITS(gfx::FontRenderParams::SubpixelRendering)
 IPC_ENUM_TRAITS_MAX_VALUE(content::TapMultipleTargetsStrategy,
                           content::TAP_MULTIPLE_TARGETS_STRATEGY_MAX)
 IPC_ENUM_TRAITS(content::StopFindAction)
 IPC_ENUM_TRAITS(content::ThreeDAPIType)
-IPC_ENUM_TRAITS(media::ChannelLayout)
-IPC_ENUM_TRAITS(media::MediaLogEvent::Type)
+IPC_ENUM_TRAITS_MAX_VALUE(media::ChannelLayout, media::CHANNEL_LAYOUT_MAX - 1)
+IPC_ENUM_TRAITS_MAX_VALUE(media::MediaLogEvent::Type,
+                          media::MediaLogEvent::TYPE_LAST)
 IPC_ENUM_TRAITS_MAX_VALUE(ui::TextInputMode, ui::TEXT_INPUT_MODE_MAX)
 IPC_ENUM_TRAITS(ui::TextInputType)
 
@@ -479,9 +479,6 @@ IPC_STRUCT_BEGIN(ViewMsg_New_Params)
 
   // The properties of the screen associated with the view.
   IPC_STRUCT_MEMBER(blink::WebScreenInfo, screen_info)
-
-  // The accessibility mode of the renderer.
-  IPC_STRUCT_MEMBER(AccessibilityMode, accessibility_mode)
 IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(ViewMsg_PostMessage_Params)
@@ -628,7 +625,8 @@ IPC_MESSAGE_ROUTED1(ViewMsg_SetInitialFocus,
 
 // Sent to inform the renderer to invoke a context menu.
 // The parameter specifies the location in the render view's coordinates.
-IPC_MESSAGE_ROUTED1(ViewMsg_ShowContextMenu,
+IPC_MESSAGE_ROUTED2(ViewMsg_ShowContextMenu,
+                    ui::MenuSourceType,
                     gfx::Point /* location where menu should be shown */)
 
 IPC_MESSAGE_ROUTED0(ViewMsg_Stop)
@@ -872,10 +870,6 @@ IPC_MESSAGE_ROUTED2(ViewMsg_SavePageAsMHTML,
 IPC_MESSAGE_CONTROL1(ViewMsg_TempCrashWithData,
                      GURL /* data */)
 
-// Change the accessibility mode in the renderer process.
-IPC_MESSAGE_ROUTED1(ViewMsg_SetAccessibilityMode,
-                    AccessibilityMode)
-
 // An acknowledge to ViewHostMsg_MultipleTargetsTouched to notify the renderer
 // process to release the magnified image.
 IPC_MESSAGE_ROUTED1(ViewMsg_ReleaseDisambiguationPopupBitmap,
@@ -983,6 +977,8 @@ IPC_MESSAGE_ROUTED2(ViewMsg_ReclaimCompositorResources,
 IPC_MESSAGE_ROUTED0(ViewMsg_SelectWordAroundCaret)
 
 // Sent by the browser to ask the renderer to redraw.
+// If |request_id| is not zero, it is added to the forced frame's latency info
+// as ui::WINDOW_SNAPSHOT_FRAME_NUMBER_COMPONENT.
 IPC_MESSAGE_ROUTED1(ViewMsg_ForceRedraw,
                     int /* request_id */)
 
@@ -1142,7 +1138,7 @@ IPC_MESSAGE_ROUTED5(ViewHostMsg_DidLoadResourceFromMemoryCache,
                     std::string  /* security info */,
                     std::string  /* http method */,
                     std::string  /* mime type */,
-                    content::ResourceType::Type /* resource type */)
+                    content::ResourceType /* resource type */)
 
 // Sent when the renderer displays insecure content in a secure page.
 IPC_MESSAGE_ROUTED0(ViewHostMsg_DidDisplayInsecureContent)

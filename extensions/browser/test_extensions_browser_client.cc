@@ -132,6 +132,9 @@ bool TestExtensionsBrowserClient::DidVersionUpdate(BrowserContext* context) {
   return false;
 }
 
+void TestExtensionsBrowserClient::PermitExternalProtocolHandler() {
+}
+
 scoped_ptr<AppSorting> TestExtensionsBrowserClient::CreateAppSorting() {
   return scoped_ptr<AppSorting>();
 }
@@ -145,9 +148,8 @@ ApiActivityMonitor* TestExtensionsBrowserClient::GetApiActivityMonitor(
 
 ExtensionSystemProvider*
 TestExtensionsBrowserClient::GetExtensionSystemFactory() {
-  // Tests requiring an extension system should override this function.
-  NOTREACHED();
-  return NULL;
+  DCHECK(extension_system_factory_);
+  return extension_system_factory_;
 }
 
 void TestExtensionsBrowserClient::RegisterExtensionFunctions(
@@ -161,6 +163,10 @@ TestExtensionsBrowserClient::CreateRuntimeAPIDelegate(
 
 ComponentExtensionResourceManager*
 TestExtensionsBrowserClient::GetComponentExtensionResourceManager() {
+  return NULL;
+}
+
+net::NetLog* TestExtensionsBrowserClient::GetNetLog() {
   return NULL;
 }
 

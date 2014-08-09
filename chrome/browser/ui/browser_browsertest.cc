@@ -854,7 +854,7 @@ class BeforeUnloadAtQuitWithTwoWindows : public InProcessBrowserTest {
   // This test is for testing a specific shutdown behavior. This mimics what
   // happens in InProcessBrowserTest::RunTestOnMainThread and QuitBrowsers, but
   // ensures that it happens through the single IDC_EXIT of the test.
-  virtual void CleanUpOnMainThread() OVERRIDE {
+  virtual void TearDownOnMainThread() OVERRIDE {
     // Cycle both the MessageLoop and the Cocoa runloop twice to flush out any
     // Chrome work that generates Cocoa work. Do this twice since there are two
     // Browsers that must be closed.
@@ -1308,8 +1308,10 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, MAYBE_TabClosingWhenRemovingExtension) {
   // Uninstall the extension and make sure TabClosing is sent.
   ExtensionService* service = extensions::ExtensionSystem::Get(
       browser()->profile())->extension_service();
-  service->UninstallExtension(
-      GetExtension()->id(), extensions::UNINSTALL_REASON_FOR_TESTING, NULL);
+  service->UninstallExtension(GetExtension()->id(),
+                              extensions::UNINSTALL_REASON_FOR_TESTING,
+                              base::Bind(&base::DoNothing),
+                              NULL);
   EXPECT_EQ(1, observer.closing_count());
 
   model->RemoveObserver(&observer);
@@ -1979,8 +1981,13 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, InterstitialClosesDialogs) {
   EXPECT_FALSE(contents->GetRenderProcessHost()->IgnoreInputEvents());
 }
 
-
-IN_PROC_BROWSER_TEST_F(BrowserTest, InterstitialCloseTab) {
+#if defined(OS_MACOSX)
+// http://crbug.com/393218
+#define MAYBE_InterstitialCloseTab DISABLED_InterstitialCloseTab
+#else
+#define MAYBE_InterstitialCloseTab InterstitialCloseTab
+#endif
+IN_PROC_BROWSER_TEST_F(BrowserTest, MAYBE_InterstitialCloseTab) {
   WebContents* contents = browser()->tab_strip_model()->GetActiveWebContents();
 
   {
@@ -2505,7 +2512,13 @@ IN_PROC_BROWSER_TEST_F(ClickModifierTest, WindowOpenControlShiftClickTest) {
 }
 
 // Middle-clicks open in a background tab.
-IN_PROC_BROWSER_TEST_F(ClickModifierTest, WindowOpenMiddleClickTest) {
+#if defined(OS_LINUX)
+// http://crbug.com/396347
+#define MAYBE_WindowOpenMiddleClickTest DISABLED_WindowOpenMiddleClickTest
+#else
+#define MAYBE_WindowOpenMiddleClickTest WindowOpenMiddleClickTest
+#endif
+IN_PROC_BROWSER_TEST_F(ClickModifierTest, MAYBE_WindowOpenMiddleClickTest) {
   int modifiers = 0;
   blink::WebMouseEvent::Button button = blink::WebMouseEvent::ButtonMiddle;
   WindowOpenDisposition disposition = NEW_BACKGROUND_TAB;
@@ -2555,7 +2568,8 @@ IN_PROC_BROWSER_TEST_F(ClickModifierTest, HrefControlClickTest) {
 
 // Control-shift-clicks open in a foreground tab.
 // On OSX meta [the command key] takes the place of control.
-IN_PROC_BROWSER_TEST_F(ClickModifierTest, HrefControlShiftClickTest) {
+// http://crbug.com/396347
+IN_PROC_BROWSER_TEST_F(ClickModifierTest, DISABLED_HrefControlShiftClickTest) {
 #if defined(OS_MACOSX)
   int modifiers = blink::WebInputEvent::MetaKey;
 #else
@@ -2576,7 +2590,8 @@ IN_PROC_BROWSER_TEST_F(ClickModifierTest, HrefMiddleClickTest) {
 }
 
 // Shift-middle-clicks open in a foreground tab.
-IN_PROC_BROWSER_TEST_F(ClickModifierTest, HrefShiftMiddleClickTest) {
+// http://crbug.com/396347
+IN_PROC_BROWSER_TEST_F(ClickModifierTest, DISABLED_HrefShiftMiddleClickTest) {
   int modifiers = blink::WebInputEvent::ShiftKey;
   blink::WebMouseEvent::Button button = blink::WebMouseEvent::ButtonMiddle;
   WindowOpenDisposition disposition = NEW_FOREGROUND_TAB;

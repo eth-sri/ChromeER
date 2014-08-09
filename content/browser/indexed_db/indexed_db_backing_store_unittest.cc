@@ -9,9 +9,9 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/logging.h"
 #include "base/macros.h"
+#include "base/sequenced_task_runner.h"
 #include "base/strings/string16.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/task_runner.h"
 #include "base/test/test_simple_task_runner.h"
 #include "content/browser/indexed_db/indexed_db_context_impl.h"
 #include "content/browser/indexed_db/indexed_db_factory_impl.h"
@@ -19,6 +19,7 @@
 #include "content/browser/indexed_db/indexed_db_value.h"
 #include "content/browser/indexed_db/leveldb/leveldb_factory.h"
 #include "content/public/test/mock_special_storage_policy.h"
+#include "content/public/test/test_browser_thread_bundle.h"
 #include "net/url_request/url_request_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/public/platform/WebIDBTypes.h"
@@ -66,7 +67,7 @@ class TestableIndexedDBBackingStore : public IndexedDBBackingStore {
       const base::FilePath& path_base,
       net::URLRequestContext* request_context,
       LevelDBFactory* leveldb_factory,
-      base::TaskRunner* task_runner,
+      base::SequencedTaskRunner* task_runner,
       leveldb::Status* status) {
     DCHECK(!path_base.empty());
 
@@ -157,7 +158,7 @@ class TestableIndexedDBBackingStore : public IndexedDBBackingStore {
                                 net::URLRequestContext* request_context,
                                 scoped_ptr<LevelDBDatabase> db,
                                 scoped_ptr<LevelDBComparator> comparator,
-                                base::TaskRunner* task_runner)
+                                base::SequencedTaskRunner* task_runner)
       : IndexedDBBackingStore(indexed_db_factory,
                               origin_url,
                               blob_path,
@@ -347,6 +348,8 @@ class IndexedDBBackingStoreTest : public testing::Test {
   std::vector<IndexedDBBlobInfo> m_blob_info;
 
  private:
+  content::TestBrowserThreadBundle thread_bundle_;
+
   DISALLOW_COPY_AND_ASSIGN(IndexedDBBackingStoreTest);
 };
 

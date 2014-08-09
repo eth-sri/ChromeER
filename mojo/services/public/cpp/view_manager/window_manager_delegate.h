@@ -8,7 +8,6 @@
 #include "mojo/services/public/interfaces/input_events/input_events.mojom.h"
 
 namespace mojo {
-namespace view_manager {
 
 class View;
 
@@ -17,7 +16,7 @@ class View;
 class WindowManagerDelegate {
  public:
   // Create an appropriate node to embed |url|.
-  virtual void EmbedRoot(const String& url) = 0;
+  virtual void Embed(const String& url) = 0;
 
   // Dispatch the supplied input event to the appropriate view (taking into
   // account focus, activation, modality, etc.).
@@ -27,7 +26,6 @@ class WindowManagerDelegate {
   virtual ~WindowManagerDelegate() {}
 };
 
-}  // namespace view_manager
 }  // namespace mojo
 
 #endif  // MOJO_SERVICES_PUBLIC_CPP_VIEW_MANAGER_WINDOW_MANAGER_DELEGATE_H_

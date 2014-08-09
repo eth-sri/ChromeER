@@ -183,6 +183,7 @@ IPC_STRUCT_TRAITS_BEGIN(gpu::GPUInfo)
   IPC_STRUCT_TRAITS_MEMBER(software_rendering)
   IPC_STRUCT_TRAITS_MEMBER(direct_rendering)
   IPC_STRUCT_TRAITS_MEMBER(sandboxed)
+  IPC_STRUCT_TRAITS_MEMBER(process_crash_count)
 #if defined(OS_WIN)
   IPC_STRUCT_TRAITS_MEMBER(dx_diagnostics)
 #endif
@@ -632,8 +633,8 @@ IPC_MESSAGE_ROUTED5(GpuCommandBufferMsg_RegisterGpuMemoryBuffer,
                     uint32 /* height */,
                     uint32 /* internalformat */)
 
-// Destroy a previously created gpu memory buffer.
-IPC_MESSAGE_ROUTED1(GpuCommandBufferMsg_DestroyGpuMemoryBuffer,
+// Unregister a previously registered gpu memory buffer.
+IPC_MESSAGE_ROUTED1(GpuCommandBufferMsg_UnregisterGpuMemoryBuffer,
                     int32 /* id */)
 
 // Attaches an external image stream to the client texture.

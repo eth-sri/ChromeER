@@ -425,9 +425,15 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
       size_t height,
       unsigned internalformat,
       unsigned usage) OVERRIDE;
+  virtual void DeleteGpuMemoryBuffer(
+      scoped_ptr<gfx::GpuMemoryBuffer> buffer) OVERRIDE;
 
   void Init();
 
+  void OnCreateNewFrame(int routing_id, int parent_routing_id);
+  void OnCreateNewFrameProxy(int routing_id,
+                             int parent_routing_id,
+                             int render_view_routing_id);
   void OnSetZoomLevelForCurrentURL(const std::string& scheme,
                                    const std::string& host,
                                    double zoom_level);

@@ -161,7 +161,7 @@ bool ServiceWorkerProviderHost::SetHostedVersionId(int64 version_id) {
 
 scoped_ptr<ServiceWorkerRequestHandler>
 ServiceWorkerProviderHost::CreateRequestHandler(
-    ResourceType::Type resource_type,
+    ResourceType resource_type,
     base::WeakPtr<webkit_blob::BlobStorageContext> blob_storage_context) {
   if (IsHostToRunningServiceWorker()) {
     return scoped_ptr<ServiceWorkerRequestHandler>(
@@ -225,8 +225,11 @@ ServiceWorkerObjectInfo ServiceWorkerProviderHost::CreateHandleAndPass(
   ServiceWorkerObjectInfo info;
   if (context_ && version) {
     scoped_ptr<ServiceWorkerHandle> handle =
-        ServiceWorkerHandle::Create(context_, dispatcher_host_,
-                                    kDocumentMainThreadId, version);
+        ServiceWorkerHandle::Create(context_,
+                                    dispatcher_host_,
+                                    kDocumentMainThreadId,
+                                    provider_id_,
+                                    version);
     info = handle->GetObjectInfo();
     dispatcher_host_->RegisterServiceWorkerHandle(handle.Pass());
   }

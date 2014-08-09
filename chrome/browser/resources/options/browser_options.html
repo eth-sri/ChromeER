@@ -2,7 +2,6 @@
   <header>
     <h1 i18n-content="settingsTitle"></h1>
   </header>
-  <include src="reset_profile_settings_banner.html">
   <include src="automatic_settings_reset_banner.html">
 <if expr="chromeos">
   <include src="secondary_user_banner.html">
@@ -153,7 +152,7 @@
       </div>
   </section>
   <section>
-    <h3 i18n-content="sectionTitleVoice"></h3>
+    <h3 id="voice-section-title" i18n-content="sectionTitleVoice" hidden></h3>
     <div id="voice-section-content">
       <div id="hotword-search" hidden>
         <div class="checkbox">
@@ -391,6 +390,11 @@
             </label>
             <span class="controlled-setting-indicator"
                 pref="user_experience_metrics.reporting_enabled">
+            </span>
+            <span id="metrics-reporting-reset-restart">
+              <!-- Text filled by JavaScript -->
+              <span></span><button class=
+                  "link-button standalone-link-button"></button><span></span>
             </span>
           </span>
 </if>

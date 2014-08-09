@@ -25,6 +25,7 @@ class WebContents;
 }
 
 namespace net {
+class NetLog;
 class NetworkDelegate;
 class URLRequest;
 class URLRequestJob;
@@ -147,6 +148,10 @@ class ExtensionsBrowserClient {
   // version for later comparison.
   virtual bool DidVersionUpdate(content::BrowserContext* context) = 0;
 
+  // Permits an external protocol handler to be launched. See
+  // ExternalProtocolHandler::PermitLaunchUrl() in Chrome.
+  virtual void PermitExternalProtocolHandler() = 0;
+
   // Creates a new AppSorting instance.
   virtual scoped_ptr<AppSorting> CreateAppSorting() = 0;
 
@@ -176,6 +181,9 @@ class ExtensionsBrowserClient {
   // the manager doesn't exist.
   virtual ComponentExtensionResourceManager*
   GetComponentExtensionResourceManager() = 0;
+
+  // Returns the embedder's net::NetLog.
+  virtual net::NetLog* GetNetLog() = 0;
 
   // Returns the single instance of |this|.
   static ExtensionsBrowserClient* Get();

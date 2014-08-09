@@ -32,8 +32,8 @@ void ExtensionUninstaller::Run() {
     return;
   }
   controller_->OnShowChildDialog();
-  dialog_.reset(
-      extensions::ExtensionUninstallDialog::Create(profile_, NULL, this));
+  dialog_.reset(extensions::ExtensionUninstallDialog::Create(
+      profile_, controller_->GetAppListWindow(), this));
   dialog_->ConfirmUninstall(extension);
 }
 
@@ -43,8 +43,10 @@ void ExtensionUninstaller::ExtensionUninstallAccepted() {
   const extensions::Extension* extension =
       service->GetInstalledExtension(app_id_);
   if (extension) {
-    service->UninstallExtension(
-        app_id_, extensions::UNINSTALL_REASON_USER_INITIATED, NULL);
+    service->UninstallExtension(app_id_,
+                                extensions::UNINSTALL_REASON_USER_INITIATED,
+                                base::Bind(&base::DoNothing),
+                                NULL);
   }
   controller_->OnCloseChildDialog();
   CleanUp();

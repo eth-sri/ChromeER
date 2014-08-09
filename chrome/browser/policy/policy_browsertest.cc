@@ -43,6 +43,7 @@
 #include "chrome/browser/media/media_capture_devices_dispatcher.h"
 #include "chrome/browser/media/media_stream_devices_controller.h"
 #include "chrome/browser/metrics/variations/variations_service.h"
+#include "chrome/browser/net/prediction_options.h"
 #include "chrome/browser/net/url_request_mock_util.h"
 #include "chrome/browser/plugins/plugin_prefs.h"
 #include "chrome/browser/policy/cloud/test_request_interceptor.h"
@@ -376,6 +377,10 @@ bool IsJavascriptEnabled(content::WebContents* contents) {
   return result == 123;
 }
 
+bool IsNetworkPredictionEnabled(PrefService* prefs) {
+  return chrome_browser_net::CanPredictNetworkActionsUI(prefs);
+}
+
 void CopyPluginListAndQuit(std::vector<content::WebPluginInfo>* out,
                            const std::vector<content::WebPluginInfo>& in) {
   *out = in;
@@ -672,7 +677,7 @@ class PolicyTest : public InProcessBrowserTest {
     installer->set_creation_flags(extensions::Extension::FROM_WEBSTORE);
 
     content::WindowedNotificationObserver observer(
-        chrome::NOTIFICATION_CRX_INSTALLER_DONE,
+        extensions::NOTIFICATION_CRX_INSTALLER_DONE,
         content::NotificationService::AllSources());
     installer->InstallCrx(extension_path);
     observer.Wait();
@@ -687,8 +692,8 @@ class PolicyTest : public InProcessBrowserTest {
     scoped_refptr<extensions::UnpackedInstaller> installer =
         extensions::UnpackedInstaller::Create(extension_service());
     content::WindowedNotificationObserver observer(
-        expect_success ? chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED
-                       : chrome::NOTIFICATION_EXTENSION_LOAD_ERROR,
+        expect_success ? extensions::NOTIFICATION_EXTENSION_LOADED_DEPRECATED
+                       : extensions::NOTIFICATION_EXTENSION_LOAD_ERROR,
         content::NotificationService::AllSources());
     installer->Load(extension_path);
     observer.Wait();
@@ -705,11 +710,15 @@ class PolicyTest : public InProcessBrowserTest {
 
   void UninstallExtension(const std::string& id, bool expect_success) {
     content::WindowedNotificationObserver observer(
-        expect_success ? chrome::NOTIFICATION_EXTENSION_UNINSTALLED_DEPRECATED
-                       : chrome::NOTIFICATION_EXTENSION_UNINSTALL_NOT_ALLOWED,
+        expect_success
+            ? extensions::NOTIFICATION_EXTENSION_UNINSTALLED_DEPRECATED
+            : extensions::NOTIFICATION_EXTENSION_UNINSTALL_NOT_ALLOWED,
         content::NotificationService::AllSources());
     extension_service()->UninstallExtension(
-        id, extensions::UNINSTALL_REASON_FOR_TESTING, NULL);
+        id,
+        extensions::UNINSTALL_REASON_FOR_TESTING,
+        base::Bind(&base::DoNothing),
+        NULL);
     observer.Wait();
   }
 
@@ -1618,7 +1627,7 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, ExtensionInstallForcelist) {
   policies.Set(key::kExtensionInstallForcelist, POLICY_LEVEL_MANDATORY,
                POLICY_SCOPE_USER, forcelist.DeepCopy(), NULL);
   content::WindowedNotificationObserver observer(
-      chrome::NOTIFICATION_EXTENSION_WILL_BE_INSTALLED_DEPRECATED,
+      extensions::NOTIFICATION_EXTENSION_WILL_BE_INSTALLED_DEPRECATED,
       content::NotificationService::AllSources());
   UpdateProviderPolicy(policies);
   observer.Wait();
@@ -1656,7 +1665,7 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, ExtensionInstallForcelist) {
   extensions::ExtensionUpdater::CheckParams params;
   params.install_immediately = true;
   content::WindowedNotificationObserver update_observer(
-      chrome::NOTIFICATION_EXTENSION_WILL_BE_INSTALLED_DEPRECATED,
+      extensions::NOTIFICATION_EXTENSION_WILL_BE_INSTALLED_DEPRECATED,
       content::NotificationService::AllSources());
   updater->CheckNow(params);
   update_observer.Wait();
@@ -1699,10 +1708,10 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, ExtensionInstallForcelist) {
   BackgroundContentsService::
       SetRestartDelayForForceInstalledAppsAndExtensionsForTesting(0);
   content::WindowedNotificationObserver extension_crashed_observer(
-      chrome::NOTIFICATION_EXTENSION_PROCESS_TERMINATED,
+      extensions::NOTIFICATION_EXTENSION_PROCESS_TERMINATED,
       content::NotificationService::AllSources());
   content::WindowedNotificationObserver extension_loaded_observer(
-      chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
+      extensions::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
       content::NotificationService::AllSources());
   extensions::ExtensionHost* extension_host =
       extensions::ExtensionSystem::Get(browser()->profile())->
@@ -1751,8 +1760,8 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, ExtensionAllowedTypes) {
 #define MAYBE_ExtensionInstallSources ExtensionInstallSources
 #endif
 IN_PROC_BROWSER_TEST_F(PolicyTest, MAYBE_ExtensionInstallSources) {
-  CommandLine::ForCurrentProcess()->AppendSwitchASCII(
-      switches::kAppsGalleryInstallAutoConfirmForTests, "accept");
+  ExtensionInstallPrompt::g_auto_confirm_for_tests =
+      ExtensionInstallPrompt::ACCEPT;
 
   const GURL install_source_url(URLRequestMockHTTPJob::GetMockUrl(
       base::FilePath(FILE_PATH_LITERAL("extensions/*"))));
@@ -1786,7 +1795,7 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, MAYBE_ExtensionInstallSources) {
   UpdateProviderPolicy(policies);
 
   content::WindowedNotificationObserver observer(
-      chrome::NOTIFICATION_EXTENSION_WILL_BE_INSTALLED_DEPRECATED,
+      extensions::NOTIFICATION_EXTENSION_WILL_BE_INSTALLED_DEPRECATED,
       content::NotificationService::AllSources());
   PerformClick(1, 0);
   observer.Wait();
@@ -1915,6 +1924,35 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, Javascript) {
   UpdateProviderPolicy(policies);
   ui_test_utils::NavigateToURL(browser(), GURL(url::kAboutBlankURL));
   EXPECT_TRUE(IsJavascriptEnabled(contents));
+}
+
+IN_PROC_BROWSER_TEST_F(PolicyTest, NetworkPrediction) {
+  PrefService* prefs = browser()->profile()->GetPrefs();
+
+  // Enabled by default.
+  EXPECT_TRUE(IsNetworkPredictionEnabled(prefs));
+
+  // Disable by old, deprecated policy.
+  PolicyMap policies;
+  policies.Set(key::kDnsPrefetchingEnabled,
+               POLICY_LEVEL_MANDATORY,
+               POLICY_SCOPE_USER,
+               new base::FundamentalValue(false),
+               NULL);
+  UpdateProviderPolicy(policies);
+
+  EXPECT_FALSE(IsNetworkPredictionEnabled(prefs));
+
+  // Enabled by new policy, this should override old one.
+  policies.Set(
+      key::kNetworkPredictionOptions,
+      POLICY_LEVEL_MANDATORY,
+      POLICY_SCOPE_USER,
+      new base::FundamentalValue(chrome_browser_net::NETWORK_PREDICTION_ALWAYS),
+      NULL);
+  UpdateProviderPolicy(policies);
+
+  EXPECT_TRUE(IsNetworkPredictionEnabled(prefs));
 }
 
 IN_PROC_BROWSER_TEST_F(PolicyTest, SavingBrowserHistoryDisabled) {

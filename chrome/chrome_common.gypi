@@ -48,13 +48,10 @@
       'common/content_restriction.h',
       'common/content_settings.cc',
       'common/content_settings.h',
-      'common/content_settings_helper.cc',
-      'common/content_settings_helper.h',
       'common/content_settings_pattern.cc',
       'common/content_settings_pattern.h',
       'common/content_settings_pattern_parser.cc',
       'common/content_settings_pattern_parser.h',
-      'common/content_settings_types.h',
       'common/crash_keys.cc',
       'common/crash_keys.h',
       'common/custom_handlers/protocol_handler.cc',
@@ -180,6 +177,8 @@
       'common/spellcheck_result.h',
       'common/switch_utils.cc',
       'common/switch_utils.h',
+      'common/terminate_on_heap_corruption_experiment_win.cc',
+      'common/terminate_on_heap_corruption_experiment_win.h',
       'common/tts_messages.h',
       'common/tts_utterance_request.cc',
       'common/tts_utterance_request.h',
@@ -273,6 +272,7 @@
     'chrome_common_win_mac_sources': [
       'common/extensions/api/networking_private/networking_private_crypto_nss.cc',
       'common/extensions/api/networking_private/networking_private_crypto_openssl.cc',
+      'common/extensions/api/networking_private/networking_private_crypto.cc',
       'common/extensions/api/networking_private/networking_private_crypto.h',
       'common/media_galleries/itunes_library.cc',
       'common/media_galleries/itunes_library.h',
@@ -320,6 +320,7 @@
         '<(DEPTH)/chrome/common_constants.gyp:common_constants',
         '<(DEPTH)/components/components.gyp:cloud_devices_common',
         '<(DEPTH)/components/components.gyp:component_updater',
+        '<(DEPTH)/components/components.gyp:content_settings_core_common',
         '<(DEPTH)/components/components.gyp:json_schema',
         '<(DEPTH)/components/components.gyp:metrics',
         '<(DEPTH)/components/components.gyp:policy_component_common',
@@ -354,6 +355,12 @@
         }],
         ['OS=="win" or OS=="mac"', {
           'sources': [ '<@(chrome_common_win_mac_sources)' ],
+        }],
+        ['(OS=="win" or OS=="mac") and use_openssl==1', {
+          # networking_private_crypto_openssl.cc depends on boringssl.
+          'dependencies': [
+            '../third_party/boringssl/boringssl.gyp:boringssl',
+          ],
         }],
         ['OS=="mac"', {
           'sources': [ '<@(chrome_common_mac_sources)' ],
@@ -411,6 +418,7 @@
         ['disable_nacl==0', {
           'dependencies': [
             '<(DEPTH)/components/nacl.gyp:nacl_common',
+            '<(DEPTH)/ppapi/native_client/src/trusted/plugin/plugin.gyp:nacl_trusted_plugin',
           ],
           'sources': [
             'common/extensions/manifest_handlers/nacl_modules_handler.cc',
@@ -464,6 +472,9 @@
             '<(DEPTH)/breakpad/src',
             '<(DEPTH)/third_party/wtl/include',
           ],
+          'dependencies': [
+            '<(DEPTH)/components/components.gyp:dom_distiller_core',  # Needed by chrome_content_client.cc.
+          ],
         }],
         ['enable_mdns == 1', {
             'sources': [
@@ -484,7 +495,6 @@
             '<(DEPTH)/breakpad/src',
           ],
           'sources!': [
-            'common/child_process_logging_posix.cc',
             'common/chrome_version_info_posix.cc',
           ],
         }],

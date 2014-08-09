@@ -18,6 +18,8 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
+#include "content/browser/accessibility/accessibility_mode_helper.h"
+#include "content/browser/accessibility/browser_accessibility_state_impl.h"
 #include "content/browser/browser_plugin/browser_plugin_embedder.h"
 #include "content/browser/browser_plugin/browser_plugin_guest.h"
 #include "content/browser/child_process_security_policy_impl.h"
@@ -72,6 +74,7 @@
 #include "content/public/browser/navigation_details.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
+#include "content/public/browser/render_widget_host_iterator.h"
 #include "content/public/browser/resource_request_details.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/user_metrics.h"
@@ -213,6 +216,16 @@ bool ForEachFrameInternal(
   return true;
 }
 
+bool ForEachPendingFrameInternal(
+    const base::Callback<void(RenderFrameHost*)>& on_frame,
+    FrameTreeNode* node) {
+  RenderFrameHost* pending_frame_host =
+      node->render_manager()->pending_frame_host();
+  if (pending_frame_host)
+    on_frame.Run(pending_frame_host);
+  return true;
+}
+
 void SendToAllFramesInternal(IPC::Message* message, RenderFrameHost* rfh) {
   IPC::Message* message_copy = new IPC::Message(*message);
   message_copy->set_routing_id(rfh->GetRoutingID());
@@ -226,6 +239,11 @@ void AddRenderWidgetHostViewToSet(std::set<RenderWidgetHostView*>* set,
                                    ->render_manager()
                                    ->GetRenderWidgetHostView();
   set->insert(rwhv);
+}
+
+void SetAccessibilityModeOnFrame(AccessibilityMode mode,
+                                 RenderFrameHost* frame_host) {
+  static_cast<RenderFrameHostImpl*>(frame_host)->SetAccessibilityMode(mode);
 }
 
 }  // namespace
@@ -356,7 +374,9 @@ WebContentsImpl::WebContentsImpl(
       fullscreen_widget_had_focus_at_shutdown_(false),
       is_subframe_(false),
       touch_emulation_enabled_(false),
-      last_dialog_suppressed_(false) {
+      last_dialog_suppressed_(false),
+      accessibility_mode_(
+          BrowserAccessibilityStateImpl::GetInstance()->accessibility_mode()) {
   for (size_t i = 0; i < g_created_callbacks.Get().size(); i++)
     g_created_callbacks.Get().at(i).Run(this);
   frame_tree_.SetFrameRemoveListener(
@@ -455,6 +475,30 @@ WebContentsImpl* WebContentsImpl::CreateWithOpener(
   return new_contents;
 }
 
+// static
+std::vector<WebContentsImpl*> WebContentsImpl::GetAllWebContents() {
+  std::vector<WebContentsImpl*> result;
+  scoped_ptr<RenderWidgetHostIterator> widgets(
+      RenderWidgetHostImpl::GetRenderWidgetHosts());
+  std::set<WebContentsImpl*> web_contents_set;
+  while (RenderWidgetHost* rwh = widgets->GetNextHost()) {
+    if (!rwh->IsRenderView())
+      continue;
+    RenderViewHost* rvh = RenderViewHost::From(rwh);
+    if (!rvh)
+      continue;
+    WebContents* web_contents = WebContents::FromRenderViewHost(rvh);
+    if (!web_contents)
+      continue;
+    WebContentsImpl* wci = static_cast<WebContentsImpl*>(web_contents);
+    if (web_contents_set.find(wci) == web_contents_set.end()) {
+      web_contents_set.insert(wci);
+      result.push_back(wci);
+    }
+  }
+  return result;
+}
+
 RenderFrameHostManager* WebContentsImpl::GetRenderManagerForTesting() {
   return GetRenderManager();
 }
@@ -508,7 +552,6 @@ bool WebContentsImpl::OnMessageReceived(RenderViewHost* render_view_host,
                         OnDomOperationResponse)
     IPC_MESSAGE_HANDLER(FrameHostMsg_DidChangeThemeColor,
                         OnThemeColorChanged)
-    IPC_MESSAGE_HANDLER(FrameHostMsg_DidDetectXSS, OnDidDetectXSS)
     IPC_MESSAGE_HANDLER(FrameHostMsg_DidFinishDocumentLoad,
                         OnDocumentLoadedInFrame)
     IPC_MESSAGE_HANDLER(FrameHostMsg_DidFinishLoad, OnDidFinishLoad)
@@ -680,6 +723,29 @@ WebContentsView* WebContentsImpl::GetView() const {
   return view_.get();
 }
 
+void WebContentsImpl::SetAccessibilityMode(AccessibilityMode mode) {
+  if (mode == accessibility_mode_)
+    return;
+
+  accessibility_mode_ = mode;
+  frame_tree_.ForEach(
+      base::Bind(&ForEachFrameInternal,
+                 base::Bind(&SetAccessibilityModeOnFrame, mode)));
+  frame_tree_.ForEach(
+      base::Bind(&ForEachPendingFrameInternal,
+                 base::Bind(&SetAccessibilityModeOnFrame, mode)));
+}
+
+void WebContentsImpl::AddAccessibilityMode(AccessibilityMode mode) {
+  SetAccessibilityMode(
+      content::AddAccessibilityModeTo(accessibility_mode_, mode));
+}
+
+void WebContentsImpl::RemoveAccessibilityMode(AccessibilityMode mode) {
+  SetAccessibilityMode(
+      content::RemoveAccessibilityModeFrom(accessibility_mode_, mode));
+}
+
 WebUI* WebContentsImpl::CreateWebUI(const GURL& url) {
   WebUIImpl* web_ui = new WebUIImpl(this);
   WebUIController* controller = WebUIControllerFactoryRegistry::GetInstance()->
@@ -728,12 +794,25 @@ const std::string& WebContentsImpl::GetUserAgentOverride() const {
   return renderer_preferences_.user_agent_override;
 }
 
+void WebContentsImpl::EnableTreeOnlyAccessibilityMode() {
+  AddAccessibilityMode(AccessibilityModeTreeOnly);
+}
+
+bool WebContentsImpl::IsTreeOnlyAccessibilityModeForTesting() const {
+  return accessibility_mode_ == AccessibilityModeTreeOnly;
+}
+
+bool WebContentsImpl::IsFullAccessibilityModeForTesting() const {
+  return accessibility_mode_ == AccessibilityModeComplete;
+}
+
 #if defined(OS_WIN)
 void WebContentsImpl::SetParentNativeViewAccessible(
 gfx::NativeViewAccessible accessible_parent) {
   accessible_parent_ = accessible_parent;
-  if (GetRenderViewHost())
-    GetRenderViewHostImpl()->SetParentNativeViewAccessible(accessible_parent);
+  RenderFrameHostImpl* rfh = static_cast<RenderFrameHostImpl*>(GetMainFrame());
+  if (rfh)
+    rfh->SetParentNativeViewAccessible(accessible_parent);
 }
 #endif
 
@@ -1294,12 +1373,6 @@ bool WebContentsImpl::HandleGestureEvent(
   return false;
 }
 
-#if defined(OS_WIN)
-gfx::NativeViewAccessible WebContentsImpl::GetParentNativeViewAccessible() {
-  return accessible_parent_;
-}
-#endif
-
 void WebContentsImpl::HandleMouseDown() {
   if (delegate_)
     delegate_->HandleMouseDown();
@@ -1695,6 +1768,10 @@ FrameTree* WebContentsImpl::GetFrameTree() {
   return &frame_tree_;
 }
 
+AccessibilityMode WebContentsImpl::GetAccessibilityMode() const {
+  return accessibility_mode_;
+}
+
 void WebContentsImpl::AccessibilityEventReceived(
     const std::vector<AXEventNotificationDetails>& details) {
   FOR_EACH_OBSERVER(
@@ -1730,6 +1807,18 @@ void WebContentsImpl::OnTouchEmulationEnabled(bool enabled) {
   touch_emulation_enabled_ = enabled;
   if (view_)
     view_->SetOverscrollControllerEnabled(CanOverscrollContent());
+}
+
+BrowserAccessibilityManager*
+    WebContentsImpl::GetRootBrowserAccessibilityManager() {
+  RenderFrameHostImpl* rfh = static_cast<RenderFrameHostImpl*>(GetMainFrame());
+  return rfh ? rfh->browser_accessibility_manager() : NULL;
+}
+
+BrowserAccessibilityManager*
+    WebContentsImpl::GetOrCreateRootBrowserAccessibilityManager() {
+  RenderFrameHostImpl* rfh = static_cast<RenderFrameHostImpl*>(GetMainFrame());
+  return rfh ? rfh->GetOrCreateBrowserAccessibilityManager() : NULL;
 }
 
 void WebContentsImpl::UpdatePreferredSize(const gfx::Size& pref_size) {
@@ -2342,6 +2431,15 @@ void WebContentsImpl::DidStartProvisionalLoad(
   }
 }
 
+void WebContentsImpl::DidStartNavigationTransition(
+    RenderFrameHostImpl* render_frame_host) {
+#if defined(OS_ANDROID)
+  int render_frame_id = render_frame_host->GetRoutingID();
+  ContentViewCoreImpl::FromWebContents(this)->
+      DidStartNavigationTransitionForFrame(render_frame_id);
+#endif
+}
+
 void WebContentsImpl::DidFailProvisionalLoadWithError(
     RenderFrameHostImpl* render_frame_host,
     const FrameHostMsg_DidFailProvisionalLoadWithError_Params& params) {
@@ -2522,7 +2620,7 @@ void WebContentsImpl::OnDidLoadResourceFromMemoryCache(
     const std::string& security_info,
     const std::string& http_method,
     const std::string& mime_type,
-    ResourceType::Type resource_type) {
+    ResourceType resource_type) {
   base::StatsCounter cache("WebKit.CacheHit");
   cache.Increment();
 
@@ -2547,7 +2645,7 @@ void WebContentsImpl::OnDidLoadResourceFromMemoryCache(
 
   if (url.is_valid() && url.SchemeIsHTTPOrHTTPS()) {
     scoped_refptr<net::URLRequestContextGetter> request_context(
-        resource_type == ResourceType::MEDIA ?
+        resource_type == RESOURCE_TYPE_MEDIA ?
             GetBrowserContext()->GetMediaRequestContextForRenderProcess(
                 GetRenderProcessHost()->GetID()) :
             GetBrowserContext()->GetRequestContextForRenderProcess(
@@ -2577,26 +2675,6 @@ void WebContentsImpl::OnDidRunInsecureContent(
   displayed_insecure_content_ = true;
   SSLManager::NotifySSLInternalStateChanged(
       GetController().GetBrowserContext());
-}
-
-
-void WebContentsImpl::OnDidDetectXSS(int32 page_id,
-                                     const GURL& url,
-                                     bool blocked_entire_page) {
-  if (!blocked_entire_page)
-    return;
-
-  int entry_index = controller_.GetEntryIndexWithPageID(
-      GetRenderViewHost()->GetSiteInstance(), page_id);
-  if (entry_index < 0)
-    return;
-
-  NavigationEntryImpl* entry = NavigationEntryImpl::FromNavigationEntry(
-      controller_.GetEntryAtIndex(entry_index));
-  if (!entry)
-    return;
-
-  entry->set_xss_detected(true);
 }
 
 void WebContentsImpl::OnDocumentLoadedInFrame() {
@@ -3205,6 +3283,7 @@ void WebContentsImpl::RenderFrameCreated(RenderFrameHost* render_frame_host) {
   FOR_EACH_OBSERVER(WebContentsObserver,
                     observers_,
                     RenderFrameCreated(render_frame_host));
+  SetAccessibilityModeOnFrame(accessibility_mode_, render_frame_host);
 }
 
 void WebContentsImpl::RenderFrameDeleted(RenderFrameHost* render_frame_host) {
@@ -3327,6 +3406,12 @@ bool WebContentsImpl::IsNeverVisible() {
   return delegate_->IsNeverVisible(this);
 }
 
+#if defined(OS_WIN)
+gfx::NativeViewAccessible WebContentsImpl::GetParentNativeViewAccessible() {
+  return accessible_parent_;
+}
+#endif
+
 RenderViewHostDelegateView* WebContentsImpl::GetDelegateView() {
   return render_view_host_delegate_view_;
 }
@@ -3385,6 +3470,7 @@ void WebContentsImpl::RenderViewCreated(RenderViewHost* render_view_host) {
   RenderFrameHost* main_frame = render_view_host->GetMainFrame();
   FOR_EACH_OBSERVER(
       WebContentsObserver, observers_, RenderFrameCreated(main_frame));
+  SetAccessibilityModeOnFrame(accessibility_mode_, main_frame);
 }
 
 void WebContentsImpl::RenderViewReady(RenderViewHost* rvh) {
@@ -3515,9 +3601,12 @@ void WebContentsImpl::SwappedOut(RenderFrameHost* rfh) {
     delegate_->SwappedOut(this);
 }
 
-void WebContentsImpl::DidDeferAfterResponseStarted() {
+void WebContentsImpl::DidDeferAfterResponseStarted(
+    const scoped_refptr<net::HttpResponseHeaders>& headers,
+    const GURL& url) {
 #if defined(OS_ANDROID)
-  ContentViewCoreImpl::FromWebContents(this)->DidDeferAfterResponseStarted();
+  ContentViewCoreImpl::FromWebContents(this)->DidDeferAfterResponseStarted(
+      headers, url);
 #endif
 }
 
@@ -3736,7 +3825,7 @@ bool WebContentsImpl::AddMessageToConsole(int32 level,
                                         source_id);
 }
 
-WebPreferences WebContentsImpl::ComputeWebkitPrefs() {
+WebPreferences WebContentsImpl::GetWebkitPrefs() {
   // We want to base the page config off of the actual URL, rather than the
   // virtual URL.
   // TODO(nasko): Investigate how to remove the GetActiveEntry usage here,
@@ -3744,13 +3833,13 @@ WebPreferences WebContentsImpl::ComputeWebkitPrefs() {
   GURL url = controller_.GetActiveEntry()
       ? controller_.GetActiveEntry()->GetURL() : GURL::EmptyGURL();
 
-  return GetRenderManager()->current_host()->ComputeWebkitPrefs(url);
+  return GetRenderManager()->current_host()->GetWebkitPrefs(url);
 }
 
 int WebContentsImpl::CreateSwappedOutRenderView(
     SiteInstance* instance) {
-  return GetRenderManager()->CreateRenderFrame(instance, MSG_ROUTING_NONE,
-                                               true, true);
+  return GetRenderManager()->CreateRenderFrame(
+      instance, MSG_ROUTING_NONE, true, true, true);
 }
 
 void WebContentsImpl::OnUserGesture() {
@@ -3920,8 +4009,8 @@ int WebContentsImpl::CreateOpenerRenderViews(SiteInstance* instance) {
 
   // Create a swapped out RenderView in the given SiteInstance if none exists,
   // setting its opener to the given route_id.  Return the new view's route_id.
-  return GetRenderManager()->CreateRenderFrame(instance, opener_route_id,
-                                               true, true);
+  return GetRenderManager()->CreateRenderFrame(
+      instance, opener_route_id, true, true, true);
 }
 
 NavigationControllerImpl& WebContentsImpl::GetControllerForRenderManager() {
@@ -3941,7 +4030,7 @@ bool WebContentsImpl::CreateRenderViewForRenderManager(
     RenderViewHost* render_view_host,
     int opener_route_id,
     int proxy_routing_id,
-    bool for_main_frame) {
+    bool for_main_frame_navigation) {
   TRACE_EVENT0("browser", "WebContentsImpl::CreateRenderViewForRenderManager");
   // Can be NULL during tests.
   RenderWidgetHostViewBase* rwh_view;
@@ -3949,7 +4038,7 @@ bool WebContentsImpl::CreateRenderViewForRenderManager(
   // until RenderWidgetHost is attached to RenderFrameHost. We need to special
   // case this because RWH is still a base class of RenderViewHost, and child
   // frame RWHVs are unique in that they do not have their own WebContents.
-  if (!for_main_frame) {
+  if (!for_main_frame_navigation) {
     RenderWidgetHostViewChildFrame* rwh_view_child =
         new RenderWidgetHostViewChildFrame(render_view_host);
     rwh_view = rwh_view_child;
@@ -3983,6 +4072,23 @@ bool WebContentsImpl::CreateRenderViewForRenderManager(
       render_widget_host->WasResized();
   }
 #endif
+
+  return true;
+}
+
+bool WebContentsImpl::CreateRenderFrameForRenderManager(
+    RenderFrameHost* render_frame_host,
+    int parent_routing_id) {
+  TRACE_EVENT0("browser", "WebContentsImpl::CreateRenderFrameForRenderManager");
+
+  RenderFrameHostImpl* rfh =
+      static_cast<RenderFrameHostImpl*>(render_frame_host);
+  if (!rfh->CreateRenderFrame(parent_routing_id))
+    return false;
+
+  // TODO(nasko): When RenderWidgetHost is owned by RenderFrameHost, the passed
+  // RenderFrameHost will have to be associated with the appropriate
+  // RenderWidgetHostView or a new one should be created here.
 
   return true;
 }

@@ -27,8 +27,10 @@
             'schema_files': [
               'app_runtime.idl',
               'app_view_internal.json',
+              'cast_channel.idl',
               'dns.idl',
               'extensions_manifest_types.json',
+              'hid.idl',
               'power.idl',
               'runtime.json',
               'serial.idl',
@@ -48,7 +50,7 @@
           }],
         ],
         'cc_dir': 'extensions/common/api',
-        'root_namespace': 'extensions::core_api',
+        'root_namespace': 'extensions::core_api::%(namespace)s',
         'impl_dir': 'extensions/browser/api',
       },
       'conditions': [

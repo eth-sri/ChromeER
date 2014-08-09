@@ -64,6 +64,9 @@ NativeViewHostAura::NativeViewHostAura(NativeViewHost* host)
     : host_(host),
       clipping_window_delegate_(new ClippingWindowDelegate()),
       clipping_window_(clipping_window_delegate_.get()) {
+  // Set the type so descendant views (including popups) get positioned
+  // appropriately.
+  clipping_window_.SetType(ui::wm::WINDOW_TYPE_CONTROL);
   clipping_window_.Init(aura::WINDOW_LAYER_NOT_DRAWN);
   clipping_window_.set_owned_by_parent(false);
   clipping_window_.SetName("NativeViewHostAuraClip");
@@ -200,14 +203,14 @@ void NativeViewHostAura::AddClippingWindow() {
   RemoveClippingWindow();
 
   gfx::Rect bounds = host_->native_view()->bounds();
+  host_->native_view()->SetProperty(aura::client::kHostWindowKey,
+                                    host_->GetWidget()->GetNativeView());
+  Widget::ReparentNativeView(host_->native_view(),
+                             &clipping_window_);
   if (host_->GetWidget()->GetNativeView()) {
     Widget::ReparentNativeView(&clipping_window_,
                                host_->GetWidget()->GetNativeView());
   }
-  host_->native_view()->SetProperty(aura::client::kHostWindowKey,
-      host_->GetWidget()->GetNativeView());
-  Widget::ReparentNativeView(host_->native_view(),
-                             &clipping_window_);
   clipping_window_.SetBounds(bounds);
   bounds.set_origin(gfx::Point(0, 0));
   host_->native_view()->SetBounds(bounds);

@@ -7,6 +7,7 @@
 #include "cc/output/software_frame_data.h"
 #include "content/browser/compositor/software_output_device_ozone.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/skia/include/core/SkDevice.h"
 #include "third_party/skia/include/core/SkSurface.h"
 #include "ui/compositor/compositor.h"
 #include "ui/compositor/test/context_factories_for_test.h"
@@ -101,7 +102,9 @@ void SoftwareOutputDeviceOzoneTest::SetUp() {
   const gfx::Size size(500, 400);
   const gfx::AcceleratedWidget kTestAcceleratedWidget = 1;
   compositor_.reset(
-      new ui::Compositor(kTestAcceleratedWidget, context_factory));
+      new ui::Compositor(kTestAcceleratedWidget,
+                         context_factory,
+                         base::MessageLoopProxy::current()));
   compositor_->SetScaleAndSize(1.0f, size);
 
   output_device_.reset(new content::SoftwareOutputDeviceOzone(

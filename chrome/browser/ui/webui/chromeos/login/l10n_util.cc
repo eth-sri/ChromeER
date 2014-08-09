@@ -11,11 +11,17 @@
 #include <utility>
 
 #include "base/basictypes.h"
+#include "base/bind.h"
 #include "base/i18n/rtl.h"
+#include "base/location.h"
 #include "base/logging.h"
+#include "base/memory/ref_counted.h"
+#include "base/sequenced_task_runner.h"
 #include "base/strings/string16.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/task_runner_util.h"
+#include "base/threading/sequenced_worker_pool.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/customization_document.h"
@@ -23,6 +29,7 @@
 #include "chromeos/ime/component_extension_ime_manager.h"
 #include "chromeos/ime/input_method_descriptor.h"
 #include "chromeos/ime/input_method_manager.h"
+#include "content/public/browser/browser_thread.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -30,7 +37,9 @@ namespace chromeos {
 
 namespace {
 
-base::DictionaryValue* CreateInputMethodsEntry(
+const char kSequenceToken[] = "chromeos_login_l10n_util";
+
+scoped_ptr<base::DictionaryValue> CreateInputMethodsEntry(
     const input_method::InputMethodDescriptor& method,
     const std::string selected) {
   input_method::InputMethodUtil* util =
@@ -40,7 +49,7 @@ base::DictionaryValue* CreateInputMethodsEntry(
   input_method->SetString("value", ime_id);
   input_method->SetString("title", util->GetInputMethodLongName(method));
   input_method->SetBoolean("selected", ime_id == selected);
-  return input_method.release();
+  return input_method.Pass();
 }
 
 // Returns true if element was inserted.
@@ -230,7 +239,9 @@ scoped_ptr<base::ListValue> GetLanguageList(
   }
 
   base::string16 divider16;
-  if (insert_divider) {
+  if (insert_divider && !out_display_names.empty()) {
+    // Insert a divider if requested, but only if
+    // |most_relevant_locales_display_names| is not empty.
     divider16 = base::ASCIIToUTF16(kMostRelevantLanguagesDivider);
     out_display_names.push_back(divider16);
   }
@@ -270,6 +281,43 @@ scoped_ptr<base::ListValue> GetLanguageList(
   return language_list.Pass();
 }
 
+// Invokes |callback| with a list of keyboard layouts that can be used for
+// |resolved_locale|.
+void GetKeyboardLayoutsForResolvedLocale(
+    const GetKeyboardLayoutsForLocaleCallback& callback,
+    const std::string& resolved_locale) {
+  input_method::InputMethodUtil* util =
+      input_method::InputMethodManager::Get()->GetInputMethodUtil();
+  std::vector<std::string> layouts = util->GetHardwareInputMethodIds();
+  std::vector<std::string> layouts_from_locale;
+  util->GetInputMethodIdsFromLanguageCode(
+      resolved_locale,
+      input_method::kKeyboardLayoutsOnly,
+      &layouts_from_locale);
+  layouts.insert(layouts.end(), layouts_from_locale.begin(),
+                 layouts_from_locale.end());
+
+  std::string selected;
+  if (!layouts_from_locale.empty()) {
+    selected =
+        util->GetInputMethodDescriptorFromId(layouts_from_locale[0])->id();
+  }
+
+  scoped_ptr<base::ListValue> input_methods_list(new base::ListValue);
+  std::set<std::string> input_methods_added;
+  for (std::vector<std::string>::const_iterator it = layouts.begin();
+       it != layouts.end(); ++it) {
+    const input_method::InputMethodDescriptor* ime =
+        util->GetInputMethodDescriptorFromId(*it);
+    if (!InsertString(ime->id(), input_methods_added))
+      continue;
+    input_methods_list->Append(
+        CreateInputMethodsEntry(*ime, selected).release());
+  }
+
+  callback.Run(input_methods_list.Pass());
+}
+
 }  // namespace
 
 const char kMostRelevantLanguagesDivider[] = "MOST_RELEVANT_LANGUAGES_DIVIDER";
@@ -280,9 +328,8 @@ scoped_ptr<base::ListValue> GetUILanguageList(
   ComponentExtensionIMEManager* manager =
       input_method::InputMethodManager::Get()->
           GetComponentExtensionIMEManager();
-  input_method::InputMethodDescriptors descriptors;
-  if (manager->IsInitialized())
-    descriptors = manager->GetXkbIMEAsInputMethodDescriptor();
+  input_method::InputMethodDescriptors descriptors =
+      manager->GetXkbIMEAsInputMethodDescriptor();
   scoped_ptr<base::ListValue> languages_list(GetLanguageList(
       descriptors,
       l10n_util::GetAvailableLocales(),
@@ -342,13 +389,6 @@ scoped_ptr<base::ListValue> GetLoginKeyboardLayouts(
   input_method::InputMethodManager* manager =
       input_method::InputMethodManager::Get();
   input_method::InputMethodUtil* util = manager->GetInputMethodUtil();
-  if (!manager->GetComponentExtensionIMEManager()->IsInitialized()) {
-    input_method::InputMethodDescriptor fallback =
-        util->GetFallbackInputMethodDescriptor();
-    input_methods_list->Append(
-        CreateInputMethodsEntry(fallback, fallback.id()));
-    return input_methods_list.Pass();
-  }
 
   const std::vector<std::string>& hardware_login_input_methods =
       util->GetHardwareLoginInputMethodIds();
@@ -367,7 +407,8 @@ scoped_ptr<base::ListValue> GetLoginKeyboardLayouts(
     // Do not crash in case of misconfiguration.
     if (ime) {
       input_methods_added.insert(*i);
-      input_methods_list->Append(CreateInputMethodsEntry(*ime, selected));
+      input_methods_list->Append(
+          CreateInputMethodsEntry(*ime, selected).release());
     } else {
       NOTREACHED();
     }
@@ -384,7 +425,7 @@ scoped_ptr<base::ListValue> GetLoginKeyboardLayouts(
       AddOptgroupOtherLayouts(input_methods_list.get());
     }
     input_methods_list->Append(CreateInputMethodsEntry((*input_methods)[i],
-                                                       selected));
+                                                       selected).release());
   }
 
   // "xkb:us::eng" should always be in the list of available layouts.
@@ -399,9 +440,37 @@ scoped_ptr<base::ListValue> GetLoginKeyboardLayouts(
       AddOptgroupOtherLayouts(input_methods_list.get());
     }
     input_methods_list->Append(CreateInputMethodsEntry(*us_eng_descriptor,
-                                                       selected));
+                                                       selected).release());
   }
   return input_methods_list.Pass();
+}
+
+void GetKeyboardLayoutsForLocale(
+    const GetKeyboardLayoutsForLocaleCallback& callback,
+    const std::string& locale) {
+  base::SequencedWorkerPool* worker_pool =
+      content::BrowserThread::GetBlockingPool();
+  scoped_refptr<base::SequencedTaskRunner> background_task_runner =
+      worker_pool->GetSequencedTaskRunnerWithShutdownBehavior(
+          worker_pool->GetNamedSequenceToken(kSequenceToken),
+          base::SequencedWorkerPool::SKIP_ON_SHUTDOWN);
+
+  // Resolve |locale| on a background thread, then continue on the current
+  // thread.
+  base::PostTaskAndReplyWithResult(
+      background_task_runner,
+      FROM_HERE,
+      base::Bind(&l10n_util::GetApplicationLocale,
+                 locale),
+      base::Bind(&GetKeyboardLayoutsForResolvedLocale,
+                 callback));
+}
+
+scoped_ptr<base::DictionaryValue> GetCurrentKeyboardLayout() {
+  const input_method::InputMethodDescriptor current_input_method =
+      input_method::InputMethodManager::Get()->GetCurrentInputMethod();
+  return CreateInputMethodsEntry(current_input_method,
+                                 current_input_method.id());
 }
 
 }  // namespace chromeos

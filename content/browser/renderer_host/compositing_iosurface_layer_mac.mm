@@ -30,6 +30,7 @@ CompositingIOSurfaceLayerHelper::CompositingIOSurfaceLayerHelper(
           needs_display_(false),
           has_pending_frame_(false),
           did_not_draw_counter_(0),
+          is_pumping_frames_(false),
           timer_(
               FROM_HERE,
               base::TimeDelta::FromSeconds(1) / 6,
@@ -52,9 +53,11 @@ void CompositingIOSurfaceLayerHelper::GotNewFrame() {
   timer_.Reset();
 
   // If reqested, draw immediately and don't bother trying to use the
-  // isAsynchronous property to ensure smooth animation.
-  if (client_->AcceleratedLayerShouldAckImmediately()) {
-    ImmediatelyForceDisplayAndAck();
+  // isAsynchronous property to ensure smooth animation. If this is while
+  // frames are being pumped then ack and display immediately to get a
+  // correct-sized frame displayed as soon as possible.
+  if (is_pumping_frames_ || client_->AcceleratedLayerShouldAckImmediately()) {
+    SetNeedsDisplayAndDisplayAndAck();
   } else {
     if (![layer_ isAsynchronous])
       [layer_ setAsynchronous:YES];
@@ -104,9 +107,33 @@ void CompositingIOSurfaceLayerHelper::AckPendingFrame(bool success) {
   TRACE_COUNTER_ID1("browser", "PendingSwapAck", this, 0);
 }
 
-void CompositingIOSurfaceLayerHelper::ImmediatelyForceDisplayAndAck() {
+void CompositingIOSurfaceLayerHelper::SetNeedsDisplayAndDisplayAndAck() {
+  // Drawing using setNeedsDisplay and displayIfNeeded will result in
+  // subsequent canDrawInCGLContext callbacks getting dropped, and jerky
+  // animation. Disable asynchronous drawing before issuing these calls as a
+  // workaround.
+  // http://crbug.com/395827
+  if ([layer_ isAsynchronous])
+    [layer_ setAsynchronous:NO];
+
   [layer_ setNeedsDisplay];
-  [layer_ displayIfNeeded];
+  DisplayIfNeededAndAck();
+}
+
+void CompositingIOSurfaceLayerHelper::DisplayIfNeededAndAck() {
+  if (!needs_display_)
+    return;
+
+  // As in SetNeedsDisplayAndDisplayAndAck, disable asynchronous drawing before
+  // issuing displayIfNeeded.
+  // http://crbug.com/395827
+  if ([layer_ isAsynchronous])
+    [layer_ setAsynchronous:NO];
+
+  // Do not bother drawing while pumping new frames -- wait until the waiting
+  // block ends to draw any of the new frames.
+  if (!is_pumping_frames_)
+    [layer_ displayIfNeeded];
 
   // Calls to setNeedsDisplay can sometimes be ignored, especially if issued
   // rapidly (e.g, with vsync off). This is unacceptable because the failure
@@ -116,7 +143,16 @@ void CompositingIOSurfaceLayerHelper::ImmediatelyForceDisplayAndAck() {
 }
 
 void CompositingIOSurfaceLayerHelper::TimerFired() {
-  ImmediatelyForceDisplayAndAck();
+  SetNeedsDisplayAndDisplayAndAck();
+}
+
+void CompositingIOSurfaceLayerHelper::BeginPumpingFrames() {
+  is_pumping_frames_ = true;
+}
+
+void CompositingIOSurfaceLayerHelper::EndPumpingFrames() {
+  is_pumping_frames_ = false;
+  DisplayIfNeededAndAck();
 }
 
 }  // namespace content
@@ -169,6 +205,22 @@ void CompositingIOSurfaceLayerHelper::TimerFired() {
 
 - (void)gotNewFrame {
   helper_->GotNewFrame();
+}
+
+- (void)setNeedsDisplayAndDisplayAndAck {
+  helper_->SetNeedsDisplayAndDisplayAndAck();
+}
+
+- (void)displayIfNeededAndAck {
+  helper_->DisplayIfNeededAndAck();
+}
+
+- (void)beginPumpingFrames {
+  helper_->BeginPumpingFrames();
+}
+
+- (void)endPumpingFrames {
+  helper_->EndPumpingFrames();
 }
 
 // The remaining methods implement the CAOpenGLLayer interface.

@@ -6,14 +6,14 @@ from telemetry import value as value_module
 
 class SkipValue(value_module.Value):
 
-  def __init__(self, page, reason):
+  def __init__(self, page, reason, description=None):
     """A value representing a skipped page.
 
     Args:
       page: The skipped page object.
       reason: The string reason the page was skipped.
     """
-    super(SkipValue, self).__init__(page, 'skip', '', True)
+    super(SkipValue, self).__init__(page, 'skip', '', True, description)
     self._reason = reason
 
   def __repr__(self):
@@ -39,14 +39,26 @@ class SkipValue(value_module.Value):
   def GetRepresentativeString(self):
     return None
 
-  @classmethod
-  def GetJSONTypeName(cls):
+  @staticmethod
+  def GetJSONTypeName():
     return 'skip'
 
   def AsDict(self):
     d = super(SkipValue, self).AsDict()
     d['reason'] = self._reason
     return d
+
+  @staticmethod
+  def FromDict(value_dict, page_dict):
+    kwargs = value_module.Value.GetConstructorKwArgs(value_dict, page_dict)
+    del kwargs['name']
+    del kwargs['units']
+    important = kwargs.get('important', None)
+    if important != None:
+      del kwargs['important']
+    kwargs['reason'] = value_dict['reason']
+
+    return SkipValue(**kwargs)
 
   @classmethod
   def MergeLikeValuesFromSamePage(cls, values):

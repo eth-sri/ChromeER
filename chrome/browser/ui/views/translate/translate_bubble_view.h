@@ -42,10 +42,17 @@ class TranslateBubbleView : public views::BubbleDelegateView,
   virtual ~TranslateBubbleView();
 
   // Shows the Translate bubble.
+  //
+  // |is_user_gesture| is true when the bubble is shown on the user's delibarate
+  // action.
   static void ShowBubble(views::View* anchor_view,
                          content::WebContents* web_contents,
                          translate::TranslateStep step,
-                         translate::TranslateErrors::Type error_type);
+                         translate::TranslateErrors::Type error_type,
+                         bool is_user_gesture);
+
+  // Closes the current bubble if existing.
+  static void CloseBubble();
 
   // If true, the Translate bubble is being shown.
   static bool IsShowing();

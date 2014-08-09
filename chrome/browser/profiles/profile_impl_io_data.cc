@@ -26,7 +26,7 @@
 #include "chrome/browser/net/cookie_store_util.h"
 #include "chrome/browser/net/http_server_properties_manager_factory.h"
 #include "chrome/browser/net/predictor.h"
-#include "chrome/browser/net/sqlite_server_bound_cert_store.h"
+#include "chrome/browser/net/sqlite_channel_id_store.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_switches.h"
@@ -46,7 +46,7 @@
 #include "net/ftp/ftp_network_layer.h"
 #include "net/http/http_cache.h"
 #include "net/http/http_server_properties_manager.h"
-#include "net/ssl/server_bound_cert_service.h"
+#include "net/ssl/channel_id_service.h"
 #include "net/url_request/url_request_job_factory_impl.h"
 #include "webkit/browser/quota/special_storage_policy.h"
 
@@ -103,12 +103,32 @@ ProfileImplIOData::Handle::~Handle() {
 
   if (io_data_->http_server_properties_manager_)
     io_data_->http_server_properties_manager_->ShutdownOnPrefThread();
+
+  ChromeURLRequestContextGetterMap::iterator iter;
+
+  iter = isolated_media_request_context_getter_map_.begin();
+  for (; iter != isolated_media_request_context_getter_map_.end(); ++iter)
+    iter->second->Invalidate();
+
+  iter = app_request_context_getter_map_.begin();
+  for (; iter != app_request_context_getter_map_.end(); ++iter)
+    iter->second->Invalidate();
+
+  if (extensions_request_context_getter_)
+    extensions_request_context_getter_->Invalidate();
+
+  if (media_request_context_getter_)
+    media_request_context_getter_->Invalidate();
+
+  if (main_request_context_getter_)
+    main_request_context_getter_->Invalidate();
+
   io_data_->ShutdownOnUIThread();
 }
 
 void ProfileImplIOData::Handle::Init(
       const base::FilePath& cookie_path,
-      const base::FilePath& server_bound_cert_path,
+      const base::FilePath& channel_id_path,
       const base::FilePath& cache_path,
       int cache_max_size,
       const base::FilePath& media_cache_path,
@@ -128,7 +148,7 @@ void ProfileImplIOData::Handle::Init(
   LazyParams* lazy_params = new LazyParams();
 
   lazy_params->cookie_path = cookie_path;
-  lazy_params->server_bound_cert_path = server_bound_cert_path;
+  lazy_params->channel_id_path = channel_id_path;
   lazy_params->cache_path = cache_path;
   lazy_params->cache_max_size = cache_max_size;
   lazy_params->media_cache_path = media_cache_path;
@@ -237,7 +257,7 @@ ProfileImplIOData::Handle::CreateIsolatedAppRequestContextGetter(
 
   scoped_ptr<ProtocolHandlerRegistry::JobInterceptorFactory>
       protocol_handler_interceptor(
-          ProtocolHandlerRegistryFactory::GetForProfile(profile_)->
+          ProtocolHandlerRegistryFactory::GetForBrowserContext(profile_)->
               CreateJobInterceptorFactory());
   ChromeURLRequestContextGetter* context =
       ChromeURLRequestContextGetter::CreateForIsolatedApp(
@@ -366,7 +386,7 @@ void ProfileImplIOData::InitializeInternal(
     ProfileParams* profile_params,
     content::ProtocolHandlerMap* protocol_handlers,
     content::URLRequestInterceptorScopedVector request_interceptors) const {
-  ChromeURLRequestContext* main_context = main_request_context();
+  net::URLRequestContext* main_context = main_request_context();
 
   IOThread* const io_thread = profile_params->io_thread;
   IOThread::Globals* const io_thread_globals = io_thread->globals();
@@ -404,7 +424,7 @@ void ProfileImplIOData::InitializeInternal(
   main_context->set_proxy_service(proxy_service());
 
   scoped_refptr<net::CookieStore> cookie_store = NULL;
-  net::ServerBoundCertService* server_bound_cert_service = NULL;
+  net::ChannelIDService* channel_id_service = NULL;
   if (chrome_browser_net::ShouldUseInMemoryCookiesAndCache()) {
     // Don't use existing cookies and use an in-memory store.
     using content::CookieStoreConfig;
@@ -413,9 +433,9 @@ void ProfileImplIOData::InitializeInternal(
         CookieStoreConfig::EPHEMERAL_SESSION_COOKIES,
         NULL,
         profile_params->cookie_monster_delegate.get()));
-    // Don't use existing server-bound certs and use an in-memory store.
-    server_bound_cert_service = new net::ServerBoundCertService(
-        new net::DefaultServerBoundCertStore(NULL),
+    // Don't use existing channel ids and use an in-memory store.
+    channel_id_service = new net::ChannelIDService(
+        new net::DefaultChannelIDStore(NULL),
         base::WorkerPool::GetTaskRunner(true));
   }
 
@@ -437,22 +457,22 @@ void ProfileImplIOData::InitializeInternal(
   main_context->set_cookie_store(cookie_store.get());
 
   // Setup server bound cert service.
-  if (!server_bound_cert_service) {
-    DCHECK(!lazy_params_->server_bound_cert_path.empty());
+  if (!channel_id_service) {
+    DCHECK(!lazy_params_->channel_id_path.empty());
 
-    scoped_refptr<SQLiteServerBoundCertStore> server_bound_cert_db =
-        new SQLiteServerBoundCertStore(
-            lazy_params_->server_bound_cert_path,
+    scoped_refptr<SQLiteChannelIDStore> channel_id_db =
+        new SQLiteChannelIDStore(
+            lazy_params_->channel_id_path,
             BrowserThread::GetBlockingPool()->GetSequencedTaskRunner(
                 BrowserThread::GetBlockingPool()->GetSequenceToken()),
             lazy_params_->special_storage_policy.get());
-    server_bound_cert_service = new net::ServerBoundCertService(
-        new net::DefaultServerBoundCertStore(server_bound_cert_db.get()),
+    channel_id_service = new net::ChannelIDService(
+        new net::DefaultChannelIDStore(channel_id_db.get()),
         base::WorkerPool::GetTaskRunner(true));
   }
 
-  set_server_bound_cert_service(server_bound_cert_service);
-  main_context->set_server_bound_cert_service(server_bound_cert_service);
+  set_channel_id_service(channel_id_service);
+  main_context->set_channel_id_service(channel_id_service);
 
   net::HttpCache::DefaultBackend* main_backend =
       new net::HttpCache::DefaultBackend(
@@ -528,7 +548,7 @@ void ProfileImplIOData::InitializeInternal(
 
 void ProfileImplIOData::
     InitializeExtensionsRequestContext(ProfileParams* profile_params) const {
-  ChromeURLRequestContext* extensions_context = extensions_request_context();
+  net::URLRequestContext* extensions_context = extensions_request_context();
   IOThread* const io_thread = profile_params->io_thread;
   IOThread::Globals* const io_thread_globals = io_thread->globals();
   ApplyProfileParamsToContext(extensions_context);
@@ -574,8 +594,8 @@ void ProfileImplIOData::
   extensions_context->set_job_factory(extensions_job_factory_.get());
 }
 
-ChromeURLRequestContext* ProfileImplIOData::InitializeAppRequestContext(
-    ChromeURLRequestContext* main_context,
+net::URLRequestContext* ProfileImplIOData::InitializeAppRequestContext(
+    net::URLRequestContext* main_context,
     const StoragePartitionDescriptor& partition_descriptor,
     scoped_ptr<ProtocolHandlerRegistry::JobInterceptorFactory>
         protocol_handler_interceptor,
@@ -658,9 +678,9 @@ ChromeURLRequestContext* ProfileImplIOData::InitializeAppRequestContext(
   return context;
 }
 
-ChromeURLRequestContext*
+net::URLRequestContext*
 ProfileImplIOData::InitializeMediaRequestContext(
-    ChromeURLRequestContext* original_context,
+    net::URLRequestContext* original_context,
     const StoragePartitionDescriptor& partition_descriptor) const {
   // Copy most state from the original context.
   MediaRequestContext* context = new MediaRequestContext();
@@ -711,21 +731,21 @@ ProfileImplIOData::InitializeMediaRequestContext(
   return context;
 }
 
-ChromeURLRequestContext*
+net::URLRequestContext*
 ProfileImplIOData::AcquireMediaRequestContext() const {
   DCHECK(media_request_context_);
   return media_request_context_.get();
 }
 
-ChromeURLRequestContext* ProfileImplIOData::AcquireIsolatedAppRequestContext(
-    ChromeURLRequestContext* main_context,
+net::URLRequestContext* ProfileImplIOData::AcquireIsolatedAppRequestContext(
+    net::URLRequestContext* main_context,
     const StoragePartitionDescriptor& partition_descriptor,
     scoped_ptr<ProtocolHandlerRegistry::JobInterceptorFactory>
         protocol_handler_interceptor,
     content::ProtocolHandlerMap* protocol_handlers,
     content::URLRequestInterceptorScopedVector request_interceptors) const {
   // We create per-app contexts on demand, unlike the others above.
-  ChromeURLRequestContext* app_request_context =
+  net::URLRequestContext* app_request_context =
       InitializeAppRequestContext(main_context,
                                   partition_descriptor,
                                   protocol_handler_interceptor.Pass(),
@@ -735,12 +755,12 @@ ChromeURLRequestContext* ProfileImplIOData::AcquireIsolatedAppRequestContext(
   return app_request_context;
 }
 
-ChromeURLRequestContext*
+net::URLRequestContext*
 ProfileImplIOData::AcquireIsolatedMediaRequestContext(
-    ChromeURLRequestContext* app_context,
+    net::URLRequestContext* app_context,
     const StoragePartitionDescriptor& partition_descriptor) const {
   // We create per-app media contexts on demand, unlike the others above.
-  ChromeURLRequestContext* media_request_context =
+  net::URLRequestContext* media_request_context =
       InitializeMediaRequestContext(app_context, partition_descriptor);
   DCHECK(media_request_context);
   return media_request_context;

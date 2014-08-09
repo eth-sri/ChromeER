@@ -19,6 +19,7 @@
 #include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/extensions/url_request_util.h"
 #include "chrome/browser/external_protocol/external_protocol_handler.h"
+#include "chrome/browser/net/chrome_net_log.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/chrome_paths.h"
@@ -206,6 +207,10 @@ bool ChromeExtensionsBrowserClient::DidVersionUpdate(
   return last_version.IsOlderThan(current_version);
 }
 
+void ChromeExtensionsBrowserClient::PermitExternalProtocolHandler() {
+  ExternalProtocolHandler::PermitLaunchUrl();
+}
+
 scoped_ptr<AppSorting> ChromeExtensionsBrowserClient::CreateAppSorting() {
   return scoped_ptr<AppSorting>(new ChromeAppSorting());
 }
@@ -261,6 +266,10 @@ ChromeExtensionsBrowserClient::GetComponentExtensionResourceManager() {
   if (!resource_manager_)
     resource_manager_.reset(new ChromeComponentExtensionResourceManager());
   return resource_manager_.get();
+}
+
+net::NetLog* ChromeExtensionsBrowserClient::GetNetLog() {
+  return g_browser_process->net_log();
 }
 
 scoped_ptr<extensions::RuntimeAPIDelegate>

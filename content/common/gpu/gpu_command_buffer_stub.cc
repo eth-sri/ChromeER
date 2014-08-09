@@ -7,6 +7,7 @@
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
 #include "base/hash.h"
+#include "base/json/json_writer.h"
 #include "base/memory/shared_memory.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
@@ -111,6 +112,36 @@ const int64 kHandleMoreWorkPeriodBusyMs = 1;
 // Prevents idle work from being starved.
 const int64 kMaxTimeSinceIdleMs = 10;
 
+class DevToolsChannelData : public base::debug::ConvertableToTraceFormat {
+ public:
+  static scoped_refptr<base::debug::ConvertableToTraceFormat> CreateForChannel(
+      GpuChannel* channel);
+
+  virtual void AppendAsTraceFormat(std::string* out) const OVERRIDE {
+    std::string tmp;
+    base::JSONWriter::Write(value_.get(), &tmp);
+    *out += tmp;
+  }
+
+ private:
+  explicit DevToolsChannelData(base::Value* value) : value_(value) {}
+  virtual ~DevToolsChannelData() {}
+  scoped_ptr<base::Value> value_;
+  DISALLOW_COPY_AND_ASSIGN(DevToolsChannelData);
+};
+
+scoped_refptr<base::debug::ConvertableToTraceFormat>
+DevToolsChannelData::CreateForChannel(GpuChannel* channel) {
+  scoped_ptr<base::DictionaryValue> res(new base::DictionaryValue);
+  res->SetInteger("renderer_pid", channel->renderer_pid());
+  res->SetDouble("used_bytes", channel->GetMemoryUsage());
+  res->SetDouble("limit_bytes",
+                 channel->gpu_channel_manager()
+                     ->gpu_memory_manager()
+                     ->GetMaximumClientAllocation());
+  return new DevToolsChannelData(res.release());
+}
+
 }  // namespace
 
 GpuCommandBufferStub::GpuCommandBufferStub(
@@ -181,6 +212,12 @@ GpuMemoryManager* GpuCommandBufferStub::GetMemoryManager() const {
 }
 
 bool GpuCommandBufferStub::OnMessageReceived(const IPC::Message& message) {
+  TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"),
+               "GPUTask",
+               "data",
+               DevToolsChannelData::CreateForChannel(channel()));
+  // TODO(yurys): remove devtools_gpu_instrumentation call once DevTools
+  // Timeline migrates to tracing crbug.com/361045.
   devtools_gpu_instrumentation::ScopedGpuTask task(channel());
   FastSetActiveURL(active_url_, active_url_hash_);
 
@@ -238,8 +275,8 @@ bool GpuCommandBufferStub::OnMessageReceived(const IPC::Message& message) {
         OnSetClientHasMemoryAllocationChangedCallback)
     IPC_MESSAGE_HANDLER(GpuCommandBufferMsg_RegisterGpuMemoryBuffer,
                         OnRegisterGpuMemoryBuffer);
-    IPC_MESSAGE_HANDLER(GpuCommandBufferMsg_DestroyGpuMemoryBuffer,
-                        OnDestroyGpuMemoryBuffer);
+    IPC_MESSAGE_HANDLER(GpuCommandBufferMsg_UnregisterGpuMemoryBuffer,
+                        OnUnregisterGpuMemoryBuffer);
     IPC_MESSAGE_HANDLER(GpuCommandBufferMsg_CreateStreamTexture,
                         OnCreateStreamTexture)
     IPC_MESSAGE_UNHANDLED(handled = false)
@@ -929,6 +966,16 @@ void GpuCommandBufferStub::OnRegisterGpuMemoryBuffer(
   }
 #endif
 
+  if (!decoder_)
+    return;
+
+  gpu::gles2::ImageManager* image_manager = decoder_->GetImageManager();
+  DCHECK(image_manager);
+  if (image_manager->LookupImage(id)) {
+    LOG(ERROR) << "Image already exists with same ID.";
+    return;
+  }
+
   GpuChannelManager* manager = channel_->gpu_channel_manager();
   scoped_refptr<gfx::GLImage> image =
       manager->gpu_memory_buffer_factory()->CreateImageForGpuMemoryBuffer(
@@ -943,21 +990,23 @@ void GpuCommandBufferStub::OnRegisterGpuMemoryBuffer(
   if (context_group_->feature_info()->workarounds().release_image_after_use)
     image->SetReleaseAfterUse();
 
-  if (decoder_) {
-    gpu::gles2::ImageManager* image_manager = decoder_->GetImageManager();
-    DCHECK(image_manager);
-    image_manager->AddImage(image.get(), id);
-  }
+  image_manager->AddImage(image.get(), id);
 }
 
-void GpuCommandBufferStub::OnDestroyGpuMemoryBuffer(int32 id) {
-  TRACE_EVENT0("gpu", "GpuCommandBufferStub::OnDestroyGpuMemoryBuffer");
+void GpuCommandBufferStub::OnUnregisterGpuMemoryBuffer(int32 id) {
+  TRACE_EVENT0("gpu", "GpuCommandBufferStub::OnUnregisterGpuMemoryBuffer");
 
-  if (decoder_) {
-    gpu::gles2::ImageManager* image_manager = decoder_->GetImageManager();
-    DCHECK(image_manager);
-    image_manager->RemoveImage(id);
+  if (!decoder_)
+    return;
+
+  gpu::gles2::ImageManager* image_manager = decoder_->GetImageManager();
+  DCHECK(image_manager);
+  if (!image_manager->LookupImage(id)) {
+    LOG(ERROR) << "Image with ID doesn't exist.";
+    return;
   }
+
+  image_manager->RemoveImage(id);
 }
 
 void GpuCommandBufferStub::SendConsoleMessage(

@@ -2275,14 +2275,19 @@ class MockGLImage : public gfx::GLImage {
   MockGLImage() {}
 
   // Overridden from gfx::GLImage:
-  MOCK_METHOD0(Destroy, void());
   MOCK_METHOD0(GetSize, gfx::Size());
+  MOCK_METHOD1(Destroy, void(bool));
   MOCK_METHOD1(BindTexImage, bool(unsigned));
   MOCK_METHOD1(ReleaseTexImage, void(unsigned));
   MOCK_METHOD0(WillUseTexImage, void());
   MOCK_METHOD0(DidUseTexImage, void());
   MOCK_METHOD0(WillModifyTexImage, void());
   MOCK_METHOD0(DidModifyTexImage, void());
+  MOCK_METHOD5(ScheduleOverlayPlane, bool(gfx::AcceleratedWidget,
+                                          int,
+                                          gfx::OverlayTransform,
+                                          const gfx::Rect&,
+                                          const gfx::RectF&));
 
  protected:
   virtual ~MockGLImage() {}

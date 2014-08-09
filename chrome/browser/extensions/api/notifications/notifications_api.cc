@@ -241,7 +241,7 @@ bool NotificationsApiFunction::IsNotificationsApiAvailable() {
   // We need to check this explicitly rather than letting
   // _permission_features.json enforce it, because we're sharing the
   // chrome.notifications permissions namespace with WebKit notifications.
-  return GetExtension()->is_platform_app() || GetExtension()->is_extension();
+  return extension()->is_platform_app() || extension()->is_extension();
 }
 
 NotificationsApiFunction::NotificationsApiFunction() {
@@ -253,7 +253,7 @@ NotificationsApiFunction::~NotificationsApiFunction() {
 bool NotificationsApiFunction::CreateNotification(
     const std::string& id,
     api::notifications::NotificationOptions* options) {
-  // First, make sure the required fields exist: type, title, message,  icon.
+  // First, make sure the required fields exist: type, title, message, icon.
   // These fields are defined as optional in IDL such that they can be used as
   // optional for notification updates. But for notification creations, they
   // should be present.

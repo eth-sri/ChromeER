@@ -313,11 +313,11 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
       uint32 output_surface_id, scoped_ptr<cc::CompositorFrame> frame) OVERRIDE;
   virtual void AcceleratedSurfaceInitialized(int host_id,
                                              int route_id) OVERRIDE;
-  virtual void CreateBrowserAccessibilityManagerIfNeeded() OVERRIDE;
+  virtual BrowserAccessibilityManager* CreateBrowserAccessibilityManager(
+      BrowserAccessibilityDelegate* delegate) OVERRIDE;
   virtual gfx::Point AccessibilityOriginInScreen(const gfx::Rect& bounds)
       OVERRIDE;
-  virtual void OnAccessibilitySetFocus(int acc_obj_id) OVERRIDE;
-  virtual void AccessibilityShowMenu(int acc_obj_id) OVERRIDE;
+  virtual void AccessibilityShowMenu(const gfx::Point& point) OVERRIDE;
   virtual bool PostProcessEventForPluginIme(
       const NativeWebKeyboardEvent& event) OVERRIDE;
 
@@ -374,7 +374,8 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   // Update the IOSurface to be drawn and call setNeedsDisplay on
   // |cocoa_view_|.
   void CompositorSwapBuffers(IOSurfaceID surface_handle,
-                             const gfx::Size& size,
+                             const gfx::Rect& damage_rect,
+                             const gfx::Size& surface_size,
                              float scale_factor,
                              const std::vector<ui::LatencyInfo>& latency_info);
 
@@ -615,6 +616,11 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
 
   // Display link for getting vsync info.
   scoped_refptr<DisplayLinkMac> display_link_;
+
+  // The current VSync timebase and interval. This is zero until the first call
+  // to SendVSyncParametersToRenderer(), and refreshed regularly thereafter.
+  base::TimeTicks vsync_timebase_;
+  base::TimeDelta vsync_interval_;
 
   // The current composition character range and its bounds.
   gfx::Range composition_range_;
