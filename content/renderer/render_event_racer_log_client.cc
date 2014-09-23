@@ -25,7 +25,7 @@ void RenderEventRacerLogClient::didHappenBefore(const WebVector<WebEventActionEd
 void RenderEventRacerLogClient::didUpdateStringTable(size_t idx, const WebVector<WebString> &wv) {
   std::vector<std::string> v;
   for (size_t i = 0; i < wv.size(); ++i)
-    v.push_back (wv[i].latin1());
+    v.push_back (wv[i].utf8());
   Send(new EventRacerLogHostMsg_UpdateStringTable(routing_id_, idx, v));
 }
 
