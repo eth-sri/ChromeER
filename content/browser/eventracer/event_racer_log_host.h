@@ -79,17 +79,20 @@ public:
   void UpdateStringTable(size_t, const std::vector<std::string> &);
 
   virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
-  
+
   static void WriteDot(scoped_ptr<EventRacerLogHost> log, int32 site_id);
+  static void WriteBin(scoped_ptr<EventRacerLogHost> log, int32 site_id);
 
 private:
   static uint32 next_event_racer_log_id_;
   uint32 id_;
   int32 routing_id_;
+  uint32 nedges_;
 
   typedef base::ScopedPtrHashMap<unsigned int, EventAction> ActionsMapType;
   ActionsMapType actions_;
-  std::vector<std::string> strings_;
+  size_t nstrings_;
+  std::vector<char> strings_;
 
   void OnCompletedEventAction(const blink::WebEventAction &);
   void OnHappensBefore(const std::vector<blink::WebEventActionEdge> &);
