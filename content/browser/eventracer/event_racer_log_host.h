@@ -62,6 +62,15 @@ private:
 
 } // end namespace detail
 
+enum StringTableKind {
+    STRING_TABLE_KIND_FIRST = 0,
+    VAR_STRINGS =  0,
+    SCOPE_STRINGS,
+    SOURCE_STRINGS,
+    VALUE_STRINGS,
+    STRING_TABLE_KIND_COUNT
+};
+
 class EventRacerLogHost : public IPC::Listener {
 public:
   EventRacerLogHost(int32);
@@ -91,8 +100,8 @@ private:
 
   typedef base::ScopedPtrHashMap<unsigned int, EventAction> ActionsMapType;
   ActionsMapType actions_;
-  size_t nstrings_;
-  std::vector<char> strings_;
+  size_t nstrings_[STRING_TABLE_KIND_COUNT];
+  std::vector<char> strings_[STRING_TABLE_KIND_COUNT];
 
   void OnCompletedEventAction(const blink::WebEventAction &);
   void OnHappensBefore(const std::vector<blink::WebEventActionEdge> &);

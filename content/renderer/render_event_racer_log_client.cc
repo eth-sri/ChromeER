@@ -22,11 +22,11 @@ void RenderEventRacerLogClient::didHappenBefore(const WebVector<WebEventActionEd
   Send(new EventRacerLogHostMsg_HappensBefore(routing_id_, v));
 }
 
-void RenderEventRacerLogClient::didUpdateStringTable(size_t idx, const WebVector<WebString> &wv) {
+void RenderEventRacerLogClient::didUpdateStringTable(size_t kind, const WebVector<WebString> &wv) {
   std::vector<std::string> v;
   for (size_t i = 0; i < wv.size(); ++i)
     v.push_back (wv[i].utf8());
-  Send(new EventRacerLogHostMsg_UpdateStringTable(routing_id_, idx, v));
+  Send(new EventRacerLogHostMsg_UpdateStringTable(routing_id_, kind, v));
 }
 
 bool RenderEventRacerLogClient::Send(IPC::Message *msg) {

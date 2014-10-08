@@ -39,9 +39,11 @@ uint32 EventRacerLogHost::next_event_racer_log_id_ = 1;
 EventRacerLogHost::EventRacerLogHost(int32 routing_id)
   : id_ (next_event_racer_log_id_++),
     routing_id_(routing_id),
-    nedges_(0),
-    nstrings_(1) {
-  strings_.push_back('\0');
+    nedges_(0) {
+  for (size_t k = 0; k < STRING_TABLE_KIND_COUNT; ++k) {
+    nstrings_[k] = 1;
+    strings_[k].push_back('\0');
+  }
 }
 
 EventRacerLogHost::~EventRacerLogHost() {
@@ -60,17 +62,19 @@ void EventRacerLogHost::CreateEdge(unsigned int srcid, unsigned int dstid) {
   ++nedges_;
 }
 
-void EventRacerLogHost::UpdateStringTable(size_t index, const std::vector<std::string> &v) {
+void EventRacerLogHost::UpdateStringTable(size_t kind, const std::vector<std::string> &v) {
+  assert(kind < STRING_TABLE_KIND_COUNT);
   size_t n = 0;
   std::vector<std::string>::const_iterator s;
   for (s = v.begin(); s != v.end(); ++s)
     n += s->size() + 1;
-  strings_.reserve(strings_.size() + n);
+  std::vector<char> &strings = strings_[kind];
+  strings.reserve(strings.size() + n);
   for (s = v.begin(); s != v.end(); ++s) {
-    strings_.insert(strings_.end(), s->begin(), s->end());
-    strings_.push_back('\0');
+    strings.insert(strings.end(), s->begin(), s->end());
+    strings.push_back('\0');
   }
-  nstrings_ += v.size();
+  nstrings_[kind] += v.size();
 }
 
 bool EventRacerLogHost::OnMessageReceived(const IPC::Message& msg) {
@@ -95,8 +99,8 @@ void EventRacerLogHost::OnHappensBefore(const std::vector<blink::WebEventActionE
     CreateEdge(v[i].first, v[i].second);
 }
 
-void EventRacerLogHost::OnUpdateStringTable(size_t index, const std::vector<std::string> &v) {
-  UpdateStringTable(index, v);
+void EventRacerLogHost::OnUpdateStringTable(size_t kind, const std::vector<std::string> &v) {
+  UpdateStringTable(kind, v);
 }
 
 
@@ -115,18 +119,12 @@ void EventRacerLogHost::WriteDot(scoped_ptr<EventRacerLogHost> log, int32 site_i
         const Operation &op = *i;
         if (op.GetType() == Operation::EXIT_SCOPE) {
           --level;
-        } else {
-          if (op.GetType() == Operation::ENTER_SCOPE) {
-            base::StringAppendF(&dotsrc, "%*c%s", level*4, ' ', op.GetTypeStr());
-            if (op.GetLocation()) {
-              if (op.GetType() == Operation::TRIGGER_ARC)
-                base::StringAppendF(&dotsrc, "%lu", op.GetLocation());
-              else
-                dotsrc += &log->strings_[op.GetLocation()];
-            }
+        } else if (op.GetType() == Operation::ENTER_SCOPE) {
+          base::StringAppendF(&dotsrc, "%*c%s", level*4, ' ', op.GetTypeStr());
+          if (op.GetLocation()) {
+            dotsrc += &log->strings_[SCOPE_STRINGS][op.GetLocation()];
           }
-          if (op.GetType() == Operation::ENTER_SCOPE)
-            ++level;
+          ++level;
           dotsrc += "\\l";
         }
       }
@@ -161,14 +159,15 @@ void EventRacerLogHost::WriteBin(scoped_ptr<EventRacerLogHost> log, int32 site_i
     base::StringPrintf("eventracer-id%02u-site%02d.bin", log->GetId(), site_id));
   base::File file(path, base::File::FLAG_WRITE | base::File::FLAG_CREATE_ALWAYS);
 
-  // Write the strings ("vars").
-  Write<uint32>(file, log->strings_.size());
-  file.WriteAtCurrentPos(&log->strings_[0], log->strings_.size());
-  Write<uint32>(file, log->nstrings_ * 2); // number of hash buckets
+  // Write the memory location strings.
+  Write<uint32>(file, log->strings_[VAR_STRINGS].size());
+  file.WriteAtCurrentPos(&log->strings_[VAR_STRINGS][0], log->strings_[VAR_STRINGS].size());
+  Write<uint32>(file, log->nstrings_[VAR_STRINGS] * 2); // number of hash buckets
 
-  // Write an empty scopes table.
-  Write<uint32>(file, 0);
-  Write<uint32>(file, 0);
+  // Write the scope strings.
+  Write<uint32>(file, log->strings_[SCOPE_STRINGS].size());
+  file.WriteAtCurrentPos(&log->strings_[SCOPE_STRINGS][0], log->strings_[SCOPE_STRINGS].size());
+  Write<uint32>(file, log->nstrings_[SCOPE_STRINGS] * 2);
 
   // Write number of actions.
   Write<uint32>(file, log->actions_.size());
@@ -207,13 +206,15 @@ void EventRacerLogHost::WriteBin(scoped_ptr<EventRacerLogHost> log, int32 site_i
     }
   }
 
-  // Write an empty sources table.
-  Write<uint32>(file, 0);
-  Write<uint32>(file, 0);
+  // Write the sources.
+  Write<uint32>(file, log->strings_[SOURCE_STRINGS].size());
+  file.WriteAtCurrentPos(&log->strings_[SOURCE_STRINGS][0], log->strings_[SOURCE_STRINGS].size());
+  Write<uint32>(file, log->nstrings_[SOURCE_STRINGS] * 2);
 
-  // Write an empty values table
-  Write<uint32>(file, 0);
-  Write<uint32>(file, 0);
+  // Write the values.
+  Write<uint32>(file, log->strings_[VALUE_STRINGS].size());
+  file.WriteAtCurrentPos(&log->strings_[VALUE_STRINGS][0], log->strings_[VALUE_STRINGS].size());
+  Write<uint32>(file, log->nstrings_[VALUE_STRINGS] * 2);
 }
 
 } // end namespace
