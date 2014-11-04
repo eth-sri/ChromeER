@@ -27,7 +27,7 @@ vars = {
   "llvm_git": "https://llvm.googlesource.com",
   "libcxx_revision": "206024",
   "libcxxabi_revision": "206024",
-  "webkit_hash": "092d2d9b78af9ff79abf206e59ddbc6ee514c3d3",
+  "webkit_hash": "f41cb0fe091a9d829b3355e7b18dbc79253293f2",
   "nacl_trunk": "http://src.chromium.org/native_client/trunk",
   "chromium_git": "https://chromium.googlesource.com",
   "chromiumos_git": "https://chromium.googlesource.com/chromiumos",
@@ -50,7 +50,7 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling Skia
   # and V8 without interference from each other.
-  "v8_hash": "77ce6fbccc5d2b416676b00e050366dd7546cc7b",
+  "v8_hash": "57772c575093b4327de9831ebbba74a0e67d8f4b",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling WebRTC
   # and V8 without interference from each other.
