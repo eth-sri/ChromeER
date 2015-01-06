@@ -35,7 +35,6 @@ class TouchEventQueueTest : public testing::Test,
         acked_event_count_(0),
         last_acked_event_state_(INPUT_EVENT_ACK_STATE_UNKNOWN),
         slop_length_dips_(0),
-        slop_includes_boundary_(true),
         touch_scrolling_mode_(TouchEventQueue::TOUCH_SCROLLING_MODE_DEFAULT) {}
 
   virtual ~TouchEventQueueTest() {}
@@ -81,8 +80,6 @@ class TouchEventQueueTest : public testing::Test,
     TouchEventQueue::Config config;
     config.touch_scrolling_mode = touch_scrolling_mode_;
     config.touchmove_slop_suppression_length_dips = slop_length_dips_;
-    config.touchmove_slop_suppression_region_includes_boundary =
-        slop_includes_boundary_;
     return config;
   }
 
@@ -91,10 +88,8 @@ class TouchEventQueueTest : public testing::Test,
     ResetQueueWithConfig(CreateConfig());
   }
 
-  void SetUpForTouchMoveSlopTesting(double slop_length_dips,
-                                    bool slop_includes_boundary) {
+  void SetUpForTouchMoveSlopTesting(double slop_length_dips) {
     slop_length_dips_ = slop_length_dips;
-    slop_includes_boundary_ = slop_includes_boundary;
     ResetQueueWithConfig(CreateConfig());
   }
 
@@ -175,6 +170,10 @@ class TouchEventQueueTest : public testing::Test,
     touch_event_.timeStampSeconds += seconds;
   }
 
+  void ResetTouchEvent() {
+    touch_event_ = SyntheticWebTouchEvent();
+  }
+
   size_t GetAndResetAckedEventCount() {
     size_t count = acked_event_count_;
     acked_event_count_ = 0;
@@ -253,7 +252,6 @@ class TouchEventQueueTest : public testing::Test,
   scoped_ptr<WebGestureEvent> followup_gesture_event_;
   scoped_ptr<InputEventAckState> sync_ack_result_;
   double slop_length_dips_;
-  bool slop_includes_boundary_;
   TouchEventQueue::TouchScrollingMode touch_scrolling_mode_;
   base::MessageLoopForUI message_loop_;
 };
@@ -287,9 +285,9 @@ TEST_F(TouchEventQueueTest, Basic) {
   EXPECT_TRUE(acked_event().cancelable);
 }
 
-// Tests that the touch-queue is emptied if a page stops listening for touch
-// events.
-TEST_F(TouchEventQueueTest, QueueFlushedWhenHandlersRemoved) {
+// Tests that the touch-queue is emptied after the outstanding ack is received
+// if a page stops listening for touch events.
+TEST_F(TouchEventQueueTest, QueueFlushedOnAckAfterHandlersRemoved) {
   OnHasTouchEventHandlers(true);
   EXPECT_EQ(0U, queued_event_count());
   EXPECT_EQ(0U, GetAndResetSentEventCount());
@@ -297,32 +295,51 @@ TEST_F(TouchEventQueueTest, QueueFlushedWhenHandlersRemoved) {
   // Send a touch-press event.
   PressTouchPoint(1, 1);
   EXPECT_EQ(1U, GetAndResetSentEventCount());
+  EXPECT_EQ(1U, queued_event_count());
 
+  // Signal that all touch handlers have been removed.
+  OnHasTouchEventHandlers(false);
+  EXPECT_EQ(0U, GetAndResetAckedEventCount());
+  EXPECT_EQ(1U, queued_event_count());
+
+  // Process the ack for the sent touch, ensuring that it is honored (despite
+  // the touch handler having been removed).
+  SendTouchEventAck(INPUT_EVENT_ACK_STATE_CONSUMED);
+  EXPECT_EQ(1U, GetAndResetAckedEventCount());
+  EXPECT_EQ(0U, queued_event_count());
+  EXPECT_EQ(INPUT_EVENT_ACK_STATE_CONSUMED, acked_event_state());
+
+  // The release should not be forwarded.
   ReleaseTouchPoint(0);
+  EXPECT_EQ(1U, GetAndResetAckedEventCount());
+  EXPECT_EQ(0U, queued_event_count());
+  EXPECT_EQ(INPUT_EVENT_ACK_STATE_NO_CONSUMER_EXISTS, acked_event_state());
+
+  OnHasTouchEventHandlers(true);
 
   // Events will be queued until the first sent event is ack'ed.
-  for (int i = 5; i < 15; ++i) {
+  for (int i = 0; i < 10; ++i) {
     PressTouchPoint(1, 1);
     MoveTouchPoint(0, i, i);
     ReleaseTouchPoint(0);
   }
-  EXPECT_EQ(32U, queued_event_count());
-  EXPECT_EQ(0U, GetAndResetSentEventCount());
-
-  // Receive an ACK for the first touch-event. One of the queued touch-event
-  // should be forwarded.
-  SendTouchEventAck(INPUT_EVENT_ACK_STATE_CONSUMED);
-  EXPECT_EQ(31U, queued_event_count());
+  EXPECT_EQ(30U, queued_event_count());
   EXPECT_EQ(1U, GetAndResetSentEventCount());
-  EXPECT_EQ(1U, GetAndResetAckedEventCount());
-  EXPECT_EQ(WebInputEvent::TouchStart, acked_event().type);
 
-  // Flush the queue. The touch-event queue should now be emptied, but none of
-  // the queued touch-events should be sent to the renderer.
+  // Signal that all touch handlers have been removed. Note that flushing of
+  // the queue will not occur until *after* the outstanding ack is received.
   OnHasTouchEventHandlers(false);
+  EXPECT_EQ(30U, queued_event_count());
+  EXPECT_EQ(0U, GetAndResetSentEventCount());
+  EXPECT_EQ(0U, GetAndResetAckedEventCount());
+
+  // Receive an ACK for the first touch-event. All remaining touch events should
+  // be flushed with the appropriate ack type.
+  SendTouchEventAck(INPUT_EVENT_ACK_STATE_CONSUMED);
   EXPECT_EQ(0U, queued_event_count());
   EXPECT_EQ(0U, GetAndResetSentEventCount());
-  EXPECT_EQ(31U, GetAndResetAckedEventCount());
+  EXPECT_EQ(30U, GetAndResetAckedEventCount());
+  EXPECT_EQ(INPUT_EVENT_ACK_STATE_NO_CONSUMER_EXISTS, acked_event_state());
 }
 
 // Tests that addition of a touch handler during a touch sequence will not cause
@@ -366,14 +383,14 @@ TEST_F(TouchEventQueueTest, ActiveSequenceDroppedWhenHandlersRemoved) {
   EXPECT_EQ(0U, GetAndResetAckedEventCount());
   EXPECT_EQ(0U, GetAndResetSentEventCount());
 
-  // Touch handle deregistration should flush the queue.
+  // Unregister all touch handlers.
   OnHasTouchEventHandlers(false);
-  EXPECT_EQ(2U, GetAndResetAckedEventCount());
-  EXPECT_EQ(0U, queued_event_count());
-
-  // The ack should be ignored as the touch queue is now empty.
-  SendTouchEventAck(INPUT_EVENT_ACK_STATE_NO_CONSUMER_EXISTS);
   EXPECT_EQ(0U, GetAndResetAckedEventCount());
+  EXPECT_EQ(2U, queued_event_count());
+
+  // The ack should be flush the queue.
+  SendTouchEventAck(INPUT_EVENT_ACK_STATE_NO_CONSUMER_EXISTS);
+  EXPECT_EQ(2U, GetAndResetAckedEventCount());
   EXPECT_EQ(0U, queued_event_count());
 
   // Events should be dropped while there is no touch handler.
@@ -498,33 +515,23 @@ TEST_F(TouchEventQueueTest, MultiTouch) {
   EXPECT_EQ(WebTouchPoint::StateMoved, event.touches[1].state);
 }
 
-// Tests that if a touch-event queue is destroyed in response to a touch-event
-// in the renderer, then there is no crash when the ACK for that touch-event
-// comes back.
-TEST_F(TouchEventQueueTest, AckAfterQueueFlushed) {
-  // Send some touch-events to the renderer.
+// Tests that the touch-event queue is robust to redundant acks.
+TEST_F(TouchEventQueueTest, SpuriousAcksIgnored) {
+  // Trigger a spurious ack.
+  SendTouchEventAck(INPUT_EVENT_ACK_STATE_CONSUMED);
+  EXPECT_EQ(0U, GetAndResetAckedEventCount());
+
+  // Send and ack a touch press.
   PressTouchPoint(1, 1);
   EXPECT_EQ(1U, GetAndResetSentEventCount());
   EXPECT_EQ(1U, queued_event_count());
-
-  MoveTouchPoint(0, 10, 10);
-  EXPECT_EQ(0U, GetAndResetSentEventCount());
-  EXPECT_EQ(2U, queued_event_count());
-
-  // Receive an ACK for the press. This should cause the queued touch-move to
-  // be sent to the renderer.
   SendTouchEventAck(INPUT_EVENT_ACK_STATE_CONSUMED);
-  EXPECT_EQ(1U, GetAndResetSentEventCount());
-  EXPECT_EQ(1U, queued_event_count());
-
-  OnHasTouchEventHandlers(false);
-  EXPECT_EQ(0U, GetAndResetSentEventCount());
+  EXPECT_EQ(1U, GetAndResetAckedEventCount());
   EXPECT_EQ(0U, queued_event_count());
 
-  // Now receive an ACK for the move.
+  // Trigger a spurious ack.
   SendTouchEventAck(INPUT_EVENT_ACK_STATE_CONSUMED);
-  EXPECT_EQ(0U, GetAndResetSentEventCount());
-  EXPECT_EQ(0U, queued_event_count());
+  EXPECT_EQ(0U, GetAndResetAckedEventCount());
 }
 
 // Tests that touch-move events are not sent to the renderer if the preceding
@@ -1371,8 +1378,7 @@ TEST_F(TouchEventQueueTest, NoCancelOnTouchTimeoutWithoutConsumer) {
 TEST_F(TouchEventQueueTest, TouchMoveSuppressionIncludingSlopBoundary) {
   const double kSlopLengthDips = 10.;
   const double kHalfSlopLengthDips = kSlopLengthDips / 2;
-  const bool slop_includes_boundary = true;
-  SetUpForTouchMoveSlopTesting(kSlopLengthDips, slop_includes_boundary);
+  SetUpForTouchMoveSlopTesting(kSlopLengthDips);
 
   // Queue a TouchStart.
   PressTouchPoint(0, 0);
@@ -1452,57 +1458,12 @@ TEST_F(TouchEventQueueTest, TouchMoveSuppressionIncludingSlopBoundary) {
   EXPECT_EQ(1U, GetAndResetAckedEventCount());
 }
 
-// Tests that TouchMove's are dropped if within the boundary-exclusive slop
-// suppression region for an unconsumed TouchStart.
-TEST_F(TouchEventQueueTest, TouchMoveSuppressionExcludingSlopBoundary) {
-  const double kSlopLengthDips = 10.;
-  const double kHalfSlopLengthDips = kSlopLengthDips / 2;
-  const bool slop_includes_boundary = false;
-  SetUpForTouchMoveSlopTesting(kSlopLengthDips, slop_includes_boundary);
-
-  // Queue a TouchStart.
-  PressTouchPoint(0, 0);
-  SendTouchEventAck(INPUT_EVENT_ACK_STATE_NOT_CONSUMED);
-  ASSERT_EQ(1U, GetAndResetSentEventCount());
-  ASSERT_EQ(1U, GetAndResetAckedEventCount());
-
-  // TouchMove's within the region should be suppressed.
-  MoveTouchPoint(0, 0, kHalfSlopLengthDips);
-  EXPECT_EQ(0U, queued_event_count());
-  EXPECT_EQ(0U, GetAndResetSentEventCount());
-  EXPECT_EQ(1U, GetAndResetAckedEventCount());
-  EXPECT_EQ(INPUT_EVENT_ACK_STATE_NOT_CONSUMED, acked_event_state());
-
-  MoveTouchPoint(0, kSlopLengthDips - 0.2f, 0);
-  EXPECT_EQ(0U, queued_event_count());
-  EXPECT_EQ(0U, GetAndResetSentEventCount());
-  EXPECT_EQ(1U, GetAndResetAckedEventCount());
-  EXPECT_EQ(INPUT_EVENT_ACK_STATE_NOT_CONSUMED, acked_event_state());
-
-  // As soon as a TouchMove reaches the (Euclidean) slop distance, no more
-  // TouchMove's should be suppressed.
-  MoveTouchPoint(0, kSlopLengthDips, 0);
-  EXPECT_EQ(1U, queued_event_count());
-  EXPECT_EQ(1U, GetAndResetSentEventCount());
-  EXPECT_EQ(0U, GetAndResetAckedEventCount());
-  SendTouchEventAck(INPUT_EVENT_ACK_STATE_NOT_CONSUMED);
-  EXPECT_EQ(1U, GetAndResetAckedEventCount());
-
-  MoveTouchPoint(0, kHalfSlopLengthDips, 0);
-  EXPECT_EQ(1U, queued_event_count());
-  EXPECT_EQ(1U, GetAndResetSentEventCount());
-  EXPECT_EQ(0U, GetAndResetAckedEventCount());
-  SendTouchEventAck(INPUT_EVENT_ACK_STATE_NOT_CONSUMED);
-  EXPECT_EQ(1U, GetAndResetAckedEventCount());
-}
-
 // Tests that TouchMove's are not dropped within the slop suppression region if
 // the touchstart was consumed.
 TEST_F(TouchEventQueueTest, NoTouchMoveSuppressionAfterTouchConsumed) {
   const double kSlopLengthDips = 10.;
   const double kHalfSlopLengthDips = kSlopLengthDips / 2;
-  const bool slop_includes_boundary = true;
-  SetUpForTouchMoveSlopTesting(kSlopLengthDips, slop_includes_boundary);
+  SetUpForTouchMoveSlopTesting(kSlopLengthDips);
 
   // Queue a TouchStart.
   PressTouchPoint(0, 0);
@@ -1518,14 +1479,28 @@ TEST_F(TouchEventQueueTest, NoTouchMoveSuppressionAfterTouchConsumed) {
   EXPECT_EQ(0U, GetAndResetAckedEventCount());
 }
 
+// Tests that even very small TouchMove's are not suppressed when suppression is
+// disabled.
+TEST_F(TouchEventQueueTest, NoTouchMoveSuppressionIfDisabled) {
+  // Queue a TouchStart.
+  PressTouchPoint(0, 0);
+  SendTouchEventAck(INPUT_EVENT_ACK_STATE_NOT_CONSUMED);
+  ASSERT_EQ(1U, GetAndResetSentEventCount());
+  ASSERT_EQ(1U, GetAndResetAckedEventCount());
+
+  // Small TouchMove's should not be suppressed.
+  MoveTouchPoint(0, 0.001f, 0.001f);
+  EXPECT_EQ(1U, queued_event_count());
+  EXPECT_EQ(1U, GetAndResetSentEventCount());
+  EXPECT_EQ(0U, GetAndResetAckedEventCount());
+}
+
 // Tests that TouchMove's are not dropped due to incorrect handling of DPI
 // scaling.
 TEST_F(TouchEventQueueTest, TouchMoveSuppressionWithDIPScaling) {
   const float kSlopLengthPixels = 7.f;
   const float kDPIScale = 3.f;
-  const bool slop_includes_boundary = true;
-  SetUpForTouchMoveSlopTesting(kSlopLengthPixels / kDPIScale,
-                               slop_includes_boundary);
+  SetUpForTouchMoveSlopTesting(kSlopLengthPixels / kDPIScale);
 
   // Queue a TouchStart.
   PressTouchPoint(0, 0);
@@ -1565,8 +1540,7 @@ TEST_F(TouchEventQueueTest, TouchMoveSuppressionWithDIPScaling) {
 TEST_F(TouchEventQueueTest, NoTouchMoveSuppressionAfterMultiTouch) {
   const double kSlopLengthDips = 10.;
   const double kHalfSlopLengthDips = kSlopLengthDips / 2;
-  const bool slop_includes_boundary = true;
-  SetUpForTouchMoveSlopTesting(kSlopLengthDips, slop_includes_boundary);
+  SetUpForTouchMoveSlopTesting(kSlopLengthDips);
 
   // Queue a TouchStart.
   PressTouchPoint(0, 0);
@@ -2064,6 +2038,47 @@ TEST_F(TouchEventQueueTest, AsyncTouchWithTouchCancelAfterAck) {
   EXPECT_EQ(WebInputEvent::TouchCancel, acked_event().type);
   EXPECT_EQ(1U, GetAndResetAckedEventCount());
   EXPECT_EQ(0U, GetAndResetSentEventCount());
+}
+
+// Ensure that the async touch is fully reset if the touch sequence restarts
+// without properly terminating.
+TEST_F(TouchEventQueueTest, AsyncTouchWithHardTouchStartReset) {
+  SetTouchScrollingMode(TouchEventQueue::TOUCH_SCROLLING_MODE_ASYNC_TOUCHMOVE);
+
+  PressTouchPoint(0, 0);
+  EXPECT_EQ(1U, GetAndResetSentEventCount());
+  SendTouchEventAck(INPUT_EVENT_ACK_STATE_NOT_CONSUMED);
+  EXPECT_EQ(1U, GetAndResetAckedEventCount());
+
+  // Trigger async touchmove dispatch.
+  MoveTouchPoint(0, 1, 1);
+  EXPECT_EQ(1U, GetAndResetSentEventCount());
+  WebGestureEvent followup_scroll;
+  followup_scroll.type = WebInputEvent::GestureScrollBegin;
+  SetFollowupEvent(followup_scroll);
+  SendTouchEventAck(INPUT_EVENT_ACK_STATE_NOT_CONSUMED);
+  EXPECT_EQ(1U, GetAndResetAckedEventCount());
+  EXPECT_EQ(0U, queued_event_count());
+  SendGestureEvent(WebInputEvent::GestureScrollUpdate);
+
+  // The async touchmove should be immediately ack'ed but delivery is deferred.
+  MoveTouchPoint(0, 2, 2);
+  EXPECT_EQ(0U, GetAndResetSentEventCount());
+  EXPECT_EQ(1U, GetAndResetAckedEventCount());
+  EXPECT_EQ(0U, queued_event_count());
+  EXPECT_EQ(WebInputEvent::TouchMove, acked_event().type);
+
+  // The queue should be robust to hard touch restarts with a new touch
+  // sequence. In this case, the deferred async touch should not be flushed
+  // by the new touch sequence.
+  SendGestureEvent(WebInputEvent::GestureScrollEnd);
+  ResetTouchEvent();
+
+  PressTouchPoint(0, 0);
+  EXPECT_EQ(1U, GetAndResetSentEventCount());
+  EXPECT_EQ(WebInputEvent::TouchStart, sent_event().type);
+  SendTouchEventAck(INPUT_EVENT_ACK_STATE_NOT_CONSUMED);
+  EXPECT_EQ(1U, GetAndResetAckedEventCount());
 }
 
 TEST_F(TouchEventQueueTest, TouchAbsorptionWithConsumedFirstMove) {

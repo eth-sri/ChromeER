@@ -5,7 +5,7 @@
 #include <string>
 
 #include "base/command_line.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/path_service.h"
 #include "base/run_loop.h"
@@ -31,6 +31,7 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
+#include "chrome/grit/generated_resources.h"
 #include "chrome/test/base/scoped_testing_local_state.h"
 #include "chrome/test/base/test_browser_window.h"
 #include "chrome/test/base/testing_browser_process.h"
@@ -39,19 +40,21 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/test/test_browser_thread_bundle.h"
-#include "grit/generated_resources.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/l10n/l10n_util.h"
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/login/users/mock_user_manager.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
+#include "chrome/browser/chromeos/login/users/fake_user_manager.h"
+#include "chrome/browser/chromeos/login/users/scoped_test_user_manager.h"
+#include "chrome/browser/chromeos/login/users/scoped_user_manager_enabler.h"
+#include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/login/user_names.h"
-#endif
+#include "components/user_manager/user_manager.h"
+#endif  // defined(OS_CHROMEOS)
 
 using base::ASCIIToUTF16;
 using content::BrowserThread;
@@ -109,8 +112,8 @@ class ProfileManagerTest : public testing::Test {
         new UnittestProfileManager(temp_dir_.path()));
 
 #if defined(OS_CHROMEOS)
-  CommandLine* cl = CommandLine::ForCurrentProcess();
-  cl->AppendSwitch(switches::kTestType);
+    CommandLine* cl = CommandLine::ForCurrentProcess();
+    cl->AppendSwitch(switches::kTestType);
 #endif
   }
 
@@ -148,6 +151,18 @@ class ProfileManagerTest : public testing::Test {
   }
 
 #if defined(OS_CHROMEOS)
+  // Helper function to register an user with id |user_id| and create profile
+  // with a correct path.
+  void RegisterUser(const std::string& user_id) {
+    chromeos::ProfileHelper* profile_helper = chromeos::ProfileHelper::Get();
+    const std::string user_id_hash =
+        profile_helper->GetUserIdHashByUserIdForTesting(user_id);
+    user_manager::UserManager::Get()->UserLoggedIn(
+        user_id, user_id_hash, false);
+    g_browser_process->profile_manager()->GetProfile(
+        profile_helper->GetProfilePathByUserIdHash(user_id_hash));
+  }
+
   chromeos::ScopedTestDeviceSettingsService test_device_settings_service_;
   chromeos::ScopedTestCrosSettings test_cros_settings_;
 #endif
@@ -161,6 +176,8 @@ class ProfileManagerTest : public testing::Test {
 #if defined(OS_CHROMEOS)
   chromeos::ScopedTestUserManager test_user_manager_;
 #endif
+
+  DISALLOW_COPY_AND_ASSIGN(ProfileManagerTest);
 };
 
 TEST_F(ProfileManagerTest, GetProfile) {
@@ -186,28 +203,29 @@ TEST_F(ProfileManagerTest, DefaultProfileDir) {
 }
 
 #if defined(OS_CHROMEOS)
+
 // This functionality only exists on Chrome OS.
 TEST_F(ProfileManagerTest, LoggedInProfileDir) {
-  CommandLine *cl = CommandLine::ForCurrentProcess();
-  std::string profile_dir(chrome::kTestUserProfileDir);
-
-  cl->AppendSwitchASCII(chromeos::switches::kLoginProfile, profile_dir);
-
   base::FilePath expected_default =
       base::FilePath().AppendASCII(chrome::kInitialProfile);
   ProfileManager* profile_manager = g_browser_process->profile_manager();
   EXPECT_EQ(expected_default.value(),
             profile_manager->GetInitialProfileDir().value());
 
-  scoped_ptr<chromeos::MockUserManager> mock_user_manager;
-  mock_user_manager.reset(new chromeos::MockUserManager());
-  mock_user_manager->SetActiveUser("user@gmail.com");
-  user_manager::User* active_user = mock_user_manager->GetActiveUser();
+  const char kTestUserName[] = "test-user@example.com";
+  chromeos::FakeUserManager* user_manager = new chromeos::FakeUserManager();
+  chromeos::ScopedUserManagerEnabler enabler(user_manager);
+
+  const user_manager::User* active_user = user_manager->AddUser(kTestUserName);
+  user_manager->LoginUser(kTestUserName);
+  user_manager->SwitchActiveUser(kTestUserName);
+
   profile_manager->Observe(
       chrome::NOTIFICATION_LOGIN_USER_CHANGED,
       content::NotificationService::AllSources(),
       content::Details<const user_manager::User>(active_user));
-  base::FilePath expected_logged_in(profile_dir);
+  base::FilePath expected_logged_in(
+      chromeos::ProfileHelper::GetUserProfileDir(active_user->username_hash()));
   EXPECT_EQ(expected_logged_in.value(),
             profile_manager->GetInitialProfileDir().value());
   VLOG(1) << temp_dir_.path().Append(
@@ -398,15 +416,10 @@ class ProfileManagerGuestTest : public ProfileManagerTest  {
     // ProfileManager (accessing DBusThreadManager).
     cl->AppendSwitch(switches::kTestType);
 
-    cl->AppendSwitchASCII(chromeos::switches::kLoginProfile,
-                          std::string(chrome::kProfileDirPrefix) +
-                              chromeos::login::kGuestUserName);
     cl->AppendSwitch(chromeos::switches::kGuestSession);
     cl->AppendSwitch(::switches::kIncognito);
 
-    chromeos::UserManager::Get()->UserLoggedIn(chromeos::login::kGuestUserName,
-                                               chromeos::login::kGuestUserName,
-                                               false);
+    RegisterUser(chromeos::login::kGuestUserName);
 #endif
   }
 };
@@ -545,6 +558,13 @@ TEST_F(ProfileManagerTest, InitProfileInfoCacheForAProfile) {
 TEST_F(ProfileManagerTest, GetLastUsedProfileAllowedByPolicy) {
   ProfileManager* profile_manager = g_browser_process->profile_manager();
   ASSERT_TRUE(profile_manager);
+
+#if defined(OS_CHROMEOS)
+  // On CrOS, profile returned by GetLastUsedProfile is a singin profile that
+  // is forced to be incognito. That's why we need to create at least one user
+  // to get a regular profile.
+  RegisterUser("test-user@example.com");
+#endif
 
   Profile* profile = profile_manager->GetLastUsedProfileAllowedByPolicy();
   ASSERT_TRUE(profile);
@@ -1040,6 +1060,7 @@ TEST_F(ProfileManagerTest, ProfileDisplayNamePreservesCustomName) {
   // We should display custom names for local profiles.
   const base::string16 custom_profile_name = ASCIIToUTF16("Batman");
   cache.SetNameOfProfileAtIndex(0, custom_profile_name);
+  cache.SetProfileIsUsingDefaultNameAtIndex(0, false);
   EXPECT_EQ(custom_profile_name, cache.GetNameOfProfileAtIndex(0));
   EXPECT_EQ(custom_profile_name,
             profiles::GetAvatarNameForProfile(profile1->GetPath()));
@@ -1082,17 +1103,27 @@ TEST_F(ProfileManagerTest, ProfileDisplayNamePreservesSignedInName) {
   EXPECT_EQ(default_profile_name,
             profiles::GetAvatarNameForProfile(profile1->GetPath()));
 
-  // We should display the actual profile name for signed in profiles.
+  // For a signed in profile with a default name we still display
+  // IDS_SINGLE_PROFILE_DISPLAY_NAME.
   cache.SetUserNameOfProfileAtIndex(0, ASCIIToUTF16("user@gmail.com"));
   EXPECT_EQ(profile_name1, cache.GetNameOfProfileAtIndex(0));
-  EXPECT_EQ(profile_name1,
+  EXPECT_EQ(default_profile_name,
             profiles::GetAvatarNameForProfile(profile1->GetPath()));
+
+  // For a signed in profile with a non-default Gaia given name we display the
+  // Gaia given name.
+  cache.SetUserNameOfProfileAtIndex(0, ASCIIToUTF16("user@gmail.com"));
+  const base::string16 gaia_given_name(ASCIIToUTF16("given name"));
+  cache.SetGAIAGivenNameOfProfileAtIndex(0, gaia_given_name);
+  EXPECT_EQ(gaia_given_name, cache.GetNameOfProfileAtIndex(0));
+  EXPECT_EQ(gaia_given_name,
+      profiles::GetAvatarNameForProfile(profile1->GetPath()));
 
   // Multiple profiles means displaying the actual profile names.
   const base::string16 profile_name2 = cache.ChooseNameForNewProfile(1);
   Profile* profile2 = AddProfileToCache(profile_manager,
                                         "path_2", profile_name2);
-  EXPECT_EQ(profile_name1,
+  EXPECT_EQ(gaia_given_name,
             profiles::GetAvatarNameForProfile(profile1->GetPath()));
   EXPECT_EQ(profile_name2,
             profiles::GetAvatarNameForProfile(profile2->GetPath()));
@@ -1102,7 +1133,7 @@ TEST_F(ProfileManagerTest, ProfileDisplayNamePreservesSignedInName) {
                                               ProfileManager::CreateCallback());
   // Spin the message loop so that all the callbacks can finish running.
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(profile_name1,
+  EXPECT_EQ(gaia_given_name,
             profiles::GetAvatarNameForProfile(profile1->GetPath()));
 }
 #endif  // !defined(OS_ANDROID) && !defined(OS_CHROMEOS)

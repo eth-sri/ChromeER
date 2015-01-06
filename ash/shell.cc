@@ -292,13 +292,28 @@ void Shell::ShowContextMenu(const gfx::Point& location_in_screen,
       ->ShowContextMenu(location_in_screen, source_type);
 }
 
-void Shell::ToggleAppList(aura::Window* window) {
+void Shell::ShowAppList(aura::Window* window) {
   // If the context window is not given, show it on the target root window.
   if (!window)
     window = GetTargetRootWindow();
   if (!app_list_controller_)
     app_list_controller_.reset(new AppListController);
-  app_list_controller_->SetVisible(!app_list_controller_->IsVisible(), window);
+  app_list_controller_->Show(window);
+}
+
+void Shell::DismissAppList() {
+  if (!app_list_controller_)
+    return;
+  app_list_controller_->Dismiss();
+}
+
+void Shell::ToggleAppList(aura::Window* window) {
+  if (app_list_controller_ && app_list_controller_->IsVisible()) {
+    DismissAppList();
+    return;
+  }
+
+  ShowAppList(window);
 }
 
 bool Shell::GetAppListTargetVisibility() const {
@@ -470,7 +485,8 @@ void Shell::RemoveShellObserver(ShellObserver* observer) {
 #if defined(OS_CHROMEOS)
 bool Shell::ShouldSaveDisplaySettings() {
   return !((maximize_mode_controller_->IsMaximizeModeWindowManagerEnabled() &&
-            maximize_mode_controller_->in_set_screen_rotation()) ||
+            maximize_mode_controller_->
+                ignore_display_configuration_updates()) ||
            resolution_notification_controller_->DoesNotificationTimeout());
 }
 #endif
@@ -836,6 +852,8 @@ void Shell::Init(const ShellInitParams& init_params) {
 #endif  // defined(OS_CHROMEOS)
   if (!display_initialized)
     display_manager_->InitDefaultDisplay();
+
+  display_manager_->InitFontParams();
 
   // Install the custom factory first so that views::FocusManagers for Tray,
   // Shelf, and WallPaper could be created by the factory.

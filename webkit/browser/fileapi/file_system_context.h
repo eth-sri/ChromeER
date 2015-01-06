@@ -20,7 +20,7 @@
 #include "webkit/browser/fileapi/plugin_private_file_system_backend.h"
 #include "webkit/browser/fileapi/sandbox_file_system_backend_delegate.h"
 #include "webkit/browser/fileapi/task_runner_bound_observer_list.h"
-#include "webkit/browser/webkit_storage_browser_export.h"
+#include "webkit/browser/storage_browser_export.h"
 #include "webkit/common/fileapi/file_system_types.h"
 
 namespace base {
@@ -33,7 +33,7 @@ namespace chrome {
 class NativeMediaFileUtilTest;
 }
 
-namespace quota {
+namespace storage {
 class QuotaManagerProxy;
 class SpecialStoragePolicy;
 }
@@ -42,12 +42,12 @@ namespace net {
 class URLRequest;
 }
 
-namespace webkit_blob {
+namespace storage {
 class BlobURLRequestJobTest;
 class FileStreamReader;
 }
 
-namespace fileapi {
+namespace storage {
 
 class AsyncFileUtil;
 class CopyOrMoveFileValidatorFactory;
@@ -65,6 +65,7 @@ class IsolatedFileSystemBackend;
 class MountPoints;
 class QuotaReservation;
 class SandboxFileSystemBackend;
+class WatchManager;
 
 struct DefaultContextDeleter;
 struct FileSystemInfo;
@@ -83,7 +84,7 @@ typedef base::Callback<bool(
 
 // This class keeps and provides a file system context for FileSystem API.
 // An instance of this class is created and owned by profile.
-class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemContext
+class STORAGE_EXPORT FileSystemContext
     : public base::RefCountedThreadSafe<FileSystemContext,
                                         DefaultContextDeleter> {
  public:
@@ -119,8 +120,8 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemContext
       base::SingleThreadTaskRunner* io_task_runner,
       base::SequencedTaskRunner* file_task_runner,
       ExternalMountPoints* external_mount_points,
-      quota::SpecialStoragePolicy* special_storage_policy,
-      quota::QuotaManagerProxy* quota_manager_proxy,
+      storage::SpecialStoragePolicy* special_storage_policy,
+      storage::QuotaManagerProxy* quota_manager_proxy,
       ScopedVector<FileSystemBackend> additional_backends,
       const std::vector<URLRequestAutoMountHandler>& auto_mount_handlers,
       const base::FilePath& partition_path,
@@ -136,7 +137,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemContext
       const GURL& origin_url,
       FileSystemType type);
 
-  quota::QuotaManagerProxy* quota_manager_proxy() const {
+  storage::QuotaManagerProxy* quota_manager_proxy() const {
     return quota_manager_proxy_.get();
   }
 
@@ -162,6 +163,10 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemContext
   // type.
   FileSystemBackend* GetFileSystemBackend(
       FileSystemType type) const;
+
+  // Returns the watcher manager for the given |type|.
+  // This may return NULL if the type does not support watching.
+  WatcherManager* GetWatcherManager(FileSystemType type) const;
 
   // Returns true for sandboxed filesystems. Currently this does
   // the same as GetQuotaUtil(type) != NULL. (In an assumption that
@@ -246,7 +251,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemContext
   // FileSystemBackend for the URL and call the backend's CreateFileReader.
   // The resolved FileSystemBackend could perform further specialization
   // depending on the filesystem type pointed by the |url|.
-  scoped_ptr<webkit_blob::FileStreamReader> CreateFileStreamReader(
+  scoped_ptr<storage::FileStreamReader> CreateFileStreamReader(
       const FileSystemURL& url,
       int64 offset,
       const base::Time& expected_modification_time);
@@ -371,7 +376,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemContext
   scoped_refptr<base::SingleThreadTaskRunner> io_task_runner_;
   scoped_refptr<base::SequencedTaskRunner> default_file_task_runner_;
 
-  scoped_refptr<quota::QuotaManagerProxy> quota_manager_proxy_;
+  scoped_refptr<storage::QuotaManagerProxy> quota_manager_proxy_;
 
   scoped_ptr<SandboxFileSystemBackendDelegate> sandbox_delegate_;
 
@@ -417,6 +422,6 @@ struct DefaultContextDeleter {
   }
 };
 
-}  // namespace fileapi
+}  // namespace storage
 
 #endif  // WEBKIT_BROWSER_FILEAPI_FILE_SYSTEM_CONTEXT_H_

@@ -16,6 +16,7 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/common/web_preferences.h"
+#include "content/shell/browser/ipc_echo_message_filter.h"
 #include "content/shell/browser/shell.h"
 #include "content/shell/browser/shell_browser_context.h"
 #include "content/shell/browser/shell_browser_main_parts.h"
@@ -37,14 +38,14 @@
 #if defined(OS_ANDROID)
 #include "base/android/path_utils.h"
 #include "base/path_service.h"
-#include "components/breakpad/browser/crash_dump_manager_android.h"
+#include "components/crash/browser/crash_dump_manager_android.h"
 #include "content/shell/android/shell_descriptors.h"
 #endif
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
 #include "base/debug/leak_annotations.h"
-#include "components/breakpad/app/breakpad_linux.h"
-#include "components/breakpad/browser/crash_handler_host_linux.h"
+#include "components/crash/app/breakpad_linux.h"
+#include "components/crash/browser/crash_handler_host_linux.h"
 #include "content/public/common/content_descriptors.h"
 #endif
 
@@ -170,6 +171,8 @@ BrowserMainParts* ShellContentBrowserClient::CreateBrowserMainParts(
 
 void ShellContentBrowserClient::RenderProcessWillLaunch(
     RenderProcessHost* host) {
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kExposeIpcEcho))
+    host->AddFilter(new IPCEchoMessageFilter());
   if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree))
     return;
   host->AddFilter(new ShellMessageFilter(
@@ -212,7 +215,7 @@ ShellContentBrowserClient::CreateRequestContextForStoragePartition(
 bool ShellContentBrowserClient::IsHandledURL(const GURL& url) {
   if (!url.is_valid())
     return false;
-  DCHECK_EQ(url.scheme(), StringToLowerASCII(url.scheme()));
+  DCHECK_EQ(url.scheme(), base::StringToLowerASCII(url.scheme()));
   // Keep in sync with ProtocolHandlers added by
   // ShellURLRequestContextGetter::GetURLRequestContext().
   static const char* const kProtocolList[] = {
@@ -240,6 +243,9 @@ void ShellContentBrowserClient::AppendExtraCommandLineSwitches(
   if (CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kExposeInternalsForTesting))
     command_line->AppendSwitch(switches::kExposeInternalsForTesting);
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kExposeIpcEcho))
+    command_line->AppendSwitch(switches::kExposeIpcEcho);
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kStableReleaseMode))
     command_line->AppendSwitch(switches::kStableReleaseMode);
   if (CommandLine::ForCurrentProcess()->HasSwitch(

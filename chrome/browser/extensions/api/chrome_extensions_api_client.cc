@@ -6,10 +6,16 @@
 
 #include "base/files/file_path.h"
 #include "chrome/browser/extensions/api/storage/sync_value_store_cache.h"
-#include "chrome/browser/guest_view/app_view/app_view_guest.h"
+#include "chrome/browser/guest_view/app_view/chrome_app_view_guest_delegate.h"
+#include "chrome/browser/guest_view/extension_options/extension_options_guest.h"
+#include "chrome/browser/guest_view/web_view/chrome_web_view_guest_delegate.h"
+#include "chrome/browser/guest_view/web_view/chrome_web_view_permission_helper_delegate.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "device/hid/hid_service.h"
+#include "extensions/browser/guest_view/app_view/app_view_guest.h"
+#include "extensions/browser/guest_view/web_view/web_view_guest.h"
+#include "extensions/browser/guest_view/web_view/web_view_permission_helper.h"
 
 #if defined(ENABLE_CONFIGURATION_POLICY)
 #include "chrome/browser/extensions/api/storage/managed_value_store_cache.h"
@@ -37,25 +43,20 @@ void ChromeExtensionsAPIClient::AddAdditionalValueStoreCaches(
 #endif
 }
 
-bool ChromeExtensionsAPIClient::AppViewInternalAttachFrame(
-    content::BrowserContext* browser_context,
-    const GURL& url,
-    int guest_instance_id,
-    const std::string& guest_extension_id) {
-  return AppViewGuest::CompletePendingRequest(browser_context,
-                                              url,
-                                              guest_instance_id,
-                                              guest_extension_id);
+AppViewGuestDelegate* ChromeExtensionsAPIClient::CreateAppViewGuestDelegate()
+    const {
+  return new ChromeAppViewGuestDelegate();
 }
 
-bool ChromeExtensionsAPIClient::AppViewInternalDenyRequest(
-    content::BrowserContext* browser_context,
-    int guest_instance_id,
-    const std::string& guest_extension_id) {
-  return AppViewGuest::CompletePendingRequest(browser_context,
-                                              GURL(),
-                                              guest_instance_id,
-                                              guest_extension_id);
+WebViewGuestDelegate* ChromeExtensionsAPIClient::CreateWebViewGuestDelegate(
+    WebViewGuest* web_view_guest) const {
+  return new ChromeWebViewGuestDelegate(web_view_guest);
+}
+
+WebViewPermissionHelperDelegate* ChromeExtensionsAPIClient::
+    CreateWebViewPermissionHelperDelegate(
+        WebViewPermissionHelper* web_view_permission_helper) const {
+  return new ChromeWebViewPermissionHelperDelegate(web_view_permission_helper);
 }
 
 device::HidService* ChromeExtensionsAPIClient::GetHidService() {
@@ -65,6 +66,10 @@ device::HidService* ChromeExtensionsAPIClient::GetHidService() {
             content::BrowserThread::UI)));
   }
   return hid_service_.get();
+}
+
+void ChromeExtensionsAPIClient::RegisterGuestViewTypes() {
+  ExtensionOptionsGuest::Register();
 }
 
 }  // namespace extensions

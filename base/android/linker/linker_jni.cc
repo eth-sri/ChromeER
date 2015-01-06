@@ -17,6 +17,7 @@
 #include <crazy_linker.h>
 #include <jni.h>
 #include <stdlib.h>
+#include <sys/mman.h>
 #include <unistd.h>
 
 // Set this to 1 to enable debug traces to the Android log.
@@ -297,7 +298,7 @@ bool FileLibraryOpener::Open(
 // Used for opening the library in a zip file.
 class ZipLibraryOpener {
  public:
-  ZipLibraryOpener(const char* zip_file) : zip_file_(zip_file) {}
+  explicit ZipLibraryOpener(const char* zip_file) : zip_file_(zip_file) {}
   bool Open(
       crazy_library_t** library,
       const char* library_name,
@@ -310,14 +311,14 @@ bool ZipLibraryOpener::Open(
     crazy_library_t** library,
     const char* library_name,
     crazy_context_t* context) const {
- if (!crazy_library_open_in_zip_file(
-         library, zip_file_, library_name, context)) {
-    LOG_ERROR("%s: Could not open %s in zip file %s: %s",
-              __FUNCTION__, library_name, zip_file_,
-              crazy_context_get_error(context));
-    return false;
- }
- return true;
+  if (!crazy_library_open_in_zip_file(
+          library, zip_file_, library_name, context)) {
+     LOG_ERROR("%s: Could not open %s in zip file %s: %s",
+               __FUNCTION__, library_name, zip_file_,
+               crazy_context_get_error(context));
+     return false;
+  }
+  return true;
 }
 
 }  // unnamed namespace
@@ -560,10 +561,16 @@ jboolean CanUseSharedRelro(JNIEnv* env, jclass clazz) {
   return crazy_system_can_share_relro();
 }
 
-jlong GetPageSize(JNIEnv* env, jclass clazz) {
-  jlong result = static_cast<jlong>(sysconf(_SC_PAGESIZE));
-  LOG_INFO("%s: System page size is %lld bytes\n", __FUNCTION__, result);
-  return result;
+jlong GetRandomBaseLoadAddress(JNIEnv* env, jclass clazz, jlong bytes) {
+  void* address =
+      mmap(NULL, bytes, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  if (address == MAP_FAILED) {
+    LOG_INFO("%s: Random base load address not determinable\n", __FUNCTION__);
+    return 0;
+  }
+  munmap(address, bytes);
+  LOG_INFO("%s: Random base load address is %p\n", __FUNCTION__, address);
+  return static_cast<jlong>(reinterpret_cast<intptr_t>(address));
 }
 
 const JNINativeMethod kNativeMethods[] = {
@@ -610,11 +617,12 @@ const JNINativeMethod kNativeMethods[] = {
      ")"
      "Z",
      reinterpret_cast<void*>(&CanUseSharedRelro)},
-    {"nativeGetPageSize",
+    {"nativeGetRandomBaseLoadAddress",
      "("
+     "J"
      ")"
      "J",
-     reinterpret_cast<void*>(&GetPageSize)}, };
+     reinterpret_cast<void*>(&GetRandomBaseLoadAddress)}, };
 
 }  // namespace
 

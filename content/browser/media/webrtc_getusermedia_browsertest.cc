@@ -93,7 +93,8 @@ class WebRtcGetUserMediaBrowserTest: public WebRtcContentBrowserTest {
   }
 
   void StopTracing() {
-    CHECK(message_loop_runner_ == NULL) << "Calling StopTracing more than once";
+    CHECK(message_loop_runner_.get() == NULL)
+        << "Calling StopTracing more than once";
     trace_log_->SetDisabled();
     message_loop_runner_ = new MessageLoopRunner;
     trace_log_->Flush(base::Bind(
@@ -503,8 +504,8 @@ IN_PROC_BROWSER_TEST_F(WebRtcGetUserMediaBrowserTest,
                                               large_value);
   NavigateToURL(shell(), url);
 
-  // TODO(perkj): A proper error code should be returned by gUM.
-  EXPECT_EQ("TrackStartError", ExecuteJavascriptAndReturnResult(call));
+  EXPECT_EQ("ConstraintNotSatisfiedError",
+            ExecuteJavascriptAndReturnResult(call));
 }
 
 // This test will make a simple getUserMedia page, verify that video is playing

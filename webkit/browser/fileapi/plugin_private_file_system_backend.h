@@ -22,15 +22,16 @@ namespace content {
 class PluginPrivateFileSystemBackendTest;
 }
 
-namespace quota {
+namespace storage {
 class SpecialStoragePolicy;
 }
 
-namespace fileapi {
+namespace storage {
 
 class ObfuscatedFileUtil;
+class WatcherManager;
 
-class WEBKIT_STORAGE_BROWSER_EXPORT PluginPrivateFileSystemBackend
+class STORAGE_EXPORT PluginPrivateFileSystemBackend
     : public FileSystemBackend,
       public FileSystemQuotaUtil {
  public:
@@ -40,7 +41,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT PluginPrivateFileSystemBackend
   PluginPrivateFileSystemBackend(
       base::SequencedTaskRunner* file_task_runner,
       const base::FilePath& profile_path,
-      quota::SpecialStoragePolicy* special_storage_policy,
+      storage::SpecialStoragePolicy* special_storage_policy,
       const FileSystemOptions& file_system_options);
   virtual ~PluginPrivateFileSystemBackend();
 
@@ -65,6 +66,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT PluginPrivateFileSystemBackend
                           OpenFileSystemMode mode,
                           const OpenFileSystemCallback& callback) OVERRIDE;
   virtual AsyncFileUtil* GetAsyncFileUtil(FileSystemType type) OVERRIDE;
+  virtual WatcherManager* GetWatcherManager(FileSystemType type) OVERRIDE;
   virtual CopyOrMoveFileValidatorFactory* GetCopyOrMoveFileValidatorFactory(
       FileSystemType type,
       base::File::Error* error_code) OVERRIDE;
@@ -73,7 +75,9 @@ class WEBKIT_STORAGE_BROWSER_EXPORT PluginPrivateFileSystemBackend
       FileSystemContext* context,
       base::File::Error* error_code) const OVERRIDE;
   virtual bool SupportsStreaming(const FileSystemURL& url) const OVERRIDE;
-  virtual scoped_ptr<webkit_blob::FileStreamReader> CreateFileStreamReader(
+  virtual bool HasInplaceCopyImplementation(
+      storage::FileSystemType type) const OVERRIDE;
+  virtual scoped_ptr<storage::FileStreamReader> CreateFileStreamReader(
       const FileSystemURL& url,
       int64 offset,
       const base::Time& expected_modification_time,
@@ -87,7 +91,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT PluginPrivateFileSystemBackend
   // FileSystemQuotaUtil overrides.
   virtual base::File::Error DeleteOriginDataOnFileTaskRunner(
       FileSystemContext* context,
-      quota::QuotaManagerProxy* proxy,
+      storage::QuotaManagerProxy* proxy,
       const GURL& origin_url,
       FileSystemType type) OVERRIDE;
   virtual void GetOriginsForTypeOnFileTaskRunner(
@@ -140,6 +144,6 @@ class WEBKIT_STORAGE_BROWSER_EXPORT PluginPrivateFileSystemBackend
   DISALLOW_COPY_AND_ASSIGN(PluginPrivateFileSystemBackend);
 };
 
-}  // namespace fileapi
+}  // namespace storage
 
 #endif  // WEBKIT_BROWSER_FILEAPI_PLUGIN_PRIVATE_FILE_SYSTEM_BACKEND_H_

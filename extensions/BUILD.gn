@@ -14,7 +14,7 @@ group("extensions_resources") {
 }
 
 # GYP version: extensions/extensions_resources.gyp:extensions_resources
-#              (exntensions_resources action)
+#              (extensions_resources action)
 grit("extensions_resources_grd") {
   source = "extensions_resources.grd"
   outputs = [
@@ -32,9 +32,11 @@ grit("extensions_renderer_resources") {
     "extensions_renderer_resources.pak",
   ]
   grit_flags = [ "-E", "mojom_root=" + rebase_path(root_gen_dir) ]
-  deps = [
-    "//device/serial:serial_mojo",
-  ]
+  if (enable_extensions) {
+    deps = [
+      "//device/serial:serial_mojo",
+    ]
+  }
 }
 
 source_set("test_support") {
@@ -59,13 +61,21 @@ source_set("test_support") {
     "common/value_builder.h",
     "renderer/test_extensions_renderer_client.cc",
     "renderer/test_extensions_renderer_client.h",
-  ]
+    "test/test_extensions_client.cc",
+    "test/test_extensions_client.h",
+    "test/test_permission_message_provider.cc",
+    "test/test_permission_message_provider.h",
+    "test/test_permissions_provider.cc",
+    "test/test_permissions_provider.h",
+   ]
 
   deps = [
+    ":extensions_resources",
     "//base",
     "//extensions/browser",
     "//extensions/common",
     "//extensions/common/api",
+    "//extensions/common/api:api_registration",
     "//net:test_support",
     "//testing/gmock",
     "//testing/gtest",
@@ -82,12 +92,12 @@ source_set("test_support") {
 # GYP version: //extensions/extensions.gyp:extensions_shell_and_test_pak
 repack("shell_and_test_pak") {
   sources = [
-    "$root_gen_dir/chrome/common/common_resources.pak",
-    "$root_gen_dir/chrome/common/extensions_api_resources.pak",
+    "$root_gen_dir/chrome/common_resources.pak",
+    "$root_gen_dir/chrome/extensions_api_resources.pak",
     # TODO(jamescook): Extract the extension/app related resources
     # from generated_resources_en-US.pak. http://crbug.com/397250
-    "$root_gen_dir/chrome/app/generated_resources_en-US.pak",
-    "$root_gen_dir/chrome/renderer/renderer_resources_100_percent.pak",
+    "$root_gen_dir/chrome/generated_resources_en-US.pak",
+    "$root_gen_dir/chrome/renderer_resources_100_percent.pak",
     "$root_gen_dir/content/content_resources.pak",
     "$root_gen_dir/content/shell/shell_resources.pak",
     "$root_gen_dir/extensions/extensions_renderer_resources.pak",
@@ -129,14 +139,23 @@ test("unittests") {
   output_name = "extensions_unittests"
 
   sources = [
+    "browser/info_map_unittest.cc",
     "browser/process_manager_unittest.cc",
     "common/api/sockets/sockets_manifest_permission_unittest.cc",
     "common/csp_validator_unittest.cc",
     "common/event_filter_unittest.cc",
-    "common/id_util_unittest.cc",
+    "common/extension_resource_unittest.cc",
+    "common/extension_set_unittest.cc",
+    "common/manifest_handler_unittest.cc",
+    "common/message_bundle_unittest.cc",
     "common/one_shot_event_unittest.cc",
     "common/permissions/manifest_permission_set_unittest.cc",
+    "common/url_pattern_set_unittest.cc",
+    "common/url_pattern_unittest.cc",
     "common/user_script_unittest.cc",
+    "renderer/activity_log_converter_strategy_unittest.cc",
+    "renderer/api/serial/data_receiver_unittest.cc",
+    "renderer/api/serial/data_sender_unittest.cc",
     "renderer/api/serial/serial_api_unittest.cc",
     "renderer/api_test_base.cc",
     "renderer/api_test_base.h",
@@ -148,15 +167,10 @@ test("unittests") {
     "renderer/module_system_test.h",
     "renderer/module_system_unittest.cc",
     "renderer/safe_builtins_unittest.cc",
+    "renderer/script_context_set_unittest.cc",
     "renderer/utils_unittest.cc",
     "test/extensions_unittests_main.cc",
-    "test/test_extensions_client.cc",
-    "test/test_extensions_client.h",
-    "test/test_permission_message_provider.cc",
-    "test/test_permission_message_provider.h",
-    "test/test_permissions_provider.cc",
-    "test/test_permissions_provider.h",
-  ]
+ ]
 
   deps = [
     ":extensions_resources",
@@ -166,6 +180,7 @@ test("unittests") {
     "//base/test:test_support",
     "//content/test:test_support",
     "//device/serial",
+    "//device/serial:test_util",
     "//extensions/common",
     "//extensions/renderer",
     "//extensions/strings",

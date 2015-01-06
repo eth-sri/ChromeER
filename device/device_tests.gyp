@@ -44,9 +44,12 @@
         'usb/usb_ids_unittest.cc',
         'usb/usb_service_unittest.cc',
         'hid/hid_connection_unittest.cc',
+        'hid/hid_device_filter_unittest.cc',
         'hid/hid_report_descriptor_unittest.cc',
         'hid/hid_service_unittest.cc',
         'hid/input_service_linux_unittest.cc',
+        'serial/data_sink_unittest.cc',
+        'serial/data_source_unittest.cc',
         'serial/serial_connection_unittest.cc',
         'serial/serial_service_unittest.cc',
         'test/run_all_unittests.cc',
@@ -82,8 +85,11 @@
           # Udev, disable these unittests.
           'dependencies!': [
             'hid/hid.gyp:device_hid',
+            'serial/serial.gyp:device_serial',
+            'serial/serial.gyp:device_serial_test_util',
           ],
           'sources/': [
+            ['exclude', '^serial/'],
             ['exclude', '^hid/'],
           ],
         }],

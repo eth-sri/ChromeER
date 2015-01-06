@@ -47,7 +47,7 @@ bool ShellExtensionSystem::LoadApp(const base::FilePath& app_dir) {
   std::string load_error;
   extension_ = file_util::LoadExtension(
       app_dir, Manifest::COMMAND_LINE, load_flags, &load_error);
-  if (!extension_) {
+  if (!extension_.get()) {
     LOG(ERROR) << "Loading extension at " << app_dir.value()
                << " failed with: " << load_error;
     return false;
@@ -63,12 +63,12 @@ bool ShellExtensionSystem::LoadApp(const base::FilePath& app_dir) {
 
   ExtensionRegistry::Get(browser_context_)->AddEnabled(extension_);
 
-  RegisterExtensionWithRequestContexts(extension_);
+  RegisterExtensionWithRequestContexts(extension_.get());
 
   content::NotificationService::current()->Notify(
       extensions::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
       content::Source<BrowserContext>(browser_context_),
-      content::Details<const Extension>(extension_));
+      content::Details<const Extension>(extension_.get()));
 
   // Inform the rest of the extensions system to start.
   ready_.Signal();
@@ -112,7 +112,7 @@ ManagementPolicy* ShellExtensionSystem::management_policy() {
   return NULL;
 }
 
-UserScriptMaster* ShellExtensionSystem::user_script_master() {
+SharedUserScriptMaster* ShellExtensionSystem::shared_user_script_master() {
   return NULL;
 }
 
@@ -131,7 +131,7 @@ StateStore* ShellExtensionSystem::rules_store() {
 InfoMap* ShellExtensionSystem::info_map() {
   if (!info_map_.get())
     info_map_ = new InfoMap;
-  return info_map_;
+  return info_map_.get();
 }
 
 LazyBackgroundTaskQueue* ShellExtensionSystem::lazy_background_task_queue() {
@@ -142,7 +142,7 @@ EventRouter* ShellExtensionSystem::event_router() {
   return event_router_.get();
 }
 
-ExtensionWarningService* ShellExtensionSystem::warning_service() {
+WarningService* ShellExtensionSystem::warning_service() {
   return NULL;
 }
 
@@ -191,6 +191,12 @@ scoped_ptr<ExtensionSet> ShellExtensionSystem::GetDependentExtensions(
     const Extension* extension) {
   scoped_ptr<ExtensionSet> empty(new ExtensionSet());
   return empty.PassAs<ExtensionSet>();
+}
+
+DeclarativeUserScriptMaster*
+ShellExtensionSystem::GetDeclarativeUserScriptMasterByExtension(
+    const ExtensionId& extension_id) {
+  return NULL;
 }
 
 }  // namespace extensions

@@ -13,18 +13,18 @@
 #include "base/files/file_util_proxy.h"
 #include "base/memory/scoped_ptr.h"
 #include "webkit/browser/fileapi/file_system_operation.h"
-#include "webkit/browser/webkit_storage_browser_export.h"
+#include "webkit/browser/storage_browser_export.h"
 #include "webkit/common/fileapi/directory_entry.h"
 
 namespace base {
 class Time;
 }
 
-namespace webkit_blob {
+namespace storage {
 class ShareableFileReference;
 }
 
-namespace fileapi {
+namespace storage {
 
 class FileSystemOperationContext;
 class FileSystemURL;
@@ -74,9 +74,8 @@ class AsyncFileUtil {
       void(base::File::Error result,
            const base::File::Info& file_info,
            const base::FilePath& platform_path,
-           const scoped_refptr<webkit_blob::ShareableFileReference>& file_ref)>
+           const scoped_refptr<storage::ShareableFileReference>& file_ref)>
       CreateSnapshotFileCallback;
-
 
   typedef base::Callback<void(int64 size)> CopyFileProgressCallback;
 
@@ -85,7 +84,7 @@ class AsyncFileUtil {
   // Creates an AsyncFileUtil instance which performs file operations on
   // local native file system. The created instance assumes
   // FileSystemURL::path() has the target platform path.
-  WEBKIT_STORAGE_BROWSER_EXPORT static AsyncFileUtil*
+  STORAGE_EXPORT static AsyncFileUtil*
       CreateForLocalFileSystem();
 
   AsyncFileUtil() {}
@@ -362,6 +361,6 @@ class AsyncFileUtil {
   DISALLOW_COPY_AND_ASSIGN(AsyncFileUtil);
 };
 
-}  // namespace fileapi
+}  // namespace storage
 
 #endif  // WEBKIT_BROWSER_FILEAPI_ASYNC_FILE_UTIL_H_

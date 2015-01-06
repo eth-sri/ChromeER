@@ -4,7 +4,7 @@
 
 #include "chrome/browser/ui/views/apps/glass_app_window_frame_view_win.h"
 
-#include "apps/ui/native_app_window.h"
+#include "extensions/browser/app_window/native_app_window.h"
 #include "ui/base/hit_test.h"
 #include "ui/gfx/win/dpi.h"
 #include "ui/views/widget/widget.h"
@@ -20,7 +20,7 @@ const char GlassAppWindowFrameViewWin::kViewClassName[] =
     "ui/views/apps/GlassAppWindowFrameViewWin";
 
 GlassAppWindowFrameViewWin::GlassAppWindowFrameViewWin(
-    apps::NativeAppWindow* window,
+    extensions::NativeAppWindow* window,
     views::Widget* widget)
     : window_(window), widget_(widget) {
 }
@@ -56,6 +56,10 @@ gfx::Rect GlassAppWindowFrameViewWin::GetBoundsForClientView() const {
 gfx::Rect GlassAppWindowFrameViewWin::GetWindowBoundsForClientBounds(
     const gfx::Rect& client_bounds) const {
   gfx::Insets insets = GetGlassInsets();
+  // Our bounds are not the same as the window's due to the offset added by
+  // AppWindowDesktopWindowTreeHostWin::GetClientAreaInsets. So account for it
+  // here.
+  insets += gfx::Insets(0, 0, 1, 1);
   return gfx::Rect(client_bounds.x() - insets.left(),
                    client_bounds.y() - insets.top(),
                    client_bounds.width() + insets.left() + insets.right(),
@@ -114,8 +118,10 @@ const char* GlassAppWindowFrameViewWin::GetClassName() const {
 
 gfx::Size GlassAppWindowFrameViewWin::GetMinimumSize() const {
   gfx::Size min_size = widget_->client_view()->GetMinimumSize();
+
   gfx::Rect client_bounds = GetBoundsForClientView();
-  min_size.Enlarge(0, client_bounds.y());
+  min_size.Enlarge(width() - client_bounds.width(),
+                   height() - client_bounds.height());
   return min_size;
 }
 

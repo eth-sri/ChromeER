@@ -223,6 +223,7 @@ const OncFieldSignature cellular_provider_fields[] = {
     {NULL}};
 
 const OncFieldSignature cellular_apn_fields[] = {
+    { ::onc::cellular_apn::kAccessPointName, &kStringSignature},
     { ::onc::cellular_apn::kName, &kStringSignature},
     { ::onc::cellular_apn::kUsername, &kStringSignature},
     { ::onc::cellular_apn::kPassword, &kStringSignature},
@@ -251,7 +252,7 @@ const OncFieldSignature cellular_fields[] = {
     {NULL}};
 
 const OncFieldSignature cellular_with_state_fields[] = {
-    { ::onc::cellular::kActivateOverNonCellularNetwork, &kBoolSignature},
+    { ::onc::cellular::kActivationType, &kStringSignature},
     { ::onc::cellular::kActivationState, &kStringSignature},
     { ::onc::cellular::kAllowRoaming, &kBoolSignature},
     { ::onc::cellular::kCarrier, &kStringSignature},
@@ -264,6 +265,7 @@ const OncFieldSignature cellular_with_state_fields[] = {
     { ::onc::cellular::kICCID, &kStringSignature},
     { ::onc::cellular::kIMEI, &kStringSignature},
     { ::onc::cellular::kIMSI, &kStringSignature},
+    { ::onc::cellular::kLastGoodAPN, &kCellularApnSignature },
     { ::onc::cellular::kManufacturer, &kStringSignature},
     { ::onc::cellular::kMDN, &kStringSignature},
     { ::onc::cellular::kMEID, &kStringSignature},
@@ -290,6 +292,7 @@ const OncFieldSignature network_configuration_fields[] = {
     { ::onc::network_config::kName, &kStringSignature},
     // Not supported, yet.
     { ::onc::network_config::kNameServers, &kStringListSignature},
+    { ::onc::network_config::kPriority, &kIntegerSignature},
     { ::onc::network_config::kProxySettings, &kProxySettingsSignature},
     { ::onc::kRemove, &kBoolSignature},
     // Not supported, yet.

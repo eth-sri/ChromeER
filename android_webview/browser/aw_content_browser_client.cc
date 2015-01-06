@@ -29,12 +29,12 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/common/web_preferences.h"
-#include "grit/ui_resources.h"
 #include "net/android/network_library.h"
 #include "net/ssl/ssl_cert_request_info.h"
 #include "net/ssl/ssl_info.h"
 #include "ui/base/l10n/l10n_util_android.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/resources/grit/ui_resources.h"
 
 using content::BrowserThread;
 using content::ResourceType;
@@ -168,7 +168,7 @@ std::string AwContentBrowserClient::GetAcceptLangsImpl() {
 
   // If we're not en-US, add in en-US which will be
   // used with a lower q-value.
-  if (StringToLowerASCII(langs) != "en-us") {
+  if (base::StringToLowerASCII(langs) != "en-us") {
     langs += ",en-US";
   }
   return langs;
@@ -236,7 +236,7 @@ net::URLRequestContextGetter* AwContentBrowserClient::CreateRequestContext(
     content::BrowserContext* browser_context,
     content::ProtocolHandlerMap* protocol_handlers,
     content::URLRequestInterceptorScopedVector request_interceptors) {
-  DCHECK(browser_context_.get() == browser_context);
+  DCHECK_EQ(browser_context_.get(), browser_context);
   return browser_context_->CreateRequestContext(protocol_handlers,
                                                 request_interceptors.Pass());
 }
@@ -248,7 +248,7 @@ AwContentBrowserClient::CreateRequestContextForStoragePartition(
     bool in_memory,
     content::ProtocolHandlerMap* protocol_handlers,
     content::URLRequestInterceptorScopedVector request_interceptors) {
-  DCHECK(browser_context_.get() == browser_context);
+  DCHECK_EQ(browser_context_.get(), browser_context);
   // TODO(mkosiba,kinuko): request_interceptors should be hooked up in the
   // downstream. (crbug.com/350286)
   return browser_context_->CreateRequestContextForStoragePartition(
@@ -364,6 +364,7 @@ void AwContentBrowserClient::AllowCertificateError(
     ResourceType resource_type,
     bool overridable,
     bool strict_enforcement,
+    bool expired_previous_decision,
     const base::Callback<void(bool)>& callback,
     content::CertificateRequestResultType* result) {
   AwContentsClientBridgeBase* client =
@@ -502,13 +503,6 @@ bool AwContentBrowserClient::CanCreateWindow(
   return true;
 }
 
-std::string AwContentBrowserClient::GetWorkerProcessTitle(const GURL& url,
-                                          content::ResourceContext* context) {
-  NOTREACHED() << "Android WebView does not yet support web workers.";
-  return std::string();
-}
-
-
 void AwContentBrowserClient::ResourceDispatcherHostCreated() {
   AwResourceDispatcherHostDelegate::ResourceDispatcherHostCreated();
 }
@@ -526,14 +520,6 @@ bool AwContentBrowserClient::IsFastShutdownPossible() {
   NOTREACHED() << "Android WebView is single process, so IsFastShutdownPossible"
                << " should never be called";
   return false;
-}
-
-void AwContentBrowserClient::UpdateInspectorSetting(
-    content::RenderViewHost* rvh,
-    const std::string& key,
-    const std::string& value) {
-  // TODO(boliu): Implement persisting inspector settings.
-  NOTIMPLEMENTED();
 }
 
 void AwContentBrowserClient::ClearCache(content::RenderViewHost* rvh) {

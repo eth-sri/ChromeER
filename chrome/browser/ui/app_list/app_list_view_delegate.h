@@ -11,6 +11,7 @@
 #include "base/callback_forward.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/scoped_vector.h"
 #include "base/observer_list.h"
 #include "base/scoped_observer.h"
 #include "chrome/browser/profiles/profile_info_cache_observer.h"
@@ -51,13 +52,24 @@ class AppListViewDelegate : public app_list::AppListViewDelegate,
                             public SigninManagerBase::Observer,
                             public SigninManagerFactory::Observer {
  public:
+  // Constructs Chrome's AppListViewDelegate, initially for |profile|.
+  // Does not take ownership of |controller|. TODO(tapted): It should.
   AppListViewDelegate(Profile* profile,
                       AppListControllerDelegate* controller);
   virtual ~AppListViewDelegate();
 
  private:
-  // Updates the app list's current profile and ProfileMenuItems.
-  void OnProfileChanged();
+  // Configure the AppList for the given |profile|.
+  void SetProfile(Profile* profile);
+
+  // Updates the speech webview and start page for the current |profile_|.
+  void SetUpSearchUI();
+
+  // Updates the app list's ProfileMenuItems for the current |profile_|.
+  void SetUpProfileSwitcher();
+
+  // Updates the app list's custom launcher pages for the current |profile_|.
+  void SetUpCustomLauncherPages();
 
   // Overridden from app_list::AppListViewDelegate:
   virtual bool ForceNativeDesktop() const OVERRIDE;
@@ -89,7 +101,8 @@ class AppListViewDelegate : public app_list::AppListViewDelegate,
       const base::FilePath& profile_path) OVERRIDE;
 #if defined(TOOLKIT_VIEWS)
   virtual views::View* CreateStartPageWebView(const gfx::Size& size) OVERRIDE;
-  virtual views::View* CreateCustomPageWebView(const gfx::Size& size) OVERRIDE;
+  virtual std::vector<views::View*> CreateCustomPageWebViews(
+      const gfx::Size& size) OVERRIDE;
 #endif
   virtual bool IsSpeechRecognitionEnabled() OVERRIDE;
   virtual const Users& GetUsers() const OVERRIDE;
@@ -116,9 +129,11 @@ class AppListViewDelegate : public app_list::AppListViewDelegate,
 
   // Overridden from SigninManagerBase::Observer:
   virtual void GoogleSigninFailed(const GoogleServiceAuthError& error) OVERRIDE;
-  virtual void GoogleSigninSucceeded(const std::string& username,
+  virtual void GoogleSigninSucceeded(const std::string& account_id,
+                                     const std::string& username,
                                      const std::string& password) OVERRIDE;
-  virtual void GoogleSignedOut(const std::string& username) OVERRIDE;
+  virtual void GoogleSignedOut(const std::string& account_id,
+                               const std::string& username) OVERRIDE;
 
   // Overridden from ProfileInfoCacheObserver:
   virtual void OnProfileAdded(const base::FilePath& profile_path) OVERRIDE;
@@ -128,7 +143,6 @@ class AppListViewDelegate : public app_list::AppListViewDelegate,
       const base::FilePath& profile_path,
       const base::string16& old_profile_name) OVERRIDE;
 
-  scoped_ptr<app_list::SearchController> search_controller_;
   // Unowned pointer to the controller.
   AppListControllerDelegate* controller_;
   // Unowned pointer to the associated profile. May change if SetProfileByPath
@@ -138,7 +152,9 @@ class AppListViewDelegate : public app_list::AppListViewDelegate,
   // if |profile_| changes.
   app_list::AppListModel* model_;
 
+  // Note: order ensures |search_controller_| is destroyed before |speech_ui_|.
   scoped_ptr<app_list::SpeechUIModel> speech_ui_;
+  scoped_ptr<app_list::SearchController> search_controller_;
 
   base::TimeDelta auto_launch_timeout_;
 
@@ -154,8 +170,8 @@ class AppListViewDelegate : public app_list::AppListViewDelegate,
   // this instance can be removed as an observer on its destruction.
   ScopedObserver<SigninManagerBase, AppListViewDelegate> scoped_observer_;
 
-  // Window contents of the additional custom launcher page. May be NULL.
-  scoped_ptr<apps::CustomLauncherPageContents> custom_page_contents_;
+  // Window contents of additional custom launcher pages.
+  ScopedVector<apps::CustomLauncherPageContents> custom_page_contents_;
 
   DISALLOW_COPY_AND_ASSIGN(AppListViewDelegate);
 };

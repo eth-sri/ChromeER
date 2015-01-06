@@ -64,6 +64,7 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
+#include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
@@ -71,7 +72,7 @@
 #include "printing/backend/print_backend.h"
 #include "printing/backend/print_backend_consts.h"
 #include "printing/metafile.h"
-#include "printing/metafile_impl.h"
+#include "printing/pdf_metafile_skia.h"
 #include "printing/pdf_render_settings.h"
 #include "printing/print_settings.h"
 #include "printing/printing_context.h"
@@ -261,10 +262,19 @@ std::string GetDefaultPrinterOnFileThread() {
   return default_printer;
 }
 
+class PrintingContextDelegate : public printing::PrintingContext::Delegate {
+ public:
+  // PrintingContext::Delegate methods.
+  virtual gfx::NativeView GetParentView() OVERRIDE { return NULL; }
+  virtual std::string GetAppLocale() OVERRIDE {
+    return g_browser_process->GetApplicationLocale();
+  }
+};
+
 gfx::Size GetDefaultPdfMediaSizeMicrons() {
+  PrintingContextDelegate delegate;
   scoped_ptr<printing::PrintingContext> printing_context(
-      printing::PrintingContext::Create(
-          g_browser_process->GetApplicationLocale()));
+      printing::PrintingContext::Create(&delegate));
   if (printing::PrintingContext::OK != printing_context->UsePdfSettings() ||
       printing_context->settings().device_units_per_inch() <= 0) {
     return gfx::Size();
@@ -556,9 +566,11 @@ void PrintPreviewHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback("getPrinterCapabilities",
       base::Bind(&PrintPreviewHandler::HandleGetPrinterCapabilities,
                  base::Unretained(this)));
+#if !defined(OS_WIN)
   web_ui()->RegisterMessageCallback("showSystemDialog",
       base::Bind(&PrintPreviewHandler::HandleShowSystemDialog,
                  base::Unretained(this)));
+#endif  // !OS_WIN
   web_ui()->RegisterMessageCallback("signIn",
       base::Bind(&PrintPreviewHandler::HandleSignin,
                  base::Unretained(this)));
@@ -606,8 +618,7 @@ void PrintPreviewHandler::RegisterMessages() {
 
 bool PrintPreviewHandler::PrivetPrintingEnabled() {
 #if defined(ENABLE_SERVICE_DISCOVERY)
-  return !base::CommandLine::ForCurrentProcess()->HasSwitch(
-    switches::kDisableDeviceDiscovery);
+  return true;
 #else
   return false;
 #endif
@@ -629,28 +640,19 @@ void PrintPreviewHandler::HandleGetPrinters(const base::ListValue* /*args*/) {
 }
 
 void PrintPreviewHandler::HandleGetPrivetPrinters(const base::ListValue* args) {
+  if (!PrivetPrintingEnabled())
+    return web_ui()->CallJavascriptFunction("onPrivetPrinterSearchDone");
 #if defined(ENABLE_SERVICE_DISCOVERY)
-  if (PrivetPrintingEnabled()) {
-    Profile* profile = Profile::FromWebUI(web_ui());
-    service_discovery_client_ =
-        local_discovery::ServiceDiscoverySharedClient::GetInstance();
-    printer_lister_.reset(new local_discovery::PrivetLocalPrinterLister(
-        service_discovery_client_.get(),
-        profile->GetRequestContext(),
-        this));
-    printer_lister_->Start();
-  }
-#endif
-
-  if (!PrivetPrintingEnabled()) {
-    web_ui()->CallJavascriptFunction("onPrivetPrinterSearchDone");
-  }
+  local_discovery::ServiceDiscoverySharedClient::GetInstanceWithoutAlert(
+      base::Bind(&PrintPreviewHandler::StartPrivetLister,
+                 weak_factory_.GetWeakPtr()));
+#endif  // ENABLE_SERVICE_DISCOVERY
 }
 
 void PrintPreviewHandler::HandleStopGetPrivetPrinters(
     const base::ListValue* args) {
 #if defined(ENABLE_SERVICE_DISCOVERY)
-  if (PrivetPrintingEnabled()) {
+  if (PrivetPrintingEnabled() && printer_lister_) {
     printer_lister_->Stop();
   }
 #endif
@@ -750,12 +752,6 @@ void PrintPreviewHandler::HandlePrint(const base::ListValue* args) {
   UMA_HISTOGRAM_COUNTS("PrintPreview.RegeneratePreviewRequest.BeforePrint",
                        regenerate_preview_request_count_);
 
-  WebContents* initiator = GetInitiator();
-  if (initiator) {
-    RenderViewHost* rvh = initiator->GetRenderViewHost();
-    rvh->Send(new PrintMsg_ResetScriptedPrintCount(rvh->GetRoutingID()));
-  }
-
   scoped_ptr<base::DictionaryValue> settings(GetSettingsDictionary(args));
   if (!settings.get())
     return;
@@ -829,8 +825,15 @@ void PrintPreviewHandler::HandlePrint(const base::ListValue* args) {
     ReportUserActionHistogram(PRINT_WITH_CLOUD_PRINT);
     SendCloudPrintJob(data.get());
   } else {
-    UMA_HISTOGRAM_COUNTS("PrintPreview.PageCount.PrintToPrinter", page_count);
-    ReportUserActionHistogram(PRINT_TO_PRINTER);
+    bool system_dialog = false;
+    settings->GetBoolean(printing::kSettingShowSystemDialog, &system_dialog);
+    if (system_dialog) {
+      UMA_HISTOGRAM_COUNTS("PrintPreview.PageCount.SystemDialog", page_count);
+      ReportUserActionHistogram(FALLBACK_TO_ADVANCED_SETTINGS_DIALOG);
+    } else {
+      UMA_HISTOGRAM_COUNTS("PrintPreview.PageCount.PrintToPrinter", page_count);
+      ReportUserActionHistogram(PRINT_TO_PRINTER);
+    }
     ReportPrintSettingsStats(*settings);
 
     // This tries to activate the initiator as well, so do not clear the
@@ -841,6 +844,16 @@ void PrintPreviewHandler::HandlePrint(const base::ListValue* args) {
 
     // Do this so the initiator can open a new print preview dialog, while the
     // current print preview dialog is still handling its print job.
+    WebContents* initiator = GetInitiator();
+    if (initiator) {
+      // Save initiator IDs. |PrintingMessageFilter::OnUpdatePrintSettings|
+      // would be called when initiator info is cleared.
+      settings->SetInteger(printing::kPreviewInitiatorHostId,
+                           initiator->GetRenderProcessHost()->GetID());
+      settings->SetInteger(printing::kPreviewInitiatorRoutingId,
+                           initiator->GetRoutingID());
+    }
+
     ClearInitiatorDetails();
 
     // The PDF being printed contains only the pages that the user selected,
@@ -887,7 +900,7 @@ void PrintPreviewHandler::PrintToPdf() {
         base::UTF16ToUTF8(print_job_title_utf16);
 #endif
 
-    file_util::ReplaceIllegalCharactersInPath(&print_job_title, '_');
+    base::i18n::ReplaceIllegalCharactersInPath(&print_job_title, '_');
     base::FilePath default_filename(print_job_title);
     default_filename =
         default_filename.ReplaceExtension(FILE_PATH_LITERAL("pdf"));
@@ -1011,6 +1024,7 @@ void PrintPreviewHandler::HandleManageCloudPrint(
       false));
 }
 
+#if !defined(OS_WIN)
 void PrintPreviewHandler::HandleShowSystemDialog(
     const base::ListValue* /*args*/) {
   ReportStats();
@@ -1026,10 +1040,11 @@ void PrintPreviewHandler::HandleShowSystemDialog(
   print_view_manager->PrintForSystemDialogNow();
 
   // Cancel the pending preview request if exists.
-  PrintPreviewUI* print_preview_ui = static_cast<PrintPreviewUI*>(
-      web_ui()->GetController());
+  PrintPreviewUI* print_preview_ui =
+      static_cast<PrintPreviewUI*>(web_ui()->GetController());
   print_preview_ui->OnCancelPendingPreviewRequest();
 }
+#endif  // !OS_WIN
 
 void PrintPreviewHandler::HandleManagePrinters(
     const base::ListValue* /*args*/) {
@@ -1275,9 +1290,11 @@ void PrintPreviewHandler::OnPrintPreviewFailed() {
   ReportUserActionHistogram(PREVIEW_FAILED);
 }
 
+#if !defined(OS_WIN)
 void PrintPreviewHandler::ShowSystemDialog() {
   HandleShowSystemDialog(NULL);
 }
+#endif  // !OS_WIN
 
 void PrintPreviewHandler::FileSelected(const base::FilePath& path,
                                        int index, void* params) {
@@ -1298,7 +1315,7 @@ void PrintPreviewHandler::PostPrintToPdfTask() {
     NOTREACHED() << "Preview data was checked before file dialog.";
     return;
   }
-  scoped_ptr<printing::PreviewMetafile> metafile(new printing::PreviewMetafile);
+  scoped_ptr<printing::PdfMetafileSkia> metafile(new printing::PdfMetafileSkia);
   metafile->InitFromData(static_cast<const void*>(data->front()), data->size());
   BrowserThread::PostTask(
       BrowserThread::FILE, FROM_HERE,
@@ -1351,6 +1368,20 @@ bool PrintPreviewHandler::GetPreviewDataAndTitle(
 }
 
 #if defined(ENABLE_SERVICE_DISCOVERY)
+
+void PrintPreviewHandler::StartPrivetLister(
+    scoped_refptr<local_discovery::ServiceDiscoverySharedClient> client) {
+  if (!PrivetPrintingEnabled())
+    return web_ui()->CallJavascriptFunction("onPrivetPrinterSearchDone");
+
+  Profile* profile = Profile::FromWebUI(web_ui());
+  DCHECK(!service_discovery_client_ || service_discovery_client_ == client);
+  service_discovery_client_ = client;
+  printer_lister_.reset(new local_discovery::PrivetLocalPrinterLister(
+      service_discovery_client_.get(), profile->GetRequestContext(), this));
+  printer_lister_->Start();
+}
+
 void PrintPreviewHandler::LocalPrinterChanged(
     bool added,
     const std::string& name,
@@ -1432,7 +1463,7 @@ void PrintPreviewHandler::StartPrivetLocalPrint(const std::string& print_ticket,
 
   privet_local_print_operation_->SetJobname(base::UTF16ToUTF8(title));
   privet_local_print_operation_->SetPageSize(page_size);
-  privet_local_print_operation_->SetData(data);
+  privet_local_print_operation_->SetData(data.get());
 
   Profile* profile = Profile::FromWebUI(web_ui());
   SigninManagerBase* signin_manager =
@@ -1451,7 +1482,8 @@ void PrintPreviewHandler::OnPrivetCapabilities(
     const base::DictionaryValue* capabilities) {
   std::string name = privet_capabilities_operation_->GetHTTPClient()->GetName();
 
-  if (!capabilities || capabilities->HasKey(local_discovery::kPrivetKeyError)) {
+  if (!capabilities || capabilities->HasKey(local_discovery::kPrivetKeyError) ||
+      !printer_lister_) {
     SendPrivetCapabilitiesError(name);
     return;
   }
@@ -1501,7 +1533,7 @@ bool PrintPreviewHandler::CreatePrivetHTTP(
     const local_discovery::PrivetHTTPAsynchronousFactory::ResultCallback&
         callback) {
   const local_discovery::DeviceDescription* device_description =
-      printer_lister_->GetDeviceDescription(name);
+      printer_lister_ ? printer_lister_->GetDeviceDescription(name) : NULL;
 
   if (!device_description) {
     SendPrivetCapabilitiesError(name);
@@ -1510,7 +1542,7 @@ bool PrintPreviewHandler::CreatePrivetHTTP(
 
   privet_http_factory_ =
       local_discovery::PrivetHTTPAsynchronousFactory::CreateInstance(
-          service_discovery_client_,
+          service_discovery_client_.get(),
           Profile::FromWebUI(web_ui())->GetRequestContext());
   privet_http_resolution_ = privet_http_factory_->CreatePrivetHTTP(
       name, device_description->address, callback);

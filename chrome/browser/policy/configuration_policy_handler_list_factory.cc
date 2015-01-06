@@ -25,7 +25,6 @@
 #include "components/policy/core/common/schema.h"
 #include "components/search_engines/default_search_policy_handler.h"
 #include "components/translate/core/common/translate_pref_names.h"
-#include "grit/components_strings.h"
 #include "policy/policy_constants.h"
 
 #if !defined(OS_IOS)
@@ -39,18 +38,14 @@
 
 #if defined(OS_CHROMEOS)
 #include "ash/magnifier/magnifier_constants.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/policy/configuration_policy_handler_chromeos.h"
 #include "chromeos/dbus/power_policy_controller.h"
 #include "components/user_manager/user.h"
+#include "components/user_manager/user_manager.h"
 #endif
 
 #if !defined(OS_ANDROID) && !defined(OS_IOS)
 #include "chrome/browser/download/download_dir_policy_handler.h"
-#endif
-
-#if !defined(OS_MACOSX) && !defined(OS_IOS)
-#include "apps/pref_names.h"
 #endif
 
 #if defined(ENABLE_EXTENSIONS)
@@ -105,9 +100,6 @@ const PolicyToPreferenceMapEntry kSimplePolicyMap[] = {
     base::Value::TYPE_BOOLEAN },
   { key::kPrintingEnabled,
     prefs::kPrintingEnabled,
-    base::Value::TYPE_BOOLEAN },
-  { key::kDisablePrintPreview,
-    prefs::kPrintPreviewDisabled,
     base::Value::TYPE_BOOLEAN },
   { key::kMetricsReportingEnabled,
     prefs::kMetricsReportingEnabled,
@@ -296,13 +288,13 @@ const PolicyToPreferenceMapEntry kSimplePolicyMap[] = {
     prefs::kPluginsAlwaysAuthorize,
     base::Value::TYPE_BOOLEAN },
   { key::kBookmarkBarEnabled,
-    prefs::kShowBookmarkBar,
+    bookmarks::prefs::kShowBookmarkBar,
     base::Value::TYPE_BOOLEAN },
   { key::kEditBookmarksEnabled,
-    prefs::kEditBookmarksEnabled,
+    bookmarks::prefs::kEditBookmarksEnabled,
     base::Value::TYPE_BOOLEAN },
   { key::kShowAppsShortcutInBookmarkBar,
-    prefs::kShowAppsShortcutInBookmarkBar,
+    bookmarks::prefs::kShowAppsShortcutInBookmarkBar,
     base::Value::TYPE_BOOLEAN },
   { key::kAllowFileSelectionDialogs,
     prefs::kAllowFileSelectionDialogs,
@@ -374,7 +366,7 @@ const PolicyToPreferenceMapEntry kSimplePolicyMap[] = {
     base::Value::TYPE_BOOLEAN },
 #if defined(ENABLE_EXTENSIONS)
   { key::kFullscreenAllowed,
-    apps::prefs::kAppFullscreenAllowed,
+    extensions::pref_names::kAppFullscreenAllowed,
     base::Value::TYPE_BOOLEAN },
 #endif  // defined(ENABLE_EXTENSIONS)
 #endif  // !defined(OS_MACOSX) && !defined(OS_IOS)
@@ -488,6 +480,9 @@ const PolicyToPreferenceMapEntry kSimplePolicyMap[] = {
   { key::kNativeMessagingUserLevelHosts,
     extensions::pref_names::kNativeMessagingUserLevelHosts,
     base::Value::TYPE_BOOLEAN },
+  { key::kBrowserGuestModeEnabled,
+    prefs::kBrowserGuestModeEnabled,
+    base::Value::TYPE_BOOLEAN },
 #endif  // !defined(OS_CHROMEOS) && !defined(OS_ANDROID) && !defined(OS_IOS)
 };
 
@@ -533,9 +528,9 @@ void GetDeprecatedFeaturesMap(
 
 void PopulatePolicyHandlerParameters(PolicyHandlerParameters* parameters) {
 #if defined(OS_CHROMEOS)
-  if (chromeos::UserManager::IsInitialized()) {
+  if (user_manager::UserManager::IsInitialized()) {
     const user_manager::User* user =
-        chromeos::UserManager::Get()->GetActiveUser();
+        user_manager::UserManager::Get()->GetActiveUser();
     if (user)
       parameters->user_id_hash = user->username_hash();
   }

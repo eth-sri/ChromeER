@@ -1571,45 +1571,6 @@ name=bug_222883
 *!v8::internal::Heap::PerformGarbageCollection*
 
 UNINITIALIZED READ
-name=bug_227278a
-...
-*!content::CompositingIOSurfaceTransformerTest::RunResizeTest
-*!content::CompositingIOSurfaceTransformerTest_ResizesTexturesCorrectly_Test::TestBody
-
-UNINITIALIZED READ
-name=bug_227278b
-...
-*!content::CompositingIOSurfaceTransformerTest::RunTransformRGBToYV12Test
-*!content::CompositingIOSurfaceTransformerTest_TransformsRGBToYV12_Test::TestBody
-
-UNINITIALIZED READ
-name=bug_227278c
-*!BitSetNextSetBit
-*!RegistersReInterfere
-*!RegistersMerge
-*!glpPPShaderLinearizeStreamMgr
-*!glpPPShaderLinearize
-*!glePrepareShaderForEmulation
-*!gleSetVPTransformFuncAll
-*!gleVPRenderQuadsSmooth
-*!gleDrawArraysOrElements_ExecCore
-*!glDrawArrays_Exec
-*!glDrawArrays
-*!content::::DrawQuad
-*!content::CompositingIOSurfaceTransformer::ResizeBilinear
-*!content::CompositingIOSurfaceTransformerTest::RunResizeTest
-*!content::CompositingIOSurfaceTransformerTest_ResizesTexturesCorrectly_Test::TestBody
-
-UNINITIALIZED READ
-name=bug_227278d
-*!glViewport_Exec
-*!glViewport
-*!content::::SetTransformationsForOffScreenRendering
-*!content::CompositingIOSurfaceTransformer::TransformRGBToYV12
-*!content::CompositingIOSurfaceTransformerTest::RunTransformRGBToYV12Test
-*!content::CompositingIOSurfaceTransformerTest_TransformsRGBToYV12_Test::TestBody
-
-UNINITIALIZED READ
 name=bug_238170a
 *!blink::ElementRuleCollector::collectMatchingRules
 *!blink::ElementRuleCollector::hasAnyMatchingRules
@@ -2209,3 +2170,30 @@ system call NtWriteFile parameter #5
 KERNELBASE.dll!WriteFile
 KERNEL32.dll!WriteFile
 mojo_system_impl.dll!mojo::system::`anonymous namespace'::RawChannelWin::WriteNoLock
+
+HANDLE LEAK
+name=bug_403544
+system call NtCreateSemaphore
+KERNELBASE.dll!CreateSemaphoreExW
+...
+v8.dll!v8::internal::SweeperThread::SweeperThread
+...
+blink_web.dll!blink::WorkerScriptController::WorkerScriptController
+blink_web.dll!blink::WorkerGlobalScope::WorkerGlobalScope
+blink_web.dll!blink::ServiceWorkerGlobalScope::ServiceWorkerGlobalScope
+
+
+HANDLE LEAK
+name=bug_403681
+system call NtCreateTimer
+KERNELBASE.dll!CreateWaitableTimerExW
+KERNEL32.dll!CreateWaitableTimerW
+content.dll!rtc::Timing::Timing
+content.dll!content::RenderProcessHostImpl::CreateMessageFilters
+...
+content.dll!content::RenderViewHostImpl::CreateRenderView
+content.dll!content::WebContentsImpl::CreateRenderViewForRenderManager
+...
+content.dll!content::NavigationControllerImpl::LoadEntry
+...
+*!extensions::ExtensionHost::LoadInitialURL

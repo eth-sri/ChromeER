@@ -119,7 +119,9 @@ void PulseAudioInputStream::Close() {
     if (handle_) {
       // Disable all the callbacks before disconnecting.
       pa_stream_set_state_callback(handle_, NULL, NULL);
-      pa_stream_flush(handle_, NULL, NULL);
+      pa_operation* operation = pa_stream_flush(
+          handle_, &pulse::StreamSuccessCallback, pa_mainloop_);
+      WaitForOperationCompletion(pa_mainloop_, operation);
 
       if (pa_stream_get_state(handle_) != PA_STREAM_UNCONNECTED)
         pa_stream_disconnect(handle_);
@@ -281,10 +283,10 @@ void PulseAudioInputStream::ReadData() {
     hardware_delay += fifo_.GetAvailableFrames() * params_.GetBytesPerFrame();
     callback_->OnData(this, audio_bus, hardware_delay, normalized_volume);
 
-    // TODO(xians): Remove once PPAPI is using circular buffers.
-    DVLOG(1) << "OnData is being called consecutively, sleep 5ms to "
-             << "wait until render consumes the data";
-    base::PlatformThread::Sleep(base::TimeDelta::FromMilliseconds(5));
+    // Sleep 5ms to wait until render consumes the data in order to avoid
+    // back to back OnData() method.
+    if (fifo_.available_blocks())
+      base::PlatformThread::Sleep(base::TimeDelta::FromMilliseconds(5));
   }
 
   pa_threaded_mainloop_signal(pa_mainloop_, 0);

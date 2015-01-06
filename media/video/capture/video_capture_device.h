@@ -46,6 +46,7 @@ class MEDIA_EXPORT VideoCaptureDevice {
     enum CaptureApiType {
       MEDIA_FOUNDATION,
       DIRECT_SHOW,
+      DIRECT_SHOW_WDM,
       API_TYPE_UNKNOWN
     };
 #endif
@@ -109,6 +110,12 @@ class MEDIA_EXPORT VideoCaptureDevice {
     TransportType transport_type() const {
       return transport_type_;
     }
+    bool is_blacklisted() const {
+      return is_blacklisted_;
+    }
+    void set_is_blacklisted(bool is_blacklisted) {
+      is_blacklisted_ = is_blacklisted;
+    }
 #endif  // if defined(OS_WIN)
 
    private:
@@ -134,6 +141,8 @@ class MEDIA_EXPORT VideoCaptureDevice {
 #endif
 #if defined(OS_MACOSX)
     TransportType transport_type_;
+    // Flag used to mark blacklisted devices for QTKit Api.
+    bool is_blacklisted_;
 #endif
     // Allow generated copy constructor and assignment.
   };

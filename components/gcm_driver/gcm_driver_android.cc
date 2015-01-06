@@ -98,6 +98,13 @@ void GCMDriverAndroid::OnSignedIn() {
 void GCMDriverAndroid::Purge() {
 }
 
+void GCMDriverAndroid::AddConnectionObserver(GCMConnectionObserver* observer) {
+}
+
+void GCMDriverAndroid::RemoveConnectionObserver(
+    GCMConnectionObserver* observer) {
+}
+
 void GCMDriverAndroid::Enable() {
 }
 
@@ -127,6 +134,13 @@ void GCMDriverAndroid::GetGCMStatistics(
 void GCMDriverAndroid::SetGCMRecording(const GetGCMStatisticsCallback& callback,
                                        bool recording) {
   NOTIMPLEMENTED();
+}
+
+void GCMDriverAndroid::UpdateAccountMapping(
+    const AccountMapping& account_mapping) {
+}
+
+void GCMDriverAndroid::RemoveAccountMapping(const std::string& account_id) {
 }
 
 GCMClient::Result GCMDriverAndroid::EnsureStarted() {

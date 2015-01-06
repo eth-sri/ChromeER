@@ -16,7 +16,7 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/camera_presence_notifier.h"
 #include "chrome/browser/chromeos/login/users/avatar/user_image_manager.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
+#include "chrome/browser/chromeos/login/users/chrome_user_manager.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_window.h"
@@ -24,17 +24,17 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/url_constants.h"
+#include "chrome/grit/generated_resources.h"
 #include "chromeos/audio/chromeos_sounds.h"
 #include "components/user_manager/user.h"
 #include "components/user_manager/user_image/default_user_images.h"
 #include "components/user_manager/user_image/user_image.h"
+#include "components/user_manager/user_manager.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/common/url_constants.h"
 #include "grit/browser_resources.h"
-#include "grit/generated_resources.h"
-#include "grit/theme_resources.h"
 #include "net/base/data_url.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -312,7 +312,7 @@ void ChangePictureOptionsHandler::SendProfileImage(const gfx::ImageSkia& image,
 
 void ChangePictureOptionsHandler::UpdateProfileImage() {
   UserImageManager* user_image_manager =
-      UserManager::Get()->GetUserImageManager(GetUser()->email());
+      ChromeUserManager::Get()->GetUserImageManager(GetUser()->email());
   // If we have a downloaded profile image and haven't sent it in
   // |SendSelectedImage|, send it now (without selecting).
   if (previous_image_index_ != user_manager::User::USER_IMAGE_PROFILE &&
@@ -343,7 +343,7 @@ void ChangePictureOptionsHandler::HandleSelectImage(
   DCHECK(!image_type.empty());
 
   UserImageManager* user_image_manager =
-      UserManager::Get()->GetUserImageManager(GetUser()->email());
+      ChromeUserManager::Get()->GetUserImageManager(GetUser()->email());
   int image_index = user_manager::User::USER_IMAGE_INVALID;
   bool waiting_for_camera_photo = false;
 
@@ -403,9 +403,9 @@ void ChangePictureOptionsHandler::HandleSelectImage(
 void ChangePictureOptionsHandler::FileSelected(const base::FilePath& path,
                                                int index,
                                                void* params) {
-  UserManager* user_manager = UserManager::Get();
-  user_manager->GetUserImageManager(GetUser()->email())->
-      SaveUserImageFromFile(path);
+  ChromeUserManager::Get()
+      ->GetUserImageManager(GetUser()->email())
+      ->SaveUserImageFromFile(path);
   UMA_HISTOGRAM_ENUMERATION("UserImage.ChangeChoice",
                             user_manager::kHistogramImageFromFile,
                             user_manager::kHistogramImagesCount);
@@ -414,8 +414,8 @@ void ChangePictureOptionsHandler::FileSelected(const base::FilePath& path,
 
 void ChangePictureOptionsHandler::SetImageFromCamera(
     const gfx::ImageSkia& photo) {
-  UserManager* user_manager = UserManager::Get();
-  user_manager->GetUserImageManager(GetUser()->email())
+  ChromeUserManager::Get()
+      ->GetUserImageManager(GetUser()->email())
       ->SaveUserImage(user_manager::UserImage::CreateAndEncode(photo));
   UMA_HISTOGRAM_ENUMERATION("UserImage.ChangeChoice",
                             user_manager::kHistogramImageFromCamera,
@@ -475,7 +475,7 @@ user_manager::User* ChangePictureOptionsHandler::GetUser() const {
   Profile* profile = Profile::FromWebUI(web_ui());
   user_manager::User* user = ProfileHelper::Get()->GetUserByProfile(profile);
   if (!user)
-    return UserManager::Get()->GetActiveUser();
+    return user_manager::UserManager::Get()->GetActiveUser();
   return user;
 }
 

@@ -17,10 +17,9 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/callback.h"
-#include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "gpu/command_buffer/client/gles2_implementation.h"
-#include "gpu/command_buffer/client/gles2_lib.h"
+#include "gpu/command_buffer/common/gles2_cmd_utils.h"
 #include "gpu/skia_bindings/gl_bindings_skia_cmd_buffer.h"
 #include "ui/gfx/size.h"
 #include "ui/gl/gl_implementation.h"
@@ -30,28 +29,6 @@ using gpu::GLInProcessContext;
 
 namespace webkit {
 namespace gpu {
-
-namespace {
-
-// Singleton used to initialize and terminate the gles2 library.
-class GLES2Initializer {
- public:
-  GLES2Initializer() {
-    ::gles2::Initialize();
-  }
-
-  ~GLES2Initializer() {
-    ::gles2::Terminate();
-  }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(GLES2Initializer);
-};
-
-static base::LazyInstance<GLES2Initializer> g_gles2_initializer =
-    LAZY_INSTANCE_INITIALIZER;
-
-}  // namespace anonymous
 
 // static
 scoped_ptr<WebGraphicsContext3DInProcessCommandBufferImpl>
@@ -117,17 +94,8 @@ WebGraphicsContext3DInProcessCommandBufferImpl::
     ~WebGraphicsContext3DInProcessCommandBufferImpl() {
 }
 
-// static
-void WebGraphicsContext3DInProcessCommandBufferImpl::ConvertAttributes(
-    const blink::WebGraphicsContext3D::Attributes& attributes,
-    ::gpu::GLInProcessContextAttribs* output_attribs) {
-  output_attribs->alpha_size = attributes.alpha ? 8 : 0;
-  output_attribs->depth_size = attributes.depth ? 24 : 0;
-  output_attribs->stencil_size = attributes.stencil ? 8 : 0;
-  output_attribs->samples = attributes.antialias ? 4 : 0;
-  output_attribs->sample_buffers = attributes.antialias ? 1 : 0;
-  output_attribs->fail_if_major_perf_caveat =
-      attributes.failIfMajorPerformanceCaveat ? 1 : 0;
+size_t WebGraphicsContext3DInProcessCommandBufferImpl::GetMappedMemoryLimit() {
+  return context_->GetMappedMemoryLimit();
 }
 
 bool WebGraphicsContext3DInProcessCommandBufferImpl::MaybeInitializeGL() {
@@ -137,9 +105,6 @@ bool WebGraphicsContext3DInProcessCommandBufferImpl::MaybeInitializeGL() {
   if (initialize_failed_)
     return false;
 
-  // Ensure the gles2 library is initialized first in a thread safe way.
-  g_gles2_initializer.Get();
-
   if (!context_) {
     // TODO(kbr): More work will be needed in this implementation to
     // properly support GPU switching. Like in the out-of-process
@@ -147,15 +112,17 @@ bool WebGraphicsContext3DInProcessCommandBufferImpl::MaybeInitializeGL() {
     // will need to be lost either when the first context requesting the
     // discrete GPU is created, or the last one is destroyed.
     gfx::GpuPreference gpu_preference = gfx::PreferDiscreteGpu;
-    context_.reset(GLInProcessContext::Create(NULL, /* service */
-                                              NULL, /* surface */
-                                              is_offscreen_,
-                                              window_,
-                                              gfx::Size(1, 1),
-                                              NULL, /* share_context */
-                                              share_resources_,
-                                              attribs_,
-                                              gpu_preference));
+    context_.reset(GLInProcessContext::Create(
+        NULL, /* service */
+        NULL, /* surface */
+        is_offscreen_,
+        window_,
+        gfx::Size(1, 1),
+        NULL, /* share_context */
+        share_resources_,
+        attribs_,
+        gpu_preference,
+        ::gpu::GLInProcessContextSharedMemoryLimits()));
   }
 
   if (context_) {
@@ -178,10 +145,10 @@ bool WebGraphicsContext3DInProcessCommandBufferImpl::MaybeInitializeGL() {
   return true;
 }
 
-bool WebGraphicsContext3DInProcessCommandBufferImpl::makeContextCurrent() {
+bool
+WebGraphicsContext3DInProcessCommandBufferImpl::InitializeOnCurrentThread() {
   if (!MaybeInitializeGL())
     return false;
-  ::gles2::SetGLContext(GetGLInterface());
   return context_ && !isContextLost();
 }
 

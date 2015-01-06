@@ -65,6 +65,7 @@ ONC_EXPORT extern const char kIPConfigs[];
 ONC_EXPORT extern const char kMacAddress[];
 ONC_EXPORT extern const char kName[];
 ONC_EXPORT extern const char kNameServers[];
+ONC_EXPORT extern const char kPriority[];
 ONC_EXPORT extern const char kProxySettings[];
 ONC_EXPORT extern const char kSearchDomains[];
 ONC_EXPORT extern const char kConnectionState[];
@@ -92,8 +93,8 @@ ONC_EXPORT extern const char kWireless[];
 }  // namespace network_type
 
 namespace cellular {
-ONC_EXPORT extern const char kActivateOverNonCellularNetwork[];
 ONC_EXPORT extern const char kActivationState[];
+ONC_EXPORT extern const char kActivationType[];
 ONC_EXPORT extern const char kAllowRoaming[];
 ONC_EXPORT extern const char kAPN[];
 ONC_EXPORT extern const char kAPNList[];
@@ -107,6 +108,7 @@ ONC_EXPORT extern const char kHomeProvider[];
 ONC_EXPORT extern const char kICCID[];
 ONC_EXPORT extern const char kIMEI[];
 ONC_EXPORT extern const char kIMSI[];
+ONC_EXPORT extern const char kLastGoodAPN[];
 ONC_EXPORT extern const char kManufacturer[];
 ONC_EXPORT extern const char kMDN[];
 ONC_EXPORT extern const char kMEID[];
@@ -131,6 +133,7 @@ ONC_EXPORT extern const char kName[];
 }  // namespace cellular_provider
 
 namespace cellular_apn {
+ONC_EXPORT extern const char kAccessPointName[];
 ONC_EXPORT extern const char kName[];
 ONC_EXPORT extern const char kUsername[];
 ONC_EXPORT extern const char kPassword[];

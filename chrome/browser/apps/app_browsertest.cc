@@ -2,13 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "apps/app_window.h"
-#include "apps/app_window_registry.h"
 #include "apps/launcher.h"
-#include "apps/ui/native_app_window.h"
 #include "base/bind.h"
 #include "base/command_line.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/prefs/pref_service.h"
 #include "base/stl_util.h"
@@ -38,6 +35,9 @@
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/test/test_utils.h"
+#include "extensions/browser/app_window/app_window.h"
+#include "extensions/browser/app_window/app_window_registry.h"
+#include "extensions/browser/app_window/native_app_window.h"
 #include "extensions/browser/event_router.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_system.h"
@@ -50,14 +50,11 @@
 #if defined(OS_CHROMEOS)
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/chromeos/login/users/mock_user_manager.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
+#include "chrome/browser/chromeos/login/users/scoped_user_manager_enabler.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
-#include "chromeos/dbus/fake_dbus_thread_manager.h"
 #include "chromeos/dbus/fake_power_manager_client.h"
 #endif
 
-using apps::AppWindow;
-using apps::AppWindowRegistry;
 using content::WebContents;
 using web_modal::WebContentsModalDialogManager;
 
@@ -146,13 +143,13 @@ class ScopedPreviewTestingDelegate : PrintPreviewUI::TestingDelegate {
     dialog_size_ = preview_dialog->GetContainerBounds().size();
     ++rendered_page_count_;
     CHECK(rendered_page_count_ <= total_page_count_);
-    if (waiting_runner_ && rendered_page_count_ == total_page_count_) {
+    if (waiting_runner_.get() && rendered_page_count_ == total_page_count_) {
       waiting_runner_->Quit();
     }
   }
 
   void WaitUntilPreviewIsReady() {
-    CHECK(!waiting_runner_);
+    CHECK(!waiting_runner_.get());
     if (rendered_page_count_ < total_page_count_) {
       waiting_runner_ = new content::MessageLoopRunner;
       waiting_runner_->Run();
@@ -823,13 +820,13 @@ void PlatformAppDevToolsBrowserTest::RunTestWithDevTools(
   AppWindow* window = GetFirstAppWindow();
   ASSERT_TRUE(window);
   ASSERT_EQ(window->window_key().empty(), (test_flags & HAS_ID) == 0);
-  content::RenderViewHost* rvh = window->web_contents()->GetRenderViewHost();
-  ASSERT_TRUE(rvh);
+  content::WebContents* web_contents = window->web_contents();
+  ASSERT_TRUE(web_contents);
 
   // Ensure no DevTools open for the AppWindow, then open one.
-  ASSERT_FALSE(DevToolsAgentHost::HasFor(rvh));
-  DevToolsWindow::OpenDevToolsWindow(rvh);
-  ASSERT_TRUE(DevToolsAgentHost::HasFor(rvh));
+  ASSERT_FALSE(DevToolsAgentHost::HasFor(web_contents));
+  DevToolsWindow::OpenDevToolsWindow(web_contents);
+  ASSERT_TRUE(DevToolsAgentHost::HasFor(web_contents));
 
   if (test_flags & RELAUNCH) {
     // Close the AppWindow, and ensure it is gone.
@@ -847,9 +844,9 @@ void PlatformAppDevToolsBrowserTest::RunTestWithDevTools(
     ASSERT_TRUE(window);
 
     // DevTools should have reopened with the relaunch.
-    rvh = window->web_contents()->GetRenderViewHost();
-    ASSERT_TRUE(rvh);
-    ASSERT_TRUE(DevToolsAgentHost::HasFor(rvh));
+    web_contents = window->web_contents();
+    ASSERT_TRUE(web_contents);
+    ASSERT_TRUE(DevToolsAgentHost::HasFor(web_contents));
   }
 }
 
@@ -1051,7 +1048,44 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, ComponentAppBackgroundPage) {
   ASSERT_TRUE(launched_listener.WaitUntilSatisfied());
 }
 
-IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, Messaging) {
+// Flaky: http://crbug.com/407409
+IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest,
+                       DISABLED_ComponentExtensionRuntimeReload) {
+  // Ensure that we wait until the background page is run (to register the
+  // OnLaunched listener) before trying to open the application. This is similar
+  // to LoadAndLaunchPlatformApp, but we want to load as a component extension.
+  content::WindowedNotificationObserver app_loaded_observer(
+      content::NOTIFICATION_LOAD_COMPLETED_MAIN_FRAME,
+      content::NotificationService::AllSources());
+
+  const Extension* extension = LoadExtensionAsComponent(
+      test_data_dir_.AppendASCII("platform_apps").AppendASCII("component"));
+  ASSERT_TRUE(extension);
+
+  app_loaded_observer.Wait();
+
+  {
+    ExtensionTestMessageListener launched_listener("Launched", false);
+    OpenApplication(AppLaunchParams(
+        browser()->profile(), extension, LAUNCH_CONTAINER_NONE, NEW_WINDOW));
+    ASSERT_TRUE(launched_listener.WaitUntilSatisfied());
+  }
+
+  {
+    ASSERT_TRUE(ExecuteScriptInBackgroundPageNoWait(
+        extension->id(), "chrome.runtime.reload();"));
+    ExtensionTestMessageListener launched_listener("Launched", false);
+    ASSERT_TRUE(launched_listener.WaitUntilSatisfied());
+  }
+}
+
+// Fails on Win7. http://crbug.com/171450
+#if defined(OS_WIN)
+#define MAYBE_Messaging DISABLED_Messaging
+#else
+#define MAYBE_Messaging Messaging
+#endif
+IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, MAYBE_Messaging) {
   ExtensionApiTest::ResultCatcher result_catcher;
   LoadAndLaunchPlatformApp("messaging/app2", "Ready");
   LoadAndLaunchPlatformApp("messaging/app1", "Launched");
@@ -1194,13 +1228,9 @@ class RestartDeviceTest : public PlatformAppBrowserTest {
   virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
     PlatformAppBrowserTest::SetUpInProcessBrowserTestFixture();
 
-    chromeos::FakeDBusThreadManager* dbus_manager =
-        new chromeos::FakeDBusThreadManager;
-    dbus_manager->SetFakeClients();
     power_manager_client_ = new chromeos::FakePowerManagerClient;
-    dbus_manager->SetPowerManagerClient(
+    chromeos::DBusThreadManager::GetSetterForTesting()->SetPowerManagerClient(
         scoped_ptr<chromeos::PowerManagerClient>(power_manager_client_));
-    chromeos::DBusThreadManager::SetInstanceForTesting(dbus_manager);
   }
 
   virtual void SetUpOnMainThread() OVERRIDE {

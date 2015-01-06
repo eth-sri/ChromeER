@@ -39,12 +39,14 @@ class SynchronousCompositorFactoryImpl : public SynchronousCompositorFactory {
       OVERRIDE;
   virtual InputHandlerManagerClient* GetInputHandlerManagerClient() OVERRIDE;
   virtual scoped_refptr<webkit::gpu::ContextProviderWebContext>
-      GetSharedOffscreenContextProviderForMainThread() OVERRIDE;
+      CreateOffscreenContextProvider(
+          const blink::WebGraphicsContext3D::Attributes& attributes,
+          const std::string& debug_name) OVERRIDE;
   virtual scoped_refptr<StreamTextureFactory> CreateStreamTextureFactory(
       int view_id) OVERRIDE;
-  virtual blink::WebGraphicsContext3D* CreateOffscreenGraphicsContext3D(
-      const blink::WebGraphicsContext3D::Attributes& attributes) OVERRIDE;
-
+  virtual webkit::gpu::WebGraphicsContext3DImpl*
+      CreateOffscreenGraphicsContext3D(
+          const blink::WebGraphicsContext3D::Attributes& attributes) OVERRIDE;
 
   SynchronousInputEventFilter* synchronous_input_event_filter() {
     return &synchronous_input_event_filter_;
@@ -66,9 +68,6 @@ class SynchronousCompositorFactoryImpl : public SynchronousCompositorFactory {
       TryCreateStreamTextureFactory();
 
   SynchronousInputEventFilter synchronous_input_event_filter_;
-
-  scoped_refptr<webkit::gpu::ContextProviderWebContext>
-      offscreen_context_for_main_thread_;
 
   scoped_refptr<gpu::InProcessCommandBuffer::Service> service_;
   scoped_ptr<gpu::GLInProcessContext> share_context_;

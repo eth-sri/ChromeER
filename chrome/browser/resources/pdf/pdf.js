@@ -5,6 +5,7 @@
 'use strict';
 
 <include src="../../../../ui/webui/resources/js/util.js">
+<include src="open_pdf_params_parser.js">
 <include src="pdf_scripting_api.js">
 <include src="viewport.js">
 
@@ -150,6 +151,10 @@ function PDFViewer() {
         this.viewport_.setZoom(zoomChangeInfo.newZoomFactor);
     }.bind(this));
   }
+
+  // Parse open pdf parameters.
+  var paramsParser = new OpenPDFParamsParser(this.streamDetails.originalUrl);
+  this.urlParams_ = paramsParser.urlParams;
 }
 
 PDFViewer.prototype = {
@@ -290,6 +295,11 @@ PDFViewer.prototype = {
       });
       if (this.lastViewportPosition_)
         this.viewport_.position = this.lastViewportPosition_;
+
+      // Handle open pdf params. Order is important as later actions can
+      // override the effects of previous actions.
+      if (this.urlParams_.page)
+        this.viewport_.goToPage(this.urlParams_.page);
     }
   },
 

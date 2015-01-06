@@ -11,6 +11,7 @@
 #include "base/message_loop/message_loop_proxy.h"
 #include "components/usb_service/usb_device_handle.h"
 #include "components/usb_service/usb_service.h"
+#include "device/core/device_client.h"
 #include "extensions/browser/api/usb/usb_device_resource.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/api/usb.h"
@@ -325,12 +326,12 @@ void RequestUsbDevicesAccessHelper(
     callback.Run(devices.Pass());
     return;
   }
-  (*i)->RequestUsbAcess(interface_id,
-                        base::Bind(RequestUsbDevicesAccessHelper,
-                                   base::Passed(devices.Pass()),
-                                   i,
-                                   interface_id,
-                                   callback));
+  (*i)->RequestUsbAccess(interface_id,
+                         base::Bind(RequestUsbDevicesAccessHelper,
+                                    base::Passed(devices.Pass()),
+                                    i,
+                                    interface_id,
+                                    callback));
 }
 
 void RequestUsbDevicesAccess(
@@ -342,12 +343,12 @@ void RequestUsbDevicesAccess(
     return;
   }
   std::vector<scoped_refptr<UsbDevice> >::iterator i = devices->begin();
-  (*i)->RequestUsbAcess(interface_id,
-                        base::Bind(RequestUsbDevicesAccessHelper,
-                                   base::Passed(devices.Pass()),
-                                   i,
-                                   interface_id,
-                                   callback));
+  (*i)->RequestUsbAccess(interface_id,
+                         base::Bind(RequestUsbDevicesAccessHelper,
+                                    base::Passed(devices.Pass()),
+                                    i,
+                                    interface_id,
+                                    callback));
 }
 #endif  // OS_CHROMEOS
 
@@ -429,7 +430,7 @@ scoped_refptr<UsbDevice> UsbAsyncApiFunction::GetDeviceOrOrCompleteWithError(
     return NULL;
   }
 
-  UsbService* service = UsbService::GetInstance();
+  UsbService* service = device::DeviceClient::Get()->GetUsbService();
   if (!service) {
     CompleteWithError(kErrorInitService);
     return NULL;
@@ -438,7 +439,7 @@ scoped_refptr<UsbDevice> UsbAsyncApiFunction::GetDeviceOrOrCompleteWithError(
 
   device = service->GetDeviceById(input_device.device);
 
-  if (!device) {
+  if (!device.get()) {
     CompleteWithError(kErrorNoDevice);
     return NULL;
   }
@@ -464,7 +465,7 @@ UsbAsyncApiFunction::GetDeviceHandleOrCompleteWithError(
     return NULL;
   }
 
-  if (!resource->device() || !resource->device()->GetDevice()) {
+  if (!resource->device().get() || !resource->device()->GetDevice().get()) {
     CompleteWithError(kErrorDisconnect);
     manager_->Remove(extension_->id(), input_device_handle.handle);
     return NULL;
@@ -560,7 +561,7 @@ void UsbFindDevicesFunction::AsyncWorkStart() {
     return;
   }
 
-  UsbService* service = UsbService::GetInstance();
+  UsbService* service = device::DeviceClient::Get()->GetUsbService();
   if (!service) {
     CompleteWithError(kErrorInitService);
     return;
@@ -592,7 +593,7 @@ void UsbFindDevicesFunction::OpenDevices(ScopedDeviceVector devices) {
 
   for (size_t i = 0; i < devices->size(); ++i) {
     scoped_refptr<UsbDeviceHandle> device_handle = devices->at(i)->Open();
-    if (device_handle)
+    if (device_handle.get())
       device_handles_.push_back(device_handle);
   }
 
@@ -636,7 +637,7 @@ void UsbGetDevicesFunction::AsyncWorkStart() {
     return;
   }
 
-  UsbService* service = UsbService::GetInstance();
+  UsbService* service = device::DeviceClient::Get()->GetUsbService();
   if (!service) {
     CompleteWithError(kErrorInitService);
     return;
@@ -680,7 +681,7 @@ void UsbRequestAccessFunction::AsyncWorkStart() {
   if (!device)
     return;
 
-  device->RequestUsbAcess(
+  device->RequestUsbAccess(
       parameters_->interface_id,
       base::Bind(&UsbRequestAccessFunction::OnCompleted, this));
 #else
@@ -709,11 +710,11 @@ bool UsbOpenDeviceFunction::Prepare() {
 void UsbOpenDeviceFunction::AsyncWorkStart() {
   scoped_refptr<UsbDevice> device =
       GetDeviceOrOrCompleteWithError(parameters_->device);
-  if (!device)
+  if (!device.get())
     return;
 
   handle_ = device->Open();
-  if (!handle_) {
+  if (!handle_.get()) {
     SetError(kErrorOpen);
     AsyncWorkCompleted();
     return;
@@ -741,13 +742,13 @@ bool UsbListInterfacesFunction::Prepare() {
 void UsbListInterfacesFunction::AsyncWorkStart() {
   scoped_refptr<UsbDeviceHandle> device_handle =
       GetDeviceHandleOrCompleteWithError(parameters_->handle);
-  if (!device_handle)
+  if (!device_handle.get())
     return;
 
   scoped_refptr<UsbConfigDescriptor> config =
       device_handle->GetDevice()->ListInterfaces();
 
-  if (!config) {
+  if (!config.get()) {
     SetError(kErrorCannotListInterfaces);
     AsyncWorkCompleted();
     return;
@@ -867,7 +868,7 @@ bool UsbCloseDeviceFunction::Prepare() {
 void UsbCloseDeviceFunction::AsyncWorkStart() {
   scoped_refptr<UsbDeviceHandle> device_handle =
       GetDeviceHandleOrCompleteWithError(parameters_->handle);
-  if (!device_handle)
+  if (!device_handle.get())
     return;
 
   device_handle->Close();
@@ -890,7 +891,7 @@ bool UsbClaimInterfaceFunction::Prepare() {
 void UsbClaimInterfaceFunction::AsyncWorkStart() {
   scoped_refptr<UsbDeviceHandle> device_handle =
       GetDeviceHandleOrCompleteWithError(parameters_->handle);
-  if (!device_handle)
+  if (!device_handle.get())
     return;
 
   bool success = device_handle->ClaimInterface(parameters_->interface_number);
@@ -915,7 +916,7 @@ bool UsbReleaseInterfaceFunction::Prepare() {
 void UsbReleaseInterfaceFunction::AsyncWorkStart() {
   scoped_refptr<UsbDeviceHandle> device_handle =
       GetDeviceHandleOrCompleteWithError(parameters_->handle);
-  if (!device_handle)
+  if (!device_handle.get())
     return;
 
   bool success = device_handle->ReleaseInterface(parameters_->interface_number);
@@ -941,7 +942,7 @@ bool UsbSetInterfaceAlternateSettingFunction::Prepare() {
 void UsbSetInterfaceAlternateSettingFunction::AsyncWorkStart() {
   scoped_refptr<UsbDeviceHandle> device_handle =
       GetDeviceHandleOrCompleteWithError(parameters_->handle);
-  if (!device_handle)
+  if (!device_handle.get())
     return;
 
   bool success = device_handle->SetInterfaceAlternateSetting(
@@ -967,7 +968,7 @@ bool UsbControlTransferFunction::Prepare() {
 void UsbControlTransferFunction::AsyncWorkStart() {
   scoped_refptr<UsbDeviceHandle> device_handle =
       GetDeviceHandleOrCompleteWithError(parameters_->handle);
-  if (!device_handle)
+  if (!device_handle.get())
     return;
 
   const ControlTransferInfo& transfer = parameters_->transfer_info;
@@ -1024,7 +1025,7 @@ bool UsbBulkTransferFunction::Prepare() {
 void UsbBulkTransferFunction::AsyncWorkStart() {
   scoped_refptr<UsbDeviceHandle> device_handle =
       GetDeviceHandleOrCompleteWithError(parameters_->handle);
-  if (!device_handle)
+  if (!device_handle.get())
     return;
 
   const GenericTransferInfo& transfer = parameters_->transfer_info;
@@ -1073,7 +1074,7 @@ bool UsbInterruptTransferFunction::Prepare() {
 void UsbInterruptTransferFunction::AsyncWorkStart() {
   scoped_refptr<UsbDeviceHandle> device_handle =
       GetDeviceHandleOrCompleteWithError(parameters_->handle);
-  if (!device_handle)
+  if (!device_handle.get())
     return;
 
   const GenericTransferInfo& transfer = parameters_->transfer_info;
@@ -1122,7 +1123,7 @@ bool UsbIsochronousTransferFunction::Prepare() {
 void UsbIsochronousTransferFunction::AsyncWorkStart() {
   scoped_refptr<UsbDeviceHandle> device_handle =
       GetDeviceHandleOrCompleteWithError(parameters_->handle);
-  if (!device_handle)
+  if (!device_handle.get())
     return;
 
   const IsochronousTransferInfo& transfer = parameters_->transfer_info;
@@ -1189,7 +1190,7 @@ bool UsbResetDeviceFunction::Prepare() {
 void UsbResetDeviceFunction::AsyncWorkStart() {
   scoped_refptr<UsbDeviceHandle> device_handle =
       GetDeviceHandleOrCompleteWithError(parameters_->handle);
-  if (!device_handle)
+  if (!device_handle.get())
     return;
 
   bool success = device_handle->ResetDevice();

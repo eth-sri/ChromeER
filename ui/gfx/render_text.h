@@ -58,7 +58,7 @@ class SkiaTextRenderer {
   void SetTextSize(SkScalar size);
   void SetFontFamilyWithStyle(const std::string& family, int font_style);
   void SetForegroundColor(SkColor foreground);
-  void SetShader(SkShader* shader, const Rect& bounds);
+  void SetShader(SkShader* shader);
   // Sets underline metrics to use if the text will be drawn with an underline.
   // If not set, default values based on the size of the text will be used. The
   // two metrics must be set together.
@@ -104,8 +104,6 @@ class SkiaTextRenderer {
   SkCanvas* canvas_skia_;
   bool started_drawing_;
   SkPaint paint_;
-  SkRect bounds_;
-  skia::RefPtr<SkShader> deferred_fade_shader_;
   SkScalar underline_thickness_;
   SkScalar underline_position_;
   scoped_ptr<DiagonalStrike> diagonal_;
@@ -163,9 +161,8 @@ struct Line {
   // Segments that make up this line in visual order.
   std::vector<LineSegment> segments;
 
-  // A line size is the sum of segment widths and the maximum of segment
-  // heights.
-  Size size;
+  // The sum of segment widths and the maximum of segment heights.
+  SizeF size;
 
   // Sum of preceding lines' heights.
   int preceding_heights;
@@ -178,6 +175,11 @@ struct Line {
 // May return NULL.
 skia::RefPtr<SkTypeface> CreateSkiaTypeface(const std::string& family,
                                             int style);
+
+// Applies the given FontRenderParams to a Skia |paint|.
+void ApplyRenderParams(const FontRenderParams& params,
+                       bool background_is_transparent,
+                       SkPaint* paint);
 
 }  // namespace internal
 
@@ -580,6 +582,7 @@ class GFX_EXPORT RenderText {
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, Win_LogicalClusters);
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, SameFontForParentheses);
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, BreakRunsByUnicodeBlocks);
+  FRIEND_TEST_ALL_PREFIXES(RenderTextTest, PangoAttributes);
 
   // Creates a platform-specific RenderText instance.
   static RenderText* CreateNativeInstance();

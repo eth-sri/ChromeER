@@ -26,13 +26,13 @@
 #include "chrome/browser/ui/webui/theme_source.h"
 #include "chrome/common/print_messages.h"
 #include "chrome/common/url_constants.h"
+#include "chrome/grit/chromium_strings.h"
+#include "chrome/grit/generated_resources.h"
+#include "chrome/grit/google_chrome_strings.h"
 #include "content/public/browser/url_data_source.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui_data_source.h"
 #include "grit/browser_resources.h"
-#include "grit/chromium_strings.h"
-#include "grit/generated_resources.h"
-#include "grit/google_chrome_strings.h"
 #include "printing/page_size_margins.h"
 #include "printing/print_job_constants.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -339,6 +339,10 @@ content::WebUIDataSource* CreatePrintPreviewUISource() {
       "advancedSettingsDialogConfirm",
       IDS_PRINT_PREVIEW_ADVANCED_SETTINGS_DIALOG_CONFIRM);
   source->AddLocalizedString("cancel", IDS_CANCEL);
+  source->AddLocalizedString("advancedOptionsLabel",
+                             IDS_PRINT_PREVIEW_ADVANCED_OPTIONS_LABEL);
+  source->AddLocalizedString("showAdvancedOptions",
+                             IDS_PRINT_PREVIEW_SHOW_ADVANCED_OPTIONS);
 
   source->SetJsonPath("strings.js");
   source->AddResourcePath("print_preview.js", IDR_PRINT_PREVIEW_JS);
@@ -359,6 +363,8 @@ content::WebUIDataSource* CreatePrintPreviewUISource() {
   source->SetDefaultResource(IDR_PRINT_PREVIEW_HTML);
   source->SetRequestFilter(base::Bind(&HandleRequestCallback));
   source->OverrideContentSecurityPolicyObjectSrc("object-src 'self';");
+  source->AddLocalizedString("moreOptionsLabel", IDS_MORE_OPTIONS_LABEL);
+  source->AddLocalizedString("lessOptionsLabel", IDS_LESS_OPTIONS_LABEL);
   return source;
 }
 
@@ -477,9 +483,11 @@ void PrintPreviewUI::OnPrintPreviewRequest(int request_id) {
   g_print_preview_request_id_map.Get().Set(id_, request_id);
 }
 
+#if !defined(OS_WIN)
 void PrintPreviewUI::OnShowSystemDialog() {
   web_ui()->CallJavascriptFunction("onSystemDialogLinkClicked");
 }
+#endif  // !OS_WIN
 
 void PrintPreviewUI::OnDidGetPreviewPageCount(
     const PrintHostMsg_DidGetPreviewPageCount_Params& params) {

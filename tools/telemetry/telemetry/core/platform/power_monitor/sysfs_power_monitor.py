@@ -9,17 +9,19 @@ import re
 from telemetry import decorators
 from telemetry.core.platform import power_monitor
 
+
 CPU_PATH = '/sys/devices/system/cpu/'
+
 
 class SysfsPowerMonitor(power_monitor.PowerMonitor):
   """PowerMonitor that relies on sysfs to monitor CPU statistics on several
   different platforms.
   """
-  def __init__(self, platform):
+  def __init__(self, linux_based_platform_backend):
     """Constructor.
 
     Args:
-        platform: A SysfsPlatform object.
+        linux_based_platform_backend: A LinuxBasedPlatformBackend object.
 
     Attributes:
         _browser: The browser to monitor.
@@ -29,50 +31,47 @@ class SysfsPowerMonitor(power_monitor.PowerMonitor):
         _final_freq: The CPU frequency times after the test.
         _initial_cstate: The c-state residency times before the test.
         _initial_freq: The CPU frequency times before the test.
-        _platform: A SysfsPlatform object associated with the target platform.
+        _platform: A LinuxBasedPlatformBackend object associated with the
+            target platform.
         _start_time: The time the test started monitoring power.
     """
     super(SysfsPowerMonitor, self).__init__()
     self._browser = None
-    self._cpus = filter(lambda x: re.match(r'^cpu[0-9]+', x),
-                        platform.RunShellCommand('ls %s' % CPU_PATH).split())
-    self._end_time = None
+    self._cpus = None
     self._final_cstate = None
     self._final_freq = None
     self._initial_cstate = None
     self._initial_freq = None
-    self._platform = platform
-    self._start_time = None
+    self._platform = linux_based_platform_backend
 
   @decorators.Cache
   def CanMonitorPower(self):
-    return bool(self._platform.RunShellCommand(
+    return bool(self._platform.RunCommand(
         'if [ -e %s ]; then echo true; fi' % CPU_PATH))
 
   def StartMonitoringPower(self, browser):
     assert not self._browser, 'Must call StopMonitoringPower().'
     self._browser = browser
-    self._start_time = int(self._platform.RunShellCommand('date +%s'))
     if self.CanMonitorPower():
+      self._cpus = filter(
+          lambda x: re.match(r'^cpu[0-9]+', x),
+          self._platform.RunCommand('ls %s' % CPU_PATH).split())
       self._initial_freq = self.GetCpuFreq()
       self._initial_cstate = self.GetCpuState()
 
   def StopMonitoringPower(self):
     assert self._browser, 'StartMonitoringPower() not called.'
     try:
-      self._end_time = int(self._platform.RunShellCommand('date +%s'))
       out = {}
-      if self.CanMonitorPower():
+      if SysfsPowerMonitor.CanMonitorPower(self):
         self._final_freq = self.GetCpuFreq()
         self._final_cstate = self.GetCpuState()
         frequencies = SysfsPowerMonitor.ComputeCpuStats(
             SysfsPowerMonitor.ParseFreqSample(self._initial_freq),
             SysfsPowerMonitor.ParseFreqSample(self._final_freq))
-        start_cstate = self._platform.ParseStateSample(
-            self._initial_cstate, self._start_time)
-        end_cstate = self._platform.ParseStateSample(
-            self._final_cstate, self._end_time)
-        cstates = SysfsPowerMonitor.ComputeCpuStats(start_cstate, end_cstate)
+        cstates = SysfsPowerMonitor.ComputeCpuStats(
+            self._platform.ParseCStateSample(self._initial_cstate),
+            self._platform.ParseCStateSample(self._final_cstate))
         for cpu in frequencies:
           out[cpu] = {'frequency_percent': frequencies[cpu]}
           out[cpu]['cstate_residency_percent'] = cstates[cpu]
@@ -89,8 +88,8 @@ class SysfsPowerMonitor(power_monitor.PowerMonitor):
     stats = {}
     for cpu in self._cpus:
       cpu_state_path = os.path.join(CPU_PATH, cpu, 'cpuidle/state*')
-      stats[cpu] = self._platform.RunShellCommand(
-          'cat %s %s %s' % (os.path.join(cpu_state_path, 'name'),
+      stats[cpu] = self._platform.RunCommand(
+          'cat %s %s %s; date +%%s' % (os.path.join(cpu_state_path, 'name'),
           os.path.join(cpu_state_path, 'time'),
           os.path.join(cpu_state_path, 'latency')))
     return stats
@@ -105,7 +104,7 @@ class SysfsPowerMonitor(power_monitor.PowerMonitor):
     for cpu in self._cpus:
       cpu_freq_path = os.path.join(
           CPU_PATH, cpu, 'cpufreq/stats/time_in_state')
-      stats[cpu] = self._platform.RunShellCommand('cat %s' % cpu_freq_path)
+      stats[cpu] = self._platform.RunCommand('cat %s' % cpu_freq_path)
     return stats
 
   @staticmethod
@@ -168,3 +167,22 @@ class SysfsPowerMonitor(power_monitor.PowerMonitor):
       average[state] = time / float(count)
     cpu_stats['whole_package'] = average
     return cpu_stats
+
+  @staticmethod
+  def CombineResults(cpu_stats, power_stats):
+    """Add frequency and c-state residency data to the power data.
+
+    Args:
+        cpu_stats: Dictionary containing CPU statistics.
+        power_stats: Dictionary containing power statistics.
+
+    Returns:
+        Dictionary in the format returned by StopMonitoringPower.
+    """
+    if not cpu_stats:
+      return power_stats
+    if 'component_utilization' not in power_stats:
+      power_stats['component_utilization'] = {}
+    for cpu in cpu_stats:
+      power_stats['component_utilization'][cpu] = cpu_stats[cpu]
+    return power_stats

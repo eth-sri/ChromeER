@@ -30,14 +30,6 @@ remoting.WindowFrame = function(titleBar) {
   this.titleBar_ = titleBar;
 
   /**
-   * @type {HTMLElement}
-   * @private
-   */
-  this.hoverTarget_ = /** @type {HTMLElement} */
-      (titleBar.querySelector('.window-controls-hover-target'));
-  base.debug.assert(this.hoverTarget_ != null);
-
-  /**
    * @type {remoting.OptionsMenu}
    * @private
    */
@@ -47,7 +39,8 @@ remoting.WindowFrame = function(titleBar) {
       titleBar.querySelector('.menu-resize-to-client'),
       titleBar.querySelector('.menu-shrink-to-fit'),
       titleBar.querySelector('.menu-new-connection'),
-      null);
+      titleBar.querySelector('.window-fullscreen'),
+      titleBar.querySelector('.menu-start-stop-recording'));
 
   /**
    * @type {HTMLElement}
@@ -73,6 +66,14 @@ remoting.WindowFrame = function(titleBar) {
       this.onHideOptionsMenu_.bind(this));
 
   /**
+   * @type {HTMLElement}
+   * @private
+   */
+  this.optionsMenuList_ = /** @type {HTMLElement} */
+      (optionsButton.querySelector('.window-options-menu'));
+  base.debug.assert(this.optionsMenu_ != null);
+
+  /**
    * @type {Array.<{cls:string, fn: function()}>}
    */
   var handlers = [
@@ -90,13 +91,13 @@ remoting.WindowFrame = function(titleBar) {
   }
 
   // Ensure that tool-tips are always correct.
-  this.updateMaximizeOrRestoreIconTitle_();
+  this.handleWindowStateChange_();
   chrome.app.window.current().onMaximized.addListener(
-      this.updateMaximizeOrRestoreIconTitle_.bind(this));
+      this.handleWindowStateChange_.bind(this));
   chrome.app.window.current().onRestored.addListener(
-      this.updateMaximizeOrRestoreIconTitle_.bind(this));
+      this.handleWindowStateChange_.bind(this));
   chrome.app.window.current().onFullscreened.addListener(
-      this.updateMaximizeOrRestoreIconTitle_.bind(this));
+      this.handleWindowStateChange_.bind(this));
   chrome.app.window.current().onFullscreened.addListener(
       this.showWindowControlsPreview_.bind(this));
 };
@@ -110,17 +111,15 @@ remoting.WindowFrame.prototype.setClientSession = function(clientSession) {
   this.clientSession_ = clientSession;
   var windowTitle = document.head.querySelector('title');
   if (this.clientSession_) {
-    document.body.classList.add('connected');
     this.title_.innerText = clientSession.getHostDisplayName();
     windowTitle.innerText = clientSession.getHostDisplayName() + ' - ' +
         chrome.i18n.getMessage(/*i18n-content*/'PRODUCT_NAME');
   } else {
-    document.body.classList.remove('connected');
     this.title_.innerHTML = '&nbsp;';
     windowTitle.innerText =
         chrome.i18n.getMessage(/*i18n-content*/'PRODUCT_NAME');
   }
-  this.updateMaximizeOrRestoreIconTitle_();
+  this.handleWindowStateChange_();
 };
 
 /**
@@ -163,13 +162,7 @@ remoting.WindowFrame.prototype.maximizeOrRestoreWindow_ = function() {
       chrome.app.window.current().isFullscreen() ||
       chrome.app.window.current().isMaximized();
   if (restore) {
-    // Restore twice: once to exit full-screen and once to exit maximized.
-    // If the app is not full-screen, or went full-screen without first
-    // being maximized, then the second restore has no effect.
     chrome.app.window.current().restore();
-    chrome.app.window.current().restore();
-  } else if (this.clientSession_) {
-    chrome.app.window.current().fullscreen();
   } else {
     chrome.app.window.current().maximize();
   }
@@ -186,7 +179,7 @@ remoting.WindowFrame.prototype.minimizeWindow_ = function() {
  * @private
  */
 remoting.WindowFrame.prototype.toggleWindowControls_ = function() {
-  this.hoverTarget_.classList.toggle('opened');
+  this.titleBar_.classList.toggle('opened');
 };
 
 /**
@@ -195,19 +188,26 @@ remoting.WindowFrame.prototype.toggleWindowControls_ = function() {
  *
  * @private
  */
-remoting.WindowFrame.prototype.updateMaximizeOrRestoreIconTitle_ = function() {
+remoting.WindowFrame.prototype.handleWindowStateChange_ = function() {
+  // Set the title for the maximize/restore/full-screen button
   /** @type {string} */
   var tag = '';
   if (chrome.app.window.current().isFullscreen()) {
     tag = /*i18n-content*/'EXIT_FULL_SCREEN';
   } else if (chrome.app.window.current().isMaximized()) {
     tag = /*i18n-content*/'RESTORE_WINDOW';
-  } else if (this.clientSession_) {
-    tag = /*i18n-content*/'FULL_SCREEN';
   } else {
     tag = /*i18n-content*/'MAXIMIZE_WINDOW';
   }
   this.maximizeRestoreControl_.title = l10n.getTranslationOrError(tag);
+
+  // Ensure that the options menu aligns correctly for the side of the window
+  // it occupies.
+  if (chrome.app.window.current().isFullscreen()) {
+    this.optionsMenuList_.classList.add('right-align');
+  } else {
+    this.optionsMenuList_.classList.remove('right-align');
+  }
 };
 
 /**
@@ -216,7 +216,7 @@ remoting.WindowFrame.prototype.updateMaximizeOrRestoreIconTitle_ = function() {
  */
 remoting.WindowFrame.prototype.onShowOptionsMenu_ = function() {
   this.optionsMenu_.onShow();
-  this.hoverTarget_.classList.add('menu-opened');
+  this.titleBar_.classList.add('menu-opened');
 };
 
 /**
@@ -224,7 +224,7 @@ remoting.WindowFrame.prototype.onShowOptionsMenu_ = function() {
  * @private
  */
 remoting.WindowFrame.prototype.onHideOptionsMenu_ = function() {
-  this.hoverTarget_.classList.remove('menu-opened');
+  this.titleBar_.classList.remove('menu-opened');
 };
 
 /**
@@ -236,7 +236,7 @@ remoting.WindowFrame.prototype.showWindowControlsPreview_ = function() {
   /**
    * @type {HTMLElement}
    */
-  var target =  this.hoverTarget_;
+  var target =  this.titleBar_;
   var kPreviewTimeoutMs = 3000;
   var hidePreview = function() {
     target.classList.remove('preview');

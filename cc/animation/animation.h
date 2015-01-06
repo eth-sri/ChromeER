@@ -68,8 +68,8 @@ class CC_EXPORT Animation {
   // This is the number of times that the animation will play. If this
   // value is zero the animation will not play. If it is negative, then
   // the animation will loop indefinitely.
-  int iterations() const { return iterations_; }
-  void set_iterations(int n) { iterations_ = n; }
+  double iterations() const { return iterations_; }
+  void set_iterations(double n) { iterations_ = n; }
 
   base::TimeTicks start_time() const { return start_time_; }
 
@@ -88,6 +88,11 @@ class CC_EXPORT Animation {
 
   Direction direction() { return direction_; }
   void set_direction(Direction direction) { direction_ = direction; }
+
+  double playback_rate() { return playback_rate_; }
+  void set_playback_rate(double playback_rate) {
+    playback_rate_ = playback_rate;
+  }
 
   bool IsFinishedAt(base::TimeTicks monotonic_time) const;
   bool is_finished() const {
@@ -161,9 +166,10 @@ class CC_EXPORT Animation {
 
   TargetProperty target_property_;
   RunState run_state_;
-  int iterations_;
+  double iterations_;
   base::TimeTicks start_time_;
   Direction direction_;
+  double playback_rate_;
 
   // The time offset effectively pushes the start of the animation back in time.
   // This is used for resuming paused animations -- an animation is added with a

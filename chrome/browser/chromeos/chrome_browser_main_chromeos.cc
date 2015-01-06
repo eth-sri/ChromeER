@@ -12,7 +12,7 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/command_line.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/lazy_instance.h"
 #include "base/linux_util.h"
 #include "base/path_service.h"
@@ -49,12 +49,13 @@
 #include "chrome/browser/chromeos/login/login_wizard.h"
 #include "chrome/browser/chromeos/login/session/user_session_manager.h"
 #include "chrome/browser/chromeos/login/startup_utils.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
+#include "chrome/browser/chromeos/login/users/chrome_user_manager.h"
 #include "chrome/browser/chromeos/login/users/wallpaper/wallpaper_manager.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/chromeos/memory/oom_priority_manager.h"
 #include "chrome/browser/chromeos/net/network_portal_detector_impl.h"
 #include "chrome/browser/chromeos/options/cert_library.h"
+#include "chrome/browser/chromeos/ownership/owner_settings_service.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/policy/device_local_account.h"
 #include "chrome/browser/chromeos/power/idle_action_warning_observer.h"
@@ -62,10 +63,10 @@
 #include "chrome/browser/chromeos/power/power_button_observer.h"
 #include "chrome/browser/chromeos/power/power_data_collector.h"
 #include "chrome/browser/chromeos/power/power_prefs.h"
+#include "chrome/browser/chromeos/power/renderer_freezer.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/settings/device_oauth2_token_service_factory.h"
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
-#include "chrome/browser/chromeos/settings/owner_key_util.h"
 #include "chrome/browser/chromeos/status/data_promo_notification.h"
 #include "chrome/browser/chromeos/system/input_device_settings.h"
 #include "chrome/browser/chromeos/upgrade_detector_chromeos.h"
@@ -90,7 +91,6 @@
 #include "chromeos/cryptohome/homedir_methods.h"
 #include "chromeos/cryptohome/system_salt_getter.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
-#include "chromeos/dbus/power_policy_controller.h"
 #include "chromeos/dbus/session_manager_client.h"
 #include "chromeos/disks/disk_mount_manager.h"
 #include "chromeos/ime/ime_keyboard.h"
@@ -104,13 +104,14 @@
 #include "chromeos/system/statistics_provider.h"
 #include "chromeos/tpm_token_loader.h"
 #include "components/metrics/metrics_service.h"
+#include "components/ownership/owner_key_util.h"
 #include "components/session_manager/core/session_manager.h"
 #include "components/user_manager/user.h"
+#include "components/user_manager/user_manager.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/power_save_blocker.h"
 #include "content/public/common/main_function_params.h"
-#include "grit/platform_locale_settings.h"
 #include "media/audio/sounds/sounds_manager.h"
 #include "net/base/network_change_notifier.h"
 #include "net/url_request/url_request.h"
@@ -186,7 +187,7 @@ class DBusServices {
     DeviceSettingsService::Initialize();
     DeviceSettingsService::Get()->SetSessionManager(
         DBusThreadManager::Get()->GetSessionManagerClient(),
-        OwnerKeyUtil::Create());
+        OwnerSettingsService::MakeOwnerKeyUtil());
   }
 
   ~DBusServices() {
@@ -341,7 +342,7 @@ void ChromeBrowserMainPartsChromeos::PreProfileInit() {
   // -- This used to be in ChromeBrowserMainParts::PreMainMessageLoopRun()
   // -- just before CreateProfile().
 
-  UserManager::Initialize();
+  g_browser_process->platform_part()->InitializeChromeUserManager();
 
   // Initialize the screen locker now so that it can receive
   // LOGIN_USER_CHANGED notification from UserManager.
@@ -415,7 +416,7 @@ void ChromeBrowserMainPartsChromeos::PreProfileInit() {
   if (immediate_login) {
     const std::string user_id = login::CanonicalizeUserID(
         parsed_command_line().GetSwitchValueASCII(switches::kLoginUser));
-    UserManager* user_manager = UserManager::Get();
+    user_manager::UserManager* user_manager = user_manager::UserManager::Get();
 
     if (policy::IsDeviceLocalAccountUser(user_id, NULL) &&
         !user_manager->IsKnownUser(user_id)) {
@@ -458,31 +459,34 @@ void GuestLanguageSetCallbackData::Callback(
     const std::string& locale,
     const std::string& loaded_locale,
     bool success) {
-  input_method::InputMethodManager* const ime_manager =
+  input_method::InputMethodManager* manager =
       input_method::InputMethodManager::Get();
+  scoped_refptr<input_method::InputMethodManager::State> ime_state =
+      manager->GetActiveIMEState();
   // Active layout must be hardware "login layout".
   // The previous one must be "locale default layout".
   // First, enable all hardware input methods.
   const std::vector<std::string>& input_methods =
-      ime_manager->GetInputMethodUtil()->GetHardwareInputMethodIds();
+      manager->GetInputMethodUtil()->GetHardwareInputMethodIds();
   for (size_t i = 0; i < input_methods.size(); ++i)
-    ime_manager->EnableInputMethod(input_methods[i]);
+    ime_state->EnableInputMethod(input_methods[i]);
 
   // Second, enable locale based input methods.
   const std::string locale_default_input_method =
-      ime_manager->GetInputMethodUtil()->
-          GetLanguageDefaultInputMethodId(loaded_locale);
+      manager->GetInputMethodUtil()->GetLanguageDefaultInputMethodId(
+          loaded_locale);
   if (!locale_default_input_method.empty()) {
     PrefService* user_prefs = self->profile->GetPrefs();
     user_prefs->SetString(prefs::kLanguagePreviousInputMethod,
                           locale_default_input_method);
-    ime_manager->EnableInputMethod(locale_default_input_method);
+    ime_state->EnableInputMethod(locale_default_input_method);
   }
 
   // Finally, activate the first login input method.
   const std::vector<std::string>& login_input_methods =
-      ime_manager->GetInputMethodUtil()->GetHardwareLoginInputMethodIds();
-  ime_manager->ChangeInputMethod(login_input_methods[0]);
+      manager->GetInputMethodUtil()->GetHardwareLoginInputMethodIds();
+  ime_state->ChangeInputMethod(login_input_methods[0],
+                               false /* show_message */);
 }
 
 void SetGuestLocale(Profile* const profile) {
@@ -523,6 +527,15 @@ void ChromeBrowserMainPartsChromeos::PostProfileInit() {
       detector->Enable(true);
   }
 
+  // Initialize input methods.
+  input_method::InputMethodManager* manager =
+      input_method::InputMethodManager::Get();
+  UserSessionManager* session_manager = UserSessionManager::GetInstance();
+  DCHECK(manager);
+  DCHECK(session_manager);
+
+  manager->SetState(session_manager->GetDefaultIMEState(profile()));
+
   bool is_running_test = parameters().ui_task != NULL;
   g_browser_process->platform_part()->InitializeSessionManager(
       parsed_command_line(), profile(), is_running_test);
@@ -530,7 +543,7 @@ void ChromeBrowserMainPartsChromeos::PostProfileInit() {
 
   // Guest user profile is never initialized with locale settings,
   // so we need special handling for Guest session.
-  if (UserManager::Get()->IsLoggedInAsGuest())
+  if (user_manager::UserManager::Get()->IsLoggedInAsGuest())
     SetGuestLocale(profile());
 
   // These observers must be initialized after the profile because
@@ -543,6 +556,8 @@ void ChromeBrowserMainPartsChromeos::PostProfileInit() {
   }
 
   peripheral_battery_observer_.reset(new PeripheralBatteryObserver());
+
+  renderer_freezer_.reset(new RendererFreezer());
 
   g_browser_process->platform_part()->InitializeAutomaticRebootManager();
 
@@ -652,6 +667,7 @@ void ChromeBrowserMainPartsChromeos::PostMainMessageLoopRun() {
   retail_mode_power_save_blocker_.reset();
   peripheral_battery_observer_.reset();
   power_prefs_.reset();
+  renderer_freezer_.reset();
 
   // Let the ScreenLocker unregister itself from SessionManagerClient before
   // DBusThreadManager is shut down.
@@ -689,7 +705,7 @@ void ChromeBrowserMainPartsChromeos::PostMainMessageLoopRun() {
   // of the CrosSettings singleton before it is destroyed. This also ensures
   // that the UserManager has no URLRequest pending (see
   // http://crbug.com/276659).
-  UserManager::Get()->Shutdown();
+  g_browser_process->platform_part()->user_manager()->Shutdown();
   WallpaperManager::Get()->Shutdown();
 
   // Let the AutomaticRebootManager unregister itself as an observer of several
@@ -699,12 +715,11 @@ void ChromeBrowserMainPartsChromeos::PostMainMessageLoopRun() {
   // Clean up dependency on CrosSettings and stop pending data fetches.
   KioskAppManager::Shutdown();
 
-  // Let the DeviceCloudPolicyInvalidator unregister itself as an observer of
-  // per-Profile InvalidationServices and the device-global
-  // invalidation::TiclInvalidationService it may have created as an observer of
-  // the DeviceOAuth2TokenService that is about to be destroyed.
+  // Give BrowserPolicyConnectorChromeOS a chance to unregister any observers
+  // on services that are going to be deleted later but before its Shutdown()
+  // is called.
   g_browser_process->platform_part()->browser_policy_connector_chromeos()->
-      ShutdownInvalidator();
+      PreShutdown();
 
   // We first call PostMainMessageLoopRun and then destroy UserManager, because
   // Ash needs to be closed before UserManager is destroyed.
@@ -721,7 +736,7 @@ void ChromeBrowserMainPartsChromeos::PostMainMessageLoopRun() {
   // parts of WebUI depends on NetworkPortalDetector.
   NetworkPortalDetector::Shutdown();
 
-  UserManager::Destroy();
+  g_browser_process->platform_part()->DestroyChromeUserManager();
 
   g_browser_process->platform_part()->ShutdownSessionManager();
 }

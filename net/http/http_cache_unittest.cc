@@ -3652,12 +3652,44 @@ TEST(HttpCache, GET_Crazy416) {
   RemoveMockTransaction(&transaction);
 }
 
-// Tests that we don't cache partial responses that can't be validated.
+// Tests that we store partial responses that can't be validated, as they can
+// be used for requests that don't require revalidation.
 TEST(HttpCache, RangeGET_NoStrongValidators) {
   MockHttpCache cache;
   std::string headers;
 
-  // Attempt to write to the cache (40-49).
+  // Write to the cache (40-49).
+  MockTransaction transaction(kRangeGET_TransactionOK);
+  AddMockTransaction(&transaction);
+  transaction.response_headers = "Content-Length: 10\n"
+                                 "Cache-Control: max-age=3600\n"
+                                 "ETag: w/\"foo\"\n";
+  RunTransactionTestWithResponse(cache.http_cache(), transaction, &headers);
+
+  Verify206Response(headers, 40, 49);
+  EXPECT_EQ(1, cache.network_layer()->transaction_count());
+  EXPECT_EQ(0, cache.disk_cache()->open_count());
+  EXPECT_EQ(1, cache.disk_cache()->create_count());
+
+  // Now verify that there's cached data.
+  RunTransactionTestWithResponse(cache.http_cache(), kRangeGET_TransactionOK,
+                                 &headers);
+
+  Verify206Response(headers, 40, 49);
+  EXPECT_EQ(1, cache.network_layer()->transaction_count());
+  EXPECT_EQ(1, cache.disk_cache()->open_count());
+  EXPECT_EQ(1, cache.disk_cache()->create_count());
+
+  RemoveMockTransaction(&transaction);
+}
+
+// Tests failures to validate cache partial responses that lack strong
+// validators.
+TEST(HttpCache, RangeGET_NoValidation) {
+  MockHttpCache cache;
+  std::string headers;
+
+  // Write to the cache (40-49).
   MockTransaction transaction(kRangeGET_TransactionOK);
   AddMockTransaction(&transaction);
   transaction.response_headers = "Content-Length: 10\n"
@@ -3669,13 +3701,13 @@ TEST(HttpCache, RangeGET_NoStrongValidators) {
   EXPECT_EQ(0, cache.disk_cache()->open_count());
   EXPECT_EQ(1, cache.disk_cache()->create_count());
 
-  // Now verify that there's no cached data.
+  // Now verify that the cached data is not used.
   RunTransactionTestWithResponse(cache.http_cache(), kRangeGET_TransactionOK,
                                  &headers);
 
   Verify206Response(headers, 40, 49);
   EXPECT_EQ(2, cache.network_layer()->transaction_count());
-  EXPECT_EQ(0, cache.disk_cache()->open_count());
+  EXPECT_EQ(1, cache.disk_cache()->open_count());
   EXPECT_EQ(2, cache.disk_cache()->create_count());
 
   RemoveMockTransaction(&transaction);
@@ -6730,14 +6762,12 @@ static void CheckResourceFreshnessHeader(const net::HttpRequestInfo* request,
                                          std::string* response_headers,
                                          std::string* response_data) {
   std::string value;
-  EXPECT_TRUE(
-      request->extra_headers.GetHeader("Chromium-Resource-Freshness", &value));
+  EXPECT_TRUE(request->extra_headers.GetHeader("Resource-Freshness", &value));
   EXPECT_EQ("max-age=3600,stale-while-revalidate=7200,age=10801", value);
 }
 
-// Verify that the Chromium-Resource-Freshness header is sent on a revalidation
-// if the stale-while-revalidate directive was on the response.
-// TODO(ricea): Rename this test when a final name for the header is decided.
+// Verify that the Resource-Freshness header is sent on a revalidation if the
+// stale-while-revalidate directive was on the response.
 TEST(HttpCache, ResourceFreshnessHeaderSent) {
   MockHttpCache cache;
 
@@ -6753,8 +6783,7 @@ TEST(HttpCache, ResourceFreshnessHeaderSent) {
 
   EXPECT_EQ(1, cache.network_layer()->transaction_count());
 
-  // Send the request again and check that Chromium-Resource-Freshness header is
-  // added.
+  // Send the request again and check that Resource-Freshness header is added.
   stale_while_revalidate_transaction.handler = CheckResourceFreshnessHeader;
 
   RunTransactionTest(cache.http_cache(), stale_while_revalidate_transaction);
@@ -6766,10 +6795,10 @@ static void CheckResourceFreshnessAbsent(const net::HttpRequestInfo* request,
                                          std::string* response_status,
                                          std::string* response_headers,
                                          std::string* response_data) {
-  EXPECT_FALSE(request->extra_headers.HasHeader("Chromium-Resource-Freshness"));
+  EXPECT_FALSE(request->extra_headers.HasHeader("Resource-Freshness"));
 }
 
-// Verify that the Chromium-Resource-Freshness header is not sent when
+// Verify that the Resource-Freshness header is not sent when
 // stale-while-revalidate is 0.
 TEST(HttpCache, ResourceFreshnessHeaderNotSent) {
   MockHttpCache cache;
@@ -6786,11 +6815,42 @@ TEST(HttpCache, ResourceFreshnessHeaderNotSent) {
 
   EXPECT_EQ(1, cache.network_layer()->transaction_count());
 
-  // Send the request again and check that Chromium-Resource-Freshness header is
-  // absent.
+  // Send the request again and check that Resource-Freshness header is absent.
   stale_while_revalidate_transaction.handler = CheckResourceFreshnessAbsent;
 
   RunTransactionTest(cache.http_cache(), stale_while_revalidate_transaction);
 
   EXPECT_EQ(2, cache.network_layer()->transaction_count());
+}
+
+// Tests that we allow multiple simultaneous, non-overlapping transactions to
+// take place on a sparse entry.
+TEST(HttpCache, RangeGET_MultipleRequests) {
+  MockHttpCache cache;
+
+  // Create a transaction for bytes 0-9.
+  MockHttpRequest request(kRangeGET_TransactionOK);
+  MockTransaction transaction(kRangeGET_TransactionOK);
+  transaction.request_headers = "Range: bytes = 0-9\r\n" EXTRA_HEADER;
+  transaction.data = "rg: 00-09 ";
+  AddMockTransaction(&transaction);
+
+  net::TestCompletionCallback callback;
+  scoped_ptr<net::HttpTransaction> trans;
+  int rv = cache.http_cache()->CreateTransaction(net::DEFAULT_PRIORITY, &trans);
+  EXPECT_EQ(net::OK, rv);
+  ASSERT_TRUE(trans.get());
+
+  // Start our transaction.
+  trans->Start(&request, callback.callback(), net::BoundNetLog());
+
+  // A second transaction on a different part of the file (the default
+  // kRangeGET_TransactionOK requests 40-49) should not be blocked by
+  // the already pending transaction.
+  RunTransactionTest(cache.http_cache(), kRangeGET_TransactionOK);
+
+  // Let the first transaction complete.
+  callback.WaitForResult();
+
+  RemoveMockTransaction(&transaction);
 }

@@ -65,7 +65,7 @@ using media::cast::proto::NetworkSimulationModelType;
 namespace media {
 namespace cast {
 namespace {
-const int kTargetDelay = 300;
+const int kTargetDelay = 400;
 const char kSourcePath[] = "source";
 const char kModelPath[] = "model";
 const char kOutputPath[] = "output";
@@ -230,9 +230,9 @@ void RunSimulation(const base::FilePath& source_path,
 
   // Video sender config.
   VideoSenderConfig video_sender_config = GetDefaultVideoSenderConfig();
-  video_sender_config.max_bitrate = 4000000;
+  video_sender_config.max_bitrate = 2500000;
   video_sender_config.min_bitrate = 2000000;
-  video_sender_config.start_bitrate = 4000000;
+  video_sender_config.start_bitrate = 2000000;
   video_sender_config.target_playout_delay =
       base::TimeDelta::FromMilliseconds(kTargetDelay);
 
@@ -283,10 +283,12 @@ void RunSimulation(const base::FilePath& source_path,
 
   // Connect sender to receiver. This initializes the pipe.
   receiver_to_sender.Initialize(
-      ipp.NewBuffer(128 * 1024), transport_sender->PacketReceiverForTesting(),
+      ipp.NewBuffer(128 * 1024).Pass(),
+      transport_sender->PacketReceiverForTesting(),
       task_runner, &testing_clock);
   sender_to_receiver.Initialize(
-      ipp.NewBuffer(128 * 1024), cast_receiver->packet_receiver(), task_runner,
+      ipp.NewBuffer(128 * 1024).Pass(),
+      cast_receiver->packet_receiver(), task_runner,
       &testing_clock);
 
   // Start receiver.

@@ -25,7 +25,28 @@
     ['OS != "ios"', {
       'includes': [
         'content_common_mojo_bindings.gypi',
+        'content_resources.gypi',
         '../build/win_precompile.gypi',
+      ],
+    }],
+    ['OS == "win"', {
+      'targets': [
+        {
+          'target_name': 'content_startup_helper_win',
+          'type': 'static_library',
+          'include_dirs': [
+            '..',
+          ],
+          'dependencies': [
+            '../base/base.gyp:base',
+            '../base/base.gyp:base_i18n',
+            '../sandbox/sandbox.gyp:sandbox',
+          ],
+          'sources': [
+            'app/startup_helper_win.cc',
+            'public/app/startup_helper_win.h',
+          ],
+        }
       ],
     }],
     # In component mode, we build all of content as a single DLL.
@@ -132,7 +153,6 @@
           ],
           'dependencies': [
             'content_common',
-            'content_resources.gyp:content_resources',
           ],
           'export_dependent_settings': [
             'content_common',
@@ -149,6 +169,11 @@
                 'content_utility',
               ],
             }],
+            ['OS != "ios"', {
+              'dependencies': [
+                'content_resources',
+              ],
+            }],
           ],
         },
         {
@@ -162,7 +187,7 @@
           'conditions': [
             ['OS != "ios"', {
               'dependencies': [
-                'content_resources.gyp:content_resources',
+                'content_resources',
               ],
             }],
           ],
@@ -182,7 +207,7 @@
                 'content_child.gypi',
               ],
               'dependencies': [
-                'content_resources.gyp:content_resources',
+                'content_resources',
               ],
               # Disable c4267 warnings until we fix size_t to int truncations.
               'msvs_disabled_warnings': [ 4267, ],
@@ -235,7 +260,7 @@
               'dependencies': [
                 'content_child',
                 'content_common',
-                'content_resources.gyp:content_resources',
+                'content_resources',
               ],
               'conditions': [
                 ['chromium_enable_vtune_jit_for_v8==1', {
@@ -270,7 +295,7 @@
           'type': 'shared_library',
           'variables': { 'enable_wexit_time_destructors': 1, },
           'dependencies': [
-           'content_resources.gyp:content_resources',
+            'content_resources',
           ],
           'conditions': [
             ['chromium_enable_vtune_jit_for_v8==1', {
@@ -330,7 +355,7 @@
           # GN version: //content/common and //content/public/common
           'target_name': 'content_common',
           'type': 'none',
-          'dependencies': ['content', 'content_resources.gyp:content_resources'],
+          'dependencies': ['content', 'content_resources'],
           # Disable c4267 warnings until we fix size_t to int truncations.
           'msvs_disabled_warnings': [ 4267, ],
           'export_dependent_settings': ['content'],

@@ -135,6 +135,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   virtual RenderWidgetHost* GetRenderWidgetHost() const OVERRIDE;
   virtual void SetSize(const gfx::Size& size) OVERRIDE;
   virtual void SetBounds(const gfx::Rect& rect) OVERRIDE;
+  virtual gfx::Vector2dF GetLastScrollOffset() const OVERRIDE;
   virtual gfx::NativeView GetNativeView() const OVERRIDE;
   virtual gfx::NativeViewId GetNativeViewId() const OVERRIDE;
   virtual gfx::NativeViewAccessible GetNativeViewAccessible() OVERRIDE;
@@ -178,7 +179,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   virtual gfx::Size GetRequestedRendererSize() const OVERRIDE;
   virtual void SelectionBoundsChanged(
       const ViewHostMsg_SelectionBounds_Params& params) OVERRIDE;
-  virtual void ScrollOffsetChanged() OVERRIDE;
   virtual void CopyFromCompositingSurface(
       const gfx::Rect& src_subrect,
       const gfx::Size& dst_size,
@@ -433,8 +433,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   virtual ui::Compositor* GetCompositor() const OVERRIDE;
   virtual ui::Layer* GetLayer() OVERRIDE;
   virtual RenderWidgetHostImpl* GetHost() OVERRIDE;
-  virtual void SchedulePaintInRect(
-      const gfx::Rect& damage_rect_in_dip) OVERRIDE;
   virtual bool IsVisible() OVERRIDE;
   virtual scoped_ptr<ResizeLock> CreateResizeLock(
       bool defer_compositor_lock) OVERRIDE;
@@ -597,6 +595,9 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   TouchEditingClient* touch_editing_client_;
 
   scoped_ptr<OverscrollController> overscroll_controller_;
+
+  // The last scroll offset of the view.
+  gfx::Vector2dF last_scroll_offset_;
 
   gfx::Insets insets_;
 

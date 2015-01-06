@@ -24,7 +24,7 @@
 #include "chrome/browser/ui/app_list/app_list_service.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
-#include "components/breakpad/app/breakpad_mac.h"
+#include "components/crash/app/breakpad_mac.h"
 #include "components/metrics/metrics_service.h"
 #include "content/public/common/main_function_params.h"
 #include "content/public/common/result_codes.h"
@@ -137,9 +137,9 @@ CatSixtyFour CatSixtyFourValue() {
 void RecordCatSixtyFour() {
   CatSixtyFour cat_sixty_four = CatSixtyFourValue();
 
-  // Set this higher than the highest value in the CatSixtyFour enum to
-  // provide some headroom and then leave it alone. See HISTOGRAM_ENUMERATION
-  // in base/metrics/histogram.h.
+  // Set this higher than the highest value in the CatSixtyFour enum to provide
+  // some headroom and then leave it alone. See UMA_HISTOGRAM_ENUMERATION in
+  // base/metrics/histogram.h.
   const int kMaxCatsAndSixtyFours = 32;
   COMPILE_ASSERT(kMaxCatsAndSixtyFours >= CAT_SIXTY_FOUR_MAX,
                  CatSixtyFour_enum_grew_too_large);
@@ -203,7 +203,8 @@ void ChromeBrowserMainPartsMac::PreMainMessageLoopStart() {
   // TODO(markusheintz): Read preference pref::kApplicationLocale in order
   // to enforce the application locale.
   const std::string loaded_locale =
-      ResourceBundle::InitSharedInstanceWithLocale(std::string(), NULL);
+      ui::ResourceBundle::InitSharedInstanceWithLocale(
+          std::string(), NULL, ui::ResourceBundle::LOAD_COMMON_RESOURCES);
   CHECK(!loaded_locale.empty()) << "Default locale could not be found";
 
   base::FilePath resources_pack_path;

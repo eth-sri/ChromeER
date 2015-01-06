@@ -279,7 +279,7 @@ SSLSocketDataProvider::SSLSocketDataProvider(IoMode mode, int result)
       cert_request_info(NULL),
       channel_id_sent(false),
       connection_status(0),
-      should_block_on_connect(false),
+      should_pause_on_connect(false),
       is_in_session_cache(false) {
   SSLConnectionStatusSetVersion(SSL_CONNECTION_VERSION_TLS1_2,
                                 &connection_status);
@@ -764,6 +764,11 @@ const BoundNetLog& MockClientSocket::NetLog() const {
   return net_log_;
 }
 
+std::string MockClientSocket::GetSessionCacheKey() const {
+  NOTIMPLEMENTED();
+  return std::string();
+}
+
 bool MockClientSocket::InSessionCache() const {
   NOTIMPLEMENTED();
   return false;
@@ -852,7 +857,7 @@ int MockTCPClientSocket::Read(IOBuffer* buf, int buf_len,
     return ERR_UNEXPECTED;
 
   // If the buffer is already in use, a read is already in progress!
-  DCHECK(pending_buf_ == NULL);
+  DCHECK(pending_buf_.get() == NULL);
 
   // Store our async IO data.
   pending_buf_ = buf;
@@ -960,7 +965,7 @@ bool MockTCPClientSocket::GetSSLInfo(SSLInfo* ssl_info) {
 
 void MockTCPClientSocket::OnReadComplete(const MockRead& data) {
   // There must be a read pending.
-  DCHECK(pending_buf_);
+  DCHECK(pending_buf_.get());
   // You can't complete a read with another ERR_IO_PENDING status code.
   DCHECK_NE(ERR_IO_PENDING, data.result);
   // Since we've been waiting for data, need_read_data_ should be true.
@@ -984,7 +989,7 @@ void MockTCPClientSocket::OnConnectComplete(const MockConnect& data) {
 }
 
 int MockTCPClientSocket::CompleteRead() {
-  DCHECK(pending_buf_);
+  DCHECK(pending_buf_.get());
   DCHECK(pending_buf_len_ > 0);
 
   was_used_to_convey_data_ = true;
@@ -1322,6 +1327,7 @@ MockSSLClientSocket::MockSSLClientSocket(
           // tests.
           transport_socket->socket()->NetLog()),
       transport_(transport_socket.Pass()),
+      host_port_pair_(host_port_pair),
       data_(data),
       is_npn_state_set_(false),
       new_npn_value_(false),
@@ -1349,7 +1355,7 @@ int MockSSLClientSocket::Write(IOBuffer* buf, int buf_len,
 }
 
 int MockSSLClientSocket::Connect(const CompletionCallback& callback) {
-  next_connect_state_ = STATE_TRANSPORT_CONNECT;
+  next_connect_state_ = STATE_SSL_CONNECT;
   reached_connect_ = true;
   int rv = DoConnectLoop(OK);
   if (rv == ERR_IO_PENDING)
@@ -1387,6 +1393,12 @@ bool MockSSLClientSocket::GetSSLInfo(SSLInfo* ssl_info) {
   ssl_info->channel_id_sent = data_->channel_id_sent;
   ssl_info->connection_status = data_->connection_status;
   return true;
+}
+
+std::string MockSSLClientSocket::GetSessionCacheKey() const {
+  // For the purposes of these tests, |host_and_port| will serve as the
+  // cache key.
+  return host_port_pair_.ToString();
 }
 
 bool MockSSLClientSocket::InSessionCache() const {
@@ -1460,7 +1472,7 @@ void MockSSLClientSocket::OnConnectComplete(const MockConnect& data) {
 }
 
 void MockSSLClientSocket::RestartPausedConnect() {
-  DCHECK(data_->should_block_on_connect);
+  DCHECK(data_->should_pause_on_connect);
   DCHECK_EQ(next_connect_state_, STATE_SSL_CONNECT_COMPLETE);
   OnIOComplete(data_->connect.result);
 }
@@ -1479,12 +1491,6 @@ int MockSSLClientSocket::DoConnectLoop(int result) {
     ConnectState state = next_connect_state_;
     next_connect_state_ = STATE_NONE;
     switch (state) {
-      case STATE_TRANSPORT_CONNECT:
-        rv = DoTransportConnect();
-        break;
-      case STATE_TRANSPORT_CONNECT_COMPLETE:
-        rv = DoTransportConnectComplete(rv);
-        break;
       case STATE_SSL_CONNECT:
         rv = DoSSLConnect();
         break;
@@ -1501,22 +1507,10 @@ int MockSSLClientSocket::DoConnectLoop(int result) {
   return rv;
 }
 
-int MockSSLClientSocket::DoTransportConnect() {
-  next_connect_state_ = STATE_TRANSPORT_CONNECT_COMPLETE;
-  return transport_->socket()->Connect(
-      base::Bind(&MockSSLClientSocket::OnIOComplete, base::Unretained(this)));
-}
-
-int MockSSLClientSocket::DoTransportConnectComplete(int result) {
-  if (result == OK)
-    next_connect_state_ = STATE_SSL_CONNECT;
-  return result;
-}
-
 int MockSSLClientSocket::DoSSLConnect() {
   next_connect_state_ = STATE_SSL_CONNECT_COMPLETE;
 
-  if (data_->should_block_on_connect)
+  if (data_->should_pause_on_connect)
     return ERR_IO_PENDING;
 
   if (data_->connect.mode == ASYNC) {
@@ -1566,7 +1560,7 @@ int MockUDPClientSocket::Read(IOBuffer* buf,
     return ERR_UNEXPECTED;
 
   // If the buffer is already in use, a read is already in progress!
-  DCHECK(pending_buf_ == NULL);
+  DCHECK(pending_buf_.get() == NULL);
 
   // Store our async IO data.
   pending_buf_ = buf;
@@ -1643,7 +1637,7 @@ int MockUDPClientSocket::Connect(const IPEndPoint& address) {
 
 void MockUDPClientSocket::OnReadComplete(const MockRead& data) {
   // There must be a read pending.
-  DCHECK(pending_buf_);
+  DCHECK(pending_buf_.get());
   // You can't complete a read with another ERR_IO_PENDING status code.
   DCHECK_NE(ERR_IO_PENDING, data.result);
   // Since we've been waiting for data, need_read_data_ should be true.
@@ -1666,7 +1660,7 @@ void MockUDPClientSocket::OnConnectComplete(const MockConnect& data) {
 }
 
 int MockUDPClientSocket::CompleteRead() {
-  DCHECK(pending_buf_);
+  DCHECK(pending_buf_.get());
   DCHECK(pending_buf_len_ > 0);
 
   // Save the pending async IO data and reset our |pending_| state.

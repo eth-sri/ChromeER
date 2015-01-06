@@ -8,25 +8,6 @@ namespace variables {
 
 // Built-in variables ----------------------------------------------------------
 
-const char kComponentMode[] = "component_mode";
-const char kComponentMode_HelpShort[] =
-    "component_mode: [string] Specifies the meaning of the component() call.";
-const char kComponentMode_Help[] =
-    "component_mode: Specifies the meaning of the component() call.\n"
-    "\n"
-    "  This value is looked up whenever a \"component\" target type is\n"
-    "  encountered. The value controls whether the given target is a shared\n"
-    "  or a static library.\n"
-    "\n"
-    "  The initial value will be empty, which will cause a call to\n"
-    "  component() to throw an error. Typically this value will be set in the\n"
-    "  build config script.\n"
-    "\n"
-    "Possible values:\n"
-    "  - \"shared_library\"\n"
-    "  - \"source_set\"\n"
-    "  - \"static_library\"\n";
-
 const char kCpuArch[] = "cpu_arch";
 const char kCpuArch_HelpShort[] =
     "cpu_arch: [string] Current processor architecture.";
@@ -281,6 +262,41 @@ const char kAllDependentConfigs_Help[] =
     "  See also \"direct_dependent_configs\".\n"
     COMMON_ORDERING_HELP;
 
+const char kAllowCircularIncludesFrom[] = "allow_circular_includes_from";
+const char kAllowCircularIncludesFrom_HelpShort[] =
+    "allow_circular_includes_from: [label list] Permit includes from deps.";
+const char kAllowCircularIncludesFrom_Help[] =
+    "allow_circular_includes_from: Permit includes from deps.\n"
+    "\n"
+    "  A list of target labels. Must be a subset of the target's \"deps\".\n"
+    "  These targets will be permitted to include headers from the current\n"
+    "  target despite the dependency going in the opposite direction.\n"
+    "\n"
+    "Tedious exposition\n"
+    "\n"
+    "  Normally, for a file in target A to include a file from target B,\n"
+    "  A must list B as a dependency. This invariant is enforced by the\n"
+    "  \"gn check\" command (and the --check flag to \"gn gen\").\n"
+    "\n"
+    "  Sometimes, two targets might be the same unit for linking purposes\n"
+    "  (two source sets or static libraries that would always be linked\n"
+    "  together in a final executable or shared library). In this case,\n"
+    "  you want A to be able to include B's headers, and B to include A's\n"
+    "  headers.\n"
+    "\n"
+    "  This list, if specified, lists which of the dependencies of the\n"
+    "  current target can include header files from the current target.\n"
+    "  That is, if A depends on B, B can only include headers from A if it is\n"
+    "  in A's allow_circular_includes_from list.\n"
+    "\n"
+    "Example\n"
+    "\n"
+    "  source_set(\"a\") {\n"
+    "    deps = [ \":b\", \":c\" ]\n"
+    "    allow_circular_includes_from = [ \":b\" ]\n"
+    "    ...\n"
+    "  }\n";
+
 const char kArgs[] = "args";
 const char kArgs_HelpShort[] =
     "args: [string list] Arguments passed to an action.";
@@ -329,6 +345,28 @@ const char kCflagsObjCC[] = "cflags_objcc";
 const char kCflagsObjCC_HelpShort[] =
     "cflags_objcc: [string list] Flags passed to the Objective C++ compiler.";
 const char* kCflagsObjCC_Help = kCommonCflagsHelp;
+
+const char kCheckIncludes[] = "check_includes";
+const char kCheckIncludes_HelpShort[] =
+    "check_includes: [boolean] Controls whether a target's files are checked.";
+const char kCheckIncludes_Help[] =
+    "check_includes: [boolean] Controls whether a target's files are checked.\n"
+    "\n"
+    "  When true (the default), the \"gn check\" command (as well as\n"
+    "  \"gn gen\" with the --check flag) will check this target's sources\n"
+    "  and headers for proper dependencies.\n"
+    "\n"
+    "  When false, the files in this target will be skipped by default.\n"
+    "  This does not affect other targets that depend on the current target,\n"
+    "  it just skips checking the includes of the current target's files.\n"
+    "\n"
+    "Example\n"
+    "\n"
+    "  source_set(\"busted_includes\") {\n"
+    "    # This target's includes are messed up, exclude it from checking.\n"
+    "    check_includes = false\n"
+    "    ...\n"
+    "  }\n";
 
 const char kConfigs[] = "configs";
 const char kConfigs_HelpShort[] =
@@ -778,26 +816,14 @@ const char kVisibility_Help[] =
     "  outside of any target, and the targets will inherit that scope and see\n"
     "  the definition.\n"
     "\n"
-    "Matching:\n"
+    "Patterns\n"
     "\n"
-    "  You can specify \"*\" but the inputs aren't general patterns. The\n"
-    "  following classes of patterns are supported:\n"
+    "  See \"gn help label_pattern\" for more details on what types of\n"
+    "  patterns are supported. If a toolchain is specified, only targets\n"
+    "  in that toolchain will be matched. If a toolchain is not specified on\n"
+    "  a pattern, targets in all toolchains will be matched.\n"
     "\n"
-    "   - Explicit (no wildcard):\n"
-    "       \"//foo/bar:baz\"\n"
-    "       \":baz\"\n"
-    "   - Wildcard target names:\n"
-    "       \"//foo/bar:*\" (any target in the //foo/bar/BUILD.gn file)\n"
-    "       \":*\"  (any target in the current build file)\n"
-    "   - Wildcard directory names (\"*\" is only supported at the end)\n"
-    "       \"*\"  (any target anywhere)\n"
-    "       \"//foo/bar/*\"  (any target in any subdir of //foo/bar)\n"
-    "       \"./*\"  (any target in the current build file or sub dirs)\n"
-    "\n"
-    "  The toolchain (normally an implicit part of a label) is ignored when\n"
-    "  checking visibility.\n"
-    "\n"
-    "Examples:\n"
+    "Examples\n"
     "\n"
     "  Only targets in the current buildfile (\"private\", the default):\n"
     "    visibility = \":*\"\n"
@@ -845,7 +871,6 @@ const VariableInfoMap& GetBuiltinVariables() {
     INSERT_VARIABLE(BuildCpuArch)
     INSERT_VARIABLE(BuildOs)
     INSERT_VARIABLE(CpuArch)
-    INSERT_VARIABLE(ComponentMode)
     INSERT_VARIABLE(CurrentToolchain)
     INSERT_VARIABLE(DefaultToolchain)
     INSERT_VARIABLE(Os)
@@ -863,15 +888,18 @@ const VariableInfoMap& GetTargetVariables() {
   static VariableInfoMap info_map;
   if (info_map.empty()) {
     INSERT_VARIABLE(AllDependentConfigs)
+    INSERT_VARIABLE(AllowCircularIncludesFrom)
     INSERT_VARIABLE(Args)
     INSERT_VARIABLE(Cflags)
     INSERT_VARIABLE(CflagsC)
     INSERT_VARIABLE(CflagsCC)
     INSERT_VARIABLE(CflagsObjC)
     INSERT_VARIABLE(CflagsObjCC)
+    INSERT_VARIABLE(CheckIncludes)
     INSERT_VARIABLE(Configs)
     INSERT_VARIABLE(Data)
     INSERT_VARIABLE(Datadeps)
+    INSERT_VARIABLE(Defines)
     INSERT_VARIABLE(Depfile)
     INSERT_VARIABLE(Deps)
     INSERT_VARIABLE(DirectDependentConfigs)

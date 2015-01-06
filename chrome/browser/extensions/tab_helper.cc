@@ -4,7 +4,6 @@
 
 #include "chrome/browser/extensions/tab_helper.h"
 
-#include "base/command_line.h"
 #include "base/logging.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -13,19 +12,16 @@
 #include "chrome/browser/extensions/activity_log/activity_log.h"
 #include "chrome/browser/extensions/api/declarative/rules_registry_service.h"
 #include "chrome/browser/extensions/api/declarative_content/content_rules_registry.h"
+#include "chrome/browser/extensions/api/extension_action/extension_action_api.h"
 #include "chrome/browser/extensions/api/webstore/webstore_api.h"
 #include "chrome/browser/extensions/bookmark_app_helper.h"
 #include "chrome/browser/extensions/error_console/error_console.h"
-#include "chrome/browser/extensions/extension_action.h"
-#include "chrome/browser/extensions/extension_action_manager.h"
-#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
+#include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/extensions/location_bar_controller.h"
-#include "chrome/browser/extensions/script_executor.h"
 #include "chrome/browser/extensions/webstore_inline_installer.h"
 #include "chrome/browser/extensions/webstore_inline_installer_factory.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/sessions/session_id.h"
 #include "chrome/browser/sessions/session_tab_helper.h"
 #include "chrome/browser/shell_integration.h"
 #include "chrome/browser/ui/browser_commands.h"
@@ -34,7 +30,6 @@
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/web_applications/web_app.h"
-#include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/chrome_extension_messages.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
@@ -49,7 +44,6 @@
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
-#include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/frame_navigate_params.h"
 #include "extensions/browser/extension_error.h"
@@ -82,21 +76,6 @@ DEFINE_WEB_CONTENTS_USER_DATA_KEY(extensions::TabHelper);
 
 namespace extensions {
 
-TabHelper::ScriptExecutionObserver::ScriptExecutionObserver(
-    TabHelper* tab_helper)
-    : tab_helper_(tab_helper) {
-  tab_helper_->AddScriptExecutionObserver(this);
-}
-
-TabHelper::ScriptExecutionObserver::ScriptExecutionObserver()
-    : tab_helper_(NULL) {
-}
-
-TabHelper::ScriptExecutionObserver::~ScriptExecutionObserver() {
-  if (tab_helper_)
-    tab_helper_->RemoveScriptExecutionObserver(this);
-}
-
 TabHelper::TabHelper(content::WebContents* web_contents)
     : content::WebContentsObserver(web_contents),
       extension_app_(NULL),
@@ -118,7 +97,7 @@ TabHelper::TabHelper(content::WebContents* web_contents)
     SetTabId(web_contents->GetRenderViewHost());
   active_tab_permission_granter_.reset(new ActiveTabPermissionGranter(
       web_contents,
-      SessionID::IdForTab(web_contents),
+      SessionTabHelper::IdForTab(web_contents),
       Profile::FromBrowserContext(web_contents->GetBrowserContext())));
 
   // If more classes need to listen to global content script activity, then
@@ -167,6 +146,15 @@ bool TabHelper::CanCreateBookmarkApp() const {
   return IsValidBookmarkAppUrl(web_contents()->GetURL()) &&
          pending_web_app_action_ == NONE;
 #endif
+}
+
+void TabHelper::AddScriptExecutionObserver(ScriptExecutionObserver* observer) {
+  script_execution_observers_.AddObserver(observer);
+}
+
+void TabHelper::RemoveScriptExecutionObserver(
+    ScriptExecutionObserver* observer) {
+  script_execution_observers_.RemoveObserver(observer);
 }
 
 void TabHelper::SetExtensionApp(const Extension* extension) {
@@ -239,8 +227,7 @@ void TabHelper::DidNavigateMainFrame(
   ExtensionRegistry* registry = ExtensionRegistry::Get(context);
   const ExtensionSet& enabled_extensions = registry->enabled_extensions();
 
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableStreamlinedHostedApps)) {
+  if (util::IsStreamlinedHostedAppsEnabled()) {
     Browser* browser = chrome::FindBrowserWithWebContents(web_contents());
     if (browser && browser->is_app()) {
       SetExtensionApp(registry->GetExtensionById(
@@ -255,24 +242,8 @@ void TabHelper::DidNavigateMainFrame(
         enabled_extensions.GetExtensionOrAppByURL(params.url));
   }
 
-  if (details.is_in_page)
-    return;
-
-  ExtensionActionManager* extension_action_manager =
-      ExtensionActionManager::Get(Profile::FromBrowserContext(context));
-  for (ExtensionSet::const_iterator it = enabled_extensions.begin();
-       it != enabled_extensions.end();
-       ++it) {
-    ExtensionAction* browser_action =
-        extension_action_manager->GetBrowserAction(*it->get());
-    if (browser_action) {
-      browser_action->ClearAllValuesForTab(SessionID::IdForTab(web_contents()));
-      content::NotificationService::current()->Notify(
-          extensions::NOTIFICATION_EXTENSION_BROWSER_ACTION_UPDATED,
-          content::Source<ExtensionAction>(browser_action),
-          content::NotificationService::NoDetails());
-    }
-  }
+  if (!details.is_in_page)
+    ExtensionActionAPI::Get(context)->ClearAllValuesForTab(web_contents());
 }
 
 bool TabHelper::OnMessageReceived(const IPC::Message& message) {
@@ -298,7 +269,7 @@ bool TabHelper::OnMessageReceived(const IPC::Message& message,
                                   content::RenderFrameHost* render_frame_host) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(TabHelper, message)
-    IPC_MESSAGE_HANDLER(ChromeViewHostMsg_DetailedConsoleMessageAdded,
+    IPC_MESSAGE_HANDLER(ExtensionHostMsg_DetailedConsoleMessageAdded,
                         OnDetailedConsoleMessageAdded)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
@@ -426,10 +397,10 @@ void TabHelper::OnRequest(const ExtensionHostMsg_Request_Params& request) {
 void TabHelper::OnContentScriptsExecuting(
     const ScriptExecutionObserver::ExecutingScriptsMap& executing_scripts_map,
     const GURL& on_url) {
-  FOR_EACH_OBSERVER(ScriptExecutionObserver, script_execution_observers_,
-                    OnScriptsExecuted(web_contents(),
-                                      executing_scripts_map,
-                                      on_url));
+  FOR_EACH_OBSERVER(
+      ScriptExecutionObserver,
+      script_execution_observers_,
+      OnScriptsExecuted(web_contents(), executing_scripts_map, on_url));
 }
 
 void TabHelper::OnWatchedPageChange(
@@ -566,7 +537,7 @@ void TabHelper::Observe(int type,
 void TabHelper::SetTabId(RenderViewHost* render_view_host) {
   render_view_host->Send(
       new ExtensionMsg_SetTabId(render_view_host->GetRoutingID(),
-                                SessionID::IdForTab(web_contents())));
+                                SessionTabHelper::IdForTab(web_contents())));
 }
 
 }  // namespace extensions

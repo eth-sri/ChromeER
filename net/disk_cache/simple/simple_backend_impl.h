@@ -44,10 +44,12 @@ class NET_EXPORT_PRIVATE SimpleBackendImpl : public Backend,
     public SimpleIndexDelegate,
     public base::SupportsWeakPtr<SimpleBackendImpl> {
  public:
-  SimpleBackendImpl(const base::FilePath& path, int max_bytes,
-                    net::CacheType cache_type,
-                    base::SingleThreadTaskRunner* cache_thread,
-                    net::NetLog* net_log);
+  SimpleBackendImpl(
+      const base::FilePath& path,
+      int max_bytes,
+      net::CacheType cache_type,
+      const scoped_refptr<base::SingleThreadTaskRunner>& cache_thread,
+      net::NetLog* net_log);
 
   virtual ~SimpleBackendImpl();
 
@@ -63,10 +65,6 @@ class NET_EXPORT_PRIVATE SimpleBackendImpl : public Backend,
 
   // Returns the maximum file size permitted in this backend.
   int GetMaxFileSize() const;
-
-  // Removes |entry| from the |active_entries_| set, forcing future Open/Create
-  // operations to construct a new object.
-  void OnDeactivated(const SimpleEntryImpl* entry);
 
   // Flush our SequencedWorkerPool.
   static void FlushWorkerPoolForTesting();
@@ -107,10 +105,13 @@ class NET_EXPORT_PRIVATE SimpleBackendImpl : public Backend,
   virtual void OnExternalCacheHit(const std::string& key) OVERRIDE;
 
  private:
-  typedef base::hash_map<uint64, base::WeakPtr<SimpleEntryImpl> > EntryMap;
+  typedef base::hash_map<uint64, SimpleEntryImpl*> EntryMap;
 
   typedef base::Callback<void(base::Time mtime, uint64 max_size, int result)>
       InitializeIndexCallback;
+
+  class ActiveEntryProxy;
+  friend class ActiveEntryProxy;
 
   // Return value of InitCacheStructureOnDisk().
   struct DiskStatResult {

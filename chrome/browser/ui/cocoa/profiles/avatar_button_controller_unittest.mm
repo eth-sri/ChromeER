@@ -7,8 +7,8 @@
 #include "base/command_line.h"
 #include "base/mac/scoped_nsobject.h"
 #include "base/strings/sys_string_conversions.h"
-#include "chrome/browser/profiles/profiles_state.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/profiles/profiles_state.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
 #import "chrome/browser/ui/cocoa/base_bubble_controller.h"
@@ -16,9 +16,9 @@
 #include "chrome/browser/ui/cocoa/info_bubble_window.h"
 #import "chrome/browser/ui/cocoa/profiles/profile_chooser_controller.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/grit/generated_resources.h"
 #include "components/signin/core/common/profile_management_switches.h"
-
-const char kDefaultProfileName[] = "default";
+#include "ui/base/l10n/l10n_util.h"
 
 class AvatarButtonControllerTest : public CocoaProfileTest {
  public:
@@ -50,7 +50,8 @@ class AvatarButtonControllerTest : public CocoaProfileTest {
 
 TEST_F(AvatarButtonControllerTest, ButtonShown) {
   EXPECT_FALSE([view() isHidden]);
-  EXPECT_EQ(kDefaultProfileName, base::SysNSStringToUTF8([button() title]));
+  EXPECT_EQ(l10n_util::GetStringUTF16(IDS_SINGLE_PROFILE_DISPLAY_NAME),
+            base::SysNSStringToUTF16([button() title]));
 }
 
 TEST_F(AvatarButtonControllerTest, DoubleOpen) {

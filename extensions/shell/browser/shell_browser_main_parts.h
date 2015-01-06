@@ -27,15 +27,17 @@ class NetLog;
 
 namespace extensions {
 
+class DesktopController;
 class ShellBrowserContext;
 class ShellBrowserMainDelegate;
-class ShellDesktopController;
+class ShellDeviceClient;
 class ShellExtensionsBrowserClient;
 class ShellExtensionsClient;
 class ShellExtensionSystem;
 class ShellOmahaQueryParamsDelegate;
 
 #if defined(OS_CHROMEOS)
+class ShellAudioController;
 class ShellNetworkController;
 #endif
 
@@ -66,9 +68,11 @@ class ShellBrowserMainParts : public content::BrowserMainParts {
 
 #if defined(OS_CHROMEOS)
   scoped_ptr<ShellNetworkController> network_controller_;
+  scoped_ptr<ShellAudioController> audio_controller_;
 #endif
-  scoped_ptr<ShellDesktopController> desktop_controller_;
+  scoped_ptr<DesktopController> desktop_controller_;
   scoped_ptr<ShellBrowserContext> browser_context_;
+  scoped_ptr<ShellDeviceClient> device_client_;
   scoped_ptr<ShellExtensionsClient> extensions_client_;
   scoped_ptr<ShellExtensionsBrowserClient> extensions_browser_client_;
   scoped_ptr<net::NetLog> net_log_;

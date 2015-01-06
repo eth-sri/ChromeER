@@ -11,6 +11,7 @@
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/common/extension_messages.h"
+#include "extensions/common/feature_switch.h"
 #include "extensions/common/permissions/permission_set.h"
 #include "extensions/common/permissions/permissions_data.h"
 #include "extensions/common/user_script.h"
@@ -47,12 +48,8 @@ void ActiveTabPermissionGranter::GrantIfRequested(const Extension* extension) {
   // permission in the manifest.
   if (permissions_data->HasAPIPermission(APIPermission::kActiveTab) ||
       permissions_data->HasWithheldImpliedAllHosts()) {
-    URLPattern pattern(UserScript::ValidUserScriptSchemes());
-    // Pattern parsing could fail if this is an unsupported URL e.g. chrome://.
-    if (pattern.Parse(web_contents()->GetURL().spec()) ==
-            URLPattern::PARSE_SUCCESS) {
-      new_hosts.AddPattern(pattern);
-    }
+    new_hosts.AddOrigin(UserScript::ValidUserScriptSchemes(),
+                        web_contents()->GetVisibleURL().GetOrigin());
     new_apis.insert(APIPermission::kTab);
   }
 
@@ -90,7 +87,25 @@ void ActiveTabPermissionGranter::DidNavigateMainFrame(
   if (details.is_in_page)
     return;
   DCHECK(details.is_main_frame);  // important: sub-frames don't get granted!
-  ClearActiveExtensionsAndNotify();
+
+  // Only clear the granted permissions for cross-origin navigations.
+  //
+  // See http://crbug.com/404243 for why. Currently we only differentiate
+  // between same-origin and cross-origin navigations when the
+  // script-require-action flag is on. It's not clear it's good for general
+  // activeTab consumption (we likely need to build some UI around it first).
+  // However, the scripts-require-action feature is all-but unusable without
+  // this behaviour.
+  if (FeatureSwitch::scripts_require_action()->IsEnabled()) {
+    const content::NavigationEntry* navigation_entry =
+        web_contents()->GetController().GetVisibleEntry();
+    if (!navigation_entry || (navigation_entry->GetURL().GetOrigin() !=
+                              details.previous_url.GetOrigin())) {
+      ClearActiveExtensionsAndNotify();
+    }
+  } else {
+    ClearActiveExtensionsAndNotify();
+  }
 }
 
 void ActiveTabPermissionGranter::WebContentsDestroyed() {

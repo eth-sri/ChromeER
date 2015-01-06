@@ -32,9 +32,6 @@ const SkColor kResultURLTextColor = SkColorSetRGB(0x00, 0x99, 0x33);
 const SkColor kGridTitleColor = SkColorSetRGB(0x5A, 0x5A, 0x5A);
 const SkColor kGridTitleHoverColor = SkColorSetRGB(0x3C, 0x3C, 0x3C);
 
-// Color of the borders used in the experimental app list start page.
-const SkColor kStartPageBorderColor = SkColorSetRGB(0xEE, 0xEE, 0xEE);
-
 // Color of the folder ink bubble.
 const SkColor kFolderBubbleColor = SkColorSetRGB(0xD7, 0xD7, 0xD7);
 
@@ -64,7 +61,11 @@ const gfx::Tween::Type kFolderFadeOutTweenType = gfx::Tween::FAST_OUT_LINEAR_IN;
 // Preferred number of columns and rows in apps grid.
 const int kPreferredCols = 4;
 const int kPreferredRows = 4;
-const int kPreferredIconDimension = 48;
+const int kGridIconDimension = 48;
+
+// Preferred search result icon sizes.
+const int kListIconSize = 32;
+const int kTileIconSize = 48;
 
 // Preferred number of columns and rows in the experimental app list apps grid.
 const int kExperimentalPreferredCols = 6;

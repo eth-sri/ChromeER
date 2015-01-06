@@ -13,11 +13,11 @@
 #if defined(ENABLE_EXTENSIONS)
 #include "chrome/browser/app_mode/app_mode_utils.h"
 #include "chrome/browser/guest_view/web_view/context_menu_content_type_web_view.h"
-#include "chrome/browser/guest_view/web_view/web_view_guest.h"
 #include "chrome/browser/renderer_context_menu/context_menu_content_type_app_mode.h"
 #include "chrome/browser/renderer_context_menu/context_menu_content_type_extension_popup.h"
 #include "chrome/browser/renderer_context_menu/context_menu_content_type_panel.h"
 #include "chrome/browser/renderer_context_menu/context_menu_content_type_platform_app.h"
+#include "extensions/browser/guest_view/web_view/web_view_guest.h"
 #include "extensions/browser/view_type_utils.h"
 #include "extensions/common/extension.h"
 #endif
@@ -58,7 +58,7 @@ ContextMenuContentType* ContextMenuContentTypeFactory::CreateInternal(
     content::WebContents* web_contents,
     const content::ContextMenuParams& params) {
 #if defined(ENABLE_EXTENSIONS)
-  if (WebViewGuest::FromWebContents(web_contents))
+  if (extensions::WebViewGuest::FromWebContents(web_contents))
     return new ContextMenuContentTypeWebView(web_contents, params);
 
   if (chrome::IsRunningInForcedAppMode())
@@ -66,7 +66,8 @@ ContextMenuContentType* ContextMenuContentTypeFactory::CreateInternal(
 
   const extensions::ViewType view_type = extensions::GetViewType(web_contents);
 
-  if (view_type == extensions::VIEW_TYPE_APP_WINDOW)
+  if (view_type == extensions::VIEW_TYPE_APP_WINDOW ||
+      view_type == extensions::VIEW_TYPE_LAUNCHER_PAGE)
     return new ContextMenuContentTypePlatformApp(web_contents, params);
 
   if (view_type == extensions::VIEW_TYPE_EXTENSION_POPUP)

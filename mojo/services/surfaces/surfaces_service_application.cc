@@ -6,6 +6,10 @@
 
 #include "cc/surfaces/display.h"
 
+#include "mojo/public/c/system/main.h"
+#include "mojo/public/cpp/application/application_runner_chromium.h"
+#include "mojo/services/surfaces/surfaces_service_impl.h"
+
 namespace mojo {
 
 SurfacesServiceApplication::SurfacesServiceApplication()
@@ -21,9 +25,10 @@ bool SurfacesServiceApplication::ConfigureIncomingConnection(
   return true;
 }
 
-void SurfacesServiceApplication::Create(ApplicationConnection* connection,
-                                        InterfaceRequest<Surface> request) {
-  BindToRequest(new SurfacesImpl(&manager_, next_id_namespace_++, this),
+void SurfacesServiceApplication::Create(
+    ApplicationConnection* connection,
+    InterfaceRequest<SurfacesService> request) {
+  BindToRequest(new SurfacesServiceImpl(&manager_, &next_id_namespace_, this),
                 &request);
 }
 
@@ -36,9 +41,9 @@ void SurfacesServiceApplication::SetDisplay(cc::Display* display) {
   display_ = display;
 }
 
-// static
-ApplicationDelegate* ApplicationDelegate::Create() {
-  return new SurfacesServiceApplication;
-}
-
 }  // namespace mojo
+
+MojoResult MojoMain(MojoHandle shell_handle) {
+  mojo::ApplicationRunnerChromium runner(new mojo::SurfacesServiceApplication);
+  return runner.Run(shell_handle);
+}

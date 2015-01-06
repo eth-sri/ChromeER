@@ -9,12 +9,14 @@
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
+#include "base/time/time.h"
 #include "content/child/resource_dispatcher.h"
 #include "content/public/child/request_peer.h"
 #include "content/public/common/resource_response_info.h"
 #include "net/base/net_errors.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_util.h"
+#include "net/url_request/redirect_info.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebURLError.h"
@@ -281,7 +283,12 @@ class WebURLLoaderImplTest : public testing::Test {
 
   void DoReceiveRedirect() {
     EXPECT_FALSE(client()->did_receive_redirect());
-    peer()->OnReceivedRedirect(GURL(kTestURL), GURL(kTestURL),
+    net::RedirectInfo redirect_info;
+    redirect_info.status_code = 302;
+    redirect_info.new_method = "GET";
+    redirect_info.new_url = GURL(kTestURL);
+    redirect_info.new_first_party_for_cookies = GURL(kTestURL);
+    peer()->OnReceivedRedirect(redirect_info,
                                content::ResourceResponseInfo());
     EXPECT_TRUE(client()->did_receive_redirect());
   }

@@ -5,10 +5,11 @@
 #ifndef APPS_UI_VIEWS_NATIVE_APP_WINDOW_VIEWS_H_
 #define APPS_UI_VIEWS_NATIVE_APP_WINDOW_VIEWS_H_
 
-#include "apps/size_constraints.h"
-#include "apps/ui/native_app_window.h"
 #include "base/observer_list.h"
 #include "content/public/browser/web_contents_observer.h"
+#include "extensions/browser/app_window/app_window.h"
+#include "extensions/browser/app_window/native_app_window.h"
+#include "extensions/browser/app_window/size_constraints.h"
 #include "ui/gfx/rect.h"
 #include "ui/views/controls/webview/unhandled_keyboard_event_handler.h"
 #include "ui/views/widget/widget.h"
@@ -42,15 +43,15 @@ class AppWindowFrameView;
 
 // A NativeAppWindow backed by a views::Widget. This class may be used alone
 // as a stub or subclassed (for example, ChromeNativeAppWindowViews).
-class NativeAppWindowViews : public NativeAppWindow,
+class NativeAppWindowViews : public extensions::NativeAppWindow,
                              public content::WebContentsObserver,
                              public views::WidgetDelegateView,
                              public views::WidgetObserver {
  public:
   NativeAppWindowViews();
   virtual ~NativeAppWindowViews();
-  void Init(AppWindow* app_window,
-            const AppWindow::CreateParams& create_params);
+  void Init(extensions::AppWindow* app_window,
+            const extensions::AppWindow::CreateParams& create_params);
 
   // Signal that CanHaveTransparentBackground has changed.
   void OnCanHaveAlphaEnabledChanged();
@@ -61,16 +62,17 @@ class NativeAppWindowViews : public NativeAppWindow,
   void set_web_view_for_testing(views::WebView* view) { web_view_ = view; }
 
  protected:
-  AppWindow* app_window() { return app_window_; }
-  const AppWindow* app_window() const { return app_window_; }
+  extensions::AppWindow* app_window() { return app_window_; }
+  const extensions::AppWindow* app_window() const { return app_window_; }
 
   const views::Widget* widget() const { return widget_; }
 
   views::WebView* web_view() { return web_view_; }
 
   // Initializes |widget_| for |app_window|.
-  virtual void InitializeWindow(AppWindow* app_window,
-                                const AppWindow::CreateParams& create_params);
+  virtual void InitializeWindow(
+      extensions::AppWindow* app_window,
+      const extensions::AppWindow::CreateParams& create_params);
 
   // ui::BaseWindow implementation.
   virtual bool IsActive() const OVERRIDE;
@@ -137,7 +139,6 @@ class NativeAppWindowViews : public NativeAppWindow,
   // NativeAppWindow implementation.
   virtual void SetFullscreen(int fullscreen_types) OVERRIDE;
   virtual bool IsFullscreenOrPending() const OVERRIDE;
-  virtual bool IsDetached() const OVERRIDE;
   virtual void UpdateWindowIcon() OVERRIDE;
   virtual void UpdateWindowTitle() OVERRIDE;
   virtual void UpdateBadgeIcon() OVERRIDE;
@@ -174,7 +175,7 @@ class NativeAppWindowViews : public NativeAppWindow,
   // Informs modal dialogs that they need to update their positions.
   void OnViewWasResized();
 
-  AppWindow* app_window_;  // Not owned.
+  extensions::AppWindow* app_window_;  // Not owned.
   views::WebView* web_view_;
   views::Widget* widget_;
 
@@ -182,7 +183,7 @@ class NativeAppWindowViews : public NativeAppWindow,
 
   bool frameless_;
   bool resizable_;
-  apps::SizeConstraints size_constraints_;
+  extensions::SizeConstraints size_constraints_;
 
   views::UnhandledKeyboardEventHandler unhandled_keyboard_event_handler_;
 

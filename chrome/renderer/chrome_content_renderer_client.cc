@@ -15,7 +15,6 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
-#include "chrome/common/chrome_content_client.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
@@ -28,6 +27,9 @@
 #include "chrome/common/pepper_permission_util.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/common/url_constants.h"
+#include "chrome/grit/generated_resources.h"
+#include "chrome/grit/locale_settings.h"
+#include "chrome/grit/renderer_resources.h"
 #include "chrome/renderer/benchmarking_extension.h"
 #include "chrome/renderer/chrome_render_frame_observer.h"
 #include "chrome/renderer/chrome_render_process_observer.h"
@@ -49,7 +51,6 @@
 #include "chrome/renderer/net_benchmarking_extension.h"
 #include "chrome/renderer/page_load_histograms.h"
 #include "chrome/renderer/pepper/pepper_helper.h"
-#include "chrome/renderer/pepper/ppb_pdf_impl.h"
 #include "chrome/renderer/playback_extension.h"
 #include "chrome/renderer/plugins/chrome_plugin_placeholder.h"
 #include "chrome/renderer/plugins/plugin_uma.h"
@@ -72,6 +73,8 @@
 #include "components/autofill/content/renderer/password_generation_agent.h"
 #include "components/dom_distiller/core/url_constants.h"
 #include "components/nacl/renderer/ppb_nacl_private_impl.h"
+#include "components/password_manager/content/renderer/credential_manager_client.h"
+#include "components/pdf/renderer/ppb_pdf_impl.h"
 #include "components/plugins/renderer/mobile_youtube_plugin.h"
 #include "components/signin/core/common/profile_management_switches.h"
 #include "components/visitedlink/renderer/visitedlink_slave.h"
@@ -88,9 +91,6 @@
 #include "extensions/renderer/dispatcher.h"
 #include "extensions/renderer/extension_helper.h"
 #include "extensions/renderer/script_context.h"
-#include "grit/generated_resources.h"
-#include "grit/locale_settings.h"
-#include "grit/renderer_resources.h"
 #include "ipc/ipc_sync_channel.h"
 #include "net/base/net_errors.h"
 #include "ppapi/c/private/ppb_nacl_private.h"
@@ -115,11 +115,16 @@
 #include "widevine_cdm_version.h"  // In SHARED_INTERMEDIATE_DIR.
 
 #if !defined(DISABLE_NACL)
+#include "components/nacl/common/nacl_constants.h"
 #include "components/nacl/renderer/nacl_helper.h"
 #endif
 
 #if defined(ENABLE_EXTENSIONS)
-#include "chrome/renderer/extensions/chrome_extensions_render_frame_observer.h"
+#include "extensions/renderer/extensions_render_frame_observer.h"
+#endif
+
+#if defined(ENABLE_FULL_PRINTING)
+#include "chrome/renderer/pepper/chrome_pdf_print_client.h"
 #endif
 
 #if defined(ENABLE_SPELLCHECK)
@@ -230,9 +235,11 @@ bool ShouldUseJavaScriptSettingForPlugin(const WebPluginInfo& plugin) {
     return false;
   }
 
+#if !defined(DISABLE_NACL)
   // Treat Native Client invocations like JavaScript.
-  if (plugin.name == ASCIIToUTF16(ChromeContentClient::kNaClPluginName))
+  if (plugin.name == ASCIIToUTF16(nacl::kNaClPluginName))
     return true;
+#endif
 
 #if defined(WIDEVINE_CDM_AVAILABLE) && defined(ENABLE_PEPPER_CDMS)
   // Treat CDM invocations like JavaScript.
@@ -243,6 +250,14 @@ bool ShouldUseJavaScriptSettingForPlugin(const WebPluginInfo& plugin) {
 #endif  // defined(WIDEVINE_CDM_AVAILABLE) && defined(ENABLE_PEPPER_CDMS)
 
   return false;
+}
+
+void IsGuestViewApiAvailableToScriptContext(
+    bool* api_is_available,
+    extensions::ScriptContext* context) {
+  if (context->GetAvailability("guestViewInternal").is_available()) {
+    *api_is_available = true;
+  }
 }
 
 }  // namespace
@@ -304,6 +319,9 @@ void ChromeContentRendererClient::RenderThreadStarted() {
 #endif
   search_bouncer_.reset(new SearchBouncer());
 
+  credential_manager_client_.reset(
+      new password_manager::CredentialManagerClient());
+
   thread->AddObserver(chrome_observer_.get());
   thread->AddObserver(extension_dispatcher_.get());
 #if defined(FULL_SAFE_BROWSING)
@@ -312,6 +330,7 @@ void ChromeContentRendererClient::RenderThreadStarted() {
   thread->AddObserver(visited_link_slave_.get());
   thread->AddObserver(prerender_dispatcher_.get());
   thread->AddObserver(search_bouncer_.get());
+  thread->AddObserver(credential_manager_client_.get());
 
 #if defined(ENABLE_WEBRTC)
   thread->AddFilter(webrtc_logging_message_filter_.get());
@@ -406,6 +425,10 @@ void ChromeContentRendererClient::RenderThreadStarted() {
   if (blacklist::IsBlacklistInitialized())
     UMA_HISTOGRAM_BOOLEAN("Blacklist.PatchedInRenderer", true);
 #endif
+#if defined(ENABLE_FULL_PRINTING)
+  pdf_print_client_.reset(new ChromePDFPrintClient());
+  pdf::PPB_PDF_Impl::SetPrintClient(pdf_print_client_.get());
+#endif
 }
 
 void ChromeContentRendererClient::RenderFrameCreated(
@@ -420,7 +443,7 @@ void ChromeContentRendererClient::RenderFrameCreated(
   }
 
 #if defined(ENABLE_EXTENSIONS)
-  new extensions::ChromeExtensionsRenderFrameObserver(render_frame);
+  new extensions::ExtensionsRenderFrameObserver(render_frame);
 #endif
   new extensions::ExtensionFrameHelper(render_frame,
                                        extension_dispatcher_.get());
@@ -483,6 +506,9 @@ void ChromeContentRendererClient::RenderViewCreated(
     new SearchBox(render_view);
 
   new ChromeRenderViewObserver(render_view, chrome_observer_.get());
+
+  if (credential_manager_client_)
+    credential_manager_client_->OnRenderViewCreated(render_view);
 }
 
 void ChromeContentRendererClient::SetNumberOfViews(int number_of_views) {
@@ -520,20 +546,13 @@ bool ChromeContentRendererClient::OverrideCreatePlugin(
     WebPlugin** plugin) {
   std::string orig_mime_type = params.mimeType.utf8();
   if (orig_mime_type == content::kBrowserPluginMimeType) {
-    WebDocument document = frame->document();
-    const Extension* extension =
-        GetExtensionByOrigin(document.securityOrigin());
-    if (extension) {
-      const extensions::APIPermission::ID perms[] = {
-          extensions::APIPermission::kAppView,
-          extensions::APIPermission::kEmbeddedExtensionOptions,
-          extensions::APIPermission::kWebView,
-      };
-      for (size_t i = 0; i < arraysize(perms); ++i) {
-        if (extension->permissions_data()->HasAPIPermission(perms[i]))
-          return false;
-      }
-    }
+    bool guest_view_api_available = false;
+    extension_dispatcher_->script_context_set().ForEach(
+        render_frame->GetRenderView(),
+        base::Bind(&IsGuestViewApiAvailableToScriptContext,
+                   &guest_view_api_available));
+    if (guest_view_api_available)
+      return false;
   }
 
   ChromeViewHostMsg_GetPluginInfo_Output output;
@@ -675,12 +694,13 @@ WebPlugin* ChromeContentRendererClient::CreatePlugin(
         break;
       }
       case ChromeViewHostMsg_GetPluginInfo_Status::kAllowed: {
+#if !defined(DISABLE_NACL)
         const bool is_nacl_plugin =
-            plugin.name == ASCIIToUTF16(ChromeContentClient::kNaClPluginName);
+            plugin.name == ASCIIToUTF16(nacl::kNaClPluginName);
         const bool is_nacl_mime_type =
-            actual_mime_type == "application/x-nacl";
+            actual_mime_type == nacl::kNaClPluginMimeType;
         const bool is_pnacl_mime_type =
-            actual_mime_type == "application/x-pnacl";
+            actual_mime_type == nacl::kPnaclPluginMimeType;
         if (is_nacl_plugin || is_nacl_mime_type || is_pnacl_mime_type) {
           bool is_nacl_unrestricted = false;
           if (is_nacl_mime_type) {
@@ -739,6 +759,7 @@ WebPlugin* ChromeContentRendererClient::CreatePlugin(
             break;
           }
         }
+#endif  // !defined(DISABLE_NACL)
 
         // Delay loading plugins if prerendering.
         // TODO(mmenke):  In the case of prerendering, feed into
@@ -1381,7 +1402,7 @@ const void* ChromeContentRendererClient::CreatePPAPIInterface(
     return nacl::GetNaClPrivateInterface();
 #endif  // DISABLE_NACL
   if (interface_name == PPB_PDF_INTERFACE)
-    return PPB_PDF_Impl::GetInterface();
+    return pdf::PPB_PDF_Impl::GetInterface();
 #endif
   return NULL;
 }

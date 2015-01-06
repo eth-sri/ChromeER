@@ -41,16 +41,23 @@ class ImageTransportSurfaceFBO
     // GL texture that was bound has already been deleted by the caller.
     virtual void FreeColorBufferStorage() = 0;
 
-    // Retrieve the handle for the surface to send to the browser process to
-    // display.
-    virtual uint64 GetSurfaceHandle() const = 0;
+    // Swap buffers and return the handle for the surface to send to the browser
+    // process to display.
+    virtual void SwapBuffers(const gfx::Size& size, float scale_factor) = 0;
 
-    // Called when a frame is about to be sent to the browser process.
-    virtual void WillSwapBuffers() = 0;
+    // Indicate that the backbuffer will be written to.
+    virtual void WillWriteToBackbuffer() = 0;
+
+    // Indicate that the backbuffer has been discarded and should not be seen
+    // again.
+    virtual void DiscardBackbuffer() = 0;
+
+    // Called once for every SwapBuffers call when the IPC for the present has
+    // been processed by the browser.
+    virtual void SwapBuffersAckedByBrowser() = 0;
   };
 
-  ImageTransportSurfaceFBO(StorageProvider* storage_provider,
-                           GpuChannelManager* manager,
+  ImageTransportSurfaceFBO(GpuChannelManager* manager,
                            GpuCommandBufferStub* stub,
                            gfx::PluginWindowHandle handle);
 
@@ -69,6 +76,11 @@ class ImageTransportSurfaceFBO
   virtual unsigned int GetBackingFrameBufferObject() OVERRIDE;
   virtual bool SetBackbufferAllocation(bool allocated) OVERRIDE;
   virtual void SetFrontbufferAllocation(bool allocated) OVERRIDE;
+
+  // Called when the context may continue to make forward progress after a swap.
+  void SendSwapBuffers(uint64 surface_handle,
+                       const gfx::Size pixel_size,
+                       float scale_factor);
 
  protected:
   // ImageTransportSurface implementation
@@ -110,12 +122,8 @@ class ImageTransportSurfaceFBO
   // Whether or not we've successfully made the surface current once.
   bool made_current_;
 
-  // Whether a SwapBuffers is pending.
-  bool is_swap_buffers_pending_;
-
-  // Whether we unscheduled command buffer because of pending SwapBuffers.
-  bool did_unschedule_;
-
+  // Whether a SwapBuffers IPC needs to be sent to the browser.
+  bool is_swap_buffers_send_pending_;
   std::vector<ui::LatencyInfo> latency_info_;
 
   scoped_ptr<ImageTransportHelper> helper_;

@@ -425,6 +425,7 @@ _STATES = {
         'type': 'GLfloat',
         'default': '1.0f',
         'range_checks': [{'check': "<= 0.0f", 'test_value': "0.0f"}],
+        'nan_check': True,
       }],
   },
   'DepthMask': {
@@ -502,6 +503,36 @@ _STATES = {
         'type': 'GLsizei',
         'default': '1',
         'expected': 'kViewportHeight',
+      },
+    ],
+  },
+  'MatrixValuesCHROMIUM': {
+    'type': 'NamedParameter',
+    'func': 'MatrixLoadfEXT',
+    'states': [
+      { 'enum': 'GL_PATH_MODELVIEW_MATRIX_CHROMIUM',
+        'enum_set': 'GL_PATH_MODELVIEW_CHROMIUM',
+        'name': 'modelview_matrix',
+        'type': 'GLfloat',
+        'default': [
+          '1.0f', '0.0f','0.0f','0.0f',
+          '0.0f', '1.0f','0.0f','0.0f',
+          '0.0f', '0.0f','1.0f','0.0f',
+          '0.0f', '0.0f','0.0f','1.0f',
+        ],
+        'extension_flag': 'chromium_path_rendering',
+      },
+      { 'enum': 'GL_PATH_PROJECTION_MATRIX_CHROMIUM',
+        'enum_set': 'GL_PATH_PROJECTION_CHROMIUM',
+        'name': 'projection_matrix',
+        'type': 'GLfloat',
+        'default': [
+          '1.0f', '0.0f','0.0f','0.0f',
+          '0.0f', '1.0f','0.0f','0.0f',
+          '0.0f', '0.0f','1.0f','0.0f',
+          '0.0f', '0.0f','0.0f','1.0f',
+        ],
+        'extension_flag': 'chromium_path_rendering',
       },
     ],
   },
@@ -836,6 +867,13 @@ _NAMED_TYPE_INFO = {
       'GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME',
       'GL_FRAMEBUFFER_ATTACHMENT_TEXTURE_LEVEL',
       'GL_FRAMEBUFFER_ATTACHMENT_TEXTURE_CUBE_MAP_FACE',
+    ],
+  },
+  'MatrixMode': {
+    'type': 'GLenum',
+    'valid': [
+      'GL_PATH_PROJECTION_CHROMIUM',
+      'GL_PATH_MODELVIEW_CHROMIUM',
     ],
   },
   'ProgramParameter': {
@@ -1382,7 +1420,7 @@ _FUNCTION_INFO = {
     'count': 64,  # GL_MAILBOX_SIZE_CHROMIUM
     'unit_test': False,
     'client_test': False,
-    'extension': True,
+    'extension': "CHROMIUM_texture_mailbox",
     'chromium': True,
     'trace_level': 1,
   },
@@ -1393,7 +1431,7 @@ _FUNCTION_INFO = {
     'data_transfer_methods': ['immediate'],
     'unit_test': False,
     'client_test': False,
-    'extension': True,
+    'extension': "CHROMIUM_texture_mailbox",
     'chromium': True,
   },
   'ClearStencil': {
@@ -1648,7 +1686,7 @@ _FUNCTION_INFO = {
   'GenMailboxCHROMIUM': {
     'type': 'HandWritten',
     'impl_func': False,
-    'extension': True,
+    'extension': "CHROMIUM_texture_mailbox",
     'chromium': True,
   },
   'GenFramebuffers': {
@@ -1976,7 +2014,7 @@ _FUNCTION_INFO = {
     'count': 64,  # GL_MAILBOX_SIZE_CHROMIUM
     'unit_test': False,
     'client_test': False,
-    'extension': True,
+    'extension': "CHROMIUM_texture_mailbox",
     'chromium': True,
     'trace_level': 1,
   },
@@ -1987,7 +2025,7 @@ _FUNCTION_INFO = {
     'count': 64,  # GL_MAILBOX_SIZE_CHROMIUM
     'unit_test': False,
     'client_test': False,
-    'extension': True,
+    'extension': "CHROMIUM_texture_mailbox",
     'chromium': True,
     'trace_level': 1,
   },
@@ -2559,13 +2597,13 @@ _FUNCTION_INFO = {
   'InsertSyncPointCHROMIUM': {
     'type': 'HandWritten',
     'impl_func': False,
-    'extension': True,
+    'extension': "CHROMIUM_sync_point",
     'chromium': True,
   },
   'WaitSyncPointCHROMIUM': {
     'type': 'Custom',
     'impl_func': True,
-    'extension': True,
+    'extension': "CHROMIUM_sync_point",
     'chromium': True,
     'trace_level': 1,
   },
@@ -2582,6 +2620,23 @@ _FUNCTION_INFO = {
       'client_test': False,
       'extension': True,
       'chromium': True,
+  },
+  'MatrixLoadfCHROMIUM': {
+    'type': 'PUT',
+    'count': 16,
+    'data_type': 'GLfloat',
+    'decoder_func': 'DoMatrixLoadfCHROMIUM',
+    'gl_test_func': 'glMatrixLoadfEXT',
+    'chromium': True,
+    'extension': True,
+    'extension_flag': 'chromium_path_rendering',
+  },
+  'MatrixLoadIdentityCHROMIUM': {
+    'decoder_func': 'DoMatrixLoadIdentityCHROMIUM',
+    'gl_test_func': 'glMatrixLoadIdentityEXT',
+    'chromium': True,
+    'extension': True,
+    'extension_flag': 'chromium_path_rendering',
   },
 }
 
@@ -2637,18 +2692,50 @@ def CachedStateName(item):
     return 'cached_' + item['name']
   return item['name']
 
+def ToGLExtensionString(extension_flag):
+  """Returns GL-type extension string of a extension flag."""
+  if extension_flag == "oes_compressed_etc1_rgb8_texture":
+    return "OES_compressed_ETC1_RGB8_texture" # Fixup inconsitency with rgb8,
+                                              # unfortunate.
+  uppercase_words = [ 'img', 'ext', 'arb', 'chromium', 'oes', 'amd', 'bgra8888',
+                      'egl', 'atc', 'etc1', 'angle']
+  parts = extension_flag.split('_')
+  return "_".join(
+    [part.upper() if part in uppercase_words else part for part in parts])
+
+def ToCamelCase(input_string):
+  """converts ABC_underscore_case to ABCUnderscoreCase."""
+  return ''.join(w[0].upper() + w[1:] for w in input_string.split('_'))
+
+def GetGLGetTypeConversion(result_type, value_type, value):
+  """Makes a gl compatible type conversion string for accessing state variables.
+
+   Useful when accessing state variables through glGetXXX calls.
+   glGet documetation (for example, the manual pages):
+   [...] If glGetIntegerv is called, [...] most floating-point values are
+   rounded to the nearest integer value. [...]
+
+  Args:
+   result_type: the gl type to be obtained
+   value_type: the GL type of the state variable
+   value: the name of the state variable
+
+  Returns:
+   String that converts the state variable to desired GL type according to GL
+   rules.
+  """
+
+  if result_type == 'GLint':
+    if value_type == 'GLfloat':
+      return 'static_cast<GLint>(round(%s))' % value
+  return 'static_cast<%s>(%s)' % (result_type, value)
 
 class CWriter(object):
   """Writes to a file formatting it for Google's style guidelines."""
 
   def __init__(self, filename):
     self.filename = filename
-    self.file_num = 0
     self.content = []
-
-  def SetFileNum(self, num):
-    """Used to help write number files and tests."""
-    self.file_num = num
 
   def Write(self, string):
     """Writes a string to a file spliting if it's > 80 characters."""
@@ -2934,7 +3021,7 @@ COMPILE_ASSERT(offsetof(%(cmd_name)s::Result, %(field_name)s) == %(offset)d,
       file.Write("  if (error != error::kNoError)\n")
       file.Write("    return error;\n")
 
-  def WriteValidUnitTest(self, func, file, test, extra = {}):
+  def WriteValidUnitTest(self, func, file, test, *extras):
     """Writes a valid unit test for the service implementation."""
     if func.GetInfo('expectation') == False:
       test = self._remove_expected_call_re.sub('', test)
@@ -2949,20 +3036,20 @@ COMPILE_ASSERT(offsetof(%(cmd_name)s::Result, %(field_name)s) == %(offset)d,
     ]
     gl_func_name = func.GetGLTestFunctionName()
     vars = {
-      'test_name': 'GLES2DecoderTest%d' % file.file_num,
       'name':name,
       'gl_func_name': gl_func_name,
       'args': ", ".join(arg_strings),
       'gl_args': ", ".join(gl_arg_strings),
     }
-    vars.update(extra)
+    for extra in extras:
+      vars.update(extra)
     old_test = ""
     while (old_test != test):
       old_test = test
       test = test % vars
     file.Write(test % vars)
 
-  def WriteInvalidUnitTest(self, func, file, test, extra = {}):
+  def WriteInvalidUnitTest(self, func, file, test, *extras):
     """Writes an invalid unit test for the service implementation."""
     for invalid_arg_index, invalid_arg in enumerate(func.GetOriginalArgs()):
       # Service implementation does not test constants, as they are not part of
@@ -2993,7 +3080,6 @@ COMPILE_ASSERT(offsetof(%(cmd_name)s::Result, %(field_name)s) == %(offset)d,
           gl_error_test = '\n  EXPECT_EQ(%s, GetGLError());' % gl_error
 
         vars = {
-          'test_name': 'GLES2DecoderTest%d' % file.file_num ,
           'name': func.name,
           'arg_index': invalid_arg_index,
           'value_index': value_index,
@@ -3004,10 +3090,11 @@ COMPILE_ASSERT(offsetof(%(cmd_name)s::Result, %(field_name)s) == %(offset)d,
           'parse_result': parse_result,
             'gl_error_test': gl_error_test,
         }
-        vars.update(extra)
+        for extra in extras:
+          vars.update(extra)
         file.Write(test % vars)
 
-  def WriteServiceUnitTest(self, func, file):
+  def WriteServiceUnitTest(self, func, file, *extras):
     """Writes the service unit test for a command."""
 
     if func.name == 'Enable':
@@ -3043,7 +3130,7 @@ TEST_P(%(test_name)s, %(name)sValidArgs) {
   EXPECT_EQ(GL_NO_ERROR, GetGLError());
 }
 """
-    self.WriteValidUnitTest(func, file, valid_test)
+    self.WriteValidUnitTest(func, file, valid_test, *extras)
 
     invalid_test = """
 TEST_P(%(test_name)s, %(name)sInvalidArgs%(arg_index)d_%(value_index)d) {
@@ -3054,9 +3141,9 @@ TEST_P(%(test_name)s, %(name)sInvalidArgs%(arg_index)d_%(value_index)d) {
   EXPECT_EQ(error::%(parse_result)s, ExecuteCmd(cmd));%(gl_error_test)s
 }
 """
-    self.WriteInvalidUnitTest(func, file, invalid_test)
+    self.WriteInvalidUnitTest(func, file, invalid_test, *extras)
 
-  def WriteImmediateServiceUnitTest(self, func, file):
+  def WriteImmediateServiceUnitTest(self, func, file, *extras):
     """Writes the service unit test for an immediate command."""
     file.Write("// TODO(gman): %s\n" % func.name)
 
@@ -3064,7 +3151,7 @@ TEST_P(%(test_name)s, %(name)sInvalidArgs%(arg_index)d_%(value_index)d) {
     """Writes the validation code for an immediate version of a command."""
     pass
 
-  def WriteBucketServiceUnitTest(self, func, file):
+  def WriteBucketServiceUnitTest(self, func, file, *extras):
     """Writes the service unit test for a bucket command."""
     file.Write("// TODO(gman): %s\n" % func.name)
 
@@ -3324,19 +3411,27 @@ class StateSetHandler(TypeHandler):
     state = _STATES[state_name]
     states = state['states']
     args = func.GetOriginalArgs()
-    code = []
     for ndx,item in enumerate(states):
+      code = []
       if 'range_checks' in item:
         for range_check in item['range_checks']:
           code.append("%s %s" % (args[ndx].name, range_check['check']))
-    if len(code):
-      file.Write("  if (%s) {\n" % " ||\n      ".join(code))
-      file.Write(
-        '    LOCAL_SET_GL_ERROR(GL_INVALID_VALUE,'
-        ' "%s", "%s out of range");\n' %
-        (func.name, args[ndx].name))
-      file.Write("    return error::kNoError;\n")
-      file.Write("  }\n")
+      if 'nan_check' in item:
+        # Drivers might generate an INVALID_VALUE error when a value is set
+        # to NaN. This is allowed behavior under GLES 3.0 section 2.1.1 or
+        # OpenGL 4.5 section 2.3.4.1 - providing NaN allows undefined results.
+        # Make this behavior consistent within Chromium, and avoid leaking GL
+        # errors by generating the error in the command buffer instead of
+        # letting the GL driver generate it.
+        code.append("base::IsNaN(%s)" % args[ndx].name)
+      if len(code):
+        file.Write("  if (%s) {\n" % " ||\n      ".join(code))
+        file.Write(
+          '    LOCAL_SET_GL_ERROR(GL_INVALID_VALUE,'
+          ' "%s", "%s out of range");\n' %
+          (func.name, args[ndx].name))
+        file.Write("    return error::kNoError;\n")
+        file.Write("  }\n")
     code = []
     for ndx,item in enumerate(states):
       code.append("state_.%s != %s" % (item['name'], args[ndx].name))
@@ -3354,9 +3449,9 @@ class StateSetHandler(TypeHandler):
                  (func.GetGLFunctionName(), func.MakeOriginalArgString("")))
     file.Write("  }\n")
 
-  def WriteServiceUnitTest(self, func, file):
+  def WriteServiceUnitTest(self, func, file, *extras):
     """Overrriden from TypeHandler."""
-    TypeHandler.WriteServiceUnitTest(self, func, file)
+    TypeHandler.WriteServiceUnitTest(self, func, file, *extras)
     state_name = func.GetInfo('state')
     state = _STATES[state_name]
     states = state['states']
@@ -3380,13 +3475,39 @@ TEST_P(%(test_name)s, %(name)sInvalidValue%(ndx)d_%(check_ndx)d) {
 
           arg_strings[ndx] = range_check['test_value']
           vars = {
-            'test_name': 'GLES2DecoderTest%d' % file.file_num,
             'name': name,
             'ndx': ndx,
             'check_ndx': check_ndx,
             'args': ", ".join(arg_strings),
           }
+          for extra in extras:
+            vars.update(extra)
           file.Write(valid_test % vars)
+      if 'nan_check' in item:
+        valid_test = """
+TEST_P(%(test_name)s, %(name)sNaNValue%(ndx)d) {
+  SpecializedSetup<cmds::%(name)s, 0>(false);
+  cmds::%(name)s cmd;
+  cmd.Init(%(args)s);
+  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
+  EXPECT_EQ(GL_INVALID_VALUE, GetGLError());
+}
+"""
+        name = func.name
+        arg_strings = [
+          arg.GetValidArg(func) \
+          for arg in func.GetOriginalArgs() if not arg.IsConstant()
+        ]
+
+        arg_strings[ndx] = 'nanf("")'
+        vars = {
+          'name': name,
+          'ndx': ndx,
+          'args': ", ".join(arg_strings),
+        }
+        for extra in extras:
+          vars.update(extra)
+        file.Write(valid_test % vars)
 
 
 class StateSetRGBAlphaHandler(TypeHandler):
@@ -3533,11 +3654,11 @@ class CustomHandler(TypeHandler):
     """Overrriden from TypeHandler."""
     pass
 
-  def WriteServiceUnitTest(self, func, file):
+  def WriteServiceUnitTest(self, func, file, *extras):
     """Overrriden from TypeHandler."""
     file.Write("// TODO(gman): %s\n\n" % func.name)
 
-  def WriteImmediateServiceUnitTest(self, func, file):
+  def WriteImmediateServiceUnitTest(self, func, file, *extras):
     """Overrriden from TypeHandler."""
     file.Write("// TODO(gman): %s\n\n" % func.name)
 
@@ -3640,15 +3761,15 @@ class HandWrittenHandler(CustomHandler):
     """Overrriden from TypeHandler."""
     pass
 
-  def WriteServiceUnitTest(self, func, file):
+  def WriteServiceUnitTest(self, func, file, *extras):
     """Overrriden from TypeHandler."""
     file.Write("// TODO(gman): %s\n\n" % func.name)
 
-  def WriteImmediateServiceUnitTest(self, func, file):
+  def WriteImmediateServiceUnitTest(self, func, file, *extras):
     """Overrriden from TypeHandler."""
     file.Write("// TODO(gman): %s\n\n" % func.name)
 
-  def WriteBucketServiceUnitTest(self, func, file):
+  def WriteBucketServiceUnitTest(self, func, file, *extras):
     """Overrriden from TypeHandler."""
     file.Write("// TODO(gman): %s\n\n" % func.name)
 
@@ -3712,11 +3833,11 @@ class ManualHandler(CustomHandler):
     """Overrriden from TypeHandler."""
     pass
 
-  def WriteServiceUnitTest(self, func, file):
+  def WriteServiceUnitTest(self, func, file, *extras):
     """Overrriden from TypeHandler."""
     file.Write("// TODO(gman): %s\n\n" % func.name)
 
-  def WriteImmediateServiceUnitTest(self, func, file):
+  def WriteImmediateServiceUnitTest(self, func, file, *extras):
     """Overrriden from TypeHandler."""
     file.Write("// TODO(gman): %s\n\n" % func.name)
 
@@ -3822,11 +3943,11 @@ class DataHandler(TypeHandler):
     file.Write("// TODO(gman): Implement test for %s\n" % func.name)
     return
 
-  def WriteServiceUnitTest(self, func, file):
+  def WriteServiceUnitTest(self, func, file, *extras):
     """Overrriden from TypeHandler."""
     file.Write("// TODO(gman): %s\n\n" % func.name)
 
-  def WriteImmediateServiceUnitTest(self, func, file):
+  def WriteImmediateServiceUnitTest(self, func, file, *extras):
     """Overrriden from TypeHandler."""
     file.Write("// TODO(gman): %s\n\n" % func.name)
 
@@ -3842,7 +3963,7 @@ class BindHandler(TypeHandler):
   def __init__(self):
     TypeHandler.__init__(self)
 
-  def WriteServiceUnitTest(self, func, file):
+  def WriteServiceUnitTest(self, func, file, *extras):
     """Overrriden from TypeHandler."""
 
     if len(func.GetOriginalArgs()) == 1:
@@ -3873,7 +3994,7 @@ TEST_P(%(test_name)s, %(name)sValidArgsNewId) {
       self.WriteValidUnitTest(func, file, valid_test, {
           'resource_type': func.GetOriginalArgs()[0].resource_type,
           'gl_gen_func_name': func.GetInfo("gen_func"),
-      })
+      }, *extras)
     else:
       valid_test = """
 TEST_P(%(test_name)s, %(name)sValidArgs) {
@@ -3904,7 +4025,7 @@ TEST_P(%(test_name)s, %(name)sValidArgsNewId) {
           'first_gl_arg': func.GetOriginalArgs()[0].GetValidGLArg(func),
           'resource_type': func.GetOriginalArgs()[1].resource_type,
           'gl_gen_func_name': func.GetInfo("gen_func"),
-      })
+      }, *extras)
 
     invalid_test = """
 TEST_P(%(test_name)s, %(name)sInvalidArgs%(arg_index)d_%(value_index)d) {
@@ -3915,7 +4036,7 @@ TEST_P(%(test_name)s, %(name)sInvalidArgs%(arg_index)d_%(value_index)d) {
   EXPECT_EQ(error::%(parse_result)s, ExecuteCmd(cmd));%(gl_error_test)s
 }
 """
-    self.WriteInvalidUnitTest(func, file, invalid_test)
+    self.WriteInvalidUnitTest(func, file, invalid_test, *extras)
 
   def WriteGLES2Implementation(self, func, file):
     """Writes the GLES2 Implemention."""
@@ -4102,7 +4223,7 @@ TEST_F(GLES2ImplementationTest, %(name)s) {
           'types': func.GetInfo('resource_types'),
         })
 
-  def WriteServiceUnitTest(self, func, file):
+  def WriteServiceUnitTest(self, func, file, *extras):
     """Overrriden from TypeHandler."""
     valid_test = """
 TEST_P(%(test_name)s, %(name)sValidArgs) {
@@ -4119,7 +4240,7 @@ TEST_P(%(test_name)s, %(name)sValidArgs) {
 """
     self.WriteValidUnitTest(func, file, valid_test, {
         'resource_name': func.GetInfo('resource_type'),
-      })
+      }, *extras)
     invalid_test = """
 TEST_P(%(test_name)s, %(name)sInvalidArgs) {
   EXPECT_CALL(*gl_, %(gl_func_name)s(_, _)).Times(0);
@@ -4132,9 +4253,9 @@ TEST_P(%(test_name)s, %(name)sInvalidArgs) {
 """
     self.WriteValidUnitTest(func, file, invalid_test, {
           'resource_name': func.GetInfo('resource_type').lower(),
-        })
+        }, *extras)
 
-  def WriteImmediateServiceUnitTest(self, func, file):
+  def WriteImmediateServiceUnitTest(self, func, file, *extras):
     """Overrriden from TypeHandler."""
     valid_test = """
 TEST_P(%(test_name)s, %(name)sValidArgs) {
@@ -4152,7 +4273,7 @@ TEST_P(%(test_name)s, %(name)sValidArgs) {
 """
     self.WriteValidUnitTest(func, file, valid_test, {
         'resource_name': func.GetInfo('resource_type'),
-      })
+      }, *extras)
     invalid_test = """
 TEST_P(%(test_name)s, %(name)sInvalidArgs) {
   EXPECT_CALL(*gl_, %(gl_func_name)s(_, _)).Times(0);
@@ -4165,7 +4286,7 @@ TEST_P(%(test_name)s, %(name)sInvalidArgs) {
 """
     self.WriteValidUnitTest(func, file, invalid_test, {
           'resource_name': func.GetInfo('resource_type').lower(),
-        })
+        }, *extras)
 
   def WriteImmediateCmdComputeSize(self, func, file):
     """Overrriden from TypeHandler."""
@@ -4268,7 +4389,7 @@ class CreateHandler(TypeHandler):
     """Overrriden from TypeHandler."""
     func.AddCmdArg(Argument("client_id", 'uint32_t'))
 
-  def WriteServiceUnitTest(self, func, file):
+  def WriteServiceUnitTest(self, func, file, *extras):
     """Overrriden from TypeHandler."""
     valid_test = """
 TEST_P(%(test_name)s, %(name)sValidArgs) {
@@ -4288,7 +4409,7 @@ TEST_P(%(test_name)s, %(name)sValidArgs) {
     self.WriteValidUnitTest(func, file, valid_test, {
           'comma': comma,
           'resource_type': func.name[6:],
-        })
+        }, *extras)
     invalid_test = """
 TEST_P(%(test_name)s, %(name)sInvalidArgs%(arg_index)d_%(value_index)d) {
   EXPECT_CALL(*gl_, %(gl_func_name)s(%(gl_args)s)).Times(0);
@@ -4300,7 +4421,7 @@ TEST_P(%(test_name)s, %(name)sInvalidArgs%(arg_index)d_%(value_index)d) {
 """
     self.WriteInvalidUnitTest(func, file, invalid_test, {
           'comma': comma,
-        })
+        }, *extras)
 
   def WriteHandlerImplementation (self, func, file):
     """Overrriden from TypeHandler."""
@@ -4399,7 +4520,7 @@ TEST_F(GLES2ImplementationTest, %(name)s) {
           'types': func.GetInfo('resource_types'),
         })
 
-  def WriteServiceUnitTest(self, func, file):
+  def WriteServiceUnitTest(self, func, file, *extras):
     """Overrriden from TypeHandler."""
     valid_test = """
 TEST_P(%(test_name)s, %(name)sValidArgs) {
@@ -4420,7 +4541,7 @@ TEST_P(%(test_name)s, %(name)sValidArgs) {
     self.WriteValidUnitTest(func, file, valid_test, {
           'resource_name': func.GetInfo('resource_type').lower(),
           'upper_resource_name': func.GetInfo('resource_type'),
-        })
+        }, *extras)
     invalid_test = """
 TEST_P(%(test_name)s, %(name)sInvalidArgs) {
   GetSharedMemoryAs<GLuint*>()[0] = kInvalidClientId;
@@ -4430,9 +4551,9 @@ TEST_P(%(test_name)s, %(name)sInvalidArgs) {
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
 }
 """
-    self.WriteValidUnitTest(func, file, invalid_test)
+    self.WriteValidUnitTest(func, file, invalid_test, *extras)
 
-  def WriteImmediateServiceUnitTest(self, func, file):
+  def WriteImmediateServiceUnitTest(self, func, file, *extras):
     """Overrriden from TypeHandler."""
     valid_test = """
 TEST_P(%(test_name)s, %(name)sValidArgs) {
@@ -4453,7 +4574,7 @@ TEST_P(%(test_name)s, %(name)sValidArgs) {
     self.WriteValidUnitTest(func, file, valid_test, {
           'resource_name': func.GetInfo('resource_type').lower(),
           'upper_resource_name': func.GetInfo('resource_type'),
-        })
+        }, *extras)
     invalid_test = """
 TEST_P(%(test_name)s, %(name)sInvalidArgs) {
   cmds::%(name)s& cmd = *GetImmediateAs<cmds::%(name)s>();
@@ -4464,7 +4585,7 @@ TEST_P(%(test_name)s, %(name)sInvalidArgs) {
             ExecuteImmediateCmd(cmd, sizeof(temp)));
 }
 """
-    self.WriteValidUnitTest(func, file, invalid_test)
+    self.WriteValidUnitTest(func, file, invalid_test, *extras)
 
   def WriteHandlerImplementation (self, func, file):
     """Overrriden from TypeHandler."""
@@ -4754,7 +4875,7 @@ TEST_F(GLES2ImplementationTest, %(name)s) {
           'cmd_args': ", ".join(cmd_arg_strings),
         })
 
-  def WriteServiceUnitTest(self, func, file):
+  def WriteServiceUnitTest(self, func, file, *extras):
     """Overrriden from TypeHandler."""
     valid_test = """
 TEST_P(%(test_name)s, %(name)sValidArgs) {
@@ -4791,7 +4912,7 @@ TEST_P(%(test_name)s, %(name)sValidArgs) {
     self.WriteValidUnitTest(func, file, valid_test, {
         'local_gl_args': ", ".join(gl_arg_strings),
         'valid_pname': valid_pname,
-      })
+      }, *extras)
 
     invalid_test = """
 TEST_P(%(test_name)s, %(name)sInvalidArgs%(arg_index)d_%(value_index)d) {
@@ -4806,7 +4927,7 @@ TEST_P(%(test_name)s, %(name)sInvalidArgs%(arg_index)d_%(value_index)d) {
   EXPECT_EQ(0u, result->size);%(gl_error_test)s
 }
 """
-    self.WriteInvalidUnitTest(func, file, invalid_test)
+    self.WriteInvalidUnitTest(func, file, invalid_test, *extras)
 
 class ArrayArgTypeHandler(TypeHandler):
   """Base class for type handlers that handle args that are arrays"""
@@ -4838,7 +4959,7 @@ class PUTHandler(ArrayArgTypeHandler):
   def __init__(self):
     ArrayArgTypeHandler.__init__(self)
 
-  def WriteServiceUnitTest(self, func, file):
+  def WriteServiceUnitTest(self, func, file, *extras):
     """Writes the service unit test for a command."""
     expected_call = "EXPECT_CALL(*gl_, %(gl_func_name)s(%(gl_args)s));"
     if func.GetInfo("first_element_only"):
@@ -4864,7 +4985,7 @@ TEST_P(%(test_name)s, %(name)sValidArgs) {
       'data_value': func.GetInfo('data_value') or '0',
       'expected_call': expected_call,
     }
-    self.WriteValidUnitTest(func, file, valid_test, extra)
+    self.WriteValidUnitTest(func, file, valid_test, extra, *extras)
 
     invalid_test = """
 TEST_P(%(test_name)s, %(name)sInvalidArgs%(arg_index)d_%(value_index)d) {
@@ -4876,9 +4997,9 @@ TEST_P(%(test_name)s, %(name)sInvalidArgs%(arg_index)d_%(value_index)d) {
   EXPECT_EQ(error::%(parse_result)s, ExecuteCmd(cmd));%(gl_error_test)s
 }
 """
-    self.WriteInvalidUnitTest(func, file, invalid_test, extra)
+    self.WriteInvalidUnitTest(func, file, invalid_test, extra, *extras)
 
-  def WriteImmediateServiceUnitTest(self, func, file):
+  def WriteImmediateServiceUnitTest(self, func, file, *extras):
     """Writes the service unit test for a command."""
     valid_test = """
 TEST_P(%(test_name)s, %(name)sValidArgs) {
@@ -4908,7 +5029,7 @@ TEST_P(%(test_name)s, %(name)sValidArgs) {
       'gl_args': ", ".join(gl_arg_strings),
       'gl_any_args': ", ".join(gl_any_strings),
     }
-    self.WriteValidUnitTest(func, file, valid_test, extra)
+    self.WriteValidUnitTest(func, file, valid_test, extra, *extras)
 
     invalid_test = """
 TEST_P(%(test_name)s, %(name)sInvalidArgs%(arg_index)d_%(value_index)d) {
@@ -4921,7 +5042,7 @@ TEST_P(%(test_name)s, %(name)sInvalidArgs%(arg_index)d_%(value_index)d) {
             ExecuteImmediateCmd(cmd, sizeof(temp)));%(gl_error_test)s
 }
 """
-    self.WriteInvalidUnitTest(func, file, invalid_test, extra)
+    self.WriteInvalidUnitTest(func, file, invalid_test, extra, *extras)
 
   def WriteGetDataSizeCode(self, func, file):
     """Overrriden from TypeHandler."""
@@ -5109,9 +5230,9 @@ class PUTnHandler(ArrayArgTypeHandler):
   def __init__(self):
     ArrayArgTypeHandler.__init__(self)
 
-  def WriteServiceUnitTest(self, func, file):
+  def WriteServiceUnitTest(self, func, file, *extras):
     """Overridden from TypeHandler."""
-    ArrayArgTypeHandler.WriteServiceUnitTest(self, func, file)
+    ArrayArgTypeHandler.WriteServiceUnitTest(self, func, file, *extras)
 
     valid_test = """
 TEST_P(%(test_name)s, %(name)sValidArgsCountTooLarge) {
@@ -5145,9 +5266,9 @@ TEST_P(%(test_name)s, %(name)sValidArgsCountTooLarge) {
       'gl_args': ", ".join(gl_arg_strings),
       'args': ", ".join(arg_strings),
     }
-    self.WriteValidUnitTest(func, file, valid_test, extra)
+    self.WriteValidUnitTest(func, file, valid_test, extra, *extras)
 
-  def WriteImmediateServiceUnitTest(self, func, file):
+  def WriteImmediateServiceUnitTest(self, func, file, *extras):
     """Overridden from TypeHandler."""
     valid_test = """
 TEST_P(%(test_name)s, %(name)sValidArgs) {
@@ -5179,7 +5300,7 @@ TEST_P(%(test_name)s, %(name)sValidArgs) {
       'gl_args': ", ".join(gl_arg_strings),
       'gl_any_args': ", ".join(gl_any_strings),
     }
-    self.WriteValidUnitTest(func, file, valid_test, extra)
+    self.WriteValidUnitTest(func, file, valid_test, extra, *extras)
 
     invalid_test = """
 TEST_P(%(test_name)s, %(name)sInvalidArgs%(arg_index)d_%(value_index)d) {
@@ -5192,7 +5313,7 @@ TEST_P(%(test_name)s, %(name)sInvalidArgs%(arg_index)d_%(value_index)d) {
             ExecuteImmediateCmd(cmd, sizeof(temp)));%(gl_error_test)s
 }
 """
-    self.WriteInvalidUnitTest(func, file, invalid_test, extra)
+    self.WriteInvalidUnitTest(func, file, invalid_test, extra, *extras)
 
   def WriteGetDataSizeCode(self, func, file):
     """Overrriden from TypeHandler."""
@@ -5454,7 +5575,7 @@ class PUTXnHandler(ArrayArgTypeHandler):
         'values': values,
       })
 
-  def WriteServiceUnitTest(self, func, file):
+  def WriteServiceUnitTest(self, func, file, *extras):
     """Overrriden from TypeHandler."""
     valid_test = """
 TEST_P(%(test_name)s, %(name)sValidArgs) {
@@ -5472,7 +5593,7 @@ TEST_P(%(test_name)s, %(name)sValidArgs) {
         'name': func.name,
         'count': self.GetArrayCount(func),
         'local_args': local_args,
-      })
+      }, *extras)
 
     invalid_test = """
 TEST_P(%(test_name)s, %(name)sInvalidArgs%(arg_index)d_%(value_index)d) {
@@ -5663,7 +5784,7 @@ class IsHandler(TypeHandler):
     if func.GetInfo('result') == None:
       func.AddInfo('result', ['uint32_t'])
 
-  def WriteServiceUnitTest(self, func, file):
+  def WriteServiceUnitTest(self, func, file, *extras):
     """Overrriden from TypeHandler."""
     valid_test = """
 TEST_P(%(test_name)s, %(name)sValidArgs) {
@@ -5680,7 +5801,7 @@ TEST_P(%(test_name)s, %(name)sValidArgs) {
       comma =", "
     self.WriteValidUnitTest(func, file, valid_test, {
           'comma': comma,
-        })
+        }, *extras)
 
     invalid_test = """
 TEST_P(%(test_name)s, %(name)sInvalidArgs%(arg_index)d_%(value_index)d) {
@@ -5693,7 +5814,7 @@ TEST_P(%(test_name)s, %(name)sInvalidArgs%(arg_index)d_%(value_index)d) {
 """
     self.WriteInvalidUnitTest(func, file, invalid_test, {
           'comma': comma,
-        })
+        }, *extras)
 
     invalid_test = """
 TEST_P(%(test_name)s, %(name)sInvalidArgsBadSharedMemoryId) {
@@ -5708,7 +5829,7 @@ TEST_P(%(test_name)s, %(name)sInvalidArgsBadSharedMemoryId) {
 """
     self.WriteValidUnitTest(func, file, invalid_test, {
           'comma': comma,
-        })
+        }, *extras)
 
   def WriteServiceImplementation(self, func, file):
     """Overrriden from TypeHandler."""
@@ -5862,7 +5983,7 @@ class STRnHandler(TypeHandler):
     func.WriteDestinationInitalizationValidation(file)
     file.Write(code_2 % str_args)
 
-  def WriteServiceUnitTest(self, func, file):
+  def WriteServiceUnitTest(self, func, file, *extras):
     """Overrriden from TypeHandler."""
     valid_test = """
 TEST_P(%(test_name)s, %(name)sValidArgs) {
@@ -5902,7 +6023,7 @@ TEST_P(%(test_name)s, %(name)sValidArgs) {
         "  EXPECT_CALL(*gl_, %s(%s, %s, _))\n"
         "      .WillOnce(SetArgumentPointee<2>(strlen(kInfo) + 1));") % (
             get_len_func[2:], id_name, get_len_enum)
-    self.WriteValidUnitTest(func, file, valid_test, sub)
+    self.WriteValidUnitTest(func, file, valid_test, sub, *extras)
 
     invalid_test = """
 TEST_P(%(test_name)s, %(name)sInvalidArgs) {
@@ -5915,7 +6036,7 @@ TEST_P(%(test_name)s, %(name)sInvalidArgs) {
   EXPECT_EQ(GL_INVALID_VALUE, GetGLError());
 }
 """
-    self.WriteValidUnitTest(func, file, invalid_test)
+    self.WriteValidUnitTest(func, file, invalid_test, *extras)
 
   def WriteServiceImplementation(self, func, file):
     """Overrriden from TypeHandler."""
@@ -6967,9 +7088,9 @@ class Function(object):
     """Writes the service implementation for a command."""
     self.type_handler.WriteServiceImplementation(self, file)
 
-  def WriteServiceUnitTest(self, file):
+  def WriteServiceUnitTest(self, file, *extras):
     """Writes the service implementation for a command."""
-    self.type_handler.WriteServiceUnitTest(self, file)
+    self.type_handler.WriteServiceUnitTest(self, file, *extras)
 
   def WriteGLES2CLibImplementation(self, file):
     """Writes the GLES2 C Lib Implemention."""
@@ -7098,9 +7219,9 @@ class ImmediateFunction(Function):
     """Overridden from Function"""
     self.type_handler.WriteImmediateHandlerImplementation(self, file)
 
-  def WriteServiceUnitTest(self, file):
+  def WriteServiceUnitTest(self, file, *extras):
     """Writes the service implementation for a command."""
-    self.type_handler.WriteImmediateServiceUnitTest(self, file)
+    self.type_handler.WriteImmediateServiceUnitTest(self, file, *extras)
 
   def WriteValidationCode(self, file):
     """Overridden from Function"""
@@ -7178,9 +7299,9 @@ class BucketFunction(Function):
     """Overridden from Function"""
     self.type_handler.WriteBucketHandlerImplementation(self, file)
 
-  def WriteServiceUnitTest(self, file):
+  def WriteServiceUnitTest(self, file, *extras):
     """Writes the service implementation for a command."""
-    self.type_handler.WriteBucketServiceUnitTest(self, file)
+    self.type_handler.WriteBucketServiceUnitTest(self, file, *extras)
 
 
 def CreateArg(arg_string):
@@ -7424,9 +7545,19 @@ class GLGenerator(object):
     for state_name in sorted(_STATES.keys()):
       state = _STATES[state_name]
       for item in state['states']:
-        file.Write("%s %s;\n" % (item['type'], item['name']))
+        if isinstance(item['default'], list):
+          file.Write("%s %s[%d];\n" % (item['type'], item['name'],
+                                       len(item['default'])))
+        else:
+          file.Write("%s %s;\n" % (item['type'], item['name']))
+
         if item.get('cached', False):
-          file.Write("%s cached_%s;\n" % (item['type'], item['name']))
+          if isinstance(item['default'], list):
+            file.Write("%s cached_%s[%d];\n" % (item['type'], item['name'],
+                                                len(item['default'])))
+          else:
+            file.Write("%s cached_%s;\n" % (item['type'], item['name']))
+
     file.Write("\n")
 
     file.Write("""
@@ -7494,10 +7625,26 @@ bool %s::GetStateAs%s(
         else:
           for item in state['states']:
             file.Write("    case %s:\n" % item['enum'])
-            file.Write("      *num_written = 1;\n")
-            file.Write("      if (params) {\n")
-            file.Write("        params[0] = static_cast<%s>(%s);\n" %
-                       (gl_type, item['name']))
+            if isinstance(item['default'], list):
+              item_len = len(item['default'])
+              file.Write("      *num_written = %d;\n" % item_len)
+              file.Write("      if (params) {\n")
+              if item['type'] == gl_type:
+                file.Write("        memcpy(params, %s, sizeof(%s) * %d);\n" %
+                           (item['name'], item['type'], item_len))
+              else:
+                file.Write("        for (size_t i = 0; i < %s; ++i) {\n" %
+                           item_len)
+                file.Write("          params[i] = %s;\n" %
+                           (GetGLGetTypeConversion(gl_type, item['type'],
+                                                   "%s[i]" % item['name'])))
+                file.Write("        }\n");
+            else:
+              file.Write("      *num_written = 1;\n")
+              file.Write("      if (params) {\n")
+              file.Write("        params[0] = %s;\n" %
+                         (GetGLGetTypeConversion(gl_type, item['type'],
+                                                 item['name'])))
             file.Write("      }\n")
             file.Write("      return true;\n")
       for capability in _CAPABILITY_FLAGS:
@@ -7536,9 +7683,17 @@ bool %s::GetStateAs%s(
     for state_name in sorted(_STATES.keys()):
       state = _STATES[state_name]
       for item in state['states']:
-        file.Write("  %s = %s;\n" % (item['name'], item['default']))
+        if isinstance(item['default'], list):
+          for ndx, value in enumerate(item['default']):
+            file.Write("  %s[%d] = %s;\n" % (item['name'], ndx, value))
+        else:
+          file.Write("  %s = %s;\n" % (item['name'], item['default']))
         if item.get('cached', False):
-          file.Write("  cached_%s = %s;\n" % (item['name'], item['default']))
+          if isinstance(item['default'], list):
+            for ndx, value in enumerate(item['default']):
+              file.Write("  cached_%s[%d] = %s;\n" % (item['name'], ndx, value))
+          else:
+            file.Write("  cached_%s = %s;\n" % (item['name'], item['default']))
     file.Write("}\n")
 
     file.Write("""
@@ -7592,14 +7747,32 @@ void ContextState::InitState(const ContextState *prev_state) const {
             item_name = CachedStateName(item)
 
             if 'extension_flag' in item:
-              file.Write("  if (feature_info_->feature_flags().%s)\n  " %
+              file.Write("  if (feature_info_->feature_flags().%s) {\n  " %
                          item['extension_flag'])
             if test_prev:
-              file.Write("  if (prev_state->%s != %s)\n" %
-                         (item_name, item_name))
+              if isinstance(item['default'], list):
+                file.Write("  if (memcmp(prev_state->%s, %s, "
+                           "sizeof(%s) * %d)) {\n" %
+                           (item_name, item_name, item['type'],
+                            len(item['default'])))
+              else:
+                file.Write("  if (prev_state->%s != %s) {\n  " %
+                           (item_name, item_name))
             file.Write("  gl%s(%s, %s);\n" %
-                       (state['func'], item['enum'], item_name))
+                       (state['func'],
+                        (item['enum_set']
+                           if 'enum_set' in item else item['enum']),
+                        item['name']))
+            if test_prev:
+              if 'extension_flag' in item:
+                file.Write("  ")
+              file.Write("  }")
+            if 'extension_flag' in item:
+              file.Write("  }")
         else:
+          if 'extension_flag' in state:
+            file.Write("  if (feature_info_->feature_flags().%s)\n  " %
+                       state['extension_flag'])
           if test_prev:
             file.Write("  if (")
           args = []
@@ -7620,7 +7793,6 @@ void ContextState::InitState(const ContextState *prev_state) const {
     file.Write("  } else {")
     WriteStates(False)
     file.Write("  }")
-
     file.Write("}\n")
 
     file.Write("""bool ContextState::GetEnabled(GLenum cap) const {
@@ -7745,19 +7917,28 @@ bool GLES2DecoderImpl::SetCapabilityState(GLenum cap, bool enabled) {
       file = CHeaderWriter(
           name,
           "// It is included by gles2_cmd_decoder_unittest_%d.cc\n" % count)
-      file.SetFileNum(count)
+      test_name = 'GLES2DecoderTest%d' % count
       end = test_num + FUNCTIONS_PER_FILE
       if end > num_tests:
         end = num_tests
       for idx in range(test_num, end):
         func = self.functions[idx]
+
+        # Do any filtering of the functions here, so that the functions
+        # will not move between the numbered files if filtering properties
+        # are changed.
+        if func.GetInfo('extension_flag'):
+          continue
+
         if True:
         #gen_cmd = func.GetInfo('gen_cmd')
         #if gen_cmd == True or gen_cmd == None:
           if func.GetInfo('unit_test') == False:
             file.Write("// TODO(gman): %s\n" % func.name)
           else:
-            func.WriteServiceUnitTest(file)
+            func.WriteServiceUnitTest(file, {
+              'test_name': test_name
+            })
 
       file.Close()
     file = CHeaderWriter(
@@ -7795,25 +7976,68 @@ void GLES2DecoderTestBase::SetupInitStateExpectations() {
       elif state['type'] == 'NamedParameter':
         for item in state['states']:
           if 'extension_flag' in item:
-            continue
+            file.Write("  if (group_->feature_info()->feature_flags().%s) {\n" %
+                       item['extension_flag'])
+            file.Write("  ")
+          expect_value = item['default']
+          if isinstance(expect_value, list):
+            # TODO: Currently we do not check array values.
+            expect_value = "_"
+
           file.Write(
               "  EXPECT_CALL(*gl_, %s(%s, %s))\n" %
-              (state['func'], item['enum'], item['default']))
+              (state['func'],
+               (item['enum_set']
+                           if 'enum_set' in item else item['enum']),
+               expect_value))
           file.Write("      .Times(1)\n")
           file.Write("      .RetiresOnSaturation();\n")
+          if 'extension_flag' in item:
+            file.Write("  }\n")
       else:
+        if 'extension_flag' in state:
+          file.Write("  if (group_->feature_info()->feature_flags().%s) {\n" %
+                     state['extension_flag'])
+          file.Write("  ")
         args = []
         for item in state['states']:
           if 'expected' in item:
             args.append(item['expected'])
           else:
             args.append(item['default'])
+        # TODO: Currently we do not check array values.
+        args = ["_" if isinstance(arg, list) else arg for arg in args]
         file.Write("  EXPECT_CALL(*gl_, %s(%s))\n" %
                    (state['func'], ", ".join(args)))
         file.Write("      .Times(1)\n")
         file.Write("      .RetiresOnSaturation();\n")
+        if 'extension_flag' in state:
+          file.Write("  }\n")
     file.Write("""}
 """)
+    file.Close()
+
+  def WriteServiceUnitTestsForExtensions(self, filename):
+    """Writes the service decorder unit tests for functions with extension_flag.
+
+       The functions are special in that they need a specific unit test
+       baseclass to turn on the extension.
+    """
+    functions = [f for f in self.functions if f.GetInfo('extension_flag')]
+    file = CHeaderWriter(
+      filename,
+      "// It is included by gles2_cmd_decoder_unittest_extensions.cc\n")
+    for func in functions:
+      if True:
+        if func.GetInfo('unit_test') == False:
+          file.Write("// TODO(gman): %s\n" % func.name)
+        else:
+          extension = ToCamelCase(
+            ToGLExtensionString(func.GetInfo('extension_flag')))
+          func.WriteServiceUnitTest(file, {
+            'test_name': 'GLES2DecoderTestWith%s' % extension
+          })
+
     file.Close()
 
   def WriteGLES2Header(self, filename):
@@ -8225,6 +8449,22 @@ const size_t GLES2Util::enum_to_string_table_len_ =
 
     file.Close()
 
+  def WriteMojoGLCallVisitorForExtension(self, filename, extension):
+    """Provides the GL implementation for mojo for a particular extension"""
+    file = CWriter(filename)
+    file.Write(_LICENSE)
+    file.Write(_DO_NOT_EDIT_WARNING)
+
+    for func in self.original_functions:
+      if func.GetInfo("extension") != extension:
+        continue
+      file.Write("VISIT_GL_CALL(%s, %s, (%s), (%s))\n" %
+                             (func.name, func.return_type,
+                              func.MakeTypedOriginalArgString(""),
+                              func.MakeOriginalArgString("")))
+
+    file.Close()
+
 def Format(generated_files):
   for filename in generated_files:
     call(["clang-format", "-i", "-style=chromium", filename])
@@ -8246,6 +8486,8 @@ def main(argv):
   gl_state_valid = _NAMED_TYPE_INFO['GLState']['valid']
   for state_name in sorted(_STATES.keys()):
     state = _STATES[state_name]
+    if 'extension_flag' in state:
+      continue
     if 'enum' in state:
       if not state['enum'] in gl_state_valid:
         gl_state_valid.append(state['enum'])
@@ -8300,14 +8542,22 @@ def main(argv):
   gen.WriteClientContextStateImpl(
       "client/client_context_state_impl_autogen.h")
   gen.WriteServiceUnitTests("service/gles2_cmd_decoder_unittest_%d_autogen.h")
+  gen.WriteServiceUnitTestsForExtensions(
+    "service/gles2_cmd_decoder_unittest_extensions_autogen.h")
   gen.WriteServiceUtilsHeader("service/gles2_cmd_validation_autogen.h")
   gen.WriteServiceUtilsImplementation(
       "service/gles2_cmd_validation_implementation_autogen.h")
   gen.WriteCommonUtilsHeader("common/gles2_cmd_utils_autogen.h")
   gen.WriteCommonUtilsImpl("common/gles2_cmd_utils_implementation_autogen.h")
   gen.WriteGLES2Header("../GLES2/gl2chromium_autogen.h")
-  gen.WriteMojoGLCallVisitor(
-      "../../mojo/public/c/gles2/gles2_call_visitor_autogen.h")
+  mojo_gles2_prefix = "../../mojo/public/c/gles2/gles2_call_visitor"
+  gen.WriteMojoGLCallVisitor(mojo_gles2_prefix + "_autogen.h")
+  gen.WriteMojoGLCallVisitorForExtension(
+      mojo_gles2_prefix + "_chromium_texture_mailbox_autogen.h",
+      "CHROMIUM_texture_mailbox")
+  gen.WriteMojoGLCallVisitorForExtension(
+      mojo_gles2_prefix + "_chromium_sync_point_autogen.h",
+      "CHROMIUM_sync_point")
 
   Format([
       "common/gles2_cmd_format_autogen.h",
@@ -8337,9 +8587,12 @@ def main(argv):
       "service/gles2_cmd_validation_autogen.h",
       "service/gles2_cmd_validation_implementation_autogen.h"])
   os.chdir("../..")
+  mojo_gles2_prefix = "mojo/public/c/gles2/gles2_call_visitor"
   Format([
       "gpu/GLES2/gl2chromium_autogen.h",
-      "mojo/public/c/gles2/gles2_call_visitor_autogen.h",
+      mojo_gles2_prefix + "_autogen.h",
+      mojo_gles2_prefix + "_chromium_texture_mailbox_autogen.h",
+      mojo_gles2_prefix + "_chromium_sync_point_autogen.h",
       "ppapi/c/dev/ppb_opengles2ext_dev.h",
       "ppapi/c/ppb_opengles2.h",
       "ppapi/lib/gl/gles2/gles2.c",

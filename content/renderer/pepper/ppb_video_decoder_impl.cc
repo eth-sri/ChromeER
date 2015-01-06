@@ -65,8 +65,8 @@ media::VideoCodecProfile PPToMediaProfile(
       return media::H264PROFILE_STEREOHIGH;
     case PP_VIDEODECODER_H264PROFILE_MULTIVIEWHIGH:
       return media::H264PROFILE_MULTIVIEWHIGH;
-    case PP_VIDEODECODER_VP8PROFILE_MAIN:
-      return media::VP8PROFILE_MAIN;
+    case PP_VIDEODECODER_VP8PROFILE_ANY:
+      return media::VP8PROFILE_ANY;
     default:
       return media::VIDEO_CODEC_PROFILE_UNKNOWN;
   }
@@ -246,6 +246,8 @@ void PPB_VideoDecoder_Impl::ProvidePictureBuffers(
 }
 
 void PPB_VideoDecoder_Impl::PictureReady(const media::Picture& picture) {
+  // So far picture.visible_rect is not used. If used, visible_rect should
+  // be validated since it comes from GPU process and may not be trustworthy.
   DCHECK(RenderThreadImpl::current());
   if (!ppp_videodecoder_)
     return;

@@ -40,7 +40,9 @@ void AddIntegerValue(CFMutableDictionaryRef dictionary,
 
 }  // namespace
 
-IOSurfaceStorageProvider::IOSurfaceStorageProvider() {}
+IOSurfaceStorageProvider::IOSurfaceStorageProvider(
+    ImageTransportSurfaceFBO* transport_surface)
+        : transport_surface_(transport_surface) {}
 
 IOSurfaceStorageProvider::~IOSurfaceStorageProvider() {
   DCHECK(!io_surface_);
@@ -103,11 +105,28 @@ void IOSurfaceStorageProvider::FreeColorBufferStorage() {
   io_surface_id_ = 0;
 }
 
-uint64 IOSurfaceStorageProvider::GetSurfaceHandle() const {
-  return SurfaceHandleFromIOSurfaceID(io_surface_id_);
+void IOSurfaceStorageProvider::SwapBuffers(
+    const gfx::Size& size, float scale_factor) {
+  // The browser compositor will throttle itself, so we are free to unblock the
+  // context immediately. Make sure that the browser is doing its throttling
+  // appropriately by ensuring that the previous swap was acknowledged before
+  // we get another swap.
+  DCHECK(pending_swapped_surfaces_.empty());
+  pending_swapped_surfaces_.push_back(io_surface_);
+
+  transport_surface_->SendSwapBuffers(
+      SurfaceHandleFromIOSurfaceID(io_surface_id_), size, scale_factor);
 }
 
-void IOSurfaceStorageProvider::WillSwapBuffers() {
+void IOSurfaceStorageProvider::WillWriteToBackbuffer() {
+}
+
+void IOSurfaceStorageProvider::DiscardBackbuffer() {
+}
+
+void IOSurfaceStorageProvider::SwapBuffersAckedByBrowser() {
+  DCHECK(!pending_swapped_surfaces_.empty());
+  pending_swapped_surfaces_.pop_front();
 }
 
 }  //  namespace content

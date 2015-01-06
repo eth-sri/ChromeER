@@ -317,8 +317,8 @@ class DesktopBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
   def Close(self):
     super(DesktopBrowserBackend, self).Close()
 
-    # First, try to politely shutdown.
-    if self.IsBrowserRunning():
+    # Shutdown politely if the profile may be used again.
+    if self._output_profile_path and self.IsBrowserRunning():
       self._proc.terminate()
       try:
         util.WaitFor(lambda: not self.IsBrowserRunning(), timeout=5)
@@ -326,16 +326,10 @@ class DesktopBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
       except util.TimeoutException:
         logging.warning('Failed to gracefully shutdown. Proceeding to kill.')
 
-    # If it didn't comply, get more aggressive.
+    # Shutdown aggressively if the above failed or if the profile is temporary.
     if self.IsBrowserRunning():
       self._proc.kill()
-
-    try:
-      util.WaitFor(lambda: not self.IsBrowserRunning(), timeout=10)
-    except util.TimeoutException:
-      raise Exception('Could not shutdown the browser.')
-    finally:
-      self._proc = None
+    self._proc = None
 
     if self._crash_service:
       self._crash_service.kill()

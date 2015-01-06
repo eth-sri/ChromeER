@@ -36,8 +36,8 @@ GpuScheduler::GpuScheduler(CommandBufferServiceBase* command_buffer,
       decoder_(decoder),
       unscheduled_count_(0),
       rescheduled_count_(0),
-      reschedule_task_factory_(this),
-      was_preempted_(false) {}
+      was_preempted_(false),
+      reschedule_task_factory_(this) {}
 
 GpuScheduler::~GpuScheduler() {
 }
@@ -192,7 +192,7 @@ void GpuScheduler::set_token(int32 token) {
 bool GpuScheduler::SetGetBuffer(int32 transfer_buffer_id) {
   scoped_refptr<Buffer> ring_buffer =
       command_buffer_->GetTransferBuffer(transfer_buffer_id);
-  if (!ring_buffer) {
+  if (!ring_buffer.get()) {
     return false;
   }
 

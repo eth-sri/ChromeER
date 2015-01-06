@@ -52,7 +52,7 @@ leak:v8::internal::Genesis::Genesis
 leak:WTF::StringImpl::createUninitialized
 leak:WTF::StringImpl::create8BitIfPossible
 leak:blink::MouseEvent::create
-leak:blink::V8WindowShell::initializeIfNeeded
+leak:blink::WindowProxy::initializeIfNeeded
 leak:blink::*::*GetterCallback
 leak:blink::CSSComputedStyleDeclaration::create
 leak:blink::V8PerIsolateData::ensureDomInJSContext
@@ -84,10 +84,5 @@ leak:CertificateViewerUITest::ShowModalCertificateViewer
 
 # http://crbug.com/356306
 leak:content::SetProcessTitleFromCommandLine
-
-# http://crbug.com/354881
-leak:LoginUtilsBlockingLoginTest_LoginBlocksForUser
-leak:LoginUtilsTest::SetUp
-leak:LoginUtilsTest::PrepareProfile
 
 # PLEASE READ ABOVE BEFORE ADDING NEW SUPPRESSIONS.

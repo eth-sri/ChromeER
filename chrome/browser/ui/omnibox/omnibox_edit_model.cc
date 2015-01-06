@@ -20,8 +20,6 @@
 #include "chrome/browser/autocomplete/autocomplete_classifier_factory.h"
 #include "chrome/browser/autocomplete/chrome_autocomplete_scheme_classifier.h"
 #include "chrome/browser/autocomplete/history_url_provider.h"
-#include "chrome/browser/autocomplete/keyword_provider.h"
-#include "chrome/browser/autocomplete/search_provider.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/bookmarks/bookmark_stats.h"
 #include "chrome/browser/chrome_notification_types.h"
@@ -54,10 +52,12 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
-#include "components/autocomplete/autocomplete_provider.h"
 #include "components/bookmarks/browser/bookmark_model.h"
 #include "components/google/core/browser/google_url_tracker.h"
 #include "components/metrics/proto/omnibox_event.pb.h"
+#include "components/omnibox/autocomplete_provider.h"
+#include "components/omnibox/keyword_provider.h"
+#include "components/omnibox/search_provider.h"
 #include "components/search_engines/template_url.h"
 #include "components/search_engines/template_url_prepopulate_data.h"
 #include "components/search_engines/template_url_service.h"
@@ -783,7 +783,7 @@ void OmniboxEditModel::OpenMatch(AutocompleteMatch match,
       chrome::NOTIFICATION_OMNIBOX_OPENED_URL,
       content::Source<Profile>(profile_),
       content::Details<OmniboxLog>(&log));
-  HISTOGRAM_ENUMERATION("Omnibox.EventCount", 1, 2);
+  LOCAL_HISTOGRAM_BOOLEAN("Omnibox.EventCount", true);
   DCHECK(!last_omnibox_focus_.is_null())
       << "An omnibox focus should have occurred before opening a match.";
   UMA_HISTOGRAM_TIMES(kFocusToOpenTimeHistogram, now - last_omnibox_focus_);

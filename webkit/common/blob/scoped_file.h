@@ -11,13 +11,13 @@
 #include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "base/move.h"
-#include "webkit/common/webkit_storage_common_export.h"
+#include "webkit/common/storage_common_export.h"
 
 namespace base {
 class TaskRunner;
 }
 
-namespace webkit_blob {
+namespace storage {
 
 // A scoped reference for a FilePath that can optionally schedule the file
 // to be deleted and/or to notify a consumer when it is going to be scoped out.
@@ -26,7 +26,7 @@ namespace webkit_blob {
 //
 // TODO(kinuko): Probably this can be moved under base or somewhere more
 // common place.
-class WEBKIT_STORAGE_COMMON_EXPORT ScopedFile {
+class STORAGE_COMMON_EXPORT ScopedFile {
   // To support destructive assignment from an l-value assignment.
   // This provides Pass() method which creates an r-value for the current
   // instance. (See base/move.h for details)
@@ -49,7 +49,7 @@ class WEBKIT_STORAGE_COMMON_EXPORT ScopedFile {
   // is DELETE_ON_SCOPE_OUT.
   ScopedFile(const base::FilePath& path,
              ScopeOutPolicy policy,
-             base::TaskRunner* file_task_runner);
+             const scoped_refptr<base::TaskRunner>& file_task_runner);
 
   // Move constructor and operator. The data of r-value will be transfered
   // in a destructive way. (See base/move.h)
@@ -89,6 +89,6 @@ class WEBKIT_STORAGE_COMMON_EXPORT ScopedFile {
   ScopeOutCallbackList scope_out_callbacks_;
 };
 
-}  // namespace webkit_blob
+}  // namespace storage
 
 #endif  // WEBKIT_COMMON_BLOB_SCOPED_FILE_H_

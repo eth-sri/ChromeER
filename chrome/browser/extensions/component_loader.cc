@@ -7,23 +7,25 @@
 #include <string>
 
 #include "base/command_line.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/json/json_string_value_serializer.h"
 #include "base/metrics/field_trial.h"
 #include "base/path_service.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/search/hotword_service_factory.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/extensions/extension_constants.h"
+#include "chrome/grit/generated_resources.h"
+#include "components/crx_file/id_util.h"
+#include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/plugin_service.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/file_util.h"
-#include "extensions/common/id_util.h"
 #include "extensions/common/manifest_constants.h"
 #include "grit/browser_resources.h"
-#include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 
@@ -39,9 +41,7 @@
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chromeos/chromeos_switches.h"
-#include "chromeos/ime/input_method_manager.h"
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/storage_partition.h"
 #include "extensions/browser/extensions_browser_client.h"
@@ -49,11 +49,7 @@
 #endif
 
 #if defined(ENABLE_APP_LIST)
-#include "grit/chromium_strings.h"
-#endif
-
-#if defined(ENABLE_EXTENSIONS)
-#include "chrome/browser/search/hotword_service_factory.h"
+#include "chrome/grit/chromium_strings.h"
 #endif
 
 using content::BrowserThread;
@@ -70,7 +66,7 @@ std::string GenerateId(const base::DictionaryValue* manifest,
   std::string id_input;
   CHECK(manifest->GetString(manifest_keys::kPublicKey, &raw_key));
   CHECK(Extension::ParsePEMKeyBytes(raw_key, &id_input));
-  std::string id = id_util::GenerateId(id_input);
+  std::string id = crx_file::id_util::GenerateId(id_input);
   return id;
 }
 
@@ -305,13 +301,25 @@ void ComponentLoader::AddHangoutServicesExtension() {
 #endif
 }
 
-void ComponentLoader::AddHotwordHelperExtension() {
-#if defined(ENABLE_EXTENSIONS)
-  if (HotwordServiceFactory::IsHotwordAllowed(browser_context_)) {
-    Add(IDR_HOTWORD_HELPER_MANIFEST,
-        base::FilePath(FILE_PATH_LITERAL("hotword_helper")));
+void ComponentLoader::AddHotwordAudioVerificationApp() {
+  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  if (command_line->HasSwitch(switches::kEnableExperimentalHotwording)) {
+    Add(IDR_HOTWORD_AUDIO_VERIFICATION_MANIFEST,
+        base::FilePath(FILE_PATH_LITERAL("hotword_audio_verification")));
   }
-#endif
+}
+
+void ComponentLoader::AddHotwordHelperExtension() {
+  if (HotwordServiceFactory::IsHotwordAllowed(browser_context_)) {
+    CommandLine* command_line = CommandLine::ForCurrentProcess();
+    if (command_line->HasSwitch(switches::kEnableExperimentalHotwording)) {
+      Add(IDR_HOTWORD_MANIFEST,
+          base::FilePath(FILE_PATH_LITERAL("hotword")));
+    } else {
+      Add(IDR_HOTWORD_HELPER_MANIFEST,
+          base::FilePath(FILE_PATH_LITERAL("hotword_helper")));
+    }
+  }
 }
 
 void ComponentLoader::AddImageLoaderExtension() {
@@ -426,11 +434,6 @@ void ComponentLoader::AddDefaultComponentExtensions(
   // Do not add component extensions that have background pages here -- add them
   // to AddDefaultComponentExtensionsWithBackgroundPages.
 #if defined(OS_CHROMEOS)
-  chromeos::input_method::InputMethodManager* input_method_manager =
-      chromeos::input_method::InputMethodManager::Get();
-  if (input_method_manager)
-    input_method_manager->InitializeComponentExtension();
-
   Add(IDR_MOBILE_MANIFEST,
       base::FilePath(FILE_PATH_LITERAL("/usr/share/chromeos-assets/mobile")));
 
@@ -472,12 +475,6 @@ void ComponentLoader::AddDefaultComponentExtensions(
 
 void ComponentLoader::AddDefaultComponentExtensionsForKioskMode(
     bool skip_session_components) {
-#if defined(OS_CHROMEOS)
-  chromeos::input_method::InputMethodManager* input_method_manager =
-      chromeos::input_method::InputMethodManager::Get();
-  if (input_method_manager)
-    input_method_manager->InitializeComponentExtension();
-#endif
   // No component extension for kiosk app launch splash screen.
   if (skip_session_components)
     return;
@@ -521,6 +518,7 @@ void ComponentLoader::AddDefaultComponentExtensionsWithBackgroundPages(
     AddGalleryExtension();
 
     AddHangoutServicesExtension();
+    AddHotwordAudioVerificationApp();
     AddHotwordHelperExtension();
     AddImageLoaderExtension();
 
@@ -642,7 +640,7 @@ void ComponentLoader::EnableFileSystemInGuestMode(const std::string& id) {
             browser_context_);
     GURL site = content::SiteInstance::GetSiteForURL(
         off_the_record_context, Extension::GetBaseURLFromExtensionId(id));
-    fileapi::FileSystemContext* file_system_context =
+    storage::FileSystemContext* file_system_context =
         content::BrowserContext::GetStoragePartitionForSite(
             off_the_record_context, site)->GetFileSystemContext();
     file_system_context->EnableTemporaryFileSystemInIncognito();

@@ -10,6 +10,7 @@
 
 #include "base/bind.h"
 #include "base/numerics/safe_conversions.h"
+#include "base/single_thread_task_runner.h"
 #include "content/public/renderer/render_thread.h"
 #include "content/renderer/pepper/pepper_video_decoder_host.h"
 #include "content/renderer/render_thread_impl.h"
@@ -47,11 +48,14 @@ VideoDecoderShim::PendingDecode::~PendingDecode() {
 
 struct VideoDecoderShim::PendingFrame {
   explicit PendingFrame(uint32_t decode_id);
-  PendingFrame(uint32_t decode_id, const gfx::Size& size);
+  PendingFrame(uint32_t decode_id,
+               const gfx::Size& coded_size,
+               const gfx::Rect& visible_rect);
   ~PendingFrame();
 
   const uint32_t decode_id;
-  const gfx::Size size;
+  const gfx::Size coded_size;
+  const gfx::Rect visible_rect;
   std::vector<uint8_t> argb_pixels;
 
  private:
@@ -64,10 +68,12 @@ VideoDecoderShim::PendingFrame::PendingFrame(uint32_t decode_id)
 }
 
 VideoDecoderShim::PendingFrame::PendingFrame(uint32_t decode_id,
-                                             const gfx::Size& size)
+                                             const gfx::Size& coded_size,
+                                             const gfx::Rect& visible_rect)
     : decode_id(decode_id),
-      size(size),
-      argb_pixels(size.width() * size.height() * 4) {
+      coded_size(coded_size),
+      visible_rect(visible_rect),
+      argb_pixels(coded_size.width() * coded_size.height() * 4) {
 }
 
 VideoDecoderShim::PendingFrame::~PendingFrame() {
@@ -258,7 +264,8 @@ void VideoDecoderShim::DecoderImpl::OnOutputComplete(
     const scoped_refptr<media::VideoFrame>& frame) {
   scoped_ptr<PendingFrame> pending_frame;
   if (!frame->end_of_stream()) {
-    pending_frame.reset(new PendingFrame(decode_id_, frame->coded_size()));
+    pending_frame.reset(new PendingFrame(
+        decode_id_, frame->coded_size(), frame->visible_rect()));
     // Convert the VideoFrame pixels to ABGR to match VideoDecodeAccelerator.
     libyuv::I420ToABGR(frame->data(media::VideoFrame::kYPlane),
                        frame->stride(media::VideoFrame::kYPlane),
@@ -288,16 +295,16 @@ void VideoDecoderShim::DecoderImpl::OnResetComplete() {
 VideoDecoderShim::VideoDecoderShim(PepperVideoDecoderHost* host)
     : state_(UNINITIALIZED),
       host_(host),
-      media_message_loop_(
-          RenderThreadImpl::current()->GetMediaThreadMessageLoopProxy()),
+      media_task_runner_(
+          RenderThreadImpl::current()->GetMediaThreadTaskRunner()),
       context_provider_(
           RenderThreadImpl::current()->SharedMainThreadContextProvider()),
       texture_pool_size_(0),
       num_pending_decodes_(0),
       weak_ptr_factory_(this) {
   DCHECK(host_);
-  DCHECK(media_message_loop_);
-  DCHECK(context_provider_);
+  DCHECK(media_task_runner_.get());
+  DCHECK(context_provider_.get());
   decoder_impl_.reset(new DecoderImpl(weak_ptr_factory_.GetWeakPtr()));
 }
 
@@ -316,7 +323,7 @@ VideoDecoderShim::~VideoDecoderShim() {
 
   // The callback now holds the only reference to the DecoderImpl, which will be
   // deleted when Stop completes.
-  media_message_loop_->PostTask(
+  media_task_runner_->PostTask(
       FROM_HERE,
       base::Bind(&VideoDecoderShim::DecoderImpl::Stop,
                  base::Owned(decoder_impl_.release())));
@@ -348,7 +355,7 @@ bool VideoDecoderShim::Initialize(
       0 /* extra_data_size */,
       false /* decryption */);
 
-  media_message_loop_->PostTask(
+  media_task_runner_->PostTask(
       FROM_HERE,
       base::Bind(&VideoDecoderShim::DecoderImpl::Initialize,
                  base::Unretained(decoder_impl_.get()),
@@ -366,7 +373,7 @@ void VideoDecoderShim::Decode(const media::BitstreamBuffer& bitstream_buffer) {
   const uint8_t* buffer = host_->DecodeIdToAddress(bitstream_buffer.id());
   DCHECK(buffer);
 
-  media_message_loop_->PostTask(
+  media_task_runner_->PostTask(
       FROM_HERE,
       base::Bind(
           &VideoDecoderShim::DecoderImpl::Decode,
@@ -423,7 +430,7 @@ void VideoDecoderShim::Reset() {
   DCHECK(RenderThreadImpl::current());
   DCHECK_EQ(state_, DECODING);
   state_ = RESETTING;
-  media_message_loop_->PostTask(
+  media_task_runner_->PostTask(
       FROM_HERE,
       base::Bind(&VideoDecoderShim::DecoderImpl::Reset,
                  base::Unretained(decoder_impl_.get())));
@@ -470,7 +477,7 @@ void VideoDecoderShim::OnOutputComplete(scoped_ptr<PendingFrame> frame) {
   DCHECK(host_);
 
   if (!frame->argb_pixels.empty()) {
-    if (texture_size_ != frame->size) {
+    if (texture_size_ != frame->coded_size) {
       // If the size has changed, all current textures must be dismissed. Add
       // all textures to |textures_to_dismiss_| and dismiss any that aren't in
       // use by the plugin. We will dismiss the rest as they are recycled.
@@ -492,10 +499,10 @@ void VideoDecoderShim::OnOutputComplete(scoped_ptr<PendingFrame> frame) {
         pending_texture_mailboxes_.push_back(gpu::Mailbox::Generate());
 
       host_->RequestTextures(texture_pool_size_,
-                             frame->size,
+                             frame->coded_size,
                              GL_TEXTURE_2D,
                              pending_texture_mailboxes_);
-      texture_size_ = frame->size;
+      texture_size_ = frame->coded_size;
     }
 
     pending_frames_.push(linked_ptr<PendingFrame>(frame.release()));
@@ -527,7 +534,8 @@ void VideoDecoderShim::SendPictures() {
                       GL_UNSIGNED_BYTE,
                       &frame->argb_pixels.front());
 
-    host_->PictureReady(media::Picture(texture_id, frame->decode_id));
+    host_->PictureReady(
+        media::Picture(texture_id, frame->decode_id, frame->visible_rect));
     pending_frames_.pop();
   }
 

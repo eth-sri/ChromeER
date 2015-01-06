@@ -8,8 +8,15 @@ from telemetry.page import page_set as page_set_module
 class ToughFiltersCasesPage(page_module.Page):
 
   def RunSmoothness(self, action_runner):
-    action_runner.Wait(5)
+    action_runner.Wait(10)
 
+
+class PirateMarkPage(page_module.Page):
+
+  def RunSmoothness(self, action_runner):
+    action_runner.EvaluateJavaScript(
+        'document.getElementById("benchmarkButtonText").click()')
+    action_runner.Wait(10)
 
 class ToughFiltersCasesPageSet(page_set_module.PageSet):
 
@@ -29,3 +36,6 @@ class ToughFiltersCasesPageSet(page_set_module.PageSet):
 
     for url in urls_list:
       self.AddPage(ToughFiltersCasesPage(url, self))
+
+    self.AddPage(PirateMarkPage(
+        'http://ie.microsoft.com/testdrive/Performance/Pirates/', self))

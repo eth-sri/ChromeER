@@ -8,7 +8,6 @@
 #include "base/compiler_specific.h"
 #include "base/memory/weak_ptr.h"
 #include "mojo/public/cpp/application/lazy_interface_ptr.h"
-#include "mojo/services/public/cpp/view_manager/node_observer.h"
 #include "mojo/services/public/cpp/view_manager/view_observer.h"
 #include "mojo/services/public/interfaces/navigation/navigation.mojom.h"
 #include "mojo/services/public/interfaces/network/url_loader.mojom.h"
@@ -17,21 +16,19 @@
 
 namespace mojo {
 
-class Node;
 class ViewManager;
 class View;
 
 // A view for a single HTML document.
 class HTMLDocumentView : public blink::WebViewClient,
                          public blink::WebFrameClient,
-                         public ViewObserver,
-                         public NodeObserver {
+                         public ViewObserver {
  public:
   HTMLDocumentView(ServiceProvider* service_provider,
                    ViewManager* view_manager);
   virtual ~HTMLDocumentView();
 
-  void AttachToNode(Node* node);
+  void AttachToView(View* view);
 
   void Load(URLResponsePtr response);
 
@@ -44,6 +41,9 @@ class HTMLDocumentView : public blink::WebViewClient,
   virtual bool allowsBrokenNullLayerTreeView() const;
 
   // WebFrameClient methods:
+  virtual blink::WebFrame* createChildFrame(blink::WebLocalFrame* parent,
+                                            const blink::WebString& frameName);
+  virtual void frameDetached(blink::WebFrame*);
   virtual blink::WebCookieJar* cookieJar(blink::WebLocalFrame* frame);
   virtual blink::WebNavigationPolicy decidePolicyForNavigation(
       blink::WebLocalFrame* frame, blink::WebDataSource::ExtraData* data,
@@ -60,22 +60,19 @@ class HTMLDocumentView : public blink::WebViewClient,
       blink::WebHistoryCommitType commit_type);
 
   // ViewObserver methods:
-  virtual void OnViewInputEvent(View* view, const EventPtr& event) OVERRIDE;
-
-  // NodeObserver methods:
-  virtual void OnNodeBoundsChanged(Node* node,
+  virtual void OnViewBoundsChanged(View* view,
                                    const gfx::Rect& old_bounds,
                                    const gfx::Rect& new_bounds) OVERRIDE;
-  virtual void OnNodeDestroyed(Node* node) OVERRIDE;
+  virtual void OnViewDestroyed(View* view) OVERRIDE;
+  virtual void OnViewInputEvent(View* view, const EventPtr& event) OVERRIDE;
 
   void Repaint();
 
   ViewManager* view_manager_;
-  View* view_;
-  blink::WebView* web_view_;
-  Node* root_;
-  bool repaint_pending_;
   LazyInterfacePtr<NavigatorHost> navigator_host_;
+  blink::WebView* web_view_;
+  View* root_;
+  bool repaint_pending_;
 
   base::WeakPtrFactory<HTMLDocumentView> weak_factory_;
   DISALLOW_COPY_AND_ASSIGN(HTMLDocumentView);

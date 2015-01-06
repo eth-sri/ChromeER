@@ -16,6 +16,7 @@
 #include "ipc/ipc_message_macros.h"
 #include "net/base/request_priority.h"
 #include "net/http/http_response_info.h"
+#include "net/url_request/redirect_info.h"
 
 #ifndef CONTENT_COMMON_RESOURCE_MESSAGES_H_
 #define CONTENT_COMMON_RESOURCE_MESSAGES_H_
@@ -39,8 +40,8 @@ struct ParamTraits<scoped_refptr<net::HttpResponseHeaders> > {
 };
 
 template <>
-struct CONTENT_EXPORT ParamTraits<webkit_common::DataElement> {
-  typedef webkit_common::DataElement param_type;
+struct CONTENT_EXPORT ParamTraits<storage::DataElement> {
+  typedef storage::DataElement param_type;
   static void Write(Message* m, const param_type& p);
   static bool Read(const Message* m, PickleIterator* iter, param_type* r);
   static void Log(const param_type& p, std::string* l);
@@ -121,6 +122,14 @@ IPC_STRUCT_TRAITS_BEGIN(content::ResourceResponseInfo)
   IPC_STRUCT_TRAITS_MEMBER(original_url_via_service_worker)
 IPC_STRUCT_TRAITS_END()
 
+IPC_STRUCT_TRAITS_BEGIN(net::RedirectInfo)
+  IPC_STRUCT_TRAITS_MEMBER(status_code)
+  IPC_STRUCT_TRAITS_MEMBER(new_method)
+  IPC_STRUCT_TRAITS_MEMBER(new_url)
+  IPC_STRUCT_TRAITS_MEMBER(new_first_party_for_cookies)
+  IPC_STRUCT_TRAITS_MEMBER(new_referrer)
+IPC_STRUCT_TRAITS_END()
+
 // Parameters for a resource request.
 IPC_STRUCT_BEGIN(ResourceHostMsg_Request)
   // The request method: GET, POST, etc.
@@ -184,6 +193,9 @@ IPC_STRUCT_BEGIN(ResourceHostMsg_Request)
 
   // True if the request was user initiated.
   IPC_STRUCT_MEMBER(bool, has_user_gesture)
+
+  // True if load timing data should be collected for request.
+  IPC_STRUCT_MEMBER(bool, enable_load_timing)
 
   // The routing id of the RenderFrame.
   IPC_STRUCT_MEMBER(int, render_frame_id)
@@ -257,10 +269,9 @@ IPC_MESSAGE_CONTROL3(ResourceMsg_UploadProgress,
 // Sent when the request has been redirected.  The receiver is expected to
 // respond with either a FollowRedirect message (if the redirect is to be
 // followed) or a CancelRequest message (if it should not be followed).
-IPC_MESSAGE_CONTROL4(ResourceMsg_ReceivedRedirect,
+IPC_MESSAGE_CONTROL3(ResourceMsg_ReceivedRedirect,
                      int /* request_id */,
-                     GURL /* new_url */,
-                     GURL /* new_first_party_for_cookies */,
+                     net::RedirectInfo /* redirect_info */,
                      content::ResourceResponseHead)
 
 // Sent to set the shared memory buffer to be used to transmit response data to

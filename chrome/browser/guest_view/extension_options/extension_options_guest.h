@@ -6,8 +6,8 @@
 #define CHROME_BROWSER_GUEST_VIEW_EXTENSION_OPTIONS_EXTENSION_OPTIONS_GUEST_H_
 
 #include "base/macros.h"
-#include "chrome/browser/guest_view/guest_view.h"
 #include "extensions/browser/extension_function_dispatcher.h"
+#include "extensions/browser/guest_view/guest_view.h"
 #include "url/gurl.h"
 
 namespace content {
@@ -15,16 +15,14 @@ class BrowserContext;
 }
 
 class ExtensionOptionsGuest
-    : public GuestView<ExtensionOptionsGuest>,
+    : public extensions::GuestView<ExtensionOptionsGuest>,
       public extensions::ExtensionFunctionDispatcher::Delegate {
  public:
   static const char Type[];
-  static GuestViewBase* Create(content::BrowserContext* browser_context,
-                               int guest_instance_id);
+  static extensions::GuestViewBase* Create(
+      content::BrowserContext* browser_context, int guest_instance_id);
 
   // GuestViewBase implementation.
-  virtual bool CanEmbedderUseGuestView(
-      const std::string& embedder_extension_id) OVERRIDE;
   virtual void CreateWebContents(
       const std::string& embedder_extension_id,
       int embedder_render_process_id,
@@ -33,6 +31,8 @@ class ExtensionOptionsGuest
   virtual void DidAttachToEmbedder() OVERRIDE;
   virtual void DidInitialize() OVERRIDE;
   virtual void DidStopLoading() OVERRIDE;
+  virtual const char* GetAPINamespace() const OVERRIDE;
+  virtual int GetTaskPrefix() const OVERRIDE;
   virtual void GuestSizeChangedDueToAutoSize(
       const gfx::Size& old_size,
       const gfx::Size& new_size) OVERRIDE;
@@ -41,6 +41,19 @@ class ExtensionOptionsGuest
   // ExtensionFunctionDispatcher::Delegate implementation.
   virtual content::WebContents* GetAssociatedWebContents() const OVERRIDE;
 
+  // content::WebContentsDelegate implementation.
+  virtual void CloseContents(content::WebContents* source) OVERRIDE;
+  virtual bool HandleContextMenu(
+      const content::ContextMenuParams& params) OVERRIDE;
+  virtual bool ShouldCreateWebContents(
+      content::WebContents* web_contents,
+      int route_id,
+      WindowContainerType window_container_type,
+      const base::string16& frame_name,
+      const GURL& target_url,
+      const std::string& partition_id,
+      content::SessionStorageNamespace* session_storage_namespace) OVERRIDE;
+
   // content::WebContentsObserver implementation.
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
@@ -48,8 +61,8 @@ class ExtensionOptionsGuest
   ExtensionOptionsGuest(content::BrowserContext* browser_context,
                         int guest_instance_id);
   virtual ~ExtensionOptionsGuest();
-  void SetUpAutoSize();
   void OnRequest(const ExtensionHostMsg_Request_Params& params);
+  void SetUpAutoSize();
 
   scoped_ptr<extensions::ExtensionFunctionDispatcher>
       extension_function_dispatcher_;

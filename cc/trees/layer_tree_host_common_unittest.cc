@@ -38,48 +38,15 @@ namespace {
 
 class LayerWithForcedDrawsContent : public Layer {
  public:
-  LayerWithForcedDrawsContent() : Layer(), last_device_scale_factor_(0.f) {}
+  LayerWithForcedDrawsContent() {}
 
   virtual bool DrawsContent() const OVERRIDE;
-  virtual void CalculateContentsScale(float ideal_contents_scale,
-                                      float device_scale_factor,
-                                      float page_scale_factor,
-                                      float maximum_animation_contents_scale,
-                                      bool animating_transform_to_screen,
-                                      float* contents_scale_x,
-                                      float* contents_scale_y,
-                                      gfx::Size* content_bounds) OVERRIDE;
-
-  float last_device_scale_factor() const { return last_device_scale_factor_; }
 
  private:
   virtual ~LayerWithForcedDrawsContent() {}
-
-  // Parameters from last CalculateContentsScale.
-  float last_device_scale_factor_;
 };
 
 bool LayerWithForcedDrawsContent::DrawsContent() const { return true; }
-
-void LayerWithForcedDrawsContent::CalculateContentsScale(
-    float ideal_contents_scale,
-    float device_scale_factor,
-    float page_scale_factor,
-    float maximum_animation_contents_scale,
-    bool animating_transform_to_screen,
-    float* contents_scale_x,
-    float* contents_scale_y,
-    gfx::Size* content_bounds) {
-  last_device_scale_factor_ = device_scale_factor;
-  Layer::CalculateContentsScale(ideal_contents_scale,
-                                device_scale_factor,
-                                page_scale_factor,
-                                maximum_animation_contents_scale,
-                                animating_transform_to_screen,
-                                contents_scale_x,
-                                contents_scale_y,
-                                content_bounds);
-}
 
 class MockContentLayerClient : public ContentLayerClient {
  public:
@@ -614,7 +581,7 @@ TEST_F(LayerTreeHostCommonTest, TransformsForSingleRenderSurface) {
 
   // Render surface should have been created now.
   ASSERT_TRUE(child->render_surface());
-  ASSERT_EQ(child, child->render_target());
+  ASSERT_EQ(child.get(), child->render_target());
 
   // The child layer's draw transform should refer to its new render surface.
   // The screen-space transform, however, should still refer to the root.
@@ -719,7 +686,7 @@ TEST_F(LayerTreeHostCommonTest, TransformsForReplica) {
 
   // Render surface should have been created now.
   ASSERT_TRUE(child->render_surface());
-  ASSERT_EQ(child, child->render_target());
+  ASSERT_EQ(child.get(), child->render_target());
 
   EXPECT_TRANSFORMATION_MATRIX_EQ(
       replica_composite_transform,
@@ -922,17 +889,17 @@ TEST_F(LayerTreeHostCommonTest, TransformsForRenderSurfaceHierarchy) {
   ASSERT_FALSE(grand_child_of_rs2->render_surface());
 
   // Verify all render target accessors
-  EXPECT_EQ(root, parent->render_target());
-  EXPECT_EQ(root, child_of_root->render_target());
-  EXPECT_EQ(root, grand_child_of_root->render_target());
+  EXPECT_EQ(root.get(), parent->render_target());
+  EXPECT_EQ(root.get(), child_of_root->render_target());
+  EXPECT_EQ(root.get(), grand_child_of_root->render_target());
 
-  EXPECT_EQ(render_surface1, render_surface1->render_target());
-  EXPECT_EQ(render_surface1, child_of_rs1->render_target());
-  EXPECT_EQ(render_surface1, grand_child_of_rs1->render_target());
+  EXPECT_EQ(render_surface1.get(), render_surface1->render_target());
+  EXPECT_EQ(render_surface1.get(), child_of_rs1->render_target());
+  EXPECT_EQ(render_surface1.get(), grand_child_of_rs1->render_target());
 
-  EXPECT_EQ(render_surface2, render_surface2->render_target());
-  EXPECT_EQ(render_surface2, child_of_rs2->render_target());
-  EXPECT_EQ(render_surface2, grand_child_of_rs2->render_target());
+  EXPECT_EQ(render_surface2.get(), render_surface2->render_target());
+  EXPECT_EQ(render_surface2.get(), child_of_rs2->render_target());
+  EXPECT_EQ(render_surface2.get(), grand_child_of_rs2->render_target());
 
   // Verify layer draw transforms note that draw transforms are described with
   // respect to the nearest ancestor render surface but screen space transforms
@@ -1198,8 +1165,8 @@ TEST_F(LayerTreeHostCommonTest, TransformAboveRootLayer) {
     EXPECT_EQ(translate, root->draw_properties().target_space_transform);
     EXPECT_EQ(translate, child->draw_properties().target_space_transform);
     EXPECT_EQ(identity_matrix, root->render_surface()->draw_transform());
-    EXPECT_EQ(1.f, root->last_device_scale_factor());
-    EXPECT_EQ(1.f, child->last_device_scale_factor());
+    EXPECT_EQ(1.f, root->draw_properties().device_scale_factor);
+    EXPECT_EQ(1.f, child->draw_properties().device_scale_factor);
   }
 
   gfx::Transform scale;
@@ -1213,8 +1180,8 @@ TEST_F(LayerTreeHostCommonTest, TransformAboveRootLayer) {
     EXPECT_EQ(scale, root->draw_properties().target_space_transform);
     EXPECT_EQ(scale, child->draw_properties().target_space_transform);
     EXPECT_EQ(identity_matrix, root->render_surface()->draw_transform());
-    EXPECT_EQ(2.f, root->last_device_scale_factor());
-    EXPECT_EQ(2.f, child->last_device_scale_factor());
+    EXPECT_EQ(2.f, root->draw_properties().device_scale_factor);
+    EXPECT_EQ(2.f, child->draw_properties().device_scale_factor);
   }
 
   gfx::Transform rotate;
@@ -1228,8 +1195,8 @@ TEST_F(LayerTreeHostCommonTest, TransformAboveRootLayer) {
     EXPECT_EQ(rotate, root->draw_properties().target_space_transform);
     EXPECT_EQ(rotate, child->draw_properties().target_space_transform);
     EXPECT_EQ(identity_matrix, root->render_surface()->draw_transform());
-    EXPECT_EQ(1.f, root->last_device_scale_factor());
-    EXPECT_EQ(1.f, child->last_device_scale_factor());
+    EXPECT_EQ(1.f, root->draw_properties().device_scale_factor);
+    EXPECT_EQ(1.f, child->draw_properties().device_scale_factor);
   }
 
   gfx::Transform composite;
@@ -1264,8 +1231,9 @@ TEST_F(LayerTreeHostCommonTest, TransformAboveRootLayer) {
     EXPECT_EQ(device_scaled_translate,
               child->draw_properties().target_space_transform);
     EXPECT_EQ(identity_matrix, root->render_surface()->draw_transform());
-    EXPECT_EQ(device_scale_factor, root->last_device_scale_factor());
-    EXPECT_EQ(device_scale_factor, child->last_device_scale_factor());
+    EXPECT_EQ(device_scale_factor, root->draw_properties().device_scale_factor);
+    EXPECT_EQ(device_scale_factor,
+              child->draw_properties().device_scale_factor);
   }
 
   // Verify it composes correctly with page scale.
@@ -1285,8 +1253,8 @@ TEST_F(LayerTreeHostCommonTest, TransformAboveRootLayer) {
     EXPECT_EQ(page_scaled_translate,
               child->draw_properties().target_space_transform);
     EXPECT_EQ(identity_matrix, root->render_surface()->draw_transform());
-    EXPECT_EQ(1.f, root->last_device_scale_factor());
-    EXPECT_EQ(1.f, child->last_device_scale_factor());
+    EXPECT_EQ(1.f, root->draw_properties().device_scale_factor);
+    EXPECT_EQ(1.f, child->draw_properties().device_scale_factor);
   }
 
   // Verify that it composes correctly with transforms directly on root layer.
@@ -2211,17 +2179,17 @@ TEST_F(LayerTreeHostCommonTest, AnimationsForRenderSurfaceHierarchy) {
   ASSERT_FALSE(grand_child_of_rs2->render_surface());
 
   // Verify all render target accessors
-  EXPECT_EQ(parent, parent->render_target());
-  EXPECT_EQ(parent, child_of_root->render_target());
-  EXPECT_EQ(parent, grand_child_of_root->render_target());
+  EXPECT_EQ(parent.get(), parent->render_target());
+  EXPECT_EQ(parent.get(), child_of_root->render_target());
+  EXPECT_EQ(parent.get(), grand_child_of_root->render_target());
 
-  EXPECT_EQ(render_surface1, render_surface1->render_target());
-  EXPECT_EQ(render_surface1, child_of_rs1->render_target());
-  EXPECT_EQ(render_surface1, grand_child_of_rs1->render_target());
+  EXPECT_EQ(render_surface1.get(), render_surface1->render_target());
+  EXPECT_EQ(render_surface1.get(), child_of_rs1->render_target());
+  EXPECT_EQ(render_surface1.get(), grand_child_of_rs1->render_target());
 
-  EXPECT_EQ(render_surface2, render_surface2->render_target());
-  EXPECT_EQ(render_surface2, child_of_rs2->render_target());
-  EXPECT_EQ(render_surface2, grand_child_of_rs2->render_target());
+  EXPECT_EQ(render_surface2.get(), render_surface2->render_target());
+  EXPECT_EQ(render_surface2.get(), child_of_rs2->render_target());
+  EXPECT_EQ(render_surface2.get(), grand_child_of_rs2->render_target());
 
   // Verify draw_opacity_is_animating values
   EXPECT_FALSE(parent->draw_opacity_is_animating());
@@ -4049,19 +4017,11 @@ class NoScaleContentLayer : public ContentLayer {
   }
 
   virtual void CalculateContentsScale(float ideal_contents_scale,
-                                      float device_scale_factor,
-                                      float page_scale_factor,
-                                      float maximum_animation_contents_scale,
-                                      bool animating_transform_to_screen,
                                       float* contents_scale_x,
                                       float* contents_scale_y,
                                       gfx::Size* content_bounds) OVERRIDE {
     // Skip over the ContentLayer to the base Layer class.
     Layer::CalculateContentsScale(ideal_contents_scale,
-                                  device_scale_factor,
-                                  page_scale_factor,
-                                  maximum_animation_contents_scale,
-                                  animating_transform_to_screen,
                                   contents_scale_x,
                                   contents_scale_y,
                                   content_bounds);
@@ -4277,7 +4237,7 @@ TEST_F(LayerTreeHostCommonTest, SurfaceLayerTransformsInHighDPI) {
       root.get(), parent->bounds(), &render_surface_layer_list);
   inputs.device_scale_factor = device_scale_factor;
   inputs.page_scale_factor = page_scale_factor;
-  inputs.page_scale_application_layer = root;
+  inputs.page_scale_application_layer = root.get();
   inputs.can_adjust_raster_scales = true;
   LayerTreeHostCommon::CalculateDrawProperties(&inputs);
 
@@ -5604,18 +5564,18 @@ TEST_F(LayerTreeHostCommonTest, SubtreeSearch) {
   host->SetRootLayer(root);
 
   int nonexistent_id = -1;
-  EXPECT_EQ(root,
+  EXPECT_EQ(root.get(),
             LayerTreeHostCommon::FindLayerInSubtree(root.get(), root->id()));
-  EXPECT_EQ(child,
+  EXPECT_EQ(child.get(),
             LayerTreeHostCommon::FindLayerInSubtree(root.get(), child->id()));
   EXPECT_EQ(
-      grand_child,
+      grand_child.get(),
       LayerTreeHostCommon::FindLayerInSubtree(root.get(), grand_child->id()));
   EXPECT_EQ(
-      mask_layer,
+      mask_layer.get(),
       LayerTreeHostCommon::FindLayerInSubtree(root.get(), mask_layer->id()));
   EXPECT_EQ(
-      replica_layer,
+      replica_layer.get(),
       LayerTreeHostCommon::FindLayerInSubtree(root.get(), replica_layer->id()));
   EXPECT_EQ(
       0, LayerTreeHostCommon::FindLayerInSubtree(root.get(), nonexistent_id));
@@ -6985,6 +6945,7 @@ TEST_F(LayerTreeHostCommonTest, CanRenderToSeparateSurface) {
 
   {
     LayerImplList render_surface_layer_list;
+    FakeLayerTreeHostImpl::RecursiveUpdateNumChildren(root.get());
     LayerTreeHostCommon::CalcDrawPropsImplInputsForTesting inputs(
         root.get(), root->bounds(), &render_surface_layer_list);
     inputs.can_render_to_separate_surface = true;
@@ -7401,11 +7362,11 @@ TEST_F(LayerTreeHostCommonTest, ClippedByOutOfOrderScrollGrandparent) {
   // correct clip, the layer lists should be unaffected.
   EXPECT_EQ(3u, root->render_surface()->layer_list().size());
   EXPECT_EQ(scroll_child.get(),
-            root->render_surface()->layer_list().at(0));
+            root->render_surface()->layer_list().at(0).get());
   EXPECT_EQ(scroll_parent.get(),
-            root->render_surface()->layer_list().at(1));
+            root->render_surface()->layer_list().at(1).get());
   EXPECT_EQ(scroll_grandparent.get(),
-            root->render_surface()->layer_list().at(2));
+            root->render_surface()->layer_list().at(2).get());
 }
 
 TEST_F(LayerTreeHostCommonTest, OutOfOrderClippingRequiresRSLLSorting) {

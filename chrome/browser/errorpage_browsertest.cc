@@ -24,6 +24,7 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
+#include "chrome/grit/generated_resources.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "components/google/core/browser/google_util.h"
@@ -38,7 +39,6 @@
 #include "content/public/test/test_navigation_observer.h"
 #include "content/test/net/url_request_failed_job.h"
 #include "content/test/net/url_request_mock_http_job.h"
-#include "grit/generated_resources.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
 #include "net/http/failing_http_transaction_factory.h"
@@ -87,13 +87,7 @@ void ToggleHelpBox(Browser* browser) {
 // |error_code| on the current page.
 bool WARN_UNUSED_RESULT IsDisplayingNetError(Browser* browser,
                                              net::Error error_code) {
-  // Get the error as a string, and remove the leading "net::", which is not
-  // included on error pages.
-  std::string error_string(net::ErrorToString(error_code));
-  DCHECK(StartsWithASCII(error_string, "net::", true));
-  error_string.erase(0, 5);
-
-  return IsDisplayingText(browser, error_string);
+  return IsDisplayingText(browser, net::ErrorToShortString(error_code));
 }
 
 // Checks that the local error page is being displayed, without remotely

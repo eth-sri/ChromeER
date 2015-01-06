@@ -16,13 +16,13 @@
 #include "base/callback.h"
 #include "base/file_util.h"
 #include "base/location.h"
-#include "base/message_loop/message_loop_proxy.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
 #include "base/metrics/sparse_histogram.h"
 #include "base/single_thread_task_runner.h"
 #include "base/sys_info.h"
 #include "base/task_runner_util.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "base/time/time.h"
 #include "net/base/net_errors.h"
@@ -39,9 +39,7 @@
 using base::Callback;
 using base::Closure;
 using base::FilePath;
-using base::MessageLoopProxy;
 using base::SequencedWorkerPool;
-using base::SingleThreadTaskRunner;
 using base::Time;
 using base::DirectoryExists;
 using base::CreateDirectory;
@@ -197,19 +195,47 @@ void RecordIndexLoad(net::CacheType cache_type,
 
 }  // namespace
 
-SimpleBackendImpl::SimpleBackendImpl(const FilePath& path,
-                                     int max_bytes,
-                                     net::CacheType cache_type,
-                                     base::SingleThreadTaskRunner* cache_thread,
-                                     net::NetLog* net_log)
+class SimpleBackendImpl::ActiveEntryProxy
+    : public SimpleEntryImpl::ActiveEntryProxy {
+ public:
+  virtual ~ActiveEntryProxy() {
+    if (backend_) {
+      DCHECK_EQ(1U, backend_->active_entries_.count(entry_hash_));
+      backend_->active_entries_.erase(entry_hash_);
+    }
+  }
+
+  static scoped_ptr<SimpleEntryImpl::ActiveEntryProxy> Create(
+      int64 entry_hash,
+      SimpleBackendImpl* backend) {
+    scoped_ptr<SimpleEntryImpl::ActiveEntryProxy>
+        proxy(new ActiveEntryProxy(entry_hash, backend));
+    return proxy.Pass();
+  }
+
+ private:
+  ActiveEntryProxy(uint64 entry_hash,
+                   SimpleBackendImpl* backend)
+      : entry_hash_(entry_hash),
+        backend_(backend->AsWeakPtr()) {}
+
+  uint64 entry_hash_;
+  base::WeakPtr<SimpleBackendImpl> backend_;
+};
+
+SimpleBackendImpl::SimpleBackendImpl(
+    const FilePath& path,
+    int max_bytes,
+    net::CacheType cache_type,
+    const scoped_refptr<base::SingleThreadTaskRunner>& cache_thread,
+    net::NetLog* net_log)
     : path_(path),
       cache_type_(cache_type),
       cache_thread_(cache_thread),
       orig_max_size_(max_bytes),
-      entry_operations_mode_(
-          cache_type == net::DISK_CACHE ?
-              SimpleEntryImpl::OPTIMISTIC_OPERATIONS :
-              SimpleEntryImpl::NON_OPTIMISTIC_OPERATIONS),
+      entry_operations_mode_(cache_type == net::DISK_CACHE ?
+                                 SimpleEntryImpl::OPTIMISTIC_OPERATIONS :
+                                 SimpleEntryImpl::NON_OPTIMISTIC_OPERATIONS),
       net_log_(net_log) {
   MaybeHistogramFdLimit(cache_type_);
 }
@@ -224,19 +250,22 @@ int SimpleBackendImpl::Init(const CompletionCallback& completion_callback) {
   worker_pool_ = g_sequenced_worker_pool->GetTaskRunnerWithShutdownBehavior(
       SequencedWorkerPool::CONTINUE_ON_SHUTDOWN);
 
-  index_.reset(new SimpleIndex(MessageLoopProxy::current(), this, cache_type_,
-                               make_scoped_ptr(new SimpleIndexFile(
-                                   cache_thread_.get(), worker_pool_.get(),
-                                   cache_type_, path_))));
+  index_.reset(new SimpleIndex(
+      base::ThreadTaskRunnerHandle::Get(),
+      this,
+      cache_type_,
+      make_scoped_ptr(new SimpleIndexFile(
+          cache_thread_, worker_pool_.get(), cache_type_, path_))));
   index_->ExecuteWhenReady(
       base::Bind(&RecordIndexLoad, cache_type_, base::TimeTicks::Now()));
 
   PostTaskAndReplyWithResult(
-      cache_thread_,
+      cache_thread_.get(),
       FROM_HERE,
-      base::Bind(&SimpleBackendImpl::InitCacheStructureOnDisk, path_,
-                 orig_max_size_),
-      base::Bind(&SimpleBackendImpl::InitializeIndex, AsWeakPtr(),
+      base::Bind(
+          &SimpleBackendImpl::InitCacheStructureOnDisk, path_, orig_max_size_),
+      base::Bind(&SimpleBackendImpl::InitializeIndex,
+                 AsWeakPtr(),
                  completion_callback));
   return net::ERR_IO_PENDING;
 }
@@ -248,10 +277,6 @@ bool SimpleBackendImpl::SetMaxSize(int max_bytes) {
 
 int SimpleBackendImpl::GetMaxFileSize() const {
   return index_->max_size() / kMaxFileRatio;
-}
-
-void SimpleBackendImpl::OnDeactivated(const SimpleEntryImpl* entry) {
-  active_entries_.erase(entry->entry_hash());
 }
 
 void SimpleBackendImpl::OnDoomStart(uint64 entry_hash) {
@@ -328,13 +353,15 @@ void SimpleBackendImpl::DoomEntries(std::vector<uint64>* entry_hashes,
   // base::Passed before mass_doom_entry_hashes.get().
   std::vector<uint64>* mass_doom_entry_hashes_ptr =
       mass_doom_entry_hashes.get();
-  PostTaskAndReplyWithResult(
-      worker_pool_, FROM_HERE,
-      base::Bind(&SimpleSynchronousEntry::DoomEntrySet,
-                 mass_doom_entry_hashes_ptr, path_),
-      base::Bind(&SimpleBackendImpl::DoomEntriesComplete,
-                 AsWeakPtr(), base::Passed(&mass_doom_entry_hashes),
-                 barrier_callback));
+  PostTaskAndReplyWithResult(worker_pool_.get(),
+                             FROM_HERE,
+                             base::Bind(&SimpleSynchronousEntry::DoomEntrySet,
+                                        mass_doom_entry_hashes_ptr,
+                                        path_),
+                             base::Bind(&SimpleBackendImpl::DoomEntriesComplete,
+                                        AsWeakPtr(),
+                                        base::Passed(&mass_doom_entry_hashes),
+                                        barrier_callback));
 }
 
 net::CacheType SimpleBackendImpl::GetCacheType() const {
@@ -511,18 +538,17 @@ scoped_refptr<SimpleEntryImpl> SimpleBackendImpl::CreateOrFindActiveEntry(
     const std::string& key) {
   DCHECK_EQ(entry_hash, simple_util::GetEntryHashKey(key));
   std::pair<EntryMap::iterator, bool> insert_result =
-      active_entries_.insert(std::make_pair(entry_hash,
-                                            base::WeakPtr<SimpleEntryImpl>()));
+      active_entries_.insert(EntryMap::value_type(entry_hash, NULL));
   EntryMap::iterator& it = insert_result.first;
-  if (insert_result.second)
-    DCHECK(!it->second.get());
-  if (!it->second.get()) {
-    SimpleEntryImpl* entry = new SimpleEntryImpl(
-        cache_type_, path_, entry_hash, entry_operations_mode_, this, net_log_);
+  const bool did_insert = insert_result.second;
+  if (did_insert) {
+    SimpleEntryImpl* entry = it->second =
+        new SimpleEntryImpl(cache_type_, path_, entry_hash,
+                            entry_operations_mode_,this, net_log_);
     entry->SetKey(key);
-    it->second = entry->AsWeakPtr();
+    entry->SetActiveEntryProxy(ActiveEntryProxy::Create(entry_hash, this));
   }
-  DCHECK(it->second.get());
+  DCHECK(it->second);
   // It's possible, but unlikely, that we have an entry hash collision with a
   // currently active entry.
   if (key != it->second->key()) {
@@ -530,7 +556,7 @@ scoped_refptr<SimpleEntryImpl> SimpleBackendImpl::CreateOrFindActiveEntry(
     DCHECK_EQ(0U, active_entries_.count(entry_hash));
     return CreateOrFindActiveEntry(entry_hash, key);
   }
-  return make_scoped_refptr(it->second.get());
+  return make_scoped_refptr(it->second);
 }
 
 int SimpleBackendImpl::OpenEntryFromHash(uint64 entry_hash,
@@ -639,19 +665,19 @@ void SimpleBackendImpl::OnEntryOpenedFromHash(
   }
   DCHECK(*entry);
   std::pair<EntryMap::iterator, bool> insert_result =
-      active_entries_.insert(std::make_pair(hash,
-                                            base::WeakPtr<SimpleEntryImpl>()));
+      active_entries_.insert(EntryMap::value_type(hash, simple_entry));
   EntryMap::iterator& it = insert_result.first;
   const bool did_insert = insert_result.second;
   if (did_insert) {
-    // There is no active entry corresponding to this hash. The entry created
-    // is put in the map of active entries and returned to the caller.
-    it->second = simple_entry->AsWeakPtr();
-    callback.Run(error_code);
+    // There was no active entry corresponding to this hash. We've already put
+    // the entry opened from hash in the |active_entries_|. We now provide the
+    // proxy object to the entry.
+    it->second->SetActiveEntryProxy(ActiveEntryProxy::Create(hash, this));
+    callback.Run(net::OK);
   } else {
-    // The entry was made active with the key while the creation from hash
-    // occurred. The entry created from hash needs to be closed, and the one
-    // coming from the key returned to the caller.
+    // The entry was made active while we waiting for the open from hash to
+    // finish. The entry created from hash needs to be closed, and the one
+    // in |active_entries_| can be returned to the caller.
     simple_entry->Close();
     it->second->OpenEntry(entry, callback);
   }

@@ -189,22 +189,9 @@ SkiaTextRenderer::SkiaTextRenderer(Canvas* canvas)
   paint_.setSubpixelText(true);
   paint_.setLCDRenderText(true);
   paint_.setHinting(SkPaint::kNormal_Hinting);
-  bounds_.setEmpty();
 }
 
 SkiaTextRenderer::~SkiaTextRenderer() {
-  // Work-around for http://crbug.com/122743, where non-ClearType text is
-  // rendered with incorrect gamma when using the fade shader. Draw the text
-  // to a layer and restore it faded by drawing a rect in kDstIn_Mode mode.
-  //
-  // TODO(asvitkine): Remove this work-around once the Skia bug is fixed.
-  //                  http://code.google.com/p/skia/issues/detail?id=590
-  if (deferred_fade_shader_.get()) {
-    paint_.setShader(deferred_fade_shader_.get());
-    paint_.setXfermodeMode(SkXfermode::kDstIn_Mode);
-    canvas_skia_->drawRect(bounds_, paint_);
-    canvas_skia_->restore();
-  }
 }
 
 void SkiaTextRenderer::SetDrawLooper(SkDrawLooper* draw_looper) {
@@ -213,12 +200,7 @@ void SkiaTextRenderer::SetDrawLooper(SkDrawLooper* draw_looper) {
 
 void SkiaTextRenderer::SetFontRenderParams(const FontRenderParams& params,
                                            bool background_is_transparent) {
-  paint_.setAntiAlias(params.antialiasing);
-  paint_.setLCDRenderText(!background_is_transparent &&
-      params.subpixel_rendering != FontRenderParams::SUBPIXEL_RENDERING_NONE);
-  paint_.setSubpixelText(params.subpixel_positioning);
-  paint_.setAutohinted(params.autohinter);
-  paint_.setHinting(FontRenderParamsHintingToSkPaintHinting(params.hinting));
+  ApplyRenderParams(params, background_is_transparent, &paint_);
 }
 
 void SkiaTextRenderer::SetTypeface(SkTypeface* typeface) {
@@ -248,8 +230,7 @@ void SkiaTextRenderer::SetForegroundColor(SkColor foreground) {
   paint_.setColor(foreground);
 }
 
-void SkiaTextRenderer::SetShader(SkShader* shader, const Rect& bounds) {
-  bounds_ = RectToSkRect(bounds);
+void SkiaTextRenderer::SetShader(SkShader* shader) {
   paint_.setShader(shader);
 }
 
@@ -262,26 +243,6 @@ void SkiaTextRenderer::SetUnderlineMetrics(SkScalar thickness,
 void SkiaTextRenderer::DrawPosText(const SkPoint* pos,
                                    const uint16* glyphs,
                                    size_t glyph_count) {
-  if (!started_drawing_) {
-    started_drawing_ = true;
-    // Work-around for http://crbug.com/122743, where non-ClearType text is
-    // rendered with incorrect gamma when using the fade shader. Draw the text
-    // to a layer and restore it faded by drawing a rect in kDstIn_Mode mode.
-    //
-    // Skip this when there is a looper which seems not working well with
-    // deferred paint. Currently a looper is only used for text shadows.
-    //
-    // TODO(asvitkine): Remove this work-around once the Skia bug is fixed.
-    //                  http://code.google.com/p/skia/issues/detail?id=590
-    if (!paint_.isLCDRenderText() &&
-        paint_.getShader() &&
-        !paint_.getLooper()) {
-      deferred_fade_shader_ = skia::SharePtr(paint_.getShader());
-      paint_.setShader(NULL);
-      canvas_skia_->saveLayer(&bounds_, NULL);
-    }
-  }
-
   const size_t byte_length = glyph_count * sizeof(glyphs[0]);
   canvas_skia_->drawPosText(&glyphs[0], byte_length, &pos[0], paint_);
 }
@@ -414,6 +375,17 @@ skia::RefPtr<SkTypeface> CreateSkiaTypeface(const std::string& family,
                                             int style) {
   SkTypeface::Style skia_style = ConvertFontStyleToSkiaTypefaceStyle(style);
   return skia::AdoptRef(SkTypeface::CreateFromName(family.c_str(), skia_style));
+}
+
+void ApplyRenderParams(const FontRenderParams& params,
+                       bool background_is_transparent,
+                       SkPaint* paint) {
+  paint->setAntiAlias(params.antialiasing);
+  paint->setLCDRenderText(!background_is_transparent &&
+      params.subpixel_rendering != FontRenderParams::SUBPIXEL_RENDERING_NONE);
+  paint->setSubpixelText(params.subpixel_positioning);
+  paint->setAutohinted(params.autohinter);
+  paint->setHinting(FontRenderParamsHintingToSkPaintHinting(params.hinting));
 }
 
 }  // namespace internal
@@ -1169,7 +1141,7 @@ void RenderText::ApplyFadeEffects(internal::SkiaTextRenderer* renderer) {
   skia::RefPtr<SkShader> shader = CreateFadeShader(
       text_rect, left_part, right_part, colors_.breaks().front().second);
   if (shader)
-    renderer->SetShader(shader.get(), display_rect());
+    renderer->SetShader(shader.get());
 }
 
 void RenderText::ApplyTextShadows(internal::SkiaTextRenderer* renderer) {

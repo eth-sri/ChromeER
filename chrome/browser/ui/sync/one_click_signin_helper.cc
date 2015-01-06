@@ -54,10 +54,13 @@
 #include "chrome/browser/ui/tab_modal_confirm_dialog.h"
 #include "chrome/browser/ui/tab_modal_confirm_dialog_delegate.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "chrome/browser/ui/webui/signin/login_ui_service_factory.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/net/url_util.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "chrome/grit/chromium_strings.h"
+#include "chrome/grit/generated_resources.h"
 #include "components/autofill/core/common/password_form.h"
 #include "components/google/core/browser/google_util.h"
 #include "components/password_manager/core/browser/password_manager.h"
@@ -79,15 +82,11 @@
 #include "content/public/common/page_transition_types.h"
 #include "google_apis/gaia/gaia_auth_util.h"
 #include "google_apis/gaia/gaia_urls.h"
-#include "grit/chromium_strings.h"
-#include "grit/generated_resources.h"
-#include "grit/theme_resources.h"
 #include "ipc/ipc_message_macros.h"
 #include "net/base/url_util.h"
 #include "net/cookies/cookie_monster.h"
 #include "net/url_request/url_request.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/resource/resource_bundle.h"
 #include "url/gurl.h"
 
 
@@ -645,12 +644,8 @@ void OneClickSigninHelper::SyncStarterWrapper::DisplayErrorBubble(
     const std::string& error_message) {
   args_.browser = OneClickSigninSyncStarter::EnsureBrowser(
       args_.browser, args_.profile, desktop_type_);
-  args_.browser->window()->ShowOneClickSigninBubble(
-      BrowserWindow::ONE_CLICK_SIGNIN_BUBBLE_TYPE_BUBBLE,
-      base::string16(),  // No email required - this is not a SAML confirmation.
-      base::UTF8ToUTF16(error_message),
-      // Callback is ignored.
-      BrowserWindow::StartSyncCallback());
+  LoginUIServiceFactory::GetForProfile(args_.profile)->DisplayLoginResult(
+      args_.browser, base::UTF8ToUTF16(error_message));
 }
 
 void OneClickSigninHelper::SyncStarterWrapper::StartSigninOAuthHelper() {
@@ -1146,21 +1141,6 @@ void OneClickSigninHelper::RemoveSigninRedirectURLHistoryItem(
 }
 
 // static
-void OneClickSigninHelper::ShowSigninErrorBubble(Browser* browser,
-                                                 const std::string& error) {
-  DCHECK(!error.empty());
-
-  browser->window()->ShowOneClickSigninBubble(
-      BrowserWindow::ONE_CLICK_SIGNIN_BUBBLE_TYPE_BUBBLE,
-      base::string16(), /* no SAML email */
-      base::UTF8ToUTF16(error),
-      // This callback is never invoked.
-      // TODO(rogerta): Separate out the bubble API so we don't have to pass
-      // ignored |email| and |callback| params.
-      BrowserWindow::StartSyncCallback());
-}
-
-// static
 bool OneClickSigninHelper::HandleCrossAccountError(
     Profile* profile,
     const std::string& session_index,
@@ -1187,6 +1167,7 @@ bool OneClickSigninHelper::HandleCrossAccountError(
         profile, chrome::GetActiveDesktop());
     content::WebContents* contents =
         browser->tab_strip_model()->GetActiveWebContents();
+
     ConfirmEmailDialogDelegate::AskForConfirmation(
         contents,
         last_email,
@@ -1372,7 +1353,8 @@ void OneClickSigninHelper::DidStopLoading(
 
     // Redirect to the landing page and display an error popup.
     RedirectToNtpOrAppsPage(web_contents(), source_);
-    ShowSigninErrorBubble(browser, error_message_);
+    LoginUIServiceFactory::GetForProfile(profile)->
+        DisplayLoginResult(browser, base::UTF8ToUTF16(error_message_));
     CleanTransientState();
     return;
   }

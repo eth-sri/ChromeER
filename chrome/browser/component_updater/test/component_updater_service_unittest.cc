@@ -2,20 +2,22 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "chrome/browser/component_updater/test/component_updater_service_unittest.h"
+
 #include <vector>
 
-#include "chrome/browser/component_updater/test/component_updater_service_unittest.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/path_service.h"
 #include "base/run_loop.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/values.h"
-#include "chrome/browser/component_updater/component_updater_utils.h"
-#include "chrome/browser/component_updater/test/test_configurator.h"
-#include "chrome/browser/component_updater/test/test_installer.h"
+#include "chrome/browser/component_updater/component_updater_resource_throttle.h"
 #include "chrome/common/chrome_paths.h"
+#include "components/component_updater/component_updater_utils.h"
+#include "components/component_updater/test/test_configurator.h"
+#include "components/component_updater/test/test_installer.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/resource_controller.h"
 #include "content/public/browser/resource_request_info.h"
@@ -41,33 +43,18 @@ MockServiceObserver::MockServiceObserver() {
 MockServiceObserver::~MockServiceObserver() {
 }
 
-bool PartialMatch::Match(const std::string& actual) const {
-  return actual.find(expected_) != std::string::npos;
-}
-
-InterceptorFactory::InterceptorFactory()
-    : URLRequestPostInterceptorFactory(POST_INTERCEPT_SCHEME,
-                                       POST_INTERCEPT_HOSTNAME) {
-}
-
-InterceptorFactory::~InterceptorFactory() {
-}
-
-URLRequestPostInterceptor* InterceptorFactory::CreateInterceptor() {
-  return URLRequestPostInterceptorFactory::CreateInterceptor(
-      base::FilePath::FromUTF8Unsafe(POST_INTERCEPT_PATH));
-}
-
 ComponentUpdaterTest::ComponentUpdaterTest()
-    : test_config_(NULL),
+    : post_interceptor_(NULL),
+      test_config_(NULL),
       thread_bundle_(content::TestBrowserThreadBundle::IO_MAINLOOP) {
   // The component updater instance under test.
-  test_config_ = new TestConfigurator;
+  test_config_ = new TestConfigurator(
+      BrowserThread::GetBlockingPool()
+          ->GetSequencedTaskRunnerWithShutdownBehavior(
+              BrowserThread::GetBlockingPool()->GetSequenceToken(),
+              base::SequencedWorkerPool::SKIP_ON_SHUTDOWN),
+      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO));
   component_updater_.reset(ComponentUpdateServiceFactory(test_config_));
-
-  // The test directory is chrome/test/data/components.
-  PathService::Get(chrome::DIR_TEST_DATA, &test_data_dir_);
-  test_data_dir_ = test_data_dir_.AppendASCII("components");
 
   net::URLFetcher::SetEnableInterceptionForTests(true);
 }
@@ -78,7 +65,8 @@ ComponentUpdaterTest::~ComponentUpdaterTest() {
 
 void ComponentUpdaterTest::SetUp() {
   get_interceptor_.reset(new GetInterceptor);
-  interceptor_factory_.reset(new InterceptorFactory);
+  interceptor_factory_.reset(new InterceptorFactory(
+      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO)));
   post_interceptor_ = interceptor_factory_->CreateInterceptor();
   EXPECT_TRUE(post_interceptor_);
 }
@@ -95,7 +83,10 @@ ComponentUpdateService* ComponentUpdaterTest::component_updater() {
 
 // Makes the full path to a component updater test file.
 const base::FilePath ComponentUpdaterTest::test_file(const char* file) {
-  return test_data_dir_.AppendASCII(file);
+  base::FilePath path;
+  PathService::Get(base::DIR_SOURCE_ROOT, &path);
+  return path.AppendASCII("components").AppendASCII("test").AppendASCII("data")
+      .AppendASCII("component_updater").AppendASCII(file);
 }
 
 TestConfigurator* ComponentUpdaterTest::test_configurator() {
@@ -459,7 +450,13 @@ TEST_F(ComponentUpdaterTest, ProdVersionCheck) {
 //    nothing happens.
 //  - We make an on demand call.
 //  - This triggers a second loop, which has a reply that triggers an install.
-TEST_F(ComponentUpdaterTest, OnDemandUpdate) {
+#if defined(OS_LINUX)
+// http://crbug.com/396488
+#define MAYBE_OnDemandUpdate DISABLED_OnDemandUpdate
+#else
+#define MAYBE_OnDemandUpdate OnDemandUpdate
+#endif
+TEST_F(ComponentUpdaterTest, MAYBE_OnDemandUpdate) {
   MockServiceObserver observer;
   {
     InSequence seq;
@@ -1190,9 +1187,7 @@ content::ResourceThrottle* RequestTestResourceThrottle(
                                   NULL,
                                   &context);
 
-  content::ResourceThrottle* rt =
-      cus->GetOnDemandUpdater().GetOnDemandResourceThrottle(&url_request,
-                                                            crx_id);
+  content::ResourceThrottle* rt = GetOnDemandResourceThrottle(cus, crx_id);
   rt->set_controller_for_testing(controller);
   controller->SetThrottle(rt);
   return rt;

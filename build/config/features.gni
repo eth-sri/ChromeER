@@ -19,10 +19,12 @@ declare_args() {
   # Multicast DNS.
   enable_mdns = is_win || is_linux
 
-  enable_plugins = !is_android || !is_ios
+  enable_plugins = !is_android && !is_ios
 
   # Enables Native Client support.
-  enable_nacl = (!is_ios && !is_android)
+  # TODO(GYP) enable this when nacl works in GN.
+  enable_nacl = false
+  #enable_nacl = (!is_ios && !is_android)
 
   # If debug_devtools is set to true, JavaScript files for DevTools are stored
   # as is and loaded from disk. Otherwise, a concatenated file is stored in
@@ -162,3 +164,8 @@ enable_chromevox_next = false
 
 # Use brlapi from brltty for braille display support.
 use_brlapi = is_chromeos
+
+# Option controlling the use of GConf (the classic GNOME configuration
+# system).
+# TODO(GYP) also require !embedded to enable.
+use_gconf = is_linux && !is_chromeos

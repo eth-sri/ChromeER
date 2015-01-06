@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import os
 import unittest
 
 from auto_bisect import source_control as source_control_module
@@ -25,8 +26,11 @@ class BisectPerfRegressionTest(unittest.TestCase):
       bad_values: First list of numbers.
       good_values: Second list of numbers.
     """
-    # ConfidenceScore takes a list of lists but these lists are flattened.
-    confidence = bisect_perf_module.ConfidenceScore([bad_values], [good_values])
+    # ConfidenceScore takes a list of lists but these lists are flattened
+    # inside the function.
+    confidence = bisect_perf_module.ConfidenceScore(
+        [[v] for v in bad_values],
+        [[v] for v in good_values])
     self.assertEqual(score, confidence)
 
   def testConfidenceScore_ZeroConfidence(self):
@@ -45,10 +49,9 @@ class BisectPerfRegressionTest(unittest.TestCase):
     self._AssertConfidence(99.9, [1, 1, 1, 1], [1.2, 1.2, 1.2, 1.2])
     self._AssertConfidence(99.9, [1, 1, 1, 1], [1.01, 1.01, 1.01, 1.01])
 
-  def testConfidenceScore_ImbalancedSampleSize(self):
-    # The second set of numbers only contains one number, so confidence is low.
-    self._AssertConfidence(
-        80.0, [1.1, 1.2, 1.1, 1.2, 1.0, 1.3, 1.2, 1.3],[1.4])
+  def testConfidenceScore_UnbalancedSampleSize(self):
+    # The second set of numbers only contains one number, so confidence is 0.
+    self._AssertConfidence(0.0, [1.1, 1.2, 1.1, 1.2, 1.0, 1.3, 1.2], [1.4])
 
   def testConfidenceScore_EmptySample(self):
     # Confidence is zero if either or both samples are empty.
@@ -59,6 +62,25 @@ class BisectPerfRegressionTest(unittest.TestCase):
   def testConfidenceScore_FunctionalTestResults(self):
     self._AssertConfidence(80.0, [1, 1, 0, 1, 1, 1, 0, 1], [0, 0, 1, 0, 1, 0])
     self._AssertConfidence(99.9, [1, 1, 1, 1, 1, 1, 1, 1], [0, 0, 0, 0, 0, 0])
+
+  def testConfidenceScore_RealWorldCases(self):
+    """This method contains a set of data from actual bisect results.
+
+    The confidence scores asserted below were all copied from the actual
+    results, so the purpose of this test method is mainly to show what the
+    results for real cases are, and compare when we change the confidence
+    score function in the future.
+    """
+    self._AssertConfidence(80, [133, 130, 132, 132, 130, 129], [129, 129, 125])
+    self._AssertConfidence(99.5, [668, 667], [498, 498, 499])
+    self._AssertConfidence(80, [67, 68], [65, 65, 67])
+    self._AssertConfidence(0, [514], [514])
+    self._AssertConfidence(90, [616, 613, 607, 615], [617, 619, 619, 617])
+    self._AssertConfidence(0, [3.5, 5.8, 4.7, 3.5, 3.6], [2.8])
+    self._AssertConfidence(90, [3, 3, 3], [2, 2, 2, 3])
+    self._AssertConfidence(0, [1999004, 1999627], [223355])
+    self._AssertConfidence(90, [1040, 934, 961], [876, 875, 789])
+    self._AssertConfidence(90, [309, 305, 304], [302, 302, 299, 303, 298])
 
   def testParseDEPSStringManually(self):
     """Tests DEPS parsing."""
@@ -219,12 +241,34 @@ class BisectPerfRegressionTest(unittest.TestCase):
         bisect_options)
     bisect_instance = bisect_perf_module.BisectPerformanceMetrics(
         source_control, bisect_options)
+    bisect_instance.src_cwd = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), '..'))
     results = bisect_instance.Run(bisect_options.command,
                                   bisect_options.bad_revision,
                                   bisect_options.good_revision,
                                   bisect_options.metric)
     bisect_instance.FormatAndPrintResults(results)
 
+  def testSVNFindRev(self):
+    """Determine numerical SVN revision or Commit Position."""
+    options_dict = {
+      'debug_ignore_build': True,
+      'debug_ignore_sync': True,
+      'debug_ignore_perf_test': True,
+      'command': 'fake_command',
+      'metric': 'fake/metric',
+      'good_revision': 280000,
+      'bad_revision': 280005,
+    }
+    bisect_options = bisect_perf_module.BisectOptions.FromDict(options_dict)
+    source_control = source_control_module.DetermineAndCreateSourceControl(
+        bisect_options)
+
+    cp_git_rev = '7017a81991de983e12ab50dfc071c70e06979531'
+    self.assertEqual(291765, source_control.SVNFindRev(cp_git_rev))
+
+    svn_git_rev = 'e6db23a037cad47299a94b155b95eebd1ee61a58'
+    self.assertEqual(291467, source_control.SVNFindRev(svn_git_rev))
 
 if __name__ == '__main__':
   unittest.main()

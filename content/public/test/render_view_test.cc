@@ -176,8 +176,9 @@ void RenderViewTest::SetUp() {
   // ResourceBundle isn't initialized (since we have to use a diferent test
   // suite implementation than for content_unittests). For browser_tests, this
   // is already initialized.
-  if (!ResourceBundle::HasSharedInstance())
-    ResourceBundle::InitSharedInstanceWithLocale("en-US", NULL);
+  if (!ui::ResourceBundle::HasSharedInstance())
+    ui::ResourceBundle::InitSharedInstanceWithLocale(
+        "en-US", NULL, ui::ResourceBundle::LOAD_COMMON_RESOURCES);
 
   mock_process_.reset(new MockRenderProcess);
 
@@ -354,7 +355,7 @@ void RenderViewTest::Resize(gfx::Size new_size,
   params.screen_info = blink::WebScreenInfo();
   params.new_size = new_size;
   params.physical_backing_size = new_size;
-  params.overdraw_bottom_height = 0.f;
+  params.top_controls_layout_height = 0.f;
   params.resizer_rect = resizer_rect;
   params.is_fullscreen = is_fullscreen;
   scoped_ptr<IPC::Message> resize_message(new ViewMsg_Resize(0, params));

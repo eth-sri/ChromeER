@@ -22,6 +22,7 @@
         'mojo_js_bindings',
         'mojo_js_unittests',
         'mojo_message_generator',
+        'mojo_message_pipe_perftests',
         'mojo_public_application_unittests',
         'mojo_public_test_utils',
         'mojo_public_bindings_unittests',
@@ -51,6 +52,7 @@
       'type': 'none',
     },
     {
+      # GN version: //mojo/common/test:run_all_unittests
       'target_name': 'mojo_run_all_unittests',
       'type': 'static_library',
       'dependencies': [
@@ -108,7 +110,15 @@
         'embedder/platform_handle_utils_posix.cc',
         'embedder/platform_handle_utils_win.cc',
         'embedder/platform_handle_vector.h',
+        'embedder/platform_shared_buffer.h',
+        'embedder/platform_support.h',
         'embedder/scoped_platform_handle.h',
+        'embedder/simple_platform_shared_buffer.cc',
+        'embedder/simple_platform_shared_buffer.h',
+        'embedder/simple_platform_shared_buffer_posix.cc',
+        'embedder/simple_platform_shared_buffer_win.cc',
+        'embedder/simple_platform_support.cc',
+        'embedder/simple_platform_support.h',
         'system/channel.cc',
         'system/channel.h',
         'system/constants.h',
@@ -153,10 +163,6 @@
         'system/raw_channel.h',
         'system/raw_channel_posix.cc',
         'system/raw_channel_win.cc',
-        'system/raw_shared_buffer.cc',
-        'system/raw_shared_buffer.h',
-        'system/raw_shared_buffer_posix.cc',
-        'system/raw_shared_buffer_win.cc',
         'system/shared_buffer_dispatcher.cc',
         'system/shared_buffer_dispatcher.h',
         'system/simple_dispatcher.cc',
@@ -180,6 +186,7 @@
       }
     },
     {
+      # GN version: //mojo/system:mojo_system_unittests
       'target_name': 'mojo_system_unittests',
       'type': 'executable',
       'dependencies': [
@@ -191,6 +198,7 @@
       'sources': [
         'embedder/embedder_unittest.cc',
         'embedder/platform_channel_pair_posix_unittest.cc',
+        'embedder/simple_platform_shared_buffer_unittest.cc',
         'system/channel_unittest.cc',
         'system/core_unittest.cc',
         'system/core_test_base.cc',
@@ -200,12 +208,13 @@
         'system/local_data_pipe_unittest.cc',
         'system/memory_unittest.cc',
         'system/message_pipe_dispatcher_unittest.cc',
+        'system/message_pipe_test_utils.h',
+        'system/message_pipe_test_utils.cc',
         'system/message_pipe_unittest.cc',
         'system/multiprocess_message_pipe_unittest.cc',
         'system/options_validation_unittest.cc',
         'system/platform_handle_dispatcher_unittest.cc',
         'system/raw_channel_unittest.cc',
-        'system/raw_shared_buffer_unittest.cc',
         'system/remote_message_pipe_unittest.cc',
         'system/run_all_unittests.cc',
         'system/shared_buffer_dispatcher_unittest.cc',
@@ -219,6 +228,28 @@
       ],
     },
     {
+      # GN version: //mojo/system:mojo_message_pipe_perftests
+      'target_name': 'mojo_message_pipe_perftests',
+      'type': 'executable',
+      'dependencies': [
+        '../base/base.gyp:base',
+        '../base/base.gyp:test_support_base',
+        '../base/base.gyp:test_support_perf',
+        '../testing/gtest.gyp:gtest',
+        'mojo_common_test_support',
+        'mojo_environment_chromium',
+        'mojo_system_impl',
+      ],
+      'sources': [
+        'system/message_pipe_perftest.cc',
+        'system/message_pipe_test_utils.h',
+        'system/message_pipe_test_utils.cc',
+        'system/test_utils.cc',
+        'system/test_utils.h',
+      ],
+    },
+    {
+      # GN version: //mojo/common/test:test_support_impl
       'target_name': 'mojo_test_support_impl',
       'type': 'static_library',
       'dependencies': [
@@ -260,6 +291,7 @@
       ],
     },
     {
+      # GN version: //mojo/common/test:test_support
       'target_name': 'mojo_common_test_support',
       'type': 'static_library',
       'dependencies': [
@@ -277,6 +309,7 @@
       ],
     },
     {
+      # GN version: //mojo/common:mojo_common_unittests
       'target_name': 'mojo_common_unittests',
       'type': 'executable',
       'dependencies': [
@@ -342,13 +375,82 @@
       ],
     },
     {
+      # GN version: //mojo/services/gles2:interfaces (for files generated from
+      # the mojom file)
+      # GN version: //mojo/services/gles2:bindings
+      'target_name': 'mojo_gles2_bindings',
+      'type': 'static_library',
+      'sources': [
+        'services/gles2/command_buffer.mojom',
+        'services/gles2/command_buffer_type_conversions.cc',
+        'services/gles2/command_buffer_type_conversions.h',
+        'services/gles2/mojo_buffer_backing.cc',
+        'services/gles2/mojo_buffer_backing.h',
+      ],
+      'includes': [ 'public/tools/bindings/mojom_bindings_generator.gypi' ],
+      'export_dependent_settings': [
+        'mojo_cpp_bindings',
+      ],
+      'dependencies': [
+        'mojo_cpp_bindings',
+        '../gpu/gpu.gyp:command_buffer_common',
+      ],
+    },
+    {
+      # GN version: //mojo/gles2
+      'target_name': 'mojo_gles2_impl',
+      'type': '<(component)',
+      'dependencies': [
+        '../base/base.gyp:base',
+        '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
+        '../gpu/gpu.gyp:command_buffer_client',
+        '../gpu/gpu.gyp:command_buffer_common',
+        '../gpu/gpu.gyp:gles2_cmd_helper',
+        '../gpu/gpu.gyp:gles2_implementation',
+        'mojo_environment_chromium',
+        'mojo_gles2_bindings',
+        '<(mojo_system_for_component)',
+      ],
+      'defines': [
+        'GLES2_USE_MOJO',
+        'GL_GLEXT_PROTOTYPES',
+        'MOJO_GLES2_IMPLEMENTATION',
+        'MOJO_GLES2_IMPL_IMPLEMENTATION',
+        'MOJO_USE_GLES2_IMPL'
+      ],
+      'direct_dependent_settings': {
+        'defines': [
+          'GLES2_USE_MOJO',
+        ],
+      },
+      'export_dependent_settings': [
+        'mojo_gles2_bindings',
+      ],
+      'sources': [
+        'gles2/command_buffer_client_impl.cc',
+        'gles2/command_buffer_client_impl.h',
+        'gles2/gles2_impl_export.h',
+        'gles2/gles2_impl.cc',
+        'gles2/gles2_context.cc',
+        'gles2/gles2_context.h',
+      ],
+      'all_dependent_settings': {
+        # Ensures that dependent projects import the core functions on Windows.
+        'defines': ['MOJO_USE_GLES2_IMPL'],
+      }
+    },
+    {
+     # GN version: //mojo/public/cpp/application:chromium
      'target_name': 'mojo_application_chromium',
      'type': 'static_library',
      'sources': [
-       'public/cpp/application/lib/application_impl_chromium.cc',
+       'public/cpp/application/lib/application_runner_chromium.cc',
+       'public/cpp/application/application_runner_chromium.h',
       ],
       'dependencies': [
         'mojo_application_base',
+        'mojo_common_lib',
+        'mojo_environment_chromium',
        ],
       'export_dependent_settings': [
         'mojo_application_base',
@@ -408,8 +510,9 @@
           ],
           'sources': [
             'android/javatests/src/org/chromium/mojo/MojoTestCase.java',
+            'android/javatests/src/org/chromium/mojo/bindings/ValidationTestUtil.java',
             'android/system/src/org/chromium/mojo/system/impl/CoreImpl.java',
-            'services/native_viewport/android/src/org/chromium/mojo/NativeViewportAndroid.java',
+            'services/native_viewport/android/src/org/chromium/mojo/PlatformViewportAndroid.java',
             'shell/android/apk/src/org/chromium/mojo_shell_apk/MojoMain.java',
           ],
           'variables': {
@@ -462,6 +565,7 @@
             '../base/base.gyp:test_support_base',
             'libmojo_system_java',
             'mojo_jni_headers',
+            'mojo_public_bindings_test_utils',
           ],
           'defines': [
             'UNIT_TEST'  # As exported from testing/gtest.gyp:gtest.
@@ -470,6 +574,8 @@
             'android/javatests/mojo_test_case.cc',
             'android/javatests/mojo_test_case.h',
             'android/javatests/init_library.cc',
+            'android/javatests/validation_test_util.cc',
+            'android/javatests/validation_test_util.h',
           ],
         },
         {

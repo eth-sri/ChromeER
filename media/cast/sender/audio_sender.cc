@@ -16,23 +16,12 @@ namespace cast {
 namespace {
 
 const int kNumAggressiveReportsSentAtStart = 100;
-const int kMinSchedulingDelayMs = 1;
 
 // TODO(miu): This should be specified in AudioSenderConfig, but currently it is
 // fixed to 100 FPS (i.e., 10 ms per frame), and AudioEncoder assumes this as
 // well.
 const int kAudioFrameRate = 100;
 
-// Helper function to compute the maximum unacked audio frames that is sent.
-int GetMaxUnackedFrames(base::TimeDelta target_delay) {
-  // As long as it doesn't go over |kMaxUnackedFrames|, it is okay to send more
-  // audio data than the target delay would suggest. Audio packets are tiny and
-  // receiver has the ability to drop any one of the packets.
-  // We send up to three times of the target delay of audio frames.
-  int frames =
-      1 + 3 * target_delay * kAudioFrameRate / base::TimeDelta::FromSeconds(1);
-  return std::min(kMaxUnackedFrames, frames);
-}
 }  // namespace
 
 AudioSender::AudioSender(scoped_refptr<CastEnvironment> cast_environment,
@@ -43,16 +32,12 @@ AudioSender::AudioSender(scoped_refptr<CastEnvironment> cast_environment,
         transport_sender,
         base::TimeDelta::FromMilliseconds(audio_config.rtcp_interval),
         audio_config.frequency,
-        audio_config.ssrc),
-      target_playout_delay_(audio_config.target_playout_delay),
-      max_unacked_frames_(GetMaxUnackedFrames(target_playout_delay_)),
+        audio_config.ssrc,
+        kAudioFrameRate * 2.0, // We lie to increase max outstanding frames.
+        audio_config.target_playout_delay),
       configured_encoder_bitrate_(audio_config.bitrate),
-      num_aggressive_rtcp_reports_sent_(0),
-      last_sent_frame_id_(0),
-      latest_acked_frame_id_(0),
-      duplicate_ack_counter_(0),
-      cast_initialization_status_(STATUS_AUDIO_UNINITIALIZED),
       weak_factory_(this) {
+  cast_initialization_status_ = STATUS_AUDIO_UNINITIALIZED;
   VLOG(1) << "max_unacked_frames " << max_unacked_frames_;
   DCHECK_GT(max_unacked_frames_, 0);
 
@@ -86,7 +71,6 @@ AudioSender::AudioSender(scoped_refptr<CastEnvironment> cast_environment,
       base::Bind(&AudioSender::OnReceivedCastFeedback,
                  weak_factory_.GetWeakPtr()),
       base::Bind(&AudioSender::OnReceivedRtt, weak_factory_.GetWeakPtr()));
-  memset(frame_id_to_rtp_timestamp_, 0, sizeof(frame_id_to_rtp_timestamp_));
 }
 
 AudioSender::~AudioSender() {}
@@ -100,7 +84,7 @@ void AudioSender::InsertAudio(scoped_ptr<AudioBus> audio_bus,
   }
   DCHECK(audio_encoder_.get()) << "Invalid internal state";
 
-  if (AreTooManyFramesInFlight()) {
+  if (ShouldDropNextFrame(recorded_time)) {
     VLOG(1) << "Dropping frame due to too many frames currently in-flight.";
     return;
   }
@@ -130,12 +114,10 @@ void AudioSender::SendEncodedAudioFrame(
       frame_id, static_cast<int>(encoded_frame->data.size()),
       encoded_frame->dependency == EncodedFrame::KEY,
       configured_encoder_bitrate_);
-  // Only use lowest 8 bits as key.
-  frame_id_to_rtp_timestamp_[frame_id & 0xff] = encoded_frame->rtp_timestamp;
 
-  DCHECK(!encoded_frame->reference_time.is_null());
-  rtp_timestamp_helper_.StoreLatestTime(encoded_frame->reference_time,
-                                        encoded_frame->rtp_timestamp);
+  RecordLatestFrameTimestamps(frame_id,
+                              encoded_frame->reference_time,
+                              encoded_frame->rtp_timestamp);
 
   // At the start of the session, it's important to send reports before each
   // frame so that the receiver can properly compute playout times.  The reason
@@ -152,38 +134,11 @@ void AudioSender::SendEncodedAudioFrame(
     SendRtcpReport(is_last_aggressive_report);
   }
 
-  transport_sender_->InsertCodedAudioFrame(*encoded_frame);
-}
-
-void AudioSender::ScheduleNextResendCheck() {
-  DCHECK(cast_environment_->CurrentlyOn(CastEnvironment::MAIN));
-  DCHECK(!last_send_time_.is_null());
-  base::TimeDelta time_to_next =
-      last_send_time_ - cast_environment_->Clock()->NowTicks() +
-      target_playout_delay_;
-  time_to_next = std::max(
-      time_to_next, base::TimeDelta::FromMilliseconds(kMinSchedulingDelayMs));
-  cast_environment_->PostDelayedTask(
-      CastEnvironment::MAIN,
-      FROM_HERE,
-      base::Bind(&AudioSender::ResendCheck, weak_factory_.GetWeakPtr()),
-      time_to_next);
-}
-
-void AudioSender::ResendCheck() {
-  DCHECK(cast_environment_->CurrentlyOn(CastEnvironment::MAIN));
-  DCHECK(!last_send_time_.is_null());
-  const base::TimeDelta time_since_last_send =
-      cast_environment_->Clock()->NowTicks() - last_send_time_;
-  if (time_since_last_send > target_playout_delay_) {
-    if (latest_acked_frame_id_ == last_sent_frame_id_) {
-      // Last frame acked, no point in doing anything
-    } else {
-      VLOG(1) << "ACK timeout; last acked frame: " << latest_acked_frame_id_;
-      ResendForKickstart();
-    }
+  if (send_target_playout_delay_) {
+    encoded_frame->new_playout_delay_ms =
+        target_playout_delay_.InMilliseconds();
   }
-  ScheduleNextResendCheck();
+  transport_sender_->InsertCodedAudioFrame(*encoded_frame);
 }
 
 void AudioSender::OnReceivedCastFeedback(const RtcpCastMessage& cast_feedback) {
@@ -221,21 +176,14 @@ void AudioSender::OnReceivedCastFeedback(const RtcpCastMessage& cast_feedback) {
     // Only count duplicated ACKs if there is no NACK request in between.
     // This is to avoid aggresive resend.
     duplicate_ack_counter_ = 0;
-
-    // A NACK is also used to cancel pending re-transmissions.
-    transport_sender_->ResendPackets(
-        true, cast_feedback.missing_frames_and_packets, false, min_rtt_);
   }
 
-  const base::TimeTicks now = cast_environment_->Clock()->NowTicks();
-
-  const RtpTimestamp rtp_timestamp =
-      frame_id_to_rtp_timestamp_[cast_feedback.ack_frame_id & 0xff];
-  cast_environment_->Logging()->InsertFrameEvent(now,
-                                                 FRAME_ACK_RECEIVED,
-                                                 AUDIO_EVENT,
-                                                 rtp_timestamp,
-                                                 cast_feedback.ack_frame_id);
+  cast_environment_->Logging()->InsertFrameEvent(
+      cast_environment_->Clock()->NowTicks(),
+      FRAME_ACK_RECEIVED,
+      AUDIO_EVENT,
+      GetRecordedRtpTimestamp(cast_feedback.ack_frame_id),
+      cast_feedback.ack_frame_id);
 
   const bool is_acked_out_of_order =
       static_cast<int32>(cast_feedback.ack_frame_id -
@@ -244,50 +192,39 @@ void AudioSender::OnReceivedCastFeedback(const RtcpCastMessage& cast_feedback) {
           << " for frame " << cast_feedback.ack_frame_id;
   if (!is_acked_out_of_order) {
     // Cancel resends of acked frames.
-    MissingFramesAndPacketsMap missing_frames_and_packets;
-    PacketIdSet missing;
+    std::vector<uint32> cancel_sending_frames;
     while (latest_acked_frame_id_ != cast_feedback.ack_frame_id) {
       latest_acked_frame_id_++;
-      missing_frames_and_packets[latest_acked_frame_id_] = missing;
+      cancel_sending_frames.push_back(latest_acked_frame_id_);
     }
-    transport_sender_->ResendPackets(
-        true, missing_frames_and_packets, true, base::TimeDelta());
+    transport_sender_->CancelSendingFrames(ssrc_, cancel_sending_frames);
     latest_acked_frame_id_ = cast_feedback.ack_frame_id;
   }
 }
 
-bool AudioSender::AreTooManyFramesInFlight() const {
+bool AudioSender::ShouldDropNextFrame(base::TimeTicks capture_time) const {
   DCHECK(cast_environment_->CurrentlyOn(CastEnvironment::MAIN));
   int frames_in_flight = 0;
+  base::TimeDelta duration_in_flight;
   if (!last_send_time_.is_null()) {
-    frames_in_flight +=
+    frames_in_flight =
         static_cast<int32>(last_sent_frame_id_ - latest_acked_frame_id_);
+    if (frames_in_flight > 0) {
+      const uint32 oldest_unacked_frame_id = latest_acked_frame_id_ + 1;
+      duration_in_flight =
+          capture_time - GetRecordedReferenceTime(oldest_unacked_frame_id);
+    }
   }
   VLOG(2) << frames_in_flight
           << " frames in flight; last sent: " << last_sent_frame_id_
-          << " latest acked: " << latest_acked_frame_id_;
-  return frames_in_flight >= max_unacked_frames_;
-}
-
-void AudioSender::ResendForKickstart() {
-  DCHECK(cast_environment_->CurrentlyOn(CastEnvironment::MAIN));
-  DCHECK(!last_send_time_.is_null());
-  VLOG(1) << "Resending last packet of frame " << last_sent_frame_id_
-          << " to kick-start.";
-  // Send the first packet of the last encoded frame to kick start
-  // retransmission. This gives enough information to the receiver what
-  // packets and frames are missing.
-  MissingFramesAndPacketsMap missing_frames_and_packets;
-  PacketIdSet missing;
-  missing.insert(kRtcpCastLastPacket);
-  missing_frames_and_packets.insert(
-      std::make_pair(last_sent_frame_id_, missing));
-  last_send_time_ = cast_environment_->Clock()->NowTicks();
-
-  // Sending this extra packet is to kick-start the session. There is
-  // no need to optimize re-transmission for this case.
-  transport_sender_->ResendPackets(
-      true, missing_frames_and_packets, false, min_rtt_);
+          << "; latest acked: " << latest_acked_frame_id_
+          << "; duration in flight: "
+          << duration_in_flight.InMicroseconds() << " usec ("
+          << (target_playout_delay_ > base::TimeDelta() ?
+                  100 * duration_in_flight / target_playout_delay_ :
+                  kint64max) << "%)";
+  return frames_in_flight >= max_unacked_frames_ ||
+      duration_in_flight >= target_playout_delay_;
 }
 
 }  // namespace cast

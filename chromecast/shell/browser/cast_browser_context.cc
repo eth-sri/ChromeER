@@ -117,12 +117,17 @@ content::BrowserPluginGuestManager* CastBrowserContext::GetGuestManager() {
   return NULL;
 }
 
-quota::SpecialStoragePolicy* CastBrowserContext::GetSpecialStoragePolicy() {
+storage::SpecialStoragePolicy* CastBrowserContext::GetSpecialStoragePolicy() {
   NOTIMPLEMENTED();
   return NULL;
 }
 
 content::PushMessagingService* CastBrowserContext::GetPushMessagingService() {
+  NOTIMPLEMENTED();
+  return NULL;
+}
+
+content::SSLHostStateDelegate* CastBrowserContext::GetSSLHostStateDelegate() {
   NOTIMPLEMENTED();
   return NULL;
 }

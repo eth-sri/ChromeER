@@ -17,12 +17,29 @@ using ::testing::_;
 using ::testing::AnyNumber;
 using ::testing::Assign;
 using ::testing::Invoke;
+using ::testing::InvokeWithoutArgs;
 using ::testing::NiceMock;
 using ::testing::Return;
 using ::testing::SaveArg;
 
 static const int kNumConfigs = 3;
 static const int kNumBuffersInOneConfig = 5;
+
+// Use anonymous namespace here to prevent the actions to be defined multiple
+// times across multiple test files. Sadly we can't use static for them.
+namespace {
+
+ACTION_P3(ExecuteCallbackWithVerifier, decryptor, done_cb, verifier) {
+  // verifier must be called first since |done_cb| call will invoke it as well.
+  verifier->RecordACalled();
+  arg0.Run(decryptor, done_cb);
+}
+
+ACTION_P(ReportCallback, verifier) {
+  verifier->RecordBCalled();
+}
+
+}  // namespace
 
 namespace media {
 
@@ -93,6 +110,7 @@ class VideoFrameStreamTest
 
   MOCK_METHOD1(OnNewSpliceBuffer, void(base::TimeDelta));
   MOCK_METHOD1(SetDecryptorReadyCallback, void(const media::DecryptorReadyCB&));
+  MOCK_METHOD1(DecryptorSet, void(bool));
 
   void OnStatistics(const PipelineStatistics& statistics) {
     total_bytes_decoded_ += statistics.video_bytes_decoded;
@@ -197,6 +215,17 @@ class VideoFrameStreamTest
     DECODER_RESET
   };
 
+  void ExpectDecryptorNotification() {
+    EXPECT_CALL(*this, SetDecryptorReadyCallback(_))
+        .WillRepeatedly(ExecuteCallbackWithVerifier(
+            decryptor_.get(),
+            base::Bind(&VideoFrameStreamTest::DecryptorSet,
+                       base::Unretained(this)),
+            &verifier_));
+    EXPECT_CALL(*this, DecryptorSet(true))
+        .WillRepeatedly(ReportCallback(&verifier_));
+  }
+
   void EnterPendingState(PendingState state) {
     DCHECK_NE(state, NOT_PENDING);
     switch (state) {
@@ -219,15 +248,13 @@ class VideoFrameStreamTest
         break;
 
       case DECRYPTOR_NO_KEY:
-        EXPECT_CALL(*this, SetDecryptorReadyCallback(_))
-            .WillRepeatedly(RunCallback<0>(decryptor_.get()));
+        ExpectDecryptorNotification();
         has_no_key_ = true;
         ReadOneFrame();
         break;
 
       case DECODER_INIT:
-        EXPECT_CALL(*this, SetDecryptorReadyCallback(_))
-            .WillRepeatedly(RunCallback<0>(decryptor_.get()));
+        ExpectDecryptorNotification();
         decoder_->HoldNextInit();
         InitializeVideoFrameStream();
         break;
@@ -332,6 +359,8 @@ class VideoFrameStreamTest
   // Decryptor has no key to decrypt a frame.
   bool has_no_key_;
 
+  CallbackPairChecker verifier_;
+
  private:
   DISALLOW_COPY_AND_ASSIGN(VideoFrameStreamTest);
 };
@@ -343,6 +372,7 @@ INSTANTIATE_TEST_CASE_P(
         VideoFrameStreamTestParams(false, 0, 1),
         VideoFrameStreamTestParams(false, 3, 1),
         VideoFrameStreamTestParams(false, 7, 1)));
+
 INSTANTIATE_TEST_CASE_P(
     Encrypted,
     VideoFrameStreamTest,
@@ -459,8 +489,44 @@ TEST_P(VideoFrameStreamTest, Read_BlockedDemuxerAndDecoder) {
   EXPECT_FALSE(pending_read_);
 }
 
-// No Reset() before initialization is successfully completed.
+TEST_P(VideoFrameStreamTest, Read_DuringEndOfStreamDecode) {
+  // Test applies only when the decoder allows multiple parallel requests, and
+  // they are not satisfied in a single batch.
+  if (GetParam().parallel_decoding == 1 || GetParam().decoding_delay != 0)
+    return;
 
+  Initialize();
+  decoder_->HoldDecode();
+
+  // Read all of the frames up to end of stream. Since parallel decoding is
+  // enabled, the end of stream buffer will be sent to the decoder immediately,
+  // but we don't satisfy it yet.
+  for (int configuration = 0; configuration < kNumConfigs; configuration++) {
+    for (int frame = 0; frame < kNumBuffersInOneConfig; frame++) {
+      ReadOneFrame();
+      while (pending_read_) {
+        decoder_->SatisfySingleDecode();
+        message_loop_.RunUntilIdle();
+      }
+    }
+  }
+
+  // Read() again. The callback must be delayed until the decode completes.
+  ReadOneFrame();
+  ASSERT_TRUE(pending_read_);
+
+  // Satisfy decoding of the end of stream buffer. The read should complete.
+  decoder_->SatisfySingleDecode();
+  message_loop_.RunUntilIdle();
+  ASSERT_FALSE(pending_read_);
+  EXPECT_EQ(last_read_status_, VideoFrameStream::OK);
+
+  // The read output should indicate end of stream.
+  ASSERT_TRUE(frame_read_.get());
+  EXPECT_TRUE(frame_read_->end_of_stream());
+}
+
+// No Reset() before initialization is successfully completed.
 TEST_P(VideoFrameStreamTest, Reset_AfterInitialization) {
   Initialize();
   Reset();

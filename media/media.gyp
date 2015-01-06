@@ -12,12 +12,11 @@
     # detection of ABI mismatches and prevents silent errors.
     'linux_link_pulseaudio%': 0,
     'conditions': [
-      ['OS=="android"', {
-        # Android doesn't use ffmpeg.
+      ['OS=="android" or OS=="ios"', {
+        # Android and iOS don't use ffmpeg or libvpx.
         'media_use_ffmpeg%': 0,
-        # Android doesn't use libvpx.
         'media_use_libvpx%': 0,
-      }, {  # 'OS!="android"'
+      }, {  # 'OS!="android" and OS!="ios"'
         'media_use_ffmpeg%': 1,
         'media_use_libvpx%': 1,
       }],
@@ -48,6 +47,7 @@
   ],
   'targets': [
     {
+      # GN version: //media
       'target_name': 'media',
       'type': '<(component)',
       'dependencies': [
@@ -57,6 +57,7 @@
         '../crypto/crypto.gyp:crypto',
         '../gpu/gpu.gyp:command_buffer_common',
         '../skia/skia.gyp:skia',
+        '../third_party/libyuv/libyuv.gyp:libyuv',
         '../third_party/opus/opus.gyp:opus',
         '../ui/events/events.gyp:events_base',
         '../ui/gfx/gfx.gyp:gfx',
@@ -278,8 +279,6 @@
         'base/demuxer_stream.h',
         'base/djb2.cc',
         'base/djb2.h',
-        'base/filter_collection.cc',
-        'base/filter_collection.h',
         'base/keyboard_event_counter.cc',
         'base/keyboard_event_counter.h',
         'base/media.cc',
@@ -304,6 +303,8 @@
         'base/player_tracker.h',
         'base/ranges.cc',
         'base/ranges.h',
+        'base/renderer.cc',
+        'base/renderer.h',
         'base/sample_format.cc',
         'base/sample_format.h',
         'base/scoped_histogram_timer.h',
@@ -418,6 +419,8 @@
         'filters/in_memory_url_protocol.h',
         'filters/opus_audio_decoder.cc',
         'filters/opus_audio_decoder.h',
+        'filters/renderer_impl.cc',
+        'filters/renderer_impl.h',
         'filters/skcanvas_video_renderer.cc',
         'filters/skcanvas_video_renderer.h',
         'filters/source_buffer_platform.cc',
@@ -655,11 +658,6 @@
           'sources': [
             'filters/h264_bitstream_buffer.cc',
             'filters/h264_bitstream_buffer.h',
-          ],
-        }],
-        ['OS!="ios"', {
-          'dependencies': [
-            '../third_party/libyuv/libyuv.gyp:libyuv',
           ],
         }],
         ['use_alsa==1', {
@@ -927,6 +925,7 @@
             'filters/h264_to_annex_b_bitstream_converter.h',
             'formats/mp2t/es_adapter_video.cc',
             'formats/mp2t/es_adapter_video.h',
+            'formats/mp2t/es_parser.cc',
             'formats/mp2t/es_parser.h',
             'formats/mp2t/es_parser_adts.cc',
             'formats/mp2t/es_parser_adts.h',
@@ -973,18 +972,10 @@
             'formats/mpeg/mpeg_audio_stream_parser_base.cc',
             'formats/mpeg/mpeg_audio_stream_parser_base.h',
           ],
-          'conditions': [
-            ['enable_mpeg2ts_stream_parser==1', {
-              'defines': [
-                'ENABLE_MPEG2TS_STREAM_PARSER',
-              ],
-            }],
-          ],
         }],
         ['target_arch=="ia32" or target_arch=="x64"', {
           'dependencies': [
             'media_asm',
-            'media_mmx',
             'media_sse2',
           ],
           'sources': [
@@ -1000,6 +991,7 @@
       ],
     },
     {
+      # GN version: //media:media_unittests
       'target_name': 'media_unittests',
       'type': '<(gtest_target_type)',
       'dependencies': [
@@ -1130,6 +1122,7 @@
         'filters/in_memory_url_protocol_unittest.cc',
         'filters/pipeline_integration_test.cc',
         'filters/pipeline_integration_test_base.cc',
+        'filters/renderer_impl_unittest.cc',
         'filters/skcanvas_video_renderer_unittest.cc',
         'filters/source_buffer_stream_unittest.cc',
         'filters/video_decoder_selector_unittest.cc',
@@ -1253,7 +1246,10 @@
             'formats/common/stream_parser_test_base.cc',
             'formats/common/stream_parser_test_base.h',
             'formats/mp2t/es_adapter_video_unittest.cc',
+            'formats/mp2t/es_parser_adts_unittest.cc',
             'formats/mp2t/es_parser_h264_unittest.cc',
+            'formats/mp2t/es_parser_test_base.cc',
+            'formats/mp2t/es_parser_test_base.h',
             'formats/mp2t/mp2t_stream_parser_unittest.cc',
             'formats/mp4/aac_unittest.cc',
             'formats/mp4/avc_unittest.cc',
@@ -1264,11 +1260,6 @@
             'formats/mp4/track_run_iterator_unittest.cc',
             'formats/mpeg/adts_stream_parser_unittest.cc',
             'formats/mpeg/mp3_stream_parser_unittest.cc',
-          ],
-        }],
-        ['enable_mpeg2ts_stream_parser==1', {
-          'defines': [
-            'ENABLE_MPEG2TS_STREAM_PARSER',
           ],
         }],
         # TODO(wolenetz): Fix size_t to int truncations in win64. See
@@ -1284,6 +1275,7 @@
       ],
     },
     {
+      # GN version: //media:media_perftests
       'target_name': 'media_perftests',
       'type': '<(gtest_target_type)',
       'dependencies': [
@@ -1335,6 +1327,7 @@
       ],
     },
     {
+      # GN version: //media:test_support
       'target_name': 'media_test_support',
       'type': 'static_library',
       'dependencies': [
@@ -1383,6 +1376,7 @@
       # Minimal target for NaCl and other renderer side media clients which
       # only need to send audio data across the shared memory to the browser
       # process.
+      # GN version: //media:shared_memory_support
       'target_name': 'shared_memory_support',
       'type': '<(component)',
       'dependencies': [
@@ -1417,7 +1411,6 @@
           'type': 'static_library',
           'sources': [
             'base/simd/convert_rgb_to_yuv_ssse3.asm',
-            'base/simd/convert_yuv_to_rgb_mmx.asm',
             'base/simd/convert_yuv_to_rgb_sse.asm',
             'base/simd/convert_yuva_to_argb_mmx.asm',
             'base/simd/empty_register_state_mmx.asm',
@@ -1442,7 +1435,7 @@
                 'yasm_flags': ['-DARCH_X86_64'],
               },
             }],
-            ['OS=="mac"', {
+            ['OS=="mac" or OS=="ios"', {
               'variables': {
                 'yasm_flags': [
                   '-DPREFIX',
@@ -1496,22 +1489,6 @@
           'msvs_2010_disable_uldi_when_referenced': 1,
           'includes': [
             '../third_party/yasm/yasm_compile.gypi',
-          ],
-        },
-        {
-          'target_name': 'media_mmx',
-          'type': 'static_library',
-          'cflags': [
-            '-mmmx',
-          ],
-          'defines': [
-            'MEDIA_IMPLEMENTATION',
-          ],
-          'include_dirs': [
-            '..',
-          ],
-          'sources': [
-            'base/simd/filter_yuv_mmx.cc',
           ],
         },
         {
@@ -1706,6 +1683,7 @@
     ['media_use_ffmpeg==1', {
       'targets': [
         {
+          # GN version: //media:ffmpeg_unittests
           'target_name': 'ffmpeg_unittests',
           'type': 'executable',
           'dependencies': [
@@ -1722,6 +1700,7 @@
           ],
         },
         {
+          # GN version: //media:ffmpeg_regression_tests
           'target_name': 'ffmpeg_regression_tests',
           'type': 'executable',
           'dependencies': [

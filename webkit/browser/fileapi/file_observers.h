@@ -6,11 +6,11 @@
 #define WEBKIT_BROWSER_FILEAPI_FILE_OBSERVERS_H_
 
 #include "base/basictypes.h"
-#include "webkit/browser/webkit_storage_browser_export.h"
+#include "webkit/browser/storage_browser_export.h"
 
 // TODO(kinuko): Split this file into per-observer multiple files.
 
-namespace fileapi {
+namespace storage {
 
 class FileSystemURL;
 
@@ -27,7 +27,7 @@ class FileSystemURL;
 //
 // OnUpdate() is called each time the |url| is updated but works only for
 // sandboxed files (where usage is tracked).
-class WEBKIT_STORAGE_BROWSER_EXPORT FileUpdateObserver {
+class STORAGE_EXPORT FileUpdateObserver {
  public:
   FileUpdateObserver() {}
   virtual ~FileUpdateObserver() {}
@@ -44,7 +44,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileUpdateObserver {
 // OnAccess is called whenever an operation reads file contents or metadata.
 // (It is called only once per operation regardless of whether the operation
 // is recursive or not)
-class WEBKIT_STORAGE_BROWSER_EXPORT FileAccessObserver {
+class STORAGE_EXPORT FileAccessObserver {
  public:
   FileAccessObserver() {}
   virtual ~FileAccessObserver() {}
@@ -60,7 +60,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileAccessObserver {
 // removed or modified.  For recursive operations each method is called for
 // each subdirectory/subfile.  Currently ChangeObserver is only supported
 // by the local sandbox file system.
-class WEBKIT_STORAGE_BROWSER_EXPORT FileChangeObserver {
+class STORAGE_EXPORT FileChangeObserver {
  public:
   FileChangeObserver() {}
   virtual ~FileChangeObserver() {}
@@ -78,6 +78,6 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileChangeObserver {
   DISALLOW_COPY_AND_ASSIGN(FileChangeObserver);
 };
 
-}  // namespace fileapi
+}  // namespace storage
 
 #endif  // WEBKIT_BROWSER_FILEAPI_FILE_OBSERVERS_H_

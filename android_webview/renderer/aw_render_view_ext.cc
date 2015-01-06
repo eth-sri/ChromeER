@@ -134,7 +134,7 @@ void PopulateHitTestData(const GURL& absolute_link_url,
     data->extra_data_for_type = data->img_src.possibly_invalid_spec();
   } else if (is_editable) {
     data->type = AwHitTestData::EDIT_TEXT_TYPE;
-    DCHECK(data->extra_data_for_type.length() == 0);
+    DCHECK_EQ(0u, data->extra_data_for_type.length());
   }
 }
 
@@ -161,7 +161,6 @@ bool AwRenderViewExt::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(AwViewMsg_ResetScrollAndScaleState,
                         OnResetScrollAndScaleState)
     IPC_MESSAGE_HANDLER(AwViewMsg_SetInitialPageScale, OnSetInitialPageScale)
-    IPC_MESSAGE_HANDLER(AwViewMsg_SetFixedLayoutSize, OnSetFixedLayoutSize)
     IPC_MESSAGE_HANDLER(AwViewMsg_SetBackgroundColor, OnSetBackgroundColor)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
@@ -306,12 +305,6 @@ void AwRenderViewExt::OnSetInitialPageScale(double page_scale_factor) {
     return;
   render_view()->GetWebView()->setInitialPageScaleOverride(
       page_scale_factor);
-}
-
-void AwRenderViewExt::OnSetFixedLayoutSize(const gfx::Size& size) {
-  if (!render_view() || !render_view()->GetWebView())
-    return;
-  render_view()->GetWebView()->setFixedLayoutSize(size);
 }
 
 void AwRenderViewExt::OnSetBackgroundColor(SkColor c) {

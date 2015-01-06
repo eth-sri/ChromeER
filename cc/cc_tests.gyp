@@ -19,6 +19,7 @@
       'base/region_unittest.cc',
       'base/rolling_time_delta_history_unittest.cc',
       'base/scoped_ptr_vector_unittest.cc',
+      'base/simple_enclosed_region_unittest.cc',
       'base/tiling_data_unittest.cc',
       'base/unique_notifier_unittest.cc',
       'base/util_unittest.cc',
@@ -30,6 +31,7 @@
       'layers/delegated_frame_provider_unittest.cc',
       'layers/delegated_frame_resource_collection_unittest.cc',
       'layers/delegated_renderer_layer_impl_unittest.cc',
+      'layers/delegated_renderer_layer_unittest.cc',
       'layers/heads_up_display_unittest.cc',
       'layers/heads_up_display_layer_impl_unittest.cc',
       'layers/io_surface_layer_impl_unittest.cc',
@@ -250,6 +252,7 @@
       'type': '<(gtest_target_type)',
       'dependencies': [
         '../base/base.gyp:test_support_base',
+        '../gpu/command_buffer/command_buffer.gyp:gles2_utils',
         '../gpu/gpu.gyp:gpu',
         '../gpu/gpu.gyp:gpu_unittest_utils',
         '../media/media.gyp:media',
@@ -304,6 +307,7 @@
       'type': '<(gtest_target_type)',
       'dependencies': [
         '../base/base.gyp:test_support_base',
+        '../gpu/command_buffer/command_buffer.gyp:gles2_utils',
         '../gpu/gpu.gyp:gpu',
         '../gpu/gpu.gyp:gpu_unittest_utils',
         '../media/media.gyp:media',
@@ -366,6 +370,7 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
+        '../gpu/command_buffer/command_buffer.gyp:gles2_utils',
         '../gpu/gpu.gyp:gles2_c_lib',
         '../gpu/gpu.gyp:gles2_implementation',
         '../gpu/gpu.gyp:gl_in_process_context',

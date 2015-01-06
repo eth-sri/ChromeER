@@ -31,7 +31,6 @@ class QuicConfigTest : public ::testing::Test {
 };
 
 TEST_F(QuicConfigTest, ToHandshakeMessage) {
-  ValueRestore<bool> old_flag(&FLAGS_enable_quic_pacing, false);
   config_.SetDefaults();
   config_.SetInitialFlowControlWindowToSend(
       kInitialSessionFlowControlWindowForTest);
@@ -42,6 +41,7 @@ TEST_F(QuicConfigTest, ToHandshakeMessage) {
   config_.set_idle_connection_state_lifetime(QuicTime::Delta::FromSeconds(5),
                                              QuicTime::Delta::FromSeconds(2));
   config_.set_max_streams_per_connection(4, 2);
+  config_.SetSocketReceiveBufferToSend(kDefaultSocketReceiveBuffer);
   CryptoHandshakeMessage msg;
   config_.ToHandshakeMessage(&msg);
 
@@ -66,6 +66,10 @@ TEST_F(QuicConfigTest, ToHandshakeMessage) {
   EXPECT_EQ(QUIC_NO_ERROR, error);
   EXPECT_EQ(kInitialSessionFlowControlWindowForTest, value);
 
+  error = msg.GetUint32(kSRBF, &value);
+  EXPECT_EQ(QUIC_NO_ERROR, error);
+  EXPECT_EQ(kDefaultSocketReceiveBuffer, value);
+
   const QuicTag* out;
   size_t out_len;
   error = msg.GetTaglist(kCGST, &out, &out_len);
@@ -73,25 +77,9 @@ TEST_F(QuicConfigTest, ToHandshakeMessage) {
   EXPECT_EQ(kQBIC, *out);
 }
 
-TEST_F(QuicConfigTest, ToHandshakeMessageWithPacing) {
-  ValueRestore<bool> old_flag(&FLAGS_enable_quic_pacing, true);
-
-  config_.SetDefaults();
-  CryptoHandshakeMessage msg;
-  config_.ToHandshakeMessage(&msg);
-
-  const QuicTag* out;
-  size_t out_len;
-  EXPECT_EQ(QUIC_NO_ERROR, msg.GetTaglist(kCGST, &out, &out_len));
-  EXPECT_EQ(2u, out_len);
-  EXPECT_EQ(kPACE, out[0]);
-  EXPECT_EQ(kQBIC, out[1]);
-}
-
 TEST_F(QuicConfigTest, ProcessClientHello) {
   QuicConfig client_config;
   QuicTagVector cgst;
-  cgst.push_back(kINAR);
   cgst.push_back(kQBIC);
   client_config.set_congestion_feedback(cgst, kQBIC);
   client_config.set_idle_connection_state_lifetime(
@@ -107,6 +95,7 @@ TEST_F(QuicConfigTest, ProcessClientHello) {
       2 * kInitialStreamFlowControlWindowForTest);
   client_config.SetInitialSessionFlowControlWindowToSend(
       2 * kInitialSessionFlowControlWindowForTest);
+  client_config.SetSocketReceiveBufferToSend(kDefaultSocketReceiveBuffer);
   QuicTagVector copt;
   copt.push_back(kTBBR);
   copt.push_back(kFHDR);
@@ -137,6 +126,8 @@ TEST_F(QuicConfigTest, ProcessClientHello) {
             2 * kInitialStreamFlowControlWindowForTest);
   EXPECT_EQ(config_.ReceivedInitialSessionFlowControlWindowBytes(),
             2 * kInitialSessionFlowControlWindowForTest);
+  EXPECT_EQ(config_.ReceivedSocketReceiveBuffer(),
+            kDefaultSocketReceiveBuffer);
 }
 
 TEST_F(QuicConfigTest, ProcessServerHello) {
@@ -159,6 +150,7 @@ TEST_F(QuicConfigTest, ProcessServerHello) {
       2 * kInitialStreamFlowControlWindowForTest);
   server_config.SetInitialSessionFlowControlWindowToSend(
       2 * kInitialSessionFlowControlWindowForTest);
+  server_config.SetSocketReceiveBufferToSend(kDefaultSocketReceiveBuffer);
   CryptoHandshakeMessage msg;
   server_config.ToHandshakeMessage(&msg);
   string error_details;
@@ -183,6 +175,8 @@ TEST_F(QuicConfigTest, ProcessServerHello) {
             2 * kInitialStreamFlowControlWindowForTest);
   EXPECT_EQ(config_.ReceivedInitialSessionFlowControlWindowBytes(),
             2 * kInitialSessionFlowControlWindowForTest);
+  EXPECT_EQ(config_.ReceivedSocketReceiveBuffer(),
+            kDefaultSocketReceiveBuffer);
 }
 
 TEST_F(QuicConfigTest, MissingOptionalValuesInCHLO) {
@@ -261,7 +255,7 @@ TEST_F(QuicConfigTest, MultipleNegotiatedValuesInVectorTag) {
   QuicConfig server_config;
   QuicTagVector cgst;
   cgst.push_back(kQBIC);
-  cgst.push_back(kINAR);
+  cgst.push_back(kTBBR);
   server_config.set_congestion_feedback(cgst, kQBIC);
 
   CryptoHandshakeMessage msg;
@@ -276,8 +270,8 @@ TEST_F(QuicConfigTest, NoOverLapInCGST) {
   QuicConfig server_config;
   server_config.SetDefaults();
   QuicTagVector cgst;
-  cgst.push_back(kINAR);
-  server_config.set_congestion_feedback(cgst, kINAR);
+  cgst.push_back(kTBBR);
+  server_config.set_congestion_feedback(cgst, kTBBR);
 
   CryptoHandshakeMessage msg;
   string error_details;

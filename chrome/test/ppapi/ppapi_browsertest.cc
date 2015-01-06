@@ -448,11 +448,14 @@ TEST_PPAPI_NACL(HostResolverPrivate_ResolveIPv4)
   )
 
 // Note: we do not support Trusted APIs in NaCl, so these will be skipped.
+// XRequestedWithHeader isn't trusted per-se, but the header isn't provided
+// for NaCl and thus must be skipped.
 #define RUN_URLLOADER_TRUSTED_SUBTESTS \
   RunTestViaHTTP( \
       LIST_TEST(URLLoader_TrustedSameOriginRestriction) \
       LIST_TEST(URLLoader_TrustedCrossOriginRequest) \
       LIST_TEST(URLLoader_TrustedHttpRequests) \
+      LIST_TEST(URLLoader_XRequestedWithHeader) \
   )
 
 IN_PROC_BROWSER_TEST_F(PPAPITest, URLLoader0) {
@@ -975,6 +978,7 @@ IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, Flash) {
       LIST_TEST(WebSocket_AbortSendMessageCall) \
       LIST_TEST(WebSocket_AbortCloseCall) \
       LIST_TEST(WebSocket_AbortReceiveMessageCall) \
+      LIST_TEST(WebSocket_ClosedFromServerWhileSending) \
       LIST_TEST(WebSocket_CcInterfaces) \
       LIST_TEST(WebSocket_UtilityInvalidConnect) \
       LIST_TEST(WebSocket_UtilityProtocols) \
@@ -1067,8 +1071,14 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClNonSfiTest,
       LIST_TEST(Audio_AudioCallback4) \
   )
 
+#if defined(OS_LINUX)
+// http://crbug.com/396464
+#define MAYBE_Audio DISABLED_Audio
+#else
+#define MAYBE_Audio Audio
+#endif
 // PPB_Audio is not supported in-process.
-IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, Audio) {
+IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, MAYBE_Audio) {
   RUN_AUDIO_SUBTESTS;
 }
 IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, Audio) {
@@ -1247,8 +1257,9 @@ IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, MAYBE_FlashMessageLoop) {
 #define MAYBE_Compositor0 DISABLED_Compositor0
 #define MAYBE_Compositor1 DISABLED_Compositor1
 #else
-#define MAYBE_Compositor0 Compositor0
-#define MAYBE_Compositor1 Compositor1
+// flaky on Linux: http://crbug.com/396482
+#define MAYBE_Compositor0 DISABLED_Compositor0
+#define MAYBE_Compositor1 DISABLED_Compositor1
 #endif
 
 TEST_PPAPI_NACL_SUBTESTS(MAYBE_Compositor0, RUN_COMPOSITOR_SUBTESTS_0)

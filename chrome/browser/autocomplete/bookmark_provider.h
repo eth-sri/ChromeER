@@ -7,9 +7,9 @@
 
 #include <string>
 
-#include "components/autocomplete/autocomplete_input.h"
-#include "components/autocomplete/autocomplete_match.h"
-#include "components/autocomplete/autocomplete_provider.h"
+#include "components/omnibox/autocomplete_input.h"
+#include "components/omnibox/autocomplete_match.h"
+#include "components/omnibox/autocomplete_provider.h"
 #include "components/query_parser/snippet.h"
 
 class BookmarkModel;
@@ -72,9 +72,6 @@ class BookmarkProvider : public AutocompleteProvider {
 
   Profile* profile_;
   BookmarkModel* bookmark_model_;
-
-  // True if we should use matches in the URL for scoring.
-  const bool score_using_url_matches_;
 
   // Languages used during the URL formatting.
   std::string languages_;

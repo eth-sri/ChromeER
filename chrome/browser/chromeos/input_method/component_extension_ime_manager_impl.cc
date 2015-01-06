@@ -6,10 +6,11 @@
 
 #include <algorithm>
 
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/json/json_string_value_serializer.h"
 #include "base/logging.h"
 #include "base/path_service.h"
+#include "base/strings/string_util.h"
 #include "base/sys_info.h"
 #include "chrome/browser/extensions/component_loader.h"
 #include "chrome/browser/extensions/extension_service.h"
@@ -18,13 +19,15 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_file_util.h"
+#include "chrome/grit/browser_resources.h"
+#include "chrome/grit/generated_resources.h"
 #include "chromeos/ime/extension_ime_util.h"
+#include "content/public/browser/browser_thread.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_l10n_util.h"
+#include "extensions/common/file_util.h"
 #include "extensions/common/manifest_constants.h"
-#include "grit/browser_resources.h"
-#include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 
@@ -39,12 +42,14 @@ struct WhitelistedComponentExtensionIME {
       {// ChromeOS Hangul Input.
        extension_ime_util::kHangulExtensionId, IDR_HANGUL_MANIFEST,
       },
+#if defined(GOOGLE_CHROME_BUILD)
       {// Official Google XKB Input.
        extension_ime_util::kXkbExtensionId, IDR_GOOGLE_XKB_MANIFEST,
       },
       {// Google input tools.
        extension_ime_util::kT13nExtensionId, IDR_GOOGLE_INPUT_TOOLS_MANIFEST,
       },
+#else
       {// Open-sourced ChromeOS xkb extension.
        extension_ime_util::kXkbExtensionId, IDR_XKB_MANIFEST,
       },
@@ -63,6 +68,7 @@ struct WhitelistedComponentExtensionIME {
       {// Japanese Mozc Input.
        extension_ime_util::kMozcExtensionId, IDR_MOZC_MANIFEST,
       },
+#endif
       {// Braille hardware keyboard IME that works together with ChromeVox.
        extension_misc::kBrailleImeExtensionId, IDR_BRAILLE_MANIFEST,
       },
@@ -228,21 +234,45 @@ const struct InputMethodNameMap {
 
 const char kImePathKeyName[] = "ime_path";
 
-extensions::ComponentLoader* GetComponentLoader() {
-  // TODO(skuhne, nkostylev): At this time the only thing which makes sense here
-  // is to use the active profile. Nkostylev is working on getting IME settings
-  // to work for multi user by collecting all settings from all users. Once that
-  // is done we might have to re-visit this decision.
-  Profile* profile = ProfileManager::GetActiveUserProfile();
+extensions::ComponentLoader* GetComponentLoader(Profile* profile) {
   extensions::ExtensionSystem* extension_system =
       extensions::ExtensionSystem::Get(profile);
   ExtensionService* extension_service = extension_system->extension_service();
   return extension_service->component_loader();
 }
+
+void DoLoadExtension(Profile* profile,
+                     const std::string& extension_id,
+                     const std::string& manifest,
+                     const base::FilePath& file_path) {
+  extensions::ExtensionSystem* extension_system =
+      extensions::ExtensionSystem::Get(profile);
+  ExtensionService* extension_service = extension_system->extension_service();
+  if (extension_service->GetExtensionById(extension_id, false))
+    return;
+  const std::string loaded_extension_id =
+      GetComponentLoader(profile)->Add(manifest, file_path);
+  DCHECK_EQ(loaded_extension_id, extension_id);
+}
+
+bool CheckFilePath(const base::FilePath* file_path) {
+  return base::PathExists(*file_path);
+}
+
+void OnFilePathChecked(Profile* profile,
+                       const std::string* extension_id,
+                       const std::string* manifest,
+                       const base::FilePath* file_path,
+                       bool result) {
+  if (result)
+    DoLoadExtension(profile, *extension_id, *manifest, *file_path);
+  else
+    LOG(ERROR) << "IME extension file path not exists: " << file_path->value();
+}
+
 }  // namespace
 
-ComponentExtensionIMEManagerImpl::ComponentExtensionIMEManagerImpl()
-    : weak_ptr_factory_(this) {
+ComponentExtensionIMEManagerImpl::ComponentExtensionIMEManagerImpl() {
   ReadComponentExtensionsInfo(&component_extension_list_);
 }
 
@@ -253,35 +283,39 @@ std::vector<ComponentExtensionIME> ComponentExtensionIMEManagerImpl::ListIME() {
   return component_extension_list_;
 }
 
-bool ComponentExtensionIMEManagerImpl::Load(const std::string& extension_id,
+void ComponentExtensionIMEManagerImpl::Load(Profile* profile,
+                                            const std::string& extension_id,
                                             const std::string& manifest,
                                             const base::FilePath& file_path) {
-  // If current environment is linux_chromeos, there should be no file path for
-  // the component extensions, so avoid loading them.
-  // The tests are also running on linux_chromeos environment. No test should
-  // run with the real component extensions because the component extension
-  // contents are not in chromium code base. They're installed through ebuild
-  // scripts from chromeos.
-  if (!base::SysInfo::IsRunningOnChromeOS())
-    return false;
-
-  Profile* profile = ProfileManager::GetActiveUserProfile();
-  extensions::ExtensionSystem* extension_system =
-      extensions::ExtensionSystem::Get(profile);
-  ExtensionService* extension_service = extension_system->extension_service();
-  if (extension_service->GetExtensionById(extension_id, false))
-    return false;
-  const std::string loaded_extension_id =
-      GetComponentLoader()->Add(manifest, file_path);
-  DCHECK_EQ(loaded_extension_id, extension_id);
-  return true;
+  if (base::SysInfo::IsRunningOnChromeOS()) {
+    // In the case of real Chrome OS device, the no need to check the file path
+    // for preinstalled files existence.
+    DoLoadExtension(profile, extension_id, manifest, file_path);
+    return;
+  }
+  // If current environment is linux_chromeos, check the existence of file path
+  // to avoid unnecessary extension loading and InputMethodEngine creation, so
+  // that the virtual keyboard web content url won't be override by IME
+  // component extensions.
+  base::FilePath* copied_file_path = new base::FilePath(file_path);
+  content::BrowserThread::PostTaskAndReplyWithResult(
+      content::BrowserThread::FILE,
+      FROM_HERE,
+      base::Bind(&CheckFilePath,
+                 base::Unretained(copied_file_path)),
+      base::Bind(&OnFilePathChecked,
+                 base::Unretained(profile),
+                 base::Owned(new std::string(extension_id)),
+                 base::Owned(new std::string(manifest)),
+                 base::Owned(copied_file_path)));
 }
 
-void ComponentExtensionIMEManagerImpl::Unload(const std::string& extension_id,
+void ComponentExtensionIMEManagerImpl::Unload(Profile* profile,
+                                              const std::string& extension_id,
                                               const base::FilePath& file_path) {
   // Remove(extension_id) does nothing when the extension has already been
   // removed or not been registered.
-  GetComponentLoader()->Remove(extension_id);
+  GetComponentLoader(profile)->Remove(extension_id);
 }
 
 scoped_ptr<base::DictionaryValue> ComponentExtensionIMEManagerImpl::GetManifest(

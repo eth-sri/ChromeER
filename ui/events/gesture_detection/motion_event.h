@@ -29,6 +29,7 @@ class GESTURE_DETECTION_EXPORT MotionEvent {
     TOOL_TYPE_FINGER,
     TOOL_TYPE_STYLUS,
     TOOL_TYPE_MOUSE,
+    TOOL_TYPE_ERASER
   };
 
   enum ButtonType {
@@ -39,8 +40,9 @@ class GESTURE_DETECTION_EXPORT MotionEvent {
     BUTTON_FORWARD = 1 << 4,
   };
 
-  // The implementer promises that |GetPointerId()| will never exceed this.
-  enum { MAX_POINTER_ID = 31 };
+  // The implementer promises that |GetPointerId()| will never exceed
+  // MAX_POINTER_ID.
+  enum { MAX_POINTER_ID = 31, MAX_TOUCH_POINT_COUNT = 12 };
 
   virtual ~MotionEvent() {}
 
@@ -83,6 +85,7 @@ class GESTURE_DETECTION_EXPORT MotionEvent {
   float GetRawOffsetY() const { return GetRawY() - GetY(); }
   float GetTouchMajor() const { return GetTouchMajor(0); }
   float GetPressure() const { return GetPressure(0); }
+  ToolType GetToolType() const { return GetToolType(0); }
 
   // O(N) search of pointers (use sparingly!). Returns -1 if |id| nonexistent.
   int FindPointerIndexOfId(int id) const;

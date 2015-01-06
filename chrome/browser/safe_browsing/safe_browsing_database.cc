@@ -8,7 +8,7 @@
 #include <iterator>
 
 #include "base/bind.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/metrics/stats_counters.h"
@@ -1013,9 +1013,12 @@ bool SafeBrowsingDatabaseNew::UpdateStarted(
     return false;
   }
 
-  // Cached fullhash results must be cleared on every database update (whether
-  // successful or not.)
-  browse_gethash_cache_.clear();
+  {
+    base::AutoLock locked(lookup_lock_);
+    // Cached fullhash results must be cleared on every database update (whether
+    // successful or not.)
+    browse_gethash_cache_.clear();
+  }
 
   UpdateChunkRangesForLists(browse_store_.get(),
                             safe_browsing_util::kMalwareList,

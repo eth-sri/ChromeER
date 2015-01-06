@@ -293,6 +293,34 @@ void HostContentSettingsMap::SetWebsiteSetting(
   NOTREACHED();
 }
 
+void HostContentSettingsMap::SetNarrowestWebsiteSetting(
+    const ContentSettingsPattern& primary_pattern,
+    const ContentSettingsPattern& secondary_pattern,
+    ContentSettingsType content_type,
+    const std::string& resource_identifier,
+    ContentSetting setting,
+    content_settings::SettingInfo existing_info) {
+  ContentSettingsPattern narrow_primary = primary_pattern;
+  ContentSettingsPattern narrow_secondary = secondary_pattern;
+
+  DCHECK_EQ(content_settings::SETTING_SOURCE_USER, existing_info.source);
+  ContentSettingsPattern::Relation r1 =
+      existing_info.primary_pattern.Compare(primary_pattern);
+  if (r1 == ContentSettingsPattern::PREDECESSOR) {
+    narrow_primary = existing_info.primary_pattern;
+  } else if (r1 == ContentSettingsPattern::IDENTITY) {
+    ContentSettingsPattern::Relation r2 =
+        existing_info.secondary_pattern.Compare(secondary_pattern);
+    DCHECK(r2 != ContentSettingsPattern::DISJOINT_ORDER_POST &&
+           r2 != ContentSettingsPattern::DISJOINT_ORDER_PRE);
+    if (r2 == ContentSettingsPattern::PREDECESSOR)
+      narrow_secondary = existing_info.secondary_pattern;
+  }
+
+  SetContentSetting(
+      narrow_primary, narrow_secondary, content_type, std::string(), setting);
+}
+
 void HostContentSettingsMap::SetContentSetting(
     const ContentSettingsPattern& primary_pattern,
     const ContentSettingsPattern& secondary_pattern,
@@ -352,6 +380,11 @@ void HostContentSettingsMap::UpdateLastUsageByPattern(
 
   GetPrefProvider()->UpdateLastUsage(
       primary_pattern, secondary_pattern, content_type);
+
+  FOR_EACH_OBSERVER(
+      content_settings::Observer,
+      observers_,
+      OnContentSettingUsed(primary_pattern, secondary_pattern, content_type));
 }
 
 base::Time HostContentSettingsMap::GetLastUsage(
@@ -372,6 +405,15 @@ base::Time HostContentSettingsMap::GetLastUsageByPattern(
 
   return GetPrefProvider()->GetLastUsage(
       primary_pattern, secondary_pattern, content_type);
+}
+
+void HostContentSettingsMap::AddObserver(content_settings::Observer* observer) {
+  observers_.AddObserver(observer);
+}
+
+void HostContentSettingsMap::RemoveObserver(
+    content_settings::Observer* observer) {
+  observers_.RemoveObserver(observer);
 }
 
 void HostContentSettingsMap::SetPrefClockForTesting(
@@ -497,14 +539,12 @@ void HostContentSettingsMap::OnContentSettingChanged(
     const ContentSettingsPattern& secondary_pattern,
     ContentSettingsType content_type,
     std::string resource_identifier) {
-  const ContentSettingsDetails details(primary_pattern,
-                                       secondary_pattern,
-                                       content_type,
-                                       resource_identifier);
-  content::NotificationService::current()->Notify(
-      chrome::NOTIFICATION_CONTENT_SETTINGS_CHANGED,
-      content::Source<HostContentSettingsMap>(this),
-      content::Details<const ContentSettingsDetails>(&details));
+  FOR_EACH_OBSERVER(content_settings::Observer,
+                    observers_,
+                    OnContentSettingChanged(primary_pattern,
+                                            secondary_pattern,
+                                            content_type,
+                                            resource_identifier));
 }
 
 HostContentSettingsMap::~HostContentSettingsMap() {

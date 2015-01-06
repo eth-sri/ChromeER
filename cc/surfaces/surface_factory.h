@@ -5,6 +5,7 @@
 #ifndef CC_SURFACES_SURFACE_FACTORY_H_
 #define CC_SURFACES_SURFACE_FACTORY_H_
 
+#include "base/callback_forward.h"
 #include "base/containers/scoped_ptr_hash_map.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
@@ -18,6 +19,7 @@ class Size;
 
 namespace cc {
 class CompositorFrame;
+class CopyOutputRequest;
 class Surface;
 class SurfaceFactoryClient;
 class SurfaceManager;
@@ -37,7 +39,12 @@ class CC_SURFACES_EXPORT SurfaceFactory
   void Destroy(SurfaceId surface_id);
   // A frame can only be submitted to a surface created by this factory,
   // although the frame may reference surfaces created by other factories.
-  void SubmitFrame(SurfaceId surface_id, scoped_ptr<CompositorFrame> frame);
+  // The callback is called the first time this frame is used to draw.
+  void SubmitFrame(SurfaceId surface_id,
+                   scoped_ptr<CompositorFrame> frame,
+                   const base::Closure& callback);
+  void RequestCopyOfSurface(SurfaceId surface_id,
+                            scoped_ptr<CopyOutputRequest> copy_request);
 
   SurfaceFactoryClient* client() { return client_; }
 

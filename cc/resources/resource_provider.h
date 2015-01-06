@@ -20,6 +20,7 @@
 #include "cc/base/cc_export.h"
 #include "cc/output/context_provider.h"
 #include "cc/output/output_surface.h"
+#include "cc/resources/raster_buffer.h"
 #include "cc/resources/release_callback.h"
 #include "cc/resources/resource_format.h"
 #include "cc/resources/return_callback.h"
@@ -60,9 +61,12 @@ class CC_EXPORT ResourceProvider {
   typedef std::vector<ResourceId> ResourceIdArray;
   typedef std::set<ResourceId> ResourceIdSet;
   typedef base::hash_map<ResourceId, ResourceId> ResourceIdMap;
-  enum TextureUsageHint {
-    TextureUsageAny,
-    TextureUsageFramebuffer,
+  enum TextureHint {
+    TextureHintDefault = 0x0,
+    TextureHintImmutable = 0x1,
+    TextureHintFramebuffer = 0x2,
+    TextureHintImmutableFramebuffer =
+        TextureHintImmutable | TextureHintFramebuffer
   };
   enum ResourceType {
     InvalidType = 0,
@@ -106,7 +110,7 @@ class CC_EXPORT ResourceProvider {
   // Creates a resource of the default resource type.
   ResourceId CreateResource(const gfx::Size& size,
                             GLint wrap_mode,
-                            TextureUsageHint hint,
+                            TextureHint hint,
                             ResourceFormat format);
 
   // Creates a resource which is tagged as being managed for GPU memory
@@ -114,7 +118,7 @@ class CC_EXPORT ResourceProvider {
   ResourceId CreateManagedResource(const gfx::Size& size,
                                    GLenum target,
                                    GLint wrap_mode,
-                                   TextureUsageHint hint,
+                                   TextureHint hint,
                                    ResourceFormat format);
 
   // You can also explicitly create a specific resource type.
@@ -122,7 +126,7 @@ class CC_EXPORT ResourceProvider {
                              GLenum target,
                              GLenum texture_pool,
                              GLint wrap_mode,
-                             TextureUsageHint hint,
+                             TextureHint hint,
                              ResourceFormat format);
 
   ResourceId CreateBitmap(const gfx::Size& size, GLint wrap_mode);
@@ -313,30 +317,28 @@ class CC_EXPORT ResourceProvider {
     DISALLOW_COPY_AND_ASSIGN(Fence);
   };
 
-  // Returns a canvas for gpu rasterization.
-  // Call Unmap before the resource can be read or used for compositing.
+  // Returns a RasterBuffer for gpu rasterization.
+  // Call Release before the resource can be read or used for compositing.
   // It is used for direct gpu rasterization.
-  SkCanvas* MapGpuRasterBuffer(ResourceId id);
-  void UnmapGpuRasterBuffer(ResourceId id);
+  RasterBuffer* AcquireGpuRasterBuffer(ResourceId id);
+  void ReleaseGpuRasterBuffer(ResourceId id);
 
-  // Returns a canvas backed by an image buffer. UnmapImageRasterBuffer
-  // returns true if canvas was written to while mapped.
-  // Rasterizing to the canvas writes the content into the image buffer,
+  // Returns a RasterBuffer backed by an image buffer. ReleaseImageRasterBuffer
+  // returns true if RasterBuffer was written to while acquired.
+  // Rasterizing to the RasterBuffer writes the content into the image buffer,
   // which is internally bound to the underlying resource when read.
-  // Call Unmap before the resource can be read or used for compositing.
+  // Call Release before the resource can be read or used for compositing.
   // It is used by ImageRasterWorkerPool.
-  SkCanvas* MapImageRasterBuffer(ResourceId id);
-  bool UnmapImageRasterBuffer(ResourceId id);
+  RasterBuffer* AcquireImageRasterBuffer(ResourceId id);
+  bool ReleaseImageRasterBuffer(ResourceId id);
 
-  // Returns a canvas backed by pixel buffer. UnmapPixelRasterBuffer
-  // returns true if canvas was written to while mapped.
+  // Returns a RasterBuffer backed by pixel buffer. ReleasePixelRasterBuffer
+  // returns true if RasterBuffer was written to while acquired.
   // The pixel buffer needs to be uploaded to the underlying resource
   // using BeginSetPixels before the resouce can be used for compositing.
   // It is used by PixelRasterWorkerPool.
-  void AcquirePixelRasterBuffer(ResourceId id);
-  void ReleasePixelRasterBuffer(ResourceId id);
-  SkCanvas* MapPixelRasterBuffer(ResourceId id);
-  bool UnmapPixelRasterBuffer(ResourceId id);
+  RasterBuffer* AcquirePixelRasterBuffer(ResourceId id);
+  bool ReleasePixelRasterBuffer(ResourceId id);
 
   // Asynchronously update pixels from acquired pixel buffer.
   void BeginSetPixels(ResourceId id);
@@ -366,6 +368,8 @@ class CC_EXPORT ResourceProvider {
   // Copy pixels from source to destination.
   void CopyResource(ResourceId source_id, ResourceId dest_id);
 
+  void WaitSyncPointIfNeeded(ResourceId id);
+
   static GLint GetActiveTextureUnit(gpu::gles2::GLES2Interface* gl);
 
  private:
@@ -385,7 +389,7 @@ class CC_EXPORT ResourceProvider {
              GLenum filter,
              GLenum texture_pool,
              GLint wrap_mode,
-             TextureUsageHint hint,
+             TextureHint hint,
              ResourceFormat format);
     Resource(uint8_t* pixels,
              SharedBitmap* bitmap,
@@ -434,7 +438,7 @@ class CC_EXPORT ResourceProvider {
     unsigned bound_image_id;
     GLenum texture_pool;
     GLint wrap_mode;
-    TextureUsageHint hint;
+    TextureHint hint;
     ResourceType type;
     ResourceFormat format;
     SharedBitmapId shared_bitmap_id;
@@ -445,29 +449,6 @@ class CC_EXPORT ResourceProvider {
   };
   typedef base::hash_map<ResourceId, Resource> ResourceMap;
 
-  class RasterBuffer {
-   public:
-    virtual ~RasterBuffer();
-
-    SkCanvas* LockForWrite();
-    // Returns true if canvas was written to while locked.
-    bool UnlockForWrite();
-
-   protected:
-    RasterBuffer(const Resource* resource, ResourceProvider* resource_provider);
-    const Resource* resource() const { return resource_; }
-    ResourceProvider* resource_provider() const { return resource_provider_; }
-
-    virtual SkCanvas* DoLockForWrite() = 0;
-    virtual bool DoUnlockForWrite() = 0;
-
-   private:
-    const Resource* resource_;
-    ResourceProvider* resource_provider_;
-    SkCanvas* locked_canvas_;
-    int canvas_save_count_;
-  };
-
   class GpuRasterBuffer : public RasterBuffer {
    public:
     GpuRasterBuffer(const Resource* resource,
@@ -475,65 +456,60 @@ class CC_EXPORT ResourceProvider {
                     bool use_distance_field_text);
     virtual ~GpuRasterBuffer();
 
-   protected:
-    virtual SkCanvas* DoLockForWrite() OVERRIDE;
-    virtual bool DoUnlockForWrite() OVERRIDE;
-    skia::RefPtr<SkSurface> CreateSurface();
+    virtual skia::RefPtr<SkCanvas> AcquireSkCanvas() OVERRIDE;
+    virtual void ReleaseSkCanvas(const skia::RefPtr<SkCanvas>& canvas) OVERRIDE;
 
    private:
+    const Resource* resource_;
+    ResourceProvider* resource_provider_;
     skia::RefPtr<SkSurface> surface_;
-    uint32_t surface_generation_id_;
-    const bool use_distance_field_text_;
 
     DISALLOW_COPY_AND_ASSIGN(GpuRasterBuffer);
   };
 
-  class BitmapRasterBuffer : public RasterBuffer {
-   public:
-    virtual ~BitmapRasterBuffer();
-
-   protected:
-    BitmapRasterBuffer(const Resource* resource,
-                       ResourceProvider* resource_provider);
-
-    virtual SkCanvas* DoLockForWrite() OVERRIDE;
-    virtual bool DoUnlockForWrite() OVERRIDE;
-
-    virtual uint8_t* MapBuffer(int* stride) = 0;
-    virtual void UnmapBuffer() = 0;
-
-   private:
-    uint8_t* mapped_buffer_;
-    SkBitmap raster_bitmap_;
-    uint32_t raster_bitmap_generation_id_;
-    skia::RefPtr<SkCanvas> raster_canvas_;
-  };
-
-  class ImageRasterBuffer : public BitmapRasterBuffer {
+  class ImageRasterBuffer : public RasterBuffer {
    public:
     ImageRasterBuffer(const Resource* resource,
                       ResourceProvider* resource_provider);
     virtual ~ImageRasterBuffer();
 
-   protected:
-    virtual uint8_t* MapBuffer(int* stride) OVERRIDE;
-    virtual void UnmapBuffer() OVERRIDE;
+    void MapBuffer();
+    bool UnmapBuffer();
+
+    virtual skia::RefPtr<SkCanvas> AcquireSkCanvas() OVERRIDE;
+    virtual void ReleaseSkCanvas(const skia::RefPtr<SkCanvas>& canvas) OVERRIDE;
 
    private:
+    const Resource* resource_;
+    ResourceProvider* resource_provider_;
+    uint8_t* mapped_buffer_;
+    SkBitmap raster_bitmap_;
+    bool raster_bitmap_changed_;
+    int stride_;
+
     DISALLOW_COPY_AND_ASSIGN(ImageRasterBuffer);
   };
 
-  class PixelRasterBuffer : public BitmapRasterBuffer {
+  class PixelRasterBuffer : public RasterBuffer {
    public:
     PixelRasterBuffer(const Resource* resource,
                       ResourceProvider* resource_provider);
     virtual ~PixelRasterBuffer();
 
-   protected:
-    virtual uint8_t* MapBuffer(int* stride) OVERRIDE;
-    virtual void UnmapBuffer() OVERRIDE;
+    void MapBuffer();
+    bool UnmapBuffer();
+
+    virtual skia::RefPtr<SkCanvas> AcquireSkCanvas() OVERRIDE;
+    virtual void ReleaseSkCanvas(const skia::RefPtr<SkCanvas>& canvas) OVERRIDE;
 
    private:
+    const Resource* resource_;
+    ResourceProvider* resource_provider_;
+    uint8_t* mapped_buffer_;
+    SkBitmap raster_bitmap_;
+    bool raster_bitmap_changed_;
+    int stride_;
+
     DISALLOW_COPY_AND_ASSIGN(PixelRasterBuffer);
   };
 
@@ -632,6 +608,7 @@ class CC_EXPORT ResourceProvider {
 
   ResourceType default_resource_type_;
   bool use_texture_storage_ext_;
+  bool use_texture_format_bgra_;
   bool use_texture_usage_hint_;
   bool use_compressed_texture_etc1_;
   scoped_ptr<TextureUploader> texture_uploader_;
@@ -663,6 +640,7 @@ inline unsigned BitsPerPixel(ResourceFormat format) {
     32,  // RGBA_8888
     16,  // RGBA_4444
     32,  // BGRA_8888
+    8,   // ALPHA_8
     8,   // LUMINANCE_8
     16,  // RGB_565,
     4    // ETC1
@@ -676,6 +654,7 @@ inline GLenum GLDataType(ResourceFormat format) {
     GL_UNSIGNED_BYTE,           // RGBA_8888
     GL_UNSIGNED_SHORT_4_4_4_4,  // RGBA_4444
     GL_UNSIGNED_BYTE,           // BGRA_8888
+    GL_UNSIGNED_BYTE,           // ALPHA_8
     GL_UNSIGNED_BYTE,           // LUMINANCE_8
     GL_UNSIGNED_SHORT_5_6_5,    // RGB_565,
     GL_UNSIGNED_BYTE            // ETC1
@@ -689,6 +668,7 @@ inline GLenum GLDataFormat(ResourceFormat format) {
     GL_RGBA,           // RGBA_8888
     GL_RGBA,           // RGBA_4444
     GL_BGRA_EXT,       // BGRA_8888
+    GL_ALPHA,          // ALPHA_8
     GL_LUMINANCE,      // LUMINANCE_8
     GL_RGB,            // RGB_565
     GL_ETC1_RGB8_OES   // ETC1

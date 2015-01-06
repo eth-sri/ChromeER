@@ -11,6 +11,7 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/defaults.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/profiles/profile.h"
@@ -205,11 +206,11 @@ BrowserCommandController::BrowserCommandController(Browser* browser)
       base::Bind(&BrowserCommandController::UpdateCommandsForDevTools,
                  base::Unretained(this)));
   profile_pref_registrar_.Add(
-      prefs::kEditBookmarksEnabled,
+      bookmarks::prefs::kEditBookmarksEnabled,
       base::Bind(&BrowserCommandController::UpdateCommandsForBookmarkEditing,
                  base::Unretained(this)));
   profile_pref_registrar_.Add(
-      prefs::kShowBookmarkBar,
+      bookmarks::prefs::kShowBookmarkBar,
       base::Bind(&BrowserCommandController::UpdateCommandsForBookmarkBar,
                  base::Unretained(this)));
   profile_pref_registrar_.Add(
@@ -460,19 +461,6 @@ void BrowserCommandController::ExecuteCommandWithDisposition(
 #endif
       break;
 
-#if defined(USE_ASH)
-    case IDC_TOGGLE_ASH_DESKTOP:
-      chrome::ToggleAshDesktop();
-      break;
-    case IDC_MINIMIZE_WINDOW:
-      content::RecordAction(
-          base::UserMetricsAction("Accel_Toggle_Minimized_M"));
-      ash::accelerators::ToggleMinimized();
-      break;
-    // If Ash needs many more commands here we should implement a general
-    // mechanism to pass accelerators back into Ash. http://crbug.com/285308
-#endif
-
 #if defined(OS_CHROMEOS)
     case IDC_VISIT_DESKTOP_OF_LRU_USER_2:
     case IDC_VISIT_DESKTOP_OF_LRU_USER_3:
@@ -497,20 +485,29 @@ void BrowserCommandController::ExecuteCommandWithDisposition(
     case IDC_METRO_SNAP_DISABLE:
       browser_->SetMetroSnapMode(false);
       break;
-    case IDC_WIN8_DESKTOP_RESTART:
-      if (!VerifyMetroSwitchForApps(window()->GetNativeWindow(), id))
+    case IDC_WIN_DESKTOP_RESTART:
+      if (!VerifyASHSwitchForApps(window()->GetNativeWindow(), id))
         break;
 
       chrome::AttemptRestartToDesktopMode();
-      content::RecordAction(base::UserMetricsAction("Win8DesktopRestart"));
+      if (base::win::GetVersion() >= base::win::VERSION_WIN8) {
+        content::RecordAction(base::UserMetricsAction("Win8DesktopRestart"));
+      } else {
+        content::RecordAction(base::UserMetricsAction("Win7DesktopRestart"));
+      }
       break;
     case IDC_WIN8_METRO_RESTART:
-      if (!VerifyMetroSwitchForApps(window()->GetNativeWindow(), id))
+    case IDC_WIN_CHROMEOS_RESTART:
+      if (!VerifyASHSwitchForApps(window()->GetNativeWindow(), id))
         break;
-
-      // SwitchToMetroUIHandler deletes itself.
-      new SwitchToMetroUIHandler;
-      content::RecordAction(base::UserMetricsAction("Win8MetroRestart"));
+      if (base::win::GetVersion() >= base::win::VERSION_WIN8) {
+        // SwitchToMetroUIHandler deletes itself.
+        new SwitchToMetroUIHandler;
+        content::RecordAction(base::UserMetricsAction("Win8MetroRestart"));
+      } else {
+        content::RecordAction(base::UserMetricsAction("Win7ASHRestart"));
+        chrome::AttemptRestartToMetroMode();
+      }
       break;
 #endif
 
@@ -545,13 +542,12 @@ void BrowserCommandController::ExecuteCommandWithDisposition(
     case IDC_PRINT:
       Print(browser_);
       break;
+#if !defined(OS_WIN)
     case IDC_ADVANCED_PRINT:
       content::RecordAction(base::UserMetricsAction("Accel_Advanced_Print"));
       AdvancedPrint(browser_);
       break;
-    case IDC_PRINT_TO_DESTINATION:
-      PrintToDestination(browser_);
-      break;
+#endif  // !OS_WIN
     case IDC_TRANSLATE_PAGE:
       Translate(browser_);
       break;
@@ -823,14 +819,17 @@ void BrowserCommandController::TabBlockedStateChanged(
 
 void BrowserCommandController::TabRestoreServiceChanged(
     TabRestoreService* service) {
-  command_updater_.UpdateCommandEnabled(
-      IDC_RESTORE_TAB,
-      GetRestoreTabType(browser_) != TabStripModelDelegate::RESTORE_NONE);
+  UpdateTabRestoreCommandState();
 }
 
 void BrowserCommandController::TabRestoreServiceDestroyed(
     TabRestoreService* service) {
   service->RemoveObserver(this);
+}
+
+void BrowserCommandController::TabRestoreServiceLoaded(
+    TabRestoreService* service) {
+  UpdateTabRestoreCommandState();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -881,7 +880,7 @@ void BrowserCommandController::InitCommandState() {
   command_updater_.UpdateCommandEnabled(IDC_NEW_TAB, true);
   command_updater_.UpdateCommandEnabled(IDC_CLOSE_TAB, true);
   command_updater_.UpdateCommandEnabled(IDC_DUPLICATE_TAB, true);
-  command_updater_.UpdateCommandEnabled(IDC_RESTORE_TAB, false);
+  UpdateTabRestoreCommandState();
 #if defined(OS_WIN) && defined(USE_ASH)
   if (browser_->host_desktop_type() != chrome::HOST_DESKTOP_TYPE_ASH)
     command_updater_.UpdateCommandEnabled(IDC_EXIT, true);
@@ -889,11 +888,6 @@ void BrowserCommandController::InitCommandState() {
   command_updater_.UpdateCommandEnabled(IDC_EXIT, true);
 #endif
   command_updater_.UpdateCommandEnabled(IDC_DEBUG_FRAME_TOGGLE, true);
-#if defined(OS_WIN) && defined(USE_ASH) && !defined(NDEBUG)
-  if (base::win::GetVersion() < base::win::VERSION_WIN8 &&
-      chrome::HOST_DESKTOP_TYPE_NATIVE != chrome::HOST_DESKTOP_TYPE_ASH)
-    command_updater_.UpdateCommandEnabled(IDC_TOGGLE_ASH_DESKTOP, true);
-#endif
 #if defined(USE_ASH)
   command_updater_.UpdateCommandEnabled(IDC_MINIMIZE_WINDOW, true);
 #endif
@@ -983,8 +977,7 @@ void BrowserCommandController::InitCommandState() {
   // Navigation commands
   command_updater_.UpdateCommandEnabled(
       IDC_HOME,
-      normal_window || (CommandLine::ForCurrentProcess()->HasSwitch(
-                            switches::kEnableStreamlinedHostedApps) &&
+      normal_window || (extensions::util::IsStreamlinedHostedAppsEnabled() &&
                         browser_->is_app()));
 
   // Window management commands
@@ -1006,7 +999,9 @@ void BrowserCommandController::InitCommandState() {
   bool metro = browser_->host_desktop_type() == chrome::HOST_DESKTOP_TYPE_ASH;
   command_updater_.UpdateCommandEnabled(IDC_METRO_SNAP_ENABLE, metro);
   command_updater_.UpdateCommandEnabled(IDC_METRO_SNAP_DISABLE, metro);
-  int restart_mode = metro ? IDC_WIN8_DESKTOP_RESTART : IDC_WIN8_METRO_RESTART;
+  int restart_mode = metro ? IDC_WIN_DESKTOP_RESTART :
+      (base::win::GetVersion() >= base::win::VERSION_WIN8 ?
+          IDC_WIN8_METRO_RESTART : IDC_WIN_CHROMEOS_RESTART);
   command_updater_.UpdateCommandEnabled(restart_mode, normal_window);
 #endif
 
@@ -1182,11 +1177,12 @@ void BrowserCommandController::UpdateCommandsForBookmarkEditing() {
 }
 
 void BrowserCommandController::UpdateCommandsForBookmarkBar() {
-  command_updater_.UpdateCommandEnabled(IDC_SHOW_BOOKMARK_BAR,
-      browser_defaults::bookmarks_enabled &&
-      !profile()->IsGuestSession() &&
-      !profile()->GetPrefs()->IsManagedPreference(prefs::kShowBookmarkBar) &&
-      IsShowingMainUI());
+  command_updater_.UpdateCommandEnabled(
+      IDC_SHOW_BOOKMARK_BAR,
+      browser_defaults::bookmarks_enabled && !profile()->IsGuestSession() &&
+          !profile()->GetPrefs()->IsManagedPreference(
+              bookmarks::prefs::kShowBookmarkBar) &&
+          IsShowingMainUI());
 }
 
 void BrowserCommandController::UpdateCommandsForFileSelectionDialogs() {
@@ -1276,11 +1272,10 @@ void BrowserCommandController::UpdateCommandsForFullscreenMode() {
 void BrowserCommandController::UpdatePrintingState() {
   bool print_enabled = CanPrint(browser_);
   command_updater_.UpdateCommandEnabled(IDC_PRINT, print_enabled);
+#if !defined(OS_WIN)
   command_updater_.UpdateCommandEnabled(IDC_ADVANCED_PRINT,
                                         CanAdvancedPrint(browser_));
-  command_updater_.UpdateCommandEnabled(IDC_PRINT_TO_DESTINATION,
-                                        print_enabled);
-#if defined(OS_WIN)
+#else   // !OS_WIN
   HMODULE metro_module = base::win::GetMetroModule();
   if (metro_module != NULL) {
     typedef void (*MetroEnablePrinting)(BOOL);
@@ -1290,7 +1285,7 @@ void BrowserCommandController::UpdatePrintingState() {
     if (metro_enable_printing)
       metro_enable_printing(print_enabled);
   }
-#endif
+#endif  // !OS_WIN
 }
 
 void BrowserCommandController::UpdateSaveAsState() {
@@ -1317,6 +1312,18 @@ void BrowserCommandController::UpdateReloadStopState(bool is_loading,
                                                      bool force) {
   window()->UpdateReloadStopState(is_loading, force);
   command_updater_.UpdateCommandEnabled(IDC_STOP, is_loading);
+}
+
+void BrowserCommandController::UpdateTabRestoreCommandState() {
+  TabRestoreService* tab_restore_service =
+      TabRestoreServiceFactory::GetForProfile(profile());
+  // The command is enabled if the service hasn't loaded yet to trigger loading.
+  // The command is updated once the load completes.
+  command_updater_.UpdateCommandEnabled(
+      IDC_RESTORE_TAB,
+      tab_restore_service &&
+      (!tab_restore_service->IsLoaded() ||
+       GetRestoreTabType(browser_) != TabStripModelDelegate::RESTORE_NONE));
 }
 
 void BrowserCommandController::UpdateCommandsForFind() {

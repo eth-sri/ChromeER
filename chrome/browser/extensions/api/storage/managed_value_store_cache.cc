@@ -7,7 +7,7 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/callback.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/logging.h"
 #include "base/memory/weak_ptr.h"
 #include "base/scoped_observer.h"
@@ -161,7 +161,7 @@ void ManagedValueStoreCache::ExtensionTracker::LoadSchemas(
   ExtensionSet::const_iterator it = added->begin();
   while (it != added->end()) {
     std::string to_remove;
-    if (!UsesManagedStorage(*it))
+    if (!UsesManagedStorage(it->get()))
       to_remove = (*it)->id();
     ++it;
     if (!to_remove.empty())
@@ -206,7 +206,10 @@ void ManagedValueStoreCache::ExtensionTracker::LoadSchemasOnBlockingPool(
     std::string error;
     policy::Schema schema =
         StorageSchemaManifestHandler::GetSchema(it->get(), &error);
-    CHECK(schema.valid()) << error;
+    // If the schema is invalid then proceed with an empty schema. The extension
+    // will be listed in chrome://policy but won't be able to load any policies.
+    if (!schema.valid())
+      schema = policy::Schema();
     (*components)[(*it)->id()] = schema;
   }
 

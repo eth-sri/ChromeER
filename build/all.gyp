@@ -51,7 +51,9 @@
             '<@(android_app_targets)',
             'android_builder_tests',
             '../android_webview/android_webview.gyp:android_webview_apk',
+            '../android_webview/android_webview_telemetry_shell.gyp:android_webview_telemetry_shell_apk',
             '../chrome/chrome.gyp:chrome_shell_apk',
+            '../chrome/chrome.gyp:chrome_sync_shell_apk',
             '../remoting/remoting.gyp:remoting_apk',
             '../tools/telemetry/telemetry.gyp:*#host',
             # TODO(nyquist) This should instead by a target for sync when all of
@@ -78,6 +80,7 @@
           'dependencies': [
             '../third_party/re2/re2.gyp:re2',
             '../chrome/chrome.gyp:*',
+            '../cc/blink/cc_blink_tests.gyp:*',
             '../cc/cc_tests.gyp:*',
             '../device/bluetooth/bluetooth.gyp:*',
             '../device/device_tests.gyp:*',
@@ -218,6 +221,7 @@
         ['use_openssl==1', {
           'dependencies': [
             '../third_party/boringssl/boringssl.gyp:*',
+            '../third_party/boringssl/boringssl_tests.gyp:*',
           ],
         }],
         ['enable_app_list==1', {
@@ -274,6 +278,7 @@
       'conditions': [
         ['OS!="ios" and OS!="android"', {
           'dependencies': [
+            '../cc/blink/cc_blink_tests.gyp:cc_blink_unittests',
             '../cc/cc_tests.gyp:cc_unittests',
             '../chrome/chrome.gyp:browser_tests',
             '../chrome/chrome.gyp:chromedriver_tests',
@@ -405,6 +410,11 @@
         ['disable_nacl==0', {
           'dependencies': [
             '../components/nacl.gyp:nacl_loader_unittests',
+          ],
+        }],
+        ['disable_nacl==0 and disable_nacl_untrusted==0', {
+          'dependencies': [
+            '../testing/gtest_nacl.gyp:*',
           ],
         }],
       ],
@@ -736,6 +746,7 @@
             '../breakpad/breakpad.gyp:minidump_dump#host',
             '../breakpad/breakpad.gyp:minidump_stackwalk#host',
             '../build/android/tests/multiple_proguards/multiple_proguards.gyp:multiple_proguards_test_apk',
+            '../cc/blink/cc_blink_tests.gyp:cc_blink_unittests',
             '../cc/cc_tests.gyp:cc_perftests_apk',
             '../cc/cc_tests.gyp:cc_unittests',
             '../chrome/chrome.gyp:unit_tests',
@@ -759,15 +770,16 @@
             '../tools/android/android_tools.gyp:android_tools',
             '../tools/android/android_tools.gyp:memconsumer',
             '../tools/android/findbugs_plugin/findbugs_plugin.gyp:findbugs_plugin_test',
-            '../tools/android/heap_profiler/heap_profiler.gyp:heap_profiler_unittests_stripped',
             '../ui/events/events.gyp:events_unittests',
             '../ui/ui_unittests.gyp:ui_unittests',
             # Unit test bundles packaged as an apk.
             '../android_webview/android_webview.gyp:android_webview_test_apk',
             '../android_webview/android_webview.gyp:android_webview_unittests_apk',
             '../base/base.gyp:base_unittests_apk',
+            '../cc/blink/cc_blink_tests.gyp:cc_blink_unittests_apk',
             '../cc/cc_tests.gyp:cc_unittests_apk',
             '../chrome/chrome.gyp:chrome_shell_test_apk',
+            '../chrome/chrome.gyp:chrome_sync_shell_test_apk',
             '../chrome/chrome.gyp:chrome_shell_uiautomator_tests',
             '../chrome/chrome.gyp:unit_tests_apk',
             '../components/components_tests.gyp:components_unittests_apk',
@@ -783,6 +795,7 @@
             '../sandbox/sandbox.gyp:sandbox_linux_jni_unittests_apk',
             '../sql/sql.gyp:sql_unittests_apk',
             '../sync/sync.gyp:sync_unit_tests_apk',
+            '../tools/android/heap_profiler/heap_profiler.gyp:heap_profiler_unittests_apk',
             '../ui/events/events.gyp:events_unittests_apk',
             '../ui/gfx/gfx_tests.gyp:gfx_unittests_apk',
             '../ui/ui_unittests.gyp:ui_unittests_apk',
@@ -838,6 +851,7 @@
           'target_name': 'chromium_builder_dbg',
           'type': 'none',
           'dependencies': [
+            '../cc/blink/cc_blink_tests.gyp:cc_blink_unittests',
             '../cc/cc_tests.gyp:cc_unittests',
             '../chrome/chrome.gyp:browser_tests',
             '../chrome/chrome.gyp:interactive_ui_tests',
@@ -875,6 +889,7 @@
           'target_name': 'chromium_builder_rel',
           'type': 'none',
           'dependencies': [
+            '../cc/blink/cc_blink_tests.gyp:cc_blink_unittests',
             '../cc/cc_tests.gyp:cc_unittests',
             '../chrome/chrome.gyp:browser_tests',
             '../chrome/chrome.gyp:performance_browser_tests',
@@ -965,6 +980,7 @@
           'target_name': 'chromium_builder',
           'type': 'none',
           'dependencies': [
+            '../cc/blink/cc_blink_tests.gyp:cc_blink_unittests',
             '../cc/cc_tests.gyp:cc_unittests',
             '../chrome/chrome.gyp:browser_tests',
             '../chrome/chrome.gyp:crash_service',
@@ -1057,6 +1073,7 @@
             '../ash/ash.gyp:ash_shell_unittests',
             '../ash/ash.gyp:ash_unittests',
             '../base/base.gyp:base_unittests',
+            '../cc/blink/cc_blink_tests.gyp:cc_blink_unittests',
             '../cc/cc_tests.gyp:cc_unittests',
             '../chrome/chrome.gyp:browser_tests',
             '../chrome/chrome.gyp:chrome_app_unittests',
@@ -1170,6 +1187,7 @@
           'target_name': 'aura_builder',
           'type': 'none',
           'dependencies': [
+            '../cc/blink/cc_blink_tests.gyp:cc_blink_unittests',
             '../cc/cc_tests.gyp:cc_unittests',
             '../chrome/chrome.gyp:browser_tests',
             '../chrome/chrome.gyp:chrome',
@@ -1271,6 +1289,13 @@
             '../net/net.gyp:net_unittests_run',
           ],
         }, # target_name: chromium_swarm_tests
+        {
+          'target_name': 'chromoting_swarm_tests',
+          'type': 'none',
+          'dependencies': [
+            '../testing/chromoting/integration_test.gyp:chromoting_integration_tests_run',
+          ],
+        }, # target_name: chromoting_swarm_tests
       ],
     }],
     ['OS=="mac" and toolkit_views==1', {

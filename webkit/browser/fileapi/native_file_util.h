@@ -10,13 +10,13 @@
 #include "base/files/file_util_proxy.h"
 #include "base/memory/scoped_ptr.h"
 #include "webkit/browser/fileapi/file_system_file_util.h"
-#include "webkit/browser/webkit_storage_browser_export.h"
+#include "webkit/browser/storage_browser_export.h"
 
 namespace base {
 class Time;
 }
 
-namespace fileapi {
+namespace storage {
 
 // A thin wrapper class for accessing the OS native filesystem.
 // This performs common error checks necessary to implement FileUtil family
@@ -28,7 +28,7 @@ namespace fileapi {
 //
 // Note that all the methods of this class are static and this does NOT
 // inherit from FileSystemFileUtil.
-class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE NativeFileUtil {
+class STORAGE_EXPORT_PRIVATE NativeFileUtil {
  public:
   enum CopyOrMoveMode {
     COPY_NOSYNC,
@@ -68,6 +68,6 @@ class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE NativeFileUtil {
   DISALLOW_IMPLICIT_CONSTRUCTORS(NativeFileUtil);
 };
 
-}  // namespace fileapi
+}  // namespace storage
 
 #endif  // WEBKIT_BROWSER_FILEAPI_NATIVE_FILE_UTIL_H_

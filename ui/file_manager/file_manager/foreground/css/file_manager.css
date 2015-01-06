@@ -157,22 +157,10 @@ a:focus {
   line-height: 45px;
 }
 
-.dialog-navigation-list-header #profile-badge {
-  display: inline-block;
-  height: 29px;  /* Size of a profile image. */
-  margin: 8px;
-  vertical-align: top;
-  width: 29px;  /* Size of a profile image. */
-}
-
 .dialog-navigation-list-header #app-name {
   color: #303030;
   font-size: 130%;
   margin: 0 15px;
-}
-
-.dialog-navigation-list-header #profile-badge:not([hidden]) + #app-name {
-  margin: 0;
 }
 
 .dialog-navigation-list-contents {
@@ -402,38 +390,24 @@ div.splitter {
   transition: all 180ms ease;
 }
 
+.dialog-header .volume-icon {
+  -webkit-margin-start: 10px;
+  background-position: center 3px;
+  background-repeat: no-repeat;
+  flex: none;
+  height: 24px;
+  width: 24px;
+}
+
+.dialog-header > .spacer {
+  flex: auto;
+}
+
 /* Search box */
 
 #search-box {
   display: flex;
-  flex: auto;
-}
-
-#search-box .icon {
-  -webkit-app-region: no-drag;
-  -webkit-padding-end: 0;
-  -webkit-padding-start: 10px;
-  background: transparent -webkit-image-set(
-      url(../images/files/ui/search_icon_inactive.png) 1x,
-      url(../images/files/ui/2x/search_icon_inactive.png) 2x)
-      no-repeat center;
   flex: none;
-  height: 32px;
-  padding-bottom: 8px;
-  padding-top: 8px;
-  width: 32px;
-}
-
-#search-box .icon:hover,
-#search-box.has-cursor .icon,
-#search-box.has-text .icon {
-  background-image: -webkit-image-set(
-      url(../images/files/ui/search_icon_active.png) 1x,
-      url(../images/files/ui/2x/search_icon_active.png) 2x);
-}
-
-#search-box .full-size {
-  flex: 1 0 0;
 }
 
 #search-box input {
@@ -449,6 +423,8 @@ div.splitter {
   max-width: 100%;
   outline: none;
   padding: 0;
+  transition: width 0.2s ease;
+  width: 0;
 }
 
 #search-box input::-webkit-search-cancel-button {
@@ -457,7 +433,7 @@ div.splitter {
 
 #search-box.has-cursor input,
 #search-box.has-text input {
-  cursor: text;
+  width: 176px;
 }
 
 #search-box .clear {
@@ -476,11 +452,17 @@ div.splitter {
   min-width: 0;
   outline: none;
   padding: 0;
+  visibility: hidden;
   width: 12px;
 }
 
+#search-box.has-cursor .clear,
 #search-box.has-text .clear {
   display: block;
+}
+
+#search-box.has-text .clear {
+  visibility: visible;
 }
 
 #search-box .clear:hover {
@@ -497,6 +479,24 @@ div.splitter {
 
 .topbutton-bar {
   flex: none;
+}
+
+.topbutton-bar .search-button {
+  background-image: -webkit-image-set(
+      url(../images/files/ui/search_icon_active.png) 1x,
+      url(../images/files/ui/2x/search_icon_active.png) 2x);
+}
+
+.topbutton-bar .view-button.table {
+  background-image: -webkit-image-set(
+      url('../images/files/ui/button_list_view.png') 1x,
+      url('../images/files/ui/2x/button_list_view.png') 2x);
+}
+
+.topbutton-bar .view-button.grid {
+  background-image: -webkit-image-set(
+      url('../images/files/ui/button_mosaic_view.png') 1x,
+      url('../images/files/ui/2x/button_mosaic_view.png') 2x);
 }
 
 /* Container for the detail and thumbnail list views. */
@@ -575,7 +575,7 @@ div.splitter {
 
 /* A single directory name in the list of path breadcrumbs. */
 .breadcrumb-path {
-  color: #969696;
+  color: #141414;
   cursor: pointer;
   flex: none;
   overflow: hidden;
@@ -935,8 +935,7 @@ li[renaming=''] .filename-label {
 .preview-panel {
   -webkit-transition: background-color 150ms ease;
   align-items: center;
-  background: linear-gradient(
-      to bottom, rgba(255, 255, 255, 0.8), rgba(255, 255, 255, 1));
+  background: white;
   border-top: 1px solid rgba(20, 20, 22, 0.1);
   bottom: 0;
   display: flex;
@@ -984,6 +983,10 @@ li[renaming=''] .filename-label {
 
 .preview-panel .progress-bar {
   flex: auto;
+}
+
+.preview-panel .preview-text {
+  color: #333;
 }
 
 .preview-thumbnails {
@@ -1139,8 +1142,8 @@ li[renaming=''] .filename-label {
 
 #list-container li.table-row,
 #default-actions-list li {
-  height: 29px;
-  line-height: 29px;
+  height: 32px;
+  line-height: 32px;
 }
 
 /* The icon in the name column. See file_types.css for specific icons. */
@@ -1244,24 +1247,6 @@ body[type='folder'] .file,
 body[type='upload-folder'] .file,
 body[drive] .dialog-container[connection='offline'] .dim-offline {
   opacity: 0.4;
-}
-
-/* Overlay pane covering the entire file manager window (e.g. image editor)*/
-.overlay-pane {
-  -webkit-app-region: no-drag;
-  border: none;
-  height: 100%;
-  left: 0;
-  position: absolute;
-  top: 0;
-  width: 100%;
-  z-index: 1000;  /* Must be above all elements in file manager container. */
-}
-
-/* When the overlay pane is visible hide everything else so that the tab order
-  is not confused. */
-body[overlay-visible] > :not(.overlay-pane) {
-  display: none !important;
 }
 
 /* Invisible container for elements representing files while dragging. */
@@ -1590,45 +1575,6 @@ list.autocomplete-suggestions > [lead] > div.detail-text em {
   -webkit-margin-end: 50px;
 }
 
-/* View buttons in the gear menu. */
-
-menuitem#detail-view {
-  background-image: -webkit-image-set(
-    url('../images/files/ui/button_list_view.png') 1x,
-    url('../images/files/ui/2x/button_list_view.png') 2x);
-}
-
-menuitem#detail-view[selected]:not([disabled]),
-menuitem#detail-view[lead]:not([disabled]) {
-  background-image: -webkit-image-set(
-    url('../images/files/ui/button_list_view_white.png') 1x,
-    url('../images/files/ui/2x/button_list_view_white.png') 2x);
-}
-
-menuitem#thumbnail-view {
-  background-image: -webkit-image-set(
-    url('../images/files/ui/button_mosaic_view.png') 1x,
-    url('../images/files/ui/2x/button_mosaic_view.png') 2x);
-}
-
-menuitem#thumbnail-view[selected]:not([disabled]),
-menuitem#thumbnail-view[lead]:not([disabled]) {
-  background-image: -webkit-image-set(
-    url('../images/files/ui/button_mosaic_view_white.png') 1x,
-    url('../images/files/ui/2x/button_mosaic_view_white.png') 2x);
-}
-
-#iframe-drag-area {
-  -webkit-app-region: drag;
-  height: 48px;
-  left: 64px;
-  position: absolute;
-  right: 134px;
-  top: 0;
-  width: auto;
-  z-index: 101;
-}
-
 #suggest-app-dialog {
   background-color: #fff;
   border: 0;
@@ -1721,6 +1667,15 @@ menuitem#thumbnail-view[lead]:not([disabled]) {
 
 .error-dialog-frame .cr-dialog-text {
   text-align: center;
+}
+
+#multi-profile-share-dialog .cr-dialog-title {
+  -webkit-margin-after: 0;
+}
+
+#multi-profile-share-dialog .cr-dialog-text {
+  line-height: 18px;
+  margin-top: 0;
 }
 
 #multi-profile-share-dialog .mail-label {

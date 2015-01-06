@@ -80,6 +80,10 @@
 #include "skia/ext/image_operations.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkColor.h"
+#include "ui/gfx/display.h"
+#include "ui/gfx/geometry/size.h"
+#include "ui/gfx/geometry/size_conversions.h"
+#include "ui/gfx/screen.h"
 
 namespace content {
 
@@ -273,11 +277,14 @@ class WebContentsCaptureMachine
   virtual void WebContentsDestroyed() OVERRIDE;
 
  private:
+  // Computes the preferred size of the target RenderWidget for optimal capture.
+  gfx::Size ComputeOptimalTargetSize() const;
+
   // Starts observing the web contents, returning false if lookup fails.
   bool StartObservingWebContents();
 
   // Helper function to determine the view that we are currently tracking.
-  RenderWidgetHost* GetTarget();
+  RenderWidgetHost* GetTarget() const;
 
   // Response callback for RenderWidgetHost::CopyFromBackingStore().
   void DidCopyFromBackingStore(
@@ -364,7 +371,7 @@ ContentCaptureSubscription::ContentCaptureSubscription(
                         &delivery_log_),
       capture_callback_(capture_callback),
       timer_(true, true) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   RenderWidgetHostViewBase* view = static_cast<RenderWidgetHostViewBase*>(
       source.GetView());
@@ -392,7 +399,13 @@ ContentCaptureSubscription::ContentCaptureSubscription(
 }
 
 ContentCaptureSubscription::~ContentCaptureSubscription() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  // If the BrowserThreads have been torn down, then the browser is in the final
+  // stages of exiting and it is dangerous to take any further action.  We must
+  // return early.  http://crbug.com/396413
+  if (!BrowserThread::IsMessageLoopValid(BrowserThread::UI))
+    return;
+
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   if (kAcceleratedSubscriberIsSupported) {
     RenderViewHost* source = RenderViewHost::FromID(render_process_id_,
                                                     render_view_id_);
@@ -409,7 +422,7 @@ void ContentCaptureSubscription::Observe(
     int type,
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK_EQ(NOTIFICATION_RENDER_WIDGET_HOST_DID_UPDATE_BACKING_STORE, type);
 
   RenderWidgetHostImpl* rwh =
@@ -448,7 +461,7 @@ void ContentCaptureSubscription::Observe(
 }
 
 void ContentCaptureSubscription::OnTimer() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   TRACE_EVENT0("mirroring", "ContentCaptureSubscription::OnTimer");
 
   scoped_refptr<media::VideoFrame> frame;
@@ -568,18 +581,13 @@ WebContentsCaptureMachine::WebContentsCaptureMachine(int render_process_id,
       fullscreen_widget_id_(MSG_ROUTING_NONE),
       weak_ptr_factory_(this) {}
 
-WebContentsCaptureMachine::~WebContentsCaptureMachine() {
-  BrowserThread::PostBlockingPoolTask(
-      FROM_HERE,
-      base::Bind(&DeleteOnWorkerThread, base::Passed(&render_thread_),
-                 base::Bind(&base::DoNothing)));
-}
+WebContentsCaptureMachine::~WebContentsCaptureMachine() {}
 
 bool WebContentsCaptureMachine::Start(
     const scoped_refptr<ThreadSafeCaptureOracle>& oracle_proxy,
     const media::VideoCaptureParams& params) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!started_);
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  DCHECK(!weak_ptr_factory_.HasWeakPtrs());  // Should not be started.
 
   DCHECK(oracle_proxy.get());
   oracle_proxy_ = oracle_proxy;
@@ -598,12 +606,11 @@ bool WebContentsCaptureMachine::Start(
     return false;
   }
 
-  started_ = true;
   return true;
 }
 
 void WebContentsCaptureMachine::Stop(const base::Closure& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   subscription_.reset();
   if (web_contents()) {
     web_contents()->DecrementCapturerCount();
@@ -616,12 +623,12 @@ void WebContentsCaptureMachine::Stop(const base::Closure& callback) {
 
   // The render thread cannot be stopped on the UI thread, so post a message
   // to the thread pool used for blocking operations.
-  BrowserThread::PostBlockingPoolTask(
-      FROM_HERE,
-      base::Bind(&DeleteOnWorkerThread, base::Passed(&render_thread_),
-                 callback));
-
-  started_ = false;
+  if (render_thread_.get()) {
+    BrowserThread::PostBlockingPoolTask(
+        FROM_HERE,
+        base::Bind(&DeleteOnWorkerThread, base::Passed(&render_thread_),
+                   callback));
+  }
 }
 
 void WebContentsCaptureMachine::Capture(
@@ -629,7 +636,7 @@ void WebContentsCaptureMachine::Capture(
     const scoped_refptr<media::VideoFrame>& target,
     const RenderWidgetHostViewFrameSubscriber::DeliverFrameCallback&
         deliver_frame_cb) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   RenderWidgetHost* rwh = GetTarget();
   RenderWidgetHostViewBase* view =
@@ -675,7 +682,40 @@ void WebContentsCaptureMachine::Capture(
   }
 }
 
+gfx::Size WebContentsCaptureMachine::ComputeOptimalTargetSize() const {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+
+  gfx::Size optimal_size = oracle_proxy_->GetCaptureSize();
+
+  // If the ratio between physical and logical pixels is greater than 1:1,
+  // shrink |optimal_size| by that amount.  Then, when external code resizes the
+  // render widget to the "preferred size," the widget will be physically
+  // rendered at the exact capture size, thereby eliminating unnecessary scaling
+  // operations in the graphics pipeline.
+  RenderWidgetHost* const rwh = GetTarget();
+  RenderWidgetHostView* const rwhv = rwh ? rwh->GetView() : NULL;
+  if (rwhv) {
+    const gfx::NativeView view = rwhv->GetNativeView();
+    gfx::Screen* const screen = gfx::Screen::GetScreenFor(view);
+    if (screen->IsDIPEnabled()) {
+      const gfx::Display display = screen->GetDisplayNearestWindow(view);
+      const float scale = display.device_scale_factor();
+      if (scale > 1.0f) {
+        const gfx::Size shrunk_size(
+            gfx::ToFlooredSize(gfx::ScaleSize(optimal_size, 1.0f / scale)));
+        if (shrunk_size.width() > 0 && shrunk_size.height() > 0)
+          optimal_size = shrunk_size;
+      }
+    }
+  }
+
+  VLOG(1) << "Computed optimal target size: " << optimal_size.ToString();
+  return optimal_size;
+}
+
 bool WebContentsCaptureMachine::StartObservingWebContents() {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+
   // Look-up the RenderFrameHost and, from that, the WebContents that wraps it.
   // If successful, begin observing the WebContents instance.
   //
@@ -694,7 +734,7 @@ bool WebContentsCaptureMachine::StartObservingWebContents() {
 
   WebContentsImpl* contents = static_cast<WebContentsImpl*>(web_contents());
   if (contents) {
-    contents->IncrementCapturerCount(oracle_proxy_->GetCaptureSize());
+    contents->IncrementCapturerCount(ComputeOptimalTargetSize());
     fullscreen_widget_id_ = contents->GetFullscreenWidgetRoutingID();
     RenewFrameSubscription();
     return true;
@@ -703,15 +743,15 @@ bool WebContentsCaptureMachine::StartObservingWebContents() {
 }
 
 void WebContentsCaptureMachine::WebContentsDestroyed() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   subscription_.reset();
   web_contents()->DecrementCapturerCount();
   oracle_proxy_->ReportError("WebContentsDestroyed()");
 }
 
-RenderWidgetHost* WebContentsCaptureMachine::GetTarget() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+RenderWidgetHost* WebContentsCaptureMachine::GetTarget() const {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   if (!web_contents())
     return NULL;
 
@@ -734,7 +774,7 @@ void WebContentsCaptureMachine::DidCopyFromBackingStore(
         deliver_frame_cb,
     bool success,
     const SkBitmap& bitmap) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   base::TimeTicks now = base::TimeTicks::Now();
   DCHECK(render_thread_.get());
@@ -757,7 +797,7 @@ void WebContentsCaptureMachine::DidCopyFromCompositingSurfaceToVideoFrame(
     const RenderWidgetHostViewFrameSubscriber::DeliverFrameCallback&
         deliver_frame_cb,
     bool success) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   base::TimeTicks now = base::TimeTicks::Now();
 
   if (success) {
@@ -770,7 +810,7 @@ void WebContentsCaptureMachine::DidCopyFromCompositingSurfaceToVideoFrame(
 }
 
 void WebContentsCaptureMachine::RenewFrameSubscription() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   // Always destroy the old subscription before creating a new one.
   subscription_.reset();
@@ -799,7 +839,7 @@ WebContentsVideoCaptureDevice::~WebContentsVideoCaptureDevice() {
 // static
 media::VideoCaptureDevice* WebContentsVideoCaptureDevice::Create(
     const std::string& device_id) {
-  // Parse device_id into render_process_id and render_view_id.
+  // Parse device_id into render_process_id and main_render_frame_id.
   int render_process_id = -1;
   int main_render_frame_id = -1;
   if (!WebContentsCaptureUtil::ExtractTabCaptureTarget(

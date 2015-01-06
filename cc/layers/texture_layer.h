@@ -134,15 +134,15 @@ class CC_EXPORT TextureLayer : public Layer {
   virtual void SetNeedsDisplayRect(const gfx::RectF& dirty_rect) OVERRIDE;
 
   virtual void SetLayerTreeHost(LayerTreeHost* layer_tree_host) OVERRIDE;
-  virtual bool DrawsContent() const OVERRIDE;
   virtual bool Update(ResourceUpdateQueue* queue,
                       const OcclusionTracker<Layer>* occlusion) OVERRIDE;
   virtual void PushPropertiesTo(LayerImpl* layer) OVERRIDE;
-  virtual Region VisibleContentOpaqueRegion() const OVERRIDE;
+  virtual SimpleEnclosedRegion VisibleContentOpaqueRegion() const OVERRIDE;
 
  protected:
   explicit TextureLayer(TextureLayerClient* client);
   virtual ~TextureLayer();
+  virtual bool HasDrawableContent() const OVERRIDE;
 
  private:
   void SetTextureMailboxInternal(

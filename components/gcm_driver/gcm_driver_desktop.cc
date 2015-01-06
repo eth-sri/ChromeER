@@ -16,17 +16,11 @@
 #include "components/gcm_driver/gcm_app_handler.h"
 #include "components/gcm_driver/gcm_client_factory.h"
 #include "components/gcm_driver/system_encryptor.h"
+#include "google_apis/gcm/engine/account_mapping.h"
 #include "net/base/ip_endpoint.h"
 #include "net/url_request/url_request_context_getter.h"
 
 namespace gcm {
-
-namespace {
-
-// Empty string is reserved for the default app handler.
-const char kDefaultAppHandler[] = "";
-
-}  // namespace
 
 // Helper class to save tasks to run until we're ready to execute them.
 class GCMDriverDesktop::DelayedTaskController {
@@ -136,6 +130,8 @@ class GCMDriverDesktop::IOWorker : public GCMClient::Delegate {
 
   void SetAccountsForCheckin(
       const std::map<std::string, std::string>& account_tokens);
+  void UpdateAccountMapping(const AccountMapping& account_mapping);
+  void RemoveAccountMapping(const std::string& account_id);
 
   // For testing purpose. Can be called from UI thread. Use with care.
   GCMClient* gcm_client_for_testing() const { return gcm_client_.get(); }
@@ -369,6 +365,22 @@ void GCMDriverDesktop::IOWorker::SetAccountsForCheckin(
     gcm_client_->SetAccountsForCheckin(account_tokens);
 }
 
+void GCMDriverDesktop::IOWorker::UpdateAccountMapping(
+    const AccountMapping& account_mapping) {
+  DCHECK(io_thread_->RunsTasksOnCurrentThread());
+
+  if (gcm_client_.get())
+    gcm_client_->UpdateAccountMapping(account_mapping);
+}
+
+void GCMDriverDesktop::IOWorker::RemoveAccountMapping(
+    const std::string& account_id) {
+  DCHECK(io_thread_->RunsTasksOnCurrentThread());
+
+  if (gcm_client_.get())
+    gcm_client_->RemoveAccountMapping(account_id);
+}
+
 GCMDriverDesktop::GCMDriverDesktop(
     scoped_ptr<GCMClientFactory> gcm_client_factory,
     const GCMClient::ChromeBuildInfo& chrome_build_info,
@@ -442,6 +454,15 @@ void GCMDriverDesktop::RemoveAppHandler(const std::string& app_id) {
   // Stops the GCM service when no app intends to consume it.
   if (app_handlers().empty())
     Stop();
+}
+
+void GCMDriverDesktop::AddConnectionObserver(GCMConnectionObserver* observer) {
+  connection_observer_list_.AddObserver(observer);
+}
+
+void GCMDriverDesktop::RemoveConnectionObserver(
+    GCMConnectionObserver* observer) {
+  connection_observer_list_.RemoveObserver(observer);
 }
 
 void GCMDriverDesktop::Enable() {
@@ -605,6 +626,27 @@ void GCMDriverDesktop::SetGCMRecording(const GetGCMStatisticsCallback& callback,
                  recording));
 }
 
+void GCMDriverDesktop::UpdateAccountMapping(
+    const AccountMapping& account_mapping) {
+  DCHECK(ui_thread_->RunsTasksOnCurrentThread());
+
+  io_thread_->PostTask(
+      FROM_HERE,
+      base::Bind(&GCMDriverDesktop::IOWorker::UpdateAccountMapping,
+                 base::Unretained(io_worker_.get()),
+                 account_mapping));
+}
+
+void GCMDriverDesktop::RemoveAccountMapping(const std::string& account_id) {
+  DCHECK(ui_thread_->RunsTasksOnCurrentThread());
+
+  io_thread_->PostTask(
+      FROM_HERE,
+      base::Bind(&GCMDriverDesktop::IOWorker::RemoveAccountMapping,
+                 base::Unretained(io_worker_.get()),
+                 account_id));
+}
+
 void GCMDriverDesktop::SetAccountsForCheckin(
     const std::map<std::string, std::string>& account_tokens) {
   DCHECK(ui_thread_->RunsTasksOnCurrentThread());
@@ -719,13 +761,9 @@ void GCMDriverDesktop::OnConnected(const net::IPEndPoint& ip_endpoint) {
   if (!gcm_started_)
     return;
 
-  const GCMAppHandlerMap& app_handler_map = app_handlers();
-  for (GCMAppHandlerMap::const_iterator iter = app_handler_map.begin();
-       iter != app_handler_map.end(); ++iter) {
-    iter->second->OnConnected(ip_endpoint);
-  }
-
-  GetAppHandler(kDefaultAppHandler)->OnConnected(ip_endpoint);
+  FOR_EACH_OBSERVER(GCMConnectionObserver,
+                    connection_observer_list_,
+                    OnConnected(ip_endpoint));
 }
 
 void GCMDriverDesktop::OnDisconnected() {
@@ -737,13 +775,8 @@ void GCMDriverDesktop::OnDisconnected() {
   if (!gcm_started_)
     return;
 
-  const GCMAppHandlerMap& app_handler_map = app_handlers();
-  for (GCMAppHandlerMap::const_iterator iter = app_handler_map.begin();
-       iter != app_handler_map.end(); ++iter) {
-    iter->second->OnDisconnected();
-  }
-
-  GetAppHandler(kDefaultAppHandler)->OnDisconnected();
+  FOR_EACH_OBSERVER(
+      GCMConnectionObserver, connection_observer_list_, OnDisconnected());
 }
 
 void GCMDriverDesktop::GetGCMStatisticsFinished(

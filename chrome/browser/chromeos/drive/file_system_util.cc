@@ -9,8 +9,8 @@
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/i18n/icu_string_conversions.h"
 #include "base/json/json_file_value_serializer.h"
 #include "base/logging.h"
@@ -36,6 +36,7 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "chromeos/chromeos_constants.h"
+#include "components/user_manager/user_manager.h"
 #include "content/public/browser/browser_thread.h"
 #include "net/base/escape.h"
 #include "webkit/browser/fileapi/file_system_url.h"
@@ -121,7 +122,7 @@ base::FilePath GetDriveMountPointPath(Profile* profile) {
     // returns currently active users's hash in such a case.) I still try
     // ProfileHelper first because it works better in tests.
     user_manager::User* const user =
-        chromeos::UserManager::IsInitialized()
+        user_manager::UserManager::IsInitialized()
             ? chromeos::ProfileHelper::Get()->GetUserByProfile(
                   profile->GetOriginalProfile())
             : NULL;
@@ -236,8 +237,8 @@ Profile* ExtractProfileFromPath(const base::FilePath& path) {
 }
 
 base::FilePath ExtractDrivePathFromFileSystemUrl(
-    const fileapi::FileSystemURL& url) {
-  if (!url.is_valid() || url.type() != fileapi::kFileSystemTypeDrive)
+    const storage::FileSystemURL& url) {
+  if (!url.is_valid() || url.type() != storage::kFileSystemTypeDrive)
     return base::FilePath();
   return ExtractDrivePath(url.path());
 }

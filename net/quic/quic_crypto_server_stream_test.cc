@@ -41,7 +41,7 @@ class QuicCryptoServerConfigPeer {
  public:
   static string GetPrimaryOrbit(const QuicCryptoServerConfig& config) {
     base::AutoLock lock(config.configs_lock_);
-    CHECK(config.primary_config_ != NULL);
+    CHECK(config.primary_config_.get() != NULL);
     return string(reinterpret_cast<const char*>(config.primary_config_->orbit),
                   kOrbitSize);
   }
@@ -131,6 +131,7 @@ TEST_P(QuicCryptoServerStreamTest, ConnectedAfterCHLO) {
   EXPECT_EQ(2, CompleteCryptoHandshake());
   EXPECT_TRUE(stream_.encryption_established());
   EXPECT_TRUE(stream_.handshake_confirmed());
+  EXPECT_EQ(1, stream_.num_server_config_update_messages_sent());
 }
 
 TEST_P(QuicCryptoServerStreamTest, ZeroRTT) {
@@ -223,6 +224,7 @@ TEST_P(QuicCryptoServerStreamTest, ZeroRTT) {
   }
 
   EXPECT_EQ(1, client->num_sent_client_hellos());
+  EXPECT_EQ(1, server->num_server_config_update_messages_sent());
 }
 
 TEST_P(QuicCryptoServerStreamTest, MessageAfterHandshake) {

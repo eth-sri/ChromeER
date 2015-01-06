@@ -518,7 +518,7 @@ class AudioAndroidOutputTest : public testing::Test {
     EXPECT_GE(average_time_between_callbacks_ms,
               0.70 * expected_time_between_callbacks_ms);
     EXPECT_LE(average_time_between_callbacks_ms,
-              1.35 * expected_time_between_callbacks_ms);
+              1.50 * expected_time_between_callbacks_ms);
   }
 
   void GetDefaultOutputStreamParameters() {
@@ -598,7 +598,6 @@ class AudioAndroidInputTest : public AudioAndroidOutputTest,
                                AudioParameters::NO_EFFECTS;
     AudioParameters params(audio_input_parameters().format(),
                            audio_input_parameters().channel_layout(),
-                           audio_input_parameters().input_channels(),
                            audio_input_parameters().sample_rate(),
                            audio_input_parameters().bits_per_sample(),
                            audio_input_parameters().frames_per_buffer(),
@@ -805,7 +804,6 @@ TEST_P(AudioAndroidInputTest,
   AudioParameters native_params = GetInputStreamParameters();
   AudioParameters params(native_params.format(),
                          native_params.channel_layout(),
-                         native_params.input_channels(),
                          native_params.sample_rate(),
                          native_params.bits_per_sample(),
                          native_params.sample_rate() / 100,
@@ -825,7 +823,7 @@ TEST_F(AudioAndroidOutputTest, StartOutputStreamCallbacks) {
 // select a 10ms buffer size instead of the default size and to open up the
 // device in mono.
 // TODO(henrika): possibly add support for more variations.
-TEST_F(AudioAndroidOutputTest, DISABLED_StartOutputStreamCallbacksNonDefaultParameters) {
+TEST_F(AudioAndroidOutputTest, StartOutputStreamCallbacksNonDefaultParameters) {
   GetDefaultOutputStreamParametersOnAudioThread();
   AudioParameters params(audio_output_parameters().format(),
                          CHANNEL_LAYOUT_MONO,

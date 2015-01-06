@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "chrome/browser/autocomplete/search_provider.h"
+#include "components/omnibox/search_provider.h"
 
 #include <string>
 
@@ -18,11 +18,11 @@
 #include "build/build_config.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier_factory.h"
 #include "chrome/browser/autocomplete/autocomplete_controller.h"
+#include "chrome/browser/autocomplete/chrome_autocomplete_provider_client.h"
 #include "chrome/browser/autocomplete/chrome_autocomplete_scheme_classifier.h"
 #include "chrome/browser/autocomplete/history_url_provider.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
-#include "chrome/browser/omnibox/omnibox_field_trial.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
@@ -31,12 +31,14 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
-#include "components/autocomplete/autocomplete_input.h"
-#include "components/autocomplete/autocomplete_match.h"
-#include "components/autocomplete/autocomplete_provider.h"
-#include "components/autocomplete/autocomplete_provider_listener.h"
 #include "components/google/core/browser/google_switches.h"
 #include "components/metrics/proto/omnibox_event.pb.h"
+#include "components/omnibox/autocomplete_input.h"
+#include "components/omnibox/autocomplete_match.h"
+#include "components/omnibox/autocomplete_provider.h"
+#include "components/omnibox/autocomplete_provider_listener.h"
+#include "components/omnibox/omnibox_field_trial.h"
+#include "components/omnibox/omnibox_switches.h"
 #include "components/search_engines/search_engine_type.h"
 #include "components/search_engines/search_engines_switches.h"
 #include "components/search_engines/search_terms_data.h"
@@ -85,7 +87,9 @@ SearchProviderForTest::SearchProviderForTest(
     AutocompleteProviderListener* listener,
     TemplateURLService* template_url_service,
     Profile* profile)
-    : SearchProvider(listener, template_url_service, profile),
+    : SearchProvider(listener, template_url_service,
+                     scoped_ptr<AutocompleteProviderClient>(
+                         new ChromeAutocompleteProviderClient(profile))),
       is_success_(false) {
 }
 
@@ -287,6 +291,9 @@ void SearchProviderTest::SetUp() {
   // has been processed on the history thread. Block until history processes all
   // requests to ensure the InMemoryDatabase is the state we expect it.
   profile_.BlockUntilHistoryProcessesPendingRequests();
+
+  AutocompleteClassifierFactory::GetInstance()->SetTestingFactoryAndUse(
+      &profile_, &AutocompleteClassifierFactory::BuildInstanceFor);
 
   provider_ = new SearchProviderForTest(this, turl_model, &profile_);
   provider_->kMinimumTimeBetweenSuggestQueriesMs = 0;
@@ -657,8 +664,6 @@ TEST_F(SearchProviderTest, SendNonPrivateDataToSuggest) {
 }
 
 TEST_F(SearchProviderTest, DontAutocompleteURLLikeTerms) {
-  AutocompleteClassifierFactory::GetInstance()->SetTestingFactoryAndUse(
-      &profile_, &AutocompleteClassifierFactory::BuildInstanceFor);
   GURL url = AddSearchToHistory(default_t_url_,
                                 ASCIIToUTF16("docs.google.com"), 1);
 
@@ -2912,7 +2917,7 @@ TEST_F(SearchProviderTest, ParseDeletionUrl) {
 }
 
 TEST_F(SearchProviderTest, ReflectsBookmarkBarState) {
-  profile_.GetPrefs()->SetBoolean(prefs::kShowBookmarkBar, false);
+  profile_.GetPrefs()->SetBoolean(bookmarks::prefs::kShowBookmarkBar, false);
   base::string16 term = term1_.substr(0, term1_.length() - 1);
   QueryForInput(term, true, false);
   ASSERT_FALSE(provider_->matches().empty());
@@ -2921,7 +2926,7 @@ TEST_F(SearchProviderTest, ReflectsBookmarkBarState) {
   ASSERT_TRUE(provider_->matches()[0].search_terms_args != NULL);
   EXPECT_FALSE(provider_->matches()[0].search_terms_args->bookmark_bar_pinned);
 
-  profile_.GetPrefs()->SetBoolean(prefs::kShowBookmarkBar, true);
+  profile_.GetPrefs()->SetBoolean(bookmarks::prefs::kShowBookmarkBar, true);
   term = term1_.substr(0, term1_.length() - 1);
   QueryForInput(term, true, false);
   ASSERT_FALSE(provider_->matches().empty());
@@ -2944,11 +2949,13 @@ TEST_F(SearchProviderTest, CanSendURL) {
   // Create field trial.
   CreateZeroSuggestFieldTrial(true);
 
+  ChromeAutocompleteProviderClient client(&profile_);
+
   // Not signed in.
   EXPECT_FALSE(SearchProvider::CanSendURL(
       GURL("http://www.google.com/search"),
       GURL("https://www.google.com/complete/search"), &google_template_url,
-      metrics::OmniboxEventProto::OTHER, SearchTermsData(), &profile_));
+      metrics::OmniboxEventProto::OTHER, SearchTermsData(), &client));
   SigninManagerBase* signin = SigninManagerFactory::GetForProfile(&profile_);
   signin->SetAuthenticatedUsername("test");
 
@@ -2956,7 +2963,7 @@ TEST_F(SearchProviderTest, CanSendURL) {
   EXPECT_TRUE(SearchProvider::CanSendURL(
       GURL("http://www.google.com/search"),
       GURL("https://www.google.com/complete/search"), &google_template_url,
-      metrics::OmniboxEventProto::OTHER, SearchTermsData(), &profile_));
+      metrics::OmniboxEventProto::OTHER, SearchTermsData(), &client));
 
   // Not in field trial.
   ResetFieldTrialList();
@@ -2964,7 +2971,7 @@ TEST_F(SearchProviderTest, CanSendURL) {
   EXPECT_FALSE(SearchProvider::CanSendURL(
       GURL("http://www.google.com/search"),
       GURL("https://www.google.com/complete/search"), &google_template_url,
-      metrics::OmniboxEventProto::OTHER, SearchTermsData(), &profile_));
+      metrics::OmniboxEventProto::OTHER, SearchTermsData(), &client));
   ResetFieldTrialList();
   CreateZeroSuggestFieldTrial(true);
 
@@ -2972,61 +2979,63 @@ TEST_F(SearchProviderTest, CanSendURL) {
   EXPECT_FALSE(SearchProvider::CanSendURL(
       GURL("badpageurl"),
       GURL("https://www.google.com/complete/search"), &google_template_url,
-      metrics::OmniboxEventProto::OTHER, SearchTermsData(), &profile_));
+      metrics::OmniboxEventProto::OTHER, SearchTermsData(), &client));
 
   // Invalid page classification.
   EXPECT_FALSE(SearchProvider::CanSendURL(
       GURL("http://www.google.com/search"),
       GURL("https://www.google.com/complete/search"), &google_template_url,
       metrics::OmniboxEventProto::INSTANT_NTP_WITH_FAKEBOX_AS_STARTING_FOCUS,
-      SearchTermsData(), &profile_));
+      SearchTermsData(), &client));
 
   // Invalid page classification.
   EXPECT_FALSE(SearchProvider::CanSendURL(
       GURL("http://www.google.com/search"),
       GURL("https://www.google.com/complete/search"), &google_template_url,
       metrics::OmniboxEventProto::INSTANT_NTP_WITH_OMNIBOX_AS_STARTING_FOCUS,
-      SearchTermsData(), &profile_));
+      SearchTermsData(), &client));
 
   // HTTPS page URL on same domain as provider.
   EXPECT_TRUE(SearchProvider::CanSendURL(
       GURL("https://www.google.com/search"),
       GURL("https://www.google.com/complete/search"),
       &google_template_url, metrics::OmniboxEventProto::OTHER,
-      SearchTermsData(), &profile_));
+      SearchTermsData(), &client));
 
   // Non-HTTP[S] page URL on same domain as provider.
   EXPECT_FALSE(SearchProvider::CanSendURL(
       GURL("ftp://www.google.com/search"),
       GURL("https://www.google.com/complete/search"), &google_template_url,
-      metrics::OmniboxEventProto::OTHER, SearchTermsData(), &profile_));
+      metrics::OmniboxEventProto::OTHER, SearchTermsData(), &client));
 
   // Non-HTTP page URL on different domain.
   EXPECT_FALSE(SearchProvider::CanSendURL(
       GURL("https://www.notgoogle.com/search"),
       GURL("https://www.google.com/complete/search"), &google_template_url,
-      metrics::OmniboxEventProto::OTHER, SearchTermsData(), &profile_));
+      metrics::OmniboxEventProto::OTHER, SearchTermsData(), &client));
 
   // Non-HTTPS provider.
   EXPECT_FALSE(SearchProvider::CanSendURL(
       GURL("http://www.google.com/search"),
       GURL("http://www.google.com/complete/search"), &google_template_url,
-      metrics::OmniboxEventProto::OTHER, SearchTermsData(), &profile_));
+      metrics::OmniboxEventProto::OTHER, SearchTermsData(), &client));
 
   // Suggest disabled.
   profile_.GetPrefs()->SetBoolean(prefs::kSearchSuggestEnabled, false);
   EXPECT_FALSE(SearchProvider::CanSendURL(
       GURL("http://www.google.com/search"),
       GURL("https://www.google.com/complete/search"), &google_template_url,
-      metrics::OmniboxEventProto::OTHER, SearchTermsData(), &profile_));
+      metrics::OmniboxEventProto::OTHER, SearchTermsData(), &client));
   profile_.GetPrefs()->SetBoolean(prefs::kSearchSuggestEnabled, true);
 
   // Incognito.
+  ChromeAutocompleteProviderClient client_incognito(
+      profile_.GetOffTheRecordProfile());
   EXPECT_FALSE(SearchProvider::CanSendURL(
       GURL("http://www.google.com/search"),
       GURL("https://www.google.com/complete/search"), &google_template_url,
       metrics::OmniboxEventProto::OTHER, SearchTermsData(),
-      profile_.GetOffTheRecordProfile()));
+      &client_incognito));
 
   // Tab sync not enabled.
   profile_.GetPrefs()->SetBoolean(sync_driver::prefs::kSyncKeepEverythingSynced,
@@ -3035,7 +3044,7 @@ TEST_F(SearchProviderTest, CanSendURL) {
   EXPECT_FALSE(SearchProvider::CanSendURL(
       GURL("http://www.google.com/search"),
       GURL("https://www.google.com/complete/search"), &google_template_url,
-      metrics::OmniboxEventProto::OTHER, SearchTermsData(), &profile_));
+      metrics::OmniboxEventProto::OTHER, SearchTermsData(), &client));
   profile_.GetPrefs()->SetBoolean(sync_driver::prefs::kSyncTabs, true);
 
   // Tab sync is encrypted.
@@ -3047,7 +3056,7 @@ TEST_F(SearchProviderTest, CanSendURL) {
   EXPECT_FALSE(SearchProvider::CanSendURL(
       GURL("http://www.google.com/search"),
       GURL("https://www.google.com/complete/search"), &google_template_url,
-      metrics::OmniboxEventProto::OTHER, SearchTermsData(), &profile_));
+      metrics::OmniboxEventProto::OTHER, SearchTermsData(), &client));
   encrypted_types.Remove(syncer::SESSIONS);
   service->OnEncryptedTypesChanged(encrypted_types, false);
 
@@ -3055,12 +3064,12 @@ TEST_F(SearchProviderTest, CanSendURL) {
   EXPECT_TRUE(SearchProvider::CanSendURL(
       GURL("http://www.google.com/search"),
       GURL("https://www.google.com/complete/search"), &google_template_url,
-      metrics::OmniboxEventProto::OTHER, SearchTermsData(), &profile_));
+      metrics::OmniboxEventProto::OTHER, SearchTermsData(), &client));
 }
 
 TEST_F(SearchProviderTest, TestDeleteMatch) {
-  AutocompleteMatch match(provider_, 0, true,
-                          AutocompleteMatchType::SEARCH_SUGGEST);
+  AutocompleteMatch match(
+      provider_.get(), 0, true, AutocompleteMatchType::SEARCH_SUGGEST);
   match.RecordAdditionalInfo(
       SearchProvider::kDeletionUrlKey,
       "https://www.google.com/complete/deleteitem?q=foo");
@@ -3230,9 +3239,6 @@ TEST_F(SearchProviderTest, SessionToken) {
 }
 
 TEST_F(SearchProviderTest, AnswersCache) {
-  // Initial condition: empty cache.
-  ASSERT_TRUE(provider_->last_answer_seen_.full_query_text.empty());
-
   AutocompleteResult result;
   ACMatches matches;
   AutocompleteMatch match1;
@@ -3248,10 +3254,7 @@ TEST_F(SearchProviderTest, AnswersCache) {
   matches.push_back(non_answer_match1);
   result.AppendMatches(matches);
   provider_->RegisterDisplayedAnswers(result);
-  EXPECT_EQ(base::ASCIIToUTF16("weather los angeles"),
-            provider_->last_answer_seen_.full_query_text);
-  EXPECT_EQ(base::ASCIIToUTF16("2334"),
-            provider_->last_answer_seen_.query_type);
+  ASSERT_FALSE(provider_->answers_cache_.empty());
 
   // Test that DoAnswersQuery retrieves data from cache.
   AutocompleteInput input(base::ASCIIToUTF16("weather l"),
@@ -3263,14 +3266,4 @@ TEST_F(SearchProviderTest, AnswersCache) {
   EXPECT_EQ(base::ASCIIToUTF16("weather los angeles"),
             provider_->prefetch_data_.full_query_text);
   EXPECT_EQ(base::ASCIIToUTF16("2334"), provider_->prefetch_data_.query_type);
-
-  // Mismatching input will return empty prefetch data.
-  AutocompleteInput input2(base::ASCIIToUTF16("weather n"),
-                           base::string16::npos, base::string16(), GURL(),
-                           metrics::OmniboxEventProto::INVALID_SPEC, false,
-                           false, true, true,
-                           ChromeAutocompleteSchemeClassifier(&profile_));
-  provider_->DoAnswersQuery(input2);
-  EXPECT_TRUE(provider_->prefetch_data_.full_query_text.empty());
-  EXPECT_TRUE(provider_->prefetch_data_.query_type.empty());
 }

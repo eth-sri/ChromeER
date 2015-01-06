@@ -36,7 +36,11 @@ Channel::EndpointInfo::EndpointInfo(scoped_refptr<MessagePipe> message_pipe,
 Channel::EndpointInfo::~EndpointInfo() {
 }
 
-Channel::Channel() : is_running_(false), next_local_id_(kBootstrapEndpointId) {
+Channel::Channel(embedder::PlatformSupport* platform_support)
+    : platform_support_(platform_support),
+      is_running_(false),
+      is_shutting_down_(false),
+      next_local_id_(kBootstrapEndpointId) {
 }
 
 bool Channel::Init(scoped_ptr<RawChannel> raw_channel) {
@@ -45,7 +49,7 @@ bool Channel::Init(scoped_ptr<RawChannel> raw_channel) {
 
   // No need to take |lock_|, since this must be called before this object
   // becomes thread-safe.
-  DCHECK(!is_running_no_lock());
+  DCHECK(!is_running_);
   raw_channel_ = raw_channel.Pass();
 
   if (!raw_channel_->Init(this)) {
@@ -63,11 +67,11 @@ void Channel::Shutdown() {
   IdToEndpointInfoMap to_destroy;
   {
     base::AutoLock locker(lock_);
-    if (!is_running_no_lock())
+    if (!is_running_)
       return;
 
     // Note: Don't reset |raw_channel_|, in case we're being called from within
-    // |OnReadMessage()| or |OnFatalError()|.
+    // |OnReadMessage()| or |OnError()|.
     raw_channel_->Shutdown();
     is_running_ = false;
 
@@ -84,7 +88,7 @@ void Channel::Shutdown() {
       it->second.message_pipe->OnRemove(it->second.port);
       num_live++;
     } else {
-      DCHECK(!it->second.message_pipe);
+      DCHECK(!it->second.message_pipe.get());
       num_zombies++;
     }
   }
@@ -93,15 +97,23 @@ void Channel::Shutdown() {
                                        << " zombies";
 }
 
+void Channel::WillShutdownSoon() {
+  base::AutoLock locker(lock_);
+  is_shutting_down_ = true;
+}
+
 MessageInTransit::EndpointId Channel::AttachMessagePipeEndpoint(
     scoped_refptr<MessagePipe> message_pipe,
     unsigned port) {
-  DCHECK(message_pipe);
+  DCHECK(message_pipe.get());
   DCHECK(port == 0 || port == 1);
 
   MessageInTransit::EndpointId local_id;
   {
     base::AutoLock locker(lock_);
+
+    DLOG_IF(WARNING, is_shutting_down_)
+        << "AttachMessagePipeEndpoint() while shutting down";
 
     while (next_local_id_ == MessageInTransit::kInvalidEndpointId ||
            local_id_to_endpoint_info_map_.find(next_local_id_) !=
@@ -151,6 +163,9 @@ bool Channel::RunMessagePipeEndpoint(MessageInTransit::EndpointId local_id,
   {
     base::AutoLock locker(lock_);
 
+    DLOG_IF(WARNING, is_shutting_down_)
+        << "RunMessagePipeEndpoint() while shutting down";
+
     IdToEndpointInfoMap::const_iterator it =
         local_id_to_endpoint_info_map_.find(local_id);
     if (it == local_id_to_endpoint_info_map_.end())
@@ -197,19 +212,20 @@ void Channel::RunRemoteMessagePipeEndpoint(
 
 bool Channel::WriteMessage(scoped_ptr<MessageInTransit> message) {
   base::AutoLock locker(lock_);
-  if (!is_running_no_lock()) {
+  if (!is_running_) {
     // TODO(vtl): I think this is probably not an error condition, but I should
     // think about it (and the shutdown sequence) more carefully.
     LOG(WARNING) << "WriteMessage() after shutdown";
     return false;
   }
 
+  DLOG_IF(WARNING, is_shutting_down_) << "WriteMessage() while shutting down";
   return raw_channel_->WriteMessage(message.Pass());
 }
 
 bool Channel::IsWriteBufferEmpty() {
   base::AutoLock locker(lock_);
-  if (!is_running_no_lock())
+  if (!is_running_)
     return true;
   return raw_channel_->IsWriteBufferEmpty();
 }
@@ -222,7 +238,7 @@ void Channel::DetachMessagePipeEndpoint(
   bool should_send_remove_message = false;
   {
     base::AutoLock locker_(lock_);
-    if (!is_running_no_lock())
+    if (!is_running_)
       return;
 
     IdToEndpointInfoMap::iterator it =
@@ -241,9 +257,6 @@ void Channel::DetachMessagePipeEndpoint(
         break;
       case EndpointInfo::STATE_WAIT_REMOTE_REMOVE_ACK:
         NOTREACHED();
-        break;
-      case EndpointInfo::STATE_WAIT_LOCAL_DETACH_AND_REMOTE_REMOVE_ACK:
-        it->second.state = EndpointInfo::STATE_WAIT_REMOTE_REMOVE_ACK;
         break;
     }
   }
@@ -268,7 +281,7 @@ size_t Channel::GetSerializedPlatformHandleSize() const {
 
 Channel::~Channel() {
   // The channel should have been shut down first.
-  DCHECK(!is_running_no_lock());
+  DCHECK(!is_running_);
 }
 
 void Channel::OnReadMessage(
@@ -290,17 +303,30 @@ void Channel::OnReadMessage(
   }
 }
 
-void Channel::OnFatalError(FatalError fatal_error) {
-  switch (fatal_error) {
-    case FATAL_ERROR_READ:
-      // Most read errors aren't notable: they just reflect that the other side
-      // tore down the channel.
-      DVLOG(1) << "RawChannel fatal error (read)";
+void Channel::OnError(Error error) {
+  switch (error) {
+    case ERROR_READ_SHUTDOWN:
+      // The other side was cleanly closed, so this isn't actually an error.
+      DVLOG(1) << "RawChannel read error (shutdown)";
       break;
-    case FATAL_ERROR_WRITE:
+    case ERROR_READ_BROKEN: {
+      base::AutoLock locker(lock_);
+      LOG_IF(ERROR, !is_shutting_down_)
+          << "RawChannel read error (connection broken)";
+      break;
+    }
+    case ERROR_READ_BAD_MESSAGE:
+      // Receiving a bad message means either a bug, data corruption, or
+      // malicious attack (probably due to some other bug).
+      LOG(ERROR) << "RawChannel read error (received bad message)";
+      break;
+    case ERROR_READ_UNKNOWN:
+      LOG(ERROR) << "RawChannel read error (unknown)";
+      break;
+    case ERROR_WRITE:
       // Write errors are slightly notable: they probably shouldn't happen under
       // normal operation (but maybe the other side crashed).
-      LOG(WARNING) << "RawChannel fatal error (write)";
+      LOG(WARNING) << "RawChannel write error";
       break;
   }
   Shutdown();
@@ -319,28 +345,32 @@ void Channel::OnReadMessageForDownstream(
   }
 
   EndpointInfo endpoint_info;
+  bool nonexistent_local_id_error = false;
   {
     base::AutoLock locker(lock_);
 
     // Since we own |raw_channel_|, and this method and |Shutdown()| should only
     // be called from the creation thread, |raw_channel_| should never be null
     // here.
-    DCHECK(is_running_no_lock());
+    DCHECK(is_running_);
 
     IdToEndpointInfoMap::const_iterator it =
         local_id_to_endpoint_info_map_.find(local_id);
-    if (it == local_id_to_endpoint_info_map_.end()) {
-      HandleRemoteError(base::StringPrintf(
-          "Received a message for nonexistent local destination ID %u",
-          static_cast<unsigned>(local_id)));
-      // This is strongly indicative of some problem. However, it's not a fatal
-      // error, since it may indicate a bug (or hostile) remote process. Don't
-      // die even for Debug builds, since handling this properly needs to be
-      // tested (TODO(vtl)).
-      DLOG(ERROR) << "This should not happen under normal operation.";
-      return;
-    }
-    endpoint_info = it->second;
+    if (it == local_id_to_endpoint_info_map_.end())
+      nonexistent_local_id_error = true;
+    else
+      endpoint_info = it->second;
+  }
+  if (nonexistent_local_id_error) {
+    HandleRemoteError(base::StringPrintf(
+        "Received a message for nonexistent local destination ID %u",
+        static_cast<unsigned>(local_id)));
+    // This is strongly indicative of some problem. However, it's not a fatal
+    // error, since it may indicate a buggy (or hostile) remote process. Don't
+    // die even for Debug builds, since handling this properly needs to be
+    // tested (TODO(vtl)).
+    DLOG(ERROR) << "This should not happen under normal operation.";
+    return;
   }
 
   // Ignore messages for zombie endpoints (not an error).

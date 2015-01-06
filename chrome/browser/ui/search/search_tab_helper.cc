@@ -31,6 +31,8 @@
 #include "chrome/browser/ui/tab_contents/core_tab_helper.h"
 #include "chrome/browser/ui/webui/ntp/ntp_user_data_logger.h"
 #include "chrome/common/url_constants.h"
+#include "chrome/grit/generated_resources.h"
+#include "components/google/core/browser/google_util.h"
 #include "components/search/search.h"
 #include "components/signin/core/browser/signin_manager.h"
 #include "content/public/browser/navigation_controller.h"
@@ -45,7 +47,6 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/page_transition_types.h"
 #include "content/public/common/referrer.h"
-#include "grit/generated_resources.h"
 #include "net/base/net_errors.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "url/gurl.h"
@@ -120,7 +121,18 @@ void RecordNewTabLoadTime(content::WebContents* contents) {
 
   base::TimeDelta duration =
       base::TimeTicks::Now() - core_tab_helper->new_tab_start_time();
-  UMA_HISTOGRAM_TIMES("Tab.NewTabOnload", duration);
+  if (IsCacheableNTP(contents)) {
+    if (google_util::IsGoogleDomainUrl(
+        contents->GetController().GetLastCommittedEntry()->GetURL(),
+        google_util::ALLOW_SUBDOMAIN,
+        google_util::DISALLOW_NON_STANDARD_PORTS)) {
+      UMA_HISTOGRAM_TIMES("Tab.NewTabOnload.Google", duration);
+    } else {
+      UMA_HISTOGRAM_TIMES("Tab.NewTabOnload.Other", duration);
+    }
+  } else {
+    UMA_HISTOGRAM_TIMES("Tab.NewTabOnload.Local", duration);
+  }
   core_tab_helper->set_new_tab_start_time(base::TimeTicks());
 }
 

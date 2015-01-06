@@ -38,6 +38,8 @@
 #include "chrome/browser/ui/profile_error_dialog.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/pref_names.h"
+#include "chrome/grit/chromium_strings.h"
+#include "chrome/grit/generated_resources.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/search_engines/default_search_manager.h"
 #include "components/search_engines/search_engines_pref_names.h"
@@ -45,8 +47,6 @@
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "grit/browser_resources.h"
-#include "grit/chromium_strings.h"
-#include "grit/generated_resources.h"
 #include "sync/internal_api/public/base/model_type.h"
 #include "ui/base/resource/resource_bundle.h"
 
@@ -353,13 +353,16 @@ scoped_ptr<ProfilePrefStoreManager> CreateProfilePrefStoreManager(
   // ways to defer preference loading until the device ID can be used.
   rlz_lib::GetMachineId(&device_id);
 #endif
+  std::string seed;
+#if defined(GOOGLE_CHROME_BUILD)
+  seed = ResourceBundle::GetSharedInstance().GetRawDataResource(
+      IDR_PREF_HASH_SEED_BIN).as_string();
+#endif
   return make_scoped_ptr(new ProfilePrefStoreManager(
       profile_path,
       GetTrackingConfiguration(),
       kTrackedPrefsReportingIDsCount,
-      ResourceBundle::GetSharedInstance()
-          .GetRawDataResource(IDR_PREF_HASH_SEED_BIN)
-          .as_string(),
+      seed,
       device_id,
       g_browser_process->local_state()));
 }

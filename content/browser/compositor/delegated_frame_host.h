@@ -46,7 +46,6 @@ class CONTENT_EXPORT DelegatedFrameHostClient {
   virtual ui::Compositor* GetCompositor() const = 0;
   virtual ui::Layer* GetLayer() = 0;
   virtual RenderWidgetHostImpl* GetHost() = 0;
-  virtual void SchedulePaintInRect(const gfx::Rect& damage_rect_in_dip) = 0;
   virtual bool IsVisible() = 0;
   virtual scoped_ptr<ResizeLock> CreateResizeLock(
       bool defer_compositor_lock) = 0;
@@ -92,8 +91,9 @@ class CONTENT_EXPORT DelegatedFrameHost
       float frame_device_scale_factor,
       const std::vector<ui::LatencyInfo>& latency_info);
   void WasHidden();
-  void WasShown();
+  void WasShown(const ui::LatencyInfo& latency_info);
   void WasResized();
+  bool HasSavedFrame();
   gfx::Size GetRequestedRendererSize() const;
   void AddedToWindow();
   void RemovingFromWindow();
@@ -122,7 +122,7 @@ class CONTENT_EXPORT DelegatedFrameHost
   }
   bool ShouldCreateResizeLockForTesting() { return ShouldCreateResizeLock(); }
   bool ReleasedFrontLockActiveForTesting() const {
-    return !!released_front_lock_;
+    return !!released_front_lock_.get();
   }
 
  private:

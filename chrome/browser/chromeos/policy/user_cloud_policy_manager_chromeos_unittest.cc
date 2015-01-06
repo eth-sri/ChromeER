@@ -58,9 +58,7 @@ using testing::_;
 
 namespace policy {
 
-namespace {
-
-const char kOAuthTokenCookie[] = "oauth_token=1234";
+const char kOAuthCodeCookie[] = "oauth_code=1234; Secure; HttpOnly";
 
 const char kOAuth2TokenPairData[] =
     "{"
@@ -74,8 +72,6 @@ const char kOAuth2AccessTokenData[] =
     "  \"access_token\": \"5678\","
     "  \"expires_in\": 3600"
     "}";
-
-}  // namespace
 
 class UserCloudPolicyManagerChromeOSTest : public testing::Test {
  protected:
@@ -97,8 +93,12 @@ class UserCloudPolicyManagerChromeOSTest : public testing::Test {
         std::make_pair(ProfileOAuth2TokenServiceFactory::GetInstance(),
                        BuildFakeProfileOAuth2TokenService));
     profile_ = profile_manager_->CreateTestingProfile(
-        chrome::kInitialProfile, scoped_ptr<PrefServiceSyncable>(),
-        base::UTF8ToUTF16("testing_profile"), 0, std::string(), factories);
+        chrome::kInitialProfile,
+        scoped_ptr<PrefServiceSyncable>(),
+        base::UTF8ToUTF16(""),
+        0,
+        std::string(),
+        factories);
     signin_profile_ = profile_manager_->CreateTestingProfile(kSigninProfile);
     signin_profile_->ForceIncognito(true);
     // Usually the signin Profile and the main Profile are separate, but since
@@ -233,7 +233,8 @@ class UserCloudPolicyManagerChromeOSTest : public testing::Test {
       if (!fetcher)
         return NULL;
       net::ResponseCookies cookies;
-      cookies.push_back(kOAuthTokenCookie);
+      cookies.push_back(kOAuthCodeCookie);
+
       fetcher->set_cookies(cookies);
       fetcher->delegate()->OnURLFetchComplete(fetcher);
 

@@ -9,14 +9,14 @@
 #include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "webkit/browser/fileapi/file_system_operation.h"
-#include "webkit/browser/webkit_storage_browser_export.h"
+#include "webkit/browser/storage_browser_export.h"
 #include "webkit/common/blob/scoped_file.h"
 
 namespace base {
 class Time;
 }
 
-namespace fileapi {
+namespace storage {
 
 class FileSystemOperationContext;
 class FileSystemURL;
@@ -26,12 +26,12 @@ class FileSystemURL;
 //
 // Layering structure of the FileSystemFileUtil was split out.
 // See http://crbug.com/128136 if you need it.
-class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemFileUtil {
+class STORAGE_EXPORT FileSystemFileUtil {
  public:
   typedef FileSystemOperation::CopyOrMoveOption CopyOrMoveOption;
 
   // It will be implemented by each subclass such as FileSystemFileEnumerator.
-  class WEBKIT_STORAGE_BROWSER_EXPORT AbstractFileEnumerator {
+  class STORAGE_EXPORT AbstractFileEnumerator {
    public:
     virtual ~AbstractFileEnumerator() {}
 
@@ -47,7 +47,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemFileUtil {
     virtual bool IsDirectory() = 0;
   };
 
-  class WEBKIT_STORAGE_BROWSER_EXPORT EmptyFileEnumerator
+  class STORAGE_EXPORT EmptyFileEnumerator
       : public AbstractFileEnumerator {
     virtual base::FilePath Next() OVERRIDE;
     virtual int64 Size() OVERRIDE;
@@ -167,7 +167,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemFileUtil {
   //
   // See header comments for AsyncFileUtil::CreateSnapshotFile() for
   // more details.
-  virtual webkit_blob::ScopedFile CreateSnapshotFile(
+  virtual storage::ScopedFile CreateSnapshotFile(
       FileSystemOperationContext* context,
       const FileSystemURL& url,
       base::File::Error* error,
@@ -181,6 +181,6 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemFileUtil {
   DISALLOW_COPY_AND_ASSIGN(FileSystemFileUtil);
 };
 
-}  // namespace fileapi
+}  // namespace storage
 
 #endif  // WEBKIT_BROWSER_FILEAPI_FILE_SYSTEM_FILE_UTIL_H_

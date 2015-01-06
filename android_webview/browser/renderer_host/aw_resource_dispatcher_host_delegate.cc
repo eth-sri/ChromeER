@@ -42,7 +42,7 @@ void SetCacheControlFlag(
       net::LOAD_VALIDATE_CACHE |
       net::LOAD_PREFERRING_CACHE |
       net::LOAD_ONLY_FROM_CACHE;
-  DCHECK((flag & all_cache_control_flags) == flag);
+  DCHECK_EQ((flag & all_cache_control_flags), flag);
   int load_flags = request->load_flags();
   load_flags &= ~all_cache_control_flags;
   load_flags |= flag;
@@ -212,8 +212,6 @@ void AwResourceDispatcherHostDelegate::RequestBeginning(
     content::ResourceContext* resource_context,
     content::AppCacheService* appcache_service,
     ResourceType resource_type,
-    int child_id,
-    int route_id,
     ScopedVector<content::ResourceThrottle>* throttles) {
 
   AddExtraHeadersIfNeeded(request, resource_context);
@@ -227,7 +225,7 @@ void AwResourceDispatcherHostDelegate::RequestBeginning(
   // however io_client may or may not be ready at the time depending on whether
   // webcontents is created.
   throttles->push_back(new IoThreadClientThrottle(
-      child_id, request_info->GetRenderFrameID(), request));
+      request_info->GetChildID(), request_info->GetRenderFrameID(), request));
 
   // We allow intercepting only navigations within main frames. This
   // is used to post onPageStarted. We handle shouldOverrideUrlLoading

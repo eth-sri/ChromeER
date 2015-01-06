@@ -22,6 +22,7 @@
 #include "net/http/http_request_headers.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_server_properties_impl.h"
+#include "net/http/transport_security_state.h"
 #include "net/proxy/proxy_service.h"
 #include "net/socket/client_socket_handle.h"
 #include "net/socket/client_socket_pool_histograms.h"
@@ -79,7 +80,8 @@ class SSLClientSocketPoolTest
       public ::testing::WithParamInterface<NextProto> {
  protected:
   SSLClientSocketPoolTest()
-      : proxy_service_(ProxyService::CreateDirect()),
+      : transport_security_state_(new TransportSecurityState),
+        proxy_service_(ProxyService::CreateDirect()),
         ssl_config_service_(new SSLConfigServiceDefaults),
         http_auth_handler_factory_(
             HttpAuthHandlerFactory::CreateDefault(&host_resolver_)),
@@ -331,13 +333,13 @@ TEST_P(SSLClientSocketPoolTest, SocketsConnectWithoutFlag) {
 
   SSLSocketDataProvider ssl(ASYNC, OK);
   ssl.is_in_session_cache = false;
-  ssl.should_block_on_connect = true;
+  ssl.should_pause_on_connect = true;
   SSLSocketDataProvider ssl2(ASYNC, OK);
   ssl2.is_in_session_cache = false;
-  ssl2.should_block_on_connect = true;
+  ssl2.should_pause_on_connect = true;
   SSLSocketDataProvider ssl3(ASYNC, OK);
   ssl3.is_in_session_cache = false;
-  ssl3.should_block_on_connect = true;
+  ssl3.should_pause_on_connect = true;
   socket_factory_.AddSSLSocketDataProvider(&ssl);
   socket_factory_.AddSSLSocketDataProvider(&ssl2);
   socket_factory_.AddSSLSocketDataProvider(&ssl3);
@@ -404,7 +406,7 @@ TEST_P(SSLClientSocketPoolTest, DeletedSSLConnectJob) {
 
   SSLSocketDataProvider ssl(ASYNC, OK);
   ssl.is_in_session_cache = false;
-  ssl.should_block_on_connect = true;
+  ssl.should_pause_on_connect = true;
   SSLSocketDataProvider ssl2(ASYNC, OK);
   ssl2.is_in_session_cache = false;
   SSLSocketDataProvider ssl3(ASYNC, OK);
@@ -469,7 +471,7 @@ TEST_P(SSLClientSocketPoolTest, DeletedSocketAfterFail) {
 
   SSLSocketDataProvider ssl(ASYNC, ERR_SSL_PROTOCOL_ERROR);
   ssl.is_in_session_cache = false;
-  ssl.should_block_on_connect = true;
+  ssl.should_pause_on_connect = true;
   SSLSocketDataProvider ssl2(ASYNC, OK);
   ssl2.is_in_session_cache = false;
   SSLSocketDataProvider ssl3(ASYNC, OK);
@@ -542,10 +544,10 @@ TEST_P(SSLClientSocketPoolTest, SimultaneousConnectJobsFail) {
   socket_factory_.AddSocketDataProvider(&data5);
   SSLSocketDataProvider ssl(ASYNC, ERR_SSL_PROTOCOL_ERROR);
   ssl.is_in_session_cache = false;
-  ssl.should_block_on_connect = true;
+  ssl.should_pause_on_connect = true;
   SSLSocketDataProvider ssl2(ASYNC, OK);
   ssl2.is_in_session_cache = false;
-  ssl2.should_block_on_connect = true;
+  ssl2.should_pause_on_connect = true;
   SSLSocketDataProvider ssl3(ASYNC, OK);
   ssl3.is_in_session_cache = false;
   SSLSocketDataProvider ssl4(ASYNC, OK);
@@ -632,7 +634,7 @@ TEST_P(SSLClientSocketPoolTest, SimultaneousConnectJobsSuccess) {
 
   SSLSocketDataProvider ssl(ASYNC, OK);
   ssl.is_in_session_cache = false;
-  ssl.should_block_on_connect = true;
+  ssl.should_pause_on_connect = true;
   SSLSocketDataProvider ssl2(ASYNC, OK);
   ssl2.is_in_session_cache = false;
   SSLSocketDataProvider ssl3(ASYNC, OK);
@@ -1257,8 +1259,7 @@ TEST_P(SSLClientSocketPoolTest, NeedProxyAuth) {
   EXPECT_FALSE(tunnel_handle->socket()->IsConnected());
 }
 
-// TODO(rch): re-enable this.
-TEST_P(SSLClientSocketPoolTest, DISABLED_IPPooling) {
+TEST_P(SSLClientSocketPoolTest, IPPooling) {
   const int kTestPort = 80;
   struct TestHosts {
     std::string name;

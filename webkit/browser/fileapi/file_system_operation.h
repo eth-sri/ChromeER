@@ -12,7 +12,7 @@
 #include "base/files/file_path.h"
 #include "base/process/process.h"
 #include "webkit/browser/fileapi/file_system_operation_context.h"
-#include "webkit/browser/webkit_storage_browser_export.h"
+#include "webkit/browser/storage_browser_export.h"
 #include "webkit/common/fileapi/directory_entry.h"
 
 namespace base {
@@ -23,13 +23,13 @@ namespace net {
 class URLRequest;
 }
 
-namespace webkit_blob {
+namespace storage {
 class ShareableFileReference;
 }
 
 class GURL;
 
-namespace fileapi {
+namespace storage {
 
 class FileSystemContext;
 class FileSystemURL;
@@ -58,7 +58,7 @@ class FileWriterDelegate;
 // it gets called.
 class FileSystemOperation {
  public:
-  WEBKIT_STORAGE_BROWSER_EXPORT static FileSystemOperation* Create(
+  STORAGE_EXPORT static FileSystemOperation* Create(
       const FileSystemURL& url,
       FileSystemContext* file_system_context,
       scoped_ptr<FileSystemOperationContext> operation_context);
@@ -117,8 +117,8 @@ class FileSystemOperation {
       void(base::File::Error result,
            const base::File::Info& file_info,
            const base::FilePath& platform_path,
-           const scoped_refptr<webkit_blob::ShareableFileReference>& file_ref)>
-          SnapshotFileCallback;
+           const scoped_refptr<storage::ShareableFileReference>& file_ref)>
+      SnapshotFileCallback;
 
   // Used for progress update callback for Copy().
   //
@@ -480,6 +480,6 @@ class FileSystemOperation {
   };
 };
 
-}  // namespace fileapi
+}  // namespace storage
 
 #endif  // WEBKIT_BROWSER_FILEAPI_FILE_SYSTEM_OPERATION_H_

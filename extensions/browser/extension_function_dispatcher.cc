@@ -231,6 +231,8 @@ void ExtensionFunctionDispatcher::DispatchOnIOThread(
     const ExtensionHostMsg_Request_Params& params) {
   const Extension* extension =
       extension_info_map->extensions().GetByID(params.extension_id);
+  if (!extension)
+    return;
 
   ExtensionFunction::ResponseCallback callback(
       base::Bind(&IOThreadResponseCallback, ipc_sender, routing_id,
@@ -455,7 +457,7 @@ ExtensionFunction* ExtensionFunctionDispatcher::CreateExtensionFunction(
   function->set_response_callback(callback);
   function->set_source_tab_id(params.source_tab_id);
   function->set_source_context_type(
-      process_map.GuessContextType(extension, requesting_process_id));
+      process_map.GetMostLikelyContextType(extension, requesting_process_id));
 
   return function;
 }

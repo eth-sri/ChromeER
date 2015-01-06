@@ -14,6 +14,7 @@
 
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
+#include "base/observer_list.h"
 #include "base/prefs/pref_change_registrar.h"
 #include "base/threading/platform_thread.h"
 #include "base/tuple.h"
@@ -147,6 +148,16 @@ class HostContentSettingsMap
                          const std::string& resource_identifier,
                          base::Value* value);
 
+  // Sets the most specific rule that currently defines the permission for the
+  // given permission type.
+  void SetNarrowestWebsiteSetting(
+      const ContentSettingsPattern& primary_pattern,
+      const ContentSettingsPattern& secondary_pattern,
+      ContentSettingsType content_type,
+      const std::string& resource_identifier,
+      ContentSetting setting,
+      content_settings::SettingInfo existing_info);
+
   // Convenience method to add a content setting for the given URLs, making sure
   // that there is no setting overriding it.
   //
@@ -237,6 +248,10 @@ class HostContentSettingsMap
       const ContentSettingsPattern& secondary_pattern,
       ContentSettingsType content_type);
 
+  // Adds/removes an observer for content settings changes.
+  void AddObserver(content_settings::Observer* observer);
+  void RemoveObserver(content_settings::Observer* observer);
+
   // Passes ownership of |clock|.
   void SetPrefClockForTesting(scoped_ptr<base::Clock> clock);
 
@@ -299,6 +314,8 @@ class HostContentSettingsMap
   // time and by RegisterExtensionService, both of which should happen
   // before any other uses of it.
   ProviderMap content_settings_providers_;
+
+  ObserverList<content_settings::Observer> observers_;
 
   DISALLOW_COPY_AND_ASSIGN(HostContentSettingsMap);
 };

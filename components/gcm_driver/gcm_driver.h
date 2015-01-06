@@ -18,6 +18,8 @@
 namespace gcm {
 
 class GCMAppHandler;
+class GCMConnectionObserver;
+struct AccountMapping;
 
 // Bridge between GCM users in Chrome and the platform-specific implementation.
 class GCMDriver {
@@ -87,6 +89,12 @@ class GCMDriver {
   // Returns the handler for the given app.
   GCMAppHandler* GetAppHandler(const std::string& app_id);
 
+  // Adds a connection state observer.
+  virtual void AddConnectionObserver(GCMConnectionObserver* observer) = 0;
+
+  // Removes a connection state observer.
+  virtual void RemoveConnectionObserver(GCMConnectionObserver* observer) = 0;
+
   // Enables/disables GCM service.
   virtual void Enable() = 0;
   virtual void Disable() = 0;
@@ -109,6 +117,13 @@ class GCMDriver {
   // Enables/disables GCM activity recording, and then returns the stats.
   virtual void SetGCMRecording(const GetGCMStatisticsCallback& callback,
                                bool recording) = 0;
+
+  // Updates the |account_mapping| information in persistent store.
+  virtual void UpdateAccountMapping(const AccountMapping& account_mapping) = 0;
+
+  // Removes the account mapping information reated to |account_id| from
+  // persistent store.
+  virtual void RemoveAccountMapping(const std::string& account_id) = 0;
 
  protected:
   // Ensures that the GCM service starts (if necessary conditions are met).

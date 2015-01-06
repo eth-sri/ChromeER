@@ -7,6 +7,7 @@ import traceback
 
 from telemetry import value as value_module
 
+
 class FailureValue(value_module.Value):
 
   def __init__(self, page, exc_info, description=None):
@@ -57,7 +58,7 @@ class FailureValue(value_module.Value):
   def GetBuildbotValue(self):
     return None
 
-  def GetBuildbotMeasurementAndTraceNameForPerPageResult(self):
+  def GetChartAndTraceNameForPerPageResult(self):
     return None
 
   def GetRepresentativeNumber(self):

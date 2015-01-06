@@ -31,13 +31,11 @@
 #include "chrome/browser/chromeos/login/saml/saml_offline_signin_limiter_factory.h"
 #include "chrome/browser/chromeos/login/signin/oauth2_login_manager.h"
 #include "chrome/browser/chromeos/login/signin/oauth2_login_manager_factory.h"
+#include "chrome/browser/chromeos/login/users/chrome_user_manager.h"
 #include "chrome/browser/chromeos/login/users/supervised_user_manager.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
-#include "chrome/browser/chromeos/ownership/owner_settings_service_factory.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
-#include "chrome/browser/component_updater/component_updater_service.h"
 #include "chrome/browser/first_run/first_run.h"
 #include "chrome/browser/google/google_brand_chromeos.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
@@ -60,10 +58,12 @@
 #include "chromeos/network/portal_detector/network_portal_detector.h"
 #include "chromeos/network/portal_detector/network_portal_detector_strategy.h"
 #include "chromeos/settings/cros_settings_names.h"
+#include "components/component_updater/component_updater_service.h"
 #include "components/policy/core/common/cloud/cloud_policy_constants.h"
 #include "components/session_manager/core/session_manager.h"
 #include "components/signin/core/browser/signin_manager_base.h"
 #include "components/user_manager/user.h"
+#include "components/user_manager/user_manager.h"
 #include "components/user_manager/user_type.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
@@ -73,9 +73,11 @@ namespace chromeos {
 namespace {
 
 void InitLocaleAndInputMethodsForNewUser(
-    PrefService* prefs,
+    UserSessionManager* session_manager,
+    Profile* profile,
     const std::string& public_session_locale,
     const std::string& public_session_input_method) {
+  PrefService* prefs = profile->GetPrefs();
   std::string locale;
   if (!public_session_locale.empty()) {
     // If this is a public session and the user chose a |public_session_locale|,
@@ -104,7 +106,9 @@ void InitLocaleAndInputMethodsForNewUser(
     // Otherwise, set kLanguagePreloadEngines to a list of input methods derived
     // from the |locale| and the currently active input method.
     manager->GetInputMethodUtil()->GetFirstLoginInputMethodIds(
-        locale, manager->GetCurrentInputMethod(), &input_method_ids);
+        locale,
+        session_manager->GetDefaultIMEState(profile)->GetCurrentInputMethod(),
+        &input_method_ids);
   }
 
   // Save the input methods in the user's preferences.
@@ -190,7 +194,7 @@ void UserSessionManager::OverrideHomedir() {
   // Override user homedir, check for ProfileManager being initialized as
   // it may not exist in unit tests.
   if (g_browser_process->profile_manager()) {
-    UserManager* user_manager = UserManager::Get();
+    user_manager::UserManager* user_manager = user_manager::UserManager::Get();
     if (user_manager->GetLoggedInUsers().size() == 1) {
       base::FilePath homedir = ProfileHelper::GetProfilePathByUserIdHash(
           user_manager->GetPrimaryUser()->username_hash());
@@ -218,9 +222,16 @@ UserSessionManager::UserSessionManager()
       session_restore_strategy_(
           OAuth2LoginManager::RESTORE_FROM_SAVED_OAUTH2_REFRESH_TOKEN) {
   net::NetworkChangeNotifier::AddConnectionTypeObserver(this);
+  user_manager::UserManager::Get()->AddSessionStateObserver(this);
 }
 
 UserSessionManager::~UserSessionManager() {
+  // UserManager is destroyed before singletons, so we need to check if it
+  // still exists.
+  // TODO(nkostylev): fix order of destruction of UserManager
+  // / UserSessionManager objects.
+  if (user_manager::UserManager::IsInitialized())
+    user_manager::UserManager::Get()->RemoveSessionStateObserver(this);
   net::NetworkChangeNotifier::RemoveConnectionTypeObserver(this);
 }
 
@@ -248,13 +259,8 @@ void UserSessionManager::StartSession(
 }
 
 void UserSessionManager::PerformPostUserLoggedInActions() {
-  UserManager* user_manager = UserManager::Get();
+  user_manager::UserManager* user_manager = user_manager::UserManager::Get();
   if (user_manager->GetLoggedInUsers().size() == 1) {
-    // Owner must be first user in session. DeviceSettingsService can't deal
-    // with multiple user and will mix up ownership, crbug.com/230018.
-    OwnerSettingsServiceFactory::GetInstance()->
-        SetUsername(user_manager->GetActiveUser()->email());
-
     if (NetworkPortalDetector::IsInitialized()) {
       NetworkPortalDetector::Get()->SetStrategy(
           PortalDetectorStrategy::STRATEGY_ID_SESSION);
@@ -263,7 +269,7 @@ void UserSessionManager::PerformPostUserLoggedInActions() {
 }
 
 void UserSessionManager::RestoreAuthenticationSession(Profile* user_profile) {
-  UserManager* user_manager = UserManager::Get();
+  user_manager::UserManager* user_manager = user_manager::UserManager::Get();
   // We need to restore session only for logged in regular (GAIA) users.
   // Note: stub user is a special case that is used for tests, running
   // linux_chromeos build on dev workstations w/o user_id parameters.
@@ -323,15 +329,13 @@ UserSessionManager::GetSigninSessionRestoreStrategy() {
   return session_restore_strategy_;
 }
 
-// static
 void UserSessionManager::SetFirstLoginPrefs(
-    PrefService* prefs,
+    Profile* profile,
     const std::string& public_session_locale,
     const std::string& public_session_input_method) {
   VLOG(1) << "Setting first login prefs";
-  InitLocaleAndInputMethodsForNewUser(prefs,
-                                      public_session_locale,
-                                      public_session_input_method);
+  InitLocaleAndInputMethodsForNewUser(
+      this, profile, public_session_locale, public_session_input_method);
 }
 
 bool UserSessionManager::GetAppModeChromeClientOAuthInfo(
@@ -366,7 +370,7 @@ bool UserSessionManager::RespectLocalePreference(
   if (g_browser_process == NULL)
     return false;
 
-  UserManager* user_manager = UserManager::Get();
+  user_manager::UserManager* user_manager = user_manager::UserManager::Get();
   if (!user || (user_manager->IsUserLoggedIn() &&
                 user != user_manager->GetPrimaryUser())) {
     return false;
@@ -426,7 +430,8 @@ bool UserSessionManager::RespectLocalePreference(
   //
   // For Guest mode, user locale preferences will never get initialized.
   // So input methods should be enabled somewhere.
-  const bool enable_layouts = UserManager::Get()->IsLoggedInAsGuest();
+  const bool enable_layouts =
+      user_manager::UserManager::Get()->IsLoggedInAsGuest();
   locale_util::SwitchLanguage(pref_locale,
                               enable_layouts,
                               false /* login_layouts_only */,
@@ -436,13 +441,13 @@ bool UserSessionManager::RespectLocalePreference(
 }
 
 void UserSessionManager::AddSessionStateObserver(
-    UserSessionStateObserver* observer) {
+    chromeos::UserSessionStateObserver* observer) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
   session_state_observer_list_.AddObserver(observer);
 }
 
 void UserSessionManager::RemoveSessionStateObserver(
-    UserSessionStateObserver* observer) {
+    chromeos::UserSessionStateObserver* observer) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
   session_state_observer_list_.RemoveObserver(observer);
 }
@@ -476,8 +481,8 @@ void UserSessionManager::OnSessionRestoreStateChanged(
   // error. http://crbug.com/295245
   if (!connection_error) {
     // We are in one of "done" states here.
-    UserManager::Get()->SaveUserOAuthStatus(
-        UserManager::Get()->GetLoggedInUser()->email(),
+    user_manager::UserManager::Get()->SaveUserOAuthStatus(
+        user_manager::UserManager::Get()->GetLoggedInUser()->email(),
         user_status);
   }
 
@@ -494,8 +499,8 @@ void UserSessionManager::OnNewRefreshTokenAvaiable(Profile* user_profile) {
   login_manager->RemoveObserver(this);
 
   // Mark user auth token status as valid.
-  UserManager::Get()->SaveUserOAuthStatus(
-      UserManager::Get()->GetLoggedInUser()->email(),
+  user_manager::UserManager::Get()->SaveUserOAuthStatus(
+      user_manager::UserManager::Get()->GetLoggedInUser()->email(),
       user_manager::User::OAUTH2_TOKEN_STATUS_VALID);
 
   VLOG(1) << "Exiting after new refresh token fetched";
@@ -511,7 +516,7 @@ void UserSessionManager::OnConnectionTypeChanged(
       base::CommandLine::ForCurrentProcess()->HasSwitch(
           ::switches::kTestName) ||
       base::CommandLine::ForCurrentProcess()->HasSwitch(::switches::kTestType);
-  UserManager* user_manager = UserManager::Get();
+  user_manager::UserManager* user_manager = user_manager::UserManager::Get();
   if (type == net::NetworkChangeNotifier::CONNECTION_NONE ||
       !user_manager->IsUserLoggedIn() ||
       !user_manager->IsLoggedInAsRegularUser() ||
@@ -527,7 +532,7 @@ void UserSessionManager::OnConnectionTypeChanged(
     if (!(*it)->is_profile_created())
       continue;
 
-    Profile* user_profile = ProfileHelper::Get()->GetProfileByUser(*it);
+    Profile* user_profile = ProfileHelper::Get()->GetProfileByUserUnsafe(*it);
     bool should_restore_session =
         pending_signin_restore_sessions_.find((*it)->email()) !=
         pending_signin_restore_sessions_.end();
@@ -585,7 +590,7 @@ void UserSessionManager::StartCrosSession() {
 void UserSessionManager::NotifyUserLoggedIn() {
   BootTimesLoader* btl = BootTimesLoader::Get();
   btl->AddLoginTimeMarker("UserLoggedIn-Start", false);
-  UserManager* user_manager = UserManager::Get();
+  user_manager::UserManager* user_manager = user_manager::UserManager::Get();
   user_manager->UserLoggedIn(user_context_.GetUserID(),
                              user_context_.GetUserIDHash(),
                              false);
@@ -599,7 +604,7 @@ void UserSessionManager::PrepareProfile() {
   // TODO(nkostylev): Figure out whether demo session is using the right profile
   // path or not. See https://codereview.chromium.org/171423009
   g_browser_process->profile_manager()->CreateProfileAsync(
-      ProfileHelper::GetUserProfileDirByUserId(user_context_.GetUserID()),
+      ProfileHelper::GetProfilePathByUserIdHash(user_context_.GetUserIDHash()),
       base::Bind(&UserSessionManager::OnProfileCreated,
                  AsWeakPtr(),
                  user_context_,
@@ -640,20 +645,21 @@ void UserSessionManager::OnProfileCreated(const UserContext& user_context,
 void UserSessionManager::InitProfilePreferences(
     Profile* profile,
     const UserContext& user_context) {
-  if (UserManager::Get()->IsCurrentUserNew()) {
-    SetFirstLoginPrefs(profile->GetPrefs(),
+  if (user_manager::UserManager::Get()->IsCurrentUserNew()) {
+    SetFirstLoginPrefs(profile,
                        user_context.GetPublicSessionLocale(),
                        user_context.GetPublicSessionInputMethod());
   }
 
-  if (UserManager::Get()->IsLoggedInAsSupervisedUser()) {
-    user_manager::User* active_user = UserManager::Get()->GetActiveUser();
+  if (user_manager::UserManager::Get()->IsLoggedInAsSupervisedUser()) {
+    user_manager::User* active_user =
+        user_manager::UserManager::Get()->GetActiveUser();
     std::string supervised_user_sync_id =
-        UserManager::Get()->GetSupervisedUserManager()->
-            GetUserSyncId(active_user->email());
+        ChromeUserManager::Get()->GetSupervisedUserManager()->GetUserSyncId(
+            active_user->email());
     profile->GetPrefs()->SetString(prefs::kSupervisedUserId,
                                    supervised_user_sync_id);
-  } else if (UserManager::Get()->IsLoggedInAsRegularUser()) {
+  } else if (user_manager::UserManager::Get()->IsLoggedInAsRegularUser()) {
     // Make sure that the google service username is properly set (we do this
     // on every sign in, not just the first login, to deal with existing
     // profiles that might not have it set yet).
@@ -743,7 +749,7 @@ void UserSessionManager::FinalizePrepareProfile(Profile* profile) {
   }
   btl->AddLoginTimeMarker("TPMOwn-End", false);
 
-  UserManager* user_manager = UserManager::Get();
+  user_manager::UserManager* user_manager = user_manager::UserManager::Get();
   if (user_manager->IsLoggedInAsRegularUser()) {
     SAMLOfflineSigninLimiter* saml_offline_signin_limiter =
         SAMLOfflineSigninLimiterFactory::GetForProfile(profile);
@@ -867,8 +873,10 @@ void UserSessionManager::InitRlzImpl(Profile* profile, bool disabled) {
   // Negative ping delay means to send ping immediately after a first search is
   // recorded.
   RLZTracker::InitRlzFromProfileDelayed(
-      profile, UserManager::Get()->IsCurrentUserNew(),
-      ping_delay < 0, base::TimeDelta::FromMilliseconds(abs(ping_delay)));
+      profile,
+      user_manager::UserManager::Get()->IsCurrentUserNew(),
+      ping_delay < 0,
+      base::TimeDelta::FromMilliseconds(abs(ping_delay)));
   if (delegate_)
     delegate_->OnRlzInitialized();
 #endif
@@ -909,7 +917,7 @@ void UserSessionManager::OnRestoreActiveSessions(
   }
 
   // One profile has been already loaded on browser start.
-  UserManager* user_manager = UserManager::Get();
+  user_manager::UserManager* user_manager = user_manager::UserManager::Get();
   DCHECK(user_manager->GetLoggedInUsers().size() == 1);
   DCHECK(user_manager->GetActiveUser());
   std::string active_user_id = user_manager->GetActiveUser()->email();
@@ -940,7 +948,7 @@ void UserSessionManager::RestorePendingUserSessions() {
 
   // Check that this user is not logged in yet.
   user_manager::UserList logged_in_users =
-      UserManager::Get()->GetLoggedInUsers();
+      user_manager::UserManager::Get()->GetLoggedInUsers();
   bool user_already_logged_in = false;
   for (user_manager::UserList::const_iterator it = logged_in_users.begin();
        it != logged_in_users.end();
@@ -972,9 +980,29 @@ void UserSessionManager::RestorePendingUserSessions() {
 void UserSessionManager::NotifyPendingUserSessionsRestoreFinished() {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
   user_sessions_restored_ = true;
-  FOR_EACH_OBSERVER(UserSessionStateObserver,
+  FOR_EACH_OBSERVER(chromeos::UserSessionStateObserver,
                     session_state_observer_list_,
                     PendingUserSessionsRestoreFinished());
+}
+
+void UserSessionManager::ActiveUserChanged(
+    const user_manager::User* active_user) {
+  input_method::InputMethodManager* manager =
+      input_method::InputMethodManager::Get();
+  manager->SetState(
+      GetDefaultIMEState(ProfileHelper::Get()->GetProfileByUser(active_user)));
+}
+
+scoped_refptr<input_method::InputMethodManager::State>
+UserSessionManager::GetDefaultIMEState(Profile* profile) {
+  scoped_refptr<input_method::InputMethodManager::State> state =
+      default_ime_states_[profile];
+  if (!state) {
+    // Profile can be NULL in tests.
+    state = input_method::InputMethodManager::Get()->CreateNewState(profile);
+    default_ime_states_[profile] = state;
+  }
+  return state;
 }
 
 }  // namespace chromeos

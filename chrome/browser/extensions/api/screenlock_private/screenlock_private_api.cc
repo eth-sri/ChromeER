@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "base/lazy_instance.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/api/screenlock_private.h"
@@ -56,6 +57,8 @@ screenlock::AuthType FromLockHandlerAuthType(
       // locking.
       NOTREACHED();
       return screenlock::AUTH_TYPE_NONE;
+    case ScreenlockBridge::LockHandler::FORCE_OFFLINE_PASSWORD:
+      return screenlock::AUTH_TYPE_OFFLINEPASSWORD;
   }
   NOTREACHED();
   return screenlock::AUTH_TYPE_OFFLINEPASSWORD;
@@ -100,7 +103,7 @@ bool ScreenlockPrivateShowMessageFunction::RunAsync() {
   ScreenlockBridge::LockHandler* locker =
       ScreenlockBridge::Get()->lock_handler();
   if (locker)
-    locker->ShowBannerMessage(params->message);
+    locker->ShowBannerMessage(base::UTF8ToUTF16(params->message));
   SendResponse(error_.empty());
   return true;
 }
@@ -168,9 +171,17 @@ void ScreenlockPrivateShowCustomIconFunction::OnImageLoaded(
     const gfx::Image& image) {
   ScreenlockBridge::LockHandler* locker =
       ScreenlockBridge::Get()->lock_handler();
+  if (!locker) {
+    SetError(kNotLockedError);
+    SendResponse(false);
+    return;
+  }
+
+  ScreenlockBridge::UserPodCustomIconOptions icon;
+  icon.SetIconAsImage(image);
   locker->ShowUserPodCustomIcon(
       ScreenlockBridge::GetAuthenticatedUserEmail(GetProfile()),
-      image);
+      icon);
   SendResponse(error_.empty());
 }
 
@@ -212,7 +223,7 @@ bool ScreenlockPrivateSetAuthTypeFunction::RunAsync() {
     locker->SetAuthType(
         ScreenlockBridge::GetAuthenticatedUserEmail(GetProfile()),
         ToLockHandlerAuthType(params->auth_type),
-        initial_value);
+        base::UTF8ToUTF16(initial_value));
   } else {
     SetError(kNotLockedError);
   }

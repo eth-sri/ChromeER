@@ -12,12 +12,13 @@
 #include "chrome/browser/search/hotword_client.h"
 #include "chrome/browser/search/hotword_service.h"
 #include "chrome/browser/search/hotword_service_factory.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
-#if defined(OS_CHROMEOS)
-#include "chromeos/chromeos_switches.h"
-#endif
+#include "extensions/common/switches.h"
 
 namespace {
+
+const char kHotwordTestExtensionId[] = "cpfhkdbjfdgdebcjlifoldbijinjfifp";
 
 class MockHotwordService : public HotwordService {
  public:
@@ -78,6 +79,15 @@ class HotwordPrivateApiTest : public ExtensionApiTest {
  public:
   HotwordPrivateApiTest() {}
   virtual ~HotwordPrivateApiTest() {}
+
+  virtual void SetUpCommandLine(base::CommandLine* command_line) OVERRIDE {
+    ExtensionApiTest::SetUpCommandLine(command_line);
+
+    // Whitelist the test extensions (which all share a common ID) to use
+    // private APIs.
+    command_line->AppendSwitchASCII(
+        extensions::switches::kWhitelistedExtensionID, kHotwordTestExtensionId);
+  }
 
   virtual void SetUpOnMainThread() OVERRIDE {
     ExtensionApiTest::SetUpOnMainThread();
@@ -164,18 +174,16 @@ IN_PROC_BROWSER_TEST_F(HotwordPrivateApiTest, ExperimentalHotwordEnabled) {
   EXPECT_TRUE(listener.WaitUntilSatisfied());
 }
 
-#if defined(OS_CHROMEOS)
 IN_PROC_BROWSER_TEST_F(HotwordPrivateApiTest,
-                       ExperimentalHotwordEnabled_ChromeOS) {
+                       ExperimentalHotwordEnabled_Enabled) {
   base::CommandLine::ForCurrentProcess()->AppendSwitch(
-      chromeos::switches::kEnableOkGoogleVoiceSearch);
+      switches::kEnableExperimentalHotwording);
   ExtensionTestMessageListener listener("experimentalHotwordEnabled: true",
                                         false);
   ASSERT_TRUE(RunComponentExtensionTest("experimentalHotwordEnabled"))
       << message_;
   EXPECT_TRUE(listener.WaitUntilSatisfied());
 }
-#endif
 
 IN_PROC_BROWSER_TEST_F(HotwordPrivateApiTest, OnEnabledChanged) {
   // Trigger the pref registrar.

@@ -14,6 +14,7 @@
  */
 function LocalNTP() {
 <include src="../../../../ui/webui/resources/js/assert.js">
+<include src="local_ntp_design.js">
 <include src="local_ntp_util.js">
 <include src="window_disposition_util.js">
 
@@ -27,12 +28,17 @@ var CLASSES = {
   ALTERNATE_LOGO: 'alternate-logo', // Shows white logo if required by theme
   BLACKLIST: 'mv-blacklist', // triggers tile blacklist animation
   BLACKLIST_BUTTON: 'mv-x',
+  BLACKLIST_BUTTON_INNER: 'mv-x-inner',
+  DARK: 'dark',
+  DEFAULT_THEME: 'default-theme',
   DELAYED_HIDE_NOTIFICATION: 'mv-notice-delayed-hide',
+  DOT: 'dot',
   FAKEBOX_DISABLE: 'fakebox-disable', // Makes fakebox non-interactive
   FAKEBOX_FOCUS: 'fakebox-focused', // Applies focus styles to the fakebox
   // Applies drag focus style to the fakebox
   FAKEBOX_DRAG_FOCUS: 'fakebox-drag-focused',
   FAVICON: 'mv-favicon',
+  FAVICON_FALLBACK: 'mv-favicon-fallback',
   HIDE_BLACKLIST_BUTTON: 'mv-x-hide', // hides blacklist button during animation
   HIDE_FAKEBOX_AND_LOGO: 'hide-fakebox-logo',
   HIDE_NOTIFICATION: 'mv-notice-hide',
@@ -42,8 +48,10 @@ var CLASSES = {
   PAGE_READY: 'mv-page-ready',  // page tile when ready
   RTL: 'rtl',  // Right-to-left language text.
   THUMBNAIL: 'mv-thumb',
+  THUMBNAIL_FALLBACK: 'mv-thumb-fallback',
   THUMBNAIL_MASK: 'mv-mask',
   TILE: 'mv-tile',
+  TILE_INNER: 'mv-tile-inner',
   TITLE: 'mv-title'
 };
 
@@ -59,6 +67,7 @@ var IDS = {
   CUSTOM_THEME_STYLE: 'ct-style',
   FAKEBOX: 'fakebox',
   FAKEBOX_INPUT: 'fakebox-input',
+  FAKEBOX_TEXT: 'fakebox-text',
   LOGO: 'logo',
   NOTIFICATION: 'mv-notice',
   NOTIFICATION_CLOSE_BUTTON: 'mv-notice-x',
@@ -99,6 +108,13 @@ var NTP_DISPOSE_STATE = {
  * @const
  */
 var MIDDLE_MOUSE_BUTTON = 1;
+
+
+/**
+ * Specifications for the NTP design.
+ * @const {NtpDesign}
+ */
+var NTP_DESIGN = getNtpDesign(configData.ntpDesignName);
 
 
 /**
@@ -204,22 +220,6 @@ var omniboxInputBehavior = NTP_DISPOSE_STATE.NONE;
 var fakeboxInputBehavior = NTP_DISPOSE_STATE.HIDE_FAKEBOX_AND_LOGO;
 
 
-/**
- * Total tile width. Should be equal to mv-tile's width + 2 * border-width.
- * @private {number}
- * @const
- */
-var TILE_WIDTH = 140;
-
-
-/**
- * Margin between tiles. Should be equal to mv-tile's total horizontal margin.
- * @private {number}
- * @const
- */
-var TILE_MARGIN = 20;
-
-
 /** @type {number} @const */
 var MAX_NUM_TILES_TO_SHOW = 8;
 
@@ -262,27 +262,10 @@ var MOST_VISITED_THUMBNAIL_IFRAME = 'thumbnail.html';
 
 
 /**
- * The hex color for most visited tile elements.
- * @type {string}
- * @const
+ * The color of the title in RRGGBBAA format.
+ * @type {?string}
  */
-var MOST_VISITED_COLOR = '777777';
-
-
-/**
- * The font family for most visited tile elements.
- * @type {string}
- * @const
- */
-var MOST_VISITED_FONT_FAMILY = 'arial, sans-serif';
-
-
-/**
- * The font size for most visited tile elements.
- * @type {number}
- * @const
- */
-var MOST_VISITED_FONT_SIZE = 11;
+var titleColor = null;
 
 
 /**
@@ -298,15 +281,19 @@ var MOST_VISITED_PAINT_TIMEOUT_MSEC = 500;
  * pad out the section when not enough pages exist.
  *
  * @param {Element} elem The element for rendering the tile.
+ * @param {Element=} opt_innerElem The element for contents of tile.
  * @param {Element=} opt_titleElem The element for rendering the title.
  * @param {Element=} opt_thumbnailElem The element for rendering the thumbnail.
  * @param {number=} opt_rid The RID for the corresponding Most Visited page.
  *     Should only be left unspecified when creating a filler tile.
  * @constructor
  */
-function Tile(elem, opt_titleElem, opt_thumbnailElem, opt_rid) {
+function Tile(elem, opt_innerElem, opt_titleElem, opt_thumbnailElem, opt_rid) {
   /** @type {Element} */
   this.elem = elem;
+
+  /** @type {Element|undefined} */
+  this.innerElem = opt_innerElem;
 
   /** @type {Element|undefined} */
   this.titleElem = opt_titleElem;
@@ -320,24 +307,71 @@ function Tile(elem, opt_titleElem, opt_thumbnailElem, opt_rid) {
 
 
 /**
+ * Heuristic to determine whether a theme should be considered to be dark, so
+ * the colors of various UI elements can be adjusted.
+ * @param {ThemeBackgroundInfo|undefined} info Theme background information.
+ * @return {boolean} Whether the theme is dark.
+ * @private
+ */
+function getIsThemeDark(info) {
+  if (!info)
+    return false;
+  // Heuristic: light text implies dark theme.
+  var rgba = info.textColorRgba;
+  var luminance = 0.3 * rgba[0] + 0.59 * rgba[1] + 0.11 * rgba[2];
+  return luminance >= 128;
+}
+
+
+/**
  * Updates the NTP based on the current theme.
  * @private
  */
-function onThemeChange() {
+function renderTheme() {
+  var fakeboxText = $(IDS.FAKEBOX_TEXT);
+  if (fakeboxText) {
+    fakeboxText.innerHTML = '';
+    if (NTP_DESIGN.showFakeboxHint &&
+        configData.translatedStrings.searchboxPlaceholder) {
+      fakeboxText.textContent =
+          configData.translatedStrings.searchboxPlaceholder;
+    }
+  }
+
   var info = ntpApiHandle.themeBackgroundInfo;
-  if (!info)
+  var isThemeDark = getIsThemeDark(info);
+  ntpContents.classList.toggle(CLASSES.DARK, isThemeDark);
+  if (!info) {
+    titleColor = NTP_DESIGN.titleColor;
     return;
+  }
+
+  if (!info.usingDefaultTheme && info.textColorRgba) {
+    titleColor = convertToRRGGBBAAColor(info.textColorRgba);
+  } else {
+    titleColor = isThemeDark ?
+        NTP_DESIGN.titleColorAgainstDark : NTP_DESIGN.titleColor;
+  }
 
   var background = [convertToRGBAColor(info.backgroundColorRgba),
                     info.imageUrl,
                     info.imageTiling,
                     info.imageHorizontalAlignment,
                     info.imageVerticalAlignment].join(' ').trim();
+
   document.body.style.background = background;
   document.body.classList.toggle(CLASSES.ALTERNATE_LOGO, info.alternateLogo);
   updateThemeAttribution(info.attributionUrl);
   setCustomThemeStyle(info);
+}
 
+
+/**
+ * Updates the NTP based on the current theme, then rerenders all tiles.
+ * @private
+ */
+function onThemeChange() {
+  renderTheme();
   tilesContainer.innerHTML = '';
   renderAndShowTiles();
 }
@@ -352,8 +386,8 @@ function onThemeChange() {
 function setCustomThemeStyle(opt_themeInfo) {
   var customStyleElement = $(IDS.CUSTOM_THEME_STYLE);
   var head = document.head;
-
   if (opt_themeInfo && !opt_themeInfo.usingDefaultTheme) {
+    ntpContents.classList.remove(CLASSES.DEFAULT_THEME);
     var themeStyle =
       '#attribution {' +
       '  color: ' + convertToRGBAColor(opt_themeInfo.textColorLightRgba) + ';' +
@@ -368,11 +402,11 @@ function setCustomThemeStyle(opt_themeInfo) {
       '  -webkit-filter: drop-shadow(0 0 0 ' +
           convertToRGBAColor(opt_themeInfo.textColorRgba) + ');' +
       '}' +
-      '.mv-page-ready {' +
+      '.mv-page-ready .mv-mask {' +
       '  border: 1px solid ' +
-        convertToRGBAColor(opt_themeInfo.sectionBorderColorRgba) + ';' +
+          convertToRGBAColor(opt_themeInfo.sectionBorderColorRgba) + ';' +
       '}' +
-      '.mv-page-ready:hover, .mv-page-ready:focus {' +
+      '.mv-page-ready:hover .mv-mask, .mv-page-ready:focus .mv-mask {' +
       '  border-color: ' +
           convertToRGBAColor(opt_themeInfo.headerColorRgba) + ';' +
       '}';
@@ -387,8 +421,10 @@ function setCustomThemeStyle(opt_themeInfo) {
       head.appendChild(customStyleElement);
     }
 
-  } else if (customStyleElement) {
-    head.removeChild(customStyleElement);
+  } else {
+    ntpContents.classList.add(CLASSES.DEFAULT_THEME);
+    if (customStyleElement)
+      head.removeChild(customStyleElement);
   }
 }
 
@@ -427,6 +463,19 @@ function setAttributionVisibility_(show) {
 
 
  /**
+ * Converts an Array of color components into RRGGBBAA format.
+ * @param {Array.<number>} color Array of rgba color components.
+ * @return {string} Color string in RRGGBBAA format.
+ * @private
+ */
+function convertToRRGGBBAAColor(color) {
+  return color.map(function(t) {
+    return ('0' + t.toString(16)).slice(-2);  // To 2-digit, 0-padded hex.
+  }).join('');
+}
+
+
+ /**
  * Converts an Array of color components into RGBA format "rgba(R,G,B,A)".
  * @param {Array.<number>} color Array of rgba color components.
  * @return {string} CSS color in RGBA format.
@@ -444,10 +493,10 @@ function convertToRGBAColor(color) {
 function onMostVisitedChange() {
   if (isBlacklisting) {
     // Trigger the blacklist animation, which then triggers reloadAllTiles().
-    var lastBlacklistedTileElement = lastBlacklistedTile.elem;
-    lastBlacklistedTileElement.addEventListener(
+    var lastBlacklistedTileElem = lastBlacklistedTile.elem;
+    lastBlacklistedTileElem.addEventListener(
         'webkitTransitionEnd', blacklistAnimationDone);
-    lastBlacklistedTileElement.classList.add(CLASSES.BLACKLIST);
+    lastBlacklistedTileElem.classList.add(CLASSES.BLACKLIST);
   } else {
     reloadAllTiles();
   }
@@ -489,22 +538,19 @@ function reloadAllTiles() {
 /**
  * Binds onload events for a tile's internal <iframe> elements.
  * @param {Tile} tile The main tile to bind events to.
- * @param {Barrier} tileVisibilityBarrier A barrier to make tile visible the
- *   moment all tiles are loaded.
+ * @param {Barrier} tileVisibilityBarrier A barrier to make all tiles visible
+ *   the moment all tiles are loaded.
  */
 function bindTileOnloadEvents(tile, tileVisibilityBarrier) {
   if (tile.titleElem) {
     tileVisibilityBarrier.add();
     tile.titleElem.onload = function() {
-      tile.titleElem.hidden = false;
       tileVisibilityBarrier.remove();
     };
   }
-
   if (tile.thumbnailElem) {
     tileVisibilityBarrier.add();
     tile.thumbnailElem.onload = function() {
-      tile.thumbnailElem.hidden = false;
       tile.elem.classList.add(CLASSES.PAGE_READY);
       tileVisibilityBarrier.remove();
     };
@@ -526,18 +572,21 @@ function renderAndShowTiles() {
   // If we need to render new tiles, manage the visibility to hide intermediate
   // load states of the <iframe>s.
   if (numExisting < numDesired) {
-    var tileVisibilityBarrier = new Barrier(function() {
-      tilesContainer.style.visibility = 'visible';
-    });
+    var showAll = function() {
+      for (var i = 0; i < numDesired; ++i) {
+        if (tiles[i].titleElem || tiles[i].thumbnailElem)
+          tiles[i].elem.classList.add(CLASSES.PAGE_READY);
+      }
+    };
+    var tileVisibilityBarrier = new Barrier(showAll);
 
     if (!userInitiatedMostVisitedChange) {
       // Make titleContainer invisible, but still taking up space.
       // titleContainer becomes visible again (1) on timeout, or (2) when all
       // tiles finish loading (using tileVisibilityBarrier).
-      tilesContainer.style.visibility = 'hidden';
       window.setTimeout(function() {
         tileVisibilityBarrier.cancel();
-        tilesContainer.style.visibility = 'visible';
+        showAll();
       }, MOST_VISITED_PAINT_TIMEOUT_MSEC);
     }
     userInitiatedMostVisitedChange = false;
@@ -548,8 +597,8 @@ function renderAndShowTiles() {
     }
   }
 
-  // Show only the desired tiles. Not using .hidden because it does not work for
-  // inline-block elements.
+  // Show only the desired tiles. Note that .hidden does not work for
+  // inline-block elements like tiles[i].elem.
   for (var i = 0; i < numDesired; ++i)
     tiles[i].elem.style.display = 'inline-block';
   // If |numDesired| < |numExisting| then hide extra tiles (e.g., this occurs
@@ -560,23 +609,46 @@ function renderAndShowTiles() {
 
 
 /**
- * Builds a URL to display a most visited tile component in an iframe.
- * @param {string} filename The desired most visited component filename.
+ * Builds a URL to display a most visited tile title in an iframe.
  * @param {number} rid The restricted ID.
- * @param {string} color The text color for text in the iframe.
- * @param {string} fontFamily The font family for text in the iframe.
- * @param {number} fontSize The font size for text in the iframe.
  * @param {number} position The position of the iframe in the UI.
- * @return {string} An URL to display the most visited component in an iframe.
+ * @return {string} An URL to display the most visited title in an iframe.
  */
-function getMostVisitedIframeUrl(filename, rid, color, fontFamily, fontSize,
-    position) {
-  return 'chrome-search://most-visited/' + encodeURIComponent(filename) + '?' +
-      ['rid=' + encodeURIComponent(rid),
-       'c=' + encodeURIComponent(color),
-       'f=' + encodeURIComponent(fontFamily),
-       'fs=' + encodeURIComponent(fontSize),
-       'pos=' + encodeURIComponent(position)].join('&');
+function getMostVisitedTitleIframeUrl(rid, position) {
+  var url = 'chrome-search://most-visited/' +
+      encodeURIComponent(MOST_VISITED_TITLE_IFRAME);
+  var params = [
+      'rid=' + encodeURIComponent(rid),
+      'f=' + encodeURIComponent(NTP_DESIGN.fontFamily),
+      'fs=' + encodeURIComponent(NTP_DESIGN.fontSize),
+      'c=' + encodeURIComponent(titleColor),
+      'pos=' + encodeURIComponent(position)];
+  if (NTP_DESIGN.titleTextAlign)
+    params.push('ta=' + encodeURIComponent(NTP_DESIGN.titleTextAlign));
+  if (NTP_DESIGN.titleTextFade)
+    params.push('tf=' + encodeURIComponent(NTP_DESIGN.titleTextFade));
+  return url + '?' + params.join('&');
+}
+
+
+/**
+ * Builds a URL to display a most visited tile thumbnail in an iframe.
+ * @param {number} rid The restricted ID.
+ * @param {number} position The position of the iframe in the UI.
+ * @return {string} An URL to display the most visited thumbnail in an iframe.
+ */
+function getMostVisitedThumbnailIframeUrl(rid, position) {
+  var url = 'chrome-search://most-visited/' +
+      encodeURIComponent(MOST_VISITED_THUMBNAIL_IFRAME);
+  var params = [
+      'rid=' + encodeURIComponent(rid),
+      'f=' + encodeURIComponent(NTP_DESIGN.fontFamily),
+      'fs=' + encodeURIComponent(NTP_DESIGN.fontSize),
+      'c=' + encodeURIComponent(NTP_DESIGN.thumbnailTextColor),
+      'pos=' + encodeURIComponent(position)];
+  if (NTP_DESIGN.thumbnailFallback)
+    params.push('etfb=1');
+  return url + '?' + params.join('&');
 }
 
 
@@ -588,12 +660,18 @@ function getMostVisitedIframeUrl(filename, rid, color, fontFamily, fontSize,
  * @return {Tile} The new Tile.
  */
 function createTile(page, position) {
-  var tileElement = document.createElement('div');
-  tileElement.classList.add(CLASSES.TILE);
+  var tileElem = document.createElement('div');
+  tileElem.classList.add(CLASSES.TILE);
+  // Prevent tile from being selected (and highlighted) when areas outside the
+  // <iframe>s are clicked.
+  tileElem.addEventListener('mousedown', function(e) {
+    e.preventDefault();
+  });
+  var innerElem = createAndAppendElement(tileElem, 'div', CLASSES.TILE_INNER);
 
   if (page) {
     var rid = page.rid;
-    tileElement.classList.add(CLASSES.PAGE);
+    tileElem.classList.add(CLASSES.PAGE);
 
     var navigateFunction = function(e) {
       e.preventDefault();
@@ -601,15 +679,15 @@ function createTile(page, position) {
     };
 
     // The click handler for navigating to the page identified by the RID.
-    tileElement.addEventListener('click', navigateFunction);
+    tileElem.addEventListener('click', navigateFunction);
 
     // Make thumbnails tab-accessible.
-    tileElement.setAttribute('tabindex', '1');
-    registerKeyHandler(tileElement, KEYCODE.ENTER, navigateFunction);
+    tileElem.setAttribute('tabindex', '1');
+    registerKeyHandler(tileElem, KEYCODE.ENTER, navigateFunction);
 
     // The iframe which renders the page title.
-    var titleElement = document.createElement('iframe');
-    titleElement.tabIndex = '-1';
+    var titleElem = document.createElement('iframe');
+    titleElem.tabIndex = '-1';
 
     // Why iframes have IDs:
     //
@@ -626,49 +704,55 @@ function createTile(page, position) {
     // TODO(jered): Find and fix the root (probably Blink) bug.
 
     // Keep this ID here. See comment above.
-    titleElement.id = 'title-' + rid;
-    titleElement.className = CLASSES.TITLE;
-    titleElement.hidden = true;
-    titleElement.src = getMostVisitedIframeUrl(
-        MOST_VISITED_TITLE_IFRAME, rid, MOST_VISITED_COLOR,
-        MOST_VISITED_FONT_FAMILY, MOST_VISITED_FONT_SIZE, position);
-    tileElement.appendChild(titleElement);
+    titleElem.id = 'title-' + rid;
+    titleElem.className = CLASSES.TITLE;
+    titleElem.src = getMostVisitedTitleIframeUrl(rid, position);
+    innerElem.appendChild(titleElem);
+
+    // A fallback element for missing thumbnails.
+    if (NTP_DESIGN.thumbnailFallback) {
+      var fallbackElem = createAndAppendElement(
+          innerElem, 'div', CLASSES.THUMBNAIL_FALLBACK);
+      if (NTP_DESIGN.thumbnailFallback === THUMBNAIL_FALLBACK.DOT)
+        createAndAppendElement(fallbackElem, 'div', CLASSES.DOT);
+    }
 
     // The iframe which renders either a thumbnail or domain element.
-    var thumbnailElement = document.createElement('iframe');
-    thumbnailElement.tabIndex = '-1';
+    var thumbnailElem = document.createElement('iframe');
+    thumbnailElem.tabIndex = '-1';
     // Keep this ID here. See comment above.
-    thumbnailElement.id = 'thumb-' + rid;
-    thumbnailElement.className = CLASSES.THUMBNAIL;
-    thumbnailElement.hidden = true;
-    thumbnailElement.src = getMostVisitedIframeUrl(
-        MOST_VISITED_THUMBNAIL_IFRAME, rid, MOST_VISITED_COLOR,
-        MOST_VISITED_FONT_FAMILY, MOST_VISITED_FONT_SIZE, position);
-    tileElement.appendChild(thumbnailElement);
-
-    // A mask to darken the thumbnail on focus.
-    var maskElement = createAndAppendElement(
-        tileElement, 'div', CLASSES.THUMBNAIL_MASK);
+    thumbnailElem.id = 'thumb-' + rid;
+    thumbnailElem.className = CLASSES.THUMBNAIL;
+    thumbnailElem.src = getMostVisitedThumbnailIframeUrl(rid, position);
+    innerElem.appendChild(thumbnailElem);
 
     // The button used to blacklist this page.
     var blacklistButton = createAndAppendElement(
-        tileElement, 'div', CLASSES.BLACKLIST_BUTTON);
+        innerElem, 'div', CLASSES.BLACKLIST_BUTTON);
+    createAndAppendElement(
+        blacklistButton, 'div', CLASSES.BLACKLIST_BUTTON_INNER);
     var blacklistFunction = generateBlacklistFunction(rid);
     blacklistButton.addEventListener('click', blacklistFunction);
     blacklistButton.title = configData.translatedStrings.removeThumbnailTooltip;
 
-    // When a tile is focused, have delete also blacklist the page.
-    registerKeyHandler(tileElement, KEYCODE.DELETE, blacklistFunction);
+    // A helper mask on top of the tile that is used to create hover border
+    // and/or to darken the thumbnail on focus.
+    var maskElement = createAndAppendElement(
+        innerElem, 'div', CLASSES.THUMBNAIL_MASK);
 
-    // The page favicon, if any.
-    var faviconUrl = page.faviconUrl;
-    if (faviconUrl) {
-      var favicon = createAndAppendElement(tileElement, 'div', CLASSES.FAVICON);
-      favicon.style.backgroundImage = 'url(' + faviconUrl + ')';
+    // When a tile is focused, have delete also blacklist the page.
+    registerKeyHandler(tileElem, KEYCODE.DELETE, blacklistFunction);
+
+    // The page favicon, or a fallback.
+    var favicon = createAndAppendElement(innerElem, 'div', CLASSES.FAVICON);
+    if (page.faviconUrl) {
+      favicon.style.backgroundImage = 'url(' + page.faviconUrl + ')';
+    } else {
+      favicon.classList.add(CLASSES.FAVICON_FALLBACK);
     }
-    return new Tile(tileElement, titleElement, thumbnailElement, rid);
+    return new Tile(tileElem, innerElem, titleElem, thumbnailElem, rid);
   } else {
-    return new Tile(tileElement);
+    return new Tile(tileElem);
   }
 }
 
@@ -710,6 +794,7 @@ function showNotification() {
  */
 function hideNotification() {
   notification.classList.add(CLASSES.HIDE_NOTIFICATION);
+  notification.classList.remove(CLASSES.DELAYED_HIDE_NOTIFICATION);
 }
 
 
@@ -738,28 +823,47 @@ function onRestoreAll() {
 
 
 /**
- * Resizes elements because the number of tile columns may need to change in
- * response to resizing. Also shows or hides extra tiles tiles according to the
- * new width of the page.
+ * Recomputes the number of tile columns, and width of various contents based
+ * on the width of the window.
+ * @return {boolean} Whether the number of tile columns has changed.
  */
-function onResize() {
+function updateContentWidth() {
+  var tileRequiredWidth = NTP_DESIGN.tileWidth + NTP_DESIGN.tileMargin;
   // If innerWidth is zero, then use the maximum snap size.
-  var innerWidth = window.innerWidth || 820;
-  // Each tile has left and right margins that sum to TILE_MARGIN.
-  var tileRequiredWidth = TILE_WIDTH + TILE_MARGIN;
-  var availableWidth = innerWidth + TILE_MARGIN - MIN_TOTAL_HORIZONTAL_PADDING;
+  var maxSnapSize = MAX_NUM_COLUMNS * tileRequiredWidth -
+      NTP_DESIGN.tileMargin + MIN_TOTAL_HORIZONTAL_PADDING;
+  var innerWidth = window.innerWidth || maxSnapSize;
+  // Each tile has left and right margins that sum to NTP_DESIGN.tileMargin.
+  var availableWidth = innerWidth + NTP_DESIGN.tileMargin -
+      MIN_TOTAL_HORIZONTAL_PADDING;
   var newNumColumns = Math.floor(availableWidth / tileRequiredWidth);
   if (newNumColumns < MIN_NUM_COLUMNS)
     newNumColumns = MIN_NUM_COLUMNS;
   else if (newNumColumns > MAX_NUM_COLUMNS)
     newNumColumns = MAX_NUM_COLUMNS;
 
-  if (numColumnsShown != newNumColumns) {
-    numColumnsShown = newNumColumns;
-    var tilesContainerWidth = numColumnsShown * tileRequiredWidth;
-    tilesContainer.style.width = tilesContainerWidth + 'px';
-    if (fakebox)  // -2 to account for border.
-      fakebox.style.width = (tilesContainerWidth - TILE_MARGIN - 2) + 'px';
+  if (numColumnsShown === newNumColumns)
+    return false;
+
+  numColumnsShown = newNumColumns;
+  var tilesContainerWidth = numColumnsShown * tileRequiredWidth;
+  tilesContainer.style.width = tilesContainerWidth + 'px';
+  if (fakebox) {
+    // -2 to account for border.
+    var fakeboxWidth = (tilesContainerWidth - NTP_DESIGN.tileMargin - 2);
+    fakebox.style.width = fakeboxWidth + 'px';
+  }
+  return true;
+}
+
+
+/**
+ * Resizes elements because the number of tile columns may need to change in
+ * response to resizing. Also shows or hides extra tiles tiles according to the
+ * new width of the page.
+ */
+function onResize() {
+  if (updateContentWidth()) {
     // Render without clearing tiles.
     renderAndShowTiles();
   }
@@ -945,10 +1049,12 @@ function init() {
 
     fakebox = document.createElement('div');
     fakebox.id = IDS.FAKEBOX;
-    fakebox.innerHTML =
-        '<input id="' + IDS.FAKEBOX_INPUT +
-            '" autocomplete="off" tabindex="-1" aria-hidden="true">' +
-        '<div id="cursor"></div>';
+    var fakeboxHtml = [];
+    fakeboxHtml.push('<input id="' + IDS.FAKEBOX_INPUT +
+        '" autocomplete="off" tabindex="-1" aria-hidden="true">');
+    fakeboxHtml.push('<div id="' + IDS.FAKEBOX_TEXT + '"></div>');
+    fakeboxHtml.push('<div id="cursor"></div>');
+    fakebox.innerHTML = fakeboxHtml.join('');
 
     ntpContents.insertBefore(fakebox, ntpContents.firstChild);
     ntpContents.insertBefore(logo, ntpContents.firstChild);
@@ -956,26 +1062,34 @@ function init() {
     document.body.classList.add(CLASSES.NON_GOOGLE_PAGE);
   }
 
+  // Hide notifications after fade out, so we can't focus on links via keyboard.
+  notification.addEventListener('webkitTransitionEnd', hideNotification);
+
   var notificationMessage = $(IDS.NOTIFICATION_MESSAGE);
   notificationMessage.textContent =
       configData.translatedStrings.thumbnailRemovedNotification;
+
   var undoLink = $(IDS.UNDO_LINK);
   undoLink.addEventListener('click', onUndo);
   registerKeyHandler(undoLink, KEYCODE.ENTER, onUndo);
   undoLink.textContent = configData.translatedStrings.undoThumbnailRemove;
+
   var restoreAllLink = $(IDS.RESTORE_ALL_LINK);
   restoreAllLink.addEventListener('click', onRestoreAll);
   registerKeyHandler(restoreAllLink, KEYCODE.ENTER, onUndo);
   restoreAllLink.textContent =
       configData.translatedStrings.restoreThumbnailsShort;
+
   $(IDS.ATTRIBUTION_TEXT).textContent =
       configData.translatedStrings.attributionIntro;
 
   var notificationCloseButton = $(IDS.NOTIFICATION_CLOSE_BUTTON);
+  createAndAppendElement(
+      notificationCloseButton, 'div', CLASSES.BLACKLIST_BUTTON_INNER);
   notificationCloseButton.addEventListener('click', hideNotification);
 
   window.addEventListener('resize', onResize);
-  onResize();
+  updateContentWidth();
 
   var topLevelHandle = getEmbeddedSearchApiHandle();
 
@@ -989,7 +1103,7 @@ function init() {
   if (ntpApiHandle.isInputInProgress)
     onInputStart();
 
-  onThemeChange();
+  renderTheme();
   onMostVisitedChange();
 
   searchboxApiHandle = topLevelHandle.searchBox;
@@ -1032,6 +1146,7 @@ function init() {
 
   if (searchboxApiHandle.rtl) {
     $(IDS.NOTIFICATION).dir = 'rtl';
+    document.body.setAttribute('dir', 'rtl');
     // Add class for setting alignments based on language directionality.
     document.body.classList.add(CLASSES.RTL);
     $(IDS.TILES).dir = 'rtl';

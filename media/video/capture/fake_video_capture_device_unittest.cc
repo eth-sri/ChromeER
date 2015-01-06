@@ -98,7 +98,7 @@ class FakeVideoCaptureDeviceTest : public testing::Test {
 
   scoped_ptr<media::VideoCaptureDevice::Names> EnumerateDevices() {
     media::VideoCaptureDevice::Names* names;
-    EXPECT_CALL(*device_enumeration_listener_,
+    EXPECT_CALL(*device_enumeration_listener_.get(),
                 OnEnumeratedDevicesCallbackPtr(_)).WillOnce(SaveArg<0>(&names));
 
     video_capture_device_factory_->EnumerateDeviceNames(
@@ -169,7 +169,8 @@ TEST_F(FakeVideoCaptureDeviceTest, GetDeviceSupportedFormats) {
   }
 }
 
-TEST_F(FakeVideoCaptureDeviceTest, CaptureVariableResolution) {
+// Disabled, http://crbug.com/407061 .
+TEST_F(FakeVideoCaptureDeviceTest, DISABLED_CaptureVariableResolution) {
   scoped_ptr<VideoCaptureDevice::Names> names(EnumerateDevices());
 
   VideoCaptureParams capture_params;

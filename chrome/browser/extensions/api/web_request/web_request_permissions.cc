@@ -6,10 +6,10 @@
 
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
-#include "chrome/browser/guest_view/web_view/web_view_renderer_state.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/resource_request_info.h"
+#include "extensions/browser/guest_view/web_view/web_view_renderer_state.h"
 #include "extensions/browser/info_map.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
@@ -86,7 +86,7 @@ bool WebRequestPermissions::HideRequest(
   if (info) {
     int process_id = info->GetChildID();
     // Never hide requests from guest processes.
-    if (WebViewRendererState::GetInstance()->IsGuest(process_id))
+    if (extensions::WebViewRendererState::GetInstance()->IsGuest(process_id))
       return false;
 
     if (extension_info_map && (

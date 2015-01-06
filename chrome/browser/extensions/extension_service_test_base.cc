@@ -5,7 +5,7 @@
 #include "chrome/browser/extensions/extension_service_test_base.h"
 
 #include "base/command_line.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/message_loop/message_loop.h"
 #include "base/path_service.h"
@@ -167,11 +167,7 @@ void ExtensionServiceTestBase::InitializeExtensionServiceWithUpdater() {
   ExtensionServiceInitParams params = CreateDefaultInitParams();
   params.autoupdate_enabled = true;
   InitializeExtensionService(params);
-  // TODO(thestig): Remove this once we disable all tests that use
-  // ExtensionServiceTestBase.
-#if defined(ENABLE_EXTENSIONS)
   service_->updater()->Start();
-#endif
 }
 
 void ExtensionServiceTestBase::InitializeProcessManager() {

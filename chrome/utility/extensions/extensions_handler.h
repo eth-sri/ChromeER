@@ -39,6 +39,7 @@ class ExtensionsHandler : public UtilityMessageHandler {
   void OnUnpackExtension(const base::FilePath& extension_path,
                          const std::string& extension_id,
                          int location, int creation_flags);
+  void OnUnzipToDir(const base::FilePath& zip_path, const base::FilePath& dir);
   void OnParseUpdateManifest(const std::string& xml);
   void OnDecodeImageBase64(const std::string& encoded_data);
   void OnParseJSON(const std::string& json);
@@ -67,8 +68,7 @@ class ExtensionsHandler : public UtilityMessageHandler {
 #endif  // defined(OS_WIN) || defined(OS_MACOSX)
 
 #if defined(OS_WIN)
-  void OnGetAndEncryptWiFiCredentials(const std::string& network_guid,
-                                      const std::vector<uint8>& public_key);
+  void OnGetWiFiCredentials(const std::string& network_guid);
 #endif  // defined(OS_WIN)
 
   DISALLOW_COPY_AND_ASSIGN(ExtensionsHandler);

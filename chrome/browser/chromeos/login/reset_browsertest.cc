@@ -16,7 +16,6 @@
 #include "chrome/common/pref_names.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
-#include "chromeos/dbus/fake_dbus_thread_manager.h"
 #include "chromeos/dbus/fake_power_manager_client.h"
 #include "chromeos/dbus/fake_session_manager_client.h"
 #include "chromeos/dbus/fake_update_engine_client.h"
@@ -39,20 +38,24 @@ class ResetTest : public LoginManagerTest {
   }
   virtual ~ResetTest() {}
 
+  virtual void SetUpCommandLine(base::CommandLine* command_line) OVERRIDE {
+    LoginManagerTest::SetUpCommandLine(command_line);
+    command_line->AppendSwitch(switches::kEnableRollbackOption);
+  }
+
   // LoginManagerTest overrides:
   virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
-    FakeDBusThreadManager* dbus_manager = new FakeDBusThreadManager;
-    dbus_manager->SetFakeClients();
+    scoped_ptr<DBusThreadManagerSetter> dbus_setter =
+        chromeos::DBusThreadManager::GetSetterForTesting();
     session_manager_client_ = new FakeSessionManagerClient;
-    dbus_manager->SetSessionManagerClient(
+    dbus_setter->SetSessionManagerClient(
         scoped_ptr<SessionManagerClient>(session_manager_client_));
     power_manager_client_ = new FakePowerManagerClient;
-    dbus_manager->SetPowerManagerClient(
+    dbus_setter->SetPowerManagerClient(
         scoped_ptr<PowerManagerClient>(power_manager_client_));
     update_engine_client_ = new FakeUpdateEngineClient;
-    dbus_manager->SetUpdateEngineClient(
+    dbus_setter->SetUpdateEngineClient(
         scoped_ptr<UpdateEngineClient>(update_engine_client_));
-    DBusThreadManager::SetInstanceForTesting(dbus_manager);
 
     LoginManagerTest::SetUpInProcessBrowserTestFixture();
   }
@@ -91,6 +94,7 @@ class ResetFirstAfterBootTest : public ResetTest {
   virtual void SetUpCommandLine(base::CommandLine* command_line) OVERRIDE {
     LoginManagerTest::SetUpCommandLine(command_line);
     command_line->AppendSwitch(switches::kFirstExecAfterBoot);
+    command_line->AppendSwitch(switches::kEnableRollbackOption);
   }
 };
 

@@ -8,6 +8,7 @@
 #include "base/callback_helpers.h"
 #include "base/location.h"
 #include "base/synchronization/lock.h"
+#include "cc/base/simple_enclosed_region.h"
 #include "cc/layers/texture_layer_client.h"
 #include "cc/layers/texture_layer_impl.h"
 #include "cc/resources/single_release_callback.h"
@@ -45,6 +46,7 @@ void TextureLayer::ClearClient() {
     layer_tree_host()->StopRateLimiter();
   client_ = NULL;
   ClearTexture();
+  UpdateDrawsContent(HasDrawableContent());
 }
 
 void TextureLayer::ClearTexture() {
@@ -136,6 +138,7 @@ void TextureLayer::SetTextureMailboxInternal(
   else
     SetNeedsPushProperties();
 
+  UpdateDrawsContent(HasDrawableContent());
   // The active frame needs to be replaced and the mailbox returned before the
   // commit is called complete.
   SetNextCommitWaitsForActivation();
@@ -198,8 +201,8 @@ void TextureLayer::SetLayerTreeHost(LayerTreeHost* host) {
   Layer::SetLayerTreeHost(host);
 }
 
-bool TextureLayer::DrawsContent() const {
-  return (client_ || holder_ref_) && Layer::DrawsContent();
+bool TextureLayer::HasDrawableContent() const {
+  return (client_ || holder_ref_) && Layer::HasDrawableContent();
 }
 
 bool TextureLayer::Update(ResourceUpdateQueue* queue,
@@ -252,14 +255,14 @@ void TextureLayer::PushPropertiesTo(LayerImpl* layer) {
   }
 }
 
-Region TextureLayer::VisibleContentOpaqueRegion() const {
+SimpleEnclosedRegion TextureLayer::VisibleContentOpaqueRegion() const {
   if (contents_opaque())
-    return visible_content_rect();
+    return SimpleEnclosedRegion(visible_content_rect());
 
   if (blend_background_color_ && (SkColorGetA(background_color()) == 0xFF))
-    return visible_content_rect();
+    return SimpleEnclosedRegion(visible_content_rect());
 
-  return Region();
+  return SimpleEnclosedRegion();
 }
 
 TextureLayer::TextureMailboxHolder::MainThreadReference::MainThreadReference(

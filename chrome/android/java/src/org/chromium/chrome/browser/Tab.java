@@ -139,6 +139,10 @@ public class Tab implements NavigationClient {
 
     private boolean mIsClosing = false;
 
+    private Bitmap mFavicon = null;
+
+    private String mFaviconUrl = null;
+
     /**
      * A default {@link ChromeContextMenuItemDelegate} that supports some of the context menu
      * functionality.
@@ -826,6 +830,11 @@ public class Tab implements NavigationClient {
         }
 
         for (TabObserver observer : mObservers) observer.onContentChanged(this);
+
+        // For browser tabs, we want to set accessibility focus to the page
+        // when it loads. This is not the default behavior for embedded
+        // web views.
+        mContentViewCore.setShouldSetAccessibilityFocusOnPageLoad(true);
     }
 
     /**
@@ -885,10 +894,32 @@ public class Tab implements NavigationClient {
     /**
      * @return The bitmap of the favicon scaled to 16x16dp. null if no favicon
      *         is specified or it requires the default favicon.
-     *         TODO(bauerb): Upstream implementation.
      */
     public Bitmap getFavicon() {
-        return null;
+        String url = getUrl();
+        // Invalidate our cached values if necessary.
+        if (url == null || !url.equals(mFaviconUrl)) {
+            mFavicon = null;
+            mFaviconUrl = null;
+        }
+
+        if (mFavicon == null) {
+            // If we have no content return null.
+            if (getNativePage() == null && getContentViewCore() == null) return null;
+
+            Bitmap favicon = nativeGetFavicon(mNativeTabAndroid);
+
+            // If the favicon is not yet valid (i.e. it's either blank or a placeholder), then do
+            // not cache the results.  We still return this though so we have something to show.
+            if (favicon != null && nativeIsFaviconValid(mNativeTabAndroid)) {
+                mFavicon = favicon;
+                mFaviconUrl = url;
+            }
+
+            return favicon;
+        }
+
+        return mFavicon;
     }
 
     /**
@@ -988,6 +1019,14 @@ public class Tab implements NavigationClient {
     }
 
     /**
+     * A helper method to allow subclasses to handle the Instant support
+     * disabled event.
+     */
+    @CalledByNative
+    protected void onWebContentsInstantSupportDisabled() {
+    }
+
+    /**
      * A helper method to allow subclasses to build their own menu populator.
      * @return An instance of a {@link ContextMenuPopulator}.
      */
@@ -1014,6 +1053,8 @@ public class Tab implements NavigationClient {
      */
     @CalledByNative
     protected void onFaviconUpdated() {
+        mFavicon = null;
+        mFaviconUrl = null;
         for (TabObserver observer : mObservers) observer.onFaviconUpdated(this);
     }
 
@@ -1156,4 +1197,6 @@ public class Tab implements NavigationClient {
     private native void nativeSetActiveNavigationEntryTitleForUrl(long nativeTabAndroid, String url,
             String title);
     private native boolean nativePrint(long nativeTabAndroid);
+    private native Bitmap nativeGetFavicon(long nativeTabAndroid);
+    private native boolean nativeIsFaviconValid(long nativeTabAndroid);
 }

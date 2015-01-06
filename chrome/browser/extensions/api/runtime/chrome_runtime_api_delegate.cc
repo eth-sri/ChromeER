@@ -8,8 +8,6 @@
 #include "base/metrics/histogram.h"
 #include "base/time/time.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_warning_service.h"
-#include "chrome/browser/extensions/extension_warning_set.h"
 #include "chrome/browser/extensions/updater/extension_updater.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_finder.h"
@@ -19,12 +17,14 @@
 #include "content/public/browser/notification_service.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/notification_types.h"
+#include "extensions/browser/warning_service.h"
+#include "extensions/browser/warning_set.h"
 #include "extensions/common/api/runtime.h"
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/power_manager_client.h"
+#include "components/user_manager/user_manager.h"
 #endif
 
 using extensions::Extension;
@@ -120,13 +120,13 @@ void ChromeRuntimeAPIDelegate::ReloadExtension(
         base::Bind(&ExtensionService::TerminateExtension,
                    service->AsWeakPtr(),
                    extension_id));
-    extensions::ExtensionWarningSet warnings;
+    extensions::WarningSet warnings;
     warnings.insert(
-        extensions::ExtensionWarning::CreateReloadTooFrequentWarning(
+        extensions::Warning::CreateReloadTooFrequentWarning(
             extension_id));
     base::MessageLoop::current()->PostTask(
         FROM_HERE,
-        base::Bind(&extensions::ExtensionWarningService::NotifyWarningsOnUI,
+        base::Bind(&extensions::WarningService::NotifyWarningsOnUI,
                    browser_context_,
                    warnings));
   } else {
@@ -166,7 +166,6 @@ bool ChromeRuntimeAPIDelegate::CheckForUpdates(
 }
 
 void ChromeRuntimeAPIDelegate::OpenURL(const GURL& uninstall_url) {
-#if defined(ENABLE_EXTENSIONS)
   Profile* profile = Profile::FromBrowserContext(browser_context_);
   Browser* browser =
       chrome::FindLastActiveWithProfile(profile, chrome::GetActiveDesktop());
@@ -179,7 +178,6 @@ void ChromeRuntimeAPIDelegate::OpenURL(const GURL& uninstall_url) {
   params.disposition = NEW_FOREGROUND_TAB;
   params.user_gesture = false;
   chrome::Navigate(&params);
-#endif
 }
 
 bool ChromeRuntimeAPIDelegate::GetPlatformInfo(PlatformInfo* info) {
@@ -188,8 +186,6 @@ bool ChromeRuntimeAPIDelegate::GetPlatformInfo(PlatformInfo* info) {
     info->os = PlatformInfo::OS_MAC_;
   } else if (strcmp(os, "win") == 0) {
     info->os = PlatformInfo::OS_WIN_;
-  } else if (strcmp(os, "android") == 0) {
-    info->os = PlatformInfo::OS_ANDROID_;
   } else if (strcmp(os, "cros") == 0) {
     info->os = PlatformInfo::OS_CROS_;
   } else if (strcmp(os, "linux") == 0) {
@@ -230,7 +226,7 @@ bool ChromeRuntimeAPIDelegate::GetPlatformInfo(PlatformInfo* info) {
 
 bool ChromeRuntimeAPIDelegate::RestartDevice(std::string* error_message) {
 #if defined(OS_CHROMEOS)
-  if (chromeos::UserManager::Get()->IsLoggedInAsKioskApp()) {
+  if (user_manager::UserManager::Get()->IsLoggedInAsKioskApp()) {
     chromeos::DBusThreadManager::Get()
         ->GetPowerManagerClient()
         ->RequestRestart();

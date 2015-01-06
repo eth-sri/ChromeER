@@ -4,13 +4,13 @@
 
 #include "chrome/common/extensions/permissions/chrome_api_permissions.h"
 
+#include "chrome/grit/generated_resources.h"
 #include "extensions/common/permissions/api_permission.h"
 #include "extensions/common/permissions/api_permission_set.h"
 #include "extensions/common/permissions/media_galleries_permission.h"
 #include "extensions/common/permissions/permission_message.h"
 #include "extensions/common/permissions/permissions_info.h"
-#include "grit/extensions_strings.h"
-#include "grit/generated_resources.h"
+#include "extensions/strings/grit/extensions_strings.h"
 
 namespace extensions {
 
@@ -109,6 +109,8 @@ std::vector<APIPermissionInfo*> ChromeAPIPermissions::GetAllPermissions()
        PermissionMessage::kContentSettings},
       {APIPermission::kContextMenus, "contextMenus"},
       {APIPermission::kCookie, "cookies"},
+      {APIPermission::kCopresence, "copresence",
+       IDS_EXTENSION_PROMPT_WARNING_COPRESENCE, PermissionMessage::kCopresence},
       {APIPermission::kCopresencePrivate, "copresencePrivate"},
       {APIPermission::kEnterprisePlatformKeys, "enterprise.platformKeys"},
       {APIPermission::kFileBrowserHandler, "fileBrowserHandler",
@@ -123,7 +125,6 @@ std::vector<APIPermissionInfo*> ChromeAPIPermissions::GetAllPermissions()
       {APIPermission::kInfobars, "infobars"},
       {APIPermission::kInput, "input", APIPermissionInfo::kFlagNone,
        IDS_EXTENSION_PROMPT_WARNING_INPUT, PermissionMessage::kInput},
-      {APIPermission::kLedger, "ledger"},
       {APIPermission::kLocation, "location",
        APIPermissionInfo::kFlagCannotBeOptional,
        IDS_EXTENSION_PROMPT_WARNING_GEOLOCATION,
@@ -150,7 +151,7 @@ std::vector<APIPermissionInfo*> ChromeAPIPermissions::GetAllPermissions()
       {APIPermission::kTab, "tabs", APIPermissionInfo::kFlagNone,
        IDS_EXTENSION_PROMPT_WARNING_HISTORY_READ, PermissionMessage::kTabs},
       {APIPermission::kTopSites, "topSites", APIPermissionInfo::kFlagNone,
-       IDS_EXTENSION_PROMPT_WARNING_HISTORY_READ, PermissionMessage::kTabs},
+       IDS_EXTENSION_PROMPT_WARNING_TOPSITES, PermissionMessage::kTopSites},
       {APIPermission::kTts, "tts", 0, APIPermissionInfo::kFlagCannotBeOptional},
       {APIPermission::kTtsEngine, "ttsEngine",
        APIPermissionInfo::kFlagCannotBeOptional,
@@ -181,6 +182,8 @@ std::vector<APIPermissionInfo*> ChromeAPIPermissions::GetAllPermissions()
        APIPermissionInfo::kFlagCannotBeOptional},
       {APIPermission::kCast, "cast", APIPermissionInfo::kFlagCannotBeOptional},
       {APIPermission::kChromeosInfoPrivate, "chromeosInfoPrivate",
+       APIPermissionInfo::kFlagCannotBeOptional},
+      {APIPermission::kCommandsAccessibility, "commands.accessibility",
        APIPermissionInfo::kFlagCannotBeOptional},
       {APIPermission::kCommandLinePrivate, "commandLinePrivate",
        APIPermissionInfo::kFlagCannotBeOptional},
@@ -294,12 +297,6 @@ std::vector<APIPermissionInfo*> ChromeAPIPermissions::GetAllPermissions()
 
       // Platform-app permissions.
       {APIPermission::kAlwaysOnTopWindows, "app.window.alwaysOnTop"},
-      {APIPermission::kAudioCapture, "audioCapture",
-       APIPermissionInfo::kFlagNone, IDS_EXTENSION_PROMPT_WARNING_AUDIO_CAPTURE,
-       PermissionMessage::kAudioCapture},
-      {APIPermission::kVideoCapture, "videoCapture",
-       APIPermissionInfo::kFlagNone, IDS_EXTENSION_PROMPT_WARNING_VIDEO_CAPTURE,
-       PermissionMessage::kVideoCapture},
       // The permission string for "fileSystem" is only shown when
       // "write" or "directory" is present. Read-only access is only
       // granted after the user has been shown a file or directory
@@ -339,6 +336,7 @@ std::vector<APIPermissionInfo*> ChromeAPIPermissions::GetAllPermissions()
       {APIPermission::kOverrideEscFullscreen,
        "app.window.fullscreen.overrideEsc"},
       {APIPermission::kWindowShape, "app.window.shape"},
+      {APIPermission::kAlphaEnabled, "app.window.alpha"},
       {APIPermission::kBrowser, "browser"},
 
       // Settings override permissions.

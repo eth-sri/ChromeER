@@ -99,12 +99,19 @@ def FetchGitRevision(directory):
   Returns:
     A VersionInfo object or None on error.
   """
+  # TODO(agable): Re-add the commit position after the lastchange value can
+  # accept strings longer than 64 characters. See crbug.com/406783.
+  hsh = ''
   proc = RunGitCommand(directory, ['rev-parse', 'HEAD'])
   if proc:
     output = proc.communicate()[0].strip()
     if proc.returncode == 0 and output:
-      return VersionInfo('git', output[:7])
-  return None
+      hsh = output
+  if not hsh:
+    return None
+  # TODO(agable): Figure out a way to use the full hash instead of just a
+  # 12-character short hash. See crbug.com/406783.
+  return VersionInfo('git', hsh[:12])
 
 
 def FetchGitSVNURLAndRevision(directory, svn_url_regex):
@@ -116,8 +123,7 @@ def FetchGitSVNURLAndRevision(directory, svn_url_regex):
   Returns:
     A tuple containing the Subversion URL and revision.
   """
-  proc = RunGitCommand(directory, ['log', '-1',
-                                   '--grep=git-svn-id', '--format=%b'])
+  proc = RunGitCommand(directory, ['log', '-1', '--format=%b'])
   if proc:
     output = proc.communicate()[0].strip()
     if proc.returncode == 0 and output:

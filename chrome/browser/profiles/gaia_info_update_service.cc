@@ -49,7 +49,7 @@ void GAIAInfoUpdateService::Update() {
   // The user must be logged in.
   SigninManagerBase* signin_manager =
       SigninManagerFactory::GetForProfile(profile_);
-  if (signin_manager->GetAuthenticatedAccountId().empty())
+  if (!signin_manager->IsAuthenticated())
     return;
 
   if (profile_image_downloader_)
@@ -159,6 +159,7 @@ void GAIAInfoUpdateService::OnUsernameChanged(const std::string& username) {
   if (username.empty()) {
     // Unset the old user's GAIA info.
     cache.SetGAIANameOfProfileAtIndex(profile_index, base::string16());
+    cache.SetGAIAGivenNameOfProfileAtIndex(profile_index, base::string16());
     // The profile index may have changed.
     profile_index = cache.GetIndexOfProfileWithPath(profile_->GetPath());
     if (profile_index == std::string::npos)
@@ -203,11 +204,13 @@ void GAIAInfoUpdateService::ScheduleNextUpdate() {
 }
 
 void GAIAInfoUpdateService::GoogleSigninSucceeded(
+    const std::string& account_id,
     const std::string& username,
     const std::string& password) {
   OnUsernameChanged(username);
 }
 
-void GAIAInfoUpdateService::GoogleSignedOut(const std::string& username) {
+void GAIAInfoUpdateService::GoogleSignedOut(const std::string& account_id,
+                                            const std::string& username) {
   OnUsernameChanged(std::string());
 }

@@ -22,7 +22,7 @@ namespace net {
 #if defined(OS_ANDROID) || defined(OS_IOS)
 // static
 const size_t SdchManager::kMaxDictionaryCount = 1;
-const size_t SdchManager::kMaxDictionarySize = 150 * 1000;
+const size_t SdchManager::kMaxDictionarySize = 500 * 1000;
 #else
 // static
 const size_t SdchManager::kMaxDictionaryCount = 20;
@@ -220,7 +220,8 @@ bool SdchManager::Dictionary::DomainMatch(const GURL& gurl,
 }
 
 //------------------------------------------------------------------------------
-SdchManager::SdchManager() {
+SdchManager::SdchManager()
+    : fetches_count_for_testing_(0) {
   DCHECK(CalledOnValidThread());
 }
 
@@ -234,7 +235,6 @@ SdchManager::~SdchManager() {
 
 void SdchManager::ClearData() {
   blacklisted_domains_.clear();
-  exponential_blacklist_count_.clear();
   allow_latency_experiment_.clear();
   if (fetcher_.get())
     fetcher_->Cancel();
@@ -251,9 +251,9 @@ void SdchManager::SdchErrorRecovery(ProblemCodes problem) {
   UMA_HISTOGRAM_ENUMERATION("Sdch3.ProblemCodes_4", problem, MAX_PROBLEM_CODE);
 }
 
-void SdchManager::set_sdch_fetcher(SdchFetcher* fetcher) {
+void SdchManager::set_sdch_fetcher(scoped_ptr<SdchFetcher> fetcher) {
   DCHECK(CalledOnValidThread());
-  fetcher_.reset(fetcher);
+  fetcher_ = fetcher.Pass();
 }
 
 // static
@@ -266,51 +266,63 @@ void SdchManager::EnableSecureSchemeSupport(bool enabled) {
   g_secure_scheme_supported_ = enabled;
 }
 
-void SdchManager::BlacklistDomain(const GURL& url) {
+void SdchManager::BlacklistDomain(const GURL& url,
+                                  ProblemCodes blacklist_reason) {
   SetAllowLatencyExperiment(url, false);
 
-  std::string domain(StringToLowerASCII(url.host()));
-  int count = blacklisted_domains_[domain];
-  if (count > 0)
+  BlacklistInfo* blacklist_info =
+      &blacklisted_domains_[base::StringToLowerASCII(url.host())];
+
+  if (blacklist_info->count > 0)
     return;  // Domain is already blacklisted.
 
-  count = 1 + 2 * exponential_blacklist_count_[domain];
-  if (count > 0)
-    exponential_blacklist_count_[domain] = count;
-  else
-    count = INT_MAX;
+  if (blacklist_info->exponential_count > (INT_MAX - 1) / 2) {
+    blacklist_info->exponential_count = INT_MAX;
+  } else {
+    blacklist_info->exponential_count =
+        blacklist_info->exponential_count * 2 + 1;
+  }
 
-  blacklisted_domains_[domain] = count;
+  blacklist_info->count = blacklist_info->exponential_count;
+  blacklist_info->reason = blacklist_reason;
 }
 
-void SdchManager::BlacklistDomainForever(const GURL& url) {
+void SdchManager::BlacklistDomainForever(const GURL& url,
+                                         ProblemCodes blacklist_reason) {
   SetAllowLatencyExperiment(url, false);
 
-  std::string domain(StringToLowerASCII(url.host()));
-  exponential_blacklist_count_[domain] = INT_MAX;
-  blacklisted_domains_[domain] = INT_MAX;
+  BlacklistInfo* blacklist_info =
+      &blacklisted_domains_[base::StringToLowerASCII(url.host())];
+  blacklist_info->count = INT_MAX;
+  blacklist_info->exponential_count = INT_MAX;
+  blacklist_info->reason = blacklist_reason;
 }
 
 void SdchManager::ClearBlacklistings() {
   blacklisted_domains_.clear();
-  exponential_blacklist_count_.clear();
 }
 
 void SdchManager::ClearDomainBlacklisting(const std::string& domain) {
-  blacklisted_domains_.erase(StringToLowerASCII(domain));
+  BlacklistInfo* blacklist_info = &blacklisted_domains_[
+      base::StringToLowerASCII(domain)];
+  blacklist_info->count = 0;
+  blacklist_info->reason = MIN_PROBLEM_CODE;
 }
 
 int SdchManager::BlackListDomainCount(const std::string& domain) {
-  if (blacklisted_domains_.end() == blacklisted_domains_.find(domain))
+  std::string domain_lower(base::StringToLowerASCII(domain));
+
+  if (blacklisted_domains_.end() == blacklisted_domains_.find(domain_lower))
     return 0;
-  return blacklisted_domains_[StringToLowerASCII(domain)];
+  return blacklisted_domains_[domain_lower].count;
 }
 
 int SdchManager::BlacklistDomainExponential(const std::string& domain) {
-  if (exponential_blacklist_count_.end() ==
-      exponential_blacklist_count_.find(domain))
+  std::string domain_lower(base::StringToLowerASCII(domain));
+
+  if (blacklisted_domains_.end() == blacklisted_domains_.find(domain_lower))
     return 0;
-  return exponential_blacklist_count_[StringToLowerASCII(domain)];
+  return blacklisted_domains_[domain_lower].exponential_count;
 }
 
 bool SdchManager::IsInSupportedDomain(const GURL& url) {
@@ -324,25 +336,33 @@ bool SdchManager::IsInSupportedDomain(const GURL& url) {
   if (blacklisted_domains_.empty())
     return true;
 
-  std::string domain(StringToLowerASCII(url.host()));
-  DomainCounter::iterator it = blacklisted_domains_.find(domain);
-  if (blacklisted_domains_.end() == it)
+  DomainBlacklistInfo::iterator it =
+      blacklisted_domains_.find(base::StringToLowerASCII(url.host()));
+  if (blacklisted_domains_.end() == it || it->second.count == 0)
     return true;
 
-  int count = it->second - 1;
-  if (count > 0)
-    blacklisted_domains_[domain] = count;
-  else
-    blacklisted_domains_.erase(domain);
+  UMA_HISTOGRAM_ENUMERATION("Sdch3.BlacklistReason", it->second.reason,
+                            MAX_PROBLEM_CODE);
   SdchErrorRecovery(DOMAIN_BLACKLIST_INCLUDES_TARGET);
+
+  int count = it->second.count - 1;
+  if (count > 0) {
+    it->second.count = count;
+  } else {
+    it->second.count = 0;
+    it->second.reason = MIN_PROBLEM_CODE;
+  }
+
   return false;
 }
 
 void SdchManager::FetchDictionary(const GURL& request_url,
                                   const GURL& dictionary_url) {
   DCHECK(CalledOnValidThread());
-  if (CanFetchDictionary(request_url, dictionary_url) && fetcher_.get())
+  if (CanFetchDictionary(request_url, dictionary_url) && fetcher_.get()) {
+    ++fetches_count_for_testing_;
     fetcher_->Schedule(dictionary_url);
+  }
 }
 
 bool SdchManager::CanFetchDictionary(const GURL& referring_url,
@@ -427,7 +447,7 @@ bool SdchManager::AddSdchDictionary(const std::string& dictionary_text,
         break;
       std::string name(dictionary_text, line_start, colon_index - line_start);
       std::string value(dictionary_text, value_start, line_end - value_start);
-      name = StringToLowerASCII(name);
+      name = base::StringToLowerASCII(name);
       if (name == "domain") {
         domain = value;
       } else if (name == "path") {
@@ -565,18 +585,8 @@ void SdchManager::UrlSafeBase64Encode(const std::string& input,
   // Since this is only done during a dictionary load, and hashes are only 8
   // characters, we just do the simple fixup, rather than rewriting the encoder.
   base::Base64Encode(input, output);
-  for (size_t i = 0; i < output->size(); ++i) {
-    switch (output->data()[i]) {
-      case '+':
-        (*output)[i] = '-';
-        continue;
-      case '/':
-        (*output)[i] = '_';
-        continue;
-      default:
-        continue;
-    }
-  }
+  std::replace(output->begin(), output->end(), '+', '-');
+  std::replace(output->begin(), output->end(), '/', '_');
 }
 
 }  // namespace net

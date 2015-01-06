@@ -1,5 +1,7 @@
 include_rules = [
   "+cc",
+  "-cc/blink",
+  "+gpu/command_buffer/service/mailbox_manager.h",
   "+mojo/aura",
   "+mojo/cc",
   "+mojo/geometry",
@@ -17,6 +19,6 @@ include_rules = [
 
 specific_include_rules = {
   "view_manager_unittest.cc": [
-    "+mojo/service_manager/service_manager.h",
+    "+mojo/application_manager/application_manager.h",
   ],
 }

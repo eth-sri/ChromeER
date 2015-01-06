@@ -77,8 +77,9 @@ IN_PROC_BROWSER_TEST_F(TabCaptureApiTest, ApiTestsAudio) {
       << message_;
 }
 
-// http://crbug.com/177163
-#if !defined(NDEBUG)
+// Disabled on ChromeOS for http://crbug.com/406051
+// Disabled on other platforms for http://crbug.com/177163
+#if !defined(NDEBUG) || defined(OS_CHROMEOS)
 #define MAYBE_EndToEnd DISABLED_EndToEnd
 #else
 #define MAYBE_EndToEnd EndToEnd
@@ -233,8 +234,8 @@ IN_PROC_BROWSER_TEST_F(TabCaptureApiTest, MAYBE_FullscreenEvents) {
 
 // Times out on Win dbg bots: http://crbug.com/177163
 // #if defined(OS_WIN) && !defined(NDEBUG)
-// Times out on all Win bots: http://crbug.com/294431
-#if defined(OS_WIN)
+// Times out on all Win bots, flaky on MSan bots: http://crbug.com/294431
+#if defined(OS_WIN) || defined(MEMORY_SANITIZER)
 #define MAYBE_GrantForChromePages DISABLED_GrantForChromePages
 #else
 #define MAYBE_GrantForChromePages GrantForChromePages

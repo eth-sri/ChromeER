@@ -4,11 +4,11 @@
 
 #include "apps/ui/views/native_app_window_views.h"
 
-#include "apps/app_window.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/browser/app_window/app_window.h"
 #include "extensions/common/draggable_region.h"
 #include "third_party/skia/include/core/SkRegion.h"
 #include "ui/gfx/path.h"
@@ -19,6 +19,8 @@
 #if defined(USE_AURA)
 #include "ui/aura/window.h"
 #endif
+
+using extensions::AppWindow;
 
 namespace apps {
 
@@ -262,8 +264,7 @@ void NativeAppWindowViews::OnWidgetActivationChanged(views::Widget* widget,
 
 void NativeAppWindowViews::RenderViewCreated(
     content::RenderViewHost* render_view_host) {
-  if (app_window_->requested_transparent_background() &&
-      CanHaveAlphaEnabled()) {
+  if (app_window_->requested_alpha_enabled() && CanHaveAlphaEnabled()) {
     content::RenderWidgetHostView* view = render_view_host->GetView();
     DCHECK(view);
     view->SetBackgroundOpaque(false);
@@ -315,11 +316,6 @@ void NativeAppWindowViews::SetFullscreen(int fullscreen_types) {
 bool NativeAppWindowViews::IsFullscreenOrPending() const {
   // Stub implementation. See also ChromeNativeAppWindowViews.
   return widget_->IsFullscreen();
-}
-
-bool NativeAppWindowViews::IsDetached() const {
-  // Stub implementation. See also ChromeNativeAppWindowViews.
-  return false;
 }
 
 void NativeAppWindowViews::UpdateWindowIcon() { widget_->UpdateWindowIcon(); }

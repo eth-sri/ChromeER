@@ -431,7 +431,7 @@ class RenderWidgetHostTest : public testing::Test {
  protected:
   // testing::Test
   virtual void SetUp() {
-    CommandLine* command_line = CommandLine::ForCurrentProcess();
+    base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
     command_line->AppendSwitch(switches::kValidateInputEventStream);
 
     browser_context_.reset(new TestBrowserContext());
@@ -808,14 +808,14 @@ TEST_F(RenderWidgetHostTest, HiddenPaint) {
 
   // Now unhide.
   process_->sink().ClearMessages();
-  host_->WasShown();
+  host_->WasShown(ui::LatencyInfo());
   EXPECT_FALSE(host_->is_hidden_);
 
   // It should have sent out a restored message with a request to paint.
   const IPC::Message* restored = process_->sink().GetUniqueMessageMatching(
       ViewMsg_WasShown::ID);
   ASSERT_TRUE(restored);
-  Tuple1<bool> needs_repaint;
+  Tuple2<bool, ui::LatencyInfo> needs_repaint;
   ViewMsg_WasShown::Read(restored, &needs_repaint);
   EXPECT_TRUE(needs_repaint.a);
 }
@@ -1032,8 +1032,7 @@ TEST_F(RenderWidgetHostTest, TouchEmulator) {
   simulated_event_time_delta_seconds_ = 0.1;
   // Immediately ack all touches instead of sending them to the renderer.
   host_->OnMessageReceived(ViewHostMsg_HasTouchEventHandlers(0, false));
-  host_->OnMessageReceived(
-      ViewHostMsg_SetTouchEventEmulationEnabled(0, true, true));
+  host_->SetTouchEventEmulationEnabled(true);
   process_->sink().ClearMessages();
   view_->set_bounds(gfx::Rect(0, 0, 400, 200));
   view_->Show();
@@ -1132,8 +1131,7 @@ TEST_F(RenderWidgetHostTest, TouchEmulator) {
   EXPECT_EQ(0U, process_->sink().message_count());
 
   // Turn off emulation during a pinch.
-  host_->OnMessageReceived(
-      ViewHostMsg_SetTouchEventEmulationEnabled(0, false, false));
+  host_->SetTouchEventEmulationEnabled(false);
   EXPECT_EQ(WebInputEvent::TouchCancel, host_->acked_touch_event_type());
   EXPECT_EQ("GesturePinchEnd GestureScrollEnd",
             GetInputMessageTypes(process_));
@@ -1148,8 +1146,7 @@ TEST_F(RenderWidgetHostTest, TouchEmulator) {
   EXPECT_EQ(0U, process_->sink().message_count());
 
   // Turn on emulation.
-  host_->OnMessageReceived(
-      ViewHostMsg_SetTouchEventEmulationEnabled(0, true, true));
+  host_->SetTouchEventEmulationEnabled(true);
   EXPECT_EQ(0U, process_->sink().message_count());
 
   // Another touch.
@@ -1168,8 +1165,7 @@ TEST_F(RenderWidgetHostTest, TouchEmulator) {
                     INPUT_EVENT_ACK_STATE_CONSUMED);
 
   // Turn off emulation during a scroll.
-  host_->OnMessageReceived(
-      ViewHostMsg_SetTouchEventEmulationEnabled(0, false, false));
+  host_->SetTouchEventEmulationEnabled(false);
   EXPECT_EQ(WebInputEvent::TouchCancel, host_->acked_touch_event_type());
 
   EXPECT_EQ("GestureScrollEnd", GetInputMessageTypes(process_));
@@ -1415,6 +1411,20 @@ TEST_F(RenderWidgetHostTest, RendererExitedResetsInputRouter) {
   // RendererExited will delete the view.
   host_->SetView(new TestView(host_.get()));
   host_->RendererExited(base::TERMINATION_STATUS_PROCESS_CRASHED, -1);
+
+  // Make sure the input router is in a fresh state.
+  ASSERT_FALSE(host_->input_router()->HasPendingEvents());
+}
+
+// Regression test for http://crbug.com/401859.
+TEST_F(RenderWidgetHostTest, RendererExitedResetsIsHidden) {
+  // RendererExited will delete the view.
+  host_->SetView(new TestView(host_.get()));
+  host_->WasHidden();
+
+  ASSERT_TRUE(host_->is_hidden());
+  host_->RendererExited(base::TERMINATION_STATUS_PROCESS_CRASHED, -1);
+  ASSERT_FALSE(host_->is_hidden());
 
   // Make sure the input router is in a fresh state.
   ASSERT_FALSE(host_->input_router()->HasPendingEvents());

@@ -123,14 +123,7 @@ void MediaStreamDispatcher::StopStreamDevice(
     }
     ++stream_it;
   }
-
-  if (!device_found) {
-    // TODO(perkj): Revisit this. It used to be true (but isn't anymore) that
-    // there was one MediaStreamDispatcher per RenderView, but one
-    // MediaStreamImpl per RenderFrame. Now both MediaStreamDispatcher and
-    // MediaStreamImpl are 1:1 per RenderFrame. http://crbug/368030.
-    return;
-  }
+  DCHECK(device_found);
 
   Send(new MediaStreamHostMsg_StopStreamDevice(routing_id(),
                                                device_info.device.id));
@@ -140,8 +133,7 @@ void MediaStreamDispatcher::EnumerateDevices(
     int request_id,
     const base::WeakPtr<MediaStreamDispatcherEventHandler>& event_handler,
     MediaStreamType type,
-    const GURL& security_origin,
-    bool hide_labels_if_no_access) {
+    const GURL& security_origin) {
   DCHECK(thread_checker_.CalledOnValidThread());
   DCHECK(type == MEDIA_DEVICE_AUDIO_CAPTURE ||
          type == MEDIA_DEVICE_VIDEO_CAPTURE ||
@@ -158,8 +150,7 @@ void MediaStreamDispatcher::EnumerateDevices(
   Send(new MediaStreamHostMsg_EnumerateDevices(routing_id(),
                                                next_ipc_id_++,
                                                type,
-                                               security_origin,
-                                               hide_labels_if_no_access));
+                                               security_origin));
 }
 
 void MediaStreamDispatcher::StopEnumerateDevices(

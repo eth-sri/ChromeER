@@ -17,11 +17,15 @@ const double kFadeDurationMs = 200;
 // when the handle is moving rapidly while the fade is active.
 const double kFadeDistanceSquared = 20.f * 20.f;
 
+// Avoid using an empty touch rect, as it may fail the intersection test event
+// if it lies within the other rect's bounds.
+const float kMinTouchMajorForHitTesting = 1.f;
+
 // The maximum touch size to use when computing whether a touch point is
 // targetting a touch handle. This is necessary for devices that misreport
 // touch radii, preventing inappropriately largely touch sizes from completely
 // breaking handle dragging behavior.
-const float kMaxTouchMajorForHitTesting = 48.f;
+const float kMaxTouchMajorForHitTesting = 36.f;
 
 }  // namespace
 
@@ -36,7 +40,8 @@ TouchHandle::TouchHandle(TouchHandleClient* client,
       animate_deferred_fade_(false),
       enabled_(true),
       is_visible_(false),
-      is_dragging_(false) {
+      is_dragging_(false),
+      is_drag_within_tap_region_(false) {
   DCHECK_NE(orientation, TOUCH_HANDLE_ORIENTATION_UNDEFINED);
   drawable_->SetEnabled(enabled_);
   drawable_->SetOrientation(orientation_);
@@ -120,8 +125,9 @@ bool TouchHandle::WillHandleTouchEvent(const ui::MotionEvent& event) {
     case ui::MotionEvent::ACTION_DOWN: {
       if (!is_visible_)
         return false;
-      const float touch_size =
-          std::min(event.GetTouchMajor(), kMaxTouchMajorForHitTesting);
+      const float touch_size = std::max(
+          kMinTouchMajorForHitTesting,
+          std::min(kMaxTouchMajorForHitTesting, event.GetTouchMajor()));
       const gfx::RectF touch_rect(event.GetX() - touch_size * .5f,
                                   event.GetY() - touch_size * .5f,
                                   touch_size,
@@ -135,17 +141,26 @@ bool TouchHandle::WillHandleTouchEvent(const ui::MotionEvent& event) {
     } break;
 
     case ui::MotionEvent::ACTION_MOVE: {
-      gfx::PointF new_position =
-          gfx::PointF(event.GetX(), event.GetY()) + touch_to_focus_offset_;
-      client_->OnHandleDragUpdate(*this, new_position);
+      gfx::PointF touch_move_position(event.GetX(), event.GetY());
+      if (is_drag_within_tap_region_) {
+        const float tap_slop = client_->GetTapSlop();
+        is_drag_within_tap_region_ =
+            (touch_move_position - touch_down_position_).LengthSquared() <
+            tap_slop * tap_slop;
+      }
+
+      // Note that we signal drag update even if we're inside the tap region,
+      // as there are cases where characters are narrower than the slop length.
+      client_->OnHandleDragUpdate(*this,
+                                  touch_move_position + touch_to_focus_offset_);
     } break;
 
     case ui::MotionEvent::ACTION_UP: {
-      // TODO(jdduke): Use the platform touch slop distance and tap delay to
-      // properly detect a tap, crbug.com/394093.
-      base::TimeDelta delay = event.GetEventTime() - touch_down_time_;
-      if (delay < base::TimeDelta::FromMilliseconds(180))
+      if (is_drag_within_tap_region_ &&
+          (event.GetEventTime() - touch_down_time_) <
+              client_->GetTapTimeout()) {
         client_->OnHandleTapped(*this);
+      }
 
       EndDrag();
     } break;
@@ -187,6 +202,7 @@ void TouchHandle::BeginDrag() {
     return;
   EndFade();
   is_dragging_ = true;
+  is_drag_within_tap_region_ = true;
   client_->OnHandleDragBegin(*this);
 }
 
@@ -196,6 +212,7 @@ void TouchHandle::EndDrag() {
     return;
 
   is_dragging_ = false;
+  is_drag_within_tap_region_ = false;
   client_->OnHandleDragEnd(*this);
 
   if (deferred_orientation_ != TOUCH_HANDLE_ORIENTATION_UNDEFINED) {

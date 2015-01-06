@@ -25,6 +25,11 @@ class HidService;
 
 namespace extensions {
 
+class AppViewGuestDelegate;
+class WebViewGuest;
+class WebViewGuestDelegate;
+class WebViewPermissionHelper;
+class WebViewPermissionHelperDelegate;
 class SettingsObserver;
 class SettingsStorageFactory;
 class ValueStoreCache;
@@ -53,23 +58,24 @@ class ExtensionsAPIClient {
       const scoped_refptr<ObserverListThreadSafe<SettingsObserver> >& observers,
       std::map<settings_namespace::Namespace, ValueStoreCache*>* caches);
 
-  // Attaches a frame |url| inside the <appview> specified by
-  // |guest_instance_id|. Returns true if the operation completes succcessfully.
-  virtual bool AppViewInternalAttachFrame(
-      content::BrowserContext* browser_context,
-      const GURL& url,
-      int guest_instance_id,
-      const std::string& guest_extension_id);
-
-  // Denies the embedding requested by the <appview> specified by
-  // |guest_instance_id|. Returns true if the operation completes successfully.
-  virtual bool AppViewInternalDenyRequest(
-      content::BrowserContext* browser_context,
-      int guest_instance_id,
-      const std::string& guest_extension_id);
+  // Creates the AppViewGuestDelegate.
+  virtual AppViewGuestDelegate* CreateAppViewGuestDelegate() const;
 
   // Returns the HidService instance for this embedder.
   virtual device::HidService* GetHidService();
+
+  // Returns a delegate for some of WebViewGuest's behavior. The caller owns the
+  // returned WebViewGuestDelegate.
+  virtual WebViewGuestDelegate* CreateWebViewGuestDelegate (
+      WebViewGuest* web_view_guest) const;
+
+  // Returns a delegate for some of WebViewPermissionHelper's behavior. The
+  // caller owns the returned WebViewPermissionHelperDelegate.
+  virtual WebViewPermissionHelperDelegate*
+      CreateWebViewPermissionHelperDelegate (
+          WebViewPermissionHelper* web_view_permission_helper) const;
+
+  virtual void RegisterGuestViewTypes() {}
 
   // NOTE: If this interface gains too many methods (perhaps more than 20) it
   // should be split into one interface per API.

@@ -14,6 +14,7 @@
 #include "chrome/browser/extensions/install_tracker.h"
 #include "chrome/browser/extensions/webstore_data_fetcher.h"
 #include "chrome/browser/profiles/profile.h"
+#include "components/crx_file/id_util.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_registry.h"
@@ -55,7 +56,7 @@ void WebstoreStandaloneInstaller::BeginInstall() {
   // AbortInstall, which both release this ref.
   AddRef();
 
-  if (!Extension::IdIsValid(id_)) {
+  if (!crx_file::id_util::IdIsValid(id_)) {
     CompleteInstall(webstore_install::INVALID_ID, kInvalidWebstoreItemId);
     return;
   }
@@ -131,7 +132,7 @@ void WebstoreStandaloneInstaller::CompleteInstall(
 
 void WebstoreStandaloneInstaller::ProceedWithInstallPrompt() {
   install_prompt_ = CreateInstallPrompt();
-  if (install_prompt_) {
+  if (install_prompt_.get()) {
     ShowInstallUI();
     // Control flow finishes up in InstallUIProceed or InstallUIAbort.
   } else {
@@ -348,8 +349,9 @@ void WebstoreStandaloneInstaller::InstallUIProceed() {
       // If the target extension has already been installed ephemerally and is
       // up to date, it can be promoted to a regular installed extension and
       // downloading from the Web Store is not necessary.
-      const Extension* extension_to_install = GetLocalizedExtensionForDisplay();
-      if (!extension_to_install) {
+      scoped_refptr<const Extension> extension_to_install =
+          GetLocalizedExtensionForDisplay();
+      if (!extension_to_install.get()) {
         CompleteInstall(webstore_install::INVALID_MANIFEST,
                         kInvalidManifestError);
         return;
@@ -420,15 +422,16 @@ void WebstoreStandaloneInstaller::OnExtensionInstallFailure(
 }
 
 void WebstoreStandaloneInstaller::ShowInstallUI() {
-  const Extension* localized_extension = GetLocalizedExtensionForDisplay();
-  if (!localized_extension) {
+  scoped_refptr<const Extension> localized_extension =
+      GetLocalizedExtensionForDisplay();
+  if (!localized_extension.get()) {
     CompleteInstall(webstore_install::INVALID_MANIFEST, kInvalidManifestError);
     return;
   }
 
   install_ui_ = CreateInstallUI();
   install_ui_->ConfirmStandaloneInstall(
-      this, localized_extension, &icon_, install_prompt_);
+      this, localized_extension.get(), &icon_, install_prompt_);
 }
 
 void WebstoreStandaloneInstaller::OnWebStoreDataFetcherDone() {

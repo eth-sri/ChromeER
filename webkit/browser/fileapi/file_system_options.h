@@ -8,17 +8,17 @@
 #include <string>
 #include <vector>
 
-#include "webkit/browser/webkit_storage_browser_export.h"
+#include "webkit/browser/storage_browser_export.h"
 
 namespace leveldb {
 class Env;
 }
 
-namespace fileapi {
+namespace storage {
 
 // Provides runtime options that may change FileSystem API behavior.
 // This object is copyable.
-class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemOptions {
+class STORAGE_EXPORT FileSystemOptions {
  public:
   enum ProfileMode {
     PROFILE_MODE_NORMAL = 0,
@@ -57,6 +57,6 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemOptions {
   leveldb::Env* env_override_;
 };
 
-}  // namespace fileapi
+}  // namespace storage
 
 #endif  // WEBKIT_BROWSER_FILEAPI_FILE_SYSTEM_OPTIONS_H_

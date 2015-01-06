@@ -47,12 +47,12 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
+#include "chrome/grit/generated_resources.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "chromeos/audio/cras_audio_handler.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/chromeos_test_utils.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
-#include "chromeos/dbus/fake_dbus_thread_manager.h"
 #include "chromeos/dbus/fake_session_manager_client.h"
 #include "chromeos/login/auth/key.h"
 #include "chromeos/login/auth/mock_auth_status_consumer.h"
@@ -63,7 +63,6 @@
 #include "chromeos/settings/timezone_settings.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/test_utils.h"
-#include "grit/generated_resources.h"
 #include "net/test/spawned_test_server/spawned_test_server.h"
 #include "net/url_request/test_url_fetcher_factory.h"
 #include "net/url_request/url_fetcher_impl.h"
@@ -799,13 +798,9 @@ class WizardControllerBrokenLocalStateTest : public WizardControllerTest {
   virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
     WizardControllerTest::SetUpInProcessBrowserTestFixture();
 
-    FakeDBusThreadManager* fake_dbus_thread_manager =
-        new FakeDBusThreadManager();
-    fake_dbus_thread_manager->SetFakeClients();
     fake_session_manager_client_ = new FakeSessionManagerClient;
-    fake_dbus_thread_manager->SetSessionManagerClient(
+    DBusThreadManager::GetSetterForTesting()->SetSessionManagerClient(
         scoped_ptr<SessionManagerClient>(fake_session_manager_client_));
-    DBusThreadManager::SetInstanceForTesting(fake_dbus_thread_manager);
   }
 
   virtual void SetUpOnMainThread() OVERRIDE {

@@ -168,7 +168,7 @@ RenderWidgetHostImpl::RenderWidgetHostImpl(RenderWidgetHostDelegate* delegate,
       repaint_ack_pending_(false),
       resize_ack_pending_(false),
       screen_info_out_of_date_(false),
-      overdraw_bottom_height_(0.f),
+      top_controls_layout_height_(0.f),
       should_auto_resize_(false),
       waiting_for_screen_rects_ack_(false),
       needs_repainting_on_restore_(false),
@@ -226,7 +226,7 @@ RenderWidgetHostImpl::RenderWidgetHostImpl(RenderWidgetHostDelegate* delegate,
   RenderViewHostImpl* rvh = static_cast<RenderViewHostImpl*>(
       IsRenderView() ? RenderViewHost::From(this) : NULL);
   if (BrowserPluginGuest::IsGuest(rvh) ||
-      !CommandLine::ForCurrentProcess()->HasSwitch(
+      !base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kDisableHangMonitor)) {
     hang_monitor_timeout_.reset(new TimeoutMonitor(
         base::Bind(&RenderWidgetHostImpl::RendererIsUnresponsive,
@@ -449,8 +449,6 @@ bool RenderWidgetHostImpl::OnMessageReceived(const IPC::Message &msg) {
     IPC_MESSAGE_HANDLER(ViewHostMsg_Focus, OnFocus)
     IPC_MESSAGE_HANDLER(ViewHostMsg_Blur, OnBlur)
     IPC_MESSAGE_HANDLER(ViewHostMsg_SetCursor, OnSetCursor)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_SetTouchEventEmulationEnabled,
-                        OnSetTouchEventEmulationEnabled)
     IPC_MESSAGE_HANDLER(ViewHostMsg_TextInputStateChanged,
                         OnTextInputStateChanged)
     IPC_MESSAGE_HANDLER(ViewHostMsg_LockMouse, OnLockMouse)
@@ -489,6 +487,13 @@ bool RenderWidgetHostImpl::Send(IPC::Message* msg) {
   return process_->Send(msg);
 }
 
+void RenderWidgetHostImpl::SetIsLoading(bool is_loading) {
+  is_loading_ = is_loading;
+  if (!view_)
+    return;
+  view_->SetIsLoading(is_loading);
+}
+
 void RenderWidgetHostImpl::WasHidden() {
   if (is_hidden_)
     return;
@@ -512,7 +517,7 @@ void RenderWidgetHostImpl::WasHidden() {
       Details<bool>(&is_visible));
 }
 
-void RenderWidgetHostImpl::WasShown() {
+void RenderWidgetHostImpl::WasShown(const ui::LatencyInfo& latency_info) {
   if (!is_hidden_)
     return;
   is_hidden_ = false;
@@ -522,7 +527,7 @@ void RenderWidgetHostImpl::WasShown() {
   // Always repaint on restore.
   bool needs_repainting = true;
   needs_repainting_on_restore_ = false;
-  Send(new ViewMsg_WasShown(routing_id_, needs_repainting));
+  Send(new ViewMsg_WasShown(routing_id_, needs_repainting, latency_info));
 
   process_->WidgetRestored();
 
@@ -564,8 +569,10 @@ void RenderWidgetHostImpl::WasResized() {
   physical_backing_size_ = view_->GetPhysicalBackingSize();
   bool was_fullscreen = is_fullscreen_;
   is_fullscreen_ = IsFullscreen();
-  float old_overdraw_bottom_height = overdraw_bottom_height_;
-  overdraw_bottom_height_ = view_->GetOverdrawBottomHeight();
+  float old_top_controls_layout_height =
+      top_controls_layout_height_;
+  top_controls_layout_height_ =
+      view_->GetTopControlsLayoutHeight();
   gfx::Size old_visible_viewport_size = visible_viewport_size_;
   visible_viewport_size_ = view_->GetVisibleViewportSize();
 
@@ -574,7 +581,8 @@ void RenderWidgetHostImpl::WasResized() {
       screen_info_out_of_date_ ||
       old_physical_backing_size != physical_backing_size_ ||
       was_fullscreen != is_fullscreen_ ||
-      old_overdraw_bottom_height != overdraw_bottom_height_ ||
+      old_top_controls_layout_height !=
+          top_controls_layout_height_ ||
       old_visible_viewport_size != visible_viewport_size_;
 
   if (!size_changed && !side_payload_changed)
@@ -594,7 +602,7 @@ void RenderWidgetHostImpl::WasResized() {
   params.screen_info = *screen_info_;
   params.new_size = new_size;
   params.physical_backing_size = physical_backing_size_;
-  params.overdraw_bottom_height = overdraw_bottom_height_;
+  params.top_controls_layout_height = top_controls_layout_height_;
   params.visible_viewport_size = visible_viewport_size_;
   params.resizer_rect = GetRootWindowResizerRect();
   params.is_fullscreen = is_fullscreen_;
@@ -651,13 +659,6 @@ void RenderWidgetHostImpl::ViewDestroyed() {
   // TODO(evanm): tracking this may no longer be necessary;
   // eliminate this function if so.
   SetView(NULL);
-}
-
-void RenderWidgetHostImpl::SetIsLoading(bool is_loading) {
-  is_loading_ = is_loading;
-  if (!view_)
-    return;
-  view_->SetIsLoading(is_loading);
 }
 
 void RenderWidgetHostImpl::CopyFromBackingStore(
@@ -1198,6 +1199,18 @@ void RenderWidgetHostImpl::RendererExited(base::TerminationStatus status,
   // Reset some fields in preparation for recovering from a crash.
   ResetSizeAndRepaintPendingFlags();
   current_size_.SetSize(0, 0);
+  // After the renderer crashes, the view is destroyed and so the
+  // RenderWidgetHost cannot track its visibility anymore. We assume such
+  // RenderWidgetHost to be visible for the sake of internal accounting - be
+  // careful about changing this - see http://crbug.com/401859.
+  //
+  // We need to at least make sure that the RenderProcessHost is notified about
+  // the |is_hidden_| change, so that the renderer will have correct visibility
+  // set when respawned.
+  if (is_hidden_) {
+    process_->WidgetRestored();
+    is_hidden_ = false;
+  }
 
   // Reset this to ensure the hung renderer mechanism is working properly.
   in_flight_event_count_ = 0;
@@ -1476,8 +1489,6 @@ void RenderWidgetHostImpl::OnUpdateRect(
 
   // Update our knowledge of the RenderWidget's size.
   current_size_ = params.view_size;
-  // Update our knowledge of the RenderWidget's scroll offset.
-  last_scroll_offset_ = params.scroll_offset;
 
   bool is_resize_ack =
       ViewHostMsg_UpdateRect_Flags::is_resize_ack(params.flags);
@@ -1562,7 +1573,7 @@ void RenderWidgetHostImpl::DidUpdateBackingStore(
 void RenderWidgetHostImpl::OnQueueSyntheticGesture(
     const SyntheticGesturePacket& gesture_packet) {
   // Only allow untrustworthy gestures if explicitly enabled.
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(
+  if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
           cc::switches::kEnableGpuBenchmarking)) {
     RecordAction(base::UserMetricsAction("BadMessageTerminate_RWH7"));
     GetProcess()->ReceivedBadMessage();
@@ -1591,20 +1602,11 @@ void RenderWidgetHostImpl::OnSetCursor(const WebCursor& cursor) {
   SetCursor(cursor);
 }
 
-void RenderWidgetHostImpl::OnSetTouchEventEmulationEnabled(
-    bool enabled, bool allow_pinch) {
-  SetTouchEventEmulationEnabled(enabled, allow_pinch);
-}
-
-void RenderWidgetHostImpl::SetTouchEventEmulationEnabled(
-    bool enabled, bool allow_pinch) {
-  if (delegate_)
-    delegate_->OnTouchEmulationEnabled(enabled);
-
+void RenderWidgetHostImpl::SetTouchEventEmulationEnabled(bool enabled) {
   if (enabled) {
     if (!touch_emulator_)
       touch_emulator_.reset(new TouchEmulator(this));
-    touch_emulator_->Enable(allow_pinch);
+    touch_emulator_->Enable();
   } else {
     if (touch_emulator_)
       touch_emulator_->Disable();
@@ -1898,10 +1900,6 @@ void RenderWidgetHostImpl::OnSyntheticGestureCompleted(
   Send(new InputMsg_SyntheticGestureCompleted(GetRoutingID()));
 }
 
-const gfx::Vector2d& RenderWidgetHostImpl::GetLastScrollOffset() const {
-  return last_scroll_offset_;
-}
-
 bool RenderWidgetHostImpl::IgnoreInputEvents() const {
   return ignore_input_events_ || process_->IgnoreInputEvents();
 }
@@ -1919,10 +1917,6 @@ bool RenderWidgetHostImpl::ShouldForwardTouchEvent() const {
 
 void RenderWidgetHostImpl::StartUserGesture() {
   OnUserGesture();
-}
-
-void RenderWidgetHostImpl::Stop() {
-  Send(new ViewMsg_Stop(GetRoutingID()));
 }
 
 void RenderWidgetHostImpl::SetBackgroundOpaque(bool opaque) {
@@ -2093,14 +2087,28 @@ void RenderWidgetHostImpl::FrameSwapped(const ui::LatencyInfo& latency_info) {
 #endif
   }
 
-  ui::LatencyInfo::LatencyComponent rwh_component;
   ui::LatencyInfo::LatencyComponent swap_component;
+  if (!latency_info.FindLatency(
+          ui::INPUT_EVENT_LATENCY_TERMINATED_FRAME_SWAP_COMPONENT,
+          0,
+          &swap_component)) {
+    return;
+  }
+  ui::LatencyInfo::LatencyComponent tab_switch_component;
+  if (latency_info.FindLatency(ui::TAB_SHOW_COMPONENT,
+                               GetLatencyComponentId(),
+                               &tab_switch_component)) {
+    base::TimeDelta delta =
+        swap_component.event_time - tab_switch_component.event_time;
+    for (size_t i = 0; i < tab_switch_component.event_count; i++) {
+      UMA_HISTOGRAM_TIMES("MPArch.RWH_TabSwitchPaintDuration", delta);
+    }
+  }
+
+  ui::LatencyInfo::LatencyComponent rwh_component;
   if (!latency_info.FindLatency(ui::INPUT_EVENT_LATENCY_BEGIN_RWH_COMPONENT,
                                 GetLatencyComponentId(),
-                                &rwh_component) ||
-      !latency_info.FindLatency(
-          ui::INPUT_EVENT_LATENCY_TERMINATED_FRAME_SWAP_COMPONENT,
-          0, &swap_component)) {
+                                &rwh_component)) {
     return;
   }
 
@@ -2134,7 +2142,7 @@ void RenderWidgetHostImpl::WindowSnapshotAsyncCallback(
     int snapshot_id,
     gfx::Size snapshot_size,
     scoped_refptr<base::RefCountedBytes> png_data) {
-  if (!png_data) {
+  if (!png_data.get()) {
     std::vector<unsigned char> png_vector;
     Send(new ViewMsg_WindowSnapshotCompleted(
         routing_id, snapshot_id, gfx::Size(), png_vector));
@@ -2152,7 +2160,8 @@ void RenderWidgetHostImpl::WindowOldSnapshotReachedScreen(int snapshot_id) {
 
   // This feature is behind the kEnableGpuBenchmarking command line switch
   // because it poses security concerns and should only be used for testing.
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
   if (!command_line.HasSwitch(cc::switches::kEnableGpuBenchmarking)) {
     Send(new ViewMsg_WindowSnapshotCompleted(
         GetRoutingID(), snapshot_id, gfx::Size(), png));
@@ -2222,7 +2231,7 @@ void RenderWidgetHostImpl::OnSnapshotDataReceived(int snapshot_id,
 void RenderWidgetHostImpl::OnSnapshotDataReceivedAsync(
     int snapshot_id,
     scoped_refptr<base::RefCountedBytes> png_data) {
-  if (png_data)
+  if (png_data.get())
     OnSnapshotDataReceived(snapshot_id, png_data->front(), png_data->size());
   else
     OnSnapshotDataReceived(snapshot_id, NULL, 0);
@@ -2239,7 +2248,8 @@ void RenderWidgetHostImpl::CompositorFrameDrawn(
          ++b) {
       if (b->first.first == ui::INPUT_EVENT_LATENCY_BEGIN_RWH_COMPONENT ||
           b->first.first == ui::WINDOW_SNAPSHOT_FRAME_NUMBER_COMPONENT ||
-          b->first.first == ui::WINDOW_OLD_SNAPSHOT_FRAME_NUMBER_COMPONENT) {
+          b->first.first == ui::WINDOW_OLD_SNAPSHOT_FRAME_NUMBER_COMPONENT ||
+          b->first.first == ui::TAB_SHOW_COMPONENT) {
         // Matches with GetLatencyComponentId
         int routing_id = b->first.second & 0xffffffff;
         int process_id = (b->first.second >> 32) & 0xffffffff;

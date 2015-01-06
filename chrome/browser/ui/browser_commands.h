@@ -110,9 +110,10 @@ void ShowWebsiteSettings(Browser* browser,
                          const content::SSLStatus& ssl);
 void Print(Browser* browser);
 bool CanPrint(Browser* browser);
+#if !defined(OS_WIN)
 void AdvancedPrint(Browser* browser);
 bool CanAdvancedPrint(Browser* browser);
-void PrintToDestination(Browser* browser);
+#endif  // !OS_WIN
 void EmailPageLocation(Browser* browser);
 bool CanEmailPageLocation(const Browser* browser);
 void Cut(Browser* browser);

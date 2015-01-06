@@ -14,6 +14,9 @@
     'libpeer_target_type%': 'static_library',
     'libpeer_allocator_shim%': 0,
   },
+  # Most of these settings have been split according to their scope into
+  # :jingle_unexported_configs, :jingle_direct_dependent_configs,
+  # :jingle_all_dependent_configs in the GN build.
   'target_defaults': {
     'defines': [
       'EXPAT_RELATIVE_PATH',
@@ -28,6 +31,7 @@
       'SRTP_RELATIVE_PATH',
       'USE_WEBRTC_DEV_BRANCH',
       'ENABLE_EXTERNAL_AUTH',
+      'WEBRTC_CHROMIUM_BUILD',
     ],
     'configurations': {
       'Debug': {
@@ -48,6 +52,7 @@
       '../../third_party/libyuv/include',
       '../../third_party/usrsctp',
     ],
+    # These dependencies have been translated into :jingle_deps in the GN build.
     'dependencies': [
       '<(DEPTH)/base/base.gyp:base',
       '<(DEPTH)/net/net.gyp:net',
@@ -154,8 +159,8 @@
       'configurations': {
         'Debug': {
           'defines': [
-            # TODO(sergeyu): Fix libjingle to use NDEBUG instead of
-            # _DEBUG and remove this define. See above as well.
+            # TODO(sergeyu): Fix libjingle to use NDEBUG instead of _DEBUG and
+            # remove this define. See above and GN file as well.
             '_DEBUG',
           ],
         }
@@ -260,6 +265,7 @@
     ],
   },
   'targets': [
+    # GN version: //third_party/libjingle
     {
       'target_name': 'libjingle',
       'type': 'static_library',
@@ -282,6 +288,8 @@
     # run GYP and if GYP has removed the validation check, then we can assume
     # that the toolchains have been fixed (we currently use VS2010 and later,
     # so VS2008 isn't a concern anymore).
+    #
+    # GN version: //third_party/libjingle:libjingle_p2p_constants
     {
       'target_name': 'libjingle_p2p_constants',
       'type': 'static_library',
@@ -290,6 +298,7 @@
         '<(libjingle_source)/talk/p2p/base/constants.h',
       ],
     },  # target libjingle_p2p_constants
+    # GN version: //third_party/libjingle:peerconnection_server
     {
       'target_name': 'peerconnection_server',
       'type': 'executable',
@@ -434,6 +443,8 @@
             '<(libjingle_source)/talk/media/webrtc/webrtcvideocapturer.h',
             '<(libjingle_source)/talk/media/webrtc/webrtcvideoframe.cc',
             '<(libjingle_source)/talk/media/webrtc/webrtcvideoframe.h',
+            '<(libjingle_source)/talk/media/webrtc/webrtcvideoframefactory.cc',
+            '<(libjingle_source)/talk/media/webrtc/webrtcvideoframefactory.h',
             '<(libjingle_source)/talk/media/webrtc/webrtcvie.h',
             '<(libjingle_source)/talk/media/webrtc/webrtcvoe.h',
             '<(libjingle_source)/talk/session/media/audiomonitor.cc',

@@ -11,11 +11,11 @@
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/extensions/extension_test_util.h"
 #include "chrome/common/extensions/features/feature_channel.h"
+#include "components/crx_file/id_util.h"
 #include "content/public/common/socket_permission_request.h"
 #include "extensions/common/error_utils.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_builder.h"
-#include "extensions/common/id_util.h"
 #include "extensions/common/manifest.h"
 #include "extensions/common/manifest_constants.h"
 #include "extensions/common/permissions/api_permission.h"
@@ -259,20 +259,19 @@ TEST(ExtensionPermissionsTest, IsRestrictedUrl) {
                                      kAllHostsPermission,
                                      Manifest::INTERNAL);
   // Chrome urls should be blocked for normal extensions.
-  CheckRestrictedUrls(extension, true);
+  CheckRestrictedUrls(extension.get(), true);
 
   scoped_refptr<const Extension> component =
       GetExtensionWithHostPermission("component",
                                      kAllHostsPermission,
                                      Manifest::COMPONENT);
   // Chrome urls should be accessible by component extensions.
-  CheckRestrictedUrls(component, false);
+  CheckRestrictedUrls(component.get(), false);
 
   base::CommandLine::ForCurrentProcess()->AppendSwitch(
       switches::kExtensionsOnChromeURLs);
   // Enabling the switch should allow all extensions to access chrome urls.
-  CheckRestrictedUrls(extension, false);
-
+  CheckRestrictedUrls(extension.get(), false);
 }
 
 TEST(ExtensionPermissionsTest, GetPermissionMessages_ManyAPIPermissions) {
@@ -358,8 +357,8 @@ class ExtensionScriptAndCaptureVisibleTest : public testing::Test {
         file_url("file:///foo/bar"),
         favicon_url("chrome://favicon/http://www.google.com"),
         extension_url("chrome-extension://" +
-            id_util::GenerateIdForPath(
-                base::FilePath(FILE_PATH_LITERAL("foo")))),
+                      crx_file::id_util::GenerateIdForPath(
+                          base::FilePath(FILE_PATH_LITERAL("foo")))),
         settings_url("chrome://settings"),
         about_url("about:flags") {
     urls_.insert(http_url);
@@ -665,9 +664,9 @@ TEST_F(ExtensionScriptAndCaptureVisibleTest, TabSpecific) {
       LoadManifestStrict("script_and_capture", "tab_specific.json");
 
   const PermissionsData* permissions_data = extension->permissions_data();
-  EXPECT_FALSE(permissions_data->GetTabSpecificPermissionsForTesting(0));
-  EXPECT_FALSE(permissions_data->GetTabSpecificPermissionsForTesting(1));
-  EXPECT_FALSE(permissions_data->GetTabSpecificPermissionsForTesting(2));
+  EXPECT_FALSE(permissions_data->GetTabSpecificPermissionsForTesting(0).get());
+  EXPECT_FALSE(permissions_data->GetTabSpecificPermissionsForTesting(1).get());
+  EXPECT_FALSE(permissions_data->GetTabSpecificPermissionsForTesting(2).get());
 
   std::set<GURL> no_urls;
 
@@ -700,7 +699,7 @@ TEST_F(ExtensionScriptAndCaptureVisibleTest, TabSpecific) {
   EXPECT_TRUE(ScriptAllowedExclusivelyOnTab(extension.get(), no_urls, 2));
 
   permissions_data->ClearTabSpecificPermissions(0);
-  EXPECT_FALSE(permissions_data->GetTabSpecificPermissionsForTesting(0));
+  EXPECT_FALSE(permissions_data->GetTabSpecificPermissionsForTesting(0).get());
 
   EXPECT_TRUE(ScriptAllowedExclusivelyOnTab(extension.get(), no_urls, 0));
   EXPECT_TRUE(ScriptAllowedExclusivelyOnTab(extension.get(), no_urls, 1));
@@ -737,7 +736,7 @@ TEST_F(ExtensionScriptAndCaptureVisibleTest, TabSpecific) {
   EXPECT_TRUE(ScriptAllowedExclusivelyOnTab(extension.get(), no_urls, 2));
 
   permissions_data->ClearTabSpecificPermissions(0);
-  EXPECT_FALSE(permissions_data->GetTabSpecificPermissionsForTesting(0));
+  EXPECT_FALSE(permissions_data->GetTabSpecificPermissionsForTesting(0).get());
 
   EXPECT_TRUE(ScriptAllowedExclusivelyOnTab(extension.get(), no_urls, 0));
   EXPECT_TRUE(
@@ -745,7 +744,7 @@ TEST_F(ExtensionScriptAndCaptureVisibleTest, TabSpecific) {
   EXPECT_TRUE(ScriptAllowedExclusivelyOnTab(extension.get(), no_urls, 2));
 
   permissions_data->ClearTabSpecificPermissions(1);
-  EXPECT_FALSE(permissions_data->GetTabSpecificPermissionsForTesting(1));
+  EXPECT_FALSE(permissions_data->GetTabSpecificPermissionsForTesting(1).get());
 
   EXPECT_TRUE(ScriptAllowedExclusivelyOnTab(extension.get(), no_urls, 0));
   EXPECT_TRUE(ScriptAllowedExclusivelyOnTab(extension.get(), no_urls, 1));

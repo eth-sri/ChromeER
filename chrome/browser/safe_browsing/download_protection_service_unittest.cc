@@ -10,8 +10,8 @@
 #include "base/base_paths.h"
 #include "base/bind.h"
 #include "base/callback.h"
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
@@ -91,6 +91,8 @@ class FakeSafeBrowsingService : public SafeBrowsingService {
     mock_database_manager_ = new MockSafeBrowsingDatabaseManager(this);
     return mock_database_manager_;
   }
+
+  virtual void RegisterAllDelayedAnalysis() OVERRIDE { }
 
  private:
   MockSafeBrowsingDatabaseManager* mock_database_manager_;

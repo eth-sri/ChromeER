@@ -10,9 +10,9 @@
 #include "base/bind_helpers.h"
 #include "base/callback.h"
 #include "base/command_line.h"
-#include "base/file_util.h"
 #include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/ref_counted.h"
 #include "base/path_service.h"
@@ -76,6 +76,7 @@
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "chrome/grit/generated_resources.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/test_switches.h"
 #include "chrome/test/base/ui_test_utils.h"
@@ -129,7 +130,6 @@
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_set.h"
-#include "grit/generated_resources.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
 #include "net/base/url_util.h"
@@ -158,12 +158,12 @@
 #endif
 
 #if !defined(OS_MACOSX)
-#include "apps/app_window.h"
-#include "apps/app_window_registry.h"
-#include "apps/ui/native_app_window.h"
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "chrome/browser/ui/extensions/application_launch.h"
+#include "extensions/browser/app_window/app_window.h"
+#include "extensions/browser/app_window/app_window_registry.h"
+#include "extensions/browser/app_window/native_app_window.h"
 #include "ui/base/window_open_disposition.h"
 #endif
 
@@ -378,7 +378,7 @@ bool IsJavascriptEnabled(content::WebContents* contents) {
 }
 
 bool IsNetworkPredictionEnabled(PrefService* prefs) {
-  return chrome_browser_net::CanPredictNetworkActionsUI(prefs);
+  return chrome_browser_net::CanPrefetchAndPrerenderUI(prefs);
 }
 
 void CopyPluginListAndQuit(std::vector<content::WebPluginInfo>* out,
@@ -540,26 +540,27 @@ void WebContentsLoadedOrDestroyedWatcher::DidStopLoading(
 #if !defined(OS_MACOSX)
 
 // Observer used to wait for the creation of a new app window.
-class TestAddAppWindowObserver : public apps::AppWindowRegistry::Observer {
+class TestAddAppWindowObserver
+    : public extensions::AppWindowRegistry::Observer {
  public:
-  explicit TestAddAppWindowObserver(apps::AppWindowRegistry* registry);
+  explicit TestAddAppWindowObserver(extensions::AppWindowRegistry* registry);
   virtual ~TestAddAppWindowObserver();
 
-  // apps::AppWindowRegistry::Observer:
-  virtual void OnAppWindowAdded(apps::AppWindow* app_window) OVERRIDE;
+  // extensions::AppWindowRegistry::Observer:
+  virtual void OnAppWindowAdded(extensions::AppWindow* app_window) OVERRIDE;
 
-  apps::AppWindow* WaitForAppWindow();
+  extensions::AppWindow* WaitForAppWindow();
 
  private:
-  apps::AppWindowRegistry* registry_;  // Not owned.
-  apps::AppWindow* window_;            // Not owned.
+  extensions::AppWindowRegistry* registry_;  // Not owned.
+  extensions::AppWindow* window_;            // Not owned.
   base::RunLoop run_loop_;
 
   DISALLOW_COPY_AND_ASSIGN(TestAddAppWindowObserver);
 };
 
 TestAddAppWindowObserver::TestAddAppWindowObserver(
-    apps::AppWindowRegistry* registry)
+    extensions::AppWindowRegistry* registry)
     : registry_(registry), window_(NULL) {
   registry_->AddObserver(this);
 }
@@ -568,12 +569,13 @@ TestAddAppWindowObserver::~TestAddAppWindowObserver() {
   registry_->RemoveObserver(this);
 }
 
-void TestAddAppWindowObserver::OnAppWindowAdded(apps::AppWindow* app_window) {
+void TestAddAppWindowObserver::OnAppWindowAdded(
+    extensions::AppWindow* app_window) {
   window_ = app_window;
   run_loop_.Quit();
 }
 
-apps::AppWindow* TestAddAppWindowObserver::WaitForAppWindow() {
+extensions::AppWindow* TestAddAppWindowObserver::WaitForAppWindow() {
   run_loop_.Run();
   return window_;
 }
@@ -805,8 +807,8 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, BookmarkBarEnabled) {
 
   // Test starts in about:blank.
   PrefService* prefs = browser()->profile()->GetPrefs();
-  EXPECT_FALSE(prefs->IsManagedPreference(prefs::kShowBookmarkBar));
-  EXPECT_FALSE(prefs->GetBoolean(prefs::kShowBookmarkBar));
+  EXPECT_FALSE(prefs->IsManagedPreference(bookmarks::prefs::kShowBookmarkBar));
+  EXPECT_FALSE(prefs->GetBoolean(bookmarks::prefs::kShowBookmarkBar));
   EXPECT_EQ(BookmarkBar::HIDDEN, browser()->bookmark_bar_state());
 
   PolicyMap policies;
@@ -816,8 +818,8 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, BookmarkBarEnabled) {
                new base::FundamentalValue(true),
                NULL);
   UpdateProviderPolicy(policies);
-  EXPECT_TRUE(prefs->IsManagedPreference(prefs::kShowBookmarkBar));
-  EXPECT_TRUE(prefs->GetBoolean(prefs::kShowBookmarkBar));
+  EXPECT_TRUE(prefs->IsManagedPreference(bookmarks::prefs::kShowBookmarkBar));
+  EXPECT_TRUE(prefs->GetBoolean(bookmarks::prefs::kShowBookmarkBar));
   EXPECT_EQ(BookmarkBar::SHOW, browser()->bookmark_bar_state());
 
   // The NTP has special handling of the bookmark bar.
@@ -830,15 +832,15 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, BookmarkBarEnabled) {
                new base::FundamentalValue(false),
                NULL);
   UpdateProviderPolicy(policies);
-  EXPECT_TRUE(prefs->IsManagedPreference(prefs::kShowBookmarkBar));
-  EXPECT_FALSE(prefs->GetBoolean(prefs::kShowBookmarkBar));
+  EXPECT_TRUE(prefs->IsManagedPreference(bookmarks::prefs::kShowBookmarkBar));
+  EXPECT_FALSE(prefs->GetBoolean(bookmarks::prefs::kShowBookmarkBar));
   // The bookmark bar is hidden in the NTP when disabled by policy.
   EXPECT_EQ(BookmarkBar::HIDDEN, browser()->bookmark_bar_state());
 
   policies.Clear();
   UpdateProviderPolicy(policies);
-  EXPECT_FALSE(prefs->IsManagedPreference(prefs::kShowBookmarkBar));
-  EXPECT_FALSE(prefs->GetBoolean(prefs::kShowBookmarkBar));
+  EXPECT_FALSE(prefs->IsManagedPreference(bookmarks::prefs::kShowBookmarkBar));
+  EXPECT_FALSE(prefs->GetBoolean(bookmarks::prefs::kShowBookmarkBar));
   // The bookmark bar is shown detached in the NTP, when disabled by prefs only.
   EXPECT_EQ(BookmarkBar::DETACHED, browser()->bookmark_bar_state());
 }
@@ -1524,9 +1526,7 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, DownloadDirectory) {
   EXPECT_FALSE(base::PathExists(initial_dir.path().Append(file)));
 }
 
-// Flaky: http://crbug.com/388340
-IN_PROC_BROWSER_TEST_F(PolicyTest,
-                       DISABLED_ExtensionInstallBlacklistSelective) {
+IN_PROC_BROWSER_TEST_F(PolicyTest, ExtensionInstallBlacklistSelective) {
   // Verifies that blacklisted extensions can't be installed.
   ExtensionService* service = extension_service();
   ASSERT_FALSE(service->GetExtensionById(kGoodCrxId, true));
@@ -2127,8 +2127,7 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, URLBlacklist) {
   }
 }
 
-// This test is flaky on all platforms; see http://crbug.com/339240
-IN_PROC_BROWSER_TEST_F(PolicyTest, DISABLED_FileURLBlacklist) {
+IN_PROC_BROWSER_TEST_F(PolicyTest, FileURLBlacklist) {
   // Check that FileURLs can be blacklisted and DisabledSchemes works together
   // with URLblacklisting and URLwhitelisting.
 
@@ -2225,12 +2224,12 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, FullscreenAllowedApp) {
 
   // Launch an app that tries to open a fullscreen window.
   TestAddAppWindowObserver add_window_observer(
-      apps::AppWindowRegistry::Get(browser()->profile()));
+      extensions::AppWindowRegistry::Get(browser()->profile()));
   OpenApplication(AppLaunchParams(browser()->profile(),
                                   extension,
                                   extensions::LAUNCH_CONTAINER_NONE,
                                   NEW_WINDOW));
-  apps::AppWindow* window = add_window_observer.WaitForAppWindow();
+  extensions::AppWindow* window = add_window_observer.WaitForAppWindow();
   ASSERT_TRUE(window);
 
   // Verify that the window is not in fullscreen mode.

@@ -22,6 +22,25 @@ namespace media {
 // This is only the base class, as parameter to resolve() varies.
 class MEDIA_EXPORT CdmPromise {
  public:
+  // A superset of media::MediaKeys::Exception for UMA reporting.
+  enum ResultCodeForUMA {
+    SUCCESS,
+    NOT_SUPPORTED_ERROR,
+    INVALID_STATE_ERROR,
+    INVALID_ACCESS_ERROR,
+    QUOTA_EXCEEDED_ERROR,
+    UNKNOWN_ERROR,
+    CLIENT_ERROR,
+    OUTPUT_ERROR,
+    NUM_RESULT_CODES
+  };
+
+  enum ResolveParameterType {
+    VOID_TYPE,
+    STRING_TYPE,
+    KEY_IDS_VECTOR_TYPE
+  };
+
   typedef base::Callback<void(MediaKeys::Exception exception_code,
                               uint32 system_code,
                               const std::string& error_message)>
@@ -37,30 +56,26 @@ class MEDIA_EXPORT CdmPromise {
                       uint32 system_code,
                       const std::string& error_message);
 
+  virtual ResolveParameterType GetResolveParameterType() const = 0;
+
  protected:
   CdmPromise();
   CdmPromise(PromiseRejectedCB reject_cb);
+
+  // If constructed with a |uma_name| (which must be the name of a
+  // CdmPromiseResult UMA), CdmPromise will report the promise result (success
+  // or rejection code).
+  CdmPromise(PromiseRejectedCB reject_cb, const std::string& uma_name);
 
   PromiseRejectedCB reject_cb_;
 
   // Keep track of whether the promise hasn't been resolved or rejected yet.
   bool is_pending_;
 
+  // UMA to report result to.
+  std::string uma_name_;
+
   DISALLOW_COPY_AND_ASSIGN(CdmPromise);
-};
-
-template <typename T>
-class MEDIA_EXPORT CdmPromiseTemplate : public CdmPromise {
- public:
-  CdmPromiseTemplate(base::Callback<void(const T&)> resolve_cb,
-                     PromiseRejectedCB rejected_cb);
-  virtual ~CdmPromiseTemplate();
-  virtual void resolve(const T& result);
-
- private:
-  base::Callback<void(const T&)> resolve_cb_;
-
-  DISALLOW_COPY_AND_ASSIGN(CdmPromiseTemplate);
 };
 
 // Specialization for no parameter to resolve().
@@ -69,8 +84,12 @@ class MEDIA_EXPORT CdmPromiseTemplate<void> : public CdmPromise {
  public:
   CdmPromiseTemplate(base::Callback<void(void)> resolve_cb,
                      PromiseRejectedCB rejected_cb);
+  CdmPromiseTemplate(base::Callback<void(void)> resolve_cb,
+                     PromiseRejectedCB rejected_cb,
+                     const std::string& uma_name);
   virtual ~CdmPromiseTemplate();
   virtual void resolve();
+  virtual ResolveParameterType GetResolveParameterType() const OVERRIDE;
 
  protected:
   // Allow subclasses to completely override the implementation.
@@ -78,6 +97,48 @@ class MEDIA_EXPORT CdmPromiseTemplate<void> : public CdmPromise {
 
  private:
   base::Callback<void(void)> resolve_cb_;
+
+  DISALLOW_COPY_AND_ASSIGN(CdmPromiseTemplate);
+};
+
+template <>
+class MEDIA_EXPORT CdmPromiseTemplate<std::string> : public CdmPromise {
+ public:
+  CdmPromiseTemplate(base::Callback<void(const std::string&)> resolve_cb,
+                     PromiseRejectedCB rejected_cb);
+  CdmPromiseTemplate(base::Callback<void(const std::string&)> resolve_cb,
+                     PromiseRejectedCB rejected_cb,
+                     const std::string& uma_name);
+  virtual ~CdmPromiseTemplate();
+  virtual void resolve(const std::string& result);
+  virtual ResolveParameterType GetResolveParameterType() const OVERRIDE;
+
+ protected:
+  // Allow subclasses to completely override the implementation.
+  // TODO(jrummell): Remove when derived class SessionLoadedPromise
+  // (in ppapi_decryptor.cc) is no longer needed.
+  CdmPromiseTemplate();
+
+ private:
+  base::Callback<void(const std::string&)> resolve_cb_;
+
+  DISALLOW_COPY_AND_ASSIGN(CdmPromiseTemplate);
+};
+
+template <>
+class MEDIA_EXPORT CdmPromiseTemplate<KeyIdsVector> : public CdmPromise {
+ public:
+  CdmPromiseTemplate(base::Callback<void(const KeyIdsVector&)> resolve_cb,
+                     PromiseRejectedCB rejected_cb);
+  CdmPromiseTemplate(base::Callback<void(const KeyIdsVector&)> resolve_cb,
+                     PromiseRejectedCB rejected_cb,
+                     const std::string& uma_name);
+  virtual ~CdmPromiseTemplate();
+  virtual void resolve(const KeyIdsVector& result);
+  virtual ResolveParameterType GetResolveParameterType() const OVERRIDE;
+
+ private:
+  base::Callback<void(const KeyIdsVector&)> resolve_cb_;
 
   DISALLOW_COPY_AND_ASSIGN(CdmPromiseTemplate);
 };

@@ -11,6 +11,7 @@
 #include "cc/animation/animation_registrar.h"
 #include "cc/animation/scrollbar_animation_controller.h"
 #include "cc/base/math_util.h"
+#include "cc/base/simple_enclosed_region.h"
 #include "cc/debug/debug_colors.h"
 #include "cc/debug/layer_tree_debug_state.h"
 #include "cc/debug/micro_benchmark_impl.h"
@@ -20,6 +21,7 @@
 #include "cc/layers/painted_scrollbar_layer_impl.h"
 #include "cc/output/copy_output_request.h"
 #include "cc/quads/debug_border_draw_quad.h"
+#include "cc/quads/render_pass.h"
 #include "cc/trees/layer_tree_host_common.h"
 #include "cc/trees/layer_tree_impl.h"
 #include "cc/trees/layer_tree_settings.h"
@@ -64,6 +66,7 @@ LayerImpl::LayerImpl(LayerTreeImpl* tree_impl, int id)
       background_color_(0),
       opacity_(1.0),
       blend_mode_(SkXfermode::kSrcOver_Mode),
+      num_descendants_that_draw_content_(0),
       draw_depth_(0.f),
       needs_push_properties_(false),
       num_dependents_need_push_properties_(0),
@@ -173,6 +176,13 @@ void LayerImpl::SetScrollChildren(std::set<LayerImpl*>* children) {
   if (scroll_children_.get() == children)
     return;
   scroll_children_.reset(children);
+  SetNeedsPushProperties();
+}
+
+void LayerImpl::SetNumDescendantsThatDrawContent(int num_descendants) {
+  if (num_descendants_that_draw_content_ == num_descendants)
+    return;
+  num_descendants_that_draw_content_ = num_descendants;
   SetNeedsPushProperties();
 }
 
@@ -331,13 +341,12 @@ bool LayerImpl::HasContributingDelegatedRenderPasses() const {
   return false;
 }
 
-RenderPass::Id LayerImpl::FirstContributingRenderPassId() const {
-  return RenderPass::Id(0, 0);
+RenderPassId LayerImpl::FirstContributingRenderPassId() const {
+  return RenderPassId(0, 0);
 }
 
-RenderPass::Id LayerImpl::NextContributingRenderPassId(RenderPass::Id id)
-    const {
-  return RenderPass::Id(0, 0);
+RenderPassId LayerImpl::NextContributingRenderPassId(RenderPassId id) const {
+  return RenderPassId(0, 0);
 }
 
 ResourceProvider::ResourceId LayerImpl::ContentsResourceId() const {
@@ -532,6 +541,7 @@ void LayerImpl::PushPropertiesTo(LayerImpl* layer) {
       scroll_offset_, layer->ScrollDelta() - layer->sent_scroll_delta());
   layer->SetSentScrollDelta(gfx::Vector2d());
   layer->Set3dSortingContextId(sorting_context_id_);
+  layer->SetNumDescendantsThatDrawContent(num_descendants_that_draw_content_);
 
   LayerImpl* scroll_parent = NULL;
   if (scroll_parent_) {
@@ -600,7 +610,7 @@ gfx::Vector2dF LayerImpl::FixedContainerSizeDelta() const {
   float scale_delta = layer_tree_impl()->page_scale_delta();
   float scale = layer_tree_impl()->page_scale_factor();
 
-  gfx::Vector2dF delta_from_scroll = scroll_clip_layer_->BoundsDelta();
+  gfx::Vector2dF delta_from_scroll = scroll_clip_layer_->bounds_delta();
   delta_from_scroll.Scale(1.f / scale);
 
   // The delta-from-pinch component requires some explanation: A viewport of
@@ -760,9 +770,10 @@ bool LayerImpl::IsActive() const {
   return layer_tree_impl_->IsActiveTree();
 }
 
-// TODO(wjmaclean) Convert so that bounds returns SizeF.
+// TODO(aelias): Convert so that bounds returns SizeF.
 gfx::Size LayerImpl::bounds() const {
-  return ToFlooredSize(temporary_impl_bounds_);
+  return gfx::ToCeiledSize(gfx::SizeF(bounds_.width() + bounds_delta_.x(),
+                                      bounds_.height() + bounds_delta_.y()));
 }
 
 void LayerImpl::SetBounds(const gfx::Size& bounds) {
@@ -770,7 +781,6 @@ void LayerImpl::SetBounds(const gfx::Size& bounds) {
     return;
 
   bounds_ = bounds;
-  temporary_impl_bounds_ = bounds;
 
   ScrollbarParametersDidChange();
   if (masks_to_bounds())
@@ -779,11 +789,11 @@ void LayerImpl::SetBounds(const gfx::Size& bounds) {
     NoteLayerPropertyChanged();
 }
 
-void LayerImpl::SetTemporaryImplBounds(const gfx::SizeF& bounds) {
-  if (temporary_impl_bounds_ == bounds)
+void LayerImpl::SetBoundsDelta(const gfx::Vector2dF& bounds_delta) {
+  if (bounds_delta_ == bounds_delta)
     return;
 
-  temporary_impl_bounds_ = bounds;
+  bounds_delta_ = bounds_delta;
 
   ScrollbarParametersDidChange();
   if (masks_to_bounds())
@@ -1138,10 +1148,10 @@ void LayerImpl::SetDoubleSided(bool double_sided) {
   NoteLayerPropertyChangedForSubtree();
 }
 
-Region LayerImpl::VisibleContentOpaqueRegion() const {
+SimpleEnclosedRegion LayerImpl::VisibleContentOpaqueRegion() const {
   if (contents_opaque())
-    return visible_content_rect();
-  return Region();
+    return SimpleEnclosedRegion(visible_content_rect());
+  return SimpleEnclosedRegion();
 }
 
 void LayerImpl::DidBeginTracing() {}
@@ -1265,8 +1275,7 @@ void LayerImpl::SetScrollbarPosition(ScrollbarLayerImplBase* scrollbar_layer,
     current_offset.Scale(layer_tree_impl()->total_page_scale_factor());
   }
 
-  scrollbar_layer->SetVerticalAdjust(
-      layer_tree_impl()->VerticalAdjust(scrollbar_clip_layer->id()));
+  scrollbar_layer->SetVerticalAdjust(scrollbar_clip_layer->bounds_delta().y());
   if (scrollbar_layer->orientation() == HORIZONTAL) {
     float visible_ratio = clip_rect.width() / scroll_rect.width();
     scrollbar_layer->SetCurrentPos(current_offset.x());
@@ -1389,6 +1398,9 @@ void LayerImpl::RemoveDependentNeedsPushProperties() {
 
   if (!parent_should_know_need_push_properties() && parent_)
       parent_->RemoveDependentNeedsPushProperties();
+}
+
+void LayerImpl::GetAllTilesForTracing(std::set<const Tile*>* tiles) const {
 }
 
 void LayerImpl::AsValueInto(base::debug::TracedValue* state) const {
@@ -1519,6 +1531,10 @@ size_t LayerImpl::GPUMemoryUsageInBytes() const { return 0; }
 
 void LayerImpl::RunMicroBenchmark(MicroBenchmarkImpl* benchmark) {
   benchmark->RunOnLayer(this);
+}
+
+int LayerImpl::NumDescendantsThatDrawContent() const {
+  return num_descendants_that_draw_content_;
 }
 
 void LayerImpl::NotifyAnimationFinished(

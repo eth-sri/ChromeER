@@ -338,6 +338,24 @@ void SessionsSyncManager::RebuildAssociations() {
       syncer::SESSIONS, data, processor.Pass(), error_handler.Pass());
 }
 
+bool SessionsSyncManager::IsValidSessionHeader(
+    const sync_pb::SessionHeader& header) {
+  // Verify that tab IDs appear only once within a session.
+  // Intended to prevent http://crbug.com/360822.
+  std::set<int> session_tab_ids;
+  for (int i = 0; i < header.window_size(); ++i) {
+    const sync_pb::SessionWindow& window = header.window(i);
+    for (int j = 0; j < window.tab_size(); ++j) {
+      const int tab_id = window.tab(j);
+      bool success = session_tab_ids.insert(tab_id).second;
+      if (!success)
+        return false;
+    }
+  }
+
+  return true;
+}
+
 void SessionsSyncManager::OnLocalTabModified(SyncedTabDelegate* modified_tab) {
   const content::NavigationEntry* entry = modified_tab->GetActiveEntry();
   if (!modified_tab->IsBeingDestroyed() &&
@@ -588,6 +606,12 @@ void SessionsSyncManager::UpdateTrackerWithForeignSession(
     // Read in the header data for this foreign session.
     // Header data contains window information and ordered tab id's for each
     // window.
+
+    if (!IsValidSessionHeader(specifics.header())) {
+      LOG(WARNING) << "Ignoring foreign session node with invalid header "
+                   << "and tag " << foreign_session_tag << ".";
+      return;
+    }
 
     // Load (or create) the SyncedSession object for this client.
     const sync_pb::SessionHeader& header = specifics.header();
@@ -919,7 +943,8 @@ void SessionsSyncManager::SetSessionTabFromDelegate(
   session_tab->window_id.set_id(tab_delegate.GetWindowId());
   session_tab->tab_id.set_id(tab_delegate.GetSessionId());
   session_tab->tab_visual_index = 0;
-  session_tab->current_navigation_index = tab_delegate.GetCurrentEntryIndex();
+  // Use -1 to indicate that the index hasn't been set properly yet.
+  session_tab->current_navigation_index = -1;
   session_tab->pinned = tab_delegate.IsPinned();
   session_tab->extension_app_id = tab_delegate.GetExtensionAppId();
   session_tab->user_agent_override.clear();
@@ -939,12 +964,23 @@ void SessionsSyncManager::SetSessionTabFromDelegate(
     if (!entry->GetVirtualURL().is_valid())
       continue;
 
+    // Set current_navigation_index to the index in navigations.
+    if (i == current_index)
+      session_tab->current_navigation_index = session_tab->navigations.size();
+
     session_tab->navigations.push_back(
         SerializedNavigationEntry::FromNavigationEntry(i, *entry));
     if (is_supervised) {
       session_tab->navigations.back().set_blocked_state(
           SerializedNavigationEntry::STATE_ALLOWED);
     }
+  }
+
+  // If the current navigation is invalid, set the index to the end of the
+  // navigation array.
+  if (session_tab->current_navigation_index < 0) {
+    session_tab->current_navigation_index =
+        session_tab->navigations.size() - 1;
   }
 
   if (is_supervised) {

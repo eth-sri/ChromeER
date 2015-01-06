@@ -30,14 +30,14 @@ class BrowsingDataDatabaseHelper
  public:
   // Contains detailed information about a web database.
   struct DatabaseInfo {
-    DatabaseInfo(const webkit_database::DatabaseIdentifier& identifier,
+    DatabaseInfo(const storage::DatabaseIdentifier& identifier,
                  const std::string& database_name,
                  const std::string& description,
                  int64 size,
                  base::Time last_modified);
     ~DatabaseInfo();
 
-    webkit_database::DatabaseIdentifier identifier;
+    storage::DatabaseIdentifier identifier;
     std::string database_name;
     std::string description;
     int64 size;
@@ -72,13 +72,13 @@ class BrowsingDataDatabaseHelper
   // thread.
   std::list<DatabaseInfo> database_info_;
 
-  // This only mutates on the UI thread.
+  // This member is only mutated on the UI thread.
   base::Callback<void(const std::list<DatabaseInfo>&)> completion_callback_;
 
   // Indicates whether or not we're currently fetching information:
   // it's true when StartFetching() is called in the UI thread, and it's reset
   // after we notify the callback in the UI thread.
-  // This only mutates on the UI thread.
+  // This member is only mutated on the UI thread.
   bool is_fetching_;
 
  private:
@@ -89,7 +89,7 @@ class BrowsingDataDatabaseHelper
   void DeleteDatabaseOnFileThread(const std::string& origin,
                                   const std::string& name);
 
-  scoped_refptr<webkit_database::DatabaseTracker> tracker_;
+  scoped_refptr<storage::DatabaseTracker> tracker_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowsingDataDatabaseHelper);
 };

@@ -6,7 +6,7 @@
 
 #include "base/strings/string_util.h"
 #include "base/sys_info.h"
-#include "grit/generated_resources.h"
+#include "chrome/grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
 namespace chromeos {
@@ -30,16 +30,20 @@ const char* const kChromeboxBoards[]  = {
 }  // namespace
 
 base::string16 GetChromeDeviceType() {
+  return l10n_util::GetStringUTF16(GetChromeDeviceTypeResourceId());
+}
+
+int GetChromeDeviceTypeResourceId() {
   const std::string board = base::SysInfo::GetLsbReleaseBoard();
   for (size_t i = 0; i < arraysize(kChromeboxBoards); ++i) {
     if (StartsWithASCII(board, kChromeboxBoards[i], true))
-      return l10n_util::GetStringUTF16(IDS_CHROMEBOX);
+      return IDS_CHROMEBOX;
   }
   for (size_t i = 0; i < arraysize(kChromebaseBoards); ++i) {
     if (StartsWithASCII(board, kChromebaseBoards[i], true))
-      return l10n_util::GetStringUTF16(IDS_CHROMEBASE);
+      return IDS_CHROMEBASE;
   }
-  return l10n_util::GetStringUTF16(IDS_CHROMEBOOK);
+  return IDS_CHROMEBOOK;
 }
 
 }  // namespace chromeos

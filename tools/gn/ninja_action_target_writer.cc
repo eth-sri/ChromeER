@@ -6,14 +6,14 @@
 
 #include "base/strings/string_util.h"
 #include "tools/gn/err.h"
+#include "tools/gn/settings.h"
 #include "tools/gn/string_utils.h"
 #include "tools/gn/substitution_writer.h"
 #include "tools/gn/target.h"
 
 NinjaActionTargetWriter::NinjaActionTargetWriter(const Target* target,
-                                                 const Toolchain* toolchain,
                                                  std::ostream& out)
-    : NinjaTargetWriter(target, toolchain, out),
+    : NinjaTargetWriter(target, out),
       path_output_no_escaping_(
           target->settings()->build_settings()->build_dir(),
           ESCAPE_NONE) {
@@ -40,7 +40,7 @@ void NinjaActionTargetWriter::Run() {
   // build rule. This should probably be handled by WriteInputDepsStampAndGetDep
   // automatically if we supply a count of sources (so it can optimize based on
   // how many times things would be duplicated).
-  std::string implicit_deps = WriteInputDepsStampAndGetDep(extra_hard_deps);
+  OutputFile input_dep = WriteInputDepsStampAndGetDep(extra_hard_deps);
   out_ << std::endl;
 
   // Collects all output files for writing below.
@@ -48,22 +48,25 @@ void NinjaActionTargetWriter::Run() {
 
   if (target_->output_type() == Target::ACTION_FOREACH) {
     // Write separate build lines for each input source file.
-    WriteSourceRules(custom_rule_name, implicit_deps, &output_files);
+    WriteSourceRules(custom_rule_name, input_dep, &output_files);
   } else {
     DCHECK(target_->output_type() == Target::ACTION);
 
     // Write a rule that invokes the script once with the outputs as outputs,
-    // and the data as inputs.
+    // and the data as inputs. It does not depend on the sources.
     out_ << "build";
-    SubstitutionWriter::ApplyListToSourcesAsOutputFile(
-        settings_, target_->action_values().outputs(), target_->sources(),
-        &output_files);
-    for (size_t i = 0; i < output_files.size(); i++) {
-      out_ << " ";
-      path_output_.WriteFile(out_, output_files[i]);
-    }
+    SubstitutionWriter::GetListAsOutputFiles(
+        settings_, target_->action_values().outputs(), &output_files);
+    path_output_.WriteFiles(out_, output_files);
 
-    out_ << ": " << custom_rule_name << implicit_deps << std::endl;
+    out_ << ": " << custom_rule_name;
+    if (!input_dep.value().empty()) {
+      // As in WriteSourceRules, we want to force this target to rebuild any
+      // time any of its dependencies change.
+      out_ << " | ";
+      path_output_.WriteFile(out_, input_dep);
+    }
+    out_ << std::endl;
     if (target_->action_values().has_depfile()) {
       out_ << "  depfile = ";
       WriteDepfile(SourceFile());
@@ -72,7 +75,13 @@ void NinjaActionTargetWriter::Run() {
   }
   out_ << std::endl;
 
-  WriteStamp(output_files);
+  // Write the stamp, which also depends on all datadeps. These are needed at
+  // runtime and should be compiled when the action is, but don't need to be
+  // done before we run the action.
+  std::vector<OutputFile> data_outs;
+  for (size_t i = 0; i < target_->datadeps().size(); i++)
+    data_outs.push_back(target_->datadeps()[i].ptr->dependency_output_file());
+  WriteStampForTarget(output_files, data_outs);
 }
 
 std::string NinjaActionTargetWriter::WriteRuleDefinition() {
@@ -93,7 +102,7 @@ std::string NinjaActionTargetWriter::WriteRuleDefinition() {
   if (settings_->IsWin()) {
     // Send through gyp-win-tool and use a response file.
     std::string rspfile = custom_rule_name;
-    if (has_sources())
+    if (!target_->sources().empty())
       rspfile += ".$unique_name";
     rspfile += ".rsp";
 
@@ -142,7 +151,7 @@ std::string NinjaActionTargetWriter::WriteRuleDefinition() {
 
 void NinjaActionTargetWriter::WriteSourceRules(
     const std::string& custom_rule_name,
-    const std::string& implicit_deps,
+    const OutputFile& input_dep,
     std::vector<OutputFile>* output_files) {
   EscapeOptions args_escape_options;
   args_escape_options.mode = ESCAPE_NINJA_COMMAND;
@@ -160,7 +169,15 @@ void NinjaActionTargetWriter::WriteSourceRules(
 
     out_ << ": " << custom_rule_name << " ";
     path_output_.WriteFile(out_, sources[i]);
-    out_ << implicit_deps << std::endl;
+    if (!input_dep.value().empty()) {
+      // Using "|" for the dependencies forces all implicit dependencies to be
+      // fully up-to-date before running the action, and will re-run this
+      // action if any input dependencies change. This is important because
+      // this action may consume the outputs of previous steps.
+      out_ << " | ";
+      path_output_.WriteFile(out_, input_dep);
+    }
+    out_ << std::endl;
 
     // Windows needs a unique ID for the response file.
     if (target_->settings()->IsWin())
@@ -176,32 +193,6 @@ void NinjaActionTargetWriter::WriteSourceRules(
       out_ << std::endl;
     }
   }
-}
-
-void NinjaActionTargetWriter::WriteStamp(
-    const std::vector<OutputFile>& output_files) {
-  out_ << "build ";
-  path_output_.WriteFile(out_, helper_.GetTargetOutputFile(target_));
-  out_ << ": "
-       << helper_.GetRulePrefix(target_->settings())
-       << "stamp";
-
-  // The action stamp depends on all output files from running the action.
-  for (size_t i = 0; i < output_files.size(); i++) {
-    out_ << " ";
-    path_output_.WriteFile(out_, output_files[i]);
-  }
-
-  // It also depends on all datadeps. These are needed at runtime and should
-  // be compiled when the action is, but don't need to be done before we run
-  // the action.
-  for (size_t i = 0; i < target_->datadeps().size(); i++) {
-    out_ << " ";
-    path_output_.WriteFile(out_,
-        helper_.GetTargetOutputFile(target_->datadeps()[i].ptr));
-  }
-
-  out_ << std::endl;
 }
 
 void NinjaActionTargetWriter::WriteOutputFilesForBuildLine(

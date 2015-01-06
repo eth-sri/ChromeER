@@ -1,10 +1,8 @@
 # Copyright 2014 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-import logging
-
 from operator import attrgetter
-from telemetry.page import page_test
+
 from telemetry.web_perf.metrics import rendering_frame
 
 # These are LatencyInfo component names indicating the various components
@@ -15,21 +13,19 @@ UI_COMP_NAME = 'INPUT_EVENT_LATENCY_UI_COMPONENT'
 ORIGINAL_COMP_NAME = 'INPUT_EVENT_LATENCY_ORIGINAL_COMPONENT'
 # This is when the input event was sent from browser to renderer.
 BEGIN_COMP_NAME = 'INPUT_EVENT_LATENCY_BEGIN_RWH_COMPONENT'
+# This is when an input event is turned into a scroll update.
+BEGIN_SCROLL_UPDATE_COMP_NAME = (
+    'INPUT_EVENT_LATENCY_BEGIN_SCROLL_UPDATE_MAIN_COMPONENT')
+# This is when a scroll update is forwarded to the main thread.
+FORWARD_SCROLL_UPDATE_COMP_NAME = (
+    'INPUT_EVENT_LATENCY_FORWARD_SCROLL_UPDATE_TO_MAIN_COMPONENT')
 # This is when the input event has reached swap buffer.
 END_COMP_NAME = 'INPUT_EVENT_LATENCY_TERMINATED_FRAME_SWAP_COMPONENT'
 
-
-class NotEnoughFramesError(page_test.MeasurementFailure):
-  def __init__(self, frame_count):
-    super(NotEnoughFramesError, self).__init__(
-      'Only %i frame timestamps were collected ' % frame_count +
-      '(at least two are required).\n'
-      'Issues that have caused this in the past:\n' +
-      '- Browser bugs that prevents the page from redrawing\n' +
-      '- Bugs in the synthetic gesture code\n' +
-      '- Page and benchmark out of sync (e.g. clicked element was renamed)\n' +
-      '- Pages that render extremely slow\n' +
-      '- Pages that can\'t be scrolled')
+# Name for a main thread scroll update latency event.
+SCROLL_UPDATE_EVENT_NAME = 'InputLatency:ScrollUpdate'
+# Name for a gesture scroll update latency event.
+GESTURE_SCROLL_UPDATE_EVENT_NAME  = 'InputLatency:GestureScrollUpdate'
 
 
 def GetInputLatencyEvents(process, timeline_range):
@@ -52,8 +48,8 @@ def GetInputLatencyEvents(process, timeline_range):
   return input_events
 
 
-def ComputeInputEventLatency(input_events):
-  """ Compute the input event latency.
+def ComputeInputEventLatencies(input_events):
+  """ Compute input event latencies.
 
   Input event latency is the time from when the input event is created to
   when its resulted page is swap buffered.
@@ -64,22 +60,34 @@ def ComputeInputEventLatency(input_events):
   2. INPUT_EVENT_LATENCY_UI_COMPONENT -- when event reaches Chrome
   3. INPUT_EVENT_LATENCY_BEGIN_RWH_COMPONENT -- when event reaches RenderWidget
 
+  If the latency starts with a
+  INPUT_EVENT_LATENCY_BEGIN_SCROLL_UPDATE_MAIN_COMPONENT component, then it is
+  classified as a scroll update instead of a normal input latency measure.
+
+  Returns:
+    A list sorted by increasing start time of latencies which are tuples of
+    (input_event_name, latency_in_ms).
   """
-  input_event_latency = []
+  input_event_latencies = []
   for event in input_events:
     data = event.args['data']
     if END_COMP_NAME in data:
       end_time = data[END_COMP_NAME]['time']
       if ORIGINAL_COMP_NAME in data:
-        latency = end_time - data[ORIGINAL_COMP_NAME]['time']
+        start_time = data[ORIGINAL_COMP_NAME]['time']
       elif UI_COMP_NAME in data:
-        latency = end_time - data[UI_COMP_NAME]['time']
+        start_time = data[UI_COMP_NAME]['time']
       elif BEGIN_COMP_NAME in data:
-        latency = end_time - data[BEGIN_COMP_NAME]['time']
+        start_time = data[BEGIN_COMP_NAME]['time']
+      elif BEGIN_SCROLL_UPDATE_COMP_NAME in data:
+        start_time = data[BEGIN_SCROLL_UPDATE_COMP_NAME]['time']
       else:
         raise ValueError, 'LatencyInfo has no begin component'
-      input_event_latency.append(latency / 1000.0)
-  return input_event_latency
+      latency = (end_time - start_time) / 1000.0
+      input_event_latencies.append((start_time, event.name, latency))
+
+  input_event_latencies.sort()
+  return [(name, latency) for _, name, latency in input_event_latencies]
 
 
 def HasRenderingStats(process):
@@ -116,7 +124,11 @@ class RenderingStats(object):
     if HasRenderingStats(browser_process):
       timestamp_process = browser_process
     else:
-      timestamp_process  = renderer_process
+      timestamp_process = renderer_process
+
+    # A lookup from list names below to any errors or exceptions encountered
+    # in attempting to generate that list.
+    self.errors = {}
 
     self.frame_timestamps = []
     self.frame_times = []
@@ -131,6 +143,11 @@ class RenderingStats(object):
     # generated to when the its resulted page is swap buffered.
     self.input_event_latency = []
     self.frame_queueing_durations = []
+    # Latency from when a scroll update is sent to the main thread until the
+    # resulting frame is swapped.
+    self.scroll_update_latency = []
+    # Latency for a GestureScrollUpdate input event.
+    self.gesture_scroll_update_latency = []
 
     for timeline_range in timeline_ranges:
       self.frame_timestamps.append([])
@@ -143,6 +160,8 @@ class RenderingStats(object):
       self.rasterized_pixel_counts.append([])
       self.approximated_pixel_percentages.append([])
       self.input_event_latency.append([])
+      self.scroll_update_latency.append([])
+      self.gesture_scroll_update_latency.append([])
 
       if timeline_range.is_empty:
         continue
@@ -156,19 +175,25 @@ class RenderingStats(object):
       self._InitFrameQueueingDurationsFromTimeline(
           renderer_process, timeline_range)
 
-    # Check if we have collected at least 2 frames in every range. Otherwise we
-    # can't compute any meaningful metrics.
-    for segment in self.frame_timestamps:
-      if len(segment) < 2:
-        raise NotEnoughFramesError(len(segment))
-
   def _InitInputLatencyStatsFromTimeline(
       self, browser_process, renderer_process, timeline_range):
     latency_events = GetInputLatencyEvents(browser_process, timeline_range)
     # Plugin input event's latency slice is generated in renderer process.
     latency_events.extend(GetInputLatencyEvents(renderer_process,
                                                 timeline_range))
-    self.input_event_latency[-1] = ComputeInputEventLatency(latency_events)
+    input_event_latencies = ComputeInputEventLatencies(latency_events)
+    # Don't include scroll updates in the overall input latency measurement,
+    # because scroll updates can take much more time to process than other
+    # input events and would therefore add noise to overall latency numbers.
+    self.input_event_latency[-1] = [
+        latency for name, latency in input_event_latencies
+        if name != SCROLL_UPDATE_EVENT_NAME]
+    self.scroll_update_latency[-1] = [
+        latency for name, latency in input_event_latencies
+        if name == SCROLL_UPDATE_EVENT_NAME]
+    self.gesture_scroll_update_latency[-1] = [
+        latency for name, latency in input_event_latencies
+        if name == GESTURE_SCROLL_UPDATE_EVENT_NAME]
 
   def _GatherEvents(self, event_name, process, timeline_range):
     events = []
@@ -229,5 +254,5 @@ class RenderingStats(object):
       new_frame_queueing_durations = [e.queueing_duration for e in events]
       self.frame_queueing_durations.append(new_frame_queueing_durations)
     except rendering_frame.NoBeginFrameIdException:
-      logging.warning('Current chrome version does not support the queueing '
-                      'delay metric.')
+      self.errors['frame_queueing_durations'] = (
+          'Current chrome version does not support the queueing delay metric.')

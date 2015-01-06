@@ -101,7 +101,7 @@
       'sources': [
         '<@(libaddressinput_files)',
         'chromium/chrome_address_validator.cc',
-        'chromium/chrome_downloader_impl.cc',
+        'chromium/chrome_metadata_source.cc',
         'chromium/chrome_storage_impl.cc',
         'chromium/fallback_data_store.cc',
         'chromium/input_suggester.cc',
@@ -137,7 +137,7 @@
         '<@(libaddressinput_test_files)',
         'chromium/addressinput_util_unittest.cc',
         'chromium/chrome_address_validator_unittest.cc',
-        'chromium/chrome_downloader_impl_unittest.cc',
+        'chromium/chrome_metadata_source_unittest.cc',
         'chromium/chrome_storage_impl_unittest.cc',
         'chromium/fallback_data_store_unittest.cc',
         'chromium/storage_test_runner.cc',
@@ -160,5 +160,26 @@
         'libaddressinput_util',
       ],
     },
+  ],
+  'conditions': [
+    ['OS=="android"', {
+      'targets': [
+        {
+          'target_name': 'android_addressinput_widget',
+          'type': 'none',
+          'variables': {
+            'java_in_dir': 'src/java',
+            'never_lint': 1,
+            'res_v14_verify_only': 1,
+            'has_java_resources': 1,
+            'R_package': 'com.android.i18n.addressinput',
+            'R_package_relpath': 'com/android/i18n/addressinput',
+          },
+          'includes': [
+            '../../build/java.gypi',
+          ],
+        },
+      ],
+    },],
   ],
 }

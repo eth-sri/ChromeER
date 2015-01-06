@@ -182,9 +182,6 @@ Chrome supports. -->
           New window
         </message>
       </if>
-      <message name="IDS_CERT_ERROR_COMMON_NAME_INVALID_EXTRA_INFO_2" desc="2nd paragraph of extra information for an unsafe common name in an X509 certificate">
-        In this case, the address listed in the certificate does not match the address of the website your browser tried to go to. One possible reason for this is that your communications are being intercepted by an attacker who is presenting a certificate for a different website, which would cause a mismatch. Another possible reason is that the server is set up to return the same certificate for multiple websites, including the one you are attempting to visit, even though that certificate is not valid for all of those websites. Google Chrome can say for sure that you reached &lt;strong&gt;<ph name="DOMAIN2">$1<ex>paypal.com</ex></ph>&lt;/strong&gt;, but cannot verify that that is the same site as &lt;strong&gt;<ph name="DOMAIN">$2<ex>www.paypal.com</ex></ph>&lt;/strong&gt; which you intended to reach. If you proceed, Chrome will not check for any further name mismatches.
-      </message>
       <if expr="is_ios">
         <message name="IDS_CERT_ERROR_AUTHORITY_INVALID_DETAILS" desc="Details for an X509 certificate with an invalid authority">
           This server could not prove that it is <ph name="DOMAIN">&lt;strong&gt;$1<ex>paypal.com</ex>&lt;/strong&gt;</ph>; its security certificate is not trusted by Chrome. This may be caused by a misconfiguration or an attacker intercepting your connection.
@@ -252,12 +249,6 @@ Chrome supports. -->
           This computer will soon stop receiving Google Chrome updates because its hardware is no longer supported.
         </message>
         <message name="IDS_MAC_32_BIT_OBSOLETE_NOW" desc="A message displayed on an at-launch infobar and About (Help) page warning the user that the computer they are using is no longer supported.">
-          This computer will no longer receive Google Chrome updates because its hardware is no longer supported.
-        </message>
-      </if>
-      <if expr="is_win">
-        <!-- Windows non-SSE2 deprecation -->
-        <message name="IDS_WIN_SSE_OBSOLETE_NOW" desc="A message displayed on an at-launch infobar and About (Help) page warning the user that the computer they are using is no longer supported.">
           This computer will no longer receive Google Chrome updates because its hardware is no longer supported.
         </message>
       </if>
@@ -471,7 +462,7 @@ Google Chrome is unable to recover your settings.
       </message>
       <if expr="is_win">
         <message name="IDS_OEM_MAIN_SHORTCUT_NAME" desc="Name of the desktop shortcut to start the application for OEM pre-installations.">
-          Internet Browser
+          Web Browser
         </message>
         <message name="IDS_SHORTCUT_TOOLTIP" desc="Text for the hover-on tooltip for the Google Chrome shortcuts.">
           Access the Internet
@@ -762,8 +753,11 @@ For Google Chrome, processes used to display diagnostics information (such as th
       <message name="IDS_PROFILES_CONFIRM_SIGNIN_TUTORIAL_TITLE" desc="The title of the tutorial card in the avatar menu bubble view shown when a user signs in to Chrome.">
         You're now signed in to Chrome
       </message>
+      <message name="IDS_PROFILES_WELCOME_UPGRADE_TUTORIAL_TITLE" desc="Title of the tutorial card in the avatar menu bubble view that introduces an upgrade user to the new profile management UI.">
+        This is your Chrome
+      </message>
       <message name="IDS_PROFILES_WELCOME_UPGRADE_TUTORIAL_CONTENT_TEXT" desc="The main content of the tutorial card in the avatar menu bubble view that introduces an upgrade user to the new profile management UI.">
-       Share a computer? Now you can set up Chrome just the way you like it.
+        Share a computer? Now you can set up Chrome just the way you like it.
       </message>
 
       <!-- Account removal view in the avatar menu bubble -->
@@ -776,7 +770,7 @@ For Google Chrome, processes used to display diagnostics information (such as th
 
       <!-- Switch user view in the avatar menu bubble -->
       <message name="IDS_PROFILES_NOT_YOU_CONTENT_TEXT" desc="Main text of the switch user view. for an upgrade user">
-        If you share this computer with <ph name="PROFILE_NAME">$1<ex>Claire</ex></ph>, add yourself to Chrome to browser separately. Otherwise disconnect your Google Account.
+        If you share this computer with <ph name="PROFILE_NAME">$1<ex>Claire</ex></ph>, add yourself to Chrome to browse separately. Otherwise disconnect their Google Account.
       </message>
 
       <!-- One click sign-in infobar -->
@@ -1130,7 +1124,7 @@ Signing in anyway will merge Chrome information like bookmarks, history, and oth
 
       <!-- Contextual Search -->
       <message name="IDS_CONTEXTUAL_SEARCH_PROMO_DESCRIPTION" desc="Description of the Contextual Search feature.">
-        Enabling "Tap to Search" provides an easy way to search for terms on a web page by simply tapping on them.  The word tapped and surrounding page will be sent to Google.
+        “Touch to Search” provides an easy way to search for terms on a web page by simply touching on them.  The touched word and surrounding page will be sent to Google.
       </message>
       <message name="IDS_CONTEXTUAL_SEARCH_PROMO_OPTIN" desc="Text for the button the user clicks to opt in.">
         Yes, please
@@ -1174,12 +1168,18 @@ Signing in anyway will merge Chrome information like bookmarks, history, and oth
       <!-- SSL Interstitial V2 strings -->
       <if expr="is_android or is_ios">
         <message name="IDS_SSL_CLOCK_ERROR" desc="Paragraph explaining that the SSL interstitial is probably caused by an incorrect clock.">
-          Chrome can't establish a private connection to &lt;strong&gt;<ph name="DOMAIN">$1<ex>paypal.com</ex></ph>&lt;/strong&gt;. This is probably because your device's date is set incorrectly (<ph name="DATE">$2<ex>Jan 1, 1970</ex></ph>). You should refresh this page after <ph name="BEGIN_LINK">&lt;a href="#" id="clock-link"&gt;</ph>you update your device's date and time<ph name="END_LINK">&lt;/a&gt;</ph>.
+          Chrome can't establish a private connection to &lt;strong&gt;<ph name="DOMAIN">$1<ex>paypal.com</ex></ph>&lt;/strong&gt;. This is probably because your device's date is set incorrectly. (Your device has the date set to <ph name="DATE">$2<ex>Jan 1, 1970</ex></ph>.) You should refresh this page after <ph name="BEGIN_LINK">&lt;a href="#" id="clock-link"&gt;</ph>you update your device's date and time<ph name="END_LINK">&lt;/a&gt;</ph>.
+        </message>
+        <message name="IDS_SSL_CLOCK_ERROR_EXPLANATION" desc="Body text for the explanation shown for when the computer's clock is wrong.">
+        To establish a secure network connection, your device needs a correct clock. This is because the certificates websites use to identify themselves when establishing a secure connection are only valid for a specific time period. Since your device's clock is wrong, Chrome cannot properly check certificates.
         </message>
       </if>
       <if expr="not is_android and not is_ios">
         <message name="IDS_SSL_CLOCK_ERROR" desc="Paragraph explaining that the SSL interstitial is probably caused by an incorrect clock.">
-          Chrome can't establish a private connection to &lt;strong&gt;<ph name="DOMAIN">$1<ex>paypal.com</ex></ph>&lt;/strong&gt;. This is probably because your computer's date is set incorrectly (<ph name="DATE">$2<ex>Jan 1, 1970</ex></ph>). You should refresh this page after <ph name="BEGIN_LINK">&lt;a href="#" id="clock-link"&gt;</ph>you update your computer's date and time<ph name="END_LINK">&lt;/a&gt;</ph>.
+          Chrome can't establish a private connection to &lt;strong&gt;<ph name="DOMAIN">$1<ex>paypal.com</ex></ph>&lt;/strong&gt;. This is probably because your computer's date is set incorrectly (Your computer has the date set to <ph name="DATE">$2<ex>Jan 1, 1970</ex></ph>.) You should refresh this page after <ph name="BEGIN_LINK">&lt;a href="#" id="clock-link"&gt;</ph>you update your computer's date and time<ph name="END_LINK">&lt;/a&gt;</ph>.
+        </message>
+        <message name="IDS_SSL_CLOCK_ERROR_EXPLANATION" desc="Body text for the explanation shown for when the computer's clock is wrong.">
+        To establish a secure network connection, your computer needs a correct clock. This is because the certificates websites use to identify themselves when establishing a secure connection are only valid for a specific time period. Since your computer's clock is wrong, Chrome cannot properly check certificates.
         </message>
       </if>
       <message name="IDS_SSL_NONOVERRIDABLE_MORE_INVALID_SP3" desc="Body text for the explanation shown if the user clicks on the details windows, the certificate is invalid and the user has an old version of Windows (before WINDOWS XP SP3) running.">

@@ -6,7 +6,7 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/format_macros.h"
 #include "base/location.h"
 #include "base/logging.h"
@@ -33,10 +33,9 @@ namespace drive_backend {
 
 namespace {
 
-bool BuildFileSystemURL(
-    MetadataDatabase* metadata_database,
-    const FileTracker& tracker,
-    fileapi::FileSystemURL* url) {
+bool BuildFileSystemURL(MetadataDatabase* metadata_database,
+                        const FileTracker& tracker,
+                        storage::FileSystemURL* url) {
   base::FilePath path;
   if (!metadata_database->BuildPathForTracker(
           tracker.tracker_id(), &path))
@@ -80,16 +79,15 @@ scoped_ptr<FileMetadata> GetFileMetadata(MetadataDatabase* database,
 
 // Creates a temporary file in |dir_path|.  This must be called on an
 // IO-allowed task runner, and the runner must be given as |file_task_runner|.
-webkit_blob::ScopedFile CreateTemporaryFile(
-    base::TaskRunner* file_task_runner) {
+storage::ScopedFile CreateTemporaryFile(
+    const scoped_refptr<base::TaskRunner>& file_task_runner) {
   base::FilePath temp_file_path;
   if (!base::CreateTemporaryFile(&temp_file_path))
-    return webkit_blob::ScopedFile();
+    return storage::ScopedFile();
 
-  return webkit_blob::ScopedFile(
-      temp_file_path,
-      webkit_blob::ScopedFile::DELETE_ON_SCOPE_OUT,
-      file_task_runner);
+  return storage::ScopedFile(temp_file_path,
+                             storage::ScopedFile::DELETE_ON_SCOPE_OUT,
+                             file_task_runner);
 }
 
 }  // namespace
@@ -119,7 +117,6 @@ void RemoteToLocalSyncer::RunPreflight(scoped_ptr<SyncTaskToken> token) {
 void RemoteToLocalSyncer::RunExclusive(scoped_ptr<SyncTaskToken> token) {
   if (!drive_service() || !metadata_database() || !remote_change_processor()) {
     token->RecordLog("Context not ready.");
-    NOTREACHED();
     SyncTaskManager::NotifyTaskDone(token.Pass(), SYNC_STATUS_FAILED);
     return;
   }
@@ -129,6 +126,7 @@ void RemoteToLocalSyncer::RunExclusive(scoped_ptr<SyncTaskToken> token) {
           dirty_tracker_.get())) {
     token->RecordLog(base::StringPrintf(
         "Start: tracker_id=%" PRId64, dirty_tracker_->tracker_id()));
+    metadata_database()->LowerTrackerPriority(dirty_tracker_->tracker_id());
     ResolveRemoteChange(token.Pass());
     return;
   }
@@ -344,6 +342,8 @@ void RemoteToLocalSyncer::DidUpdateDatabaseForRemoteMetadata(
     return;
   }
 
+  metadata_database()->PromoteDemotedTracker(dirty_tracker_->tracker_id());
+
   // Do not update |dirty_tracker_|.
   SyncCompleted(token.Pass(), SYNC_STATUS_RETRY);
 }
@@ -383,9 +383,7 @@ void RemoteToLocalSyncer::DidPrepareForAddOrUpdateFile(
 
     // Got a remote regular file modification for existing local folder.
     // Our policy prioritize folders in this case.
-    // Lower the priority of the tracker to prevent repeated remote sync to the
-    // same tracker, and let local-to-remote sync phase process this change.
-    metadata_database()->LowerTrackerPriority(dirty_tracker_->tracker_id());
+    // Let local-to-remote sync phase process this change.
     remote_change_processor()->RecordFakeLocalChange(
         url_,
         FileChange(FileChange::FILE_CHANGE_ADD_OR_UPDATE,
@@ -397,10 +395,6 @@ void RemoteToLocalSyncer::DidPrepareForAddOrUpdateFile(
   DCHECK(local_changes_->back().IsAddOrUpdate());
   // Conflict case.
   // Do nothing for the change now, and handle this in LocalToRemoteSync phase.
-
-  // Lower the priority of the tracker to prevent repeated remote sync to the
-  // same tracker.
-  metadata_database()->LowerTrackerPriority(dirty_tracker_->tracker_id());
   SyncCompleted(token.Pass(), SYNC_STATUS_RETRY);
 }
 
@@ -694,7 +688,7 @@ void RemoteToLocalSyncer::DeleteLocalFile(scoped_ptr<SyncTaskToken> token) {
 void RemoteToLocalSyncer::DownloadFile(scoped_ptr<SyncTaskToken> token) {
   DCHECK(sync_context_->GetWorkerTaskRunner()->RunsTasksOnCurrentThread());
 
-  webkit_blob::ScopedFile file = CreateTemporaryFile(
+  storage::ScopedFile file = CreateTemporaryFile(
       make_scoped_refptr(sync_context_->GetWorkerTaskRunner()));
 
   base::FilePath path = file.path();
@@ -708,7 +702,7 @@ void RemoteToLocalSyncer::DownloadFile(scoped_ptr<SyncTaskToken> token) {
 }
 
 void RemoteToLocalSyncer::DidDownloadFile(scoped_ptr<SyncTaskToken> token,
-                                          webkit_blob::ScopedFile file,
+                                          storage::ScopedFile file,
                                           google_apis::GDataErrorCode error,
                                           const base::FilePath&) {
   DCHECK(sync_context_->GetWorkerTaskRunner()->RunsTasksOnCurrentThread());
@@ -728,10 +722,6 @@ void RemoteToLocalSyncer::DidDownloadFile(scoped_ptr<SyncTaskToken> token,
 
   if (md5 != remote_metadata_->details().md5()) {
     // File has been modified since last metadata retrieval.
-
-    // Lower the priority of the tracker to prevent repeated remote sync to the
-    // same tracker.
-    metadata_database()->LowerTrackerPriority(dirty_tracker_->tracker_id());
     SyncCompleted(token.Pass(), SYNC_STATUS_RETRY);
     return;
   }
@@ -745,10 +735,8 @@ void RemoteToLocalSyncer::DidDownloadFile(scoped_ptr<SyncTaskToken> token,
 }
 
 void RemoteToLocalSyncer::DidApplyDownload(scoped_ptr<SyncTaskToken> token,
-                                           webkit_blob::ScopedFile,
+                                           storage::ScopedFile,
                                            SyncStatusCode status) {
-  if (status != SYNC_STATUS_OK)
-    metadata_database()->LowerTrackerPriority(dirty_tracker_->tracker_id());
   SyncCompleted(token.Pass(), status);
 }
 

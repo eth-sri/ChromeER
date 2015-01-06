@@ -1,0 +1,28 @@
+/* Copyright 2014 The Chromium Authors. All rights reserved.
+ * Use of this source code is governed by a BSD-style license that can be
+ * found in the LICENSE file. */
+
+#extension-options-overlay {
+  overflow: hidden;
+}
+
+#extension-options-overlay-header {
+  align-items: center;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.26);
+  display: flex;
+  position: relative;
+}
+
+#extension-options-overlay-icon {
+  padding: 8px;
+}
+
+#extension-options-overlay-icon {
+  height: 32px;
+  width: 32px;
+}
+
+#extension-options-overlay-title {
+  /* Cancel left padding to line up with the icon. */
+  padding-left: 0;
+}

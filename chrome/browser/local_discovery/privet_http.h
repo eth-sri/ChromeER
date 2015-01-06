@@ -54,6 +54,7 @@ class PrivetHTTPClient {
   virtual scoped_ptr<PrivetJSONOperation> CreateInfoOperation(
       const PrivetJSONOperation::ResultCallback& callback) = 0;
 
+  // Creates a URL fetcher for PrivetV1.
   virtual scoped_ptr<PrivetURLFetcher> CreateURLFetcher(
       const GURL& url,
       net::URLFetcher::RequestType request_type,
@@ -157,7 +158,7 @@ class PrivetLocalPrintOperation {
 
 
   // Required print data. MUST be called before calling |Start()|.
-  virtual void SetData(base::RefCountedBytes* data) = 0;
+  virtual void SetData(const scoped_refptr<base::RefCountedBytes>& data) = 0;
 
   // Optional attributes for /submitdoc. Call before calling |Start()|
   // |ticket| should be in CJT format.
@@ -208,15 +209,6 @@ class PrivetV1HTTPClient {
   virtual scoped_ptr<PrivetLocalPrintOperation> CreateLocalPrintOperation(
       PrivetLocalPrintOperation::Delegate* delegate) = 0;
 
-  // Creates operation to list files on local Privet storage.
-  virtual scoped_ptr<PrivetJSONOperation> CreateStorageListOperation(
-      const std::string& path,
-      const PrivetJSONOperation::ResultCallback& callback) = 0;
-
-  // Creates operation to read data from local Privet storage.
-  virtual scoped_ptr<PrivetDataReadOperation> CreateStorageReadOperation(
-      const std::string& path,
-      const PrivetDataReadOperation::ResultCallback& callback) = 0;
 };
 
 }  // namespace local_discovery

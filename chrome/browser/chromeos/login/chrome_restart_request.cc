@@ -22,7 +22,6 @@
 #include "cc/base/switches.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/boot_times_loader.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
@@ -72,7 +71,6 @@ std::string DeriveCommandLine(const GURL& start_url,
 
   static const char* kForwardSwitches[] = {
     ::switches::kDisableAccelerated2dCanvas,
-    ::switches::kDisableAcceleratedOverflowScroll,
     ::switches::kDisableAcceleratedVideoDecode,
     ::switches::kDisableDelegatedRenderer,
     ::switches::kDisableDistanceFieldText,
@@ -84,19 +82,18 @@ std::string DeriveCommandLine(const GURL& start_url,
     ::switches::kDisableImplSidePainting,
     ::switches::kDisableLowResTiling,
     ::switches::kDisableMediaSource,
+    ::switches::kDisablePreferCompositingToLCDText,
     ::switches::kDisablePrefixedEncryptedMedia,
     ::switches::kDisablePanelFitting,
     ::switches::kDisableSeccompFilterSandbox,
     ::switches::kDisableSetuidSandbox,
     ::switches::kDisableTouchDragDrop,
     ::switches::kDisableTouchEditing,
-    ::switches::kDisableAcceleratedFixedRootBackground,
     ::switches::kDisableZeroCopy,
-    ::switches::kEnableAcceleratedFixedRootBackground,
-    ::switches::kEnableAcceleratedOverflowScroll,
     ::switches::kEnableBeginFrameScheduling,
-    ::switches::kEnableCompositingForFixedPosition,
+    ::switches::kEnablePreferCompositingToLCDText,
     ::switches::kEnableDelegatedRenderer,
+    ::switches::kDisableDisplayList2dCanvas,
     ::switches::kEnableDisplayList2dCanvas,
     ::switches::kEnableEncryptedMedia,
     ::switches::kDisableGpuSandbox,
@@ -154,10 +151,12 @@ std::string DeriveCommandLine(const GURL& start_url,
     ::switches::kDisableWebRtcHWDecoding,
     ::switches::kDisableWebRtcHWEncoding,
     ::switches::kEnableWebRtcHWVp8Encoding,
+    ::switches::kEnableWebRtcHWH264Encoding,
 #endif
-    ::switches::kEnableVaapiAcceleratedVideoEncode,
+    ::switches::kDisableVaapiAcceleratedVideoEncode,
 #if defined(USE_OZONE)
     ::switches::kOzonePlatform,
+    ::switches::kOzoneUseSurfaceless,
 #endif
     app_list::switches::kDisableSyncAppList,
     app_list::switches::kEnableSyncAppList,
@@ -196,6 +195,7 @@ std::string DeriveCommandLine(const GURL& start_url,
     cc::switches::kUIDisablePartialSwap,
     chromeos::switches::kConsumerDeviceManagementUrl,
     chromeos::switches::kDbusStub,
+    chromeos::switches::kDbusUnstubClients,
     chromeos::switches::kDisableLoginAnimations,
     chromeos::switches::kEnableConsumerManagement,
     chromeos::switches::kEnterpriseEnableForcedReEnrollment,
@@ -205,7 +205,6 @@ std::string DeriveCommandLine(const GURL& start_url,
     chromeos::switches::kNaturalScrollDefault,
     chromeos::switches::kSystemInDevMode,
     policy::switches::kDeviceManagementUrl,
-    ::switches::kEnableBrowserTextSubpixelPositioning,
     ::switches::kEnableWebkitTextSubpixelPositioning,
     wm::switches::kWindowAnimationsDisabled,
   };

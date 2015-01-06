@@ -36,7 +36,6 @@ struct WorkerProcessMsg_CreateWorker_Params;
 
 namespace blink {
 class WebGamepads;
-class WebGamepadListener;
 class WebGraphicsContext3D;
 class WebMediaStreamCenter;
 class WebMediaStreamCenterClient;
@@ -84,7 +83,6 @@ class DBMessageFilter;
 class DevToolsAgentFilter;
 class DomStorageDispatcher;
 class EmbeddedWorkerDispatcher;
-class GamepadSharedMemoryReader;
 class GpuChannelHost;
 class IndexedDBDispatcher;
 class InputEventFilter;
@@ -272,6 +270,7 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   blink::WebMediaStreamCenter* CreateMediaStreamCenter(
       blink::WebMediaStreamCenterClient* client);
 
+#if defined(ENABLE_WEBRTC)
   // Returns a factory used for creating RTC PeerConnection objects.
   PeerConnectionDependencyFactory* GetPeerConnectionDependencyFactory();
 
@@ -283,13 +282,10 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   P2PSocketDispatcher* p2p_socket_dispatcher() {
     return p2p_socket_dispatcher_.get();
   }
+#endif
 
   VideoCaptureImplManager* video_capture_impl_manager() const {
     return vc_manager_.get();
-  }
-
-  GamepadSharedMemoryReader* gamepad_shared_memory_reader() const {
-    return gamepad_shared_memory_reader_.get();
   }
 
   // Get the GPU channel. Returns NULL if the channel is not established or
@@ -301,10 +297,10 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   // on the renderer's main thread.
   scoped_refptr<base::MessageLoopProxy> GetFileThreadMessageLoopProxy();
 
-  // Returns a MessageLoopProxy instance corresponding to the message loop
+  // Returns a SingleThreadTaskRunner instance corresponding to the message loop
   // of the thread on which media operations should be run. Must be called
   // on the renderer's main thread.
-  scoped_refptr<base::MessageLoopProxy> GetMediaThreadMessageLoopProxy();
+  scoped_refptr<base::SingleThreadTaskRunner> GetMediaThreadTaskRunner();
 
   // Causes the idle handler to skip sending idle notifications
   // on the two next scheduled calls, so idle notifications are
@@ -388,10 +384,6 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
 
   // Retrieve current gamepad data.
   void SampleGamepads(blink::WebGamepads* data);
-
-  // Set a listener for gamepad connected/disconnected events.
-  // A non-null listener must be set first before calling SampleGamepads.
-  void SetGamepadListener(blink::WebGamepadListener* listener);
 
   // Called by a RenderWidget when it is created or destroyed. This
   // allows the process to know when there are no visible widgets.
@@ -483,6 +475,7 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
 #endif
   scoped_refptr<DevToolsAgentFilter> devtools_agent_message_filter_;
 
+#if defined(ENABLE_WEBRTC)
   scoped_ptr<PeerConnectionDependencyFactory> peer_connection_factory_;
 
   // This is used to communicate to the browser process the status
@@ -491,6 +484,7 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
 
   // Dispatches all P2P sockets.
   scoped_refptr<P2PSocketDispatcher> p2p_socket_dispatcher_;
+#endif
 
   // Used on the render thread.
   scoped_ptr<VideoCaptureImplManager> vc_manager_;
@@ -548,7 +542,8 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   scoped_ptr<InputHandlerManager> input_handler_manager_;
   scoped_refptr<IPC::ForwardingMessageFilter> compositor_output_surface_filter_;
 
-  scoped_refptr<ContextProviderCommandBuffer> shared_main_thread_contexts_;
+  scoped_refptr<webkit::gpu::ContextProviderWebContext>
+      shared_main_thread_contexts_;
 
   ObserverList<RenderProcessObserver> observers_;
 
@@ -561,9 +556,9 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
 
   scoped_ptr<base::MemoryPressureListener> memory_pressure_listener_;
 
+#if defined(ENABLE_WEBRTC)
   scoped_ptr<WebRTCIdentityService> webrtc_identity_service_;
-
-  scoped_ptr<GamepadSharedMemoryReader> gamepad_shared_memory_reader_;
+#endif
 
   // TODO(reveman): Allow AllocateGpuMemoryBuffer to be called from
   // multiple threads. Current allocation mechanism for IOSurface

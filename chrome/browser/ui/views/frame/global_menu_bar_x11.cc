@@ -27,8 +27,8 @@
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/frame/global_menu_bar_registrar_x11.h"
 #include "chrome/common/pref_names.h"
+#include "chrome/grit/generated_resources.h"
 #include "content/public/browser/notification_source.h"
-#include "grit/generated_resources.h"
 #include "ui/base/accelerators/menu_label_accelerator_util_linux.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/events/keycodes/keyboard_code_conversion_x.h"
@@ -406,7 +406,7 @@ void GlobalMenuBarX11::InitServer(unsigned long xid) {
 
   pref_change_registrar_.Init(browser_->profile()->GetPrefs());
   pref_change_registrar_.Add(
-      prefs::kShowBookmarkBar,
+      bookmarks::prefs::kShowBookmarkBar,
       base::Bind(&GlobalMenuBarX11::OnBookmarkBarVisibilityChanged,
                  base::Unretained(this)));
   OnBookmarkBarVisibilityChanged();
@@ -580,8 +580,10 @@ void GlobalMenuBarX11::OnBookmarkBarVisibilityChanged() {
     PrefService* prefs = browser_->profile()->GetPrefs();
     // Note: Unlike the GTK version, we don't appear to need to do tricks where
     // we block activation while setting the toggle.
-    menuitem_property_set_int(it->second, kPropertyToggleState,
-                              prefs->GetBoolean(prefs::kShowBookmarkBar));
+    menuitem_property_set_int(
+        it->second,
+        kPropertyToggleState,
+        prefs->GetBoolean(bookmarks::prefs::kShowBookmarkBar));
   }
 }
 

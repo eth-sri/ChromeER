@@ -11,7 +11,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/threading/non_thread_safe.h"
 #include "base/timer/timer.h"
-#include "webkit/browser/webkit_storage_browser_export.h"
+#include "webkit/browser/storage_browser_export.h"
 #include "webkit/common/quota/quota_types.h"
 
 class GURL;
@@ -20,12 +20,12 @@ namespace content {
 class QuotaTemporaryStorageEvictorTest;
 }
 
-namespace quota {
+namespace storage {
 
 class QuotaEvictionHandler;
 struct UsageAndQuota;
 
-class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE QuotaTemporaryStorageEvictor
+class STORAGE_EXPORT_PRIVATE QuotaTemporaryStorageEvictor
     : public base::NonThreadSafe {
  public:
   struct Statistics {
@@ -129,6 +129,6 @@ class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE QuotaTemporaryStorageEvictor
   DISALLOW_COPY_AND_ASSIGN(QuotaTemporaryStorageEvictor);
 };
 
-}  // namespace quota
+}  // namespace storage
 
 #endif  // WEBKIT_BROWSER_QUOTA_QUOTA_TEMPORARY_STORAGE_EVICTOR_H_

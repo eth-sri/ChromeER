@@ -113,7 +113,8 @@
     "can_be_recommended": true,
     "test_policy": { "DnsPrefetchingEnabled": false },
     "pref_mappings": [
-      { "pref": "dns_prefetching.enabled",
+      { "pref": "dns_prefetching.enabled" },
+      { "pref": "net.network_prediction_options",
         "indicator_tests": [
           { "policy": { "DnsPrefetchingEnabled": false } }
         ]
@@ -126,7 +127,8 @@
     "can_be_recommended": true,
     "test_policy": { "NetworkPredictionOptions": 2 },
     "pref_mappings": [
-      { "pref": "dns_prefetching.enabled",
+      { "pref": "dns_prefetching.enabled" },
+      { "pref": "net.network_prediction_options",
         "indicator_tests": [
           { "policy": { "NetworkPredictionOptions": 2 } }
         ]
@@ -1647,6 +1649,16 @@
       }
     },
     "indicator_selector": "#wallpaper-indicator"
+  },
+
+  "BrowserGuestModeEnabled": {
+    "os": ["win", "linux", "mac"],
+    "test_policy": { "BrowserGuestModeEnabled": true },
+    "pref_mappings": [
+      { "pref": "profile.browser_guest_enabled",
+        "local_state": true
+      }
+    ]
   },
 
   "----- Chrome OS policies ------------------------------------------------": {},

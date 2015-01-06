@@ -8,8 +8,8 @@
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/command_line.h"
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/lazy_instance.h"
 #include "base/path_service.h"
 #include "base/strings/string_number_conversions.h"
@@ -68,6 +68,10 @@
 
 #if !defined(OS_ANDROID) && !defined(OS_IOS)
 #include "components/storage_monitor/test_storage_monitor.h"
+#endif
+
+#if defined(OS_CHROMEOS)
+#include "chrome/browser/chromeos/input_method/input_method_configuration.h"
 #endif
 
 namespace {
@@ -176,6 +180,8 @@ void InProcessBrowserTest::SetUp() {
   // Make sure that the log directory exists.
   base::FilePath log_dir = logging::GetSessionLogFile(*command_line).DirName();
   base::CreateDirectory(log_dir);
+  // Disable IME extension loading to avoid many browser tests failures.
+  chromeos::input_method::DisableExtensionLoading();
 #endif  // defined(OS_CHROMEOS)
 
 #if defined(OS_MACOSX)

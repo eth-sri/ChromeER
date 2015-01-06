@@ -14,12 +14,17 @@
 #include "ui/aura/client/screen_position_client.h"
 #include "ui/aura/client/window_tree_client.h"
 #include "ui/aura/layout_manager.h"
+#include "ui/aura/test/test_screen.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_property.h"
 #include "ui/aura/window_targeter.h"
 #include "ui/aura/window_tree_host.h"
+#include "ui/compositor/layer.h"
+#include "ui/gfx/display.h"
+#include "ui/gfx/screen.h"
 #include "ui/wm/core/base_focus_rules.h"
 #include "ui/wm/core/capture_controller.h"
+#include "ui/wm/core/focus_controller.h"
 
 namespace athena {
 namespace {
@@ -187,7 +192,7 @@ class AthenaEventTargeter : public aura::WindowTargeter,
 
 class ScreenManagerImpl : public ScreenManager {
  public:
-  explicit ScreenManagerImpl(aura::Window* root_window);
+  ScreenManagerImpl(aura::Window* root_window);
   virtual ~ScreenManagerImpl();
 
   void Init();
@@ -199,10 +204,14 @@ class ScreenManagerImpl : public ScreenManager {
   virtual aura::Window* CreateContainer(const ContainerParams& params) OVERRIDE;
   virtual aura::Window* GetContext() OVERRIDE { return root_window_; }
   virtual void SetBackgroundImage(const gfx::ImageSkia& image) OVERRIDE;
+  virtual void SetRotation(gfx::Display::Rotation rotation) OVERRIDE;
+  virtual ui::LayerAnimator* GetScreenAnimator() OVERRIDE;
 
+  // Not owned.
   aura::Window* root_window_;
   aura::Window* background_window_;
 
+  scoped_ptr<aura::client::FocusClient> focus_client_;
   scoped_ptr<BackgroundController> background_controller_;
   scoped_ptr<aura::client::WindowTreeClient> window_tree_client_;
   scoped_ptr<AcceleratorHandler> accelerator_handler_;
@@ -222,10 +231,23 @@ ScreenManagerImpl::ScreenManagerImpl(aura::Window* root_window)
 ScreenManagerImpl::~ScreenManagerImpl() {
   aura::client::SetScreenPositionClient(root_window_, NULL);
   aura::client::SetWindowTreeClient(root_window_, NULL);
+  wm::FocusController* focus_controller =
+      static_cast<wm::FocusController*>(focus_client_.get());
+  root_window_->RemovePreTargetHandler(focus_controller);
+  aura::client::SetActivationClient(root_window_, NULL);
+  aura::client::SetFocusClient(root_window_, NULL);
   instance = NULL;
 }
 
 void ScreenManagerImpl::Init() {
+  wm::FocusController* focus_controller =
+      new wm::FocusController(new AthenaFocusRules());
+
+  aura::client::SetFocusClient(root_window_, focus_controller);
+  root_window_->AddPreTargetHandler(focus_controller);
+  aura::client::SetActivationClient(root_window_, focus_controller);
+  focus_client_.reset(focus_controller);
+
   // TODO(oshima): Move the background out from ScreenManager.
   root_window_->SetLayoutManager(new FillLayoutManager(root_window_));
   background_window_ =
@@ -322,6 +344,22 @@ void ScreenManagerImpl::SetBackgroundImage(const gfx::ImageSkia& image) {
   background_controller_->SetImage(image);
 }
 
+void ScreenManagerImpl::SetRotation(gfx::Display::Rotation rotation) {
+  if (rotation ==
+      gfx::Screen::GetNativeScreen()->GetPrimaryDisplay().rotation()) {
+    return;
+  }
+
+  // TODO(flackr): Use display manager to update display rotation:
+  // http://crbug.com/401044.
+  static_cast<aura::TestScreen*>(gfx::Screen::GetNativeScreen())->
+      SetDisplayRotation(rotation);
+}
+
+ui::LayerAnimator* ScreenManagerImpl::GetScreenAnimator() {
+  return root_window_->layer()->GetAnimator();
+}
+
 }  // namespace
 
 ScreenManager::ContainerParams::ContainerParams(const std::string& n,
@@ -350,11 +388,6 @@ void ScreenManager::Shutdown() {
   DCHECK(instance);
   delete instance;
   DCHECK(!instance);
-}
-
-// static
-wm::FocusRules* ScreenManager::CreateFocusRules() {
-  return new AthenaFocusRules();
 }
 
 }  // namespace athena

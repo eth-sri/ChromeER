@@ -50,18 +50,40 @@ class Override(object):
     self._overrides = {}
 
 
+class AndroidCommands(object):
+
+  def CanAccessProtectedFileContents(self):
+    return False
+
+
+class AdbDevice(object):
+
+  def __init__(self, shell_command_handlers):
+    self._shell_command_handlers = shell_command_handlers
+
+  def RunShellCommand(self, args):
+    if isinstance(args, basestring):
+      args = shlex.split(args)
+    handler = self._shell_command_handlers[args[0]]
+    return handler(args)
+
+  def FileExists(self, _):
+    return False
+
+  @property
+  def old_interface(self):
+    return AndroidCommands()
+
+
 class AdbCommandsModuleStub(object):
+
   class AdbCommandsStub(object):
+
     def __init__(self, module, device):
       self._module = module
       self._device = device
       self.is_root_enabled = True
-
-    def RunShellCommand(self, args):
-      if isinstance(args, basestring):
-        args = shlex.split(args)
-      handler = self._module.shell_command_handlers[args[0]]
-      return handler(args)
+      self._adb_device = AdbDevice(module.shell_command_handlers)
 
     def IsRootEnabled(self):
       return self.is_root_enabled
@@ -75,9 +97,12 @@ class AdbCommandsModuleStub(object):
     def WaitForDevicePm(self):
       pass
 
+    def device(self):
+      return self._adb_device
+
   def __init__(self):
-    self.attached_devices = []
     self.shell_command_handlers = {}
+    self.attached_devices = []
 
     def AdbCommandsStubConstructor(device=None):
       return AdbCommandsModuleStub.AdbCommandsStub(self, device)
@@ -138,6 +163,12 @@ class OpenFunctionStub(object):
         return self._data[:size]
       else:
         return self._data
+
+    def write(self, data):
+      self._data.write(data)
+
+    def close(self):
+      pass
 
   def __init__(self):
     self.files = {}
@@ -226,6 +257,9 @@ class OsModuleStub(object):
     else:
       raise NotImplementedError('Unsupported getenv')
     return env if env else value
+
+  def chdir(self, path):
+    pass
 
 
 class PerfControlModuleStub(object):

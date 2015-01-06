@@ -14,6 +14,7 @@
 #include "content/browser/media/capture/desktop_capture_device_uma_types.h"
 #include "content/common/gpu/client/gl_helper.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/power_save_blocker.h"
 #include "media/base/video_util.h"
 #include "media/video/capture/video_capture_types.h"
 #include "skia/ext/image_operations.h"
@@ -46,7 +47,7 @@ void RenderCursorOnVideoFrame(
     const scoped_refptr<media::VideoFrame>& target,
     const SkBitmap& cursor_bitmap,
     const gfx::Point& cursor_position) {
-  DCHECK(target);
+  DCHECK(target.get());
   DCHECK(!cursor_bitmap.isNull());
 
   gfx::Rect rect = gfx::IntersectRects(
@@ -174,6 +175,10 @@ class DesktopVideoCaptureMachine
   gfx::Point cursor_hot_point_;
   SkBitmap scaled_cursor_bitmap_;
 
+  // TODO(jiayl): Remove power_save_blocker_ when there is an API to keep the
+  // screen from sleeping for the drive-by web.
+  scoped_ptr<PowerSaveBlocker> power_save_blocker_;
+
   DISALLOW_COPY_AND_ASSIGN(DesktopVideoCaptureMachine);
 };
 
@@ -213,17 +218,21 @@ bool DesktopVideoCaptureMachine::Start(
   if (desktop_window_->GetHost())
     desktop_window_->GetHost()->compositor()->AddObserver(this);
 
+  power_save_blocker_.reset(PowerSaveBlocker::Create(
+      PowerSaveBlocker::kPowerSaveBlockPreventDisplaySleep,
+      "DesktopCaptureDevice is running").release());
+
   // Starts timer.
   timer_.Start(FROM_HERE, oracle_proxy_->min_capture_period(),
                base::Bind(&DesktopVideoCaptureMachine::Capture, AsWeakPtr(),
                           false));
 
-  started_ = true;
   return true;
 }
 
 void DesktopVideoCaptureMachine::Stop(const base::Closure& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  power_save_blocker_.reset();
 
   // Stop observing compositor and window events.
   if (desktop_window_) {
@@ -236,17 +245,15 @@ void DesktopVideoCaptureMachine::Stop(const base::Closure& callback) {
   // Stop timer.
   timer_.Stop();
 
-  started_ = false;
-
   callback.Run();
 }
 
 void DesktopVideoCaptureMachine::UpdateCaptureSize() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  if (oracle_proxy_ && desktop_window_) {
-    ui::Layer* layer = desktop_window_->layer();
-    oracle_proxy_->UpdateCaptureSize(ui::ConvertSizeToPixel(
-        layer, layer->bounds().size()));
+  if (oracle_proxy_.get() && desktop_window_) {
+     ui::Layer* layer = desktop_window_->layer();
+     oracle_proxy_->UpdateCaptureSize(ui::ConvertSizeToPixel(
+         layer, layer->bounds().size()));
   }
   ClearCursorState();
 }
@@ -271,10 +278,8 @@ void DesktopVideoCaptureMachine::Capture(bool dirty) {
         cc::CopyOutputRequest::CreateRequest(
             base::Bind(&DesktopVideoCaptureMachine::DidCopyOutput,
                        AsWeakPtr(), frame, start_time, capture_frame_cb));
-    gfx::Rect window_rect =
-        ui::ConvertRectToPixel(desktop_window_->layer(),
-                               gfx::Rect(desktop_window_->bounds().width(),
-                                         desktop_window_->bounds().height()));
+    gfx::Rect window_rect = gfx::Rect(desktop_window_->bounds().width(),
+                                      desktop_window_->bounds().height());
     request->set_area(window_rect);
     desktop_window_->layer()->RequestCopyOfOutput(request.Pass());
   }
@@ -339,7 +344,7 @@ bool DesktopVideoCaptureMachine::ProcessCopyOutputResponse(
 
   if (capture_params_.requested_format.pixel_format ==
       media::PIXEL_FORMAT_TEXTURE) {
-    DCHECK(!video_frame);
+    DCHECK(!video_frame.get());
     cc::TextureMailbox texture_mailbox;
     scoped_ptr<cc::SingleReleaseCallback> release_callback;
     result->TakeTexture(&texture_mailbox, &release_callback);

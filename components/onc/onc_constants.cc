@@ -41,6 +41,7 @@ const char kIPConfigs[] = "IPConfigs";
 const char kMacAddress[] = "MacAddress";
 const char kName[] = "Name";
 const char kNameServers[] = "NameServers";
+const char kPriority[] = "Priority";
 const char kProxySettings[] = "ProxySettings";
 const char kSearchDomains[] = "SearchDomains";
 const char kConnectionState[] = "ConnectionState";
@@ -75,8 +76,8 @@ const char kWireless[] = "Wireless";
 }  // namespace network_type
 
 namespace cellular {
-const char kActivateOverNonCellularNetwork[] = "ActivateOverNonCellularNetwork";
 const char kActivationState[] = "ActivationState";
+const char kActivationType[] = "ActivationType";
 const char kAllowRoaming[] = "AllowRoaming";
 const char kAPN[] = "APN";
 const char kAPNList[] = "APNList";
@@ -90,6 +91,7 @@ const char kHomeProvider[] = "HomeProvider";
 const char kICCID[] = "ICCID";
 const char kIMEI[] = "IMEI";
 const char kIMSI[] = "IMSI";
+const char kLastGoodAPN[] = "LastGoodAPN";
 const char kManufacturer[] = "Manufacturer";
 const char kMDN[] = "MDN";
 const char kMEID[] = "MEID";
@@ -114,6 +116,7 @@ const char kName[] = "Name";
 }  // namespace cellular_provider
 
 namespace cellular_apn {
+const char kAccessPointName[] = "AccessPointName";
 const char kName[] = "Name";
 const char kUsername[] = "Username";
 const char kPassword[] = "Password";

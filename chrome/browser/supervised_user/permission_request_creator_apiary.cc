@@ -62,7 +62,7 @@ PermissionRequestCreatorApiary::CreateWithProfile(Profile* profile) {
 }
 
 void PermissionRequestCreatorApiary::CreatePermissionRequest(
-    const std::string& url_requested,
+    const GURL& url_requested,
     const base::Closure& callback) {
   url_requested_ = url_requested;
   callback_ = callback;
@@ -71,7 +71,13 @@ void PermissionRequestCreatorApiary::CreatePermissionRequest(
 
 void PermissionRequestCreatorApiary::StartFetching() {
   OAuth2TokenService::ScopeSet scopes;
-  scopes.insert(signin_wrapper_->GetSyncScopeToUse());
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kPermissionRequestApiScope)) {
+    scopes.insert(CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+        switches::kPermissionRequestApiScope));
+  } else {
+    scopes.insert(signin_wrapper_->GetSyncScopeToUse());
+  }
   access_token_request_ = oauth2_token_service_->StartRequest(
       signin_wrapper_->GetAccountIdToUse(), scopes, this);
 }
@@ -97,7 +103,7 @@ void PermissionRequestCreatorApiary::OnGetTokenSuccess(
 
   base::DictionaryValue dict;
   dict.SetStringWithoutPathExpansion("namespace", kNamespace);
-  dict.SetStringWithoutPathExpansion("objectRef", url_requested_);
+  dict.SetStringWithoutPathExpansion("objectRef", url_requested_.spec());
   dict.SetStringWithoutPathExpansion("state", kState);
   std::string body;
   base::JSONWriter::Write(&dict, &body);

@@ -5,11 +5,11 @@
 #include "chrome/browser/ui/views/passwords/manage_password_item_view.h"
 
 #include "chrome/browser/ui/passwords/manage_passwords_bubble_model.h"
+#include "chrome/grit/generated_resources.h"
 #include "components/password_manager/core/common/password_manager_ui.h"
-#include "grit/generated_resources.h"
-#include "grit/ui_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/resources/grit/ui_resources.h"
 #include "ui/views/controls/button/button.h"
 #include "ui/views/controls/button/image_button.h"
 #include "ui/views/layout/fill_layout.h"
@@ -18,23 +18,9 @@
 
 namespace {
 
-enum FieldType { USERNAME_FIELD, PASSWORD_FIELD };
-
-// Upper limit on the size of the username and password fields.
-const int kUsernameFieldSize = 30;
-const int kPasswordFieldSize = 22;
-
-// Returns the width of |type| field.
-int GetFieldWidth(FieldType type) {
-  return ui::ResourceBundle::GetSharedInstance()
-      .GetFontList(ui::ResourceBundle::SmallFont)
-      .GetExpectedTextWidth(type == USERNAME_FIELD ? kUsernameFieldSize
-                                                   : kPasswordFieldSize);
-}
-
 int FirstFieldWidth() {
   return std::max(
-      GetFieldWidth(USERNAME_FIELD),
+      ManagePasswordsBubbleModel::UsernameFieldWidth(),
       views::Label(l10n_util::GetStringUTF16(IDS_MANAGE_PASSWORDS_DELETED))
           .GetPreferredSize()
           .width());
@@ -42,7 +28,7 @@ int FirstFieldWidth() {
 
 int SecondFieldWidth() {
   return std::max(
-      GetFieldWidth(PASSWORD_FIELD),
+      ManagePasswordsBubbleModel::PasswordFieldWidth(),
       views::Label(l10n_util::GetStringUTF16(IDS_MANAGE_PASSWORDS_UNDO))
           .GetPreferredSize()
           .width());
@@ -194,7 +180,7 @@ ManagePasswordItemView::UndoView::~UndoView() {
 ManagePasswordItemView::ManagePasswordItemView(
     ManagePasswordsBubbleModel* manage_passwords_bubble_model,
     autofill::PasswordForm password_form,
-    Position position)
+    password_manager::ui::PasswordItemPosition position)
     : model_(manage_passwords_bubble_model),
       password_form_(password_form),
       delete_password_(false) {
@@ -205,7 +191,7 @@ ManagePasswordItemView::ManagePasswordItemView(
   // on both the top and bottom. When it's in the middle of a list, or at the
   // end, it has a border only on the bottom.
   SetBorder(views::Border::CreateSolidSidedBorder(
-      position == FIRST_ITEM ? 1 : 0,
+      position == password_manager::ui::FIRST_ITEM ? 1 : 0,
       0,
       1,
       0,

@@ -5,6 +5,7 @@
 #include "content/child/runtime_features.h"
 
 #include "base/command_line.h"
+#include "base/metrics/field_trial.h"
 #include "content/common/content_switches_internal.h"
 #include "content/public/common/content_switches.h"
 #include "third_party/WebKit/public/web/WebRuntimeFeatures.h"
@@ -15,6 +16,8 @@
 #include "base/android/build_info.h"
 #include "base/metrics/field_trial.h"
 #include "media/base/android/media_codec_bridge.h"
+#elif defined(OS_WIN)
+#include "base/win/windows_version.h"
 #endif
 
 using blink::WebRuntimeFeatures;
@@ -67,10 +70,19 @@ static void SetRuntimeFeatureDefaultsForPlatform() {
     // Only Android, ChromeOS, and IOS support NetInfo right now.
     WebRuntimeFeatures::enableNetworkInformation(false);
 #endif
+
+#if defined(OS_WIN)
+  // Screen Orientation API is currently broken on Windows 8 Metro mode and
+  // until we can find how to disable it only for Blink instances running in a
+  // renderer process in Metro, we need to disable the API altogether for Win8.
+  // See http://crbug.com/400846
+  if (base::win::OSInfo::GetInstance()->version() >= base::win::VERSION_WIN8)
+    WebRuntimeFeatures::enableScreenOrientation(false);
+#endif // OS_WIN
 }
 
 void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
-    const CommandLine& command_line) {
+    const base::CommandLine& command_line) {
   if (command_line.HasSwitch(switches::kEnableExperimentalWebPlatformFeatures))
     WebRuntimeFeatures::enableExperimentalFeatures(true);
 
@@ -134,8 +146,15 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   if (command_line.HasSwitch(switches::kEnableExperimentalCanvasFeatures))
     WebRuntimeFeatures::enableExperimentalCanvasFeatures(true);
 
-  if (command_line.HasSwitch(switches::kEnableDisplayList2dCanvas))
+  if (command_line.HasSwitch(switches::kDisableDisplayList2dCanvas)) {
+    WebRuntimeFeatures::enableDisplayList2dCanvas(false);
+  } else if (command_line.HasSwitch(switches::kEnableDisplayList2dCanvas)) {
     WebRuntimeFeatures::enableDisplayList2dCanvas(true);
+  } else {
+    WebRuntimeFeatures::enableDisplayList2dCanvas(
+        base::FieldTrialList::FindFullName("DisplayList2dCanvas") == "Enabled"
+    );
+  }
 
   if (command_line.HasSwitch(switches::kEnableWebGLDraftExtensions))
     WebRuntimeFeatures::enableWebGLDraftExtensions(true);

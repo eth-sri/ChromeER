@@ -73,7 +73,7 @@ class APP_LIST_EXPORT AppsGridView : public views::View,
 
   // Sets fixed layout parameters. After setting this, CalculateLayout below
   // is no longer called to dynamically choosing those layout params.
-  void SetLayout(int icon_size, int cols, int rows_per_page);
+  void SetLayout(int cols, int rows_per_page);
 
   int cols() const { return cols_; }
   int rows_per_page() const { return rows_per_page_; }
@@ -117,8 +117,8 @@ class APP_LIST_EXPORT AppsGridView : public views::View,
   void SetDragAndDropHostOfCurrentAppList(
       ApplicationDragAndDropHost* drag_and_drop_host);
 
-  // Prerenders the icons on and around |page_index|.
-  void Prerender(int page_index);
+  // Prerenders the icons on and around the currently selected page.
+  void Prerender();
 
   // Return true if the |bounds_animator_| is animating |view|.
   bool IsAnimatingView(views::View* view);
@@ -134,6 +134,7 @@ class APP_LIST_EXPORT AppsGridView : public views::View,
   virtual void Layout() OVERRIDE;
   virtual bool OnKeyPressed(const ui::KeyEvent& event) OVERRIDE;
   virtual bool OnKeyReleased(const ui::KeyEvent& event) OVERRIDE;
+  virtual bool OnMouseWheel(const ui::MouseWheelEvent& event) OVERRIDE;
   virtual void ViewHierarchyChanged(
       const ViewHierarchyChangedDetails& details) OVERRIDE;
   virtual bool GetDropFormats(
@@ -141,6 +142,10 @@ class APP_LIST_EXPORT AppsGridView : public views::View,
       std::set<OSExchangeData::CustomFormat>* custom_formats) OVERRIDE;
   virtual bool CanDrop(const OSExchangeData& data) OVERRIDE;
   virtual int OnDragUpdated(const ui::DropTargetEvent& event) OVERRIDE;
+
+  // Overridden from ui::EventHandler:
+  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
+  virtual void OnScrollEvent(ui::ScrollEvent* event) OVERRIDE;
 
   // Stops the timer that triggers a page flip during a drag.
   void StopPageFlipTimer();
@@ -218,6 +223,8 @@ class APP_LIST_EXPORT AppsGridView : public views::View,
     DROP_FOR_REORDER,
     DROP_FOR_FOLDER,
   };
+
+  enum ScrollAxis { SCROLL_AXIS_HORIZONTAL, SCROLL_AXIS_VERTICAL };
 
   // Represents the index to an item view in the grid.
   struct Index {
@@ -454,6 +461,9 @@ class APP_LIST_EXPORT AppsGridView : public views::View,
                          const base::FilePath& path);
 #endif
 
+  // Determines whether the grid view scrolls horizontally or vertically.
+  static ScrollAxis GetScrollAxis();
+
   AppListModel* model_;  // Owned by AppListView.
   AppListItemList* item_list_;  // Not owned.
   AppsGridViewDelegate* delegate_;
@@ -464,7 +474,6 @@ class APP_LIST_EXPORT AppsGridView : public views::View,
   PaginationModel pagination_model_;
   PageSwitcher* page_switcher_view_;  // Owned by views hierarchy.
 
-  gfx::Size icon_size_;
   int cols_;
   int rows_per_page_;
 

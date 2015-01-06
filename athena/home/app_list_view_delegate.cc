@@ -5,6 +5,7 @@
 #include "athena/home/app_list_view_delegate.h"
 
 #include <string>
+#include <vector>
 
 #include "athena/home/public/app_model_builder.h"
 #include "base/basictypes.h"
@@ -18,7 +19,10 @@
 #include "ui/app_list/search_provider.h"
 #include "ui/app_list/search_result.h"
 #include "ui/app_list/speech_ui_model.h"
+#include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/image/image_skia.h"
+#include "ui/resources/grit/ui_resources.h"
+#include "ui/views/controls/image_view.h"
 
 namespace athena {
 
@@ -155,12 +159,19 @@ void AppListViewDelegate::ShowForProfileByPath(
 
 views::View* AppListViewDelegate::CreateStartPageWebView(
     const gfx::Size& size) {
-  return NULL;
+  // A static image of the logo. This needs to support dynamic Doodles
+  // eventually.
+  views::ImageView* logo_image = new views::ImageView();
+  logo_image->SetImage(ui::ResourceBundle::GetSharedInstance().
+                       GetImageSkiaNamed(IDR_LOCAL_NTP_IMAGES_LOGO_PNG));
+  logo_image->SetHorizontalAlignment(views::ImageView::CENTER);
+  logo_image->SetVerticalAlignment(views::ImageView::CENTER);
+  return logo_image;
 }
 
-views::View* AppListViewDelegate::CreateCustomPageWebView(
+std::vector<views::View*> AppListViewDelegate::CreateCustomPageWebViews(
     const gfx::Size& size) {
-  return NULL;
+  return std::vector<views::View*>();
 }
 
 bool AppListViewDelegate::IsSpeechRecognitionEnabled() {

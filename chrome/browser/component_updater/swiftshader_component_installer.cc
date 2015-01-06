@@ -10,16 +10,15 @@
 #include "base/base_paths.h"
 #include "base/bind.h"
 #include "base/compiler_specific.h"
-#include "base/cpu.h"
-#include "base/file_util.h"
 #include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/logging.h"
 #include "base/path_service.h"
 #include "base/strings/string_util.h"
 #include "base/values.h"
-#include "chrome/browser/component_updater/component_updater_service.h"
 #include "components/component_updater/component_updater_paths.h"
+#include "components/component_updater/component_updater_service.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/gpu_data_manager.h"
 #include "content/public/browser/gpu_data_manager_observer.h"
@@ -249,10 +248,6 @@ void RegisterSwiftShaderPath(ComponentUpdateService* cus) {
 
 void RegisterSwiftShaderComponent(ComponentUpdateService* cus) {
 #if defined(ENABLE_SWIFTSHADER)
-  base::CPU cpu;
-
-  if (!cpu.has_sse2())
-    return;
   BrowserThread::PostTask(BrowserThread::FILE,
                           FROM_HERE,
                           base::Bind(&RegisterSwiftShaderPath, cus));

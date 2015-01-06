@@ -7,10 +7,10 @@
 #include "base/logging.h"
 
 namespace extensions {
+class AppViewGuestDelegate;
+
 namespace {
-
 ExtensionsAPIClient* g_instance = NULL;
-
 }  // namespace
 
 ExtensionsAPIClient::ExtensionsAPIClient() { g_instance = this; }
@@ -26,24 +26,24 @@ void ExtensionsAPIClient::AddAdditionalValueStoreCaches(
     const scoped_refptr<ObserverListThreadSafe<SettingsObserver> >& observers,
     std::map<settings_namespace::Namespace, ValueStoreCache*>* caches) {}
 
-bool ExtensionsAPIClient::AppViewInternalAttachFrame(
-    content::BrowserContext* browser_context,
-    const GURL& url,
-    int guest_instance_id,
-    const std::string& guest_extension_id) {
-  return false;
-}
-
-bool ExtensionsAPIClient::AppViewInternalDenyRequest(
-    content::BrowserContext* browser_context,
-    int guest_instance_id,
-    const std::string& guest_extension_id) {
-  return false;
+AppViewGuestDelegate* ExtensionsAPIClient::CreateAppViewGuestDelegate() const {
+  return NULL;
 }
 
 device::HidService* ExtensionsAPIClient::GetHidService() {
   // This should never be called by clients which don't support the HID API.
   NOTIMPLEMENTED();
+  return NULL;
+}
+
+WebViewGuestDelegate* ExtensionsAPIClient::CreateWebViewGuestDelegate(
+    WebViewGuest* web_view_guest) const {
+  return NULL;
+}
+
+WebViewPermissionHelperDelegate* ExtensionsAPIClient::
+    CreateWebViewPermissionHelperDelegate(
+        WebViewPermissionHelper* web_view_permission_helper) const {
   return NULL;
 }
 

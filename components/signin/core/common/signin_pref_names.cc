@@ -6,6 +6,11 @@
 
 namespace prefs {
 
+// An integer property indicating the state of account id migration from
+// email to gaia id for the the profile.  See account_tracker_service.h
+// for possible values.
+const char kAccountIdMigrationState[] = "account_id_migration_state";
+
 // Boolean identifying whether reverse auto-login is enabled.
 const char kAutologinEnabled[] = "autologin.enabled";
 
@@ -42,6 +47,10 @@ const char kReverseAutologinEnabled[] = "reverse_autologin.enabled";
 // sign-in.
 const char kReverseAutologinRejectedEmailList[] =
     "reverse_autologin.rejected_email_list";
+
+// Int64 which tracks, as time from epoch, when last time the user signed in
+// to the browser.
+const char kSignedInTime[] = "signin.signedin_time";
 
 // Boolean which stores if the user is allowed to signin to chrome.
 const char kSigninAllowed[] = "signin.allowed";

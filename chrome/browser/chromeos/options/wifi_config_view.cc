@@ -13,6 +13,8 @@
 #include "chrome/browser/chromeos/net/onc_utils.h"
 #include "chrome/browser/chromeos/options/passphrase_textfield.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/grit/generated_resources.h"
+#include "chrome/grit/theme_resources.h"
 #include "chromeos/login/login_state.h"
 #include "chromeos/network/client_cert_util.h"
 #include "chromeos/network/network_configuration_handler.h"
@@ -23,10 +25,6 @@
 #include "chromeos/network/network_ui_data.h"
 #include "chromeos/network/shill_property_util.h"
 #include "components/onc/onc_constants.h"
-#include "grit/chromium_strings.h"
-#include "grit/generated_resources.h"
-#include "grit/locale_settings.h"
-#include "grit/theme_resources.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -575,7 +573,7 @@ void WifiConfigView::UpdateErrorLabel() {
   if (UserCertRequired() && CertLibrary::Get()->CertificatesLoaded()) {
     if (!HaveUserCerts()) {
       if (!LoginState::Get()->IsUserLoggedIn() ||
-          LoginState::Get()->IsGuestUser()) {
+          LoginState::Get()->IsGuestSessionUser()) {
         error_msg = l10n_util::GetStringUTF16(
             IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_LOGIN_FOR_USER_CERT);
       } else {
@@ -884,7 +882,9 @@ void WifiConfigView::SetEapProperties(base::DictionaryValue* properties) {
       shill::kEapPasswordProperty, GetPassphrase());
 
   base::ListValue* pem_list = new base::ListValue;
-  pem_list->AppendString(GetEapServerCaCertPEM());
+  std::string ca_cert_pem = GetEapServerCaCertPEM();
+  if (!ca_cert_pem.empty())
+    pem_list->AppendString(ca_cert_pem);
   properties->SetWithoutPathExpansion(
       shill::kEapCaCertPemProperty, pem_list);
 }
@@ -1293,7 +1293,9 @@ void WifiConfigView::InitFromProperties(
     std::string eap_cert_id;
     properties.GetStringWithoutPathExpansion(
         shill::kEapCertIdProperty, &eap_cert_id);
-    std::string pkcs11_id = client_cert::GetPkcs11IdFromEapCertId(eap_cert_id);
+    int unused_slot_id = 0;
+    std::string pkcs11_id = client_cert::GetPkcs11AndSlotIdFromEapCertId(
+        eap_cert_id, &unused_slot_id);
     if (!pkcs11_id.empty()) {
       int cert_index =
           CertLibrary::Get()->GetUserCertIndexByPkcs11Id(pkcs11_id);

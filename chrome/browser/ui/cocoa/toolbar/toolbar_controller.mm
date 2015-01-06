@@ -45,18 +45,17 @@
 #include "chrome/browser/ui/toolbar/wrench_menu_badge_controller.h"
 #include "chrome/browser/ui/toolbar/wrench_menu_model.h"
 #include "chrome/common/pref_names.h"
-#include "components/autocomplete/autocomplete_match.h"
+#include "chrome/grit/chromium_strings.h"
+#include "chrome/grit/generated_resources.h"
 #include "components/metrics/proto/omnibox_event.pb.h"
+#include "components/omnibox/autocomplete_match.h"
 #include "components/search_engines/template_url_service.h"
 #include "components/url_fixer/url_fixer.h"
 #include "content/public/browser/web_contents.h"
-#include "grit/chromium_strings.h"
-#include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #import "ui/base/cocoa/menu_controller.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/l10n/l10n_util_mac.h"
-#include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/rect.h"
 
@@ -735,6 +734,10 @@ class NotificationBridge : public WrenchMenuBadgeController::Delegate {
   return [self.view convertPoint:point toView:nil];
 }
 
+- (NSPoint)managePasswordsBubblePoint {
+  return locationBarView_->GetManagePasswordsBubblePoint();
+}
+
 - (NSPoint)translateBubblePoint {
   return locationBarView_->GetTranslateBubblePoint();
 }
@@ -767,15 +770,6 @@ class NotificationBridge : public WrenchMenuBadgeController::Delegate {
 
 - (NSView*)wrenchButton {
   return wrenchButton_;
-}
-
-- (void)activatePageAction:(const std::string&)extension_id {
-  locationBarView_->ActivatePageAction(extension_id);
-}
-
-// Activates the browser action for the extension that has the given id.
-- (void)activateBrowserAction:(const std::string&)extension_id {
-  [browserActionsController_ activateBrowserAction:extension_id];
 }
 
 // (URLDropTargetController protocol)

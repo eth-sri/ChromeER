@@ -105,7 +105,6 @@
 #include "net/ocsp/nss_ocsp.h"
 #include "net/socket/client_socket_handle.h"
 #include "net/socket/nss_ssl_util.h"
-#include "net/socket/ssl_error_params.h"
 #include "net/ssl/ssl_cert_request_info.h"
 #include "net/ssl/ssl_connection_status_flags.h"
 #include "net/ssl/ssl_info.h"
@@ -2456,26 +2455,6 @@ void SSLClientSocketNSS::Core::UpdateConnectionStatus() {
       VLOG(1) << "The server " << host_and_port_.ToString()
               << " does not support the TLS renegotiation_info extension.";
     }
-    UMA_HISTOGRAM_ENUMERATION("Net.RenegotiationExtensionSupported",
-                              peer_supports_renego_ext, 2);
-
-    // We would like to eliminate fallback to SSLv3 for non-buggy servers
-    // because of security concerns. For example, Google offers forward
-    // secrecy with ECDHE but that requires TLS 1.0. An attacker can block
-    // TLSv1 connections and force us to downgrade to SSLv3 and remove forward
-    // secrecy.
-    //
-    // Yngve from Opera has suggested using the renegotiation extension as an
-    // indicator that SSLv3 fallback was mistaken:
-    // tools.ietf.org/html/draft-pettersen-tls-version-rollback-removal-00 .
-    //
-    // As a first step, measure how often clients perform version fallback
-    // while the server advertises support secure renegotiation.
-    if (ssl_config_.version_fallback &&
-        channel_info.protocolVersion == SSL_LIBRARY_VERSION_3_0) {
-      UMA_HISTOGRAM_BOOLEAN("Net.SSLv3FallbackToRenegoPatchedServer",
-                            peer_supports_renego_ext == PR_TRUE);
-    }
   }
 
   if (ssl_config_.version_fallback) {
@@ -2832,6 +2811,11 @@ bool SSLClientSocketNSS::GetSSLInfo(SSLInfo* ssl_info) {
 
   LeaveFunction("");
   return true;
+}
+
+std::string SSLClientSocketNSS::GetSessionCacheKey() const {
+  NOTIMPLEMENTED();
+  return std::string();
 }
 
 bool SSLClientSocketNSS::InSessionCache() const {
@@ -3427,53 +3411,20 @@ int SSLClientSocketNSS::DoVerifyCertComplete(int result) {
   if (result == OK)
     LogConnectionTypeMetrics();
 
-#if defined(OFFICIAL_BUILD) && !defined(OS_ANDROID) && !defined(OS_IOS)
-  // Take care of any mandates for public key pinning.
-  //
-  // Pinning is only enabled for official builds to make sure that others don't
-  // end up with pins that cannot be easily updated.
-  //
-  // TODO(agl): We might have an issue here where a request for foo.example.com
-  // merges into a SPDY connection to www.example.com, and gets a different
-  // certificate.
-
-  // Perform pin validation if, and only if, all these conditions obtain:
-  //
-  // * a TransportSecurityState object is available;
-  // * the server's certificate chain is valid (or suffers from only a minor
-  //   error);
-  // * the server's certificate chain chains up to a known root (i.e. not a
-  //   user-installed trust anchor); and
-  // * the build is recent (very old builds should fail open so that users
-  //   have some chance to recover).
-  //
+  bool sni_available = ssl_config_.version_max >= SSL_PROTOCOL_VERSION_TLS1 ||
+                       ssl_config_.version_fallback;
   const CertStatus cert_status = server_cert_verify_result_.cert_status;
   if (transport_security_state_ &&
       (result == OK ||
        (IsCertificateError(result) && IsCertStatusMinorError(cert_status))) &&
-      server_cert_verify_result_.is_issued_by_known_root &&
-      TransportSecurityState::IsBuildTimely()) {
-    bool sni_available =
-        ssl_config_.version_max >= SSL_PROTOCOL_VERSION_TLS1 ||
-        ssl_config_.version_fallback;
-    const std::string& host = host_and_port_.host();
-
-    if (transport_security_state_->HasPublicKeyPins(host, sni_available)) {
-      if (!transport_security_state_->CheckPublicKeyPins(
-              host,
-              sni_available,
-              server_cert_verify_result_.public_key_hashes,
-              &pinning_failure_log_)) {
-        LOG(ERROR) << pinning_failure_log_;
-        result = ERR_SSL_PINNED_KEY_NOT_IN_CERT_CHAIN;
-        UMA_HISTOGRAM_BOOLEAN("Net.PublicKeyPinSuccess", false);
-        TransportSecurityState::ReportUMAOnPinFailure(host);
-      } else {
-        UMA_HISTOGRAM_BOOLEAN("Net.PublicKeyPinSuccess", true);
-      }
-    }
+      !transport_security_state_->CheckPublicKeyPins(
+          host_and_port_.host(),
+          sni_available,
+          server_cert_verify_result_.is_issued_by_known_root,
+          server_cert_verify_result_.public_key_hashes,
+          &pinning_failure_log_)) {
+    result = ERR_SSL_PINNED_KEY_NOT_IN_CERT_CHAIN;
   }
-#endif
 
   if (result == OK) {
     // Only check Certificate Transparency if there were no other errors with
@@ -3499,7 +3450,7 @@ void SSLClientSocketNSS::VerifyCT() {
   // gets all the data it needs for SCT verification and does not do any
   // external communication.
   int result = cert_transparency_verifier_->Verify(
-      server_cert_verify_result_.verified_cert,
+      server_cert_verify_result_.verified_cert.get(),
       core_->state().stapled_ocsp_response,
       core_->state().sct_list_from_tls_extension,
       &ct_verify_result_,

@@ -38,14 +38,14 @@
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/manifest_url_handler.h"
 #include "chrome/common/pref_names.h"
+#include "chrome/grit/chromium_strings.h"
+#include "chrome/grit/generated_resources.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/user_metrics.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/permissions/permission_set.h"
 #include "grit/chrome_unscaled_resources.h"
-#include "grit/chromium_strings.h"
-#include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 
@@ -137,7 +137,8 @@ void BackgroundModeManager::BackgroundModeData::BuildProfileMenu(
       // The compromise is to disable the item, avoiding the non-actionable
       // navigate to the extensions page and preserving the user model.
       if ((*cursor)->location() == extensions::Manifest::COMPONENT) {
-        GURL options_page = extensions::ManifestURL::GetOptionsPage(*cursor);
+        GURL options_page =
+            extensions::ManifestURL::GetOptionsPage(cursor->get());
         if (!options_page.is_valid())
           menu->SetCommandIdEnabled(command_id, false);
       }

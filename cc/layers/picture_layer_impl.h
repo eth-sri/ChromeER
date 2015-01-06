@@ -5,6 +5,7 @@
 #ifndef CC_LAYERS_PICTURE_LAYER_IMPL_H_
 #define CC_LAYERS_PICTURE_LAYER_IMPL_H_
 
+#include <set>
 #include <string>
 #include <vector>
 
@@ -77,34 +78,20 @@ class CC_EXPORT PictureLayerImpl
     operator bool() const;
 
    private:
-    enum IterationStage {
-      EVENTUALLY,
-      EVENTUALLY_AND_REQUIRED_FOR_ACTIVATION,
-      SOON,
-      SOON_AND_REQUIRED_FOR_ACTIVATION,
-      NOW,
-      NOW_AND_REQUIRED_FOR_ACTIVATION
-    };
+    bool AdvanceToNextCategory();
+    bool AdvanceToNextTilingRangeType();
+    bool AdvanceToNextTiling();
 
-    TilePriority::PriorityBin PriorityBinFromIterationStage(
-        IterationStage stage);
-    bool RequiredForActivationFromIterationStage(IterationStage stage);
+    PictureLayerTilingSet::TilingRange CurrentTilingRange() const;
+    size_t CurrentTilingIndex() const;
 
-    PictureLayerTilingSet::TilingRange CurrentRange();
-    int CurrentTilingIndex();
-
-    void AdvanceToNextIterator();
-    bool AdvanceTiling();
-    bool AdvanceRange();
-    bool AdvanceStage();
-
-    PictureLayerTiling::TilingEvictionTileIterator iterator_;
-    int current_range_offset_;
-    PictureLayerTilingSet::TilingRangeType current_tiling_range_type_;
-    IterationStage current_stage_;
-
-    TreePriority tree_priority_;
     PictureLayerImpl* layer_;
+    TreePriority tree_priority_;
+
+    PictureLayerTiling::EvictionCategory current_category_;
+    PictureLayerTilingSet::TilingRangeType current_tiling_range_type_;
+    size_t current_tiling_;
+    PictureLayerTiling::TilingEvictionTileIterator current_iterator_;
   };
 
   static scoped_ptr<PictureLayerImpl> Create(LayerTreeImpl* tree_impl, int id) {
@@ -138,6 +125,8 @@ class CC_EXPORT PictureLayerImpl
   virtual const Region* GetInvalidation() OVERRIDE;
   virtual const PictureLayerTiling* GetTwinTiling(
       const PictureLayerTiling* tiling) const OVERRIDE;
+  virtual PictureLayerTiling* GetRecycledTwinTiling(
+      const PictureLayerTiling* tiling) OVERRIDE;
   virtual size_t GetMaxTilesForInterestArea() const OVERRIDE;
   virtual float GetSkewportTargetTimeInSeconds() const OVERRIDE;
   virtual int GetSkewportExtrapolationLimitInContentPixels() const OVERRIDE;
@@ -157,7 +146,8 @@ class CC_EXPORT PictureLayerImpl
   // Functions used by tile manager.
   PictureLayerImpl* GetTwinLayer() { return twin_layer_; }
   bool IsOnActiveOrPendingTree() const;
-  bool HasValidTilePriorities() const;
+  // Virtual for testing.
+  virtual bool HasValidTilePriorities() const;
   bool AllTilesRequiredForActivationAreReadyToDraw() const;
 
  protected:
@@ -185,6 +175,8 @@ class CC_EXPORT PictureLayerImpl
       float contents_scale,
       const gfx::Rect& rect,
       const Region& missing_region) const;
+  gfx::Rect GetViewportForTilePriorityInContentSpace() const;
+  PictureLayerImpl* GetRecycledTwinLayer();
 
   void DoPostCommitInitializationIfNeeded() {
     if (needs_post_commit_initialization_)
@@ -196,8 +188,12 @@ class CC_EXPORT PictureLayerImpl
   bool CanHaveTilingWithScale(float contents_scale) const;
   void SanityCheckTilingState() const;
 
+  bool ShouldAdjustRasterScaleDuringScaleAnimations() const;
+
   virtual void GetDebugBorderProperties(
       SkColor* color, float* width) const OVERRIDE;
+  virtual void GetAllTilesForTracing(
+      std::set<const Tile*>* tiles) const OVERRIDE;
   virtual void AsValueInto(base::debug::TracedValue* dict) const OVERRIDE;
 
   virtual void UpdateIdealScales();

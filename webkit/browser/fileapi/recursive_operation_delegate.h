@@ -14,7 +14,7 @@
 #include "webkit/browser/fileapi/file_system_operation.h"
 #include "webkit/browser/fileapi/file_system_url.h"
 
-namespace fileapi {
+namespace storage {
 
 class FileSystemContext;
 class FileSystemOperationRunner;
@@ -24,7 +24,7 @@ class FileSystemOperationRunner;
 // In short, each subclass should override ProcessFile and ProcessDirectory
 // to process a directory or a file. To start the recursive operation it
 // should also call StartRecursiveOperation.
-class WEBKIT_STORAGE_BROWSER_EXPORT RecursiveOperationDelegate
+class STORAGE_EXPORT RecursiveOperationDelegate
     : public base::SupportsWeakPtr<RecursiveOperationDelegate> {
  public:
   typedef FileSystemOperation::StatusCallback StatusCallback;
@@ -147,6 +147,6 @@ class WEBKIT_STORAGE_BROWSER_EXPORT RecursiveOperationDelegate
   DISALLOW_COPY_AND_ASSIGN(RecursiveOperationDelegate);
 };
 
-}  // namespace fileapi
+}  // namespace storage
 
 #endif  // WEBKIT_BROWSER_FILEAPI_RECURSIVE_OPERATION_DELEGATE_H_

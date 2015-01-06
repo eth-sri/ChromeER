@@ -261,17 +261,16 @@ void PixelBufferRasterWorkerPool::CheckForCompletedTasks() {
   completed_raster_tasks_.clear();
 }
 
-SkCanvas* PixelBufferRasterWorkerPool::AcquireCanvasForRaster(
+RasterBuffer* PixelBufferRasterWorkerPool::AcquireBufferForRaster(
     RasterTask* task) {
   DCHECK(std::find_if(raster_task_states_.begin(),
                       raster_task_states_.end(),
                       RasterTaskState::TaskComparator(task)) !=
          raster_task_states_.end());
-  resource_provider_->AcquirePixelRasterBuffer(task->resource()->id());
-  return resource_provider_->MapPixelRasterBuffer(task->resource()->id());
+  return resource_provider_->AcquirePixelRasterBuffer(task->resource()->id());
 }
 
-void PixelBufferRasterWorkerPool::ReleaseCanvasForRaster(RasterTask* task) {
+void PixelBufferRasterWorkerPool::ReleaseBufferForRaster(RasterTask* task) {
   DCHECK(std::find_if(raster_task_states_.begin(),
                       raster_task_states_.end(),
                       RasterTaskState::TaskComparator(task)) !=
@@ -515,10 +514,13 @@ void PixelBufferRasterWorkerPool::ScheduleMoreTasks() {
       continue;
     }
 
-    // All raster tasks need to be throttled by bytes of pending uploads.
+    // All raster tasks need to be throttled by bytes of pending uploads,
+    // but if it's the only task allow it to complete no matter what its size,
+    // to prevent starvation of the task queue.
     size_t new_bytes_pending_upload = bytes_pending_upload;
     new_bytes_pending_upload += task->resource()->bytes();
-    if (new_bytes_pending_upload > max_bytes_pending_upload_) {
+    if (new_bytes_pending_upload > max_bytes_pending_upload_ &&
+        bytes_pending_upload) {
       did_throttle_raster_tasks = true;
       if (item.required_for_activation)
         did_throttle_raster_tasks_required_for_activation = true;
@@ -683,30 +685,21 @@ void PixelBufferRasterWorkerPool::CheckForCompletedRasterizerTasks() {
     RasterTaskState& state = *state_it;
     DCHECK_EQ(RasterTaskState::SCHEDULED, state.type);
 
-    // Balanced with MapPixelRasterBuffer() call in AcquireCanvasForRaster().
-    bool content_has_changed = resource_provider_->UnmapPixelRasterBuffer(
-        raster_task->resource()->id());
-
-    // |content_has_changed| can be false as result of task being canceled or
-    // task implementation deciding not to modify bitmap (ie. analysis of raster
-    // commands detected content as a solid color).
-    if (!content_has_changed) {
+    if (!raster_task->HasFinishedRunning()) {
+      // When priorites change, a raster task can be canceled as a result of
+      // no longer being of high enough priority to fit in our throttled
+      // raster task budget. The task has not yet completed in this case.
       raster_task->WillComplete();
       raster_task->CompleteOnOriginThread(this);
       raster_task->DidComplete();
 
-      if (!raster_task->HasFinishedRunning()) {
-        // When priorites change, a raster task can be canceled as a result of
-        // no longer being of high enough priority to fit in our throttled
-        // raster task budget. The task has not yet completed in this case.
-        RasterTaskQueue::Item::Vector::const_iterator item_it =
-            std::find_if(raster_tasks_.items.begin(),
-                         raster_tasks_.items.end(),
-                         RasterTaskQueue::Item::TaskComparator(raster_task));
-        if (item_it != raster_tasks_.items.end()) {
-          state.type = RasterTaskState::UNSCHEDULED;
-          continue;
-        }
+      RasterTaskQueue::Item::Vector::const_iterator item_it =
+          std::find_if(raster_tasks_.items.begin(),
+                       raster_tasks_.items.end(),
+                       RasterTaskQueue::Item::TaskComparator(raster_task));
+      if (item_it != raster_tasks_.items.end()) {
+        state.type = RasterTaskState::UNSCHEDULED;
+        continue;
       }
 
       DCHECK(std::find(completed_raster_tasks_.begin(),
@@ -720,8 +713,6 @@ void PixelBufferRasterWorkerPool::CheckForCompletedRasterizerTasks() {
           state.required_for_activation;
       continue;
     }
-
-    DCHECK(raster_task->HasFinishedRunning());
 
     resource_provider_->BeginSetPixels(raster_task->resource()->id());
     has_performed_uploads_since_last_flush_ = true;

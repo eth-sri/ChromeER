@@ -71,8 +71,8 @@
 
 #if defined(ENABLE_EXTENSIONS)
 #include "chrome/browser/extensions/api/web_request/web_request_api.h"
-#include "chrome/browser/guest_view/guest_view_manager.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/browser/guest_view/guest_view_manager.h"
 #include "extensions/common/extension.h"
 #endif
 
@@ -124,8 +124,10 @@ void OffTheRecordProfileImpl::Init() {
   BrowserContextDependencyManager::GetInstance()->CreateBrowserContextServices(
       this);
 
-  DCHECK_NE(IncognitoModePrefs::DISABLED,
-            IncognitoModePrefs::GetAvailability(profile_->GetPrefs()));
+  // Guest profiles may always be OTR. Check IncognitoModePrefs otherwise.
+  DCHECK(profile_->IsGuestSession() ||
+         IncognitoModePrefs::GetAvailability(profile_->GetPrefs()) !=
+             IncognitoModePrefs::DISABLED);
 
 #if defined(OS_ANDROID) || defined(OS_IOS)
   UseSystemProxy();
@@ -192,9 +194,9 @@ void OffTheRecordProfileImpl::InitIoData() {
 }
 
 void OffTheRecordProfileImpl::InitHostZoomMap() {
-  HostZoomMap* host_zoom_map = HostZoomMap::GetForBrowserContext(this);
+  HostZoomMap* host_zoom_map = HostZoomMap::GetDefaultForBrowserContext(this);
   HostZoomMap* parent_host_zoom_map =
-      HostZoomMap::GetForBrowserContext(profile_);
+      HostZoomMap::GetDefaultForBrowserContext(profile_);
   host_zoom_map->CopyFrom(parent_host_zoom_map);
   // Observe parent's HZM change for propagating change of parent's
   // change to this HZM.
@@ -364,13 +366,13 @@ HostContentSettingsMap* OffTheRecordProfileImpl::GetHostContentSettingsMap() {
 
 content::BrowserPluginGuestManager* OffTheRecordProfileImpl::GetGuestManager() {
 #if defined(ENABLE_EXTENSIONS)
-  return GuestViewManager::FromBrowserContext(this);
+  return extensions::GuestViewManager::FromBrowserContext(this);
 #else
   return NULL;
 #endif
 }
 
-quota::SpecialStoragePolicy*
+storage::SpecialStoragePolicy*
 OffTheRecordProfileImpl::GetSpecialStoragePolicy() {
   return GetExtensionSpecialStoragePolicy();
 }
@@ -489,8 +491,8 @@ class GuestSessionProfile : public OffTheRecordProfileImpl {
 
   virtual void InitChromeOSPreferences() OVERRIDE {
     chromeos_preferences_.reset(new chromeos::Preferences());
-    chromeos_preferences_->Init(static_cast<PrefServiceSyncable*>(GetPrefs()),
-                                chromeos::UserManager::Get()->GetActiveUser());
+    chromeos_preferences_->Init(
+        this, user_manager::UserManager::Get()->GetActiveUser());
   }
 
  private:
@@ -513,7 +515,7 @@ Profile* Profile::CreateOffTheRecordProfile() {
 
 void OffTheRecordProfileImpl::OnZoomLevelChanged(
     const HostZoomMap::ZoomLevelChange& change) {
-  HostZoomMap* host_zoom_map = HostZoomMap::GetForBrowserContext(this);
+  HostZoomMap* host_zoom_map = HostZoomMap::GetDefaultForBrowserContext(this);
   switch (change.mode) {
     case HostZoomMap::ZOOM_CHANGED_TEMPORARY_ZOOM:
        return;

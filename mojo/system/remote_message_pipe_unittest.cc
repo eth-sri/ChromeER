@@ -17,17 +17,18 @@
 #include "base/logging.h"
 #include "base/macros.h"
 #include "base/message_loop/message_loop.h"
+#include "base/test/test_io_thread.h"
 #include "base/threading/platform_thread.h"  // For |Sleep()|.
 #include "build/build_config.h"              // TODO(vtl): Remove this.
 #include "mojo/common/test/test_utils.h"
 #include "mojo/embedder/platform_channel_pair.h"
+#include "mojo/embedder/platform_shared_buffer.h"
 #include "mojo/embedder/scoped_platform_handle.h"
+#include "mojo/embedder/simple_platform_support.h"
 #include "mojo/system/channel.h"
-#include "mojo/system/local_message_pipe_endpoint.h"
 #include "mojo/system/message_pipe.h"
 #include "mojo/system/message_pipe_dispatcher.h"
 #include "mojo/system/platform_handle_dispatcher.h"
-#include "mojo/system/proxy_message_pipe_endpoint.h"
 #include "mojo/system/raw_channel.h"
 #include "mojo/system/shared_buffer_dispatcher.h"
 #include "mojo/system/test_utils.h"
@@ -40,7 +41,7 @@ namespace {
 
 class RemoteMessagePipeTest : public testing::Test {
  public:
-  RemoteMessagePipeTest() : io_thread_(test::TestIOThread::kAutoStart) {}
+  RemoteMessagePipeTest() : io_thread_(base::TestIOThread::kAutoStart) {}
   virtual ~RemoteMessagePipeTest() {}
 
   virtual void SetUp() OVERRIDE {
@@ -92,7 +93,8 @@ class RemoteMessagePipeTest : public testing::Test {
                    base::Unretained(this)));
   }
 
-  test::TestIOThread* io_thread() { return &io_thread_; }
+  embedder::PlatformSupport* platform_support() { return &platform_support_; }
+  base::TestIOThread* io_thread() { return &io_thread_; }
 
  private:
   void SetUpOnIOThread() {
@@ -106,11 +108,11 @@ class RemoteMessagePipeTest : public testing::Test {
   void TearDownOnIOThread() {
     CHECK_EQ(base::MessageLoop::current(), io_thread()->message_loop());
 
-    if (channels_[0]) {
+    if (channels_[0].get()) {
       channels_[0]->Shutdown();
       channels_[0] = NULL;
     }
-    if (channels_[1]) {
+    if (channels_[1].get()) {
       channels_[1]->Shutdown();
       channels_[1] = NULL;
     }
@@ -119,9 +121,9 @@ class RemoteMessagePipeTest : public testing::Test {
   void CreateAndInitChannel(unsigned channel_index) {
     CHECK_EQ(base::MessageLoop::current(), io_thread()->message_loop());
     CHECK(channel_index == 0 || channel_index == 1);
-    CHECK(!channels_[channel_index]);
+    CHECK(!channels_[channel_index].get());
 
-    channels_[channel_index] = new Channel();
+    channels_[channel_index] = new Channel(&platform_support_);
     CHECK(channels_[channel_index]->Init(
         RawChannel::Create(platform_handles_[channel_index].Pass())));
   }
@@ -130,9 +132,9 @@ class RemoteMessagePipeTest : public testing::Test {
                                      scoped_refptr<MessagePipe> mp1) {
     CHECK_EQ(base::MessageLoop::current(), io_thread()->message_loop());
 
-    if (!channels_[0])
+    if (!channels_[0].get())
       CreateAndInitChannel(0);
-    if (!channels_[1])
+    if (!channels_[1].get())
       CreateAndInitChannel(1);
 
     MessageInTransit::EndpointId local_id0 =
@@ -169,7 +171,8 @@ class RemoteMessagePipeTest : public testing::Test {
     SetUpOnIOThread();
   }
 
-  test::TestIOThread io_thread_;
+  embedder::SimplePlatformSupport platform_support_;
+  base::TestIOThread io_thread_;
   embedder::ScopedPlatformHandle platform_handles_[2];
   scoped_refptr<Channel> channels_[2];
 
@@ -189,12 +192,8 @@ TEST_F(RemoteMessagePipeTest, Basic) {
   // connected to MP 1, port 0, which will be attached to channel 1. This leaves
   // MP 0, port 0 and MP 1, port 1 as the "user-facing" endpoints.
 
-  scoped_refptr<MessagePipe> mp0(new MessagePipe(
-      scoped_ptr<MessagePipeEndpoint>(new LocalMessagePipeEndpoint()),
-      scoped_ptr<MessagePipeEndpoint>(new ProxyMessagePipeEndpoint())));
-  scoped_refptr<MessagePipe> mp1(new MessagePipe(
-      scoped_ptr<MessagePipeEndpoint>(new ProxyMessagePipeEndpoint()),
-      scoped_ptr<MessagePipeEndpoint>(new LocalMessagePipeEndpoint())));
+  scoped_refptr<MessagePipe> mp0(MessagePipe::CreateLocalProxy());
+  scoped_refptr<MessagePipe> mp1(MessagePipe::CreateProxyLocal());
   ConnectMessagePipes(mp0, mp1);
 
   // Write in one direction: MP 0, port 0 -> ... -> MP 1, port 1.
@@ -302,22 +301,14 @@ TEST_F(RemoteMessagePipeTest, Multiplex) {
 
   // Connect message pipes as in the |Basic| test.
 
-  scoped_refptr<MessagePipe> mp0(new MessagePipe(
-      scoped_ptr<MessagePipeEndpoint>(new LocalMessagePipeEndpoint()),
-      scoped_ptr<MessagePipeEndpoint>(new ProxyMessagePipeEndpoint())));
-  scoped_refptr<MessagePipe> mp1(new MessagePipe(
-      scoped_ptr<MessagePipeEndpoint>(new ProxyMessagePipeEndpoint()),
-      scoped_ptr<MessagePipeEndpoint>(new LocalMessagePipeEndpoint())));
+  scoped_refptr<MessagePipe> mp0(MessagePipe::CreateLocalProxy());
+  scoped_refptr<MessagePipe> mp1(MessagePipe::CreateProxyLocal());
   ConnectMessagePipes(mp0, mp1);
 
   // Now put another message pipe on the channel.
 
-  scoped_refptr<MessagePipe> mp2(new MessagePipe(
-      scoped_ptr<MessagePipeEndpoint>(new LocalMessagePipeEndpoint()),
-      scoped_ptr<MessagePipeEndpoint>(new ProxyMessagePipeEndpoint())));
-  scoped_refptr<MessagePipe> mp3(new MessagePipe(
-      scoped_ptr<MessagePipeEndpoint>(new ProxyMessagePipeEndpoint()),
-      scoped_ptr<MessagePipeEndpoint>(new LocalMessagePipeEndpoint())));
+  scoped_refptr<MessagePipe> mp2(MessagePipe::CreateLocalProxy());
+  scoped_refptr<MessagePipe> mp3(MessagePipe::CreateProxyLocal());
   ConnectMessagePipes(mp2, mp3);
 
   // Write: MP 2, port 0 -> MP 3, port 1.
@@ -457,9 +448,7 @@ TEST_F(RemoteMessagePipeTest, CloseBeforeConnect) {
   // connected to MP 1, port 0, which will be attached to channel 1. This leaves
   // MP 0, port 0 and MP 1, port 1 as the "user-facing" endpoints.
 
-  scoped_refptr<MessagePipe> mp0(new MessagePipe(
-      scoped_ptr<MessagePipeEndpoint>(new LocalMessagePipeEndpoint()),
-      scoped_ptr<MessagePipeEndpoint>(new ProxyMessagePipeEndpoint())));
+  scoped_refptr<MessagePipe> mp0(MessagePipe::CreateLocalProxy());
 
   // Write to MP 0, port 0.
   EXPECT_EQ(MOJO_RESULT_OK,
@@ -474,9 +463,7 @@ TEST_F(RemoteMessagePipeTest, CloseBeforeConnect) {
   // Close MP 0, port 0 before channel 1 is even connected.
   mp0->Close(0);
 
-  scoped_refptr<MessagePipe> mp1(new MessagePipe(
-      scoped_ptr<MessagePipeEndpoint>(new ProxyMessagePipeEndpoint()),
-      scoped_ptr<MessagePipeEndpoint>(new LocalMessagePipeEndpoint())));
+  scoped_refptr<MessagePipe> mp1(MessagePipe::CreateProxyLocal());
 
   // Prepare to wait on MP 1, port 1. (Add the waiter now. Otherwise, if we do
   // it later, it might already be readable.)
@@ -519,18 +506,14 @@ TEST_F(RemoteMessagePipeTest, HandlePassing) {
   HandleSignalsState hss;
   uint32_t context = 0;
 
-  scoped_refptr<MessagePipe> mp0(new MessagePipe(
-      scoped_ptr<MessagePipeEndpoint>(new LocalMessagePipeEndpoint()),
-      scoped_ptr<MessagePipeEndpoint>(new ProxyMessagePipeEndpoint())));
-  scoped_refptr<MessagePipe> mp1(new MessagePipe(
-      scoped_ptr<MessagePipeEndpoint>(new ProxyMessagePipeEndpoint()),
-      scoped_ptr<MessagePipeEndpoint>(new LocalMessagePipeEndpoint())));
+  scoped_refptr<MessagePipe> mp0(MessagePipe::CreateLocalProxy());
+  scoped_refptr<MessagePipe> mp1(MessagePipe::CreateProxyLocal());
   ConnectMessagePipes(mp0, mp1);
 
   // We'll try to pass this dispatcher.
   scoped_refptr<MessagePipeDispatcher> dispatcher(
       new MessagePipeDispatcher(MessagePipeDispatcher::kDefaultCreateOptions));
-  scoped_refptr<MessagePipe> local_mp(new MessagePipe());
+  scoped_refptr<MessagePipe> local_mp(MessagePipe::CreateLocalLocal());
   dispatcher->Init(local_mp, 0);
 
   // Prepare to wait on MP 1, port 1. (Add the waiter now. Otherwise, if we do
@@ -587,7 +570,7 @@ TEST_F(RemoteMessagePipeTest, HandlePassing) {
   EXPECT_STREQ(kHello, read_buffer);
   EXPECT_EQ(1u, read_dispatchers.size());
   EXPECT_EQ(1u, read_num_dispatchers);
-  ASSERT_TRUE(read_dispatchers[0]);
+  ASSERT_TRUE(read_dispatchers[0].get());
   EXPECT_TRUE(read_dispatchers[0]->HasOneRef());
 
   EXPECT_EQ(Dispatcher::kTypeMessagePipe, read_dispatchers[0]->GetType());
@@ -691,33 +674,31 @@ TEST_F(RemoteMessagePipeTest, MAYBE_SharedBufferPassing) {
   HandleSignalsState hss;
   uint32_t context = 0;
 
-  scoped_refptr<MessagePipe> mp0(new MessagePipe(
-      scoped_ptr<MessagePipeEndpoint>(new LocalMessagePipeEndpoint()),
-      scoped_ptr<MessagePipeEndpoint>(new ProxyMessagePipeEndpoint())));
-  scoped_refptr<MessagePipe> mp1(new MessagePipe(
-      scoped_ptr<MessagePipeEndpoint>(new ProxyMessagePipeEndpoint()),
-      scoped_ptr<MessagePipeEndpoint>(new LocalMessagePipeEndpoint())));
+  scoped_refptr<MessagePipe> mp0(MessagePipe::CreateLocalProxy());
+  scoped_refptr<MessagePipe> mp1(MessagePipe::CreateProxyLocal());
   ConnectMessagePipes(mp0, mp1);
 
   // We'll try to pass this dispatcher.
   scoped_refptr<SharedBufferDispatcher> dispatcher;
-  EXPECT_EQ(
-      MOJO_RESULT_OK,
-      SharedBufferDispatcher::Create(
-          SharedBufferDispatcher::kDefaultCreateOptions, 100, &dispatcher));
-  ASSERT_TRUE(dispatcher);
+  EXPECT_EQ(MOJO_RESULT_OK,
+            SharedBufferDispatcher::Create(
+                platform_support(),
+                SharedBufferDispatcher::kDefaultCreateOptions,
+                100,
+                &dispatcher));
+  ASSERT_TRUE(dispatcher.get());
 
   // Make a mapping.
-  scoped_ptr<RawSharedBufferMapping> mapping0;
+  scoped_ptr<embedder::PlatformSharedBufferMapping> mapping0;
   EXPECT_EQ(
       MOJO_RESULT_OK,
       dispatcher->MapBuffer(0, 100, MOJO_MAP_BUFFER_FLAG_NONE, &mapping0));
   ASSERT_TRUE(mapping0);
-  ASSERT_TRUE(mapping0->base());
-  ASSERT_EQ(100u, mapping0->length());
-  static_cast<char*>(mapping0->base())[0] = 'A';
-  static_cast<char*>(mapping0->base())[50] = 'B';
-  static_cast<char*>(mapping0->base())[99] = 'C';
+  ASSERT_TRUE(mapping0->GetBase());
+  ASSERT_EQ(100u, mapping0->GetLength());
+  static_cast<char*>(mapping0->GetBase())[0] = 'A';
+  static_cast<char*>(mapping0->GetBase())[50] = 'B';
+  static_cast<char*>(mapping0->GetBase())[99] = 'C';
 
   // Prepare to wait on MP 1, port 1. (Add the waiter now. Otherwise, if we do
   // it later, it might already be readable.)
@@ -773,34 +754,34 @@ TEST_F(RemoteMessagePipeTest, MAYBE_SharedBufferPassing) {
   EXPECT_STREQ(kHello, read_buffer);
   EXPECT_EQ(1u, read_dispatchers.size());
   EXPECT_EQ(1u, read_num_dispatchers);
-  ASSERT_TRUE(read_dispatchers[0]);
+  ASSERT_TRUE(read_dispatchers[0].get());
   EXPECT_TRUE(read_dispatchers[0]->HasOneRef());
 
   EXPECT_EQ(Dispatcher::kTypeSharedBuffer, read_dispatchers[0]->GetType());
   dispatcher = static_cast<SharedBufferDispatcher*>(read_dispatchers[0].get());
 
   // Make another mapping.
-  scoped_ptr<RawSharedBufferMapping> mapping1;
+  scoped_ptr<embedder::PlatformSharedBufferMapping> mapping1;
   EXPECT_EQ(
       MOJO_RESULT_OK,
       dispatcher->MapBuffer(0, 100, MOJO_MAP_BUFFER_FLAG_NONE, &mapping1));
   ASSERT_TRUE(mapping1);
-  ASSERT_TRUE(mapping1->base());
-  ASSERT_EQ(100u, mapping1->length());
-  EXPECT_NE(mapping1->base(), mapping0->base());
-  EXPECT_EQ('A', static_cast<char*>(mapping1->base())[0]);
-  EXPECT_EQ('B', static_cast<char*>(mapping1->base())[50]);
-  EXPECT_EQ('C', static_cast<char*>(mapping1->base())[99]);
+  ASSERT_TRUE(mapping1->GetBase());
+  ASSERT_EQ(100u, mapping1->GetLength());
+  EXPECT_NE(mapping1->GetBase(), mapping0->GetBase());
+  EXPECT_EQ('A', static_cast<char*>(mapping1->GetBase())[0]);
+  EXPECT_EQ('B', static_cast<char*>(mapping1->GetBase())[50]);
+  EXPECT_EQ('C', static_cast<char*>(mapping1->GetBase())[99]);
 
   // Write stuff either way.
-  static_cast<char*>(mapping1->base())[1] = 'x';
-  EXPECT_EQ('x', static_cast<char*>(mapping0->base())[1]);
-  static_cast<char*>(mapping0->base())[2] = 'y';
-  EXPECT_EQ('y', static_cast<char*>(mapping1->base())[2]);
+  static_cast<char*>(mapping1->GetBase())[1] = 'x';
+  EXPECT_EQ('x', static_cast<char*>(mapping0->GetBase())[1]);
+  static_cast<char*>(mapping0->GetBase())[2] = 'y';
+  EXPECT_EQ('y', static_cast<char*>(mapping1->GetBase())[2]);
 
   // Kill the first mapping; the second should still be valid.
   mapping0.reset();
-  EXPECT_EQ('A', static_cast<char*>(mapping1->base())[0]);
+  EXPECT_EQ('A', static_cast<char*>(mapping1->GetBase())[0]);
 
   // Close everything that belongs to us.
   mp0->Close(0);
@@ -808,7 +789,7 @@ TEST_F(RemoteMessagePipeTest, MAYBE_SharedBufferPassing) {
   EXPECT_EQ(MOJO_RESULT_OK, dispatcher->Close());
 
   // The second mapping should still be good.
-  EXPECT_EQ('x', static_cast<char*>(mapping1->base())[1]);
+  EXPECT_EQ('x', static_cast<char*>(mapping1->GetBase())[1]);
 }
 
 #if defined(OS_POSIX)
@@ -827,12 +808,8 @@ TEST_F(RemoteMessagePipeTest, MAYBE_PlatformHandlePassing) {
   uint32_t context = 0;
   HandleSignalsState hss;
 
-  scoped_refptr<MessagePipe> mp0(new MessagePipe(
-      scoped_ptr<MessagePipeEndpoint>(new LocalMessagePipeEndpoint()),
-      scoped_ptr<MessagePipeEndpoint>(new ProxyMessagePipeEndpoint())));
-  scoped_refptr<MessagePipe> mp1(new MessagePipe(
-      scoped_ptr<MessagePipeEndpoint>(new ProxyMessagePipeEndpoint()),
-      scoped_ptr<MessagePipeEndpoint>(new LocalMessagePipeEndpoint())));
+  scoped_refptr<MessagePipe> mp0(MessagePipe::CreateLocalProxy());
+  scoped_refptr<MessagePipe> mp1(MessagePipe::CreateProxyLocal());
   ConnectMessagePipes(mp0, mp1);
 
   base::FilePath unused;
@@ -899,7 +876,7 @@ TEST_F(RemoteMessagePipeTest, MAYBE_PlatformHandlePassing) {
   EXPECT_STREQ(kWorld, read_buffer);
   EXPECT_EQ(1u, read_dispatchers.size());
   EXPECT_EQ(1u, read_num_dispatchers);
-  ASSERT_TRUE(read_dispatchers[0]);
+  ASSERT_TRUE(read_dispatchers[0].get());
   EXPECT_TRUE(read_dispatchers[0]->HasOneRef());
 
   EXPECT_EQ(Dispatcher::kTypePlatformHandle, read_dispatchers[0]->GetType());
@@ -934,14 +911,10 @@ TEST_F(RemoteMessagePipeTest, RacingClosesStress) {
 
   for (unsigned i = 0; i < 256; i++) {
     DVLOG(2) << "---------------------------------------- " << i;
-    scoped_refptr<MessagePipe> mp0(new MessagePipe(
-        scoped_ptr<MessagePipeEndpoint>(new LocalMessagePipeEndpoint()),
-        scoped_ptr<MessagePipeEndpoint>(new ProxyMessagePipeEndpoint())));
+    scoped_refptr<MessagePipe> mp0(MessagePipe::CreateLocalProxy());
     BootstrapMessagePipeNoWait(0, mp0);
 
-    scoped_refptr<MessagePipe> mp1(new MessagePipe(
-        scoped_ptr<MessagePipeEndpoint>(new ProxyMessagePipeEndpoint()),
-        scoped_ptr<MessagePipeEndpoint>(new LocalMessagePipeEndpoint())));
+    scoped_refptr<MessagePipe> mp1(MessagePipe::CreateProxyLocal());
     BootstrapMessagePipeNoWait(1, mp1);
 
     if (i & 1u) {

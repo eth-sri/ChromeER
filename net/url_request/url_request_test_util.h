@@ -25,6 +25,7 @@
 #include "net/base/net_errors.h"
 #include "net/base/network_delegate.h"
 #include "net/base/request_priority.h"
+#include "net/base/sdch_manager.h"
 #include "net/cert/cert_verifier.h"
 #include "net/cookies/cookie_monster.h"
 #include "net/disk_cache/disk_cache.h"
@@ -70,6 +71,10 @@ class TestURLRequestContext : public URLRequestContext {
 
   void set_http_network_session_params(
       const HttpNetworkSession::Params& params) {
+  }
+
+  void SetSdchManager(scoped_ptr<SdchManager> sdch_manager) {
+    context_storage_.set_sdch_manager(sdch_manager.Pass());
   }
 
  private:
@@ -175,7 +180,8 @@ class TestDelegate : public URLRequest::Delegate {
   void ClearFullRequestHeaders();
 
   // URLRequest::Delegate:
-  virtual void OnReceivedRedirect(URLRequest* request, const GURL& new_url,
+  virtual void OnReceivedRedirect(URLRequest* request,
+                                  const RedirectInfo& redirect_info,
                                   bool* defer_redirect) OVERRIDE;
   virtual void OnBeforeNetworkStart(URLRequest* request, bool* defer) OVERRIDE;
   virtual void OnAuthRequired(URLRequest* request,

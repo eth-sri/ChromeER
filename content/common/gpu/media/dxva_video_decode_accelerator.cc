@@ -18,6 +18,7 @@
 #include "base/callback.h"
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
+#include "base/file_version_info.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/shared_memory.h"
@@ -638,6 +639,19 @@ bool DXVAVideoDecodeAccelerator::InitDecoder(media::VideoCodecProfile profile) {
                     "msmpeg2vdec.dll required for decoding is not loaded",
                     false);
 
+  // Check version of DLL, version 6.7.7140 is blacklisted due to high crash
+  // rates in browsers loading that DLL. If that is the version installed we
+  // fall back to software decoding. See crbug/403440.
+  FileVersionInfo* version_info =
+      FileVersionInfo::CreateFileVersionInfoForModule(decoder_dll);
+  RETURN_ON_FAILURE(version_info,
+                    "unable to get version of msmpeg2vdec.dll",
+                    false);
+  base::string16 file_version = version_info->file_version();
+  RETURN_ON_FAILURE(file_version.find(L"6.1.7140") == base::string16::npos,
+                    "blacklisted version of msmpeg2vdec.dll 6.7.7140",
+                    false);
+
   typedef HRESULT(WINAPI * GetClassObject)(
       const CLSID & clsid, const IID & iid, void * *object);
 
@@ -943,7 +957,8 @@ void DXVAVideoDecodeAccelerator::ProcessPendingSamples() {
           PLATFORM_FAILURE, );
 
       media::Picture output_picture(index->second->id(),
-                                    sample_info.input_buffer_id);
+                                    sample_info.input_buffer_id,
+                                    gfx::Rect(index->second->size()));
       base::MessageLoop::current()->PostTask(
           FROM_HERE,
           base::Bind(&DXVAVideoDecodeAccelerator::NotifyPictureReady,

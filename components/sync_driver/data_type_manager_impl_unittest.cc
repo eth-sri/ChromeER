@@ -10,7 +10,7 @@
 #include "components/sync_driver/data_type_controller.h"
 #include "components/sync_driver/data_type_encryption_handler.h"
 #include "components/sync_driver/data_type_manager_observer.h"
-#include "components/sync_driver/failed_data_types_handler.h"
+#include "components/sync_driver/data_type_status_table.h"
 #include "components/sync_driver/fake_data_type_controller.h"
 #include "sync/internal_api/public/base/model_type.h"
 #include "sync/internal_api/public/configure_reason.h"
@@ -152,14 +152,14 @@ class TestDataTypeManager : public DataTypeManagerImpl {
       const DataTypeController::TypeMap* controllers,
       const DataTypeEncryptionHandler* encryption_handler,
       DataTypeManagerObserver* observer,
-      FailedDataTypesHandler* failed_data_types_handler)
+      DataTypeStatusTable* data_type_status_table)
       : DataTypeManagerImpl(base::Closure(),
                             debug_info_listener,
                             controllers,
                             encryption_handler,
                             configurer,
                             observer,
-                            failed_data_types_handler),
+                            data_type_status_table),
         custom_priority_types_(syncer::ControlTypes()) {}
 
   void set_priority_types(const syncer::ModelTypeSet& priority_types) {
@@ -203,7 +203,7 @@ class SyncDataTypeManagerImplTest : public testing::Test {
            &controllers_,
            &encryption_handler_,
            &observer_,
-           &failed_data_types_handler_));
+           &data_type_status_table_));
   }
 
   void SetConfigureStartExpectation() {
@@ -262,7 +262,7 @@ class SyncDataTypeManagerImplTest : public testing::Test {
   FakeBackendDataTypeConfigurer configurer_;
   DataTypeManagerObserverMock observer_;
   scoped_ptr<TestDataTypeManager> dtm_;
-  FailedDataTypesHandler failed_data_types_handler_;
+  DataTypeStatusTable data_type_status_table_;
   FakeDataTypeEncryptionHandler encryption_handler_;
 };
 
@@ -394,7 +394,7 @@ TEST_F(SyncDataTypeManagerImplTest, OneWaitingForCrypto) {
   AddController(PASSWORDS);
 
   SetConfigureStartExpectation();
-  SetConfigureDoneExpectation(DataTypeManager::PARTIAL_SUCCESS);
+  SetConfigureDoneExpectation(DataTypeManager::OK);
 
   const ModelTypeSet types(PASSWORDS);
   dtm_->set_priority_types(AddHighPriorityTypesTo(types));
@@ -651,7 +651,7 @@ TEST_F(SyncDataTypeManagerImplTest, OneControllerFailsAssociation) {
   AddController(PREFERENCES);
 
   SetConfigureStartExpectation();
-  SetConfigureDoneExpectation(DataTypeManager::PARTIAL_SUCCESS);
+  SetConfigureDoneExpectation(DataTypeManager::OK);
 
   // Step 1.
   Configure(dtm_.get(), ModelTypeSet(BOOKMARKS, PREFERENCES));
@@ -1024,7 +1024,7 @@ TEST_F(SyncDataTypeManagerImplTest, HighPriorityAssociationFailure) {
 
   // Initial configure.
   SetConfigureStartExpectation();
-  SetConfigureDoneExpectation(DataTypeManager::PARTIAL_SUCCESS);
+  SetConfigureDoneExpectation(DataTypeManager::OK);
 
   // Initially only PREFERENCES is configured.
   configurer_.set_expected_configure_types(
@@ -1076,7 +1076,7 @@ TEST_F(SyncDataTypeManagerImplTest, LowPriorityAssociationFailure) {
 
   // Initial configure.
   SetConfigureStartExpectation();
-  SetConfigureDoneExpectation(DataTypeManager::PARTIAL_SUCCESS);
+  SetConfigureDoneExpectation(DataTypeManager::OK);
 
   // Initially only PREFERENCES is configured.
   configurer_.set_expected_configure_types(
@@ -1161,13 +1161,13 @@ TEST_F(SyncDataTypeManagerImplTest, ReenableAfterDataTypeError) {
                           syncer::BOOKMARKS);
   std::map<syncer::ModelType, syncer::SyncError> errors;
   errors[syncer::BOOKMARKS] = error;
-  failed_data_types_handler_.UpdateFailedDataTypes(errors);
+  data_type_status_table_.UpdateFailedDataTypes(errors);
 
   AddController(PREFERENCES);  // Will succeed.
   AddController(BOOKMARKS);    // Will be disabled due to datatype error.
 
   SetConfigureStartExpectation();
-  SetConfigureDoneExpectation(DataTypeManager::PARTIAL_SUCCESS);
+  SetConfigureDoneExpectation(DataTypeManager::OK);
 
   Configure(dtm_.get(), ModelTypeSet(BOOKMARKS, PREFERENCES));
   FinishDownload(*dtm_, ModelTypeSet(), ModelTypeSet());
@@ -1180,12 +1180,9 @@ TEST_F(SyncDataTypeManagerImplTest, ReenableAfterDataTypeError) {
   Mock::VerifyAndClearExpectations(&observer_);
 
   // Re-enable bookmarks.
-  failed_data_types_handler_.ResetDataTypeErrorFor(syncer::BOOKMARKS);
-
-  SetConfigureStartExpectation();
   SetConfigureDoneExpectation(DataTypeManager::OK);
+  dtm_->ReenableType(syncer::BOOKMARKS);
 
-  Configure(dtm_.get(), ModelTypeSet(BOOKMARKS, PREFERENCES));
   EXPECT_EQ(DataTypeManager::DOWNLOAD_PENDING, dtm_->state());
   FinishDownload(*dtm_, ModelTypeSet(), ModelTypeSet());
   FinishDownload(*dtm_, ModelTypeSet(BOOKMARKS), ModelTypeSet());
@@ -1194,6 +1191,46 @@ TEST_F(SyncDataTypeManagerImplTest, ReenableAfterDataTypeError) {
   EXPECT_EQ(DataTypeManager::CONFIGURED, dtm_->state());
   EXPECT_EQ(DataTypeController::RUNNING, GetController(PREFERENCES)->state());
   EXPECT_EQ(DataTypeController::RUNNING, GetController(BOOKMARKS)->state());
+
+  // Should do nothing.
+  dtm_->ReenableType(syncer::BOOKMARKS);
+}
+
+TEST_F(SyncDataTypeManagerImplTest, UnreadyType) {
+  AddController(BOOKMARKS);
+  GetController(BOOKMARKS)->SetReadyForStart(false);
+
+  // Bookmarks is never started due to being unready.
+  SetConfigureStartExpectation();
+  SetConfigureDoneExpectation(DataTypeManager::OK);
+  Configure(dtm_.get(), ModelTypeSet(BOOKMARKS));
+  FinishDownload(*dtm_, ModelTypeSet(), ModelTypeSet());
+  EXPECT_EQ(DataTypeController::NOT_RUNNING, GetController(BOOKMARKS)->state());
+  EXPECT_EQ(DataTypeManager::CONFIGURED, dtm_->state());
+  EXPECT_EQ(0U, configurer_.activated_types().Size());
+  Mock::VerifyAndClearExpectations(&observer_);
+
+  // Bookmarks should start normally now.
+  GetController(BOOKMARKS)->SetReadyForStart(true);
+  SetConfigureDoneExpectation(DataTypeManager::OK);
+  dtm_->ReenableType(BOOKMARKS);
+  EXPECT_EQ(DataTypeManager::DOWNLOAD_PENDING, dtm_->state());
+
+  FinishDownload(*dtm_, ModelTypeSet(), ModelTypeSet());
+  FinishDownload(*dtm_, ModelTypeSet(BOOKMARKS), ModelTypeSet());
+  EXPECT_EQ(DataTypeManager::CONFIGURING, dtm_->state());
+
+  GetController(BOOKMARKS)->FinishStart(DataTypeController::OK);
+  EXPECT_EQ(DataTypeManager::CONFIGURED, dtm_->state());
+  EXPECT_EQ(1U, configurer_.activated_types().Size());
+
+  // Should do nothing.
+  Mock::VerifyAndClearExpectations(&observer_);
+  dtm_->ReenableType(BOOKMARKS);
+
+  dtm_->Stop();
+  EXPECT_EQ(DataTypeManager::STOPPED, dtm_->state());
+  EXPECT_TRUE(configurer_.activated_types().Empty());
 }
 
 }  // namespace sync_driver

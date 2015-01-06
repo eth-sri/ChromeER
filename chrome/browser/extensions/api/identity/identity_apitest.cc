@@ -18,7 +18,6 @@
 #include "chrome/browser/extensions/extension_browsertest.h"
 #include "chrome/browser/extensions/extension_function_test_utils.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/guest_view/guest_view_base.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/account_reconcilor_factory.h"
 #include "chrome/browser/signin/fake_account_reconcilor.h"
@@ -34,16 +33,16 @@
 #include "chrome/common/extensions/api/identity/oauth2_manifest_handler.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/test_switches.h"
+#include "components/crx_file/id_util.h"
 #include "components/signin/core/browser/signin_manager.h"
 #include "components/signin/core/common/profile_management_switches.h"
 #include "components/signin/core/common/signin_pref_names.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/test/test_utils.h"
-#include "extensions/common/id_util.h"
+#include "extensions/browser/guest_view/guest_view_base.h"
 #include "google_apis/gaia/google_service_auth_error.h"
 #include "google_apis/gaia/oauth2_mint_token_flow.h"
-#include "grit/browser_resources.h"
 #include "net/test/spawned_test_server/spawned_test_server.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -1608,7 +1607,7 @@ class RemoveCachedAuthTokenFunctionTest : public ExtensionBrowserTest {
   }
 
   void SetCachedToken(IdentityTokenCacheValue& token_data) {
-    ExtensionTokenKey key(extensions::id_util::GenerateId(kExtensionId),
+    ExtensionTokenKey key(crx_file::id_util::GenerateId(kExtensionId),
                           "test@example.com",
                           std::set<std::string>());
     id_api()->SetCachedToken(key, token_data);
@@ -1616,7 +1615,7 @@ class RemoveCachedAuthTokenFunctionTest : public ExtensionBrowserTest {
 
   const IdentityTokenCacheValue& GetCachedToken() {
     return id_api()->GetCachedToken(
-        ExtensionTokenKey(extensions::id_util::GenerateId(kExtensionId),
+        ExtensionTokenKey(crx_file::id_util::GenerateId(kExtensionId),
                           "test@example.com",
                           std::set<std::string>()));
   }

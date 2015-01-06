@@ -462,7 +462,7 @@ RenderWidgetHostViewAura::RenderWidgetHostViewAura(RenderWidgetHost* host)
   window_->set_layer_owner_delegate(delegated_frame_host_.get());
   gfx::Screen::GetScreenFor(window_)->AddObserver(this);
 
-  bool overscroll_enabled = CommandLine::ForCurrentProcess()->
+  bool overscroll_enabled = base::CommandLine::ForCurrentProcess()->
       GetSwitchValueASCII(switches::kOverscrollHistoryNavigation) != "0";
   SetOverscrollControllerEnabled(overscroll_enabled);
 }
@@ -559,7 +559,17 @@ void RenderWidgetHostViewAura::WasShown() {
   DCHECK(host_);
   if (!host_->is_hidden())
     return;
-  host_->WasShown();
+
+  bool has_saved_frame = delegated_frame_host_->HasSavedFrame();
+  ui::LatencyInfo renderer_latency_info, browser_latency_info;
+  if (has_saved_frame) {
+    browser_latency_info.AddLatencyNumber(
+        ui::TAB_SHOW_COMPONENT, host_->GetLatencyComponentId(), 0);
+  } else {
+    renderer_latency_info.AddLatencyNumber(
+        ui::TAB_SHOW_COMPONENT, host_->GetLatencyComponentId(), 0);
+  }
+  host_->WasShown(renderer_latency_info);
 
   aura::Window* root = window_->GetRootWindow();
   if (root) {
@@ -569,7 +579,7 @@ void RenderWidgetHostViewAura::WasShown() {
       NotifyRendererOfCursorVisibilityState(cursor_client->IsCursorVisible());
   }
 
-  delegated_frame_host_->WasShown();
+  delegated_frame_host_->WasShown(browser_latency_info);
 
 #if defined(OS_WIN)
   if (legacy_render_widget_host_HWND_) {
@@ -631,6 +641,10 @@ void RenderWidgetHostViewAura::SetBounds(const gfx::Rect& rect) {
   }
 
   InternalSetBounds(gfx::Rect(relative_origin, rect.size()));
+}
+
+gfx::Vector2dF RenderWidgetHostViewAura::GetLastScrollOffset() const {
+  return last_scroll_offset_;
 }
 
 gfx::NativeView RenderWidgetHostViewAura::GetNativeView() const {
@@ -924,16 +938,6 @@ void RenderWidgetHostViewAura::SelectionBoundsChanged(
   }
 }
 
-void RenderWidgetHostViewAura::ScrollOffsetChanged() {
-  aura::Window* root = window_->GetRootWindow();
-  if (!root)
-    return;
-  aura::client::CursorClient* cursor_client =
-      aura::client::GetCursorClient(root);
-  if (cursor_client && !cursor_client->IsCursorVisible())
-    cursor_client->DisableMouseEvents();
-}
-
 void RenderWidgetHostViewAura::CopyFromCompositingSurface(
     const gfx::Rect& src_subrect,
     const gfx::Size& dst_size,
@@ -1022,6 +1026,8 @@ void RenderWidgetHostViewAura::OnSwapCompositorFrame(
     uint32 output_surface_id,
     scoped_ptr<cc::CompositorFrame> frame) {
   TRACE_EVENT0("content", "RenderWidgetHostViewAura::OnSwapCompositorFrame");
+
+  last_scroll_offset_ = frame->metadata.root_scroll_offset;
   if (frame->delegated_frame_data) {
     delegated_frame_host_->SwapDelegatedFrame(
         output_surface_id,
@@ -2453,11 +2459,6 @@ ui::Layer* RenderWidgetHostViewAura::GetLayer() {
 
 RenderWidgetHostImpl* RenderWidgetHostViewAura::GetHost() {
   return host_;
-}
-
-void RenderWidgetHostViewAura::SchedulePaintInRect(
-    const gfx::Rect& damage_rect_in_dip) {
-  window_->SchedulePaintInRect(damage_rect_in_dip);
 }
 
 bool RenderWidgetHostViewAura::IsVisible() {

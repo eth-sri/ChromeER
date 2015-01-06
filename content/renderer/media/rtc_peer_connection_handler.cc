@@ -40,6 +40,9 @@
 #include "third_party/WebKit/public/platform/WebRTCVoidRequest.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
 
+using webrtc::StatsReport;
+using webrtc::StatsReports;
+
 namespace content {
 
 // Converter functions from libjingle types to WebKit types.
@@ -255,13 +258,12 @@ class StatsResponse : public webrtc::StatsObserver {
     TRACE_EVENT_ASYNC_BEGIN0("webrtc", "getStats_Native", this);
   }
 
-  virtual void OnComplete(
-      const std::vector<webrtc::StatsReport>& reports) OVERRIDE {
+  virtual void OnComplete(const StatsReports& reports) OVERRIDE {
     TRACE_EVENT0("webrtc", "StatsResponse::OnComplete")
-    for (std::vector<webrtc::StatsReport>::const_iterator it = reports.begin();
+    for (StatsReports::const_iterator it = reports.begin();
          it != reports.end(); ++it) {
-      if (it->values.size() > 0) {
-        AddReport(*it);
+      if ((*it)->values.size() > 0) {
+        AddReport(*(*it));
       }
     }
 
@@ -274,19 +276,17 @@ class StatsResponse : public webrtc::StatsObserver {
   }
 
  private:
-  void AddReport(const webrtc::StatsReport& report) {
+  void AddReport(const StatsReport& report) {
     int idx = response_->addReport(blink::WebString::fromUTF8(report.id),
                                    blink::WebString::fromUTF8(report.type),
                                    report.timestamp);
-    for (webrtc::StatsReport::Values::const_iterator value_it =
-         report.values.begin();
+    for (StatsReport::Values::const_iterator value_it = report.values.begin();
          value_it != report.values.end(); ++value_it) {
-      AddStatistic(idx, value_it->name, value_it->value);
+      AddStatistic(idx, value_it->display_name(), value_it->value);
     }
   }
 
-  void AddStatistic(int idx, const std::string& name,
-                    const std::string& value) {
+  void AddStatistic(int idx, const char* name, const std::string& value) {
     response_->addStatistic(idx,
                             blink::WebString::fromUTF8(name),
                             blink::WebString::fromUTF8(value));
@@ -714,15 +714,15 @@ void RTCPeerConnectionHandler::removeStream(
       break;
     }
   }
-  DCHECK(webrtc_stream);
-  native_peer_connection_->RemoveStream(webrtc_stream);
+  DCHECK(webrtc_stream.get());
+  native_peer_connection_->RemoveStream(webrtc_stream.get());
 
   if (peer_connection_tracker_)
     peer_connection_tracker_->TrackRemoveStream(
         this, stream, PeerConnectionTracker::SOURCE_LOCAL);
   PerSessionWebRTCAPIMetrics::GetInstance()->DecrementStreamCounter();
   track_metrics_.RemoveStream(MediaStreamTrackMetrics::SENT_STREAM,
-                              webrtc_stream);
+                              webrtc_stream.get());
 }
 
 void RTCPeerConnectionHandler::getStats(
@@ -759,8 +759,7 @@ void RTCPeerConnectionHandler::getStats(LocalRTCStatsRequest* request) {
     if (!track) {
       DVLOG(1) << "GetStats: Track not found.";
       // TODO(hta): Consider how to get an error back.
-      std::vector<webrtc::StatsReport> no_reports;
-      observer->OnComplete(no_reports);
+      observer->OnComplete(StatsReports());
       return;
     }
   }
@@ -777,8 +776,7 @@ void RTCPeerConnectionHandler::GetStats(
   if (!native_peer_connection_->GetStats(observer, track, level)) {
     DVLOG(1) << "GetStats failed.";
     // TODO(hta): Consider how to get an error back.
-    std::vector<webrtc::StatsReport> no_reports;
-    observer->OnComplete(no_reports);
+    observer->OnComplete(StatsReports());
     return;
   }
 }

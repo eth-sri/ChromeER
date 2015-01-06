@@ -30,6 +30,7 @@
 #include "gpu/command_buffer/service/gpu_scheduler.h"
 #include "gpu/command_buffer/service/image_manager.h"
 #include "gpu/command_buffer/service/mailbox_manager.h"
+#include "gpu/command_buffer/service/memory_tracking.h"
 #include "gpu/command_buffer/service/query_manager.h"
 #include "gpu/command_buffer/service/transfer_buffer_manager.h"
 #include "ui/gfx/size.h"
@@ -206,11 +207,12 @@ InProcessCommandBuffer::GetDefaultService() {
 InProcessCommandBuffer::InProcessCommandBuffer(
     const scoped_refptr<Service>& service)
     : context_lost_(false),
+      idle_work_pending_(false),
       last_put_offset_(-1),
       flush_event_(false, false),
       service_(service.get() ? service : GetDefaultService()),
       gpu_thread_weak_ptr_factory_(this) {
-  if (!service) {
+  if (!service.get()) {
     base::AutoLock lock(default_thread_clients_lock_.Get());
     default_thread_clients_.Get().insert(this);
   }
@@ -269,7 +271,7 @@ bool InProcessCommandBuffer::Initialize(
   DCHECK(!share_group || service_ == share_group->service_);
   context_lost_callback_ = WrapCallback(context_lost_callback);
 
-  if (surface) {
+  if (surface.get()) {
     // GPU thread must be the same as client thread due to GLSurface not being
     // thread safe.
     sequence_checker_.reset(new base::SequenceChecker);
@@ -354,7 +356,7 @@ bool InProcessCommandBuffer::InitializeOnGpuThread(
 
   decoder_->set_engine(gpu_scheduler_.get());
 
-  if (!surface_) {
+  if (!surface_.get()) {
     if (params.is_offscreen)
       surface_ = gfx::GLSurface::CreateOffscreenGLSurface(params.size);
     else
@@ -439,7 +441,7 @@ bool InProcessCommandBuffer::DestroyOnGpuThread() {
   gpu_thread_weak_ptr_factory_.InvalidateWeakPtrs();
   command_buffer_.reset();
   // Clean up GL resources if possible.
-  bool have_context = context_ && context_->MakeCurrent(surface_);
+  bool have_context = context_.get() && context_->MakeCurrent(surface_.get());
   if (decoder_) {
     decoder_->Destroy(have_context);
     decoder_.reset();
@@ -505,21 +507,28 @@ void InProcessCommandBuffer::FlushOnGpuThread(int32 put_offset) {
   // pump idle work until the query is passed.
   if (put_offset == state_after_last_flush_.get_offset &&
       gpu_scheduler_->HasMoreWork()) {
-    service_->ScheduleIdleWork(
-        base::Bind(&InProcessCommandBuffer::ScheduleMoreIdleWork,
-                   gpu_thread_weak_ptr_));
+    ScheduleIdleWorkOnGpuThread();
   }
 }
 
-void InProcessCommandBuffer::ScheduleMoreIdleWork() {
+void InProcessCommandBuffer::PerformIdleWork() {
   CheckSequencedThread();
+  idle_work_pending_ = false;
   base::AutoLock lock(command_buffer_lock_);
   if (gpu_scheduler_->HasMoreWork()) {
     gpu_scheduler_->PerformIdleWork();
-    service_->ScheduleIdleWork(
-        base::Bind(&InProcessCommandBuffer::ScheduleMoreIdleWork,
-                   gpu_thread_weak_ptr_));
+    ScheduleIdleWorkOnGpuThread();
   }
+}
+
+void InProcessCommandBuffer::ScheduleIdleWorkOnGpuThread() {
+  CheckSequencedThread();
+  if (idle_work_pending_)
+    return;
+  idle_work_pending_ = true;
+  service_->ScheduleIdleWork(
+      base::Bind(&InProcessCommandBuffer::PerformIdleWork,
+                 gpu_thread_weak_ptr_));
 }
 
 void InProcessCommandBuffer::Flush(int32 put_offset) {
@@ -641,7 +650,7 @@ void InProcessCommandBuffer::RegisterGpuMemoryBufferOnGpuThread(
   scoped_refptr<gfx::GLImage> image =
       g_gpu_memory_buffer_factory->CreateImageForGpuMemoryBuffer(
           handle, gfx::Size(width, height), internalformat);
-  if (!image)
+  if (!image.get())
     return;
 
   // For Android specific workaround.

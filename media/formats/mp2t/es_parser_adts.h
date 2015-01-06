@@ -13,6 +13,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/time/time.h"
 #include "media/base/audio_decoder_config.h"
+#include "media/base/media_export.h"
 #include "media/formats/mp2t/es_parser.h"
 
 namespace media {
@@ -25,7 +26,7 @@ class StreamParserBuffer;
 namespace media {
 namespace mp2t {
 
-class EsParserAdts : public EsParser {
+class MEDIA_EXPORT EsParserAdts : public EsParser {
  public:
   typedef base::Callback<void(const AudioDecoderConfig&)> NewAudioConfigCB;
 
@@ -35,18 +36,14 @@ class EsParserAdts : public EsParser {
   virtual ~EsParserAdts();
 
   // EsParser implementation.
-  virtual bool Parse(const uint8* buf, int size,
-                     base::TimeDelta pts,
-                     base::TimeDelta dts) OVERRIDE;
   virtual void Flush() OVERRIDE;
-  virtual void Reset() OVERRIDE;
 
  private:
-  // Used to link a PTS with a byte position in the ES stream.
-  typedef std::pair<int64, base::TimeDelta> EsPts;
-  typedef std::list<EsPts> EsPtsList;
-
   struct AdtsFrame;
+
+  // EsParser implementation.
+  virtual bool ParseFromEsQueue() OVERRIDE;
+  virtual void ResetInternal() OVERRIDE;
 
   // Synchronize the stream on an ADTS syncword (consuming bytes from
   // |es_queue_| if needed).
@@ -73,12 +70,6 @@ class EsParserAdts : public EsParser {
   // (mp4a.40.5 in the codecs parameter).
   bool sbr_in_mimetype_;
 
-  // Bytes of the ES stream that have not been emitted yet.
-  scoped_ptr<media::OffsetByteQueue> es_queue_;
-
-  // List of PTS associated with a position in the ES stream.
-  EsPtsList pts_list_;
-
   // Interpolated PTS for frames that don't have one.
   scoped_ptr<AudioTimestampHelper> audio_timestamp_helper_;
 
@@ -92,4 +83,3 @@ class EsParserAdts : public EsParser {
 }  // namespace media
 
 #endif
-

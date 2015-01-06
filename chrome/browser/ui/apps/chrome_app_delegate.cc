@@ -6,6 +6,8 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/stringprintf.h"
+#include "chrome/browser/chrome_notification_types.h"
+#include "chrome/browser/extensions/chrome_extension_web_contents_observer.h"
 #include "chrome/browser/favicon/favicon_tab_helper.h"
 #include "chrome/browser/file_select_helper.h"
 #include "chrome/browser/media/media_capture_devices_dispatcher.h"
@@ -17,12 +19,16 @@
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/scoped_tabbed_browser_displayer.h"
+#include "chrome/browser/ui/web_contents_sizer.h"
 #include "chrome/common/extensions/chrome_extension_messages.h"
 #include "content/public/browser/browser_context.h"
+#include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "extensions/common/constants.h"
+#include "grit/theme_resources.h"
+#include "ui/base/resource/resource_bundle.h"
 
 #if defined(USE_ASH)
 #include "ash/shelf/shelf_constants.h"
@@ -144,6 +150,9 @@ ChromeAppDelegate::NewWindowContentsDelegate::OpenURLFromTab(
 
 ChromeAppDelegate::ChromeAppDelegate()
     : new_window_contents_delegate_(new NewWindowContentsDelegate()) {
+  registrar_.Add(this,
+                 chrome::NOTIFICATION_APP_TERMINATING,
+                 content::NotificationService::AllSources());
 }
 
 ChromeAppDelegate::~ChromeAppDelegate() {
@@ -164,6 +173,13 @@ void ChromeAppDelegate::InitWebContents(content::WebContents* web_contents) {
   printing::PrintViewManagerBasic::CreateForWebContents(web_contents);
 #endif  // defined(ENABLE_FULL_PRINTING)
 #endif  // defined(ENABLE_PRINTING)
+  extensions::ChromeExtensionWebContentsObserver::CreateForWebContents(
+      web_contents);
+}
+
+void ChromeAppDelegate::ResizeWebContents(content::WebContents* web_contents,
+                                          const gfx::Size& size) {
+  ::ResizeWebContents(web_contents, size);
 }
 
 content::WebContents* ChromeAppDelegate::OpenURLFromTab(
@@ -231,6 +247,11 @@ int ChromeAppDelegate::PreferredIconSize() {
 #endif
 }
 
+gfx::ImageSkia ChromeAppDelegate::GetAppDefaultIcon() {
+  return *ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
+      IDR_APP_DEFAULT_ICON);
+}
+
 void ChromeAppDelegate::SetWebContentsBlocked(
     content::WebContents* web_contents,
     bool blocked) {
@@ -245,4 +266,21 @@ void ChromeAppDelegate::SetWebContentsBlocked(
 bool ChromeAppDelegate::IsWebContentsVisible(
     content::WebContents* web_contents) {
   return platform_util::IsVisible(web_contents->GetNativeView());
+}
+
+void ChromeAppDelegate::SetTerminatingCallback(const base::Closure& callback) {
+  terminating_callback_ = callback;
+}
+
+void ChromeAppDelegate::Observe(int type,
+                                const content::NotificationSource& source,
+                                const content::NotificationDetails& details) {
+  switch (type) {
+    case chrome::NOTIFICATION_APP_TERMINATING:
+      if (!terminating_callback_.is_null())
+        terminating_callback_.Run();
+      break;
+    default:
+      NOTREACHED() << "Received unexpected notification";
+  }
 }

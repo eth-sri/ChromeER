@@ -143,8 +143,7 @@ void SyncWorker::UninstallOrigin(
       callback);
 }
 
-void SyncWorker::ProcessRemoteChange(
-    const SyncFileCallback& callback) {
+void SyncWorker::ProcessRemoteChange(const SyncFileCallback& callback) {
   DCHECK(sequence_checker_.CalledOnValidSequencedThread());
 
   RemoteToLocalSyncer* syncer = new RemoteToLocalSyncer(context_.get());
@@ -245,12 +244,11 @@ void SyncWorker::PromoteDemotedChanges(const base::Closure& callback) {
   callback.Run();
 }
 
-void SyncWorker::ApplyLocalChange(
-    const FileChange& local_change,
-    const base::FilePath& local_path,
-    const SyncFileMetadata& local_metadata,
-    const fileapi::FileSystemURL& url,
-    const SyncStatusCallback& callback) {
+void SyncWorker::ApplyLocalChange(const FileChange& local_change,
+                                  const base::FilePath& local_path,
+                                  const SyncFileMetadata& local_metadata,
+                                  const storage::FileSystemURL& url,
+                                  const SyncStatusCallback& callback) {
   DCHECK(sequence_checker_.CalledOnValidSequencedThread());
 
   LocalToRemoteSyncer* syncer = new LocalToRemoteSyncer(
@@ -382,6 +380,10 @@ void SyncWorker::DidInitialize(SyncEngineInitializer* initializer,
                                SyncStatusCode status) {
   DCHECK(sequence_checker_.CalledOnValidSequencedThread());
 
+  if (status == SYNC_STATUS_ACCESS_FORBIDDEN) {
+    UpdateServiceState(REMOTE_SERVICE_ACCESS_FORBIDDEN, "Access forbidden");
+    return;
+  }
   if (status != SYNC_STATUS_OK) {
     UpdateServiceState(REMOTE_SERVICE_TEMPORARY_UNAVAILABLE,
                        "Could not initialize remote service");
@@ -512,7 +514,7 @@ void SyncWorker::DidProcessRemoteChange(RemoteToLocalSyncer* syncer,
 
     if (syncer->sync_action() == SYNC_ACTION_DELETED &&
         syncer->url().is_valid() &&
-        fileapi::VirtualPath::IsRootPath(syncer->url().path())) {
+        storage::VirtualPath::IsRootPath(syncer->url().path())) {
       RegisterOrigin(syncer->url().origin(), base::Bind(&EmptyStatusCallback));
     }
     should_check_conflict_ = true;
@@ -528,7 +530,7 @@ void SyncWorker::DidApplyLocalChange(LocalToRemoteSyncer* syncer,
   if ((status == SYNC_STATUS_OK || status == SYNC_STATUS_RETRY) &&
       syncer->url().is_valid() &&
       syncer->sync_action() != SYNC_ACTION_NONE) {
-    fileapi::FileSystemURL updated_url = syncer->url();
+    storage::FileSystemURL updated_url = syncer->url();
     if (!syncer->target_path().empty()) {
       updated_url = CreateSyncableFileSystemURL(syncer->url().origin(),
                                                 syncer->target_path());
@@ -638,7 +640,7 @@ void SyncWorker::UpdateServiceStateFromSyncStatusCode(
 
     // OAuth token error.
     case SYNC_STATUS_ACCESS_FORBIDDEN:
-      UpdateServiceState(REMOTE_SERVICE_AUTHENTICATION_REQUIRED,
+      UpdateServiceState(REMOTE_SERVICE_ACCESS_FORBIDDEN,
                          "Access forbidden");
       break;
 

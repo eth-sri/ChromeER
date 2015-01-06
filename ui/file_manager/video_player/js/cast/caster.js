@@ -15,13 +15,20 @@ window.__defineGetter__('localStorage', function() { return {}; });
 var APPLICATION_ID = '214CC863';
 
 util.addPageLoadHandler(function() {
+  initialize();
+}.wrap());
+
+/**
+ * Starts initialization of cast-related feature.
+ */
+function initialize() {
   CastExtensionDiscoverer.findInstalledExtension(function(foundId) {
     if (foundId)
       loadCastAPI(initializeApi);
     else
       console.info('No Google Cast extension is installed.');
-  });
-});
+  }.wrap());
+}
 
 /**
  * Executes the given callback after the cast extension is initialized.
@@ -72,7 +79,7 @@ function loadCastAPI(callback, opt_secondTry) {
         if (loaded)
           callback();
         else
-          console.error('Google Cast exntnsion load failed.', errorInfo);
+          console.error('Google Cast extension load failed.', errorInfo);
       }.wrap();
     } else {
       setTimeout(callback);  // Runs asynchronously.

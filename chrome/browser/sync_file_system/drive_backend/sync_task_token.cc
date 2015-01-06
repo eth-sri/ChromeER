@@ -68,16 +68,18 @@ SyncTaskToken::~SyncTaskToken() {
   // it must return the token to TaskManager.
   // Destroying a token with valid |client| indicates the token was
   // dropped by a task without returning.
-  if (task_runner_ && task_runner_->RunsTasksOnCurrentThread() &&
+  if (task_runner_.get() && task_runner_->RunsTasksOnCurrentThread() &&
       manager_ && manager_->IsRunningTask(token_id_)) {
     NOTREACHED()
         << "Unexpected TaskToken deletion from: " << location_.ToString();
 
     // Reinitializes the token.
     SyncTaskManager::NotifyTaskDone(
-        make_scoped_ptr(new SyncTaskToken(
-            manager_, task_runner_, token_id_, blocking_factor_.Pass(),
-            SyncStatusCallback())),
+        make_scoped_ptr(new SyncTaskToken(manager_,
+                                          task_runner_.get(),
+                                          token_id_,
+                                          blocking_factor_.Pass(),
+                                          SyncStatusCallback())),
         SYNC_STATUS_OK);
   }
 }
@@ -136,11 +138,12 @@ scoped_ptr<TaskLogger::TaskLog> SyncTaskToken::PassTaskLog() {
   return task_log_.Pass();
 }
 
-SyncTaskToken::SyncTaskToken(const base::WeakPtr<SyncTaskManager>& manager,
-                             base::SequencedTaskRunner* task_runner,
-                             int64 token_id,
-                             scoped_ptr<BlockingFactor> blocking_factor,
-                             const SyncStatusCallback& callback)
+SyncTaskToken::SyncTaskToken(
+    const base::WeakPtr<SyncTaskManager>& manager,
+    const scoped_refptr<base::SequencedTaskRunner>& task_runner,
+    int64 token_id,
+    scoped_ptr<BlockingFactor> blocking_factor,
+    const SyncStatusCallback& callback)
     : manager_(manager),
       task_runner_(task_runner),
       token_id_(token_id),

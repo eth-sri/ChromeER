@@ -148,7 +148,7 @@ class SpeechRecognitionBrowserTest :
     audio_bus->FromInterleaved(&audio_buffer.get()[0],
                                audio_bus->frames(),
                                audio_params.bits_per_sample() / 8);
-    controller->event_handler()->OnData(controller, audio_bus.get());
+    controller->event_handler()->OnData(controller.get(), audio_bus.get());
   }
 
   void FeedAudioController(int duration_ms, bool feed_with_noise) {
@@ -189,7 +189,7 @@ class SpeechRecognitionBrowserTest :
 // Simply loads the test page and checks if it was able to create a Speech
 // Recognition object in JavaScript, to make sure the Web Speech API is enabled.
 // http://crbug.com/396414
-#if defined(OS_WIN)
+#if defined(OS_WIN) || defined(OS_MACOSX)
 #define MAYBE_Precheck DISABLED_Precheck
 #else
 #define MAYBE_Precheck Precheck

@@ -76,9 +76,11 @@ class BrowserOptionsHandler
   virtual void OnStateChanged() OVERRIDE;
 
   // SigninManagerBase::Observer implementation.
-  virtual void GoogleSigninSucceeded(const std::string& username,
+  virtual void GoogleSigninSucceeded(const std::string& account_id,
+                                     const std::string& username,
                                      const std::string& password) OVERRIDE;
-  virtual void GoogleSignedOut(const std::string& username) OVERRIDE;
+  virtual void GoogleSignedOut(const std::string& account_id,
+                               const std::string& username) OVERRIDE;
 
   // ShellIntegration::DefaultWebClientObserver implementation.
   virtual void SetDefaultWebClientUIState(
@@ -297,6 +299,9 @@ class BrowserOptionsHandler
 
   // Setup the visibility for the metrics reporting setting.
   void SetupMetricsReportingSettingVisibility();
+
+  // Update value of predictive network actions UI element.
+  void SetupNetworkPredictionControl();
 
   // Setup the font size selector control.
   void SetupFontSizeSelector();

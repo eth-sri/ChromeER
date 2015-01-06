@@ -14,6 +14,7 @@
 #include "cc/surfaces/display_client.h"
 #include "cc/surfaces/surface.h"
 #include "cc/surfaces/surface_aggregator.h"
+#include "cc/surfaces/surface_manager.h"
 
 namespace cc {
 
@@ -21,14 +22,17 @@ Display::Display(DisplayClient* client,
                  SurfaceManager* manager,
                  SharedBitmapManager* bitmap_manager)
     : client_(client), manager_(manager), bitmap_manager_(bitmap_manager) {
+  manager_->AddObserver(this);
 }
 
 Display::~Display() {
+  manager_->RemoveObserver(this);
 }
 
 void Display::Resize(SurfaceId id, const gfx::Size& size) {
   current_surface_id_ = id;
   current_surface_size_ = size;
+  client_->DisplayDamaged();
 }
 
 void Display::InitializeOutputSurface() {
@@ -110,7 +114,20 @@ bool Display::Draw() {
                        disable_picture_quad_image_filtering);
   CompositorFrameMetadata metadata;
   renderer_->SwapBuffers(metadata);
+  for (SurfaceAggregator::SurfaceIndexMap::iterator it =
+           aggregator_->previous_contained_surfaces().begin();
+       it != aggregator_->previous_contained_surfaces().end();
+       ++it) {
+    Surface* surface = manager_->GetSurfaceForId(it->first);
+    if (surface)
+      surface->RunDrawCallbacks();
+  }
   return true;
+}
+
+void Display::OnSurfaceDamaged(SurfaceId surface) {
+  if (aggregator_ && aggregator_->previous_contained_surfaces().count(surface))
+    client_->DisplayDamaged();
 }
 
 SurfaceId Display::CurrentSurfaceId() {

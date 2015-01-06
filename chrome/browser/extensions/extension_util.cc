@@ -22,9 +22,11 @@
 #include "extensions/browser/extension_util.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_icon_set.h"
+#include "extensions/common/feature_switch.h"
 #include "extensions/common/features/simple_feature.h"
 #include "extensions/common/manifest.h"
 #include "extensions/common/manifest_handlers/incognito_info.h"
+#include "extensions/common/permissions/permissions_data.h"
 #include "grit/theme_resources.h"
 #include "ui/base/resource/resource_bundle.h"
 
@@ -204,6 +206,18 @@ void SetAllowedScriptingOnAllUrls(const std::string& extension_id,
   }
 }
 
+bool ScriptsMayRequireActionForExtension(const Extension* extension) {
+  // An extension requires user action to execute scripts iff the switch to do
+  // so is enabled, the extension shows up in chrome:extensions (so the user can
+  // grant withheld permissions), the extension is not part of chrome or
+  // corporate policy, and also not on the scripting whitelist.
+  return FeatureSwitch::scripts_require_action()->IsEnabled() &&
+      extension->ShouldDisplayInExtensionSettings() &&
+      !Manifest::IsPolicyLocation(extension->location()) &&
+      !Manifest::IsComponentLocation(extension->location()) &&
+      !PermissionsData::CanExecuteScriptEverywhere(extension);
+}
+
 bool IsAppLaunchable(const std::string& extension_id,
                      content::BrowserContext* context) {
   int reason = ExtensionPrefs::Get(context)->GetDisableReasons(extension_id);
@@ -307,6 +321,11 @@ const gfx::ImageSkia& GetDefaultAppIcon() {
 const gfx::ImageSkia& GetDefaultExtensionIcon() {
   return *ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
       IDR_EXTENSION_DEFAULT_ICON);
+}
+
+bool IsStreamlinedHostedAppsEnabled() {
+  return CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableStreamlinedHostedApps);
 }
 
 }  // namespace util

@@ -7,12 +7,14 @@
 #include "base/command_line.h"
 #include "base/guid.h"
 #include "base/prefs/pref_service.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/content_settings/cookie_settings.h"
 #include "chrome/browser/net/chrome_cookie_notification_details.h"
 #include "chrome/browser/signin/local_auth.h"
 #include "chrome/browser/webdata/web_data_service_factory.h"
 #include "chrome/common/chrome_version_info.h"
+#include "components/metrics/metrics_service.h"
 #include "components/signin/core/common/profile_management_switches.h"
 #include "components/signin/core/common/signin_pref_names.h"
 #include "components/signin/core/common/signin_switches.h"
@@ -27,7 +29,11 @@
 #endif
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/login/users/user_manager.h"
+#include "components/user_manager/user_manager.h"
+#endif
+
+#if !defined(OS_ANDROID)
+#include "chrome/browser/first_run/first_run.h"
 #endif
 
 using content::ChildProcessHost;
@@ -40,7 +46,11 @@ const char kGoogleAccountsUrl[] = "https://accounts.google.com";
 }  // namespace
 
 ChromeSigninClient::ChromeSigninClient(Profile* profile)
-    : profile_(profile), signin_host_id_(ChildProcessHost::kInvalidUniqueID) {}
+    : profile_(profile), signin_host_id_(ChildProcessHost::kInvalidUniqueID) {
+  callbacks_.set_removal_callback(
+    base::Bind(&ChromeSigninClient::UnregisterForCookieChangedNotification,
+               base::Unretained(this)));
+}
 
 ChromeSigninClient::~ChromeSigninClient() {
   UnregisterForCookieChangedNotification();
@@ -112,8 +122,8 @@ scoped_refptr<TokenWebData> ChromeSigninClient::GetDatabase() {
 bool ChromeSigninClient::CanRevokeCredentials() {
 #if defined(OS_CHROMEOS)
   // UserManager may not exist in unit_tests.
-  if (chromeos::UserManager::IsInitialized() &&
-      chromeos::UserManager::Get()->IsLoggedInAsSupervisedUser()) {
+  if (user_manager::UserManager::IsInitialized() &&
+      user_manager::UserManager::Get()->IsLoggedInAsSupervisedUser()) {
     // Don't allow revoking credentials for Chrome OS supervised users.
     // See http://crbug.com/332032
     LOG(ERROR) << "Attempt to revoke supervised user refresh "
@@ -172,25 +182,34 @@ std::string ChromeSigninClient::GetProductVersion() {
   return chrome_version.CreateVersionString();
 }
 
-void ChromeSigninClient::SetCookieChangedCallback(
-    const CookieChangedCallback& callback) {
-  if (callback_.Equals(callback))
-    return;
-
-  // There should be only one callback active at a time.
-  DCHECK(callback.is_null() || callback_.is_null());
-  callback_ = callback;
-  if (!callback_.is_null())
-    RegisterForCookieChangedNotification();
-  else
-    UnregisterForCookieChangedNotification();
+bool ChromeSigninClient::IsFirstRun() const {
+#if defined(OS_ANDROID)
+  return false;
+#else
+  return first_run::IsChromeFirstRun();
+#endif
 }
 
-void ChromeSigninClient::GoogleSigninSucceeded(const std::string& username,
+base::Time ChromeSigninClient::GetInstallDate() {
+  return base::Time::FromTimeT(
+      g_browser_process->metrics_service()->GetInstallDate());
+}
+
+scoped_ptr<SigninClient::CookieChangedCallbackList::Subscription>
+ChromeSigninClient::AddCookieChangedCallback(
+    const CookieChangedCallback& callback) {
+  scoped_ptr<SigninClient::CookieChangedCallbackList::Subscription>
+    subscription = callbacks_.Add(callback);
+  RegisterForCookieChangedNotification();
+  return subscription.Pass();
+}
+
+void ChromeSigninClient::GoogleSigninSucceeded(const std::string& account_id,
+                                               const std::string& username,
                                                const std::string& password) {
-#if !defined(OS_ANDROID)
-  // Don't store password hash except for users of account consistency features.
-  if (switches::IsEnableAccountConsistency())
+#if !defined(OS_ANDROID) && !defined(OS_IOS) && !defined(OS_CHROMEOS)
+  // Don't store password hash except for users of new profile management.
+  if (switches::IsNewProfileManagement())
     chrome::SetLocalAuthCredentials(profile_, password);
 #endif
 }
@@ -200,10 +219,10 @@ void ChromeSigninClient::Observe(int type,
                                  const content::NotificationDetails& details) {
   switch (type) {
     case chrome::NOTIFICATION_COOKIE_CHANGED: {
-      DCHECK(!callback_.is_null());
+      DCHECK(!callbacks_.empty());
       const net::CanonicalCookie* cookie =
           content::Details<ChromeCookieDetails>(details).ptr()->cookie;
-      callback_.Run(cookie);
+      callbacks_.Notify(cookie);
       break;
     }
     default:
@@ -213,13 +232,17 @@ void ChromeSigninClient::Observe(int type,
 }
 
 void ChromeSigninClient::RegisterForCookieChangedNotification() {
+  if (callbacks_.empty())
+    return;
   content::Source<Profile> source(profile_);
-  DCHECK(!registrar_.IsRegistered(
-      this, chrome::NOTIFICATION_COOKIE_CHANGED, source));
+  if (!registrar_.IsRegistered(
+      this, chrome::NOTIFICATION_COOKIE_CHANGED, source))
   registrar_.Add(this, chrome::NOTIFICATION_COOKIE_CHANGED, source);
 }
 
 void ChromeSigninClient::UnregisterForCookieChangedNotification() {
+  if (!callbacks_.empty())
+    return;
   // Note that it's allowed to call this method multiple times without an
   // intervening call to |RegisterForCookieChangedNotification()|.
   content::Source<Profile> source(profile_);

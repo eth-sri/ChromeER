@@ -12,6 +12,7 @@
 #include "net/http/http_request_headers.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_status_code.h"
+#include "net/url_request/redirect_info.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context.h"
 #include "net/websockets/websocket_errors.h"
@@ -46,7 +47,7 @@ class Delegate : public URLRequest::Delegate {
 
   // Implementation of URLRequest::Delegate methods.
   virtual void OnReceivedRedirect(URLRequest* request,
-                                  const GURL& new_url,
+                                  const RedirectInfo& redirect_info,
                                   bool* defer_redirect) OVERRIDE {
     // HTTP status codes returned by HttpStreamParser are filtered by
     // WebSocketBasicHandshakeStream, and only 101, 401 and 407 are permitted
@@ -85,7 +86,8 @@ class StreamRequestImpl : public WebSocketStreamRequest {
       scoped_ptr<WebSocketStream::ConnectDelegate> connect_delegate,
       scoped_ptr<WebSocketHandshakeStreamCreateHelper> create_helper)
       : delegate_(new Delegate(this)),
-        url_request_(url, DEFAULT_PRIORITY, delegate_.get(), context),
+        url_request_(context->CreateRequest(url, DEFAULT_PRIORITY,
+                                            delegate_.get(), NULL)),
         connect_delegate_(connect_delegate.Pass()),
         create_helper_(create_helper.release()) {
     create_helper_->set_failure_message(&failure_message_);
@@ -95,15 +97,15 @@ class StreamRequestImpl : public WebSocketStreamRequest {
     headers.SetHeader(HttpRequestHeaders::kOrigin, origin.string());
     headers.SetHeader(websockets::kSecWebSocketVersion,
                       websockets::kSupportedVersion);
-    url_request_.SetExtraRequestHeaders(headers);
+    url_request_->SetExtraRequestHeaders(headers);
 
     // This passes the ownership of |create_helper_| to |url_request_|.
-    url_request_.SetUserData(
+    url_request_->SetUserData(
         WebSocketHandshakeStreamBase::CreateHelper::DataKey(),
         create_helper_);
-    url_request_.SetLoadFlags(LOAD_DISABLE_CACHE |
-                              LOAD_BYPASS_CACHE |
-                              LOAD_DO_NOT_PROMPT_FOR_LOGIN);
+    url_request_->SetLoadFlags(LOAD_DISABLE_CACHE |
+                               LOAD_BYPASS_CACHE |
+                               LOAD_DO_NOT_PROMPT_FOR_LOGIN);
   }
 
   // Destroying this object destroys the URLRequest, which cancels the request
@@ -111,7 +113,7 @@ class StreamRequestImpl : public WebSocketStreamRequest {
   virtual ~StreamRequestImpl() {}
 
   void Start() {
-    url_request_.Start();
+    url_request_->Start();
   }
 
   void PerformUpgrade() {
@@ -120,7 +122,7 @@ class StreamRequestImpl : public WebSocketStreamRequest {
 
   void ReportFailure() {
     if (failure_message_.empty()) {
-      switch (url_request_.status().status()) {
+      switch (url_request_->status().status()) {
         case URLRequestStatus::SUCCESS:
         case URLRequestStatus::IO_PENDING:
           break;
@@ -130,7 +132,7 @@ class StreamRequestImpl : public WebSocketStreamRequest {
         case URLRequestStatus::FAILED:
           failure_message_ =
               std::string("Error in connection establishment: ") +
-              ErrorToString(url_request_.status().error());
+              ErrorToString(url_request_->status().error());
           break;
       }
     }
@@ -143,9 +145,9 @@ class StreamRequestImpl : public WebSocketStreamRequest {
 
   void OnFinishOpeningHandshake() {
     WebSocketDispatchOnFinishOpeningHandshake(connect_delegate(),
-                                              url_request_.url(),
-                                              url_request_.response_headers(),
-                                              url_request_.response_time());
+                                              url_request_->url(),
+                                              url_request_->response_headers(),
+                                              url_request_->response_time());
   }
 
   WebSocketStream::ConnectDelegate* connect_delegate() const {
@@ -159,7 +161,7 @@ class StreamRequestImpl : public WebSocketStreamRequest {
 
   // Deleting the StreamRequestImpl object deletes this URLRequest object,
   // cancelling the whole connection.
-  URLRequest url_request_;
+  scoped_ptr<URLRequest> url_request_;
 
   scoped_ptr<WebSocketStream::ConnectDelegate> connect_delegate_;
 
@@ -312,7 +314,7 @@ void WebSocketDispatchOnFinishOpeningHandshake(
     const scoped_refptr<HttpResponseHeaders>& headers,
     base::Time response_time) {
   DCHECK(connect_delegate);
-  if (headers) {
+  if (headers.get()) {
     connect_delegate->OnFinishOpeningHandshake(make_scoped_ptr(
         new WebSocketHandshakeResponseInfo(url,
                                            headers->response_code(),

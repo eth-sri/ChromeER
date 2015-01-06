@@ -93,11 +93,12 @@ component("gfx") {
     "font_list.h",
     "font_list_impl.cc",
     "font_list_impl.h",
-    "font_render_params_android.cc",
-    "font_render_params_linux.cc",
-    "font_render_params_win.cc",
     "font_render_params.cc",
     "font_render_params.h",
+    "font_render_params_android.cc",
+    "font_render_params_linux.cc",
+    "font_render_params_mac.cc",
+    "font_render_params_win.cc",
     "frame_time.h",
     "gdi_util.cc",
     "gdi_util.h",
@@ -135,6 +136,8 @@ component("gfx") {
     "interpolated_transform.h",
     "linux_font_delegate.cc",
     "linux_font_delegate.h",
+    "mac/coordinate_conversion.h",
+    "mac/coordinate_conversion.mm",
     "mac/scoped_ns_disable_screen_updates.h",
     "native_widget_types.h",
     "nine_image_painter.cc",
@@ -371,10 +374,12 @@ source_set("test_support") {
   ]
 
   deps = [
+    ":gfx",
     "//base",
     "//base/test:test_support",
     "//skia",
     "//testing/gtest",
+    "//ui/gfx/geometry",
   ]
 
   if (is_ios) {
@@ -403,6 +408,7 @@ test("gfx_unittests") {
     "geometry/size_unittest.cc",
     "geometry/vector2d_unittest.cc",
     "geometry/vector3d_unittest.cc",
+    "mac/coordinate_conversion_unittest.mm",
     "range/range_unittest.cc",
     "test/run_all_unittests.cc",
   ]

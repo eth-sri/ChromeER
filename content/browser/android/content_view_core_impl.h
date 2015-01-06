@@ -28,7 +28,9 @@ class WindowAndroid;
 }
 
 namespace content {
+
 class GinJavaBridgeDispatcherHost;
+class RenderFrameHost;
 class RenderWidgetHostViewAndroid;
 struct MenuItem;
 
@@ -78,7 +80,9 @@ class ContentViewCoreImpl : public ContentViewCore,
 
   // Notifies the ContentViewCore that items were selected in the currently
   // showing select popup.
-  void SelectPopupMenuItems(JNIEnv* env, jobject obj, jintArray indices);
+  void SelectPopupMenuItems(JNIEnv* env, jobject obj,
+                            jlong selectPopupSourceFrame,
+                            jintArray indices);
 
   void LoadUrl(
       JNIEnv* env, jobject obj,
@@ -94,8 +98,6 @@ class ContentViewCoreImpl : public ContentViewCore,
       jstring virtual_url_for_data_url,
       jboolean can_load_local_resources,
       jboolean is_renderer_initiated);
-  base::android::ScopedJavaLocalRef<jstring> GetURL(JNIEnv* env, jobject) const;
-  jboolean IsIncognito(JNIEnv* env, jobject obj);
   void SendOrientationChangeEvent(JNIEnv* env, jobject obj, jint orientation);
   jboolean OnTouchEvent(JNIEnv* env,
                         jobject obj,
@@ -161,11 +163,6 @@ class ContentViewCoreImpl : public ContentViewCore,
                                        jboolean enabled);
 
   void ClearHistory(JNIEnv* env, jobject obj);
-  void EvaluateJavaScript(JNIEnv* env,
-                          jobject obj,
-                          jstring script,
-                          jobject callback,
-                          jboolean start_renderer);
   void PostMessageToFrame(JNIEnv* env, jobject obj, jstring frame_id,
       jstring message, jstring source_origin, jstring target_origin);
   long GetNativeImeAdapter(JNIEnv* env, jobject obj);
@@ -209,30 +206,11 @@ class ContentViewCoreImpl : public ContentViewCore,
 
   void SetBackgroundOpaque(JNIEnv* env, jobject jobj, jboolean opaque);
 
-  // Notifies the main frame that it can continue navigation (if it was deferred
-  // immediately at first response).
-  void ResumeResponseDeferredAtStart(JNIEnv* env, jobject obj);
-
-  void SetHasPendingNavigationTransitionForTesting(JNIEnv* env, jobject obj);
-
   jint GetCurrentRenderProcessId(JNIEnv* env, jobject obj);
 
   // --------------------------------------------------------------------------
   // Public methods that call to Java via JNI
   // --------------------------------------------------------------------------
-
-  // This method is invoked when the request is deferred immediately after
-  // receiving response headers.
-  void DidDeferAfterResponseStarted(
-      const scoped_refptr<net::HttpResponseHeaders>& headers,
-      const GURL& url);
-
-  // This method is invoked when a navigation transition is detected, to
-  // determine if the embedder intends to handle it.
-  bool WillHandleDeferAfterResponseStarted();
-
-  // This method is invoked when a navigation transition has started.
-  void DidStartNavigationTransitionForFrame(int64 frame_id);
 
   void OnSmartClipDataExtracted(const base::string16& text,
                                 const base::string16& html,
@@ -242,7 +220,8 @@ class ContentViewCoreImpl : public ContentViewCore,
   // |multiple| defines if it should support multi-select.
   // If not |multiple|, |selected_item| sets the initially selected item.
   // Otherwise, item's "checked" flag selects it.
-  void ShowSelectPopupMenu(const gfx::Rect& bounds,
+  void ShowSelectPopupMenu(RenderFrameHost* frame,
+                           const gfx::Rect& bounds,
                            const std::vector<MenuItem>& items,
                            int selected_item,
                            bool multiple);
@@ -256,14 +235,18 @@ class ContentViewCoreImpl : public ContentViewCore,
                        const gfx::SizeF& content_size,
                        const gfx::SizeF& viewport_size,
                        const gfx::Vector2dF& controls_offset,
-                       const gfx::Vector2dF& content_offset,
-                       float overdraw_bottom_height);
+                       const gfx::Vector2dF& content_offset);
 
-  void UpdateImeAdapter(long native_ime_adapter, int text_input_type,
+  void UpdateImeAdapter(long native_ime_adapter,
+                        int text_input_type,
+                        int text_input_flags,
                         const std::string& text,
-                        int selection_start, int selection_end,
-                        int composition_start, int composition_end,
-                        bool show_ime_if_needed, bool is_non_ime_change);
+                        int selection_start,
+                        int selection_end,
+                        int composition_start,
+                        int composition_end,
+                        bool show_ime_if_needed,
+                        bool is_non_ime_change);
   void SetTitle(const base::string16& title);
   void OnBackgroundColorChanged(SkColor color);
 
@@ -312,8 +295,7 @@ class ContentViewCoreImpl : public ContentViewCore,
 
   gfx::Size GetPhysicalBackingSize() const;
   gfx::Size GetViewportSizeDip() const;
-  gfx::Size GetViewportSizeOffsetDip() const;
-  float GetOverdrawBottomHeightDip() const;
+  float GetTopControlsLayoutHeightDip() const;
 
   void AttachLayer(scoped_refptr<cc::Layer> layer);
   void RemoveLayer(scoped_refptr<cc::Layer> layer);
@@ -345,11 +327,8 @@ class ContentViewCoreImpl : public ContentViewCore,
       blink::WebInputEvent::Type type, int64 time_ms, float x, float y) const;
 
   gfx::Size GetViewportSizePix() const;
-  gfx::Size GetViewportSizeOffsetPix() const;
+  int GetTopControlsLayoutHeightPix() const;
 
-  void DeleteScaledSnapshotTexture();
-
-  bool OnMotionEvent(const ui::MotionEvent& event);
   void SendGestureEvent(const blink::WebGestureEvent& event);
 
   // Update focus state of the RenderWidgetHostView.

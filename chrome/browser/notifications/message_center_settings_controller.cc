@@ -37,11 +37,11 @@
 #include "extensions/common/extension.h"
 #include "extensions/common/permissions/permissions_data.h"
 #include "grit/theme_resources.h"
-#include "grit/ui_strings.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/image/image.h"
 #include "ui/message_center/message_center_style.h"
+#include "ui/strings/grit/ui_strings.h"
 
 #if defined(OS_CHROMEOS)
 #include "ash/system/system_notifier.h"
@@ -141,16 +141,16 @@ MessageCenterSettingsController::MessageCenterSettingsController(
 
 #if defined(OS_CHROMEOS)
   // UserManager may not exist in some tests.
-  if (chromeos::UserManager::IsInitialized())
-    chromeos::UserManager::Get()->AddSessionStateObserver(this);
+  if (user_manager::UserManager::IsInitialized())
+    user_manager::UserManager::Get()->AddSessionStateObserver(this);
 #endif
 }
 
 MessageCenterSettingsController::~MessageCenterSettingsController() {
 #if defined(OS_CHROMEOS)
   // UserManager may not exist in some tests.
-  if (chromeos::UserManager::IsInitialized())
-    chromeos::UserManager::Get()->RemoveSessionStateObserver(this);
+  if (user_manager::UserManager::IsInitialized())
+    user_manager::UserManager::Get()->RemoveSessionStateObserver(this);
 #endif
 }
 
@@ -446,13 +446,14 @@ void MessageCenterSettingsController::CreateNotifierGroupForGuestLogin() {
   if (!notifier_groups_.empty())
     return;
 
-  chromeos::UserManager* user_manager = chromeos::UserManager::Get();
+  user_manager::UserManager* user_manager = user_manager::UserManager::Get();
   // |notifier_groups_| can be empty in login screen too.
   if (!user_manager->IsLoggedInAsGuest())
     return;
 
   user_manager::User* user = user_manager->GetActiveUser();
-  Profile* profile = chromeos::ProfileHelper::Get()->GetProfileByUser(user);
+  Profile* profile =
+      chromeos::ProfileHelper::Get()->GetProfileByUserUnsafe(user);
   DCHECK(profile);
   notifier_groups_.push_back(
       new message_center::ProfileNotifierGroup(gfx::Image(user->GetImage()),
@@ -487,8 +488,9 @@ void MessageCenterSettingsController::RebuildNotifierGroups() {
 #if defined(OS_CHROMEOS)
     // Allows the active user only.
     // UserManager may not exist in some tests.
-    if (chromeos::UserManager::IsInitialized()) {
-      chromeos::UserManager* user_manager = chromeos::UserManager::Get();
+    if (user_manager::UserManager::IsInitialized()) {
+      user_manager::UserManager* user_manager =
+          user_manager::UserManager::Get();
       if (chromeos::ProfileHelper::Get()->GetUserByProfile(group->profile()) !=
           user_manager->GetActiveUser()) {
         continue;
@@ -507,8 +509,8 @@ void MessageCenterSettingsController::RebuildNotifierGroups() {
 #if defined(OS_CHROMEOS)
   // ChromeOS guest login cannot get the profile from the for-loop above, so
   // get the group here.
-  if (notifier_groups_.empty() && chromeos::UserManager::IsInitialized() &&
-      chromeos::UserManager::Get()->IsLoggedInAsGuest()) {
+  if (notifier_groups_.empty() && user_manager::UserManager::IsInitialized() &&
+      user_manager::UserManager::Get()->IsLoggedInAsGuest()) {
     // Do not invoke CreateNotifierGroupForGuestLogin() directly. In some tests,
     // this method may be called before the primary profile is created, which
     // means ProfileHelper::Get()->GetProfileByUser() will create a new primary

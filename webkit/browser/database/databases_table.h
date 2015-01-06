@@ -8,15 +8,15 @@
 #include <vector>
 
 #include "base/strings/string16.h"
-#include "webkit/browser/webkit_storage_browser_export.h"
+#include "webkit/browser/storage_browser_export.h"
 
 namespace sql {
 class Connection;
 }
 
-namespace webkit_database {
+namespace storage {
 
-struct WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE DatabaseDetails {
+struct STORAGE_EXPORT_PRIVATE DatabaseDetails {
   DatabaseDetails();
   ~DatabaseDetails();
 
@@ -26,7 +26,7 @@ struct WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE DatabaseDetails {
   int64 estimated_size;
 };
 
-class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE DatabasesTable {
+class STORAGE_EXPORT_PRIVATE DatabasesTable {
  public:
   explicit DatabasesTable(sql::Connection* db) : db_(db) { }
 
@@ -49,6 +49,6 @@ class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE DatabasesTable {
   sql::Connection* db_;
 };
 
-}  // namespace webkit_database
+}  // namespace storage
 
 #endif  // WEBKIT_BROWSER_DATABASE_DATABASES_TABLE_H_

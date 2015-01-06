@@ -12,6 +12,7 @@
       'type': 'static_library',
       'defines!': ['CONTENT_IMPLEMENTATION'],
       'dependencies': [
+        'app_shell_version_header',
         '<(DEPTH)/base/base.gyp:base',
         '<(DEPTH)/base/base.gyp:base_prefs_test_support',
         '<(DEPTH)/components/components.gyp:omaha_query_params',
@@ -21,13 +22,16 @@
         '<(DEPTH)/content/content.gyp:content_gpu',
         '<(DEPTH)/content/content.gyp:content_ppapi_plugin',
         '<(DEPTH)/content/content_shell_and_tests.gyp:content_shell_lib',
+        '<(DEPTH)/device/core/core.gyp:device_core',
         '<(DEPTH)/device/hid/hid.gyp:device_hid',
+        '<(DEPTH)/extensions/browser/api/api_registration.gyp:extensions_api_registration',
         '<(DEPTH)/extensions/common/api/api.gyp:extensions_api',
         '<(DEPTH)/extensions/extensions.gyp:extensions_browser',
         '<(DEPTH)/extensions/extensions.gyp:extensions_common',
         '<(DEPTH)/extensions/extensions.gyp:extensions_renderer',
         '<(DEPTH)/extensions/extensions.gyp:extensions_shell_and_test_pak',
         '<(DEPTH)/extensions/extensions_resources.gyp:extensions_resources',
+        '<(DEPTH)/extensions/shell/browser/api/api_registration.gyp:shell_api_registration',
         '<(DEPTH)/extensions/shell/common/api/api.gyp:shell_api',
         '<(DEPTH)/mojo/mojo_base.gyp:mojo_environment_chromium',
         '<(DEPTH)/mojo/mojo_base.gyp:mojo_system_impl',
@@ -50,13 +54,17 @@
         'browser/api/shell_extensions_api_client.h',
         'browser/default_shell_browser_main_delegate.cc',
         'browser/default_shell_browser_main_delegate.h',
-        'browser/default_shell_app_window_controller.cc',
-        'browser/default_shell_app_window_controller.h',
+        'browser/desktop_controller.cc',
+        'browser/desktop_controller.h',
+        'browser/media_capture_util.cc',
+        'browser/media_capture_util.h',
         'browser/shell_app_sorting.cc',
         'browser/shell_app_sorting.h',
         'browser/shell_app_window.cc',
         'browser/shell_app_window.h',
         'browser/shell_app_window_controller.h',
+        'browser/shell_audio_controller_chromeos.cc',
+        'browser/shell_audio_controller_chromeos.h',
         'browser/shell_browser_context.cc',
         'browser/shell_browser_context.h',
         'browser/shell_browser_main_delegate.h',
@@ -66,6 +74,10 @@
         'browser/shell_content_browser_client.h',
         'browser/shell_desktop_controller.cc',
         'browser/shell_desktop_controller.h',
+        'browser/shell_device_client.cc',
+        'browser/shell_device_client.h',
+        'browser/shell_extension_host_delegate.cc',
+        'browser/shell_extension_host_delegate.h',
         'browser/shell_extension_system.cc',
         'browser/shell_extension_system.h',
         'browser/shell_extension_system_factory.cc',
@@ -97,7 +109,6 @@
         'renderer/shell_dispatcher_delegate.h',
         'renderer/shell_extensions_renderer_client.cc',
         'renderer/shell_extensions_renderer_client.h',
-        'renderer/shell_renderer_main_delegate.h',
       ],
       'conditions': [
         ['chromeos==1', {
@@ -105,6 +116,20 @@
             '<(DEPTH)/chromeos/chromeos.gyp:chromeos',
             '<(DEPTH)/ui/chromeos/ui_chromeos.gyp:ui_chromeos',
             '<(DEPTH)/ui/display/display.gyp:display',
+          ],
+        }],
+        ['disable_nacl==0', {
+          'dependencies': [
+            '<(DEPTH)/components/nacl.gyp:nacl',
+            '<(DEPTH)/components/nacl.gyp:nacl_browser',
+            '<(DEPTH)/components/nacl.gyp:nacl_common',
+            '<(DEPTH)/components/nacl.gyp:nacl_helper',
+            '<(DEPTH)/components/nacl.gyp:nacl_renderer',
+            '<(DEPTH)/components/nacl.gyp:nacl_switches',
+          ],
+          'sources': [
+            'browser/shell_nacl_browser_delegate.cc',
+            'browser/shell_nacl_browser_delegate.h',
           ],
         }],
       ],
@@ -157,12 +182,86 @@
         # TODO(yoz): Something is off here; should this .gyp file be
         # in the parent directory? Test target extensions_browsertests?
         '../browser/api/dns/dns_apitest.cc',
+        '../browser/api/socket/socket_apitest.cc',
+        '../browser/api/sockets_tcp/sockets_tcp_apitest.cc',
+        '../browser/api/sockets_udp/sockets_udp_apitest.cc',
         'browser/shell_browsertest.cc',
         'test/shell_test.h',
         'test/shell_test.cc',
         'test/shell_test_launcher_delegate.cc',
         'test/shell_test_launcher_delegate.h',
         'test/shell_tests_main.cc',
+      ],
+    },
+    {
+      'target_name': 'app_shell_unittests',
+      'type': 'executable',
+      'dependencies': [
+        'app_shell_lib',
+        '<(DEPTH)/base/base.gyp:base',
+        '<(DEPTH)/base/base.gyp:test_support_base',
+        '<(DEPTH)/content/content.gyp:content_app_both',
+        '<(DEPTH)/content/content_shell_and_tests.gyp:test_support_content',
+        '<(DEPTH)/extensions/extensions.gyp:extensions_shell_and_test_pak',
+        '<(DEPTH)/extensions/extensions.gyp:extensions_test_support',
+        '<(DEPTH)/testing/gtest.gyp:gtest',
+        '<(DEPTH)/ui/aura/aura.gyp:aura_test_support',
+      ],
+      'sources': [
+        '../test/extensions_unittests_main.cc',
+        'browser/shell_audio_controller_chromeos_unittest.cc',
+        'browser/shell_desktop_controller_unittest.cc',
+        'browser/shell_nacl_browser_delegate_unittest.cc',
+        'common/shell_content_client_unittest.cc'
+      ],
+      'conditions': [
+        ['disable_nacl==1', {
+          'sources!': [
+            'browser/shell_nacl_browser_delegate_unittest.cc',
+          ],
+        }],
+        ['chromeos==1', {
+          'dependencies': [
+            '<(DEPTH)/chromeos/chromeos.gyp:chromeos_test_support_without_gmock',
+          ],
+        }],
+      ],
+    },
+    {
+      'target_name': 'app_shell_version_header',
+      'type': 'none',
+      'direct_dependent_settings': {
+        'include_dirs': [
+          '<(SHARED_INTERMEDIATE_DIR)',
+        ],
+      },
+      'actions': [
+        {
+          'action_name': 'version_header',
+          'message': 'Generating version header file: <@(_outputs)',
+          'variables': {
+            'lastchange_path': '<(DEPTH)/build/util/LASTCHANGE',
+          },
+          'inputs': [
+            '<(version_path)',
+            '<(lastchange_path)',
+            'common/version.h.in',
+          ],
+          'outputs': [
+            '<(SHARED_INTERMEDIATE_DIR)/extensions/shell/common/version.h',
+          ],
+          'action': [
+            'python',
+            '<(version_py_path)',
+            '-e', 'VERSION_FULL="<(version_full)"',
+            '-f', '<(lastchange_path)',
+            'common/version.h.in',
+            '<@(_outputs)',
+          ],
+          'includes': [
+            '../../build/util/version.gypi',
+          ],
+        },
       ],
     },
   ],  # targets

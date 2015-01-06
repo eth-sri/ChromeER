@@ -30,6 +30,7 @@ namespace {
 
 const char kRecordUntilFull[]   = "record-until-full";
 const char kRecordContinuously[] = "record-continuously";
+const char kRecordAsMuchAsPossible[] = "record-as-much-as-possible";
 const char kEnableSampling[] = "enable-sampling";
 
 void ReadFile(
@@ -63,12 +64,6 @@ DevToolsTracingHandler::DevToolsTracingHandler(
                                     base::Unretained(this)));
   RegisterCommandHandler(devtools::Tracing::getCategories::kName,
                          base::Bind(&DevToolsTracingHandler::OnGetCategories,
-                                    base::Unretained(this)));
-  RegisterNotificationHandler(devtools::Tracing::started::kName,
-                         base::Bind(&DevToolsTracingHandler::OnTracingStarted,
-                                    base::Unretained(this)));
-  RegisterNotificationHandler(devtools::Tracing::stopped::kName,
-                         base::Bind(&DevToolsTracingHandler::OnTracingStopped,
                                     base::Unretained(this)));
 }
 
@@ -141,6 +136,8 @@ base::debug::TraceOptions DevToolsTracingHandler::TraceOptionsFromString(
       ret.record_mode = base::debug::RECORD_UNTIL_FULL;
     } else if (*iter == kRecordContinuously) {
       ret.record_mode = base::debug::RECORD_CONTINUOUSLY;
+    } else if (*iter == kRecordAsMuchAsPossible) {
+      ret.record_mode = base::debug::RECORD_AS_MUCH_AS_POSSIBLE;
     } else if (*iter == kEnableSampling) {
       ret.enable_sampling = true;
     }
@@ -151,6 +148,11 @@ base::debug::TraceOptions DevToolsTracingHandler::TraceOptionsFromString(
 scoped_refptr<DevToolsProtocol::Response>
 DevToolsTracingHandler::OnStart(
     scoped_refptr<DevToolsProtocol::Command> command) {
+  // If inspected target is a render process Tracing.start will be handled by
+  // tracing agent in the renderer.
+  if (target_ == Renderer)
+    return NULL;
+
   is_recording_ = true;
 
   std::string categories;
@@ -171,16 +173,6 @@ DevToolsTracingHandler::OnStart(
   }
 
   SetupTimer(usage_reporting_interval);
-
-  // If inspected target is a render process Tracing.start will be handled by
-  // tracing agent in the renderer.
-  if (target_ == Renderer) {
-    TracingController::GetInstance()->EnableRecording(
-        base::debug::CategoryFilter(categories),
-        options,
-        TracingController::EnableRecordingDoneCallback());
-    return NULL;
-  }
 
   TracingController::GetInstance()->EnableRecording(
       base::debug::CategoryFilter(categories),
@@ -225,6 +217,10 @@ void DevToolsTracingHandler::OnBufferUsage(float usage) {
 scoped_refptr<DevToolsProtocol::Response>
 DevToolsTracingHandler::OnEnd(
     scoped_refptr<DevToolsProtocol::Command> command) {
+  // If inspected target is a render process Tracing.end will be handled by
+  // tracing agent in the renderer.
+  if (target_ == Renderer)
+    return NULL;
   DisableRecording(
       base::Bind(&DevToolsTracingHandler::BeginReadingRecordingResult,
                  weak_factory_.GetWeakPtr()));
@@ -269,8 +265,7 @@ void DevToolsTracingHandler::OnCategoriesReceived(
   SendAsyncResponse(command->SuccessResponse(response));
 }
 
-void DevToolsTracingHandler::OnTracingStarted(
-    scoped_refptr<DevToolsProtocol::Notification> notification) {
+void DevToolsTracingHandler::EnableTracing(const std::string& category_filter) {
   if (is_recording_)
     return;
   is_recording_ = true;
@@ -278,13 +273,13 @@ void DevToolsTracingHandler::OnTracingStarted(
   SetupTimer(kDefaultReportingInterval);
 
   TracingController::GetInstance()->EnableRecording(
-      base::debug::CategoryFilter(kDefaultCategories),
+      base::debug::CategoryFilter(category_filter),
       base::debug::TraceOptions(),
       TracingController::EnableRecordingDoneCallback());
+  SendNotification(devtools::Tracing::started::kName, NULL);
 }
 
-void DevToolsTracingHandler::OnTracingStopped(
-    scoped_refptr<DevToolsProtocol::Notification> notification) {
+void DevToolsTracingHandler::DisableTracing() {
   if (!is_recording_)
     return;
   is_recording_ = false;

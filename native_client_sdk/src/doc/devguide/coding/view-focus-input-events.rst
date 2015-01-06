@@ -11,21 +11,21 @@ View Change, Focus, and Input Events
   :backlinks: none
   :depth: 2
 
-This chapter describes view change, focus, and input event handling for a
-Native Client module. The chapter assumes you are familiar with the
+This section describes view change, focus, and input event handling for a
+Native Client module. The section assumes you are familiar with the
 material presented in the :doc:`Technical Overview <../../overview>`.
 
-There are two examples used in this chapter to illustrate basic
+There are two examples used in this section to illustrate basic
 programming techniques. The ``input_events`` example is used to
 illustrate how your module can react to keyboard and mouse input
 event.  The ``mouse_lock`` example is used to illustrate how your module
 can react to view change events. You can find these examples in the
-``/examples/api/input_events`` and ``/examples/api/mouse_lock``
-directories in the Native Client SDK.  There is also the
-ppapi_simple library that can be used to to implement most of the
-boiler plate.  The ``pi_generator`` example in
-``/examples/demo/pi_generator`` uses ppapi_simple to manage view
-change events and 2D graphics.
+``/pepper_<version>/examples/api/input_event`` and 
+``/pepper_<version>/examples/api/mouse_lock`` directories in the Native Client
+SDK.  There is also the ppapi_simple library that can be used to to implement
+most of the boiler plate.  The ``pi_generator`` example in
+``/pepper_<version>/examples/demo/pi_generator`` uses ppapi_simple to manage
+view change events and 2D graphics.
 
 
 Overview

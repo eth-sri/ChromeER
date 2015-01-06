@@ -69,6 +69,7 @@
 #include "content/browser/media/midi_host.h"
 #include "content/browser/message_port_message_filter.h"
 #include "content/browser/mime_registry_message_filter.h"
+#include "content/browser/mojo/mojo_application_host.h"
 #include "content/browser/plugin_service_impl.h"
 #include "content/browser/profiler_message_filter.h"
 #include "content/browser/push_messaging_message_filter.h"
@@ -152,6 +153,7 @@
 #if defined(OS_ANDROID)
 #include "content/browser/media/android/browser_demuxer_android.h"
 #include "content/browser/renderer_host/compositor_impl_android.h"
+#include "content/browser/screen_orientation/screen_orientation_message_filter_android.h"
 #include "content/common/gpu/client/gpu_memory_buffer_impl_surface_texture.h"
 #endif
 
@@ -160,7 +162,6 @@
 #endif
 
 #if defined(OS_WIN)
-#include "base/strings/string_number_conversions.h"
 #include "base/win/scoped_com_initializer.h"
 #include "content/common/font_cache_dispatcher_win.h"
 #include "content/common/sandbox_win.h"
@@ -178,10 +179,10 @@
 
 extern bool g_exited_main_message_loop;
 
-static const char* kSiteProcessMapKeyName = "content_site_process_map";
-
 namespace content {
 namespace {
+
+const char kSiteProcessMapKeyName[] = "content_site_process_map";
 
 void CacheShaderInfo(int32 id, base::FilePath path) {
   ShaderCacheFactory::GetInstance()->SetCacheInfo(id, path);
@@ -302,7 +303,7 @@ SiteProcessMap* GetSiteProcessMapForBrowserContext(BrowserContext* context) {
 class RendererSandboxedProcessLauncherDelegate
     : public content::SandboxedProcessLauncherDelegate {
  public:
-  RendererSandboxedProcessLauncherDelegate(IPC::ChannelProxy* channel)
+  explicit RendererSandboxedProcessLauncherDelegate(IPC::ChannelProxy* channel)
 #if defined(OS_POSIX)
        : ipc_fd_(channel->TakeClientFileDescriptor())
 #endif  // OS_POSIX
@@ -319,8 +320,9 @@ class RendererSandboxedProcessLauncherDelegate
 
 #elif defined(OS_POSIX)
   virtual bool ShouldUseZygote() OVERRIDE {
-    const CommandLine& browser_command_line = *CommandLine::ForCurrentProcess();
-    CommandLine::StringType renderer_prefix =
+    const base::CommandLine& browser_command_line =
+        *base::CommandLine::ForCurrentProcess();
+    base::CommandLine::StringType renderer_prefix =
         browser_command_line.GetSwitchValueNative(switches::kRendererCmdPrefix);
     return renderer_prefix.empty();
   }
@@ -480,7 +482,7 @@ RenderProcessHostImpl::RenderProcessHostImpl(
   mark_child_process_activity_time();
 
   if (!GetBrowserContext()->IsOffTheRecord() &&
-      !CommandLine::ForCurrentProcess()->HasSwitch(
+      !base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kDisableGpuShaderDiskCache)) {
     BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
                             base::Bind(&CacheShaderInfo, GetID(),
@@ -549,7 +551,7 @@ RenderProcessHostImpl::~RenderProcessHostImpl() {
 
   UnregisterHost(GetID());
 
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(
+  if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kDisableGpuShaderDiskCache)) {
     BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
                             base::Bind(&RemoveShaderInfo, GetID()));
@@ -570,11 +572,12 @@ bool RenderProcessHostImpl::Init() {
   if (channel_)
     return true;
 
-  CommandLine::StringType renderer_prefix;
+  base::CommandLine::StringType renderer_prefix;
 #if defined(OS_POSIX)
   // A command prefix is something prepended to the command line of the spawned
   // process. It is supported only on POSIX systems.
-  const CommandLine& browser_command_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& browser_command_line =
+      *base::CommandLine::ForCurrentProcess();
   renderer_prefix =
       browser_command_line.GetSwitchValueNative(switches::kRendererCmdPrefix);
 #endif  // defined(OS_POSIX)
@@ -632,7 +635,7 @@ bool RenderProcessHostImpl::Init() {
   } else {
     // Build command line for renderer.  We call AppendRendererCommandLine()
     // first so the process type argument will appear first.
-    CommandLine* cmd_line = new CommandLine(renderer_path);
+    base::CommandLine* cmd_line = new base::CommandLine(renderer_path);
     if (!renderer_prefix.empty())
       cmd_line->PrependWrapper(renderer_prefix);
     AppendRendererCommandLine(cmd_line);
@@ -676,7 +679,8 @@ void RenderProcessHostImpl::MaybeActivateMojo() {
 }
 
 bool RenderProcessHostImpl::ShouldUseMojoChannel() const {
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
   return command_line.HasSwitch(switches::kEnableRendererMojoChannel);
 }
 
@@ -751,17 +755,17 @@ void RenderProcessHostImpl::CreateMessageFilters() {
   AddFilter(new AudioInputRendererHost(
       audio_manager,
       media_stream_manager,
-      BrowserMainLoop::GetInstance()->audio_mirroring_manager(),
+      AudioMirroringManager::GetInstance(),
       BrowserMainLoop::GetInstance()->user_input_monitor()));
   // The AudioRendererHost needs to be available for lookup, so it's
   // stashed in a member variable.
   audio_renderer_host_ = new AudioRendererHost(
       GetID(),
       audio_manager,
-      BrowserMainLoop::GetInstance()->audio_mirroring_manager(),
+      AudioMirroringManager::GetInstance(),
       media_internals,
       media_stream_manager);
-  AddFilter(audio_renderer_host_);
+  AddFilter(audio_renderer_host_.get());
   AddFilter(
       new MidiHost(GetID(), BrowserMainLoop::GetInstance()->midi_manager()));
   AddFilter(new VideoCaptureHost(media_stream_manager));
@@ -843,13 +847,14 @@ void RenderProcessHostImpl::CreateMessageFilters() {
   message_port_message_filter_ = new MessagePortMessageFilter(
       base::Bind(&RenderWidgetHelper::GetNextRoutingID,
                  base::Unretained(widget_helper_.get())));
-  AddFilter(message_port_message_filter_);
+  AddFilter(message_port_message_filter_.get());
 
   scoped_refptr<ServiceWorkerDispatcherHost> service_worker_filter =
-      new ServiceWorkerDispatcherHost(GetID(), message_port_message_filter_);
+      new ServiceWorkerDispatcherHost(GetID(),
+                                      message_port_message_filter_.get());
   service_worker_filter->Init(
       storage_partition_impl_->GetServiceWorkerContext());
-  AddFilter(service_worker_filter);
+  AddFilter(service_worker_filter.get());
 
   AddFilter(new SharedWorkerMessageFilter(
       GetID(),
@@ -863,13 +868,13 @@ void RenderProcessHostImpl::CreateMessageFilters() {
           storage_partition_impl_->GetDatabaseTracker(),
           storage_partition_impl_->GetIndexedDBContext(),
           storage_partition_impl_->GetServiceWorkerContext()),
-      message_port_message_filter_));
+      message_port_message_filter_.get()));
 
 #if defined(ENABLE_WEBRTC)
   p2p_socket_dispatcher_host_ = new P2PSocketDispatcherHost(
       resource_context,
       browser_context->GetRequestContextForRenderProcess(GetID()));
-  AddFilter(p2p_socket_dispatcher_host_);
+  AddFilter(p2p_socket_dispatcher_host_.get());
 #endif
 
   AddFilter(new TraceMessageFilter());
@@ -885,7 +890,7 @@ void RenderProcessHostImpl::CreateMessageFilters() {
   AddFilter(new ProfilerMessageFilter(PROCESS_TYPE_RENDERER));
   AddFilter(new HistogramMessageFilter());
 #if defined(USE_TCMALLOC) && (defined(OS_LINUX) || defined(OS_ANDROID))
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kEnableMemoryBenchmarking))
     AddFilter(new MemoryBenchmarkMessageFilter());
 #endif
@@ -893,6 +898,9 @@ void RenderProcessHostImpl::CreateMessageFilters() {
   AddFilter(new PushMessagingMessageFilter(
       GetID(), storage_partition_impl_->GetServiceWorkerContext()));
   AddFilter(new BatteryStatusMessageFilter());
+#if defined(OS_ANDROID)
+  AddFilter(new ScreenOrientationMessageFilterAndroid());
+#endif
 }
 
 int RenderProcessHostImpl::GetNextRoutingID() {
@@ -915,8 +923,7 @@ void RenderProcessHostImpl::NotifyTimezoneChange() {
 }
 
 ServiceRegistry* RenderProcessHostImpl::GetServiceRegistry() {
-  if (!mojo_application_host_)
-    return NULL;
+  DCHECK(mojo_application_host_);
   return mojo_application_host_->service_registry();
 }
 
@@ -932,8 +939,8 @@ void RenderProcessHostImpl::RemoveRoute(int32 routing_id) {
 
 #if defined(OS_WIN)
   // Dump the handle table if handle auditing is enabled.
-  const CommandLine& browser_command_line =
-      *CommandLine::ForCurrentProcess();
+  const base::CommandLine& browser_command_line =
+      *base::CommandLine::ForCurrentProcess();
   if (browser_command_line.HasSwitch(switches::kAuditHandles) ||
       browser_command_line.HasSwitch(switches::kAuditAllHandles)) {
     DumpHandles();
@@ -958,7 +965,7 @@ void RenderProcessHostImpl::RemoveObserver(
 }
 
 void RenderProcessHostImpl::ReceivedBadMessage() {
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
   if (command_line->HasSwitch(switches::kDisableKillAfterBadIPC))
     return;
 
@@ -1006,15 +1013,19 @@ StoragePartition* RenderProcessHostImpl::GetStoragePartition() const {
   return storage_partition_impl_;
 }
 
-static void AppendCompositorCommandLineFlags(CommandLine* command_line) {
+static void AppendCompositorCommandLineFlags(base::CommandLine* command_line) {
   if (IsPinchVirtualViewportEnabled())
     command_line->AppendSwitch(cc::switches::kEnablePinchVirtualViewport);
 
   if (IsDelegatedRendererEnabled())
     command_line->AppendSwitch(switches::kEnableDelegatedRenderer);
 
-  if (IsImplSidePaintingEnabled())
+  if (IsImplSidePaintingEnabled()) {
     command_line->AppendSwitch(switches::kEnableImplSidePainting);
+    command_line->AppendSwitchASCII(
+        switches::kNumRasterThreads,
+        base::IntToString(NumberOfRendererRasterThreads()));
+  }
 
   if (content::IsGpuRasterizationEnabled())
     command_line->AppendSwitch(switches::kEnableGpuRasterization);
@@ -1029,13 +1040,14 @@ static void AppendCompositorCommandLineFlags(CommandLine* command_line) {
 }
 
 void RenderProcessHostImpl::AppendRendererCommandLine(
-    CommandLine* command_line) const {
+    base::CommandLine* command_line) const {
   // Pass the process type first, so it shows first in process listings.
   command_line->AppendSwitchASCII(switches::kProcessType,
                                   switches::kRendererProcess);
 
   // Now send any options from our own command line we want to propagate.
-  const CommandLine& browser_command_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& browser_command_line =
+      *base::CommandLine::ForCurrentProcess();
   PropagateBrowserCommandLineToRenderer(browser_command_line, command_line);
 
   // Pass on the browser locale.
@@ -1068,8 +1080,8 @@ void RenderProcessHostImpl::AppendRendererCommandLine(
 }
 
 void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
-    const CommandLine& browser_cmd,
-    CommandLine* renderer_cmd) const {
+    const base::CommandLine& browser_cmd,
+    base::CommandLine* renderer_cmd) const {
   // Propagate the following switches to the renderer command line (along
   // with any associated values) if present in the browser command line.
   static const char* const kSwitchNames[] = {
@@ -1083,16 +1095,15 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kDefaultTileWidth,
     switches::kDefaultTileHeight,
     switches::kDisable3DAPIs,
-    switches::kDisableAcceleratedFixedRootBackground,
-    switches::kDisableAcceleratedOverflowScroll,
     switches::kDisableAcceleratedVideoDecode,
     switches::kDisableApplicationCache,
     switches::kDisableBreakpad,
-    switches::kDisableCompositingForFixedPosition,
+    switches::kDisablePreferCompositingToLCDText,
     switches::kDisableCompositingForTransition,
     switches::kDisableDatabases,
     switches::kDisableDesktopNotifications,
     switches::kDisableDirectNPAPIRequests,
+    switches::kDisableDisplayList2dCanvas,
     switches::kDisableDistanceFieldText,
     switches::kDisableFileSystem,
     switches::kDisableGpuCompositing,
@@ -1116,11 +1127,9 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kDisableTouchEditing,
     switches::kDisableZeroCopy,
     switches::kDomAutomationController,
-    switches::kEnableAcceleratedFixedRootBackground,
-    switches::kEnableAcceleratedOverflowScroll,
     switches::kEnableBeginFrameScheduling,
     switches::kEnableBleedingEdgeRenderingFastPaths,
-    switches::kEnableCompositingForFixedPosition,
+    switches::kEnablePreferCompositingToLCDText,
     switches::kEnableCompositingForTransition,
     switches::kEnableDeferredImageDecoding,
     switches::kEnableDisplayList2dCanvas,
@@ -1131,7 +1140,6 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kEnableGPUClientLogging,
     switches::kEnableGpuClientTracing,
     switches::kEnableGPUServiceLogging,
-    switches::kEnableHighDpiCompositingForFixedPosition,
     switches::kEnableLowResTiling,
     switches::kEnableInbandTextTracks,
     switches::kEnableLCDText,
@@ -1145,7 +1153,6 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kEnableOverscrollNotifications,
     switches::kEnablePinch,
     switches::kEnablePreciseMemoryInfo,
-    switches::kEnablePreparsedJsCaching,
     switches::kEnableRendererMojoChannel,
     switches::kEnableSeccompFilterSandbox,
     switches::kEnableSkiaBenchmarking,
@@ -1176,13 +1183,13 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kMemoryMetrics,
     switches::kNoReferrers,
     switches::kNoSandbox,
-    switches::kNumRasterThreads,
     switches::kPpapiInProcess,
     switches::kProfilerTiming,
     switches::kReduceSecurityForTesting,
     switches::kRegisterPepperPlugins,
     switches::kRendererAssertTest,
     switches::kRendererStartupDialog,
+    switches::kSendV8IdleNotificationAfterCommit,
     switches::kShowPaintRects,
     switches::kSitePerProcess,
     switches::kStatsCollectionController,
@@ -1231,6 +1238,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kDisableWebRtcHWDecoding,
     switches::kDisableWebRtcHWEncoding,
     switches::kEnableWebRtcHWVp8Encoding,
+    switches::kEnableWebRtcHWH264Encoding,
 #endif
     switches::kLowEndDeviceMode,
 #if defined(OS_ANDROID)
@@ -1240,6 +1248,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kMediaDrmEnableNonCompositing,
     switches::kNetworkCountryIso,
     switches::kDisableWebAudio,
+    switches::kRendererWaitForJavaDebugger,
 #endif
 #if defined(OS_MACOSX)
     // Allow this to be set when invoking the browser and relayed along.
@@ -1249,7 +1258,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kDisableDirectWrite,
 #endif
 #if defined(OS_CHROMEOS)
-    switches::kEnableVaapiAcceleratedVideoEncode,
+    switches::kDisableVaapiAcceleratedVideoEncode,
 #endif
   };
   renderer_cmd->CopySwitchesFrom(browser_cmd, kSwitchNames,
@@ -1572,7 +1581,7 @@ RenderProcessHostImpl::StartRtpDump(
     bool incoming,
     bool outgoing,
     const WebRtcRtpPacketCallback& packet_callback) {
-  if (!p2p_socket_dispatcher_host_)
+  if (!p2p_socket_dispatcher_host_.get())
     return WebRtcStopRtpDumpCallback();
 
   BrowserThread::PostTask(BrowserThread::IO,
@@ -1723,7 +1732,7 @@ bool RenderProcessHost::run_renderer_in_process() {
 void RenderProcessHost::SetRunRendererInProcess(bool value) {
   g_run_renderer_in_process_ = value;
 
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
   if (value) {
     if (!command_line->HasSwitch(switches::kLang)) {
       // Modify the current process' command line to include the browser locale,
@@ -1760,7 +1769,8 @@ bool RenderProcessHost::ShouldTryToUseExistingProcessHost(
   // from the same site to share, if we knew what the given process was
   // dedicated to.  Allowing no sharing is simpler for now.)  This may cause
   // resource exhaustion issues if too many sites are open at once.
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
   if (command_line.HasSwitch(switches::kEnableStrictSiteIsolation) ||
       command_line.HasSwitch(switches::kSitePerProcess))
     return false;
@@ -1817,7 +1827,8 @@ bool RenderProcessHost::ShouldUseProcessPerSite(
   // the case if the --process-per-site switch is specified, or in
   // process-per-site-instance for particular sites (e.g., WebUI).
   // Note that --single-process is handled in ShouldTryToUseExistingProcessHost.
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
   if (command_line.HasSwitch(switches::kProcessPerSite))
     return true;
 
@@ -1911,6 +1922,8 @@ void RenderProcessHostImpl::ProcessDied(bool already_dead) {
                     observers_,
                     RenderProcessExited(this, GetHandle(), status, exit_code));
   within_process_died_observer_ = false;
+
+  mojo_application_host_->WillDestroySoon();
 
   child_process_launcher_.reset();
   channel_.reset();
@@ -2013,6 +2026,8 @@ void RenderProcessHostImpl::OnShutdownRequest() {
       NOTIFICATION_RENDERER_PROCESS_CLOSING,
       Source<RenderProcessHost>(this),
       NotificationService::NoDetails());
+
+  mojo_application_host_->WillDestroySoon();
 
   Send(new ChildProcessMsg_Shutdown());
 }
@@ -2141,7 +2156,7 @@ void RenderProcessHostImpl::OnGpuSwitching() {
       continue;
 
     RenderViewHost* rvh = RenderViewHost::From(widget);
-    rvh->UpdateWebkitPreferences(rvh->GetWebkitPreferences());
+    rvh->OnWebkitPreferencesChanged();
   }
 }
 
@@ -2326,6 +2341,7 @@ void RenderProcessHostImpl::OnAllocateGpuMemoryBuffer(uint32 width,
       internalformat,
       usage,
       GetHandle(),
+      GetID(),
       base::Bind(&RenderProcessHostImpl::GpuMemoryBufferAllocated,
                  weak_factory_.GetWeakPtr(),
                  reply));

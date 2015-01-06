@@ -16,8 +16,8 @@
 
 #include "base/bind.h"
 #include "base/command_line.h"
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/message_loop/message_loop.h"
 #include "base/posix/eintr_wrapper.h"
@@ -277,7 +277,8 @@ TEST_F(ProcessSingletonPosixTest, NotifyOtherProcessSuccess) {
 }
 
 // Test failure case of NotifyOtherProcess().
-TEST_F(ProcessSingletonPosixTest, NotifyOtherProcessFailure) {
+// Disabled, http://crbug.com/407065 .
+TEST_F(ProcessSingletonPosixTest, DISABLED_NotifyOtherProcessFailure) {
   CreateProcessSingletonOnThread();
 
   BlockWorkerThread();
@@ -323,7 +324,8 @@ TEST_F(ProcessSingletonPosixTest, NotifyOtherProcessHostChanged) {
 
 // Test that we fail when lock says process is on another host and we can't
 // notify it over the socket.
-TEST_F(ProcessSingletonPosixTest, NotifyOtherProcessDifferingHost) {
+// Disabled, http://crbug.com/407065 .
+TEST_F(ProcessSingletonPosixTest, DISABLED_NotifyOtherProcessDifferingHost) {
   CreateProcessSingletonOnThread();
 
   BlockWorkerThread();
@@ -341,7 +343,9 @@ TEST_F(ProcessSingletonPosixTest, NotifyOtherProcessDifferingHost) {
 
 // Test that we fail when lock says process is on another host and we can't
 // notify it over the socket.
-TEST_F(ProcessSingletonPosixTest, NotifyOtherProcessOrCreate_DifferingHost) {
+// Disabled, http://crbug.com/407065 .
+TEST_F(ProcessSingletonPosixTest,
+       DISABLED_NotifyOtherProcessOrCreate_DifferingHost) {
   CreateProcessSingletonOnThread();
 
   BlockWorkerThread();

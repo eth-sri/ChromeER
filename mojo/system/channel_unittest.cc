@@ -7,11 +7,11 @@
 #include "base/bind.h"
 #include "base/location.h"
 #include "base/message_loop/message_loop.h"
+#include "base/test/test_io_thread.h"
 #include "mojo/embedder/platform_channel_pair.h"
-#include "mojo/system/local_message_pipe_endpoint.h"
+#include "mojo/embedder/simple_platform_support.h"
 #include "mojo/system/message_in_transit.h"
 #include "mojo/system/message_pipe.h"
-#include "mojo/system/proxy_message_pipe_endpoint.h"
 #include "mojo/system/raw_channel.h"
 #include "mojo/system/test_utils.h"
 #include "mojo/system/waiter.h"
@@ -30,7 +30,7 @@ Tristate BoolToTristate(bool b) {
 class ChannelTest : public testing::Test {
  public:
   ChannelTest()
-      : io_thread_(test::TestIOThread::kAutoStart),
+      : io_thread_(base::TestIOThread::kAutoStart),
         init_result_(TRISTATE_UNKNOWN) {}
   virtual ~ChannelTest() {}
 
@@ -42,14 +42,14 @@ class ChannelTest : public testing::Test {
 
   void CreateChannelOnIOThread() {
     CHECK_EQ(base::MessageLoop::current(), io_thread()->message_loop());
-    channel_ = new Channel();
+    channel_ = new Channel(&platform_support_);
   }
 
   void InitChannelOnIOThread() {
     CHECK_EQ(base::MessageLoop::current(), io_thread()->message_loop());
 
     CHECK(raw_channel_);
-    CHECK(channel_);
+    CHECK(channel_.get());
     CHECK_EQ(init_result_, TRISTATE_UNKNOWN);
 
     init_result_ = BoolToTristate(channel_->Init(raw_channel_.Pass()));
@@ -58,11 +58,11 @@ class ChannelTest : public testing::Test {
   void ShutdownChannelOnIOThread() {
     CHECK_EQ(base::MessageLoop::current(), io_thread()->message_loop());
 
-    CHECK(channel_);
+    CHECK(channel_.get());
     channel_->Shutdown();
   }
 
-  test::TestIOThread* io_thread() { return &io_thread_; }
+  base::TestIOThread* io_thread() { return &io_thread_; }
   RawChannel* raw_channel() { return raw_channel_.get(); }
   scoped_ptr<RawChannel>* mutable_raw_channel() { return &raw_channel_; }
   Channel* channel() { return channel_.get(); }
@@ -78,7 +78,8 @@ class ChannelTest : public testing::Test {
     other_platform_handle_ = channel_pair.PassClientHandle();
   }
 
-  test::TestIOThread io_thread_;
+  embedder::SimplePlatformSupport platform_support_;
+  base::TestIOThread io_thread_;
   scoped_ptr<RawChannel> raw_channel_;
   embedder::ScopedPlatformHandle other_platform_handle_;
   scoped_refptr<Channel> channel_;
@@ -125,11 +126,11 @@ class MockRawChannelOnInitFails : public RawChannel {
   // |RawChannel| protected methods:
   virtual IOResult Read(size_t*) OVERRIDE {
     CHECK(false);
-    return IO_FAILED;
+    return IO_FAILED_UNKNOWN;
   }
   virtual IOResult ScheduleRead() OVERRIDE {
     CHECK(false);
-    return IO_FAILED;
+    return IO_FAILED_UNKNOWN;
   }
   virtual embedder::ScopedPlatformHandleVectorPtr GetReadPlatformHandles(
       size_t,
@@ -139,11 +140,11 @@ class MockRawChannelOnInitFails : public RawChannel {
   }
   virtual IOResult WriteNoLock(size_t*, size_t*) OVERRIDE {
     CHECK(false);
-    return IO_FAILED;
+    return IO_FAILED_UNKNOWN;
   }
   virtual IOResult ScheduleWriteNoLock() OVERRIDE {
     CHECK(false);
-    return IO_FAILED;
+    return IO_FAILED_UNKNOWN;
   }
   virtual bool OnInit() OVERRIDE {
     EXPECT_FALSE(on_init_called_);
@@ -192,9 +193,7 @@ TEST_F(ChannelTest, CloseBeforeRun) {
       base::Bind(&ChannelTest::InitChannelOnIOThread, base::Unretained(this)));
   EXPECT_EQ(TRISTATE_TRUE, init_result());
 
-  scoped_refptr<MessagePipe> mp(new MessagePipe(
-      scoped_ptr<MessagePipeEndpoint>(new LocalMessagePipeEndpoint()),
-      scoped_ptr<MessagePipeEndpoint>(new ProxyMessagePipeEndpoint())));
+  scoped_refptr<MessagePipe> mp(MessagePipe::CreateLocalProxy());
 
   MessageInTransit::EndpointId local_id =
       channel()->AttachMessagePipeEndpoint(mp, 1);
@@ -232,9 +231,7 @@ TEST_F(ChannelTest, ShutdownAfterAttach) {
       base::Bind(&ChannelTest::InitChannelOnIOThread, base::Unretained(this)));
   EXPECT_EQ(TRISTATE_TRUE, init_result());
 
-  scoped_refptr<MessagePipe> mp(new MessagePipe(
-      scoped_ptr<MessagePipeEndpoint>(new LocalMessagePipeEndpoint()),
-      scoped_ptr<MessagePipeEndpoint>(new ProxyMessagePipeEndpoint())));
+  scoped_refptr<MessagePipe> mp(MessagePipe::CreateLocalProxy());
 
   MessageInTransit::EndpointId local_id =
       channel()->AttachMessagePipeEndpoint(mp, 1);
@@ -284,9 +281,7 @@ TEST_F(ChannelTest, WaitAfterAttachRunAndShutdown) {
       base::Bind(&ChannelTest::InitChannelOnIOThread, base::Unretained(this)));
   EXPECT_EQ(TRISTATE_TRUE, init_result());
 
-  scoped_refptr<MessagePipe> mp(new MessagePipe(
-      scoped_ptr<MessagePipeEndpoint>(new LocalMessagePipeEndpoint()),
-      scoped_ptr<MessagePipeEndpoint>(new ProxyMessagePipeEndpoint())));
+  scoped_refptr<MessagePipe> mp(MessagePipe::CreateLocalProxy());
 
   MessageInTransit::EndpointId local_id =
       channel()->AttachMessagePipeEndpoint(mp, 1);

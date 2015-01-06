@@ -29,10 +29,13 @@
 #include "third_party/libaddressinput/chromium/addressinput_util.h"
 #include "third_party/libaddressinput/src/cpp/include/libaddressinput/address_data.h"
 #include "third_party/libaddressinput/src/cpp/include/libaddressinput/address_formatter.h"
+#include "third_party/libaddressinput/src/cpp/include/libaddressinput/address_metadata.h"
 #include "ui/base/l10n/l10n_util.h"
 
 using base::ASCIIToUTF16;
 using base::UTF16ToUTF8;
+using i18n::addressinput::AddressData;
+using i18n::addressinput::AddressField;
 
 namespace autofill {
 namespace {
@@ -62,9 +65,11 @@ void GetFieldsForDistinguishingProfiles(
     NAME_FULL,
     ADDRESS_HOME_LINE1,
     ADDRESS_HOME_LINE2,
+    ADDRESS_HOME_DEPENDENT_LOCALITY,
     ADDRESS_HOME_CITY,
     ADDRESS_HOME_STATE,
     ADDRESS_HOME_ZIP,
+    ADDRESS_HOME_SORTING_CODE,
     ADDRESS_HOME_COUNTRY,
     EMAIL_ADDRESS,
     PHONE_HOME_WHOLE_NUMBER,
@@ -235,7 +240,7 @@ struct CaseInsensitiveStringEquals {
 
   bool operator()(const base::string16& x) const {
     return x.size() == other_.size() &&
-        StringToLowerASCII(x) == StringToLowerASCII(other_);
+        base::StringToLowerASCII(x) == base::StringToLowerASCII(other_);
   }
 
  private:
@@ -315,7 +320,7 @@ void AutofillProfile::SetRawInfo(ServerFieldType type,
 base::string16 AutofillProfile::GetInfo(const AutofillType& type,
                                         const std::string& app_locale) const {
   if (type.html_type() == HTML_TYPE_FULL_ADDRESS) {
-    scoped_ptr< ::i18n::addressinput::AddressData> address_data =
+    scoped_ptr<AddressData> address_data =
         i18n::CreateAddressDataFromAutofillProfile(*this, app_locale);
     if (!addressinput::HasAllRequiredFields(*address_data))
       return base::string16();
@@ -560,8 +565,8 @@ bool AutofillProfile::IsSubsetOf(const AutofillProfile& profile,
             app_locale)) {
         return false;
       }
-    } else if (StringToLowerASCII(GetRawInfo(*it)) !=
-                   StringToLowerASCII(profile.GetRawInfo(*it))) {
+    } else if (base::StringToLowerASCII(GetRawInfo(*it)) !=
+                   base::StringToLowerASCII(profile.GetRawInfo(*it))) {
       return false;
     }
   }
@@ -593,8 +598,8 @@ void AutofillProfile::OverwriteOrAppendNames(
 
       AutofillType type = AutofillType(NAME_FULL);
       base::string16 full_name = current_name.GetInfo(type, app_locale);
-      if (StringToLowerASCII(full_name) ==
-          StringToLowerASCII(imported_name.GetInfo(type, app_locale))) {
+      if (base::StringToLowerASCII(full_name) ==
+          base::StringToLowerASCII(imported_name.GetInfo(type, app_locale))) {
         // The imported name has the same full name string as one of the
         // existing names for this profile.  Because full names are
         // _heuristically_ parsed into {first, middle, last} name components,
@@ -658,8 +663,8 @@ void AutofillProfile::OverwriteWithOrAddTo(const AutofillProfile& profile,
     // Single value field --- overwrite.
     if (!AutofillProfile::SupportsMultiValue(*iter)) {
       base::string16 new_value = profile.GetRawInfo(*iter);
-      if (StringToLowerASCII(GetRawInfo(*iter)) !=
-              StringToLowerASCII(new_value)) {
+      if (base::StringToLowerASCII(GetRawInfo(*iter)) !=
+              base::StringToLowerASCII(new_value)) {
         SetRawInfo(*iter, new_value);
       }
       continue;
@@ -800,30 +805,69 @@ base::string16 AutofillProfile::ConstructInferredLabel(
     const std::vector<ServerFieldType>& included_fields,
     size_t num_fields_to_use,
     const std::string& app_locale) const {
-  const base::string16 separator =
+  base::string16 separator =
       l10n_util::GetStringUTF16(IDS_AUTOFILL_ADDRESS_SUMMARY_SEPARATOR);
 
-  base::string16 label;
-  size_t num_fields_used = 0;
+  AutofillType region_code_type(HTML_TYPE_COUNTRY_CODE, HTML_MODE_NONE);
+  const base::string16& profile_region_code =
+      GetInfo(region_code_type, app_locale);
+  std::string address_region_code = UTF16ToUTF8(profile_region_code);
+
+  // A copy of |this| pruned down to contain only data for the address fields in
+  // |included_fields|.
+  AutofillProfile trimmed_profile(guid(), origin());
+  trimmed_profile.SetInfo(region_code_type, profile_region_code, app_locale);
+  trimmed_profile.set_language_code(language_code());
+
+  std::vector<ServerFieldType> remaining_fields;
   for (std::vector<ServerFieldType>::const_iterator it =
            included_fields.begin();
-       it != included_fields.end() && num_fields_used < num_fields_to_use;
+       it != included_fields.end() && num_fields_to_use > 0;
        ++it) {
-    base::string16 field = GetInfo(AutofillType(*it), app_locale);
-    if (field.empty())
+    AddressField address_field;
+    if (!i18n::FieldForType(*it, &address_field) ||
+        !::i18n::addressinput::IsFieldUsed(
+            address_field, address_region_code) ||
+        address_field == ::i18n::addressinput::COUNTRY) {
+      remaining_fields.push_back(*it);
+      continue;
+    }
+
+    AutofillType autofill_type(*it);
+    const base::string16& field_value = GetInfo(autofill_type, app_locale);
+    if (field_value.empty())
+      continue;
+
+    trimmed_profile.SetInfo(autofill_type, field_value, app_locale);
+    --num_fields_to_use;
+  }
+
+  scoped_ptr<AddressData> address_data =
+      i18n::CreateAddressDataFromAutofillProfile(trimmed_profile, app_locale);
+  std::string address_line;
+  ::i18n::addressinput::GetFormattedNationalAddressLine(
+      *address_data, &address_line);
+  base::string16 label = base::UTF8ToUTF16(address_line);
+
+  for (std::vector<ServerFieldType>::const_iterator it =
+           remaining_fields.begin();
+       it != remaining_fields.end() && num_fields_to_use > 0;
+       ++it) {
+    const base::string16& field_value = GetInfo(AutofillType(*it), app_locale);
+    if (field_value.empty())
       continue;
 
     if (!label.empty())
       label.append(separator);
 
-    label.append(field);
-    ++num_fields_used;
+    label.append(field_value);
+    --num_fields_to_use;
   }
 
-  // Flatten the label if need be.
-  const base::string16& line_separator =
-      l10n_util::GetStringUTF16(IDS_AUTOFILL_ADDRESS_LINE_SEPARATOR);
-  base::ReplaceChars(label, base::ASCIIToUTF16("\n"), line_separator, &label);
+  // If country code is missing, libaddressinput won't be used to format the
+  // address. In this case the suggestion might include a multi-line street
+  // address which needs to be flattened.
+  base::ReplaceChars(label, base::ASCIIToUTF16("\n"), separator, &label);
 
   return label;
 }

@@ -40,7 +40,9 @@
 #include "content/public/common/user_agent.h"
 #include "grit/browser_resources.h"
 #include "jni/DevToolsServer_jni.h"
+#include "net/base/net_errors.h"
 #include "net/socket/unix_domain_listen_socket_posix.h"
+#include "net/socket/unix_domain_server_socket_posix.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "ui/base/resource/resource_bundle.h"
 
@@ -63,10 +65,10 @@ const char kDevToolsChannelNameFormat[] = "%s_devtools_remote";
 
 const char kFrontEndURL[] =
     "http://chrome-devtools-frontend.appspot.com/serve_rev/%s/devtools.html";
-const char kDefaultSocketNamePrefix[] = "chrome";
 const char kTetheringSocketName[] = "chrome_devtools_tethering_%d_%d";
 
 const char kTargetTypePage[] = "page";
+const char kTargetTypeServiceWorker[] = "service_worker";
 const char kTargetTypeOther[] = "other";
 
 static GURL GetFaviconURLForContents(WebContents* web_contents) {
@@ -75,6 +77,29 @@ static GURL GetFaviconURLForContents(WebContents* web_contents) {
   if (entry != NULL && entry->GetURL().is_valid())
     return entry->GetFavicon().url;
   return GURL();
+}
+
+static GURL GetFaviconURLForAgentHost(
+    scoped_refptr<DevToolsAgentHost> agent_host) {
+  if (WebContents* web_contents = agent_host->GetWebContents())
+    return GetFaviconURLForContents(web_contents);
+  return GURL();
+}
+
+static base::TimeTicks GetLastActiveTimeForAgentHost(
+    scoped_refptr<DevToolsAgentHost> agent_host) {
+  if (WebContents* web_contents = agent_host->GetWebContents())
+    return web_contents->GetLastActiveTime();
+  return base::TimeTicks();
+}
+
+bool AuthorizeSocketAccessWithDebugPermission(
+    const net::UnixDomainServerSocket::Credentials& credentials) {
+  JNIEnv* env = base::android::AttachCurrentThread();
+  return Java_DevToolsServer_checkDebugPermission(
+      env, base::android::GetApplicationContext(),
+      credentials.process_id, credentials.user_id) ||
+      content::CanUserConnectToDevTools(credentials);
 }
 
 class TargetBase : public content::DevToolsTarget {
@@ -102,10 +127,17 @@ class TargetBase : public content::DevToolsTarget {
         last_activity_time_(web_contents->GetLastActiveTime()) {
   }
 
-  TargetBase(const base::string16& title, const GURL& url)
-      : title_(base::UTF16ToUTF8(title)),
-        url_(url)
-  {}
+  explicit TargetBase(scoped_refptr<DevToolsAgentHost> agent_host)
+      : title_(agent_host->GetTitle()),
+        url_(agent_host->GetURL()),
+        favicon_url_(GetFaviconURLForAgentHost(agent_host)),
+        last_activity_time_(GetLastActiveTimeForAgentHost(agent_host)) {
+  }
+
+  TargetBase(const std::string& title, const GURL& url)
+      : title_(title),
+        url_(url) {
+  }
 
  private:
   const std::string title_;
@@ -132,7 +164,9 @@ class TabTarget : public TargetBase {
     return base::IntToString(tab_id_);
   }
 
-  virtual std::string GetType() const OVERRIDE { return kTargetTypePage; }
+  virtual std::string GetType() const OVERRIDE {
+    return kTargetTypePage;
+  }
 
   virtual bool IsAttached() const OVERRIDE {
     TabModel* model;
@@ -159,8 +193,7 @@ class TabTarget : public TargetBase {
       if (!web_contents)
         return NULL;
     }
-    RenderViewHost* rvh = web_contents->GetRenderViewHost();
-    return rvh ? DevToolsAgentHost::GetOrCreateFor(rvh) : NULL;
+    return DevToolsAgentHost::GetOrCreateFor(web_contents);
   }
 
   virtual bool Activate() const OVERRIDE {
@@ -188,7 +221,7 @@ class TabTarget : public TargetBase {
   }
 
   TabTarget(int tab_id, const base::string16& title, const GURL& url)
-      : TargetBase(title, url),
+      : TargetBase(base::UTF16ToUTF8(title), url),
         tab_id_(tab_id) {
   }
 
@@ -213,10 +246,9 @@ class TabTarget : public TargetBase {
 
 class NonTabTarget : public TargetBase {
  public:
-  explicit NonTabTarget(WebContents* web_contents)
-      : TargetBase(web_contents),
-        agent_host_(DevToolsAgentHost::GetOrCreateFor(
-            web_contents->GetRenderViewHost())) {
+  explicit NonTabTarget(scoped_refptr<DevToolsAgentHost> agent_host)
+      : TargetBase(agent_host),
+        agent_host_(agent_host) {
   }
 
   // content::DevToolsTarget implementation:
@@ -225,10 +257,18 @@ class NonTabTarget : public TargetBase {
   }
 
   virtual std::string GetType() const OVERRIDE {
-    if (TabModelList::begin() == TabModelList::end()) {
-      // If there are no tab models we must be running in ChromeShell.
-      // Return the 'page' target type for backwards compatibility.
-      return kTargetTypePage;
+    switch (agent_host_->GetType()) {
+      case DevToolsAgentHost::TYPE_WEB_CONTENTS:
+        if (TabModelList::begin() == TabModelList::end()) {
+          // If there are no tab models we must be running in ChromeShell.
+          // Return the 'page' target type for backwards compatibility.
+          return kTargetTypePage;
+        }
+        break;
+      case DevToolsAgentHost::TYPE_SERVICE_WORKER:
+        return kTargetTypeServiceWorker;
+      default:
+        break;
     }
     return kTargetTypeOther;
   }
@@ -242,22 +282,11 @@ class NonTabTarget : public TargetBase {
   }
 
   virtual bool Activate() const OVERRIDE {
-    RenderViewHost* rvh = agent_host_->GetRenderViewHost();
-    if (!rvh)
-      return false;
-    WebContents* web_contents = WebContents::FromRenderViewHost(rvh);
-    if (!web_contents)
-      return false;
-    web_contents->GetDelegate()->ActivateContents(web_contents);
-    return true;
+    return agent_host_->Activate();
   }
 
   virtual bool Close() const OVERRIDE {
-    RenderViewHost* rvh = agent_host_->GetRenderViewHost();
-    if (!rvh)
-      return false;
-    rvh->ClosePage();
-    return true;
+    return agent_host_->Close();
   }
 
  private:
@@ -268,8 +297,10 @@ class NonTabTarget : public TargetBase {
 // instance of this gets created each time devtools is enabled.
 class DevToolsServerDelegate : public content::DevToolsHttpHandlerDelegate {
  public:
-  DevToolsServerDelegate()
-      : last_tethering_socket_(0) {
+  explicit DevToolsServerDelegate(
+      const net::UnixDomainServerSocket::AuthCallback& auth_callback)
+      : last_tethering_socket_(0),
+        auth_callback_(auth_callback) {
   }
 
   virtual std::string GetDiscoveryPageHTML() OVERRIDE {
@@ -346,16 +377,15 @@ class DevToolsServerDelegate : public content::DevToolsHttpHandlerDelegate {
     }
 
     // Add targets for WebContents not associated with any tabs.
-    std::vector<RenderViewHost*> rvh_list =
-        DevToolsAgentHost::GetValidRenderViewHosts();
-    for (std::vector<RenderViewHost*>::iterator it = rvh_list.begin();
-         it != rvh_list.end(); ++it) {
-      WebContents* web_contents = WebContents::FromRenderViewHost(*it);
-      if (!web_contents)
-        continue;
-      if (tab_web_contents.find(web_contents) != tab_web_contents.end())
-        continue;
-      targets.push_back(new NonTabTarget(web_contents));
+    DevToolsAgentHost::List agents =
+        DevToolsAgentHost::GetOrCreateAll();
+    for (DevToolsAgentHost::List::iterator it = agents.begin();
+         it != agents.end(); ++it) {
+      if (WebContents* web_contents = (*it)->GetWebContents()) {
+        if (tab_web_contents.find(web_contents) != tab_web_contents.end())
+          continue;
+      }
+      targets.push_back(new NonTabTarget(*it));
     }
 
     callback.Run(targets);
@@ -371,7 +401,7 @@ class DevToolsServerDelegate : public content::DevToolsHttpHandlerDelegate {
             *name,
             "",
             delegate,
-            base::Bind(&content::CanUserConnectToDevTools))
+            auth_callback_)
         .PassAs<net::StreamListenSocket>();
   }
 
@@ -385,23 +415,55 @@ class DevToolsServerDelegate : public content::DevToolsHttpHandlerDelegate {
   }
 
   int last_tethering_socket_;
+  const net::UnixDomainServerSocket::AuthCallback auth_callback_;
 
   DISALLOW_COPY_AND_ASSIGN(DevToolsServerDelegate);
 };
 
-}  // namespace
-
-DevToolsServer::DevToolsServer()
-    : socket_name_(base::StringPrintf(kDevToolsChannelNameFormat,
-                                      kDefaultSocketNamePrefix)),
-      protocol_handler_(NULL) {
-  // Override the default socket name if one is specified on the command line.
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  if (command_line.HasSwitch(switches::kRemoteDebuggingSocketName)) {
-    socket_name_ = command_line.GetSwitchValueASCII(
-        switches::kRemoteDebuggingSocketName);
+// Factory for UnixDomainServerSocket. It tries a fallback socket when
+// original socket doesn't work.
+class UnixDomainServerSocketFactory
+    : public content::DevToolsHttpHandler::ServerSocketFactory {
+ public:
+  UnixDomainServerSocketFactory(
+      const std::string& socket_name,
+      const net::UnixDomainServerSocket::AuthCallback& auth_callback)
+      : content::DevToolsHttpHandler::ServerSocketFactory(socket_name, 0, 1),
+        auth_callback_(auth_callback) {
   }
-}
+
+ private:
+  // content::DevToolsHttpHandler::ServerSocketFactory.
+  virtual scoped_ptr<net::ServerSocket> Create() const OVERRIDE {
+    return scoped_ptr<net::ServerSocket>(
+        new net::UnixDomainServerSocket(auth_callback_,
+                                        true /* use_abstract_namespace */));
+  }
+
+  virtual scoped_ptr<net::ServerSocket> CreateAndListen() const OVERRIDE {
+    scoped_ptr<net::ServerSocket> socket = Create();
+    if (!socket)
+      return scoped_ptr<net::ServerSocket>();
+
+    if (socket->ListenWithAddressAndPort(address_, port_, backlog_) == net::OK)
+      return socket.Pass();
+
+    // Try a fallback socket name.
+    const std::string fallback_address(
+        base::StringPrintf("%s_%d", address_.c_str(), getpid()));
+    if (socket->ListenWithAddressAndPort(fallback_address, port_, backlog_)
+        == net::OK)
+      return socket.Pass();
+
+    return scoped_ptr<net::ServerSocket>();
+  }
+
+  const net::UnixDomainServerSocket::AuthCallback auth_callback_;
+
+  DISALLOW_COPY_AND_ASSIGN(UnixDomainServerSocketFactory);
+};
+
+}  // namespace
 
 DevToolsServer::DevToolsServer(const std::string& socket_name_prefix)
     : socket_name_(base::StringPrintf(kDevToolsChannelNameFormat,
@@ -419,17 +481,20 @@ DevToolsServer::~DevToolsServer() {
   Stop();
 }
 
-void DevToolsServer::Start() {
+void DevToolsServer::Start(bool allow_debug_permission) {
   if (protocol_handler_)
     return;
 
+  net::UnixDomainServerSocket::AuthCallback auth_callback =
+      allow_debug_permission ?
+          base::Bind(&AuthorizeSocketAccessWithDebugPermission) :
+          base::Bind(&content::CanUserConnectToDevTools);
+  scoped_ptr<content::DevToolsHttpHandler::ServerSocketFactory> factory(
+      new UnixDomainServerSocketFactory(socket_name_, auth_callback));
   protocol_handler_ = content::DevToolsHttpHandler::Start(
-      new net::deprecated::UnixDomainListenSocketWithAbstractNamespaceFactory(
-          socket_name_,
-          base::StringPrintf("%s_%d", socket_name_.c_str(), getpid()),
-          base::Bind(&content::CanUserConnectToDevTools)),
+      factory.Pass(),
       base::StringPrintf(kFrontEndURL, content::GetWebKitRevision().c_str()),
-      new DevToolsServerDelegate(),
+      new DevToolsServerDelegate(auth_callback),
       base::FilePath());
 }
 
@@ -471,10 +536,11 @@ static jboolean IsRemoteDebuggingEnabled(JNIEnv* env,
 static void SetRemoteDebuggingEnabled(JNIEnv* env,
                                       jobject obj,
                                       jlong server,
-                                      jboolean enabled) {
+                                      jboolean enabled,
+                                      jboolean allow_debug_permission) {
   DevToolsServer* devtools_server = reinterpret_cast<DevToolsServer*>(server);
   if (enabled) {
-    devtools_server->Start();
+    devtools_server->Start(allow_debug_permission);
   } else {
     devtools_server->Stop();
   }

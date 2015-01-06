@@ -5,6 +5,7 @@
 {
   'targets': [
     {
+      # GN version: //remoting/client/plugin
       'target_name': 'remoting_client_plugin',
       'type': 'static_library',
       'variables': { 'enable_wexit_time_destructors': 1, },
@@ -29,6 +30,7 @@
     },  # end of target 'remoting_client_plugin'
 
     {
+      # GN version: //remoting/client
       'target_name': 'remoting_client',
       'type': 'static_library',
       'variables': { 'enable_wexit_time_destructors': 1, },
@@ -52,6 +54,7 @@
       'type': 'none',
       'actions': [
         {
+          # GN version: //remoting/webapp:html
           'action_name': 'Build Remoting Webapp main.html',
           'inputs': [
             'webapp/build-html.py',
@@ -85,6 +88,22 @@
             '--js', '<@(remoting_webapp_wcs_sandbox_html_js_files)',
           ],
         },
+        {
+          'action_name': 'Build Remoting Webapp background.html',
+          'inputs': [
+            'webapp/build-html.py',
+            '<(remoting_webapp_template_background)',
+          ],
+          'outputs': [
+            '<(SHARED_INTERMEDIATE_DIR)/background.html',
+          ],
+          'action': [
+            'python', 'webapp/build-html.py',
+            '<(SHARED_INTERMEDIATE_DIR)/background.html',
+            '<(remoting_webapp_template_background)',
+            '--js', '<@(remoting_webapp_background_js_files)',
+          ],
+        },
       ],
     },  # end of target 'remoting_webapp_html'
 
@@ -114,7 +133,6 @@
       'variables': {
         'output_dir': '<(PRODUCT_DIR)/remoting/remoting.webapp.v2',
         'zip_path': '<(PRODUCT_DIR)/remoting-webapp.v2.zip',
-        'extra_files': [ 'webapp/background.js' ],
       },
       'conditions': [
         ['disable_nacl==0 and disable_nacl_untrusted==0', {

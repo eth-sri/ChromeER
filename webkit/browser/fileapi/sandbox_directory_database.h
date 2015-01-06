@@ -12,7 +12,7 @@
 #include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/time/time.h"
-#include "webkit/browser/webkit_storage_browser_export.h"
+#include "webkit/browser/storage_browser_export.h"
 
 namespace content {
 class SandboxDirectoryDatabaseTest;
@@ -29,7 +29,7 @@ class Status;
 class WriteBatch;
 }
 
-namespace fileapi {
+namespace storage {
 
 // This class WILL NOT protect you against producing directory loops, giving an
 // empty directory a backing data file, giving two files the same backing file,
@@ -40,11 +40,11 @@ namespace fileapi {
 // TODO(ericu): Safe mode, which does more checks such as the above on debug
 // builds.
 // TODO(ericu): Add a method that will give a unique filename for a data file.
-class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE SandboxDirectoryDatabase {
+class STORAGE_EXPORT_PRIVATE SandboxDirectoryDatabase {
  public:
   typedef int64 FileId;
 
-  struct WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE FileInfo {
+  struct STORAGE_EXPORT_PRIVATE FileInfo {
     FileInfo();
     ~FileInfo();
 
@@ -130,6 +130,6 @@ class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE SandboxDirectoryDatabase {
   DISALLOW_COPY_AND_ASSIGN(SandboxDirectoryDatabase);
 };
 
-}  // namespace fileapi
+}  // namespace storage
 
 #endif  // WEBKIT_BROWSER_FILEAPI_SANDBOX_DIRECTORY_DATABASE_H_

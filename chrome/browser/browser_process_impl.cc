@@ -28,14 +28,11 @@
 #include "chrome/browser/chrome_browser_main.h"
 #include "chrome/browser/chrome_content_browser_client.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/component_updater/component_updater_configurator.h"
-#include "chrome/browser/component_updater/component_updater_service.h"
-#include "chrome/browser/component_updater/pnacl/pnacl_component_installer.h"
+#include "chrome/browser/component_updater/chrome_component_updater_configurator.h"
 #include "chrome/browser/defaults.h"
 #include "chrome/browser/devtools/remote_debugging_server.h"
 #include "chrome/browser/download/download_request_limiter.h"
 #include "chrome/browser/download/download_status_updater.h"
-#include "chrome/browser/extensions/chrome_extensions_browser_client.h"
 #include "chrome/browser/first_run/upgrade_util.h"
 #include "chrome/browser/gpu/gl_string_manager.h"
 #include "chrome/browser/gpu/gpu_mode_manager.h"
@@ -76,6 +73,7 @@
 #include "chrome/common/url_constants.h"
 #include "chrome/installer/util/google_update_constants.h"
 #include "chrome/installer/util/google_update_settings.h"
+#include "components/component_updater/component_updater_service.h"
 #include "components/gcm_driver/gcm_driver.h"
 #include "components/metrics/metrics_service.h"
 #include "components/network_time/network_time_tracker.h"
@@ -108,6 +106,7 @@
 #if defined(OS_ANDROID)
 #include "components/gcm_driver/gcm_driver_android.h"
 #else
+#include "chrome/browser/chrome_device_client.h"
 #include "chrome/browser/services/gcm/gcm_desktop_utils.h"
 #include "components/gcm_driver/gcm_client_factory.h"
 #endif
@@ -123,10 +122,15 @@
 #endif  // defined(ENABLE_CONFIGURATION_POLICY)
 
 #if defined(ENABLE_EXTENSIONS)
+#include "chrome/browser/extensions/chrome_extensions_browser_client.h"
 #include "chrome/browser/extensions/event_router_forwarder.h"
 #include "chrome/browser/extensions/extension_renderer_state.h"
 #include "chrome/browser/media_galleries/media_file_system_registry.h"
 #include "components/storage_monitor/storage_monitor.h"
+#endif
+
+#if !defined(DISABLE_NACL)
+#include "chrome/browser/component_updater/pnacl/pnacl_component_installer.h"
 #endif
 
 #if defined(ENABLE_PLUGIN_INSTALLATION)
@@ -191,12 +195,15 @@ BrowserProcessImpl::BrowserProcessImpl(
   InitIdleMonitor();
 #endif
 
+#if !defined(OS_ANDROID)
+  device_client_.reset(new ChromeDeviceClient);
+#endif
+
 #if defined(ENABLE_EXTENSIONS)
-  apps::AppsClient::Set(ChromeAppsClient::GetInstance());
+  extensions::AppsClient::Set(ChromeAppsClient::GetInstance());
 
   extension_event_router_forwarder_ = new extensions::EventRouterForwarder;
   ExtensionRendererState::GetInstance()->Init();
-#endif
 
   extensions::ExtensionsClient::Set(
       extensions::ChromeExtensionsClient::GetInstance());
@@ -204,6 +211,7 @@ BrowserProcessImpl::BrowserProcessImpl(
   extensions_browser_client_.reset(
       new extensions::ChromeExtensionsBrowserClient);
   extensions::ExtensionsBrowserClient::Set(extensions_browser_client_.get());
+#endif
 
   message_center::MessageCenter::Initialize();
 
@@ -426,7 +434,9 @@ void RundownTaskCounter::Post(base::SequencedTaskRunner* task_runner) {
 
   base::AtomicRefCountInc(&count_);
 
-  task_runner->PostTask(FROM_HERE,
+  // The task must be non-nestable to guarantee that it runs after all tasks
+  // currently scheduled on |task_runner| have completed.
+  task_runner->PostNonNestableTask(FROM_HERE,
       base::Bind(&RundownTaskCounter::Decrement, this));
 }
 
@@ -470,11 +480,11 @@ void BrowserProcessImpl::EndSession() {
     profile->SetExitType(Profile::EXIT_SESSION_ENDED);
 
     if (!use_broken_synchronization)
-      rundown_counter->Post(profile->GetIOTaskRunner());
+      rundown_counter->Post(profile->GetIOTaskRunner().get());
   }
 
   // Tell the metrics service it was cleanly shutdown.
-  MetricsService* metrics = g_browser_process->metrics_service();
+  metrics::MetricsService* metrics = g_browser_process->metrics_service();
   if (metrics && local_state()) {
     metrics->RecordStartOfSessionEnd();
 #if !defined(OS_CHROMEOS)
@@ -484,7 +494,7 @@ void BrowserProcessImpl::EndSession() {
     local_state()->CommitPendingWrite();
 
     if (!use_broken_synchronization)
-      rundown_counter->Post(local_state_task_runner_);
+      rundown_counter->Post(local_state_task_runner_.get());
 #endif
   }
 
@@ -500,7 +510,7 @@ void BrowserProcessImpl::EndSession() {
 #if defined(USE_X11) || defined(OS_WIN)
   if (use_broken_synchronization) {
     rundown_counter->Post(
-        BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE));
+        BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE).get());
   }
 
   // Do a best-effort wait on the successful countdown of rundown tasks. Note
@@ -530,7 +540,7 @@ MetricsServicesManager* BrowserProcessImpl::GetMetricsServicesManager() {
   return metrics_services_manager_.get();
 }
 
-MetricsService* BrowserProcessImpl::metrics_service() {
+metrics::MetricsService* BrowserProcessImpl::metrics_service() {
   DCHECK(CalledOnValidThread());
   return GetMetricsServicesManager()->GetMetricsService();
 }
@@ -772,11 +782,13 @@ void BrowserProcessImpl::RegisterPrefs(PrefRegistrySimple* registry) {
 
   registry->RegisterBooleanPref(prefs::kAllowCrossOriginAuthPrompt, false);
 
+  registry->RegisterBooleanPref(prefs::kBrowserGuestModeEnabled, true);
+
 #if defined(OS_CHROMEOS) || defined(OS_ANDROID) || defined(OS_IOS)
   registry->RegisterBooleanPref(prefs::kEulaAccepted, false);
 #endif  // defined(OS_CHROMEOS) || defined(OS_ANDROID) || defined(OS_IOS)
 #if defined(OS_WIN)
-  if (base::win::GetVersion() >= base::win::VERSION_WIN8) {
+  if (base::win::GetVersion() >= base::win::VERSION_WIN7) {
     registry->RegisterStringPref(prefs::kRelaunchMode,
                                  upgrade_util::kRelaunchModeDefault);
   }
@@ -897,11 +909,15 @@ CRLSetFetcher* BrowserProcessImpl::crl_set_fetcher() {
 
 component_updater::PnaclComponentInstaller*
 BrowserProcessImpl::pnacl_component_installer() {
+#if !defined(DISABLE_NACL)
   if (!pnacl_component_installer_.get()) {
     pnacl_component_installer_.reset(
         new component_updater::PnaclComponentInstaller());
   }
   return pnacl_component_installer_.get();
+#else
+  return NULL;
+#endif
 }
 
 void BrowserProcessImpl::ResourceDispatcherHostCreated() {

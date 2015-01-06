@@ -49,6 +49,7 @@
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "chrome/grit/generated_resources.h"
 #include "components/bookmarks/browser/bookmark_model.h"
 #include "components/metrics/metrics_service.h"
 #include "content/public/browser/notification_details.h"
@@ -62,9 +63,7 @@
 #include "extensions/browser/extension_registry.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_set.h"
-#include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
-#include "grit/ui_resources.h"
 #include "ui/accessibility/ax_view_state.h"
 #include "ui/base/dragdrop/drag_utils.h"
 #include "ui/base/dragdrop/os_exchange_data.h"
@@ -76,6 +75,7 @@
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/text_constants.h"
 #include "ui/gfx/text_elider.h"
+#include "ui/resources/grit/ui_resources.h"
 #include "ui/views/button_drag_utils.h"
 #include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/button/label_button_border.h"
@@ -268,7 +268,6 @@ class ShortcutButton : public BookmarkButtonBase {
   }
 
  private:
-
   DISALLOW_COPY_AND_ASSIGN(ShortcutButton);
 };
 
@@ -853,7 +852,7 @@ bool BookmarkBarView::AreDropTypesRequired() {
 bool BookmarkBarView::CanDrop(const ui::OSExchangeData& data) {
   if (!model_ || !model_->loaded() ||
       !browser_->profile()->GetPrefs()->GetBoolean(
-          prefs::kEditBookmarksEnabled))
+          bookmarks::prefs::kEditBookmarksEnabled))
     return false;
 
   if (!drop_info_.get())
@@ -1353,11 +1352,11 @@ void BookmarkBarView::Init() {
   AddChildView(apps_page_shortcut_);
   profile_pref_registrar_.Init(browser_->profile()->GetPrefs());
   profile_pref_registrar_.Add(
-      prefs::kShowAppsShortcutInBookmarkBar,
+      bookmarks::prefs::kShowAppsShortcutInBookmarkBar,
       base::Bind(&BookmarkBarView::OnAppsPageShortcutVisibilityPrefChanged,
                  base::Unretained(this)));
   profile_pref_registrar_.Add(
-      prefs::kShowManagedBookmarksInBookmarkBar,
+      bookmarks::prefs::kShowManagedBookmarksInBookmarkBar,
       base::Bind(&BookmarkBarView::UpdateButtonsVisibility,
                  base::Unretained(this)));
   apps_page_shortcut_->SetVisible(
@@ -1825,7 +1824,7 @@ void BookmarkBarView::UpdateButtonsVisibility() {
 
   bool show_managed = !client_->managed_node()->empty() &&
                       browser_->profile()->GetPrefs()->GetBoolean(
-                          prefs::kShowManagedBookmarksInBookmarkBar);
+                          bookmarks::prefs::kShowManagedBookmarksInBookmarkBar);
   bool update_managed = show_managed != managed_bookmarks_button_->visible();
   if (update_managed)
     managed_bookmarks_button_->SetVisible(show_managed);

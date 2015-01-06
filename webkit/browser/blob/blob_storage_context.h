@@ -12,7 +12,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "webkit/browser/blob/blob_data_handle.h"
-#include "webkit/browser/webkit_storage_browser_export.h"
+#include "webkit/browser/storage_browser_export.h"
 #include "webkit/common/blob/blob_data.h"
 
 class GURL;
@@ -26,7 +26,7 @@ namespace content {
 class BlobStorageHost;
 }
 
-namespace webkit_blob {
+namespace storage {
 
 class BlobDataHandle;
 
@@ -34,7 +34,7 @@ class BlobDataHandle;
 // and maintains a mapping from blob uuid to the data. The class is single
 // threaded and should only be used on the IO thread.
 // In chromium, there is one instance per profile.
-class WEBKIT_STORAGE_BROWSER_EXPORT BlobStorageContext
+class STORAGE_EXPORT BlobStorageContext
     : public base::SupportsWeakPtr<BlobStorageContext> {
  public:
   BlobStorageContext();
@@ -113,6 +113,6 @@ class WEBKIT_STORAGE_BROWSER_EXPORT BlobStorageContext
   DISALLOW_COPY_AND_ASSIGN(BlobStorageContext);
 };
 
-}  // namespace webkit_blob
+}  // namespace storage
 
 #endif  // WEBKIT_BROWSER_BLOB_BLOB_STORAGE_CONTEXT_H_

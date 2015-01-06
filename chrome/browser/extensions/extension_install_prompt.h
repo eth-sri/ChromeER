@@ -83,6 +83,8 @@ class ExtensionInstallPrompt
     RETAINED_FILES_DETAILS,
   };
 
+  static std::string PromptTypeToString(PromptType type);
+
   // Extra information needed to display an installation or uninstallation
   // prompt. Gets populated with raw data and exposes getters for formatted
   // strings so that the GTK/views/Cocoa install dialogs don't have to repeat
@@ -165,7 +167,7 @@ class ExtensionInstallPrompt
     bool has_webstore_data() const { return has_webstore_data_; }
 
     const ExtensionInstallPromptExperiment* experiment() const {
-      return experiment_;
+      return experiment_.get();
     }
     void set_experiment(ExtensionInstallPromptExperiment* experiment) {
       experiment_ = experiment;
@@ -361,6 +363,10 @@ class ExtensionInstallPrompt
 
   // Installation failed. This is declared virtual for testing.
   virtual void OnInstallFailure(const extensions::CrxInstallerError& error);
+
+  void set_callback_for_test(const ShowDialogCallback& show_dialog_callback) {
+    show_dialog_callback_ = show_dialog_callback;
+  }
 
  protected:
   friend class extensions::ExtensionWebstorePrivateApiTest;

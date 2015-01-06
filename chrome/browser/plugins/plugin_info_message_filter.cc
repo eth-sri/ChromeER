@@ -16,7 +16,6 @@
 #include "chrome/browser/plugins/plugin_metadata.h"
 #include "chrome/browser/plugins/plugin_prefs.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/chrome_content_client.h"
 #include "chrome/common/content_settings.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/render_messages.h"
@@ -28,11 +27,15 @@
 #include "widevine_cdm_version.h"  // In SHARED_INTERMEDIATE_DIR.
 
 #if defined(ENABLE_EXTENSIONS)
-#include "chrome/browser/guest_view/web_view/web_view_renderer_state.h"
+#include "extensions/browser/guest_view/web_view/web_view_renderer_state.h"
 #endif
 
 #if defined(OS_WIN)
 #include "base/win/metro.h"
+#endif
+
+#if !defined(DISABLE_NACL)
+#include "components/nacl/common/nacl_constants.h"
 #endif
 
 using content::PluginService;
@@ -47,9 +50,11 @@ bool ShouldUseJavaScriptSettingForPlugin(const WebPluginInfo& plugin) {
     return false;
   }
 
+#if !defined(DISABLE_NACL)
   // Treat Native Client invocations like JavaScript.
-  if (plugin.name == base::ASCIIToUTF16(ChromeContentClient::kNaClPluginName))
+  if (plugin.name == base::ASCIIToUTF16(nacl::kNaClPluginName))
     return true;
+#endif
 
 #if defined(WIDEVINE_CDM_AVAILABLE) && defined(ENABLE_PEPPER_CDMS)
   // Treat CDM invocations like JavaScript.
@@ -247,7 +252,8 @@ void PluginInfoMessageFilter::Context::DecidePluginStatus(
     CHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
     // NPAPI plugins are not supported inside <webview> guests.
 #if defined(ENABLE_EXTENSIONS)
-    if (WebViewRendererState::GetInstance()->IsGuest(render_process_id_)) {
+    if (extensions::WebViewRendererState::GetInstance()->IsGuest(
+        render_process_id_)) {
       status->value =
           ChromeViewHostMsg_GetPluginInfo_Status::kNPAPINotSupported;
       return;
@@ -325,7 +331,8 @@ void PluginInfoMessageFilter::Context::DecidePluginStatus(
     // and update the status as appropriate depending on the response from the
     // embedder.
 #if defined(ENABLE_EXTENSIONS)
-    if (WebViewRendererState::GetInstance()->IsGuest(render_process_id_))
+    if (extensions::WebViewRendererState::GetInstance()->IsGuest(
+        render_process_id_))
       status->value = ChromeViewHostMsg_GetPluginInfo_Status::kUnauthorized;
 
 #endif

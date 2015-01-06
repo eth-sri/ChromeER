@@ -14,6 +14,7 @@
 #include "base/strings/string16.h"
 #include "base/supports_user_data.h"
 #include "content/common/content_export.h"
+#include "content/public/browser/invalidate_type.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/page_navigator.h"
 #include "content/public/browser/save_page_type.h"
@@ -315,8 +316,8 @@ class WebContents : public PageNavigator,
   virtual bool IsBeingDestroyed() const = 0;
 
   // Convenience method for notifying the delegate of a navigation state
-  // change. See InvalidateType enum.
-  virtual void NotifyNavigationStateChanged(unsigned changed_flags) = 0;
+  // change.
+  virtual void NotifyNavigationStateChanged(InvalidateTypes changed_flags) = 0;
 
   // Get the last time that the WebContents was made active (either when it was
   // created or shown with WasShown()).
@@ -580,15 +581,6 @@ class WebContents : public PageNavigator,
       jobject jweb_contents_android);
   virtual base::android::ScopedJavaLocalRef<jobject> GetJavaWebContents() = 0;
 #elif defined(OS_MACOSX)
-  // The web contents view assumes that its view will never be overlapped by
-  // another view (either partially or fully). This allows it to perform
-  // optimizations. If the view is in a view hierarchy where it might be
-  // overlapped by another view, notify the view by calling this with |true|.
-  virtual void SetAllowOverlappingViews(bool overlapping) = 0;
-
-  // Returns true if overlapping views are allowed, false otherwise.
-  virtual bool GetAllowOverlappingViews() = 0;
-
   // Allowing other views disables optimizations which assume that only a single
   // WebContents is present.
   virtual void SetAllowOtherViews(bool allow) = 0;

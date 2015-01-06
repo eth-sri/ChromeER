@@ -44,7 +44,6 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/sys_byteorder.h"
 #include "base/values.h"
-#include "grit/net_resources.h"
 #include "url/gurl.h"
 #include "url/url_canon.h"
 #include "url/url_canon_ip.h"
@@ -52,6 +51,7 @@
 #include "net/base/dns_util.h"
 #include "net/base/net_module.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
+#include "net/grit/net_resources.h"
 #include "net/http/http_content_disposition.h"
 
 #if defined(OS_ANDROID)
@@ -797,6 +797,28 @@ int ConvertAddressFamily(AddressFamily address_family) {
   }
   NOTREACHED();
   return AF_UNSPEC;
+}
+
+bool ParseURLHostnameToNumber(const std::string& hostname,
+                              IPAddressNumber* ip_number) {
+  // |hostname| is an already canoncalized hostname, conforming to RFC 3986.
+  // For an IP address, this is defined in Section 3.2.2 of RFC 3986, with
+  // the canonical form for IPv6 addresses defined in Section 4 of RFC 5952.
+  url::Component host_comp(0, hostname.size());
+
+  // If it has a bracket, try parsing it as an IPv6 address.
+  if (hostname[0] == '[') {
+    ip_number->resize(16);  // 128 bits.
+    return url::IPv6AddressToNumber(
+        hostname.data(), host_comp, &(*ip_number)[0]);
+  }
+
+  // Otherwise, try IPv4.
+  ip_number->resize(4);  // 32 bits.
+  int num_components;
+  url::CanonHostInfo::Family family = url::IPv4AddressToNumber(
+      hostname.data(), host_comp, &(*ip_number)[0], &num_components);
+  return family == url::CanonHostInfo::IPV4;
 }
 
 bool ParseIPLiteralToNumber(const std::string& ip_literal,

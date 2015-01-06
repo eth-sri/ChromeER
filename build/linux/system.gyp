@@ -12,6 +12,10 @@
       }],
     ],
 
+    # If any of the linux_link_FOO below are set to 1, then the corresponding
+    # target will be linked against the FOO library (either dynamically or
+    # statically, depending on the pkg-config files), as opposed to loading the
+    # FOO library dynamically with dlopen.
     'linux_link_libgps%': 0,
     'linux_link_libpci%': 0,
     'linux_link_libspeechd%': 0,
@@ -434,6 +438,31 @@
         },
       ],
     }],
+    ['use_udev==1', {
+      'targets': [
+        {
+          'target_name': 'udev',
+          'type': 'none',
+          'conditions': [
+            ['_toolset=="target"', {
+              'direct_dependent_settings': {
+                'cflags': [
+                  '<!@(<(pkg-config) --cflags libudev)'
+                ],
+              },
+              'link_settings': {
+                'ldflags': [
+                  '<!@(<(pkg-config) --libs-only-L --libs-only-other libudev)',
+                ],
+                'libraries': [
+                  '<!@(<(pkg-config) --libs-only-l libudev)',
+                ],
+              },
+            }],
+          ],
+        },
+      ],
+    }],
   ],  # conditions
   'targets': [
     {
@@ -538,12 +567,28 @@
           'cflags': [
             '<!@(<(pkg-config) --cflags gio-2.0)',
           ],
+          'variables': {
+            'gio_warning_define': [
+              # glib >=2.40 deprecate g_settings_list_schemas in favor of
+              # g_settings_schema_source_list_schemas. This function is not
+              # available on earlier versions that we still need to support
+              # (specifically, 2.32), so disable the warning.
+              # TODO(mgiuca): Remove this suppression (and variable) when we
+              # drop support for Ubuntu 13.10 (saucy) and earlier. Update the
+              # code to use g_settings_schema_source_list_schemas instead.
+              'GLIB_DISABLE_DEPRECATION_WARNINGS',
+            ],
+          },
+          'defines': [
+            '<(gio_warning_define)',
+          ],
           'direct_dependent_settings': {
             'cflags': [
               '<!@(<(pkg-config) --cflags gio-2.0)',
             ],
             'defines': [
               'USE_GIO',
+              '<(gio_warning_define)',
             ],
             'include_dirs': [
               '<(SHARED_INTERMEDIATE_DIR)',
@@ -1025,28 +1070,6 @@
               },
             }],
           ]
-        }],
-      ],
-    },
-    {
-      'target_name': 'udev',
-      'type': 'none',
-      'conditions': [
-        # libudev is not available on *BSD
-        ['_toolset=="target" and os_bsd!=1', {
-          'direct_dependent_settings': {
-            'cflags': [
-              '<!@(<(pkg-config) --cflags libudev)'
-            ],
-          },
-          'link_settings': {
-            'ldflags': [
-              '<!@(<(pkg-config) --libs-only-L --libs-only-other libudev)',
-            ],
-            'libraries': [
-              '<!@(<(pkg-config) --libs-only-l libudev)',
-            ],
-          },
         }],
       ],
     },

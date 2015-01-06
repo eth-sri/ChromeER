@@ -5,14 +5,12 @@
 #include "chrome/browser/extensions/api/developer_private/developer_private_api.h"
 
 #include "apps/app_load_service.h"
-#include "apps/app_window.h"
-#include "apps/app_window_registry.h"
 #include "apps/saved_files_service.h"
 #include "base/base64.h"
 #include "base/bind.h"
 #include "base/command_line.h"
-#include "base/file_util.h"
 #include "base/files/file_enumerator.h"
+#include "base/files/file_util.h"
 #include "base/i18n/file_util_icu.h"
 #include "base/lazy_instance.h"
 #include "base/strings/string_number_conversions.h"
@@ -32,7 +30,6 @@
 #include "chrome/browser/extensions/updater/extension_updater.h"
 #include "chrome/browser/platform_util.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/sync_file_system/drive_backend_v1/drive_file_sync_service.h"
 #include "chrome/browser/sync_file_system/syncable_file_system_util.h"
 #include "chrome/browser/ui/chrome_select_file_policy.h"
 #include "chrome/browser/ui/webui/extensions/extension_error_ui_util.h"
@@ -41,6 +38,7 @@
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "chrome/common/extensions/manifest_url_handler.h"
 #include "chrome/common/url_constants.h"
+#include "chrome/grit/generated_resources.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_process_host.h"
@@ -48,6 +46,8 @@
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/browser/app_window/app_window.h"
+#include "extensions/browser/app_window/app_window_registry.h"
 #include "extensions/browser/extension_error.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_registry.h"
@@ -66,8 +66,6 @@
 #include "extensions/common/manifest_handlers/offline_enabled_info.h"
 #include "extensions/common/permissions/permissions_data.h"
 #include "extensions/common/switches.h"
-#include "grit/chromium_strings.h"
-#include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "net/base/net_util.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -80,8 +78,6 @@
 #include "webkit/browser/fileapi/isolated_context.h"
 #include "webkit/common/blob/shareable_file_reference.h"
 
-using apps::AppWindow;
-using apps::AppWindowRegistry;
 using content::RenderViewHost;
 
 namespace extensions {
@@ -897,12 +893,13 @@ bool DeveloperPrivateInspectFunction::RunSync() {
   content::RenderViewHost* host = content::RenderViewHost::FromID(
       render_process_id, render_view_id);
 
-  if (!host) {
+  if (!host || !content::WebContents::FromRenderViewHost(host)) {
     // This can happen if the host has gone away since the page was displayed.
     return false;
   }
 
-  DevToolsWindow::OpenDevToolsWindow(host);
+  DevToolsWindow::OpenDevToolsWindow(
+      content::WebContents::FromRenderViewHost(host));
   return true;
 }
 
@@ -1071,10 +1068,10 @@ bool DeveloperPrivateLoadDirectoryFunction::RunAsync() {
 
   // Directory url is non empty only for syncfilesystem.
   if (directory_url_str != "") {
-    fileapi::FileSystemURL directory_url =
+    storage::FileSystemURL directory_url =
         context_->CrackURL(GURL(directory_url_str));
     if (!directory_url.is_valid() ||
-        directory_url.type() != fileapi::kFileSystemTypeSyncable) {
+        directory_url.type() != storage::kFileSystemTypeSyncable) {
       SetError("DirectoryEntry of unsupported filesystem.");
       return false;
     }
@@ -1094,21 +1091,21 @@ bool DeveloperPrivateLoadDirectoryFunction::RunAsync() {
     // points to a non-native local directory.
     std::string filesystem_id;
     bool cracked =
-        fileapi::CrackIsolatedFileSystemName(filesystem_name, &filesystem_id);
+        storage::CrackIsolatedFileSystemName(filesystem_name, &filesystem_id);
     CHECK(cracked);
     base::FilePath virtual_path =
-        fileapi::IsolatedContext::GetInstance()
+        storage::IsolatedContext::GetInstance()
             ->CreateVirtualRootPath(filesystem_id)
             .Append(base::FilePath::FromUTF8Unsafe(filesystem_path));
-    fileapi::FileSystemURL directory_url = context_->CreateCrackedFileSystemURL(
+    storage::FileSystemURL directory_url = context_->CreateCrackedFileSystemURL(
         extensions::Extension::GetBaseURLFromExtensionId(extension_id()),
-        fileapi::kFileSystemTypeIsolated,
+        storage::kFileSystemTypeIsolated,
         virtual_path);
 
     if (directory_url.is_valid() &&
-        directory_url.type() != fileapi::kFileSystemTypeNativeLocal &&
-        directory_url.type() != fileapi::kFileSystemTypeRestrictedNativeLocal &&
-        directory_url.type() != fileapi::kFileSystemTypeDragged) {
+        directory_url.type() != storage::kFileSystemTypeNativeLocal &&
+        directory_url.type() != storage::kFileSystemTypeRestrictedNativeLocal &&
+        directory_url.type() != storage::kFileSystemTypeDragged) {
       return LoadByFileSystemAPI(directory_url);
     }
 
@@ -1119,7 +1116,7 @@ bool DeveloperPrivateLoadDirectoryFunction::RunAsync() {
 }
 
 bool DeveloperPrivateLoadDirectoryFunction::LoadByFileSystemAPI(
-    const fileapi::FileSystemURL& directory_url) {
+    const storage::FileSystemURL& directory_url) {
   std::string directory_url_str = directory_url.ToGURL().spec();
 
   size_t pos = 0;
@@ -1177,7 +1174,7 @@ void DeveloperPrivateLoadDirectoryFunction::ReadDirectoryByFileSystemAPI(
     const base::FilePath& project_path,
     const base::FilePath& destination_path) {
   GURL project_url = GURL(project_base_url_ + destination_path.AsUTF8Unsafe());
-  fileapi::FileSystemURL url = context_->CrackURL(project_url);
+  storage::FileSystemURL url = context_->CrackURL(project_url);
 
   context_->operation_runner()->ReadDirectory(
       url, base::Bind(&DeveloperPrivateLoadDirectoryFunction::
@@ -1189,9 +1186,8 @@ void DeveloperPrivateLoadDirectoryFunction::ReadDirectoryByFileSystemAPICb(
     const base::FilePath& project_path,
     const base::FilePath& destination_path,
     base::File::Error status,
-    const fileapi::FileSystemOperation::FileEntryList& file_list,
+    const storage::FileSystemOperation::FileEntryList& file_list,
     bool has_more) {
-
   if (status != base::File::FILE_OK) {
     DLOG(ERROR) << "Error in copying files from sync filesystem.";
     return;
@@ -1215,7 +1211,7 @@ void DeveloperPrivateLoadDirectoryFunction::ReadDirectoryByFileSystemAPICb(
 
     GURL project_url = GURL(project_base_url_ +
         destination_path.Append(file_list[i].name).AsUTF8Unsafe());
-    fileapi::FileSystemURL url = context_->CrackURL(project_url);
+    storage::FileSystemURL url = context_->CrackURL(project_url);
 
     base::FilePath target_path = project_path;
     target_path = target_path.Append(file_list[i].name);
@@ -1246,7 +1242,7 @@ void DeveloperPrivateLoadDirectoryFunction::SnapshotFileCallback(
     base::File::Error result,
     const base::File::Info& file_info,
     const base::FilePath& src_path,
-    const scoped_refptr<webkit_blob::ShareableFileReference>& file_ref) {
+    const scoped_refptr<storage::ShareableFileReference>& file_ref) {
   if (result != base::File::FILE_OK) {
     SetError("Error in copying files from sync filesystem.");
     success_ = false;

@@ -7,6 +7,7 @@ import unittest
 from telemetry import value
 from telemetry.page import page_set
 
+
 class TestBase(unittest.TestCase):
   def setUp(self):
     self.page_set =  page_set.PageSet(file_path=os.path.dirname(__file__))
@@ -34,7 +35,7 @@ class ValueForTest(value.Value):
   def GetBuildbotValue(self):
     pass
 
-  def GetBuildbotMeasurementAndTraceNameForComputedSummaryResult(
+  def GetChartAndTraceNameForComputedSummaryResult(
       self, trace_tag):
     pass
 

@@ -8,9 +8,6 @@
 #include <map>
 #include <string>
 
-#include "apps/app_window.h"
-#include "apps/app_window_registry.h"
-#include "apps/ui/native_app_window.h"
 #include "base/base64.h"
 #include "base/bind.h"
 #include "base/bind_helpers.h"
@@ -44,6 +41,8 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/common/url_constants.h"
+#include "chrome/grit/chromium_strings.h"
+#include "chrome/grit/generated_resources.h"
 #include "components/autofill/content/browser/risk/fingerprint.h"
 #include "components/autofill/content/browser/risk/proto/fingerprint.pb.h"
 #include "components/autofill/content/browser/wallet/form_field_error.h"
@@ -76,14 +75,15 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/url_constants.h"
-#include "grit/chromium_strings.h"
+#include "extensions/browser/app_window/app_window.h"
+#include "extensions/browser/app_window/app_window_registry.h"
+#include "extensions/browser/app_window/native_app_window.h"
 #include "grit/component_scaled_resources.h"
 #include "grit/components_strings.h"
-#include "grit/generated_resources.h"
 #include "grit/platform_locale_settings.h"
 #include "grit/theme_resources.h"
 #include "net/cert/cert_status_flags.h"
-#include "third_party/libaddressinput/chromium/chrome_downloader_impl.h"
+#include "third_party/libaddressinput/chromium/chrome_metadata_source.h"
 #include "third_party/libaddressinput/chromium/chrome_storage_impl.h"
 #include "third_party/libaddressinput/messages.h"
 #include "third_party/libaddressinput/src/cpp/include/libaddressinput/address_data.h"
@@ -103,7 +103,6 @@ using ::i18n::addressinput::AddressField;
 using ::i18n::addressinput::AddressProblem;
 using ::i18n::addressinput::ADMIN_AREA;
 using ::i18n::addressinput::DEPENDENT_LOCALITY;
-using ::i18n::addressinput::Downloader;
 using ::i18n::addressinput::FieldProblemMap;
 using ::i18n::addressinput::Localization;
 using ::i18n::addressinput::MISSING_REQUIRED_FIELD;
@@ -258,8 +257,8 @@ ui::BaseWindow* GetBaseWindowForWebContents(
     return browser->window();
 
   gfx::NativeWindow native_window = web_contents->GetTopLevelNativeWindow();
-  apps::AppWindow* app_window =
-      apps::AppWindowRegistry::GetAppWindowForNativeWindowAnyProfile(
+  extensions::AppWindow* app_window =
+      extensions::AppWindowRegistry::GetAppWindowForNativeWindowAnyProfile(
           native_window);
   return app_window->GetBaseWindow();
 }
@@ -863,9 +862,9 @@ void AutofillDialogControllerImpl::Show() {
     FetchWalletCookie();
 
   validator_.reset(new AddressValidator(
-      I18N_ADDRESS_VALIDATION_DATA_URL,
-      scoped_ptr<Downloader>(
-          new autofill::ChromeDownloaderImpl(profile_->GetRequestContext())),
+      scoped_ptr< ::i18n::addressinput::Source>(
+          new autofill::ChromeMetadataSource(I18N_ADDRESS_VALIDATION_DATA_URL,
+                                             profile_->GetRequestContext())),
       ValidationRulesStorageFactory::CreateStorage(),
       this));
 

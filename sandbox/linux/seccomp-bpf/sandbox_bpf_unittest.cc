@@ -28,6 +28,8 @@
 #include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/posix/eintr_wrapper.h"
+#include "base/synchronization/waitable_event.h"
+#include "base/threading/thread.h"
 #include "build/build_config.h"
 #include "sandbox/linux/seccomp-bpf/bpf_tests.h"
 #include "sandbox/linux/seccomp-bpf/syscall.h"
@@ -151,16 +153,19 @@ class BlacklistNanosleepPolicy : public SandboxBPFPolicy {
     }
   }
 
+  static void AssertNanosleepFails() {
+    const struct timespec ts = {0, 0};
+    errno = 0;
+    BPF_ASSERT_EQ(-1, HANDLE_EINTR(syscall(__NR_nanosleep, &ts, NULL)));
+    BPF_ASSERT_EQ(EACCES, errno);
+  }
+
  private:
   DISALLOW_COPY_AND_ASSIGN(BlacklistNanosleepPolicy);
 };
 
 BPF_TEST_C(SandboxBPF, ApplyBasicBlacklistPolicy, BlacklistNanosleepPolicy) {
-  // nanosleep() should be denied
-  const struct timespec ts = {0, 0};
-  errno = 0;
-  BPF_ASSERT(syscall(__NR_nanosleep, &ts, NULL) == -1);
-  BPF_ASSERT(errno == EACCES);
+  BlacklistNanosleepPolicy::AssertNanosleepFails();
 }
 
 // Now do a simple whitelist test
@@ -248,7 +253,9 @@ ErrorCode ErrnoTestPolicy::EvaluateSyscall(SandboxBPF*, int sysno) const {
   DCHECK(SandboxBPF::IsValidSyscallNumber(sysno));
   switch (sysno) {
     case __NR_dup3:    // dup2 is a wrapper of dup3 in android
+#if defined(__NR_dup2)
     case __NR_dup2:
+#endif
       // Pretend that dup2() worked, but don't actually do anything.
       return ErrorCode(0);
     case __NR_setuid:
@@ -762,12 +769,16 @@ intptr_t BrokerOpenTrapHandler(const struct arch_seccomp_data& args,
       BPF_ASSERT(static_cast<int>(args.args[0]) == AT_FDCWD);
       return broker_process->Access(reinterpret_cast<const char*>(args.args[1]),
                                     static_cast<int>(args.args[2]));
+#if defined(__NR_access)
     case __NR_access:
       return broker_process->Access(reinterpret_cast<const char*>(args.args[0]),
                                     static_cast<int>(args.args[1]));
+#endif
+#if defined(__NR_open)
     case __NR_open:
       return broker_process->Open(reinterpret_cast<const char*>(args.args[0]),
                                   static_cast<int>(args.args[1]));
+#endif
     case __NR_openat:
       // We only call open() so if we arrive here, it's because glibc uses
       // the openat() system call.
@@ -789,8 +800,12 @@ ErrorCode DenyOpenPolicy(SandboxBPF* sandbox,
 
   switch (sysno) {
     case __NR_faccessat:
+#if defined(__NR_access)
     case __NR_access:
+#endif
+#if defined(__NR_open)
     case __NR_open:
+#endif
     case __NR_openat:
       // We get a InitializedOpenBroker class, but our trap handler wants
       // the BrokerProcess object.
@@ -869,13 +884,14 @@ ErrorCode SimpleCondTestPolicy::EvaluateSyscall(SandboxBPF* sandbox,
   // to return more traditional values.
   int flags_argument_position = -1;
   switch (sysno) {
+#if defined(__NR_open)
     case __NR_open:
+      flags_argument_position = 1;
+#endif
     case __NR_openat:  // open can be a wrapper for openat(2).
-      if (sysno == __NR_open) {
-        flags_argument_position = 1;
-      } else if (sysno == __NR_openat) {
+      if (sysno == __NR_openat)
         flags_argument_position = 2;
-      }
+
       // Allow opening files for reading, but don't allow writing.
       COMPILE_ASSERT(O_RDONLY == 0, O_RDONLY_must_be_all_zero_bits);
       return sandbox->Cond(flags_argument_position,
@@ -1213,7 +1229,11 @@ class EqualityStressTest {
   // Don't increase these values. We are pushing the limits of the maximum
   // BPF program that the kernel will allow us to load. If the values are
   // increased too much, the test will start failing.
+#if defined(__aarch64__)
+  static const int kNumTestCases = 30;
+#else
   static const int kNumTestCases = 40;
+#endif
   static const int kMaxFanOut = 3;
   static const int kMaxArgs = 6;
 };
@@ -1930,6 +1950,18 @@ BPF_TEST_C(SandboxBPF, PthreadBitMask, PthreadPolicyBitMask) {
 #endif
 #endif
 
+#if defined(__aarch64__)
+#ifndef PTRACE_GETREGS
+#define PTRACE_GETREGS 12
+#endif
+#endif
+
+#if defined(__aarch64__)
+#ifndef PTRACE_SETREGS
+#define PTRACE_SETREGS 13
+#endif
+#endif
+
 // Changes the syscall to run for a child being sandboxed using seccomp-bpf with
 // PTRACE_O_TRACESECCOMP.  Should only be called when the child is stopped on
 // PTRACE_EVENT_SECCOMP.
@@ -1973,8 +2005,10 @@ SANDBOX_TEST(SandboxBPF, DISABLE_ON_TSAN(SeccompRetTrace)) {
     return;
   }
 
-#if defined(__arm__)
-  printf("This test is currently disabled on ARM due to a kernel bug.");
+// This test is disabled on arm due to a kernel bug.
+// See https://code.google.com/p/chromium/issues/detail?id=383977
+#if defined(__arm__) || defined(__aarch64__)
+  printf("This test is currently disabled on ARM32/64 due to a kernel bug.");
   return;
 #endif
 
@@ -2144,6 +2178,88 @@ BPF_TEST_C(SandboxBPF, Pread64, TrapPread64Policy) {
 }
 
 #endif  // !defined(OS_ANDROID)
+
+void* TsyncApplyToTwoThreadsFunc(void* cond_ptr) {
+  base::WaitableEvent* event = static_cast<base::WaitableEvent*>(cond_ptr);
+
+  // Wait for the main thread to signal that the filter has been applied.
+  if (!event->IsSignaled()) {
+    event->Wait();
+  }
+
+  BPF_ASSERT(event->IsSignaled());
+
+  BlacklistNanosleepPolicy::AssertNanosleepFails();
+
+  return NULL;
+}
+
+SANDBOX_TEST(SandboxBPF, Tsync) {
+  if (SandboxBPF::SupportsSeccompThreadFilterSynchronization() !=
+          SandboxBPF::STATUS_AVAILABLE) {
+    return;
+  }
+
+  base::WaitableEvent event(true, false);
+
+  // Create a thread on which to invoke the blocked syscall.
+  pthread_t thread;
+  BPF_ASSERT_EQ(0,
+      pthread_create(&thread, NULL, &TsyncApplyToTwoThreadsFunc, &event));
+
+  // Test that nanoseelp success.
+  const struct timespec ts = {0, 0};
+  BPF_ASSERT_EQ(0, HANDLE_EINTR(syscall(__NR_nanosleep, &ts, NULL)));
+
+  // Engage the sandbox.
+  SandboxBPF sandbox;
+  sandbox.SetSandboxPolicy(new BlacklistNanosleepPolicy());
+  BPF_ASSERT(sandbox.StartSandbox(SandboxBPF::PROCESS_MULTI_THREADED));
+
+  // This thread should have the filter applied as well.
+  BlacklistNanosleepPolicy::AssertNanosleepFails();
+
+  // Signal the condition to invoke the system call.
+  event.Signal();
+
+  // Wait for the thread to finish.
+  BPF_ASSERT_EQ(0, pthread_join(thread, NULL));
+}
+
+class AllowAllPolicy : public SandboxBPFPolicy {
+ public:
+  AllowAllPolicy() : SandboxBPFPolicy() {}
+  virtual ~AllowAllPolicy() {}
+
+  virtual ErrorCode EvaluateSyscall(SandboxBPF* sandbox,
+                                    int sysno) const OVERRIDE {
+    return ErrorCode(ErrorCode::ERR_ALLOWED);
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(AllowAllPolicy);
+};
+
+SANDBOX_DEATH_TEST(SandboxBPF, StartMultiThreadedAsSingleThreaded,
+    DEATH_MESSAGE("Cannot start sandbox; process is already multi-threaded")) {
+  base::Thread thread("sandbox.linux.StartMultiThreadedAsSingleThreaded");
+  BPF_ASSERT(thread.Start());
+
+  SandboxBPF sandbox;
+  sandbox.SetSandboxPolicy(new AllowAllPolicy());
+  BPF_ASSERT(!sandbox.StartSandbox(SandboxBPF::PROCESS_SINGLE_THREADED));
+}
+
+// http://crbug.com/407357
+#if !defined(THREAD_SANITIZER)
+SANDBOX_DEATH_TEST(SandboxBPF, StartSingleThreadedAsMultiThreaded,
+    DEATH_MESSAGE("Cannot start sandbox; process may be single-threaded when "
+                  "reported as not")) {
+  SandboxBPF sandbox;
+  sandbox.SetSandboxPolicy(new AllowAllPolicy());
+  BPF_ASSERT(!sandbox.StartSandbox(SandboxBPF::PROCESS_MULTI_THREADED));
+}
+#endif  // !defined(THREAD_SANITIZER)
 
 }  // namespace
 

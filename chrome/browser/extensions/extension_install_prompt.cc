@@ -21,6 +21,8 @@
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
+#include "chrome/grit/chromium_strings.h"
+#include "chrome/grit/generated_resources.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_util.h"
@@ -37,8 +39,6 @@
 #include "extensions/common/permissions/permission_set.h"
 #include "extensions/common/permissions/permissions_data.h"
 #include "extensions/common/url_pattern.h"
-#include "grit/chromium_strings.h"
-#include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -176,6 +176,34 @@ gfx::NativeWindow NativeWindowForWebContents(content::WebContents* contents) {
 ExtensionInstallPrompt::AutoConfirmForTests
 ExtensionInstallPrompt::g_auto_confirm_for_tests = ExtensionInstallPrompt::NONE;
 
+// This should match the PromptType enum.
+std::string ExtensionInstallPrompt::PromptTypeToString(PromptType type) {
+  switch (type) {
+    case ExtensionInstallPrompt::INSTALL_PROMPT:
+      return "INSTALL_PROMPT";
+    case ExtensionInstallPrompt::INLINE_INSTALL_PROMPT:
+      return "INLINE_INSTALL_PROMPT";
+    case ExtensionInstallPrompt::BUNDLE_INSTALL_PROMPT:
+      return "BUNDLE_INSTALL_PROMPT";
+    case ExtensionInstallPrompt::RE_ENABLE_PROMPT:
+      return "RE_ENABLE_PROMPT";
+    case ExtensionInstallPrompt::PERMISSIONS_PROMPT:
+      return "PERMISSIONS_PROMPT";
+    case ExtensionInstallPrompt::EXTERNAL_INSTALL_PROMPT:
+      return "EXTERNAL_INSTALL_PROMPT";
+    case ExtensionInstallPrompt::POST_INSTALL_PERMISSIONS_PROMPT:
+      return "POST_INSTALL_PERMISSIONS_PROMPT";
+    case ExtensionInstallPrompt::LAUNCH_PROMPT:
+      return "LAUNCH_PROMPT";
+    case ExtensionInstallPrompt::REMOTE_INSTALL_PROMPT:
+      return "REMOTE_INSTALL_PROMPT";
+    case ExtensionInstallPrompt::UNSET_PROMPT_TYPE:
+    case ExtensionInstallPrompt::NUM_PROMPT_TYPES:
+      break;
+  }
+  return "OTHER";
+}
+
 ExtensionInstallPrompt::Prompt::Prompt(PromptType type)
     : type_(type),
       is_showing_details_for_retained_files_(false),
@@ -283,8 +311,8 @@ int ExtensionInstallPrompt::Prompt::GetDialogButtons() const {
 }
 
 bool ExtensionInstallPrompt::Prompt::ShouldShowExplanationText() const {
-   return type_ == INSTALL_PROMPT &&
-       extension_->is_extension() && experiment_ && experiment_->text_only();
+  return type_ == INSTALL_PROMPT && extension_->is_extension() &&
+         experiment_.get() && experiment_->text_only();
 }
 
 bool ExtensionInstallPrompt::Prompt::HasAcceptButtonLabel() const {
@@ -711,22 +739,18 @@ void ExtensionInstallPrompt::ShowConfirmation() {
   else
     prompt_->set_experiment(ExtensionInstallPromptExperiment::ControlGroup());
 
-  if (permissions_.get()) {
-    if (extension_) {
-      const extensions::PermissionsData* permissions_data =
-          extension_->permissions_data();
-      prompt_->SetPermissions(permissions_data->GetPermissionMessageStrings());
-      prompt_->SetPermissionsDetails(
-          permissions_data->GetPermissionMessageDetailsStrings());
-    } else {
-      const extensions::PermissionMessageProvider* message_provider =
-          extensions::PermissionMessageProvider::Get();
-      prompt_->SetPermissions(message_provider->GetWarningMessages(
-          permissions_, Manifest::TYPE_UNKNOWN));
-      prompt_->SetPermissionsDetails(
-          message_provider->GetWarningMessagesDetails(permissions_,
-                                                      Manifest::TYPE_UNKNOWN));
-    }
+  if (permissions_.get() &&
+      (!extension_ ||
+       !extensions::PermissionsData::ShouldSkipPermissionWarnings(
+           extension_->id()))) {
+    Manifest::Type type =
+        extension_ ? extension_->GetType() : Manifest::TYPE_UNKNOWN;
+    const extensions::PermissionMessageProvider* message_provider =
+        extensions::PermissionMessageProvider::Get();
+    prompt_->SetPermissions(
+        message_provider->GetWarningMessages(permissions_.get(), type));
+    prompt_->SetPermissionsDetails(
+        message_provider->GetWarningMessagesDetails(permissions_.get(), type));
   }
 
   switch (prompt_->type()) {

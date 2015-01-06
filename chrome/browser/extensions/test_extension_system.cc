@@ -7,12 +7,12 @@
 #include "base/command_line.h"
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/extensions/blacklist.h"
+#include "chrome/browser/extensions/declarative_user_script_master.h"
 #include "chrome/browser/extensions/error_console/error_console.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/install_verifier.h"
 #include "chrome/browser/extensions/shared_module_service.h"
 #include "chrome/browser/extensions/standard_management_policy_provider.h"
-#include "chrome/browser/extensions/user_script_master.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_switches.h"
 #include "content/public/browser/browser_thread.h"
@@ -131,7 +131,7 @@ void TestExtensionSystem::SetExtensionService(ExtensionService* service) {
   extension_service_.reset(service);
 }
 
-UserScriptMaster* TestExtensionSystem::user_script_master() {
+SharedUserScriptMaster* TestExtensionSystem::shared_user_script_master() {
   return NULL;
 }
 
@@ -160,7 +160,7 @@ void TestExtensionSystem::SetEventRouter(scoped_ptr<EventRouter> event_router) {
 
 EventRouter* TestExtensionSystem::event_router() { return event_router_.get(); }
 
-ExtensionWarningService* TestExtensionSystem::warning_service() {
+WarningService* TestExtensionSystem::warning_service() {
   return NULL;
 }
 
@@ -192,6 +192,27 @@ scoped_ptr<ExtensionSet> TestExtensionSystem::GetDependentExtensions(
     const Extension* extension) {
   return extension_service()->shared_module_service()->GetDependentExtensions(
       extension);
+}
+
+DeclarativeUserScriptMaster*
+TestExtensionSystem::GetDeclarativeUserScriptMasterByExtension(
+    const ExtensionId& extension_id) {
+  DCHECK(ready().is_signaled());
+  DeclarativeUserScriptMaster* master = NULL;
+  for (ScopedVector<DeclarativeUserScriptMaster>::iterator it =
+           declarative_user_script_masters_.begin();
+       it != declarative_user_script_masters_.end();
+       ++it) {
+    if ((*it)->extension_id() == extension_id) {
+      master = *it;
+      break;
+    }
+  }
+  if (!master) {
+    master = new DeclarativeUserScriptMaster(profile_, extension_id);
+    declarative_user_script_masters_.push_back(master);
+  }
+  return master;
 }
 
 // static

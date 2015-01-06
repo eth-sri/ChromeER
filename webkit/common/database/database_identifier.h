@@ -10,16 +10,16 @@
 #include "base/basictypes.h"
 #include "base/strings/string_piece.h"
 #include "url/gurl.h"
-#include "webkit/common/webkit_storage_common_export.h"
+#include "webkit/common/storage_common_export.h"
 
-namespace webkit_database {
+namespace storage {
 
-WEBKIT_STORAGE_COMMON_EXPORT std::string GetIdentifierFromOrigin(
+STORAGE_COMMON_EXPORT std::string GetIdentifierFromOrigin(
     const GURL& origin);
-WEBKIT_STORAGE_COMMON_EXPORT GURL GetOriginFromIdentifier(
+STORAGE_COMMON_EXPORT GURL GetOriginFromIdentifier(
     const std::string& identifier);
 
-class WEBKIT_STORAGE_COMMON_EXPORT DatabaseIdentifier {
+class STORAGE_COMMON_EXPORT DatabaseIdentifier {
  public:
   static const DatabaseIdentifier UniqueFileIdentifier();
   static DatabaseIdentifier CreateFromOrigin(const GURL& origin);
@@ -49,6 +49,6 @@ class WEBKIT_STORAGE_COMMON_EXPORT DatabaseIdentifier {
   bool is_file_;
 };
 
-}  // namespace webkit_database
+}  // namespace storage
 
 #endif  // WEBKIT_COMMON_DATABASE_DATABASE_IDENTIFIER_H_

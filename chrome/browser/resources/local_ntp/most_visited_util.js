@@ -96,18 +96,29 @@ function parseQueryParams(location) {
  * @param {string} href The destination for the link.
  * @param {string} title The title for the link.
  * @param {string|undefined} text The text for the link or none.
+ * @param {string|undefined} direction The text direction.
  * @param {string|undefined} provider A provider name (max 8 alphanumeric
  *     characters) used for logging. Undefined if suggestion is not coming from
  *     the server.
  * @return {HTMLAnchorElement} A new link element.
  */
-function createMostVisitedLink(params, href, title, text, provider) {
+function createMostVisitedLink(params, href, title, text, direction, provider) {
   var styles = getMostVisitedStyles(params, !!text);
   var link = document.createElement('a');
   link.style.color = styles.color;
   link.style.fontSize = styles.fontSize + 'px';
   if (styles.fontFamily)
     link.style.fontFamily = styles.fontFamily;
+  if (styles.textAlign)
+    link.style.textAlign = styles.textAlign;
+  if (styles.textFadePos) {
+    var dir = /^rtl$/i.test(direction) ? 'to left' : 'to right';
+    // The fading length in pixels is passed by the caller.
+    var mask = 'linear-gradient(' + dir + ', rgba(0,0,0,1), rgba(0,0,0,1) ' +
+        styles.textFadePos + 'px, rgba(0,0,0,0))';
+    link.style.textOverflow = 'clip';
+    link.style.webkitMask = mask;
+  }
 
   link.href = href;
   link.title = title;
@@ -151,32 +162,65 @@ function createMostVisitedLink(params, href, title, text, provider) {
 
 
 /**
+ * Returns the color to display string with, depending on whether title is
+ * displayed, the current theme, and URL parameters.
+ * @param {Object.<string, string>} params URL parameters specifying style.
+ * @param {boolean} isTitle if the style is for the Most Visited Title.
+ * @return {string} The color to use, in "rgba(#,#,#,#)" format.
+ */
+function getTextColor(params, isTitle) {
+  // 'RRGGBBAA' color format overrides everything.
+  if ('c' in params && params.c.match(/^[0-9A-Fa-f]{8}$/)) {
+    // Extract the 4 pairs of hex digits, map to number, then form rgba().
+    var t = params.c.match(/(..)(..)(..)(..)/).slice(1).map(function(s) {
+      return parseInt(s, 16);
+    });
+    return 'rgba(' + t[0] + ',' + t[1] + ',' + t[2] + ',' + t[3] / 255 + ')';
+  }
+
+  // For backward compatibility with server-side NTP, look at themes directly
+  // and use param.c for non-title or as fallback.
+  var apiHandle = chrome.embeddedSearch.newTabPage;
+  var themeInfo = apiHandle.themeBackgroundInfo;
+  var c = '#777';
+  if (isTitle && themeInfo && !themeInfo.usingDefaultTheme) {
+    // Read from theme directly
+    c = convertArrayToRGBAColor(themeInfo.textColorRgba) || c;
+  } else if ('c' in params) {
+    c = convertToHexColor(parseInt(params.c, 16)) || c;
+  }
+  return c;
+}
+
+
+/**
  * Decodes most visited styles from URL parameters.
- * - f: font-family
- * - fs: font-size as a number in pixels.
  * - c: A hexadecimal number interpreted as a hex color code.
+ * - f: font-family.
+ * - fs: font-size as a number in pixels.
+ * - ta: text-align property, as a string.
+ * - tf: specifying a text fade starting position, in pixels.
  * @param {Object.<string, string>} params URL parameters specifying style.
  * @param {boolean} isTitle if the style is for the Most Visited Title.
  * @return {Object} Styles suitable for CSS interpolation.
  */
 function getMostVisitedStyles(params, isTitle) {
   var styles = {
-    color: '#777',
+    color: getTextColor(params, isTitle),  // Handles 'c' in params.
     fontFamily: '',
     fontSize: 11
   };
-  var apiHandle = chrome.embeddedSearch.newTabPage;
-  var themeInfo = apiHandle.themeBackgroundInfo;
-  if (isTitle && themeInfo && !themeInfo.usingDefaultTheme) {
-    styles.color = convertArrayToRGBAColor(themeInfo.textColorRgba) ||
-        styles.color;
-  } else if ('c' in params) {
-    styles.color = convertToHexColor(parseInt(params.c, 16)) || styles.color;
-  }
   if ('f' in params && /^[-0-9a-zA-Z ,]+$/.test(params.f))
     styles.fontFamily = params.f;
   if ('fs' in params && isFinite(parseInt(params.fs, 10)))
     styles.fontSize = parseInt(params.fs, 10);
+  if ('ta' in params && /^[-0-9a-zA-Z ,]+$/.test(params.ta))
+    styles.textAlign = params.ta;
+  if ('tf' in params) {
+    var tf = parseInt(params.tf, 10);
+    if (isFinite(tf))
+      styles.textFadePos = tf;
+  }
   return styles;
 }
 

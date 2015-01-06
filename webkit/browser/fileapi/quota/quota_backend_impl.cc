@@ -16,13 +16,13 @@
 #include "webkit/browser/quota/quota_manager_proxy.h"
 #include "webkit/common/fileapi/file_system_util.h"
 
-namespace fileapi {
+namespace storage {
 
 QuotaBackendImpl::QuotaBackendImpl(
     base::SequencedTaskRunner* file_task_runner,
     ObfuscatedFileUtil* obfuscated_file_util,
     FileSystemUsageCache* file_system_usage_cache,
-    quota::QuotaManagerProxy* quota_manager_proxy)
+    storage::QuotaManagerProxy* quota_manager_proxy)
     : file_task_runner_(file_task_runner),
       obfuscated_file_util_(obfuscated_file_util),
       file_system_usage_cache_(file_system_usage_cache),
@@ -43,12 +43,15 @@ void QuotaBackendImpl::ReserveQuota(const GURL& origin,
     callback.Run(base::File::FILE_OK, 0);
     return;
   }
-  DCHECK(quota_manager_proxy_);
+  DCHECK(quota_manager_proxy_.get());
   quota_manager_proxy_->GetUsageAndQuota(
-      file_task_runner_, origin, FileSystemTypeToQuotaStorageType(type),
+      file_task_runner_.get(),
+      origin,
+      FileSystemTypeToQuotaStorageType(type),
       base::Bind(&QuotaBackendImpl::DidGetUsageAndQuotaForReserveQuota,
                  weak_ptr_factory_.GetWeakPtr(),
-                 QuotaReservationInfo(origin, type, delta), callback));
+                 QuotaReservationInfo(origin, type, delta),
+                 callback));
 }
 
 void QuotaBackendImpl::ReleaseReservedQuota(const GURL& origin,
@@ -102,12 +105,14 @@ void QuotaBackendImpl::DecrementDirtyCount(const GURL& origin,
 void QuotaBackendImpl::DidGetUsageAndQuotaForReserveQuota(
     const QuotaReservationInfo& info,
     const ReserveQuotaCallback& callback,
-    quota::QuotaStatusCode status, int64 usage, int64 quota) {
+    storage::QuotaStatusCode status,
+    int64 usage,
+    int64 quota) {
   DCHECK(file_task_runner_->RunsTasksOnCurrentThread());
   DCHECK(info.origin.is_valid());
   DCHECK_LE(0, usage);
   DCHECK_LE(0, quota);
-  if (status != quota::kQuotaStatusOk) {
+  if (status != storage::kQuotaStatusOk) {
     callback.Run(base::File::FILE_ERROR_FAILED, 0);
     return;
   }
@@ -134,10 +139,12 @@ void QuotaBackendImpl::DidGetUsageAndQuotaForReserveQuota(
 void QuotaBackendImpl::ReserveQuotaInternal(const QuotaReservationInfo& info) {
   DCHECK(file_task_runner_->RunsTasksOnCurrentThread());
   DCHECK(info.origin.is_valid());
-  DCHECK(quota_manager_proxy_);
+  DCHECK(quota_manager_proxy_.get());
   quota_manager_proxy_->NotifyStorageModified(
-      quota::QuotaClient::kFileSystem, info.origin,
-      FileSystemTypeToQuotaStorageType(info.type), info.delta);
+      storage::QuotaClient::kFileSystem,
+      info.origin,
+      FileSystemTypeToQuotaStorageType(info.type),
+      info.delta);
 }
 
 base::File::Error QuotaBackendImpl::GetUsageCachePath(
@@ -162,4 +169,4 @@ QuotaBackendImpl::QuotaReservationInfo::QuotaReservationInfo(
 QuotaBackendImpl::QuotaReservationInfo::~QuotaReservationInfo() {
 }
 
-}  // namespace fileapi
+}  // namespace storage

@@ -8,7 +8,7 @@
 #include <set>
 
 #include "base/bind.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/lazy_instance.h"
 #include "base/metrics/histogram.h"
@@ -37,6 +37,7 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/manifest_url_handler.h"
+#include "chrome/grit/generated_resources.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/resource_dispatcher_host.h"
@@ -55,16 +56,12 @@
 #include "extensions/common/permissions/permission_set.h"
 #include "extensions/common/permissions/permissions_data.h"
 #include "extensions/common/user_script.h"
-#include "grit/chromium_strings.h"
 #include "grit/extensions_strings.h"
-#include "grit/generated_resources.h"
-#include "grit/theme_resources.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/resource/resource_bundle.h"
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/login/users/user_manager.h"
+#include "components/user_manager/user_manager.h"
 #endif
 
 using base::UserMetricsAction;
@@ -308,8 +305,8 @@ CrxInstallerError CrxInstaller::AllowInstall(const Extension* extension) {
           scoped_refptr<const PermissionSet> expected_permissions =
               dummy_extension->permissions_data()->active_permissions();
           valid = !(PermissionMessageProvider::Get()->IsPrivilegeIncrease(
-              expected_permissions,
-              extension->permissions_data()->active_permissions(),
+              expected_permissions.get(),
+              extension->permissions_data()->active_permissions().get(),
               extension->GetType()));
         }
       }
@@ -572,10 +569,10 @@ void CrxInstaller::ConfirmInstall() {
   if (!service || service->browser_terminating())
     return;
 
-  if (KioskModeInfo::IsKioskOnly(install_checker_.extension())) {
+  if (KioskModeInfo::IsKioskOnly(install_checker_.extension().get())) {
     bool in_kiosk_mode = false;
 #if defined(OS_CHROMEOS)
-    chromeos::UserManager* user_manager = chromeos::UserManager::Get();
+    user_manager::UserManager* user_manager = user_manager::UserManager::Get();
     in_kiosk_mode = user_manager && user_manager->IsLoggedInAsKioskApp();
 #endif
     if (!in_kiosk_mode) {

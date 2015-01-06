@@ -7,11 +7,11 @@
 #include "base/message_loop/message_loop.h"
 #include "base/strings/stringprintf.h"
 #include "mojo/examples/window_manager/window_manager.mojom.h"
+#include "mojo/public/c/system/main.h"
 #include "mojo/public/cpp/application/application_connection.h"
 #include "mojo/public/cpp/application/application_delegate.h"
+#include "mojo/public/cpp/application/application_runner_chromium.h"
 #include "mojo/public/cpp/application/interface_factory_impl.h"
-#include "mojo/services/public/cpp/view_manager/node.h"
-#include "mojo/services/public/cpp/view_manager/node_observer.h"
 #include "mojo/services/public/cpp/view_manager/view.h"
 #include "mojo/services/public/cpp/view_manager/view_manager.h"
 #include "mojo/services/public/cpp/view_manager/view_manager_client_factory.h"
@@ -49,8 +49,7 @@ class NavigatorImpl : public InterfaceImpl<Navigator> {
 class NestingApp
     : public ApplicationDelegate,
       public ViewManagerDelegate,
-      public ViewObserver,
-      public NodeObserver {
+      public ViewObserver {
  public:
   NestingApp()
       : navigator_factory_(this),
@@ -87,15 +86,14 @@ class NestingApp
   }
 
   // Overridden from ViewManagerDelegate:
-  virtual void OnEmbed(ViewManager* view_manager, Node* root) OVERRIDE {
+  virtual void OnEmbed(ViewManager* view_manager,
+                       View* root,
+                       ServiceProviderImpl* exported_services,
+                       scoped_ptr<ServiceProvider> imported_services) OVERRIDE {
     root->AddObserver(this);
+    root->SetColor(SK_ColorCYAN);
 
-    View* view = View::Create(view_manager);
-    root->SetActiveView(view);
-    view->SetColor(SK_ColorCYAN);
-    view->AddObserver(this);
-
-    nested_ = Node::Create(view_manager);
+    nested_ = View::Create(view_manager);
     root->AddChild(nested_);
     nested_->SetBounds(gfx::Rect(20, 20, 50, 50));
     nested_->Embed(kEmbeddedAppURL);
@@ -107,22 +105,20 @@ class NestingApp
   }
 
   // Overridden from ViewObserver:
+  virtual void OnViewDestroyed(View* view) OVERRIDE {
+    // TODO(beng): reap views & child Views.
+    nested_ = NULL;
+  }
   virtual void OnViewInputEvent(View* view, const EventPtr& event) OVERRIDE {
     if (event->action == EVENT_TYPE_MOUSE_RELEASED)
-      window_manager_->CloseWindow(view->node()->id());
-  }
-
-  // Overridden from NodeObserver:
-  virtual void OnNodeDestroyed(Node* node) OVERRIDE {
-    // TODO(beng): reap views & child nodes.
-    nested_ = NULL;
+      window_manager_->CloseWindow(view->id());
   }
 
   InterfaceFactoryImplWithContext<NavigatorImpl, NestingApp> navigator_factory_;
   ViewManagerClientFactory view_manager_client_factory_;
 
   std::string color_;
-  Node* nested_;
+  View* nested_;
   NavigatorPtr navigator_;
   IWindowManagerPtr window_manager_;
 
@@ -142,10 +138,9 @@ void NavigatorImpl::Navigate(uint32 node_id,
 }
 
 }  // namespace examples
-
-// static
-ApplicationDelegate* ApplicationDelegate::Create() {
-  return new examples::NestingApp;
-}
-
 }  // namespace mojo
+
+MojoResult MojoMain(MojoHandle shell_handle) {
+  mojo::ApplicationRunnerChromium runner(new mojo::examples::NestingApp);
+  return runner.Run(shell_handle);
+}

@@ -4,7 +4,7 @@
 
 #include "chrome/browser/safe_browsing/safe_browsing_store_file.h"
 
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_file.h"
 #include "base/md5.h"
 #include "base/metrics/histogram.h"
@@ -504,7 +504,7 @@ bool IsPowerOfTwo(const T& val) {
 // files.  Returns false in case of errors reading the data.
 bool ReadDbStateHelper(const base::FilePath& filename,
                        StateInternal* db_state) {
-  file_util::ScopedFILE file(base::OpenFile(filename, "rb"));
+  base::ScopedFILE file(base::OpenFile(filename, "rb"));
   if (file.get() == NULL)
     return false;
 

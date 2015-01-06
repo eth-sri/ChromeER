@@ -7,8 +7,8 @@
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/zoom/zoom_event_manager.h"
+#include "chrome/browser/ui/zoom/zoom_observer.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/host_zoom_map.h"
 #include "content/public/browser/navigation_entry.h"
@@ -40,7 +40,7 @@ ZoomController::ZoomController(content::WebContents* web_contents)
           &ZoomController::UpdateState, base::Unretained(this), std::string()));
   zoom_level_ = default_zoom_level_.GetValue();
 
-  zoom_subscription_ = content::HostZoomMap::GetForBrowserContext(
+  zoom_subscription_ = content::HostZoomMap::GetDefaultForBrowserContext(
       browser_context_)->AddZoomLevelChangedCallback(
           base::Bind(&ZoomController::OnZoomLevelChanged,
                      base::Unretained(this)));
@@ -90,8 +90,10 @@ bool ZoomController::SetZoomLevel(double zoom_level) {
 bool ZoomController::SetZoomLevelByExtension(
     double zoom_level,
     const scoped_refptr<const extensions::Extension>& extension) {
-  // Cannot zoom in disabled mode.
-  if (zoom_mode_ == ZOOM_MODE_DISABLED)
+  // Cannot zoom in disabled mode. Also, don't allow changing zoom level on
+  // a crashed tab.
+  if (zoom_mode_ == ZOOM_MODE_DISABLED ||
+      !web_contents()->GetRenderProcessHost()->HasConnection())
     return false;
 
   // Store extension data so that |extension| can be attributed when the zoom
@@ -124,7 +126,7 @@ bool ZoomController::SetZoomLevelByExtension(
   }
 
   content::HostZoomMap* zoom_map =
-      content::HostZoomMap::GetForBrowserContext(browser_context_);
+      content::HostZoomMap::GetDefaultForBrowserContext(browser_context_);
   DCHECK(zoom_map);
   DCHECK(!event_data_);
   event_data_.reset(new ZoomChangedEventData(web_contents(),
@@ -160,7 +162,7 @@ void ZoomController::SetZoomMode(ZoomMode new_mode) {
     return;
 
   content::HostZoomMap* zoom_map =
-      content::HostZoomMap::GetForBrowserContext(browser_context_);
+      content::HostZoomMap::GetDefaultForBrowserContext(browser_context_);
   DCHECK(zoom_map);
   int render_process_id = web_contents()->GetRenderProcessHost()->GetID();
   int render_view_id = web_contents()->GetRenderViewHost()->GetRoutingID();

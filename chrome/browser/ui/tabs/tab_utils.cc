@@ -8,7 +8,7 @@
 #include "chrome/browser/media/audio_stream_monitor.h"
 #include "chrome/browser/media/media_capture_devices_dispatcher.h"
 #include "chrome/browser/media/media_stream_capture_indicator.h"
-#include "grit/generated_resources.h"
+#include "chrome/grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -129,7 +129,7 @@ TabMediaState GetTabMediaStateForContents(content::WebContents* contents) {
   scoped_refptr<MediaStreamCaptureIndicator> indicator =
       MediaCaptureDevicesDispatcher::GetInstance()->
           GetMediaStreamCaptureIndicator();
-  if (indicator) {
+  if (indicator.get()) {
     if (indicator->IsBeingMirrored(contents))
       return TAB_MEDIA_STATE_CAPTURING;
     if (indicator->IsCapturingUserMedia(contents))

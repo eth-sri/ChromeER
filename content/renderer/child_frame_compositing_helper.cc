@@ -4,6 +4,7 @@
 
 #include "content/renderer/child_frame_compositing_helper.h"
 
+#include "cc/blink/web_layer_impl.h"
 #include "cc/layers/delegated_frame_provider.h"
 #include "cc/layers/delegated_frame_resource_collection.h"
 #include "cc/layers/delegated_renderer_layer.h"
@@ -18,7 +19,6 @@
 #include "content/common/gpu/client/context_provider_command_buffer.h"
 #include "content/renderer/browser_plugin/browser_plugin.h"
 #include "content/renderer/browser_plugin/browser_plugin_manager.h"
-#include "content/renderer/compositor_bindings/web_layer_impl.h"
 #include "content/renderer/render_frame_impl.h"
 #include "content/renderer/render_frame_proxy.h"
 #include "content/renderer/render_thread_impl.h"
@@ -92,7 +92,7 @@ int ChildFrameCompositingHelper::GetInstanceID() {
   if (!browser_plugin_)
     return 0;
 
-  return browser_plugin_->guest_instance_id();
+  return browser_plugin_->browser_plugin_instance_id();
 }
 
 void ChildFrameCompositingHelper::SendCompositorFrameSwappedACKToBrowser(
@@ -140,7 +140,7 @@ void ChildFrameCompositingHelper::CopyFromCompositingSurface(
     int request_id,
     gfx::Rect source_rect,
     gfx::Size dest_size) {
-  CHECK(background_layer_);
+  CHECK(background_layer_.get());
   scoped_ptr<cc::CopyOutputRequest> request =
       cc::CopyOutputRequest::CreateBitmapRequest(base::Bind(
           &ChildFrameCompositingHelper::CopyFromCompositingSurfaceHasResult,
@@ -187,7 +187,7 @@ void ChildFrameCompositingHelper::EnableCompositing(bool enable) {
     background_layer_->SetMasksToBounds(true);
     background_layer_->SetBackgroundColor(
         SkColorSetARGBInline(255, 255, 255, 255));
-    web_layer_.reset(new WebLayerImpl(background_layer_));
+    web_layer_.reset(new cc_blink::WebLayerImpl(background_layer_));
   }
 
   if (GetContainer()) {
@@ -276,7 +276,7 @@ void ChildFrameCompositingHelper::OnContainerDestroy() {
   if (GetContainer())
     GetContainer()->setWebLayer(NULL);
 
-  if (resource_collection_)
+  if (resource_collection_.get())
     resource_collection_->SetClient(NULL);
 
   ack_pending_ = false;
@@ -448,7 +448,7 @@ void ChildFrameCompositingHelper::OnCompositorFrameSwapped(
 
   cc::DelegatedFrameData* frame_data = frame->delegated_frame_data.get();
   // Do nothing if we are getting destroyed or have no frame data.
-  if (!frame_data || !background_layer_)
+  if (!frame_data || !background_layer_.get())
     return;
 
   DCHECK(!frame_data->render_pass_list.empty());
@@ -468,7 +468,7 @@ void ChildFrameCompositingHelper::OnCompositorFrameSwapped(
 
     // Drop the cc::DelegatedFrameResourceCollection so that we will not return
     // any resources from the old output surface with the new output surface id.
-    if (resource_collection_) {
+    if (resource_collection_.get()) {
       resource_collection_->SetClient(NULL);
 
       if (resource_collection_->LoseAllResources())
@@ -479,7 +479,7 @@ void ChildFrameCompositingHelper::OnCompositorFrameSwapped(
     last_route_id_ = route_id;
     last_host_id_ = host_id;
   }
-  if (!resource_collection_) {
+  if (!resource_collection_.get()) {
     resource_collection_ = new cc::DelegatedFrameResourceCollection;
     resource_collection_->SetClient(this);
   }
@@ -521,7 +521,7 @@ void ChildFrameCompositingHelper::UnusedResourcesAreAvailable() {
 
 void ChildFrameCompositingHelper::SendReturnedDelegatedResources() {
   FrameHostMsg_ReclaimCompositorResources_Params params;
-  if (resource_collection_)
+  if (resource_collection_.get())
     resource_collection_->TakeUnusedResourcesForChildCompositor(
         &params.ack.resources);
   DCHECK(!params.ack.resources.empty());

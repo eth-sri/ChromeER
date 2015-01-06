@@ -14,9 +14,6 @@ ReceiveAlgorithmInterface* ReceiveAlgorithmInterface::Create(
   switch (type) {
     case kTCP:
       return new TcpReceiver();
-    case kInterArrival:
-      LOG(DFATAL) << "InterArrivalSendAlgorithm no longer supported.";
-      return NULL;
   }
   return NULL;
 }

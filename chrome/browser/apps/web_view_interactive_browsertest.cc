@@ -2,17 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "apps/app_window.h"
-#include "apps/app_window_registry.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/apps/app_browsertest_util.h"
 #include "chrome/browser/chrome_content_browser_client.h"
 #include "chrome/browser/extensions/extension_test_message_listener.h"
-#include "chrome/browser/guest_view/guest_view_base.h"
-#include "chrome/browser/guest_view/guest_view_manager.h"
-#include "chrome/browser/guest_view/guest_view_manager_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/renderer_context_menu/render_view_context_menu_browsertest_util.h"
 #include "chrome/browser/renderer_context_menu/render_view_context_menu_test_util.h"
@@ -27,15 +22,20 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/test/browser_test_utils.h"
+#include "extensions/browser/app_window/app_window.h"
+#include "extensions/browser/app_window/app_window_registry.h"
+#include "extensions/browser/guest_view/guest_view_base.h"
+#include "extensions/browser/guest_view/guest_view_manager.h"
+#include "extensions/browser/guest_view/guest_view_manager_factory.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "ui/base/ime/composition_text.h"
 #include "ui/base/ime/text_input_client.h"
 #include "ui/base/test/ui_controls.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 
-using apps::AppWindow;
+using extensions::AppWindow;
 
-class TestGuestViewManager : public GuestViewManager {
+class TestGuestViewManager : public extensions::GuestViewManager {
  public:
   explicit TestGuestViewManager(content::BrowserContext* context) :
       GuestViewManager(context),
@@ -57,7 +57,7 @@ class TestGuestViewManager : public GuestViewManager {
     GuestViewManager::AddGuest(guest_instance_id, guest_web_contents);
     web_contents_ = guest_web_contents;
 
-    if (message_loop_runner_)
+    if (message_loop_runner_.get())
       message_loop_runner_->Quit();
   }
 
@@ -66,14 +66,14 @@ class TestGuestViewManager : public GuestViewManager {
 };
 
 // Test factory for creating test instances of GuestViewManager.
-class TestGuestViewManagerFactory : public GuestViewManagerFactory {
+class TestGuestViewManagerFactory : public extensions::GuestViewManagerFactory {
  public:
   TestGuestViewManagerFactory() :
       test_guest_view_manager_(NULL) {}
 
   virtual ~TestGuestViewManagerFactory() {}
 
-  virtual GuestViewManager* CreateGuestViewManager(
+  virtual extensions::GuestViewManager* CreateGuestViewManager(
       content::BrowserContext* context) OVERRIDE {
     return GetManager(context);
   }
@@ -100,7 +100,7 @@ class WebViewInteractiveTest
         corner_(gfx::Point()),
         mouse_click_result_(false),
         first_click_(true) {
-    GuestViewManager::set_factory_for_testing(&factory_);
+    extensions::GuestViewManager::set_factory_for_testing(&factory_);
   }
 
   TestGuestViewManager* GetGuestViewManager() {
@@ -133,8 +133,8 @@ class WebViewInteractiveTest
   }
 
   gfx::NativeWindow GetPlatformAppWindow() {
-    const apps::AppWindowRegistry::AppWindowList& app_windows =
-        apps::AppWindowRegistry::Get(browser()->profile())->app_windows();
+    const extensions::AppWindowRegistry::AppWindowList& app_windows =
+        extensions::AppWindowRegistry::Get(browser()->profile())->app_windows();
     return (*app_windows.begin())->GetNativeWindow();
   }
 
@@ -286,7 +286,7 @@ class WebViewInteractiveTest
 
     guest_web_contents_ = source->GetWebContents();
     embedder_web_contents_ =
-        GuestViewBase::FromWebContents(guest_web_contents_)->
+        extensions::GuestViewBase::FromWebContents(guest_web_contents_)->
             embedder_web_contents();
 
     gfx::Rect offset = embedder_web_contents_->GetContainerBounds();
@@ -333,7 +333,7 @@ class WebViewInteractiveTest
 
   class PopupCreatedObserver {
    public:
-    explicit PopupCreatedObserver()
+    PopupCreatedObserver()
         : initial_widget_count_(0),
           last_render_widget_host_(NULL),
           seen_new_widget_(false) {}
@@ -362,11 +362,11 @@ class WebViewInteractiveTest
         ScheduleWait();
       } else {
         // We are done.
-        if (message_loop_)
+        if (message_loop_.get())
           message_loop_->Quit();
       }
 
-      if (!message_loop_) {
+      if (!message_loop_.get()) {
         message_loop_ = new content::MessageLoopRunner;
         message_loop_->Run();
       }
@@ -523,7 +523,7 @@ class WebViewInteractiveTest
 // Disabled on Linux Aura because pointer lock does not work on Linux Aura.
 // crbug.com/341876
 
-#if defined(OS_LINUX) && !defined(USE_AURA)
+#if defined(OS_LINUX)
 
 IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, PointerLock) {
   SetupTest("web_view/pointer_lock",
@@ -597,7 +597,28 @@ IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, PointerLock) {
   }
 }
 
-#endif  // defined(OS_LINUX) && !defined(USE_AURA)
+IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, PointerLockFocus) {
+  SetupTest("web_view/pointer_lock_focus",
+            "/extensions/platform_apps/web_view/pointer_lock_focus/guest.html");
+
+  // Move the mouse over the Lock Pointer button.
+  ASSERT_TRUE(ui_test_utils::SendMouseMoveSync(
+      gfx::Point(corner().x() + 75, corner().y() + 25)));
+
+  // Click the Lock Pointer button, locking the mouse to lockTarget.
+  // This will also change focus to another element
+  SendMouseClickWithListener(ui_controls::LEFT, "locked");
+
+  // Try to unlock the mouse now that the focus is outside of the BrowserPlugin
+  ExtensionTestMessageListener unlocked_listener("unlocked", false);
+  // Send a key press to unlock the mouse.
+  SendKeyPressToPlatformApp(ui::VKEY_ESCAPE);
+
+  // Wait for page to receive (successful) mouse unlock response.
+  ASSERT_TRUE(unlocked_listener.WaitUntilSatisfied());
+}
+
+#endif  // defined(OS_LINUX)
 
 // Tests that if a <webview> is focused before navigation then the guest starts
 // off focused.
@@ -742,6 +763,12 @@ IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, NewWindow_Close) {
              NEEDS_TEST_SERVER);
 }
 
+IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, NewWindow_DeferredAttachment) {
+  TestHelper("testNewWindowDeferredAttachment",
+             "web_view/newwindow",
+             NEEDS_TEST_SERVER);
+}
+
 IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, NewWindow_ExecuteScript) {
   TestHelper("testNewWindowExecuteScript",
              "web_view/newwindow",
@@ -829,7 +856,7 @@ IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, PopupPositioningMoved) {
 // Drag and drop inside a webview is currently only enabled for linux and mac,
 // but the tests don't work on anything except chromeos for now. This is because
 // of simulating mouse drag code's dependency on platforms.
-#if defined(OS_CHROMEOS)
+#if defined(OS_CHROMEOS) && !defined(USE_OZONE)
 IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, DragDropWithinWebView) {
   LoadAndLaunchPlatformApp("web_view/dnd_within_webview", "connected");
   ASSERT_TRUE(ui_test_utils::ShowAndFocusNativeWindow(GetPlatformAppWindow()));

@@ -15,7 +15,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/task/cancelable_task_tracker.h"
 #include "base/threading/sequenced_worker_pool.h"
-#include "chrome/browser/sessions/session_id.h"
+#include "components/sessions/session_id.h"
 #include "url/gurl.h"
 
 class Profile;
@@ -156,7 +156,7 @@ class BaseSessionService {
 
   // This posts the task to the SequencedWorkerPool, or run immediately
   // if the SequencedWorkerPool has been shutdown.
-  bool RunTaskOnBackendThread(const tracked_objects::Location& from_here,
+  void RunTaskOnBackendThread(const tracked_objects::Location& from_here,
                               const base::Closure& task);
 
   // Max number of navigation entries in each direction we'll persist.

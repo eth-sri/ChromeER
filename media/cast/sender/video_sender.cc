@@ -20,7 +20,6 @@ namespace media {
 namespace cast {
 
 const int kNumAggressiveReportsSentAtStart = 100;
-const int kMinSchedulingDelayMs = 1;
 
 namespace {
 
@@ -47,25 +46,17 @@ VideoSender::VideoSender(
         transport_sender,
         base::TimeDelta::FromMilliseconds(video_config.rtcp_interval),
         kVideoFrequency,
-        video_config.ssrc),
-      target_playout_delay_(video_config.target_playout_delay),
-      max_unacked_frames_(
-          std::min(kMaxUnackedFrames,
-                   1 + static_cast<int>(target_playout_delay_ *
-                                        video_config.max_frame_rate /
-                                        base::TimeDelta::FromSeconds(1)))),
+        video_config.ssrc,
+        video_config.max_frame_rate,
+        video_config.target_playout_delay),
       fixed_bitrate_(GetFixedBitrate(video_config)),
-      num_aggressive_rtcp_reports_sent_(0),
       frames_in_encoder_(0),
-      last_sent_frame_id_(0),
-      latest_acked_frame_id_(0),
-      duplicate_ack_counter_(0),
       congestion_control_(cast_environment->Clock(),
                           video_config.max_bitrate,
                           video_config.min_bitrate,
                           max_unacked_frames_),
-      cast_initialization_status_(STATUS_VIDEO_UNINITIALIZED),
       weak_factory_(this) {
+  cast_initialization_status_ = STATUS_VIDEO_UNINITIALIZED;
   VLOG(1) << "max_unacked_frames is " << max_unacked_frames_
           << " for target_playout_delay="
           << target_playout_delay_.InMilliseconds() << " ms"
@@ -96,8 +87,6 @@ VideoSender::VideoSender(
       base::Bind(&VideoSender::OnReceivedCastFeedback,
                  weak_factory_.GetWeakPtr()),
       base::Bind(&VideoSender::OnReceivedRtt, weak_factory_.GetWeakPtr()));
-
-  memset(frame_id_to_rtp_timestamp_, 0, sizeof(frame_id_to_rtp_timestamp_));
 }
 
 VideoSender::~VideoSender() {
@@ -130,7 +119,7 @@ void VideoSender::InsertRawVideoFrame(
       "timestamp", capture_time.ToInternalValue(),
       "rtp_timestamp", rtp_timestamp);
 
-  if (AreTooManyFramesInFlight()) {
+  if (ShouldDropNextFrame(capture_time)) {
     VLOG(1) << "Dropping frame due to too many frames currently in-flight.";
     return;
   }
@@ -189,18 +178,16 @@ void VideoSender::SendEncodedVideoFrame(
       frame_id, static_cast<int>(encoded_frame->data.size()),
       encoded_frame->dependency == EncodedFrame::KEY,
       requested_bitrate_before_encode);
-  // Only use lowest 8 bits as key.
-  frame_id_to_rtp_timestamp_[frame_id & 0xff] = encoded_frame->rtp_timestamp;
+
+  RecordLatestFrameTimestamps(frame_id,
+                              encoded_frame->reference_time,
+                              encoded_frame->rtp_timestamp);
 
   // Used by chrome/browser/extension/api/cast_streaming/performance_test.cc
   TRACE_EVENT_INSTANT1(
       "cast_perf_test", "VideoFrameEncoded",
       TRACE_EVENT_SCOPE_THREAD,
       "rtp_timestamp", encoded_frame->rtp_timestamp);
-
-  DCHECK(!encoded_frame->reference_time.is_null());
-  rtp_timestamp_helper_.StoreLatestTime(encoded_frame->reference_time,
-                                        encoded_frame->rtp_timestamp);
 
   // At the start of the session, it's important to send reports before each
   // frame so that the receiver can properly compute playout times.  The reason
@@ -220,38 +207,11 @@ void VideoSender::SendEncodedVideoFrame(
   congestion_control_.SendFrameToTransport(
       frame_id, encoded_frame->data.size() * 8, last_send_time_);
 
-  transport_sender_->InsertCodedVideoFrame(*encoded_frame);
-}
-
-void VideoSender::ResendCheck() {
-  DCHECK(cast_environment_->CurrentlyOn(CastEnvironment::MAIN));
-  DCHECK(!last_send_time_.is_null());
-  const base::TimeDelta time_since_last_send =
-      cast_environment_->Clock()->NowTicks() - last_send_time_;
-  if (time_since_last_send > target_playout_delay_) {
-    if (latest_acked_frame_id_ == last_sent_frame_id_) {
-      // Last frame acked, no point in doing anything
-    } else {
-      VLOG(1) << "ACK timeout; last acked frame: " << latest_acked_frame_id_;
-      ResendForKickstart();
-    }
+  if (send_target_playout_delay_) {
+    encoded_frame->new_playout_delay_ms =
+        target_playout_delay_.InMilliseconds();
   }
-  ScheduleNextResendCheck();
-}
-
-void VideoSender::ScheduleNextResendCheck() {
-  DCHECK(cast_environment_->CurrentlyOn(CastEnvironment::MAIN));
-  DCHECK(!last_send_time_.is_null());
-  base::TimeDelta time_to_next =
-      last_send_time_ - cast_environment_->Clock()->NowTicks() +
-      target_playout_delay_;
-  time_to_next = std::max(
-      time_to_next, base::TimeDelta::FromMilliseconds(kMinSchedulingDelayMs));
-  cast_environment_->PostDelayedTask(
-      CastEnvironment::MAIN,
-      FROM_HERE,
-      base::Bind(&VideoSender::ResendCheck, weak_factory_.GetWeakPtr()),
-      time_to_next);
+  transport_sender_->InsertCodedVideoFrame(*encoded_frame);
 }
 
 void VideoSender::OnReceivedCastFeedback(const RtcpCastMessage& cast_feedback) {
@@ -308,22 +268,17 @@ void VideoSender::OnReceivedCastFeedback(const RtcpCastMessage& cast_feedback) {
     // Only count duplicated ACKs if there is no NACK request in between.
     // This is to avoid aggresive resend.
     duplicate_ack_counter_ = 0;
-
-    // A NACK is also used to cancel pending re-transmissions.
-    transport_sender_->ResendPackets(
-        false, cast_feedback.missing_frames_and_packets, true, rtt);
   }
 
   base::TimeTicks now = cast_environment_->Clock()->NowTicks();
   congestion_control_.AckFrame(cast_feedback.ack_frame_id, now);
 
-  RtpTimestamp rtp_timestamp =
-      frame_id_to_rtp_timestamp_[cast_feedback.ack_frame_id & 0xff];
-  cast_environment_->Logging()->InsertFrameEvent(now,
-                                                 FRAME_ACK_RECEIVED,
-                                                 VIDEO_EVENT,
-                                                 rtp_timestamp,
-                                                 cast_feedback.ack_frame_id);
+  cast_environment_->Logging()->InsertFrameEvent(
+      now,
+      FRAME_ACK_RECEIVED,
+      VIDEO_EVENT,
+      GetRecordedRtpTimestamp(cast_feedback.ack_frame_id),
+      cast_feedback.ack_frame_id);
 
   const bool is_acked_out_of_order =
       static_cast<int32>(cast_feedback.ack_frame_id -
@@ -332,51 +287,41 @@ void VideoSender::OnReceivedCastFeedback(const RtcpCastMessage& cast_feedback) {
           << " for frame " << cast_feedback.ack_frame_id;
   if (!is_acked_out_of_order) {
     // Cancel resends of acked frames.
-    MissingFramesAndPacketsMap missing_frames_and_packets;
-    PacketIdSet missing;
+    std::vector<uint32> cancel_sending_frames;
     while (latest_acked_frame_id_ != cast_feedback.ack_frame_id) {
       latest_acked_frame_id_++;
-      missing_frames_and_packets[latest_acked_frame_id_] = missing;
+      cancel_sending_frames.push_back(latest_acked_frame_id_);
     }
-    transport_sender_->ResendPackets(
-        false, missing_frames_and_packets, true, rtt);
+    transport_sender_->CancelSendingFrames(ssrc_, cancel_sending_frames);
     latest_acked_frame_id_ = cast_feedback.ack_frame_id;
   }
 }
 
-bool VideoSender::AreTooManyFramesInFlight() const {
+bool VideoSender::ShouldDropNextFrame(base::TimeTicks capture_time) const {
   DCHECK(cast_environment_->CurrentlyOn(CastEnvironment::MAIN));
-  int frames_in_flight = frames_in_encoder_;
+  int frames_in_flight = 0;
+  base::TimeDelta duration_in_flight;
   if (!last_send_time_.is_null()) {
-    frames_in_flight +=
+    frames_in_flight =
         static_cast<int32>(last_sent_frame_id_ - latest_acked_frame_id_);
+    if (frames_in_flight > 0) {
+      const uint32 oldest_unacked_frame_id = latest_acked_frame_id_ + 1;
+      duration_in_flight =
+          capture_time - GetRecordedReferenceTime(oldest_unacked_frame_id);
+    }
   }
+  frames_in_flight += frames_in_encoder_;
   VLOG(2) << frames_in_flight
           << " frames in flight; last sent: " << last_sent_frame_id_
-          << " latest acked: " << latest_acked_frame_id_
-          << " frames in encoder: " << frames_in_encoder_;
-  return frames_in_flight >= max_unacked_frames_;
-}
-
-void VideoSender::ResendForKickstart() {
-  DCHECK(cast_environment_->CurrentlyOn(CastEnvironment::MAIN));
-  DCHECK(!last_send_time_.is_null());
-  VLOG(1) << "Resending last packet of frame " << last_sent_frame_id_
-          << " to kick-start.";
-  // Send the first packet of the last encoded frame to kick start
-  // retransmission. This gives enough information to the receiver what
-  // packets and frames are missing.
-  MissingFramesAndPacketsMap missing_frames_and_packets;
-  PacketIdSet missing;
-  missing.insert(kRtcpCastLastPacket);
-  missing_frames_and_packets.insert(
-      std::make_pair(last_sent_frame_id_, missing));
-  last_send_time_ = cast_environment_->Clock()->NowTicks();
-
-  // Sending this extra packet is to kick-start the session. There is
-  // no need to optimize re-transmission for this case.
-  transport_sender_->ResendPackets(false, missing_frames_and_packets,
-                                   false, rtt_);
+          << "; latest acked: " << latest_acked_frame_id_
+          << "; frames in encoder: " << frames_in_encoder_
+          << "; duration in flight: "
+          << duration_in_flight.InMicroseconds() << " usec ("
+          << (target_playout_delay_ > base::TimeDelta() ?
+                  100 * duration_in_flight / target_playout_delay_ :
+                  kint64max) << "%)";
+  return frames_in_flight >= max_unacked_frames_ ||
+      duration_in_flight >= target_playout_delay_;
 }
 
 }  // namespace cast

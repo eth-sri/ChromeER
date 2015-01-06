@@ -73,7 +73,6 @@
         "syscalls/cfsetispeed.c",
         "syscalls/cfsetospeed.c",
         "syscalls/cfsetspeed.c",
-        "syscalls/chmod.c",
         "syscalls/chown.c",
         "syscalls/connect.c",
         "syscalls/fchown.c",
@@ -84,6 +83,7 @@
         "syscalls/getaddrinfo.c",
         "syscalls/getcwd.c",
         "syscalls/gethostbyname.c",
+        "syscalls/getnameinfo.c",
         "syscalls/getpeername.c",
         "syscalls/getsockname.c",
         "syscalls/getsockopt.c",
@@ -102,11 +102,8 @@
         "syscalls/kill.c",
         "syscalls/killpg.c",
         "syscalls/lchown.c",
-        "syscalls/link.c",
         "syscalls/listen.c",
-        # Not called mount.c to avoid object file naming conflict with
-        # mount.cc.
-        "syscalls/syscall_mount.c",
+        "syscalls/mount.c",
         "syscalls/ntohl.c",
         "syscalls/ntohs.c",
         "syscalls/pipe.c",
@@ -141,7 +138,6 @@
         "syscalls/truncate.c",
         "syscalls/umount.c",
         "syscalls/uname.c",
-        "syscalls/unlink.c",
         "syscalls/utime.c",
       ],
     }

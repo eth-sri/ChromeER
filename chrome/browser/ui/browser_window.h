@@ -374,6 +374,8 @@ class BrowserWindow : public ui::BaseWindow {
     AVATAR_BUBBLE_MODE_SIGNIN,
     AVATAR_BUBBLE_MODE_ADD_ACCOUNT,
     AVATAR_BUBBLE_MODE_REAUTH,
+    AVATAR_BUBBLE_MODE_CONFIRM_SIGNIN,
+    AVATAR_BUBBLE_MODE_SHOW_ERROR,
   };
   virtual void ShowAvatarBubbleFromAvatarButton(AvatarBubbleMode mode,
       const signin::ManageAccountsParams& manage_accounts_params) = 0;
@@ -399,15 +401,6 @@ class BrowserWindow : public ui::BaseWindow {
   // Executes |command| registered by |extension|.
   virtual void ExecuteExtensionCommand(const extensions::Extension* extension,
                                        const extensions::Command& command) = 0;
-
-  // Shows the page action for the extension.
-  virtual void ShowPageActionPopup(const extensions::Extension* extension) = 0;
-
-  // Shows the browser action for the extension. NOTE(wittman): This function
-  // grants tab permissions to the browser action popup, so it should only be
-  // invoked due to user action, not due to invocation from an extensions API.
-  virtual void ShowBrowserActionPopup(
-      const extensions::Extension* extension) = 0;
 
  protected:
   friend class BrowserCloseManager;

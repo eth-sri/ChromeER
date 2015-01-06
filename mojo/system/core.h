@@ -9,6 +9,7 @@
 
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/synchronization/lock.h"
 #include "mojo/public/c/system/buffer.h"
 #include "mojo/public/c/system/data_pipe.h"
@@ -20,16 +21,24 @@
 #include "mojo/system/system_impl_export.h"
 
 namespace mojo {
+
+namespace embedder {
+class PlatformSupport;
+}
+
 namespace system {
 
 class Dispatcher;
+struct HandleSignalsState;
 
 // |Core| is an object that implements the Mojo system calls. All public methods
 // are thread-safe.
 class MOJO_SYSTEM_IMPL_EXPORT Core {
  public:
-  // These methods are only to be used by via the embedder API (and internally).
-  Core();
+  // ---------------------------------------------------------------------------
+
+  // These methods are only to be used by via the embedder API (and internally):
+  explicit Core(scoped_ptr<embedder::PlatformSupport> platform_support);
   virtual ~Core();
 
   // Adds |dispatcher| to the handle table, returning the handle for it. Returns
@@ -40,16 +49,25 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
   // invalid.
   scoped_refptr<Dispatcher> GetDispatcher(MojoHandle handle);
 
-  // System calls implementation.
+  embedder::PlatformSupport* platform_support() const {
+    return platform_support_.get();
+  }
+
+  // ---------------------------------------------------------------------------
+
+  // System calls implementation:
   MojoTimeTicks GetTimeTicksNow();
   MojoResult Close(MojoHandle handle);
   MojoResult Wait(MojoHandle handle,
                   MojoHandleSignals signals,
-                  MojoDeadline deadline);
+                  MojoDeadline deadline,
+                  UserPointer<MojoHandleSignalsState> signals_state);
   MojoResult WaitMany(UserPointer<const MojoHandle> handles,
                       UserPointer<const MojoHandleSignals> signals,
                       uint32_t num_handles,
-                      MojoDeadline deadline);
+                      MojoDeadline deadline,
+                      UserPointer<uint32_t> result_index,
+                      UserPointer<MojoHandleSignalsState> signals_states);
   MojoResult CreateMessagePipe(
       UserPointer<const MojoCreateMessagePipeOptions> options,
       UserPointer<MojoHandle> message_pipe_handle0,
@@ -116,9 +134,10 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
                               const MojoHandleSignals* signals,
                               uint32_t num_handles,
                               MojoDeadline deadline,
-                              uint32_t* result_index);
+                              uint32_t* result_index,
+                              HandleSignalsState* signals_states);
 
-  // ---------------------------------------------------------------------------
+  const scoped_ptr<embedder::PlatformSupport> platform_support_;
 
   // TODO(vtl): |handle_table_lock_| should be a reader-writer lock (if only we
   // had them).
@@ -127,8 +146,6 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
 
   base::Lock mapping_table_lock_;  // Protects |mapping_table_|.
   MappingTable mapping_table_;
-
-  // ---------------------------------------------------------------------------
 
   DISALLOW_COPY_AND_ASSIGN(Core);
 };

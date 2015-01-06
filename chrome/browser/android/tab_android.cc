@@ -12,6 +12,7 @@
 #include "chrome/browser/browser_about_handler.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/content_settings/tab_specific_content_settings.h"
+#include "chrome/browser/favicon/favicon_tab_helper.h"
 #include "chrome/browser/google/google_url_tracker_factory.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/prerender/prerender_contents.h"
@@ -47,8 +48,14 @@
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
 #include "jni/Tab_jni.h"
+#include "skia/ext/image_operations.h"
 #include "third_party/WebKit/public/platform/WebReferrerPolicy.h"
+#include "ui/base/resource/resource_bundle.h"
 #include "ui/base/window_open_disposition.h"
+#include "ui/gfx/android/device_display_info.h"
+#include "ui/gfx/android/java_bitmap.h"
+#include "ui/gfx/favicon_size.h"
+#include "ui/gfx/image/image_skia.h"
 
 using content::GlobalRequestID;
 using content::NavigationController;
@@ -299,6 +306,17 @@ void TabAndroid::SwapTabContents(content::WebContents* old_contents,
       did_finish_load);
 }
 
+void TabAndroid::OnWebContentsInstantSupportDisabled(
+    const content::WebContents* contents) {
+  DCHECK(contents);
+  if (web_contents() != contents)
+    return;
+
+  JNIEnv* env = base::android::AttachCurrentThread();
+  Java_Tab_onWebContentsInstantSupportDisabled(env,
+                                               weak_java_tab_.get(env).obj());
+}
+
 void TabAndroid::Observe(int type,
                          const content::NotificationSource& source,
                          const content::NotificationDetails& details) {
@@ -364,6 +382,7 @@ void TabAndroid::InitWebContents(JNIEnv* env,
   WindowAndroidHelper::FromWebContents(web_contents())->
       SetWindowAndroid(content_view_core->GetWindowAndroid());
   CoreTabHelper::FromWebContents(web_contents())->set_delegate(this);
+  SearchTabHelper::FromWebContents(web_contents())->set_delegate(this);
   web_contents_delegate_.reset(
       new chrome::android::ChromeWebContentsDelegateAndroid(
           env, jweb_contents_delegate));
@@ -587,6 +606,50 @@ bool TabAndroid::Print(JNIEnv* env, jobject obj) {
 
   print_view_manager->PrintNow();
   return true;
+}
+
+ScopedJavaLocalRef<jobject> TabAndroid::GetFavicon(JNIEnv* env, jobject obj) {
+  ScopedJavaLocalRef<jobject> bitmap;
+  FaviconTabHelper* favicon_tab_helper =
+      FaviconTabHelper::FromWebContents(web_contents_.get());
+
+  if (!favicon_tab_helper)
+    return bitmap;
+
+  // If the favicon isn't valid, it will return a default bitmap.
+
+  SkBitmap favicon =
+      favicon_tab_helper->GetFavicon()
+          .AsImageSkia()
+          .GetRepresentation(
+               ResourceBundle::GetSharedInstance().GetMaxScaleFactor())
+          .sk_bitmap();
+
+  if (favicon.empty()) {
+    favicon = favicon_tab_helper->GetFavicon().AsBitmap();
+  }
+
+  if (!favicon.empty()) {
+    gfx::DeviceDisplayInfo device_info;
+    const float device_scale_factor = device_info.GetDIPScale();
+    int target_size_dip = device_scale_factor * gfx::kFaviconSize;
+    if (favicon.width() != target_size_dip ||
+        favicon.height() != target_size_dip) {
+      favicon =
+          skia::ImageOperations::Resize(favicon,
+                                        skia::ImageOperations::RESIZE_BEST,
+                                        target_size_dip,
+                                        target_size_dip);
+    }
+
+    bitmap = gfx::ConvertToJavaBitmap(&favicon);
+  }
+  return bitmap;
+}
+
+jboolean TabAndroid::IsFaviconValid(JNIEnv* env, jobject jobj) {
+  return web_contents() &&
+      FaviconTabHelper::FromWebContents(web_contents())->FaviconIsValid();
 }
 
 prerender::PrerenderManager* TabAndroid::GetPrerenderManager() const {

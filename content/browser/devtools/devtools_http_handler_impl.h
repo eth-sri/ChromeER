@@ -13,6 +13,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "content/common/content_export.h"
+#include "content/public/browser/devtools_agent_host.h"
 #include "content/public/browser/devtools_http_handler.h"
 #include "content/public/browser/devtools_http_handler_delegate.h"
 #include "net/http/http_status_code.h"
@@ -26,14 +27,13 @@ class Value;
 }
 
 namespace net {
-class StreamListenSocketFactory;
+class ServerSocketFactory;
 class URLRequestContextGetter;
 }
 
 namespace content {
 
 class DevToolsBrowserTarget;
-class DevToolsClientHost;
 
 class DevToolsHttpHandlerImpl
     : public DevToolsHttpHandler,
@@ -43,8 +43,7 @@ class DevToolsHttpHandlerImpl
   friend class base::RefCountedThreadSafe<DevToolsHttpHandlerImpl>;
   friend class DevToolsHttpHandler;
 
-  // Takes ownership over |socket_factory|.
-  DevToolsHttpHandlerImpl(const net::StreamListenSocketFactory* socket_factory,
+  DevToolsHttpHandlerImpl(scoped_ptr<ServerSocketFactory> server_socket_factory,
                           const std::string& frontend_url,
                           DevToolsHttpHandlerDelegate* delegate,
                           const base::FilePath& active_port_output_directory);
@@ -90,6 +89,7 @@ class DevToolsHttpHandlerImpl
 
   void StartHandlerThread();
   void StopHandlerThread();
+  void StopWithoutRelease();
 
   void WriteActivePortToUserProfile();
 
@@ -117,12 +117,12 @@ class DevToolsHttpHandlerImpl
   scoped_ptr<base::Thread> thread_;
 
   std::string frontend_url_;
-  scoped_ptr<const net::StreamListenSocketFactory> socket_factory_;
-  scoped_refptr<net::HttpServer> server_;
-  typedef std::map<int, DevToolsClientHost*> ConnectionToClientHostMap;
-  ConnectionToClientHostMap connection_to_client_host_ui_;
-  scoped_ptr<DevToolsHttpHandlerDelegate> delegate_;
-  base::FilePath active_port_output_directory_;
+  const scoped_ptr<ServerSocketFactory> server_socket_factory_;
+  scoped_ptr<net::HttpServer> server_;
+  typedef std::map<int, DevToolsAgentHostClient*> ConnectionToClientMap;
+  ConnectionToClientMap connection_to_client_ui_;
+  const scoped_ptr<DevToolsHttpHandlerDelegate> delegate_;
+  const base::FilePath active_port_output_directory_;
   typedef std::map<std::string, DevToolsTarget*> TargetMap;
   TargetMap target_map_;
   typedef std::map<int, scoped_refptr<DevToolsBrowserTarget> > BrowserTargets;

@@ -55,6 +55,8 @@
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "chrome/grit/chromium_strings.h"
+#include "chrome/grit/generated_resources.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/test_switches.h"
 #include "chrome/test/base/ui_test_utils.h"
@@ -83,8 +85,6 @@
 #include "extensions/browser/uninstall_reason.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_set.h"
-#include "grit/chromium_strings.h"
-#include "grit/generated_resources.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/test/spawned_test_server/spawned_test_server.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -1836,7 +1836,7 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, MAYBE_PageZoom) {
     content::HostZoomMap::ZoomLevelChangedCallback callback(
         base::Bind(&OnZoomLevelChanged, loop_runner->QuitClosure()));
     scoped_ptr<content::HostZoomMap::Subscription> sub =
-        content::HostZoomMap::GetForBrowserContext(
+        content::HostZoomMap::GetDefaultForBrowserContext(
             browser()->profile())->AddZoomLevelChangedCallback(callback);
     chrome::Zoom(browser(), content::PAGE_ZOOM_IN);
     loop_runner->Run();
@@ -1852,7 +1852,7 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, MAYBE_PageZoom) {
     content::HostZoomMap::ZoomLevelChangedCallback callback(
         base::Bind(&OnZoomLevelChanged, loop_runner->QuitClosure()));
     scoped_ptr<content::HostZoomMap::Subscription> sub =
-        content::HostZoomMap::GetForBrowserContext(
+        content::HostZoomMap::GetDefaultForBrowserContext(
             browser()->profile())->AddZoomLevelChangedCallback(callback);
     chrome::Zoom(browser(), content::PAGE_ZOOM_RESET);
     loop_runner->Run();
@@ -1868,7 +1868,7 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, MAYBE_PageZoom) {
     content::HostZoomMap::ZoomLevelChangedCallback callback(
         base::Bind(&OnZoomLevelChanged, loop_runner->QuitClosure()));
     scoped_ptr<content::HostZoomMap::Subscription> sub =
-        content::HostZoomMap::GetForBrowserContext(
+        content::HostZoomMap::GetDefaultForBrowserContext(
             browser()->profile())->AddZoomLevelChangedCallback(callback);
     chrome::Zoom(browser(), content::PAGE_ZOOM_OUT);
     loop_runner->Run();
@@ -1981,13 +1981,8 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, InterstitialClosesDialogs) {
   EXPECT_FALSE(contents->GetRenderProcessHost()->IgnoreInputEvents());
 }
 
-#if defined(OS_MACOSX)
-// http://crbug.com/393218
-#define MAYBE_InterstitialCloseTab DISABLED_InterstitialCloseTab
-#else
-#define MAYBE_InterstitialCloseTab InterstitialCloseTab
-#endif
-IN_PROC_BROWSER_TEST_F(BrowserTest, MAYBE_InterstitialCloseTab) {
+
+IN_PROC_BROWSER_TEST_F(BrowserTest, InterstitialCloseTab) {
   WebContents* contents = browser()->tab_strip_model()->GetActiveWebContents();
 
   {

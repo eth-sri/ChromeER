@@ -13,7 +13,6 @@
 #include "third_party/skia/include/effects/SkBlurImageFilter.h"
 #include "ui/accessibility/ax_view_state.h"
 #include "ui/aura/window.h"
-#include "ui/base/l10n/l10n_util.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/layer_delegate.h"
 #include "ui/events/event.h"
@@ -59,7 +58,6 @@ class MouseMoveDetectorHost : public MouseWatcherHost {
   virtual bool Contains(const gfx::Point& screen_point,
                         MouseEventType type) OVERRIDE;
  private:
-
   DISALLOW_COPY_AND_ASSIGN(MouseMoveDetectorHost);
 };
 
@@ -185,6 +183,8 @@ class TrayBubbleContentMask : public ui::LayerDelegate {
 
   // Overridden from LayerDelegate.
   virtual void OnPaintLayer(gfx::Canvas* canvas) OVERRIDE;
+  virtual void OnDelegatedFrameDamage(
+      const gfx::Rect& damage_rect_in_dip) OVERRIDE {}
   virtual void OnDeviceScaleFactorChanged(float device_scale_factor) OVERRIDE;
   virtual base::Closure PrepareForLayerBoundsChange() OVERRIDE;
 
@@ -381,6 +381,7 @@ void TrayBubbleView::SetWidth(int width) {
 void TrayBubbleView::SetArrowPaintType(
     views::BubbleBorder::ArrowPaintType paint_type) {
   bubble_border_->set_paint_arrow(paint_type);
+  UpdateBubble();
 }
 
 gfx::Insets TrayBubbleView::GetBorderInsets() const {

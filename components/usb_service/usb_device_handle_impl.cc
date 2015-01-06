@@ -7,19 +7,19 @@
 #include <algorithm>
 #include <vector>
 
-#include "base/message_loop/message_loop.h"
+#include "base/bind.h"
+#include "base/location.h"
+#include "base/single_thread_task_runner.h"
 #include "base/stl_util.h"
 #include "base/strings/string16.h"
 #include "base/synchronization/lock.h"
+#include "base/thread_task_runner_handle.h"
 #include "components/usb_service/usb_context.h"
 #include "components/usb_service/usb_device_impl.h"
 #include "components/usb_service/usb_error.h"
 #include "components/usb_service/usb_interface.h"
 #include "components/usb_service/usb_service.h"
-#include "content/public/browser/browser_thread.h"
 #include "third_party/libusb/src/libusb/libusb.h"
-
-using content::BrowserThread;
 
 namespace usb_service {
 
@@ -103,23 +103,7 @@ static UsbTransferStatus ConvertTransferStatus(
   }
 }
 
-static void LIBUSB_CALL
-PlatformTransferCompletionCallback(PlatformUsbTransferHandle transfer) {
-  BrowserThread::PostTask(BrowserThread::FILE,
-                          FROM_HERE,
-                          base::Bind(HandleTransferCompletion, transfer));
-}
-
 }  // namespace
-
-void HandleTransferCompletion(PlatformUsbTransferHandle transfer) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
-  UsbDeviceHandleImpl* const device_handle =
-      reinterpret_cast<UsbDeviceHandleImpl*>(transfer->user_data);
-  CHECK(device_handle) << "Device handle is closed before transfer finishes.";
-  device_handle->TransferComplete(transfer);
-  libusb_free_transfer(transfer);
-}
 
 class UsbDeviceHandleImpl::InterfaceClaimer
     : public base::RefCountedThreadSafe<UsbDeviceHandleImpl::InterfaceClaimer> {
@@ -170,10 +154,12 @@ struct UsbDeviceHandleImpl::Transfer {
   Transfer();
   ~Transfer();
 
+  void Complete(UsbTransferStatus status, size_t bytes_transferred);
+
   UsbTransferType transfer_type;
   scoped_refptr<net::IOBuffer> buffer;
   scoped_refptr<UsbDeviceHandleImpl::InterfaceClaimer> claimed_interface;
-  scoped_refptr<base::MessageLoopProxy> message_loop_proxy;
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner;
   size_t length;
   UsbTransferCallback callback;
 };
@@ -185,6 +171,16 @@ UsbDeviceHandleImpl::Transfer::Transfer()
 UsbDeviceHandleImpl::Transfer::~Transfer() {
 }
 
+void UsbDeviceHandleImpl::Transfer::Complete(UsbTransferStatus status,
+                                             size_t bytes_transferred) {
+  if (task_runner->RunsTasksOnCurrentThread()) {
+    callback.Run(status, buffer, bytes_transferred);
+  } else {
+    task_runner->PostTask(
+        FROM_HERE, base::Bind(callback, status, buffer, bytes_transferred));
+  }
+}
+
 UsbDeviceHandleImpl::UsbDeviceHandleImpl(
     scoped_refptr<UsbContext> context,
     UsbDeviceImpl* device,
@@ -193,10 +189,10 @@ UsbDeviceHandleImpl::UsbDeviceHandleImpl(
     : device_(device),
       handle_(handle),
       interfaces_(interfaces),
-      context_(context) {
-  DCHECK(thread_checker_.CalledOnValidThread());
+      context_(context),
+      task_runner_(base::ThreadTaskRunnerHandle::Get()) {
   DCHECK(handle) << "Cannot create device with NULL handle.";
-  DCHECK(interfaces_) << "Unabled to list interfaces";
+  DCHECK(interfaces_.get()) << "Unable to list interfaces";
 }
 
 UsbDeviceHandleImpl::~UsbDeviceHandleImpl() {
@@ -216,7 +212,18 @@ void UsbDeviceHandleImpl::Close() {
     device_->Close(this);
 }
 
-void UsbDeviceHandleImpl::TransferComplete(PlatformUsbTransferHandle handle) {
+/* static */
+void LIBUSB_CALL UsbDeviceHandleImpl::PlatformTransferCallback(
+    PlatformUsbTransferHandle transfer) {
+  UsbDeviceHandleImpl* device_handle =
+      reinterpret_cast<UsbDeviceHandleImpl*>(transfer->user_data);
+  device_handle->task_runner_->PostTask(
+      FROM_HERE,
+      base::Bind(
+          &UsbDeviceHandleImpl::CompleteTransfer, device_handle, transfer));
+}
+
+void UsbDeviceHandleImpl::CompleteTransfer(PlatformUsbTransferHandle handle) {
   DCHECK(ContainsKey(transfers_, handle)) << "Missing transfer completed";
 
   Transfer transfer = transfers_[handle];
@@ -229,7 +236,6 @@ void UsbDeviceHandleImpl::TransferComplete(PlatformUsbTransferHandle handle) {
   DCHECK(transfer.length >= actual_length)
       << "data too big for our buffer (libusb failure?)";
 
-  scoped_refptr<net::IOBuffer> buffer = transfer.buffer;
   switch (transfer.transfer_type) {
     case USB_TRANSFER_CONTROL:
       // If the transfer is a control transfer we do not expose the control
@@ -246,9 +252,9 @@ void UsbDeviceHandleImpl::TransferComplete(PlatformUsbTransferHandle handle) {
               new net::IOBuffer(static_cast<int>(
                   std::max(actual_length, static_cast<size_t>(1))));
           memcpy(resized_buffer->data(),
-                 buffer->data() + LIBUSB_CONTROL_SETUP_SIZE,
+                 transfer.buffer->data() + LIBUSB_CONTROL_SETUP_SIZE,
                  actual_length);
-          buffer = resized_buffer;
+          transfer.buffer = resized_buffer;
         }
       }
       break;
@@ -268,8 +274,8 @@ void UsbDeviceHandleImpl::TransferComplete(PlatformUsbTransferHandle handle) {
             if (actual_length < packet_buffer_start) {
               CHECK(packet_buffer_start + packet->actual_length <=
                     transfer.length);
-              memmove(buffer->data() + actual_length,
-                      buffer->data() + packet_buffer_start,
+              memmove(transfer.buffer->data() + actual_length,
+                      transfer.buffer->data() + packet_buffer_start,
                       packet->actual_length);
             }
             actual_length += packet->actual_length;
@@ -289,12 +295,8 @@ void UsbDeviceHandleImpl::TransferComplete(PlatformUsbTransferHandle handle) {
       break;
   }
 
-  transfer.message_loop_proxy->PostTask(
-      FROM_HERE,
-      base::Bind(transfer.callback,
-                 ConvertTransferStatus(handle->status),
-                 buffer,
-                 actual_length));
+  transfer.Complete(ConvertTransferStatus(handle->status), actual_length);
+  libusb_free_transfer(handle);
 
   // Must release interface first before actually delete this.
   transfer.claimed_interface = NULL;
@@ -372,62 +374,145 @@ bool UsbDeviceHandleImpl::ResetDevice() {
   return rv == LIBUSB_SUCCESS;
 }
 
-bool UsbDeviceHandleImpl::GetSerial(base::string16* serial) {
+bool UsbDeviceHandleImpl::GetSupportedLanguages() {
+  if (!languages_.empty()) {
+    return true;
+  }
+
+  // The 1-byte length field limits the descriptor to 256-bytes (128 uint16s).
+  uint16 languages[128];
+  int size = libusb_get_string_descriptor(
+      handle_,
+      0,
+      0,
+      reinterpret_cast<unsigned char*>(&languages[0]),
+      sizeof(languages));
+  if (size < 0) {
+    VLOG(1) << "Failed to get list of supported languages: "
+            << ConvertErrorToString(size);
+    return false;
+  } else if (size < 2) {
+    VLOG(1) << "String descriptor zero has no header.";
+    return false;
+  // The first 2 bytes of the descriptor are the total length and type tag.
+  } else if ((languages[0] & 0xff) != size) {
+    VLOG(1) << "String descriptor zero size mismatch: " << (languages[0] & 0xff)
+            << " != " << size;
+    return false;
+  } else if ((languages[0] >> 8) != LIBUSB_DT_STRING) {
+    VLOG(1) << "String descriptor zero is not a string descriptor.";
+    return false;
+  }
+
+  languages_.assign(languages[1], languages[(size - 2) / 2]);
+  return true;
+}
+
+bool UsbDeviceHandleImpl::GetStringDescriptor(uint8 string_id,
+                                              base::string16* string) {
+  if (!GetSupportedLanguages()) {
+    return false;
+  }
+
+  std::map<uint8, base::string16>::const_iterator it = strings_.find(string_id);
+  if (it != strings_.end()) {
+    *string = it->second;
+    return true;
+  }
+
+  for (size_t i = 0; i < languages_.size(); ++i) {
+    // Get the string using language ID.
+    uint16 language_id = languages_[i];
+    // The 1-byte length field limits the descriptor to 256-bytes (128 char16s).
+    base::char16 text[128];
+    int size =
+        libusb_get_string_descriptor(handle_,
+                                     string_id,
+                                     language_id,
+                                     reinterpret_cast<unsigned char*>(&text[0]),
+                                     sizeof(text));
+    if (size < 0) {
+      VLOG(1) << "Failed to get string descriptor " << string_id << " (langid "
+              << language_id << "): " << ConvertErrorToString(size);
+      continue;
+    } else if (size < 2) {
+      VLOG(1) << "String descriptor " << string_id << " (langid " << language_id
+              << ") has no header.";
+      continue;
+    // The first 2 bytes of the descriptor are the total length and type tag.
+    } else if ((text[0] & 0xff) != size) {
+      VLOG(1) << "String descriptor " << string_id << " (langid " << language_id
+              << ") size mismatch: " << (text[0] & 0xff) << " != " << size;
+      continue;
+    } else if ((text[0] >> 8) != LIBUSB_DT_STRING) {
+      VLOG(1) << "String descriptor " << string_id << " (langid " << language_id
+              << ") is not a string descriptor.";
+      continue;
+    }
+
+    *string = base::string16(text + 1, (size - 2) / 2);
+    strings_[string_id] = *string;
+    return true;
+  }
+
+  return false;
+}
+
+bool UsbDeviceHandleImpl::GetManufacturer(base::string16* manufacturer) {
   DCHECK(thread_checker_.CalledOnValidThread());
   PlatformUsbDevice device = libusb_get_device(handle_);
   libusb_device_descriptor desc;
 
+  // This is a non-blocking call as libusb has the descriptor in memory.
   const int rv = libusb_get_device_descriptor(device, &desc);
   if (rv != LIBUSB_SUCCESS) {
     VLOG(1) << "Failed to read device descriptor: " << ConvertErrorToString(rv);
     return false;
   }
 
-  if (desc.iSerialNumber == 0)
-    return false;
-
-  // Getting supported language ID.
-  uint16 langid[128] = {0};
-
-  int size =
-      libusb_get_string_descriptor(handle_,
-                                   0,
-                                   0,
-                                   reinterpret_cast<unsigned char*>(&langid[0]),
-                                   sizeof(langid));
-  if (size < 0) {
-    VLOG(1) << "Failed to get language IDs: " << ConvertErrorToString(size);
+  if (desc.iManufacturer == 0) {
     return false;
   }
 
-  int language_count = (size - 2) / 2;
+  return GetStringDescriptor(desc.iManufacturer, manufacturer);
+}
 
-  for (int i = 1; i <= language_count; ++i) {
-    // Get the string using language ID.
-    base::char16 text[256] = {0};
-    size =
-        libusb_get_string_descriptor(handle_,
-                                     desc.iSerialNumber,
-                                     langid[i],
-                                     reinterpret_cast<unsigned char*>(&text[0]),
-                                     sizeof(text));
-    if (size < 0) {
-      VLOG(1) << "Failed to get serial number (langid " << langid[i] << "): "
-              << ConvertErrorToString(size);
-      continue;
-    }
-    if (size <= 2)
-      continue;
-    if ((text[0] >> 8) != LIBUSB_DT_STRING)
-      continue;
-    if ((text[0] & 255) > size)
-      continue;
+bool UsbDeviceHandleImpl::GetProduct(base::string16* product) {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  PlatformUsbDevice device = libusb_get_device(handle_);
+  libusb_device_descriptor desc;
 
-    size = size / 2 - 1;
-    *serial = base::string16(text + 1, size);
-    return true;
+  // This is a non-blocking call as libusb has the descriptor in memory.
+  const int rv = libusb_get_device_descriptor(device, &desc);
+  if (rv != LIBUSB_SUCCESS) {
+    VLOG(1) << "Failed to read device descriptor: " << ConvertErrorToString(rv);
+    return false;
   }
-  return false;
+
+  if (desc.iProduct == 0) {
+    return false;
+  }
+
+  return GetStringDescriptor(desc.iProduct, product);
+}
+
+bool UsbDeviceHandleImpl::GetSerial(base::string16* serial) {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  PlatformUsbDevice device = libusb_get_device(handle_);
+  libusb_device_descriptor desc;
+
+  // This is a non-blocking call as libusb has the descriptor in memory.
+  const int rv = libusb_get_device_descriptor(device, &desc);
+  if (rv != LIBUSB_SUCCESS) {
+    VLOG(1) << "Failed to read device descriptor: " << ConvertErrorToString(rv);
+    return false;
+  }
+
+  if (desc.iSerialNumber == 0) {
+    return false;
+  }
+
+  return GetStringDescriptor(desc.iSerialNumber, serial);
 }
 
 void UsbDeviceHandleImpl::ControlTransfer(
@@ -449,7 +534,7 @@ void UsbDeviceHandleImpl::ControlTransfer(
   const size_t resized_length = LIBUSB_CONTROL_SETUP_SIZE + length;
   scoped_refptr<net::IOBuffer> resized_buffer(
       new net::IOBufferWithSize(static_cast<int>(resized_length)));
-  if (!resized_buffer) {
+  if (!resized_buffer.get()) {
     callback.Run(USB_TRANSFER_ERROR, buffer, 0);
     return;
   }
@@ -469,20 +554,12 @@ void UsbDeviceHandleImpl::ControlTransfer(
   libusb_fill_control_transfer(transfer,
                                handle_,
                                reinterpret_cast<uint8*>(resized_buffer->data()),
-                               PlatformTransferCompletionCallback,
+                               &UsbDeviceHandleImpl::PlatformTransferCallback,
                                this,
                                timeout);
 
-  BrowserThread::PostTask(BrowserThread::FILE,
-                          FROM_HERE,
-                          base::Bind(&UsbDeviceHandleImpl::SubmitTransfer,
-                                     this,
-                                     transfer,
-                                     USB_TRANSFER_CONTROL,
-                                     resized_buffer,
-                                     resized_length,
-                                     base::MessageLoopProxy::current(),
-                                     callback));
+  PostOrSubmitTransfer(
+      transfer, USB_TRANSFER_CONTROL, resized_buffer, resized_length, callback);
 }
 
 void UsbDeviceHandleImpl::BulkTransfer(const UsbEndpointDirection direction,
@@ -503,20 +580,11 @@ void UsbDeviceHandleImpl::BulkTransfer(const UsbEndpointDirection direction,
                             new_endpoint,
                             reinterpret_cast<uint8*>(buffer->data()),
                             static_cast<int>(length),
-                            PlatformTransferCompletionCallback,
+                            &UsbDeviceHandleImpl::PlatformTransferCallback,
                             this,
                             timeout);
 
-  BrowserThread::PostTask(BrowserThread::FILE,
-                          FROM_HERE,
-                          base::Bind(&UsbDeviceHandleImpl::SubmitTransfer,
-                                     this,
-                                     transfer,
-                                     USB_TRANSFER_BULK,
-                                     make_scoped_refptr(buffer),
-                                     length,
-                                     base::MessageLoopProxy::current(),
-                                     callback));
+  PostOrSubmitTransfer(transfer, USB_TRANSFER_BULK, buffer, length, callback);
 }
 
 void UsbDeviceHandleImpl::InterruptTransfer(
@@ -538,19 +606,12 @@ void UsbDeviceHandleImpl::InterruptTransfer(
                                  new_endpoint,
                                  reinterpret_cast<uint8*>(buffer->data()),
                                  static_cast<int>(length),
-                                 PlatformTransferCompletionCallback,
+                                 &UsbDeviceHandleImpl::PlatformTransferCallback,
                                  this,
                                  timeout);
-  BrowserThread::PostTask(BrowserThread::FILE,
-                          FROM_HERE,
-                          base::Bind(&UsbDeviceHandleImpl::SubmitTransfer,
-                                     this,
-                                     transfer,
-                                     USB_TRANSFER_INTERRUPT,
-                                     make_scoped_refptr(buffer),
-                                     length,
-                                     base::MessageLoopProxy::current(),
-                                     callback));
+
+  PostOrSubmitTransfer(
+      transfer, USB_TRANSFER_INTERRUPT, buffer, length, callback);
 }
 
 void UsbDeviceHandleImpl::IsochronousTransfer(
@@ -579,21 +640,13 @@ void UsbDeviceHandleImpl::IsochronousTransfer(
                            reinterpret_cast<uint8*>(buffer->data()),
                            static_cast<int>(length),
                            packets,
-                           PlatformTransferCompletionCallback,
+                           &UsbDeviceHandleImpl::PlatformTransferCallback,
                            this,
                            timeout);
   libusb_set_iso_packet_lengths(transfer, packet_length);
 
-  BrowserThread::PostTask(BrowserThread::FILE,
-                          FROM_HERE,
-                          base::Bind(&UsbDeviceHandleImpl::SubmitTransfer,
-                                     this,
-                                     transfer,
-                                     USB_TRANSFER_ISOCHRONOUS,
-                                     make_scoped_refptr(buffer),
-                                     length,
-                                     base::MessageLoopProxy::current(),
-                                     callback));
+  PostOrSubmitTransfer(
+      transfer, USB_TRANSFER_ISOCHRONOUS, buffer, length, callback);
 }
 
 void UsbDeviceHandleImpl::RefreshEndpointMap() {
@@ -621,27 +674,52 @@ UsbDeviceHandleImpl::GetClaimedInterfaceForEndpoint(unsigned char endpoint) {
   return NULL;
 }
 
+void UsbDeviceHandleImpl::PostOrSubmitTransfer(
+    PlatformUsbTransferHandle transfer,
+    UsbTransferType transfer_type,
+    net::IOBuffer* buffer,
+    size_t length,
+    const UsbTransferCallback& callback) {
+  if (task_runner_->RunsTasksOnCurrentThread()) {
+    SubmitTransfer(transfer,
+                   transfer_type,
+                   buffer,
+                   length,
+                   base::ThreadTaskRunnerHandle::Get(),
+                   callback);
+  } else {
+    task_runner_->PostTask(FROM_HERE,
+                           base::Bind(&UsbDeviceHandleImpl::SubmitTransfer,
+                                      this,
+                                      transfer,
+                                      transfer_type,
+                                      make_scoped_refptr(buffer),
+                                      length,
+                                      base::ThreadTaskRunnerHandle::Get(),
+                                      callback));
+  }
+}
+
 void UsbDeviceHandleImpl::SubmitTransfer(
     PlatformUsbTransferHandle handle,
     UsbTransferType transfer_type,
     net::IOBuffer* buffer,
     const size_t length,
-    scoped_refptr<base::MessageLoopProxy> message_loop_proxy,
+    scoped_refptr<base::SingleThreadTaskRunner> task_runner,
     const UsbTransferCallback& callback) {
   DCHECK(thread_checker_.CalledOnValidThread());
-  if (!device_) {
-    message_loop_proxy->PostTask(
-        FROM_HERE,
-        base::Bind(
-            callback, USB_TRANSFER_DISCONNECT, make_scoped_refptr(buffer), 0));
-  }
 
   Transfer transfer;
   transfer.transfer_type = transfer_type;
   transfer.buffer = buffer;
   transfer.length = length;
   transfer.callback = callback;
-  transfer.message_loop_proxy = message_loop_proxy;
+  transfer.task_runner = task_runner;
+
+  if (!device_) {
+    transfer.Complete(USB_TRANSFER_DISCONNECT, 0);
+    return;
+  }
 
   // It's OK for this method to return NULL. libusb_submit_transfer will fail if
   // it requires an interface we didn't claim.
@@ -652,10 +730,7 @@ void UsbDeviceHandleImpl::SubmitTransfer(
     transfers_[handle] = transfer;
   } else {
     VLOG(1) << "Failed to submit transfer: " << ConvertErrorToString(rv);
-    message_loop_proxy->PostTask(
-        FROM_HERE,
-        base::Bind(
-            callback, USB_TRANSFER_ERROR, make_scoped_refptr(buffer), 0));
+    transfer.Complete(USB_TRANSFER_ERROR, 0);
   }
 }
 

@@ -24,6 +24,7 @@
 #include "gpu/command_buffer/service/gpu_scheduler.h"
 #include "gpu/command_buffer/service/image_manager.h"
 #include "gpu/command_buffer/service/mailbox_manager.h"
+#include "gpu/command_buffer/service/memory_tracking.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gfx/gpu_memory_buffer.h"
 #include "ui/gl/gl_context.h"
@@ -158,11 +159,11 @@ void GLManager::Initialize(const GLManager::Options& options) {
   gfx::GpuPreference gpu_preference(gfx::PreferDiscreteGpu);
   std::vector<int32> attribs;
   gles2::ContextCreationAttribHelper attrib_helper;
-  attrib_helper.red_size_ = 8;
-  attrib_helper.green_size_ = 8;
-  attrib_helper.blue_size_ = 8;
-  attrib_helper.alpha_size_ = 8;
-  attrib_helper.depth_size_ = 16;
+  attrib_helper.red_size = 8;
+  attrib_helper.green_size = 8;
+  attrib_helper.blue_size = 8;
+  attrib_helper.alpha_size = 8;
+  attrib_helper.depth_size = 16;
   attrib_helper.Serialize(&attribs);
 
   if (!context_group) {

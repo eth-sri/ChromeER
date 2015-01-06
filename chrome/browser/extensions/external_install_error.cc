@@ -17,12 +17,12 @@
 #include "chrome/browser/ui/global_error/global_error_service.h"
 #include "chrome/browser/ui/global_error/global_error_service_factory.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "chrome/grit/generated_resources.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/uninstall_reason.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
-#include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/image/image_skia_operations.h"
@@ -302,9 +302,7 @@ void ExternalInstallError::ShowDialog(Browser* browser) {
   DCHECK(prompt_.get());
   DCHECK(browser);
   content::WebContents* web_contents = NULL;
-#if !defined(OS_ANDROID)
   web_contents = browser->tab_strip_model()->GetActiveWebContents();
-#endif
   ExtensionInstallPrompt::ShowParams params(web_contents);
   ExtensionInstallPrompt::GetDefaultShowDialogCallback().Run(
       params, this, prompt_);
@@ -371,16 +369,13 @@ void ExternalInstallError::OnDialogReady(
   prompt_ = prompt;
 
   if (alert_type_ == BUBBLE_ALERT) {
-    global_error_.reset(new ExternalInstallBubbleAlert(this, prompt_));
+    global_error_.reset(new ExternalInstallBubbleAlert(this, prompt_.get()));
     error_service_->AddGlobalError(global_error_.get());
 
-    Browser* browser = NULL;
-#if !defined(OS_ANDROID)
-    browser =
+    Browser* browser =
         chrome::FindTabbedBrowser(Profile::FromBrowserContext(browser_context_),
                                   true,
                                   chrome::GetActiveDesktop());
-#endif  // !defined(OS_ANDROID)
     if (browser)
       global_error_->ShowBubbleView(browser);
   } else {

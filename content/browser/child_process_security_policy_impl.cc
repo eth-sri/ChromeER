@@ -76,8 +76,8 @@ class ChildProcessSecurityPolicyImpl::SecurityState {
 
   ~SecurityState() {
     scheme_policy_.clear();
-    fileapi::IsolatedContext* isolated_context =
-        fileapi::IsolatedContext::GetInstance();
+    storage::IsolatedContext* isolated_context =
+        storage::IsolatedContext::GetInstance();
     for (FileSystemMap::iterator iter = filesystem_permissions_.begin();
          iter != filesystem_permissions_.end();
          ++iter) {
@@ -121,7 +121,7 @@ class ChildProcessSecurityPolicyImpl::SecurityState {
   void GrantPermissionsForFileSystem(const std::string& filesystem_id,
                                      int permissions) {
     if (!ContainsKey(filesystem_permissions_, filesystem_id))
-      fileapi::IsolatedContext::GetInstance()->AddReference(filesystem_id);
+      storage::IsolatedContext::GetInstance()->AddReference(filesystem_id);
     filesystem_permissions_[filesystem_id] |= permissions;
   }
 
@@ -241,7 +241,8 @@ class ChildProcessSecurityPolicyImpl::SecurityState {
     // compatibility with many sites.  The similar --site-per-process flag only
     // blocks JavaScript access to cross-site cookies (in
     // CanAccessCookiesForOrigin).
-    const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+    const base::CommandLine& command_line =
+        *base::CommandLine::ForCurrentProcess();
     if (!command_line.HasSwitch(switches::kEnableStrictSiteIsolation))
       return true;
 
@@ -585,7 +586,8 @@ bool ChildProcessSecurityPolicyImpl::CanLoadPage(int child_id,
                                                  ResourceType resource_type) {
   // If --site-per-process flag is passed, we should enforce
   // stronger security restrictions on page navigation.
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kSitePerProcess) &&
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kSitePerProcess) &&
       IsResourceTypeFrame(resource_type)) {
     // TODO(nasko): Do the proper check for site-per-process, once
     // out-of-process iframes is ready to go.
@@ -695,7 +697,9 @@ bool ChildProcessSecurityPolicyImpl::HasPermissionsForFile(
 }
 
 bool ChildProcessSecurityPolicyImpl::HasPermissionsForFileSystemFile(
-    int child_id, const fileapi::FileSystemURL& url, int permissions) {
+    int child_id,
+    const storage::FileSystemURL& url,
+    int permissions) {
   if (!url.is_valid())
     return false;
 
@@ -703,12 +707,12 @@ bool ChildProcessSecurityPolicyImpl::HasPermissionsForFileSystemFile(
     return false;
 
   // Any write access is disallowed on the root path.
-  if (fileapi::VirtualPath::IsRootPath(url.path()) &&
+  if (storage::VirtualPath::IsRootPath(url.path()) &&
       (permissions & ~READ_FILE_GRANT)) {
     return false;
   }
 
-  if (url.mount_type() == fileapi::kFileSystemTypeIsolated) {
+  if (url.mount_type() == storage::kFileSystemTypeIsolated) {
     // When Isolated filesystems is overlayed on top of another filesystem,
     // its per-filesystem permission overrides the underlying filesystem
     // permissions).
@@ -721,15 +725,15 @@ bool ChildProcessSecurityPolicyImpl::HasPermissionsForFileSystemFile(
   if (found == file_system_policy_map_.end())
     return false;
 
-  if ((found->second & fileapi::FILE_PERMISSION_READ_ONLY) &&
+  if ((found->second & storage::FILE_PERMISSION_READ_ONLY) &&
       permissions & ~READ_FILE_GRANT) {
     return false;
   }
 
-  if (found->second & fileapi::FILE_PERMISSION_USE_FILE_PERMISSION)
+  if (found->second & storage::FILE_PERMISSION_USE_FILE_PERMISSION)
     return HasPermissionsForFile(child_id, url.path(), permissions);
 
-  if (found->second & fileapi::FILE_PERMISSION_SANDBOX)
+  if (found->second & storage::FILE_PERMISSION_SANDBOX)
     return true;
 
   return false;
@@ -737,38 +741,38 @@ bool ChildProcessSecurityPolicyImpl::HasPermissionsForFileSystemFile(
 
 bool ChildProcessSecurityPolicyImpl::CanReadFileSystemFile(
     int child_id,
-    const fileapi::FileSystemURL& url) {
+    const storage::FileSystemURL& url) {
   return HasPermissionsForFileSystemFile(child_id, url, READ_FILE_GRANT);
 }
 
 bool ChildProcessSecurityPolicyImpl::CanWriteFileSystemFile(
     int child_id,
-    const fileapi::FileSystemURL& url) {
+    const storage::FileSystemURL& url) {
   return HasPermissionsForFileSystemFile(child_id, url, WRITE_FILE_GRANT);
 }
 
 bool ChildProcessSecurityPolicyImpl::CanCreateFileSystemFile(
     int child_id,
-    const fileapi::FileSystemURL& url) {
+    const storage::FileSystemURL& url) {
   return HasPermissionsForFileSystemFile(child_id, url, CREATE_NEW_FILE_GRANT);
 }
 
 bool ChildProcessSecurityPolicyImpl::CanCreateReadWriteFileSystemFile(
     int child_id,
-    const fileapi::FileSystemURL& url) {
+    const storage::FileSystemURL& url) {
   return HasPermissionsForFileSystemFile(child_id, url,
                                          CREATE_READ_WRITE_FILE_GRANT);
 }
 
 bool ChildProcessSecurityPolicyImpl::CanCopyIntoFileSystemFile(
     int child_id,
-    const fileapi::FileSystemURL& url) {
+    const storage::FileSystemURL& url) {
   return HasPermissionsForFileSystemFile(child_id, url, COPY_INTO_FILE_GRANT);
 }
 
 bool ChildProcessSecurityPolicyImpl::CanDeleteFileSystemFile(
     int child_id,
-    const fileapi::FileSystemURL& url) {
+    const storage::FileSystemURL& url) {
   return HasPermissionsForFileSystemFile(child_id, url, DELETE_FILE_GRANT);
 }
 
@@ -873,7 +877,7 @@ bool ChildProcessSecurityPolicyImpl::HasPermissionsForFileSystem(
 }
 
 void ChildProcessSecurityPolicyImpl::RegisterFileSystemPermissionPolicy(
-    fileapi::FileSystemType type,
+    storage::FileSystemType type,
     int policy) {
   base::AutoLock lock(lock_);
   file_system_policy_map_[type] = policy;

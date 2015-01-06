@@ -53,6 +53,7 @@ bool AwMainDelegate::BasicStartupComplete(int* exit_code) {
   CommandLine* cl = CommandLine::ForCurrentProcess();
   bool zero_copy_disabled_by_switch = cl->HasSwitch(switches::kDisableZeroCopy);
   bool use_zero_copy = !zero_copy_disabled_by_switch &&
+                       cl->HasSwitch(switches::kEnableZeroCopy) &&
                        gpu_memory_buffer_factory_.get()->Initialize();
 
   if (use_zero_copy) {
@@ -111,7 +112,7 @@ int AwMainDelegate::RunProcess(
 
     browser_runner_.reset(content::BrowserMainRunner::Create());
     int exit_code = browser_runner_->Initialize(main_function_params);
-    DCHECK(exit_code < 0);
+    DCHECK_LT(exit_code, 0);
 
     g_allow_wait_in_ui_thread.Get().reset(
         new ScopedAllowWaitForLegacyWebViewApi);

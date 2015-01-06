@@ -11,8 +11,8 @@
 #include "base/basictypes.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/json/json_writer.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
@@ -20,7 +20,6 @@
 #include "chrome/browser/chromeos/login/login_manager_test.h"
 #include "chrome/browser/chromeos/login/startup_utils.h"
 #include "chrome/browser/chromeos/login/ui/login_display_host_impl.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/login/users/wallpaper/wallpaper_manager.h"
 #include "chrome/browser/chromeos/policy/cloud_external_data_manager_base_test_util.h"
 #include "chrome/browser/chromeos/policy/user_cloud_policy_manager_chromeos.h"
@@ -32,7 +31,6 @@
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/cryptohome_client.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
-#include "chromeos/dbus/fake_dbus_thread_manager.h"
 #include "chromeos/dbus/fake_session_manager_client.h"
 #include "chromeos/dbus/session_manager_client.h"
 #include "components/policy/core/common/cloud/cloud_policy_core.h"
@@ -40,6 +38,7 @@
 #include "components/policy/core/common/cloud/cloud_policy_validator.h"
 #include "components/policy/core/common/cloud/policy_builder.h"
 #include "components/user_manager/user.h"
+#include "components/user_manager/user_manager.h"
 #include "content/public/test/browser_test_utils.h"
 #include "crypto/rsa_private_key.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
@@ -64,7 +63,7 @@ const SkColor kRedImageColor = SkColorSetARGB(255, 199, 6, 7);
 const SkColor kGreenImageColor = SkColorSetARGB(255, 38, 196, 15);
 
 policy::CloudPolicyStore* GetStoreForUser(const user_manager::User* user) {
-  Profile* profile = ProfileHelper::Get()->GetProfileByUser(user);
+  Profile* profile = ProfileHelper::Get()->GetProfileByUserUnsafe(user);
   if (!profile) {
     ADD_FAILURE();
     return NULL;
@@ -136,11 +135,7 @@ class WallpaperManagerPolicyTest
   WallpaperManagerPolicyTest()
       : LoginManagerTest(true),
         wallpaper_change_count_(0),
-        fake_dbus_thread_manager_(new FakeDBusThreadManager),
         fake_session_manager_client_(new FakeSessionManagerClient) {
-    fake_dbus_thread_manager_->SetFakeClients();
-    fake_dbus_thread_manager_->SetSessionManagerClient(
-        scoped_ptr<SessionManagerClient>(fake_session_manager_client_));
   }
 
   scoped_ptr<policy::UserPolicyBuilder> GetUserPolicyBuilder(
@@ -169,7 +164,9 @@ class WallpaperManagerPolicyTest
 
   // LoginManagerTest:
   virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
-    DBusThreadManager::SetInstanceForTesting(fake_dbus_thread_manager_);
+    DBusThreadManager::GetSetterForTesting()->SetSessionManagerClient(
+        scoped_ptr<SessionManagerClient>(fake_session_manager_client_));
+
     LoginManagerTest::SetUpInProcessBrowserTestFixture();
     ASSERT_TRUE(PathService::Get(chrome::DIR_TEST_DATA, &test_data_dir_));
   }
@@ -245,7 +242,8 @@ class WallpaperManagerPolicyTest
     }
     builder->Build();
     fake_session_manager_client_->set_user_policy(user_id, builder->GetBlob());
-    const user_manager::User* user = UserManager::Get()->FindUser(user_id);
+    const user_manager::User* user =
+        user_manager::UserManager::Get()->FindUser(user_id);
     ASSERT_TRUE(user);
     policy::CloudPolicyStore* store = GetStoreForUser(user);
     ASSERT_TRUE(store);
@@ -265,7 +263,6 @@ class WallpaperManagerPolicyTest
   scoped_ptr<base::RunLoop> run_loop_;
   int wallpaper_change_count_;
   scoped_ptr<policy::UserPolicyBuilder> user_policy_builders_[2];
-  FakeDBusThreadManager* fake_dbus_thread_manager_;
   FakeSessionManagerClient* fake_session_manager_client_;
 
  private:

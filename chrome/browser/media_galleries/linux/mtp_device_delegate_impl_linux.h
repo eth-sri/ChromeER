@@ -60,6 +60,9 @@ class MTPDeviceDelegateImplLinux : public MTPDeviceAsyncDelegate {
   // Maps file ids to file nodes.
   typedef std::map<uint32, MTPFileNode*> FileIdToMTPFileNodeMap;
 
+  // Maps file paths to file info.
+  typedef std::map<base::FilePath, storage::DirectoryEntry> FileInfoCache;
+
   // Should only be called by CreateMTPDeviceAsyncDelegate() factory call.
   // Defer the device initializations until the first file operation request.
   // Do all the initializations in EnsureInitAndRunTask() function.
@@ -82,11 +85,12 @@ class MTPDeviceDelegateImplLinux : public MTPDeviceAsyncDelegate {
       const CreateSnapshotFileSuccessCallback& success_callback,
       const ErrorCallback& error_callback) OVERRIDE;
   virtual bool IsStreaming() OVERRIDE;
-  virtual void ReadBytes(
-      const base::FilePath& device_file_path,
-      net::IOBuffer* buf, int64 offset, int buf_len,
-      const ReadBytesSuccessCallback& success_callback,
-      const ErrorCallback& error_callback) OVERRIDE;
+  virtual void ReadBytes(const base::FilePath& device_file_path,
+                         const scoped_refptr<net::IOBuffer>& buf,
+                         int64 offset,
+                         int buf_len,
+                         const ReadBytesSuccessCallback& success_callback,
+                         const ErrorCallback& error_callback) OVERRIDE;
   virtual void CancelPendingTasksAndDeleteDelegate() OVERRIDE;
 
   // The internal methods correspond to the similarly named methods above.
@@ -183,7 +187,7 @@ class MTPDeviceDelegateImplLinux : public MTPDeviceAsyncDelegate {
   // |has_more| is true if there are more file entries to read.
   void OnDidReadDirectory(uint32 dir_id,
                           const ReadDirectorySuccessCallback& success_callback,
-                          const fileapi::AsyncFileUtil::EntryList& file_list,
+                          const storage::AsyncFileUtil::EntryList& file_list,
                           bool has_more);
 
   // Called when WriteDataIntoSnapshotFile() succeeds.
@@ -213,7 +217,7 @@ class MTPDeviceDelegateImplLinux : public MTPDeviceAsyncDelegate {
 
   // Called when FillFileCache() succeeds.
   void OnDidFillFileCache(const base::FilePath& path,
-                          const fileapi::AsyncFileUtil::EntryList& file_list,
+                          const storage::AsyncFileUtil::EntryList& file_list,
                           bool has_more);
 
   // Called when FillFileCache() fails.
@@ -277,6 +281,11 @@ class MTPDeviceDelegateImplLinux : public MTPDeviceAsyncDelegate {
   // A list of child nodes encountered while a ReadDirectory operation, which
   // can return results over multiple callbacks, is in progress.
   std::set<std::string> child_nodes_seen_;
+
+  // A cache to store file metadata for file entries read during a ReadDirectory
+  // operation. Used to service incoming GetFileInfo calls for the duration of
+  // the ReadDirectory operation.
+  FileInfoCache file_info_cache_;
 
   // For callbacks that may run after destruction.
   base::WeakPtrFactory<MTPDeviceDelegateImplLinux> weak_ptr_factory_;

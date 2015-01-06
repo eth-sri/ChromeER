@@ -194,6 +194,7 @@ IPC_STRUCT_TRAITS_BEGIN(gpu::Capabilities)
   IPC_STRUCT_TRAITS_MEMBER(egl_image_external)
   IPC_STRUCT_TRAITS_MEMBER(texture_format_bgra8888)
   IPC_STRUCT_TRAITS_MEMBER(texture_format_etc1)
+  IPC_STRUCT_TRAITS_MEMBER(texture_format_etc1_npot)
   IPC_STRUCT_TRAITS_MEMBER(texture_rectangle)
   IPC_STRUCT_TRAITS_MEMBER(iosurface)
   IPC_STRUCT_TRAITS_MEMBER(texture_usage)
@@ -696,9 +697,10 @@ IPC_MESSAGE_ROUTED1(AcceleratedVideoDecoderHostMsg_DismissPictureBuffer,
                     int32) /* Picture buffer ID */
 
 // Decoder reports that a picture is ready.
-IPC_MESSAGE_ROUTED2(AcceleratedVideoDecoderHostMsg_PictureReady,
-                    int32,  /* Picture buffer ID */
-                    int32)  /* Bitstream buffer ID */
+IPC_MESSAGE_ROUTED3(AcceleratedVideoDecoderHostMsg_PictureReady,
+                    int32,     /* Picture buffer ID */
+                    int32,     /* Bitstream buffer ID */
+                    gfx::Rect) /* Visible rectangle */
 
 // Confirm decoder has been flushed.
 IPC_MESSAGE_ROUTED0(AcceleratedVideoDecoderHostMsg_FlushDone)

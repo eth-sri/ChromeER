@@ -40,6 +40,8 @@ cr.define('options', function() {
     'channel_id': [['serverId', 'label_channel_id_server_id'],
                           ['certType', 'label_channel_id_type'],
                           ['created', 'label_channel_id_created']],
+    'service_worker': [['origin', 'label_service_worker_origin'],
+                       ['scopes', 'label_service_worker_scopes']],
     'flash_lso': [['domain', 'label_cookie_domain']],
   };
 
@@ -171,12 +173,12 @@ cr.define('options', function() {
         return;
       this.expanded_ = expanded;
       if (expanded) {
+        this.classList.add('show-items');
         var oldExpanded = this.list.expandedItem;
         this.list.expandedItem = this;
         this.updateItems_();
         if (oldExpanded)
           oldExpanded.expanded = false;
-        this.classList.add('show-items');
       } else {
         if (this.list.expandedItem == this) {
           this.list.expandedItem = null;
@@ -247,6 +249,7 @@ cr.define('options', function() {
         indexedDb: false,
         fileSystem: false,
         channelIDs: 0,
+        serviceWorker: false,
       };
       if (this.origin)
         this.origin.collectSummaryInfo(info);
@@ -266,6 +269,8 @@ cr.define('options', function() {
         list.push(loadTimeData.getString('cookie_file_system'));
       if (info.channelIDs)
         list.push(loadTimeData.getString('cookie_channel_id'));
+      if (info.serviceWorker)
+        list.push(loadTimeData.getString('cookie_service_worker'));
       if (info.flashLSO)
         list.push(loadTimeData.getString('cookie_flash_lso'));
 
@@ -482,6 +487,8 @@ cr.define('options', function() {
           info.quota = this.data;
         } else if (this.data.type == 'channel_id') {
           info.channelIDs++;
+        } else if (this.data.type == 'service_worker') {
+          info.serviceWorker = true;
         } else if (this.data.type == 'flash_lso') {
           info.flashLSO = true;
         }
@@ -528,7 +535,6 @@ cr.define('options', function() {
       div.className = 'cookie-item';
       // Help out screen readers and such: this is a clickable thing.
       div.setAttribute('role', 'button');
-      div.tabIndex = 0;
       div.textContent = text;
       var apps = this.data.appsProtectingThis;
       if (apps)

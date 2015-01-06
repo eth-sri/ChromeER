@@ -549,6 +549,7 @@
         'http_server',
         'net',
         'net_derived_sources',
+        'net_extras',
         'net_test_support',
         'quic_tools',
       ],
@@ -1047,7 +1048,19 @@
           'includes': [ '../build/grit_action.gypi' ],
         },
       ],
-      'includes': [ '../build/grit_target.gypi' ],
+    },
+    {
+      'target_name': 'net_extras',
+      'type': 'static_library',
+      'variables': { 'enable_wexit_time_destructors': 1, },
+      'dependencies': [
+        '../base/base.gyp:base',
+        '../sql/sql.gyp:sql',
+        'net',
+      ],
+      'sources': [
+        '<@(net_extras_sources)',
+      ],
     },
     {
       'target_name': 'http_server',
@@ -1485,6 +1498,8 @@
             'tools/quic/quic_in_memory_cache.h',
             'tools/quic/quic_packet_writer_wrapper.cc',
             'tools/quic/quic_packet_writer_wrapper.h',
+            'tools/quic/quic_per_connection_packet_writer.cc',
+            'tools/quic/quic_per_connection_packet_writer.h',
             'tools/quic/quic_server.cc',
             'tools/quic/quic_server.h',
             'tools/quic/quic_server_session.cc',

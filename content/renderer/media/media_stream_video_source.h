@@ -81,6 +81,7 @@ class CONTENT_EXPORT MediaStreamVideoSource
   static const int kDefaultWidth;
   static const int kDefaultHeight;
   static const int kDefaultFrameRate;
+  static const int kUnknownFrameRate;
 
  protected:
   virtual void DoStopSource() OVERRIDE;
@@ -112,7 +113,7 @@ class CONTENT_EXPORT MediaStreamVideoSource
   virtual void StartSourceImpl(
       const media::VideoCaptureParams& params,
       const VideoCaptureDeliverFrameCB& frame_callback) = 0;
-  void OnStartDone(bool success);
+  void OnStartDone(MediaStreamRequestResult result);
 
   // An implementation must immediately stop capture video frames and must not
   // call OnSupportedFormats after this method has been called. After this

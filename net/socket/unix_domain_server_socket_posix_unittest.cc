@@ -24,10 +24,14 @@ namespace {
 const char kSocketFilename[] = "socket_for_testing";
 const char kInvalidSocketPath[] = "/invalid/path";
 
-bool UserCanConnectCallback(bool allow_user, uid_t uid, gid_t gid) {
+bool UserCanConnectCallback(bool allow_user,
+    const UnixDomainServerSocket::Credentials& credentials) {
   // Here peers are running in same process.
-  EXPECT_EQ(getuid(), uid);
-  EXPECT_EQ(getgid(), gid);
+#if defined(OS_LINUX) || defined(OS_ANDROID)
+  EXPECT_EQ(getpid(), credentials.process_id);
+#endif
+  EXPECT_EQ(getuid(), credentials.user_id);
+  EXPECT_EQ(getgid(), credentials.group_id);
   return allow_user;
 }
 
@@ -67,6 +71,15 @@ TEST_F(UnixDomainServerSocketTest, ListenWithInvalidPathWithAbstractNamespace) {
 #endif
 }
 
+TEST_F(UnixDomainServerSocketTest, ListenAgainAfterFailureWithInvalidPath) {
+  const bool kUseAbstractNamespace = false;
+  UnixDomainServerSocket server_socket(CreateAuthCallback(true),
+                                       kUseAbstractNamespace);
+  EXPECT_EQ(ERR_FILE_NOT_FOUND,
+            server_socket.ListenWithAddressAndPort(kInvalidSocketPath, 0, 1));
+  EXPECT_EQ(OK, server_socket.ListenWithAddressAndPort(socket_path_, 0, 1));
+}
+
 TEST_F(UnixDomainServerSocketTest, AcceptWithForbiddenUser) {
   const bool kUseAbstractNamespace = false;
 
@@ -93,8 +106,8 @@ TEST_F(UnixDomainServerSocketTest, AcceptWithForbiddenUser) {
   const int read_buffer_size = 10;
   scoped_refptr<IOBuffer> read_buffer(new IOBuffer(read_buffer_size));
   TestCompletionCallback read_callback;
-  rv = read_callback.GetResult(client_socket.Read(read_buffer, read_buffer_size,
-                                                  read_callback.callback()));
+  rv = read_callback.GetResult(client_socket.Read(
+      read_buffer.get(), read_buffer_size, read_callback.callback()));
 
   // The server should have disconnected gracefully, without sending any data.
   ASSERT_EQ(0, rv);

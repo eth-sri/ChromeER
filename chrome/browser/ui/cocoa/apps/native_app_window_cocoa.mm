@@ -16,7 +16,6 @@
 #import "chrome/browser/ui/cocoa/custom_frame_view.h"
 #include "chrome/browser/ui/cocoa/extensions/extension_keybinding_registry_cocoa.h"
 #include "chrome/browser/ui/cocoa/extensions/extension_view_mac.h"
-#import "chrome/browser/ui/cocoa/nsview_additions.h"
 #include "chrome/common/chrome_switches.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/render_widget_host_view.h"
@@ -43,7 +42,7 @@
 // windowWillUseStandardFrame, as the window would not restore back to the
 // desired size.
 
-using apps::AppWindow;
+using extensions::AppWindow;
 
 @interface NSWindow (NSPrivateApis)
 - (void)setBottomCornerRounded:(BOOL)rounded;
@@ -79,7 +78,7 @@ NSInteger AlwaysOnTopWindowLevel() {
 }
 
 NSRect GfxToCocoaBounds(gfx::Rect bounds) {
-  typedef apps::AppWindow::BoundsSpecification BoundsSpecification;
+  typedef AppWindow::BoundsSpecification BoundsSpecification;
 
   NSRect main_screen_rect = [[[NSScreen screens] objectAtIndex:0] frame];
 
@@ -206,7 +205,7 @@ std::vector<gfx::Rect> CalculateNonDraggableRegions(
 - (CGFloat)roundedCornerRadius;
 @end
 
-// TODO(jamescook): Should these be AppNSWindow to match apps::AppWindow?
+// TODO(jamescook): Should these be AppNSWindow to match AppWindow?
 // http://crbug.com/344082
 @interface ShellNSWindow : ChromeEventProcessingWindow
 @end
@@ -338,8 +337,7 @@ NativeAppWindowCocoa::NativeAppWindowCocoa(
       shows_fullscreen_controls_(true),
       has_frame_color_(params.has_frame_color),
       active_frame_color_(params.active_frame_color),
-      inactive_frame_color_(params.inactive_frame_color),
-      attention_request_id_(0) {
+      inactive_frame_color_(params.inactive_frame_color) {
   Observe(WebContents());
 
   base::scoped_nsobject<NSWindow> window;
@@ -366,7 +364,7 @@ NativeAppWindowCocoa::NativeAppWindowCocoa(
   if (extension)
     name = extension->name();
   [window setTitle:base::SysUTF8ToNSString(name)];
-  [[window contentView] cr_setWantsLayer:YES];
+  [[window contentView] setWantsLayer:YES];
   if (has_frame_ && has_frame_color_) {
     [base::mac::ObjCCastStrict<ShellCustomFrameNSWindow>(window)
              setColor:gfx::SkColorToSRGBNSColor(active_frame_color_)
@@ -532,10 +530,6 @@ bool NativeAppWindowCocoa::IsFullscreenOrPending() const {
   return is_fullscreen_;
 }
 
-bool NativeAppWindowCocoa::IsDetached() const {
-  return false;
-}
-
 gfx::NativeWindow NativeAppWindowCocoa::GetNativeWindow() {
   return window();
 }
@@ -570,7 +564,7 @@ void NativeAppWindowCocoa::Show() {
   if (is_hidden_with_app_) {
     // If there is a shim to gently request attention, return here. Otherwise
     // show the window as usual.
-    if (apps::ExtensionAppShimHandler::RequestUserAttentionForWindow(
+    if (apps::ExtensionAppShimHandler::ActivateAndRequestUserAttentionForWindow(
             app_window_)) {
       return;
     }
@@ -729,12 +723,10 @@ void NativeAppWindowCocoa::UpdateDraggableRegionViews() {
 }
 
 void NativeAppWindowCocoa::FlashFrame(bool flash) {
-  if (flash) {
-    attention_request_id_ = [NSApp requestUserAttention:NSInformationalRequest];
-  } else {
-    [NSApp cancelUserAttentionRequest:attention_request_id_];
-    attention_request_id_ = 0;
-  }
+  apps::ExtensionAppShimHandler::RequestUserAttentionForWindow(
+      app_window_,
+      flash ? apps::APP_SHIM_ATTENTION_CRITICAL
+            : apps::APP_SHIM_ATTENTION_CANCEL);
 }
 
 bool NativeAppWindowCocoa::IsAlwaysOnTop() const {
@@ -940,7 +932,7 @@ void NativeAppWindowCocoa::SetContentSizeConstraints(
                                          minimum_size.height())];
 
   gfx::Size maximum_size = size_constraints_.GetMaximumSize();
-  const int kUnboundedSize = apps::SizeConstraints::kUnboundedSize;
+  const int kUnboundedSize = extensions::SizeConstraints::kUnboundedSize;
   CGFloat max_width = maximum_size.width() == kUnboundedSize ?
       CGFLOAT_MAX : maximum_size.width();
   CGFloat max_height = maximum_size.height() == kUnboundedSize ?

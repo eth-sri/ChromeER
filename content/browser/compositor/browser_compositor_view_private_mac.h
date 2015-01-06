@@ -9,8 +9,8 @@
 
 #include "base/mac/scoped_nsobject.h"
 #include "content/browser/compositor/browser_compositor_view_mac.h"
-#include "content/browser/renderer_host/compositing_iosurface_layer_mac.h"
-#include "content/browser/renderer_host/software_layer_mac.h"
+#include "content/browser/compositor/io_surface_layer_mac.h"
+#include "content/browser/compositor/software_layer_mac.h"
 #include "ui/base/cocoa/remote_layer_api.h"
 
 namespace content {
@@ -18,7 +18,7 @@ namespace content {
 // BrowserCompositorViewMacInternal owns a NSView and a ui::Compositor that
 // draws that view.
 class BrowserCompositorViewMacInternal
-    : public CompositingIOSurfaceLayerClient {
+    : public IOSurfaceLayerClient {
  public:
   BrowserCompositorViewMacInternal();
   virtual ~BrowserCompositorViewMacInternal();
@@ -32,6 +32,9 @@ class BrowserCompositorViewMacInternal
 
   // Return true if the last frame swapped has a size in DIP of |dip_size|.
   bool HasFrameOfSize(const gfx::Size& dip_size) const;
+
+  // Return the CGL renderer ID for the surface, if one is available.
+  int GetRendererID() const;
 
   // Mark a bracket in which new frames are being pumped in a restricted nested
   // run loop.
@@ -47,15 +50,26 @@ class BrowserCompositorViewMacInternal
       cc::SoftwareFrameData* frame_data, float scale_factor, SkCanvas* canvas);
 
 private:
-  // CompositingIOSurfaceLayerClient implementation:
-  virtual bool AcceleratedLayerShouldAckImmediately() const OVERRIDE;
-  virtual void AcceleratedLayerDidDrawFrame(bool succeeded) OVERRIDE;
+  // IOSurfaceLayerClient implementation:
+  virtual bool IOSurfaceLayerShouldAckImmediately() const OVERRIDE;
+  virtual void IOSurfaceLayerDidDrawFrame() OVERRIDE;
+  virtual void IOSurfaceLayerHitError() OVERRIDE;
 
   void GotAcceleratedCAContextFrame(
       CAContextID ca_context_id, gfx::Size pixel_size, float scale_factor);
 
   void GotAcceleratedIOSurfaceFrame(
       IOSurfaceID io_surface_id, gfx::Size pixel_size, float scale_factor);
+
+  // Remove a layer from the heirarchy and destroy it. Because the accelerated
+  // layer types may be replaced by a layer of the same type, the layer to
+  // destroy is parameterized, and, if it is the current layer, the current
+  // layer is reset.
+  void DestroyCAContextLayer(
+      base::scoped_nsobject<CALayerHost> ca_context_layer);
+  void DestroyIOSurfaceLayer(
+      base::scoped_nsobject<IOSurfaceLayer> io_surface_layer);
+  void DestroySoftwareLayer();
 
   // The client of the BrowserCompositorViewMac that is using this as its
   // internals.
@@ -80,7 +94,7 @@ private:
   base::scoped_nsobject<CALayerHost> ca_context_layer_;
 
   // The locally drawn accelerated CoreAnimation layer.
-  base::scoped_nsobject<CompositingIOSurfaceLayer> io_surface_layer_;
+  base::scoped_nsobject<IOSurfaceLayer> io_surface_layer_;
 
   // The locally drawn software layer.
   base::scoped_nsobject<SoftwareLayer> software_layer_;

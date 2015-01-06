@@ -22,11 +22,11 @@
 #include "url/gurl.h"
 
 namespace base {
-class MessageLoopProxy;
 class SequencedTaskRunner;
+class SingleThreadTaskRunner;
 }
 
-namespace quota {
+namespace storage {
 class QuotaManagerProxy;
 }
 
@@ -61,9 +61,9 @@ class CONTENT_EXPORT ServiceWorkerStorage
   static scoped_ptr<ServiceWorkerStorage> Create(
       const base::FilePath& path,
       base::WeakPtr<ServiceWorkerContextCore> context,
-      base::SequencedTaskRunner* database_task_runner,
-      base::MessageLoopProxy* disk_cache_thread,
-      quota::QuotaManagerProxy* quota_manager_proxy);
+      const scoped_refptr<base::SequencedTaskRunner>& database_task_runner,
+      const scoped_refptr<base::SingleThreadTaskRunner>& disk_cache_thread,
+      storage::QuotaManagerProxy* quota_manager_proxy);
 
   // Used for DeleteAndStartOver. Creates new storage based on |old_storage|.
   static scoped_ptr<ServiceWorkerStorage> Create(
@@ -87,6 +87,8 @@ class CONTENT_EXPORT ServiceWorkerStorage
                              const GURL& origin,
                              const FindRegistrationCallback& callback);
 
+  ServiceWorkerRegistration* GetUninstallingRegistration(const GURL& scope);
+
   // Returns info about all stored and initially installing registrations.
   void GetAllRegistrations(const GetAllRegistrationInfosCallback& callback);
 
@@ -103,6 +105,10 @@ class CONTENT_EXPORT ServiceWorkerStorage
   void UpdateToActiveState(
       ServiceWorkerRegistration* registration,
       const StatusCallback& callback);
+
+  // Updates the stored time to match the value of
+  // registration->last_update_check().
+  void UpdateLastUpdateCheckTime(ServiceWorkerRegistration* registration);
 
   // Deletes the registration data for |registration_id|. If the registration's
   // version is live, its script resources will remain available.
@@ -136,13 +142,17 @@ class CONTENT_EXPORT ServiceWorkerStorage
   int64 NewVersionId();
   int64 NewResourceId();
 
-  // Intended for use only by ServiceWorkerRegisterJob.
+  // Intended for use only by ServiceWorkerRegisterJob and
+  // ServiceWorkerRegistration.
   void NotifyInstallingRegistration(
       ServiceWorkerRegistration* registration);
   void NotifyDoneInstallingRegistration(
       ServiceWorkerRegistration* registration,
       ServiceWorkerVersion* version,
       ServiceWorkerStatusCode status);
+  void NotifyUninstallingRegistration(ServiceWorkerRegistration* registration);
+  void NotifyDoneUninstallingRegistration(
+      ServiceWorkerRegistration* registration);
 
   void Disable();
   bool IsDisabled() const;
@@ -153,6 +163,7 @@ class CONTENT_EXPORT ServiceWorkerStorage
  private:
   friend class ServiceWorkerResourceStorageTest;
   friend class ServiceWorkerControlleeRequestHandlerTest;
+  friend class ServiceWorkerContextRequestHandlerTest;
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerResourceStorageTest,
                            DeleteRegistration_NoLiveVersion);
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerResourceStorageTest,
@@ -208,11 +219,12 @@ class CONTENT_EXPORT ServiceWorkerStorage
                               ServiceWorkerDatabase::Status status)>
       GetResourcesCallback;
 
-  ServiceWorkerStorage(const base::FilePath& path,
-                       base::WeakPtr<ServiceWorkerContextCore> context,
-                       base::SequencedTaskRunner* database_task_runner,
-                       base::MessageLoopProxy* disk_cache_thread,
-                       quota::QuotaManagerProxy* quota_manager_proxy);
+  ServiceWorkerStorage(
+      const base::FilePath& path,
+      base::WeakPtr<ServiceWorkerContextCore> context,
+      const scoped_refptr<base::SequencedTaskRunner>& database_task_runner,
+      const scoped_refptr<base::SingleThreadTaskRunner>& disk_cache_thread,
+      storage::QuotaManagerProxy* quota_manager_proxy);
 
   base::FilePath GetDatabasePath();
   base::FilePath GetDiskCachePath();
@@ -335,8 +347,9 @@ class CONTENT_EXPORT ServiceWorkerStorage
       const StatusCallback& callback,
       bool result);
 
-  // For finding registrations being installed.
+  // For finding registrations being installed or uninstalled.
   RegistrationRefsById installing_registrations_;
+  RegistrationRefsById uninstalling_registrations_;
 
   // Origins having registations.
   std::set<GURL> registered_origins_;
@@ -363,8 +376,8 @@ class CONTENT_EXPORT ServiceWorkerStorage
   scoped_ptr<ServiceWorkerDatabase> database_;
 
   scoped_refptr<base::SequencedTaskRunner> database_task_runner_;
-  scoped_refptr<base::MessageLoopProxy> disk_cache_thread_;
-  scoped_refptr<quota::QuotaManagerProxy> quota_manager_proxy_;
+  scoped_refptr<base::SingleThreadTaskRunner> disk_cache_thread_;
+  scoped_refptr<storage::QuotaManagerProxy> quota_manager_proxy_;
   scoped_ptr<ServiceWorkerDiskCache> disk_cache_;
   std::deque<int64> purgeable_resource_ids_;
   bool is_purge_pending_;

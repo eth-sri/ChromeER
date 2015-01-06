@@ -5,12 +5,10 @@
 #include "extensions/shell/browser/shell_desktop_controller.h"
 
 #include "base/command_line.h"
-#include "content/public/browser/context_factory.h"
-#include "extensions/shell/browser/shell_app_window_controller.h"
+#include "extensions/shell/browser/shell_app_window.h"
 #include "extensions/shell/common/switches.h"
 #include "ui/aura/client/cursor_client.h"
 #include "ui/aura/client/default_capture_client.h"
-#include "ui/aura/env.h"
 #include "ui/aura/layout_manager.h"
 #include "ui/aura/test/test_screen.h"
 #include "ui/aura/window.h"
@@ -31,6 +29,7 @@
 #include "ui/wm/core/user_activity_detector.h"
 
 #if defined(OS_CHROMEOS)
+#include "chromeos/dbus/dbus_thread_manager.h"
 #include "ui/chromeos/user_activity_power_manager_notifier.h"
 #include "ui/display/types/chromeos/display_mode.h"
 #include "ui/display/types/chromeos/display_snapshot.h"
@@ -152,48 +151,52 @@ class AppsFocusRules : public wm::BaseFocusRules {
   DISALLOW_COPY_AND_ASSIGN(AppsFocusRules);
 };
 
-ShellDesktopController* g_instance = NULL;
-
 }  // namespace
 
 ShellDesktopController::ShellDesktopController() {
 #if defined(OS_CHROMEOS)
+  chromeos::DBusThreadManager::Get()->GetPowerManagerClient()->
+      AddObserver(this);
   display_configurator_.reset(new ui::DisplayConfigurator);
   display_configurator_->Init(false);
   display_configurator_->ForceInitialConfigure(0);
   display_configurator_->AddObserver(this);
 #endif
-  aura::Env::CreateInstance(true);
-  aura::Env::GetInstance()->set_context_factory(content::GetContextFactory());
 
-  g_instance = this;
+  CreateRootWindow();
 }
 
 ShellDesktopController::~ShellDesktopController() {
-  app_window_controller_.reset();
-  g_instance = NULL;
+  app_window_.reset();
   DestroyRootWindow();
-  aura::Env::DeleteInstance();
+#if defined(OS_CHROMEOS)
+  chromeos::DBusThreadManager::Get()->GetPowerManagerClient()->
+      RemoveObserver(this);
+#endif
 }
 
-// static
-ShellDesktopController* ShellDesktopController::instance() {
-  return g_instance;
-}
-
-void ShellDesktopController::SetAppWindowController(
-    ShellAppWindowController* app_window_controller) {
-  app_window_controller_.reset(app_window_controller);
+aura::WindowTreeHost* ShellDesktopController::GetHost() {
+  return host_.get();
 }
 
 ShellAppWindow* ShellDesktopController::CreateAppWindow(
-    content::BrowserContext* context) {
-  return app_window_controller_->CreateAppWindow(context);
+    content::BrowserContext* context,
+    const Extension* extension) {
+  aura::Window* root_window = GetHost()->window();
+
+  app_window_.reset(new ShellAppWindow);
+  app_window_->Init(context, extension, root_window->bounds().size());
+
+  // Attach the web contents view to our window hierarchy.
+  aura::Window* content = app_window_->GetNativeWindow();
+  root_window->AddChild(content);
+  content->Show();
+
+  return app_window_.get();
 }
 
 void ShellDesktopController::CloseAppWindows() {
-  if (app_window_controller_)
-    app_window_controller_->CloseAppWindows();
+  app_window_.reset();
 }
 
 aura::Window* ShellDesktopController::GetDefaultParent(
@@ -204,6 +207,15 @@ aura::Window* ShellDesktopController::GetDefaultParent(
 }
 
 #if defined(OS_CHROMEOS)
+void ShellDesktopController::PowerButtonEventReceived(
+    bool down,
+    const base::TimeTicks& timestamp) {
+  if (down) {
+    chromeos::DBusThreadManager::Get()->GetPowerManagerClient()->
+        RequestShutdown();
+  }
+}
+
 void ShellDesktopController::OnDisplayModeChanged(
     const std::vector<ui::DisplayConfigurator::DisplayState>& displays) {
   gfx::Size size = GetPrimaryDisplaySize();
@@ -218,6 +230,42 @@ void ShellDesktopController::OnHostCloseRequested(
   CloseAppWindows();
   base::MessageLoop::current()->PostTask(FROM_HERE,
                                          base::MessageLoop::QuitClosure());
+}
+
+void ShellDesktopController::InitWindowManager() {
+  wm::FocusController* focus_controller =
+      new wm::FocusController(new AppsFocusRules());
+  aura::client::SetFocusClient(host_->window(), focus_controller);
+  host_->window()->AddPreTargetHandler(focus_controller);
+  aura::client::SetActivationClient(host_->window(), focus_controller);
+  focus_client_.reset(focus_controller);
+
+  input_method_filter_.reset(
+      new wm::InputMethodEventFilter(host_->GetAcceleratedWidget()));
+  input_method_filter_->SetInputMethodPropertyInRootWindow(host_->window());
+  root_window_event_filter_->AddHandler(input_method_filter_.get());
+
+  capture_client_.reset(
+      new aura::client::DefaultCaptureClient(host_->window()));
+
+  // Ensure new windows fill the display.
+  host_->window()->SetLayoutManager(new FillLayout);
+
+  cursor_manager_.reset(
+      new wm::CursorManager(scoped_ptr<wm::NativeCursorManager>(
+          new ShellNativeCursorManager(host_.get()))));
+  cursor_manager_->SetDisplay(
+      gfx::Screen::GetNativeScreen()->GetPrimaryDisplay());
+  cursor_manager_->SetCursor(ui::kCursorPointer);
+  aura::client::SetCursorClient(host_->window(), cursor_manager_.get());
+
+  user_activity_detector_.reset(new wm::UserActivityDetector);
+  host_->event_processor()->GetRootTarget()->AddPreTargetHandler(
+      user_activity_detector_.get());
+#if defined(OS_CHROMEOS)
+  user_activity_notifier_.reset(
+      new ui::UserActivityPowerManagerNotifier(user_activity_detector_.get()));
+#endif
 }
 
 void ShellDesktopController::CreateRootWindow() {
@@ -252,46 +300,6 @@ void ShellDesktopController::CreateRootWindow() {
 
   // Ensure the X window gets mapped.
   host_->Show();
-}
-
-void ShellDesktopController::InitWindowManager() {
-  wm::FocusController* focus_controller =
-      new wm::FocusController(CreateFocusRules());
-  aura::client::SetFocusClient(host_->window(), focus_controller);
-  host_->window()->AddPreTargetHandler(focus_controller);
-  aura::client::SetActivationClient(host_->window(), focus_controller);
-  focus_client_.reset(focus_controller);
-
-  input_method_filter_.reset(
-      new wm::InputMethodEventFilter(host_->GetAcceleratedWidget()));
-  input_method_filter_->SetInputMethodPropertyInRootWindow(host_->window());
-  root_window_event_filter_->AddHandler(input_method_filter_.get());
-
-  capture_client_.reset(
-      new aura::client::DefaultCaptureClient(host_->window()));
-
-  // Ensure new windows fill the display.
-  host_->window()->SetLayoutManager(new FillLayout);
-
-  cursor_manager_.reset(
-      new wm::CursorManager(scoped_ptr<wm::NativeCursorManager>(
-          new ShellNativeCursorManager(host_.get()))));
-  cursor_manager_->SetDisplay(
-      gfx::Screen::GetNativeScreen()->GetPrimaryDisplay());
-  cursor_manager_->SetCursor(ui::kCursorPointer);
-  aura::client::SetCursorClient(host_->window(), cursor_manager_.get());
-
-  user_activity_detector_.reset(new wm::UserActivityDetector);
-  host_->event_processor()->GetRootTarget()->AddPreTargetHandler(
-      user_activity_detector_.get());
-#if defined(OS_CHROMEOS)
-  user_activity_notifier_.reset(
-      new ui::UserActivityPowerManagerNotifier(user_activity_detector_.get()));
-#endif
-}
-
-wm::FocusRules* ShellDesktopController::CreateFocusRules() {
-  return new AppsFocusRules();
 }
 
 void ShellDesktopController::DestroyRootWindow() {

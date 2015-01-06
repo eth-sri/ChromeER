@@ -15,6 +15,7 @@
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/memory/discardable_memory.h"
+#include "base/memory/discardable_memory_emulated.h"
 #include "base/memory/shared_memory.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
@@ -28,6 +29,8 @@
 #include "base/threading/thread_restrictions.h"
 #include "base/values.h"
 #include "cc/base/switches.h"
+#include "cc/blink/web_external_bitmap_impl.h"
+#include "cc/blink/web_layer_impl.h"
 #include "cc/resources/raster_worker_pool.h"
 #include "content/child/appcache/appcache_dispatcher.h"
 #include "content/child/appcache/appcache_frontend_impl.h"
@@ -65,13 +68,10 @@
 #include "content/public/renderer/content_renderer_client.h"
 #include "content/public/renderer/render_process_observer.h"
 #include "content/public/renderer/render_view_visitor.h"
-#include "content/renderer/compositor_bindings/web_external_bitmap_impl.h"
-#include "content/renderer/compositor_bindings/web_layer_impl.h"
 #include "content/renderer/devtools/devtools_agent_filter.h"
 #include "content/renderer/dom_storage/dom_storage_dispatcher.h"
 #include "content/renderer/dom_storage/webstoragearea_impl.h"
 #include "content/renderer/dom_storage/webstoragenamespace_impl.h"
-#include "content/renderer/gamepad_shared_memory_reader.h"
 #include "content/renderer/gpu/compositor_output_surface.h"
 #include "content/renderer/gpu/gpu_benchmarking_extension.h"
 #include "content/renderer/input/input_event_filter.h"
@@ -82,13 +82,9 @@
 #include "content/renderer/media/audio_renderer_mixer_manager.h"
 #include "content/renderer/media/media_stream_center.h"
 #include "content/renderer/media/midi_message_filter.h"
-#include "content/renderer/media/peer_connection_tracker.h"
 #include "content/renderer/media/renderer_gpu_video_accelerator_factories.h"
-#include "content/renderer/media/rtc_peer_connection_handler.h"
 #include "content/renderer/media/video_capture_impl_manager.h"
 #include "content/renderer/media/video_capture_message_filter.h"
-#include "content/renderer/media/webrtc/peer_connection_dependency_factory.h"
-#include "content/renderer/media/webrtc_identity_service.h"
 #include "content/renderer/net_info_helper.h"
 #include "content/renderer/p2p/socket_dispatcher.h"
 #include "content/renderer/render_frame_proxy.h"
@@ -98,7 +94,6 @@
 #include "content/renderer/service_worker/embedded_worker_context_message_filter.h"
 #include "content/renderer/service_worker/embedded_worker_dispatcher.h"
 #include "content/renderer/shared_worker/embedded_shared_worker_stub.h"
-#include "grit/content_resources.h"
 #include "ipc/ipc_channel_handle.h"
 #include "ipc/ipc_forwarding_message_filter.h"
 #include "ipc/ipc_platform_file.h"
@@ -153,6 +148,13 @@
 #include "content/renderer/npapi/plugin_channel_host.h"
 #endif
 
+#if defined(ENABLE_WEBRTC)
+#include "content/renderer/media/peer_connection_tracker.h"
+#include "content/renderer/media/rtc_peer_connection_handler.h"
+#include "content/renderer/media/webrtc/peer_connection_dependency_factory.h"
+#include "content/renderer/media/webrtc_identity_service.h"
+#endif
+
 using base::ThreadRestrictions;
 using blink::WebDocument;
 using blink::WebFrame;
@@ -171,14 +173,15 @@ const int64 kInitialIdleHandlerDelayMs = 1000;
 const int64 kShortIdleHandlerDelayMs = 1000;
 const int64 kLongIdleHandlerDelayMs = 30*1000;
 const int kIdleCPUUsageThresholdInPercents = 3;
-const int kMinRasterThreads = 1;
-const int kMaxRasterThreads = 64;
 
 // Maximum allocation size allowed for image scaling filters that
 // require pre-scaling. Skia will fallback to a filter that doesn't
 // require pre-scaling if the default filter would require an
 // allocation that exceeds this limit.
 const size_t kImageCacheSingleAllocationByteLimit = 64 * 1024 * 1024;
+
+const size_t kEmulatedDiscardableMemoryBytesToKeepWhenWidgetsHidden =
+    4 * 1024 * 1024;
 
 // Keep the global RenderThreadImpl in a TLS slot so it is impossible to access
 // incorrectly from the wrong thread.
@@ -302,6 +305,16 @@ bool ShouldUseMojoChannel() {
       switches::kEnableRendererMojoChannel);
 }
 
+blink::WebGraphicsContext3D::Attributes GetOffscreenAttribs() {
+  blink::WebGraphicsContext3D::Attributes attributes;
+  attributes.shareResources = true;
+  attributes.depth = false;
+  attributes.stencil = false;
+  attributes.antialias = false;
+  attributes.noAutomaticFlushes = true;
+  return attributes;
+}
+
 }  // namespace
 
 // For measuring memory usage after each task. Behind a command line flag.
@@ -314,7 +327,7 @@ class MemoryObserver : public base::MessageLoop::TaskObserver {
   }
 
   virtual void DidProcessTask(const base::PendingTask& pending_task) OVERRIDE {
-    HISTOGRAM_MEMORY_KB("Memory.RendererUsed", GetMemoryUsageKB());
+    LOCAL_HISTOGRAM_MEMORY_KB("Memory.RendererUsed", GetMemoryUsageKB());
   }
 
  private:
@@ -465,7 +478,8 @@ void RenderThreadImpl::Init() {
 
   is_impl_side_painting_enabled_ =
       command_line.HasSwitch(switches::kEnableImplSidePainting);
-  WebLayerImpl::SetImplSidePaintingEnabled(is_impl_side_painting_enabled_);
+  cc_blink::WebLayerImpl::SetImplSidePaintingEnabled(
+      is_impl_side_painting_enabled_);
 
   is_zero_copy_enabled_ = command_line.HasSwitch(switches::kEnableZeroCopy) &&
                           !command_line.HasSwitch(switches::kDisableZeroCopy);
@@ -536,26 +550,19 @@ void RenderThreadImpl::Init() {
 
   base::DiscardableMemory::SetPreferredType(type);
 
-  // Allow discardable memory implementations to register memory pressure
-  // listeners.
-  base::DiscardableMemory::RegisterMemoryPressureListeners();
-
   // AllocateGpuMemoryBuffer must be used exclusively on one thread but
   // it doesn't have to be the same thread RenderThreadImpl is created on.
   allocate_gpu_memory_buffer_thread_checker_.DetachFromThread();
 
-  if (command_line.HasSwitch(switches::kNumRasterThreads)) {
-    int num_raster_threads;
+  if (is_impl_side_painting_enabled_) {
+    int num_raster_threads = 0;
     std::string string_value =
         command_line.GetSwitchValueASCII(switches::kNumRasterThreads);
-    if (base::StringToInt(string_value, &num_raster_threads) &&
-        num_raster_threads >= kMinRasterThreads &&
-        num_raster_threads <= kMaxRasterThreads) {
-      cc::RasterWorkerPool::SetNumRasterThreads(num_raster_threads);
-    } else {
-      LOG(WARNING) << "Failed to parse switch " <<
-                      switches::kNumRasterThreads  << ": " << string_value;
-    }
+    bool parsed_num_raster_threads =
+        base::StringToInt(string_value, &num_raster_threads);
+    DCHECK(parsed_num_raster_threads) << string_value;
+    DCHECK_GT(num_raster_threads, 0);
+    cc::RasterWorkerPool::SetNumRasterThreads(num_raster_threads);
   }
 
   service_registry()->AddService<RenderFrameSetup>(
@@ -885,10 +892,6 @@ void RenderThreadImpl::EnsureWebKitInitialized() {
       CompositorOutputSurface::CreateFilter(output_surface_loop.get());
   AddFilter(compositor_output_surface_filter_.get());
 
-  gamepad_shared_memory_reader_.reset(
-      new GamepadSharedMemoryReader(webkit_platform_support_.get()));
-  AddObserver(gamepad_shared_memory_reader_.get());
-
   RenderThreadImpl::RegisterSchemes();
 
   EnableBlinkPlatformLogChannels(
@@ -909,7 +912,7 @@ void RenderThreadImpl::EnsureWebKitInitialized() {
   if (GetContentClient()->renderer()->RunIdleHandlerWhenWidgetsHidden())
     ScheduleIdleHandler(kLongIdleHandlerDelayMs);
 
-  SetSharedMemoryAllocationFunction(AllocateSharedMemoryFunction);
+  cc_blink::SetSharedMemoryAllocationFunction(AllocateSharedMemoryFunction);
 
   // Limit use of the scaled image cache to when deferred image decoding is
   // enabled.
@@ -1100,12 +1103,12 @@ RenderThreadImpl::GetGpuFactories() {
   scoped_refptr<GpuChannelHost> gpu_channel_host = GetGpuChannel();
   const CommandLine* cmd_line = CommandLine::ForCurrentProcess();
   scoped_refptr<media::GpuVideoAcceleratorFactories> gpu_factories;
-  scoped_refptr<base::MessageLoopProxy> media_loop_proxy =
-      GetMediaThreadMessageLoopProxy();
+  scoped_refptr<base::SingleThreadTaskRunner> media_task_runner =
+      GetMediaThreadTaskRunner();
   if (!cmd_line->HasSwitch(switches::kDisableAcceleratedVideoDecode)) {
-    if (!gpu_va_context_provider_ ||
+    if (!gpu_va_context_provider_.get() ||
         gpu_va_context_provider_->DestroyedOnMainThread()) {
-      if (!gpu_channel_host) {
+      if (!gpu_channel_host.get()) {
         gpu_channel_host = EstablishGpuChannelSync(
             CAUSE_FOR_GPU_LAUNCH_WEBGRAPHICSCONTEXT3DCOMMANDBUFFERIMPL_INITIALIZE);
       }
@@ -1123,21 +1126,16 @@ RenderThreadImpl::GetGpuFactories() {
           "GPU-VideoAccelerator-Offscreen");
     }
   }
-  if (gpu_va_context_provider_) {
+  if (gpu_va_context_provider_.get()) {
     gpu_factories = RendererGpuVideoAcceleratorFactories::Create(
-        gpu_channel_host, media_loop_proxy, gpu_va_context_provider_);
+        gpu_channel_host.get(), media_task_runner, gpu_va_context_provider_);
   }
   return gpu_factories;
 }
 
 scoped_ptr<WebGraphicsContext3DCommandBufferImpl>
 RenderThreadImpl::CreateOffscreenContext3d() {
-  blink::WebGraphicsContext3D::Attributes attributes;
-  attributes.shareResources = true;
-  attributes.depth = false;
-  attributes.stencil = false;
-  attributes.antialias = false;
-  attributes.noAutomaticFlushes = true;
+  blink::WebGraphicsContext3D::Attributes attributes(GetOffscreenAttribs());
   bool lose_context_when_out_of_memory = true;
 
   scoped_refptr<GpuChannelHost> gpu_channel_host(EstablishGpuChannelSync(
@@ -1155,20 +1153,24 @@ RenderThreadImpl::CreateOffscreenContext3d() {
 scoped_refptr<webkit::gpu::ContextProviderWebContext>
 RenderThreadImpl::SharedMainThreadContextProvider() {
   DCHECK(IsMainThread());
-#if defined(OS_ANDROID)
-  if (SynchronousCompositorFactory* factory =
-      SynchronousCompositorFactory::GetInstance())
-    return factory->GetSharedOffscreenContextProviderForMainThread();
-#endif
-
-  if (!shared_main_thread_contexts_ ||
+  if (!shared_main_thread_contexts_.get() ||
       shared_main_thread_contexts_->DestroyedOnMainThread()) {
-    shared_main_thread_contexts_ = ContextProviderCommandBuffer::Create(
-        CreateOffscreenContext3d(), "Offscreen-MainThread");
-  }
-  if (shared_main_thread_contexts_ &&
-      !shared_main_thread_contexts_->BindToCurrentThread())
     shared_main_thread_contexts_ = NULL;
+#if defined(OS_ANDROID)
+    if (SynchronousCompositorFactory* factory =
+            SynchronousCompositorFactory::GetInstance()) {
+      shared_main_thread_contexts_ = factory->CreateOffscreenContextProvider(
+          GetOffscreenAttribs(), "Offscreen-MainThread");
+    }
+#endif
+    if (!shared_main_thread_contexts_.get()) {
+      shared_main_thread_contexts_ = ContextProviderCommandBuffer::Create(
+          CreateOffscreenContext3d(), "Offscreen-MainThread");
+    }
+    if (shared_main_thread_contexts_.get() &&
+        !shared_main_thread_contexts_->BindToCurrentThread())
+      shared_main_thread_contexts_ = NULL;
+  }
   return shared_main_thread_contexts_;
 }
 
@@ -1453,10 +1455,12 @@ blink::WebMediaStreamCenter* RenderThreadImpl::CreateMediaStreamCenter(
   return media_stream_center_;
 }
 
+#if defined(ENABLE_WEBRTC)
 PeerConnectionDependencyFactory*
 RenderThreadImpl::GetPeerConnectionDependencyFactory() {
   return peer_connection_factory_.get();
 }
+#endif
 
 GpuChannelHost* RenderThreadImpl::GetGpuChannel() {
   if (!gpu_channel_.get())
@@ -1579,8 +1583,8 @@ RenderThreadImpl::GetFileThreadMessageLoopProxy() {
   return file_thread_->message_loop_proxy();
 }
 
-scoped_refptr<base::MessageLoopProxy>
-RenderThreadImpl::GetMediaThreadMessageLoopProxy() {
+scoped_refptr<base::SingleThreadTaskRunner>
+RenderThreadImpl::GetMediaThreadTaskRunner() {
   DCHECK(message_loop() == base::MessageLoop::current());
   if (!media_thread_) {
     media_thread_.reset(new base::Thread("Media"));
@@ -1603,11 +1607,7 @@ void RenderThreadImpl::SetFlingCurveParameters(
 }
 
 void RenderThreadImpl::SampleGamepads(blink::WebGamepads* data) {
-  gamepad_shared_memory_reader_->SampleGamepads(*data);
-}
-
-void RenderThreadImpl::SetGamepadListener(blink::WebGamepadListener* listener) {
-  gamepad_shared_memory_reader_->SetGamepadListener(listener);
+  webkit_platform_support_->sampleGamepads(*data);
 }
 
 void RenderThreadImpl::WidgetCreated() {
@@ -1623,6 +1623,12 @@ void RenderThreadImpl::WidgetHidden() {
   hidden_widget_count_++;
 
   if (widget_count_ && hidden_widget_count_ == widget_count_) {
+    // TODO(reveman): Remove this when we have a better mechanism to prevent
+    // total discardable memory used by all renderers from growing too large.
+    base::internal::DiscardableMemoryEmulated::
+        ReduceMemoryUsageUntilWithinLimit(
+            kEmulatedDiscardableMemoryBytesToKeepWhenWidgetsHidden);
+
     if (GetContentClient()->renderer()->RunIdleHandlerWhenWidgetsHidden())
       ScheduleIdleHandler(kInitialIdleHandlerDelayMs);
   }

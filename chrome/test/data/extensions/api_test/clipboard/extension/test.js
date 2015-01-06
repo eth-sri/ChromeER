@@ -17,6 +17,25 @@ chrome.test.runTests([
       chrome.test.succeed();
     else
       chrome.test.fail('execCommand("paste") failed');
+  },
+  function copyInIframe() {
+    var ifr = document.createElement('iframe');
+    document.body.appendChild(ifr);
+    window.command = 'copy';
+    ifr.contentDocument.write('<script src="iframe.js"></script>');
+  },
+  function pasteInIframe() {
+    var ifr = document.createElement('iframe');
+    document.body.appendChild(ifr);
+    window.command = 'paste';
+    ifr.contentDocument.write('<script src="iframe.js"></script>');
   }
 ]);
 
+
+function testDone(result) {
+  if (result)
+    chrome.test.succeed();
+  else
+    chrome.test.fail();
+}

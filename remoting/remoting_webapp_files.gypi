@@ -46,9 +46,11 @@
       'webapp/client_screen.js',
       'webapp/client_session.js',
       'webapp/clipboard.js',
+      'webapp/hangout_session.js',
       'webapp/media_source_renderer.js',
       'webapp/session_connector.js',
       'webapp/smart_reconnector.js',
+      'webapp/video_frame_recorder.js',
     ],
     # Remoting core JavaScript files.
     'remoting_webapp_js_core_files': [
@@ -96,6 +98,7 @@
       'webapp/host_screen.js',
       'webapp/host_setup_dialog.js',
       'webapp/host_install_dialog.js',
+      'webapp/host_installer.js',
       'webapp/paired_client_manager.js',
     ],
     # UI files for displaying (in the client) info about available hosts.
@@ -120,25 +123,37 @@
     'remoting_webapp_js_gnubby_auth_files': [
       'webapp/gnubby_auth_handler.js',
     ],
+    # cast extension handler JavaScript files.
+    'remoting_webapp_js_cast_extension_files': [
+      'webapp/cast_extension_handler.js',
+    ],
     # browser test JavaScript files.
     'remoting_webapp_js_browser_test_files': [
       'webapp/browser_test/browser_test.js',
+      'webapp/browser_test/bump_scroll_browser_test.js',
       'webapp/browser_test/cancel_pin_browser_test.js',
       'webapp/browser_test/invalid_pin_browser_test.js',
       'webapp/browser_test/update_pin_browser_test.js',
     ],
     # These product files are excluded from our JavaScript unittest
     'remoting_webapp_unittest_exclude_files': [
+      # background.js is where the onLoad handler is defined, which
+      # makes it the entry point of the background page.
+      'webapp/background/background.js',
       # event_handlers.js is where the onLoad handler is defined, which
       # makes it the entry point of the webapp.
       'webapp/event_handlers.js',
     ],
     # The unit test cases for the webapp
-    'remoting_webapp_unittest_cases': [
+    'remoting_webapp_unittest_js_files': [
       'webapp/js_proto/chrome_proto.js',
+      'webapp/unittests/chrome_mocks.js',
       'webapp/unittests/base_unittest.js',
       'webapp/unittests/l10n_unittest.js',
       'webapp/unittests/menu_button_unittest.js',
+      'webapp/unittests/it2me_helpee_channel_unittest.js',
+      'webapp/unittests/it2me_helper_channel_unittest.js',
+      'webapp/unittests/it2me_service_unittest.js'
     ],
     'remoting_webapp_unittest_additional_files': [
       'webapp/menu_button.css',
@@ -155,6 +170,7 @@
       '<@(remoting_webapp_js_auth_google_files)',
       '<@(remoting_webapp_js_client_files)',
       '<@(remoting_webapp_js_gnubby_auth_files)',
+      '<@(remoting_webapp_js_cast_extension_files)',
       '<@(remoting_webapp_js_host_files)',
       '<@(remoting_webapp_js_logging_files)',
       '<@(remoting_webapp_js_ui_files)',
@@ -164,6 +180,25 @@
       # Uncomment this line to include browser test files in the web app
       # to expedite debugging or local development.
       # '<@(remoting_webapp_js_browser_test_files)'
+    ],
+
+    # The JavaScript files that are used in the background page.
+    'remoting_webapp_background_js_files': [
+      'webapp/base.js',
+      'webapp/client_session.js',
+      'webapp/error.js',
+      'webapp/host_installer.js',
+      'webapp/host_session.js',
+      'webapp/it2me_host_facade.js',
+      'webapp/plugin_settings.js',
+      'webapp/typecheck.js',
+      'webapp/background/app_launcher.js',
+      'webapp/background/background.js',
+      'webapp/background/it2me_helpee_channel.js',
+      'webapp/background/it2me_helper_channel.js',
+      'webapp/background/it2me_service.js',
+      'webapp/background/message_window_helper.js',
+      'webapp/background/message_window_manager.js',
     ],
 
     # The JavaScript files required by wcs_sandbox.html.
@@ -177,6 +212,9 @@
     'remoting_webapp_all_js_files': [
       # JS files for main.html.
       '<@(remoting_webapp_main_html_js_files)',
+      '<@(remoting_webapp_background_js_files)',
+      # JS files for message_window.html
+      'webapp/background/message_window.js',
       # JS files for wcs_sandbox.html.
       # Use r_w_js_wcs_sandbox_files instead of r_w_wcs_sandbox_html_js_files
       # so that we don't double include error.js and plugin_settings.js.
@@ -193,6 +231,7 @@
       'resources/icon_close.webp',
       'resources/icon_cross.webp',
       'resources/icon_disconnect.webp',
+      'resources/icon_fullscreen.webp',
       'resources/icon_help.webp',
       'resources/icon_host.webp',
       'resources/icon_maximize_restore.webp',
@@ -206,8 +245,10 @@
       'resources/reload.webp',
       'resources/tick.webp',
       'webapp/connection_stats.css',
+      'webapp/html/message_window.html',
       'webapp/main.css',
       'webapp/menu_button.css',
+      'webapp/message_window.css',
       'webapp/open_sans.css',
       'webapp/open_sans.woff',
       'webapp/scale-to-fit.webp',
@@ -228,6 +269,9 @@
 
     'remoting_webapp_template_wcs_sandbox':
       'webapp/html/template_wcs_sandbox.html',
+
+    'remoting_webapp_template_background':
+      'webapp/html/template_background.html',
 
     'remoting_webapp_template_files': [
       'webapp/html/butterbar.html',

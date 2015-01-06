@@ -11,13 +11,13 @@
 #include "webkit/browser/quota/quota_client.h"
 #include "webkit/common/quota/quota_types.h"
 
-namespace quota {
+namespace storage {
 
 // This interface is implemented by observers that wish to monitor storage
 // events, such as changes in quota or usage.
-class WEBKIT_STORAGE_BROWSER_EXPORT StorageObserver {
+class STORAGE_EXPORT StorageObserver {
  public:
-  struct WEBKIT_STORAGE_BROWSER_EXPORT Filter {
+  struct STORAGE_EXPORT Filter {
     // The storage type to monitor. This must not be kStorageTypeUnknown or
     // kStorageTypeQuotaNotManaged.
     StorageType storage_type;
@@ -30,7 +30,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT StorageObserver {
     bool operator==(const Filter& other) const;
   };
 
-  struct WEBKIT_STORAGE_BROWSER_EXPORT MonitorParams {
+  struct STORAGE_EXPORT MonitorParams {
     // Storage type and origin to monitor.
     Filter filter;
 
@@ -52,7 +52,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT StorageObserver {
                   bool get_initial_state);
   };
 
-  struct WEBKIT_STORAGE_BROWSER_EXPORT Event {
+  struct STORAGE_EXPORT Event {
     // The storage type and origin monitored.
     Filter filter;
 
@@ -74,6 +74,6 @@ class WEBKIT_STORAGE_BROWSER_EXPORT StorageObserver {
   virtual ~StorageObserver() {}
 };
 
-}  // namespace quota
+}  // namespace storage
 
 #endif  // WEBKIT_BROWSER_QUOTA_STORAGE_OBSERVER_H_

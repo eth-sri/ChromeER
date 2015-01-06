@@ -6,6 +6,7 @@
 #define CONTENT_BROWSER_MEDIA_WEBRTC_INTERNALS_H_
 
 #include "base/gtest_prod_util.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
 #include "base/observer_list.h"
 #include "base/process/process.h"
@@ -16,6 +17,8 @@
 #include "ui/shell_dialogs/select_file_dialog.h"
 
 namespace content {
+
+class PowerSaveBlocker;
 class WebContents;
 class WebRTCInternalsUIObserver;
 
@@ -100,10 +103,10 @@ class CONTENT_EXPORT WebRTCInternals : public NotificationObserver,
 
  private:
   friend struct DefaultSingletonTraits<WebRTCInternals>;
-  FRIEND_TEST_ALL_PREFIXES(WebRtcBrowserTest, CallWithAecDump);
-  FRIEND_TEST_ALL_PREFIXES(WebRtcBrowserTest,
+  FRIEND_TEST_ALL_PREFIXES(WebRtcAecDumpBrowserTest, CallWithAecDump);
+  FRIEND_TEST_ALL_PREFIXES(WebRtcAecDumpBrowserTest,
                            CallWithAecDumpEnabledThenDisabled);
-  FRIEND_TEST_ALL_PREFIXES(WebRtcBrowserTest, TwoCallsWithAecDump);
+  FRIEND_TEST_ALL_PREFIXES(WebRtcAecDumpBrowserTest, TwoCallsWithAecDump);
   FRIEND_TEST_ALL_PREFIXES(WebRTCInternalsTest,
                            AecRecordingFileSelectionCanceled);
 
@@ -130,6 +133,11 @@ class CONTENT_EXPORT WebRTCInternals : public NotificationObserver,
   // Enables AEC dump on all render process hosts using |aec_dump_file_path_|.
   void EnableAecDumpOnAllRenderProcessHosts();
 #endif
+
+  // Called whenever an element is added to or removed from
+  // |peer_connection_data_| to impose/release a block on suspending the current
+  // application for power-saving.
+  void CreateOrReleasePowerSaveBlocker();
 
   ObserverList<WebRTCInternalsUIObserver> observers_;
 
@@ -166,6 +174,11 @@ class CONTENT_EXPORT WebRTCInternals : public NotificationObserver,
   // AEC dump (diagnostic echo canceller recording) state.
   bool aec_dump_enabled_;
   base::FilePath aec_dump_file_path_;
+
+  // While |peer_connection_data_| is non-empty, hold an instance of
+  // PowerSaveBlocker.  This prevents the application from being suspended while
+  // remoting.
+  scoped_ptr<PowerSaveBlocker> power_save_blocker_;
 };
 
 }  // namespace content

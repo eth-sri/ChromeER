@@ -12,18 +12,19 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/strings/string_util.h"
 #include "base/sys_info.h"
 #include "base/values.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/common/extensions/extension_constants.h"
+#include "chrome/grit/chromium_strings.h"
+#include "chrome/grit/generated_resources.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/settings/cros_settings_names.h"
+#include "components/crx_file/id_util.h"
+#include "components/user_manager/user_manager.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_data_source.h"
-#include "extensions/common/extension.h"
-#include "grit/chromium_strings.h"
-#include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/webui/web_ui_util.h"
 #include "url/gurl.h"
@@ -41,6 +42,9 @@ void PopulateAppDict(const KioskAppManager::App& app_data,
   if (!app_data.icon.isNull())
     icon_url = webui::GetBitmapDataUrl(*app_data.icon.bitmap());
 
+  // The items which are to be written into app_dict are also described in
+  // chrome/browser/resources/extensions/chromeos/kiosk_app_list.js in @typedef
+  // for AppDict. Please update it whenever you add or remove any keys here.
   app_dict->SetString("id", app_data.app_id);
   app_dict->SetString("name", app_data.name);
   app_dict->SetString("iconURL", icon_url);
@@ -56,7 +60,7 @@ void PopulateAppDict(const KioskAppManager::App& app_data,
 // Returns false if an app id could not be derived out of the input.
 bool ExtractsAppIdFromInput(const std::string& input,
                             std::string* app_id) {
-  if (extensions::Extension::IdIsValid(input)) {
+  if (crx_file::id_util::IdIsValid(input)) {
     *app_id = input;
     return true;
   }
@@ -81,7 +85,7 @@ bool ExtractsAppIdFromInput(const std::string& input,
     return false;
 
   const std::string candidate_id = path.substr(last_slash + 1);
-  if (!extensions::Extension::IdIsValid(candidate_id))
+  if (!crx_file::id_util::IdIsValid(candidate_id))
     return false;
 
   *app_id = candidate_id;
@@ -198,9 +202,8 @@ void KioskAppsHandler::OnKioskExtensionDownloadFailed(
 void KioskAppsHandler::OnGetConsumerKioskAutoLaunchStatus(
     chromeos::KioskAppManager::ConsumerKioskAutoLaunchStatus status) {
   initialized_ = true;
-  is_kiosk_enabled_ =
-      chromeos::UserManager::Get()->IsCurrentUserOwner() ||
-      !base::SysInfo::IsRunningOnChromeOS();
+  is_kiosk_enabled_ = user_manager::UserManager::Get()->IsCurrentUserOwner() ||
+                      !base::SysInfo::IsRunningOnChromeOS();
 
   is_auto_launch_enabled_ =
       status == KioskAppManager::CONSUMER_KIOSK_AUTO_LAUNCH_ENABLED ||

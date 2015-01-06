@@ -12,7 +12,7 @@
 #include "net/base/file_stream.h"
 #include "webkit/common/blob/shareable_file_reference.h"
 
-using webkit_blob::ShareableFileReference;
+using storage::ShareableFileReference;
 
 namespace content {
 
@@ -43,7 +43,7 @@ void DidCreateTemporaryFile(
   scoped_ptr<net::FileStream> file_stream(
       new net::FileStream(file_proxy->TakeFile(), task_runner));
 
-  callback.Run(error_code, file_stream.Pass(), deletable_file);
+  callback.Run(error_code, file_stream.Pass(), deletable_file.get());
 }
 
 }  // namespace

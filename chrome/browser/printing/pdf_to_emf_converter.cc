@@ -6,8 +6,8 @@
 
 #include "base/bind_helpers.h"
 #include "base/cancelable_callback.h"
-#include "base/file_util.h"
 #include "base/files/file.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/logging.h"
 #include "chrome/common/chrome_utility_messages.h"
@@ -125,7 +125,7 @@ class PdfToEmfUtilityProcessHostClient
       double scale_factor);
   void OnFilesReadyOnUIThread();
 
-  scoped_ptr<FileHandlers> files_;
+  scoped_ptr<FileHandlers, BrowserThread::DeleteOnFileThread> files_;
   printing::PdfRenderSettings settings_;
   PdfToEmfConverter::ResultCallback callback_;
   base::WeakPtr<content::UtilityProcessHost> utility_process_host_;
@@ -138,8 +138,6 @@ PdfToEmfUtilityProcessHostClient::PdfToEmfUtilityProcessHostClient(
     : settings_(settings) {}
 
 PdfToEmfUtilityProcessHostClient::~PdfToEmfUtilityProcessHostClient() {
-  // Delete temp directory.
-  BrowserThread::DeleteSoon(BrowserThread::FILE, FROM_HERE, files_.release());
 }
 
 void PdfToEmfUtilityProcessHostClient::Convert(

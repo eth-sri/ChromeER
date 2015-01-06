@@ -33,10 +33,16 @@ extern const char kRestoreOnStartupMigrated[];
 extern const char kRestoreStartupURLsMigrationTime[];
 extern const char kSessionExitedCleanly[];
 extern const char kSessionExitType[];
-extern const char kSupervisedUserManualHosts[];
-extern const char kSupervisedUserManualURLs[];
 extern const char kSupervisedUserCustodianEmail[];
 extern const char kSupervisedUserCustodianName[];
+extern const char kSupervisedUserCustodianProfileImageURL[];
+extern const char kSupervisedUserCustodianProfileURL[];
+extern const char kSupervisedUserManualHosts[];
+extern const char kSupervisedUserManualURLs[];
+extern const char kSupervisedUserSecondCustodianEmail[];
+extern const char kSupervisedUserSecondCustodianName[];
+extern const char kSupervisedUserSecondCustodianProfileImageURL[];
+extern const char kSupervisedUserSecondCustodianProfileURL[];
 extern const char kSupervisedUserSharedSettings[];
 extern const char kURLsToRestoreOnStartup[];
 extern const char kURLsToRestoreOnStartupOld[];
@@ -120,7 +126,6 @@ extern const char kWebKitLoadsImagesAutomatically[];
 extern const char kWebKitPluginsEnabled[];
 extern const char kWebKitDomPasteEnabled[];
 extern const char kWebKitShrinksStandaloneImagesToFit[];
-extern const char kWebKitInspectorSettings[];
 extern const char kWebKitUsesUniversalDetector[];
 extern const char kWebKitTextAreasAreResizable[];
 extern const char kWebKitJavaEnabled[];
@@ -223,6 +228,7 @@ extern const char kUseSharedProxies[];
 extern const char kDisplayPowerState[];
 extern const char kDisplayProperties[];
 extern const char kSecondaryDisplays[];
+extern const char kDisplayRotationLock[];
 extern const char kSessionUserActivitySeen[];
 extern const char kSessionStartTime[];
 extern const char kSessionLengthLimit[];
@@ -350,19 +356,20 @@ extern const char kImportSearchEngine[];
 extern const char kImportSavedPasswords[];
 
 extern const char kProfileAvatarIndex[];
+extern const char kProfileUsingDefaultName[];
 extern const char kProfileName[];
+extern const char kProfileUsingDefaultAvatar[];
+extern const char kProfileUsingGAIAAvatar[];
 extern const char kSupervisedUserId[];
 
 extern const char kProfileGAIAInfoUpdateTime[];
 extern const char kProfileGAIAInfoPictureURL[];
 
 extern const char kProfileAvatarTutorialShown[];
-extern const char kProfileUserManagerTutorialShown[];
 
 extern const char kInvertNotificationShown[];
 
 extern const char kPrintingEnabled[];
-extern const char kPrintPreviewDisabled[];
 
 extern const char kDefaultSupervisedUserFilteringBehavior[];
 
@@ -463,8 +470,6 @@ extern const char kBrowserSuppressDefaultBrowserPrompt[];
 extern const char kBrowserWindowPlacement[];
 extern const char kBrowserWindowPlacementPopup[];
 extern const char kTaskManagerWindowPlacement[];
-extern const char kKeywordEditorWindowPlacement[];
-extern const char kPreferencesWindowPlacement[];
 extern const char kMemoryCacheSize[];
 
 extern const char kDownloadDefaultDirectory[];
@@ -635,6 +640,7 @@ extern const char kVideoCaptureAllowed[];
 extern const char kVideoCaptureAllowedUrls[];
 
 extern const char kHotwordSearchEnabled[];
+extern const char kHotwordAlwaysOnSearchEnabled[];
 extern const char kHotwordAudioLoggingEnabled[];
 extern const char kHotwordPreviousLanguage[];
 
@@ -674,7 +680,7 @@ extern const char kUsedPolicyCertificates[];
 extern const char kServerBackedDeviceState[];
 extern const char kCustomizationDefaultWallpaperURL[];
 extern const char kLogoutStartedLast[];
-extern const char kConsumerManagementEnrollmentRequested[];
+extern const char kConsumerManagementEnrollmentState[];
 #endif
 
 extern const char kClearPluginLSODataEnabled[];
@@ -814,6 +820,7 @@ extern const char kPartnerBookmarkMappings[];
 #endif
 
 extern const char kQuickCheckEnabled[];
+extern const char kBrowserGuestModeEnabled[];
 
 }  // namespace prefs
 

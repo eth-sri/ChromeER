@@ -8,7 +8,7 @@
 #include "base/basictypes.h"
 #include "base/timer/timer.h"
 #include "chrome/browser/ui/passwords/manage_passwords_bubble.h"
-#include "chrome/browser/ui/views/passwords/save_password_refusal_combobox_model.h"
+#include "chrome/browser/ui/passwords/save_password_refusal_combobox_model.h"
 #include "ui/views/bubble/bubble_delegate.h"
 #include "ui/views/controls/button/button.h"
 #include "ui/views/controls/combobox/combobox.h"
@@ -226,6 +226,9 @@ class ManagePasswordsBubbleView : public ManagePasswordsBubble,
   virtual void OnMouseEntered(const ui::MouseEvent& event) OVERRIDE;
   virtual void OnMouseExited(const ui::MouseEvent& event) OVERRIDE;
 
+  // Called from WebContentMouseHandler when user clicks the web view.
+  void OnWebContentClicked();
+
   void set_initially_focused_view(views::View* view) {
     DCHECK(!initially_focused_view_);
     initially_focused_view_ = view;
@@ -233,7 +236,8 @@ class ManagePasswordsBubbleView : public ManagePasswordsBubble,
 
   // Singleton instance of the Password bubble. The Password bubble can only be
   // shown on the active browser window, so there is no case in which it will be
-  // shown twice at the same time.
+  // shown twice at the same time. The instance is owned by the Bubble and will
+  // be deleted when the bubble closes.
   static ManagePasswordsBubbleView* manage_passwords_bubble_;
 
   ManagePasswordsIconView* anchor_view_;
@@ -246,6 +250,9 @@ class ManagePasswordsBubbleView : public ManagePasswordsBubble,
 
   // Timer used to close the bubble after timeout.
   base::OneShotTimer<ManagePasswordsBubbleView> timer_;
+
+  class WebContentMouseHandler;
+  scoped_ptr<WebContentMouseHandler> mouse_handler_;
 
   DISALLOW_COPY_AND_ASSIGN(ManagePasswordsBubbleView);
 };

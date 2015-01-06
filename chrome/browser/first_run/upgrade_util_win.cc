@@ -14,8 +14,8 @@
 #include "base/base_paths.h"
 #include "base/command_line.h"
 #include "base/environment.h"
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/logging.h"
 #include "base/path_service.h"
 #include "base/process/launch.h"
@@ -136,11 +136,15 @@ bool RelaunchChromeHelper(const CommandLine& command_line,
   chrome_exe_command_line.SetProgram(
       chrome_exe.DirName().Append(installer::kChromeExe));
 
-  if (base::win::GetVersion() < base::win::VERSION_WIN8)
+  if (base::win::GetVersion() < base::win::VERSION_WIN8 &&
+      relaunch_mode != RELAUNCH_MODE_METRO &&
+      relaunch_mode != RELAUNCH_MODE_DESKTOP)
     return base::LaunchProcess(chrome_exe_command_line,
                                base::LaunchOptions(), NULL);
 
   // On Windows 8 we always use the delegate_execute for re-launching chrome.
+  // On Windows 7 we use delegate_execute for re-launching chrome into Windows
+  // ASH.
   //
   // Pass this Chrome's Start Menu shortcut path to the relauncher so it can re-
   // activate chrome via ShellExecute which will wait until we exit. Since

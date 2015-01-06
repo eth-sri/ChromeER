@@ -8,7 +8,6 @@
 #include <limits>
 #include <vector>
 
-#include "apps/app_window.h"
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/logging.h"
@@ -25,12 +24,12 @@
 #include "chrome/browser/extensions/api/tabs/windows_util.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
-#include "chrome/browser/extensions/script_executor.h"
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/extensions/window_controller.h"
 #include "chrome/browser/extensions/window_controller_list.h"
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/sessions/session_tab_helper.h"
 #include "chrome/browser/translate/chrome_translate_client.h"
 #include "chrome/browser/ui/apps/chrome_app_delegate.h"
 #include "chrome/browser/ui/browser.h"
@@ -65,14 +64,15 @@
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/url_constants.h"
+#include "extensions/browser/app_window/app_window.h"
 #include "extensions/browser/extension_function_dispatcher.h"
 #include "extensions/browser/extension_function_util.h"
 #include "extensions/browser/extension_host.h"
 #include "extensions/browser/file_reader.h"
+#include "extensions/browser/script_executor.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/error_utils.h"
 #include "extensions/common/extension.h"
-#include "extensions/common/extension_l10n_util.h"
 #include "extensions/common/extension_messages.h"
 #include "extensions/common/manifest_constants.h"
 #include "extensions/common/message_bundle.h"
@@ -85,12 +85,11 @@
 #include "ui/base/ui_base_types.h"
 
 #if defined(USE_ASH)
-#include "apps/app_window_registry.h"
 #include "ash/ash_switches.h"
 #include "chrome/browser/extensions/api/tabs/ash_panel_contents.h"
+#include "extensions/browser/app_window/app_window_registry.h"
 #endif
 
-using apps::AppWindow;
 using content::BrowserThread;
 using content::NavigationController;
 using content::NavigationEntry;
@@ -991,9 +990,12 @@ bool TabsGetFunction::RunSync() {
 bool TabsGetCurrentFunction::RunSync() {
   DCHECK(dispatcher());
 
-  WebContents* contents = dispatcher()->delegate()->GetAssociatedWebContents();
-  if (contents)
-    SetResult(ExtensionTabUtil::CreateTabValue(contents, extension()));
+  // Return the caller, if it's a tab. If not the result isn't an error but an
+  // empty tab (hence returning true).
+  WebContents* caller_contents =
+      WebContents::FromRenderViewHost(render_view_host());
+  if (caller_contents && ExtensionTabUtil::GetTabId(caller_contents) >= 0)
+    SetResult(ExtensionTabUtil::CreateTabValue(caller_contents, extension()));
 
   return true;
 }
@@ -1085,7 +1087,7 @@ bool TabsUpdateFunction::RunAsync() {
       error_ = keys::kNoSelectedTabError;
       return false;
     }
-    tab_id = SessionID::IdForTab(contents);
+    tab_id = SessionTabHelper::IdForTab(contents);
   } else {
     tab_id = *params->tab_id;
   }
@@ -1515,7 +1517,7 @@ WebContents* TabsCaptureVisibleTabFunction::GetWebContentsForID(int window_id) {
   }
 
   if (!extension()->permissions_data()->CanCaptureVisiblePage(
-          SessionID::IdForTab(contents), &error_)) {
+          SessionTabHelper::IdForTab(contents), &error_)) {
     return NULL;
   }
   return contents;

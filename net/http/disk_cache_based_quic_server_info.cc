@@ -47,19 +47,19 @@ DiskCacheBasedQuicServerInfo::DiskCacheBasedQuicServerInfo(
     const QuicServerId& server_id,
     HttpCache* http_cache)
     : QuicServerInfo(server_id),
-      weak_factory_(this),
       data_shim_(new CacheOperationDataShim()),
-      io_callback_(
-          base::Bind(&DiskCacheBasedQuicServerInfo::OnIOComplete,
-                     weak_factory_.GetWeakPtr(),
-                     base::Owned(data_shim_))),  // Ownership assigned.
       state_(GET_BACKEND),
       ready_(false),
       found_entry_(false),
       server_id_(server_id),
       http_cache_(http_cache),
       backend_(NULL),
-      entry_(NULL) {
+      entry_(NULL),
+      weak_factory_(this) {
+      io_callback_ =
+          base::Bind(&DiskCacheBasedQuicServerInfo::OnIOComplete,
+                     weak_factory_.GetWeakPtr(),
+                     base::Owned(data_shim_));  // Ownership assigned.
 }
 
 void DiskCacheBasedQuicServerInfo::Start() {
@@ -247,7 +247,7 @@ int DiskCacheBasedQuicServerInfo::DoRead() {
   read_buffer_ = new IOBuffer(size);
   state_ = READ_COMPLETE;
   return entry_->ReadData(
-      0 /* index */, 0 /* offset */, read_buffer_, size, io_callback_);
+      0 /* index */, 0 /* offset */, read_buffer_.get(), size, io_callback_);
 }
 
 int DiskCacheBasedQuicServerInfo::DoWrite() {
@@ -255,9 +255,12 @@ int DiskCacheBasedQuicServerInfo::DoWrite() {
   memcpy(write_buffer_->data(), new_data_.data(), new_data_.size());
   state_ = WRITE_COMPLETE;
 
-  return entry_->WriteData(
-      0 /* index */, 0 /* offset */, write_buffer_, new_data_.size(),
-      io_callback_, true /* truncate */);
+  return entry_->WriteData(0 /* index */,
+                           0 /* offset */,
+                           write_buffer_.get(),
+                           new_data_.size(),
+                           io_callback_,
+                           true /* truncate */);
 }
 
 int DiskCacheBasedQuicServerInfo::DoCreateOrOpen() {

@@ -44,7 +44,6 @@
         'image_mac.cc',
         'image_win.cc',
         'metafile.h',
-        'metafile_impl.h',
         'metafile_skia_wrapper.cc',
         'metafile_skia_wrapper.h',
         'page_number.cc',
@@ -58,8 +57,6 @@
         'pdf_metafile_cg_mac.h',
         'pdf_metafile_skia.cc',
         'pdf_metafile_skia.h',
-        'print_destination_interface.h',
-        'print_destination_none.cc',
         'print_dialog_gtk_interface.h',
         'print_job_constants.cc',
         'print_job_constants.h',
@@ -254,6 +251,7 @@
       'msvs_disabled_warnings': [ 4267, ],
     },
     {
+      # GN version: //printing:cups (config, not a target).
       'target_name': 'cups',
       'type': 'none',
       'conditions': [

@@ -6,8 +6,13 @@
 
 #include "base/metrics/histogram_samples.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/passwords/manage_passwords_test.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/browser/ui/views/passwords/manage_passwords_view_test.h"
+#include "chrome/browser/ui/views/frame/browser_view.h"
+#include "chrome/browser/ui/views/passwords/manage_passwords_bubble_view.h"
+#include "chrome/browser/ui/views/passwords/manage_passwords_icon_view.h"
+#include "chrome/browser/ui/views/toolbar/toolbar_view.h"
+#include "chrome/test/base/interactive_test_utils.h"
 #include "components/password_manager/core/browser/password_manager_metrics_util.h"
 #include "components/password_manager/core/browser/stub_password_manager_client.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -18,8 +23,23 @@ const char kDisplayDispositionMetric[] = "PasswordBubble.DisplayDisposition";
 
 }  // namespace
 
-typedef ManagePasswordsViewTest ManagePasswordsBubbleViewTest;
 namespace metrics_util = password_manager::metrics_util;
+
+class ManagePasswordsBubbleViewTest : public ManagePasswordsTest {
+ public:
+  ManagePasswordsBubbleViewTest() {}
+  virtual ~ManagePasswordsBubbleViewTest() {}
+
+  virtual ManagePasswordsIcon* view() OVERRIDE {
+    BrowserView* browser_view = static_cast<BrowserView*>(browser()->window());
+    return browser_view->GetToolbarView()
+        ->location_bar()
+        ->manage_passwords_icon_view();
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(ManagePasswordsBubbleViewTest);
+};
 
 IN_PROC_BROWSER_TEST_F(ManagePasswordsBubbleViewTest, BasicOpenAndClose) {
   EXPECT_FALSE(ManagePasswordsBubbleView::IsShowing());
@@ -158,4 +178,15 @@ IN_PROC_BROWSER_TEST_F(ManagePasswordsBubbleViewTest,
   EXPECT_EQ(1,
             samples->GetCount(
                 metrics_util::MANUAL_MANAGE_PASSWORDS));
+}
+
+IN_PROC_BROWSER_TEST_F(ManagePasswordsBubbleViewTest, CloseOnClick) {
+  ManagePasswordsBubbleView::ShowBubble(
+      browser()->tab_strip_model()->GetActiveWebContents(),
+      ManagePasswordsBubble::AUTOMATIC);
+  EXPECT_TRUE(ManagePasswordsBubbleView::IsShowing());
+  EXPECT_FALSE(ManagePasswordsBubbleView::manage_password_bubble()->
+      GetFocusManager()->GetFocusedView());
+  ui_test_utils::ClickOnView(browser(), VIEW_ID_TAB_CONTAINER);
+  EXPECT_FALSE(ManagePasswordsBubbleView::IsShowing());
 }

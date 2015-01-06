@@ -14,9 +14,8 @@ from telemetry.core import tab_list
 from telemetry.core import wpr_modes
 from telemetry.core import wpr_server
 from telemetry.core.backends import browser_backend
-from telemetry.core.platform import tracing_category_filter
-from telemetry.core.platform import tracing_options
 from telemetry.core.platform.profiler import profiler_finder
+
 
 class Browser(object):
   """A running browser instance that can be controlled in a limited way.
@@ -34,7 +33,6 @@ class Browser(object):
 
     self._browser_backend = backend
     self._platform_backend = platform_backend
-    self._http_server = None
     self._wpr_server = None
     self._active_profilers = []
     self._profilers_states = {}
@@ -94,10 +92,6 @@ class Browser(object):
       raise browser_backend.ExtensionsNotSupportedException(
           'Extensions not supported')
     return extension_dict.ExtensionDict(self._browser_backend.extension_backend)
-
-  @property
-  def supports_tracing(self):
-    return self.platform.tracing_controller.IsChromeTracingSupported(self)
 
   def is_profiler_active(self, profiler_name):
     return profiler_name in [profiler.name() for
@@ -274,29 +268,6 @@ class Browser(object):
     self._active_profilers = []
     return output_files
 
-
-  def StartTracing(self, custom_categories=None, timeout=10):
-    """Note: this function is deprecated. Prefer platform.tracing_controller."""
-    if not isinstance(custom_categories,
-                      tracing_category_filter.TracingCategoryFilter):
-      category_filter = tracing_category_filter.TracingCategoryFilter(
-          filter_string=custom_categories)
-    else:
-      category_filter = custom_categories
-    options = tracing_options.TracingOptions()
-    options.enable_chrome_trace = True
-    return self.platform.tracing_controller.Start(
-        options, category_filter, timeout)
-
-  @property
-  def is_tracing_running(self):
-    """Note: this function is deprecated. Prefer platform.tracing_controller."""
-    return self.platform.tracing_controller.is_tracing_running
-
-  def StopTracing(self):
-    """Note: this function is deprecated. Prefer platform.tracing_controller."""
-    return self.platform.tracing_controller.Stop()
-
   def Start(self):
     browser_options = self._browser_backend.browser_options
     self.platform.FlushDnsCache()
@@ -326,10 +297,6 @@ class Browser(object):
       self._wpr_server.Close()
       self._wpr_server = None
 
-    if self._http_server:
-      self._http_server.Close()
-      self._http_server = None
-
     self._local_server_controller.Close()
     self._browser_backend.Close()
     self.credentials = None
@@ -337,7 +304,7 @@ class Browser(object):
   @property
   def http_server(self):
     return self._local_server_controller.GetRunningServer(
-      memory_cache_http_server.MemoryCacheHTTPServer, None)
+        memory_cache_http_server.MemoryCacheHTTPServer, None)
 
   def SetHTTPServerDirectories(self, paths):
     """Returns True if the HTTP server was started, False otherwise."""

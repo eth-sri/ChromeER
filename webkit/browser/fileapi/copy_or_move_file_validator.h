@@ -7,17 +7,17 @@
 
 #include "base/callback.h"
 #include "base/files/file.h"
-#include "webkit/browser/webkit_storage_browser_export.h"
+#include "webkit/browser/storage_browser_export.h"
 
 namespace base {
 class FilePath;
 }
 
-namespace fileapi {
+namespace storage {
 
 class FileSystemURL;
 
-class WEBKIT_STORAGE_BROWSER_EXPORT CopyOrMoveFileValidator {
+class STORAGE_EXPORT CopyOrMoveFileValidator {
  public:
   // Callback that is invoked when validation completes. A result of
   // base::File::FILE_OK means the file validated.
@@ -49,6 +49,6 @@ class CopyOrMoveFileValidatorFactory {
       const base::FilePath& platform_path) = 0;
 };
 
-}  // namespace fileapi
+}  // namespace storage
 
 #endif  // WEBKIT_BROWSER_FILEAPI_COPY_OR_MOVE_FILE_VALIDATOR_H_

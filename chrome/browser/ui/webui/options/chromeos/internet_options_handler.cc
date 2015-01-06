@@ -28,6 +28,7 @@
 #include "chrome/browser/chromeos/ui/mobile_config_ui.h"
 #include "chrome/browser/chromeos/ui_proxy_config_service.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/webui/chromeos/mobile_setup_dialog.h"
 #include "chrome/browser/ui/webui/options/chromeos/internet_options_handler_strings.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/network/device_state.h"
@@ -43,12 +44,13 @@
 #include "chromeos/network/network_state_handler.h"
 #include "chromeos/network/network_util.h"
 #include "chromeos/network/onc/onc_signature.h"
+#include "chromeos/network/onc/onc_translation_tables.h"
 #include "chromeos/network/onc/onc_translator.h"
+#include "chromeos/network/onc/onc_utils.h"
 #include "components/onc/onc_constants.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
-#include "grit/ash_resources.h"
 #include "grit/ui_chromeos_resources.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -60,6 +62,10 @@ namespace chromeos {
 namespace options {
 
 namespace {
+
+// The key in a Managed Value dictionary for translated values.
+// TODO(stevenjb): Consider making this part of the ONC spec.
+const char kTranslatedKey[] = "Translated";
 
 // Keys for the network description dictionary passed to the web ui. Make sure
 // to keep the strings in sync with what the JavaScript side uses.
@@ -125,8 +131,6 @@ const char kShowMorePlanInfoMessage[] = "showMorePlanInfo";
 const char kTagActivate[] = "activate";
 const char kTagActivationState[] = "activationState";
 const char kTagAddConnection[] = "add";
-const char kTagApn[] = "apn";
-const char kTagAutoConnect[] = "autoConnect";
 const char kTagCarrierSelectFlag[] = "showCarrierSelect";
 const char kTagCarrierUrl[] = "carrierUrl";
 const char kTagCellularAvailable[] = "cellularAvailable";
@@ -137,39 +141,24 @@ const char kTagConnect[] = "connect";
 const char kTagControlledBy[] = "controlledBy";
 const char kTagDeviceConnected[] = "deviceConnected";
 const char kTagDisconnect[] = "disconnect";
-const char kTagErrorState[] = "errorState";
+const char kTagErrorMessage[] = "errorMessage";
 const char kTagForget[] = "forget";
-const char kTagIdentity[] = "identity";
-const char kTagLanguage[] = "language";
-const char kTagLastGoodApn[] = "lastGoodApn";
-const char kTagLocalizedName[] = "localizedName";
-const char kTagName[] = "name";
 const char kTagNameServersGoogle[] = "nameServersGoogle";
 const char kTagNameServerType[] = "nameServerType";
-const char kTagNetworkId[] = "networkId";
 const char kTagOptions[] = "options";
-const char kTagPassword[] = "password";
 const char kTagPolicy[] = "policy";
-const char kTagPreferred[] = "preferred";
-const char kTagProviderType[] = "providerType";
-const char kTagProviderApnList[] = "providerApnList";
 const char kTagRecommended[] = "recommended";
 const char kTagRecommendedValue[] = "recommendedValue";
 const char kTagRemembered[] = "remembered";
 const char kTagRememberedList[] = "rememberedList";
 const char kTagRestrictedPool[] = "restrictedPool";
 const char kTagRoamingState[] = "roamingState";
-const char kTagServerHostname[] = "serverHostname";
 const char kTagCarriers[] = "carriers";
 const char kTagCurrentCarrierIndex[] = "currentCarrierIndex";
 const char kTagShared[] = "shared";
 const char kTagShowActivateButton[] = "showActivateButton";
-const char kTagShowStaticIPConfig[] = "showStaticIPConfig";
 const char kTagShowViewAccountButton[] = "showViewAccountButton";
-const char kTagSimCardLockEnabled[] = "simCardLockEnabled";
-const char kTagSupportUrl[] = "supportUrl";
 const char kTagTrue[] = "true";
-const char kTagUsername[] = "username";
 const char kTagValue[] = "value";
 const char kTagVpnList[] = "vpnList";
 const char kTagWifiAvailable[] = "wifiAvailable";
@@ -295,67 +284,123 @@ base::DictionaryValue* BuildIPInfoDictionary(
   return ip_info_dict.release();
 }
 
-// Decorate dictionary |value_dict| with policy information from |ui_data|.
-void DecorateValueDictionary(const NetworkPropertyUIData& ui_data,
-                             const base::Value& value,
-                             base::DictionaryValue* value_dict) {
-  const base::Value* recommended_value = ui_data.default_value();
-  if (ui_data.IsManaged())
-    value_dict->SetString(kTagControlledBy, kTagPolicy);
-  else if (recommended_value && recommended_value->Equals(&value))
-    value_dict->SetString(kTagControlledBy, kTagRecommended);
-
-  if (recommended_value)
-    value_dict->Set(kTagRecommendedValue, recommended_value->DeepCopy());
-}
-
 // Decorate pref value as CoreOptionsHandler::CreateValueForPref() does and
 // store it under |key| in |settings|. Takes ownership of |value|.
-void SetValueDictionary(base::DictionaryValue* settings,
-                        const char* key,
+void SetValueDictionary(const char* key,
                         base::Value* value,
-                        const NetworkPropertyUIData& ui_data) {
+                        const NetworkPropertyUIData& ui_data,
+                        base::DictionaryValue* settings) {
   base::DictionaryValue* dict = new base::DictionaryValue();
   // DictionaryValue::Set() takes ownership of |value|.
   dict->Set(kTagValue, value);
   settings->Set(key, dict);
-  DecorateValueDictionary(ui_data, *value, dict);
+
+  const base::Value* recommended_value = ui_data.default_value();
+  if (ui_data.IsManaged())
+    dict->SetString(kTagControlledBy, kTagPolicy);
+  else if (recommended_value && recommended_value->Equals(value))
+    dict->SetString(kTagControlledBy, kTagRecommended);
+
+  if (recommended_value)
+    dict->Set(kTagRecommendedValue, recommended_value->DeepCopy());
 }
 
-// Creates a decorated dictionary like SetValueDictionary does, but extended for
-// the Autoconnect property, which respects additionally global network policy.
-void SetAutoconnectValueDictionary(bool network_is_private,
-                                   ::onc::ONCSource onc_source,
-                                   bool current_autoconnect,
-                                   const NetworkPropertyUIData& ui_data,
-                                   base::DictionaryValue* settings) {
+const char* GetOncPolicyString(::onc::ONCSource onc_source) {
+  if (onc_source == ::onc::ONC_SOURCE_DEVICE_POLICY)
+    return ::onc::kAugmentationDevicePolicy;
+  return ::onc::kAugmentationUserPolicy;
+}
+
+const char* GetOncEditableString(::onc::ONCSource onc_source) {
+  if (onc_source == ::onc::ONC_SOURCE_DEVICE_POLICY)
+    return ::onc::kAugmentationDeviceEditable;
+  return ::onc::kAugmentationUserEditable;
+}
+
+const char* GetOncSettingString(::onc::ONCSource onc_source) {
+  if (onc_source == ::onc::ONC_SOURCE_DEVICE_POLICY)
+    return ::onc::kAugmentationSharedSetting;
+  return ::onc::kAugmentationUserSetting;
+}
+
+// Creates a GetManagedProperties style dictionary and adds it to |settings|.
+// |default_value| represents either the recommended value if |recommended|
+// is true, or the enforced value if |recommended| is false. |settings_dict_key|
+// is expected to be an ONC key with no '.' in it.
+// Note(stevenjb): This is bridge code until we use GetManagedProperties to
+// retrieve Shill properties.
+void SetManagedValueDictionaryEx(const char* settings_dict_key,
+                                 const base::Value& value,
+                                 ::onc::ONCSource onc_source,
+                                 bool recommended,
+                                 const base::Value* default_value,
+                                 base::DictionaryValue* settings_dict) {
   base::DictionaryValue* dict = new base::DictionaryValue();
-  base::Value* value = new base::FundamentalValue(current_autoconnect);
-  // DictionaryValue::Set() takes ownership of |value|.
-  dict->Set(kTagValue, value);
-  settings->Set(kTagAutoConnect, dict);
-  if (onc_source != ::onc::ONC_SOURCE_USER_POLICY &&
-      onc_source != ::onc::ONC_SOURCE_DEVICE_POLICY) {
-    // Autoconnect can be controlled by the GlobalNetworkConfiguration of the
-    // ONC policy.
-    bool only_policy_autoconnect =
-        onc::PolicyAllowsOnlyPolicyNetworksToAutoconnect(network_is_private);
-    if (only_policy_autoconnect) {
-      dict->SetString(kTagControlledBy, kTagPolicy);
-      return;
+  settings_dict->SetWithoutPathExpansion(settings_dict_key, dict);
+
+  dict->Set(::onc::kAugmentationActiveSetting, value.DeepCopy());
+
+  if (onc_source == ::onc::ONC_SOURCE_NONE)
+    return;
+
+  if (recommended) {
+    // If an ONC property is 'Recommended' it can be edited by the user.
+    std::string editable = GetOncEditableString(onc_source);
+    dict->Set(editable, new base::FundamentalValue(true));
+  }
+  if (default_value) {
+    std::string policy_source = GetOncPolicyString(onc_source);
+    dict->Set(policy_source, default_value->DeepCopy());
+    if (recommended && !value.Equals(default_value)) {
+      std::string setting_source = GetOncSettingString(onc_source);
+      dict->Set(setting_source, value.DeepCopy());
+      dict->SetString(::onc::kAugmentationEffectiveSetting, setting_source);
+    } else {
+      dict->SetString(::onc::kAugmentationEffectiveSetting, policy_source);
     }
   }
-  DecorateValueDictionary(ui_data, *value, dict);
 }
 
-std::string CopyStringFromDictionary(const base::DictionaryValue& source,
-                                     const std::string& src_key,
-                                     const std::string& dest_key,
-                                     base::DictionaryValue* dest) {
-  std::string string_value;
-  if (source.GetStringWithoutPathExpansion(src_key, &string_value))
-    dest->SetStringWithoutPathExpansion(dest_key, string_value);
-  return string_value;
+// Wrapper for SetManagedValueDictionaryEx that does the policy lookup.
+// Note: We have to pass |onc_key| separately from |settings_dict_key| since
+// we might be populating a sub-dictionary in which case |onc_key| will be the
+// complete path (e.g. 'VPN.Host') and |settings_dict_key| is the dictionary key
+// (e.g. 'Host').
+void SetManagedValueDictionary(const std::string& guid,
+                               const char* settings_dict_key,
+                               const base::Value& value,
+                               const std::string& onc_key,
+                               base::DictionaryValue* settings_dict) {
+  ::onc::ONCSource onc_source = ::onc::ONC_SOURCE_NONE;
+  const base::DictionaryValue* onc =
+      onc::FindPolicyForActiveUser(guid, &onc_source);
+  DCHECK_EQ(onc == NULL, onc_source == ::onc::ONC_SOURCE_NONE);
+  const base::Value* default_value = NULL;
+  bool recommended = false;
+  if (onc) {
+    onc->Get(onc_key, &default_value);
+    recommended = onc::IsRecommendedValue(onc, onc_key);
+  }
+  SetManagedValueDictionaryEx(settings_dict_key,
+                              value,
+                              onc_source,
+                              recommended,
+                              default_value,
+                              settings_dict);
+}
+
+// Creates a GetManagedProperties style dictionary with an Active value and
+// a Translated value, and adds it to |settings|.
+// Note(stevenjb): This is bridge code until we use GetManagedProperties to
+// retrieve Shill properties and include Translated values.
+void SetTranslatedDictionary(const char* settings_dict_key,
+                             const std::string& value,
+                             const std::string& translated_value,
+                             base::DictionaryValue* settings_dict) {
+  base::DictionaryValue* dict = new base::DictionaryValue();
+  settings_dict->Set(settings_dict_key, dict);
+  dict->SetString(::onc::kAugmentationActiveSetting, value);
+  dict->SetString(kTranslatedKey, translated_value);
 }
 
 // Fills |dictionary| with the configuration details of |vpn|. |onc| is required
@@ -365,45 +410,55 @@ void PopulateVPNDetails(const NetworkState* vpn,
                         base::DictionaryValue* dictionary) {
   // Name and Remembered are set in PopulateConnectionDetails().
   // Provider properties are stored in the "Provider" dictionary.
-  const base::DictionaryValue* provider_properties = NULL;
+  const base::DictionaryValue* shill_provider_properties = NULL;
   if (!shill_properties.GetDictionaryWithoutPathExpansion(
-          shill::kProviderProperty, &provider_properties)) {
+          shill::kProviderProperty, &shill_provider_properties)) {
     LOG(ERROR) << "No provider properties for VPN: " << vpn->path();
     return;
   }
-  std::string provider_type;
-  provider_properties->GetStringWithoutPathExpansion(
-      shill::kTypeProperty, &provider_type);
-  dictionary->SetString(kTagProviderType,
-                        internet_options_strings::ProviderTypeString(
-                            provider_type,
-                            *provider_properties));
+  base::DictionaryValue* vpn_dictionary = new base::DictionaryValue;
+  dictionary->Set(::onc::network_config::kVPN, vpn_dictionary);
 
+  std::string shill_provider_type;
+  if (!shill_provider_properties->GetStringWithoutPathExpansion(
+          shill::kTypeProperty, &shill_provider_type)) {
+    LOG(ERROR) << "Shill VPN has no Provider.Type: " << vpn->path();
+    return;
+  }
+  std::string onc_provider_type;
+  onc::TranslateStringToONC(
+      onc::kVPNTypeTable, shill_provider_type, &onc_provider_type);
+  SetTranslatedDictionary(
+      ::onc::vpn::kType,
+      onc_provider_type,
+      internet_options_strings::ProviderTypeString(shill_provider_type,
+                                                   *shill_provider_properties),
+      vpn_dictionary);
+
+  std::string provider_type_key;
   std::string username;
-  if (provider_type == shill::kProviderOpenVpn) {
-    provider_properties->GetStringWithoutPathExpansion(
+  if (shill_provider_type == shill::kProviderOpenVpn) {
+    provider_type_key = ::onc::vpn::kOpenVPN;
+    shill_provider_properties->GetStringWithoutPathExpansion(
         shill::kOpenVPNUserProperty, &username);
   } else {
-    provider_properties->GetStringWithoutPathExpansion(
+    provider_type_key = ::onc::vpn::kL2TP;
+    shill_provider_properties->GetStringWithoutPathExpansion(
         shill::kL2tpIpsecUserProperty, &username);
   }
-  dictionary->SetString(kTagUsername, username);
+  base::DictionaryValue* provider_type_dictionary = new base::DictionaryValue;
+  vpn_dictionary->Set(provider_type_key, provider_type_dictionary);
+  provider_type_dictionary->SetString(::onc::vpn::kUsername, username);
 
-  ::onc::ONCSource onc_source = ::onc::ONC_SOURCE_NONE;
-  const base::DictionaryValue* onc =
-      onc::FindPolicyForActiveUser(vpn->guid(), &onc_source);
-
-  NetworkPropertyUIData hostname_ui_data;
-  hostname_ui_data.ParseOncProperty(
-      onc_source,
-      onc,
-      ::onc::network_config::VpnProperty(::onc::vpn::kHost));
   std::string provider_host;
-  provider_properties->GetStringWithoutPathExpansion(
+  shill_provider_properties->GetStringWithoutPathExpansion(
       shill::kHostProperty, &provider_host);
-  SetValueDictionary(dictionary, kTagServerHostname,
-                     new base::StringValue(provider_host),
-                     hostname_ui_data);
+  SetManagedValueDictionary(
+      vpn->guid(),
+      ::onc::vpn::kHost,
+      base::StringValue(provider_host),
+      ::onc::network_config::VpnProperty(::onc::vpn::kHost),
+      vpn_dictionary);
 }
 
 // Given a list of supported carrier's by the device, return the index of
@@ -430,31 +485,7 @@ int FindCurrentCarrierIndex(const base::ListValue* carriers,
   return -1;
 }
 
-void PopulateWimaxDetails(const NetworkState* wimax,
-                          const base::DictionaryValue& shill_properties,
-                          base::DictionaryValue* dictionary) {
-  CopyStringFromDictionary(
-      shill_properties, shill::kEapIdentityProperty, kTagIdentity, dictionary);
-}
-
-void CreateDictionaryFromCellularApn(const base::DictionaryValue* apn,
-                                     base::DictionaryValue* dictionary) {
-  CopyStringFromDictionary(*apn, shill::kApnProperty, kTagApn, dictionary);
-  CopyStringFromDictionary(
-      *apn, shill::kApnNetworkIdProperty, kTagNetworkId, dictionary);
-  CopyStringFromDictionary(
-      *apn, shill::kApnUsernameProperty, kTagUsername, dictionary);
-  CopyStringFromDictionary(
-      *apn, shill::kApnPasswordProperty, kTagPassword, dictionary);
-  CopyStringFromDictionary(*apn, shill::kApnNameProperty, kTagName, dictionary);
-  CopyStringFromDictionary(
-      *apn, shill::kApnLocalizedNameProperty, kTagLocalizedName, dictionary);
-  CopyStringFromDictionary(
-      *apn, shill::kApnLanguageProperty, kTagLanguage, dictionary);
-}
-
 void PopulateCellularDetails(const NetworkState* cellular,
-                             const base::DictionaryValue& shill_properties,
                              base::DictionaryValue* dictionary) {
   dictionary->SetBoolean(kTagCarrierSelectFlag,
                          CommandLine::ForCurrentProcess()->HasSwitch(
@@ -470,29 +501,6 @@ void PopulateCellularDetails(const NetworkState* cellular,
                         internet_options_strings::RestrictedStateString(
                             cellular->connection_state()));
 
-  const base::DictionaryValue* olp = NULL;
-  if (shill_properties.GetDictionaryWithoutPathExpansion(
-          shill::kPaymentPortalProperty, &olp)) {
-    std::string url;
-    olp->GetStringWithoutPathExpansion(shill::kPaymentPortalURL, &url);
-    dictionary->SetString(kTagSupportUrl, url);
-  }
-
-  base::DictionaryValue* apn = new base::DictionaryValue;
-  const base::DictionaryValue* source_apn = NULL;
-  if (shill_properties.GetDictionaryWithoutPathExpansion(
-          shill::kCellularApnProperty, &source_apn)) {
-    CreateDictionaryFromCellularApn(source_apn, apn);
-  }
-  dictionary->Set(kTagApn, apn);
-
-  base::DictionaryValue* last_good_apn = new base::DictionaryValue;
-  if (shill_properties.GetDictionaryWithoutPathExpansion(
-          shill::kCellularLastGoodApnProperty, &source_apn)) {
-    CreateDictionaryFromCellularApn(source_apn, last_good_apn);
-  }
-  dictionary->Set(kTagLastGoodApn, last_good_apn);
-
   // These default to empty and are only set if device != NULL.
   std::string carrier_id;
   std::string mdn;
@@ -503,15 +511,6 @@ void PopulateCellularDetails(const NetworkState* cellular,
           cellular->device_path());
   if (device) {
     const base::DictionaryValue& device_properties = device->properties();
-    ::onc::ONCSource onc_source;
-    NetworkHandler::Get()->managed_network_configuration_handler()->
-        FindPolicyByGUID(LoginState::Get()->primary_user_hash(),
-                         cellular->guid(), &onc_source);
-    const NetworkPropertyUIData cellular_property_ui_data(onc_source);
-    SetValueDictionary(dictionary,
-                       kTagSimCardLockEnabled,
-                       new base::FundamentalValue(device->sim_lock_enabled()),
-                       cellular_property_ui_data);
 
     carrier_id = device->home_provider_id();
     device_properties.GetStringWithoutPathExpansion(shill::kMdnProperty, &mdn);
@@ -523,25 +522,6 @@ void PopulateCellularDetails(const NetworkState* cellular,
         dictionary->SetString(kTagCarrierUrl, carrier->top_up_url());
     }
 
-    base::ListValue* apn_list_value = new base::ListValue();
-    const base::ListValue* apn_list;
-    if (device_properties.GetListWithoutPathExpansion(
-            shill::kCellularApnListProperty, &apn_list)) {
-      for (base::ListValue::const_iterator iter = apn_list->begin();
-           iter != apn_list->end();
-           ++iter) {
-        const base::DictionaryValue* dict;
-        if ((*iter)->GetAsDictionary(&dict)) {
-          base::DictionaryValue* apn = new base::DictionaryValue;
-          CreateDictionaryFromCellularApn(dict, apn);
-          apn_list_value->Append(apn);
-        }
-      }
-    }
-    SetValueDictionary(dictionary,
-                       kTagProviderApnList,
-                       apn_list_value,
-                       cellular_property_ui_data);
     const base::ListValue* supported_carriers;
     if (device_properties.GetListWithoutPathExpansion(
             shill::kSupportedCarriersProperty, &supported_carriers)) {
@@ -557,12 +537,9 @@ void PopulateCellularDetails(const NetworkState* cellular,
   }
 
   // Don't show any account management related buttons if the activation
-  // state is unknown or no payment portal URL is available.
-  std::string support_url;
-  if (cellular->activation_state() == shill::kActivationStateUnknown ||
-      !dictionary->GetString(kTagSupportUrl, &support_url) ||
-      support_url.empty()) {
-    VLOG(2) << "No support URL is available. Don't display buttons.";
+  // state is unknown.
+  if (cellular->activation_state() == shill::kActivationStateUnknown) {
+    VLOG(2) << "Activation state unknown. Don't display buttons.";
     return;
   }
 
@@ -570,15 +547,11 @@ void PopulateCellularDetails(const NetworkState* cellular,
       cellular->activation_state() != shill::kActivationStateActivated) {
     dictionary->SetBoolean(kTagShowActivateButton, true);
   } else {
-    bool may_show_portal_button = false;
+    // TODO(stevenjb): Determine if we actually need this check. The payment url
+    // property is commented as 'Deprecated' in service_constants.h and appears
+    // to be unset in Shill, but we still reference it in mobile_setup.cc.
+    bool may_show_portal_button = !cellular->payment_url().empty();
 
-    // If an online payment URL was provided by shill, then this means that the
-    // "View Account" button should be shown for the current carrier.
-    if (olp) {
-      std::string url;
-      olp->GetStringWithoutPathExpansion(shill::kPaymentPortalURL, &url);
-      may_show_portal_button = !url.empty();
-    }
     // If no online payment URL was provided by shill, fall back to
     // MobileConfig to determine if the "View Account" should be shown.
     if (!may_show_portal_button && MobileConfig::GetInstance()->IsReady()) {
@@ -621,8 +594,15 @@ scoped_ptr<base::DictionaryValue> PopulateConnectionDetails(
       NetworkHandler::Get()->network_state_handler()->GetDeviceState(
           network->device_path());
   if (device) {
-    shill_properties_with_device->Set(shill::kDeviceProperty,
-                                      device->properties().DeepCopy());
+    shill_properties_with_device->SetWithoutPathExpansion(
+        shill::kDeviceProperty, device->properties().DeepCopy());
+    // Get the hardware MAC address from the DeviceState.
+    // (Note: this is done in ManagedNetworkConfigurationHandler but not
+    //  in NetworkConfigurationHandler).
+    if (!device->mac_address().empty()) {
+      shill_properties_with_device->SetStringWithoutPathExpansion(
+          shill::kAddressProperty, device->mac_address());
+    }
   }
   scoped_ptr<base::DictionaryValue> dictionary =
       onc::TranslateShillServiceToONCPart(
@@ -630,7 +610,7 @@ scoped_ptr<base::DictionaryValue> PopulateConnectionDetails(
 
   dictionary->SetString(kNetworkInfoKeyServicePath, network->path());
   dictionary->SetString(
-      kTagErrorState,
+      kTagErrorMessage,
       ash::network_connect::ErrorString(network->error(), network->path()));
 
   dictionary->SetBoolean(kTagRemembered, !network->profile_path().empty());
@@ -644,10 +624,8 @@ scoped_ptr<base::DictionaryValue> PopulateConnectionDetails(
           NetworkTypePattern::Primitive(type));
   dictionary->SetBoolean(kTagDeviceConnected, connected_network != NULL);
 
-  if (type == shill::kTypeWimax)
-    PopulateWimaxDetails(network, shill_properties, dictionary.get());
-  else if (type == shill::kTypeCellular)
-    PopulateCellularDetails(network, shill_properties, dictionary.get());
+  if (type == shill::kTypeCellular)
+    PopulateCellularDetails(network, dictionary.get());
   else if (type == shill::kTypeVPN)
     PopulateVPNDetails(network, shill_properties, dictionary.get());
 
@@ -1272,10 +1250,10 @@ void InternetOptionsHandler::PopulateDictionaryDetailsCallback(
   ipconfig_dhcp->SetString(kIpConfigNameServers, ipconfig_name_servers);
   ipconfig_dhcp->SetString(kIpConfigWebProxyAutoDiscoveryUrl,
                            network->web_proxy_auto_discovery_url().spec());
-  SetValueDictionary(dictionary.get(),
-                     kDictionaryIpConfig,
+  SetValueDictionary(kDictionaryIpConfig,
                      ipconfig_dhcp.release(),
-                     property_ui_data);
+                     property_ui_data,
+                     dictionary.get());
 
   std::string name_server_type = kNameServerTypeAutomatic;
   int automatic_ip_config = 0;
@@ -1300,28 +1278,23 @@ void InternetOptionsHandler::PopulateDictionaryDetailsCallback(
   if (ipconfig_name_servers == kGoogleNameServers) {
     name_server_type = kNameServerTypeGoogle;
   }
-  SetValueDictionary(dictionary.get(),
-                     kDictionaryStaticIp,
+  SetValueDictionary(kDictionaryStaticIp,
                      static_ip_dict.release(),
-                     property_ui_data);
+                     property_ui_data,
+                     dictionary.get());
 
   dictionary->SetString(kTagNameServerType, name_server_type);
   dictionary->SetString(kTagNameServersGoogle, kGoogleNameServers);
 
-  // Enable static ip config for Ethernet or WiFi.
-  bool staticIPConfig = network->Matches(NetworkTypePattern::Ethernet()) ||
-                        network->Matches(NetworkTypePattern::WiFi());
-  dictionary->SetBoolean(kTagShowStaticIPConfig, staticIPConfig);
-
   int priority = 0;
   shill_properties.GetIntegerWithoutPathExpansion(
       shill::kPriorityProperty, &priority);
-  bool preferred = priority > 0;
-  SetValueDictionary(dictionary.get(), kTagPreferred,
-                     new base::FundamentalValue(preferred),
-                     property_ui_data);
+  SetManagedValueDictionary(network->guid(),
+                            ::onc::network_config::kPriority,
+                            base::FundamentalValue(priority),
+                            ::onc::network_config::kPriority,
+                            dictionary.get());
 
-  NetworkPropertyUIData auto_connect_ui_data(onc_source);
   std::string onc_path_to_auto_connect;
   if (network->Matches(NetworkTypePattern::WiFi())) {
     content::RecordAction(
@@ -1349,18 +1322,47 @@ void InternetOptionsHandler::PopulateDictionaryDetailsCallback(
           "Options_NetworkShowDetailsCellularConnected"));
     }
   }
+
   if (!onc_path_to_auto_connect.empty()) {
-    auto_connect_ui_data.ParseOncProperty(
-        onc_source, onc, onc_path_to_auto_connect);
-  }
-  bool auto_connect = false;
-  shill_properties.GetBooleanWithoutPathExpansion(
-      shill::kAutoConnectProperty, &auto_connect);
-  SetAutoconnectValueDictionary(network->IsPrivate(),
-                                onc_source,
-                                auto_connect,
-                                auto_connect_ui_data,
+    bool auto_connect = false;
+    shill_properties.GetBooleanWithoutPathExpansion(
+        shill::kAutoConnectProperty, &auto_connect);
+
+    base::FundamentalValue auto_connect_value(auto_connect);
+    ::onc::ONCSource auto_connect_onc_source = onc_source;
+
+    DCHECK_EQ(onc == NULL, onc_source == ::onc::ONC_SOURCE_NONE);
+    bool auto_connect_recommended =
+        auto_connect_onc_source != ::onc::ONC_SOURCE_NONE &&
+        onc::IsRecommendedValue(onc, onc_path_to_auto_connect);
+    // If a policy exists, |auto_connect_default_value| will contain either a
+    // recommended value (if |auto_connect_recommended| is true) or an enforced
+    // value (if |auto_connect_recommended| is false).
+    const base::Value* auto_connect_default_value = NULL;
+    if (onc)
+      onc->Get(onc_path_to_auto_connect, &auto_connect_default_value);
+
+    // Autoconnect can be controlled by the GlobalNetworkConfiguration of the
+    // ONC policy.
+    if (auto_connect_onc_source == ::onc::ONC_SOURCE_NONE &&
+        onc::PolicyAllowsOnlyPolicyNetworksToAutoconnect(
+            network->IsPrivate())) {
+      auto_connect_recommended = false;
+      auto_connect_onc_source = network->IsPrivate()
+                                    ? ::onc::ONC_SOURCE_USER_POLICY
+                                    : ::onc::ONC_SOURCE_DEVICE_POLICY;
+      if (auto_connect) {
+        LOG(WARNING) << "Policy prevents autoconnect, but value is True.";
+        auto_connect_value = base::FundamentalValue(false);
+      }
+    }
+    SetManagedValueDictionaryEx(shill::kAutoConnectProperty,
+                                auto_connect_value,
+                                auto_connect_onc_source,
+                                auto_connect_recommended,
+                                auto_connect_default_value,
                                 dictionary.get());
+  }
 
   // Show details dialog
   web_ui()->CallJavascriptFunction(kShowDetailedInfoFunction, *dictionary);

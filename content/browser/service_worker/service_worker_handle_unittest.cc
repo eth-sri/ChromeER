@@ -48,11 +48,13 @@ class ServiceWorkerHandleTest : public testing::Test {
 
     registration_ = new ServiceWorkerRegistration(
         GURL("http://www.example.com/"),
-        GURL("http://www.example.com/service_worker.js"),
         1L,
         helper_->context()->AsWeakPtr());
     version_ = new ServiceWorkerVersion(
-        registration_, 1L, helper_->context()->AsWeakPtr());
+        registration_.get(),
+        GURL("http://www.example.com/service_worker.js"),
+        1L,
+        helper_->context()->AsWeakPtr());
 
     // Simulate adding one process to the worker.
     int embedded_worker_id = version_->embedded_worker()->embedded_worker_id();
@@ -82,7 +84,7 @@ TEST_F(ServiceWorkerHandleTest, OnVersionStateChanged) {
                                   helper_.get(),
                                   1 /* thread_id */,
                                   33 /* provider_id */,
-                                  version_);
+                                  version_.get());
 
   // Start the worker, and then...
   ServiceWorkerStatusCode status = SERVICE_WORKER_ERROR_FAILED;

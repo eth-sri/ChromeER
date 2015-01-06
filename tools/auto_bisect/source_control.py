@@ -5,6 +5,7 @@
 """This module contains the SourceControl class and related functions."""
 
 import os
+import re
 
 from . import bisect_utils
 
@@ -27,6 +28,9 @@ def DetermineAndCreateSourceControl(opts):
   return None
 
 
+# TODO(qyearsley): Almost all of the methods below could be top-level functions
+# (or class methods). Refactoring may make this simpler.
+# pylint: disable=R0201
 class SourceControl(object):
   """SourceControl is an abstraction over the source control system."""
 
@@ -36,10 +40,10 @@ class SourceControl(object):
   def SyncToRevisionWithGClient(self, revision):
     """Uses gclient to sync to the specified revision.
 
-    ie. gclient sync --revision <revision>
+    This is like running gclient sync --revision <revision>.
 
     Args:
-      revision: The git SHA1 or svn CL (depending on workflow).
+      revision: A git SHA1 hash or SVN revision number (depending on workflow).
 
     Returns:
       The return code of the call.
@@ -48,11 +52,11 @@ class SourceControl(object):
         '--delete_unversioned_trees', '--nohooks', '--revision', revision])
 
   def SyncToRevisionWithRepo(self, timestamp):
-    """Uses repo to sync all the underlying git depots to the specified
-    time.
+    """Uses the repo command to sync all the underlying git depots to the
+    specified time.
 
     Args:
-      timestamp: The unix timestamp to sync to.
+      timestamp: The Unix timestamp to sync to.
 
     Returns:
       The return code of the call.
@@ -114,7 +118,7 @@ class GitSourceControl(SourceControl):
 
   def ResolveToRevision(self, revision_to_check, depot, depot_deps_dict,
                         search, cwd=None):
-    """If an SVN revision is supplied, try to resolve it to a git SHA1.
+    """Tries to resolve an SVN revision or commit position to a git SHA1.
 
     Args:
       revision_to_check: The user supplied revision string that may need to be
@@ -151,8 +155,9 @@ class GitSourceControl(SourceControl):
 
       for i in search_range:
         svn_pattern = 'git-svn-id: %s@%d' % (depot_svn, i)
+        commit_position_pattern = 'Cr-Commit-Position: .*@{#%d}' % i
         cmd = ['log', '--format=%H', '-1', '--grep', svn_pattern,
-               'origin/master']
+               '--grep', commit_position_pattern, 'origin/master']
 
         (log_output, return_code) = bisect_utils.RunGit(cmd, cwd=cwd)
 
@@ -201,23 +206,40 @@ class GitSourceControl(SourceControl):
 
     return log_output == "master"
 
-  def SVNFindRev(self, revision, cwd=None):
-    """Maps directly to the 'git svn find-rev' command.
+  def SVNFindRev(self, git_revision, cwd=None):
+    """Finds a SVN revision OR git number for the given git hash.
+
+    If "git svn find_rev <hash>" fails, then it runs
+    "git log --format=%b -1 origin/master <hash> and greps for
+    Cr-Commit-Position.
 
     Args:
-      revision: The git SHA1 to use.
+      git_revision: The git SHA1 to use.
 
     Returns:
-      An integer changelist #, otherwise None.
+      Git number (aka git commit position) OR an SVN revision as integer,
+      otherwise None.
     """
 
-    cmd = ['svn', 'find-rev', revision]
+    cmd = ['svn', 'find-rev', git_revision]
 
     output = bisect_utils.CheckRunGit(cmd, cwd)
     svn_revision = output.strip()
 
     if bisect_utils.IsStringInt(svn_revision):
       return int(svn_revision)
+
+    # Retrieve commit position number from git log body for the given revision.
+    # TODO(prasadv): Use an appropriate command to find commit position instead
+    # of parsing the log. Resolve this once 407316 is fixed.
+    commit_position_pattern = 'Cr-Commit-Position: .*@\{#(?P<commit>[0-9]+)\}'
+    cmd = ['log', '--format=%b', '-1', git_revision]
+    output = bisect_utils.CheckRunGit(cmd, cwd=cwd)
+    if output:
+      version_re = re.compile(commit_position_pattern)
+      commit_reg = version_re.search(output)
+      if commit_reg and bisect_utils.IsStringInt(commit_reg.group('commit')):
+        return int(commit_reg.group('commit'))
 
     return None
 
@@ -227,6 +249,7 @@ class GitSourceControl(SourceControl):
 
     Args:
       revision: Revision you want to gather information on.
+
     Returns:
       A dict in the following format:
       {
@@ -259,7 +282,7 @@ class GitSourceControl(SourceControl):
         ['checkout', revision, file_name], cwd=cwd)[1]
 
   def RevertFileToHead(self, file_name):
-    """Unstages a file and returns it to HEAD.
+    """Un-stages a file and resets the file's state to HEAD.
 
     Returns:
       True if successful.
@@ -281,7 +304,7 @@ class GitSourceControl(SourceControl):
         Returns a list of commits that touched this file.
     """
     cmd = ['log', '--format=%H', '%s~1..%s' % (revision_start, revision_end),
-           filename]
+           '--', filename]
     output = bisect_utils.CheckRunGit(cmd)
 
     return [o for o in output.split('\n') if o]

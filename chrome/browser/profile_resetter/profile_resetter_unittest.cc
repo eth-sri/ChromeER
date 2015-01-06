@@ -38,7 +38,7 @@
 #include "url/gurl.h"
 
 #if defined(OS_WIN)
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/path_service.h"
 #include "base/process/process_handle.h"
 #include "base/rand_util.h"
@@ -864,7 +864,7 @@ TEST_F(ProfileResetterTest, CheckSnapshots) {
       Manifest::INVALID_LOCATION,
       extensions::Manifest::TYPE_EXTENSION,
       false);
-  ASSERT_TRUE(ext);
+  ASSERT_TRUE(ext.get());
   service_->AddExtension(ext.get());
 
   std::string master_prefs(kDistributionConfig);
@@ -902,6 +902,7 @@ TEST_F(ProfileResetterTest, CheckSnapshots) {
             empty_snap.startup_type());
   EXPECT_TRUE(empty_snap.homepage().empty());
   EXPECT_TRUE(empty_snap.homepage_is_ntp());
+  EXPECT_FALSE(empty_snap.show_home_button());
   EXPECT_NE(std::string::npos, empty_snap.dse_url().find("{google:baseURL}"));
   EXPECT_EQ(ResettableSettingsSnapshot::ExtensionList(),
             empty_snap.enabled_extensions());
@@ -926,6 +927,7 @@ TEST_F(ProfileResetterTest, CheckSnapshots) {
   EXPECT_EQ(SessionStartupPref::URLS, nonorganic_snap.startup_type());
   EXPECT_EQ("http://www.foo.com", nonorganic_snap.homepage());
   EXPECT_FALSE(nonorganic_snap.homepage_is_ntp());
+  EXPECT_TRUE(nonorganic_snap.show_home_button());
   EXPECT_EQ("http://www.foo.com/s?q={searchTerms}", nonorganic_snap.dse_url());
   EXPECT_EQ(ResettableSettingsSnapshot::ExtensionList(
       1, std::make_pair(ext_id, "example")),
@@ -951,7 +953,7 @@ TEST_F(ProfileResetterTest, FeedbackSerializationTest) {
       Manifest::INVALID_LOCATION,
       extensions::Manifest::TYPE_EXTENSION,
       false);
-  ASSERT_TRUE(ext);
+  ASSERT_TRUE(ext.get());
   service_->AddExtension(ext.get());
 
   ShortcutHandler shortcut;
@@ -982,6 +984,7 @@ TEST_F(ProfileResetterTest, FeedbackSerializationTest) {
     int startup_type = 0;
     std::string homepage;
     bool homepage_is_ntp = true;
+    bool show_home_button = true;
     std::string default_search_engine;
     base::ListValue* extensions = NULL;
     base::ListValue* shortcuts = NULL;
@@ -994,6 +997,8 @@ TEST_F(ProfileResetterTest, FeedbackSerializationTest) {
               dict->GetString("homepage", &homepage));
     EXPECT_EQ(!!(field_mask & ResettableSettingsSnapshot::HOMEPAGE),
               dict->GetBoolean("homepage_is_ntp", &homepage_is_ntp));
+    EXPECT_EQ(!!(field_mask & ResettableSettingsSnapshot::HOMEPAGE),
+              dict->GetBoolean("show_home_button", &show_home_button));
     EXPECT_EQ(!!(field_mask & ResettableSettingsSnapshot::DSE_URL),
               dict->GetString("default_search_engine", &default_search_engine));
     EXPECT_EQ(!!(field_mask & ResettableSettingsSnapshot::EXTENSIONS),
@@ -1027,7 +1032,7 @@ TEST_F(ProfileResetterTest, GetReadableFeedback) {
       Manifest::INVALID_LOCATION,
       extensions::Manifest::TYPE_EXTENSION,
       false);
-  ASSERT_TRUE(ext);
+  ASSERT_TRUE(ext.get());
   service_->AddExtension(ext.get());
 
   PrefService* prefs = profile()->GetPrefs();

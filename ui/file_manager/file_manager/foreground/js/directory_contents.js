@@ -415,14 +415,8 @@ function FileListModel(metadataCache) {
    */
   this.metadataCache_ = metadataCache;
 
-  /**
-   * Collator for sorting.
-   * @type {Intl.Collator}
-   */
-  this.collator_ = new Intl.Collator([], {numeric: true, sensitivity: 'base'});
-
   // Initialize compare functions.
-  this.setCompareFunction('name', this.compareName_.bind(this));
+  this.setCompareFunction('name', util.compareName);
   this.setCompareFunction('modificationTime', this.compareMtime_.bind(this));
   this.setCompareFunction('size', this.compareSize_.bind(this));
   this.setCompareFunction('type', this.compareType_.bind(this));
@@ -430,18 +424,6 @@ function FileListModel(metadataCache) {
 
 FileListModel.prototype = {
   __proto__: cr.ui.ArrayDataModel.prototype
-};
-
-/**
- * Compare by mtime first, then by name.
- * @param {Entry} a First entry.
- * @param {Entry} b Second entry.
- * @return {number} Compare result.
- * @private
- */
-FileListModel.prototype.compareName_ = function(a, b) {
-  var result = this.collator_.compare(a.name, b.name);
-  return result !== 0 ? result : a.toURL().localeCompare(b.toURL());
 };
 
 /**
@@ -464,7 +446,7 @@ FileListModel.prototype.compareMtime_ = function(a, b) {
   if (aTime < bTime)
     return -1;
 
-  return this.compareName_(a, b);
+  return util.compareName(a, b);
 };
 
 /**
@@ -481,7 +463,7 @@ FileListModel.prototype.compareSize_ = function(a, b) {
   var bCachedFilesystem = this.metadataCache_.getCached(b, 'filesystem');
   var bSize = bCachedFilesystem ? bCachedFilesystem.size : 0;
 
-  return aSize !== bSize ? aSize - bSize : this.compareName_(a, b);
+  return aSize !== bSize ? aSize - bSize : util.compareName(a, b);
 };
 
 /**
@@ -499,8 +481,8 @@ FileListModel.prototype.compareType_ = function(a, b) {
   var aType = FileType.typeToString(FileType.getType(a));
   var bType = FileType.typeToString(FileType.getType(b));
 
-  var result = this.collator_.compare(aType, bType);
-  return result !== 0 ? result : this.compareName_(a, b);
+  var result = util.collator.compare(aType, bType);
+  return result !== 0 ? result : util.compareName(a, b);
 };
 
 /**
@@ -584,6 +566,9 @@ DirectoryContents.prototype.clone = function() {
  */
 DirectoryContents.prototype.dispose = function() {
   this.context_.metadataCache.resizeBy(-this.lastSpaceInMetadataCache_);
+  // Though the lastSpaceInMetadataCache_ is not supposed to be referred after
+  // dispose(), keep it synced with requested cache size just in case.
+  this.lastSpaceInMetadataCache_ = 0;
 };
 
 /**
@@ -650,7 +635,7 @@ DirectoryContents.prototype.getDirectoryEntry = function() {
  * Start directory scan/search operation. Either 'scan-completed' or
  * 'scan-failed' event will be fired upon completion.
  *
- * @param {boolean} refresh True to refrech metadata, or false to use cached
+ * @param {boolean} refresh True to refresh metadata, or false to use cached
  *     one.
  */
 DirectoryContents.prototype.scan = function(refresh) {
@@ -678,6 +663,53 @@ DirectoryContents.prototype.scan = function(refresh) {
   this.scanner_.scan(this.onNewEntries_.bind(this, refresh),
                      completionCallback.bind(this),
                      errorCallback.bind(this));
+};
+
+/**
+ * Adds/removes/updates items of file list.
+ * @param {Array.<Entry>} updatedEntries Entries of updated/added files.
+ * @param {Array.<string>} removedUrls URLs of removed files.
+ */
+DirectoryContents.prototype.update = function(updatedEntries, removedUrls) {
+  var removedMap = {};
+  for (var i = 0; i < removedUrls.length; i++) {
+    removedMap[removedUrls[i]] = true;
+  }
+
+  var updatedMap = {};
+  for (var i = 0; i < updatedEntries.length; i++) {
+    updatedMap[updatedEntries[i].toURL()] = updatedEntries[i];
+  }
+
+  var updatedList = [];
+  for (var i = 0; i < this.fileList_.length; i++) {
+    var url = this.fileList_.item(i).toURL();
+
+    if (url in removedMap) {
+      this.fileList_.splice(i, 1);
+      i--;
+      continue;
+    }
+
+    if (url in updatedMap) {
+      updatedList.push(updatedMap[url]);
+      delete updatedMap[url];
+    }
+  }
+
+  var addedList = [];
+  for (var url in updatedMap) {
+    addedList.push(updatedMap[url]);
+  }
+
+  if (removedUrls.length > 0)
+    this.fileList_.metadataCache_.clearByUrl(removedUrls, '*');
+
+  this.prefetchMetadata(updatedList, true, function() {
+    this.onNewEntries_(true, addedList);
+    this.onScanFinished_();
+    this.onScanCompleted_();
+  }.bind(this));
 };
 
 /**

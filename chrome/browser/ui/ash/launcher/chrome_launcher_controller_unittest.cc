@@ -48,11 +48,10 @@
 
 #if defined(OS_CHROMEOS)
 #include "apps/app_window_contents.h"
-#include "apps/app_window_registry.h"
-#include "apps/ui/native_app_window.h"
 #include "ash/test/test_session_state_delegate.h"
 #include "ash/test/test_shell_delegate.h"
 #include "chrome/browser/chromeos/login/users/fake_user_manager.h"
+#include "chrome/browser/chromeos/login/users/scoped_user_manager_enabler.h"
 #include "chrome/browser/ui/apps/chrome_app_delegate.h"
 #include "chrome/browser/ui/ash/launcher/app_window_launcher_controller.h"
 #include "chrome/browser/ui/ash/launcher/browser_status_monitor.h"
@@ -65,6 +64,8 @@
 #include "chrome/test/base/testing_profile_manager.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/test/test_utils.h"
+#include "extensions/browser/app_window/app_window_registry.h"
+#include "extensions/browser/app_window/native_app_window.h"
 #include "ui/aura/window.h"
 #endif
 
@@ -79,9 +80,6 @@ const char* gmail_url = "https://mail.google.com/mail/u";
 const char* kGmailLaunchURL = "https://mail.google.com/mail/ca";
 
 #if defined(OS_CHROMEOS)
-// As defined in /chromeos/dbus/cryptohome_client.cc.
-const char kUserIdHashSuffix[] = "-hash";
-
 // An extension prefix.
 const char kCrxAppPrefix[] = "_crx_";
 #endif
@@ -744,10 +742,12 @@ class V1App : public TestBrowserWindow {
 class V2App {
  public:
   V2App(Profile* profile, const extensions::Extension* extension) {
-    window_ = new apps::AppWindow(profile, new ChromeAppDelegate(), extension);
-    apps::AppWindow::CreateParams params = apps::AppWindow::CreateParams();
-    window_->Init(
-        GURL(std::string()), new apps::AppWindowContentsImpl(window_), params);
+    window_ = new extensions::AppWindow(profile, new ChromeAppDelegate(),
+                                        extension);
+    extensions::AppWindow::CreateParams params =
+        extensions::AppWindow::CreateParams();
+    window_->Init(GURL(std::string()),
+                  new apps::AppWindowContentsImpl(window_), params);
   }
 
   virtual ~V2App() {
@@ -756,13 +756,13 @@ class V2App {
     destroyed_watcher.Wait();
   }
 
-  apps::AppWindow* window() { return window_; }
+  extensions::AppWindow* window() { return window_; }
 
  private:
   // The app window which represents the application. Note that the window
   // deletes itself asynchronously after window_->GetBaseWindow()->Close() gets
   // called.
-  apps::AppWindow* window_;
+  extensions::AppWindow* window_;
 
   DISALLOW_COPY_AND_ASSIGN(V2App);
 };
@@ -826,22 +826,14 @@ class MultiProfileMultiBrowserShelfLayoutChromeLauncherControllerTest
     session_delegate()->AddUser(email_string);
     GetFakeUserManager()->AddUser(email_string);
 
-    GetFakeUserManager()->UserLoggedIn(
-        email_string,
-        email_string + kUserIdHashSuffix,
-        false);
+    GetFakeUserManager()->LoginUser(email_string);
 
-    std::string profile_name =
-        chrome::kProfileDirPrefix + email_string + kUserIdHashSuffix;
-    TestingProfile* profile = profile_manager()->CreateTestingProfile(
-        profile_name,
-        scoped_ptr<PrefServiceSyncable>(),
-        ASCIIToUTF16(email_string), 0, std::string(),
-        TestingProfile::TestingFactories());
-    profile->set_profile_name(email_string);
+    TestingProfile* profile =
+        profile_manager()->CreateTestingProfile(email_string);
     EXPECT_TRUE(profile);
+
     // Remember the profile name so that we can destroy it upon destruction.
-    created_profiles_[profile] = profile_name;
+    created_profiles_[profile] = email_string;
     if (chrome::MultiUserWindowManager::GetInstance())
       chrome::MultiUserWindowManager::GetInstance()->AddUser(profile);
     if (launcher_controller_)
@@ -925,7 +917,7 @@ class MultiProfileMultiBrowserShelfLayoutChromeLauncherControllerTest
 
   chromeos::FakeUserManager* GetFakeUserManager() {
     return static_cast<chromeos::FakeUserManager*>(
-        chromeos::UserManager::Get());
+        user_manager::UserManager::Get());
   }
 
   scoped_ptr<TestingProfileManager> profile_manager_;
@@ -2323,7 +2315,7 @@ TEST_F(MultiProfileMultiBrowserShelfLayoutChromeLauncherControllerTest,
     v2_app_1.window()->Hide();
     EXPECT_EQ(2, model_->item_count());
 
-    v2_app_1.window()->Show(apps::AppWindow::SHOW_ACTIVE);
+    v2_app_1.window()->Show(extensions::AppWindow::SHOW_ACTIVE);
     EXPECT_EQ(3, model_->item_count());
   }
   {
@@ -2334,7 +2326,7 @@ TEST_F(MultiProfileMultiBrowserShelfLayoutChromeLauncherControllerTest,
     v2_app_1.window()->Hide();
     EXPECT_EQ(2, model_->item_count());
 
-    v2_app_1.window()->Show(apps::AppWindow::SHOW_ACTIVE);
+    v2_app_1.window()->Show(extensions::AppWindow::SHOW_ACTIVE);
     EXPECT_EQ(2, model_->item_count());
 
     SwitchActiveUser(profile()->GetProfileName());
@@ -2351,7 +2343,7 @@ TEST_F(MultiProfileMultiBrowserShelfLayoutChromeLauncherControllerTest,
     SwitchActiveUser(profile()->GetProfileName());
     EXPECT_EQ(2, model_->item_count());
 
-    v2_app_1.window()->Show(apps::AppWindow::SHOW_ACTIVE);
+    v2_app_1.window()->Show(extensions::AppWindow::SHOW_ACTIVE);
     EXPECT_EQ(3, model_->item_count());
   }
   {
@@ -2362,7 +2354,7 @@ TEST_F(MultiProfileMultiBrowserShelfLayoutChromeLauncherControllerTest,
     v2_app_2.window()->Hide();
     EXPECT_EQ(3, model_->item_count());
 
-    v2_app_2.window()->Show(apps::AppWindow::SHOW_ACTIVE);
+    v2_app_2.window()->Show(extensions::AppWindow::SHOW_ACTIVE);
     EXPECT_EQ(3, model_->item_count());
 
     v2_app_1.window()->Hide();

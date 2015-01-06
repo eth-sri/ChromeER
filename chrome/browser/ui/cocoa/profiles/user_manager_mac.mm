@@ -10,10 +10,10 @@
 #include "chrome/browser/ui/browser_dialogs.h"
 #import "chrome/browser/ui/cocoa/browser_window_utils.h"
 #include "chrome/browser/ui/cocoa/chrome_event_processing_window.h"
+#include "chrome/grit/chromium_strings.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
-#include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util_mac.h"
 
 // Default window size. Taken from the views implementation in
@@ -92,11 +92,10 @@ class UserManagerWebContentsDelegate : public content::WebContentsDelegate {
 - (id)initWithProfile:(Profile*)profile
          withObserver:(UserManagerMac*)userManagerObserver {
 
-  // Center the window on the primary screen.
-  CGFloat screenHeight =
-      [[[NSScreen screens] objectAtIndex:0] frame].size.height;
-  CGFloat screenWidth =
-      [[[NSScreen screens] objectAtIndex:0] frame].size.width;
+  // Center the window on the screen that currently has focus.
+  NSScreen* mainScreen = [NSScreen mainScreen];
+  CGFloat screenHeight = [mainScreen frame].size.height;
+  CGFloat screenWidth = [mainScreen frame].size.width;
 
   NSRect contentRect = NSMakeRect((screenWidth - kWindowWidth) / 2,
                                   (screenHeight - kWindowHeight) / 2,
@@ -107,8 +106,9 @@ class UserManagerWebContentsDelegate : public content::WebContentsDelegate {
                           NSClosableWindowMask |
                           NSResizableWindowMask
                   backing:NSBackingStoreBuffered
-                    defer:NO];
-  [window setTitle:l10n_util::GetNSString(IDS_USER_MANAGER_SCREEN_TITLE)];
+                    defer:NO
+                   screen:mainScreen];
+  [window setTitle:l10n_util::GetNSString(IDS_PRODUCT_NAME)];
   [window setMinSize:NSMakeSize(kWindowWidth, kWindowHeight)];
 
   if ((self = [super initWithWindow:window])) {

@@ -140,7 +140,6 @@ void WindowEventDispatcher::DispatchGestureEvent(ui::GestureEvent* event) {
   DispatchDetails details = DispatchHeldEvents();
   if (details.dispatcher_destroyed)
     return;
-
   Window* target = GetGestureTarget(event);
   if (target) {
     event->ConvertLocationToTarget(window(), target);
@@ -160,9 +159,12 @@ DispatchDetails WindowEventDispatcher::DispatchMouseExitAtPoint(
 void WindowEventDispatcher::ProcessedTouchEvent(ui::TouchEvent* event,
                                                 Window* window,
                                                 ui::EventResult result) {
-  scoped_ptr<ui::GestureRecognizer::Gestures> gestures;
-  gestures.reset(ui::GestureRecognizer::Get()->
-      ProcessTouchEventForGesture(*event, result, window));
+  ui::TouchEvent orig_event(*event, window, this->window());
+  // Once we've fully migrated to the eager gesture detector, we won't need to
+  // pass an event here.
+  scoped_ptr<ui::GestureRecognizer::Gestures> gestures(
+      ui::GestureRecognizer::Get()->ProcessTouchEventOnAsyncAck(
+          orig_event, result, window));
   DispatchDetails details = ProcessGestures(gestures.get());
   if (details.dispatcher_destroyed)
     return;
@@ -282,6 +284,9 @@ ui::EventDispatchDetails WindowEventDispatcher::ProcessGestures(
     return details;
 
   Window* target = GetGestureTarget(gestures->get().at(0));
+  if (!target)
+    return details;
+
   for (size_t i = 0; i < gestures->size(); ++i) {
     ui::GestureEvent* event = gestures->get().at(i);
     event->ConvertLocationToTarget(window(), target);
@@ -388,8 +393,12 @@ void WindowEventDispatcher::UpdateCapture(Window* old_capture,
 }
 
 void WindowEventDispatcher::OnOtherRootGotCapture() {
-  // Sending the mouse exit causes bugs on Windows (e.g. crbug.com/394672).
-  // TODO(pkotwicz): Fix the bugs and send mouse exit on Windows too.
+  // Windows provides the TrackMouseEvents API which allows us to rely on the
+  // OS to send us the mouse exit events (WM_MOUSELEAVE). Additionally on
+  // desktop Windows, every top level window could potentially have its own
+  // root window, in which case this function will get called whenever those
+  // windows grab mouse capture. Sending mouse exit messages in these cases
+  // causes subtle bugs like (crbug.com/394672).
 #if !defined(OS_WIN)
   if (mouse_moved_handler_) {
     // Dispatch a mouse exit to reset any state associated with hover. This is
@@ -427,10 +436,7 @@ void WindowEventDispatcher::PrepareEventForDispatch(ui::Event* event) {
     // coordinate system to |window()|'s coordinate system.
     return;
   }
-  if (event->IsMouseEvent() ||
-      event->IsScrollEvent() ||
-      event->IsTouchEvent() ||
-      event->IsGestureEvent()) {
+  if (event->IsLocatedEvent()) {
     TransformEventForDeviceScaleFactor(static_cast<ui::LocatedEvent*>(event));
   }
 }
@@ -489,13 +495,20 @@ ui::EventDispatchDetails WindowEventDispatcher::PostDispatchEvent(
     // being dispatched.
     if (dispatching_held_event_ || !held_move_event_ ||
         !held_move_event_->IsTouchEvent()) {
-      ui::TouchEvent orig_event(static_cast<const ui::TouchEvent&>(event),
-                                static_cast<Window*>(event.target()), window());
-      // Get the list of GestureEvents from GestureRecognizer.
+      // If the event is being handled asynchronously, ignore it.
+      if(event.result() & ui::ER_CONSUMED)
+        return details;
       scoped_ptr<ui::GestureRecognizer::Gestures> gestures;
-      gestures.reset(ui::GestureRecognizer::Get()->
-          ProcessTouchEventForGesture(orig_event, event.result(),
-                                      static_cast<Window*>(target)));
+
+      // Once we've fully migrated to the eager gesture detector, we won't
+      // need to pass an event here.
+      ui::TouchEvent orig_event(static_cast<const ui::TouchEvent&>(event),
+                                static_cast<Window*>(event.target()),
+                                window());
+      gestures.reset(
+          ui::GestureRecognizer::Get()->ProcessTouchEventPostDispatch(
+              orig_event, event.result(), static_cast<Window*>(target)));
+
       return ProcessGestures(gestures.get());
     }
   }
@@ -513,6 +526,10 @@ bool WindowEventDispatcher::CanDispatchToConsumer(
 }
 
 void WindowEventDispatcher::DispatchCancelTouchEvent(ui::TouchEvent* event) {
+  // The touchcancel event's location is based on the last known location of
+  // the pointer, in dips. OnEventFromSource expects events with co-ordinates
+  // in raw pixels, so we convert back to raw pixels here.
+  event->UpdateForRootTransform(host_->GetRootTransform());
   DispatchDetails details = OnEventFromSource(event);
   if (details.dispatcher_destroyed)
     return;
@@ -870,6 +887,20 @@ void WindowEventDispatcher::PreDispatchTouchEvent(Window* target,
       NOTREACHED();
       break;
   }
+
+  if (dispatching_held_event_ || !held_move_event_ ||
+      !held_move_event_->IsTouchEvent()) {
+    ui::TouchEvent orig_event(*event, target, window());
+
+    // If the touch event is invalid in some way, the gesture recognizer will
+    // reject it. This must call |StopPropagation()|, in order to prevent the
+    // touch from being acked in |PostDispatchEvent|.
+    if (!ui::GestureRecognizer::Get()->ProcessTouchEventPreDispatch(orig_event,
+                                                                    target)) {
+      event->StopPropagation();
+    }
+  }
+
   PreDispatchLocatedEvent(target, event);
 }
 

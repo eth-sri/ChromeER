@@ -85,12 +85,10 @@ bool IsEcdsaSupported() {
   return true;
 }
 
-QuicConfig InitializeQuicConfig(bool enable_pacing,
-                                bool enable_time_based_loss_detection,
+QuicConfig InitializeQuicConfig(bool enable_time_based_loss_detection,
                                 const QuicTagVector& connection_options) {
   QuicConfig config;
   config.SetDefaults();
-  config.EnablePacing(enable_pacing);
   if (enable_time_based_loss_detection)
     config.SetLossDetectionToSend(kTIME);
   config.set_idle_connection_state_lifetime(
@@ -98,6 +96,26 @@ QuicConfig InitializeQuicConfig(bool enable_pacing,
       QuicTime::Delta::FromSeconds(kIdleConnectionTimeoutSeconds));
   config.SetConnectionOptionsToSend(connection_options);
   return config;
+}
+
+class DefaultPacketWriterFactory : public QuicConnection::PacketWriterFactory {
+ public:
+  explicit DefaultPacketWriterFactory(DatagramClientSocket* socket)
+      : socket_(socket) {}
+  virtual ~DefaultPacketWriterFactory() {}
+
+  virtual QuicPacketWriter* Create(QuicConnection* connection) const OVERRIDE;
+
+ private:
+  DatagramClientSocket* socket_;
+};
+
+QuicPacketWriter* DefaultPacketWriterFactory::Create(
+    QuicConnection* connection) const {
+  scoped_ptr<QuicDefaultPacketWriter> writer(
+      new QuicDefaultPacketWriter(socket_));
+  writer->SetConnection(connection);
+  return writer.release();
 }
 
 }  // namespace
@@ -462,25 +480,25 @@ QuicStreamFactory::QuicStreamFactory(
     const std::string& user_agent_id,
     const QuicVersionVector& supported_versions,
     bool enable_port_selection,
-    bool enable_pacing,
     bool enable_time_based_loss_detection,
     const QuicTagVector& connection_options)
     : require_confirmation_(true),
       host_resolver_(host_resolver),
       client_socket_factory_(client_socket_factory),
       http_server_properties_(http_server_properties),
+      transport_security_state_(transport_security_state),
       quic_server_info_factory_(NULL),
       quic_crypto_client_stream_factory_(quic_crypto_client_stream_factory),
       random_generator_(random_generator),
       clock_(clock),
       max_packet_length_(max_packet_length),
-      config_(InitializeQuicConfig(enable_pacing,
-                                   enable_time_based_loss_detection,
+      config_(InitializeQuicConfig(enable_time_based_loss_detection,
                                    connection_options)),
       supported_versions_(supported_versions),
       enable_port_selection_(enable_port_selection),
       port_seed_(random_generator_->RandUint64()),
       weak_factory_(this) {
+  DCHECK(transport_security_state_);
   crypto_config_.SetDefaults();
   crypto_config_.set_user_agent_id(user_agent_id);
   crypto_config_.AddCanonicalSuffix(".c.youtube.com");
@@ -822,8 +840,7 @@ int QuicStreamFactory::CreateSession(
     return rv;
   }
 
-  scoped_ptr<QuicDefaultPacketWriter> writer(
-      new QuicDefaultPacketWriter(socket.get()));
+  DefaultPacketWriterFactory packet_writer_factory(socket.get());
 
   if (!helper_.get()) {
     helper_.reset(new QuicConnectionHelper(
@@ -834,11 +851,10 @@ int QuicStreamFactory::CreateSession(
   QuicConnection* connection = new QuicConnection(connection_id,
                                                   addr,
                                                   helper_.get(),
-                                                  writer.get(),
-                                                  false  /* owns_writer */,
+                                                  packet_writer_factory,
+                                                  true  /* owns_writer */,
                                                   false  /* is_server */,
                                                   supported_versions_);
-  writer->SetConnection(connection);
   connection->set_max_packet_length(max_packet_length_);
 
   InitializeCachedStateInCryptoConfig(server_id, server_info);
@@ -860,12 +876,12 @@ int QuicStreamFactory::CreateSession(
   }
 
   *session = new QuicClientSession(
-      connection, socket.Pass(), writer.Pass(), this,
-      quic_crypto_client_stream_factory_, server_info.Pass(), server_id,
-      config, &crypto_config_,
+      connection, socket.Pass(), this, transport_security_state_,
+      server_info.Pass(), config,
       base::MessageLoop::current()->message_loop_proxy().get(),
       net_log.net_log());
-  (*session)->InitializeSession();
+  (*session)->InitializeSession(server_id,  &crypto_config_,
+                                quic_crypto_client_stream_factory_);
   all_sessions_[*session] = server_id;  // owning pointer
   return OK;
 }

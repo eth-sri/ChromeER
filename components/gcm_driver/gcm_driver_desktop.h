@@ -14,7 +14,9 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/observer_list.h"
 #include "components/gcm_driver/gcm_client.h"
+#include "components/gcm_driver/gcm_connection_observer.h"
 #include "components/gcm_driver/gcm_driver.h"
 
 namespace base {
@@ -55,6 +57,9 @@ class GCMDriverDesktop : public GCMDriver {
   virtual void AddAppHandler(const std::string& app_id,
                              GCMAppHandler* handler) OVERRIDE;
   virtual void RemoveAppHandler(const std::string& app_id) OVERRIDE;
+  virtual void AddConnectionObserver(GCMConnectionObserver* observer) OVERRIDE;
+  virtual void RemoveConnectionObserver(
+      GCMConnectionObserver* observer) OVERRIDE;
   virtual void Enable() OVERRIDE;
   virtual void Disable() OVERRIDE;
   virtual GCMClient* GetGCMClientForTesting() const OVERRIDE;
@@ -64,6 +69,9 @@ class GCMDriverDesktop : public GCMDriver {
                                 bool clear_logs) OVERRIDE;
   virtual void SetGCMRecording(const GetGCMStatisticsCallback& callback,
                                bool recording) OVERRIDE;
+  virtual void UpdateAccountMapping(
+      const AccountMapping& account_mapping) OVERRIDE;
+  virtual void RemoveAccountMapping(const std::string& account_id) OVERRIDE;
 
   // GCMDriverDesktop specific implementation.
   // Sets a list of accounts with OAuth2 tokens for the next checkin.
@@ -130,6 +138,10 @@ class GCMDriverDesktop : public GCMDriver {
   // flag lives on the UI thread, while the GCM client lives on the IO thread,
   // it may be out of date while connection changes are happening.
   bool connected_;
+
+  // List of observers to notify when connection state changes.
+  // Makes sure list is empty on destruction.
+  ObserverList<GCMConnectionObserver, true> connection_observer_list_;
 
   scoped_refptr<base::SequencedTaskRunner> ui_thread_;
   scoped_refptr<base::SequencedTaskRunner> io_thread_;

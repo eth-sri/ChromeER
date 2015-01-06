@@ -85,12 +85,6 @@ Press any key to continue exploring.
   <message name="IDS_FLAGS_ENABLE_FILE_MANAGER_MTP_DESCRIPTION" desc="Description of the about:flag option to the enable MTP support in file manager.">
     Show MTP devices as a file storage in the file manager.
   </message>
-  <message name="IDS_FLAGS_FILE_MANAGER_ENABLE_NEW_GALLERY_NAME" desc="Name of the about:flag option to enable the new gallery app.">
-    Enable the new gallery
-  </message>
-  <message name="IDS_FLAGS_FILE_MANAGER_ENABLE_NEW_GALLERY_DESCRIPTION" desc="Description of the about:flag option to the enable new gallery app.">
-    Use the experimental new gallery instead of the stable one.
-  </message>
   <message name="IDS_FLAGS_ENABLE_VIDEO_PLAYER_CHROMECAST_SUPPORT_NAME" desc="Name of the about:flag option to enable the chromecast support for video app.">
     Experimental Chromecast support for Video Player
   </message>
@@ -668,10 +662,10 @@ Press any key to continue exploring.
     These Drive files aren't shared yet
   </message>
   <message name="IDS_FILE_BROWSER_MULTI_PROFILE_SHARE_DIALOG_MESSAGE" desc="Message of a dialog to request drive share for files that come from other profiles during file transfering. Below the message, there are the e-mail address of the account to be shared with the file, and a drop down list to select a share type.">
-    Change how this file is shared.
+    Change how this file is shared
   </message>
   <message name="IDS_FILE_BROWSER_MULTI_PROFILE_SHARE_DIALOG_MESSAGE_PLURAL" desc="Message of a dialog to request drive share for files that come from other profiles during file transfering. Below the message, there are the e-mail address of the account to be shared with the file, and a drop down list to select a share type.">
-    Change how these files are shared.
+    Change how these files are shared
   </message>
   <message name="IDS_FILE_BROWSER_DRIVE_SHARE_TYPE_CAN_EDIT" desc="Label text of 'Can edit' share type. Please use the same string with Google Drive.">
     Can edit
@@ -760,14 +754,16 @@ Press any key to continue exploring.
     <ph name="BEGIN_LINK_HELP">&lt;a target='_blank' href='$2'&gt;<ex>&lt;a target='_blank' href='$2'&gt;</ex></ph>Learn More<ph name="END_LINK_HELP">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>
   </message>
   <message name="IDS_FILE_BROWSER_NO_ACTION_FOR_EXECUTABLE" desc="Message shown when user tries to open a windows executable file, which we can't handle.">
-    This file type is not supported. Please visit the <ph name="BEGIN_LINK">&lt;a target='_blank' href='$1'&gt;<ex>&lt;a target='_blank' href='$1'&gt;</ex></ph>Chrome Web Store<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph> to find a similar app.
-    <ph name="BEGIN_LINK_HELP">&lt;a target='_blank' href='$2'&gt;<ex>&lt;a target='_blank' href='$2'&gt;</ex></ph>Learn More<ph name="END_LINK_HELP">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>
+    This file is designed for a PC using Windows software. This is not compatible with your device which runs Chrome OS. Please search the <ph name="BEGIN_LINK">&lt;a target='_blank' href='$1'&gt;<ex>&lt;a target='_blank' href='$1'&gt;</ex></ph>Chrome Web Store<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph> for a suitable replacement app.<ph name="BEGIN_LINK_HELP">&lt;a target='_blank' href='$2'&gt;<ex>&lt;a target='_blank' href='$2'&gt;</ex></ph>Learn More<ph name="END_LINK_HELP">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>
+  </message>
+  <message name="IDS_FILE_BROWSER_NO_ACTION_FOR_DMG" desc="Message shown when user tries to open a windows executable file, which we can't handle.">
+    This file is designed for a computer using Macintosh software. This is not compatible with your device which runs Chrome OS. Please search the <ph name="BEGIN_LINK">&lt;a target='_blank' href='$1'&gt;<ex>&lt;a target='_blank' href='$1'&gt;</ex></ph>Chrome Web Store<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph> for a suitable replacement app.<ph name="BEGIN_LINK_HELP">&lt;a target='_blank' href='$2'&gt;<ex>&lt;a target='_blank' href='$2'&gt;</ex></ph>Learn More<ph name="END_LINK_HELP">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>
   </message>
   <message name="IDS_FILE_BROWSER_NO_ACTION_FOR_CRX_TITLE" desc="Message shown when a user tries to open a *.crx file, which we don't handle in Files.app.">
     Wait just a sec
   </message>
   <message name="IDS_FILE_BROWSER_NO_ACTION_FOR_CRX" desc="Message shown when a user tries to open a *.crx file, which we don't handle in Files.app.">
-    We're constantly looking for ways to make your browsing safer. Previously, any website could prompt you to add an extension into your browser. In the latest versions of Google Chrome, you must explicitly tell Chrome that you want to install these extensions by adding them through the Extensions page. <ph name="BEGIN_LINK">&lt;a target='_blank' href='https://support.google.com/chrome_webstore/answer/2664769?p=crx_warning&amp;rd=1'&gt;</ph>Lean more<ph name="END_LINK">&lt;/a&gt;</ph>
+    We're constantly looking for ways to make your browsing safer. Previously, any website could prompt you to add an extension into your browser. In the latest versions of Google Chrome, you must explicitly tell Chrome that you want to install these extensions by adding them through the Extensions page. <ph name="BEGIN_LINK">&lt;a target='_blank' href='https://support.google.com/chrome_webstore/answer/2664769?p=crx_warning&amp;rd=1'&gt;</ph>Learn more<ph name="END_LINK">&lt;/a&gt;</ph>
   </message>
 
   <message name="IDS_FILE_BROWSER_FOLDER" desc="Folder entry type">
@@ -1242,10 +1238,10 @@ Press any key to continue exploring.
     Select your keyboard:
   </message>
   <message name="IDS_HID_DETECTION_INVITATION_TEXT" desc="Text shown on top of HID detection screen inviting user to connect an input device.">
-    Please connect a mouse or keyboard
+    Searching for Bluetooth and USB devices...
   </message>
   <message name="IDS_HID_DETECTION_PRECONDITION_TEXT" desc="Text shown on HID detection screen beneath invitation.">
-    If you're using Bluetooth, make sure your devices are ready to pair.
+    Please connect a mouse or a keyboard. If you are using a Bluetooth device, make sure it is ready to pair.
   </message>
   <message name="IDS_HID_DETECTION_SEARCHING_MOUSE" desc="Text shown on HID detection screen next to mouse icon while device searching.">
     Searching for mouse...
@@ -1647,7 +1643,7 @@ Press any key to continue exploring.
   <message name="IDS_MULTI_PROFILES_RESTRICTED_POLICY_TITLE" desc="Text that is shown on the title of the bubble shown for user pod which is not allowed in multi-profiles session.">
     Can't set up multiple sign-in
   </message>
-  <message name="IDS_MULTI_PROFILES_NOT_ALLOWED_POLICY_MSG" desc="Text that is shown on the bubble shown for user pod which is not allowed in multi-profiles session because of not-allowed policy.">
+  <message name="IDS_MULTI_PROFILES_NOT_ALLOWED_POLICY_MSG" desc="Text that is shown on the bubble shown for user pod which is not allowed in multi-profiles session because of not-allowed policy or because of usage policy-pushed certificates.">
     The administrator for this account has disallowed multiple sign-in.
   </message>
   <message name="IDS_MULTI_PROFILES_PRIMARY_ONLY_POLICY_MSG" desc="Text that is shown on the bubble shown for user pod which is not allowed in multi-profiles session because of primary-only policy.">
@@ -1691,9 +1687,6 @@ Press any key to continue exploring.
   </message>
   <message name="IDS_LOGIN_CAPTCHA_INSTRUCTIONS" desc="Explanatory message shown when the user must type letters shown in a captcha image to reauthenticate.">
     Type the characters you see in the picture below.
-  </message>
-  <message name="IDS_OPTIONS_EASY_UNLOCK_CHECKBOX_LABEL_CHROMEOS" desc="The label beside the checkbox to enable or disable easy unlock. This is the ChromeOS specific label.">
-    Enable Easy Unlock for this <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>.
   </message>
   <message name="IDS_OPTIONS_SETTINGS_SECONDARY_USER_BANNER" desc="Banner displayed in settings page when the user is secondary in a multi-profile session.">
     Some settings belonging to <ph name="PRIMARY_EMAIL">$1<ex>john@google.com</ex></ph> are being shared with you. These settings only affect your account when using multiple sign-in.
@@ -3771,6 +3764,10 @@ Battery full
   <message name="IDS_DEVICE_UNKNOWN_MESSAGE" desc="Text of notification message which is shown when user inserts removable device (SD card, USB key...)">
    Sorry, the device <ph name="DEVICE_LABEL">$1<ex>My SD card</ex></ph> could not be recognized.
   </message>
+  <message name="IDS_DEVICE_UNKNOWN_BUTTON_LABEL" desc="Text of a button label in a notification to format the device. If user clicks the button, Files.app opens and 
+  focus on unknown the device.">
+    Format this device
+  </message>
   <message name="IDS_DEVICE_UNKNOWN_DEFAULT_MESSAGE" desc="Text of notification message which is shown when user inserts removable device (SD card, USB key...)">
    Sorry, your external storage device could not be recognized.
   </message>
@@ -5053,9 +5050,6 @@ Battery full
   <message name="IDS_LOGIN_CONNECTING_INDICATOR_TEXT" desc="A message to show telling the user that the device is attempting to re-connect to the network.">
     Connecting and verifying<ph name="ANIMATED_ELLIPSIS">$1<ex>...</ex></ph>
   </message>
-  <message name="IDS_LOGIN_CONSUMER_MANAGEMENT_ENROLLMENT" desc="A message to show at the signin page when consumer management enrollment is in progress.">
-    The owner must sign in to complete enrollment with Google Device Manager.
-  </message>
 
   <!-- Idle warning dialog -->
   <message name="IDS_IDLE_WARNING_TITLE" desc="Title of the warning dialog shown when the user becomes idle and is about to get logged out.">
@@ -5075,15 +5069,54 @@ Battery full
   </message>
   <message name="IDS_KIOSK_APP_ERROR_UNABLE_TO_DOWNLOAD" desc="Error message used when a kiosk app fails to launch due to crx file download failure.">
     Kiosk application could not be downloaded.
-  </message>  
+  </message>
   <message name="IDS_KIOSK_APP_ERROR_UNABLE_TO_LAUNCH" desc="Error message used when a kiosk app fails to launch due to app launching failure.">
     Kiosk application could not be launched.
-  </message>    
+  </message>
   <message name="IDS_KIOSK_APP_ERROR_USER_CANCEL" desc="Error message used when a kiosk app launch is canceled by user.">
     Kiosk application launch canceled.
   </message>
+  <message name="IDS_KIOSK_EXTERNAL_UPDATE_IN_PROGRESS" desc="Message shown on screen when the system is updating kiosk apps from usb stick.">
+    Kiosk applications are being updated from usb stick, please wait. Do not remove the usb stick.
+  </message>  
+  <message name="IDS_KIOSK_EXTERNAL_UPDATE_NO_UPDATES" desc="Error message for no external extensions to update.">
+    No kiosk apps with newer version are found on the usb stick, nothing to update. Please remove the usb stick.
+  </message>  
+  <message name="IDS_KIOSK_EXTERNAL_UPDATE_NO_MANIFEST" desc="Error message for external update manifest file not found.">
+    Can't find kiosk external update manifest file on the usb stick, failed to update kiosk apps. Please remove the usb stick.
+  </message>
+  <message name="IDS_KIOSK_EXTERNAL_UPDATE_INVALID_MANIFEST" desc="Error message for invalid external update manifest file from usb stick.">
+    Found invalid kiosk external update manifest file on the usb stick, failed to update kiosk apps. Please remove the usb stick.
+  </message>     
+  <message name="IDS_KIOSK_EXTERNAL_UPDATE_COMPLETE" desc="Message shown on screen when the system completes updating kiosk apps from usb stick.">
+    Kiosk app updating from usb stick is completed. Please remove the usb stick from the device.
+  </message>  
+  <message name="IDS_KIOSK_EXTERNAL_UPDATE_SUCCESSFUL_UPDATED_APPS" desc="Message shown for successfully updated kiosk apps.">
+    The following kiosk apps have been updated, please reboot the device to complete the update process: <ph name="updated_apps">$1<ex>PrintApp</ex></ph>.
+  </message>
+  <message name="IDS_KIOSK_EXTERNAL_UPDATE_FAILED_UPDATED_APPS" desc="Message shown for failed updated kiosk apps.">
+    The following kiosk apps have been failed for updating: 
+  </message>    
+  <message name="IDS_KIOSK_EXTERNAL_UPDATE_BAD_CRX" desc="Error message for crx file unpacking failure.">
+    Bad crx file, unpacking failed.
+  </message>
+  <message name="IDS_KIOSK_EXTERNAL_UPDATE_SAME_OR_LOWER_APP_VERSION" desc="Error message for external extension is the same or lower version comparing to the existing one.">
+    External extension is at the same or lower version comparing to the existing one.
+  </message>
+  <message name="IDS_KIOSK_EXTERNAL_UPDATE_REQUIRE_HIGHER_BROWSER_VERSION" desc="Error message for external extension requires higher version of chrome to be installed.">
+    The external extension requires chrome version <ph name="MINIMUM_CHROME_VERSION">$1<ex>1.0.0</ex></ph> or greater to be installed.
+  </message>
+  <message name="IDS_KIOSK_EXTERNAL_UPDATE_CANNOT_INSTALL_IN_LOCAL_CACHE" desc="Error message for not being able to install kiosk external crx file in local cache.">
+    Can't install <ph name="EXTERNAL_CRX_FILE">$1<ex>/media/usb/app_v2.crx</ex></ph> in local cache.
+  </message> 
+  <message name="IDS_KIOSK_EXTERNAL_UPDATE_FAILED_COPY_CRX_TO_TEMP" desc="Error message for not being able to copy external crx file to a temp file.">
+    Can't copy external crx file to <ph name="TEMP_CRX_FILE">$1<ex>/tmp/kiosk_update/app.crx</ex></ph>.
+  </message> 
 
   <!-- About Chrome page -->
+  <message name="IDS_UPGRADE_BUTTON" desc="The button label to check for updates and apply (download and install) if found">
+    Check for and apply updates
+  </message>
   <message name="IDS_UPGRADE_OFFLINE" desc="Status label: Currently offline">
     You are currently offline.
   </message>
@@ -5708,7 +5741,10 @@ All users must sign out to continue.
     Failed to submit NDEF:
   </message>
 
-  <!-- About the device control section in the settings page -->
+  <!-- About consumer management service -->
+  <message name="IDS_LOGIN_CONSUMER_MANAGEMENT_ENROLLMENT" desc="A message to show at the sign-in page when consumer management enrollment is in progress.">
+    The owner must sign in to complete enrollment with Google Device Manager.
+  </message>
   <message name="IDS_OPTIONS_DEVICE_CONTROL_SECTION_TITLE" desc="The title of the device control section in the settings page.">
     Device control
   </message>
@@ -5742,6 +5778,24 @@ All users must sign out to continue.
   <message name="IDS_OPTIONS_CONSUMER_MANAGEMENT_OVERLAY_UNENROLL" desc="The button text of the consumer management overlay in the settings page for unenrollment.">
     Unenroll and restart
   </message>
+  <message name="IDS_CONSUMER_MANAGEMENT_ENROLLMENT_NOTIFICATION_TITLE" desc="The title of the desktop notification shown when consumer management enrollment is completed">
+    Enrolled
+  </message>
+  <message name="IDS_CONSUMER_MANAGEMENT_ENROLLMENT_NOTIFICATION_BODY" desc="The body of the desktop notification shown when consumer management enrollment is completed">
+    You can now lock this device remotely anytime on Chrome Manager.
+  </message>
+  <message name="IDS_CONSUMER_MANAGEMENT_ENROLLMENT_FAILURE_NOTIFICATION_TITLE" desc="The title of the desktop notification shown when consumer management enrollment fails">
+    Unable to enroll
+  </message>
+  <message name="IDS_CONSUMER_MANAGEMENT_ENROLLMENT_FAILURE_NOTIFICATION_BODY" desc="The body of the desktop notification shown when consumer management enrollment fails">
+    Enrollment in Google Device Manager was not successful.
+  </message>
+  <message name="IDS_CONSUMER_MANAGEMENT_NOTIFICATION_MODIFY_SETTINGS_BUTTON" desc="The label of the modify settings button on the desktop notification shown when consumer management enrollment or unenrollment is completed">
+    Modify settings
+  </message>
+  <message name="IDS_CONSUMER_MANAGEMENT_NOTIFICATION_TRY_AGAIN_BUTTON" desc="The label of the modify settings button on the desktop notification shown when consumer management enrollment or unenrollment fails">
+    Try again
+  </message>
 
   <!-- Set time/date UI display strings -->
   <message name="IDS_SET_TIME_TITLE" desc="Title of the set time/date UI.">
@@ -5758,13 +5812,5 @@ All users must sign out to continue.
   </message>
   <message name="IDS_SET_TIME_TIME_LABEL" desc="Label for the time input element.">
     System time
-  </message>
-
-  <!-- 'OK Google' voice search activation display strings -->
-  <message name="IDS_FLAGS_OK_GOOGLE_NAME" desc="Name of about:flags option for Ok Google.">
-    Enable 'Ok Google' to activate voice search.
-  </message>
-  <message name="IDS_FLAGS_OK_GOOGLE_DESCRIPTION" desc="Description of about:flags option Ok Google.">
-    If enabled, there will be an option in chrome:settings to enable saying 'Ok Google' to activate voice search.
   </message>
 </grit-part>

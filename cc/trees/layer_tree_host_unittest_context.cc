@@ -65,6 +65,9 @@ class LayerTreeHostContextTest : public LayerTreeTest {
   }
 
   void LoseContext() {
+    // For sanity-checking tests, they should only call this when the
+    // context is not lost.
+    CHECK(context3d_);
     context3d_->loseContextCHROMIUM(GL_GUILTY_CONTEXT_RESET_ARB,
                                     GL_INNOCENT_CONTEXT_RESET_ARB);
     context3d_ = NULL;
@@ -200,45 +203,53 @@ class LayerTreeHostContextTestLostContextSucceeds
     static const TestCase kTests[] = {
         // Losing the context and failing to recreate it (or losing it again
         // immediately) a small number of times should succeed.
-        {1,      // times_to_lose_during_commit
+        {
+         1,      // times_to_lose_during_commit
          0,      // times_to_lose_during_draw
          0,      // times_to_fail_recreate
          false,  // fallback_context_works
         },
-        {0,      // times_to_lose_during_commit
+        {
+         0,      // times_to_lose_during_commit
          1,      // times_to_lose_during_draw
          0,      // times_to_fail_recreate
          false,  // fallback_context_works
         },
-        {1,      // times_to_lose_during_commit
+        {
+         1,      // times_to_lose_during_commit
          0,      // times_to_lose_during_draw
          3,      // times_to_fail_recreate
          false,  // fallback_context_works
         },
-        {0,      // times_to_lose_during_commit
+        {
+         0,      // times_to_lose_during_commit
          1,      // times_to_lose_during_draw
          3,      // times_to_fail_recreate
          false,  // fallback_context_works
         },
         // Losing the context and recreating it any number of times should
         // succeed.
-        {10,     // times_to_lose_during_commit
+        {
+         10,     // times_to_lose_during_commit
          0,      // times_to_lose_during_draw
          0,      // times_to_fail_recreate
          false,  // fallback_context_works
         },
-        {0,      // times_to_lose_during_commit
+        {
+         0,      // times_to_lose_during_commit
          10,     // times_to_lose_during_draw
          0,      // times_to_fail_recreate
          false,  // fallback_context_works
         },
         // Losing the context, failing to reinitialize it, and making a fallback
         // context should work.
-        {0,     // times_to_lose_during_commit
+        {
+         0,     // times_to_lose_during_commit
          1,     // times_to_lose_during_draw
          0,     // times_to_fail_recreate
          true,  // fallback_context_works
-        }, };
+        },
+    };
 
     if (test_case_ >= arraysize(kTests))
       return false;
@@ -300,7 +311,8 @@ class LayerTreeHostClientNotReadyDoesNotCreateOutputSurface
   }
 };
 
-MULTI_THREAD_TEST_F(LayerTreeHostClientNotReadyDoesNotCreateOutputSurface);
+SINGLE_AND_MULTI_THREAD_TEST_F(
+    LayerTreeHostClientNotReadyDoesNotCreateOutputSurface);
 
 class LayerTreeHostContextTestLostContextSucceedsWithContent
     : public LayerTreeHostContextTestLostContextSucceeds {
@@ -358,10 +370,11 @@ class LayerTreeHostContextTestCreateOutputSurfaceFails
       : times_to_fail_(times_to_fail),
         expect_fallback_attempt_(expect_fallback_attempt),
         did_attempt_fallback_(false),
-        times_initialized_(0) {}
+        times_initialized_(0) {
+    times_to_fail_create_ = times_to_fail_;
+  }
 
   virtual void BeginTest() OVERRIDE {
-    times_to_fail_create_ = times_to_fail_;
     PostSetNeedsCommitToMainThread();
   }
 
@@ -692,18 +705,18 @@ class LayerTreeHostContextTestDontUseLostResources
     scoped_ptr<TestRenderPass> pass_for_quad = TestRenderPass::Create();
     pass_for_quad->SetNew(
         // AppendOneOfEveryQuadType() makes a RenderPass quad with this id.
-        RenderPass::Id(2, 1),
+        RenderPassId(2, 1),
         gfx::Rect(0, 0, 10, 10),
         gfx::Rect(0, 0, 10, 10),
         gfx::Transform());
 
     scoped_ptr<TestRenderPass> pass = TestRenderPass::Create();
-    pass->SetNew(RenderPass::Id(1, 1),
+    pass->SetNew(RenderPassId(1, 1),
                  gfx::Rect(0, 0, 10, 10),
                  gfx::Rect(0, 0, 10, 10),
                  gfx::Transform());
     pass->AppendOneOfEveryQuadType(child_resource_provider_.get(),
-                                   RenderPass::Id(2, 1));
+                                   RenderPassId(2, 1));
 
     frame_data->render_pass_list.push_back(pass_for_quad.PassAs<RenderPass>());
     frame_data->render_pass_list.push_back(pass.PassAs<RenderPass>());
@@ -716,7 +729,7 @@ class LayerTreeHostContextTestDontUseLostResources
         child_resource_provider_->CreateResource(
             gfx::Size(4, 4),
             GL_CLAMP_TO_EDGE,
-            ResourceProvider::TextureUsageAny,
+            ResourceProvider::TextureHintImmutable,
             RGBA_8888);
     ResourceProvider::ScopedWriteLockGL lock(child_resource_provider_.get(),
                                              resource);
@@ -761,19 +774,19 @@ class LayerTreeHostContextTestDontUseLostResources
     root->AddChild(content_with_mask);
 
     scoped_refptr<VideoLayer> video_color =
-        VideoLayer::Create(&color_frame_provider_);
+        VideoLayer::Create(&color_frame_provider_, media::VIDEO_ROTATION_0);
     video_color->SetBounds(gfx::Size(10, 10));
     video_color->SetIsDrawable(true);
     root->AddChild(video_color);
 
     scoped_refptr<VideoLayer> video_hw =
-        VideoLayer::Create(&hw_frame_provider_);
+        VideoLayer::Create(&hw_frame_provider_, media::VIDEO_ROTATION_0);
     video_hw->SetBounds(gfx::Size(10, 10));
     video_hw->SetIsDrawable(true);
     root->AddChild(video_hw);
 
     scoped_refptr<VideoLayer> video_scaled_hw =
-        VideoLayer::Create(&scaled_hw_frame_provider_);
+        VideoLayer::Create(&scaled_hw_frame_provider_, media::VIDEO_ROTATION_0);
     video_scaled_hw->SetBounds(gfx::Size(10, 10));
     video_scaled_hw->SetIsDrawable(true);
     root->AddChild(video_scaled_hw);
@@ -975,12 +988,6 @@ class ScrollbarLayerLostContext : public LayerTreeHostContextTest {
         EXPECT_EQ(2, scrollbar_layer_->update_count());
         EndTest();
         break;
-      case 3:
-        // Single thread proxy issues extra commits after context lost.
-        // http://crbug.com/287250
-        if (HasImplThread())
-          NOTREACHED();
-        break;
       default:
         NOTREACHED();
     }
@@ -1024,12 +1031,10 @@ class UIResourceLostTest : public LayerTreeHostContextTest {
 
   void PostLoseContextToImplThread() {
     EXPECT_TRUE(layer_tree_host()->proxy()->IsMainThread());
-    base::SingleThreadTaskRunner* task_runner =
-        HasImplThread() ? ImplThreadTaskRunner()
-                        : base::MessageLoopProxy::current();
-    task_runner->PostTask(FROM_HERE,
-                          base::Bind(&LayerTreeHostContextTest::LoseContext,
-                                     base::Unretained(this)));
+    ImplThreadTaskRunner()->PostTask(
+        FROM_HERE,
+        base::Bind(&LayerTreeHostContextTest::LoseContext,
+                   base::Unretained(this)));
   }
 
  protected:
@@ -1084,13 +1089,8 @@ class UIResourceLostAfterCommit : public UIResourceLostTestSimple {
         EndTest();
         break;
       case 5:
-        // Single thread proxy issues extra commits after context lost.
-        // http://crbug.com/287250
-        if (HasImplThread())
-          NOTREACHED();
-        break;
-      case 6:
         NOTREACHED();
+        break;
     }
   }
 
@@ -1178,13 +1178,8 @@ class UIResourceLostBeforeCommit : public UIResourceLostTestSimple {
         EndTest();
         break;
       case 6:
-        // Single thread proxy issues extra commits after context lost.
-        // http://crbug.com/287250
-        if (HasImplThread())
-          NOTREACHED();
-        break;
-      case 8:
         NOTREACHED();
+        break;
     }
   }
 
@@ -1205,15 +1200,8 @@ class UIResourceLostBeforeCommit : public UIResourceLostTestSimple {
         // Sequence 2 (continued):
         // The previous resource should have been deleted.
         EXPECT_EQ(0u, impl->ResourceIdForUIResource(test_id0_));
-        if (HasImplThread()) {
-          // The second resource should have been created.
-          EXPECT_NE(0u, impl->ResourceIdForUIResource(test_id1_));
-        } else {
-          // The extra commit that happens at context lost in the single thread
-          // proxy changes the timing so that the resource has been destroyed.
-          // http://crbug.com/287250
-          EXPECT_EQ(0u, impl->ResourceIdForUIResource(test_id1_));
-        }
+        // The second resource should have been created.
+        EXPECT_NE(0u, impl->ResourceIdForUIResource(test_id1_));
         // The second resource called the resource callback once and since the
         // context is lost, a "resource lost" callback was also issued.
         EXPECT_EQ(2, ui_resource_->resource_create_count);
@@ -1529,8 +1517,8 @@ class LayerTreeHostContextTestLoseAfterSendingBeginMainFrame
   bool deferred_;
 };
 
-// TODO(danakj): We don't use scheduler with SingleThreadProxy yet.
-MULTI_THREAD_TEST_F(LayerTreeHostContextTestLoseAfterSendingBeginMainFrame);
+SINGLE_AND_MULTI_THREAD_TEST_F(
+    LayerTreeHostContextTestLoseAfterSendingBeginMainFrame);
 
 }  // namespace
 }  // namespace cc

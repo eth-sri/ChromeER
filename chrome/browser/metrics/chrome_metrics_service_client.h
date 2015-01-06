@@ -21,16 +21,20 @@
 
 class ChromeOSMetricsProvider;
 class GoogleUpdateMetricsProviderWin;
-class MetricsService;
 class PluginMetricsProvider;
 class PrefRegistrySimple;
 class ProfilerMetricsProvider;
+
+#if !defined(OS_CHROMEOS) && !defined(OS_IOS)
+class SigninStatusMetricsProvider;
+#endif
 
 namespace base {
 class FilePath;
 }
 
 namespace metrics {
+class MetricsService;
 class MetricsStateManager;
 }
 
@@ -68,7 +72,7 @@ class ChromeMetricsServiceClient
       const std::string& mime_type,
       const base::Callback<void(int)>& on_upload_complete) OVERRIDE;
 
-  MetricsService* metrics_service() { return metrics_service_.get(); }
+  metrics::MetricsService* metrics_service() { return metrics_service_.get(); }
 
   void LogPluginLoadingError(const base::FilePath& plugin_path);
 
@@ -127,7 +131,7 @@ class ChromeMetricsServiceClient
   metrics::MetricsStateManager* metrics_state_manager_;
 
   // The MetricsService that |this| is a client of.
-  scoped_ptr<MetricsService> metrics_service_;
+  scoped_ptr<metrics::MetricsService> metrics_service_;
 
   content::NotificationRegistrar registrar_;
 
@@ -160,6 +164,12 @@ class ChromeMetricsServiceClient
   // The GoogleUpdateMetricsProviderWin instance that was registered with
   // MetricsService. Has the same lifetime as |metrics_service_|.
   GoogleUpdateMetricsProviderWin* google_update_metrics_provider_;
+#endif
+
+#if !defined(OS_CHROMEOS) && !defined(OS_IOS)
+  // The SigninStatusMetricsProvider instance that was registered with
+  // MetricsService. Has the same lifetime as |metrics_service_|.
+  SigninStatusMetricsProvider* signin_status_metrics_provider_;
 #endif
 
   // Callback that is called when initial metrics gathering is complete.

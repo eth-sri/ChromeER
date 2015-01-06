@@ -9,9 +9,9 @@
 #include "base/message_loop/message_loop.h"
 #include "base/strings/sys_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
+#include "chrome/grit/generated_resources.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host_view.h"
-#include "grit/generated_resources.h"
 #import "ui/base/cocoa/menu_controller.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -49,7 +49,7 @@ NSMenuItem* GetMenuItemByID(ui::MenuModel* model,
 // OSX implemenation of the ToolkitDelegate.
 // This simply (re)delegates calls to RVContextMenuMac because they do not
 // have to be componentized.
-class ToolkitDelegateMac : public RenderViewContextMenu::ToolkitDelegate {
+class ToolkitDelegateMac : public RenderViewContextMenuBase::ToolkitDelegate {
  public:
   explicit ToolkitDelegateMac(RenderViewContextMenuMac* context_menu)
       : context_menu_(context_menu) {}

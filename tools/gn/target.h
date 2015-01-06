@@ -19,12 +19,14 @@
 #include "tools/gn/item.h"
 #include "tools/gn/label_ptr.h"
 #include "tools/gn/ordered_set.h"
+#include "tools/gn/output_file.h"
 #include "tools/gn/source_file.h"
 #include "tools/gn/unique_vector.h"
 
 class InputFile;
 class Settings;
 class Token;
+class Toolchain;
 
 class Target : public Item {
  public:
@@ -59,8 +61,17 @@ class Target : public Item {
   bool IsLinkable() const;
 
   // Will be the empty string to use the target label as the output name.
+  // See GetComputedOutputName().
   const std::string& output_name() const { return output_name_; }
   void set_output_name(const std::string& name) { output_name_ = name; }
+
+  // Returns the output name for this target, which is the output_name if
+  // specified, or the target label if not. If the flag is set, it will also
+  // include any output prefix specified on the tool (often "lib" on Linux).
+  //
+  // Because this depends on the tool for this target, the toolchain must
+  // have been set before calling.
+  std::string GetComputedOutputName(bool include_prefix) const;
 
   const std::string& output_extension() const { return output_extension_; }
   void set_output_extension(const std::string& extension) {
@@ -79,6 +90,10 @@ class Target : public Item {
   // could be empty which would mean no headers are public.
   const FileList& public_headers() const { return public_headers_; }
   FileList& public_headers() { return public_headers_; }
+
+  // Whether this target's includes should be checked by "gn check".
+  bool check_includes() const { return check_includes_; }
+  void set_check_includes(bool ci) { check_includes_ = ci; }
 
   // Compile-time extra dependencies.
   const FileList& inputs() const { return inputs_; }
@@ -137,6 +152,14 @@ class Target : public Item {
     return forward_dependent_configs_;
   }
 
+  // Dependencies that can include files from this target.
+  const std::set<Label>& allow_circular_includes_from() const {
+    return allow_circular_includes_from_;
+  }
+  std::set<Label>& allow_circular_includes_from() {
+    return allow_circular_includes_from_;
+  }
+
   const UniqueVector<const Target*>& inherited_libraries() const {
     return inherited_libraries_;
   }
@@ -155,6 +178,37 @@ class Target : public Item {
     return recursive_hard_deps_;
   }
 
+  // The toolchain is only known once this target is resolved (all if its
+  // dependencies are known). They will be null until then. Generally, this can
+  // only be used during target writing.
+  const Toolchain* toolchain() const { return toolchain_; }
+
+  // Sets the toolchain. The toolchain must include a tool for this target
+  // or the error will be set and the function will return false. Unusually,
+  // this function's "err" output is optional since this is commonly used
+  // frequently by unit tests which become needlessly verbose.
+  bool SetToolchain(const Toolchain* toolchain, Err* err = NULL);
+
+  // Returns outputs from this target. The link output file is the one that
+  // other targets link to when they depend on this target. This will only be
+  // valid for libraries and will be empty for all other target types.
+  //
+  // The dependency output file is the file that should be used to express
+  // a dependency on this one. It could be the same as the link output file
+  // (this will be the case for static libraries). For shared libraries it
+  // could be the same or different than the link output file, depending on the
+  // system. For actions this will be the stamp file.
+  //
+  // These are only known once the target is resolved and will be empty before
+  // that. This is a cache of the files to prevent every target that depends on
+  // a given library from recomputing the same pattern.
+  const OutputFile& link_output_file() const {
+    return link_output_file_;
+  }
+  const OutputFile& dependency_output_file() const {
+    return dependency_output_file_;
+  }
+
  private:
   // Pulls necessary information from dependencies to this one when all
   // dependencies have been resolved.
@@ -165,6 +219,9 @@ class Target : public Item {
   void PullForwardedDependentConfigs();
   void PullRecursiveHardDeps();
 
+  // Fills the link and dependency output files when a target is resolved.
+  void FillOutputFiles();
+
   OutputType output_type_;
   std::string output_name_;
   std::string output_extension_;
@@ -172,6 +229,7 @@ class Target : public Item {
   FileList sources_;
   bool all_headers_public_;
   FileList public_headers_;
+  bool check_includes_;
   FileList inputs_;
   FileList data_;
 
@@ -196,6 +254,8 @@ class Target : public Item {
   UniqueVector<LabelConfigPair> direct_dependent_configs_;
   UniqueVector<LabelTargetPair> forward_dependent_configs_;
 
+  std::set<Label> allow_circular_includes_from_;
+
   bool external_;
 
   // Static libraries and source sets from transitive deps. These things need
@@ -216,6 +276,13 @@ class Target : public Item {
 
   ConfigValues config_values_;  // Used for all binary targets.
   ActionValues action_values_;  // Used for action[_foreach] targets.
+
+  // Toolchain used by this target. Null until target is resolved.
+  const Toolchain* toolchain_;
+
+  // Output files. Null until the target is resolved.
+  OutputFile link_output_file_;
+  OutputFile dependency_output_file_;
 
   DISALLOW_COPY_AND_ASSIGN(Target);
 };

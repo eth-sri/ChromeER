@@ -9,7 +9,6 @@
 #include "media/cast/net/cast_transport_config.h"
 #include "media/cast/net/cast_transport_sender_impl.h"
 #include "media/cast/net/pacing/paced_sender.h"
-#include "media/cast/net/rtcp/mock_rtcp_receiver_feedback.h"
 #include "media/cast/net/rtcp/rtcp.h"
 #include "media/cast/net/rtcp/test_rtcp_packet_builder.h"
 #include "media/cast/test/fake_single_thread_task_runner.h"
@@ -60,7 +59,7 @@ class RtcpTestPacketSender : public PacketSender {
   bool drop_packets_;
   bool short_delay_;
   Rtcp* rtcp_receiver_;
-  base::SimpleTestTickClock* testing_clock_;
+  base::SimpleTestTickClock* testing_clock_;  // Not owned.
 
   DISALLOW_COPY_AND_ASSIGN(RtcpTestPacketSender);
 };
@@ -99,8 +98,7 @@ class LocalRtcpTransport : public PacedPacketSender {
   }
 
   virtual bool ResendPackets(
-      const SendPacketVector& packets,
-      base::TimeDelta dedupe_window) OVERRIDE {
+      const SendPacketVector& packets, const DedupInfo& dedup_info) OVERRIDE {
     return false;
   }
 
@@ -112,7 +110,7 @@ class LocalRtcpTransport : public PacedPacketSender {
   bool drop_packets_;
   bool short_delay_;
   Rtcp* rtcp_;
-  base::SimpleTestTickClock* testing_clock_;
+  base::SimpleTestTickClock* testing_clock_;  // Not owned.
 
   DISALLOW_COPY_AND_ASSIGN(LocalRtcpTransport);
 };
@@ -156,9 +154,10 @@ class RtcpTest : public ::testing::Test {
  protected:
   RtcpTest()
       : testing_clock_(new base::SimpleTestTickClock()),
-        task_runner_(new test::FakeSingleThreadTaskRunner(testing_clock_)),
-        sender_to_receiver_(testing_clock_),
-        receiver_to_sender_(testing_clock_) {
+        task_runner_(
+            new test::FakeSingleThreadTaskRunner(testing_clock_.get())),
+        sender_to_receiver_(testing_clock_.get()),
+        receiver_to_sender_(testing_clock_.get()) {
     testing_clock_->Advance(base::TimeTicks::Now() - base::TimeTicks());
   }
 
@@ -178,7 +177,7 @@ class RtcpTest : public ::testing::Test {
     }
   }
 
-  base::SimpleTestTickClock* testing_clock_;  // Owned by CastEnvironment.
+  scoped_ptr<base::SimpleTestTickClock> testing_clock_;
   scoped_refptr<test::FakeSingleThreadTaskRunner> task_runner_;
   LocalRtcpTransport sender_to_receiver_;
   LocalRtcpTransport receiver_to_sender_;
@@ -194,7 +193,7 @@ TEST_F(RtcpTest, BasicSenderReport) {
             base::Bind(&MockFrameSender::OnReceivedRtt,
                        base::Unretained(&mock_frame_sender_)),
             RtcpLogMessageCallback(),
-            testing_clock_,
+            testing_clock_.get(),
             &sender_to_receiver_,
             kSenderSsrc,
             kReceiverSsrc);
@@ -208,7 +207,7 @@ TEST_F(RtcpTest, BasicReceiverReport) {
             base::Bind(&MockFrameSender::OnReceivedRtt,
                        base::Unretained(&mock_frame_sender_)),
             RtcpLogMessageCallback(),
-            testing_clock_,
+            testing_clock_.get(),
             &receiver_to_sender_,
             kSenderSsrc,
             kReceiverSsrc);
@@ -225,7 +224,7 @@ TEST_F(RtcpTest, BasicCast) {
             base::Bind(&MockFrameSender::OnReceivedRtt,
                        base::Unretained(&mock_frame_sender_)),
             RtcpLogMessageCallback(),
-            testing_clock_,
+            testing_clock_.get(),
             &receiver_to_sender_,
             kSenderSsrc,
             kSenderSsrc);
@@ -248,7 +247,7 @@ TEST_F(RtcpTest, RttReducedSizeRtcp) {
   Rtcp rtcp_receiver(RtcpCastMessageCallback(),
                      RtcpRttCallback(),
                      RtcpLogMessageCallback(),
-                     testing_clock_,
+                     testing_clock_.get(),
                      &receiver_to_sender_,
                      kReceiverSsrc,
                      kSenderSsrc);
@@ -259,7 +258,7 @@ TEST_F(RtcpTest, RttReducedSizeRtcp) {
                    base::Bind(&MockFrameSender::OnReceivedRtt,
                               base::Unretained(&mock_frame_sender_)),
                    RtcpLogMessageCallback(),
-                   testing_clock_,
+                   testing_clock_.get(),
                    &sender_to_receiver_,
                    kSenderSsrc,
                    kReceiverSsrc);
@@ -272,25 +271,13 @@ TEST_F(RtcpTest, RttReducedSizeRtcp) {
   base::TimeDelta min_rtt;
   base::TimeDelta max_rtt;
   EXPECT_FALSE(rtcp_sender.Rtt(&rtt, &avg_rtt, &min_rtt, &max_rtt));
-  EXPECT_FALSE(rtcp_receiver.Rtt(&rtt, &avg_rtt, &min_rtt, &max_rtt));
 
   rtcp_sender.SendRtcpFromRtpSender(testing_clock_->NowTicks(), 1, 1, 1);
   RunTasks(33);
   rtcp_receiver.SendRtcpFromRtpReceiver(NULL, base::TimeDelta(), NULL, &stats_);
   EXPECT_TRUE(rtcp_sender.Rtt(&rtt, &avg_rtt, &min_rtt, &max_rtt));
-  EXPECT_FALSE(rtcp_receiver.Rtt(&rtt, &avg_rtt, &min_rtt, &max_rtt));
-  EXPECT_NEAR(2 * kAddedDelay, rtt.InMilliseconds(), 2);
-  EXPECT_NEAR(2 * kAddedDelay, avg_rtt.InMilliseconds(), 2);
-  EXPECT_NEAR(2 * kAddedDelay, min_rtt.InMilliseconds(), 2);
-  EXPECT_NEAR(2 * kAddedDelay, max_rtt.InMilliseconds(), 2);
   rtcp_sender.SendRtcpFromRtpSender(testing_clock_->NowTicks(), 2, 1, 1);
   RunTasks(33);
-  EXPECT_TRUE(rtcp_receiver.Rtt(&rtt, &avg_rtt, &min_rtt, &max_rtt));
-
-  EXPECT_NEAR(2 * kAddedDelay, rtt.InMilliseconds(), 2);
-  EXPECT_NEAR(2 * kAddedDelay, avg_rtt.InMilliseconds(), 2);
-  EXPECT_NEAR(2 * kAddedDelay, min_rtt.InMilliseconds(), 2);
-  EXPECT_NEAR(2 * kAddedDelay, max_rtt.InMilliseconds(), 2);
 }
 
 TEST_F(RtcpTest, Rtt) {
@@ -298,7 +285,7 @@ TEST_F(RtcpTest, Rtt) {
   Rtcp rtcp_receiver(RtcpCastMessageCallback(),
                      RtcpRttCallback(),
                      RtcpLogMessageCallback(),
-                     testing_clock_,
+                     testing_clock_.get(),
                      &receiver_to_sender_,
                      kReceiverSsrc,
                      kSenderSsrc);
@@ -309,7 +296,7 @@ TEST_F(RtcpTest, Rtt) {
                    base::Bind(&MockFrameSender::OnReceivedRtt,
                               base::Unretained(&mock_frame_sender_)),
                    RtcpLogMessageCallback(),
-                   testing_clock_,
+                   testing_clock_.get(),
                    &sender_to_receiver_,
                    kSenderSsrc,
                    kReceiverSsrc);
@@ -322,7 +309,6 @@ TEST_F(RtcpTest, Rtt) {
   base::TimeDelta min_rtt;
   base::TimeDelta max_rtt;
   EXPECT_FALSE(rtcp_sender.Rtt(&rtt, &avg_rtt, &min_rtt, &max_rtt));
-  EXPECT_FALSE(rtcp_receiver.Rtt(&rtt, &avg_rtt, &min_rtt, &max_rtt));
 
   rtcp_sender.SendRtcpFromRtpSender(testing_clock_->NowTicks(), 1, 1, 1);
   RunTasks(33);
@@ -331,7 +317,6 @@ TEST_F(RtcpTest, Rtt) {
   EXPECT_TRUE(rtcp_sender.Rtt(&rtt, &avg_rtt, &min_rtt, &max_rtt));
   RunTasks(33);
 
-  EXPECT_FALSE(rtcp_receiver.Rtt(&rtt, &avg_rtt, &min_rtt, &max_rtt));
   RunTasks(33);
 
   EXPECT_NEAR(2 * kAddedDelay, rtt.InMilliseconds(), 2);
@@ -341,11 +326,6 @@ TEST_F(RtcpTest, Rtt) {
 
   rtcp_sender.SendRtcpFromRtpSender(testing_clock_->NowTicks(), 2, 1, 1);
   RunTasks(33);
-  EXPECT_TRUE(rtcp_receiver.Rtt(&rtt, &avg_rtt, &min_rtt, &max_rtt));
-  EXPECT_NEAR(2 * kAddedDelay, rtt.InMilliseconds(), 2);
-  EXPECT_NEAR(2 * kAddedDelay, avg_rtt.InMilliseconds(), 2);
-  EXPECT_NEAR(2 * kAddedDelay, min_rtt.InMilliseconds(), 2);
-  EXPECT_NEAR(2 * kAddedDelay, max_rtt.InMilliseconds(), 2);
 
   receiver_to_sender_.set_short_delay();
   sender_to_receiver_.set_short_delay();
@@ -359,13 +339,6 @@ TEST_F(RtcpTest, Rtt) {
 
   rtcp_sender.SendRtcpFromRtpSender(testing_clock_->NowTicks(), 3, 1, 1);
   RunTasks(33);
-  EXPECT_TRUE(rtcp_receiver.Rtt(&rtt, &avg_rtt, &min_rtt, &max_rtt));
-  EXPECT_NEAR(2 * kAddedShortDelay, rtt.InMilliseconds(), 1);
-  EXPECT_NEAR((2 * kAddedShortDelay + 2 * kAddedDelay) / 2,
-              avg_rtt.InMilliseconds(),
-              1);
-  EXPECT_NEAR(2 * kAddedShortDelay, min_rtt.InMilliseconds(), 2);
-  EXPECT_NEAR(2 * kAddedDelay, max_rtt.InMilliseconds(), 2);
 
   rtcp_receiver.SendRtcpFromRtpReceiver(NULL, base::TimeDelta(), NULL, &stats_);
   EXPECT_TRUE(rtcp_sender.Rtt(&rtt, &avg_rtt, &min_rtt, &max_rtt));
@@ -385,7 +358,7 @@ TEST_F(RtcpTest, RttWithPacketLoss) {
   Rtcp rtcp_receiver(RtcpCastMessageCallback(),
                      RtcpRttCallback(),
                      RtcpLogMessageCallback(),
-                     testing_clock_,
+                     testing_clock_.get(),
                      &receiver_to_sender_,
                      kReceiverSsrc,
                      kSenderSsrc);
@@ -396,7 +369,7 @@ TEST_F(RtcpTest, RttWithPacketLoss) {
                    base::Bind(&MockFrameSender::OnReceivedRtt,
                               base::Unretained(&mock_frame_sender_)),
                    RtcpLogMessageCallback(),
-                   testing_clock_,
+                   testing_clock_.get(),
                    &sender_to_receiver_,
                    kSenderSsrc,
                    kReceiverSsrc);
@@ -413,11 +386,6 @@ TEST_F(RtcpTest, RttWithPacketLoss) {
   base::TimeDelta min_rtt;
   base::TimeDelta max_rtt;
   EXPECT_FALSE(rtcp_sender.Rtt(&rtt, &avg_rtt, &min_rtt, &max_rtt));
-  EXPECT_TRUE(rtcp_receiver.Rtt(&rtt, &avg_rtt, &min_rtt, &max_rtt));
-  EXPECT_NEAR(2 * kAddedDelay, rtt.InMilliseconds(), 1);
-  EXPECT_NEAR(2 * kAddedDelay, avg_rtt.InMilliseconds(), 1);
-  EXPECT_NEAR(2 * kAddedDelay, min_rtt.InMilliseconds(), 1);
-  EXPECT_NEAR(2 * kAddedDelay, max_rtt.InMilliseconds(), 1);
 
   receiver_to_sender_.set_short_delay();
   sender_to_receiver_.set_short_delay();
@@ -427,8 +395,6 @@ TEST_F(RtcpTest, RttWithPacketLoss) {
   rtcp_sender.SendRtcpFromRtpSender(testing_clock_->NowTicks(), 1, 1, 1);
   RunTasks(33);
 
-  EXPECT_TRUE(rtcp_receiver.Rtt(&rtt, &avg_rtt, &min_rtt, &max_rtt));
-  EXPECT_NEAR(kAddedDelay + kAddedShortDelay, rtt.InMilliseconds(), 2);
 }
 
 TEST_F(RtcpTest, NtpAndTime) {

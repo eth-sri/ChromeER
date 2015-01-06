@@ -28,7 +28,7 @@
 #include "remoting/protocol/client_stub.h"
 #include "remoting/protocol/clipboard_thread_proxy.h"
 #include "remoting/protocol/pairing_registry.h"
-#include "third_party/webrtc/modules/desktop_capture/screen_capturer.h"
+#include "third_party/webrtc/modules/desktop_capture/desktop_capturer.h"
 
 // Default DPI to assume for old clients that use notifyClientDimensions.
 const int kDefaultDPI = 96;
@@ -142,21 +142,21 @@ void ClientSession::ControlVideo(const protocol::VideoControl& video_control) {
     VLOG(1) << "Received VideoControl (enable="
             << video_control.enable() << ")";
     pause_video_ = !video_control.enable();
-    if (video_scheduler_)
+    if (video_scheduler_.get())
       video_scheduler_->Pause(pause_video_);
   }
   if (video_control.has_lossless_encode()) {
     VLOG(1) << "Received VideoControl (lossless_encode="
             << video_control.lossless_encode() << ")";
     lossless_video_encode_ = video_control.lossless_encode();
-    if (video_scheduler_)
+    if (video_scheduler_.get())
       video_scheduler_->SetLosslessEncode(lossless_video_encode_);
   }
   if (video_control.has_lossless_color()) {
     VLOG(1) << "Received VideoControl (lossless_color="
             << video_control.lossless_color() << ")";
     lossless_video_color_ = video_control.lossless_color();
-    if (video_scheduler_)
+    if (video_scheduler_.get())
       video_scheduler_->SetLosslessColor(lossless_video_color_);
   }
 }
@@ -207,7 +207,7 @@ void ClientSession::SetCapabilities(
 
 void ClientSession::RequestPairing(
     const protocol::PairingRequest& pairing_request) {
-  if (pairing_registry_ && pairing_request.has_client_name()) {
+  if (pairing_registry_.get() && pairing_request.has_client_name()) {
     protocol::PairingRegistry::Pairing pairing =
         pairing_registry_->CreatePairing(pairing_request.client_name());
     protocol::PairingResponse pairing_response;
@@ -453,14 +453,14 @@ void ClientSession::ResetVideoPipeline() {
     video_scheduler_ = NULL;
   }
 
-  // Create VideoEncoder and ScreenCapturer to match the session's video channel
-  // configuration.
-  scoped_ptr<webrtc::ScreenCapturer> video_capturer =
-      extension_manager_->OnCreateVideoCapturer(
-          desktop_environment_->CreateVideoCapturer());
+  // Create VideoEncoder and DesktopCapturer to match the session's video
+  // channel configuration.
+  scoped_ptr<webrtc::DesktopCapturer> video_capturer =
+      desktop_environment_->CreateVideoCapturer();
+  extension_manager_->OnCreateVideoCapturer(&video_capturer);
   scoped_ptr<VideoEncoder> video_encoder =
-      extension_manager_->OnCreateVideoEncoder(
-          CreateVideoEncoder(connection_->session()->config()));
+      CreateVideoEncoder(connection_->session()->config());
+  extension_manager_->OnCreateVideoEncoder(&video_encoder);
 
   // Don't start the VideoScheduler if either capturer or encoder are missing.
   if (!video_capturer || !video_encoder)
@@ -472,6 +472,7 @@ void ClientSession::ResetVideoPipeline() {
       video_encode_task_runner_,
       network_task_runner_,
       video_capturer.Pass(),
+      desktop_environment_->CreateMouseCursorMonitor(),
       video_encoder.Pass(),
       connection_->client_stub(),
       &mouse_clamping_filter_);

@@ -159,6 +159,15 @@ cr.define('print_preview', function() {
     this.addChild(this.otherOptionsSettings_);
 
     /**
+     * Component that renders the advanced options button.
+     * @type {!print_preview.AdvancedOptionsSettings}
+     * @private
+     */
+    this.advancedOptionsSettings_ = new print_preview.AdvancedOptionsSettings(
+        this.destinationStore_);
+    this.addChild(this.advancedOptionsSettings_);
+
+    /**
      * Component used to search for print destinations.
      * @type {!print_preview.AdvancedSettings}
      * @private
@@ -166,6 +175,23 @@ cr.define('print_preview', function() {
     this.advancedSettings_ = new print_preview.AdvancedSettings(
         this.printTicketStore_);
     this.addChild(this.advancedSettings_);
+
+    /**
+     * Component representing more/less settings button.
+     * @type {!print_preview.MoreSettings}
+     * @private
+     */
+    this.moreSettings_ = new print_preview.MoreSettings([
+        this.destinationSettings_,
+        this.pageSettings_,
+        this.copiesSettings_,
+        this.mediaSizeSettings_,
+        this.layoutSettings_,
+        this.marginSettings_,
+        this.colorSettings_,
+        this.otherOptionsSettings_,
+        this.advancedOptionsSettings_]);
+    this.addChild(this.moreSettings_);
 
     /**
      * Area of the UI that holds the print preview.
@@ -205,6 +231,13 @@ cr.define('print_preview', function() {
     this.isInAppKioskMode_ = false;
 
     /**
+     * Whether Print with System Dialog option is available.
+     * @type {boolean}
+     * @private
+     */
+    this.isSystemDialogAvailable_ = false;
+
+    /**
      * State of the print preview UI.
      * @type {print_preview.PrintPreview.UiState_}
      * @private
@@ -217,6 +250,13 @@ cr.define('print_preview', function() {
      * @private
      */
     this.isPreviewGenerationInProgress_ = true;
+
+    /**
+     * Whether to show system dialog before next printing.
+     * @type {boolean}
+     * @private
+     */
+    this.showSystemDialogBeforeNextPrint_ = false;
   };
 
   /**
@@ -383,6 +423,11 @@ cr.define('print_preview', function() {
           print_preview.DestinationListItem.EventType.REGISTER_PROMO_CLICKED,
           this.onCloudPrintRegisterPromoClick_.bind(this));
 
+      this.tracker.add(
+          this.advancedOptionsSettings_,
+          print_preview.AdvancedOptionsSettings.EventType.BUTTON_ACTIVATED,
+          this.onAdvancedOptionsButtonActivated_.bind(this));
+
       // TODO(rltoscano): Move no-destinations-promo into its own component
       // instead being part of PrintPreview.
       this.tracker.add(
@@ -411,7 +456,9 @@ cr.define('print_preview', function() {
       this.colorSettings_.decorate($('color-settings'));
       this.marginSettings_.decorate($('margin-settings'));
       this.otherOptionsSettings_.decorate($('other-options-settings'));
+      this.advancedOptionsSettings_.decorate($('advanced-options-settings'));
       this.advancedSettings_.decorate($('advanced-settings'));
+      this.moreSettings_.decorate($('more-settings'));
       this.previewArea_.decorate($('preview-area'));
 
       setIsVisible($('open-pdf-in-preview-link'), cr.isMac);
@@ -436,6 +483,7 @@ cr.define('print_preview', function() {
       this.colorSettings_.isEnabled = isEnabled;
       this.marginSettings_.isEnabled = isEnabled;
       this.otherOptionsSettings_.isEnabled = isEnabled;
+      this.advancedOptionsSettings_.isEnabled = isEnabled;
     },
 
     /**
@@ -504,7 +552,9 @@ cr.define('print_preview', function() {
             this.printTicketStore_,
             this.cloudPrintInterface_,
             this.documentInfo_,
-            this.uiState_ == PrintPreview.UiState_.OPENING_PDF_PREVIEW);
+            this.uiState_ == PrintPreview.UiState_.OPENING_PDF_PREVIEW,
+            this.showSystemDialogBeforeNextPrint_);
+        this.showSystemDialogBeforeNextPrint_ = false;
       }
       return PrintPreview.PrintAttemptResult_.PRINTED;
     },
@@ -524,6 +574,13 @@ cr.define('print_preview', function() {
      * @private
      */
     openSystemPrintDialog_: function() {
+      if (!this.shouldShowSystemDialogLink_())
+        return;
+      if (cr.isWindows) {
+        this.showSystemDialogBeforeNextPrint_ = true;
+        this.printDocumentOrOpenPdfPreview_(false /*isPdfPreview*/);
+        return;
+      }
       setIsVisible($('system-dialog-throbber'), true);
       this.setIsEnabled_(false);
       this.uiState_ = PrintPreview.UiState_.OPENING_NATIVE_PRINT_DIALOG;
@@ -565,9 +622,9 @@ cr.define('print_preview', function() {
       this.appState_.setInitialized();
 
       $('document-title').innerText = settings.documentTitle;
-      setIsVisible($('system-dialog-link'),
-                   !settings.hidePrintWithSystemDialogLink &&
-                   !settings.isInAppKioskMode);
+      this.isSystemDialogAvailable_ = !settings.hidePrintWithSystemDialogLink &&
+                                      !settings.isInAppKioskMode;
+      setIsVisible($('system-dialog-link'), this.shouldShowSystemDialogLink_());
     },
 
     /**
@@ -851,6 +908,16 @@ cr.define('print_preview', function() {
     },
 
     /**
+     * Called when the destination settings' change button is activated.
+     * Displays the destination search component.
+     * @private
+     */
+    onAdvancedOptionsButtonActivated_: function() {
+      this.advancedSettings_.showForDestination(
+          this.destinationStore_.selectedDestination);
+    },
+
+    /**
      * Called when the destination search dispatches manage cloud destinations
      * event. Calls corresponding native layer method.
      * @private
@@ -1037,6 +1104,23 @@ cr.define('print_preview', function() {
     },
 
     /**
+     * Returns true if "Print using system dialog" link should be shown for
+     * current destination.
+     * @return {boolean} Returns true if link should be shown.
+     */
+    shouldShowSystemDialogLink_: function() {
+      if (!this.isSystemDialogAvailable_)
+        return false;
+      if (!cr.isWindows)
+        return true;
+      var selectedDest = this.destinationStore_.selectedDestination;
+      return selectedDest &&
+             selectedDest.origin == print_preview.Destination.Origin.LOCAL &&
+             selectedDest.id !=
+                 print_preview.Destination.GooglePromotedId.SAVE_AS_PDF;
+    },
+
+    /**
      * Called when the open-cloud-print-dialog link is clicked. Opens the Google
      * Cloud Print web dialog.
      * @private
@@ -1061,6 +1145,9 @@ cr.define('print_preview', function() {
       setIsVisible(
           $('cloud-print-dialog-link'),
           selectedDest && !cr.isChromeOS && !selectedDest.isLocal);
+      setIsVisible(
+          $('system-dialog-link'),
+          this.shouldShowSystemDialogLink_());
       if (selectedDest && this.isInKioskAutoPrintMode_) {
         this.onPrintButtonClick_();
       }
@@ -1164,6 +1251,7 @@ cr.define('print_preview', function() {
 <include src="print_header.js"/>
 <include src="metrics.js"/>
 
+<include src="settings/settings_section.js"/>
 <include src="settings/page_settings.js"/>
 <include src="settings/copies_settings.js"/>
 <include src="settings/media_size_settings.js"/>
@@ -1172,8 +1260,10 @@ cr.define('print_preview', function() {
 <include src="settings/margin_settings.js"/>
 <include src="settings/destination_settings.js"/>
 <include src="settings/other_options_settings.js"/>
+<include src="settings/advanced_options_settings.js"/>
 <include src="settings/advanced_settings/advanced_settings.js"/>
 <include src="settings/advanced_settings/advanced_settings_item.js"/>
+<include src="settings/more_settings.js"/>
 
 <include src="previewarea/margin_control.js"/>
 <include src="previewarea/margin_control_container.js"/>

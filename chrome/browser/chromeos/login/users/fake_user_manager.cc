@@ -4,32 +4,42 @@
 
 #include "chrome/browser/chromeos/login/users/fake_user_manager.h"
 
+#include "base/task_runner.h"
 #include "chrome/browser/chromeos/login/users/fake_supervised_user_manager.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
+#include "chrome/grit/theme_resources.h"
 #include "components/user_manager/user_image/user_image.h"
 #include "components/user_manager/user_type.h"
-#include "grit/theme_resources.h"
 #include "ui/base/resource/resource_bundle.h"
 
 namespace {
 
-// As defined in /chromeos/dbus/cryptohome_client.cc.
-static const char kUserIdHashSuffix[] = "-hash";
+class FakeTaskRunner : public base::TaskRunner {
+ public:
+  virtual bool PostDelayedTask(const tracked_objects::Location& from_here,
+                               const base::Closure& task,
+                               base::TimeDelta delay) OVERRIDE {
+    task.Run();
+    return true;
+  }
+  virtual bool RunsTasksOnCurrentThread() const OVERRIDE { return true; }
+
+ protected:
+  virtual ~FakeTaskRunner() {}
+};
 
 }  // namespace
 
 namespace chromeos {
 
 FakeUserManager::FakeUserManager()
-    : supervised_user_manager_(new FakeSupervisedUserManager),
+    : ChromeUserManager(new FakeTaskRunner(), new FakeTaskRunner()),
+      supervised_user_manager_(new FakeSupervisedUserManager),
       primary_user_(NULL),
       multi_profile_user_controller_(NULL) {
-  ProfileHelper::SetProfileToUserForTestingEnabled(true);
 }
 
 FakeUserManager::~FakeUserManager() {
-  ProfileHelper::SetProfileToUserForTestingEnabled(false);
-
   // Can't use STLDeleteElements because of the private destructor of User.
   for (user_manager::UserList::iterator it = user_list_.begin();
        it != user_list_.end();
@@ -40,37 +50,37 @@ FakeUserManager::~FakeUserManager() {
 
 const user_manager::User* FakeUserManager::AddUser(const std::string& email) {
   user_manager::User* user = user_manager::User::CreateRegularUser(email);
-  user->set_username_hash(email + kUserIdHashSuffix);
+  user->set_username_hash(
+      ProfileHelper::GetUserIdHashByUserIdForTesting(email));
   user->SetStubImage(user_manager::UserImage(
                          *ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
                              IDR_PROFILE_PICTURE_LOADING)),
                      user_manager::User::USER_IMAGE_PROFILE,
                      false);
   user_list_.push_back(user);
-  ProfileHelper::Get()->SetProfileToUserMappingForTesting(user);
   return user;
 }
 
 const user_manager::User* FakeUserManager::AddPublicAccountUser(
     const std::string& email) {
   user_manager::User* user = user_manager::User::CreatePublicAccountUser(email);
-  user->set_username_hash(email + kUserIdHashSuffix);
+  user->set_username_hash(
+      ProfileHelper::GetUserIdHashByUserIdForTesting(email));
   user->SetStubImage(user_manager::UserImage(
                          *ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
                              IDR_PROFILE_PICTURE_LOADING)),
                      user_manager::User::USER_IMAGE_PROFILE,
                      false);
   user_list_.push_back(user);
-  ProfileHelper::Get()->SetProfileToUserMappingForTesting(user);
   return user;
 }
 
 void FakeUserManager::AddKioskAppUser(const std::string& kiosk_app_username) {
   user_manager::User* user =
       user_manager::User::CreateKioskAppUser(kiosk_app_username);
-  user->set_username_hash(kiosk_app_username + kUserIdHashSuffix);
+  user->set_username_hash(
+      ProfileHelper::GetUserIdHashByUserIdForTesting(kiosk_app_username));
   user_list_.push_back(user);
-  ProfileHelper::Get()->SetProfileToUserMappingForTesting(user);
 }
 
 void FakeUserManager::RemoveUserFromList(const std::string& email) {
@@ -83,7 +93,8 @@ void FakeUserManager::RemoveUserFromList(const std::string& email) {
 }
 
 void FakeUserManager::LoginUser(const std::string& email) {
-  UserLoggedIn(email, email + kUserIdHashSuffix, false);
+  UserLoggedIn(
+      email, ProfileHelper::GetUserIdHashByUserIdForTesting(email), false);
 }
 
 const user_manager::UserList& FakeUserManager::GetUsers() const {
@@ -115,6 +126,7 @@ void FakeUserManager::UserLoggedIn(const std::string& email,
        ++it) {
     if ((*it)->username_hash() == username_hash) {
       (*it)->set_is_logged_in(true);
+      (*it)->set_profile_is_created();
       logged_in_users_.push_back(*it);
 
       if (!primary_user_)
@@ -149,6 +161,8 @@ user_manager::User* FakeUserManager::GetActiveUser() {
 
 void FakeUserManager::SwitchActiveUser(const std::string& email) {
   active_user_id_ = email;
+  ProfileHelper::Get()->ActiveUserHashChanged(
+      ProfileHelper::GetUserIdHashByUserIdForTesting(email));
 }
 
 void FakeUserManager::SaveUserDisplayName(
@@ -302,6 +316,36 @@ UserFlow* FakeUserManager::GetUserFlow(const std::string& email) const {
 
 bool FakeUserManager::AreSupervisedUsersAllowed() const {
   return true;
+}
+
+bool FakeUserManager::AreEphemeralUsersEnabled() const {
+  return false;
+}
+
+const std::string& FakeUserManager::GetApplicationLocale() const {
+  static const std::string default_locale("en-US");
+  return default_locale;
+}
+
+PrefService* FakeUserManager::GetLocalState() const {
+  return NULL;
+}
+
+bool FakeUserManager::IsEnterpriseManaged() const {
+  return false;
+}
+
+bool FakeUserManager::IsDemoApp(const std::string& user_id) const {
+  return false;
+}
+
+bool FakeUserManager::IsKioskApp(const std::string& user_id) const {
+  return false;
+}
+
+bool FakeUserManager::IsPublicAccountMarkedForRemoval(
+    const std::string& user_id) const {
+  return false;
 }
 
 }  // namespace chromeos

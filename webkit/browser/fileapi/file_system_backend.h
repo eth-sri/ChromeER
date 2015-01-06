@@ -14,16 +14,16 @@
 #include "base/memory/scoped_ptr.h"
 #include "webkit/browser/fileapi/file_permission_policy.h"
 #include "webkit/browser/fileapi/open_file_system_mode.h"
-#include "webkit/browser/webkit_storage_browser_export.h"
+#include "webkit/browser/storage_browser_export.h"
 #include "webkit/common/fileapi/file_system_types.h"
 
 class GURL;
 
-namespace webkit_blob {
+namespace storage {
 class FileStreamReader;
 }
 
-namespace fileapi {
+namespace storage {
 
 class AsyncFileUtil;
 class CopyOrMoveFileValidatorFactory;
@@ -33,13 +33,14 @@ class FileSystemContext;
 class FileSystemFileUtil;
 class FileSystemOperation;
 class FileSystemQuotaUtil;
+class WatcherManager;
 
 // An interface for defining a file system backend.
 //
 // NOTE: when you implement a new FileSystemBackend for your own
 // FileSystem module, please contact to kinuko@chromium.org.
 //
-class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemBackend {
+class STORAGE_EXPORT FileSystemBackend {
  public:
   // Callback for InitializeFileSystem.
   typedef base::Callback<void(const GURL& root_url,
@@ -70,6 +71,9 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemBackend {
   // Returns the specialized AsyncFileUtil for this backend.
   virtual AsyncFileUtil* GetAsyncFileUtil(FileSystemType type) = 0;
 
+  // Returns the specialized WatcherManager for this backend.
+  virtual WatcherManager* GetWatcherManager(FileSystemType type) = 0;
+
   // Returns the specialized CopyOrMoveFileValidatorFactory for this backend
   // and |type|.  If |error_code| is File::FILE_OK and the result is NULL,
   // then no validator is required.
@@ -92,6 +96,11 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemBackend {
   // AsyncFileUtil::CreateSnapshotFile.
   virtual bool SupportsStreaming(const FileSystemURL& url) const = 0;
 
+  // Returns true if specified |type| of filesystem can handle Copy()
+  // of the files in the same file system instead of streaming
+  // read/write implementation.
+  virtual bool HasInplaceCopyImplementation(FileSystemType type) const = 0;
+
   // Creates a new file stream reader for a given filesystem URL |url| with an
   // offset |offset|. |expected_modification_time| specifies the expected last
   // modification if the value is non-null, the reader will check the underlying
@@ -100,7 +109,9 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemBackend {
   // ERR_UPLOAD_FILE_CHANGED error.
   // This method itself does *not* check if the given path exists and is a
   // regular file.
-  virtual scoped_ptr<webkit_blob::FileStreamReader> CreateFileStreamReader(
+  // The |length| argument says how many bytes are going to be read using the
+  // instance of the file stream reader. If unknown, then equal to -1.
+  virtual scoped_ptr<storage::FileStreamReader> CreateFileStreamReader(
       const FileSystemURL& url,
       int64 offset,
       const base::Time& expected_modification_time,
@@ -127,7 +138,7 @@ class ExternalFileSystemBackend : public FileSystemBackend {
   // Returns true if |url| is allowed to be accessed.
   // This is supposed to perform ExternalFileSystem-specific security
   // checks.
-  virtual bool IsAccessAllowed(const fileapi::FileSystemURL& url) const = 0;
+  virtual bool IsAccessAllowed(const storage::FileSystemURL& url) const = 0;
   // Returns the list of top level directories that are exposed by this
   // provider. This list is used to set appropriate child process file access
   // permissions.
@@ -148,6 +159,6 @@ class ExternalFileSystemBackend : public FileSystemBackend {
                               base::FilePath* virtual_path) = 0;
 };
 
-}  // namespace fileapi
+}  // namespace storage
 
 #endif  // WEBKIT_BROWSER_FILEAPI_FILE_SYSTEM_BACKEND_H_

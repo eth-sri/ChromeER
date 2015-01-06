@@ -1,6 +1,13 @@
+# Copyright 2014 The Chromium Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
 {
   'targets': [
     {
+      # GN version: //mojo/apps/js
+      #             //mojo/apps/js/bindings
+      #             //mojo/apps/js/bindings/gl
       'target_name': 'mojo_js_lib',
       'type': 'static_library',
       'dependencies': [
@@ -10,17 +17,18 @@
         '../v8/tools/gyp/v8.gyp:v8',
         'mojo_base.gyp:mojo_common_lib',
         'mojo_base.gyp:mojo_environment_chromium',
+        'mojo_base.gyp:mojo_gles2_bindings',
         'mojo_base.gyp:mojo_js_bindings_lib',
-        'mojo_gles2',
-        'mojo_gles2_bindings',
         'mojo_native_viewport_bindings',
+      ],
+      'includes': [
+        'mojo_public_gles2_for_loadable_module.gypi',
       ],
       'export_dependent_settings': [
         '../base/base.gyp:base',
         '../gin/gin.gyp:gin',
         'mojo_base.gyp:mojo_common_lib',
-        'mojo_gles2',
-        'mojo_gles2_bindings',
+        'mojo_base.gyp:mojo_gles2_bindings',
         'mojo_native_viewport_bindings',
       ],
       'sources': [
@@ -51,6 +59,7 @@
       ],
     },
     {
+      # GN version: //mojo/apps/js/test/mojo_apps_js_unittests
       'target_name': 'mojo_apps_js_unittests',
       'type': 'executable',
       'dependencies': [

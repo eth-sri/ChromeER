@@ -8,6 +8,7 @@
 #include <string>
 
 #include "athena/athena_export.h"
+#include "ui/gfx/display.h"
 
 namespace aura {
 class Window;
@@ -15,6 +16,11 @@ class Window;
 
 namespace gfx {
 class ImageSkia;
+class Insets;
+}
+
+namespace ui {
+class LayerAnimator;
 }
 
 namespace wm {
@@ -22,6 +28,7 @@ class FocusRules;
 }
 
 namespace athena {
+class ScreenManagerDelegate;
 
 // Mananges basic UI components on the screen such as background, and provide
 // API for other UI components, such as window manager, home card, to
@@ -64,9 +71,14 @@ class ATHENA_EXPORT ScreenManager {
   // Sets the background image.
   virtual void SetBackgroundImage(const gfx::ImageSkia& image) = 0;
 
-  // Create a focus rules.
-  // TODO(oshima): Make this virtual function.
-  static wm::FocusRules* CreateFocusRules();
+  // Set screen rotation.
+  // TODO(flackr): Extract and use ash DisplayManager to set rotation
+  // instead: http://crbug.com/401044.
+  virtual void SetRotation(gfx::Display::Rotation rotation) = 0;
+
+  // Returns the LayerAnimator to use to animate the entire screen (e.g. fade
+  // screen to white).
+  virtual ui::LayerAnimator* GetScreenAnimator() = 0;
 };
 
 }  // namespace athena

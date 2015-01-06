@@ -13,12 +13,12 @@
 #include "base/pickle.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/win/scoped_hglobal.h"
-#include "grit/ui_strings.h"
 #include "net/base/filename_util.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/clipboard/clipboard_util_win.h"
 #include "ui/base/dragdrop/file_info.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/strings/grit/ui_strings.h"
 #include "url/gurl.h"
 
 namespace ui {
@@ -917,7 +917,7 @@ static void CreateValidFileNameFromTitle(const GURL& url,
     }
   } else {
     *validated = title;
-    file_util::ReplaceIllegalCharactersInPath(validated, '-');
+    base::i18n::ReplaceIllegalCharactersInPath(validated, '-');
   }
   static const wchar_t extension[] = L".url";
   static const size_t max_length = MAX_PATH - arraysize(extension);

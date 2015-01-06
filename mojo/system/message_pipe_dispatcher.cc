@@ -70,7 +70,7 @@ MojoResult MessagePipeDispatcher::ValidateCreateOptions(
 
 void MessagePipeDispatcher::Init(scoped_refptr<MessagePipe> message_pipe,
                                  unsigned port) {
-  DCHECK(message_pipe);
+  DCHECK(message_pipe.get());
   DCHECK(port == 0 || port == 1);
 
   message_pipe_ = message_pipe;
@@ -84,9 +84,7 @@ Dispatcher::Type MessagePipeDispatcher::GetType() const {
 // static
 std::pair<scoped_refptr<MessagePipeDispatcher>, scoped_refptr<MessagePipe> >
 MessagePipeDispatcher::CreateRemoteMessagePipe() {
-  scoped_refptr<MessagePipe> message_pipe(new MessagePipe(
-      scoped_ptr<MessagePipeEndpoint>(new LocalMessagePipeEndpoint()),
-      scoped_ptr<MessagePipeEndpoint>(new ProxyMessagePipeEndpoint())));
+  scoped_refptr<MessagePipe> message_pipe(MessagePipe::CreateLocalProxy());
   scoped_refptr<MessagePipeDispatcher> dispatcher(
       new MessagePipeDispatcher(MessagePipeDispatcher::kDefaultCreateOptions));
   dispatcher->Init(message_pipe, 0);
@@ -140,7 +138,7 @@ scoped_refptr<MessagePipeDispatcher> MessagePipeDispatcher::Deserialize(
 
 MessagePipeDispatcher::~MessagePipeDispatcher() {
   // |Close()|/|CloseImplNoLock()| should have taken care of the pipe.
-  DCHECK(!message_pipe_);
+  DCHECK(!message_pipe_.get());
 }
 
 MessagePipe* MessagePipeDispatcher::GetMessagePipeNoLock() const {

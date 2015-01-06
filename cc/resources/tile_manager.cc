@@ -17,7 +17,7 @@
 #include "cc/debug/frame_viewer_instrumentation.h"
 #include "cc/debug/traced_value.h"
 #include "cc/layers/picture_layer_impl.h"
-#include "cc/resources/raster_worker_pool.h"
+#include "cc/resources/rasterizer.h"
 #include "cc/resources/tile.h"
 #include "skia/ext/paint_simplifier.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -59,51 +59,43 @@ class RasterTaskImpl : public RasterTask {
         analyze_picture_(analyze_picture),
         rendering_stats_(rendering_stats),
         reply_(reply),
-        canvas_(NULL) {}
+        raster_buffer_(NULL) {}
 
   // Overridden from Task:
   virtual void RunOnWorkerThread() OVERRIDE {
     TRACE_EVENT0("cc", "RasterizerTaskImpl::RunOnWorkerThread");
 
-    DCHECK(picture_pile_);
-    if (canvas_) {
-      AnalyzeAndRaster(picture_pile_->GetCloneForDrawingOnThread(
-          RasterWorkerPool::GetPictureCloneIndexForCurrentThread()));
-    }
-  }
-
-  // Overridden from RasterizerTask:
-  virtual void ScheduleOnOriginThread(RasterizerTaskClient* client) OVERRIDE {
-    DCHECK(!canvas_);
-    canvas_ = client->AcquireCanvasForRaster(this);
-  }
-  virtual void CompleteOnOriginThread(RasterizerTaskClient* client) OVERRIDE {
-    canvas_ = NULL;
-    client->ReleaseCanvasForRaster(this);
-  }
-  virtual void RunReplyOnOriginThread() OVERRIDE {
-    DCHECK(!canvas_);
-    reply_.Run(analysis_, !HasFinishedRunning());
-  }
-
- protected:
-  virtual ~RasterTaskImpl() { DCHECK(!canvas_); }
-
- private:
-  void AnalyzeAndRaster(PicturePileImpl* picture_pile) {
-    DCHECK(picture_pile);
-    DCHECK(canvas_);
+    DCHECK(picture_pile_.get());
+    DCHECK(raster_buffer_);
 
     if (analyze_picture_) {
-      Analyze(picture_pile);
+      Analyze(picture_pile_.get());
       if (analysis_.is_solid_color)
         return;
     }
 
-    Raster(picture_pile);
+    Raster(picture_pile_.get());
   }
 
-  void Analyze(PicturePileImpl* picture_pile) {
+  // Overridden from RasterizerTask:
+  virtual void ScheduleOnOriginThread(RasterizerTaskClient* client) OVERRIDE {
+    DCHECK(!raster_buffer_);
+    raster_buffer_ = client->AcquireBufferForRaster(this);
+  }
+  virtual void CompleteOnOriginThread(RasterizerTaskClient* client) OVERRIDE {
+    raster_buffer_ = NULL;
+    client->ReleaseBufferForRaster(this);
+  }
+  virtual void RunReplyOnOriginThread() OVERRIDE {
+    DCHECK(!raster_buffer_);
+    reply_.Run(analysis_, !HasFinishedRunning());
+  }
+
+ protected:
+  virtual ~RasterTaskImpl() { DCHECK(!raster_buffer_); }
+
+ private:
+  void Analyze(const PicturePileImpl* picture_pile) {
     frame_viewer_instrumentation::ScopedAnalyzeTask analyze_task(
         tile_id_, tile_resolution_, source_frame_number_, layer_id_);
 
@@ -120,7 +112,7 @@ class RasterTaskImpl : public RasterTask {
     analysis_.is_solid_color &= kUseColorEstimator;
   }
 
-  void Raster(PicturePileImpl* picture_pile) {
+  void Raster(const PicturePileImpl* picture_pile) {
     frame_viewer_instrumentation::ScopedRasterTask raster_task(
         tile_id_,
         tile_resolution_,
@@ -129,6 +121,11 @@ class RasterTaskImpl : public RasterTask {
         raster_mode_);
     devtools_instrumentation::ScopedLayerTask layer_task(
         devtools_instrumentation::kRasterTask, layer_id_);
+
+    skia::RefPtr<SkCanvas> canvas = raster_buffer_->AcquireSkCanvas();
+    if (!canvas)
+      return;
+    canvas->save();
 
     skia::RefPtr<SkDrawFilter> draw_filter;
     switch (raster_mode_) {
@@ -141,7 +138,7 @@ class RasterTaskImpl : public RasterTask {
       default:
         NOTREACHED();
     }
-    canvas_->setDrawFilter(draw_filter.get());
+    canvas->setDrawFilter(draw_filter.get());
 
     base::TimeDelta prev_rasterize_time =
         rendering_stats_->impl_thread_rendering_stats().rasterize_time;
@@ -154,18 +151,21 @@ class RasterTaskImpl : public RasterTask {
         tile_resolution_ == HIGH_RESOLUTION ? rendering_stats_ : NULL;
     DCHECK(picture_pile);
     picture_pile->RasterToBitmap(
-        canvas_, content_rect_, contents_scale_, stats);
+        canvas.get(), content_rect_, contents_scale_, stats);
 
     if (rendering_stats_->record_rendering_stats()) {
       base::TimeDelta current_rasterize_time =
           rendering_stats_->impl_thread_rendering_stats().rasterize_time;
-      HISTOGRAM_CUSTOM_COUNTS(
+      LOCAL_HISTOGRAM_CUSTOM_COUNTS(
           "Renderer4.PictureRasterTimeUS",
           (current_rasterize_time - prev_rasterize_time).InMicroseconds(),
           0,
           100000,
           100);
     }
+
+    canvas->restore();
+    raster_buffer_->ReleaseSkCanvas(canvas);
   }
 
   PicturePileImpl::Analysis analysis_;
@@ -180,7 +180,7 @@ class RasterTaskImpl : public RasterTask {
   bool analyze_picture_;
   RenderingStatsInstrumentation* rendering_stats_;
   const base::Callback<void(const PicturePileImpl::Analysis&, bool)> reply_;
-  SkCanvas* canvas_;
+  RasterBuffer* raster_buffer_;
 
   DISALLOW_COPY_AND_ASSIGN(RasterTaskImpl);
 };
@@ -362,7 +362,7 @@ scoped_ptr<TileManager> TileManager::Create(
 
 TileManager::TileManager(
     TileManagerClient* client,
-    base::SequencedTaskRunner* task_runner,
+    const scoped_refptr<base::SequencedTaskRunner>& task_runner,
     ResourcePool* resource_pool,
     Rasterizer* rasterizer,
     RenderingStatsInstrumentation* rendering_stats_instrumentation)
@@ -380,7 +380,7 @@ TileManager::TileManager(
       did_initialize_visible_tile_(false),
       did_check_for_completed_tasks_since_last_schedule_tasks_(true),
       ready_to_activate_check_notifier_(
-          task_runner_,
+          task_runner_.get(),
           base::Bind(&TileManager::CheckIfReadyToActivate,
                      base::Unretained(this))) {
   rasterizer_->SetClient(this);
@@ -563,7 +563,7 @@ void TileManager::GetTilesWithAssignedBins(PrioritizedTileSet* tiles) {
         tile->GetTileVersionForDrawing();
     bool tile_is_ready_to_draw = tile_version.IsReadyToDraw();
     bool tile_is_active = tile_is_ready_to_draw ||
-                          mts.tile_versions[mts.raster_mode].raster_task_;
+                          mts.tile_versions[mts.raster_mode].raster_task_.get();
 
     // Get the active priority and bin.
     TilePriority active_priority = tile->priority(ACTIVE_TREE);
@@ -649,7 +649,7 @@ void TileManager::GetTilesWithAssignedBins(PrioritizedTileSet* tiles) {
     // should keep it in the prioritized tile set to ensure that AssignGpuMemory
     // can visit it.
     if (mts.bin == NEVER_BIN &&
-        !mts.tile_versions[mts.raster_mode].raster_task_) {
+        !mts.tile_versions[mts.raster_mode].raster_task_.get()) {
       FreeResourcesForTileAndNotifyClientIfTileWasReadyToDraw(tile);
       continue;
     }
@@ -729,14 +729,6 @@ void TileManager::BasicStateAsValueInto(base::debug::TracedValue* state) const {
   state->BeginDictionary("global_state");
   global_state_.AsValueInto(state);
   state->EndDictionary();
-}
-
-void TileManager::AllTilesAsValueInto(base::debug::TracedValue* state) const {
-  for (TileMap::const_iterator it = tiles_.begin(); it != tiles_.end(); ++it) {
-    state->BeginDictionary();
-    it->second->AsValueInto(state);
-    state->EndDictionary();
-  }
 }
 
 void TileManager::AssignGpuMemoryToTiles(
@@ -835,7 +827,7 @@ void TileManager::AssignGpuMemoryToTiles(
     if (!reached_scheduled_raster_tasks_limit) {
       // If we don't have the required version, and it's not in flight
       // then we'll have to pay to create a new task.
-      if (!tile_version.resource_ && !tile_version.raster_task_) {
+      if (!tile_version.resource_ && !tile_version.raster_task_.get()) {
         tile_bytes += bytes_if_allocated;
         tile_resources++;
       }
@@ -843,18 +835,13 @@ void TileManager::AssignGpuMemoryToTiles(
 
     // Tile is OOM.
     if (tile_bytes > tile_bytes_left || tile_resources > resources_left) {
-      bool was_ready_to_draw = tile->IsReadyToDraw();
-
-      FreeResourcesForTile(tile);
+      FreeResourcesForTileAndNotifyClientIfTileWasReadyToDraw(tile);
 
       // This tile was already on screen and now its resources have been
       // released. In order to prevent checkerboarding, set this tile as
       // rasterize on demand immediately.
       if (mts.visible_and_ready_to_draw)
         tile_version.set_rasterize_on_demand();
-
-      if (was_ready_to_draw)
-        client_->NotifyTileStateChanged(tile);
 
       oomed_soft = true;
       if (tile_uses_hard_limit) {
@@ -983,7 +970,7 @@ void TileManager::ScheduleTasks(
     DCHECK(tile_version.requires_resource());
     DCHECK(!tile_version.resource_);
 
-    if (!tile_version.raster_task_)
+    if (!tile_version.raster_task_.get())
       tile_version.raster_task_ = CreateRasterTask(tile);
 
     raster_queue_.items.push_back(RasterTaskQueue::Item(
@@ -1026,7 +1013,7 @@ scoped_refptr<RasterTask> TileManager::CreateRasterTask(Tile* tile) {
   ManagedTileState& mts = tile->managed_state();
 
   scoped_ptr<ScopedResource> resource =
-      resource_pool_->AcquireResource(tile->tile_size_.size());
+      resource_pool_->AcquireResource(tile->size());
   const ScopedResource* const_resource = resource.get();
 
   // Create and queue all image decode tasks that this tile depends on.
@@ -1104,7 +1091,7 @@ void TileManager::OnRasterTaskCompleted(
   Tile* tile = tiles_[tile_id];
   ManagedTileState& mts = tile->managed_state();
   ManagedTileState::TileVersion& tile_version = mts.tile_versions[raster_mode];
-  DCHECK(tile_version.raster_task_);
+  DCHECK(tile_version.raster_task_.get());
   orphan_raster_tasks_.push_back(tile_version.raster_task_);
   tile_version.raster_task_ = NULL;
 
@@ -1153,7 +1140,7 @@ scoped_refptr<Tile> TileManager::CreateTile(PicturePileImpl* picture_pile,
                                                          flags));
   DCHECK(tiles_.find(tile->id()) == tiles_.end());
 
-  tiles_[tile->id()] = tile;
+  tiles_[tile->id()] = tile.get();
   used_layer_counts_[tile->layer_id()]++;
   prioritized_tiles_dirty_ = true;
   return tile;

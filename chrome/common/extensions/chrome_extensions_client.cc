@@ -11,6 +11,9 @@
 #include "chrome/common/extensions/features/chrome_channel_feature_filter.h"
 #include "chrome/common/extensions/features/feature_channel.h"
 #include "chrome/common/url_constants.h"
+#include "chrome/grit/chromium_strings.h"
+#include "chrome/grit/common_resources.h"
+#include "chrome/grit/generated_resources.h"
 #include "content/public/common/url_constants.h"
 #include "extensions/common/api/generated_schemas.h"
 #include "extensions/common/common_manifest_handlers.h"
@@ -30,14 +33,13 @@
 #include "extensions/common/permissions/permissions_info.h"
 #include "extensions/common/url_pattern.h"
 #include "extensions/common/url_pattern_set.h"
-#include "grit/common_resources.h"
-#if defined(ENABLE_EXTENSIONS)
-#include "grit/extensions_api_resources.h"
-#endif
-#include "grit/extensions_resources.h"
-#include "grit/generated_resources.h"
+#include "extensions/grit/extensions_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "url/gurl.h"
+
+#if defined(ENABLE_EXTENSIONS)
+#include "chrome/grit/extensions_api_resources.h"
+#endif
 
 namespace extensions {
 
@@ -97,6 +99,10 @@ void ChromeExtensionsClient::Initialize() {
 const PermissionMessageProvider&
 ChromeExtensionsClient::GetPermissionMessageProvider() const {
   return permission_message_provider_;
+}
+
+const std::string ChromeExtensionsClient::GetProductName() {
+  return l10n_util::GetStringUTF8(IDS_PRODUCT_NAME);
 }
 
 scoped_ptr<FeatureProvider> ChromeExtensionsClient::CreateFeatureProvider(
@@ -246,8 +252,6 @@ void ChromeExtensionsClient::RegisterAPISchemaResources(
   api->RegisterSchemaResource("inputMethodPrivate",
                               IDR_EXTENSION_API_JSON_INPUTMETHODPRIVATE);
   api->RegisterSchemaResource("pageAction", IDR_EXTENSION_API_JSON_PAGEACTION);
-  api->RegisterSchemaResource("pageActions",
-                              IDR_EXTENSION_API_JSON_PAGEACTIONS);
   api->RegisterSchemaResource("privacy", IDR_EXTENSION_API_JSON_PRIVACY);
   api->RegisterSchemaResource("processes", IDR_EXTENSION_API_JSON_PROCESSES);
   api->RegisterSchemaResource("proxy", IDR_EXTENSION_API_JSON_PROXY);

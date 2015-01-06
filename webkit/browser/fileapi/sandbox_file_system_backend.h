@@ -17,15 +17,15 @@
 #include "webkit/browser/fileapi/sandbox_file_system_backend_delegate.h"
 #include "webkit/browser/fileapi/task_runner_bound_observer_list.h"
 #include "webkit/browser/quota/special_storage_policy.h"
-#include "webkit/browser/webkit_storage_browser_export.h"
+#include "webkit/browser/storage_browser_export.h"
 
-namespace fileapi {
+namespace storage {
 
 // TEMPORARY or PERSISTENT filesystems, which are placed under the user's
 // profile directory in a sandboxed way.
 // This interface also lets one enumerate and remove storage for the origins
 // that use the filesystem.
-class WEBKIT_STORAGE_BROWSER_EXPORT SandboxFileSystemBackend
+class STORAGE_EXPORT SandboxFileSystemBackend
     : public FileSystemBackend {
  public:
   explicit SandboxFileSystemBackend(SandboxFileSystemBackendDelegate* delegate);
@@ -38,6 +38,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT SandboxFileSystemBackend
                           OpenFileSystemMode mode,
                           const OpenFileSystemCallback& callback) OVERRIDE;
   virtual AsyncFileUtil* GetAsyncFileUtil(FileSystemType type) OVERRIDE;
+  virtual WatcherManager* GetWatcherManager(FileSystemType type) OVERRIDE;
   virtual CopyOrMoveFileValidatorFactory* GetCopyOrMoveFileValidatorFactory(
       FileSystemType type,
       base::File::Error* error_code) OVERRIDE;
@@ -46,7 +47,9 @@ class WEBKIT_STORAGE_BROWSER_EXPORT SandboxFileSystemBackend
       FileSystemContext* context,
       base::File::Error* error_code) const OVERRIDE;
   virtual bool SupportsStreaming(const FileSystemURL& url) const OVERRIDE;
-  virtual scoped_ptr<webkit_blob::FileStreamReader> CreateFileStreamReader(
+  virtual bool HasInplaceCopyImplementation(
+      storage::FileSystemType type) const OVERRIDE;
+  virtual scoped_ptr<storage::FileStreamReader> CreateFileStreamReader(
       const FileSystemURL& url,
       int64 offset,
       const base::Time& expected_modification_time,
@@ -77,6 +80,6 @@ class WEBKIT_STORAGE_BROWSER_EXPORT SandboxFileSystemBackend
   DISALLOW_COPY_AND_ASSIGN(SandboxFileSystemBackend);
 };
 
-}  // namespace fileapi
+}  // namespace storage
 
 #endif  // WEBKIT_BROWSER_FILEAPI_SANDBOX_FILE_SYSTEM_BACKEND_H_

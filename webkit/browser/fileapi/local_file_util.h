@@ -9,7 +9,7 @@
 #include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "webkit/browser/fileapi/file_system_file_util.h"
-#include "webkit/browser/webkit_storage_browser_export.h"
+#include "webkit/browser/storage_browser_export.h"
 
 namespace base {
 class Time;
@@ -17,13 +17,13 @@ class Time;
 
 class GURL;
 
-namespace fileapi {
+namespace storage {
 
 class FileSystemOperationContext;
 class FileSystemURL;
 
 // An instance of this class is created and owned by *FileSystemBackend.
-class WEBKIT_STORAGE_BROWSER_EXPORT LocalFileUtil
+class STORAGE_EXPORT LocalFileUtil
     : public FileSystemFileUtil {
  public:
   LocalFileUtil();
@@ -78,7 +78,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT LocalFileUtil
   virtual base::File::Error DeleteDirectory(
       FileSystemOperationContext* context,
       const FileSystemURL& url) OVERRIDE;
-  virtual webkit_blob::ScopedFile CreateSnapshotFile(
+  virtual storage::ScopedFile CreateSnapshotFile(
       FileSystemOperationContext* context,
       const FileSystemURL& url,
       base::File::Error* error,
@@ -89,6 +89,6 @@ class WEBKIT_STORAGE_BROWSER_EXPORT LocalFileUtil
   DISALLOW_COPY_AND_ASSIGN(LocalFileUtil);
 };
 
-}  // namespace fileapi
+}  // namespace storage
 
 #endif  // WEBKIT_BROWSER_FILEAPI_LOCAL_FILE_UTIL_H_

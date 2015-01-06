@@ -5,9 +5,9 @@
 #include "ui/app_list/views/contents_view.h"
 
 #include <algorithm>
+#include <vector>
 
 #include "base/logging.h"
-#include "grit/ui_resources.h"
 #include "ui/app_list/app_list_constants.h"
 #include "ui/app_list/app_list_switches.h"
 #include "ui/app_list/app_list_view_delegate.h"
@@ -18,22 +18,12 @@
 #include "ui/app_list/views/contents_switcher_view.h"
 #include "ui/app_list/views/search_result_list_view.h"
 #include "ui/app_list/views/start_page_view.h"
-#include "ui/base/resource/resource_bundle.h"
 #include "ui/events/event.h"
+#include "ui/resources/grit/ui_resources.h"
 #include "ui/views/view_model.h"
 #include "ui/views/view_model_utils.h"
 
 namespace app_list {
-
-namespace {
-
-const int kMinMouseWheelToSwitchPage = 20;
-const int kMinScrollToSwitchPage = 20;
-const int kMinHorizVelocityToSwitchPage = 800;
-
-const double kFinishTransitionThreshold = 0.33;
-
-}  // namespace
 
 ContentsView::ContentsView(AppListMainView* app_list_main_view)
     : search_results_view_(NULL),
@@ -56,10 +46,14 @@ void ContentsView::InitNamedPages(AppListModel* model,
   DCHECK(model);
 
   if (app_list::switches::IsExperimentalAppListEnabled()) {
-    views::View* custom_page_view =
-        view_delegate->CreateCustomPageWebView(GetLocalBounds().size());
-    if (custom_page_view)
-      AddLauncherPage(custom_page_view, IDR_APP_LIST_NOTIFICATIONS_ICON);
+    std::vector<views::View*> custom_page_views =
+        view_delegate->CreateCustomPageWebViews(GetLocalBounds().size());
+    for (std::vector<views::View*>::const_iterator it =
+             custom_page_views.begin();
+         it != custom_page_views.end();
+         ++it) {
+      AddLauncherPage(*it, IDR_APP_LIST_NOTIFICATIONS_ICON);
+    }
 
     start_page_view_ = new StartPageView(app_list_main_view_, view_delegate);
     AddLauncherPage(
@@ -211,23 +205,13 @@ void ContentsView::UpdatePageBounds() {
   gfx::Rect outgoing_target(rect);
   int dir = target_page > current_page ? -1 : 1;
 
-  if (app_list::switches::IsExperimentalAppListEnabled()) {
-    // The experimental app list transitions horizontally.
-    int page_width = rect.width();
-    int transition_offset = progress * page_width * dir;
+  // Pages transition vertically.
+  int page_height = rect.height();
+  int transition_offset = progress * page_height * dir;
 
-    outgoing_target.set_x(transition_offset);
-    incoming_target.set_x(dir < 0 ? transition_offset + page_width
-                                  : transition_offset - page_width);
-  } else {
-    // The normal app list transitions vertically.
-    int page_height = rect.height();
-    int transition_offset = progress * page_height * dir;
-
-    outgoing_target.set_y(transition_offset);
-    incoming_target.set_y(dir < 0 ? transition_offset + page_height
-                                  : transition_offset - page_height);
-  }
+  outgoing_target.set_y(transition_offset);
+  incoming_target.set_y(dir < 0 ? transition_offset + page_height
+                                : transition_offset - page_height);
 
   view_model_->view_at(current_page)->SetBoundsRect(outgoing_target);
   view_model_->view_at(target_page)->SetBoundsRect(incoming_target);
@@ -242,9 +226,7 @@ void ContentsView::ShowFolderContent(AppListFolderItem* item) {
 }
 
 void ContentsView::Prerender() {
-  const int selected_page =
-      std::max(0, GetAppsPaginationModel()->selected_page());
-  apps_container_view_->apps_grid_view()->Prerender(selected_page);
+  apps_container_view_->apps_grid_view()->Prerender();
 }
 
 views::View* ContentsView::GetPageView(int index) {
@@ -309,26 +291,6 @@ bool ContentsView::OnKeyPressed(const ui::KeyEvent& event) {
   return view_model_->view_at(GetActivePageIndex())->OnKeyPressed(event);
 }
 
-bool ContentsView::OnMouseWheel(const ui::MouseWheelEvent& event) {
-  if (!IsNamedPageActive(NAMED_PAGE_APPS))
-    return false;
-
-  int offset;
-  if (abs(event.x_offset()) > abs(event.y_offset()))
-    offset = event.x_offset();
-  else
-    offset = event.y_offset();
-
-  if (abs(offset) > kMinMouseWheelToSwitchPage) {
-    if (!GetAppsPaginationModel()->has_transition()) {
-      GetAppsPaginationModel()->SelectPageRelative(offset > 0 ? -1 : 1, true);
-    }
-    return true;
-  }
-
-  return false;
-}
-
 void ContentsView::TotalPagesChanged() {
 }
 
@@ -340,63 +302,6 @@ void ContentsView::TransitionStarted() {
 
 void ContentsView::TransitionChanged() {
   UpdatePageBounds();
-}
-
-void ContentsView::OnGestureEvent(ui::GestureEvent* event) {
-  if (!IsNamedPageActive(NAMED_PAGE_APPS))
-    return;
-
-  switch (event->type()) {
-    case ui::ET_GESTURE_SCROLL_BEGIN:
-      GetAppsPaginationModel()->StartScroll();
-      event->SetHandled();
-      return;
-    case ui::ET_GESTURE_SCROLL_UPDATE:
-      // event->details.scroll_x() > 0 means moving contents to right. That is,
-      // transitioning to previous page.
-      GetAppsPaginationModel()->UpdateScroll(event->details().scroll_x() /
-                                             GetContentsBounds().width());
-      event->SetHandled();
-      return;
-    case ui::ET_GESTURE_SCROLL_END:
-      GetAppsPaginationModel()->EndScroll(
-          GetAppsPaginationModel()->transition().progress <
-          kFinishTransitionThreshold);
-      event->SetHandled();
-      return;
-    case ui::ET_SCROLL_FLING_START: {
-      GetAppsPaginationModel()->EndScroll(true);
-      if (fabs(event->details().velocity_x()) > kMinHorizVelocityToSwitchPage) {
-        GetAppsPaginationModel()->SelectPageRelative(
-            event->details().velocity_x() < 0 ? 1 : -1, true);
-      }
-      event->SetHandled();
-      return;
-    }
-    default:
-      break;
-  }
-}
-
-void ContentsView::OnScrollEvent(ui::ScrollEvent* event) {
-  if (!IsNamedPageActive(NAMED_PAGE_APPS) ||
-      event->type() == ui::ET_SCROLL_FLING_CANCEL) {
-    return;
-  }
-
-  float offset;
-  if (std::abs(event->x_offset()) > std::abs(event->y_offset()))
-    offset = event->x_offset();
-  else
-    offset = event->y_offset();
-
-  if (std::abs(offset) > kMinScrollToSwitchPage) {
-    if (!GetAppsPaginationModel()->has_transition()) {
-      GetAppsPaginationModel()->SelectPageRelative(offset > 0 ? -1 : 1, true);
-    }
-    event->SetHandled();
-    event->StopPropagation();
-  }
 }
 
 }  // namespace app_list

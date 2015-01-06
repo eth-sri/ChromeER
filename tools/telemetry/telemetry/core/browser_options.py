@@ -44,9 +44,9 @@ class BrowserFinderOptions(optparse.Values):
 
     self.browser_options = BrowserOptions()
     self.output_file = None
-    self.skip_navigate_on_repeat = False
 
     self.android_rndis = False
+    self.no_performance_mode = False
 
   def __repr__(self):
     return str(sorted(self.__dict__.items()))
@@ -64,7 +64,7 @@ class BrowserFinderOptions(optparse.Values):
         default=None,
         help='Browser type to run, '
              'in order of priority. Supported values: list,%s' %
-             ','.join(browser_finder.ALL_BROWSER_TYPES))
+             ','.join(browser_finder.FindAllBrowserTypes(self)))
     group.add_option('--browser-executable',
         dest='browser_executable',
         help='The exact browser to run.')
@@ -75,7 +75,7 @@ class BrowserFinderOptions(optparse.Values):
     group.add_option('--device',
         dest='android_device',
         help='The android device ID to use'
-             'If not specified, only 0 or 1 connected devcies are supported.')
+             'If not specified, only 0 or 1 connected devices are supported.')
     group.add_option('--target-arch',
         dest='target_arch',
         help='The target architecture of the browser. Options available are: '
@@ -196,7 +196,7 @@ class BrowserOptions(object):
     self.browser_user_agent_type = None
 
     self.clear_sytem_cache_for_browser_and_profile_on_start = False
-    self.startup_url = None
+    self.startup_url = 'about:blank'
 
     # Background pages of built-in component extensions can interfere with
     # performance measurements.

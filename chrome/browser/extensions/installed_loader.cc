@@ -202,7 +202,8 @@ void InstalledLoader::Load(const ExtensionInfo& info, bool write_to_prefs) {
       error = errors::kDisabledByPolicy;
       extension = NULL;
     } else if (!extension_prefs_->IsExtensionDisabled(extension->id()) &&
-               policy->MustRemainDisabled(extension, &disable_reason, NULL)) {
+               policy->MustRemainDisabled(
+                   extension.get(), &disable_reason, NULL)) {
       extension_prefs_->SetExtensionState(extension->id(), Extension::DISABLED);
       extension_prefs_->AddDisableReason(extension->id(), disable_reason);
       force_disabled = true;
@@ -330,7 +331,7 @@ void InstalledLoader::LoadAllExtensions() {
   for (ExtensionSet::const_iterator iter = extensions.begin();
        iter != extensions.end();
        ++iter) {
-    const Extension* extension = *iter;
+    const Extension* extension = iter->get();
     Manifest::Location location = extension->location();
     Manifest::Type type = extension->GetType();
 
@@ -498,7 +499,7 @@ void InstalledLoader::LoadAllExtensions() {
     RecordDisableReasons(extension_prefs_->GetDisableReasons((*ex)->id()));
     if (Manifest::IsExternalLocation((*ex)->location())) {
       // See loop above for ENABLED.
-      if (ManifestURL::UpdatesFromGallery(*ex)) {
+      if (ManifestURL::UpdatesFromGallery(ex->get())) {
         UMA_HISTOGRAM_ENUMERATION("Extensions.ExternalItemState",
                                   EXTERNAL_ITEM_WEBSTORE_DISABLED,
                                   EXTERNAL_ITEM_MAX_ITEMS);
@@ -545,7 +546,9 @@ void InstalledLoader::LoadAllExtensions() {
                            extension_external_count);
   UMA_HISTOGRAM_COUNTS_100("Extensions.LoadUserScript", user_script_count);
   UMA_HISTOGRAM_COUNTS_100("Extensions.LoadTheme", theme_count);
-  UMA_HISTOGRAM_COUNTS_100("Extensions.LoadPageAction", page_action_count);
+  // Histogram name different for legacy reasons.
+  UMA_HISTOGRAM_COUNTS_100("PageActionController.ExtensionsWithPageActions",
+                           page_action_count);
   UMA_HISTOGRAM_COUNTS_100("Extensions.LoadBrowserAction",
                            browser_action_count);
   UMA_HISTOGRAM_COUNTS_100("Extensions.LoadContentPack", content_pack_count);

@@ -2,9 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "apps/app_window.h"
-#include "apps/app_window_registry.h"
-#include "apps/ui/native_app_window.h"
 #include "base/run_loop.h"
 #include "base/strings/string_number_conversions.h"
 #include "chrome/browser/apps/app_browsertest_util.h"
@@ -12,21 +9,28 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/common/extensions/features/feature_channel.h"
 #include "chrome/test/base/testing_profile.h"
+#include "extensions/browser/app_window/app_window.h"
+#include "extensions/browser/app_window/app_window_registry.h"
+#include "extensions/browser/app_window/native_app_window.h"
 #include "ui/base/base_window.h"
 #include "ui/gfx/rect.h"
 
-using apps::AppWindow;
+#if defined(OS_WIN)
+#include "ui/base/win/shell.h"
+#endif
+
+namespace extensions {
 
 namespace {
 
-class TestAppWindowRegistryObserver : public apps::AppWindowRegistry::Observer {
+class TestAppWindowRegistryObserver : public AppWindowRegistry::Observer {
  public:
   explicit TestAppWindowRegistryObserver(Profile* profile)
       : profile_(profile), icon_updates_(0) {
-    apps::AppWindowRegistry::Get(profile_)->AddObserver(this);
+    AppWindowRegistry::Get(profile_)->AddObserver(this);
   }
   virtual ~TestAppWindowRegistryObserver() {
-    apps::AppWindowRegistry::Get(profile_)->RemoveObserver(this);
+    AppWindowRegistry::Get(profile_)->RemoveObserver(this);
   }
 
   // Overridden from AppWindowRegistry::Observer:
@@ -44,8 +48,6 @@ class TestAppWindowRegistryObserver : public apps::AppWindowRegistry::Observer {
 };
 
 }  // namespace
-
-namespace extensions {
 
 // Tests chrome.app.window.setIcon.
 IN_PROC_BROWSER_TEST_F(ExperimentalPlatformAppBrowserTest, WindowsApiSetIcon) {
@@ -107,6 +109,54 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest,
 
 IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, WindowsApiGet) {
   EXPECT_TRUE(RunPlatformAppTest("platform_apps/windows_api_get"))
+      << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, WindowsApiSetShape) {
+  EXPECT_TRUE(RunPlatformAppTest("platform_apps/windows_api_shape"))
+      << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest,
+                       WindowsApiAlphaEnabledHasPermissions) {
+  const char* no_alpha_dir =
+      "platform_apps/windows_api_alpha_enabled/has_permissions_no_alpha";
+  const char* test_dir = no_alpha_dir;
+
+#if defined(USE_AURA) && (defined(OS_CHROMEOS) || !defined(OS_LINUX))
+  test_dir =
+      "platform_apps/windows_api_alpha_enabled/has_permissions_has_alpha";
+#if defined(OS_WIN)
+  if (!ui::win::IsAeroGlassEnabled()) {
+    test_dir = no_alpha_dir;
+  }
+#endif  // OS_WIN
+#endif  // USE_AURA && (OS_CHROMEOS || !OS_LINUX)
+
+  EXPECT_TRUE(RunPlatformAppTest(test_dir)) << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest,
+                       WindowsApiAlphaEnabledNoPermissions) {
+  EXPECT_TRUE(RunPlatformAppTest(
+      "platform_apps/windows_api_alpha_enabled/no_permissions"))
+      << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, WindowsApiAlphaEnabledInStable) {
+  extensions::ScopedCurrentChannel channel(chrome::VersionInfo::CHANNEL_STABLE);
+  EXPECT_TRUE(RunPlatformAppTestWithFlags(
+      "platform_apps/windows_api_alpha_enabled/in_stable",
+      // Ignore manifest warnings because the extension will not load at all
+      // in stable.
+      kFlagIgnoreManifestWarnings))
+      << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest,
+                       WindowsApiAlphaEnabledWrongFrameType) {
+  EXPECT_TRUE(RunPlatformAppTest(
+      "platform_apps/windows_api_alpha_enabled/wrong_frame_type"))
       << message_;
 }
 

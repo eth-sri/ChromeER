@@ -29,7 +29,6 @@ login.createScreen('AccountPickerScreen', 'account-picker', function() {
       'showUserPodCustomIcon',
       'hideUserPodCustomIcon',
       'setAuthType',
-      'showEasyUnlockBubble',
       'setPublicSessionDisplayName',
       'setPublicSessionLocales',
       'setPublicSessionKeyboardLayouts',
@@ -178,15 +177,6 @@ login.createScreen('AccountPickerScreen', 'account-picker', function() {
     loadUsers: function(users, showGuest) {
       $('pod-row').loadPods(users);
       $('login-header-bar').showGuestButton = showGuest;
-
-      // The desktop User Manager can send the index of a pod that should be
-      // initially focused.
-      var hash = window.location.hash;
-      if (hash) {
-        var podIndex = hash.substr(1);
-        if (podIndex)
-          $('pod-row').focusPodByIndex(podIndex, false);
-      }
     },
 
     /**
@@ -279,8 +269,14 @@ login.createScreen('AccountPickerScreen', 'account-picker', function() {
      * Shows a custom icon in the user pod of |username|. This function
      * is used by the chrome.screenlockPrivate API.
      * @param {string} username Username of pod to add button
-     * @param {{scale1x: string, scale2x: string}} icon Dictionary of URLs of
-     *     the custom icon's representations for 1x and 2x scale factors.
+     * @param {!{resourceUrl: (string | undefined),
+     *           data: ({scale1x: string, scale2x: string} | undefined),
+     *           size: ({width: number, height: number} | undefined),
+     *           animation: ({resourceWidth: number, frameLength: number} |
+     *                       undefined),
+     *           opacity: (number | undefined),
+     *           tooltip: ({text: string, autoshow: boolean} | undefined)}} icon
+     *     The icon parameters.
      */
     showUserPodCustomIcon: function(username, icon) {
       $('pod-row').showUserPodCustomIcon(username, icon);
@@ -305,13 +301,6 @@ login.createScreen('AccountPickerScreen', 'account-picker', function() {
      */
     setAuthType: function(username, authType, value) {
       $('pod-row').setAuthType(username, authType, value);
-    },
-
-    /**
-     * Shows a tooltip bubble explaining Easy Unlock.
-     */
-    showEasyUnlockBubble: function() {
-      $('pod-row').showEasyUnlockBubble();
     },
 
     /**

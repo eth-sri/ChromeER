@@ -13,13 +13,13 @@
 #include "net/base/file_stream.h"
 #include "net/base/io_buffer.h"
 #include "net/url_request/url_request.h"
-#include "webkit/browser/webkit_storage_browser_export.h"
+#include "webkit/browser/storage_browser_export.h"
 
-namespace fileapi {
+namespace storage {
 
 class FileStreamWriter;
 
-class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE FileWriterDelegate
+class STORAGE_EXPORT_PRIVATE FileWriterDelegate
     : public net::URLRequest::Delegate {
  public:
   enum FlushPolicy {
@@ -52,7 +52,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE FileWriterDelegate
   void Cancel();
 
   virtual void OnReceivedRedirect(net::URLRequest* request,
-                                  const GURL& new_url,
+                                  const net::RedirectInfo& redirect_info,
                                   bool* defer_redirect) OVERRIDE;
   virtual void OnAuthRequired(net::URLRequest* request,
                               net::AuthChallengeInfo* auth_info) OVERRIDE;
@@ -105,6 +105,6 @@ class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE FileWriterDelegate
   DISALLOW_COPY_AND_ASSIGN(FileWriterDelegate);
 };
 
-}  // namespace fileapi
+}  // namespace storage
 
 #endif  // WEBKIT_BROWSER_FILEAPI_FILE_WRITER_DELEGATE_H_

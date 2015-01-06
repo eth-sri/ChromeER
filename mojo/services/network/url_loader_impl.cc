@@ -13,6 +13,8 @@
 #include "net/base/upload_bytes_element_reader.h"
 #include "net/base/upload_data_stream.h"
 #include "net/http/http_response_headers.h"
+#include "net/url_request/redirect_info.h"
+#include "net/url_request/url_request_context.h"
 
 namespace mojo {
 namespace {
@@ -82,7 +84,8 @@ class UploadDataPipeElementReader : public net::UploadElementReader {
                    int buf_length,
                    const net::CompletionCallback& callback) OVERRIDE {
     uint32_t bytes_read =
-        std::min(BytesRemaining(), static_cast<uint64>(buf_length));
+        std::min(static_cast<uint32_t>(BytesRemaining()),
+                 static_cast<uint32_t>(buf_length));
     if (bytes_read > 0) {
       ReadDataRaw(pipe_.get(), buf->data(), &bytes_read,
                   MOJO_READ_DATA_FLAG_NONE);
@@ -177,11 +180,11 @@ void URLLoaderImpl::Start(URLRequestPtr request,
     return;
   }
 
-  url_request_.reset(
-      new net::URLRequest(GURL(request->url),
-                          net::DEFAULT_PRIORITY,
-                          this,
-                          context_->url_request_context()));
+  url_request_ = context_->url_request_context()->CreateRequest(
+      GURL(request->url),
+      net::DEFAULT_PRIORITY,
+      this,
+      NULL);
   url_request_->set_method(request->method);
   if (request->headers) {
     net::HttpRequestHeaders headers;
@@ -240,7 +243,7 @@ void URLLoaderImpl::QueryStatus(
 }
 
 void URLLoaderImpl::OnReceivedRedirect(net::URLRequest* url_request,
-                                       const GURL& new_url,
+                                       const net::RedirectInfo& redirect_info,
                                        bool* defer_redirect) {
   DCHECK(url_request == url_request_.get());
   DCHECK(url_request->status().is_success());
@@ -253,10 +256,8 @@ void URLLoaderImpl::OnReceivedRedirect(net::URLRequest* url_request,
   *defer_redirect = true;
 
   URLResponsePtr response = MakeURLResponse(url_request);
-  response->redirect_method =
-      net::URLRequest::ComputeMethodForRedirect(url_request->method(),
-                                                response->status_code);
-  response->redirect_url = String::From(new_url);
+  response->redirect_method = redirect_info.new_method;
+  response->redirect_url = String::From(redirect_info.new_url);
 
   SendResponse(response.Pass());
 }
@@ -326,7 +327,7 @@ void URLLoaderImpl::WaitToReadMore() {
 }
 
 void URLLoaderImpl::ReadMore() {
-  DCHECK(!pending_write_);
+  DCHECK(!pending_write_.get());
 
   pending_write_ = new PendingWriteToDataPipe(response_body_stream_.Pass());
 
@@ -346,10 +347,11 @@ void URLLoaderImpl::ReadMore() {
   }
   CHECK_GT(static_cast<uint32_t>(std::numeric_limits<int>::max()), num_bytes);
 
-  scoped_refptr<net::IOBuffer> buf = new DependentIOBuffer(pending_write_);
+  scoped_refptr<net::IOBuffer> buf =
+      new DependentIOBuffer(pending_write_.get());
 
   int bytes_read;
-  url_request_->Read(buf, static_cast<int>(num_bytes), &bytes_read);
+  url_request_->Read(buf.get(), static_cast<int>(num_bytes), &bytes_read);
 
   // Drop our reference to the buffer.
   buf = NULL;

@@ -9,7 +9,6 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
-#include "grit/ui_strings.h"
 #include "ui/base/accelerators/accelerator.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -22,6 +21,7 @@
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/path.h"
 #include "ui/gfx/transform.h"
+#include "ui/strings/grit/ui_strings.h"
 #include "ui/views/background.h"
 #include "ui/views/controls/native/native_view_host.h"
 #include "ui/views/controls/scroll_view.h"
@@ -2639,6 +2639,69 @@ TEST_F(ViewTest, AddExistingChild) {
   v1.AddChildView(&v3);
   EXPECT_EQ(0, v1.GetIndexOf(&v2));
   EXPECT_EQ(1, v1.GetIndexOf(&v3));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// FocusManager
+////////////////////////////////////////////////////////////////////////////////
+
+// A widget that always claims to be active, regardless of its real activation
+// status.
+class ActiveWidget : public Widget {
+ public:
+  ActiveWidget() {}
+  virtual ~ActiveWidget() {}
+
+  virtual bool IsActive() const OVERRIDE {
+    return true;
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(ActiveWidget);
+};
+
+TEST_F(ViewTest, AdvanceFocusIfNecessaryForUnfocusableView) {
+  // Create a widget with two views and give the first one focus.
+  ActiveWidget widget;
+  Widget::InitParams params = CreateParams(Widget::InitParams::TYPE_POPUP);
+  params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+  widget.Init(params);
+
+  View* view1 = new View();
+  view1->SetFocusable(true);
+  widget.GetRootView()->AddChildView(view1);
+  View* view2 = new View();
+  view2->SetFocusable(true);
+  widget.GetRootView()->AddChildView(view2);
+
+  FocusManager* focus_manager = widget.GetFocusManager();
+  ASSERT_TRUE(focus_manager);
+
+  focus_manager->SetFocusedView(view1);
+  EXPECT_EQ(view1, focus_manager->GetFocusedView());
+
+  // Disable the focused view and check if the next view gets focused.
+  view1->SetEnabled(false);
+  EXPECT_EQ(view2, focus_manager->GetFocusedView());
+
+  // Re-enable and re-focus.
+  view1->SetEnabled(true);
+  focus_manager->SetFocusedView(view1);
+  EXPECT_EQ(view1, focus_manager->GetFocusedView());
+
+  // Hide the focused view and check it the next view gets focused.
+  view1->SetVisible(false);
+  EXPECT_EQ(view2, focus_manager->GetFocusedView());
+
+  // Re-show and re-focus.
+  view1->SetVisible(true);
+  focus_manager->SetFocusedView(view1);
+  EXPECT_EQ(view1, focus_manager->GetFocusedView());
+
+  // Set the focused view as not focusable and check if the next view gets
+  // focused.
+  view1->SetFocusable(false);
+  EXPECT_EQ(view2, focus_manager->GetFocusedView());
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -43,6 +43,7 @@ const char kDeviceModelCommand[] = "shell:getprop ro.product.model";
 const char kDumpsysCommand[] = "shell:dumpsys window policy";
 const char kListProcessesCommand[] = "shell:ps";
 const char kInstalledChromePackagesCommand[] = "shell:pm list packages";
+const char kDeviceManufacturer[] = "Test Manufacturer";
 const char kDeviceModel[] = "Nexus 5";
 const char kDeviceSerial[] = "Sample serial";
 
@@ -254,6 +255,16 @@ class MockUsbDeviceHandle : public UsbDeviceHandle {
 
   virtual bool ResetDevice() OVERRIDE { return true; }
 
+  virtual bool GetManufacturer(base::string16* manufacturer) OVERRIDE {
+    *manufacturer = base::UTF8ToUTF16(kDeviceManufacturer);
+    return true;
+  }
+
+  virtual bool GetProduct(base::string16* product) OVERRIDE {
+    *product = base::UTF8ToUTF16(kDeviceModel);
+    return true;
+  }
+
   virtual bool GetSerial(base::string16* serial) OVERRIDE {
     *serial = base::UTF8ToUTF16(kDeviceSerial);
     return true;
@@ -289,7 +300,7 @@ class MockUsbDeviceHandle : public UsbDeviceHandle {
           return;
         }
       } else {
-        DCHECK(current_message_);
+        DCHECK(current_message_.get());
         current_message_->body += std::string(buffer->data(), length);
         remaining_body_length_ -= length;
       }
@@ -329,7 +340,7 @@ class MockUsbDeviceHandle : public UsbDeviceHandle {
   }
 
   void ProcessIncoming() {
-    DCHECK(current_message_);
+    DCHECK(current_message_.get());
     switch (current_message_->command) {
       case AdbMessage::kCommandCNXN:
         WriteResponse(new AdbMessage(AdbMessage::kCommandCNXN,
@@ -464,7 +475,7 @@ class MockUsbDevice : public UsbDevice {
   // permission broker can change the owner of the device so that the unclaimed
   // interfaces can be used. If this argument is missing, permission broker will
   // not be used and this method fails if the device is claimed.
-  virtual void RequestUsbAcess(
+  virtual void RequestUsbAccess(
       int interface_id,
       const base::Callback<void(bool success)>& callback) OVERRIDE {
     callback.Run(true);
@@ -574,7 +585,7 @@ class AndroidUsbDiscoveryTest : public InProcessBrowserTest {
 
     adb_bridge_ =
         DevToolsAndroidBridge::Factory::GetForProfile(browser()->profile());
-    DCHECK(adb_bridge_);
+    DCHECK(adb_bridge_.get());
     adb_bridge_->set_task_scheduler_for_test(base::Bind(
         &AndroidUsbDiscoveryTest::ScheduleDeviceCountRequest, this));
 

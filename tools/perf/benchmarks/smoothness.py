@@ -27,7 +27,7 @@ class SmoothnessToughCanvasCases(benchmark.Benchmark):
   page_set = page_sets.ToughCanvasCasesPageSet
 
 
-@benchmark.Disabled('android', 'mac')  # crbug.com/373812
+@benchmark.Disabled('android', 'mac', 'win')  # crbug.com/373812
 class SmoothnessToughWebGLCases(benchmark.Benchmark):
   test = smoothness.Smoothness
   page_set = page_sets.ToughWebglCasesPageSet
@@ -122,7 +122,7 @@ class SmoothnessFastPathGpuRasterizationKeySilkCases(
     silk_flags.CustomizeBrowserOptionsForFastPath(options)
 
 
-@benchmark.Enabled('android')
+@benchmark.Disabled  # crbug.com/402885
 class SmoothnessSimpleMobilePages(benchmark.Benchmark):
   """Measures rendering statistics for pinch-zooming into the tough pinch zoom
   cases

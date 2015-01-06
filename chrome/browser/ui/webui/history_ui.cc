@@ -38,6 +38,7 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "chrome/grit/generated_resources.h"
 #include "components/bookmarks/browser/bookmark_model.h"
 #include "components/bookmarks/browser/bookmark_utils.h"
 #include "components/search/search.h"
@@ -47,7 +48,6 @@
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_data_source.h"
 #include "grit/browser_resources.h"
-#include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "net/base/escape.h"
 #include "net/base/net_util.h"
@@ -327,6 +327,10 @@ scoped_ptr<base::DictionaryValue> BrowsingHistoryHandler::HistoryEntry::ToValue(
   if (domain.empty())
     domain = base::UTF8ToUTF16(url.scheme() + ":");
 
+  // The items which are to be written into result are also described in
+  // chrome/browser/resources/history/history.js in @typedef for
+  // HistoryEntry. Please update it whenever you add or remove
+  // any keys in result.
   result->SetString("domain", domain);
   result->SetDouble("time", time.ToJsTime());
 
@@ -783,6 +787,10 @@ void BrowsingHistoryHandler::QueryComplete(
             accept_languages));
   }
 
+  // The items which are to be written into results_info_value_ are also
+  // described in chrome/browser/resources/history/history.js in @typedef for
+  // HistoryQuery. Please update it whenever you add or remove any keys in
+  // results_info_value_.
   results_info_value_.SetString("term", search_text);
   results_info_value_.SetBoolean("finished", results->reached_beginning());
 

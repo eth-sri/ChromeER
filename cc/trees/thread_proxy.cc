@@ -25,6 +25,7 @@
 #include "cc/trees/blocking_task_runner.h"
 #include "cc/trees/layer_tree_host.h"
 #include "cc/trees/layer_tree_impl.h"
+#include "cc/trees/scoped_abort_remaining_swap_promises.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
 #include "ui/gfx/frame_time.h"
 
@@ -37,25 +38,7 @@ const double kSmoothnessTakesPriorityExpirationDelay = 0.25;
 
 unsigned int nextBeginFrameId = 0;
 
-class SwapPromiseChecker {
- public:
-  explicit SwapPromiseChecker(LayerTreeHost* layer_tree_host)
-      : layer_tree_host_(layer_tree_host) {}
-
-  ~SwapPromiseChecker() {
-    layer_tree_host_->BreakSwapPromises(SwapPromise::COMMIT_FAILS);
-  }
-
- private:
-  LayerTreeHost* layer_tree_host_;
-};
-
 }  // namespace
-
-struct ThreadProxy::CommitPendingRequest {
-  CompletionEvent completion;
-  bool commit_pending;
-};
 
 struct ThreadProxy::SchedulerStateRequest {
   CompletionEvent completion;
@@ -335,14 +318,6 @@ void ThreadProxy::UpdateRendererCapabilitiesOnImplThread() {
 void ThreadProxy::DidLoseOutputSurfaceOnImplThread() {
   TRACE_EVENT0("cc", "ThreadProxy::DidLoseOutputSurfaceOnImplThread");
   DCHECK(IsImplThread());
-  CheckOutputSurfaceStatusOnImplThread();
-}
-
-void ThreadProxy::CheckOutputSurfaceStatusOnImplThread() {
-  TRACE_EVENT0("cc", "ThreadProxy::CheckOutputSurfaceStatusOnImplThread");
-  DCHECK(IsImplThread());
-  if (!impl().layer_tree_host_impl->IsContextLost())
-    return;
   Proxy::MainThreadTaskRunner()->PostTask(
       FROM_HERE,
       base::Bind(&ThreadProxy::DidLoseOutputSurface, main_thread_weak_ptr_));
@@ -466,9 +441,10 @@ void ThreadProxy::SetNextCommitWaitsForActivation() {
 
 void ThreadProxy::SetDeferCommits(bool defer_commits) {
   DCHECK(IsMainThread());
-  DCHECK_NE(main().defer_commits, defer_commits);
-  main().defer_commits = defer_commits;
+  if (main().defer_commits == defer_commits)
+    return;
 
+  main().defer_commits = defer_commits;
   if (main().defer_commits)
     TRACE_EVENT_ASYNC_BEGIN0("cc", "ThreadProxy::SetDeferCommits", this);
   else
@@ -701,14 +677,15 @@ void ThreadProxy::FinishAllRenderingOnImplThread(CompletionEvent* completion) {
 }
 
 void ThreadProxy::ScheduledActionSendBeginMainFrame() {
+  VLOG(2) << "ThreadProxy::ScheduledActionSendBeginMainFrame";
   unsigned int begin_frame_id = nextBeginFrameId++;
   benchmark_instrumentation::ScopedBeginFrameTask begin_frame_task(
       benchmark_instrumentation::kSendBeginFrame, begin_frame_id);
   scoped_ptr<BeginMainFrameAndCommitState> begin_main_frame_state(
       new BeginMainFrameAndCommitState);
   begin_main_frame_state->begin_frame_id = begin_frame_id;
-  begin_main_frame_state->monotonic_frame_begin_time =
-      impl().layer_tree_host_impl->CurrentFrameTimeTicks();
+  begin_main_frame_state->begin_frame_args =
+      impl().layer_tree_host_impl->CurrentBeginFrameArgs();
   begin_main_frame_state->scroll_info =
       impl().layer_tree_host_impl->ProcessScrollDeltas();
 
@@ -739,18 +716,21 @@ void ThreadProxy::BeginMainFrame(
   TRACE_EVENT_SYNTHETIC_DELAY_BEGIN("cc.BeginMainFrame");
   DCHECK(IsMainThread());
 
+  VLOG(2) << "ThreadProxy::BeginMainFrame - BEGIN";
+
   if (main().defer_commits) {
     main().pending_deferred_commit = begin_main_frame_state.Pass();
     layer_tree_host()->DidDeferCommit();
     TRACE_EVENT_INSTANT0(
         "cc", "EarlyOut_DeferCommits", TRACE_EVENT_SCOPE_THREAD);
+    VLOG(2) << "ThreadProxy::BeginMainFrame: EarlyOut_DeferCommits";
     return;
   }
 
   // If the commit finishes, LayerTreeHost will transfer its swap promises to
-  // LayerTreeImpl. The destructor of SwapPromiseChecker checks LayerTressHost's
-  // swap promises.
-  SwapPromiseChecker swap_promise_checker(layer_tree_host());
+  // LayerTreeImpl. The destructor of ScopedSwapPromiseChecker aborts the
+  // remaining swap promises.
+  ScopedAbortRemainingSwapPromises swap_promise_checker(layer_tree_host());
 
   main().commit_requested = false;
   main().commit_request_sent_to_impl_thread = false;
@@ -758,6 +738,7 @@ void ThreadProxy::BeginMainFrame(
 
   if (!layer_tree_host()->visible()) {
     TRACE_EVENT_INSTANT0("cc", "EarlyOut_NotVisible", TRACE_EVENT_SCOPE_THREAD);
+    VLOG(2) << "ThreadProxy::BeginMainFrame: EarlyOut_NotVisible";
     bool did_handle = false;
     Proxy::ImplThreadTaskRunner()->PostTask(
         FROM_HERE,
@@ -770,6 +751,7 @@ void ThreadProxy::BeginMainFrame(
   if (layer_tree_host()->output_surface_lost()) {
     TRACE_EVENT_INSTANT0(
         "cc", "EarlyOut_OutputSurfaceLost", TRACE_EVENT_SCOPE_THREAD);
+    VLOG(2) << "ThreadProxy::BeginMainFrame: EarlyOut_OutputSurfaceLost";
     bool did_handle = false;
     Proxy::ImplThreadTaskRunner()->PostTask(
         FROM_HERE,
@@ -790,16 +772,16 @@ void ThreadProxy::BeginMainFrame(
   main().commit_requested = true;
   main().commit_request_sent_to_impl_thread = true;
 
-  layer_tree_host()->ApplyScrollAndScale(*begin_main_frame_state->scroll_info);
+  layer_tree_host()->ApplyScrollAndScale(
+      begin_main_frame_state->scroll_info.get());
 
   layer_tree_host()->WillBeginMainFrame();
 
-  layer_tree_host()->UpdateClientAnimations(
-      begin_main_frame_state->monotonic_frame_begin_time);
+  layer_tree_host()->BeginMainFrame(begin_main_frame_state->begin_frame_args);
   layer_tree_host()->AnimateLayers(
-      begin_main_frame_state->monotonic_frame_begin_time);
+      begin_main_frame_state->begin_frame_args.frame_time);
   blocked_main().last_monotonic_frame_begin_time =
-      begin_main_frame_state->monotonic_frame_begin_time;
+      begin_main_frame_state->begin_frame_args.frame_time;
 
   // Unlink any backings that the impl thread has evicted, so that we know to
   // re-paint them in UpdateLayers.
@@ -849,6 +831,7 @@ void ThreadProxy::BeginMainFrame(
 
   if (!updated && can_cancel_this_commit) {
     TRACE_EVENT_INSTANT0("cc", "EarlyOut_NoUpdates", TRACE_EVENT_SCOPE_THREAD);
+    VLOG(2) << "ThreadProxy::BeginMainFrame: EarlyOut_NoUpdates";
     bool did_handle = true;
     Proxy::ImplThreadTaskRunner()->PostTask(
         FROM_HERE,
@@ -971,7 +954,7 @@ void ThreadProxy::ScheduledActionAnimate() {
 
   if (!impl().animations_frozen_until_next_draw) {
     impl().animation_time =
-        impl().layer_tree_host_impl->CurrentFrameTimeTicks();
+        impl().layer_tree_host_impl->CurrentBeginFrameArgs().frame_time;
   }
   impl().layer_tree_host_impl->Animate(impl().animation_time);
   impl().did_commit_after_animating = false;
@@ -1132,9 +1115,6 @@ DrawResult ThreadProxy::DrawSwapInternal(bool forced_draw) {
         base::Bind(&ThreadProxy::DidCommitAndDrawFrame, main_thread_weak_ptr_));
   }
 
-  if (draw_frame)
-    CheckOutputSurfaceStatusOnImplThread();
-
   if (result == DRAW_SUCCESS)
     impl().timing_history.DidFinishDrawing();
 
@@ -1184,7 +1164,7 @@ base::TimeDelta ThreadProxy::CommitToActivateDurationEstimate() {
 }
 
 void ThreadProxy::DidBeginImplFrameDeadline() {
-  impl().layer_tree_host_impl->ResetCurrentFrameTimeForNextFrame();
+  impl().layer_tree_host_impl->ResetCurrentBeginFrameArgsForNextFrame();
 }
 
 void ThreadProxy::ReadyToFinalizeTextureUpdates() {
@@ -1320,29 +1300,33 @@ void ThreadProxy::AsValueOnImplThread(CompletionEvent* completion,
   completion->Signal();
 }
 
-bool ThreadProxy::CommitPendingForTesting() {
+bool ThreadProxy::MainFrameWillHappenForTesting() {
   DCHECK(IsMainThread());
-  CommitPendingRequest commit_pending_request;
+  CompletionEvent completion;
+  bool main_frame_will_happen = false;
   {
     DebugScopedSetMainThreadBlocked main_thread_blocked(this);
     Proxy::ImplThreadTaskRunner()->PostTask(
         FROM_HERE,
-        base::Bind(&ThreadProxy::CommitPendingOnImplThreadForTesting,
+        base::Bind(&ThreadProxy::MainFrameWillHappenOnImplThreadForTesting,
                    impl_thread_weak_ptr_,
-                   &commit_pending_request));
-    commit_pending_request.completion.Wait();
+                   &completion,
+                   &main_frame_will_happen));
+    completion.Wait();
   }
-  return commit_pending_request.commit_pending;
+  return main_frame_will_happen;
 }
 
-void ThreadProxy::CommitPendingOnImplThreadForTesting(
-    CommitPendingRequest* request) {
+void ThreadProxy::MainFrameWillHappenOnImplThreadForTesting(
+    CompletionEvent* completion,
+    bool* main_frame_will_happen) {
   DCHECK(IsImplThread());
-  if (impl().layer_tree_host_impl->output_surface())
-    request->commit_pending = impl().scheduler->CommitPending();
-  else
-    request->commit_pending = false;
-  request->completion.Signal();
+  if (impl().layer_tree_host_impl->output_surface()) {
+    *main_frame_will_happen = impl().scheduler->MainFrameForTestingWillHappen();
+  } else {
+    *main_frame_will_happen = false;
+  }
+  completion->Signal();
 }
 
 void ThreadProxy::RenewTreePriority() {

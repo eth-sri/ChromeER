@@ -30,15 +30,12 @@
 #include "chrome/browser/extensions/api/web_request/web_request_api_helpers.h"
 #include "chrome/browser/extensions/api/web_request/web_request_time_tracker.h"
 #include "chrome/browser/extensions/extension_renderer_state.h"
-#include "chrome/browser/extensions/extension_warning_service.h"
-#include "chrome/browser/extensions/extension_warning_set.h"
-#include "chrome/browser/guest_view/web_view/web_view_constants.h"
-#include "chrome/browser/guest_view/web_view/web_view_renderer_state.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/extensions/api/web_request.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/url_constants.h"
+#include "chrome/grit/generated_resources.h"
 #include "content/public/browser/browser_message_filter.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_frame_host.h"
@@ -50,8 +47,12 @@
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/browser/guest_view/web_view/web_view_constants.h"
+#include "extensions/browser/guest_view/web_view/web_view_renderer_state.h"
 #include "extensions/browser/info_map.h"
 #include "extensions/browser/runtime_data.h"
+#include "extensions/browser/warning_service.h"
+#include "extensions/browser/warning_set.h"
 #include "extensions/common/error_utils.h"
 #include "extensions/common/event_filtering_info.h"
 #include "extensions/common/extension.h"
@@ -60,11 +61,11 @@
 #include "extensions/common/features/feature.h"
 #include "extensions/common/permissions/permissions_data.h"
 #include "extensions/common/url_pattern.h"
-#include "grit/generated_resources.h"
 #include "net/base/auth.h"
 #include "net/base/net_errors.h"
 #include "net/base/upload_data_stream.h"
 #include "net/http/http_response_headers.h"
+#include "net/http/http_util.h"
 #include "net/url_request/url_request.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "url/gurl.h"
@@ -78,12 +79,12 @@ using content::ResourceRequestInfo;
 using content::ResourceType;
 using extensions::ErrorUtils;
 using extensions::Extension;
-using extensions::ExtensionWarning;
-using extensions::ExtensionWarningService;
-using extensions::ExtensionWarningSet;
 using extensions::InfoMap;
 using extensions::Feature;
 using extensions::RulesRegistryService;
+using extensions::Warning;
+using extensions::WarningService;
+using extensions::WarningSet;
 
 namespace helpers = extension_web_request_api_helpers;
 namespace keys = extension_web_request_api_constants;
@@ -185,12 +186,13 @@ void ExtractRequestRoutingInfo(net::URLRequest* request,
 // a <webview> guest process or not. If it is from a <webview> guest process,
 // then |web_view_info| is returned with information about the instance ID
 // that uniquely identifies the <webview> and its embedder.
-bool GetWebViewInfo(net::URLRequest* request,
-                    WebViewRendererState::WebViewInfo* web_view_info) {
+bool GetWebViewInfo(
+    net::URLRequest* request,
+    extensions::WebViewRendererState::WebViewInfo* web_view_info) {
   int render_process_host_id = -1;
   int routing_id = -1;
   ExtractRequestRoutingInfo(request, &render_process_host_id, &routing_id);
-  return WebViewRendererState::GetInstance()->
+  return extensions::WebViewRendererState::GetInstance()->
       GetInfo(render_process_host_id, routing_id, web_view_info);
 }
 
@@ -406,7 +408,7 @@ void SendOnMessageEventOnUI(
     void* profile_id,
     const std::string& extension_id,
     bool is_web_view_guest,
-    const WebViewRendererState::WebViewInfo& web_view_info,
+    const extensions::WebViewRendererState::WebViewInfo& web_view_info,
     scoped_ptr<base::DictionaryValue> event_argument) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
@@ -1471,8 +1473,8 @@ void ExtensionWebRequestEventRouter::GetMatchingListenersImpl(
     std::vector<const ExtensionWebRequestEventRouter::EventListener*>*
         matching_listeners) {
   std::string web_request_event_name(event_name);
-  WebViewRendererState::WebViewInfo web_view_info;
-  bool is_web_view_guest = WebViewRendererState::GetInstance()->
+  extensions::WebViewRendererState::WebViewInfo web_view_info;
+  bool is_web_view_guest = extensions::WebViewRendererState::GetInstance()->
       GetInfo(render_process_host_id, routing_id, &web_view_info);
   if (is_web_view_guest) {
     web_request_event_name.replace(
@@ -1848,7 +1850,7 @@ void ExtensionWebRequestEventRouter::SendMessages(
          message != messages.end(); ++message) {
       scoped_ptr<base::DictionaryValue> argument(new base::DictionaryValue);
       ExtractRequestInfo(blocked_request.request, argument.get());
-      WebViewRendererState::WebViewInfo web_view_info;
+      extensions::WebViewRendererState::WebViewInfo web_view_info;
       bool is_web_view_guest = GetWebViewInfo(blocked_request.request,
                                               &web_view_info);
       argument->SetString(keys::kMessageKey, *message);
@@ -1882,7 +1884,7 @@ int ExtensionWebRequestEventRouter::ExecuteDeltas(
   bool credentials_set = false;
 
   deltas.sort(&helpers::InDecreasingExtensionInstallationTimeOrder);
-  ExtensionWarningSet warnings;
+  WarningSet warnings;
 
   bool canceled = false;
   helpers::MergeCancelOfResponses(
@@ -1931,8 +1933,7 @@ int ExtensionWebRequestEventRouter::ExecuteDeltas(
     BrowserThread::PostTask(
         BrowserThread::UI,
         FROM_HERE,
-        base::Bind(&ExtensionWarningService::NotifyWarningsOnUI,
-                   profile, warnings));
+        base::Bind(&WarningService::NotifyWarningsOnUI, profile, warnings));
   }
 
   if (canceled) {
@@ -1977,7 +1978,7 @@ bool ExtensionWebRequestEventRouter::ProcessDeclarativeRules(
     net::URLRequest* request,
     extensions::RequestStage request_stage,
     const net::HttpResponseHeaders* original_response_headers) {
-  WebViewRendererState::WebViewInfo web_view_info;
+  extensions::WebViewRendererState::WebViewInfo web_view_info;
   bool is_web_view_guest = GetWebViewInfo(request, &web_view_info);
 
   RulesRegistryService::WebViewKey webview_key(
@@ -2387,7 +2388,7 @@ bool WebRequestInternalEventHandledFunction::RunSync() {
                                                           serialized_header));
           return false;
         }
-        if (!helpers::IsValidHeaderName(name)) {
+        if (!net::HttpUtil::IsValidHeaderName(name)) {
           RespondWithError(event_name,
                            sub_event_name,
                            request_id,
@@ -2395,7 +2396,7 @@ bool WebRequestInternalEventHandledFunction::RunSync() {
                            keys::kInvalidHeaderName);
           return false;
         }
-        if (!helpers::IsValidHeaderValue(value)) {
+        if (!net::HttpUtil::IsValidHeaderValue(value)) {
           RespondWithError(event_name,
                            sub_event_name,
                            request_id,
@@ -2454,14 +2455,13 @@ void WebRequestHandlerBehaviorChangedFunction::GetQuotaLimitHeuristics(
 void WebRequestHandlerBehaviorChangedFunction::OnQuotaExceeded(
     const std::string& violation_error) {
   // Post warning message.
-  ExtensionWarningSet warnings;
+  WarningSet warnings;
   warnings.insert(
-      ExtensionWarning::CreateRepeatedCacheFlushesWarning(extension_id()));
+      Warning::CreateRepeatedCacheFlushesWarning(extension_id()));
   BrowserThread::PostTask(
       BrowserThread::UI,
       FROM_HERE,
-      base::Bind(&ExtensionWarningService::NotifyWarningsOnUI,
-                 profile_id(), warnings));
+      base::Bind(&WarningService::NotifyWarningsOnUI, profile_id(), warnings));
 
   // Continue gracefully.
   RunSync();

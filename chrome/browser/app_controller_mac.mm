@@ -5,7 +5,6 @@
 #import "chrome/browser/app_controller_mac.h"
 
 #include "apps/app_shim/extension_app_shim_handler_mac.h"
-#include "apps/app_window_registry.h"
 #include "base/auto_reset.h"
 #include "base/bind.h"
 #include "base/command_line.h"
@@ -77,17 +76,18 @@
 #include "chrome/common/mac/app_mode_common.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
-#include "components/signin/core/common/profile_management_switches.h"
+#include "chrome/grit/chromium_strings.h"
+#include "chrome/grit/generated_resources.h"
 #include "components/signin/core/browser/signin_manager.h"
+#include "components/signin/core/common/profile_management_switches.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/download_manager.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/plugin_service.h"
 #include "content/public/browser/user_metrics.h"
+#include "extensions/browser/app_window/app_window_registry.h"
 #include "extensions/browser/extension_system.h"
-#include "grit/chromium_strings.h"
-#include "grit/generated_resources.h"
 #include "net/base/filename_util.h"
 #include "ui/base/cocoa/focus_window_set.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -433,7 +433,7 @@ class AppControllerProfileObserver : public ProfileInfoCacheObserver {
 - (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication*)app {
   // If there are no windows, quit immediately.
   if (chrome::BrowserIterator().done() &&
-      !apps::AppWindowRegistry::IsAppWindowRegisteredInAnyProfile(0)) {
+      !extensions::AppWindowRegistry::IsAppWindowRegisteredInAnyProfile(0)) {
     return NSTerminateNow;
   }
 
@@ -1544,6 +1544,36 @@ class AppControllerProfileObserver : public ProfileInfoCacheObserver {
 - (void)delayedScreenParametersUpdate {
   FOR_EACH_OBSERVER(ui::WorkAreaWatcherObserver, workAreaChangeObservers_,
       WorkAreaChanged());
+}
+
+- (BOOL)application:(NSApplication*)application
+    willContinueUserActivityWithType:(NSString*)userActivityType {
+  return [userActivityType isEqualToString:NSUserActivityTypeBrowsingWeb];
+}
+
+- (BOOL)application:(NSApplication*)application
+    continueUserActivity:(NSUserActivity*)userActivity
+      restorationHandler:(void (^)(NSArray*))restorationHandler {
+  if (![userActivity.activityType
+          isEqualToString:NSUserActivityTypeBrowsingWeb]) {
+    return NO;
+  }
+
+  NSURL* url = userActivity.webPageURL;
+  if (!url)
+    return NO;
+
+  GURL gurl(base::SysNSStringToUTF8([url absoluteString]));
+  std::vector<GURL> gurlVector;
+  gurlVector.push_back(gurl);
+
+  [self openUrls:gurlVector];
+  return YES;
+}
+
+- (void)application:(NSApplication*)application
+    didFailToContinueUserActivityWithType:(NSString*)userActivityType
+                                    error:(NSError*)error {
 }
 
 @end  // @implementation AppController

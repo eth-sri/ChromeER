@@ -44,6 +44,8 @@ cr.define('options', function() {
         assert(target.tagName == 'SELECT');
         if (target.value == 'storage')
           chrome.send('updateLocalStorage');
+        else if (target.value == 'battery')
+          chrome.send('updateBatteryUsage');
         else
           chrome.send('updateOrigins', [target.value]);
       };
@@ -86,7 +88,8 @@ cr.define('options', function() {
         return {
           origin: origin,
           usage: originDict[origin].usage,
-          usageString: originDict[origin].usageString
+          usageString: originDict[origin].usageString,
+          readableName: originDict[origin].readableName,
         };
       });
       origins.sort(function(first, second) {
@@ -121,6 +124,10 @@ cr.define('options', function() {
 
   WebsiteSettingsManager.populateOrigins = function(originDict) {
     WebsiteSettingsManager.getInstance().populateOrigins_(originDict);
+  };
+
+  WebsiteSettingsManager.showEditPage = function(url) {
+    WebsiteSettingsEditor.getInstance().populatePage(url);
   };
 
   // Export

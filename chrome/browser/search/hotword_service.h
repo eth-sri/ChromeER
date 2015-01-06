@@ -39,6 +39,9 @@ class HotwordService : public content::NotificationObserver,
   // Returns true if the hotword supports the current system language.
   static bool DoesHotwordSupportLanguage(Profile* profile);
 
+  // Returns true if the "enable-experimental-hotwording" flag is set.
+  static bool IsExperimentalHotwordingEnabled();
+
   explicit HotwordService(Profile* profile);
   virtual ~HotwordService();
 
@@ -72,6 +75,10 @@ class HotwordService : public content::NotificationObserver,
   // Control the state of the hotword extension.
   void EnableHotwordExtension(ExtensionService* extension_service);
   void DisableHotwordExtension(ExtensionService* extension_service);
+
+  // Handles launching the Hotword Audio Verification extension when the user
+  // turns it on via the settings menu.
+  void OnHotwordAlwaysOnSearchEnabledChanged(const std::string& pref_name);
 
   // Handles enabling/disabling the hotword extension when the user
   // turns it off via the settings menu.

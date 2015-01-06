@@ -49,6 +49,8 @@ namespace extensions {
 class ComponentLoader;
 class CrxInstaller;
 class ExtensionActionStorageManager;
+class ExtensionDownloader;
+class ExtensionDownloaderDelegate;
 class ExtensionErrorController;
 class ExtensionRegistry;
 class ExtensionSystem;
@@ -333,7 +335,8 @@ class ExtensionService
   void DidCreateRenderViewForBackgroundPage(extensions::ExtensionHost* host);
 
   // Changes sequenced task runner for crx installation tasks to |task_runner|.
-  void SetFileTaskRunnerForTesting(base::SequencedTaskRunner* task_runner);
+  void SetFileTaskRunnerForTesting(
+      const scoped_refptr<base::SequencedTaskRunner>& task_runner);
 
   // Postpone installations so that we don't have to worry about race
   // conditions.
@@ -390,11 +393,7 @@ class ExtensionService
   }
 
   // Note that this may return NULL if autoupdate is not turned on.
-#if defined(ENABLE_EXTENSIONS)
   extensions::ExtensionUpdater* updater() { return updater_.get(); }
-#else
-  extensions::ExtensionUpdater* updater() { return NULL; }
-#endif
 
   extensions::ComponentLoader* component_loader() {
     return component_loader_.get();
@@ -460,6 +459,10 @@ class ExtensionService
 
 
  private:
+  // Creates an ExtensionDownloader for use by the updater.
+  scoped_ptr<extensions::ExtensionDownloader> CreateExtensionDownloader(
+      extensions::ExtensionDownloaderDelegate* delegate);
+
   // Reloads the specified extension, sending the onLaunched() event to it if it
   // currently has any window showing. |be_noisy| determines whether noisy
   // failures are allowed for unpacked extension installs.
@@ -626,10 +629,8 @@ class ExtensionService
   // Signaled when all extensions are loaded.
   extensions::OneShotEvent* const ready_;
 
-#if defined(ENABLE_EXTENSIONS)
   // Our extension updater, if updates are turned on.
   scoped_ptr<extensions::ExtensionUpdater> updater_;
-#endif
 
   // Map unloaded extensions' ids to their paths. When a temporarily loaded
   // extension is unloaded, we lose the information about it and don't have
@@ -701,10 +702,8 @@ class ExtensionService
   // Sequenced task runner for extension related file operations.
   scoped_refptr<base::SequencedTaskRunner> file_task_runner_;
 
-#if defined(ENABLE_EXTENSIONS)
   scoped_ptr<extensions::ExtensionActionStorageManager>
       extension_action_storage_manager_;
-#endif
   scoped_ptr<extensions::ManagementPolicy::Provider>
       shared_module_policy_provider_;
 

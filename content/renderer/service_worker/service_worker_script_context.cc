@@ -39,7 +39,8 @@ void SendPostMessageToDocumentOnMainThread(
 ServiceWorkerScriptContext::ServiceWorkerScriptContext(
     EmbeddedWorkerContextClient* embedded_context,
     blink::WebServiceWorkerContextProxy* proxy)
-    : embedded_context_(embedded_context),
+    : cache_storage_dispatcher_(new ServiceWorkerCacheStorageDispatcher(this)),
+      embedded_context_(embedded_context),
       proxy_(proxy) {
 }
 
@@ -59,6 +60,12 @@ void ServiceWorkerScriptContext::OnMessageReceived(
                         OnDidGetClientDocuments)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
+
+  // TODO(gavinp): Would it be preferable to put an AddListener() method to
+  // EmbeddedWorkerContextClient?
+  if (!handled)
+    handled = cache_storage_dispatcher_->OnMessageReceived(message);
+
   DCHECK(handled);
 }
 
@@ -116,6 +123,10 @@ void ServiceWorkerScriptContext::Send(IPC::Message* message) {
   embedded_context_->Send(message);
 }
 
+int ServiceWorkerScriptContext::GetRoutingID() const {
+  return embedded_context_->embedded_worker_id();
+}
+
 void ServiceWorkerScriptContext::OnActivateEvent(int request_id) {
   proxy_->dispatchActivateEvent(request_id);
 }
@@ -137,6 +148,10 @@ void ServiceWorkerScriptContext::OnFetchEvent(
        ++it) {
     webRequest.setHeader(blink::WebString::fromUTF8(it->first),
                          blink::WebString::fromUTF8(it->second));
+  }
+  if (!request.blob_uuid.empty()) {
+    webRequest.setBlob(blink::WebString::fromUTF8(request.blob_uuid),
+                       request.blob_size);
   }
   webRequest.setReferrer(blink::WebString::fromUTF8(request.referrer.spec()),
                          blink::WebReferrerPolicyDefault);
@@ -185,10 +200,6 @@ void ServiceWorkerScriptContext::OnDidGetClientDocuments(
   info->clientIDs = client_ids;
   callbacks->onSuccess(info.release());
   pending_clients_callbacks_.Remove(request_id);
-}
-
-int ServiceWorkerScriptContext::GetRoutingID() const {
-  return embedded_context_->embedded_worker_id();
 }
 
 }  // namespace content

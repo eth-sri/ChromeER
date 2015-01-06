@@ -125,8 +125,11 @@ extern int UtilityMain(const MainFunctionParams&);
 
 namespace content {
 
+#if !defined(CHROME_MULTIPLE_DLL_CHILD)
 base::LazyInstance<ContentBrowserClient>
     g_empty_content_browser_client = LAZY_INSTANCE_INITIALIZER;
+#endif  //  !CHROME_MULTIPLE_DLL_CHILD
+
 #if !defined(OS_IOS) && !defined(CHROME_MULTIPLE_DLL_BROWSER)
 base::LazyInstance<ContentPluginClient>
     g_empty_content_plugin_client = LAZY_INSTANCE_INITIALIZER;
@@ -190,7 +193,7 @@ void CommonSubprocessInit(const std::string& process_type) {
 
 // Only needed on Windows for creating stats tables.
 #if defined(OS_WIN)
-static base::ProcessId GetBrowserPid(const CommandLine& command_line) {
+static base::ProcessId GetBrowserPid(const base::CommandLine& command_line) {
   base::ProcessId browser_pid = base::GetCurrentProcId();
   if (command_line.HasSwitch(switches::kProcessChannelID)) {
     std::string channel_name =
@@ -205,7 +208,7 @@ static base::ProcessId GetBrowserPid(const CommandLine& command_line) {
 }
 #endif
 
-static void InitializeStatsTable(const CommandLine& command_line) {
+static void InitializeStatsTable(const base::CommandLine& command_line) {
   // Initialize the Stats Counters table.  With this initialized,
   // the StatsViewer can be utilized to read counters outside of
   // Chrome.  These lines can be commented out to effectively turn
@@ -242,12 +245,14 @@ class ContentClientInitializer {
   static void Set(const std::string& process_type,
                   ContentMainDelegate* delegate) {
     ContentClient* content_client = GetContentClient();
+#if !defined(CHROME_MULTIPLE_DLL_CHILD)
     if (process_type.empty()) {
       if (delegate)
         content_client->browser_ = delegate->CreateContentBrowserClient();
       if (!content_client->browser_)
         content_client->browser_ = &g_empty_content_browser_client.Get();
     }
+#endif  // !CHROME_MULTIPLE_DLL_CHILD
 
 #if !defined(OS_IOS) && !defined(CHROME_MULTIPLE_DLL_BROWSER)
     if (process_type == switches::kPluginProcess ||
@@ -258,7 +263,7 @@ class ContentClientInitializer {
         content_client->plugin_ = &g_empty_content_plugin_client.Get();
       // Single process not supported in split dll mode.
     } else if (process_type == switches::kRendererProcess ||
-               CommandLine::ForCurrentProcess()->HasSwitch(
+               base::CommandLine::ForCurrentProcess()->HasSwitch(
                    switches::kSingleProcess)) {
       if (delegate)
         content_client->renderer_ = delegate->CreateContentRendererClient();
@@ -267,7 +272,7 @@ class ContentClientInitializer {
     }
 
     if (process_type == switches::kUtilityProcess ||
-        CommandLine::ForCurrentProcess()->HasSwitch(
+        base::CommandLine::ForCurrentProcess()->HasSwitch(
             switches::kSingleProcess)) {
       if (delegate)
         content_client->utility_ = delegate->CreateContentUtilityClient();
@@ -320,7 +325,8 @@ int RunZygote(const MainFunctionParams& main_function_params,
 
   // Zygote::HandleForkRequest may have reallocated the command
   // line so update it here with the new version.
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
   std::string process_type =
       command_line.GetSwitchValueASCII(switches::kProcessType);
   ContentClientInitializer::Set(process_type, delegate);
@@ -348,7 +354,7 @@ int RunZygote(const MainFunctionParams& main_function_params,
 
 #if !defined(OS_IOS)
 static void RegisterMainThreadFactories() {
-#if !defined(CHROME_MULTIPLE_DLL_BROWSER)
+#if !defined(CHROME_MULTIPLE_DLL_BROWSER) && !defined(CHROME_MULTIPLE_DLL_CHILD)
   UtilityProcessHostImpl::RegisterUtilityMainThreadFactory(
       CreateInProcessUtilityThread);
   RenderProcessHostImpl::RegisterRendererMainThreadFactory(
@@ -356,7 +362,7 @@ static void RegisterMainThreadFactories() {
   GpuProcessHost::RegisterGpuMainThreadFactory(
       CreateInProcessGpuThread);
 #else
-  CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  base::CommandLine& command_line = *base::CommandLine::ForCurrentProcess();
   if (command_line.HasSwitch(switches::kSingleProcess)) {
     LOG(FATAL) <<
         "--single-process is not supported in chrome multiple dll browser.";
@@ -365,7 +371,7 @@ static void RegisterMainThreadFactories() {
     LOG(FATAL) <<
         "--in-process-gpu is not supported in chrome multiple dll browser.";
   }
-#endif
+#endif  // !CHROME_MULTIPLE_DLL_BROWSER && !CHROME_MULTIPLE_DLL_CHILD
 }
 
 // Run the FooMain() for a given process type.
@@ -589,7 +595,7 @@ class ContentMainRunnerImpl : public ContentMainRunner {
     argv = params.argv;
 #endif
 
-    CommandLine::Init(argc, argv);
+    base::CommandLine::Init(argc, argv);
 
     if (!delegate_ || delegate_->ShouldEnableTerminationOnHeapCorruption())
       base::EnableTerminationOnHeapCorruption();
@@ -606,7 +612,8 @@ class ContentMainRunnerImpl : public ContentMainRunner {
 
     completed_basic_startup_ = true;
 
-    const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+    const base::CommandLine& command_line =
+        *base::CommandLine::ForCurrentProcess();
     std::string process_type =
         command_line.GetSwitchValueASCII(switches::kProcessType);
 
@@ -745,9 +752,10 @@ class ContentMainRunnerImpl : public ContentMainRunner {
   virtual int Run() OVERRIDE {
     DCHECK(is_initialized_);
     DCHECK(!is_shutdown_);
-    const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+    const base::CommandLine& command_line =
+        *base::CommandLine::ForCurrentProcess();
     std::string process_type =
-          command_line.GetSwitchValueASCII(switches::kProcessType);
+        command_line.GetSwitchValueASCII(switches::kProcessType);
 
     MainFunctionParams main_params(command_line);
     main_params.ui_task = ui_task_;
@@ -769,7 +777,8 @@ class ContentMainRunnerImpl : public ContentMainRunner {
     DCHECK(!is_shutdown_);
 
     if (completed_basic_startup_ && delegate_) {
-      const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+      const base::CommandLine& command_line =
+          *base::CommandLine::ForCurrentProcess();
       std::string process_type =
           command_line.GetSwitchValueASCII(switches::kProcessType);
 

@@ -16,16 +16,14 @@
 #include "chrome/browser/chromeos/reset/metrics.h"
 #include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
 #include "chrome/common/pref_names.h"
+#include "chrome/grit/chromium_strings.h"
+#include "chrome/grit/generated_resources.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/power_manager_client.h"
 #include "chromeos/dbus/session_manager_client.h"
 #include "chromeos/dbus/update_engine_client.h"
 #include "content/public/browser/browser_thread.h"
-#include "grit/browser_resources.h"
-#include "grit/chromium_strings.h"
-#include "grit/generated_resources.h"
-#include "ui/base/l10n/l10n_util.h"
 
 namespace {
 
@@ -110,8 +108,8 @@ void ResetScreenHandler::ChooseAndApplyShowScenario() {
   if (!restart_required_)  // First exec after boot.
     reboot_was_requested_ = prefs->GetBoolean(prefs::kFactoryResetRequested);
 
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDisableRollbackOption)) {
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableRollbackOption)) {
     rollback_available_ = false;
     ShowWithParams();
   } else if (!restart_required_ && reboot_was_requested_) {
@@ -140,7 +138,7 @@ void ResetScreenHandler::DeclareLocalizedValues(
     LocalizedValuesBuilder* builder) {
   builder->Add("resetScreenTitle", IDS_RESET_SCREEN_TITLE);
   builder->Add("resetScreenAccessibleTitle", IDS_RESET_SCREEN_TITLE);
-  builder->Add("resetScreenIconTitle",IDS_RESET_SCREEN_ICON_TITLE);
+  builder->Add("resetScreenIconTitle", IDS_RESET_SCREEN_ICON_TITLE);
   builder->Add("cancelButton", IDS_CANCEL);
 
   builder->Add("resetWarningDataDetails",

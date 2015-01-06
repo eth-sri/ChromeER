@@ -17,6 +17,7 @@
 #include "media/cdm/aes_decryptor.h"
 #include "media/cdm/json_web_key.h"
 #include "media/filters/chunk_demuxer.h"
+#include "media/filters/renderer_impl.h"
 
 using testing::_;
 using testing::AnyNumber;
@@ -540,8 +541,10 @@ class PipelineIntegrationTest
         .WillRepeatedly(SaveArg<0>(&metadata_));
     EXPECT_CALL(*this, OnBufferingStateChanged(BUFFERING_HAVE_ENOUGH))
         .Times(AtMost(1));
+    demuxer_ = source->GetDemuxer().Pass();
     pipeline_->Start(
-        CreateFilterCollection(source->GetDemuxer(), NULL),
+        demuxer_.get(),
+        CreateRenderer(NULL),
         base::Bind(&PipelineIntegrationTest::OnEnded, base::Unretained(this)),
         base::Bind(&PipelineIntegrationTest::OnError, base::Unretained(this)),
         QuitOnStatusCB(PIPELINE_OK),
@@ -549,8 +552,9 @@ class PipelineIntegrationTest
                    base::Unretained(this)),
         base::Bind(&PipelineIntegrationTest::OnBufferingStateChanged,
                    base::Unretained(this)),
-        base::Closure());
-
+        base::Closure(),
+        base::Bind(&PipelineIntegrationTest::OnAddTextTrack,
+                   base::Unretained(this)));
     message_loop_.Run();
   }
 
@@ -567,9 +571,10 @@ class PipelineIntegrationTest
         .WillRepeatedly(SaveArg<0>(&metadata_));
     EXPECT_CALL(*this, OnBufferingStateChanged(BUFFERING_HAVE_ENOUGH))
         .Times(AtMost(1));
+    demuxer_ = source->GetDemuxer().Pass();
     pipeline_->Start(
-        CreateFilterCollection(source->GetDemuxer(),
-                               encrypted_media->decryptor()),
+        demuxer_.get(),
+        CreateRenderer(encrypted_media->decryptor()),
         base::Bind(&PipelineIntegrationTest::OnEnded, base::Unretained(this)),
         base::Bind(&PipelineIntegrationTest::OnError, base::Unretained(this)),
         QuitOnStatusCB(PIPELINE_OK),
@@ -577,7 +582,9 @@ class PipelineIntegrationTest
                    base::Unretained(this)),
         base::Bind(&PipelineIntegrationTest::OnBufferingStateChanged,
                    base::Unretained(this)),
-        base::Closure());
+        base::Closure(),
+        base::Bind(&PipelineIntegrationTest::OnAddTextTrack,
+                   base::Unretained(this)));
 
     source->set_need_key_cb(base::Bind(&FakeEncryptedMedia::NeedKey,
                                        base::Unretained(encrypted_media)));
@@ -1553,6 +1560,28 @@ TEST_F(PipelineIntegrationTest, BasicPlaybackChainedOggVideo) {
   ASSERT_TRUE(Start(GetTestDataFilePath("double-bear.ogv"), PIPELINE_OK));
   Play();
   EXPECT_EQ(PIPELINE_ERROR_DECODE, WaitUntilEndedOrError());
+}
+
+// Tests that we signal ended even when audio runs longer than video track.
+TEST_F(PipelineIntegrationTest, BasicPlaybackAudioLongerThanVideo) {
+  ASSERT_TRUE(Start(GetTestDataFilePath("bear_audio_longer_than_video.ogv"),
+                    PIPELINE_OK));
+  // Audio track is 2000ms. Video track is 1001ms. Duration should be higher
+  // of the two.
+  EXPECT_EQ(2000, pipeline_->GetMediaDuration().InMilliseconds());
+  Play();
+  ASSERT_TRUE(WaitUntilOnEnded());
+}
+
+// Tests that we signal ended even when audio runs shorter than video track.
+TEST_F(PipelineIntegrationTest, BasicPlaybackAudioShorterThanVideo) {
+  ASSERT_TRUE(Start(GetTestDataFilePath("bear_audio_shorter_than_video.ogv"),
+                    PIPELINE_OK));
+  // Audio track is 500ms. Video track is 1001ms. Duration should be higher of
+  // the two.
+  EXPECT_EQ(1001, pipeline_->GetMediaDuration().InMilliseconds());
+  Play();
+  ASSERT_TRUE(WaitUntilOnEnded());
 }
 
 }  // namespace media

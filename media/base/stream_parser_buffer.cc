@@ -61,15 +61,15 @@ scoped_refptr<StreamParserBuffer> StreamParserBuffer::CopyFrom(
                              is_keyframe, type, track_id));
 }
 
-base::TimeDelta StreamParserBuffer::GetDecodeTimestamp() const {
-  if (decode_timestamp_ == kNoTimestamp())
-    return timestamp();
+DecodeTimestamp StreamParserBuffer::GetDecodeTimestamp() const {
+  if (decode_timestamp_ == kNoDecodeTimestamp())
+    return DecodeTimestamp::FromPresentationTime(timestamp());
   return decode_timestamp_;
 }
 
-void StreamParserBuffer::SetDecodeTimestamp(base::TimeDelta timestamp) {
+void StreamParserBuffer::SetDecodeTimestamp(DecodeTimestamp timestamp) {
   decode_timestamp_ = timestamp;
-  if (preroll_buffer_)
+  if (preroll_buffer_.get())
     preroll_buffer_->SetDecodeTimestamp(timestamp);
 }
 
@@ -79,7 +79,7 @@ StreamParserBuffer::StreamParserBuffer(const uint8* data, int data_size,
                                        Type type, TrackId track_id)
     : DecoderBuffer(data, data_size, side_data, side_data_size),
       is_keyframe_(is_keyframe),
-      decode_timestamp_(kNoTimestamp()),
+      decode_timestamp_(kNoDecodeTimestamp()),
       config_id_(kInvalidConfigId),
       type_(type),
       track_id_(track_id) {
@@ -99,7 +99,7 @@ int StreamParserBuffer::GetConfigId() const {
 
 void StreamParserBuffer::SetConfigId(int config_id) {
   config_id_ = config_id;
-  if (preroll_buffer_)
+  if (preroll_buffer_.get())
     preroll_buffer_->SetConfigId(config_id);
 }
 
@@ -128,8 +128,8 @@ void StreamParserBuffer::ConvertToSpliceBuffer(
   // on that behavior.
 
   // Move over any preroll from this buffer.
-  if (preroll_buffer_) {
-    DCHECK(!overlapping_buffer->preroll_buffer_);
+  if (preroll_buffer_.get()) {
+    DCHECK(!overlapping_buffer->preroll_buffer_.get());
     overlapping_buffer->preroll_buffer_.swap(preroll_buffer_);
   }
 
@@ -158,9 +158,9 @@ void StreamParserBuffer::ConvertToSpliceBuffer(
        ++it) {
     const scoped_refptr<StreamParserBuffer>& buffer = *it;
     DCHECK(!buffer->end_of_stream());
-    DCHECK(!buffer->preroll_buffer());
+    DCHECK(!buffer->preroll_buffer().get());
     DCHECK(buffer->splice_buffers().empty());
-    splice_buffers_.push_back(CopyBuffer(*buffer));
+    splice_buffers_.push_back(CopyBuffer(*buffer.get()));
     splice_buffers_.back()->set_splice_timestamp(splice_timestamp());
   }
 
@@ -169,10 +169,10 @@ void StreamParserBuffer::ConvertToSpliceBuffer(
 
 void StreamParserBuffer::SetPrerollBuffer(
     const scoped_refptr<StreamParserBuffer>& preroll_buffer) {
-  DCHECK(!preroll_buffer_);
+  DCHECK(!preroll_buffer_.get());
   DCHECK(!end_of_stream());
   DCHECK(!preroll_buffer->end_of_stream());
-  DCHECK(!preroll_buffer->preroll_buffer_);
+  DCHECK(!preroll_buffer->preroll_buffer_.get());
   DCHECK(preroll_buffer->splice_timestamp() == kNoTimestamp());
   DCHECK(preroll_buffer->splice_buffers().empty());
   DCHECK(preroll_buffer->timestamp() <= timestamp());
@@ -191,7 +191,7 @@ void StreamParserBuffer::SetPrerollBuffer(
 
 void StreamParserBuffer::set_timestamp(base::TimeDelta timestamp) {
   DecoderBuffer::set_timestamp(timestamp);
-  if (preroll_buffer_)
+  if (preroll_buffer_.get())
     preroll_buffer_->set_timestamp(timestamp);
 }
 

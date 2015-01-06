@@ -1360,7 +1360,7 @@ error::Error GLES2DecoderImpl::HandleLineWidth(
     uint32_t immediate_data_size,
     const gles2::cmds::LineWidth& c) {
   GLfloat width = static_cast<GLfloat>(c.width);
-  if (width <= 0.0f) {
+  if (width <= 0.0f || base::IsNaN(width)) {
     LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "LineWidth", "width out of range");
     return error::kNoError;
   }
@@ -2852,6 +2852,58 @@ error::Error GLES2DecoderImpl::HandleDrawBuffersEXTImmediate(
     return error::kOutOfBounds;
   }
   DoDrawBuffersEXT(count, bufs);
+  return error::kNoError;
+}
+
+error::Error GLES2DecoderImpl::HandleMatrixLoadfCHROMIUMImmediate(
+    uint32_t immediate_data_size,
+    const gles2::cmds::MatrixLoadfCHROMIUMImmediate& c) {
+  if (!features().chromium_path_rendering) {
+    LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION,
+                       "glMatrixLoadfCHROMIUM",
+                       "function not available");
+    return error::kNoError;
+  }
+
+  GLenum matrixMode = static_cast<GLenum>(c.matrixMode);
+  uint32_t data_size;
+  if (!ComputeDataSize(1, sizeof(GLfloat), 16, &data_size)) {
+    return error::kOutOfBounds;
+  }
+  if (data_size > immediate_data_size) {
+    return error::kOutOfBounds;
+  }
+  const GLfloat* m =
+      GetImmediateDataAs<const GLfloat*>(c, data_size, immediate_data_size);
+  if (!validators_->matrix_mode.IsValid(matrixMode)) {
+    LOCAL_SET_GL_ERROR_INVALID_ENUM(
+        "glMatrixLoadfCHROMIUM", matrixMode, "matrixMode");
+    return error::kNoError;
+  }
+  if (m == NULL) {
+    return error::kOutOfBounds;
+  }
+  DoMatrixLoadfCHROMIUM(matrixMode, m);
+  return error::kNoError;
+}
+
+error::Error GLES2DecoderImpl::HandleMatrixLoadIdentityCHROMIUM(
+    uint32_t immediate_data_size,
+    const gles2::cmds::MatrixLoadIdentityCHROMIUM& c) {
+  if (!features().chromium_path_rendering) {
+    LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION,
+                       "glMatrixLoadIdentityCHROMIUM",
+                       "function not available");
+    return error::kNoError;
+  }
+
+  GLenum matrixMode = static_cast<GLenum>(c.matrixMode);
+  if (!validators_->matrix_mode.IsValid(matrixMode)) {
+    LOCAL_SET_GL_ERROR_INVALID_ENUM(
+        "glMatrixLoadIdentityCHROMIUM", matrixMode, "matrixMode");
+    return error::kNoError;
+  }
+  DoMatrixLoadIdentityCHROMIUM(matrixMode);
   return error::kNoError;
 }
 

@@ -5,8 +5,6 @@
 #include "ui/views/touchui/touch_selection_controller_impl.h"
 
 #include "base/time/time.h"
-#include "grit/ui_resources.h"
-#include "grit/ui_strings.h"
 #include "ui/aura/client/cursor_client.h"
 #include "ui/aura/env.h"
 #include "ui/aura/window.h"
@@ -17,6 +15,8 @@
 #include "ui/gfx/rect.h"
 #include "ui/gfx/screen.h"
 #include "ui/gfx/size.h"
+#include "ui/resources/grit/ui_resources.h"
+#include "ui/strings/grit/ui_strings.h"
 #include "ui/views/widget/widget.h"
 #include "ui/wm/core/masked_window_targeter.h"
 #include "ui/wm/core/window_animations.h"

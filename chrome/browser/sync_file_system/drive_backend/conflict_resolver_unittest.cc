@@ -6,7 +6,7 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/run_loop.h"
 #include "base/thread_task_runner_handle.h"
@@ -39,8 +39,7 @@ namespace drive_backend {
 
 namespace {
 
-fileapi::FileSystemURL URL(const GURL& origin,
-                           const std::string& path) {
+storage::FileSystemURL URL(const GURL& origin, const std::string& path) {
   return CreateSyncableFileSystemURL(
       origin, base::FilePath::FromUTF8Unsafe(path));
 }
@@ -155,7 +154,7 @@ class ConflictResolverTest : public testing::Test {
     return file_id;
   }
 
-  void CreateLocalFile(const fileapi::FileSystemURL& url) {
+  void CreateLocalFile(const storage::FileSystemURL& url) {
     remote_change_processor_->UpdateLocalFileMetadata(
         url, FileChange(FileChange::FILE_CHANGE_ADD_OR_UPDATE,
                         SYNC_FILE_TYPE_FILE));
@@ -189,9 +188,8 @@ class ConflictResolverTest : public testing::Test {
     return status;
   }
 
-  SyncStatusCode RunLocalToRemoteSyncer(
-      const fileapi::FileSystemURL& url,
-      const FileChange& file_change) {
+  SyncStatusCode RunLocalToRemoteSyncer(const storage::FileSystemURL& url,
+                                        const FileChange& file_change) {
     SyncStatusCode status = SYNC_STATUS_UNKNOWN;
     base::FilePath local_path = base::FilePath(FILE_PATH_LITERAL("dummy"));
     if (file_change.IsAddOrUpdate())
@@ -209,9 +207,18 @@ class ConflictResolverTest : public testing::Test {
   }
 
   void RunRemoteToLocalSyncerUntilIdle() {
-    SyncStatusCode status = SYNC_STATUS_UNKNOWN;
-    while (status != SYNC_STATUS_NO_CHANGE_TO_SYNC)
+    const int kRetryLimit = 100;
+    SyncStatusCode status;
+    int retry_count = 0;
+    MetadataDatabase* metadata_database = context_->GetMetadataDatabase();
+    do {
+      if (retry_count++ > kRetryLimit)
+        break;
       status = RunRemoteToLocalSyncer();
+    } while (status == SYNC_STATUS_OK ||
+             status == SYNC_STATUS_RETRY ||
+             metadata_database->PromoteLowerPriorityTrackersToNormal());
+    EXPECT_EQ(SYNC_STATUS_NO_CHANGE_TO_SYNC, status);
   }
 
   SyncStatusCode RunConflictResolver() {
@@ -375,7 +382,7 @@ TEST_F(ConflictResolverTest, ResolveConflict_RemoteFolderOnLocalFile) {
   RunRemoteToLocalSyncerUntilIdle();
 
   const std::string kTitle = "foo";
-  fileapi::FileSystemURL kURL = URL(kOrigin, kTitle);
+  storage::FileSystemURL kURL = URL(kOrigin, kTitle);
 
   // Create a file on local and sync it.
   CreateLocalFile(kURL);
@@ -422,7 +429,7 @@ TEST_F(ConflictResolverTest, ResolveConflict_RemoteNestedFolderOnLocalFile) {
   RunRemoteToLocalSyncerUntilIdle();
 
   const std::string kTitle = "foo";
-  fileapi::FileSystemURL kURL = URL(kOrigin, kTitle);
+  storage::FileSystemURL kURL = URL(kOrigin, kTitle);
 
   // Create a file on local and sync it.
   CreateLocalFile(kURL);

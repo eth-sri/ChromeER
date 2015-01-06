@@ -10,7 +10,7 @@
 #include "base/allocator/allocator_extension.h"
 #include "base/bind.h"
 #include "base/command_line.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/field_trial.h"
@@ -254,9 +254,6 @@ ChromeRenderProcessObserver::ChromeRenderProcessObserver(
       pending_cache_max_dead_capacity_(0),
       pending_cache_capacity_(kUnitializedCacheCapacity) {
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  if (command_line.HasSwitch(switches::kEnableWatchdog)) {
-    // TODO(JAR): Need to implement renderer IO msgloop watchdog.
-  }
 
 #if defined(ENABLE_AUTOFILL_DIALOG)
   WebRuntimeFeatures::enableRequestAutocomplete(true);

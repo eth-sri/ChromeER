@@ -7,16 +7,16 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "webkit/browser/fileapi/local_file_util.h"
-#include "webkit/browser/webkit_storage_browser_export.h"
+#include "webkit/browser/storage_browser_export.h"
 
-namespace fileapi {
+namespace storage {
 
 class FileSystemOperationContext;
 
 // Dragged file system is a specialized LocalFileUtil where read access to
 // the virtual root directory (i.e. empty cracked path case) is allowed
 // and single isolated context may be associated with multiple file paths.
-class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE DraggedFileUtil
+class STORAGE_EXPORT_PRIVATE DraggedFileUtil
     : public LocalFileUtil {
  public:
   DraggedFileUtil();
@@ -36,6 +36,6 @@ class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE DraggedFileUtil
   DISALLOW_COPY_AND_ASSIGN(DraggedFileUtil);
 };
 
-}  // namespace fileapi
+}  // namespace storage
 
 #endif  // WEBKIT_BROWSER_FILEAPI_DRAGGED_FILE_UTIL_H_

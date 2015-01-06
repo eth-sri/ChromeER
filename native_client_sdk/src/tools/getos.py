@@ -68,6 +68,7 @@ def GetSDKVersion():
 
   version = None
   revision = None
+  commit_position = None
   for line in open(readme):
     if ':' in line:
       name, value = line.split(':', 1)
@@ -75,17 +76,18 @@ def GetSDKVersion():
         version = value.strip()
       if name == "Chrome Revision":
         revision = value.strip()
+      if name == "Chrome Commit Position":
+        commit_position = value.strip()
 
-  if revision == None or version == None:
+  if revision is None or version is None or commit_position is None:
     raise Error("error parsing SDK README: %s" % readme)
 
   try:
-    revision = int(revision)
     version = int(version)
   except ValueError:
     raise Error("error parsing SDK README: %s" % readme)
 
-  return (version, revision)
+  return (version, revision, commit_position)
 
 
 def GetSystemArch(platform):
@@ -205,6 +207,8 @@ def main(args):
       help='Print major version of the NaCl SDK.')
   parser.add_option('--sdk-revision', action='store_true',
       help='Print revision number of the NaCl SDK.')
+  parser.add_option('--sdk-commit-position', action='store_true',
+      help='Print commit position of the NaCl SDK.')
   parser.add_option('--check-version',
       help='Check that the SDK version is at least as great as the '
            'version passed in.')
@@ -230,13 +234,19 @@ def main(args):
     out = GetSDKVersion()[0]
   elif options.sdk_revision:
     out = GetSDKVersion()[1]
+  elif options.sdk_commit_position:
+    out = GetSDKVersion()[2]
   elif options.check_version:
     required_version = ParseVersion(options.check_version)
     version = GetSDKVersion()
-    if version < required_version:
-      raise Error("SDK version too old (current: %s.%s, required: %s.%s)"
-             % (version[0], version[1],
-                required_version[0], required_version[1]))
+    # We currently ignore the revision and just check the major version number.
+    # Currently, version[1] is just a Git hash, which cannot be compared.
+    # TODO(mgiuca): Compare the minor revision numbers (which should be
+    # Cr-Commit-Position values), when http://crbug.com/406783 is fixed.
+    # Then Cr-Commit-Position should be available: see http://crbug.com/406993.
+    if version[0] < required_version[0]:
+      raise Error("SDK version too old (current: %s, required: %s)"
+             % (version[0], required_version[0]))
     out = None
 
   if out:

@@ -4,8 +4,8 @@
 
 """Finds android browsers that can be controlled by telemetry."""
 
-import os
 import logging as real_logging
+import os
 import re
 import subprocess
 import sys
@@ -13,7 +13,6 @@ import sys
 from telemetry import decorators
 from telemetry.core import browser
 from telemetry.core import platform
-from telemetry.core import platform as platform_module
 from telemetry.core import possible_browser
 from telemetry.core import util
 from telemetry.core.backends import adb_commands
@@ -37,9 +36,13 @@ CHROME_PACKAGE_NAMES = {
        android_browser_backend.ChromeShellBackendSettings,
        'ChromeShell.apk'],
   'android-webview':
-      ['com.android.webview.chromium.shell',
+      ['org.chromium.telemetry_shell',
        android_browser_backend.WebviewBackendSettings,
        None],
+  'android-webview-shell':
+      ['org.chromium.android_webview.shell',
+       android_browser_backend.WebviewShellBackendSettings,
+       'AndroidWebView.apk'],
   'android-chrome':
       ['com.google.android.apps.chrome',
        android_browser_backend.ChromeBackendSettings,
@@ -62,16 +65,18 @@ CHROME_PACKAGE_NAMES = {
        None]
 }
 
-ALL_BROWSER_TYPES = CHROME_PACKAGE_NAMES.keys()
-
 
 class PossibleAndroidBrowser(possible_browser.PossibleBrowser):
   """A launchable android browser instance."""
-  def __init__(self, browser_type, finder_options, backend_settings, apk_name):
+  def __init__(self, browser_type, finder_options, android_platform,
+               platform_backend, backend_settings, apk_name):
     super(PossibleAndroidBrowser, self).__init__(browser_type, 'android',
         finder_options, backend_settings.supports_tab_control)
-    assert browser_type in ALL_BROWSER_TYPES, \
-        'Please add %s to ALL_BROWSER_TYPES' % browser_type
+    assert browser_type in FindAllBrowserTypes(finder_options), \
+        ('Please add %s to android_browser_finder.FindAllBrowserTypes' %
+         browser_type)
+    self._platform = android_platform
+    self._platform_backend = platform_backend
     self._backend_settings = backend_settings
     self._local_apk = None
 
@@ -90,18 +95,11 @@ class PossibleAndroidBrowser(possible_browser.PossibleBrowser):
         newest_apk_path = sorted(candidate_apks)[-1][1]
         self._local_apk = newest_apk_path
 
-
   def __repr__(self):
     return 'PossibleAndroidBrowser(browser_type=%s)' % self.browser_type
 
   def _InitPlatformIfNeeded(self):
-    if self._platform:
-      return
-
-    self._platform_backend = android_platform_backend.AndroidPlatformBackend(
-        self._backend_settings.adb.device(),
-        self.finder_options.no_performance_mode)
-    self._platform = platform_module.Platform(self._platform_backend)
+    pass
 
   def Create(self):
     self._InitPlatformIfNeeded()
@@ -129,9 +127,8 @@ class PossibleAndroidBrowser(possible_browser.PossibleBrowser):
   @decorators.Cache
   def UpdateExecutableIfNeeded(self):
     if self.HaveLocalAPK():
-      real_logging.warn(
-          'Refreshing %s on device if needed.' % self._local_apk)
-      self._backend_settings.adb.Install(self._local_apk)
+      real_logging.warn('Installing %s on device if needed.' % self._local_apk)
+      self.platform.InstallApplication(self._local_apk)
 
   def last_modification_time(self):
     if self.HaveLocalAPK():
@@ -177,6 +174,10 @@ def CanFindAvailableBrowsers(logging=real_logging):
                                             os.environ['PATH']])
       return True
   return False
+
+
+def FindAllBrowserTypes(_):
+  return CHROME_PACKAGE_NAMES.keys()
 
 
 def FindAllAvailableBrowsers(finder_options, logging=real_logging):
@@ -226,16 +227,16 @@ Waiting for device...
     return []
 
   device = devices[0]
-
   adb = adb_commands.AdbCommands(device=device)
+
   # Trying to root the device, if possible.
   if not adb.IsRootEnabled():
     # Ignore result.
     adb.EnableAdbRoot()
 
+  # Host side workaround for crbug.com/268450 (adb instability).
+  # The adb server has a race which is mitigated by binding to a single core.
   if psutil:
-    # Host side workaround for crbug.com/268450 (adb instability).
-    # The adb server has a race which is mitigated by binding to a single core.
     for proc in psutil.process_iter():
       try:
         if 'adb' in proc.name:
@@ -250,25 +251,20 @@ Waiting for device...
       except (psutil.NoSuchProcess, psutil.AccessDenied):
         logging.warn('Failed to set adb process CPU affinity')
 
-  if not os.environ.get('BUILDBOT_BUILDERNAME'):
-    # Killing adbd before running tests has proven to make them less likely to
-    # flake out during the test. We skip this if Telemetry is running under a
-    # buildbot because build/android/test_runner.py wrapper already took care
-    # of it before starting the shards.
-    adb.RestartAdbdOnDevice()
+  platform_backend = android_platform_backend.AndroidPlatformBackend(
+      adb.device(), finder_options.no_performance_mode)
+  android_platform = platform.Platform(platform_backend)
 
-  packages = adb.RunShellCommand('pm list packages')
   possible_browsers = []
-
   for name, package_info in CHROME_PACKAGE_NAMES.iteritems():
     [package, backend_settings, local_apk] = package_info
-    b = PossibleAndroidBrowser(
-        name,
-        finder_options,
-        backend_settings(adb, package),
-        local_apk)
-
-    if 'package:' + package in packages or b.HaveLocalAPK():
+    b = PossibleAndroidBrowser(name,
+                               finder_options,
+                               android_platform,
+                               platform_backend,
+                               backend_settings(adb, package),
+                               local_apk)
+    if b.platform.CanLaunchApplication(package) or b.HaveLocalAPK():
       possible_browsers.append(b)
 
   if possible_browsers:

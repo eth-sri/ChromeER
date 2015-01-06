@@ -35,23 +35,15 @@ class Facebook(WebsiteTest):
     self.FillPasswordInto("[name='pass']")
     self.Submit("[name='pass']")
 
-  def Logout(self):
-    self.WaitUntilDisplayed("#userNavigationLabel")
-    self.Click("#userNavigationLabel")
-    self.WaitUntilDisplayed("#logout_form [type='submit']")
-    self.Click("#logout_form [type='submit']")
-
 
 class Google(WebsiteTest):
 
   def Login(self):
     self.GoTo("https://accounts.google.com/ServiceLogin?sacu=1&continue=")
+    self.WaitUntilDisplayed("#Email")
     self.FillUsernameInto("#Email")
     self.FillPasswordInto("#Passwd")
     self.Submit("#Passwd")
-
-  def Logout(self):
-    self.GoTo("https://accounts.google.com/Logout")
 
 
 class Linkedin(WebsiteTest):
@@ -62,12 +54,6 @@ class Linkedin(WebsiteTest):
     self.FillPasswordInto("#session_password-login")
     self.Submit("#session_password-login")
 
-  def Logout(self):
-    self.WaitUntilDisplayed(".account-toggle")
-    self.HoverOver(".account-toggle")
-    self.WaitUntilDisplayed(".account-settings .act-set-action")
-    self.Click(".account-settings .act-set-action")
-
 
 class Mailru(WebsiteTest):
 
@@ -76,9 +62,6 @@ class Mailru(WebsiteTest):
     self.FillUsernameInto("#mailbox__login")
     self.FillPasswordInto("#mailbox__password")
     self.Submit("#mailbox__password")
-
-  def Logout(self):
-    self.Click("#PH_logoutLink")
 
 
 class Nytimes(WebsiteTest):
@@ -89,9 +72,6 @@ class Nytimes(WebsiteTest):
     self.FillPasswordInto("#password")
     self.Submit("#password")
 
-  def Logout(self):
-    self.GoTo("https://myaccount.nytimes.com/gst/signout")
-
 
 class Pinterest(WebsiteTest):
 
@@ -100,9 +80,6 @@ class Pinterest(WebsiteTest):
     self.FillUsernameInto("[name='username_or_email']")
     self.FillPasswordInto("[name='password']")
     self.Submit("[name='password']")
-
-  def Logout(self):
-    self.GoTo("https://www.pinterest.com/logout/")
 
 
 class Reddit(WebsiteTest):
@@ -115,9 +92,6 @@ class Reddit(WebsiteTest):
     self.Wait(2)
     self.Submit("#passwd_login")
 
-  def Logout(self):
-    self.Click("form[action='http://www.reddit.com/logout'] a")
-
 
 class Tumblr(WebsiteTest):
 
@@ -127,8 +101,15 @@ class Tumblr(WebsiteTest):
     self.FillPasswordInto("#signup_password")
     self.Submit("#signup_password")
 
-  def Logout(self):
-    self.GoTo("https://www.tumblr.com/logout")
+
+class Twitter(WebsiteTest):
+
+  def Login(self):
+    self.GoTo("https:///twitter.com")
+    self.WaitUntilDisplayed("#signin-email")
+    self.FillUsernameInto("#signin-email")
+    self.FillPasswordInto("#signin-password")
+    self.Submit("#signin-password")
 
 
 class Wikipedia(WebsiteTest):
@@ -139,8 +120,14 @@ class Wikipedia(WebsiteTest):
     self.FillPasswordInto("#wpPassword1")
     self.Submit("#wpPassword1")
 
-  def Logout(self):
-    self.GoTo("https://en.wikipedia.org/w/index.php?title=Special:UserLogout")
+
+class Yahoo(WebsiteTest):
+
+  def Login(self):
+    self.GoTo("https://login.yahoo.com")
+    self.FillUsernameInto("#username")
+    self.FillPasswordInto("#passwd")
+    self.Submit("#passwd")
 
 
 class Yandex(WebsiteTest):
@@ -150,13 +137,6 @@ class Yandex(WebsiteTest):
     self.FillUsernameInto("#b-mail-domik-username11")
     self.FillPasswordInto("#b-mail-domik-password11")
     self.Click(".b-mail-button__button")
-
-  def Logout(self):
-    while not self.IsDisplayed(".b-mail-dropdown__item__content"
-                               u".Выход.daria-action"):
-      self.ClickIfClickable(".header-user-pic.b-mail-dropdown__handle")
-      self.Wait(1)
-    self.Click(u".b-mail-dropdown__item__content.Выход.daria-action")
 
 
 # Disabled tests.
@@ -172,13 +152,7 @@ class Amazon(WebsiteTest):
         "%2Fauth%2F2.0")
     self.FillUsernameInto("[name='email']")
     self.FillPasswordInto("[name='password']")
-    self.Submit("[name='password']")
-
-  def Logout(self):
-    while not self.IsDisplayed("#nav-item-signout"):
-      self.Wait(1)
-      self.HoverOver("#nav-signin-title")
-    self.Click("#nav-item-signout")
+    self.Click("#signInSubmit-input")
 
 
 # Password not saved.
@@ -193,25 +167,16 @@ class Ask(WebsiteTest):
     self.FillPasswordInto("[name='password']")
     self.Click(".signin_show.signin_submit")
 
-  def Logout(self):
-    self.WaitUntilDisplayed("#a16CnbSignInText")
-    self.Click("#a16CnbSignInText")
-
 
 # Password not saved.
 class Baidu(WebsiteTest):
 
   def Login(self):
-    self.GoTo("http://www.baidu.com/")
-    self.Click("[name='tj_login']")
+    self.GoTo("https://passport.baidu.com")
     self.WaitUntilDisplayed("[name='userName']")
     self.FillUsernameInto("[name='userName']")
     self.FillPasswordInto("[name='password']")
     self.Submit("[name='password']")
-
-  def Logout(self):
-    self.Wait(1)
-    self.GoTo("https://passport.baidu.com/?logout&u=http://www.baidu.com")
 
 
 # http://crbug.com/368690
@@ -231,25 +196,16 @@ class Cnn(WebsiteTest):
     self.Click(".cnnOvrlyBtn.cnnBtnLogIn")
     self.Wait(5)
 
-  def Logout(self):
-    self.Wait(4)
-    self.Click("#hdr-auth .no-border.no-pad-right")
-
 
 # http://crbug.com/368690
 class Ebay(WebsiteTest):
 
   def Login(self):
     self.GoTo("https://signin.ebay.com/")
+    self.WaitUntilDisplayed("[name='userid']")
     self.FillUsernameInto("[name='userid']")
     self.FillPasswordInto("[name='pass']")
     self.Submit("[name='pass']")
-
-  def Logout(self):
-    self.WaitUntilDisplayed("#gh-ug")
-    self.Click("#gh-ug")
-    self.WaitUntilDisplayed("#gh-uo")
-    self.Click("#gh-uo")
 
 
 # Iframe, password saved but not autofileld.
@@ -270,25 +226,16 @@ class Espn(WebsiteTest):
       self.ClickIfClickable("#submitBtn")
       self.Wait(1)
 
-  def Logout(self):
-    self.WaitUntilDisplayed("#signin .small")
-    self.Click("#signin .small")
-
 
 # http://crbug.com/367768
 class Live(WebsiteTest):
 
   def Login(self):
-    self.GoTo("https://www.live.com")
+    self.GoTo("https://login.live.com")
+    self.WaitUntilDisplayed("[name='login']")
     self.FillUsernameInto("[name='login']")
     self.FillPasswordInto("[name='passwd']")
     self.Submit("[name='passwd']")
-
-  def Logout(self):
-    self.WaitUntilDisplayed("#c_meun")
-    self.Click("#c_meun")
-    self.WaitUntilDisplayed("#c_signout")
-    self.Click("#c_signout")
 
 
 # http://crbug.com/368690
@@ -296,15 +243,12 @@ class One63(WebsiteTest):
 
   def Login(self):
     self.GoTo("http://www.163.com")
+    self.WaitUntilDisplayed("#js_N_navHighlight")
     self.HoverOver("#js_N_navHighlight")
     self.WaitUntilDisplayed("#js_loginframe_username")
     self.FillUsernameInto("#js_loginframe_username")
     self.FillPasswordInto(".ntes-loginframe-label-ipt[type='password']")
     self.Click(".ntes-loginframe-btn")
-
-  def Logout(self):
-    self.WaitUntilDisplayed("#js_N_navLogout")
-    self.Click("#js_N_navLogout")
 
 
 # http://crbug.com/368690
@@ -312,6 +256,7 @@ class Vube(WebsiteTest):
 
   def Login(self):
     self.GoTo("https://vube.com")
+    self.WaitUntilDisplayed("[vube-login='']")
     self.Click("[vube-login='']")
     self.WaitUntilDisplayed("[ng-model='login.user']")
     self.FillUsernameInto("[ng-model='login.user']")
@@ -320,28 +265,6 @@ class Vube(WebsiteTest):
            and not self.IsDisplayed(".prompt.alert")):
       self.ClickIfClickable("[ng-click='login()']")
       self.Wait(1)
-
-  def Logout(self):
-    self.WaitUntilDisplayed("[ng-click='user.logout()']")
-    self.Click("[ng-click='user.logout()']")
-
-
-# Tests that can cause a crash.
-
-
-class Yahoo(WebsiteTest):
-
-  def Login(self):
-    self.GoTo("https://login.yahoo.com")
-    self.FillUsernameInto("#username")
-    self.FillPasswordInto("#passwd")
-    self.Submit("#passwd")
-
-  def Logout(self):
-    self.WaitUntilDisplayed(".tab.tab-user>.mod.view_default")
-    self.HoverOver(".tab.tab-user>.mod.view_default")
-    self.WaitUntilDisplayed("[data-pos='4'] .lbl.y-link-1")
-    self.Click("[data-pos='4'] .lbl.y-link-1")
 
 
 def Tests(environment):
@@ -366,10 +289,13 @@ def Tests(environment):
 
   environment.AddWebsiteTest(Tumblr("tumblr", username_not_auto=True))
 
+  environment.AddWebsiteTest(Twitter("twitter"))
+
   environment.AddWebsiteTest(Wikipedia("wikipedia", username_not_auto=True))
 
-  environment.AddWebsiteTest(Yandex("yandex"))
+  environment.AddWebsiteTest(Yahoo("yahoo", username_not_auto=True))
 
+  environment.AddWebsiteTest(Yandex("yandex"))
 
   # Disabled tests.
 
@@ -401,11 +327,6 @@ def Tests(environment):
 
   # http://crbug.com/368690
   environment.AddWebsiteTest(Vube("vube"), disabled=True)
-
-  # Tests that can cause a crash (the cause of the crash is not related to the
-  # password manager).
-  environment.AddWebsiteTest(Yahoo("yahoo", username_not_auto=True),
-                             disabled=True)
 
 def saveResults(environment_tests_results, environment_save_path):
   """Save the test results in an xml file.

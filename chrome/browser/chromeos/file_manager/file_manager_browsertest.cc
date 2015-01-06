@@ -11,11 +11,9 @@
 #include <deque>
 #include <string>
 
-#include "apps/app_window.h"
-#include "apps/app_window_registry.h"
 #include "base/bind.h"
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_value_converter.h"
 #include "base/json/json_writer.h"
@@ -29,7 +27,6 @@
 #include "chrome/browser/chromeos/file_manager/drive_test_util.h"
 #include "chrome/browser/chromeos/file_manager/path_util.h"
 #include "chrome/browser/chromeos/file_manager/volume_manager.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/drive/fake_drive_service.h"
 #include "chrome/browser/extensions/component_loader.h"
@@ -41,9 +38,12 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chromeos/chromeos_switches.h"
+#include "components/user_manager/user_manager.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/test/test_utils.h"
 #include "extensions/browser/api/test/test_api.h"
+#include "extensions/browser/app_window/app_window.h"
+#include "extensions/browser/app_window/app_window_registry.h"
 #include "extensions/browser/notification_types.h"
 #include "extensions/common/extension.h"
 #include "google_apis/drive/drive_api_parser.h"
@@ -312,15 +312,15 @@ class FakeTestVolume : public LocalTestVolume {
   virtual bool Mount(Profile* profile) OVERRIDE {
     if (!CreateRootDirectory(profile))
       return false;
-    fileapi::ExternalMountPoints* const mount_points =
-        fileapi::ExternalMountPoints::GetSystemInstance();
+    storage::ExternalMountPoints* const mount_points =
+        storage::ExternalMountPoints::GetSystemInstance();
 
     // First revoke the existing mount point (if any).
     mount_points->RevokeFileSystem(name());
     const bool result =
         mount_points->RegisterFileSystem(name(),
-                                         fileapi::kFileSystemTypeNativeLocal,
-                                         fileapi::FileSystemMountOption(),
+                                         storage::kFileSystemTypeNativeLocal,
+                                         storage::FileSystemMountOption(),
                                          root_path());
     if (!result)
       return false;
@@ -747,8 +747,7 @@ class FileManagerBrowserTest :
   }
 };
 
-// http://crbug.com/400892
-IN_PROC_BROWSER_TEST_P(FileManagerBrowserTest, DISABLED_Test) {
+IN_PROC_BROWSER_TEST_P(FileManagerBrowserTest, Test) {
   StartTest();
 }
 
@@ -1132,7 +1131,8 @@ class MultiProfileFileManagerBrowserTest : public FileManagerBrowserTestBase {
 
   // Adds a new user for testing to the current session.
   void AddUser(const TestAccountInfo& info, bool log_in) {
-    chromeos::UserManager* const user_manager = chromeos::UserManager::Get();
+    user_manager::UserManager* const user_manager =
+        user_manager::UserManager::Get();
     if (log_in)
       user_manager->UserLoggedIn(info.email, info.hash, false);
     user_manager->SaveUserDisplayName(info.email,
@@ -1158,12 +1158,12 @@ class MultiProfileFileManagerBrowserTest : public FileManagerBrowserTestBase {
     } else if (name == "getWindowOwnerId") {
       chrome::MultiUserWindowManager* const window_manager =
           chrome::MultiUserWindowManager::GetInstance();
-      apps::AppWindowRegistry* const app_window_registry =
-          apps::AppWindowRegistry::Get(profile());
+      extensions::AppWindowRegistry* const app_window_registry =
+          extensions::AppWindowRegistry::Get(profile());
       DCHECK(window_manager);
       DCHECK(app_window_registry);
 
-      const apps::AppWindowRegistry::AppWindowList& list =
+      const extensions::AppWindowRegistry::AppWindowList& list =
           app_window_registry->GetAppWindowsForApp(
               file_manager::kFileManagerAppId);
       return list.size() == 1u ?
@@ -1221,24 +1221,6 @@ IN_PROC_BROWSER_TEST_F(MultiProfileFileManagerBrowserTest, MAYBE_BasicDrive) {
 
 // Slow tests are disabled on debug build. http://crbug.com/327719
 #if !defined(NDEBUG)
-#define MAYBE_PRE_Badge DISABLED_PRE_Badge
-#define MAYBE_Badge DISABLED_Badge
-#else
-#define MAYBE_PRE_Badge PRE_Badge
-#define MAYBE_Badge Badge
-#endif
-IN_PROC_BROWSER_TEST_F(MultiProfileFileManagerBrowserTest, MAYBE_PRE_Badge) {
-  AddAllUsers();
-}
-
-IN_PROC_BROWSER_TEST_F(MultiProfileFileManagerBrowserTest, MAYBE_Badge) {
-  // Test the profile badge to be correctly shown and hidden.
-  set_test_case_name("multiProfileBadge");
-  StartTest();
-}
-
-// Slow tests are disabled on debug build. http://crbug.com/327719
-#if !defined(NDEBUG)
 #define MAYBE_PRE_VisitDesktopMenu DISABLED_PRE_VisitDesktopMenu
 #define MAYBE_VisitDesktopMenu DISABLED_VisitDesktopMenu
 #else
@@ -1267,6 +1249,7 @@ class GalleryBrowserTestBase : public FileManagerBrowserTestBase {
 
  protected:
   virtual void SetUp() OVERRIDE {
+    AddScript("common/test_util_common.js");
     AddScript("gallery/test_util.js");
     FileManagerBrowserTestBase::SetUp();
   }
@@ -1455,6 +1438,69 @@ IN_PROC_BROWSER_TEST_F(GalleryBrowserTestInGuestMode,
 IN_PROC_BROWSER_TEST_F(GalleryBrowserTest, ExposureImageOnDrive) {
   AddScript("gallery/photo_editor.js");
   set_test_case_name("exposureImageOnDrive");
+  StartTest();
+}
+
+template<GuestMode M>
+class VideoPlayerBrowserTestBase : public FileManagerBrowserTestBase {
+ public:
+  virtual GuestMode GetGuestModeParam() const OVERRIDE { return M; }
+  virtual const char* GetTestCaseNameParam() const OVERRIDE {
+    return test_case_name_.c_str();
+  }
+
+ protected:
+  virtual void SetUp() OVERRIDE {
+    AddScript("common/test_util_common.js");
+    AddScript("video_player/test_util.js");
+    FileManagerBrowserTestBase::SetUp();
+  }
+
+  virtual std::string OnMessage(const std::string& name,
+                                const base::Value* value) OVERRIDE;
+
+  virtual const char* GetTestManifestName() const OVERRIDE {
+    return "video_player_test_manifest.json";
+  }
+
+  void AddScript(const std::string& name) {
+    scripts_.AppendString(
+        "chrome-extension://ljoplibgfehghmibaoaepfagnmbbfiga/" + name);
+  }
+
+  void set_test_case_name(const std::string& name) {
+    test_case_name_ = name;
+  }
+
+ private:
+  base::ListValue scripts_;
+  std::string test_case_name_;
+};
+
+template<GuestMode M>
+std::string VideoPlayerBrowserTestBase<M>::OnMessage(const std::string& name,
+                                                     const base::Value* value) {
+  if (name == "getScripts") {
+    std::string jsonString;
+    base::JSONWriter::Write(&scripts_, &jsonString);
+    return jsonString;
+  }
+  return FileManagerBrowserTestBase::OnMessage(name, value);
+}
+
+typedef VideoPlayerBrowserTestBase<NOT_IN_GUEST_MODE> VideoPlayerBrowserTest;
+typedef VideoPlayerBrowserTestBase<IN_GUEST_MODE>
+    VideoPlayerBrowserTestInGuestMode;
+
+IN_PROC_BROWSER_TEST_F(VideoPlayerBrowserTest, OpenSingleVideoOnDownloads) {
+  AddScript("video_player/open_video_files.js");
+  set_test_case_name("openSingleVideoOnDownloads");
+  StartTest();
+}
+
+IN_PROC_BROWSER_TEST_F(VideoPlayerBrowserTest, OpenSingleVideoOnDrive) {
+  AddScript("video_player/open_video_files.js");
+  set_test_case_name("openSingleVideoOnDrive");
   StartTest();
 }
 

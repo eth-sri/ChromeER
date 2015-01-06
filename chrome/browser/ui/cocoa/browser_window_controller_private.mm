@@ -33,7 +33,6 @@
 #import "chrome/browser/ui/cocoa/profiles/avatar_icon_controller.h"
 #import "chrome/browser/ui/cocoa/status_bubble_mac.h"
 #import "chrome/browser/ui/cocoa/tab_contents/overlayable_contents_controller.h"
-#import "chrome/browser/ui/cocoa/tabs/tab_strip_controller.h"
 #import "chrome/browser/ui/cocoa/tabs/tab_strip_view.h"
 #import "chrome/browser/ui/cocoa/toolbar/toolbar_controller.h"
 #import "chrome/browser/ui/cocoa/version_independent_window.h"
@@ -279,20 +278,6 @@ willPositionSheet:(NSWindow*)sheet
   // Normally, we don't need to tell the toolbar whether or not to show the
   // divider, but things break down during animation.
   [toolbarController_ setDividerOpacity:[self toolbarDividerOpacity]];
-
-  // Update the position of the active constrained window sheet.  We force this
-  // here because the |sheetParentView| may not have been resized (e.g., to
-  // prevent jank during a fullscreen mode transition), but constrained window
-  // sheets also compute their position based on the bookmark bar and toolbar.
-  content::WebContents* const activeWebContents =
-      browser_->tab_strip_model()->GetActiveWebContents();
-  NSView* const sheetParentView = activeWebContents ?
-      GetSheetParentViewForWebContents(activeWebContents) : nil;
-  if (sheetParentView) {
-    [[NSNotificationCenter defaultCenter]
-      postNotificationName:NSViewFrameDidChangeNotification
-                    object:sheetParentView];
-  }
 }
 
 - (CGFloat)floatingBarHeight {
@@ -372,10 +357,16 @@ willPositionSheet:(NSWindow*)sheet
         static_cast<FramedBrowserWindow*>([self window]);
     rightIndent += -[window fullScreenButtonOriginAdjustment].x;
 
-    // The new avatar is wider than the default indentation, so we need to
-    // account for its width.
-    if ([self shouldUseNewAvatarButton])
+    if ([self shouldUseNewAvatarButton]) {
+      // The new avatar is wider than the default indentation, so we need to
+      // account for its width.
       rightIndent += NSWidth([avatarButton frame]) + kAvatarTabStripShrink;
+
+      // When the fullscreen icon is not displayed, return its width to the
+      // tabstrip.
+      if ([self isFullscreen])
+        rightIndent -= kFullscreenIconWidth;
+    }
   } else if ([self shouldShowAvatar]) {
     rightIndent += kAvatarTabStripShrink +
         NSWidth([avatarButton frame]) + kAvatarRightOffset;
@@ -484,6 +475,8 @@ willPositionSheet:(NSWindow*)sheet
   containerFrame.origin.y = maxY;
   containerFrame.size.width = width;
   [containerView setFrame:containerFrame];
+  [infoBarContainerController_ setMaxTopArrowHeight:[self
+      infoBarMaxTopArrowHeight]];
   return maxY;
 }
 
@@ -521,6 +514,10 @@ willPositionSheet:(NSWindow*)sheet
         rwhv->WindowFrameChanged();
     }
   }
+}
+
+- (void)updateRoundedBottomCorners {
+  [[self tabContentArea] setRoundedBottomCorners:![self isFullscreen]];
 }
 
 - (void)adjustToolbarAndBookmarkBarForCompression:(CGFloat)compression {
@@ -688,6 +685,7 @@ willPositionSheet:(NSWindow*)sheet
       // Leaving wantsLayer on for the duration of presentation mode causes
       // performance issues when the dropdown is animated in/out.  It also does
       // not seem to be required for the exit animation.
+      windowViewWantsLayer_ = [[[self window] cr_windowView] wantsLayer];
       [[[self window] cr_windowView] setWantsLayer:YES];
     }
     NSView* contentView = [[self window] contentView];
@@ -734,6 +732,21 @@ willPositionSheet:(NSWindow*)sheet
     [self adjustUIForPresentationMode:YES];
     [self setPresentationModeInternal:YES forceDropdown:NO];
   }
+
+  // AppKit is helpful and prevents NSWindows from having the same height as
+  // the screen while the menu bar is showing. This only applies to windows on
+  // a secondary screen, in a separate space. Calling [NSWindow
+  // setFrame:display:] with the screen's height will always reduce the
+  // height by the height of the MenuBar. Calling the method with any other
+  // height works fine. The relevant method in the 10.10 AppKit SDK is called:
+  // _canAdjustSizeForScreensHaveSeparateSpacesIfFillingSecondaryScreen
+  //
+  // TODO(erikchen): Refactor the logic to allow the window to be shown after
+  // the menubar has been hidden. This would remove the need for this hack.
+  // http://crbug.com/403203
+  NSRect frame = [[[self window] screen] frame];
+  if (!NSEqualRects(frame, [fullscreenWindow_ frame]))
+    [fullscreenWindow_ setFrame:[[[self window] screen] frame] display:YES];
 
   [self layoutSubviews];
 
@@ -804,7 +817,6 @@ willPositionSheet:(NSWindow*)sheet
   // Force the bookmark bar z-order to update.
   [[bookmarkBarController_ view] removeFromSuperview];
   [self updateSubviewZOrder:fullscreen];
-  [self updateAllowOverlappingViews:fullscreen];
 }
 
 - (void)showFullscreenExitBubbleIfNecessary {
@@ -911,7 +923,8 @@ willPositionSheet:(NSWindow*)sheet
 
   [self showFullscreenExitBubbleIfNecessary];
   browser_->WindowFullscreenStateChanged();
-  [[[self window] cr_windowView] setWantsLayer:NO];
+  [[[self window] cr_windowView] setWantsLayer:windowViewWantsLayer_];
+  [self updateRoundedBottomCorners];
 }
 
 - (void)windowWillExitFullScreen:(NSNotification*)notification {
@@ -926,6 +939,7 @@ willPositionSheet:(NSWindow*)sheet
   if (notification)  // For System Fullscreen when non-nil.
     [self deregisterForContentViewResizeNotifications];
   browser_->WindowFullscreenStateChanged();
+  [self updateRoundedBottomCorners];
 }
 
 - (void)windowDidFailToEnterFullScreen:(NSWindow*)window {
@@ -1040,44 +1054,27 @@ willPositionSheet:(NSWindow*)sheet
   }
 }
 
-- (BOOL)shouldAllowOverlappingViews:(BOOL)inPresentationMode {
-  if (inPresentationMode)
-    return YES;
-
-  if (findBarCocoaController_ &&
-      ![[findBarCocoaController_ findBarView] isHidden]) {
-    return YES;
-  }
-
-  if (overlappedViewCount_)
-    return YES;
-
-  return NO;
-}
-
-- (void)updateAllowOverlappingViews:(BOOL)inPresentationMode {
-  WebContents* contents = browser_->tab_strip_model()->GetActiveWebContents();
-  if (!contents)
-    return;
-
-  BOOL allowOverlappingViews =
-      [self shouldAllowOverlappingViews:inPresentationMode];
-
-  // The rendering path with overlapping views disabled causes bugs when
-  // transitioning between composited and non-composited mode.
-  // http://crbug.com/279472
-  allowOverlappingViews = YES;
-  contents->SetAllowOverlappingViews(allowOverlappingViews);
-
-  WebContents* devTools = DevToolsWindow::GetInTabWebContents(contents, NULL);
-  if (devTools)
-    devTools->SetAllowOverlappingViews(allowOverlappingViews);
-}
-
 - (void)updateInfoBarTipVisibility {
   // If there's no toolbar then hide the infobar tip.
   [infoBarContainerController_
       setShouldSuppressTopInfoBarTip:![self hasToolbar]];
+}
+
+- (NSInteger)infoBarMaxTopArrowHeight {
+  NSInteger topArrowHeight = 0;
+  LocationBarViewMac* locationBarView = [self locationBarBridge];
+  NSPoint iconBottom = locationBarView->GetPageInfoBubblePoint();
+
+  CGFloat overlappingTipHeight =
+      [infoBarContainerController_ overlappingTipHeight];
+  NSPoint infoBarTop =
+      NSMakePoint(0, NSHeight([infoBarContainerController_ view].frame) -
+                  overlappingTipHeight);
+  infoBarTop = [[infoBarContainerController_ view] convertPoint:infoBarTop
+                                                         toView:nil];
+
+  topArrowHeight = iconBottom.y - infoBarTop.y;
+  return topArrowHeight;
 }
 
 @end  // @implementation BrowserWindowController(Private)

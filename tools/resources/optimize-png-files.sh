@@ -22,14 +22,15 @@ chrome/android/java/res
 chrome/app/theme
 chrome/browser/resources
 chrome/renderer/resources
+component/resources
 content/public/android/java/res
+content/app/resources
 content/renderer/resources
 content/shell/resources
 remoting/resources
 ui/resources
 ui/chromeos/resources
 ui/webui/resources/images
-webkit/glue/resources
 win8/metro_driver/resources
 "
 

@@ -24,6 +24,7 @@ source_set("renderer") {
     "//crypto:platform",
 
     "//base/allocator",
+    "//cc/blink",
     "//content:resources",
     "//content/common:mojo_bindings",
     "//gin",
@@ -36,6 +37,7 @@ source_set("renderer") {
     "//net",
     "//skia",
     "//third_party/icu",
+    "//third_party/libjingle",
     "//third_party/npapi",
     "//third_party/WebKit/public:blink",
     "//third_party/widevine/cdm:version_h",
@@ -46,9 +48,8 @@ source_set("renderer") {
     "//v8",
     "//webkit/child",
     "//webkit/common",
-    "//webkit/common:storage",
+    "//webkit/common:storage_common",
     "//webkit/common/gpu",
-    #'../third_party/libjingle/libjingle.gyp:libjingle',  TODO(GYP)
   ]
 
   if (!enable_notifications) {
@@ -111,7 +112,6 @@ source_set("renderer") {
       "media/media_stream_audio_renderer.cc",
       "media/media_stream_audio_renderer.h",
       "media/media_stream_center.h",
-      "media/media_stream_client.h",
       "media/media_stream_constraints_util.cc",
       "media/media_stream_constraints_util.h",
       "media/media_stream_dispatcher.h",
@@ -149,6 +149,7 @@ source_set("renderer") {
       "//ppapi:ppapi_host",
       "//ppapi:ppapi_proxy",
       "//ppapi:ppapi_shared",
+      "//third_party/libyuv",
     ]
   } else {
     # These files are in the WebRTC list, but also require plugins.
@@ -164,5 +165,9 @@ source_set("renderer") {
     sources += rebase_path(
         content_renderer_gypi_values.private_renderer_plugin_webrtc_sources,
         ".", "//content")
+  }
+
+  if (printing_mode == 1) {
+    deps += [ "//printing" ]
   }
 }

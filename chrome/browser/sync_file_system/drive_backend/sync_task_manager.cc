@@ -12,7 +12,7 @@
 #include "chrome/browser/sync_file_system/drive_backend/sync_task_token.h"
 #include "chrome/browser/sync_file_system/sync_file_metadata.h"
 
-using fileapi::FileSystemURL;
+using storage::FileSystemURL;
 
 namespace sync_file_system {
 namespace drive_backend {
@@ -55,7 +55,7 @@ bool SyncTaskManager::PendingTaskComparator::operator()(
 SyncTaskManager::SyncTaskManager(
     base::WeakPtr<Client> client,
     size_t maximum_background_task,
-    base::SequencedTaskRunner* task_runner)
+    const scoped_refptr<base::SequencedTaskRunner>& task_runner)
     : client_(client),
       maximum_background_task_(maximum_background_task),
       pending_task_seq_(0),
@@ -72,7 +72,7 @@ void SyncTaskManager::Initialize(SyncStatusCode status) {
   DCHECK(sequence_checker_.CalledOnValidSequencedThread());
   DCHECK(!token_);
   NotifyTaskDone(
-      SyncTaskToken::CreateForForegroundTask(AsWeakPtr(), task_runner_),
+      SyncTaskToken::CreateForForegroundTask(AsWeakPtr(), task_runner_.get()),
       status);
 }
 
@@ -206,7 +206,7 @@ void SyncTaskManager::NotifyTaskDoneBody(scoped_ptr<SyncTaskToken> token,
 
   DVLOG(3) << "NotifyTaskDone: " << "finished with status=" << status
            << " (" << SyncStatusCodeToString(status) << ")"
-           << " " << token_->location().ToString();
+           << " " << token->location().ToString();
 
   if (token->blocking_factor()) {
     dependency_manager_.Erase(token->blocking_factor());
@@ -327,11 +327,10 @@ void SyncTaskManager::UpdateBlockingFactorBody(
     foreground_task_token->clear_callback();
 
     background_task_token =
-        SyncTaskToken::CreateForBackgroundTask(
-            AsWeakPtr(),
-            task_runner_,
-            task_token_seq_++,
-            blocking_factor.Pass());
+        SyncTaskToken::CreateForBackgroundTask(AsWeakPtr(),
+                                               task_runner_.get(),
+                                               task_token_seq_++,
+                                               blocking_factor.Pass());
     background_task_token->UpdateTask(from_here, callback);
     running_background_tasks_.set(background_task_token->token_id(),
                                   running_foreground_task_.Pass());

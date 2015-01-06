@@ -7,13 +7,11 @@
 #include <string>
 
 #include "base/debug/trace_event.h"
-#include "grit/ui_strings.h"
 #include "ui/accessibility/ax_view_state.h"
 #include "ui/base/clipboard/scoped_clipboard_writer.h"
 #include "ui/base/cursor/cursor.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
 #include "ui/base/dragdrop/drag_utils.h"
-#include "ui/base/resource/resource_bundle.h"
 #include "ui/base/ui_base_switches_util.h"
 #include "ui/compositor/scoped_animation_duration_scale_mode.h"
 #include "ui/events/event.h"
@@ -23,6 +21,7 @@
 #include "ui/gfx/insets.h"
 #include "ui/gfx/screen.h"
 #include "ui/native_theme/native_theme.h"
+#include "ui/strings/grit/ui_strings.h"
 #include "ui/views/background.h"
 #include "ui/views/controls/focusable_border.h"
 #include "ui/views/controls/label.h"
@@ -1753,6 +1752,9 @@ void Textfield::RevealPasswordChar(int index) {
 }
 
 void Textfield::CreateTouchSelectionControllerAndNotifyIt() {
+  if (!HasFocus())
+    return;
+
   if (!touch_selection_controller_) {
     touch_selection_controller_.reset(
         ui::TouchSelectionController::create(this));

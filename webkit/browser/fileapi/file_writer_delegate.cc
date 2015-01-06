@@ -16,7 +16,7 @@
 #include "webkit/browser/fileapi/file_system_context.h"
 #include "webkit/common/fileapi/file_system_util.h"
 
-namespace fileapi {
+namespace storage {
 
 static const int kReadBufSize = 32768;
 
@@ -61,9 +61,10 @@ void FileWriterDelegate::Cancel() {
   }
 }
 
-void FileWriterDelegate::OnReceivedRedirect(net::URLRequest* request,
-                                            const GURL& new_url,
-                                            bool* defer_redirect) {
+void FileWriterDelegate::OnReceivedRedirect(
+    net::URLRequest* request,
+    const net::RedirectInfo& redirect_info,
+    bool* defer_redirect) {
   NOTREACHED();
   OnError(base::File::FILE_ERROR_SECURITY);
 }
@@ -240,4 +241,4 @@ void FileWriterDelegate::OnFlushed(base::File::Error error,
   write_callback_.Run(error, bytes_written, progress_status);
 }
 
-}  // namespace fileapi
+}  // namespace storage

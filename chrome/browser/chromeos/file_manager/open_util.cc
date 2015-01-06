@@ -19,9 +19,9 @@
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/simple_message_box.h"
+#include "chrome/grit/generated_resources.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/user_metrics.h"
-#include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "webkit/browser/fileapi/file_system_backend.h"
 #include "webkit/browser/fileapi/file_system_context.h"
@@ -29,7 +29,7 @@
 #include "webkit/browser/fileapi/file_system_url.h"
 
 using content::BrowserThread;
-using fileapi::FileSystemURL;
+using storage::FileSystemURL;
 
 namespace file_manager {
 namespace util {
@@ -54,7 +54,7 @@ void ShowWarningMessageBox(Profile* profile,
 void ExecuteFileTaskForUrl(Profile* profile,
                            const file_tasks::TaskDescriptor& task,
                            const GURL& url) {
-  fileapi::FileSystemContext* file_system_context =
+  storage::FileSystemContext* file_system_context =
       GetFileSystemContextForExtensionId(profile, kFileManagerAppId);
 
   file_tasks::ExecuteFileTask(

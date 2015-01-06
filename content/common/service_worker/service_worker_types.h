@@ -25,11 +25,13 @@ static const int kInvalidServiceWorkerRequestId = -1;
 
 // Constants for invalid identifiers.
 static const int kInvalidServiceWorkerHandleId = -1;
+static const int kInvalidServiceWorkerRegistrationHandleId = -1;
 static const int kInvalidServiceWorkerProviderId = -1;
 static const int64 kInvalidServiceWorkerRegistrationId = -1;
 static const int64 kInvalidServiceWorkerVersionId = -1;
 static const int64 kInvalidServiceWorkerResourceId = -1;
 static const int64 kInvalidServiceWorkerResponseId = -1;
+static const int kInvalidEmbeddedWorkerThreadId = -1;
 
 // Indicates how the service worker handled a fetch event.
 enum ServiceWorkerFetchEventResult {
@@ -41,8 +43,6 @@ enum ServiceWorkerFetchEventResult {
 };
 
 // To dispatch fetch request from browser to child process.
-// TODO(kinuko): This struct will definitely need more fields and
-// we'll probably want to have response struct/class too.
 struct CONTENT_EXPORT ServiceWorkerFetchRequest {
   ServiceWorkerFetchRequest();
   ServiceWorkerFetchRequest(const GURL& url,
@@ -55,6 +55,8 @@ struct CONTENT_EXPORT ServiceWorkerFetchRequest {
   GURL url;
   std::string method;
   std::map<std::string, std::string> headers;
+  std::string blob_uuid;
+  uint64 blob_size;
   GURL referrer;
   bool is_reload;
 };
@@ -83,6 +85,18 @@ struct CONTENT_EXPORT ServiceWorkerObjectInfo {
   GURL scope;
   GURL url;
   blink::WebServiceWorkerState state;
+};
+
+struct ServiceWorkerRegistrationObjectInfo {
+  ServiceWorkerRegistrationObjectInfo();
+  int handle_id;
+  GURL scope;
+};
+
+struct ServiceWorkerVersionAttributes {
+  ServiceWorkerObjectInfo installing;
+  ServiceWorkerObjectInfo waiting;
+  ServiceWorkerObjectInfo active;
 };
 
 class ChangedVersionAttributesMask {

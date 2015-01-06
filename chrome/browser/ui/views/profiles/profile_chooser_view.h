@@ -53,6 +53,7 @@ class ProfileChooserView : public views::BubbleDelegateView,
   // the existing bubble will auto-close due to focus loss.
   static void ShowBubble(
       profiles::BubbleViewMode view_mode,
+      profiles::TutorialMode tutorial_mode,
       const signin::ManageAccountsParams& manage_accounts_params,
       views::View* anchor_view,
       views::BubbleBorder::Arrow arrow,
@@ -80,6 +81,7 @@ class ProfileChooserView : public views::BubbleDelegateView,
                      views::BubbleBorder::Arrow arrow,
                      Browser* browser,
                      profiles::BubbleViewMode view_mode,
+                     profiles::TutorialMode tutorial_mode,
                      signin::GAIAServiceType service_type);
   virtual ~ProfileChooserView();
 
@@ -94,7 +96,7 @@ class ProfileChooserView : public views::BubbleDelegateView,
   // views::LinkListener:
   virtual void LinkClicked(views::Link* sender, int event_flags) OVERRIDE;
 
-  // views::StyledLabelListener implementation.
+  // views::StyledLabelListener:
   virtual void StyledLabelLinkClicked(
       const gfx::Range& range, int event_flags) OVERRIDE;
 
@@ -118,10 +120,8 @@ class ProfileChooserView : public views::BubbleDelegateView,
   void ShowView(profiles::BubbleViewMode view_to_display,
                 AvatarMenu* avatar_menu);
 
-  // Creates the profile chooser view. |tutorial_shown| indicates if a tutorial
-  // was shown in the last active view.
-  views::View* CreateProfileChooserView(AvatarMenu* avatar_menu,
-      profiles::TutorialMode last_tutorial_mode);
+  // Creates the profile chooser view.
+  views::View* CreateProfileChooserView(AvatarMenu* avatar_menu);
 
   // Creates the main profile card for the profile |avatar_item|. |is_guest|
   // is used to determine whether to show any Sign in/Sign out/Manage accounts
@@ -131,14 +131,14 @@ class ProfileChooserView : public views::BubbleDelegateView,
       bool is_guest);
   views::View* CreateGuestProfileView();
   views::View* CreateOtherProfilesView(const Indexes& avatars_to_show);
-  views::View* CreateOptionsView(bool enable_lock);
+  views::View* CreateOptionsView(bool display_lock);
   views::View* CreateSupervisedUserDisclaimerView();
 
   // Account Management view for the profile |avatar_item|.
   views::View* CreateCurrentProfileAccountsView(
       const AvatarMenu::Item& avatar_item);
   void CreateAccountButton(views::GridLayout* layout,
-                           const std::string& account,
+                           const std::string& account_id,
                            bool is_primary_account,
                            bool reauth_required,
                            int width);
@@ -151,6 +151,9 @@ class ProfileChooserView : public views::BubbleDelegateView,
 
   // Removes the currently selected account and attempts to restart Chrome.
   void RemoveAccount();
+
+  // Close the tutorial card.
+  void DismissTutorial();
 
   // Creates a tutorial card to introduce an upgrade user to the new avatar
   // menu if needed. |tutorial_shown| indicates if the tutorial has already been
@@ -167,23 +170,25 @@ class ProfileChooserView : public views::BubbleDelegateView,
   // Creates a a tutorial card to show the errors in the last Chrome signin.
   views::View* CreateSigninErrorView();
 
-  // Creates a tutorial card with the specified |title_text|, |context_text|,
-  // and a bottom row with a right-aligned link using the specified |link_text|,
-  // and a left aligned button using the specified |button_text|. The method
-  // sets |link| to point to the newly created link, |button| to the newly
-  // created button, and |tutorial_mode_| to the given |tutorial_mode|.
+  // Creates a tutorial card. If |stack_button| is true, places the button above
+  // the link otherwise places both on the same row with the link left aligned
+  // and button right aligned. The method sets |link| to point to the newly
+  // create link, |button| to the newly created button, and |tutorial_mode_| to
+  // the given |tutorial_mode|.
   views::View*  CreateTutorialView(
       profiles::TutorialMode tutorial_mode,
       const base::string16& title_text,
       const base::string16& content_text,
       const base::string16& link_text,
       const base::string16& button_text,
+      bool stack_button,
       views::Link** link,
-      views::LabelButton** button);
+      views::LabelButton** button,
+      views::ImageButton** close_button);
 
   // Create a view that shows various options for an upgrade user who is not
-  // the same person as the currently signed in user |avatar_item|.
-  views::View* CreateSwitchUserView(const AvatarMenu::Item& avatar_item);
+  // the same person as the currently signed in user.
+  views::View* CreateSwitchUserView();
 
   bool ShouldShowGoIncognito() const;
 
@@ -205,6 +210,8 @@ class ProfileChooserView : public views::BubbleDelegateView,
   views::Link* tutorial_sync_settings_link_;
   views::LabelButton* tutorial_see_whats_new_button_;
   views::Link* tutorial_not_you_link_;
+  views::Link* tutorial_learn_more_link_;
+  views::ImageButton* tutorial_close_button_;
 
   // Links and buttons displayed in the active profile card.
   views::Link* manage_accounts_link_;

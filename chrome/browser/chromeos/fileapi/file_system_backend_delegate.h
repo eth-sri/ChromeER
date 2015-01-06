@@ -13,41 +13,48 @@ namespace base {
 class Time;
 }  // namespace base
 
-namespace fileapi {
+namespace storage {
 class AsyncFileUtil;
 class FileSystemContext;
+class FileStreamReader;
 class FileSystemURL;
 class FileStreamWriter;
-}  // namespace fileapi
+class WatcherManager;
+}  // namespace storage
 
-namespace webkit_blob {
+namespace storage {
 class FileStreamReader;
-}  // namespace webkit_blob
+}  // namespace storage
 
 namespace chromeos {
 
 // This is delegate interface to inject the implementation of the some methods
-// of FileSystemBackend. The main goal is to inject Drive File System.
+// of FileSystemBackend.
 class FileSystemBackendDelegate {
  public:
   virtual ~FileSystemBackendDelegate() {}
 
   // Called from FileSystemBackend::GetAsyncFileUtil().
-  virtual fileapi::AsyncFileUtil* GetAsyncFileUtil(
-      fileapi::FileSystemType type) = 0;
+  virtual storage::AsyncFileUtil* GetAsyncFileUtil(
+      storage::FileSystemType type) = 0;
 
   // Called from FileSystemBackend::CreateFileStreamReader().
-  virtual scoped_ptr<webkit_blob::FileStreamReader> CreateFileStreamReader(
-      const fileapi::FileSystemURL& url,
+  virtual scoped_ptr<storage::FileStreamReader> CreateFileStreamReader(
+      const storage::FileSystemURL& url,
       int64 offset,
       const base::Time& expected_modification_time,
-      fileapi::FileSystemContext* context) = 0;
+      storage::FileSystemContext* context) = 0;
 
   // Called from FileSystemBackend::CreateFileStreamWriter().
-  virtual scoped_ptr<fileapi::FileStreamWriter> CreateFileStreamWriter(
-      const fileapi::FileSystemURL& url,
+  virtual scoped_ptr<storage::FileStreamWriter> CreateFileStreamWriter(
+      const storage::FileSystemURL& url,
       int64 offset,
-      fileapi::FileSystemContext* context) = 0;
+      storage::FileSystemContext* context) = 0;
+
+  // Called from the FileSystemWatcherService class. The returned pointer must
+  // stay valid until shutdown.
+  virtual storage::WatcherManager* GetWatcherManager(
+      const storage::FileSystemURL& url) = 0;
 };
 
 }  // namespace chromeos

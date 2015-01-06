@@ -31,9 +31,7 @@
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/manifest_handlers/icons_handler.h"
-#include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
-#include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/theme_provider.h"
 #include "ui/gfx/canvas.h"
@@ -152,7 +150,7 @@ OriginChipView::OriginChipView(LocationBarView* location_bar_view,
   scoped_refptr<SafeBrowsingService> sb_service =
       g_browser_process->safe_browsing_service();
   // |sb_service| may be NULL in tests.
-  if (sb_service && sb_service->ui_manager())
+  if (sb_service.get() && sb_service->ui_manager().get())
     sb_service->ui_manager()->AddObserver(this);
 
   SetFontList(font_list);
@@ -184,7 +182,7 @@ OriginChipView::OriginChipView(LocationBarView* location_bar_view,
 OriginChipView::~OriginChipView() {
   scoped_refptr<SafeBrowsingService> sb_service =
       g_browser_process->safe_browsing_service();
-  if (sb_service.get() && sb_service->ui_manager())
+  if (sb_service.get() && sb_service->ui_manager().get())
     sb_service->ui_manager()->RemoveObserver(this);
 }
 

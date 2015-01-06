@@ -56,8 +56,9 @@
 #include "chrome/browser/chromeos/login/ui/login_display_host.h"
 #include "chrome/browser/chromeos/login/ui/login_display_host_impl.h"
 #include "chrome/browser/chromeos/login/ui/user_adding_screen.h"
+#include "chrome/browser/chromeos/login/user_flow.h"
+#include "chrome/browser/chromeos/login/users/chrome_user_manager.h"
 #include "chrome/browser/chromeos/login/users/supervised_user_manager.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/options/network_config_view.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/policy/device_cloud_policy_manager_chromeos.h"
@@ -86,6 +87,8 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "chrome/grit/generated_resources.h"
+#include "chrome/grit/locale_settings.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/session_manager_client.h"
 #include "chromeos/ime/extension_ime_util.h"
@@ -96,6 +99,7 @@
 #include "components/google/core/browser/google_util.h"
 #include "components/policy/core/common/cloud/cloud_policy_store.h"
 #include "components/user_manager/user.h"
+#include "components/user_manager/user_manager.h"
 #include "components/user_manager/user_type.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_service.h"
@@ -104,9 +108,6 @@
 #include "device/bluetooth/bluetooth_adapter.h"
 #include "device/bluetooth/bluetooth_adapter_factory.h"
 #include "device/bluetooth/bluetooth_device.h"
-#include "grit/ash_strings.h"
-#include "grit/generated_resources.h"
-#include "grit/locale_settings.h"
 #include "net/base/escape.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -137,9 +138,13 @@ void ExtractIMEInfo(const input_method::InputMethodDescriptor& ime,
 
 gfx::NativeWindow GetNativeWindowByStatus(ash::user::LoginStatus login_status,
                                           bool session_started) {
+  bool isUserAddingRunning = ash::Shell::GetInstance()
+                                 ->session_state_delegate()
+                                 ->IsInSecondaryLoginScreen();
+
   int container_id =
       (!session_started || login_status == ash::user::LOGGED_IN_NONE ||
-       login_status == ash::user::LOGGED_IN_LOCKED)
+       login_status == ash::user::LOGGED_IN_LOCKED || isUserAddingRunning)
           ? ash::kShellWindowId_LockSystemModalContainer
           : ash::kShellWindowId_SystemModalContainer;
   return ash::Shell::GetContainer(ash::Shell::GetPrimaryRootWindow(),
@@ -371,16 +376,20 @@ const base::string16 SystemTrayDelegateChromeOS::GetEnterpriseMessage() const {
 const std::string SystemTrayDelegateChromeOS::GetSupervisedUserManager() const {
   if (GetUserLoginStatus() != ash::user::LOGGED_IN_SUPERVISED)
     return std::string();
-  return UserManager::Get()->GetSupervisedUserManager()->GetManagerDisplayEmail(
-      chromeos::UserManager::Get()->GetActiveUser()->email());
+  return ChromeUserManager::Get()
+      ->GetSupervisedUserManager()
+      ->GetManagerDisplayEmail(
+          user_manager::UserManager::Get()->GetActiveUser()->email());
 }
 
 const base::string16
 SystemTrayDelegateChromeOS::GetSupervisedUserManagerName() const {
   if (GetUserLoginStatus() != ash::user::LOGGED_IN_SUPERVISED)
     return base::string16();
-  return UserManager::Get()->GetSupervisedUserManager()->GetManagerDisplayName(
-      chromeos::UserManager::Get()->GetActiveUser()->email());
+  return ChromeUserManager::Get()
+      ->GetSupervisedUserManager()
+      ->GetManagerDisplayName(
+          user_manager::UserManager::Get()->GetActiveUser()->email());
 }
 
 const base::string16 SystemTrayDelegateChromeOS::GetSupervisedUserMessage()
@@ -405,7 +414,10 @@ void SystemTrayDelegateChromeOS::ShowSettings() {
 }
 
 bool SystemTrayDelegateChromeOS::ShouldShowSettings() {
-  return UserManager::Get()->GetCurrentUserFlow()->ShouldShowSettings();
+  return ChromeUserManager::Get()->GetCurrentUserFlow()->ShouldShowSettings() &&
+         !ash::Shell::GetInstance()
+              ->session_state_delegate()
+              ->IsInSecondaryLoginScreen();
 }
 
 void SystemTrayDelegateChromeOS::ShowDateSettings() {
@@ -423,7 +435,11 @@ void SystemTrayDelegateChromeOS::ShowSetTimeDialog() {
 
 void SystemTrayDelegateChromeOS::ShowNetworkSettings(
     const std::string& service_path) {
-  if (!LoginState::Get()->IsUserLoggedIn())
+  bool userAddingRunning = ash::Shell::GetInstance()
+                               ->session_state_delegate()
+                               ->IsInSecondaryLoginScreen();
+
+  if (!LoginState::Get()->IsUserLoggedIn() || userAddingRunning)
     return;
   ShowNetworkSettingsPage(service_path);
 }
@@ -504,8 +520,12 @@ void SystemTrayDelegateChromeOS::ShowSupervisedUserInfo() {
 
 void SystemTrayDelegateChromeOS::ShowEnterpriseInfo() {
   ash::user::LoginStatus status = GetUserLoginStatus();
+  bool userAddingRunning = ash::Shell::GetInstance()
+                               ->session_state_delegate()
+                               ->IsInSecondaryLoginScreen();
+
   if (status == ash::user::LOGGED_IN_NONE ||
-      status == ash::user::LOGGED_IN_LOCKED) {
+      status == ash::user::LOGGED_IN_LOCKED || userAddingRunning) {
     scoped_refptr<chromeos::HelpAppLauncher> help_app(
         new chromeos::HelpAppLauncher(GetNativeWindow()));
     help_app->ShowHelpTopic(chromeos::HelpAppLauncher::HELP_ENTERPRISE);
@@ -523,22 +543,25 @@ void SystemTrayDelegateChromeOS::ShowUserLogin() {
     return;
 
   // Only regular users could add other users to current session.
-  if (UserManager::Get()->GetActiveUser()->GetType() !=
+  if (user_manager::UserManager::Get()->GetActiveUser()->GetType() !=
       user_manager::USER_TYPE_REGULAR) {
     return;
   }
 
-  if (static_cast<int>(UserManager::Get()->GetLoggedInUsers().size()) >=
+  if (static_cast<int>(
+          user_manager::UserManager::Get()->GetLoggedInUsers().size()) >=
       shell->session_state_delegate()->GetMaximumNumberOfLoggedInUsers())
     return;
 
   // Launch sign in screen to add another user to current session.
-  if (UserManager::Get()->GetUsersAdmittedForMultiProfile().size()) {
+  if (user_manager::UserManager::Get()
+          ->GetUsersAdmittedForMultiProfile()
+          .size()) {
     // Don't show dialog if any logged in user in multi-profiles session
     // dismissed it.
     bool show_intro = true;
     const user_manager::UserList logged_in_users =
-        UserManager::Get()->GetLoggedInUsers();
+        user_manager::UserManager::Get()->GetLoggedInUsers();
     for (user_manager::UserList::const_iterator it = logged_in_users.begin();
          it != logged_in_users.end();
          ++it) {
@@ -670,7 +693,8 @@ void SystemTrayDelegateChromeOS::GetCurrentIME(ash::IMEInfo* info) {
   input_method::InputMethodManager* manager =
       input_method::InputMethodManager::Get();
   input_method::InputMethodUtil* util = manager->GetInputMethodUtil();
-  input_method::InputMethodDescriptor ime = manager->GetCurrentInputMethod();
+  input_method::InputMethodDescriptor ime =
+      manager->GetActiveIMEState()->GetCurrentInputMethod();
   ExtractIMEInfo(ime, *util, info);
   info->selected = true;
 }
@@ -680,8 +704,9 @@ void SystemTrayDelegateChromeOS::GetAvailableIMEList(ash::IMEInfoList* list) {
       input_method::InputMethodManager::Get();
   input_method::InputMethodUtil* util = manager->GetInputMethodUtil();
   scoped_ptr<input_method::InputMethodDescriptors> ime_descriptors(
-      manager->GetActiveInputMethods());
-  std::string current = manager->GetCurrentInputMethod().id();
+      manager->GetActiveIMEState()->GetActiveInputMethods());
+  std::string current =
+      manager->GetActiveIMEState()->GetCurrentInputMethod().id();
   for (size_t i = 0; i < ime_descriptors->size(); i++) {
     input_method::InputMethodDescriptor& ime = ime_descriptors->at(i);
     ash::IMEInfo info;
@@ -706,7 +731,9 @@ void SystemTrayDelegateChromeOS::GetCurrentIMEProperties(
 }
 
 void SystemTrayDelegateChromeOS::SwitchIME(const std::string& ime_id) {
-  input_method::InputMethodManager::Get()->ChangeInputMethod(ime_id);
+  input_method::InputMethodManager::Get()
+      ->GetActiveIMEState()
+      ->ChangeInputMethod(ime_id, false /* show_message */);
 }
 
 void SystemTrayDelegateChromeOS::ActivateIMEProperty(const std::string& key) {
@@ -815,8 +842,9 @@ ash::tray::UserAccountsDelegate*
 SystemTrayDelegateChromeOS::GetUserAccountsDelegate(
     const std::string& user_id) {
   if (!accounts_delegates_.contains(user_id)) {
-    const user_manager::User* user = UserManager::Get()->FindUser(user_id);
-    Profile* user_profile = ProfileHelper::Get()->GetProfileByUser(user);
+    const user_manager::User* user =
+        user_manager::UserManager::Get()->FindUser(user_id);
+    Profile* user_profile = ProfileHelper::Get()->GetProfileByUserUnsafe(user);
     CHECK(user_profile);
     accounts_delegates_.set(
         user_id,
@@ -841,7 +869,7 @@ void SystemTrayDelegateChromeOS::SetProfile(Profile* profile) {
   user_profile_ = profile;
 
   // Start observing the AppWindowRegistry of the newly set |user_profile_|.
-  apps::AppWindowRegistry::Get(user_profile_)->AddObserver(this);
+  extensions::AppWindowRegistry::Get(user_profile_)->AddObserver(this);
 
   PrefService* prefs = profile->GetPrefs();
   user_pref_registrar_.reset(new PrefChangeRegistrar);
@@ -934,7 +962,7 @@ void SystemTrayDelegateChromeOS::UpdateClockType() {
   GetSystemTrayNotifier()->NotifyDateFormatChanged();
   // This also works for enterprise-managed devices because they never have
   // local owner.
-  if (chromeos::UserManager::Get()->IsCurrentUserOwner())
+  if (user_manager::UserManager::Get()->IsCurrentUserOwner())
     CrosSettings::Get()->SetBoolean(kSystemUse24HourClock, use_24_hour_clock);
 }
 
@@ -983,9 +1011,9 @@ void SystemTrayDelegateChromeOS::StopObservingAppWindowRegistry() {
   if (!user_profile_)
     return;
 
-  apps::AppWindowRegistry* registry =
-      apps::AppWindowRegistry::Factory::GetForBrowserContext(user_profile_,
-                                                             false);
+  extensions::AppWindowRegistry* registry =
+      extensions::AppWindowRegistry::Factory::GetForBrowserContext(
+          user_profile_, false);
   if (registry)
     registry->RemoveObserver(this);
 }
@@ -1005,7 +1033,8 @@ void SystemTrayDelegateChromeOS::NotifyIfLastWindowClosed() {
     }
   }
 
-  if (!apps::AppWindowRegistry::Get(user_profile_)->app_windows().empty()) {
+  if (!extensions::AppWindowRegistry::Get(
+          user_profile_)->app_windows().empty()) {
     // The current user has at least one open app window.
     return;
   }
@@ -1024,7 +1053,7 @@ void SystemTrayDelegateChromeOS::LoggedInStateChanged() {
   // method, as LoggedInStateChanged() is also called before the logged-in
   // user's profile has actually been loaded (http://crbug.com/317745). The
   // system tray's time format is updated at login via SetProfile().
-  if (chromeos::UserManager::Get()->IsCurrentUserOwner()) {
+  if (user_manager::UserManager::Get()->IsCurrentUserOwner()) {
     CrosSettings::Get()->SetBoolean(kSystemUse24HourClock,
                                     ShouldUse24HourClock());
   }
@@ -1251,9 +1280,9 @@ void SystemTrayDelegateChromeOS::OnBrowserRemoved(Browser* browser) {
   NotifyIfLastWindowClosed();
 }
 
-// Overridden from apps::AppWindowRegistry::Observer.
+// Overridden from extensions::AppWindowRegistry::Observer.
 void SystemTrayDelegateChromeOS::OnAppWindowRemoved(
-    apps::AppWindow* app_window) {
+    extensions::AppWindow* app_window) {
   NotifyIfLastWindowClosed();
 }
 

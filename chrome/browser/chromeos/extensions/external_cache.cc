@@ -7,8 +7,8 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/callback.h"
-#include "base/file_util.h"
 #include "base/files/file_enumerator.h"
+#include "base/files/file_util.h"
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/strings/string_util.h"
@@ -124,6 +124,20 @@ bool ExternalCache::GetExtension(const std::string& id,
                                  base::FilePath* file_path,
                                  std::string* version) {
   return local_cache_.GetExtension(id, file_path, version);
+}
+
+void ExternalCache::PutExternalExtension(
+    const std::string& id,
+    const base::FilePath& crx_file_path,
+    const std::string& version,
+    const PutExternalExtensionCallback& callback) {
+  local_cache_.PutExtension(id,
+                            crx_file_path,
+                            version,
+                            base::Bind(&ExternalCache::OnPutExternalExtension,
+                                       weak_ptr_factory_.GetWeakPtr(),
+                                       id,
+                                       callback));
 }
 
 void ExternalCache::Observe(int type,
@@ -319,6 +333,16 @@ void ExternalCache::OnPutExtension(const std::string& id,
   if (delegate_)
     delegate_->OnExtensionLoadedInCache(id);
   UpdateExtensionLoader();
+}
+
+void ExternalCache::OnPutExternalExtension(
+    const std::string& id,
+    const PutExternalExtensionCallback& callback,
+    const base::FilePath& file_path,
+    bool file_ownership_passed) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  OnPutExtension(id, file_path, file_ownership_passed);
+  callback.Run(id, !file_ownership_passed);
 }
 
 std::string ExternalCache::Delegate::GetInstalledExtensionVersion(

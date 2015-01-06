@@ -334,38 +334,15 @@ IPC_STRUCT_BEGIN(ViewHostMsg_SelectionBounds_Params)
   IPC_STRUCT_MEMBER(bool, is_anchor_first)
 IPC_STRUCT_END()
 
-// This message is used for supporting popup menus on Mac OS X using native
-// Cocoa controls. The renderer sends us this message which we use to populate
-// the popup menu.
-IPC_STRUCT_BEGIN(ViewHostMsg_ShowPopup_Params)
-  // Position on the screen.
-  IPC_STRUCT_MEMBER(gfx::Rect, bounds)
-
-  // The height of each item in the menu.
-  IPC_STRUCT_MEMBER(int, item_height)
-
-  // The size of the font to use for those items.
-  IPC_STRUCT_MEMBER(double, item_font_size)
-
-  // The currently selected (displayed) item in the menu.
-  IPC_STRUCT_MEMBER(int, selected_item)
-
-  // The entire list of items in the popup menu.
-  IPC_STRUCT_MEMBER(std::vector<content::MenuItem>, popup_items)
-
-  // Whether items should be right-aligned.
-  IPC_STRUCT_MEMBER(bool, right_aligned)
-
-  // Whether this is a multi-select popup.
-  IPC_STRUCT_MEMBER(bool, allow_multiple_selection)
-IPC_STRUCT_END()
-
 IPC_STRUCT_BEGIN(ViewHostMsg_TextInputState_Params)
   // The type of input field
   IPC_STRUCT_MEMBER(ui::TextInputType, type)
 
   // The mode of input field
   IPC_STRUCT_MEMBER(ui::TextInputMode, mode)
+
+  // The flags of the input field (autocorrect, autocomplete, etc.)
+  IPC_STRUCT_MEMBER(int, flags)
 
   // The value of the input field
   IPC_STRUCT_MEMBER(std::string, value)
@@ -397,9 +374,6 @@ IPC_STRUCT_BEGIN(ViewHostMsg_TextInputState_Params)
 IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(ViewHostMsg_UpdateRect_Params)
-  // The scroll offset of the render view.
-  IPC_STRUCT_MEMBER(gfx::Vector2d, scroll_offset)
-
   // The size of the RenderView when this message was generated.  This is
   // included so the host knows how large the view is from the perspective of
   // the renderer process.  This is necessary in case a resize operation is in
@@ -424,10 +398,6 @@ IPC_STRUCT_BEGIN(ViewHostMsg_UpdateRect_Params)
   // which would indicate that this paint message is an ACK for multiple
   // request messages.
   IPC_STRUCT_MEMBER(int, flags)
-
-  // All the above coordinates are in DIP. This is the scale factor needed
-  // to convert them to pixels.
-  IPC_STRUCT_MEMBER(float, scale_factor)
 IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(ViewMsg_New_Params)
@@ -585,7 +555,7 @@ IPC_STRUCT_BEGIN(ViewMsg_Resize_Params)
   IPC_STRUCT_MEMBER(blink::WebScreenInfo, screen_info)
   IPC_STRUCT_MEMBER(gfx::Size, new_size)
   IPC_STRUCT_MEMBER(gfx::Size, physical_backing_size)
-  IPC_STRUCT_MEMBER(float, overdraw_bottom_height)
+  IPC_STRUCT_MEMBER(float, top_controls_layout_height)
   IPC_STRUCT_MEMBER(gfx::Size, visible_viewport_size)
   IPC_STRUCT_MEMBER(gfx::Rect, resizer_rect)
   IPC_STRUCT_MEMBER(bool, is_fullscreen)
@@ -611,12 +581,9 @@ IPC_MESSAGE_ROUTED0(ViewMsg_WasHidden)
 // render view is expected to respond with a full repaint if needs_repainting
 // is true. If needs_repainting is false, then this message does not trigger a
 // message in response.
-IPC_MESSAGE_ROUTED1(ViewMsg_WasShown,
-                    bool /* needs_repainting */)
-
-// Sent to inform the view that it was swapped out.  This allows the process to
-// exit if no other views are using it.
-IPC_MESSAGE_ROUTED0(ViewMsg_WasSwappedOut)
+IPC_MESSAGE_ROUTED2(ViewMsg_WasShown,
+                    bool /* needs_repainting */,
+                    ui::LatencyInfo /* latency_info */)
 
 // Tells the renderer to focus the first (last if reverse is true) focusable
 // node.
@@ -628,8 +595,6 @@ IPC_MESSAGE_ROUTED1(ViewMsg_SetInitialFocus,
 IPC_MESSAGE_ROUTED2(ViewMsg_ShowContextMenu,
                     ui::MenuSourceType,
                     gfx::Point /* location where menu should be shown */)
-
-IPC_MESSAGE_ROUTED0(ViewMsg_Stop)
 
 // Sent when the user wants to search for a word on the page (find in page).
 IPC_MESSAGE_ROUTED3(ViewMsg_Find,
@@ -669,9 +634,6 @@ IPC_MESSAGE_ROUTED2(ViewMsg_PluginActionAt,
 // Posts a message from a frame in another process to the current renderer.
 IPC_MESSAGE_ROUTED1(ViewMsg_PostMessageEvent,
                     ViewMsg_PostMessage_Params)
-
-// Requests that the RenderView's main frame sets its opener to null.
-IPC_MESSAGE_ROUTED0(ViewMsg_DisownOpener)
 
 // Change the zoom level for the current main frame.  If the level actually
 // changes, a ViewHostMsg_DidZoomURL message will be sent back to the browser
@@ -881,6 +843,9 @@ IPC_MESSAGE_ROUTED3(ViewMsg_WindowSnapshotCompleted,
                     gfx::Size /* size */,
                     std::vector<unsigned char> /* png */)
 
+// Fetches complete rendered content of a web page as plain text.
+IPC_MESSAGE_ROUTED0(ViewMsg_GetRenderedText)
+
 #if defined(OS_MACOSX)
 IPC_ENUM_TRAITS_MAX_VALUE(blink::ScrollerStyle, blink::ScrollerStyleOverlay)
 
@@ -910,11 +875,6 @@ IPC_MESSAGE_CONTROL1(ViewMsg_SetWebKitSharedTimersSuspended,
 // final_update set to true).
 IPC_MESSAGE_ROUTED1(ViewMsg_FindMatchRects,
                     int /* current_version */)
-
-// External popup menus.
-IPC_MESSAGE_ROUTED2(ViewMsg_SelectPopupMenuItems,
-                    bool /* user canceled the popup */,
-                    std::vector<int> /* selected indices */)
 
 // Notifies the renderer whether hiding/showing the top controls is enabled
 // and whether or not to animate to the proper state.
@@ -957,10 +917,6 @@ IPC_MESSAGE_ROUTED1(ViewMsg_SetInLiveResize,
 IPC_MESSAGE_ROUTED2(ViewMsg_PluginImeCompositionCompleted,
                     base::string16 /* text */,
                     int /* plugin_id */)
-
-// External popup menus.
-IPC_MESSAGE_ROUTED1(ViewMsg_SelectPopupMenuItem,
-                    int /* selected index, -1 means no selection */)
 #endif
 
 // Sent by the browser as a reply to ViewHostMsg_SwapCompositorFrame.
@@ -1082,13 +1038,6 @@ IPC_MESSAGE_ROUTED0(ViewHostMsg_UpdateScreenRects_ACK)
 IPC_MESSAGE_ROUTED1(ViewHostMsg_RequestMove,
                     gfx::Rect /* position */)
 
-#if defined(OS_MACOSX) || defined(OS_ANDROID)
-// Message to show/hide a popup menu using native controls.
-IPC_MESSAGE_ROUTED1(ViewHostMsg_ShowPopup,
-                    ViewHostMsg_ShowPopup_Params)
-IPC_MESSAGE_ROUTED0(ViewHostMsg_HidePopup)
-#endif
-
 // Result of string search in the page.
 // Response to ViewMsg_Find with the results of the requested find-in-page
 // search, the number of matches found and the selection rect (in screen
@@ -1163,12 +1112,6 @@ IPC_MESSAGE_ROUTED1(ViewHostMsg_FocusedNodeChanged,
     bool /* is_editable_node */)
 
 IPC_MESSAGE_ROUTED1(ViewHostMsg_SetCursor, content::WebCursor)
-
-// Message sent from renderer requesting touch emulation using mouse.
-// Shift-scrolling should be converted to pinch, if |allow_pinch| is true.
-IPC_MESSAGE_ROUTED2(ViewHostMsg_SetTouchEventEmulationEnabled,
-                    bool /* enabled */,
-                    bool /* allow_pinch */)
 
 // Used to set a cookie. The cookie is set asynchronously, but will be
 // available to a subsequent ViewHostMsg_GetCookies request.
@@ -1281,12 +1224,6 @@ IPC_MESSAGE_ROUTED1(ViewHostMsg_RouteMessageEvent,
 // Notifies that the preferred size of the content changed.
 IPC_MESSAGE_ROUTED1(ViewHostMsg_DidContentsPreferredSizeChange,
                     gfx::Size /* pref_size */)
-
-// Notifies that the scroll offset changed.
-// This is different from ViewHostMsg_UpdateRect in that ViewHostMsg_UpdateRect
-// is not sent at all when threaded compositing is enabled while
-// ViewHostMsg_DidChangeScrollOffset works properly in this case.
-IPC_MESSAGE_ROUTED0(ViewHostMsg_DidChangeScrollOffset)
 
 // Notifies whether there are JavaScript touch event handlers or not.
 IPC_MESSAGE_ROUTED1(ViewHostMsg_HasTouchEventHandlers,
@@ -1483,12 +1420,6 @@ IPC_MESSAGE_ROUTED3(ViewHostMsg_UnregisterProtocolHandler,
                     GURL /* url */,
                     bool /* user_gesture */)
 
-// Stores new inspector setting in the profile.
-// TODO(jam): this should be in the chrome module
-IPC_MESSAGE_ROUTED2(ViewHostMsg_UpdateInspectorSetting,
-                    std::string,  /* key */
-                    std::string /* value */)
-
 // Puts the browser into "tab fullscreen" mode for the sending renderer.
 // See the comment in chrome/browser/ui/browser.h for more details.
 IPC_MESSAGE_ROUTED1(ViewHostMsg_ToggleFullscreen,
@@ -1657,6 +1588,9 @@ IPC_MESSAGE_ROUTED2(ViewHostMsg_PluginFocusChanged,
 
 // Instructs the browser to start plugin IME.
 IPC_MESSAGE_ROUTED0(ViewHostMsg_StartPluginIme)
+
+// Receives content of a web page as plain text.
+IPC_MESSAGE_ROUTED1(ViewMsg_GetRenderedTextCompleted, std::string);
 
 #elif defined(OS_WIN)
 // Request that the given font characters be loaded by the browser so it's

@@ -22,7 +22,12 @@
     "identity",
     "notifications",
     "easyUnlockPrivate",
-    "systemPrivate"
+    "systemPrivate",
+    "alarms",
+    "gcm",
+    "system.display",
+    "chromeosInfoPrivate",
+    "tabs"
   ],
 
   "app": {

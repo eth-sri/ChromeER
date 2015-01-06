@@ -11,7 +11,6 @@ import android.content.ClipboardManager;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
-import android.content.pm.FeatureInfo;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.database.ContentObserver;
@@ -77,6 +76,7 @@ import org.chromium.content.browser.input.SelectPopupItem;
 import org.chromium.content.browser.input.SelectionEventType;
 import org.chromium.content.common.ContentSwitches;
 import org.chromium.content_public.browser.GestureStateListener;
+import org.chromium.content_public.browser.JavaScriptCallback;
 import org.chromium.content_public.browser.WebContents;
 import org.chromium.ui.base.DeviceFormFactor;
 import org.chromium.ui.base.ViewAndroid;
@@ -110,15 +110,6 @@ public class ContentViewCore
     // Used to represent gestures for long press and long tap.
     private static final int IS_LONG_PRESS = 1;
     private static final int IS_LONG_TAP = 2;
-
-    // These values are obtained from Samsung.
-    // TODO(changwan): refactor SPen related code into a separate class. See
-    // http://crbug.com/398169.
-    private static final int SPEN_ACTION_DOWN = 211;
-    private static final int SPEN_ACTION_UP = 212;
-    private static final int SPEN_ACTION_MOVE = 213;
-    private static final int SPEN_ACTION_CANCEL = 214;
-    private static Boolean sIsSPenSupported;
 
     // If the embedder adds a JavaScript interface object that contains an indirect reference to
     // the ContentViewCore, then storing a strong ref to the interface object on the native
@@ -227,40 +218,6 @@ public class ContentViewCore
         public void onSmartClipDataExtracted(String text, String html, Rect clipRect);
     }
 
-    /**
-     * An interface that allows the embedder to be notified of navigation transition
-     * related events and respond to them.
-     */
-    public interface NavigationTransitionDelegate {
-        /**
-         * Called when the navigation is deferred immediately after the response started.
-         *
-         * @param enteringColor The background color of the entering document, as a String
-         *                      representing a legal CSS color value. This is inserted into
-         *                      the transition layer's markup after the entering stylesheets
-         *                      have been applied.
-         */
-        public void didDeferAfterResponseStarted(String enteringColor);
-
-        /**
-         * Called when a navigation transition has been detected, and we need to check
-         * if it's supported.
-         */
-        public boolean willHandleDeferAfterResponseStarted();
-
-        /**
-         * Called when the navigation is deferred immediately after the response
-         * started.
-         */
-        public void addEnteringStylesheetToTransition(String stylesheet);
-
-        /**
-         * Notifies that a navigation transition is started for a given frame.
-         * @param frameId A positive, non-zero integer identifying the navigating frame.
-         */
-        public void didStartNavigationTransitionForFrame(long frameId);
-    }
-
     private final Context mContext;
     private ViewGroup mContainerView;
     private InternalAccessDelegate mContainerViewInternals;
@@ -280,6 +237,7 @@ public class ContentViewCore
 
     private PopupZoomer mPopupZoomer;
     private SelectPopup mSelectPopup;
+    private long mNativeSelectPopupSourceFrame = 0;
 
     private Runnable mFakeMouseMoveRunnable = null;
 
@@ -292,6 +250,7 @@ public class ContentViewCore
     // Lazily created paste popup menu, triggered either via long press in an
     // editable region or from tapping the insertion handle.
     private PastePopupMenu mPastePopupMenu;
+    private boolean mWasPastePopupShowingOnInsertionDragStart;
 
     private PopupTouchHandleDrawableDelegate mTouchHandleDelegate;
 
@@ -302,9 +261,7 @@ public class ContentViewCore
     private int mViewportHeightPix;
     private int mPhysicalBackingWidthPix;
     private int mPhysicalBackingHeightPix;
-    private int mOverdrawBottomHeightPix;
-    private int mViewportSizeOffsetWidthPix;
-    private int mViewportSizeOffsetHeightPix;
+    private int mTopControlsLayoutHeightPix;
 
     // Cached copy of all positions and scales as reported by the renderer.
     private final RenderCoordinates mRenderCoordinates;
@@ -339,6 +296,12 @@ public class ContentViewCore
     // Accessibility touch exploration state.
     private boolean mTouchExplorationEnabled;
 
+    // Whether accessibility focus should be set to the page when it finishes loading.
+    // This only applies if an accessibility service like TalkBack is running.
+    // This is desirable behavior for a browser window, but not for an embedded
+    // WebView.
+    private boolean mShouldSetAccessibilityFocusOnPageLoad;
+
     // Allows us to dynamically respond when the accessibility script injection flag changes.
     private ContentObserver mAccessibilityScriptInjectionObserver;
 
@@ -362,8 +325,6 @@ public class ContentViewCore
     private ViewAndroid mViewAndroid;
 
     private SmartClipDataListener mSmartClipDataListener = null;
-
-    private NavigationTransitionDelegate mNavigationTransitionDelegate = null;
 
     // This holds the state of editable text (e.g. contents of <input>, contenteditable) of
     // a focused element.
@@ -441,17 +402,19 @@ public class ContentViewCore
         return mWebContents;
     }
 
-    /**
-     * Specifies how much smaller the WebKit layout size should be relative to the size of this
-     * view.
-     * @param offsetXPix The X amount in pixels to shrink the viewport by.
-     * @param offsetYPix The Y amount in pixels to shrink the viewport by.
-     */
+    /* TODO(aelias): Remove this after downstream callers switch to setTopControlsLayoutHeight. */
     public void setViewportSizeOffset(int offsetXPix, int offsetYPix) {
-        if (offsetXPix != mViewportSizeOffsetWidthPix ||
-                offsetYPix != mViewportSizeOffsetHeightPix) {
-            mViewportSizeOffsetWidthPix = offsetXPix;
-            mViewportSizeOffsetHeightPix = offsetYPix;
+        setTopControlsLayoutHeight(offsetYPix);
+    }
+
+    /**
+     * Specifies how much smaller the Blink layout size should be relative to the size of this
+     * view.
+     * @param topControlsLayoutHeightPix The Y amount in pixels to shrink the viewport by.
+     */
+    public void setTopControlsLayoutHeight(int topControlsLayoutHeightPix) {
+        if (topControlsLayoutHeightPix != mTopControlsLayoutHeightPix) {
+            mTopControlsLayoutHeightPix = topControlsLayoutHeightPix;
             if (mNativeContentViewCore != 0) nativeWasResized(mNativeContentViewCore);
         }
     }
@@ -485,6 +448,11 @@ public class ContentViewCore
             @SuppressWarnings("deprecation")  // AbsoluteLayout
             public void setAnchorViewPosition(
                     View view, float x, float y, float width, float height) {
+                if (view.getParent() == null) {
+                    // Ignore. setAnchorViewPosition has been called after the anchor view has
+                    // already been released.
+                    return;
+                }
                 assert view.getParent() == mContainerViewAtCreation;
 
                 float scale = (float) DeviceDisplayInfo.create(mContext).getDIPScale();
@@ -565,9 +533,7 @@ public class ContentViewCore
                 new ImeAdapter.ImeAdapterDelegate() {
                     @Override
                     public void onImeEvent() {
-                        if (mPopupZoomer.isShowing()) {
-                            mPopupZoomer.hide(true);
-                        }
+                        mPopupZoomer.hide(true);
                         getContentViewClient().onImeEvent();
                         hideTextHandles();
                     }
@@ -798,6 +764,11 @@ public class ContentViewCore
         mPopupZoomer.setOnTapListener(listener);
     }
 
+    @VisibleForTesting
+    public void setPopupZoomerForTest(PopupZoomer popupZoomer) {
+        mPopupZoomer = popupZoomer;
+    }
+
     /**
      * Destroy the internal state of the ContentView. This method may only be
      * called after the ContentView has been removed from the view system. No
@@ -906,7 +877,8 @@ public class ContentViewCore
      * Stops loading the current web contents.
      */
     public void stopLoading() {
-        if (mWebContents != null) mWebContents.stop();
+        assert mWebContents != null;
+        mWebContents.stop();
     }
 
     /**
@@ -915,8 +887,8 @@ public class ContentViewCore
      * @return The URL of the current page.
      */
     public String getUrl() {
-        if (mNativeContentViewCore != 0) return nativeGetURL(mNativeContentViewCore);
-        return null;
+        assert mWebContents != null;
+        return mWebContents.getUrl();
     }
 
     /**
@@ -925,7 +897,8 @@ public class ContentViewCore
      * @return The title of the current page.
      */
     public String getTitle() {
-        return mWebContents == null ? null : mWebContents.getTitle();
+        assert mWebContents != null;
+        return mWebContents.getTitle();
     }
 
     /**
@@ -973,23 +946,15 @@ public class ContentViewCore
     @CalledByNative
     public int getPhysicalBackingHeightPix() { return mPhysicalBackingHeightPix; }
 
-    /**
-     * @return Amount the output surface extends past the bottom of the window viewport.
-     */
-    @CalledByNative
-    public int getOverdrawBottomHeightPix() { return mOverdrawBottomHeightPix; }
+    /* TODO(aelias): Remove these when downstream callers disappear. */
+    public int getViewportSizeOffsetWidthPix() { return 0; }
+    public int getViewportSizeOffsetHeightPix() { return getTopControlsLayoutHeightPix(); }
 
     /**
-     * @return The amount to shrink the viewport relative to {@link #getViewportWidthPix()}.
+     * @return The amount that the viewport size given to Blink is shrunk by the URL-bar..
      */
     @CalledByNative
-    public int getViewportSizeOffsetWidthPix() { return mViewportSizeOffsetWidthPix; }
-
-    /**
-     * @return The amount to shrink the viewport relative to {@link #getViewportHeightPix()}.
-     */
-    @CalledByNative
-    public int getViewportSizeOffsetHeightPix() { return mViewportSizeOffsetHeightPix; }
+    public int getTopControlsLayoutHeightPix() { return mTopControlsLayoutHeightPix; }
 
     /**
      * @see android.webkit.WebView#getContentHeight()
@@ -1137,55 +1102,6 @@ public class ContentViewCore
     // End FrameLayout overrides.
 
     /**
-     * TODO(changwan): refactor SPen related code into a separate class. See
-     * http://crbug.com/398169.
-     * @return Whether SPen is supported on the device.
-     */
-    public static boolean isSPenSupported(Context context) {
-        if (sIsSPenSupported == null)
-            sIsSPenSupported = detectSPenSupport(context);
-        return sIsSPenSupported.booleanValue();
-    }
-
-    private static boolean detectSPenSupport(Context context) {
-        if (!"SAMSUNG".equalsIgnoreCase(Build.MANUFACTURER))
-            return false;
-
-        final FeatureInfo[] infos = context.getPackageManager().getSystemAvailableFeatures();
-        for (FeatureInfo info : infos) {
-            if ("com.sec.feature.spen_usp".equalsIgnoreCase(info.name)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /**
-     * Convert SPen event action into normal event action.
-     * TODO(changwan): refactor SPen related code into a separate class. See
-     * http://crbug.com/398169.
-     *
-     * @param eventActionMasked Input event action. It is assumed that it is masked as the values
-                                cannot be ORed.
-     * @return Event action after the conversion
-     */
-    public static int convertSPenEventAction(int eventActionMasked) {
-        // S-Pen support: convert to normal stylus event handling
-        switch (eventActionMasked) {
-            case SPEN_ACTION_DOWN:
-                return MotionEvent.ACTION_DOWN;
-            case SPEN_ACTION_UP:
-                return MotionEvent.ACTION_UP;
-            case SPEN_ACTION_MOVE:
-                return MotionEvent.ACTION_MOVE;
-            case SPEN_ACTION_CANCEL:
-                return MotionEvent.ACTION_CANCEL;
-            default:
-                return eventActionMasked;
-        }
-    }
-
-    /**
      * @see View#onTouchEvent(MotionEvent)
      */
     public boolean onTouchEvent(MotionEvent event) {
@@ -1202,8 +1118,8 @@ public class ContentViewCore
                 cancelRequestToScrollFocusedEditableNodeIntoView();
             }
 
-            if (isSPenSupported(mContext))
-                eventAction = convertSPenEventAction(eventAction);
+            if (SPenSupport.isSPenSupported(mContext))
+                eventAction = SPenSupport.convertSPenEventAction(eventAction);
             if (!isValidTouchEventActionForNative(eventAction)) return false;
 
             if (mNativeContentViewCore == 0) return false;
@@ -1421,17 +1337,29 @@ public class ContentViewCore
     }
 
     /**
+     * Inserts the provided markup sandboxed into the frame.
+     */
+    public void setupTransitionView(String markup) {
+        assert mWebContents != null;
+        mWebContents.setupTransitionView(markup);
+    }
+
+    /**
+     * Hides transition elements specified by the selector, and activates any
+     * exiting-transition stylesheets.
+     */
+    public void beginExitTransition(String cssSelector) {
+        assert mWebContents != null;
+        mWebContents.beginExitTransition(cssSelector);
+    }
+
+    /**
      * Requests the renderer insert a link to the specified stylesheet in the
      * main frame's document.
      */
-    void addStyleSheetByURL(String url) {
+    public void addStyleSheetByURL(String url) {
         assert mWebContents != null;
         mWebContents.addStyleSheetByURL(url);
-    }
-
-    /** Callback interface for evaluateJavaScript(). */
-    public interface JavaScriptCallback {
-        void handleJavaScriptResult(String jsonResult);
     }
 
     /**
@@ -1446,8 +1374,8 @@ public class ContentViewCore
      *                 If no result is required, pass null.
      */
     public void evaluateJavaScript(String script, JavaScriptCallback callback) {
-        if (mNativeContentViewCore == 0) return;
-        nativeEvaluateJavaScript(mNativeContentViewCore, script, callback, false);
+        assert mWebContents != null;
+        mWebContents.evaluateJavaScript(script, callback, false);
     }
 
     /**
@@ -1457,8 +1385,8 @@ public class ContentViewCore
      * @param script The Javascript to execute.
      */
     public void evaluateJavaScriptEvenIfNotYetNavigated(String script) {
-        if (mNativeContentViewCore == 0) return;
-        nativeEvaluateJavaScript(mNativeContentViewCore, script, null, true);
+        assert mWebContents != null;
+        mWebContents.evaluateJavaScript(script, null, true);
     }
 
     /**
@@ -1521,6 +1449,7 @@ public class ContentViewCore
         hidePastePopup();
         hideSelectPopup();
         hideTextHandles();
+        mPopupZoomer.hide(false);
     }
 
     public void hideSelectActionBar() {
@@ -1616,7 +1545,7 @@ public class ContentViewCore
         if (newConfig.keyboard != Configuration.KEYBOARD_NOKEYS) {
             if (mNativeContentViewCore != 0) {
                 mImeAdapter.attach(nativeGetNativeImeAdapter(mNativeContentViewCore),
-                        ImeAdapter.getTextInputTypeNone());
+                        ImeAdapter.getTextInputTypeNone(), 0 /* no flags */);
             }
             mInputMethodManagerWrapper.restartInput(mContainerView);
         }
@@ -1659,18 +1588,8 @@ public class ContentViewCore
         }
     }
 
-    /**
-     * Called when the amount the surface is overdrawing off the bottom has changed.
-     * @param overdrawHeightPix The overdraw height.
-     */
+    /* TODO(aelias): Remove this after downstream callers disappear. */
     public void onOverdrawBottomHeightChanged(int overdrawHeightPix) {
-        if (mOverdrawBottomHeightPix == overdrawHeightPix) return;
-
-        mOverdrawBottomHeightPix = overdrawHeightPix;
-
-        if (mNativeContentViewCore != 0) {
-            nativeWasResized(mNativeContentViewCore);
-        }
     }
 
     private void updateAfterSizeChanged() {
@@ -1724,6 +1643,7 @@ public class ContentViewCore
             cancelRequestToScrollFocusedEditableNodeIntoView();
             hidePastePopup();
             hideTextHandles();
+            mPopupZoomer.hide(false);
         }
         if (mNativeContentViewCore != 0) nativeSetFocus(mNativeContentViewCore, gainFocus);
     }
@@ -2005,8 +1925,10 @@ public class ContentViewCore
 
     public void selectPopupMenuItems(int[] indices) {
         if (mNativeContentViewCore != 0) {
-            nativeSelectPopupMenuItems(mNativeContentViewCore, indices);
+            nativeSelectPopupMenuItems(mNativeContentViewCore, mNativeSelectPopupSourceFrame,
+                                       indices);
         }
+        mNativeSelectPopupSourceFrame = 0;
         mSelectPopup = null;
     }
 
@@ -2152,9 +2074,10 @@ public class ContentViewCore
         mActionMode = null;
         // On ICS, startActionMode throws an NPE when getParent() is null.
         if (mContainerView.getParent() != null) {
+            assert mWebContents != null;
             mActionMode = mContainerView.startActionMode(
                     getContentViewClient().getSelectActionModeCallback(getContext(), actionHandler,
-                            nativeIsIncognito(mNativeContentViewCore)));
+                            mWebContents.isIncognito()));
         }
         mUnselectAllOnActionModeDismiss = true;
         if (mActionMode == null) {
@@ -2163,6 +2086,13 @@ public class ContentViewCore
         } else {
             getContentViewClient().onContextualActionBarShown();
         }
+    }
+
+    /**
+     * Clears the current text selection.
+     */
+    public void clearSelection() {
+        mImeAdapter.unselect();
     }
 
     private void hidePastePopup() {
@@ -2187,18 +2117,28 @@ public class ContentViewCore
                 hideSelectActionBar();
                 break;
 
+            case SelectionEventType.SELECTION_DRAG_STARTED:
+                break;
+
+            case SelectionEventType.SELECTION_DRAG_STOPPED:
+                break;
+
             case SelectionEventType.INSERTION_SHOWN:
                 mHasInsertion = true;
                 break;
 
             case SelectionEventType.INSERTION_MOVED:
-                // TODO(jdduke): Handle case where movement triggered by focus.
-                hidePastePopup();
+                if (mPastePopupMenu == null) break;
+                if (!isScrollInProgress() && mPastePopupMenu.isShowing()) {
+                    showPastePopup((int) posXDip, (int) posYDip);
+                } else {
+                    hidePastePopup();
+                }
                 break;
 
             case SelectionEventType.INSERTION_TAPPED:
-                if (getPastePopup().isShowing())
-                    mPastePopupMenu.hide();
+                if (mWasPastePopupShowingOnInsertionDragStart)
+                    hidePastePopup();
                 else
                     showPastePopup((int) posXDip, (int) posYDip);
                 break;
@@ -2208,9 +2148,16 @@ public class ContentViewCore
                 hidePastePopup();
                 break;
 
+            case SelectionEventType.INSERTION_DRAG_STARTED:
+                mWasPastePopupShowingOnInsertionDragStart =
+                        mPastePopupMenu != null && mPastePopupMenu.isShowing();
+                hidePastePopup();
+                break;
+
             default:
                 assert false : "Invalid selection event type.";
         }
+        getContentViewClient().onSelectionEvent(eventType);
     }
 
     public boolean getUseDesktopUserAgent() {
@@ -2274,8 +2221,7 @@ public class ContentViewCore
             float pageScaleFactor, float minPageScaleFactor, float maxPageScaleFactor,
             float contentWidth, float contentHeight,
             float viewportWidth, float viewportHeight,
-            float controlsOffsetYCss, float contentOffsetYCss,
-            float overdrawBottomHeightCss) {
+            float controlsOffsetYCss, float contentOffsetYCss) {
         TraceEvent.begin("ContentViewCore:updateFrameInfo");
         // Adjust contentWidth/Height to be always at least as big as
         // the actual viewport (as set by onSizeChanged).
@@ -2334,9 +2280,9 @@ public class ContentViewCore
 
         // Update offsets for fullscreen.
         final float controlsOffsetPix = controlsOffsetYCss * deviceScale;
-        final float overdrawBottomHeightPix = overdrawBottomHeightCss * deviceScale;
+        // TODO(aelias): Remove last argument after downstream removes it.
         getContentViewClient().onOffsetsForFullscreenChanged(
-                controlsOffsetPix, contentOffsetYPix, overdrawBottomHeightPix);
+                controlsOffsetPix, contentOffsetYPix, 0);
 
         if (mBrowserAccessibilityManager != null) {
             mBrowserAccessibilityManager.notifyFrameInfoInitialized();
@@ -2346,7 +2292,7 @@ public class ContentViewCore
 
     @CalledByNative
     private void updateImeAdapter(long nativeImeAdapterAndroid, int textInputType,
-            String text, int selectionStart, int selectionEnd,
+            int textInputFlags, String text, int selectionStart, int selectionEnd,
             int compositionStart, int compositionEnd, boolean showImeIfNeeded,
             boolean isNonImeChange) {
         TraceEvent.begin();
@@ -2354,7 +2300,7 @@ public class ContentViewCore
         if (!mFocusedNodeEditable) hidePastePopup();
 
         mImeAdapter.updateKeyboardVisibility(
-                nativeImeAdapterAndroid, textInputType, showImeIfNeeded);
+                nativeImeAdapterAndroid, textInputType, textInputFlags, showImeIfNeeded);
 
         if (mInputConnection != null) {
             mInputConnection.updateState(text, selectionStart, selectionEnd, compositionStart,
@@ -2373,6 +2319,7 @@ public class ContentViewCore
 
     /**
      * Called (from native) when the <select> popup needs to be shown.
+     * @param nativeSelectPopupSourceFrame The native RenderFrameHost that owns the popup.
      * @param items           Items to show.
      * @param enabled         POPUP_ITEM_TYPEs for items.
      * @param multiple        Whether the popup menu should support multi-select.
@@ -2380,9 +2327,10 @@ public class ContentViewCore
      */
     @SuppressWarnings("unused")
     @CalledByNative
-    private void showSelectPopup(Rect bounds, String[] items, int[] enabled, boolean multiple,
-            int[] selectedIndices) {
+    private void showSelectPopup(long nativeSelectPopupSourceFrame, Rect bounds, String[] items,
+            int[] enabled, boolean multiple, int[] selectedIndices) {
         if (mContainerView.getParent() == null || mContainerView.getVisibility() != View.VISIBLE) {
+            mNativeSelectPopupSourceFrame = nativeSelectPopupSourceFrame;
             selectPopupMenuItems(null);
             return;
         }
@@ -2398,6 +2346,7 @@ public class ContentViewCore
         } else {
             mSelectPopup = new SelectPopupDialog(this, popupItems, multiple, selectedIndices);
         }
+        mNativeSelectPopupSourceFrame = nativeSelectPopupSourceFrame;
         mSelectPopup.show();
     }
 
@@ -2460,19 +2409,21 @@ public class ContentViewCore
 
     @SuppressWarnings("unused")
     @CalledByNative
-    private static void onEvaluateJavaScriptResult(
-            String jsonResult, JavaScriptCallback callback) {
-        callback.handleJavaScriptResult(jsonResult);
+    private void showPastePopupWithFeedback(int xDip, int yDip) {
+        // TODO(jdduke): Remove this when there is a better signal that long press caused
+        // showing of the paste popup. See http://crbug.com/150151.
+        if (showPastePopup(xDip, yDip)) {
+            mContainerView.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+        }
     }
 
-    @SuppressWarnings("unused")
-    @CalledByNative
-    private void showPastePopup(int xDip, int yDip) {
-        if (!mHasInsertion) return;
+    private boolean showPastePopup(int xDip, int yDip) {
+        if (!mHasInsertion || !canPaste()) return false;
         final float contentOffsetYPix = mRenderCoordinates.getContentOffsetYPix();
         getPastePopup().showAt(
             (int) mRenderCoordinates.fromDipToPix(xDip),
             (int) (mRenderCoordinates.fromDipToPix(yDip) + contentOffsetYPix));
+        return true;
     }
 
     private PastePopupMenu getPastePopup() {
@@ -2483,14 +2434,20 @@ public class ContentViewCore
                         mImeAdapter.paste();
                         hideTextHandles();
                     }
-                    public boolean canPaste() {
-                        if (!mFocusedNodeEditable) return false;
-                        return ((ClipboardManager) mContext.getSystemService(
-                                Context.CLIPBOARD_SERVICE)).hasPrimaryClip();
-                    }
                 });
         }
         return mPastePopupMenu;
+    }
+
+    @VisibleForTesting
+    public PastePopupMenu getPastePopupForTest() {
+        return getPastePopup();
+    }
+
+    private boolean canPaste() {
+        if (!mFocusedNodeEditable) return false;
+        return ((ClipboardManager) mContext.getSystemService(
+                Context.CLIPBOARD_SERVICE)).hasPrimaryClip();
     }
 
     @SuppressWarnings("unused")
@@ -2944,6 +2901,23 @@ public class ContentViewCore
     }
 
     /**
+     * Return whether or not we should set accessibility focus on page load.
+     */
+    public boolean shouldSetAccessibilityFocusOnPageLoad() {
+        return mShouldSetAccessibilityFocusOnPageLoad;
+    }
+
+    /**
+     * Sets whether or not we should set accessibility focus on page load.
+     * This only applies if an accessibility service like TalkBack is running.
+     * This is desirable behavior for a browser window, but not for an embedded
+     * WebView.
+     */
+    public void setShouldSetAccessibilityFocusOnPageLoad(boolean on) {
+        mShouldSetAccessibilityFocusOnPageLoad = on;
+    }
+
+    /**
      * Inform WebKit that Fullscreen mode has been exited by the user.
      */
     public void exitFullscreen() {
@@ -3060,43 +3034,6 @@ public class ContentViewCore
         }
     }
 
-    @CalledByNative
-    private void didDeferAfterResponseStarted(String enteringColor) {
-        if (mNavigationTransitionDelegate != null ) {
-            mNavigationTransitionDelegate.didDeferAfterResponseStarted(enteringColor);
-        }
-    }
-
-    @CalledByNative
-    public void didStartNavigationTransitionForFrame(long frameId) {
-        if (mNavigationTransitionDelegate != null ) {
-            mNavigationTransitionDelegate.didStartNavigationTransitionForFrame(frameId);
-        }
-    }
-
-    @CalledByNative
-    private boolean willHandleDeferAfterResponseStarted() {
-        if (mNavigationTransitionDelegate == null) return false;
-        return mNavigationTransitionDelegate.willHandleDeferAfterResponseStarted();
-    }
-
-    @VisibleForTesting
-    void setHasPendingNavigationTransitionForTesting() {
-        if (mNativeContentViewCore == 0) return;
-        nativeSetHasPendingNavigationTransitionForTesting(mNativeContentViewCore);
-    }
-
-    public void setNavigationTransitionDelegate(NavigationTransitionDelegate delegate) {
-        mNavigationTransitionDelegate = delegate;
-    }
-
-    @CalledByNative
-    private void addEnteringStylesheetToTransition(String stylesheet) {
-        if (mNavigationTransitionDelegate != null ) {
-            mNavigationTransitionDelegate.addEnteringStylesheetToTransition(stylesheet);
-        }
-    }
-
     /**
      * Offer a long press gesture to the embedding View, primarily for WebView compatibility.
      *
@@ -3152,8 +3089,8 @@ public class ContentViewCore
     }
 
     public void resumeResponseDeferredAtStart() {
-        if (mNativeContentViewCore == 0) return;
-        nativeResumeResponseDeferredAtStart(mNativeContentViewCore);
+        assert mWebContents != null;
+        mWebContents.resumeResponseDeferredAtStart();
     }
 
     /**
@@ -3187,10 +3124,6 @@ public class ContentViewCore
             String virtualUrlForDataUrl,
             boolean canLoadLocalResources,
             boolean isRendererInitiated);
-
-    private native String nativeGetURL(long nativeContentViewCoreImpl);
-
-    private native boolean nativeIsIncognito(long nativeContentViewCoreImpl);
 
     private native void nativeSetFocus(long nativeContentViewCoreImpl, boolean focused);
 
@@ -3254,17 +3187,17 @@ public class ContentViewCore
     private native void nativeHideTextHandles(long nativeContentViewCoreImpl);
 
     private native void nativeResetGestureDetection(long nativeContentViewCoreImpl);
+
     private native void nativeSetDoubleTapSupportEnabled(
             long nativeContentViewCoreImpl, boolean enabled);
+
     private native void nativeSetMultiTouchZoomSupportEnabled(
             long nativeContentViewCoreImpl, boolean enabled);
 
-    private native void nativeSelectPopupMenuItems(long nativeContentViewCoreImpl, int[] indices);
+    private native void nativeSelectPopupMenuItems(long nativeContentViewCoreImpl,
+            long nativeSelectPopupSourceFrame, int[] indices);
 
     private native void nativeClearHistory(long nativeContentViewCoreImpl);
-
-    private native void nativeEvaluateJavaScript(long nativeContentViewCoreImpl,
-            String script, JavaScriptCallback callback, boolean startRenderer);
 
     private native void nativePostMessageToFrame(long nativeContentViewCoreImpl, String frameId,
             String message, String sourceOrigin, String targetOrigin);
@@ -3275,6 +3208,7 @@ public class ContentViewCore
 
     private native void nativeSetUseDesktopUserAgent(long nativeContentViewCoreImpl,
             boolean enabled, boolean reloadOnChange);
+
     private native boolean nativeGetUseDesktopUserAgent(long nativeContentViewCoreImpl);
 
     private native void nativeClearSslPreferences(long nativeContentViewCoreImpl);
@@ -3289,8 +3223,10 @@ public class ContentViewCore
             String name);
 
     private native int nativeGetNavigationHistory(long nativeContentViewCoreImpl, Object context);
+
     private native void nativeGetDirectedNavigationHistory(long nativeContentViewCoreImpl,
             Object context, boolean isForward, int maxEntries);
+
     private native String nativeGetOriginalUrlForActiveNavigationEntry(
             long nativeContentViewCoreImpl);
 
@@ -3301,10 +3237,6 @@ public class ContentViewCore
 
     private native void nativeExtractSmartClipData(long nativeContentViewCoreImpl,
             int x, int y, int w, int h);
-    private native void nativeSetBackgroundOpaque(long nativeContentViewCoreImpl, boolean opaque);
 
-    private native void nativeResumeResponseDeferredAtStart(
-            long nativeContentViewCoreImpl);
-    private native void nativeSetHasPendingNavigationTransitionForTesting(
-            long nativeContentViewCoreImpl);
+    private native void nativeSetBackgroundOpaque(long nativeContentViewCoreImpl, boolean opaque);
 }

@@ -53,7 +53,8 @@ HRESULT VideoCaptureDeviceWin::GetDeviceFilter(
       continue;
     }
 
-    // Find the description or friendly name.
+    // Find the device via DevicePath, Description or FriendlyName, whichever is
+    // available first.
     static const wchar_t* kPropertyNames[] = {
       L"DevicePath", L"Description", L"FriendlyName"
     };
@@ -101,20 +102,20 @@ bool VideoCaptureDeviceWin::PinMatchesCategory(IPin* pin, REFGUID category) {
   return found;
 }
 
-// Finds a IPin on a IBaseFilter given the direction an category.
+// Finds an IPin on an IBaseFilter given the direction and category.
 // static
 ScopedComPtr<IPin> VideoCaptureDeviceWin::GetPin(IBaseFilter* filter,
                                                  PIN_DIRECTION pin_dir,
                                                  REFGUID category) {
   ScopedComPtr<IPin> pin;
-  ScopedComPtr<IEnumPins> pin_emum;
-  HRESULT hr = filter->EnumPins(pin_emum.Receive());
-  if (pin_emum == NULL)
+  ScopedComPtr<IEnumPins> pin_enum;
+  HRESULT hr = filter->EnumPins(pin_enum.Receive());
+  if (pin_enum == NULL)
     return pin;
 
   // Get first unconnected pin.
-  hr = pin_emum->Reset();  // set to first pin
-  while ((hr = pin_emum->Next(1, pin.Receive(), NULL)) == S_OK) {
+  hr = pin_enum->Reset();  // set to first pin
+  while ((hr = pin_enum->Next(1, pin.Receive(), NULL)) == S_OK) {
     PIN_DIRECTION this_pin_dir = static_cast<PIN_DIRECTION>(-1);
     hr = pin->QueryDirection(&this_pin_dir);
     if (pin_dir == this_pin_dir) {
@@ -304,7 +305,7 @@ void VideoCaptureDeviceWin::AllocateAndStart(
   int count = 0, size = 0;
   hr = stream_config->GetNumberOfCapabilities(&count, &size);
   if (FAILED(hr)) {
-    DVLOG(2) << "Failed to GetNumberOfCapabilities";
+    SetErrorState("Failed to GetNumberOfCapabilities");
     return;
   }
 
@@ -312,9 +313,14 @@ void VideoCaptureDeviceWin::AllocateAndStart(
   ScopedMediaType media_type;
 
   // Get the windows capability from the capture device.
+  // GetStreamCaps can return S_FALSE which we consider an error. Therefore the
+  // FAILED macro can't be used.
   hr = stream_config->GetStreamCaps(
       found_capability.stream_index, media_type.Receive(), caps.get());
-  if (SUCCEEDED(hr)) {
+  if (hr != S_OK) {
+    SetErrorState("Failed to get capture device capabilities");
+    return;
+  } else {
     if (media_type->formattype == FORMAT_VideoInfo) {
       VIDEOINFOHEADER* h =
           reinterpret_cast<VIDEOINFOHEADER*>(media_type->pbFormat);
@@ -325,10 +331,12 @@ void VideoCaptureDeviceWin::AllocateAndStart(
     sink_filter_->SetRequestedMediaFormat(format);
     // Order the capture device to use this format.
     hr = stream_config->SetFormat(media_type.get());
+    if (FAILED(hr)) {
+      // TODO(grunell): Log the error. http://crbug.com/405016.
+      SetErrorState("Failed to set capture device output format");
+      return;
+    }
   }
-
-  if (FAILED(hr))
-    SetErrorState("Failed to set capture device output format");
 
   if (format.pixel_format == PIXEL_FORMAT_MJPEG && !mjpg_filter_.get()) {
     // Create MJPG filter if we need it.

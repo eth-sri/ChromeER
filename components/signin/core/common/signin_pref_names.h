@@ -7,6 +7,7 @@
 
 namespace prefs {
 
+extern const char kAccountIdMigrationState[];
 extern const char kAutologinEnabled[];
 extern const char kGoogleServicesLastUsername[];
 extern const char kGoogleServicesUserAccountId[];
@@ -15,6 +16,7 @@ extern const char kGoogleServicesUsernamePattern[];
 extern const char kGoogleServicesSigninScopedDeviceId[];
 extern const char kReverseAutologinEnabled[];
 extern const char kReverseAutologinRejectedEmailList[];
+extern const char kSignedInTime[];
 extern const char kSigninAllowed[];
 
 }  // namespace prefs

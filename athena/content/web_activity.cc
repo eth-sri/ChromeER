@@ -7,10 +7,15 @@
 #include "athena/activity/public/activity_factory.h"
 #include "athena/activity/public/activity_manager.h"
 #include "athena/input/public/accelerator_manager.h"
+#include "base/bind.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
+#include "ui/aura/window.h"
+#include "ui/compositor/closure_animation_observer.h"
+#include "ui/compositor/scoped_layer_animation_settings.h"
 #include "ui/views/controls/webview/unhandled_keyboard_event_handler.h"
 #include "ui/views/controls/webview/webview.h"
 #include "ui/views/focus/focus_manager.h"
@@ -26,6 +31,8 @@ class WebActivityController : public AcceleratorHandler {
     CMD_FORWARD,
     CMD_RELOAD,
     CMD_RELOAD_IGNORE_CACHE,
+    CMD_CLOSE,
+    CMD_STOP,
   };
 
   explicit WebActivityController(views::WebView* web_view)
@@ -47,6 +54,8 @@ class WebActivityController : public AcceleratorHandler {
          AF_NONE},
         {TRIGGER_ON_PRESS, ui::VKEY_BROWSER_BACK, ui::EF_NONE, CMD_BACK,
          AF_NONE},
+        {TRIGGER_ON_PRESS, ui::VKEY_W, ui::EF_CONTROL_DOWN, CMD_CLOSE, AF_NONE},
+        {TRIGGER_ON_PRESS, ui::VKEY_ESCAPE, ui::EF_NONE, CMD_STOP, AF_NONE},
     };
     accelerator_manager_->RegisterAccelerators(
         accelerator_data, arraysize(accelerator_data), this);
@@ -84,11 +93,17 @@ class WebActivityController : public AcceleratorHandler {
   virtual bool IsCommandEnabled(int command_id) const OVERRIDE {
     switch (command_id) {
       case CMD_RELOAD:
+      case CMD_RELOAD_IGNORE_CACHE:
         return true;
       case CMD_BACK:
         return web_view_->GetWebContents()->GetController().CanGoBack();
       case CMD_FORWARD:
         return web_view_->GetWebContents()->GetController().CanGoForward();
+      case CMD_CLOSE:
+        // TODO(oshima): check onbeforeunload handler.
+        return true;
+      case CMD_STOP:
+        return web_view_->GetWebContents()->IsLoading();
     }
     return false;
   }
@@ -108,6 +123,12 @@ class WebActivityController : public AcceleratorHandler {
       case CMD_FORWARD:
         web_view_->GetWebContents()->GetController().GoForward();
         return true;
+      case CMD_CLOSE:
+        web_view_->GetWidget()->Close();
+        return true;
+      case CMD_STOP:
+        web_view_->GetWebContents()->Stop();
+        return true;
     }
     return false;
   }
@@ -119,6 +140,9 @@ class WebActivityController : public AcceleratorHandler {
 
   DISALLOW_COPY_AND_ASSIGN(WebActivityController);
 };
+
+const SkColor kDefaultTitleColor = SkColorSetRGB(0xf2, 0xf2, 0xf2);
+const SkColor kDefaultUnavailableColor = SkColorSetRGB(0xbb, 0x77, 0x77);
 
 }  // namespace
 
@@ -242,12 +266,48 @@ class AthenaWebView : public views::WebView {
     return fullscreen_;
   }
 
+  virtual void LoadingStateChanged(content::WebContents* source,
+                                   bool to_different_document) OVERRIDE {
+    bool has_stopped = source == NULL || !source->IsLoading();
+    LoadProgressChanged(source, has_stopped ? 1 : 0);
+  }
+
+  virtual void LoadProgressChanged(content::WebContents* source,
+                                   double progress) OVERRIDE {
+    if (!progress)
+      return;
+
+    if (!progress_bar_) {
+      CreateProgressBar();
+      source->GetNativeView()->layer()->Add(progress_bar_.get());
+    }
+    progress_bar_->SetBounds(gfx::Rect(
+        0, 0, progress * progress_bar_->parent()->bounds().width(), 3));
+    if (progress < 1)
+      return;
+
+    ui::ScopedLayerAnimationSettings settings(progress_bar_->GetAnimator());
+    settings.SetTweenType(gfx::Tween::EASE_IN);
+    ui::Layer* layer = progress_bar_.get();
+    settings.AddObserver(new ui::ClosureAnimationObserver(
+        base::Bind(&base::DeletePointer<ui::Layer>, progress_bar_.release())));
+    layer->SetOpacity(0.f);
+  }
+
  private:
+  void CreateProgressBar() {
+    CHECK(!progress_bar_);
+    progress_bar_.reset(new ui::Layer(ui::LAYER_SOLID_COLOR));
+    progress_bar_->SetColor(SkColorSetRGB(0x00, 0xb0, 0xc7));
+  }
+
   scoped_ptr<WebActivityController> controller_;
 
   // If the activity got evicted, this is the web content which holds the known
   // state of the content before eviction.
   scoped_ptr<content::WebContents> evicted_web_contents_;
+
+  scoped_ptr<ui::Layer> progress_bar_;
 
   // TODO(oshima): Find out if we should support window fullscreen.
   // It may still useful when a user is in split mode.
@@ -261,6 +321,7 @@ WebActivity::WebActivity(content::BrowserContext* browser_context,
     : browser_context_(browser_context),
       url_(url),
       web_view_(NULL),
+      title_color_(kDefaultTitleColor),
       current_state_(ACTIVITY_UNLOADED) {
 }
 
@@ -332,7 +393,11 @@ Activity::ActivityState WebActivity::GetCurrentState() {
 }
 
 bool WebActivity::IsVisible() {
-  return web_view_ && web_view_->IsDrawn();
+  return web_view_ &&
+         web_view_->IsDrawn() &&
+         current_state_ != ACTIVITY_UNLOADED &&
+         GetWindow() &&
+         GetWindow()->IsVisible();
 }
 
 Activity::ActivityMediaState WebActivity::GetMediaState() {
@@ -342,6 +407,10 @@ Activity::ActivityMediaState WebActivity::GetMediaState() {
   return Activity::ACTIVITY_MEDIA_STATE_NONE;
 }
 
+aura::Window* WebActivity::GetWindow() {
+  return !web_view_ ? NULL : web_view_->GetWidget()->GetNativeWindow();
+}
+
 void WebActivity::Init() {
   DCHECK(web_view_);
   web_view_->InstallAccelerators();
@@ -349,11 +418,13 @@ void WebActivity::Init() {
 
 SkColor WebActivity::GetRepresentativeColor() const {
   // TODO(sad): Compute the color from the favicon.
-  return web_view_ ? SK_ColorGRAY : SkColorSetRGB(0xbb, 0x77, 0x77);
+  return web_view_ ? title_color_ : kDefaultUnavailableColor;
 }
 
 base::string16 WebActivity::GetTitle() const {
-  return web_view_ ? web_view_->GetWebContents()->GetTitle() : base::string16();
+  return web_view_ ? base::UTF8ToUTF16(
+                         web_view_->GetWebContents()->GetVisibleURL().host())
+                   : base::string16();
 }
 
 bool WebActivity::UsesFrame() const {
@@ -387,6 +458,10 @@ void WebActivity::TitleWasSet(content::NavigationEntry* entry,
 void WebActivity::DidUpdateFaviconURL(
     const std::vector<content::FaviconURL>& candidates) {
   ActivityManager::Get()->UpdateActivity(this);
+}
+
+void WebActivity::DidChangeThemeColor(SkColor theme_color) {
+  title_color_ = theme_color;
 }
 
 }  // namespace athena

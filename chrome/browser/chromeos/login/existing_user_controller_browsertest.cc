@@ -12,14 +12,13 @@
 #include "base/memory/ref_counted.h"
 #include "base/run_loop.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/chromeos/login/auth/mock_url_fetchers.h"
 #include "chrome/browser/chromeos/login/existing_user_controller.h"
 #include "chrome/browser/chromeos/login/helper.h"
 #include "chrome/browser/chromeos/login/mock_login_utils.h"
 #include "chrome/browser/chromeos/login/ui/mock_login_display.h"
 #include "chrome/browser/chromeos/login/ui/mock_login_display_host.h"
 #include "chrome/browser/chromeos/login/users/mock_user_manager.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
+#include "chrome/browser/chromeos/login/users/scoped_user_manager_enabler.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/policy/device_local_account.h"
@@ -35,7 +34,7 @@
 #include "chromeos/login/auth/authenticator.h"
 #include "chromeos/login/auth/key.h"
 #include "chromeos/login/auth/mock_authenticator.h"
-#include "chromeos/login/auth/mock_authenticator.h"
+#include "chromeos/login/auth/mock_url_fetchers.h"
 #include "chromeos/login/auth/user_context.h"
 #include "chromeos/settings/cros_settings_names.h"
 #include "components/policy/core/common/cloud/cloud_policy_constants.h"
@@ -44,14 +43,13 @@
 #include "components/policy/core/common/cloud/mock_cloud_policy_store.h"
 #include "components/policy/core/common/cloud/policy_builder.h"
 #include "components/user_manager/user.h"
+#include "components/user_manager/user_manager.h"
 #include "components/user_manager/user_type.h"
 #include "content/public/test/mock_notification_observer.h"
 #include "content/public/test/test_utils.h"
 #include "google_apis/gaia/mock_url_fetcher_factory.h"
-#include "grit/generated_resources.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "ui/base/l10n/l10n_util.h"
 
 using ::testing::AnyNumber;
 using ::testing::Invoke;
@@ -353,11 +351,12 @@ class ExistingUserControllerPublicSessionTest
     ExistingUserControllerTest::SetUpOnMainThread();
 
     // Wait for the public session user to be created.
-    if (!chromeos::UserManager::Get()->IsKnownUser(public_session_user_id_)) {
+    if (!user_manager::UserManager::Get()->IsKnownUser(
+            public_session_user_id_)) {
       content::WindowedNotificationObserver(
           chrome::NOTIFICATION_USER_LIST_CHANGED,
-          base::Bind(&chromeos::UserManager::IsKnownUser,
-                     base::Unretained(chromeos::UserManager::Get()),
+          base::Bind(&user_manager::UserManager::IsKnownUser,
+                     base::Unretained(user_manager::UserManager::Get()),
                      public_session_user_id_)).Wait();
     }
 

@@ -169,8 +169,8 @@ class Command;
   // handle.
   scoped_ptr<ExtensionKeybindingRegistryCocoa> extension_keybinding_registry_;
 
-  // The number of overlapped views being shown.
-  NSUInteger overlappedViewCount_;
+  // Whether the root view of the window is layer backed.
+  BOOL windowViewWantsLayer_;
 }
 
 // A convenience class method which gets the |BrowserWindowController| for a
@@ -352,29 +352,9 @@ class Command;
          returnCode:(NSInteger)code
             context:(void*)context;
 
-// Called when the find bar visibility changes. This is used to update the
-// allowOverlappingViews state.
-- (void)onFindBarVisibilityChanged;
-
-// Called when an overlapped view is shown. This is used to update the
-// allowOverlappingViews state. Currently used for history overlay and
-// confirm bubble.
-- (void)onOverlappedViewShown;
-
-// Called when a history overlay is hidden. This is used to update the
-// allowOverlappingViews state. Currently used for history overlay and
-// confirm bubble.
-- (void)onOverlappedViewHidden;
-
 // Executes the command registered by the extension that has the given id.
 - (void)executeExtensionCommand:(const std::string&)extension_id
                         command:(const extensions::Command&)command;
-
-// Activates the page action for the extension that has the given id.
-- (void)activatePageAction:(const std::string&)extension_id;
-
-// Activates the browser action for the extension that has the given id.
-- (void)activateBrowserAction:(const std::string&)extension_id;
 
 @end  // @interface BrowserWindowController
 

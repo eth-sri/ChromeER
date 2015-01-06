@@ -76,6 +76,10 @@ class PermissionsData {
   // whitelist of extensions that can script all pages.
   static bool CanExecuteScriptEverywhere(const Extension* extension);
 
+  // Returns true if we should skip the permisisons warning for the extension
+  // with the given |extension_id|.
+  static bool ShouldSkipPermissionWarnings(const std::string& extension_id);
+
   // Returns true if the given |url| is restricted for the given |extension|,
   // as is commonly the case for chrome:// urls.
   // NOTE: You probably want to use CanAccessPage().
@@ -196,13 +200,14 @@ class PermissionsData {
   // page itself.
   bool CanCaptureVisiblePage(int tab_id, std::string* error) const;
 
-  scoped_refptr<const PermissionSet> active_permissions() const {
+  const scoped_refptr<const PermissionSet>& active_permissions() const {
+    // TODO(dcheng): What is the point of this lock?
     base::AutoLock auto_lock(runtime_lock_);
     return active_permissions_unsafe_;
   }
 
-  scoped_refptr<const PermissionSet> withheld_permissions() const {
-    base::AutoLock auto_lock(runtime_lock_);
+  const scoped_refptr<const PermissionSet>& withheld_permissions() const {
+    // TODO(dcheng): What is the point of this lock?
     return withheld_permissions_unsafe_;
   }
 

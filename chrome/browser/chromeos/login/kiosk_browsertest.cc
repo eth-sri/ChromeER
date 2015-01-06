@@ -2,22 +2,25 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "apps/app_window.h"
-#include "apps/app_window_registry.h"
-#include "apps/ui/native_app_window.h"
 #include "ash/desktop_background/desktop_background_controller.h"
 #include "ash/desktop_background/desktop_background_controller_observer.h"
 #include "ash/shell.h"
-#include "base/file_util.h"
+#include "base/bind.h"
+#include "base/bind_helpers.h"
+#include "base/files/file_util.h"
+#include "base/location.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
+#include "base/synchronization/lock.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/app_mode/fake_cws.h"
 #include "chrome/browser/chromeos/app_mode/kiosk_app_launch_error.h"
 #include "chrome/browser/chromeos/app_mode/kiosk_app_manager.h"
+#include "chrome/browser/chromeos/file_manager/fake_disk_mount_manager.h"
 #include "chrome/browser/chromeos/login/app_launch_controller.h"
 #include "chrome/browser/chromeos/login/startup_utils.h"
 #include "chrome/browser/chromeos/login/test/app_window_waiter.h"
@@ -25,6 +28,7 @@
 #include "chrome/browser/chromeos/login/test/oobe_screen_waiter.h"
 #include "chrome/browser/chromeos/login/users/fake_user_manager.h"
 #include "chrome/browser/chromeos/login/users/mock_user_manager.h"
+#include "chrome/browser/chromeos/login/users/scoped_user_manager_enabler.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/chromeos/policy/device_policy_cros_browser_test.h"
 #include "chrome/browser/chromeos/policy/proto/chrome_device_policy.pb.h"
@@ -34,6 +38,7 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_test_message_listener.h"
 #include "chrome/browser/profiles/profile_impl.h"
+#include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/profiles/profiles_state.h"
 #include "chrome/browser/ui/webui/chromeos/login/kiosk_app_menu_handler.h"
 #include "chrome/common/chrome_constants.h"
@@ -41,11 +46,16 @@
 #include "chrome/common/pref_names.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/cryptohome_client.h"
+#include "chromeos/disks/disk_mount_manager.h"
 #include "components/signin/core/common/signin_pref_names.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/test/browser_test_utils.h"
+#include "extensions/browser/app_window/app_window.h"
+#include "extensions/browser/app_window/app_window_registry.h"
+#include "extensions/browser/app_window/native_app_window.h"
 #include "extensions/browser/extension_system.h"
 #include "google_apis/gaia/gaia_constants.h"
 #include "google_apis/gaia/gaia_switches.h"
@@ -86,6 +96,8 @@ const char kTestOfflineEnabledKioskApp[] = "ajoggoflpgplnnjkjamcmbepjdjdnpdp";
 //   chrome/test/data/chromeos/app_mode/webstore/inlineinstall/
 //       detail/bmbpicmpniaclbbpdkfglgipkkebnbjf
 const char kTestLocalFsKioskApp[] = "bmbpicmpniaclbbpdkfglgipkkebnbjf";
+
+const char kFakeUsbStickMountPath[] = "chromeos/app_mode/external_update/";
 
 // Timeout while waiting for network connectivity during tests.
 const int kTestNetworkTimeoutSeconds = 1;
@@ -136,6 +148,12 @@ void ConsumerKioskModeAutoStartLockCheck(
 // Helper function for WaitForNetworkTimeOut.
 void OnNetworkWaitTimedOut(const base::Closure& runner_quit_task) {
   runner_quit_task.Run();
+}
+
+// Helper function for LockFileThread.
+void LockAndUnlock(scoped_ptr<base::Lock> lock) {
+  lock->Acquire();
+  lock->Release();
 }
 
 // Helper functions for CanConfigureNetwork mock.
@@ -222,6 +240,29 @@ class JsConditionWaiter {
   scoped_refptr<content::MessageLoopRunner> runner_;
 
   DISALLOW_COPY_AND_ASSIGN(JsConditionWaiter);
+};
+
+class KioskFakeDiskMountManager : public file_manager::FakeDiskMountManager {
+ public:
+  explicit KioskFakeDiskMountManager(const std::string& usb_mount_path)
+      : usb_mount_path_(usb_mount_path) {}
+
+  virtual ~KioskFakeDiskMountManager() {}
+
+  void MountUsbStick() {
+    MountPath(usb_mount_path_, "", "", chromeos::MOUNT_TYPE_DEVICE);
+  }
+
+  void UnMountUsbStick() {
+    UnmountPath(usb_mount_path_,
+                UNMOUNT_OPTIONS_NONE,
+                disks::DiskMountManager::UnmountPathCallback());
+  }
+
+ private:
+  std::string usb_mount_path_;
+
+  DISALLOW_COPY_AND_ASSIGN(KioskFakeDiskMountManager);
 };
 
 }  // namespace
@@ -390,9 +431,9 @@ class KioskTest : public OobeBaseTest {
     EXPECT_TRUE(app);
 
     // App should appear with its window.
-    apps::AppWindowRegistry* app_window_registry =
-        apps::AppWindowRegistry::Get(app_profile);
-    apps::AppWindow* window =
+    extensions::AppWindowRegistry* app_window_registry =
+        extensions::AppWindowRegistry::Get(app_profile);
+    extensions::AppWindow* window =
         AppWindowWaiter(app_window_registry, test_app_id_).Wait();
     EXPECT_TRUE(window);
 
@@ -504,6 +545,22 @@ class KioskTest : public OobeBaseTest {
         ->GetAppLaunchController();
   }
 
+  // Returns a lock that is holding a task on the FILE thread. Any tasks posted
+  // to the FILE thread after this call will be blocked until the returned
+  // lock is released.
+  // This can be used to prevent app installation from completing until some
+  // other conditions are checked and triggered. For example, this can be used
+  // to trigger the network screen during app launch without racing with the
+  // app launching process itself.
+  scoped_ptr<base::AutoLock> LockFileThread() {
+    scoped_ptr<base::Lock> lock(new base::Lock);
+    scoped_ptr<base::AutoLock> auto_lock(new base::AutoLock(*lock));
+    content::BrowserThread::PostTask(
+        content::BrowserThread::FILE, FROM_HERE,
+        base::Bind(&LockAndUnlock, base::Passed(&lock)));
+    return auto_lock.Pass();
+  }
+
   MockUserManager* mock_user_manager() { return mock_user_manager_.get(); }
 
   void set_test_app_id(const std::string& test_app_id) {
@@ -558,10 +615,11 @@ IN_PROC_BROWSER_TEST_F(KioskTest, LaunchAppNetworkDown) {
   RunAppLaunchNetworkDownTest();
 }
 
-// TODO(zelidrag): Figure out why this test is flaky on bbots.
-IN_PROC_BROWSER_TEST_F(KioskTest,
-                       DISABLED_LaunchAppWithNetworkConfigAccelerator) {
+IN_PROC_BROWSER_TEST_F(KioskTest, LaunchAppWithNetworkConfigAccelerator) {
   ScopedCanConfigureNetwork can_configure_network(true, false);
+
+  // Block app loading until the network screen is shown.
+  scoped_ptr<base::AutoLock> lock = LockFileThread();
 
   // Start app launch and wait for network connectivity timeout.
   StartAppLaunchFromLoginScreen(SimulateNetworkOnlineClosure());
@@ -587,6 +645,9 @@ IN_PROC_BROWSER_TEST_F(KioskTest,
       "var e = new Event('click');"
       "$('continue-network-config-btn').dispatchEvent(e);"
       "})();"));
+
+  // Let app launching resume.
+  lock.reset();
 
   WaitForAppLaunchSuccess();
 }
@@ -890,6 +951,23 @@ class KioskUpdateTest : public KioskTest {
   virtual ~KioskUpdateTest() {}
 
  protected:
+  virtual void SetUp() OVERRIDE {
+    base::FilePath test_data_dir;
+    PathService::Get(chrome::DIR_TEST_DATA, &test_data_dir);
+    test_data_dir = test_data_dir.AppendASCII(kFakeUsbStickMountPath);
+    fake_disk_mount_manager_ =
+        new KioskFakeDiskMountManager(test_data_dir.value());
+    disks::DiskMountManager::InitializeForTesting(fake_disk_mount_manager_);
+
+    KioskTest::SetUp();
+  }
+
+  virtual void TearDown() OVERRIDE {
+    disks::DiskMountManager::Shutdown();
+
+    KioskTest::TearDown();
+  }
+
   virtual void SetUpOnMainThread() OVERRIDE {
     KioskTest::SetUpOnMainThread();
   }
@@ -930,6 +1008,13 @@ class KioskUpdateTest : public KioskTest {
     EXPECT_EQ(version, cached_version);
   }
 
+  void SimulateUpdateAppFromUsbStick() {
+    KioskAppExternalUpdateWaiter waiter(KioskAppManager::Get(), test_app_id());
+    fake_disk_mount_manager_->MountUsbStick();
+    waiter.Wait();
+    fake_disk_mount_manager_->UnMountUsbStick();
+  }
+
   void PreCacheAndLaunchApp(const std::string& app_id,
                             const std::string& version,
                             const std::string& crx_file) {
@@ -944,6 +1029,41 @@ class KioskUpdateTest : public KioskTest {
   }
 
  private:
+  class KioskAppExternalUpdateWaiter : KioskAppManagerObserver {
+   public:
+    KioskAppExternalUpdateWaiter(KioskAppManager* manager,
+                                 const std::string& app_id)
+        : runner_(NULL), manager_(manager), app_id_(app_id), quit_(false) {
+      manager_->AddObserver(this);
+    }
+
+    virtual ~KioskAppExternalUpdateWaiter() { manager_->RemoveObserver(this); }
+
+    void Wait() {
+      if (quit_)
+        return;
+      runner_ = new content::MessageLoopRunner;
+      runner_->Run();
+    }
+
+   private:
+    // KioskAppManagerObserver overrides:
+    virtual void OnKioskAppCacheUpdated(const std::string& app_id) OVERRIDE {
+      if (app_id_ != app_id)
+        return;
+      quit_ = true;
+      if (runner_)
+        runner_->Quit();
+    }
+
+    scoped_refptr<content::MessageLoopRunner> runner_;
+    KioskAppManager* manager_;
+    const std::string app_id_;
+    bool quit_;
+
+    DISALLOW_COPY_AND_ASSIGN(KioskAppExternalUpdateWaiter);
+  };
+
   class AppDataLoadWaiter : public KioskAppManagerObserver {
    public:
     AppDataLoadWaiter(KioskAppManager* manager,
@@ -1002,6 +1122,9 @@ class KioskUpdateTest : public KioskTest {
 
     DISALLOW_COPY_AND_ASSIGN(AppDataLoadWaiter);
   };
+
+  // Owned by DiskMountManager.
+  KioskFakeDiskMountManager* fake_disk_mount_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(KioskUpdateTest);
 };
@@ -1105,6 +1228,39 @@ IN_PROC_BROWSER_TEST_F(KioskUpdateTest, LaunchOfflineEnabledAppHasUpdate) {
   LaunchApp(test_app_id(), false);
   WaitForAppLaunchSuccess();
 
+  EXPECT_EQ("2.0.0", GetInstalledAppVersion().GetString());
+}
+
+// Pre-cache v1 kiosk app, then launch the app without network,
+// plug in usb stick with a v2 app for offline updating.
+IN_PROC_BROWSER_TEST_F(KioskUpdateTest, PRE_UsbStickUpdateAppNoNetwork) {
+  PreCacheApp(kTestOfflineEnabledKioskApp,
+              "1.0.0",
+              std::string(kTestOfflineEnabledKioskApp) + "_v1.crx");
+
+  set_test_app_id(kTestOfflineEnabledKioskApp);
+  StartUIForAppLaunch();
+  SimulateNetworkOffline();
+  LaunchApp(test_app_id(), false);
+  WaitForAppLaunchSuccess();
+  EXPECT_EQ("1.0.0", GetInstalledAppVersion().GetString());
+
+  // Simulate mounting of usb stick with v2 app on the stick.
+  SimulateUpdateAppFromUsbStick();
+
+  // The v2 kiosk app is copied into external cache, but won't be loaded
+  // until next time the device is started.
+  EXPECT_EQ("1.0.0", GetInstalledAppVersion().GetString());
+}
+
+// Restart the device, verify the app has been updated to v2.
+IN_PROC_BROWSER_TEST_F(KioskUpdateTest, UsbStickUpdateAppNoNetwork) {
+  // Verify the kiosk app has been updated to v2.
+  set_test_app_id(kTestOfflineEnabledKioskApp);
+  StartUIForAppLaunch();
+  SimulateNetworkOffline();
+  LaunchApp(test_app_id(), false);
+  WaitForAppLaunchSuccess();
   EXPECT_EQ("2.0.0", GetInstalledAppVersion().GetString());
 }
 
@@ -1269,9 +1425,10 @@ IN_PROC_BROWSER_TEST_F(KioskEnterpriseTest, EnterpriseKioskApp) {
             chromeos::KioskAppLaunchError::Get());
 
   // Wait for the window to appear.
-  apps::AppWindow* window =
+  extensions::AppWindow* window =
       AppWindowWaiter(
-          apps::AppWindowRegistry::Get(ProfileManager::GetPrimaryUserProfile()),
+          extensions::AppWindowRegistry::Get(
+              ProfileManager::GetPrimaryUserProfile()),
           kTestEnterpriseKioskApp).Wait();
   ASSERT_TRUE(window);
 

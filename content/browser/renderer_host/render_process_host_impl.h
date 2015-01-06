@@ -15,7 +15,6 @@
 #include "base/timer/timer.h"
 #include "content/browser/child_process_launcher.h"
 #include "content/browser/dom_storage/session_storage_namespace_impl.h"
-#include "content/browser/mojo/mojo_application_host.h"
 #include "content/browser/power_monitor_message_broadcaster.h"
 #include "content/common/content_export.h"
 #include "content/common/mojo/service_registry_impl.h"
@@ -46,6 +45,7 @@ class AudioRendererHost;
 class BrowserDemuxerAndroid;
 class GpuMessageFilter;
 class MessagePortMessageFilter;
+class MojoApplicationHost;
 #if defined(ENABLE_WEBRTC)
 class P2PSocketDispatcherHost;
 #endif
@@ -234,7 +234,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
 #endif
 
   MessagePortMessageFilter* message_port_message_filter() const {
-    return message_port_message_filter_;
+    return message_port_message_filter_.get();
   }
 
   void set_is_isolated_guest_for_testing(bool is_isolated_guest) {

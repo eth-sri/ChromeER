@@ -10,12 +10,6 @@ var remoting = remoting || {};
 /** @type {remoting.HostSession} */ remoting.hostSession = null;
 
 /**
- * @type {boolean} True if this is a v2 app; false if it is a legacy app.
- */
-remoting.isAppsV2 = false;
-
-
-/**
  * @type {base.EventSource} An event source object for handling global events.
  *    This is an interim hack.  Eventually, we should move functionalities
  *    away from the remoting namespace and into smaller objects.
@@ -47,17 +41,10 @@ function consentRequired_(authContinue) {
  * Entry point for app initialization.
  */
 remoting.init = function() {
-  // Determine whether or not this is a V2 web-app. In order to keep the apps
-  // v2 patch as small as possible, all JS changes needed for apps v2 are done
-  // at run-time. Only the manifest is patched.
-  var manifest = chrome.runtime.getManifest();
-  if (manifest && manifest.app && manifest.app.background) {
-    remoting.isAppsV2 = true;
+  if (base.isAppsV2()) {
     var htmlNode = /** @type {HTMLElement} */ (document.body.parentNode);
     htmlNode.classList.add('apps-v2');
-  }
-
-  if (!remoting.isAppsV2) {
+  } else {
     migrateLocalToChromeStorage_();
   }
 
@@ -66,7 +53,7 @@ remoting.init = function() {
 
   // Create global objects.
   remoting.settings = new remoting.Settings();
-  if (remoting.isAppsV2) {
+  if (base.isAppsV2()) {
     remoting.identity = new remoting.Identity(consentRequired_);
     remoting.fullscreen = new remoting.FullscreenAppsV2();
     remoting.windowFrame = new remoting.WindowFrame(
@@ -133,13 +120,52 @@ remoting.init = function() {
     button.disabled = true;
   }
 
+  /**
+   * @return {Promise} A promise that resolves to the id of the current
+   * containing tab/window.
+   */
+  var getCurrentId = function () {
+    if (base.isAppsV2()) {
+      return Promise.resolve(chrome.app.window.current().id);
+    }
+
+    /**
+     * @param {function(*=):void} resolve
+     * @param {function(*=):void} reject
+     */
+    return new Promise(function(resolve, reject) {
+      /** @param {chrome.Tab} tab */
+      chrome.tabs.getCurrent(function(tab){
+        if (tab) {
+          resolve(String(tab.id));
+        }
+        reject('Cannot retrieve the current tab.');
+      });
+    });
+  };
+
   var onLoad = function() {
     // Parse URL parameters.
     var urlParams = getUrlParameters_();
     if ('mode' in urlParams) {
-      if (urlParams['mode'] == 'me2me') {
+      if (urlParams['mode'] === 'me2me') {
         var hostId = urlParams['hostId'];
         remoting.connectMe2Me(hostId);
+        return;
+      } else if (urlParams['mode'] === 'hangout') {
+        /** @param {*} id */
+        getCurrentId().then(function(id) {
+          /** @type {string} */
+          var accessCode = urlParams['accessCode'];
+          remoting.ensureSessionConnector_();
+          remoting.setMode(remoting.AppMode.CLIENT_CONNECTING);
+          remoting.connector.connectIT2Me(accessCode);
+
+          document.body.classList.add('hangout-remote-desktop');
+          var senderId = /** @type {string} */ String(id);
+          var hangoutSession = new remoting.HangoutSession(senderId);
+          hangoutSession.init();
+        });
         return;
       }
     }
@@ -150,7 +176,7 @@ remoting.init = function() {
 
   // For Apps v1, check the tab type to warn the user if they are not getting
   // the best keyboard experience.
-  if (!remoting.isAppsV2 && !remoting.platformIsMac()) {
+  if (!base.isAppsV2() && !remoting.platformIsMac()) {
     /** @param {boolean} isWindowed */
     var onIsWindowed = function(isWindowed) {
       if (!isWindowed) {
@@ -168,6 +194,8 @@ remoting.init = function() {
     uiModeChanged: 'uiModeChanged'
   };
   remoting.testEvents.defineEvents(base.values(remoting.testEvents.Names));
+
+  remoting.ClientPlugin.preload();
 };
 
 /**
@@ -293,7 +321,7 @@ remoting.updateLocalHostState = function() {
  * @return {string} Information about the current extension.
  */
 remoting.getExtensionInfo = function() {
-  var v2OrLegacy = remoting.isAppsV2 ? " (v2)" : " (legacy)";
+  var v2OrLegacy = base.isAppsV2() ? " (v2)" : " (legacy)";
   var manifest = chrome.runtime.getManifest();
   if (manifest && manifest.version) {
     var name = chrome.i18n.getMessage('PRODUCT_NAME');
@@ -541,7 +569,8 @@ remoting.platformIsMac = function() {
  * @return {boolean} True if the platform is Windows.
  */
 remoting.platformIsWindows = function() {
-  return navigator.platform.indexOf('Win32') != -1;
+  return (navigator.platform.indexOf('Win32') != -1) ||
+         (navigator.platform.indexOf('Win64') != -1);
 }
 
 /**

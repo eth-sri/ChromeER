@@ -12,11 +12,10 @@
 #include "chrome/browser/chromeos/policy/proto/chrome_device_policy.pb.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
-#include "chrome/browser/chromeos/settings/mock_owner_key_util.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
-#include "chromeos/dbus/fake_dbus_thread_manager.h"
+#include "components/ownership/mock_owner_key_util.h"
 #include "content/public/browser/browser_thread.h"
 
 namespace chromeos {
@@ -192,7 +191,8 @@ DeviceSettingsTestHelper::PolicyState::~PolicyState() {}
 
 ScopedDeviceSettingsTestHelper::ScopedDeviceSettingsTestHelper() {
   DeviceSettingsService::Initialize();
-  DeviceSettingsService::Get()->SetSessionManager(this, new MockOwnerKeyUtil());
+  DeviceSettingsService::Get()->SetSessionManager(
+      this, new ownership::MockOwnerKeyUtil());
   DeviceSettingsService::Get()->Load();
   Flush();
 }
@@ -206,8 +206,7 @@ ScopedDeviceSettingsTestHelper::~ScopedDeviceSettingsTestHelper() {
 DeviceSettingsTestBase::DeviceSettingsTestBase()
     : user_manager_(new FakeUserManager()),
       user_manager_enabler_(user_manager_),
-      owner_key_util_(new MockOwnerKeyUtil()),
-      fake_dbus_thread_manager_(new FakeDBusThreadManager()) {
+      owner_key_util_(new ownership::MockOwnerKeyUtil()) {
 }
 
 DeviceSettingsTestBase::~DeviceSettingsTestBase() {
@@ -216,7 +215,7 @@ DeviceSettingsTestBase::~DeviceSettingsTestBase() {
 
 void DeviceSettingsTestBase::SetUp() {
   // Initialize DBusThreadManager with a stub implementation.
-  chromeos::DBusThreadManager::InitializeForTesting(fake_dbus_thread_manager_);
+  dbus_setter_ = chromeos::DBusThreadManager::GetSetterForTesting();
 
   base::RunLoop().RunUntilIdle();
 
@@ -265,7 +264,6 @@ void DeviceSettingsTestBase::InitOwner(const std::string& user_id,
   CHECK(service);
   if (tpm_is_ready)
     service->OnTPMTokenReady();
-  OwnerSettingsServiceFactory::GetInstance()->SetUsername(user_id);
 }
 
 }  // namespace chromeos

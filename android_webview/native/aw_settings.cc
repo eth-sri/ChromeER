@@ -158,8 +158,7 @@ void AwSettings::UpdateWebkitPreferencesLocked(JNIEnv* env, jobject obj) {
   content::RenderViewHost* render_view_host =
       web_contents()->GetRenderViewHost();
   if (!render_view_host) return;
-  render_view_host->UpdateWebkitPreferences(
-      render_view_host->GetWebkitPreferences());
+  render_view_host->OnWebkitPreferencesChanged();
 }
 
 void AwSettings::UpdateInitialPageScaleLocked(JNIEnv* env, jobject obj) {
@@ -219,7 +218,7 @@ void AwSettings::RenderViewCreated(content::RenderViewHost* render_view_host) {
   // we shouldn't have to deal with the multiple RVH per WebContents case. That
   // in turn means that the newly created RVH is always the 'current' RVH
   // (since we only ever go from 0 to 1 RVH instances) and hence the DCHECK.
-  DCHECK(web_contents()->GetRenderViewHost() == render_view_host);
+  DCHECK_EQ(render_view_host, web_contents()->GetRenderViewHost());
 
   UpdateEverything();
 }
@@ -339,6 +338,14 @@ void AwSettings::PopulateWebPreferencesLocked(
   web_prefs->use_wide_viewport =
       Java_AwSettings_getUseWideViewportLocked(env, obj);
 
+  web_prefs->force_zero_layout_height =
+      Java_AwSettings_getForceZeroLayoutHeightLocked(env, obj);
+
+  const bool zero_layout_height_disables_viewport_quirk =
+      Java_AwSettings_getZeroLayoutHeightDisablesViewportQuirkLocked(env, obj);
+  web_prefs->viewport_enabled = !(zero_layout_height_disables_viewport_quirk &&
+                                  web_prefs->force_zero_layout_height);
+
   web_prefs->double_tap_to_zoom_enabled =
       Java_AwSettings_supportsDoubleTapZoomLocked(env, obj);
 
@@ -395,6 +402,8 @@ void AwSettings::PopulateWebPreferencesLocked(
       Java_AwSettings_getAllowRunningInsecureContentLocked(env, obj);
 
   web_prefs->disallow_fullscreen_for_non_media_elements = true;
+  web_prefs->fullscreen_supported =
+      Java_AwSettings_getFullscreenSupportedLocked(env, obj);
 }
 
 static jlong Init(JNIEnv* env,

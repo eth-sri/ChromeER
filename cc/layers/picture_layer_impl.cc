@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <set>
 
 #include "base/debug/trace_event_argument.h"
 #include "base/time/time.h"
@@ -15,6 +16,7 @@
 #include "cc/debug/micro_benchmark_impl.h"
 #include "cc/debug/traced_value.h"
 #include "cc/layers/append_quads_data.h"
+#include "cc/output/begin_frame_args.h"
 #include "cc/quads/checkerboard_draw_quad.h"
 #include "cc/quads/debug_border_draw_quad.h"
 #include "cc/quads/picture_draw_quad.h"
@@ -108,7 +110,7 @@ void PictureLayerImpl::PushPropertiesTo(LayerImpl* base_layer) {
   LayerImpl::PushPropertiesTo(base_layer);
 
   // When the pending tree pushes to the active tree, the pending twin
-  // disappears.
+  // becomes recycled.
   layer_impl->twin_layer_ = NULL;
   twin_layer_ = NULL;
 
@@ -117,14 +119,13 @@ void PictureLayerImpl::PushPropertiesTo(LayerImpl* base_layer) {
 
   // Tilings would be expensive to push, so we swap.
   layer_impl->tilings_.swap(tilings_);
+  layer_impl->tilings_->SetClient(layer_impl);
+  if (tilings_)
+    tilings_->SetClient(this);
 
   // Remove invalidated tiles from what will become a recycle tree.
   if (tilings_)
     tilings_->RemoveTilesInRegion(invalidation_);
-
-  layer_impl->tilings_->SetClient(layer_impl);
-  if (tilings_)
-    tilings_->SetClient(this);
 
   layer_impl->raster_page_scale_ = raster_page_scale_;
   layer_impl->raster_device_scale_ = raster_device_scale_;
@@ -264,6 +265,12 @@ void PictureLayerImpl::AppendQuads(
   // unused can be considered for removal.
   std::vector<PictureLayerTiling*> seen_tilings;
 
+  // Ignore missing tiles outside of viewport for tile priority. This is
+  // normally the same as draw viewport but can be independently overridden by
+  // embedders like Android WebView with SetExternalDrawConstraints.
+  gfx::Rect scaled_viewport_for_tile_priority = gfx::ScaleToEnclosingRect(
+      GetViewportForTilePriorityInContentSpace(), max_contents_scale);
+
   size_t missing_tile_count = 0u;
   size_t on_demand_missing_tile_count = 0u;
   for (PictureLayerTilingSet::CoverageIterator iter(tilings_.get(),
@@ -281,6 +288,7 @@ void PictureLayerImpl::AppendQuads(
     append_quads_data->visible_content_area +=
         visible_geometry_rect.width() * visible_geometry_rect.height();
 
+    bool has_draw_quad = false;
     if (*iter && iter->IsReadyToDraw()) {
       const ManagedTileState::TileVersion& tile_version =
           iter->GetTileVersionForDrawing();
@@ -290,8 +298,17 @@ void PictureLayerImpl::AppendQuads(
           gfx::Rect opaque_rect = iter->opaque_rect();
           opaque_rect.Intersect(geometry_rect);
 
-          if (iter->contents_scale() != ideal_contents_scale_)
+          // The raster_contents_scale_ is the best scale that the layer is
+          // trying to produce, even though it may not be ideal. Since that's
+          // the best the layer can promise in the future, consider those as
+          // complete. But if a tile is ideal scale, we don't want to consider
+          // it incomplete and trying to replace it with a tile at a worse
+          // scale.
+          if (iter->contents_scale() != raster_contents_scale_ &&
+              iter->contents_scale() != ideal_contents_scale_ &&
+              geometry_rect.Intersects(scaled_viewport_for_tile_priority)) {
             append_quads_data->num_incomplete_tiles++;
+          }
 
           TileDrawQuad* quad =
               render_pass->CreateAndAppendDrawQuad<TileDrawQuad>();
@@ -303,6 +320,7 @@ void PictureLayerImpl::AppendQuads(
                        texture_rect,
                        iter.texture_size(),
                        tile_version.contents_swizzled());
+          has_draw_quad = true;
           break;
         }
         case ManagedTileState::TileVersion::PICTURE_PILE_MODE: {
@@ -333,6 +351,7 @@ void PictureLayerImpl::AppendQuads(
                        iter->content_rect(),
                        iter->contents_scale(),
                        pile_);
+          has_draw_quad = true;
           break;
         }
         case ManagedTileState::TileVersion::SOLID_COLOR_MODE: {
@@ -343,10 +362,13 @@ void PictureLayerImpl::AppendQuads(
                        visible_geometry_rect,
                        tile_version.get_solid_color(),
                        false);
+          has_draw_quad = true;
           break;
         }
       }
-    } else {
+    }
+
+    if (!has_draw_quad) {
       if (draw_checkerboard_for_missing_tiles()) {
         CheckerboardDrawQuad* quad =
             render_pass->CreateAndAppendDrawQuad<CheckerboardDrawQuad>();
@@ -364,10 +386,12 @@ void PictureLayerImpl::AppendQuads(
                      false);
       }
 
-      append_quads_data->num_missing_tiles++;
+      if (geometry_rect.Intersects(scaled_viewport_for_tile_priority)) {
+        append_quads_data->num_missing_tiles++;
+        ++missing_tile_count;
+      }
       append_quads_data->approximated_visible_content_area +=
           visible_geometry_rect.width() * visible_geometry_rect.height();
-      ++missing_tile_count;
       continue;
     }
 
@@ -409,14 +433,10 @@ void PictureLayerImpl::UpdateTiles(
   DCHECK(!occlusion_tracker ||
          layer_tree_impl()->settings().use_occlusion_for_tile_prioritization);
 
-  // Transforms and viewport are invalid for tile management inside a
-  // resourceless software draw, so don't update them.
-  if (!layer_tree_impl()->resourceless_software_draw()) {
-    visible_rect_for_tile_priority_ = visible_content_rect();
-    viewport_rect_for_tile_priority_ =
-        layer_tree_impl()->ViewportRectForTilePriority();
-    screen_space_transform_for_tile_priority_ = screen_space_transform();
-  }
+  visible_rect_for_tile_priority_ = visible_content_rect();
+  viewport_rect_for_tile_priority_ =
+      layer_tree_impl()->ViewportRectForTilePriority();
+  screen_space_transform_for_tile_priority_ = screen_space_transform();
 
   if (!CanHaveTilings()) {
     ideal_page_scale_ = 0.f;
@@ -458,7 +478,7 @@ void PictureLayerImpl::UpdateTilePriorities(
   TRACE_EVENT0("cc", "PictureLayerImpl::UpdateTilePriorities");
 
   double current_frame_time_in_seconds =
-      (layer_tree_impl()->CurrentFrameTimeTicks() -
+      (layer_tree_impl()->CurrentBeginFrameArgs().frame_time -
        base::TimeTicks()).InSecondsF();
 
   bool tiling_needs_update = false;
@@ -472,6 +492,28 @@ void PictureLayerImpl::UpdateTilePriorities(
   if (!tiling_needs_update)
     return;
 
+  gfx::Rect visible_rect_in_content_space(
+      GetViewportForTilePriorityInContentSpace());
+  visible_rect_in_content_space.Intersect(visible_content_rect());
+  gfx::Rect visible_layer_rect = gfx::ScaleToEnclosingRect(
+      visible_rect_in_content_space, 1.f / contents_scale_x());
+  WhichTree tree =
+      layer_tree_impl()->IsActiveTree() ? ACTIVE_TREE : PENDING_TREE;
+  for (size_t i = 0; i < tilings_->num_tilings(); ++i) {
+    tilings_->tiling_at(i)->UpdateTilePriorities(tree,
+                                                 visible_layer_rect,
+                                                 ideal_contents_scale_,
+                                                 current_frame_time_in_seconds,
+                                                 occlusion_tracker,
+                                                 render_target(),
+                                                 draw_transform());
+  }
+
+  // Tile priorities were modified.
+  layer_tree_impl()->DidModifyTilePriorities();
+}
+
+gfx::Rect PictureLayerImpl::GetViewportForTilePriorityInContentSpace() const {
   // If visible_rect_for_tile_priority_ is empty or
   // viewport_rect_for_tile_priority_ is set to be different from the device
   // viewport, try to inverse project the viewport into layer space and use
@@ -492,22 +534,13 @@ void PictureLayerImpl::UpdateTilePriorities(
     }
   }
 
-  gfx::Rect visible_layer_rect = gfx::ScaleToEnclosingRect(
-      visible_rect_in_content_space, 1.f / contents_scale_x());
-  WhichTree tree =
-      layer_tree_impl()->IsActiveTree() ? ACTIVE_TREE : PENDING_TREE;
-  for (size_t i = 0; i < tilings_->num_tilings(); ++i) {
-    tilings_->tiling_at(i)->UpdateTilePriorities(tree,
-                                                 visible_layer_rect,
-                                                 ideal_contents_scale_,
-                                                 current_frame_time_in_seconds,
-                                                 occlusion_tracker,
-                                                 render_target(),
-                                                 draw_transform());
-  }
+  return visible_rect_in_content_space;
+}
 
-  // Tile priorities were modified.
-  layer_tree_impl()->DidModifyTilePriorities();
+PictureLayerImpl* PictureLayerImpl::GetRecycledTwinLayer() {
+  // TODO(vmpstr): Maintain recycled twin as a member. crbug.com/407418
+  return static_cast<PictureLayerImpl*>(
+      layer_tree_impl()->FindRecycleTreeLayerById(id()));
 }
 
 void PictureLayerImpl::NotifyTileStateChanged(const Tile* tile) {
@@ -579,11 +612,15 @@ const PictureLayerTiling* PictureLayerImpl::GetTwinTiling(
     const PictureLayerTiling* tiling) const {
   if (!twin_layer_)
     return NULL;
-  for (size_t i = 0; i < twin_layer_->tilings_->num_tilings(); ++i)
-    if (twin_layer_->tilings_->tiling_at(i)->contents_scale() ==
-        tiling->contents_scale())
-      return twin_layer_->tilings_->tiling_at(i);
-  return NULL;
+  return twin_layer_->tilings_->TilingAtScale(tiling->contents_scale());
+}
+
+PictureLayerTiling* PictureLayerImpl::GetRecycledTwinTiling(
+    const PictureLayerTiling* tiling) {
+  PictureLayerImpl* recycled_twin = GetRecycledTwinLayer();
+  if (!recycled_twin || !recycled_twin->tilings_)
+    return NULL;
+  return recycled_twin->tilings_->TilingAtScale(tiling->contents_scale());
 }
 
 size_t PictureLayerImpl::GetMaxTilesForInterestArea() const {
@@ -764,6 +801,12 @@ void PictureLayerImpl::MarkVisibleResourcesAsRequired() const {
     return;
 
   gfx::Rect rect(visible_content_rect());
+
+  // Only mark tiles inside the viewport for tile priority as required for
+  // activation. This viewport is normally the same as the draw viewport but
+  // can be independently overridden by embedders like Android WebView with
+  // SetExternalDrawConstraints.
+  rect.Intersect(GetViewportForTilePriorityInContentSpace());
 
   float min_acceptable_scale =
       std::min(raster_contents_scale_, ideal_contents_scale_);
@@ -1022,6 +1065,11 @@ bool PictureLayerImpl::ShouldAdjustRasterScale() const {
       draw_properties().screen_space_transform_is_animating)
     return true;
 
+  if (draw_properties().screen_space_transform_is_animating &&
+      raster_contents_scale_ != ideal_contents_scale_ &&
+      ShouldAdjustRasterScaleDuringScaleAnimations())
+    return true;
+
   bool is_pinching = layer_tree_impl()->PinchGestureActive();
   if (is_pinching && raster_page_scale_) {
     // We change our raster scale when it is:
@@ -1116,11 +1164,12 @@ void PictureLayerImpl::RecalculateRasterScales() {
   raster_contents_scale_ =
       std::max(raster_contents_scale_, MinimumContentsScale());
 
-  // Since we're not re-rasterizing during animation, rasterize at the maximum
+  // If we're not re-rasterizing during animation, rasterize at the maximum
   // scale that will occur during the animation, if the maximum scale is
   // known. However, to avoid excessive memory use, don't rasterize at a scale
   // at which this layer would become larger than the viewport.
-  if (draw_properties().screen_space_transform_is_animating) {
+  if (draw_properties().screen_space_transform_is_animating &&
+      !ShouldAdjustRasterScaleDuringScaleAnimations()) {
     bool can_raster_at_maximum_scale = false;
     if (draw_properties().maximum_animation_contents_scale > 0.f) {
       gfx::Size bounds_at_maximum_scale = gfx::ToCeiledSize(gfx::ScaleSize(
@@ -1214,8 +1263,7 @@ void PictureLayerImpl::CleanUpTilingsOnActiveLayer(
   if (to_remove.empty())
     return;
 
-  PictureLayerImpl* recycled_twin = static_cast<PictureLayerImpl*>(
-      layer_tree_impl()->FindRecycleTreeLayerById(id()));
+  PictureLayerImpl* recycled_twin = GetRecycledTwinLayer();
   // Remove tilings on this tree and the twin tree.
   for (size_t i = 0; i < to_remove.size(); ++i) {
     const PictureLayerTiling* twin_tiling = GetTwinTiling(to_remove[i]);
@@ -1298,6 +1346,22 @@ void PictureLayerImpl::SanityCheckTilingState() const {
 #endif
 }
 
+bool PictureLayerImpl::ShouldAdjustRasterScaleDuringScaleAnimations() const {
+  if (!layer_tree_impl()->use_gpu_rasterization())
+    return false;
+
+  // Re-rastering text at different scales using GPU rasterization causes
+  // texture uploads for glyphs at each scale (see crbug.com/366225). To
+  // workaround this performance issue, we don't re-rasterize layers with
+  // text during scale animations.
+  // TODO(ajuma): Remove this workaround once text can be efficiently
+  // re-rastered at different scales (e.g. by using distance-field fonts).
+  if (pile_->has_text())
+    return false;
+
+  return true;
+}
+
 float PictureLayerImpl::MaximumTilingContentsScale() const {
   float max_contents_scale = MinimumContentsScale();
   for (size_t i = 0; i < tilings_->num_tilings(); ++i) {
@@ -1334,6 +1398,15 @@ void PictureLayerImpl::GetDebugBorderProperties(
     float* width) const {
   *color = DebugColors::TiledContentLayerBorderColor();
   *width = DebugColors::TiledContentLayerBorderWidth(layer_tree_impl());
+}
+
+void PictureLayerImpl::GetAllTilesForTracing(
+    std::set<const Tile*>* tiles) const {
+  if (!tilings_)
+    return;
+
+  for (size_t i = 0; i < tilings_->num_tilings(); ++i)
+    tilings_->tiling_at(i)->GetAllTilesForTracing(tiles);
 }
 
 void PictureLayerImpl::AsValueInto(base::debug::TracedValue* state) const {
@@ -1550,39 +1623,34 @@ const Tile* PictureLayerImpl::LayerRasterTileIterator::operator*() const {
 }
 
 PictureLayerImpl::LayerEvictionTileIterator::LayerEvictionTileIterator()
-    : current_range_offset_(0),
-      current_tiling_range_type_(PictureLayerTilingSet::HIGHER_THAN_HIGH_RES),
-      current_stage_(EVENTUALLY),
+    : layer_(NULL),
       tree_priority_(SAME_PRIORITY_FOR_BOTH_TREES),
-      layer_(NULL) {
+      current_category_(PictureLayerTiling::EVENTUALLY),
+      current_tiling_range_type_(PictureLayerTilingSet::HIGHER_THAN_HIGH_RES),
+      current_tiling_(0u) {
 }
 
 PictureLayerImpl::LayerEvictionTileIterator::LayerEvictionTileIterator(
     PictureLayerImpl* layer,
     TreePriority tree_priority)
-    : current_range_offset_(0),
-      current_tiling_range_type_(PictureLayerTilingSet::HIGHER_THAN_HIGH_RES),
-      current_stage_(EVENTUALLY),
+    : layer_(layer),
       tree_priority_(tree_priority),
-      layer_(layer) {
-  // Early out if the tilings_ object doesn't exist.
+      current_category_(PictureLayerTiling::EVENTUALLY),
+      current_tiling_range_type_(PictureLayerTilingSet::HIGHER_THAN_HIGH_RES),
+      current_tiling_(CurrentTilingRange().start - 1u) {
   // TODO(vmpstr): Once tile priorities are determined by the iterators, ensure
   // that layers that don't have valid tile priorities have lowest priorities so
   // they evict their tiles first (crbug.com/381704)
-  if (!layer_->tilings_)
-    return;
+  DCHECK(layer_->tilings_);
+  do {
+    if (!AdvanceToNextTiling())
+      break;
 
-  if (!CurrentRange().IsIndexWithinRange(CurrentTilingIndex()))
-    AdvanceRange();
-
-  iterator_ = PictureLayerTiling::TilingEvictionTileIterator(
-      layer_->tilings_->tiling_at(CurrentTilingIndex()),
-      tree_priority,
-      PriorityBinFromIterationStage(current_stage_),
-      RequiredForActivationFromIterationStage(current_stage_));
-
-  if (!iterator_)
-    AdvanceToNextIterator();
+    current_iterator_ = PictureLayerTiling::TilingEvictionTileIterator(
+        layer_->tilings_->tiling_at(CurrentTilingIndex()),
+        tree_priority,
+        current_category_);
+  } while (!current_iterator_);
 }
 
 PictureLayerImpl::LayerEvictionTileIterator::~LayerEvictionTileIterator() {
@@ -1590,160 +1658,121 @@ PictureLayerImpl::LayerEvictionTileIterator::~LayerEvictionTileIterator() {
 
 Tile* PictureLayerImpl::LayerEvictionTileIterator::operator*() {
   DCHECK(*this);
-  return *iterator_;
+  return *current_iterator_;
 }
 
 const Tile* PictureLayerImpl::LayerEvictionTileIterator::operator*() const {
   DCHECK(*this);
-  return *iterator_;
+  return *current_iterator_;
 }
 
 PictureLayerImpl::LayerEvictionTileIterator&
 PictureLayerImpl::LayerEvictionTileIterator::
 operator++() {
   DCHECK(*this);
-  ++iterator_;
+  ++current_iterator_;
+  while (!current_iterator_) {
+    if (!AdvanceToNextTiling())
+      break;
 
-  if (!iterator_)
-    AdvanceToNextIterator();
+    current_iterator_ = PictureLayerTiling::TilingEvictionTileIterator(
+        layer_->tilings_->tiling_at(CurrentTilingIndex()),
+        tree_priority_,
+        current_category_);
+  }
   return *this;
 }
 
-void PictureLayerImpl::LayerEvictionTileIterator::AdvanceToNextIterator() {
-  DCHECK(!iterator_);
-  while (!iterator_) {
-    bool success = AdvanceTiling();
-    if (!success)
-      success = AdvanceRange();
-    if (!success)
-      success = AdvanceStage();
-    if (!success)
-      break;
-
-    iterator_ = PictureLayerTiling::TilingEvictionTileIterator(
-        layer_->tilings_->tiling_at(CurrentTilingIndex()),
-        tree_priority_,
-        PriorityBinFromIterationStage(current_stage_),
-        RequiredForActivationFromIterationStage(current_stage_));
-  }
+PictureLayerImpl::LayerEvictionTileIterator::operator bool() const {
+  return !!current_iterator_;
 }
 
-bool PictureLayerImpl::LayerEvictionTileIterator::AdvanceTiling() {
-  DCHECK(CurrentRange().IsIndexWithinRange(CurrentTilingIndex()));
-  ++current_range_offset_;
-  return CurrentRange().IsIndexWithinRange(CurrentTilingIndex());
-}
-
-bool PictureLayerImpl::LayerEvictionTileIterator::AdvanceRange() {
-  DCHECK(!CurrentRange().IsIndexWithinRange(CurrentTilingIndex()));
-  bool wrapped_around = false;
-  while (!CurrentRange().IsIndexWithinRange(CurrentTilingIndex())) {
-    switch (current_tiling_range_type_) {
-      case PictureLayerTilingSet::HIGHER_THAN_HIGH_RES:
-        current_tiling_range_type_ = PictureLayerTilingSet::LOWER_THAN_LOW_RES;
-        break;
-      case PictureLayerTilingSet::LOWER_THAN_LOW_RES:
-        current_tiling_range_type_ =
-            PictureLayerTilingSet::BETWEEN_HIGH_AND_LOW_RES;
-        break;
-      case PictureLayerTilingSet::BETWEEN_HIGH_AND_LOW_RES:
-        current_tiling_range_type_ = PictureLayerTilingSet::LOW_RES;
-        break;
-      case PictureLayerTilingSet::LOW_RES:
-        current_tiling_range_type_ = PictureLayerTilingSet::HIGH_RES;
-        break;
-      case PictureLayerTilingSet::HIGH_RES:
-        current_tiling_range_type_ =
-            PictureLayerTilingSet::HIGHER_THAN_HIGH_RES;
-        wrapped_around = true;
-        break;
-    }
-    current_range_offset_ = 0;
-  }
-  // If we wrapped around the ranges, we need to indicate that we should advance
-  // the stage.
-  return !wrapped_around;
-}
-
-TilePriority::PriorityBin
-PictureLayerImpl::LayerEvictionTileIterator::PriorityBinFromIterationStage(
-    IterationStage stage) {
-  switch (stage) {
-    case EVENTUALLY:
-    case EVENTUALLY_AND_REQUIRED_FOR_ACTIVATION:
-      return TilePriority::EVENTUALLY;
-    case SOON:
-    case SOON_AND_REQUIRED_FOR_ACTIVATION:
-      return TilePriority::SOON;
-    case NOW:
-    case NOW_AND_REQUIRED_FOR_ACTIVATION:
-      return TilePriority::NOW;
+bool PictureLayerImpl::LayerEvictionTileIterator::AdvanceToNextCategory() {
+  switch (current_category_) {
+    case PictureLayerTiling::EVENTUALLY:
+      current_category_ =
+          PictureLayerTiling::EVENTUALLY_AND_REQUIRED_FOR_ACTIVATION;
+      return true;
+    case PictureLayerTiling::EVENTUALLY_AND_REQUIRED_FOR_ACTIVATION:
+      current_category_ = PictureLayerTiling::SOON;
+      return true;
+    case PictureLayerTiling::SOON:
+      current_category_ = PictureLayerTiling::SOON_AND_REQUIRED_FOR_ACTIVATION;
+      return true;
+    case PictureLayerTiling::SOON_AND_REQUIRED_FOR_ACTIVATION:
+      current_category_ = PictureLayerTiling::NOW;
+      return true;
+    case PictureLayerTiling::NOW:
+      current_category_ = PictureLayerTiling::NOW_AND_REQUIRED_FOR_ACTIVATION;
+      return true;
+    case PictureLayerTiling::NOW_AND_REQUIRED_FOR_ACTIVATION:
+      return false;
   }
   NOTREACHED();
-  return TilePriority::EVENTUALLY;
+  return false;
 }
 
-bool PictureLayerImpl::LayerEvictionTileIterator::
-    RequiredForActivationFromIterationStage(IterationStage stage) {
-  switch (stage) {
-    case EVENTUALLY:
-    case SOON:
-    case NOW:
-      return false;
-    case EVENTUALLY_AND_REQUIRED_FOR_ACTIVATION:
-    case SOON_AND_REQUIRED_FOR_ACTIVATION:
-    case NOW_AND_REQUIRED_FOR_ACTIVATION:
+bool
+PictureLayerImpl::LayerEvictionTileIterator::AdvanceToNextTilingRangeType() {
+  switch (current_tiling_range_type_) {
+    case PictureLayerTilingSet::HIGHER_THAN_HIGH_RES:
+      current_tiling_range_type_ = PictureLayerTilingSet::LOWER_THAN_LOW_RES;
+      return true;
+    case PictureLayerTilingSet::LOWER_THAN_LOW_RES:
+      current_tiling_range_type_ =
+          PictureLayerTilingSet::BETWEEN_HIGH_AND_LOW_RES;
+      return true;
+    case PictureLayerTilingSet::BETWEEN_HIGH_AND_LOW_RES:
+      current_tiling_range_type_ = PictureLayerTilingSet::LOW_RES;
+      return true;
+    case PictureLayerTilingSet::LOW_RES:
+      current_tiling_range_type_ = PictureLayerTilingSet::HIGH_RES;
+      return true;
+    case PictureLayerTilingSet::HIGH_RES:
+      if (!AdvanceToNextCategory())
+        return false;
+
+      current_tiling_range_type_ = PictureLayerTilingSet::HIGHER_THAN_HIGH_RES;
       return true;
   }
   NOTREACHED();
   return false;
 }
 
-PictureLayerTilingSet::TilingRange
-PictureLayerImpl::LayerEvictionTileIterator::CurrentRange() {
-  return layer_->tilings_->GetTilingRange(current_tiling_range_type_);
-}
-
-int PictureLayerImpl::LayerEvictionTileIterator::CurrentTilingIndex() {
-  const PictureLayerTilingSet::TilingRange& range = CurrentRange();
-  switch (current_tiling_range_type_) {
-    case PictureLayerTilingSet::HIGHER_THAN_HIGH_RES:
-    case PictureLayerTilingSet::LOW_RES:
-    case PictureLayerTilingSet::HIGH_RES:
-      return range.start + current_range_offset_;
-    case PictureLayerTilingSet::BETWEEN_HIGH_AND_LOW_RES:
-    case PictureLayerTilingSet::LOWER_THAN_LOW_RES:
-      return static_cast<int>(range.end) - 1 - current_range_offset_;
-  }
-  NOTREACHED();
-  return 0;
-}
-
-bool PictureLayerImpl::LayerEvictionTileIterator::AdvanceStage() {
-  switch (current_stage_) {
-    case EVENTUALLY:
-      current_stage_ = EVENTUALLY_AND_REQUIRED_FOR_ACTIVATION;
-      break;
-    case EVENTUALLY_AND_REQUIRED_FOR_ACTIVATION:
-      current_stage_ = SOON;
-      break;
-    case SOON:
-      current_stage_ = SOON_AND_REQUIRED_FOR_ACTIVATION;
-      break;
-    case SOON_AND_REQUIRED_FOR_ACTIVATION:
-      current_stage_ = NOW;
-      break;
-    case NOW:
-      current_stage_ = NOW_AND_REQUIRED_FOR_ACTIVATION;
-      break;
-    case NOW_AND_REQUIRED_FOR_ACTIVATION:
+bool PictureLayerImpl::LayerEvictionTileIterator::AdvanceToNextTiling() {
+  DCHECK_NE(current_tiling_, CurrentTilingRange().end);
+  ++current_tiling_;
+  while (current_tiling_ == CurrentTilingRange().end) {
+    if (!AdvanceToNextTilingRangeType())
       return false;
+
+    current_tiling_ = CurrentTilingRange().start;
   }
   return true;
 }
 
-PictureLayerImpl::LayerEvictionTileIterator::operator bool() const {
-  return !!iterator_;
+PictureLayerTilingSet::TilingRange
+PictureLayerImpl::LayerEvictionTileIterator::CurrentTilingRange() const {
+  return layer_->tilings_->GetTilingRange(current_tiling_range_type_);
+}
+
+size_t PictureLayerImpl::LayerEvictionTileIterator::CurrentTilingIndex() const {
+  DCHECK_NE(current_tiling_, CurrentTilingRange().end);
+  switch (current_tiling_range_type_) {
+    case PictureLayerTilingSet::HIGHER_THAN_HIGH_RES:
+    case PictureLayerTilingSet::LOW_RES:
+    case PictureLayerTilingSet::HIGH_RES:
+      return current_tiling_;
+    // Tilings in the following ranges are accessed in reverse order.
+    case PictureLayerTilingSet::BETWEEN_HIGH_AND_LOW_RES:
+    case PictureLayerTilingSet::LOWER_THAN_LOW_RES: {
+      PictureLayerTilingSet::TilingRange tiling_range = CurrentTilingRange();
+      size_t current_tiling_range_offset = current_tiling_ - tiling_range.start;
+      return tiling_range.end - 1 - current_tiling_range_offset;
+    }
+  }
+  NOTREACHED();
+  return 0;
 }
 
 }  // namespace cc

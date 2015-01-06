@@ -9,6 +9,7 @@ from telemetry import value
 from telemetry.page import page_set
 from telemetry.value import skip
 
+
 class TestBase(unittest.TestCase):
   def setUp(self):
     self.page_set = page_set.PageSet(file_path=os.path.dirname(__file__))
@@ -24,7 +25,7 @@ class ValueTest(TestBase):
     self.assertIsNone(v.GetBuildbotValue())
     self.assertIsNone(v.GetBuildbotDataType(
         value.COMPUTED_PER_PAGE_SUMMARY_OUTPUT_CONTEXT))
-    self.assertIsNone(v.GetBuildbotMeasurementAndTraceNameForPerPageResult())
+    self.assertIsNone(v.GetChartAndTraceNameForPerPageResult())
     self.assertIsNone(v.GetRepresentativeNumber())
     self.assertIsNone(v.GetRepresentativeString())
 

@@ -23,6 +23,13 @@
 var remoting = remoting || {};
 
 /**
+ * True if Cast capability is supported.
+ *
+ * @type {boolean}
+ */
+remoting.enableCast = false;
+
+/**
  * @param {HTMLElement} container Container element for the client view.
  * @param {string} hostDisplayName A human-readable name for the host.
  * @param {string} accessCode The IT2Me access code. Blank for Me2Me.
@@ -105,6 +112,14 @@ remoting.ClientSession = function(container, hostDisplayName, accessCode,
   /** @type {number?} @private */
   this.bumpScrollTimer_ = null;
 
+  // Bump-scroll test variables. Override to use a fake value for the width
+  // and height of the client plugin so that bump-scrolling can be tested
+  // without relying on the actual size of the host desktop.
+  /** @type {number} @private */
+  this.pluginWidthForBumpScrollTesting = 0;
+  /** @type {number} @private */
+  this.pluginHeightForBumpScrollTesting = 0;
+
   /**
    * Allow host-offline error reporting to be suppressed in situations where it
    * would not be useful, for example, when using a cached host JID.
@@ -158,6 +173,12 @@ remoting.ClientSession = function(container, hostDisplayName, accessCode,
   /** @type {remoting.GnubbyAuthHandler} @private */
   this.gnubbyAuthHandler_ = null;
 
+  /** @type {remoting.CastExtensionHandler} @private */
+  this.castExtensionHandler_ = null;
+
+  /** @type {remoting.VideoFrameRecorder} @private */
+  this.videoFrameRecorder_ = null;
+
   if (this.mode_ == remoting.ClientSession.Mode.IT2ME) {
     // Resize-to-client is not supported for IT2Me hosts.
     this.resizeToClientButton_.hidden = true;
@@ -167,6 +188,7 @@ remoting.ClientSession = function(container, hostDisplayName, accessCode,
 
   this.fullScreenButton_.addEventListener(
       'click', this.callToggleFullScreen_, false);
+
   this.defineEvents(Object.keys(remoting.ClientSession.Events));
 };
 
@@ -175,7 +197,9 @@ base.extend(remoting.ClientSession, base.EventSource);
 /** @enum {string} */
 remoting.ClientSession.Events = {
   stateChanged: 'stateChanged',
-  videoChannelStateChanged: 'videoChannelStateChanged'
+  videoChannelStateChanged: 'videoChannelStateChanged',
+  bumpScrollStarted: 'bumpScrollStarted',
+  bumpScrollStopped: 'bumpScrollStopped'
 };
 
 /**
@@ -346,13 +370,6 @@ remoting.ClientSession.KEY_RESIZE_TO_CLIENT = 'resizeToClient';
 remoting.ClientSession.KEY_SHRINK_TO_FIT = 'shrinkToFit';
 
 /**
- * The id of the client plugin
- *
- * @const
- */
-remoting.ClientSession.prototype.PLUGIN_ID = 'session-client-plugin';
-
-/**
  * Set of capabilities for which hasCapability_() can be used to test.
  *
  * @enum {string}
@@ -363,7 +380,8 @@ remoting.ClientSession.Capability = {
   // this.plugin_.notifyClientResolution().
   SEND_INITIAL_RESOLUTION: 'sendInitialResolution',
   RATE_LIMIT_RESIZE_REQUESTS: 'rateLimitResizeRequests',
-  VIDEO_RECORDER: 'videoRecorder'
+  VIDEO_RECORDER: 'videoRecorder',
+  CAST: 'casting'
 };
 
 /**
@@ -388,39 +406,6 @@ remoting.ClientSession.prototype.hasCapability_ = function(capability) {
 };
 
 /**
- * @param {string} id Id to use for the plugin element .
- * @param {function(string, string):boolean} onExtensionMessage The handler for
- *     protocol extension messages. Returns true if a message is recognized;
- *     false otherwise.
- * @return {remoting.ClientPlugin} Create plugin object for the locally
- * installed plugin.
- */
-remoting.ClientSession.prototype.createClientPlugin_ =
-    function(id, onExtensionMessage) {
-  var plugin = /** @type {remoting.ViewerPlugin} */
-      document.createElement('embed');
-
-  plugin.id = id;
-  if (remoting.settings.CLIENT_PLUGIN_TYPE == 'pnacl') {
-    plugin.src = 'remoting_client_pnacl.nmf';
-    plugin.type = 'application/x-pnacl';
-  } else if (remoting.settings.CLIENT_PLUGIN_TYPE == 'nacl') {
-    plugin.src = 'remoting_client_nacl.nmf';
-    plugin.type = 'application/x-nacl';
-  } else {
-    plugin.src = 'about://none';
-    plugin.type = 'application/vnd.chromium.remoting-viewer';
-  }
-
-  plugin.width = 0;
-  plugin.height = 0;
-  plugin.tabIndex = 0;  // Required, otherwise focus() doesn't work.
-  this.container_.querySelector('.client-plugin-container').appendChild(plugin);
-
-  return new remoting.ClientPlugin(plugin, onExtensionMessage);
-};
-
-/**
  * Callback function called when the plugin element gets focus.
  */
 remoting.ClientSession.prototype.pluginGotFocus_ = function() {
@@ -439,8 +424,7 @@ remoting.ClientSession.prototype.pluginLostFocus_ = function() {
       // Due to crbug.com/246335, we can't restore the focus immediately,
       // otherwise the plugin gets confused about whether or not it has focus.
       window.setTimeout(
-          this.plugin_.element().focus.bind(this.plugin_.element()),
-          0);
+          this.plugin_.element().focus.bind(this.plugin_.element()), 0);
     }
   }
 };
@@ -454,7 +438,9 @@ remoting.ClientSession.prototype.pluginLostFocus_ = function() {
  */
 remoting.ClientSession.prototype.createPluginAndConnect =
     function(onExtensionMessage) {
-  this.plugin_ = this.createClientPlugin_(this.PLUGIN_ID, onExtensionMessage);
+  this.plugin_ = new remoting.ClientPlugin(
+      this.container_.querySelector('.client-plugin-container'),
+      onExtensionMessage);
   remoting.HostSettings.load(this.hostId_,
                              this.onHostSettingsLoaded_.bind(this));
 };
@@ -505,7 +491,7 @@ remoting.ClientSession.prototype.setFocusHandlers_ = function() {
  */
 remoting.ClientSession.prototype.resetWithError_ = function(error) {
   this.plugin_.cleanup();
-  delete this.plugin_;
+  this.plugin_ = null;
   this.error_ = error;
   this.setState_(remoting.ClientSession.State.FAILED);
 }
@@ -577,6 +563,8 @@ remoting.ClientSession.prototype.onPluginInitialized_ = function(initialized) {
   this.plugin_.onSetCapabilitiesHandler = this.onSetCapabilities_.bind(this);
   this.plugin_.onGnubbyAuthHandler = this.processGnubbyAuthMessage_.bind(this);
   this.plugin_.updateMouseCursorImage = this.updateMouseCursorImage_.bind(this);
+  this.plugin_.onCastExtensionHandler =
+      this.processCastExtensionMessage_.bind(this);
   this.initiateConnection_();
 };
 
@@ -603,7 +591,6 @@ remoting.ClientSession.prototype.removePlugin = function() {
 
   // Leave full-screen mode, and stop listening for related events.
   var listener = this.callOnFullScreenChanged_;
-  remoting.fullscreen.syncWithMaximize(false);
   remoting.fullscreen.activate(
       false,
       function() {
@@ -614,6 +601,7 @@ remoting.ClientSession.prototype.removePlugin = function() {
   } else {
     remoting.toolbar.setClientSession(null);
   }
+  document.body.classList.remove('connected');
 
   // Remove mediasource-rendering class from the container - this will also
   // hide the <video> element.
@@ -995,12 +983,12 @@ remoting.ClientSession.prototype.onConnectionStatusUpdate_ =
     }
     // Activate full-screen related UX.
     remoting.fullscreen.addListener(this.callOnFullScreenChanged_);
-    remoting.fullscreen.syncWithMaximize(true);
     if (remoting.windowFrame) {
       remoting.windowFrame.setClientSession(this);
     } else {
       remoting.toolbar.setClientSession(this);
     }
+    document.body.classList.add('connected');
 
     this.container_.addEventListener('mousemove',
                                      this.updateMouseCursorPosition_,
@@ -1070,6 +1058,10 @@ remoting.ClientSession.prototype.onSetCapabilities_ = function(capabilities) {
                                         clientArea.height,
                                         window.devicePixelRatio);
   }
+  if (this.hasCapability_(
+      remoting.ClientSession.Capability.VIDEO_RECORDER)) {
+    this.videoFrameRecorder_ = new remoting.VideoFrameRecorder(this.plugin_);
+  }
 };
 
 /**
@@ -1099,6 +1091,7 @@ remoting.ClientSession.prototype.setState_ = function(newState) {
   this.logToServer.logClientSessionStateChange(state, this.error_, this.mode_);
   if (this.state_ == remoting.ClientSession.State.CONNECTED) {
     this.createGnubbyAuthHandler_();
+    this.createCastExtensionHandler_();
   }
 
   this.raiseEvent(remoting.ClientSession.Events.stateChanged,
@@ -1383,12 +1376,13 @@ remoting.ClientSession.prototype.scroll_ = function(dx, dy) {
 
   var stopX = { stop: false };
   var clientArea = this.getClientArea_();
-  style.marginLeft = adjustMargin(style.marginLeft, dx,
-                                  clientArea.width, plugin.clientWidth, stopX);
+  style.marginLeft = adjustMargin(style.marginLeft, dx, clientArea.width,
+      this.pluginWidthForBumpScrollTesting || plugin.clientWidth, stopX);
 
   var stopY = { stop: false };
   style.marginTop = adjustMargin(
-      style.marginTop, dy, clientArea.height, plugin.clientHeight, stopY);
+      style.marginTop, dy, clientArea.height,
+      this.pluginHeightForBumpScrollTesting || plugin.clientHeight, stopY);
   return stopX.stop && stopY.stop;
 };
 
@@ -1450,6 +1444,7 @@ remoting.ClientSession.prototype.onMouseMove_ = function(event) {
   var dy = computeDelta(event.y, clientArea.height);
 
   if (dx != 0 || dy != 0) {
+    this.raiseEvent(remoting.ClientSession.Events.bumpScrollStarted);
     /** @type {remoting.ClientSession} */
     var that = this;
     /**
@@ -1463,7 +1458,9 @@ remoting.ClientSession.prototype.onMouseMove_ = function(event) {
       /** @type {number} */
       var timeout = 10;
       var lateAdjustment = 1 + (now - expected) / timeout;
-      if (!that.scroll_(lateAdjustment * dx, lateAdjustment * dy)) {
+      if (that.scroll_(lateAdjustment * dx, lateAdjustment * dy)) {
+        that.raiseEvent(remoting.ClientSession.Events.bumpScrollStopped);
+      } else {
         that.bumpScrollTimer_ = window.setTimeout(
             function() { repeatScroll(now + timeout); },
             timeout);
@@ -1551,4 +1548,97 @@ remoting.ClientSession.prototype.updateMouseCursorImage_ =
     this.mouseCursorOverlay_.style.marginTop = '-' + hotspotY + 'px';
     this.mouseCursorOverlay_.src = url;
   }
- };
+};
+
+/**
+ * @return {{top: number, left:number}} The top-left corner of the plugin.
+ */
+remoting.ClientSession.prototype.getPluginPositionForTesting = function() {
+  var plugin = this.plugin_.element();
+  var style = plugin.style;
+  return {
+    top: parseFloat(style.marginTop),
+    left: parseFloat(style.marginLeft)
+  };
+};
+
+/**
+ * Send a Cast extension message to the host.
+ * @param {Object} data The cast message data.
+ */
+remoting.ClientSession.prototype.sendCastExtensionMessage = function(data) {
+  if (!this.plugin_)
+    return;
+  this.plugin_.sendClientMessage('cast_message', JSON.stringify(data));
+};
+
+/**
+ * Process a remote Cast extension message from the host.
+ * @param {string} data Remote cast extension data message.
+ * @private
+ */
+remoting.ClientSession.prototype.processCastExtensionMessage_ = function(data) {
+  if (this.castExtensionHandler_) {
+    try {
+      this.castExtensionHandler_.onMessage(data);
+    } catch (err) {
+      console.error('Failed to process cast message: ',
+          /** @type {*} */ (err));
+    }
+  } else {
+    console.error('Received unexpected cast message');
+  }
+};
+
+/**
+ * Create a CastExtensionHandler and inform the host that cast extension
+ * is supported.
+ * @private
+ */
+remoting.ClientSession.prototype.createCastExtensionHandler_ = function() {
+  if (remoting.enableCast && this.mode_ == remoting.ClientSession.Mode.ME2ME) {
+    this.castExtensionHandler_ = new remoting.CastExtensionHandler(this);
+  }
+};
+
+/**
+ * Returns true if the ClientSession can record video frames to a file.
+ * @return {boolean}
+ */
+remoting.ClientSession.prototype.canRecordVideo = function() {
+  return !!this.videoFrameRecorder_;
+}
+
+/**
+ * Returns true if the ClientSession is currently recording video frames.
+ * @return {boolean}
+ */
+remoting.ClientSession.prototype.isRecordingVideo = function() {
+  if (!this.videoFrameRecorder_) {
+    return false;
+  }
+  return this.videoFrameRecorder_.isRecording();
+}
+
+/**
+ * Starts or stops recording of video frames.
+ */
+remoting.ClientSession.prototype.startStopRecording = function() {
+  if (this.videoFrameRecorder_) {
+    this.videoFrameRecorder_.startStopRecording();
+  }
+}
+
+/**
+ * Handles protocol extension messages.
+ * @param {string} type Type of extension message.
+ * @param {string} data Contents of the extension message.
+ * @return {boolean} True if the message was recognized, false otherwise.
+ */
+remoting.ClientSession.prototype.handleExtensionMessage =
+    function(type, data) {
+  if (this.videoFrameRecorder_) {
+    return this.videoFrameRecorder_.handleMessage(type, data);
+  }
+  return false;
+}

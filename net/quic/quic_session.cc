@@ -64,6 +64,10 @@ class VisitorShim : public QuicConnectionVisitorInterface {
     session_->PostProcessAfterData();
   }
 
+  virtual void OnCongestionWindowChange(QuicTime now) OVERRIDE {
+    session_->OnCongestionWindowChange(now);
+  }
+
   virtual void OnSuccessfulVersionNegotiation(
       const QuicVersion& version) OVERRIDE {
     session_->OnSuccessfulVersionNegotiation(version);
@@ -262,8 +266,7 @@ void QuicSession::OnWindowUpdateFrames(
       DVLOG(1) << ENDPOINT
                << "Received connection level flow control window update with "
                   "byte offset: " << frames[i].byte_offset;
-      if (FLAGS_enable_quic_connection_flow_control_2 &&
-          flow_controller_->UpdateSendWindowOffset(frames[i].byte_offset)) {
+      if (flow_controller_->UpdateSendWindowOffset(frames[i].byte_offset)) {
         connection_window_updated = true;
       }
       continue;
@@ -428,10 +431,15 @@ void QuicSession::CloseStreamInner(QuicStreamId stream_id,
   // of the how many bytes the stream's flow controller believes it has
   // received, for accurate connection level flow control accounting.
   if (!stream->HasFinalReceivedByteOffset() &&
-      stream->flow_controller()->IsEnabled() &&
-      FLAGS_enable_quic_connection_flow_control_2) {
+      stream->flow_controller()->IsEnabled()) {
     locally_closed_streams_highest_offset_[stream_id] =
         stream->flow_controller()->highest_received_byte_offset();
+    if (FLAGS_close_quic_connection_unfinished_streams &&
+        connection()->connected() &&
+        locally_closed_streams_highest_offset_.size() > max_open_streams_) {
+      // A buggy client may fail to send FIN/RSTs. Don't tolerate this.
+      connection_->SendConnectionClose(QUIC_TOO_MANY_UNFINISHED_STREAMS);
+    }
   }
 
   stream_map_.erase(it);
@@ -440,10 +448,6 @@ void QuicSession::CloseStreamInner(QuicStreamId stream_id,
 
 void QuicSession::UpdateFlowControlOnFinalReceivedByteOffset(
     QuicStreamId stream_id, QuicStreamOffset final_byte_offset) {
-  if (!FLAGS_enable_quic_connection_flow_control_2) {
-    return;
-  }
-
   map<QuicStreamId, QuicStreamOffset>::iterator it =
       locally_closed_streams_highest_offset_.find(stream_id);
   if (it == locally_closed_streams_highest_offset_.end()) {

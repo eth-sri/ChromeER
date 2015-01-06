@@ -19,11 +19,13 @@
         'remoting_resources',
       ],
       'sources': [
+        'host/fake_desktop_capturer.cc',
+        'host/fake_desktop_capturer.h',
         'host/fake_desktop_environment.cc',
         'host/fake_desktop_environment.h',
         'host/fake_host_status_monitor.h',
-        'host/fake_screen_capturer.cc',
-        'host/fake_screen_capturer.h',
+        'host/fake_mouse_cursor_monitor.cc',
+        'host/fake_mouse_cursor_monitor.h',
         'host/policy_hack/fake_policy_watcher.cc',
         'host/policy_hack/fake_policy_watcher.h',
         'host/policy_hack/mock_policy_callback.cc',
@@ -38,6 +40,16 @@
         'signaling/fake_signal_strategy.h',
         'signaling/mock_signal_strategy.cc',
         'signaling/mock_signal_strategy.h',
+        'test/fake_network_dispatcher.cc',
+        'test/fake_network_dispatcher.h',
+        'test/fake_network_manager.cc',
+        'test/fake_network_manager.h',
+        'test/fake_port_allocator.cc',
+        'test/fake_port_allocator.h',
+        'test/fake_socket_factory.cc',
+        'test/fake_socket_factory.h',
+        'test/leaky_bucket.cc',
+        'test/leaky_bucket.h',
       ],
       'conditions': [
         ['enable_remoting_host == 0', {
@@ -125,11 +137,11 @@
         'host/daemon_process_unittest.cc',
         'host/desktop_process_unittest.cc',
         'host/desktop_shape_tracker_unittest.cc',
+        'host/fake_desktop_capturer.cc',
+        'host/fake_desktop_capturer.h',
         'host/fake_host_extension.cc',
         'host/fake_host_extension.h',
         'host/fake_host_status_monitor.h',
-        'host/fake_screen_capturer.cc',
-        'host/fake_screen_capturer.h',
         'host/gnubby_auth_handler_posix_unittest.cc',
         'host/heartbeat_sender_unittest.cc',
         'host/host_change_notification_listener_unittest.cc',
@@ -160,7 +172,7 @@
         'host/setup/me2me_native_messaging_host_unittest.cc',
         'host/setup/oauth_helper_unittest.cc',
         'host/setup/pin_validator_unittest.cc',
-        'host/shaped_screen_capturer_unittest.cc',
+        'host/shaped_desktop_capturer_unittest.cc',
         'host/token_validator_factory_impl_unittest.cc',
         'host/video_frame_recorder_unittest.cc',
         'host/video_scheduler_unittest.cc',
@@ -295,6 +307,7 @@
         'webapp_js_files': [
           '<@(remoting_webapp_main_html_js_files)',
           '<@(remoting_webapp_js_wcs_sandbox_files)',
+          '<@(remoting_webapp_background_js_files)',
         ]
       },
       'copies': [
@@ -324,7 +337,7 @@
           'destination': '<(output_dir)',
           'files': [
             '<@(webapp_js_files)',
-            '<@(remoting_webapp_unittest_cases)',
+            '<@(remoting_webapp_unittest_js_files)',
             '<@(remoting_webapp_unittest_additional_files)'
           ],
         },
@@ -336,7 +349,7 @@
             'webapp/build-html.py',
             '<(remoting_webapp_unittest_template_main)',
             '<@(webapp_js_files)',
-            '<@(remoting_webapp_unittest_cases)'
+            '<@(remoting_webapp_unittest_js_files)'
           ],
           'outputs': [
             '<(output_dir)/unittest.html',
@@ -350,7 +363,7 @@
             # instrumentedjs flag or else GYP will ignore the files in the
             # exclude list.
             '--exclude-js', '<@(remoting_webapp_unittest_exclude_files)',
-            '--js', '<@(remoting_webapp_unittest_cases)',
+            '--js', '<@(remoting_webapp_unittest_js_files)',
             '--instrument-js', '<@(webapp_js_files)',
            ],
         },

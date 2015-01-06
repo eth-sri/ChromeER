@@ -8,7 +8,6 @@
 #include "ash/metrics/user_metrics_recorder.h"
 #include "ash/shelf/shelf_layout_manager.h"
 #include "ash/shell.h"
-#include "ash/shell/panel_window.h"
 #include "ash/shell_window_ids.h"
 #include "ash/system/audio/tray_audio.h"
 #include "ash/system/bluetooth/tray_bluetooth.h"
@@ -183,8 +182,10 @@ void SystemTray::CreateItems(SystemTrayDelegate* delegate) {
   AddTrayItem(new TraySms(this));
   AddTrayItem(new TrayBluetooth(this));
   AddTrayItem(new TrayDisplay(this));
-  AddTrayItem(new ScreenCaptureTrayItem(this));
-  AddTrayItem(new ScreenShareTrayItem(this));
+  screen_capture_tray_item_ = new ScreenCaptureTrayItem(this);
+  AddTrayItem(screen_capture_tray_item_);
+  screen_share_tray_item_ = new ScreenShareTrayItem(this);
+  AddTrayItem(screen_share_tray_item_);
   AddTrayItem(new MultiProfileMediaTrayItem(this));
   AddTrayItem(new TrayAudioChromeOs(this));
   AddTrayItem(new TrayBrightness(this));

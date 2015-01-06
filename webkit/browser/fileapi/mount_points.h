@@ -10,22 +10,22 @@
 
 #include "base/basictypes.h"
 #include "base/files/file_path.h"
-#include "webkit/browser/webkit_storage_browser_export.h"
+#include "webkit/browser/storage_browser_export.h"
 #include "webkit/common/fileapi/file_system_util.h"
 
 class GURL;
 
-namespace fileapi {
+namespace storage {
 class FileSystemMountOption;
 class FileSystemURL;
 }
 
-namespace fileapi {
+namespace storage {
 
 // Represents a set of mount points for File API.
-class WEBKIT_STORAGE_BROWSER_EXPORT MountPoints {
+class STORAGE_EXPORT MountPoints {
  public:
-  struct WEBKIT_STORAGE_BROWSER_EXPORT MountPointInfo {
+  struct STORAGE_EXPORT MountPointInfo {
     MountPointInfo();
     MountPointInfo(const std::string& name, const base::FilePath& path);
 
@@ -65,7 +65,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT MountPoints {
   // registered in this context, returns empty, invalid FileSystemURL.
   virtual FileSystemURL CreateCrackedFileSystemURL(
       const GURL& origin,
-      fileapi::FileSystemType type,
+      storage::FileSystemType type,
       const base::FilePath& path) const = 0;
 
   // Returns the mount point root path registered for a given |mount_name|.
@@ -103,6 +103,6 @@ class WEBKIT_STORAGE_BROWSER_EXPORT MountPoints {
   DISALLOW_COPY_AND_ASSIGN(MountPoints);
 };
 
-}  // namespace fileapi
+}  // namespace storage
 
 #endif  // WEBKIT_BROWSER_FILEAPI_MOUNT_POINTS_H_

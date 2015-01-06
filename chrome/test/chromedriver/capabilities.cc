@@ -47,6 +47,18 @@ Status ParseString(std::string* to_set,
   return Status(kOk);
 }
 
+Status ParseInterval(int* to_set,
+                     const base::Value& option,
+                     Capabilities* capabilities) {
+  int parsed_int = 0;
+  if (!option.GetAsInteger(&parsed_int))
+    return Status(kUnknownError, "must be an integer");
+  if (parsed_int <= 0)
+    return Status(kUnknownError, "must be positive");
+  *to_set = parsed_int;
+  return Status(kOk);
+}
+
 Status ParseFilePath(base::FilePath* to_set,
                      const base::Value& option,
                      Capabilities* capabilities) {
@@ -185,7 +197,7 @@ Status ParseProxy(const base::Value& option, Capabilities* capabilities) {
   std::string proxy_type;
   if (!proxy_dict->GetString("proxyType", &proxy_type))
     return Status(kUnknownError, "'proxyType' must be a string");
-  proxy_type = StringToLowerASCII(proxy_type);
+  proxy_type = base::StringToLowerASCII(proxy_type);
   if (proxy_type == "direct") {
     capabilities->switches.SetSwitch("no-proxy-server");
   } else if (proxy_type == "system") {
@@ -323,6 +335,8 @@ Status ParsePerfLoggingPrefs(const base::Value& option,
     return Status(kUnknownError, "must be a dictionary");
 
   std::map<std::string, Parser> parser_map;
+  parser_map["bufferUsageReportingInterval"] = base::Bind(&ParseInterval,
+      &capabilities->perf_logging_prefs.buffer_usage_reporting_interval);
   parser_map["enableNetwork"] = base::Bind(
       &ParseInspectorDomainStatus, &capabilities->perf_logging_prefs.network);
   parser_map["enablePage"] = base::Bind(
@@ -522,7 +536,8 @@ PerfLoggingPrefs::PerfLoggingPrefs()
     : network(InspectorDomainStatus::kDefaultEnabled),
       page(InspectorDomainStatus::kDefaultEnabled),
       timeline(InspectorDomainStatus::kDefaultEnabled),
-      trace_categories() {}
+      trace_categories(),
+      buffer_usage_reporting_interval(1000) {}
 
 PerfLoggingPrefs::~PerfLoggingPrefs() {}
 

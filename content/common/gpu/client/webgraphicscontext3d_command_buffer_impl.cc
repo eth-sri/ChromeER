@@ -28,7 +28,6 @@
 #include "gpu/GLES2/gl2extchromium.h"
 #include "gpu/command_buffer/client/gles2_cmd_helper.h"
 #include "gpu/command_buffer/client/gles2_implementation.h"
-#include "gpu/command_buffer/client/gles2_lib.h"
 #include "gpu/command_buffer/client/gles2_trace_implementation.h"
 #include "gpu/command_buffer/client/transfer_buffer.h"
 #include "gpu/command_buffer/common/constants.h"
@@ -64,28 +63,6 @@ scoped_refptr<WebGraphicsContext3DCommandBufferImpl::ShareGroup>
   }
   return it->second;
 }
-
-// Singleton used to initialize and terminate the gles2 library.
-class GLES2Initializer {
- public:
-  GLES2Initializer() {
-    gles2::Initialize();
-  }
-
-  ~GLES2Initializer() {
-    gles2::Terminate();
-  }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(GLES2Initializer);
-};
-
-////////////////////////////////////////////////////////////////////////////////
-
-base::LazyInstance<GLES2Initializer> g_gles2_initializer =
-    LAZY_INSTANCE_INITIALIZER;
-
-////////////////////////////////////////////////////////////////////////////////
 
 } // namespace anonymous
 
@@ -185,24 +162,13 @@ bool WebGraphicsContext3DCommandBufferImpl::InitializeCommandBuffer(
     share_group_command_buffer = share_context->command_buffer_.get();
   }
 
+  ::gpu::gles2::ContextCreationAttribHelper attribs_for_gles2;
+  ConvertAttributes(attributes_, &attribs_for_gles2);
+  attribs_for_gles2.lose_context_when_out_of_memory =
+      lose_context_when_out_of_memory_;
+  DCHECK(attribs_for_gles2.buffer_preserved);
   std::vector<int32> attribs;
-  attribs.push_back(ALPHA_SIZE);
-  attribs.push_back(attributes_.alpha ? 8 : 0);
-  attribs.push_back(DEPTH_SIZE);
-  attribs.push_back(attributes_.depth ? 24 : 0);
-  attribs.push_back(STENCIL_SIZE);
-  attribs.push_back(attributes_.stencil ? 8 : 0);
-  attribs.push_back(SAMPLES);
-  attribs.push_back(attributes_.antialias ? 4 : 0);
-  attribs.push_back(SAMPLE_BUFFERS);
-  attribs.push_back(attributes_.antialias ? 1 : 0);
-  attribs.push_back(FAIL_IF_MAJOR_PERF_CAVEAT);
-  attribs.push_back(attributes_.failIfMajorPerformanceCaveat ? 1 : 0);
-  attribs.push_back(LOSE_CONTEXT_WHEN_OUT_OF_MEMORY);
-  attribs.push_back(lose_context_when_out_of_memory_ ? 1 : 0);
-  attribs.push_back(BIND_GENERATES_RESOURCES);
-  attribs.push_back(0);
-  attribs.push_back(NONE);
+  attribs_for_gles2.Serialize(&attribs);
 
   // Create a proxy to a command buffer in the GPU process.
   if (onscreen) {
@@ -237,9 +203,6 @@ bool WebGraphicsContext3DCommandBufferImpl::InitializeCommandBuffer(
 
 bool WebGraphicsContext3DCommandBufferImpl::CreateContext(bool onscreen) {
   TRACE_EVENT0("gpu", "WebGfxCtx3DCmdBfrImpl::CreateContext");
-  // Ensure the gles2 library is initialized first in a thread safe way.
-  g_gles2_initializer.Get();
-
   scoped_refptr<gpu::gles2::ShareGroup> gles2_share_group;
 
   scoped_ptr<base::AutoLock> share_group_lock;
@@ -280,7 +243,7 @@ bool WebGraphicsContext3DCommandBufferImpl::CreateContext(bool onscreen) {
   bool bind_generates_resources = false;
   real_gl_.reset(
       new gpu::gles2::GLES2Implementation(gles2_helper_.get(),
-                                          gles2_share_group,
+                                          gles2_share_group.get(),
                                           transfer_buffer_.get(),
                                           bind_generates_resources,
                                           lose_context_when_out_of_memory_,
@@ -307,12 +270,11 @@ bool WebGraphicsContext3DCommandBufferImpl::CreateContext(bool onscreen) {
   return true;
 }
 
-bool WebGraphicsContext3DCommandBufferImpl::makeContextCurrent() {
+bool WebGraphicsContext3DCommandBufferImpl::InitializeOnCurrentThread() {
   if (!MaybeInitializeGL()) {
     DLOG(ERROR) << "Failed to initialize context.";
     return false;
   }
-  gles2::SetGLContext(GetGLInterface());
   if (gpu::error::IsError(command_buffer_->GetLastError())) {
     LOG(ERROR) << "Context dead on arrival. Last error: "
                << command_buffer_->GetLastError();

@@ -37,9 +37,7 @@
 #include "content/public/browser/child_process_data.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/devtools_agent_host.h"
-#include "content/public/browser/devtools_client_host.h"
 #include "content/public/browser/devtools_http_handler.h"
-#include "content/public/browser/devtools_manager.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_view_host.h"
@@ -55,7 +53,6 @@
 #include "net/test/spawned_test_server/spawned_test_server.h"
 
 using content::BrowserThread;
-using content::DevToolsManager;
 using content::DevToolsAgentHost;
 using content::NavigationController;
 using content::RenderViewHost;
@@ -109,9 +106,7 @@ void RunTestFunction(DevToolsWindow* window, const char* test_name) {
 
 class DevToolsSanityTest : public InProcessBrowserTest {
  public:
-  DevToolsSanityTest()
-      : window_(NULL),
-        inspected_rvh_(NULL) {}
+  DevToolsSanityTest() : window_(NULL) {}
 
  protected:
   void RunTest(const std::string& test_name, const std::string& test_page) {
@@ -129,9 +124,8 @@ class DevToolsSanityTest : public InProcessBrowserTest {
     ASSERT_TRUE(test_server()->Start());
     LoadTestPage(test_page);
 
-    inspected_rvh_ = GetInspectedTab()->GetRenderViewHost();
-    window_ = DevToolsWindowTesting::OpenDevToolsWindowSync(
-        inspected_rvh_, is_docked);
+    window_ = DevToolsWindowTesting::OpenDevToolsWindowSync(GetInspectedTab(),
+                                                            is_docked);
   }
 
   WebContents* GetInspectedTab() {
@@ -151,7 +145,6 @@ class DevToolsSanityTest : public InProcessBrowserTest {
   }
 
   DevToolsWindow* window_;
-  RenderViewHost* inspected_rvh_;
 };
 
 // Used to block until a dev tools window gets beforeunload event.
@@ -246,8 +239,8 @@ class DevToolsBeforeUnloadTest: public DevToolsSanityTest {
 
   DevToolsWindow* OpenDevToolWindowOnWebContents(
       content::WebContents* contents, bool is_docked) {
-    DevToolsWindow* window = DevToolsWindowTesting::OpenDevToolsWindowSync(
-        contents->GetRenderViewHost(), is_docked);
+    DevToolsWindow* window =
+        DevToolsWindowTesting::OpenDevToolsWindowSync(contents, is_docked);
     return window;
   }
 
@@ -514,7 +507,7 @@ class WorkerDevToolsSanityTest : public InProcessBrowserTest {
             worker_data->worker_process_id,
             worker_data->worker_route_id));
     window_ = DevToolsWindowTesting::OpenDevToolsWindowForWorkerSync(
-        profile, agent_host);
+        profile, agent_host.get());
   }
 
   void CloseDevToolsWindow() {
@@ -691,13 +684,6 @@ IN_PROC_BROWSER_TEST_F(DevToolsSanityTest, TestShowScriptsTab) {
 IN_PROC_BROWSER_TEST_F(
     DevToolsSanityTest,
     TestScriptsTabIsPopulatedOnInspectedPageRefresh) {
-  // Clear inspector settings to ensure that Elements will be
-  // current panel when DevTools window is open.
-  content::BrowserContext* browser_context =
-      GetInspectedTab()->GetBrowserContext();
-  Profile::FromBrowserContext(browser_context)->GetPrefs()->
-      ClearPref(prefs::kWebKitInspectorSettings);
-
   RunTest("testScriptsTabIsPopulatedOnInspectedPageRefresh",
           kDebuggerTestPage);
 }
@@ -786,7 +772,13 @@ IN_PROC_BROWSER_TEST_F(DevToolsSanityTest, TestNetworkRawHeadersText) {
 }
 
 // Tests that console messages are not duplicated on navigation back.
-IN_PROC_BROWSER_TEST_F(DevToolsSanityTest, TestConsoleOnNavigateBack) {
+#if defined(OS_WIN)
+// Flaking on windows swarm try runs: crbug.com/409285.
+#define MAYBE_TestConsoleOnNavigateBack DISABLED_TestConsoleOnNavigateBack
+#else
+#define MAYBE_TestConsoleOnNavigateBack TestConsoleOnNavigateBack
+#endif
+IN_PROC_BROWSER_TEST_F(DevToolsSanityTest, MAYBE_TestConsoleOnNavigateBack) {
   RunTest("testConsoleOnNavigateBack", kNavigateBackTestPage);
 }
 
@@ -818,8 +810,8 @@ IN_PROC_BROWSER_TEST_F(DevToolsSanityTest, TestDevToolsExternalNavigation) {
 IN_PROC_BROWSER_TEST_F(DevToolsSanityTest, TestToolboxLoadedUndocked) {
   OpenDevToolsWindow(kDebuggerTestPage, false);
   ASSERT_TRUE(toolbox_web_contents());
-  DevToolsWindow* on_self = DevToolsWindowTesting::OpenDevToolsWindowSync(
-      main_web_contents()->GetRenderViewHost(), false);
+  DevToolsWindow* on_self =
+      DevToolsWindowTesting::OpenDevToolsWindowSync(main_web_contents(), false);
   ASSERT_FALSE(DevToolsWindowTesting::Get(on_self)->toolbox_web_contents());
   DevToolsWindowTesting::CloseDevToolsWindowSync(on_self);
   CloseDevToolsWindow();
@@ -829,8 +821,8 @@ IN_PROC_BROWSER_TEST_F(DevToolsSanityTest, TestToolboxLoadedUndocked) {
 IN_PROC_BROWSER_TEST_F(DevToolsSanityTest, TestToolboxNotLoadedDocked) {
   OpenDevToolsWindow(kDebuggerTestPage, true);
   ASSERT_FALSE(toolbox_web_contents());
-  DevToolsWindow* on_self = DevToolsWindowTesting::OpenDevToolsWindowSync(
-      main_web_contents()->GetRenderViewHost(), false);
+  DevToolsWindow* on_self =
+      DevToolsWindowTesting::OpenDevToolsWindowSync(main_web_contents(), false);
   ASSERT_FALSE(DevToolsWindowTesting::Get(on_self)->toolbox_web_contents());
   DevToolsWindowTesting::CloseDevToolsWindowSync(on_self);
   CloseDevToolsWindow();
@@ -855,13 +847,8 @@ IN_PROC_BROWSER_TEST_F(DevToolsSanityTest, TestPageWithNoJavaScript) {
   CloseDevToolsWindow();
 }
 
-#if defined(OS_MACOSX)
-#define MAYBE_InspectSharedWorker DISABLED_InspectSharedWorker
-#else
-#define MAYBE_InspectSharedWorker InspectSharedWorker
-#endif
-// Flakily fails with 25s timeout: http://crbug.com/89845
-IN_PROC_BROWSER_TEST_F(WorkerDevToolsSanityTest, MAYBE_InspectSharedWorker) {
+// Flakily fails: http://crbug.com/403007 http://crbug.com/89845
+IN_PROC_BROWSER_TEST_F(WorkerDevToolsSanityTest, DISABLED_InspectSharedWorker) {
 #if defined(OS_WIN) && defined(USE_ASH)
   // Disable this test in Metro+Ash for now (http://crbug.com/262796).
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kAshBrowserTests))
@@ -896,12 +883,12 @@ class DevToolsAgentHostTest : public InProcessBrowserTest {};
 // Tests DevToolsAgentHost retention by its target.
 IN_PROC_BROWSER_TEST_F(DevToolsAgentHostTest, TestAgentHostReleased) {
   ui_test_utils::NavigateToURL(browser(), GURL("about:blank"));
-  RenderViewHost* rvh = browser()->tab_strip_model()->GetWebContentsAt(0)->
-      GetRenderViewHost();
-  DevToolsAgentHost* agent_raw = DevToolsAgentHost::GetOrCreateFor(rvh).get();
+  WebContents* web_contents = browser()->tab_strip_model()->GetWebContentsAt(0);
+  DevToolsAgentHost* agent_raw =
+      DevToolsAgentHost::GetOrCreateFor(web_contents).get();
   const std::string agent_id = agent_raw->GetId();
-  ASSERT_EQ(agent_raw, DevToolsAgentHost::GetForId(agent_id)) <<
-      "DevToolsAgentHost cannot be found by id";
+  ASSERT_EQ(agent_raw, DevToolsAgentHost::GetForId(agent_id).get())
+      << "DevToolsAgentHost cannot be found by id";
   browser()->tab_strip_model()->
       CloseWebContentsAt(0, TabStripModel::CLOSE_NONE);
   ASSERT_FALSE(DevToolsAgentHost::GetForId(agent_id).get())

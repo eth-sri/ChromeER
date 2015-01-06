@@ -5,11 +5,10 @@
 
 """Run Performance Test Bisect Tool
 
-This script is used by a trybot to run the src/tools/bisect-perf-regression.py
-script with the parameters specified in run-bisect-perf-regression.cfg. It will
-check out a copy of the depot in a subdirectory 'bisect' of the working
+This script is used by a try bot to run the src/tools/bisect-perf-regression.py
+script with the parameters specified in src/tools/auto_bisect/bisect.cfg.
+It will check out a copy of the depot in a subdirectory 'bisect' of the working
 directory provided, and run the bisect-perf-regression.py script there.
-
 """
 
 import imp
@@ -31,11 +30,12 @@ bisect = imp.load_source('bisect-perf-regression',
 CROS_BOARD_ENV = 'BISECT_CROS_BOARD'
 CROS_IP_ENV = 'BISECT_CROS_IP'
 
-# Default config file names.
-BISECT_REGRESSION_CONFIG = 'run-bisect-perf-regression.cfg'
+# Default config file paths, relative to this script.
+BISECT_REGRESSION_CONFIG = os.path.join('auto_bisect', 'bisect.cfg')
 RUN_TEST_CONFIG = 'run-perf-test.cfg'
 WEBKIT_RUN_TEST_CONFIG = os.path.join(
     '..', 'third_party', 'WebKit', 'Tools', 'run-perf-test.cfg')
+
 
 class Goma(object):
 
@@ -151,7 +151,6 @@ def _ValidatePerfConfigFile(config_contents):
   """
   valid_parameters = [
       'command',
-      'metric',
       'repeat_count',
       'truncate_percent',
       'max_time_minutes',
@@ -195,7 +194,7 @@ def _CreateBisectOptionsFromConfig(config):
   print config['command']
   opts_dict = {}
   opts_dict['command'] = config['command']
-  opts_dict['metric'] = config['metric']
+  opts_dict['metric'] = config.get('metric')
 
   if config['repeat_count']:
     opts_dict['repeat_test_count'] = int(config['repeat_count'])
@@ -221,7 +220,7 @@ def _CreateBisectOptionsFromConfig(config):
       opts_dict['cros_board'] = os.environ[CROS_BOARD_ENV]
       opts_dict['cros_remote_ip'] = os.environ[CROS_IP_ENV]
     else:
-      raise RuntimeError('Cros build selected, but BISECT_CROS_IP or'
+      raise RuntimeError('CrOS build selected, but BISECT_CROS_IP or'
           'BISECT_CROS_BOARD undefined.')
   elif 'android' in config['command']:
     if 'android-chrome-shell' in config['command']:
@@ -270,8 +269,13 @@ def _RunPerformanceTest(config, path_to_file):
   bisect_utils.OutputAnnotationStepClosed()
 
   bisect_utils.OutputAnnotationStepStart('Reverting Patch')
-  if bisect_utils.RunGClient(['revert']):
-    raise RuntimeError('Failed to run gclient runhooks')
+  # TODO: When this is re-written to recipes, this should use bot_update's
+  # revert mechanism to fully revert the client. But for now, since we know that
+  # the perf try bot currently only supports src/ and src/third_party/WebKit, we
+  # simply reset those two directories.
+  bisect_utils.CheckRunGit(['reset', '--hard'])
+  bisect_utils.CheckRunGit(['reset', '--hard'],
+                           os.path.join('third_party', 'WebKit'))
   bisect_utils.OutputAnnotationStepClosed()
 
   bisect_utils.OutputAnnotationStepStart('Building Without Patch')
@@ -297,35 +301,42 @@ def _RunPerformanceTest(config, path_to_file):
       if 'storage.googleapis.com/chromium-telemetry/html-results/' in t]
   if cloud_file_link:
     # What we're getting here is basically "View online at http://..." so parse
-    # out just the url portion.
+    # out just the URL portion.
     cloud_file_link = cloud_file_link[0]
     cloud_file_link = [t for t in cloud_file_link.split(' ')
         if 'storage.googleapis.com/chromium-telemetry/html-results/' in t]
-    assert cloud_file_link, "Couldn't parse url from output."
+    assert cloud_file_link, 'Couldn\'t parse URL from output.'
     cloud_file_link = cloud_file_link[0]
   else:
     cloud_file_link = ''
 
   # Calculate the % difference in the means of the 2 runs.
-  percent_diff_in_means = (results_with_patch[0]['mean'] /
-      max(0.0001, results_without_patch[0]['mean'])) * 100.0 - 100.0
-  std_err = math_utils.PooledStandardError(
-      [results_with_patch[0]['values'], results_without_patch[0]['values']])
+  percent_diff_in_means = None
+  std_err = None
+  if (results_with_patch[0].has_key('mean') and
+      results_with_patch[0].has_key('values')):
+    percent_diff_in_means = (results_with_patch[0]['mean'] /
+        max(0.0001, results_without_patch[0]['mean'])) * 100.0 - 100.0
+    std_err = math_utils.PooledStandardError(
+        [results_with_patch[0]['values'], results_without_patch[0]['values']])
 
   bisect_utils.OutputAnnotationStepClosed()
-  bisect_utils.OutputAnnotationStepStart('Results - %.02f +- %0.02f delta' %
-      (percent_diff_in_means, std_err))
-  print ' %s %s %s' % (''.center(10, ' '), 'Mean'.center(20, ' '),
-      'Std. Error'.center(20, ' '))
-  print ' %s %s %s' % ('Patch'.center(10, ' '),
-      ('%.02f' % results_with_patch[0]['mean']).center(20, ' '),
-      ('%.02f' % results_with_patch[0]['std_err']).center(20, ' '))
-  print ' %s %s %s' % ('No Patch'.center(10, ' '),
-      ('%.02f' % results_without_patch[0]['mean']).center(20, ' '),
-      ('%.02f' % results_without_patch[0]['std_err']).center(20, ' '))
-  if cloud_file_link:
+  if percent_diff_in_means is not None and std_err is not None:
+    bisect_utils.OutputAnnotationStepStart('Results - %.02f +- %0.02f delta' %
+        (percent_diff_in_means, std_err))
+    print ' %s %s %s' % (''.center(10, ' '), 'Mean'.center(20, ' '),
+        'Std. Error'.center(20, ' '))
+    print ' %s %s %s' % ('Patch'.center(10, ' '),
+        ('%.02f' % results_with_patch[0]['mean']).center(20, ' '),
+        ('%.02f' % results_with_patch[0]['std_err']).center(20, ' '))
+    print ' %s %s %s' % ('No Patch'.center(10, ' '),
+        ('%.02f' % results_without_patch[0]['mean']).center(20, ' '),
+        ('%.02f' % results_without_patch[0]['std_err']).center(20, ' '))
+    if cloud_file_link:
+      bisect_utils.OutputAnnotationStepLink('HTML Results', cloud_file_link)
+    bisect_utils.OutputAnnotationStepClosed()
+  elif cloud_file_link:
     bisect_utils.OutputAnnotationStepLink('HTML Results', cloud_file_link)
-  bisect_utils.OutputAnnotationStepClosed()
 
 
 def _SetupAndRunPerformanceTest(config, path_to_file, path_to_goma):
@@ -343,7 +354,8 @@ def _SetupAndRunPerformanceTest(config, path_to_file, path_to_goma):
   try:
     with Goma(path_to_goma) as _:
       config['use_goma'] = bool(path_to_goma)
-      config['goma_dir'] = os.path.abspath(path_to_goma)
+      if config['use_goma']:
+        config['goma_dir'] = os.path.abspath(path_to_goma)
       _RunPerformanceTest(config, path_to_file)
     return 0
   except RuntimeError, e:
@@ -379,6 +391,9 @@ def _RunBisectionScript(
          '-m', config['metric'],
          '--working_directory', working_directory,
          '--output_buildbot_annotations']
+
+  if config.get('metric'):
+    cmd.extend(['-m', config['metric']])
 
   if config['repeat_count']:
     cmd.extend(['-r', config['repeat_count']])
@@ -428,8 +443,8 @@ def _RunBisectionScript(
     cmd.extend(['--extra_src', path_to_extra_src])
 
   # These flags are used to download build archives from cloud storage if
-  # available, otherwise will post a try_job_http request to build it on
-  # tryserver.
+  # available, otherwise will post a try_job_http request to build it on the
+  # try server.
   if config.get('gs_bucket'):
     if config.get('builder_host') and config.get('builder_port'):
       cmd.extend(['--gs_bucket', config['gs_bucket'],
@@ -469,8 +484,8 @@ def _PrintConfigStep(config):
 def _OptionParser():
   """Returns the options parser for run-bisect-perf-regression.py."""
   usage = ('%prog [options] [-- chromium-options]\n'
-           'Used by a trybot to run the bisection script using the parameters'
-           ' provided in the run-bisect-perf-regression.cfg file.')
+           'Used by a try bot to run the bisection script using the parameters'
+           ' provided in the auto_bisect/bisect.cfg file.')
   parser = optparse.OptionParser(usage=usage)
   parser.add_option('-w', '--working_directory',
                     type='str',
@@ -551,7 +566,7 @@ def main():
           config, current_dir, opts.path_to_goma)
 
   print ('Error: Could not load config file. Double check your changes to '
-         'run-bisect-perf-regression.cfg or run-perf-test.cfg for syntax '
+         'auto_bisect/bisect.cfg or run-perf-test.cfg for syntax '
          'errors.\n')
   return 1
 

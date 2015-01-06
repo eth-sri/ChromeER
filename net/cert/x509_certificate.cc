@@ -158,7 +158,9 @@ void X509CertificateCache::InsertOrUpdate(
   // be guarded by the lock.
   if (old_handle) {
     X509Certificate::FreeOSCertHandle(old_handle);
-    DHISTOGRAM_COUNTS("X509CertificateReuseCount", 1);
+#ifndef NDEBUG
+    LOCAL_HISTOGRAM_BOOLEAN("X509CertificateReuseCount", true);
+#endif
   }
 }
 
@@ -610,7 +612,7 @@ bool X509Certificate::VerifyHostname(
       DVLOG(1) << "Bad name in cert: " << *it;
       continue;
     }
-    std::string presented_name(StringToLowerASCII(*it));
+    std::string presented_name(base::StringToLowerASCII(*it));
 
     // Remove trailing dot, if any.
     if (*presented_name.rbegin() == '.')

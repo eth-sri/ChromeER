@@ -171,6 +171,7 @@ void DevToolsAgent::setTraceEventCallback(const WebString& category_filter,
 }
 
 void DevToolsAgent::enableTracing(const WebString& category_filter) {
+  Send(new DevToolsHostMsg_EnableTracing(routing_id(), category_filter.utf8()));
   TraceLog* trace_log = TraceLog::GetInstance();
   trace_log->SetEnabled(base::debug::CategoryFilter(category_filter.utf8()),
                         TraceLog::RECORDING_MODE,
@@ -179,6 +180,7 @@ void DevToolsAgent::enableTracing(const WebString& category_filter) {
 
 void DevToolsAgent::disableTracing() {
   TraceLog::GetInstance()->SetDisabled();
+  Send(new DevToolsHostMsg_DisableTracing(routing_id()));
 }
 
 // static
@@ -252,27 +254,6 @@ void DevToolsAgent::enableDeviceEmulation(
 void DevToolsAgent::disableDeviceEmulation() {
   RenderViewImpl* impl = static_cast<RenderViewImpl*>(render_view());
   impl->DisableScreenMetricsEmulation();
-}
-
-void DevToolsAgent::setTouchEventEmulationEnabled(
-    bool enabled, bool allow_pinch) {
-  RenderViewImpl* impl = static_cast<RenderViewImpl*>(render_view());
-  impl->Send(new ViewHostMsg_SetTouchEventEmulationEnabled(
-      impl->routing_id(), enabled, allow_pinch));
-}
-
-#if defined(USE_TCMALLOC) && !defined(OS_WIN)
-static void AllocationVisitor(void* data, const void* ptr) {
-    typedef blink::WebDevToolsAgentClient::AllocatedObjectVisitor Visitor;
-    Visitor* visitor = reinterpret_cast<Visitor*>(data);
-    visitor->visitObject(ptr);
-}
-#endif
-
-void DevToolsAgent::visitAllocatedObjects(AllocatedObjectVisitor* visitor) {
-#if defined(USE_TCMALLOC) && !defined(OS_WIN)
-  IterateAllocatedObjects(&AllocationVisitor, visitor);
-#endif
 }
 
 // static

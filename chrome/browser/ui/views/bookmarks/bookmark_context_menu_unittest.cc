@@ -25,7 +25,6 @@
 #include "components/bookmarks/test/bookmark_test_helpers.h"
 #include "content/public/browser/page_navigator.h"
 #include "content/public/test/test_browser_thread.h"
-#include "grit/generated_resources.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/events/platform/platform_event_source.h"
@@ -373,7 +372,7 @@ TEST_F(BookmarkContextMenuTest, ShowManagedBookmarks) {
   base::ListValue list;
   list.Append(dict);
   EXPECT_TRUE(client->managed_node()->empty());
-  profile_->GetPrefs()->Set(prefs::kManagedBookmarks, list);
+  profile_->GetPrefs()->Set(bookmarks::prefs::kManagedBookmarks, list);
   EXPECT_FALSE(client->managed_node()->empty());
 
   // New context menus now show the "Show managed bookmarks" option.

@@ -275,12 +275,12 @@ void AccountReconcilor::RegisterForCookieChanges() {
   // First clear any existing registration to avoid DCHECKs that can otherwise
   // go off in some embedders on reauth (e.g., ChromeSigninClient).
   UnregisterForCookieChanges();
-  client_->SetCookieChangedCallback(
+  cookie_changed_subscription_ = client_->AddCookieChangedCallback(
       base::Bind(&AccountReconcilor::OnCookieChanged, base::Unretained(this)));
 }
 
 void AccountReconcilor::UnregisterForCookieChanges() {
-  client_->SetCookieChangedCallback(SigninClient::CookieChangedCallback());
+  cookie_changed_subscription_.reset();
 }
 
 void AccountReconcilor::RegisterWithSigninManager() {
@@ -312,7 +312,7 @@ void AccountReconcilor::UnregisterWithTokenService() {
 }
 
 bool AccountReconcilor::IsProfileConnected() {
-  return !signin_manager_->GetAuthenticatedUsername().empty();
+  return signin_manager_->IsAuthenticated();
 }
 
 void AccountReconcilor::OnCookieChanged(const net::CanonicalCookie* cookie) {
@@ -342,14 +342,16 @@ void AccountReconcilor::OnEndBatchChanges() {
   StartReconcile();
 }
 
-void AccountReconcilor::GoogleSigninSucceeded(const std::string& username,
+void AccountReconcilor::GoogleSigninSucceeded(const std::string& account_id,
+                                              const std::string& username,
                                               const std::string& password) {
   VLOG(1) << "AccountReconcilor::GoogleSigninSucceeded: signed in";
   RegisterForCookieChanges();
   RegisterWithTokenService();
 }
 
-void AccountReconcilor::GoogleSignedOut(const std::string& username) {
+void AccountReconcilor::GoogleSignedOut(const std::string& account_id,
+                                        const std::string& username) {
   VLOG(1) << "AccountReconcilor::GoogleSignedOut: signed out";
   gaia_fetcher_.reset();
   get_gaia_accounts_callbacks_.clear();
@@ -431,6 +433,8 @@ void AccountReconcilor::StartReconcile() {
 
   is_reconcile_started_ = true;
 
+  StartFetchingExternalCcResult();
+
   // Reset state for validating gaia cookie.
   are_gaia_accounts_set_ = false;
   gaia_accounts_.clear();
@@ -458,6 +462,10 @@ void AccountReconcilor::GetAccountsFromCookie(
         this, GaiaConstants::kChromeSource, client_->GetURLRequestContext()));
     gaia_fetcher_->StartListAccounts();
   }
+}
+
+void AccountReconcilor::StartFetchingExternalCcResult() {
+  merge_session_helper_.StartFetchingExternalCcResult();
 }
 
 void AccountReconcilor::OnListAccountsSuccess(const std::string& data) {
@@ -525,7 +533,7 @@ void AccountReconcilor::ContinueReconcileActionAfterGetGaiaAccounts(
 }
 
 void AccountReconcilor::ValidateAccountsFromTokenService() {
-  primary_account_ = signin_manager_->GetAuthenticatedUsername();
+  primary_account_ = signin_manager_->GetAuthenticatedAccountId();
   DCHECK(!primary_account_.empty());
 
   chrome_accounts_ = token_service_->GetAccounts();
@@ -650,6 +658,8 @@ void AccountReconcilor::FinishReconcile() {
   // SignalComplete() will change the array.
   std::vector<std::string> add_to_cookie_copy = add_to_cookie_;
   int added_to_cookie = 0;
+  bool external_cc_result_completed =
+      !merge_session_helper_.StillFetchingExternalCcResult();
   for (size_t i = 0; i < add_to_cookie_copy.size(); ++i) {
     if (gaia_accounts_.end() !=
             std::find_if(gaia_accounts_.begin(),
@@ -665,6 +675,11 @@ void AccountReconcilor::FinishReconcile() {
       added_to_cookie++;
     }
   }
+
+  // Log whether the external connection checks were completed when we tried
+  // to add the accounts to the cookie.
+  if (added_to_cookie > 0)
+    signin_metrics::LogExternalCcResultFetches(external_cc_result_completed);
 
   std::string signin_scoped_device_id = client_->GetSigninScopedDeviceId();
   // For each account in the gaia cookie not known to chrome,

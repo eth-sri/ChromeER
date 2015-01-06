@@ -9,10 +9,13 @@
 #include <stdlib.h>
 
 #include "base/at_exit.h"
+#include "base/command_line.h"
 #include "ui/events/ozone/device/device_manager.h"
 #include "ui/events/ozone/evdev/event_factory_evdev.h"
 #include "ui/ozone/platform/dri/cursor_factory_evdev_dri.h"
 #include "ui/ozone/platform/dri/dri_window.h"
+#include "ui/ozone/platform/dri/dri_window_delegate_proxy.h"
+#include "ui/ozone/platform/dri/dri_window_manager.h"
 #include "ui/ozone/platform/dri/dri_wrapper.h"
 #include "ui/ozone/platform/dri/gbm_buffer.h"
 #include "ui/ozone/platform/dri/gbm_surface.h"
@@ -26,6 +29,7 @@
 #include "ui/ozone/public/gpu_platform_support.h"
 #include "ui/ozone/public/gpu_platform_support_host.h"
 #include "ui/ozone/public/ozone_platform.h"
+#include "ui/ozone/public/ozone_switches.h"
 
 #if defined(OS_CHROMEOS)
 #include "ui/ozone/common/chromeos/touchscreen_device_manager_ozone.h"
@@ -73,7 +77,7 @@ class GbmBufferGenerator : public ScanoutBufferGenerator {
 class OzonePlatformGbm : public OzonePlatform {
  public:
   OzonePlatformGbm(bool use_surfaceless) : use_surfaceless_(use_surfaceless) {
-     base::AtExitManager::RegisterTask(
+    base::AtExitManager::RegisterTask(
         base::Bind(&base::DeletePointer<OzonePlatformGbm>, this));
   }
   virtual ~OzonePlatformGbm() {}
@@ -81,9 +85,6 @@ class OzonePlatformGbm : public OzonePlatform {
   // OzonePlatform:
   virtual ui::SurfaceFactoryOzone* GetSurfaceFactoryOzone() OVERRIDE {
     return surface_factory_ozone_.get();
-  }
-  virtual EventFactoryOzone* GetEventFactoryOzone() OVERRIDE {
-    return event_factory_ozone_.get();
   }
   virtual CursorFactoryOzone* GetCursorFactoryOzone() OVERRIDE {
     return cursor_factory_ozone_.get();
@@ -97,8 +98,16 @@ class OzonePlatformGbm : public OzonePlatform {
   virtual scoped_ptr<PlatformWindow> CreatePlatformWindow(
       PlatformWindowDelegate* delegate,
       const gfx::Rect& bounds) OVERRIDE {
-    return scoped_ptr<PlatformWindow>(
-        new DriWindow(delegate, bounds, surface_factory_ozone_.get()));
+    scoped_ptr<DriWindow> platform_window(
+        new DriWindow(delegate,
+                      bounds,
+                      scoped_ptr<DriWindowDelegate>(new DriWindowDelegateProxy(
+                          ui_window_manager_.NextAcceleratedWidget(),
+                          gpu_platform_support_host_.get())),
+                      event_factory_ozone_.get(),
+                      &ui_window_manager_));
+    platform_window->Initialize();
+    return platform_window.PassAs<PlatformWindow>();
   }
 #if defined(OS_CHROMEOS)
   virtual scoped_ptr<NativeDisplayDelegate> CreateNativeDisplayDelegate()
@@ -117,7 +126,6 @@ class OzonePlatformGbm : public OzonePlatform {
     // Needed since the browser process creates the accelerated widgets and that
     // happens through SFO.
     surface_factory_ozone_.reset(new GbmSurfaceFactory(use_surfaceless_));
-
     device_manager_ = CreateDeviceManager();
     gpu_platform_support_host_.reset(new GpuPlatformSupportHostGbm());
     cursor_factory_ozone_.reset(
@@ -136,9 +144,12 @@ class OzonePlatformGbm : public OzonePlatform {
 
     surface_factory_ozone_->InitializeGpu(dri_.get(),
                                           buffer_generator_->device(),
-                                          screen_manager_.get());
+                                          screen_manager_.get(),
+                                          &gpu_window_manager_);
     gpu_platform_support_.reset(
-        new GpuPlatformSupportGbm(surface_factory_ozone_.get()));
+        new GpuPlatformSupportGbm(surface_factory_ozone_.get(),
+                                  &gpu_window_manager_,
+                                  screen_manager_.get()));
 #if defined(OS_CHROMEOS)
     gpu_platform_support_->AddHandler(scoped_ptr<GpuPlatformSupport>(
         new DisplayMessageHandler(
@@ -167,16 +178,17 @@ class OzonePlatformGbm : public OzonePlatform {
   scoped_ptr<GpuPlatformSupportGbm> gpu_platform_support_;
   scoped_ptr<GpuPlatformSupportHostGbm> gpu_platform_support_host_;
 
+  DriWindowManager gpu_window_manager_;
+  DriWindowManager ui_window_manager_;
+
   DISALLOW_COPY_AND_ASSIGN(OzonePlatformGbm);
 };
 
 }  // namespace
 
 OzonePlatform* CreateOzonePlatformGbm() {
-  return new OzonePlatformGbm(false);
-}
-OzonePlatform* CreateOzonePlatformGbmEglImage() {
-  return new OzonePlatformGbm(true);
+  CommandLine* cmd = CommandLine::ForCurrentProcess();
+  return new OzonePlatformGbm(cmd->HasSwitch(switches::kOzoneUseSurfaceless));
 }
 
 }  // namespace ui

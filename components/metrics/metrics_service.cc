@@ -191,8 +191,7 @@
 #include "components/metrics/metrics_state_manager.h"
 #include "components/variations/entropy_provider.h"
 
-using base::Time;
-using metrics::MetricsLogManager;
+namespace metrics {
 
 namespace {
 
@@ -303,8 +302,6 @@ void MetricsService::RegisterPrefs(PrefRegistrySimple* registry) {
 
   registry->RegisterListPref(metrics::prefs::kMetricsInitialLogs);
   registry->RegisterListPref(metrics::prefs::kMetricsOngoingLogs);
-  registry->RegisterListPref(metrics::prefs::kMetricsInitialLogsOld);
-  registry->RegisterListPref(metrics::prefs::kMetricsOngoingLogsOld);
 
   registry->RegisterInt64Pref(metrics::prefs::kUninstallLaunchCount, 0);
   registry->RegisterInt64Pref(metrics::prefs::kUninstallMetricsUptimeSec, 0);
@@ -438,7 +435,6 @@ void MetricsService::DisableRecording() {
     metrics_providers_[i]->OnRecordingDisabled();
 
   PushPendingLogsToPersistentStorage();
-  DCHECK(!log_manager_.has_staged_log());
 }
 
 bool MetricsService::recording_active() const {
@@ -616,7 +612,7 @@ void MetricsService::InitializeMetricsState() {
   // them.  metrics::prefs::kStabilityLastTimestampSec may also be useless now.
   // TODO(jar): Delete these if they have no uses.
   local_state_->SetInt64(metrics::prefs::kStabilityLaunchTimeSec,
-                         Time::Now().ToTimeT());
+                         base::Time::Now().ToTimeT());
 
   // Bookkeeping for the uninstall metrics.
   IncrementLongPrefsValue(metrics::prefs::kUninstallLaunchCount);
@@ -1193,5 +1189,7 @@ void MetricsService::RecordBooleanPrefValue(const char* path, bool value) {
 
 void MetricsService::RecordCurrentState(PrefService* pref) {
   pref->SetInt64(metrics::prefs::kStabilityLastTimestampSec,
-                 Time::Now().ToTimeT());
+                 base::Time::Now().ToTimeT());
 }
+
+}  // namespace metrics

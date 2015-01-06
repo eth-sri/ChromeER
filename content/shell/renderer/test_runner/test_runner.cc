@@ -8,11 +8,12 @@
 
 #include "base/logging.h"
 #include "content/shell/common/test_runner/test_preferences.h"
-#include "content/shell/renderer/test_runner/TestInterfaces.h"
+#include "content/shell/renderer/binding_helpers.h"
 #include "content/shell/renderer/test_runner/WebTestDelegate.h"
 #include "content/shell/renderer/test_runner/mock_web_push_client.h"
 #include "content/shell/renderer/test_runner/mock_web_speech_recognizer.h"
 #include "content/shell/renderer/test_runner/notification_presenter.h"
+#include "content/shell/renderer/test_runner/test_interfaces.h"
 #include "content/shell/renderer/test_runner/web_permissions.h"
 #include "content/shell/renderer/test_runner/web_test_proxy.h"
 #include "gin/arguments.h"
@@ -291,8 +292,6 @@ class TestRunnerBindings : public gin::Wrappable<TestRunnerBindings> {
                                 const std::string& registration_id);
   void SetMockPushClientError(const std::string& message);
 
-  bool GlobalFlag();
-  void SetGlobalFlag(bool value);
   std::string PlatformName();
   std::string TooltipText();
   bool DisableNotifyDone();
@@ -313,22 +312,11 @@ gin::WrapperInfo TestRunnerBindings::kWrapperInfo = {
 // static
 void TestRunnerBindings::Install(base::WeakPtr<TestRunner> runner,
                                  WebFrame* frame) {
-  v8::Isolate* isolate = blink::mainThreadIsolate();
-  v8::HandleScope handle_scope(isolate);
-  v8::Handle<v8::Context> context = frame->mainWorldScriptContext();
-  if (context.IsEmpty())
-    return;
-
-  v8::Context::Scope context_scope(context);
-
-  gin::Handle<TestRunnerBindings> bindings =
-      gin::CreateHandle(isolate, new TestRunnerBindings(runner));
-  if (bindings.IsEmpty())
-    return;
-  v8::Handle<v8::Object> global = context->Global();
-  v8::Handle<v8::Value> v8_bindings = bindings.ToV8();
-  global->Set(gin::StringToV8(isolate, "testRunner"), v8_bindings);
-  global->Set(gin::StringToV8(isolate, "layoutTestController"), v8_bindings);
+  std::vector<std::string> names;
+  names.push_back("testRunner");
+  names.push_back("layoutTestController");
+  return InstallAsWindowProperties(
+      new TestRunnerBindings(runner), frame, names);
 }
 
 TestRunnerBindings::TestRunnerBindings(base::WeakPtr<TestRunner> runner)
@@ -546,9 +534,6 @@ gin::ObjectTemplateBuilder TestRunnerBindings::GetObjectTemplateBuilder(
                  &TestRunnerBindings::SetMockPushClientError)
 
       // Properties.
-      .SetProperty("globalFlag",
-                   &TestRunnerBindings::GlobalFlag,
-                   &TestRunnerBindings::SetGlobalFlag)
       .SetProperty("platformName", &TestRunnerBindings::PlatformName)
       .SetProperty("tooltipText", &TestRunnerBindings::TooltipText)
       .SetProperty("disableNotifyDone", &TestRunnerBindings::DisableNotifyDone)
@@ -1398,17 +1383,6 @@ void TestRunnerBindings::SetMockPushClientError(const std::string& message) {
   runner_->SetMockPushClientError(message);
 }
 
-bool TestRunnerBindings::GlobalFlag() {
-  if (runner_)
-    return runner_->global_flag_;
-  return false;
-}
-
-void TestRunnerBindings::SetGlobalFlag(bool value) {
-  if (runner_)
-    runner_->global_flag_ = value;
-}
-
 std::string TestRunnerBindings::PlatformName() {
   if (runner_)
     return runner_->platform_name_;
@@ -1637,7 +1611,6 @@ void TestRunner::Reset() {
 
   http_headers_to_clear_.clear();
 
-  global_flag_ = false;
   platform_name_ = "chromium";
   tooltip_text_ = std::string();
   disable_notify_done_ = false;
@@ -2076,7 +2049,7 @@ void TestRunner::WaitForPolicyDelegate() {
 }
 
 int TestRunner::WindowCount() {
-  return test_interfaces_->windowList().size();
+  return test_interfaces_->GetWindowList().size();
 }
 
 void TestRunner::SetCloseRemainingWindowsWhenComplete(
@@ -2085,7 +2058,7 @@ void TestRunner::SetCloseRemainingWindowsWhenComplete(
 }
 
 void TestRunner::ResetTestHelperControllers() {
-  test_interfaces_->resetTestHelperControllers();
+  test_interfaces_->ResetTestHelperControllers();
 }
 
 void TestRunner::SetTabKeyCyclesThroughElements(
@@ -2744,7 +2717,7 @@ void TestRunner::SetMIDIAccessorResult(bool result) {
 
 void TestRunner::SetMIDISysexPermission(bool value) {
   const std::vector<WebTestProxyBase*>& windowList =
-      test_interfaces_->windowList();
+      test_interfaces_->GetWindowList();
   for (unsigned i = 0; i < windowList.size(); ++i)
     windowList.at(i)->GetMIDIClientMock()->setSysexPermission(value);
 }

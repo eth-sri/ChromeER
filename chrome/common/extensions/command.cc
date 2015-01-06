@@ -9,10 +9,10 @@
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/values.h"
+#include "chrome/grit/generated_resources.h"
 #include "extensions/common/error_utils.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/manifest_constants.h"
-#include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
 namespace extensions {
@@ -94,6 +94,15 @@ ui::Accelerator ParseImpl(const std::string& accelerator,
 #endif
       } else {
         // No other platform supports Command.
+        key = ui::VKEY_UNKNOWN;
+        break;
+      }
+    } else if (tokens[i] == values::kKeySearch) {
+      // Search is a special modifier only on ChromeOS and maps to 'Command'.
+      if (platform_key == values::kKeybindingPlatformChromeOs) {
+        modifiers |= ui::EF_COMMAND_DOWN;
+      } else {
+        // No other platform supports Search.
         key = ui::VKEY_UNKNOWN;
         break;
       }
@@ -303,7 +312,12 @@ std::string Command::AcceleratorToString(const ui::Accelerator& accelerator) {
     shortcut += values::kKeySeparator;
 
   if (accelerator.IsCmdDown()) {
+#if defined(OS_CHROMEOS)
+    // Chrome OS treats the Search key like the Command key.
+    shortcut += values::kKeySearch;
+#else
     shortcut += values::kKeyCommand;
+#endif
     shortcut += values::kKeySeparator;
   }
 

@@ -39,16 +39,10 @@ RenderFrameProxy* RenderFrameProxy::CreateProxyToReplaceFrame(
   scoped_ptr<RenderFrameProxy> proxy(
       new RenderFrameProxy(routing_id, frame_to_replace->GetRoutingID()));
 
-  blink::WebRemoteFrame* web_frame = NULL;
-  if (frame_to_replace->GetWebFrame()->parent() &&
-      frame_to_replace->GetWebFrame()->parent()->isWebRemoteFrame()) {
-    blink::WebRemoteFrame* parent_web_frame =
-        frame_to_replace->GetWebFrame()->parent()->toWebRemoteFrame();
-    web_frame = parent_web_frame->createRemoteChild("", proxy.get());
-  } else {
-    web_frame = blink::WebRemoteFrame::create(proxy.get());
-  }
-
+  // When a RenderFrame is replaced by a RenderProxy, the WebRemoteFrame should
+  // always come from WebRemoteFrame::create and a call to WebFrame::swap must
+  // follow later.
+  blink::WebRemoteFrame* web_frame = blink::WebRemoteFrame::create(proxy.get());
   proxy->Init(web_frame, frame_to_replace->render_view());
   return proxy.release();
 }
@@ -143,7 +137,7 @@ void RenderFrameProxy::Init(blink::WebRemoteFrame* web_frame,
 }
 
 void RenderFrameProxy::DidCommitCompositorFrame() {
-  if (compositing_helper_)
+  if (compositing_helper_.get())
     compositing_helper_->DidCommitCompositorFrame();
 }
 
@@ -155,6 +149,7 @@ bool RenderFrameProxy::OnMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(FrameMsg_BuffersSwapped, OnBuffersSwapped)
     IPC_MESSAGE_HANDLER_GENERIC(FrameMsg_CompositorFrameSwapped,
                                 OnCompositorFrameSwapped(msg))
+    IPC_MESSAGE_HANDLER(FrameMsg_DisownOpener, OnDisownOpener)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
 
@@ -187,13 +182,13 @@ void RenderFrameProxy::OnDeleteProxy() {
 }
 
 void RenderFrameProxy::OnChildFrameProcessGone() {
-  if (compositing_helper_)
+  if (compositing_helper_.get())
     compositing_helper_->ChildFrameGone();
 }
 
 void RenderFrameProxy::OnBuffersSwapped(
     const FrameMsg_BuffersSwapped_Params& params) {
-  if (!compositing_helper_) {
+  if (!compositing_helper_.get()) {
     compositing_helper_ =
         ChildFrameCompositingHelper::CreateForRenderFrameProxy(this);
     compositing_helper_->EnableCompositing(true);
@@ -214,7 +209,7 @@ void RenderFrameProxy::OnCompositorFrameSwapped(const IPC::Message& message) {
   scoped_ptr<cc::CompositorFrame> frame(new cc::CompositorFrame);
   param.a.frame.AssignTo(frame.get());
 
-  if (!compositing_helper_) {
+  if (!compositing_helper_.get()) {
     compositing_helper_ =
         ChildFrameCompositingHelper::CreateForRenderFrameProxy(this);
     compositing_helper_->EnableCompositing(true);
@@ -224,6 +219,27 @@ void RenderFrameProxy::OnCompositorFrameSwapped(const IPC::Message& message) {
                                                 param.a.output_surface_id,
                                                 param.a.producing_host_id,
                                                 param.a.shared_memory_handle);
+}
+
+void RenderFrameProxy::OnDisownOpener() {
+  // TODO(creis): We should only see this for main frames for now.  To support
+  // disowning the opener on subframes, we will need to move WebContentsImpl's
+  // opener_ to FrameTreeNode.
+  CHECK(!web_frame_->parent());
+
+  // When there is a RenderFrame for this proxy, tell it to disown its opener.
+  // TODO(creis): Remove this when we only have WebRemoteFrames and make sure
+  // they know they have an opener.
+  RenderFrameImpl* render_frame =
+      RenderFrameImpl::FromRoutingID(frame_routing_id_);
+  if (render_frame) {
+    if (render_frame->GetWebFrame()->opener())
+      render_frame->GetWebFrame()->setOpener(NULL);
+    return;
+  }
+
+  if (web_frame_->opener())
+    web_frame_->setOpener(NULL);
 }
 
 }  // namespace

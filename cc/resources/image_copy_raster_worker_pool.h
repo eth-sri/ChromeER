@@ -48,8 +48,8 @@ class CC_EXPORT ImageCopyRasterWorkerPool : public RasterWorkerPool,
   virtual void CheckForCompletedTasks() OVERRIDE;
 
   // Overridden from RasterizerTaskClient:
-  virtual SkCanvas* AcquireCanvasForRaster(RasterTask* task) OVERRIDE;
-  virtual void ReleaseCanvasForRaster(RasterTask* task) OVERRIDE;
+  virtual RasterBuffer* AcquireBufferForRaster(RasterTask* task) OVERRIDE;
+  virtual void ReleaseBufferForRaster(RasterTask* task) OVERRIDE;
 
  protected:
   ImageCopyRasterWorkerPool(base::SequencedTaskRunner* task_runner,
@@ -102,9 +102,6 @@ class CC_EXPORT ImageCopyRasterWorkerPool : public RasterWorkerPool,
   bool raster_tasks_pending_;
   bool raster_tasks_required_for_activation_pending_;
 
-  base::WeakPtrFactory<ImageCopyRasterWorkerPool>
-      raster_finished_weak_ptr_factory_;
-
   scoped_refptr<RasterizerTask> raster_finished_task_;
   scoped_refptr<RasterizerTask> raster_required_for_activation_finished_task_;
 
@@ -112,6 +109,9 @@ class CC_EXPORT ImageCopyRasterWorkerPool : public RasterWorkerPool,
   // completed tasks.
   TaskGraph graph_;
   Task::Vector completed_tasks_;
+
+  base::WeakPtrFactory<ImageCopyRasterWorkerPool>
+      raster_finished_weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ImageCopyRasterWorkerPool);
 };

@@ -292,9 +292,9 @@ To run your application from a local server:
 * Enable the :ref:`Native Client flag <flag>` in Chrome.
 * Start a :ref:`local web server <web_server>`.
 * Put your application under the examples directory in the SDK bundle you are
-  using (e.g., in the directory ``pepper_31/examples/my_app``).
+  using (for example, in the directory ``pepper_35/examples/my_app``).
 * Access your application on the local server by typing the location of its
-  HTML file in Chrome, e.g.:
+  HTML file in Chrome, for example:
   ``http://localhost:5103/my_app/my_app_main_page.html``.
 
 .. Note::
@@ -420,7 +420,7 @@ is how to do so:
    * Upload the application files (.html, .nmf, .nexe, .css, .js, image files,
      etc.) to the server on which the application is being hosted.
    * Use `Google Webmaster Tools <http://www.google.com/webmasters/tools/>`_ to
-     verify ownership of the web site on which the application runs.
+     verify ownership of the website on which the application runs.
 
 #. Log in to the `Chrome Web Store Developer Dashboard
    <https://chrome.google.com/webstore/developer/dashboard>`_.

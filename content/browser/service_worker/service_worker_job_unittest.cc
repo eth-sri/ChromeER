@@ -148,7 +148,7 @@ TEST_F(ServiceWorkerJobTest, SameDocumentSameRegistration) {
       SaveFoundRegistration(SERVICE_WORKER_OK, &called, &registration2));
   base::RunLoop().RunUntilIdle();
   EXPECT_TRUE(called);
-  ASSERT_TRUE(registration1);
+  ASSERT_TRUE(registration1.get());
   ASSERT_EQ(registration1, original_registration);
   ASSERT_EQ(registration1, registration2);
 }
@@ -288,8 +288,8 @@ TEST_F(ServiceWorkerJobTest, Unregister_NothingRegistered) {
   ASSERT_TRUE(called);
 }
 
-// Make sure that when a new registration replaces an existing
-// registration, that the old one is cleaned up.
+// Make sure registering a new script creates a new version and shares an
+// existing registration.
 TEST_F(ServiceWorkerJobTest, RegisterNewScript) {
   GURL pattern("http://www.example.com/");
 
@@ -329,9 +329,7 @@ TEST_F(ServiceWorkerJobTest, RegisterNewScript) {
   base::RunLoop().RunUntilIdle();
   ASSERT_TRUE(called);
 
-  ASSERT_TRUE(old_registration->HasOneRef());
-
-  ASSERT_NE(old_registration, new_registration);
+  ASSERT_EQ(old_registration, new_registration);
 
   scoped_refptr<ServiceWorkerRegistration> new_registration_by_pattern;
   storage()->FindRegistrationForPattern(
@@ -373,7 +371,7 @@ TEST_F(ServiceWorkerJobTest, RegisterDuplicateScript) {
   base::RunLoop().RunUntilIdle();
   ASSERT_TRUE(called);
 
-  ASSERT_TRUE(old_registration_by_pattern);
+  ASSERT_TRUE(old_registration_by_pattern.get());
 
   scoped_refptr<ServiceWorkerRegistration> new_registration;
   job_coordinator()->Register(
@@ -715,26 +713,27 @@ TEST_F(ServiceWorkerJobTest, AbortAll_RegUnreg) {
 TEST_F(ServiceWorkerJobTest, UnregisterWaitingSetsRedundant) {
   scoped_refptr<ServiceWorkerRegistration> registration;
   bool called = false;
+  GURL script_url("http://www.example.com/service_worker.js");
   job_coordinator()->Register(
       GURL("http://www.example.com/"),
-      GURL("http://www.example.com/service_worker.js"),
+      script_url,
       render_process_id_,
       SaveRegistration(SERVICE_WORKER_OK, &called, &registration));
   base::RunLoop().RunUntilIdle();
   ASSERT_TRUE(called);
-  ASSERT_TRUE(registration);
+  ASSERT_TRUE(registration.get());
 
   // Manually create the waiting worker since there is no way to become a
   // waiting worker until Update is implemented.
   scoped_refptr<ServiceWorkerVersion> version = new ServiceWorkerVersion(
-      registration, 1L, helper_->context()->AsWeakPtr());
+      registration.get(), script_url, 1L, helper_->context()->AsWeakPtr());
   ServiceWorkerStatusCode status = SERVICE_WORKER_ERROR_FAILED;
   version->StartWorker(CreateReceiverOnCurrentThread(&status));
   base::RunLoop().RunUntilIdle();
   ASSERT_EQ(SERVICE_WORKER_OK, status);
 
   version->SetStatus(ServiceWorkerVersion::INSTALLED);
-  registration->SetWaitingVersion(version);
+  registration->SetWaitingVersion(version.get());
   EXPECT_EQ(ServiceWorkerVersion::RUNNING,
             version->running_status());
   EXPECT_EQ(ServiceWorkerVersion::INSTALLED, version->status());
@@ -763,7 +762,7 @@ TEST_F(ServiceWorkerJobTest, UnregisterActiveSetsRedundant) {
       SaveRegistration(SERVICE_WORKER_OK, &called, &registration));
   base::RunLoop().RunUntilIdle();
   ASSERT_TRUE(called);
-  ASSERT_TRUE(registration);
+  ASSERT_TRUE(registration.get());
 
   scoped_refptr<ServiceWorkerVersion> version = registration->active_version();
   EXPECT_EQ(ServiceWorkerVersion::RUNNING, version->running_status());
@@ -794,7 +793,7 @@ TEST_F(ServiceWorkerJobTest,
       SaveRegistration(SERVICE_WORKER_OK, &called, &registration));
   base::RunLoop().RunUntilIdle();
   ASSERT_TRUE(called);
-  ASSERT_TRUE(registration);
+  ASSERT_TRUE(registration.get());
 
   scoped_ptr<ServiceWorkerProviderHost> host(
       new ServiceWorkerProviderHost(33 /* dummy render process id */,
@@ -858,7 +857,7 @@ void WriteResponse(
       new HttpResponseInfoIOBuffer(info.release());
 
   int rv = -1234;
-  writer->WriteInfo(info_buffer, base::Bind(&OnIOComplete, &rv));
+  writer->WriteInfo(info_buffer.get(), base::Bind(&OnIOComplete, &rv));
   RunNestedUntilIdle();
   EXPECT_LT(0, rv);
 
@@ -875,7 +874,7 @@ void WriteStringResponse(
   scoped_refptr<IOBuffer> body_buffer(new WrappedIOBuffer(body.data()));
   const char kHttpHeaders[] = "HTTP/1.0 200 HONKYDORY\0\0";
   std::string headers(kHttpHeaders, arraysize(kHttpHeaders));
-  WriteResponse(storage, id, headers, body_buffer, body.length());
+  WriteResponse(storage, id, headers, body_buffer.get(), body.length());
 }
 
 class UpdateJobTestHelper
@@ -895,7 +894,12 @@ class UpdateJobTestHelper
   };
 
   UpdateJobTestHelper(int mock_render_process_id)
-      : EmbeddedWorkerTestHelper(mock_render_process_id) {}
+      : EmbeddedWorkerTestHelper(mock_render_process_id),
+        update_found_(false) {}
+  virtual ~UpdateJobTestHelper() {
+    if (registration_.get())
+      registration_->RemoveListener(this);
+  }
 
   ServiceWorkerStorage* storage() { return context()->storage(); }
   ServiceWorkerJobCoordinator* job_coordinator() {
@@ -913,10 +917,11 @@ class UpdateJobTestHelper
         SaveRegistration(SERVICE_WORKER_OK, &called, &registration));
     base::RunLoop().RunUntilIdle();
     EXPECT_TRUE(called);
-    EXPECT_TRUE(registration);
+    EXPECT_TRUE(registration.get());
     EXPECT_TRUE(registration->active_version());
     EXPECT_FALSE(registration->installing_version());
     EXPECT_FALSE(registration->waiting_version());
+    registration_ = registration;
     return registration;
   }
 
@@ -963,6 +968,22 @@ class UpdateJobTestHelper
     attribute_change_log_.push_back(entry);
   }
 
+  virtual void OnRegistrationFailed(
+      ServiceWorkerRegistration* registration) OVERRIDE {
+    NOTREACHED();
+  }
+
+  virtual void OnRegistrationFinishedUninstalling(
+      ServiceWorkerRegistration* registration) OVERRIDE {
+    NOTREACHED();
+  }
+
+  virtual void OnUpdateFound(
+      ServiceWorkerRegistration* registration) OVERRIDE {
+    ASSERT_FALSE(update_found_);
+    update_found_ = true;
+  }
+
   // ServiceWorkerVersion::Listener overrides
   virtual void OnVersionStateChanged(ServiceWorkerVersion* version) OVERRIDE {
     StateChangeLogEntry entry;
@@ -971,8 +992,11 @@ class UpdateJobTestHelper
     state_change_log_.push_back(entry);
   }
 
+  scoped_refptr<ServiceWorkerRegistration> registration_;
+
   std::vector<AttributeChangeLogEntry> attribute_change_log_;
   std::vector<StateChangeLogEntry> state_change_log_;
+  bool update_found_;
 };
 
 }  // namespace
@@ -983,7 +1007,7 @@ TEST_F(ServiceWorkerJobTest, Update_NoChange) {
   helper_.reset(update_helper);
   scoped_refptr<ServiceWorkerRegistration> registration =
       update_helper->SetupInitialRegistration(kNoChangeOrigin);
-  ASSERT_TRUE(registration);
+  ASSERT_TRUE(registration.get());
   ASSERT_EQ(4u, update_helper->state_change_log_.size());
   EXPECT_EQ(ServiceWorkerVersion::INSTALLING,
             update_helper->state_change_log_[0].status);
@@ -1013,6 +1037,7 @@ TEST_F(ServiceWorkerJobTest, Update_NoChange) {
             update_helper->state_change_log_[0].version_id);
   EXPECT_EQ(ServiceWorkerVersion::REDUNDANT,
             update_helper->state_change_log_[0].status);
+  EXPECT_FALSE(update_helper->update_found_);
 }
 
 TEST_F(ServiceWorkerJobTest, Update_NewVersion) {
@@ -1021,7 +1046,7 @@ TEST_F(ServiceWorkerJobTest, Update_NewVersion) {
   helper_.reset(update_helper);
   scoped_refptr<ServiceWorkerRegistration> registration =
       update_helper->SetupInitialRegistration(kNewVersionOrigin);
-  ASSERT_TRUE(registration);
+  ASSERT_TRUE(registration.get());
   update_helper->state_change_log_.clear();
 
   // Run the update job.
@@ -1093,6 +1118,79 @@ TEST_F(ServiceWorkerJobTest, Update_NewVersion) {
             update_helper->state_change_log_[4].version_id);
   EXPECT_EQ(ServiceWorkerVersion::ACTIVATED,
             update_helper->state_change_log_[4].status);
+
+  EXPECT_TRUE(update_helper->update_found_);
+}
+
+TEST_F(ServiceWorkerJobTest, Update_NewestVersionChanged) {
+  bool called;
+  scoped_refptr<ServiceWorkerRegistration> registration;
+  job_coordinator()->Register(
+      GURL("http://www.example.com/one/"),
+      GURL("http://www.example.com/service_worker.js"),
+      render_process_id_,
+      SaveRegistration(SERVICE_WORKER_OK, &called, &registration));
+
+  EXPECT_FALSE(called);
+  base::RunLoop().RunUntilIdle();
+  EXPECT_TRUE(called);
+  ServiceWorkerVersion* active_version = registration->active_version();
+
+  // Queue an Update, it should abort when it starts and sees the new version.
+  job_coordinator()->Update(registration.get());
+
+  // Add a waiting version with new script.
+  scoped_refptr<ServiceWorkerVersion> version =
+      new ServiceWorkerVersion(registration.get(),
+                               GURL("http://www.example.com/new_worker.js"),
+                               2L /* dummy version id */,
+                               helper_->context()->AsWeakPtr());
+  registration->SetWaitingVersion(version.get());
+
+  base::RunLoop().RunUntilIdle();
+
+  // Verify the registration was not modified by the Update.
+  EXPECT_EQ(active_version, registration->active_version());
+  EXPECT_EQ(version.get(), registration->waiting_version());
+  EXPECT_EQ(NULL, registration->installing_version());
+}
+
+TEST_F(ServiceWorkerJobTest, Update_UninstallingRegistration) {
+  bool called;
+  scoped_refptr<ServiceWorkerRegistration> registration;
+  job_coordinator()->Register(
+      GURL("http://www.example.com/one/"),
+      GURL("http://www.example.com/service_worker.js"),
+      render_process_id_,
+      SaveRegistration(SERVICE_WORKER_OK, &called, &registration));
+
+  EXPECT_FALSE(called);
+  base::RunLoop().RunUntilIdle();
+  EXPECT_TRUE(called);
+
+  // Add a controllee and queue an unregister to force the uninstalling state.
+  scoped_ptr<ServiceWorkerProviderHost> host(
+      new ServiceWorkerProviderHost(33 /* dummy render_process id */,
+                                    1 /* dummy provider_id */,
+                                    helper_->context()->AsWeakPtr(),
+                                    NULL));
+  ServiceWorkerVersion* active_version = registration->active_version();
+  active_version->AddControllee(host.get());
+  job_coordinator()->Unregister(GURL("http://www.example.com/one/"),
+                                SaveUnregistration(SERVICE_WORKER_OK, &called));
+
+  // Update should abort after it starts and sees uninstalling.
+  job_coordinator()->Update(registration.get());
+
+  EXPECT_FALSE(called);
+  base::RunLoop().RunUntilIdle();
+  EXPECT_TRUE(called);
+
+  // Verify the registration was not modified by the Update.
+  EXPECT_TRUE(registration->is_uninstalling());
+  EXPECT_EQ(active_version, registration->active_version());
+  EXPECT_EQ(NULL, registration->waiting_version());
+  EXPECT_EQ(NULL, registration->installing_version());
 }
 
 }  // namespace content

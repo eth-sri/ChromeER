@@ -13,7 +13,6 @@
 #include "chrome/common/icon_with_badge_image_source.h"
 #include "extensions/common/constants.h"
 #include "grit/theme_resources.h"
-#include "grit/ui_resources.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkPaint.h"
@@ -58,7 +57,8 @@ bool HasValue(const std::map<int, T>& map, int tab_id) {
 }  // namespace
 
 const int ExtensionAction::kDefaultTabId = -1;
-const int ExtensionAction::kPageActionIconMaxSize = 19;
+const int ExtensionAction::kPageActionIconMaxSize =
+    extension_misc::EXTENSION_ICON_ACTION;
 
 ExtensionAction::ExtensionAction(const std::string& extension_id,
                                  extensions::ActionInfo::Type action_type,
@@ -173,7 +173,7 @@ void ExtensionAction::ClearAllValuesForTab(int tab_id) {
   is_visible_.erase(tab_id);
   // TODO(jyasskin): Erase the element from declarative_show_count_
   // when the tab's closed.  There's a race between the
-  // PageActionController and the ContentRulesRegistry on navigation,
+  // LocationBarController and the ContentRulesRegistry on navigation,
   // which prevents me from cleaning everything up now.
 }
 

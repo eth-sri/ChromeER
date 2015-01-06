@@ -38,6 +38,7 @@
 #include "chrome/common/extensions/api/bookmarks.h"
 #include "chrome/common/importer/importer_data_types.h"
 #include "chrome/common/pref_names.h"
+#include "chrome/grit/generated_resources.h"
 #include "components/bookmarks/browser/bookmark_model.h"
 #include "components/bookmarks/browser/bookmark_utils.h"
 #include "components/user_prefs/user_prefs.h"
@@ -49,7 +50,6 @@
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/notification_types.h"
 #include "extensions/common/permissions/permissions_data.h"
-#include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
 #if defined(OS_WIN)
@@ -85,7 +85,7 @@ base::FilePath GetDefaultFilepathForBookmarkExport() {
                                  base::TimeFormatShortDateNumeric(time));
 #endif
 
-  file_util::ReplaceIllegalCharactersInPath(&filename, '_');
+  base::i18n::ReplaceIllegalCharactersInPath(&filename, '_');
 
   base::FilePath default_path;
   PathService::Get(chrome::DIR_USER_DOCUMENTS, &default_path);
@@ -102,7 +102,7 @@ bool IsEnhancedBookmarksExtensionActive(Profile* profile) {
       ExtensionRegistry::Get(profile)->enabled_extensions();
   for (ExtensionSet::const_iterator it = extensions.begin();
        it != extensions.end(); ++it) {
-    const Extension* extension = *it;
+    const Extension* extension = it->get();
     if (extension->permissions_data()->HasAPIPermission(
             APIPermission::kBookmarkManagerPrivate)) {
       std::string hash = base::SHA1HashString(extension->id());
@@ -255,7 +255,7 @@ const BookmarkNode* BookmarksFunction::CreateBookmarkNode(
 
 bool BookmarksFunction::EditBookmarksEnabled() {
   PrefService* prefs = user_prefs::UserPrefs::Get(GetProfile());
-  if (prefs->GetBoolean(prefs::kEditBookmarksEnabled))
+  if (prefs->GetBoolean(::bookmarks::prefs::kEditBookmarksEnabled))
     return true;
   error_ = keys::kEditBookmarksDisabled;
   return false;
@@ -908,8 +908,6 @@ bool BookmarksExportFunction::RunOnReady() {
 void BookmarksExportFunction::FileSelected(const base::FilePath& path,
                                            int index,
                                            void* params) {
-  // TODO(jgreenwald): remove ifdef once extensions are no longer built on
-  // Android.
   bookmark_html_writer::WriteBookmarks(GetProfile(), path, NULL);
   Release();  // Balanced in BookmarksIOFunction::SelectFile()
 }

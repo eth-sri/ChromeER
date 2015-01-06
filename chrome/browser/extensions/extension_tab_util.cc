@@ -4,21 +4,21 @@
 
 #include "chrome/browser/extensions/extension_tab_util.h"
 
-#include "apps/app_window.h"
-#include "apps/app_window_registry.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/stringprintf.h"
 #include "chrome/browser/extensions/api/tabs/tabs_constants.h"
 #include "chrome/browser/extensions/chrome_extension_function.h"
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/extensions/window_controller.h"
 #include "chrome/browser/extensions/window_controller_list.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/sessions/session_id.h"
+#include "chrome/browser/sessions/session_tab_helper.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_iterator.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/scoped_tabbed_browser_displayer.h"
+#include "chrome/browser/ui/singleton_tabs.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_iterator.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/extensions/api/tabs.h"
@@ -28,16 +28,18 @@
 #include "content/public/browser/favicon_status.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/browser/app_window/app_window.h"
+#include "extensions/browser/app_window/app_window_registry.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/error_utils.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/feature_switch.h"
 #include "extensions/common/manifest_constants.h"
 #include "extensions/common/manifest_handlers/incognito_info.h"
 #include "extensions/common/permissions/api_permission.h"
 #include "extensions/common/permissions/permissions_data.h"
 #include "url/gurl.h"
 
-using apps::AppWindow;
 using content::NavigationEntry;
 using content::WebContents;
 
@@ -49,7 +51,7 @@ namespace keys = tabs_constants;
 
 WindowController* GetAppWindowController(const WebContents* contents) {
   Profile* profile = Profile::FromBrowserContext(contents->GetBrowserContext());
-  apps::AppWindowRegistry* registry = apps::AppWindowRegistry::Get(profile);
+  AppWindowRegistry* registry = AppWindowRegistry::Get(profile);
   if (!registry)
     return NULL;
   AppWindow* app_window =
@@ -289,7 +291,7 @@ int ExtensionTabUtil::GetWindowIdOfTabStripModel(
 }
 
 int ExtensionTabUtil::GetTabId(const WebContents* web_contents) {
-  return SessionID::IdForTab(web_contents);
+  return SessionTabHelper::IdForTab(web_contents);
 }
 
 std::string ExtensionTabUtil::GetTabStatusText(bool is_loading) {
@@ -297,7 +299,7 @@ std::string ExtensionTabUtil::GetTabStatusText(bool is_loading) {
 }
 
 int ExtensionTabUtil::GetWindowIdOfTab(const WebContents* web_contents) {
-  return SessionID::IdForWindowContainingTab(web_contents);
+  return SessionTabHelper::IdForWindowContainingTab(web_contents);
 }
 
 base::DictionaryValue* ExtensionTabUtil::CreateTabValue(
@@ -467,7 +469,7 @@ bool ExtensionTabUtil::GetTabById(int tab_id,
       TabStripModel* target_tab_strip = target_browser->tab_strip_model();
       for (int i = 0; i < target_tab_strip->count(); ++i) {
         WebContents* target_contents = target_tab_strip->GetWebContentsAt(i);
-        if (SessionID::IdForTab(target_contents) == tab_id) {
+        if (SessionTabHelper::IdForTab(target_contents) == tab_id) {
           if (browser)
             *browser = target_browser;
           if (tab_strip)
@@ -566,16 +568,33 @@ void ExtensionTabUtil::OpenOptionsPage(const Extension* extension,
     browser = displayer->browser();
   }
 
-  content::OpenURLParams params(ManifestURL::GetOptionsPage(extension),
-                                content::Referrer(),
-                                SINGLETON_TAB,
-                                content::PAGE_TRANSITION_LINK,
-                                false);
-  browser->OpenURL(params);
-  browser->window()->Show();
-  WebContents* web_contents =
-      browser->tab_strip_model()->GetActiveWebContents();
-  web_contents->GetDelegate()->ActivateContents(web_contents);
+  if (FeatureSwitch::embedded_extension_options()->IsEnabled()) {
+    // If embedded extension options are enabled, open chrome://extensions
+    // in a new tab and show the extension options in an embedded popup.
+    chrome::NavigateParams params(chrome::GetSingletonTabNavigateParams(
+        browser, GURL(chrome::kChromeUIExtensionsURL)));
+    params.path_behavior = chrome::NavigateParams::IGNORE_AND_NAVIGATE;
+
+    GURL::Replacements replacements;
+    std::string query =
+        base::StringPrintf("options=%s", extension->id().c_str());
+    replacements.SetQueryStr(query);
+    params.url = params.url.ReplaceComponents(replacements);
+
+    chrome::ShowSingletonTabOverwritingNTP(browser, params);
+  } else {
+    // Otherwise open a new tab with the extension's options page
+    content::OpenURLParams params(ManifestURL::GetOptionsPage(extension),
+                                  content::Referrer(),
+                                  SINGLETON_TAB,
+                                  content::PAGE_TRANSITION_LINK,
+                                  false);
+    browser->OpenURL(params);
+    browser->window()->Show();
+    WebContents* web_contents =
+        browser->tab_strip_model()->GetActiveWebContents();
+    web_contents->GetDelegate()->ActivateContents(web_contents);
+  }
 }
 
 }  // namespace extensions

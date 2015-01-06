@@ -30,6 +30,7 @@
 #include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "chrome/grit/generated_resources.h"
 #include "components/nacl/browser/nacl_browser.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/gpu_data_manager.h"
@@ -40,13 +41,12 @@
 #include "content/public/browser/worker_service.h"
 #include "content/public/common/result_codes.h"
 #include "extensions/browser/extension_system.h"
-#include "grit/generated_resources.h"
-#include "grit/ui_resources.h"
 #include "third_party/icu/source/i18n/unicode/coll.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/text/bytes_formatting.h"
 #include "ui/gfx/image/image_skia.h"
+#include "ui/resources/grit/ui_resources.h"
 
 #if defined(OS_MACOSX)
 #include "content/public/browser/browser_child_process_host.h"
@@ -698,15 +698,6 @@ bool TaskManagerModel::GetV8MemoryUsed(int index, size_t* result) const {
 bool TaskManagerModel::CanActivate(int index) const {
   CHECK_LT(index, ResourceCount());
   return GetResourceWebContents(index) != NULL;
-}
-
-bool TaskManagerModel::CanInspect(int index) const {
-  return GetResource(index)->CanInspect();
-}
-
-void TaskManagerModel::Inspect(int index) const {
-  CHECK_LT(index, ResourceCount());
-  GetResource(index)->Inspect();
 }
 
 int TaskManagerModel::GetGoatsTeleported(int index) const {

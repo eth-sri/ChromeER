@@ -62,12 +62,6 @@
           'nacl_load_test.html',
         ],
       },
-      # We only need the pexe for this test. However, build_pnacl_newlib: 1
-      # will also translate that pexe into a nexe, so add the shim
-      # just in case of a race condition.
-      'dependencies': [
-        '<(DEPTH)/ppapi/native_client/src/untrusted/pnacl_irt_shim/pnacl_irt_shim.gyp:aot',
-      ],
     },
     {
       'target_name': 'exit_status_test',
@@ -85,9 +79,6 @@
           'exit_status/pm_exit_status_test.html',
         ],
       },
-      'dependencies': [
-        '<(DEPTH)/ppapi/native_client/src/untrusted/pnacl_irt_shim/pnacl_irt_shim.gyp:aot',
-      ],
     },
     {
       'target_name': 'extension_validation_cache',
@@ -95,10 +86,11 @@
       'variables': {
         'nexe_target': 'extension_validation_cache',
         # The test currently only has the test expectations for the
-        # newlib case (# validation queries/settings), and has also
-        # hardcoded the newlib variant's directory path for the unpacked ext.
+        # newlib and glibc cases (# validation queries/settings), and has also
+        # hardcoded the newlib and glibc variants' directory path for the
+        # unpacked ext.
         'build_newlib': 1,
-        'build_glibc': 0,
+        'build_glibc': 1,
         'build_pnacl_newlib': 0,
         # Need a new directory to not clash with with other extension
         # tests's files (e.g., manifest.json).
@@ -139,9 +131,6 @@
           'sysconf_nprocessors_onln/sysconf_nprocessors_onln_test.html',
         ],
       },
-      'dependencies': [
-        '<(DEPTH)/ppapi/native_client/src/untrusted/pnacl_irt_shim/pnacl_irt_shim.gyp:aot',
-      ],
     },
     {
       'target_name': 'ppapi_test_lib',
@@ -214,7 +203,6 @@
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
         '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
-        '<(DEPTH)/ppapi/native_client/src/untrusted/pnacl_irt_shim/pnacl_irt_shim.gyp:aot',
         '<(DEPTH)/ppapi/ppapi_nacl.gyp:ppapi_cpp_lib',
         'ppapi_test_lib',
       ],
@@ -393,7 +381,6 @@
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
         '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
-        '<(DEPTH)/ppapi/native_client/src/untrusted/pnacl_irt_shim/pnacl_irt_shim.gyp:aot',
         '<(DEPTH)/ppapi/ppapi_nacl.gyp:ppapi_cpp_lib',
         'ppapi_test_lib',
       ],
@@ -422,7 +409,6 @@
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
         '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
-        '<(DEPTH)/ppapi/native_client/src/untrusted/pnacl_irt_shim/pnacl_irt_shim.gyp:aot',
         '<(DEPTH)/ppapi/ppapi_nacl.gyp:ppapi_cpp_lib',
         'ppapi_test_lib',
       ],
@@ -451,7 +437,6 @@
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
         '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
-        '<(DEPTH)/ppapi/native_client/src/untrusted/pnacl_irt_shim/pnacl_irt_shim.gyp:aot',
         '<(DEPTH)/ppapi/ppapi_nacl.gyp:ppapi_cpp_lib',
         'ppapi_test_lib',
       ],
@@ -480,7 +465,6 @@
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
         '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
-        '<(DEPTH)/ppapi/native_client/src/untrusted/pnacl_irt_shim/pnacl_irt_shim.gyp:aot',
         '<(DEPTH)/ppapi/ppapi_nacl.gyp:ppapi_cpp_lib',
         'ppapi_test_lib',
       ],
@@ -509,7 +493,6 @@
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
         '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
-        '<(DEPTH)/ppapi/native_client/src/untrusted/pnacl_irt_shim/pnacl_irt_shim.gyp:aot',
         '<(DEPTH)/ppapi/ppapi_nacl.gyp:ppapi_cpp_lib',
         'ppapi_test_lib',
       ],
@@ -540,7 +523,6 @@
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
         '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
-        '<(DEPTH)/ppapi/native_client/src/untrusted/pnacl_irt_shim/pnacl_irt_shim.gyp:aot',
         '<(DEPTH)/ppapi/ppapi_nacl.gyp:ppapi_cpp_lib',
       ],
     },
@@ -779,7 +761,6 @@
         '<(DEPTH)/native_client/tools.gyp:prep_toolchain',
         '<(DEPTH)/ppapi/ppapi_nacl.gyp:ppapi_cpp_lib',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
-        '<(DEPTH)/ppapi/native_client/src/untrusted/pnacl_irt_shim/pnacl_irt_shim.gyp:aot',
         '<(DEPTH)/native_client/src/shared/srpc/srpc.gyp:srpc_lib',
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
         '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
@@ -832,10 +813,6 @@
         'nexe_target': 'pnacl_debug_url',
         'build_pnacl_newlib': 1,
         'nexe_destination_dir': 'nacl_test_data',
-        # No need to translate these AOT, when we just need the pexe.
-        'enable_x86_32': 0,
-        'enable_x86_64': 0,
-        'enable_arm': 0,
         'generate_nmf': 0,
         'sources': [
           'simple.cc',
@@ -857,10 +834,6 @@
       'variables': {
         'build_pnacl_newlib': 1,
         'nexe_destination_dir': 'nacl_test_data',
-        # No need to translate AOT.
-        'enable_x86_32': 0,
-        'enable_x86_64': 0,
-        'enable_arm': 0,
         # Use prebuilt NMF files.
         'generate_nmf': 0,
         'test_files': [
@@ -883,10 +856,6 @@
         'build_glibc': 1,
         'build_pnacl_newlib': 1,
         'nexe_destination_dir': 'nacl_test_data',
-        # No need to translate AOT.
-        'enable_x86_32': 0,
-        'enable_x86_64': 0,
-        'enable_arm': 0,
         'test_files': [
           'pnacl_mime_type/pnacl_mime_type.html',
         ],
@@ -899,10 +868,6 @@
         'nexe_target': 'pnacl_options',
         'build_pnacl_newlib': 1,
         'nexe_destination_dir': 'nacl_test_data',
-        # No need to translate these AOT, when we just need the pexe.
-        'enable_x86_32': 0,
-        'enable_x86_64': 0,
-        'enable_arm': 0,
         'generate_nmf': 0,
         'sources': [
           'simple.cc',
@@ -922,12 +887,6 @@
       'target_name': 'pnacl_dyncode_syscall_disabled_test',
       'type': 'none',
       'variables': {
-        # This tests that nexes produced by translation in the browser are not
-        # able to use the dyncode syscalls.  Pre-translated nexes are not
-        # subject to this constraint, so we do not test them.
-        'enable_x86_32': 0,
-        'enable_x86_64': 0,
-        'enable_arm': 0,
         'nexe_target': 'pnacl_dyncode_syscall_disabled',
         'build_pnacl_newlib': 1,
         'nexe_destination_dir': 'nacl_test_data',
@@ -963,12 +922,6 @@
       'target_name': 'pnacl_hw_eh_disabled_test',
       'type': 'none',
       'variables': {
-        # This tests that nexes produced by translation in the browser are not
-        # able to use hardware exception handling.  Pre-translated nexes are
-        # not subject to this constraint, so we do not test them.
-        'enable_x86_32': 0,
-        'enable_x86_64': 0,
-        'enable_arm': 0,
         'nexe_target': 'pnacl_hw_eh_disabled',
         'build_pnacl_newlib': 1,
         'nexe_destination_dir': 'nacl_test_data',
@@ -1028,7 +981,6 @@
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
         '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
-        '<(DEPTH)/ppapi/native_client/src/untrusted/pnacl_irt_shim/pnacl_irt_shim.gyp:aot',
         '<(DEPTH)/ppapi/ppapi_nacl.gyp:ppapi_cpp_lib',
         'ppapi_test_lib',
       ],
@@ -1060,7 +1012,6 @@
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
         '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
-        '<(DEPTH)/ppapi/native_client/src/untrusted/pnacl_irt_shim/pnacl_irt_shim.gyp:aot',
         '<(DEPTH)/ppapi/ppapi_nacl.gyp:ppapi_cpp_lib',
         'ppapi_test_lib',
       ],
@@ -1093,7 +1044,6 @@
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
         '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
-        '<(DEPTH)/ppapi/native_client/src/untrusted/pnacl_irt_shim/pnacl_irt_shim.gyp:aot',
         '<(DEPTH)/ppapi/ppapi_nacl.gyp:ppapi_cpp_lib',
         'ppapi_test_lib',
       ],

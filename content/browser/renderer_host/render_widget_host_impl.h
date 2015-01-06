@@ -146,7 +146,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl
       const blink::WebMouseWheelEvent& wheel_event) OVERRIDE;
   virtual void ForwardKeyboardEvent(
       const NativeWebKeyboardEvent& key_event) OVERRIDE;
-  virtual const gfx::Vector2d& GetLastScrollOffset() const OVERRIDE;
   virtual RenderProcessHost* GetProcess() const OVERRIDE;
   virtual int GetRoutingID() const OVERRIDE;
   virtual RenderWidgetHostView* GetView() const OVERRIDE;
@@ -155,7 +154,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   virtual void ResizeRectChanged(const gfx::Rect& new_rect) OVERRIDE;
   virtual void RestartHangMonitorTimeout() OVERRIDE;
   virtual void SetIgnoreInputEvents(bool ignore_input_events) OVERRIDE;
-  virtual void Stop() OVERRIDE;
   virtual void WasResized() OVERRIDE;
   virtual void AddKeyPressEventCallback(
       const KeyPressEventCallback& callback) OVERRIDE;
@@ -205,10 +203,13 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // Sends a message to the corresponding object in the renderer.
   virtual bool Send(IPC::Message* msg) OVERRIDE;
 
+  // Indicates if the page has finished loading.
+  virtual void SetIsLoading(bool is_loading);
+
   // Called to notify the RenderWidget that it has been hidden or restored from
   // having been hidden.
-  void WasHidden();
-  void WasShown();
+  virtual void WasHidden();
+  virtual void WasShown(const ui::LatencyInfo& latency_info);
 
   // Returns true if the RenderWidget is hidden.
   bool is_hidden() const { return is_hidden_; }
@@ -226,9 +227,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl
 
   // Notifies the RenderWidgetHost that the View was destroyed.
   void ViewDestroyed();
-
-  // Indicates if the page has finished loading.
-  void SetIsLoading(bool is_loading);
 
 #if defined(OS_MACOSX)
   // Pause for a moment to wait for pending repaint or resize messages sent to
@@ -276,7 +274,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl
       const ui::LatencyInfo& ui_latency);
 
   // Enables/disables touch emulation using mouse event. See TouchEmulator.
-  void SetTouchEventEmulationEnabled(bool enabled, bool allow_pinch);
+  void SetTouchEventEmulationEnabled(bool enabled);
 
   // TouchEmulatorClient implementation.
   virtual void ForwardGestureEvent(
@@ -599,7 +597,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   virtual void OnFocus();
   virtual void OnBlur();
   void OnSetCursor(const WebCursor& cursor);
-  void OnSetTouchEventEmulationEnabled(bool enabled, bool allow_pinch);
   void OnTextInputStateChanged(
       const ViewHostMsg_TextInputState_Params& params);
 
@@ -696,7 +693,8 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // Indicates whether a page is loading or not.
   bool is_loading_;
 
-  // Indicates whether a page is hidden or not.
+  // Indicates whether a page is hidden or not. It has to stay in sync with the
+  // most recent call to process_->WidgetRestored() / WidgetHidden().
   bool is_hidden_;
 
   // Indicates whether a page is fullscreen or not.
@@ -722,9 +720,9 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // The size of the view's backing surface in non-DPI-adjusted pixels.
   gfx::Size physical_backing_size_;
 
-  // The height of the physical backing surface that is overdrawn opaquely in
-  // the browser, for example by an on-screen-keyboard (in DPI-adjusted pixels).
-  float overdraw_bottom_height_;
+  // The amount that the viewport size given to Blink was shrunk by the URL-bar
+  // (always 0 on platforms where URL-bar hiding isn't supported).
+  float top_controls_layout_height_;
 
   // The size of the visible viewport, which may be smaller than the view if the
   // view is partially occluded (e.g. by a virtual keyboard).  The size is in
@@ -811,9 +809,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // switching back to the original tab, because the content may already be
   // changed.
   bool suppress_next_char_events_;
-
-  // The last scroll offset of the render widget.
-  gfx::Vector2d last_scroll_offset_;
 
   bool pending_mouse_lock_request_;
   bool allow_privileged_mouse_lock_;

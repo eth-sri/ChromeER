@@ -20,11 +20,9 @@ namespace content {
 class ServiceWorkerRegistrationInfo;
 class ServiceWorkerVersion;
 
-// This class represents a service worker registration. The
-// scope and script url are constant for the life of the persistent
-// registration. It's refcounted to facillitate multiple controllees
-// being associated with the same registration. The class roughly
-// corresponds to navigator.serviceWorker.registgration.
+// This class represents a Service Worker registration. The scope is constant
+// for the life of the persistent registration. It's refcounted to facilitate
+// multiple controllees being associated with the same registration.
 class CONTENT_EXPORT ServiceWorkerRegistration
     : NON_EXPORTED_BASE(public base::RefCounted<ServiceWorkerRegistration>),
       public ServiceWorkerVersion::Listener {
@@ -36,17 +34,26 @@ class CONTENT_EXPORT ServiceWorkerRegistration
     virtual void OnVersionAttributesChanged(
         ServiceWorkerRegistration* registration,
         ChangedVersionAttributesMask changed_mask,
-        const ServiceWorkerRegistrationInfo& info)  = 0;
+        const ServiceWorkerRegistrationInfo& info) {}
+    virtual void OnRegistrationFailed(
+        ServiceWorkerRegistration* registration) {}
+    virtual void OnRegistrationFinishedUninstalling(
+        ServiceWorkerRegistration* registration) {}
+    virtual void OnUpdateFound(
+        ServiceWorkerRegistration* registration) {}
   };
 
   ServiceWorkerRegistration(const GURL& pattern,
-                            const GURL& script_url,
                             int64 registration_id,
                             base::WeakPtr<ServiceWorkerContextCore> context);
 
   int64 id() const { return registration_id_; }
-  const GURL& script_url() const { return script_url_; }
   const GURL& pattern() const { return pattern_; }
+
+  bool is_deleted() const { return is_deleted_; }
+  void set_is_deleted(bool deleted) { is_deleted_ = deleted; }
+
+  bool is_uninstalling() const { return is_uninstalling_; }
 
   ServiceWorkerVersion* active_version() const {
     return active_version_.get();
@@ -60,8 +67,12 @@ class CONTENT_EXPORT ServiceWorkerRegistration
     return installing_version_.get();
   }
 
+  ServiceWorkerVersion* GetNewestVersion() const;
+
   void AddListener(Listener* listener);
   void RemoveListener(Listener* listener);
+  void NotifyRegistrationFailed();
+  void NotifyUpdateFound();
 
   ServiceWorkerRegistrationInfo GetInfo();
 
@@ -82,8 +93,18 @@ class CONTENT_EXPORT ServiceWorkerRegistration
   // is called, activation is initiated immediately.
   void ActivateWaitingVersionWhenReady();
 
-  bool is_deleted() const { return is_deleted_; }
-  void set_is_deleted() { is_deleted_ = true; }
+  // Triggers the [[ClearRegistration]] algorithm when the currently
+  // active version has no controllees. Deletes this registration
+  // from storage immediately.
+  void ClearWhenReady();
+
+  // Restores this registration in storage and cancels the pending
+  // [[ClearRegistration]] algorithm.
+  void AbortPendingClear(const StatusCallback& callback);
+
+  // The time of the most recent update check.
+  base::Time last_update_check() const { return last_update_check_; }
+  void set_last_update_check(base::Time last) { last_update_check_ = last; }
 
  private:
   friend class base::RefCounted<ServiceWorkerRegistration>;
@@ -106,14 +127,21 @@ class CONTENT_EXPORT ServiceWorkerRegistration
   void OnActivateEventFinished(
       ServiceWorkerVersion* activating_version,
       ServiceWorkerStatusCode status);
-  void ResetShouldActivateWhenReady();
   void OnDeleteFinished(ServiceWorkerStatusCode status);
 
+  // This method corresponds to the [[ClearRegistration]] algorithm.
+  void Clear();
+
+  void OnRestoreFinished(const StatusCallback& callback,
+                         scoped_refptr<ServiceWorkerVersion> version,
+                         ServiceWorkerStatusCode status);
+
   const GURL pattern_;
-  const GURL script_url_;
   const int64 registration_id_;
   bool is_deleted_;
+  bool is_uninstalling_;
   bool should_activate_when_ready_;
+  base::Time last_update_check_;
   scoped_refptr<ServiceWorkerVersion> active_version_;
   scoped_refptr<ServiceWorkerVersion> waiting_version_;
   scoped_refptr<ServiceWorkerVersion> installing_version_;
@@ -122,5 +150,7 @@ class CONTENT_EXPORT ServiceWorkerRegistration
 
   DISALLOW_COPY_AND_ASSIGN(ServiceWorkerRegistration);
 };
+
 }  // namespace content
+
 #endif  // CONTENT_BROWSER_SERVICE_WORKER_SERVICE_WORKER_REGISTRATION_H_

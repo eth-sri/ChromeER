@@ -1,0 +1,5 @@
+include_rules = [
+  "+components/usb_service",
+  "+device/core",
+  "+device/usb",
+]

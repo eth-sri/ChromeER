@@ -160,7 +160,10 @@ class NET_EXPORT ProxyService : public NetworkChangeNotifier::IPAddressObserver,
   // and will use the default proxy retry duration otherwise. Proxies marked as
   // bad will not be retried until |retry_delay| has passed. Returns true if
   // there will be at least one proxy remaining in the list after fallback and
-  // false otherwise.
+  // false otherwise. This method should be used to add proxies to the bad
+  // proxy list only for reasons other than a network error. If a proxy needs
+  // to be added to the bad proxy list because a network error was encountered
+  // when trying to connect to it, use |ReconsiderProxyAfterError|.
   bool MarkProxiesAsBadUntil(const ProxyInfo& results,
                              base::TimeDelta retry_delay,
                              const ProxyServer& another_bad_proxy,
@@ -168,8 +171,10 @@ class NET_EXPORT ProxyService : public NetworkChangeNotifier::IPAddressObserver,
 
   // Called to report that the last proxy connection succeeded.  If |proxy_info|
   // has a non empty proxy_retry_info map, the proxies that have been tried (and
-  // failed) for this request will be marked as bad.
-  void ReportSuccess(const ProxyInfo& proxy_info);
+  // failed) for this request will be marked as bad. |network_delegate| will
+  // be notified of any proxy fallbacks.
+  void ReportSuccess(const ProxyInfo& proxy_info,
+                     NetworkDelegate* network_delegate);
 
   // Call this method with a non-null |pac_request| to cancel the PAC request.
   void CancelPacRequest(PacRequest* pac_request);
@@ -272,65 +277,6 @@ class NET_EXPORT ProxyService : public NetworkChangeNotifier::IPAddressObserver,
   }
 
   bool quick_check_enabled() const { return quick_check_enabled_; }
-
-  // Values of the UMA DataReductionProxy.BypassType{Primary|Fallback}
-  // and DataReductionProxy.BlockType{Primary|Fallback} histograms.
-  // This enum must remain synchronized with the enum of the same
-  // name in metrics/histograms/histograms.xml.
-  enum DataReductionProxyBypassType {
-    // Bypass due to explicit instruction for the current request.
-    // Not yet supported.
-    CURRENT_BYPASS = 0,
-
-    // Bypass the proxy for less than one minute.
-    SHORT_BYPASS = 1,
-
-    // Bypass the proxy for one to five minutes.
-    MEDIUM_BYPASS = 2,
-
-    // Bypass the proxy for more than five minutes.
-    LONG_BYPASS = 3,
-
-    // Bypass due to a 4xx missing via header.
-    MISSING_VIA_HEADER_4XX = 4,
-
-    // Bypass due to other missing via header, excluding 4xx errors.
-    MISSING_VIA_HEADER_OTHER = 5,
-
-    // Bypass due to 407 response from proxy without a challenge.
-    MALFORMED_407 = 6,
-
-    // Bypass due to a 500 internal server error
-    STATUS_500_HTTP_INTERNAL_SERVER_ERROR = 7,
-
-    // Bypass because the request URI was too long.
-    STATUS_502_HTTP_BAD_GATEWAY = 8,
-
-    // Bypass due to a 503 response.
-    STATUS_503_HTTP_SERVICE_UNAVAILABLE = 9,
-
-    // Bypass due to any network error.
-    NETWORK_ERROR = 10,
-
-    // This must always be last.
-    BYPASS_EVENT_TYPE_MAX = 11
-  };
-
-  // Records a |DataReductionProxyBypassEventType|  or
-  // |DataReductionProxyBlockEventType| for either the data reduction
-  // proxy (|is_primary| is true) or the data reduction proxy fallback.
-  void RecordDataReductionProxyBypassInfo(
-      bool is_primary,
-      bool bypass_all,
-      const ProxyServer& proxy_server,
-      DataReductionProxyBypassType block_type) const;
-
-  // Records a net error code that resulted in bypassing the data reduction
-  // proxy (|is_primary| is true) or the data reduction proxy fallback.
-  void RecordDataReductionProxyBypassOnNetworkError(
-      bool is_primary,
-      const ProxyServer& proxy_server,
-      int net_error);
 
  private:
   FRIEND_TEST_ALL_PREFIXES(ProxyServiceTest, UpdateConfigAfterFailedAutodetect);

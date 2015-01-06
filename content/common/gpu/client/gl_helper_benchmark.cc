@@ -61,7 +61,7 @@ class GLHelperTest : public testing::Test {
     bool lose_context_when_out_of_memory = false;
     context_ = webkit::gpu::WebGraphicsContext3DInProcessCommandBufferImpl::
         CreateOffscreenContext(attributes, lose_context_when_out_of_memory);
-    context_->makeContextCurrent();
+    context_->InitializeOnCurrentThread();
 
     helper_.reset(
         new content::GLHelper(context_->GetGLInterface(),
@@ -296,7 +296,7 @@ TEST_F(GLHelperTest, DISABLED_ScaleTestImage) {
 // These tests needs to run against a proper GL environment, so we
 // need to set it up before we can run the tests.
 int main(int argc, char** argv) {
-  CommandLine::Init(argc, argv);
+  base::CommandLine::Init(argc, argv);
   base::TestSuite* suite = new content::ContentTestSuite(argc, argv);
 #if defined(OS_MACOSX)
   base::mac::ScopedNSAutoreleasePool pool;

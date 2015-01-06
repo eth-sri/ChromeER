@@ -43,8 +43,9 @@ MATCHER_P(HasTimestamp, ms, "") {
   return arg->timestamp().InMilliseconds() == ms;
 }
 
-// Arbitrary value. Has to be larger to cover any timestamp value used in tests.
-static const int kVideoDurationInMs = 1000;
+// Arbitrary value. Has to be larger to cover any timestamp value used in tests
+// and kTimeToDeclareHaveNothing.
+static const int kVideoDurationInMs = 10000;
 
 class VideoRendererImplTest : public ::testing::Test {
  public:
@@ -139,6 +140,7 @@ class VideoRendererImplTest : public ::testing::Test {
   void Destroy() {
     SCOPED_TRACE("Destroy()");
     renderer_.reset();
+    message_loop_.RunUntilIdle();
   }
 
   // Parses a string representation of video frames and generates corresponding
@@ -222,7 +224,7 @@ class VideoRendererImplTest : public ::testing::Test {
 
     // Post tasks for OutputCB and DecodeCB.
     scoped_refptr<VideoFrame> frame = decode_results_.front().second;
-    if (frame)
+    if (frame.get())
       message_loop_.PostTask(FROM_HERE, base::Bind(output_cb_, frame));
     message_loop_.PostTask(
         FROM_HERE, base::Bind(base::ResetAndReturn(&decode_cb_),
@@ -530,13 +532,17 @@ TEST_F(VideoRendererImplTest, Underflow) {
   EXPECT_CALL(mock_cb_, BufferingStateChange(BUFFERING_HAVE_ENOUGH));
   StartPlaying();
 
-  // Frames should be dropped and we should signal having nothing.
+  // Advance time slightly. Frames should be dropped and we should NOT signal
+  // having nothing.
+  AdvanceTimeInMs(100);
+
+  // Advance time more. Now we should signal having nothing.
   {
     SCOPED_TRACE("Waiting for BUFFERING_HAVE_NOTHING");
     WaitableMessageLoopEvent event;
     EXPECT_CALL(mock_cb_, BufferingStateChange(BUFFERING_HAVE_NOTHING))
         .WillOnce(RunClosure(event.GetClosure()));
-    AdvanceTimeInMs(100);
+    AdvanceTimeInMs(3000);  // Must match kTimeToDeclareHaveNothing.
     event.RunAndWait();
   }
 

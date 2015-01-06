@@ -13,7 +13,7 @@
 #include "base/files/file_path.h"
 #include "chrome/browser/browsing_data/browsing_data_remover.h"
 #include "chrome/browser/chromeos/login/signin/oauth2_login_manager.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
+#include "components/user_manager/user_manager.h"
 
 class Profile;
 class User;
@@ -39,9 +39,10 @@ namespace chromeos {
 // 2. Get profile dir of an active user, used by ProfileManager:
 //    GetActiveUserProfileDir()
 // 3. Get mapping from user_id_hash to Profile instance/profile path etc.
-class ProfileHelper : public BrowsingDataRemover::Observer,
-                      public OAuth2LoginManager::Observer,
-                      public UserManager::UserSessionStateObserver {
+class ProfileHelper
+    : public BrowsingDataRemover::Observer,
+      public OAuth2LoginManager::Observer,
+      public user_manager::UserManager::UserSessionStateObserver {
  public:
   ProfileHelper();
   virtual ~ProfileHelper();
@@ -53,9 +54,6 @@ class ProfileHelper : public BrowsingDataRemover::Observer,
 
   // Returns Profile instance that corresponds to |user_id_hash|.
   static Profile* GetProfileByUserIdHash(const std::string& user_id_hash);
-
-  // Returns profile dir that corresponds to a --login-profile cmd line switch.
-  static base::FilePath GetProfileDirByLegacyLoginProfileSwitch();
 
   // Returns profile path that corresponds to a given |user_id_hash|.
   static base::FilePath GetProfilePathByUserIdHash(
@@ -70,9 +68,6 @@ class ProfileHelper : public BrowsingDataRemover::Observer,
   // Returns user_id hash for |profile| instance or empty string if hash
   // could not be extracted from |profile|.
   static std::string GetUserIdHashFromProfile(Profile* profile);
-
-  // Returns profile dir for the user identified by |user_id|.
-  static base::FilePath GetUserProfileDirByUserId(const std::string& user_id);
 
   // Returns user profile dir in a format [u-user_id_hash].
   static base::FilePath GetUserProfileDir(const std::string& user_id_hash);
@@ -107,32 +102,47 @@ class ProfileHelper : public BrowsingDataRemover::Observer,
   // Callback can be empty. Not thread-safe.
   void ClearSigninProfile(const base::Closure& on_clear_callback);
 
-  // Returns NULL if profile for user is not found or is not fully loaded.
+  // Returns profile of the |user| if it is created and fully initialized.
+  // Otherwise, returns NULL.
   Profile* GetProfileByUser(const user_manager::User* user);
+
+  // DEPRECATED
+  // Returns profile of the |user| if user's profile is created and fully
+  // initialized. Otherwise, if some user is active, returns his profile.
+  // Otherwise, returns signin profile.
+  // Behaviour of this function does not correspond to its name and can be
+  // very surprising, that's why it should not be used anymore.
+  // Use |GetProfileByUser| instead.
+  // TODO(dzhioev): remove this method. http://crbug.com/361528
+  Profile* GetProfileByUserUnsafe(const user_manager::User* user);
 
   // Returns NULL if User is not created.
   user_manager::User* GetUserByProfile(Profile* profile);
 
+  static std::string GetUserIdHashByUserIdForTesting(
+      const std::string& user_id);
+
  private:
+  friend class CryptohomeAuthenticatorTest;
   friend class DeviceSettingsTestBase;
   friend class extensions::ExtensionGarbageCollectorChromeOSUnitTest;
   friend class FakeUserManager;
   friend class KioskTest;
   friend class MockUserManager;
   friend class MultiProfileUserControllerTest;
-  friend class ParallelAuthenticatorTest;
   friend class ProfileHelperTest;
   friend class ProfileListChromeOSTest;
+  friend class SessionStateDelegateChromeOSTest;
 
   // BrowsingDataRemover::Observer implementation:
   virtual void OnBrowsingDataRemoverDone() OVERRIDE;
 
-  // UserManager::Observer overrides.
+  // OAuth2LoginManager::Observer overrides.
   virtual void OnSessionRestoreStateChanged(
       Profile* user_profile,
       OAuth2LoginManager::SessionRestoreState state) OVERRIDE;
 
-  // UserManager::UserSessionStateObserver implementation:
+  // user_manager::UserManager::UserSessionStateObserver implementation:
   virtual void ActiveUserHashChanged(const std::string& hash) OVERRIDE;
 
   // Associates |user| with profile with the same user_id,

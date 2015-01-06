@@ -8,12 +8,10 @@
 
 #include "base/strings/sys_string_conversions.h"
 #include "chrome/browser/chrome_notification_types.h"
+#include "chrome/browser/extensions/api/extension_action/extension_action_api.h"
 #include "chrome/browser/extensions/extension_action.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
-#include "chrome/browser/extensions/location_bar_controller.h"
-#include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/sessions/session_id.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
 #import "chrome/browser/ui/cocoa/extensions/extension_action_context_menu_controller.h"
@@ -21,7 +19,9 @@
 #include "chrome/browser/ui/cocoa/last_active_browser_cocoa.h"
 #import "chrome/browser/ui/cocoa/location_bar/location_bar_view_mac.h"
 #include "chrome/browser/ui/webui/extensions/extension_info_ui.h"
-#include "content/public/browser/notification_service.h"
+#include "components/sessions/session_id.h"
+#include "content/public/browser/notification_details.h"
+#include "content/public/browser/notification_source.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/common/manifest_handlers/icons_handler.h"
@@ -31,7 +31,6 @@
 
 using content::WebContents;
 using extensions::Extension;
-using extensions::LocationBarController;
 
 namespace {
 
@@ -87,39 +86,31 @@ bool PageActionDecoration::AcceptsMousePress() {
 // Either notify listeners or show a popup depending on the Page
 // Action.
 bool PageActionDecoration::OnMousePressed(NSRect frame, NSPoint location) {
-  return ActivatePageAction(frame);
+  ActivatePageAction(frame, true);
+  // We don't want other code to try and handle this click. Returning true
+  // prevents this by indicating that we handled it.
+  return true;
 }
 
-void PageActionDecoration::ActivatePageAction() {
-  ActivatePageAction(owner_->GetPageActionFrame(page_action_));
+bool PageActionDecoration::ActivatePageAction(bool grant_active_tab) {
+  return ActivatePageAction(
+      owner_->GetPageActionFrame(page_action_), grant_active_tab);
 }
 
-bool PageActionDecoration::ActivatePageAction(NSRect frame) {
+bool PageActionDecoration::ActivatePageAction(
+    NSRect frame, bool grant_active_tab) {
   WebContents* web_contents = owner_->GetWebContents();
-  if (!web_contents) {
-    // We don't want other code to try and handle this click. Returning true
-    // prevents this by indicating that we handled it.
-    return true;
-  }
+  if (!web_contents)
+    return false;
 
-  LocationBarController* controller =
-      extensions::TabHelper::FromWebContents(web_contents)->
-          location_bar_controller();
-
-  switch (controller->OnClicked(page_action_)) {
-    case LocationBarController::ACTION_NONE:
+  switch (extensions::ExtensionActionAPI::Get(browser_->profile())->
+              ExecuteExtensionAction(
+                  GetExtension(), browser_, grant_active_tab)) {
+    case ExtensionAction::ACTION_NONE:
       break;
 
-    case LocationBarController::ACTION_SHOW_POPUP:
+    case ExtensionAction::ACTION_SHOW_POPUP:
       ShowPopup(frame, page_action_->GetPopupUrl(current_tab_id_));
-      break;
-
-    case LocationBarController::ACTION_SHOW_CONTEXT_MENU:
-      // We are never passing OnClicked a right-click button, so assume that
-      // we're never going to be asked to show a context menu.
-      // TODO(kalman): if this changes, update this class to pass the real
-      // mouse button through to the LocationBarController.
-      NOTREACHED();
       break;
   }
 
@@ -160,13 +151,8 @@ void PageActionDecoration::UpdateVisibility(WebContents* contents,
     }
   }
 
-  if (IsVisible() != visible) {
+  if (IsVisible() != visible)
     SetVisible(visible);
-    content::NotificationService::current()->Notify(
-        extensions::NOTIFICATION_EXTENSION_PAGE_ACTION_VISIBILITY_CHANGED,
-        content::Source<ExtensionAction>(page_action_),
-        content::Details<WebContents>(contents));
-  }
 }
 
 void PageActionDecoration::SetToolTip(NSString* tooltip) {
@@ -198,10 +184,7 @@ NSPoint PageActionDecoration::GetBubblePointInFrame(NSRect frame) {
 }
 
 NSMenu* PageActionDecoration::GetMenu() {
-  const Extension* extension = extensions::ExtensionRegistry::Get(
-      browser_->profile())->enabled_extensions().GetByID(
-          page_action_->extension_id());
-  DCHECK(extension);
+  const Extension* extension = GetExtension();
   if (!extension->ShowConfigureContextMenus())
     return nil;
 
@@ -229,6 +212,14 @@ void PageActionDecoration::ShowPopup(const NSRect& frame,
                             devMode:NO];
 }
 
+const Extension* PageActionDecoration::GetExtension() {
+  const Extension* extension = extensions::ExtensionRegistry::Get(
+      browser_->profile())->enabled_extensions().GetByID(
+          page_action_->extension_id());
+  DCHECK(extension);
+  return extension;
+}
+
 void PageActionDecoration::Observe(
     int type,
     const content::NotificationSource& source,
@@ -252,7 +243,7 @@ void PageActionDecoration::Observe(
       if (extension_id != page_action_->extension_id())
         break;
       if (IsVisible())
-        ActivatePageAction();
+        ActivatePageAction(true);
       break;
     }
 

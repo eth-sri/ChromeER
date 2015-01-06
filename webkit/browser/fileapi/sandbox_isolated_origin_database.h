@@ -10,13 +10,13 @@
 
 #include "webkit/browser/fileapi/sandbox_origin_database_interface.h"
 
-namespace fileapi {
+namespace storage {
 
 class SandboxOriginDatabase;
 
 // This origin database implementation supports only one origin
 // (therefore is expected to run very fast).
-class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE SandboxIsolatedOriginDatabase
+class STORAGE_EXPORT_PRIVATE SandboxIsolatedOriginDatabase
     : public SandboxOriginDatabaseInterface {
  public:
   static const base::FilePath::CharType kObsoleteOriginDirectory[];
@@ -56,6 +56,6 @@ class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE SandboxIsolatedOriginDatabase
   DISALLOW_COPY_AND_ASSIGN(SandboxIsolatedOriginDatabase);
 };
 
-}  // namespace fileapi
+}  // namespace storage
 
 #endif  // WEBKIT_BROWSER_FILEAPI_SANDBOX_ISOLATED_ORIGIN_DATABASE_H_

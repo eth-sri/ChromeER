@@ -11,7 +11,6 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/input_method/input_method_util.h"
 #include "chrome/browser/chromeos/language_preferences.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/pref_names.h"
@@ -107,7 +106,7 @@ void PersistUserInputMethod(const std::string& input_method,
 InputMethodPersistence::InputMethodPersistence(
     InputMethodManager* input_method_manager)
     : input_method_manager_(input_method_manager),
-      state_(InputMethodManager::STATE_LOGIN_SCREEN) {
+      ui_session_(InputMethodManager::STATE_LOGIN_SCREEN) {
   input_method_manager_->AddObserver(this);
 }
 
@@ -119,9 +118,9 @@ void InputMethodPersistence::InputMethodChanged(
     InputMethodManager* manager, bool show_message) {
   DCHECK_EQ(input_method_manager_, manager);
   const std::string current_input_method =
-      manager->GetCurrentInputMethod().id();
+      manager->GetActiveIMEState()->GetCurrentInputMethod().id();
   // Save the new input method id depending on the current browser state.
-  switch (state_) {
+  switch (ui_session_) {
     case InputMethodManager::STATE_LOGIN_SCREEN:
       if (!manager->IsLoginKeyboard(current_input_method)) {
         DVLOG(1) << "Only keyboard layouts are supported: "
@@ -143,8 +142,8 @@ void InputMethodPersistence::InputMethodChanged(
 }
 
 void InputMethodPersistence::OnSessionStateChange(
-    InputMethodManager::State new_state) {
-  state_ = new_state;
+    InputMethodManager::UISessionState new_ui_session) {
+  ui_session_ = new_ui_session;
 }
 
 }  // namespace input_method

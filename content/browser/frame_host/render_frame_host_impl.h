@@ -32,6 +32,9 @@ struct FrameHostMsg_DidFailProvisionalLoadWithError_Params;
 struct FrameHostMsg_OpenURL_Params;
 struct FrameHostMsg_BeginNavigation_Params;
 struct FrameMsg_Navigate_Params;
+#if defined(OS_MACOSX) || defined(OS_ANDROID)
+struct FrameHostMsg_ShowPopup_Params;
+#endif
 
 namespace base {
 class FilePath;
@@ -53,6 +56,7 @@ struct ContextMenuParams;
 struct GlobalRequestID;
 struct Referrer;
 struct ShowDesktopNotificationHostMsgParams;
+struct TransitionLayerData;
 
 class CONTENT_EXPORT RenderFrameHostImpl
     : public RenderFrameHost,
@@ -156,8 +160,7 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // receieved.
   void OnDeferredAfterResponseStarted(
       const GlobalRequestID& global_request_id,
-      const scoped_refptr<net::HttpResponseHeaders>& headers,
-      const GURL& url);
+      const TransitionLayerData& transition_data);
 
   // Tells the renderer that this RenderFrame is being swapped out for one in a
   // different renderer process.  It should run its unload handler, move to
@@ -189,10 +192,41 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // Load the specified URL; this is a shortcut for Navigate().
   void NavigateToURL(const GURL& url);
 
+  // Stop the load in progress.
+  void Stop();
+
+  // Returns whether navigation messages are currently suspended for this
+  // RenderFrameHost. Only true during a cross-site navigation, while waiting
+  // for the onbeforeunload handler.
+  bool are_navigations_suspended() const { return navigations_suspended_; }
+
+  // Suspends (or unsuspends) any navigation messages from being sent from this
+  // RenderFrameHost. This is called when a pending RenderFrameHost is created
+  // for a cross-site navigation, because we must suspend any navigations until
+  // we hear back from the old renderer's onbeforeunload handler. Note that it
+  // is important that only one navigation event happen after calling this
+  // method with |suspend| equal to true. If |suspend| is false and there is a
+  // suspended_nav_message_, this will send the message. This function should
+  // only be called to toggle the state; callers should check
+  // are_navigations_suspended() first. If |suspend| is false, the time that the
+  // user decided the navigation should proceed should be passed as
+  // |proceed_time|.
+  void SetNavigationsSuspended(bool suspend,
+                               const base::TimeTicks& proceed_time);
+
+  // Clears any suspended navigation state after a cross-site navigation is
+  // canceled or suspended. This is important if we later return to this
+  // RenderFrameHost.
+  void CancelSuspendedNavigations();
+
   // Runs the beforeunload handler for this frame. |for_cross_site_transition|
   // indicates whether this call is for the current frame during a cross-process
   // navigation. False means we're closing the entire tab.
   void DispatchBeforeUnload(bool for_cross_site_transition);
+
+  // Set the frame's opener to null in the renderer process in response to an
+  // action in another renderer process.
+  void DisownOpener();
 
   // Deletes the current selection plus the specified number of characters
   // before and after the selection or caret.
@@ -208,10 +242,9 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // Called when an HTML5 notification is closed.
   void NotificationClosed(int notification_id);
 
-  // Sets whether there is an outstanding transition request. This is called at
-  // the start of a provisional load for the main frame, and cleared when we
-  // hear the response or commit.
-  void SetHasPendingTransitionRequest(bool has_pending_request);
+  // Clears any outstanding transition request. This is called when we hear the
+  // response or commit.
+  void ClearPendingTransitionRequestData();
 
   // Send a message to the renderer process to change the accessibility mode.
   void SetAccessibilityMode(AccessibilityMode AccessibilityMode);
@@ -242,6 +275,13 @@ class CONTENT_EXPORT RenderFrameHostImpl
   void SetParentNativeViewAccessible(
       gfx::NativeViewAccessible accessible_parent);
   gfx::NativeViewAccessible GetParentNativeViewAccessible() const;
+#elif defined(OS_MACOSX)
+  // Select popup menu related methods (for external popup menus).
+  void DidSelectPopupMenuItem(int selected_index);
+  void DidCancelPopupMenu();
+#elif defined(OS_ANDROID)
+  void DidSelectPopupMenuItems(const std::vector<int>& selected_indices);
+  void DidCancelPopupMenu();
 #endif
 
  protected:
@@ -321,6 +361,11 @@ class CONTENT_EXPORT RenderFrameHostImpl
   void OnAccessibilityLocationChanges(
       const std::vector<AccessibilityHostMsg_LocationChangeParams>& params);
 
+#if defined(OS_MACOSX) || defined(OS_ANDROID)
+  void OnShowPopup(const FrameHostMsg_ShowPopup_Params& params);
+  void OnHidePopup();
+#endif
+
   // Returns whether the given URL is allowed to commit in the current process.
   // This is a more conservative check than RenderProcessHost::FilterURL, since
   // it will be used to kill processes that commit unauthorized URLs.
@@ -375,6 +420,19 @@ class CONTENT_EXPORT RenderFrameHostImpl
   int routing_id_;
   bool is_swapped_out_;
   bool renderer_initialized_;
+
+  // Whether we should buffer outgoing Navigate messages rather than sending
+  // them. This will be true when a RenderFrameHost is created for a cross-site
+  // request, until we hear back from the onbeforeunload handler of the old
+  // RenderFrameHost.
+  bool navigations_suspended_;
+
+  // We only buffer the params for a suspended navigation while this RFH is the
+  // pending RenderFrameHost of a RenderFrameHostManager. There will only ever
+  // be one suspended navigation, because RenderFrameHostManager will destroy
+  // the pending RenderFrameHost and create a new one if a second navigation
+  // occurs.
+  scoped_ptr<FrameMsg_Navigate_Params> suspended_nav_params_;
 
   // When the last BeforeUnload message was sent.
   base::TimeTicks send_before_unload_start_time_;

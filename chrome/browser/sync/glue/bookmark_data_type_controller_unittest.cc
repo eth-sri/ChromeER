@@ -67,7 +67,7 @@ KeyedService* BuildBookmarkModelWithoutLoading(
   Profile* profile = static_cast<Profile*>(context);
   ChromeBookmarkClient* bookmark_client =
       ChromeBookmarkClientFactory::GetForProfile(profile);
-  BookmarkModel* bookmark_model = new BookmarkModel(bookmark_client, false);
+  BookmarkModel* bookmark_model = new BookmarkModel(bookmark_client);
   bookmark_client->Init(bookmark_model);
   return bookmark_model;
 }
@@ -334,22 +334,4 @@ TEST_F(SyncBookmarkDataTypeControllerTest, Stop) {
   EXPECT_EQ(DataTypeController::RUNNING, bookmark_dtc_->state());
   bookmark_dtc_->Stop();
   EXPECT_EQ(DataTypeController::NOT_RUNNING, bookmark_dtc_->state());
-}
-
-TEST_F(SyncBookmarkDataTypeControllerTest, OnSingleDatatypeUnrecoverableError) {
-  CreateBookmarkModel(LOAD_MODEL);
-  SetStartExpectations();
-  SetAssociateExpectations();
-  EXPECT_CALL(*model_associator_, SyncModelHasUserCreatedNodes(_)).
-      WillRepeatedly(DoAll(SetArgumentPointee<0>(true), Return(true)));
-  EXPECT_CALL(service_, DisableDatatype(_)).
-      WillOnce(InvokeWithoutArgs(bookmark_dtc_.get(),
-                                 &BookmarkDataTypeController::Stop));
-  SetStopExpectations();
-
-  EXPECT_CALL(start_callback_, Run(DataTypeController::OK, _, _));
-  Start();
-  // This should cause bookmark_dtc_->Stop() to be called.
-  bookmark_dtc_->OnSingleDatatypeUnrecoverableError(FROM_HERE, "Test");
-  base::RunLoop().RunUntilIdle();
 }

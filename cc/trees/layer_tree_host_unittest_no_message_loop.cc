@@ -54,8 +54,8 @@ class LayerTreeHostNoMessageLoopTest
 
   // LayerTreeHostClient overrides.
   virtual void WillBeginMainFrame(int frame_id) OVERRIDE {}
+  virtual void BeginMainFrame(const BeginFrameArgs& args) OVERRIDE {}
   virtual void DidBeginMainFrame() OVERRIDE {}
-  virtual void Animate(base::TimeTicks frame_begin_time) OVERRIDE {}
   virtual void Layout() OVERRIDE {}
   virtual void ApplyScrollAndScale(const gfx::Vector2d& scroll_delta,
                                    float page_scale) OVERRIDE {}
@@ -74,8 +74,6 @@ class LayerTreeHostNoMessageLoopTest
   virtual void DidCompleteSwapBuffers() OVERRIDE {}
 
   // LayerTreeHostSingleThreadClient overrides.
-  virtual void ScheduleComposite() OVERRIDE {}
-  virtual void ScheduleAnimation() OVERRIDE {}
   virtual void DidPostSwapBuffers() OVERRIDE {}
   virtual void DidAbortSwapBuffers() OVERRIDE {}
 
@@ -86,9 +84,9 @@ class LayerTreeHostNoMessageLoopTest
 
   // base::DelegateSimpleThread::Delegate override.
   virtual void Run() OVERRIDE {
-    ASSERT_FALSE(base::MessageLoopProxy::current());
+    ASSERT_FALSE(base::MessageLoopProxy::current().get());
     RunTestWithoutMessageLoop();
-    EXPECT_FALSE(base::MessageLoopProxy::current());
+    EXPECT_FALSE(base::MessageLoopProxy::current().get());
   }
 
  protected:
@@ -96,6 +94,7 @@ class LayerTreeHostNoMessageLoopTest
 
   void SetupLayerTreeHost() {
     LayerTreeSettings settings;
+    settings.single_thread_proxy_scheduler = false;
     layer_tree_host_ =
         LayerTreeHost::CreateSingleThreaded(this, this, NULL, settings, NULL);
     layer_tree_host_->SetViewportSize(size_);
@@ -166,7 +165,8 @@ class LayerTreeHostNoMessageLoopDelegatedLayer
         resource_collection_.get(), CreateFrameDataWithResource(998));
 
     root_layer_ = Layer::Create();
-    delegated_layer_ = FakeDelegatedRendererLayer::Create(frame_provider_);
+    delegated_layer_ =
+        FakeDelegatedRendererLayer::Create(frame_provider_.get());
     delegated_layer_->SetBounds(size_);
     delegated_layer_->SetIsDrawable(true);
     root_layer_->AddChild(delegated_layer_);
@@ -203,7 +203,7 @@ class LayerTreeHostNoMessageLoopDelegatedLayer
 
     scoped_ptr<RenderPass> root_pass(RenderPass::Create());
     root_pass->SetNew(
-        RenderPass::Id(1, 1), frame_rect, frame_rect, gfx::Transform());
+        RenderPassId(1, 1), frame_rect, frame_rect, gfx::Transform());
     frame->render_pass_list.push_back(root_pass.Pass());
 
     TransferableResource resource;

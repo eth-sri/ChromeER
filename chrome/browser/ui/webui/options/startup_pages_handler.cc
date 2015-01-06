@@ -9,7 +9,6 @@
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier.h"
 #include "chrome/browser/autocomplete/autocomplete_controller.h"
-#include "chrome/browser/autocomplete/autocomplete_result.h"
 #include "chrome/browser/autocomplete/chrome_autocomplete_scheme_classifier.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/custom_home_pages_table_model.h"
@@ -17,12 +16,13 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/common/pref_names.h"
-#include "components/autocomplete/autocomplete_input.h"
+#include "chrome/grit/generated_resources.h"
 #include "components/metrics/proto/omnibox_event.pb.h"
+#include "components/omnibox/autocomplete_input.h"
+#include "components/omnibox/autocomplete_result.h"
 #include "components/url_fixer/url_fixer.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/web_ui.h"
-#include "grit/generated_resources.h"
 
 namespace options {
 
@@ -48,6 +48,11 @@ void StartupPagesHandler::GetLocalizedValues(
 }
 
 void StartupPagesHandler::RegisterMessages() {
+  // Guest profiles should never have been displayed the option to set these
+  // values.
+  if (Profile::FromWebUI(web_ui())->IsOffTheRecord())
+    return;
+
   web_ui()->RegisterMessageCallback("removeStartupPages",
       base::Bind(&StartupPagesHandler::RemoveStartupPages,
                  base::Unretained(this)));

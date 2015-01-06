@@ -189,6 +189,7 @@
       'screen_util.cc',
       'screen_util.h',
       'screenshot_delegate.h',
+      'session/session_state_delegate.cc',
       'session/session_state_delegate.h',
       'session/session_state_observer.cc',
       'session/session_state_observer.h',
@@ -290,6 +291,8 @@
       'system/chromeos/keyboard_brightness_controller.h',
       'system/chromeos/label_tray_view.cc',
       'system/chromeos/label_tray_view.h',
+      'system/chromeos/multi_user/user_switch_util.cc',
+      'system/chromeos/multi_user/user_switch_util.h',
       'system/chromeos/network/network_connect.cc',
       'system/chromeos/network/network_connect.h',
       'system/chromeos/network/network_detailed_view.h',
@@ -688,6 +691,8 @@
       'test/test_activation_delegate.h',
       'test/test_lock_state_controller_delegate.cc',
       'test/test_lock_state_controller_delegate.h',
+      'test/test_overlay_delegate.cc',
+      'test/test_overlay_delegate.h',
       'test/test_screenshot_delegate.cc',
       'test/test_screenshot_delegate.h',
       'test/test_session_state_delegate.cc',
@@ -712,7 +717,6 @@
       'test/ui_controls_factory_ash.h',
     ],
     'ash_shell_lib_sources': [
-      '../content/app/startup_helper_win.cc',
       '../ui/views/test/test_views_delegate_aura.cc',
       'shell/app_list.cc',
       'shell/bubble.cc',
@@ -808,6 +812,7 @@
       'system/chromeos/power/power_status_view_unittest.cc',
       'system/chromeos/power/tray_power_unittest.cc',
       'system/chromeos/rotation/tray_rotation_lock_unittest.cc',
+      'system/chromeos/multi_user/user_switch_util_unittest.cc',
       'system/chromeos/screen_security/screen_tray_item_unittest.cc',
       'system/chromeos/session/logout_confirmation_controller_unittest.cc',
       'system/chromeos/session/tray_session_length_limit_unittest.cc',
@@ -859,6 +864,7 @@
       'wm/window_util_unittest.cc',
       'wm/maximize_mode/workspace_backdrop_delegate.cc',
       'wm/maximize_mode/workspace_backdrop_delegate.h',
+      'wm/overlay_event_filter_unittest.cc',
       'wm/workspace/magnetism_matcher_unittest.cc',
       'wm/workspace/multi_window_resize_controller_unittest.cc',
       'wm/workspace/workspace_event_handler_test_helper.cc',
@@ -1194,6 +1200,13 @@
       ],
       'sources': [
         '<@(ash_shell_lib_sources)',
+      ],
+      'conditions': [
+        ['OS=="win"', {
+          'dependencies': [
+            '../content/content.gyp:content_startup_helper_win',
+          ],
+        }],
       ],
     },
     {

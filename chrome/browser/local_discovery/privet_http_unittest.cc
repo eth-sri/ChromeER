@@ -186,8 +186,6 @@ const char kSampleInvalidDocumentTypeResponse[] = "{"
 
 const char kSampleCreatejobResponse[] = "{ \"job_id\": \"1234\" }";
 
-const char kSampleEmptyJSONResponse[] = "{}";
-
 const char kSampleCJT[] = "{ \"version\" : \"1.0\" }";
 
 const char kSampleCapabilitiesResponsePWGSettings[] =
@@ -242,11 +240,11 @@ class PrivetHTTPTest : public ::testing::Test {
 
     request_context_= new net::TestURLRequestContextGetter(
         base::MessageLoopProxy::current());
-    privet_client_ = PrivetV1HTTPClient::CreateDefault(
-        make_scoped_ptr<PrivetHTTPClient>(
+    privet_client_ =
+        PrivetV1HTTPClient::CreateDefault(make_scoped_ptr<PrivetHTTPClient>(
             new PrivetHTTPClientImpl("sampleDevice._privet._tcp.local",
                                      net::HostPortPair("10.0.0.8", 6006),
-                                     request_context_)));
+                                     request_context_.get())));
     fetcher_factory_.SetDelegateForTests(&fetcher_delegate_);
   }
 
@@ -459,24 +457,6 @@ class FakePWGRasterConverter : public PWGRasterConverter {
  private:
   printing::PwgRasterSettings bitmap_settings_;
 };
-
-TEST_F(PrivetHTTPTest, CreatePrivetStorageList) {
-  MockJSONCallback mock_callback;
-  scoped_ptr<PrivetJSONOperation> storage_list_operation =
-      privet_client_->CreateStorageListOperation(
-          "/path/to/nothing",
-          mock_callback.callback());
-  storage_list_operation->Start();
-
-  EXPECT_TRUE(SuccessfulResponseToURL(GURL("http://10.0.0.8:6006/privet/info"),
-                                      kSampleInfoResponse));
-
-  EXPECT_CALL(mock_callback, OnPrivetJSONDoneInternal());
-
-  EXPECT_TRUE(SuccessfulResponseToURL(
-      GURL("http://10.0.0.8:6006/privet/storage/list?path=/path/to/nothing"),
-      kSampleEmptyJSONResponse));
-}
 
 class PrivetInfoTest : public PrivetHTTPTest {
  public:

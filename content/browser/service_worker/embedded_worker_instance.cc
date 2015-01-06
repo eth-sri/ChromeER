@@ -12,6 +12,7 @@
 #include "content/browser/service_worker/embedded_worker_registry.h"
 #include "content/browser/service_worker/service_worker_context_core.h"
 #include "content/common/service_worker/embedded_worker_messages.h"
+#include "content/common/service_worker/service_worker_types.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_process_host.h"
 #include "ipc/ipc_message.h"
@@ -28,6 +29,20 @@ struct SecondGreater {
     return lhs.second > rhs.second;
   }
 };
+
+void NotifyWorkerReadyForInspection(int worker_process_id,
+                                    int worker_route_id) {
+  if (!BrowserThread::CurrentlyOn(BrowserThread::UI)) {
+    BrowserThread::PostTask(BrowserThread::UI,
+                            FROM_HERE,
+                            base::Bind(NotifyWorkerReadyForInspection,
+                                       worker_process_id,
+                                       worker_route_id));
+    return;
+  }
+  EmbeddedWorkerDevToolsManager::GetInstance()->WorkerReadyForInspection(
+      worker_process_id, worker_route_id);
+}
 
 void NotifyWorkerContextStarted(int worker_process_id, int worker_route_id) {
   if (!BrowserThread::CurrentlyOn(BrowserThread::UI)) {
@@ -56,8 +71,10 @@ void NotifyWorkerDestroyed(int worker_process_id, int worker_route_id) {
 
 void RegisterToWorkerDevToolsManager(
     int process_id,
-    const ServiceWorkerContextCore* const service_worker_context,
+    const ServiceWorkerContextCore* service_worker_context,
+    base::WeakPtr<ServiceWorkerContextCore> service_worker_context_weak,
     int64 service_worker_version_id,
+    const GURL& url,
     const base::Callback<void(int worker_devtools_agent_route_id,
                               bool wait_for_debugger)>& callback) {
   if (!BrowserThread::CurrentlyOn(BrowserThread::UI)) {
@@ -66,7 +83,9 @@ void RegisterToWorkerDevToolsManager(
                             base::Bind(RegisterToWorkerDevToolsManager,
                                        process_id,
                                        service_worker_context,
+                                       service_worker_context_weak,
                                        service_worker_version_id,
+                                       url,
                                        callback));
     return;
   }
@@ -80,7 +99,10 @@ void RegisterToWorkerDevToolsManager(
             process_id,
             worker_devtools_agent_route_id,
             EmbeddedWorkerDevToolsManager::ServiceWorkerIdentifier(
-                service_worker_context, service_worker_version_id));
+                service_worker_context,
+                service_worker_context_weak,
+                service_worker_version_id,
+                url));
   }
   BrowserThread::PostTask(
       BrowserThread::IO,
@@ -150,7 +172,9 @@ void EmbeddedWorkerInstance::ResumeAfterDownload() {
 
 ServiceWorkerStatusCode EmbeddedWorkerInstance::SendMessage(
     const IPC::Message& message) {
-  DCHECK(status_ == RUNNING);
+  DCHECK_NE(kInvalidEmbeddedWorkerThreadId, thread_id_);
+  if (status_ != RUNNING && status_ != STARTING)
+    return SERVICE_WORKER_ERROR_IPC_FAILED;
   return registry_->Send(process_id_,
                          new EmbeddedWorkerContextMsg_MessageToWorker(
                              thread_id_, embedded_worker_id_, message));
@@ -181,7 +205,7 @@ EmbeddedWorkerInstance::EmbeddedWorkerInstance(
       embedded_worker_id_(embedded_worker_id),
       status_(STOPPED),
       process_id_(-1),
-      thread_id_(-1),
+      thread_id_(kInvalidEmbeddedWorkerThreadId),
       worker_devtools_agent_route_id_(MSG_ROUTING_NONE),
       weak_factory_(this) {
 }
@@ -223,10 +247,13 @@ void EmbeddedWorkerInstance::ProcessAllocated(
   }
   const int64 service_worker_version_id = params->service_worker_version_id;
   process_id_ = process_id;
+  GURL script_url(params->script_url);
   RegisterToWorkerDevToolsManager(
       process_id,
       context_.get(),
+      context_,
       service_worker_version_id,
+      script_url,
       base::Bind(&EmbeddedWorkerInstance::SendStartWorker,
                  weak_factory_.GetWeakPtr(),
                  base::Passed(&params),
@@ -244,7 +271,14 @@ void EmbeddedWorkerInstance::SendStartWorker(
   registry_->SendStartWorker(params.Pass(), callback, process_id_);
 }
 
-void EmbeddedWorkerInstance::OnScriptLoaded() {
+void EmbeddedWorkerInstance::OnReadyForInspection() {
+  if (worker_devtools_agent_route_id_ != MSG_ROUTING_NONE)
+    NotifyWorkerReadyForInspection(process_id_,
+                                   worker_devtools_agent_route_id_);
+}
+
+void EmbeddedWorkerInstance::OnScriptLoaded(int thread_id) {
+  thread_id_ = thread_id;
   if (worker_devtools_agent_route_id_ != MSG_ROUTING_NONE)
     NotifyWorkerContextStarted(process_id_, worker_devtools_agent_route_id_);
 }
@@ -252,13 +286,12 @@ void EmbeddedWorkerInstance::OnScriptLoaded() {
 void EmbeddedWorkerInstance::OnScriptLoadFailed() {
 }
 
-void EmbeddedWorkerInstance::OnStarted(int thread_id) {
+void EmbeddedWorkerInstance::OnStarted() {
   // Stop is requested before OnStarted is sent back from the worker.
   if (status_ == STOPPING)
     return;
   DCHECK(status_ == STARTING);
   status_ = RUNNING;
-  thread_id_ = thread_id;
   FOR_EACH_OBSERVER(Listener, listener_list_, OnStarted());
 }
 

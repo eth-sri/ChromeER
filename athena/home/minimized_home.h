@@ -5,22 +5,15 @@
 #ifndef ATHENA_HOME_MINIMIZED_HOME_H_
 #define ATHENA_HOME_MINIMIZED_HOME_H_
 
-namespace views {
-class View;
+#include "base/memory/scoped_ptr.h"
+
+namespace ui {
+class LayerOwner;
 }
 
 namespace athena {
 
-class MinimizedHomeDragDelegate {
- public:
-  virtual ~MinimizedHomeDragDelegate() {}
-
-  virtual void OnDragUpCompleted() = 0;
-};
-
-// Note that |delegate| is guaranteed to be alive as long as the returned view
-// is alive.
-views::View* CreateMinimizedHome(MinimizedHomeDragDelegate* delegate);
+scoped_ptr<ui::LayerOwner> CreateMinimizedHome();
 
 }  // namespace athena
 

@@ -8,15 +8,15 @@
 #include "base/files/file.h"
 #include "base/process/process.h"
 #include "base/strings/string16.h"
-#include "webkit/browser/webkit_storage_browser_export.h"
+#include "webkit/browser/storage_browser_export.h"
 
 namespace base {
 class FilePath;
 }
 
-namespace webkit_database {
+namespace storage {
 
-class WEBKIT_STORAGE_BROWSER_EXPORT VfsBackend {
+class STORAGE_EXPORT VfsBackend {
  public:
    static base::File OpenFile(const base::FilePath& file_path,
                               int desired_flags);
@@ -37,6 +37,6 @@ class WEBKIT_STORAGE_BROWSER_EXPORT VfsBackend {
   static bool OpenFileFlagsAreConsistent(int desired_flags);
 };
 
-} // namespace webkit_database
+}  // namespace storage
 
 #endif  // WEBKIT_BROWSER_DATABASE_VFS_BACKEND_H_

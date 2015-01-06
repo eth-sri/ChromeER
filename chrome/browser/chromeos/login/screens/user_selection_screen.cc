@@ -4,8 +4,6 @@
 
 #include "chrome/browser/chromeos/login/screens/user_selection_screen.h"
 
-#include <vector>
-
 #include "ash/shell.h"
 #include "base/location.h"
 #include "base/logging.h"
@@ -14,13 +12,14 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browser_process_platform_part.h"
 #include "chrome/browser/chromeos/login/ui/login_display_host_impl.h"
+#include "chrome/browser/chromeos/login/users/chrome_user_manager.h"
 #include "chrome/browser/chromeos/login/users/multi_profile_user_controller.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/signin/screenlock_bridge.h"
 #include "chrome/browser/ui/webui/chromeos/login/l10n_util.h"
 #include "chrome/browser/ui/webui/chromeos/login/signin_screen_handler.h"
 #include "chrome/common/pref_names.h"
+#include "components/user_manager/user_manager.h"
 #include "components/user_manager/user_type.h"
 #include "ui/wm/core/user_activity_detector.h"
 
@@ -65,23 +64,27 @@ void AddPublicSessionDetailsToUserDictionaryEntry(
   }
 
   std::vector<std::string> kEmptyRecommendedLocales;
-  const std::vector<std::string>* recommended_locales =
+  const std::vector<std::string>& recommended_locales =
       public_session_recommended_locales ?
-          public_session_recommended_locales : &kEmptyRecommendedLocales;
+          *public_session_recommended_locales : kEmptyRecommendedLocales;
 
-  // Set |kKeyInitialLocales| to the list of available locales. This list
-  // consists of the recommended locales, followed by all others.
-  user_dict->Set(
-      kKeyInitialLocales,
-      GetUILanguageList(recommended_locales, std::string()).release());
+  // Construct the list of available locales. This list consists of the
+  // recommended locales, followed by all others.
+  scoped_ptr<base::ListValue> available_locales =
+      GetUILanguageList(&recommended_locales, std::string());
 
-  // Set |kKeyInitialLocale| to the initially selected locale. If the list of
-  // recommended locales is not empty, select its first entry. Otherwise,
-  // select the current UI locale.
-  user_dict->SetString(kKeyInitialLocale,
-                       recommended_locales->empty() ?
-                           g_browser_process->GetApplicationLocale() :
-                           recommended_locales->front());
+  // Select the the first recommended locale that is actually available or the
+  // current UI locale if none of them are available.
+  const std::string selected_locale = FindMostRelevantLocale(
+      recommended_locales,
+      *available_locales.get(),
+      g_browser_process->GetApplicationLocale());
+
+  // Set |kKeyInitialLocales| to the list of available locales.
+  user_dict->Set(kKeyInitialLocales, available_locales.release());
+
+  // Set |kKeyInitialLocale| to the initially selected locale.
+  user_dict->SetString(kKeyInitialLocale, selected_locale);
 
   // Set |kKeyInitialMultipleRecommendedLocales| to indicate whether the list
   // of recommended locales contains at least two entries. This is used to
@@ -89,7 +92,7 @@ void AddPublicSessionDetailsToUserDictionaryEntry(
   // or one recommended locales) or the advanced form (two or more recommended
   // locales).
   user_dict->SetBoolean(kKeyInitialMultipleRecommendedLocales,
-                        recommended_locales->size() >= 2);
+                        recommended_locales.size() >= 2);
 
   // Set |kKeyInitialKeyboardLayout| to the current keyboard layout. This
   // value will be used temporarily only because the UI immediately requests a
@@ -136,7 +139,7 @@ void UserSelectionScreen::FillUserDictionary(
   // Fill in multi-profiles related fields.
   if (is_signin_to_add) {
     MultiProfileUserController* multi_profile_user_controller =
-        UserManager::Get()->GetMultiProfileUserController();
+        ChromeUserManager::Get()->GetMultiProfileUserController();
     MultiProfileUserController::UserAllowedInSessionReason isUserAllowedReason;
     bool isUserAllowed = multi_profile_user_controller->IsUserAllowedInSession(
         user_id, &isUserAllowedReason);
@@ -299,7 +302,7 @@ void UserSelectionScreen::SendUserList() {
   // http://crbug.com/230852
   bool single_user = users.size() == 1;
   bool is_signin_to_add = LoginDisplayHostImpl::default_host() &&
-                          UserManager::Get()->IsUserLoggedIn();
+                          user_manager::UserManager::Get()->IsUserLoggedIn();
   std::string owner;
   chromeos::CrosSettings::Get()->GetString(chromeos::kDeviceOwner, &owner);
 
@@ -361,6 +364,9 @@ void UserSelectionScreen::HandleGetUsers() {
 void UserSelectionScreen::SetAuthType(
     const std::string& username,
     ScreenlockBridge::LockHandler::AuthType auth_type) {
+  DCHECK(GetAuthType(username) !=
+             ScreenlockBridge::LockHandler::FORCE_OFFLINE_PASSWORD ||
+         auth_type == ScreenlockBridge::LockHandler::FORCE_OFFLINE_PASSWORD);
   user_auth_type_map_[username] = auth_type;
 }
 

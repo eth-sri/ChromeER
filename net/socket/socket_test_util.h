@@ -334,8 +334,8 @@ struct SSLSocketDataProvider {
   bool channel_id_sent;
   ChannelIDService* channel_id_service;
   int connection_status;
-  // Indicates that the socket should block in the Connect method.
-  bool should_block_on_connect;
+  // Indicates that the socket should pause in the Connect method.
+  bool should_pause_on_connect;
   // Whether or not the Socket should behave like there is a pre-existing
   // session to resume. Whether or not such a session is reported as
   // resumed is controlled by |connection_status|.
@@ -703,6 +703,7 @@ class MockClientSocket : public SSLClientSocket {
   virtual void SetOmniboxSpeculation() OVERRIDE {}
 
   // SSLClientSocket implementation.
+  virtual std::string GetSessionCacheKey() const OVERRIDE;
   virtual bool InSessionCache() const OVERRIDE;
   virtual void SetHandshakeCompletionCallback(const base::Closure& cb) OVERRIDE;
   virtual void GetSSLCertRequestInfo(SSLCertRequestInfo* cert_request_info)
@@ -964,6 +965,7 @@ class MockSSLClientSocket : public MockClientSocket, public AsyncSocket {
   virtual bool GetSSLInfo(SSLInfo* ssl_info) OVERRIDE;
 
   // SSLClientSocket implementation.
+  virtual std::string GetSessionCacheKey() const OVERRIDE;
   virtual bool InSessionCache() const OVERRIDE;
   virtual void SetHandshakeCompletionCallback(const base::Closure& cb) OVERRIDE;
   virtual void GetSSLCertRequestInfo(SSLCertRequestInfo* cert_request_info)
@@ -990,8 +992,6 @@ class MockSSLClientSocket : public MockClientSocket, public AsyncSocket {
  private:
   enum ConnectState {
     STATE_NONE,
-    STATE_TRANSPORT_CONNECT,
-    STATE_TRANSPORT_CONNECT_COMPLETE,
     STATE_SSL_CONNECT,
     STATE_SSL_CONNECT_COMPLETE,
   };
@@ -1001,12 +1001,11 @@ class MockSSLClientSocket : public MockClientSocket, public AsyncSocket {
   // Runs the state transistion loop.
   int DoConnectLoop(int result);
 
-  int DoTransportConnect();
-  int DoTransportConnectComplete(int result);
   int DoSSLConnect();
   int DoSSLConnectComplete(int result);
 
   scoped_ptr<ClientSocketHandle> transport_;
+  HostPortPair host_port_pair_;
   SSLSocketDataProvider* data_;
   bool is_npn_state_set_;
   bool new_npn_value_;

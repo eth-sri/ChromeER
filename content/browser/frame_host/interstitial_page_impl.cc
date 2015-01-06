@@ -78,7 +78,8 @@ class InterstitialPageImpl::InterstitialPageRVHDelegateView
 
   // RenderViewHostDelegateView implementation:
 #if defined(OS_MACOSX) || defined(OS_ANDROID)
-  virtual void ShowPopupMenu(const gfx::Rect& bounds,
+  virtual void ShowPopupMenu(RenderFrameHost* render_frame_host,
+                             const gfx::Rect& bounds,
                              int item_height,
                              double item_font_size,
                              int selected_item,
@@ -509,11 +510,11 @@ RendererPreferences InterstitialPageImpl::GetRendererPrefs(
   return renderer_preferences_;
 }
 
-WebPreferences InterstitialPageImpl::GetWebkitPrefs() {
+WebPreferences InterstitialPageImpl::ComputeWebkitPrefs() {
   if (!enabled())
     return WebPreferences();
 
-  return render_view_host_->GetWebkitPrefs(url_);
+  return render_view_host_->ComputeWebkitPrefs(url_);
 }
 
 void InterstitialPageImpl::RenderWidgetDeleted(
@@ -863,6 +864,7 @@ InterstitialPageImpl::InterstitialPageRVHDelegateView::
 
 #if defined(OS_MACOSX) || defined(OS_ANDROID)
 void InterstitialPageImpl::InterstitialPageRVHDelegateView::ShowPopupMenu(
+    RenderFrameHost* render_frame_host,
     const gfx::Rect& bounds,
     int item_height,
     double item_font_size,

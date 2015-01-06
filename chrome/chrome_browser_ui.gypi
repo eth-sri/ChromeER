@@ -16,6 +16,8 @@
       'browser/ui/android/autofill/autofill_logger_android.h',
       'browser/ui/android/autofill/autofill_popup_view_android.cc',
       'browser/ui/android/autofill/autofill_popup_view_android.h',
+      'browser/ui/android/autofill/country_adapter_android.cc',
+      'browser/ui/android/autofill/country_adapter_android.h',
       'browser/ui/android/content_settings/popup_blocked_infobar_delegate.cc',
       'browser/ui/android/content_settings/popup_blocked_infobar_delegate.h',
       'browser/ui/android/infobars/auto_login_infobar_delegate_android.cc',
@@ -40,10 +42,6 @@
       'browser/ui/android/color_chooser_dialog_android.cc',
       'browser/ui/android/context_menu_helper.cc',
       'browser/ui/android/context_menu_helper.h',
-      'browser/ui/android/extensions/extension_install_dialog_android.cc',
-      'browser/ui/android/extensions/extension_install_ui_android.cc',
-      'browser/ui/android/extensions/extension_install_ui_android.h',
-      'browser/ui/android/extensions/extension_view_android.cc',
       'browser/ui/android/external_protocol_dialog_android.cc',
       'browser/ui/android/javascript_app_modal_dialog_android.cc',
       'browser/ui/android/login_prompt_android.cc',
@@ -103,6 +101,8 @@
       'browser/ui/autofill/chrome_autofill_client.cc',
       'browser/ui/autofill/chrome_autofill_client.h',
       'browser/ui/autofill/chrome_autofill_client_mac.mm',
+      'browser/ui/autofill/country_combobox_model.cc',
+      'browser/ui/autofill/country_combobox_model.h',
       'browser/ui/autofill/loading_animation.cc',
       'browser/ui/autofill/loading_animation.h',
       'browser/ui/autofill/password_generation_popup_controller_impl.cc',
@@ -145,6 +145,7 @@
       'browser/ui/browser_navigator.cc',
       'browser/ui/browser_navigator.h',
       'browser/ui/browser_otr_state_android.cc',
+      'browser/ui/browser_tab_restorer.cc',
       'browser/ui/browser_ui_prefs.cc',
       'browser/ui/browser_ui_prefs.h',
       'browser/ui/browser_win.cc',
@@ -321,6 +322,8 @@
       'browser/ui/cocoa/browser_window_factory.mm',
       'browser/ui/cocoa/browser_window_utils.h',
       'browser/ui/cocoa/browser_window_utils.mm',
+      'browser/ui/cocoa/bubble_combobox.h',
+      'browser/ui/cocoa/bubble_combobox.mm',
       'browser/ui/cocoa/bubble_view.h',
       'browser/ui/cocoa/bubble_view.mm',
       'browser/ui/cocoa/certificate_viewer_mac.mm',
@@ -351,7 +354,6 @@
       'browser/ui/cocoa/constrained_window/constrained_window_control_utils.mm',
       'browser/ui/cocoa/constrained_window/constrained_window_custom_sheet.h',
       'browser/ui/cocoa/constrained_window/constrained_window_custom_sheet.mm',
-      'browser/ui/cocoa/constrained_window/constrained_window_custom_window.h',
       'browser/ui/cocoa/constrained_window/constrained_window_custom_window.h',
       'browser/ui/cocoa/constrained_window/constrained_window_custom_window.mm',
       'browser/ui/cocoa/constrained_window/constrained_window_mac.h',
@@ -625,6 +627,24 @@
       'browser/ui/cocoa/panels/panel_utils_cocoa.mm',
       'browser/ui/cocoa/panels/panel_window_controller_cocoa.h',
       'browser/ui/cocoa/panels/panel_window_controller_cocoa.mm',
+      'browser/ui/cocoa/passwords/manage_password_item_view_controller.h',
+      'browser/ui/cocoa/passwords/manage_password_item_view_controller.mm',
+      'browser/ui/cocoa/passwords/manage_passwords_bubble_blacklist_view_controller.h',
+      'browser/ui/cocoa/passwords/manage_passwords_bubble_blacklist_view_controller.mm',
+      'browser/ui/cocoa/passwords/manage_passwords_bubble_cocoa.h',
+      'browser/ui/cocoa/passwords/manage_passwords_bubble_cocoa.mm',
+      'browser/ui/cocoa/passwords/manage_passwords_bubble_confirmation_view_controller.h',
+      'browser/ui/cocoa/passwords/manage_passwords_bubble_confirmation_view_controller.mm',
+      'browser/ui/cocoa/passwords/manage_passwords_bubble_content_view_controller.h',
+      'browser/ui/cocoa/passwords/manage_passwords_bubble_content_view_controller.mm',
+      'browser/ui/cocoa/passwords/manage_passwords_bubble_controller.h',
+      'browser/ui/cocoa/passwords/manage_passwords_bubble_controller.mm',
+      'browser/ui/cocoa/passwords/manage_passwords_bubble_manage_view_controller.h',
+      'browser/ui/cocoa/passwords/manage_passwords_bubble_manage_view_controller.mm',
+      'browser/ui/cocoa/passwords/manage_passwords_bubble_never_save_view_controller.h',
+      'browser/ui/cocoa/passwords/manage_passwords_bubble_never_save_view_controller.mm',
+      'browser/ui/cocoa/passwords/manage_passwords_bubble_pending_view_controller.h',
+      'browser/ui/cocoa/passwords/manage_passwords_bubble_pending_view_controller.mm',
       'browser/ui/cocoa/pdf_password_dialog.mm',
       'browser/ui/cocoa/presentation_mode_controller.h',
       'browser/ui/cocoa/presentation_mode_controller.mm',
@@ -808,6 +828,8 @@
       'browser/ui/passwords/password_manager_presenter.cc',
       'browser/ui/passwords/password_manager_presenter.h',
       'browser/ui/passwords/password_ui_view.h',
+      'browser/ui/passwords/save_password_refusal_combobox_model.cc',
+      'browser/ui/passwords/save_password_refusal_combobox_model.h',
       'browser/ui/prefs/prefs_tab_helper.cc',
       'browser/ui/prefs/prefs_tab_helper.h',
       'browser/ui/process_singleton_dialog_linux.h',
@@ -889,6 +911,7 @@
       'browser/ui/uninstall_browser_prompt.h',
       'browser/ui/validation_message_bubble.h',
       'browser/ui/view_ids.h',
+      'browser/ui/web_contents_sizer.h',
       'browser/ui/website_settings/permission_bubble_manager.cc',
       'browser/ui/website_settings/permission_bubble_manager.h',
       'browser/ui/website_settings/permission_bubble_request.h',
@@ -901,10 +924,6 @@
       'browser/ui/website_settings/website_settings_ui.h',
       'browser/ui/webui/about_ui.cc',
       'browser/ui/webui/about_ui.h',
-      'browser/ui/webui/app_list/start_page_handler.cc',
-      'browser/ui/webui/app_list/start_page_handler.h',
-      'browser/ui/webui/app_list/start_page_ui.cc',
-      'browser/ui/webui/app_list/start_page_ui.h',
       'browser/ui/webui/chromeos/bluetooth_pairing_ui.cc',
       'browser/ui/webui/chromeos/bluetooth_pairing_ui.h',
       'browser/ui/webui/chromeos/certificate_manager_dialog_ui.cc',
@@ -985,8 +1004,6 @@
       'browser/ui/webui/chromeos/login/screenlock_icon_provider.h',
       'browser/ui/webui/chromeos/login/screenlock_icon_source.cc',
       'browser/ui/webui/chromeos/login/screenlock_icon_source.h',
-      'browser/ui/webui/chromeos/login/screen_manager_handler.cc',
-      'browser/ui/webui/chromeos/login/screen_manager_handler.h',
       'browser/ui/webui/chromeos/login/signin_screen_handler.cc',
       'browser/ui/webui/chromeos/login/signin_screen_handler.h',
       'browser/ui/webui/chromeos/login/supervised_user_creation_screen_handler.cc',
@@ -1049,8 +1066,6 @@
       'browser/ui/webui/fileicon_source.h',
       'browser/ui/webui/flags_ui.cc',
       'browser/ui/webui/flags_ui.h',
-      'browser/ui/webui/flash_ui.cc',
-      'browser/ui/webui/flash_ui.h',
       'browser/ui/webui/gcm_internals_ui.cc',
       'browser/ui/webui/gcm_internals_ui.h',
       'browser/ui/webui/history_ui.cc',
@@ -1128,8 +1143,8 @@
     # Note that we assume app list is enabled on all views builds, so the
     # views-specific app list files are in the views section.
     'chrome_browser_ui_app_list_sources': [
-      'browser/ui/views/app_list/app_list_dialog_contents_view.cc',
-      'browser/ui/views/app_list/app_list_dialog_contents_view.h',
+      'browser/ui/views/app_list/app_list_dialog_container.cc',
+      'browser/ui/views/app_list/app_list_dialog_container.h',
       'browser/ui/views/app_list/win/activation_tracker_win.cc',
       'browser/ui/views/app_list/win/activation_tracker_win.h',
       'browser/ui/views/app_list/win/app_list_controller_delegate_win.cc',
@@ -1236,6 +1251,10 @@
       'browser/ui/app_list/start_page_service.h',
       'browser/ui/app_list/start_page_service_factory.cc',
       'browser/ui/app_list/start_page_service_factory.h',
+      'browser/ui/webui/app_list/start_page_handler.cc',
+      'browser/ui/webui/app_list/start_page_handler.h',
+      'browser/ui/webui/app_list/start_page_ui.cc',
+      'browser/ui/webui/app_list/start_page_ui.h',
     ],
     # Used when the app list is disabled.
     'chrome_browser_ui_non_app_list_sources': [
@@ -1309,8 +1328,10 @@
     'chrome_browser_ui_mac_sources': [
       'browser/ui/startup/session_crashed_bubble.cc',
       'browser/ui/startup/autolaunch_prompt.cc',
+      'browser/ui/web_contents_sizer.mm',
     ],
     'chrome_browser_ui_non_mac_sources': [
+      'browser/ui/web_contents_sizer.cc',
     ],
     # Files used only on desktop systems (not iOS, Android, ChromeOS).
     'chrome_browser_ui_desktop_sources': [
@@ -1330,10 +1351,6 @@
       'browser/ui/views/select_file_dialog_extension_factory.cc',
       'browser/ui/views/select_file_dialog_extension_factory.h',
     ],
-    # Files shared between CrOS and Android.
-    'chrome_browser_ui_android_chromeos_sources': [
-      'browser/ui/screen_capture_notification_ui_stub.cc',
-    ],
     # Used everwhere but ChromeOS.
     'chrome_browser_ui_non_chromeos_sources': [
       'browser/ui/external_protocol_dialog_delegate.cc',
@@ -1348,6 +1365,7 @@
     'chrome_browser_ui_android_sources': [
       'browser/ui/auto_login_infobar_delegate.cc',
       'browser/ui/auto_login_infobar_delegate.h',
+      'browser/ui/screen_capture_notification_ui_stub.cc',
     ],
     'chrome_browser_ui_non_android_sources': [
       'browser/ui/apps/chrome_app_delegate.cc',
@@ -1356,8 +1374,6 @@
       'browser/ui/autofill/account_chooser_model.h',
       'browser/ui/autofill/autofill_dialog_sign_in_delegate.cc',
       'browser/ui/autofill/autofill_dialog_sign_in_delegate.h',
-      'browser/ui/autofill/country_combobox_model.cc',
-      'browser/ui/autofill/country_combobox_model.h',
       'browser/ui/autofill/generated_credit_card_bubble_controller.cc',
       'browser/ui/autofill/generated_credit_card_bubble_controller.h',
       'browser/ui/autofill/generated_credit_card_bubble_view.cc',
@@ -1493,9 +1509,8 @@
       'browser/ui/panels/stacked_panel_drag_handler.h',
       'browser/ui/pdf/adobe_reader_info_win.cc',
       'browser/ui/pdf/adobe_reader_info_win.h',
-      'browser/ui/pdf/open_pdf_in_reader_prompt_delegate.h',
-      'browser/ui/pdf/pdf_tab_helper.cc',
-      'browser/ui/pdf/pdf_tab_helper.h',
+      'browser/ui/pdf/chrome_pdf_web_contents_helper_client.cc',
+      'browser/ui/pdf/chrome_pdf_web_contents_helper_client.h',
       'browser/ui/pdf/pdf_unsupported_feature.cc',
       'browser/ui/pdf/pdf_unsupported_feature.h',
       'browser/ui/sad_tab.cc',
@@ -1708,6 +1723,8 @@
       'browser/ui/webui/options/core_options_handler.h',
       'browser/ui/webui/options/create_profile_handler.cc',
       'browser/ui/webui/options/create_profile_handler.h',
+      'browser/ui/webui/options/easy_unlock_handler.cc',
+      'browser/ui/webui/options/easy_unlock_handler.h',
       'browser/ui/webui/options/font_settings_handler.cc',
       'browser/ui/webui/options/font_settings_handler.h',
       'browser/ui/webui/options/font_settings_utils.h',
@@ -1716,6 +1733,8 @@
       'browser/ui/webui/options/font_settings_utils_win.cc',
       'browser/ui/webui/options/handler_options_handler.cc',
       'browser/ui/webui/options/handler_options_handler.h',
+      'browser/ui/webui/options/help_overlay_handler.cc',
+      'browser/ui/webui/options/help_overlay_handler.h',
       'browser/ui/webui/options/home_page_overlay_handler.cc',
       'browser/ui/webui/options/home_page_overlay_handler.h',
       'browser/ui/webui/options/import_data_handler.cc',
@@ -1841,6 +1860,8 @@
     'chrome_browser_ui_plugin_sources': [
       'browser/ui/hung_plugin_tab_helper.cc',
       'browser/ui/hung_plugin_tab_helper.h',
+      'browser/ui/webui/flash_ui.cc',
+      'browser/ui/webui/flash_ui.h',
     ],
     'chrome_browser_ui_policy_sources': [
       'browser/ui/webui/policy_ui.cc',
@@ -2088,8 +2109,6 @@
       'browser/ui/views/javascript_app_modal_dialog_views.h',
       'browser/ui/views/load_complete_listener.cc',
       'browser/ui/views/load_complete_listener.h',
-      'browser/ui/views/location_bar/add_to_app_launcher_view.cc',
-      'browser/ui/views/location_bar/add_to_app_launcher_view.h',
       'browser/ui/views/location_bar/bubble_icon_view.cc',
       'browser/ui/views/location_bar/bubble_icon_view.h',
       'browser/ui/views/location_bar/content_setting_image_view.cc',
@@ -2163,8 +2182,6 @@
       'browser/ui/views/passwords/manage_passwords_bubble_view.h',
       'browser/ui/views/passwords/manage_passwords_icon_view.cc',
       'browser/ui/views/passwords/manage_passwords_icon_view.h',
-      'browser/ui/views/passwords/save_password_refusal_combobox_model.cc',
-      'browser/ui/views/passwords/save_password_refusal_combobox_model.h',
       'browser/ui/views/pdf_password_dialog.cc',
       'browser/ui/views/process_singleton_dialog_linux.cc',
       'browser/ui/views/profiles/avatar_label.cc',
@@ -2228,8 +2245,7 @@
       'browser/ui/views/tabs/window_finder_chromeos.cc',
       'browser/ui/views/tabs/window_finder.h',
       'browser/ui/views/tabs/window_finder_win.cc',
-      'browser/ui/views/theme_image_mapper_chromeos.cc',
-      'browser/ui/views/theme_image_mapper_desktop.cc',
+      'browser/ui/views/theme_image_mapper.cc',
       'browser/ui/views/theme_image_mapper.h',
       'browser/ui/views/toolbar/back_button.cc',
       'browser/ui/views/toolbar/back_button.h',
@@ -2600,7 +2616,7 @@
             '<(SHARED_INTERMEDIATE_DIR)/chrome/browser/ui/webui/omnibox/omnibox.mojom.cc',
           ],
           'dependencies': [
-            'browser_extensions',
+            'browser/extensions/api/api_registration.gyp:chrome_api_registration',
             'browser/performance_monitor/performance_monitor.gyp:performance_monitor',
             'chrome_web_ui_mojo_bindings.gyp:web_ui_mojo_bindings',
             'common/extensions/api/api.gyp:chrome_api',
@@ -2608,10 +2624,10 @@
             'installer_util',
             '../components/components.gyp:autofill_content_risk_proto',
             '../components/components.gyp:translate_content_common',
+            '../content/app/resources/content_resources.gyp:content_resources',
             '../media/media.gyp:media',
             '../mojo/mojo_base.gyp:mojo_system_impl',
             '../net/net.gyp:net_with_v8',
-            '../third_party/adobe/flash/flash_player.gyp:flapper_version_h',
             '../third_party/expat/expat.gyp:expat',
             '../third_party/leveldatabase/leveldatabase.gyp:leveldatabase',
             '../third_party/libjingle/libjingle.gyp:libjingle',
@@ -2621,9 +2637,8 @@
             '../ui/surface/surface.gyp:surface',
             '../ui/web_dialogs/web_dialogs.gyp:web_dialogs',
             '../v8/tools/gyp/v8.gyp:v8',
-            '../webkit/storage_browser.gyp:webkit_storage_browser',
-            '../webkit/storage_common.gyp:webkit_storage_common',
-            '../webkit/webkit_resources.gyp:webkit_resources',
+            '../webkit/storage_browser.gyp:storage',
+            '../webkit/storage_common.gyp:storage_common',
           ],
           'defines': [
             '<@(nacl_defines)',
@@ -2671,6 +2686,7 @@
           'sources': [ '<@(chrome_browser_ui_plugin_sources)' ],
           'dependencies': [
             '../ppapi/ppapi_internal.gyp:ppapi_ipc',
+            '../third_party/adobe/flash/flash_player.gyp:flapper_version_h',
           ],
         }],
         ['safe_browsing==1', {
@@ -2739,9 +2755,6 @@
         }],
         ['OS=="win" or OS=="mac" or desktop_linux==1', {
           'sources': [ '<@(chrome_browser_ui_desktop_sources)' ],
-        }],
-        ['chromeos==1 or OS=="android"', {
-          'sources': [ '<@(chrome_browser_ui_android_chromeos_sources)' ],
         }],
         ['use_aura==1', {
           'sources': [ '<@(chrome_browser_ui_aura_sources)'] ,
@@ -2896,9 +2909,6 @@
         }],
         ['OS=="linux"', {  # Both desktop Linux and ChromeOS.
           'sources': [ '<@(chrome_browser_ui_linux_sources)' ],
-          'dependencies': [
-            '../build/linux/system.gyp:udev',
-          ],
           'conditions': [
             ['use_aura==1', {
               'dependencies': [
@@ -2913,6 +2923,11 @@
               'dependencies': [
                 '../build/linux/system.gyp:x11',
                 '../build/linux/system.gyp:gio',
+              ],
+            }],
+            ['use_udev==1', {
+              'dependencies': [
+                '../build/linux/system.gyp:udev',
               ],
             }],
           ],
@@ -2940,6 +2955,9 @@
           ],
         }],
         ['enable_extensions==1', {
+          'dependencies': [
+            'browser_extensions',
+          ],
           'sources': [ '<@(chrome_browser_ui_extensions_sources)' ],
         }],
         ['enable_google_now==1 and OS!="android"', {

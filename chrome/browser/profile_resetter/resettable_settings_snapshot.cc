@@ -6,6 +6,7 @@
 
 #include "base/json/json_writer.h"
 #include "base/prefs/pref_service.h"
+#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/cancellation_flag.h"
 #include "base/values.h"
@@ -15,13 +16,13 @@
 #include "chrome/common/chrome_content_client.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/pref_names.h"
+#include "chrome/grit/generated_resources.h"
+#include "chrome/grit/google_chrome_strings.h"
 #include "components/feedback/feedback_data.h"
 #include "components/feedback/feedback_util.h"
 #include "components/search_engines/template_url_service.h"
 #include "content/public/browser/browser_thread.h"
 #include "extensions/browser/extension_registry.h"
-#include "grit/generated_resources.h"
-#include "grit/google_chrome_strings.h"
 #include "ui/base/l10n/l10n_util.h"
 
 using feedback::FeedbackData;
@@ -37,6 +38,7 @@ const char kEnabledExtensions[] = "enabled_extensions";
 const char kHomepageIsNewTabPage[] = "homepage_is_ntp";
 const char kHomepagePath[] = "homepage";
 const char kShortcuts[] = "shortcuts";
+const char kShowHomeButton[] = "show_home_button";
 const char kStartupTypePath[] = "startup_type";
 const char kStartupURLPath[] = "startup_urls";
 
@@ -65,6 +67,7 @@ ResettableSettingsSnapshot::ResettableSettingsSnapshot(
   DCHECK(prefs);
   homepage_ = prefs->GetString(prefs::kHomePage);
   homepage_is_ntp_ = prefs->GetBoolean(prefs::kHomePageIsNewTabPage);
+  show_home_button_ = prefs->GetBoolean(prefs::kShowHomeButton);
 
   TemplateURLService* service =
       TemplateURLServiceFactory::GetForProfile(profile);
@@ -87,7 +90,7 @@ ResettableSettingsSnapshot::ResettableSettingsSnapshot(
 
 ResettableSettingsSnapshot::~ResettableSettingsSnapshot() {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
-  if (cancellation_flag_)
+  if (cancellation_flag_.get())
     cancellation_flag_->data.Set();
 }
 
@@ -109,7 +112,8 @@ int ResettableSettingsSnapshot::FindDifferentFields(
     bit_mask |= STARTUP_MODE;
 
   if (homepage_is_ntp_ != snapshot.homepage_is_ntp_ ||
-      homepage_ != snapshot.homepage_)
+      homepage_ != snapshot.homepage_ ||
+      show_home_button_ != snapshot.show_home_button_)
     bit_mask |= HOMEPAGE;
 
   if (dse_url_ != snapshot.dse_url_)
@@ -130,7 +134,7 @@ int ResettableSettingsSnapshot::FindDifferentFields(
 void ResettableSettingsSnapshot::RequestShortcuts(
     const base::Closure& callback) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
-  DCHECK(!cancellation_flag_ && !shortcuts_determined());
+  DCHECK(!cancellation_flag_.get() && !shortcuts_determined());
 
   cancellation_flag_ = new SharedCancellationFlag;
   content::BrowserThread::PostTaskAndReplyWithResult(
@@ -172,6 +176,7 @@ std::string SerializeSettingsReport(const ResettableSettingsSnapshot& snapshot,
   if (field_mask & ResettableSettingsSnapshot::HOMEPAGE) {
     dict.SetString(kHomepagePath, snapshot.homepage());
     dict.SetBoolean(kHomepageIsNewTabPage, snapshot.homepage_is_ntp());
+    dict.SetBoolean(kShowHomeButton, snapshot.show_home_button());
   }
 
   if (field_mask & ResettableSettingsSnapshot::DSE_URL)
@@ -293,6 +298,14 @@ scoped_ptr<base::ListValue> GetReadableFeedbackForSnapshot(
   AddPair(list.get(),
           l10n_util::GetStringUTF16(IDS_RESET_PROFILE_SETTINGS_HOMEPAGE_IS_NTP),
           l10n_util::GetStringUTF16(is_ntp_message_id));
+
+  int show_home_button_id = snapshot.show_home_button() ?
+      IDS_RESET_PROFILE_SETTINGS_SHOW_HOME_BUTTON_TRUE :
+      IDS_RESET_PROFILE_SETTINGS_SHOW_HOME_BUTTON_FALSE;
+  AddPair(
+      list.get(),
+      l10n_util::GetStringUTF16(IDS_RESET_PROFILE_SETTINGS_SHOW_HOME_BUTTON),
+      l10n_util::GetStringUTF16(show_home_button_id));
 
   TemplateURLService* service =
       TemplateURLServiceFactory::GetForProfile(profile);

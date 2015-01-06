@@ -143,7 +143,7 @@ class BrowserActionsContainer
   void Init();
 
   // Get the number of browser actions being displayed.
-  int num_browser_actions() const { return browser_action_views_.size(); }
+  size_t num_browser_actions() const { return browser_action_views_.size(); }
 
   // Whether we are performing resize animation on the container.
   bool animating() const { return animation_target_size_ > 0; }
@@ -231,11 +231,10 @@ class BrowserActionsContainer
 
   // Overridden from BrowserActionView::Delegate:
   virtual content::WebContents* GetCurrentWebContents() OVERRIDE;
-  virtual void OnBrowserActionVisibilityChanged() OVERRIDE;
   virtual bool ShownInsideMenu() const OVERRIDE;
   virtual void OnBrowserActionViewDragDone() OVERRIDE;
   virtual views::View* GetOverflowReferenceView() OVERRIDE;
-  virtual void SetPopupOwner(BrowserActionButton* popup_owner) OVERRIDE;
+  virtual void SetPopupOwner(BrowserActionView* popup_owner) OVERRIDE;
   virtual void HideActivePopup() OVERRIDE;
 
   // Overridden from extension::ExtensionKeybindingRegistry::Delegate:
@@ -244,16 +243,6 @@ class BrowserActionsContainer
 
   // Moves a browser action with |id| to |new_index|.
   void MoveBrowserAction(const std::string& extension_id, size_t new_index);
-
-  // Shows the popup for |extension| if possible. Returns true if a new popup
-  // was shown. Showing the popup will grant active tab permissions if
-  // |grant_tab_permissions| is true. Only pass true for this argument for
-  // popups triggered interactively, not popups triggered by an API.
-  // If |can_override| is true, this popup can override other popups (hiding
-  // them) and does not have to be in the active window.
-  bool ShowPopupForExtension(const extensions::Extension* extension,
-                             bool grant_tab_permissions,
-                             bool can_override);
 
   // Retrieve the current popup.  This should only be used by unit tests.
   ExtensionPopup* TestGetPopup();
@@ -290,18 +279,25 @@ class BrowserActionsContainer
   static int IconHeight();
 
   // extensions::ExtensionToolbarModel::Observer implementation.
-  virtual void BrowserActionAdded(const extensions::Extension* extension,
-                                  int index) OVERRIDE;
-  virtual void BrowserActionRemoved(
+  virtual void ToolbarExtensionAdded(const extensions::Extension* extension,
+                                     int index) OVERRIDE;
+  virtual void ToolbarExtensionRemoved(
       const extensions::Extension* extension) OVERRIDE;
-  virtual void BrowserActionMoved(const extensions::Extension* extension,
-                                  int index) OVERRIDE;
-  virtual bool BrowserActionShowPopup(
+  virtual void ToolbarExtensionMoved(const extensions::Extension* extension,
+                                     int index) OVERRIDE;
+  virtual void ToolbarExtensionUpdated(
       const extensions::Extension* extension) OVERRIDE;
-  virtual void VisibleCountChanged() OVERRIDE;
-  virtual void HighlightModeChanged(bool is_highlighting) OVERRIDE;
+  virtual bool ShowExtensionActionPopup(
+      const extensions::Extension* extension,
+      bool grant_active_tab) OVERRIDE;
+  virtual void ToolbarVisibleCountChanged() OVERRIDE;
+  virtual void ToolbarHighlightModeChanged(bool is_highlighting) OVERRIDE;
+  virtual Browser* GetBrowser() OVERRIDE;
 
   void LoadImages();
+
+  // Called when a browser action's visibility may have changed.
+  void OnBrowserActionVisibilityChanged();
 
   // Sets the initial container width.
   void SetContainerWidth();
@@ -335,18 +331,25 @@ class BrowserActionsContainer
   int MinimumNonemptyWidth() const;
 
   // Animate to the target size (unless testing, in which case we go straight to
-  // the target size).  This also saves the target number of visible icons in
-  // the pref if we're not incognito.
-  void SaveDesiredSizeAndAnimate(gfx::Tween::Type type,
-                                 size_t num_visible_icons);
+  // the target size).
+  void Animate(gfx::Tween::Type type, size_t num_visible_icons);
 
   // Returns true if this extension should be shown in this toolbar. This can
   // return false if we are in an incognito window and the extension is disabled
   // for incognito.
-  bool ShouldDisplayBrowserAction(const extensions::Extension* extension);
+  bool ShouldDisplayBrowserAction(const extensions::Extension* extension) const;
 
   // Return the index of the first visible icon.
   size_t GetFirstVisibleIconIndex() const;
+
+  // Returns the BrowserActionView* associated with the given |extension|, or
+  // NULL if none exists.
+  BrowserActionView* GetViewForExtension(
+      const extensions::Extension* extension);
+
+  // Returns the number of icons that this container should draw. This differs
+  // from the model's GetVisibleIconCount if this container is for the overflow.
+  size_t GetIconCount() const;
 
   // Whether this container is in overflow mode (as opposed to in 'main'
   // mode). See class comments for details on the difference.
@@ -370,9 +373,9 @@ class BrowserActionsContainer
   // the difference between main and overflow.
   BrowserActionsContainer* main_container_;
 
-  // The button that triggered the current popup (just a reference to a button
+  // The view that triggered the current popup (just a reference to a view
   // from browser_action_views_).
-  BrowserActionButton* popup_owner_;
+  BrowserActionView* popup_owner_;
 
   // The model that tracks the order of the toolbar icons.
   extensions::ExtensionToolbarModel* model_;

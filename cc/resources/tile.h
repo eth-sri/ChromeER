@@ -67,6 +67,9 @@ class CC_EXPORT Tile : public RefCountedManaged<Tile> {
 
   bool is_occluded(WhichTree tree) const { return is_occluded_[tree]; }
 
+  void set_shared(bool is_shared) { is_shared_ = is_shared; }
+  bool is_shared() const { return is_shared_; }
+
   bool is_occluded_for_tree_priority(TreePriority tree_priority) const {
     switch (tree_priority) {
       case SMOOTHNESS_TAKES_PRIORITY:
@@ -131,6 +134,7 @@ class CC_EXPORT Tile : public RefCountedManaged<Tile> {
 
   void set_picture_pile(scoped_refptr<PicturePileImpl> pile) {
     DCHECK(pile->CanRaster(contents_scale_, content_rect_))
+        << "Recording rect: "
         << gfx::ScaleToEnclosingRect(content_rect_, 1.f / contents_scale_)
                .ToString();
     picture_pile_ = pile;
@@ -138,7 +142,7 @@ class CC_EXPORT Tile : public RefCountedManaged<Tile> {
 
   size_t GPUMemoryUsageInBytes() const;
 
-  gfx::Size size() const { return tile_size_.size(); }
+  gfx::Size size() const { return size_; }
 
   RasterMode DetermineRasterModeForTree(WhichTree tree) const;
   RasterMode DetermineOverallRasterMode() const;
@@ -178,7 +182,7 @@ class CC_EXPORT Tile : public RefCountedManaged<Tile> {
 
   TileManager* tile_manager_;
   scoped_refptr<PicturePileImpl> picture_pile_;
-  gfx::Rect tile_size_;
+  gfx::Size size_;
   gfx::Rect content_rect_;
   float contents_scale_;
   gfx::Rect opaque_rect_;
@@ -189,6 +193,7 @@ class CC_EXPORT Tile : public RefCountedManaged<Tile> {
   int layer_id_;
   int source_frame_number_;
   int flags_;
+  bool is_shared_;
 
   Id id_;
   static Id s_next_id_;

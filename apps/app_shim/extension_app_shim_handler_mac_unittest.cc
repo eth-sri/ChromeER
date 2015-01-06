@@ -18,7 +18,7 @@
 namespace apps {
 
 using extensions::Extension;
-typedef AppWindowRegistry::AppWindowList AppWindowList;
+typedef extensions::AppWindowRegistry::AppWindowList AppWindowList;
 
 using ::testing::_;
 using ::testing::Invoke;
@@ -121,7 +121,7 @@ class FakeHost : public apps::AppShimHandler::Host {
     ++close_count_;
   }
   virtual void OnAppHide() OVERRIDE {}
-  virtual void OnAppRequestUserAttention() OVERRIDE {}
+  virtual void OnAppRequestUserAttention(AppShimAttentionType type) OVERRIDE {}
   virtual base::FilePath GetProfilePath() const OVERRIDE {
     return profile_path_;
   }
@@ -176,7 +176,7 @@ class ExtensionAppShimHandlerTest : public testing::Test {
     // In most tests, we don't care about the result of GetWindows, it just
     // needs to be non-empty.
     AppWindowList app_window_list;
-    app_window_list.push_back(static_cast<AppWindow*>(NULL));
+    app_window_list.push_back(static_cast<extensions::AppWindow*>(NULL));
     EXPECT_CALL(*delegate_, GetWindows(_, _))
         .WillRepeatedly(Return(app_window_list));
 

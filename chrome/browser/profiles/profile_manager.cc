@@ -10,9 +10,9 @@
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
 #include "base/deferred_sequenced_task_runner.h"
-#include "base/file_util.h"
 #include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/metrics/histogram.h"
 #include "base/prefs/pref_service.h"
 #include "base/prefs/scoped_user_pref_update.h"
@@ -36,6 +36,7 @@
 #include "chrome/browser/profiles/startup_task_runner_service.h"
 #include "chrome/browser/profiles/startup_task_runner_service_factory.h"
 #include "chrome/browser/signin/account_reconcilor_factory.h"
+#include "chrome/browser/signin/account_tracker_service_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/ui/browser.h"
@@ -47,6 +48,7 @@
 #include "chrome/common/logging_chrome.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "chrome/grit/generated_resources.h"
 #include "components/bookmarks/browser/bookmark_model.h"
 #include "components/password_manager/core/browser/password_store.h"
 #include "components/signin/core/common/profile_management_switches.h"
@@ -56,7 +58,6 @@
 #include "extensions/browser/extension_registry.h"
 #include "extensions/common/extension_set.h"
 #include "extensions/common/manifest.h"
-#include "grit/generated_resources.h"
 #include "net/http/http_transaction_factory.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
@@ -82,13 +83,13 @@
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/browser_process_platform_part_chromeos.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/profiles/profiles_state.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/cryptohome_client.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "components/user_manager/user.h"
+#include "components/user_manager/user_manager.h"
 #endif
 
 using base::UserMetricsAction;
@@ -313,12 +314,13 @@ std::vector<Profile*> ProfileManager::GetLastOpenedProfiles() {
 Profile* ProfileManager::GetPrimaryUserProfile() {
   ProfileManager* profile_manager = g_browser_process->profile_manager();
 #if defined(OS_CHROMEOS)
-  if (!profile_manager->IsLoggedIn() || !chromeos::UserManager::IsInitialized())
+  if (!profile_manager->IsLoggedIn() ||
+      !user_manager::UserManager::IsInitialized())
     return profile_manager->GetActiveUserOrOffTheRecordProfileFromPath(
         profile_manager->user_data_dir());
-  chromeos::UserManager* manager = chromeos::UserManager::Get();
+  user_manager::UserManager* manager = user_manager::UserManager::Get();
   // Note: The ProfileHelper will take care of guest profiles.
-  return chromeos::ProfileHelper::Get()->GetProfileByUser(
+  return chromeos::ProfileHelper::Get()->GetProfileByUserUnsafe(
       manager->GetPrimaryUser());
 #else
   return profile_manager->GetActiveUserOrOffTheRecordProfileFromPath(
@@ -331,19 +333,19 @@ Profile* ProfileManager::GetActiveUserProfile() {
   ProfileManager* profile_manager = g_browser_process->profile_manager();
 #if defined(OS_CHROMEOS)
   if (!profile_manager->IsLoggedIn() ||
-      !chromeos::UserManager::IsInitialized()) {
+      !user_manager::UserManager::IsInitialized()) {
     return profile_manager->GetActiveUserOrOffTheRecordProfileFromPath(
         profile_manager->user_data_dir());
   }
 
-  chromeos::UserManager* manager = chromeos::UserManager::Get();
+  user_manager::UserManager* manager = user_manager::UserManager::Get();
   const user_manager::User* user = manager->GetActiveUser();
   // To avoid an endless loop (crbug.com/334098) we have to additionally check
   // if the profile of the user was already created. If the profile was not yet
   // created we load the profile using the profile directly.
   // TODO: This should be cleaned up with the new profile manager.
   if (user && user->is_profile_created())
-    return chromeos::ProfileHelper::Get()->GetProfileByUser(user);
+    return chromeos::ProfileHelper::Get()->GetProfileByUserUnsafe(user);
 
 #endif
   Profile* profile =
@@ -460,35 +462,14 @@ bool ProfileManager::IsValidProfile(Profile* profile) {
 }
 
 base::FilePath ProfileManager::GetInitialProfileDir() {
-  base::FilePath relative_profile_dir;
 #if defined(OS_CHROMEOS)
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
   if (logged_in_) {
-    base::FilePath profile_dir;
-    // If the user has logged in, pick up the new profile.
-    if (command_line.HasSwitch(chromeos::switches::kLoginProfile)) {
-      // TODO(nkostylev): Remove this code completely once we eliminate
-      // legacy --login-profile=user switch and enable multi-profiles on CrOS
-      // by default. http://crbug.com/294628
-      profile_dir = chromeos::ProfileHelper::
-          GetProfileDirByLegacyLoginProfileSwitch();
-    }
-    // In case of multi-profiles ignore --login-profile switch.
-    // TODO(nkostylev): Some cases like Guest mode will have empty username_hash
-    // so default kLoginProfile dir will be used.
-    std::string user_id_hash =
-        chromeos::ProfileHelper::Get()->active_user_id_hash();
-    if (!user_id_hash.empty())
-      profile_dir = chromeos::ProfileHelper::Get()->GetActiveUserProfileDir();
-
-    relative_profile_dir = relative_profile_dir.Append(profile_dir);
-    return relative_profile_dir;
+    return chromeos::ProfileHelper::Get()->GetActiveUserProfileDir();
   }
 #endif
+  base::FilePath relative_profile_dir;
   // TODO(mirandac): should not automatically be default profile.
-  relative_profile_dir =
-      relative_profile_dir.AppendASCII(chrome::kInitialProfile);
-  return relative_profile_dir;
+  return relative_profile_dir.AppendASCII(chrome::kInitialProfile);
 }
 
 Profile* ProfileManager::GetLastUsedProfile(
@@ -777,11 +758,9 @@ void ProfileManager::InitProfileUserPrefs(Profile* profile) {
           cache.GetSupervisedUserIdOfProfileAtIndex(profile_cache_index);
     } else if (profile->GetPath() ==
                profiles::GetDefaultProfileDir(cache.GetUserDataDir())) {
-      // The --new-avatar-menu flag no longer uses the "First User" name,
-      // and should assign the default avatar icon to all new profiles.
+      // The --new-avatar-menu flag no longer uses the "First User" name.
       bool is_new_avatar_menu = switches::IsNewAvatarMenu();
-      avatar_index = is_new_avatar_menu ?
-          profiles::GetPlaceholderAvatarIndex() : 0;
+      avatar_index = profiles::GetPlaceholderAvatarIndex();
       profile_name = is_new_avatar_menu ?
           base::UTF16ToUTF8(cache.ChooseNameForNewProfile(avatar_index)) :
           l10n_util::GetStringUTF8(IDS_DEFAULT_PROFILE_NAME);
@@ -1004,7 +983,7 @@ void ProfileManager::DoFinalInitForServices(Profile* profile,
         extensions::ExtensionSystem::Get(profile)->extension_service());
   }
 #endif
-#if defined(ENABLE_MANAGED_USERS)
+#if defined(ENABLE_MANAGED_USERS) && !defined(OS_ANDROID)
   // Initialization needs to happen after extension system initialization (for
   // extension::ManagementPolicy) and InitProfileUserPrefs (for setting the
   // initializing the supervised flag if necessary).
@@ -1014,6 +993,7 @@ void ProfileManager::DoFinalInitForServices(Profile* profile,
   StartupTaskRunnerServiceFactory::GetForProfile(profile)->
       StartDeferredTaskRunners();
 
+  AccountTrackerServiceFactory::GetForProfile(profile);
   AccountReconcilorFactory::GetForProfile(profile);
 }
 
@@ -1055,7 +1035,7 @@ Profile* ProfileManager::GetActiveUserOrOffTheRecordProfileFromPath(
     // if the login-profile switch is passed so that we can test this.
     if (ShouldGoOffTheRecord(profile))
       return profile->GetOffTheRecordProfile();
-    DCHECK(!chromeos::UserManager::Get()->IsLoggedInAsGuest());
+    DCHECK(!user_manager::UserManager::Get()->IsLoggedInAsGuest());
     return profile;
   }
 
@@ -1068,8 +1048,8 @@ Profile* ProfileManager::GetActiveUserOrOffTheRecordProfileFromPath(
 
   Profile* profile = GetProfile(default_profile_dir);
   // Some unit tests didn't initialize the UserManager.
-  if (chromeos::UserManager::IsInitialized() &&
-      chromeos::UserManager::Get()->IsLoggedInAsGuest())
+  if (user_manager::UserManager::IsInitialized() &&
+      user_manager::UserManager::Get()->IsLoggedInAsGuest())
     return profile->GetOffTheRecordProfile();
   return profile;
 #else
@@ -1131,7 +1111,7 @@ void ProfileManager::FinishDeletingProfile(const base::FilePath& profile_dir) {
     scoped_refptr<password_manager::PasswordStore> password_store =
         PasswordStoreFactory::GetForProfile(profile, Profile::EXPLICIT_ACCESS)
             .get();
-    if (password_store) {
+    if (password_store.get()) {
       password_store->RemoveLoginsCreatedBetween(base::Time(),
                                                  base::Time::Max());
     }
@@ -1196,8 +1176,8 @@ void ProfileManager::AddProfileToCache(Profile* profile) {
 void ProfileManager::SetGuestProfilePrefs(Profile* profile) {
   PrefService* prefs = profile->GetPrefs();
   prefs->SetBoolean(prefs::kSigninAllowed, false);
-  prefs->SetBoolean(prefs::kEditBookmarksEnabled, false);
-  prefs->SetBoolean(prefs::kShowBookmarkBar, false);
+  prefs->SetBoolean(bookmarks::prefs::kEditBookmarksEnabled, false);
+  prefs->SetBoolean(bookmarks::prefs::kShowBookmarkBar, false);
   // This can be removed in the future but needs to be present through
   // a release (or two) so that any existing installs get switched to
   // the new state and away from the previous "forced" state.
@@ -1206,10 +1186,7 @@ void ProfileManager::SetGuestProfilePrefs(Profile* profile) {
 
 bool ProfileManager::ShouldGoOffTheRecord(Profile* profile) {
 #if defined(OS_CHROMEOS)
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  if (profile->GetPath().BaseName().value() == chrome::kInitialProfile &&
-      (!command_line.HasSwitch(switches::kTestType) ||
-       command_line.HasSwitch(chromeos::switches::kLoginProfile))) {
+  if (profile->GetPath().BaseName().value() == chrome::kInitialProfile) {
     return true;
   }
 #endif

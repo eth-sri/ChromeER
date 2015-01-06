@@ -42,8 +42,8 @@ class TestExtensionsMetricsProvider : public ExtensionsMetricsProvider {
  protected:
   // Override the GetInstalledExtensions method to return a set of extensions
   // for tests.
-  virtual scoped_ptr<extensions::ExtensionSet> GetInstalledExtensions()
-      OVERRIDE {
+  virtual scoped_ptr<extensions::ExtensionSet> GetInstalledExtensions(
+      Profile* profile) OVERRIDE {
     scoped_ptr<extensions::ExtensionSet> extensions(
         new extensions::ExtensionSet());
     scoped_refptr<const extensions::Extension> extension;
@@ -103,7 +103,7 @@ TEST(ExtensionsMetricsProvider, HashExtension) {
 TEST(ExtensionsMetricsProvider, SystemProtoEncoding) {
   metrics::SystemProfileProto system_profile;
   TestingPrefServiceSimple local_state;
-  MetricsService::RegisterPrefs(local_state.registry());
+  metrics::MetricsService::RegisterPrefs(local_state.registry());
   scoped_ptr<metrics::MetricsStateManager> metrics_state_manager(
       metrics::MetricsStateManager::Create(
           &local_state,

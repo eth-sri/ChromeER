@@ -10,11 +10,14 @@
     # the link of the actual chrome (or chromium) executable on
     # Linux or Mac, and into chrome.dll on Windows.
     # NOTE: Most new includes should go in the OS!="ios" condition below.
+    #
+    # GN version is the group //chrome:browser_dependencies
     'chromium_browser_dependencies': [
       'common',
       'browser',
       '../sync/sync.gyp:sync',
     ],
+    # GN version is the group //chrome:child_dependencies
     'chromium_child_dependencies': [
       'common',
       '../sync/sync.gyp:sync',
@@ -25,10 +28,10 @@
     'conditions': [
       ['OS!="ios"', {
         'chromium_browser_dependencies': [
+          'debugger',
           '../ppapi/ppapi_internal.gyp:ppapi_host',
         ],
         'chromium_child_dependencies': [
-          'debugger',
           'plugin',
           'renderer',
           'utility',
@@ -42,15 +45,15 @@
           '../printing/printing.gyp:printing',
         ],
       }],
-      ['OS=="win"', {
-        'platform_locale_settings_grd':
-            'app/resources/locale_settings_win.grd',
-      },],
       ['enable_printing==1', {
         'chromium_browser_dependencies': [
           'service',
         ],
       }],
+      ['OS=="win"', {
+        'platform_locale_settings_grd':
+            'app/resources/locale_settings_win.grd',
+      },],
       ['OS=="linux"', {
         'conditions': [
           ['chromeos==1', {
@@ -100,7 +103,6 @@
     ['OS!="ios"', {
       'includes': [
         '../apps/apps.gypi',
-        'chrome_browser_extensions.gypi',
         'chrome_debugger.gypi',
         'chrome_dll.gypi',
         'chrome_exe.gypi',
@@ -478,6 +480,7 @@
           ],
         },
         {
+          # GN version: //chrome:version_header
           'target_name': 'chrome_version_header',
           'type': 'none',
           'hard_dependency': 1,
@@ -638,8 +641,9 @@
             'toolbar_model_security_levels_java',
             'tab_load_status_java',
             '../base/base.gyp:base',
-            '../components/components.gyp:autofill_java',
+            '../components/components.gyp:bookmarks_java',
             '../components/components.gyp:dom_distiller_core_java',
+            '../components/components.gyp:enhanced_bookmarks_java',
             '../components/components.gyp:gcm_driver_java',
             '../components/components.gyp:navigation_interception_java',
             '../components/components.gyp:sessions',
@@ -649,6 +653,7 @@
             '../printing/printing.gyp:printing_java',
             '../sync/sync.gyp:sync_java',
             '../third_party/android_tools/android_tools.gyp:android_support_v7_appcompat_javalib',
+            '../third_party/android_tools/android_tools.gyp:android_support_v13_javalib',
             '../third_party/guava/guava.gyp:guava_javalib',
             '../ui/android/ui_android.gyp:ui_java',
           ],
@@ -682,6 +687,11 @@
     ],  # OS=="android"
     ['configuration_policy==1 and OS!="android" and OS!="ios"', {
       'includes': [ 'policy.gypi', ],
+    }],
+    ['enable_extensions==1', {
+      'includes': [
+        'chrome_browser_extensions.gypi',
+      ],
     }],
     ['enable_printing==1', {
       'targets': [

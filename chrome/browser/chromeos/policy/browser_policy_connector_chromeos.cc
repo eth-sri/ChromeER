@@ -19,6 +19,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "chrome/browser/chromeos/policy/app_pack_updater.h"
+#include "chrome/browser/chromeos/policy/consumer_management_service.h"
 #include "chrome/browser/chromeos/policy/device_cloud_policy_initializer.h"
 #include "chrome/browser/chromeos/policy/device_cloud_policy_invalidator.h"
 #include "chrome/browser/chromeos/policy/device_cloud_policy_manager_chromeos.h"
@@ -35,6 +36,7 @@
 #include "chromeos/chromeos_paths.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/cryptohome/system_salt_getter.h"
+#include "chromeos/dbus/cryptohome_client.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/network/network_handler.h"
 #include "chromeos/network/onc/onc_certificate_importer_impl.h"
@@ -73,7 +75,7 @@ scoped_refptr<base::SequencedTaskRunner> GetBackgroundTaskRunner() {
       pool->GetSequenceToken(), base::SequencedWorkerPool::SKIP_ON_SHUTDOWN);
 }
 
-std::string GetConsumerDeviceManagementServerUrl() {
+std::string GetDeviceManagementServerUrlForConsumer() {
   const CommandLine* command_line = CommandLine::ForCurrentProcess();
   if (command_line->HasSwitch(
           chromeos::switches::kConsumerDeviceManagementUrl)) {
@@ -142,11 +144,19 @@ void BrowserPolicyConnectorChromeOS::Init(
 
   scoped_ptr<DeviceManagementService::Configuration> configuration(
       new DeviceManagementServiceConfiguration(
-          GetConsumerDeviceManagementServerUrl()));
+          GetDeviceManagementServerUrlForConsumer()));
   consumer_device_management_service_.reset(
       new DeviceManagementService(configuration.Pass()));
   consumer_device_management_service_->ScheduleInitialization(
       kServiceInitializationStartupDelay);
+
+  const CommandLine* command_line = CommandLine::ForCurrentProcess();
+  if (command_line->HasSwitch(chromeos::switches::kEnableConsumerManagement)) {
+    chromeos::CryptohomeClient* cryptohome_client =
+        chromeos::DBusThreadManager::Get()->GetCryptohomeClient();
+    consumer_management_service_.reset(
+        new ConsumerManagementService(cryptohome_client));
+  }
 
   if (device_cloud_policy_manager_) {
     // Note: for now the |device_cloud_policy_manager_| is using the global
@@ -160,7 +170,7 @@ void BrowserPolicyConnectorChromeOS::Init(
         new DeviceCloudPolicyInitializer(
             local_state,
             device_management_service(),
-            consumer_device_management_service(),
+            GetDeviceManagementServiceForConsumer(),
             GetBackgroundTaskRunner(),
             install_attributes_.get(),
             state_keys_broker_.get(),
@@ -170,6 +180,7 @@ void BrowserPolicyConnectorChromeOS::Init(
             base::Bind(&BrowserPolicyConnectorChromeOS::
                            OnDeviceCloudPolicyManagerConnected,
                        base::Unretained(this))));
+    device_cloud_policy_initializer_->Init();
   }
 
   device_local_account_policy_service_.reset(
@@ -203,13 +214,23 @@ void BrowserPolicyConnectorChromeOS::Init(
           chromeos::CrosSettings::Get());
 }
 
-void BrowserPolicyConnectorChromeOS::ShutdownInvalidator() {
+void BrowserPolicyConnectorChromeOS::PreShutdown() {
+  // Let the |device_cloud_policy_invalidator_| unregister itself as an
+  // observer of per-Profile InvalidationServices and the device-global
+  // invalidation::TiclInvalidationService it may have created as an observer of
+  // the DeviceOAuth2TokenService that is destroyed before Shutdown() is called.
   device_cloud_policy_invalidator_.reset();
+
+  // The |consumer_management_service_| may be observing a
+  // ProfileOAuth2TokenService and needs to be destroyed before the token
+  // service.
+  consumer_management_service_.reset();
 }
 
 void BrowserPolicyConnectorChromeOS::Shutdown() {
-  // Verify that ShutdownInvalidator() has been called first.
+  // Verify that PreShutdown() has been called first.
   DCHECK(!device_cloud_policy_invalidator_);
+  DCHECK(!consumer_management_service_);
 
   // The AppPackUpdater may be observing the |device_cloud_policy_manager_|.
   // Delete it first.
@@ -265,6 +286,11 @@ AppPackUpdater* BrowserPolicyConnectorChromeOS::GetAppPackUpdater() {
 void BrowserPolicyConnectorChromeOS::SetUserPolicyDelegate(
     ConfigurationPolicyProvider* user_policy_provider) {
   global_user_cloud_policy_provider_->SetDelegate(user_policy_provider);
+}
+
+void BrowserPolicyConnectorChromeOS::SetDeviceCloudPolicyInitializerForTesting(
+    scoped_ptr<DeviceCloudPolicyInitializer> initializer) {
+  device_cloud_policy_initializer_ = initializer.Pass();
 }
 
 void BrowserPolicyConnectorChromeOS::SetInstallAttributesForTesting(

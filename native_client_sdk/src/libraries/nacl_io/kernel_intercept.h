@@ -44,9 +44,11 @@ int ki_init(void* kernel_proxy);
 /*
  * Saves the current internal state.  This is used by test code which can
  * use this to save the current state before calling ki_init().  The
- * pushed state is restored in the next call to ki_uninit().
+ * pushed state is restored by ki_pop_state_for_testing() (or ki_uninit()).
  */
 int ki_push_state_for_testing(void);
+
+int ki_pop_state_for_testing(void);
 
 int ki_init_ppapi(void* kernel_proxy,
                   PP_Instance instance,
@@ -152,6 +154,13 @@ int ki_getaddrinfo(const char* node,
                    const struct addrinfo* hints,
                    struct addrinfo** res);
 struct hostent* ki_gethostbyname(const char* name);
+int ki_getnameinfo(const struct sockaddr *sa,
+                   socklen_t salen,
+                   char *host,
+                   size_t hostlen,
+                   char *serv,
+                   size_t servlen,
+                   unsigned int flags);
 int ki_getpeername(int fd, struct sockaddr* addr, socklen_t* len);
 int ki_getsockname(int fd, struct sockaddr* addr, socklen_t* len);
 int ki_getsockopt(int fd, int lvl, int optname, void* optval, socklen_t* len);

@@ -15,6 +15,8 @@ gypi_values = exec_script(
 # (generate_renderer_resources action)
 grit("resources") {
   source = "resources/renderer_resources.grd"
+  output_dir = "$root_gen_dir/chrome"
+  output_name = "renderer_resources"
   outputs = [
     "grit/renderer_resources.h",
     "renderer_resources_100_percent.pak",
@@ -34,31 +36,35 @@ static_library("renderer") {
     "//chrome:resources",
     "//chrome:strings",
     "//components/autofill/content/renderer",
+    "//components/cdm/renderer",
     "//components/data_reduction_proxy/common",
+    "//components/password_manager/content/renderer",
     "//components/plugins/renderer",
     "//components/startup_metric_utils",
+    "//components/translate/content/renderer",
     "//components/translate/core/common",
     "//components/translate/core/language_detection",
     "//components/visitedlink/renderer",
+    "//content/app/resources",
+    "//content/app/strings",
     "//content/public/renderer",
     "//extensions:extensions_resources",
+    "//extensions/renderer",
+    "//media/cast:net",
+    "//media/cast:sender",
     "//media/cast/logging/proto",
-    "//third_party/re2",
     "//net",
     "//skia",
     "//third_party/WebKit/public:blink",
+    "//third_party/WebKit/public:resources",
     "//third_party/icu",
     "//third_party/npapi",
+    "//third_party/re2",
     "//third_party/widevine/cdm:version_h",
     "//ui/surface",
     "//v8:v8",
     "//webkit/child",
     "//webkit/common",
-    "//webkit:resources",
-    #"../components/components.gyp:cdm_renderer",  TODO(GYP)
-    #"../extensions/extensions.gyp:extensions_renderer",  TODO(GYP)
-    #"../media/cast/cast.gyp:cast_sender",  TODO(GYP)
-    #"../media/cast/cast.gyp:cast_transport",  TODO(GYP)
   ]
 
   if (enable_nacl) {
@@ -118,8 +124,10 @@ static_library("renderer") {
 
   if (printing_mode > 0) {
     deps += [ "//printing" ]
+    sources += rebase_path(gypi_values.chrome_renderer_printing_sources,
+                           ".", "..")
     if (printing_mode == 1) {
-      sources += rebase_path(gypi_values.chrome_renderer_printing_sources,
+      sources += rebase_path(gypi_values.chrome_renderer_full_printing_sources,
                              ".", "..")
     }
   }
@@ -146,13 +154,7 @@ static_library("renderer") {
   }
 
   # TODO(GYP)
-  #     ['win_pdf_metafile_for_printing==1', {
   #       'sources': [
   #         'renderer/printing/print_web_view_helper_pdf_win.cc',
   #       ],
-  #     }, {
-  #       'sources': [
-  #         'renderer/printing/print_web_view_helper_win.cc',
-  #       ],
-  #     }],
 }

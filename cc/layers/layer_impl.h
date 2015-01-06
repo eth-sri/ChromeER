@@ -24,7 +24,6 @@
 #include "cc/layers/layer_position_constraint.h"
 #include "cc/layers/render_surface_impl.h"
 #include "cc/output/filter_operations.h"
-#include "cc/quads/render_pass.h"
 #include "cc/quads/shared_quad_state.h"
 #include "cc/resources/resource_provider.h"
 #include "skia/ext/refptr.h"
@@ -52,9 +51,12 @@ class LayerTreeImpl;
 class MicroBenchmarkImpl;
 template <typename LayerType>
 class OcclusionTracker;
+class RenderPass;
+class RenderPassId;
 class Renderer;
 class ScrollbarAnimationController;
 class ScrollbarLayerImplBase;
+class SimpleEnclosedRegion;
 class Tile;
 
 struct AppendQuadsData;
@@ -140,6 +142,7 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
     return scroll_children_.get();
   }
 
+  void SetNumDescendantsThatDrawContent(int num_descendants);
   void SetClipParent(LayerImpl* ancestor);
 
   LayerImpl* clip_parent() {
@@ -198,8 +201,8 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
 
   virtual bool HasDelegatedContent() const;
   virtual bool HasContributingDelegatedRenderPasses() const;
-  virtual RenderPass::Id FirstContributingRenderPassId() const;
-  virtual RenderPass::Id NextContributingRenderPassId(RenderPass::Id id) const;
+  virtual RenderPassId FirstContributingRenderPassId() const;
+  virtual RenderPassId NextContributingRenderPassId(RenderPassId id) const;
 
   virtual void UpdateTiles(
       const OcclusionTracker<LayerImpl>* occlusion_tracker) {}
@@ -211,6 +214,7 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   void SetDrawsContent(bool draws_content);
   bool DrawsContent() const { return draws_content_; }
 
+  int NumDescendantsThatDrawContent() const;
   void SetHideLayerAndSubtree(bool hide);
   bool hide_layer_and_subtree() const { return hide_layer_and_subtree_; }
 
@@ -358,12 +362,9 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   // them from the other values.
 
   void SetBounds(const gfx::Size& bounds);
-  void SetTemporaryImplBounds(const gfx::SizeF& bounds);
   gfx::Size bounds() const;
-  gfx::Vector2dF BoundsDelta() const {
-    return gfx::Vector2dF(temporary_impl_bounds_.width() - bounds_.width(),
-                          temporary_impl_bounds_.height() - bounds_.height());
-  }
+  void SetBoundsDelta(const gfx::Vector2dF& bounds_delta);
+  gfx::Vector2dF bounds_delta() const { return bounds_delta_; }
 
   void SetContentBounds(const gfx::Size& content_bounds);
   gfx::Size content_bounds() const { return draw_properties_.content_bounds; }
@@ -490,7 +491,7 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
     return layer_animation_controller_.get();
   }
 
-  virtual Region VisibleContentOpaqueRegion() const;
+  virtual SimpleEnclosedRegion VisibleContentOpaqueRegion() const;
 
   virtual void DidBecomeActive();
 
@@ -522,6 +523,7 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   virtual scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl);
   virtual void PushPropertiesTo(LayerImpl* layer);
 
+  virtual void GetAllTilesForTracing(std::set<const Tile*>* tiles) const;
   virtual void AsValueInto(base::debug::TracedValue* dict) const;
 
   virtual size_t GPUMemoryUsageInBytes() const;
@@ -603,7 +605,7 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   // Properties synchronized from the associated Layer.
   gfx::Point3F transform_origin_;
   gfx::Size bounds_;
-  gfx::SizeF temporary_impl_bounds_;
+  gfx::Vector2dF bounds_delta_;
   gfx::Vector2d scroll_offset_;
   ScrollOffsetDelegate* scroll_offset_delegate_;
   LayerImpl* scroll_clip_layer_;
@@ -649,6 +651,8 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   gfx::Vector2dF scroll_delta_;
   gfx::Vector2d sent_scroll_delta_;
   gfx::Vector2dF last_scroll_offset_;
+
+  int num_descendants_that_draw_content_;
 
   // The global depth value of the center of the layer. This value is used
   // to sort layers from back to front.

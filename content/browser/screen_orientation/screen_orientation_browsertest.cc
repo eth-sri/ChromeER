@@ -21,6 +21,10 @@
 #include "third_party/WebKit/public/platform/WebScreenInfo.h"
 #include "ui/compositor/compositor_switches.h"
 
+#if defined(OS_WIN)
+#include "base/win/windows_version.h"
+#endif // OS_WIN
+
 namespace content {
 
 class ScreenOrientationBrowserTest : public ContentBrowserTest  {
@@ -66,7 +70,7 @@ class ScreenOrientationBrowserTest : public ContentBrowserTest  {
     params.screen_info = screen_info;
     params.new_size = gfx::Size(0, 0);
     params.physical_backing_size = gfx::Size(300, 300);
-    params.overdraw_bottom_height = 0.f;
+    params.top_controls_layout_height = 0.f;
     params.resizer_rect = gfx::Rect();
     params.is_fullscreen = false;
     rwh->Send(new ViewMsg_Resize(rwh->GetRoutingID(), params));
@@ -84,6 +88,13 @@ class ScreenOrientationBrowserTest : public ContentBrowserTest  {
     ExecuteScriptAndGetValue(shell()->web_contents()->GetMainFrame(),
                              "screen.orientation.type")->GetAsString(&type);
     return type;
+  }
+
+  bool ScreenOrientationSupported() {
+    bool support;
+    ExecuteScriptAndGetValue(shell()->web_contents()->GetMainFrame(),
+                             "'orientation' in screen")->GetAsBoolean(&support);
+    return support;
   }
 
   bool WindowOrientationSupported() {
@@ -123,6 +134,15 @@ IN_PROC_BROWSER_TEST_F(ScreenOrientationBrowserTest, ScreenOrientationChange) {
   WaitForResizeComplete(shell()->web_contents());
 #endif // USE_AURA
 
+#if defined(OS_WIN)
+  // Screen Orientation is currently disabled on Windows 8.
+  // This test will break, requiring an update when the API will be enabled.
+  if (base::win::OSInfo::GetInstance()->version() >= base::win::VERSION_WIN8) {
+    EXPECT_EQ(false, ScreenOrientationSupported());
+    return;
+  }
+#endif // defined(OS_WIN)
+
   int angle = GetOrientationAngle();
 
   for (int i = 0; i < 4; ++i) {
@@ -144,6 +164,9 @@ IN_PROC_BROWSER_TEST_F(ScreenOrientationBrowserTest, WindowOrientationChange) {
   TestNavigationObserver navigation_observer(shell()->web_contents(), 1);
   shell()->LoadURL(test_url);
   navigation_observer.Wait();
+#if USE_AURA
+  WaitForResizeComplete(shell()->web_contents());
+#endif // USE_AURA
 
   if (!WindowOrientationSupported())
     return;
@@ -158,6 +181,38 @@ IN_PROC_BROWSER_TEST_F(ScreenOrientationBrowserTest, WindowOrientationChange) {
     navigation_observer.Wait();
     EXPECT_EQ(angle == 270 ? -90 : angle, GetWindowOrientationAngle());
   }
+}
+
+// Chromium Android does not support fullscreen
+IN_PROC_BROWSER_TEST_F(ScreenOrientationBrowserTest, LockSmoke) {
+  GURL test_url = GetTestUrl("screen_orientation",
+                             "screen_orientation_lock_smoke.html");
+
+  TestNavigationObserver navigation_observer(shell()->web_contents(), 2);
+  shell()->LoadURL(test_url);
+
+#if defined(OS_WIN)
+  // Screen Orientation is currently disabled on Windows 8.
+  // This test will break, requiring an update when the API will be enabled.
+  if (base::win::OSInfo::GetInstance()->version() >= base::win::VERSION_WIN8) {
+    EXPECT_EQ(false, ScreenOrientationSupported());
+    return;
+  }
+#endif // defined(OS_WIN)
+
+  navigation_observer.Wait();
+#if USE_AURA
+  WaitForResizeComplete(shell()->web_contents());
+#endif // USE_AURA
+
+  std::string expected =
+#if defined(OS_ANDROID)
+      "SecurityError"; // WebContents need to be fullscreen.
+#else
+      "NotSupportedError"; // Locking isn't supported.
+#endif
+
+  EXPECT_EQ(expected, shell()->web_contents()->GetLastCommittedURL().ref());
 }
 
 } // namespace content

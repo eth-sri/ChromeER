@@ -4,7 +4,6 @@
 
 #include "net/quic/quic_headers_stream.h"
 
-#include "net/quic/quic_flags.h"
 #include "net/quic/quic_utils.h"
 #include "net/quic/spdy_utils.h"
 #include "net/quic/test_tools/quic_connection_peer.h"
@@ -69,6 +68,7 @@ class MockVisitor : public SpdyFramerVisitorInterface {
                               StringPiece protocol_id,
                               StringPiece host,
                               StringPiece origin));
+  MOCK_METHOD2(OnUnknownFrame, bool(SpdyStreamId stream_id, int frame_type));
 };
 
 class QuicHeadersStreamTest : public ::testing::TestWithParam<bool> {
@@ -326,8 +326,6 @@ TEST_P(QuicHeadersStreamTest, ProcessSpdyWindowUpdateFrame) {
 }
 
 TEST_P(QuicHeadersStreamTest, NoConnectionLevelFlowControl) {
-  ValueRestore<bool> old_flag(&FLAGS_enable_quic_connection_flow_control_2,
-                              true);
   if (connection_->version() <= QUIC_VERSION_20) {
     EXPECT_FALSE(headers_stream_->flow_controller()->IsEnabled());
   } else {

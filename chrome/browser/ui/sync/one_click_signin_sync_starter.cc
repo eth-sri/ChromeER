@@ -37,15 +37,14 @@
 #include "chrome/browser/ui/webui/signin/login_ui_service_factory.h"
 #include "chrome/browser/ui/webui/signin/profile_signin_confirmation_dialog.h"
 #include "chrome/common/url_constants.h"
+#include "chrome/grit/chromium_strings.h"
+#include "chrome/grit/generated_resources.h"
 #include "components/signin/core/browser/signin_manager.h"
 #include "components/signin/core/browser/signin_metrics.h"
 #include "components/signin/core/common/profile_management_switches.h"
 #include "components/sync_driver/sync_prefs.h"
-#include "grit/chromium_strings.h"
-#include "grit/generated_resources.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/resource/resource_bundle.h"
 
 namespace {
 
@@ -85,6 +84,7 @@ OneClickSigninSyncStarter::OneClickSigninSyncStarter(
     const GURL& continue_url,
     Callback sync_setup_completed_callback)
     : content::WebContentsObserver(web_contents),
+      profile_(NULL),
       start_mode_(start_mode),
       desktop_type_(chrome::HOST_DESKTOP_TYPE_NATIVE),
       confirmation_required_(confirmation_required),
@@ -94,7 +94,6 @@ OneClickSigninSyncStarter::OneClickSigninSyncStarter(
   DCHECK(profile);
   DCHECK(web_contents || continue_url.is_empty());
   BrowserList::AddObserver(this);
-  LoginUIServiceFactory::GetForProfile(profile)->AddObserver(this);
   Initialize(profile, browser);
 
   // Policy is enabled, so pass in a callback to do extra policy-related UI
@@ -118,8 +117,14 @@ OneClickSigninSyncStarter::~OneClickSigninSyncStarter() {
 
 void OneClickSigninSyncStarter::Initialize(Profile* profile, Browser* browser) {
   DCHECK(profile);
+
+  if (profile_)
+    LoginUIServiceFactory::GetForProfile(profile_)->RemoveObserver(this);
+
   profile_ = profile;
   browser_ = browser;
+
+  LoginUIServiceFactory::GetForProfile(profile_)->AddObserver(this);
 
   // Cache the parent desktop for the browser, so we can reuse that same
   // desktop for any UI we want to display.
@@ -148,7 +153,7 @@ void OneClickSigninSyncStarter::ConfirmSignin(const std::string& oauth_token) {
   SigninManager* signin = SigninManagerFactory::GetForProfile(profile_);
   // If this is a new signin (no authenticated username yet) try loading
   // policy for this user now, before any signed in services are initialized.
-  if (signin->GetAuthenticatedUsername().empty()) {
+  if (!signin->IsAuthenticated()) {
 #if defined(ENABLE_CONFIGURATION_POLICY)
     policy::UserPolicySigninService* policy_service =
         policy::UserPolicySigninServiceFactory::GetForProfile(profile_);
@@ -185,12 +190,14 @@ void OneClickSigninSyncStarter::SigninDialogDelegate::OnCancelSignin() {
 
 void OneClickSigninSyncStarter::SigninDialogDelegate::OnContinueSignin() {
   SetUserChoiceHistogram(SIGNIN_CHOICE_CONTINUE);
+
   if (sync_starter_ != NULL)
     sync_starter_->LoadPolicyWithCachedCredentials();
 }
 
 void OneClickSigninSyncStarter::SigninDialogDelegate::OnSigninWithNewProfile() {
   SetUserChoiceHistogram(SIGNIN_CHOICE_NEW_PROFILE);
+
   if (sync_starter_ != NULL)
     sync_starter_->CreateNewSignedInProfile();
 }
@@ -295,8 +302,8 @@ void OneClickSigninSyncStarter::CompleteInitForNewProfile(
       SigninManager* new_signin_manager =
           SigninManagerFactory::GetForProfile(new_profile);
       DCHECK(!old_signin_manager->GetUsernameForAuthInProgress().empty());
-      DCHECK(old_signin_manager->GetAuthenticatedUsername().empty());
-      DCHECK(new_signin_manager->GetAuthenticatedUsername().empty());
+      DCHECK(!old_signin_manager->IsAuthenticated());
+      DCHECK(!new_signin_manager->IsAuthenticated());
       DCHECK(!dm_token_.empty());
       DCHECK(!client_id_.empty());
 
@@ -369,8 +376,17 @@ void OneClickSigninSyncStarter::UntrustedSigninConfirmed(
   } else {
     // If the user clicked the "Advanced" link in the confirmation dialog, then
     // override the current start_mode_ to bring up the advanced sync settings.
+
+    // If the user signs in from the new avatar bubble, the untrusted dialog
+    // would dismiss the avatar bubble, thus it won't show any confirmation upon
+    // sign in completes. This dialog already has a settings link, thus we just
+    // start sync immediately .
+
     if (response == CONFIGURE_SYNC_FIRST)
       start_mode_ = response;
+    else if (start_mode_ == CONFIRM_SYNC_SETTINGS_FIRST)
+      start_mode_ = SYNC_WITH_DEFAULT_SETTINGS;
+
     SigninManager* signin = SigninManagerFactory::GetForProfile(profile_);
     signin->CompletePendingSignin();
   }
@@ -447,6 +463,7 @@ void OneClickSigninSyncStarter::MergeSessionComplete(
     }
     case CONFIRM_SYNC_SETTINGS_FIRST:
       // Blocks sync until the sync settings confirmation UI is closed.
+      DisplayFinalConfirmationBubble(base::string16());
       return;
     case CONFIGURE_SYNC_FIRST:
       ShowSettingsPage(true);  // Show sync config UI.
@@ -471,12 +488,8 @@ void OneClickSigninSyncStarter::MergeSessionComplete(
 void OneClickSigninSyncStarter::DisplayFinalConfirmationBubble(
     const base::string16& custom_message) {
   browser_ = EnsureBrowser(browser_, profile_, desktop_type_);
-  browser_->window()->ShowOneClickSigninBubble(
-      BrowserWindow::ONE_CLICK_SIGNIN_BUBBLE_TYPE_BUBBLE,
-      base::string16(),  // No email required - this is not a SAML confirmation.
-      custom_message,
-      // Callback is ignored.
-      BrowserWindow::StartSyncCallback());
+  LoginUIServiceFactory::GetForProfile(browser_->profile())->
+      DisplayLoginResult(browser_, custom_message);
 }
 
 // static

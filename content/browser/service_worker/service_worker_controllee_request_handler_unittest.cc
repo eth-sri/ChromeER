@@ -15,6 +15,7 @@
 #include "content/browser/service_worker/service_worker_registration.h"
 #include "content/browser/service_worker/service_worker_url_request_job.h"
 #include "content/browser/service_worker/service_worker_utils.h"
+#include "content/common/resource_request_body.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "net/url_request/url_request_context.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -41,17 +42,16 @@ class ServiceWorkerControlleeRequestHandlerTest : public testing::Test {
     scope_ = GURL("http://host/scope/");
     script_url_ = GURL("http://host/script.js");
     registration_ = new ServiceWorkerRegistration(
-        scope_, script_url_, 1L, context()->AsWeakPtr());
+        scope_, 1L, context()->AsWeakPtr());
     version_ = new ServiceWorkerVersion(
-        registration_,
-        1L, context()->AsWeakPtr());
+        registration_.get(), script_url_, 1L, context()->AsWeakPtr());
 
     // An empty host.
     scoped_ptr<ServiceWorkerProviderHost> host(new ServiceWorkerProviderHost(
         kMockRenderProcessId, 1 /* provider_id */,
         context()->AsWeakPtr(), NULL));
     provider_host_ = host->AsWeakPtr();
-    context()->AddProviderHost(make_scoped_ptr(host.release()));
+    context()->AddProviderHost(host.Pass());
 
     context()->storage()->LazyInitialize(base::Bind(&EmptyCallback));
     base::RunLoop().RunUntilIdle();
@@ -80,9 +80,10 @@ class ServiceWorkerControlleeRequestHandlerTest : public testing::Test {
 TEST_F(ServiceWorkerControlleeRequestHandlerTest, ActivateWaitingVersion) {
   // Store a registration that is installed but not activated yet.
   version_->SetStatus(ServiceWorkerVersion::INSTALLED);
-  registration_->SetWaitingVersion(version_);
+  registration_->SetWaitingVersion(version_.get());
   context()->storage()->StoreRegistration(
-      registration_, version_,
+      registration_.get(),
+      version_.get(),
       base::Bind(&ServiceWorkerUtils::NoOpStatusCallback));
   base::RunLoop().RunUntilIdle();
 
@@ -97,8 +98,9 @@ TEST_F(ServiceWorkerControlleeRequestHandlerTest, ActivateWaitingVersion) {
       new ServiceWorkerControlleeRequestHandler(
           context()->AsWeakPtr(),
           provider_host_,
-          base::WeakPtr<webkit_blob::BlobStorageContext>(),
-          RESOURCE_TYPE_MAIN_FRAME));
+          base::WeakPtr<storage::BlobStorageContext>(),
+          RESOURCE_TYPE_MAIN_FRAME,
+          scoped_refptr<ResourceRequestBody>()));
   scoped_refptr<net::URLRequestJob> job =
       handler->MaybeCreateJob(request.get(), NULL);
   ServiceWorkerURLRequestJob* sw_job =

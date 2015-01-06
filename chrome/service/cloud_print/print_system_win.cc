@@ -5,7 +5,7 @@
 #include "chrome/service/cloud_print/print_system.h"
 
 #include "base/command_line.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/json/json_writer.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/utf_string_conversions.h"
@@ -20,12 +20,10 @@
 #include "chrome/service/cloud_print/cdd_conversion_win.h"
 #include "chrome/service/service_process.h"
 #include "chrome/service/service_utility_process_host.h"
-#include "grit/generated_resources.h"
 #include "printing/backend/win_helper.h"
 #include "printing/emf_win.h"
 #include "printing/page_range.h"
 #include "printing/printing_utils.h"
-#include "ui/base/l10n/l10n_util.h"
 
 namespace cloud_print {
 

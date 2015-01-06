@@ -12,14 +12,14 @@
 #include "net/http/http_byte_range.h"
 #include "net/http/http_status_code.h"
 #include "net/url_request/url_request_job.h"
-#include "webkit/browser/webkit_storage_browser_export.h"
+#include "webkit/browser/storage_browser_export.h"
 #include "webkit/common/blob/blob_data.h"
 
 namespace base {
 class MessageLoopProxy;
 }
 
-namespace fileapi {
+namespace storage {
 class FileSystemContext;
 }
 
@@ -28,18 +28,18 @@ class DrainableIOBuffer;
 class IOBuffer;
 }
 
-namespace webkit_blob {
+namespace storage {
 
 class FileStreamReader;
 
 // A request job that handles reading blob URLs.
-class WEBKIT_STORAGE_BROWSER_EXPORT BlobURLRequestJob
+class STORAGE_EXPORT BlobURLRequestJob
     : public net::URLRequestJob {
  public:
   BlobURLRequestJob(net::URLRequest* request,
                     net::NetworkDelegate* network_delegate,
-                    BlobData* blob_data,
-                    fileapi::FileSystemContext* file_system_context,
+                    const scoped_refptr<BlobData>& blob_data,
+                    storage::FileSystemContext* file_system_context,
                     base::MessageLoopProxy* resolving_message_loop_proxy);
 
   // net::URLRequestJob methods.
@@ -98,7 +98,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT BlobURLRequestJob
   scoped_refptr<BlobData> blob_data_;
 
   // Variables for controlling read from |blob_data_|.
-  scoped_refptr<fileapi::FileSystemContext> file_system_context_;
+  scoped_refptr<storage::FileSystemContext> file_system_context_;
   scoped_refptr<base::MessageLoopProxy> file_thread_proxy_;
   std::vector<int64> item_length_list_;
   int64 total_size_;
@@ -124,6 +124,6 @@ class WEBKIT_STORAGE_BROWSER_EXPORT BlobURLRequestJob
   DISALLOW_COPY_AND_ASSIGN(BlobURLRequestJob);
 };
 
-}  // namespace webkit_blob
+}  // namespace storage
 
 #endif  // WEBKIT_BROWSER_BLOB_BLOB_URL_REQUEST_JOB_H_

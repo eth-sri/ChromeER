@@ -10,6 +10,7 @@
 #include "content/browser/service_worker/service_worker_registration.h"
 #include "content/browser/service_worker/service_worker_url_request_job.h"
 #include "content/browser/service_worker/service_worker_utils.h"
+#include "content/common/resource_request_body.h"
 #include "content/common/service_worker/service_worker_types.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_util.h"
@@ -20,14 +21,16 @@ namespace content {
 ServiceWorkerControlleeRequestHandler::ServiceWorkerControlleeRequestHandler(
     base::WeakPtr<ServiceWorkerContextCore> context,
     base::WeakPtr<ServiceWorkerProviderHost> provider_host,
-    base::WeakPtr<webkit_blob::BlobStorageContext> blob_storage_context,
-    ResourceType resource_type)
+    base::WeakPtr<storage::BlobStorageContext> blob_storage_context,
+    ResourceType resource_type,
+    scoped_refptr<ResourceRequestBody> body)
     : ServiceWorkerRequestHandler(context,
                                   provider_host,
                                   blob_storage_context,
                                   resource_type),
       is_main_resource_load_(
           ServiceWorkerUtils::IsMainResourceType(resource_type)),
+      body_(body),
       weak_factory_(this) {
 }
 
@@ -79,7 +82,7 @@ net::URLRequestJob* ServiceWorkerControlleeRequestHandler::MaybeCreateJob(
   DCHECK(!job_.get() || job_->ShouldForwardToServiceWorker());
 
   job_ = new ServiceWorkerURLRequestJob(
-      request, network_delegate, provider_host_, blob_storage_context_);
+      request, network_delegate, provider_host_, blob_storage_context_, body_);
   if (is_main_resource_load_)
     PrepareForMainResource(request->url());
   else
@@ -99,7 +102,7 @@ net::URLRequestJob* ServiceWorkerControlleeRequestHandler::MaybeCreateJob(
 void ServiceWorkerControlleeRequestHandler::GetExtraResponseInfo(
     bool* was_fetched_via_service_worker,
     GURL* original_url_via_service_worker) const {
-  if (!job_) {
+  if (!job_.get()) {
     *was_fetched_via_service_worker = false;
     *original_url_via_service_worker = GURL();
     return;
@@ -114,10 +117,7 @@ void ServiceWorkerControlleeRequestHandler::PrepareForMainResource(
   DCHECK(context_);
   // The corresponding provider_host may already have associated a registration
   // in redirect case, unassociate it now.
-  provider_host_->SetControllerVersion(NULL);
-  provider_host_->SetActiveVersion(NULL);
-  provider_host_->SetWaitingVersion(NULL);
-  provider_host_->SetInstallingVersion(NULL);
+  provider_host_->UnassociateRegistration();
 
   GURL stripped_url = net::SimplifyUrlForRequest(url);
   provider_host_->SetDocumentUrl(stripped_url);
@@ -136,7 +136,7 @@ ServiceWorkerControlleeRequestHandler::DidLookupRegistrationForMainResource(
     job_->FallbackToNetwork();
     return;
   }
-  DCHECK(registration);
+  DCHECK(registration.get());
 
   ServiceWorkerMetrics::CountControlledPageLoad();
 
@@ -151,8 +151,8 @@ ServiceWorkerControlleeRequestHandler::DidLookupRegistrationForMainResource(
       registration->active_version();
 
   // Wait until it's activated before firing fetch events.
-  if (active_version &&
-      active_version->status() ==  ServiceWorkerVersion::ACTIVATING) {
+  if (active_version.get() &&
+      active_version->status() == ServiceWorkerVersion::ACTIVATING) {
     registration->active_version()->RegisterStatusChangeCallback(
         base::Bind(&self::OnVersionStatusChanged,
                    weak_factory_.GetWeakPtr(),
@@ -161,17 +161,13 @@ ServiceWorkerControlleeRequestHandler::DidLookupRegistrationForMainResource(
     return;
   }
 
-  if (!active_version ||
+  if (!active_version.get() ||
       active_version->status() != ServiceWorkerVersion::ACTIVATED) {
     job_->FallbackToNetwork();
     return;
   }
 
-  provider_host_->SetControllerVersion(registration->active_version());
-  provider_host_->SetActiveVersion(registration->active_version());
-  provider_host_->SetWaitingVersion(registration->waiting_version());
-  provider_host_->SetInstallingVersion(registration->installing_version());
-
+  provider_host_->AssociateRegistration(registration.get());
   job_->ForwardToServiceWorker();
 }
 
@@ -183,11 +179,8 @@ void ServiceWorkerControlleeRequestHandler::OnVersionStatusChanged(
     job_->FallbackToNetwork();
     return;
   }
-  provider_host_->SetControllerVersion(registration->active_version());
-  provider_host_->SetActiveVersion(registration->active_version());
-  provider_host_->SetWaitingVersion(registration->waiting_version());
-  provider_host_->SetInstallingVersion(registration->installing_version());
 
+  provider_host_->AssociateRegistration(registration);
   job_->ForwardToServiceWorker();
 }
 

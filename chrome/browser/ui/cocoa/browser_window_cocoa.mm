@@ -56,8 +56,6 @@
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/web_contents.h"
-#include "grit/chromium_strings.h"
-#include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util_mac.h"
 #include "ui/gfx/rect.h"
 
@@ -448,7 +446,8 @@ void BrowserWindowCocoa::FocusInfobars() {
 }
 
 bool BrowserWindowCocoa::IsBookmarkBarVisible() const {
-  return browser_->profile()->GetPrefs()->GetBoolean(prefs::kShowBookmarkBar);
+  return browser_->profile()->GetPrefs()->GetBoolean(
+      bookmarks::prefs::kShowBookmarkBar);
 }
 
 bool BrowserWindowCocoa::IsBookmarkBarAnimating() const {
@@ -717,9 +716,9 @@ void BrowserWindowCocoa::ShowAvatarBubbleFromAvatarButton(
   NSView* anchor = [controller buttonView];
   if ([anchor isHiddenOrHasHiddenAncestor])
     anchor = [[controller_ toolbarController] wrenchButton];
-  [controller showAvatarBubble:anchor
-                      withMode:mode
-               withServiceType:manage_accounts_params.service_type];
+  [controller showAvatarBubbleAnchoredAt:anchor
+                                withMode:mode
+                         withServiceType:manage_accounts_params.service_type];
 }
 
 void BrowserWindowCocoa::ShowPasswordGenerationBubble(
@@ -756,14 +755,4 @@ void BrowserWindowCocoa::ExecuteExtensionCommand(
     const extensions::Extension* extension,
     const extensions::Command& command) {
   [cocoa_controller() executeExtensionCommand:extension->id() command:command];
-}
-
-void BrowserWindowCocoa::ShowPageActionPopup(
-    const extensions::Extension* extension) {
-  [cocoa_controller() activatePageAction:extension->id()];
-}
-
-void BrowserWindowCocoa::ShowBrowserActionPopup(
-    const extensions::Extension* extension) {
-  [cocoa_controller() activateBrowserAction:extension->id()];
 }

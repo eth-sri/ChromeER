@@ -18,6 +18,7 @@
         '../compositor/compositor.gyp:compositor',
         '../events/events.gyp:events',
         '../events/events.gyp:events_base',
+        '../events/platform/events_platform.gyp:events_platform',
         '../gfx/gfx.gyp:gfx_geometry',
         '../gfx/gfx.gyp:gfx',
         '../resources/ui_resources.gyp:ui_resources',
@@ -27,6 +28,7 @@
         'WM_IMPLEMENTATION',
       ],
       'sources': [
+        # Note: sources list duplicated in GN build.
         'core/accelerator_delegate.h',
         'core/accelerator_filter.cc',
         'core/accelerator_filter.h',
@@ -37,6 +39,8 @@
         'core/capture_controller.h',
         'core/compound_event_filter.cc',
         'core/compound_event_filter.h',
+        'core/coordinate_conversion.cc',
+        'core/coordinate_conversion.h',
         'core/cursor_manager.cc',
         'core/cursor_manager.h',
         'core/default_activation_client.cc',
@@ -123,6 +127,7 @@
         '../compositor/compositor.gyp:compositor',
         '../events/events.gyp:events',
         '../events/events.gyp:events_base',
+        '../events/platform/events_platform.gyp:events_platform',
         '../gfx/gfx.gyp:gfx',
         '../gfx/gfx.gyp:gfx_geometry',
         'wm',

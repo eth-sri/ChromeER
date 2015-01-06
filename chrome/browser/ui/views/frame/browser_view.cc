@@ -19,6 +19,7 @@
 #include "chrome/browser/bookmarks/bookmark_stats.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
+#include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/native_window_notification_source.h"
@@ -98,9 +99,13 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "chrome/grit/chromium_strings.h"
+#include "chrome/grit/generated_resources.h"
+#include "chrome/grit/locale_settings.h"
 #include "components/password_manager/core/browser/password_manager.h"
 #include "components/signin/core/common/profile_management_switches.h"
 #include "components/translate/core/browser/language_state.h"
+#include "content/app/resources/grit/content_resources.h"
 #include "content/public/browser/download_manager.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/notification_service.h"
@@ -109,13 +114,7 @@
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_switches.h"
-#include "grit/chromium_strings.h"
-#include "grit/generated_resources.h"
-#include "grit/locale_settings.h"
 #include "grit/theme_resources.h"
-#include "grit/ui_resources.h"
-#include "grit/ui_strings.h"
-#include "grit/webkit_resources.h"
 #include "ui/accessibility/ax_view_state.h"
 #include "ui/aura/client/window_tree_client.h"
 #include "ui/aura/window.h"
@@ -130,6 +129,7 @@
 #include "ui/gfx/color_utils.h"
 #include "ui/gfx/rect_conversions.h"
 #include "ui/gfx/screen.h"
+#include "ui/strings/grit/ui_strings.h"
 #include "ui/views/controls/button/menu_button.h"
 #include "ui/views/controls/textfield/textfield.h"
 #include "ui/views/controls/webview/webview.h"
@@ -918,7 +918,7 @@ bool BrowserView::IsFullscreenBubbleVisible() const {
 
 #if defined(OS_WIN)
 void BrowserView::SetMetroSnapMode(bool enable) {
-  HISTOGRAM_COUNTS("Metro.SnapModeToggle", enable);
+  LOCAL_HISTOGRAM_COUNTS("Metro.SnapModeToggle", enable);
   ProcessFullscreen(enable, METRO_SNAP_FULLSCREEN, GURL(), FEB_TYPE_NONE);
 }
 
@@ -1543,7 +1543,9 @@ bool BrowserView::ShouldShowWindowTitle() const {
   // For Ash only, trusted windows (apps and settings) do not show an icon,
   // crbug.com/119411. Child windows (i.e. popups) do show an icon.
   if (browser_->host_desktop_type() == chrome::HOST_DESKTOP_TYPE_ASH &&
-      browser_->is_trusted_source())
+      browser_->is_trusted_source() &&
+      !(browser_->is_app() &&
+        extensions::util::IsStreamlinedHostedAppsEnabled()))
     return false;
 
   return browser_->SupportsWindowFeature(Browser::FEATURE_TITLEBAR);
@@ -1572,7 +1574,9 @@ bool BrowserView::ShouldShowWindowIcon() const {
   // For Ash only, trusted windows (apps and settings) do not show an icon,
   // crbug.com/119411. Child windows (i.e. popups) do show an icon.
   if (browser_->host_desktop_type() == chrome::HOST_DESKTOP_TYPE_ASH &&
-      browser_->is_trusted_source())
+      browser_->is_trusted_source() &&
+      !(browser_->is_app() &&
+        extensions::util::IsStreamlinedHostedAppsEnabled()))
     return false;
 
   return browser_->SupportsWindowFeature(Browser::FEATURE_TITLEBAR);
@@ -2134,6 +2138,17 @@ void BrowserView::UpdateDevToolsForContents(
         DevToolsContentsResizingStrategy());
   }
   contents_container_->Layout();
+
+  if (devtools) {
+    // When strategy.hide_inspected_contents() returns true, we are hiding
+    // contents_web_view_ behind the devtools_web_view_. Otherwise,
+    // contents_web_view_ should be right above the devtools_web_view_.
+    int devtools_index = contents_container_->GetIndexOf(devtools_web_view_);
+    int contents_index = contents_container_->GetIndexOf(contents_web_view_);
+    bool devtools_is_on_top = devtools_index > contents_index;
+    if (strategy.hide_inspected_contents() != devtools_is_on_top)
+      contents_container_->ReorderChildView(contents_web_view_, devtools_index);
+  }
 }
 
 void BrowserView::UpdateUIForContents(WebContents* contents) {
@@ -2399,8 +2414,12 @@ void BrowserView::ShowAvatarBubbleFromAvatarButton(
       alignment = views::BubbleBorder::ALIGN_EDGE_TO_ANCHOR_EDGE;
     }
 
+    profiles::BubbleViewMode bubble_view_mode;
+    profiles::TutorialMode tutorial_mode;
+    profiles::BubbleViewModeFromAvatarBubbleMode(
+        mode, &bubble_view_mode, &tutorial_mode);
     ProfileChooserView::ShowBubble(
-        profiles::BubbleViewModeFromAvatarBubbleMode(mode),
+        bubble_view_mode, tutorial_mode,
         manage_accounts_params, anchor_view, arrow, alignment, browser());
   } else {
     gfx::Point origin;
@@ -2463,16 +2482,6 @@ void BrowserView::ExecuteExtensionCommand(
     const extensions::Extension* extension,
     const extensions::Command& command) {
   toolbar_->ExecuteExtensionCommand(extension, command);
-}
-
-void BrowserView::ShowPageActionPopup(
-    const extensions::Extension* extension) {
-  toolbar_->ShowPageActionPopup(extension);
-}
-
-void BrowserView::ShowBrowserActionPopup(
-    const extensions::Extension* extension) {
-  toolbar_->ShowBrowserActionPopup(extension);
 }
 
 void BrowserView::DoCutCopyPaste(void (WebContents::*method)(),

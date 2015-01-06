@@ -10,7 +10,7 @@ from telemetry.core import exceptions
 from telemetry.core import platform
 from telemetry.core import util
 from telemetry.core import video
-from telemetry.core.platform import proc_supporting_platform_backend
+from telemetry.core.platform import linux_based_platform_backend
 from telemetry.core.platform.power_monitor import android_ds2784_power_monitor
 from telemetry.core.platform.power_monitor import android_dumpsys_power_monitor
 from telemetry.core.platform.power_monitor import android_temperature_monitor
@@ -31,15 +31,8 @@ except Exception:
   surface_stats_collector = None
 
 
-_HOST_APPLICATIONS = [
-    'avconv',
-    'ipfw',
-    'perfhost',
-    ]
-
-
 class AndroidPlatformBackend(
-    proc_supporting_platform_backend.ProcSupportingPlatformBackend):
+    linux_based_platform_backend.LinuxBasedPlatformBackend):
   def __init__(self, device, no_performance_mode):
     super(AndroidPlatformBackend, self).__init__()
     self._device = device
@@ -51,13 +44,14 @@ class AndroidPlatformBackend(
     self._can_access_protected_file_contents = \
         self._device.old_interface.CanAccessProtectedFileContents()
     power_controller = power_monitor_controller.PowerMonitorController([
-        monsoon_power_monitor.MonsoonPowerMonitor(),
-        android_ds2784_power_monitor.DS2784PowerMonitor(device),
-        android_dumpsys_power_monitor.DumpsysPowerMonitor(device),
+        monsoon_power_monitor.MonsoonPowerMonitor(device, self),
+        android_ds2784_power_monitor.DS2784PowerMonitor(device, self),
+        android_dumpsys_power_monitor.DumpsysPowerMonitor(device, self),
     ])
     self._power_monitor = android_temperature_monitor.AndroidTemperatureMonitor(
         power_controller, device)
     self._video_recorder = None
+    self._installed_applications = None
     if self._no_performance_mode:
       logging.warning('CPU governor will not be set!')
 
@@ -150,7 +144,7 @@ class AndroidPlatformBackend(
 
   def GetChildPids(self, pid):
     child_pids = []
-    ps = self._GetPsOutput(['pid', 'name'])
+    ps = self.GetPsOutput(['pid', 'name'])
     for curr_pid, curr_name in ps:
       if int(curr_pid) == pid:
         name = curr_name
@@ -162,7 +156,7 @@ class AndroidPlatformBackend(
 
   @decorators.Cache
   def GetCommandLine(self, pid):
-    ps = self._GetPsOutput(['pid', 'name'], pid)
+    ps = self.GetPsOutput(['pid', 'name'], pid)
     if not ps:
       raise exceptions.ProcessGoneException()
     return ps[0][1]
@@ -189,32 +183,36 @@ class AndroidPlatformBackend(
 
   def LaunchApplication(
       self, application, parameters=None, elevate_privilege=False):
-    if application in _HOST_APPLICATIONS:
-      platform.GetHostPlatform().LaunchApplication(
-          application, parameters, elevate_privilege=elevate_privilege)
-      return
+    """Launches the given |application| with a list of |parameters| on the OS.
+
+    Args:
+      application: The full package name string of the application to launch.
+      parameters: A list of parameters to be passed to the ActivityManager.
+      elevate_privilege: Currently unimplemented on Android.
+    """
     if elevate_privilege:
       raise NotImplementedError("elevate_privilege isn't supported on android.")
     if not parameters:
       parameters = ''
-    self._device.RunShellCommand('am start ' + parameters + ' ' + application)
+    result_lines = self._device.RunShellCommand('am start %s %s' %
+                                                (parameters, application))
+    for line in result_lines:
+      if line.startswith('Error: '):
+        raise ValueError('Failed to start "%s" with error\n  %s' %
+                         (application, line))
 
   def IsApplicationRunning(self, application):
-    if application in _HOST_APPLICATIONS:
-      return platform.GetHostPlatform().IsApplicationRunning(application)
     return len(self._device.GetPids(application)) > 0
 
   def CanLaunchApplication(self, application):
-    if application in _HOST_APPLICATIONS:
-      return platform.GetHostPlatform().CanLaunchApplication(application)
-    return True
+    if not self._installed_applications:
+      self._installed_applications = self._device.RunShellCommand(
+          'pm list packages')
+    return 'package:' + application in self._installed_applications
 
   def InstallApplication(self, application):
-    if application in _HOST_APPLICATIONS:
-      platform.GetHostPlatform().InstallApplication(application)
-      return
-    raise NotImplementedError(
-        'Please teach Telemetry how to install ' + application)
+    self._installed_applications = None
+    self._device.Install(application)
 
   @decorators.Cache
   def CanCaptureVideo(self):
@@ -255,13 +253,13 @@ class AndroidPlatformBackend(
   def StopMonitoringPower(self):
     return self._power_monitor.StopMonitoringPower()
 
-  def _GetFileContents(self, fname):
+  def GetFileContents(self, fname):
     if not self._can_access_protected_file_contents:
       logging.warning('%s cannot be retrieved on non-rooted device.' % fname)
       return ''
     return '\n'.join(self._device.ReadFile(fname, as_root=True))
 
-  def _GetPsOutput(self, columns, pid=None):
+  def GetPsOutput(self, columns, pid=None):
     assert columns == ['pid', 'name'] or columns == ['pid'], \
         'Only know how to return pid and name. Requested: ' + columns
     command = 'ps'
@@ -278,3 +276,29 @@ class AndroidPlatformBackend(
       else:
         output.append([curr_pid])
     return output
+
+  def RunCommand(self, command):
+    return '\n'.join(self._device.RunShellCommand(command))
+
+  @staticmethod
+  def ParseCStateSample(sample):
+    sample_stats = {}
+    for cpu in sample:
+      values = sample[cpu].splitlines()
+      # Each state has three values after excluding the time value.
+      num_states = (len(values) - 1) / 3
+      names = values[:num_states]
+      times = values[num_states:2 * num_states]
+      cstates = {'C0': int(values[-1]) * 10 ** 6}
+      for i, state in enumerate(names):
+        if state == 'C0':
+          # The Exynos cpuidle driver for the Nexus 10 uses the name 'C0' for
+          # its WFI state.
+          # TODO(tmandel): We should verify that no other Android device
+          # actually reports time in C0 causing this to report active time as
+          # idle time.
+          state = 'WFI'
+        cstates[state] = int(times[i])
+        cstates['C0'] -= int(times[i])
+      sample_stats[cpu] = cstates
+    return sample_stats

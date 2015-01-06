@@ -497,6 +497,7 @@ void FakeShillManagerClient::ServiceStateChanged(
 void FakeShillManagerClient::SortManagerServices(bool notify) {
   DVLOG(1) << "SortManagerServices";
   static const char* ordered_types[] = {shill::kTypeEthernet,
+                                        shill::kTypeEthernetEap,
                                         shill::kTypeWifi,
                                         shill::kTypeCellular,
                                         shill::kTypeWimax,
@@ -564,6 +565,11 @@ void FakeShillManagerClient::SetBestServiceToConnect(
 }
 
 void FakeShillManagerClient::SetupDefaultEnvironment() {
+  // Bail out from setup if there is no message loop. This will be the common
+  // case for tests that are not testing Shill.
+  if (!base::MessageLoop::current())
+    return;
+
   DBusThreadManager* dbus_manager = DBusThreadManager::Get();
   ShillServiceClient::TestInterface* services =
       dbus_manager->GetShillServiceClient()->GetTestInterface();
@@ -876,6 +882,8 @@ base::ListValue* FakeShillManagerClient::GetListProperty(
 bool FakeShillManagerClient::TechnologyEnabled(const std::string& type) const {
   if (type == shill::kTypeVPN)
     return true;  // VPN is always "enabled" since there is no associated device
+  if (type == shill::kTypeEthernetEap)
+    return true;
   bool enabled = false;
   const base::ListValue* technologies;
   if (stub_properties_.GetListWithoutPathExpansion(
@@ -1002,7 +1010,7 @@ bool FakeShillManagerClient::ParseOption(const std::string& arg0,
 bool FakeShillManagerClient::SetInitialNetworkState(std::string type_arg,
                                                     std::string state_arg) {
   std::string state;
-  state_arg = StringToLowerASCII(state_arg);
+  state_arg = base::StringToLowerASCII(state_arg);
   if (state_arg.empty() || state_arg == "1" || state_arg == "on" ||
       state_arg == "enabled" || state_arg == "connected" ||
       state_arg == "online") {
@@ -1029,7 +1037,7 @@ bool FakeShillManagerClient::SetInitialNetworkState(std::string type_arg,
     return false;
   }
 
-  type_arg = StringToLowerASCII(type_arg);
+  type_arg = base::StringToLowerASCII(type_arg);
   // Special cases
   if (type_arg == "wireless") {
     shill_initial_state_map_[shill::kTypeWifi] = state;

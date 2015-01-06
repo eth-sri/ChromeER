@@ -35,3 +35,13 @@ Local Modifications:
 - Move packed relocation dynamic tags from DT_LOPROC range to DT_LOOS range.
 
 - Add support for x86_64.
+
+- Speculative fix for crbug/397634.
+
+- Implement LEB128 decoding more efficiently.
+
+- Add support for unpacking relative relocations with addends, for arm64.
+
+- Fix phdr_table_get_dynamic_section() call in ElfView::InitUnmapped().
+
+- Fix typo in LOG() call, added in arm64 packed relative relocations change.

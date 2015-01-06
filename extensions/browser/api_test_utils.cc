@@ -11,9 +11,23 @@
 #include "content/public/test/test_utils.h"
 #include "extensions/browser/extension_function.h"
 #include "extensions/browser/extension_function_dispatcher.h"
+#include "extensions/common/extension_builder.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+using extensions::ExtensionFunctionDispatcher;
+
 namespace {
+
+class TestFunctionDispatcherDelegate
+    : public ExtensionFunctionDispatcher::Delegate {
+ public:
+  TestFunctionDispatcherDelegate() {}
+  virtual ~TestFunctionDispatcherDelegate() {}
+
+  // NULL implementation.
+ private:
+  DISALLOW_COPY_AND_ASSIGN(TestFunctionDispatcherDelegate);
+};
 
 base::Value* ParseJSON(const std::string& data) {
   return base::JSONReader::Read(data);
@@ -69,16 +83,16 @@ namespace extensions {
 
 namespace api_test_utils {
 
-base::Value* RunFunctionAndReturnSingleResult(
+base::Value* RunFunctionWithDelegateAndReturnSingleResult(
     UIThreadExtensionFunction* function,
     const std::string& args,
     content::BrowserContext* context,
     scoped_ptr<extensions::ExtensionFunctionDispatcher> dispatcher) {
-  return RunFunctionAndReturnSingleResult(
+  return RunFunctionWithDelegateAndReturnSingleResult(
       function, args, context, dispatcher.Pass(), NONE);
 }
 
-base::Value* RunFunctionAndReturnSingleResult(
+base::Value* RunFunctionWithDelegateAndReturnSingleResult(
     UIThreadExtensionFunction* function,
     const std::string& args,
     content::BrowserContext* context,
@@ -98,17 +112,67 @@ base::Value* RunFunctionAndReturnSingleResult(
   return NULL;
 }
 
+base::Value* RunFunctionAndReturnSingleResult(
+    UIThreadExtensionFunction* function,
+    const std::string& args,
+    content::BrowserContext* context) {
+  return RunFunctionAndReturnSingleResult(function, args, context, NONE);
+}
+
+base::Value* RunFunctionAndReturnSingleResult(
+    UIThreadExtensionFunction* function,
+    const std::string& args,
+    content::BrowserContext* context,
+    RunFunctionFlags flags) {
+  TestFunctionDispatcherDelegate delegate;
+  scoped_ptr<ExtensionFunctionDispatcher> dispatcher(
+      new ExtensionFunctionDispatcher(context, &delegate));
+
+  return RunFunctionWithDelegateAndReturnSingleResult(
+      function, args, context, dispatcher.Pass(), flags);
+}
+
+std::string RunFunctionAndReturnError(UIThreadExtensionFunction* function,
+                                      const std::string& args,
+                                      content::BrowserContext* context) {
+  return RunFunctionAndReturnError(function, args, context, NONE);
+}
+
+std::string RunFunctionAndReturnError(UIThreadExtensionFunction* function,
+                                      const std::string& args,
+                                      content::BrowserContext* context,
+                                      RunFunctionFlags flags) {
+  TestFunctionDispatcherDelegate delegate;
+  scoped_ptr<ExtensionFunctionDispatcher> dispatcher(
+      new ExtensionFunctionDispatcher(context, &delegate));
+  scoped_refptr<ExtensionFunction> function_owner(function);
+  // Without a callback the function will not generate a result.
+  function->set_has_callback(true);
+  RunFunction(function, args, context, dispatcher.Pass(), flags);
+  EXPECT_FALSE(function->GetResultList()) << "Did not expect a result";
+  return function->GetError();
+}
+
 bool RunFunction(UIThreadExtensionFunction* function,
                  const std::string& args,
                  content::BrowserContext* context,
                  scoped_ptr<extensions::ExtensionFunctionDispatcher> dispatcher,
                  RunFunctionFlags flags) {
-  SendResponseDelegate response_delegate;
-  function->set_test_delegate(&response_delegate);
   scoped_ptr<base::ListValue> parsed_args(ParseList(args));
   EXPECT_TRUE(parsed_args.get())
       << "Could not parse extension function arguments: " << args;
-  function->SetArgs(parsed_args.get());
+  return RunFunction(
+      function, parsed_args.Pass(), context, dispatcher.Pass(), flags);
+}
+
+bool RunFunction(UIThreadExtensionFunction* function,
+                 scoped_ptr<base::ListValue> args,
+                 content::BrowserContext* context,
+                 scoped_ptr<extensions::ExtensionFunctionDispatcher> dispatcher,
+                 RunFunctionFlags flags) {
+  SendResponseDelegate response_delegate;
+  function->set_test_delegate(&response_delegate);
+  function->SetArgs(args.get());
 
   CHECK(dispatcher);
   function->set_dispatcher(dispatcher->AsWeakPtr());

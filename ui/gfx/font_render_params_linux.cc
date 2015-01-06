@@ -4,29 +4,58 @@
 
 #include "ui/gfx/font_render_params.h"
 
+#include <fontconfig/fontconfig.h>
+
 #include "base/command_line.h"
 #include "base/containers/mru_cache.h"
 #include "base/hash.h"
+#include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/macros.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
+#include "base/synchronization/lock.h"
 #include "ui/gfx/font.h"
 #include "ui/gfx/linux_font_delegate.h"
 #include "ui/gfx/switches.h"
-
-#include <fontconfig/fontconfig.h>
 
 namespace gfx {
 
 namespace {
 
-// Should cache entries by dropped by the next call to GetFontRenderParams()?
-// Used for tests.
-bool g_clear_cache_for_test = false;
+#if defined(OS_CHROMEOS)
+// A device scale factor for an internal display (if any)
+// that is used to determine if subpixel positioning should be used.
+float device_scale_factor_for_internal_display = 1.0f;
+#endif
+
+// Keyed by hashes of FontRenderParamQuery structs from
+// HashFontRenderParamsQuery().
+typedef base::MRUCache<uint32, FontRenderParams> Cache;
 
 // Number of recent GetFontRenderParams() results to cache.
-const size_t kCacheSize = 10;
+const size_t kCacheSize = 20;
+
+// A cache and the lock that must be held while accessing it.
+// GetFontRenderParams() is called by both the UI thread and the sandbox IPC
+// thread.
+struct SynchronizedCache {
+  SynchronizedCache() : cache(kCacheSize) {}
+
+  base::Lock lock;
+  Cache cache;
+};
+
+base::LazyInstance<SynchronizedCache>::Leaky g_synchronized_cache =
+    LAZY_INSTANCE_INITIALIZER;
+
+bool IsBrowserTextSubpixelPositioningEnabled() {
+#if defined(OS_CHROMEOS)
+  return device_scale_factor_for_internal_display > 1.0f;
+#else
+  return false;
+#endif
+}
 
 // Converts Fontconfig FC_HINT_STYLE to FontRenderParams::Hinting.
 FontRenderParams::Hinting ConvertFontconfigHintStyle(int hint_style) {
@@ -138,20 +167,14 @@ uint32 HashFontRenderParamsQuery(const FontRenderParamsQuery& query) {
 
 FontRenderParams GetFontRenderParams(const FontRenderParamsQuery& query,
                                      std::string* family_out) {
-  typedef base::MRUCache<uint32, FontRenderParams> Cache;
-  CR_DEFINE_STATIC_LOCAL(Cache, cache, (kCacheSize));
-
-  if (g_clear_cache_for_test) {
-    cache.Clear();
-    g_clear_cache_for_test = false;
-  }
-
   const uint32 hash = HashFontRenderParamsQuery(query);
   if (!family_out) {
     // The family returned by Fontconfig isn't part of FontRenderParams, so we
     // can only return a value from the cache if it wasn't requested.
-    Cache::const_iterator it = cache.Get(hash);
-    if (it != cache.end()) {
+    SynchronizedCache* synchronized_cache = g_synchronized_cache.Pointer();
+    base::AutoLock lock(synchronized_cache->lock);
+    Cache::const_iterator it = synchronized_cache->cache.Get(hash);
+    if (it != synchronized_cache->cache.end()) {
       DVLOG(1) << "Returning cached params for " << hash;
       return it->second;
     }
@@ -167,7 +190,6 @@ FontRenderParams GetFontRenderParams(const FontRenderParamsQuery& query,
   if (delegate)
     params = delegate->GetDefaultFontRenderParams();
   QueryFontconfig(query, &params, family_out);
-
   if (!params.antialiasing) {
     // Cairo forces full hinting when antialiasing is disabled, since anything
     // less than that looks awful; do the same here. Requesting subpixel
@@ -178,10 +200,11 @@ FontRenderParams GetFontRenderParams(const FontRenderParamsQuery& query,
   } else {
     // Fontconfig doesn't support configuring subpixel positioning; check a
     // flag.
-    params.subpixel_positioning = CommandLine::ForCurrentProcess()->HasSwitch(
+    params.subpixel_positioning =
         query.for_web_contents ?
-        switches::kEnableWebkitTextSubpixelPositioning :
-        switches::kEnableBrowserTextSubpixelPositioning);
+        CommandLine::ForCurrentProcess()->HasSwitch(
+            switches::kEnableWebkitTextSubpixelPositioning) :
+        IsBrowserTextSubpixelPositioningEnabled();
 
     // To enable subpixel positioning, we need to disable hinting.
     if (params.subpixel_positioning)
@@ -192,12 +215,26 @@ FontRenderParams GetFontRenderParams(const FontRenderParamsQuery& query,
   if (family_out && family_out->empty() && !query.families.empty())
     *family_out = query.families[0];
 
-  cache.Put(hash, params);
+  // Store the computed struct. It's fine if this overwrites a struct that was
+  // cached by a different thread in the meantime; the values should be
+  // identical.
+  SynchronizedCache* synchronized_cache = g_synchronized_cache.Pointer();
+  base::AutoLock lock(synchronized_cache->lock);
+  synchronized_cache->cache.Put(hash, params);
+
   return params;
 }
 
 void ClearFontRenderParamsCacheForTest() {
-  g_clear_cache_for_test = true;
+  SynchronizedCache* synchronized_cache = g_synchronized_cache.Pointer();
+  base::AutoLock lock(synchronized_cache->lock);
+  synchronized_cache->cache.Clear();
 }
+
+#if defined(OS_CHROMEOS)
+void SetFontRenderParamsDeviceScaleFactor(float device_scale_factor) {
+  device_scale_factor_for_internal_display = device_scale_factor;
+}
+#endif
 
 }  // namespace gfx

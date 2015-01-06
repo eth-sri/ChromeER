@@ -5,6 +5,7 @@
 import time
 
 from metrics import Metric
+from telemetry.core.platform import process_statistic_timeline_data
 from telemetry.value import scalar
 
 
@@ -138,6 +139,24 @@ class PowerMetric(Metric):
           results.current_page, 'board_temperature', 'celsius',
           board_temperature_c, important=False))
 
+    # Add CPU frequency measurements.
+    frequency_hz = whole_package_utilization.get('frequency_percent')
+    if frequency_hz is not None:
+      frequency_sum = 0.0
+      for freq, percent in frequency_hz.iteritems():
+        frequency_sum += freq * (percent / 100.0)
+      results.AddValue(scalar.ScalarValue(
+          results.current_page, 'cpu_average_frequency_hz', 'Hz',
+          frequency_sum, important=False))
+
+    # Add CPU c-state residency measurements.
+    cstate_percent = whole_package_utilization.get('cstate_residency_percent')
+    if cstate_percent is not None:
+      for state, percent in cstate_percent.iteritems():
+        results.AddValue(scalar.ScalarValue(
+            results.current_page, 'cpu_cstate_%s_residency_percent' % state,
+            '%', percent, important=False))
+
     self._results = None
 
 def _SubtractCpuStats(cpu_stats, start_cpu_stats):
@@ -160,7 +179,10 @@ def _SubtractCpuStats(cpu_stats, start_cpu_stats):
     if (('IdleWakeupCount' not in cpu_stats[process_type]) or
         ('IdleWakeupCount' not in start_cpu_stats[process_type])):
       continue
+
+    assert isinstance(cpu_stats[process_type]['IdleWakeupCount'],
+        process_statistic_timeline_data.IdleWakeupTimelineData)
     idle_wakeup_delta = (cpu_stats[process_type]['IdleWakeupCount'] -
                         start_cpu_stats[process_type]['IdleWakeupCount'])
-    cpu_delta[process_type] = idle_wakeup_delta
+    cpu_delta[process_type] = idle_wakeup_delta.total_sum()
   return cpu_delta

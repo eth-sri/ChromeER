@@ -10,6 +10,7 @@ ManagePasswordsUIControllerMock::ManagePasswordsUIControllerMock(
     content::WebContents* contents)
     : ManagePasswordsUIController(contents),
       navigated_to_settings_page_(false),
+      navigated_to_account_central_management_page_(false),
       saved_password_(false),
       never_saved_password_(false) {
   contents->SetUserData(UserDataKey(), this);
@@ -23,9 +24,18 @@ void ManagePasswordsUIControllerMock::
   navigated_to_settings_page_ = true;
 }
 
+void ManagePasswordsUIControllerMock::NavigateToAccountCentralManagementPage() {
+  navigated_to_account_central_management_page_ = true;
+}
+
 const autofill::PasswordForm&
     ManagePasswordsUIControllerMock::PendingCredentials() const {
   return pending_credentials_;
+}
+
+void ManagePasswordsUIControllerMock::SetPendingCredentials(
+    autofill::PasswordForm pending_credentials) {
+  pending_credentials_ = pending_credentials;
 }
 
 bool ManagePasswordsUIControllerMock::IsInstalled() const {

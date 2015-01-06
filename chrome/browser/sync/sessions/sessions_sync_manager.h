@@ -15,7 +15,6 @@
 #include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
-#include "chrome/browser/sessions/session_id.h"
 #include "chrome/browser/sessions/session_types.h"
 #include "chrome/browser/sync/glue/device_info.h"
 #include "chrome/browser/sync/glue/favicon_cache.h"
@@ -23,6 +22,7 @@
 #include "chrome/browser/sync/glue/synced_session_tracker.h"
 #include "chrome/browser/sync/open_tabs_ui_delegate.h"
 #include "chrome/browser/sync/sessions/tab_node_pool.h"
+#include "components/sessions/session_id.h"
 #include "components/sync_driver/sync_prefs.h"
 #include "sync/api/syncable_service.h"
 
@@ -181,6 +181,10 @@ class SessionsSyncManager : public syncer::SyncableService,
   FRIEND_TEST_ALL_PREFIXES(SessionsSyncManagerTest, PopulateSessionWindow);
   FRIEND_TEST_ALL_PREFIXES(SessionsSyncManagerTest, ValidTabs);
   FRIEND_TEST_ALL_PREFIXES(SessionsSyncManagerTest, SetSessionTabFromDelegate);
+  FRIEND_TEST_ALL_PREFIXES(SessionsSyncManagerTest,
+                           SetSessionTabFromDelegateNavigationIndex);
+  FRIEND_TEST_ALL_PREFIXES(SessionsSyncManagerTest,
+                           SetSessionTabFromDelegateCurrentInvalid);
   FRIEND_TEST_ALL_PREFIXES(SessionsSyncManagerTest, BlockedNavigations);
   FRIEND_TEST_ALL_PREFIXES(SessionsSyncManagerTest, DeleteForeignSession);
   FRIEND_TEST_ALL_PREFIXES(SessionsSyncManagerTest,
@@ -318,6 +322,10 @@ class SessionsSyncManager : public syncer::SyncableService,
   // Stops and re-starts syncing to rebuild association mappings.
   // See |local_tab_pool_out_of_sync_|.
   void RebuildAssociations();
+
+  // Validates the content of a SessionHeader protobuf.
+  // Returns false if validation fails.
+  static bool IsValidSessionHeader(const sync_pb::SessionHeader& header);
 
   // Mapping of current open (local) tabs to their sync identifiers.
   TabLinksMap local_tab_map_;

@@ -31,7 +31,6 @@
 #include "chrome/browser/history/history_notifications.h"
 #include "chrome/browser/history/in_memory_history_backend.h"
 #include "chrome/browser/history/in_memory_history_backend.h"
-#include "chrome/browser/history/page_usage_data.h"
 #include "chrome/browser/history/top_sites.h"
 #include "chrome/browser/history/typed_url_syncable_service.h"
 #include "chrome/browser/history/typed_url_syncable_service.h"
@@ -42,8 +41,7 @@
 #include "components/favicon_base/select_favicon_frames.h"
 #include "components/history/core/browser/history_client.h"
 #include "components/history/core/browser/keyword_search_term.h"
-#include "grit/chromium_strings.h"
-#include "grit/generated_resources.h"
+#include "components/history/core/browser/page_usage_data.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "sql/error_delegate_util.h"
 #include "url/gurl.h"
@@ -173,7 +171,7 @@ QueuedHistoryDBTask::QueuedHistoryDBTask(
     const base::CancelableTaskTracker::IsCanceledCallback& is_canceled)
     : task_(task.Pass()), origin_loop_(origin_loop), is_canceled_(is_canceled) {
   DCHECK(task_);
-  DCHECK(origin_loop_);
+  DCHECK(origin_loop_.get());
   DCHECK(!is_canceled_.is_null());
 }
 
@@ -704,8 +702,7 @@ void HistoryBackend::InitImpl(const std::string& languages) {
   }
 #endif
 
-  HISTOGRAM_TIMES("History.InitTime",
-                  TimeTicks::Now() - beginning_time);
+  LOCAL_HISTOGRAM_TIMES("History.InitTime", TimeTicks::Now() - beginning_time);
 }
 
 void HistoryBackend::OnMemoryPressure(
@@ -1598,8 +1595,8 @@ void HistoryBackend::GetLargestFaviconForURL(
   if (bitmap_result.is_valid())
     *favicon_bitmap_result = bitmap_result;
 
-  HISTOGRAM_TIMES("History.GetLargestFaviconForURL",
-                  TimeTicks::Now() - beginning_time);
+  LOCAL_HISTOGRAM_TIMES("History.GetLargestFaviconForURL",
+                        TimeTicks::Now() - beginning_time);
 }
 
 void HistoryBackend::GetFaviconsForURL(

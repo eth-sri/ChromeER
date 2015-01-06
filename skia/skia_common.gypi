@@ -21,11 +21,6 @@
          ['exclude', '_android\\.(cc|cpp)$'],
       ],
     }],
-    [ 'OS == "android"', {
-      'defines': [
-        'SK_FONTHOST_DOES_NOT_USE_FONTMGR',
-      ],
-    }],
     [ 'OS != "ios"', {
       'sources/': [
          ['exclude', '_ios\\.(cc|cpp|mm?)$'],
@@ -135,11 +130,6 @@
           'skia_support_pdf': 1,
         }],
       ],
-      # TODO(scottmg): http://crbug.com/177306
-      'clang_warning_flags': [
-        # Don't warn about string->bool used in asserts.
-        '-Wstring-conversion',
-      ]
     },
     'skia_support_gpu': '<(skia_support_gpu)',
     'skia_support_pdf': '<(skia_support_pdf)',

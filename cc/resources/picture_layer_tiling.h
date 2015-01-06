@@ -5,6 +5,7 @@
 #ifndef CC_RESOURCES_PICTURE_LAYER_TILING_H_
 #define CC_RESOURCES_PICTURE_LAYER_TILING_H_
 
+#include <set>
 #include <utility>
 #include <vector>
 
@@ -44,6 +45,8 @@ class CC_EXPORT PictureLayerTilingClient {
   virtual const Region* GetInvalidation() = 0;
   virtual const PictureLayerTiling* GetTwinTiling(
       const PictureLayerTiling* tiling) const = 0;
+  virtual PictureLayerTiling* GetRecycledTwinTiling(
+      const PictureLayerTiling* tiling) = 0;
   virtual size_t GetMaxTilesForInterestArea() const = 0;
   virtual float GetSkewportTargetTimeInSeconds() const = 0;
   virtual int GetSkewportExtrapolationLimitInContentPixels() const = 0;
@@ -55,6 +58,15 @@ class CC_EXPORT PictureLayerTilingClient {
 
 class CC_EXPORT PictureLayerTiling {
  public:
+  enum EvictionCategory {
+    EVENTUALLY,
+    EVENTUALLY_AND_REQUIRED_FOR_ACTIVATION,
+    SOON,
+    SOON_AND_REQUIRED_FOR_ACTIVATION,
+    NOW,
+    NOW_AND_REQUIRED_FOR_ACTIVATION
+  };
+
   class CC_EXPORT TilingRasterTileIterator {
    public:
     TilingRasterTileIterator();
@@ -109,8 +121,7 @@ class CC_EXPORT PictureLayerTiling {
     TilingEvictionTileIterator();
     TilingEvictionTileIterator(PictureLayerTiling* tiling,
                                TreePriority tree_priority,
-                               TilePriority::PriorityBin type,
-                               bool required_for_activation);
+                               EvictionCategory category);
     ~TilingEvictionTileIterator();
 
     operator bool() const;
@@ -119,10 +130,8 @@ class CC_EXPORT PictureLayerTiling {
     TilingEvictionTileIterator& operator++();
 
    private:
-    PictureLayerTiling* tiling_;
-    TreePriority tree_priority_;
-    std::vector<Tile*>::iterator tile_iterator_;
-    std::vector<Tile*>* eviction_tiles_;
+    const std::vector<Tile*>* eviction_tiles_;
+    size_t current_eviction_tiles_index_;
   };
 
   ~PictureLayerTiling();
@@ -253,6 +262,7 @@ class CC_EXPORT PictureLayerTiling {
     return frame_time_in_seconds != last_impl_frame_time_in_seconds_;
   }
 
+  void GetAllTilesForTracing(std::set<const Tile*>* tiles) const;
   void AsValueInto(base::debug::TracedValue* array) const;
   size_t GPUMemoryUsageInBytes() const;
 
@@ -288,7 +298,10 @@ class CC_EXPORT PictureLayerTiling {
                      const gfx::Size& layer_bounds,
                      PictureLayerTilingClient* client);
   void SetLiveTilesRect(const gfx::Rect& live_tiles_rect);
+  void VerifyLiveTilesRect();
   Tile* CreateTile(int i, int j, const PictureLayerTiling* twin_tiling);
+  // Returns true if the Tile existed and was removed from the tiling.
+  bool RemoveTileAt(int i, int j, PictureLayerTiling* recycled_twin);
 
   // Computes a skewport. The calculation extrapolates the last visible
   // rect and the current visible rect to expand the skewport to where it
@@ -299,6 +312,9 @@ class CC_EXPORT PictureLayerTiling {
       const;
 
   void UpdateEvictionCacheIfNeeded(TreePriority tree_priority);
+  const std::vector<Tile*>* GetEvictionTiles(TreePriority tree_priority,
+                                             EvictionCategory category);
+
   void Invalidate(const Region& layer_region);
 
   void DoInvalidate(const Region& layer_region,
@@ -330,10 +346,16 @@ class CC_EXPORT PictureLayerTiling {
   bool has_soon_border_rect_tiles_;
   bool has_eventually_rect_tiles_;
 
-  std::vector<Tile*> eventually_eviction_tiles_;
-  std::vector<Tile*> soon_eviction_tiles_;
-  std::vector<Tile*> now_required_for_activation_eviction_tiles_;
-  std::vector<Tile*> now_not_required_for_activation_eviction_tiles_;
+  // TODO(reveman): Remove this in favour of an array of eviction_tiles_ when we
+  // change all enums to have a consistent way of getting the count/last
+  // element.
+  std::vector<Tile*> eviction_tiles_now_;
+  std::vector<Tile*> eviction_tiles_now_and_required_for_activation_;
+  std::vector<Tile*> eviction_tiles_soon_;
+  std::vector<Tile*> eviction_tiles_soon_and_required_for_activation_;
+  std::vector<Tile*> eviction_tiles_eventually_;
+  std::vector<Tile*> eviction_tiles_eventually_and_required_for_activation_;
+
   bool eviction_tiles_cache_valid_;
   TreePriority eviction_cache_tree_priority_;
 

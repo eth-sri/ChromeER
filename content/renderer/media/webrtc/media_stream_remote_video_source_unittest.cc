@@ -35,12 +35,11 @@ class MediaStreamRemoteVideoSourceTest
   MediaStreamRemoteVideoSourceTest()
       : child_process_(new ChildProcess()),
         mock_factory_(new MockPeerConnectionDependencyFactory()),
-        webrtc_video_track_(
-            mock_factory_->CreateLocalVideoTrack(
-                "test",
-                static_cast<cricket::VideoCapturer*>(NULL))),
-        remote_source_(
-            new MediaStreamRemoteVideoSourceUnderTest(webrtc_video_track_)),
+        webrtc_video_track_(mock_factory_->CreateLocalVideoTrack(
+            "test",
+            static_cast<cricket::VideoCapturer*>(NULL))),
+        remote_source_(new MediaStreamRemoteVideoSourceUnderTest(
+            webrtc_video_track_.get())),
         number_of_successful_constraints_applied_(0),
         number_of_failed_constraints_applied_(0) {
     webkit_source_.initialize(base::UTF8ToUTF16("dummy_source_id"),
@@ -84,9 +83,11 @@ class MediaStreamRemoteVideoSourceTest
   }
 
  private:
-  void OnConstraintsApplied(MediaStreamSource* source, bool success) {
+  void OnConstraintsApplied(MediaStreamSource* source,
+                            MediaStreamRequestResult result,
+                            const blink::WebString& result_name) {
     ASSERT_EQ(source, remote_source_);
-    if (success)
+    if (result == MEDIA_DEVICE_OK)
       ++number_of_successful_constraints_applied_;
     else
       ++number_of_failed_constraints_applied_;

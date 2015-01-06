@@ -5,7 +5,7 @@
 'use strict';
 
 /**
- * Inverval for updating media info (in ms).
+ * Interval for updating media info (in ms).
  * @type {number}
  * @const
  */
@@ -41,6 +41,7 @@ function CastVideoElement(media, session) {
   this.currentMediaDuration_ = null;
   this.playInProgress_ = false;
   this.pauseInProgress_ = false;
+  this.errorCode_ = 0;
 
   this.onMessageBound_ = this.onMessage_.bind(this);
   this.onCastMediaUpdatedBound_ = this.onCastMediaUpdated_.bind(this);
@@ -91,7 +92,11 @@ CastVideoElement.prototype = {
     }
   },
   set currentTime(currentTime) {
-    // TODO(yoshiki): Support seek.
+    var seekRequest = new chrome.cast.media.SeekRequest();
+    seekRequest.currentTime = currentTime;
+    this.castMedia_.seek(seekRequest,
+        function() {},
+        this.onCastCommandError_.wrap(this));
   },
 
   /**
@@ -115,16 +120,21 @@ CastVideoElement.prototype = {
     if (!this.castMedia_)
       return true;
 
-   return this.castMedia_.idleReason === chrome.cast.media.IdleReason.FINISHED;
+   return !this.playInProgress &&
+     this.castMedia_.idleReason === chrome.cast.media.IdleReason.FINISHED;
   },
 
   /**
-   * If this video is seelable or not.
-   * @type {boolean}
+   * TimeRange object that represents the seekable ranges of the media
+   * resource.
+   * @type {TimeRanges}
    */
   get seekable() {
-    // TODO(yoshiki): Support seek.
-    return false;
+    return {
+      length: 1,
+      start: function(index) { return 0; },
+      end: function(index) { return this.currentMediaDuration_; },
+    };
   },
 
   /**
@@ -181,6 +191,17 @@ CastVideoElement.prototype = {
   },
 
   /**
+   * Returns the error object if available.
+   * @type {?Object}
+   */
+  get error() {
+    if (this.errorCode_ === 0)
+      return null;
+
+    return {code: this.errorCode_};
+  },
+
+  /**
    * Plays the video.
    */
   play: function() {
@@ -229,6 +250,9 @@ CastVideoElement.prototype = {
       this.token_ = token;
       this.sendMessage_({message: 'push-token', token: token});
     }.bind(this));
+
+    // Resets the error code.
+    this.errorCode_ = 0;
 
     Promise.all([
       sendTokenPromise,
@@ -279,6 +303,7 @@ CastVideoElement.prototype = {
       this.castMedia_.removeUpdateListener(this.onCastMediaUpdatedBound_);
       this.castMedia_ = null;
     }
+
     clearInterval(this.updateTimerId_);
   },
 
@@ -317,6 +342,9 @@ CastVideoElement.prototype = {
         console.error(
             'New token is requested, but the previous token mismatches.');
       }
+    } else if (message['message'] === 'playback-error') {
+      if (message['detail'] === 'src-not-supported')
+        this.errorCode_ = MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED;
     }
   },
 

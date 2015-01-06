@@ -21,9 +21,6 @@ using base::android::ScopedJavaLocalRef;
 // Time update happens every 250ms.
 const int kTimeUpdateInterval = 250;
 
-// blob url scheme.
-const char kBlobScheme[] = "blob";
-
 namespace media {
 
 MediaPlayerBridge::MediaPlayerBridge(
@@ -35,7 +32,8 @@ MediaPlayerBridge::MediaPlayerBridge(
     MediaPlayerManager* manager,
     const RequestMediaResourcesCB& request_media_resources_cb,
     const ReleaseMediaResourcesCB& release_media_resources_cb,
-    const GURL& frame_url)
+    const GURL& frame_url,
+    bool allow_credentials)
     : MediaPlayerAndroid(player_id,
                          manager,
                          request_media_resources_cb,
@@ -54,6 +52,7 @@ MediaPlayerBridge::MediaPlayerBridge(
       can_seek_backward_(true),
       is_surface_in_use_(false),
       volume_(-1.0),
+      allow_credentials_(allow_credentials),
       weak_factory_(this) {
   listener_.reset(new MediaPlayerListener(base::MessageLoopProxy::current(),
                                           weak_factory_.GetWeakPtr()));
@@ -77,11 +76,18 @@ void MediaPlayerBridge::Initialize() {
 
   media::MediaResourceGetter* resource_getter =
       manager()->GetMediaResourceGetter();
-  if (url_.SchemeIsFileSystem() || url_.SchemeIs(kBlobScheme)) {
+  if (url_.SchemeIsFileSystem() || url_.SchemeIsBlob()) {
     resource_getter->GetPlatformPathFromURL(
         url_,
         base::Bind(&MediaPlayerBridge::ExtractMediaMetadata,
                    weak_factory_.GetWeakPtr()));
+    return;
+  }
+
+  // Start extracting the metadata immediately if the request is anonymous.
+  // Otherwise, wait for user credentials to be retrieved first.
+  if (!allow_credentials_) {
+    ExtractMediaMetadata(url_.spec());
     return;
   }
 
@@ -147,7 +153,7 @@ void MediaPlayerBridge::SetVideoSurface(gfx::ScopedJavaSurface surface) {
 void MediaPlayerBridge::Prepare() {
   DCHECK(j_media_player_bridge_.is_null());
   CreateJavaMediaPlayerBridge();
-  if (url_.SchemeIsFileSystem() || url_.SchemeIs(kBlobScheme)) {
+  if (url_.SchemeIsFileSystem() || url_.SchemeIsBlob()) {
     manager()->GetMediaResourceGetter()->GetPlatformPathFromURL(
         url_,
         base::Bind(&MediaPlayerBridge::SetDataSource,

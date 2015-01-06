@@ -8,8 +8,8 @@
   },
   'targets': [
     {
-      # GN version: //webkit/common:storage
-      'target_name': 'webkit_storage_common',
+      # GN version: //webkit/common:storage_common
+      'target_name': 'storage_common',
       'type': '<(component)',
       'variables': { 'enable_wexit_time_destructors': 1, },
       'dependencies': [
@@ -19,9 +19,8 @@
         '<(DEPTH)/url/url.gyp:url_lib',
         '<(DEPTH)/webkit/common/webkit_common.gyp:webkit_common',
       ],
-      'defines': ['WEBKIT_STORAGE_COMMON_IMPLEMENTATION'],
+      'defines': ['STORAGE_COMMON_IMPLEMENTATION'],
       'sources': [
-        'common/webkit_storage_common_export.h',
         'common/blob/blob_data.cc',
         'common/blob/blob_data.h',
         'common/blob/scoped_file.cc',
@@ -43,6 +42,7 @@
         'common/quota/quota_status_code.cc',
         'common/quota/quota_status_code.h',
         'common/quota/quota_types.h',
+        'common/storage_common_export.h',
       ],
       # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
       'msvs_disabled_warnings': [ 4267, ],

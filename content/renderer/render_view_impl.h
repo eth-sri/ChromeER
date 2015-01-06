@@ -121,10 +121,10 @@ struct SelectedFileInfo;
 }
 
 namespace content {
+
 class BrowserPluginManager;
 class DevToolsAgent;
 class DocumentState;
-class ExternalPopupMenu;
 class FaviconHelper;
 class HistoryController;
 class HistoryEntry;
@@ -150,7 +150,7 @@ class WebMediaPlayerProxyAndroid;
 
 //
 // RenderView is an object that manages a WebView object, and provides a
-// communication interface with an embedding application process
+// communication interface with an embedding application process.
 //
 class CONTENT_EXPORT RenderViewImpl
     : public RenderWidget,
@@ -246,9 +246,6 @@ class CONTENT_EXPORT RenderViewImpl
 
 #if defined(OS_ANDROID)
   void DismissDateTimeDialog();
-#endif
-#if defined(OS_MACOSX) || defined(OS_ANDROID)
-  void DidHideExternalPopupMenu();
 #endif
 
   bool is_loading() const { return frames_in_progress_ != 0; }
@@ -376,9 +373,6 @@ class CONTENT_EXPORT RenderViewImpl
                                      blink::WebNavigationPolicy policy,
                                      bool suppress_opener);
   virtual blink::WebWidget* createPopupMenu(blink::WebPopupType popup_type);
-  virtual blink::WebExternalPopupMenu* createExternalPopupMenu(
-      const blink::WebPopupMenuInfo& popup_menu_info,
-      blink::WebExternalPopupMenuClient* popup_menu_client);
   virtual blink::WebStorageNamespace* createSessionStorageNamespace();
   virtual void printPage(blink::WebLocalFrame* frame);
   virtual bool enumerateChosenDirectory(
@@ -420,19 +414,24 @@ class CONTENT_EXPORT RenderViewImpl
   virtual int historyForwardListCount();
   virtual void postAccessibilityEvent(
       const blink::WebAXObject& obj, blink::WebAXEvent event);
-  virtual void didUpdateInspectorSetting(const blink::WebString& key,
-                                         const blink::WebString& value);
   virtual blink::WebSpeechRecognizer* speechRecognizer();
   virtual void zoomLimitsChanged(double minimum_level, double maximum_level);
   virtual void zoomLevelChanged();
   virtual double zoomLevelToZoomFactor(double zoom_level) const;
   virtual double zoomFactorToZoomLevel(double factor) const;
+
+  // TODO(sanjoy.pal): Remove once blink patch lands. http://crbug.com/406236.
   virtual void registerProtocolHandler(const blink::WebString& scheme,
                                        const blink::WebURL& base_url,
                                        const blink::WebURL& url,
                                        const blink::WebString& title);
   virtual void unregisterProtocolHandler(const blink::WebString& scheme,
                                          const blink::WebURL& base_url,
+                                         const blink::WebURL& url);
+  virtual void registerProtocolHandler(const blink::WebString& scheme,
+                                       const blink::WebURL& url,
+                                       const blink::WebString& title);
+  virtual void unregisterProtocolHandler(const blink::WebString& scheme,
                                          const blink::WebURL& url);
   virtual blink::WebPageVisibilityState visibilityState() const;
   virtual blink::WebPushClient* webPushClient();
@@ -517,7 +516,8 @@ class CONTENT_EXPORT RenderViewImpl
   virtual bool HasTouchEventHandlersAt(const gfx::Point& point) const OVERRIDE;
   virtual void OnSetFocus(bool enable) OVERRIDE;
   virtual void OnWasHidden() OVERRIDE;
-  virtual void OnWasShown(bool needs_repainting) OVERRIDE;
+  virtual void OnWasShown(bool needs_repainting,
+                          const ui::LatencyInfo& latency_info) OVERRIDE;
   virtual GURL GetURLForGraphicsContext3D() OVERRIDE;
   virtual void OnImeSetComposition(
       const base::string16& text,
@@ -559,7 +559,6 @@ class CONTENT_EXPORT RenderViewImpl
 
  private:
   // For unit tests.
-  friend class ExternalPopupMenuTest;
   friend class PepperDeviceTest;
   friend class RenderViewImplTest;
   friend class RenderViewTest;
@@ -570,9 +569,6 @@ class CONTENT_EXPORT RenderViewImpl
   // code away from this class.
   friend class RenderFrameImpl;
 
-  FRIEND_TEST_ALL_PREFIXES(ExternalPopupMenuRemoveTest, RemoveOnChange);
-  FRIEND_TEST_ALL_PREFIXES(ExternalPopupMenuTest, NormalCase);
-  FRIEND_TEST_ALL_PREFIXES(ExternalPopupMenuTest, ShowPopupThenNavigate);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, DecideNavigationPolicyForWebUI);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest,
                            DidFailProvisionalLoadWithErrorForError);
@@ -649,9 +645,6 @@ class CONTENT_EXPORT RenderViewImpl
   // Sends a message and runs a nested message loop.
   bool SendAndRunNestedMessageLoop(IPC::SyncMessage* message);
 
-  // Called when the "pinned to left/right edge" state needs to be updated.
-  void UpdateScrollState(blink::WebFrame* frame);
-
   // IPC message handlers ------------------------------------------------------
   //
   // The documentation for these functions should be in
@@ -722,7 +715,6 @@ class CONTENT_EXPORT RenderViewImpl
   void OnSetWebUIProperty(const std::string& name, const std::string& value);
   void OnSetZoomLevelForLoadingURL(const GURL& url, double zoom_level);
   void OnSetZoomLevelForView(bool uses_temporary_zoom_level, double level);
-  void OnStop();
   void OnStopFinding(StopFindAction action);
   void OnSuppressDialogsUntilSwapOut();
   void OnThemeChanged();
@@ -730,7 +722,6 @@ class CONTENT_EXPORT RenderViewImpl
   void OnUpdateWebPreferences(const WebPreferences& prefs);
   void OnZoom(PageZoom zoom);
   void OnEnableViewSourceMode();
-  void OnDisownOpener();
   void OnWindowSnapshotCompleted(const int snapshot_id,
       const gfx::Size& size, const std::vector<unsigned char>& png);
   void OnForceRedraw(int request_id);
@@ -738,17 +729,15 @@ class CONTENT_EXPORT RenderViewImpl
 #if defined(OS_ANDROID)
   void OnActivateNearestFindResult(int request_id, float x, float y);
   void OnFindMatchRects(int current_version);
-  void OnSelectPopupMenuItems(bool canceled,
-                              const std::vector<int>& selected_indices);
   void OnUndoScrollFocusedEditableNodeIntoRect();
   void OnUpdateTopControlsState(bool enable_hiding,
                                 bool enable_showing,
                                 bool animate);
   void OnExtractSmartClipData(const gfx::Rect& rect);
 #elif defined(OS_MACOSX)
+  void OnGetRenderedText();
   void OnPluginImeCompositionCompleted(const base::string16& text,
                                        int plugin_id);
-  void OnSelectPopupMenuItem(int selected_index);
   void OnSetInLiveResize(bool in_live_resize);
   void OnSetWindowVisibility(bool visible);
   void OnWindowFrameChanged(const gfx::Rect& window_frame,
@@ -1106,11 +1095,6 @@ class CONTENT_EXPORT RenderViewImpl
   // Stores edit commands associated to the next key event.
   // Shall be cleared as soon as the next key event is processed.
   EditCommands edit_commands_;
-
-#if defined(OS_MACOSX) || defined(OS_ANDROID)
-  // The external popup for the currently showing select popup.
-  scoped_ptr<ExternalPopupMenu> external_popup_menu_;
-#endif
 
   // All the registered observers.  We expect this list to be small, so vector
   // is fine.

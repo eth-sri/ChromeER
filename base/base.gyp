@@ -239,7 +239,6 @@
         'message_loop/message_pump_glib.h',
         'message_loop/message_pump_io_ios.cc',
         'message_loop/message_pump_io_ios.h',
-        'message_loop/message_pump_observer.h',
         'message_loop/message_pump_libevent.cc',
         'message_loop/message_pump_libevent.h',
         'message_loop/message_pump_mac.h',
@@ -448,6 +447,7 @@
         'debug/leak_tracker_unittest.cc',
         'debug/proc_maps_linux_unittest.cc',
         'debug/stack_trace_unittest.cc',
+        'debug/task_annotator_unittest.cc',
         'debug/trace_event_argument_unittest.cc',
         'debug/trace_event_memory_unittest.cc',
         'debug/trace_event_synthetic_delay_unittest.cc',
@@ -457,13 +457,13 @@
         'debug/trace_event_win_unittest.cc',
         'deferred_sequenced_task_runner_unittest.cc',
         'environment_unittest.cc',
-        'file_util_unittest.cc',
         'file_version_info_unittest.cc',
         'files/dir_reader_posix_unittest.cc',
         'files/file_path_unittest.cc',
         'files/file_proxy_unittest.cc',
         'files/file_unittest.cc',
         'files/file_util_proxy_unittest.cc',
+        'files/file_util_unittest.cc',
         'files/important_file_writer_unittest.cc',
         'files/memory_mapped_file_unittest.cc',
         'files/scoped_temp_dir_unittest.cc',
@@ -482,7 +482,6 @@
         'i18n/string_search_unittest.cc',
         'i18n/time_formatting_unittest.cc',
         'i18n/timezone_unittest.cc',
-        'ini_parser_unittest.cc',
         'ios/device_util_unittest.mm',
         'json/json_parser_unittest.cc',
         'json/json_reader_unittest.cc',
@@ -498,6 +497,7 @@
         'mac/mac_util_unittest.mm',
         'mac/objc_property_releaser_unittest.mm',
         'mac/scoped_nsobject_unittest.mm',
+        'mac/scoped_objc_class_swizzler_unittest.mm',
         'mac/scoped_sending_event_unittest.mm',
         'md5_unittest.cc',
         'memory/aligned_memory_unittest.cc',
@@ -592,7 +592,8 @@
         'template_util_unittest.cc',
         'test/expectations/expectation_unittest.cc',
         'test/expectations/parser_unittest.cc',
-        'test/statistics_delta_reader_unittest.cc',
+        'test/histogram_tester_unittest.cc',
+        'test/test_pending_task_unittest.cc',
         'test/test_reg_util_win_unittest.cc',
         'test/trace_event_analyzer_unittest.cc',
         'threading/non_thread_safe_unittest.cc',
@@ -902,8 +903,8 @@
         'test/simple_test_clock.h',
         'test/simple_test_tick_clock.cc',
         'test/simple_test_tick_clock.h',
-        'test/statistics_delta_reader.cc',
-        'test/statistics_delta_reader.h',
+        'test/histogram_tester.cc',
+        'test/histogram_tester.h',
         'test/task_runner_test_template.cc',
         'test/task_runner_test_template.h',
         'test/test_file_util.cc',
@@ -913,6 +914,8 @@
         'test/test_file_util_mac.cc',
         'test/test_file_util_posix.cc',
         'test/test_file_util_win.cc',
+        'test/test_io_thread.cc',
+        'test/test_io_thread.h',
         'test/test_listener_ios.h',
         'test/test_listener_ios.mm',
         'test/test_pending_task.cc',
@@ -970,49 +973,6 @@
       'direct_dependent_settings': {
         'defines': [
           'PERF_TEST',
-        ],
-      },
-    },
-    {
-      'target_name': 'sanitizer_options',
-      'type': 'static_library',
-      'toolsets': ['host', 'target'],
-      'variables': {
-         # Every target is going to depend on sanitizer_options, so allow
-         # this one to depend on itself.
-         'prune_self_dependency': 1,
-         # Do not let 'none' targets depend on this one, they don't need to.
-         'link_dependency': 1,
-       },
-      'sources': [
-        'debug/sanitizer_options.cc',
-      ],
-      'include_dirs': [
-        '..',
-      ],
-      # Some targets may want to opt-out from ASan, TSan and MSan and link
-      # without the corresponding runtime libraries. We drop the libc++
-      # dependency and omit the compiler flags to avoid bringing instrumented
-      # code to those targets.
-      'conditions': [
-        ['use_custom_libcxx==1', {
-          'dependencies!': [
-            '../third_party/libc++/libc++.gyp:libcxx_proxy',
-          ],
-        }],
-        ['tsan==1', {
-          'sources': [
-            'debug/tsan_suppressions.cc',
-          ],
-        }],
-      ],
-      'cflags/': [
-        ['exclude', '-fsanitize='],
-        ['exclude', '-fsanitize-'],
-      ],
-      'direct_dependent_settings': {
-        'ldflags': [
-          '-Wl,-u_sanitizer_options_link_helper',
         ],
       },
     },
@@ -1127,7 +1087,6 @@
             'linux_util.h',
             'md5.cc',
             'md5.h',
-            'message_loop/message_pump_observer.h',
             'message_loop/message_pump_libevent.cc',
             'message_loop/message_pump_libevent.h',
             'metrics/field_trial.cc',
@@ -1283,6 +1242,7 @@
             'android/java/src/org/chromium/base/EventLog.java',
             'android/java/src/org/chromium/base/FieldTrialList.java',
             'android/java/src/org/chromium/base/ImportantFileWriterAndroid.java',
+            'android/java/src/org/chromium/base/JNIUtils.java',
             'android/java/src/org/chromium/base/library_loader/LibraryLoader.java',
             'android/java/src/org/chromium/base/MemoryPressureListener.java',
             'android/java/src/org/chromium/base/JavaHandlerThread.java',
@@ -1318,10 +1278,7 @@
           ],
           'variables': {
             'package_name': 'org/chromium/base/library_loader',
-            'include_path': 'android/java/templates',
-            'template_deps': [
-              'android/java/templates/native_libraries_array.h'
-            ],
+            'template_deps': [],
           },
           'includes': [ '../build/android/java_cpp_template.gypi' ],
         },
@@ -1412,10 +1369,10 @@
           'target_name': 'chromium_android_linker',
           'type': 'shared_library',
           'conditions': [
-            ['android_webview_build == 0 and target_arch != "x64"', {
-              # Avoid breaking the webview build because it
-              # does not have <(android_ndk_root)/crazy_linker.gyp.
-              # Note that webview never uses the linker anyway.
+            # Avoid breaking the webview build because it
+            # does not have <(android_ndk_root)/crazy_linker.gyp.
+            # Note that webview never uses the linker anyway.
+            ['android_webview_build == 0', {
               'sources': [
                 'android/linker/linker_jni.cc',
               ],

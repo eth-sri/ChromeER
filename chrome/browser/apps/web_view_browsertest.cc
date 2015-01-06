@@ -2,15 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "apps/ui/native_app_window.h"
 #include "base/path_service.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/apps/app_browsertest_util.h"
 #include "chrome/browser/chrome_content_browser_client.h"
 #include "chrome/browser/extensions/extension_test_message_listener.h"
-#include "chrome/browser/guest_view/guest_view_manager.h"
-#include "chrome/browser/guest_view/guest_view_manager_factory.h"
 #include "chrome/browser/prerender/prerender_link_manager.h"
 #include "chrome/browser/prerender/prerender_link_manager_factory.h"
 #include "chrome/browser/profiles/profile.h"
@@ -31,6 +28,9 @@
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/fake_speech_recognition_manager.h"
 #include "content/public/test/test_renderer_host.h"
+#include "extensions/browser/app_window/native_app_window.h"
+#include "extensions/browser/guest_view/guest_view_manager.h"
+#include "extensions/browser/guest_view/guest_view_manager_factory.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extensions_client.h"
 #include "media/base/media_switches.h"
@@ -94,45 +94,68 @@ class TestInterstitialPageDelegate : public content::InterstitialPageDelegate {
   virtual std::string GetHTMLContents() OVERRIDE { return std::string(); }
 };
 
-class TestGuestViewManager : public GuestViewManager {
+class TestGuestViewManager : public extensions::GuestViewManager {
  public:
   explicit TestGuestViewManager(content::BrowserContext* context) :
       GuestViewManager(context),
+      seen_guest_removed_(false),
       web_contents_(NULL) {}
 
   content::WebContents* WaitForGuestCreated() {
     if (web_contents_)
       return web_contents_;
 
-    message_loop_runner_ = new content::MessageLoopRunner;
-    message_loop_runner_->Run();
+    created_message_loop_runner_ = new content::MessageLoopRunner;
+    created_message_loop_runner_->Run();
     return web_contents_;
+  }
+
+  void WaitForGuestDeleted() {
+    if (seen_guest_removed_)
+      return;
+
+    deleted_message_loop_runner_ = new content::MessageLoopRunner;
+    deleted_message_loop_runner_->Run();
   }
 
  private:
   // GuestViewManager override:
   virtual void AddGuest(int guest_instance_id,
                         content::WebContents* guest_web_contents) OVERRIDE{
-    GuestViewManager::AddGuest(guest_instance_id, guest_web_contents);
+    extensions::GuestViewManager::AddGuest(
+        guest_instance_id, guest_web_contents);
     web_contents_ = guest_web_contents;
+    seen_guest_removed_ = false;
 
-    if (message_loop_runner_)
-      message_loop_runner_->Quit();
+    if (created_message_loop_runner_.get())
+      created_message_loop_runner_->Quit();
   }
 
+  virtual void RemoveGuest(int guest_instance_id) OVERRIDE {
+    extensions::GuestViewManager::RemoveGuest(guest_instance_id);
+    web_contents_ = NULL;
+    seen_guest_removed_ = true;
+
+    if (deleted_message_loop_runner_.get())
+      deleted_message_loop_runner_->Quit();
+  }
+
+  bool seen_guest_removed_;
   content::WebContents* web_contents_;
-  scoped_refptr<content::MessageLoopRunner> message_loop_runner_;
+  scoped_refptr<content::MessageLoopRunner> created_message_loop_runner_;
+  scoped_refptr<content::MessageLoopRunner> deleted_message_loop_runner_;
 };
 
 // Test factory for creating test instances of GuestViewManager.
-class TestGuestViewManagerFactory : public GuestViewManagerFactory {
+class TestGuestViewManagerFactory :
+  public extensions::GuestViewManagerFactory {
  public:
   TestGuestViewManagerFactory() :
       test_guest_view_manager_(NULL) {}
 
   virtual ~TestGuestViewManagerFactory() {}
 
-  virtual GuestViewManager* CreateGuestViewManager(
+  virtual extensions::GuestViewManager* CreateGuestViewManager(
       content::BrowserContext* context) OVERRIDE {
     return GetManager(context);
   }
@@ -677,7 +700,6 @@ class WebViewTest : public extensions::PlatformAppBrowserTest {
   }
 
   void LoadAppWithGuest(const std::string& app_path) {
-
     ExtensionTestMessageListener launched_listener("WebViewTest.LAUNCHED",
                                                    false);
     launched_listener.set_failure_message("WebViewTest.FAILURE");
@@ -727,7 +749,7 @@ class WebViewTest : public extensions::PlatformAppBrowserTest {
 
   WebViewTest() : guest_web_contents_(NULL),
                   embedder_web_contents_(NULL) {
-    GuestViewManager::set_factory_for_testing(&factory_);
+    extensions::GuestViewManager::set_factory_for_testing(&factory_);
   }
 
  private:
@@ -840,6 +862,33 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, AutoSize) {
       << message_;
 }
 
+// Tests that a <webview> that is set to "display: none" after load and then
+// setting "display: block" re-renders the plugin properly.
+//
+// Initially after loading the <webview> and the test sets <webview> to
+// "display: none".
+// This causes the browser plugin to be destroyed, we then set the
+// style.display of the <webview> to block again and check that loadstop
+// fires properly.
+IN_PROC_BROWSER_TEST_F(WebViewTest, DisplayNoneAndBack) {
+  LoadAppWithGuest("web_view/display_none_and_back");
+
+  scoped_refptr<content::MessageLoopRunner> loop_runner(
+      new content::MessageLoopRunner);
+  WebContentsHiddenObserver observer(GetGuestWebContents(),
+                                     loop_runner->QuitClosure());
+
+  // Handled in platform_apps/web_view/display_none_and_back/main.js
+  SendMessageToEmbedder("hide-guest");
+  GetGuestViewManager()->WaitForGuestDeleted();
+  ExtensionTestMessageListener test_passed_listener("WebViewTest.PASSED",
+                                                    false);
+
+  SendMessageToEmbedder("show-guest");
+  GetGuestViewManager()->WaitForGuestCreated();
+  EXPECT_TRUE(test_passed_listener.WaitUntilSatisfied());
+}
+
 // http://crbug.com/326332
 IN_PROC_BROWSER_TEST_F(WebViewTest, DISABLED_Shim_TestAutosizeAfterNavigation) {
   TestHelper("testAutosizeAfterNavigation", "web_view/shim", NO_TEST_SERVER);
@@ -853,7 +902,7 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestAutosizeRemoveAttributes) {
 }
 
 // This test is disabled due to being flaky. http://crbug.com/282116
-#if defined(OS_WIN)
+#if defined(OS_WIN) || defined(OS_MACOSX)
 #define MAYBE_Shim_TestAutosizeWithPartialAttributes \
     DISABLED_Shim_TestAutosizeWithPartialAttributes
 #else
@@ -1231,7 +1280,7 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, MAYBE_InterstitialTeardown) {
   WaitForInterstitial(guest_web_contents);
 
   // Now close the app while interstitial page being shown in guest.
-  apps::AppWindow* window = GetFirstAppWindow();
+  extensions::AppWindow* window = GetFirstAppWindow();
   window->GetBaseWindow()->Close();
 }
 
@@ -1858,7 +1907,7 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, ChromeVoxInjection) {
 IN_PROC_BROWSER_TEST_F(WebViewTest, MAYBE_TearDownTest) {
   const extensions::Extension* extension =
       LoadAndLaunchPlatformApp("web_view/teardown", "guest-loaded");
-  apps::AppWindow* window = NULL;
+  extensions::AppWindow* window = NULL;
   if (!GetAppWindowCount())
     window = CreateAppWindow(extension);
   else
@@ -2249,4 +2298,17 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestFindAPI_findupdate) {
 IN_PROC_BROWSER_TEST_F(WebViewCaptureTest,
                        DISABLED_Shim_ScreenshotCapture) {
   TestHelper("testScreenshotCapture", "web_view/shim", NO_TEST_SERVER);
+}
+
+#if defined(OS_WIN)
+// Test is disabled on Windows because it times out often.
+// http://crbug.com/403325
+#define MAYBE_WebViewInBackgroundPage \
+    DISABLED_WebViewInBackgroundPage
+#else
+#define MAYBE_WebViewInBackgroundPage WebViewInBackgroundPage
+#endif
+IN_PROC_BROWSER_TEST_F(WebViewTest, MAYBE_WebViewInBackgroundPage) {
+  ASSERT_TRUE(RunExtensionTest("platform_apps/web_view/background"))
+      << message_;
 }

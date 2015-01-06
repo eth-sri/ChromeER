@@ -78,7 +78,6 @@
 #include "content/renderer/disambiguation_popup_helper.h"
 #include "content/renderer/dom_storage/webstoragenamespace_impl.h"
 #include "content/renderer/drop_data_builder.h"
-#include "content/renderer/external_popup_menu.h"
 #include "content/renderer/gpu/render_widget_compositor.h"
 #include "content/renderer/history_controller.h"
 #include "content/renderer/history_serialization.h"
@@ -88,7 +87,6 @@
 #include "content/renderer/internal_document_state_data.h"
 #include "content/renderer/media/audio_device_factory.h"
 #include "content/renderer/media/video_capture_impl_manager.h"
-#include "content/renderer/media/webrtc/peer_connection_dependency_factory.h"
 #include "content/renderer/memory_benchmarking_extension.h"
 #include "content/renderer/mhtml_generator.h"
 #include "content/renderer/net_info_helper.h"
@@ -113,7 +111,6 @@
 #include "content/renderer/web_ui_mojo.h"
 #include "content/renderer/websharedworker_proxy.h"
 #include "media/audio/audio_output_device.h"
-#include "media/base/filter_collection.h"
 #include "media/base/media_switches.h"
 #include "media/filters/audio_renderer_impl.h"
 #include "media/filters/gpu_video_accelerator_factories.h"
@@ -227,6 +224,7 @@
 
 #if defined(ENABLE_WEBRTC)
 #include "content/renderer/media/rtc_peer_connection_handler.h"
+#include "content/renderer/media/webrtc/peer_connection_dependency_factory.h"
 #endif
 
 using blink::WebAXObject;
@@ -245,8 +243,6 @@ using blink::WebDragData;
 using blink::WebDragOperation;
 using blink::WebDragOperationsMask;
 using blink::WebElement;
-using blink::WebExternalPopupMenu;
-using blink::WebExternalPopupMenuClient;
 using blink::WebFileChooserCompletion;
 using blink::WebFindOptions;
 using blink::WebFormControlElement;
@@ -275,7 +271,6 @@ using blink::WebPluginAction;
 using blink::WebPluginContainer;
 using blink::WebPluginDocument;
 using blink::WebPoint;
-using blink::WebPopupMenuInfo;
 using blink::WebRange;
 using blink::WebRect;
 using blink::WebReferrerPolicy;
@@ -399,39 +394,15 @@ static bool DeviceScaleEnsuresTextQuality(float device_scale_factor) {
 
 }
 
-static bool ShouldUseFixedPositionCompositing(float device_scale_factor) {
-  // Compositing for fixed-position elements is dependent on
-  // device_scale_factor if no flag is set. http://crbug.com/172738
+static bool PreferCompositingToLCDText(float device_scale_factor) {
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-
-  if (command_line.HasSwitch(switches::kDisableCompositingForFixedPosition))
+  if (command_line.HasSwitch(switches::kDisablePreferCompositingToLCDText))
     return false;
-
-  if (command_line.HasSwitch(switches::kEnableCompositingForFixedPosition))
+  if (command_line.HasSwitch(switches::kEnablePreferCompositingToLCDText))
     return true;
-
-  return DeviceScaleEnsuresTextQuality(device_scale_factor);
-}
-
-static bool ShouldUseAcceleratedCompositingForOverflowScroll(
-    float device_scale_factor) {
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-
-  if (command_line.HasSwitch(switches::kDisableAcceleratedOverflowScroll))
-    return false;
-
-  if (command_line.HasSwitch(switches::kEnableAcceleratedOverflowScroll))
-    return true;
-
-  return DeviceScaleEnsuresTextQuality(device_scale_factor);
-}
-
-static bool ShouldUseCompositedScrollingForFrames(
-    float device_scale_factor) {
   if (RenderThreadImpl::current() &&
       !RenderThreadImpl::current()->is_lcd_text_enabled())
     return true;
-
   return DeviceScaleEnsuresTextQuality(device_scale_factor);
 }
 
@@ -448,18 +419,6 @@ static bool ShouldUseTransitionCompositing(float device_scale_factor) {
   // of excessive layer promotion caused by overlap has been addressed.
   // http://crbug.com/178119.
   return false;
-}
-
-static bool ShouldUseAcceleratedFixedRootBackground(float device_scale_factor) {
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-
-  if (command_line.HasSwitch(switches::kDisableAcceleratedFixedRootBackground))
-    return false;
-
-  if (command_line.HasSwitch(switches::kEnableAcceleratedFixedRootBackground))
-    return true;
-
-  return DeviceScaleEnsuresTextQuality(device_scale_factor);
 }
 
 static FaviconURL::IconType ToFaviconType(blink::WebIconURL::Type type) {
@@ -795,16 +754,10 @@ void RenderViewImpl::Initialize(RenderViewImplParams* params) {
   g_view_map.Get().insert(std::make_pair(webview(), this));
   g_routing_id_view_map.Get().insert(std::make_pair(routing_id_, this));
   webview()->setDeviceScaleFactor(device_scale_factor_);
-  webview()->settings()->setAcceleratedCompositingForFixedPositionEnabled(
-      ShouldUseFixedPositionCompositing(device_scale_factor_));
-  webview()->settings()->setAcceleratedCompositingForOverflowScrollEnabled(
-      ShouldUseAcceleratedCompositingForOverflowScroll(device_scale_factor_));
+  webview()->settings()->setPreferCompositingToLCDTextEnabled(
+      PreferCompositingToLCDText(device_scale_factor_));
   webview()->settings()->setAcceleratedCompositingForTransitionEnabled(
       ShouldUseTransitionCompositing(device_scale_factor_));
-  webview()->settings()->setAcceleratedCompositingForFixedRootBackgroundEnabled(
-      ShouldUseAcceleratedFixedRootBackground(device_scale_factor_));
-  webview()->settings()->setCompositedScrollingForFramesEnabled(
-      ShouldUseCompositedScrollingForFrames(device_scale_factor_));
 
   ApplyWebPreferences(webkit_preferences_, webview());
 
@@ -992,7 +945,6 @@ void RenderView::ApplyWebPreferences(const WebPreferences& prefs,
   settings->setImagesEnabled(prefs.images_enabled);
   settings->setPluginsEnabled(prefs.plugins_enabled);
   settings->setDOMPasteAllowed(prefs.dom_paste_enabled);
-  settings->setNeedsSiteSpecificQuirks(prefs.site_specific_quirks_enabled);
   settings->setShrinksStandaloneImagesToFit(
       prefs.shrinks_standalone_images_to_fit);
   settings->setUsesEncodingDetector(prefs.uses_universal_detector);
@@ -1068,14 +1020,6 @@ void RenderView::ApplyWebPreferences(const WebPreferences& prefs,
       prefs.asynchronous_spell_checking_enabled);
   settings->setUnifiedTextCheckerEnabled(prefs.unified_textchecker_enabled);
 
-  for (WebInspectorPreferences::const_iterator it =
-           prefs.inspector_settings.begin();
-       it != prefs.inspector_settings.end();
-       ++it) {
-    web_view->setInspectorSetting(WebString::fromUTF8(it->first),
-                                  WebString::fromUTF8(it->second));
-  }
-
   // Tabs to link is not part of the settings. WebCore calls
   // ChromeClient::tabsToLinks which is part of the glue code.
   web_view->setTabsToLinks(prefs.tabs_to_links);
@@ -1112,8 +1056,6 @@ void RenderView::ApplyWebPreferences(const WebPreferences& prefs,
   settings->setViewportEnabled(prefs.viewport_enabled);
   settings->setLoadWithOverviewMode(prefs.initialize_at_minimum_page_scale);
   settings->setViewportMetaEnabled(prefs.viewport_meta_enabled);
-  settings->setUseExpandedHeuristicsForGpuRasterization(
-      prefs.use_expanded_heuristics_for_gpu_rasterization);
   settings->setMainFrameResizesAreOrientationChanges(
       prefs.main_frame_resizes_are_orientation_changes);
 
@@ -1123,6 +1065,9 @@ void RenderView::ApplyWebPreferences(const WebPreferences& prefs,
 
   settings->setSelectionIncludesAltImageText(true);
 
+  settings->setV8CacheOptions(
+      static_cast<WebSettings::V8CacheOptions>(prefs.v8_cache_options));
+
 #if defined(OS_ANDROID)
   settings->setAllowCustomScrollbarInMainFrame(false);
   settings->setTextAutosizingEnabled(prefs.text_autosizing_enabled);
@@ -1130,6 +1075,7 @@ void RenderView::ApplyWebPreferences(const WebPreferences& prefs,
   settings->setDeviceScaleAdjustment(prefs.device_scale_adjustment);
   settings->setDisallowFullscreenForNonMediaElements(
       prefs.disallow_fullscreen_for_non_media_elements);
+  settings->setFullscreenSupported(prefs.fullscreen_supported);
   web_view->setIgnoreViewportTagScaleLimits(prefs.force_enable_zoom);
   settings->setAutoZoomFocusedNodeToLegibleScale(true);
   settings->setDoubleTapToZoomEnabled(prefs.double_tap_to_zoom_enabled);
@@ -1144,6 +1090,7 @@ void RenderView::ApplyWebPreferences(const WebPreferences& prefs,
       prefs.use_legacy_background_size_shorthand_behavior);
   settings->setWideViewportQuirkEnabled(prefs.wide_viewport_quirk);
   settings->setUseWideViewport(prefs.use_wide_viewport);
+  settings->setForceZeroLayoutHeight(prefs.force_zero_layout_height);
   settings->setViewportMetaLayoutSizeQuirk(
       prefs.viewport_meta_layout_size_quirk);
   settings->setViewportMetaMergeContentQuirk(
@@ -1301,6 +1248,20 @@ void RenderViewImpl::PluginFocusChanged(bool focused, int plugin_id) {
   Send(new ViewHostMsg_PluginFocusChanged(routing_id(), focused, plugin_id));
 }
 
+void RenderViewImpl::OnGetRenderedText() {
+  if (!webview())
+    return;
+  // Get rendered text from WebLocalFrame.
+  // TODO: Currently IPC truncates any data that has a
+  // size > kMaximumMessageSize. May be split the text into smaller chunks and
+  // send back using multiple IPC. See http://crbug.com/393444.
+  static const size_t kMaximumMessageSize = 8 * 1024 * 1024;
+  std::string text = webview()->mainFrame()->contentAsText(
+      kMaximumMessageSize).utf8();
+
+  Send(new ViewMsg_GetRenderedTextCompleted(routing_id(), text));
+}
+
 void RenderViewImpl::StartPluginIme() {
   IPC::Message* msg = new ViewHostMsg_StartPluginIme(routing_id());
   // This message can be sent during event-handling, and needs to be delivered
@@ -1341,7 +1302,6 @@ bool RenderViewImpl::OnMessageReceived(const IPC::Message& message) {
                         OnScrollFocusedEditableNodeIntoRect)
     IPC_MESSAGE_HANDLER(InputMsg_SetEditCommandsForNextKeyEvent,
                         OnSetEditCommandsForNextKeyEvent)
-    IPC_MESSAGE_HANDLER(ViewMsg_Stop, OnStop)
     IPC_MESSAGE_HANDLER(ViewMsg_CopyImageAt, OnCopyImageAt)
     IPC_MESSAGE_HANDLER(ViewMsg_SaveImageAt, OnSaveImageAt)
     IPC_MESSAGE_HANDLER(ViewMsg_Find, OnFind)
@@ -1396,7 +1356,6 @@ bool RenderViewImpl::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(ViewMsg_SetHistoryLengthAndPrune,
                         OnSetHistoryLengthAndPrune)
     IPC_MESSAGE_HANDLER(ViewMsg_EnableViewSourceMode, OnEnableViewSourceMode)
-    IPC_MESSAGE_HANDLER(ViewMsg_DisownOpener, OnDisownOpener)
     IPC_MESSAGE_HANDLER(ViewMsg_ReleaseDisambiguationPopupBitmap,
                         OnReleaseDisambiguationPopupBitmap)
     IPC_MESSAGE_HANDLER(ViewMsg_WindowSnapshotCompleted,
@@ -1407,14 +1366,14 @@ bool RenderViewImpl::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(InputMsg_ActivateNearestFindResult,
                         OnActivateNearestFindResult)
     IPC_MESSAGE_HANDLER(ViewMsg_FindMatchRects, OnFindMatchRects)
-    IPC_MESSAGE_HANDLER(ViewMsg_SelectPopupMenuItems, OnSelectPopupMenuItems)
     IPC_MESSAGE_HANDLER(ViewMsg_UpdateTopControlsState,
                         OnUpdateTopControlsState)
     IPC_MESSAGE_HANDLER(ViewMsg_ExtractSmartClipData, OnExtractSmartClipData)
 #elif defined(OS_MACOSX)
+    IPC_MESSAGE_HANDLER(ViewMsg_GetRenderedText,
+                        OnGetRenderedText)
     IPC_MESSAGE_HANDLER(ViewMsg_PluginImeCompositionCompleted,
                         OnPluginImeCompositionCompleted)
-    IPC_MESSAGE_HANDLER(ViewMsg_SelectPopupMenuItem, OnSelectPopupMenuItem)
     IPC_MESSAGE_HANDLER(ViewMsg_SetInLiveResize, OnSetInLiveResize)
     IPC_MESSAGE_HANDLER(ViewMsg_SetWindowVisibility, OnSetWindowVisibility)
     IPC_MESSAGE_HANDLER(ViewMsg_WindowFrameChanged, OnWindowFrameChanged)
@@ -1473,14 +1432,6 @@ bool RenderViewImpl::IsBackForwardToStaleEntry(
   }
 
   return false;
-}
-
-// Stop loading the current page.
-void RenderViewImpl::OnStop() {
-  if (webview())
-    webview()->mainFrame()->stopLoading();
-  FOR_EACH_OBSERVER(RenderViewObserver, observers_, OnStop());
-  main_render_frame_->OnStop();
 }
 
 void RenderViewImpl::OnCopyImageAt(int x, int y) {
@@ -1760,30 +1711,6 @@ WebWidget* RenderViewImpl::createPopupMenu(blink::WebPopupType popup_type) {
   return widget->webwidget();
 }
 
-WebExternalPopupMenu* RenderViewImpl::createExternalPopupMenu(
-    const WebPopupMenuInfo& popup_menu_info,
-    WebExternalPopupMenuClient* popup_menu_client) {
-#if defined(OS_MACOSX) || defined(OS_ANDROID)
-  // An IPC message is sent to the browser to build and display the actual
-  // popup.  The user could have time to click a different select by the time
-  // the popup is shown.  In that case external_popup_menu_ is non NULL.
-  // By returning NULL in that case, we instruct WebKit to cancel that new
-  // popup.  So from the user perspective, only the first one will show, and
-  // will have to close the first one before another one can be shown.
-  if (external_popup_menu_)
-    return NULL;
-  external_popup_menu_.reset(
-      new ExternalPopupMenu(this, popup_menu_info, popup_menu_client));
-  if (screen_metrics_emulator_) {
-    SetExternalPopupOriginAdjustmentsForEmulation(
-        external_popup_menu_.get(), screen_metrics_emulator_.get());
-  }
-  return external_popup_menu_.get();
-#else
-  return NULL;
-#endif
-}
-
 WebStorageNamespace* RenderViewImpl::createSessionStorageNamespace() {
   CHECK(session_storage_namespace_id_ != kInvalidSessionStorageNamespaceId);
   return new WebStorageNamespaceImpl(session_storage_namespace_id_);
@@ -2059,13 +1986,6 @@ int RenderViewImpl::historyForwardListCount() {
 void RenderViewImpl::postAccessibilityEvent(
     const WebAXObject& obj, blink::WebAXEvent event) {
   main_render_frame()->HandleWebAccessibilityEvent(obj, event);
-}
-
-void RenderViewImpl::didUpdateInspectorSetting(const WebString& key,
-                                           const WebString& value) {
-  Send(new ViewHostMsg_UpdateInspectorSetting(routing_id_,
-                                              key.utf8(),
-                                              value.utf8()));
 }
 
 // blink::WebWidgetClient ----------------------------------------------------
@@ -2500,15 +2420,8 @@ BrowserPluginManager* RenderViewImpl::GetBrowserPluginManager() {
   return browser_plugin_manager_.get();
 }
 
-void RenderViewImpl::UpdateScrollState(WebFrame* frame) {
-  Send(new ViewHostMsg_DidChangeScrollOffset(routing_id_));
-}
-
 void RenderViewImpl::didChangeScrollOffset(WebLocalFrame* frame) {
   StartNavStateSyncTimerIfNecessary();
-
-  if (webview()->mainFrame() == frame)
-    UpdateScrollState(frame);
 
   FOR_EACH_OBSERVER(
       RenderViewObserver, observers_, DidChangeScrollOffset(frame));
@@ -3123,7 +3036,7 @@ void RenderViewImpl::OnDisableAutoResize(const gfx::Size& new_size) {
   if (!new_size.IsEmpty()) {
     Resize(new_size,
            physical_backing_size_,
-           overdraw_bottom_height_,
+           top_controls_layout_height_,
            visible_viewport_size_,
            resizer_rect_,
            is_fullscreen_,
@@ -3336,7 +3249,6 @@ void RenderViewImpl::OnResize(const ViewMsg_Resize_Params& params) {
           ShouldDisplayScrollbars(params.new_size.width(),
                                   params.new_size.height()));
     }
-    UpdateScrollState(webview()->mainFrame());
   }
 
   gfx::Size old_visible_viewport_size = visible_viewport_size_;
@@ -3345,6 +3257,10 @@ void RenderViewImpl::OnResize(const ViewMsg_Resize_Params& params) {
 
   if (old_visible_viewport_size != visible_viewport_size_)
     has_scrolled_focused_editable_node_into_rect_ = false;
+
+  FOR_EACH_OBSERVER(RenderViewObserver,
+                    observers_,
+                    Resized());
 }
 
 void RenderViewImpl::DidInitiatePaint() {
@@ -3591,8 +3507,9 @@ void RenderViewImpl::OnWasHidden() {
 #endif // ENABLE_PLUGINS
 }
 
-void RenderViewImpl::OnWasShown(bool needs_repainting) {
-  RenderWidget::OnWasShown(needs_repainting);
+void RenderViewImpl::OnWasShown(bool needs_repainting,
+                                const ui::LatencyInfo& latency_info) {
+  RenderWidget::OnWasShown(needs_repainting, latency_info);
 
 #if defined(OS_ANDROID) && defined(ENABLE_WEBRTC)
   RenderThreadImpl::current()->video_capture_impl_manager()->
@@ -3742,17 +3659,10 @@ void RenderViewImpl::SetDeviceScaleFactor(float device_scale_factor) {
   RenderWidget::SetDeviceScaleFactor(device_scale_factor);
   if (webview()) {
     webview()->setDeviceScaleFactor(device_scale_factor);
-    webview()->settings()->setAcceleratedCompositingForFixedPositionEnabled(
-        ShouldUseFixedPositionCompositing(device_scale_factor_));
-    webview()->settings()->setAcceleratedCompositingForOverflowScrollEnabled(
-        ShouldUseAcceleratedCompositingForOverflowScroll(device_scale_factor_));
+    webview()->settings()->setPreferCompositingToLCDTextEnabled(
+        PreferCompositingToLCDText(device_scale_factor_));
     webview()->settings()->setAcceleratedCompositingForTransitionEnabled(
         ShouldUseTransitionCompositing(device_scale_factor_));
-    webview()->settings()->
-        setAcceleratedCompositingForFixedRootBackgroundEnabled(
-            ShouldUseAcceleratedFixedRootBackground(device_scale_factor_));
-    webview()->settings()->setCompositedScrollingForFramesEnabled(
-        ShouldUseCompositedScrollingForFrames(device_scale_factor_));
   }
   if (auto_resize_mode_)
     AutoResizeCompositor();
@@ -3959,6 +3869,7 @@ double RenderViewImpl::zoomFactorToZoomLevel(double factor) const {
   return ZoomFactorToZoomLevel(factor);
 }
 
+// TODO(sanjoy.pal): Remove once blink patch lands. http://crbug.com/406236.
 void RenderViewImpl::registerProtocolHandler(const WebString& scheme,
                                              const WebURL& base_url,
                                              const WebURL& url,
@@ -3987,6 +3898,26 @@ void RenderViewImpl::unregisterProtocolHandler(const WebString& scheme,
   Send(new ViewHostMsg_UnregisterProtocolHandler(routing_id_,
                                                  base::UTF16ToUTF8(scheme),
                                                  absolute_url,
+                                                 user_gesture));
+}
+
+void RenderViewImpl::registerProtocolHandler(const WebString& scheme,
+                                             const WebURL& url,
+                                             const WebString& title) {
+  bool user_gesture = WebUserGestureIndicator::isProcessingUserGesture();
+  Send(new ViewHostMsg_RegisterProtocolHandler(routing_id_,
+                                               base::UTF16ToUTF8(scheme),
+                                               url,
+                                               title,
+                                               user_gesture));
+}
+
+void RenderViewImpl::unregisterProtocolHandler(const WebString& scheme,
+                                               const WebURL& url) {
+  bool user_gesture = WebUserGestureIndicator::isProcessingUserGesture();
+  Send(new ViewHostMsg_UnregisterProtocolHandler(routing_id_,
+                                                 base::UTF16ToUTF8(scheme),
+                                                 url,
                                                  user_gesture));
 }
 
@@ -4081,39 +4012,6 @@ void RenderViewImpl::DismissDateTimeDialog() {
 
 #endif  // defined(OS_ANDROID)
 
-#if defined(OS_MACOSX)
-void RenderViewImpl::OnSelectPopupMenuItem(int selected_index) {
-  if (external_popup_menu_ == NULL)
-    return;
-  external_popup_menu_->DidSelectItem(selected_index);
-  external_popup_menu_.reset();
-}
-#endif
-
-#if defined(OS_ANDROID)
-void RenderViewImpl::OnSelectPopupMenuItems(
-    bool canceled,
-    const std::vector<int>& selected_indices) {
-  // It is possible to receive more than one of these calls if the user presses
-  // a select faster than it takes for the show-select-popup IPC message to make
-  // it to the browser UI thread.  Ignore the extra-messages.
-  // TODO(jcivelli): http:/b/5793321 Implement a better fix, as detailed in bug.
-  if (!external_popup_menu_)
-    return;
-
-  external_popup_menu_->DidSelectItems(canceled, selected_indices);
-  external_popup_menu_.reset();
-}
-#endif
-
-#if defined(OS_MACOSX) || defined(OS_ANDROID)
-void RenderViewImpl::DidHideExternalPopupMenu() {
-  // We need to clear external_popup_menu_ as soon as ExternalPopupMenu::close
-  // is called. Otherwise, createExternalPopupMenu() for new popup will fail.
-  external_popup_menu_.reset();
-}
-#endif
-
 void RenderViewImpl::OnShowContextMenu(
     ui::MenuSourceType source_type, const gfx::Point& location) {
   context_menu_source_type_ = source_type;
@@ -4131,15 +4029,6 @@ void RenderViewImpl::OnEnableViewSourceMode() {
   if (!main_frame)
     return;
   main_frame->enableViewSourceMode(true);
-}
-
-void RenderViewImpl::OnDisownOpener() {
-  if (!webview())
-    return;
-
-  WebFrame* main_frame = webview()->mainFrame();
-  if (main_frame && main_frame->opener())
-    main_frame->setOpener(NULL);
 }
 
 #if defined(OS_ANDROID)
@@ -4247,7 +4136,7 @@ void RenderViewImpl::SetDeviceScaleFactorForTesting(float factor) {
   params.new_size = size();
   params.physical_backing_size =
       gfx::ToCeiledSize(gfx::ScaleSize(size(), factor));
-  params.overdraw_bottom_height = 0.f;
+  params.top_controls_layout_height = 0.f;
   params.resizer_rect = WebRect();
   params.is_fullscreen = is_fullscreen();
   OnResize(params);

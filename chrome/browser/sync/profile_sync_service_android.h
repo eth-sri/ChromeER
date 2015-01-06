@@ -198,6 +198,20 @@ class ProfileSyncServiceAndroid : public ProfileSyncServiceObserver {
   // the internal value of base::Time.
   jlong GetLastSyncedTimeForTest(JNIEnv* env, jobject obj);
 
+  // Overrides ProfileSyncService's NetworkResources object. This is used to
+  // set up the Sync FakeServer for testing.
+  void OverrideNetworkResourcesForTest(JNIEnv* env,
+                                       jobject obj,
+                                       jlong network_resources);
+
+  // Public for tests.
+  static jlong ModelTypeSetToSelection(syncer::ModelTypeSet model_types);
+
+  // Converts a bitmap of model types to a set of Java ModelTypes, and returns
+  // their string descriptions separated by commas.
+  static std::string ModelTypeSelectionToStringForTest(
+      jlong model_type_selection);
+
   static ProfileSyncServiceAndroid* GetProfileSyncServiceAndroid();
 
   // Registers the ProfileSyncServiceAndroid's native methods through JNI.

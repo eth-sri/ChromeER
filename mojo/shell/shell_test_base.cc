@@ -33,16 +33,6 @@ void ShellTestBase::SetUp() {
   test_server_->ServeFilesFromDirectory(service_dir);
 }
 
-ScopedMessagePipeHandle ShellTestBase::ConnectToServiceViaNetwork(
-    const GURL& application_url,
-    const std::string& service_name) {
-  shell_context_.mojo_url_resolver()->SetBaseURL(
-      test_server_->base_url());
-
-  return shell_context_.service_manager()->ConnectToServiceByName(
-      application_url, service_name).Pass();
-}
-
 ScopedMessagePipeHandle ShellTestBase::ConnectToService(
     const GURL& application_url,
     const std::string& service_name) {
@@ -55,7 +45,17 @@ ScopedMessagePipeHandle ShellTestBase::ConnectToService(
   shell_context_.mojo_url_resolver()->SetBaseURL(
       net::FilePathToFileURL(service_dir));
 
-  return shell_context_.service_manager()->ConnectToServiceByName(
+  return shell_context_.ConnectToServiceByName(
+      application_url, service_name).Pass();
+}
+
+ScopedMessagePipeHandle ShellTestBase::ConnectToServiceViaNetwork(
+    const GURL& application_url,
+    const std::string& service_name) {
+  shell_context_.mojo_url_resolver()->SetBaseURL(
+      test_server_->base_url());
+
+  return shell_context_.ConnectToServiceByName(
       application_url, service_name).Pass();
 }
 

@@ -91,10 +91,12 @@ void RunErrorFetchCallback(const ServiceWorkerVersion::FetchCallback& callback,
 
 ServiceWorkerVersion::ServiceWorkerVersion(
     ServiceWorkerRegistration* registration,
+    const GURL& script_url,
     int64 version_id,
     base::WeakPtr<ServiceWorkerContextCore> context)
     : version_id_(version_id),
       registration_id_(kInvalidServiceWorkerVersionId),
+      script_url_(script_url),
       status_(NEW),
       context_(context),
       script_cache_map_(this, context),
@@ -104,12 +106,13 @@ ServiceWorkerVersion::ServiceWorkerVersion(
   DCHECK(registration);
   if (registration) {
     registration_id_ = registration->id();
-    script_url_ = registration->script_url();
     scope_ = registration->pattern();
   }
   context_->AddLiveVersion(this);
   embedded_worker_ = context_->embedded_worker_registry()->CreateWorker();
   embedded_worker_->AddListener(this);
+  cache_listener_.reset(new ServiceWorkerCacheListener(this, context));
+  embedded_worker_->AddListener(cache_listener_.get());
 }
 
 ServiceWorkerVersion::~ServiceWorkerVersion() {
@@ -149,6 +152,7 @@ ServiceWorkerVersionInfo ServiceWorkerVersion::GetInfo() {
   return ServiceWorkerVersionInfo(
       running_status(),
       status(),
+      script_url(),
       version_id(),
       embedded_worker()->process_id(),
       embedded_worker()->thread_id(),
@@ -224,7 +228,7 @@ void ServiceWorkerVersion::StartUpdate() {
     return;
   ServiceWorkerRegistration* registration =
       context_->GetLiveRegistration(registration_id_);
-  if (!registration)
+  if (!registration || !registration->GetNewestVersion())
     return;
   context_->UpdateServiceWorker(registration);
 }
@@ -285,27 +289,32 @@ void ServiceWorkerVersion::DispatchActivateEvent(
 
 void ServiceWorkerVersion::DispatchFetchEvent(
     const ServiceWorkerFetchRequest& request,
-    const FetchCallback& callback) {
+    const base::Closure& prepare_callback,
+    const FetchCallback& fetch_callback) {
   DCHECK_EQ(ACTIVATED, status()) << status();
 
   if (running_status() != RUNNING) {
     // Schedule calling this method after starting the worker.
     StartWorker(base::Bind(&RunTaskAfterStartWorker,
                            weak_factory_.GetWeakPtr(),
-                           base::Bind(&RunErrorFetchCallback, callback),
+                           base::Bind(&RunErrorFetchCallback, fetch_callback),
                            base::Bind(&self::DispatchFetchEvent,
                                       weak_factory_.GetWeakPtr(),
-                                      request, callback)));
+                                      request,
+                                      prepare_callback,
+                                      fetch_callback)));
     return;
   }
 
-  int request_id = fetch_callbacks_.Add(new FetchCallback(callback));
+  prepare_callback.Run();
+
+  int request_id = fetch_callbacks_.Add(new FetchCallback(fetch_callback));
   ServiceWorkerStatusCode status = embedded_worker_->SendMessage(
       ServiceWorkerMsg_FetchEvent(request_id, request));
   if (status != SERVICE_WORKER_OK) {
     fetch_callbacks_.Remove(request_id);
     RunSoon(base::Bind(&RunErrorFetchCallback,
-                       callback,
+                       fetch_callback,
                        SERVICE_WORKER_ERROR_FAILED));
   }
 }

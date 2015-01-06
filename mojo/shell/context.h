@@ -7,8 +7,7 @@
 
 #include <string>
 
-#include "mojo/service_manager/service_manager.h"
-#include "mojo/shell/keep_alive.h"
+#include "mojo/application_manager/application_manager.h"
 #include "mojo/shell/mojo_url_resolver.h"
 #include "mojo/shell/task_runners.h"
 
@@ -22,19 +21,26 @@ class Spy;
 
 namespace shell {
 
-class DynamicServiceLoader;
+class DynamicApplicationLoader;
 
 // The "global" context for the shell's main process.
-class Context {
+class Context : ApplicationManager::Delegate {
  public:
   Context();
-  ~Context();
+  virtual ~Context();
 
   void Init();
 
+  // ApplicationManager::Delegate override.
+  virtual void OnApplicationError(const GURL& gurl) OVERRIDE;
+
+  void Run(const GURL& url);
+  ScopedMessagePipeHandle ConnectToServiceByName(
+      const GURL& application_url,
+      const std::string& service_name);
+
   TaskRunners* task_runners() { return task_runners_.get(); }
-  ServiceManager* service_manager() { return &service_manager_; }
-  KeepAliveCounter* keep_alive_counter() { return &keep_alive_counter_; }
+  ApplicationManager* application_manager() { return &application_manager_; }
   MojoURLResolver* mojo_url_resolver() { return &mojo_url_resolver_; }
 
 #if defined(OS_ANDROID)
@@ -43,17 +49,16 @@ class Context {
 #endif  // defined(OS_ANDROID)
 
  private:
-  class NativeViewportServiceLoader;
+  class NativeViewportApplicationLoader;
 
+  std::set<GURL> app_urls_;
   scoped_ptr<TaskRunners> task_runners_;
-  ServiceManager service_manager_;
+  ApplicationManager application_manager_;
   MojoURLResolver mojo_url_resolver_;
   scoped_ptr<Spy> spy_;
 #if defined(OS_ANDROID)
   base::MessageLoop* ui_loop_;
 #endif  // defined(OS_ANDROID)
-
-  KeepAliveCounter keep_alive_counter_;
 
   DISALLOW_COPY_AND_ASSIGN(Context);
 };

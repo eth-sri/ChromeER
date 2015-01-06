@@ -7,17 +7,17 @@
 #include <algorithm>
 #include <map>
 
-#include "base/command_line.h"
 #include "base/i18n/rtl.h"
 #include "base/prefs/pref_service.h"
 #include "base/stl_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
-#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/command_updater.h"
 #include "chrome/browser/defaults.h"
 #include "chrome/browser/extensions/api/omnibox/omnibox_api.h"
 #include "chrome/browser/extensions/extension_action.h"
+#include "chrome/browser/extensions/extension_action_manager.h"
+#include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/extensions/location_bar_controller.h"
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/favicon/favicon_tab_helper.h"
@@ -39,7 +39,6 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/view_ids.h"
 #include "chrome/browser/ui/views/browser_dialogs.h"
-#include "chrome/browser/ui/views/location_bar/add_to_app_launcher_view.h"
 #include "chrome/browser/ui/views/location_bar/content_setting_image_view.h"
 #include "chrome/browser/ui/views/location_bar/ev_bubble_view.h"
 #include "chrome/browser/ui/views/location_bar/generated_credit_card_view.h"
@@ -60,19 +59,17 @@
 #include "chrome/browser/ui/views/passwords/manage_passwords_icon_view.h"
 #include "chrome/browser/ui/views/translate/translate_bubble_view.h"
 #include "chrome/browser/ui/zoom/zoom_controller.h"
-#include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
+#include "chrome/grit/generated_resources.h"
 #include "components/search_engines/template_url.h"
 #include "components/search_engines/template_url_service.h"
 #include "components/translate/core/browser/language_state.h"
-#include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/common/feature_switch.h"
 #include "extensions/common/permissions/permissions_data.h"
 #include "grit/component_scaled_resources.h"
-#include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "ui/accessibility/ax_view_state.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
@@ -112,52 +109,6 @@ const gfx::Tween::Type kHideTweenType = gfx::Tween::FAST_OUT_LINEAR_IN;
 // images, but to align things, the search button needs to be inset horizontally
 // by 1 px.
 const int kSearchButtonInset = 1;
-
-// Given a containing |height| and a |base_font_list|, shrinks the font size
-// until the font list will fit within |height| while having its cap height
-// vertically centered.  Returns the correctly-sized font list.
-//
-// The expected layout:
-//   +--------+-----------------------------------------------+------------+
-//   |        | y offset                                      | space      |
-//   |        +--------+-------------------+------------------+ above      |
-//   |        |        |                   | internal leading | cap height |
-//   | box    | font   | ascent (baseline) +------------------+------------+
-//   | height | height |                   | cap height                    |
-//   |        |        |-------------------+------------------+------------+
-//   |        |        | descent (height - baseline)          | space      |
-//   |        +--------+--------------------------------------+ below      |
-//   |        | space at bottom                               | cap height |
-//   +--------+-----------------------------------------------+------------+
-// Goal:
-//     center of box height == center of cap height
-//     (i.e. space above cap height == space below cap height)
-// Restrictions:
-//     y offset >= 0
-//     space at bottom >= 0
-//     (i.e. Entire font must be visible inside the box.)
-gfx::FontList GetLargestFontListWithHeightBound(
-    const gfx::FontList& base_font_list,
-    int height) {
-  gfx::FontList font_list = base_font_list;
-  for (int font_size = font_list.GetFontSize(); font_size > 1; --font_size) {
-    const int internal_leading =
-        font_list.GetBaseline() - font_list.GetCapHeight();
-    // Some platforms don't support getting the cap height, and simply return
-    // the entire font ascent from GetCapHeight().  Centering the ascent makes
-    // the font look too low, so if GetCapHeight() returns the ascent, center
-    // the entire font height instead.
-    const int space =
-        height - ((internal_leading != 0) ?
-                  font_list.GetCapHeight() : font_list.GetHeight());
-    const int y_offset = space / 2 - internal_leading;
-    const int space_at_bottom = height - (y_offset + font_list.GetHeight());
-    if ((y_offset >= 0) && (space_at_bottom >= 0))
-      break;
-    font_list = font_list.DeriveWithSizeDelta(-1);
-  }
-  return font_list;
-}
 
 int GetEditLeadingInternalSpace() {
   // The textfield has 1 px of whitespace before the text in the RTL case only.
@@ -222,7 +173,6 @@ LocationBarView::LocationBarView(Browser* browser,
       open_pdf_in_reader_view_(NULL),
       manage_passwords_icon_view_(NULL),
       translate_icon_view_(NULL),
-      add_to_app_launcher_view_(NULL),
       star_view_(NULL),
       search_button_(NULL),
       is_popup_mode_(is_popup_mode),
@@ -236,7 +186,7 @@ LocationBarView::LocationBarView(Browser* browser,
       current_omnibox_width_(0),
       ending_omnibox_width_(0) {
   edit_bookmarks_enabled_.Init(
-      prefs::kEditBookmarksEnabled, profile->GetPrefs(),
+      bookmarks::prefs::kEditBookmarksEnabled, profile->GetPrefs(),
       base::Bind(&LocationBarView::Update, base::Unretained(this),
                  static_cast<content::WebContents*>(NULL)));
 
@@ -281,16 +231,15 @@ void LocationBarView::Init() {
   // Shrink large fonts to make them fit.
   // TODO(pkasting): Stretch the location bar instead in this case.
   const int location_height = GetInternalHeight(true);
-  font_list = GetLargestFontListWithHeightBound(font_list, location_height);
+  font_list = font_list.DeriveWithHeightUpperBound(location_height);
 
   // Determine the font for use inside the bubbles.  The bubble background
   // images have 1 px thick edges, which we don't want to overlap.
   const int kBubbleInteriorVerticalPadding = 1;
   const int bubble_vertical_padding =
       (kBubblePadding + kBubbleInteriorVerticalPadding) * 2;
-  const gfx::FontList bubble_font_list(
-      GetLargestFontListWithHeightBound(
-          font_list, location_height - bubble_vertical_padding));
+  const gfx::FontList bubble_font_list(font_list.DeriveWithHeightUpperBound(
+      location_height - bubble_vertical_padding));
 
   const SkColor background_color =
       GetColor(ToolbarModel::NONE, LocationBarView::BACKGROUND);
@@ -304,8 +253,8 @@ void LocationBarView::Init() {
   omnibox_view_ = new OmniboxViewViews(
       this, profile(), command_updater(),
       is_popup_mode_ ||
-          (browser_->is_app() && CommandLine::ForCurrentProcess()->
-              HasSwitch(switches::kEnableStreamlinedHostedApps)),
+          (browser_->is_app() &&
+           extensions::util::IsStreamlinedHostedAppsEnabled()),
       this, font_list);
   omnibox_view_->Init();
   omnibox_view_->SetFocusable(true);
@@ -390,11 +339,6 @@ void LocationBarView::Init() {
   translate_icon_view_->SetVisible(false);
   AddChildView(translate_icon_view_);
 
-  add_to_app_launcher_view_ = new AddToAppLauncherView(
-      this, bubble_font_list, text_color, background_color);
-  add_to_app_launcher_view_->SetVisible(false);
-  AddChildView(add_to_app_launcher_view_);
-
   star_view_ = new StarView(command_updater());
   star_view_->SetVisible(false);
   AddChildView(star_view_);
@@ -410,14 +354,6 @@ void LocationBarView::Init() {
   hide_url_animation_.reset(new gfx::SlideAnimation(this));
   hide_url_animation_->SetTweenType(kHideTweenType);
   hide_url_animation_->SetSlideDuration(175);
-
-  content::Source<Profile> profile_source = content::Source<Profile>(profile());
-  registrar_.Add(this,
-                 extensions::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
-                 profile_source);
-  registrar_.Add(this,
-                 extensions::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
-                 profile_source);
 
   // Initialize the location entry. We do this to avoid a black flash which is
   // visible when the location entry has just been initialized.
@@ -676,8 +612,7 @@ gfx::Size LocationBarView::GetPreferredSize() const {
       IncrementalMinimumWidth(manage_passwords_icon_view_) +
       IncrementalMinimumWidth(zoom_view_) +
       IncrementalMinimumWidth(generated_credit_card_view_) +
-      IncrementalMinimumWidth(mic_search_view_) +
-      IncrementalMinimumWidth(add_to_app_launcher_view_) + kItemPadding;
+      IncrementalMinimumWidth(mic_search_view_) + kItemPadding;
   for (PageActionViews::const_iterator i(page_action_views_.begin());
        i != page_action_views_.end(); ++i)
     trailing_width += IncrementalMinimumWidth((*i));
@@ -761,10 +696,6 @@ void LocationBarView::Layout() {
   if (star_view_->visible()) {
     trailing_decorations.AddDecoration(
         vertical_edge_thickness(), location_height, star_view_);
-  }
-  if (add_to_app_launcher_view_->visible()) {
-    trailing_decorations.AddDecoration(
-        vertical_edge_thickness(), location_height, add_to_app_launcher_view_);
   }
   if (translate_icon_view_->visible()) {
     trailing_decorations.AddDecoration(
@@ -1049,7 +980,6 @@ void LocationBarView::Update(const WebContents* contents) {
   content::WebContents* web_contents_for_sub_views =
       GetToolbarModel()->input_in_progress() ? NULL : GetWebContents();
   open_pdf_in_reader_view_->Update(web_contents_for_sub_views);
-  add_to_app_launcher_view_->Update(web_contents_for_sub_views);
 
   if (star_view_) {
     star_view_->SetVisible(
@@ -1146,15 +1076,6 @@ bool LocationBarView::RefreshPageActionViews() {
     return false;
 
   bool changed = false;
-
-  // Remember the previous visibility of the page actions so that we can
-  // notify when this changes.
-  std::map<ExtensionAction*, bool> old_visibility;
-  for (PageActionViews::const_iterator i(page_action_views_.begin());
-       i != page_action_views_.end(); ++i) {
-    old_visibility[(*i)->image_view()->extension_action()] = (*i)->visible();
-  }
-
   PageActions new_page_actions;
 
   WebContents* web_contents = GetWebContents();
@@ -1206,19 +1127,10 @@ bool LocationBarView::RefreshPageActionViews() {
   if (!page_action_views_.empty() && web_contents) {
     for (PageActionViews::const_iterator i(page_action_views_.begin());
          i != page_action_views_.end(); ++i) {
+      bool old_visibility = (*i)->visible();
       (*i)->UpdateVisibility(
           GetToolbarModel()->input_in_progress() ? NULL : web_contents);
-
-      // Check if the visibility of the action changed and notify if it did.
-      ExtensionAction* action = (*i)->image_view()->extension_action();
-      if (old_visibility.find(action) == old_visibility.end() ||
-          old_visibility[action] != (*i)->visible()) {
-        changed = true;
-        content::NotificationService::current()->Notify(
-            extensions::NOTIFICATION_EXTENSION_PAGE_ACTION_VISIBILITY_CHANGED,
-            content::Source<ExtensionAction>(action),
-            content::Details<WebContents>(web_contents));
-      }
+      changed |= old_visibility != (*i)->visible();
     }
   }
   return changed;
@@ -1378,30 +1290,25 @@ void LocationBarView::UpdateManagePasswordsIconAndBubble() {
 }
 
 void LocationBarView::UpdatePageActions() {
-  size_t count_before = page_action_views_.size();
-  bool changed = RefreshPageActionViews();
-  if (page_action_views_.size() != count_before) {
-    content::NotificationService::current()->Notify(
-        extensions::NOTIFICATION_EXTENSION_PAGE_ACTION_COUNT_CHANGED,
-        content::Source<LocationBar>(this),
-        content::NotificationService::NoDetails());
-  }
-
-  if (changed) {
+  if (RefreshPageActionViews()) {  // Changed.
     Layout();
     SchedulePaint();
   }
 }
 
 void LocationBarView::InvalidatePageActions() {
-  size_t count_before = page_action_views_.size();
   DeletePageActionViews();
-  if (page_action_views_.size() != count_before) {
-    content::NotificationService::current()->Notify(
-        extensions::NOTIFICATION_EXTENSION_PAGE_ACTION_COUNT_CHANGED,
-        content::Source<LocationBar>(this),
-        content::NotificationService::NoDetails());
-  }
+}
+
+bool LocationBarView::ShowPageActionPopup(
+    const extensions::Extension* extension,
+    bool grant_tab_permissions) {
+  ExtensionAction* extension_action =
+      extensions::ExtensionActionManager::Get(profile())->GetPageAction(
+          *extension);
+  DCHECK(extension_action);
+  return GetPageActionView(extension_action)->image_view()->view_controller()->
+      ExecuteAction(ExtensionPopup::SHOW, grant_tab_permissions);
 }
 
 void LocationBarView::UpdateOpenPDFInReaderPrompt() {
@@ -1738,23 +1645,6 @@ void LocationBarView::OnTemplateURLServiceChanged() {
   // would make the browser the active window again.
   if (omnibox_view_ && omnibox_view_->GetWidget()->IsActive())
     ShowFirstRunBubble();
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// LocationBarView, private content::NotificationObserver implementation:
-
-void LocationBarView::Observe(int type,
-                              const content::NotificationSource& source,
-                              const content::NotificationDetails& details) {
-  switch (type) {
-    case extensions::NOTIFICATION_EXTENSION_LOADED_DEPRECATED:
-    case extensions::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED:
-      Update(NULL);
-      break;
-
-    default:
-      NOTREACHED() << "Unexpected notification.";
-  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////

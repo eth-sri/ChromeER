@@ -9,13 +9,14 @@
 
 #include "base/basictypes.h"
 #include "base/strings/string_piece.h"
+#include "net/base/net_export.h"
 
 namespace net {
 
 // TODO(rtenneti): sync with server more rationally.
 // CachedNetworkParameters contains data that can be used to choose appropriate
 // connection parameters (initial RTT, initial CWND, etc.) in new connections.
-class CachedNetworkParameters {
+class NET_EXPORT_PRIVATE CachedNetworkParameters {
  public:
   // Describes the state of the connection during which the supplied network
   // parameters were calculated.
@@ -42,6 +43,23 @@ class CachedNetworkParameters {
     bandwidth_estimate_bytes_per_second_ = bandwidth_estimate_bytes_per_second;
   }
 
+  int32 max_bandwidth_estimate_bytes_per_second() const {
+    return max_bandwidth_estimate_bytes_per_second_;
+  }
+  void set_max_bandwidth_estimate_bytes_per_second(
+      int32 max_bandwidth_estimate_bytes_per_second) {
+    max_bandwidth_estimate_bytes_per_second_ =
+        max_bandwidth_estimate_bytes_per_second;
+  }
+
+  int64 max_bandwidth_timestamp_seconds() const {
+    return max_bandwidth_timestamp_seconds_;
+  }
+  void set_max_bandwidth_timestamp_seconds(
+      int64 max_bandwidth_timestamp_seconds) {
+    max_bandwidth_timestamp_seconds_ = max_bandwidth_timestamp_seconds;
+  }
+
   int32 min_rtt_ms() const {
     return min_rtt_ms_;
   }
@@ -66,6 +84,11 @@ class CachedNetworkParameters {
   // The server can supply a bandwidth estimate (in bytes/s) which it may re-use
   // on receipt of a source-address token with this field set.
   int32 bandwidth_estimate_bytes_per_second_;
+  // The maximum bandwidth seen by the client, not necessarily the latest.
+  int32 max_bandwidth_estimate_bytes_per_second_;
+  // Timestamp (seconds since UNIX epoch) that indicates when the max bandwidth
+  // was seen by the server.
+  int64 max_bandwidth_timestamp_seconds_;
   // The min RTT seen on a previous connection can be used by the server to
   // inform initial connection parameters for new connections.
   int32 min_rtt_ms_;
@@ -76,7 +99,7 @@ class CachedNetworkParameters {
 // TODO(rtenneti): sync with server more rationally.
 // A SourceAddressToken is serialised, encrypted and sent to clients so that
 // they can prove ownership of an IP address.
-class SourceAddressToken {
+class NET_EXPORT_PRIVATE SourceAddressToken {
  public:
   SourceAddressToken();
   ~SourceAddressToken();

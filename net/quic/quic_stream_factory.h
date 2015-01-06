@@ -102,7 +102,6 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
       const std::string& user_agent_id,
       const QuicVersionVector& supported_versions,
       bool enable_port_selection,
-      bool enable_pacing,
       bool enable_time_based_loss_detection,
       const QuicTagVector& connection_options);
   virtual ~QuicStreamFactory();
@@ -238,6 +237,7 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
   HostResolver* host_resolver_;
   ClientSocketFactory* client_socket_factory_;
   base::WeakPtr<HttpServerProperties> http_server_properties_;
+  TransportSecurityState* transport_security_state_;
   QuicServerInfoFactory* quic_server_info_factory_;
   QuicCryptoClientStreamFactory* quic_crypto_client_stream_factory_;
   QuicRandom* random_generator_;

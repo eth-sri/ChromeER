@@ -12,7 +12,7 @@
 #include "ash/system/system_notifier.h"
 #include "base/base64.h"
 #include "base/bind.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/i18n/time_formatting.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted_memory.h"
@@ -31,7 +31,6 @@
 #include "content/public/browser/user_metrics.h"
 #include "grit/ash_strings.h"
 #include "grit/theme_resources.h"
-#include "grit/ui_strings.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/clipboard/clipboard.h"
@@ -40,12 +39,12 @@
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/image/image.h"
 #include "ui/snapshot/snapshot.h"
+#include "ui/strings/grit/ui_strings.h"
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/drive/file_system_interface.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/file_manager/open_util.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/notifications/desktop_notification_service.h"
 #include "chrome/browser/notifications/desktop_notification_service_factory.h"
 #include "chromeos/login/login_state.h"
@@ -553,7 +552,7 @@ void ScreenshotTaker::GrabWindowSnapshotAsyncCallback(
     bool is_partial,
     int window_idx,
     scoped_refptr<base::RefCountedBytes> png_data) {
-  if (!png_data) {
+  if (!png_data.get()) {
     if (is_partial) {
       LOG(ERROR) << "Failed to grab the window screenshot";
       ShowNotification(

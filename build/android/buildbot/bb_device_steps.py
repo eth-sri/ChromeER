@@ -74,7 +74,7 @@ INSTRUMENTATION_TESTS = dict((suite.name, suite) for suite in [
       'webview:android_webview/test/data/device_files'),
     ])
 
-VALID_TESTS = set(['chromedriver', 'chrome_proxy', 'gpu', 'mojo',
+VALID_TESTS = set(['chromedriver', 'chrome_proxy', 'gpu', 'mojo', 'sync',
                    'telemetry_perf_unittests', 'ui', 'unit', 'webkit',
                    'webkit_layout', 'webrtc_chromium', 'webrtc_native'])
 
@@ -94,6 +94,32 @@ def _GetRevision(options):
   if not revision:
     revision = options.build_properties.get('revision', 'testing')
   return revision
+
+
+def _RunTest(options, cmd, suite):
+  """Run test command with runtest.py.
+
+  Args:
+    options: options object.
+    cmd: the command to run.
+    suite: test name.
+  """
+  property_args = bb_utils.EncodeProperties(options)
+  args = [os.path.join(SLAVE_SCRIPTS_DIR, 'runtest.py')] + property_args
+  args += ['--test-platform', 'android']
+  if options.factory_properties.get('generate_gtest_json'):
+    args.append('--generate-json-file')
+    args += ['-o', 'gtest-results/%s' % suite,
+             '--annotate', 'gtest',
+             '--build-number', str(options.build_properties.get('buildnumber',
+                                                                '')),
+             '--builder-name', options.build_properties.get('buildername', '')]
+  if options.target == 'Release':
+    args += ['--target', 'Release']
+  else:
+    args += ['--target', 'Debug']
+  args += cmd
+  RunCmd(args, cwd=DIR_BUILD_ROOT)
 
 
 def RunTestSuites(options, suites, suites_options=None):
@@ -121,11 +147,11 @@ def RunTestSuites(options, suites, suites_options=None):
 
   for suite in suites:
     bb_annotations.PrintNamedStep(suite)
-    cmd = ['build/android/test_runner.py', 'gtest', '-s', suite] + args
+    cmd = [suite] + args
     cmd += suites_options.get(suite, [])
     if suite == 'content_browsertests':
       cmd.append('--num_retries=1')
-    RunCmd(cmd)
+    _RunTest(options, cmd, suite)
 
 
 def RunChromeDriverTests(options):
@@ -153,6 +179,15 @@ def RunChromeProxyTests(options):
     args = args + ['--device', devices[0]]
   bb_annotations.PrintNamedStep('chrome_proxy')
   RunCmd(['tools/chrome_proxy/run_tests'] + args)
+
+def RunChromeSyncShellTests(options):
+  """Run the chrome sync shell tests"""
+  test = I('ChromeSyncShell',
+           'ChromeSyncShell.apk',
+           'org.chromium.chrome.browser.sync',
+           'ChromeSyncShellTest.apk',
+           'chrome:chrome/test/data/android/device_files')
+  RunInstrumentationSuite(options, test)
 
 def RunTelemetryPerfUnitTests(options):
   """Runs the telemetry perf unit tests.
@@ -512,9 +547,10 @@ def GetTestStepCmds():
       ('chrome_proxy', RunChromeProxyTests),
       ('gpu', RunGPUTests),
       ('mojo', RunMojoTests),
+      ('sync', RunChromeSyncShellTests),
       ('telemetry_perf_unittests', RunTelemetryPerfUnitTests),
-      ('unit', RunUnitTests),
       ('ui', RunInstrumentationTests),
+      ('unit', RunUnitTests),
       ('webkit', RunWebkitTests),
       ('webkit_layout', RunWebkitLayoutTests),
       ('webrtc_chromium', RunWebRTCChromiumTests),
@@ -634,6 +670,9 @@ def MainTestWrapper(options):
     # KillHostHeartbeat() has logic to check if heartbeat process is running,
     # and kills only if it finds the process is running on the host.
     provision_devices.KillHostHeartbeat()
+    if options.cleanup:
+      shutil.rmtree(os.path.join(CHROME_OUT_DIR, options.target),
+          ignore_errors=True)
 
 
 def GetDeviceStepsOptParser():
@@ -679,6 +718,8 @@ def GetDeviceStepsOptParser():
       help='Do not run stack tool.')
   parser.add_option('--asan-symbolize',  action='store_true',
       help='Run stack tool for ASAN')
+  parser.add_option('--cleanup', action='store_true',
+      help='Delete out/<target> directory at the end of the run.')
   return parser
 
 

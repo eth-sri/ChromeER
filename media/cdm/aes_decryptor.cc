@@ -53,6 +53,10 @@ class AesDecryptor::SessionIdDecryptionKeyMap {
     return key_list_.begin()->second;
   }
 
+  bool Contains(const std::string& web_session_id) {
+    return Find(web_session_id) != key_list_.end();
+  }
+
  private:
   // Searches the list for an element with |web_session_id|.
   KeyList::iterator Find(const std::string& web_session_id);
@@ -241,11 +245,11 @@ void AesDecryptor::CreateSession(const std::string& init_data_type,
 
   // For now, the AesDecryptor does not care about |init_data_type| or
   // |session_type|; just resolve the promise and then fire a message event
-  // with the |init_data| as the request.
+  // using the |init_data| as the key ID in the license request.
   // TODO(jrummell): Validate |init_data_type| and |session_type|.
   std::vector<uint8> message;
   if (init_data && init_data_length)
-    message.assign(init_data, init_data + init_data_length);
+    CreateLicenseRequest(init_data, init_data_length, session_type, &message);
 
   promise->resolve(web_session_id);
 
@@ -276,7 +280,8 @@ void AesDecryptor::UpdateSession(const std::string& web_session_id,
                          response_length);
 
   KeyIdAndKeyPairs keys;
-  if (!ExtractKeysFromJWKSet(key_string, &keys)) {
+  SessionType session_type = MediaKeys::TEMPORARY_SESSION;
+  if (!ExtractKeysFromJWKSet(key_string, &keys, &session_type)) {
     promise->reject(
         INVALID_ACCESS_ERROR, 0, "response is not a valid JSON Web Key Set.");
     return;
@@ -313,6 +318,23 @@ void AesDecryptor::UpdateSession(const std::string& web_session_id,
   }
 
   promise->resolve();
+}
+
+void AesDecryptor::GetUsableKeyIds(const std::string& web_session_id,
+                                   scoped_ptr<KeyIdsPromise> promise) {
+  // Since |web_session_id| is not provided by the user, this should never
+  // happen.
+  DCHECK(valid_sessions_.find(web_session_id) != valid_sessions_.end());
+
+  KeyIdsVector keyids;
+  base::AutoLock auto_lock(key_map_lock_);
+  for (KeyIdToSessionKeysMap::iterator it = key_map_.begin();
+       it != key_map_.end();
+       ++it) {
+    if (it->second->Contains(web_session_id))
+      keyids.push_back(std::vector<uint8>(it->first.begin(), it->first.end()));
+  }
+  promise->resolve(keyids);
 }
 
 void AesDecryptor::ReleaseSession(const std::string& web_session_id,

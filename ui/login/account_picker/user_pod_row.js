@@ -55,6 +55,7 @@ cr.define('login', function() {
   var DESKTOP_POD_HEIGHT = 226;
   var POD_ROW_PADDING = 10;
   var DESKTOP_ROW_PADDING = 15;
+  var CUSTOM_ICON_CONTAINER_SIZE = 40;
 
   /**
    * Minimal padding between user pod and virtual keyboard.
@@ -84,10 +85,11 @@ cr.define('login', function() {
    * @const
    */
   var UserPodTabOrder = {
-    POD_INPUT: 1,     // Password input fields (and whole pods themselves).
-    HEADER_BAR: 2,    // Buttons on the header bar (Shutdown, Add User).
-    ACTION_BOX: 3,    // Action box buttons.
-    PAD_MENU_ITEM: 4  // User pad menu items (Remove this user).
+    POD_INPUT: 1,        // Password input fields (and whole pods themselves).
+    POD_CUSTOM_ICON: 2,  // Pod custom icon next to passwrod input field.
+    HEADER_BAR: 3,       // Buttons on the header bar (Shutdown, Add User).
+    ACTION_BOX: 4,       // Action box buttons.
+    PAD_MENU_ITEM: 5     // User pad menu items (Remove this user).
   };
 
   /**
@@ -102,6 +104,7 @@ cr.define('login', function() {
     NUMERIC_PIN: 2,
     USER_CLICK: 3,
     EXPAND_THEN_USER_CLICK: 4,
+    FORCE_OFFLINE_PASSWORD: 5
   };
 
   /**
@@ -113,6 +116,7 @@ cr.define('login', function() {
     2: 'numericPin',
     3: 'userClick',
     4: 'expandThenUserClick',
+    5: 'forceOfflinePassword'
   };
 
   // Focus and tab order are organized as follows:
@@ -120,9 +124,12 @@ cr.define('login', function() {
   // (1) all user pods have tab index 1 so they are traversed first;
   // (2) when a user pod is activated, its tab index is set to -1 and its
   // main input field gets focus and tab index 1;
-  // (3) buttons on the header bar have tab index 2 so they follow user pods;
-  // (4) Action box buttons have tab index 3 and follow header bar buttons;
-  // (5) lastly, focus jumps to the Status Area and back to user pods.
+  // (3) if user pod custom icon is interactive, it has tab index 2 so it
+  // follows the input.
+  // (4) buttons on the header bar have tab index 3 so they follow the custom
+  // icon, or user pod if custom icon is not interactive;
+  // (5) Action box buttons have tab index 4 and follow header bar buttons;
+  // (6) lastly, focus jumps to the Status Area and back to user pods.
   //
   // 'Focus' event is handled by a capture handler for the whole document
   // and in some cases 'mousedown' event handlers are used instead of 'click'
@@ -157,6 +164,439 @@ cr.define('login', function() {
     e.preventDefault();
     e.stopPropagation();
   }
+
+  /**
+   * Creates an element for custom icon shown in a user pod next to the input
+   * field.
+   * @constructor
+   * @extends {HTMLDivElement}
+   */
+  var UserPodCustomIcon = cr.ui.define(function() {
+    var node = document.createElement('div');
+    node.classList.add('custom-icon-container');
+    node.hidden = true;
+
+    // Create the actual icon element and add it as a child to the container.
+    var iconNode = document.createElement('div');
+    iconNode.classList.add('custom-icon');
+    node.appendChild(iconNode);
+    return node;
+  });
+
+  UserPodCustomIcon.prototype = {
+    __proto__: HTMLDivElement.prototype,
+
+    /**
+     * The icon height.
+     * @type {number}
+     * @private
+     */
+    height_: 0,
+
+    /**
+     * The icon width.
+     * @type {number}
+     * @private
+     */
+    width_: 0,
+
+    /**
+     * Tooltip to be shown when the user hovers over the icon. The icon
+     * properties may be set so the tooltip is shown automatically when the icon
+     * is updated. The tooltip is shown in a bubble attached to the icon
+     * element.
+     * @type {string}
+     * @private
+     */
+    tooltip_: '',
+
+    /**
+     * Whether the tooltip is shown and the user is hovering over the icon.
+     * @type {boolean}
+     * @private
+     */
+    tooltipActive_: false,
+
+    /**
+     * Whether the icon has been shown as a result of |autoshow| parameter begin
+     * set rather than user hovering over the icon.
+     * If this is set, the tooltip will not be removed when the mouse leaves the
+     * icon.
+     * @type {boolean}
+     * @private
+     */
+    tooltipAutoshown_: false,
+
+    /**
+     * A reference to the timeout for showing tooltip after mouse enters the
+     * icon.
+     * @type {?number}
+     * @private
+     */
+    showTooltipTimeout_: null,
+
+    /**
+     * If animation is set, the current horizontal background offset for the
+     * icon resource.
+     * @type {number}
+     * @private
+     */
+    lastAnimationOffset_: 0,
+
+    /**
+     * The reference to interval for progressing the animation.
+     * @type {?number}
+     * @private
+     */
+    animationInterval_: null,
+
+    /**
+     * The width of the resource that contains representations for different
+     * animation stages.
+     * @type {number}
+     * @private
+     */
+    animationResourceSize_: 0,
+
+    /**
+     * When {@code fadeOut} is called, the element gets hidden using fadeout
+     * animation. This is reference to the listener for transition end added to
+     * the icon element while it's fading out.
+     * @type {?function(Event)}
+     * @private
+     */
+    hideTransitionListener_: null,
+
+    /**
+     * Callback for click and 'Enter' key events that gets set if the icon is
+     * interactive.
+     * @type {?function()}
+     * @private
+     */
+    actionHandler_: null,
+
+    /** @override */
+    decorate: function() {
+      this.iconElement.addEventListener('mouseover',
+                                        this.showTooltipSoon_.bind(this));
+      this.iconElement.addEventListener('mouseout',
+                                         this.hideTooltip_.bind(this, false));
+      this.iconElement.addEventListener('mousedown',
+                                         this.hideTooltip_.bind(this, false));
+      this.iconElement.addEventListener('click',
+                                        this.handleClick_.bind(this));
+      this.iconElement.addEventListener('keydown',
+                                        this.handleKeyDown_.bind(this));
+
+      // When the icon is focused using mouse, there should be no outline shown.
+      // Preventing default mousedown event accomplishes this.
+      this.iconElement.addEventListener('mousedown', function(e) {
+        e.preventDefault();
+      });
+    },
+
+    /**
+     * Getter for the icon element's div.
+     * @return {HTMLDivElement}
+     */
+    get iconElement() {
+      return this.querySelector('.custom-icon');
+    },
+
+    /**
+     * Set the icon's background image as image set with different
+     * representations for available screen scale factors.
+     * @param {!{scale1x: string, scale2x: string}} icon The icon
+     *     representations.
+     */
+    setIconAsImageSet: function(icon) {
+      this.iconElement.style.backgroundImage =
+          '-webkit-image-set(' +
+              'url(' + icon.scale1x + ') 1x,' +
+              'url(' + icon.scale2x + ') 2x)';
+    },
+
+    /**
+     * Sets the icon background image to a chrome://theme URL.
+     * @param {!string} iconUrl The icon's background image URL.
+     */
+    setIconAsResourceUrl: function(iconUrl) {
+      this.iconElement.style.backgroundImage =
+          '-webkit-image-set(' +
+              'url(' + iconUrl + '@1x) 1x,' +
+              'url(' + iconUrl + '@2x) 2x)';
+    },
+
+    /**
+     * Shows the icon.
+     */
+    show: function() {
+      this.resetHideTransitionState_();
+      this.hidden = false;
+    },
+
+    /**
+     * Hides the icon using a fade-out animation.
+     */
+    fadeOut: function() {
+      // The icon is already being hidden.
+      if (this.iconElement.classList.contains('faded'))
+        return;
+
+      this.hideTooltip_(true);
+      this.iconElement.classList.add('faded');
+      this.hideTransitionListener_ = this.hide_.bind(this);
+      this.iconElement.addEventListener('webkitTransitionEnd',
+                                        this.hideTransitionListener_);
+      ensureTransitionEndEvent(this.iconElement, 200);
+    },
+
+    /**
+     * Sets the icon size element size.
+     * @param {!{width: number, height: number}} size The icon size.
+     */
+    setSize: function(size) {
+      this.height_ = size.height < CUSTOM_ICON_CONTAINER_SIZE ?
+          size.height : CUSTOM_ICON_COTAINER_SIZE;
+      this.iconElement.style.height = this.height_ + 'px';
+
+      this.width_ = size.width < CUSTOM_ICON_CONTAINER_SIZE ?
+          size.width : CUSTOM_ICON_COTAINER_SIZE;
+      this.iconElement.style.width = this.width_ + 'px';
+      this.style.width = this.width_ + 'px';
+    },
+
+    /**
+     * Sets the icon opacity.
+     * @param {number} opacity The icon opacity in [0-100] scale.
+     */
+    setOpacity: function(opacity) {
+      if (opacity > 100) {
+        this.style.opacity = 1;
+      } else if (opacity < 0) {
+        this.style.opacity = 0;
+      } else {
+        this.style.opacity = opacity / 100;
+      }
+    },
+
+    /**
+     * Updates the icon tooltip. If {@code autoshow} parameter is set the
+     * tooltip is immediatelly shown. If tooltip text is not set, the method
+     * ensures the tooltip gets hidden. If tooltip is shown prior to this call,
+     * it remains shown, but the tooltip text is updated.
+     * @param {!{text: string, autoshow: boolean}} tooltip The tooltip
+     *    parameters.
+     */
+    setTooltip: function(tooltip) {
+      if (this.tooltip_ == tooltip.text && !tooltip.autoshow)
+        return;
+      this.tooltip_ = tooltip.text;
+
+      // If tooltip is already shown, just update the text.
+      if (tooltip.text && this.tooltipActive_ && !$('bubble').hidden) {
+        // If both previous and the new tooltip are supposed to be shown
+        // automatically, keep the autoshown flag.
+        var markAutoshown = this.tooltipAutoshown_ && tooltip.autoshow;
+        this.hideTooltip_(true);
+        this.showTooltip_();
+        this.tooltipAutoshown_ = markAutoshown;
+        return;
+      }
+
+      // If autoshow flag is set, make sure the tooltip gets shown.
+      if (tooltip.text && tooltip.autoshow) {
+        this.hideTooltip_(true);
+        this.showTooltip_();
+        this.tooltipAutoshown_ = true;
+        // Reset the tooltip active flag, which gets set in |showTooltip_|.
+        this.tooltipActive_ = false;
+        return;
+      }
+
+      this.hideTooltip_(true);
+
+      if (this.tooltip_)
+        this.iconElement.setAttribute('aria-lablel', this.tooltip_);
+    },
+
+    /**
+     * Sets the icon animation parameter and starts the animation.
+     * The animation is set using the resource containing all animation frames
+     * concatenated horizontally. The animator offsets the background image in
+     * regural intervals.
+     * @param {?{resourceWidth: number, frameLengthMs: number}} animation
+     *     |resourceWidth|: Total width for the resource containing the
+     *                      animation frames.
+     *     |frameLengthMs|: Time interval for which a single animation frame is
+     *                      shown.
+     */
+    setAnimation: function(animation) {
+      if (this.animationInterval_)
+        clearInterval(this.animationInterval_);
+      this.iconElement.style.backgroundPosition = 'center';
+      if (!animation)
+        return;
+      this.lastAnimationOffset_ = 0;
+      this.animationResourceSize_ = animation.resourceWidth;
+      this.animationInterval_ = setInterval(this.progressAnimation_.bind(this),
+                                            animation.frameLengthMs);
+    },
+
+    /**
+     * Sets up icon tabIndex attribute and handler for click and 'Enter' key
+     * down events.
+     * @param {?function()} callback If icon should be interactive, the
+     *     function to get called on click and 'Enter' key down events. Should
+     *     be null to make the icon  non interactive.
+     */
+    setInteractive: function(callback) {
+      // Update tabIndex property if needed.
+      if (!!this.actionHandler_ != !!callback) {
+        if (callback) {
+          this.iconElement.setAttribute('tabIndex',
+                                         UserPodTabOrder.POD_CUSTOM_ICON);
+        } else {
+          this.iconElement.removeAttribute('tabIndex');
+        }
+      }
+
+      // Set the new action handler.
+      this.actionHandler_ = callback;
+    },
+
+    /**
+     * Hides the icon. Makes sure the tooltip is hidden and animation reset.
+     * @private
+     */
+    hide_: function() {
+      this.hideTooltip_(true);
+      this.hidden = true;
+      this.setAnimation(null);
+      this.setInteractive(null);
+      this.resetHideTransitionState_();
+    },
+
+    /**
+     * Ensures the icon's transition state potentially set by a call to
+     * {@code fadeOut} is cleared.
+     * @private
+     */
+    resetHideTransitionState_: function() {
+      if (this.hideTransitionListener_) {
+        this.iconElement.removeEventListener('webkitTransitionEnd',
+                                             this.hideTransitionListener_);
+        this.hideTransitionListener_ = null;
+      }
+      this.iconElement.classList.toggle('faded', false);
+    },
+
+    /**
+     * Handles click event on the icon element. No-op if
+     * {@code this.actionHandler_} is not set.
+     * @param {Event} e The click event.
+     * @private
+     */
+    handleClick_: function(e) {
+      if (!this.actionHandler_)
+        return;
+      this.actionHandler_();
+      stopEventPropagation(e);
+    },
+
+    /**
+     * Handles key down event on the icon element. Only 'Enter' key is handled.
+     * No-op if {@code this.actionHandler_} is not set.
+     * @param {Event} e The key down event.
+     * @private
+     */
+    handleKeyDown_: function(e) {
+      if (!this.actionHandler_ || e.keyIdentifier != 'Enter')
+        return;
+      this.actionHandler_(e);
+      stopEventPropagation(e);
+    },
+
+    /**
+     * Called when mouse enters the icon. It sets timeout for showing the
+     * tooltip.
+     * @private
+     */
+    showTooltipSoon_: function() {
+      if (this.showTooltipTimeout_ || this.tooltipActive_)
+        return;
+      this.showTooltipTimeout_ =
+          setTimeout(this.showTooltip_.bind(this), 1000);
+    },
+
+    /**
+     * Shows the current tooltip if one is set.
+     * @private
+     */
+    showTooltip_: function() {
+      if (this.hidden || !this.tooltip_ || this.tooltipActive_)
+        return;
+
+      // If autoshown bubble got hidden, clear the autoshown flag.
+      if ($('bubble').hidden && this.tooltipAutoshown_)
+        this.tooltipAutoshown_ = false;
+
+      // Show the tooltip bubble.
+      var bubbleContent = document.createElement('div');
+      bubbleContent.textContent = this.tooltip_;
+
+      /** @const */ var BUBBLE_OFFSET = CUSTOM_ICON_CONTAINER_SIZE / 2;
+      /** @const */ var BUBBLE_PADDING = 8;
+      $('bubble').showContentForElement(this,
+                                        cr.ui.Bubble.Attachment.RIGHT,
+                                        bubbleContent,
+                                        BUBBLE_OFFSET,
+                                        BUBBLE_PADDING);
+      this.ensureTooltipTimeoutCleared_();
+      this.tooltipActive_ = true;
+    },
+
+    /**
+     * Hides the tooltip. If the current tooltip was automatically shown, it
+     * will be hidden only if |force| is set.
+     * @param {boolean} Whether the tooltip should be hidden if it got shown
+     *     because autoshow flag was set.
+     * @private
+     */
+    hideTooltip_: function(force) {
+      this.tooltipActive_ = false;
+      this.ensureTooltipTimeoutCleared_();
+      if (!force && this.tooltipAutoshown_)
+        return;
+      $('bubble').hideForElement(this);
+      this.tooltipAutoshown_ = false;
+      this.iconElement.removeAttribute('aria-label');
+    },
+
+    /**
+     * Clears timaout for showing the tooltip if it's set.
+     * @private
+     */
+    ensureTooltipTimeoutCleared_: function() {
+      if (this.showTooltipTimeout_) {
+        clearTimeout(this.showTooltipTimeout_);
+        this.showTooltipTimeout_ = null;
+      }
+    },
+
+    /**
+     * Horizontally offsets the animated icon's background for a single icon
+     * size width.
+     * @private
+     */
+    progressAnimation_: function() {
+      this.lastAnimationOffset_ += this.width_;
+      if (this.lastAnimationOffset_ >= this.animationResourceSize_)
+        this.lastAnimationOffset_ = 0;
+      this.iconElement.style.backgroundPosition =
+          '-' + this.lastAnimationOffset_ + 'px center';
+    }
+  };
 
   /**
    * Unique salt added to user image URLs to prevent caching. Dictionary with
@@ -198,6 +638,9 @@ cr.define('login', function() {
         this.actionBoxRemoveUserWarningButtonElement.addEventListener(
             'keydown',
             this.handleRemoveUserConfirmationKeyDown_.bind(this));
+
+      var customIcon = this.customIconElement;
+      customIcon.parentNode.replaceChild(new UserPodCustomIcon(), customIcon);
     },
 
     /**
@@ -445,7 +888,7 @@ cr.define('login', function() {
      * @type {!HTMLDivElement}
      */
     get customIconElement() {
-      return this.querySelector('.custom-icon');
+      return this.querySelector('.custom-icon-container');
     },
 
     /**
@@ -645,7 +1088,8 @@ cr.define('login', function() {
      * @type {bool}
      */
     get isAuthTypePassword() {
-      return this.authType_ == AUTH_TYPE.OFFLINE_PASSWORD;
+      return this.authType_ == AUTH_TYPE.OFFLINE_PASSWORD ||
+             this.authType_ == AUTH_TYPE.FORCE_OFFLINE_PASSWORD;
     },
 
     /**
@@ -1843,8 +2287,14 @@ cr.define('login', function() {
     /**
      * Shows a custom icon on a user pod besides the input field.
      * @param {string} username Username of pod to add button
-     * @param {{scale1x: string, scale2x: string}} icon Dictionary of URLs of
-     *     the custom icon's representations for 1x and 2x scale factors.
+     * @param {!{resourceUrl: (string | undefined),
+     *           data: ({scale1x: string, scale2x: string} | undefined),
+     *           size: ({width: number, height: number} | undefined),
+     *           animation: ({resourceWidth: number, frameLength: number} |
+     *                       undefined),
+     *           opacity: (number | undefined),
+     *           tooltip: ({text: string, autoshow: boolean} | undefined)}} icon
+     *     The icon parameters.
      */
     showUserPodCustomIcon: function(username, icon) {
       var pod = this.getPodWithUsername_(username);
@@ -1854,11 +2304,39 @@ cr.define('login', function() {
         return;
       }
 
-      pod.customIconElement.hidden = false;
-      pod.customIconElement.style.backgroundImage =
-          '-webkit-image-set(' +
-              'url(' + icon.scale1x + ') 1x,' +
-              'url(' + icon.scale2x + ') 2x)';
+      if (icon.resourceUrl) {
+        pod.customIconElement.setIconAsResourceUrl(icon.resourceUrl);
+      } else if (icon.data) {
+        pod.customIconElement.setIconAsImageSet(icon.data);
+      } else {
+        return;
+      }
+
+      pod.customIconElement.setSize(icon.size || {width: 0, height: 0});
+      pod.customIconElement.setAnimation(icon.animation || null);
+      pod.customIconElement.setOpacity(icon.opacity || 100);
+      if (icon.hardlockOnClick) {
+        pod.customIconElement.setInteractive(
+            this.hardlockUserPod_.bind(this, username));
+      } else {
+        pod.customIconElement.setInteractive(null);
+      }
+      pod.customIconElement.show();
+      // This has to be called after |show| in case the tooltip should be shown
+      // immediatelly.
+      pod.customIconElement.setTooltip(
+          icon.tooltip || {text: '', autoshow: false});
+    },
+
+    /**
+     * Hard-locks user pod for the user. If user pod is hard-locked, it can be
+     * only unlocked using password, and the authentication type cannot be
+     * changed.
+     * @param {!string} username The user's username.
+     * @private
+     */
+    hardlockUserPod_: function(username) {
+      chrome.send('hardlockPod', [username]);
     },
 
     /**
@@ -1873,7 +2351,7 @@ cr.define('login', function() {
         return;
       }
 
-      pod.customIconElement.hidden = true;
+      pod.customIconElement.fadeOut();
     },
 
     /**
@@ -1891,29 +2369,6 @@ cr.define('login', function() {
         return;
       }
       pod.setAuthType(authType, value);
-    },
-
-    /**
-     * Shows a tooltip bubble explaining Easy Unlock for the focused pod.
-     */
-    showEasyUnlockBubble: function() {
-      if (!this.focusedPod_) {
-        console.error('No focused pod to show Easy Unlock bubble.');
-        return;
-      }
-
-      var bubbleContent = document.createElement('div');
-      bubbleContent.classList.add('easy-unlock-button-content');
-      bubbleContent.textContent = loadTimeData.getString('easyUnlockTooltip');
-
-      var attachElement = this.focusedPod_.customIconElement;
-      /** @const */ var BUBBLE_OFFSET = 20;
-      /** @const */ var BUBBLE_PADDING = 8;
-      $('bubble').showContentForElement(attachElement,
-                                        cr.ui.Bubble.Attachment.RIGHT,
-                                        bubbleContent,
-                                        BUBBLE_OFFSET,
-                                        BUBBLE_PADDING);
     },
 
     /**
@@ -2175,17 +2630,6 @@ cr.define('login', function() {
     },
 
     /**
-     * Focuses a given user pod by index or clear focus when given null.
-     * @param {int=} podToFocus index of User pod to focus.
-     * @param {boolean=} opt_force If true, forces focus update even when
-     *     podToFocus is already focused.
-     */
-    focusPodByIndex: function(podToFocus, opt_force) {
-      if (podToFocus < this.pods.length)
-        this.focusPod(this.pods[podToFocus], opt_force);
-    },
-
-    /**
      * Resets wallpaper to the last active user's wallpaper, if any.
      */
     loadLastWallpaper: function() {
@@ -2228,11 +2672,20 @@ cr.define('login', function() {
      * @type {?UserPod}
      */
     get preselectedPod() {
-      // On desktop, don't pre-select a pod if it's the only one.
       var isDesktopUserManager = Oobe.getInstance().displayType ==
           DISPLAY_TYPE.DESKTOP_USER_MANAGER;
-      if (isDesktopUserManager && this.pods.length == 1)
-        return null;
+      if (isDesktopUserManager) {
+        // On desktop, don't pre-select a pod if it's the only one.
+        if (this.pods.length == 1)
+          return null;
+
+        // The desktop User Manager can send the index of a pod that should be
+        // initially focused in url hash.
+        var podIndex = parseInt(window.location.hash.substr(1));
+        if (isNaN(podIndex) || podIndex >= this.pods.length)
+          return null;
+        return this.pods[podIndex];
+      }
 
       var lockedPod = this.lockedPod;
       if (lockedPod)

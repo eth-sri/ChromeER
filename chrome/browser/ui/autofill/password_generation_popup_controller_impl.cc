@@ -16,17 +16,16 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/common/url_constants.h"
+#include "chrome/grit/chromium_strings.h"
+#include "chrome/grit/generated_resources.h"
+#include "chrome/grit/google_chrome_strings.h"
 #include "components/autofill/content/common/autofill_messages.h"
 #include "components/autofill/core/browser/password_generator.h"
 #include "components/password_manager/core/browser/password_manager.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
-#include "grit/chromium_strings.h"
-#include "grit/generated_resources.h"
-#include "grit/google_chrome_strings.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/resource/resource_bundle.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/rect_conversions.h"
 #include "ui/gfx/text_utils.h"
@@ -73,12 +72,12 @@ PasswordGenerationPopupControllerImpl::PasswordGenerationPopupControllerImpl(
     PasswordGenerationPopupObserver* observer,
     content::WebContents* web_contents,
     gfx::NativeView container_view)
-    : form_(form),
+    : view_(NULL),
+      form_(form),
       password_manager_(password_manager),
       observer_(observer),
       generator_(new PasswordGenerator(max_length)),
       controller_common_(bounds, container_view, web_contents),
-      view_(NULL),
       password_selected_(false),
       display_password_(false),
       weak_ptr_factory_(this) {
@@ -173,7 +172,7 @@ void PasswordGenerationPopupControllerImpl::CalculateBounds() {
 
 void PasswordGenerationPopupControllerImpl::Show(bool display_password) {
   display_password_ = display_password;
-  if (display_password_)
+  if (display_password_ && current_password_.empty())
     current_password_ = base::ASCIIToUTF16(generator_->Generate());
 
   if (!view_) {
@@ -214,12 +213,10 @@ void PasswordGenerationPopupControllerImpl::ViewDestroyed() {
 }
 
 void PasswordGenerationPopupControllerImpl::OnSavedPasswordsLinkClicked() {
-  // TODO(gcasto): Change this to navigate to account central once passwords
-  // are visible there.
   Browser* browser =
       chrome::FindBrowserWithWebContents(controller_common_.web_contents());
   content::OpenURLParams params(
-      GURL(chrome::kAutoPasswordGenerationLearnMoreURL), content::Referrer(),
+      GURL(chrome::kPasswordManagerAccountDashboardURL), content::Referrer(),
       NEW_FOREGROUND_TAB, content::PAGE_TRANSITION_LINK, false);
   browser->OpenURL(params);
 }

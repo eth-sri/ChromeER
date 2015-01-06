@@ -80,7 +80,7 @@ class LayerTreeHostDelegatedTest : public LayerTreeTest {
     scoped_ptr<DelegatedFrameData> frame(new DelegatedFrameData);
 
     scoped_ptr<RenderPass> root_pass(RenderPass::Create());
-    root_pass->SetNew(RenderPass::Id(1, 1),
+    root_pass->SetNew(RenderPassId(1, 1),
                       root_output_rect,
                       root_damage_rect,
                       gfx::Transform());
@@ -94,7 +94,7 @@ class LayerTreeHostDelegatedTest : public LayerTreeTest {
     scoped_ptr<DelegatedFrameData> frame(new DelegatedFrameData);
 
     scoped_ptr<RenderPass> root_pass(RenderPass::Create());
-    root_pass->SetNew(RenderPass::Id(1, 1),
+    root_pass->SetNew(RenderPassId(1, 1),
                       root_output_rect,
                       root_damage_rect,
                       gfx::Transform());
@@ -166,7 +166,7 @@ class LayerTreeHostDelegatedTest : public LayerTreeTest {
   }
 
   void AddRenderPass(DelegatedFrameData* frame,
-                     RenderPass::Id id,
+                     RenderPassId id,
                      const gfx::Rect& output_rect,
                      const gfx::Rect& damage_rect,
                      const FilterOperations& filters,
@@ -190,11 +190,10 @@ class LayerTreeHostDelegatedTest : public LayerTreeTest {
                  output_rect,
                  output_rect,
                  id,
-                 false,  // is_replica
                  0,      // mask_resource_id
-                 damage_rect,
                  gfx::Rect(0, 0, 1, 1),  // mask_uv_rect
                  filters,
+                 gfx::Vector2dF(),
                  background_filters);
   }
 
@@ -339,7 +338,7 @@ class LayerTreeHostDelegatedTestCreateChildId
         static_cast<FakeDelegatedRendererLayerImpl*>(root_impl->children()[0]);
 
     TestContextProvider* context_provider = static_cast<TestContextProvider*>(
-        host_impl->output_surface()->context_provider().get());
+        host_impl->output_surface()->context_provider());
 
     ++num_activates_;
     switch (num_activates_) {
@@ -420,7 +419,7 @@ class LayerTreeHostDelegatedTestInvalidFrameAfterContextLost
       return;
 
     TestContextProvider* context_provider = static_cast<TestContextProvider*>(
-        host_impl->output_surface()->context_provider().get());
+        host_impl->output_surface()->context_provider());
 
     ++num_activates_;
     switch (num_activates_) {
@@ -564,7 +563,7 @@ class LayerTreeHostDelegatedTestLayerUsesFrameDamage
       case 17:
         // Make another layer that uses the same frame provider. The new layer
         // should be damaged.
-        delegated_copy_ = CreateDelegatedLayer(frame_provider_);
+        delegated_copy_ = CreateDelegatedLayer(frame_provider_.get());
         delegated_copy_->SetPosition(gfx::Point(5, 0));
 
         // Also set a new frame.

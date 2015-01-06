@@ -13,6 +13,7 @@
 #include "chrome/browser/chromeos/net/onc_utils.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/net/x509_certificate_model.h"
+#include "chrome/grit/generated_resources.h"
 #include "chromeos/login/login_state.h"
 #include "chromeos/network/network_configuration_handler.h"
 #include "chromeos/network/network_event_log.h"
@@ -20,14 +21,9 @@
 #include "chromeos/network/network_state_handler.h"
 #include "chromeos/network/network_ui_data.h"
 #include "components/onc/onc_constants.h"
-#include "grit/chromium_strings.h"
-#include "grit/generated_resources.h"
-#include "grit/locale_settings.h"
-#include "grit/theme_resources.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/models/combobox_model.h"
-#include "ui/base/resource/resource_bundle.h"
 #include "ui/events/event.h"
 #include "ui/views/controls/button/checkbox.h"
 #include "ui/views/controls/combobox/combobox.h"
@@ -839,12 +835,11 @@ void VPNConfigView::SetConfigProperties(
     }
     case PROVIDER_TYPE_INDEX_L2TP_IPSEC_USER_CERT: {
       std::string ca_cert_pem = GetServerCACertPEM();
-      if (!ca_cert_pem.empty()) {
-        base::ListValue* pem_list = new base::ListValue;
+      base::ListValue* pem_list = new base::ListValue;
+      if (!ca_cert_pem.empty())
         pem_list->AppendString(ca_cert_pem);
-        properties->SetWithoutPathExpansion(
-            shill::kL2tpIpsecCaCertPemProperty, pem_list);
-      }
+      properties->SetWithoutPathExpansion(shill::kL2tpIpsecCaCertPemProperty,
+                                          pem_list);
       SetUserCertProperties(client_cert::CONFIG_TYPE_IPSEC, properties);
       if (!group_name.empty()) {
         properties->SetStringWithoutPathExpansion(
@@ -862,12 +857,11 @@ void VPNConfigView::SetConfigProperties(
     }
     case PROVIDER_TYPE_INDEX_OPEN_VPN: {
       std::string ca_cert_pem = GetServerCACertPEM();
-      if (!ca_cert_pem.empty()) {
-        base::ListValue* pem_list = new base::ListValue;
+      base::ListValue* pem_list = new base::ListValue;
+      if (!ca_cert_pem.empty())
         pem_list->AppendString(ca_cert_pem);
-        properties->SetWithoutPathExpansion(
-            shill::kOpenVPNCaCertPemProperty, pem_list);
-      }
+      properties->SetWithoutPathExpansion(shill::kOpenVPNCaCertPemProperty,
+                                          pem_list);
       SetUserCertProperties(client_cert::CONFIG_TYPE_OPENVPN, properties);
       properties->SetStringWithoutPathExpansion(
           shill::kOpenVPNUserProperty, GetUsername());

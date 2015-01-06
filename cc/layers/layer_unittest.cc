@@ -56,7 +56,6 @@ class MockLayerPainter : public LayerPainter {
                      gfx::RectF* opaque) OVERRIDE {}
 };
 
-
 class LayerTest : public testing::Test {
  public:
   LayerTest()
@@ -168,7 +167,7 @@ TEST_F(LayerTest, AddAndRemoveChild) {
   EXPECT_SET_NEEDS_FULL_TREE_SYNC(1, parent->AddChild(child));
 
   ASSERT_EQ(1U, parent->children().size());
-  EXPECT_EQ(child.get(), parent->children()[0]);
+  EXPECT_EQ(child.get(), parent->children()[0].get());
   EXPECT_EQ(parent.get(), child->parent());
   EXPECT_EQ(parent.get(), child->RootLayer());
 
@@ -393,23 +392,23 @@ TEST_F(LayerTest, SetChildren) {
 
 TEST_F(LayerTest, HasAncestor) {
   scoped_refptr<Layer> parent = Layer::Create();
-  EXPECT_FALSE(parent->HasAncestor(parent));
+  EXPECT_FALSE(parent->HasAncestor(parent.get()));
 
   scoped_refptr<Layer> child = Layer::Create();
   parent->AddChild(child);
 
-  EXPECT_FALSE(child->HasAncestor(child));
-  EXPECT_TRUE(child->HasAncestor(parent));
-  EXPECT_FALSE(parent->HasAncestor(child));
+  EXPECT_FALSE(child->HasAncestor(child.get()));
+  EXPECT_TRUE(child->HasAncestor(parent.get()));
+  EXPECT_FALSE(parent->HasAncestor(child.get()));
 
   scoped_refptr<Layer> child_child = Layer::Create();
   child->AddChild(child_child);
 
-  EXPECT_FALSE(child_child->HasAncestor(child_child));
-  EXPECT_TRUE(child_child->HasAncestor(parent));
-  EXPECT_TRUE(child_child->HasAncestor(child));
-  EXPECT_FALSE(parent->HasAncestor(child));
-  EXPECT_FALSE(parent->HasAncestor(child_child));
+  EXPECT_FALSE(child_child->HasAncestor(child_child.get()));
+  EXPECT_TRUE(child_child->HasAncestor(parent.get()));
+  EXPECT_TRUE(child_child->HasAncestor(child.get()));
+  EXPECT_FALSE(parent->HasAncestor(child.get()));
+  EXPECT_FALSE(parent->HasAncestor(child_child.get()));
 }
 
 TEST_F(LayerTest, GetRootLayerAfterTreeManipulations) {
@@ -783,24 +782,24 @@ TEST_F(LayerTest, MaskAndReplicaHasParent) {
   child->SetReplicaLayer(replica.get());
   replica->SetMaskLayer(replica_mask.get());
 
-  EXPECT_EQ(parent, child->parent());
-  EXPECT_EQ(child, mask->parent());
-  EXPECT_EQ(child, replica->parent());
-  EXPECT_EQ(replica, replica_mask->parent());
+  EXPECT_EQ(parent.get(), child->parent());
+  EXPECT_EQ(child.get(), mask->parent());
+  EXPECT_EQ(child.get(), replica->parent());
+  EXPECT_EQ(replica.get(), replica_mask->parent());
 
   replica->SetMaskLayer(replica_mask_replacement.get());
   EXPECT_EQ(NULL, replica_mask->parent());
-  EXPECT_EQ(replica, replica_mask_replacement->parent());
+  EXPECT_EQ(replica.get(), replica_mask_replacement->parent());
 
   child->SetMaskLayer(mask_replacement.get());
   EXPECT_EQ(NULL, mask->parent());
-  EXPECT_EQ(child, mask_replacement->parent());
+  EXPECT_EQ(child.get(), mask_replacement->parent());
 
   child->SetReplicaLayer(replica_replacement.get());
   EXPECT_EQ(NULL, replica->parent());
-  EXPECT_EQ(child, replica_replacement->parent());
+  EXPECT_EQ(child.get(), replica_replacement->parent());
 
-  EXPECT_EQ(replica, replica->mask_layer()->parent());
+  EXPECT_EQ(replica.get(), replica->mask_layer()->parent());
 }
 
 TEST_F(LayerTest, CheckTranformIsInvertible) {
@@ -857,7 +856,7 @@ TEST_F(LayerTest, TranformIsInvertibleAnimation) {
   gfx::Transform identity_transform;
 
   layer->SetTransform(identity_transform);
-  static_cast<LayerAnimationValueObserver*>(layer)
+  static_cast<LayerAnimationValueObserver*>(layer.get())
       ->OnTransformAnimated(singular_transform);
   layer->PushPropertiesTo(impl_layer.get());
   EXPECT_FALSE(layer->transform_is_invertible());
@@ -1150,6 +1149,51 @@ TEST_F(LayerTest, SafeOpaqueBackgroundColor) {
       }
     }
   }
+}
+
+class DrawsContentChangeLayer : public Layer {
+ public:
+  static scoped_refptr<DrawsContentChangeLayer> Create() {
+    return make_scoped_refptr(new DrawsContentChangeLayer());
+  }
+
+  virtual void SetLayerTreeHost(LayerTreeHost* host) OVERRIDE {
+    Layer::SetLayerTreeHost(host);
+    SetFakeDrawsContent(!fake_draws_content_);
+  }
+
+  virtual bool HasDrawableContent() const OVERRIDE {
+    return fake_draws_content_ && Layer::HasDrawableContent();
+  }
+
+  void SetFakeDrawsContent(bool fake_draws_content) {
+    fake_draws_content_ = fake_draws_content;
+    UpdateDrawsContent(HasDrawableContent());
+  }
+
+ private:
+  DrawsContentChangeLayer() : Layer(), fake_draws_content_(false) {}
+  virtual ~DrawsContentChangeLayer() OVERRIDE {}
+
+  bool fake_draws_content_;
+};
+
+TEST_F(LayerTest, DrawsContentChangedInSetLayerTreeHost) {
+  scoped_refptr<Layer> root_layer = Layer::Create();
+  scoped_refptr<DrawsContentChangeLayer> becomes_not_draws_content =
+      DrawsContentChangeLayer::Create();
+  scoped_refptr<DrawsContentChangeLayer> becomes_draws_content =
+      DrawsContentChangeLayer::Create();
+  root_layer->SetIsDrawable(true);
+  becomes_not_draws_content->SetIsDrawable(true);
+  becomes_not_draws_content->SetFakeDrawsContent(true);
+  EXPECT_EQ(0, root_layer->NumDescendantsThatDrawContent());
+  root_layer->AddChild(becomes_not_draws_content);
+  EXPECT_EQ(0, root_layer->NumDescendantsThatDrawContent());
+
+  becomes_draws_content->SetIsDrawable(true);
+  root_layer->AddChild(becomes_draws_content);
+  EXPECT_EQ(1, root_layer->NumDescendantsThatDrawContent());
 }
 
 }  // namespace

@@ -10,6 +10,7 @@
 #include "content/child/child_thread.h"
 #include "content/child/service_worker/service_worker_handle_reference.h"
 #include "content/child/service_worker/service_worker_provider_context.h"
+#include "content/child/service_worker/service_worker_registration_handle_reference.h"
 #include "content/child/service_worker/web_service_worker_impl.h"
 #include "content/child/service_worker/web_service_worker_registration_impl.h"
 #include "content/child/thread_safe_sender.h"
@@ -59,12 +60,10 @@ void ServiceWorkerDispatcher::OnMessageReceived(const IPC::Message& msg) {
                         OnRegistrationError)
     IPC_MESSAGE_HANDLER(ServiceWorkerMsg_ServiceWorkerStateChanged,
                         OnServiceWorkerStateChanged)
-    IPC_MESSAGE_HANDLER(ServiceWorkerMsg_SetInstallingServiceWorker,
-                        OnSetInstallingServiceWorker)
-    IPC_MESSAGE_HANDLER(ServiceWorkerMsg_SetWaitingServiceWorker,
-                        OnSetWaitingServiceWorker)
-    IPC_MESSAGE_HANDLER(ServiceWorkerMsg_SetActiveServiceWorker,
-                        OnSetActiveServiceWorker)
+    IPC_MESSAGE_HANDLER(ServiceWorkerMsg_SetVersionAttributes,
+                        OnSetVersionAttributes)
+    IPC_MESSAGE_HANDLER(ServiceWorkerMsg_UpdateFound,
+                        OnUpdateFound)
     IPC_MESSAGE_HANDLER(ServiceWorkerMsg_SetControllerServiceWorker,
                         OnSetControllerServiceWorker)
     IPC_MESSAGE_HANDLER(ServiceWorkerMsg_MessageToDocument,
@@ -193,34 +192,69 @@ WebServiceWorkerImpl* ServiceWorkerDispatcher::GetServiceWorker(
     if (adopt_handle) {
       // We are instructed to adopt a handle but we already have one, so
       // adopt and destroy a handle ref.
-      ServiceWorkerHandleReference::Adopt(info, thread_safe_sender_);
+      ServiceWorkerHandleReference::Adopt(info, thread_safe_sender_.get());
     }
     return existing_worker->second;
   }
 
   scoped_ptr<ServiceWorkerHandleReference> handle_ref =
       adopt_handle
-          ? ServiceWorkerHandleReference::Adopt(info, thread_safe_sender_)
-          : ServiceWorkerHandleReference::Create(info, thread_safe_sender_);
+          ? ServiceWorkerHandleReference::Adopt(info, thread_safe_sender_.get())
+          : ServiceWorkerHandleReference::Create(info,
+                                                 thread_safe_sender_.get());
   // WebServiceWorkerImpl constructor calls AddServiceWorker.
-  return new WebServiceWorkerImpl(handle_ref.Pass(), thread_safe_sender_);
+  return new WebServiceWorkerImpl(handle_ref.Pass(), thread_safe_sender_.get());
+}
+
+WebServiceWorkerRegistrationImpl*
+ServiceWorkerDispatcher::GetServiceWorkerRegistration(
+    const ServiceWorkerRegistrationObjectInfo& info,
+    bool adopt_handle) {
+  if (info.handle_id == kInvalidServiceWorkerRegistrationHandleId)
+    return NULL;
+
+  RegistrationObjectMap::iterator existing_registration =
+      registrations_.find(info.handle_id);
+
+  if (existing_registration != registrations_.end()) {
+    if (adopt_handle) {
+      // We are instructed to adopt a handle but we already have one, so
+      // adopt and destroy a handle ref.
+      ServiceWorkerRegistrationHandleReference::Adopt(
+          info, thread_safe_sender_.get());
+    }
+    return existing_registration->second;
+  }
+
+  scoped_ptr<ServiceWorkerRegistrationHandleReference> handle_ref =
+      adopt_handle ? ServiceWorkerRegistrationHandleReference::Adopt(
+                         info, thread_safe_sender_.get())
+                   : ServiceWorkerRegistrationHandleReference::Create(
+                         info, thread_safe_sender_.get());
+
+  // WebServiceWorkerRegistrationImpl constructor calls
+  // AddServiceWorkerRegistration.
+  return new WebServiceWorkerRegistrationImpl(handle_ref.Pass());
 }
 
 void ServiceWorkerDispatcher::OnRegistered(
     int thread_id,
     int request_id,
-    const ServiceWorkerObjectInfo& info) {
+    const ServiceWorkerRegistrationObjectInfo& info,
+    const ServiceWorkerVersionAttributes& attrs) {
   WebServiceWorkerRegistrationCallbacks* callbacks =
       pending_callbacks_.Lookup(request_id);
   DCHECK(callbacks);
   if (!callbacks)
     return;
 
-#ifdef DISABLE_SERVICE_WORKER_REGISTRATION
-  callbacks->onSuccess(GetServiceWorker(info, true));
-#else
-  callbacks->onSuccess(new WebServiceWorkerRegistrationImpl(info));
-#endif
+  WebServiceWorkerRegistrationImpl* registration =
+      GetServiceWorkerRegistration(info, true);
+  registration->SetInstalling(GetServiceWorker(attrs.installing, true));
+  registration->SetWaiting(GetServiceWorker(attrs.waiting, true));
+  registration->SetActive(GetServiceWorker(attrs.active, true));
+
+  callbacks->onSuccess(registration);
   pending_callbacks_.Remove(request_id);
 }
 
@@ -267,9 +301,41 @@ void ServiceWorkerDispatcher::OnServiceWorkerStateChanged(
     provider->second->OnServiceWorkerStateChanged(handle_id, state);
 }
 
-void ServiceWorkerDispatcher::OnSetInstallingServiceWorker(
+void ServiceWorkerDispatcher::OnSetVersionAttributes(
     int thread_id,
     int provider_id,
+    int registration_handle_id,
+    int changed_mask,
+    const ServiceWorkerVersionAttributes& attributes) {
+  ChangedVersionAttributesMask mask(changed_mask);
+  if (mask.installing_changed()) {
+    SetInstallingServiceWorker(provider_id,
+                               registration_handle_id,
+                               attributes.installing);
+  }
+  if (mask.waiting_changed()) {
+    SetWaitingServiceWorker(provider_id,
+                            registration_handle_id,
+                            attributes.waiting);
+  }
+  if (mask.active_changed()) {
+    SetActiveServiceWorker(provider_id,
+                           registration_handle_id,
+                           attributes.active);
+  }
+}
+
+void ServiceWorkerDispatcher::OnUpdateFound(
+    int thread_id,
+    const ServiceWorkerRegistrationObjectInfo& info) {
+  RegistrationObjectMap::iterator found = registrations_.find(info.handle_id);
+  if (found != registrations_.end())
+    found->second->OnUpdateFound();
+}
+
+void ServiceWorkerDispatcher::SetInstallingServiceWorker(
+    int provider_id,
+    int registration_handle_id,
     const ServiceWorkerObjectInfo& info) {
   ProviderContextMap::iterator provider = provider_contexts_.find(provider_id);
   if (provider != provider_contexts_.end()) {
@@ -287,16 +353,17 @@ void ServiceWorkerDispatcher::OnSetInstallingServiceWorker(
       worker_to_provider_[info.handle_id] = provider->second;
   }
 
-  ScriptClientMap::iterator found = script_clients_.find(provider_id);
-  if (found != script_clients_.end()) {
+  RegistrationObjectMap::iterator found =
+      registrations_.find(registration_handle_id);
+  if (found != registrations_.end()) {
     // Populate the .installing field with the new worker object.
-    found->second->setInstalling(GetServiceWorker(info, false));
+    found->second->SetInstalling(GetServiceWorker(info, false));
   }
 }
 
-void ServiceWorkerDispatcher::OnSetWaitingServiceWorker(
-    int thread_id,
+void ServiceWorkerDispatcher::SetWaitingServiceWorker(
     int provider_id,
+    int registration_handle_id,
     const ServiceWorkerObjectInfo& info) {
   ProviderContextMap::iterator provider = provider_contexts_.find(provider_id);
   if (provider != provider_contexts_.end()) {
@@ -314,16 +381,17 @@ void ServiceWorkerDispatcher::OnSetWaitingServiceWorker(
       worker_to_provider_[info.handle_id] = provider->second;
   }
 
-  ScriptClientMap::iterator found = script_clients_.find(provider_id);
-  if (found != script_clients_.end()) {
+  RegistrationObjectMap::iterator found =
+      registrations_.find(registration_handle_id);
+  if (found != registrations_.end()) {
     // Populate the .waiting field with the new worker object.
-    found->second->setWaiting(GetServiceWorker(info, false));
+    found->second->SetWaiting(GetServiceWorker(info, false));
   }
 }
 
-void ServiceWorkerDispatcher::OnSetActiveServiceWorker(
-    int thread_id,
+void ServiceWorkerDispatcher::SetActiveServiceWorker(
     int provider_id,
+    int registration_handle_id,
     const ServiceWorkerObjectInfo& info) {
   ProviderContextMap::iterator provider = provider_contexts_.find(provider_id);
   if (provider != provider_contexts_.end()) {
@@ -341,10 +409,11 @@ void ServiceWorkerDispatcher::OnSetActiveServiceWorker(
       worker_to_provider_[info.handle_id] = provider->second;
   }
 
-  ScriptClientMap::iterator found = script_clients_.find(provider_id);
-  if (found != script_clients_.end()) {
+  RegistrationObjectMap::iterator found =
+      registrations_.find(registration_handle_id);
+  if (found != registrations_.end()) {
     // Populate the .active field with the new worker object.
-    found->second->setActive(GetServiceWorker(info, false));
+    found->second->SetActive(GetServiceWorker(info, false));
   }
 }
 
@@ -404,6 +473,19 @@ void ServiceWorkerDispatcher::AddServiceWorker(
 void ServiceWorkerDispatcher::RemoveServiceWorker(int handle_id) {
   DCHECK(ContainsKey(service_workers_, handle_id));
   service_workers_.erase(handle_id);
+}
+
+void ServiceWorkerDispatcher::AddServiceWorkerRegistration(
+    int registration_handle_id,
+    WebServiceWorkerRegistrationImpl* registration) {
+  DCHECK(!ContainsKey(registrations_, registration_handle_id));
+  registrations_[registration_handle_id] = registration;
+}
+
+void ServiceWorkerDispatcher::RemoveServiceWorkerRegistration(
+    int registration_handle_id) {
+  DCHECK(ContainsKey(registrations_, registration_handle_id));
+  registrations_.erase(registration_handle_id);
 }
 
 }  // namespace content

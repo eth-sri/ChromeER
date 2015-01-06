@@ -5,10 +5,10 @@
 #include "chrome/browser/ui/webui/chromeos/login/signin_screen_handler.h"
 
 #include <algorithm>
+#include <vector>
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/command_line.h"
 #include "base/debug/trace_event.h"
 #include "base/location.h"
 #include "base/logging.h"
@@ -36,10 +36,10 @@
 #include "chrome/browser/chromeos/login/ui/login_display_host_impl.h"
 #include "chrome/browser/chromeos/login/ui/webui_login_display.h"
 #include "chrome/browser/chromeos/login/users/multi_profile_user_controller.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/login/users/wallpaper/wallpaper_manager.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
+#include "chrome/browser/chromeos/policy/consumer_management_service.h"
 #include "chrome/browser/chromeos/policy/device_local_account.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
@@ -54,7 +54,8 @@
 #include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
-#include "chromeos/chromeos_switches.h"
+#include "chrome/grit/chromium_strings.h"
+#include "chrome/grit/generated_resources.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/power_manager_client.h"
 #include "chromeos/ime/ime_keyboard.h"
@@ -66,17 +67,14 @@
 #include "chromeos/network/network_state_handler.h"
 #include "chromeos/network/portal_detector/network_portal_detector.h"
 #include "components/user_manager/user.h"
+#include "components/user_manager/user_manager.h"
 #include "components/user_manager/user_type.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
 #include "google_apis/gaia/gaia_auth_util.h"
-#include "grit/chromium_strings.h"
-#include "grit/generated_resources.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
 #include "ui/base/webui/web_ui_util.h"
-#include "ui/gfx/image/image.h"
-#include "ui/gfx/image/image_skia.h"
 
 #if defined(USE_AURA)
 #include "ash/shell.h"
@@ -216,14 +214,16 @@ static bool SetUserInputMethodImpl(
     return false;
   }
 
-  if (!Contains(manager->GetActiveInputMethodIds(), input_method)) {
-    if (!manager->EnableInputMethod(input_method)) {
+  if (!Contains(manager->GetActiveIMEState()->GetActiveInputMethodIds(),
+                input_method)) {
+    if (!manager->GetActiveIMEState()->EnableInputMethod(input_method)) {
       DLOG(ERROR) << "SigninScreenHandler::SetUserInputMethod('" << username
                   << "'): user input method '" << input_method
                   << "' is not enabled and enabling failed (ignored!).";
     }
   }
-  manager->ChangeInputMethod(input_method);
+  manager->GetActiveIMEState()->ChangeInputMethod(input_method,
+                                                  false /* show_message */);
 
   return true;
 }
@@ -299,12 +299,13 @@ SigninScreenHandler::SigninScreenHandler(
   if (keyboard)
     keyboard->AddObserver(this);
 
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
-  PrefService* prefs = g_browser_process->local_state();
+  policy::ConsumerManagementService* consumer_management =
+      g_browser_process->platform_part()->browser_policy_connector_chromeos()->
+          GetConsumerManagementService();
   is_enrolling_consumer_management_ =
-      command_line->HasSwitch(chromeos::switches::kEnableConsumerManagement) &&
-      prefs->GetBoolean(prefs::kConsumerManagementEnrollmentRequested);
-
+      consumer_management &&
+      consumer_management->GetEnrollmentState() ==
+          policy::ConsumerManagementService::ENROLLMENT_REQUESTED;
 }
 
 SigninScreenHandler::~SigninScreenHandler() {
@@ -411,8 +412,6 @@ void SigninScreenHandler::DeclareLocalizedValues(
   builder->Add("confirmPasswordText", IDS_LOGIN_CONFIRM_PASSWORD_TEXT);
   builder->Add("confirmPasswordErrorText",
                IDS_LOGIN_CONFIRM_PASSWORD_ERROR_TEXT);
-  builder->Add("easyUnlockTooltip",
-               IDS_LOGIN_EASY_UNLOCK_TOOLTIP);
 
   builder->Add("fatalEnrollmentError",
                IDS_ENTERPRISE_ENROLLMENT_AUTH_FATAL_ERROR);
@@ -431,8 +430,8 @@ void SigninScreenHandler::Show(const LoginScreenContext& context) {
 
   std::string email;
   if (is_enrolling_consumer_management_) {
-    // We don't check if the value of the owner email is trusted because it is
-    // only used to pre-fill the email field in Gaia sign-in page and a cached
+    // We don't check if the value of the owner e-mail is trusted because it is
+    // only used to pre-fill the e-mail field in Gaia sign-in page and a cached
     // value is sufficient.
     CrosSettings::Get()->GetString(kDeviceOwner, &email);
   } else {
@@ -513,8 +512,8 @@ void SigninScreenHandler::UpdateUIState(UIState ui_state,
   }
 }
 
-// TODO (ygorshenin@): split this method into small parts.
-// TODO (ygorshenin@): move this logic to GaiaScreenHandler.
+// TODO(ygorshenin@): split this method into small parts.
+// TODO(ygorshenin@): move this logic to GaiaScreenHandler.
 void SigninScreenHandler::UpdateStateInternal(
     ErrorScreenActor::ErrorReason reason,
     bool force_update) {
@@ -765,6 +764,7 @@ void SigninScreenHandler::RegisterMessages() {
   AddCallback("updateOfflineLogin",
               &SigninScreenHandler::HandleUpdateOfflineLogin);
   AddCallback("focusPod", &SigninScreenHandler::HandleFocusPod);
+  AddCallback("hardlockPod", &SigninScreenHandler::HandleHardlockPod);
   AddCallback("retrieveAuthenticatedUserEmail",
               &SigninScreenHandler::HandleRetrieveAuthenticatedUserEmail);
   AddCallback("getPublicSessionKeyboardLayouts",
@@ -923,37 +923,17 @@ void SigninScreenHandler::Observe(int type,
   }
 }
 
-void SigninScreenHandler::ShowBannerMessage(const std::string& message) {
+void SigninScreenHandler::ShowBannerMessage(const base::string16& message) {
   CallJS("login.AccountPickerScreen.showBannerMessage", message);
 }
 
 void SigninScreenHandler::ShowUserPodCustomIcon(
     const std::string& username,
-    const gfx::Image& icon) {
-  gfx::ImageSkia icon_skia = icon.AsImageSkia();
-  base::DictionaryValue icon_representations;
-  icon_representations.SetString(
-      "scale1x",
-      webui::GetBitmapDataUrl(icon_skia.GetRepresentation(1.0f).sk_bitmap()));
-  icon_representations.SetString(
-      "scale2x",
-      webui::GetBitmapDataUrl(icon_skia.GetRepresentation(2.0f).sk_bitmap()));
-  CallJS("login.AccountPickerScreen.showUserPodCustomIcon",
-      username, icon_representations);
-
-  // TODO(tengs): Move this code once we move unlocking to native code.
-  if (ScreenLocker::default_screen_locker()) {
-    UserManager* user_manager = UserManager::Get();
-    const user_manager::User* user = user_manager->FindUser(username);
-    if (!user)
-      return;
-    PrefService* profile_prefs =
-        ProfileHelper::Get()->GetProfileByUser(user)->GetPrefs();
-    if (profile_prefs->GetBoolean(prefs::kEasyUnlockShowTutorial)) {
-      CallJS("login.AccountPickerScreen.showEasyUnlockBubble");
-      profile_prefs->SetBoolean(prefs::kEasyUnlockShowTutorial, false);
-    }
-  }
+    const ScreenlockBridge::UserPodCustomIconOptions& icon_options) {
+  scoped_ptr<base::DictionaryValue> icon = icon_options.ToDictionaryValue();
+  if (!icon || icon->empty())
+    return;
+  CallJS("login.AccountPickerScreen.showUserPodCustomIcon", username, *icon);
 }
 
 void SigninScreenHandler::HideUserPodCustomIcon(const std::string& username) {
@@ -968,7 +948,11 @@ void SigninScreenHandler::EnableInput() {
 void SigninScreenHandler::SetAuthType(
     const std::string& username,
     ScreenlockBridge::LockHandler::AuthType auth_type,
-    const std::string& initial_value) {
+    const base::string16& initial_value) {
+  if (delegate_->GetAuthType(username) ==
+          ScreenlockBridge::LockHandler::FORCE_OFFLINE_PASSWORD)
+    return;
+
   delegate_->SetAuthType(username, auth_type);
 
   CallJS("login.AccountPickerScreen.setAuthType",
@@ -997,7 +981,7 @@ bool SigninScreenHandler::ShouldLoadGaia() const {
 
 // Update keyboard layout to least recently used by the user.
 void SigninScreenHandler::SetUserInputMethod(const std::string& username) {
-  UserManager* user_manager = UserManager::Get();
+  user_manager::UserManager* user_manager = user_manager::UserManager::Get();
   if (user_manager->IsUserLoggedIn()) {
     // We are on sign-in screen inside user session (adding new user to
     // the session or on lock screen), don't switch input methods in this case.
@@ -1018,7 +1002,7 @@ void SigninScreenHandler::SetUserInputMethod(const std::string& username) {
     DVLOG(0) << "SetUserInputMethod('" << username
                << "'): failed to set user layout. Switching to default.";
 
-    manager->SetInputMethodLoginDefault();
+    manager->GetActiveIMEState()->SetInputMethodLoginDefault();
   }
 }
 
@@ -1062,7 +1046,7 @@ void SigninScreenHandler::HandleAttemptUnlock(const std::string& username) {
   if (!unlock_user)
     return;
 
-  Profile* profile = ProfileHelper::Get()->GetProfileByUser(unlock_user);
+  Profile* profile = ProfileHelper::Get()->GetProfileByUserUnsafe(unlock_user);
   extensions::ScreenlockPrivateEventRouter* router =
       extensions::ScreenlockPrivateEventRouter::GetFactoryInstance()->Get(
           profile);
@@ -1082,7 +1066,7 @@ void SigninScreenHandler::HandleLaunchIncognito() {
 }
 
 void SigninScreenHandler::HandleShowSupervisedUserCreationScreen() {
-  if (!UserManager::Get()->AreSupervisedUsersAllowed()) {
+  if (!user_manager::UserManager::Get()->AreSupervisedUsersAllowed()) {
     LOG(ERROR) << "Managed users not allowed.";
     return;
   }
@@ -1307,7 +1291,7 @@ void SigninScreenHandler::HandleLoginUIStateChanged(const std::string& source,
 }
 
 void SigninScreenHandler::HandleUnlockOnLoginSuccess() {
-  DCHECK(UserManager::Get()->IsUserLoggedIn());
+  DCHECK(user_manager::UserManager::Get()->IsUserLoggedIn());
   if (ScreenLocker::default_screen_locker())
     ScreenLocker::default_screen_locker()->UnlockOnLoginSuccess();
 }
@@ -1323,6 +1307,13 @@ void SigninScreenHandler::HandleUpdateOfflineLogin(bool offline_login_active) {
 void SigninScreenHandler::HandleFocusPod(const std::string& user_id) {
   SetUserInputMethod(user_id);
   WallpaperManager::Get()->SetUserWallpaperDelayed(user_id);
+}
+
+void SigninScreenHandler::HandleHardlockPod(const std::string& user_id) {
+  SetAuthType(user_id,
+              ScreenlockBridge::LockHandler::FORCE_OFFLINE_PASSWORD,
+              base::string16());
+  HideUserPodCustomIcon(user_id);
 }
 
 void SigninScreenHandler::HandleRetrieveAuthenticatedUserEmail(
@@ -1367,8 +1358,12 @@ void SigninScreenHandler::HandleLaunchKioskApp(const std::string& app_id,
 }
 
 void SigninScreenHandler::HandleCancelConsumerManagementEnrollment() {
-  PrefService* prefs = g_browser_process->local_state();
-  prefs->SetBoolean(prefs::kConsumerManagementEnrollmentRequested, false);
+  policy::ConsumerManagementService* consumer_management =
+      g_browser_process->platform_part()->browser_policy_connector_chromeos()->
+          GetConsumerManagementService();
+  CHECK(consumer_management);
+  consumer_management->SetEnrollmentState(
+      policy::ConsumerManagementService::ENROLLMENT_CANCELED);
   is_enrolling_consumer_management_ = false;
   ShowImpl();
 }
@@ -1379,7 +1374,7 @@ bool SigninScreenHandler::AllWhitelistedUsersPresent() {
   cros_settings->GetBoolean(kAccountsPrefAllowNewUser, &allow_new_user);
   if (allow_new_user)
     return false;
-  UserManager* user_manager = UserManager::Get();
+  user_manager::UserManager* user_manager = user_manager::UserManager::Get();
   const user_manager::UserList& users = user_manager->GetUsers();
   if (!delegate_ || users.size() > kMaxUsers) {
     return false;

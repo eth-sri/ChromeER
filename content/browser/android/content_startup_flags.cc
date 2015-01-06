@@ -26,7 +26,8 @@ void SetContentCommandLineFlags(bool single_process,
     return;
   already_initialized = true;
 
-  CommandLine* parsed_command_line = CommandLine::ForCurrentProcess();
+  base::CommandLine* parsed_command_line =
+      base::CommandLine::ForCurrentProcess();
 
   int command_line_renderer_limit = -1;
   if (parsed_command_line->HasSwitch(switches::kRendererProcessLimit)) {
@@ -51,9 +52,6 @@ void SetContentCommandLineFlags(bool single_process,
     parsed_command_line->AppendSwitch(switches::kSingleProcess);
   }
 
-  parsed_command_line->AppendSwitch(
-      switches::kEnableCompositingForFixedPosition);
-  parsed_command_line->AppendSwitch(switches::kEnableAcceleratedOverflowScroll);
   parsed_command_line->AppendSwitch(switches::kEnableBeginFrameScheduling);
 
   parsed_command_line->AppendSwitch(switches::kEnablePinch);

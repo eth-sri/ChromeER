@@ -9,25 +9,25 @@
 
 #include "url/gurl.h"
 #include "webkit/common/fileapi/file_system_types.h"
-#include "webkit/common/webkit_storage_common_export.h"
+#include "webkit/common/storage_common_export.h"
 
-namespace fileapi {
+namespace storage {
 
 // This struct is used to send the necessary information for Blink to create a
 // DOMFileSystem.  Since Blink side only uses mount_type (rather than
 // detailed/cracked filesystem type) this only contains mount_type but not type.
-struct WEBKIT_STORAGE_COMMON_EXPORT FileSystemInfo {
+struct STORAGE_COMMON_EXPORT FileSystemInfo {
   FileSystemInfo();
   FileSystemInfo(const std::string& filesystem_name,
                  const GURL& root_url,
-                 fileapi::FileSystemType mount_type);
+                 storage::FileSystemType mount_type);
   ~FileSystemInfo();
 
   std::string name;
   GURL root_url;
-  fileapi::FileSystemType mount_type;
+  storage::FileSystemType mount_type;
 };
 
-}  // namespace fileapi
+}  // namespace storage
 
 #endif  // WEBKIT_COMMON_FILEAPI_FILE_SYSTEM_INFO_H_

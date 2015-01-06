@@ -5,8 +5,6 @@
 #include "chrome/browser/ui/webui/extensions/extension_settings_handler.h"
 
 #include "apps/app_load_service.h"
-#include "apps/app_window.h"
-#include "apps/app_window_registry.h"
 #include "apps/saved_files_service.h"
 #include "base/auto_reset.h"
 #include "base/base64.h"
@@ -37,7 +35,6 @@
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/extensions/extension_ui_util.h"
 #include "chrome/browser/extensions/extension_util.h"
-#include "chrome/browser/extensions/extension_warning_set.h"
 #include "chrome/browser/extensions/install_verifier.h"
 #include "chrome/browser/extensions/path_util.h"
 #include "chrome/browser/extensions/shared_module_service.h"
@@ -61,6 +58,8 @@
 #include "chrome/common/extensions/manifest_url_handler.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "chrome/grit/chromium_strings.h"
+#include "chrome/grit/generated_resources.h"
 #include "components/google/core/browser/google_util.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "content/public/browser/notification_service.h"
@@ -72,6 +71,8 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_data_source.h"
+#include "extensions/browser/app_window/app_window.h"
+#include "extensions/browser/app_window/app_window_registry.h"
 #include "extensions/browser/blacklist_state.h"
 #include "extensions/browser/extension_error.h"
 #include "extensions/browser/extension_host.h"
@@ -82,6 +83,7 @@
 #include "extensions/browser/pref_names.h"
 #include "extensions/browser/uninstall_reason.h"
 #include "extensions/browser/view_type_utils.h"
+#include "extensions/browser/warning_set.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_icon_set.h"
@@ -91,12 +93,8 @@
 #include "extensions/common/manifest_handlers/background_info.h"
 #include "extensions/common/manifest_handlers/incognito_info.h"
 #include "extensions/common/permissions/permissions_data.h"
-#include "grit/browser_resources.h"
-#include "grit/chromium_strings.h"
-#include "grit/generated_resources.h"
-#include "grit/theme_resources.h"
+#include "extensions/common/switches.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/resource/resource_bundle.h"
 
 using base::DictionaryValue;
 using base::ListValue;
@@ -210,7 +208,10 @@ void ExtensionSettingsHandler::RegisterProfilePrefs(
 base::DictionaryValue* ExtensionSettingsHandler::CreateExtensionDetailValue(
     const Extension* extension,
     const std::vector<ExtensionPage>& pages,
-    const ExtensionWarningService* warning_service) {
+    const WarningService* warning_service) {
+  // The items which are to be written into app_dict are also described in
+  // chrome/browser/resources/extensions/extension_list.js in @typedef for
+  // ExtensionData. Please update it whenever you add or remove any keys here.
   base::DictionaryValue* extension_data = new base::DictionaryValue();
   bool enabled = extension_service_->IsExtensionEnabled(extension->id());
   GetExtensionBasicInfo(extension, enabled, extension_data);
@@ -277,17 +278,23 @@ base::DictionaryValue* ExtensionSettingsHandler::CreateExtensionDetailValue(
     for (ExtensionSet::const_iterator i = dependent_extensions->begin();
          i != dependent_extensions->end();
          i++) {
-      dependents_list->Append(new base::StringValue((*i)->id()));
+      base::DictionaryValue* dependent_entry = new base::DictionaryValue;
+      dependent_entry->SetString("id", (*i)->id());
+      dependent_entry->SetString("name", (*i)->name());
+      dependents_list->Append(dependent_entry);
     }
   }
   extension_data->Set("dependentExtensions", dependents_list);
 
   // Extensions only want all URL access if:
-  // - The feature is enabled.
+  // - The feature is enabled for the given extension.
   // - The extension has access to enough urls that we can't just let it run
   //   on those specified in the permissions.
   bool wants_all_urls =
-      extension->permissions_data()->HasWithheldImpliedAllHosts();
+      util::ScriptsMayRequireActionForExtension(extension) &&
+      (extension->permissions_data()->HasWithheldImpliedAllHosts() ||
+       util::AllowedScriptingOnAllUrls(
+           extension->id(), extension_service_->GetBrowserContext()));
   extension_data->SetBoolean("wantsAllUrls", wants_all_urls);
   extension_data->SetBoolean(
       "allowAllUrls",
@@ -809,6 +816,10 @@ void ExtensionSettingsHandler::ReloadUnpackedExtensions() {
 
 void ExtensionSettingsHandler::HandleRequestExtensionsData(
     const base::ListValue* args) {
+  // The items which are to be written into results are also described in
+  // chrome/browser/resources/extensions/extensions.js in @typedef for
+  // ExtensionDataResponse. Please update it whenever you add or remove any keys
+  // here.
   base::DictionaryValue results;
 
   Profile* profile = Profile::FromWebUI(web_ui());
@@ -816,14 +827,13 @@ void ExtensionSettingsHandler::HandleRequestExtensionsData(
   // Add the extensions to the results structure.
   base::ListValue* extensions_list = new base::ListValue();
 
-  ExtensionWarningService* warnings =
-      ExtensionSystem::Get(profile)->warning_service();
+  WarningService* warnings = ExtensionSystem::Get(profile)->warning_service();
 
   ExtensionRegistry* registry = ExtensionRegistry::Get(profile);
   const ExtensionSet& enabled_set = registry->enabled_extensions();
   for (ExtensionSet::const_iterator extension = enabled_set.begin();
        extension != enabled_set.end(); ++extension) {
-    if (ui_util::ShouldDisplayInExtensionSettings(*extension, profile)) {
+    if (ui_util::ShouldDisplayInExtensionSettings(extension->get(), profile)) {
       extensions_list->Append(CreateExtensionDetailValue(
           extension->get(),
           GetInspectablePagesForExtension(extension->get(), true),
@@ -833,7 +843,7 @@ void ExtensionSettingsHandler::HandleRequestExtensionsData(
   const ExtensionSet& disabled_set = registry->disabled_extensions();
   for (ExtensionSet::const_iterator extension = disabled_set.begin();
        extension != disabled_set.end(); ++extension) {
-    if (ui_util::ShouldDisplayInExtensionSettings(*extension, profile)) {
+    if (ui_util::ShouldDisplayInExtensionSettings(extension->get(), profile)) {
       extensions_list->Append(CreateExtensionDetailValue(
           extension->get(),
           GetInspectablePagesForExtension(extension->get(), false),
@@ -844,7 +854,7 @@ void ExtensionSettingsHandler::HandleRequestExtensionsData(
   std::vector<ExtensionPage> empty_pages;
   for (ExtensionSet::const_iterator extension = terminated_set.begin();
        extension != terminated_set.end(); ++extension) {
-    if (ui_util::ShouldDisplayInExtensionSettings(*extension, profile)) {
+    if (ui_util::ShouldDisplayInExtensionSettings(extension->get(), profile)) {
       extensions_list->Append(CreateExtensionDetailValue(
           extension->get(),
           empty_pages,  // Terminated process has no active pages.
@@ -878,6 +888,10 @@ void ExtensionSettingsHandler::HandleRequestExtensionsData(
   bool load_unpacked_disabled =
       ExtensionPrefs::Get(profile)->ExtensionsBlacklistedByDefault();
   results.SetBoolean("loadUnpackedDisabled", load_unpacked_disabled);
+
+  results.SetBoolean(
+      "enableEmbeddedExtensionOptions",
+      extensions::FeatureSwitch::embedded_extension_options()->IsEnabled());
 
   web_ui()->CallJavascriptFunction(
       "extensions.ExtensionSettings.returnExtensionsData", results);
@@ -935,12 +949,12 @@ void ExtensionSettingsHandler::HandleInspectMessage(
 
   RenderViewHost* host = RenderViewHost::FromID(render_process_id,
                                                 render_view_id);
-  if (!host) {
+  if (!host || !WebContents::FromRenderViewHost(host)) {
     // This can happen if the host has gone away since the page was displayed.
     return;
   }
 
-  DevToolsWindow::OpenDevToolsWindow(host);
+  DevToolsWindow::OpenDevToolsWindow(WebContents::FromRenderViewHost(host));
 }
 
 void ExtensionSettingsHandler::HandleLaunchMessage(
@@ -1183,7 +1197,10 @@ void ExtensionSettingsHandler::HandleShowPath(const base::ListValue* args) {
       extension_id,
       ExtensionRegistry::EVERYTHING);
   CHECK(extension);
-  platform_util::OpenItem(profile, extension->path());
+  // We explicitly show manifest.json in order to work around an issue in OSX
+  // where opening the directory doesn't focus the Finder.
+  platform_util::ShowItemInFolder(profile,
+                                  extension->path().Append(kManifestFilename));
 }
 
 void ExtensionSettingsHandler::ShowAlert(const std::string& message) {
@@ -1345,15 +1362,15 @@ void ExtensionSettingsHandler::GetAppWindowPagesForExtensionProfile(
     const Extension* extension,
     Profile* profile,
     std::vector<ExtensionPage>* result) {
-  apps::AppWindowRegistry* registry = apps::AppWindowRegistry::Get(profile);
+  AppWindowRegistry* registry = AppWindowRegistry::Get(profile);
   if (!registry) return;
 
-  const apps::AppWindowRegistry::AppWindowList windows =
+  const AppWindowRegistry::AppWindowList windows =
       registry->GetAppWindowsForApp(extension->id());
 
   bool has_generated_background_page =
       BackgroundInfo::HasGeneratedBackgroundPage(extension);
-  for (apps::AppWindowRegistry::const_iterator it = windows.begin();
+  for (AppWindowRegistry::const_iterator it = windows.begin();
        it != windows.end();
        ++it) {
     WebContents* web_contents = (*it)->web_contents();

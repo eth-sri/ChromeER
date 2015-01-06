@@ -141,7 +141,8 @@ FeatureInfo::FeatureFlags::FeatureFlags()
       is_angle(false),
       is_swiftshader(false),
       angle_texture_usage(false),
-      ext_texture_storage(false) {
+      ext_texture_storage(false),
+      chromium_path_rendering(false) {
 }
 
 FeatureInfo::Workarounds::Workarounds() :
@@ -239,7 +240,7 @@ void FeatureInfo::InitializeFeatures() {
   const char* version_str =
       reinterpret_cast<const char*>(glGetString(GL_VERSION));
   if (version_str) {
-    std::string lstr(StringToLowerASCII(std::string(version_str)));
+    std::string lstr(base::StringToLowerASCII(std::string(version_str)));
     is_es3 = (lstr.substr(0, 12) == "opengl es 3.");
   }
 
@@ -395,10 +396,12 @@ void FeatureInfo::InitializeFeatures() {
   bool enable_texture_format_bgra8888 = false;
   bool enable_read_format_bgra = false;
   bool enable_render_buffer_bgra = false;
+  bool enable_immutable_texture_format_bgra_on_es3 =
+      extensions.Contains("GL_APPLE_texture_format_BGRA8888");
 
   // Check if we should allow GL_EXT_texture_format_BGRA8888
   if (extensions.Contains("GL_EXT_texture_format_BGRA8888") ||
-      extensions.Contains("GL_APPLE_texture_format_BGRA8888") ||
+      enable_immutable_texture_format_bgra_on_es3 ||
       extensions.Contains("GL_EXT_bgra")) {
     enable_texture_format_bgra8888 = true;
   }
@@ -691,7 +694,18 @@ void FeatureInfo::InitializeFeatures() {
     validators_.texture_parameter.AddValue(GL_TEXTURE_USAGE_ANGLE);
   }
 
-  if (extensions.Contains("GL_EXT_texture_storage")) {
+  // Note: Only APPLE_texture_format_BGRA8888 extension allows BGRA8_EXT in
+  // ES3's glTexStorage2D. We prefer support BGRA to texture storage.
+  // So we don't expose GL_EXT_texture_storage when ES3 +
+  // GL_EXT_texture_format_BGRA8888 because we fail the GL_BGRA8 requirement.
+  // However we expose GL_EXT_texture_storage when just ES3 because we don't
+  // claim to handle GL_BGRA8.
+  bool support_texture_storage_on_es3 =
+      (is_es3 && enable_immutable_texture_format_bgra_on_es3) ||
+      (is_es3 && !enable_texture_format_bgra8888);
+  if (extensions.Contains("GL_EXT_texture_storage") ||
+      extensions.Contains("GL_ARB_texture_storage") ||
+      support_texture_storage_on_es3) {
     feature_flags_.ext_texture_storage = true;
     AddExtensionString("GL_EXT_texture_storage");
     validators_.texture_parameter.AddValue(GL_TEXTURE_IMMUTABLE_FORMAT_EXT);
@@ -830,6 +844,15 @@ void FeatureInfo::InitializeFeatures() {
   if (ui_gl_fence_works) {
     AddExtensionString("GL_CHROMIUM_sync_query");
     feature_flags_.chromium_sync_query = true;
+  }
+
+  if (extensions.Contains("GL_NV_path_rendering")) {
+    if (extensions.Contains("GL_EXT_direct_state_access") || is_es3) {
+      AddExtensionString("GL_CHROMIUM_path_rendering");
+      feature_flags_.chromium_path_rendering = true;
+      validators_.g_l_state.AddValue(GL_PATH_MODELVIEW_MATRIX_CHROMIUM);
+      validators_.g_l_state.AddValue(GL_PATH_PROJECTION_MATRIX_CHROMIUM);
+    }
   }
 }
 

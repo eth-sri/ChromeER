@@ -4,12 +4,10 @@
 
 #include "chrome/browser/chromeos/ownership/owner_settings_service_factory.h"
 
-#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/ownership/owner_settings_service.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/profiles/profile.h"
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
-#include "components/user_manager/user.h"
 
 namespace chromeos {
 
@@ -32,28 +30,6 @@ OwnerSettingsService* OwnerSettingsServiceFactory::GetForProfile(
 // static
 OwnerSettingsServiceFactory* OwnerSettingsServiceFactory::GetInstance() {
   return Singleton<OwnerSettingsServiceFactory>::get();
-}
-
-void OwnerSettingsServiceFactory::SetUsername(const std::string& username) {
-  username_ = username;
-  if (!UserManager::IsInitialized())
-    return;
-  const user_manager::User* user = UserManager::Get()->FindUser(username_);
-  if (!user || !user->is_profile_created())
-    return;
-  Profile* profile = ProfileHelper::Get()->GetProfileByUser(user);
-  if (!profile)
-    return;
-  OwnerSettingsService* service = GetForProfile(profile);
-
-  // It's safe to call ReloadPrivateKey() here, as profile is fully created
-  // at this time.
-  if (service)
-    service->ReloadPrivateKey();
-}
-
-std::string OwnerSettingsServiceFactory::GetUsername() const {
-  return username_;
 }
 
 // static

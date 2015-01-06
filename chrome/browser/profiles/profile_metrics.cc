@@ -288,9 +288,11 @@ void ProfileMetrics::LogProfileAvatarSelection(size_t icon_index) {
                             NUM_PROFILE_AVATAR_METRICS);
 }
 
-void ProfileMetrics::LogProfileDeleteUser(ProfileNetUserCounts metric) {
-  DCHECK(metric < NUM_PROFILE_NET_METRICS);
-  UMA_HISTOGRAM_ENUMERATION("Profile.NetUserCount", metric,
+void ProfileMetrics::LogProfileDeleteUser(ProfileDelete metric) {
+  DCHECK(metric < NUM_DELETE_PROFILE_METRICS);
+  UMA_HISTOGRAM_ENUMERATION("Profile.DeleteProfileAction", metric,
+                            NUM_DELETE_PROFILE_METRICS);
+  UMA_HISTOGRAM_ENUMERATION("Profile.NetUserCount", PROFILE_DELETED,
                             NUM_PROFILE_NET_METRICS);
 }
 
@@ -325,12 +327,6 @@ void ProfileMetrics::LogProfileAuthResult(ProfileAuth metric) {
                             NUM_PROFILE_AUTH_METRICS);
 }
 
-void ProfileMetrics::LogProfileUpgradeEnrollment(
-    ProfileUpgradeEnrollment metric) {
-  UMA_HISTOGRAM_ENUMERATION("Profile.UpgradeEnrollment", metric,
-                            NUM_PROFILE_ENROLLMENT_METRICS);
-}
-
 void ProfileMetrics::LogProfileDesktopMenu(
     ProfileDesktopMenu metric,
     signin::GAIAServiceType gaia_service) {
@@ -358,6 +354,10 @@ void ProfileMetrics::LogProfileDesktopMenu(
       UMA_HISTOGRAM_ENUMERATION("Profile.DesktopMenu.GAIAReAuth", metric,
                                 NUM_PROFILE_DESKTOP_MENU_METRICS);
       break;
+    case signin::GAIA_SERVICE_TYPE_SIGNUP:
+      UMA_HISTOGRAM_ENUMERATION("Profile.DesktopMenu.GAIASignup", metric,
+                                NUM_PROFILE_DESKTOP_MENU_METRICS);
+      break;
     case signin::GAIA_SERVICE_TYPE_DEFAULT:
       UMA_HISTOGRAM_ENUMERATION("Profile.DesktopMenu.GAIADefault", metric,
                                 NUM_PROFILE_DESKTOP_MENU_METRICS);
@@ -367,6 +367,27 @@ void ProfileMetrics::LogProfileDesktopMenu(
 
 void ProfileMetrics::LogProfileDelete(bool profile_was_signed_in) {
   UMA_HISTOGRAM_BOOLEAN("Profile.Delete", profile_was_signed_in);
+}
+
+void ProfileMetrics::LogProfileNewAvatarMenuNotYou(
+    ProfileNewAvatarMenuNotYou metric) {
+  DCHECK_LT(metric, NUM_PROFILE_AVATAR_MENU_NOT_YOU_METRICS);
+  UMA_HISTOGRAM_ENUMERATION("Profile.NewAvatarMenu.NotYou", metric,
+                            NUM_PROFILE_AVATAR_MENU_NOT_YOU_METRICS);
+}
+
+void ProfileMetrics::LogProfileNewAvatarMenuSignin(
+    ProfileNewAvatarMenuSignin metric) {
+  DCHECK_LT(metric, NUM_PROFILE_AVATAR_MENU_SIGNIN_METRICS);
+  UMA_HISTOGRAM_ENUMERATION("Profile.NewAvatarMenu.Signin", metric,
+                            NUM_PROFILE_AVATAR_MENU_SIGNIN_METRICS);
+}
+
+void ProfileMetrics::LogProfileNewAvatarMenuUpgrade(
+    ProfileNewAvatarMenuUpgrade metric) {
+  DCHECK_LT(metric, NUM_PROFILE_AVATAR_MENU_UPGRADE_METRICS);
+  UMA_HISTOGRAM_ENUMERATION("Profile.NewAvatarMenu.Upgrade", metric,
+                            NUM_PROFILE_AVATAR_MENU_UPGRADE_METRICS);
 }
 
 #if defined(OS_ANDROID)
@@ -404,6 +425,12 @@ void ProfileMetrics::LogProfileAndroidAccountManagementMenu(
     case signin::GAIA_SERVICE_TYPE_REAUTH:
       UMA_HISTOGRAM_ENUMERATION(
           "Profile.AndroidAccountManagementMenu.GAIAReAuth",
+          metric,
+          NUM_PROFILE_ANDROID_ACCOUNT_MANAGEMENT_MENU_METRICS);
+      break;
+    case signin::GAIA_SERVICE_TYPE_SIGNUP:
+      UMA_HISTOGRAM_ENUMERATION(
+          "Profile.AndroidAccountManagementMenu.GAIASignup",
           metric,
           NUM_PROFILE_ANDROID_ACCOUNT_MANAGEMENT_MENU_METRICS);
       break;

@@ -12,6 +12,12 @@ const char kIsFirstRequest[] = "isFirstRequest";
 // Unique ID sent along every preview request.
 const char kPreviewRequestID[] = "requestID";
 
+// Unique ID of Print Preview initiator host.
+const char kPreviewInitiatorHostId[] = "previewInitiatorHostId";
+
+// Routing ID of Print Preview initiator.
+const char kPreviewInitiatorRoutingId[] = "previewInitiatorRoutingId";
+
 // Unique ID to identify a print preview UI.
 const char kPreviewUIID[] = "previewUIID";
 
@@ -156,6 +162,9 @@ const char kSettingShouldPrintBackgrounds[] = "shouldPrintBackgrounds";
 
 // Whether to print selection only.
 const char kSettingShouldPrintSelectionOnly[] = "shouldPrintSelectionOnly";
+
+// Whether to print selection only.
+const char kSettingShowSystemDialog[] = "showSystemDialog";
 
 // Indices used to represent first preview page and complete preview document.
 const int FIRST_PAGE_INDEX = 0;

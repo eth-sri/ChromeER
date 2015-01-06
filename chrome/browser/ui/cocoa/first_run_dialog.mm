@@ -19,7 +19,6 @@
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/url_constants.h"
 #include "components/search_engines/template_url_service.h"
-#include "grit/locale_settings.h"
 #import "third_party/google_toolbox_for_mac/src/AppKit/GTMUILocalizerAndLayoutTweaker.h"
 #include "ui/base/l10n/l10n_util_mac.h"
 #include "url/gurl.h"
@@ -29,7 +28,7 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/installer/util/google_update_settings.h"
-#import "components/breakpad/app/breakpad_mac.h"
+#import "components/crash/app/breakpad_mac.h"
 #endif
 
 @interface FirstRunDialogController (PrivateMethods)

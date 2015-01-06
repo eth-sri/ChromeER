@@ -6,7 +6,7 @@
 
 #include "base/basictypes.h"
 #include "base/bind.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/location.h"
 #include "base/run_loop.h"
 #include "base/stl_util.h"
@@ -36,7 +36,7 @@
 #include "webkit/browser/fileapi/file_system_context.h"
 
 using content::BrowserThread;
-using fileapi::FileSystemURL;
+using storage::FileSystemURL;
 using ::testing::_;
 using ::testing::AtLeast;
 using ::testing::InvokeWithoutArgs;
@@ -543,7 +543,7 @@ TEST_F(LocalFileSyncServiceTest, RecordFakeChange) {
 
   EXPECT_EQ(0, GetNumChangesInTracker());
 
-  fileapi::FileSystemURLSet urlset;
+  storage::FileSystemURLSet urlset;
   file_system_->GetChangedURLsInTracker(&urlset);
   EXPECT_TRUE(urlset.empty());
 

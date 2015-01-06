@@ -13,7 +13,6 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/task_runner_util.h"
-#include "chrome/browser/guest_view/web_view/web_view_renderer_state.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/extensions/manifest_url_handler.h"
 #include "content/public/browser/browser_thread.h"
@@ -21,6 +20,7 @@
 #include "extensions/browser/component_extension_resource_manager.h"
 #include "extensions/browser/extension_protocols.h"
 #include "extensions/browser/extensions_browser_client.h"
+#include "extensions/browser/guest_view/web_view/web_view_renderer_state.h"
 #include "extensions/browser/info_map.h"
 #include "extensions/common/file_util.h"
 #include "extensions/common/manifest_handlers/icons_handler.h"
@@ -140,15 +140,8 @@ bool AllowCrossRendererResourceLoad(net::URLRequest* request,
   const content::ResourceRequestInfo* info =
       content::ResourceRequestInfo::ForRequest(request);
 
-  // Check workers so that importScripts works from extension workers.
-  if (extension_info_map->worker_process_map().Contains(request->url().host(),
-                                                        info->GetChildID())) {
-    return true;
-  }
-
   bool is_guest = false;
 
-#if defined(ENABLE_EXTENSIONS)
   // Extensions with webview: allow loading certain resources by guest renderers
   // with privileged partition IDs as specified in the manifest file.
   WebViewRendererState* web_view_renderer_state =
@@ -161,7 +154,6 @@ bool AllowCrossRendererResourceLoad(net::URLRequest* request,
                       extension, partition_id, resource_path)) {
     return true;
   }
-#endif
 
   // If the request is for navigations outside of webviews, then it should be
   // allowed. The navigation logic in CrossSiteResourceHandler will properly
@@ -253,11 +245,7 @@ bool IsWebViewRequest(net::URLRequest* request) {
   // |info| can be NULL sometimes: http://crbug.com/370070.
   if (!info)
     return false;
-#if defined(ENABLE_EXTENSIONS)
   return WebViewRendererState::GetInstance()->IsGuest(info->GetChildID());
-#else
-  return false;
-#endif
 }
 
 }  // namespace url_request_util

@@ -15,14 +15,14 @@
 #include "url/gurl.h"
 #include "webkit/common/blob/shareable_file_reference.h"
 #include "webkit/common/data_element.h"
-#include "webkit/common/webkit_storage_common_export.h"
+#include "webkit/common/storage_common_export.h"
 
-namespace webkit_blob {
+namespace storage {
 
-class WEBKIT_STORAGE_COMMON_EXPORT BlobData
+class STORAGE_COMMON_EXPORT BlobData
     : public base::RefCounted<BlobData> {
  public:
-  typedef webkit_common::DataElement Item;
+  typedef storage::DataElement Item;
 
   // TODO(michaeln): remove the empty ctor when we fully transition to uuids.
   BlobData();
@@ -93,6 +93,6 @@ inline bool operator!=(const BlobData& a, const BlobData& b) {
 }
 #endif  // defined(UNIT_TEST)
 
-}  // namespace webkit_blob
+}  // namespace storage
 
 #endif  // WEBKIT_COMMON_BLOB_BLOB_DATA_H_

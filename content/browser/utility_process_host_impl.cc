@@ -194,7 +194,8 @@ bool UtilityProcessHostImpl::StartProcess() {
     in_process_thread_.reset(g_utility_main_thread_factory(channel_id));
     in_process_thread_->Start();
   } else {
-    const CommandLine& browser_command_line = *CommandLine::ForCurrentProcess();
+    const base::CommandLine& browser_command_line =
+        *base::CommandLine::ForCurrentProcess();
     int child_flags = child_flags_;
 
 #if defined(OS_POSIX)
@@ -216,7 +217,7 @@ bool UtilityProcessHostImpl::StartProcess() {
       return false;
     }
 
-    CommandLine* cmd_line = new CommandLine(exe_path);
+    base::CommandLine* cmd_line = new base::CommandLine(exe_path);
     cmd_line->AppendSwitchASCII(switches::kProcessType,
                                 switches::kUtilityProcess);
     cmd_line->AppendSwitchASCII(switches::kProcessChannelID, channel_id);
@@ -267,15 +268,23 @@ bool UtilityProcessHostImpl::StartProcess() {
 }
 
 bool UtilityProcessHostImpl::OnMessageReceived(const IPC::Message& message) {
+  if (!client_.get())
+    return true;
+
   client_task_runner_->PostTask(
       FROM_HERE,
-      base::Bind(base::IgnoreResult(
-          &UtilityProcessHostClient::OnMessageReceived), client_.get(),
+      base::Bind(
+          base::IgnoreResult(&UtilityProcessHostClient::OnMessageReceived),
+          client_.get(),
           message));
+
   return true;
 }
 
 void UtilityProcessHostImpl::OnProcessLaunchFailed() {
+  if (!client_.get())
+    return;
+
   client_task_runner_->PostTask(
       FROM_HERE,
       base::Bind(&UtilityProcessHostClient::OnProcessLaunchFailed,
@@ -283,6 +292,9 @@ void UtilityProcessHostImpl::OnProcessLaunchFailed() {
 }
 
 void UtilityProcessHostImpl::OnProcessCrashed(int exit_code) {
+  if (!client_.get())
+    return;
+
   client_task_runner_->PostTask(
       FROM_HERE,
       base::Bind(&UtilityProcessHostClient::OnProcessCrashed, client_.get(),

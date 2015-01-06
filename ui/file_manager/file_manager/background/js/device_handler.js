@@ -87,13 +87,6 @@ DeviceHandler.Notification = function(prefix, title, message, opt_buttonLabel) {
    */
   this.queue_ = new AsyncUtil.Queue();
 
-  /**
-   * Timeout ID.
-   * @type {number}
-   * @private
-   */
-  this.pendingShowTimerId_ = 0;
-
   Object.seal(this);
 };
 
@@ -124,6 +117,16 @@ DeviceHandler.Notification.DEVICE_FAIL = new DeviceHandler.Notification(
     'deviceFail',
     'REMOVABLE_DEVICE_DETECTION_TITLE',
     'DEVICE_UNSUPPORTED_DEFAULT_MESSAGE');
+
+/**
+ * @type {DeviceHandler.Notification}
+ * @const
+ */
+DeviceHandler.Notification.DEVICE_FAIL_UNKNOWN = new DeviceHandler.Notification(
+    'deviceFail',
+    'REMOVABLE_DEVICE_DETECTION_TITLE',
+    'DEVICE_UNKNOWN_DEFAULT_MESSAGE',
+    'DEVICE_UNKNOWN_BUTTON_LABEL');
 
 /**
  * @type {DeviceHandler.Notification}
@@ -179,7 +182,6 @@ DeviceHandler.Notification.FORMAT_FAIL = new DeviceHandler.Notification(
  * @return {string} Notification ID.
  */
 DeviceHandler.Notification.prototype.show = function(devicePath, opt_message) {
-  this.clearTimeout_();
   var notificationId = this.makeId_(devicePath);
   this.queue_.run(function(callback) {
     var buttons =
@@ -199,20 +201,10 @@ DeviceHandler.Notification.prototype.show = function(devicePath, opt_message) {
 };
 
 /**
- * Shows the notification after 5 seconds.
- * @param {string} devicePath Device path.
- */
-DeviceHandler.Notification.prototype.showLater = function(devicePath) {
-  this.clearTimeout_();
-  this.pendingShowTimerId_ = setTimeout(this.show.bind(this, devicePath), 5000);
-};
-
-/**
  * Hides the notification for the device path.
  * @param {string} devicePath Device path.
  */
 DeviceHandler.Notification.prototype.hide = function(devicePath) {
-  this.clearTimeout_();
   this.queue_.run(function(callback) {
     chrome.notifications.clear(this.makeId_(devicePath), callback);
   }.bind(this));
@@ -229,33 +221,21 @@ DeviceHandler.Notification.prototype.makeId_ = function(devicePath) {
 };
 
 /**
- * Cancels the timeout request.
- * @private
- */
-DeviceHandler.Notification.prototype.clearTimeout_ = function() {
-  if (this.pendingShowTimerId_) {
-    clearTimeout(this.pendingShowTimerId_);
-    this.pendingShowTimerId_ = 0;
-  }
-};
-
-/**
  * Handles notifications from C++ sides.
  * @param {DeviceEvent} event Device event.
  * @private
  */
 DeviceHandler.prototype.onDeviceChanged_ = function(event) {
   switch (event.type) {
-    case 'added':
-      DeviceHandler.Notification.DEVICE.showLater(event.devicePath);
-      this.mountStatus_[event.devicePath] = DeviceHandler.MountStatus.NO_RESULT;
+    case 'scan_started':
+      DeviceHandler.Notification.DEVICE.show(event.devicePath);
+      break;
+    case 'scan_cancelled':
+      DeviceHandler.Notification.DEVICE.hide(event.devicePath);
       break;
     case 'disabled':
       DeviceHandler.Notification.DEVICE_EXTERNAL_STORAGE_DISABLED.show(
           event.devicePath);
-      break;
-    case 'scan_canceled':
-      DeviceHandler.Notification.DEVICE.hide(event.devicePath);
       break;
     case 'removed':
       DeviceHandler.Notification.DEVICE.hide(event.devicePath);
@@ -278,6 +258,9 @@ DeviceHandler.prototype.onDeviceChanged_ = function(event) {
     case 'format_fail':
       DeviceHandler.Notification.FORMAT_START.hide(event.devicePath);
       DeviceHandler.Notification.FORMAT_FAIL.show(event.devicePath);
+      break;
+    default:
+      console.error('Unknown event tyep: ' + event.type);
       break;
   }
 };
@@ -311,12 +294,13 @@ DeviceHandler.prototype.onMountCompleted_ = function(event) {
   // If this is remounting, which happens when resuming ChromeOS, the device has
   // already inserted to the computer. So we suppress the notification.
   var volume = event.volumeMetadata;
-  if (!volume.deviceType || event.isRemounting)
+  if (!volume.deviceType || !event.shouldNotify)
     return;
 
   // If the current volume status is succeed and it should be handled in
   // Files.app, show the notification to navigate the volume.
-  if (event.status === 'success' && event.shouldNotify) {
+  if (event.eventType === 'mount' &&
+      event.status === 'success') {
     if (this.navigationVolumes_[event.volumeMetadata.devicePath]) {
       // The notification has already shown for the device. It seems the device
       // has multiple volumes. The order of mount events of volumes are
@@ -334,6 +318,11 @@ DeviceHandler.prototype.onMountCompleted_ = function(event) {
       DeviceHandler.Notification.DEVICE_NAVIGATION.show(
           event.volumeMetadata.devicePath);
     }
+  } else if (event.status === 'error_unknown_filesystem') {
+    // The volume id is necessary to navigate when users click start
+    // format button.
+    this.navigationVolumes_[event.volumeMetadata.devicePath] =
+        event.volumeMetadata.volumeId;
   }
 
   if (event.eventType === 'unmount') {
@@ -351,10 +340,9 @@ DeviceHandler.prototype.onMountCompleted_ = function(event) {
   };
 
   // Update the current status.
+  if (!this.mountStatus_[volume.devicePath])
+    this.mountStatus_[volume.devicePath] = DeviceHandler.MountStatus.NO_RESULT;
   switch (this.mountStatus_[volume.devicePath]) {
-    // If there is no related device, do nothing.
-    case undefined:
-      return;
     // If the multipart error message has already shown, do nothing because the
     // message does not changed by the following mount results.
     case DeviceHandler.MountStatus.MULTIPART_ERROR:
@@ -399,6 +387,9 @@ DeviceHandler.prototype.onMountCompleted_ = function(event) {
       message = volume.deviceLabel ?
           strf('MULTIPART_DEVICE_UNSUPPORTED_MESSAGE', volume.deviceLabel) :
           str('MULTIPART_DEVICE_UNSUPPORTED_DEFAULT_MESSAGE');
+      DeviceHandler.Notification.DEVICE_FAIL.show(
+          volume.devicePath,
+          message);
       break;
     case DeviceHandler.MountStatus.CHILD_ERROR:
     case DeviceHandler.MountStatus.ONLY_PARENT_ERROR:
@@ -406,16 +397,17 @@ DeviceHandler.prototype.onMountCompleted_ = function(event) {
         message = volume.deviceLabel ?
             strf('DEVICE_UNSUPPORTED_MESSAGE', volume.deviceLabel) :
             str('DEVICE_UNSUPPORTED_DEFAULT_MESSAGE');
+        DeviceHandler.Notification.DEVICE_FAIL.show(
+            volume.devicePath,
+            message);
       } else {
         message = volume.deviceLabel ?
             strf('DEVICE_UNKNOWN_MESSAGE', volume.deviceLabel) :
             str('DEVICE_UNKNOWN_DEFAULT_MESSAGE');
+        DeviceHandler.Notification.DEVICE_FAIL_UNKNOWN.show(
+            volume.devicePath,
+            message);
       }
-      break;
-  }
-  if (message) {
-    DeviceHandler.Notification.DEVICE_FAIL.hide(volume.devicePath);
-    DeviceHandler.Notification.DEVICE_FAIL.show(volume.devicePath, message);
   }
 };
 
@@ -425,11 +417,13 @@ DeviceHandler.prototype.onMountCompleted_ = function(event) {
  * @private
  */
 DeviceHandler.prototype.onNotificationButtonClicked_ = function(id) {
-  var match = /^deviceNavigation:(.*)$/.exec(id);
-  if (match) {
+  var pos = id.indexOf(':');
+  var type = id.substr(0, pos);
+  var path = id.substr(pos + 1);
+  if (type === 'deviceNavigation' || type === 'deviceFail') {
     chrome.notifications.clear(id, function() {});
     var event = new Event(DeviceHandler.VOLUME_NAVIGATION_REQUESTED);
-    event.volumeId = this.navigationVolumes_[match[1]];
+    event.volumeId = this.navigationVolumes_[path];
     this.dispatchEvent(event);
   }
 };

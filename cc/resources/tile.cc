@@ -27,13 +27,14 @@ Tile::Tile(TileManager* tile_manager,
            int flags)
     : RefCountedManaged<Tile>(tile_manager),
       tile_manager_(tile_manager),
-      tile_size_(tile_size),
+      size_(tile_size),
       content_rect_(content_rect),
       contents_scale_(contents_scale),
       opaque_rect_(opaque_rect),
       layer_id_(layer_id),
       source_frame_number_(source_frame_number),
       flags_(flags),
+      is_shared_(false),
       id_(s_next_id_++) {
   set_picture_pile(picture_pile);
   for (int i = 0; i < NUM_TREES; i++)
@@ -117,7 +118,7 @@ RasterMode Tile::DetermineRasterModeForResolution(
 
 bool Tile::HasRasterTask() const {
   for (int mode = 0; mode < NUM_RASTER_MODES; ++mode) {
-    if (managed_state_.tile_versions[mode].raster_task_)
+    if (managed_state_.tile_versions[mode].raster_task_.get())
       return true;
   }
   return false;

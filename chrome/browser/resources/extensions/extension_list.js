@@ -4,6 +4,60 @@
 
 <include src="extension_error.js">
 
+/**
+ * The type of the extension data object. The definition is based on
+ * chrome/browser/ui/webui/extensions/extension_basic_info.cc
+ * and
+ * chrome/browser/ui/webui/extensions/extension_settings_handler.cc
+ *     ExtensionSettingsHandler::CreateExtensionDetailValue()
+ * @typedef {{allow_reload: boolean,
+ *            allowAllUrls: boolean,
+ *            allowFileAccess: boolean,
+ *            blacklistText: string,
+ *            corruptInstall: boolean,
+ *            dependentExtensions: Array,
+ *            description: string,
+ *            detailsUrl: string,
+ *            enable_show_button: boolean,
+ *            enabled: boolean,
+ *            enabledIncognito: boolean,
+ *            errorCollectionEnabled: (boolean|undefined),
+ *            hasPopupAction: boolean,
+ *            homepageProvided: boolean,
+ *            homepageUrl: string,
+ *            icon: string,
+ *            id: string,
+ *            incognitoCanBeEnabled: boolean,
+ *            installWarnings: (Array|undefined),
+ *            is_hosted_app: boolean,
+ *            is_platform_app: boolean,
+ *            isUnpacked: boolean,
+ *            kioskEnabled: boolean,
+ *            kioskOnly: boolean,
+ *            locationText: string,
+ *            managedInstall: boolean,
+ *            manifestErrors: (Array.<RuntimeError>|undefined),
+ *            name: string,
+ *            offlineEnabled: boolean,
+ *            optionsUrl: string,
+ *            order: number,
+ *            packagedApp: boolean,
+ *            path: (string|undefined),
+ *            prettifiedPath: (string|undefined),
+ *            runtimeErrors: (Array.<RuntimeError>|undefined),
+ *            suspiciousInstall: boolean,
+ *            terminated: boolean,
+ *            version: string,
+ *            views: Array.<{renderViewId: number, renderProcessId: number,
+ *                path: string, incognito: boolean,
+ *                generatedBackgroundPage: boolean}>,
+ *            wantsAllUrls: boolean,
+ *            wantsErrorCollection: boolean,
+ *            wantsFileAccess: boolean,
+ *            warnings: (Array|undefined)}}
+ */
+var ExtensionData;
+
 cr.define('options', function() {
   'use strict';
 
@@ -11,7 +65,7 @@ cr.define('options', function() {
    * Creates a new list of extensions.
    * @param {Object=} opt_propertyBag Optional properties.
    * @constructor
-   * @extends {cr.ui.div}
+   * @extends {HTMLDivElement}
    */
   var ExtensionsList = cr.ui.define('div');
 
@@ -23,7 +77,7 @@ cr.define('options', function() {
   var butterBarVisibility = {};
 
   /**
-   * @type {Object.<string, string>} A map from extension id to last reloaded
+   * @type {Object.<string, number>} A map from extension id to last reloaded
    *     timestamp. The timestamp is recorded when the user click the 'Reload'
    *     link. It is used to refresh the icon of an unpacked extension.
    *     This persists between calls to decorate.
@@ -32,6 +86,15 @@ cr.define('options', function() {
 
   ExtensionsList.prototype = {
     __proto__: HTMLDivElement.prototype,
+
+    /**
+     * Indicates whether an embedded options page that was navigated to through
+     * the '?options=' URL query has been shown to the user. This is necessary
+     * to prevent showExtensionNodes_ from opening the options more than once.
+     * @type {boolean}
+     * @private
+     */
+    optionsShown_: false,
 
     /** @override */
     decorate: function() {
@@ -44,6 +107,10 @@ cr.define('options', function() {
       return parseQueryParams(document.location)['id'];
     },
 
+    getOptionsQueryParam_: function() {
+      return parseQueryParams(document.location)['options'];
+    },
+
     /**
      * Creates all extension items from scratch.
      * @private
@@ -53,16 +120,12 @@ cr.define('options', function() {
       this.data_.extensions.forEach(this.createNode_, this);
 
       var idToHighlight = this.getIdQueryParam_();
-      if (idToHighlight && $(idToHighlight)) {
-        // Scroll offset should be calculated slightly higher than the actual
-        // offset of the element being scrolled to, so that it ends up not all
-        // the way at the top. That way it is clear that there are more elements
-        // above the element being scrolled to.
-        var scrollFudge = 1.2;
-        var scrollTop = $(idToHighlight).offsetTop - scrollFudge *
-            $(idToHighlight).clientHeight;
-        setScrollTopForDocument(document, scrollTop);
-      }
+      if (idToHighlight && $(idToHighlight))
+        this.scrollToNode_(idToHighlight);
+
+      var idToOpenOptions = this.getOptionsQueryParam_();
+      if (idToOpenOptions && $(idToOpenOptions))
+        this.showEmbeddedExtensionOptions_(idToOpenOptions, true);
 
       if (this.data_.extensions.length == 0)
         this.classList.add('empty-extension-list');
@@ -71,9 +134,25 @@ cr.define('options', function() {
     },
 
     /**
+     * Scrolls the page down to the extension node with the given id.
+     * @param {string} extensionId The id of the extension to scroll to.
+     * @private
+     */
+    scrollToNode_: function(extensionId) {
+      // Scroll offset should be calculated slightly higher than the actual
+      // offset of the element being scrolled to, so that it ends up not all
+      // the way at the top. That way it is clear that there are more elements
+      // above the element being scrolled to.
+      var scrollFudge = 1.2;
+      var scrollTop = $(extensionId).offsetTop - scrollFudge *
+          $(extensionId).clientHeight;
+      setScrollTopForDocument(document, scrollTop);
+    },
+
+    /**
      * Synthesizes and initializes an HTML element for the extension metadata
      * given in |extension|.
-     * @param {Object} extension A dictionary of extension metadata.
+     * @param {ExtensionData} extension A dictionary of extension metadata.
      * @private
      */
     createNode_: function(extension) {
@@ -193,9 +272,13 @@ cr.define('options', function() {
       if (extension.enabled && extension.optionsUrl) {
         var options = node.querySelector('.options-link');
         options.addEventListener('click', function(e) {
-          chrome.send('extensionSettingsOptions', [extension.id]);
+          if (this.data_.enableEmbeddedExtensionOptions) {
+            this.showEmbeddedExtensionOptions_(extension.id, false);
+          } else {
+            chrome.send('extensionSettingsOptions', [extension.id]);
+          }
           e.preventDefault();
-        });
+        }.bind(this));
         options.hidden = false;
       }
 
@@ -321,10 +404,13 @@ cr.define('options', function() {
             node.querySelector('.dependent-extensions-message');
         dependentMessage.hidden = false;
         var dependentList = dependentMessage.querySelector('ul');
-        extension.dependentExtensions.forEach(function(id) {
-          var li = document.createElement('li');
-          li.innerText = id;
-          dependentList.appendChild(li);
+        var dependentTemplate = $('template-collection').querySelector(
+            '.dependent-list-item');
+        extension.dependentExtensions.forEach(function(elem) {
+          var depNode = dependentTemplate.cloneNode(true);
+          depNode.querySelector('.dep-extension-title').textContent = elem.name;
+          depNode.querySelector('.dep-extension-id').textContent = elem.id;
+          dependentList.appendChild(depNode);
         });
       }
 
@@ -401,11 +487,48 @@ cr.define('options', function() {
         // Scroll beneath the fixed header so that the extension is not
         // obscured.
         var topScroll = node.offsetTop - $('page-header').offsetHeight;
-        var pad = parseInt(getComputedStyle(node, null).marginTop, 10);
+        var pad = parseInt(window.getComputedStyle(node, null).marginTop, 10);
         if (!isNaN(pad))
           topScroll -= pad / 2;
         setScrollTopForDocument(document, topScroll);
       }
+    },
+
+    /**
+     * Opens the extension options overlay for the extension with the given id.
+     * @param {string} extensionId The id of extension whose options page should
+     *     be displayed.
+     * @param {boolean} scroll Whether the page should scroll to the extension
+     * @private
+     */
+    showEmbeddedExtensionOptions_: function(extensionId, scroll) {
+      if (this.optionsShown_)
+        return;
+
+      // Get the extension from the given id.
+      var extension = this.data_.extensions.filter(function(extension) {
+        return extension.id == extensionId;
+      })[0];
+
+      if (!extension)
+        return;
+
+      if (scroll)
+        this.scrollToNode_(extensionId);
+      // Add the options query string. Corner case: the 'options' query string
+      // will clobber the 'id' query string if the options link is clicked when
+      // 'id' is in the URL, or if both query strings are in the URL.
+      uber.replaceState({}, '?options=' + extensionId);
+
+      extensions.ExtensionOptionsOverlay.getInstance().
+          setExtensionAndShowOverlay(extensionId,
+                                     extension.name,
+                                     extension.icon);
+
+      this.optionsShown_ = true;
+      $('overlay').addEventListener('cancelOverlay', function() {
+        this.optionsShown_ = false;
+      }.bind(this));
     },
   };
 

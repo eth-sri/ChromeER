@@ -108,7 +108,7 @@ AttachmentUploaderImpl::UploadState::UploadState(
       token_service_provider_(token_service_provider),
       owner_(owner) {
   DCHECK(upload_url_.is_valid());
-  DCHECK(url_request_context_getter_);
+  DCHECK(url_request_context_getter_.get());
   DCHECK(!account_id_.empty());
   DCHECK(!scopes_.empty());
   DCHECK(token_service_provider_);
@@ -212,17 +212,17 @@ AttachmentUploaderImpl::AttachmentUploaderImpl(
         url_request_context_getter,
     const std::string& account_id,
     const OAuth2TokenService::ScopeSet& scopes,
-    scoped_ptr<OAuth2TokenServiceRequest::TokenServiceProvider>
+    const scoped_refptr<OAuth2TokenServiceRequest::TokenServiceProvider>&
         token_service_provider)
     : sync_service_url_(sync_service_url),
       url_request_context_getter_(url_request_context_getter),
       account_id_(account_id),
       scopes_(scopes),
-      token_service_provider_(token_service_provider.Pass()) {
+      token_service_provider_(token_service_provider) {
   DCHECK(CalledOnValidThread());
   DCHECK(!account_id.empty());
   DCHECK(!scopes.empty());
-  DCHECK(token_service_provider_);
+  DCHECK(token_service_provider_.get());
 }
 
 AttachmentUploaderImpl::~AttachmentUploaderImpl() {

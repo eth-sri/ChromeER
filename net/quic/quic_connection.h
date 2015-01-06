@@ -94,6 +94,9 @@ class NET_EXPORT_PRIVATE QuicConnectionVisitorInterface {
   // Called when a blocked socket becomes writable.
   virtual void OnCanWrite() = 0;
 
+  // Called when the connection experiences a change in congestion window.
+  virtual void OnCongestionWindowChange(QuicTime now) = 0;
+
   // Called to ask if the visitor wants to schedule write resumption as it both
   // has pending data to write, and is able to write (e.g. based on flow control
   // limits).
@@ -137,7 +140,7 @@ class NET_EXPORT_PRIVATE QuicConnectionDebugVisitor
                                 const IPEndPoint& peer_address,
                                 const QuicEncryptedPacket& packet) {}
 
-  // Called when a packet is recived with a connection id that does not
+  // Called when a packet is received with a connection id that does not
   // match the ID of this connection.
   virtual void OnIncorrectConnectionId(
       QuicConnectionId connection_id) {}
@@ -198,6 +201,9 @@ class NET_EXPORT_PRIVATE QuicConnectionDebugVisitor
   // in the revival of a packet via FEC.
   virtual void OnRevivedPacket(const QuicPacketHeader& revived_header,
                                base::StringPiece payload) {}
+
+  // Called when the connection is closed.
+  virtual void OnConnectionClosed(QuicErrorCode error, bool from_peer) {}
 };
 
 class NET_EXPORT_PRIVATE QuicConnectionHelperInterface {
@@ -219,7 +225,8 @@ class NET_EXPORT_PRIVATE QuicConnectionHelperInterface {
 class NET_EXPORT_PRIVATE QuicConnection
     : public QuicFramerVisitorInterface,
       public QuicBlockedWriterInterface,
-      public QuicPacketGenerator::DelegateInterface {
+      public QuicPacketGenerator::DelegateInterface,
+      public QuicSentPacketManager::NetworkChangeVisitor {
  public:
   enum PacketType {
     NORMAL,
@@ -233,13 +240,21 @@ class NET_EXPORT_PRIVATE QuicConnection
     BUNDLE_PENDING_ACK = 2,
   };
 
-  // Constructs a new QuicConnection for |connection_id| and |address|.
-  // |helper| must outlive this connection, and if |owns_writer| is false, so
-  // must |writer|.
+  class PacketWriterFactory {
+   public:
+    virtual ~PacketWriterFactory() {}
+
+    virtual QuicPacketWriter* Create(QuicConnection* connection) const = 0;
+  };
+
+  // Constructs a new QuicConnection for |connection_id| and |address|. Invokes
+  // writer_factory->Create() to get a writer; |owns_writer| specifies whether
+  // the connection takes ownership of the returned writer. |helper| must
+  // outlive this connection.
   QuicConnection(QuicConnectionId connection_id,
                  IPEndPoint address,
                  QuicConnectionHelperInterface* helper,
-                 QuicPacketWriter* writer,
+                 const PacketWriterFactory& writer_factory,
                  bool owns_writer,
                  bool is_server,
                  const QuicVersionVector& supported_versions);
@@ -310,8 +325,9 @@ class NET_EXPORT_PRIVATE QuicConnection
   // writes to happen.
   virtual void OnCanWrite() OVERRIDE;
 
-  // Called when a packet has been finally sent to the network.
-  bool OnPacketSent(WriteResult result);
+  // Called when an error occurs while attempting to write a packet to the
+  // network.
+  void OnWriteError(int error_code);
 
   // If the socket is not blocked, writes queued packets.
   void WriteIfNotBlocked();
@@ -363,10 +379,20 @@ class NET_EXPORT_PRIVATE QuicConnection
   virtual QuicStopWaitingFrame* CreateStopWaitingFrame() OVERRIDE;
   virtual bool OnSerializedPacket(const SerializedPacket& packet) OVERRIDE;
 
+  // QuicSentPacketManager::NetworkChangeVisitor
+  virtual void OnCongestionWindowChange(
+      QuicByteCount congestion_window) OVERRIDE;
+
+  // Called by the crypto stream when the handshake completes. In the server's
+  // case this is when the SHLO has been ACKed. Clients call this on receipt of
+  // the SHLO.
+  void OnHandshakeComplete();
+
   // Accessors
   void set_visitor(QuicConnectionVisitorInterface* visitor) {
     visitor_ = visitor;
   }
+  // This method takes ownership of |debug_visitor|.
   void set_debug_visitor(QuicConnectionDebugVisitor* debug_visitor) {
     debug_visitor_.reset(debug_visitor);
     packet_generator_.set_debug_delegate(debug_visitor);
@@ -526,10 +552,6 @@ class NET_EXPORT_PRIVATE QuicConnection
   QuicPacketWriter* writer() { return writer_; }
 
   bool peer_port_changed() const { return peer_port_changed_; }
-
-  const QuicReceivedPacketManager& received_packet_manager() const {
-    return received_packet_manager_;
-  }
 
   QuicPacketSequenceNumber sequence_number_of_last_sent_packet() const {
     return sequence_number_of_last_sent_packet_;
@@ -696,9 +718,6 @@ class NET_EXPORT_PRIVATE QuicConnection
   // they are added to this list.  All corresponding frames are in
   // unacked_packets_ if they are to be retransmitted.
   QueuedPacketList queued_packets_;
-
-  // Contains information about the current write in progress, if any.
-  scoped_ptr<QueuedPacket> pending_write_;
 
   // Contains the connection close packet if the connection has been closed.
   scoped_ptr<QuicEncryptedPacket> connection_close_packet_;

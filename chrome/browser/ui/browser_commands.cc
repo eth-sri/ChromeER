@@ -18,6 +18,7 @@
 #include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/dom_distiller/tab_utils.h"
 #include "chrome/browser/extensions/api/commands/command_service.h"
+#include "chrome/browser/extensions/api/extension_action/extension_action_api.h"
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/favicon/favicon_tab_helper.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
@@ -120,7 +121,7 @@ bool CanBookmarkCurrentPageInternal(const Browser* browser,
       BookmarkModelFactory::GetForProfile(browser->profile());
   return browser_defaults::bookmarks_enabled &&
       browser->profile()->GetPrefs()->GetBoolean(
-          prefs::kEditBookmarksEnabled) &&
+          bookmarks::prefs::kEditBookmarksEnabled) &&
       model && model->loaded() && browser->is_type_tabbed() &&
       (!check_remove_bookmark_ui ||
            !chrome::ShouldRemoveBookmarkThisPageUI(browser->profile()));
@@ -603,15 +604,6 @@ bool ActualSize(content::WebContents* contents) {
   return zoom_controller->GetZoomPercent() != 100.0f;
 }
 
-void RestoreTab(Browser* browser) {
-  content::RecordAction(UserMetricsAction("RestoreTab"));
-  TabRestoreService* service =
-      TabRestoreServiceFactory::GetForProfile(browser->profile());
-  if (service)
-    service->RestoreMostRecentEntry(browser->tab_restore_service_delegate(),
-                                    browser->host_desktop_type());
-}
-
 TabStripModelDelegate::RestoreTabType GetRestoreTabType(
     const Browser* browser) {
   TabRestoreService* service =
@@ -754,18 +746,16 @@ void BookmarkCurrentPage(Browser* browser) {
     switch (command_type) {
       case extensions::CommandService::NAMED:
         browser->window()->ExecuteExtensionCommand(extension, command);
-        return;
-
+        break;
       case extensions::CommandService::BROWSER_ACTION:
-        // BookmarkCurrentPage is called through a user gesture, so it is safe
-        // to call ShowBrowserActionPopup.
-        browser->window()->ShowBrowserActionPopup(extension);
-        return;
-
       case extensions::CommandService::PAGE_ACTION:
-        browser->window()->ShowPageActionPopup(extension);
-        return;
+        // BookmarkCurrentPage is called through a user gesture, so it is safe
+        // to grant the active tab permission.
+        extensions::ExtensionActionAPI::Get(browser->profile())->
+            ShowExtensionActionPopup(extension, browser, true);
+        break;
     }
+    return;
   }
 
   BookmarkCurrentPageInternal(browser);
@@ -806,15 +796,12 @@ void Translate(Browser* browser) {
 }
 
 void ManagePasswordsForPage(Browser* browser) {
-// TODO(mkwst): Implement this feature on Mac: http://crbug.com/261628
-#if !defined(OS_MACOSX)
   if (!browser->window()->IsActive())
     return;
 
   WebContents* web_contents =
       browser->tab_strip_model()->GetActiveWebContents();
   chrome::ShowManagePasswordsBubble(web_contents);
-#endif
 }
 
 void TogglePagePinnedToStartScreen(Browser* browser) {
@@ -864,10 +851,7 @@ void Print(Browser* browser) {
 #if defined(ENABLE_FULL_PRINTING)
   printing::PrintViewManager* print_view_manager =
       printing::PrintViewManager::FromWebContents(contents);
-  if (browser->profile()->GetPrefs()->GetBoolean(prefs::kPrintPreviewDisabled))
-    print_view_manager->PrintNow();
-  else
-    print_view_manager->PrintPreviewNow(false);
+  print_view_manager->PrintPreviewNow(false);
 #else
   printing::PrintViewManagerBasic* print_view_manager =
       printing::PrintViewManagerBasic::FromWebContents(contents);
@@ -888,6 +872,7 @@ bool CanPrint(Browser* browser) {
       GetContentRestrictions(browser) & CONTENT_RESTRICTION_PRINT);
 }
 
+#if !defined(OS_WIN)
 void AdvancedPrint(Browser* browser) {
 #if defined(ENABLE_FULL_PRINTING)
   printing::PrintViewManager* print_view_manager =
@@ -898,28 +883,10 @@ void AdvancedPrint(Browser* browser) {
 }
 
 bool CanAdvancedPrint(Browser* browser) {
-  // If printing is not disabled via pref or policy, it is always possible to
-  // advanced print when the print preview is visible.  The exception to this
-  // is under Win8 ash, since showing the advanced print dialog will open it
-  // modally on the Desktop and hang the browser.  We can remove this check
-  // once we integrate with the system print charm.
-#if defined(OS_WIN)
-  if (chrome::GetActiveDesktop() == chrome::HOST_DESKTOP_TYPE_ASH)
-    return false;
-#endif
-
   return browser->profile()->GetPrefs()->GetBoolean(prefs::kPrintingEnabled) &&
       (PrintPreviewShowing(browser) || CanPrint(browser));
 }
-
-void PrintToDestination(Browser* browser) {
-#if defined(ENABLE_FULL_PRINTING)
-  printing::PrintViewManager* print_view_manager =
-      printing::PrintViewManager::FromWebContents(
-          browser->tab_strip_model()->GetActiveWebContents());
-  print_view_manager->PrintToDestination();
-#endif
-}
+#endif  // !OS_WIN
 
 void EmailPageLocation(Browser* browser) {
   content::RecordAction(UserMetricsAction("EmailPageLocation"));

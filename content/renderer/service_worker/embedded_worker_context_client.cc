@@ -123,6 +123,11 @@ blink::WebURL EmbeddedWorkerContextClient::scope() const {
   return service_worker_scope_;
 }
 
+blink::WebServiceWorkerCacheStorage*
+    EmbeddedWorkerContextClient::cacheStorage() {
+  return script_context_->cache_storage();
+}
+
 void EmbeddedWorkerContextClient::didPauseAfterDownload() {
   Send(new EmbeddedWorkerHostMsg_DidPauseAfterDownload(embedded_worker_id_));
 }
@@ -131,6 +136,10 @@ void EmbeddedWorkerContextClient::getClients(
     blink::WebServiceWorkerClientsCallbacks* callbacks) {
   DCHECK(script_context_);
   script_context_->GetClientDocuments(callbacks);
+}
+
+void EmbeddedWorkerContextClient::workerReadyForInspection() {
+  Send(new EmbeddedWorkerHostMsg_WorkerReadyForInspection(embedded_worker_id_));
 }
 
 void EmbeddedWorkerContextClient::workerContextFailedToStart() {
@@ -145,7 +154,7 @@ void EmbeddedWorkerContextClient::workerContextFailedToStart() {
 
 void EmbeddedWorkerContextClient::workerContextStarted(
     blink::WebServiceWorkerContextProxy* proxy) {
-  DCHECK(!worker_task_runner_);
+  DCHECK(!worker_task_runner_.get());
   worker_task_runner_ = new WorkerThreadTaskRunner(
       WorkerTaskRunner::Instance()->CurrentWorkerId());
   DCHECK_NE(0, WorkerTaskRunner::Instance()->CurrentWorkerId());
@@ -156,7 +165,9 @@ void EmbeddedWorkerContextClient::workerContextStarted(
   g_worker_client_tls.Pointer()->Set(this);
   script_context_.reset(new ServiceWorkerScriptContext(this, proxy));
 
-  Send(new EmbeddedWorkerHostMsg_WorkerScriptLoaded(embedded_worker_id_));
+  Send(new EmbeddedWorkerHostMsg_WorkerScriptLoaded(
+      embedded_worker_id_,
+      WorkerTaskRunner::Instance()->CurrentWorkerId()));
 
   // Schedule a task to send back WorkerStarted asynchronously,
   // so that at the time we send it we can be sure that the worker
@@ -319,9 +330,7 @@ void EmbeddedWorkerContextClient::OnMessageToWorker(
 
 void EmbeddedWorkerContextClient::SendWorkerStarted() {
   DCHECK(worker_task_runner_->RunsTasksOnCurrentThread());
-  Send(new EmbeddedWorkerHostMsg_WorkerStarted(
-      WorkerTaskRunner::Instance()->CurrentWorkerId(),
-      embedded_worker_id_));
+  Send(new EmbeddedWorkerHostMsg_WorkerStarted(embedded_worker_id_));
 }
 
 }  // namespace content

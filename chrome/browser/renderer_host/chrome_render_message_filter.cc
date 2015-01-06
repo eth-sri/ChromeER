@@ -23,8 +23,8 @@
 #include "content/public/browser/render_process_host.h"
 
 #if defined(ENABLE_EXTENSIONS)
-#include "chrome/browser/guest_view/web_view/web_view_permission_helper.h"
-#include "chrome/browser/guest_view/web_view/web_view_renderer_state.h"
+#include "extensions/browser/guest_view/web_view/web_view_permission_helper.h"
+#include "extensions/browser/guest_view/web_view/web_view_renderer_state.h"
 #endif
 
 #if defined(ENABLE_TASK_MANAGER)
@@ -114,16 +114,16 @@ void ChromeRenderMessageFilter::OnPreconnect(const GURL& url) {
 
 void ChromeRenderMessageFilter::OnResourceTypeStats(
     const WebCache::ResourceTypeStats& stats) {
-  HISTOGRAM_COUNTS("WebCoreCache.ImagesSizeKB",
-                   static_cast<int>(stats.images.size / 1024));
-  HISTOGRAM_COUNTS("WebCoreCache.CSSStylesheetsSizeKB",
-                   static_cast<int>(stats.cssStyleSheets.size / 1024));
-  HISTOGRAM_COUNTS("WebCoreCache.ScriptsSizeKB",
-                   static_cast<int>(stats.scripts.size / 1024));
-  HISTOGRAM_COUNTS("WebCoreCache.XSLStylesheetsSizeKB",
-                   static_cast<int>(stats.xslStyleSheets.size / 1024));
-  HISTOGRAM_COUNTS("WebCoreCache.FontsSizeKB",
-                   static_cast<int>(stats.fonts.size / 1024));
+  LOCAL_HISTOGRAM_COUNTS("WebCoreCache.ImagesSizeKB",
+                         static_cast<int>(stats.images.size / 1024));
+  LOCAL_HISTOGRAM_COUNTS("WebCoreCache.CSSStylesheetsSizeKB",
+                         static_cast<int>(stats.cssStyleSheets.size / 1024));
+  LOCAL_HISTOGRAM_COUNTS("WebCoreCache.ScriptsSizeKB",
+                         static_cast<int>(stats.scripts.size / 1024));
+  LOCAL_HISTOGRAM_COUNTS("WebCoreCache.XSLStylesheetsSizeKB",
+                         static_cast<int>(stats.xslStyleSheets.size / 1024));
+  LOCAL_HISTOGRAM_COUNTS("WebCoreCache.FontsSizeKB",
+                         static_cast<int>(stats.fonts.size / 1024));
 
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 #if defined(ENABLE_TASK_MANAGER)
@@ -227,10 +227,11 @@ void ChromeRenderMessageFilter::FileSystemAccessedSyncOnUIThread(
     bool blocked_by_policy,
     IPC::Message* reply_msg) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  WebViewPermissionHelper* web_view_permission_helper =
-      WebViewPermissionHelper::FromFrameID(render_process_id, render_frame_id);
+  extensions::WebViewPermissionHelper* web_view_permission_helper =
+      extensions::WebViewPermissionHelper::FromFrameID(
+          render_process_id, render_frame_id);
   // Between the time the permission request is made and the time it is handled
-  // by the UI thread, the WebViewPermissionHelper might be gone.
+  // by the UI thread, the extensions::WebViewPermissionHelper might be gone.
   if (!web_view_permission_helper)
     return;
   web_view_permission_helper->FileSystemAccessedSync(
@@ -275,8 +276,8 @@ void ChromeRenderMessageFilter::OnRequestFileSystemAccess(
       cookie_settings_->IsSettingCookieAllowed(origin_url, top_origin_url);
 
 #if defined(ENABLE_EXTENSIONS)
-  bool is_web_view_guest =
-      WebViewRendererState::GetInstance()->IsGuest(render_process_id_);
+  bool is_web_view_guest = extensions::WebViewRendererState::GetInstance()
+      ->IsGuest(render_process_id_);
   if (is_web_view_guest) {
     // Record access to file system for potential display in UI.
     BrowserThread::PostTask(
@@ -311,10 +312,11 @@ void ChromeRenderMessageFilter::FileSystemAccessedOnUIThread(
     bool allowed,
     base::Callback<void(bool)> callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  WebViewPermissionHelper* web_view_permission_helper =
-      WebViewPermissionHelper::FromFrameID(render_process_id, render_frame_id);
+  extensions::WebViewPermissionHelper* web_view_permission_helper =
+      extensions::WebViewPermissionHelper::FromFrameID(
+          render_process_id, render_frame_id);
   // Between the time the permission request is made and the time it is handled
-  // by the UI thread, the WebViewPermissionHelper might be gone.
+  // by the UI thread, the extensions::WebViewPermissionHelper might be gone.
   if (!web_view_permission_helper)
     return;
   web_view_permission_helper->RequestFileSystemPermission(

@@ -9,7 +9,6 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browsing_data/browsing_data_helper.h"
 #include "chrome/browser/chromeos/login/signin/oauth2_login_manager_factory.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/profiles/profiles_state.h"
@@ -17,11 +16,15 @@
 #include "chrome/common/chrome_switches.h"
 #include "chromeos/chromeos_switches.h"
 #include "components/user_manager/user.h"
+#include "components/user_manager/user_manager.h"
 #include "content/public/browser/browser_thread.h"
 
 namespace chromeos {
 
 namespace {
+
+// As defined in /chromeos/dbus/cryptohome_client.cc.
+static const char kUserIdHashSuffix[] = "-hash";
 
 bool ShouldAddProfileDirPrefix(const std::string& user_id_hash) {
   // Do not add profile dir prefix for legacy profile dir and test
@@ -61,8 +64,8 @@ ProfileHelper::ProfileHelper()
 ProfileHelper::~ProfileHelper() {
   // Checking whether UserManager is initialized covers case
   // when ScopedTestUserManager is used.
-  if (UserManager::IsInitialized())
-    UserManager::Get()->RemoveSessionStateObserver(this);
+  if (user_manager::UserManager::IsInitialized())
+    user_manager::UserManager::Get()->RemoveSessionStateObserver(this);
 }
 
 // static
@@ -89,14 +92,6 @@ base::FilePath ProfileHelper::GetProfilePathByUserIdHash(
   base::FilePath profile_path = profile_manager->user_data_dir();
 
   return profile_path.Append(GetUserProfileDir(user_id_hash));
-}
-
-// static
-base::FilePath ProfileHelper::GetProfileDirByLegacyLoginProfileSwitch() {
-  const std::string login_profile_value =
-      CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
-          chromeos::switches::kLoginProfile);
-  return ProfileHelper::GetUserProfileDir(login_profile_value);
 }
 
 // static
@@ -138,27 +133,10 @@ std::string ProfileHelper::GetUserIdHashFromProfile(Profile* profile) {
 // static
 base::FilePath ProfileHelper::GetUserProfileDir(
     const std::string& user_id_hash) {
-  DCHECK(!user_id_hash.empty());
+  CHECK(!user_id_hash.empty());
   return ShouldAddProfileDirPrefix(user_id_hash)
              ? base::FilePath(chrome::kProfileDirPrefix + user_id_hash)
              : base::FilePath(user_id_hash);
-}
-
-// static
-base::FilePath ProfileHelper::GetUserProfileDirByUserId(
-    const std::string& user_id) {
-  // TODO(dpolukhin): Remove Chrome OS specific profile path logic from
-  // ProfileManager and use only this function to construct profile path.
-  // TODO(nkostylev): Cleanup profile dir related code paths crbug.com/294233
-  base::FilePath profile_dir;
-  const user_manager::User* user = UserManager::Get()->FindUser(user_id);
-  if (user && !user->username_hash().empty())
-    profile_dir = ProfileHelper::GetUserProfileDir(user->username_hash());
-
-  ProfileManager* profile_manager = g_browser_process->profile_manager();
-  profile_dir = profile_manager->user_data_dir().Append(profile_dir);
-
-  return profile_dir;
 }
 
 // static
@@ -174,17 +152,17 @@ bool ProfileHelper::IsOwnerProfile(Profile* profile) {
   if (!user)
     return false;
 
-  return user->email() == chromeos::UserManager::Get()->GetOwnerEmail();
+  return user->email() == user_manager::UserManager::Get()->GetOwnerEmail();
 }
 
-//static
+// static
 bool ProfileHelper::IsPrimaryProfile(Profile* profile) {
   if (!profile)
     return false;
   user_manager::User* user = ProfileHelper::Get()->GetUserByProfile(profile);
   if (!user)
     return false;
-  return user == chromeos::UserManager::Get()->GetPrimaryUser();
+  return user == user_manager::UserManager::Get()->GetPrimaryUser();
 }
 
 void ProfileHelper::ProfileStartup(Profile* profile, bool process_startup) {
@@ -198,8 +176,8 @@ void ProfileHelper::ProfileStartup(Profile* profile, bool process_startup) {
   // Add observer so we can see when the first profile's session restore is
   // completed. After that, we won't need the default profile anymore.
   if (!IsSigninProfile(profile) &&
-      UserManager::Get()->IsLoggedInAsRegularUser() &&
-      !UserManager::Get()->IsLoggedInAsStub()) {
+      user_manager::UserManager::Get()->IsLoggedInAsRegularUser() &&
+      !user_manager::UserManager::Get()->IsLoggedInAsStub()) {
     chromeos::OAuth2LoginManager* login_manager =
         chromeos::OAuth2LoginManagerFactory::GetInstance()->GetForProfile(
             profile);
@@ -213,7 +191,7 @@ base::FilePath ProfileHelper::GetActiveUserProfileDir() {
 }
 
 void ProfileHelper::Initialize() {
-  UserManager::Get()->AddSessionStateObserver(this);
+  user_manager::UserManager::Get()->AddSessionStateObserver(this);
 }
 
 void ProfileHelper::ClearSigninProfile(const base::Closure& on_clear_callback) {
@@ -242,15 +220,41 @@ Profile* ProfileHelper::GetProfileByUser(const user_manager::User* user) {
     return it == user_to_profile_for_testing_.end() ? NULL : it->second;
   }
 
-  Profile* profile = NULL;
-  if (user->is_profile_created())
-    profile = ProfileHelper::GetProfileByUserIdHash(user->username_hash());
-  else
-    profile = ProfileManager::GetActiveUserProfile();
+  if (!user->is_profile_created())
+    return NULL;
+  Profile* profile =
+      ProfileHelper::GetProfileByUserIdHash(user->username_hash());
 
   // GetActiveUserProfile() or GetProfileByUserIdHash() returns a new instance
   // of ProfileImpl(), but actually its OffTheRecordProfile() should be used.
-  if (profile && UserManager::Get()->IsLoggedInAsGuest())
+  if (user_manager::UserManager::Get()->IsLoggedInAsGuest())
+    profile = profile->GetOffTheRecordProfile();
+
+  return profile;
+}
+
+Profile* ProfileHelper::GetProfileByUserUnsafe(const user_manager::User* user) {
+  // This map is non-empty only in tests.
+  if (!user_to_profile_for_testing_.empty()) {
+    std::map<const user_manager::User*, Profile*>::const_iterator it =
+        user_to_profile_for_testing_.find(user);
+    return it == user_to_profile_for_testing_.end() ? NULL : it->second;
+  }
+
+  Profile* profile = NULL;
+  if (user->is_profile_created()) {
+    profile = ProfileHelper::GetProfileByUserIdHash(user->username_hash());
+  } else {
+    LOG(WARNING) << "ProfileHelper::GetProfileByUserUnsafe is called when "
+                    "|user|'s profile is not created. It probably means that "
+                    "something is wrong with a calling code. Please report in "
+                    "http://crbug.com/361528 if you see this message.";
+    profile = ProfileManager::GetActiveUserProfile();
+  }
+
+  // GetActiveUserProfile() or GetProfileByUserIdHash() returns a new instance
+  // of ProfileImpl(), but actually its OffTheRecordProfile() should be used.
+  if (profile && user_manager::UserManager::Get()->IsLoggedInAsGuest())
     profile = profile->GetOffTheRecordProfile();
   return profile;
 }
@@ -260,7 +264,7 @@ user_manager::User* ProfileHelper::GetUserByProfile(Profile* profile) {
   if (enable_profile_to_user_testing || !user_list_for_testing_.empty()) {
     if (always_return_primary_user_for_testing)
       return const_cast<user_manager::User*>(
-          UserManager::Get()->GetPrimaryUser());
+          user_manager::UserManager::Get()->GetPrimaryUser());
 
     const std::string& user_name = profile->GetProfileName();
     for (user_manager::UserList::const_iterator it =
@@ -273,14 +277,16 @@ user_manager::User* ProfileHelper::GetUserByProfile(Profile* profile) {
 
     // In case of test setup we should always default to primary user.
     return const_cast<user_manager::User*>(
-        UserManager::Get()->GetPrimaryUser());
+        user_manager::UserManager::Get()->GetPrimaryUser());
   }
 
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK(!content::BrowserThread::IsThreadInitialized(
+             content::BrowserThread::UI) ||
+         content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
   if (ProfileHelper::IsSigninProfile(profile))
     return NULL;
 
-  UserManager* user_manager = UserManager::Get();
+  user_manager::UserManager* user_manager = user_manager::UserManager::Get();
 
   // Special case for non-CrOS tests that do create several profiles
   // and don't really care about mapping to the real user.
@@ -345,8 +351,6 @@ void ProfileHelper::OnSessionRestoreStateChanged(
 
 void ProfileHelper::ActiveUserHashChanged(const std::string& hash) {
   active_user_id_hash_ = hash;
-  base::FilePath profile_path = GetProfilePathByUserIdHash(hash);
-  VLOG(1) << "Switching to profile path: " << profile_path.value();
 }
 
 void ProfileHelper::SetProfileToUserMappingForTesting(
@@ -369,6 +373,12 @@ void ProfileHelper::SetUserToProfileMappingForTesting(
     const user_manager::User* user,
     Profile* profile) {
   user_to_profile_for_testing_[user] = profile;
+}
+
+// static
+std::string ProfileHelper::GetUserIdHashByUserIdForTesting(
+    const std::string& user_id) {
+  return user_id + kUserIdHashSuffix;
 }
 
 }  // namespace chromeos

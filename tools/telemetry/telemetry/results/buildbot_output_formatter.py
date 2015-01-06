@@ -4,8 +4,8 @@
 
 from telemetry import perf_tests_helper
 from telemetry import value as value_module
-from telemetry.value import summary as summary_module
 from telemetry.results import output_formatter
+from telemetry.value import summary as summary_module
 
 
 class BuildbotOutputFormatter(output_formatter.OutputFormatter):
@@ -31,8 +31,7 @@ class BuildbotOutputFormatter(output_formatter.OutputFormatter):
     # Print out the list of unique pages.
     perf_tests_helper.PrintPages(
         [page.display_name for page in page_test_results.pages_that_succeeded])
-    summary = summary_module.Summary(page_test_results.all_page_specific_values,
-                                     had_failures)
+    summary = summary_module.Summary(page_test_results.all_page_specific_values)
     for value in summary.interleaved_computed_per_page_values_and_summaries:
       if value.page:
         self._PrintComputedPerPageValue(value)
@@ -53,7 +52,7 @@ class BuildbotOutputFormatter(output_formatter.OutputFormatter):
       return
 
     buildbot_measurement_name, buildbot_trace_name = (
-        value.GetBuildbotMeasurementAndTraceNameForPerPageResult())
+        value.GetChartAndTraceNameForPerPageResult())
     self._PrintPerfResult(buildbot_measurement_name,
                           buildbot_trace_name,
                           buildbot_value, value.units, buildbot_data_type)
@@ -72,7 +71,7 @@ class BuildbotOutputFormatter(output_formatter.OutputFormatter):
       return
 
     buildbot_measurement_name, buildbot_trace_name = (
-        value.GetBuildbotMeasurementAndTraceNameForComputedSummaryResult(
+        value.GetChartAndTraceNameForComputedSummaryResult(
             self._trace_tag))
     self._PrintPerfResult(buildbot_measurement_name,
                           buildbot_trace_name,
@@ -88,7 +87,7 @@ class BuildbotOutputFormatter(output_formatter.OutputFormatter):
         buildbot_data_type = value.GetBuildbotDataType(
             output_context=value_module.SUMMARY_RESULT_OUTPUT_CONTEXT)
         buildbot_measurement_name, buildbot_trace_name = (
-            value.GetBuildbotMeasurementAndTraceNameForComputedSummaryResult(
+            value.GetChartAndTraceNameForComputedSummaryResult(
                 self._trace_tag))
         self._PrintPerfResult(
             buildbot_measurement_name,

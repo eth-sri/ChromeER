@@ -6,10 +6,13 @@ import("//build/config/ui.gni")
 
 component("compositor") {
   sources = [
+    "closure_animation_observer.cc",
+    "closure_animation_observer.h",
     "compositor.cc",
     "compositor.h",
     "compositor_animation_observer.h",
     "compositor_export.h",
+    "compositor_observer.cc",
     "compositor_observer.h",
     "compositor_vsync_manager.cc",
     "compositor_vsync_manager.h",
@@ -55,6 +58,7 @@ component("compositor") {
     "//base",
     "//base/third_party/dynamic_annotations",
     "//cc",
+    "//cc/surfaces",
     "//gpu/command_buffer/common",
     "//skia",
     "//ui/gfx",

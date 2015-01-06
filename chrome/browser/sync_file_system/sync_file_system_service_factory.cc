@@ -28,6 +28,11 @@ SyncFileSystemServiceFactory* SyncFileSystemServiceFactory::GetInstance() {
   return Singleton<SyncFileSystemServiceFactory>::get();
 }
 
+void SyncFileSystemServiceFactory::set_mock_local_file_service(
+    scoped_ptr<LocalFileSyncService> mock_local_service) {
+  mock_local_file_service_ = mock_local_service.Pass();
+}
+
 void SyncFileSystemServiceFactory::set_mock_remote_file_service(
     scoped_ptr<RemoteFileSyncService> mock_remote_service) {
   mock_remote_file_service_ = mock_remote_service.Pass();
@@ -40,10 +45,7 @@ SyncFileSystemServiceFactory::SyncFileSystemServiceFactory()
   typedef std::set<BrowserContextKeyedServiceFactory*> FactorySet;
   FactorySet factories;
   factories.insert(extensions::ExtensionRegistryFactory::GetInstance());
-  RemoteFileSyncService::AppendDependsOnFactories(
-      RemoteFileSyncService::V1, &factories);
-  RemoteFileSyncService::AppendDependsOnFactories(
-      RemoteFileSyncService::V2, &factories);
+  RemoteFileSyncService::AppendDependsOnFactories(&factories);
   for (FactorySet::iterator iter = factories.begin();
        iter != factories.end();
        ++iter) {
@@ -59,18 +61,18 @@ KeyedService* SyncFileSystemServiceFactory::BuildServiceInstanceFor(
 
   SyncFileSystemService* service = new SyncFileSystemService(profile);
 
-  scoped_ptr<LocalFileSyncService> local_file_service =
-      LocalFileSyncService::Create(profile);
+  scoped_ptr<LocalFileSyncService> local_file_service;
+  if (mock_local_file_service_)
+    local_file_service = mock_local_file_service_.Pass();
+  else
+    local_file_service = LocalFileSyncService::Create(profile);
 
   scoped_ptr<RemoteFileSyncService> remote_file_service;
   if (mock_remote_file_service_) {
     remote_file_service = mock_remote_file_service_.Pass();
-  } else if (IsV2Enabled()) {
-    remote_file_service = RemoteFileSyncService::CreateForBrowserContext(
-        RemoteFileSyncService::V2, context, service->task_logger());
   } else {
     remote_file_service = RemoteFileSyncService::CreateForBrowserContext(
-        RemoteFileSyncService::V1, context, service->task_logger());
+        context, service->task_logger());
   }
 
   service->Initialize(local_file_service.Pass(),

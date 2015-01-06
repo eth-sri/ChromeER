@@ -16,7 +16,6 @@
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/devtools_agent_host.h"
-#include "content/public/browser/devtools_manager.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
@@ -286,8 +285,7 @@ ProcessManager::ProcessManager(BrowserContext* context,
         base::TimeDelta::FromMilliseconds(suspending_time_msec);
   }
 
-  content::DevToolsManager::GetInstance()->AddAgentStateCallback(
-      devtools_callback_);
+  content::DevToolsAgentHost::AddAgentStateCallback(devtools_callback_);
 
   OnKeepaliveImpulseCheck();
 }
@@ -295,8 +293,7 @@ ProcessManager::ProcessManager(BrowserContext* context,
 ProcessManager::~ProcessManager() {
   CloseBackgroundHosts();
   DCHECK(background_hosts_.empty());
-  content::DevToolsManager::GetInstance()->RemoveAgentStateCallback(
-      devtools_callback_);
+  content::DevToolsAgentHost::RemoveAgentStateCallback(devtools_callback_);
 }
 
 const ProcessManager::ViewSet ProcessManager::GetAllViews() const {
@@ -507,6 +504,33 @@ void ProcessManager::KeepaliveImpulse(const Extension* extension) {
       keepalive_impulse_callback_for_testing_;
     callback_may_clear_callbacks_reentrantly.Run(extension->id());
   }
+}
+
+// static
+void ProcessManager::OnKeepaliveFromPlugin(int render_process_id,
+                                           int render_frame_id,
+                                           const std::string& extension_id) {
+  content::RenderFrameHost* render_frame_host =
+      content::RenderFrameHost::FromID(render_process_id, render_frame_id);
+  if (!render_frame_host)
+    return;
+
+  content::SiteInstance* site_instance = render_frame_host->GetSiteInstance();
+  if (!site_instance)
+    return;
+
+  BrowserContext* browser_context = site_instance->GetBrowserContext();
+  const Extension* extension =
+      ExtensionRegistry::Get(browser_context)->enabled_extensions().GetByID(
+          extension_id);
+  if (!extension)
+    return;
+
+  ProcessManager* pm = ExtensionSystem::Get(browser_context)->process_manager();
+  if (!pm)
+    return;
+
+  pm->KeepaliveImpulse(extension);
 }
 
 // DecrementLazyKeepaliveCount is called when no calls to KeepaliveImpulse
@@ -759,16 +783,14 @@ void ProcessManager::Observe(int type,
 void ProcessManager::OnDevToolsStateChanged(
     content::DevToolsAgentHost* agent_host,
     bool attached) {
-  RenderViewHost* rvh = agent_host->GetRenderViewHost();
+  WebContents* web_contents = agent_host->GetWebContents();
   // Ignore unrelated notifications.
-  if (!rvh ||
-      rvh->GetSiteInstance()->GetProcess()->GetBrowserContext() !=
-          GetBrowserContext())
+  if (!web_contents || web_contents->GetBrowserContext() != GetBrowserContext())
     return;
-  if (GetViewType(WebContents::FromRenderViewHost(rvh)) !=
-      VIEW_TYPE_EXTENSION_BACKGROUND_PAGE)
+  if (GetViewType(web_contents) != VIEW_TYPE_EXTENSION_BACKGROUND_PAGE)
     return;
-  const Extension* extension = GetExtensionForRenderViewHost(rvh);
+  const Extension* extension =
+      GetExtensionForRenderViewHost(web_contents->GetRenderViewHost());
   if (!extension)
     return;
   if (attached) {
@@ -825,7 +847,7 @@ void ProcessManager::CreateStartupBackgroundHosts() {
 
     FOR_EACH_OBSERVER(ProcessManagerObserver,
                       observer_list_,
-                      OnBackgroundHostStartup(*extension));
+                      OnBackgroundHostStartup(extension->get()));
   }
 }
 

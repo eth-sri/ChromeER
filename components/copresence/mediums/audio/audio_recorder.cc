@@ -51,8 +51,8 @@ void ProcessSamples(scoped_ptr<media::AudioBus> bus,
 // Public methods.
 
 AudioRecorder::AudioRecorder(const DecodeSamplesCallback& decode_callback)
-    : stream_(NULL),
-      is_recording_(false),
+    : is_recording_(false),
+      stream_(NULL),
       decode_callback_(decode_callback),
       total_buffer_frames_(0),
       buffer_frame_index_(0) {
@@ -80,6 +80,10 @@ void AudioRecorder::Stop() {
       base::Bind(&AudioRecorder::StopOnAudioThread, base::Unretained(this)));
 }
 
+bool AudioRecorder::IsRecording() {
+  return is_recording_;
+}
+
 void AudioRecorder::Finalize() {
   media::AudioManager::Get()->GetTaskRunner()->PostTask(
       FROM_HERE,
@@ -100,8 +104,6 @@ void AudioRecorder::InitializeOnAudioThread() {
 
   const media::AudioParameters dest_params(params.format(),
                                            kDefaultChannelLayout,
-                                           kDefaultChannels,
-                                           params.input_channels(),
                                            kDefaultSampleRate,
                                            kDefaultBitsPerSample,
                                            params.frames_per_buffer(),
@@ -137,7 +139,6 @@ void AudioRecorder::RecordOnAudioThread() {
   if (!stream_ || is_recording_)
     return;
 
-  DVLOG(2) << "Recording Audio.";
   converter_->Reset();
   stream_->Start(this);
   is_recording_ = true;

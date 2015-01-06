@@ -9,20 +9,29 @@
 #include <list>
 #include <map>
 
+#include "base/basictypes.h"
 #include "base/memory/weak_ptr.h"
+#include "gin/handle.h"
+#include "gin/interceptor.h"
+#include "gin/wrappable.h"
 #include "ppapi/shared_impl/resource.h"
 #include "third_party/WebKit/public/web/WebSerializedScriptValue.h"
-#include "third_party/npapi/bindings/npruntime.h"
+#include "v8/include/v8.h"
 
 struct PP_Var;
 
+namespace gin {
+class Arguments;
+}  // namespace gin
+
 namespace ppapi {
 class ScopedPPVar;
-}
+}  // namespace ppapi
 
 namespace content {
 
 class PepperPluginInstanceImpl;
+class PluginObject;
 
 // MessageChannel implements bidirectional postMessage functionality, allowing
 // calls from JavaScript to plugins and vice-versa. See
@@ -37,63 +46,84 @@ class PepperPluginInstanceImpl;
 //   - The message target won't be limited to instance, and should support
 //     either plugin-provided or JS objects.
 // TODO(dmichael):  Add support for separate MessagePorts.
-class MessageChannel {
+class MessageChannel : public gin::Wrappable<MessageChannel>,
+                       public gin::NamedPropertyInterceptor {
  public:
-  // MessageChannelNPObject is a simple struct that adds a pointer back to a
-  // MessageChannel instance.  This way, we can use an NPObject to allow
-  // JavaScript interactions without forcing MessageChannel to inherit from
-  // NPObject.
-  struct MessageChannelNPObject : public NPObject {
-    MessageChannelNPObject();
-    ~MessageChannelNPObject();
+  static gin::WrapperInfo kWrapperInfo;
 
-    base::WeakPtr<MessageChannel> message_channel;
-  };
+  // Creates a MessageChannel, returning a pointer to it and sets |result| to
+  // the v8 object which is backed by the message channel. The returned pointer
+  // is only valid as long as the object in |result| is alive.
+  static MessageChannel* Create(PepperPluginInstanceImpl* instance,
+                                v8::Persistent<v8::Object>* result);
 
-  explicit MessageChannel(PepperPluginInstanceImpl* instance);
-  ~MessageChannel();
+  virtual ~MessageChannel();
+
+  // Called when the instance is deleted. The MessageChannel might outlive the
+  // plugin instance because it is garbage collected.
+  void InstanceDeleted();
 
   // Post a message to the onmessage handler for this channel's instance
   // asynchronously.
   void PostMessageToJavaScript(PP_Var message_data);
-
-  // Post a message to the plugin's HandleMessage function for this channel's
-  // instance.
-  void PostMessageToNative(const NPVariant* message_data);
-  // Post a message to the plugin's HandleBlocking Message function for this
-  // channel's instance synchronously, and return a result.
-  void PostBlockingMessageToNative(const NPVariant* message_data,
-                                   NPVariant* np_result);
-
-  // Return the NPObject* to which we should forward any calls which aren't
-  // related to postMessage.  Note that this can be NULL;  it only gets set if
-  // there is a scriptable 'InstanceObject' associated with this channel's
-  // instance.
-  NPObject* passthrough_object() { return passthrough_object_; }
-  void SetPassthroughObject(NPObject* passthrough);
-
-  NPObject* np_object() { return np_object_; }
-
-  PepperPluginInstanceImpl* instance() { return instance_; }
 
   // Messages are queued initially. After the PepperPluginInstanceImpl is ready
   // to send and handle messages, users of MessageChannel should call
   // Start().
   void Start();
 
-  bool GetReadOnlyProperty(NPIdentifier key, NPVariant* value) const;
+  // Set the V8Object to which we should forward any calls which aren't
+  // related to postMessage. Note that this can be empty; it only gets set if
+  // there is a scriptable 'InstanceObject' associated with this channel's
+  // instance.
+  void SetPassthroughObject(v8::Handle<v8::Object> passthrough);
+
+  PepperPluginInstanceImpl* instance() { return instance_; }
+
   void SetReadOnlyProperty(PP_Var key, PP_Var value);
 
  private:
-  // Struct for storing the result of a NPVariant being converted to a PP_Var.
+  // Struct for storing the result of a v8 object being converted to a PP_Var.
   struct VarConversionResult;
 
-  void EnqueuePluginMessage(const NPVariant* variant);
+  explicit MessageChannel(PepperPluginInstanceImpl* instance);
+
+  // gin::NamedPropertyInterceptor
+  virtual v8::Local<v8::Value> GetNamedProperty(
+      v8::Isolate* isolate,
+      const std::string& property) OVERRIDE;
+  virtual bool SetNamedProperty(v8::Isolate* isolate,
+                                const std::string& property,
+                                v8::Local<v8::Value> value) OVERRIDE;
+  virtual std::vector<std::string> EnumerateNamedProperties(
+      v8::Isolate* isolate) OVERRIDE;
+
+  // gin::Wrappable
+  virtual gin::ObjectTemplateBuilder GetObjectTemplateBuilder(
+      v8::Isolate* isolate) OVERRIDE;
+
+  // Post a message to the plugin's HandleMessage function for this channel's
+  // instance.
+  void PostMessageToNative(gin::Arguments* args);
+  // Post a message to the plugin's HandleBlocking Message function for this
+  // channel's instance synchronously, and return a result.
+  void PostBlockingMessageToNative(gin::Arguments* args);
+
+  // Post a message to the onmessage handler for this channel's instance
+  // synchronously.  This is used by PostMessageToJavaScript.
+  void PostMessageToJavaScriptImpl(
+      const blink::WebSerializedScriptValue& message_data);
+
+  PluginObject* GetPluginObject(v8::Isolate* isolate);
+
+  void EnqueuePluginMessage(v8::Handle<v8::Value> v8_value);
 
   void FromV8ValueComplete(VarConversionResult* result_holder,
                            const ppapi::ScopedPPVar& result_var,
                            bool success);
+
   void DrainCompletedPluginMessages();
+  void DrainEarlyMessageQueue();
 
   PepperPluginInstanceImpl* instance_;
 
@@ -102,20 +132,7 @@ class MessageChannel {
   // postMessage.  This is necessary to support backwards-compatibility, and
   // also trusted plugins for which we will continue to support synchronous
   // scripting.
-  NPObject* passthrough_object_;
-
-  // The NPObject we use to expose postMessage to JavaScript.
-  MessageChannelNPObject* np_object_;
-
-  // Post a message to the onmessage handler for this channel's instance
-  // synchronously.  This is used by PostMessageToJavaScript.
-  void PostMessageToJavaScriptImpl(
-      const blink::WebSerializedScriptValue& message_data);
-  // Post a message to the PPP_Instance HandleMessage function for this
-  // channel's instance.  This is used by PostMessageToNative.
-  void PostMessageToNativeImpl(PP_Var message_data);
-
-  void DrainEarlyMessageQueue();
+  v8::Persistent<v8::Object> passthrough_object_;
 
   std::deque<blink::WebSerializedScriptValue> early_message_queue_;
   enum EarlyMessageQueueState {
@@ -134,7 +151,7 @@ class MessageChannel {
   // probably also work, but is less clearly specified).
   std::list<VarConversionResult> plugin_message_queue_;
 
-  std::map<NPIdentifier, ppapi::ScopedPPVar> internal_properties_;
+  std::map<std::string, ppapi::ScopedPPVar> internal_named_properties_;
 
   // This is used to ensure pending tasks will not fire after this object is
   // destroyed.

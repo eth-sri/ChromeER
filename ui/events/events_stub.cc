@@ -122,13 +122,6 @@ bool GetFlingData(const base::NativeEvent& native_event,
   return false;
 }
 
-bool GetGestureTimes(const base::NativeEvent& native_event,
-                     double* start_time,
-                     double* end_time) {
-  NOTIMPLEMENTED();
-  return false;
-}
-
 KeyboardCode KeyboardCodeFromNative(const base::NativeEvent& native_event) {
   NOTIMPLEMENTED();
   return static_cast<KeyboardCode>(0);
@@ -148,5 +141,21 @@ bool IsCharFromNative(const base::NativeEvent& native_event) {
   NOTIMPLEMENTED();
   return false;
 }
+
+uint32 WindowsKeycodeFromNative(const base::NativeEvent& native_event) {
+  NOTIMPLEMENTED();
+  return 0;
+}
+
+uint16 TextFromNative(const base::NativeEvent& native_event) {
+  NOTIMPLEMENTED();
+  return 0;
+}
+
+uint16 UnmodifiedTextFromNative(const base::NativeEvent& native_event) {
+  NOTIMPLEMENTED();
+  return 0;
+}
+
 
 }  // namespace ui

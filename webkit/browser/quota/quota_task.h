@@ -11,14 +11,14 @@
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "base/sequenced_task_runner_helpers.h"
-#include "webkit/browser/webkit_storage_browser_export.h"
+#include "webkit/browser/storage_browser_export.h"
 
 namespace base {
 class SingleThreadTaskRunner;
 class TaskRunner;
 }
 
-namespace quota {
+namespace storage {
 
 class QuotaTaskObserver;
 
@@ -61,7 +61,7 @@ class QuotaTask {
   bool delete_scheduled_;
 };
 
-class WEBKIT_STORAGE_BROWSER_EXPORT QuotaTaskObserver {
+class STORAGE_EXPORT QuotaTaskObserver {
  protected:
   friend class QuotaTask;
 

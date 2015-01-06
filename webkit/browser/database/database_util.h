@@ -8,17 +8,17 @@
 #include <string>
 #include "base/strings/string16.h"
 #include "url/gurl.h"
-#include "webkit/browser/webkit_storage_browser_export.h"
+#include "webkit/browser/storage_browser_export.h"
 
 namespace base {
 class FilePath;
 }
 
-namespace webkit_database {
+namespace storage {
 
 class DatabaseTracker;
 
-class WEBKIT_STORAGE_BROWSER_EXPORT DatabaseUtil {
+class STORAGE_EXPORT DatabaseUtil {
  public:
   static const char kJournalFileSuffix[];
 
@@ -34,6 +34,6 @@ class WEBKIT_STORAGE_BROWSER_EXPORT DatabaseUtil {
   static bool IsValidOriginIdentifier(const std::string& origin_identifier);
 };
 
-}  // namespace webkit_database
+}  // namespace storage
 
 #endif  // WEBKIT_BROWSER_DATABASE_DATABASE_UTIL_H_

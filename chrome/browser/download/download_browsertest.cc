@@ -7,9 +7,9 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
-#include "base/file_util.h"
 #include "base/files/file.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/ref_counted.h"
 #include "base/path_service.h"
@@ -63,6 +63,7 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/common/safe_browsing/csd.pb.h"
 #include "chrome/common/url_constants.h"
+#include "chrome/grit/generated_resources.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/test_switches.h"
 #include "chrome/test/base/ui_test_utils.h"
@@ -89,7 +90,6 @@
 #include "content/test/net/url_request_slow_download_job.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/feature_switch.h"
-#include "grit/generated_resources.h"
 #include "net/base/filename_util.h"
 #include "net/test/spawned_test_server/spawned_test_server.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -1041,8 +1041,8 @@ class DownloadTest : public InProcessBrowserTest {
     base::FilePath destination_folder = GetDownloadDirectory(browser());
     DVLOG(1) << " " << __FUNCTION__ << "()"
              << " folder = '" << destination_folder.value() << "'";
-    file_util::PermissionRestorer permission_restorer(destination_folder);
-    EXPECT_TRUE(file_util::MakeFileUnwritable(destination_folder));
+    base::FilePermissionRestorer permission_restorer(destination_folder);
+    EXPECT_TRUE(base::MakeFileUnwritable(destination_folder));
 
     for (size_t i = 0; i < count; ++i) {
       DownloadFilesCheckErrorsLoopBody(download_info[i], i);
@@ -3192,8 +3192,7 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, Resumption_NoPrompt) {
   EnableFileChooser(true);
 
   DownloadItem* download = StartMockDownloadAndInjectError(
-      error_injector,
-      content::DOWNLOAD_INTERRUPT_REASON_FILE_FAILED);
+      error_injector.get(), content::DOWNLOAD_INTERRUPT_REASON_FILE_FAILED);
   ASSERT_TRUE(download);
 
   download->Resume();
@@ -3218,8 +3217,7 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, Resumption_WithPrompt) {
   EnableFileChooser(true);
 
   DownloadItem* download = StartMockDownloadAndInjectError(
-      error_injector,
-      content::DOWNLOAD_INTERRUPT_REASON_FILE_NO_SPACE);
+      error_injector.get(), content::DOWNLOAD_INTERRUPT_REASON_FILE_NO_SPACE);
   ASSERT_TRUE(download);
 
   download->Resume();
@@ -3245,8 +3243,7 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, Resumption_WithPromptAlways) {
   EnableFileChooser(true);
 
   DownloadItem* download = StartMockDownloadAndInjectError(
-      error_injector,
-      content::DOWNLOAD_INTERRUPT_REASON_FILE_FAILED);
+      error_injector.get(), content::DOWNLOAD_INTERRUPT_REASON_FILE_FAILED);
   ASSERT_TRUE(download);
 
   // Prompts the user initially because of the kPromptForDownload preference.
@@ -3271,7 +3268,7 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, Resumption_Automatic) {
           DownloadManagerForBrowser(browser())));
 
   DownloadItem* download = StartMockDownloadAndInjectError(
-      error_injector,
+      error_injector.get(),
       content::DOWNLOAD_INTERRUPT_REASON_FILE_TRANSIENT_ERROR);
   ASSERT_TRUE(download);
 
@@ -3299,8 +3296,7 @@ IN_PROC_BROWSER_TEST_F(DownloadTest, Resumption_MultipleAttempts) {
 
   EnableFileChooser(true);
   DownloadItem* download = StartMockDownloadAndInjectError(
-      error_injector,
-      content::DOWNLOAD_INTERRUPT_REASON_FILE_FAILED);
+      error_injector.get(), content::DOWNLOAD_INTERRUPT_REASON_FILE_FAILED);
   ASSERT_TRUE(download);
 
   content::TestFileErrorInjector::FileErrorInfo error_info;

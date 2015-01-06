@@ -17,6 +17,7 @@ var ContentSettings = options.ContentSettings;
 var CookiesView = options.CookiesView;
 var CreateProfileOverlay = options.CreateProfileOverlay;
 var EditDictionaryOverlay = cr.IsMac ? null : options.EditDictionaryOverlay;
+var EasyUnlockTurnOffOverlay = options.EasyUnlockTurnOffOverlay;
 var FactoryResetOverlay = options.FactoryResetOverlay;
 <if expr="enable_google_now">
 var GeolocationOptions = options.GeolocationOptions;
@@ -43,6 +44,7 @@ var SupervisedUserCreateConfirmOverlay =
 var SupervisedUserImportOverlay = options.SupervisedUserImportOverlay;
 var SupervisedUserLearnMoreOverlay = options.SupervisedUserLearnMoreOverlay;
 var SyncSetupOverlay = options.SyncSetupOverlay;
+var WebsiteSettingsEditor = options.WebsiteSettings.WebsiteSettingsEditor;
 var WebsiteSettingsManager = options.WebsiteSettingsManager;
 var ThirdPartyImeConfirmOverlay = options.ThirdPartyImeConfirmOverlay;
 
@@ -116,6 +118,8 @@ function load() {
   PageManager.registerOverlay(WebsiteSettingsManager.getInstance(),
                               BrowserOptions.getInstance(),
                               [$('website-management-button')]);
+  PageManager.registerOverlay(WebsiteSettingsEditor.getInstance(),
+                              WebsiteSettingsManager.getInstance());
   PageManager.registerOverlay(ContentSettingsExceptionsArea.getInstance(),
                               ContentSettings.getInstance());
   PageManager.registerOverlay(CookiesView.getInstance(),
@@ -124,6 +128,9 @@ function load() {
                                $('show-cookies-button')]);
   PageManager.registerOverlay(CreateProfileOverlay.getInstance(),
                               BrowserOptions.getInstance());
+  PageManager.registerOverlay(EasyUnlockTurnOffOverlay.getInstance(),
+                              BrowserOptions.getInstance(),
+                              [$('easy-unlock-turn-off-button')]);
   if (!cr.isMac) {
     PageManager.registerOverlay(EditDictionaryOverlay.getInstance(),
                                 LanguageOptions.getInstance(),
@@ -205,6 +212,12 @@ function load() {
                                 BrowserOptions.getInstance());
     PageManager.registerOverlay(ThirdPartyImeConfirmOverlay.getInstance(),
                                 LanguageOptions.getInstance());
+    if (loadTimeData.getBoolean('showVersion')) {
+      PageManager.registerOverlay(help.ChannelChangePage.getInstance(),
+                                  help.HelpPage.getInstance());
+      PageManager.registerOverlay(help.HelpPage.getInstance(),
+                                  BrowserOptions.getInstance());
+    }
   }
 
   if (!cr.isWindows && !cr.isMac) {
@@ -228,6 +241,7 @@ function load() {
   OptionsPage.initialize();
   PageManager.initialize(BrowserOptions.getInstance());
   PageManager.addObserver(new uber.PageManagerObserver());
+  uber.onContentFrameLoaded();
 
   var pageName = PageManager.getPageNameFromPath();
   // Still update history so that chrome://settings/nonexistant redirects
@@ -242,8 +256,6 @@ function load() {
       OptionsPage.showTab(event.srcElement);
     };
   }
-
-  uber.onContentFrameLoaded();
 
   window.setTimeout(function() {
     document.documentElement.classList.remove('loading');

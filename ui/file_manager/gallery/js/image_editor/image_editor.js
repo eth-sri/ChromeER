@@ -1132,8 +1132,7 @@ ImageEditor.Prompt.prototype.setTimer = function(callback, timeout) {
  */
 ImageEditor.Prompt.prototype.show = function(text, timeout, var_formatArgs) {
   var args = [text].concat(Array.prototype.slice.call(arguments, 2));
-  var message = this.displayStringFunction_.apply(
-      null, [text].concat(args));
+  var message = this.displayStringFunction_.apply(null, args);
   this.showStringAt('center', message, timeout);
 };
 
@@ -1148,8 +1147,7 @@ ImageEditor.Prompt.prototype.show = function(text, timeout, var_formatArgs) {
 ImageEditor.Prompt.prototype.showAt = function(
     pos, text, timeout, var_formatArgs) {
   var args = [text].concat(Array.prototype.slice.call(arguments, 3));
-  var message = this.displayStringFunction_.apply(
-      null, [text].concat(args));
+  var message = this.displayStringFunction_.apply(null, args);
   this.showStringAt(pos, message, timeout);
 };
 

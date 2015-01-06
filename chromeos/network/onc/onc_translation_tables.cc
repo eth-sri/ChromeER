@@ -43,7 +43,8 @@ const FieldTranslationEntry ipsec_fields[] = {
     // Ignored by Shill, not necessary to synchronize.
     // { ::onc::ipsec::kIKEVersion, shill::kL2tpIpsecIkeVersion },
     { ::onc::ipsec::kPSK, shill::kL2tpIpsecPskProperty},
-    { ::onc::vpn::kSaveCredentials, shill::kSaveCredentialsProperty},
+    // This field is converted during translation, see onc_translator_*.
+    // { ::onc::vpn::kSaveCredentials, shill::kSaveCredentialsProperty},
     { ::onc::ipsec::kServerCAPEMs, shill::kL2tpIpsecCaCertPemProperty},
     {NULL}};
 
@@ -55,8 +56,7 @@ const FieldTranslationEntry xauth_fields[] = {
 const FieldTranslationEntry l2tp_fields[] = {
     { ::onc::vpn::kPassword, shill::kL2tpIpsecPasswordProperty},
     // We don't synchronize l2tp's SaveCredentials field for now, as Shill
-    // doesn't
-    // support separate settings for ipsec and l2tp.
+    // doesn't support separate settings for ipsec and l2tp.
     // { ::onc::vpn::kSaveCredentials, &kBoolSignature },
     { ::onc::vpn::kUsername, shill::kL2tpIpsecUserProperty}, {NULL}};
 
@@ -80,7 +80,8 @@ const FieldTranslationEntry openvpn_fields[] = {
     // { ::onc::openvpn::kRemoteCertKU, shill::kOpenVPNRemoteCertKUProperty },
     { ::onc::openvpn::kRemoteCertTLS, shill::kOpenVPNRemoteCertTLSProperty},
     { ::onc::openvpn::kRenegSec, shill::kOpenVPNRenegSecProperty},
-    { ::onc::vpn::kSaveCredentials, shill::kSaveCredentialsProperty},
+    // This field is converted during translation, see onc_translator_*.
+    // { ::onc::vpn::kSaveCredentials, shill::kSaveCredentialsProperty},
     { ::onc::openvpn::kServerCAPEMs, shill::kOpenVPNCaCertPemProperty},
     { ::onc::openvpn::kServerPollTimeout,
       shill::kOpenVPNServerPollTimeoutProperty},
@@ -99,8 +100,8 @@ const FieldTranslationEntry verify_x509_fields[] = {
 
 const FieldTranslationEntry vpn_fields[] = {
     { ::onc::vpn::kAutoConnect, shill::kAutoConnectProperty},
-    { ::onc::vpn::kHost, shill::kProviderHostProperty},
-    // This field is converted during translation, see onc_translator_*.
+    // These fields are converted during translation, see onc_translator_*.
+    // { ::onc::vpn::kHost, shill::kProviderHostProperty},
     // { ::onc::vpn::kType, shill::kProviderTypeProperty },
     {NULL}};
 
@@ -119,7 +120,8 @@ const FieldTranslationEntry wifi_fields[] = {
     {NULL}};
 
 const FieldTranslationEntry cellular_apn_fields[] = {
-    { ::onc::cellular_apn::kName, shill::kApnProperty},
+    { ::onc::cellular_apn::kAccessPointName, shill::kApnProperty},
+    { ::onc::cellular_apn::kName, shill::kApnNameProperty},
     { ::onc::cellular_apn::kUsername, shill::kApnUsernameProperty},
     { ::onc::cellular_apn::kPassword, shill::kApnPasswordProperty},
     { ::onc::cellular_apn::kLocalizedName, shill::kApnLocalizedNameProperty},
@@ -149,8 +151,7 @@ const FieldTranslationEntry sim_lock_status_fields[] = {
 // This must only contain Service properties and not Device properties.
 // For Device properties see kCellularDeviceTable.
 const FieldTranslationEntry cellular_fields[] = {
-    { ::onc::cellular::kActivateOverNonCellularNetwork,
-      shill::kActivateOverNonCellularNetworkProperty},
+    { ::onc::cellular::kActivationType, shill::kActivationTypeProperty},
     { ::onc::cellular::kActivationState, shill::kActivationStateProperty},
     { ::onc::cellular::kNetworkTechnology, shill::kNetworkTechnologyProperty},
     { ::onc::cellular::kRoamingState, shill::kRoamingStateProperty},
@@ -160,6 +161,7 @@ const FieldTranslationEntry network_fields[] = {
     { ::onc::network_config::kGUID, shill::kGuidProperty},
     { ::onc::network_config::kConnectable, shill::kConnectableProperty },
     { ::onc::network_config::kErrorState, shill::kErrorProperty },
+    { ::onc::network_config::kPriority, shill::kPriorityProperty },
 
     // Shill doesn't allow setting the name for non-VPN networks.
     // Name is conditionally translated, see onc_translator_*.

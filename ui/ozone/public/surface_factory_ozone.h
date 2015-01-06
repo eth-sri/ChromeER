@@ -64,6 +64,7 @@ class OZONE_BASE_EXPORT SurfaceFactoryOzone {
   enum BufferFormat {
     UNKNOWN,
     RGBA_8888,
+    RGBX_8888,
     RGB_888,
   };
 
@@ -88,6 +89,12 @@ class OZONE_BASE_EXPORT SurfaceFactoryOzone {
   // platform must support creation of SurfaceOzoneEGL from the GPU process
   // using only the handle contained in gfx::AcceleratedWidget.
   virtual scoped_ptr<SurfaceOzoneEGL> CreateEGLSurfaceForWidget(
+      gfx::AcceleratedWidget widget);
+
+  // Create an EGL surface that isn't backed by any buffers, and is used
+  // for overlay-only displays. This will return NULL if this mode is
+  // not supported.
+  virtual scoped_ptr<SurfaceOzoneEGL> CreateSurfacelessEGLSurfaceForWidget(
       gfx::AcceleratedWidget widget);
 
   // Create SurfaceOzoneCanvas for the specified gfx::AcceleratedWidget.
@@ -118,6 +125,24 @@ class OZONE_BASE_EXPORT SurfaceFactoryOzone {
   virtual scoped_refptr<NativePixmap> CreateNativePixmap(
       gfx::Size size,
       BufferFormat format);
+
+  // Sets the overlay plane to switch to at the next page flip.
+  // |w| specifies the screen to display this overlay plane on.
+  // |plane_z_order| specifies the stacking order of the plane relative to the
+  // main framebuffer located at index 0.
+  // |plane_transform| specifies how the buffer is to be transformed during.
+  // composition.
+  // |buffer| to be presented by the overlay.
+  // |display_bounds| specify where it is supposed to be on the screen.
+  // |crop_rect| specifies the region within the buffer to be placed
+  // inside |display_bounds|. This is specified in texture coordinates, in the
+  // range of [0,1].
+  virtual bool ScheduleOverlayPlane(gfx::AcceleratedWidget widget,
+                                    int plane_z_order,
+                                    gfx::OverlayTransform plane_transform,
+                                    scoped_refptr<NativePixmap> buffer,
+                                    const gfx::Rect& display_bounds,
+                                    const gfx::RectF& crop_rect);
 
   // Returns true if overlays can be shown at z-index 0, replacing the main
   // surface. Combined with surfaceless extensions, it allows for an

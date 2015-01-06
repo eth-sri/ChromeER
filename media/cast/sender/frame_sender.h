@@ -15,7 +15,6 @@
 #include "base/time/time.h"
 #include "media/cast/cast_environment.h"
 #include "media/cast/net/rtcp/rtcp.h"
-#include "media/cast/sender/rtp_timestamp_helper.h"
 
 namespace media {
 namespace cast {
@@ -25,9 +24,19 @@ class FrameSender {
   FrameSender(scoped_refptr<CastEnvironment> cast_environment,
               CastTransportSender* const transport_sender,
               base::TimeDelta rtcp_interval,
-              int frequency,
-              uint32 ssrc);
+              int rtp_timebase,
+              uint32 ssrc,
+              double max_frame_rate,
+              base::TimeDelta playout_delay);
   virtual ~FrameSender();
+
+  // Calling this function is only valid if the receiver supports the
+  // "extra_playout_delay", rtp extension.
+  void SetTargetPlayoutDelay(base::TimeDelta new_target_playout_delay);
+
+  base::TimeDelta GetTargetPlayoutDelay() const {
+    return target_playout_delay_;
+  }
 
  protected:
   // Schedule and execute periodic sending of RTCP report.
@@ -50,9 +59,7 @@ class FrameSender {
   // network layer.
   CastTransportSender* const transport_sender_;
 
-  // Records lip-sync (i.e., mapping of RTP <--> NTP timestamps), and
-  // extrapolates this mapping to any other point in time.
-  RtpTimestampHelper rtp_timestamp_helper_;
+  const uint32 ssrc_;
 
   // RTT information from RTCP.
   bool rtt_available_;
@@ -61,9 +68,84 @@ class FrameSender {
   base::TimeDelta min_rtt_;
   base::TimeDelta max_rtt_;
 
- private:
+ protected:
+  // Schedule and execute periodic checks for re-sending packets.  If no
+  // acknowledgements have been received for "too long," AudioSender will
+  // speculatively re-send certain packets of an unacked frame to kick-start
+  // re-transmission.  This is a last resort tactic to prevent the session from
+  // getting stuck after a long outage.
+  void ScheduleNextResendCheck();
+  void ResendCheck();
+  void ResendForKickstart();
+
+  // Record or retrieve a recent history of each frame's timestamps.
+  // Warning: If a frame ID too far in the past is requested, the getters will
+  // silently succeed but return incorrect values.  Be sure to respect
+  // media::cast::kMaxUnackedFrames.
+  void RecordLatestFrameTimestamps(uint32 frame_id,
+                                   base::TimeTicks reference_time,
+                                   RtpTimestamp rtp_timestamp);
+  base::TimeTicks GetRecordedReferenceTime(uint32 frame_id) const;
+  RtpTimestamp GetRecordedRtpTimestamp(uint32 frame_id) const;
+
   const base::TimeDelta rtcp_interval_;
-  const uint32 ssrc_;
+
+  // The total amount of time between a frame's capture/recording on the sender
+  // and its playback on the receiver (i.e., shown to a user).  This is fixed as
+  // a value large enough to give the system sufficient time to encode,
+  // transmit/retransmit, receive, decode, and render; given its run-time
+  // environment (sender/receiver hardware performance, network conditions,
+  // etc.).
+  base::TimeDelta target_playout_delay_;
+
+  // If true, we transmit the target playout delay to the receiver.
+  bool send_target_playout_delay_;
+
+  // Max encoded frames generated per second.
+  double max_frame_rate_;
+
+  // Maximum number of outstanding frames before the encoding and sending of
+  // new frames shall halt.
+  int max_unacked_frames_;
+
+  // Counts how many RTCP reports are being "aggressively" sent (i.e., one per
+  // frame) at the start of the session.  Once a threshold is reached, RTCP
+  // reports are instead sent at the configured interval + random drift.
+  int num_aggressive_rtcp_reports_sent_;
+
+  // This is "null" until the first frame is sent.  Thereafter, this tracks the
+  // last time any frame was sent or re-sent.
+  base::TimeTicks last_send_time_;
+
+  // The ID of the last frame sent.  Logic throughout FrameSender assumes this
+  // can safely wrap-around.  This member is invalid until
+  // |!last_send_time_.is_null()|.
+  uint32 last_sent_frame_id_;
+
+  // The ID of the latest (not necessarily the last) frame that has been
+  // acknowledged.  Logic throughout AudioSender assumes this can safely
+  // wrap-around.  This member is invalid until |!last_send_time_.is_null()|.
+  uint32 latest_acked_frame_id_;
+
+  // Counts the number of duplicate ACK that are being received.  When this
+  // number reaches a threshold, the sender will take this as a sign that the
+  // receiver hasn't yet received the first packet of the next frame.  In this
+  // case, VideoSender will trigger a re-send of the next frame.
+  int duplicate_ack_counter_;
+
+  // If this sender is ready for use, this is STATUS_AUDIO_INITIALIZED or
+  // STATUS_VIDEO_INITIALIZED.
+  CastInitializationStatus cast_initialization_status_;
+
+ private:
+  // RTP timestamp increment representing one second.
+  const int rtp_timebase_;
+
+  // Ring buffers to keep track of recent frame timestamps (both in terms of
+  // local reference time and RTP media time).  These should only be accessed
+  // through the Record/GetXXX() methods.
+  base::TimeTicks frame_reference_times_[256];
+  RtpTimestamp frame_rtp_timestamps_[256];
 
   // NOTE: Weak pointers must be invalidated before all other member variables.
   base::WeakPtrFactory<FrameSender> weak_factory_;

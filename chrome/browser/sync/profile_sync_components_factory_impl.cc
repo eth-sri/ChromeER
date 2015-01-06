@@ -179,24 +179,6 @@ void ProfileSyncComponentsFactoryImpl::RegisterDataTypes(
 #endif
 }
 
-void ProfileSyncComponentsFactoryImpl::DisableBrokenType(
-    syncer::ModelType type,
-    const tracked_objects::Location& from_here,
-    const std::string& message) {
-  ProfileSyncService* p = ProfileSyncServiceFactory::GetForProfile(profile_);
-  syncer::SyncError error(
-      from_here, syncer::SyncError::DATATYPE_ERROR, message, type);
-  p->DisableDatatype(error);
-}
-
-DataTypeController::DisableTypeCallback
-ProfileSyncComponentsFactoryImpl::MakeDisableCallbackFor(
-    syncer::ModelType type) {
-  return base::Bind(&ProfileSyncComponentsFactoryImpl::DisableBrokenType,
-                    weak_factory_.GetWeakPtr(),
-                    type);
-}
-
 void ProfileSyncComponentsFactoryImpl::RegisterCommonDataTypes(
     syncer::ModelTypeSet disabled_types,
     syncer::ModelTypeSet enabled_types,
@@ -205,16 +187,14 @@ void ProfileSyncComponentsFactoryImpl::RegisterCommonDataTypes(
   // disabled.
   if (!disabled_types.Has(syncer::AUTOFILL)) {
     pss->RegisterDataTypeController(
-        new AutofillDataTypeController(
-            this, profile_, MakeDisableCallbackFor(syncer::AUTOFILL)));
+        new AutofillDataTypeController(this, profile_));
   }
 
   // Autofill profile sync is enabled by default.  Register unless explicitly
   // disabled.
   if (!disabled_types.Has(syncer::AUTOFILL_PROFILE)) {
     pss->RegisterDataTypeController(
-        new AutofillProfileDataTypeController(
-            this, profile_, MakeDisableCallbackFor(syncer::AUTOFILL_PROFILE)));
+        new AutofillProfileDataTypeController(this, profile_));
   }
 
   // Bookmark sync is enabled by default.  Register unless explicitly
@@ -224,10 +204,11 @@ void ProfileSyncComponentsFactoryImpl::RegisterCommonDataTypes(
         new BookmarkDataTypeController(this, profile_, pss));
   }
 
+  const bool history_disabled =
+      profile_->GetPrefs()->GetBoolean(prefs::kSavingBrowserHistoryDisabled);
   // TypedUrl sync is enabled by default.  Register unless explicitly disabled,
   // or if saving history is disabled.
-  if (!profile_->GetPrefs()->GetBoolean(prefs::kSavingBrowserHistoryDisabled) &&
-      !disabled_types.Has(syncer::TYPED_URLS)) {
+  if (!disabled_types.Has(syncer::TYPED_URLS) && !history_disabled) {
     pss->RegisterDataTypeController(
         new TypedUrlDataTypeController(this, profile_, pss));
   }
@@ -239,40 +220,38 @@ void ProfileSyncComponentsFactoryImpl::RegisterCommonDataTypes(
         new UIDataTypeController(
             BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI),
             base::Bind(&ChromeReportUnrecoverableError),
-            MakeDisableCallbackFor(syncer::HISTORY_DELETE_DIRECTIVES),
             syncer::HISTORY_DELETE_DIRECTIVES,
             this));
   }
 
   // Session sync is enabled by default.  Register unless explicitly disabled.
-  if (!disabled_types.Has(syncer::PROXY_TABS)) {
-      pss->RegisterDataTypeController(new ProxyDataTypeController(
-         BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI),
-         syncer::PROXY_TABS));
+  // This is also disabled if the browser history is disabled, because the
+  // tab sync data is added to the web history on the server.
+  if (!disabled_types.Has(syncer::PROXY_TABS) && !history_disabled) {
+    pss->RegisterDataTypeController(new ProxyDataTypeController(
+        BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI),
+        syncer::PROXY_TABS));
     pss->RegisterDataTypeController(
-        new SessionDataTypeController(
-            this,
-            profile_,
-            pss->GetSyncedWindowDelegatesGetter(),
-            pss->GetLocalDeviceInfoProvider(),
-            MakeDisableCallbackFor(syncer::SESSIONS)));
+        new SessionDataTypeController(this,
+                                      profile_,
+                                      pss->GetSyncedWindowDelegatesGetter(),
+                                      pss->GetLocalDeviceInfoProvider()));
   }
 
   // Favicon sync is enabled by default. Register unless explicitly disabled.
   if (!disabled_types.Has(syncer::FAVICON_IMAGES) &&
       !disabled_types.Has(syncer::FAVICON_TRACKING)) {
+    // crbug/384552. We disable error uploading for this data types for now.
     pss->RegisterDataTypeController(
         new UIDataTypeController(
             BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI),
-            base::Bind(&ChromeReportUnrecoverableError),
-            MakeDisableCallbackFor(syncer::FAVICON_IMAGES),
+            base::Closure(),
             syncer::FAVICON_IMAGES,
             this));
     pss->RegisterDataTypeController(
         new UIDataTypeController(
             BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI),
-            base::Bind(&ChromeReportUnrecoverableError),
-            MakeDisableCallbackFor(syncer::FAVICON_TRACKING),
+            base::Closure(),
             syncer::FAVICON_TRACKING,
             this));
   }
@@ -281,8 +260,7 @@ void ProfileSyncComponentsFactoryImpl::RegisterCommonDataTypes(
   // disabled.
   if (!disabled_types.Has(syncer::PASSWORDS)) {
     pss->RegisterDataTypeController(
-        new PasswordDataTypeController(
-            this, profile_, MakeDisableCallbackFor(syncer::PASSWORDS)));
+        new PasswordDataTypeController(this, profile_));
   }
 
   // Article sync is disabled by default.  Register only if explicitly enabled.
@@ -291,7 +269,6 @@ void ProfileSyncComponentsFactoryImpl::RegisterCommonDataTypes(
         new UIDataTypeController(
             BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI),
             base::Bind(&ChromeReportUnrecoverableError),
-            MakeDisableCallbackFor(syncer::ARTICLES),
             syncer::ARTICLES,
             this));
   }
@@ -299,20 +276,7 @@ void ProfileSyncComponentsFactoryImpl::RegisterCommonDataTypes(
 #if defined(ENABLE_MANAGED_USERS)
   pss->RegisterDataTypeController(
       new SupervisedUserSyncDataTypeController(
-          MakeDisableCallbackFor(syncer::SUPERVISED_USER_SETTINGS),
           syncer::SUPERVISED_USER_SETTINGS,
-          this,
-          profile_));
-  pss->RegisterDataTypeController(
-      new SupervisedUserSyncDataTypeController(
-          MakeDisableCallbackFor(syncer::SUPERVISED_USERS),
-          syncer::SUPERVISED_USERS,
-          this,
-          profile_));
-  pss->RegisterDataTypeController(
-      new SupervisedUserSyncDataTypeController(
-          MakeDisableCallbackFor(syncer::SUPERVISED_USER_SHARED_SETTINGS),
-          syncer::SUPERVISED_USER_SHARED_SETTINGS,
           this,
           profile_));
 #endif
@@ -326,17 +290,14 @@ void ProfileSyncComponentsFactoryImpl::RegisterDesktopDataTypes(
   // disabled.
   if (!disabled_types.Has(syncer::APPS)) {
     pss->RegisterDataTypeController(
-        new ExtensionDataTypeController(syncer::APPS, this, profile_,
-                                        MakeDisableCallbackFor(syncer::APPS)));
+        new ExtensionDataTypeController(syncer::APPS, this, profile_));
   }
 
   // Extension sync is enabled by default.  Register unless explicitly
   // disabled.
   if (!disabled_types.Has(syncer::EXTENSIONS)) {
     pss->RegisterDataTypeController(
-        new ExtensionDataTypeController(
-            syncer::EXTENSIONS, this, profile_,
-            MakeDisableCallbackFor(syncer::EXTENSIONS)));
+        new ExtensionDataTypeController(syncer::EXTENSIONS, this, profile_));
   }
 
   // Preference sync is enabled by default.  Register unless explicitly
@@ -346,7 +307,6 @@ void ProfileSyncComponentsFactoryImpl::RegisterDesktopDataTypes(
         new UIDataTypeController(
             BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI),
             base::Bind(&ChromeReportUnrecoverableError),
-            MakeDisableCallbackFor(syncer::PREFERENCES),
             syncer::PREFERENCES,
             this));
   }
@@ -356,7 +316,6 @@ void ProfileSyncComponentsFactoryImpl::RegisterDesktopDataTypes(
         new UIDataTypeController(
             BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI),
             base::Bind(&ChromeReportUnrecoverableError),
-            MakeDisableCallbackFor(syncer::PRIORITY_PREFERENCES),
             syncer::PRIORITY_PREFERENCES,
             this));
   }
@@ -365,8 +324,7 @@ void ProfileSyncComponentsFactoryImpl::RegisterDesktopDataTypes(
   // Theme sync is enabled by default.  Register unless explicitly disabled.
   if (!disabled_types.Has(syncer::THEMES)) {
     pss->RegisterDataTypeController(
-        new ThemeDataTypeController(this, profile_,
-                                    MakeDisableCallbackFor(syncer::THEMES)));
+        new ThemeDataTypeController(this, profile_));
   }
 #endif
 
@@ -374,26 +332,21 @@ void ProfileSyncComponentsFactoryImpl::RegisterDesktopDataTypes(
   // disabled.
   if (!disabled_types.Has(syncer::SEARCH_ENGINES)) {
     pss->RegisterDataTypeController(
-        new SearchEngineDataTypeController(
-            this, profile_, MakeDisableCallbackFor(syncer::SEARCH_ENGINES)));
+        new SearchEngineDataTypeController(this, profile_));
   }
 
   // Extension setting sync is enabled by default.  Register unless explicitly
   // disabled.
   if (!disabled_types.Has(syncer::EXTENSION_SETTINGS)) {
-    pss->RegisterDataTypeController(
-        new ExtensionSettingDataTypeController(
-            syncer::EXTENSION_SETTINGS, this, profile_,
-            MakeDisableCallbackFor(syncer::EXTENSION_SETTINGS)));
+    pss->RegisterDataTypeController(new ExtensionSettingDataTypeController(
+        syncer::EXTENSION_SETTINGS, this, profile_));
   }
 
   // App setting sync is enabled by default.  Register unless explicitly
   // disabled.
   if (!disabled_types.Has(syncer::APP_SETTINGS)) {
-    pss->RegisterDataTypeController(
-        new ExtensionSettingDataTypeController(
-            syncer::APP_SETTINGS, this, profile_,
-            MakeDisableCallbackFor(syncer::APP_SETTINGS)));
+    pss->RegisterDataTypeController(new ExtensionSettingDataTypeController(
+        syncer::APP_SETTINGS, this, profile_));
   }
 
 #if defined(ENABLE_APP_LIST)
@@ -402,7 +355,6 @@ void ProfileSyncComponentsFactoryImpl::RegisterDesktopDataTypes(
         new UIDataTypeController(
             BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI),
             base::Bind(&ChromeReportUnrecoverableError),
-            MakeDisableCallbackFor(syncer::APP_LIST),
             syncer::APP_LIST,
             this));
   }
@@ -413,7 +365,6 @@ void ProfileSyncComponentsFactoryImpl::RegisterDesktopDataTypes(
   if (enabled_types.Has(syncer::SYNCED_NOTIFICATIONS)) {
     pss->RegisterDataTypeController(
         new ExtensionBackedDataTypeController(
-              MakeDisableCallbackFor(syncer::SYNCED_NOTIFICATIONS),
               syncer::SYNCED_NOTIFICATIONS,
               "",  // TODO(dewittj): pass the extension hash here.
               this,
@@ -421,7 +372,6 @@ void ProfileSyncComponentsFactoryImpl::RegisterDesktopDataTypes(
 
     pss->RegisterDataTypeController(
         new ExtensionBackedDataTypeController(
-              MakeDisableCallbackFor(syncer::SYNCED_NOTIFICATION_APP_INFO),
               syncer::SYNCED_NOTIFICATION_APP_INFO,
               "",  // TODO(dewittj): pass the extension hash here.
               this,
@@ -436,10 +386,22 @@ void ProfileSyncComponentsFactoryImpl::RegisterDesktopDataTypes(
         new UIDataTypeController(
             BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI),
             base::Bind(&ChromeReportUnrecoverableError),
-            MakeDisableCallbackFor(syncer::DICTIONARY),
             syncer::DICTIONARY,
             this));
   }
+#endif
+
+#if defined(ENABLE_MANAGED_USERS)
+  pss->RegisterDataTypeController(
+      new SupervisedUserSyncDataTypeController(
+          syncer::SUPERVISED_USERS,
+          this,
+          profile_));
+  pss->RegisterDataTypeController(
+      new SupervisedUserSyncDataTypeController(
+          syncer::SUPERVISED_USER_SHARED_SETTINGS,
+          this,
+          profile_));
 #endif
 }
 
@@ -450,14 +412,14 @@ DataTypeManager* ProfileSyncComponentsFactoryImpl::CreateDataTypeManager(
     const sync_driver::DataTypeEncryptionHandler* encryption_handler,
     SyncBackendHost* backend,
     DataTypeManagerObserver* observer,
-    sync_driver::FailedDataTypesHandler* failed_data_types_handler) {
+    sync_driver::DataTypeStatusTable* data_type_status_table) {
   return new DataTypeManagerImpl(base::Bind(ChromeReportUnrecoverableError),
                                  debug_info_listener,
                                  controllers,
                                  encryption_handler,
                                  backend,
                                  observer,
-                                 failed_data_types_handler);
+                                 data_type_status_table);
 }
 
 browser_sync::SyncBackendHost*
@@ -575,11 +537,11 @@ base::WeakPtr<syncer::SyncableService> ProfileSyncComponentsFactoryImpl::
     }
     case syncer::PASSWORDS: {
 #if defined(PASSWORD_MANAGER_ENABLE_SYNC)
-      password_manager::PasswordStore* password_store =
+      scoped_refptr<password_manager::PasswordStore> password_store =
           PasswordStoreFactory::GetForProfile(profile_,
                                               Profile::EXPLICIT_ACCESS);
-      return password_store ? password_store->GetPasswordSyncableService()
-                            : base::WeakPtr<syncer::SyncableService>();
+      return password_store.get() ? password_store->GetPasswordSyncableService()
+                                  : base::WeakPtr<syncer::SyncableService>();
 #else
       return base::WeakPtr<syncer::SyncableService>();
 #endif
@@ -600,7 +562,6 @@ class TokenServiceProvider
   TokenServiceProvider(
       const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
       OAuth2TokenService* token_service);
-  virtual ~TokenServiceProvider();
 
   // OAuth2TokenServiceRequest::TokenServiceProvider implementation.
   virtual scoped_refptr<base::SingleThreadTaskRunner>
@@ -608,6 +569,8 @@ class TokenServiceProvider
   virtual OAuth2TokenService* GetTokenService() OVERRIDE;
 
  private:
+  virtual ~TokenServiceProvider();
+
   scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
   OAuth2TokenService* token_service_;
 };
@@ -646,7 +609,7 @@ ProfileSyncComponentsFactoryImpl::CreateAttachmentService(
   // signed in sync user (e.g. sync is running in "backup" mode).
   if (!user_share.sync_credentials.email.empty() &&
       !user_share.sync_credentials.scope_set.empty()) {
-    scoped_ptr<OAuth2TokenServiceRequest::TokenServiceProvider>
+    scoped_refptr<OAuth2TokenServiceRequest::TokenServiceProvider>
         token_service_provider(new TokenServiceProvider(
             content::BrowserThread::GetMessageLoopProxyForThread(
                 content::BrowserThread::UI),
@@ -659,18 +622,18 @@ ProfileSyncComponentsFactoryImpl::CreateAttachmentService(
         url_request_context_getter_,
         user_share.sync_credentials.email,
         user_share.sync_credentials.scope_set,
-        token_service_provider.Pass()));
+        token_service_provider));
 
-    token_service_provider.reset(new TokenServiceProvider(
+    token_service_provider = new TokenServiceProvider(
         content::BrowserThread::GetMessageLoopProxyForThread(
             content::BrowserThread::UI),
-        token_service_));
+        token_service_);
     attachment_downloader = syncer::AttachmentDownloader::Create(
         sync_service_url_,
         url_request_context_getter_,
         user_share.sync_credentials.email,
         user_share.sync_credentials.scope_set,
-        token_service_provider.Pass());
+        token_service_provider);
   }
 
   scoped_ptr<syncer::AttachmentService> attachment_service(

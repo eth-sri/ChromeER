@@ -8,9 +8,9 @@
 #include "base/logging.h"
 #include "base/strings/stringprintf.h"
 #include "content/public/common/page_zoom.h"
-#include "content/shell/renderer/test_runner/TestInterfaces.h"
 #include "content/shell/renderer/test_runner/WebTestDelegate.h"
 #include "content/shell/renderer/test_runner/mock_spell_check.h"
+#include "content/shell/renderer/test_runner/test_interfaces.h"
 #include "content/shell/renderer/test_runner/web_test_proxy.h"
 #include "gin/handle.h"
 #include "gin/object_template_builder.h"
@@ -124,6 +124,7 @@ const double kMultipleClickTimeSec = 1;
 const int kMultipleClickRadiusPixels = 5;
 const char kSubMenuDepthIdentifier[] = "_";
 const char kSubMenuIdentifier[] = " >";
+const char kSeparatorIdentifier[] = "---------";
 
 bool OutsideMultiClickRadius(const WebPoint& a, const WebPoint& b) {
   return ((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y)) >
@@ -133,7 +134,9 @@ bool OutsideMultiClickRadius(const WebPoint& a, const WebPoint& b) {
 void PopulateCustomItems(const WebVector<WebMenuItemInfo>& customItems,
     const std::string& prefix, std::vector<std::string>* strings) {
   for (size_t i = 0; i < customItems.size(); ++i) {
-    if (customItems[i].type == blink::WebMenuItemInfo::SubMenu) {
+    if (customItems[i].type == blink::WebMenuItemInfo::Separator) {
+      strings->push_back(prefix + kSeparatorIdentifier);
+    } else if (customItems[i].type == blink::WebMenuItemInfo::SubMenu) {
       strings->push_back(prefix + customItems[i].label.utf8() +
           kSubMenuIdentifier);
       PopulateCustomItems(customItems[i].subMenuItems, prefix +
@@ -1267,6 +1270,10 @@ void EventSender::KeyDown(const std::string& code_str,
     code = ui::VKEY_RMENU;
   } else if ("numLock" == code_str) {
     code = ui::VKEY_NUMLOCK;
+  } else if ("backspace" == code_str) {
+    code = ui::VKEY_BACK;
+  } else if ("escape" == code_str) {
+    code = ui::VKEY_ESCAPE;
   } else {
     // Compare the input string with the function-key names defined by the
     // DOM spec (i.e. "F1",...,"F24"). If the input string is a function-key
@@ -1426,7 +1433,8 @@ void EventSender::TextZoomOut() {
 }
 
 void EventSender::ZoomPageIn() {
-  const std::vector<WebTestProxyBase*>& window_list = interfaces_->windowList();
+  const std::vector<WebTestProxyBase*>& window_list =
+      interfaces_->GetWindowList();
 
   for (size_t i = 0; i < window_list.size(); ++i) {
     window_list.at(i)->GetWebView()->setZoomLevel(
@@ -1435,7 +1443,8 @@ void EventSender::ZoomPageIn() {
 }
 
 void EventSender::ZoomPageOut() {
-  const std::vector<WebTestProxyBase*>& window_list = interfaces_->windowList();
+  const std::vector<WebTestProxyBase*>& window_list =
+      interfaces_->GetWindowList();
 
   for (size_t i = 0; i < window_list.size(); ++i) {
     window_list.at(i)->GetWebView()->setZoomLevel(
@@ -1444,7 +1453,8 @@ void EventSender::ZoomPageOut() {
 }
 
 void EventSender::SetPageZoomFactor(double zoom_factor) {
-  const std::vector<WebTestProxyBase*>& window_list = interfaces_->windowList();
+  const std::vector<WebTestProxyBase*>& window_list =
+      interfaces_->GetWindowList();
 
   for (size_t i = 0; i < window_list.size(); ++i) {
     window_list.at(i)->GetWebView()->setZoomLevel(
@@ -1943,7 +1953,7 @@ void EventSender::GestureEvent(WebInputEvent::Type type,
       event.x = current_gesture_location_.x;
       event.y = current_gesture_location_.y;
       break;
-    case WebInputEvent::GestureTap: 
+    case WebInputEvent::GestureTap:
     {
       float tap_count = 1;
       float width = 30;

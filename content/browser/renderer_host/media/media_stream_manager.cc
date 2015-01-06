@@ -118,6 +118,18 @@ void ParseStreamType(const StreamOptions& options,
   }
 }
 
+// Turns off available audio effects (removes the flag) if the options
+// explicitly turn them off.
+void FilterAudioEffects(const StreamOptions& options, int* effects) {
+  DCHECK(effects);
+  // TODO(ajm): Should we also handle ECHO_CANCELLER here?
+  std::string value;
+  if (options.GetFirstAudioConstraintByName(
+          kMediaStreamAudioDucking, &value, NULL) && value == "false") {
+    *effects &= ~media::AudioParameters::DUCKING;
+  }
+}
+
 // Private helper method for SendMessageToNativeLog() that obtains the global
 // MediaStreamManager instance on the UI thread before sending |message| to the
 // webrtcLoggingPrivate API.
@@ -384,7 +396,7 @@ MediaStreamManager::MediaStreamManager(media::AudioManager* audio_manager)
 MediaStreamManager::~MediaStreamManager() {
   DVLOG(1) << "~MediaStreamManager";
   DCHECK(requests_.empty());
-  DCHECK(!device_task_runner_);
+  DCHECK(!device_task_runner_.get());
 
   base::PowerMonitor* power_monitor = base::PowerMonitor::Get();
   // The PowerMonitor instance owned by BrowserMainLoops always outlives the
@@ -1386,8 +1398,12 @@ bool MediaStreamManager::FindExistingRequestedDeviceInfo(
            device_it != request->devices.end(); ++device_it) {
         if (device_it->device.id == source_id &&
             device_it->device.type == new_device_info.type) {
-            *existing_device_info = *device_it;
-            *existing_request_state = request->state(device_it->device.type);
+          *existing_device_info = *device_it;
+          // Make sure that the audio |effects| reflect what the request
+          // is set to and not what the capabilities are.
+          FilterAudioEffects(request->options,
+              &existing_device_info->device.input.effects);
+          *existing_request_state = request->state(device_it->device.type);
           return true;
         }
       }
@@ -1513,7 +1529,7 @@ void MediaStreamManager::FinalizeMediaAccessRequest(
 
 void MediaStreamManager::InitializeDeviceManagersOnIOThread() {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  if (device_task_runner_)
+  if (device_task_runner_.get())
     return;
 
   device_task_runner_ = audio_manager_->GetWorkerTaskRunner();
@@ -1568,6 +1584,14 @@ void MediaStreamManager::Opened(MediaStreamType stream_type,
                 audio_input_device_manager_->GetOpenedDeviceInfoById(
                     device_it->session_id);
             device_it->device.input = info->device.input;
+
+            // Since the audio input device manager will set the input
+            // parameters to the default settings (including supported effects),
+            // we need to adjust those settings here according to what the
+            // request asks for.
+            FilterAudioEffects(request->options,
+                &device_it->device.input.effects);
+
             device_it->device.matched_output = info->device.matched_output;
           }
         }
@@ -1902,7 +1926,7 @@ void MediaStreamManager::WillDestroyCurrentMessageLoop() {
   DVLOG(3) << "MediaStreamManager::WillDestroyCurrentMessageLoop()";
   DCHECK_EQ(base::MessageLoop::current(), io_loop_);
   DCHECK(requests_.empty());
-  if (device_task_runner_) {
+  if (device_task_runner_.get()) {
     StopMonitoring();
 
     video_capture_manager_->Unregister();

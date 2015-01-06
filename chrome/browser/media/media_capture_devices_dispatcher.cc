@@ -4,8 +4,6 @@
 
 #include "chrome/browser/media/media_capture_devices_dispatcher.h"
 
-#include "apps/app_window.h"
-#include "apps/app_window_registry.h"
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "base/metrics/field_trial.h"
@@ -28,6 +26,7 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/pref_names.h"
+#include "chrome/grit/generated_resources.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/desktop_media_id.h"
@@ -39,10 +38,11 @@
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/media_stream_request.h"
+#include "extensions/browser/app_window/app_window.h"
+#include "extensions/browser/app_window/app_window_registry.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/permissions/permissions_data.h"
-#include "grit/generated_resources.h"
 #include "media/audio/audio_manager_base.h"
 #include "media/base/media_switches.h"
 #include "net/base/net_util.h"
@@ -100,6 +100,7 @@ const content::MediaStreamDevice* FindDeviceWithId(
 // 3. Flutter gesture recognition extension.
 // 4. TODO(smus): Airbender experiment 1.
 // 5. TODO(smus): Airbender experiment 2.
+// 6. Hotwording component extension.
 // Once http://crbug.com/292856 is fixed, remove this whitelist.
 bool IsMediaRequestWhitelistedForExtension(
     const extensions::Extension* extension) {
@@ -107,7 +108,8 @@ bool IsMediaRequestWhitelistedForExtension(
       extension->id() == "bepbmhgboaologfdajaanbcjmnhjmhfn" ||
       extension->id() == "jokbpnebhdcladagohdnfgjcpejggllo" ||
       extension->id() == "clffjmdilanldobdnedchkdbofoimcgb" ||
-      extension->id() == "nnckehldicaciogcbchegobnafnjkcne";
+      extension->id() == "nnckehldicaciogcbchegobnafnjkcne" ||
+      extension->id() == "nbpagnldghgfoolbancepceaanlmhfmd";
 }
 
 bool IsBuiltInExtension(const GURL& origin) {
@@ -234,10 +236,10 @@ gfx::NativeWindow FindParentWindowForWebContents(
   if (browser && browser->window())
     return browser->window()->GetNativeWindow();
 
-  const apps::AppWindowRegistry::AppWindowList& window_list =
-      apps::AppWindowRegistry::Get(
+  const extensions::AppWindowRegistry::AppWindowList& window_list =
+      extensions::AppWindowRegistry::Get(
           web_contents->GetBrowserContext())->app_windows();
-  for (apps::AppWindowRegistry::AppWindowList::const_iterator iter =
+  for (extensions::AppWindowRegistry::AppWindowList::const_iterator iter =
            window_list.begin();
        iter != window_list.end(); ++iter) {
     if ((*iter)->web_contents() == web_contents)

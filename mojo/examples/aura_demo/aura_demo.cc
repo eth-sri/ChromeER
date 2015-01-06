@@ -10,10 +10,11 @@
 #include "mojo/aura/screen_mojo.h"
 #include "mojo/aura/window_tree_host_mojo.h"
 #include "mojo/aura/window_tree_host_mojo_delegate.h"
+#include "mojo/public/c/system/main.h"
 #include "mojo/public/cpp/application/application_connection.h"
 #include "mojo/public/cpp/application/application_delegate.h"
+#include "mojo/public/cpp/application/application_runner_chromium.h"
 #include "mojo/public/cpp/system/core.h"
-#include "mojo/services/public/cpp/view_manager/node.h"
 #include "mojo/services/public/cpp/view_manager/view.h"
 #include "mojo/services/public/cpp/view_manager/view_manager.h"
 #include "mojo/services/public/cpp/view_manager/view_manager_client_factory.h"
@@ -112,16 +113,17 @@ class AuraDemo : public ApplicationDelegate,
       : window1_(NULL),
         window2_(NULL),
         window21_(NULL),
-        view_(NULL),
         view_manager_client_factory_(this) {}
   virtual ~AuraDemo() {}
 
  private:
   // Overridden from ViewManagerDelegate:
-  virtual void OnEmbed(ViewManager* view_manager, Node* root) OVERRIDE {
+  virtual void OnEmbed(ViewManager* view_manager,
+                       View* root,
+                       ServiceProviderImpl* exported_services,
+                       scoped_ptr<ServiceProvider> imported_services) OVERRIDE {
     // TODO(beng): this function could be called multiple times!
-    view_ = View::Create(view_manager);
-    root->SetActiveView(view_);
+    root_ = root;
 
     window_tree_host_.reset(new WindowTreeHostMojo(root, this));
     window_tree_host_->InitHost();
@@ -159,7 +161,7 @@ class AuraDemo : public ApplicationDelegate,
 
   // WindowTreeHostMojoDelegate:
   virtual void CompositorContentsChanged(const SkBitmap& bitmap) OVERRIDE {
-    view_->SetContents(bitmap);
+    root_->SetContents(bitmap);
   }
 
   virtual void Initialize(ApplicationImpl* app) MOJO_OVERRIDE {
@@ -190,7 +192,7 @@ class AuraDemo : public ApplicationDelegate,
   aura::Window* window2_;
   aura::Window* window21_;
 
-  View* view_;
+  View* root_;
 
   ViewManagerClientFactory view_manager_client_factory_;
 
@@ -200,10 +202,9 @@ class AuraDemo : public ApplicationDelegate,
 };
 
 }  // namespace examples
-
-// static
-ApplicationDelegate* ApplicationDelegate::Create() {
-  return new examples::AuraDemo();
-}
-
 }  // namespace mojo
+
+MojoResult MojoMain(MojoHandle shell_handle) {
+  mojo::ApplicationRunnerChromium runner(new mojo::examples::AuraDemo);
+  return runner.Run(shell_handle);
+}

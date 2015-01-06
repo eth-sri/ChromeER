@@ -17,7 +17,7 @@
 #include "chrome/browser/devtools/devtools_file_helper.h"
 #include "chrome/browser/devtools/devtools_file_system_indexer.h"
 #include "chrome/browser/devtools/devtools_targets_ui.h"
-#include "content/public/browser/devtools_client_host.h"
+#include "content/public/browser/devtools_agent_host.h"
 #include "content/public/browser/devtools_frontend_host.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
@@ -27,7 +27,6 @@ class InfoBarService;
 class Profile;
 
 namespace content {
-class DevToolsClientHost;
 struct FileChooserParams;
 class WebContents;
 }
@@ -37,8 +36,10 @@ class DevToolsUIBindings : public content::NotificationObserver,
                            public content::DevToolsFrontendHost::Delegate,
                            public DevToolsEmbedderMessageDispatcher::Delegate,
                            public DevToolsAndroidBridge::DeviceCountListener,
-                           public content::DevToolsClientHost {
+                           public content::DevToolsAgentHostClient {
  public:
+  static DevToolsUIBindings* ForWebContents(
+      content::WebContents* web_contents);
   static GURL ApplyThemeToURL(Profile* profile, const GURL& base_url);
 
   class Delegate {
@@ -47,8 +48,6 @@ class DevToolsUIBindings : public content::NotificationObserver,
     virtual void ActivateWindow() = 0;
     virtual void CloseWindow() = 0;
     virtual void SetInspectedPageBounds(const gfx::Rect& rect) = 0;
-    virtual void SetContentsResizingStrategy(
-        const gfx::Insets& insets, const gfx::Size& min_size) = 0;
     virtual void InspectElementCompleted() = 0;
     virtual void MoveWindow(int x, int y) = 0;
     virtual void SetIsDocked(bool is_docked) = 0;
@@ -61,11 +60,12 @@ class DevToolsUIBindings : public content::NotificationObserver,
     virtual void RenderProcessGone() = 0;
   };
 
-  DevToolsUIBindings(content::WebContents* web_contents, const GURL& url);
+  explicit DevToolsUIBindings(content::WebContents* web_contents);
   virtual ~DevToolsUIBindings();
 
   content::WebContents* web_contents() { return web_contents_; }
   Profile* profile() { return profile_; }
+  content::DevToolsAgentHost* agent_host() { return agent_host_.get(); }
 
   // Takes ownership over the |delegate|.
   void SetDelegate(Delegate* delegate);
@@ -73,6 +73,11 @@ class DevToolsUIBindings : public content::NotificationObserver,
                           const base::Value* arg1,
                           const base::Value* arg2,
                           const base::Value* arg3);
+  void AttachTo(const scoped_refptr<content::DevToolsAgentHost>& agent_host);
+  void Reattach();
+  void Detach();
+  bool IsAttachedTo(content::DevToolsAgentHost* agent_host);
+
  private:
   // content::NotificationObserver overrides.
   virtual void Observe(int type,
@@ -85,17 +90,18 @@ class DevToolsUIBindings : public content::NotificationObserver,
   virtual void HandleMessageFromDevToolsFrontendToBackend(
       const std::string& message) OVERRIDE;
 
-  // content::DevToolsClientHost implementation.
-  virtual void DispatchOnInspectorFrontend(const std::string& message) OVERRIDE;
-  virtual void InspectedContentsClosing() OVERRIDE;
-  virtual void ReplacedWithAnotherClient() OVERRIDE;
+  // content::DevToolsAgentHostClient implementation.
+  virtual void DispatchProtocolMessage(
+      content::DevToolsAgentHost* agent_host,
+      const std::string& message) OVERRIDE;
+  virtual void AgentHostClosed(
+       content::DevToolsAgentHost* agent_host,
+       bool replaced_with_another_client) OVERRIDE;
 
   // DevToolsEmbedderMessageDispatcher::Delegate implementation.
   virtual void ActivateWindow() OVERRIDE;
   virtual void CloseWindow() OVERRIDE;
   virtual void SetInspectedPageBounds(const gfx::Rect& rect) OVERRIDE;
-  virtual void SetContentsResizingStrategy(
-      const gfx::Insets& insets, const gfx::Size& min_size) OVERRIDE;
   virtual void InspectElementCompleted() OVERRIDE;
   virtual void InspectedURLChanged(const std::string& url) OVERRIDE;
   virtual void MoveWindow(int x, int y) OVERRIDE;
@@ -170,6 +176,7 @@ class DevToolsUIBindings : public content::NotificationObserver,
   Profile* profile_;
   content::WebContents* web_contents_;
   scoped_ptr<Delegate> delegate_;
+  scoped_refptr<content::DevToolsAgentHost> agent_host_;
   content::NotificationRegistrar registrar_;
   scoped_ptr<content::DevToolsFrontendHost> frontend_host_;
   scoped_ptr<DevToolsFileHelper> file_helper_;

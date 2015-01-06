@@ -20,7 +20,7 @@ import org.chromium.chrome.browser.search_engines.TemplateUrlService;
 public class ChromeContextMenuPopulator implements ContextMenuPopulator {
     private final ChromeContextMenuItemDelegate mDelegate;
     private MenuInflater mMenuInflater;
-    private final String BLANK_URL = "about:blank";
+    private static final String BLANK_URL = "about:blank";
 
     /**
      * Builds a {@link ChromeContextMenuPopulator}.
@@ -58,14 +58,14 @@ public class ChromeContextMenuPopulator implements ContextMenuPopulator {
             menu.findItem(R.id.contextmenu_copy_link_text).setVisible(false);
         }
 
-        menu.findItem(R.id.contextmenu_save_link_as).setEnabled(
+        menu.findItem(R.id.contextmenu_save_link_as).setVisible(
                 UrlUtilities.isDownloadableScheme(params.getLinkUrl()));
 
         if (params.isVideo()) {
-            menu.findItem(R.id.contextmenu_save_video).setEnabled(
+            menu.findItem(R.id.contextmenu_save_video).setVisible(
                     UrlUtilities.isDownloadableScheme(params.getSrcUrl()));
         } else if (params.isImage()) {
-            menu.findItem(R.id.contextmenu_save_image).setEnabled(
+            menu.findItem(R.id.contextmenu_save_image).setVisible(
                     UrlUtilities.isDownloadableScheme(params.getSrcUrl()));
 
             if (mDelegate.canLoadOriginalImage()) {

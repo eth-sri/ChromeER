@@ -82,14 +82,13 @@
         'logging/simple_event_subscriber_unittest.cc',
         'logging/stats_event_subscriber_unittest.cc',
         'net/cast_transport_sender_impl_unittest.cc',
+        'net/frame_id_wrap_helper_test.cc',
         'net/pacing/mock_paced_packet_sender.cc',
         'net/pacing/mock_paced_packet_sender.h',
         'net/pacing/paced_sender_unittest.cc',
-        'net/rtcp/mock_rtcp_receiver_feedback.cc',
-        'net/rtcp/mock_rtcp_receiver_feedback.h',
-        'net/rtcp/rtcp_receiver_unittest.cc',
         'net/rtcp/rtcp_sender_unittest.cc',
         'net/rtcp/rtcp_unittest.cc',
+        'net/rtcp/rtcp_utility_unittest.cc',
         'net/rtcp/receiver_rtcp_event_subscriber_unittest.cc',
 # TODO(miu): The following two are test utility modules.  Rename/move the files.
         'net/rtcp/test_rtcp_packet_builder.cc',
@@ -318,6 +317,29 @@
       'sources': [
         'test/utility/udp_proxy_main.cc',
       ],
-    }
+    },
+  ], # targets
+
+  'conditions': [
+    ['OS=="linux"',
+      { 'targets': [
+          {
+            'target_name': 'tap_proxy',
+            'type': 'executable',
+            'include_dirs': [
+              '<(DEPTH)/',
+            ],
+            'dependencies': [
+              'cast_test_utility',
+              '<(DEPTH)/base/base.gyp:base',
+              '<(DEPTH)/media/media.gyp:media',
+            ],
+            'sources': [
+              'test/utility/tap_proxy.cc',
+            ],
+          }
+        ]
+      }
+    ]
   ], # targets
 }

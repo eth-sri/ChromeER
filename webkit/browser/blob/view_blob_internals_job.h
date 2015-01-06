@@ -9,20 +9,20 @@
 
 #include "base/memory/weak_ptr.h"
 #include "net/url_request/url_request_simple_job.h"
-#include "webkit/browser/webkit_storage_browser_export.h"
+#include "webkit/browser/storage_browser_export.h"
 
 namespace net {
 class URLRequest;
 }  // namespace net
 
-namespace webkit_blob {
+namespace storage {
 
 class BlobData;
 class BlobStorageContext;
 
 // A job subclass that implements a protocol to inspect the internal
 // state of blob registry.
-class WEBKIT_STORAGE_BROWSER_EXPORT ViewBlobInternalsJob
+class STORAGE_EXPORT ViewBlobInternalsJob
     : public net::URLRequestSimpleJob {
  public:
   ViewBlobInternalsJob(net::URLRequest* request,
@@ -52,6 +52,6 @@ class WEBKIT_STORAGE_BROWSER_EXPORT ViewBlobInternalsJob
   DISALLOW_COPY_AND_ASSIGN(ViewBlobInternalsJob);
 };
 
-}  // namespace webkit_blob
+}  // namespace storage
 
 #endif  // WEBKIT_BROWSER_BLOB_VIEW_BLOB_INTERNALS_JOB_H_

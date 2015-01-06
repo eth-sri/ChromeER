@@ -9,7 +9,7 @@
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/command_line.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
 #include "base/metrics/sparse_histogram.h"
@@ -35,6 +35,7 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension_constants.h"
+#include "components/crx_file/id_util.h"
 #include "components/omaha_query_params/omaha_query_params.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/download_manager.h"
@@ -300,17 +301,17 @@ void WebstoreInstaller::Start() {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   AddRef();  // Balanced in ReportSuccess and ReportFailure.
 
-  if (!Extension::IdIsValid(id_)) {
+  if (!crx_file::id_util::IdIsValid(id_)) {
     ReportFailure(kInvalidIdError, FAILURE_REASON_OTHER);
     return;
   }
 
   ExtensionService* extension_service =
     ExtensionSystem::Get(profile_)->extension_service();
-  if (approval_.get() && approval_->dummy_extension) {
+  if (approval_.get() && approval_->dummy_extension.get()) {
     SharedModuleService::ImportStatus status =
         extension_service->shared_module_service()->CheckImports(
-            approval_->dummy_extension,
+            approval_->dummy_extension.get(),
             &pending_modules_,
             &pending_modules_);
     // For this case, it is because some imports are not shared modules.

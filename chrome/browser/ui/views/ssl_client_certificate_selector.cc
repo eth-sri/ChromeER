@@ -9,9 +9,9 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/certificate_viewer.h"
 #include "chrome/browser/ui/views/constrained_window_views.h"
+#include "chrome/grit/generated_resources.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/web_contents.h"
-#include "grit/generated_resources.h"
 #include "net/cert/x509_certificate.h"
 #include "net/ssl/ssl_cert_request_info.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -189,14 +189,14 @@ bool SSLClientCertificateSelector::Cancel() {
 bool SSLClientCertificateSelector::Accept() {
   DVLOG(1) << __FUNCTION__;
   scoped_refptr<net::X509Certificate> cert = GetSelectedCert();
-  if (cert) {
+  if (cert.get()) {
     // Remove the observer before we try unlocking, otherwise we might act on a
     // notification while waiting for the unlock dialog, causing us to delete
     // ourself before the Unlocked callback gets called.
     StopObserving();
 #if defined(USE_NSS)
     chrome::UnlockCertSlotIfNecessary(
-        cert,
+        cert.get(),
         chrome::kCryptoModulePasswordClientAuth,
         cert_request_info()->host_and_port,
         GetWidget()->GetNativeView(),

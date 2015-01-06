@@ -18,7 +18,7 @@ class Display;
 }
 
 namespace mojo {
-class ServiceManager;
+class ApplicationManager;
 
 class SurfaceNativeViewportClient;
 
@@ -37,9 +37,6 @@ class SurfacesImpl : public InterfaceImpl<Surface>,
                Client* client);
   virtual ~SurfacesImpl();
 
-  // InterfaceImpl<Surface> implementation.
-  virtual void OnConnectionEstablished() OVERRIDE;
-
   // Surface implementation.
   virtual void CreateSurface(SurfaceIdPtr id, mojo::SizePtr size) OVERRIDE;
   virtual void SubmitFrame(SurfaceIdPtr id, FramePtr frame) OVERRIDE;
@@ -54,6 +51,7 @@ class SurfacesImpl : public InterfaceImpl<Surface>,
 
   // DisplayClient implementation.
   virtual scoped_ptr<cc::OutputSurface> CreateOutputSurface() OVERRIDE;
+  virtual void DisplayDamaged() OVERRIDE;
 
   cc::SurfaceFactory* factory() { return &factory_; }
 

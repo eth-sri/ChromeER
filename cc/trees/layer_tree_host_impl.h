@@ -217,6 +217,7 @@ class CC_EXPORT LayerTreeHostImpl
 
   // Resets all of the trees to an empty state.
   void ResetTreesForTesting();
+  void ResetRecycleTreeForTesting();
 
   DrawMode GetDrawMode() const;
 
@@ -227,15 +228,8 @@ class CC_EXPORT LayerTreeHostImpl
   // Viewport rect in view space used for tiling prioritization.
   const gfx::Rect ViewportRectForTilePriority() const;
 
-  // Viewport size for scrolling and fixed-position compensation. This value
-  // excludes the URL bar and non-overlay scrollbars and is in DIP (and
-  // invariant relative to page scale).
-  gfx::SizeF UnscaledScrollableViewportSize() const;
-  float VerticalAdjust() const;
-
   // RendererClient implementation.
   virtual void SetFullRootLayerDamage() OVERRIDE;
-  virtual void RunOnDemandRasterTask(Task* on_demand_raster_task) OVERRIDE;
 
   // TileManagerClient implementation.
   virtual const std::vector<PictureLayerImpl*>& GetPictureLayers()
@@ -289,7 +283,6 @@ class CC_EXPORT LayerTreeHostImpl
   int SourceAnimationFrameNumber() const;
 
   virtual bool InitializeRenderer(scoped_ptr<OutputSurface> output_surface);
-  bool IsContextLost();
   TileManager* tile_manager() { return tile_manager_.get(); }
   void SetUseGpuRasterization(bool use_gpu);
   bool use_gpu_rasterization() const { return use_gpu_rasterization_; }
@@ -331,6 +324,8 @@ class CC_EXPORT LayerTreeHostImpl
   bool scroll_affects_scroll_handler() const {
     return scroll_affects_scroll_handler_;
   }
+  void QueueSwapPromiseForMainThreadScrollUpdate(
+      scoped_ptr<SwapPromise> swap_promise);
 
   bool IsCurrentlyScrolling() const;
 
@@ -348,8 +343,10 @@ class CC_EXPORT LayerTreeHostImpl
   void SetViewportSize(const gfx::Size& device_viewport_size);
   gfx::Size device_viewport_size() const { return device_viewport_size_; }
 
-  void SetOverdrawBottomHeight(float overdraw_bottom_height);
-  float overdraw_bottom_height() const { return overdraw_bottom_height_; }
+  void SetTopControlsLayoutHeight(float top_controls_layout_height);
+  float top_controls_layout_height() const {
+    return top_controls_layout_height_;
+  }
 
   void SetOverhangUIResource(UIResourceId overhang_ui_resource_id,
                              const gfx::Size& overhang_ui_resource_size);
@@ -425,9 +422,9 @@ class CC_EXPORT LayerTreeHostImpl
 
   void SetTreePriority(TreePriority priority);
 
-  void UpdateCurrentFrameTime();
-  void ResetCurrentFrameTimeForNextFrame();
-  virtual base::TimeTicks CurrentFrameTimeTicks();
+  void UpdateCurrentBeginFrameArgs(const BeginFrameArgs& args);
+  void ResetCurrentBeginFrameArgsForNextFrame();
+  virtual BeginFrameArgs CurrentBeginFrameArgs() const;
 
   // Expected time between two begin impl frame calls.
   base::TimeDelta begin_impl_frame_interval() const {
@@ -497,7 +494,6 @@ class CC_EXPORT LayerTreeHostImpl
       SharedBitmapManager* manager,
       int id);
 
-  gfx::SizeF ComputeInnerViewportContainerSize() const;
   void UpdateInnerViewportContainerSize();
 
   // Virtual for testing.
@@ -575,6 +571,7 @@ class CC_EXPORT LayerTreeHostImpl
   void MarkUIResourceNotEvicted(UIResourceId uid);
 
   void NotifySwapPromiseMonitorsOfSetNeedsRedraw();
+  void NotifySwapPromiseMonitorsOfForwardingToMainThread();
 
   typedef base::hash_map<UIResourceId, UIResourceData>
       UIResourceMap;
@@ -586,7 +583,6 @@ class CC_EXPORT LayerTreeHostImpl
   std::set<UIResourceId> evicted_ui_resources_;
 
   scoped_ptr<OutputSurface> output_surface_;
-  scoped_refptr<ContextProvider> offscreen_context_provider_;
 
   // |resource_provider_| and |tile_manager_| can be NULL, e.g. when using tile-
   // free rendering - see OutputSurface::ForcedDrawToSoftwareDevice().
@@ -597,10 +593,6 @@ class CC_EXPORT LayerTreeHostImpl
   scoped_ptr<ResourcePool> resource_pool_;
   scoped_ptr<ResourcePool> staging_resource_pool_;
   scoped_ptr<Renderer> renderer_;
-
-  TaskGraphRunner synchronous_task_graph_runner_;
-  TaskGraphRunner* on_demand_task_graph_runner_;
-  NamespaceToken on_demand_task_namespace_;
 
   GlobalStateThatImpactsTilePriority global_tile_state_;
 
@@ -621,6 +613,7 @@ class CC_EXPORT LayerTreeHostImpl
   bool wheel_scrolling_;
   bool scroll_affects_scroll_handler_;
   int scroll_layer_id_when_mouse_over_scrollbar_;
+  ScopedPtrVector<SwapPromise> swap_promises_for_main_thread_scroll_update_;
 
   bool tile_priorities_dirty_;
 
@@ -671,11 +664,8 @@ class CC_EXPORT LayerTreeHostImpl
   UIResourceId overhang_ui_resource_id_;
   gfx::Size overhang_ui_resource_size_;
 
-  // Vertical amount of the viewport size that's known to covered by a
-  // browser-side UI element, such as an on-screen-keyboard.  This affects
-  // scrollable size since we want to still be able to scroll to the bottom of
-  // the page when the keyboard is up.
-  float overdraw_bottom_height_;
+  // Height of the top controls as known by Blink.
+  float top_controls_layout_height_;
 
   // Optional top-level constraints that can be set by the OutputSurface.
   // - external_transform_ applies a transform above the root layer
@@ -692,7 +682,7 @@ class CC_EXPORT LayerTreeHostImpl
 
   gfx::Rect viewport_damage_rect_;
 
-  base::TimeTicks current_frame_timeticks_;
+  BeginFrameArgs current_begin_frame_args_;
 
   // Expected time between two begin impl frame calls.
   base::TimeDelta begin_impl_frame_interval_;
@@ -703,9 +693,6 @@ class CC_EXPORT LayerTreeHostImpl
   MicroBenchmarkControllerImpl micro_benchmark_controller_;
 
   bool need_to_update_visible_tiles_before_draw_;
-#if DCHECK_IS_ON
-  bool did_lose_called_;
-#endif
 
   // Optional callback to notify of new tree activations.
   base::Closure tree_activation_callback_;

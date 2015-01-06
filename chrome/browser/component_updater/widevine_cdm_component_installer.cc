@@ -12,8 +12,8 @@
 #include "base/base_paths.h"
 #include "base/bind.h"
 #include "base/compiler_specific.h"
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/logging.h"
 #include "base/path_service.h"
 #include "base/strings/string16.h"
@@ -22,11 +22,11 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "build/build_config.h"
-#include "chrome/browser/component_updater/component_updater_service.h"
-#include "chrome/browser/component_updater/default_component_installer.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/widevine_cdm_constants.h"
+#include "components/component_updater/component_updater_service.h"
+#include "components/component_updater/default_component_installer.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/plugin_service.h"
 #include "content/public/common/pepper_plugin_info.h"
@@ -126,7 +126,9 @@ bool MakeWidevineCdmPluginInfo(
   plugin_info->is_out_of_process = true;
   plugin_info->path = path;
   plugin_info->name = kWidevineCdmDisplayName;
-  plugin_info->description = kWidevineCdmDescription;
+  plugin_info->description = kWidevineCdmDescription +
+                             std::string(" (version: ") + version.GetString() +
+                             ")";
   plugin_info->version = version.GetString();
   content::WebPluginMimeType widevine_cdm_mime_type(
       kWidevineCdmPluginMimeType,

@@ -132,10 +132,11 @@ class MetadataDatabase {
   // If |env_override| is non-NULL, internal LevelDB uses |env_override| instead
   // of leveldb::Env::Default().  Use leveldb::MemEnv in test code for faster
   // testing.
-  static void Create(base::SequencedTaskRunner* worker_task_runner,
-                     const base::FilePath& database_path,
-                     leveldb::Env* env_override,
-                     const CreateCallback& callback);
+  static void Create(
+      const scoped_refptr<base::SequencedTaskRunner>& worker_task_runner,
+      const base::FilePath& database_path,
+      leveldb::Env* env_override,
+      const CreateCallback& callback);
   static SyncStatusCode CreateForTesting(
       scoped_ptr<LevelDBWrapper> db,
       scoped_ptr<MetadataDatabase>* metadata_database_out);
@@ -322,7 +323,9 @@ class MetadataDatabase {
 
   // Changes the priority of the tracker to low.
   void LowerTrackerPriority(int64 tracker_id);
-  void PromoteLowerPriorityTrackersToNormal();
+  bool PromoteLowerPriorityTrackersToNormal();
+
+  void PromoteDemotedTracker(int64 tracker_id);
 
   // Returns true if there is a normal priority dirty tracker.
   // Assigns the dirty tracker if exists and |tracker| is non-NULL.
@@ -343,13 +346,19 @@ class MetadataDatabase {
   // Sets |app_ids| to a list of all registered app ids.
   void GetRegisteredAppIDs(std::vector<std::string>* app_ids);
 
+  // Clears dirty flag of trackers that can be cleared without external
+  // interactien.
+  void SweepDirtyTrackers(const std::vector<std::string>& file_ids,
+                          const SyncStatusCallback& callback);
+
  private:
   friend class MetadataDatabaseTest;
   struct CreateParam;
 
-  MetadataDatabase(base::SequencedTaskRunner* worker_task_runner,
-                   const base::FilePath& database_path,
-                   leveldb::Env* env_override);
+  MetadataDatabase(
+      const scoped_refptr<base::SequencedTaskRunner>& worker_task_runner,
+      const base::FilePath& database_path,
+      leveldb::Env* env_override);
   static void CreateOnWorkerTaskRunner(
       scoped_ptr<CreateParam> create_param,
       const CreateCallback& callback);
@@ -402,6 +411,7 @@ class MetadataDatabase {
                                   const std::string& file_id);
 
   void DetachFromSequence();
+  bool CanClearDirty(const FileTracker& tracker);
 
   scoped_refptr<base::SequencedTaskRunner> worker_task_runner_;
   base::FilePath database_path_;

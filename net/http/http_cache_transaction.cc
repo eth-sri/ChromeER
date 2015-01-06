@@ -52,7 +52,7 @@ using base::TimeTicks;
 namespace {
 
 // TODO(ricea): Move this to HttpResponseHeaders once it is standardised.
-static const char kFreshnessHeader[] = "Chromium-Resource-Freshness";
+static const char kFreshnessHeader[] = "Resource-Freshness";
 
 // Stores data relevant to the statistics of writing and reading entire
 // certificate chains using DiskBasedCertCache. |num_pending_ops| is the number
@@ -329,15 +329,16 @@ HttpCache::Transaction::Transaction(
       read_offset_(0),
       effective_load_flags_(0),
       write_len_(0),
-      weak_factory_(this),
-      io_callback_(base::Bind(&Transaction::OnIOComplete,
-                              weak_factory_.GetWeakPtr())),
       transaction_pattern_(PATTERN_UNDEFINED),
       total_received_bytes_(0),
-      websocket_handshake_stream_base_create_helper_(NULL) {
+      websocket_handshake_stream_base_create_helper_(NULL),
+      weak_factory_(this) {
   COMPILE_ASSERT(HttpCache::Transaction::kNumValidationHeaders ==
                  arraysize(kValidationHeaders),
                  Invalid_number_of_validation_headers);
+
+  io_callback_ = base::Bind(&Transaction::OnIOComplete,
+                              weak_factory_.GetWeakPtr());
 }
 
 HttpCache::Transaction::~Transaction() {
@@ -347,7 +348,7 @@ HttpCache::Transaction::~Transaction() {
 
   if (cache_) {
     if (entry_) {
-      bool cancel_request = reading_ && response_.headers;
+      bool cancel_request = reading_ && response_.headers.get();
       if (cancel_request) {
         if (partial_) {
           entry_->disk_entry->CancelSparseIO();
@@ -1382,12 +1383,26 @@ int HttpCache::Transaction::DoAddToEntry() {
     if (bypass_lock_for_test_) {
       OnAddToEntryTimeout(entry_lock_waiting_since_);
     } else {
-      const int kTimeoutSeconds = 20;
+      int timeout_secs = 20;
+      if (partial_ && new_entry_->writer &&
+          new_entry_->writer->range_requested_) {
+        // Immediately timeout and bypass the cache if we're a range request and
+        // we're blocked by the reader/writer lock. Doing so eliminates a long
+        // running issue, http://crbug.com/31014, where two of the same media
+        // resources could not be played back simultaneously due to one locking
+        // the cache entry until the entire video was downloaded.
+        //
+        // Bypassing the cache is not ideal, as we are now ignoring the cache
+        // entirely for all range requests to a resource beyond the first. This
+        // is however a much more succinct solution than the alternatives, which
+        // would require somewhat significant changes to the http caching logic.
+        timeout_secs = 0;
+      }
       base::MessageLoop::current()->PostDelayedTask(
           FROM_HERE,
           base::Bind(&HttpCache::Transaction::OnAddToEntryTimeout,
                      weak_factory_.GetWeakPtr(), entry_lock_waiting_since_),
-          TimeDelta::FromSeconds(kTimeoutSeconds));
+          TimeDelta::FromSeconds(timeout_secs));
     }
   }
   return rv;
@@ -1556,15 +1571,6 @@ int HttpCache::Transaction::DoOverwriteCachedResponse() {
     DoneWritingToEntry(false);
     mode_ = NONE;
     new_response_ = NULL;
-    return OK;
-  }
-
-  if (handling_206_ && !CanResume(false)) {
-    // There is no point in storing this resource because it will never be used.
-    DoneWritingToEntry(false);
-    if (partial_.get())
-      partial_->FixResponseHeaders(response_.headers.get(), true);
-    next_state_ = STATE_PARTIAL_HEADERS_RECEIVED;
     return OK;
   }
 
@@ -2307,9 +2313,10 @@ bool HttpCache::Transaction::ConditionalizeRequest() {
     return false;
   }
 
-  // We should have handled this case before.
-  DCHECK(response_.headers->response_code() != 206 ||
-         response_.headers->HasStrongValidators());
+  if (response_.headers->response_code() == 206 &&
+      !response_.headers->HasStrongValidators()) {
+    return false;
+  }
 
   // Just use the first available ETag and/or Last-Modified header value.
   // TODO(darin): Or should we use the last?

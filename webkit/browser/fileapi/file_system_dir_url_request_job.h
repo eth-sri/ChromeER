@@ -14,15 +14,15 @@
 #include "base/message_loop/message_loop_proxy.h"
 #include "net/url_request/url_request_job.h"
 #include "webkit/browser/fileapi/file_system_url.h"
-#include "webkit/browser/webkit_storage_browser_export.h"
+#include "webkit/browser/storage_browser_export.h"
 
-namespace fileapi {
+namespace storage {
 
 class FileSystemContext;
 struct DirectoryEntry;
 
 // A request job that handles reading filesystem: URLs for directories.
-class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE FileSystemDirURLRequestJob
+class STORAGE_EXPORT_PRIVATE FileSystemDirURLRequestJob
     : public net::URLRequestJob {
  public:
   FileSystemDirURLRequestJob(
@@ -64,6 +64,6 @@ class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE FileSystemDirURLRequestJob
   DISALLOW_COPY_AND_ASSIGN(FileSystemDirURLRequestJob);
 };
 
-}  // namespace fileapi
+}  // namespace storage
 
 #endif  // WEBKIT_BROWSER_FILEAPI_FILE_SYSTEM_DIR_URL_REQUEST_JOB_H_

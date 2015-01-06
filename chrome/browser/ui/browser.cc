@@ -54,6 +54,7 @@
 #include "chrome/browser/extensions/api/tabs/tabs_windows_api.h"
 #include "chrome/browser/extensions/browser_extension_window_controller.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/favicon/favicon_tab_helper.h"
 #include "chrome/browser/file_select_helper.h"
@@ -149,6 +150,9 @@
 #include "chrome/common/profiling.h"
 #include "chrome/common/search_types.h"
 #include "chrome/common/url_constants.h"
+#include "chrome/grit/chromium_strings.h"
+#include "chrome/grit/generated_resources.h"
+#include "chrome/grit/locale_settings.h"
 #include "components/bookmarks/browser/bookmark_model.h"
 #include "components/bookmarks/browser/bookmark_utils.h"
 #include "components/google/core/browser/google_url_tracker.h"
@@ -156,7 +160,7 @@
 #include "components/startup_metric_utils/startup_metric_utils.h"
 #include "components/web_modal/popup_manager.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
-#include "content/public/browser/devtools_manager.h"
+#include "content/public/browser/devtools_agent_host.h"
 #include "content/public/browser/download_item.h"
 #include "content/public/browser/download_manager.h"
 #include "content/public/browser/interstitial_page.h"
@@ -181,10 +185,6 @@
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/manifest_handlers/background_info.h"
-#include "grit/chromium_strings.h"
-#include "grit/generated_resources.h"
-#include "grit/locale_settings.h"
-#include "grit/theme_resources.h"
 #include "net/base/filename_util.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "net/cookies/cookie_monster.h"
@@ -403,7 +403,7 @@ Browser::Browser(const CreateParams& params)
       prefs::kDevToolsDisabled,
       base::Bind(&Browser::OnDevToolsDisabledChanged, base::Unretained(this)));
   profile_pref_registrar_.Add(
-      prefs::kShowBookmarkBar,
+      bookmarks::prefs::kShowBookmarkBar,
       base::Bind(&Browser::UpdateBookmarkBarState, base::Unretained(this),
                  BOOKMARK_BAR_STATE_CHANGE_PREF_CHANGE));
 
@@ -576,6 +576,10 @@ base::string16 Browser::GetWindowTitleForCurrentTab() const {
   // |contents| can be NULL because GetWindowTitleForCurrentTab is called by the
   // window during the window's creation (before tabs have been added).
   if (contents) {
+    // Streamlined hosted apps use the host instead of the title.
+    if (is_app() && extensions::util::IsStreamlinedHostedAppsEnabled())
+      return base::UTF8ToUTF16(contents->GetURL().host());
+
     title = contents->GetTitle();
     FormatTitleForDisplay(&title);
   }
@@ -1347,7 +1351,7 @@ WebContents* Browser::OpenURLFromTab(WebContents* source,
 }
 
 void Browser::NavigationStateChanged(const WebContents* source,
-                                     unsigned changed_flags) {
+                                     content::InvalidateTypes changed_flags) {
   // Only update the UI when something visible has changed.
   if (changed_flags)
     ScheduleUIUpdate(source, changed_flags);
@@ -2028,7 +2032,7 @@ void Browser::Observe(int type,
 
 void Browser::OnDevToolsDisabledChanged() {
   if (profile_->GetPrefs()->GetBoolean(prefs::kDevToolsDisabled))
-    content::DevToolsManager::GetInstance()->CloseAllClientHosts();
+    content::DevToolsAgentHost::DetachAllClients();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -2122,11 +2126,6 @@ void Browser::ProcessPendingUIUpdates() {
     if (contents == tab_strip_model_->GetActiveWebContents()) {
       // Updates that only matter when the tab is selected go here.
 
-      if (flags & content::INVALIDATE_TYPE_PAGE_ACTIONS) {
-        LocationBar* location_bar = window()->GetLocationBar();
-        if (location_bar)
-          location_bar->UpdatePageActions();
-      }
       // Updating the URL happens synchronously in ScheduleUIUpdate.
       if (flags & content::INVALIDATE_TYPE_LOAD && GetStatusBubble()) {
         GetStatusBubble()->SetStatus(CoreTabHelper::FromWebContents(
@@ -2304,10 +2303,11 @@ bool Browser::ShouldShowLocationBar() const {
     return true;
 
   if (is_app()) {
-    if (CommandLine::ForCurrentProcess()->HasSwitch(
-            switches::kEnableStreamlinedHostedApps)) {
-      // If kEnableStreamlinedHostedApps is true, show the location bar for
-      // bookmark apps.
+    if (extensions::util::IsStreamlinedHostedAppsEnabled() &&
+        host_desktop_type() != chrome::HOST_DESKTOP_TYPE_ASH) {
+      // If streamlined hosted apps are enabled, show the location bar for
+      // bookmark apps, except on ash which has the toolbar merged into the
+      // frame.
       ExtensionService* service =
           extensions::ExtensionSystem::Get(profile_)->extension_service();
       const extensions::Extension* extension =
@@ -2357,7 +2357,7 @@ void Browser::UpdateBookmarkBarState(BookmarkBarStateChangeReason reason) {
   if (profile_->IsGuestSession()) {
     state = BookmarkBar::HIDDEN;
   } else if (browser_defaults::bookmarks_enabled &&
-      profile_->GetPrefs()->GetBoolean(prefs::kShowBookmarkBar) &&
+      profile_->GetPrefs()->GetBoolean(bookmarks::prefs::kShowBookmarkBar) &&
       !ShouldHideUIForFullscreen()) {
     state = BookmarkBar::SHOW;
   } else {

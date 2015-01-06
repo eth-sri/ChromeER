@@ -9,14 +9,14 @@
 #include "base/supports_user_data.h"
 #include "base/threading/thread_checker.h"
 #include "webkit/browser/fileapi/task_runner_bound_observer_list.h"
-#include "webkit/browser/webkit_storage_browser_export.h"
+#include "webkit/browser/storage_browser_export.h"
 #include "webkit/common/quota/quota_types.h"
 
 namespace base {
 class SequencedTaskRunner;
 }
 
-namespace fileapi {
+namespace storage {
 
 class FileSystemContext;
 
@@ -26,7 +26,7 @@ class FileSystemContext;
 // the same context (e.g. use the same task runner, share the quota etc).
 // Note that the remaining quota bytes (allowed_bytes_growth) may be
 // updated during the execution of write operations.
-class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE FileSystemOperationContext
+class STORAGE_EXPORT_PRIVATE FileSystemOperationContext
     : public base::SupportsUserData {
  public:
   explicit FileSystemOperationContext(FileSystemContext* context);
@@ -50,7 +50,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE FileSystemOperationContext
 
   // Returns the current remaining quota.
   int64 allowed_bytes_growth() const { return allowed_bytes_growth_; }
-  quota::QuotaLimitType quota_limit_type() const { return quota_limit_type_; }
+  storage::QuotaLimitType quota_limit_type() const { return quota_limit_type_; }
   base::SequencedTaskRunner* task_runner() const { return task_runner_.get(); }
 
   ChangeObserverList* change_observers() { return &change_observers_; }
@@ -67,7 +67,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE FileSystemOperationContext
     DCHECK(setter_thread_checker_.CalledOnValidThread());
     update_observers_ = list;
   }
-  void set_quota_limit_type(quota::QuotaLimitType limit_type) {
+  void set_quota_limit_type(storage::QuotaLimitType limit_type) {
     DCHECK(setter_thread_checker_.CalledOnValidThread());
     quota_limit_type_ = limit_type;
   }
@@ -80,7 +80,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE FileSystemOperationContext
   int64 allowed_bytes_growth_;
 
   // The current quota limit type, used by ObfuscatedFileUtil.
-  quota::QuotaLimitType quota_limit_type_;
+  storage::QuotaLimitType quota_limit_type_;
 
   // Observers attached to this context.
   ChangeObserverList change_observers_;
@@ -92,6 +92,6 @@ class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE FileSystemOperationContext
   DISALLOW_COPY_AND_ASSIGN(FileSystemOperationContext);
 };
 
-}  // namespace fileapi
+}  // namespace storage
 
 #endif  // WEBKIT_BROWSER_FILEAPI_FILE_SYSTEM_OPERATION_CONTEXT_H_

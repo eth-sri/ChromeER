@@ -8,19 +8,24 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
+#include "base/command_line.h"
+#include "base/path_service.h"
+#include "base/prefs/pref_service.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/ownership/owner_settings_service_factory.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
+#include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/settings/session_manager_operation.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chromeos/chromeos_paths.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
+#include "components/ownership/owner_key_util_impl.h"
 #include "components/policy/core/common/cloud/cloud_policy_constants.h"
-#include "components/user_manager/user.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
+#include "content/public/common/content_switches.h"
 #include "crypto/nss_util.h"
 #include "crypto/nss_util_internal.h"
 #include "crypto/rsa_private_key.h"
@@ -30,6 +35,9 @@
 namespace em = enterprise_management;
 
 using content::BrowserThread;
+using ownership::OwnerKeyUtil;
+using ownership::PrivateKey;
+using ownership::PublicKey;
 
 namespace chromeos {
 
@@ -37,6 +45,18 @@ namespace {
 
 scoped_refptr<OwnerKeyUtil>* g_owner_key_util_for_testing = NULL;
 DeviceSettingsService* g_device_settings_service_for_testing = NULL;
+
+bool IsOwnerInTests(const std::string& user_id) {
+  if (user_id.empty() ||
+      !CommandLine::ForCurrentProcess()->HasSwitch(::switches::kTestType) ||
+      !CrosSettings::IsInitialized()) {
+    return false;
+  }
+  const base::Value* value = CrosSettings::Get()->GetPref(kDeviceOwner);
+  if (!value || value->GetType() != base::Value::TYPE_STRING)
+    return false;
+  return static_cast<const base::StringValue*>(value)->GetString() == user_id;
+}
 
 // Assembles PolicyData based on |settings|, |policy_data| and
 // |user_id|.
@@ -163,7 +183,11 @@ void DoesPrivateKeyExistAsync(
   if (g_owner_key_util_for_testing)
     owner_key_util = *g_owner_key_util_for_testing;
   else
-    owner_key_util = OwnerKeyUtil::Create();
+    owner_key_util = OwnerSettingsService::MakeOwnerKeyUtil();
+  if (!owner_key_util) {
+    callback.Run(false);
+    return;
+  }
   scoped_refptr<base::TaskRunner> task_runner =
       content::BrowserThread::GetBlockingPool()
           ->GetTaskRunnerWithShutdownBehavior(
@@ -219,7 +243,7 @@ bool CheckManagementModeTransition(em::PolicyData::ManagementMode current_mode,
 
 OwnerSettingsService::OwnerSettingsService(Profile* profile)
     : profile_(profile),
-      owner_key_util_(OwnerKeyUtil::Create()),
+      owner_key_util_(MakeOwnerKeyUtil()),
       waiting_for_profile_creation_(true),
       waiting_for_tpm_token_(true),
       weak_factory_(this) {
@@ -377,6 +401,15 @@ void OwnerSettingsService::IsOwnerForSafeModeAsync(
 }
 
 // static
+scoped_refptr<ownership::OwnerKeyUtil>
+OwnerSettingsService::MakeOwnerKeyUtil() {
+  base::FilePath public_key_path;
+  if (!PathService::Get(chromeos::FILE_OWNER_KEY, &public_key_path))
+    return NULL;
+  return new ownership::OwnerKeyUtilImpl(public_key_path);
+}
+
+// static
 void OwnerSettingsService::SetOwnerKeyUtilForTesting(
     const scoped_refptr<OwnerKeyUtil>& owner_key_util) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -422,12 +455,12 @@ void OwnerSettingsService::OnPrivateKeyLoaded(
   private_key_ = private_key;
 
   user_id_ = profile_->GetProfileName();
-  if (user_id_ == OwnerSettingsServiceFactory::GetInstance()->GetUsername())
+  const bool is_owner = IsOwner() || IsOwnerInTests(user_id_);
+  if (is_owner && GetDeviceSettingsService())
     GetDeviceSettingsService()->InitOwner(user_id_, weak_factory_.GetWeakPtr());
 
   std::vector<IsOwnerCallback> is_owner_callbacks;
   is_owner_callbacks.swap(pending_is_owner_callbacks_);
-  const bool is_owner = IsOwner();
   for (std::vector<IsOwnerCallback>::iterator it(is_owner_callbacks.begin());
        it != is_owner_callbacks.end();
        ++it) {

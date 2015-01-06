@@ -20,12 +20,26 @@ ContentProvider.WORKER_SCRIPT = '/js/metadata_worker.js';
 /**
  * Data model for gallery.
  *
+ * @param {MetadataCache} metadataCache Metadata cache.
  * @constructor
  * @extends {cr.ui.ArrayDataModel}
  */
-function GalleryDataModel() {
+function GalleryDataModel(metadataCache) {
   cr.ui.ArrayDataModel.call(this, []);
-  this.metadataCache_ = null;
+
+  /**
+   * Metadata cache.
+   * @type {MetadataCache}
+   * @private
+   */
+  this.metadataCache_ = metadataCache;
+
+  /**
+   * Directory where the image is saved if the image is located in a read-only
+   * volume.
+   * @type {DirectoryEntry}
+   */
+  this.fallbackSaveDirectory = null;
 }
 
 /**
@@ -46,40 +60,6 @@ GalleryDataModel.MAX_SCREEN_IMAGE_CACHE_ = 5;
 
 GalleryDataModel.prototype = {
   __proto__: cr.ui.ArrayDataModel.prototype
-};
-
-/**
- * Initializes the data model.
- *
- * @param {MetadataCache} metadataCache Metadata cache.
- * @param {Array.<FileEntry>} entries Image entries.
- * @return {Promise} Promise to be fulfilled with after initialization.
- */
-GalleryDataModel.prototype.initialize = function(metadataCache, entries) {
-  // Store metadata cache.
-  this.metadataCache_ = metadataCache;
-
-  // Obtain metadata.
-  var metadataPromise = new Promise(function(fulfill) {
-    this.metadataCache_.get(entries, Gallery.METADATA_TYPE, fulfill);
-  }.bind(this));
-
-  // Initialize the gallery by using the metadata.
-  return metadataPromise.then(function(metadata) {
-    // Check the length of metadata.
-    if (entries.length !== metadata.length)
-      return Promise.reject('Failed to obtain metadata for the entries.');
-
-    // Obtains items.
-    var items = entries.map(function(entry, i) {
-      var clonedMetadata = MetadataCache.cloneMetadata(metadata[i]);
-      return new Gallery.Item(
-          entry, clonedMetadata, metadataCache, /* original */ true);
-    });
-
-    // Update the models.
-    this.push.apply(this, items);
-  }.bind(this));
 };
 
 /**
@@ -105,7 +85,7 @@ GalleryDataModel.prototype.saveItem = function(item, canvas, overwrite) {
 
   return new Promise(function(fulfill, reject) {
     item.saveToFile(
-        null,
+        this.fallbackSaveDirectory,
         overwrite,
         canvas,
         metadataEncoder,
@@ -136,7 +116,11 @@ GalleryDataModel.prototype.saveItem = function(item, canvas, overwrite) {
             // New entry is added and the item now tracks it.
             // Add another item for the old entry.
             var anotherItem = new Gallery.Item(
-                oldEntry, oldMetadata, this.metadataCache_, item.isOriginal());
+                oldEntry,
+                oldMetadata,
+                this.metadataCache_,
+                item.isOriginal(),
+                item.isReadOnly());
             // The item must be added behind the existing item so that it does
             // not change the index of the existing item.
             // TODO(hirono): Update the item index of the selection model
@@ -168,7 +152,7 @@ GalleryDataModel.prototype.evictCache = function(currentSelectedItem) {
         if (sorted[i].contentImage.parentNode) {
           console.error('The content image has a parent node.');
         } else {
-          // Force to free the buffer of the canvas by assinng zero size.
+          // Force to free the buffer of the canvas by assigning zero size.
           sorted[i].contentImage.width = 0;
           sorted[i].contentImage.height = 0;
           sorted[i].contentImage = null;
@@ -180,7 +164,7 @@ GalleryDataModel.prototype.evictCache = function(currentSelectedItem) {
         if (sorted[i].screenImage.parentNode) {
           console.error('The screen image has a parent node.');
         } else {
-          // Force to free the buffer of the canvas by assinng zero size.
+          // Force to free the buffer of the canvas by assigning zero size.
           sorted[i].screenImage.width = 0;
           sorted[i].screenImage.height = 0;
           sorted[i].screenImage = null;
@@ -223,7 +207,15 @@ function Gallery(volumeManager) {
   this.metadataCacheObserverId_ = null;
   this.onExternallyUnmountedBound_ = this.onExternallyUnmounted_.bind(this);
 
-  this.dataModel_ = new GalleryDataModel();
+  this.dataModel_ = new GalleryDataModel(this.context_.metadataCache);
+  var downloadVolumeInfo = this.volumeManager_.getCurrentProfileVolumeInfo(
+      VolumeManagerCommon.VolumeType.DOWNLOADS);
+  downloadVolumeInfo.resolveDisplayRoot().then(function(entry) {
+    this.dataModel_.fallbackSaveDirectory = entry;
+  }.bind(this)).catch(function(error) {
+    console.error(
+        'Failed to obtain the fallback directory: ' + (error.stack || error));
+  });
   this.selectionModel_ = new cr.ui.ListSelectionModel();
 
   this.initDom_();
@@ -251,7 +243,7 @@ Gallery.FIRST_FADE_TIMEOUT = 1000;
 
 /**
  * Time until mosaic is initialized in the background. Used to make gallery
- * in the slide mode load faster. In miiliseconds.
+ * in the slide mode load faster. In milliseconds.
  * @const
  * @type {number}
  */
@@ -371,7 +363,7 @@ Gallery.prototype.initDom_ = function() {
       this.toolbar_.querySelector('.middle-spacer');
   var buttonSpacer = this.toolbar_.querySelector('button-spacer');
 
-  this.prompt_ = new ImageEditor.Prompt(this.container_, str);
+  this.prompt_ = new ImageEditor.Prompt(this.container_, strf);
 
   this.modeButton_ = this.toolbar_.querySelector('button.mode');
   this.modeButton_.addEventListener('click', this.toggleMode_.bind(this, null));
@@ -436,50 +428,129 @@ Gallery.prototype.initToolbarButton_ = function(className, title) {
  * @param {!Array.<Entry>} selectedEntries Array of selected entries.
  */
 Gallery.prototype.load = function(entries, selectedEntries) {
-  this.dataModel_.initialize(this.metadataCache_, entries).then(function() {
-    // Apply selection.
-    this.selectionModel_.adjustLength(this.dataModel_.length);
-    var entryIndexesByURLs = {};
-    for (var index = 0; index < entries.length; index++) {
-      entryIndexesByURLs[entries[index].toURL()] = index;
-    }
-    for (var i = 0; i !== selectedEntries.length; i++) {
-      var selectedIndex = entryIndexesByURLs[selectedEntries[i].toURL()];
-      if (selectedIndex !== undefined)
-        this.selectionModel_.setIndexSelected(selectedIndex, true);
-      else
-        console.error('Cannot select ' + selectedEntries[i]);
-    }
-    if (this.selectionModel_.selectedIndexes.length === 0)
-      this.onSelection_();
+  // Obtains max chank size.
+  var maxChunkSize = 20;
+  var volumeInfo = this.volumeManager_.getVolumeInfo(entries[0]);
+  if (volumeInfo &&
+      volumeInfo.volumeType === VolumeManagerCommon.VolumeType.MTP) {
+    maxChunkSize = 1;
+  }
+  if (volumeInfo.isReadOnly)
+    this.context_.readonlyDirName = volumeInfo.label;
 
-    // Determine the initial mode.
-    var shouldShowMosaic = selectedEntries.length > 1 ||
-                           (this.context_.pageState &&
-                            this.context_.pageState.gallery === 'mosaic');
-    this.setCurrentMode_(shouldShowMosaic ? this.mosaicMode_ : this.slideMode_);
+  // Make loading list.
+  var entrySet = {};
+  for (var i = 0; i < entries.length; i++) {
+    var entry = entries[i];
+    entrySet[entry.toURL()] = {
+      entry: entry,
+      selected: false,
+      index: i
+    };
+  }
+  for (var i = 0; i < selectedEntries.length; i++) {
+    var entry = selectedEntries[i];
+    entrySet[entry.toURL()] = {
+      entry: entry,
+      selected: true,
+      index: i
+    };
+  }
+  var loadingList = [];
+  for (var url in entrySet) {
+    loadingList.push(entrySet[url]);
+  }
+  loadingList = loadingList.sort(function(a, b) {
+    if (a.selected && !b.selected)
+      return -1;
+    else if (!a.selected && b.selected)
+      return 1;
+    else
+      return a.index - b.index;
+  });
 
-    // Init mosaic mode.
-    var mosaic = this.mosaicMode_.getMosaic();
-    mosaic.init();
+  // Load entries.
+  // Use the self variable capture-by-closure because it is faster than bind.
+  var self = this;
+  var loadChunk = function(firstChunk) {
+    // Extract chunk.
+    var chunk = loadingList.splice(0, maxChunkSize);
+    if (!chunk.length)
+      return;
 
-    // Do the initialization for each mode.
-    if (shouldShowMosaic) {
-      mosaic.show();
-      this.inactivityWatcher_.check();  // Show the toolbar.
-      cr.dispatchSimpleEvent(this, 'loaded');
-    } else {
-      this.slideMode_.enter(
-          null,
-          function() {
-            // Flash the toolbar briefly to show it is there.
-            this.inactivityWatcher_.kick(Gallery.FIRST_FADE_TIMEOUT);
-          }.bind(this),
-          function() {
-            cr.dispatchSimpleEvent(this, 'loaded');
-          }.bind(this));
-    }
-  }.bind(this)).catch(function(error) {
+    return new Promise(function(fulfill) {
+      // Obtains metadata for chunk.
+      var entries = chunk.map(function(chunkItem) {
+        return chunkItem.entry;
+      });
+      self.metadataCache_.get(entries, Gallery.METADATA_TYPE, fulfill);
+    }).then(function(metadataList) {
+      if (chunk.length !== metadataList.length)
+        return Promise.reject('Failed to load metadata.');
+
+      // Add items to the model.
+      var items = chunk.map(function(chunkItem, index) {
+        var volumeInfo = self.volumeManager_.getVolumeInfo(chunkItem.entry);
+        var clonedMetadata = MetadataCache.cloneMetadata(metadataList[index]);
+        return new Gallery.Item(
+            chunkItem.entry,
+            clonedMetadata,
+            self.metadataCache_,
+            /* original */ true,
+            /* readonly */ !!(volumeInfo && volumeInfo.isReadOnly));
+      });
+      self.dataModel_.push.apply(self.dataModel_, items);
+
+      // Apply the selection.
+      var selectionUpdated = false;
+      for (var i = 0; i < chunk.length; i++) {
+        if (!chunk[i].selected)
+          continue;
+        var index = self.dataModel_.indexOf(items[i]);
+        if (index < 0)
+          continue;
+        self.selectionModel_.setIndexSelected(index, true);
+        selectionUpdated = true;
+      }
+      if (selectionUpdated)
+        self.onSelection_();
+
+      // Init modes after the first chunk is loaded.
+      if (firstChunk) {
+        // Determine the initial mode.
+        var shouldShowMosaic = selectedEntries.length > 1 ||
+            (self.context_.pageState &&
+             self.context_.pageState.gallery === 'mosaic');
+        self.setCurrentMode_(
+            shouldShowMosaic ? self.mosaicMode_ : self.slideMode_);
+
+        // Init mosaic mode.
+        var mosaic = self.mosaicMode_.getMosaic();
+        mosaic.init();
+
+        // Do the initialization for each mode.
+        if (shouldShowMosaic) {
+          mosaic.show();
+          self.inactivityWatcher_.check();  // Show the toolbar.
+          cr.dispatchSimpleEvent(self, 'loaded');
+        } else {
+          self.slideMode_.enter(
+              null,
+              function() {
+                // Flash the toolbar briefly to show it is there.
+                self.inactivityWatcher_.kick(Gallery.FIRST_FADE_TIMEOUT);
+              },
+              function() {
+                cr.dispatchSimpleEvent(self, 'loaded');
+              });
+        }
+      }
+
+      // Continue to load chunks.
+      return loadChunk(/* firstChunk */ false);
+    });
+  };
+  loadChunk(/* firstChunk */ true).catch(function(error) {
     console.error(error.stack || error);
   });
 };
@@ -762,7 +833,6 @@ Gallery.prototype.onKeyDown_ = function(event) {
  */
 Gallery.prototype.updateSelectionAndState_ = function() {
   var numSelectedItems = this.selectionModel_.selectedIndexes.length;
-  var displayName = '';
   var selectedEntryURL = null;
 
   // If it's selecting something, update the variable values.
@@ -779,31 +849,36 @@ Gallery.prototype.updateSelectionAndState_ = function() {
 
     // Update the title and the display name.
     if (numSelectedItems === 1) {
-      window.top.document.title = this.selectedEntry_.name;
-      displayName = ImageUtil.getDisplayNameFromName(this.selectedEntry_.name);
-    } else if (this.context_.curDirEntry) {
-      // If the Gallery was opened on search results the search query will not
-      // be recorded in the app state and the relaunch will just open the
-      // gallery in the curDirEntry directory.
-      window.top.document.title = this.context_.curDirEntry.name;
-      displayName = strf('GALLERY_ITEMS_SELECTED', numSelectedItems);
+      document.title = this.selectedEntry_.name;
+      this.filenameEdit_.disabled = selectedItem.isReadOnly();
+      this.filenameEdit_.value =
+          ImageUtil.getDisplayNameFromName(this.selectedEntry_.name);
+      this.shareButton_.hidden = !selectedItem.isOnDrive();
+    } else {
+      if (this.context_.curDirEntry) {
+        // If the Gallery was opened on search results the search query will not
+        // be recorded in the app state and the relaunch will just open the
+        // gallery in the curDirEntry directory.
+        document.title = this.context_.curDirEntry.name;
+      } else {
+        document.title = '';
+      }
+      this.filenameEdit_.disabled = true;
+      this.filenameEdit_.value =
+          strf('GALLERY_ITEMS_SELECTED', numSelectedItems);
+      this.shareButton_.hidden = true;
     }
+  } else {
+    document.title = '';
+    this.filenameEdit_.disabled = true;
+    this.filenameEdit_.value = '';
+    this.shareButton_.hidden = true;
   }
 
-  window.top.util.updateAppState(
+  util.updateAppState(
       null,  // Keep the current directory.
       selectedEntryURL,  // Update the selection.
       {gallery: (this.currentMode_ === this.mosaicMode_ ? 'mosaic' : 'slide')});
-
-  // We can't rename files in readonly directory.
-  // We can only rename a single file.
-  this.filenameEdit_.disabled = numSelectedItems !== 1 ||
-                                this.context_.readonlyDirName;
-  this.filenameEdit_.value = displayName;
-
-  // Update the share button.
-  var item = this.getSingleSelectedItem();
-  this.shareButton_.hidden = !item || !item.isOnDrive();
 };
 
 /**

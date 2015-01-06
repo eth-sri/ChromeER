@@ -106,7 +106,6 @@
     'strip_stamp': '<(intermediate_dir)/strip.stamp',
     'stripped_libraries_dir': '<(intermediate_dir)/stripped_libraries',
     'strip_additional_stamp': '<(intermediate_dir)/strip_additional.stamp',
-    'classes_dir': '<(intermediate_dir)/classes/2',
     'javac_includes': [],
     'jar_excluded_classes': [],
     'javac_jar_path': '<(intermediate_dir)/<(_target_name).javac.jar',
@@ -258,26 +257,6 @@
           'includes': ['../build/android/write_ordered_libraries.gypi'],
         },
         {
-          'action_name': 'native_libraries_template_data_<(_target_name)',
-          'message': 'Creating native_libraries_list.h for <(_target_name)',
-          'inputs': [
-            '<(DEPTH)/build/android/gyp/util/build_utils.py',
-            '<(DEPTH)/build/android/gyp/create_native_libraries_header.py',
-            '<(ordered_libraries_file)',
-          ],
-          'outputs': [
-            '<(native_libraries_template_data_file)',
-            '<(native_libraries_template_version_file)',
-          ],
-          'action': [
-            'python', '<(DEPTH)/build/android/gyp/create_native_libraries_header.py',
-            '--ordered-libraries=<(ordered_libraries_file)',
-            '--version-name=<(native_lib_version_name)',
-            '--native-library-list=<(native_libraries_template_data_file)',
-            '--version-output=<(native_libraries_template_version_file)',
-          ],
-        },
-        {
           'action_name': 'native_libraries_<(_target_name)',
           'variables': {
             'conditions': [
@@ -325,8 +304,7 @@
           'inputs': [
             '<(DEPTH)/build/android/gyp/util/build_utils.py',
             '<(DEPTH)/build/android/gyp/gcc_preprocess.py',
-            '<(native_libraries_template_data_file)',
-            '<(native_libraries_template_version_file)',
+            '<(ordered_libraries_file)',
             '<(native_libraries_template)',
           ],
           'outputs': [
@@ -334,10 +312,12 @@
           ],
           'action': [
             'python', '<(DEPTH)/build/android/gyp/gcc_preprocess.py',
-            '--include-path=<(native_libraries_template_data_dir)',
+            '--include-path=',
             '--output=<(native_libraries_java_file)',
             '--template=<(native_libraries_template)',
             '--stamp=<(native_libraries_java_stamp)',
+            '--defines', 'NATIVE_LIBRARIES_LIST=@FileArg(<(ordered_libraries_file):java_libraries_list)',
+            '--defines', 'NATIVE_LIBRARIES_VERSION_NUMBER="<(native_lib_version_name)"',
             '<@(gcc_preprocess_defines)',
           ],
         },
@@ -450,7 +430,7 @@
               'action': [
                 'python', '<(DEPTH)/build/android/gyp/create_device_library_links.py',
                 '--build-device-configuration=<(build_device_config_path)',
-                '--libraries-json=<(ordered_libraries_file)',
+                '--libraries=@FileArg(<(ordered_libraries_file):libraries)',
                 '--script-host-path=<(symlink_script_host_path)',
                 '--script-device-path=<(symlink_script_device_path)',
                 '--target-dir=<(device_library_dir)',
@@ -646,7 +626,6 @@
       ],
       'action': [
         'python', '<(DEPTH)/build/android/gyp/javac.py',
-        '--classes-dir=<(classes_dir)',
         '--classpath=>(input_jars_paths) <(android_sdk_jar)',
         '--src-gendirs=>(gen_src_dirs)',
         '--javac-includes=<(javac_includes)',
@@ -656,24 +635,6 @@
         '--stamp=<(compile_stamp)',
         '>@(java_sources)',
       ],
-    },
-    {
-      'variables': {
-        'src_dirs': [
-          '<(java_in_dir)/src',
-          '>@(additional_src_dirs)',
-        ],
-        'stamp_path': '<(lint_stamp)',
-        'result_path': '<(lint_result)',
-        'config_path': '<(lint_config)',
-      },
-      'inputs': [
-        '<(compile_stamp)',
-      ],
-      'outputs': [
-        '<(lint_stamp)',
-      ],
-      'includes': [ 'android/lint_action.gypi' ],
     },
     {
       'action_name': 'instr_jar_<(_target_name)',
@@ -692,6 +653,22 @@
         '<(javac_jar_path)',
       ],
       'includes': [ 'android/instr_action.gypi' ],
+    },
+    {
+      'variables': {
+        'src_dirs': [
+          '<(java_in_dir)/src',
+          '>@(additional_src_dirs)',
+        ],
+        'lint_jar_path': '<(jar_path)',
+        'stamp_path': '<(lint_stamp)',
+        'result_path': '<(lint_result)',
+        'config_path': '<(lint_config)',
+      },
+      'outputs': [
+        '<(lint_stamp)',
+      ],
+      'includes': [ 'android/lint_action.gypi' ],
     },
     {
       'action_name': 'obfuscate_<(_target_name)',

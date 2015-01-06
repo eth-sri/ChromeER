@@ -8,10 +8,10 @@ import schema_util
 from docs_server_utils import ToUnicode
 from file_system import FileNotFoundError
 from future import Future
-from path_util import AssertIsDirectory, AssertIsFile
-from third_party.handlebar import Handlebar
+from path_util import AssertIsDirectory, AssertIsFile, ToDirectory
 from third_party.json_schema_compiler import json_parse
 from third_party.json_schema_compiler.memoize import memoize
+from third_party.motemplate import Motemplate
 
 
 _SINGLE_FILE_FUNCTIONS = set()
@@ -111,7 +111,7 @@ class CompiledFileSystem(object):
       '''
       return self.Create(
           file_system,
-          SingleFile(lambda path, text: Handlebar(ToUnicode(text), name=path)),
+          SingleFile(lambda path, text: Motemplate(ToUnicode(text), name=path)),
           CompiledFileSystem)
 
     @memoize
@@ -185,28 +185,31 @@ class CompiledFileSystem(object):
     return self._file_system.Read(add_prefix(path, first_layer_dirs)).Then(
         lambda results: first_layer_files + get_from_future_listing(results))
 
-  def GetFromFile(self, path):
-    '''Calls |compilation_function| on the contents of the file at |path|.  If
-    |binary| is True then the file will be read as binary - but this will only
-    apply for the first time the file is fetched; if already cached, |binary|
-    will be ignored.
+  def GetFromFile(self, path, skip_not_found=False):
+    '''Calls |compilation_function| on the contents of the file at |path|.
+    If |skip_not_found| is True, then None is passed to |compilation_function|.
     '''
     AssertIsFile(path)
 
     try:
       version = self._file_system.Stat(path).version
     except FileNotFoundError:
-      return Future(exc_info=sys.exc_info())
+      if skip_not_found:
+        version = None
+      else:
+        return Future(exc_info=sys.exc_info())
 
     cache_entry = self._file_object_store.Get(path).Get()
     if (cache_entry is not None) and (version == cache_entry.version):
       return Future(value=cache_entry._cache_data)
 
-    def next(files):
+    def compile_(files):
       cache_data = self._compilation_function(path, files)
       self._file_object_store.Set(path, _CacheEntry(cache_data, version))
       return cache_data
-    return self._file_system.ReadSingle(path).Then(next)
+
+    return self._file_system.ReadSingle(
+        path, skip_not_found=skip_not_found).Then(compile_)
 
   def GetFromFileListing(self, path):
     '''Calls |compilation_function| on the listing of the files at |path|.
@@ -229,22 +232,25 @@ class CompiledFileSystem(object):
       return cache_data
     return self._RecursiveList(path).Then(next)
 
-  def GetFileVersion(self, path):
+  # _GetFileVersionFromCache and _GetFileListingVersionFromCache are exposed
+  # *only* so that ChainedCompiledFileSystem can optimise its caches. *Do not*
+  # use these methods otherwise, they don't do what you want. Use
+  # FileSystem.Stat on the FileSystem that this CompiledFileSystem uses.
+
+  def _GetFileVersionFromCache(self, path):
     cache_entry = self._file_object_store.Get(path).Get()
     if cache_entry is not None:
-      return cache_entry.version
-    return self._file_system.Stat(path).version
+      return Future(value=cache_entry.version)
+    stat_future = self._file_system.StatAsync(path)
+    return Future(callback=lambda: stat_future.Get().version)
 
-  def GetFileListingVersion(self, path):
-    if not path.endswith('/'):
-      path += '/'
+  def _GetFileListingVersionFromCache(self, path):
+    path = ToDirectory(path)
     cache_entry = self._list_object_store.Get(path).Get()
     if cache_entry is not None:
-      return cache_entry.version
-    return self._file_system.Stat(path).version
-
-  def FileExists(self, path):
-    return self._file_system.Exists(path)
+      return Future(value=cache_entry.version)
+    stat_future = self._file_system.StatAsync(path)
+    return Future(callback=lambda: stat_future.Get().version)
 
   def GetIdentity(self):
     return self._file_system.GetIdentity()

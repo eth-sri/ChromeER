@@ -5,8 +5,8 @@
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/message_loop/message_loop.h"
 #include "base/path_service.h"
@@ -164,10 +164,7 @@ PreferencesPrivateApiTest::TestGetSyncCategoriesWithoutPassphraseFunction() {
       function(
           new PreferencesPrivateGetSyncCategoriesWithoutPassphraseFunction);
   ASSERT_TRUE(extension_function_test_utils::RunFunction(
-      function,
-      "[]",
-      browser_,
-      extension_function_test_utils::NONE));
+      function.get(), "[]", browser_, extension_function_test_utils::NONE));
   EXPECT_FALSE(service_->initialized_state_violation());
 
   const base::ListValue* result = function->GetResultList();

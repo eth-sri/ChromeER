@@ -385,7 +385,7 @@ void PepperMediaStreamVideoTrackHost::OnVideoFrame(
     const scoped_refptr<VideoFrame>& frame,
     const media::VideoCaptureFormat& format,
     const base::TimeTicks& estimated_capture_time) {
-  DCHECK(frame);
+  DCHECK(frame.get());
   // TODO(penghuang): Check |frame->end_of_stream()| and close the track.
   PP_VideoFrame_Format ppformat = ToPpapiFormat(frame->format());
   if (ppformat == PP_VIDEOFRAME_FORMAT_UNKNOWN)
@@ -404,7 +404,6 @@ void PepperMediaStreamVideoTrackHost::OnVideoFrame(
     return;
   }
 
-  CHECK(frame->coded_size() == source_frame_size_) << "Frame size is changed";
   CHECK_EQ(ppformat, source_frame_format_) << "Frame format is changed.";
 
   gfx::Size size = GetTargetSize(source_frame_size_, plugin_frame_size_);
@@ -539,8 +538,10 @@ void PepperMediaStreamVideoTrackHost::InitBlinkTrack() {
 }
 
 void PepperMediaStreamVideoTrackHost::OnTrackStarted(
-    MediaStreamSource* source, bool success) {
-  DVLOG(3) << "OnTrackStarted result: " << success;
+    MediaStreamSource* source,
+    MediaStreamRequestResult result,
+    const blink::WebString& result_name) {
+  DVLOG(3) << "OnTrackStarted result: " << result;
 }
 
 }  // namespace content

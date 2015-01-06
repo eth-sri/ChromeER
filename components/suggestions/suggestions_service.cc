@@ -100,6 +100,9 @@ const char kSuggestionsFieldTrialControlParam[] = "control";
 const char kSuggestionsFieldTrialStateEnabled[] = "enabled";
 const char kSuggestionsFieldTrialTimeoutMs[] = "timeout_ms";
 
+// The default expiry timeout is 72 hours.
+const int64 kDefaultExpiryUsec = 72 * base::Time::kMicrosecondsPerHour;
+
 namespace {
 
 std::string GetBlacklistUrlPrefix() {
@@ -153,8 +156,25 @@ bool SuggestionsService::IsControlGroup() {
 }
 
 void SuggestionsService::FetchSuggestionsData(
+    SyncState sync_state,
     SuggestionsService::ResponseCallback callback) {
   DCHECK(thread_checker_.CalledOnValidThread());
+  if (sync_state == NOT_INITIALIZED_ENABLED) {
+    // Sync is not initialized yet, but enabled. Serve previously cached
+    // suggestions if available.
+    waiting_requestors_.push_back(callback);
+    ServeFromCache();
+    return;
+  } else if (sync_state == SYNC_OR_HISTORY_SYNC_DISABLED) {
+    // Cancel any ongoing request (and the timeout closure). We must no longer
+    // interact with the server.
+    pending_request_.reset(NULL);
+    pending_timeout_closure_.reset(NULL);
+    suggestions_store_->ClearSuggestions();
+    callback.Run(SuggestionsProfile());
+    DispatchRequestsAndClear(SuggestionsProfile(), &waiting_requestors_);
+    return;
+  }
 
   FetchSuggestionsDataNoTimeout(callback);
 
@@ -165,21 +185,6 @@ void SuggestionsService::FetchSuggestionsData(
   base::MessageLoopProxy::current()->PostDelayedTask(
       FROM_HERE, pending_timeout_closure_->callback(),
       base::TimeDelta::FromMilliseconds(request_timeout_ms_));
-}
-
-void SuggestionsService::FetchSuggestionsDataNoTimeout(
-    SuggestionsService::ResponseCallback callback) {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  if (pending_request_.get()) {
-    // Request already exists, so just add requestor to queue.
-    waiting_requestors_.push_back(callback);
-    return;
-  }
-
-  // Form new request.
-  DCHECK(waiting_requestors_.empty());
-  waiting_requestors_.push_back(callback);
-  IssueRequest(suggestions_url_);
 }
 
 void SuggestionsService::GetPageThumbnail(
@@ -230,6 +235,33 @@ void SuggestionsService::RegisterProfilePrefs(
     user_prefs::PrefRegistrySyncable* registry) {
   SuggestionsStore::RegisterProfilePrefs(registry);
   BlacklistStore::RegisterProfilePrefs(registry);
+}
+
+void SuggestionsService::SetDefaultExpiryTimestamp(
+    SuggestionsProfile* suggestions, int64 default_timestamp_usec) {
+  for (int i = 0; i < suggestions->suggestions_size(); ++i) {
+    ChromeSuggestion* suggestion = suggestions->mutable_suggestions(i);
+    // Do not set expiry if the server has already provided a more specific
+    // expiry time for this suggestion.
+    if (!suggestion->has_expiry_ts()) {
+      suggestion->set_expiry_ts(default_timestamp_usec);
+    }
+  }
+}
+
+void SuggestionsService::FetchSuggestionsDataNoTimeout(
+    SuggestionsService::ResponseCallback callback) {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  if (pending_request_.get()) {
+    // Request already exists, so just add requestor to queue.
+    waiting_requestors_.push_back(callback);
+    return;
+  }
+
+  // Form new request.
+  DCHECK(waiting_requestors_.empty());
+  waiting_requestors_.push_back(callback);
+  IssueRequest(suggestions_url_);
 }
 
 void SuggestionsService::IssueRequest(const GURL& url) {
@@ -303,7 +335,7 @@ void SuggestionsService::OnURLFetchComplete(const net::URLFetcher* source) {
   bool success = request->GetResponseAsString(&suggestions_data);
   DCHECK(success);
 
-  // Compute suggestions, and dispatch then to requestors. On error still
+  // Compute suggestions, and dispatch them to requestors. On error still
   // dispatch empty suggestions.
   SuggestionsProfile suggestions;
   if (suggestions_data.empty()) {
@@ -312,10 +344,15 @@ void SuggestionsService::OnURLFetchComplete(const net::URLFetcher* source) {
   } else if (suggestions.ParseFromString(suggestions_data)) {
     LogResponseState(RESPONSE_VALID);
     thumbnail_manager_->Initialize(suggestions);
+
+    int64 now_usec = (base::Time::NowFromSystemTime() - base::Time::UnixEpoch())
+        .ToInternalValue();
+    SetDefaultExpiryTimestamp(&suggestions, now_usec + kDefaultExpiryUsec);
     suggestions_store_->StoreSuggestions(suggestions);
   } else {
     LogResponseState(RESPONSE_INVALID);
     suggestions_store_->LoadSuggestions(&suggestions);
+    thumbnail_manager_->Initialize(suggestions);
   }
 
   FilterAndServe(&suggestions);
@@ -333,6 +370,7 @@ void SuggestionsService::Shutdown() {
 void SuggestionsService::ServeFromCache() {
   SuggestionsProfile suggestions;
   suggestions_store_->LoadSuggestions(&suggestions);
+  thumbnail_manager_->Initialize(suggestions);
   FilterAndServe(&suggestions);
 }
 

@@ -272,6 +272,7 @@ IPC_STRUCT_BEGIN(FrameHostMsg_OpenURL_Params)
   IPC_STRUCT_MEMBER(bool, user_gesture)
 IPC_STRUCT_END()
 
+// PlzNavigate
 IPC_STRUCT_BEGIN(FrameHostMsg_BeginNavigation_Params)
   // The request method: GET, POST, etc.
   IPC_STRUCT_MEMBER(std::string, method)
@@ -280,16 +281,12 @@ IPC_STRUCT_BEGIN(FrameHostMsg_BeginNavigation_Params)
   IPC_STRUCT_MEMBER(GURL, url)
 
   // The referrer to use (may be empty).
-  IPC_STRUCT_MEMBER(GURL, referrer)
-
-  // The referrer policy to use.
-  IPC_STRUCT_MEMBER(blink::WebReferrerPolicy, referrer_policy)
+  IPC_STRUCT_MEMBER(content::Referrer, referrer)
 
   // Additional HTTP request headers.
   IPC_STRUCT_MEMBER(std::string, headers)
 
-  // net::URLRequest load flags (net::LOAD_NORMAL | net::LOAD_ENABLE_LOAD_TIMING
-  // by default).
+  // net::URLRequest load flags (net::LOAD_NORMAL) by default).
   IPC_STRUCT_MEMBER(int, load_flags)
 
   // Optional resource request body (may be null).
@@ -308,6 +305,33 @@ IPC_STRUCT_BEGIN(FrameHostMsg_BeginNavigation_Params)
   // Whether or not we should allow the URL to download.
   IPC_STRUCT_MEMBER(bool, allow_download)
 IPC_STRUCT_END()
+
+#if defined(OS_MACOSX) || defined(OS_ANDROID)
+// This message is used for supporting popup menus on Mac OS X and Android using
+// native controls. See the FrameHostMsg_ShowPopup message.
+IPC_STRUCT_BEGIN(FrameHostMsg_ShowPopup_Params)
+  // Position on the screen.
+  IPC_STRUCT_MEMBER(gfx::Rect, bounds)
+
+  // The height of each item in the menu.
+  IPC_STRUCT_MEMBER(int, item_height)
+
+  // The size of the font to use for those items.
+  IPC_STRUCT_MEMBER(double, item_font_size)
+
+  // The currently selected (displayed) item in the menu.
+  IPC_STRUCT_MEMBER(int, selected_item)
+
+  // The entire list of items in the popup menu.
+  IPC_STRUCT_MEMBER(std::vector<content::MenuItem>, popup_items)
+
+  // Whether items should be right-aligned.
+  IPC_STRUCT_MEMBER(bool, right_aligned)
+
+  // Whether this is a multi-select popup.
+  IPC_STRUCT_MEMBER(bool, allow_multiple_selection)
+IPC_STRUCT_END()
+#endif
 
 // -----------------------------------------------------------------------------
 // Messages sent from the browser to the renderer.
@@ -345,6 +369,9 @@ IPC_MESSAGE_ROUTED2(FrameMsg_CustomContextMenuAction,
                     content::CustomContextMenuContext /* custom_context */,
                     unsigned /* action */)
 
+// Requests that the RenderFrame or RenderFrameProxy sets its opener to null.
+IPC_MESSAGE_ROUTED0(FrameMsg_DisownOpener)
+
 // Instructs the renderer to create a new RenderFrame object with |routing_id|.
 // The new frame should be created as a child of the object identified by
 // |parent_routing_id| or as top level if that is MSG_ROUTING_NONE.
@@ -375,6 +402,9 @@ IPC_MESSAGE_ROUTED0(FrameMsg_BeforeUnload)
 IPC_MESSAGE_ROUTED1(FrameMsg_SwapOut,
                     int /* proxy_routing_id */)
 
+// Instructs the frame to stop the load in progress, if any.
+IPC_MESSAGE_ROUTED0(FrameMsg_Stop)
+
 // Request for the renderer to insert CSS into the frame.
 IPC_MESSAGE_ROUTED1(FrameMsg_CSSInsertRequest,
                     std::string  /* css */)
@@ -398,6 +428,16 @@ IPC_MESSAGE_ROUTED3(FrameMsg_JavaScriptExecuteRequest,
 IPC_MESSAGE_ROUTED2(FrameMsg_SetEditableSelectionOffsets,
                     int /* start */,
                     int /* end */)
+
+// Requests a navigation to the supplied markup, in an iframe with sandbox
+// attributes.
+IPC_MESSAGE_ROUTED1(FrameMsg_SetupTransitionView,
+                    std::string /* markup */)
+
+// Tells the renderer to hide the elements specified by the supplied CSS
+// selector, and activates any exiting-transition stylesheets.
+IPC_MESSAGE_ROUTED1(FrameMsg_BeginExitTransition,
+                    std::string /* css_selector */)
 
 // Tells the renderer to reload the frame, optionally ignoring the cache while
 // doing so.
@@ -426,6 +466,21 @@ IPC_MESSAGE_ROUTED1(FrameMsg_AddStyleSheetByURL, std::string)
 // Change the accessibility mode in the renderer process.
 IPC_MESSAGE_ROUTED1(FrameMsg_SetAccessibilityMode,
                     AccessibilityMode)
+
+#if defined(OS_ANDROID)
+
+// External popup menus.
+IPC_MESSAGE_ROUTED2(FrameMsg_SelectPopupMenuItems,
+                    bool /* user canceled the popup */,
+                    std::vector<int> /* selected indices */)
+
+#elif defined(OS_MACOSX)
+
+// External popup menus.
+IPC_MESSAGE_ROUTED1(FrameMsg_SelectPopupMenuItem,
+                    int /* selected index, -1 means no selection */)
+
+#endif
 
 // -----------------------------------------------------------------------------
 // Messages sent from the renderer to the browser.
@@ -692,9 +747,12 @@ IPC_MESSAGE_ROUTED3(FrameHostMsg_TextSurroundingSelectionResponse,
                     size_t /* endOffset */)
 
 // Notifies the browser that the renderer has a pending navigation transition.
-IPC_MESSAGE_CONTROL2(FrameHostMsg_SetHasPendingTransitionRequest,
+// The string parameters are all UTF8.
+IPC_MESSAGE_CONTROL4(FrameHostMsg_AddNavigationTransitionData,
                      int /* render_frame_id */,
-                     bool /* is_transition */)
+                     std::string  /* allowed_destination_host_pattern */,
+                     std::string  /* selector */,
+                     std::string  /* markup */)
 
 // Tells the browser to perform a navigation.
 IPC_MESSAGE_ROUTED1(FrameHostMsg_BeginNavigation,
@@ -704,5 +762,14 @@ IPC_MESSAGE_ROUTED1(FrameHostMsg_BeginNavigation,
 // after the frame has painted something.
 IPC_MESSAGE_ROUTED0(FrameHostMsg_DidFirstVisuallyNonEmptyPaint)
 
+#if defined(OS_MACOSX) || defined(OS_ANDROID)
+
+// Message to show/hide a popup menu using native controls.
+IPC_MESSAGE_ROUTED1(FrameHostMsg_ShowPopup,
+                    FrameHostMsg_ShowPopup_Params)
+IPC_MESSAGE_ROUTED0(FrameHostMsg_HidePopup)
+
+#endif
 // Start a new EventRacer log.
 IPC_SYNC_MESSAGE_ROUTED0_1(FrameHostMsg_CreateEventRacerLog, int32/* routing id */)
+

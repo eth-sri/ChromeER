@@ -113,9 +113,9 @@ var reopenEntriesPromsie = null;
  * Launches the application with entries.
  *
  * @param {Promise} selectedEntriesPromise Promise to be fulfilled with the
- *     entries that are stored in the exteranl file system (not in the isolated
+ *     entries that are stored in the external file system (not in the isolated
  *     file system).
- * @return {Promise} Promise to be fulfilled after the applicaiton is launched.
+ * @return {Promise} Promise to be fulfilled after the application is launched.
  */
 function launch(selectedEntriesPromise) {
   // If there is the previous window, close the window.
@@ -203,13 +203,14 @@ chrome.app.runtime.onLaunched.addListener(function(launchData) {
 // If is is run in the browser test, wait for the test resources are installed
 // as a component extension, and then load the test resources.
 if (chrome.test) {
+  window.testExtensionId = 'ejhcmmdhhpdhhgmifplfmjobgegbibkn';
   chrome.runtime.onMessageExternal.addListener(function(message) {
     if (message.name !== 'testResourceLoaded')
       return;
     var script = document.createElement('script');
     script.src =
-        'chrome-extension://ejhcmmdhhpdhhgmifplfmjobgegbibkn' +
-        '/gallery/test_loader.js';
+        'chrome-extension://' + window.testExtensionId +
+        '/common/test_loader.js';
     document.documentElement.appendChild(script);
   });
 }

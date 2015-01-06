@@ -8,12 +8,12 @@
 
 #include "ash/shell.h"
 #include "ash/shell_delegate.h"
+#include "ash/strings/grit/ash_strings.h"
 #include "ash/system/chromeos/network/network_connect.h"
 #include "base/bind.h"
 #include "base/logging.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/mobile_config.h"
 #include "chrome/browser/chromeos/options/network_config_view.h"
 #include "chrome/browser/chromeos/sim_dialog_delegate.h"
@@ -21,18 +21,16 @@
 #include "chrome/browser/defaults.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/url_constants.h"
+#include "chrome/grit/generated_resources.h"
 #include "chromeos/network/device_state.h"
 #include "chromeos/network/network_state.h"
 #include "chromeos/network/network_state_handler.h"
-#include "grit/ash_resources.h"
-#include "grit/ash_strings.h"
-#include "grit/generated_resources.h"
-#include "grit/ui_chromeos_strings.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/models/menu_model.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/chromeos/network/network_icon.h"
+#include "ui/chromeos/strings/grit/ui_chromeos_strings.h"
 #include "ui/gfx/image/image_skia.h"
 
 namespace chromeos {
@@ -76,8 +74,11 @@ class NetworkMenuModel : public ui::MenuModel {
           sub_menu_model(NULL),
           flags(0) {
     }
-    MenuItem(ui::MenuModel::ItemType type, base::string16 label, gfx::ImageSkia icon,
-             const std::string& service_path, int flags)
+    MenuItem(ui::MenuModel::ItemType type,
+             base::string16 label,
+             gfx::ImageSkia icon,
+             const std::string& service_path,
+             int flags)
         : type(type),
           label(label),
           icon(icon),
@@ -85,8 +86,11 @@ class NetworkMenuModel : public ui::MenuModel {
           sub_menu_model(NULL),
           flags(flags) {
     }
-    MenuItem(ui::MenuModel::ItemType type, base::string16 label, gfx::ImageSkia icon,
-             NetworkMenuModel* sub_menu_model, int flags)
+    MenuItem(ui::MenuModel::ItemType type,
+             base::string16 label,
+             gfx::ImageSkia icon,
+             NetworkMenuModel* sub_menu_model,
+             int flags)
         : type(type),
           label(label),
           icon(icon),

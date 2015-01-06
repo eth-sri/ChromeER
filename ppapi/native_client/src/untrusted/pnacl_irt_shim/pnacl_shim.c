@@ -63,6 +63,7 @@
 #include "ppapi/c/private/ppb_flash_drm.h"
 #include "ppapi/c/private/ppb_flash_menu.h"
 #include "ppapi/c/private/ppb_host_resolver_private.h"
+#include "ppapi/c/private/ppb_image_capture_private.h"
 #include "ppapi/c/private/ppb_instance_private.h"
 #include "ppapi/c/private/ppb_isolated_file_system_private.h"
 #include "ppapi/c/private/ppb_nacl_private.h"
@@ -97,6 +98,7 @@ static int mystrcmp(const char* s1, const char *s2) {
 
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Compositor_0_1;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_CompositorLayer_0_1;
+static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_CompositorLayer_0_2;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Console_1_0;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Core_1_0;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_FileIO_1_0;
@@ -142,6 +144,7 @@ static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_VarArray_1_0;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_VarArrayBuffer_1_0;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_VarDictionary_1_0;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_VideoDecoder_0_1;
+static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_VideoDecoder_0_2;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_WebSocket_1_0;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPP_Messaging_1_0;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_AudioInput_Dev_0_3;
@@ -176,6 +179,7 @@ static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Flash_DRM_1_0;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Flash_DRM_1_1;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Flash_Menu_0_2;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_HostResolver_Private_0_1;
+static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_ImageCapture_Private_0_1;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Instance_Private_0_1;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_IsolatedFileSystem_Private_0_2;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_NaCl_Private_1_0;
@@ -295,6 +299,60 @@ static int32_t Pnacl_M37_PPB_CompositorLayer_SetPremultipliedAlpha(PP_Resource l
 }
 
 /* End wrapper methods for PPB_CompositorLayer_0_1 */
+
+/* Begin wrapper methods for PPB_CompositorLayer_0_2 */
+
+static PP_Bool Pnacl_M38_PPB_CompositorLayer_IsCompositorLayer(PP_Resource resource) {
+  const struct PPB_CompositorLayer_0_2 *iface = Pnacl_WrapperInfo_PPB_CompositorLayer_0_2.real_iface;
+  return iface->IsCompositorLayer(resource);
+}
+
+static int32_t Pnacl_M38_PPB_CompositorLayer_SetColor(PP_Resource layer, float red, float green, float blue, float alpha, const struct PP_Size* size) {
+  const struct PPB_CompositorLayer_0_2 *iface = Pnacl_WrapperInfo_PPB_CompositorLayer_0_2.real_iface;
+  return iface->SetColor(layer, red, green, blue, alpha, size);
+}
+
+static int32_t Pnacl_M38_PPB_CompositorLayer_SetTexture(PP_Resource layer, PP_Resource context, uint32_t target, uint32_t texture, const struct PP_Size* size, struct PP_CompletionCallback* cc) {
+  const struct PPB_CompositorLayer_0_2 *iface = Pnacl_WrapperInfo_PPB_CompositorLayer_0_2.real_iface;
+  return iface->SetTexture(layer, context, target, texture, size, *cc);
+}
+
+static int32_t Pnacl_M38_PPB_CompositorLayer_SetImage(PP_Resource layer, PP_Resource image_data, const struct PP_Size* size, struct PP_CompletionCallback* cc) {
+  const struct PPB_CompositorLayer_0_2 *iface = Pnacl_WrapperInfo_PPB_CompositorLayer_0_2.real_iface;
+  return iface->SetImage(layer, image_data, size, *cc);
+}
+
+static int32_t Pnacl_M38_PPB_CompositorLayer_SetClipRect(PP_Resource layer, const struct PP_Rect* rect) {
+  const struct PPB_CompositorLayer_0_2 *iface = Pnacl_WrapperInfo_PPB_CompositorLayer_0_2.real_iface;
+  return iface->SetClipRect(layer, rect);
+}
+
+static int32_t Pnacl_M38_PPB_CompositorLayer_SetTransform(PP_Resource layer, const float matrix[16]) {
+  const struct PPB_CompositorLayer_0_2 *iface = Pnacl_WrapperInfo_PPB_CompositorLayer_0_2.real_iface;
+  return iface->SetTransform(layer, matrix);
+}
+
+static int32_t Pnacl_M38_PPB_CompositorLayer_SetOpacity(PP_Resource layer, float opacity) {
+  const struct PPB_CompositorLayer_0_2 *iface = Pnacl_WrapperInfo_PPB_CompositorLayer_0_2.real_iface;
+  return iface->SetOpacity(layer, opacity);
+}
+
+static int32_t Pnacl_M38_PPB_CompositorLayer_SetBlendMode(PP_Resource layer, PP_BlendMode mode) {
+  const struct PPB_CompositorLayer_0_2 *iface = Pnacl_WrapperInfo_PPB_CompositorLayer_0_2.real_iface;
+  return iface->SetBlendMode(layer, mode);
+}
+
+static int32_t Pnacl_M38_PPB_CompositorLayer_SetSourceRect(PP_Resource layer, const struct PP_FloatRect* rect) {
+  const struct PPB_CompositorLayer_0_2 *iface = Pnacl_WrapperInfo_PPB_CompositorLayer_0_2.real_iface;
+  return iface->SetSourceRect(layer, rect);
+}
+
+static int32_t Pnacl_M38_PPB_CompositorLayer_SetPremultipliedAlpha(PP_Resource layer, PP_Bool premult) {
+  const struct PPB_CompositorLayer_0_2 *iface = Pnacl_WrapperInfo_PPB_CompositorLayer_0_2.real_iface;
+  return iface->SetPremultipliedAlpha(layer, premult);
+}
+
+/* End wrapper methods for PPB_CompositorLayer_0_2 */
 
 /* Begin wrapper methods for PPB_Console_1_0 */
 
@@ -1913,6 +1971,50 @@ static int32_t Pnacl_M36_PPB_VideoDecoder_Reset(PP_Resource video_decoder, struc
 
 /* End wrapper methods for PPB_VideoDecoder_0_1 */
 
+/* Begin wrapper methods for PPB_VideoDecoder_0_2 */
+
+static PP_Resource Pnacl_M39_PPB_VideoDecoder_Create(PP_Instance instance) {
+  const struct PPB_VideoDecoder_0_2 *iface = Pnacl_WrapperInfo_PPB_VideoDecoder_0_2.real_iface;
+  return iface->Create(instance);
+}
+
+static PP_Bool Pnacl_M39_PPB_VideoDecoder_IsVideoDecoder(PP_Resource resource) {
+  const struct PPB_VideoDecoder_0_2 *iface = Pnacl_WrapperInfo_PPB_VideoDecoder_0_2.real_iface;
+  return iface->IsVideoDecoder(resource);
+}
+
+static int32_t Pnacl_M39_PPB_VideoDecoder_Initialize(PP_Resource video_decoder, PP_Resource graphics3d_context, PP_VideoProfile profile, PP_HardwareAcceleration acceleration, struct PP_CompletionCallback* callback) {
+  const struct PPB_VideoDecoder_0_2 *iface = Pnacl_WrapperInfo_PPB_VideoDecoder_0_2.real_iface;
+  return iface->Initialize(video_decoder, graphics3d_context, profile, acceleration, *callback);
+}
+
+static int32_t Pnacl_M39_PPB_VideoDecoder_Decode(PP_Resource video_decoder, uint32_t decode_id, uint32_t size, const void* buffer, struct PP_CompletionCallback* callback) {
+  const struct PPB_VideoDecoder_0_2 *iface = Pnacl_WrapperInfo_PPB_VideoDecoder_0_2.real_iface;
+  return iface->Decode(video_decoder, decode_id, size, buffer, *callback);
+}
+
+static int32_t Pnacl_M39_PPB_VideoDecoder_GetPicture(PP_Resource video_decoder, struct PP_VideoPicture* picture, struct PP_CompletionCallback* callback) {
+  const struct PPB_VideoDecoder_0_2 *iface = Pnacl_WrapperInfo_PPB_VideoDecoder_0_2.real_iface;
+  return iface->GetPicture(video_decoder, picture, *callback);
+}
+
+static void Pnacl_M39_PPB_VideoDecoder_RecyclePicture(PP_Resource video_decoder, const struct PP_VideoPicture* picture) {
+  const struct PPB_VideoDecoder_0_2 *iface = Pnacl_WrapperInfo_PPB_VideoDecoder_0_2.real_iface;
+  iface->RecyclePicture(video_decoder, picture);
+}
+
+static int32_t Pnacl_M39_PPB_VideoDecoder_Flush(PP_Resource video_decoder, struct PP_CompletionCallback* callback) {
+  const struct PPB_VideoDecoder_0_2 *iface = Pnacl_WrapperInfo_PPB_VideoDecoder_0_2.real_iface;
+  return iface->Flush(video_decoder, *callback);
+}
+
+static int32_t Pnacl_M39_PPB_VideoDecoder_Reset(PP_Resource video_decoder, struct PP_CompletionCallback* callback) {
+  const struct PPB_VideoDecoder_0_2 *iface = Pnacl_WrapperInfo_PPB_VideoDecoder_0_2.real_iface;
+  return iface->Reset(video_decoder, *callback);
+}
+
+/* End wrapper methods for PPB_VideoDecoder_0_2 */
+
 /* Not generating wrapper methods for PPB_VideoFrame_0_1 */
 
 /* Not generating wrapper methods for PPB_View_1_0 */
@@ -2605,6 +2707,8 @@ static struct PP_Var Pnacl_M13_PPP_Selection_Dev_GetSelectedText(PP_Instance ins
 
 /* Not generating wrapper methods for PPP_Zoom_Dev_0_3 */
 
+/* Not generating wrapper methods for PPB_CameraCapabilities_Private_0_1 */
+
 /* Begin wrapper methods for PPB_ContentDecryptor_Private_0_12 */
 
 static void Pnacl_M36_PPB_ContentDecryptor_Private_PromiseResolved(PP_Instance instance, uint32_t promise_id) {
@@ -3245,6 +3349,47 @@ static PP_Bool Pnacl_M19_PPB_HostResolver_Private_GetNetAddress(PP_Resource host
 
 /* End wrapper methods for PPB_HostResolver_Private_0_1 */
 
+/* Not generating wrapper methods for PPB_ImageCaptureConfig_Private_0_1 */
+
+/* Begin wrapper methods for PPB_ImageCapture_Private_0_1 */
+
+static PP_Resource Pnacl_M39_PPB_ImageCapture_Private_Create(PP_Instance instance, struct PP_Var* camera_source_id, PPB_ImageCapture_Private_ErrorCallback error_callback, void* user_data) {
+  const struct PPB_ImageCapture_Private_0_1 *iface = Pnacl_WrapperInfo_PPB_ImageCapture_Private_0_1.real_iface;
+  return iface->Create(instance, *camera_source_id, error_callback, user_data);
+}
+
+static PP_Bool Pnacl_M39_PPB_ImageCapture_Private_IsImageCapture(PP_Resource resource) {
+  const struct PPB_ImageCapture_Private_0_1 *iface = Pnacl_WrapperInfo_PPB_ImageCapture_Private_0_1.real_iface;
+  return iface->IsImageCapture(resource);
+}
+
+static int32_t Pnacl_M39_PPB_ImageCapture_Private_Close(PP_Resource resource, struct PP_CompletionCallback* callback) {
+  const struct PPB_ImageCapture_Private_0_1 *iface = Pnacl_WrapperInfo_PPB_ImageCapture_Private_0_1.real_iface;
+  return iface->Close(resource, *callback);
+}
+
+static int32_t Pnacl_M39_PPB_ImageCapture_Private_SetConfig(PP_Resource image_capture, PP_Resource config, struct PP_CompletionCallback* callback) {
+  const struct PPB_ImageCapture_Private_0_1 *iface = Pnacl_WrapperInfo_PPB_ImageCapture_Private_0_1.real_iface;
+  return iface->SetConfig(image_capture, config, *callback);
+}
+
+static int32_t Pnacl_M39_PPB_ImageCapture_Private_GetConfig(PP_Resource image_capture, PP_Resource* config, struct PP_CompletionCallback* callback) {
+  const struct PPB_ImageCapture_Private_0_1 *iface = Pnacl_WrapperInfo_PPB_ImageCapture_Private_0_1.real_iface;
+  return iface->GetConfig(image_capture, config, *callback);
+}
+
+static int32_t Pnacl_M39_PPB_ImageCapture_Private_GetCameraCapabilities(PP_Resource image_capture, PP_Resource* capabilities, struct PP_CompletionCallback* callback) {
+  const struct PPB_ImageCapture_Private_0_1 *iface = Pnacl_WrapperInfo_PPB_ImageCapture_Private_0_1.real_iface;
+  return iface->GetCameraCapabilities(image_capture, capabilities, *callback);
+}
+
+static int32_t Pnacl_M39_PPB_ImageCapture_Private_CaptureStillImage(PP_Resource image_capture, PPB_ImageCapture_Private_ShutterCallback shutter_callback, PPB_ImageCapture_Private_PreviewCallback preview_callback, PPB_ImageCapture_Private_JpegCallback jpeg_callback, int64_t* sequence_id) {
+  const struct PPB_ImageCapture_Private_0_1 *iface = Pnacl_WrapperInfo_PPB_ImageCapture_Private_0_1.real_iface;
+  return iface->CaptureStillImage(image_capture, shutter_callback, preview_callback, jpeg_callback, sequence_id);
+}
+
+/* End wrapper methods for PPB_ImageCapture_Private_0_1 */
+
 /* Not generating wrapper methods for PPB_InputEvent_Private_0_1 */
 
 /* Begin wrapper methods for PPB_Instance_Private_0_1 */
@@ -3347,9 +3492,9 @@ static void Pnacl_M25_PPB_NaCl_Private_ReportLoadAbort(PP_Instance instance) {
   iface->ReportLoadAbort(instance);
 }
 
-static void Pnacl_M25_PPB_NaCl_Private_NexeDidCrash(PP_Instance instance, const char* crash_log) {
+static void Pnacl_M25_PPB_NaCl_Private_NexeDidCrash(PP_Instance instance) {
   const struct PPB_NaCl_Private_1_0 *iface = Pnacl_WrapperInfo_PPB_NaCl_Private_1_0.real_iface;
-  iface->NexeDidCrash(instance, crash_log);
+  iface->NexeDidCrash(instance);
 }
 
 static void Pnacl_M25_PPB_NaCl_Private_InstanceCreated(PP_Instance instance) {
@@ -3380,16 +3525,6 @@ static void Pnacl_M25_PPB_NaCl_Private_LogToConsole(PP_Instance instance, const 
 static PP_NaClReadyState Pnacl_M25_PPB_NaCl_Private_GetNaClReadyState(PP_Instance instance) {
   const struct PPB_NaCl_Private_1_0 *iface = Pnacl_WrapperInfo_PPB_NaCl_Private_1_0.real_iface;
   return iface->GetNaClReadyState(instance);
-}
-
-static int32_t Pnacl_M25_PPB_NaCl_Private_GetExitStatus(PP_Instance instance) {
-  const struct PPB_NaCl_Private_1_0 *iface = Pnacl_WrapperInfo_PPB_NaCl_Private_1_0.real_iface;
-  return iface->GetExitStatus(instance);
-}
-
-static void Pnacl_M25_PPB_NaCl_Private_SetExitStatus(PP_Instance instance, int32_t exit_status) {
-  const struct PPB_NaCl_Private_1_0 *iface = Pnacl_WrapperInfo_PPB_NaCl_Private_1_0.real_iface;
-  iface->SetExitStatus(instance, exit_status);
 }
 
 static void Pnacl_M25_PPB_NaCl_Private_Vlog(const char* message) {
@@ -3989,6 +4124,11 @@ static void Pnacl_M33_PPB_Testing_Private_SetMinimumArrayBufferSizeForShmem(PP_I
   iface->SetMinimumArrayBufferSizeForShmem(instance, threshold);
 }
 
+static void Pnacl_M33_PPB_Testing_Private_RunV8GC(PP_Instance instance) {
+  const struct PPB_Testing_Private_1_0 *iface = Pnacl_WrapperInfo_PPB_Testing_Private_1_0.real_iface;
+  iface->RunV8GC(instance);
+}
+
 /* End wrapper methods for PPB_Testing_Private_1_0 */
 
 /* Begin wrapper methods for PPB_UDPSocket_Private_0_2 */
@@ -4362,6 +4502,19 @@ static const struct PPB_CompositorLayer_0_1 Pnacl_Wrappers_PPB_CompositorLayer_0
     .SetBlendMode = (int32_t (*)(PP_Resource layer, PP_BlendMode mode))&Pnacl_M37_PPB_CompositorLayer_SetBlendMode,
     .SetSourceRect = (int32_t (*)(PP_Resource layer, const struct PP_FloatRect* rect))&Pnacl_M37_PPB_CompositorLayer_SetSourceRect,
     .SetPremultipliedAlpha = (int32_t (*)(PP_Resource layer, PP_Bool premult))&Pnacl_M37_PPB_CompositorLayer_SetPremultipliedAlpha
+};
+
+static const struct PPB_CompositorLayer_0_2 Pnacl_Wrappers_PPB_CompositorLayer_0_2 = {
+    .IsCompositorLayer = (PP_Bool (*)(PP_Resource resource))&Pnacl_M38_PPB_CompositorLayer_IsCompositorLayer,
+    .SetColor = (int32_t (*)(PP_Resource layer, float red, float green, float blue, float alpha, const struct PP_Size* size))&Pnacl_M38_PPB_CompositorLayer_SetColor,
+    .SetTexture = (int32_t (*)(PP_Resource layer, PP_Resource context, uint32_t target, uint32_t texture, const struct PP_Size* size, struct PP_CompletionCallback cc))&Pnacl_M38_PPB_CompositorLayer_SetTexture,
+    .SetImage = (int32_t (*)(PP_Resource layer, PP_Resource image_data, const struct PP_Size* size, struct PP_CompletionCallback cc))&Pnacl_M38_PPB_CompositorLayer_SetImage,
+    .SetClipRect = (int32_t (*)(PP_Resource layer, const struct PP_Rect* rect))&Pnacl_M38_PPB_CompositorLayer_SetClipRect,
+    .SetTransform = (int32_t (*)(PP_Resource layer, const float matrix[16]))&Pnacl_M38_PPB_CompositorLayer_SetTransform,
+    .SetOpacity = (int32_t (*)(PP_Resource layer, float opacity))&Pnacl_M38_PPB_CompositorLayer_SetOpacity,
+    .SetBlendMode = (int32_t (*)(PP_Resource layer, PP_BlendMode mode))&Pnacl_M38_PPB_CompositorLayer_SetBlendMode,
+    .SetSourceRect = (int32_t (*)(PP_Resource layer, const struct PP_FloatRect* rect))&Pnacl_M38_PPB_CompositorLayer_SetSourceRect,
+    .SetPremultipliedAlpha = (int32_t (*)(PP_Resource layer, PP_Bool premult))&Pnacl_M38_PPB_CompositorLayer_SetPremultipliedAlpha
 };
 
 static const struct PPB_Console_1_0 Pnacl_Wrappers_PPB_Console_1_0 = {
@@ -4796,6 +4949,17 @@ static const struct PPB_VideoDecoder_0_1 Pnacl_Wrappers_PPB_VideoDecoder_0_1 = {
     .Reset = (int32_t (*)(PP_Resource video_decoder, struct PP_CompletionCallback callback))&Pnacl_M36_PPB_VideoDecoder_Reset
 };
 
+static const struct PPB_VideoDecoder_0_2 Pnacl_Wrappers_PPB_VideoDecoder_0_2 = {
+    .Create = (PP_Resource (*)(PP_Instance instance))&Pnacl_M39_PPB_VideoDecoder_Create,
+    .IsVideoDecoder = (PP_Bool (*)(PP_Resource resource))&Pnacl_M39_PPB_VideoDecoder_IsVideoDecoder,
+    .Initialize = (int32_t (*)(PP_Resource video_decoder, PP_Resource graphics3d_context, PP_VideoProfile profile, PP_HardwareAcceleration acceleration, struct PP_CompletionCallback callback))&Pnacl_M39_PPB_VideoDecoder_Initialize,
+    .Decode = (int32_t (*)(PP_Resource video_decoder, uint32_t decode_id, uint32_t size, const void* buffer, struct PP_CompletionCallback callback))&Pnacl_M39_PPB_VideoDecoder_Decode,
+    .GetPicture = (int32_t (*)(PP_Resource video_decoder, struct PP_VideoPicture* picture, struct PP_CompletionCallback callback))&Pnacl_M39_PPB_VideoDecoder_GetPicture,
+    .RecyclePicture = (void (*)(PP_Resource video_decoder, const struct PP_VideoPicture* picture))&Pnacl_M39_PPB_VideoDecoder_RecyclePicture,
+    .Flush = (int32_t (*)(PP_Resource video_decoder, struct PP_CompletionCallback callback))&Pnacl_M39_PPB_VideoDecoder_Flush,
+    .Reset = (int32_t (*)(PP_Resource video_decoder, struct PP_CompletionCallback callback))&Pnacl_M39_PPB_VideoDecoder_Reset
+};
+
 /* Not generating wrapper interface for PPB_VideoFrame_0_1 */
 
 /* Not generating wrapper interface for PPB_View_1_0 */
@@ -5033,6 +5197,8 @@ static const struct PPP_Selection_Dev_0_3 Pnacl_Wrappers_PPP_Selection_Dev_0_3 =
 
 /* Not generating wrapper interface for PPP_Zoom_Dev_0_3 */
 
+/* Not generating wrapper interface for PPB_CameraCapabilities_Private_0_1 */
+
 static const struct PPB_ContentDecryptor_Private_0_12 Pnacl_Wrappers_PPB_ContentDecryptor_Private_0_12 = {
     .PromiseResolved = (void (*)(PP_Instance instance, uint32_t promise_id))&Pnacl_M36_PPB_ContentDecryptor_Private_PromiseResolved,
     .PromiseResolvedWithSession = (void (*)(PP_Instance instance, uint32_t promise_id, struct PP_Var web_session_id))&Pnacl_M36_PPB_ContentDecryptor_Private_PromiseResolvedWithSession,
@@ -5208,6 +5374,18 @@ static const struct PPB_HostResolver_Private_0_1 Pnacl_Wrappers_PPB_HostResolver
     .GetNetAddress = (PP_Bool (*)(PP_Resource host_resolver, uint32_t index, struct PP_NetAddress_Private* addr))&Pnacl_M19_PPB_HostResolver_Private_GetNetAddress
 };
 
+/* Not generating wrapper interface for PPB_ImageCaptureConfig_Private_0_1 */
+
+static const struct PPB_ImageCapture_Private_0_1 Pnacl_Wrappers_PPB_ImageCapture_Private_0_1 = {
+    .Create = (PP_Resource (*)(PP_Instance instance, struct PP_Var camera_source_id, PPB_ImageCapture_Private_ErrorCallback error_callback, void* user_data))&Pnacl_M39_PPB_ImageCapture_Private_Create,
+    .IsImageCapture = (PP_Bool (*)(PP_Resource resource))&Pnacl_M39_PPB_ImageCapture_Private_IsImageCapture,
+    .Close = (int32_t (*)(PP_Resource resource, struct PP_CompletionCallback callback))&Pnacl_M39_PPB_ImageCapture_Private_Close,
+    .SetConfig = (int32_t (*)(PP_Resource image_capture, PP_Resource config, struct PP_CompletionCallback callback))&Pnacl_M39_PPB_ImageCapture_Private_SetConfig,
+    .GetConfig = (int32_t (*)(PP_Resource image_capture, PP_Resource* config, struct PP_CompletionCallback callback))&Pnacl_M39_PPB_ImageCapture_Private_GetConfig,
+    .GetCameraCapabilities = (int32_t (*)(PP_Resource image_capture, PP_Resource* capabilities, struct PP_CompletionCallback callback))&Pnacl_M39_PPB_ImageCapture_Private_GetCameraCapabilities,
+    .CaptureStillImage = (int32_t (*)(PP_Resource image_capture, PPB_ImageCapture_Private_ShutterCallback shutter_callback, PPB_ImageCapture_Private_PreviewCallback preview_callback, PPB_ImageCapture_Private_JpegCallback jpeg_callback, int64_t* sequence_id))&Pnacl_M39_PPB_ImageCapture_Private_CaptureStillImage
+};
+
 /* Not generating wrapper interface for PPB_InputEvent_Private_0_1 */
 
 static const struct PPB_Instance_Private_0_1 Pnacl_Wrappers_PPB_Instance_Private_0_1 = {
@@ -5235,15 +5413,13 @@ static const struct PPB_NaCl_Private_1_0 Pnacl_Wrappers_PPB_NaCl_Private_1_0 = {
     .ReportLoadSuccess = (void (*)(PP_Instance instance, uint64_t loaded_bytes, uint64_t total_bytes))&Pnacl_M25_PPB_NaCl_Private_ReportLoadSuccess,
     .ReportLoadError = (void (*)(PP_Instance instance, PP_NaClError error, const char* error_message))&Pnacl_M25_PPB_NaCl_Private_ReportLoadError,
     .ReportLoadAbort = (void (*)(PP_Instance instance))&Pnacl_M25_PPB_NaCl_Private_ReportLoadAbort,
-    .NexeDidCrash = (void (*)(PP_Instance instance, const char* crash_log))&Pnacl_M25_PPB_NaCl_Private_NexeDidCrash,
+    .NexeDidCrash = (void (*)(PP_Instance instance))&Pnacl_M25_PPB_NaCl_Private_NexeDidCrash,
     .InstanceCreated = (void (*)(PP_Instance instance))&Pnacl_M25_PPB_NaCl_Private_InstanceCreated,
     .InstanceDestroyed = (void (*)(PP_Instance instance))&Pnacl_M25_PPB_NaCl_Private_InstanceDestroyed,
     .NaClDebugEnabledForURL = (PP_Bool (*)(const char* alleged_nmf_url))&Pnacl_M25_PPB_NaCl_Private_NaClDebugEnabledForURL,
     .GetSandboxArch = (const char* (*)(void))&Pnacl_M25_PPB_NaCl_Private_GetSandboxArch,
     .LogToConsole = (void (*)(PP_Instance instance, const char* message))&Pnacl_M25_PPB_NaCl_Private_LogToConsole,
     .GetNaClReadyState = (PP_NaClReadyState (*)(PP_Instance instance))&Pnacl_M25_PPB_NaCl_Private_GetNaClReadyState,
-    .GetExitStatus = (int32_t (*)(PP_Instance instance))&Pnacl_M25_PPB_NaCl_Private_GetExitStatus,
-    .SetExitStatus = (void (*)(PP_Instance instance, int32_t exit_status))&Pnacl_M25_PPB_NaCl_Private_SetExitStatus,
     .Vlog = (void (*)(const char* message))&Pnacl_M25_PPB_NaCl_Private_Vlog,
     .InitializePlugin = (void (*)(PP_Instance instance, uint32_t argc, const char* argn[], const char* argv[]))&Pnacl_M25_PPB_NaCl_Private_InitializePlugin,
     .GetNexeSize = (int64_t (*)(PP_Instance instance))&Pnacl_M25_PPB_NaCl_Private_GetNexeSize,
@@ -5391,7 +5567,8 @@ static const struct PPB_Testing_Private_1_0 Pnacl_Wrappers_PPB_Testing_Private_1
     .SimulateInputEvent = (void (*)(PP_Instance instance, PP_Resource input_event))&Pnacl_M33_PPB_Testing_Private_SimulateInputEvent,
     .GetDocumentURL = (struct PP_Var (*)(PP_Instance instance, struct PP_URLComponents_Dev* components))&Pnacl_M33_PPB_Testing_Private_GetDocumentURL,
     .GetLiveVars = (uint32_t (*)(struct PP_Var live_vars[], uint32_t array_size))&Pnacl_M33_PPB_Testing_Private_GetLiveVars,
-    .SetMinimumArrayBufferSizeForShmem = (void (*)(PP_Instance instance, uint32_t threshold))&Pnacl_M33_PPB_Testing_Private_SetMinimumArrayBufferSizeForShmem
+    .SetMinimumArrayBufferSizeForShmem = (void (*)(PP_Instance instance, uint32_t threshold))&Pnacl_M33_PPB_Testing_Private_SetMinimumArrayBufferSizeForShmem,
+    .RunV8GC = (void (*)(PP_Instance instance))&Pnacl_M33_PPB_Testing_Private_RunV8GC
 };
 
 static const struct PPB_UDPSocket_Private_0_2 Pnacl_Wrappers_PPB_UDPSocket_Private_0_2 = {
@@ -5494,6 +5671,12 @@ static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Compositor_0_1 = {
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_CompositorLayer_0_1 = {
   .iface_macro = PPB_COMPOSITORLAYER_INTERFACE_0_1,
   .wrapped_iface = (const void *) &Pnacl_Wrappers_PPB_CompositorLayer_0_1,
+  .real_iface = NULL
+};
+
+static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_CompositorLayer_0_2 = {
+  .iface_macro = PPB_COMPOSITORLAYER_INTERFACE_0_2,
+  .wrapped_iface = (const void *) &Pnacl_Wrappers_PPB_CompositorLayer_0_2,
   .real_iface = NULL
 };
 
@@ -5767,6 +5950,12 @@ static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_VideoDecoder_0_1 = {
   .real_iface = NULL
 };
 
+static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_VideoDecoder_0_2 = {
+  .iface_macro = PPB_VIDEODECODER_INTERFACE_0_2,
+  .wrapped_iface = (const void *) &Pnacl_Wrappers_PPB_VideoDecoder_0_2,
+  .real_iface = NULL
+};
+
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_WebSocket_1_0 = {
   .iface_macro = PPB_WEBSOCKET_INTERFACE_1_0,
   .wrapped_iface = (const void *) &Pnacl_Wrappers_PPB_WebSocket_1_0,
@@ -5971,6 +6160,12 @@ static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_HostResolver_Private_0_1 
   .real_iface = NULL
 };
 
+static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_ImageCapture_Private_0_1 = {
+  .iface_macro = PPB_IMAGECAPTURE_PRIVATE_INTERFACE_0_1,
+  .wrapped_iface = (const void *) &Pnacl_Wrappers_PPB_ImageCapture_Private_0_1,
+  .real_iface = NULL
+};
+
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Instance_Private_0_1 = {
   .iface_macro = PPB_INSTANCE_PRIVATE_INTERFACE_0_1,
   .wrapped_iface = (const void *) &Pnacl_Wrappers_PPB_Instance_Private_0_1,
@@ -6124,6 +6319,7 @@ static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPP_Instance_Private_0_1 = {
 static struct __PnaclWrapperInfo *s_ppb_wrappers[] = {
   &Pnacl_WrapperInfo_PPB_Compositor_0_1,
   &Pnacl_WrapperInfo_PPB_CompositorLayer_0_1,
+  &Pnacl_WrapperInfo_PPB_CompositorLayer_0_2,
   &Pnacl_WrapperInfo_PPB_Console_1_0,
   &Pnacl_WrapperInfo_PPB_Core_1_0,
   &Pnacl_WrapperInfo_PPB_FileIO_1_0,
@@ -6169,6 +6365,7 @@ static struct __PnaclWrapperInfo *s_ppb_wrappers[] = {
   &Pnacl_WrapperInfo_PPB_VarArrayBuffer_1_0,
   &Pnacl_WrapperInfo_PPB_VarDictionary_1_0,
   &Pnacl_WrapperInfo_PPB_VideoDecoder_0_1,
+  &Pnacl_WrapperInfo_PPB_VideoDecoder_0_2,
   &Pnacl_WrapperInfo_PPB_WebSocket_1_0,
   &Pnacl_WrapperInfo_PPB_AudioInput_Dev_0_3,
   &Pnacl_WrapperInfo_PPB_AudioInput_Dev_0_4,
@@ -6201,6 +6398,7 @@ static struct __PnaclWrapperInfo *s_ppb_wrappers[] = {
   &Pnacl_WrapperInfo_PPB_Flash_DRM_1_1,
   &Pnacl_WrapperInfo_PPB_Flash_Menu_0_2,
   &Pnacl_WrapperInfo_PPB_HostResolver_Private_0_1,
+  &Pnacl_WrapperInfo_PPB_ImageCapture_Private_0_1,
   &Pnacl_WrapperInfo_PPB_Instance_Private_0_1,
   &Pnacl_WrapperInfo_PPB_IsolatedFileSystem_Private_0_2,
   &Pnacl_WrapperInfo_PPB_NaCl_Private_1_0,

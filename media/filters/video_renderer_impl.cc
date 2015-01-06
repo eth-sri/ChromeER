@@ -11,6 +11,7 @@
 #include "base/location.h"
 #include "base/single_thread_task_runner.h"
 #include "base/threading/platform_thread.h"
+#include "media/base/bind_to_current_loop.h"
 #include "media/base/buffers.h"
 #include "media/base/limits.h"
 #include "media/base/pipeline.h"
@@ -39,6 +40,7 @@ VideoRendererImpl::VideoRendererImpl(
       buffering_state_(BUFFERING_HAVE_NOTHING),
       paint_cb_(paint_cb),
       last_timestamp_(kNoTimestamp()),
+      last_painted_timestamp_(kNoTimestamp()),
       frames_decoded_(0),
       frames_dropped_(0),
       is_shutting_down_(false),
@@ -125,7 +127,10 @@ void VideoRendererImpl::Initialize(DemuxerStream* stream,
 
   low_delay_ = low_delay;
 
-  init_cb_ = init_cb;
+  // Always post |init_cb_| because |this| could be destroyed if initialization
+  // failed.
+  init_cb_ = BindToCurrentLoop(init_cb);
+
   statistics_cb_ = statistics_cb;
   max_time_cb_ = max_time_cb;
   buffering_state_cb_ = buffering_state_cb;
@@ -184,6 +189,11 @@ void VideoRendererImpl::ThreadMain() {
   const base::TimeDelta kIdleTimeDelta =
       base::TimeDelta::FromMilliseconds(10);
 
+  // If we have no frames and haven't painted any frame for certain amount of
+  // time, declare BUFFERING_HAVE_NOTHING.
+  const base::TimeDelta kTimeToDeclareHaveNothing =
+      base::TimeDelta::FromSeconds(3);
+
   for (;;) {
     base::AutoLock auto_lock(lock_);
 
@@ -197,6 +207,8 @@ void VideoRendererImpl::ThreadMain() {
       continue;
     }
 
+    base::TimeDelta now = get_time_cb_.Run();
+
     // Remain idle until we have the next frame ready for rendering.
     if (ready_frames_.empty()) {
       if (received_end_of_stream_) {
@@ -204,7 +216,8 @@ void VideoRendererImpl::ThreadMain() {
           rendered_end_of_stream_ = true;
           task_runner_->PostTask(FROM_HERE, ended_cb_);
         }
-      } else {
+      } else if (last_painted_timestamp_ != kNoTimestamp() &&
+                 now - last_painted_timestamp_ >= kTimeToDeclareHaveNothing) {
         buffering_state_ = BUFFERING_HAVE_NOTHING;
         task_runner_->PostTask(
             FROM_HERE, base::Bind(buffering_state_cb_, BUFFERING_HAVE_NOTHING));
@@ -214,7 +227,6 @@ void VideoRendererImpl::ThreadMain() {
       continue;
     }
 
-    base::TimeDelta now = get_time_cb_.Run();
     base::TimeDelta target_paint_timestamp = ready_frames_.front()->timestamp();
     base::TimeDelta latest_paint_timestamp;
 
@@ -258,6 +270,7 @@ void VideoRendererImpl::PaintNextReadyFrame_Locked() {
   frames_decoded_++;
 
   last_timestamp_ = next_frame->timestamp();
+  last_painted_timestamp_ = next_frame->timestamp();
 
   paint_cb_.Run(next_frame);
 
@@ -283,6 +296,7 @@ void VideoRendererImpl::DropNextReadyFrame_Locked() {
 
 void VideoRendererImpl::FrameReady(VideoFrameStream::Status status,
                                    const scoped_refptr<VideoFrame>& frame) {
+  DCHECK(task_runner_->BelongsToCurrentThread());
   base::AutoLock auto_lock(lock_);
   DCHECK_NE(state_, kUninitialized);
   DCHECK_NE(state_, kFlushed);
@@ -296,7 +310,7 @@ void VideoRendererImpl::FrameReady(VideoFrameStream::Status status,
     PipelineStatus error = PIPELINE_ERROR_DECODE;
     if (status == VideoFrameStream::DECRYPT_ERROR)
       error = PIPELINE_ERROR_DECRYPT;
-    error_cb_.Run(error);
+    task_runner_->PostTask(FROM_HERE, base::Bind(error_cb_, error));
     return;
   }
 
@@ -308,7 +322,7 @@ void VideoRendererImpl::FrameReady(VideoFrameStream::Status status,
   DCHECK_EQ(state_, kPlaying);
 
   // Can happen when demuxers are preparing for a new Seek().
-  if (!frame) {
+  if (!frame.get()) {
     DCHECK_EQ(status, VideoFrameStream::DEMUXER_READ_ABORTED);
     return;
   }
@@ -443,6 +457,7 @@ void VideoRendererImpl::OnVideoFrameStreamResetDone() {
 
   state_ = kFlushed;
   last_timestamp_ = kNoTimestamp();
+  last_painted_timestamp_ = kNoTimestamp();
   base::ResetAndReturn(&flush_cb_).Run();
 }
 

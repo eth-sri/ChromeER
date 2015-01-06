@@ -21,9 +21,25 @@ MessagePipe::MessagePipe(scoped_ptr<MessagePipeEndpoint> endpoint0,
   endpoints_[1].reset(endpoint1.release());
 }
 
-MessagePipe::MessagePipe() {
-  endpoints_[0].reset(new LocalMessagePipeEndpoint());
-  endpoints_[1].reset(new LocalMessagePipeEndpoint());
+// static
+MessagePipe* MessagePipe::CreateLocalLocal() {
+  return new MessagePipe(
+      scoped_ptr<MessagePipeEndpoint>(new LocalMessagePipeEndpoint),
+      scoped_ptr<MessagePipeEndpoint>(new LocalMessagePipeEndpoint));
+}
+
+// static
+MessagePipe* MessagePipe::CreateLocalProxy() {
+  return new MessagePipe(
+      scoped_ptr<MessagePipeEndpoint>(new LocalMessagePipeEndpoint),
+      scoped_ptr<MessagePipeEndpoint>(new ProxyMessagePipeEndpoint));
+}
+
+// static
+MessagePipe* MessagePipe::CreateProxyLocal() {
+  return new MessagePipe(
+      scoped_ptr<MessagePipeEndpoint>(new ProxyMessagePipeEndpoint),
+      scoped_ptr<MessagePipeEndpoint>(new LocalMessagePipeEndpoint));
 }
 
 // static
@@ -162,7 +178,7 @@ bool MessagePipe::Attach(unsigned port,
                          scoped_refptr<Channel> channel,
                          MessageInTransit::EndpointId local_id) {
   DCHECK(port == 0 || port == 1);
-  DCHECK(channel);
+  DCHECK(channel.get());
   DCHECK_NE(local_id, MessageInTransit::kInvalidEndpointId);
 
   base::AutoLock locker(lock_);

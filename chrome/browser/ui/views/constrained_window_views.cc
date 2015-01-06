@@ -6,10 +6,10 @@
 
 #include <algorithm>
 
-#include "chrome/browser/guest_view/web_view/web_view_guest.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "components/web_modal/popup_manager.h"
 #include "components/web_modal/web_contents_modal_dialog_host.h"
+#include "extensions/browser/guest_view/web_view/web_view_guest.h"
 #include "ui/views/border.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_observer.h"
@@ -123,8 +123,8 @@ void UpdateBrowserModalDialogPosition(views::Widget* widget,
 views::Widget* ShowWebModalDialogViews(
     views::WidgetDelegate* dialog,
     content::WebContents* initiator_web_contents) {
-  WebViewGuest* web_view_guest = WebViewGuest::FromWebContents(
-      initiator_web_contents);
+  extensions::WebViewGuest* web_view_guest =
+      extensions::WebViewGuest::FromWebContents(initiator_web_contents);
   // For embedded WebContents, use the embedder's WebContents for constrained
   // window.
   content::WebContents* web_contents =

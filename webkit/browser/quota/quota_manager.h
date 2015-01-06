@@ -26,7 +26,7 @@
 #include "webkit/browser/quota/quota_task.h"
 #include "webkit/browser/quota/special_storage_policy.h"
 #include "webkit/browser/quota/storage_observer.h"
-#include "webkit/browser/webkit_storage_browser_export.h"
+#include "webkit/browser/storage_browser_export.h"
 
 namespace base {
 class FilePath;
@@ -46,7 +46,7 @@ class StorageMonitorTest;
 
 }
 
-namespace quota {
+namespace storage {
 
 class QuotaDatabase;
 class QuotaManagerProxy;
@@ -56,7 +56,7 @@ class UsageTracker;
 
 struct QuotaManagerDeleter;
 
-struct WEBKIT_STORAGE_BROWSER_EXPORT UsageAndQuota {
+struct STORAGE_EXPORT UsageAndQuota {
   int64 usage;
   int64 global_limited_usage;
   int64 quota;
@@ -70,7 +70,7 @@ struct WEBKIT_STORAGE_BROWSER_EXPORT UsageAndQuota {
 };
 
 // An interface called by QuotaTemporaryStorageEvictor.
-class WEBKIT_STORAGE_BROWSER_EXPORT QuotaEvictionHandler {
+class STORAGE_EXPORT QuotaEvictionHandler {
  public:
   typedef base::Callback<void(const GURL&)> GetLRUOriginCallback;
   typedef StatusCallback EvictOriginDataCallback;
@@ -109,7 +109,7 @@ struct UsageInfo {
 // The quota manager class.  This class is instantiated per profile and
 // held by the profile.  With the exception of the constructor and the
 // proxy() method, all methods should only be called on the IO thread.
-class WEBKIT_STORAGE_BROWSER_EXPORT QuotaManager
+class STORAGE_EXPORT QuotaManager
     : public QuotaTaskObserver,
       public QuotaEvictionHandler,
       public base::RefCountedThreadSafe<QuotaManager, QuotaManagerDeleter> {
@@ -122,11 +122,12 @@ class WEBKIT_STORAGE_BROWSER_EXPORT QuotaManager
   static const int64 kIncognitoDefaultQuotaLimit;
   static const int64 kNoLimit;
 
-  QuotaManager(bool is_incognito,
-               const base::FilePath& profile_path,
-               base::SingleThreadTaskRunner* io_thread,
-               base::SequencedTaskRunner* db_thread,
-               SpecialStoragePolicy* special_storage_policy);
+  QuotaManager(
+      bool is_incognito,
+      const base::FilePath& profile_path,
+      const scoped_refptr<base::SingleThreadTaskRunner>& io_thread,
+      const scoped_refptr<base::SequencedTaskRunner>& db_thread,
+      const scoped_refptr<SpecialStoragePolicy>& special_storage_policy);
 
   // Returns a proxy object that can be used on any thread.
   QuotaManagerProxy* proxy() { return proxy_.get(); }
@@ -454,6 +455,6 @@ struct QuotaManagerDeleter {
   }
 };
 
-}  // namespace quota
+}  // namespace storage
 
 #endif  // WEBKIT_BROWSER_QUOTA_QUOTA_MANAGER_H_

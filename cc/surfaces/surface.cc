@@ -5,12 +5,20 @@
 #include "cc/surfaces/surface.h"
 
 #include "cc/output/compositor_frame.h"
+#include "cc/output/copy_output_request.h"
 #include "cc/surfaces/surface_factory.h"
 
 namespace cc {
 
+// The frame index starts at 2 so that empty frames will be treated as
+// completely damaged the first time they're drawn from.
+static const int kFrameIndexStart = 2;
+
 Surface::Surface(SurfaceId id, const gfx::Size& size, SurfaceFactory* factory)
-    : surface_id_(id), size_(size), factory_(factory) {
+    : surface_id_(id),
+      size_(size),
+      factory_(factory),
+      frame_index_(kFrameIndexStart) {
 }
 
 Surface::~Surface() {
@@ -23,11 +31,13 @@ Surface::~Surface() {
   }
 }
 
-void Surface::QueueFrame(scoped_ptr<CompositorFrame> frame) {
+void Surface::QueueFrame(scoped_ptr<CompositorFrame> frame,
+                         const base::Closure& callback) {
   scoped_ptr<CompositorFrame> previous_frame = current_frame_.Pass();
   current_frame_ = frame.Pass();
   factory_->ReceiveFromChild(
       current_frame_->delegated_frame_data->resource_list);
+  ++frame_index_;
 
   if (previous_frame) {
     ReturnedResourceArray previous_resources;
@@ -36,10 +46,26 @@ void Surface::QueueFrame(scoped_ptr<CompositorFrame> frame) {
         &previous_resources);
     factory_->UnrefResources(previous_resources);
   }
+  if (!draw_callback_.is_null())
+    draw_callback_.Run();
+  draw_callback_ = callback;
+}
+
+void Surface::RequestCopyOfOutput(scoped_ptr<CopyOutputRequest> copy_request) {
+  // TODO(jbauman): Make this work.
+  copy_request->SendEmptyResult();
 }
 
 const CompositorFrame* Surface::GetEligibleFrame() {
   return current_frame_.get();
+}
+
+void Surface::RunDrawCallbacks() {
+  if (!draw_callback_.is_null()) {
+    base::Closure callback = draw_callback_;
+    draw_callback_ = base::Closure();
+    callback.Run();
+  }
 }
 
 }  // namespace cc

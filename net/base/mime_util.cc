@@ -243,7 +243,8 @@ static const MimeInfo secondary_mappings[] = {
   { "application/vnd.mozilla.xul+xml", "xul" },
   { "application/x-shockwave-flash", "swf,swl" },
   { "application/pkcs7-mime", "p7m,p7c,p7z" },
-  { "application/pkcs7-signature", "p7s" }
+  { "application/pkcs7-signature", "p7s" },
+  { "application/x-mpegurl", "m3u8" },
 };
 
 static const char* FindMimeType(const MimeInfo* mappings,
@@ -378,6 +379,11 @@ static const char* const proprietary_media_types[] = {
   "audio/mp3",
   "audio/x-mp3",
   "audio/mpeg",
+
+#if defined(ENABLE_MPEG2TS_STREAM_PARSER)
+  // MPEG-2 TS.
+  "video/mp2t",
+#endif
 };
 
 // Note:
@@ -471,6 +477,8 @@ static bool IsCodecSupportedOnAndroid(MimeUtil::Codec codec) {
     case MimeUtil::MPEG4_AAC_LC:
     case MimeUtil::MPEG4_AAC_SBRv1:
     case MimeUtil::H264_BASELINE:
+    case MimeUtil::H264_MAIN:
+    case MimeUtil::H264_HIGH:
     case MimeUtil::VP8:
     case MimeUtil::VORBIS:
       return true;
@@ -479,11 +487,6 @@ static bool IsCodecSupportedOnAndroid(MimeUtil::Codec codec) {
     case MimeUtil::MPEG2_AAC_MAIN:
     case MimeUtil::MPEG2_AAC_SSR:
       // MPEG-2 variants of AAC are not supported on Android.
-      return false;
-
-    case MimeUtil::H264_MAIN:
-    case MimeUtil::H264_HIGH:
-      // H.264 Main and High profiles are not supported on Android.
       return false;
 
     case MimeUtil::VP9:
@@ -767,8 +770,8 @@ bool MatchesMimeTypeParameters(const std::string& mime_type_pattern,
 bool MimeUtil::MatchesMimeType(const std::string& mime_type_pattern,
                                const std::string& mime_type) const {
   // Verify caller is passing lowercase strings.
-  DCHECK_EQ(StringToLowerASCII(mime_type_pattern), mime_type_pattern);
-  DCHECK_EQ(StringToLowerASCII(mime_type), mime_type);
+  DCHECK_EQ(base::StringToLowerASCII(mime_type_pattern), mime_type_pattern);
+  DCHECK_EQ(base::StringToLowerASCII(mime_type), mime_type);
 
   if (mime_type_pattern.empty())
     return false;
@@ -838,7 +841,7 @@ bool MimeUtil::ParseMimeTypeWithoutParameter(
 }
 
 bool MimeUtil::IsValidTopLevelMimeType(const std::string& type_string) const {
-  std::string lower_type = StringToLowerASCII(type_string);
+  std::string lower_type = base::StringToLowerASCII(type_string);
   for (size_t i = 0; i < arraysize(legal_top_level_types); ++i) {
     if (lower_type.compare(legal_top_level_types[i]) == 0)
       return true;
@@ -1270,7 +1273,7 @@ void GetExtensionsForMimeType(
   if (unsafe_mime_type == "*/*" || unsafe_mime_type == "*")
     return;
 
-  const std::string mime_type = StringToLowerASCII(unsafe_mime_type);
+  const std::string mime_type = base::StringToLowerASCII(unsafe_mime_type);
   base::hash_set<base::FilePath::StringType> unique_extensions;
 
   if (EndsWith(mime_type, "/*", true)) {

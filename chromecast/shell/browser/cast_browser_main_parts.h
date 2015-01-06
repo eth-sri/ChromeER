@@ -15,12 +15,8 @@ struct MainFunctionParams;
 }
 
 namespace chromecast {
-
-class CastService;
-
 namespace shell {
-
-class CastBrowserContext;
+class CastBrowserProcess;
 class URLRequestContextFactory;
 
 class CastBrowserMainParts : public content::BrowserMainParts {
@@ -38,15 +34,10 @@ class CastBrowserMainParts : public content::BrowserMainParts {
   virtual bool MainMessageLoopRun(int* result_code) OVERRIDE;
   virtual void PostMainMessageLoopRun() OVERRIDE;
 
-  CastBrowserContext* browser_context() {
-    return browser_context_.get();
-  }
-
  private:
-  scoped_ptr<CastBrowserContext> browser_context_;
-  scoped_ptr<CastService> cast_service_;
-  URLRequestContextFactory* const url_request_context_factory_;
+  scoped_ptr<CastBrowserProcess> cast_browser_process_;
 
+  URLRequestContextFactory* const url_request_context_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(CastBrowserMainParts);
 };

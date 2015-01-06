@@ -222,10 +222,12 @@ IN_PROC_BROWSER_TEST_F(PluginTest, MAYBE(ManyPlugins)) {
   LoadAndWait(GetURL("many_plugins.html"));
 }
 
+#if !defined(OS_MACOSX)  // http://crbug.com/402164
 // Test various calls to GetURL from a plugin.
 IN_PROC_BROWSER_TEST_F(PluginTest, MAYBE(GetURL)) {
   LoadAndWait(GetURL("geturl.html"));
 }
+#endif
 
 // Test various calls to GetURL for javascript URLs with
 // non NULL targets from a plugin.
@@ -294,7 +296,8 @@ IN_PROC_BROWSER_TEST_F(PluginTest, MAYBE(VerifyPluginWindowRect)) {
 
 // Tests that creating a new instance of a plugin while another one is handling
 // a paint message doesn't cause deadlock.
-IN_PROC_BROWSER_TEST_F(PluginTest, MAYBE(CreateInstanceInPaint)) {
+// http://crbug.com/406184
+IN_PROC_BROWSER_TEST_F(PluginTest, DISABLED_CreateInstanceInPaint) {
   LoadAndWait(GetURL("create_instance_in_paint.html"));
 }
 
@@ -306,7 +309,8 @@ IN_PROC_BROWSER_TEST_F(PluginTest, DISABLED_AlertInWindowMessage) {
   WaitForAppModalDialog(shell());
 }
 
-IN_PROC_BROWSER_TEST_F(PluginTest, MAYBE(VerifyNPObjectLifetimeTest)) {
+// http://crbug.com/406184
+IN_PROC_BROWSER_TEST_F(PluginTest, DISABLED_VerifyNPObjectLifetimeTest) {
   LoadAndWait(GetURL("npobject_lifetime_test.html"));
 }
 
@@ -441,7 +445,7 @@ IN_PROC_BROWSER_TEST_F(PluginTest, DISABLED_FlashSecurity) {
 // TODO(port) Port the following tests to platforms that have the required
 // plugins.
 // Flaky: http://crbug.com/55915
-IN_PROC_BROWSER_TEST_F(PluginTest, MAYBE(Quicktime)) {
+IN_PROC_BROWSER_TEST_F(PluginTest, DISABLED_Quicktime) {
   TestPlugin("quicktime.html");
 }
 
@@ -480,7 +484,8 @@ IN_PROC_BROWSER_TEST_F(PluginTest, DISABLED_Java) {
   TestPlugin("Java.html");
 }
 
-IN_PROC_BROWSER_TEST_F(PluginTest, MAYBE(Silverlight)) {
+// Flaky: http://crbug.com/55915
+IN_PROC_BROWSER_TEST_F(PluginTest, DISABLED_Silverlight) {
   TestPlugin("silverlight.html");
 }
 #endif  // defined(OS_WIN)

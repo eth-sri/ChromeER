@@ -12,6 +12,7 @@
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/page_transition_types.h"
 #include "content/public/test/test_renderer_host.h"
+#include "content/test/test_render_view_host.h"
 
 struct FrameHostMsg_DidCommitProvisionalLoad_Params;
 
@@ -42,8 +43,12 @@ class TestRenderFrameHost : public RenderFrameHostImpl,
                       bool is_swapped_out);
   virtual ~TestRenderFrameHost();
 
+  // RenderFrameHostImpl overrides (same values, but in Test* types)
+  virtual TestRenderViewHost* GetRenderViewHost() OVERRIDE;
+
   // RenderFrameHostTester implementation.
-  virtual RenderFrameHost* AppendChild(const std::string& frame_name) OVERRIDE;
+  virtual TestRenderFrameHost* AppendChild(
+      const std::string& frame_name) OVERRIDE;
   virtual void SendNavigateWithTransition(int page_id,
                                           const GURL& url,
                                           PageTransition transition) OVERRIDE;
@@ -77,6 +82,8 @@ class TestRenderFrameHost : public RenderFrameHostImpl,
       const base::FilePath* file_path_for_history_item,
       const std::vector<GURL>& redirects);
   void SendBeginNavigationWithURL(const GURL& url);
+
+  void DidDisownOpener();
 
   void set_contents_mime_type(const std::string& mime_type) {
     contents_mime_type_ = mime_type;

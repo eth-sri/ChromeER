@@ -20,9 +20,8 @@
 #include "chrome/browser/ui/views/theme_image_mapper.h"
 #include "chrome/browser/ui/views/touch_uma/touch_uma.h"
 #include "chrome/common/chrome_switches.h"
-#include "grit/generated_resources.h"
+#include "chrome/grit/generated_resources.h"
 #include "grit/theme_resources.h"
-#include "grit/ui_resources.h"
 #include "third_party/skia/include/effects/SkGradientShader.h"
 #include "ui/accessibility/ax_view_state.h"
 #include "ui/aura/env.h"
@@ -40,6 +39,7 @@
 #include "ui/gfx/path.h"
 #include "ui/gfx/rect_conversions.h"
 #include "ui/gfx/skia_util.h"
+#include "ui/resources/grit/ui_resources.h"
 #include "ui/views/border.h"
 #include "ui/views/controls/button/image_button.h"
 #include "ui/views/controls/label.h"
@@ -542,7 +542,7 @@ void Tab::UpdateLoadingAnimation(TabRendererData::NetworkState state) {
 void Tab::StartPulse() {
   pulse_animation_.reset(new gfx::ThrobAnimation(this));
   pulse_animation_->SetSlideDuration(kPulseDurationMs);
-  if (animation_container_)
+  if (animation_container_.get())
     pulse_animation_->SetContainer(animation_container_.get());
   pulse_animation_->StartThrobbing(std::numeric_limits<int>::max());
 }
@@ -572,7 +572,7 @@ void Tab::StartMiniTabTitleAnimation() {
     base::TimeDelta timeout =
         base::TimeDelta::FromMilliseconds(kMiniTitleChangeAnimationIntervalMS);
     mini_title_change_animation_.reset(new gfx::MultiAnimation(parts, timeout));
-    if (animation_container_)
+    if (animation_container_.get())
       mini_title_change_animation_->SetContainer(animation_container_.get());
     mini_title_change_animation_->set_delegate(this);
   }
@@ -798,6 +798,11 @@ void Tab::Layout() {
           kViewSpacing - title_left;
     }
     gfx::Rect rect(title_left, lb.y(), std::max(title_width, 0), lb.height());
+    const int title_height = title_->GetPreferredSize().height();
+    if (title_height > rect.height()) {
+      rect.set_y(lb.y() - (title_height - rect.height()) / 2);
+      rect.set_height(title_height);
+    }
     rect.set_x(GetMirroredXForRect(rect));
     title_->SetBoundsRect(rect);
   }

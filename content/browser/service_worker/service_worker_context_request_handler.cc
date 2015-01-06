@@ -10,6 +10,7 @@
 #include "content/browser/service_worker/service_worker_storage.h"
 #include "content/browser/service_worker/service_worker_version.h"
 #include "content/browser/service_worker/service_worker_write_to_cache_job.h"
+#include "net/base/load_flags.h"
 #include "net/url_request/url_request.h"
 
 namespace content {
@@ -17,7 +18,7 @@ namespace content {
 ServiceWorkerContextRequestHandler::ServiceWorkerContextRequestHandler(
     base::WeakPtr<ServiceWorkerContextCore> context,
     base::WeakPtr<ServiceWorkerProviderHost> provider_host,
-    base::WeakPtr<webkit_blob::BlobStorageContext> blob_storage_context,
+    base::WeakPtr<storage::BlobStorageContext> blob_storage_context,
     ResourceType resource_type)
     : ServiceWorkerRequestHandler(context,
                                   provider_host,
@@ -33,7 +34,7 @@ ServiceWorkerContextRequestHandler::~ServiceWorkerContextRequestHandler() {
 net::URLRequestJob* ServiceWorkerContextRequestHandler::MaybeCreateJob(
     net::URLRequest* request,
     net::NetworkDelegate* network_delegate) {
-  if (!provider_host_ || !version_ || !context_)
+  if (!provider_host_ || !version_.get() || !context_)
     return NULL;
 
   // We currently have no use case for hijacking a redirected request.
@@ -51,14 +52,28 @@ net::URLRequestJob* ServiceWorkerContextRequestHandler::MaybeCreateJob(
   }
 
   if (ShouldAddToScriptCache(request->url())) {
+    ServiceWorkerRegistration* registration =
+        context_->GetLiveRegistration(version_->registration_id());
+    DCHECK(registration);  // We're registering or updating so must be there.
+
     int64 response_id = context_->storage()->NewResourceId();
     if (response_id == kInvalidServiceWorkerResponseId)
       return NULL;
+
+    // Bypass the browser cache for initial installs and update
+    // checks after 24 hours have passed.
+    int extra_load_flags = 0;
+    base::TimeDelta time_since_last_check =
+        base::Time::Now() - registration->last_update_check();
+    if (time_since_last_check > base::TimeDelta::FromHours(24))
+      extra_load_flags = net::LOAD_BYPASS_CACHE;
+
     return new ServiceWorkerWriteToCacheJob(request,
                                             network_delegate,
                                             resource_type_,
                                             context_,
-                                            version_,
+                                            version_.get(),
+                                            extra_load_flags,
                                             response_id);
   }
 

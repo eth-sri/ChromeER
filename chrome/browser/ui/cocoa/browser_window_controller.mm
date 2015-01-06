@@ -44,6 +44,7 @@
 #import "chrome/browser/ui/cocoa/browser_window_cocoa.h"
 #import "chrome/browser/ui/cocoa/browser_window_controller_private.h"
 #import "chrome/browser/ui/cocoa/browser_window_utils.h"
+#import "chrome/browser/ui/cocoa/constrained_window/constrained_window_sheet_controller.h"
 #import "chrome/browser/ui/cocoa/dev_tools_controller.h"
 #import "chrome/browser/ui/cocoa/download/download_shelf_controller.h"
 #include "chrome/browser/ui/cocoa/extensions/extension_keybinding_registry_cocoa.h"
@@ -80,6 +81,8 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/command.h"
 #include "chrome/common/url_constants.h"
+#include "chrome/grit/generated_resources.h"
+#include "chrome/grit/locale_settings.h"
 #include "components/bookmarks/browser/bookmark_model.h"
 #include "components/signin/core/common/profile_management_switches.h"
 #include "components/translate/core/browser/translate_manager.h"
@@ -89,9 +92,6 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
-#include "grit/chromium_strings.h"
-#include "grit/generated_resources.h"
-#include "grit/locale_settings.h"
 #import "ui/base/cocoa/cocoa_base_utils.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/l10n/l10n_util_mac.h"
@@ -253,7 +253,7 @@ using content::WebContents;
     // Make the content view for the window have a layer. This will make all
     // sub-views have layers. This is necessary to ensure correct layer
     // ordering of all child views and their layers.
-    [[window contentView] cr_setWantsLayer:YES];
+    [[window contentView] setWantsLayer:YES];
     windowShim_.reset(new BrowserWindowCocoa(browser, self));
 
     // Set different minimum sizes on tabbed windows vs non-tabbed, e.g. popups.
@@ -558,7 +558,6 @@ using content::WebContents;
 - (void)updateDevToolsForContents:(WebContents*)contents {
   [devToolsController_ updateDevToolsForWebContents:contents
                                         withProfile:browser_->profile()];
-  [self updateAllowOverlappingViews:[self inPresentationMode]];
 }
 
 // Called when the user wants to close a window or from the shutdown process.
@@ -1012,10 +1011,6 @@ using content::WebContents;
       }
     }
   }
-}
-
-- (void)setAnimationInProgress:(BOOL)inProgress {
-  [[self tabContentArea] setFastResizeMode:inProgress];
 }
 
 // Update a toggle state for an NSMenuItem if modified.
@@ -1642,8 +1637,6 @@ using content::WebContents;
   // unnecesary resize in contents.
   [devToolsController_ updateDevToolsForWebContents:contents
                                         withProfile:browser_->profile()];
-
-  [self updateAllowOverlappingViews:[self inPresentationMode]];
 }
 
 - (void)onTabChanged:(TabStripModelObserver::TabChangeType)change
@@ -1957,6 +1950,9 @@ using content::WebContents;
   [toolbarController_ setDividerOpacity:[self toolbarDividerOpacity]];
   [self adjustToolbarAndBookmarkBarForCompression:
           [controller getDesiredToolbarHeightCompression]];
+
+  [[ConstrainedWindowSheetController controllerForParentWindow:[self window]]
+      updateSheetPosition];
 }
 
 // (Needed for |BookmarkBarControllerDelegate| protocol.)
@@ -2025,20 +2021,6 @@ willAnimateFromState:(BookmarkBar::State)oldState
   [sheet orderOut:self];
 }
 
-- (void)onFindBarVisibilityChanged {
-  [self updateAllowOverlappingViews:[self inPresentationMode]];
-}
-
-- (void)onOverlappedViewShown {
-  ++overlappedViewCount_;
-  [self updateAllowOverlappingViews:[self inPresentationMode]];
-}
-
-- (void)onOverlappedViewHidden {
-  --overlappedViewCount_;
-  [self updateAllowOverlappingViews:[self inPresentationMode]];
-}
-
 - (void)executeExtensionCommand:(const std::string&)extension_id
                         command:(const extensions::Command&)command {
   // Global commands are handled by the ExtensionCommandsGlobalRegistry
@@ -2046,14 +2028,6 @@ willAnimateFromState:(BookmarkBar::State)oldState
   DCHECK(!command.global());
   extension_keybinding_registry_->ExecuteCommand(extension_id,
                                                  command.accelerator());
-}
-
-- (void)activatePageAction:(const std::string&)extension_id {
-  [toolbarController_ activatePageAction:extension_id];
-}
-
-- (void)activateBrowserAction:(const std::string&)extension_id {
-  [toolbarController_ activateBrowserAction:extension_id];
 }
 
 @end  // @implementation BrowserWindowController

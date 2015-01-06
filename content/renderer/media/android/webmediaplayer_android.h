@@ -13,6 +13,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/threading/thread_checker.h"
 #include "base/time/time.h"
 #include "cc/layers/video_frame_provider.h"
 #include "content/common/media/media_player_messages_enums_android.h"
@@ -35,13 +36,18 @@
 #include "ui/gfx/rect_f.h"
 
 namespace base {
-class MessageLoopProxy;
+class SingleThreadTaskRunner;
 }
 
 namespace blink {
 class WebContentDecryptionModule;
+class WebContentDecryptionModuleResult;
 class WebFrame;
 class WebURL;
+}
+
+namespace cc_blink {
+class WebLayerImpl;
 }
 
 namespace gpu {
@@ -56,7 +62,6 @@ namespace content {
 class RendererCdmManager;
 class RendererMediaPlayerManager;
 class WebContentDecryptionModuleImpl;
-class WebLayerImpl;
 class WebMediaPlayerDelegate;
 
 // This class implements blink::WebMediaPlayer by keeping the android
@@ -73,14 +78,15 @@ class WebMediaPlayerAndroid : public blink::WebMediaPlayer,
   // player can enter fullscreen. This logic should probably be moved into
   // blink, so that enterFullscreen() will not be called if another video is
   // already in fullscreen.
-  WebMediaPlayerAndroid(blink::WebFrame* frame,
-                        blink::WebMediaPlayerClient* client,
-                        base::WeakPtr<WebMediaPlayerDelegate> delegate,
-                        RendererMediaPlayerManager* player_manager,
-                        RendererCdmManager* cdm_manager,
-                        scoped_refptr<StreamTextureFactory> factory,
-                        const scoped_refptr<base::MessageLoopProxy>& media_loop,
-                        media::MediaLog* media_log);
+  WebMediaPlayerAndroid(
+      blink::WebFrame* frame,
+      blink::WebMediaPlayerClient* client,
+      base::WeakPtr<WebMediaPlayerDelegate> delegate,
+      RendererMediaPlayerManager* player_manager,
+      RendererCdmManager* cdm_manager,
+      scoped_refptr<StreamTextureFactory> factory,
+      const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
+      media::MediaLog* media_log);
   virtual ~WebMediaPlayerAndroid();
 
   // blink::WebMediaPlayer implementation.
@@ -110,6 +116,11 @@ class WebMediaPlayerAndroid : public blink::WebMediaPlayer,
   // issue that Skia could not handle Android's GL_TEXTURE_EXTERNAL_OES texture
   // internally. It should be removed and replaced by the normal paint path.
   // https://code.google.com/p/skia/issues/detail?id=1189
+  virtual void paint(blink::WebCanvas* canvas,
+                     const blink::WebRect& rect,
+                     unsigned char alpha,
+                     SkXfermode::Mode mode);
+  // TODO(dshwang): remove it because above method replaces. crbug.com/401027
   virtual void paint(blink::WebCanvas* canvas,
                      const blink::WebRect& rect,
                      unsigned char alpha);
@@ -219,7 +230,14 @@ class WebMediaPlayerAndroid : public blink::WebMediaPlayer,
   virtual MediaKeyException cancelKeyRequest(
       const blink::WebString& key_system,
       const blink::WebString& session_id);
+  // TODO(jrummell): Remove this method once Blink updated to use the other
+  // two methods.
   virtual void setContentDecryptionModule(
+      blink::WebContentDecryptionModule* cdm);
+  virtual void setContentDecryptionModule(
+      blink::WebContentDecryptionModule* cdm,
+      blink::WebContentDecryptionModuleResult result);
+  virtual void setContentDecryptionModuleSync(
       blink::WebContentDecryptionModule* cdm);
 
   void OnKeyAdded(const std::string& session_id);
@@ -256,13 +274,20 @@ class WebMediaPlayerAndroid : public blink::WebMediaPlayer,
   void SetNeedsEstablishPeer(bool needs_establish_peer);
 
  private:
-  void InitializePlayer(int demuxer_client_id);
+  void InitializePlayer(const GURL& url,
+                        const GURL& first_party_for_cookies,
+                        bool allowed_stored_credentials,
+                        int demuxer_client_id);
   void Pause(bool is_media_related_action);
   void DrawRemotePlaybackText(const std::string& remote_playback_message);
   void ReallocateVideoFrame();
   void SetCurrentFrameInternal(scoped_refptr<media::VideoFrame>& frame);
-  void DidLoadMediaInfo(MediaInfoLoader::Status status);
+  void DidLoadMediaInfo(MediaInfoLoader::Status status,
+                        const GURL& redirected_url,
+                        const GURL& first_party_for_cookies,
+                        bool allow_stored_credentials);
   bool IsKeySystemSupported(const std::string& key_system);
+  bool IsLocalResource();
 
   // Actually do the work for generateKeyRequest/addKey so they can easily
   // report results to UMA.
@@ -284,10 +309,18 @@ class WebMediaPlayerAndroid : public blink::WebMediaPlayer,
   // NULL immediately and reset.
   void SetDecryptorReadyCB(const media::DecryptorReadyCB& decryptor_ready_cb);
 
+  // Called when the ContentDecryptionModule has been attached to the
+  // pipeline/decoders.
+  void ContentDecryptionModuleAttached(
+      blink::WebContentDecryptionModuleResult result,
+      bool success);
+
   bool EnsureTextureBackedSkBitmap(GrContext* gr, SkBitmap& bitmap,
                                    const blink::WebSize& size,
                                    GrSurfaceOrigin origin,
                                    GrPixelConfig config);
+
+  bool IsHLSStream() const;
 
   blink::WebFrame* const frame_;
 
@@ -316,10 +349,14 @@ class WebMediaPlayerAndroid : public blink::WebMediaPlayer,
   base::ThreadChecker main_thread_checker_;
 
   // Message loop for media thread.
-  const scoped_refptr<base::MessageLoopProxy> media_loop_;
+  const scoped_refptr<base::SingleThreadTaskRunner> media_task_runner_;
 
   // URL of the media file to be fetched.
   GURL url_;
+
+  // URL of the media file after |media_info_loader_| resolves all the
+  // redirections.
+  GURL redirected_url_;
 
   // Media duration.
   base::TimeDelta duration_;
@@ -394,7 +431,7 @@ class WebMediaPlayerAndroid : public blink::WebMediaPlayer,
   // not NULL while the compositor is actively using this webmediaplayer.
   cc::VideoFrameProvider::Client* video_frame_provider_client_;
 
-  scoped_ptr<WebLayerImpl> video_weblayer_;
+  scoped_ptr<cc_blink::WebLayerImpl> video_weblayer_;
 
 #if defined(VIDEO_HOLE)
   // A rectangle represents the geometry of video frame, when computed last
@@ -423,7 +460,7 @@ class WebMediaPlayerAndroid : public blink::WebMediaPlayer,
   // Whether the browser is currently connected to a remote media player.
   bool is_remote_;
 
-  media::MediaLog* media_log_;
+  scoped_refptr<media::MediaLog> media_log_;
 
   scoped_ptr<MediaInfoLoader> info_loader_;
 
@@ -449,6 +486,12 @@ class WebMediaPlayerAndroid : public blink::WebMediaPlayer,
   media::DecryptorReadyCB decryptor_ready_cb_;
 
   SkBitmap bitmap_;
+
+  // Whether stored credentials are allowed to be passed to the server.
+  bool allow_stored_credentials_;
+
+  // Whether the resource is local.
+  bool is_local_resource_;
 
   // NOTE: Weak pointers must be invalidated before all other member variables.
   base::WeakPtrFactory<WebMediaPlayerAndroid> weak_factory_;

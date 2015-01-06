@@ -10,12 +10,12 @@
 #include "base/basictypes.h"
 #include "base/files/file_path.h"
 #include "base/time/time.h"
-#include "webkit/common/webkit_storage_common_export.h"
+#include "webkit/common/storage_common_export.h"
 
-namespace fileapi {
+namespace storage {
 
 // Holds metadata for file or directory entry.
-struct WEBKIT_STORAGE_COMMON_EXPORT DirectoryEntry {
+struct STORAGE_COMMON_EXPORT DirectoryEntry {
   enum DirectoryEntryType {
     FILE,
     DIRECTORY,
@@ -33,6 +33,6 @@ struct WEBKIT_STORAGE_COMMON_EXPORT DirectoryEntry {
   base::Time last_modified_time;
 };
 
-}  // namespace fileapi
+}  // namespace storage
 
 #endif  // WEBKIT_COMMON_FILEAPI_DIRECTORY_ENTRY_H_

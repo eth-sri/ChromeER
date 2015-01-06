@@ -21,9 +21,9 @@
 #include "chrome/browser/ui/views/toolbar/browser_actions_container.h"
 #include "chrome/browser/ui/views/toolbar/browser_actions_container_observer.h"
 #include "chrome/browser/ui/views/toolbar/toolbar_view.h"
+#include "chrome/grit/locale_settings.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_system.h"
-#include "grit/locale_settings.h"
 #include "ui/accessibility/ax_view_state.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/views/controls/button/label_button.h"
@@ -485,7 +485,7 @@ void ExtensionMessageBubbleFactory::ShowHighlightingBubble() {
   stage_ = STAGE_COMPLETE;
 
   views::View* reference_view = NULL;
-  if (container_->num_browser_actions() > 0)
+  if (container_->num_browser_actions() > 0u)
     reference_view = container_->GetBrowserActionViewAt(0);
   if (reference_view && reference_view->visible())
     anchor_view_ = reference_view;

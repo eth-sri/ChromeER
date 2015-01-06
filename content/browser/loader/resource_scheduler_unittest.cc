@@ -6,6 +6,7 @@
 
 #include "base/memory/scoped_vector.h"
 #include "base/message_loop/message_loop.h"
+#include "base/run_loop.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/timer/mock_timer.h"
 #include "base/timer/timer.h"
@@ -19,12 +20,16 @@
 #include "content/public/browser/resource_throttle.h"
 #include "content/public/common/process_type.h"
 #include "content/public/common/resource_type.h"
+#include "content/public/test/mock_render_process_host.h"
+#include "content/public/test/test_browser_context.h"
+#include "content/test/test_web_contents.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/request_priority.h"
 #include "net/http/http_server_properties_impl.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/events/latency_info.h"
 
 namespace content {
 
@@ -146,9 +151,8 @@ class ResourceSchedulerTest : public testing::Test {
     scheduler_.SetThrottleOptionsForTesting(true /* should_throttle */,
                                             false /* should_coalesce */);
 
-    scheduler_.OnClientCreated(kChildId, kRouteId);
-    scheduler_.OnVisibilityChanged(kChildId, kRouteId, true);
-    scheduler_.OnClientCreated(kBackgroundChildId, kBackgroundRouteId);
+    scheduler_.OnClientCreated(kChildId, kRouteId, true);
+    scheduler_.OnClientCreated(kBackgroundChildId, kBackgroundRouteId, false);
     context_.set_http_server_properties(http_server_properties_.GetWeakPtr());
   }
 
@@ -182,6 +186,7 @@ class ResourceSchedulerTest : public testing::Test {
         false,                                   // is_stream
         true,                                    // allow_download
         false,                                   // has_user_gesture
+        false,                                   // enable_load_timing
         blink::WebReferrerPolicyDefault,         // referrer_policy
         blink::WebPageVisibilityStateVisible,    // visibility_state
         NULL,                                    // context
@@ -304,7 +309,21 @@ TEST_F(ResourceSchedulerTest, OneLowLoadsUntilBodyInserted) {
   EXPECT_TRUE(high->started());
   EXPECT_TRUE(low->started());
   EXPECT_FALSE(low2->started());
+  high.reset();
   scheduler_.OnWillInsertBody(kChildId, kRouteId);
+  EXPECT_TRUE(low2->started());
+}
+
+TEST_F(ResourceSchedulerTest, OneLowLoadsUntilCriticalComplete) {
+  scoped_ptr<TestRequest> high(NewRequest("http://host/high", net::HIGHEST));
+  scoped_ptr<TestRequest> low(NewRequest("http://host/low", net::LOWEST));
+  scoped_ptr<TestRequest> low2(NewRequest("http://host/low", net::LOWEST));
+  EXPECT_TRUE(high->started());
+  EXPECT_TRUE(low->started());
+  EXPECT_FALSE(low2->started());
+  scheduler_.OnWillInsertBody(kChildId, kRouteId);
+  EXPECT_FALSE(low2->started());
+  high.reset();
   EXPECT_TRUE(low2->started());
 }
 
@@ -321,6 +340,7 @@ TEST_F(ResourceSchedulerTest, OneLowLoadsUntilBodyInsertedExceptSpdy) {
   EXPECT_TRUE(low->started());
   EXPECT_FALSE(low2->started());
   scheduler_.OnWillInsertBody(kChildId, kRouteId);
+  high.reset();
   EXPECT_TRUE(low2->started());
 }
 
@@ -461,6 +481,8 @@ TEST_F(ResourceSchedulerTest, RaisePriorityInQueue) {
   }
 
   scheduler_.OnWillInsertBody(kChildId, kRouteId);
+  high.reset();
+
   EXPECT_TRUE(request->started());
   EXPECT_FALSE(idle->started());
 }
@@ -490,6 +512,8 @@ TEST_F(ResourceSchedulerTest, LowerPriority) {
   }
 
   scheduler_.OnWillInsertBody(kChildId, kRouteId);
+  high.reset();
+
   EXPECT_FALSE(request->started());
   EXPECT_TRUE(idle->started());
 }
@@ -543,6 +567,7 @@ TEST_F(ResourceSchedulerTest, HigherIntraPriorityGoesToFrontOfQueue) {
   EXPECT_FALSE(request->started());
 
   scheduler_.OnWillInsertBody(kChildId, kRouteId);
+  high.reset();
   EXPECT_TRUE(request->started());
 }
 
@@ -638,7 +663,7 @@ TEST_F(ResourceSchedulerTest, ThrottledClientCreation) {
   scheduler_.SetThrottleOptionsForTesting(true /* should_throttle */,
                                           false /* should_coalesce */);
   EXPECT_TRUE(scheduler_.should_throttle());
-  scheduler_.OnClientCreated(kBackgroundChildId2, kBackgroundRouteId2);
+  scheduler_.OnClientCreated(kBackgroundChildId2, kBackgroundRouteId2, false);
 
   EXPECT_EQ(ResourceScheduler::THROTTLED,
             scheduler_.GetClientStateForTesting(kBackgroundChildId2,
@@ -1022,8 +1047,8 @@ TEST_F(ResourceSchedulerTest,
   // TODO(aiolos): remove when throttling and coalescing have both landed
   scheduler_.SetThrottleOptionsForTesting(true /* should_throttle */,
                                           false /* should_coalesce */);
-  scheduler_.OnClientCreated(kChildId2, kRouteId2);
-  scheduler_.OnClientCreated(kBackgroundChildId2, kBackgroundRouteId2);
+  scheduler_.OnClientCreated(kChildId2, kRouteId2, false);
+  scheduler_.OnClientCreated(kBackgroundChildId2, kBackgroundRouteId2, false);
   scheduler_.OnLoadingStateChanged(kChildId2, kRouteId2, true);
   scheduler_.OnLoadingStateChanged(
       kBackgroundChildId2, kBackgroundRouteId2, true);
@@ -1078,8 +1103,8 @@ TEST_F(ResourceSchedulerTest,
   // TODO(aiolos): remove when throttling and coalescing have both landed
   scheduler_.SetThrottleOptionsForTesting(true /* should_throttle */,
                                           false /* should_coalesce */);
-  scheduler_.OnClientCreated(kChildId2, kRouteId2);
-  scheduler_.OnClientCreated(kBackgroundChildId2, kBackgroundRouteId2);
+  scheduler_.OnClientCreated(kChildId2, kRouteId2, false);
+  scheduler_.OnClientCreated(kBackgroundChildId2, kBackgroundRouteId2, false);
   scheduler_.OnLoadingStateChanged(
       kBackgroundChildId2, kBackgroundRouteId2, true);
   scheduler_.OnVisibilityChanged(kChildId, kRouteId, false);
@@ -1135,8 +1160,8 @@ TEST_F(ResourceSchedulerTest,
   // TODO(aiolos): remove when throttling and coalescing have both landed
   scheduler_.SetThrottleOptionsForTesting(true /* should_throttle */,
                                           false /* should_coalesce */);
-  scheduler_.OnClientCreated(kChildId2, kRouteId2);
-  scheduler_.OnClientCreated(kBackgroundChildId2, kBackgroundRouteId2);
+  scheduler_.OnClientCreated(kChildId2, kRouteId2, false);
+  scheduler_.OnClientCreated(kBackgroundChildId2, kBackgroundRouteId2, false);
   scheduler_.OnLoadingStateChanged(kChildId2, kRouteId2, true);
   scheduler_.OnLoadingStateChanged(
       kBackgroundChildId2, kBackgroundRouteId2, true);
@@ -1190,8 +1215,8 @@ TEST_F(ResourceSchedulerTest,
   // TODO(aiolos): remove when throttling and coalescing have both landed
   scheduler_.SetThrottleOptionsForTesting(true /* should_throttle */,
                                           false /* should_coalesce */);
-  scheduler_.OnClientCreated(kChildId2, kRouteId2);
-  scheduler_.OnClientCreated(kBackgroundChildId2, kBackgroundRouteId2);
+  scheduler_.OnClientCreated(kChildId2, kRouteId2, false);
+  scheduler_.OnClientCreated(kBackgroundChildId2, kBackgroundRouteId2, false);
   scheduler_.OnLoadingStateChanged(kChildId2, kRouteId2, true);
   scheduler_.OnLoadingStateChanged(
       kBackgroundChildId2, kBackgroundRouteId2, true);
@@ -1246,13 +1271,12 @@ TEST_F(ResourceSchedulerTest, UnloadedClientBecomesHiddenCorrectlyUnthrottles) {
   // TODO(aiolos): remove when throttling and coalescing have both landed
   scheduler_.SetThrottleOptionsForTesting(true /* should_throttle */,
                                           false /* should_coalesce */);
-  scheduler_.OnClientCreated(kChildId2, kRouteId2);
-  scheduler_.OnClientCreated(kBackgroundChildId2, kBackgroundRouteId2);
+  scheduler_.OnClientCreated(kChildId2, kRouteId2, true);
+  scheduler_.OnClientCreated(kBackgroundChildId2, kBackgroundRouteId2, false);
   scheduler_.OnLoadingStateChanged(
       kBackgroundChildId2, kBackgroundRouteId2, true);
 
   // 2 visible, 2 hidden
-  scheduler_.OnVisibilityChanged(kChildId2, kRouteId2, true);
   EXPECT_FALSE(scheduler_.active_clients_loaded());
   EXPECT_EQ(ResourceScheduler::THROTTLED,
             scheduler_.GetClientStateForTesting(kBackgroundChildId,
@@ -1315,8 +1339,8 @@ TEST_F(ResourceSchedulerTest, UnloadedClientBecomesSilentCorrectlyUnthrottles) {
   // TODO(aiolos): remove when throttling and coalescing have both landed
   scheduler_.SetThrottleOptionsForTesting(true /* should_throttle */,
                                           false /* should_coalesce */);
-  scheduler_.OnClientCreated(kChildId2, kRouteId2);
-  scheduler_.OnClientCreated(kBackgroundChildId2, kBackgroundRouteId2);
+  scheduler_.OnClientCreated(kChildId2, kRouteId2, false);
+  scheduler_.OnClientCreated(kBackgroundChildId2, kBackgroundRouteId2, false);
   scheduler_.OnLoadingStateChanged(
       kBackgroundChildId2, kBackgroundRouteId2, true);
   scheduler_.OnAudibilityChanged(kChildId, kRouteId, true);
@@ -1385,12 +1409,11 @@ TEST_F(ResourceSchedulerTest, LoadedClientBecomesHiddenCorrectlyThrottles) {
   // TODO(aiolos): remove when throttling and coalescing have both landed
   scheduler_.SetThrottleOptionsForTesting(true /* should_throttle */,
                                           false /* should_coalesce */);
-  scheduler_.OnClientCreated(kChildId2, kRouteId2);
-  scheduler_.OnClientCreated(kBackgroundChildId2, kBackgroundRouteId2);
+  scheduler_.OnClientCreated(kChildId2, kRouteId2, true);
+  scheduler_.OnClientCreated(kBackgroundChildId2, kBackgroundRouteId2, false);
   scheduler_.OnLoadingStateChanged(
       kBackgroundChildId2, kBackgroundRouteId2, true);
   scheduler_.OnLoadingStateChanged(kChildId2, kRouteId2, true);
-  scheduler_.OnVisibilityChanged(kChildId2, kRouteId2, true);
   // 2 visible, 2 hidden
   EXPECT_FALSE(scheduler_.active_clients_loaded());
   EXPECT_EQ(ResourceScheduler::THROTTLED,
@@ -1454,8 +1477,8 @@ TEST_F(ResourceSchedulerTest, LoadedClientBecomesSilentCorrectlyThrottles) {
   // TODO(aiolos): remove when throttling and coalescing have both landed
   scheduler_.SetThrottleOptionsForTesting(true /* should_throttle */,
                                           false /* should_coalesce */);
-  scheduler_.OnClientCreated(kChildId2, kRouteId2);
-  scheduler_.OnClientCreated(kBackgroundChildId2, kBackgroundRouteId2);
+  scheduler_.OnClientCreated(kChildId2, kRouteId2, false);
+  scheduler_.OnClientCreated(kBackgroundChildId2, kBackgroundRouteId2, false);
   scheduler_.OnLoadingStateChanged(
       kBackgroundChildId2, kBackgroundRouteId2, true);
   scheduler_.OnLoadingStateChanged(kChildId2, kRouteId2, true);
@@ -1525,11 +1548,10 @@ TEST_F(ResourceSchedulerTest, HiddenLoadedChangesCorrectlyStayThrottled) {
   // TODO(aiolos): remove when throttling and coalescing have both landed
   scheduler_.SetThrottleOptionsForTesting(true /* should_throttle */,
                                           false /* should_coalesce */);
-  scheduler_.OnClientCreated(kChildId2, kRouteId2);
-  scheduler_.OnClientCreated(kBackgroundChildId2, kBackgroundRouteId2);
+  scheduler_.OnClientCreated(kChildId2, kRouteId2, true);
+  scheduler_.OnClientCreated(kBackgroundChildId2, kBackgroundRouteId2, false);
 
   // 1 visible and 2 hidden loading, 1 visible loaded
-  scheduler_.OnVisibilityChanged(kChildId2, kRouteId2, true);
   scheduler_.OnLoadingStateChanged(kChildId, kRouteId, true);
   EXPECT_FALSE(scheduler_.active_clients_loaded());
   EXPECT_EQ(ResourceScheduler::THROTTLED,
@@ -1596,9 +1618,8 @@ TEST_F(ResourceSchedulerTest, PartialVisibleClientLoadedDoesNotUnthrottle) {
   // TODO(aiolos): remove when throttling and coalescing have both landed
   scheduler_.SetThrottleOptionsForTesting(true /* should_throttle */,
                                           false /* should_coalesce */);
-  scheduler_.OnClientCreated(kChildId2, kRouteId2);
-  scheduler_.OnClientCreated(kBackgroundChildId2, kBackgroundRouteId2);
-  scheduler_.OnVisibilityChanged(kChildId2, kRouteId2, true);
+  scheduler_.OnClientCreated(kChildId2, kRouteId2, true);
+  scheduler_.OnClientCreated(kBackgroundChildId2, kBackgroundRouteId2, false);
 
   // 2 visible loading, 1 hidden loading, 1 hidden loaded
   scheduler_.OnLoadingStateChanged(
@@ -1651,9 +1672,8 @@ TEST_F(ResourceSchedulerTest, FullVisibleLoadedCorrectlyUnthrottle) {
   // TODO(aiolos): remove when throttling and coalescing have both landed
   scheduler_.SetThrottleOptionsForTesting(true /* should_throttle */,
                                           false /* should_coalesce */);
-  scheduler_.OnClientCreated(kChildId2, kRouteId2);
-  scheduler_.OnClientCreated(kBackgroundChildId2, kBackgroundRouteId2);
-  scheduler_.OnVisibilityChanged(kChildId2, kRouteId2, true);
+  scheduler_.OnClientCreated(kChildId2, kRouteId2, true);
+  scheduler_.OnClientCreated(kBackgroundChildId2, kBackgroundRouteId2, false);
 
   // 1 visible and 1 hidden loaded, 1 visible and 1 hidden loading
   scheduler_.OnLoadingStateChanged(
@@ -1718,9 +1738,8 @@ TEST_F(ResourceSchedulerTest,
   // TODO(aiolos): remove when throttling and coalescing have both landed
   scheduler_.SetThrottleOptionsForTesting(true /* should_throttle */,
                                           false /* should_coalesce */);
-  scheduler_.OnClientCreated(kChildId2, kRouteId2);
-  scheduler_.OnClientCreated(kBackgroundChildId2, kBackgroundRouteId2);
-  scheduler_.OnVisibilityChanged(kChildId2, kRouteId2, true);
+  scheduler_.OnClientCreated(kChildId2, kRouteId2, true);
+  scheduler_.OnClientCreated(kBackgroundChildId2, kBackgroundRouteId2, false);
 
   // 1 visible and 1 hidden loaded, 1 visible and 1 hidden loading
   scheduler_.OnLoadingStateChanged(
@@ -1856,7 +1875,7 @@ TEST_F(ResourceSchedulerTest, CoalescedClientBecomesAudibleStopsTimer) {
 TEST_F(ResourceSchedulerTest, LastCoalescedClientDeletionStopsTimer) {
   scheduler_.SetThrottleOptionsForTesting(true /* should_throttle */,
                                           true /* should_coalesce */);
-  scheduler_.OnClientCreated(kBackgroundChildId2, kBackgroundRouteId2);
+  scheduler_.OnClientCreated(kBackgroundChildId2, kBackgroundRouteId2, false);
   EXPECT_FALSE(mock_timer_->IsRunning());
   scheduler_.OnLoadingStateChanged(kChildId, kRouteId, true);
   EXPECT_FALSE(mock_timer_->IsRunning());
@@ -1879,13 +1898,13 @@ TEST_F(ResourceSchedulerTest, LastCoalescedClientDeletionStopsTimer) {
   EXPECT_FALSE(mock_timer_->IsRunning());
 
   // To avoid errors on test tear down.
-  scheduler_.OnClientCreated(kBackgroundChildId, kBackgroundRouteId);
+  scheduler_.OnClientCreated(kBackgroundChildId, kBackgroundRouteId, false);
 }
 
 TEST_F(ResourceSchedulerTest, LastCoalescedClientStartsLoadingStopsTimer) {
   scheduler_.SetThrottleOptionsForTesting(true /* should_throttle */,
                                           true /* should_coalesce */);
-  scheduler_.OnClientCreated(kBackgroundChildId2, kBackgroundRouteId2);
+  scheduler_.OnClientCreated(kBackgroundChildId2, kBackgroundRouteId2, false);
   EXPECT_FALSE(mock_timer_->IsRunning());
   scheduler_.OnLoadingStateChanged(kChildId, kRouteId, true);
   EXPECT_FALSE(mock_timer_->IsRunning());
@@ -1916,7 +1935,7 @@ TEST_F(ResourceSchedulerTest, LastCoalescedClientStartsLoadingStopsTimer) {
 TEST_F(ResourceSchedulerTest, LastCoalescedClientBecomesVisibleStopsTimer) {
   scheduler_.SetThrottleOptionsForTesting(true /* should_throttle */,
                                           true /* should_coalesce */);
-  scheduler_.OnClientCreated(kBackgroundChildId2, kBackgroundRouteId2);
+  scheduler_.OnClientCreated(kBackgroundChildId2, kBackgroundRouteId2, false);
   EXPECT_FALSE(mock_timer_->IsRunning());
   scheduler_.OnLoadingStateChanged(kChildId, kRouteId, true);
   EXPECT_FALSE(mock_timer_->IsRunning());
@@ -2095,6 +2114,67 @@ TEST_F(ResourceSchedulerTest, CoalescedRequestsWaitForNextTimer) {
   EXPECT_TRUE(high->started());
   EXPECT_TRUE(high2->started());
   EXPECT_TRUE(low->started());
+}
+
+TEST_F(ResourceSchedulerTest, GetVisualSignalFromRenderViewHost) {
+  scoped_ptr<MockRenderProcessHostFactory> render_process_host_factory;
+  scoped_ptr<TestBrowserContext> browser_context;
+  scoped_ptr<TestWebContents> web_contents_1;
+  scoped_ptr<TestWebContents> web_contents_2;
+
+  render_process_host_factory.reset(new MockRenderProcessHostFactory());
+  browser_context.reset(new TestBrowserContext());
+  scoped_refptr<SiteInstance> site_instance_1 =
+      SiteInstance::Create(browser_context.get());
+  scoped_refptr<SiteInstance> site_instance_2 =
+      SiteInstance::Create(browser_context.get());
+  SiteInstanceImpl::set_render_process_host_factory(
+          render_process_host_factory.get());
+
+  web_contents_1.reset(
+      TestWebContents::Create(browser_context.get(), site_instance_1.get()));
+  web_contents_2.reset(
+      TestWebContents::Create(browser_context.get(), site_instance_2.get()));
+  base::RunLoop().RunUntilIdle();
+
+  RenderViewHostImpl* rvh1 = web_contents_1->GetRenderViewHost();
+  RenderViewHostImpl* rvh2 = web_contents_2->GetRenderViewHost();
+  ResourceScheduler* scheduler = ResourceDispatcherHostImpl::Get()->scheduler();
+
+  // Check initial visibility is set correctly.
+  EXPECT_EQ(scheduler->IsClientVisibleForTesting(rvh1->GetProcess()->GetID(),
+                                                 rvh1->GetRoutingID()),
+            !rvh1->is_hidden());
+  EXPECT_EQ(scheduler->IsClientVisibleForTesting(rvh2->GetProcess()->GetID(),
+                                                 rvh1->GetRoutingID()),
+            !rvh2->is_hidden());
+
+  // 1 visible, 1 hidden
+  rvh1->WasShown(ui::LatencyInfo());
+  rvh2->WasHidden();
+  base::RunLoop().RunUntilIdle();
+
+  EXPECT_TRUE(scheduler->IsClientVisibleForTesting(rvh1->GetProcess()->GetID(),
+                                                   rvh1->GetRoutingID()));
+  EXPECT_FALSE(scheduler->IsClientVisibleForTesting(rvh2->GetProcess()->GetID(),
+                                                    rvh2->GetRoutingID()));
+
+  // Flip the visibility and check again.
+  rvh1->WasHidden();
+  rvh2->WasShown(ui::LatencyInfo());
+  base::RunLoop().RunUntilIdle();
+
+  EXPECT_FALSE(scheduler->IsClientVisibleForTesting(rvh1->GetProcess()->GetID(),
+                                                    rvh1->GetRoutingID()));
+  EXPECT_TRUE(scheduler->IsClientVisibleForTesting(rvh2->GetProcess()->GetID(),
+                                                   rvh2->GetRoutingID()));
+  // Clean up.
+  web_contents_1.reset();
+  web_contents_2.reset();
+  base::RunLoop().RunUntilIdle();
+
+  browser_context.reset();
+  render_process_host_factory.reset();
 }
 
 }  // unnamed namespace

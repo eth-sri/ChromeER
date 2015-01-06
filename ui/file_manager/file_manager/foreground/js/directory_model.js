@@ -6,7 +6,7 @@
 
 // If directory files changes too often, don't rescan directory more than once
 // per specified interval
-var SIMULTANEOUS_RESCAN_INTERVAL = 1000;
+var SIMULTANEOUS_RESCAN_INTERVAL = 500;
 // Used for operations that require almost instant rescan.
 var SHORT_RESCAN_INTERVAL = 100;
 
@@ -33,6 +33,8 @@ function DirectoryModel(singleSelection, fileFilter, fileWatcher,
   this.changeDirectorySequence_ = 0;
 
   this.directoryChangeQueue_ = new AsyncUtil.Queue();
+  this.rescanAggregator_ = new AsyncUtil.Aggregator(
+      this.rescanSoon.bind(this, true), 500);
 
   this.fileFilter_ = fileFilter;
   this.fileFilter_.addEventListener('changed',
@@ -171,29 +173,31 @@ DirectoryModel.prototype.onWatcherDirectoryChanged_ = function(event) {
   var directoryEntry = this.getCurrentDirEntry();
 
   if (event.changedFiles) {
-    var urls = event.changedFiles.map(function(change) { return change.url; });
-    util.URLsToEntries(urls).then(function(result) {
-      // Removes the metadata of invalid entries.
-      if (result.failureUrls.length > 0)
-        this.metadataCache_.clearByUrl(result.failureUrls, '*');
+    var addedOrUpdatedFileUrls = [];
+    var deletedFileUrls = [];
+    event.changedFiles.forEach(function(change) {
+      if (change.changes.length === 1 && change.changes[0] === 'delete')
+        deletedFileUrls.push(change.url);
+      else
+        addedOrUpdatedFileUrls.push(change.url);
+    });
 
-      // Rescans after force-refreshing the metadata of the changed entries.
-      var entries = result.entries;
-      if (entries.length) {
-        this.currentDirContents_.prefetchMetadata(entries, true, function() {
-          this.rescanSoon(false);
-        }.bind(this));
-      } else {
-        this.rescanSoon(false);
-      }
+    util.URLsToEntries(addedOrUpdatedFileUrls).then(function(result) {
+      deletedFileUrls = deletedFileUrls.concat(result.failureUrls);
+
+      // Passing the resolved entries and failed URLs as the removed files.
+      // The URLs are removed files and they chan't be resolved.
+      this.partialUpdate_(result.entries, deletedFileUrls);
     }.bind(this)).catch(function(error) {
       console.error('Error in proceeding the changed event.', error,
                     'Fallback to force-refresh');
-      this.rescanSoon(true);
+      this.rescanAggregator_.run();
     }.bind(this));
   } else {
     // Invokes force refresh if the detailed information isn't provided.
-    this.rescanSoon(true);
+    // This can occur very frequently (e.g. when copying files into Downlaods)
+    // and rescan is heavy operation, so we keep some interval for each rescan.
+    this.rescanAggregator_.run();
   }
 };
 
@@ -276,7 +280,7 @@ DirectoryModel.prototype.setLeadEntry_ = function(value) {
 
 /**
  * Schedule rescan with short delay.
- * @param {boolean} refresh True to refrech metadata, or false to use cached
+ * @param {boolean} refresh True to refresh metadata, or false to use cached
  *     one.
  */
 DirectoryModel.prototype.rescanSoon = function(refresh) {
@@ -286,7 +290,7 @@ DirectoryModel.prototype.rescanSoon = function(refresh) {
 /**
  * Schedule rescan with delay. Designed to handle directory change
  * notification.
- * @param {boolean} refresh True to refrech metadata, or false to use cached
+ * @param {boolean} refresh True to refresh metadata, or false to use cached
  *     one.
  */
 DirectoryModel.prototype.rescanLater = function(refresh) {
@@ -298,7 +302,7 @@ DirectoryModel.prototype.rescanLater = function(refresh) {
  * nothing. File operation may cause a few notifications what should cause
  * a single refresh.
  * @param {number} delay Delay in ms after which the rescan will be performed.
- * @param {boolean} refresh True to refrech metadata, or false to use cached
+ * @param {boolean} refresh True to refresh metadata, or false to use cached
  *     one.
  */
 DirectoryModel.prototype.scheduleRescan = function(delay, refresh) {
@@ -338,7 +342,7 @@ DirectoryModel.prototype.clearRescanTimeout_ = function() {
  *
  * This should be to scan the contents of current directory (or search).
  *
- * @param {boolean} refresh True to refrech metadata, or false to use cached
+ * @param {boolean} refresh True to refresh metadata, or false to use cached
  *     one.
  */
 DirectoryModel.prototype.rescan = function(refresh) {
@@ -381,6 +385,7 @@ DirectoryModel.prototype.clearAndScan_ = function(newDirContents,
                                                   callback) {
   if (this.currentDirContents_.isScanning())
     this.currentDirContents_.cancelScan();
+  this.currentDirContents_.dispose();
   this.currentDirContents_ = newDirContents;
   this.clearRescanTimeout_();
 
@@ -444,12 +449,70 @@ DirectoryModel.prototype.clearAndScan_ = function(newDirContents,
 };
 
 /**
+ * Adds/removes/updates items of file list.
+ * @param {Array.<Entry>} updatedEntries Entries of updated/added files.
+ * @param {Array.<string>} removedUrls URLs of removed files.
+ * @private
+ */
+DirectoryModel.prototype.partialUpdate_ =
+    function(changedEntries, removedUrls) {
+  // This update should be included in the current running update.
+  if (this.pendingScan_)
+    return;
+
+  if (this.runningScan_) {
+    // Do update after the current scan is finished.
+    var previousScan = this.runningScan_;
+    var onPreviousScanCompleted = function() {
+      previousScan.removeEventListener('scan-completed',
+                                       onPreviousScanCompleted);
+      // Run the update asynchronously.
+      Promise.resolve().then(function() {
+        if (!this.runningScan_)
+          this.partialUpdate_(changedEntries, removedUrls);
+      }.bind(this));
+    }.bind(this);
+    previousScan.addEventListener('scan-completed', onPreviousScanCompleted);
+    return;
+  }
+
+  var onFinish = function() {
+    this.runningScan_ = null;
+
+    this.currentDirContents_.removeEventListener(
+        'scan-completed', onCompleted);
+    this.currentDirContents_.removeEventListener('scan-failed', onFailure);
+    this.currentDirContents_.removeEventListener(
+        'scan-cancelled', onCancelled);
+  }.bind(this);
+
+  var onCompleted = function() {
+    onFinish();
+    cr.dispatchSimpleEvent(this, 'rescan-completed');
+  }.bind(this);
+
+  var onFailure = function() {
+    onFinish();
+  };
+
+  var onCancelled = function() {
+    onFinish();
+  };
+
+  this.runningScan_ = this.currentDirContents_;
+  this.currentDirContents_.addEventListener('scan-completed', onCompleted);
+  this.currentDirContents_.addEventListener('scan-failed', onFailure);
+  this.currentDirContents_.addEventListener('scan-cancelled', onCancelled);
+  this.currentDirContents_.update(changedEntries, removedUrls);
+};
+
+/**
  * Perform a directory contents scan. Should be called only from rescan() and
  * clearAndScan_().
  *
  * @param {DirectoryContents} dirContents DirectoryContents instance on which
  *     the scan will be run.
- * @param {boolean} refresh True to refrech metadata, or false to use cached
+ * @param {boolean} refresh True to refresh metadata, or false to use cached
  *     one.
  * @param {function()} successCallback Callback on success.
  * @param {function()} failureCallback Callback on failure.
@@ -478,7 +541,16 @@ DirectoryModel.prototype.scan_ = function(
     return false;
   }.bind(this);
 
+  var onFinished = function() {
+    dirContents.removeEventListener('scan-completed', onSuccess);
+    dirContents.removeEventListener('scan-updated', updatedCallback);
+    dirContents.removeEventListener('scan-failed', onFailure);
+    dirContents.removeEventListener('scan-cancelled', cancelledCallback);
+  };
+
   var onSuccess = function() {
+    onFinished();
+
     // Record metric for Downloads directory.
     if (!dirContents.isSearch()) {
       var locationInfo =
@@ -498,6 +570,8 @@ DirectoryModel.prototype.scan_ = function(
   }.bind(this);
 
   var onFailure = function() {
+    onFinished();
+
     this.runningScan_ = null;
     this.scanFailures_++;
     failureCallback();
@@ -509,20 +583,28 @@ DirectoryModel.prototype.scan_ = function(
       this.rescanLater(refresh);
   }.bind(this);
 
+  var onCancelled = function() {
+    onFinished();
+    cancelledCallback();
+  };
+
   this.runningScan_ = dirContents;
 
   dirContents.addEventListener('scan-completed', onSuccess);
   dirContents.addEventListener('scan-updated', updatedCallback);
   dirContents.addEventListener('scan-failed', onFailure);
-  dirContents.addEventListener('scan-cancelled', cancelledCallback);
+  dirContents.addEventListener('scan-cancelled', onCancelled);
   dirContents.scan(refresh);
 };
 
 /**
- * @param {DirectoryContents} dirContents DirectoryContents instance.
+ * @param {DirectoryContents} dirContents DirectoryContents instance. This must
+ *     be a different instance from this.currentDirContents_.
  * @private
  */
 DirectoryModel.prototype.replaceDirectoryContents_ = function(dirContents) {
+  console.assert(this.currentDirContents_ !== dirContents,
+      'Give directory contents instance must be different from current one.');
   cr.dispatchSimpleEvent(this, 'begin-update-files');
   this.updateSelectionAndPublishEvent_(this.fileListSelection_, function() {
     var selectedEntries = this.getSelectedEntries_();
@@ -532,9 +614,10 @@ DirectoryModel.prototype.replaceDirectoryContents_ = function(dirContents) {
     var leadIndex = this.fileListSelection_.leadIndex;
     var leadEntry = this.getLeadEntry_();
 
-    this.currentDirContents_.dispose();
+    var previousDirContents = this.currentDirContents_;
     this.currentDirContents_ = dirContents;
-    dirContents.replaceContextFileList();
+    this.currentDirContents_.replaceContextFileList();
+    previousDirContents.dispose();
 
     this.setSelectedEntries_(selectedEntries);
     this.fileListSelection_.leadIndex = leadIndex;
@@ -559,9 +642,9 @@ DirectoryModel.prototype.replaceDirectoryContents_ = function(dirContents) {
 /**
  * Callback when an entry is changed.
  * @param {util.EntryChangedKind} kind How the entry is changed.
- * @param {Entry} entry The changed entry.
+ * @param {Array.<Entry>} entries The changed entries.
  */
-DirectoryModel.prototype.onEntryChanged = function(kind, entry) {
+DirectoryModel.prototype.onEntriesChanged = function(kind, entries) {
   // TODO(hidehiko): We should update directory model even the search result
   // is shown.
   var rootType = this.getCurrentRootType();
@@ -574,34 +657,34 @@ DirectoryModel.prototype.onEntryChanged = function(kind, entry) {
 
   switch (kind) {
     case util.EntryChangedKind.CREATED:
-      entry.getParent(function(parentEntry) {
-        if (!util.isSameEntry(this.getCurrentDirEntry(), parentEntry)) {
-          // Do nothing if current directory changed during async operations.
-          return;
-        }
-        // Refresh the cache.
-        this.currentDirContents_.prefetchMetadata([entry], true, function() {
-          if (!util.isSameEntry(this.getCurrentDirEntry(), parentEntry)) {
-            // Do nothing if current directory changed during async operations.
-            return;
-          }
-
-          var index = this.findIndexByEntry_(entry);
+      var parentPromises = [];
+      for (var i = 0; i < entries.length; i++) {
+        parentPromises.push(new Promise(function(resolve, reject) {
+          entries[i].getParent(resolve, reject);
+        }));
+      }
+      Promise.all(parentPromises).then(function(parents) {
+        var entriesToAdd = [];
+        for (var i = 0; i < parents.length; i++) {
+          if (!util.isSameEntry(parents[i], this.getCurrentDirEntry()))
+            continue;
+          var index = this.findIndexByEntry_(entries[i]);
           if (index >= 0) {
             this.getFileList().replaceItem(
-                this.getFileList().item(index), entry);
+                this.getFileList().item(index), entries[i]);
           } else {
-            this.getFileList().push(entry);
+            entriesToAdd.push(entries[i]);
           }
-        }.bind(this));
-      }.bind(this));
+        }
+        this.partialUpdate_(entriesToAdd, []);
+      }.bind(this)).catch(function(error) {
+        console.error(error.stack || error);
+      });
       break;
 
     case util.EntryChangedKind.DELETED:
       // This is the delete event.
-      var index = this.findIndexByEntry_(entry);
-      if (index >= 0)
-        this.getFileList().splice(index, 1);
+      this.partialUpdate_([], util.entriesToURLs(entries));
       break;
 
     default:
@@ -780,7 +863,7 @@ DirectoryModel.prototype.changeDirectoryEntry = function(
 };
 
 /**
- * Activates the given directry.
+ * Activates the given directory.
  * This method:
  *  - Changes the current directory, if the given directory is the current
  *    directory.

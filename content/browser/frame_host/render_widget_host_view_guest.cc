@@ -74,7 +74,7 @@ void RenderWidgetHostViewGuest::WasShown() {
   // |guest_| is NULL during test.
   if ((guest_ && guest_->is_in_destruction()) || !host_->is_hidden())
     return;
-  host_->WasShown();
+  host_->WasShown(ui::LatencyInfo());
 }
 
 void RenderWidgetHostViewGuest::WasHidden() {
@@ -109,8 +109,12 @@ void RenderWidgetHostViewGuest::ProcessAckedTouchEvent(
       INPUT_EVENT_ACK_STATE_CONSUMED) ? ui::ER_HANDLED : ui::ER_UNHANDLED;
   for (ScopedVector<ui::TouchEvent>::iterator iter = events.begin(),
       end = events.end(); iter != end; ++iter)  {
+    if (!ui::GestureRecognizer::Get()->ProcessTouchEventPreDispatch(*(*iter),
+                                                                    this)) {
+      continue;
+    }
     scoped_ptr<ui::GestureRecognizer::Gestures> gestures;
-    gestures.reset(gesture_recognizer_->ProcessTouchEventForGesture(
+    gestures.reset(ui::GestureRecognizer::Get()->ProcessTouchEventPostDispatch(
         *(*iter), result, this));
     ProcessGestures(gestures.get());
   }
@@ -172,7 +176,7 @@ void RenderWidgetHostViewGuest::AcceleratedSurfaceBuffersSwapped(
   guest_params.gpu_route_id = params.route_id;
   guest_params.gpu_host_id = gpu_host_id;
   guest_->SendMessageToEmbedder(
-      new BrowserPluginMsg_BuffersSwapped(guest_->instance_id(),
+      new BrowserPluginMsg_BuffersSwapped(guest_->browser_plugin_instance_id(),
                                           guest_params));
 }
 
@@ -193,6 +197,8 @@ void RenderWidgetHostViewGuest::OnSwapCompositorFrame(
     // the frame to.
     return;
   }
+
+  last_scroll_offset_ = frame->metadata.root_scroll_offset;
   base::SharedMemoryHandle software_frame_handle =
       base::SharedMemory::NULLHandle();
   if (frame->software_frame_data) {
@@ -219,8 +225,8 @@ void RenderWidgetHostViewGuest::OnSwapCompositorFrame(
   guest_params.shared_memory_handle = software_frame_handle;
 
   guest_->SendMessageToEmbedder(
-      new BrowserPluginMsg_CompositorFrameSwapped(guest_->instance_id(),
-                                                  guest_params));
+      new BrowserPluginMsg_CompositorFrameSwapped(
+          guest_->browser_plugin_instance_id(), guest_params));
 }
 
 bool RenderWidgetHostViewGuest::OnMessageReceived(const IPC::Message& msg) {

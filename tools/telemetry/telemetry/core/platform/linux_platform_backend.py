@@ -8,16 +8,16 @@ import subprocess
 import sys
 
 from telemetry import decorators
+from telemetry.core.platform import linux_based_platform_backend
 from telemetry.core.platform import platform_backend
 from telemetry.core.platform import posix_platform_backend
-from telemetry.core.platform import proc_supporting_platform_backend
 from telemetry.util import cloud_storage
 from telemetry.util import support_binaries
 
 
 class LinuxPlatformBackend(
     posix_platform_backend.PosixPlatformBackend,
-    proc_supporting_platform_backend.ProcSupportingPlatformBackend):
+    linux_based_platform_backend.LinuxBasedPlatformBackend):
 
   def StartRawDisplayFrameRateMeasurement(self):
     raise NotImplementedError()
@@ -44,15 +44,17 @@ class LinuxPlatformBackend(
 
     codename = None
     version = None
-    with open('/etc/lsb-release') as f:
-      for line in f.readlines():
-        key, _, value = line.partition('=')
-        if key == 'DISTRIB_CODENAME':
-          codename = value.strip()
-        elif key == 'DISTRIB_RELEASE':
+    for line in self.GetFileContents('/etc/lsb-release').splitlines():
+      key, _, value = line.partition('=')
+      if key == 'DISTRIB_CODENAME':
+        codename = value.strip()
+      elif key == 'DISTRIB_RELEASE':
+        try:
           version = float(value)
-        if codename and version:
-          break
+        except ValueError:
+          version = 0
+      if codename and version:
+        break
     return platform_backend.OSVersion(codename, version)
 
   def CanFlushIndividualFilesFromSystemCache(self):
@@ -94,7 +96,8 @@ class LinuxPlatformBackend(
           ipfw_mod, cloud_storage.INTERNAL_BUCKET)
     except cloud_storage.CloudStorageError, e:
       logging.error(str(e))
-      logging.error('You may proceed by manually installing dummynet. See: '
+      logging.error('You may proceed by manually building and installing'
+                    'dummynet for your kernel. See: '
                     'http://info.iet.unipi.it/~luigi/dummynet/')
       sys.exit(1)
 
@@ -104,7 +107,10 @@ class LinuxPlatformBackend(
       os.chmod(ipfw_bin, 0755)
       subprocess.check_call(['sudo', 'cp', ipfw_bin, '/usr/local/sbin'])
 
-    assert self.CanLaunchApplication('ipfw'), 'Failed to install ipfw'
+    assert self.CanLaunchApplication('ipfw'), 'Failed to install ipfw. ' \
+        'ipfw provided binaries are not supported for linux kernel < 3.13. ' \
+        'You may proceed by manually building and installing dummynet for ' \
+        'your kernel. See: http://info.iet.unipi.it/~luigi/dummynet/'
 
   def _InstallBinary(self, bin_name, fallback_package=None):
     bin_path = support_binaries.FindPath(bin_name, self.GetOSName())

@@ -19,7 +19,6 @@
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier_factory.h"
-#include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/favicon/favicon_tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
@@ -50,16 +49,15 @@
 #include "chrome/browser/ui/tabs/tab_utils.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
-#include "components/autocomplete/autocomplete_match.h"
+#include "chrome/grit/generated_resources.h"
 #include "components/metrics/proto/omnibox_event.pb.h"
+#include "components/omnibox/autocomplete_match.h"
 #include "components/url_fixer/url_fixer.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
-#include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
-#include "grit/ui_resources.h"
 #include "skia/ext/skia_utils_mac.h"
 #import "third_party/google_toolbox_for_mac/src/AppKit/GTMNSAnimation+Duration.h"
 #include "ui/base/cocoa/animation_utils.h"
@@ -70,6 +68,7 @@
 #include "ui/base/theme_provider.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/mac/scoped_ns_disable_screen_updates.h"
+#include "ui/resources/grit/ui_resources.h"
 
 using base::UserMetricsAction;
 using content::OpenURLParams;
@@ -2222,9 +2221,18 @@ NSView* GetSheetParentViewForWebContents(WebContents* web_contents) {
   // View hierarchy of the contents view:
   // NSView  -- switchView, same for all tabs
   // +- NSView  -- TabContentsController's view
-  //    +- TabContentsViewCocoa
+  //    +- WebContentsViewCocoa
   //
   // Changing it? Do not forget to modify
   // -[TabStripController swapInTabAtIndex:] too.
   return [web_contents->GetNativeView() superview];
+}
+
+NSRect GetSheetParentBoundsForParentView(NSView* view) {
+  // If the devtools view is open, it shrinks the size of the WebContents, so go
+  // up the hierarchy to the devtools container view to avoid that. Note that
+  // the devtools view is always in the hierarchy even if it is not open or it
+  // is detached.
+  NSView* devtools_view = [[[view superview] superview] superview];
+  return [devtools_view convertRect:[devtools_view bounds] toView:nil];
 }

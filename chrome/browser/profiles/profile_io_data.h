@@ -7,6 +7,7 @@
 
 #include <map>
 #include <string>
+#include <vector>
 
 #include "base/basictypes.h"
 #include "base/callback_forward.h"
@@ -32,6 +33,7 @@
 
 class ChromeHttpUserAgentSettings;
 class ChromeNetworkDelegate;
+class ChromeURLRequestContextGetter;
 class CookieSettings;
 class DevToolsNetworkController;
 class HostContentSettingsMap;
@@ -45,6 +47,7 @@ class InfoMap;
 }
 
 namespace net {
+class CertVerifier;
 class ChannelIDService;
 class CookieStore;
 class FraudulentCertificateReporter;
@@ -76,6 +79,9 @@ class PrerenderTracker;
 // possibly in unit tests where there is no IO thread).
 class ProfileIOData {
  public:
+  typedef std::vector<scoped_refptr<ChromeURLRequestContextGetter>>
+      ChromeURLRequestContextGetterVector;
+
   virtual ~ProfileIOData();
 
   static ProfileIOData* FromResourceContext(content::ResourceContext* rc);
@@ -170,7 +176,7 @@ class ProfileIOData {
     return &safe_browsing_enabled_;
   }
 
-#if defined(OS_ANDROID)
+#if defined(SPDY_PROXY_AUTH_ORIGIN)
   // TODO(feng): move the function to protected area.
   // IsDataReductionProxyEnabled() should be used as public API.
   BooleanPrefMember* data_reduction_proxy_enabled() const {
@@ -346,15 +352,6 @@ class ProfileIOData {
   void InitializeOnUIThread(Profile* profile);
   void ApplyProfileParamsToContext(net::URLRequestContext* context) const;
 
-#if defined(OS_ANDROID)
-#if defined(SPDY_PROXY_AUTH_ORIGIN)
-  void SetDataReductionProxyUsageStatsOnIOThread(IOThread* io_thread,
-                                                 Profile* profile);
-  void SetDataReductionProxyUsageStatsOnUIThread(Profile* profile,
-      data_reduction_proxy::DataReductionProxyUsageStats* usage_stats);
-#endif
-#endif
-
   scoped_ptr<net::URLRequestJobFactory> SetUpJobFactoryDefaults(
       scoped_ptr<net::URLRequestJobFactoryImpl> job_factory,
       content::URLRequestInterceptorScopedVector request_interceptors,
@@ -364,7 +361,8 @@ class ProfileIOData {
       net::FtpTransactionFactory* ftp_transaction_factory) const;
 
   // Called when the profile is destroyed.
-  void ShutdownOnUIThread();
+  void ShutdownOnUIThread(
+      scoped_ptr<ChromeURLRequestContextGetterVector> context_getters);
 
   // A ChannelIDService object is created by a derived class of
   // ProfileIOData, and the derived class calls this method to set the
@@ -549,7 +547,7 @@ class ProfileIOData {
   mutable BooleanPrefMember enable_do_not_track_;
   mutable BooleanPrefMember force_safesearch_;
   mutable BooleanPrefMember safe_browsing_enabled_;
-#if defined(OS_ANDROID)
+#if defined(SPDY_PROXY_AUTH_ORIGIN)
   mutable BooleanPrefMember data_reduction_proxy_enabled_;
 #endif
   mutable BooleanPrefMember printing_enabled_;
@@ -590,7 +588,10 @@ class ProfileIOData {
   mutable scoped_ptr<net::HttpServerProperties>
       http_server_properties_;
 #if defined(OS_CHROMEOS)
-  mutable scoped_ptr<policy::PolicyCertVerifier> cert_verifier_;
+  // Set to |cert_verifier_| if it references a PolicyCertVerifier. In that
+  // case, the verifier is owned by  |cert_verifier_|. Otherwise, set to NULL.
+  mutable policy::PolicyCertVerifier* policy_cert_verifier_;
+  mutable scoped_ptr<net::CertVerifier> cert_verifier_;
   mutable std::string username_hash_;
   mutable bool use_system_key_slot_;
 #endif

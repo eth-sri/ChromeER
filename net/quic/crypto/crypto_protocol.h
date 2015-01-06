@@ -44,14 +44,17 @@ const QuicTag kNULL = TAG('N', 'U', 'L', 'N');   // null algorithm
 const QuicTag kAESG = TAG('A', 'E', 'S', 'G');   // AES128 + GCM-12
 const QuicTag kCC12 = TAG('C', 'C', '1', '2');   // ChaCha20 + Poly1305
 
+// Socket receive buffer
+const QuicTag kSRBF = TAG('S', 'R', 'B', 'F');   // Socket receive buffer
+
 // Congestion control feedback types
 const QuicTag kQBIC = TAG('Q', 'B', 'I', 'C');   // TCP cubic
-const QuicTag kPACE = TAG('P', 'A', 'C', 'E');   // Paced TCP cubic
-const QuicTag kINAR = TAG('I', 'N', 'A', 'R');   // Inter arrival
 
-// Congestion control options
+// Connection options (COPT) values
 const QuicTag kTBBR = TAG('T', 'B', 'B', 'R');   // Reduced Buffer Bloat TCP
 const QuicTag kRENO = TAG('R', 'E', 'N', 'O');   // Reno Congestion Control
+const QuicTag kIW10 = TAG('I', 'W', '1', '0');   // Force ICWND to 10
+const QuicTag kPACE = TAG('P', 'A', 'C', 'E');   // Paced TCP cubic
 
 // Loss detection algorithm types
 const QuicTag kNACK = TAG('N', 'A', 'C', 'K');   // TCP style nack counting
@@ -77,7 +80,7 @@ const QuicTag kAEAD = TAG('A', 'E', 'A', 'D');   // Authenticated
                                                  // encryption algorithms
 const QuicTag kCGST = TAG('C', 'G', 'S', 'T');   // Congestion control
                                                  // feedback types
-const QuicTag kCOPT = TAG('C', 'O', 'P', 'T');   // Congestion control options
+const QuicTag kCOPT = TAG('C', 'O', 'P', 'T');   // Connection options
 // kLOSS was 'L', 'O', 'S', 'S', but was changed from a tag vector to a tag.
 const QuicTag kLOSS = TAG('L', 'O', 'S', 'A');   // Loss detection algorithms
 const QuicTag kICSL = TAG('I', 'C', 'S', 'L');   // Idle connection state

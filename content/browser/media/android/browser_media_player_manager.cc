@@ -85,7 +85,8 @@ MediaPlayerAndroid* BrowserMediaPlayerManager::CreateMediaPlayer(
                      weak_ptr_factory_.GetWeakPtr()),
           base::Bind(&BrowserMediaPlayerManager::OnMediaResourcesReleased,
                      weak_ptr_factory_.GetWeakPtr()),
-          media_player_params.frame_url);
+          media_player_params.frame_url,
+          media_player_params.allow_credentials);
       BrowserMediaPlayerManager* browser_media_player_manager =
           static_cast<BrowserMediaPlayerManager*>(manager);
       ContentViewCoreImpl* content_view_core_impl =
@@ -290,7 +291,7 @@ BrowserMediaPlayerManager::GetMediaResourceGetter() {
     RenderProcessHost* host = web_contents()->GetRenderProcessHost();
     BrowserContext* context = host->GetBrowserContext();
     StoragePartition* partition = host->GetStoragePartition();
-    fileapi::FileSystemContext* file_system_context =
+    storage::FileSystemContext* file_system_context =
         partition ? partition->GetFileSystemContext() : NULL;
     // Eventually this needs to be fixed to pass the correct frame rather
     // than just using the main frame.

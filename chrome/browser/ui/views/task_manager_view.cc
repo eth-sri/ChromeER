@@ -17,9 +17,8 @@
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/views/browser_dialogs.h"
 #include "chrome/common/pref_names.h"
-#include "grit/chromium_strings.h"
-#include "grit/generated_resources.h"
-#include "grit/theme_resources.h"
+#include "chrome/grit/chromium_strings.h"
+#include "chrome/grit/generated_resources.h"
 #include "ui/base/accelerators/accelerator.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/models/simple_menu_model.h"
@@ -498,9 +497,9 @@ void TaskManagerView::Show(Browser* browser) {
     focus_manager->SetFocusedView(instance_->tab_table_);
 
 #if defined(USE_ASH)
+  gfx::NativeWindow native_window = instance_->GetWidget()->GetNativeWindow();
   ash::SetShelfItemDetailsForDialogWindow(
-      instance_->GetWidget()->GetNativeWindow(),
-      IDR_ASH_SHELF_ICON_TASK_MANAGER);
+      native_window, IDR_ASH_SHELF_ICON_TASK_MANAGER, native_window->title());
 #endif
 }
 

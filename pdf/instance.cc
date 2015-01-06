@@ -307,6 +307,10 @@ Instance::Instance(PP_Instance instance)
 }
 
 Instance::~Instance() {
+  if (timer_pending_) {
+    timer_factory_.CancelAll();
+    timer_pending_ = false;
+  }
   // The engine may try to access this instance during its destruction.
   // Make sure this happens early while the instance is still intact.
   engine_.reset();
@@ -1495,6 +1499,12 @@ void Instance::DocumentLoadComplete(int page_count) {
   DCHECK(document_load_state_ == LOAD_STATE_LOADING);
   document_load_state_ = LOAD_STATE_COMPLETE;
   UserMetricsRecordAction("PDF.LoadSuccess");
+
+  if (did_call_start_loading_) {
+    pp::PDF::DidStopLoading(this);
+    did_call_start_loading_ = false;
+  }
+
   if (on_load_callback_.is_string())
     ExecuteScript(on_load_callback_);
   // Note: If we are in print preview mode on_load_callback_ might call
@@ -1510,11 +1520,6 @@ void Instance::DocumentLoadComplete(int page_count) {
     return;
   if (!pp::PDF::IsAvailable())
     return;
-
-  if (did_call_start_loading_) {
-    pp::PDF::DidStopLoading(this);
-    did_call_start_loading_ = false;
-  }
 
   int content_restrictions =
       CONTENT_RESTRICTION_CUT | CONTENT_RESTRICTION_PASTE;
@@ -2499,10 +2504,14 @@ double Instance::CalculateZoom(uint32 control_id) const {
 }
 
 pp::ImageData Instance::CreateResourceImage(PP_ResourceImage image_id) {
-  if (hidpi_enabled_)
-    return pp::PDF::GetResourceImageForScale(this, image_id, device_scale_);
+  pp::ImageData resource_data;
+  if (hidpi_enabled_) {
+    resource_data =
+        pp::PDF::GetResourceImageForScale(this, image_id, device_scale_);
+  }
 
-  return pp::PDF::GetResourceImage(this, image_id);
+  return resource_data.data() ? resource_data
+                              : pp::PDF::GetResourceImage(this, image_id);
 }
 
 std::string Instance::GetLocalizedString(PP_ResourceString id) {

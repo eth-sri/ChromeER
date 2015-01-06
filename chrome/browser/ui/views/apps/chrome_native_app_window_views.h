@@ -36,9 +36,9 @@ class ChromeNativeAppWindowViews : public apps::NativeAppWindowViews,
                                   views::Widget* widget);
 
   virtual void InitializeDefaultWindow(
-      const apps::AppWindow::CreateParams& create_params);
+      const extensions::AppWindow::CreateParams& create_params);
   virtual void InitializePanelWindow(
-      const apps::AppWindow::CreateParams& create_params);
+      const extensions::AppWindow::CreateParams& create_params);
   virtual views::NonClientFrameView* CreateStandardDesktopAppFrame();
 
  private:
@@ -72,7 +72,6 @@ class ChromeNativeAppWindowViews : public apps::NativeAppWindowViews,
   // NativeAppWindow implementation.
   virtual void SetFullscreen(int fullscreen_types) OVERRIDE;
   virtual bool IsFullscreenOrPending() const OVERRIDE;
-  virtual bool IsDetached() const OVERRIDE;
   virtual void UpdateBadgeIcon() OVERRIDE;
   virtual void UpdateShape(scoped_ptr<SkRegion> region) OVERRIDE;
   virtual bool HasFrameColor() const OVERRIDE;
@@ -81,8 +80,8 @@ class ChromeNativeAppWindowViews : public apps::NativeAppWindowViews,
 
   // NativeAppWindowViews implementation.
   virtual void InitializeWindow(
-      apps::AppWindow* app_window,
-      const apps::AppWindow::CreateParams& create_params) OVERRIDE;
+      extensions::AppWindow* app_window,
+      const extensions::AppWindow::CreateParams& create_params) OVERRIDE;
 
   // True if the window is fullscreen or fullscreen is pending.
   bool is_fullscreen_;

@@ -7,7 +7,7 @@
 
 #include <algorithm>
 
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/json/json_reader.h"
 #include "base/message_loop/message_loop.h"
@@ -699,9 +699,9 @@ class ScopedItemVectorCanceller {
 // Writes an HTML5 file so that it can be downloaded.
 class HTML5FileWriter {
  public:
-  static bool CreateFileForTesting(fileapi::FileSystemContext* context,
-                                   const fileapi::FileSystemURL& path,
-                                   const char*data,
+  static bool CreateFileForTesting(storage::FileSystemContext* context,
+                                   const storage::FileSystemURL& path,
+                                   const char* data,
                                    int length) {
     // Create a temp file.
     base::FilePath temp_file;
@@ -735,8 +735,8 @@ class HTML5FileWriter {
   }
 
   static void CreateFileForTestingOnIOThread(
-      fileapi::FileSystemContext* context,
-      const fileapi::FileSystemURL& path,
+      storage::FileSystemContext* context,
+      const storage::FileSystemURL& path,
       const base::FilePath& temp_file,
       bool* result,
       base::WaitableEvent* done_event) {
@@ -1603,7 +1603,7 @@ IN_PROC_BROWSER_TEST_F(DownloadExtensionTest,
 
   for (size_t index = 0; index < arraysize(kUnsafeHeaders); ++index) {
     std::string download_url = test_server()->GetURL("slow?0").spec();
-    EXPECT_STREQ(errors::kInvalidHeader,
+    EXPECT_STREQ(errors::kInvalidHeaderUnsafe,
                   RunFunctionAndReturnError(new DownloadsDownloadFunction(),
                                             base::StringPrintf(
         "[{\"url\": \"%s\","
@@ -1615,6 +1615,35 @@ IN_PROC_BROWSER_TEST_F(DownloadExtensionTest,
         static_cast<int>(index),
         kUnsafeHeaders[index])).c_str());
   }
+}
+
+// Tests that invalid header names and values are rejected.
+IN_PROC_BROWSER_TEST_F(DownloadExtensionTest,
+                       DownloadExtensionTest_Download_InvalidHeaders) {
+  LoadExtension("downloads_split");
+  ASSERT_TRUE(StartEmbeddedTestServer());
+  ASSERT_TRUE(test_server()->Start());
+  GoOnTheRecord();
+  std::string download_url = test_server()->GetURL("slow?0").spec();
+  EXPECT_STREQ(errors::kInvalidHeaderName,
+               RunFunctionAndReturnError(new DownloadsDownloadFunction(),
+                                         base::StringPrintf(
+      "[{\"url\": \"%s\","
+      "  \"filename\": \"unsafe-header-crlf.txt\","
+      "  \"headers\": [{"
+      "    \"name\": \"Header\\r\\nSec-Spoof: Hey\\r\\nX-Split:X\","
+      "    \"value\": \"unsafe\"}]}]",
+      download_url.c_str())).c_str());
+
+  EXPECT_STREQ(errors::kInvalidHeaderValue,
+               RunFunctionAndReturnError(new DownloadsDownloadFunction(),
+                                         base::StringPrintf(
+      "[{\"url\": \"%s\","
+      "  \"filename\": \"unsafe-header-crlf.txt\","
+      "  \"headers\": [{"
+      "    \"name\": \"Invalid-value\","
+      "    \"value\": \"hey\\r\\nSec-Spoof: Hey\"}]}]",
+      download_url.c_str())).c_str());
 }
 
 #if defined(OS_WIN)
@@ -2331,10 +2360,11 @@ IN_PROC_BROWSER_TEST_F(DownloadExtensionTest,
 
   // Setup a file in the filesystem which we can download.
   ASSERT_TRUE(HTML5FileWriter::CreateFileForTesting(
-      BrowserContext::GetDefaultStoragePartition(browser()->profile())->
-          GetFileSystemContext(),
-      fileapi::FileSystemURL::CreateForTest(GURL(download_url)),
-      kPayloadData, strlen(kPayloadData)));
+      BrowserContext::GetDefaultStoragePartition(browser()->profile())
+          ->GetFileSystemContext(),
+      storage::FileSystemURL::CreateForTest(GURL(download_url)),
+      kPayloadData,
+      strlen(kPayloadData)));
 
   // Now download it.
   scoped_ptr<base::Value> result(RunFunctionAndReturnResult(
@@ -4066,7 +4096,7 @@ TEST(ExtensionDetermineDownloadFilenameInternal,
   base::FilePath filename;
   downloads::FilenameConflictAction conflict_action =
       downloads::FILENAME_CONFLICT_ACTION_UNIQUIFY;
-  ExtensionWarningSet warnings;
+  WarningSet warnings;
 
   // Empty incumbent determiner
   warnings.clear();
@@ -4103,7 +4133,7 @@ TEST(ExtensionDetermineDownloadFilenameInternal,
   EXPECT_EQ(FILE_PATH_LITERAL("a"), filename.value());
   EXPECT_EQ(downloads::FILENAME_CONFLICT_ACTION_OVERWRITE, conflict_action);
   EXPECT_FALSE(warnings.empty());
-  EXPECT_EQ(ExtensionWarning::kDownloadFilenameConflict,
+  EXPECT_EQ(Warning::kDownloadFilenameConflict,
             warnings.begin()->warning_type());
   EXPECT_EQ("suggester", warnings.begin()->extension_id());
 
@@ -4124,7 +4154,7 @@ TEST(ExtensionDetermineDownloadFilenameInternal,
   EXPECT_EQ(FILE_PATH_LITERAL("b"), filename.value());
   EXPECT_EQ(downloads::FILENAME_CONFLICT_ACTION_PROMPT, conflict_action);
   EXPECT_FALSE(warnings.empty());
-  EXPECT_EQ(ExtensionWarning::kDownloadFilenameConflict,
+  EXPECT_EQ(Warning::kDownloadFilenameConflict,
             warnings.begin()->warning_type());
   EXPECT_EQ("incumbent", warnings.begin()->extension_id());
 }

@@ -5,9 +5,8 @@
 #include "mojo/shell/run.h"
 
 #include "base/logging.h"
-#include "mojo/service_manager/service_manager.h"
+#include "mojo/application_manager/application_manager.h"
 #include "mojo/shell/context.h"
-#include "mojo/shell/keep_alive.h"
 
 namespace mojo {
 namespace shell {
@@ -22,8 +21,6 @@ class StubServiceProvider : public InterfaceImpl<ServiceProvider> {
 
 
 void Run(Context* context, const std::vector<GURL>& app_urls) {
-  KeepAlive keep_alive(context);
-
   if (app_urls.empty()) {
     LOG(ERROR) << "No app path specified";
     return;
@@ -37,7 +34,7 @@ void Run(Context* context, const std::vector<GURL>& app_urls) {
     ServiceProviderPtr spp;
     BindToProxy(stub_sp, &spp);
 
-    context->service_manager()->ConnectToApplication(
+    context->application_manager()->ConnectToApplication(
         *it, GURL(), spp.Pass());
   }
 }

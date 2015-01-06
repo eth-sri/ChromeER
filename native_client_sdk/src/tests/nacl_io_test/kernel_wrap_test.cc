@@ -19,6 +19,7 @@
 #include "nacl_io/osmman.h"
 #include "nacl_io/ossocket.h"
 #include "nacl_io/ostermios.h"
+#include "ppapi_simple/ps.h"
 
 #if defined(__native_client__) && !defined(__GLIBC__)
 extern "C" {
@@ -188,14 +189,16 @@ TEST_F(KernelWrapTest, chdir) {
 
 TEST_F(KernelWrapTest, chmod) {
   EXPECT_CALL(mock, chmod(kDummyConstChar, kDummyMode))
-      .WillOnce(Return(kDummyInt2));
-  EXPECT_EQ(kDummyInt2,chmod(kDummyConstChar, kDummyMode));
+      .WillOnce(DoAll(SetErrno(kDummyErrno), Return(-1)));
+  EXPECT_EQ(-1, chmod(kDummyConstChar, kDummyMode));
+  ASSERT_EQ(kDummyErrno, errno);
 }
 
 TEST_F(KernelWrapTest, chown) {
   EXPECT_CALL(mock, chown(kDummyConstChar, kDummyUid, kDummyGid))
-      .WillOnce(Return(kDummyInt));
-  EXPECT_EQ(kDummyInt, chown(kDummyConstChar, kDummyUid, kDummyGid));
+      .WillOnce(DoAll(SetErrno(kDummyErrno), Return(-1)));
+  EXPECT_EQ(-1, chown(kDummyConstChar, kDummyUid, kDummyGid));
+  ASSERT_EQ(kDummyErrno, errno);
 }
 
 TEST_F(KernelWrapTest, close) {
@@ -372,8 +375,9 @@ TEST_F(KernelWrapTest, lchown) {
 
 TEST_F(KernelWrapTest, link) {
   EXPECT_CALL(mock, link(kDummyConstChar, kDummyConstChar2))
-      .WillOnce(Return(kDummyInt));
-  EXPECT_EQ(kDummyInt, link(kDummyConstChar, kDummyConstChar2));
+      .WillOnce(DoAll(SetErrno(kDummyErrno), Return(-1)));
+  EXPECT_EQ(-1, link(kDummyConstChar, kDummyConstChar2));
+  ASSERT_EQ(kDummyErrno, errno);
 }
 
 TEST_F(KernelWrapTest, lseek) {
@@ -628,6 +632,40 @@ TEST_F(KernelWrapTest, write) {
   EXPECT_CALL(mock, write(kDummyInt, kDummyVoidPtr, kDummyInt2))
       .WillOnce(Return(kDummyInt3));
   EXPECT_EQ(kDummyInt3, write(kDummyInt, kDummyVoidPtr, kDummyInt2));
+}
+
+class KernelWrapTestUninit : public ::testing::Test {
+  void SetUp() {
+    ASSERT_EQ(0, ki_push_state_for_testing());
+    kernel_wrap_uninit();
+  }
+
+  void TearDown() {
+    kernel_wrap_init();
+    ki_pop_state_for_testing();
+  }
+};
+
+TEST_F(KernelWrapTestUninit, Mkdir_Uninitialised) {
+  // If we are running within chrome we can't use these calls without
+  // nacl_io initialized.
+  if (PSGetInstanceId() != 0)
+    return;
+  EXPECT_EQ(0, mkdir("./foo", S_IREAD | S_IWRITE));
+  EXPECT_EQ(0, rmdir("./foo"));
+}
+
+TEST_F(KernelWrapTestUninit, Getcwd_Uninitialised) {
+  // If we are running within chrome we can't use these calls without
+  // nacl_io initialized.
+  if (PSGetInstanceId() != 0)
+    return;
+  char dir[PATH_MAX];
+  ASSERT_NE((char*)NULL, getcwd(dir, PATH_MAX));
+  // Verify that the CWD ends with 'nacl_io_test'
+  const char* suffix = "nacl_io_test";
+  ASSERT_GT(strlen(dir), strlen(suffix));
+  ASSERT_EQ(0, strcmp(dir+strlen(dir)-strlen(suffix), suffix));
 }
 
 #if defined(PROVIDES_SOCKET_API) and !defined(__BIONIC__)

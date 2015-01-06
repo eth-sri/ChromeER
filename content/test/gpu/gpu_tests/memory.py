@@ -6,12 +6,14 @@ import page_sets
 
 from telemetry import benchmark
 from telemetry.page import page_test
+from telemetry.core.platform import tracing_category_filter
+from telemetry.core.platform import tracing_options
 from telemetry.timeline import counter
 from telemetry.timeline import model
 
 MEMORY_LIMIT_MB = 192
 SINGLE_TAB_LIMIT_MB = 192
-WIGGLE_ROOM_MB = 8
+WIGGLE_ROOM_MB = 12
 
 test_harness_script = r"""
   var domAutomationController = {};
@@ -63,8 +65,8 @@ test_harness_script = r"""
 """ % MEMORY_LIMIT_MB
 
 class _MemoryValidator(page_test.PageTest):
-  def ValidatePage(self, page, tab, results):
-    timeline_data = tab.browser.StopTracing()
+  def ValidateAndMeasurePage(self, page, tab, results):
+    timeline_data = tab.browser.platform.tracing_controller.Stop()
     timeline_model = model.TimelineModel(timeline_data)
     for process in timeline_model.GetAllProcesses():
       if 'gpu.GpuMemoryUsage' in process.counters:
@@ -86,7 +88,12 @@ class _MemoryValidator(page_test.PageTest):
     # FIXME: Remove webkit.console when blink.console lands in chromium and the
     # ref builds are updated. crbug.com/386847
     custom_categories = ['webkit.console', 'blink.console', 'gpu']
-    tab.browser.StartTracing(','.join(custom_categories), 60)
+    category_filter = tracing_category_filter.TracingCategoryFilter()
+    for c in custom_categories:
+        category_filter.AddIncludedCategory(c)
+    options = tracing_options.TracingOptions()
+    options.enable_chrome_trace = True
+    tab.browser.platform.tracing_controller.Start(options, category_filter, 60)
 
   def _FormatException(self, low_or_high, mb_used):
     return 'Memory allocation too %s (was %d MB, should be %d MB +/- %d MB)' % (

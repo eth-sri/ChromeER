@@ -4,6 +4,8 @@
 
 #include "chrome/browser/browsing_data/browsing_data_file_system_helper.h"
 
+#include <set>
+
 #include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
@@ -18,7 +20,7 @@
 
 using content::BrowserThread;
 
-namespace fileapi {
+namespace storage {
 class FileSystemContext;
 }
 
@@ -31,7 +33,7 @@ class BrowsingDataFileSystemHelperImpl : public BrowsingDataFileSystemHelper {
  public:
   // BrowsingDataFileSystemHelper implementation
   explicit BrowsingDataFileSystemHelperImpl(
-      fileapi::FileSystemContext* filesystem_context);
+      storage::FileSystemContext* filesystem_context);
   virtual void StartFetching(const base::Callback<
       void(const std::list<FileSystemInfo>&)>& callback) OVERRIDE;
   virtual void DeleteFileSystemOrigin(const GURL& origin) OVERRIDE;
@@ -59,7 +61,7 @@ class BrowsingDataFileSystemHelperImpl : public BrowsingDataFileSystemHelper {
 
   // Keep a reference to the FileSystemContext object for the current profile
   // for use on the file task runner.
-  scoped_refptr<fileapi::FileSystemContext> filesystem_context_;
+  scoped_refptr<storage::FileSystemContext> filesystem_context_;
 
   // Holds the current list of file systems returned to the client after
   // StartFetching is called. Access to |file_system_info_| is triggered
@@ -84,9 +86,8 @@ class BrowsingDataFileSystemHelperImpl : public BrowsingDataFileSystemHelper {
 };
 
 BrowsingDataFileSystemHelperImpl::BrowsingDataFileSystemHelperImpl(
-    fileapi::FileSystemContext* filesystem_context)
-    : filesystem_context_(filesystem_context),
-      is_fetching_(false) {
+    storage::FileSystemContext* filesystem_context)
+    : filesystem_context_(filesystem_context), is_fetching_(false) {
   DCHECK(filesystem_context_.get());
 }
 
@@ -95,9 +96,9 @@ BrowsingDataFileSystemHelperImpl::~BrowsingDataFileSystemHelperImpl() {
 
 void BrowsingDataFileSystemHelperImpl::StartFetching(
     const base::Callback<void(const std::list<FileSystemInfo>&)>& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(!is_fetching_);
-  DCHECK_EQ(false, callback.is_null());
+  DCHECK(!callback.is_null());
   is_fetching_ = true;
   completion_callback_ = callback;
   file_task_runner()->PostTask(
@@ -109,7 +110,7 @@ void BrowsingDataFileSystemHelperImpl::StartFetching(
 
 void BrowsingDataFileSystemHelperImpl::DeleteFileSystemOrigin(
     const GURL& origin) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   file_task_runner()->PostTask(
       FROM_HERE,
       base::Bind(
@@ -121,20 +122,20 @@ void BrowsingDataFileSystemHelperImpl::FetchFileSystemInfoInFileThread() {
   DCHECK(file_task_runner()->RunsTasksOnCurrentThread());
 
   // We check usage for these filesystem types.
-  const fileapi::FileSystemType types[] = {
-    fileapi::kFileSystemTypeTemporary,
-    fileapi::kFileSystemTypePersistent,
+  const storage::FileSystemType types[] = {
+    storage::kFileSystemTypeTemporary,
+    storage::kFileSystemTypePersistent,
 #if defined(ENABLE_EXTENSIONS)
-    fileapi::kFileSystemTypeSyncable,
+    storage::kFileSystemTypeSyncable,
 #endif
   };
 
   typedef std::map<GURL, FileSystemInfo> OriginInfoMap;
   OriginInfoMap file_system_info_map;
   for (size_t i = 0; i < arraysize(types); ++i) {
-    fileapi::FileSystemType type = types[i];
-    fileapi::FileSystemQuotaUtil* quota_util =
-      filesystem_context_->GetQuotaUtil(type);
+    storage::FileSystemType type = types[i];
+    storage::FileSystemQuotaUtil* quota_util =
+        filesystem_context_->GetQuotaUtil(type);
     DCHECK(quota_util);
     std::set<GURL> origins;
     quota_util->GetOriginsForTypeOnFileTaskRunner(type, &origins);
@@ -163,7 +164,7 @@ void BrowsingDataFileSystemHelperImpl::FetchFileSystemInfoInFileThread() {
 }
 
 void BrowsingDataFileSystemHelperImpl::NotifyOnUIThread() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(is_fetching_);
   completion_callback_.Run(file_system_info_);
   completion_callback_.Reset();
@@ -185,7 +186,7 @@ BrowsingDataFileSystemHelper::FileSystemInfo::~FileSystemInfo() {}
 
 // static
 BrowsingDataFileSystemHelper* BrowsingDataFileSystemHelper::Create(
-    fileapi::FileSystemContext* filesystem_context) {
+    storage::FileSystemContext* filesystem_context) {
   return new BrowsingDataFileSystemHelperImpl(filesystem_context);
 }
 
@@ -200,7 +201,7 @@ CannedBrowsingDataFileSystemHelper::~CannedBrowsingDataFileSystemHelper() {}
 
 CannedBrowsingDataFileSystemHelper*
     CannedBrowsingDataFileSystemHelper::Clone() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   CannedBrowsingDataFileSystemHelper* clone =
       new CannedBrowsingDataFileSystemHelper();
   // This list only mutates on the UI thread, so it's safe to work with it here
@@ -210,8 +211,10 @@ CannedBrowsingDataFileSystemHelper*
 }
 
 void CannedBrowsingDataFileSystemHelper::AddFileSystem(
-    const GURL& origin, const fileapi::FileSystemType type, const int64 size) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+    const GURL& origin,
+    const storage::FileSystemType type,
+    const int64 size) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   // This canned implementation of AddFileSystem uses an O(n^2) algorithm; which
   // is fine, as it isn't meant for use in a high-volume context. If it turns
   // out that we want to start using this in a context with many, many origins,
@@ -247,13 +250,13 @@ bool CannedBrowsingDataFileSystemHelper::empty() const {
 }
 
 size_t CannedBrowsingDataFileSystemHelper::GetFileSystemCount() const {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   return file_system_info_.size();
 }
 
 void CannedBrowsingDataFileSystemHelper::StartFetching(
     const base::Callback<void(const std::list<FileSystemInfo>&)>& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(!callback.is_null());
 
   BrowserThread::PostTask(

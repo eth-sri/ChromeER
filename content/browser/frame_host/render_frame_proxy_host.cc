@@ -53,9 +53,8 @@ void RenderFrameProxyHost::SetChildRWHView(RenderWidgetHostView* view) {
 }
 
 RenderViewHostImpl* RenderFrameProxyHost::GetRenderViewHost() {
-  if (render_frame_host_.get())
-    return render_frame_host_->render_view_host();
-  return NULL;
+  return frame_tree_node_->frame_tree()->GetRenderViewHost(
+      site_instance_.get());
 }
 
 scoped_ptr<RenderFrameHostImpl> RenderFrameProxyHost::PassFrameHostOwnership() {
@@ -96,18 +95,24 @@ bool RenderFrameProxyHost::InitRenderFrameProxy() {
 
   int parent_routing_id = MSG_ROUTING_NONE;
   if (frame_tree_node_->parent()) {
-    parent_routing_id = frame_tree_node_->parent()->render_manager()->
-        GetRoutingIdForSiteInstance(site_instance_);
+    parent_routing_id = frame_tree_node_->parent()
+                            ->render_manager()
+                            ->GetRoutingIdForSiteInstance(site_instance_.get());
     CHECK_NE(parent_routing_id, MSG_ROUTING_NONE);
   }
 
-  Send(new FrameMsg_NewFrameProxy(
-      routing_id_,
-      parent_routing_id,
-      frame_tree_node_->frame_tree()->GetRenderViewHost(
-          site_instance_)->GetRoutingID()));
+  Send(new FrameMsg_NewFrameProxy(routing_id_,
+                                  parent_routing_id,
+                                  frame_tree_node_->frame_tree()
+                                      ->GetRenderViewHost(site_instance_.get())
+                                      ->GetRoutingID()));
 
   return true;
 }
+
+void RenderFrameProxyHost::DisownOpener() {
+  Send(new FrameMsg_DisownOpener(GetRoutingID()));
+}
+
 
 }  // namespace content

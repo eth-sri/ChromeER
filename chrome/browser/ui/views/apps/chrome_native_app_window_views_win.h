@@ -21,7 +21,7 @@ class ChromeNativeAppWindowViewsWin : public ChromeNativeAppWindowViews {
 
   GlassAppWindowFrameViewWin* glass_frame_view() {
     return glass_frame_view_;
-  };
+  }
 
  private:
   void ActivateParentDesktopIfNecessary();
@@ -37,14 +37,14 @@ class ChromeNativeAppWindowViewsWin : public ChromeNativeAppWindowViews {
   virtual void OnBeforeWidgetInit(views::Widget::InitParams* init_params,
                                   views::Widget* widget) OVERRIDE;
   virtual void InitializeDefaultWindow(
-      const apps::AppWindow::CreateParams& create_params) OVERRIDE;
+      const extensions::AppWindow::CreateParams& create_params) OVERRIDE;
   virtual views::NonClientFrameView* CreateStandardDesktopAppFrame() OVERRIDE;
 
   // Overridden from ui::BaseWindow:
   virtual void Show() OVERRIDE;
   virtual void Activate() OVERRIDE;
 
-  // Overridden from apps::NativeAppWindow:
+  // Overridden from extensions::NativeAppWindow:
   virtual void UpdateShelfMenu() OVERRIDE;
 
   base::WeakPtrFactory<ChromeNativeAppWindowViewsWin> weak_ptr_factory_;

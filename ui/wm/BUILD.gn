@@ -7,13 +7,14 @@ component("wm") {
     "core/accelerator_delegate.h",
     "core/accelerator_filter.cc",
     "core/accelerator_filter.h",
-    "core/base_focus_rules.h",
     "core/base_focus_rules.cc",
     "core/base_focus_rules.h",
     "core/capture_controller.cc",
     "core/capture_controller.h",
     "core/compound_event_filter.cc",
     "core/compound_event_filter.h",
+    "core/coordinate_conversion.cc",
+    "core/coordinate_conversion.h",
     "core/cursor_manager.cc",
     "core/cursor_manager.h",
     "core/default_activation_client.cc",
@@ -79,7 +80,9 @@ component("wm") {
     "//ui/base",
     "//ui/compositor",
     "//ui/events",
+    "//ui/events/platform",
     "//ui/events:events_base",
+    "//ui/events/platform",
     "//ui/gfx",
     "//ui/gfx/geometry",
     "//ui/resources",
@@ -93,17 +96,15 @@ static_library("test_support") {
   ]
 
   deps = [
+    ":wm",
     "//skia",
     "//ui/aura",
+    "//ui/aura:test_support",
     "//ui/base",
     "//ui/events",
     "//ui/events:events_base",
   ]
 }
-
-# TODO(GYP) enable the wm_unittests target when all dependencies have been
-# resolved. Some transitive deps aren't converted yet.
-if (false) {
 
 test("wm_unittests") {
   sources = [
@@ -135,9 +136,9 @@ test("wm_unittests") {
     "//ui/compositor",
     "//ui/events",
     "//ui/events:events_base",
+    "//ui/events/platform",
     "//ui/gfx",
     "//ui/gfx/geometry",
+    "//ui/gl",
   ]
-}
-
 }

@@ -11,7 +11,6 @@
 #include "base/values.h"
 #include "chrome/browser/bookmarks/chrome_bookmark_client.h"
 #include "chrome/browser/bookmarks/chrome_bookmark_client_factory.h"
-#include "chrome/browser/omnibox/omnibox_field_trial.h"
 #include "chrome/browser/profiles/incognito_helpers.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/startup_task_runner_service.h"
@@ -59,8 +58,7 @@ KeyedService* BookmarkModelFactory::BuildServiceInstanceFor(
   Profile* profile = static_cast<Profile*>(context);
   ChromeBookmarkClient* bookmark_client =
       ChromeBookmarkClientFactory::GetForProfile(profile);
-  BookmarkModel* bookmark_model = new BookmarkModel(
-      bookmark_client, OmniboxFieldTrial::BookmarksIndexURLsValue());
+  BookmarkModel* bookmark_model = new BookmarkModel(bookmark_client);
   bookmark_client->Init(bookmark_model);
   bookmark_model->Load(profile->GetPrefs(),
                        profile->GetPrefs()->GetString(prefs::kAcceptLanguages),
@@ -90,11 +88,11 @@ void BookmarkModelFactory::RegisterProfilePrefs(
   // will cause a deadlock (see http://crbug.com/97955).  If we truly
   // want to sync the expanded state of folders, it should be part of
   // bookmark sync itself (i.e., a property of the sync folder nodes).
-  registry->RegisterListPref(prefs::kBookmarkEditorExpandedNodes,
+  registry->RegisterListPref(bookmarks::prefs::kBookmarkEditorExpandedNodes,
                              new base::ListValue,
                              user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   registry->RegisterListPref(
-      prefs::kManagedBookmarks,
+      bookmarks::prefs::kManagedBookmarks,
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
 

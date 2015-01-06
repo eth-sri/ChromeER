@@ -12,6 +12,7 @@
 #include "base/macros.h"
 #include "base/message_loop/message_loop.h"
 #include "base/synchronization/waitable_event.h"
+#include "base/test/test_io_thread.h"
 #include "mojo/common/test/multiprocess_test_helper.h"
 #include "mojo/embedder/platform_channel_pair.h"
 #include "mojo/embedder/test_embedder.h"
@@ -100,20 +101,20 @@ class ScopedTestChannel {
 
 class EmbedderTest : public testing::Test {
  public:
-  EmbedderTest() : test_io_thread_(system::test::TestIOThread::kAutoStart) {}
+  EmbedderTest() : test_io_thread_(base::TestIOThread::kAutoStart) {}
   virtual ~EmbedderTest() {}
 
  protected:
-  system::test::TestIOThread* test_io_thread() { return &test_io_thread_; }
+  base::TestIOThread* test_io_thread() { return &test_io_thread_; }
 
  private:
-  system::test::TestIOThread test_io_thread_;
+  base::TestIOThread test_io_thread_;
 
   DISALLOW_COPY_AND_ASSIGN(EmbedderTest);
 };
 
 TEST_F(EmbedderTest, ChannelsBasic) {
-  Init();
+  mojo::embedder::test::InitWithSimplePlatformSupport();
 
   {
     PlatformChannelPair channel_pair;
@@ -170,7 +171,7 @@ TEST_F(EmbedderTest, ChannelsBasic) {
 }
 
 TEST_F(EmbedderTest, ChannelsHandlePassing) {
-  Init();
+  mojo::embedder::test::InitWithSimplePlatformSupport();
 
   {
     PlatformChannelPair channel_pair;
@@ -331,7 +332,7 @@ TEST_F(EmbedderTest, ChannelsHandlePassing) {
 //  11.                                      (wait/cl.)
 //  12.                                                  (wait/cl.)
 TEST_F(EmbedderTest, MultiprocessChannels) {
-  Init();
+  mojo::embedder::test::InitWithSimplePlatformSupport();
   mojo::test::MultiprocessTestHelper multiprocess_test_helper;
   multiprocess_test_helper.StartChild("MultiprocessChannelsClient");
 
@@ -456,13 +457,12 @@ TEST_F(EmbedderTest, MultiprocessChannels) {
 }
 
 MOJO_MULTIPROCESS_TEST_CHILD_TEST(MultiprocessChannelsClient) {
-  embedder::ScopedPlatformHandle client_platform_handle =
+  ScopedPlatformHandle client_platform_handle =
       mojo::test::MultiprocessTestHelper::client_platform_handle.Pass();
   EXPECT_TRUE(client_platform_handle.is_valid());
 
-  system::test::TestIOThread test_io_thread(
-      system::test::TestIOThread::kAutoStart);
-  Init();
+  base::TestIOThread test_io_thread(base::TestIOThread::kAutoStart);
+  mojo::embedder::test::InitWithSimplePlatformSupport();
 
   {
     ScopedTestChannel client_channel(test_io_thread.task_runner(),

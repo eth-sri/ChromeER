@@ -5,7 +5,7 @@
 #include "chrome/browser/profiles/profile_info_cache.h"
 
 #include "base/bind.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/i18n/case_conversion.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
@@ -24,11 +24,10 @@
 #include "chrome/browser/profiles/profile_avatar_icon_util.h"
 #include "chrome/browser/profiles/profiles_state.h"
 #include "chrome/common/pref_names.h"
+#include "chrome/grit/generated_resources.h"
 #include "components/signin/core/common/profile_management_switches.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
-#include "grit/generated_resources.h"
-#include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/image/image.h"
@@ -137,29 +136,6 @@ void DeleteBitmap(const base::FilePath& image_path) {
   base::DeleteFile(image_path, false);
 }
 
-bool IsDefaultName(const base::string16& name) {
-  // Check if it's a "First user" old-style name.
-  if (name == l10n_util::GetStringUTF16(IDS_DEFAULT_PROFILE_NAME))
-    return true;
-
-  // Check if it's one of the old-style profile names.
-  for (size_t i = 0; i < arraysize(kDefaultNames); ++i) {
-    if (name == l10n_util::GetStringUTF16(kDefaultNames[i]))
-      return true;
-  }
-
-  // Check whether it's one of the "Person %d" style names.
-  std::string default_name_format = l10n_util::GetStringFUTF8(
-      IDS_NEW_NUMBERED_PROFILE_NAME, base::string16()) + "%d";
-
-  int generic_profile_number;  // Unused. Just a placeholder for sscanf.
-  int assignments = sscanf(base::UTF16ToUTF8(name).c_str(),
-                           default_name_format.c_str(),
-                           &generic_profile_number);
-  // Unless it matched the format, this is a custom name.
-  return assignments == 1;
-}
-
 }  // namespace
 
 ProfileInfoCache::ProfileInfoCache(PrefService* prefs,
@@ -176,8 +152,15 @@ ProfileInfoCache::ProfileInfoCache(PrefService* prefs,
     base::string16 name;
     info->GetString(kNameKey, &name);
     sorted_keys_.insert(FindPositionForProfile(it.key(), name), it.key());
-    bool using_default_name = IsDefaultName(name);
-    info->SetBoolean(kIsUsingDefaultNameKey, using_default_name);
+
+    bool using_default_name;
+    if (!info->GetBoolean(kIsUsingDefaultNameKey, &using_default_name)) {
+      // If the preference hasn't been set, and the name is default, assume
+      // that the user hasn't done this on purpose.
+      using_default_name = IsDefaultProfileName(name);
+      info->SetBoolean(kIsUsingDefaultNameKey, using_default_name);
+    }
+
     // For profiles that don't have the "using default avatar" state set yet,
     // assume it's the same as the "using default name" state.
     if (!info->HasKey(kIsUsingDefaultAvatarKey)) {
@@ -185,13 +168,10 @@ ProfileInfoCache::ProfileInfoCache(PrefService* prefs,
     }
   }
 
-  // If needed, start downloading the high-res avatars.
-  if (switches::IsNewAvatarMenu()) {
-    for (size_t i = 0; i < GetNumberOfProfiles(); i++) {
-      DownloadHighResAvatar(GetAvatarIconIndexOfProfileAtIndex(i),
-                            GetPathOfProfileAtIndex(i));
-    }
-  }
+  // If needed, start downloading the high-res avatars and migrate any legacy
+  // profile names.
+  if (switches::IsNewAvatarMenu())
+    MigrateLegacyProfileNamesAndDownloadAvatars();
 }
 
 ProfileInfoCache::~ProfileInfoCache() {
@@ -222,7 +202,7 @@ void ProfileInfoCache::AddProfileToCache(
   info->SetString(kSupervisedUserId, supervised_user_id);
   info->SetBoolean(kIsOmittedFromProfileListKey, !supervised_user_id.empty());
   info->SetBoolean(kProfileIsEphemeral, false);
-  info->SetBoolean(kIsUsingDefaultNameKey, IsDefaultName(name));
+  info->SetBoolean(kIsUsingDefaultNameKey, IsDefaultProfileName(name));
   // Assume newly created profiles use a default avatar.
   info->SetBoolean(kIsUsingDefaultAvatarKey, true);
   cache->SetWithoutPathExpansion(key, info.release());
@@ -488,10 +468,10 @@ void ProfileInfoCache::SetNameOfProfileAtIndex(size_t index,
 
   base::string16 old_display_name = GetNameOfProfileAtIndex(index);
   info->SetString(kNameKey, name);
-  info->SetBoolean(kIsUsingDefaultNameKey, false);
 
   // This takes ownership of |info|.
   SetInfoForProfileAtIndex(index, info.release());
+
   base::string16 new_display_name = GetNameOfProfileAtIndex(index);
   base::FilePath profile_path = GetPathOfProfileAtIndex(index);
   UpdateSortForProfileIndex(index);
@@ -536,8 +516,6 @@ void ProfileInfoCache::SetAvatarIconOfProfileAtIndex(size_t index,
       profiles::GetDefaultAvatarIconUrl(icon_index));
   // This takes ownership of |info|.
   SetInfoForProfileAtIndex(index, info.release());
-
-  SetProfileIsUsingDefaultAvatarAtIndex(index, false);
 
   base::FilePath profile_path = GetPathOfProfileAtIndex(index);
 
@@ -757,6 +735,30 @@ void ProfileInfoCache::SetProfileIsUsingDefaultAvatarAtIndex(
   SetInfoForProfileAtIndex(index, info.release());
 }
 
+bool ProfileInfoCache::IsDefaultProfileName(const base::string16& name) {
+  // Check if it's a "First user" old-style name.
+  if (name == l10n_util::GetStringUTF16(IDS_DEFAULT_PROFILE_NAME) ||
+      name == l10n_util::GetStringUTF16(IDS_LEGACY_DEFAULT_PROFILE_NAME))
+    return true;
+
+  // Check if it's one of the old-style profile names.
+  for (size_t i = 0; i < arraysize(kDefaultNames); ++i) {
+    if (name == l10n_util::GetStringUTF16(kDefaultNames[i]))
+      return true;
+  }
+
+  // Check whether it's one of the "Person %d" style names.
+  std::string default_name_format = l10n_util::GetStringFUTF8(
+      IDS_NEW_NUMBERED_PROFILE_NAME, base::ASCIIToUTF16("%d"));
+
+  int generic_profile_number;  // Unused. Just a placeholder for sscanf.
+  int assignments = sscanf(base::UTF16ToUTF8(name).c_str(),
+                           default_name_format.c_str(),
+                           &generic_profile_number);
+  // Unless it matched the format, this is a custom name.
+  return assignments == 1;
+}
+
 base::string16 ProfileInfoCache::ChooseNameForNewProfile(
     size_t icon_index) const {
   base::string16 name;
@@ -832,6 +834,11 @@ void ProfileInfoCache::RegisterPrefs(PrefRegistrySimple* registry) {
 void ProfileInfoCache::DownloadHighResAvatar(
     size_t icon_index,
     const base::FilePath& profile_path) {
+  // Downloading is only supported on desktop.
+#if defined(OS_ANDROID) || defined(OS_IOS) || defined(OS_CHROMEOS)
+  return;
+#endif
+
   // TODO(noms): We should check whether the file already exists on disk
   // before trying to re-download it. For now, since this is behind a flag and
   // the resources are still changing, re-download it every time the profile
@@ -1055,4 +1062,46 @@ void ProfileInfoCache::OnAvatarPictureSaved(
 
   delete avatar_images_downloads_in_progress_[file_name];
   avatar_images_downloads_in_progress_[file_name] = NULL;
+}
+
+void ProfileInfoCache::MigrateLegacyProfileNamesAndDownloadAvatars() {
+  DCHECK(switches::IsNewAvatarMenu());
+
+  // Only do this on desktop platforms.
+#if !defined(OS_ANDROID) && !defined(OS_IOS) && !defined(OS_CHROMEOS)
+  // Migrate any legacy profile names ("First user", "Default Profile") to
+  // new style default names ("Person 1"). The problem here is that every
+  // time you rename a profile, the ProfileInfoCache sorts itself, so
+  // whatever you were iterating through is no longer valid. We need to
+  // save a list of the profile paths (which thankfully do not change) that
+  // need to be renamed. We also can't pre-compute the new names, as they
+  // depend on the names of all the other profiles in the info cache, so they
+  // need to be re-computed after each rename.
+  std::vector<base::FilePath> profiles_to_rename;
+
+  const base::string16 default_profile_name = base::i18n::ToLower(
+      l10n_util::GetStringUTF16(IDS_DEFAULT_PROFILE_NAME));
+  const base::string16 default_legacy_profile_name = base::i18n::ToLower(
+      l10n_util::GetStringUTF16(IDS_LEGACY_DEFAULT_PROFILE_NAME));
+
+  for (size_t i = 0; i < GetNumberOfProfiles(); i++) {
+    // If needed, start downloading the high-res avatar for this profile.
+    DownloadHighResAvatar(GetAvatarIconIndexOfProfileAtIndex(i),
+                          GetPathOfProfileAtIndex(i));
+
+    base::string16 name = base::i18n::ToLower(GetNameOfProfileAtIndex(i));
+    if (name == default_profile_name || name == default_legacy_profile_name)
+      profiles_to_rename.push_back(GetPathOfProfileAtIndex(i));
+  }
+
+  // Rename the necessary profiles.
+  std::vector<base::FilePath>::const_iterator it;
+  for (it = profiles_to_rename.begin(); it != profiles_to_rename.end(); ++it) {
+    size_t profile_index = GetIndexOfProfileWithPath(*it);
+    SetProfileIsUsingDefaultNameAtIndex(profile_index, true);
+    // This will assign a new "Person %d" type name and re-sort the cache.
+    SetNameOfProfileAtIndex(profile_index, ChooseNameForNewProfile(
+        GetAvatarIconIndexOfProfileAtIndex(profile_index)));
+  }
+#endif
 }

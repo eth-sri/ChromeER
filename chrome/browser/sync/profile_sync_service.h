@@ -5,9 +5,9 @@
 #ifndef CHROME_BROWSER_SYNC_PROFILE_SYNC_SERVICE_H_
 #define CHROME_BROWSER_SYNC_PROFILE_SYNC_SERVICE_H_
 
+#include <set>
 #include <string>
 #include <utility>
-#include <vector>
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
@@ -20,6 +20,7 @@
 #include "base/strings/string16.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
+#include "chrome/browser/browsing_data/browsing_data_remover.h"
 #include "chrome/browser/sync/backend_unrecoverable_error_handler.h"
 #include "chrome/browser/sync/backup_rollback_controller.h"
 #include "chrome/browser/sync/glue/local_device_info_provider.h"
@@ -36,7 +37,7 @@
 #include "components/sync_driver/data_type_encryption_handler.h"
 #include "components/sync_driver/data_type_manager.h"
 #include "components/sync_driver/data_type_manager_observer.h"
-#include "components/sync_driver/failed_data_types_handler.h"
+#include "components/sync_driver/data_type_status_table.h"
 #include "components/sync_driver/non_blocking_data_type_manager.h"
 #include "components/sync_driver/sync_frontend.h"
 #include "components/sync_driver/sync_prefs.h"
@@ -57,6 +58,7 @@ class ProfileOAuth2TokenService;
 class ProfileSyncComponentsFactory;
 class SupervisedUserSigninManagerWrapper;
 class SyncErrorController;
+class SyncTypePreferenceProvider;
 
 namespace base {
 class CommandLine;
@@ -301,6 +303,15 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   void AddTypeDebugInfoObserver(syncer::TypeDebugInfoObserver* observer);
   void RemoveTypeDebugInfoObserver(syncer::TypeDebugInfoObserver* observer);
 
+  // Add a sync type preference provider. Each provider may only be added once.
+  void AddPreferenceProvider(SyncTypePreferenceProvider* provider);
+  // Remove a sync type preference provider. May only be called for providers
+  // that have been added. Providers must not remove themselves while being
+  // called back.
+  void RemovePreferenceProvider(SyncTypePreferenceProvider* provider);
+  // Check whether a given sync type preference provider has been added.
+  bool HasPreferenceProvider(SyncTypePreferenceProvider* provider) const;
+
   // Asynchronously fetches base::Value representations of all sync nodes and
   // returns them to the specified callback on this thread.
   //
@@ -442,9 +453,11 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   virtual syncer::ModelTypeSet GetEncryptedDataTypes() const OVERRIDE;
 
   // SigninManagerBase::Observer implementation.
-  virtual void GoogleSigninSucceeded(const std::string& username,
+  virtual void GoogleSigninSucceeded(const std::string& account_id,
+                                     const std::string& username,
                                      const std::string& password) OVERRIDE;
-  virtual void GoogleSignedOut(const std::string& username) OVERRIDE;
+  virtual void GoogleSignedOut(const std::string& account_id,
+                               const std::string& username) OVERRIDE;
 
   // Called when a user chooses which data types to sync as part of the sync
   // setup wizard.  |sync_everything| represents whether they chose the
@@ -548,11 +561,6 @@ class ProfileSyncService : public ProfileSyncServiceBase,
       const tracked_objects::Location& from_here,
       const std::string& message) OVERRIDE;
 
-  // Called when a datatype wishes to disable itself. The datatype to be
-  // disabled is passed via |error.model_type()|. Note, this does not change
-  // preferred state of a datatype and is not persisted across restarts.
-  virtual void DisableDatatype(const syncer::SyncError& error);
-
   // Called to re-enable a type disabled by DisableDatatype(..). Note, this does
   // not change the preferred state of a datatype, and is not persisted across
   // restarts.
@@ -627,6 +635,10 @@ class ProfileSyncService : public ProfileSyncServiceBase,
 
   // Returns the set of off-thread types which are preferred for enabling.
   virtual syncer::ModelTypeSet GetPreferredNonBlockingDataTypes() const;
+
+  // Returns the set of types which are enforced programmatically and can not
+  // be disabled by the user.
+  virtual syncer::ModelTypeSet GetForcedDataTypes() const;
 
   // Gets the set of all data types that could be allowed (the set that
   // should be advertised to the user).  These will typically only change
@@ -714,7 +726,7 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   }
 
   // TODO(sync): This is only used in tests.  Can we remove it?
-  const sync_driver::FailedDataTypesHandler& failed_data_types_handler() const;
+  const sync_driver::DataTypeStatusTable& data_type_status_table() const;
 
   sync_driver::DataTypeManager::ConfigureStatus configure_status() {
     return configure_status_;
@@ -766,19 +778,19 @@ class ProfileSyncService : public ProfileSyncServiceBase,
 
   virtual bool IsSessionsDataTypeControllerRunning() const;
 
-  void SetBackupStartDelayForTest(base::TimeDelta delay);
-
   BackendMode backend_mode() const {
     return backend_mode_;
   }
 
-  void SetClearingBrowseringDataForTesting(
-      base::Callback<void(Profile*, base::Time, base::Time)> c);
+  // Helpers for testing rollback.
+  void SetBrowsingDataRemoverObserverForTesting(
+      BrowsingDataRemover::Observer* observer);
+  void SetClearingBrowseringDataForTesting(base::Callback<
+      void(BrowsingDataRemover::Observer*, Profile*, base::Time, base::Time)>
+                                               c);
 
   // Return the base URL of the Sync Server.
   static GURL GetSyncServiceURL(const base::CommandLine& command_line);
-
-  void StartStopBackupForTesting();
 
   base::Time GetDeviceBackupTimeForTesting() const;
 
@@ -814,6 +826,8 @@ class ProfileSyncService : public ProfileSyncServiceBase,
       const tracked_objects::Location& from_here,
       const std::string& message,
       bool delete_sync_database);
+
+  virtual bool NeedBackup() const;
 
   // This is a cache of the last authentication response we received from the
   // sync server. The UI queries this to display appropriate messaging to the
@@ -920,6 +934,9 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   // want to startup once more.
   virtual void ReconfigureDatatypeManager();
 
+  // Collects preferred sync data types from |preference_providers_|.
+  syncer::ModelTypeSet GetDataTypesFromPreferenceProviders() const;
+
   // Called when the user changes the sync configuration, to update the UMA
   // stats.
   void UpdateSelectedTypesHistogram(
@@ -962,6 +979,13 @@ class ProfileSyncService : public ProfileSyncServiceBase,
 
   // Callback to receive backup DB check result.
   void CheckSyncBackupCallback(base::Time backup_time);
+
+  // Callback function to call |startup_controller_|.TryStart() after
+  // backup/rollback finishes;
+  void TryStartSyncAfterBackup();
+
+  // Clean up prefs and backup DB when rollback is not needed.
+  void CleanUpBackup();
 
  // Factory used to create various dependent objects.
   scoped_ptr<ProfileSyncComponentsFactory> factory_;
@@ -1024,6 +1048,8 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   ObserverList<browser_sync::ProtocolEventObserver> protocol_event_observers_;
   ObserverList<syncer::TypeDebugInfoObserver> type_debug_info_observers_;
 
+  std::set<SyncTypePreferenceProvider*> preference_providers_;
+
   syncer::SyncJsController sync_js_controller_;
 
   // This allows us to gracefully handle an ABORTED return code from the
@@ -1060,7 +1086,7 @@ class ProfileSyncService : public ProfileSyncServiceBase,
 
   // Tracks the set of failed data types (those that encounter an error
   // or must delay loading for some reason).
-  sync_driver::FailedDataTypesHandler failed_data_types_handler_;
+  sync_driver::DataTypeStatusTable data_type_status_table_;
 
   sync_driver::DataTypeManager::ConfigureStatus configure_status_;
 
@@ -1126,15 +1152,23 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   // Mode of current backend.
   BackendMode backend_mode_;
 
-  // When browser starts, delay sync backup/rollback backend start for this
-  // time.
-  base::TimeDelta backup_start_delay_;
+  // Whether backup is needed before sync starts.
+  bool need_backup_;
 
-  base::Callback<void(Profile*, base::Time, base::Time)> clear_browsing_data_;
+  // Whether backup is finished.
+  bool backup_finished_;
+
+  base::Time backup_start_time_;
+
+  base::Callback<
+      void(BrowsingDataRemover::Observer*, Profile*, base::Time, base::Time)>
+      clear_browsing_data_;
 
   // Last time when pre-sync data was saved. NULL pointer means backup data
   // state is unknown. If time value is null, backup data doesn't exist.
   scoped_ptr<base::Time> last_backup_time_;
+
+  BrowsingDataRemover::Observer* browsing_data_remover_observer_;
 
   DISALLOW_COPY_AND_ASSIGN(ProfileSyncService);
 };

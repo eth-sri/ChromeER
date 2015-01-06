@@ -99,7 +99,7 @@ ui::SelectFileDialog::FileTypeInfo ConvertExtensionsToFileTypeInfo(
 class FileSelectorImpl : public FileSelector,
                          public ui::SelectFileDialog::Listener {
  public:
-  explicit FileSelectorImpl();
+  FileSelectorImpl();
   virtual ~FileSelectorImpl() OVERRIDE;
 
  protected:
@@ -315,7 +315,7 @@ void FileBrowserHandlerInternalSelectFileFunction::OnFilePathSelected(
     return;
   }
 
-  fileapi::ExternalFileSystemBackend* external_backend =
+  storage::ExternalFileSystemBackend* external_backend =
       file_manager::util::GetFileSystemContextForRenderViewHost(
           GetProfile(), render_view_host())->external_backend();
   DCHECK(external_backend);

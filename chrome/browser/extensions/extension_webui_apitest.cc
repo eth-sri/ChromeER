@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/path_service.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/extension_apitest.h"
@@ -18,6 +18,8 @@
 #include "extensions/browser/event_router.h"
 #include "extensions/common/api/test.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/feature_switch.h"
+#include "extensions/common/switches.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace extensions {
@@ -68,17 +70,33 @@ class ExtensionWebUITest : public ExtensionApiTest {
                : (testing::AssertionFailure() << "Check console output");
   }
 
-  testing::AssertionResult RunTestOnExtensions(const char* name) {
-    // In the current design the URL of the chrome://extensions page it's
-    // actually chrome://extensions-frame/ -- and it's important we find it,
-    // because the top-level frame doesn't execute any code, so a script
-    // context is never created, so the bindings are never set up, and
-    // apparently the call to ExecuteScriptAndExtractString doesn't adequately
-    // set them up either.
+  testing::AssertionResult RunTestOnExtensionsFrame(const char* name) {
+    // In the current extension WebUI design, the content is actually hosted in
+    // an iframe at chrome://extensions-frame.
     return RunTest(name,
                    GURL("chrome://extensions"),
                    GURL("chrome://extensions-frame"),
-                   true);  // tests on chrome://extensions should succeed
+                   true);  // tests on chrome://extensions-frame should succeed
+  }
+
+  testing::AssertionResult RunTestOnChromeExtensionsFrame(const char* name) {
+    // Like RunTestOnExtensionsFrame, but chrome://extensions is an alias for
+    // chrome://chrome/extensions so test it explicitly.
+    return RunTest(name,
+                   GURL("chrome://chrome/extensions"),
+                   GURL("chrome://extensions-frame"),
+                   true);  // tests on chrome://extensions-frame should succeed
+  }
+
+  testing::AssertionResult RunTestOnChromeExtensions(const char* name) {
+    // Despite the extensions page being hosted in an iframe, also test the
+    // top-level chrome://extensions page (which actually loads
+    // chrome://chrome/extensions). In the past there was a bug where top-level
+    // extension WebUI bindings weren't correctly set up.
+    return RunTest(name,
+                   GURL("chrome://chrome/extensions"),
+                   GURL("chrome://chrome/extensions"),
+                   true);  // tests on chrome://chrome/extensions should succeed
   }
 
   testing::AssertionResult RunTestOnAbout(const char* name) {
@@ -108,10 +126,31 @@ class ExtensionWebUITest : public ExtensionApiTest {
         base::Bind(&FindFrame, frame_url, &frame_host));
     return frame_host;
   }
+
+  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+    FeatureSwitch::ScopedOverride enable_options(
+        FeatureSwitch::embedded_extension_options(), true);
+    // Need to add a command line flag as well as a FeatureSwitch because the
+    // FeatureSwitch is not copied over to the renderer process from the
+    // browser process.
+    command_line->AppendSwitch(switches::kEnableEmbeddedExtensionOptions);
+    ExtensionApiTest::SetUpCommandLine(command_line);
+  }
+
+  scoped_ptr<FeatureSwitch::ScopedOverride> enable_options_;
 };
 
-IN_PROC_BROWSER_TEST_F(ExtensionWebUITest, SanityCheckAvailableAPIs) {
-  ASSERT_TRUE(RunTestOnExtensions("sanity_check_available_apis.js"));
+IN_PROC_BROWSER_TEST_F(ExtensionWebUITest, SanityCheckAvailableAPIsInFrame) {
+  ASSERT_TRUE(RunTestOnExtensionsFrame("sanity_check_available_apis.js"));
+}
+
+IN_PROC_BROWSER_TEST_F(ExtensionWebUITest,
+                       SanityCheckAvailableAPIsInChromeFrame) {
+  ASSERT_TRUE(RunTestOnChromeExtensionsFrame("sanity_check_available_apis.js"));
+}
+
+IN_PROC_BROWSER_TEST_F(ExtensionWebUITest, SanityCheckAvailableAPIsInToplevel) {
+  ASSERT_TRUE(RunTestOnChromeExtensions("sanity_check_available_apis.js"));
 }
 
 IN_PROC_BROWSER_TEST_F(ExtensionWebUITest, SanityCheckUnavailableAPIs) {
@@ -124,7 +163,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionWebUITest, SendMessage) {
   scoped_ptr<ExtensionTestMessageListener> listener(
       new ExtensionTestMessageListener("ping", true));
 
-  ASSERT_TRUE(RunTestOnExtensions("send_message.js"));
+  ASSERT_TRUE(RunTestOnExtensionsFrame("send_message.js"));
 
   ASSERT_TRUE(listener->WaitUntilSatisfied());
   listener->Reply("pong");
@@ -137,7 +176,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionWebUITest, SendMessage) {
 // Tests chrome.runtime.onMessage, which exercises WebUI registering and
 // receiving an event.
 IN_PROC_BROWSER_TEST_F(ExtensionWebUITest, OnMessage) {
-  ASSERT_TRUE(RunTestOnExtensions("on_message.js"));
+  ASSERT_TRUE(RunTestOnExtensionsFrame("on_message.js"));
 
   OnMessage::Info info;
   info.data = "hi";
@@ -157,7 +196,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionWebUITest, RuntimeLastError) {
   scoped_ptr<ExtensionTestMessageListener> listener(
       new ExtensionTestMessageListener("ping", true));
 
-  ASSERT_TRUE(RunTestOnExtensions("runtime_last_error.js"));
+  ASSERT_TRUE(RunTestOnExtensionsFrame("runtime_last_error.js"));
 
   ASSERT_TRUE(listener->WaitUntilSatisfied());
   listener->ReplyWithError("unknown host");
@@ -165,6 +204,41 @@ IN_PROC_BROWSER_TEST_F(ExtensionWebUITest, RuntimeLastError) {
   listener.reset(new ExtensionTestMessageListener(false));
   ASSERT_TRUE(listener->WaitUntilSatisfied());
   EXPECT_EQ("true", listener->message());
+}
+
+IN_PROC_BROWSER_TEST_F(ExtensionWebUITest, CanEmbedExtensionOptions) {
+  scoped_ptr<ExtensionTestMessageListener> listener(
+      new ExtensionTestMessageListener("ready", true));
+
+  const Extension* extension =
+      LoadExtension(test_data_dir_.AppendASCII("extension_options")
+                        .AppendASCII("embed_self"));
+  ASSERT_TRUE(extension);
+
+  ASSERT_TRUE(RunTestOnExtensionsFrame("can_embed_extension_options.js"));
+
+  ASSERT_TRUE(listener->WaitUntilSatisfied());
+  listener->Reply(extension->id());
+  listener.reset(new ExtensionTestMessageListener("guest loaded", false));
+  ASSERT_TRUE(listener->WaitUntilSatisfied());
+}
+
+IN_PROC_BROWSER_TEST_F(ExtensionWebUITest, ReceivesExtensionOptionsOnClose) {
+  scoped_ptr<ExtensionTestMessageListener> listener(
+      new ExtensionTestMessageListener("ready", true));
+
+  const Extension* extension =
+      InstallExtension(test_data_dir_.AppendASCII("extension_options")
+          .AppendASCII("close_self"), 1);
+  ASSERT_TRUE(extension);
+
+  ASSERT_TRUE(
+      RunTestOnExtensionsFrame("receives_extension_options_on_close.js"));
+
+  ASSERT_TRUE(listener->WaitUntilSatisfied());
+  listener->Reply(extension->id());
+  listener.reset(new ExtensionTestMessageListener("onclose received", false));
+  ASSERT_TRUE(listener->WaitUntilSatisfied());
 }
 
 }  // namespace
