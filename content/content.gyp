@@ -429,7 +429,6 @@
             'content_strings_grd',
             'content_gamepad_mapping',
             'gesture_event_type_java',
-            'page_transition_types_java',
             'popup_item_type_java',
             'result_codes_java',
             'selection_event_type_java',
@@ -447,7 +446,6 @@
             ['android_webview_build == 0', {
               'dependencies': [
                 '../third_party/eyesfree/eyesfree.gyp:eyesfree_java',
-                '../third_party/guava/guava.gyp:guava_javalib',
               ],
             }],
           ],
@@ -474,18 +472,6 @@
           'variables': {
             'package_name': 'org/chromium/content/browser',
             'template_deps': ['browser/android/gesture_event_type_list.h'],
-          },
-          'includes': [ '../build/android/java_cpp_template.gypi' ],
-        },
-        {
-          'target_name': 'page_transition_types_java',
-          'type': 'none',
-          'sources': [
-            'public/android/java/src/org/chromium/content/browser/PageTransitionTypes.template',
-          ],
-          'variables': {
-            'package_name': 'org/chromium/content/browser',
-            'template_deps': ['public/common/page_transition_types_list.h'],
           },
           'includes': [ '../build/android/java_cpp_template.gypi' ],
         },
@@ -553,10 +539,10 @@
           'target_name': 'screen_orientation_values_java',
           'type': 'none',
           'sources': [
-            'public/android/java/src/org/chromium/content/common/ScreenOrientationValues.template',
+            'public/android/java/src/org/chromium/content_public/common/ScreenOrientationValues.template',
           ],
           'variables': {
-            'package_name': 'org/chromium/content/common',
+            'package_name': 'org/chromium/content_public/common',
             'template_deps': ['public/common/screen_orientation_values_list.h'],
           },
           'includes': [ '../build/android/java_cpp_template.gypi' ],

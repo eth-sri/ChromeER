@@ -10,7 +10,7 @@
 
 #include "base/at_exit.h"
 #include "base/command_line.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/process/kill.h"
 #include "base/strings/string16.h"
@@ -97,7 +97,7 @@ int RelaunchChrome(const DelegateExecuteOperation& operation) {
   ScopedHandle mutex(OpenMutexW(SYNCHRONIZE, FALSE, operation.mutex().c_str()));
   if (mutex.IsValid()) {
     const int kWaitSeconds = 5;
-    DWORD result = ::WaitForSingleObject(mutex, kWaitSeconds * 1000);
+    DWORD result = ::WaitForSingleObject(mutex.Get(), kWaitSeconds * 1000);
     if (result == WAIT_ABANDONED) {
       // This is the normal case. Chrome exits and windows marks the mutex as
       // abandoned.

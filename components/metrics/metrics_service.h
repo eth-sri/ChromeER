@@ -21,14 +21,11 @@
 #include "base/metrics/histogram_flattener.h"
 #include "base/metrics/histogram_snapshot_manager.h"
 #include "base/metrics/user_metrics.h"
-#include "base/observer_list.h"
-#include "base/strings/string16.h"
-#include "base/threading/thread_checker.h"
 #include "base/time/time.h"
+#include "components/metrics/clean_exit_beacon.h"
 #include "components/metrics/metrics_log.h"
 #include "components/metrics/metrics_log_manager.h"
 #include "components/metrics/metrics_provider.h"
-#include "components/metrics/metrics_service_observer.h"
 #include "components/variations/active_field_trials.h"
 
 class MetricsServiceAccessor;
@@ -183,7 +180,7 @@ class MetricsService : public base::HistogramFlattener {
   void OnAppEnterForeground();
 #else
   // Set the dirty flag, which will require a later call to LogCleanShutdown().
-  static void LogNeedForCleanShutdown(PrefService* local_state);
+  void LogNeedForCleanShutdown();
 #endif  // defined(OS_ANDROID) || defined(OS_IOS)
 
   static void SetExecutionPhase(ExecutionPhase execution_phase,
@@ -283,9 +280,7 @@ class MetricsService : public base::HistogramFlattener {
   // Set up client ID, session ID, etc.
   void InitializeMetricsState();
 
-  // Registers/unregisters |observer| to receive MetricsLog notifications.
-  void AddObserver(MetricsServiceObserver* observer);
-  void RemoveObserver(MetricsServiceObserver* observer);
+  // Notifies providers when a new metrics log is created.
   void NotifyOnDidCreateMetricsLog();
 
   // Schedule the next save of LocalState information.  This is called
@@ -320,6 +315,10 @@ class MetricsService : public base::HistogramFlattener {
   // Either closes the current log or creates and closes the initial log
   // (depending on |state_|), and stages it for upload.
   void StageNewLog();
+
+  // Returns true if any of the registered metrics providers have stability
+  // metrics to report.
+  bool ProvidersHaveStabilityMetrics();
 
   // Prepares the initial stability log, which is only logged when the previous
   // run of Chrome crashed.  This log contains any stability metrics left over
@@ -365,6 +364,9 @@ class MetricsService : public base::HistogramFlattener {
   // Creates a new MetricsLog instance with the given |log_type|.
   scoped_ptr<MetricsLog> CreateLog(MetricsLog::LogType log_type);
 
+  // Records the current environment (system profile) in |log|.
+  void RecordCurrentEnvironment(MetricsLog* log);
+
   // Record complete list of histograms into the current log.
   // Called when we close a log.
   void RecordCurrentHistograms();
@@ -391,6 +393,8 @@ class MetricsService : public base::HistogramFlattener {
   ScopedVector<MetricsProvider> metrics_providers_;
 
   PrefService* local_state_;
+
+  CleanExitBeacon clean_exit_beacon_;
 
   base::ActionCallback action_callback_;
 
@@ -446,6 +450,9 @@ class MetricsService : public base::HistogramFlattener {
   // Stores the time of the last call to |GetUptimes()|.
   base::TimeTicks last_updated_time_;
 
+  // Field trial groups that map to Chrome configuration states.
+  SyntheticTrialGroups synthetic_trial_groups_;
+
   // Execution phase the browser is in.
   static ExecutionPhase execution_phase_;
 
@@ -453,18 +460,9 @@ class MetricsService : public base::HistogramFlattener {
   // exited-cleanly bit in the prefs.
   static ShutdownCleanliness clean_shutdown_status_;
 
-  // Field trial groups that map to Chrome configuration states.
-  SyntheticTrialGroups synthetic_trial_groups_;
-
-  ObserverList<MetricsServiceObserver> observers_;
-
-  // Confirms single-threaded access to |observers_| in debug builds.
-  base::ThreadChecker thread_checker_;
-
   friend class ::MetricsServiceAccessor;
 
   FRIEND_TEST_ALL_PREFIXES(MetricsServiceTest, IsPluginProcess);
-  FRIEND_TEST_ALL_PREFIXES(MetricsServiceTest, MetricsServiceObserver);
   FRIEND_TEST_ALL_PREFIXES(MetricsServiceTest,
                            PermutedEntropyCacheClearedWhenLowEntropyReset);
   FRIEND_TEST_ALL_PREFIXES(MetricsServiceTest, RegisterSyntheticTrial);

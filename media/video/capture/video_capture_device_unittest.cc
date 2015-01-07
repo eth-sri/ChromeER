@@ -201,7 +201,14 @@ class VideoCaptureDeviceTest : public testing::Test {
   scoped_ptr<VideoCaptureDeviceFactory> video_capture_device_factory_;
 };
 
-TEST_F(VideoCaptureDeviceTest, OpenInvalidDevice) {
+// Cause hangs on Windows Debug. http://crbug.com/417824
+#if defined(OS_WIN) && !defined(NDEBUG)
+#define MAYBE_OpenInvalidDevice DISABLED_OpenInvalidDevice
+#else
+#define MAYBE_OpenInvalidDevice OpenInvalidDevice
+#endif
+
+TEST_F(VideoCaptureDeviceTest, MAYBE_OpenInvalidDevice) {
 #if defined(OS_WIN)
   VideoCaptureDevice::Name::CaptureApiType api_type =
       VideoCaptureDeviceFactoryWin::PlatformSupportsMediaFoundation()
@@ -232,7 +239,6 @@ TEST_F(VideoCaptureDeviceTest, OpenInvalidDevice) {
     capture_params.requested_format.frame_size.SetSize(640, 480);
     capture_params.requested_format.frame_rate = 30;
     capture_params.requested_format.pixel_format = PIXEL_FORMAT_I420;
-    capture_params.allow_resolution_change = false;
     device->AllocateAndStart(capture_params, client_.PassAs<Client>());
     device->StopAndDeAllocate();
   }
@@ -258,7 +264,6 @@ TEST_F(VideoCaptureDeviceTest, CaptureVGA) {
   capture_params.requested_format.frame_size.SetSize(640, 480);
   capture_params.requested_format.frame_rate = 30;
   capture_params.requested_format.pixel_format = PIXEL_FORMAT_I420;
-  capture_params.allow_resolution_change = false;
   device->AllocateAndStart(capture_params, client_.PassAs<Client>());
   // Get captured video frames.
   WaitForCapturedFrame();
@@ -285,7 +290,6 @@ TEST_F(VideoCaptureDeviceTest, Capture720p) {
   capture_params.requested_format.frame_size.SetSize(1280, 720);
   capture_params.requested_format.frame_rate = 30;
   capture_params.requested_format.pixel_format = PIXEL_FORMAT_I420;
-  capture_params.allow_resolution_change = false;
   device->AllocateAndStart(capture_params, client_.PassAs<Client>());
   // Get captured video frames.
   WaitForCapturedFrame();
@@ -309,7 +313,6 @@ TEST_F(VideoCaptureDeviceTest, MAYBE_AllocateBadSize) {
   capture_params.requested_format.frame_size.SetSize(637, 472);
   capture_params.requested_format.frame_rate = 35;
   capture_params.requested_format.pixel_format = PIXEL_FORMAT_I420;
-  capture_params.allow_resolution_change = false;
   device->AllocateAndStart(capture_params, client_.PassAs<Client>());
   WaitForCapturedFrame();
   device->StopAndDeAllocate();
@@ -317,7 +320,14 @@ TEST_F(VideoCaptureDeviceTest, MAYBE_AllocateBadSize) {
   EXPECT_EQ(last_format().frame_size.height(), 480);
 }
 
-TEST_F(VideoCaptureDeviceTest, ReAllocateCamera) {
+// Cause hangs on Windows Debug. http://crbug.com/417824
+#if defined(OS_WIN) && !defined(NDEBUG)
+#define MAYBE_ReAllocateCamera DISABLED_ReAllocateCamera
+#else
+#define MAYBE_ReAllocateCamera ReAllocateCamera
+#endif
+
+TEST_F(VideoCaptureDeviceTest, MAYBE_ReAllocateCamera) {
   names_ = EnumerateDevices();
   if (!names_->size()) {
     DVLOG(1) << "No camera available. Exiting test.";
@@ -339,7 +349,6 @@ TEST_F(VideoCaptureDeviceTest, ReAllocateCamera) {
     capture_params.requested_format.frame_size = resolution;
     capture_params.requested_format.frame_rate = 30;
     capture_params.requested_format.pixel_format = PIXEL_FORMAT_I420;
-    capture_params.allow_resolution_change = false;
     device->AllocateAndStart(capture_params, client_.PassAs<Client>());
     device->StopAndDeAllocate();
   }
@@ -349,7 +358,6 @@ TEST_F(VideoCaptureDeviceTest, ReAllocateCamera) {
   capture_params.requested_format.frame_size.SetSize(320, 240);
   capture_params.requested_format.frame_rate = 30;
   capture_params.requested_format.pixel_format = PIXEL_FORMAT_I420;
-  capture_params.allow_resolution_change = false;
 
   ResetWithNewClient();
   scoped_ptr<VideoCaptureDevice> device(
@@ -380,7 +388,6 @@ TEST_F(VideoCaptureDeviceTest, DeAllocateCameraWhileRunning) {
   capture_params.requested_format.frame_size.SetSize(640, 480);
   capture_params.requested_format.frame_rate = 30;
   capture_params.requested_format.pixel_format = PIXEL_FORMAT_I420;
-  capture_params.allow_resolution_change = false;
   device->AllocateAndStart(capture_params, client_.PassAs<Client>());
   // Get captured video frames.
   WaitForCapturedFrame();
@@ -409,7 +416,6 @@ TEST_F(VideoCaptureDeviceTest, MAYBE_CaptureMjpeg) {
   capture_params.requested_format.frame_size.SetSize(1280, 720);
   capture_params.requested_format.frame_rate = 30;
   capture_params.requested_format.pixel_format = PIXEL_FORMAT_MJPEG;
-  capture_params.allow_resolution_change = false;
   device->AllocateAndStart(capture_params, client_.PassAs<Client>());
   // Get captured video frames.
   WaitForCapturedFrame();

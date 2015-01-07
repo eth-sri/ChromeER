@@ -11,7 +11,6 @@
 #include "cc/base/ref_counted_managed.h"
 #include "cc/resources/managed_tile_state.h"
 #include "cc/resources/picture_pile_impl.h"
-#include "cc/resources/raster_mode.h"
 #include "cc/resources/tile_priority.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/size.h"
@@ -94,37 +93,20 @@ class CC_EXPORT Tile : public RefCountedManaged<Tile> {
     return !!(flags_ & USE_PICTURE_ANALYSIS);
   }
 
-  bool NeedsRasterForMode(RasterMode mode) const {
-    return !managed_state_.tile_versions[mode].IsReadyToDraw();
-  }
-
-  bool HasResources() const {
-    for (int mode = 0; mode < NUM_RASTER_MODES; ++mode) {
-      if (managed_state_.tile_versions[mode].has_resource())
-        return true;
-    }
-    return false;
-  }
+  bool HasResources() const { return managed_state_.draw_info.has_resource(); }
 
   void AsValueInto(base::debug::TracedValue* dict) const;
 
   inline bool IsReadyToDraw() const {
-    for (int mode = 0; mode < NUM_RASTER_MODES; ++mode) {
-      if (managed_state_.tile_versions[mode].IsReadyToDraw())
-        return true;
-    }
-    return false;
+    return managed_state_.draw_info.IsReadyToDraw();
   }
 
-  const ManagedTileState::TileVersion& GetTileVersionForDrawing() const {
-    for (int mode = 0; mode < NUM_RASTER_MODES; ++mode) {
-      if (managed_state_.tile_versions[mode].IsReadyToDraw())
-        return managed_state_.tile_versions[mode];
-    }
-    return managed_state_.tile_versions[HIGH_QUALITY_RASTER_MODE];
+  const ManagedTileState::DrawInfo& draw_info() const {
+    return managed_state_.draw_info;
   }
 
-  gfx::Rect opaque_rect() const { return opaque_rect_; }
+  ManagedTileState::DrawInfo& draw_info() { return managed_state_.draw_info; }
+
   float contents_scale() const { return contents_scale_; }
   gfx::Rect content_rect() const { return content_rect_; }
 
@@ -144,17 +126,6 @@ class CC_EXPORT Tile : public RefCountedManaged<Tile> {
 
   gfx::Size size() const { return size_; }
 
-  RasterMode DetermineRasterModeForTree(WhichTree tree) const;
-  RasterMode DetermineOverallRasterMode() const;
-
-  // Functionality used in tests.
-  RasterMode GetRasterModeForTesting() const {
-    return managed_state().raster_mode;
-  }
-  ManagedTileState::TileVersion& GetTileVersionForTesting(RasterMode mode) {
-    return managed_state_.tile_versions[mode];
-  }
-
  private:
   friend class TileManager;
   friend class PrioritizedTileSet;
@@ -167,7 +138,6 @@ class CC_EXPORT Tile : public RefCountedManaged<Tile> {
        PicturePileImpl* picture_pile,
        const gfx::Size& tile_size,
        const gfx::Rect& content_rect,
-       const gfx::Rect& opaque_rect,
        float contents_scale,
        int layer_id,
        int source_frame_number,
@@ -176,7 +146,6 @@ class CC_EXPORT Tile : public RefCountedManaged<Tile> {
 
   ManagedTileState& managed_state() { return managed_state_; }
   const ManagedTileState& managed_state() const { return managed_state_; }
-  RasterMode DetermineRasterModeForResolution(TileResolution resolution) const;
 
   bool HasRasterTask() const;
 
@@ -185,7 +154,6 @@ class CC_EXPORT Tile : public RefCountedManaged<Tile> {
   gfx::Size size_;
   gfx::Rect content_rect_;
   float contents_scale_;
-  gfx::Rect opaque_rect_;
   bool is_occluded_[NUM_TREES];
 
   TilePriority priority_[NUM_TREES];

@@ -331,10 +331,12 @@ class TestPageHandler(testserver_base.BasePageHandler):
       self.ContentTypeHandler,
       self.NoContentHandler,
       self.ServerRedirectHandler,
+      self.CrossSiteRedirectHandler,
       self.ClientRedirectHandler,
       self.GetSSLSessionCacheHandler,
       self.SSLManySmallRecords,
       self.GetChannelID,
+      self.ClientCipherListHandler,
       self.CloseSocketHandler,
       self.RangeResetHandler,
       self.DefaultResponseHandler]
@@ -1417,6 +1419,36 @@ class TestPageHandler(testserver_base.BasePageHandler):
 
     return True
 
+  def CrossSiteRedirectHandler(self):
+    """Sends a server redirect to the given site. The syntax is
+    '/cross-site/hostname/...' to redirect to //hostname/...
+    It is used to navigate between different Sites, causing
+    cross-site/cross-process navigations in the browser."""
+
+    test_name = "/cross-site"
+    if not self._ShouldHandleRequest(test_name):
+      print "CSRH: not handling request for " + test_name
+      return False
+
+    params = urllib.unquote(self.path[(len(test_name) + 1):])
+    slash = params.find('/')
+    if slash < 0:
+      self.sendRedirectHelp(test_name)
+      return True
+
+    host = params[:slash]
+    path = params[(slash+1):]
+    dest = "//%s:%s/%s" % (host, str(self.server.server_port), path)
+
+    self.send_response(301)  # moved permanently
+    self.send_header('Location', dest)
+    self.send_header('Content-Type', 'text/html')
+    self.end_headers()
+    self.wfile.write('<html><head>')
+    self.wfile.write('</head><body>Redirecting to %s</body></html>' % dest)
+
+    return True
+
   def ClientRedirectHandler(self):
     """Sends a client redirect to the given URL. The syntax is
     '/client-redirect?http://foo.bar/asdf' to redirect to
@@ -1490,6 +1522,23 @@ class TestPageHandler(testserver_base.BasePageHandler):
     self.end_headers()
     channel_id = bytes(self.server.tlsConnection.channel_id)
     self.wfile.write(hashlib.sha256(channel_id).digest().encode('base64'))
+    return True
+
+  def ClientCipherListHandler(self):
+    """Send a reply containing the cipher suite list that the client
+    provided. Each cipher suite value is serialized in decimal, followed by a
+    newline."""
+
+    if not self._ShouldHandleRequest('/client-cipher-list'):
+      return False
+
+    self.send_response(200)
+    self.send_header('Content-Type', 'text/plain')
+    self.end_headers()
+
+    for cipher_suite in self.server.tlsConnection.clientHello.cipher_suites:
+      self.wfile.write(str(cipher_suite))
+      self.wfile.write('\n')
     return True
 
   def CloseSocketHandler(self):

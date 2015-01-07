@@ -19,7 +19,7 @@ namespace gfx {
 // specific management.
 class GL_EXPORT GLImage : public base::RefCounted<GLImage> {
  public:
-  GLImage();
+  GLImage() {}
 
   // Destroys the image.
   virtual void Destroy(bool have_context) = 0;
@@ -32,6 +32,9 @@ class GL_EXPORT GLImage : public base::RefCounted<GLImage> {
 
   // Release image from texture currently bound to |target|.
   virtual void ReleaseTexImage(unsigned target) = 0;
+
+  // Copy image to texture currently bound to |target|.
+  virtual bool CopyTexImage(unsigned target) = 0;
 
   // Called before the texture is used for drawing.
   virtual void WillUseTexImage() = 0;
@@ -52,12 +55,8 @@ class GL_EXPORT GLImage : public base::RefCounted<GLImage> {
                                     const Rect& bounds_rect,
                                     const RectF& crop_rect) = 0;
 
-  // Indicate that image should be released after use.
-  // (For an Android work-around only).
-  virtual void SetReleaseAfterUse();
-
  protected:
-  virtual ~GLImage();
+  virtual ~GLImage() {}
 
  private:
   friend class base::RefCounted<GLImage>;

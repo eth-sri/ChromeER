@@ -96,12 +96,8 @@ static_library("bluetooth") {
   deps = [
     ":strings",
     "//base",
-    "//base/third_party/dynamic_annotations",
     "//net",
-    "//third_party/libxml",
     "//ui/base",
-    "//ui/gfx",
-    "//ui/gfx/geometry",
   ]
 
   if (is_chromeos) {
@@ -117,7 +113,6 @@ static_library("bluetooth") {
 }
 
 grit("strings") {
-  visibility = ":*"
   source = "bluetooth_strings.grd"
   outputs = [
     "grit/device_bluetooth_strings.h",
@@ -179,6 +174,7 @@ grit("strings") {
 }
 
 static_library("mocks") {
+  testonly = true
   sources = [
     "test/mock_bluetooth_adapter.cc",
     "test/mock_bluetooth_adapter.h",

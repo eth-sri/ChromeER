@@ -15,8 +15,8 @@
 
 #include <deque>
 
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_file.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/logging.h"
@@ -44,16 +44,16 @@ class PlatformChannelPairPosixTest : public testing::Test {
   PlatformChannelPairPosixTest() {}
   virtual ~PlatformChannelPairPosixTest() {}
 
-  virtual void SetUp() OVERRIDE {
+  virtual void SetUp() override {
     // Make sure |SIGPIPE| isn't being ignored.
     struct sigaction action = {};
     action.sa_handler = SIG_DFL;
     ASSERT_EQ(0, sigaction(SIGPIPE, &action, &old_action_));
   }
 
-  virtual void TearDown() OVERRIDE {
+  virtual void TearDown() override {
     // Restore the |SIGPIPE| handler.
-    ASSERT_EQ(0, sigaction(SIGPIPE, &old_action_, NULL));
+    ASSERT_EQ(0, sigaction(SIGPIPE, &old_action_, nullptr));
   }
 
  private:

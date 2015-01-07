@@ -36,7 +36,6 @@
 #include "chrome/browser/chromeos/settings/device_oauth2_token_service.h"
 #include "chrome/browser/chromeos/settings/device_oauth2_token_service_factory.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_test_message_listener.h"
 #include "chrome/browser/profiles/profile_impl.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/profiles/profiles_state.h"
@@ -47,6 +46,7 @@
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/cryptohome_client.h"
 #include "chromeos/disks/disk_mount_manager.h"
+#include "components/native_app_window/native_app_window_views.h"
 #include "components/signin/core/common/signin_pref_names.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_observer.h"
@@ -57,10 +57,13 @@
 #include "extensions/browser/app_window/app_window_registry.h"
 #include "extensions/browser/app_window/native_app_window.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/test/extension_test_message_listener.h"
+#include "extensions/test/result_catcher.h"
 #include "google_apis/gaia/gaia_constants.h"
 #include "google_apis/gaia/gaia_switches.h"
 #include "google_apis/gaia/gaia_urls.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
+#include "ui/base/accelerators/accelerator.h"
 
 namespace em = enterprise_management;
 
@@ -97,7 +100,19 @@ const char kTestOfflineEnabledKioskApp[] = "ajoggoflpgplnnjkjamcmbepjdjdnpdp";
 //       detail/bmbpicmpniaclbbpdkfglgipkkebnbjf
 const char kTestLocalFsKioskApp[] = "bmbpicmpniaclbbpdkfglgipkkebnbjf";
 
-const char kFakeUsbStickMountPath[] = "chromeos/app_mode/external_update/";
+// Fake usb stick mount path.
+const char kFakeUsbMountPathUpdatePass[] =
+    "chromeos/app_mode/external_update/update_pass";
+const char kFakeUsbMountPathNoManifest[] =
+    "chromeos/app_mode/external_update/no_manifest";
+const char kFakeUsbMountPathBadManifest[] =
+    "chromeos/app_mode/external_update/bad_manifest";
+const char kFakeUsbMountPathLowerAppVersion[] =
+    "chromeos/app_mode/external_update/lower_app_version";
+const char kFakeUsbMountPathLowerCrxVersion[] =
+    "chromeos/app_mode/external_update/lower_crx_version";
+const char kFakeUsbMountPathBadCrx[] =
+    "chromeos/app_mode/external_update/bad_crx";
 
 // Timeout while waiting for network connectivity during tests.
 const int kTestNetworkTimeoutSeconds = 1;
@@ -230,7 +245,7 @@ class JsConditionWaiter {
   }
 
   void OnTimer() {
-    DCHECK(runner_);
+    DCHECK(runner_.get());
     if (CheckJs())
       runner_->Quit();
   }
@@ -244,16 +259,21 @@ class JsConditionWaiter {
 
 class KioskFakeDiskMountManager : public file_manager::FakeDiskMountManager {
  public:
-  explicit KioskFakeDiskMountManager(const std::string& usb_mount_path)
-      : usb_mount_path_(usb_mount_path) {}
+  KioskFakeDiskMountManager() {}
 
   virtual ~KioskFakeDiskMountManager() {}
 
+  void set_usb_mount_path(const std::string& usb_mount_path) {
+    usb_mount_path_ = usb_mount_path;
+  }
+
   void MountUsbStick() {
+    DCHECK(!usb_mount_path_.empty());
     MountPath(usb_mount_path_, "", "", chromeos::MOUNT_TYPE_DEVICE);
   }
 
   void UnMountUsbStick() {
+    DCHECK(!usb_mount_path_.empty());
     UnmountPath(usb_mount_path_,
                 UNMOUNT_OPTIONS_NONE,
                 disks::DiskMountManager::UnmountPathCallback());
@@ -403,7 +423,7 @@ class KioskTest : public OobeBaseTest {
     return *GetInstalledApp()->version();
   }
 
-  void WaitForAppLaunchSuccess() {
+  void WaitForAppLaunchAndOptionallyTerminateApp(bool terminate_app) {
     ExtensionTestMessageListener
         launch_data_check_listener("launchData.isKioskSession = true", false);
 
@@ -445,6 +465,10 @@ class KioskTest : public OobeBaseTest {
         login_display_host->GetNativeWindow()->layer()->GetTargetOpacity() ==
             0.0f);
 
+    // Terminate the app.
+    if (terminate_app)
+      window->GetBaseWindow()->Close();
+
     // Wait until the app terminates if it is still running.
     if (!app_window_registry->GetAppWindowsForApp(test_app_id_).empty())
       content::RunMessageLoop();
@@ -452,6 +476,10 @@ class KioskTest : public OobeBaseTest {
     // Check that the app had been informed that it is running in a kiosk
     // session.
     EXPECT_TRUE(launch_data_check_listener.was_satisfied());
+  }
+
+  void WaitForAppLaunchSuccess() {
+    WaitForAppLaunchAndOptionallyTerminateApp(true);
   }
 
   void WaitForAppLaunchNetworkTimeout() {
@@ -590,6 +618,73 @@ class KioskTest : public OobeBaseTest {
 IN_PROC_BROWSER_TEST_F(KioskTest, InstallAndLaunchApp) {
   StartAppLaunchFromLoginScreen(SimulateNetworkOnlineClosure());
   WaitForAppLaunchSuccess();
+}
+
+IN_PROC_BROWSER_TEST_F(KioskTest, ZoomSupport) {
+  ExtensionTestMessageListener
+      app_window_loaded_listener("appWindowLoaded", false);
+  StartAppLaunchFromLoginScreen(SimulateNetworkOnlineClosure());
+  app_window_loaded_listener.WaitUntilSatisfied();
+
+  Profile* app_profile = ProfileManager::GetPrimaryUserProfile();
+  ASSERT_TRUE(app_profile);
+
+  extensions::AppWindowRegistry* app_window_registry =
+      extensions::AppWindowRegistry::Get(app_profile);
+  extensions::AppWindow* window =
+      AppWindowWaiter(app_window_registry, test_app_id()).Wait();
+  ASSERT_TRUE(window);
+
+  // Gets the original width of the app window.
+  int original_width;
+  EXPECT_TRUE(content::ExecuteScriptAndExtractInt(
+      window->web_contents(),
+      "window.domAutomationController.setAutomationId(0);"
+      "window.domAutomationController.send(window.innerWidth);",
+      &original_width));
+
+  native_app_window::NativeAppWindowViews* native_app_window_views =
+      static_cast<native_app_window::NativeAppWindowViews*>(
+          window->GetBaseWindow());
+  ui::AcceleratorTarget* accelerator_target =
+      static_cast<ui::AcceleratorTarget*>(native_app_window_views);
+
+  // Zoom in. Text is bigger and content window width becomes smaller.
+  accelerator_target->AcceleratorPressed(ui::Accelerator(
+      ui::VKEY_ADD, ui::EF_CONTROL_DOWN));
+  int width_zoomed_in;
+  EXPECT_TRUE(content::ExecuteScriptAndExtractInt(
+      window->web_contents(),
+      "window.domAutomationController.setAutomationId(0);"
+      "window.domAutomationController.send(window.innerWidth);",
+      &width_zoomed_in));
+  DCHECK_LT(width_zoomed_in, original_width);
+
+  // Go back to normal. Window width is restored.
+  accelerator_target->AcceleratorPressed(ui::Accelerator(
+      ui::VKEY_0, ui::EF_CONTROL_DOWN));
+  int width_zoom_normal;
+  EXPECT_TRUE(content::ExecuteScriptAndExtractInt(
+      window->web_contents(),
+      "window.domAutomationController.setAutomationId(0);"
+      "window.domAutomationController.send(window.innerWidth);",
+      &width_zoom_normal));
+  DCHECK_EQ(width_zoom_normal, original_width);
+
+  // Zoom out. Text is smaller and content window width becomes larger.
+  accelerator_target->AcceleratorPressed(ui::Accelerator(
+      ui::VKEY_SUBTRACT, ui::EF_CONTROL_DOWN));
+  int width_zoomed_out;
+  EXPECT_TRUE(content::ExecuteScriptAndExtractInt(
+      window->web_contents(),
+      "window.domAutomationController.setAutomationId(0);"
+      "window.domAutomationController.send(window.innerWidth);",
+      &width_zoomed_out));
+  DCHECK_GT(width_zoomed_out, original_width);
+
+  // Terminate the app.
+  window->GetBaseWindow()->Close();
+  content::RunAllPendingInMessageLoop();
 }
 
 IN_PROC_BROWSER_TEST_F(KioskTest, NotSignedInWithGAIAAccount) {
@@ -952,11 +1047,7 @@ class KioskUpdateTest : public KioskTest {
 
  protected:
   virtual void SetUp() OVERRIDE {
-    base::FilePath test_data_dir;
-    PathService::Get(chrome::DIR_TEST_DATA, &test_data_dir);
-    test_data_dir = test_data_dir.AppendASCII(kFakeUsbStickMountPath);
-    fake_disk_mount_manager_ =
-        new KioskFakeDiskMountManager(test_data_dir.value());
+    fake_disk_mount_manager_ = new KioskFakeDiskMountManager();
     disks::DiskMountManager::InitializeForTesting(fake_disk_mount_manager_);
 
     KioskTest::SetUp();
@@ -1008,11 +1099,23 @@ class KioskUpdateTest : public KioskTest {
     EXPECT_EQ(version, cached_version);
   }
 
-  void SimulateUpdateAppFromUsbStick() {
+  void SetupFakeDiskMountManagerMountPath(const std::string mount_path) {
+    base::FilePath test_data_dir;
+    PathService::Get(chrome::DIR_TEST_DATA, &test_data_dir);
+    test_data_dir = test_data_dir.AppendASCII(mount_path);
+    fake_disk_mount_manager_->set_usb_mount_path(test_data_dir.value());
+  }
+
+  void SimulateUpdateAppFromUsbStick(const std::string& usb_mount_path,
+                                     bool* app_update_notified,
+                                     bool* update_success) {
+    SetupFakeDiskMountManagerMountPath(usb_mount_path);
     KioskAppExternalUpdateWaiter waiter(KioskAppManager::Get(), test_app_id());
     fake_disk_mount_manager_->MountUsbStick();
     waiter.Wait();
     fake_disk_mount_manager_->UnMountUsbStick();
+    *update_success = waiter.update_success();
+    *app_update_notified = waiter.app_update_notified();
   }
 
   void PreCacheAndLaunchApp(const std::string& app_id,
@@ -1029,11 +1132,16 @@ class KioskUpdateTest : public KioskTest {
   }
 
  private:
-  class KioskAppExternalUpdateWaiter : KioskAppManagerObserver {
+  class KioskAppExternalUpdateWaiter : public KioskAppManagerObserver {
    public:
     KioskAppExternalUpdateWaiter(KioskAppManager* manager,
                                  const std::string& app_id)
-        : runner_(NULL), manager_(manager), app_id_(app_id), quit_(false) {
+        : runner_(NULL),
+          manager_(manager),
+          app_id_(app_id),
+          quit_(false),
+          update_success_(false),
+          app_update_notified_(false) {
       manager_->AddObserver(this);
     }
 
@@ -1046,20 +1154,32 @@ class KioskUpdateTest : public KioskTest {
       runner_->Run();
     }
 
+    bool update_success() const { return update_success_; }
+
+    bool app_update_notified() const { return app_update_notified_; }
+
    private:
     // KioskAppManagerObserver overrides:
     virtual void OnKioskAppCacheUpdated(const std::string& app_id) OVERRIDE {
       if (app_id_ != app_id)
         return;
+      app_update_notified_ = true;
+    }
+
+    virtual void OnKioskAppExternalUpdateComplete(bool success) OVERRIDE {
       quit_ = true;
-      if (runner_)
+      update_success_ = success;
+      if (runner_.get())
         runner_->Quit();
     }
 
     scoped_refptr<content::MessageLoopRunner> runner_;
     KioskAppManager* manager_;
+    bool wait_for_update_success_;
     const std::string app_id_;
     bool quit_;
+    bool update_success_;
+    bool app_update_notified_;
 
     DISALLOW_COPY_AND_ASSIGN(KioskAppExternalUpdateWaiter);
   };
@@ -1101,7 +1221,7 @@ class KioskUpdateTest : public KioskTest {
         return;
       loaded_ = true;
       quit_ = true;
-      if (runner_)
+      if (runner_.get())
         runner_->Quit();
     }
 
@@ -1109,7 +1229,7 @@ class KioskUpdateTest : public KioskTest {
         const std::string& app_id) OVERRIDE {
       loaded_ = false;
       quit_ = true;
-      if (runner_)
+      if (runner_.get())
         runner_->Quit();
     }
 
@@ -1246,10 +1366,20 @@ IN_PROC_BROWSER_TEST_F(KioskUpdateTest, PRE_UsbStickUpdateAppNoNetwork) {
   EXPECT_EQ("1.0.0", GetInstalledAppVersion().GetString());
 
   // Simulate mounting of usb stick with v2 app on the stick.
-  SimulateUpdateAppFromUsbStick();
+  bool update_success;
+  bool app_update_notified;
+  SimulateUpdateAppFromUsbStick(
+      kFakeUsbMountPathUpdatePass, &app_update_notified, &update_success);
+  EXPECT_TRUE(update_success);
+  EXPECT_TRUE(app_update_notified);
 
-  // The v2 kiosk app is copied into external cache, but won't be loaded
+  // The v2 kiosk app is loaded into external cache, but won't be installed
   // until next time the device is started.
+  base::FilePath crx_path;
+  std::string cached_version;
+  EXPECT_TRUE(KioskAppManager::Get()->GetCachedCrx(
+      test_app_id(), &crx_path, &cached_version));
+  EXPECT_EQ("2.0.0", cached_version);
   EXPECT_EQ("1.0.0", GetInstalledAppVersion().GetString());
 }
 
@@ -1262,6 +1392,121 @@ IN_PROC_BROWSER_TEST_F(KioskUpdateTest, UsbStickUpdateAppNoNetwork) {
   LaunchApp(test_app_id(), false);
   WaitForAppLaunchSuccess();
   EXPECT_EQ("2.0.0", GetInstalledAppVersion().GetString());
+}
+
+// Usb stick is plugged in without a manifest file on it.
+IN_PROC_BROWSER_TEST_F(KioskUpdateTest, UsbStickUpdateAppNoManifest) {
+  PreCacheAndLaunchApp(kTestOfflineEnabledKioskApp,
+                       "1.0.0",
+                       std::string(kTestOfflineEnabledKioskApp) + "_v1.crx");
+  EXPECT_EQ("1.0.0", GetInstalledAppVersion().GetString());
+
+  // Simulate mounting of usb stick with v2 app on the stick.
+  bool update_success;
+  bool app_update_notified;
+  SimulateUpdateAppFromUsbStick(
+      kFakeUsbMountPathNoManifest, &app_update_notified, &update_success);
+  EXPECT_FALSE(update_success);
+
+  // Kiosk app is not updated.
+  base::FilePath crx_path;
+  std::string cached_version;
+  EXPECT_TRUE(KioskAppManager::Get()->GetCachedCrx(
+      test_app_id(), &crx_path, &cached_version));
+  EXPECT_EQ("1.0.0", cached_version);
+}
+
+// Usb stick is plugged in with a bad manifest file on it.
+IN_PROC_BROWSER_TEST_F(KioskUpdateTest, UsbStickUpdateAppBadManifest) {
+  PreCacheAndLaunchApp(kTestOfflineEnabledKioskApp,
+                       "1.0.0",
+                       std::string(kTestOfflineEnabledKioskApp) + "_v1.crx");
+  EXPECT_EQ("1.0.0", GetInstalledAppVersion().GetString());
+
+  // Simulate mounting of usb stick with v2 app on the stick.
+  bool update_success;
+  bool app_update_notified;
+  SimulateUpdateAppFromUsbStick(
+      kFakeUsbMountPathBadManifest, &app_update_notified, &update_success);
+  EXPECT_FALSE(update_success);
+
+  // Kiosk app is not updated.
+  base::FilePath crx_path;
+  std::string cached_version;
+  EXPECT_TRUE(KioskAppManager::Get()->GetCachedCrx(
+      test_app_id(), &crx_path, &cached_version));
+  EXPECT_EQ("1.0.0", cached_version);
+}
+
+// Usb stick is plugged in with a lower version of crx file specified in
+// manifest.
+IN_PROC_BROWSER_TEST_F(KioskUpdateTest, UsbStickUpdateAppLowerAppVersion) {
+  // Precache v2 version of app.
+  PreCacheAndLaunchApp(kTestOfflineEnabledKioskApp,
+                       "2.0.0",
+                       std::string(kTestOfflineEnabledKioskApp) + ".crx");
+  EXPECT_EQ("2.0.0", GetInstalledAppVersion().GetString());
+
+  // Simulate mounting of usb stick with v1 app on the stick.
+  bool update_success;
+  bool app_update_notified;
+  SimulateUpdateAppFromUsbStick(
+      kFakeUsbMountPathLowerAppVersion, &app_update_notified, &update_success);
+  EXPECT_FALSE(update_success);
+
+  // Kiosk app is NOT updated to the lower version.
+  base::FilePath crx_path;
+  std::string cached_version;
+  EXPECT_TRUE(KioskAppManager::Get()->GetCachedCrx(
+      test_app_id(), &crx_path, &cached_version));
+  EXPECT_EQ("2.0.0", cached_version);
+}
+
+// Usb stick is plugged in with a v1 crx file, although the manifest says
+// this is a v3 version.
+IN_PROC_BROWSER_TEST_F(KioskUpdateTest, UsbStickUpdateAppLowerCrxVersion) {
+  PreCacheAndLaunchApp(kTestOfflineEnabledKioskApp,
+                       "2.0.0",
+                       std::string(kTestOfflineEnabledKioskApp) + ".crx");
+  EXPECT_EQ("2.0.0", GetInstalledAppVersion().GetString());
+
+  // Simulate mounting of usb stick with v1 crx file on the stick, although
+  // the manifest says it is v3 app.
+  bool update_success;
+  bool app_update_notified;
+  SimulateUpdateAppFromUsbStick(
+      kFakeUsbMountPathLowerCrxVersion, &app_update_notified, &update_success);
+  EXPECT_FALSE(update_success);
+
+  // Kiosk app is NOT updated to the lower version.
+  base::FilePath crx_path;
+  std::string cached_version;
+  EXPECT_TRUE(KioskAppManager::Get()->GetCachedCrx(
+      test_app_id(), &crx_path, &cached_version));
+  EXPECT_EQ("2.0.0", cached_version);
+}
+
+// Usb stick is plugged in with a bad crx file.
+IN_PROC_BROWSER_TEST_F(KioskUpdateTest, UsbStickUpdateAppBadCrx) {
+  PreCacheAndLaunchApp(kTestOfflineEnabledKioskApp,
+                       "1.0.0",
+                       std::string(kTestOfflineEnabledKioskApp) + "_v1.crx");
+  EXPECT_EQ("1.0.0", GetInstalledAppVersion().GetString());
+
+  // Simulate mounting of usb stick with v1 crx file on the stick, although
+  // the manifest says it is v3 app.
+  bool update_success;
+  bool app_update_notified;
+  SimulateUpdateAppFromUsbStick(
+      kFakeUsbMountPathBadCrx, &app_update_notified, &update_success);
+  EXPECT_FALSE(update_success);
+
+  // Kiosk app is NOT updated.
+  base::FilePath crx_path;
+  std::string cached_version;
+  EXPECT_TRUE(KioskAppManager::Get()->GetCachedCrx(
+      test_app_id(), &crx_path, &cached_version));
+  EXPECT_EQ("1.0.0", cached_version);
 }
 
 IN_PROC_BROWSER_TEST_F(KioskUpdateTest, PRE_PermissionChange) {
@@ -1289,9 +1534,9 @@ IN_PROC_BROWSER_TEST_F(KioskUpdateTest, PRE_PreserveLocalData) {
   set_test_app_version("1.0.0");
   set_test_crx_file(test_app_id() + ".crx");
 
-  ResultCatcher catcher;
+  extensions::ResultCatcher catcher;
   StartAppLaunchFromLoginScreen(SimulateNetworkOnlineClosure());
-  WaitForAppLaunchSuccess();
+  WaitForAppLaunchAndOptionallyTerminateApp(false);
   ASSERT_TRUE(catcher.GetNextResult()) << catcher.message();
 }
 
@@ -1301,9 +1546,9 @@ IN_PROC_BROWSER_TEST_F(KioskUpdateTest, PreserveLocalData) {
   set_test_app_id(kTestLocalFsKioskApp);
   set_test_app_version("2.0.0");
   set_test_crx_file(test_app_id() + "_v2_read_and_verify_data.crx");
-  ResultCatcher catcher;
+  extensions::ResultCatcher catcher;
   StartAppLaunchFromLoginScreen(SimulateNetworkOnlineClosure());
-  WaitForAppLaunchSuccess();
+  WaitForAppLaunchAndOptionallyTerminateApp(false);
 
   EXPECT_EQ("2.0.0", GetInstalledAppVersion().GetString());
   ASSERT_TRUE(catcher.GetNextResult()) << catcher.message();

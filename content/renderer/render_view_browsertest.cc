@@ -26,6 +26,7 @@
 #include "content/public/renderer/document_state.h"
 #include "content/public/renderer/navigation_state.h"
 #include "content/public/test/browser_test_utils.h"
+#include "content/public/test/frame_load_waiter.h"
 #include "content/public/test/render_view_test.h"
 #include "content/public/test/test_utils.h"
 #include "content/renderer/accessibility/renderer_accessibility.h"
@@ -37,7 +38,6 @@
 #include "content/renderer/render_view_impl.h"
 #include "content/shell/browser/shell.h"
 #include "content/shell/browser/shell_browser_context.h"
-#include "content/test/frame_load_waiter.h"
 #include "content/test/mock_keyboard.h"
 #include "net/base/net_errors.h"
 #include "net/cert/cert_status_flags.h"
@@ -236,6 +236,8 @@ class RenderViewImplTest : public RenderViewTest {
                         static_cast<ui::KeyboardCode>(key_code),
                         flags);
     ui::KeyEvent event2(xevent);
+    event2.set_character(GetCharacterFromKeyCode(event2.key_code(),
+                                                 event2.flags()));
     ui::KeyEventTestApi test_event2(&event2);
     test_event2.set_is_char(true);
     NativeWebKeyboardEvent char_event(&event2);
@@ -255,26 +257,21 @@ class RenderViewImplTest : public RenderViewTest {
 #elif defined(USE_OZONE)
     const int flags = ConvertMockKeyboardModifier(modifiers);
 
-    // Ozone's native events are ui::Events. So first create the "native" event,
-    // then create the actual ui::KeyEvent with the native event.
-    ui::KeyEvent keydown_native_event(ui::ET_KEY_PRESSED,
-                                   static_cast<ui::KeyboardCode>(key_code),
-                                   flags);
-    ui::KeyEvent keydown_event(&keydown_native_event);
+    ui::KeyEvent keydown_event(ui::ET_KEY_PRESSED,
+                               static_cast<ui::KeyboardCode>(key_code),
+                               flags);
     NativeWebKeyboardEvent keydown_web_event(&keydown_event);
     SendNativeKeyEvent(keydown_web_event);
 
-    ui::KeyEvent char_native_event(static_cast<base::char16>(key_code),
-                                   static_cast<ui::KeyboardCode>(key_code),
-                                   flags);
-    ui::KeyEvent char_event(&char_native_event);
+    ui::KeyEvent char_event(keydown_event.GetCharacter(),
+                            static_cast<ui::KeyboardCode>(key_code),
+                            flags);
     NativeWebKeyboardEvent char_web_event(&char_event);
     SendNativeKeyEvent(char_web_event);
 
-    ui::KeyEvent keyup_native_event(ui::ET_KEY_RELEASED,
-                                    static_cast<ui::KeyboardCode>(key_code),
-                                    flags);
-    ui::KeyEvent keyup_event(&keyup_native_event);
+    ui::KeyEvent keyup_event(ui::ET_KEY_RELEASED,
+                             static_cast<ui::KeyboardCode>(key_code),
+                             flags);
     NativeWebKeyboardEvent keyup_web_event(&keyup_event);
     SendNativeKeyEvent(keyup_web_event);
 
@@ -291,6 +288,54 @@ class RenderViewImplTest : public RenderViewTest {
  private:
   scoped_ptr<MockKeyboard> mock_keyboard_;
 };
+
+TEST_F(RenderViewImplTest, SaveImageFromDataURL) {
+  const IPC::Message* msg1 = render_thread_->sink().GetFirstMessageMatching(
+      ViewHostMsg_SaveImageFromDataURL::ID);
+  EXPECT_FALSE(msg1);
+  render_thread_->sink().ClearMessages();
+
+  const std::string image_data_url =
+      "data:image/gif;base64,R0lGODlhAQABAIAAAAUEBAAAACwAAAAAAQABAAACAkQBADs=";
+
+  view()->saveImageFromDataURL(WebString::fromUTF8(image_data_url));
+  ProcessPendingMessages();
+  const IPC::Message* msg2 = render_thread_->sink().GetFirstMessageMatching(
+      ViewHostMsg_SaveImageFromDataURL::ID);
+  EXPECT_TRUE(msg2);
+
+  ViewHostMsg_SaveImageFromDataURL::Param param1;
+  ViewHostMsg_SaveImageFromDataURL::Read(msg2, &param1);
+  EXPECT_EQ(param1.b.length(), image_data_url.length());
+  EXPECT_EQ(param1.b, image_data_url);
+
+  ProcessPendingMessages();
+  render_thread_->sink().ClearMessages();
+
+  const std::string large_data_url(1024 * 1024 * 10 - 1, 'd');
+
+  view()->saveImageFromDataURL(WebString::fromUTF8(large_data_url));
+  ProcessPendingMessages();
+  const IPC::Message* msg3 = render_thread_->sink().GetFirstMessageMatching(
+      ViewHostMsg_SaveImageFromDataURL::ID);
+  EXPECT_TRUE(msg3);
+
+  ViewHostMsg_SaveImageFromDataURL::Param param2;
+  ViewHostMsg_SaveImageFromDataURL::Read(msg3, &param2);
+  EXPECT_EQ(param2.b.length(), large_data_url.length());
+  EXPECT_EQ(param2.b, large_data_url);
+
+  ProcessPendingMessages();
+  render_thread_->sink().ClearMessages();
+
+  const std::string exceeded_data_url(1024 * 1024 * 10 + 1, 'd');
+
+  view()->saveImageFromDataURL(WebString::fromUTF8(exceeded_data_url));
+  ProcessPendingMessages();
+  const IPC::Message* msg4 = render_thread_->sink().GetFirstMessageMatching(
+      ViewHostMsg_SaveImageFromDataURL::ID);
+  EXPECT_FALSE(msg4);
+}
 
 // Test that we get form state change notifications when input fields change.
 TEST_F(RenderViewImplTest, DISABLED_OnNavStateChanged) {
@@ -318,19 +363,20 @@ TEST_F(RenderViewImplTest, OnNavigationHttpPost) {
   FrameMsg_Navigate_Params nav_params;
 
   // An http url will trigger a resource load so cannot be used here.
-  nav_params.url = GURL("data:text/html,<div>Page</div>");
-  nav_params.navigation_type = FrameMsg_Navigate_Type::NORMAL;
-  nav_params.transition = PAGE_TRANSITION_TYPED;
+  nav_params.common_params.url = GURL("data:text/html,<div>Page</div>");
+  nav_params.common_params.navigation_type = FrameMsg_Navigate_Type::NORMAL;
+  nav_params.common_params.transition = ui::PAGE_TRANSITION_TYPED;
   nav_params.page_id = -1;
-  nav_params.is_post = true;
-  nav_params.browser_navigation_start = base::TimeTicks::FromInternalValue(1);
+  nav_params.request_params.is_post = true;
+  nav_params.commit_params.browser_navigation_start =
+      base::TimeTicks::FromInternalValue(1);
 
   // Set up post data.
   const unsigned char* raw_data = reinterpret_cast<const unsigned char*>(
       "post \0\ndata");
   const unsigned int length = 11;
   const std::vector<unsigned char> post_data(raw_data, raw_data + length);
-  nav_params.browser_initiated_post_data = post_data;
+  nav_params.request_params.browser_initiated_post_data = post_data;
 
   frame()->OnNavigate(nav_params);
   ProcessPendingMessages();
@@ -502,7 +548,7 @@ TEST_F(RenderViewImplTest, SendSwapOutACK) {
   RenderProcess::current()->AddRefProcess();
 
   // Respond to a swap out request.
-  view()->main_render_frame()->OnSwapOut(kProxyRoutingId);
+  view()->GetMainRenderFrame()->OnSwapOut(kProxyRoutingId);
 
   // Ensure the swap out commits synchronously.
   EXPECT_NE(initial_page_id, view_page_id());
@@ -515,7 +561,7 @@ TEST_F(RenderViewImplTest, SendSwapOutACK) {
   // It is possible to get another swap out request.  Ensure that we send
   // an ACK, even if we don't have to do anything else.
   render_thread_->sink().ClearMessages();
-  view()->main_render_frame()->OnSwapOut(kProxyRoutingId);
+  view()->GetMainRenderFrame()->OnSwapOut(kProxyRoutingId);
   const IPC::Message* msg2 = render_thread_->sink().GetUniqueMessageMatching(
       FrameHostMsg_SwapOut_ACK::ID);
   ASSERT_TRUE(msg2);
@@ -523,14 +569,15 @@ TEST_F(RenderViewImplTest, SendSwapOutACK) {
   // If we navigate back to this RenderView, ensure we don't send a state
   // update for the swapped out URL.  (http://crbug.com/72235)
   FrameMsg_Navigate_Params nav_params;
-  nav_params.url = GURL("data:text/html,<div>Page B</div>");
-  nav_params.navigation_type = FrameMsg_Navigate_Type::NORMAL;
-  nav_params.transition = PAGE_TRANSITION_TYPED;
+  nav_params.common_params.url = GURL("data:text/html,<div>Page B</div>");
+  nav_params.common_params.navigation_type = FrameMsg_Navigate_Type::NORMAL;
+  nav_params.common_params.transition = ui::PAGE_TRANSITION_TYPED;
   nav_params.current_history_list_length = 1;
   nav_params.current_history_list_offset = 0;
   nav_params.pending_history_list_offset = 1;
   nav_params.page_id = -1;
-  nav_params.browser_navigation_start = base::TimeTicks::FromInternalValue(1);
+  nav_params.commit_params.browser_navigation_start =
+      base::TimeTicks::FromInternalValue(1);
   frame()->OnNavigate(nav_params);
   ProcessPendingMessages();
   const IPC::Message* msg3 = render_thread_->sink().GetUniqueMessageMatching(
@@ -561,19 +608,20 @@ TEST_F(RenderViewImplTest, ReloadWhileSwappedOut) {
 
   // Back to page A (page_id 1) and commit.
   FrameMsg_Navigate_Params params_A;
-  params_A.navigation_type = FrameMsg_Navigate_Type::NORMAL;
-  params_A.transition = PAGE_TRANSITION_FORWARD_BACK;
+  params_A.common_params.navigation_type = FrameMsg_Navigate_Type::NORMAL;
+  params_A.common_params.transition = ui::PAGE_TRANSITION_FORWARD_BACK;
   params_A.current_history_list_length = 2;
   params_A.current_history_list_offset = 1;
   params_A.pending_history_list_offset = 0;
   params_A.page_id = 1;
-  params_A.page_state = state_A;
-  params_A.browser_navigation_start = base::TimeTicks::FromInternalValue(1);
+  params_A.commit_params.page_state = state_A;
+  params_A.commit_params.browser_navigation_start =
+      base::TimeTicks::FromInternalValue(1);
   frame()->OnNavigate(params_A);
   ProcessPendingMessages();
 
   // Respond to a swap out request.
-  view()->main_render_frame()->OnSwapOut(kProxyRoutingId);
+  view()->GetMainRenderFrame()->OnSwapOut(kProxyRoutingId);
 
   // Check for a OnSwapOutACK.
   const IPC::Message* msg = render_thread_->sink().GetUniqueMessageMatching(
@@ -586,15 +634,16 @@ TEST_F(RenderViewImplTest, ReloadWhileSwappedOut) {
   // provisional load in the renderer process, after we unload the old page).
   // Ensure the old page gets reloaded, not swappedout://.
   FrameMsg_Navigate_Params nav_params;
-  nav_params.url = GURL("data:text/html,<div>Page A</div>");
-  nav_params.navigation_type = FrameMsg_Navigate_Type::RELOAD;
-  nav_params.transition = PAGE_TRANSITION_RELOAD;
+  nav_params.common_params.url = GURL("data:text/html,<div>Page A</div>");
+  nav_params.common_params.navigation_type = FrameMsg_Navigate_Type::RELOAD;
+  nav_params.common_params.transition = ui::PAGE_TRANSITION_RELOAD;
   nav_params.current_history_list_length = 2;
   nav_params.current_history_list_offset = 0;
   nav_params.pending_history_list_offset = 0;
   nav_params.page_id = 1;
-  nav_params.page_state = state_A;
-  nav_params.browser_navigation_start = base::TimeTicks::FromInternalValue(1);
+  nav_params.commit_params.page_state = state_A;
+  nav_params.commit_params.browser_navigation_start =
+      base::TimeTicks::FromInternalValue(1);
   frame()->OnNavigate(nav_params);
   ProcessPendingMessages();
 
@@ -666,14 +715,15 @@ TEST_F(RenderViewImplTest,  DISABLED_LastCommittedUpdateState) {
 
   // Go back to C and commit, preparing for our real test.
   FrameMsg_Navigate_Params params_C;
-  params_C.navigation_type = FrameMsg_Navigate_Type::NORMAL;
-  params_C.transition = PAGE_TRANSITION_FORWARD_BACK;
+  params_C.common_params.navigation_type = FrameMsg_Navigate_Type::NORMAL;
+  params_C.common_params.transition = ui::PAGE_TRANSITION_FORWARD_BACK;
   params_C.current_history_list_length = 4;
   params_C.current_history_list_offset = 3;
   params_C.pending_history_list_offset = 2;
   params_C.page_id = 3;
-  params_C.page_state = state_C;
-  params_C.browser_navigation_start = base::TimeTicks::FromInternalValue(1);
+  params_C.commit_params.page_state = state_C;
+  params_C.commit_params.browser_navigation_start =
+      base::TimeTicks::FromInternalValue(1);
   frame()->OnNavigate(params_C);
   ProcessPendingMessages();
   render_thread_->sink().ClearMessages();
@@ -684,26 +734,28 @@ TEST_F(RenderViewImplTest,  DISABLED_LastCommittedUpdateState) {
 
   // Back to page B (page_id 2), without committing.
   FrameMsg_Navigate_Params params_B;
-  params_B.navigation_type = FrameMsg_Navigate_Type::NORMAL;
-  params_B.transition = PAGE_TRANSITION_FORWARD_BACK;
+  params_B.common_params.navigation_type = FrameMsg_Navigate_Type::NORMAL;
+  params_B.common_params.transition = ui::PAGE_TRANSITION_FORWARD_BACK;
   params_B.current_history_list_length = 4;
   params_B.current_history_list_offset = 2;
   params_B.pending_history_list_offset = 1;
   params_B.page_id = 2;
-  params_B.page_state = state_B;
-  params_B.browser_navigation_start = base::TimeTicks::FromInternalValue(1);
+  params_B.commit_params.page_state = state_B;
+  params_B.commit_params.browser_navigation_start =
+      base::TimeTicks::FromInternalValue(1);
   frame()->OnNavigate(params_B);
 
   // Back to page A (page_id 1) and commit.
   FrameMsg_Navigate_Params params;
-  params.navigation_type = FrameMsg_Navigate_Type::NORMAL;
-  params.transition = PAGE_TRANSITION_FORWARD_BACK;
+  params.common_params.navigation_type = FrameMsg_Navigate_Type::NORMAL;
+  params.common_params.transition = ui::PAGE_TRANSITION_FORWARD_BACK;
   params_B.current_history_list_length = 4;
   params_B.current_history_list_offset = 2;
   params_B.pending_history_list_offset = 0;
   params.page_id = 1;
-  params.page_state = state_A;
-  params.browser_navigation_start = base::TimeTicks::FromInternalValue(1);
+  params.commit_params.page_state = state_A;
+  params.commit_params.browser_navigation_start =
+      base::TimeTicks::FromInternalValue(1);
   frame()->OnNavigate(params);
   ProcessPendingMessages();
 
@@ -751,14 +803,15 @@ TEST_F(RenderViewImplTest, StaleNavigationsIgnored) {
 
   // Back to page A (page_id 1) and commit.
   FrameMsg_Navigate_Params params_A;
-  params_A.navigation_type = FrameMsg_Navigate_Type::NORMAL;
-  params_A.transition = PAGE_TRANSITION_FORWARD_BACK;
+  params_A.common_params.navigation_type = FrameMsg_Navigate_Type::NORMAL;
+  params_A.common_params.transition = ui::PAGE_TRANSITION_FORWARD_BACK;
   params_A.current_history_list_length = 2;
   params_A.current_history_list_offset = 1;
   params_A.pending_history_list_offset = 0;
   params_A.page_id = 1;
-  params_A.page_state = state_A;
-  params_A.browser_navigation_start = base::TimeTicks::FromInternalValue(1);
+  params_A.commit_params.page_state = state_A;
+  params_A.commit_params.browser_navigation_start =
+      base::TimeTicks::FromInternalValue(1);
   frame()->OnNavigate(params_A);
   ProcessPendingMessages();
 
@@ -770,14 +823,16 @@ TEST_F(RenderViewImplTest, StaleNavigationsIgnored) {
 
   // The browser then sends a stale navigation to B, which should be ignored.
   FrameMsg_Navigate_Params params_B;
-  params_B.navigation_type = FrameMsg_Navigate_Type::NORMAL;
-  params_B.transition = PAGE_TRANSITION_FORWARD_BACK;
+  params_B.common_params.navigation_type = FrameMsg_Navigate_Type::NORMAL;
+  params_B.common_params.transition = ui::PAGE_TRANSITION_FORWARD_BACK;
   params_B.current_history_list_length = 2;
   params_B.current_history_list_offset = 0;
   params_B.pending_history_list_offset = 1;
   params_B.page_id = 2;
-  params_B.page_state = state_A;  // Doesn't matter, just has to be present.
-  params_B.browser_navigation_start = base::TimeTicks::FromInternalValue(1);
+  params_B.commit_params.page_state =
+      state_A;  // Doesn't matter, just has to be present.
+  params_B.commit_params.browser_navigation_start =
+      base::TimeTicks::FromInternalValue(1);
   frame()->OnNavigate(params_B);
 
   // State should be unchanged.
@@ -838,14 +893,15 @@ TEST_F(RenderViewImplTest, DontIgnoreBackAfterNavEntryLimit) {
   // It has now dropped the first entry, but the renderer isn't notified.
   // Ensure that going back to page B (page_id 2) at offset 0 is successful.
   FrameMsg_Navigate_Params params_B;
-  params_B.navigation_type = FrameMsg_Navigate_Type::NORMAL;
-  params_B.transition = PAGE_TRANSITION_FORWARD_BACK;
+  params_B.common_params.navigation_type = FrameMsg_Navigate_Type::NORMAL;
+  params_B.common_params.transition = ui::PAGE_TRANSITION_FORWARD_BACK;
   params_B.current_history_list_length = 2;
   params_B.current_history_list_offset = 1;
   params_B.pending_history_list_offset = 0;
   params_B.page_id = 2;
-  params_B.page_state = state_B;
-  params_B.browser_navigation_start = base::TimeTicks::FromInternalValue(1);
+  params_B.commit_params.page_state = state_B;
+  params_B.commit_params.browser_navigation_start =
+      base::TimeTicks::FromInternalValue(1);
   frame()->OnNavigate(params_B);
   ProcessPendingMessages();
 
@@ -1551,13 +1607,14 @@ TEST_F(RenderViewImplTest, DISABLED_DidFailProvisionalLoadWithErrorForError) {
   // but won't complete synchronously.
   FrameMsg_Navigate_Params params;
   params.page_id = -1;
-  params.navigation_type = FrameMsg_Navigate_Type::NORMAL;
-  params.url = GURL("data:text/html,test data");
-  params.browser_navigation_start = base::TimeTicks::FromInternalValue(1);
+  params.common_params.navigation_type = FrameMsg_Navigate_Type::NORMAL;
+  params.common_params.url = GURL("data:text/html,test data");
+  params.commit_params.browser_navigation_start =
+      base::TimeTicks::FromInternalValue(1);
   frame()->OnNavigate(params);
 
   // An error occurred.
-  view()->main_render_frame()->didFailProvisionalLoad(web_frame, error);
+  view()->GetMainRenderFrame()->didFailProvisionalLoad(web_frame, error);
   // Frame should exit view-source mode.
   EXPECT_FALSE(web_frame->isViewSourceModeEnabled());
 }
@@ -1574,13 +1631,14 @@ TEST_F(RenderViewImplTest, DidFailProvisionalLoadWithErrorForCancellation) {
   // but won't complete synchronously.
   FrameMsg_Navigate_Params params;
   params.page_id = -1;
-  params.navigation_type = FrameMsg_Navigate_Type::NORMAL;
-  params.url = GURL("data:text/html,test data");
-  params.browser_navigation_start = base::TimeTicks::FromInternalValue(1);
+  params.common_params.navigation_type = FrameMsg_Navigate_Type::NORMAL;
+  params.common_params.url = GURL("data:text/html,test data");
+  params.commit_params.browser_navigation_start =
+      base::TimeTicks::FromInternalValue(1);
   frame()->OnNavigate(params);
 
   // A cancellation occurred.
-  view()->main_render_frame()->didFailProvisionalLoad(web_frame, error);
+  view()->GetMainRenderFrame()->didFailProvisionalLoad(web_frame, error);
   // Frame should stay in view-source mode.
   EXPECT_TRUE(web_frame->isViewSourceModeEnabled());
 }
@@ -1956,14 +2014,15 @@ TEST_F(RenderViewImplTest, ZoomLimit) {
 
   FrameMsg_Navigate_Params params;
   params.page_id = -1;
-  params.navigation_type = FrameMsg_Navigate_Type::NORMAL;
-  params.browser_navigation_start = base::TimeTicks::FromInternalValue(1);
+  params.common_params.navigation_type = FrameMsg_Navigate_Type::NORMAL;
+  params.commit_params.browser_navigation_start =
+      base::TimeTicks::FromInternalValue(1);
 
   // Verifies navigation to a URL with preset zoom level indeed sets the level.
   // Regression test for http://crbug.com/139559, where the level was not
   // properly set when it is out of the default zoom limits of WebView.
-  params.url = GURL("data:text/html,min_zoomlimit_test");
-  view()->OnSetZoomLevelForLoadingURL(params.url, kMinZoomLevel);
+  params.common_params.url = GURL("data:text/html,min_zoomlimit_test");
+  view()->OnSetZoomLevelForLoadingURL(params.common_params.url, kMinZoomLevel);
   frame()->OnNavigate(params);
   ProcessPendingMessages();
   EXPECT_DOUBLE_EQ(kMinZoomLevel, view()->GetWebView()->zoomLevel());
@@ -1971,8 +2030,8 @@ TEST_F(RenderViewImplTest, ZoomLimit) {
   // It should work even when the zoom limit is temporarily changed in the page.
   view()->GetWebView()->zoomLimitsChanged(ZoomFactorToZoomLevel(1.0),
                                           ZoomFactorToZoomLevel(1.0));
-  params.url = GURL("data:text/html,max_zoomlimit_test");
-  view()->OnSetZoomLevelForLoadingURL(params.url, kMaxZoomLevel);
+  params.common_params.url = GURL("data:text/html,max_zoomlimit_test");
+  view()->OnSetZoomLevelForLoadingURL(params.common_params.url, kMaxZoomLevel);
   frame()->OnNavigate(params);
   ProcessPendingMessages();
   EXPECT_DOUBLE_EQ(kMaxZoomLevel, view()->GetWebView()->zoomLevel());
@@ -2034,15 +2093,16 @@ TEST_F(RenderViewImplTest, NavigateFrame) {
 
   // Navigate the frame only.
   FrameMsg_Navigate_Params nav_params;
-  nav_params.url = GURL("data:text/html,world");
-  nav_params.navigation_type = FrameMsg_Navigate_Type::NORMAL;
-  nav_params.transition = PAGE_TRANSITION_TYPED;
+  nav_params.common_params.url = GURL("data:text/html,world");
+  nav_params.common_params.navigation_type = FrameMsg_Navigate_Type::NORMAL;
+  nav_params.common_params.transition = ui::PAGE_TRANSITION_TYPED;
   nav_params.current_history_list_length = 1;
   nav_params.current_history_list_offset = 0;
   nav_params.pending_history_list_offset = 1;
   nav_params.page_id = -1;
   nav_params.frame_to_navigate = "frame";
-  nav_params.browser_navigation_start = base::TimeTicks::FromInternalValue(1);
+  nav_params.commit_params.browser_navigation_start =
+      base::TimeTicks::FromInternalValue(1);
   frame()->OnNavigate(nav_params);
   FrameLoadWaiter(
       RenderFrame::FromWebFrame(frame()->GetWebFrame()->firstChild())).Wait();
@@ -2160,13 +2220,14 @@ TEST_F(SuppressErrorPageTest, MAYBE_Suppresses) {
   // but won't complete synchronously.
   FrameMsg_Navigate_Params params;
   params.page_id = -1;
-  params.navigation_type = FrameMsg_Navigate_Type::NORMAL;
-  params.url = GURL("data:text/html,test data");
-  params.browser_navigation_start = base::TimeTicks::FromInternalValue(1);
+  params.common_params.navigation_type = FrameMsg_Navigate_Type::NORMAL;
+  params.common_params.url = GURL("data:text/html,test data");
+  params.commit_params.browser_navigation_start =
+      base::TimeTicks::FromInternalValue(1);
   frame()->OnNavigate(params);
 
   // An error occurred.
-  view()->main_render_frame()->didFailProvisionalLoad(web_frame, error);
+  view()->GetMainRenderFrame()->didFailProvisionalLoad(web_frame, error);
   const int kMaxOutputCharacters = 22;
   EXPECT_EQ("",
             base::UTF16ToASCII(web_frame->contentAsText(kMaxOutputCharacters)));
@@ -2190,13 +2251,14 @@ TEST_F(SuppressErrorPageTest, MAYBE_DoesNotSuppress) {
   // but won't complete synchronously.
   FrameMsg_Navigate_Params params;
   params.page_id = -1;
-  params.navigation_type = FrameMsg_Navigate_Type::NORMAL;
-  params.url = GURL("data:text/html,test data");
-  params.browser_navigation_start = base::TimeTicks::FromInternalValue(1);
+  params.common_params.navigation_type = FrameMsg_Navigate_Type::NORMAL;
+  params.common_params.url = GURL("data:text/html,test data");
+  params.commit_params.browser_navigation_start =
+      base::TimeTicks::FromInternalValue(1);
   frame()->OnNavigate(params);
 
   // An error occurred.
-  view()->main_render_frame()->didFailProvisionalLoad(web_frame, error);
+  view()->GetMainRenderFrame()->didFailProvisionalLoad(web_frame, error);
   // The error page itself is loaded asynchronously.
   FrameLoadWaiter(frame()).Wait();
   const int kMaxOutputCharacters = 22;
@@ -2403,12 +2465,13 @@ TEST_F(RenderViewImplTest, NavigationStartOverride) {
   // OnNavigate() is called.
   base::Time before_navigation = base::Time::Now();
   FrameMsg_Navigate_Params early_nav_params;
-  early_nav_params.url = GURL("data:text/html,<div>Page</div>");
-  early_nav_params.navigation_type = FrameMsg_Navigate_Type::NORMAL;
-  early_nav_params.transition = PAGE_TRANSITION_TYPED;
+  early_nav_params.common_params.url = GURL("data:text/html,<div>Page</div>");
+  early_nav_params.common_params.navigation_type =
+      FrameMsg_Navigate_Type::NORMAL;
+  early_nav_params.common_params.transition = ui::PAGE_TRANSITION_TYPED;
   early_nav_params.page_id = -1;
-  early_nav_params.is_post = true;
-  early_nav_params.browser_navigation_start =
+  early_nav_params.request_params.is_post = true;
+  early_nav_params.commit_params.browser_navigation_start =
       base::TimeTicks::FromInternalValue(1);
 
   frame()->OnNavigate(early_nav_params);
@@ -2422,12 +2485,14 @@ TEST_F(RenderViewImplTest, NavigationStartOverride) {
   // days from now is *not* reported as one that starts in the future; as we
   // sanitize the override allowing a maximum of ::Now().
   FrameMsg_Navigate_Params late_nav_params;
-  late_nav_params.url = GURL("data:text/html,<div>Another page</div>");
-  late_nav_params.navigation_type = FrameMsg_Navigate_Type::NORMAL;
-  late_nav_params.transition = PAGE_TRANSITION_TYPED;
+  late_nav_params.common_params.url =
+      GURL("data:text/html,<div>Another page</div>");
+  late_nav_params.common_params.navigation_type =
+      FrameMsg_Navigate_Type::NORMAL;
+  late_nav_params.common_params.transition = ui::PAGE_TRANSITION_TYPED;
   late_nav_params.page_id = -1;
-  late_nav_params.is_post = true;
-  late_nav_params.browser_navigation_start =
+  late_nav_params.request_params.is_post = true;
+  late_nav_params.commit_params.browser_navigation_start =
       base::TimeTicks::Now() + base::TimeDelta::FromDays(42);
 
   frame()->OnNavigate(late_nav_params);

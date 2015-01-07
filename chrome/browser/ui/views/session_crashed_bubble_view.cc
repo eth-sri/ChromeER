@@ -375,7 +375,7 @@ void SessionCrashedBubbleView::StyledLabelLinkClicked(const gfx::Range& range,
       GURL("https://support.google.com/chrome/answer/96817"),
       content::Referrer(),
       NEW_FOREGROUND_TAB,
-      content::PAGE_TRANSITION_LINK,
+      ui::PAGE_TRANSITION_LINK,
       false));
   RecordBubbleHistogramValue(SESSION_CRASHED_BUBBLE_HELP);
 }
@@ -423,11 +423,7 @@ void SessionCrashedBubbleView::RestorePreviousSession(views::Button* sender) {
   // Record user's choice for opting in to UMA.
   // There's no opting-out choice in the crash restore bubble.
   if (uma_option_ && uma_option_->checked()) {
-    // TODO: Clean up function ResolveMetricsReportingEnabled so that user pref
-    // is stored automatically.
-    ResolveMetricsReportingEnabled(true);
-    g_browser_process->local_state()->SetBoolean(
-        prefs::kMetricsReportingEnabled, true);
+    InitiateMetricsReportingChange(true, OnMetricsReportingCallbackType());
     RecordBubbleHistogramValue(SESSION_CRASHED_BUBBLE_UMA_OPTIN);
   }
   CloseBubble();

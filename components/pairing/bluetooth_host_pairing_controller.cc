@@ -5,6 +5,7 @@
 #include "components/pairing/bluetooth_host_pairing_controller.h"
 
 #include "base/bind.h"
+#include "base/hash.h"
 #include "base/logging.h"
 #include "base/strings/stringprintf.h"
 #include "components/pairing/bluetooth_pairing_constants.h"
@@ -26,7 +27,10 @@ BluetoothHostPairingController::BluetoothHostPairingController()
       ptr_factory_(this) {
 }
 
-BluetoothHostPairingController::~BluetoothHostPairingController() {}
+BluetoothHostPairingController::~BluetoothHostPairingController() {
+  if (adapter_.get())
+    adapter_->RemoveObserver(this);
+}
 
 void BluetoothHostPairingController::ChangeStage(Stage new_stage) {
   if (current_stage_ == new_stage)
@@ -66,7 +70,7 @@ void BluetoothHostPairingController::SendHostStatus() {
 void BluetoothHostPairingController::AbortWithError(
     int code,
     const std::string& message) {
-  if (controller_socket_) {
+  if (controller_socket_.get()) {
     pairing_api::Error error;
 
     error.set_api_version(kPairingAPIVersion);
@@ -88,12 +92,12 @@ void BluetoothHostPairingController::AbortWithError(
 }
 
 void BluetoothHostPairingController::Reset() {
-  if (controller_socket_) {
+  if (controller_socket_.get()) {
     controller_socket_->Close();
     controller_socket_ = NULL;
   }
 
-  if (service_socket_) {
+  if (service_socket_.get()) {
     service_socket_->Close();
     service_socket_ = NULL;
   }
@@ -103,12 +107,23 @@ void BluetoothHostPairingController::Reset() {
 void BluetoothHostPairingController::OnGetAdapter(
     scoped_refptr<device::BluetoothAdapter> adapter) {
   DCHECK(thread_checker_.CalledOnValidThread());
-  DCHECK(!adapter_);
+  DCHECK(!adapter_.get());
   adapter_ = adapter;
 
-  // TODO(zork): Make the device name prettier. (http://crbug.com/405774)
-  device_name_ = base::StringPrintf("%s%s", kDeviceNamePrefix,
-                                    adapter_->GetAddress().c_str());
+  if (adapter_->IsPresent()) {
+    SetName();
+  } else {
+    // Set the name once the adapter is present.
+    adapter_->AddObserver(this);
+  }
+}
+
+void BluetoothHostPairingController::SetName() {
+  // Hash the bluetooth address and take the lower 2 bytes to create a human
+  // readable device name.
+  const uint32 device_id = base::Hash(adapter_->GetAddress()) & 0xFFFF;
+  device_name_ = base::StringPrintf("%s%04X", kDeviceNamePrefix, device_id);
+
   adapter_->SetName(
       device_name_,
       base::Bind(&BluetoothHostPairingController::OnSetName,
@@ -219,14 +234,12 @@ void BluetoothHostPairingController::OnReceiveComplete(
 void BluetoothHostPairingController::OnCreateServiceError(
     const std::string& message) {
   LOG(ERROR) << message;
-  // TODO(zork): Add a stage for initialization error. (http://crbug.com/405744)
-  ChangeStage(STAGE_NONE);
+  ChangeStage(STAGE_INITIALIZATION_ERROR);
 }
 
 void BluetoothHostPairingController::OnSetError() {
   adapter_->RemovePairingDelegate(this);
-  // TODO(zork): Add a stage for initialization error. (http://crbug.com/405744)
-  ChangeStage(STAGE_NONE);
+  ChangeStage(STAGE_INITIALIZATION_ERROR);
 }
 
 void BluetoothHostPairingController::OnAcceptError(
@@ -254,7 +267,12 @@ void BluetoothHostPairingController::OnHostStatusMessage(
 
 void BluetoothHostPairingController::OnConfigureHostMessage(
     const pairing_api::ConfigureHost& message) {
-  // TODO(zork): Add event to API to handle this case. (http://crbug.com/405744)
+  FOR_EACH_OBSERVER(Observer, observers_,
+                    ConfigureHost(message.parameters().accepted_eula(),
+                                  message.parameters().lang(),
+                                  message.parameters().timezone(),
+                                  message.parameters().send_reports(),
+                                  message.parameters().keyboard_layout()));
 }
 
 void BluetoothHostPairingController::OnPairDevicesMessage(
@@ -266,12 +284,19 @@ void BluetoothHostPairingController::OnPairDevicesMessage(
   }
 
   ChangeStage(STAGE_ENROLLING);
-  // TODO(zork,achuith): Enroll device, send error on error.
-  // (http://crbug.com/374990)
-  // For now, test domain is sent in the access token.
-  enrollment_domain_ = message.parameters().admin_access_token();
-  ChangeStage(STAGE_PAIRING_DONE);
-  SendHostStatus();
+  FOR_EACH_OBSERVER(Observer, observers_,
+                    EnrollHost(message.parameters().admin_access_token()));
+}
+
+void BluetoothHostPairingController::SetEnrollmentComplete(bool success) {
+  DCHECK_EQ(current_stage_, STAGE_ENROLLING);
+  DCHECK(thread_checker_.CalledOnValidThread());
+  if (success) {
+    ChangeStage(STAGE_PAIRING_DONE);
+    SendHostStatus();
+  } else {
+    AbortWithError(PAIRING_ERROR_PAIRING_OR_ENROLLMENT, kErrorEnrollmentFailed);
+  }
 }
 
 void BluetoothHostPairingController::OnCompleteSetupMessage(
@@ -291,6 +316,16 @@ void BluetoothHostPairingController::OnErrorMessage(
   NOTREACHED();
 }
 
+void BluetoothHostPairingController::AdapterPresentChanged(
+    device::BluetoothAdapter* adapter,
+    bool present) {
+  DCHECK_EQ(adapter, adapter_.get());
+  if (present) {
+    adapter_->RemoveObserver(this);
+    SetName();
+  }
+}
+
 void BluetoothHostPairingController::AddObserver(Observer* observer) {
   observers_.AddObserver(observer);
 }
@@ -307,9 +342,10 @@ void BluetoothHostPairingController::StartPairing() {
   DCHECK_EQ(current_stage_, STAGE_NONE);
   bool bluetooth_available =
       device::BluetoothAdapterFactory::IsBluetoothAdapterAvailable();
-  // TODO(zork): Add a stage for initialization error. (http://crbug.com/405744)
-  if (!bluetooth_available)
+  if (!bluetooth_available) {
+    ChangeStage(STAGE_INITIALIZATION_ERROR);
     return;
+  }
 
   device::BluetoothAdapterFactory::GetAdapter(
       base::Bind(&BluetoothHostPairingController::OnGetAdapter,

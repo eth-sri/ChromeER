@@ -19,6 +19,8 @@
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/ui/app_list/start_page_observer.h"
 #include "components/signin/core/browser/signin_manager_base.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
 #include "ui/app_list/app_list_view_delegate.h"
 
 class AppListControllerDelegate;
@@ -50,18 +52,19 @@ class AppListViewDelegate : public app_list::AppListViewDelegate,
                             public HotwordClient,
                             public ProfileInfoCacheObserver,
                             public SigninManagerBase::Observer,
-                            public SigninManagerFactory::Observer {
+                            public SigninManagerFactory::Observer,
+                            public content::NotificationObserver {
  public:
-  // Constructs Chrome's AppListViewDelegate, initially for |profile|.
+  // Constructs Chrome's AppListViewDelegate with a NULL Profile.
   // Does not take ownership of |controller|. TODO(tapted): It should.
-  AppListViewDelegate(Profile* profile,
-                      AppListControllerDelegate* controller);
+  explicit AppListViewDelegate(AppListControllerDelegate* controller);
   virtual ~AppListViewDelegate();
 
- private:
   // Configure the AppList for the given |profile|.
   void SetProfile(Profile* profile);
+  Profile* profile() { return profile_; }
 
+ private:
   // Updates the speech webview and start page for the current |profile_|.
   void SetUpSearchUI();
 
@@ -143,6 +146,11 @@ class AppListViewDelegate : public app_list::AppListViewDelegate,
       const base::FilePath& profile_path,
       const base::string16& old_profile_name) OVERRIDE;
 
+  // Overridden from content::NotificationObserver:
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
+
   // Unowned pointer to the controller.
   AppListControllerDelegate* controller_;
   // Unowned pointer to the associated profile. May change if SetProfileByPath
@@ -172,6 +180,9 @@ class AppListViewDelegate : public app_list::AppListViewDelegate,
 
   // Window contents of additional custom launcher pages.
   ScopedVector<apps::CustomLauncherPageContents> custom_page_contents_;
+
+  // Registers for NOTIFICATION_APP_TERMINATING to unload custom launcher pages.
+  content::NotificationRegistrar registrar_;
 
   DISALLOW_COPY_AND_ASSIGN(AppListViewDelegate);
 };

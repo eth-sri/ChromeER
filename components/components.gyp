@@ -44,7 +44,6 @@
     'policy.gypi',
     'precache.gypi',
     'pref_registry.gypi',
-    'proximity_auth.gypi',
     'query_parser.gypi',
     'rappor.gypi',
     'search.gypi',
@@ -68,6 +67,7 @@
         'power.gypi',
         'sessions.gypi',
         'visitedlink.gypi',
+        'web_cache.gypi',
         'web_contents_delegate_android.gypi',
         'web_modal.gypi',
       ],
@@ -80,8 +80,8 @@
     ['OS != "ios" and OS != "android"', {
       'includes': [
         'copresence.gypi',
+        'proximity_auth.gypi',
         'storage_monitor.gypi',
-        'usb_service.gypi',
       ]
     }],
     ['chromeos == 1', {
@@ -110,6 +110,11 @@
         'search_engines.gypi',
         'sync_driver.gypi',
         'invalidation.gypi',
+      ],
+    }],
+    ['toolkit_views==1', {
+      'includes': [
+        'native_app_window.gypi',
       ],
     }],
     ['enable_plugins==1', {

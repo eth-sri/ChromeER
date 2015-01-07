@@ -67,7 +67,6 @@ component("wm") {
     "core/wm_core_switches.h",
     "core/wm_state.cc",
     "core/wm_state.h",
-    "public/window_types.h",
     "wm_export.h",
   ]
 
@@ -90,6 +89,7 @@ component("wm") {
 }
 
 static_library("test_support") {
+  testonly = true
   sources = [
     "test/wm_test_helper.cc",
     "test/wm_test_helper.h",
@@ -130,12 +130,10 @@ test("wm_unittests") {
     "//base/test:test_support",
     "//skia",
     "//testing/gtest",
-    "//ui/aura",
     "//ui/aura:test_support",
-    "//ui/base",
-    "//ui/compositor",
-    "//ui/events",
-    "//ui/events:events_base",
+    "//ui/base:test_support",
+    "//ui/compositor:test_support",
+    "//ui/events:test_support",
     "//ui/events/platform",
     "//ui/gfx",
     "//ui/gfx/geometry",

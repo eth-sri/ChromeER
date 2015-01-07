@@ -34,6 +34,7 @@ class GLImageSync : public gfx::GLImage {
   virtual gfx::Size GetSize() OVERRIDE;
   virtual bool BindTexImage(unsigned target) OVERRIDE;
   virtual void ReleaseTexImage(unsigned target) OVERRIDE;
+  virtual bool CopyTexImage(unsigned target) OVERRIDE;
   virtual void WillUseTexImage() OVERRIDE;
   virtual void WillModifyTexImage() OVERRIDE;
   virtual void DidModifyTexImage() OVERRIDE;
@@ -43,7 +44,6 @@ class GLImageSync : public gfx::GLImage {
                                     gfx::OverlayTransform transform,
                                     const gfx::Rect& bounds_rect,
                                     const gfx::RectF& crop_rect) OVERRIDE;
-  virtual void SetReleaseAfterUse() OVERRIDE;
 
  protected:
   virtual ~GLImageSync();
@@ -83,6 +83,10 @@ void GLImageSync::ReleaseTexImage(unsigned target) {
   NOTREACHED();
 }
 
+bool GLImageSync::CopyTexImage(unsigned target) {
+  return false;
+}
+
 void GLImageSync::WillUseTexImage() {
   if (buffer_.get())
     buffer_->WillRead(this);
@@ -110,10 +114,6 @@ bool GLImageSync::ScheduleOverlayPlane(gfx::AcceleratedWidget widget,
                                        const gfx::RectF& crop_rect) {
   NOTREACHED();
   return false;
-}
-
-void GLImageSync::SetReleaseAfterUse() {
-  NOTREACHED();
 }
 
 #if !defined(OS_MACOSX)

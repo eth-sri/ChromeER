@@ -19,8 +19,6 @@ static_library("apps") {
     "app_restore_service.h",
     "app_restore_service_factory.cc",
     "app_restore_service_factory.h",
-    "app_window_contents.cc",
-    "app_window_contents.h",
     "browser_context_keyed_service_factories.cc",
     "browser_context_keyed_service_factories.h",
     "custom_launcher_page_contents.cc",
@@ -52,7 +50,10 @@ static_library("apps") {
 
   if (!enable_extensions) {
     # When extensions are disabled, only the sizer file below is included.
-    deps -= [ "//chrome/browser/extensions" ]
+    deps -= [
+      "//chrome/browser/extensions",
+      "//chrome/common/extensions/api:api",
+    ]
     sources = []
   }
 
@@ -60,8 +61,6 @@ static_library("apps") {
     sources += [
       "ui/views/app_window_frame_view.cc",
       "ui/views/app_window_frame_view.h",
-      "ui/views/native_app_window_views.cc",
-      "ui/views/native_app_window_views.h",
     ]
     deps += [
       "//ui/strings",

@@ -31,6 +31,7 @@
 #include "cc/quads/render_pass.h"
 #include "cc/resources/resource_provider.h"
 #include "cc/resources/tile_manager.h"
+#include "cc/scheduler/begin_frame_source.h"
 #include "cc/scheduler/draw_result.h"
 #include "skia/ext/refptr.h"
 #include "third_party/skia/include/core/SkColor.h"
@@ -73,7 +74,6 @@ class LayerTreeHostImplClient {
   virtual void SetMaxSwapsPendingOnImplThread(int max) = 0;
   virtual void DidSwapBuffersOnImplThread() = 0;
   virtual void DidSwapBuffersCompleteOnImplThread() = 0;
-  virtual void BeginFrame(const BeginFrameArgs& args) = 0;
   virtual void OnCanDrawStateChanged(bool can_draw) = 0;
   virtual void NotifyReadyToActivate() = 0;
   // Please call these 3 functions through
@@ -112,6 +112,7 @@ class CC_EXPORT LayerTreeHostImpl
       public OutputSurfaceClient,
       public TopControlsManagerClient,
       public ScrollbarAnimationControllerClient,
+      public BeginFrameSourceMixIn,
       public base::SupportsWeakPtr<LayerTreeHostImpl> {
  public:
   static scoped_ptr<LayerTreeHostImpl> Create(
@@ -122,6 +123,9 @@ class CC_EXPORT LayerTreeHostImpl
       SharedBitmapManager* manager,
       int id);
   virtual ~LayerTreeHostImpl();
+
+  // BeginFrameSourceMixIn implementation
+  virtual void OnNeedsBeginFramesChange(bool needs_begin_frames) OVERRIDE;
 
   // InputHandler implementation
   virtual void BindToClient(InputHandlerClient* client) OVERRIDE;
@@ -159,6 +163,8 @@ class CC_EXPORT LayerTreeHostImpl
       ui::LatencyInfo* latency) OVERRIDE;
 
   // TopControlsManagerClient implementation.
+  virtual void SetControlsTopOffset(float offset) OVERRIDE;
+  virtual float ControlsTopOffset() const OVERRIDE;
   virtual void DidChangeTopControlsPosition() OVERRIDE;
   virtual bool HaveRootScrollLayer() const OVERRIDE;
 
@@ -294,7 +300,6 @@ class CC_EXPORT LayerTreeHostImpl
   const RendererCapabilitiesImpl& GetRendererCapabilities() const;
 
   virtual bool SwapBuffers(const FrameData& frame);
-  void SetNeedsBeginFrame(bool enable);
   virtual void WillBeginImplFrame(const BeginFrameArgs& args);
   void DidModifyTilePriorities();
 
@@ -342,11 +347,6 @@ class CC_EXPORT LayerTreeHostImpl
 
   void SetViewportSize(const gfx::Size& device_viewport_size);
   gfx::Size device_viewport_size() const { return device_viewport_size_; }
-
-  void SetTopControlsLayoutHeight(float top_controls_layout_height);
-  float top_controls_layout_height() const {
-    return top_controls_layout_height_;
-  }
 
   void SetOverhangUIResource(UIResourceId overhang_ui_resource_id,
                              const gfx::Size& overhang_ui_resource_size);
@@ -431,9 +431,7 @@ class CC_EXPORT LayerTreeHostImpl
     return begin_impl_frame_interval_;
   }
 
-  void AsValueInto(base::debug::TracedValue* value) const {
-    return AsValueWithFrameInto(NULL, value);
-  }
+  virtual void AsValueInto(base::debug::TracedValue* value) const OVERRIDE;
   void AsValueWithFrameInto(FrameData* frame,
                             base::debug::TracedValue* value) const;
   scoped_refptr<base::debug::ConvertableToTraceFormat> AsValue() const;
@@ -485,6 +483,8 @@ class CC_EXPORT LayerTreeHostImpl
   void GetPictureLayerImplPairs(
       std::vector<PictureLayerImpl::Pair>* layers) const;
 
+  void SetTopControlsLayoutHeight(float height);
+
  protected:
   LayerTreeHostImpl(
       const LayerTreeSettings& settings,
@@ -520,10 +520,15 @@ class CC_EXPORT LayerTreeHostImpl
   void EnforceZeroBudget(bool zero_budget);
 
   bool UsePendingTreeForSync() const;
-  bool UseZeroCopyTextureUpload() const;
-  bool UseOneCopyTextureUpload() const;
+  bool UseZeroCopyRasterizer() const;
+  bool UseOneCopyRasterizer() const;
 
+  // Scroll by preferring to move the outer viewport first, only moving the
+  // inner if the outer is at its scroll extents.
   void ScrollViewportBy(gfx::Vector2dF scroll_delta);
+  // Scroll by preferring to move the inner viewport first, only moving the
+  // outer if the inner is at its scroll extents.
+  void ScrollViewportInnerFirst(gfx::Vector2dF scroll_delta);
   void AnimatePageScale(base::TimeTicks monotonic_time);
   void AnimateScrollbars(base::TimeTicks monotonic_time);
   void AnimateTopControls(base::TimeTicks monotonic_time);
@@ -664,9 +669,6 @@ class CC_EXPORT LayerTreeHostImpl
   UIResourceId overhang_ui_resource_id_;
   gfx::Size overhang_ui_resource_size_;
 
-  // Height of the top controls as known by Blink.
-  float top_controls_layout_height_;
-
   // Optional top-level constraints that can be set by the OutputSurface.
   // - external_transform_ applies a transform above the root layer
   // - external_viewport_ is used DrawProperties, tile management and
@@ -701,8 +703,6 @@ class CC_EXPORT LayerTreeHostImpl
   int id_;
 
   std::set<SwapPromiseMonitor*> swap_promise_monitor_;
-
-  size_t transfer_buffer_memory_limit_;
 
   std::vector<PictureLayerImpl*> picture_layers_;
   std::vector<PictureLayerImpl::Pair> picture_layer_pairs_;

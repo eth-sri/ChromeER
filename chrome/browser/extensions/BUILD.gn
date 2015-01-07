@@ -21,14 +21,15 @@ static_library("extensions") {
 
   defines = []
 
-  # TODO(GYP) remove this when webrtc is ported.
-  configs += [ "//content:webrtc_stub_config" ]
-
   # Since browser and browser_extensions actually depend on each other,
   # we must omit the dependency from browser_extensions to browser.
   # However, this means browser_extensions and browser should more or less
   # have the same dependencies. Once browser_extensions is untangled from
   # browser, then we can clean up these dependencies.
+  public_deps = [
+    "//chrome/common/extensions/api",
+    "//content/public/browser",
+  ]
   deps = [
     "//chrome:extra_resources",
     "//chrome:resources",
@@ -38,7 +39,6 @@ static_library("extensions") {
     "//chrome/browser/devtools",
     "//chrome/browser/history:in_memory_url_index_cache_proto",
     "//chrome/common",
-    "//chrome/common/extensions/api",
     "//chrome/common/extensions/api:api_registration",
     "//chrome/common/net",
     "//chrome/common/safe_browsing:proto",
@@ -46,10 +46,10 @@ static_library("extensions") {
     "//components/copresence",
     "//components/omaha_query_params",
     "//components/onc",
+    "//components/proximity_auth",
     "//components/strings",
     "//components/url_matcher",
     "//content/app/resources",
-    "//content/public/browser",
     "//content/public/common",
     "//crypto",
     "//device/bluetooth",
@@ -60,12 +60,14 @@ static_library("extensions") {
     "//extensions/strings",
     "//net",
     "//skia",
+    "//storage/common",
     "//sync",
     "//third_party/WebKit/public:resources",
     "//third_party/cacheinvalidation",
     "//third_party/icu",
     "//third_party/leveldatabase",
     "//third_party/re2",
+    "//third_party/webrtc/modules/desktop_capture",
     "//ui/accessibility:ax_gen",
     "//ui/base",
     "//ui/gfx",
@@ -73,14 +75,7 @@ static_library("extensions") {
     "//ui/resources",
     "//ui/strings",
     "//url",
-    "//webkit/browser:storage",
-    "//webkit/common:storage_common",
-    #"../third_party/webrtc/modules/modules.gyp:desktop_capture",  TODO(GYP)
-  ]
-
-  forward_dependent_configs_from = [
-    "//chrome/common/extensions/api",
-    "//content/public/browser",
+    "//storage/browser",
   ]
 
   if (is_chromeos) {
@@ -118,6 +113,7 @@ static_library("extensions") {
         "//build/config/linux:x11",
       ]
       deps += [
+        "//ui/events:events_base",
         "//ui/events/platform",
         "//ui/events/platform/x11",
       ]

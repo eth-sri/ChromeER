@@ -4,13 +4,16 @@
 
 #include "content/renderer/device_sensors/device_light_event_pump.h"
 
+#include "base/time/time.h"
 #include "content/common/device_sensors/device_light_messages.h"
 #include "content/public/renderer/render_thread.h"
 #include "third_party/WebKit/public/platform/WebDeviceLightListener.h"
 
 namespace {
-// Default delay between subsequent firing of DeviceLight events.
-const int kDefaultLightPumpDelayMillis = 200;
+// Default rate for firing of DeviceLight events.
+const int kDefaultLightPumpFrequencyHz = 5;
+const int kDefaultLightPumpDelayMicroseconds =
+    base::Time::kMicrosecondsPerSecond / kDefaultLightPumpFrequencyHz;
 }  // namespace
 
 namespace content {
@@ -18,7 +21,7 @@ namespace content {
 DeviceLightEventPump::DeviceLightEventPump(RenderThread* thread)
     : DeviceSensorEventPump<blink::WebDeviceLightListener>(thread),
       last_seen_data_(-1) {
-  pump_delay_millis_ = kDefaultLightPumpDelayMillis;
+  pump_delay_microseconds_ = kDefaultLightPumpDelayMicroseconds;
 }
 
 DeviceLightEventPump::~DeviceLightEventPump() {
@@ -37,11 +40,22 @@ bool DeviceLightEventPump::OnControlMessageReceived(
 void DeviceLightEventPump::FireEvent() {
   DCHECK(listener());
   DeviceLightData data;
-  bool did_return_light_data = reader_->GetLatestData(&data);
-  if (did_return_light_data && data.value != last_seen_data_) {
+  if (reader_->GetLatestData(&data) && ShouldFireEvent(data.value)) {
     last_seen_data_ = data.value;
     listener()->didChangeDeviceLight(data.value);
   }
+}
+
+bool DeviceLightEventPump::ShouldFireEvent(double lux) const {
+  if (lux < 0)
+    return false;
+
+  if (lux == std::numeric_limits<double>::infinity()) {
+    // no sensor data can be provided, fire an Infinity event to Blink.
+    return true;
+  }
+
+  return lux != last_seen_data_;
 }
 
 bool DeviceLightEventPump::InitializeReader(base::SharedMemoryHandle handle) {

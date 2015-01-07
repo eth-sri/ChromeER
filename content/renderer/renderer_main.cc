@@ -27,7 +27,6 @@
 #include "content/public/common/main_function_params.h"
 #include "content/public/renderer/content_renderer_client.h"
 #include "content/renderer/browser_plugin/browser_plugin_manager_impl.h"
-#include "content/renderer/pepper/pepper_plugin_registry.h"
 #include "content/renderer/render_process_impl.h"
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/renderer_main_platform_delegate.h"
@@ -47,6 +46,10 @@
 #include "base/message_loop/message_pump_mac.h"
 #include "third_party/WebKit/public/web/WebView.h"
 #endif  // OS_MACOSX
+
+#if defined(ENABLE_PLUGINS)
+#include "content/renderer/pepper/pepper_plugin_registry.h"
+#endif
 
 #if defined(ENABLE_WEBRTC)
 #include "third_party/libjingle/overrides/init_webrtc.h"
@@ -146,12 +149,13 @@ int RendererMain(const MainFunctionParams& parameters) {
   // needs to be backed by a Foundation-level loop to process NSTimers. See
   // http://crbug.com/306348#c24 for details.
   scoped_ptr<base::MessagePump> pump(new base::MessagePumpNSRunLoop());
-  base::MessageLoop main_message_loop(pump.Pass());
+  scoped_ptr<base::MessageLoop> main_message_loop(
+      new base::MessageLoop(pump.Pass()));
 #else
   // The main message loop of the renderer services doesn't have IO or UI tasks.
-  base::MessageLoop main_message_loop;
+  scoped_ptr<base::MessageLoop> main_message_loop(new base::MessageLoop());
 #endif
-  main_message_loop.AddTaskObserver(&task_observer);
+  main_message_loop->AddTaskObserver(&task_observer);
 
   base::PlatformThread::SetName("CrRendererMain");
 
@@ -195,7 +199,7 @@ int RendererMain(const MainFunctionParams& parameters) {
     // TODO(markus): Check if it is OK to unconditionally move this
     // instruction down.
     RenderProcessImpl render_process;
-    new RenderThreadImpl();
+    new RenderThreadImpl(main_message_loop.Pass());
 #endif
     bool run_loop = true;
     if (!no_sandbox) {
@@ -211,7 +215,7 @@ int RendererMain(const MainFunctionParams& parameters) {
     }
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
     RenderProcessImpl render_process;
-    new RenderThreadImpl();
+    new RenderThreadImpl(main_message_loop.Pass());
 #endif
 
     base::HighResolutionTimerManager hi_res_timer_manager;

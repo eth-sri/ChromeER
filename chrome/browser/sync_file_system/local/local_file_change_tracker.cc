@@ -12,14 +12,14 @@
 #include "base/stl_util.h"
 #include "chrome/browser/sync_file_system/local/local_file_sync_status.h"
 #include "chrome/browser/sync_file_system/syncable_file_system_util.h"
+#include "storage/browser/fileapi/file_system_context.h"
+#include "storage/browser/fileapi/file_system_file_util.h"
+#include "storage/browser/fileapi/file_system_operation_context.h"
+#include "storage/common/fileapi/file_system_util.h"
 #include "third_party/leveldatabase/src/helpers/memenv/memenv.h"
 #include "third_party/leveldatabase/src/include/leveldb/db.h"
 #include "third_party/leveldatabase/src/include/leveldb/env.h"
 #include "third_party/leveldatabase/src/include/leveldb/write_batch.h"
-#include "webkit/browser/fileapi/file_system_context.h"
-#include "webkit/browser/fileapi/file_system_file_util.h"
-#include "webkit/browser/fileapi/file_system_operation_context.h"
-#include "webkit/common/fileapi/file_system_util.h"
 
 using storage::FileSystemContext;
 using storage::FileSystemFileUtil;
@@ -415,12 +415,14 @@ void LocalFileChangeTracker::RecordChange(
   int change_seq = current_change_seq_number_++;
   if (ContainsKey(demoted_changes_, url)) {
     RecordChangeToChangeMaps(url, change, change_seq,
-                             &demoted_changes_, NULL);
+                             &demoted_changes_, nullptr);
   } else {
     RecordChangeToChangeMaps(url, change, change_seq, &changes_, &change_seqs_);
   }
-  if (ContainsKey(mirror_changes_, url))
-    RecordChangeToChangeMaps(url, change, change_seq, &mirror_changes_, NULL);
+  if (ContainsKey(mirror_changes_, url)) {
+    RecordChangeToChangeMaps(url, change, change_seq, &mirror_changes_,
+                             nullptr);
+  }
   UpdateNumChanges();
 }
 

@@ -23,7 +23,7 @@ public class ChromiumUrlRequestFactory extends HttpUrlRequestFactory {
     public ChromiumUrlRequestFactory(
             Context context, HttpUrlRequestFactoryConfig config) {
         if (isEnabled()) {
-            System.loadLibrary("cronet");
+            System.loadLibrary(config.libraryName());
             mRequestContext = new ChromiumUrlRequestContext(
                     context.getApplicationContext(), UserAgent.from(context),
                     config.toString());
@@ -53,6 +53,16 @@ public class ChromiumUrlRequestFactory extends HttpUrlRequestFactory {
             HttpUrlRequestListener listener) {
         return new ChromiumUrlRequest(mRequestContext, url, requestPriority,
                 headers, channel, listener);
+    }
+
+    @Override
+    public void startNetLogToFile(String fileName) {
+        mRequestContext.startNetLogToFile(fileName);
+    }
+
+    @Override
+    public void stopNetLog() {
+        mRequestContext.stopNetLog();
     }
 
     public ChromiumUrlRequestContext getRequestContext() {

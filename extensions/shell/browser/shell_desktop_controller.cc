@@ -4,8 +4,14 @@
 
 #include "extensions/shell/browser/shell_desktop_controller.h"
 
+#include <string>
+#include <vector>
+
 #include "base/command_line.h"
-#include "extensions/shell/browser/shell_app_window.h"
+#include "extensions/browser/app_window/app_window.h"
+#include "extensions/browser/app_window/native_app_window.h"
+#include "extensions/shell/browser/shell_app_delegate.h"
+#include "extensions/shell/browser/shell_app_window_client.h"
 #include "extensions/shell/common/switches.h"
 #include "ui/aura/client/cursor_client.h"
 #include "ui/aura/client/default_capture_client.h"
@@ -31,8 +37,8 @@
 #if defined(OS_CHROMEOS)
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "ui/chromeos/user_activity_power_manager_notifier.h"
-#include "ui/display/types/chromeos/display_mode.h"
-#include "ui/display/types/chromeos/display_snapshot.h"
+#include "ui/display/types/display_mode.h"
+#include "ui/display/types/display_snapshot.h"
 #endif
 
 namespace extensions {
@@ -153,7 +159,10 @@ class AppsFocusRules : public wm::BaseFocusRules {
 
 }  // namespace
 
-ShellDesktopController::ShellDesktopController() {
+ShellDesktopController::ShellDesktopController()
+    : app_window_client_(new ShellAppWindowClient), app_window_(NULL) {
+  extensions::AppWindowClient::Set(app_window_client_.get());
+
 #if defined(OS_CHROMEOS)
   chromeos::DBusThreadManager::Get()->GetPowerManagerClient()->
       AddObserver(this);
@@ -162,41 +171,40 @@ ShellDesktopController::ShellDesktopController() {
   display_configurator_->ForceInitialConfigure(0);
   display_configurator_->AddObserver(this);
 #endif
-
   CreateRootWindow();
 }
 
 ShellDesktopController::~ShellDesktopController() {
-  app_window_.reset();
+  CloseAppWindows();
   DestroyRootWindow();
 #if defined(OS_CHROMEOS)
   chromeos::DBusThreadManager::Get()->GetPowerManagerClient()->
       RemoveObserver(this);
 #endif
+  extensions::AppWindowClient::Set(NULL);
 }
 
 aura::WindowTreeHost* ShellDesktopController::GetHost() {
   return host_.get();
 }
 
-ShellAppWindow* ShellDesktopController::CreateAppWindow(
+AppWindow* ShellDesktopController::CreateAppWindow(
     content::BrowserContext* context,
     const Extension* extension) {
+  app_window_ = new AppWindow(context, new ShellAppDelegate, extension);
+  return app_window_;
+}
+
+void ShellDesktopController::AddAppWindow(aura::Window* window) {
   aura::Window* root_window = GetHost()->window();
-
-  app_window_.reset(new ShellAppWindow);
-  app_window_->Init(context, extension, root_window->bounds().size());
-
-  // Attach the web contents view to our window hierarchy.
-  aura::Window* content = app_window_->GetNativeWindow();
-  root_window->AddChild(content);
-  content->Show();
-
-  return app_window_.get();
+  root_window->AddChild(window);
 }
 
 void ShellDesktopController::CloseAppWindows() {
-  app_window_.reset();
+  if (app_window_) {
+    app_window_->GetBaseWindow()->Close();  // Close() deletes |app_window_|.
+    app_window_ = NULL;
+  }
 }
 
 aura::Window* ShellDesktopController::GetDefaultParent(

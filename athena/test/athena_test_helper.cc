@@ -6,13 +6,14 @@
 
 #include "athena/env/public/athena_env.h"
 #include "athena/extensions/public/extensions_delegate.h"
-#include "athena/main/athena_launcher.h"
+#include "athena/main/public/athena_launcher.h"
 #include "athena/test/sample_activity_factory.h"
 #include "athena/test/test_app_model_builder.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/threading/thread.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
+#include "chromeos/network/network_handler.h"
 #include "ui/aura/env.h"
 #include "ui/aura/input_state_lookup.h"
 #include "ui/aura/test/env_test_helper.h"
@@ -49,6 +50,7 @@ void AthenaTestHelper::SetUp(ui::ContextFactory* context_factory) {
   file_thread_->StartWithOptions(options);
 
   chromeos::DBusThreadManager::Initialize();
+  chromeos::NetworkHandler::Initialize();
   ui::InitializeInputMethodForTesting();
   aura::Env::CreateInstance(true);
   aura::Env::GetInstance()->set_context_factory(context_factory);
@@ -58,6 +60,7 @@ void AthenaTestHelper::SetUp(ui::ContextFactory* context_factory) {
   aura::test::EnvTestHelper(aura::Env::GetInstance())
       .SetInputStateLookup(scoped_ptr<aura::InputStateLookup>());
 
+  // TODO(oshima): Use a BlockingPool task runner.
   athena::StartAthenaEnv(file_thread_->message_loop_proxy());
   athena::ExtensionsDelegate::CreateExtensionsDelegateForTest();
   athena::StartAthenaSession(new SampleActivityFactory(),
@@ -75,6 +78,7 @@ void AthenaTestHelper::TearDown() {
 #endif
 
   ui::ShutdownInputMethodForTesting();
+  chromeos::NetworkHandler::Shutdown();
   chromeos::DBusThreadManager::Shutdown();
 }
 

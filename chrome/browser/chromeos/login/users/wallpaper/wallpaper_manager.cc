@@ -471,8 +471,8 @@ WallpaperManager::WallpaperManager()
     : loaded_wallpapers_(0),
       command_line_for_testing_(NULL),
       should_cache_wallpaper_(false),
-      weak_factory_(this),
-      pending_inactive_(NULL) {
+      pending_inactive_(NULL),
+      weak_factory_(this) {
   SetDefaultWallpaperPathsFromCommandLine(
       base::CommandLine::ForCurrentProcess());
   registrar_.Add(this,
@@ -1788,7 +1788,7 @@ WallpaperManager::PendingWallpaper* WallpaperManager::GetPendingWallpaper(
         (delayed ? GetWallpaperLoadDelay()
                  : base::TimeDelta::FromMilliseconds(0)),
         user_id));
-    pending_inactive_ = loading_.back();
+    pending_inactive_ = loading_.back().get();
   }
   return pending_inactive_;
 }

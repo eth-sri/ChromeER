@@ -45,7 +45,7 @@ def ParseOwnersFile(content, randomize):
 
 class OwnersDataSource(DataSource):
   def __init__(self, server_instance, _, randomize=True):
-    self._host_fs = server_instance.host_file_system_provider.GetTrunk()
+    self._host_fs = server_instance.host_file_system_provider.GetMaster()
     self._cache = server_instance.object_store_creator.Create(OwnersDataSource)
     self._owners_fs = server_instance.compiled_fs_factory.Create(
         self._host_fs, self._CreateAPIEntry, OwnersDataSource)
@@ -102,5 +102,5 @@ class OwnersDataSource(DataSource):
       'apis': self._CollectOwnersData()
     }.get(key).Get()
 
-  def Cron(self):
+  def Refresh(self, path):
     return self._CollectOwnersData()

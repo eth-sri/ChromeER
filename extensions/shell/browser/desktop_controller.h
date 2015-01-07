@@ -6,6 +6,7 @@
 #define EXTENSIONS_SHELL_BROWSER_DESKTOP_CONTROLLER_H_
 
 namespace aura {
+class Window;
 class WindowTreeHost;
 }
 
@@ -14,13 +15,15 @@ class BrowserContext;
 }
 
 namespace extensions {
+class AppWindow;
 class Extension;
 class ShellAppWindow;
 
 // DesktopController is an interface to construct the window environment in
 // extensions shell. ShellDesktopController provides a default implementation
-// for
-// app_shell, and embedder (such as athena) can provide its own.
+// for app_shell, and embedder (such as athena) can provide its own.
+// TODO(jamescook|oshima): Clean up this interface now that there is only one
+// way to create an app window.
 class DesktopController {
  public:
   DesktopController();
@@ -37,13 +40,16 @@ class DesktopController {
   // Creates a new app window and adds it to the desktop. The desktop maintains
   // ownership of the window. The window must be closed before |extension| is
   // destroyed.
-  virtual ShellAppWindow* CreateAppWindow(content::BrowserContext* context,
-                                          const Extension* extension) = 0;
+  virtual AppWindow* CreateAppWindow(content::BrowserContext* context,
+                                     const Extension* extension) = 0;
+
+  // Attaches the window to our window hierarchy.
+  virtual void AddAppWindow(aura::Window* window) = 0;
 
   // Closes and destroys the app windows.
   virtual void CloseAppWindows() = 0;
 };
 
-}  // namespace extensinos
+}  // namespace extensions
 
 #endif  // EXTENSIONS_SHELL_BROWSER_DESKTOP_CONTROLLER_H_

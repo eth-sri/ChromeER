@@ -59,8 +59,7 @@ class CONTENT_EXPORT ServiceWorkerContextCore
  public:
   typedef base::Callback<void(ServiceWorkerStatusCode status)> StatusCallback;
   typedef base::Callback<void(ServiceWorkerStatusCode status,
-                              int64 registration_id,
-                              int64 version_id)> RegistrationCallback;
+                              int64 registration_id)> RegistrationCallback;
   typedef base::Callback<
       void(ServiceWorkerStatusCode status)> UnregistrationCallback;
   typedef IDMap<ServiceWorkerProviderHost, IDMapOwnPointer> ProviderMap;
@@ -145,11 +144,9 @@ class CONTENT_EXPORT ServiceWorkerContextCore
 
   // A child process of |source_process_id| may be used to run the created
   // worker for initial installation.
-  // Non-null |provider_host| must be given if this is called from a document,
-  // whose process_id() must match with |source_process_id|.
+  // Non-null |provider_host| must be given if this is called from a document.
   void RegisterServiceWorker(const GURL& pattern,
                              const GURL& script_url,
-                             int source_process_id,
                              ServiceWorkerProviderHost* provider_host,
                              const RegistrationCallback& callback);
   void UnregisterServiceWorker(const GURL& pattern,
@@ -197,8 +194,7 @@ class CONTENT_EXPORT ServiceWorkerContextCore
   void RegistrationComplete(const GURL& pattern,
                             const RegistrationCallback& callback,
                             ServiceWorkerStatusCode status,
-                            ServiceWorkerRegistration* registration,
-                            ServiceWorkerVersion* version);
+                            ServiceWorkerRegistration* registration);
 
   void UnregistrationComplete(const GURL& pattern,
                               const UnregistrationCallback& callback,

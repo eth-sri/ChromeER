@@ -25,6 +25,7 @@
         # Note: sources list duplicated in GN build.
         'password_manager/core/browser/browser_save_password_progress_logger.cc',
         'password_manager/core/browser/browser_save_password_progress_logger.h',
+        'password_manager/core/browser/credential_manager_dispatcher.h',
         'password_manager/core/browser/log_receiver.h',
         'password_manager/core/browser/log_router.cc',
         'password_manager/core/browser/log_router.h',
@@ -199,26 +200,6 @@
           ],
         },
         {
-          # GN version: //components/password_manager/core/browser:test_support
-          'target_name': 'password_manager_content_renderer_test_support',
-          'type': 'static_library',
-          'dependencies': [
-            'password_manager_content_common',
-            '../base/base.gyp:base',
-            '../testing/gmock.gyp:gmock',
-            '../testing/gtest.gyp:gtest',
-            '../third_party/WebKit/public/blink.gyp:blink',
-          ],
-          'include_dirs': [
-            '..',
-          ],
-          'sources': [
-            # Note: sources list duplicated in GN build.
-            'password_manager/content/renderer/test_credential_manager_client.cc',
-            'password_manager/content/renderer/test_credential_manager_client.h',
-          ],
-        },
-        {
           # GN version: //components/password_manager/content/browser
           'target_name': 'password_manager_content_browser',
           'type': 'static_library',
@@ -240,6 +221,8 @@
           ],
           'sources': [
             # Note: sources list duplicated in GN build.
+            'password_manager/content/browser/content_credential_manager_dispatcher.cc',
+            'password_manager/content/browser/content_credential_manager_dispatcher.h',
             'password_manager/content/browser/content_password_manager_driver.cc',
             'password_manager/content/browser/content_password_manager_driver.h',
             'password_manager/content/browser/password_manager_internals_service_factory.cc',

@@ -6,8 +6,8 @@
 
 #include <string>
 
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
@@ -24,7 +24,6 @@
 #include "extensions/browser/quota_service.h"
 #include "extensions/browser/runtime_data.h"
 #include "extensions/common/file_util.h"
-#include "extensions/shell/browser/api/shell/shell_api.h"
 
 using content::BrowserContext;
 using content::BrowserThread;

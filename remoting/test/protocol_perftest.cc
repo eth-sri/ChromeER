@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 #include "base/base64.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/message_loop/message_loop.h"
 #include "base/rand_util.h"
 #include "base/run_loop.h"
@@ -61,6 +61,16 @@ struct NetworkPerformanceParams {
   double out_of_order_rate;
 };
 
+class FakeCursorShapeStub : public protocol::CursorShapeStub {
+ public:
+  FakeCursorShapeStub() {}
+  virtual ~FakeCursorShapeStub() {}
+
+  // protocol::CursorShapeStub interface.
+  virtual void SetCursorShape(
+      const protocol::CursorShapeInfo& cursor_shape) OVERRIDE {};
+};
+
 class ProtocolPerfTest
     : public testing::Test,
       public testing::WithParamInterface<NetworkPerformanceParams>,
@@ -108,7 +118,7 @@ class ProtocolPerfTest
     return NULL;
   }
   virtual protocol::CursorShapeStub* GetCursorShapeStub() OVERRIDE {
-    return NULL;
+    return &cursor_shape_stub_;
   }
 
   // VideoRenderer interface.
@@ -227,7 +237,7 @@ class ProtocolPerfTest
     scoped_ptr<protocol::TransportFactory> host_transport_factory(
         new protocol::LibjingleTransportFactory(
             host_signaling_.get(),
-            port_allocator.PassAs<cricket::HttpPortAllocatorBase>(),
+            port_allocator.Pass(),
             network_settings));
 
     scoped_ptr<protocol::SessionManager> session_manager(
@@ -298,7 +308,7 @@ class ProtocolPerfTest
     scoped_ptr<protocol::TransportFactory> client_transport_factory(
         new protocol::LibjingleTransportFactory(
             client_signaling_.get(),
-            port_allocator.PassAs<cricket::HttpPortAllocatorBase>(),
+            port_allocator.Pass(),
             network_settings));
 
     std::vector<protocol::AuthenticationMethod> auth_methods;
@@ -310,10 +320,10 @@ class ProtocolPerfTest
             std::string(),  // client_pairing_secret
             std::string(),  // authentication_tag
             base::Bind(&ProtocolPerfTest::FetchPin, base::Unretained(this)),
-            scoped_ptr<protocol::ThirdPartyClientAuthenticator::TokenFetcher>(),
+            nullptr,
             auth_methods));
-    client_.reset(new ChromotingClient(
-        client_context_.get(), this, this, scoped_ptr<AudioPlayer>()));
+    client_.reset(
+        new ChromotingClient(client_context_.get(), this, this, nullptr));
     client_->SetProtocolConfigForTests(protocol_config_->Clone());
     client_->Start(
         client_signaling_.get(), client_authenticator.Pass(),
@@ -334,6 +344,8 @@ class ProtocolPerfTest
   base::Thread capture_thread_;
   base::Thread encode_thread_;
   FakeDesktopEnvironmentFactory desktop_environment_factory_;
+
+  FakeCursorShapeStub cursor_shape_stub_;
 
   scoped_ptr<protocol::CandidateSessionConfig> protocol_config_;
 

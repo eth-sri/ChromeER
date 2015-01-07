@@ -374,7 +374,8 @@ RenderWidgetHostViewBase::RenderWidgetHostViewBase()
       current_device_scale_factor_(0),
       current_display_rotation_(gfx::Display::ROTATE_0),
       pinch_zoom_enabled_(content::IsPinchToZoomEnabled()),
-      renderer_frame_number_(0) {
+      renderer_frame_number_(0),
+      weak_factory_(this) {
 }
 
 RenderWidgetHostViewBase::~RenderWidgetHostViewBase() {
@@ -535,6 +536,10 @@ bool RenderWidgetHostViewBase::HasDisplayPropertyChanged(gfx::NativeView view) {
   return true;
 }
 
+base::WeakPtr<RenderWidgetHostViewBase> RenderWidgetHostViewBase::GetWeakPtr() {
+  return weak_factory_.GetWeakPtr();
+}
+
 scoped_ptr<SyntheticGestureTarget>
 RenderWidgetHostViewBase::CreateSyntheticGestureTarget() {
   RenderWidgetHostImpl* host =
@@ -598,6 +603,19 @@ void RenderWidgetHostViewBase::FlushInput() {
 
 SkColorType RenderWidgetHostViewBase::PreferredReadbackFormat() {
   return kN32_SkColorType;
+}
+
+void RenderWidgetHostViewBase::OnTextSurroundingSelectionResponse(
+    const base::string16& content,
+    size_t start_offset,
+    size_t end_offset) {
+  NOTIMPLEMENTED();
+}
+
+void RenderWidgetHostViewBase::ShowDisambiguationPopup(
+    const gfx::Rect& rect_pixels,
+    const SkBitmap& zoomed_bitmap) {
+  NOTIMPLEMENTED();
 }
 
 gfx::Size RenderWidgetHostViewBase::GetVisibleViewportSize() const {

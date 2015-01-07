@@ -190,6 +190,9 @@
       <message name="IDS_EXTENSION_LOAD_LAUNCHER_PAGE_FAILED" desc="">
         Could not load launcher page '<ph name="PAGE">$1<ex>index.html</ex></ph>'.
       </message>
+      <message name="IDS_EXTENSION_LOAD_OPTIONS_PAGE_FAILED" desc="">
+        Could not load options page '<ph name="OPTIONS_PAGE">$1<ex>page.html</ex></ph>'.
+      </message>
       <message name="IDS_EXTENSION_LOCALES_NO_DEFAULT_LOCALE_SPECIFIED" desc="">
         Localization used, but default_locale wasn't specified in the manifest.
       </message>
@@ -198,6 +201,9 @@
       </message>
       <message name="IDS_EXTENSION_MANIFEST_INVALID" desc="">
         Manifest file is invalid.
+      </message>
+      <message name="IDS_LOAD_STATE_PARAMETER_EXTENSION" desc="Parameter to IDS_LOAD_STATE_WAITING_FOR_DELEGATE when we are waiting for an extension. The variable is the extension name.">
+        extension <ph name="EXTENSION_NAME">$1<ex>Adblock</ex></ph>
       </message>
 
       <!-- Bluetooth access permissions. Please keep alphabetized. -->
@@ -311,8 +317,20 @@
       <message name="IDS_EXTENSION_TASK_MANAGER_EXTENSIONOPTIONS_TAG_PREFIX" desc="The prefix for a guest page loaded in an extensionoptions tag in the Task Manager">
         Options: <ph name="EXTENSIONOPTIONS_TAG_NAME">$1<ex>Google Hangouts</ex></ph>
       </message>
+      <message name="IDS_EXTENSION_TASK_MANAGER_MIMEHANDLERVIEW_TAG_PREFIX" desc="The prefix for a guest page loaded in a mime handler view page in the task manager">
+        Mimehandler: <ph name="MIMEHANDLERVIEW_TAG_NAME">$1<ex>My mime handler view</ex></ph>
+      </message>
       <message name="IDS_EXTENSION_TASK_MANAGER_WEBVIEW_TAG_PREFIX" desc="The prefix for a guest page loaded in a webview tag in the Task Manager">
         Webview: <ph name="WEBVIEW_TAG_NAME">$1<ex>Google</ex></ph>
+      </message>
+      <message name="IDS_EXTENSION_PROMPT_WARNING_USB_DEVICE_SERIAL" desc="Permission string for accessing a USB device with a known vendor name, product name and serial number.">
+        <ph name="PRODUCT_NAME">$2<ex>Nexus 5</ex></ph> from <ph name="VENDOR_NAME">$1<ex>Google Inc.</ex></ph> (serial number <ph name="SERIAL_NUMBER">$3<ex>ABCDEF123456</ex></ph>)
+      </message>
+      <message name="IDS_EXTENSION_PROMPT_WARNING_USB_DEVICE_PID_SERIAL" desc="Permission string for accessing a USB device with a known vendor name and serial number and a hexidecimal product ID.">
+        Product <ph name="PRODUCT_ID">$2<ex>0x1234</ex></ph> from <ph name="VENDOR_NAME">$1<ex>Google Inc.</ex></ph> (serial number <ph name="SERIAL_NUMBER">$3<ex>ABCDEF123456</ex></ph>)
+      </message>
+      <message name="IDS_EXTENSION_PROMPT_WARNING_USB_DEVICE_VID_PID_SERIAL" desc="Permission string for accessing a USB device with a known serial number and a hexidecimal vendor and product IDs.">
+        Product <ph name="PRODUCT_ID">$2<ex>0x5678</ex></ph> from Vendor <ph name="VENDOR_ID">$1<ex>0x1234</ex></ph> (serial number <ph name="SERIAL_NUMBER">$3<ex>ABCDEF123456</ex></ph>)
       </message>
 
       <!-- Global error messages for extensions. Please keep alphabetized. -->
@@ -339,6 +357,12 @@
       </message>
       <message name="IDS_EXTENSION_WARNING_RELOAD_TOO_FREQUENT" desc="Warning message which indates that an extension got stuck in a reload loop.">
         This extension reloaded itself too frequently.
+      </message>
+      <message name="IDS_EXTENSION_PROMPT_WARNING_U2F_DEVICES" desc="Warning message which indicates that an extension has access to Universal 2nd Factor devices.">
+        Access your Universal 2nd Factor devices
+      </message>
+      <message name="IDS_EXTENSION_PROMPT_WARNING_WEB_CONNECTABLE" desc="Permission string for allowing websites to connect to extensions.">
+        Communicate with cooperating websites
       </message>
 
     </messages>

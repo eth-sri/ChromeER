@@ -25,7 +25,7 @@ content::WebUIDataSource* CreateWebUIDataSource() {
   content::WebUIDataSource* source =
         content::WebUIDataSource::Create(chrome::kChromeUIChromeSigninHost);
   source->OverrideContentSecurityPolicyFrameSrc("frame-src chrome-extension:;");
-  source->SetUseJsonJSFormatV2();
+  source->OverrideContentSecurityPolicyObjectSrc("object-src *;");
   source->SetJsonPath("strings.js");
 
   source->SetDefaultResource(IDR_INLINE_LOGIN_HTML);

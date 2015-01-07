@@ -17,7 +17,7 @@
 #include "net/base/file_stream.h"
 #include "net/base/net_util.h"
 #include "remoting/base/auto_thread_task_runner.h"
-#include "remoting/host/native_messaging/native_messaging_channel.h"
+#include "remoting/host/native_messaging/pipe_messaging_channel.h"
 #include "remoting/host/pin_hash.h"
 #include "remoting/host/setup/test_util.h"
 #include "remoting/protocol/pairing_registry.h"
@@ -323,17 +323,12 @@ void Me2MeNativeMessagingHostTest::StartHost() {
       new SynchronousPairingRegistry(scoped_ptr<PairingRegistry::Delegate>(
           new MockPairingRegistryDelegate()));
 
-  scoped_ptr<NativeMessagingChannel> channel(
-      new NativeMessagingChannel(input_read_file.Pass(),
-                                 output_write_file.Pass()));
+  scoped_ptr<extensions::NativeMessagingChannel> channel(
+      new PipeMessagingChannel(input_read_file.Pass(),
+                               output_write_file.Pass()));
 
   host_.reset(new Me2MeNativeMessagingHost(
-        false,
-        0,
-        channel.Pass(),
-        daemon_controller,
-        pairing_registry,
-        scoped_ptr<remoting::OAuthClient>()));
+      false, 0, channel.Pass(), daemon_controller, pairing_registry, nullptr));
   host_->Start(base::Bind(&Me2MeNativeMessagingHostTest::StopHost,
                           base::Unretained(this)));
 
@@ -389,19 +384,19 @@ Me2MeNativeMessagingHostTest::ReadMessageFromOutputPipe() {
   int read_result = output_read_file_.ReadAtCurrentPos(
       reinterpret_cast<char*>(&length), sizeof(length));
   if (read_result != sizeof(length)) {
-    return scoped_ptr<base::DictionaryValue>();
+    return nullptr;
   }
 
   std::string message_json(length, '\0');
   read_result = output_read_file_.ReadAtCurrentPos(
       string_as_array(&message_json), length);
   if (read_result != static_cast<int>(length)) {
-    return scoped_ptr<base::DictionaryValue>();
+    return nullptr;
   }
 
   scoped_ptr<base::Value> message(base::JSONReader::Read(message_json));
   if (!message || !message->IsType(base::Value::TYPE_DICTIONARY)) {
-    return scoped_ptr<base::DictionaryValue>();
+    return nullptr;
   }
 
   return scoped_ptr<base::DictionaryValue>(

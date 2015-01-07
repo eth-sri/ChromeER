@@ -150,37 +150,24 @@ void WebContentsTarget::Inspect(Profile* profile) const {
 
 class WorkerTarget : public DevToolsTargetImpl {
  public:
-  explicit WorkerTarget(const WorkerService::WorkerInfo& worker_info);
-
   explicit WorkerTarget(scoped_refptr<DevToolsAgentHost> agent_host);
 
   // DevToolsTargetImpl overrides:
-  virtual std::string GetType() const OVERRIDE;
   virtual void Inspect(Profile* profile) const OVERRIDE;
 };
 
-WorkerTarget::WorkerTarget(const WorkerService::WorkerInfo& worker)
-    : DevToolsTargetImpl(DevToolsAgentHost::GetForWorker(worker.process_id,
-                                                         worker.route_id)) {
-  set_description(base::StringPrintf("Worker pid:%d",
-                      base::GetProcId(worker.handle)));
-}
-
-WorkerTarget::WorkerTarget(
-    scoped_refptr<DevToolsAgentHost> agent_host)
+WorkerTarget::WorkerTarget(scoped_refptr<DevToolsAgentHost> agent_host)
     : DevToolsTargetImpl(agent_host) {
-}
-
-std::string WorkerTarget::GetType() const {
-  switch (GetAgentHost()->GetType()) {
+  switch (agent_host->GetType()) {
     case DevToolsAgentHost::TYPE_SHARED_WORKER:
-      return kTargetTypeWorker;
-    case DevToolsAgentHost::TYPE_SERVICE_WORKER:
-      return kTargetTypeServiceWorker;
-    default:
+      set_type(kTargetTypeWorker);
       break;
+    case DevToolsAgentHost::TYPE_SERVICE_WORKER:
+      set_type(kTargetTypeServiceWorker);
+      break;
+    default:
+      NOTREACHED();
   }
-  return kTargetTypeOther;
 }
 
 void WorkerTarget::Inspect(Profile* profile) const {
@@ -277,70 +264,36 @@ scoped_ptr<DevToolsTargetImpl> DevToolsTargetImpl::CreateForWebContents(
 }
 
 // static
-DevToolsTargetImpl::List DevToolsTargetImpl::EnumerateWebContentsTargets() {
+void DevToolsTargetImpl::EnumerateAllTargets(Callback callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
   std::set<WebContents*> tab_web_contents;
   for (TabContentsIterator it; !it.done(); it.Next())
     tab_web_contents.insert(*it);
 
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DevToolsTargetImpl::List result;
   DevToolsAgentHost::List agents = DevToolsAgentHost::GetOrCreateAll();
   for (DevToolsAgentHost::List::iterator it = agents.begin();
        it != agents.end(); ++it) {
-    if (WebContents* web_contents = (*it)->GetWebContents()) {
-      bool is_tab =
-          tab_web_contents.find(web_contents) != tab_web_contents.end();
-      result.push_back(new WebContentsTarget(web_contents, is_tab));
+    DevToolsAgentHost* agent_host = (*it).get();
+    switch (agent_host->GetType()) {
+      case DevToolsAgentHost::TYPE_WEB_CONTENTS:
+        if (WebContents* web_contents = agent_host->GetWebContents()) {
+          const bool is_tab =
+              tab_web_contents.find(web_contents) != tab_web_contents.end();
+          result.push_back(new WebContentsTarget(web_contents, is_tab));
+        }
+        break;
+      case DevToolsAgentHost::TYPE_SHARED_WORKER:
+        result.push_back(new WorkerTarget(agent_host));
+        break;
+      case DevToolsAgentHost::TYPE_SERVICE_WORKER:
+        result.push_back(new WorkerTarget(agent_host));
+        break;
+      default:
+        break;
     }
   }
-  return result;
-}
 
-static void CreateWorkerTargets(
-    const std::vector<WorkerService::WorkerInfo>& worker_info,
-    DevToolsTargetImpl::Callback callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DevToolsTargetImpl::List result;
-  for (size_t i = 0; i < worker_info.size(); ++i) {
-    result.push_back(new WorkerTarget(worker_info[i]));
-  }
   callback.Run(result);
-}
-
-// static
-void DevToolsTargetImpl::EnumerateWorkerTargets(Callback callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  content::BrowserThread::PostTask(
-      content::BrowserThread::UI,
-      FROM_HERE,
-      base::Bind(&CreateWorkerTargets,
-                 WorkerService::GetInstance()->GetWorkers(),
-                 callback));
-}
-
-static void CollectAllTargets(
-    DevToolsTargetImpl::Callback callback,
-    const DevToolsTargetImpl::List& worker_targets) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DevToolsTargetImpl::List result =
-      DevToolsTargetImpl::EnumerateWebContentsTargets();
-  result.insert(result.end(), worker_targets.begin(), worker_targets.end());
-
-  DevToolsAgentHost::List agents = DevToolsAgentHost::GetOrCreateAll();
-  for (DevToolsAgentHost::List::iterator it = agents.begin();
-      it != agents.end(); ++it) {
-    if ((*it)->GetType() == DevToolsAgentHost::TYPE_SERVICE_WORKER)
-      result.push_back(new WorkerTarget(*it));
-  }
-  callback.Run(result);
-}
-
-// static
-void DevToolsTargetImpl::EnumerateAllTargets(Callback callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  content::BrowserThread::PostTask(
-      content::BrowserThread::IO,
-      FROM_HERE,
-      base::Bind(&DevToolsTargetImpl::EnumerateWorkerTargets,
-                 base::Bind(&CollectAllTargets, callback)));
 }

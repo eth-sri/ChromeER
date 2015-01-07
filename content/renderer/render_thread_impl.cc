@@ -21,6 +21,7 @@
 #include "base/metrics/histogram.h"
 #include "base/metrics/stats_table.h"
 #include "base/path_service.h"
+#include "base/single_thread_task_runner.h"
 #include "base/strings/string16.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_tokenizer.h"
@@ -91,6 +92,7 @@
 #include "content/renderer/render_process_impl.h"
 #include "content/renderer/render_view_impl.h"
 #include "content/renderer/renderer_webkitplatformsupport_impl.h"
+#include "content/renderer/scheduler_proxy_task_runner.h"
 #include "content/renderer/service_worker/embedded_worker_context_message_filter.h"
 #include "content/renderer/service_worker/embedded_worker_dispatcher.h"
 #include "content/renderer/shared_worker/embedded_shared_worker_stub.h"
@@ -105,6 +107,7 @@
 #include "net/base/net_util.h"
 #include "skia/ext/event_tracer_impl.h"
 #include "third_party/WebKit/public/platform/WebString.h"
+#include "third_party/WebKit/public/platform/WebThread.h"
 #include "third_party/WebKit/public/web/WebColorName.h"
 #include "third_party/WebKit/public/web/WebDatabase.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
@@ -170,9 +173,7 @@ namespace content {
 namespace {
 
 const int64 kInitialIdleHandlerDelayMs = 1000;
-const int64 kShortIdleHandlerDelayMs = 1000;
 const int64 kLongIdleHandlerDelayMs = 30*1000;
-const int kIdleCPUUsageThresholdInPercents = 3;
 
 // Maximum allocation size allowed for image scaling filters that
 // require pre-scaling. Skia will fallback to a filter that doesn't
@@ -315,6 +316,13 @@ blink::WebGraphicsContext3D::Attributes GetOffscreenAttribs() {
   return attributes;
 }
 
+void DeletedGpuMemoryBuffer(ThreadSafeSender* sender,
+                            gfx::GpuMemoryBufferType type,
+                            const gfx::GpuMemoryBufferId& id) {
+  TRACE_EVENT0("renderer", "RenderThreadImpl::DeletedGpuMemoryBuffer");
+  sender->Send(new ChildProcessHostMsg_DeletedGpuMemoryBuffer(type, id));
+}
+
 }  // namespace
 
 // For measuring memory usage after each task. Behind a command line flag.
@@ -390,6 +398,13 @@ RenderThreadImpl::RenderThreadImpl()
 
 RenderThreadImpl::RenderThreadImpl(const std::string& channel_name)
     : ChildThread(Options(channel_name, ShouldUseMojoChannel())) {
+  Init();
+}
+
+RenderThreadImpl::RenderThreadImpl(
+    scoped_ptr<base::MessageLoop> main_message_loop)
+    : ChildThread(Options(ShouldUseMojoChannel())),
+      main_message_loop_(main_message_loop.Pass()) {
   Init();
 }
 
@@ -511,12 +526,6 @@ void RenderThreadImpl::Init() {
     is_distance_field_text_enabled_ = false;
   }
 
-  is_low_res_tiling_enabled_ = true;
-  if (command_line.HasSwitch(switches::kDisableLowResTiling) &&
-      !command_line.HasSwitch(switches::kEnableLowResTiling)) {
-    is_low_res_tiling_enabled_ = false;
-  }
-
   // Note that under Linux, the media library will normally already have
   // been initialized by the Zygote before this instance became a Renderer.
   base::FilePath media_path;
@@ -611,9 +620,6 @@ void RenderThreadImpl::Shutdown() {
   RemoveFilter(audio_input_message_filter_.get());
   audio_input_message_filter_ = NULL;
 
-  RemoveFilter(audio_message_filter_.get());
-  audio_message_filter_ = NULL;
-
 #if defined(ENABLE_WEBRTC)
   RTCPeerConnectionHandler::DestructAllHandlers();
 
@@ -635,6 +641,11 @@ void RenderThreadImpl::Shutdown() {
   }
 
   media_thread_.reset();
+
+  // AudioMessageFilter may be accessed on |media_thread_|, so shutdown after.
+  RemoveFilter(audio_message_filter_.get());
+  audio_message_filter_ = NULL;
+
   compositor_thread_.reset();
   input_handler_manager_.reset();
   if (input_event_filter_.get()) {
@@ -651,16 +662,26 @@ void RenderThreadImpl::Shutdown() {
   // hold pointers to V8 objects (e.g., via pending requests).
   main_thread_indexed_db_dispatcher_.reset();
 
-  if (webkit_platform_support_)
-    blink::shutdown();
+  main_thread_compositor_task_runner_ = NULL;
 
-  lazy_tls.Pointer()->Set(NULL);
+  gpu_channel_ = NULL;
 
   // TODO(port)
 #if defined(OS_WIN)
   // Clean up plugin channels before this thread goes away.
   NPChannelBase::CleanupChannels();
 #endif
+
+  // Shut down the message loop before shutting down Blink.
+  // This prevents a scenario where a pending task in the message loop accesses
+  // Blink objects after Blink shuts down.
+  // This must be at the very end of the shutdown sequence. You must not touch
+  // the message loop after this.
+  main_message_loop_.reset();
+  if (webkit_platform_support_)
+    blink::shutdown();
+
+  lazy_tls.Pointer()->Set(NULL);
 }
 
 bool RenderThreadImpl::Send(IPC::Message* msg) {
@@ -833,6 +854,7 @@ void RenderThreadImpl::EnsureWebKitInitialized() {
 
   webkit_platform_support_.reset(new RendererWebKitPlatformSupportImpl);
   blink::initialize(webkit_platform_support_.get());
+  main_thread_compositor_task_runner_ = base::MessageLoopProxy::current();
 
   v8::Isolate* isolate = blink::mainThreadIsolate();
 
@@ -873,7 +895,9 @@ void RenderThreadImpl::EnsureWebKitInitialized() {
 #endif
     if (!input_handler_manager_client) {
       input_event_filter_ =
-          new InputEventFilter(this, compositor_message_loop_proxy_);
+          new InputEventFilter(this,
+                               main_thread_compositor_task_runner_,
+                               compositor_message_loop_proxy_);
       AddFilter(input_event_filter_.get());
       input_handler_manager_client = input_event_filter_.get();
     }
@@ -900,7 +924,6 @@ void RenderThreadImpl::EnsureWebKitInitialized() {
   SetRuntimeFeaturesDefaultsAndUpdateFromArgs(command_line);
 
   if (!media::IsMediaLibraryInitialized()) {
-    WebRuntimeFeatures::enableMediaPlayer(false);
     WebRuntimeFeatures::enableWebAudio(false);
   }
 
@@ -993,7 +1016,13 @@ void RenderThreadImpl::IdleHandler() {
                                GetContentClient()->renderer()->
                                    RunIdleHandlerWhenWidgetsHidden();
   if (run_in_foreground_tab) {
-    IdleHandlerInForegroundTab();
+    if (idle_notifications_to_skip_ > 0) {
+      --idle_notifications_to_skip_;
+    } else {
+      base::allocator::ReleaseFreeMemory();
+      base::DiscardableMemory::ReduceMemoryUsage();
+    }
+    ScheduleIdleHandler(kLongIdleHandlerDelayMs);
     return;
   }
 
@@ -1011,62 +1040,30 @@ void RenderThreadImpl::IdleHandler() {
     continue_timer = true;
   }
 
-  // Schedule next invocation.
+  // Schedule next invocation. When the tab is originally hidden, an invocation
+  // is scheduled for kInitialIdleHandlerDelayMs in
+  // RenderThreadImpl::WidgetHidden in order to race to a minimal heap.
+  // After that, idle calls can be much less frequent, so run at a maximum of
+  // once every kLongIdleHandlerDelayMs.
   // Dampen the delay using the algorithm (if delay is in seconds):
   //    delay = delay + 1 / (delay + 2)
   // Using floor(delay) has a dampening effect such as:
-  //    1s, 1, 1, 2, 2, 2, 2, 3, 3, ...
+  //    30s, 30, 30, 31, 31, 31, 31, 32, 32, ...
   // If the delay is in milliseconds, the above formula is equivalent to:
   //    delay_ms / 1000 = delay_ms / 1000 + 1 / (delay_ms / 1000 + 2)
   // which is equivalent to
   //    delay_ms = delay_ms + 1000*1000 / (delay_ms + 2000).
-  // Note that idle_notification_delay_in_ms_ would be reset to
-  // kInitialIdleHandlerDelayMs in RenderThreadImpl::WidgetHidden.
   if (continue_timer) {
-    ScheduleIdleHandler(idle_notification_delay_in_ms_ +
-                        1000000 / (idle_notification_delay_in_ms_ + 2000));
+    ScheduleIdleHandler(
+        std::max(kLongIdleHandlerDelayMs,
+                 idle_notification_delay_in_ms_ +
+                 1000000 / (idle_notification_delay_in_ms_ + 2000)));
 
   } else {
     idle_timer_.Stop();
   }
 
   FOR_EACH_OBSERVER(RenderProcessObserver, observers_, IdleNotification());
-}
-
-void RenderThreadImpl::IdleHandlerInForegroundTab() {
-  // Increase the delay in the same way as in IdleHandler,
-  // but make it periodic by reseting it once it is too big.
-  int64 new_delay_ms = idle_notification_delay_in_ms_ +
-                       1000000 / (idle_notification_delay_in_ms_ + 2000);
-  if (new_delay_ms >= kLongIdleHandlerDelayMs)
-    new_delay_ms = kShortIdleHandlerDelayMs;
-
-  if (idle_notifications_to_skip_ > 0) {
-    idle_notifications_to_skip_--;
-  } else  {
-    int cpu_usage = 0;
-    Send(new ViewHostMsg_GetCPUUsage(&cpu_usage));
-    // Idle notification hint roughly specifies the expected duration of the
-    // idle pause. We set it proportional to the idle timer delay.
-    int idle_hint = static_cast<int>(new_delay_ms / 10);
-    if (cpu_usage < kIdleCPUUsageThresholdInPercents) {
-      base::allocator::ReleaseFreeMemory();
-
-      bool finished_idle_work = true;
-      if (blink::mainThreadIsolate() &&
-          !blink::mainThreadIsolate()->IdleNotification(idle_hint)) {
-        finished_idle_work = false;
-      }
-      if (!base::DiscardableMemory::ReduceMemoryUsage())
-        finished_idle_work = false;
-
-      // V8 finished collecting garbage and discardable memory system has no
-      // more idle work left.
-      if (finished_idle_work)
-        new_delay_ms = kLongIdleHandlerDelayMs;
-    }
-  }
-  ScheduleIdleHandler(new_delay_ms);
 }
 
 int64 RenderThreadImpl::GetIdleNotificationDelayInMs() const {
@@ -1267,6 +1264,8 @@ scoped_ptr<gfx::GpuMemoryBuffer> RenderThreadImpl::AllocateGpuMemoryBuffer(
     size_t height,
     unsigned internalformat,
     unsigned usage) {
+  TRACE_EVENT0("renderer", "RenderThreadImpl::AllocateGpuMemoryBuffer");
+
   DCHECK(allocate_gpu_memory_buffer_thread_checker_.CalledOnValidThread());
 
   if (!GpuMemoryBufferImpl::IsFormatValid(internalformat))
@@ -1286,20 +1285,21 @@ scoped_ptr<gfx::GpuMemoryBuffer> RenderThreadImpl::AllocateGpuMemoryBuffer(
   if (!success)
     return scoped_ptr<gfx::GpuMemoryBuffer>();
 
-  return GpuMemoryBufferImpl::CreateFromHandle(
-             handle, gfx::Size(width, height), internalformat)
-      .PassAs<gfx::GpuMemoryBuffer>();
-}
+  scoped_ptr<GpuMemoryBufferImpl> buffer(GpuMemoryBufferImpl::CreateFromHandle(
+      handle,
+      gfx::Size(width, height),
+      internalformat,
+      base::Bind(&DeletedGpuMemoryBuffer,
+                 make_scoped_refptr(thread_safe_sender()),
+                 handle.type,
+                 handle.global_id)));
+  if (!buffer) {
+    thread_safe_sender()->Send(new ChildProcessHostMsg_DeletedGpuMemoryBuffer(
+        handle.type, handle.global_id));
+    return scoped_ptr<gfx::GpuMemoryBuffer>();
+  }
 
-void RenderThreadImpl::DeleteGpuMemoryBuffer(
-    scoped_ptr<gfx::GpuMemoryBuffer> buffer) {
-  gfx::GpuMemoryBufferHandle handle(buffer->GetHandle());
-
-  IPC::Message* message = new ChildProcessHostMsg_DeletedGpuMemoryBuffer(
-      handle.type, handle.global_id);
-
-  // Allow calling this from the compositor thread.
-  thread_safe_sender()->Send(message);
+  return buffer.PassAs<gfx::GpuMemoryBuffer>();
 }
 
 void RenderThreadImpl::DoNotSuspendWebKitSharedTimer() {
@@ -1334,7 +1334,6 @@ bool RenderThreadImpl::OnControlMessageReceived(const IPC::Message& msg) {
     // TODO(port): removed from render_messages_internal.h;
     // is there a new non-windows message I should add here?
     IPC_MESSAGE_HANDLER(ViewMsg_New, OnCreateNewView)
-    IPC_MESSAGE_HANDLER(ViewMsg_PurgePluginListCache, OnPurgePluginListCache)
     IPC_MESSAGE_HANDLER(ViewMsg_NetworkTypeChanged, OnNetworkTypeChanged)
     IPC_MESSAGE_HANDLER(ViewMsg_TempCrashWithData, OnTempCrashWithData)
     IPC_MESSAGE_HANDLER(WorkerProcessMsg_CreateWorker, OnCreateNewSharedWorker)
@@ -1345,6 +1344,9 @@ bool RenderThreadImpl::OnControlMessageReceived(const IPC::Message& msg) {
 #endif
 #if defined(OS_MACOSX)
     IPC_MESSAGE_HANDLER(ViewMsg_UpdateScrollbarTheme, OnUpdateScrollbarTheme)
+#endif
+#if defined(ENABLE_PLUGINS)
+    IPC_MESSAGE_HANDLER(ViewMsg_PurgePluginListCache, OnPurgePluginListCache)
 #endif
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
@@ -1472,6 +1474,7 @@ GpuChannelHost* RenderThreadImpl::GetGpuChannel() {
   return gpu_channel_.get();
 }
 
+#if defined(ENABLE_PLUGINS)
 void RenderThreadImpl::OnPurgePluginListCache(bool reload_pages) {
   EnsureWebKitInitialized();
   // The call below will cause a GetPlugins call with refresh=true, but at this
@@ -1484,6 +1487,7 @@ void RenderThreadImpl::OnPurgePluginListCache(bool reload_pages) {
 
   FOR_EACH_OBSERVER(RenderProcessObserver, observers_, PluginListChanged());
 }
+#endif
 
 void RenderThreadImpl::OnNetworkTypeChanged(
     net::NetworkChangeNotifier::ConnectionType type) {
@@ -1596,14 +1600,6 @@ RenderThreadImpl::GetMediaThreadTaskRunner() {
 #endif
   }
   return media_thread_->message_loop_proxy();
-}
-
-void RenderThreadImpl::SetFlingCurveParameters(
-    const std::vector<float>& new_touchpad,
-    const std::vector<float>& new_touchscreen) {
-  webkit_platform_support_->SetFlingCurveParameters(new_touchpad,
-                                                    new_touchscreen);
-
 }
 
 void RenderThreadImpl::SampleGamepads(blink::WebGamepads* data) {

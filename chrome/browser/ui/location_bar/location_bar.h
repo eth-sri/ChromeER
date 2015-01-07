@@ -5,7 +5,7 @@
 #ifndef CHROME_BROWSER_UI_LOCATION_BAR_LOCATION_BAR_H_
 #define CHROME_BROWSER_UI_LOCATION_BAR_LOCATION_BAR_H_
 
-#include "content/public/common/page_transition_types.h"
+#include "ui/base/page_transition_types.h"
 #include "ui/base/window_open_disposition.h"
 #include "url/gurl.h"
 
@@ -37,7 +37,7 @@ class LocationBar {
   // The details necessary to open the user's desired omnibox match.
   virtual GURL GetDestinationURL() const = 0;
   virtual WindowOpenDisposition GetWindowOpenDisposition() const = 0;
-  virtual content::PageTransition GetPageTransition() const = 0;
+  virtual ui::PageTransition GetPageTransition() const = 0;
 
   // Accepts the current string of text entered in the location bar.
   virtual void AcceptInput() = 0;
@@ -57,6 +57,9 @@ class LocationBar {
 
   // Updates the state of the page actions.
   virtual void UpdatePageActions() = 0;
+
+  // Updates the visibility of the bookmark star.
+  virtual void UpdateBookmarkStarVisibility() = 0;
 
   // Called when the page-action data needs to be refreshed, e.g. when an
   // extension is unloaded or crashes.

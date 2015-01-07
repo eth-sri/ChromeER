@@ -10,10 +10,14 @@
 
 #include "base/synchronization/lock.h"
 #include "extensions/common/extension_set.h"
+#include "storage/browser/quota/special_storage_policy.h"
 #include "url/gurl.h"
-#include "webkit/browser/quota/special_storage_policy.h"
 
 class CookieSettings;
+
+namespace content {
+class BrowserContext;
+}
 
 namespace extensions {
 class Extension;
@@ -37,7 +41,8 @@ class ExtensionSpecialStoragePolicy : public storage::SpecialStoragePolicy {
   virtual bool HasSessionOnlyOrigins() OVERRIDE;
 
   // Methods used by the ExtensionService to populate this class.
-  void GrantRightsForExtension(const extensions::Extension* extension);
+  void GrantRightsForExtension(const extensions::Extension* extension,
+                               content::BrowserContext* browser_context);
   void RevokeRightsForExtension(const extensions::Extension* extension);
   void RevokeRightsForAllExtensions();
 

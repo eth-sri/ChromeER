@@ -15,9 +15,9 @@
 #include "content/browser/indexed_db/indexed_db_database_error.h"
 #include "content/browser/indexed_db/indexed_db_tracing.h"
 #include "content/browser/indexed_db/indexed_db_transaction_coordinator.h"
+#include "storage/common/database/database_identifier.h"
 #include "third_party/WebKit/public/platform/WebIDBDatabaseException.h"
 #include "third_party/leveldatabase/env_chromium.h"
-#include "webkit/common/database/database_identifier.h"
 
 using base::ASCIIToUTF16;
 
@@ -276,7 +276,7 @@ void IndexedDBFactoryImpl::DeleteDatabase(
   }
 
   database_map_[unique_identifier] = database.get();
-  origin_dbs_.insert(std::make_pair(origin_url, database));
+  origin_dbs_.insert(std::make_pair(origin_url, database.get()));
   database->DeleteDatabase(callbacks);
   RemoveDatabaseFromMaps(unique_identifier);
   database = NULL;
@@ -482,7 +482,7 @@ void IndexedDBFactoryImpl::Open(const base::string16& name,
 
   if (!was_open && database->ConnectionCount() > 0) {
     database_map_[unique_identifier] = database.get();
-    origin_dbs_.insert(std::make_pair(origin_url, database));
+    origin_dbs_.insert(std::make_pair(origin_url, database.get()));
   }
 }
 

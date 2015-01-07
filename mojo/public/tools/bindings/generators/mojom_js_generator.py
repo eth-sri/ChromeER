@@ -31,8 +31,8 @@ _kind_to_javascript_default_value = {
   mojom.INT64:                 "0",
   mojom.UINT64:                "0",
   mojom.DOUBLE:                "0",
-  mojom.STRING:                '""',
-  mojom.NULLABLE_STRING:       '""'
+  mojom.STRING:                "null",
+  mojom.NULLABLE_STRING:       "null"
 }
 
 
@@ -195,7 +195,7 @@ def TranslateConstants(token):
     if token.parent_kind:
       name.append(token.parent_kind.name)
     if isinstance(token, mojom.EnumValue):
-      name.append(token.enum_name)
+      name.append(token.enum.name)
     name.append(token.name)
     return ".".join(name)
 

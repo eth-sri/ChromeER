@@ -34,8 +34,8 @@
 #include "extensions/browser/extension_registry.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/manifest_constants.h"
+#include "storage/browser/fileapi/file_system_context.h"
 #include "url/gurl.h"
-#include "webkit/browser/fileapi/file_system_context.h"
 
 using content::BrowserThread;
 using extensions::Extension;
@@ -130,7 +130,7 @@ LocalChangeProcessor* GetLocalChangeProcessorAdapter(
     base::WeakPtr<SyncFileSystemService> service,
     const GURL& origin) {
   if (!service)
-    return NULL;
+    return nullptr;
   return service->GetLocalChangeProcessor(origin);
 }
 
@@ -146,7 +146,8 @@ class LocalSyncRunner : public SyncProcessRunner,
   LocalSyncRunner(const std::string& name,
                   SyncFileSystemService* sync_service)
       : SyncProcessRunner(name, sync_service,
-                          scoped_ptr<SyncProcessRunner::TimerHelper>(), 1),
+                          nullptr,  /* timer_helper */
+                          1  /* max_parallel_task */),
         factory_(this) {}
 
   virtual void StartSync(const SyncStatusCallback& callback) OVERRIDE {
@@ -189,7 +190,8 @@ class RemoteSyncRunner : public SyncProcessRunner,
                    SyncFileSystemService* sync_service,
                    RemoteFileSyncService* remote_service)
       : SyncProcessRunner(name, sync_service,
-                          scoped_ptr<SyncProcessRunner::TimerHelper>(), 1),
+                          nullptr,  /* timer_helper */
+                          1  /* max_parallel_task */),
         remote_service_(remote_service),
         last_state_(REMOTE_SERVICE_OK),
         factory_(this) {}
@@ -267,7 +269,7 @@ void SyncFileSystemService::Shutdown() {
 
   ExtensionRegistry::Get(profile_)->RemoveObserver(this);
 
-  profile_ = NULL;
+  profile_ = nullptr;
 }
 
 SyncFileSystemService::~SyncFileSystemService() {
@@ -396,8 +398,7 @@ void SyncFileSystemService::CheckIfIdle() {
 
   for (size_t i = 0; i < remote_sync_runners_.size(); ++i) {
     SyncServiceState service_state = remote_sync_runners_[i]->GetServiceState();
-    if (service_state != SYNC_SERVICE_RUNNING &&
-        service_state != SYNC_SERVICE_TEMPORARY_UNAVAILABLE)
+    if (service_state != SYNC_SERVICE_RUNNING)
       continue;
 
     if (remote_sync_runners_[i]->pending_changes())
@@ -406,8 +407,7 @@ void SyncFileSystemService::CheckIfIdle() {
 
   for (size_t i = 0; i < local_sync_runners_.size(); ++i) {
     SyncServiceState service_state = local_sync_runners_[i]->GetServiceState();
-    if (service_state != SYNC_SERVICE_RUNNING &&
-        service_state != SYNC_SERVICE_TEMPORARY_UNAVAILABLE)
+    if (service_state != SYNC_SERVICE_RUNNING)
       continue;
 
     if (local_sync_runners_[i]->pending_changes())
@@ -571,13 +571,13 @@ void SyncFileSystemService::DidDumpFiles(
 
   // After all metadata loaded, sync status can be added to each entry.
   for (size_t i = 0; i < files->GetSize(); ++i) {
-    base::DictionaryValue* file = NULL;
+    base::DictionaryValue* file = nullptr;
     std::string path_string;
     if (!files->GetDictionary(i, &file) ||
         !file->GetString("path", &path_string)) {
       NOTREACHED();
       completion_callback.Run(
-          NULL, SYNC_FILE_ERROR_FAILED, SYNC_FILE_STATUS_UNKNOWN);
+          nullptr, SYNC_FILE_ERROR_FAILED, SYNC_FILE_STATUS_UNKNOWN);
       continue;
     }
 

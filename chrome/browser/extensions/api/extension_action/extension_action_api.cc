@@ -175,7 +175,7 @@ ExtensionAction::ShowAction ExtensionActionAPI::ExecuteExtensionAction(
       ActiveScriptController::GetForWebContents(web_contents);
   bool has_pending_scripts = false;
   if (active_script_controller &&
-      active_script_controller->GetActionForExtension(extension)) {
+      active_script_controller->WantsToRun(extension)) {
     has_pending_scripts = true;
   }
 
@@ -230,6 +230,26 @@ bool ExtensionActionAPI::ShowExtensionActionPopup(
   }
 }
 
+bool ExtensionActionAPI::ExtensionWantsToRun(
+    const Extension* extension, content::WebContents* web_contents) {
+  // An extension wants to act if it has a visible page action on the given
+  // page...
+  ExtensionAction* page_action =
+      ExtensionActionManager::Get(browser_context_)->GetPageAction(*extension);
+  if (page_action &&
+      page_action->GetIsVisible(SessionTabHelper::IdForTab(web_contents)))
+    return true;
+
+  // ... Or if it has pending scripts that need approval for execution.
+  ActiveScriptController* active_script_controller =
+      ActiveScriptController::GetForWebContents(web_contents);
+  if (active_script_controller &&
+      active_script_controller->WantsToRun(extension))
+    return true;
+
+  return false;
+}
+
 void ExtensionActionAPI::NotifyChange(ExtensionAction* extension_action,
                                       content::WebContents* web_contents,
                                       content::BrowserContext* context) {
@@ -255,9 +275,7 @@ void ExtensionActionAPI::ClearAllValuesForTab(
   for (ExtensionSet::const_iterator iter = enabled_extensions.begin();
        iter != enabled_extensions.end(); ++iter) {
     ExtensionAction* extension_action =
-        action_manager->GetBrowserAction(*iter->get());
-    if (!extension_action)
-      extension_action = action_manager->GetPageAction(*iter->get());
+        action_manager->GetExtensionAction(**iter);
     if (extension_action) {
       extension_action->ClearAllValuesForTab(tab_id);
       NotifyChange(extension_action, web_contents, browser_context);
@@ -464,21 +482,9 @@ bool ExtensionActionSetIconFunction::RunExtensionAction() {
   int icon_index;
   if (details_->GetDictionary("imageData", &canvas_set)) {
     gfx::ImageSkia icon;
-    // Extract icon representations from the ImageDataSet dictionary.
-    for (size_t i = 0; i < extension_misc::kNumExtensionActionIconSizes; i++) {
-      base::BinaryValue* binary = NULL;
-      const extension_misc::IconRepresentationInfo& icon_info =
-          extension_misc::kExtensionActionIconSizes[i];
-      if (canvas_set->GetBinary(icon_info.size_string, &binary)) {
-        IPC::Message pickle(binary->GetBuffer(), binary->GetSize());
-        PickleIterator iter(pickle);
-        SkBitmap bitmap;
-        EXTENSION_FUNCTION_VALIDATE(IPC::ReadParam(&pickle, &iter, &bitmap));
-        CHECK(!bitmap.isNull());
-        float scale = ui::GetScaleForScaleFactor(icon_info.scale);
-        icon.AddRepresentation(gfx::ImageSkiaRep(bitmap, scale));
-      }
-    }
+
+    EXTENSION_FUNCTION_VALIDATE(
+        ExtensionAction::ParseIconFromCanvasDictionary(*canvas_set, &icon));
 
     extension_action_->SetIcon(tab_id_, gfx::Image(icon));
   } else if (details_->GetInteger("iconIndex", &icon_index)) {

@@ -32,10 +32,12 @@ class TestingNinjaTargetWriter : public NinjaTargetWriter {
 
 TEST(NinjaTargetWriter, WriteInputDepsStampAndGetDep) {
   TestWithScope setup;
+  Err err;
 
   // Make a base target that's a hard dep (action).
   Target base_target(setup.settings(), Label(SourceDir("//foo/"), "base"));
   base_target.set_output_type(Target::ACTION);
+  base_target.visibility().SetPublic();
   base_target.SetToolchain(setup.toolchain());
   base_target.action_values().set_script(SourceFile("//foo/script.py"));
 
@@ -43,23 +45,25 @@ TEST(NinjaTargetWriter, WriteInputDepsStampAndGetDep) {
   // included) and a source (should not be included).
   Target target(setup.settings(), Label(SourceDir("//foo/"), "target"));
   target.set_output_type(Target::EXECUTABLE);
+  target.visibility().SetPublic();
   target.SetToolchain(setup.toolchain());
   target.inputs().push_back(SourceFile("//foo/input.txt"));
   target.sources().push_back(SourceFile("//foo/source.txt"));
-  target.deps().push_back(LabelTargetPair(&base_target));
+  target.public_deps().push_back(LabelTargetPair(&base_target));
 
   // Dependent action to test that action sources will be treated the same as
   // inputs.
   Target action(setup.settings(), Label(SourceDir("//foo/"), "action"));
   action.set_output_type(Target::ACTION);
+  action.visibility().SetPublic();
   action.SetToolchain(setup.toolchain());
   action.action_values().set_script(SourceFile("//foo/script.py"));
   action.sources().push_back(SourceFile("//foo/action_source.txt"));
-  action.deps().push_back(LabelTargetPair(&target));
+  action.public_deps().push_back(LabelTargetPair(&target));
 
-  base_target.OnResolved();
-  target.OnResolved();
-  action.OnResolved();
+  ASSERT_TRUE(base_target.OnResolved(&err));
+  ASSERT_TRUE(target.OnResolved(&err));
+  ASSERT_TRUE(action.OnResolved(&err));
 
   // Input deps for the base (should be only the script itself).
   {
@@ -105,6 +109,7 @@ TEST(NinjaTargetWriter, WriteInputDepsStampAndGetDep) {
 // Tests WriteInputDepsStampAndGetDep when toolchain deps are present.
 TEST(NinjaTargetWriter, WriteInputDepsStampAndGetDepWithToolchainDeps) {
   TestWithScope setup;
+  Err err;
 
   // Toolchain dependency. Here we make a target in the same toolchain for
   // simplicity, but in real life (using the Builder) this would be rejected
@@ -114,14 +119,14 @@ TEST(NinjaTargetWriter, WriteInputDepsStampAndGetDepWithToolchainDeps) {
                               Label(SourceDir("//foo/"), "setup"));
   toolchain_dep_target.set_output_type(Target::ACTION);
   toolchain_dep_target.SetToolchain(setup.toolchain());
-  toolchain_dep_target.OnResolved();
+  ASSERT_TRUE(toolchain_dep_target.OnResolved(&err));
   setup.toolchain()->deps().push_back(LabelTargetPair(&toolchain_dep_target));
 
   // Make a binary target
   Target target(setup.settings(), Label(SourceDir("//foo/"), "target"));
   target.set_output_type(Target::EXECUTABLE);
   target.SetToolchain(setup.toolchain());
-  target.OnResolved();
+  ASSERT_TRUE(target.OnResolved(&err));
 
   std::ostringstream stream;
   TestingNinjaTargetWriter writer(&target, setup.toolchain(), stream);

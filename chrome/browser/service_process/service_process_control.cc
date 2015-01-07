@@ -25,22 +25,6 @@
 
 using content::BrowserThread;
 
-namespace {
-
-// Test: On Mac, launchd_msg_send tries to allocate a 10MB buffer, but doesn't
-// handle errors and makes ugly crash dumps when close to OOM.
-// TODO(vitalybuka): Remove after few Canary builds.
-// See http://crbug.com/406227
-void AllocDebugTest() {
-#if defined(OS_MACOSX)
-  void* buffer = malloc(20 * 1024 * 1024);
-  CHECK(buffer);
-  free(buffer);
-#endif  // OS_MACOSX
-}
-
-}  // namespace
-
 // ServiceProcessControl implementation.
 ServiceProcessControl::ServiceProcessControl() {
 }
@@ -239,7 +223,6 @@ void ServiceProcessControl::OnHistograms(
 }
 
 void ServiceProcessControl::RunHistogramsCallback() {
-  AllocDebugTest();
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   if (!histograms_callback_.is_null()) {
     histograms_callback_.Run();
@@ -276,10 +259,14 @@ bool ServiceProcessControl::GetCloudPrintProxyInfo(
 bool ServiceProcessControl::GetHistograms(
     const base::Closure& histograms_callback,
     const base::TimeDelta& timeout) {
-  AllocDebugTest();
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!histograms_callback.is_null());
   histograms_callback_.Reset();
+
+#if defined(OS_MACOSX)
+  // TODO(vitalybuka): Investigate why it crashes MAC http://crbug.com/406227.
+  return false;
+#endif  // OS_MACOSX
 
   // If the service process is already running then connect to it.
   if (!CheckServiceProcessReady())

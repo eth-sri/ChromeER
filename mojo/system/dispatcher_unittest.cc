@@ -23,14 +23,14 @@ class TrivialDispatcher : public Dispatcher {
  public:
   TrivialDispatcher() {}
 
-  virtual Type GetType() const OVERRIDE { return kTypeUnknown; }
+  virtual Type GetType() const override { return kTypeUnknown; }
 
  private:
   friend class base::RefCountedThreadSafe<TrivialDispatcher>;
   virtual ~TrivialDispatcher() {}
 
   virtual scoped_refptr<Dispatcher>
-  CreateEquivalentDispatcherAndCloseImplNoLock() OVERRIDE {
+  CreateEquivalentDispatcherAndCloseImplNoLock() override {
     lock().AssertAcquired();
     return scoped_refptr<Dispatcher>(new TrivialDispatcher());
   }
@@ -45,12 +45,12 @@ TEST(DispatcherTest, Basic) {
 
   EXPECT_EQ(MOJO_RESULT_INVALID_ARGUMENT,
             d->WriteMessage(
-                NullUserPointer(), 0, NULL, MOJO_WRITE_MESSAGE_FLAG_NONE));
+                NullUserPointer(), 0, nullptr, MOJO_WRITE_MESSAGE_FLAG_NONE));
   EXPECT_EQ(MOJO_RESULT_INVALID_ARGUMENT,
             d->ReadMessage(NullUserPointer(),
                            NullUserPointer(),
-                           NULL,
-                           NULL,
+                           nullptr,
+                           nullptr,
                            MOJO_WRITE_MESSAGE_FLAG_NONE));
   EXPECT_EQ(
       MOJO_RESULT_INVALID_ARGUMENT,
@@ -91,12 +91,12 @@ TEST(DispatcherTest, Basic) {
 
   EXPECT_EQ(MOJO_RESULT_INVALID_ARGUMENT,
             d->WriteMessage(
-                NullUserPointer(), 0, NULL, MOJO_WRITE_MESSAGE_FLAG_NONE));
+                NullUserPointer(), 0, nullptr, MOJO_WRITE_MESSAGE_FLAG_NONE));
   EXPECT_EQ(MOJO_RESULT_INVALID_ARGUMENT,
             d->ReadMessage(NullUserPointer(),
                            NullUserPointer(),
-                           NULL,
-                           NULL,
+                           nullptr,
+                           nullptr,
                            MOJO_WRITE_MESSAGE_FLAG_NONE));
   EXPECT_EQ(
       MOJO_RESULT_INVALID_ARGUMENT,
@@ -160,7 +160,7 @@ class ThreadSafetyStressThread : public base::SimpleThread {
   virtual ~ThreadSafetyStressThread() { Join(); }
 
  private:
-  virtual void Run() OVERRIDE {
+  virtual void Run() override {
     event_->Wait();
 
     waiter_.Init();
@@ -175,14 +175,14 @@ class ThreadSafetyStressThread : public base::SimpleThread {
         EXPECT_EQ(
             MOJO_RESULT_INVALID_ARGUMENT,
             dispatcher_->WriteMessage(
-                NullUserPointer(), 0, NULL, MOJO_WRITE_MESSAGE_FLAG_NONE));
+                NullUserPointer(), 0, nullptr, MOJO_WRITE_MESSAGE_FLAG_NONE));
         break;
       case READ_MESSAGE:
         EXPECT_EQ(MOJO_RESULT_INVALID_ARGUMENT,
                   dispatcher_->ReadMessage(NullUserPointer(),
                                            NullUserPointer(),
-                                           NULL,
-                                           NULL,
+                                           nullptr,
+                                           nullptr,
                                            MOJO_WRITE_MESSAGE_FLAG_NONE));
         break;
       case WRITE_DATA:

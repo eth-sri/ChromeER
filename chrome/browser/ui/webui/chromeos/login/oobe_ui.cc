@@ -6,6 +6,7 @@
 
 #include "base/command_line.h"
 #include "base/logging.h"
+#include "base/strings/stringprintf.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browser_process_platform_part.h"
@@ -15,6 +16,7 @@
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/policy/consumer_management_service.h"
 #include "chrome/browser/chromeos/system/input_device_settings.h"
+#include "chrome/browser/extensions/signin/gaia_auth_extension_loader.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/about_ui.h"
 #include "chrome/browser/ui/webui/chromeos/login/app_launch_splash_screen_handler.h"
@@ -33,6 +35,7 @@
 #include "chrome/browser/ui/webui/chromeos/login/network_dropdown_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/network_screen_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/network_state_informer.h"
+#include "chrome/browser/ui/webui/chromeos/login/polymer_resources_map.h"
 #include "chrome/browser/ui/webui/chromeos/login/reset_screen_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/signin_screen_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/supervised_user_creation_screen_handler.h"
@@ -48,6 +51,7 @@
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_data_source.h"
 #include "grit/browser_resources.h"
+#include "grit/chrome_unscaled_resources.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/webui/web_ui_util.h"
 
@@ -74,13 +78,17 @@ const char kEnrollmentHTMLPath[] = "enrollment.html";
 const char kEnrollmentCSSPath[] = "enrollment.css";
 const char kEnrollmentJSPath[] = "enrollment.js";
 
+void AddPolymerResourcesPaths(content::WebUIDataSource* source) {
+  for (const auto& mapping: GetPolymerResourcesMap())
+    source->AddResourcePath(mapping.first, mapping.second);
+}
+
 // Creates a WebUIDataSource for chrome://oobe
 content::WebUIDataSource* CreateOobeUIDataSource(
     const base::DictionaryValue& localized_strings,
     const std::string& display_type) {
   content::WebUIDataSource* source =
       content::WebUIDataSource::Create(chrome::kChromeUIOobeHost);
-  source->SetUseJsonJSFormatV2();
   source->AddLocalizedStrings(localized_strings);
   source->SetJsonPath(kStringsJSPath);
 
@@ -98,13 +106,21 @@ content::WebUIDataSource* CreateOobeUIDataSource(
   }
   source->AddResourcePath(kKeyboardUtilsJSPath, IDR_KEYBOARD_UTILS_JS);
   source->OverrideContentSecurityPolicyFrameSrc(
-      "frame-src chrome://terms/ "
-      "chrome-extension://mfffpogegjflfpflabcdkioaeobkgjik/;");
+      base::StringPrintf(
+          "frame-src chrome://terms/ %s/;",
+          extensions::kGaiaAuthExtensionOrigin));
 
   // Serve deferred resources.
   source->AddResourcePath(kEnrollmentHTMLPath, IDR_OOBE_ENROLLMENT_HTML);
   source->AddResourcePath(kEnrollmentCSSPath, IDR_OOBE_ENROLLMENT_CSS);
   source->AddResourcePath(kEnrollmentJSPath, IDR_OOBE_ENROLLMENT_JS);
+
+  if (display_type == OobeUI::kOobeDisplay) {
+    AddPolymerResourcesPaths(source);
+    source->AddResourcePath("Roboto-Thin.ttf", IDR_FONT_ROBOTO_THIN);
+    source->AddResourcePath("Roboto-Light.ttf", IDR_FONT_ROBOTO_LIGHT);
+    source->AddResourcePath("Roboto-Bold.ttf", IDR_FONT_ROBOTO_BOLD);
+  }
 
   return source;
 }
@@ -264,7 +280,8 @@ OobeUI::OobeUI(content::WebUI* web_ui, const GURL& url)
       g_browser_process->platform_part()->browser_policy_connector_chromeos()->
           GetConsumerManagementService();
   gaia_screen_handler_ =
-      new GaiaScreenHandler(network_state_informer_, consumer_management);
+      new GaiaScreenHandler(
+          core_handler_, network_state_informer_, consumer_management);
   AddScreenHandler(gaia_screen_handler_);
 
   signin_screen_handler_ = new SigninScreenHandler(network_state_informer_,

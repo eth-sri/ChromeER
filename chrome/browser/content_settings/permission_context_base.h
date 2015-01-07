@@ -63,6 +63,11 @@ class PermissionContextBase : public KeyedService {
                                  bool user_gesture,
                                  const BrowserPermissionCallback& callback);
 
+  // Withdraw an existing permission request, no op if the permission request
+  // was already cancelled by some other means.
+  virtual void CancelPermissionRequest(content::WebContents* web_contents,
+                                       const PermissionRequestID& id);
+
  protected:
   // Decide whether the permission should be granted.
   // Calls PermissionDecided if permission can be decided non-interactively,
@@ -98,21 +103,27 @@ class PermissionContextBase : public KeyedService {
   // Return an instance of the infobar queue controller, creating it if needed.
   PermissionQueueController* GetQueueController();
 
+  // Store the decided permission as a content setting.
+  // virtual since the permission might be stored with different restrictions
+  // (for example for desktop notifications).
+  virtual void UpdateContentSetting(const GURL& requesting_origin,
+                                    const GURL& embedder_origin,
+                                    bool allowed);
+
  private:
-  void UpdateContentSetting(
-      const GURL& requesting_origin,
-      const GURL& embedder_origin,
-      bool allowed);
 
   // Called when a bubble is no longer used so it can be cleaned up.
   void CleanUpBubble(const PermissionRequestID& id);
 
   Profile* profile_;
   const ContentSettingsType permission_type_;
-  base::WeakPtrFactory<PermissionContextBase> weak_factory_;
   scoped_ptr<PermissionQueueController> permission_queue_controller_;
   base::ScopedPtrHashMap<std::string, PermissionBubbleRequest>
       pending_bubbles_;
+
+  // Must be the last member, to ensure that it will be
+  // destroyed first, which will invalidate weak pointers
+  base::WeakPtrFactory<PermissionContextBase> weak_factory_;
 };
 
 #endif  // CHROME_BROWSER_CONTENT_SETTINGS_PERMISSION_CONTEXT_BASE_H_

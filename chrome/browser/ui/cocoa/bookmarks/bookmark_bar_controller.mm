@@ -716,11 +716,26 @@ void RecordAppLaunch(Profile* profile, GURL url) {
     RecordBookmarkFolderOpen([self bookmarkLaunchLocation]);
   showFolderMenus_ = !showFolderMenus_;
 
-  if (sender == offTheSideButton_)
+  // Middle click on chevron should not open bookmarks under it, instead just
+  // open its folder menu.
+  if (sender == offTheSideButton_) {
     [[sender cell] setStartingChildIndex:displayedButtonCount_];
-
+    NSEvent* event = [NSApp currentEvent];
+    if ([event type] == NSOtherMouseUp) {
+      [self openOrCloseBookmarkFolderForOffTheSideButton];
+      return;
+    }
+  }
   // Toggle presentation of bar folder menus.
   [folderTarget_ openBookmarkFolderFromButton:sender];
+}
+
+- (void)openOrCloseBookmarkFolderForOffTheSideButton {
+  // If clicked on already opened folder, then close it and return.
+  if ([folderController_ parentButton] == offTheSideButton_)
+    [self closeBookmarkFolder:self];
+  else
+    [self addNewFolderControllerWithParentButton:offTheSideButton_];
 }
 
 // Click on a bookmark folder button.
@@ -949,7 +964,7 @@ void RecordAppLaunch(Profile* profile, GURL url) {
 // override.
 - (void)openURL:(GURL)url disposition:(WindowOpenDisposition)disposition {
   OpenURLParams params(
-      url, Referrer(), disposition, content::PAGE_TRANSITION_AUTO_BOOKMARK,
+      url, Referrer(), disposition, ui::PAGE_TRANSITION_AUTO_BOOKMARK,
       false);
   browser_->OpenURL(params);
 }
@@ -2791,7 +2806,7 @@ static BOOL ValueInRangeInclusive(CGFloat low, CGFloat value, CGFloat high) {
     // The button being removed is in the OTS (off-the-side) and the OTS
     // menu is showing so we need to remove the button.
     NSInteger index = buttonIndex - displayedButtonCount_;
-    [folderController_ removeButton:index animate:YES];
+    [folderController_ removeButton:index animate:animate];
   }
 }
 

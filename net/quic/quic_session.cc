@@ -16,6 +16,7 @@ using base::StringPiece;
 using base::hash_map;
 using base::hash_set;
 using std::make_pair;
+using std::max;
 using std::vector;
 
 namespace net {
@@ -103,8 +104,8 @@ QuicSession::QuicSession(QuicConnection* connection, const QuicConfig& config)
     : connection_(connection),
       visitor_shim_(new VisitorShim(this)),
       config_(config),
-      max_open_streams_(config_.max_streams_per_connection()),
-      next_stream_id_(is_server() ? 2 : 3),
+      max_open_streams_(config_.MaxStreamsPerConnection()),
+      next_stream_id_(is_server() ? 2 : 5),
       largest_peer_created_stream_id_(0),
       error_(QUIC_NO_ERROR),
       goaway_received_(false),
@@ -126,17 +127,11 @@ QuicSession::QuicSession(QuicConnection* connection, const QuicConfig& config)
 void QuicSession::InitializeSession() {
   connection_->set_visitor(visitor_shim_.get());
   connection_->SetFromConfig(config_);
-  if (connection_->connected()) {
+  if (!FLAGS_quic_unified_timeouts && connection_->connected()) {
     connection_->SetOverallConnectionTimeout(
         config_.max_time_before_crypto_handshake());
   }
   headers_stream_.reset(new QuicHeadersStream(this));
-  if (!is_server()) {
-    // For version above QUIC v12, the headers stream is stream 3, so the
-    // next available local stream ID should be 5.
-    DCHECK_EQ(kHeadersStreamId, next_stream_id_);
-    next_stream_id_ += 2;
-  }
 }
 
 QuicSession::~QuicSession() {
@@ -272,7 +267,7 @@ void QuicSession::OnWindowUpdateFrames(
       continue;
     }
 
-    if (connection_->version() <= QUIC_VERSION_20 &&
+    if (connection_->version() < QUIC_VERSION_21 &&
         (stream_id == kCryptoStreamId || stream_id == kHeadersStreamId)) {
       DLOG(DFATAL) << "WindowUpdate for stream " << stream_id << " in version "
                    << QuicVersionToString(connection_->version());
@@ -434,12 +429,6 @@ void QuicSession::CloseStreamInner(QuicStreamId stream_id,
       stream->flow_controller()->IsEnabled()) {
     locally_closed_streams_highest_offset_[stream_id] =
         stream->flow_controller()->highest_received_byte_offset();
-    if (FLAGS_close_quic_connection_unfinished_streams &&
-        connection()->connected() &&
-        locally_closed_streams_highest_offset_.size() > max_open_streams_) {
-      // A buggy client may fail to send FIN/RSTs. Don't tolerate this.
-      connection_->SendConnectionClose(QUIC_TOO_MANY_UNFINISHED_STREAMS);
-    }
   }
 
   stream_map_.erase(it);
@@ -482,8 +471,20 @@ bool QuicSession::IsCryptoHandshakeConfirmed() {
 void QuicSession::OnConfigNegotiated() {
   connection_->SetFromConfig(config_);
   QuicVersion version = connection()->version();
-  if (version <= QUIC_VERSION_16) {
-    return;
+
+  if (FLAGS_quic_allow_more_open_streams) {
+    uint32 max_streams = config_.MaxStreamsPerConnection();
+    if (is_server()) {
+      // A server should accept a small number of additional streams beyond the
+      // limit sent to the client. This helps avoid early connection termination
+      // when FIN/RSTs for old streams are lost or arrive out of order.
+      // Use a minimum number of additional streams, or a percentage increase,
+      // whichever is larger.
+      max_streams =
+          max(max_streams + kMaxStreamsMinimumIncrement,
+              static_cast<uint32>(max_streams * kMaxStreamsMultiplier));
+    }
+    set_max_open_streams(max_streams);
   }
 
   if (version <= QUIC_VERSION_19) {
@@ -500,7 +501,7 @@ void QuicSession::OnConfigNegotiated() {
     return;
   }
 
-  // QUIC_VERSION_20 and higher can have independent stream and session flow
+  // QUIC_VERSION_21 and higher can have independent stream and session flow
   // control windows.
   if (config_.HasReceivedInitialStreamFlowControlWindowBytes()) {
     // Streams which were created before the SHLO was received (0-RTT
@@ -526,7 +527,7 @@ void QuicSession::OnNewStreamFlowControlWindow(uint32 new_window) {
   }
 
   // Inform all existing streams about the new window.
-  if (connection_->version() > QUIC_VERSION_20) {
+  if (connection_->version() >= QUIC_VERSION_21) {
     GetCryptoStream()->flow_controller()->UpdateSendWindowOffset(new_window);
     headers_stream_->flow_controller()->UpdateSendWindowOffset(new_window);
   }
@@ -560,7 +561,7 @@ void QuicSession::OnCryptoHandshakeEvent(CryptoHandshakeEvent event) {
     case ENCRYPTION_REESTABLISHED:
       // Retransmit originally packets that were sent, since they can't be
       // decrypted by the peer.
-      connection_->RetransmitUnackedPackets(INITIAL_ENCRYPTION_ONLY);
+      connection_->RetransmitUnackedPackets(ALL_INITIAL_RETRANSMISSION);
       break;
 
     case HANDSHAKE_CONFIRMED:
@@ -569,8 +570,12 @@ void QuicSession::OnCryptoHandshakeEvent(CryptoHandshakeEvent event) {
       // Discard originally encrypted packets, since they can't be decrypted by
       // the peer.
       connection_->NeuterUnencryptedPackets();
-      connection_->SetOverallConnectionTimeout(QuicTime::Delta::Infinite());
-      max_open_streams_ = config_.max_streams_per_connection();
+      if (!FLAGS_quic_unified_timeouts) {
+        connection_->SetOverallConnectionTimeout(QuicTime::Delta::Infinite());
+      }
+      if (!FLAGS_quic_allow_more_open_streams) {
+        max_open_streams_ = config_.MaxStreamsPerConnection();
+      }
       break;
 
     default:
@@ -685,6 +690,11 @@ QuicDataStream* QuicSession::GetIncomingDataStream(QuicStreamId stream_id) {
   return stream;
 }
 
+void QuicSession::set_max_open_streams(size_t max_open_streams) {
+  DVLOG(1) << "Setting max_open_streams_ to " << max_open_streams;
+  max_open_streams_ = max_open_streams;
+}
+
 bool QuicSession::IsClosedStream(QuicStreamId id) {
   DCHECK_NE(0u, id);
   if (id == kCryptoStreamId) {
@@ -750,6 +760,13 @@ bool QuicSession::GetSSLInfo(SSLInfo* ssl_info) const {
 void QuicSession::PostProcessAfterData() {
   STLDeleteElements(&closed_streams_);
   closed_streams_.clear();
+
+  if (FLAGS_close_quic_connection_unfinished_streams_2 &&
+      connection()->connected() &&
+      locally_closed_streams_highest_offset_.size() > max_open_streams_) {
+    // A buggy client may fail to send FIN/RSTs. Don't tolerate this.
+    connection_->SendConnectionClose(QUIC_TOO_MANY_UNFINISHED_STREAMS);
+  }
 }
 
 void QuicSession::OnSuccessfulVersionNegotiation(const QuicVersion& version) {
@@ -759,15 +776,9 @@ void QuicSession::OnSuccessfulVersionNegotiation(const QuicVersion& version) {
 
   // Disable stream level flow control based on negotiated version. Streams may
   // have been created with a different version.
-  if (version <= QUIC_VERSION_20) {
+  if (version < QUIC_VERSION_21) {
     GetCryptoStream()->flow_controller()->Disable();
     headers_stream_->flow_controller()->Disable();
-  }
-  for (DataStreamMap::iterator it = stream_map_.begin();
-       it != stream_map_.end(); ++it) {
-    if (version <= QUIC_VERSION_16) {
-      it->second->flow_controller()->Disable();
-    }
   }
 }
 

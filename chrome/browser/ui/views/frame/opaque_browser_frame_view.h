@@ -57,6 +57,7 @@ class OpaqueBrowserFrameView : public BrowserNonClientFrameView,
   virtual void ResetWindowControls() OVERRIDE;
   virtual void UpdateWindowIcon() OVERRIDE;
   virtual void UpdateWindowTitle() OVERRIDE;
+  virtual void SizeConstraintsChanged() OVERRIDE;
 
   // views::View:
   virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
@@ -127,6 +128,9 @@ class OpaqueBrowserFrameView : public BrowserNonClientFrameView,
   // Returns the height of the top resize area.  This is smaller than the frame
   // border height in order to increase the window draggable area.
   int TopResizeHeight() const;
+
+  // Returns true if the specified point is within the avatar menu buttons.
+  bool IsWithinAvatarMenuButtons(const gfx::Point& point) const;
 
   // Returns the thickness of the entire nonclient left, right, and bottom
   // borders, including both the window frame and any client edge.

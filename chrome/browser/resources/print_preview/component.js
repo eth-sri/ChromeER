@@ -31,7 +31,7 @@ cr.define('print_preview', function() {
 
     /**
      * Child components of the component.
-     * @type {Array.<print_preview.Component>}
+     * @type {Array.<!print_preview.Component>}
      * @private
      */
     this.children_ = [];
@@ -119,7 +119,7 @@ cr.define('print_preview', function() {
     },
 
     /**
-     * @param {print_preview.Component} child Component to add as a child of
+     * @param {!print_preview.Component} child Component to add as a child of
      *     this component.
      */
     addChild: function(child) {
@@ -155,6 +155,8 @@ cr.define('print_preview', function() {
      *     the component's root element using a depth first search for the first
      *     element that matches the query.
      * @return {HTMLElement} Element selected by the given query.
+     * TODO(alekseys): Check all call sites and rename this function to
+     *     something like getRequiredChildElement.
      */
     getChildElement: function(query) {
       return this.element_.querySelector(query);

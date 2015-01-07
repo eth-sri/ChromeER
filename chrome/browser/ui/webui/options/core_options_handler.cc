@@ -16,8 +16,9 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_util.h"
-#include "chrome/browser/metrics/metrics_reporting_state.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/webui/help/help_handler.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/grit/chromium_strings.h"
@@ -33,6 +34,7 @@
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
+#include "grit/components_strings.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "url/gurl.h"
 
@@ -41,18 +43,6 @@ using base::UserMetricsAction;
 namespace options {
 
 namespace {
-
-// Only allow changes to the metrics reporting checkbox if we were succesfully
-// able to change the service.
-bool AllowMetricsReportingChange(const base::Value* to_value) {
-  bool enable;
-  if (!to_value->GetAsBoolean(&enable)) {
-    NOTREACHED();
-    return false;
-  }
-
-  return enable == ResolveMetricsReportingEnabled(enable);
-}
 
 // Whether "controlledBy" property of pref value sent to options web UI needs to
 // be set to "extension" when the preference is controlled by an extension.
@@ -89,8 +79,12 @@ void CoreOptionsHandler::InitializeHandler() {
                  base::Unretained(this),
                  profile->GetPrefs()));
 
-  pref_change_filters_[prefs::kMetricsReportingEnabled] =
-      base::Bind(&AllowMetricsReportingChange);
+  pref_change_filters_[prefs::kBrowserGuestModeEnabled] =
+      base::Bind(&CoreOptionsHandler::IsUserUnsupervised,
+                 base::Unretained(this));
+  pref_change_filters_[prefs::kBrowserAddPersonEnabled] =
+      base::Bind(&CoreOptionsHandler::IsUserUnsupervised,
+                 base::Unretained(this));
 }
 
 void CoreOptionsHandler::InitializePage() {
@@ -166,6 +160,12 @@ void CoreOptionsHandler::GetStaticLocalizedValues(
       l10n_util::GetStringUTF16(IDS_DONE));
   localized_strings->SetString("deletableItemDeleteButtonTitle",
       l10n_util::GetStringUTF16(IDS_OPTIONS_DELETABLE_ITEM_DELETE_BUTTON));
+  localized_strings->SetString(
+      "browserVersion",
+      l10n_util::GetStringFUTF16(IDS_ABOUT_PRODUCT_VERSION,
+                                 HelpHandler::BuildBrowserVersionString()));
+  localized_strings->SetBoolean("showVersion",
+                                switches::AboutInSettingsEnabled());
 }
 
 void CoreOptionsHandler::Uninitialize() {
@@ -654,6 +654,10 @@ void CoreOptionsHandler::UpdatePepperFlashSettingsEnabled() {
           plugin_status_pref_setter_.IsPepperFlashSettingsEnabled());
   web_ui()->CallJavascriptFunction(
       "OptionsPage.setPepperFlashSettingsEnabled", enabled);
+}
+
+bool CoreOptionsHandler::IsUserUnsupervised(const base::Value* to_value) {
+  return !Profile::FromWebUI(web_ui())->IsSupervised();
 }
 
 }  // namespace options

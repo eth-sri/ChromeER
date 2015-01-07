@@ -152,6 +152,7 @@ class CC_EXPORT ThreadProxy : public Proxy,
   // Proxy implementation
   virtual void FinishAllRendering() OVERRIDE;
   virtual bool IsStarted() const OVERRIDE;
+  virtual void SetOutputSurface(scoped_ptr<OutputSurface>) OVERRIDE;
   virtual void SetLayerTreeHostClientReady() OVERRIDE;
   virtual void SetVisible(bool visible) OVERRIDE;
   virtual const RendererCapabilities& GetRendererCapabilities() const OVERRIDE;
@@ -180,7 +181,6 @@ class CC_EXPORT ThreadProxy : public Proxy,
   virtual void CommitVSyncParameters(base::TimeTicks timebase,
                                      base::TimeDelta interval) OVERRIDE;
   virtual void SetEstimatedParentDrawTime(base::TimeDelta draw_time) OVERRIDE;
-  virtual void BeginFrame(const BeginFrameArgs& args) OVERRIDE;
   virtual void SetMaxSwapsPendingOnImplThread(int max) OVERRIDE;
   virtual void DidSwapBuffersOnImplThread() OVERRIDE;
   virtual void DidSwapBuffersCompleteOnImplThread() OVERRIDE;
@@ -210,7 +210,7 @@ class CC_EXPORT ThreadProxy : public Proxy,
   virtual void DidManageTiles() OVERRIDE;
 
   // SchedulerClient implementation
-  virtual void SetNeedsBeginFrame(bool enable) OVERRIDE;
+  virtual BeginFrameSource* ExternalBeginFrameSource() OVERRIDE;
   virtual void WillBeginImplFrame(const BeginFrameArgs& args) OVERRIDE;
   virtual void ScheduledActionSendBeginMainFrame() OVERRIDE;
   virtual DrawResult ScheduledActionDrawAndSwapIfPossible() OVERRIDE;
@@ -245,7 +245,7 @@ class CC_EXPORT ThreadProxy : public Proxy,
   void DidCompleteSwapBuffers();
   void SetAnimationEvents(scoped_ptr<AnimationEventsVector> queue);
   void DidLoseOutputSurface();
-  void CreateAndInitializeOutputSurface();
+  void RequestNewOutputSurface();
   void DidInitializeOutputSurface(bool success,
                                   const RendererCapabilities& capabilities);
   void SendCommitRequestToImplThreadIfNeeded();

@@ -4,6 +4,8 @@
 
 #include "ui/keyboard/keyboard_controller.h"
 
+#include <set>
+
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "content/public/browser/render_widget_host.h"
@@ -24,7 +26,6 @@
 #include "ui/keyboard/keyboard_controller_observer.h"
 #include "ui/keyboard/keyboard_controller_proxy.h"
 #include "ui/keyboard/keyboard_layout_manager.h"
-#include "ui/keyboard/keyboard_switches.h"
 #include "ui/keyboard/keyboard_util.h"
 #include "ui/wm/core/masked_window_targeter.h"
 
@@ -38,11 +39,13 @@ namespace {
 const int kHideKeyboardDelayMs = 100;
 
 // The virtual keyboard show/hide animation duration.
-const int kAnimationDurationMs = 200;
+const int kShowAnimationDurationMs = 350;
+const int kHideAnimationDurationMs = 100;
 
 // The opacity of virtual keyboard container when show animation starts or
 // hide animation finishes.
-const float kAnimationStartOrAfterHideOpacity = 0.2f;
+// TODO(rsadam@): Investigate why setting this to zero crashes.
+const float kAnimationStartOrAfterHideOpacity = 0.01f;
 
 // Event targeter for the keyboard container.
 class KeyboardContainerTargeter : public wm::MaskedWindowTargeter {
@@ -147,7 +150,7 @@ aura::Window *GetFrameWindow(aura::Window *window) {
   // of a container window.
   if (!window)
     return NULL;
-  while(window->parent() && window->parent()->id() < 0) {
+  while (window->parent() && window->parent()->id() < 0) {
     window = window->parent();
   }
   return window;
@@ -207,6 +210,12 @@ class WindowBoundsChangeObserver : public aura::WindowObserver {
                                      const gfx::Rect& old_bounds,
                                      const gfx::Rect& new_bounds) OVERRIDE;
   virtual void OnWindowDestroyed(aura::Window* window) OVERRIDE;
+
+  void AddObservedWindow(aura::Window* window);
+  void RemoveAllObservedWindows();
+
+ private:
+  std::set<aura::Window*> observed_windows_;
 };
 
 void WindowBoundsChangeObserver::OnWindowBoundsChanged(aura::Window* window,
@@ -217,8 +226,23 @@ void WindowBoundsChangeObserver::OnWindowBoundsChanged(aura::Window* window,
 }
 
 void WindowBoundsChangeObserver::OnWindowDestroyed(aura::Window* window) {
-   if (window->HasObserver(this))
-     window->RemoveObserver(this);
+  if (window->HasObserver(this))
+    window->RemoveObserver(this);
+  observed_windows_.erase(window);
+}
+
+void WindowBoundsChangeObserver::AddObservedWindow(aura::Window* window) {
+  if (!window->HasObserver(this)) {
+    window->AddObserver(this);
+    observed_windows_.insert(window);
+  }
+}
+
+void WindowBoundsChangeObserver::RemoveAllObservedWindows() {
+  for (std::set<aura::Window*>::iterator it = observed_windows_.begin();
+       it != observed_windows_.end(); ++it)
+    (*it)->RemoveObserver(this);
+  observed_windows_.clear();
 }
 
 // static
@@ -341,11 +365,11 @@ void KeyboardController::HideKeyboard(HideReason reason) {
   container_animator->AddObserver(animation_observer_.get());
 
   ui::ScopedLayerAnimationSettings settings(container_animator);
-  settings.SetTweenType(gfx::Tween::EASE_OUT);
+  settings.SetTweenType(gfx::Tween::FAST_OUT_LINEAR_IN);
   settings.SetTransitionDuration(
-      base::TimeDelta::FromMilliseconds(kAnimationDurationMs));
+      base::TimeDelta::FromMilliseconds(kHideAnimationDurationMs));
   gfx::Transform transform;
-  transform.Translate(0, proxy_->GetKeyboardWindow()->bounds().height());
+  transform.Translate(0, kAnimationDistance);
   container_->SetTransform(transform);
   container_->layer()->SetOpacity(kAnimationStartOrAfterHideOpacity);
 }
@@ -382,11 +406,6 @@ void KeyboardController::OnTextInputStateChanged(
     const ui::TextInputClient* client) {
   if (!container_.get())
     return;
-
-  if (IsKeyboardUsabilityExperimentEnabled()) {
-    ShowKeyboardInternal();
-    return;
-  }
 
   type_ = client ? client->GetTextInputType() : ui::TEXT_INPUT_TYPE_NONE;
 
@@ -426,14 +445,18 @@ void KeyboardController::OnShowImeIfNeeded() {
   ShowKeyboardInternal();
 }
 
+bool KeyboardController::ShouldEnableInsets(aura::Window* window) {
+  aura::Window *keyboard_window = proxy_->GetKeyboardWindow();
+  return (keyboard_window->GetRootWindow() == window->GetRootWindow() &&
+          keyboard::IsKeyboardOverscrollEnabled() &&
+          proxy_->GetKeyboardWindow()->IsVisible() &&
+          keyboard_visible_);
+}
+
 void KeyboardController::UpdateWindowInsets(aura::Window* window) {
   aura::Window *keyboard_window = proxy_->GetKeyboardWindow();
   if (window == keyboard_window)
     return;
-
-  bool enableInsets = (keyboard_window->GetRootWindow() ==
-      window->GetRootWindow()) && keyboard::IsKeyboardOverscrollEnabled() &&
-      proxy_->GetKeyboardWindow()->IsVisible();
 
   scoped_ptr<content::RenderWidgetHostIterator> widgets(
       content::RenderWidgetHost::GetRenderWidgetHosts());
@@ -443,7 +466,7 @@ void KeyboardController::UpdateWindowInsets(aura::Window* window) {
       gfx::Rect window_bounds = view->GetNativeView()->GetBoundsInScreen();
       gfx::Rect intersect = gfx::IntersectRects(window_bounds,
           proxy_->GetKeyboardWindow()->bounds());
-      int overlap = enableInsets ? intersect.height() : 0;
+      int overlap = ShouldEnableInsets(window) ? intersect.height() : 0;
       if (overlap > 0 && overlap < window_bounds.height())
         view->SetInsets(gfx::Insets(0, 0, overlap, 0));
       else
@@ -498,7 +521,7 @@ void KeyboardController::ShowKeyboardInternal() {
   // are at begin states for animation.
   if (!container_animator->is_animating()) {
     gfx::Transform transform;
-    transform.Translate(0, proxy_->GetKeyboardWindow()->bounds().height());
+    transform.Translate(0, kAnimationDistance);
     container_->SetTransform(transform);
     container_->layer()->SetOpacity(kAnimationStartOrAfterHideOpacity);
   }
@@ -519,9 +542,9 @@ void KeyboardController::ShowKeyboardInternal() {
     // ShowKeyboardContainer with these settings. The container should become
     // visible immediately.
     ui::ScopedLayerAnimationSettings settings(container_animator);
-    settings.SetTweenType(gfx::Tween::EASE_IN);
+    settings.SetTweenType(gfx::Tween::LINEAR_OUT_SLOW_IN);
     settings.SetTransitionDuration(
-        base::TimeDelta::FromMilliseconds(kAnimationDurationMs));
+        base::TimeDelta::FromMilliseconds(kShowAnimationDurationMs));
     container_->SetTransform(gfx::Transform());
     container_->layer()->SetOpacity(1.0);
   }
@@ -533,12 +556,10 @@ void KeyboardController::ResetWindowInsets() {
       content::RenderWidgetHost::GetRenderWidgetHosts());
   while (content::RenderWidgetHost* widget = widgets->GetNextHost()) {
     content::RenderWidgetHostView* view = widget->GetView();
-    if (view) {
+    if (view)
       view->SetInsets(insets);
-      aura::Window *window = view->GetNativeView();
-      RemoveBoundsChangedObserver(window);
-    }
   }
+  window_bounds_observer_->RemoveAllObservedWindows();
 }
 
 bool KeyboardController::WillHideKeyboard() const {
@@ -558,18 +579,8 @@ void KeyboardController::HideAnimationFinished() {
 
 void KeyboardController::AddBoundsChangedObserver(aura::Window* window) {
   aura::Window* target_window = GetFrameWindow(window);
-  if (target_window &&
-      !target_window->HasObserver(window_bounds_observer_.get())) {
-    target_window->AddObserver(window_bounds_observer_.get());
-  }
-}
-
-void KeyboardController::RemoveBoundsChangedObserver(aura::Window* window) {
-  aura::Window* target_window = GetFrameWindow(window);
-  if (target_window &&
-      target_window->HasObserver(window_bounds_observer_.get())) {
-    target_window->RemoveObserver(window_bounds_observer_.get());
-  }
+  if (target_window)
+    window_bounds_observer_->AddObservedWindow(target_window);
 }
 
 }  // namespace keyboard

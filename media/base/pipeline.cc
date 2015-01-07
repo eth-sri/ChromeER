@@ -158,12 +158,11 @@ void Pipeline::SetVolume(float volume) {
 }
 
 TimeDelta Pipeline::GetMediaTime() const {
+  base::AutoLock auto_lock(lock_);
   if (!renderer_)
     return TimeDelta();
 
   TimeDelta media_time = renderer_->GetMediaTime();
-
-  base::AutoLock auto_lock(lock_);
   return std::min(media_time, duration_);
 }
 
@@ -337,17 +336,19 @@ void Pipeline::StateTransitionTask(PipelineStatus status) {
       return InitializeDemuxer(done_cb);
 
     case kInitRenderer:
-      return InitializeRenderer(done_cb);
+      return InitializeRenderer(base::Bind(done_cb, PIPELINE_OK));
 
     case kPlaying:
       // Report metadata the first time we enter the playing state.
       if (!is_initialized_) {
         is_initialized_ = true;
         ReportMetadata();
+        start_timestamp_ = demuxer_->GetStartTime();
       }
 
       base::ResetAndReturn(&seek_cb_).Run(PIPELINE_OK);
 
+      DCHECK(start_timestamp_ >= base::TimeDelta());
       renderer_->StartPlayingFrom(start_timestamp_);
 
       if (text_renderer_)
@@ -406,12 +407,19 @@ void Pipeline::DoStop(const PipelineStatusCB& done_cb) {
   DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK(!pending_callbacks_.get());
 
-  renderer_.reset();
+  // TODO(scherkus): Enforce that Renderer is only called on a single thread,
+  // even for accessing media time http://crbug.com/370634
+  scoped_ptr<Renderer> renderer;
+  {
+    base::AutoLock auto_lock(lock_);
+    renderer.swap(renderer_);
+  }
+  renderer.reset();
   text_renderer_.reset();
 
   if (demuxer_) {
-    demuxer_->Stop(base::Bind(done_cb, PIPELINE_OK));
-    return;
+    demuxer_->Stop();
+    demuxer_ = NULL;
   }
 
   task_runner_->PostTask(FROM_HERE, base::Bind(done_cb, PIPELINE_OK));
@@ -547,7 +555,7 @@ void Pipeline::PlaybackRateChangedTask(float playback_rate) {
   if (state_ != kPlaying)
     return;
 
-  renderer_->SetPlaybackRate(playback_rate_);
+  renderer_->SetPlaybackRate(playback_rate);
 }
 
 void Pipeline::VolumeChangedTask(float volume) {
@@ -578,13 +586,16 @@ void Pipeline::SeekTask(TimeDelta time, const PipelineStatusCB& seek_cb) {
 
   DCHECK(seek_cb_.is_null());
 
+  const base::TimeDelta seek_timestamp =
+      std::max(time, demuxer_->GetStartTime());
+
   SetState(kSeeking);
   seek_cb_ = seek_cb;
   renderer_ended_ = false;
   text_renderer_ended_ = false;
-  start_timestamp_ = time;
+  start_timestamp_ = seek_timestamp;
 
-  DoSeek(time,
+  DoSeek(seek_timestamp,
          base::Bind(&Pipeline::OnStateTransition, weak_factory_.GetWeakPtr()));
 }
 
@@ -665,14 +676,16 @@ void Pipeline::InitializeDemuxer(const PipelineStatusCB& done_cb) {
   demuxer_->Initialize(this, done_cb, text_renderer_);
 }
 
-void Pipeline::InitializeRenderer(const PipelineStatusCB& done_cb) {
+void Pipeline::InitializeRenderer(const base::Closure& done_cb) {
   DCHECK(task_runner_->BelongsToCurrentThread());
 
   if (!demuxer_->GetStream(DemuxerStream::AUDIO) &&
       !demuxer_->GetStream(DemuxerStream::VIDEO)) {
-    renderer_.reset();
-    task_runner_->PostTask(
-        FROM_HERE, base::Bind(done_cb, PIPELINE_ERROR_COULD_NOT_RENDER));
+    {
+      base::AutoLock auto_lock(lock_);
+      renderer_.reset();
+    }
+    OnError(PIPELINE_ERROR_COULD_NOT_RENDER);
     return;
   }
 
@@ -682,8 +695,7 @@ void Pipeline::InitializeRenderer(const PipelineStatusCB& done_cb) {
       base::Bind(&Pipeline::OnUpdateStatistics, weak_this),
       base::Bind(&Pipeline::OnRendererEnded, weak_this),
       base::Bind(&Pipeline::OnError, weak_this),
-      base::Bind(&Pipeline::BufferingStateChanged, weak_this),
-      base::Bind(&Pipeline::GetMediaDuration, base::Unretained(this)));
+      base::Bind(&Pipeline::BufferingStateChanged, weak_this));
 }
 
 void Pipeline::ReportMetadata() {

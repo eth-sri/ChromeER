@@ -29,13 +29,16 @@ class ScreenManager {
   ScreenManager(DriWrapper* dri, ScanoutBufferGenerator* surface_generator);
   virtual ~ScreenManager();
 
+  // Register a display controller. This must be called before trying to
+  // configure it.
+  void AddDisplayController(uint32_t crtc, uint32_t connector);
+
   // Remove a display controller from the list of active controllers. The
   // controller is removed since it was disconnected.
   void RemoveDisplayController(uint32_t crtc);
 
-  // Configure (and add if not present) a display controller. The display
-  // controller is identified by (|crtc|, |connector|) and the controller is
-  // modeset using |mode|.
+  // Configure a display controller. The display controller is identified by
+  // (|crtc|, |connector|) and the controller is modeset using |mode|.
   bool ConfigureDisplayController(uint32_t crtc,
                                   uint32_t connector,
                                   const gfx::Point& origin,
@@ -53,6 +56,11 @@ class ScreenManager {
   // display surface).
   base::WeakPtr<HardwareDisplayController> GetDisplayController(
       const gfx::Rect& bounds);
+
+  // On non CrOS builds there is no display configurator to look-up available
+  // displays and initialize the HDCs. In such cases this is called internally
+  // to initialize a display.
+  virtual void ForceInitializationOfPrimaryDisplay();
 
  private:
   typedef ScopedVector<HardwareDisplayController> HardwareDisplayControllers;
@@ -78,11 +86,6 @@ class ScreenManager {
                         HardwareDisplayControllers::iterator mirror,
                         uint32_t crtc,
                         uint32_t connector);
-
-  // On non CrOS builds there is no display configurator to look-up available
-  // displays and initialize the HDCs. In such cases this is called internally
-  // to initialize a display.
-  virtual void ForceInitializationOfPrimaryDisplay();
 
   DriWrapper* dri_;  // Not owned.
   ScanoutBufferGenerator* buffer_generator_;  // Not owned.

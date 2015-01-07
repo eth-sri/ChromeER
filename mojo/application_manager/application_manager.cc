@@ -29,9 +29,9 @@ class StubServiceProvider : public InterfaceImpl<ServiceProvider> {
   ServiceProvider* GetRemoteServiceProvider() { return client(); }
 
  private:
-  virtual void ConnectToService(const String& service_name,
-                                ScopedMessagePipeHandle client_handle)
-      MOJO_OVERRIDE {}
+  virtual void ConnectToService(
+      const String& service_name,
+      ScopedMessagePipeHandle client_handle) override {}
 };
 
 }  // namespace
@@ -54,7 +54,7 @@ class ApplicationManager::LoadCallbacksImpl
   virtual ~LoadCallbacksImpl() {}
 
   // LoadCallbacks implementation
-  virtual ScopedMessagePipeHandle RegisterApplication() OVERRIDE {
+  virtual ScopedMessagePipeHandle RegisterApplication() override {
     ScopedMessagePipeHandle shell_handle;
     if (manager_) {
       manager_->RegisterLoadedApplication(requested_url_,
@@ -66,7 +66,7 @@ class ApplicationManager::LoadCallbacksImpl
   }
 
   virtual void LoadWithContentHandler(const GURL& content_handler_url,
-                                      URLResponsePtr url_response) OVERRIDE {
+                                      URLResponsePtr url_response) override {
     if (manager_) {
       manager_->LoadWithContentHandler(requested_url_,
                                        requestor_url_,
@@ -98,7 +98,7 @@ class ApplicationManager::ShellImpl : public InterfaceImpl<Shell> {
   // ServiceProvider implementation:
   virtual void ConnectToApplication(
       const String& app_url,
-      InterfaceRequest<ServiceProvider> in_service_provider) OVERRIDE {
+      InterfaceRequest<ServiceProvider> in_service_provider) override {
     ServiceProviderPtr out_service_provider;
     out_service_provider.Bind(in_service_provider.PassMessagePipe());
     manager_->ConnectToApplication(
@@ -108,7 +108,7 @@ class ApplicationManager::ShellImpl : public InterfaceImpl<Shell> {
   const GURL& url() const { return url_; }
 
  private:
-  virtual void OnConnectionError() OVERRIDE {
+  virtual void OnConnectionError() override {
     manager_->OnShellImplError(this);
   }
 
@@ -206,6 +206,13 @@ void ApplicationManager::ConnectToClient(ShellImpl* shell_impl,
   }
 }
 
+void ApplicationManager::RegisterExternalApplication(
+    const GURL& url,
+    ScopedMessagePipeHandle shell_handle) {
+  url_to_shell_impl_[url] =
+      WeakBindToPipe(new ShellImpl(this, url), shell_handle.Pass());
+}
+
 void ApplicationManager::RegisterLoadedApplication(
     const GURL& url,
     const GURL& requestor_url,
@@ -220,9 +227,14 @@ void ApplicationManager::RegisterLoadedApplication(
     shell_impl = iter->second;
   } else {
     MessagePipe pipe;
+    URLToArgsMap::const_iterator args_it = url_to_args_.find(url);
+    Array<String> args;
+    if (args_it != url_to_args_.end())
+      args = Array<String>::From(args_it->second);
     shell_impl = WeakBindToPipe(new ShellImpl(this, url), pipe.handle1.Pass());
     url_to_shell_impl_[url] = shell_impl;
     *shell_handle = pipe.handle0.Pass();
+    shell_impl->client()->Initialize(args.Pass());
   }
 
   ConnectToClient(shell_impl, url, requestor_url, service_provider.Pass());
@@ -265,6 +277,11 @@ void ApplicationManager::SetLoaderForScheme(
   if (it != scheme_to_loader_.end())
     delete it->second;
   scheme_to_loader_[scheme] = loader.release();
+}
+
+void ApplicationManager::SetArgsForURL(const std::vector<std::string>& args,
+                                       const GURL& url) {
+  url_to_args_[url] = args;
 }
 
 void ApplicationManager::SetInterceptor(Interceptor* interceptor) {

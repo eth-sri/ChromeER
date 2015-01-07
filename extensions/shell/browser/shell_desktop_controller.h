@@ -49,10 +49,8 @@ class UserActivityDetector;
 }
 
 namespace extensions {
-
+class AppWindowClient;
 class Extension;
-class ShellAppWindow;
-class ShellAppWindowController;
 
 // Handles desktop-related tasks for app_shell.
 class ShellDesktopController : public DesktopController,
@@ -68,8 +66,9 @@ class ShellDesktopController : public DesktopController,
 
   // DesktopController:
   virtual aura::WindowTreeHost* GetHost() OVERRIDE;
-  virtual ShellAppWindow* CreateAppWindow(content::BrowserContext* context,
-                                          const Extension* extension) OVERRIDE;
+  virtual AppWindow* CreateAppWindow(content::BrowserContext* context,
+                                     const Extension* extension) OVERRIDE;
+  virtual void AddAppWindow(aura::Window* window) OVERRIDE;
   virtual void CloseAppWindows() OVERRIDE;
 
   // aura::client::WindowTreeClient overrides:
@@ -130,8 +129,10 @@ class ShellDesktopController : public DesktopController,
   scoped_ptr<ui::UserActivityPowerManagerNotifier> user_activity_notifier_;
 #endif
 
+  scoped_ptr<AppWindowClient> app_window_client_;
+
   // The desktop supports a single app window.
-  scoped_ptr<ShellAppWindow> app_window_;
+  AppWindow* app_window_;  // NativeAppWindow::Close() deletes this.
 
   DISALLOW_COPY_AND_ASSIGN(ShellDesktopController);
 };

@@ -25,11 +25,9 @@ scoped_ptr<ContentLayerPainter> ContentLayerPainter::Create(
 }
 
 void ContentLayerPainter::Paint(SkCanvas* canvas,
-                                const gfx::Rect& content_rect,
-                                gfx::RectF* opaque) {
+                                const gfx::Rect& content_rect) {
   client_->PaintContents(canvas,
                          content_rect,
-                         opaque,
                          ContentLayerClient::GRAPHICS_CONTEXT_ENABLED);
 }
 
@@ -101,8 +99,7 @@ LayerUpdater* ContentLayer::Updater() const {
 void ContentLayer::CreateUpdaterIfNeeded() {
   if (updater_.get())
     return;
-  scoped_ptr<LayerPainter> painter =
-      ContentLayerPainter::Create(client_).PassAs<LayerPainter>();
+  scoped_ptr<LayerPainter> painter = ContentLayerPainter::Create(client_);
   if (layer_tree_host()->settings().per_tile_painting_enabled) {
     updater_ = BitmapSkPictureContentLayerUpdater::Create(
         painter.Pass(),
@@ -117,6 +114,7 @@ void ContentLayer::CreateUpdaterIfNeeded() {
   updater_->SetOpaque(contents_opaque());
   if (client_)
     updater_->SetFillsBoundsCompletely(client_->FillsBoundsCompletely());
+  updater_->SetBackgroundColor(background_color());
 
   SetTextureFormat(
       layer_tree_host()->GetRendererCapabilities().best_texture_format);
@@ -147,13 +145,11 @@ skia::RefPtr<SkPicture> ContentLayer::GetPicture() const {
 
   int width = bounds().width();
   int height = bounds().height();
-  gfx::RectF opaque;
 
   SkPictureRecorder recorder;
   SkCanvas* canvas = recorder.beginRecording(width, height, NULL, 0);
   client_->PaintContents(canvas,
                          gfx::Rect(width, height),
-                         &opaque,
                          ContentLayerClient::GRAPHICS_CONTEXT_ENABLED);
   skia::RefPtr<SkPicture> picture = skia::AdoptRef(recorder.endRecording());
   return picture;

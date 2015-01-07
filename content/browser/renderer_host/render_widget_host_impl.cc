@@ -184,9 +184,9 @@ RenderWidgetHostImpl::RenderWidgetHostImpl(RenderWidgetHostDelegate* delegate,
       pending_mouse_lock_request_(false),
       allow_privileged_mouse_lock_(false),
       has_touch_handler_(false),
-      weak_factory_(this),
       last_input_number_(static_cast<int64>(GetProcess()->GetID()) << 32),
-      next_browser_snapshot_id_(1) {
+      next_browser_snapshot_id_(1),
+      weak_factory_(this) {
   CHECK(delegate_);
   if (routing_id_ == MSG_ROUTING_NONE) {
     routing_id_ = process_->GetNextRoutingID();
@@ -235,6 +235,8 @@ RenderWidgetHostImpl::RenderWidgetHostImpl(RenderWidgetHostDelegate* delegate,
 }
 
 RenderWidgetHostImpl::~RenderWidgetHostImpl() {
+  if (view_weak_)
+    view_weak_->RenderWidgetHostGone();
   SetView(NULL);
 
   GpuSurfaceTracker::Get()->RemoveSurface(surface_id_);
@@ -282,8 +284,7 @@ scoped_ptr<RenderWidgetHostIterator> RenderWidgetHost::GetRenderWidgetHosts() {
 
     // Add only active RenderViewHosts.
     RenderViewHost* rvh = RenderViewHost::From(widget);
-    if (RenderViewHostImpl::IsRVHStateActive(
-            static_cast<RenderViewHostImpl*>(rvh)->rvh_state()))
+    if (static_cast<RenderViewHostImpl*>(rvh)->is_active())
       hosts->Add(widget);
   }
 
@@ -310,6 +311,10 @@ RenderWidgetHostImpl* RenderWidgetHostImpl::From(RenderWidgetHost* rwh) {
 }
 
 void RenderWidgetHostImpl::SetView(RenderWidgetHostViewBase* view) {
+  if (view)
+    view_weak_ = view->GetWeakPtr();
+  else
+    view_weak_.reset();
   view_ = view;
 
   GpuSurfaceTracker::Get()->SetSurfaceHandle(
@@ -851,9 +856,11 @@ void RenderWidgetHostImpl::ForwardMouseEventWithLatencyInfo(
       const ui::LatencyInfo& ui_latency) {
   TRACE_EVENT2("input", "RenderWidgetHostImpl::ForwardMouseEvent",
                "x", mouse_event.x, "y", mouse_event.y);
+  ui::LatencyInfo::InputCoordinate logical_coordinate(mouse_event.x,
+                                                      mouse_event.y);
 
-  ui::LatencyInfo latency_info =
-      CreateRWHLatencyInfoIfNotExist(&ui_latency, mouse_event.type);
+  ui::LatencyInfo latency_info = CreateRWHLatencyInfoIfNotExist(
+      &ui_latency, mouse_event.type, &logical_coordinate, 1);
 
   for (size_t i = 0; i < mouse_event_callbacks_.size(); ++i) {
     if (mouse_event_callbacks_[i].Run(mouse_event))
@@ -883,8 +890,11 @@ void RenderWidgetHostImpl::ForwardWheelEventWithLatencyInfo(
       const ui::LatencyInfo& ui_latency) {
   TRACE_EVENT0("input", "RenderWidgetHostImpl::ForwardWheelEvent");
 
-  ui::LatencyInfo latency_info =
-      CreateRWHLatencyInfoIfNotExist(&ui_latency, wheel_event.type);
+  ui::LatencyInfo::InputCoordinate logical_coordinate(wheel_event.x,
+                                                      wheel_event.y);
+
+  ui::LatencyInfo latency_info = CreateRWHLatencyInfoIfNotExist(
+      &ui_latency, wheel_event.type, &logical_coordinate, 1);
 
   if (IgnoreInputEvents())
     return;
@@ -912,8 +922,11 @@ void RenderWidgetHostImpl::ForwardGestureEventWithLatencyInfo(
   if (delegate_->PreHandleGestureEvent(gesture_event))
     return;
 
-  ui::LatencyInfo latency_info =
-      CreateRWHLatencyInfoIfNotExist(&ui_latency, gesture_event.type);
+  ui::LatencyInfo::InputCoordinate logical_coordinate(gesture_event.x,
+                                                      gesture_event.y);
+
+  ui::LatencyInfo latency_info = CreateRWHLatencyInfoIfNotExist(
+      &ui_latency, gesture_event.type, &logical_coordinate, 1);
 
   if (gesture_event.type == blink::WebInputEvent::GestureScrollUpdate) {
     latency_info.AddLatencyNumber(
@@ -944,8 +957,19 @@ void RenderWidgetHostImpl::ForwardGestureEventWithLatencyInfo(
 void RenderWidgetHostImpl::ForwardEmulatedTouchEvent(
       const blink::WebTouchEvent& touch_event) {
   TRACE_EVENT0("input", "RenderWidgetHostImpl::ForwardEmulatedTouchEvent");
-  ui::LatencyInfo latency_info =
-      CreateRWHLatencyInfoIfNotExist(NULL, touch_event.type);
+
+  ui::LatencyInfo::InputCoordinate
+      logical_coordinates[ui::LatencyInfo::kMaxInputCoordinates];
+  size_t logical_coordinates_size =
+      std::min(arraysize(logical_coordinates),
+               static_cast<size_t>(touch_event.touchesLength));
+  for (size_t i = 0; i < logical_coordinates_size; i++) {
+    logical_coordinates[i] = ui::LatencyInfo::InputCoordinate(
+        touch_event.touches[i].position.x, touch_event.touches[i].position.y);
+  }
+
+  ui::LatencyInfo latency_info = CreateRWHLatencyInfoIfNotExist(
+      NULL, touch_event.type, logical_coordinates, logical_coordinates_size);
   TouchEventWithLatencyInfo touch_with_latency(touch_event, latency_info);
   input_router_->SendTouchEvent(touch_with_latency);
 }
@@ -958,8 +982,21 @@ void RenderWidgetHostImpl::ForwardTouchEventWithLatencyInfo(
   // Always forward TouchEvents for touch stream consistency. They will be
   // ignored if appropriate in FilterInputEvent().
 
+  ui::LatencyInfo::InputCoordinate
+      logical_coordinates[ui::LatencyInfo::kMaxInputCoordinates];
+  size_t logical_coordinates_size =
+      std::min(arraysize(logical_coordinates),
+               static_cast<size_t>(touch_event.touchesLength));
+  for (size_t i = 0; i < logical_coordinates_size; i++) {
+    logical_coordinates[i] = ui::LatencyInfo::InputCoordinate(
+        touch_event.touches[i].position.x, touch_event.touches[i].position.y);
+  }
+
   ui::LatencyInfo latency_info =
-      CreateRWHLatencyInfoIfNotExist(&ui_latency, touch_event.type);
+      CreateRWHLatencyInfoIfNotExist(&ui_latency,
+                                     touch_event.type,
+                                     logical_coordinates,
+                                     logical_coordinates_size);
   TouchEventWithLatencyInfo touch_with_latency(touch_event, latency_info);
 
   if (touch_emulator_ &&
@@ -1040,7 +1077,7 @@ void RenderWidgetHostImpl::ForwardKeyboardEvent(
 
   input_router_->SendKeyboardEvent(
       key_event,
-      CreateRWHLatencyInfoIfNotExist(NULL, key_event.type),
+      CreateRWHLatencyInfoIfNotExist(NULL, key_event.type, NULL, 0),
       is_shortcut);
 }
 
@@ -1083,7 +1120,10 @@ void RenderWidgetHostImpl::DisableResizeAckCheckForTesting() {
 }
 
 ui::LatencyInfo RenderWidgetHostImpl::CreateRWHLatencyInfoIfNotExist(
-    const ui::LatencyInfo* original, WebInputEvent::Type type) {
+    const ui::LatencyInfo* original,
+    WebInputEvent::Type type,
+    const ui::LatencyInfo::InputCoordinate* logical_coordinates,
+    size_t logical_coordinates_size) {
   ui::LatencyInfo info;
   if (original)
     info = *original;
@@ -1096,7 +1136,21 @@ ui::LatencyInfo RenderWidgetHostImpl::CreateRWHLatencyInfoIfNotExist(
                           GetLatencyComponentId(),
                           ++last_input_number_);
     info.TraceEventType(WebInputEventTraits::GetName(type));
+
+    // Convert logical coordinates to physical coordinates, based on the
+    // device scale factor.
+    float device_scale_factor =
+        screen_info_ ? screen_info_->deviceScaleFactor : 1;
+    DCHECK(logical_coordinates_size <= ui::LatencyInfo::kMaxInputCoordinates);
+    info.input_coordinates_size = logical_coordinates_size;
+    for (size_t i = 0; i < info.input_coordinates_size; i++) {
+      info.input_coordinates[i].x =
+          logical_coordinates[i].x * device_scale_factor;
+      info.input_coordinates[i].y =
+          logical_coordinates[i].y * device_scale_factor;
+    }
   }
+
   return info;
 }
 
@@ -1219,7 +1273,8 @@ void RenderWidgetHostImpl::RendererExited(base::TerminationStatus status,
     GpuSurfaceTracker::Get()->SetSurfaceHandle(surface_id_,
                                                gfx::GLSurfaceHandle());
     view_->RenderProcessGone(status, exit_code);
-    view_ = NULL;  // The View should be deleted by RenderProcessGone.
+    view_ = NULL; // The View should be deleted by RenderProcessGone.
+    view_weak_.reset();
   }
 
   // Reconstruct the input router to ensure that it has fresh state for a new
@@ -1427,8 +1482,8 @@ bool RenderWidgetHostImpl::OnSwapCompositorFrame(
     const IPC::Message& message) {
   // This trace event is used in
   // chrome/browser/extensions/api/cast_streaming/performance_test.cc
-  UNSHIPPED_TRACE_EVENT0("test_fps",
-                         TRACE_DISABLED_BY_DEFAULT("OnSwapCompositorFrame"));
+  TRACE_EVENT0("test_fps",
+               TRACE_DISABLED_BY_DEFAULT("OnSwapCompositorFrame"));
   ViewHostMsg_SwapCompositorFrame::Param param;
   if (!ViewHostMsg_SwapCompositorFrame::Read(&message, &param))
     return false;
@@ -1659,10 +1714,10 @@ void RenderWidgetHostImpl::OnUnlockMouse() {
 }
 
 void RenderWidgetHostImpl::OnShowDisambiguationPopup(
-    const gfx::Rect& rect,
+    const gfx::Rect& rect_pixels,
     const gfx::Size& size,
     const cc::SharedBitmapId& id) {
-  DCHECK(!rect.IsEmpty());
+  DCHECK(!rect_pixels.IsEmpty());
   DCHECK(!size.IsEmpty());
 
   scoped_ptr<cc::SharedBitmap> bitmap =
@@ -1679,13 +1734,13 @@ void RenderWidgetHostImpl::OnShowDisambiguationPopup(
   SkBitmap zoomed_bitmap;
   zoomed_bitmap.installPixels(info, bitmap->pixels(), info.minRowBytes());
 
-#if defined(OS_ANDROID)
+  // Note that |rect| is in coordinates of pixels relative to the window origin.
+  // Aura-based systems will want to convert this to DIPs.
   if (view_)
-    view_->ShowDisambiguationPopup(rect, zoomed_bitmap);
-#else
-  NOTIMPLEMENTED();
-#endif
+    view_->ShowDisambiguationPopup(rect_pixels, zoomed_bitmap);
 
+  // It is assumed that the disambiguation popup will make a copy of the
+  // provided zoomed image, so we delete this one.
   zoomed_bitmap.setPixels(0);
   Send(new ViewMsg_ReleaseDisambiguationPopupBitmap(GetRoutingID(), id));
 }
@@ -1779,9 +1834,13 @@ void RenderWidgetHostImpl::IncrementInFlightEventCount() {
 
 void RenderWidgetHostImpl::DecrementInFlightEventCount() {
   DCHECK_GE(in_flight_event_count_, 0);
-  // Cancel pending hung renderer checks since the renderer is responsive.
-  if (decrement_in_flight_event_count() <= 0)
+  if (decrement_in_flight_event_count() <= 0) {
+    // Cancel pending hung renderer checks since the renderer is responsive.
     StopHangMonitorTimeout();
+  } else {
+    // The renderer is responsive, but there are in-flight events to wait for.
+    RestartHangMonitorTimeout();
+  }
 }
 
 void RenderWidgetHostImpl::OnHasTouchEventHandlers(bool has_handlers) {
@@ -1961,17 +2020,6 @@ bool RenderWidgetHostImpl::GotResponseToLockMouseRequest(bool allowed) {
       Send(new ViewMsg_LockMouse_ACK(routing_id_, true));
       return true;
     }
-  }
-}
-
-// static
-void RenderWidgetHostImpl::AcknowledgeBufferPresent(
-    int32 route_id, int gpu_host_id,
-    const AcceleratedSurfaceMsg_BufferPresented_Params& params) {
-  GpuProcessHostUIShim* ui_shim = GpuProcessHostUIShim::FromID(gpu_host_id);
-  if (ui_shim) {
-    ui_shim->Send(new AcceleratedSurfaceMsg_BufferPresented(route_id,
-                                                            params));
   }
 }
 

@@ -28,10 +28,6 @@ class MEDIA_EXPORT AudioBlockFifo {
   // Push() will crash if the allocated space is insufficient.
   void Push(const void* source, int frames, int bytes_per_sample);
 
-  // Pushes the audio data from |source| to the FIFO.
-  // Push() will crash if the allocated space is insufficient.
-  void Push(const AudioBus* source);
-
   // Consumes a block of audio from the FIFO.  Returns an AudioBus which
   // contains the consumed audio data to avoid copying.
   // Consume() will crash if the FIFO does not contain a block of data.
@@ -49,12 +45,15 @@ class MEDIA_EXPORT AudioBlockFifo {
   // Number of unfilled frames in the whole FIFO.
   int GetUnfilledFrames() const;
 
- private:
-  // Helper method to update the indexes in Push methods.
-  void UpdatePosition(int push_frames);
+  // Dynamically increase |blocks| of memory to the FIFO.
+  void IncreaseCapacity(int blocks);
 
+ private:
   // The actual FIFO is a vector of audio buses.
   ScopedVector<AudioBus> audio_blocks_;
+
+  // Number of channels in AudioBus.
+  const int channels_;
 
   // Maximum number of frames of data one block of memory can contain.
   // This value is set by |frames| in the constructor.

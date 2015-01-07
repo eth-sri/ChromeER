@@ -179,7 +179,6 @@ const SkScalar kUnderlineMetricsNotSet = -1.0f;
 SkiaTextRenderer::SkiaTextRenderer(Canvas* canvas)
     : canvas_(canvas),
       canvas_skia_(canvas->sk_canvas()),
-      started_drawing_(false),
       underline_thickness_(kUnderlineMetricsNotSet),
       underline_position_(0.0f) {
   DCHECK(canvas_skia_);
@@ -413,10 +412,15 @@ void RenderText::SetText(const base::string16& text) {
   text_ = text;
 
   // Adjust ranged styles and colors to accommodate a new text length.
+  // Clear style ranges as they might break new text graphemes and apply
+  // the first style to the whole text instead.
   const size_t text_length = text_.length();
   colors_.SetMax(text_length);
-  for (size_t style = 0; style < NUM_TEXT_STYLES; ++style)
-    styles_[style].SetMax(text_length);
+  for (size_t style = 0; style < NUM_TEXT_STYLES; ++style) {
+    BreakList<bool>& break_list = styles_[style];
+    break_list.SetValue(break_list.breaks().begin()->second);
+    break_list.SetMax(text_length);
+  }
   cached_bounds_and_offset_valid_ = false;
 
   // Reset selection model. SetText should always followed by SetSelectionModel
@@ -638,52 +642,29 @@ void RenderText::SetCompositionRange(const Range& composition_range) {
 
 void RenderText::SetColor(SkColor value) {
   colors_.SetValue(value);
-
-#if defined(OS_WIN)
-  // TODO(msw): Windows applies colors and decorations in the layout process.
-  cached_bounds_and_offset_valid_ = false;
-  ResetLayout();
-#endif
 }
 
 void RenderText::ApplyColor(SkColor value, const Range& range) {
   colors_.ApplyValue(value, range);
-
-#if defined(OS_WIN)
-  // TODO(msw): Windows applies colors and decorations in the layout process.
-  cached_bounds_and_offset_valid_ = false;
-  ResetLayout();
-#endif
 }
 
 void RenderText::SetStyle(TextStyle style, bool value) {
   styles_[style].SetValue(value);
 
-  // Only invalidate the layout on font changes; not for colors or decorations.
-  bool invalidate = (style == BOLD) || (style == ITALIC);
-#if defined(OS_WIN)
-  // TODO(msw): Windows applies colors and decorations in the layout process.
-  invalidate = true;
-#endif
-  if (invalidate) {
-    cached_bounds_and_offset_valid_ = false;
-    ResetLayout();
-  }
+  cached_bounds_and_offset_valid_ = false;
+  ResetLayout();
 }
 
 void RenderText::ApplyStyle(TextStyle style, bool value, const Range& range) {
-  styles_[style].ApplyValue(value, range);
+  // Do not change styles mid-grapheme to avoid breaking ligatures.
+  const size_t start = IsValidCursorIndex(range.start()) ? range.start() :
+      IndexOfAdjacentGrapheme(range.start(), CURSOR_BACKWARD);
+  const size_t end = IsValidCursorIndex(range.end()) ? range.end() :
+      IndexOfAdjacentGrapheme(range.end(), CURSOR_FORWARD);
+  styles_[style].ApplyValue(value, Range(start, end));
 
-  // Only invalidate the layout on font changes; not for colors or decorations.
-  bool invalidate = (style == BOLD) || (style == ITALIC);
-#if defined(OS_WIN)
-  // TODO(msw): Windows applies colors and decorations in the layout process.
-  invalidate = true;
-#endif
-  if (invalidate) {
-    cached_bounds_and_offset_valid_ = false;
-    ResetLayout();
-  }
+  cached_bounds_and_offset_valid_ = false;
+  ResetLayout();
 }
 
 bool RenderText::GetStyle(TextStyle style) const {

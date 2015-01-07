@@ -21,7 +21,7 @@ PictureImageLayer::~PictureImageLayer() {
 
 scoped_ptr<LayerImpl> PictureImageLayer::CreateLayerImpl(
     LayerTreeImpl* tree_impl) {
-  return PictureImageLayerImpl::Create(tree_impl, id()).PassAs<LayerImpl>();
+  return PictureImageLayerImpl::Create(tree_impl, id());
 }
 
 bool PictureImageLayer::HasDrawableContent() const {
@@ -44,7 +44,6 @@ void PictureImageLayer::SetBitmap(const SkBitmap& bitmap) {
 void PictureImageLayer::PaintContents(
     SkCanvas* canvas,
     const gfx::Rect& clip,
-    gfx::RectF* opaque,
     ContentLayerClient::GraphicsContextStatus gc_status) {
   if (!bitmap_.width() || !bitmap_.height())
     return;

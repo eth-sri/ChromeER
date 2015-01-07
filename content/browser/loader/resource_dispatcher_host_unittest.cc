@@ -6,8 +6,8 @@
 
 #include "base/basictypes.h"
 #include "base/bind.h"
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/memory/scoped_vector.h"
 #include "base/memory/shared_memory.h"
 #include "base/message_loop/message_loop.h"
@@ -49,8 +49,8 @@
 #include "net/url_request/url_request_simple_job.h"
 #include "net/url_request/url_request_test_job.h"
 #include "net/url_request/url_request_test_util.h"
+#include "storage/common/blob/shareable_file_reference.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/common/blob/shareable_file_reference.h"
 
 // TODO(eroman): Write unit tests for SafeBrowsing that exercise
 //               SafeBrowsingResourceHandler.
@@ -142,7 +142,7 @@ static ResourceHostMsg_Request CreateResourceRequest(const char* method,
   request.is_main_frame = true;
   request.parent_is_main_frame = false;
   request.parent_render_frame_id = -1;
-  request.transition_type = PAGE_TRANSITION_LINK;
+  request.transition_type = ui::PAGE_TRANSITION_LINK;
   request.allow_download = true;
   return request;
 }

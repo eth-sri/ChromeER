@@ -42,7 +42,7 @@ const remoting::protocol::NameMapElement<It2MeHostState> kIt2MeHostStates[] = {
 
 It2MeNativeMessagingHost::It2MeNativeMessagingHost(
     scoped_refptr<AutoThreadTaskRunner> task_runner,
-    scoped_ptr<NativeMessagingChannel> channel,
+    scoped_ptr<extensions::NativeMessagingChannel> channel,
     scoped_ptr<It2MeHostFactory> factory)
     : channel_(channel.Pass()),
       factory_(factory.Pass()),
@@ -75,28 +75,36 @@ It2MeNativeMessagingHost::~It2MeNativeMessagingHost() {
   }
 }
 
-void It2MeNativeMessagingHost::Start(const base::Closure& quit_closure) const {
+void It2MeNativeMessagingHost::Start(const base::Closure& quit_closure) {
   DCHECK(task_runner()->BelongsToCurrentThread());
+  DCHECK(!quit_closure.is_null());
 
-  channel_->Start(
-      base::Bind(&It2MeNativeMessagingHost::ProcessMessage, weak_ptr_),
-      quit_closure);
+  quit_closure_ = quit_closure;
+
+  channel_->Start(this);
 }
 
-void It2MeNativeMessagingHost::ProcessMessage(
-    scoped_ptr<base::DictionaryValue> message) {
+void It2MeNativeMessagingHost::OnMessage(scoped_ptr<base::Value> message) {
   DCHECK(task_runner()->BelongsToCurrentThread());
 
+  if (message->GetType() != base::Value::TYPE_DICTIONARY) {
+    LOG(ERROR) << "Received a message that's not a dictionary.";
+    channel_->SendMessage(nullptr);
+    return;
+  }
+
+  scoped_ptr<base::DictionaryValue> message_dict(
+      static_cast<base::DictionaryValue*>(message.release()));
   scoped_ptr<base::DictionaryValue> response(new base::DictionaryValue());
 
   // If the client supplies an ID, it will expect it in the response. This
   // might be a string or a number, so cope with both.
   const base::Value* id;
-  if (message->Get("id", &id))
+  if (message_dict->Get("id", &id))
     response->Set("id", id->DeepCopy());
 
   std::string type;
-  if (!message->GetString("type", &type)) {
+  if (!message_dict->GetString("type", &type)) {
     SendErrorAndExit(response.Pass(), "'type' not found in request.");
     return;
   }
@@ -104,14 +112,19 @@ void It2MeNativeMessagingHost::ProcessMessage(
   response->SetString("type", type + "Response");
 
   if (type == "hello") {
-    ProcessHello(*message, response.Pass());
+    ProcessHello(*message_dict, response.Pass());
   } else if (type == "connect") {
-    ProcessConnect(*message, response.Pass());
+    ProcessConnect(*message_dict, response.Pass());
   } else if (type == "disconnect") {
-    ProcessDisconnect(*message, response.Pass());
+    ProcessDisconnect(*message_dict, response.Pass());
   } else {
     SendErrorAndExit(response.Pass(), "Unsupported request type: " + type);
   }
+}
+
+void It2MeNativeMessagingHost::OnDisconnect() {
+  if (!quit_closure_.is_null())
+    base::ResetAndReturn(&quit_closure_).Run();
 }
 
 void It2MeNativeMessagingHost::ProcessHello(
@@ -226,7 +239,7 @@ void It2MeNativeMessagingHost::SendErrorAndExit(
   channel_->SendMessage(response.Pass());
 
   // Trigger a host shutdown by sending a NULL message.
-  channel_->SendMessage(scoped_ptr<base::DictionaryValue>());
+  channel_->SendMessage(nullptr);
 }
 
 void It2MeNativeMessagingHost::OnStateChanged(It2MeHostState state) {

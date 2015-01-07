@@ -4,6 +4,7 @@
 
 #include "extensions/browser/api/bluetooth_socket/bluetooth_api_socket.h"
 
+#include "base/lazy_instance.h"
 #include "device/bluetooth/bluetooth_socket.h"
 #include "net/base/io_buffer.h"
 
@@ -139,8 +140,6 @@ void BluetoothApiSocket::OnSocketReceiveError(
     case device::BluetoothSocket::kSystemError:
       error_reason = BluetoothApiSocket::kSystemError;
       break;
-    default:
-      NOTREACHED();
   }
   error_callback.Run(error_reason, message);
 }

@@ -5,13 +5,14 @@
 #ifndef COMPONENTS_COMPONENT_UPDATER_TEST_URL_REQUEST_POST_INTERCEPTOR_H_
 #define COMPONENTS_COMPONENT_UPDATER_TEST_URL_REQUEST_POST_INTERCEPTOR_H_
 
+#include <stdint.h>
 #include <map>
 #include <queue>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include "base/basictypes.h"
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/synchronization/lock.h"
 #include "url/gurl.h"
@@ -29,22 +30,22 @@ namespace component_updater {
 
 // component 1 has extension id "jebgalgnebhfojomionfpkfelancnnkf", and
 // the RSA public key the following hash:
-const uint8 jebg_hash[] = {0x94, 0x16, 0x0b, 0x6d, 0x41, 0x75, 0xe9, 0xec,
-                           0x8e, 0xd5, 0xfa, 0x54, 0xb0, 0xd2, 0xdd, 0xa5,
-                           0x6e, 0x05, 0x6b, 0xe8, 0x73, 0x47, 0xf6, 0xc4,
-                           0x11, 0x9f, 0xbc, 0xb3, 0x09, 0xb3, 0x5b, 0x40};
+const uint8_t jebg_hash[] = {0x94, 0x16, 0x0b, 0x6d, 0x41, 0x75, 0xe9, 0xec,
+                             0x8e, 0xd5, 0xfa, 0x54, 0xb0, 0xd2, 0xdd, 0xa5,
+                             0x6e, 0x05, 0x6b, 0xe8, 0x73, 0x47, 0xf6, 0xc4,
+                             0x11, 0x9f, 0xbc, 0xb3, 0x09, 0xb3, 0x5b, 0x40};
 // component 2 has extension id "abagagagagagagagagagagagagagagag", and
 // the RSA public key the following hash:
-const uint8 abag_hash[] = {0x01, 0x06, 0x06, 0x06, 0x06, 0x06, 0x06, 0x06,
-                           0x06, 0x06, 0x06, 0x06, 0x06, 0x06, 0x06, 0x06,
-                           0x06, 0x06, 0x06, 0x06, 0x06, 0x06, 0x06, 0x06,
-                           0x06, 0x06, 0x06, 0x06, 0x06, 0x06, 0x06, 0x01};
+const uint8_t abag_hash[] = {0x01, 0x06, 0x06, 0x06, 0x06, 0x06, 0x06, 0x06,
+                             0x06, 0x06, 0x06, 0x06, 0x06, 0x06, 0x06, 0x06,
+                             0x06, 0x06, 0x06, 0x06, 0x06, 0x06, 0x06, 0x06,
+                             0x06, 0x06, 0x06, 0x06, 0x06, 0x06, 0x06, 0x01};
 // component 3 has extension id "ihfokbkgjpifnbbojhneepfflplebdkc", and
 // the RSA public key the following hash:
-const uint8 ihfo_hash[] = {0x87, 0x5e, 0xa1, 0xa6, 0x9f, 0x85, 0xd1, 0x1e,
-                           0x97, 0xd4, 0x4f, 0x55, 0xbf, 0xb4, 0x13, 0xa2,
-                           0xe7, 0xc5, 0xc8, 0xf5, 0x60, 0x19, 0x78, 0x1b,
-                           0x6d, 0xe9, 0x4c, 0xeb, 0x96, 0x05, 0x42, 0x17};
+const uint8_t ihfo_hash[] = {0x87, 0x5e, 0xa1, 0xa6, 0x9f, 0x85, 0xd1, 0x1e,
+                             0x97, 0xd4, 0x4f, 0x55, 0xbf, 0xb4, 0x13, 0xa2,
+                             0xe7, 0xc5, 0xc8, 0xf5, 0x60, 0x19, 0x78, 0x1b,
+                             0x6d, 0xe9, 0x4c, 0xeb, 0x96, 0x05, 0x42, 0x17};
 
 // Intercepts requests to a file path, counts them, and captures the body of
 // the requests. Optionally, for each request, it can return a canned response
@@ -66,9 +67,12 @@ class URLRequestPostInterceptor {
   // Sets an expection for the body of the POST request and optionally,
   // provides a canned response identified by a |file_path| to be returned when
   // the expectation is met. If no |file_path| is provided, then an empty
-  // response body is served. This class takes ownership of the
-  // |request_matcher| object. Returns |true| if the expectation was set.
+  // response body is served. If |response_code| is provided, then an empty
+  // response body with that response code is returned.
+  // Returns |true| if the expectation was set. This class takes ownership of
+  // the |request_matcher| object.
   bool ExpectRequest(class RequestMatcher* request_matcher);
+  bool ExpectRequest(class RequestMatcher* request_matcher, int response_code);
   bool ExpectRequest(class RequestMatcher* request_matcher,
                      const base::FilePath& filepath);
 
@@ -92,7 +96,16 @@ class URLRequestPostInterceptor {
 
  private:
   friend class URLRequestPostInterceptorFactory;
-  typedef std::pair<const RequestMatcher*, std::string> Expectation;
+
+  static const int kResponseCode200 = 200;
+
+  struct ExpectationResponse {
+    ExpectationResponse(int code, const std::string& body)
+        : response_code(code), response_body(body) {}
+    const int response_code;
+    const std::string response_body;
+  };
+  typedef std::pair<const RequestMatcher*, ExpectationResponse> Expectation;
 
   URLRequestPostInterceptor(
       const GURL& url,
@@ -100,6 +113,7 @@ class URLRequestPostInterceptor {
   ~URLRequestPostInterceptor();
 
   void ClearExpectations();
+
   const GURL url_;
   scoped_refptr<base::SequencedTaskRunner> io_task_runner_;
 
@@ -144,7 +158,11 @@ class InterceptorFactory : public URLRequestPostInterceptorFactory {
       const scoped_refptr<base::SequencedTaskRunner>& io_task_runner);
   ~InterceptorFactory();
 
+  // Creates an interceptor for the url path defined by POST_INTERCEPT_PATH.
   URLRequestPostInterceptor* CreateInterceptor();
+
+  // Creates an interceptor for the given url path.
+  URLRequestPostInterceptor* CreateInterceptorForPath(const char* url_path);
 
  private:
   DISALLOW_COPY_AND_ASSIGN(InterceptorFactory);

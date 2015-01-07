@@ -14,7 +14,6 @@
 #include "chrome/browser/extensions/extension_action.h"
 #include "chrome/browser/extensions/extension_action_manager.h"
 #include "chrome/browser/extensions/extension_util.h"
-#include "chrome/browser/extensions/location_bar_controller.h"
 #include "chrome/browser/extensions/permissions_updater.h"
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
@@ -61,11 +60,11 @@ bool ShouldRecordExtension(const Extension* extension) {
 ActiveScriptController::ActiveScriptController(
     content::WebContents* web_contents)
     : content::WebContentsObserver(web_contents),
+      browser_context_(web_contents->GetBrowserContext()),
       enabled_(FeatureSwitch::scripts_require_action()->IsEnabled()),
       extension_registry_observer_(this) {
   CHECK(web_contents);
-  extension_registry_observer_.Add(
-      ExtensionRegistry::Get(web_contents->GetBrowserContext()));
+  extension_registry_observer_.Add(ExtensionRegistry::Get(browser_context_));
 }
 
 ActiveScriptController::~ActiveScriptController() {
@@ -78,13 +77,7 @@ ActiveScriptController* ActiveScriptController::GetForWebContents(
   if (!web_contents)
     return NULL;
   TabHelper* tab_helper = TabHelper::FromWebContents(web_contents);
-  if (!tab_helper)
-    return NULL;
-  LocationBarController* location_bar_controller =
-      tab_helper->location_bar_controller();
-  // This should never be NULL.
-  DCHECK(location_bar_controller);
-  return location_bar_controller->active_script_controller();
+  return tab_helper ? tab_helper->active_script_controller() : NULL;
 }
 
 void ActiveScriptController::OnActiveTabPermissionGranted(
@@ -137,8 +130,8 @@ void ActiveScriptController::AlwaysRunOnVisibleOrigin(
   // permissions and granted permissions.
   // TODO(devlin): Make sure that the permission is removed from
   // withheld_permissions if appropriate.
-  PermissionsUpdater(web_contents()->GetBrowserContext())
-      .AddPermissions(extension, new_permissions.get());
+  PermissionsUpdater(browser_context_).AddPermissions(extension,
+                                                      new_permissions.get());
 
   // Allow current tab to run injection.
   OnClicked(extension);
@@ -149,27 +142,8 @@ void ActiveScriptController::OnClicked(const Extension* extension) {
   RunPendingForExtension(extension);
 }
 
-bool ActiveScriptController::HasActiveScriptAction(const Extension* extension) {
+bool ActiveScriptController::WantsToRun(const Extension* extension) {
   return enabled_ && pending_requests_.count(extension->id()) > 0;
-}
-
-ExtensionAction* ActiveScriptController::GetActionForExtension(
-    const Extension* extension) {
-  if (!enabled_ || pending_requests_.count(extension->id()) == 0)
-    return NULL;  // No action for this extension.
-
-  ActiveScriptMap::iterator existing =
-      active_script_actions_.find(extension->id());
-  if (existing != active_script_actions_.end())
-    return existing->second.get();
-
-  linked_ptr<ExtensionAction> action(ExtensionActionManager::Get(
-      Profile::FromBrowserContext(web_contents()->GetBrowserContext()))
-      ->GetBestFitAction(*extension, ActionInfo::TYPE_PAGE).release());
-  action->SetIsVisible(ExtensionAction::kDefaultTabId, true);
-
-  active_script_actions_[extension->id()] = action;
-  return action.get();
 }
 
 PermissionsData::AccessType
@@ -209,12 +183,10 @@ void ActiveScriptController::RequestScriptInjection(
   PendingRequestList& list = pending_requests_[extension->id()];
   list.push_back(callback);
 
-  // If this was the first entry, notify the location bar that there's a new
-  // icon.
-  if (list.size() == 1u) {
-    ExtensionActionAPI::Get(web_contents()->GetBrowserContext())->
-        NotifyPageActionsChanged(web_contents());
-  }
+  // If this was the first entry, we need to notify that a new extension wants
+  // to run.
+  if (list.size() == 1u)
+    NotifyChange(extension);
 }
 
 void ActiveScriptController::RunPendingForExtension(
@@ -255,9 +227,9 @@ void ActiveScriptController::RunPendingForExtension(
     request->Run();
   }
 
-  // Inform the location bar that the action is now gone.
-  ExtensionActionAPI::Get(web_contents()->GetBrowserContext())->
-      NotifyPageActionsChanged(web_contents());
+  // The extension ran, so we need to update the ExtensionActionAPI that we no
+  // longer want to act.
+  NotifyChange(extension);
 }
 
 void ActiveScriptController::OnRequestScriptInjectionPermission(
@@ -270,7 +242,7 @@ void ActiveScriptController::OnRequestScriptInjectionPermission(
   }
 
   const Extension* extension =
-      ExtensionRegistry::Get(web_contents()->GetBrowserContext())
+      ExtensionRegistry::Get(browser_context_)
           ->enabled_extensions().GetByID(extension_id);
   // We shouldn't allow extensions which are no longer enabled to run any
   // scripts. Ignore the request.
@@ -320,6 +292,22 @@ void ActiveScriptController::PermitScriptInjection(int64 request_id) {
   }
 }
 
+void ActiveScriptController::NotifyChange(const Extension* extension) {
+  ExtensionActionAPI* extension_action_api =
+      ExtensionActionAPI::Get(browser_context_);
+  ExtensionAction* extension_action =
+      ExtensionActionManager::Get(browser_context_)->
+          GetExtensionAction(*extension);
+  // If the extension has an action, we need to notify that it's updated.
+  if (extension_action) {
+    extension_action_api->NotifyChange(
+        extension_action, web_contents(), browser_context_);
+  }
+
+  // We also notify that page actions may have changed.
+  extension_action_api->NotifyPageActionsChanged(web_contents());
+}
+
 void ActiveScriptController::LogUMA() const {
   UMA_HISTOGRAM_COUNTS_100(
       "Extensions.ActiveScriptController.ShownActiveScriptsOnPage",
@@ -365,7 +353,7 @@ void ActiveScriptController::OnExtensionUnloaded(
   PendingRequestMap::iterator iter = pending_requests_.find(extension->id());
   if (iter != pending_requests_.end()) {
     pending_requests_.erase(iter);
-    ExtensionActionAPI::Get(web_contents()->GetBrowserContext())->
+    ExtensionActionAPI::Get(browser_context_)->
         NotifyPageActionsChanged(web_contents());
   }
 }

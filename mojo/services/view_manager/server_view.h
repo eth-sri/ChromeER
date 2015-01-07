@@ -8,10 +8,10 @@
 #include <vector>
 
 #include "base/logging.h"
+#include "cc/surfaces/surface_id.h"
 #include "mojo/services/public/interfaces/view_manager/view_manager.mojom.h"
 #include "mojo/services/view_manager/ids.h"
 #include "mojo/services/view_manager/view_manager_export.h"
-#include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/geometry/rect.h"
 
 namespace mojo {
@@ -53,6 +53,7 @@ class MOJO_VIEW_MANAGER_EXPORT ServerView {
   std::vector<const ServerView*> GetChildren() const;
   std::vector<ServerView*> GetChildren();
 
+  // Returns true if this contains |view| or is |view|.
   bool Contains(const ServerView* view) const;
 
   // Returns true if the window is visible. This does not consider visibility
@@ -60,8 +61,12 @@ class MOJO_VIEW_MANAGER_EXPORT ServerView {
   bool visible() const { return visible_; }
   void SetVisible(bool value);
 
-  void SetBitmap(const SkBitmap& contents);
-  const SkBitmap& bitmap() const { return bitmap_; }
+  // Returns true if this view is attached to |root| and all ancestors are
+  // visible.
+  bool IsDrawn(const ServerView* root) const;
+
+  void SetSurfaceId(cc::SurfaceId surface_id);
+  const cc::SurfaceId surface_id() const { return surface_id_; }
 
  private:
   typedef std::vector<ServerView*> Views;
@@ -75,7 +80,7 @@ class MOJO_VIEW_MANAGER_EXPORT ServerView {
   Views children_;
   bool visible_;
   gfx::Rect bounds_;
-  SkBitmap bitmap_;
+  cc::SurfaceId surface_id_;
 
   DISALLOW_COPY_AND_ASSIGN(ServerView);
 };

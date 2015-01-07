@@ -54,8 +54,8 @@
 #include "google_apis/drive/drive_api_url_generator.h"
 #include "google_apis/drive/gdata_wapi_url_generator.h"
 #include "net/url_request/url_request_context_getter.h"
-#include "webkit/common/blob/scoped_file.h"
-#include "webkit/common/fileapi/file_system_util.h"
+#include "storage/common/blob/scoped_file.h"
+#include "storage/common/fileapi/file_system_util.h"
 
 namespace sync_file_system {
 
@@ -227,7 +227,7 @@ scoped_ptr<SyncEngine> SyncEngine::CreateForBrowserContext(
                      token_service,
                      request_context.get(),
                      make_scoped_ptr(new DriveServiceFactory()),
-                     NULL /* env_override */));
+                     nullptr /* env_override */));
 
   sync_engine->Initialize();
   return sync_engine.Pass();
@@ -284,8 +284,7 @@ void SyncEngine::Initialize() {
   scoped_ptr<drive::DriveUploaderInterface> drive_uploader(
       new drive::DriveUploader(drive_service.get(), drive_task_runner_.get()));
 
-  InitializeInternal(drive_service.Pass(), drive_uploader.Pass(),
-                     scoped_ptr<SyncWorkerInterface>());
+  InitializeInternal(drive_service.Pass(), drive_uploader.Pass(), nullptr);
 }
 
 void SyncEngine::InitializeForTesting(
@@ -358,7 +357,6 @@ void SyncEngine::InitializeInternal(
   drive_service_->AddObserver(this);
 
   service_state_ = REMOTE_SERVICE_TEMPORARY_UNAVAILABLE;
-  SetSyncEnabled(sync_enabled_);
   OnNetworkChanged(net::NetworkChangeNotifier::GetConnectionType());
   if (drive_service_->HasRefreshToken())
     OnReadyToSendRequests();
@@ -665,7 +663,7 @@ void SyncEngine::OnNotificationReceived() {
                  "Got push notification for Drive"));
 }
 
-void SyncEngine::OnPushNotificationEnabled(bool) {}
+void SyncEngine::OnPushNotificationEnabled(bool /* enabled */) {}
 
 void SyncEngine::OnReadyToSendRequests() {
   has_refresh_token_ = true;
@@ -714,7 +712,6 @@ void SyncEngine::OnNetworkChanged(
                    base::Unretained(sync_worker_.get()),
                    "Disconnected"));
   }
-
 }
 
 void SyncEngine::GoogleSigninFailed(const GoogleServiceAuthError& error) {
@@ -746,7 +743,7 @@ SyncEngine::SyncEngine(
     ExtensionServiceInterface* extension_service,
     SigninManagerBase* signin_manager,
     OAuth2TokenService* token_service,
-    const scoped_refptr<net::URLRequestContextGetter>& request_context,
+    net::URLRequestContextGetter* request_context,
     scoped_ptr<DriveServiceFactory> drive_service_factory,
     leveldb::Env* env_override)
     : ui_task_runner_(ui_task_runner),
@@ -760,7 +757,7 @@ SyncEngine::SyncEngine(
       token_service_(token_service),
       request_context_(request_context),
       drive_service_factory_(drive_service_factory.Pass()),
-      remote_change_processor_(NULL),
+      remote_change_processor_(nullptr),
       service_state_(REMOTE_SERVICE_TEMPORARY_UNAVAILABLE),
       has_refresh_token_(false),
       network_available_(false),

@@ -20,6 +20,7 @@
 #include "chrome/browser/extensions/declarative_user_script_master.h"
 #include "chrome/browser/extensions/error_console/error_console.h"
 #include "chrome/browser/extensions/extension_error_reporter.h"
+#include "chrome/browser/extensions/extension_management.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system_factory.h"
 #include "chrome/browser/extensions/extension_util.h"
@@ -28,10 +29,8 @@
 #include "chrome/browser/extensions/navigation_observer.h"
 #include "chrome/browser/extensions/shared_module_service.h"
 #include "chrome/browser/extensions/shared_user_script_master.h"
-#include "chrome/browser/extensions/standard_management_policy_provider.h"
 #include "chrome/browser/extensions/state_store_notification_observer.h"
 #include "chrome/browser/extensions/unpacked_installer.h"
-#include "chrome/browser/extensions/updater/manifest_fetch_data.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/webui/extensions/extension_icon_source.h"
@@ -62,6 +61,7 @@
 #include "extensions/browser/warning_set.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/extension_urls.h"
 #include "extensions/common/manifest.h"
 #include "net/base/escape.h"
 
@@ -124,9 +124,6 @@ void ExtensionSystemImpl::Shared::InitPrefs() {
 
   blacklist_.reset(new Blacklist(ExtensionPrefs::Get(profile_)));
 
-  standard_management_policy_provider_.reset(
-      new StandardManagementPolicyProvider(ExtensionPrefs::Get(profile_)));
-
 #if defined(OS_CHROMEOS)
   const user_manager::User* user =
       user_manager::UserManager::Get()->GetActiveUser();
@@ -141,9 +138,9 @@ void ExtensionSystemImpl::Shared::InitPrefs() {
 }
 
 void ExtensionSystemImpl::Shared::RegisterManagementPolicyProviders() {
-  DCHECK(standard_management_policy_provider_.get());
   management_policy_->RegisterProvider(
-      standard_management_policy_provider_.get());
+      ExtensionManagementFactory::GetForBrowserContext(profile_)
+          ->GetProvider());
 
 #if defined(OS_CHROMEOS)
   if (device_local_account_management_policy_provider_) {

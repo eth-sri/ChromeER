@@ -12,7 +12,9 @@ mojom("view_manager") {
   ]
 
   deps = [
+    "//mojo/public/interfaces/application",
     "//mojo/services/public/interfaces/geometry",
     "//mojo/services/public/interfaces/input_events",
+    "//mojo/services/public/interfaces/surfaces:surface_id",
   ]
 }

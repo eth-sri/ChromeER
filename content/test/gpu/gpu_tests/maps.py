@@ -90,7 +90,7 @@ class Maps(cloud_storage_test_base.TestBase):
   """Google Maps pixel tests."""
   test = _MapsValidator
 
-  def CreateExpectations(self, page_set):
+  def CreateExpectations(self):
     return maps_expectations.MapsExpectations()
 
   def CreatePageSet(self, options):
@@ -98,6 +98,7 @@ class Maps(cloud_storage_test_base.TestBase):
         util.GetChromiumSrcDir(), 'content', 'test', 'gpu', 'page_sets')
     ps = page_set.PageSet(archive_data_file='data/maps.json',
                           make_javascript_deterministic=False,
-                          file_path=page_set_path)
+                          file_path=page_set_path,
+                          bucket=page_set.PUBLIC_BUCKET)
     ps.AddPage(MapsPage(ps, ps.base_dir))
     return ps

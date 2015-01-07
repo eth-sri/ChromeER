@@ -11,7 +11,6 @@
 #include "android_webview/browser/aw_resource_context.h"
 #include "android_webview/browser/browser_view_renderer.h"
 #include "android_webview/browser/deferred_gpu_command_service.h"
-#include "android_webview/browser/gpu_memory_buffer_factory_impl.h"
 #include "android_webview/browser/hardware_renderer.h"
 #include "android_webview/browser/net_disk_cache_remover.h"
 #include "android_webview/browser/renderer_host/aw_resource_dispatcher_host_delegate.h"
@@ -297,7 +296,12 @@ void AwContents::Destroy(JNIEnv* env, jobject obj) {
   // the java peer. This is important for the popup window case, where we are
   // swapping AwContents out that share the same java AwContentsClientBridge.
   // See b/15074651.
+  AwContentsClientBridgeBase::Disassociate(web_contents_.get());
   contents_client_bridge_.reset();
+
+  // Do not wait until the WebContents are deleted asynchronously to clear
+  // the delegate and stop sending callbacks.
+  web_contents_->SetDelegate(NULL);
 
   // We do not delete AwContents immediately. Some applications try to delete
   // Webview in ShouldOverrideUrlLoading callback, which is a sync IPC from
@@ -323,8 +327,6 @@ static void SetAwDrawSWFunctionTable(JNIEnv* env, jclass,
 
 static void SetAwDrawGLFunctionTable(JNIEnv* env, jclass,
                                      jlong function_table) {
-  GpuMemoryBufferFactoryImpl::SetAwDrawGLFunctionTable(
-      reinterpret_cast<AwDrawGLFunctionTable*>(function_table));
 }
 
 static jlong GetAwDrawGLFunction(JNIEnv* env, jclass) {
@@ -868,9 +870,6 @@ void AwContents::SetIsPaused(JNIEnv* env, jobject obj, bool paused) {
       ContentViewCore::FromWebContents(web_contents_.get());
   if (cvc) {
     cvc->PauseOrResumeGeolocation(paused);
-    if (paused) {
-      cvc->PauseVideo();
-    }
   }
 }
 
@@ -897,6 +896,11 @@ void AwContents::OnDetachedFromWindow(JNIEnv* env, jobject obj) {
 
 void AwContents::ReleaseHardwareDrawIfNeeded() {
   InsideHardwareReleaseReset inside_reset(&shared_renderer_state_);
+
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
+  if (!obj.is_null())
+    Java_AwContents_invalidateOnFunctorDestroy(env, obj.obj());
 
   bool hardware_initialized = browser_view_renderer_.hardware_enabled();
   if (hardware_initialized) {
@@ -1141,11 +1145,6 @@ void AwContents::SetExtraHeadersForUrl(JNIEnv* env, jobject obj,
       GetResourceContext());
   resource_context->SetExtraHeaders(GURL(ConvertJavaStringToUTF8(env, url)),
                                     extra_headers);
-}
-
-void AwContents::SendCheckRenderThreadResponsiveness(JNIEnv* env, jobject obj) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  render_view_host_ext_->SendCheckRenderThreadResponsiveness();
 }
 
 void AwContents::SetJsOnlineProperty(JNIEnv* env,

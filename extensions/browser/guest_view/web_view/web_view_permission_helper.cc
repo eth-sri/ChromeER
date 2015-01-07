@@ -130,10 +130,10 @@ void RecordUserInitiatedUMA(
 } // namespace
 
 WebViewPermissionHelper::WebViewPermissionHelper(WebViewGuest* web_view_guest)
-  : content::WebContentsObserver(web_view_guest->guest_web_contents()),
-    next_permission_request_id_(guestview::kInstanceIDNone),
-    web_view_guest_(web_view_guest),
-    weak_factory_(this) {
+    : content::WebContentsObserver(web_view_guest->web_contents()),
+      next_permission_request_id_(guestview::kInstanceIDNone),
+      web_view_guest_(web_view_guest),
+      weak_factory_(this) {
       web_view_permission_helper_delegate_.reset(
           ExtensionsAPIClient::Get()->CreateWebViewPermissionHelperDelegate(
               this));
@@ -180,8 +180,57 @@ void WebViewPermissionHelper::RequestMediaAccessPermission(
     content::WebContents* source,
     const content::MediaStreamRequest& request,
     const content::MediaResponseCallback& callback) {
-  web_view_permission_helper_delegate_-> RequestMediaAccessPermission(
-      source, request, callback);
+  base::DictionaryValue request_info;
+  request_info.SetString(guestview::kUrl, request.security_origin.spec());
+  RequestPermission(
+      WEB_VIEW_PERMISSION_TYPE_MEDIA,
+      request_info,
+      base::Bind(&WebViewPermissionHelper::OnMediaPermissionResponse,
+                 weak_factory_.GetWeakPtr(),
+                 request,
+                 callback),
+      false /* allowed_by_default */);
+}
+
+bool WebViewPermissionHelper::CheckMediaAccessPermission(
+    content::WebContents* source,
+    const GURL& security_origin,
+    content::MediaStreamType type) {
+  if (!web_view_guest()->attached() ||
+      !web_view_guest()->embedder_web_contents()->GetDelegate()) {
+    return false;
+  }
+  return web_view_guest()
+      ->embedder_web_contents()
+      ->GetDelegate()
+      ->CheckMediaAccessPermission(
+          web_view_guest()->embedder_web_contents(), security_origin, type);
+}
+
+void WebViewPermissionHelper::OnMediaPermissionResponse(
+    const content::MediaStreamRequest& request,
+    const content::MediaResponseCallback& callback,
+    bool allow,
+    const std::string& user_input) {
+  if (!allow) {
+    callback.Run(content::MediaStreamDevices(),
+                 content::MEDIA_DEVICE_PERMISSION_DENIED,
+                 scoped_ptr<content::MediaStreamUI>());
+    return;
+  }
+  if (!web_view_guest()->attached() ||
+      !web_view_guest()->embedder_web_contents()->GetDelegate()) {
+    callback.Run(content::MediaStreamDevices(),
+                 content::MEDIA_DEVICE_INVALID_STATE,
+                 scoped_ptr<content::MediaStreamUI>());
+    return;
+  }
+
+  web_view_guest()
+      ->embedder_web_contents()
+      ->GetDelegate()
+      ->RequestMediaAccessPermission(
+          web_view_guest()->embedder_web_contents(), request, callback);
 }
 
 void WebViewPermissionHelper::CanDownload(

@@ -107,8 +107,6 @@ class FakeResourceContext : public ResourceContext {
  private:
   virtual net::HostResolver* GetHostResolver() OVERRIDE { return NULL; }
   virtual net::URLRequestContext* GetRequestContext() OVERRIDE { return NULL; }
-  virtual bool AllowMicAccess(const GURL& origin) OVERRIDE { return false; }
-  virtual bool AllowCameraAccess(const GURL& origin) OVERRIDE { return false; }
 };
 
 class FakeResourceMessageFilter : public ResourceMessageFilter {
@@ -180,7 +178,7 @@ class ResourceSchedulerTest : public testing::Test {
         false,                                   // parent_is_main_frame
         0,                                       // parent_render_frame_id
         RESOURCE_TYPE_SUB_RESOURCE,              // resource_type
-        PAGE_TRANSITION_LINK,                    // transition_type
+        ui::PAGE_TRANSITION_LINK,                // transition_type
         false,                                   // should_replace_current_entry
         false,                                   // is_download
         false,                                   // is_stream

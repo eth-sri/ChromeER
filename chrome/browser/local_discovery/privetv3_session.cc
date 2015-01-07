@@ -16,7 +16,7 @@ namespace {
 
 const char kUrlPlaceHolder[] = "http://host/";
 
-const char kStubPrivetCode[] = "01234";
+const char kStubPrivetCode[] = "1234";
 
 GURL CreatePrivetURL(const std::string& path) {
   GURL url(kUrlPlaceHolder);
@@ -133,6 +133,7 @@ void PrivetV3Session::StartRequest(Request* request) {
   url_fetcher->SetUploadData(cloud_print::kContentTypeJSON, json);
 
   request->fetcher_delegate_->url_fetcher_ = url_fetcher.Pass();
+  request->fetcher_delegate_->url_fetcher_->V3Mode();
   request->fetcher_delegate_->url_fetcher_->Start();
 }
 

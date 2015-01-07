@@ -739,7 +739,7 @@ void RenderWidgetHostViewMac::UpdateDisplayLink() {
   CGDirectDisplayID display_id = [screen_number unsignedIntValue];
 
   display_link_ = DisplayLinkMac::GetForDisplay(display_id);
-  if (!display_link_) {
+  if (!display_link_.get()) {
     // Note that on some headless systems, the display link will fail to be
     // created, so this should not be a fatal error.
     LOG(ERROR) << "Failed to create display link.";
@@ -747,7 +747,7 @@ void RenderWidgetHostViewMac::UpdateDisplayLink() {
 }
 
 void RenderWidgetHostViewMac::SendVSyncParametersToRenderer() {
-  if (!render_widget_host_ || !display_link_)
+  if (!render_widget_host_ || !display_link_.get())
     return;
 
   if (!display_link_->GetVSyncParameters(&vsync_timebase_, &vsync_interval_)) {
@@ -977,6 +977,13 @@ void RenderWidgetHostViewMac::ImeCompositionRangeChanged(
 void RenderWidgetHostViewMac::RenderProcessGone(base::TerminationStatus status,
                                                 int error_code) {
   Destroy();
+}
+
+void RenderWidgetHostViewMac::RenderWidgetHostGone() {
+  // Destroy the DelegatedFrameHost, to prevent crashes when Destroy is never
+  // called on the view.
+  // http://crbug.com/404828
+  ShutdownBrowserCompositor();
 }
 
 void RenderWidgetHostViewMac::Destroy() {
@@ -1358,22 +1365,6 @@ bool RenderWidgetHostViewMac::GetCachedFirstRectForCharacterRange(
   return true;
 }
 
-void RenderWidgetHostViewMac::AcceleratedSurfaceBuffersSwapped(
-    const GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params& params,
-    int gpu_host_id) {
-}
-
-void RenderWidgetHostViewMac::AcceleratedSurfacePostSubBuffer(
-    const GpuHostMsg_AcceleratedSurfacePostSubBuffer_Params& params,
-    int gpu_host_id) {
-}
-
-void RenderWidgetHostViewMac::AcceleratedSurfaceSuspend() {
-}
-
-void RenderWidgetHostViewMac::AcceleratedSurfaceRelease() {
-}
-
 bool RenderWidgetHostViewMac::HasAcceleratedSurface(
       const gfx::Size& desired_size) {
   if (browser_compositor_view_)
@@ -1418,10 +1409,6 @@ void RenderWidgetHostViewMac::OnSwapCompositorFrame(
   }
 }
 
-void RenderWidgetHostViewMac::AcceleratedSurfaceInitialized(int host_id,
-                                                            int route_id) {
-}
-
 void RenderWidgetHostViewMac::GetScreenInfo(blink::WebScreenInfo* results) {
   *results = GetWebScreenInfo(GetNativeView());
 }
@@ -1441,7 +1428,7 @@ gfx::Rect RenderWidgetHostViewMac::GetBoundsInRootWindow() {
 gfx::GLSurfaceHandle RenderWidgetHostViewMac::GetCompositingSurface() {
   // TODO(kbr): may be able to eliminate PluginWindowHandle argument
   // completely on Mac OS.
-  return gfx::GLSurfaceHandle(gfx::kNullPluginWindow, gfx::NATIVE_TRANSPORT);
+  return gfx::GLSurfaceHandle(gfx::kNullPluginWindow, gfx::NULL_TRANSPORT);
 }
 
 bool RenderWidgetHostViewMac::LockMouse() {
@@ -1685,13 +1672,6 @@ void RenderWidgetHostViewMac::OnDisplayMetricsChanged(
 }
 
 - (void)dealloc {
-  // Unbind the GL context from this view. If this is not done before super's
-  // dealloc is called then the GL context will crash when it reaches into
-  // the view in its destructor.
-  // http://crbug.com/255608
-  if (renderWidgetHostView_)
-    renderWidgetHostView_->AcceleratedSurfaceRelease();
-
   if (responderDelegate_ &&
       [responderDelegate_ respondsToSelector:@selector(viewGone:)])
     [responderDelegate_ viewGone:self];

@@ -3,6 +3,8 @@
 // found in the LICENSE file.
 
 #include "athena/extensions/public/extensions_delegate.h"
+
+#include "athena/extensions/shell/athena_shell_app_window_client.h"
 #include "base/macros.h"
 #include "extensions/common/extension_set.h"
 #include "extensions/shell/browser/shell_extension_system.h"
@@ -15,9 +17,11 @@ class ShellExtensionsDelegate : public ExtensionsDelegate {
   explicit ShellExtensionsDelegate(content::BrowserContext* context)
       : context_(context),
         extension_system_(static_cast<extensions::ShellExtensionSystem*>(
-            extensions::ExtensionSystem::Get(context))) {}
+            extensions::ExtensionSystem::Get(context))) {
+    extensions::AppWindowClient::Set(&app_window_client_);
+  }
 
-  virtual ~ShellExtensionsDelegate() {}
+  virtual ~ShellExtensionsDelegate() { extensions::AppWindowClient::Set(NULL); }
 
  private:
   // ExtensionsDelegate:
@@ -26,7 +30,7 @@ class ShellExtensionsDelegate : public ExtensionsDelegate {
   }
   virtual const extensions::ExtensionSet& GetInstalledExtensions() OVERRIDE {
     shell_extensions_.Clear();
-    if (extension_system_->extension())
+    if (extension_system_->extension().get())
       shell_extensions_.Insert(extension_system_->extension());
     return shell_extensions_;
   }
@@ -40,6 +44,8 @@ class ShellExtensionsDelegate : public ExtensionsDelegate {
   content::BrowserContext* context_;
   extensions::ShellExtensionSystem* extension_system_;
   extensions::ExtensionSet shell_extensions_;
+
+  AthenaShellAppWindowClient app_window_client_;
 
   DISALLOW_COPY_AND_ASSIGN(ShellExtensionsDelegate);
 };

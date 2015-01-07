@@ -15,7 +15,6 @@
 #include "cc/base/math_util.h"
 #include "cc/resources/tile.h"
 #include "cc/resources/tile_priority.h"
-#include "cc/trees/occlusion_tracker.h"
 #include "ui/gfx/point_conversions.h"
 #include "ui/gfx/rect_conversions.h"
 #include "ui/gfx/safe_integer_conversions.h"
@@ -91,6 +90,10 @@ PictureLayerTiling::PictureLayerTiling(float contents_scale,
   gfx::Size content_bounds =
       gfx::ToCeiledSize(gfx::ScaleSize(layer_bounds, contents_scale));
   gfx::Size tile_size = client_->CalculateTileSize(content_bounds);
+  if (tile_size.IsEmpty()) {
+    layer_bounds_ = gfx::Size();
+    content_bounds = gfx::Size();
+  }
 
   DCHECK(!gfx::ToFlooredSize(
       gfx::ScaleSize(layer_bounds, contents_scale)).IsEmpty()) <<
@@ -168,14 +171,20 @@ void PictureLayerTiling::UpdateTilesToCurrentPile(
     const gfx::Size& new_layer_bounds) {
   DCHECK(!new_layer_bounds.IsEmpty());
 
-  gfx::Size old_layer_bounds = layer_bounds_;
-  layer_bounds_ = new_layer_bounds;
-
-  gfx::Size content_bounds =
-      gfx::ToCeiledSize(gfx::ScaleSize(layer_bounds_, contents_scale_));
   gfx::Size tile_size = tiling_data_.max_texture_size();
 
-  if (layer_bounds_ != old_layer_bounds) {
+  if (new_layer_bounds != layer_bounds_) {
+    gfx::Size content_bounds =
+        gfx::ToCeiledSize(gfx::ScaleSize(new_layer_bounds, contents_scale_));
+
+    tile_size = client_->CalculateTileSize(content_bounds);
+    if (tile_size.IsEmpty()) {
+      layer_bounds_ = gfx::Size();
+      content_bounds = gfx::Size();
+    } else {
+      layer_bounds_ = new_layer_bounds;
+    }
+
     // The SetLiveTilesRect() method would drop tiles outside the new bounds,
     // but may do so incorrectly if resizing the tiling causes the number of
     // tiles in the tiling_data_ to change.
@@ -229,8 +238,6 @@ void PictureLayerTiling::UpdateTilesToCurrentPile(
       for (int i = before_left; i <= before_right; ++i)
         CreateTile(i, after_bottom, twin_tiling);
     }
-
-    tile_size = client_->CalculateTileSize(content_bounds);
   }
 
   if (tile_size != tiling_data_.max_texture_size()) {
@@ -529,12 +536,10 @@ gfx::Rect PictureLayerTiling::ComputeSkewport(
 
 void PictureLayerTiling::UpdateTilePriorities(
     WhichTree tree,
-    const gfx::Rect& visible_layer_rect,
+    const gfx::Rect& viewport_in_layer_space,
     float ideal_contents_scale,
     double current_frame_time_in_seconds,
-    const OcclusionTracker<LayerImpl>* occlusion_tracker,
-    const LayerImpl* render_target,
-    const gfx::Transform& draw_transform) {
+    const Occlusion& occlusion_in_layer_space) {
   if (!NeedsUpdateForFrameAtTime(current_frame_time_in_seconds)) {
     // This should never be zero for the purposes of has_ever_been_updated().
     DCHECK_NE(current_frame_time_in_seconds, 0.0);
@@ -542,7 +547,7 @@ void PictureLayerTiling::UpdateTilePriorities(
   }
 
   gfx::Rect visible_rect_in_content_space =
-      gfx::ScaleToEnclosingRect(visible_layer_rect, contents_scale_);
+      gfx::ScaleToEnclosingRect(viewport_in_layer_space, contents_scale_);
 
   if (tiling_size().IsEmpty()) {
     last_impl_frame_time_in_seconds_ = current_frame_time_in_seconds;
@@ -597,16 +602,10 @@ void PictureLayerTiling::UpdateTilePriorities(
     tile->SetPriority(tree, now_priority);
 
     // Set whether tile is occluded or not.
-    bool is_occluded = false;
-    if (occlusion_tracker) {
-      gfx::Rect tile_query_rect = ScaleToEnclosingRect(
-          IntersectRects(tile->content_rect(), visible_rect_in_content_space),
-          1.0f / contents_scale_);
-      // TODO(vmpstr): Remove render_target and draw_transform from the
-      // parameters so they can be hidden from the tiling.
-      is_occluded = occlusion_tracker->Occluded(
-          render_target, tile_query_rect, draw_transform);
-    }
+    gfx::Rect tile_query_rect = ScaleToEnclosingRect(
+        IntersectRects(tile->content_rect(), visible_rect_in_content_space),
+        1.0f / contents_scale_);
+    bool is_occluded = occlusion_in_layer_space.IsOccluded(tile_query_rect);
     tile->set_is_occluded(tree, is_occluded);
   }
 
@@ -815,9 +814,11 @@ int ComputeExpansionDelta(int num_x_edges, int num_y_edges,
   int64 c = static_cast<int64>(width) * height - target_area;
 
   // Compute the delta for our edges using the quadratic equation.
-  return a == 0 ? -c / b :
-     (-b + static_cast<int>(
-         std::sqrt(static_cast<int64>(b) * b - 4.0 * a * c))) / (2 * a);
+  int delta =
+      (a == 0) ? -c / b : (-b + static_cast<int>(std::sqrt(
+                                    static_cast<int64>(b) * b - 4.0 * a * c))) /
+                              (2 * a);
+  return std::max(0, delta);
 }
 
 }  // namespace

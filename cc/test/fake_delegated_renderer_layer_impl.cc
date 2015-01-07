@@ -22,8 +22,7 @@ FakeDelegatedRendererLayerImpl::~FakeDelegatedRendererLayerImpl() {}
 
 scoped_ptr<LayerImpl> FakeDelegatedRendererLayerImpl::CreateLayerImpl(
     LayerTreeImpl* tree_impl) {
-  return FakeDelegatedRendererLayerImpl::Create(
-      tree_impl, id()).PassAs<LayerImpl>();
+  return FakeDelegatedRendererLayerImpl::Create(tree_impl, id());
 }
 
 static ResourceProvider::ResourceId AddResourceToFrame(
@@ -48,7 +47,9 @@ ResourceProvider::ResourceIdSet FakeDelegatedRendererLayerImpl::Resources()
   return set;
 }
 
-void NoopReturnCallback(const ReturnedResourceArray& returned) {}
+void NoopReturnCallback(const ReturnedResourceArray& returned,
+                        BlockingTaskRunner* main_thread_task_runner) {
+}
 
 void FakeDelegatedRendererLayerImpl::SetFrameDataForRenderPasses(
     float device_scale_factor,
@@ -63,8 +64,11 @@ void FakeDelegatedRendererLayerImpl::SetFrameDataForRenderPasses(
       base::Bind(&AddResourceToFrame, resource_provider, delegated_frame.get());
   for (size_t i = 0; i < delegated_frame->render_pass_list.size(); ++i) {
     RenderPass* pass = delegated_frame->render_pass_list[i];
-    for (size_t j = 0; j < pass->quad_list.size(); ++j)
-      pass->quad_list[j]->IterateResources(add_resource_to_frame_callback);
+    for (QuadList::Iterator iter = pass->quad_list.begin();
+         iter != pass->quad_list.end();
+         ++iter) {
+      iter->IterateResources(add_resource_to_frame_callback);
+    }
   }
 
   CreateChildIdIfNeeded(base::Bind(&NoopReturnCallback));

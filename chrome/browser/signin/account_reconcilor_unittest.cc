@@ -28,6 +28,7 @@
 #include "components/signin/core/common/profile_management_switches.h"
 #include "components/signin/core/common/signin_switches.h"
 #include "content/public/test/test_browser_thread_bundle.h"
+#include "google_apis/gaia/gaia_constants.h"
 #include "google_apis/gaia/gaia_urls.h"
 #include "net/url_request/test_url_fetcher_factory.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -51,16 +52,6 @@ class MockAccountReconcilor : public testing::StrictMock<AccountReconcilor> {
   }
 
   MOCK_METHOD1(PerformMergeAction, void(const std::string& account_id));
-  MOCK_METHOD1(PerformStartRemoveAction, void(const std::string& account_id));
-  MOCK_METHOD3(
-      PerformFinishRemoveAction,
-      void(const std::string& account_id,
-           const GoogleServiceAuthError& error,
-           const std::vector<std::pair<std::string, bool> >& accounts));
-  MOCK_METHOD3(PerformAddToChromeAction,
-               void(const std::string& account_id,
-                    int session_index,
-                    const std::string& signin_scoped_device_id));
   MOCK_METHOD0(PerformLogoutAllAccountsAction, void());
 };
 
@@ -109,10 +100,7 @@ class AccountReconcilorTest : public ::testing::TestWithParam<bool> {
       const std::string& account_id,
       const GoogleServiceAuthError& error);
 
-  void SimulateRefreshTokenFetched(
-      AccountReconcilor* reconcilor,
-      const std::string& account_id,
-      const std::string& refresh_token);
+  GURL list_accounts_url() { return list_accounts_url_; }
 
  private:
   content::TestBrowserThreadBundle bundle_;
@@ -123,6 +111,7 @@ class AccountReconcilorTest : public ::testing::TestWithParam<bool> {
   net::FakeURLFetcherFactory url_fetcher_factory_;
   scoped_ptr<TestingProfileManager> testing_profile_manager_;
   base::HistogramTester histogram_tester_;
+  GURL list_accounts_url_;
 
   DISALLOW_COPY_AND_ASSIGN(AccountReconcilorTest);
 };
@@ -140,6 +129,9 @@ void AccountReconcilorTest::SetUp() {
     CommandLine::ForCurrentProcess()->AppendSwitch(
         switches::kEnableNewProfileManagement);
   }
+
+  list_accounts_url_ = GaiaUrls::GetInstance()->ListAccountsURLWithSource(
+      GaiaConstants::kReconcilorSource);
 
   testing_profile_manager_.reset(
       new TestingProfileManager(TestingBrowserProcess::GetGlobal()));
@@ -185,13 +177,6 @@ void AccountReconcilorTest::SimulateMergeSessionCompleted(
     const std::string& account_id,
     const GoogleServiceAuthError& error) {
   observer->MergeSessionCompleted(account_id, error);
-}
-
-void AccountReconcilorTest::SimulateRefreshTokenFetched(
-    AccountReconcilor* reconcilor,
-    const std::string& account_id,
-    const std::string& refresh_token) {
-  reconcilor->HandleRefreshTokenFetched(account_id, refresh_token);
 }
 
 TEST_F(AccountReconcilorTest, Basic) {
@@ -255,11 +240,12 @@ TEST_F(AccountReconcilorTest, ProfileAlreadyConnected) {
 TEST_F(AccountReconcilorTest, GetAccountsFromCookieSuccess) {
   signin_manager()->SetAuthenticatedUsername(kTestEmail);
   token_service()->UpdateCredentials(kTestEmail, "refresh_token");
+  EXPECT_CALL(*GetMockReconcilor(), PerformMergeAction(kTestEmail));
   AccountReconcilor* reconcilor =
       AccountReconcilorFactory::GetForProfile(profile());
   ASSERT_TRUE(reconcilor);
 
-  SetFakeResponse(GaiaUrls::GetInstance()->list_accounts_url().spec(),
+  SetFakeResponse(list_accounts_url().spec(),
       "[\"f\", [[\"b\", 0, \"n\", \"user@gmail.com\", \"p\", 0, 0, 0, 0, 0]]]",
       net::HTTP_OK, net::URLRequestStatus::SUCCESS);
 
@@ -281,78 +267,14 @@ TEST_F(AccountReconcilorTest, GetAccountsFromCookieFailure) {
       AccountReconcilorFactory::GetForProfile(profile());
   ASSERT_TRUE(reconcilor);
 
-  SetFakeResponse(GaiaUrls::GetInstance()->list_accounts_url().spec(), "",
+  SetFakeResponse(list_accounts_url().spec(), "",
       net::HTTP_NOT_FOUND, net::URLRequestStatus::SUCCESS);
 
   reconcilor->StartReconcile();
   ASSERT_FALSE(reconcilor->AreGaiaAccountsSet());
 
   base::RunLoop().RunUntilIdle();
-  ASSERT_EQ(0u, reconcilor->GetGaiaAccountsForTesting().size());
-}
-
-TEST_F(AccountReconcilorTest, ValidateAccountsFromTokens) {
-  signin_manager()->SetAuthenticatedUsername(kTestEmail);
-  token_service()->UpdateCredentials(kTestEmail, "refresh_token");
-
-  AccountReconcilor* reconcilor =
-      AccountReconcilorFactory::GetForProfile(profile());
-  ASSERT_TRUE(reconcilor);
-
-  reconcilor->ValidateAccountsFromTokenService();
-  ASSERT_FALSE(reconcilor->AreAllRefreshTokensChecked());
-
-  SetFakeResponse("https://www.googleapis.com/oauth2/v1/userinfo",
-      "{\"id\":\"foo\"}", net::HTTP_OK, net::URLRequestStatus::SUCCESS);
-  token_service()->IssueTokenForAllPendingRequests("access_token",
-      base::Time::Now() + base::TimeDelta::FromHours(1));
-
-  base::RunLoop().RunUntilIdle();
-  ASSERT_TRUE(reconcilor->AreAllRefreshTokensChecked());
-  ASSERT_EQ(1u, reconcilor->GetValidChromeAccountsForTesting().size());
-  ASSERT_EQ(0u, reconcilor->GetInvalidChromeAccountsForTesting().size());
-}
-
-TEST_F(AccountReconcilorTest, ValidateAccountsFromTokensFailedUserInfo) {
-  signin_manager()->SetAuthenticatedUsername(kTestEmail);
-  token_service()->UpdateCredentials(kTestEmail, "refresh_token");
-
-  AccountReconcilor* reconcilor =
-      AccountReconcilorFactory::GetForProfile(profile());
-  ASSERT_TRUE(reconcilor);
-
-  reconcilor->ValidateAccountsFromTokenService();
-  ASSERT_FALSE(reconcilor->AreAllRefreshTokensChecked());
-
-  SetFakeResponse("https://www.googleapis.com/oauth2/v1/userinfo",
-      "", net::HTTP_NOT_FOUND, net::URLRequestStatus::SUCCESS);
-  token_service()->IssueTokenForAllPendingRequests("access_token",
-      base::Time::Now() + base::TimeDelta::FromHours(1));
-
-  base::RunLoop().RunUntilIdle();
-  ASSERT_TRUE(reconcilor->AreAllRefreshTokensChecked());
-  ASSERT_EQ(0u, reconcilor->GetValidChromeAccountsForTesting().size());
-  ASSERT_EQ(1u, reconcilor->GetInvalidChromeAccountsForTesting().size());
-}
-
-TEST_F(AccountReconcilorTest, ValidateAccountsFromTokensFailedTokenRequest) {
-  signin_manager()->SetAuthenticatedUsername(kTestEmail);
-  token_service()->UpdateCredentials(kTestEmail, "refresh_token");
-
-  AccountReconcilor* reconcilor =
-      AccountReconcilorFactory::GetForProfile(profile());
-  ASSERT_TRUE(reconcilor);
-
-  reconcilor->ValidateAccountsFromTokenService();
-  ASSERT_FALSE(reconcilor->AreAllRefreshTokensChecked());
-
-  token_service()->IssueErrorForAllPendingRequests(
-      GoogleServiceAuthError(GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS));
-
-  base::RunLoop().RunUntilIdle();
-  ASSERT_TRUE(reconcilor->AreAllRefreshTokensChecked());
-  ASSERT_EQ(0u, reconcilor->GetValidChromeAccountsForTesting().size());
-  ASSERT_EQ(1u, reconcilor->GetInvalidChromeAccountsForTesting().size());
+  ASSERT_FALSE(reconcilor->AreGaiaAccountsSet());
 }
 
 TEST_P(AccountReconcilorTest, StartReconcileNoop) {
@@ -363,26 +285,15 @@ TEST_P(AccountReconcilorTest, StartReconcileNoop) {
       AccountReconcilorFactory::GetForProfile(profile());
   ASSERT_TRUE(reconcilor);
 
-  SetFakeResponse(GaiaUrls::GetInstance()->list_accounts_url().spec(),
+  SetFakeResponse(list_accounts_url().spec(),
       "[\"f\", [[\"b\", 0, \"n\", \"user@gmail.com\", \"p\", 0, 0, 0, 0, 1]]]",
       net::HTTP_OK, net::URLRequestStatus::SUCCESS);
-  SetFakeResponse("https://www.googleapis.com/oauth2/v1/userinfo",
-      "{\"id\":\"foo\"}", net::HTTP_OK, net::URLRequestStatus::SUCCESS);
 
   reconcilor->StartReconcile();
+  ASSERT_TRUE(reconcilor->is_reconcile_started_);
   ASSERT_FALSE(reconcilor->AreGaiaAccountsSet());
-  ASSERT_FALSE(reconcilor->AreAllRefreshTokensChecked());
 
   base::RunLoop().RunUntilIdle();
-  ASSERT_TRUE(reconcilor->AreGaiaAccountsSet());
-  ASSERT_EQ(1u, reconcilor->GetGaiaAccountsForTesting().size());
-  ASSERT_FALSE(reconcilor->AreAllRefreshTokensChecked());
-
-  token_service()->IssueAllTokensForAccount("user@gmail.com", "access_token",
-      base::Time::Now() + base::TimeDelta::FromHours(1));
-
-  base::RunLoop().RunUntilIdle();
-  ASSERT_TRUE(reconcilor->AreAllRefreshTokensChecked());
   ASSERT_FALSE(reconcilor->is_reconcile_started_);
 
   histogram_tester()->ExpectTotalCount(
@@ -409,28 +320,14 @@ TEST_P(AccountReconcilorTest, StartReconcileNoopWithDots) {
       AccountReconcilorFactory::GetForProfile(profile());
   ASSERT_TRUE(reconcilor);
 
-  SetFakeResponse(GaiaUrls::GetInstance()->list_accounts_url().spec(),
+  SetFakeResponse(list_accounts_url().spec(),
       "[\"f\", [[\"b\", 0, \"n\", \"dot.s@gmail.com\", \"p\", 0, 0, 0, 0, 1]]]",
       net::HTTP_OK, net::URLRequestStatus::SUCCESS);
-  SetFakeResponse("https://www.googleapis.com/oauth2/v1/userinfo",
-      "{\"id\":\"foo\"}", net::HTTP_OK, net::URLRequestStatus::SUCCESS);
 
   reconcilor->StartReconcile();
   ASSERT_FALSE(reconcilor->AreGaiaAccountsSet());
-  ASSERT_FALSE(reconcilor->AreAllRefreshTokensChecked());
 
   base::RunLoop().RunUntilIdle();
-  ASSERT_TRUE(reconcilor->AreGaiaAccountsSet());
-  ASSERT_EQ(1u, reconcilor->GetGaiaAccountsForTesting().size());
-  ASSERT_STREQ("dots@gmail.com",
-               reconcilor->GetGaiaAccountsForTesting()[0].first.c_str());
-  ASSERT_FALSE(reconcilor->AreAllRefreshTokensChecked());
-
-  token_service()->IssueAllTokensForAccount("Dot.S@gmail.com", "access_token",
-      base::Time::Now() + base::TimeDelta::FromHours(1));
-
-  base::RunLoop().RunUntilIdle();
-  ASSERT_TRUE(reconcilor->AreAllRefreshTokensChecked());
   ASSERT_FALSE(reconcilor->is_reconcile_started_);
 
   histogram_tester()->ExpectUniqueSample(
@@ -448,33 +345,14 @@ TEST_P(AccountReconcilorTest, StartReconcileNoopMultiple) {
       AccountReconcilorFactory::GetForProfile(profile());
   ASSERT_TRUE(reconcilor);
 
-  SetFakeResponse(GaiaUrls::GetInstance()->list_accounts_url().spec(),
+  SetFakeResponse(list_accounts_url().spec(),
       "[\"f\", [[\"b\", 0, \"n\", \"user@gmail.com\", \"p\", 0, 0, 0, 0, 1], "
                "[\"b\", 0, \"n\", \"other@gmail.com\", \"p\", 0, 0, 0, 0, 1]]]",
       net::HTTP_OK, net::URLRequestStatus::SUCCESS);
-  SetFakeResponse("https://www.googleapis.com/oauth2/v1/userinfo",
-      "{\"id\":\"foo\"}", net::HTTP_OK, net::URLRequestStatus::SUCCESS);
 
   reconcilor->StartReconcile();
   ASSERT_FALSE(reconcilor->AreGaiaAccountsSet());
-  ASSERT_FALSE(reconcilor->AreAllRefreshTokensChecked());
-
   base::RunLoop().RunUntilIdle();
-  ASSERT_TRUE(reconcilor->AreGaiaAccountsSet());
-  ASSERT_FALSE(reconcilor->AreAllRefreshTokensChecked());
-  ASSERT_EQ(2u, reconcilor->GetGaiaAccountsForTesting().size());
-
-  token_service()->IssueAllTokensForAccount("other@gmail.com", "access_token",
-      base::Time::Now() + base::TimeDelta::FromHours(1));
-
-  base::RunLoop().RunUntilIdle();
-  ASSERT_FALSE(reconcilor->AreAllRefreshTokensChecked());
-
-  token_service()->IssueAllTokensForAccount("user@gmail.com", "access_token",
-      base::Time::Now() + base::TimeDelta::FromHours(1));
-
-  base::RunLoop().RunUntilIdle();
-  ASSERT_TRUE(reconcilor->AreAllRefreshTokensChecked());
   ASSERT_FALSE(reconcilor->is_reconcile_started_);
 
   histogram_tester()->ExpectTotalCount(
@@ -492,18 +370,12 @@ TEST_P(AccountReconcilorTest, StartReconcileAddToCookie) {
 
   EXPECT_CALL(*GetMockReconcilor(), PerformMergeAction("other@gmail.com"));
 
-  SetFakeResponse(GaiaUrls::GetInstance()->list_accounts_url().spec(),
+  SetFakeResponse(list_accounts_url().spec(),
       "[\"f\", [[\"b\", 0, \"n\", \"user@gmail.com\", \"p\", 0, 0, 0, 0, 1]]]",
       net::HTTP_OK, net::URLRequestStatus::SUCCESS);
-  SetFakeResponse("https://www.googleapis.com/oauth2/v1/userinfo",
-      "{\"id\":\"foo\"}", net::HTTP_OK, net::URLRequestStatus::SUCCESS);
 
   AccountReconcilor* reconcilor = GetMockReconcilor();
   reconcilor->StartReconcile();
-  token_service()->IssueAllTokensForAccount("other@gmail.com", "access_token",
-      base::Time::Now() + base::TimeDelta::FromHours(1));
-  token_service()->IssueAllTokensForAccount("user@gmail.com", "access_token",
-      base::Time::Now() + base::TimeDelta::FromHours(1));
 
   base::RunLoop().RunUntilIdle();
   ASSERT_TRUE(reconcilor->is_reconcile_started_);
@@ -518,7 +390,38 @@ TEST_P(AccountReconcilorTest, StartReconcileAddToCookie) {
   histogram_tester()->ExpectUniqueSample(
       "Signin.Reconciler.AddedToCookieJar.FirstRun", 1, 1);
   histogram_tester()->ExpectUniqueSample(
-      "Signin.Reconciler.AddedToChrome.FirstRun", 0, 1);
+      "Signin.Reconciler.RemovedFromCookieJar.FirstRun", 0, 1);
+}
+
+TEST_P(AccountReconcilorTest, StartReconcileRemoveFromCookie) {
+  signin_manager()->SetAuthenticatedUsername("user@gmail.com");
+  token_service()->UpdateCredentials("user@gmail.com", "refresh_token");
+
+  EXPECT_CALL(*GetMockReconcilor(), PerformLogoutAllAccountsAction());
+  EXPECT_CALL(*GetMockReconcilor(), PerformMergeAction("user@gmail.com"));
+
+  SetFakeResponse(list_accounts_url().spec(),
+      "[\"f\", [[\"b\", 0, \"n\", \"user@gmail.com\", \"p\", 0, 0, 0, 0, 1], "
+               "[\"b\", 0, \"n\", \"other@gmail.com\", \"p\", 0, 0, 0, 0, 1]]]",
+      net::HTTP_OK, net::URLRequestStatus::SUCCESS);
+
+  AccountReconcilor* reconcilor = GetMockReconcilor();
+  reconcilor->StartReconcile();
+  ASSERT_TRUE(reconcilor->is_reconcile_started_);
+
+  base::RunLoop().RunUntilIdle();
+  SimulateMergeSessionCompleted(reconcilor, "user@gmail.com",
+                                GoogleServiceAuthError::AuthErrorNone());
+  ASSERT_FALSE(reconcilor->is_reconcile_started_);
+
+  histogram_tester()->ExpectUniqueSample(
+      "Signin.Reconciler.DifferentPrimaryAccounts.FirstRun",
+      signin_metrics::ACCOUNTS_SAME,
+      1);
+  histogram_tester()->ExpectUniqueSample(
+      "Signin.Reconciler.AddedToCookieJar.FirstRun", 0, 1);
+  histogram_tester()->ExpectUniqueSample(
+      "Signin.Reconciler.RemovedFromCookieJar.FirstRun", 1, 1);
 }
 
 TEST_P(AccountReconcilorTest, StartReconcileAddToCookieTwice) {
@@ -530,25 +433,13 @@ TEST_P(AccountReconcilorTest, StartReconcileAddToCookieTwice) {
   EXPECT_CALL(*GetMockReconcilor(), PerformMergeAction("third@gmail.com"));
 
   SetFakeResponse(
-      GaiaUrls::GetInstance()->list_accounts_url().spec(),
+      list_accounts_url().spec(),
       "[\"f\", [[\"b\", 0, \"n\", \"user@gmail.com\", \"p\", 0, 0, 0, 0, 1]]]",
       net::HTTP_OK,
       net::URLRequestStatus::SUCCESS);
-  SetFakeResponse("https://www.googleapis.com/oauth2/v1/userinfo",
-                  "{\"id\":\"foo\"}",
-                  net::HTTP_OK,
-                  net::URLRequestStatus::SUCCESS);
 
   AccountReconcilor* reconcilor = GetMockReconcilor();
   reconcilor->StartReconcile();
-  token_service()->IssueAllTokensForAccount(
-      "other@gmail.com",
-      "access_token",
-      base::Time::Now() + base::TimeDelta::FromHours(1));
-  token_service()->IssueAllTokensForAccount(
-      "user@gmail.com",
-      "access_token",
-      base::Time::Now() + base::TimeDelta::FromHours(1));
 
   base::RunLoop().RunUntilIdle();
   ASSERT_TRUE(reconcilor->is_reconcile_started_);
@@ -563,31 +454,18 @@ TEST_P(AccountReconcilorTest, StartReconcileAddToCookieTwice) {
   histogram_tester()->ExpectUniqueSample(
       "Signin.Reconciler.AddedToCookieJar.FirstRun", 1, 1);
   histogram_tester()->ExpectUniqueSample(
-      "Signin.Reconciler.AddedToChrome.FirstRun", 0, 1);
+      "Signin.Reconciler.RemovedFromCookieJar.FirstRun", 0, 1);
 
   // Do another pass after I've added a third account to the token service
 
   SetFakeResponse(
-      GaiaUrls::GetInstance()->list_accounts_url().spec(),
+      list_accounts_url().spec(),
       "[\"f\", [[\"b\", 0, \"n\", \"user@gmail.com\", \"p\", 0, 0, 0, 0, 1], "
       "[\"b\", 0, \"n\", \"other@gmail.com\", \"p\", 0, 0, 0, 0, 1]]]",
       net::HTTP_OK,
       net::URLRequestStatus::SUCCESS);
   // This will cause the reconcilor to fire.
   token_service()->UpdateCredentials("third@gmail.com", "refresh_token");
-
-  token_service()->IssueAllTokensForAccount(
-      "other@gmail.com",
-      "access_token",
-      base::Time::Now() + base::TimeDelta::FromHours(1));
-  token_service()->IssueAllTokensForAccount(
-      "user@gmail.com",
-      "access_token",
-      base::Time::Now() + base::TimeDelta::FromHours(1));
-  token_service()->IssueAllTokensForAccount(
-      "third@gmail.com",
-      "access_token",
-      base::Time::Now() + base::TimeDelta::FromHours(1));
 
   base::RunLoop().RunUntilIdle();
 
@@ -603,7 +481,7 @@ TEST_P(AccountReconcilorTest, StartReconcileAddToCookieTwice) {
   histogram_tester()->ExpectUniqueSample(
       "Signin.Reconciler.AddedToCookieJar.FirstRun", 1, 1);
   histogram_tester()->ExpectUniqueSample(
-      "Signin.Reconciler.AddedToChrome.FirstRun", 0, 1);
+      "Signin.Reconciler.RemovedFromCookieJar.FirstRun", 0, 1);
   histogram_tester()->ExpectUniqueSample(
       "Signin.Reconciler.DifferentPrimaryAccounts.SubsequentRun",
       signin_metrics::ACCOUNTS_SAME,
@@ -611,41 +489,7 @@ TEST_P(AccountReconcilorTest, StartReconcileAddToCookieTwice) {
   histogram_tester()->ExpectUniqueSample(
       "Signin.Reconciler.AddedToCookieJar.SubsequentRun", 1, 1);
   histogram_tester()->ExpectUniqueSample(
-      "Signin.Reconciler.AddedToChrome.SubsequentRun", 0, 1);
-}
-
-TEST_P(AccountReconcilorTest, StartReconcileAddToChrome) {
-  signin_manager()->SetAuthenticatedUsername("user@gmail.com");
-  token_service()->UpdateCredentials("user@gmail.com", "refresh_token");
-
-  EXPECT_CALL(*GetMockReconcilor(),
-              PerformAddToChromeAction("other@gmail.com", 1, ""));
-
-  SetFakeResponse(GaiaUrls::GetInstance()->list_accounts_url().spec(),
-      "[\"f\", [[\"b\", 0, \"n\", \"user@gmail.com\", \"p\", 0, 0, 0, 0, 1], "
-               "[\"b\", 0, \"n\", \"other@gmail.com\", \"p\", 0, 0, 0, 0, 1]]]",
-      net::HTTP_OK, net::URLRequestStatus::SUCCESS);
-  SetFakeResponse("https://www.googleapis.com/oauth2/v1/userinfo",
-      "{\"id\":\"foo\"}", net::HTTP_OK, net::URLRequestStatus::SUCCESS);
-
-  AccountReconcilor* reconcilor = GetMockReconcilor();
-  reconcilor->StartReconcile();
-  token_service()->IssueAllTokensForAccount("user@gmail.com", "access_token",
-      base::Time::Now() + base::TimeDelta::FromHours(1));
-
-  base::RunLoop().RunUntilIdle();
-  ASSERT_TRUE(reconcilor->is_reconcile_started_);
-  SimulateRefreshTokenFetched(reconcilor, "other@gmail.com", "");
-  ASSERT_FALSE(reconcilor->is_reconcile_started_);
-
-  histogram_tester()->ExpectUniqueSample(
-      "Signin.Reconciler.DifferentPrimaryAccounts.FirstRun",
-      signin_metrics::ACCOUNTS_SAME,
-      1);
-  histogram_tester()->ExpectUniqueSample(
-      "Signin.Reconciler.AddedToCookieJar.FirstRun", 0, 1);
-  histogram_tester()->ExpectUniqueSample(
-      "Signin.Reconciler.AddedToChrome.FirstRun", 1, 1);
+      "Signin.Reconciler.RemovedFromCookieJar.SubsequentRun", 0, 1);
 }
 
 TEST_P(AccountReconcilorTest, StartReconcileBadPrimary) {
@@ -657,19 +501,13 @@ TEST_P(AccountReconcilorTest, StartReconcileBadPrimary) {
   EXPECT_CALL(*GetMockReconcilor(), PerformMergeAction("user@gmail.com"));
   EXPECT_CALL(*GetMockReconcilor(), PerformMergeAction("other@gmail.com"));
 
-  SetFakeResponse(GaiaUrls::GetInstance()->list_accounts_url().spec(),
+  SetFakeResponse(list_accounts_url().spec(),
       "[\"f\", [[\"b\", 0, \"n\", \"other@gmail.com\", \"p\", 0, 0, 0, 0, 1], "
                "[\"b\", 0, \"n\", \"user@gmail.com\", \"p\", 0, 0, 0, 0, 1]]]",
       net::HTTP_OK, net::URLRequestStatus::SUCCESS);
-  SetFakeResponse("https://www.googleapis.com/oauth2/v1/userinfo",
-      "{\"id\":\"foo\"}", net::HTTP_OK, net::URLRequestStatus::SUCCESS);
 
   AccountReconcilor* reconcilor = GetMockReconcilor();
   reconcilor->StartReconcile();
-  token_service()->IssueAllTokensForAccount("other@gmail.com", "access_token",
-      base::Time::Now() + base::TimeDelta::FromHours(1));
-  token_service()->IssueAllTokensForAccount("user@gmail.com", "access_token",
-      base::Time::Now() + base::TimeDelta::FromHours(1));
 
   base::RunLoop().RunUntilIdle();
   ASSERT_TRUE(reconcilor->is_reconcile_started_);
@@ -685,9 +523,9 @@ TEST_P(AccountReconcilorTest, StartReconcileBadPrimary) {
       signin_metrics::COOKIE_AND_TOKEN_PRIMARIES_DIFFERENT,
       1);
   histogram_tester()->ExpectUniqueSample(
-      "Signin.Reconciler.AddedToCookieJar.FirstRun", 2, 1);
+      "Signin.Reconciler.AddedToCookieJar.FirstRun", 0, 1);
   histogram_tester()->ExpectUniqueSample(
-      "Signin.Reconciler.AddedToChrome.FirstRun", 0, 1);
+      "Signin.Reconciler.RemovedFromCookieJar.FirstRun", 0, 1);
 }
 
 TEST_P(AccountReconcilorTest, StartReconcileOnlyOnce) {
@@ -698,18 +536,13 @@ TEST_P(AccountReconcilorTest, StartReconcileOnlyOnce) {
       AccountReconcilorFactory::GetForProfile(profile());
   ASSERT_TRUE(reconcilor);
 
-  SetFakeResponse(GaiaUrls::GetInstance()->list_accounts_url().spec(),
+  SetFakeResponse(list_accounts_url().spec(),
       "[\"f\", [[\"b\", 0, \"n\", \"user@gmail.com\", \"p\", 0, 0, 0, 0, 1]]]",
       net::HTTP_OK, net::URLRequestStatus::SUCCESS);
-  SetFakeResponse("https://www.googleapis.com/oauth2/v1/userinfo",
-      "{\"id\":\"foo\"}", net::HTTP_OK, net::URLRequestStatus::SUCCESS);
 
   ASSERT_FALSE(reconcilor->is_reconcile_started_);
   reconcilor->StartReconcile();
   ASSERT_TRUE(reconcilor->is_reconcile_started_);
-
-  token_service()->IssueAllTokensForAccount("user@gmail.com", "access_token",
-      base::Time::Now() + base::TimeDelta::FromHours(1));
 
   base::RunLoop().RunUntilIdle();
   ASSERT_FALSE(reconcilor->is_reconcile_started_);
@@ -722,12 +555,10 @@ TEST_P(AccountReconcilorTest, StartReconcileWithSessionInfoExpiredDefault) {
 
   EXPECT_CALL(*GetMockReconcilor(), PerformMergeAction("user@gmail.com"));
 
-  SetFakeResponse(GaiaUrls::GetInstance()->list_accounts_url().spec(),
+  SetFakeResponse(list_accounts_url().spec(),
       "[\"f\", [[\"b\", 0, \"n\", \"user@gmail.com\", \"p\", 0, 0, 0, 0, 0],"
                "[\"b\", 0, \"n\", \"other@gmail.com\", \"p\", 0, 0, 0, 0, 1]]]",
       net::HTTP_OK, net::URLRequestStatus::SUCCESS);
-  SetFakeResponse("https://www.googleapis.com/oauth2/v1/userinfo",
-      "{\"id\":\"foo\"}", net::HTTP_OK, net::URLRequestStatus::SUCCESS);
 
   AccountReconcilor* reconcilor =
       AccountReconcilorFactory::GetForProfile(profile());
@@ -736,11 +567,6 @@ TEST_P(AccountReconcilorTest, StartReconcileWithSessionInfoExpiredDefault) {
   ASSERT_FALSE(reconcilor->is_reconcile_started_);
   reconcilor->StartReconcile();
   ASSERT_TRUE(reconcilor->is_reconcile_started_);
-
-  token_service()->IssueAllTokensForAccount("user@gmail.com", "access_token",
-      base::Time::Now() + base::TimeDelta::FromHours(1));
-  token_service()->IssueAllTokensForAccount("other@gmail.com", "access_token",
-      base::Time::Now() + base::TimeDelta::FromHours(1));
 
   base::RunLoop().RunUntilIdle();
   SimulateMergeSessionCompleted(reconcilor, "user@gmail.com",
@@ -754,11 +580,9 @@ TEST_F(AccountReconcilorTest, MergeSessionCompletedWithBogusAccount) {
 
   EXPECT_CALL(*GetMockReconcilor(), PerformMergeAction("user@gmail.com"));
 
-  SetFakeResponse(GaiaUrls::GetInstance()->list_accounts_url().spec(),
+  SetFakeResponse(list_accounts_url().spec(),
       "[\"f\", [[\"b\", 0, \"n\", \"user@gmail.com\", \"p\", 0, 0, 0, 0, 0]]]",
       net::HTTP_OK, net::URLRequestStatus::SUCCESS);
-  SetFakeResponse("https://www.googleapis.com/oauth2/v1/userinfo",
-      "{\"id\":\"foo\"}", net::HTTP_OK, net::URLRequestStatus::SUCCESS);
 
   AccountReconcilor* reconcilor =
       AccountReconcilorFactory::GetForProfile(profile());
@@ -768,8 +592,6 @@ TEST_F(AccountReconcilorTest, MergeSessionCompletedWithBogusAccount) {
   reconcilor->StartReconcile();
   ASSERT_TRUE(reconcilor->is_reconcile_started_);
 
-  token_service()->IssueAllTokensForAccount("user@gmail.com", "access_token",
-      base::Time::Now() + base::TimeDelta::FromHours(1));
   base::RunLoop().RunUntilIdle();
 
   // If an unknown account id is sent, it should not upset the state.

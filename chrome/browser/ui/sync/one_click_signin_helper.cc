@@ -79,14 +79,15 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/common/frame_navigate_params.h"
-#include "content/public/common/page_transition_types.h"
 #include "google_apis/gaia/gaia_auth_util.h"
 #include "google_apis/gaia/gaia_urls.h"
+#include "grit/components_strings.h"
 #include "ipc/ipc_message_macros.h"
 #include "net/base/url_util.h"
 #include "net/cookies/cookie_monster.h"
 #include "net/url_request/url_request.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/base/page_transition_types.h"
 #include "url/gurl.h"
 
 
@@ -208,7 +209,7 @@ void ConfirmEmailDialogDelegate::OnLinkClicked(
       GURL(chrome::kChromeSyncMergeTroubleshootingURL),
       content::Referrer(),
       NEW_POPUP,
-      content::PAGE_TRANSITION_AUTO_TOPLEVEL,
+      ui::PAGE_TRANSITION_AUTO_TOPLEVEL,
       false);
   // It is guaranteed that |web_contents_| is valid here because when it's
   // deleted, the dialog is immediately closed and no further action can be
@@ -302,22 +303,15 @@ void StartExplicitSync(const OneClickSigninHelper::StartSyncArgs& args,
       // Redirect/tab closing for inline flow is handled by the sync callback.
       args.callback.Run(OneClickSigninSyncStarter::SYNC_SETUP_FAILURE);
     } else {
-      // Don't redirect when the visible URL is not a blank page: if the
-      // source is SOURCE_WEBSTORE_INSTALL, |contents| might be showing an app
-      // page that shouldn't be hidden.
-      //
-      // If redirecting, don't do so immediately, otherwise there may be 2
-      // nested navigations and a crash would occur (crbug.com/293261).  Post
-      // the task to the current thread instead.
-      if (signin::IsContinueUrlForWebBasedSigninFlow(
-              contents->GetVisibleURL())) {
-        base::MessageLoopProxy::current()->PostNonNestableTask(
-            FROM_HERE,
-            base::Bind(RedirectToNtpOrAppsPageWithIds,
-                       contents->GetRenderProcessHost()->GetID(),
-                       contents->GetRoutingID(),
-                       args.source));
-      }
+      // Redirect, but don't do so immediately; otherwise there might be two
+      // nested navigations, which would cause a crash: http://crbug.com/293261
+      // Instead, post a task to the current thread.
+      base::MessageLoopProxy::current()->PostNonNestableTask(
+          FROM_HERE,
+          base::Bind(RedirectToNtpOrAppsPageWithIds,
+                     contents->GetRenderProcessHost()->GetID(),
+                     contents->GetRoutingID(),
+                     args.source));
     }
     if (action == ConfirmEmailDialogDelegate::CREATE_NEW_USER) {
       chrome::ShowSettingsSubPage(args.browser,
@@ -442,7 +436,7 @@ class CurrentHistoryCleaner : public content::WebContentsObserver {
   virtual void DidCommitProvisionalLoadForFrame(
       content::RenderFrameHost* render_frame_host,
       const GURL& url,
-      content::PageTransition transition_type) OVERRIDE;
+      ui::PageTransition transition_type) OVERRIDE;
 
  private:
   scoped_ptr<content::WebContents> contents_;
@@ -463,7 +457,7 @@ CurrentHistoryCleaner::~CurrentHistoryCleaner() {
 void CurrentHistoryCleaner::DidCommitProvisionalLoadForFrame(
     content::RenderFrameHost* render_frame_host,
     const GURL& url,
-    content::PageTransition transition_type) {
+    ui::PageTransition transition_type) {
   // Return early if this is not top-level navigation.
   if (render_frame_host->GetParent())
     return;
@@ -527,9 +521,8 @@ OneClickSigninHelper::StartSyncArgs::StartSyncArgs(
   DCHECK(session_index.empty() != refresh_token.empty());
   if (untrusted_confirmation_required) {
     confirmation_required = OneClickSigninSyncStarter::CONFIRM_UNTRUSTED_SIGNIN;
-  } else if (source == signin::SOURCE_SETTINGS ||
-             source == signin::SOURCE_WEBSTORE_INSTALL) {
-    // Do not display a status confirmation for webstore installs or re-auth.
+  } else if (source == signin::SOURCE_SETTINGS) {
+    // Do not display a status confirmation for re-auth.
     confirmation_required = OneClickSigninSyncStarter::NO_CONFIRMATION;
   } else {
     confirmation_required = OneClickSigninSyncStarter::CONFIRM_AFTER_SIGNIN;
@@ -726,10 +719,6 @@ void OneClickSigninHelper::LogHistogramValue(
       UMA_HISTOGRAM_ENUMERATION("Signin.ExtensionInstallBubbleActions", action,
                                 one_click_signin::HISTOGRAM_MAX);
       break;
-    case signin::SOURCE_WEBSTORE_INSTALL:
-      UMA_HISTOGRAM_ENUMERATION("Signin.WebstoreInstallActions", action,
-                                one_click_signin::HISTOGRAM_MAX);
-      break;
     case signin::SOURCE_APP_LAUNCHER:
       UMA_HISTOGRAM_ENUMERATION("Signin.AppLauncherActions", action,
                                 one_click_signin::HISTOGRAM_MAX);
@@ -760,7 +749,7 @@ void OneClickSigninHelper::LogHistogramValue(
       break;
     default:
       // This switch statement needs to be updated when the enum Source changes.
-      COMPILE_ASSERT(signin::SOURCE_UNKNOWN == 13,
+      COMPILE_ASSERT(signin::SOURCE_UNKNOWN == 12,
                      kSourceEnumHasChangedButNotThisSwitchStatement);
       UMA_HISTOGRAM_ENUMERATION("Signin.UnknownActions", action,
                                 one_click_signin::HISTOGRAM_MAX);
@@ -971,7 +960,7 @@ void OneClickSigninHelper::ShowInfoBarIfPossible(net::URLRequest* request,
     return;
 
   // Parse Google-Accounts-SignIn.
-  std::vector<std::pair<std::string, std::string> > pairs;
+  base::StringPairs pairs;
   base::SplitStringIntoKeyValuePairs(google_accounts_signin_value, '=', ',',
                                      &pairs);
   std::string session_index;
@@ -1203,7 +1192,7 @@ void OneClickSigninHelper::RedirectToNtpOrAppsPage(
   content::OpenURLParams params(url,
                                 content::Referrer(),
                                 CURRENT_TAB,
-                                content::PAGE_TRANSITION_AUTO_TOPLEVEL,
+                                ui::PAGE_TRANSITION_AUTO_TOPLEVEL,
                                 false);
   contents->OpenURL(params);
 }
@@ -1211,8 +1200,7 @@ void OneClickSigninHelper::RedirectToNtpOrAppsPage(
 // static
 void OneClickSigninHelper::RedirectToNtpOrAppsPageIfNecessary(
     content::WebContents* contents, signin::Source source) {
-  if (source != signin::SOURCE_SETTINGS &&
-      source != signin::SOURCE_WEBSTORE_INSTALL) {
+  if (source != signin::SOURCE_SETTINGS) {
     RedirectToNtpOrAppsPage(contents, source);
   }
 }
@@ -1229,7 +1217,7 @@ void OneClickSigninHelper::RedirectToSignin() {
   content::WebContents* contents = web_contents();
   contents->GetController().LoadURL(page,
                                     content::Referrer(),
-                                    content::PAGE_TRANSITION_AUTO_TOPLEVEL,
+                                    ui::PAGE_TRANSITION_AUTO_TOPLEVEL,
                                     std::string());
 }
 
@@ -1313,7 +1301,7 @@ void OneClickSigninHelper::DidNavigateMainFrame(
     // If the navigation to a non-sign-in URL hasn't been triggered by the web
     // contents, the sign in flow has been aborted and the state must be
     // cleaned (crbug.com/269421).
-    if (!content::PageTransitionIsWebTriggerable(params.transition) &&
+    if (!ui::PageTransitionIsWebTriggerable(params.transition) &&
         auto_accept_ != AUTO_ACCEPT_NONE) {
       CleanTransientState();
     }
@@ -1554,13 +1542,10 @@ void OneClickSigninHelper::DidStopLoading(
         RedirectToNtpOrAppsPageIfNecessary(web_contents(), source_);
       }
 
-      // Observe the sync service if the Webstore tab or the settings tab
-      // requested a gaia sign in, so that when sign in and sync setup are
-      // successful, we can redirect to the correct URL, or auto-close the gaia
-      // sign in tab.
-      if (original_source == signin::SOURCE_SETTINGS ||
-          (original_source == signin::SOURCE_WEBSTORE_INSTALL &&
-           source_ == signin::SOURCE_SETTINGS)) {
+      // Observe the sync service if the settings tab requested a gaia sign in,
+      // so that when sign in and sync setup are successful, we can redirect to
+      // the correct URL, or auto-close the gaia sign in tab.
+      if (original_source == signin::SOURCE_SETTINGS) {
         // The observer deletes itself once it's done.
         new OneClickSigninSyncObserver(contents, original_continue_url_);
       }

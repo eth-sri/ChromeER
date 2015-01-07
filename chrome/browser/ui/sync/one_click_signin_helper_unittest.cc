@@ -392,10 +392,12 @@ class OneClickSigninHelperIncognitoTest : public OneClickSigninHelperTest {
 
 content::BrowserContext*
 OneClickSigninHelperIncognitoTest::CreateBrowserContext() {
-  // Builds an incognito profile to run this test.
-  TestingProfile::Builder builder;
-  builder.SetIncognito();
-  return builder.Build().release();
+  // Simulate an incognito profile to run this test. RenderViewHostTestHarness
+  // takes ownership of the return value, so it can't be a "proper" incognito
+  // profile, since they are owned by their parent, non-incognito profile.
+  scoped_ptr<TestingProfile> profile = TestingProfile::Builder().Build();
+  profile->ForceIncognito(true);
+  return profile.release();
 }
 
 TEST_F(OneClickSigninHelperTest, CanOfferNoContents) {
@@ -669,43 +671,6 @@ TEST_F(OneClickSigninHelperIncognitoTest, ShowInfoBarUIThreadIncognito) {
       rvh()->GetRoutingID());
 }
 
-// If Chrome signin is triggered from a webstore install, and user chooses to
-// config sync, then Chrome should redirect immediately to sync settings page,
-// and upon successful setup, redirect back to webstore.
-TEST_F(OneClickSigninHelperTest, SigninFromWebstoreWithConfigSyncfirst) {
-  SetUpSigninManager(std::string());
-  EXPECT_CALL(*signin_manager_, IsAllowedUsername(_))
-      .WillRepeatedly(Return(true));
-
-  OneClickTestProfileSyncService* sync_service =
-      static_cast<OneClickTestProfileSyncService*>(
-          ProfileSyncServiceFactory::GetInstance()->SetTestingFactoryAndUse(
-              profile(), OneClickTestProfileSyncService::Build));
-  sync_service->set_sync_initialized(true);
-
-  content::WebContents* contents = web_contents();
-
-  OneClickSigninHelper::CreateForWebContentsWithPasswordManager(contents, NULL);
-  OneClickSigninHelper* helper =
-      OneClickSigninHelper::FromWebContents(contents);
-  helper->SetDoNotClearPendingEmailForTesting();
-  helper->set_do_not_start_sync_for_testing();
-
-  GURL continueUrl("https://chrome.google.com/webstore?source=5");
-  OneClickSigninHelper::ShowInfoBarUIThread(
-      "session_index", "user@gmail.com",
-      OneClickSigninHelper::AUTO_ACCEPT_EXPLICIT,
-      signin::SOURCE_WEBSTORE_INSTALL,
-      continueUrl, process()->GetID(), rvh()->GetRoutingID());
-
-  SubmitGAIAPassword(helper);
-
-  NavigateAndCommit(GURL("https://chrome.google.com/webstore?source=3"));
-  helper->DidStopLoading(rvh());
-  sync_service->NotifyObservers();
-  EXPECT_EQ(GURL(continueUrl), contents->GetVisibleURL());
-}
-
 // Checks that the state of OneClickSigninHelper is cleaned when there is a
 // navigation away from the sign in flow that is not triggered by the
 // web contents.
@@ -721,7 +686,7 @@ TEST_F(OneClickSigninHelperTest, CleanTransientStateOnNavigate) {
   content::LoadCommittedDetails details;
   content::FrameNavigateParams params;
   params.url = GURL("http://crbug.com");
-  params.transition = content::PAGE_TRANSITION_TYPED;
+  params.transition = ui::PAGE_TRANSITION_TYPED;
   helper->DidNavigateMainFrame(details, params);
 
   EXPECT_EQ(OneClickSigninHelper::AUTO_ACCEPT_NONE, helper->auto_accept_);
@@ -733,7 +698,7 @@ TEST_F(OneClickSigninHelperTest, NoRedirectToNTPWithPendingEntry) {
 
   const GURL fooWebUIURL("chrome://foo");
   controller.LoadURL(fooWebUIURL, content::Referrer(),
-                     content::PAGE_TRANSITION_TYPED, std::string());
+                     ui::PAGE_TRANSITION_TYPED, std::string());
   EXPECT_EQ(fooWebUIURL, controller.GetPendingEntry()->GetURL());
 
   MockWebContentsDelegate delegate;

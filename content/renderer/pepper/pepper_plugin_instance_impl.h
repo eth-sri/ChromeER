@@ -145,9 +145,16 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
 
   MessageChannel* message_channel() { return message_channel_; }
   v8::Local<v8::Object> GetMessageChannelObject();
+  // Called when |message_channel_| is destroyed as it may be destroyed prior to
+  // the plugin being destroyed.
+  void MessageChannelDestroyed();
 
-  // Return the v8 context that the plugin is in.
-  v8::Local<v8::Context> GetContext();
+  // Return the v8 context for the frame that the plugin is contained in. Care
+  // should be taken to use the correct context for plugin<->JS interactions.
+  // In cases where JS calls into the plugin, the caller's context should
+  // typically be used. When calling from the plugin into JS, this context
+  // should typically used.
+  v8::Local<v8::Context> GetMainWorldContext();
 
   // Does some pre-destructor cleanup on the instance. This is necessary
   // because some cleanup depends on the plugin instance still existing (like
@@ -424,8 +431,13 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   virtual void PostMessage(PP_Instance instance, PP_Var message) OVERRIDE;
   virtual int32_t RegisterMessageHandler(PP_Instance instance,
                                          void* user_data,
-                                         const PPP_MessageHandler_0_1* handler,
+                                         const PPP_MessageHandler_0_2* handler,
                                          PP_Resource message_loop) OVERRIDE;
+  virtual int32_t RegisterMessageHandler_1_1_Deprecated(
+      PP_Instance instance,
+      void* user_data,
+      const PPP_MessageHandler_0_1_Deprecated* handler,
+      PP_Resource message_loop) OVERRIDE;
   virtual void UnregisterMessageHandler(PP_Instance instance) OVERRIDE;
   virtual PP_Bool SetCursor(PP_Instance instance,
                             PP_MouseCursor_Type type,
@@ -468,6 +480,9 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   virtual void PromiseResolvedWithSession(PP_Instance instance,
                                           uint32 promise_id,
                                           PP_Var web_session_id_var) OVERRIDE;
+  virtual void PromiseResolvedWithKeyIds(PP_Instance instance,
+                                         uint32 promise_id,
+                                         PP_Var key_ids_var) OVERRIDE;
   virtual void PromiseRejected(PP_Instance instance,
                                uint32 promise_id,
                                PP_CdmExceptionCode exception_code,
@@ -477,6 +492,12 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
                               PP_Var web_session_id_var,
                               PP_Var message_var,
                               PP_Var destination_url_var) OVERRIDE;
+  virtual void SessionKeysChange(PP_Instance instance,
+                                 PP_Var web_session_id_var,
+                                 PP_Bool has_additional_usable_key) OVERRIDE;
+  virtual void SessionExpirationChange(PP_Instance instance,
+                                       PP_Var web_session_id_var,
+                                       PP_Time new_expiry_time) OVERRIDE;
   virtual void SessionReady(PP_Instance instance,
                             PP_Var web_session_id_var) OVERRIDE;
   virtual void SessionClosed(PP_Instance instance,
@@ -534,6 +555,7 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
 
  private:
   friend class base::RefCounted<PepperPluginInstanceImpl>;
+  friend class PpapiPluginInstanceTest;
   friend class PpapiUnittest;
 
   // Delete should be called by the WebPlugin before this destructor.
@@ -906,7 +928,6 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   base::WeakPtrFactory<PepperPluginInstanceImpl> view_change_weak_ptr_factory_;
   base::WeakPtrFactory<PepperPluginInstanceImpl> weak_factory_;
 
-  friend class PpapiPluginInstanceTest;
   DISALLOW_COPY_AND_ASSIGN(PepperPluginInstanceImpl);
 };
 

@@ -363,6 +363,7 @@ void OneClickSigninSyncStarter::ConfirmAndSignin() {
         base::string16(),  // No error message to display.
         base::Bind(&OneClickSigninSyncStarter::UntrustedSigninConfirmed,
                    weak_pointer_factory_.GetWeakPtr()));
+    LoginUIServiceFactory::GetForProfile(profile_)->UntrustedLoginUIShown();
   } else {
     // No confirmation required - just sign in the user.
     signin->CompletePendingSignin();
@@ -598,7 +599,7 @@ void OneClickSigninSyncStarter::ShowSettingsPageInWebContents(
   content::OpenURLParams params(url,
                                 content::Referrer(),
                                 CURRENT_TAB,
-                                content::PAGE_TRANSITION_AUTO_TOPLEVEL,
+                                ui::PAGE_TRANSITION_AUTO_TOPLEVEL,
                                 false);
   contents->OpenURL(params);
 
@@ -614,6 +615,6 @@ void OneClickSigninSyncStarter::LoadContinueUrl() {
   web_contents()->GetController().LoadURL(
       continue_url_,
       content::Referrer(),
-      content::PAGE_TRANSITION_AUTO_TOPLEVEL,
+      ui::PAGE_TRANSITION_AUTO_TOPLEVEL,
       std::string());
 }

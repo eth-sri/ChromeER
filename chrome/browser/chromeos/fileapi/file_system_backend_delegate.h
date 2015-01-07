@@ -6,8 +6,12 @@
 #define CHROME_BROWSER_CHROMEOS_FILEAPI_FILE_SYSTEM_BACKEND_DELEGATE_H_
 
 #include "base/basictypes.h"
+#include "base/callback_forward.h"
 #include "base/memory/scoped_ptr.h"
-#include "webkit/common/fileapi/file_system_types.h"
+#include "storage/browser/fileapi/file_system_backend.h"
+#include "storage/common/fileapi/file_system_types.h"
+
+class GURL;
 
 namespace base {
 class Time;
@@ -20,10 +24,6 @@ class FileStreamReader;
 class FileSystemURL;
 class FileStreamWriter;
 class WatcherManager;
-}  // namespace storage
-
-namespace storage {
-class FileStreamReader;
 }  // namespace storage
 
 namespace chromeos {
@@ -42,6 +42,7 @@ class FileSystemBackendDelegate {
   virtual scoped_ptr<storage::FileStreamReader> CreateFileStreamReader(
       const storage::FileSystemURL& url,
       int64 offset,
+      int64 max_bytes_to_read,
       const base::Time& expected_modification_time,
       storage::FileSystemContext* context) = 0;
 
@@ -55,6 +56,13 @@ class FileSystemBackendDelegate {
   // stay valid until shutdown.
   virtual storage::WatcherManager* GetWatcherManager(
       const storage::FileSystemURL& url) = 0;
+
+  // Called from FileSystemBackend::GetRedirectURLForContents.  Please ensure
+  // that the returned URL is secure to be opened in a browser tab, or referred
+  // from <img>, <video>, XMLHttpRequest, etc...
+  virtual void GetRedirectURLForContents(
+      const storage::FileSystemURL& url,
+      const storage::URLCallback& callback) = 0;
 };
 
 }  // namespace chromeos

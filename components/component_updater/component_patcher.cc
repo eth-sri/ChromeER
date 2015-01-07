@@ -7,10 +7,10 @@
 #include <string>
 #include <vector>
 
-#include "base/basictypes.h"
 #include "base/bind.h"
-#include "base/file_util.h"
+#include "base/bind_helpers.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/json/json_file_value_serializer.h"
 #include "base/location.h"
 #include "base/memory/weak_ptr.h"

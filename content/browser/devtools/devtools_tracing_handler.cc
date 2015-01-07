@@ -7,13 +7,7 @@
 #include <cmath>
 
 #include "base/bind.h"
-#include "base/callback.h"
 #include "base/debug/trace_event_impl.h"
-#include "base/file_util.h"
-#include "base/json/json_reader.h"
-#include "base/json/json_writer.h"
-#include "base/location.h"
-#include "base/memory/ref_counted_memory.h"
 #include "base/strings/string_split.h"
 #include "base/strings/stringprintf.h"
 #include "base/time/time.h"
@@ -33,18 +27,25 @@ const char kRecordContinuously[] = "record-continuously";
 const char kRecordAsMuchAsPossible[] = "record-as-much-as-possible";
 const char kEnableSampling[] = "enable-sampling";
 
-void ReadFile(
-    const base::FilePath& path,
-    const base::Callback<void(const scoped_refptr<base::RefCountedString>&)>
-        callback) {
-  std::string trace_data;
-  if (!base::ReadFileToString(path, &trace_data))
-    LOG(ERROR) << "Failed to read file: " << path.value();
-  base::DeleteFile(path, false);
-  BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-      base::Bind(callback, make_scoped_refptr(
-          base::RefCountedString::TakeString(&trace_data))));
-}
+class DevToolsTraceSinkProxy : public TracingController::TraceDataSink {
+ public:
+  explicit DevToolsTraceSinkProxy(base::WeakPtr<DevToolsTracingHandler> handler)
+      : tracing_handler_(handler) {}
+
+  virtual void AddTraceChunk(const std::string& chunk) OVERRIDE {
+    if (DevToolsTracingHandler* h = tracing_handler_.get())
+      h->OnTraceDataCollected(chunk);
+  }
+  virtual void Close() OVERRIDE {
+    if (DevToolsTracingHandler* h = tracing_handler_.get())
+      h->OnTraceComplete();
+  }
+
+ private:
+  virtual ~DevToolsTraceSinkProxy() {}
+
+  base::WeakPtr<DevToolsTracingHandler> tracing_handler_;
+};
 
 }  // namespace
 
@@ -55,7 +56,7 @@ const double DevToolsTracingHandler::kMinimumReportingInterval = 250.0;
 
 DevToolsTracingHandler::DevToolsTracingHandler(
     DevToolsTracingHandler::Target target)
-    : weak_factory_(this), target_(target), is_recording_(false) {
+    : target_(target), is_recording_(false), weak_factory_(this) {
   RegisterCommandHandler(devtools::Tracing::start::kName,
                          base::Bind(&DevToolsTracingHandler::OnStart,
                                     base::Unretained(this)));
@@ -70,58 +71,22 @@ DevToolsTracingHandler::DevToolsTracingHandler(
 DevToolsTracingHandler::~DevToolsTracingHandler() {
 }
 
-void DevToolsTracingHandler::BeginReadingRecordingResult(
-    const base::FilePath& path) {
-  BrowserThread::PostTask(
-      BrowserThread::FILE, FROM_HERE,
-      base::Bind(&ReadFile, path,
-                 base::Bind(&DevToolsTracingHandler::ReadRecordingResult,
-                            weak_factory_.GetWeakPtr())));
-}
-
-void DevToolsTracingHandler::ReadRecordingResult(
-    const scoped_refptr<base::RefCountedString>& trace_data) {
-  if (trace_data->data().size()) {
-    scoped_ptr<base::Value> trace_value(base::JSONReader::Read(
-        trace_data->data()));
-    base::DictionaryValue* dictionary = NULL;
-    bool ok = trace_value->GetAsDictionary(&dictionary);
-    DCHECK(ok);
-    base::ListValue* list = NULL;
-    ok = dictionary->GetList("traceEvents", &list);
-    DCHECK(ok);
-    std::string buffer;
-    for (size_t i = 0; i < list->GetSize(); ++i) {
-      std::string item;
-      base::Value* item_value;
-      list->Get(i, &item_value);
-      base::JSONWriter::Write(item_value, &item);
-      if (buffer.size())
-        buffer.append(",");
-      buffer.append(item);
-      const size_t kMessageSizeThreshold = 1024 * 1024;
-      if (buffer.size() > kMessageSizeThreshold) {
-        OnTraceDataCollected(buffer);
-        buffer.clear();
-      }
-    }
-    if (buffer.size())
-      OnTraceDataCollected(buffer);
-  }
-
-  SendNotification(devtools::Tracing::tracingComplete::kName, NULL);
-}
-
 void DevToolsTracingHandler::OnTraceDataCollected(
     const std::string& trace_fragment) {
   // Hand-craft protocol notification message so we can substitute JSON
   // that we already got as string as a bare object, not a quoted string.
-  std::string message = base::StringPrintf(
-      "{ \"method\": \"%s\", \"params\": { \"%s\": [ %s ] } }",
-      devtools::Tracing::dataCollected::kName,
-      devtools::Tracing::dataCollected::kParamValue,
-      trace_fragment.c_str());
-  SendRawMessage(message);
+  std::string message =
+      base::StringPrintf("{ \"method\": \"%s\", \"params\": { \"%s\": [",
+                         devtools::Tracing::dataCollected::kName,
+                         devtools::Tracing::dataCollected::kParamValue);
+  const size_t messageSuffixSize = 10;
+  message.reserve(message.size() + trace_fragment.size() + messageSuffixSize);
+  message += trace_fragment;
+  message += "] } }", SendRawMessage(message);
+}
+
+void DevToolsTracingHandler::OnTraceComplete() {
+  SendNotification(devtools::Tracing::tracingComplete::kName, NULL);
 }
 
 base::debug::TraceOptions DevToolsTracingHandler::TraceOptionsFromString(
@@ -148,11 +113,9 @@ base::debug::TraceOptions DevToolsTracingHandler::TraceOptionsFromString(
 scoped_refptr<DevToolsProtocol::Response>
 DevToolsTracingHandler::OnStart(
     scoped_refptr<DevToolsProtocol::Command> command) {
-  // If inspected target is a render process Tracing.start will be handled by
-  // tracing agent in the renderer.
-  if (target_ == Renderer)
-    return NULL;
-
+  if (is_recording_) {
+    return command->InternalErrorResponse("Tracing is already started");
+  }
   is_recording_ = true;
 
   std::string categories;
@@ -173,6 +136,16 @@ DevToolsTracingHandler::OnStart(
   }
 
   SetupTimer(usage_reporting_interval);
+
+  // If inspected target is a render process Tracing.start will be handled by
+  // tracing agent in the renderer.
+  if (target_ == Renderer) {
+    TracingController::GetInstance()->EnableRecording(
+        base::debug::CategoryFilter(categories),
+        options,
+        TracingController::EnableRecordingDoneCallback());
+    return NULL;
+  }
 
   TracingController::GetInstance()->EnableRecording(
       base::debug::CategoryFilter(categories),
@@ -217,27 +190,27 @@ void DevToolsTracingHandler::OnBufferUsage(float usage) {
 scoped_refptr<DevToolsProtocol::Response>
 DevToolsTracingHandler::OnEnd(
     scoped_refptr<DevToolsProtocol::Command> command) {
+  if (!is_recording_) {
+    return command->InternalErrorResponse("Tracing is not started");
+  }
+  DisableRecording(false);
   // If inspected target is a render process Tracing.end will be handled by
   // tracing agent in the renderer.
   if (target_ == Renderer)
     return NULL;
-  DisableRecording(
-      base::Bind(&DevToolsTracingHandler::BeginReadingRecordingResult,
-                 weak_factory_.GetWeakPtr()));
   return command->SuccessResponse(NULL);
 }
 
-void DevToolsTracingHandler::DisableRecording(
-    const TracingController::TracingFileResultCallback& callback) {
+void DevToolsTracingHandler::DisableRecording(bool abort) {
   is_recording_ = false;
   buffer_usage_poll_timer_.reset();
-  TracingController::GetInstance()->DisableRecording(base::FilePath(),
-                                                     callback);
+  TracingController::GetInstance()->DisableRecording(
+      abort ? NULL : new DevToolsTraceSinkProxy(weak_factory_.GetWeakPtr()));
 }
 
 void DevToolsTracingHandler::OnClientDetached() {
   if (is_recording_)
-    DisableRecording();
+    DisableRecording(true);
 }
 
 scoped_refptr<DevToolsProtocol::Response>
@@ -264,29 +237,5 @@ void DevToolsTracingHandler::OnCategoriesReceived(
                 category_list);
   SendAsyncResponse(command->SuccessResponse(response));
 }
-
-void DevToolsTracingHandler::EnableTracing(const std::string& category_filter) {
-  if (is_recording_)
-    return;
-  is_recording_ = true;
-
-  SetupTimer(kDefaultReportingInterval);
-
-  TracingController::GetInstance()->EnableRecording(
-      base::debug::CategoryFilter(category_filter),
-      base::debug::TraceOptions(),
-      TracingController::EnableRecordingDoneCallback());
-  SendNotification(devtools::Tracing::started::kName, NULL);
-}
-
-void DevToolsTracingHandler::DisableTracing() {
-  if (!is_recording_)
-    return;
-  is_recording_ = false;
-  DisableRecording(
-      base::Bind(&DevToolsTracingHandler::BeginReadingRecordingResult,
-                 weak_factory_.GetWeakPtr()));
-}
-
 
 }  // namespace content

@@ -10,6 +10,7 @@
 #include <map>
 
 #include "base/basictypes.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/threading/thread_checker.h"
 #include "device/hid/hid_device_info.h"
@@ -50,10 +51,9 @@ class HidDeviceManager : public BrowserContextKeyedAPI {
   friend class BrowserContextKeyedAPIFactory<HidDeviceManager>;
 
   static const char* service_name() { return "HidDeviceManager"; }
+  static bool IsCalledOnValidThread();
 
   void UpdateDevices();
-
-  base::ThreadChecker thread_checker_;
 
   int next_resource_id_;
 

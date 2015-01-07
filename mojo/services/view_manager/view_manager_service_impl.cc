@@ -7,13 +7,11 @@
 #include "base/bind.h"
 #include "mojo/services/public/cpp/geometry/geometry_type_converters.h"
 #include "mojo/services/public/cpp/input_events/input_events_type_converters.h"
+#include "mojo/services/public/cpp/surfaces/surfaces_type_converters.h"
 #include "mojo/services/view_manager/connection_manager.h"
 #include "mojo/services/view_manager/default_access_policy.h"
 #include "mojo/services/view_manager/server_view.h"
 #include "mojo/services/view_manager/window_manager_access_policy.h"
-#include "third_party/skia/include/core/SkBitmap.h"
-#include "ui/aura/window.h"
-#include "ui/gfx/codec/png_codec.h"
 
 namespace mojo {
 namespace service {
@@ -81,6 +79,23 @@ void ViewManagerServiceImpl::ProcessViewBoundsChanged(
                                 Rect::From(new_bounds));
 }
 
+void ViewManagerServiceImpl::ProcessWillChangeViewHierarchy(
+    const ServerView* view,
+    const ServerView* new_parent,
+    const ServerView* old_parent,
+    bool originated_change) {
+  if (originated_change)
+    return;
+
+  const bool old_drawn = view->IsDrawn(connection_manager_->root());
+  const bool new_drawn = view->visible() && new_parent &&
+      new_parent->IsDrawn(connection_manager_->root());
+  if (old_drawn == new_drawn)
+    return;
+
+  NotifyDrawnStateChanged(view, new_drawn);
+}
+
 void ViewManagerServiceImpl::ProcessViewHierarchyChanged(
     const ServerView* view,
     const ServerView* new_parent,
@@ -140,6 +155,31 @@ void ViewManagerServiceImpl::ProcessViewDeleted(const ViewId& view,
     client()->OnViewDeleted(ViewIdToTransportId(view));
     connection_manager_->OnConnectionMessagedClient(id_);
   }
+}
+
+void ViewManagerServiceImpl::ProcessWillChangeViewVisibility(
+    const ServerView* view,
+    bool originated_change) {
+  if (originated_change)
+    return;
+
+  if (IsViewKnown(view)) {
+    client()->OnViewVisibilityChanged(ViewIdToTransportId(view->id()),
+                                      !view->visible());
+    return;
+  }
+
+  bool view_target_drawn_state;
+  if (view->visible()) {
+    // View is being hidden, won't be drawn.
+    view_target_drawn_state = false;
+  } else {
+    // View is being shown. View will be drawn if its parent is drawn.
+    view_target_drawn_state =
+        view->parent() && view->parent()->IsDrawn(connection_manager_->root());
+  }
+
+  NotifyDrawnStateChanged(view, view_target_drawn_state);
 }
 
 void ViewManagerServiceImpl::OnConnectionError() {
@@ -214,32 +254,6 @@ void ViewManagerServiceImpl::RemoveFromKnown(
     RemoveFromKnown(children[i], local_views);
 }
 
-void ViewManagerServiceImpl::AddRoot(
-    const ViewId& view_id,
-    InterfaceRequest<ServiceProvider> service_provider) {
-  const Id transport_view_id(ViewIdToTransportId(view_id));
-  CHECK(roots_.count(transport_view_id) == 0);
-
-  CHECK_EQ(creator_id_, view_id.connection_id);
-  roots_.insert(transport_view_id);
-  const ServerView* view = GetView(view_id);
-  CHECK(view);
-  std::vector<const ServerView*> to_send;
-  if (!IsViewKnown(view)) {
-    GetUnknownViewsFrom(view, &to_send);
-  } else {
-    // Even though the connection knows about the new root we need to tell it
-    // |view| is now a root.
-    to_send.push_back(view);
-  }
-
-  client()->OnEmbed(id_,
-                    creator_url_,
-                    ViewToViewData(to_send.front()),
-                    service_provider.Pass());
-  connection_manager_->OnConnectionMessagedClient(id_);
-}
-
 void ViewManagerServiceImpl::RemoveRoot(const ViewId& view_id) {
   const Id transport_view_id(ViewIdToTransportId(view_id));
   CHECK(roots_.count(transport_view_id) > 0);
@@ -290,6 +304,8 @@ ViewDataPtr ViewManagerServiceImpl::ViewToViewData(const ServerView* view) {
   view_data->parent_id = ViewIdToTransportId(parent ? parent->id() : ViewId());
   view_data->view_id = ViewIdToTransportId(view->id());
   view_data->bounds = Rect::From(view->bounds());
+  view_data->visible = view->visible();
+  view_data->drawn = view->IsDrawn(connection_manager_->root());
   return view_data.Pass();
 }
 
@@ -309,6 +325,21 @@ void ViewManagerServiceImpl::GetViewTreeImpl(
   std::vector<const ServerView*> children(view->GetChildren());
   for (size_t i = 0 ; i < children.size(); ++i)
     GetViewTreeImpl(children[i], views);
+}
+
+void ViewManagerServiceImpl::NotifyDrawnStateChanged(const ServerView* view,
+                                                     bool new_drawn_value) {
+  // Even though we don't know about view, it may be an ancestor of one of our
+  // roots, in which case the change may effect our roots drawn state.
+  for (ViewIdSet::iterator i = roots_.begin(); i != roots_.end(); ++i) {
+    const ServerView* root = GetView(ViewIdFromTransportId(*i));
+    DCHECK(root);
+    if (view->Contains(root) &&
+        (new_drawn_value != root->IsDrawn(connection_manager_->root()))) {
+      client()->OnViewDrawnStateChanged(ViewIdToTransportId(root->id()),
+                                        new_drawn_value);
+    }
+  }
 }
 
 void ViewManagerServiceImpl::CreateView(
@@ -397,28 +428,17 @@ void ViewManagerServiceImpl::GetViewTree(
   callback.Run(ViewsToViewDatas(views));
 }
 
-void ViewManagerServiceImpl::SetViewContents(
+void ViewManagerServiceImpl::SetViewSurfaceId(
     Id view_id,
-    ScopedSharedBufferHandle buffer,
-    uint32_t buffer_size,
+    SurfaceIdPtr surface_id,
     const Callback<void(bool)>& callback) {
-  // TODO(sky): add coverage of not being able to set for random view.
+  // TODO(sky): add coverage of not being able to set for random node.
   ServerView* view = GetView(ViewIdFromTransportId(view_id));
-  if (!view || !access_policy_->CanSetViewContents(view)) {
+  if (!view || !access_policy_->CanSetViewSurfaceId(view)) {
     callback.Run(false);
     return;
   }
-  void* handle_data;
-  if (MapBuffer(buffer.get(), 0, buffer_size, &handle_data,
-                MOJO_MAP_BUFFER_FLAG_NONE) != MOJO_RESULT_OK) {
-    callback.Run(false);
-    return;
-  }
-  SkBitmap bitmap;
-  gfx::PNGCodec::Decode(static_cast<const unsigned char*>(handle_data),
-                        buffer_size, &bitmap);
-  view->SetBitmap(bitmap);
-  UnmapBuffer(handle_data);
+  view->SetSurfaceId(surface_id.To<cc::SurfaceId>());
   callback.Run(true);
 }
 
@@ -440,14 +460,16 @@ void ViewManagerServiceImpl::SetViewVisibility(
     bool visible,
     const Callback<void(bool)>& callback) {
   ServerView* view = GetView(ViewIdFromTransportId(transport_view_id));
-  const bool success = view && view->visible() != visible &&
-                       access_policy_->CanChangeViewVisibility(view);
-  if (success) {
-    DCHECK(view);
+  if (!view || view->visible() == visible ||
+      !access_policy_->CanChangeViewVisibility(view)) {
+    callback.Run(false);
+    return;
+  }
+  {
+    ConnectionManager::ScopedChange change(this, connection_manager_, false);
     view->SetVisible(visible);
   }
-  // TODO(sky): need to notify of visibility changes.
-  callback.Run(success);
+  callback.Run(true);
 }
 
 void ViewManagerServiceImpl::Embed(
@@ -464,33 +486,25 @@ void ViewManagerServiceImpl::Embed(
     return;
   }
   const ServerView* view = GetView(ViewIdFromTransportId(transport_view_id));
-  bool success = view && access_policy_->CanEmbed(view);
-  if (success) {
-    // Only allow a view to be the root for one connection.
-    const ViewId view_id(ViewIdFromTransportId(transport_view_id));
-    ViewManagerServiceImpl* connection_by_url =
-        connection_manager_->GetConnectionByCreator(id_, url.To<std::string>());
-    ViewManagerServiceImpl* connection_with_view_as_root =
-        connection_manager_->GetConnectionWithRoot(view_id);
-    if ((connection_by_url != connection_with_view_as_root ||
-         (!connection_by_url && !connection_with_view_as_root)) &&
-        (!connection_by_url || !connection_by_url->HasRoot(view_id))) {
-      ConnectionManager::ScopedChange change(this, connection_manager_, true);
-      RemoveChildrenAsPartOfEmbed(view_id);
-      // Never message the originating connection.
-      connection_manager_->OnConnectionMessagedClient(id_);
-      if (connection_with_view_as_root)
-        connection_with_view_as_root->RemoveRoot(view_id);
-      if (connection_by_url) {
-        connection_by_url->AddRoot(view_id, spir.Pass());
-      } else {
-        connection_manager_->Embed(id_, url, transport_view_id, spir.Pass());
-      }
-    } else {
-      success = false;
-    }
+  if (!view || !access_policy_->CanEmbed(view)) {
+    callback.Run(false);
+    return;
   }
-  callback.Run(success);
+
+  // Only allow a node to be the root for one connection.
+  const ViewId view_id(ViewIdFromTransportId(transport_view_id));
+  ViewManagerServiceImpl* existing_owner =
+      connection_manager_->GetConnectionWithRoot(view_id);
+
+  ConnectionManager::ScopedChange change(this, connection_manager_, true);
+  RemoveChildrenAsPartOfEmbed(view_id);
+  if (existing_owner) {
+    // Never message the originating connection.
+    connection_manager_->OnConnectionMessagedClient(id_);
+    existing_owner->RemoveRoot(view_id);
+  }
+  connection_manager_->Embed(id_, url, transport_view_id, spir.Pass());
+  callback.Run(true);
 }
 
 void ViewManagerServiceImpl::DispatchOnViewInputEvent(Id transport_view_id,

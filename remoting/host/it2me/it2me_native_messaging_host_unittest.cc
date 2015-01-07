@@ -17,7 +17,7 @@
 #include "net/base/net_util.h"
 #include "remoting/base/auto_thread_task_runner.h"
 #include "remoting/host/chromoting_host_context.h"
-#include "remoting/host/native_messaging/native_messaging_channel.h"
+#include "remoting/host/native_messaging/pipe_messaging_channel.h"
 #include "remoting/host/setup/test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -261,7 +261,7 @@ It2MeNativeMessagingHostTest::ReadMessageFromOutputPipe() {
       reinterpret_cast<char*>(&length), sizeof(length));
   if (read_result != sizeof(length)) {
     // The output pipe has been closed, return an empty message.
-    return scoped_ptr<base::DictionaryValue>();
+    return nullptr;
   }
 
   std::string message_json(length, '\0');
@@ -270,13 +270,13 @@ It2MeNativeMessagingHostTest::ReadMessageFromOutputPipe() {
   if (read_result != static_cast<int>(length)) {
     LOG(ERROR) << "Message size (" << read_result
                << ") doesn't match the header (" << length << ").";
-    return scoped_ptr<base::DictionaryValue>();
+    return nullptr;
   }
 
   scoped_ptr<base::Value> message(base::JSONReader::Read(message_json));
   if (!message || !message->IsType(base::Value::TYPE_DICTIONARY)) {
     LOG(ERROR) << "Malformed message:" << message_json;
-    return scoped_ptr<base::DictionaryValue>();
+    return nullptr;
   }
 
   return scoped_ptr<base::DictionaryValue>(
@@ -431,13 +431,14 @@ void It2MeNativeMessagingHostTest::StartHost() {
   // Creating a native messaging host with a mock It2MeHostFactory.
   scoped_ptr<It2MeHostFactory> factory(new MockIt2MeHostFactory());
 
-  scoped_ptr<NativeMessagingChannel> channel(
-      new NativeMessagingChannel(input_read_file.Pass(),
-                                 output_write_file.Pass()));
+  scoped_ptr<extensions::NativeMessagingChannel> channel(
+      new PipeMessagingChannel(input_read_file.Pass(),
+                               output_write_file.Pass()));
 
-  host_.reset(
-      new It2MeNativeMessagingHost(
-          host_task_runner_, channel.Pass(), factory.Pass()));
+  host_.reset(new It2MeNativeMessagingHost(
+      host_task_runner_,
+      channel.Pass(),
+      factory.Pass()));
   host_->Start(base::Bind(&It2MeNativeMessagingHostTest::StopHost,
                           base::Unretained(this)));
 

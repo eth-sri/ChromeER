@@ -3,8 +3,10 @@
 // found in the LICENSE file.
 
 #include "base/bind.h"
+#include "mojo/application/application_runner_chromium.h"
 #include "mojo/examples/wm_flow/app/embedder.mojom.h"
 #include "mojo/examples/wm_flow/embedded/embeddee.mojom.h"
+#include "mojo/public/c/system/main.h"
 #include "mojo/public/cpp/application/application_connection.h"
 #include "mojo/public/cpp/application/application_delegate.h"
 #include "mojo/public/cpp/application/application_impl.h"
@@ -15,13 +17,12 @@
 #include "mojo/services/public/cpp/view_manager/view.h"
 #include "mojo/services/public/cpp/view_manager/view_manager.h"
 #include "mojo/services/public/cpp/view_manager/view_manager_client_factory.h"
+#include "mojo/services/public/cpp/view_manager/view_manager_context.h"
 #include "mojo/services/public/cpp/view_manager/view_manager_delegate.h"
 #include "mojo/services/public/cpp/view_manager/view_observer.h"
-#include "mojo/services/public/interfaces/view_manager/view_manager.mojom.h"
 
 namespace examples {
 namespace {
-void ConnectCallback(bool success) {}
 
 const SkColor kColors[] = { SK_ColorRED, SK_ColorGREEN, SK_ColorYELLOW };
 
@@ -49,23 +50,22 @@ class WMFlowApp : public mojo::ApplicationDelegate,
                   public mojo::ViewManagerDelegate,
                   public mojo::ViewObserver {
  public:
-  WMFlowApp()
-      : embed_count_(0),
-        view_manager_client_factory_(this),
-        app_(NULL) {}
+  WMFlowApp() : embed_count_(0) {}
   virtual ~WMFlowApp() {}
 
  private:
   // Overridden from Application:
-  virtual void Initialize(mojo::ApplicationImpl* app) MOJO_OVERRIDE {
-    app_ = app;
+  virtual void Initialize(mojo::ApplicationImpl* app) override {
+    view_manager_client_factory_.reset(
+        new mojo::ViewManagerClientFactory(app->shell(), this));
+    view_manager_context_.reset(new mojo::ViewManagerContext(app));
     OpenNewWindow();
     OpenNewWindow();
     OpenNewWindow();
   }
   virtual bool ConfigureIncomingConnection(
-      mojo::ApplicationConnection* connection) MOJO_OVERRIDE {
-    connection->AddService(&view_manager_client_factory_);
+      mojo::ApplicationConnection* connection) override {
+    connection->AddService(view_manager_client_factory_.get());
     return true;
   }
 
@@ -76,7 +76,7 @@ class WMFlowApp : public mojo::ApplicationDelegate,
       mojo::ViewManager* view_manager,
       mojo::View* root,
       mojo::ServiceProviderImpl* exported_services,
-      scoped_ptr<mojo::ServiceProvider> imported_services) MOJO_OVERRIDE {
+      scoped_ptr<mojo::ServiceProvider> imported_services) override {
     root->AddObserver(this);
     root->SetColor(kColors[embed_count_++ % arraysize(kColors)]);
 
@@ -97,17 +97,17 @@ class WMFlowApp : public mojo::ApplicationDelegate,
                                     base::Unretained(this)));
   }
   virtual void OnViewManagerDisconnected(
-      mojo::ViewManager* view_manager) MOJO_OVERRIDE {}
+      mojo::ViewManager* view_manager) override {}
 
   // Overridden from mojo::ViewObserver:
   virtual void OnViewInputEvent(mojo::View* view,
-                                const mojo::EventPtr& event) MOJO_OVERRIDE {
+                                const mojo::EventPtr& event) override {
     if (event->action == mojo::EVENT_TYPE_MOUSE_RELEASED &&
         event->flags & mojo::EVENT_FLAGS_LEFT_MOUSE_BUTTON) {
       OpenNewWindow();
     }
   }
-  virtual void OnViewDestroyed(mojo::View* view) MOJO_OVERRIDE {
+  virtual void OnViewDestroyed(mojo::View* view) override {
     --embed_count_;
     view->RemoveObserver(this);
   }
@@ -117,29 +117,21 @@ class WMFlowApp : public mojo::ApplicationDelegate,
   }
 
   void OpenNewWindow() {
-    mojo::ViewManagerInitServicePtr init_svc;
-    app_->ConnectToService("mojo:mojo_view_manager", &init_svc);
-    mojo::ServiceProviderPtr sp;
-    init_svc->Embed("mojo:mojo_wm_flow_app", sp.Pass(),
-                    base::Bind(&ConnectCallback));
+    view_manager_context_->Embed("mojo:mojo_wm_flow_app");
   }
 
   int embed_count_;
-  mojo::ViewManagerClientFactory view_manager_client_factory_;
+  scoped_ptr<mojo::ViewManagerClientFactory> view_manager_client_factory_;
   mojo::InterfaceFactoryImpl<EmbedderImpl> embedder_factory_;
+  scoped_ptr<mojo::ViewManagerContext> view_manager_context_;
   EmbeddeePtr embeddee_;
-  mojo::ApplicationImpl* app_;
 
   DISALLOW_COPY_AND_ASSIGN(WMFlowApp);
 };
 
 }  // namespace examples
 
-namespace mojo {
-
-// static
-ApplicationDelegate* ApplicationDelegate::Create() {
-  return new examples::WMFlowApp;
+MojoResult MojoMain(MojoHandle shell_handle) {
+  mojo::ApplicationRunnerChromium runner(new examples::WMFlowApp);
+  return runner.Run(shell_handle);
 }
-
-}  // namespace

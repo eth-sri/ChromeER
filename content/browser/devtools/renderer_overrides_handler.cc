@@ -38,15 +38,16 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/common/content_client.h"
-#include "content/public/common/page_transition_types.h"
 #include "content/public/common/referrer.h"
 #include "content/public/common/url_constants.h"
 #include "ipc/ipc_sender.h"
 #include "net/base/net_util.h"
+#include "storage/browser/quota/quota_manager.h"
 #include "third_party/WebKit/public/platform/WebCursorInfo.h"
 #include "third_party/WebKit/public/platform/WebScreenInfo.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "third_party/skia/include/core/SkCanvas.h"
+#include "ui/base/page_transition_types.h"
 #include "ui/gfx/codec/jpeg_codec.h"
 #include "ui/gfx/codec/png_codec.h"
 #include "ui/gfx/display.h"
@@ -54,7 +55,6 @@
 #include "ui/gfx/size_conversions.h"
 #include "ui/snapshot/snapshot.h"
 #include "url/gurl.h"
-#include "webkit/browser/quota/quota_manager.h"
 
 using blink::WebGestureEvent;
 using blink::WebInputEvent;
@@ -429,7 +429,7 @@ RendererOverridesHandler::PageNavigate(
   WebContents* web_contents = WebContents::FromRenderViewHost(host_);
   if (web_contents) {
     web_contents->GetController()
-        .LoadURL(gurl, Referrer(), PAGE_TRANSITION_TYPED, std::string());
+        .LoadURL(gurl, Referrer(), ui::PAGE_TRANSITION_TYPED, std::string());
     // Fall through into the renderer.
     return NULL;
   }
@@ -615,7 +615,8 @@ RendererOverridesHandler::PageStartScreencast(
     else
       host_->Send(new ViewMsg_ForceRedraw(host_->GetRoutingID(), 0));
   }
-  return command->SuccessResponse(NULL);
+  // Pass through to the renderer.
+  return NULL;
 }
 
 scoped_refptr<DevToolsProtocol::Response>
@@ -624,7 +625,8 @@ RendererOverridesHandler::PageStopScreencast(
   last_frame_time_ = base::TimeTicks();
   screencast_command_ = NULL;
   UpdateTouchEventEmulationState();
-  return command->SuccessResponse(NULL);
+  // Pass through to the renderer.
+  return NULL;
 }
 
 void RendererOverridesHandler::ScreencastFrameCaptured(

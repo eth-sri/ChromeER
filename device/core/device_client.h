@@ -7,11 +7,10 @@
 
 #include "base/macros.h"
 
-namespace usb_service {
-class UsbService;
-}
-
 namespace device {
+
+class HidService;
+class UsbService;
 
 // Interface used by consumers of //device APIs to get pointers to the service
 // singletons appropriate for a given embedding application. For an example see
@@ -28,7 +27,10 @@ class DeviceClient {
   static DeviceClient* Get();
 
   // Returns the UsbService instance for this embedder.
-  virtual usb_service::UsbService* GetUsbService();
+  virtual UsbService* GetUsbService();
+
+  // Returns the HidService instance for this embedder.
+  virtual HidService* GetHidService();
 
  private:
   DISALLOW_COPY_AND_ASSIGN(DeviceClient);

@@ -43,6 +43,7 @@ class WebMediaStreamCenterClient;
 
 namespace base {
 class MessageLoopProxy;
+class SingleThreadTaskRunner;
 class Thread;
 }
 
@@ -119,6 +120,8 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   RenderThreadImpl();
   // Constructor that's used when running in single process mode.
   explicit RenderThreadImpl(const std::string& channel_name);
+  // Constructor that's used in RendererMain.
+  explicit RenderThreadImpl(scoped_ptr<base::MessageLoop> main_message_loop);
   virtual ~RenderThreadImpl();
   virtual void Shutdown() OVERRIDE;
 
@@ -198,6 +201,11 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
     return webkit_platform_support_.get();
   }
 
+  scoped_refptr<base::SingleThreadTaskRunner>
+  main_thread_compositor_task_runner() const {
+    return main_thread_compositor_task_runner_;
+  }
+
   IPC::ForwardingMessageFilter* compositor_output_surface_filter() const {
     return compositor_output_surface_filter_.get();
   }
@@ -222,8 +230,6 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   bool is_impl_side_painting_enabled() const {
     return is_impl_side_painting_enabled_;
   }
-
-  bool is_low_res_tiling_enabled() const { return is_low_res_tiling_enabled_; }
 
   bool is_lcd_text_enabled() const { return is_lcd_text_enabled_; }
 
@@ -379,9 +385,6 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
     return &histogram_customizer_;
   }
 
-  void SetFlingCurveParameters(const std::vector<float>& new_touchpad,
-                               const std::vector<float>& new_touchscreen);
-
   // Retrieve current gamepad data.
   void SampleGamepads(blink::WebGamepads* data);
 
@@ -417,8 +420,6 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
       size_t height,
       unsigned internalformat,
       unsigned usage) OVERRIDE;
-  virtual void DeleteGpuMemoryBuffer(
-      scoped_ptr<gfx::GpuMemoryBuffer> buffer) OVERRIDE;
 
   void Init();
 
@@ -431,7 +432,9 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
                                    double zoom_level);
   void OnCreateNewView(const ViewMsg_New_Params& params);
   void OnTransferBitmap(const SkBitmap& bitmap, int resource_id);
+#if defined(ENABLE_PLUGINS)
   void OnPurgePluginListCache(bool reload_pages);
+#endif
   void OnNetworkTypeChanged(net::NetworkChangeNotifier::ConnectionType type);
   void OnGetAccessibilityTree();
   void OnTempCrashWithData(const GURL& data);
@@ -450,8 +453,6 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
 #endif
   void OnCreateNewSharedWorker(
       const WorkerProcessMsg_CreateWorker_Params& params);
-
-  void IdleHandlerInForegroundTab();
 
   scoped_ptr<WebGraphicsContext3DCommandBufferImpl> CreateOffscreenContext3d();
 
@@ -524,6 +525,11 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   // GpuChannelHostFactory methods.
   scoped_refptr<base::MessageLoopProxy> io_message_loop_proxy_;
 
+  // The message loop of the renderer main thread.
+  // This message loop should be destructed before the RenderThreadImpl
+  // shuts down Blink.
+  scoped_ptr<base::MessageLoop> main_message_loop_;
+
   // A lazily initiated thread on which file operations are run.
   scoped_ptr<base::Thread> file_thread_;
 
@@ -567,11 +573,13 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
 
   scoped_ptr<MemoryObserver> memory_observer_;
 
+  scoped_refptr<base::SingleThreadTaskRunner>
+      main_thread_compositor_task_runner_;
+
   // Compositor settings
   bool is_gpu_rasterization_enabled_;
   bool is_gpu_rasterization_forced_;
   bool is_impl_side_painting_enabled_;
-  bool is_low_res_tiling_enabled_;
   bool is_lcd_text_enabled_;
   bool is_distance_field_text_enabled_;
   bool is_zero_copy_enabled_;

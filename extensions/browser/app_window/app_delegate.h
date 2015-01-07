@@ -9,7 +9,6 @@
 #include "content/public/common/media_stream_request.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/base/window_open_disposition.h"
-#include "ui/gfx/image/image_skia.h"
 
 namespace content {
 class BrowserContext;
@@ -21,6 +20,7 @@ class WebContents;
 
 namespace gfx {
 class Rect;
+class Size;
 }
 
 namespace extensions {
@@ -63,8 +63,11 @@ class AppDelegate {
       const content::MediaStreamRequest& request,
       const content::MediaResponseCallback& callback,
       const Extension* extension) = 0;
+  virtual bool CheckMediaAccessPermission(content::WebContents* web_contents,
+                                          const GURL& security_origin,
+                                          content::MediaStreamType type,
+                                          const Extension* extension) = 0;
   virtual int PreferredIconSize() = 0;
-  virtual gfx::ImageSkia GetAppDefaultIcon() = 0;
 
   // Web contents modal dialog support.
   virtual void SetWebContentsBlocked(content::WebContents* web_contents,

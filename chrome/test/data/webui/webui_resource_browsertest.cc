@@ -11,7 +11,7 @@
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test_utils.h"
-#include "grit/webui_resources.h"
+#include "ui/resources/grit/webui_resources.h"
 
 class WebUIResourceBrowserTest : public InProcessBrowserTest {
  public:
@@ -104,11 +104,6 @@ IN_PROC_BROWSER_TEST_F(WebUIResourceBrowserTest, ListSingleSelectionModelTest) {
   AddLibrary(IDR_WEBUI_JS_CR_UI_LIST_SINGLE_SELECTION_MODEL);
   RunTest(base::FilePath(FILE_PATH_LITERAL(
       "list_single_selection_model_test.html")));
-}
-
-IN_PROC_BROWSER_TEST_F(WebUIResourceBrowserTest, LocalStringsTest) {
-  AddLibrary(IDR_WEBUI_JS_LOCAL_STRINGS);
-  RunTest(base::FilePath(FILE_PATH_LITERAL("local_strings_test.html")));
 }
 
 IN_PROC_BROWSER_TEST_F(WebUIResourceBrowserTest, MenuTest) {

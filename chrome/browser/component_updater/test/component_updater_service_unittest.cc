@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "base/files/file_util.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
 #include "base/run_loop.h"
 #include "base/strings/string_number_conversions.h"
@@ -18,13 +19,16 @@
 #include "components/component_updater/component_updater_utils.h"
 #include "components/component_updater/test/test_configurator.h"
 #include "components/component_updater/test/test_installer.h"
+#include "components/component_updater/test/url_request_post_interceptor.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/resource_controller.h"
 #include "content/public/browser/resource_request_info.h"
 #include "content/public/browser/resource_throttle.h"
 #include "libxml/globals.h"
 #include "net/base/upload_bytes_element_reader.h"
+#include "net/url_request/test_url_request_interceptor.h"
 #include "net/url_request/url_fetcher.h"
+#include "net/url_request/url_request.h"
 #include "net/url_request/url_request_test_util.h"
 #include "url/gurl.h"
 
@@ -64,7 +68,10 @@ ComponentUpdaterTest::~ComponentUpdaterTest() {
 }
 
 void ComponentUpdaterTest::SetUp() {
-  get_interceptor_.reset(new GetInterceptor);
+  get_interceptor_.reset(new GetInterceptor(
+      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO),
+      BrowserThread::GetBlockingPool()->GetTaskRunnerWithShutdownBehavior(
+          base::SequencedWorkerPool::SKIP_ON_SHUTDOWN)));
   interceptor_factory_.reset(new InterceptorFactory(
       BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO)));
   post_interceptor_ = interceptor_factory_->CreateInterceptor();
@@ -1182,10 +1189,11 @@ content::ResourceThrottle* RequestTestResourceThrottle(
     TestResourceController* controller,
     const char* crx_id) {
   net::TestURLRequestContext context;
-  net::TestURLRequest url_request(GURL("http://foo.example.com/thing.bin"),
-                                  net::DEFAULT_PRIORITY,
-                                  NULL,
-                                  &context);
+  scoped_ptr<net::URLRequest> url_request(context.CreateRequest(
+      GURL("http://foo.example.com/thing.bin"),
+      net::DEFAULT_PRIORITY,
+      NULL,
+      NULL));
 
   content::ResourceThrottle* rt = GetOnDemandResourceThrottle(cus, crx_id);
   rt->set_controller_for_testing(controller);

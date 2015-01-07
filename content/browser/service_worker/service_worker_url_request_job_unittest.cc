@@ -28,11 +28,11 @@
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_job_factory_impl.h"
+#include "storage/browser/blob/blob_storage_context.h"
+#include "storage/browser/blob/blob_url_request_job.h"
+#include "storage/browser/blob/blob_url_request_job_factory.h"
+#include "storage/common/blob/blob_data.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/browser/blob/blob_storage_context.h"
-#include "webkit/browser/blob/blob_url_request_job.h"
-#include "webkit/browser/blob/blob_url_request_job_factory.h"
-#include "webkit/common/blob/blob_data.h"
 
 namespace content {
 
@@ -62,6 +62,7 @@ class MockHttpProtocolHandler
                                        network_delegate,
                                        provider_host_,
                                        blob_storage_context_,
+                                       FETCH_REQUEST_MODE_NO_CORS,
                                        scoped_refptr<ResourceRequestBody>());
     job->ForwardToServiceWorker();
     return job;
@@ -199,11 +200,8 @@ class BlobResponder : public EmbeddedWorkerTestHelper {
         embedded_worker_id,
         request_id,
         SERVICE_WORKER_FETCH_EVENT_RESULT_RESPONSE,
-        ServiceWorkerResponse(GURL(""),
-                              200,
-                              "OK",
-                              std::map<std::string, std::string>(),
-                              blob_uuid_)));
+        ServiceWorkerResponse(
+            GURL(""), 200, "OK", ServiceWorkerHeaderMap(), blob_uuid_)));
   }
 
   std::string blob_uuid_;

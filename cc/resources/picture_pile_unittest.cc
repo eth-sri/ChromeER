@@ -472,9 +472,15 @@ TEST_P(PicturePileResizeCornerTest, ResizePileOutsideInterestRect) {
     }
   }
 
-  // We invalidated the old bottom row.
-  expected_invalidation = gfx::UnionRects(pile_->tiling().TileBounds(0, 5),
-                                          pile_->tiling().TileBounds(5, 5));
+  // We invalidated all new pixels in the recording.
+  expected_invalidation = SubtractRegions(gfx::Rect(grow_down_tiling_size),
+                                          gfx::Rect(base_tiling_size));
+  // But the new pixels don't cover the whole bottom row.
+  gfx::Rect bottom_row = gfx::UnionRects(pile_->tiling().TileBounds(0, 5),
+                                         pile_->tiling().TileBounds(5, 5));
+  EXPECT_FALSE(expected_invalidation.Contains(bottom_row));
+  // We invalidated the entire old bottom row.
+  expected_invalidation.Union(bottom_row);
   EXPECT_EQ(expected_invalidation.ToString(), invalidation.ToString());
   invalidation.Clear();
 
@@ -518,9 +524,15 @@ TEST_P(PicturePileResizeCornerTest, ResizePileOutsideInterestRect) {
     }
   }
 
-  // We invalidated the old right column.
-  expected_invalidation = gfx::UnionRects(pile_->tiling().TileBounds(5, 0),
-                                          pile_->tiling().TileBounds(5, 5));
+  // We invalidated all new pixels in the recording.
+  expected_invalidation = SubtractRegions(gfx::Rect(grow_right_tiling_size),
+                                          gfx::Rect(base_tiling_size));
+  // But the new pixels don't cover the whole right_column.
+  gfx::Rect right_column = gfx::UnionRects(pile_->tiling().TileBounds(5, 0),
+                                           pile_->tiling().TileBounds(5, 5));
+  EXPECT_FALSE(expected_invalidation.Contains(right_column));
+  // We invalidated the entire old right column.
+  expected_invalidation.Union(right_column);
   EXPECT_EQ(expected_invalidation.ToString(), invalidation.ToString());
   invalidation.Clear();
 
@@ -564,11 +576,18 @@ TEST_P(PicturePileResizeCornerTest, ResizePileOutsideInterestRect) {
     }
   }
 
-  // We invalidated the old right column and the old bottom row.
-  expected_invalidation = gfx::UnionRects(pile_->tiling().TileBounds(5, 0),
-                                          pile_->tiling().TileBounds(5, 5));
-  expected_invalidation.Union(gfx::UnionRects(
-      pile_->tiling().TileBounds(0, 5), pile_->tiling().TileBounds(5, 5)));
+  // We invalidated all new pixels in the recording.
+  expected_invalidation = SubtractRegions(gfx::Rect(grow_both_tiling_size),
+                                          gfx::Rect(base_tiling_size));
+  // But the new pixels don't cover the whole right_column.
+  Region right_column_and_bottom_row =
+      UnionRegions(gfx::UnionRects(pile_->tiling().TileBounds(5, 0),
+                                   pile_->tiling().TileBounds(5, 5)),
+                   gfx::UnionRects(pile_->tiling().TileBounds(0, 5),
+                                   pile_->tiling().TileBounds(5, 5)));
+  EXPECT_FALSE(expected_invalidation.Contains(right_column_and_bottom_row));
+  // We invalidated the entire old right column and the old bottom row.
+  expected_invalidation.Union(right_column_and_bottom_row);
   EXPECT_EQ(expected_invalidation.ToString(), invalidation.ToString());
   invalidation.Clear();
 
@@ -934,9 +953,13 @@ TEST_F(PicturePileTest, ResizePileInsideInterestRect) {
   }
 
   // We invalidated the newly exposed pixels on the bottom row of tiles.
-  expected_invalidation = gfx::UnionRects(pile_->tiling().TileBounds(0, 5),
-                                          pile_->tiling().TileBounds(5, 5));
-  expected_invalidation.Subtract(gfx::Rect(base_tiling_size));
+  expected_invalidation = SubtractRegions(gfx::Rect(grow_down_tiling_size),
+                                          gfx::Rect(base_tiling_size));
+  Region bottom_row_new_pixels =
+      SubtractRegions(gfx::UnionRects(pile_->tiling().TileBounds(0, 5),
+                                      pile_->tiling().TileBounds(5, 5)),
+                      gfx::Rect(base_tiling_size));
+  EXPECT_TRUE(expected_invalidation.Contains(bottom_row_new_pixels));
   EXPECT_EQ(expected_invalidation.ToString(), invalidation.ToString());
   invalidation.Clear();
 
@@ -976,9 +999,13 @@ TEST_F(PicturePileTest, ResizePileInsideInterestRect) {
   }
 
   // We invalidated the newly exposed pixels on the right column of tiles.
-  expected_invalidation = gfx::UnionRects(pile_->tiling().TileBounds(5, 0),
-                                          pile_->tiling().TileBounds(5, 5));
-  expected_invalidation.Subtract(gfx::Rect(base_tiling_size));
+  expected_invalidation = SubtractRegions(gfx::Rect(grow_right_tiling_size),
+                                          gfx::Rect(base_tiling_size));
+  Region right_column_new_pixels =
+      SubtractRegions(gfx::UnionRects(pile_->tiling().TileBounds(5, 0),
+                                      pile_->tiling().TileBounds(5, 5)),
+                      gfx::Rect(base_tiling_size));
+  EXPECT_TRUE(expected_invalidation.Contains(right_column_new_pixels));
   EXPECT_EQ(expected_invalidation.ToString(), invalidation.ToString());
   invalidation.Clear();
 
@@ -1019,12 +1046,16 @@ TEST_F(PicturePileTest, ResizePileInsideInterestRect) {
 
   // We invalidated the newly exposed pixels on the bottom row and right column
   // of tiles.
-  expected_invalidation =
-      UnionRegions(gfx::UnionRects(pile_->tiling().TileBounds(5, 0),
+  expected_invalidation = SubtractRegions(gfx::Rect(grow_both_tiling_size),
+                                          gfx::Rect(base_tiling_size));
+  Region bottom_row_and_right_column_new_pixels = SubtractRegions(
+      UnionRegions(gfx::UnionRects(pile_->tiling().TileBounds(0, 5),
                                    pile_->tiling().TileBounds(5, 5)),
-                   gfx::UnionRects(pile_->tiling().TileBounds(0, 5),
-                                   pile_->tiling().TileBounds(5, 5)));
-  expected_invalidation.Subtract(gfx::Rect(base_tiling_size));
+                   gfx::UnionRects(pile_->tiling().TileBounds(5, 0),
+                                   pile_->tiling().TileBounds(5, 5))),
+      gfx::Rect(base_tiling_size));
+  EXPECT_TRUE(
+      expected_invalidation.Contains(bottom_row_and_right_column_new_pixels));
   EXPECT_EQ(expected_invalidation.ToString(), invalidation.ToString());
   invalidation.Clear();
 
@@ -1203,8 +1234,8 @@ TEST_F(PicturePileTest, SolidRectangleIsSolid) {
   // If the client has no contents, the solid state will be true.
   Region invalidation1(tiling_rect());
   UpdateAndExpandInvalidation(&invalidation1, tiling_size(), tiling_rect());
-  EXPECT_TRUE(pile_->IsSolidColor());
-  EXPECT_EQ(static_cast<SkColor>(SK_ColorTRANSPARENT), pile_->GetSolidColor());
+  EXPECT_TRUE(pile_->is_solid_color());
+  EXPECT_EQ(static_cast<SkColor>(SK_ColorTRANSPARENT), pile_->solid_color());
 
   // If there is a single rect that covers the view, the solid
   // state will be true.
@@ -1213,8 +1244,8 @@ TEST_F(PicturePileTest, SolidRectangleIsSolid) {
   client_.add_draw_rect(tiling_rect(), paint);
   Region invalidation2(tiling_rect());
   UpdateAndExpandInvalidation(&invalidation2, tiling_size(), tiling_rect());
-  EXPECT_TRUE(pile_->IsSolidColor());
-  EXPECT_EQ(SK_ColorCYAN, pile_->GetSolidColor());
+  EXPECT_TRUE(pile_->is_solid_color());
+  EXPECT_EQ(SK_ColorCYAN, pile_->solid_color());
 
   // If a second smaller rect is draw that doesn't cover the viewport
   // completely, the solid state will be false.
@@ -1223,15 +1254,15 @@ TEST_F(PicturePileTest, SolidRectangleIsSolid) {
   client_.add_draw_rect(smallRect, paint);
   Region invalidation3(tiling_rect());
   UpdateAndExpandInvalidation(&invalidation3, tiling_size(), tiling_rect());
-  EXPECT_FALSE(pile_->IsSolidColor());
+  EXPECT_FALSE(pile_->is_solid_color());
 
   // If a third rect is drawn over everything, we should be solid again.
   paint.setColor(SK_ColorRED);
   client_.add_draw_rect(tiling_rect(), paint);
   Region invalidation4(tiling_rect());
   UpdateAndExpandInvalidation(&invalidation4, tiling_size(), tiling_rect());
-  EXPECT_TRUE(pile_->IsSolidColor());
-  EXPECT_EQ(SK_ColorRED, pile_->GetSolidColor());
+  EXPECT_TRUE(pile_->is_solid_color());
+  EXPECT_EQ(SK_ColorRED, pile_->solid_color());
 
   // If we draw too many, we don't bother doing the analysis and we should no
   // longer be in a solid state.  There are 8 rects, two clips and a translate.
@@ -1242,7 +1273,7 @@ TEST_F(PicturePileTest, SolidRectangleIsSolid) {
   client_.add_draw_rect(tiling_rect(), paint);
   Region invalidation5(tiling_rect());
   UpdateAndExpandInvalidation(&invalidation5, tiling_size(), tiling_rect());
-  EXPECT_FALSE(pile_->IsSolidColor());
+  EXPECT_FALSE(pile_->is_solid_color());
 }
 
 }  // namespace

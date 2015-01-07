@@ -4,10 +4,14 @@
 
 component("ownership") {
   sources = [
+    "mock_owner_key_util.cc",
+    "mock_owner_key_util.h",
     "owner_key_util.cc",
     "owner_key_util.h",
     "owner_key_util_impl.cc",
     "owner_key_util_impl.h",
+    "owner_settings_service.cc",
+    "owner_settings_service.h",
   ]
 
   defines = [
@@ -16,24 +20,16 @@ component("ownership") {
 
   deps = [
     "//base",
-    "//crypto",
-  ]
-}
-
-component("test_support") {
-  sources = [
-    "mock_owner_key_util.cc",
-    "mock_owner_key_util.h",
-  ]
-
-  deps = [
-    ":ownership",
-    "//base",
+    "//components/keyed_service/core",
+    "//components/policy",
+    "//components/policy/proto",
+    "//components/policy:policy_component_common",
     "//crypto",
   ]
 }
 
 source_set("unit_tests") {
+  testonly = true
   sources = ["owner_key_util_unittest.cc"]
 
   deps = [

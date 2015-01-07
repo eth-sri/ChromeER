@@ -17,6 +17,7 @@
 #include "base/threading/thread_checker.h"
 #include "mojo/embedder/scoped_platform_handle.h"
 #include "mojo/public/c/system/types.h"
+#include "mojo/system/channel_endpoint.h"
 #include "mojo/system/message_in_transit.h"
 #include "mojo/system/message_pipe.h"
 #include "mojo/system/raw_channel.h"
@@ -30,29 +31,22 @@ class PlatformSupport;
 
 namespace system {
 
+class ChannelEndpoint;
+
 // This class is mostly thread-safe. It must be created on an I/O thread.
 // |Init()| must be called on that same thread before it becomes thread-safe (in
 // particular, before references are given to any other thread) and |Shutdown()|
 // must be called on that same thread before destruction. Its public methods are
-// otherwise thread-safe. It may be destroyed on any thread, in the sense that
-// the last reference to it may be released on any thread, with the proviso that
+// otherwise thread-safe. (Many private methods are restricted to the creation
+// thread.) It may be destroyed on any thread, in the sense that the last
+// reference to it may be released on any thread, with the proviso that
 // |Shutdown()| must have been called first (so the pattern is that a "main"
 // reference is kept on its creation thread and is released after |Shutdown()|
 // is called, but other threads may have temporarily "dangling" references).
 //
-// Note that |MessagePipe| calls into |Channel| and the former's |lock_| must be
-// acquired before the latter's. When |Channel| wants to call into a
-// |MessagePipe|, it must obtain a reference to the |MessagePipe| (from
-// |local_id_to_endpoint_info_map_|) under |Channel::lock_| and then release the
-// lock.
-//
-// Also, care must be taken with respect to references: While a |Channel| has
-// references to |MessagePipe|s, |MessagePipe|s (via |ProxyMessagePipeEndpoint|)
-// may also have references to |Channel|s. These references are set up by
-// calling |AttachMessagePipeEndpoint()|. The reference to |MessagePipe| owned
-// by |Channel| must be removed by calling |DetachMessagePipeEndpoint()| (which
-// is done by |MessagePipe|/|ProxyMessagePipeEndpoint|, which simultaneously
-// removes its reference to |Channel|).
+// Note the lock order (in order of allowable acquisition): |MessagePipe|,
+// |ChannelEndpoint|, |Channel|. Thus |Channel| may not call into
+// |ChannelEndpoint| with |Channel|'s lock held.
 class MOJO_SYSTEM_IMPL_EXPORT Channel
     : public base::RefCountedThreadSafe<Channel>,
       public RawChannel::Delegate {
@@ -80,17 +74,17 @@ class MOJO_SYSTEM_IMPL_EXPORT Channel
   // may be called multiple times, or not at all.)
   void WillShutdownSoon();
 
-  // Attaches the given message pipe/port's endpoint (which must be a
-  // |ProxyMessagePipeEndpoint|) to this channel. This assigns it a local ID,
-  // which it returns. The first message pipe endpoint attached will always have
+  // Attaches the given endpoint to this channel. This assigns it a local ID,
+  // which it returns. The first endpoint attached will always have
   // |kBootstrapEndpointId| as its local ID. (For bootstrapping, this occurs on
   // both sides, so one should use |kBootstrapEndpointId| for the remote ID for
   // the first message pipe across a channel.) Returns |kInvalidEndpointId| on
   // failure.
+  // TODO(vtl): This should be combined with "run", and it should take a
+  // |ChannelEndpoint| instead.
   // TODO(vtl): Maybe limit the number of attached message pipes.
-  MessageInTransit::EndpointId AttachMessagePipeEndpoint(
-      scoped_refptr<MessagePipe> message_pipe,
-      unsigned port);
+  MessageInTransit::EndpointId AttachEndpoint(
+      scoped_refptr<ChannelEndpoint> endpoint);
 
   // Runs the message pipe with the given |local_id| (previously attached), with
   // the given |remote_id| (negotiated using some other means, e.g., over an
@@ -119,8 +113,8 @@ class MOJO_SYSTEM_IMPL_EXPORT Channel
 
   // This removes the message pipe/port's endpoint (with the given local ID and
   // given remote ID, which should be |kInvalidEndpointId| if not yet running),
-  // returned by |AttachMessagePipeEndpoint()| from this channel. After this is
-  // called, |local_id| may be reused for another message pipe.
+  // returned by |AttachEndpoint()| from this channel. After this is called,
+  // |local_id| may be reused for another message pipe.
   void DetachMessagePipeEndpoint(MessageInTransit::EndpointId local_id,
                                  MessageInTransit::EndpointId remote_id);
 
@@ -132,101 +126,16 @@ class MOJO_SYSTEM_IMPL_EXPORT Channel
   }
 
  private:
-  // Terminology:
-  //   - "Message pipe endpoint": In the implementation, a |MessagePipe| owns
-  //     two |MessagePipeEndpoint| objects, one for each port. The
-  //     |MessagePipeEndpoint| objects are only accessed via the |MessagePipe|
-  //     (which has the lock), with the additional information of the port
-  //     number. So as far as the channel is concerned, a message pipe endpoint
-  //     is a pointer to a |MessagePipe| together with the port number.
-  //       - The value of |port| in |EndpointInfo| refers to the
-  //         |ProxyMessagePipeEndpoint| (i.e., the endpoint that is logically on
-  //         the other side). Messages received by a channel for a message pipe
-  //         are thus written to the *peer* of this port.
-  //   - "Attached"/"detached": A message pipe endpoint is attached to a channel
-  //     if it has a pointer to it. It must be detached before the channel gives
-  //     up its pointer to it in order to break a reference cycle. (This cycle
-  //     is needed to allow a channel to be shut down cleanly, without shutting
-  //     down everything else first.)
-  //   - "Running" (message pipe endpoint): A message pipe endpoint is running
-  //     if messages written to it (via some |MessagePipeDispatcher|, to which
-  //     some |MojoHandle| is assigned) are being transmitted through the
-  //     channel.
-  //       - Before a message pipe endpoint is run, it will queue messages.
-  //       - When a message pipe endpoint is detached from a channel, it is also
-  //         taken out of the running state. After that point, messages should
-  //         no longer be written to it.
-  //   - "Normal" message pipe endpoint (state): The channel itself does not
-  //     have knowledge of whether a message pipe endpoint has started running
-  //     yet. It will *receive* messages for a message pipe in either state (but
-  //     the message pipe endpoint won't *send* messages to the channel if it
-  //     has not started running).
-  //   - "Zombie" message pipe endpoint (state): A message pipe endpoint is a
-  //     zombie if it is still in |local_id_to_endpoint_info_map_|, but the
-  //     channel is no longer forwarding messages to it (even if it may still be
-  //     receiving messages for it).
-  //       - There are various types of zombies, depending on the reason the
-  //         message pipe endpoint cannot yet be removed.
-  //       - If the remote side is closed, it will send a "remove" control
-  //         message. After the channel receives that message (to which it
-  //         responds with a "remove ack" control message), it knows that it
-  //         shouldn't receive any more messages for that message pipe endpoint
-  //         (local ID), but it must wait for the endpoint to detach. (It can't
-  //         do so without a race, since it can't call into the message pipe
-  //         under |lock_|.) [TODO(vtl): When I add remotely-allocated IDs,
-  //         we'll have to remove the |EndpointInfo| from
-  //         |local_id_to_endpoint_info_map_| -- i.e., remove the local ID,
-  //         since it's no longer valid and may be reused by the remote side --
-  //         and keep the |EndpointInfo| alive in some other way.]
-  //       - If the local side is closed and the message pipe endpoint was
-  //         already running (so there are no queued messages left to send), it
-  //         will detach the endpoint, and send a "remove" control message.
-  //         However, the channel may still receive messages for that endpoint
-  //         until it receives a "remove ack" control message.
-  //       - If the local side is closed but the message pipe endpoint was not
-  //         yet running , the detaching is delayed until after it is run and
-  //         all the queued messages are sent to the channel. On being detached,
-  //         things proceed as in one of the above cases. The endpoint is *not*
-  //         a zombie until it is detached (or a "remove" message is received).
-  //         [TODO(vtl): Maybe we can get rid of this case? It'd only not yet be
-  //         running since under the current scheme it wouldn't have a remote ID
-  //         yet.]
-  //       - Note that even if the local side is closed, it may still receive a
-  //         "remove" message from the other side (if the other side is closed
-  //         simultaneously, and both sides send "remove" messages). In that
-  //         case, it must still remain alive until it receives the "remove
-  //         ack" (and it must ack the "remove" message that it received).
-  struct EndpointInfo {
-    enum State {
-      // Attached, possibly running or not.
-      STATE_NORMAL,
-      // "Zombie" states:
-      // Waiting for |DetachMessagePipeEndpoint()| before removing.
-      STATE_WAIT_LOCAL_DETACH,
-      // Waiting for a |kSubtypeChannelRemoveMessagePipeEndpointAck| before
-      // removing.
-      STATE_WAIT_REMOTE_REMOVE_ACK,
-    };
-
-    EndpointInfo();
-    EndpointInfo(scoped_refptr<MessagePipe> message_pipe, unsigned port);
-    ~EndpointInfo();
-
-    State state;
-    scoped_refptr<MessagePipe> message_pipe;
-    unsigned port;
-  };
-
   friend class base::RefCountedThreadSafe<Channel>;
   virtual ~Channel();
 
-  // |RawChannel::Delegate| implementation:
+  // |RawChannel::Delegate| implementation (only called on the creation thread):
   virtual void OnReadMessage(
       const MessageInTransit::View& message_view,
-      embedder::ScopedPlatformHandleVectorPtr platform_handles) OVERRIDE;
-  virtual void OnError(Error error) OVERRIDE;
+      embedder::ScopedPlatformHandleVectorPtr platform_handles) override;
+  virtual void OnError(Error error) override;
 
-  // Helpers for |OnReadMessage|:
+  // Helpers for |OnReadMessage| (only called on the creation thread):
   void OnReadMessageForDownstream(
       const MessageInTransit::View& message_view,
       embedder::ScopedPlatformHandleVectorPtr platform_handles);
@@ -236,17 +145,20 @@ class MOJO_SYSTEM_IMPL_EXPORT Channel
 
   // Removes the message pipe endpoint with the given local ID, which must exist
   // and be a zombie, and given remote ID. Returns false on failure, in
-  // particular if no message pipe with |local_id| is attached.
+  // particular if no message pipe with |local_id| is attached. Only called on
+  // the creation thread.
   bool RemoveMessagePipeEndpoint(MessageInTransit::EndpointId local_id,
                                  MessageInTransit::EndpointId remote_id);
 
-  // Handles errors (e.g., invalid messages) from the remote side.
+  // Handles errors (e.g., invalid messages) from the remote side. Callable from
+  // any thread.
   void HandleRemoteError(const base::StringPiece& error_message);
-  // Handles internal errors/failures from the local side.
+  // Handles internal errors/failures from the local side. Callable from any
+  // thread.
   void HandleLocalError(const base::StringPiece& error_message);
 
   // Helper to send channel control messages. Returns true on success. Should be
-  // called *without* |lock_| held.
+  // called *without* |lock_| held. Callable from any thread.
   bool SendControlMessage(MessageInTransit::Subtype subtype,
                           MessageInTransit::EndpointId source_id,
                           MessageInTransit::EndpointId destination_id);
@@ -257,9 +169,8 @@ class MOJO_SYSTEM_IMPL_EXPORT Channel
 
   // Note: |MessagePipe|s MUST NOT be used under |lock_|. I.e., |lock_| can only
   // be acquired after |MessagePipe::lock_|, never before. Thus to call into a
-  // |MessagePipe|, a reference should be acquired from
-  // |local_id_to_endpoint_info_map_| under |lock_| (e.g., by copying the
-  // |EndpointInfo|) and then the lock released.
+  // |MessagePipe|, a reference to the |MessagePipe| should be acquired from
+  // |local_id_to_endpoint_map_| under |lock_| and then the lock released.
   base::Lock lock_;  // Protects the members below.
 
   scoped_ptr<RawChannel> raw_channel_;
@@ -267,9 +178,9 @@ class MOJO_SYSTEM_IMPL_EXPORT Channel
   // Set when |WillShutdownSoon()| is called.
   bool is_shutting_down_;
 
-  typedef base::hash_map<MessageInTransit::EndpointId, EndpointInfo>
-      IdToEndpointInfoMap;
-  IdToEndpointInfoMap local_id_to_endpoint_info_map_;
+  typedef base::hash_map<MessageInTransit::EndpointId,
+                         scoped_refptr<ChannelEndpoint>> IdToEndpointMap;
+  IdToEndpointMap local_id_to_endpoint_map_;
   // The next local ID to try (when allocating new local IDs). Note: It should
   // be checked for existence before use.
   MessageInTransit::EndpointId next_local_id_;

@@ -19,6 +19,7 @@
 #include "ui/app_list/views/search_result_list_view.h"
 #include "ui/app_list/views/start_page_view.h"
 #include "ui/events/event.h"
+#include "ui/gfx/animation/tween.h"
 #include "ui/resources/grit/ui_resources.h"
 #include "ui/views/view_model.h"
 #include "ui/views/view_model_utils.h"
@@ -32,6 +33,8 @@ ContentsView::ContentsView(AppListMainView* app_list_main_view)
       contents_switcher_view_(NULL),
       view_model_(new views::ViewModel),
       page_before_search_(0) {
+  pagination_model_.SetTransitionDurations(kPageTransitionDurationInMs,
+                                           kOverscrollPageTransitionDurationMs);
   pagination_model_.AddObserver(this);
 }
 
@@ -67,10 +70,13 @@ void ContentsView::InitNamedPages(AppListModel* model,
 
   apps_container_view_ = new AppsContainerView(app_list_main_view_, model);
 
-  int initial_page_index = AddLauncherPage(
+  AddLauncherPage(
       apps_container_view_, IDR_APP_LIST_APPS_ICON, NAMED_PAGE_APPS);
-  if (app_list::switches::IsExperimentalAppListEnabled())
-    initial_page_index = GetPageIndexForNamedPage(NAMED_PAGE_START);
+
+  int initial_page_index = app_list::switches::IsExperimentalAppListEnabled()
+                               ? GetPageIndexForNamedPage(NAMED_PAGE_START)
+                               : GetPageIndexForNamedPage(NAMED_PAGE_APPS);
+  DCHECK_GE(initial_page_index, 0);
 
   page_before_search_ = initial_page_index;
   pagination_model_.SelectPage(initial_page_index, false);
@@ -116,20 +122,18 @@ int ContentsView::GetActivePageIndex() const {
 }
 
 bool ContentsView::IsNamedPageActive(NamedPage named_page) const {
-  std::map<NamedPage, int>::const_iterator it =
-      named_page_to_view_.find(named_page);
-  if (it == named_page_to_view_.end())
-    return false;
-  return it->second == GetActivePageIndex();
+  int active_page_index = GetActivePageIndex();
+  return active_page_index >= 0 &&
+         GetPageIndexForNamedPage(named_page) == active_page_index;
 }
 
 int ContentsView::GetPageIndexForNamedPage(NamedPage named_page) const {
   // Find the index of the view corresponding to the given named_page.
   std::map<NamedPage, int>::const_iterator it =
       named_page_to_view_.find(named_page);
-  // GetPageIndexForNamedPage should never be called on a named_page that does
-  // not have a corresponding view.
-  DCHECK(it != named_page_to_view_.end());
+  if (it == named_page_to_view_.end())
+    return -1;
+
   return it->second;
 }
 
@@ -171,6 +175,7 @@ void ContentsView::ShowSearchResults(bool show) {
       app_list::switches::IsExperimentalAppListEnabled()
           ? NAMED_PAGE_START
           : NAMED_PAGE_SEARCH_RESULTS);
+  DCHECK_GE(search_page, 0);
 
   SetActivePageInternal(show ? search_page : page_before_search_, show);
 }
@@ -182,11 +187,19 @@ bool ContentsView::IsShowingSearchResults() const {
              : IsNamedPageActive(NAMED_PAGE_SEARCH_RESULTS);
 }
 
-void ContentsView::UpdatePageBounds() {
-  gfx::Rect rect(GetContentsBounds());
-  if (rect.IsEmpty())
-    return;
+gfx::Rect ContentsView::GetOffscreenPageBounds(int page_index) const {
+  gfx::Rect bounds(GetContentsBounds());
+  // The start page and search page origins are above; all other pages' origins
+  // are below.
+  int page_height = bounds.height();
+  bool origin_above =
+      GetPageIndexForNamedPage(NAMED_PAGE_START) == page_index ||
+      GetPageIndexForNamedPage(NAMED_PAGE_SEARCH_RESULTS) == page_index;
+  bounds.set_y(origin_above ? -page_height : page_height);
+  return bounds;
+}
 
+void ContentsView::UpdatePageBounds() {
   // The bounds calculations will potentially be mid-transition (depending on
   // the state of the PaginationModel).
   int current_page = std::max(0, pagination_model_.selected_page());
@@ -201,20 +214,18 @@ void ContentsView::UpdatePageBounds() {
     }
   }
 
-  gfx::Rect incoming_target(rect);
-  gfx::Rect outgoing_target(rect);
-  int dir = target_page > current_page ? -1 : 1;
+  // Move |current_page| from 0 to its origin. Move |target_page| from its
+  // origin to 0.
+  gfx::Rect on_screen(GetContentsBounds());
+  gfx::Rect current_page_origin(GetOffscreenPageBounds(current_page));
+  gfx::Rect target_page_origin(GetOffscreenPageBounds(target_page));
+  gfx::Rect current_page_rect(
+      gfx::Tween::RectValueBetween(progress, on_screen, current_page_origin));
+  gfx::Rect target_page_rect(
+      gfx::Tween::RectValueBetween(progress, target_page_origin, on_screen));
 
-  // Pages transition vertically.
-  int page_height = rect.height();
-  int transition_offset = progress * page_height * dir;
-
-  outgoing_target.set_y(transition_offset);
-  incoming_target.set_y(dir < 0 ? transition_offset + page_height
-                                : transition_offset - page_height);
-
-  view_model_->view_at(current_page)->SetBoundsRect(outgoing_target);
-  view_model_->view_at(target_page)->SetBoundsRect(incoming_target);
+  view_model_->view_at(current_page)->SetBoundsRect(current_page_rect);
+  view_model_->view_at(target_page)->SetBoundsRect(target_page_rect);
 }
 
 PaginationModel* ContentsView::GetAppsPaginationModel() {
@@ -241,7 +252,7 @@ int ContentsView::AddLauncherPage(views::View* view, int resource_id) {
   int page_index = view_model_->view_size();
   AddChildView(view);
   view_model_->Add(view, page_index);
-  if (contents_switcher_view_)
+  if (contents_switcher_view_ && resource_id)
     contents_switcher_view_->AddSwitcherButton(resource_id, page_index);
   pagination_model_.SetTotalPages(view_model_->view_size());
   return page_index;

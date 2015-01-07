@@ -7,7 +7,6 @@
     {
       # GN version: //mojo/public/c/test_support
       'target_name': 'mojo_test_support',
-      'type': 'shared_library',
       'defines': [
         'MOJO_TEST_SUPPORT_IMPLEMENTATION',
       ],
@@ -27,6 +26,11 @@
         'public/tests/test_support_private.h',
       ],
       'conditions': [
+        ['OS=="ios"', {
+          'type': 'static_library',
+        }, {
+          'type': 'shared_library',
+        }],
         ['OS=="mac"', {
           'xcode_settings': {
             # Make it a run-path dependent library.
@@ -139,11 +143,7 @@
       ],
       'include_dirs': [ '..' ],
       'sources': [
-        'public/c/system/tests/core_unittest.cc',
-        'public/c/system/tests/core_unittest_pure_c.c',
-        'public/c/system/tests/macros_unittest.cc',
-        'public/cpp/system/tests/core_unittest.cc',
-        'public/cpp/system/tests/macros_unittest.cc',
+        '<@(mojo_public_system_unittest_sources)',
       ],
     },
     {
@@ -173,6 +173,7 @@
       ],
     },
     {
+      # GN version: //mojo/public/c/system/tests:perftests
       'target_name': 'mojo_public_system_perftests',
       'type': 'executable',
       'dependencies': [
@@ -192,7 +193,9 @@
       'type': 'static_library',
       'sources': [
         'public/interfaces/bindings/tests/math_calculator.mojom',
+        'public/interfaces/bindings/tests/no_module.mojom',
         'public/interfaces/bindings/tests/rect.mojom',
+        'public/interfaces/bindings/tests/regression_tests.mojom',
         'public/interfaces/bindings/tests/sample_factory.mojom',
         'public/interfaces/bindings/tests/sample_import.mojom',
         'public/interfaces/bindings/tests/sample_import2.mojom',
@@ -217,9 +220,11 @@
       'dependencies': [
         '../gin/gin.gyp:gin_test',
         'mojo_common_test_support',
+        'mojo_environment_standalone',
         'mojo_js_bindings_lib',
         'mojo_public_test_interfaces',
         'mojo_run_all_unittests',
+        'mojo_utility',
       ],
       'sources': [
         'public/js/bindings/tests/run_js_tests.cc',

@@ -10,10 +10,13 @@
 #include "chromecast/common/chromecast_switches.h"
 #include "chromecast/metrics/platform_metrics_providers.h"
 #include "components/metrics/client_info.h"
+#include "components/metrics/gpu/gpu_metrics_provider.h"
 #include "components/metrics/metrics_provider.h"
 #include "components/metrics/metrics_service.h"
 #include "components/metrics/metrics_state_manager.h"
 #include "components/metrics/net/net_metrics_log_uploader.h"
+#include "components/metrics/net/network_metrics_provider.h"
+#include "components/metrics/profiler/profiler_metrics_provider.h"
 
 namespace chromecast {
 namespace metrics {
@@ -31,9 +34,12 @@ scoped_ptr<::metrics::ClientInfo> LoadClientInfo() {
 
 // static
 CastMetricsServiceClient* CastMetricsServiceClient::Create(
+    base::TaskRunner* io_task_runner,
     PrefService* pref_service,
     net::URLRequestContextGetter* request_context) {
-  return new CastMetricsServiceClient(pref_service, request_context);
+  return new CastMetricsServiceClient(io_task_runner,
+                                      pref_service,
+                                      request_context);
 }
 
 void CastMetricsServiceClient::SetMetricsClientId(
@@ -46,6 +52,11 @@ bool CastMetricsServiceClient::IsOffTheRecordSessionActive() {
   // Chromecast behaves as "off the record" w/r/t recording browsing state,
   // but this value is about not disabling metrics because of it.
   return false;
+}
+
+int32_t CastMetricsServiceClient::GetProduct() {
+  // Chromecast currently uses the same product identifier as Chrome.
+  return ::metrics::ChromeUserMetricsExtension::CHROME;
 }
 
 std::string CastMetricsServiceClient::GetApplicationLocale() {
@@ -99,6 +110,15 @@ CastMetricsServiceClient::CreateUploader(
 }
 
 void CastMetricsServiceClient::EnableMetricsService(bool enabled) {
+  if (!metrics_service_loop_->BelongsToCurrentThread()) {
+    metrics_service_loop_->PostTask(
+        FROM_HERE,
+        base::Bind(&CastMetricsServiceClient::EnableMetricsService,
+                   base::Unretained(this),
+                   enabled));
+    return;
+  }
+
   if (enabled) {
     metrics_service_->Start();
   } else {
@@ -107,6 +127,7 @@ void CastMetricsServiceClient::EnableMetricsService(bool enabled) {
 }
 
 CastMetricsServiceClient::CastMetricsServiceClient(
+    base::TaskRunner* io_task_runner,
     PrefService* pref_service,
     net::URLRequestContextGetter* request_context)
     : metrics_state_manager_(::metrics::MetricsStateManager::Create(
@@ -119,6 +140,7 @@ CastMetricsServiceClient::CastMetricsServiceClient(
           metrics_state_manager_.get(),
           this,
           pref_service)),
+      metrics_service_loop_(base::MessageLoopProxy::current()),
       request_context_(request_context) {
   // Always create a client id as it may also be used by crash reporting,
   // (indirectly) included in feedback, and can be queried during setup.
@@ -129,8 +151,15 @@ CastMetricsServiceClient::CastMetricsServiceClient(
   // value.
   metrics_state_manager_->ForceClientIdCreation();
 
-  // TODO(gunsch): Add the following: GPUMetricsProvider,
-  // NetworkMetricsProvider, ProfilerMetricsProvider. See: crbug/404791
+  metrics_service_->RegisterMetricsProvider(
+      scoped_ptr< ::metrics::MetricsProvider>(
+          new ::metrics::GPUMetricsProvider));
+  metrics_service_->RegisterMetricsProvider(
+      scoped_ptr< ::metrics::MetricsProvider>(
+          new NetworkMetricsProvider(io_task_runner)));
+  metrics_service_->RegisterMetricsProvider(
+      scoped_ptr< ::metrics::MetricsProvider>(
+          new ::metrics::ProfilerMetricsProvider));
   RegisterPlatformMetricsProviders(metrics_service_.get());
 
   metrics_service_->InitializeMetricsRecordingState();

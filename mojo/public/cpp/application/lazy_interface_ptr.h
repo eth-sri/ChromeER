@@ -5,18 +5,25 @@
 #ifndef MOJO_PUBLIC_CPP_APPLICATION_LAZY_INTERFACE_PTR_H_
 #define MOJO_PUBLIC_CPP_APPLICATION_LAZY_INTERFACE_PTR_H_
 
-#include <string>
-
 #include "mojo/public/cpp/application/connect.h"
 #include "mojo/public/interfaces/application/service_provider.mojom.h"
 
 namespace mojo {
 
 template<typename Interface>
-class LazyInterfacePtr : InterfacePtr<Interface> {
+class LazyInterfacePtr : public InterfacePtr<Interface> {
  public:
+  LazyInterfacePtr() : service_provider_(nullptr) {}
+
   LazyInterfacePtr(ServiceProvider* service_provider)
       : service_provider_(service_provider) {
+  }
+
+  void set_service_provider(ServiceProvider* service_provider) {
+    if (service_provider != service_provider_) {
+      InterfacePtr<Interface>::reset();
+    }
+    service_provider_ = service_provider;
   }
 
   Interface* get() const {

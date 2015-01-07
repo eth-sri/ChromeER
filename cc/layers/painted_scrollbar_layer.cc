@@ -23,7 +23,7 @@ namespace cc {
 scoped_ptr<LayerImpl> PaintedScrollbarLayer::CreateLayerImpl(
     LayerTreeImpl* tree_impl) {
   return PaintedScrollbarLayerImpl::Create(
-      tree_impl, id(), scrollbar_->Orientation()).PassAs<LayerImpl>();
+      tree_impl, id(), scrollbar_->Orientation());
 }
 
 scoped_refptr<PaintedScrollbarLayer> PaintedScrollbarLayer::Create(
@@ -130,8 +130,12 @@ void PaintedScrollbarLayer::PushPropertiesTo(LayerImpl* layer) {
 
   if (track_resource_.get())
     scrollbar_layer->set_track_ui_resource_id(track_resource_->id());
+  else
+    scrollbar_layer->set_track_ui_resource_id(0);
   if (thumb_resource_.get())
     scrollbar_layer->set_thumb_ui_resource_id(thumb_resource_->id());
+  else
+    scrollbar_layer->set_thumb_ui_resource_id(0);
 
   scrollbar_layer->set_is_overlay_scrollbar(is_overlay_);
 }
@@ -152,8 +156,8 @@ void PaintedScrollbarLayer::SetLayerTreeHost(LayerTreeHost* host) {
   // When the LTH is set to null or has changed, then this layer should remove
   // all of its associated resources.
   if (!host || host != layer_tree_host()) {
-    track_resource_.reset();
-    thumb_resource_.reset();
+    track_resource_ = nullptr;
+    thumb_resource_ = nullptr;
   }
 
   ContentsScalingLayer::SetLayerTreeHost(host);
@@ -192,6 +196,9 @@ void PaintedScrollbarLayer::UpdateThumbAndTrackGeometry() {
   if (has_thumb_) {
     UpdateProperty(scrollbar_->ThumbThickness(), &thumb_thickness_);
     UpdateProperty(scrollbar_->ThumbLength(), &thumb_length_);
+  } else {
+    UpdateProperty(0, &thumb_thickness_);
+    UpdateProperty(0, &thumb_length_);
   }
 }
 
@@ -203,8 +210,22 @@ bool PaintedScrollbarLayer::Update(ResourceUpdateQueue* queue,
   gfx::Rect scaled_track_rect = ScrollbarLayerRectToContentRect(
       track_layer_rect);
 
-  if (track_rect_.IsEmpty() || scaled_track_rect.IsEmpty())
-    return false;
+  bool updated = false;
+
+  if (track_rect_.IsEmpty() || scaled_track_rect.IsEmpty()) {
+    if (track_resource_) {
+      track_resource_ = nullptr;
+      thumb_resource_ = nullptr;
+      SetNeedsPushProperties();
+      updated = true;
+    }
+    return updated;
+  }
+
+  if (!has_thumb_ && thumb_resource_) {
+    thumb_resource_ = nullptr;
+    SetNeedsPushProperties();
+  }
 
   {
     base::AutoReset<bool> ignore_set_needs_commit(&ignore_set_needs_commit_,
@@ -213,7 +234,7 @@ bool PaintedScrollbarLayer::Update(ResourceUpdateQueue* queue,
   }
 
   if (update_rect_.IsEmpty() && track_resource_)
-    return false;
+    return updated;
 
   track_resource_ = ScopedUIResource::Create(
       layer_tree_host(),
@@ -230,7 +251,8 @@ bool PaintedScrollbarLayer::Update(ResourceUpdateQueue* queue,
 
   // UI resources changed so push properties is needed.
   SetNeedsPushProperties();
-  return true;
+  updated = true;
+  return updated;
 }
 
 UIResourceBitmap PaintedScrollbarLayer::RasterizeScrollbarPart(

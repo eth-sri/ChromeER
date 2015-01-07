@@ -37,13 +37,12 @@ EmbeddedWorkerTestHelper::~EmbeddedWorkerTestHelper() {
     wrapper_->Shutdown();
 }
 
-void EmbeddedWorkerTestHelper::SimulateAddProcessToWorker(
-    int embedded_worker_id,
+void EmbeddedWorkerTestHelper::SimulateAddProcessToPattern(
+    const GURL& pattern,
     int process_id) {
-  EmbeddedWorkerInstance* worker = registry()->GetWorker(embedded_worker_id);
-  ASSERT_TRUE(worker);
   registry()->AddChildProcessSender(process_id, this);
-  worker->AddProcessReference(process_id);
+  wrapper_->process_manager()->AddProcessReferenceToPattern(
+      pattern, process_id);
 }
 
 bool EmbeddedWorkerTestHelper::Send(IPC::Message* message) {
@@ -144,16 +143,12 @@ void EmbeddedWorkerTestHelper::OnFetchEvent(
     int embedded_worker_id,
     int request_id,
     const ServiceWorkerFetchRequest& request) {
-  SimulateSend(
-      new ServiceWorkerHostMsg_FetchEventFinished(
-          embedded_worker_id,
-          request_id,
-          SERVICE_WORKER_FETCH_EVENT_RESULT_RESPONSE,
-          ServiceWorkerResponse(GURL(""),
-                                200,
-                                "OK",
-                                std::map<std::string, std::string>(),
-                                std::string())));
+  SimulateSend(new ServiceWorkerHostMsg_FetchEventFinished(
+      embedded_worker_id,
+      request_id,
+      SERVICE_WORKER_FETCH_EVENT_RESULT_RESPONSE,
+      ServiceWorkerResponse(
+          GURL(""), 200, "OK", ServiceWorkerHeaderMap(), std::string())));
 }
 
 void EmbeddedWorkerTestHelper::SimulatePausedAfterDownload(

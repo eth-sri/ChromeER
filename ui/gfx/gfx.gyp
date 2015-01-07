@@ -67,6 +67,10 @@
         'geometry/vector3d_f.cc',
         'geometry/vector3d_f.h',
       ],
+      # TODO(jdduke): Revisit optimization after gauging benefit, crbug/419051.
+      'includes': [
+        '../../build/android/increase_size_for_speed.gypi',
+      ],
     },
     {
       'target_name': 'gfx',
@@ -307,8 +311,14 @@
         'win/window_impl.cc',
         'win/window_impl.h',
       ],
+      'includes': [
+        '../../build/android/increase_size_for_speed.gypi',
+      ],
       'conditions': [
         ['OS=="ios"', {
+          'dependencies': [
+            '<(DEPTH)/ui/ios/ui_ios.gyp:ui_ios',
+          ],
           # iOS only uses a subset of UI.
           'sources/': [
             ['exclude', '^codec/jpeg_codec\\.cc$'],
@@ -423,6 +433,10 @@
       'target_name': 'gfx_test_support',
       'type': 'static_library',
       'sources': [
+        'image/image_unittest_util.cc',
+        'image/image_unittest_util.h',
+        'image/image_unittest_util_ios.mm',
+        'image/image_unittest_util_mac.mm',
         'test/fontconfig_util_linux.cc',
         'test/fontconfig_util_linux.h',
         'test/gfx_util.cc',

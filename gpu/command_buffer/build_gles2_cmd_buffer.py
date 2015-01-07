@@ -2934,13 +2934,18 @@ COMPILE_ASSERT(offsetof(%(cmd_name)s::Result, %(field_name)s) == %(offset)d,
     file.Write("  %s(%s);\n" %
                (func.GetGLFunctionName(), func.MakeOriginalArgString("")))
 
+  def WriteServiceHandlerFunctionHeader(self, func, file):
+    """Writes function header for service implementation handlers."""
+    file.Write("""error::Error GLES2DecoderImpl::Handle%(name)s(
+        uint32_t immediate_data_size, const void* cmd_data) {
+      const gles2::cmds::%(name)s& c =
+          *static_cast<const gles2::cmds::%(name)s*>(cmd_data);
+      (void)c;
+      """ % {'name': func.name})
+
   def WriteServiceImplementation(self, func, file):
     """Writes the service implementation for a command."""
-    file.Write(
-        "error::Error GLES2DecoderImpl::Handle%s(\n" % func.name)
-    file.Write(
-        "    uint32_t immediate_data_size, const gles2::cmds::%s& c) {\n" %
-        func.name)
+    self.WriteServiceHandlerFunctionHeader(func, file)
     self.WriteHandlerExtensionCheck(func, file)
     self.WriteHandlerDeferReadWrite(func, file);
     if len(func.GetOriginalArgs()) > 0:
@@ -2958,11 +2963,7 @@ COMPILE_ASSERT(offsetof(%(cmd_name)s::Result, %(field_name)s) == %(offset)d,
 
   def WriteImmediateServiceImplementation(self, func, file):
     """Writes the service implementation for an immediate version of command."""
-    file.Write(
-        "error::Error GLES2DecoderImpl::Handle%s(\n" % func.name)
-    file.Write(
-        "    uint32_t immediate_data_size, const gles2::cmds::%s& c) {\n" %
-        func.name)
+    self.WriteServiceHandlerFunctionHeader(func, file)
     self.WriteHandlerExtensionCheck(func, file)
     self.WriteHandlerDeferReadWrite(func, file);
     last_arg = func.GetLastOriginalArg()
@@ -2979,11 +2980,7 @@ COMPILE_ASSERT(offsetof(%(cmd_name)s::Result, %(field_name)s) == %(offset)d,
 
   def WriteBucketServiceImplementation(self, func, file):
     """Writes the service implementation for a bucket version of command."""
-    file.Write(
-        "error::Error GLES2DecoderImpl::Handle%s(\n" % func.name)
-    file.Write(
-        "    uint32_t immediate_data_size, const gles2::cmds::%s& c) {\n" %
-        func.name)
+    self.WriteServiceHandlerFunctionHeader(func, file)
     self.WriteHandlerExtensionCheck(func, file)
     self.WriteHandlerDeferReadWrite(func, file);
     last_arg = func.GetLastOriginalArg()
@@ -3723,11 +3720,7 @@ class TodoHandler(CustomHandler):
 
   def WriteServiceImplementation(self, func, file):
     """Overrriden from TypeHandler."""
-    file.Write(
-        "error::Error GLES2DecoderImpl::Handle%s(\n" % func.name)
-    file.Write(
-        "    uint32_t immediate_data_size, const gles2::cmds::%s& c) {\n" %
-        func.name)
+    self.WriteServiceHandlerFunctionHeader(func, file)
     file.Write("  // TODO: for now this is a no-op\n")
     file.Write(
         "  LOCAL_SET_GL_ERROR("
@@ -4739,11 +4732,7 @@ class GETnHandler(TypeHandler):
 
   def WriteServiceImplementation(self, func, file):
     """Overrriden from TypeHandler."""
-    file.Write(
-        "error::Error GLES2DecoderImpl::Handle%s(\n" % func.name)
-    file.Write(
-        "    uint32_t immediate_data_size, const gles2::cmds::%s& c) {\n" %
-        func.name)
+    self.WriteServiceHandlerFunctionHeader(func, file)
     last_arg = func.GetLastOriginalArg()
 
     all_but_last_args = func.GetOriginalArgs()[:-1]
@@ -5749,8 +5738,8 @@ class GLcharNHandler(CustomHandler):
 
   def WriteServiceImplementation(self, func, file):
     """Overrriden from TypeHandler."""
-    file.Write("""error::Error GLES2DecoderImpl::Handle%(name)s(
-  uint32_t immediate_data_size, const gles2::cmds::%(name)s& c) {
+    self.WriteServiceHandlerFunctionHeader(func, file)
+    file.Write("""
   GLuint bucket_id = static_cast<GLuint>(c.%(bucket_id)s);
   Bucket* bucket = GetBucket(bucket_id);
   if (!bucket || bucket->size() == 0) {
@@ -5833,11 +5822,7 @@ TEST_P(%(test_name)s, %(name)sInvalidArgsBadSharedMemoryId) {
 
   def WriteServiceImplementation(self, func, file):
     """Overrriden from TypeHandler."""
-    file.Write(
-        "error::Error GLES2DecoderImpl::Handle%s(\n" % func.name)
-    file.Write(
-        "    uint32_t immediate_data_size, const gles2::cmds::%s& c) {\n" %
-        func.name)
+    self.WriteServiceHandlerFunctionHeader(func, file)
     args = func.GetOriginalArgs()
     for arg in args:
       arg.WriteGetCode(file)
@@ -6961,6 +6946,36 @@ class Function(object):
     else:
       return self.MakeTypedOriginalArgString(prefix, False)
 
+  def MapCTypeToPepperIdlType(self, ctype, is_for_return_type=False):
+    """Converts a C type name to the corresponding Pepper IDL type."""
+    idltype = {
+        'char*': '[out] str_t',
+        'const GLchar* const*': '[out] cstr_t',
+        'const char*': 'cstr_t',
+        'const void*': 'mem_t',
+        'void*': '[out] mem_t',
+        'void**': '[out] mem_ptr_t',
+    }.get(ctype, ctype)
+    # We use "GLxxx_ptr_t" for "GLxxx*".
+    matched = re.match(r'(const )?(GL\w+)\*$', ctype)
+    if matched:
+      idltype = matched.group(2) + '_ptr_t'
+      if not matched.group(1):
+        idltype = '[out] ' + idltype
+    # If an in/out specifier is not specified yet, prepend [in].
+    if idltype[0] != '[':
+      idltype = '[in] ' + idltype
+    # Strip the in/out specifier for a return type.
+    if is_for_return_type:
+      idltype = re.sub(r'\[\w+\] ', '', idltype)
+    return idltype
+
+  def MakeTypedPepperIdlArgStrings(self):
+    """Gets a list of arguments as they need to be for Pepper IDL."""
+    args = self.GetOriginalArgs()
+    return ["%s %s" % (self.MapCTypeToPepperIdlType(arg.type), arg.name)
+            for arg in args]
+
   def GetPepperName(self):
     if self.GetInfo("pepper_name"):
       return self.GetInfo("pepper_name")
@@ -7355,6 +7370,7 @@ class GLGenerator(object):
     self.errors = 0
     self.pepper_interfaces = []
     self.interface_info = {}
+    self.generated_cpp_filenames = []
 
     for interface in _PEPPER_INTERFACES:
       interface = PepperInterface(interface)
@@ -7479,6 +7495,7 @@ class GLGenerator(object):
     file.Write("};\n")
     file.Write("\n")
     file.Close()
+    self.generated_cpp_filenames.append(file.filename)
 
   def WriteFormat(self, filename):
     """Writes the command buffer format"""
@@ -7490,6 +7507,7 @@ class GLGenerator(object):
         func.WriteStruct(file)
     file.Write("\n")
     file.Close()
+    self.generated_cpp_filenames.append(file.filename)
 
   def WriteDocs(self, filename):
     """Writes the command buffer doc version of the commands"""
@@ -7501,6 +7519,7 @@ class GLGenerator(object):
         func.WriteDocs(file)
     file.Write("\n")
     file.Close()
+    self.generated_cpp_filenames.append(file.filename)
 
   def WriteFormatTest(self, filename):
     """Writes the command buffer format test."""
@@ -7517,6 +7536,7 @@ class GLGenerator(object):
         func.WriteFormatTest(file)
 
     file.Close()
+    self.generated_cpp_filenames.append(file.filename)
 
   def WriteCmdHelperHeader(self, filename):
     """Writes the gles2 command helper."""
@@ -7529,6 +7549,7 @@ class GLGenerator(object):
         func.WriteCmdHelper(file)
 
     file.Close()
+    self.generated_cpp_filenames.append(file.filename)
 
   def WriteServiceContextStateHeader(self, filename):
     """Writes the service context state header."""
@@ -7589,6 +7610,7 @@ class GLGenerator(object):
         """)
 
     file.Close()
+    self.generated_cpp_filenames.append(file.filename)
 
   def WriteClientContextStateHeader(self, filename):
     """Writes the client context state header."""
@@ -7602,6 +7624,7 @@ class GLGenerator(object):
     file.Write("};\n\n")
 
     file.Close()
+    self.generated_cpp_filenames.append(file.filename)
 
   def WriteContextStateGetters(self, file, class_name):
     """Writes the state getters."""
@@ -7810,6 +7833,7 @@ void ContextState::InitState(const ContextState *prev_state) const {
 
     self.WriteContextStateGetters(file, "ContextState")
     file.Close()
+    self.generated_cpp_filenames.append(file.filename)
 
   def WriteClientContextStateImpl(self, filename):
     """Writes the context state client side implementation."""
@@ -7859,6 +7883,7 @@ bool ClientContextState::SetCapabilityState(
 }
 """)
     file.Close()
+    self.generated_cpp_filenames.append(file.filename)
 
   def WriteServiceImplementation(self, filename):
     """Writes the service decorder implementation."""
@@ -7905,6 +7930,7 @@ bool GLES2DecoderImpl::SetCapabilityState(GLenum cap, bool enabled) {
 }
 """)
     file.Close()
+    self.generated_cpp_filenames.append(file.filename)
 
   def WriteServiceUnitTests(self, filename):
     """Writes the service decorder unit tests."""
@@ -7939,8 +7965,8 @@ bool GLES2DecoderImpl::SetCapabilityState(GLenum cap, bool enabled) {
             func.WriteServiceUnitTest(file, {
               'test_name': test_name
             })
-
       file.Close()
+      self.generated_cpp_filenames.append(file.filename)
     file = CHeaderWriter(
         filename % 0,
         "// It is included by gles2_cmd_decoder_unittest_base.cc\n")
@@ -8016,6 +8042,7 @@ void GLES2DecoderTestBase::SetupInitStateExpectations() {
     file.Write("""}
 """)
     file.Close()
+    self.generated_cpp_filenames.append(file.filename)
 
   def WriteServiceUnitTestsForExtensions(self, filename):
     """Writes the service decorder unit tests for functions with extension_flag.
@@ -8039,6 +8066,7 @@ void GLES2DecoderTestBase::SetupInitStateExpectations() {
           })
 
     file.Close()
+    self.generated_cpp_filenames.append(file.filename)
 
   def WriteGLES2Header(self, filename):
     """Writes the GLES2 header."""
@@ -8051,6 +8079,7 @@ void GLES2DecoderTestBase::SetupInitStateExpectations() {
 
     file.Write("\n")
     file.Close()
+    self.generated_cpp_filenames.append(file.filename)
 
   def WriteGLES2CLibImplementation(self, filename):
     """Writes the GLES2 c lib implementation."""
@@ -8076,6 +8105,7 @@ extern const NameToFunc g_gles2_function_table[] = {
 }  // namespace gles2
 """)
     file.Close()
+    self.generated_cpp_filenames.append(file.filename)
 
   def WriteGLES2InterfaceHeader(self, filename):
     """Writes the GLES2 interface header."""
@@ -8086,6 +8116,7 @@ extern const NameToFunc g_gles2_function_table[] = {
     for func in self.original_functions:
       func.WriteGLES2InterfaceHeader(file)
     file.Close()
+    self.generated_cpp_filenames.append(file.filename)
 
   def WriteGLES2InterfaceStub(self, filename):
     """Writes the GLES2 interface stub header."""
@@ -8095,6 +8126,7 @@ extern const NameToFunc g_gles2_function_table[] = {
     for func in self.original_functions:
       func.WriteGLES2InterfaceStub(file)
     file.Close()
+    self.generated_cpp_filenames.append(file.filename)
 
   def WriteGLES2InterfaceStubImpl(self, filename):
     """Writes the GLES2 interface header."""
@@ -8104,6 +8136,7 @@ extern const NameToFunc g_gles2_function_table[] = {
     for func in self.original_functions:
       func.WriteGLES2InterfaceStubImpl(file)
     file.Close()
+    self.generated_cpp_filenames.append(file.filename)
 
   def WriteGLES2ImplementationHeader(self, filename):
     """Writes the GLES2 Implementation header."""
@@ -8114,6 +8147,7 @@ extern const NameToFunc g_gles2_function_table[] = {
     for func in self.original_functions:
       func.WriteGLES2ImplementationHeader(file)
     file.Close()
+    self.generated_cpp_filenames.append(file.filename)
 
   def WriteGLES2Implementation(self, filename):
     """Writes the GLES2 Implementation."""
@@ -8124,6 +8158,7 @@ extern const NameToFunc g_gles2_function_table[] = {
     for func in self.original_functions:
       func.WriteGLES2Implementation(file)
     file.Close()
+    self.generated_cpp_filenames.append(file.filename)
 
   def WriteGLES2TraceImplementationHeader(self, filename):
     """Writes the GLES2 Trace Implementation header."""
@@ -8133,6 +8168,7 @@ extern const NameToFunc g_gles2_function_table[] = {
     for func in self.original_functions:
       func.WriteGLES2TraceImplementationHeader(file)
     file.Close()
+    self.generated_cpp_filenames.append(file.filename)
 
   def WriteGLES2TraceImplementation(self, filename):
     """Writes the GLES2 Trace Implementation."""
@@ -8142,6 +8178,7 @@ extern const NameToFunc g_gles2_function_table[] = {
     for func in self.original_functions:
       func.WriteGLES2TraceImplementation(file)
     file.Close()
+    self.generated_cpp_filenames.append(file.filename)
 
   def WriteGLES2ImplementationUnitTests(self, filename):
     """Writes the GLES2 helper header."""
@@ -8152,6 +8189,7 @@ extern const NameToFunc g_gles2_function_table[] = {
     for func in self.original_functions:
       func.WriteGLES2ImplementationUnitTest(file)
     file.Close()
+    self.generated_cpp_filenames.append(file.filename)
 
   def WriteServiceUtilsHeader(self, filename):
     """Writes the gles2 auto generated utility header."""
@@ -8164,6 +8202,7 @@ extern const NameToFunc g_gles2_function_table[] = {
                  (named_type.GetType(), ToUnderscore(name)))
     file.Write("\n")
     file.Close()
+    self.generated_cpp_filenames.append(file.filename)
 
   def WriteServiceUtilsImplementation(self, filename):
     """Writes the gles2 auto generated utility implementation."""
@@ -8199,6 +8238,7 @@ extern const NameToFunc g_gles2_function_table[] = {
     file.Write(" {\n");
     file.Write("}\n\n");
     file.Close()
+    self.generated_cpp_filenames.append(file.filename)
 
   def WriteCommonUtilsHeader(self, filename):
     """Writes the gles2 common utility header."""
@@ -8210,15 +8250,16 @@ extern const NameToFunc g_gles2_function_table[] = {
                    type_info)
     file.Write("\n")
     file.Close()
+    self.generated_cpp_filenames.append(file.filename)
 
   def WriteCommonUtilsImpl(self, filename):
     """Writes the gles2 common utility header."""
     enum_re = re.compile(r'\#define\s+(GL_[a-zA-Z0-9_]+)\s+([0-9A-Fa-fx]+)')
     dict = {}
-    for fname in ['../../third_party/khronos/GLES2/gl2.h',
-                  '../../third_party/khronos/GLES2/gl2ext.h',
-                  '../../gpu/GLES2/gl2chromium.h',
-                  '../../gpu/GLES2/gl2extchromium.h']:
+    for fname in ['third_party/khronos/GLES2/gl2.h',
+                  'third_party/khronos/GLES2/gl2ext.h',
+                  'gpu/GLES2/gl2chromium.h',
+                  'gpu/GLES2/gl2extchromium.h']:
       lines = open(fname).readlines()
       for line in lines:
         m = enum_re.match(line)
@@ -8264,13 +8305,32 @@ const size_t GLES2Util::enum_to_string_table_len_ =
 
 """)
     file.Close()
+    self.generated_cpp_filenames.append(file.filename)
 
   def WritePepperGLES2Interface(self, filename, dev):
     """Writes the Pepper OpenGLES interface definition."""
-    file = CHeaderWriter(
-        filename,
-        "// OpenGL ES interface.\n")
+    file = CWriter(filename)
+    file.Write(_LICENSE)
+    file.Write(_DO_NOT_EDIT_WARNING)
 
+    file.Write("label Chrome {\n")
+    file.Write("  M39 = 1.0\n")
+    file.Write("};\n\n")
+
+    if not dev:
+      # Declare GL types.
+      file.Write("[version=1.0]\n")
+      file.Write("describe {\n")
+      for gltype in ['GLbitfield', 'GLboolean', 'GLbyte', 'GLclampf',
+                     'GLclampx', 'GLenum', 'GLfixed', 'GLfloat', 'GLint',
+                     'GLintptr', 'GLshort', 'GLsizei', 'GLsizeiptr',
+                     'GLubyte', 'GLuint', 'GLushort']:
+        file.Write("  %s;\n" % gltype)
+        file.Write("  %s_ptr_t;\n" % gltype)
+      file.Write("};\n\n")
+
+    # C level typedefs.
+    file.Write("#inline c\n")
     file.Write("#include \"ppapi/c/pp_resource.h\"\n")
     if dev:
       file.Write("#include \"ppapi/c/ppb_opengles2.h\"\n\n")
@@ -8286,28 +8346,29 @@ const size_t GLES2Util::enum_to_string_table_len_ =
         file.Write("typedef %s %s;\n" % (v, k))
       file.Write("#endif  // _WIN64\n")
       file.Write("#endif  // __gl2_h_\n\n")
+    file.Write("#endinl\n")
 
     for interface in self.pepper_interfaces:
       if interface.dev != dev:
         continue
-      file.Write("#define %s_1_0 \"%s;1.0\"\n" %
-                 (interface.GetInterfaceName(), interface.GetInterfaceString()))
-      file.Write("#define %s %s_1_0\n" %
-                 (interface.GetInterfaceName(), interface.GetInterfaceName()))
-
-      file.Write("\nstruct %s {\n" % interface.GetStructName())
+      # Historically, we provide OpenGLES2 interfaces with struct
+      # namespace. Not to break code which uses the interface as
+      # "struct OpenGLES2", we put it in struct namespace.
+      file.Write('\n[macro="%s", force_struct_namespace]\n' %
+                 interface.GetInterfaceName())
+      file.Write("interface %s {\n" % interface.GetStructName())
       for func in self.original_functions:
         if not func.InPepperInterface(interface):
           continue
 
-        original_arg = func.MakeTypedPepperArgString("")
-        context_arg = "PP_Resource context"
-        if len(original_arg):
-          arg = context_arg + ", " + original_arg
-        else:
-          arg = context_arg
-        file.Write("  %s (*%s)(%s);\n" %
-                   (func.return_type, func.GetPepperName(), arg))
+        ret_type = func.MapCTypeToPepperIdlType(func.return_type,
+                                                is_for_return_type=True)
+        func_prefix = "  %s %s(" % (ret_type, func.GetPepperName())
+        file.Write(func_prefix)
+        file.Write("[in] PP_Resource context")
+        for arg in func.MakeTypedPepperIdlArgStrings():
+          file.Write(",\n" + " " * len(func_prefix) + arg)
+        file.Write(");\n")
       file.Write("};\n\n")
 
 
@@ -8387,6 +8448,7 @@ const size_t GLES2Util::enum_to_string_table_len_ =
 
     file.Write("}  // namespace ppapi\n")
     file.Close()
+    self.generated_cpp_filenames.append(file.filename)
 
   def WriteGLES2ToPPAPIBridge(self, filename):
     """Connects GLES2 helper library to PPB_OpenGLES2 interface"""
@@ -8432,6 +8494,7 @@ const size_t GLES2Util::enum_to_string_table_len_ =
                    (return_str, interface_str, func.GetPepperName(), arg))
       file.Write("}\n\n")
     file.Close()
+    self.generated_cpp_filenames.append(file.filename)
 
   def WriteMojoGLCallVisitor(self, filename):
     """Provides the GL implementation for mojo"""
@@ -8448,6 +8511,7 @@ const size_t GLES2Util::enum_to_string_table_len_ =
                               func.MakeOriginalArgString("")))
 
     file.Close()
+    self.generated_cpp_filenames.append(file.filename)
 
   def WriteMojoGLCallVisitorForExtension(self, filename, extension):
     """Provides the GL implementation for mojo for a particular extension"""
@@ -8464,6 +8528,7 @@ const size_t GLES2Util::enum_to_string_table_len_ =
                               func.MakeOriginalArgString("")))
 
     file.Close()
+    self.generated_cpp_filenames.append(file.filename)
 
 def Format(generated_files):
   for filename in generated_files:
@@ -8504,7 +8569,7 @@ def main(argv):
 
   # This script lives under gpu/command_buffer, cd to base directory.
   os.chdir(os.path.dirname(__file__) + "/../..")
-
+  base_dir = os.getcwd()
   gen = GLGenerator(options.verbose)
   gen.ParseGLH("gpu/command_buffer/cmd_buffer_functions.txt")
 
@@ -8512,45 +8577,62 @@ def main(argv):
   if options.output_dir != None:
     os.chdir(options.output_dir)
 
-  gen.WritePepperGLES2Interface("ppapi/c/ppb_opengles2.h", False)
-  gen.WritePepperGLES2Interface("ppapi/c/dev/ppb_opengles2ext_dev.h", True)
+  gen.WritePepperGLES2Interface("ppapi/api/ppb_opengles2.idl", False)
+  gen.WritePepperGLES2Interface("ppapi/api/dev/ppb_opengles2ext_dev.idl", True)
   gen.WriteGLES2ToPPAPIBridge("ppapi/lib/gl/gles2/gles2.c")
   gen.WritePepperGLES2Implementation(
       "ppapi/shared_impl/ppb_opengles2_shared.cc")
-  os.chdir("gpu/command_buffer")
-  gen.WriteCommandIds("common/gles2_cmd_ids_autogen.h")
-  gen.WriteFormat("common/gles2_cmd_format_autogen.h")
-  gen.WriteFormatTest("common/gles2_cmd_format_test_autogen.h")
-  gen.WriteGLES2InterfaceHeader("client/gles2_interface_autogen.h")
-  gen.WriteGLES2InterfaceStub("client/gles2_interface_stub_autogen.h")
+  os.chdir(base_dir)
+  gen.WriteCommandIds("gpu/command_buffer/common/gles2_cmd_ids_autogen.h")
+  gen.WriteFormat("gpu/command_buffer/common/gles2_cmd_format_autogen.h")
+  gen.WriteFormatTest(
+    "gpu/command_buffer/common/gles2_cmd_format_test_autogen.h")
+  gen.WriteGLES2InterfaceHeader(
+    "gpu/command_buffer/client/gles2_interface_autogen.h")
+  gen.WriteGLES2InterfaceStub(
+    "gpu/command_buffer/client/gles2_interface_stub_autogen.h")
   gen.WriteGLES2InterfaceStubImpl(
-      "client/gles2_interface_stub_impl_autogen.h")
-  gen.WriteGLES2ImplementationHeader("client/gles2_implementation_autogen.h")
-  gen.WriteGLES2Implementation("client/gles2_implementation_impl_autogen.h")
+      "gpu/command_buffer/client/gles2_interface_stub_impl_autogen.h")
+  gen.WriteGLES2ImplementationHeader(
+    "gpu/command_buffer/client/gles2_implementation_autogen.h")
+  gen.WriteGLES2Implementation(
+    "gpu/command_buffer/client/gles2_implementation_impl_autogen.h")
   gen.WriteGLES2ImplementationUnitTests(
-      "client/gles2_implementation_unittest_autogen.h")
+      "gpu/command_buffer/client/gles2_implementation_unittest_autogen.h")
   gen.WriteGLES2TraceImplementationHeader(
-      "client/gles2_trace_implementation_autogen.h")
+      "gpu/command_buffer/client/gles2_trace_implementation_autogen.h")
   gen.WriteGLES2TraceImplementation(
-      "client/gles2_trace_implementation_impl_autogen.h")
-  gen.WriteGLES2CLibImplementation("client/gles2_c_lib_autogen.h")
-  gen.WriteCmdHelperHeader("client/gles2_cmd_helper_autogen.h")
-  gen.WriteServiceImplementation("service/gles2_cmd_decoder_autogen.h")
-  gen.WriteServiceContextStateHeader("service/context_state_autogen.h")
-  gen.WriteServiceContextStateImpl("service/context_state_impl_autogen.h")
-  gen.WriteClientContextStateHeader("client/client_context_state_autogen.h")
+      "gpu/command_buffer/client/gles2_trace_implementation_impl_autogen.h")
+  gen.WriteGLES2CLibImplementation(
+    "gpu/command_buffer/client/gles2_c_lib_autogen.h")
+  gen.WriteCmdHelperHeader(
+    "gpu/command_buffer/client/gles2_cmd_helper_autogen.h")
+  gen.WriteServiceImplementation(
+    "gpu/command_buffer/service/gles2_cmd_decoder_autogen.h")
+  gen.WriteServiceContextStateHeader(
+    "gpu/command_buffer/service/context_state_autogen.h")
+  gen.WriteServiceContextStateImpl(
+    "gpu/command_buffer/service/context_state_impl_autogen.h")
+  gen.WriteClientContextStateHeader(
+    "gpu/command_buffer/client/client_context_state_autogen.h")
   gen.WriteClientContextStateImpl(
-      "client/client_context_state_impl_autogen.h")
-  gen.WriteServiceUnitTests("service/gles2_cmd_decoder_unittest_%d_autogen.h")
+      "gpu/command_buffer/client/client_context_state_impl_autogen.h")
+  gen.WriteServiceUnitTests(
+    "gpu/command_buffer/service/gles2_cmd_decoder_unittest_%d_autogen.h")
   gen.WriteServiceUnitTestsForExtensions(
-    "service/gles2_cmd_decoder_unittest_extensions_autogen.h")
-  gen.WriteServiceUtilsHeader("service/gles2_cmd_validation_autogen.h")
+    "gpu/command_buffer/service/"
+    "gles2_cmd_decoder_unittest_extensions_autogen.h")
+  gen.WriteServiceUtilsHeader(
+    "gpu/command_buffer/service/gles2_cmd_validation_autogen.h")
   gen.WriteServiceUtilsImplementation(
-      "service/gles2_cmd_validation_implementation_autogen.h")
-  gen.WriteCommonUtilsHeader("common/gles2_cmd_utils_autogen.h")
-  gen.WriteCommonUtilsImpl("common/gles2_cmd_utils_implementation_autogen.h")
-  gen.WriteGLES2Header("../GLES2/gl2chromium_autogen.h")
-  mojo_gles2_prefix = "../../mojo/public/c/gles2/gles2_call_visitor"
+    "gpu/command_buffer/service/"
+    "gles2_cmd_validation_implementation_autogen.h")
+  gen.WriteCommonUtilsHeader(
+    "gpu/command_buffer/common/gles2_cmd_utils_autogen.h")
+  gen.WriteCommonUtilsImpl(
+    "gpu/command_buffer/common/gles2_cmd_utils_implementation_autogen.h")
+  gen.WriteGLES2Header("gpu/GLES2/gl2chromium_autogen.h")
+  mojo_gles2_prefix = "mojo/public/c/gles2/gles2_call_visitor"
   gen.WriteMojoGLCallVisitor(mojo_gles2_prefix + "_autogen.h")
   gen.WriteMojoGLCallVisitorForExtension(
       mojo_gles2_prefix + "_chromium_texture_mailbox_autogen.h",
@@ -8559,44 +8641,7 @@ def main(argv):
       mojo_gles2_prefix + "_chromium_sync_point_autogen.h",
       "CHROMIUM_sync_point")
 
-  Format([
-      "common/gles2_cmd_format_autogen.h",
-      "common/gles2_cmd_format_test_autogen.h",
-      "common/gles2_cmd_ids_autogen.h",
-      "common/gles2_cmd_utils_autogen.h",
-      "common/gles2_cmd_utils_implementation_autogen.h",
-      "client/client_context_state_autogen.h",
-      "client/client_context_state_impl_autogen.h",
-      "client/gles2_cmd_helper_autogen.h",
-      "client/gles2_c_lib_autogen.h",
-      "client/gles2_implementation_autogen.h",
-      "client/gles2_implementation_impl_autogen.h",
-      "client/gles2_implementation_unittest_autogen.h",
-      "client/gles2_interface_autogen.h",
-      "client/gles2_interface_stub_autogen.h",
-      "client/gles2_interface_stub_impl_autogen.h",
-      "client/gles2_trace_implementation_autogen.h",
-      "client/gles2_trace_implementation_impl_autogen.h",
-      "service/context_state_autogen.h",
-      "service/context_state_impl_autogen.h",
-      "service/gles2_cmd_decoder_autogen.h",
-      "service/gles2_cmd_decoder_unittest_0_autogen.h",
-      "service/gles2_cmd_decoder_unittest_1_autogen.h",
-      "service/gles2_cmd_decoder_unittest_2_autogen.h",
-      "service/gles2_cmd_decoder_unittest_3_autogen.h",
-      "service/gles2_cmd_validation_autogen.h",
-      "service/gles2_cmd_validation_implementation_autogen.h"])
-  os.chdir("../..")
-  mojo_gles2_prefix = "mojo/public/c/gles2/gles2_call_visitor"
-  Format([
-      "gpu/GLES2/gl2chromium_autogen.h",
-      mojo_gles2_prefix + "_autogen.h",
-      mojo_gles2_prefix + "_chromium_texture_mailbox_autogen.h",
-      mojo_gles2_prefix + "_chromium_sync_point_autogen.h",
-      "ppapi/c/dev/ppb_opengles2ext_dev.h",
-      "ppapi/c/ppb_opengles2.h",
-      "ppapi/lib/gl/gles2/gles2.c",
-      "ppapi/shared_impl/ppb_opengles2_shared.cc"])
+  Format(gen.generated_cpp_filenames)
 
   if gen.errors > 0:
     print "%d errors" % gen.errors

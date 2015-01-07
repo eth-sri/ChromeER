@@ -11,11 +11,13 @@
 namespace net {
 class HttpTransactionFactory;
 class HttpUserAgentSettings;
+class ProxyConfigService;
 class URLRequestJobFactory;
 }  // namespace net
 
 namespace chromecast {
 namespace shell {
+class CastNetworkDelegate;
 
 class URLRequestContextFactory {
  public:
@@ -41,6 +43,14 @@ class URLRequestContextFactory {
       content::URLRequestInterceptorScopedVector request_interceptors);
   net::URLRequestContextGetter* GetMainGetter();
   net::URLRequestContextGetter* GetMediaGetter();
+
+  CastNetworkDelegate* app_network_delegate() const {
+    return app_network_delegate_.get();
+  }
+
+  // Initialize the CastNetworkDelegate objects. This needs to be done
+  // after the CastService is created, but before any URL requests are made.
+  void InitializeNetworkDelegates();
 
  private:
   class URLRequestContextGetter;
@@ -71,6 +81,8 @@ class URLRequestContextFactory {
   scoped_refptr<net::URLRequestContextGetter> system_getter_;
   scoped_refptr<net::URLRequestContextGetter> media_getter_;
   scoped_refptr<net::URLRequestContextGetter> main_getter_;
+  scoped_ptr<CastNetworkDelegate> app_network_delegate_;
+  scoped_ptr<CastNetworkDelegate> system_network_delegate_;
 
   // Shared objects for all contexts.
   // The URLRequestContextStorage class is not used as owner to these objects
@@ -83,11 +95,13 @@ class URLRequestContextFactory {
   scoped_ptr<net::CertVerifier> cert_verifier_;
   scoped_refptr<net::SSLConfigService> ssl_config_service_;
   scoped_ptr<net::TransportSecurityState> transport_security_state_;
+  scoped_ptr<net::ProxyConfigService> proxy_config_service_;
   scoped_ptr<net::ProxyService> proxy_service_;
   scoped_ptr<net::HttpAuthHandlerFactory> http_auth_handler_factory_;
   scoped_ptr<net::HttpServerProperties> http_server_properties_;
   scoped_ptr<net::HttpUserAgentSettings> http_user_agent_settings_;
   scoped_ptr<net::HttpTransactionFactory> system_transaction_factory_;
+  scoped_ptr<net::URLRequestJobFactory> system_job_factory_;
 
   bool main_dependencies_initialized_;
   scoped_ptr<net::HttpTransactionFactory> main_transaction_factory_;

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "chrome/browser/extensions/api/declarative_webrequest/webrequest_action.h"
+#include "extensions/browser/api/declarative_webrequest/webrequest_action.h"
 
 #include "base/files/file_path.h"
 #include "base/json/json_file_value_serializer.h"
@@ -13,18 +13,19 @@
 #include "base/test/values_test_util.h"
 #include "base/time/time.h"
 #include "base/values.h"
-#include "chrome/browser/extensions/api/declarative_webrequest/request_stage.h"
-#include "chrome/browser/extensions/api/declarative_webrequest/webrequest_condition.h"
-#include "chrome/browser/extensions/api/declarative_webrequest/webrequest_constants.h"
-#include "chrome/browser/extensions/api/web_request/web_request_api_helpers.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_test_util.h"
 #include "content/public/test/test_browser_thread_bundle.h"
+#include "extensions/browser/api/declarative_webrequest/request_stage.h"
+#include "extensions/browser/api/declarative_webrequest/webrequest_condition.h"
+#include "extensions/browser/api/declarative_webrequest/webrequest_constants.h"
+#include "extensions/browser/api/web_request/web_request_api_helpers.h"
 #include "extensions/browser/info_map.h"
 #include "extensions/common/extension.h"
 #include "net/base/request_priority.h"
 #include "net/http/http_response_headers.h"
+#include "net/url_request/url_request.h"
 #include "net/url_request/url_request_test_util.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -140,12 +141,12 @@ bool WebRequestActionWithThreadsTest::ActionWorksOnRequest(
     const std::string& extension_id,
     const WebRequestActionSet* action_set,
     RequestStage stage) {
-  net::TestURLRequest regular_request(
-      GURL(url_string), net::DEFAULT_PRIORITY, NULL, &context_);
+  scoped_ptr<net::URLRequest> regular_request(context_.CreateRequest(
+      GURL(url_string), net::DEFAULT_PRIORITY, NULL, NULL));
   std::list<LinkedPtrEventResponseDelta> deltas;
   scoped_refptr<net::HttpResponseHeaders> headers(
       new net::HttpResponseHeaders(""));
-  WebRequestData request_data(&regular_request, stage, headers.get());
+  WebRequestData request_data(regular_request.get(), stage, headers.get());
   std::set<std::string> ignored_tags;
   WebRequestAction::ApplyInfo apply_info = { extension_info_map_.get(),
                                              request_data,

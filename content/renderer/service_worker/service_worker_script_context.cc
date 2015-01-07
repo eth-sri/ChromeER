@@ -4,9 +4,9 @@
 
 #include "content/renderer/service_worker/service_worker_script_context.h"
 
-#include <map>
-
+#include "base/debug/trace_event.h"
 #include "base/logging.h"
+#include "base/metrics/histogram.h"
 #include "content/child/thread_safe_sender.h"
 #include "content/child/webmessageportchannel_impl.h"
 #include "content/common/service_worker/service_worker_messages.h"
@@ -32,6 +32,11 @@ void SendPostMessageToDocumentOnMainThread(
   sender->Send(new ServiceWorkerHostMsg_PostMessageToDocument(
       routing_id, client_id, message,
       WebMessagePortChannelImpl::ExtractMessagePortIDs(channels.release())));
+}
+
+blink::WebURLRequest::FetchRequestMode GetBlinkFetchRequestMode(
+    FetchRequestMode mode) {
+  return static_cast<blink::WebURLRequest::FetchRequestMode>(mode);
 }
 
 }  // namespace
@@ -72,6 +77,11 @@ void ServiceWorkerScriptContext::OnMessageReceived(
 void ServiceWorkerScriptContext::DidHandleActivateEvent(
     int request_id,
     blink::WebServiceWorkerEventResult result) {
+  UMA_HISTOGRAM_TIMES(
+      "ServiceWorker.ActivateEventExecutionTime",
+      base::TimeTicks::Now() - activate_start_timings_[request_id]);
+  activate_start_timings_.erase(request_id);
+
   Send(new ServiceWorkerHostMsg_ActivateEventFinished(
       GetRoutingID(), request_id, result));
 }
@@ -79,6 +89,11 @@ void ServiceWorkerScriptContext::DidHandleActivateEvent(
 void ServiceWorkerScriptContext::DidHandleInstallEvent(
     int request_id,
     blink::WebServiceWorkerEventResult result) {
+  UMA_HISTOGRAM_TIMES(
+      "ServiceWorker.InstallEventExecutionTime",
+      base::TimeTicks::Now() - install_start_timings_[request_id]);
+  install_start_timings_.erase(request_id);
+
   Send(new ServiceWorkerHostMsg_InstallEventFinished(
       GetRoutingID(), request_id, result));
 }
@@ -87,6 +102,11 @@ void ServiceWorkerScriptContext::DidHandleFetchEvent(
     int request_id,
     ServiceWorkerFetchEventResult result,
     const ServiceWorkerResponse& response) {
+  UMA_HISTOGRAM_TIMES(
+      "ServiceWorker.FetchEventExecutionTime",
+      base::TimeTicks::Now() - fetch_start_timings_[request_id]);
+  fetch_start_timings_.erase(request_id);
+
   Send(new ServiceWorkerHostMsg_FetchEventFinished(
       GetRoutingID(), request_id, result, response));
 }
@@ -128,11 +148,17 @@ int ServiceWorkerScriptContext::GetRoutingID() const {
 }
 
 void ServiceWorkerScriptContext::OnActivateEvent(int request_id) {
+  TRACE_EVENT0("ServiceWorker",
+               "ServiceWorkerScriptContext::OnActivateEvent");
+  activate_start_timings_[request_id] = base::TimeTicks::Now();
   proxy_->dispatchActivateEvent(request_id);
 }
 
 void ServiceWorkerScriptContext::OnInstallEvent(int request_id,
                                                 int active_version_id) {
+  TRACE_EVENT0("ServiceWorker",
+               "ServiceWorkerScriptContext::OnInstallEvent");
+  install_start_timings_[request_id] = base::TimeTicks::Now();
   proxy_->dispatchInstallEvent(request_id);
 }
 
@@ -140,10 +166,11 @@ void ServiceWorkerScriptContext::OnFetchEvent(
     int request_id,
     const ServiceWorkerFetchRequest& request) {
   blink::WebServiceWorkerRequest webRequest;
+  TRACE_EVENT0("ServiceWorker",
+               "ServiceWorkerScriptContext::OnFetchEvent");
   webRequest.setURL(blink::WebURL(request.url));
   webRequest.setMethod(blink::WebString::fromUTF8(request.method));
-  for (std::map<std::string, std::string>::const_iterator it =
-           request.headers.begin();
+  for (ServiceWorkerHeaderMap::const_iterator it = request.headers.begin();
        it != request.headers.end();
        ++it) {
     webRequest.setHeader(blink::WebString::fromUTF8(it->first),
@@ -155,16 +182,22 @@ void ServiceWorkerScriptContext::OnFetchEvent(
   }
   webRequest.setReferrer(blink::WebString::fromUTF8(request.referrer.spec()),
                          blink::WebReferrerPolicyDefault);
+  webRequest.setMode(GetBlinkFetchRequestMode(request.mode));
   webRequest.setIsReload(request.is_reload);
+  fetch_start_timings_[request_id] = base::TimeTicks::Now();
   proxy_->dispatchFetchEvent(request_id, webRequest);
 }
 
 void ServiceWorkerScriptContext::OnSyncEvent(int request_id) {
+  TRACE_EVENT0("ServiceWorker",
+               "ServiceWorkerScriptContext::OnSyncEvent");
   proxy_->dispatchSyncEvent(request_id);
 }
 
 void ServiceWorkerScriptContext::OnPushEvent(int request_id,
                                              const std::string& data) {
+  TRACE_EVENT0("ServiceWorker",
+               "ServiceWorkerScriptContext::OnPushEvent");
   proxy_->dispatchPushEvent(request_id, blink::WebString::fromUTF8(data));
   Send(new ServiceWorkerHostMsg_PushEventFinished(
       GetRoutingID(), request_id));
@@ -174,6 +207,8 @@ void ServiceWorkerScriptContext::OnPostMessage(
     const base::string16& message,
     const std::vector<int>& sent_message_port_ids,
     const std::vector<int>& new_routing_ids) {
+  TRACE_EVENT0("ServiceWorker",
+               "ServiceWorkerScriptContext::OnPostEvent");
   std::vector<WebMessagePortChannelImpl*> ports;
   if (!sent_message_port_ids.empty()) {
     base::MessageLoopProxy* loop_proxy = embedded_context_->main_thread_proxy();
@@ -189,6 +224,8 @@ void ServiceWorkerScriptContext::OnPostMessage(
 
 void ServiceWorkerScriptContext::OnDidGetClientDocuments(
     int request_id, const std::vector<int>& client_ids) {
+  TRACE_EVENT0("ServiceWorker",
+               "ServiceWorkerScriptContext::OnDidGetClientDocuments");
   blink::WebServiceWorkerClientsCallbacks* callbacks =
       pending_clients_callbacks_.Lookup(request_id);
   if (!callbacks) {

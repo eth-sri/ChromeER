@@ -7,19 +7,10 @@
     '<@(schema_files)',
   ],
   'variables': {
-    # These duplicate other lists and are the only ones used on Android. They
-    # should be eliminated. See crbug.com/305852.
-    'android_schema_files': [
-      'manifest_types.json',
-    ],
-
-    # These are used everywhere except Android.
     'main_schema_files': [
       'accessibility_private.json',
       'activity_log_private.json',
       'alarms.idl',
-      'app_current_window_internal.idl',
-      'app_window.idl',
       'audio.idl',
       'automation.idl',
       'automation_internal.idl',
@@ -28,6 +19,7 @@
       'bookmarks.json',
       'braille_display_private.idl',
       'browser.idl',
+      'chrome_web_view_internal.json',
       'cloud_print_private.json',
       'command_line_private.json',
       'content_settings.json',
@@ -45,12 +37,10 @@
       'easy_unlock_private.idl',
       'echo_private.json',
       'enterprise_platform_keys_private.json',
-      'events.json',
       'experience_sampling_private.json',
-      'extension_options_internal.idl',
       'feedback_private.idl',
-      'file_browser_private.idl',
-      'file_browser_private_internal.idl',
+      'file_manager_private.idl',
+      'file_manager_private_internal.idl',
       'file_system.idl',
       'file_system_provider.idl',
       'file_system_provider_internal.idl',
@@ -88,27 +78,20 @@
       'streams_private.idl',
       'synced_notifications_private.idl',
       'sync_file_system.idl',
-      'system_cpu.idl',
-      'system_display.idl',
       'system_indicator.idl',
-      'system_memory.idl',
-      'system_network.idl',
       'system_private.json',
-      'system_storage.idl',
       'tab_capture.idl',
       'tabs.json',
       'terminal_private.json',
       'types.json',
       'virtual_keyboard_private.json',
       'web_navigation.json',
-      'web_request.json',
       # Despite the name, this API does not rely on any
       # WebRTC-specific bits and as such does not belong in
       # the enable_webrtc==0 section below.
       'webrtc_audio_private.idl',
       'webrtc_logging_private.idl',
       'webstore_private.json',
-      'web_view_internal.json',
       'windows.json',
     ],
     'main_schema_include_rules': [
@@ -124,7 +107,6 @@
       'music_manager_private.idl',
       'principals_private.idl',
       'top_sites.json',
-      'web_request_internal.json',
     ],
 
     # ChromeOS-specific schemas.
@@ -151,6 +133,9 @@
     # Disable schema compiler to generate model extension API code.
     # Only register the extension functions in extension system.
     'conditions': [
+      # TODO(thestig): Remove this file from non-extensions build so the
+      # conditional and else branch goes away.
+      # Do the same for chrome/common/extensions/api/schemas.gni.
       ['enable_extensions==1', {
         'non_compiled_schema_files': [
           '<@(main_non_compiled_schema_files)',
@@ -170,8 +155,6 @@
         'schema_dependencies': [
         ],
         'schema_files': [
-          # These should be eliminated. See crbug.com/305852.
-          '<@(android_schema_files)',
         ],
       }],
       ['chromeos==1', {

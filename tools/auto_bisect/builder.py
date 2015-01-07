@@ -39,6 +39,9 @@ class Builder(object):
           raise RuntimeError(
               'Path to visual studio could not be determined.')
       else:
+        # Need to re-escape goma dir, see crbug.com/394990.
+        if opts.goma_dir:
+          opts.goma_dir = opts.goma_dir.encode('string_escape')
         SetBuildSystemDefault(opts.build_preference, opts.use_goma,
                               opts.goma_dir)
     else:

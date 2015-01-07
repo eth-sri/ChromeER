@@ -56,6 +56,7 @@ const char kImeOptionsPage[] = "options_page";
 const char kImport[] = "import";
 const char kIncognito[] = "incognito";
 const char kIncludeGlobs[] = "include_globs";
+const char kIndicator[] = "indicator";
 const char kInputComponents[] = "input_components";
 const char kInputView[] = "input_view";
 const char kIsolation[] = "app.isolation";
@@ -83,6 +84,7 @@ const char kMinimumVersion[] = "minimum_version";
 const char kMIMETypes[] = "mime_types";
 const char kMimeTypesHandler[] = "mime_types_handler";
 const char kName[] = "name";
+const char kNaClArch[] = "nacl_arch";
 const char kNaClModules[] = "nacl_modules";
 const char kNaClModulesMIMEType[] = "mime_type";
 const char kNaClModulesPath[] = "path";
@@ -95,6 +97,7 @@ const char kOmnibox[] = "omnibox";
 const char kOmniboxKeyword[] = "omnibox.keyword";
 const char kOptionalPermissions[] = "optional_permissions";
 const char kOptionsPage[] = "options_page";
+const char kOptionsUI[] = "options_ui";
 const char kOverrideHomepage[] = "chrome_settings_overrides.homepage";
 const char kOverrideSearchProvider[] =
     "chrome_settings_overrides.search_provider";
@@ -113,6 +116,7 @@ const char kPlatformAppBackground[] = "app.background";
 const char kPlatformAppBackgroundPage[] = "app.background.page";
 const char kPlatformAppBackgroundScripts[] = "app.background.scripts";
 const char kPlatformAppContentSecurityPolicy[] = "app.content_security_policy";
+const char kPlatforms[] = "platforms";
 const char kPlugins[] = "plugins";
 const char kPluginsPath[] = "path";
 const char kPluginsPublic[] = "public";
@@ -138,6 +142,7 @@ const char kSpellcheckDictionaryLanguage[] = "dictionary_language";
 const char kSpellcheckDictionaryLocale[] = "dictionary_locale";
 const char kSpellcheckDictionaryPath[] = "dictionary_path";
 const char kStorageManagedSchema[] = "storage.managed_schema";
+const char kSubPackagePath[] = "sub_package_path";
 const char kSuggestedKey[] = "suggested_key";
 const char kSynthesizeBrowserAction[] = "_synthesize_browser_action";
 const char kSystemIndicator[] = "system_indicator";
@@ -513,13 +518,16 @@ const char kInvalidOfflineEnabled[] =
     "Invalid value for 'offline_enabled'.";
 const char kInvalidOmniboxKeyword[] =
     "Invalid value for 'omnibox.keyword'.";
-const char kInvalidOptionsPage[] =
-    "Invalid value for 'options_page'.";
+const char kInvalidOptionsPage[] = "Invalid value for '*'.";
 const char kInvalidOptionsPageExpectUrlInPackage[] =
     "Invalid value for 'options_page'.  Value must be a relative path.";
 const char kInvalidOptionsPageInHostedApp[] =
     "Invalid value for 'options_page'. Hosted apps must specify an "
     "absolute URL.";
+const char kInvalidOptionsUIChromeStyle[] =
+    "Invalid value for 'options_ui.chrome_style'.";
+const char kInvalidOptionsUIOpenInTab[] =
+    "Invalid value for 'options_ui.open_in_tab'.";
 const char kInvalidPageAction[] =
     "Invalid value for 'page_action'.";
 const char kInvalidPageActionDefaultTitle[] =

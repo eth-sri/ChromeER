@@ -2,10 +2,13 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import atexit
 import cgi
 import ConfigParser
 import json
 import os
+import Queue
+import threading
 import time
 
 from common import utils
@@ -13,6 +16,83 @@ from result import Result
 
 
 INFINITY = float('inf')
+
+MAX_THREAD_NUMBER = 10
+TASK_QUEUE = None
+
+
+def SignalWorkerThreads():
+  global TASK_QUEUE
+  if not TASK_QUEUE:
+    return
+
+  for i in range(MAX_THREAD_NUMBER):
+    TASK_QUEUE.put(None)
+
+  # Give worker threads a chance to exit.
+  # Workaround the harmless bug in python 2.7 below.
+  time.sleep(1)
+
+
+atexit.register(SignalWorkerThreads)
+
+
+def Worker():
+  global TASK_QUEUE
+  while True:
+    try:
+      task = TASK_QUEUE.get()
+      if not task:
+        return
+    except TypeError:
+      # According to http://bugs.python.org/issue14623, this is a harmless bug
+      # in python 2.7 which won't be fixed.
+      # The exception is raised on daemon threads when python interpreter is
+      # shutting down.
+      return
+
+    function, args, kwargs, result_semaphore = task
+    try:
+      function(*args, **kwargs)
+    except:
+      pass
+    finally:
+      # Signal one task is done in case of exception.
+      result_semaphore.release()
+
+
+def RunTasks(tasks):
+  """Run given tasks. Not thread-safe: no concurrent calls of this function.
+
+  Return after all tasks were completed. A task is a dict as below:
+    {
+      'function': the function to call,
+      'args': the positional argument to pass to the function,
+      'kwargs': the key-value arguments to pass to the function,
+    }
+  """
+  if not tasks:
+    return
+
+  global TASK_QUEUE
+  if not TASK_QUEUE:
+    TASK_QUEUE = Queue.Queue()
+    for index in range(MAX_THREAD_NUMBER):
+      thread = threading.Thread(target=Worker, name='worker_%s' % index)
+      # Set as daemon, so no join is needed.
+      thread.daemon = True
+      thread.start()
+
+  result_semaphore = threading.Semaphore(0)
+  # Push task to task queue for execution.
+  for task in tasks:
+    TASK_QUEUE.put(
+        (task['function'], task.get('args', []),
+         task.get('kwargs', {}), result_semaphore))
+
+  # Wait until all tasks to be executed.
+  for _ in tasks:
+    result_semaphore.acquire()
 
 
 def GetRepositoryType(revision_number):
@@ -213,39 +293,22 @@ def LoadJSON(json_string):
   return data
 
 
-def GetDataFromURL(url, retries=10, sleep_time=0.1, timeout=5):
+def GetDataFromURL(url):
   """Retrieves raw data from URL, tries 10 times.
 
   Args:
     url: URL to get data from.
     retries: Number of times to retry connection.
-    sleep_time: Time in seconds to wait before retrying connection.
-    timeout: Time in seconds to wait before time out.
 
   Returns:
     None if the data retrieval fails, or the raw data.
   """
-  count = 0
-  while True:
-    count += 1
-    # Retrieves data from URL.
-    try:
-      status_code, data = utils.GetHttpClient().Get(url, timeout=timeout)
-    except IOError as e:
-      status_code = -1
-      data = None
-
-    if status_code == 200:
-      return data
-
-    if count < retries:
-      # If retrieval fails, try after sleep_time second.
-      time.sleep(sleep_time)
-    else:
-      break
-
-  # Return None if it fails to read data from URL 'retries' times.
-  return None
+  status_code, data = utils.GetHttpClient().Get(url, retries=10)
+  if status_code == 200:
+    return data
+  else:
+    # Return None if it fails to read data.
+    return None
 
 
 def FindMinLineDistance(crashed_line_list, changed_line_numbers,

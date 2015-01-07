@@ -20,6 +20,7 @@ class Size;
 
 namespace cc {
 
+class BlockingTaskRunner;
 class DirectRenderer;
 class DisplayClient;
 class OutputSurface;
@@ -29,6 +30,7 @@ class Surface;
 class SurfaceAggregator;
 class SurfaceIdAllocator;
 class SurfaceFactory;
+class TextureMailboxDeleter;
 
 // A Display produces a surface that can be used to draw to a physical display
 // (OutputSurface). The client is responsible for creating and sizing the
@@ -46,16 +48,17 @@ class CC_SURFACES_EXPORT Display : public OutputSurfaceClient,
   bool Draw();
 
   SurfaceId CurrentSurfaceId();
+  int GetMaxFramesPending();
 
   // OutputSurfaceClient implementation.
   virtual void DeferredInitialize() OVERRIDE {}
   virtual void ReleaseGL() OVERRIDE {}
   virtual void CommitVSyncParameters(base::TimeTicks timebase,
-                                     base::TimeDelta interval) OVERRIDE {}
+                                     base::TimeDelta interval) OVERRIDE;
   virtual void SetNeedsRedrawRect(const gfx::Rect& damage_rect) OVERRIDE {}
   virtual void BeginFrame(const BeginFrameArgs& args) OVERRIDE {}
-  virtual void DidSwapBuffers() OVERRIDE {}
-  virtual void DidSwapBuffersComplete() OVERRIDE {}
+  virtual void DidSwapBuffers() OVERRIDE;
+  virtual void DidSwapBuffersComplete() OVERRIDE;
   virtual void ReclaimResources(const CompositorFrameAck* ack) OVERRIDE {}
   virtual void DidLoseOutputSurface() OVERRIDE {}
   virtual void SetExternalDrawConstraints(
@@ -88,6 +91,8 @@ class CC_SURFACES_EXPORT Display : public OutputSurfaceClient,
   scoped_ptr<ResourceProvider> resource_provider_;
   scoped_ptr<SurfaceAggregator> aggregator_;
   scoped_ptr<DirectRenderer> renderer_;
+  scoped_ptr<BlockingTaskRunner> blocking_main_thread_task_runner_;
+  scoped_ptr<TextureMailboxDeleter> texture_mailbox_deleter_;
 
   DISALLOW_COPY_AND_ASSIGN(Display);
 };

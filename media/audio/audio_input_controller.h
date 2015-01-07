@@ -285,7 +285,7 @@ class MEDIA_EXPORT AudioInputController
   void DoSetVolume(double volume);
   void DoSetAutomaticGainControl(bool enabled);
   void DoOnData(scoped_ptr<AudioBus> data);
-  void DoLogAudioLevel(float level_dbfs);
+  void DoLogAudioLevels(float level_dbfs, int microphone_volume_percent);
 
   // Method to check if we get recorded data after a stream was started,
   // and log the result to UMA.
@@ -368,6 +368,9 @@ class MEDIA_EXPORT AudioInputController
 #endif
 
   size_t prev_key_down_count_;
+
+  // Time when a low-latency stream is created.
+  base::TimeTicks low_latency_create_time_;
 
   DISALLOW_COPY_AND_ASSIGN(AudioInputController);
 };

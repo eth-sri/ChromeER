@@ -4,17 +4,19 @@
 
 #include "chrome/browser/sync_file_system/drive_backend/metadata_db_migration_util.h"
 
+#include <string>
+
 #include "base/files/scoped_temp_dir.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "chrome/browser/sync_file_system/drive_backend/drive_backend_constants.h"
 #include "chrome/browser/sync_file_system/syncable_file_system_util.h"
+#include "storage/browser/fileapi/external_mount_points.h"
+#include "storage/common/fileapi/file_system_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/leveldatabase/src/include/leveldb/db.h"
 #include "third_party/leveldatabase/src/include/leveldb/write_batch.h"
 #include "url/gurl.h"
-#include "webkit/browser/fileapi/external_mount_points.h"
-#include "webkit/common/fileapi/file_system_util.h"
 
 #define FPL FILE_PATH_LITERAL
 
@@ -65,7 +67,7 @@ TEST(DriveMetadataDBMigrationUtilTest, RollbackFromV4ToV3) {
   const char kDemotedDirtyIDKeyPrefix[] = "DEMOTED_DIRTY: ";
 
   // Set up environment.
-  leveldb::DB* db_ptr = NULL;
+  leveldb::DB* db_ptr = nullptr;
   base::ScopedTempDir base_dir;
   ASSERT_TRUE(base_dir.CreateUniqueTempDir());
   {

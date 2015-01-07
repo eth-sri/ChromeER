@@ -17,14 +17,13 @@
 #import "chrome/browser/app_controller_mac.h"
 #include "chrome/browser/apps/app_browsertest_util.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/extensions/extension_test_message_listener.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window.h"
-#import "chrome/browser/ui/cocoa/profiles/user_manager_mac.h"
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "chrome/browser/ui/user_manager.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
@@ -35,6 +34,7 @@
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/app_window/app_window_registry.h"
 #include "extensions/common/extension.h"
+#include "extensions/test/extension_test_message_listener.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 
 namespace {
@@ -222,7 +222,7 @@ IN_PROC_BROWSER_TEST_F(AppControllerNewProfileManagementBrowserTest,
 
   EXPECT_FALSE(result);
   EXPECT_EQ(2u, active_browser_list_->size());
-  EXPECT_FALSE(UserManagerMac::IsShowing());
+  EXPECT_FALSE(UserManager::IsShowing());
 }
 
 // Test that for a locked last profile, a reopen event opens the User Manager.
@@ -248,8 +248,8 @@ IN_PROC_BROWSER_TEST_F(AppControllerNewProfileManagementBrowserTest,
 
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(1u, active_browser_list_->size());
-  EXPECT_TRUE(UserManagerMac::IsShowing());
-  UserManagerMac::Hide();
+  EXPECT_TRUE(UserManager::IsShowing());
+  UserManager::Hide();
 }
 
 // Test that for a guest last profile, a reopen event opens the User Manager.
@@ -274,8 +274,8 @@ IN_PROC_BROWSER_TEST_F(AppControllerNewProfileManagementBrowserTest,
   base::RunLoop().RunUntilIdle();
 
   EXPECT_EQ(1u, active_browser_list_->size());
-  EXPECT_TRUE(UserManagerMac::IsShowing());
-  UserManagerMac::Hide();
+  EXPECT_TRUE(UserManager::IsShowing());
+  UserManager::Hide();
 }
 
 class AppControllerOpenShortcutBrowserTest : public InProcessBrowserTest {

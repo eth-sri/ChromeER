@@ -251,6 +251,9 @@
         'sync_socket_win.cc',
         'sync_socket_posix.cc',
       ],
+      'includes': [
+        '../build/android/increase_size_for_speed.gypi',
+      ],
     },
     {
       'target_name': 'base_i18n',
@@ -288,8 +291,9 @@
       'export_dependent_settings': [
         'base',
       ],
-
-
+      'includes': [
+        '../build/android/increase_size_for_speed.gypi',
+      ],
     },
     {
       'target_name': 'base_message_loop_tests',
@@ -357,6 +361,9 @@
         'prefs/value_map_pref_store.h',
         'prefs/writeable_pref_store.h',
       ],
+      'includes': [
+        '../build/android/increase_size_for_speed.gypi',
+      ],
     },
     {
       'target_name': 'base_prefs_test_support',
@@ -395,6 +402,9 @@
       ],
       'include_dirs': [
         '..',
+      ],
+      'includes': [
+        '../build/android/increase_size_for_speed.gypi',
       ],
     },
     # Include this target for a main() function that simply instantiates
@@ -437,6 +447,7 @@
         'callback_unittest.nc',
         'cancelable_callback_unittest.cc',
         'command_line_unittest.cc',
+        'containers/adapters_unittest.cc',
         'containers/hash_tables_unittest.cc',
         'containers/linked_list_unittest.cc',
         'containers/mru_cache_unittest.cc',
@@ -756,6 +767,14 @@
                 '../third_party/icu/icu.gyp:icudata',
               ],
             }],
+            ['incremental_chrome_dll', {
+              'defines': [
+                # Used only to workaround a linker bug, do not use this
+                # otherwise, and don't make it broader scope. See
+                # http://crbug.com/251251.
+                'INCREMENTAL_LINKING',
+              ],
+            }],
           ],
         }, {  # OS != "win"
           'dependencies': [
@@ -797,6 +816,7 @@
       ],
       'sources': [
         'threading/thread_perftest.cc',
+        'message_loop/message_pump_perftest.cc',
         'test/run_all_unittests.cc',
         '../testing/perf/perf_test.cc'
       ],
@@ -823,6 +843,7 @@
       ],
     },
     {
+      # GN: //base/test:test_support
       'target_name': 'test_support_base',
       'type': 'static_library',
       'dependencies': [
@@ -920,8 +941,6 @@
         'test/test_listener_ios.mm',
         'test/test_pending_task.cc',
         'test/test_pending_task.h',
-        'test/test_process_killer_win.cc',
-        'test/test_process_killer_win.h',
         'test/test_reg_util_win.cc',
         'test/test_reg_util_win.h',
         'test/test_shortcut_win.cc',
@@ -942,6 +961,8 @@
         'test/thread_test_helper.h',
         'test/trace_event_analyzer.cc',
         'test/trace_event_analyzer.h',
+        'test/trace_to_file.cc',
+        'test/trace_to_file.h',
         'test/values_test_util.cc',
         'test/values_test_util.h',
       ],
@@ -1196,6 +1217,9 @@
           'include_dirs': [
             '..',
           ],
+          'includes': [
+            '../build/android/increase_size_for_speed.gypi',
+          ],
         },
         {
           'target_name': 'xdg_mime',
@@ -1225,12 +1249,16 @@
             'third_party/xdg_mime/xdgmimeparent.c',
             'third_party/xdg_mime/xdgmimeparent.h',
           ],
+          'includes': [
+            '../build/android/increase_size_for_speed.gypi',
+          ],
         },
       ],
     }],
     ['OS == "android"', {
       'targets': [
         {
+          # GN: //base:base_jni_headers
           'target_name': 'base_jni_headers',
           'type': 'none',
           'sources': [
@@ -1260,6 +1288,7 @@
           'includes': [ '../build/jni_generator.gypi' ],
         },
         {
+          # TODO(GN)
           'target_name': 'base_unittests_jni_headers',
           'type': 'none',
           'sources': [
@@ -1271,6 +1300,7 @@
           'includes': [ '../build/jni_generator.gypi' ],
         },
         {
+          # GN: //base:base_native_libraries_gen
           'target_name': 'base_native_libraries_gen',
           'type': 'none',
           'sources': [
@@ -1283,6 +1313,7 @@
           'includes': [ '../build/android/java_cpp_template.gypi' ],
         },
         {
+          # GN: //base:base_java
           'target_name': 'base_java',
           'type': 'none',
           'variables': {
@@ -1304,6 +1335,7 @@
           ],
         },
         {
+          # GN: //base:base_java_unittest_support
           'target_name': 'base_java_unittest_support',
           'type': 'none',
           'dependencies': [
@@ -1315,6 +1347,7 @@
           'includes': [ '../build/java.gypi' ],
         },
         {
+          # GN: //base:base_java_application_state
           'target_name': 'base_java_application_state',
           'type': 'none',
           # This target is used to auto-generate ApplicationState.java
@@ -1331,6 +1364,7 @@
           'includes': [ '../build/android/java_cpp_template.gypi' ],
         },
         {
+          # GN: //base:base_java_memory_pressure_level_list
           'target_name': 'base_java_memory_pressure_level_list',
           'type': 'none',
           'sources': [
@@ -1343,6 +1377,7 @@
           'includes': [ '../build/android/java_cpp_template.gypi' ],
         },
         {
+          # GN: //base:base_java_test_support
           'target_name': 'base_java_test_support',
           'type': 'none',
           'dependencies': [
@@ -1354,6 +1389,7 @@
           'includes': [ '../build/java.gypi' ],
         },
         {
+          # GN: //base:base_javatests
           'target_name': 'base_javatests',
           'type': 'none',
           'dependencies': [
@@ -1366,6 +1402,7 @@
           'includes': [ '../build/java.gypi' ],
         },
         {
+          # TODO(GN)
           'target_name': 'chromium_android_linker',
           'type': 'shared_library',
           'conditions': [
@@ -1389,12 +1426,8 @@
             }],
           ],
         },
-
-      ],
-    }],
-    ['OS == "android"', {
-      'targets': [
         {
+          # TODO(GN)
           'target_name': 'base_perftests_apk',
           'type': 'none',
           'dependencies': [
@@ -1402,6 +1435,19 @@
           ],
           'variables': {
             'test_suite_name': 'base_perftests',
+          },
+          'includes': [ '../build/apk_test.gypi' ],
+        },
+        {
+          # GN: //base:base_unittests_apk
+          'target_name': 'base_unittests_apk',
+          'type': 'none',
+          'dependencies': [
+            'base_java',
+            'base_unittests',
+          ],
+          'variables': {
+            'test_suite_name': 'base_unittests',
           },
           'includes': [ '../build/apk_test.gypi' ],
         },
@@ -1420,22 +1466,6 @@
               'SubSystem': '2',         # Set /SUBSYSTEM:WINDOWS
             },
           },
-        },
-      ],
-    }],
-    ['OS == "android"', {
-      'targets': [
-        {
-          'target_name': 'base_unittests_apk',
-          'type': 'none',
-          'dependencies': [
-            'base_java',
-            'base_unittests',
-          ],
-          'variables': {
-            'test_suite_name': 'base_unittests',
-          },
-          'includes': [ '../build/apk_test.gypi' ],
         },
       ],
     }],

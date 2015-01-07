@@ -399,13 +399,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   virtual void UpdateVSyncParameters(base::TimeTicks timebase,
                                      base::TimeDelta interval);
 
-  // Called by the view in response to AcceleratedSurfaceBuffersSwapped or
-  // AcceleratedSurfacePostSubBuffer.
-  static void AcknowledgeBufferPresent(
-      int32 route_id,
-      int gpu_host_id,
-      const AcceleratedSurfaceMsg_BufferPresented_Params& params);
-
   // Called by the view in response to OnSwapCompositorFrame.
   static void SendSwapCompositorFrameAck(
       int32 route_id,
@@ -494,7 +487,10 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // component if it is not already in |original|. And if |original| is
   // not NULL, it is also merged into the resulting LatencyInfo.
   ui::LatencyInfo CreateRWHLatencyInfoIfNotExist(
-      const ui::LatencyInfo* original, blink::WebInputEvent::Type type);
+      const ui::LatencyInfo* original,
+      blink::WebInputEvent::Type type,
+      const ui::LatencyInfo::InputCoordinate* logical_coordinates,
+      size_t logical_coordinates_size);
 
   // Called when we receive a notification indicating that the renderer
   // process has gone. This will reset our state so that our state will be
@@ -560,6 +556,12 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // doing so).
   RenderWidgetHostViewBase* view_;
 
+  // A weak pointer to the view. The above pointer should be weak, but changing
+  // that to be weak causes crashes on Android.
+  // TODO(ccameron): Fix this.
+  // http://crbug.com/404828
+  base::WeakPtr<RenderWidgetHostViewBase> view_weak_;
+
   // true if a renderer has once been valid. We use this flag to display a sad
   // tab only when we lose our renderer and not if a paint occurs during
   // initialization.
@@ -610,7 +612,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl
                    bool last_unlocked_by_target,
                    bool privileged);
   void OnUnlockMouse();
-  void OnShowDisambiguationPopup(const gfx::Rect& rect,
+  void OnShowDisambiguationPopup(const gfx::Rect& rect_pixels,
                                  const gfx::Size& size,
                                  const cc::SharedBitmapId& id);
 #if defined(OS_WIN)
@@ -818,8 +820,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // not sent to the renderer.
   bool has_touch_handler_;
 
-  base::WeakPtrFactory<RenderWidgetHostImpl> weak_factory_;
-
   scoped_ptr<SyntheticGestureController> synthetic_gesture_controller_;
 
   scoped_ptr<TouchEmulator> touch_emulator_;
@@ -839,6 +839,8 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   typedef std::map<int,
       base::Callback<void(const unsigned char*, size_t)> > PendingSnapshotMap;
   PendingSnapshotMap pending_browser_snapshots_;
+
+  base::WeakPtrFactory<RenderWidgetHostImpl> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderWidgetHostImpl);
 };

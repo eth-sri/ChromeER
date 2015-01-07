@@ -68,6 +68,7 @@
       'target_name': 'mojo_sample_app',
       'type': 'loadable_module',
       'dependencies': [
+        '../base/base.gyp:base',
         'mojo_base.gyp:mojo_application_standalone',
         'mojo_base.gyp:mojo_cpp_bindings',
         'mojo_base.gyp:mojo_utility',
@@ -81,7 +82,7 @@
       ],
       'sources': [
         'examples/sample_app/gles2_client_impl.cc',
-        'examples/sample_app/gles2_client_impl.cc',
+        'examples/sample_app/gles2_client_impl.h',
         'examples/sample_app/sample_app.cc',
         'examples/sample_app/spinning_cube.cc',
         'examples/sample_app/spinning_cube.h',
@@ -95,6 +96,7 @@
       'includes': [ 'build/package_app.gypi' ],
     },
     {
+      # GN version: //mojo/examples/apptest:bindings
       'target_name': 'mojo_example_service_bindings',
       'type': 'static_library',
       'sources': [
@@ -109,6 +111,7 @@
       ],
     },
     {
+      # GN version: //mojo/examples/apptest:service
       'target_name': 'mojo_example_service',
       'type': 'loadable_module',
       'dependencies': [
@@ -126,6 +129,7 @@
       ],
     },
     {
+      # GN version: //mojo/examples/apptest:apptests
       'target_name': 'mojo_example_apptests',
       'type': 'loadable_module',
       'dependencies': [
@@ -152,6 +156,7 @@
       'includes': [ 'build/package_app.gypi' ],
     },
     {
+      # GN version: //mojo/examples/compositor_app
       'target_name': 'mojo_compositor_app',
       'type': 'loadable_module',
       'dependencies': [
@@ -200,6 +205,7 @@
       ],
     },
     {
+      # GN version: //mojo/examples/content_handler_demo
       'target_name': 'mojo_content_handler_demo',
       'type': 'loadable_module',
       'dependencies': [
@@ -221,6 +227,7 @@
       'includes': [ 'build/package_app.gypi' ],
     },
     {
+      # GN version: //mojo/examples/media_viewer:bindings
       'target_name': 'mojo_media_viewer_bindings',
       'type': 'static_library',
       'sources': [
@@ -235,6 +242,7 @@
       ],
     },
     {
+      # GN version: //mojo/examples/png_viewer
       'target_name': 'mojo_png_viewer',
       'type': 'loadable_module',
       'dependencies': [
@@ -243,10 +251,9 @@
         'mojo_base.gyp:mojo_application_chromium',
         'mojo_base.gyp:mojo_cpp_bindings',
         'mojo_base.gyp:mojo_utility',
+        'mojo_content_handler_bindings',
         'mojo_media_viewer_bindings',
-        'mojo_navigation_bindings',
         'mojo_network_bindings',
-        'mojo_launcher_bindings',
         'mojo_view_manager_lib',
         '<(mojo_system_for_loadable_module)',
       ],
@@ -255,6 +262,7 @@
       ],
     },
     {
+      # GN version: //mojo/examples/pepper_container_app
       'target_name': 'mojo_pepper_container_app',
       'type': 'loadable_module',
       'dependencies': [
@@ -352,6 +360,7 @@
       ],
     },
     {
+      # GN version: //mojo/examples/surfaces_app:parent_app
       'target_name': 'mojo_surfaces_app',
       'type': 'loadable_module',
       'dependencies': [
@@ -381,6 +390,7 @@
       ],
     },
     {
+      # GN version: //mojo/examples/surfaces_app:bindings
       'target_name': 'mojo_surfaces_app_bindings',
       'type': 'static_library',
       'sources': [
@@ -404,6 +414,7 @@
       'includes': [ 'build/package_app.gypi' ],
     },
     {
+      # GN version: //mojo/examples/surfaces_app:child_app
       'target_name': 'mojo_surfaces_child_app',
       'type': 'loadable_module',
       'dependencies': [
@@ -431,6 +442,7 @@
       ],
     },
     {
+      # GN version: //mojo/examples/surfaces_app:child_gl_app
       'target_name': 'mojo_surfaces_child_gl_app',
       'type': 'loadable_module',
       'dependencies': [
@@ -468,6 +480,7 @@
     ['use_aura==1', {
       'targets': [
         {
+          # GN version: //mojo/examples/aura_demo:mojo_aura_demo
           'target_name': 'mojo_aura_demo',
           'type': 'loadable_module',
           'dependencies': [
@@ -491,12 +504,14 @@
           ],
         },
         {
+          # GN version: //mojo/examples/aura_demo:init
           'target_name': 'mojo_aura_demo_init',
           'type': 'loadable_module',
           'dependencies': [
             '../base/base.gyp:base',
             'mojo_base.gyp:mojo_application_chromium',
             'mojo_view_manager_bindings',
+            'mojo_view_manager_lib',
             '<(mojo_system_for_loadable_module)',
           ],
           'sources': [
@@ -504,6 +519,7 @@
           ],
         },
         {
+          # GN version: //mojo/examples/browser
           'target_name': 'mojo_browser',
           'type': 'loadable_module',
           'dependencies': [
@@ -545,6 +561,7 @@
           'includes': [ 'build/package_app.gypi' ],
         },
         {
+          # GYP version: //mojo/examples/demo_launcher
           'target_name': 'mojo_demo_launcher',
           'type': 'loadable_module',
           'dependencies': [
@@ -552,12 +569,12 @@
             '../skia/skia.gyp:skia',
             '../ui/gfx/gfx.gyp:gfx',
             '../ui/gfx/gfx.gyp:gfx_geometry',
-            '../ui/gl/gl.gyp:gl',
             'mojo_base.gyp:mojo_application_chromium',
             'mojo_base.gyp:mojo_cpp_bindings',
             'mojo_base.gyp:mojo_utility',
             'mojo_geometry_bindings',
             'mojo_view_manager_bindings',
+            'mojo_view_manager_lib',
             '<(mojo_system_for_loadable_module)',
           ],
           'includes': [
@@ -568,6 +585,7 @@
           ],
         },
         {
+          # GYP version: //mojo/examples/keyboard
           'target_name': 'mojo_keyboard',
           'type': 'loadable_module',
           'dependencies': [
@@ -607,6 +625,7 @@
           ],
         },
         {
+          # GYP version: //mojo/examples/keyboard:bindings
           'target_name': 'mojo_keyboard_bindings',
           'type': 'static_library',
           'sources': [
@@ -621,6 +640,7 @@
           ],
         },
         {
+          # GN version: //mojo/examples/window_manager:bindings
           'target_name': 'mojo_window_manager_bindings',
           'type': 'static_library',
           'sources': [
@@ -636,6 +656,7 @@
           ],
         },
         {
+          # GN version: //mojo/examples/window_manager
           'target_name': 'mojo_window_manager',
           'type': 'loadable_module',
           'dependencies': [
@@ -644,7 +665,6 @@
             '../ui/base/ui_base.gyp:ui_base',
             '../ui/gfx/gfx.gyp:gfx',
             '../ui/gfx/gfx.gyp:gfx_geometry',
-            '../ui/gl/gl.gyp:gl',
             '../ui/resources/ui_resources.gyp:ui_resources',
             '../ui/resources/ui_resources.gyp:ui_test_pak',
             '../ui/views/views.gyp:views',
@@ -657,7 +677,6 @@
             'mojo_geometry_lib',
             'mojo_input_events_lib',
             'mojo_keyboard_bindings',
-            'mojo_launcher_bindings',
             'mojo_navigation_bindings',
             'mojo_view_manager_lib',
             'mojo_views_support',
@@ -674,12 +693,12 @@
           ],
         },
         {
+          # GN version: //mojo/examples/embedded_app
           'target_name': 'mojo_embedded_app',
           'type': 'loadable_module',
           'dependencies': [
             '../base/base.gyp:base',
             '../ui/gfx/gfx.gyp:gfx_geometry',
-            '../ui/gl/gl.gyp:gl',
             '../url/url.gyp:url_lib',
             'mojo_base.gyp:mojo_application_chromium',
             'mojo_base.gyp:mojo_cpp_bindings',
@@ -698,12 +717,12 @@
           ],
         },
         {
+          # GN version: //mojo/examples/nesting_app
           'target_name': 'mojo_nesting_app',
           'type': 'loadable_module',
           'dependencies': [
             '../base/base.gyp:base',
             '../ui/gfx/gfx.gyp:gfx_geometry',
-            '../ui/gl/gl.gyp:gl',
             '../url/url.gyp:url_lib',
             'mojo_base.gyp:mojo_application_chromium',
             'mojo_base.gyp:mojo_cpp_bindings',
@@ -722,6 +741,7 @@
           ],
         },
         {
+          # GN version: //mojo/examples/media_viewer
           'target_name': 'mojo_media_viewer',
           'type': 'loadable_module',
           'dependencies': [
@@ -743,26 +763,34 @@
           ],
         },
         {
+          # GN version: //mojo/examples/wm_flow
           'target_name': 'mojo_wm_flow_wm',
           'type': 'loadable_module',
           'dependencies': [
             '../base/base.gyp:base',
+            '../skia/skia.gyp:skia',
+            '../ui/views/views.gyp:views',
             'mojo_base.gyp:mojo_application_chromium',
             'mojo_core_window_manager_lib',
             'mojo_view_manager_lib',
+            'mojo_views_support',
             '<(mojo_system_for_loadable_module)',
           ],
           'sources': [
+            'examples/wm_flow/wm/frame_controller.cc',
+            'examples/wm_flow/wm/frame_controller.h',
             'examples/wm_flow/wm/wm.cc',
           ],
         },
         {
+          # GN version: //mojo/examples/wm_flow:init
           'target_name': 'mojo_wm_flow_init',
           'type': 'loadable_module',
           'dependencies': [
             '../base/base.gyp:base',
             'mojo_base.gyp:mojo_application_chromium',
             'mojo_view_manager_bindings',
+            'mojo_view_manager_lib',
             '<(mojo_system_for_loadable_module)',
           ],
           'sources': [
@@ -770,6 +798,7 @@
           ],
         },
         {
+          # GN version: //mojo/examples/wm_flow:embedder_bindings
           'target_name': 'mojo_wm_flow_embedder_bindings',
           'type': 'static_library',
           'sources': [
@@ -784,6 +813,7 @@
           ],
         },
         {
+          # GN version: //mojo/examples/wm_flow:embeddee_bindings
           'target_name': 'mojo_wm_flow_embeddee_bindings',
           'type': 'static_library',
           'sources': [
@@ -798,6 +828,7 @@
           ],
         },
         {
+          # GN version: //mojo/examples/wm_flow:app
           'target_name': 'mojo_wm_flow_app',
           'type': 'loadable_module',
           'dependencies': [
@@ -814,6 +845,7 @@
           ],
         },
         {
+          # GN version: //mojo/examples/wm_flow:embedded
           'target_name': 'mojo_wm_flow_embedded',
           'type': 'loadable_module',
           'dependencies': [
@@ -834,6 +866,7 @@
     ['OS=="linux"', {
       'targets': [
         {
+          # GN version: //mojo/examples/dbus_echo:dbus_echo_app
           'target_name': 'mojo_dbus_echo',
           'type': 'loadable_module',
           'dependencies': [
@@ -849,6 +882,7 @@
           ],
         },
         {
+          # GN version: //mojo/examples/dbus_echo:dbus_echo_service
           'target_name': 'mojo_dbus_echo_service',
           'type': 'executable',
           'dependencies': [

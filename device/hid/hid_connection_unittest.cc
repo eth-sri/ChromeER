@@ -73,7 +73,7 @@ class HidConnectionTest : public testing::Test {
     if (!UsbTestGadget::IsTestEnabled()) return;
 
     message_loop_.reset(new base::MessageLoopForIO());
-    service_.reset(HidService::Create(message_loop_->message_loop_proxy()));
+    service_ = HidService::GetInstance(message_loop_->message_loop_proxy());
     ASSERT_TRUE(service_);
 
     test_gadget_ = UsbTestGadget::Claim();
@@ -100,7 +100,7 @@ class HidConnectionTest : public testing::Test {
     for (std::vector<HidDeviceInfo>::iterator it = devices.begin();
          it != devices.end();
          ++it) {
-      if (it->serial_number == test_gadget_->GetSerial()) {
+      if (it->serial_number == test_gadget_->GetSerialNumber()) {
         device_id_ = it->device_id;
         break;
       }
@@ -118,7 +118,7 @@ class HidConnectionTest : public testing::Test {
   }
 
   scoped_ptr<base::MessageLoopForIO> message_loop_;
-  scoped_ptr<HidService> service_;
+  HidService* service_;
   scoped_ptr<UsbTestGadget> test_gadget_;
   HidDeviceId device_id_;
 };

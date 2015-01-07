@@ -21,9 +21,9 @@
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_data_source.h"
 #include "content/public/common/url_constants.h"
+#include "storage/common/database/database_identifier.h"
 #include "third_party/zlib/google/zip.h"
 #include "ui/base/text/bytes_formatting.h"
-#include "webkit/common/database/database_identifier.h"
 
 namespace content {
 
@@ -44,7 +44,6 @@ IndexedDBInternalsUI::IndexedDBInternalsUI(WebUI* web_ui)
 
   WebUIDataSource* source =
       WebUIDataSource::Create(kChromeUIIndexedDBInternalsHost);
-  source->SetUseJsonJSFormatV2();
   source->SetJsonPath("strings.js");
   source->AddResourcePath("indexeddb_internals.js",
                           IDR_INDEXED_DB_INTERNALS_JS);

@@ -47,8 +47,6 @@ namespace gpu {
 
 namespace {
 
-static InProcessGpuMemoryBufferFactory* g_gpu_memory_buffer_factory = NULL;
-
 template <typename T>
 static void RunTaskWithResult(base::Callback<T(void)> task,
                               T* result,
@@ -190,6 +188,13 @@ InProcessCommandBuffer::Service::Service() {}
 
 InProcessCommandBuffer::Service::~Service() {}
 
+scoped_refptr<gles2::MailboxManager>
+InProcessCommandBuffer::Service::mailbox_manager() {
+  if (!mailbox_manager_.get())
+    mailbox_manager_ = new gles2::MailboxManager();
+  return mailbox_manager_;
+}
+
 scoped_refptr<InProcessCommandBuffer::Service>
 InProcessCommandBuffer::GetDefaultService() {
   base::AutoLock lock(default_thread_clients_lock_.Get());
@@ -268,7 +273,7 @@ bool InProcessCommandBuffer::Initialize(
     gfx::GpuPreference gpu_preference,
     const base::Closure& context_lost_callback,
     InProcessCommandBuffer* share_group) {
-  DCHECK(!share_group || service_ == share_group->service_);
+  DCHECK(!share_group || service_.get() == share_group->service_.get());
   context_lost_callback_ = WrapCallback(context_lost_callback);
 
   if (surface.get()) {
@@ -298,11 +303,9 @@ bool InProcessCommandBuffer::Initialize(
       base::Bind(&RunTaskWithResult<bool>, init_task, &result, &completion));
   completion.Wait();
 
-  if (result) {
+  if (result)
     capabilities_ = capabilities;
-    capabilities_.map_image =
-        capabilities_.map_image && g_gpu_memory_buffer_factory;
-  }
+
   return result;
 }
 
@@ -342,7 +345,7 @@ bool InProcessCommandBuffer::InitializeOnGpuThread(
   decoder_.reset(gles2::GLES2Decoder::Create(
       params.context_group
           ? params.context_group->decoder_->GetContextGroup()
-          : new gles2::ContextGroup(NULL,
+          : new gles2::ContextGroup(service_->mailbox_manager(),
                                     NULL,
                                     service_->shader_translator_cache(),
                                     NULL,
@@ -515,7 +518,7 @@ void InProcessCommandBuffer::PerformIdleWork() {
   CheckSequencedThread();
   idle_work_pending_ = false;
   base::AutoLock lock(command_buffer_lock_);
-  if (gpu_scheduler_->HasMoreWork()) {
+  if (MakeCurrent() && gpu_scheduler_->HasMoreWork()) {
     gpu_scheduler_->PerformIdleWork();
     ScheduleIdleWorkOnGpuThread();
   }
@@ -612,78 +615,12 @@ gfx::GpuMemoryBuffer* InProcessCommandBuffer::CreateGpuMemoryBuffer(
     unsigned internalformat,
     unsigned usage,
     int32* id) {
-  CheckSequencedThread();
-
-  *id = -1;
-
-  scoped_ptr<gfx::GpuMemoryBuffer> buffer =
-      g_gpu_memory_buffer_factory->AllocateGpuMemoryBuffer(
-          width, height, internalformat, usage);
-  if (!buffer.get())
-    return NULL;
-
-  static int32 next_id = 1;
-  int32 new_id = next_id++;
-
-  base::Closure task =
-      base::Bind(&InProcessCommandBuffer::RegisterGpuMemoryBufferOnGpuThread,
-                 base::Unretained(this),
-                 new_id,
-                 buffer->GetHandle(),
-                 width,
-                 height,
-                 internalformat);
-
-  QueueTask(task);
-
-  *id = new_id;
-  DCHECK(gpu_memory_buffers_.find(new_id) == gpu_memory_buffers_.end());
-  return gpu_memory_buffers_.add(new_id, buffer.Pass()).first->second;
-}
-
-void InProcessCommandBuffer::RegisterGpuMemoryBufferOnGpuThread(
-    int32 id,
-    const gfx::GpuMemoryBufferHandle& handle,
-    size_t width,
-    size_t height,
-    unsigned internalformat) {
-  scoped_refptr<gfx::GLImage> image =
-      g_gpu_memory_buffer_factory->CreateImageForGpuMemoryBuffer(
-          handle, gfx::Size(width, height), internalformat);
-  if (!image.get())
-    return;
-
-  // For Android specific workaround.
-  gles2::ContextGroup* context_group = decoder_->GetContextGroup();
-  if (context_group->feature_info()->workarounds().release_image_after_use)
-    image->SetReleaseAfterUse();
-
-  if (decoder_) {
-    gpu::gles2::ImageManager* image_manager = decoder_->GetImageManager();
-    DCHECK(image_manager);
-    image_manager->AddImage(image.get(), id);
-  }
+  NOTREACHED();
+  return NULL;
 }
 
 void InProcessCommandBuffer::DestroyGpuMemoryBuffer(int32 id) {
-  CheckSequencedThread();
-
-  base::Closure task =
-      base::Bind(&InProcessCommandBuffer::UnregisterGpuMemoryBufferOnGpuThread,
-                 base::Unretained(this),
-                 id);
-
-  QueueTask(task);
-
-  gpu_memory_buffers_.erase(id);
-}
-
-void InProcessCommandBuffer::UnregisterGpuMemoryBufferOnGpuThread(int32 id) {
-  if (decoder_) {
-    gpu::gles2::ImageManager* image_manager = decoder_->GetImageManager();
-    DCHECK(image_manager);
-    image_manager->RemoveImage(id);
-  }
+  NOTREACHED();
 }
 
 uint32 InProcessCommandBuffer::InsertSyncPoint() {
@@ -841,11 +778,5 @@ InProcessCommandBuffer::GetSurfaceTexture(uint32 stream_id) {
   return stream_texture_manager_->GetSurfaceTexture(stream_id);
 }
 #endif
-
-// static
-void InProcessCommandBuffer::SetGpuMemoryBufferFactory(
-    InProcessGpuMemoryBufferFactory* factory) {
-  g_gpu_memory_buffer_factory = factory;
-}
 
 }  // namespace gpu

@@ -9,6 +9,7 @@
 #include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/grit/generated_resources.h"
+#include "extensions/common/extension_urls.h"
 #include "grit/theme_resources.h"
 #include "net/base/url_util.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -48,7 +49,7 @@ void SearchWebstoreResult::Open(int event_flags) {
 
   chrome::NavigateParams params(profile_,
                                 store_url,
-                                content::PAGE_TRANSITION_LINK);
+                                ui::PAGE_TRANSITION_LINK);
   params.disposition = ui::DispositionFromEventFlags(event_flags);
   chrome::Navigate(&params);
 }

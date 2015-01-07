@@ -15,6 +15,7 @@
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/sessions/tab_restore_service.h"
 #include "chrome/browser/sessions/tab_restore_service_factory.h"
 #include "chrome/browser/shell_integration.h"
@@ -542,12 +543,12 @@ void BrowserCommandController::ExecuteCommandWithDisposition(
     case IDC_PRINT:
       Print(browser_);
       break;
-#if !defined(OS_WIN)
-    case IDC_ADVANCED_PRINT:
+#if !defined(DISABLE_BASIC_PRINTING)
+    case IDC_BASIC_PRINT:
       content::RecordAction(base::UserMetricsAction("Accel_Advanced_Print"));
-      AdvancedPrint(browser_);
+      BasicPrint(browser_);
       break;
-#endif  // !OS_WIN
+#endif  // !DISABLE_BASIC_PRINTING
     case IDC_TRANSLATE_PAGE:
       Translate(browser_);
       break;
@@ -844,8 +845,6 @@ class BrowserCommandController::InterstitialObserver
         controller_(controller) {
   }
 
-  using content::WebContentsObserver::web_contents;
-
   virtual void DidAttachInterstitialPage() OVERRIDE {
     controller_->UpdateCommandsForTabState();
   }
@@ -1029,6 +1028,8 @@ void BrowserCommandController::InitCommandState() {
 void BrowserCommandController::UpdateSharedCommandsForIncognitoAvailability(
     CommandUpdater* command_updater,
     Profile* profile) {
+  const bool guest_session = profile->IsGuestSession();
+  // TODO(mlerman): Make GetAvailability account for profile->IsGuestSession().
   IncognitoModePrefs::Availability incognito_availability =
       IncognitoModePrefs::GetAvailability(profile->GetPrefs());
   command_updater->UpdateCommandEnabled(
@@ -1036,9 +1037,8 @@ void BrowserCommandController::UpdateSharedCommandsForIncognitoAvailability(
       incognito_availability != IncognitoModePrefs::FORCED);
   command_updater->UpdateCommandEnabled(
       IDC_NEW_INCOGNITO_WINDOW,
-      incognito_availability != IncognitoModePrefs::DISABLED);
+      incognito_availability != IncognitoModePrefs::DISABLED && !guest_session);
 
-  const bool guest_session = profile->IsGuestSession();
   const bool forced_incognito =
       incognito_availability == IncognitoModePrefs::FORCED ||
       guest_session;  // Guest always runs in Incognito mode.
@@ -1272,20 +1272,10 @@ void BrowserCommandController::UpdateCommandsForFullscreenMode() {
 void BrowserCommandController::UpdatePrintingState() {
   bool print_enabled = CanPrint(browser_);
   command_updater_.UpdateCommandEnabled(IDC_PRINT, print_enabled);
-#if !defined(OS_WIN)
-  command_updater_.UpdateCommandEnabled(IDC_ADVANCED_PRINT,
-                                        CanAdvancedPrint(browser_));
-#else   // !OS_WIN
-  HMODULE metro_module = base::win::GetMetroModule();
-  if (metro_module != NULL) {
-    typedef void (*MetroEnablePrinting)(BOOL);
-    MetroEnablePrinting metro_enable_printing =
-        reinterpret_cast<MetroEnablePrinting>(
-            ::GetProcAddress(metro_module, "MetroEnablePrinting"));
-    if (metro_enable_printing)
-      metro_enable_printing(print_enabled);
-  }
-#endif  // !OS_WIN
+#if !defined(DISABLE_BASIC_PRINTING)
+  command_updater_.UpdateCommandEnabled(IDC_BASIC_PRINT,
+                                        CanBasicPrint(browser_));
+#endif  // !DISABLE_BASIC_PRINTING
 }
 
 void BrowserCommandController::UpdateSaveAsState() {

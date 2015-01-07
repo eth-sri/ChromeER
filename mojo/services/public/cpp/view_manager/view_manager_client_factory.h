@@ -11,21 +11,22 @@
 namespace mojo {
 
 class ViewManagerDelegate;
+class Shell;
 
 // Add an instance of this class to an incoming connection to allow it to
 // instantiate ViewManagerClient implementations in response to
 // ViewManagerClient requests.
 class ViewManagerClientFactory : public InterfaceFactory<ViewManagerClient> {
  public:
-  explicit ViewManagerClientFactory(ViewManagerDelegate* delegate);
+  ViewManagerClientFactory(Shell* shell, ViewManagerDelegate* delegate);
   virtual ~ViewManagerClientFactory();
 
   // InterfaceFactory<ViewManagerClient> implementation.
   virtual void Create(ApplicationConnection* connection,
-                      InterfaceRequest<ViewManagerClient> request)
-      MOJO_OVERRIDE;
+                      InterfaceRequest<ViewManagerClient> request) override;
 
  private:
+  Shell* shell_;
   ViewManagerDelegate* delegate_;
 };
 

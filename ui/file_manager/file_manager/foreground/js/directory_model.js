@@ -450,7 +450,7 @@ DirectoryModel.prototype.clearAndScan_ = function(newDirContents,
 
 /**
  * Adds/removes/updates items of file list.
- * @param {Array.<Entry>} updatedEntries Entries of updated/added files.
+ * @param {Array.<Entry>} changedEntries Entries of updated/added files.
  * @param {Array.<string>} removedUrls URLs of removed files.
  * @private
  */
@@ -468,8 +468,7 @@ DirectoryModel.prototype.partialUpdate_ =
                                        onPreviousScanCompleted);
       // Run the update asynchronously.
       Promise.resolve().then(function() {
-        if (!this.runningScan_)
-          this.partialUpdate_(changedEntries, removedUrls);
+        this.partialUpdate_(changedEntries, removedUrls);
       }.bind(this));
     }.bind(this);
     previousScan.addEventListener('scan-completed', onPreviousScanCompleted);
@@ -716,7 +715,7 @@ DirectoryModel.prototype.findIndexByEntry_ = function(entry) {
  *
  * @param {Entry} oldEntry The old entry.
  * @param {Entry} newEntry The new entry.
- * @param {function()} opt_callback Called on completion.
+ * @param {function()=} opt_callback Called on completion.
  */
 DirectoryModel.prototype.onRenameEntry = function(
     oldEntry, newEntry, opt_callback) {

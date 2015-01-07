@@ -9,6 +9,7 @@ cr.define('options', function() {
   /**
    * Encapsulated handling of the 'DisplayOverscan' page.
    * @constructor
+   * @extends {cr.ui.pageManager.Page}
    */
   function DisplayOverscan() {
     Page.call(this, 'displayOverscan',
@@ -23,7 +24,7 @@ cr.define('options', function() {
 
     /**
      * The ID of the target display.
-     * @private
+     * @private {?string}
      */
     id_: null,
 

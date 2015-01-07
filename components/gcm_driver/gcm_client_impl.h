@@ -103,8 +103,8 @@ class GCMClientImpl
   virtual void SetRecording(bool recording) OVERRIDE;
   virtual void ClearActivityLogs() OVERRIDE;
   virtual GCMStatistics GetStatistics() const OVERRIDE;
-  virtual void SetAccountsForCheckin(
-      const std::map<std::string, std::string>& account_tokens) OVERRIDE;
+  virtual void SetAccountTokens(
+      const std::vector<AccountTokenInfo>& account_tokens) OVERRIDE;
   virtual void UpdateAccountMapping(
       const AccountMapping& account_mapping) OVERRIDE;
   virtual void RemoveAccountMapping(const std::string& account_id) OVERRIDE;
@@ -198,7 +198,7 @@ class GCMClientImpl
   void ResetState();
   // Sets state to ready. This will initiate the MCS login and notify the
   // delegates.
-  void OnReady();
+  void OnReady(const std::vector<AccountMapping>& account_mappings);
 
   // Starts a first time device checkin.
   void StartCheckin();

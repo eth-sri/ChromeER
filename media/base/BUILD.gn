@@ -77,6 +77,8 @@ source_set("base") {
     "demuxer.h",
     "demuxer_stream.cc",
     "demuxer_stream.h",
+    "demuxer_stream_provider.cc",
+    "demuxer_stream_provider.h",
     "djb2.cc",
     "djb2.h",
     "media.cc",
@@ -195,6 +197,10 @@ source_set("base") {
   #         "//build/config/linux:xtst",
     ]
     sources += [ "user_input_monitor_linux.cc" ]
+    deps += [
+      "//ui/events:events_base",
+      "//ui/gfx/x",
+    ]
   } else if (is_mac) {
     sources += [ "user_input_monitor_mac.cc" ]
   } else if (is_win) {
@@ -219,7 +225,22 @@ source_set("base") {
   }
 }
 
+# Minimal media component for media/cast on iOS.
+config("base_for_cast_ios_dependent_config") {
+  defines = [ "MEDIA_FOR_CAST_IOS" ]
+}
+
+source_set("base_for_cast_ios") {
+  sources = [
+    "video_frame.cc",
+    "video_frame.h",
+  ]
+  configs += [ "//media:media_config" ]
+  all_dependent_configs = [ ":base_for_cast_ios_dependent_config" ]
+}
+
 source_set("test_support") {
+  testonly = true
   sources = [
     "fake_audio_render_callback.cc",
     "fake_audio_render_callback.h",
@@ -244,6 +265,7 @@ source_set("test_support") {
 }
 
 source_set("unittests") {
+  testonly = true
   sources = [
     "audio_block_fifo_unittest.cc",
     "audio_buffer_converter_unittest.cc",
@@ -320,6 +342,7 @@ source_set("unittests") {
 }
 
 source_set("perftests") {
+  testonly = true
   sources = [
     "audio_bus_perftest.cc",
     "audio_converter_perftest.cc",

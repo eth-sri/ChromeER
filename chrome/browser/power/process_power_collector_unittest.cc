@@ -4,7 +4,7 @@
 
 #include "chrome/browser/power/process_power_collector.h"
 
-#include "apps/app_window_contents.h"
+#include "chrome/browser/apps/scoped_keep_alive.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/apps/chrome_app_delegate.h"
 #include "chrome/browser/ui/browser_commands.h"
@@ -17,8 +17,9 @@
 #include "content/public/browser/site_instance.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/mock_render_process_host.h"
+#include "extensions/browser/app_window/app_window_client.h"
+#include "extensions/browser/app_window/app_window_contents.h"
 #include "extensions/browser/app_window/app_window_registry.h"
-#include "extensions/browser/app_window/apps_client.h"
 #include "extensions/browser/app_window/native_app_window.h"
 #include "extensions/common/extension.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -286,14 +287,13 @@ TEST_F(BrowserProcessPowerTest, AppsRecordPowerUsage) {
                                     kTestAppId,
                                     &error));
   EXPECT_TRUE(extension.get()) << error;
-  // Increment the apps count to avoid a DCHECK later.
-  extensions::AppsClient::Get()->IncrementKeepAliveCount();
 
   Profile* current_profile =
       profile_manager_->CreateTestingProfile("Test user");
   GURL url("chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
   extensions::AppWindow* window = new extensions::AppWindow(
-      current_profile, new ChromeAppDelegate(), extension.get());
+      current_profile, new ChromeAppDelegate(scoped_ptr<ScopedKeepAlive>()),
+      extension.get());
   content::WebContents* web_contents(
       content::WebContents::Create(content::WebContents::CreateParams(
           current_profile,

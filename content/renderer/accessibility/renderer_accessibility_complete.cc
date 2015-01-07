@@ -35,11 +35,11 @@ namespace content {
 RendererAccessibilityComplete::RendererAccessibilityComplete(
     RenderFrameImpl* render_frame)
     : RendererAccessibility(render_frame),
-      weak_factory_(this),
       tree_source_(render_frame),
       serializer_(&tree_source_),
       last_scroll_offset_(gfx::Size()),
-      ack_pending_(false) {
+      ack_pending_(false),
+      weak_factory_(this) {
   WebView* web_view = render_frame_->GetRenderView()->GetWebView();
   WebSettings* settings = web_view->settings();
   settings->setAccessibilityEnabled(true);
@@ -207,6 +207,9 @@ void RendererAccessibilityComplete::SendPendingAccessibilityEvents() {
     }
 
     AccessibilityHostMsg_EventParams event_msg;
+    tree_source_.CollectChildFrameIdMapping(
+        &event_msg.node_to_frame_routing_id_map,
+        &event_msg.node_to_browser_plugin_instance_id_map);
     event_msg.event_type = event.event_type;
     event_msg.id = event.id;
     serializer_.SerializeChanges(obj, &event_msg.update);

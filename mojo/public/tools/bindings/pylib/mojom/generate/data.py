@@ -102,6 +102,8 @@ def FixupExpression(module, value, scope, kind):
     # Allow user defined values to shadow builtins.
     result = LookupValue(module.values, value[1], scope, kind)
     if result:
+      if isinstance(result, tuple):
+        raise Exception('Unable to resolve expression: %r' % value[1])
       return result
     if IsBuiltinValue(value[1]):
       return mojom.BuiltinValue(value[1])
@@ -134,7 +136,12 @@ def KindFromData(kinds, data, scope):
 def KindFromImport(original_kind, imported_from):
   """Used with 'import module' - clones the kind imported from the given
   module's namespace. Only used with Structs, Interfaces and Enums."""
-  kind = copy.deepcopy(original_kind)
+  kind = copy.copy(original_kind)
+  # |shared_definition| is used to store various properties (see
+  # |AddSharedProperty()| in module.py), including |imported_from|. We don't
+  # want the copy to share these with the original, so copy it if necessary.
+  if hasattr(original_kind, 'shared_definition'):
+    kind.shared_definition = copy.copy(original_kind.shared_definition)
   kind.imported_from = imported_from
   return kind
 
@@ -155,7 +162,9 @@ def ImportFromData(module, data):
   # Ditto for values.
   for value in import_module.values.itervalues():
     if value.imported_from is None:
-      value = copy.deepcopy(value)
+      # Values don't have shared definitions (since they're not nullable), so no
+      # need to do anything special.
+      value = copy.copy(value)
       value.imported_from = import_item
       module.values[value.GetSpec()] = value
 
@@ -309,7 +318,7 @@ def ConstantFromData(module, data, parent_kind):
   constant.kind = KindFromData(module.kinds, data['kind'], scope)
   constant.value = FixupExpression(module, data.get('value'), scope, None)
 
-  value = mojom.NamedValue(module, parent_kind, constant.name)
+  value = mojom.ConstantValue(module, parent_kind, constant)
   module.values[value.GetSpec()] = value
   return constant
 

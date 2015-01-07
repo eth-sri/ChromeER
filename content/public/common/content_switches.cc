@@ -250,6 +250,14 @@ const char kDisableSoftwareRasterizer[]     = "disable-software-rasterizer";
 // Disable multithreaded GPU compositing of web content.
 const char kDisableThreadedCompositing[]     = "disable-threaded-compositing";
 
+// Disable multithreaded, compositor scrolling of web content.
+const char kDisableThreadedScrolling[]      = "disable-threaded-scrolling";
+
+// Disable V8 idle notification after commit.
+// Overrides kEnableV8IdleNotificationAfterCommit.
+const char kDisableV8IdleNotificationAfterCommit[] =
+    "disable-v8-idle-notification-after-commit";
+
 // Don't enforce the same-origin policy. (Used by people testing their sites.)
 const char kDisableWebSecurity[]            = "disable-web-security";
 
@@ -372,10 +380,6 @@ const char kEnableOneCopy[]                 = "enable-one-copy";
 // Enables use of hardware overlay for fullscreen video playback. Android only.
 const char kEnableOverlayFullscreenVideo[]  = "enable-overlay-fullscreen-video";
 
-// Disables blink subtitle and media control on top of overlay fullscreen video.
-const char kDisableOverlayFullscreenVideoSubtitle[] =
-    "disable-overlay-fullscreen-video-subtitle";
-
 // Forward overscroll event data from the renderer to the browser.
 const char kEnableOverscrollNotifications[] = "enable-overscroll-notifications";
 
@@ -398,10 +402,6 @@ const char kEnableRegionBasedColumns[] =
 // Replaces renderer-browser IPC channel with ChnanelMojo.
 const char kEnableRendererMojoChannel[] =
     "enable-renderer-mojo-channel";
-
-// Enables targeted style recalculation optimizations.
-const char kEnableTargetedStyleRecalc[] =
-    "enable-targeted-style-recalc";
 
 // Cause the OS X sandbox write to syslog every time an access to a resource
 // is denied by the sandbox.
@@ -456,6 +456,17 @@ const char kEnableTracingOutput[]           = "enable-tracing-output";
 const char kEnableUserMediaScreenCapturing[] =
     "enable-usermedia-screen-capturing";
 
+// Enables streaming scripts to V8 while loading.
+const char kEnableV8ScriptStreaming[] = "enable-v8-script-streaming";
+
+// Send a notification from RenderWidgetCompositor to V8 to do idle work
+// (e.g. garbage collection) after the commit until the beginning of the next
+// frame.  This moves the work off the critical path where compositor is waiting
+// for the main thread. The flag is experimental until the implementation of the
+// V8 idle handler is completed.
+const char kEnableV8IdleNotificationAfterCommit[] =
+    "enable-v8-idle-notification-after-commit";
+
 // Enables the use of the @viewport CSS rule, which allows
 // pages to control aspects of their own layout. This also turns on touch-screen
 // pinch gestures.
@@ -472,9 +483,6 @@ const char kMainFrameResizesAreOrientationChanges[] =
 
 // Enable the Vtune profiler support.
 const char kEnableVtune[]                   = "enable-vtune-support";
-
-// Enable SVG Animations on the Web Animations model.
-const char kEnableWebAnimationsSVG[]        = "enable-web-animations-svg";
 
 // Enables WebGL extensions not yet approved by the community.
 const char kEnableWebGLDraftExtensions[] = "enable-webgl-draft-extensions";
@@ -696,14 +704,6 @@ const char kSandboxIPCProcess[]             = "sandbox-ipc";
 // Defaults to disabled.
 const char kScrollEndEffect[] = "scroll-end-effect";
 
-// Send a notification from RenderWidgetCompositor to V8 to do idle work
-// (e.g. garbage collection) after the commit until the beginning of the next
-// frame.  This moves the work off the critical path where compositor is waiting
-// for the main thread. The flag is experimental until the implementation of the
-// V8 idle handler is completed.
-const char kSendV8IdleNotificationAfterCommit[] =
-    "send-v8-idle-notification-after-commit";
-
 // Visibly render a border around paint rects in the web page to help debug
 // and study painting behavior.
 const char kShowPaintRects[]                = "show-paint-rects";
@@ -883,6 +883,10 @@ const char kDisableOverscrollEdgeEffect[]   = "disable-overscroll-edge-effect";
 
 // WebRTC is enabled by default on Android.
 const char kDisableWebRTC[]                 = "disable-webrtc";
+
+// Enable the PowerSaveBlocker in ContentVideoView. Android only.
+const char kEnableContentVideoViewPowerSaveBlocker[] =
+    "enable-content-video-view-power-save-blocker";
 
 // Enable the recognition part of the Web Speech API.
 const char kEnableSpeechRecognition[]       = "enable-speech-recognition";

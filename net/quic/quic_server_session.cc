@@ -128,6 +128,8 @@ void QuicServerSession::OnCongestionWindowChange(QuicTime now) {
       bandwidth_recorder.EstimateRecordedDuringSlowStart()
           ? CachedNetworkParameters::SLOW_START
           : CachedNetworkParameters::CONGESTION_AVOIDANCE);
+  cached_network_params.set_timestamp(
+      connection()->clock()->WallNow().ToUNIXSeconds());
   if (!serving_region_.empty()) {
     cached_network_params.set_serving_region(serving_region_);
   }
@@ -144,7 +146,8 @@ bool QuicServerSession::ShouldCreateIncomingDataStream(QuicStreamId id) {
   }
   if (GetNumOpenStreams() >= get_max_open_streams()) {
     DVLOG(1) << "Failed to create a new incoming stream with id:" << id
-             << " Already " << GetNumOpenStreams() << " open.";
+             << " Already " << GetNumOpenStreams() << " streams open (max "
+             << get_max_open_streams() << ").";
     connection()->SendConnectionClose(QUIC_TOO_MANY_OPEN_STREAMS);
     return false;
   }

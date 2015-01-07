@@ -175,24 +175,19 @@ ServiceWorkerContextCore::GetProviderHostIterator() {
 void ServiceWorkerContextCore::RegisterServiceWorker(
     const GURL& pattern,
     const GURL& script_url,
-    int source_process_id,
     ServiceWorkerProviderHost* provider_host,
     const RegistrationCallback& callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   if (storage()->IsDisabled()) {
     callback.Run(SERVICE_WORKER_ERROR_ABORT,
-                 kInvalidServiceWorkerRegistrationId,
-                 kInvalidServiceWorkerVersionId);
+                 kInvalidServiceWorkerRegistrationId);
     return;
   }
-
-  // TODO(kinuko): Wire the provider_host so that we can tell which document
-  // is calling .register.
 
   job_coordinator_->Register(
       pattern,
       script_url,
-      source_process_id,
+      provider_host,
       base::Bind(&ServiceWorkerContextCore::RegistrationComplete,
                  AsWeakPtr(),
                  pattern,
@@ -228,21 +223,15 @@ void ServiceWorkerContextCore::RegistrationComplete(
     const GURL& pattern,
     const ServiceWorkerContextCore::RegistrationCallback& callback,
     ServiceWorkerStatusCode status,
-    ServiceWorkerRegistration* registration,
-    ServiceWorkerVersion* version) {
+    ServiceWorkerRegistration* registration) {
   if (status != SERVICE_WORKER_OK) {
-    DCHECK(!version);
-    callback.Run(status,
-                 kInvalidServiceWorkerRegistrationId,
-                 kInvalidServiceWorkerVersionId);
+    DCHECK(!registration);
+    callback.Run(status, kInvalidServiceWorkerRegistrationId);
     return;
   }
 
-  DCHECK(version);
-  DCHECK_EQ(version->registration_id(), registration->id());
-  callback.Run(status,
-               registration->id(),
-               version->version_id());
+  DCHECK(registration);
+  callback.Run(status, registration->id());
   if (observer_list_.get()) {
     observer_list_->Notify(&ServiceWorkerContextObserver::OnRegistrationStored,
                            pattern);
@@ -408,7 +397,9 @@ void ServiceWorkerContextCore::OnReportConsoleMessage(
 }
 
 ServiceWorkerProcessManager* ServiceWorkerContextCore::process_manager() {
-  return wrapper_->process_manager();
+  if (wrapper_)
+    return wrapper_->process_manager();
+  return NULL;
 }
 
 }  // namespace content

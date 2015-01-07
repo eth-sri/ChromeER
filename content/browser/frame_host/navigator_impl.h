@@ -6,10 +6,15 @@
 #define CONTENT_BROWSER_FRAME_HOST_NAVIGATOR_IMPL_H_
 
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
+#include "base/time/time.h"
+#include "base/tuple.h"
 #include "content/browser/frame_host/navigation_controller_impl.h"
 #include "content/browser/frame_host/navigator.h"
 #include "content/common/content_export.h"
+#include "url/gurl.h"
 
+class GURL;
 struct FrameMsg_Navigate_Params;
 
 namespace content {
@@ -17,6 +22,9 @@ namespace content {
 class NavigationControllerImpl;
 class NavigatorDelegate;
 struct LoadCommittedDetails;
+struct CommitNavigationParams;
+struct CommonNavigationParams;
+struct RequestNavigationParams;
 
 // This class is an implementation of Navigator, responsible for managing
 // navigations in regular browser tabs.
@@ -24,13 +32,6 @@ class CONTENT_EXPORT NavigatorImpl : public Navigator {
  public:
   NavigatorImpl(NavigationControllerImpl* navigation_controller,
                 NavigatorDelegate* delegate);
-
-  // Fills in |params| based on the content of |entry|.
-  static void MakeNavigateParams(const NavigationEntryImpl& entry,
-                                 const NavigationControllerImpl& controller,
-                                 NavigationController::ReloadType reload_type,
-                                 base::TimeTicks navigation_start,
-                                 FrameMsg_Navigate_Params* params);
 
   // Navigator implementation.
   virtual NavigationController* GetController() OVERRIDE;
@@ -46,11 +47,6 @@ class CONTENT_EXPORT NavigatorImpl : public Navigator {
       const GURL& url,
       int error_code,
       const base::string16& error_description) OVERRIDE;
-  virtual void DidRedirectProvisionalLoad(
-      RenderFrameHostImpl* render_frame_host,
-      int32 page_id,
-      const GURL& source_url,
-      const GURL& target_url) OVERRIDE;
   virtual void DidNavigate(
       RenderFrameHostImpl* render_frame_host,
       const FrameHostMsg_DidCommitProvisionalLoad_Params&
@@ -58,7 +54,6 @@ class CONTENT_EXPORT NavigatorImpl : public Navigator {
   virtual bool NavigateToPendingEntry(
       RenderFrameHostImpl* render_frame_host,
       NavigationController::ReloadType reload_type) OVERRIDE;
-  virtual base::TimeTicks GetCurrentLoadStart() OVERRIDE;
   virtual void RequestOpenURL(RenderFrameHostImpl* render_frame_host,
                               const GURL& url,
                               const Referrer& referrer,
@@ -70,17 +65,21 @@ class CONTENT_EXPORT NavigatorImpl : public Navigator {
       const GURL& url,
       const std::vector<GURL>& redirect_chain,
       const Referrer& referrer,
-      PageTransition page_transition,
+      ui::PageTransition page_transition,
       WindowOpenDisposition disposition,
       const GlobalRequestID& transferred_global_request_id,
       bool should_replace_current_entry,
       bool user_gesture) OVERRIDE;
   virtual void CommitNavigation(
       RenderFrameHostImpl* render_frame_host,
-      const NavigationBeforeCommitInfo& info) OVERRIDE;
+      const GURL& stream_url,
+      const CommonNavigationParams& common_params,
+      const CommitNavigationParams& commit_params) OVERRIDE;
+  virtual void LogResourceRequestTime(
+      base::TimeTicks timestamp, const GURL& url) OVERRIDE;
 
  private:
-  virtual ~NavigatorImpl() {}
+  virtual ~NavigatorImpl();
 
   // Navigates to the given entry, which must be the pending entry.  Private
   // because all callers should use NavigateToPendingEntry.
@@ -105,8 +104,9 @@ class CONTENT_EXPORT NavigatorImpl : public Navigator {
   // events. Can be NULL in tests.
   NavigatorDelegate* delegate_;
 
-  // System time at which the current load was started.
-  base::TimeTicks current_load_start_;
+  // The start time and URL for latest navigation request, used for feeding a
+  // few histograms under the Navigation group.
+  Tuple2<base::TimeTicks, GURL> navigation_start_time_and_url;
 
   DISALLOW_COPY_AND_ASSIGN(NavigatorImpl);
 };

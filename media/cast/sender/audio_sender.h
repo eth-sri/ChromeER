@@ -51,22 +51,21 @@ class AudioSender : public FrameSender,
                    const base::TimeTicks& recorded_time);
 
  protected:
-  // Protected for testability.
-  void OnReceivedCastFeedback(const RtcpCastMessage& cast_feedback);
+  virtual int GetNumberOfFramesInEncoder() const OVERRIDE;
+  virtual base::TimeDelta GetInFlightMediaDuration() const OVERRIDE;
+  virtual void OnAck(uint32 frame_id) OVERRIDE;
 
  private:
-  // Returns true if there are too many frames in flight, or if the media
-  // duration of the frames in flight would be too high by sending the next
-  // frame.  The latter metric is determined from the given |capture_time|
-  // for the next frame to be encoded and sent.
-  bool ShouldDropNextFrame(base::TimeTicks capture_time) const;
-
   // Called by the |audio_encoder_| with the next EncodedFrame to send.
-  void SendEncodedAudioFrame(scoped_ptr<EncodedFrame> audio_frame);
+  void OnEncodedAudioFrame(int encoder_bitrate,
+                           scoped_ptr<EncodedFrame> encoded_frame,
+                           int samples_skipped);
 
   // Encodes AudioBuses into EncodedFrames.
   scoped_ptr<AudioEncoder> audio_encoder_;
-  const int configured_encoder_bitrate_;
+
+  // The number of audio samples enqueued in |audio_encoder_|.
+  int samples_in_encoder_;
 
   // NOTE: Weak pointers must be invalidated before all other member variables.
   base::WeakPtrFactory<AudioSender> weak_factory_;

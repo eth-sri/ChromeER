@@ -9,7 +9,6 @@
 
 #include "base/basictypes.h"
 #include "content/common/frame_messages.h"
-#include "content/public/common/page_transition_types.h"
 #include "content/public/common/referrer.h"
 #include "url/gurl.h"
 
@@ -19,7 +18,8 @@ namespace content {
 // ResourceDispatcherHost. It is initialized on the UI thread, and then passed
 // to the IO thread by a NavigationRequest object.
 struct NavigationRequestInfo {
-  NavigationRequestInfo(const FrameHostMsg_BeginNavigation_Params& params);
+  explicit NavigationRequestInfo(
+      const FrameHostMsg_BeginNavigation_Params& params);
 
   const FrameHostMsg_BeginNavigation_Params navigation_params;
 
@@ -32,9 +32,6 @@ struct NavigationRequestInfo {
   GURL first_party_for_cookies;
   bool is_main_frame;
   bool parent_is_main_frame;
-
-  // True if the frame is visible.
-  bool is_showing;
 };
 
 }  // namespace content

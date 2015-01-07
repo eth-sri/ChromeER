@@ -80,7 +80,7 @@ class EncryptedMediaTest : public content::MediaBrowserTest,
       return;
     }
 
-    media::QueryParams query_params;
+    base::StringPairs query_params;
     query_params.push_back(std::make_pair("keySystem", CurrentKeySystem()));
     query_params.push_back(std::make_pair("runEncrypted", "1"));
     RunMediaTestPage("mse_config_change.html", query_params, kEnded, true);
@@ -92,12 +92,16 @@ class EncryptedMediaTest : public content::MediaBrowserTest,
                              const std::string& key_system,
                              SrcType src_type,
                              const std::string& expectation) {
+#if defined(OS_ANDROID) && defined(__aarch64__)
+    // Disable EME tests on arm64 due to timeouts: http://crbug.com/418039
+    return;
+#endif
     if (src_type == MSE && !IsMSESupported()) {
       VLOG(0) << "Skipping test - MSE not supported.";
       return;
     }
 
-    media::QueryParams query_params;
+    base::StringPairs query_params;
     query_params.push_back(std::make_pair("mediaFile", media_file));
     query_params.push_back(std::make_pair("mediaType", media_type));
     query_params.push_back(std::make_pair("keySystem", key_system));
@@ -175,9 +179,6 @@ IN_PROC_BROWSER_TEST_P(EncryptedMediaTest, FrameSizeChangeVideo) {
 #if defined(OS_WIN)
   if (base::win::GetVersion() < base::win::VERSION_VISTA)
     return;
-#elif defined(__aarch64__)
-  // Times out on arm64 currently due to http://crbug.com/403308
-  return;
 #endif
   TestFrameSizeChange();
 }

@@ -6,20 +6,22 @@
 
 #include "base/command_line.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
-#include "components/pairing/bluetooth_host_pairing_controller.h"
+#include "components/pairing/host_pairing_controller.h"
 
 namespace chromeos {
 
 using namespace host_pairing;
 using namespace pairing_chromeos;
 
-HostPairingScreen::HostPairingScreen(ScreenObserver* observer,
-                                     HostPairingScreenActor* actor)
+HostPairingScreen::HostPairingScreen(
+    ScreenObserver* observer,
+    HostPairingScreenActor* actor,
+    pairing_chromeos::HostPairingController* controller)
     : WizardScreen(observer),
       actor_(actor),
+      controller_(controller),
       current_stage_(HostPairingController::STAGE_NONE) {
   actor_->SetDelegate(this);
-  controller_.reset(new BluetoothHostPairingController());
   controller_->AddObserver(this);
 }
 
@@ -44,7 +46,7 @@ void HostPairingScreen::PrepareToShow() {
 void HostPairingScreen::Show() {
   if (actor_)
     actor_->Show();
-  controller_->StartPairing();
+  PairingStageChanged(controller_->GetCurrentStage());
 }
 
 void HostPairingScreen::Hide() {
@@ -57,10 +59,12 @@ std::string HostPairingScreen::GetName() const {
 }
 
 void HostPairingScreen::PairingStageChanged(Stage new_stage) {
-  DCHECK(new_stage != current_stage_);
-
   std::string desired_page;
   switch (new_stage) {
+    case HostPairingController::STAGE_NONE:
+    case HostPairingController::STAGE_INITIALIZATION_ERROR: {
+      break;
+    }
     case HostPairingController::STAGE_WAITING_FOR_CONTROLLER:
     case HostPairingController::STAGE_WAITING_FOR_CONTROLLER_AFTER_UPDATE: {
       desired_page = kPageWelcome;
@@ -96,11 +100,7 @@ void HostPairingScreen::PairingStageChanged(Stage new_stage) {
       break;
     }
     case HostPairingController::STAGE_FINISHED: {
-      get_screen_observer()->OnExit(WizardController::HOST_PAIRING_FINISHED);
-      break;
-    }
-    default: {
-      NOTREACHED();
+      // This page is closed in EnrollHost.
       break;
     }
   }
@@ -120,8 +120,9 @@ void HostPairingScreen::ConfigureHost(bool accepted_eula,
 }
 
 void HostPairingScreen::EnrollHost(const std::string& auth_token) {
-  // TODO(zork,achuith): Enroll device, send error on error.
-  // (http://crbug.com/374990)
+  controller_->RemoveObserver(this);
+  WizardController::default_controller()->OnEnrollmentAuthTokenReceived(
+      auth_token);
 }
 
 void HostPairingScreen::OnActorDestroyed(HostPairingScreenActor* actor) {

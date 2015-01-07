@@ -51,6 +51,7 @@ class EasyUnlockScreenlockStateHandler : public ScreenlockBridge::Observer {
   // |screenlock_bridge|: The screenlock bridge used to update the screen lock
   //     state.
   EasyUnlockScreenlockStateHandler(const std::string& user_email,
+                                   bool initially_hardlocked,
                                    PrefService* pref_service,
                                    ScreenlockBridge* screenlock_bridge);
   virtual ~EasyUnlockScreenlockStateHandler();
@@ -59,10 +60,17 @@ class EasyUnlockScreenlockStateHandler : public ScreenlockBridge::Observer {
   // accordingly.
   void ChangeState(State new_state);
 
+  // Updates the screenlock state according to whether the pod is hardlocked or
+  // not.
+  void SetHardlocked(bool value);
+
  private:
   // ScreenlockBridge::Observer:
   virtual void OnScreenDidLock() OVERRIDE;
   virtual void OnScreenDidUnlock() OVERRIDE;
+  virtual void OnFocusedUserChanged(const std::string& user_id) OVERRIDE;
+
+  void ShowHardlockUI();
 
   // Updates icon's tooltip options.
   // |trial_run|: Whether the trial Easy Unlock run is in progress.
@@ -90,6 +98,10 @@ class EasyUnlockScreenlockStateHandler : public ScreenlockBridge::Observer {
   std::string user_email_;
   PrefService* pref_service_;
   ScreenlockBridge* screenlock_bridge_;
+
+  // Whether the easy unlock is disabled due to user hardlocking the pod.
+  bool hardlocked_;
+  bool hardlock_ui_shown_;
 
   DISALLOW_COPY_AND_ASSIGN(EasyUnlockScreenlockStateHandler);
 };

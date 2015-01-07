@@ -23,6 +23,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/test_file_util.h"
+#include "base/threading/sequenced_worker_pool.h"
 #include "base/time/time.h"
 #include "base/values.h"
 #include "chrome/app/chrome_command_ids.h"
@@ -71,8 +72,6 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/content_settings.h"
-#include "chrome/common/content_settings_pattern.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
@@ -80,6 +79,8 @@
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/test_switches.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/content_settings/core/common/content_settings.h"
+#include "components/content_settings/core/common/content_settings_pattern.h"
 #include "components/infobars/core/infobar.h"
 #include "components/policy/core/browser/browser_policy_connector.h"
 #include "components/policy/core/common/external_data_fetcher.h"
@@ -111,7 +112,6 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_constants.h"
 #include "content/public/common/content_paths.h"
-#include "content/public/common/page_transition_types.h"
 #include "content/public/common/process_type.h"
 #include "content/public/common/result_codes.h"
 #include "content/public/common/url_constants.h"
@@ -121,8 +121,6 @@
 #include "content/public/test/mock_notification_observer.h"
 #include "content/public/test/test_navigation_observer.h"
 #include "content/public/test/test_utils.h"
-#include "content/test/net/url_request_failed_job.h"
-#include "content/test/net/url_request_mock_http_job.h"
 #include "extensions/browser/extension_host.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/process_manager.h"
@@ -134,6 +132,8 @@
 #include "net/base/net_util.h"
 #include "net/base/url_util.h"
 #include "net/http/http_stream_factory.h"
+#include "net/test/url_request/url_request_failed_job.h"
+#include "net/test/url_request/url_request_mock_http_job.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_filter.h"
 #include "policy/policy_constants.h"
@@ -141,6 +141,7 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/base/page_transition_types.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "url/gurl.h"
 
@@ -168,7 +169,7 @@
 #endif
 
 using content::BrowserThread;
-using content::URLRequestMockHTTPJob;
+using net::URLRequestMockHTTPJob;
 using testing::Mock;
 using testing::Return;
 using testing::_;
@@ -223,8 +224,9 @@ void RedirectHostsToTestData(const char* const urls[], size_t size) {
   for (size_t i = 0; i < size; ++i) {
     const GURL url(urls[i]);
     EXPECT_TRUE(url.is_valid());
-    filter->AddUrlInterceptor(
-        url, URLRequestMockHTTPJob::CreateInterceptor(base_path));
+    filter->AddUrlInterceptor(url,
+                              URLRequestMockHTTPJob::CreateInterceptor(
+                                  base_path, BrowserThread::GetBlockingPool()));
   }
 }
 
@@ -244,7 +246,7 @@ net::URLRequestJob* FailedJobFactory(
     net::URLRequest* request,
     net::NetworkDelegate* network_delegate,
     const std::string& scheme) {
-  return new content::URLRequestFailedJob(
+  return new net::URLRequestFailedJob(
       request, network_delegate, net::ERR_CONNECTION_RESET);
 }
 
@@ -293,7 +295,9 @@ void CheckCanOpenURL(Browser* browser, const char* spec) {
   content::WebContents* contents =
       browser->tab_strip_model()->GetActiveWebContents();
   EXPECT_EQ(url, contents->GetURL());
-  base::string16 title = base::UTF8ToUTF16(url.spec() + " was blocked");
+  base::string16 spec16 = base::UTF8ToUTF16(url.spec());
+  base::string16 title =
+      l10n_util::GetStringFUTF16(IDS_ERRORPAGES_TITLE_BLOCKED, spec16);
   EXPECT_NE(title, contents->GetTitle());
 }
 
@@ -304,7 +308,9 @@ void CheckURLIsBlocked(Browser* browser, const char* spec) {
   content::WebContents* contents =
       browser->tab_strip_model()->GetActiveWebContents();
   EXPECT_EQ(url, contents->GetURL());
-  base::string16 title = base::UTF8ToUTF16(url.spec() + " was blocked");
+  base::string16 spec16 = base::UTF8ToUTF16(url.spec());
+  base::string16 title =
+      l10n_util::GetStringFUTF16(IDS_ERRORPAGES_TITLE_BLOCKED, spec16);
   EXPECT_EQ(title, contents->GetTitle());
 
   // Verify that the expected error page is being displayed.
@@ -452,9 +458,9 @@ int CountPlugins() {
 
 void FlushBlacklistPolicy() {
   // Updates of the URLBlacklist are done on IO, after building the blacklist
-  // on FILE, which is initiated from IO.
+  // on the blocking pool, which is initiated from IO.
   content::RunAllPendingInMessageLoop(BrowserThread::IO);
-  content::RunAllPendingInMessageLoop(BrowserThread::FILE);
+  BrowserThread::GetBlockingPool()->FlushForTesting();
   content::RunAllPendingInMessageLoop(BrowserThread::IO);
 }
 
@@ -613,8 +619,11 @@ class PolicyTest : public InProcessBrowserTest {
     base::FilePath root_http;
     PathService::Get(content::DIR_TEST_DATA, &root_http);
     BrowserThread::PostTaskAndReply(
-        BrowserThread::IO, FROM_HERE,
-        base::Bind(URLRequestMockHTTPJob::AddUrlHandler, root_http),
+        BrowserThread::IO,
+        FROM_HERE,
+        base::Bind(URLRequestMockHTTPJob::AddUrlHandler,
+                   root_http,
+                   make_scoped_refptr(BrowserThread::GetBlockingPool())),
         base::MessageLoop::current()->QuitWhenIdleClosure());
     content::RunMessageLoop();
   }
@@ -2127,7 +2136,13 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, URLBlacklist) {
   }
 }
 
-IN_PROC_BROWSER_TEST_F(PolicyTest, FileURLBlacklist) {
+#if defined(OS_MACOSX)
+// http://crbug.com/339240
+#define MAYBE_FileURLBlacklist DISABLED_FileURLBlacklist
+#else
+#define MAYBE_FileURLBlacklist FileURLBlacklist
+#endif
+IN_PROC_BROWSER_TEST_F(PolicyTest, MAYBE_FileURLBlacklist) {
   // Check that FileURLs can be blacklisted and DisabledSchemes works together
   // with URLblacklisting and URLwhitelisting.
 
@@ -2681,9 +2696,14 @@ class RestoreOnStartupPolicyTest
     command_line->InitFromArgv(argv);
     ASSERT_TRUE(std::equal(argv.begin(), argv.end(),
                            command_line->argv().begin()));
+  }
 
-    // Redirect the test URLs to the test data directory.
-    RedirectHostsToTestData(kRestoredURLs, arraysize(kRestoredURLs));
+  virtual void SetUpOnMainThread() OVERRIDE {
+    BrowserThread::PostTask(
+        BrowserThread::IO,
+        FROM_HERE,
+        base::Bind(
+            RedirectHostsToTestData, kRestoredURLs, arraysize(kRestoredURLs)));
   }
 
   void HomepageIsNotNTP() {
@@ -2790,7 +2810,7 @@ IN_PROC_BROWSER_TEST_P(RestoreOnStartupPolicyTest, PRE_RunTest) {
         content::NOTIFICATION_LOAD_STOP,
         content::NotificationService::AllSources());
     chrome::AddSelectedTabWithURL(browser(), GURL(kRestoredURLs[i]),
-                                  content::PAGE_TRANSITION_LINK);
+                                  ui::PAGE_TRANSITION_LINK);
     observer.Wait();
   }
 }

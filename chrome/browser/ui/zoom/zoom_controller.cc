@@ -4,20 +4,15 @@
 
 #include "chrome/browser/ui/zoom/zoom_controller.h"
 
-#include "base/prefs/pref_service.h"
-#include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/sad_tab.h"
 #include "chrome/browser/ui/zoom/zoom_event_manager.h"
 #include "chrome/browser/ui/zoom/zoom_observer.h"
-#include "chrome/common/pref_names.h"
 #include "content/public/browser/host_zoom_map.h"
 #include "content/public/browser/navigation_entry.h"
-#include "content/public/browser/notification_details.h"
-#include "content/public/browser/notification_service.h"
-#include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/common/page_type.h"
 #include "content/public/common/page_zoom.h"
 #include "extensions/common/extension.h"
 #include "grit/theme_resources.h"
@@ -31,19 +26,14 @@ ZoomController::ZoomController(content::WebContents* web_contents)
       zoom_mode_(ZOOM_MODE_DEFAULT),
       zoom_level_(1.0),
       browser_context_(web_contents->GetBrowserContext()) {
-  Profile* profile =
-      Profile::FromBrowserContext(web_contents->GetBrowserContext());
-  default_zoom_level_.Init(
-      prefs::kDefaultZoomLevel,
-      profile->GetPrefs(),
-      base::Bind(
-          &ZoomController::UpdateState, base::Unretained(this), std::string()));
-  zoom_level_ = default_zoom_level_.GetValue();
+  // TODO(wjmaclean) Make calls to HostZoomMap::GetDefaultForBrowserContext()
+  // refer to the webcontents-specific HostZoomMap when that becomes available.
+  content::HostZoomMap* host_zoom_map =
+      content::HostZoomMap::GetDefaultForBrowserContext(browser_context_);
+  zoom_level_ = host_zoom_map->GetDefaultZoomLevel();
 
-  zoom_subscription_ = content::HostZoomMap::GetDefaultForBrowserContext(
-      browser_context_)->AddZoomLevelChangedCallback(
-          base::Bind(&ZoomController::OnZoomLevelChanged,
-                     base::Unretained(this)));
+  zoom_subscription_ = host_zoom_map->AddZoomLevelChangedCallback(
+      base::Bind(&ZoomController::OnZoomLevelChanged, base::Unretained(this)));
 
   UpdateState(std::string());
 }
@@ -51,15 +41,14 @@ ZoomController::ZoomController(content::WebContents* web_contents)
 ZoomController::~ZoomController() {}
 
 bool ZoomController::IsAtDefaultZoom() const {
-  return content::ZoomValuesEqual(GetZoomLevel(),
-                                  default_zoom_level_.GetValue());
+  return content::ZoomValuesEqual(GetZoomLevel(), GetDefaultZoomLevel());
 }
 
 int ZoomController::GetResourceForZoomLevel() const {
   if (IsAtDefaultZoom())
     return IDR_ZOOM_NORMAL;
-  return GetZoomLevel() > default_zoom_level_.GetValue() ? IDR_ZOOM_PLUS
-                                                         : IDR_ZOOM_MINUS;
+  return GetZoomLevel() > GetDefaultZoomLevel() ? IDR_ZOOM_PLUS
+                                                : IDR_ZOOM_MINUS;
 }
 
 void ZoomController::AddObserver(ZoomObserver* observer) {
@@ -90,10 +79,15 @@ bool ZoomController::SetZoomLevel(double zoom_level) {
 bool ZoomController::SetZoomLevelByExtension(
     double zoom_level,
     const scoped_refptr<const extensions::Extension>& extension) {
+  content::NavigationEntry* entry =
+      web_contents()->GetController().GetLastCommittedEntry();
+  bool is_normal_page =
+      entry && entry->GetPageType() == content::PAGE_TYPE_NORMAL;
   // Cannot zoom in disabled mode. Also, don't allow changing zoom level on
-  // a crashed tab.
+  // a crashed tab, an error page or an interstitial page.
   if (zoom_mode_ == ZOOM_MODE_DISABLED ||
-      !web_contents()->GetRenderProcessHost()->HasConnection())
+      !web_contents()->GetRenderViewHost()->IsRenderViewLive() ||
+      !is_normal_page)
     return false;
 
   // Store extension data so that |extension| can be attributed when the zoom
@@ -141,9 +135,6 @@ bool ZoomController::SetZoomLevelByExtension(
     zoom_map->SetTemporaryZoomLevel(
         render_process_id, render_view_id, zoom_level);
   } else {
-    content::NavigationEntry* entry =
-        web_contents()->GetController().GetLastCommittedEntry();
-
     if (!entry) {
       last_extension_ = NULL;
       return false;
@@ -227,7 +218,7 @@ void ZoomController::SetZoomMode(ZoomMode new_mode) {
       // the zoom level is handled independently.
       if (zoom_mode_ != ZOOM_MODE_DISABLED) {
         zoom_map->SetTemporaryZoomLevel(
-            render_process_id, render_view_id, default_zoom_level_.GetValue());
+            render_process_id, render_view_id, GetDefaultZoomLevel());
         zoom_level_ = original_zoom_level;
       } else {
         // When we don't call any HostZoomMap set functions, we send the event
@@ -241,7 +232,7 @@ void ZoomController::SetZoomMode(ZoomMode new_mode) {
     case ZOOM_MODE_DISABLED: {
       // The page needs to be zoomed back to default before disabling the zoom
       zoom_map->SetTemporaryZoomLevel(
-          render_process_id, render_view_id, default_zoom_level_.GetValue());
+          render_process_id, render_view_id, GetDefaultZoomLevel());
       break;
     }
   }

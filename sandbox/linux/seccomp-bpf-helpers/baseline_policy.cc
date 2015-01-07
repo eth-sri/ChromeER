@@ -120,12 +120,15 @@ ResultExpr EvaluateSyscallImpl(int fs_denied_errno,
     return Allow();
   }
 
-#if defined(__aarch64__)
-  // These are needed for thread creation.
-  // TODO(leecam): Check jln's fix for this and remove these 'allows'.
-  if (sysno == __NR_sigaltstack || sysno == __NR_setpriority)
+#if defined(OS_ANDROID)
+  // Needed for thread creation.
+  if (sysno == __NR_sigaltstack)
     return Allow();
 #endif
+
+  if (sysno == __NR_clock_gettime) {
+    return RestrictClockID();
+  }
 
   if (sysno == __NR_clone) {
     return RestrictCloneToThreadsAndEPERMFork();
@@ -150,6 +153,12 @@ ResultExpr EvaluateSyscallImpl(int fs_denied_errno,
   if (sysno == __NR_futex)
     return RestrictFutex();
 
+  if (sysno == __NR_set_robust_list)
+    return Error(EPERM);
+
+  if (sysno == __NR_getpriority || sysno ==__NR_setpriority)
+    return RestrictGetSetpriority(current_pid);
+
   if (sysno == __NR_madvise) {
     // Only allow MADV_DONTNEED (aka MADV_FREE).
     const Arg<int> advice(2);
@@ -171,7 +180,7 @@ ResultExpr EvaluateSyscallImpl(int fs_denied_errno,
     return RestrictMprotectFlags();
 
   if (sysno == __NR_prctl)
-    return sandbox::RestrictPrctl();
+    return RestrictPrctl();
 
 #if defined(__x86_64__) || defined(__arm__) || defined(__mips__) || \
     defined(__aarch64__)
@@ -225,16 +234,15 @@ ResultExpr EvaluateSyscallImpl(int fs_denied_errno,
 
 // Unfortunately C++03 doesn't allow delegated constructors.
 // Call other constructor when C++11 lands.
-BaselinePolicy::BaselinePolicy()
-    : fs_denied_errno_(EPERM), current_pid_(syscall(__NR_getpid)) {}
+BaselinePolicy::BaselinePolicy() : BaselinePolicy(EPERM) {}
 
 BaselinePolicy::BaselinePolicy(int fs_denied_errno)
-    : fs_denied_errno_(fs_denied_errno), current_pid_(syscall(__NR_getpid)) {}
+    : fs_denied_errno_(fs_denied_errno), policy_pid_(syscall(__NR_getpid)) {}
 
 BaselinePolicy::~BaselinePolicy() {
   // Make sure that this policy is created, used and destroyed by a single
   // process.
-  DCHECK_EQ(syscall(__NR_getpid), current_pid_);
+  DCHECK_EQ(syscall(__NR_getpid), policy_pid_);
 }
 
 ResultExpr BaselinePolicy::EvaluateSyscall(int sysno) const {
@@ -242,9 +250,9 @@ ResultExpr BaselinePolicy::EvaluateSyscall(int sysno) const {
   DCHECK(SandboxBPF::IsValidSyscallNumber(sysno));
   // Make sure that this policy is used in the creating process.
   if (1 == sysno) {
-    DCHECK_EQ(syscall(__NR_getpid), current_pid_);
+    DCHECK_EQ(syscall(__NR_getpid), policy_pid_);
   }
-  return EvaluateSyscallImpl(fs_denied_errno_, current_pid_, sysno);
+  return EvaluateSyscallImpl(fs_denied_errno_, policy_pid_, sysno);
 }
 
 ResultExpr BaselinePolicy::InvalidSyscall() const {

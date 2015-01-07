@@ -21,6 +21,7 @@ import os
 import re
 import socket
 import ssl
+import time
 import urllib
 import urllib2
 
@@ -217,6 +218,9 @@ def _SendRequest(url, timeout=None):
   except urllib2.HTTPError as e:
     status_code = e.code
     content = None
+  except (ssl.SSLError, httplib.BadStatusLine, IOError):
+    status_code = -1
+    content = None
 
   return status_code, content
 
@@ -225,7 +229,25 @@ class HttpClientLocal(http_client.HttpClient):
   """This http client is used locally in a workstation, GCE VMs, etc."""
 
   @staticmethod
-  def Get(url, params={}, timeout=None):
+  def Get(url, params={}, timeout=120, retries=5, retry_interval=0.5,
+          retry_if_not=None):
     if params:
       url = '%s?%s' % (url, urllib.urlencode(params))
-    return _SendRequest(url, timeout=timeout)
+
+    count = 0
+    while True:
+      count += 1
+
+      status_code, content = _SendRequest(url, timeout=timeout)
+      if status_code == 200:
+        return status_code, content
+      if retry_if_not and status_code == retry_if_not:
+        return status_code, content
+
+      if count < retries:
+        time.sleep(retry_interval)
+      else:
+        return status_code, content
+
+    # Should never be reached.
+    return status_code, content

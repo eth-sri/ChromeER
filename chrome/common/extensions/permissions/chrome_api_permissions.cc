@@ -16,9 +16,6 @@ namespace extensions {
 
 namespace {
 
-const char kOldAlwaysOnTopWindowsPermission[] = "alwaysOnTopWindows";
-const char kOldFullscreenPermission[] = "fullscreen";
-const char kOldOverrideEscFullscreenPermission[] = "overrideEscFullscreen";
 const char kOldUnlimitedStoragePermission[] = "unlimited_storage";
 const char kWindowsPermission[] = "windows";
 
@@ -66,14 +63,6 @@ std::vector<APIPermissionInfo*> ChromeAPIPermissions::GetAllPermissions()
        APIPermissionInfo::kFlagCannotBeOptional},
       {APIPermission::kEmbeddedExtensionOptions, "embeddedExtensionOptions",
        APIPermissionInfo::kFlagCannotBeOptional},
-      // NOTE(kalman): this is provided by a manifest property but needs to
-      // appear in the install permission dialogue, so we need a fake
-      // permission for it. See http://crbug.com/247857.
-      {APIPermission::kWebConnectable, "webConnectable",
-       APIPermissionInfo::kFlagCannotBeOptional |
-           APIPermissionInfo::kFlagInternal,
-       IDS_EXTENSION_PROMPT_WARNING_WEB_CONNECTABLE,
-       PermissionMessage::kWebConnectable},
       {APIPermission::kGeolocation, "geolocation",
        APIPermissionInfo::kFlagCannotBeOptional,
        IDS_EXTENSION_PROMPT_WARNING_GEOLOCATION,
@@ -109,7 +98,7 @@ std::vector<APIPermissionInfo*> ChromeAPIPermissions::GetAllPermissions()
        PermissionMessage::kContentSettings},
       {APIPermission::kContextMenus, "contextMenus"},
       {APIPermission::kCookie, "cookies"},
-      {APIPermission::kCopresence, "copresence",
+      {APIPermission::kCopresence, "copresence", APIPermissionInfo::kFlagNone,
        IDS_EXTENSION_PROMPT_WARNING_COPRESENCE, PermissionMessage::kCopresence},
       {APIPermission::kCopresencePrivate, "copresencePrivate"},
       {APIPermission::kEnterprisePlatformKeys, "enterprise.platformKeys"},
@@ -164,8 +153,6 @@ std::vector<APIPermissionInfo*> ChromeAPIPermissions::GetAllPermissions()
        PermissionMessage::kTabs},
       {APIPermission::kWebRequest, "webRequest"},
       {APIPermission::kWebRequestBlocking, "webRequestBlocking"},
-      {APIPermission::kWebView, "webview",
-       APIPermissionInfo::kFlagCannotBeOptional},
 
       // Register private permissions.
       {APIPermission::kScreenlockPrivate, "screenlockPrivate",
@@ -199,7 +186,7 @@ std::vector<APIPermissionInfo*> ChromeAPIPermissions::GetAllPermissions()
        PermissionMessage::kExperienceSamplingPrivate},
       {APIPermission::kFileBrowserHandlerInternal, "fileBrowserHandlerInternal",
        APIPermissionInfo::kFlagCannotBeOptional},
-      {APIPermission::kFileBrowserPrivate, "fileBrowserPrivate",
+      {APIPermission::kFileManagerPrivate, "fileManagerPrivate",
        APIPermissionInfo::kFlagCannotBeOptional},
       {APIPermission::kHotwordPrivate, "hotwordPrivate",
        APIPermissionInfo::kFlagCannotBeOptional},
@@ -296,7 +283,7 @@ std::vector<APIPermissionInfo*> ChromeAPIPermissions::GetAllPermissions()
            APIPermissionInfo::kFlagCannotBeOptional},
 
       // Platform-app permissions.
-      {APIPermission::kAlwaysOnTopWindows, "app.window.alwaysOnTop"},
+
       // The permission string for "fileSystem" is only shown when
       // "write" or "directory" is present. Read-only access is only
       // granted after the user has been shown a file or directory
@@ -324,19 +311,9 @@ std::vector<APIPermissionInfo*> ChromeAPIPermissions::GetAllPermissions()
        &CreateAPIPermission<MediaGalleriesPermission>},
       {APIPermission::kPushMessaging, "pushMessaging",
        APIPermissionInfo::kFlagCannotBeOptional},
-      {APIPermission::kSystemCpu, "system.cpu"},
-      {APIPermission::kSystemMemory, "system.memory"},
-      {APIPermission::kSystemNetwork, "system.network"},
-      {APIPermission::kSystemDisplay, "system.display"},
-      {APIPermission::kSystemStorage, "system.storage"},
       {APIPermission::kPointerLock, "pointerLock"},
-      {APIPermission::kFullscreen, "app.window.fullscreen"},
       {APIPermission::kAudio, "audio"},
       {APIPermission::kCastStreaming, "cast.streaming"},
-      {APIPermission::kOverrideEscFullscreen,
-       "app.window.fullscreen.overrideEsc"},
-      {APIPermission::kWindowShape, "app.window.shape"},
-      {APIPermission::kAlphaEnabled, "app.window.alpha"},
       {APIPermission::kBrowser, "browser"},
 
       // Settings override permissions.
@@ -368,13 +345,6 @@ std::vector<PermissionsProvider::AliasInfo>
 ChromeAPIPermissions::GetAllAliases() const {
   // Register aliases.
   std::vector<PermissionsProvider::AliasInfo> aliases;
-  aliases.push_back(PermissionsProvider::AliasInfo(
-      "app.window.alwaysOnTop", kOldAlwaysOnTopWindowsPermission));
-  aliases.push_back(PermissionsProvider::AliasInfo("app.window.fullscreen",
-                                                   kOldFullscreenPermission));
-  aliases.push_back(
-      PermissionsProvider::AliasInfo("app.window.fullscreen.overrideEsc",
-                                     kOldOverrideEscFullscreenPermission));
   aliases.push_back(PermissionsProvider::AliasInfo(
       "unlimitedStorage", kOldUnlimitedStoragePermission));
   aliases.push_back(PermissionsProvider::AliasInfo(

@@ -78,7 +78,7 @@ void GpuScheduler::PutChanged() {
     DCHECK(IsScheduled());
     DCHECK(unschedule_fences_.empty());
 
-    error = parser_->ProcessCommand();
+    error = parser_->ProcessCommands(CommandParser::kParseCommandsSlice);
 
     if (error == error::kDeferCommandUntilLater) {
       DCHECK_GT(unscheduled_count_, 0);
@@ -91,8 +91,6 @@ void GpuScheduler::PutChanged() {
     command_buffer_->SetGetOffset(static_cast<int32>(parser_->get()));
 
     if (error::IsError(error)) {
-      LOG(ERROR) << "[" << decoder_ << "] "
-                 << "GPU PARSE ERROR: " << error;
       command_buffer_->SetContextLostReason(decoder_->GetContextLostReason());
       command_buffer_->SetParseError(error);
       break;

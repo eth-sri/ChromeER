@@ -85,7 +85,7 @@ cr.define('cr.ui', function() {
 
     /**
      * Function used to create grid items.
-     * @type {function(new:cr.ui.ListItem, Object)}
+     * @type {function(new:cr.ui.ListItem, *)}
      * @private
      */
     itemConstructor_: cr.ui.ListItem,
@@ -467,8 +467,16 @@ cr.define('cr.ui', function() {
       var target = /** @type {HTMLElement} */(e.target);
 
       var ancestor = this.getListItemAncestor(target);
-      if (ancestor)
-        this.activateItemAtIndex(this.getIndexOfListItem(ancestor));
+      var index = -1;
+      if (ancestor) {
+        index = this.getIndexOfListItem(ancestor);
+        this.activateItemAtIndex(index);
+      }
+
+      var sm = this.selectionModel;
+      var indexSelected = sm.getIndexSelected(index);
+      if (!indexSelected)
+        this.handlePointerDownUp_(e);
     },
 
     /**
@@ -796,7 +804,7 @@ cr.define('cr.ui', function() {
 
     /**
      * Creates a new list item.
-     * @param {Object} value The value to use for the item.
+     * @param {*} value The value to use for the item.
      * @return {!ListItem} The newly created list item.
      */
     createItem: function(value) {

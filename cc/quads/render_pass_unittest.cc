@@ -52,12 +52,13 @@ static void CompareRenderPassLists(const RenderPassList& expected_list,
               actual->shared_quad_state_list.size());
     EXPECT_EQ(expected->quad_list.size(), actual->quad_list.size());
 
-    for (size_t i = 0; i < expected->quad_list.size(); ++i) {
-      EXPECT_EQ(expected->quad_list[i]->rect.ToString(),
-                actual->quad_list[i]->rect.ToString());
-      EXPECT_EQ(
-          expected->quad_list[i]->shared_quad_state->content_bounds.ToString(),
-          actual->quad_list[i]->shared_quad_state->content_bounds.ToString());
+    for (QuadList::Iterator exp_iter = expected->quad_list.begin(),
+                            act_iter = actual->quad_list.begin();
+         exp_iter != expected->quad_list.end();
+         ++exp_iter, ++act_iter) {
+      EXPECT_EQ(exp_iter->rect.ToString(), act_iter->rect.ToString());
+      EXPECT_EQ(exp_iter->shared_quad_state->content_bounds.ToString(),
+                act_iter->shared_quad_state->content_bounds.ToString());
     }
   }
 }
@@ -224,8 +225,8 @@ TEST(RenderPassTest, CopyAllShouldBeIdentical) {
                     gfx::Vector2dF(),  // filters_scale
                     FilterOperations());
 
-  pass_list.push_back(pass.PassAs<RenderPass>());
-  pass_list.push_back(contrib.PassAs<RenderPass>());
+  pass_list.push_back(pass.Pass());
+  pass_list.push_back(contrib.Pass());
 
   // Make a copy with CopyAll().
   RenderPassList copy_list;
@@ -309,7 +310,7 @@ TEST(RenderPassTest, CopyAllWithCulledQuads) {
                              gfx::Rect(3, 3, 3, 3),
                              SkColor());
 
-  pass_list.push_back(pass.PassAs<RenderPass>());
+  pass_list.push_back(pass.Pass());
 
   // Make a copy with CopyAll().
   RenderPassList copy_list;

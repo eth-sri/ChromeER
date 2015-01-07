@@ -76,7 +76,6 @@
         'gl_fence_nv.h',
         'gl_gl_api_implementation.cc',
         'gl_gl_api_implementation.h',
-        'gl_image.cc',
         'gl_image.h',
         'gl_image_memory.cc',
         'gl_image_memory.h',
@@ -278,8 +277,6 @@
             'gl_jni_headers',
           ],
           'sources': [
-            'gl_image_android_native_buffer.cc',
-            'gl_image_android_native_buffer.h',
             'gl_image_surface_texture.cc',
             'gl_image_surface_texture.h',
           ],

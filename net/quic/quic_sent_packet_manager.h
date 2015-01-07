@@ -5,10 +5,7 @@
 #ifndef NET_QUIC_QUIC_SENT_PACKET_MANAGER_H_
 #define NET_QUIC_QUIC_SENT_PACKET_MANAGER_H_
 
-#include <deque>
-#include <list>
 #include <map>
-#include <queue>
 #include <set>
 #include <utility>
 #include <vector>
@@ -55,15 +52,11 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
         QuicByteCount byte_size) {}
 
     virtual void OnSentPacket(
-        QuicPacketSequenceNumber sequence_number,
+        const SerializedPacket& packet,
+        QuicPacketSequenceNumber original_sequence_number,
         QuicTime sent_time,
-        QuicByteCount bytes) {}
-
-    virtual void OnRetransmittedPacket(
-        QuicPacketSequenceNumber old_sequence_number,
-        QuicPacketSequenceNumber new_sequence_number,
-        TransmissionType transmission_type,
-        QuicTime time) {}
+        QuicByteCount bytes,
+        TransmissionType transmission_type) {}
 
     virtual void OnIncomingAck(
         const QuicAckFrame& ack_frame,
@@ -114,16 +107,6 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
 
   void SetHandshakeConfirmed() { handshake_confirmed_ = true; }
 
-  // Called when a new packet is serialized.  If the packet contains
-  // retransmittable data, it will be added to the unacked packet map.
-  void OnSerializedPacket(const SerializedPacket& serialized_packet);
-
-  // Called when a packet is retransmitted with a new sequence number.
-  // Replaces the old entry in the unacked packet map with the new
-  // sequence number.
-  void OnRetransmittedPacket(QuicPacketSequenceNumber old_sequence_number,
-                             QuicPacketSequenceNumber new_sequence_number);
-
   // Processes the incoming ack.
   void OnIncomingAck(const QuicAckFrame& ack_frame,
                      QuicTime ack_receive_time);
@@ -132,7 +115,7 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
   bool IsUnacked(QuicPacketSequenceNumber sequence_number) const;
 
   // Requests retransmission of all unacked packets of |retransmission_type|.
-  void RetransmitUnackedPackets(RetransmissionType retransmission_type);
+  void RetransmitUnackedPackets(TransmissionType retransmission_type);
 
   // Retransmits the oldest pending packet there is still a tail loss probe
   // pending.  Invoked after OnRetransmissionTimeout.
@@ -157,8 +140,8 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
   bool HasUnackedPackets() const;
 
   // Returns the smallest sequence number of a serialized packet which has not
-  // been acked by the peer.  If there are no unacked packets, returns 0.
-  QuicPacketSequenceNumber GetLeastUnackedSentPacket() const;
+  // been acked by the peer.
+  QuicPacketSequenceNumber GetLeastUnacked() const;
 
   // Called when a congestion feedback frame is received from peer.
   virtual void OnIncomingQuicCongestionFeedbackFrame(
@@ -168,7 +151,8 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
   // Called when we have sent bytes to the peer.  This informs the manager both
   // the number of bytes sent and if they were retransmitted.  Returns true if
   // the sender should reset the retransmission timer.
-  virtual bool OnPacketSent(QuicPacketSequenceNumber sequence_number,
+  virtual bool OnPacketSent(SerializedPacket* serialized_packet,
+                            QuicPacketSequenceNumber original_sequence_number,
                             QuicTime sent_time,
                             QuicByteCount bytes,
                             TransmissionType transmission_type,
@@ -265,6 +249,12 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
   typedef linked_hash_map<QuicPacketSequenceNumber,
                           TransmissionType> PendingRetransmissionMap;
 
+  // Called when a packet is retransmitted with a new sequence number.
+  // Replaces the old entry in the unacked packet map with the new
+  // sequence number.
+  void OnRetransmittedPacket(QuicPacketSequenceNumber old_sequence_number,
+                             QuicPacketSequenceNumber new_sequence_number);
+
   // Updates the least_packet_awaited_by_peer.
   void UpdatePacketInformationReceivedByPeer(const QuicAckFrame& ack_frame);
 
@@ -314,9 +304,9 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
   // Removes the retransmittability and pending properties from the packet at
   // |it| due to receipt by the peer.  Returns an iterator to the next remaining
   // unacked packet.
-  QuicUnackedPacketMap::const_iterator MarkPacketHandled(
-      QuicUnackedPacketMap::const_iterator it,
-      QuicTime::Delta delta_largest_observed);
+  void MarkPacketHandled(QuicPacketSequenceNumber sequence_number,
+                         const TransmissionInfo& info,
+                         QuicTime::Delta delta_largest_observed);
 
   // Request that |sequence_number| be retransmitted after the other pending
   // retransmissions.  Does not add it to the retransmissions if it's already
@@ -326,8 +316,13 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
 
   // Notify observers about spurious retransmits.
   void RecordSpuriousRetransmissions(
-      const SequenceNumberSet& all_transmissions,
+      const SequenceNumberList& all_transmissions,
       QuicPacketSequenceNumber acked_sequence_number);
+
+  // Returns true if the client is sending or the server has received a
+  // connection option.
+  bool HasClientSentConnectionOption(const QuicConfig& config,
+                                     QuicTag tag) const;
 
   // Newly serialized retransmittable and fec packets are added to this map,
   // which contains owning pointers to any contained frames.  If a packet is
@@ -376,9 +371,9 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
   size_t max_tail_loss_probes_;
   bool using_pacing_;
 
-  // Sets of packets acked and lost as a result of the last congestion event.
-  SendAlgorithmInterface::CongestionMap packets_acked_;
-  SendAlgorithmInterface::CongestionMap packets_lost_;
+  // Vectors packets acked and lost as a result of the last congestion event.
+  SendAlgorithmInterface::CongestionVector packets_acked_;
+  SendAlgorithmInterface::CongestionVector packets_lost_;
 
   // Set to true after the crypto handshake has successfully completed. After
   // this is true we no longer use HANDSHAKE_MODE, and further frames sent on

@@ -3,16 +3,17 @@ caitkp@chromium.org
 erikwright@chromium.org
 jochen@chromium.org
 
-per-file autofill*=dhollowa@chromium.org
+per-file autofill*=estade@chromium.org
 per-file autofill*=isherman@chromium.org
-per-file autofill*=kaiwang@chromium.org
 
-per-file bookmarks.gypi=brettw@chromium.org
 per-file bookmarks.gypi=sky@chromium.org
 
 per-file cloud_devices*=gene@chromium.org
-per-file cloud_devices*=noamsml@chromium.org
 per-file cloud_devices*=vitalybuka@chromium.org
+
+per-file content_settings*=markusheintz@chromium.org
+per-file content_settings*=bauerb@chromium.org
+per-file content_settings*=jochen@chromium.org
 
 per-file copresence.gypi=rkc@chromium.org
 per-file copresence.gypi=ckehoe@chromium.org
@@ -29,6 +30,9 @@ per-file cronet*=mmenke@chromium.org
 per-file data_reduction_proxy*=bengr@chromium.org
 per-file data_reduction_proxy*=marq@chromium.org
 per-file data_reduction_proxy*=bolian@chromium.org
+
+per-file devtools_bridge.gyp=mnaganov@chromium.org
+per-file devtools_bridge.gyp=serya@chromium.org
 
 per-file dom_distiller*=bengr@chromium.org
 per-file dom_distiller*=cjhopman@chromium.org
@@ -61,10 +65,9 @@ per-file gcm*=zea@chromium.org
 per-file google*=isherman@chromium.org
 per-file google*=pkasting@chromium.org
 
-per-file history.gypi=brettw@chromium.org
 per-file history.gypi=sky@chromium.org
 # Temporary for the duration of the history componentization.
-per-file history.gypi=blundell@chromium.org
+per-file history.gypi=sdefresne@chromium.org
 
 per-file infobars.gypi=pkasting@chromium.org
 
@@ -95,6 +98,10 @@ per-file nacl*=mseaborn@chromium.org
 per-file nacl*=noelallen@chromium.org
 per-file nacl*=teravest@chromium.org
 
+per-file native_app_window*=benwells@chromium.org
+per-file native_app_window*=jackhou@chromium.org
+per-file native_app_window*=jamescook@chromium.org
+
 per-file navigation_interception.gypi=mkosiba@chromium.org
 
 per-file network_time.gypi=zea@chromium.org
@@ -118,6 +125,7 @@ per-file password_manager*=dubroy@chromium.org
 per-file password_manager*=gcasto@chromium.org
 per-file password_manager*=isherman@chromium.org
 per-file password_manager*=mdm@chromium.org
+per-file password_manager*=mkwst@chromium.org
 per-file password_manager*=stuartmorgan@chromium.org
 per-file password_manager*=tim@chromium.org
 per-file password_manager*=vabr@chromium.org
@@ -143,18 +151,15 @@ per-file proximity_auth*=tbarzic@chromium.org
 per-file proximity_auth*=tengs@chromium.org
 per-file proximity_auth*=xiyuan@chromium.org
 
-per-file query_parser.gypi=brettw@chromium.org
 per-file query_parser.gypi=sky@chromium.org
 
 per-file rappor*=asvitkine@chromium.org
 # OWNER-to-be: per-file rappor*=holte@chromium.org
 
 per-file renderer_context_menu*=avi@chromium.org
-per-file renderer_context_menu*=brettw@chromium.org
 per-file renderer_context_menu*=lazyboy@chromium.org
 
 per-file search.gypi=kmadhusu@chromium.org
-per-file search.gypi=brettw@chromium.org
 per-file search.gypi=jered@chromium.org
 per-file search.gypi=samarth@chromium.org
 
@@ -208,7 +213,6 @@ per-file user_manager.gypi=dzhioev@chromium.org
 per-file user_manager.gypi=nkostylev@chromium.org
 per-file user_manager.gypi=ygorshenin@chromium.org
 
-per-file url_fixer.gypi=brettw@chromium.org
 per-file url_fixer.gypi=pkasting@chromium.org
 
 per-file user_prefs.gypi=battre@chromium.org

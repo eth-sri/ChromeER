@@ -35,9 +35,9 @@
 #include "net/url_request/url_request_filter.h"
 #include "net/url_request/url_request_interceptor.h"
 #include "net/url_request/url_request_test_job.h"
-#include "webkit/browser/blob/blob_data_handle.h"
-#include "webkit/browser/blob/blob_storage_context.h"
-#include "webkit/common/blob/blob_data.h"
+#include "storage/browser/blob/blob_data_handle.h"
+#include "storage/browser/blob/blob_storage_context.h"
+#include "storage/common/blob/blob_data.h"
 
 namespace content {
 
@@ -294,9 +294,9 @@ class ServiceWorkerBrowserTest : public ContentBrowserTest {
   ServiceWorkerContextWrapper* wrapper() { return wrapper_.get(); }
   ServiceWorkerContext* public_context() { return wrapper(); }
 
-  void AssociateRendererProcessToWorker(EmbeddedWorkerInstance* worker) {
-    worker->AddProcessReference(
-        shell()->web_contents()->GetRenderProcessHost()->GetID());
+  void AssociateRendererProcessToPattern(const GURL& pattern) {
+    wrapper_->process_manager()->AddProcessReferenceToPattern(
+        pattern, shell()->web_contents()->GetRenderProcessHost()->GetID());
   }
 
  private:
@@ -326,21 +326,20 @@ class EmbeddedWorkerBrowserTest : public ServiceWorkerBrowserTest,
     EXPECT_EQ(EmbeddedWorkerInstance::STOPPED, worker_->status());
     worker_->AddListener(this);
 
-    AssociateRendererProcessToWorker(worker_.get());
 
     const int64 service_worker_version_id = 33L;
-    const GURL scope = embedded_test_server()->GetURL("/");
+    const GURL pattern = embedded_test_server()->GetURL("/");
     const GURL script_url = embedded_test_server()->GetURL(
         "/service_worker/worker.js");
-    std::vector<int> processes;
-    processes.push_back(
-        shell()->web_contents()->GetRenderProcessHost()->GetID());
+    AssociateRendererProcessToPattern(pattern);
+    int process_id = shell()->web_contents()->GetRenderProcessHost()->GetID();
+    wrapper()->process_manager()->AddProcessReferenceToPattern(
+        pattern, process_id);
     worker_->Start(
         service_worker_version_id,
-        scope,
+        pattern,
         script_url,
         pause_mode_ != DONT_PAUSE,
-        processes,
         base::Bind(&EmbeddedWorkerBrowserTest::StartOnIOThread2, this));
   }
   void StartOnIOThread2(ServiceWorkerStatusCode status) {
@@ -503,8 +502,9 @@ class ServiceWorkerVersionBrowserTest : public ServiceWorkerBrowserTest {
   }
 
   void SetUpRegistrationOnIOThread(const std::string& worker_url) {
+    const GURL pattern = embedded_test_server()->GetURL("/");
     registration_ = new ServiceWorkerRegistration(
-        embedded_test_server()->GetURL("/"),
+        pattern,
         wrapper()->context()->storage()->NewRegistrationId(),
         wrapper()->context()->AsWeakPtr());
     version_ = new ServiceWorkerVersion(
@@ -512,7 +512,7 @@ class ServiceWorkerVersionBrowserTest : public ServiceWorkerBrowserTest {
         embedded_test_server()->GetURL(worker_url),
         wrapper()->context()->storage()->NewVersionId(),
         wrapper()->context()->AsWeakPtr());
-    AssociateRendererProcessToWorker(version_->embedded_worker());
+    AssociateRendererProcessToPattern(pattern);
   }
 
   void StartOnIOThread(const base::Closure& done,
@@ -544,7 +544,7 @@ class ServiceWorkerVersionBrowserTest : public ServiceWorkerBrowserTest {
     ServiceWorkerFetchRequest request(
         embedded_test_server()->GetURL("/service_worker/empty.html"),
         "GET",
-        std::map<std::string, std::string>(),
+        ServiceWorkerHeaderMap(),
         GURL(""),
         false);
     version_->SetStatus(ServiceWorkerVersion::ACTIVATED);
@@ -701,7 +701,7 @@ IN_PROC_BROWSER_TEST_F(ServiceWorkerVersionBrowserTest, FetchEvent_Response) {
   ASSERT_EQ(SERVICE_WORKER_FETCH_EVENT_RESULT_RESPONSE, result);
   EXPECT_EQ(301, response.status_code);
   EXPECT_EQ("Moved Permanently", response.status_text);
-  std::map<std::string, std::string> expected_headers;
+  ServiceWorkerHeaderMap expected_headers;
   expected_headers["content-language"] = "fi";
   expected_headers["content-type"] = "text/html; charset=UTF-8";
   EXPECT_EQ(expected_headers, response.headers);
@@ -882,12 +882,12 @@ IN_PROC_BROWSER_TEST_F(ServiceWorkerBlackBoxBrowserTest, MAYBE_Registration) {
 
   const std::string kWorkerUrl = "/service_worker/fetch_event.js";
 
-  // Unregistering nothing should return true.
+  // Unregistering nothing should return false.
   {
     base::RunLoop run_loop;
     public_context()->UnregisterServiceWorker(
         embedded_test_server()->GetURL("/"),
-        base::Bind(&ExpectResultAndRun, true, run_loop.QuitClosure()));
+        base::Bind(&ExpectResultAndRun, false, run_loop.QuitClosure()));
     run_loop.Run();
   }
 

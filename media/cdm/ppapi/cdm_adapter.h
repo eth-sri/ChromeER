@@ -52,6 +52,9 @@ class CdmAdapter : public pp::Instance,
   // Note: Results of calls to these methods must be reported through the
   // PPB_ContentDecryptor_Private interface.
   virtual void Initialize(const std::string& key_system) OVERRIDE;
+  virtual void SetServerCertificate(
+      uint32_t promise_id,
+      pp::VarArrayBuffer server_certificate) OVERRIDE;
   virtual void CreateSession(uint32_t promise_id,
                              const std::string& init_data_type,
                              pp::VarArrayBuffer init_data,
@@ -61,15 +64,12 @@ class CdmAdapter : public pp::Instance,
   virtual void UpdateSession(uint32_t promise_id,
                              const std::string& web_session_id,
                              pp::VarArrayBuffer response) OVERRIDE;
-  // TODO(jrummell): Pass this function through Pepper and add OVERRIDE.
   virtual void CloseSession(uint32_t promise_id,
                             const std::string& web_session_id);
-  // TODO(jrummell): Rename to RemoveSession().
-  virtual void ReleaseSession(uint32_t promise_id,
-                              const std::string& web_session_id) OVERRIDE;
-  // TODO(jrummell): Pass this function through Pepper and add OVERRIDE.
+  virtual void RemoveSession(uint32_t promise_id,
+                             const std::string& web_session_id) OVERRIDE;
   virtual void GetUsableKeyIds(uint32_t promise_id,
-                               const std::string& web_session_id);
+                               const std::string& web_session_id) OVERRIDE;
   virtual void Decrypt(
       pp::Buffer_Dev encrypted_buffer,
       const PP_EncryptedBlockInfo& encrypted_block_info) OVERRIDE;
@@ -247,6 +247,9 @@ class CdmAdapter : public pp::Instance,
 
   bool IsValidVideoFrame(const LinkedVideoFrame& video_frame);
 
+  // Callback to report |file_size_bytes| of the first file read by FileIO.
+  void OnFirstFileRead(int32_t file_size_bytes);
+
 #if !defined(NDEBUG)
   // Logs the given message to the JavaScript console associated with the
   // CDM adapter instance. The name of the CDM adapter issuing the log message
@@ -297,6 +300,9 @@ class CdmAdapter : public pp::Instance,
   uint32_t deferred_audio_decoder_config_id_;
   bool deferred_initialize_video_decoder_;
   uint32_t deferred_video_decoder_config_id_;
+
+  uint32_t last_read_file_size_kb_;
+  bool file_size_uma_reported_;
 
   DISALLOW_COPY_AND_ASSIGN(CdmAdapter);
 };

@@ -32,7 +32,6 @@ const uint32 kStartFrameId = UINT32_C(0xffffffff);
 // can handle wrap around and compare two frame IDs.
 const int kMaxUnackedFrames = 120;
 
-const int kStartRttMs = 20;
 const int64 kCastMessageUpdateIntervalMs = 33;
 const int64 kNackRepeatIntervalMs = 30;
 
@@ -47,8 +46,7 @@ enum CastInitializationStatus {
   STATUS_UNSUPPORTED_VIDEO_CODEC,
   STATUS_INVALID_AUDIO_CONFIGURATION,
   STATUS_INVALID_VIDEO_CONFIGURATION,
-  STATUS_GPU_ACCELERATION_NOT_SUPPORTED,
-  STATUS_GPU_ACCELERATION_ERROR,
+  STATUS_HW_VIDEO_ENCODER_NOT_SUPPORTED,
 };
 
 enum DefaultSettings {

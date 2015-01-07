@@ -5,13 +5,11 @@
 #include "mojo/system/message_pipe_endpoint.h"
 
 #include "base/logging.h"
-#include "mojo/system/channel.h"
 
 namespace mojo {
 namespace system {
 
 void MessagePipeEndpoint::Close() {
-  NOTREACHED();
 }
 
 void MessagePipeEndpoint::CancelAllWaiters() {
@@ -49,17 +47,7 @@ void MessagePipeEndpoint::RemoveWaiter(Waiter* /*waiter*/,
     *signals_state = HandleSignalsState();
 }
 
-void MessagePipeEndpoint::Attach(scoped_refptr<Channel> /*channel*/,
-                                 MessageInTransit::EndpointId /*local_id*/) {
-  NOTREACHED();
-}
-
-bool MessagePipeEndpoint::Run(MessageInTransit::EndpointId /*remote_id*/) {
-  NOTREACHED();
-  return true;
-}
-
-void MessagePipeEndpoint::OnRemove() {
+void MessagePipeEndpoint::Attach(ChannelEndpoint* /*channel_endpoint*/) {
   NOTREACHED();
 }
 

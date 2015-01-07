@@ -8,8 +8,8 @@
 
 #include "base/basictypes.h"
 #include "base/bind.h"
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/string_util.h"
@@ -17,17 +17,17 @@
 #include "base/threading/thread_restrictions.h"
 #include "net/cookies/cookie_util.h"
 #include "net/extras/sqlite/sqlite_channel_id_store.h"
+#include "storage/browser/quota/special_storage_policy.h"
 #include "url/gurl.h"
-#include "webkit/browser/quota/special_storage_policy.h"
 
 QuotaPolicyChannelIDStore::QuotaPolicyChannelIDStore(
     const base::FilePath& path,
     const scoped_refptr<base::SequencedTaskRunner>& background_task_runner,
-    storage::SpecialStoragePolicy* special_storage_policy)
+    const scoped_refptr<storage::SpecialStoragePolicy>& special_storage_policy)
     : special_storage_policy_(special_storage_policy),
       persistent_store_(
           new net::SQLiteChannelIDStore(path, background_task_runner)) {
-  DCHECK(background_task_runner);
+  DCHECK(background_task_runner.get());
 }
 
 QuotaPolicyChannelIDStore::~QuotaPolicyChannelIDStore() {

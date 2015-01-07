@@ -11,17 +11,17 @@
 #include "base/memory/weak_ptr.h"
 #include "base/threading/thread_checker.h"
 #include "chrome/browser/chromeos/file_manager/volume_manager_observer.h"
-#include "chrome/common/extensions/api/file_browser_private.h"
+#include "chrome/common/extensions/api/file_manager_private.h"
 #include "chromeos/dbus/power_manager_client.h"
 
 namespace file_manager {
 
 enum DeviceState {
-  // Device is not being scanned and is not hard unplugged.
+  // Device is not being hard unplugged.
   DEVICE_STATE_USUAL,
-  DEVICE_SCANNED,
-  DEVICE_SCANNED_AND_REPORTED,
+  // Device is hard unplugged.
   DEVICE_HARD_UNPLUGGED,
+  // Device is hard unplugged and reported to the JavaScript side.
   DEVICE_HARD_UNPLUGGED_AND_REPORTED
 };
 
@@ -66,7 +66,7 @@ class DeviceEventRouter : public VolumeManagerObserver,
  protected:
   // Handles a device event containing |type| and |device_path|.
   virtual void OnDeviceEvent(
-      extensions::api::file_browser_private::DeviceEventType type,
+      extensions::api::file_manager_private::DeviceEventType type,
       const std::string& device_path) = 0;
   // Returns external storage is disabled or not.
   virtual bool IsExternalStorageDisabled() = 0;
@@ -85,7 +85,6 @@ class DeviceEventRouter : public VolumeManagerObserver,
   // Whther to use zero time delta for testing or not.
   const base::TimeDelta resume_time_delta_;
   const base::TimeDelta startup_time_delta_;
-  const base::TimeDelta scan_time_delta_;
 
   // Whether the profile is starting up or not.
   bool is_starting_up_;

@@ -5,14 +5,16 @@
 #include "ui/ozone/platform/dri/ozone_platform_dri.h"
 
 #include "base/at_exit.h"
+#include "ui/base/cursor/ozone/bitmap_cursor_factory_ozone.h"
 #include "ui/events/ozone/device/device_manager.h"
 #include "ui/events/ozone/evdev/cursor_delegate_evdev.h"
 #include "ui/events/ozone/evdev/event_factory_evdev.h"
-#include "ui/ozone/platform/dri/cursor_factory_evdev_dri.h"
 #include "ui/ozone/platform/dri/dri_buffer.h"
+#include "ui/ozone/platform/dri/dri_cursor.h"
 #include "ui/ozone/platform/dri/dri_surface_factory.h"
 #include "ui/ozone/platform/dri/dri_window.h"
 #include "ui/ozone/platform/dri/dri_window_delegate_impl.h"
+#include "ui/ozone/platform/dri/dri_window_delegate_manager.h"
 #include "ui/ozone/platform/dri/dri_window_manager.h"
 #include "ui/ozone/platform/dri/dri_wrapper.h"
 #include "ui/ozone/platform/dri/screen_manager.h"
@@ -20,7 +22,6 @@
 #include "ui/ozone/public/ozone_platform.h"
 
 #if defined(OS_CHROMEOS)
-#include "ui/ozone/common/chromeos/touchscreen_device_manager_ozone.h"
 #include "ui/ozone/platform/dri/chromeos/native_display_delegate_dri.h"
 #endif
 
@@ -68,9 +69,10 @@ class OzonePlatformDri : public OzonePlatform {
         delegate,
         bounds,
         scoped_ptr<DriWindowDelegate>(new DriWindowDelegateImpl(
-            window_manager_.NextAcceleratedWidget(), screen_manager_.get())),
+            window_manager_->NextAcceleratedWidget(), screen_manager_.get())),
         event_factory_ozone_.get(),
-        &window_manager_));
+        &window_delegate_manager_,
+        window_manager_.get()));
     platform_window->Initialize();
     return platform_window.PassAs<PlatformWindow>();
   }
@@ -80,19 +82,15 @@ class OzonePlatformDri : public OzonePlatform {
     return scoped_ptr<NativeDisplayDelegate>(new NativeDisplayDelegateDri(
         dri_.get(), screen_manager_.get(), device_manager_.get()));
   }
-  virtual scoped_ptr<TouchscreenDeviceManager>
-      CreateTouchscreenDeviceManager() OVERRIDE {
-    return scoped_ptr<TouchscreenDeviceManager>(
-        new TouchscreenDeviceManagerOzone());
-  }
 #endif
   virtual void InitializeUI() OVERRIDE {
+    dri_->Initialize();
     surface_factory_ozone_.reset(new DriSurfaceFactory(
-        dri_.get(), screen_manager_.get(), &window_manager_));
-    cursor_factory_ozone_.reset(
-        new CursorFactoryEvdevDri(surface_factory_ozone_.get()));
-    event_factory_ozone_.reset(new EventFactoryEvdev(
-        cursor_factory_ozone_.get(), device_manager_.get()));
+        dri_.get(), screen_manager_.get(), &window_delegate_manager_));
+    cursor_factory_ozone_.reset(new BitmapCursorFactoryOzone);
+    window_manager_.reset(new DriWindowManager(surface_factory_ozone_.get()));
+    event_factory_ozone_.reset(new EventFactoryEvdev(window_manager_->cursor(),
+                                                     device_manager_.get()));
     if (surface_factory_ozone_->InitializeHardware() !=
         DriSurfaceFactory::INITIALIZED)
       LOG(FATAL) << "failed to initialize display hardware";
@@ -109,10 +107,11 @@ class OzonePlatformDri : public OzonePlatform {
   scoped_ptr<DeviceManager> device_manager_;
 
   scoped_ptr<DriSurfaceFactory> surface_factory_ozone_;
-  scoped_ptr<CursorFactoryEvdevDri> cursor_factory_ozone_;
+  scoped_ptr<BitmapCursorFactoryOzone> cursor_factory_ozone_;
   scoped_ptr<EventFactoryEvdev> event_factory_ozone_;
 
-  DriWindowManager window_manager_;
+  scoped_ptr<DriWindowManager> window_manager_;
+  DriWindowDelegateManager window_delegate_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(OzonePlatformDri);
 };

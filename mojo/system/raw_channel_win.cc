@@ -50,8 +50,8 @@ class VistaOrHigherFunctions {
 
 VistaOrHigherFunctions::VistaOrHigherFunctions()
     : is_vista_or_higher_(base::win::GetVersion() >= base::win::VERSION_VISTA),
-      set_file_completion_notification_modes_(NULL),
-      cancel_io_ex_(NULL) {
+      set_file_completion_notification_modes_(nullptr),
+      cancel_io_ex_(nullptr) {
   if (!is_vista_or_higher_)
     return;
 
@@ -75,7 +75,7 @@ class RawChannelWin : public RawChannel {
   virtual ~RawChannelWin();
 
   // |RawChannel| public methods:
-  virtual size_t GetSerializedPlatformHandleSize() const OVERRIDE;
+  virtual size_t GetSerializedPlatformHandleSize() const override;
 
  private:
   // RawChannelIOHandler receives OS notifications for I/O completion. It must
@@ -111,7 +111,7 @@ class RawChannelWin : public RawChannel {
     // detached from the owner.
     virtual void OnIOCompleted(base::MessageLoopForIO::IOContext* context,
                                DWORD bytes_transferred,
-                               DWORD error) OVERRIDE;
+                               DWORD error) override;
 
     // Must be called on the I/O thread under |owner_->write_lock()|.
     // After this call, the owner must not make any further calls on this
@@ -160,17 +160,17 @@ class RawChannelWin : public RawChannel {
   };
 
   // |RawChannel| private methods:
-  virtual IOResult Read(size_t* bytes_read) OVERRIDE;
-  virtual IOResult ScheduleRead() OVERRIDE;
+  virtual IOResult Read(size_t* bytes_read) override;
+  virtual IOResult ScheduleRead() override;
   virtual embedder::ScopedPlatformHandleVectorPtr GetReadPlatformHandles(
       size_t num_platform_handles,
-      const void* platform_handle_table) OVERRIDE;
+      const void* platform_handle_table) override;
   virtual IOResult WriteNoLock(size_t* platform_handles_written,
-                               size_t* bytes_written) OVERRIDE;
-  virtual IOResult ScheduleWriteNoLock() OVERRIDE;
-  virtual bool OnInit() OVERRIDE;
+                               size_t* bytes_written) override;
+  virtual IOResult ScheduleWriteNoLock() override;
+  virtual bool OnInit() override;
   virtual void OnShutdownNoLock(scoped_ptr<ReadBuffer> read_buffer,
-                                scoped_ptr<WriteBuffer> write_buffer) OVERRIDE;
+                                scoped_ptr<WriteBuffer> write_buffer) override;
 
   // Passed to |io_handler_| during initialization.
   embedder::ScopedPlatformHandle handle_;
@@ -279,7 +279,7 @@ void RawChannelWin::RawChannelIOHandler::DetachFromOwnerNoLock(
   if (pending_write_)
     preserved_write_buffer_after_detach_ = write_buffer.Pass();
 
-  owner_ = NULL;
+  owner_ = nullptr;
   if (ShouldSelfDestruct())
     delete this;
 }
@@ -347,7 +347,7 @@ void RawChannelWin::RawChannelIOHandler::OnWriteCompleted(DWORD bytes_written,
 
 RawChannelWin::RawChannelWin(embedder::ScopedPlatformHandle handle)
     : handle_(handle.Pass()),
-      io_handler_(NULL),
+      io_handler_(nullptr),
       skip_completion_port_on_success_(
           g_vista_or_higher_functions.Get().is_vista_or_higher()) {
   DCHECK(handle_.is_valid());
@@ -367,7 +367,7 @@ RawChannel::IOResult RawChannelWin::Read(size_t* bytes_read) {
   DCHECK(io_handler_);
   DCHECK(!io_handler_->pending_read());
 
-  char* buffer = NULL;
+  char* buffer = nullptr;
   size_t bytes_to_read = 0;
   read_buffer()->GetBuffer(&buffer, &bytes_to_read);
 
@@ -553,14 +553,16 @@ void RawChannelWin::OnShutdownNoLock(scoped_ptr<ReadBuffer> read_buffer,
     // soon as possible.
     // Note: |CancelIo()| only cancels read/write requests started from this
     // thread.
-    if (g_vista_or_higher_functions.Get().is_vista_or_higher())
-      g_vista_or_higher_functions.Get().CancelIoEx(io_handler_->handle(), NULL);
-    else
+    if (g_vista_or_higher_functions.Get().is_vista_or_higher()) {
+      g_vista_or_higher_functions.Get().CancelIoEx(io_handler_->handle(),
+                                                   nullptr);
+    } else {
       CancelIo(io_handler_->handle());
+    }
   }
 
   io_handler_->DetachFromOwnerNoLock(read_buffer.Pass(), write_buffer.Pass());
-  io_handler_ = NULL;
+  io_handler_ = nullptr;
 }
 
 }  // namespace
@@ -571,7 +573,7 @@ void RawChannelWin::OnShutdownNoLock(scoped_ptr<ReadBuffer> read_buffer,
 // static
 scoped_ptr<RawChannel> RawChannel::Create(
     embedder::ScopedPlatformHandle handle) {
-  return scoped_ptr<RawChannel>(new RawChannelWin(handle.Pass()));
+  return make_scoped_ptr(new RawChannelWin(handle.Pass()));
 }
 
 }  // namespace system

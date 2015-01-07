@@ -42,11 +42,9 @@ class LayerTestCommon {
   static void VerifyQuadsExactlyCoverRect(const QuadList& quads,
                                           const gfx::Rect& rect);
 
-  static void VerifyQuadsCoverRectWithOcclusion(
-      const QuadList& quads,
-      const gfx::Rect& rect,
-      const gfx::Rect& occluded,
-      size_t* partially_occluded_count);
+  static void VerifyQuadsAreOccluded(const QuadList& quads,
+                                     const gfx::Rect& occluded,
+                                     size_t* partially_occluded_count);
 
   class LayerImplTest {
    public:
@@ -57,7 +55,7 @@ class LayerTestCommon {
     T* AddChildToRoot() {
       scoped_ptr<T> layer = T::Create(host_->host_impl()->active_tree(), 2);
       T* ptr = layer.get();
-      root_layer_impl_->AddChild(layer.template PassAs<LayerImpl>());
+      root_layer_impl_->AddChild(layer.Pass());
       return ptr;
     }
 
@@ -65,7 +63,7 @@ class LayerTestCommon {
     T* AddChildToRoot(const A& a) {
       scoped_ptr<T> layer = T::Create(host_->host_impl()->active_tree(), 2, a);
       T* ptr = layer.get();
-      root_layer_impl_->AddChild(layer.template PassAs<LayerImpl>());
+      root_layer_impl_->AddChild(layer.Pass());
       return ptr;
     }
 
@@ -74,7 +72,7 @@ class LayerTestCommon {
       scoped_ptr<T> layer =
           T::Create(host_->host_impl()->active_tree(), 2, a, b);
       T* ptr = layer.get();
-      root_layer_impl_->AddChild(layer.template PassAs<LayerImpl>());
+      root_layer_impl_->AddChild(layer.Pass());
       return ptr;
     }
 
@@ -83,7 +81,7 @@ class LayerTestCommon {
       scoped_ptr<T> layer =
           T::Create(host_->host_impl()->active_tree(), 2, a, b, c, d);
       T* ptr = layer.get();
-      root_layer_impl_->AddChild(layer.template PassAs<LayerImpl>());
+      root_layer_impl_->AddChild(layer.Pass());
       return ptr;
     }
 
@@ -101,7 +99,7 @@ class LayerTestCommon {
       scoped_ptr<T> layer =
           T::Create(host_->host_impl()->active_tree(), 2, a, b, c, d, e);
       T* ptr = layer.get();
-      root_layer_impl_->AddChild(layer.template PassAs<LayerImpl>());
+      root_layer_impl_->AddChild(layer.Pass());
       return ptr;
     }
 
@@ -126,6 +124,7 @@ class LayerTestCommon {
     const QuadList& quad_list() const { return render_pass_->quad_list; }
 
    private:
+    FakeLayerTreeHostClient client_;
     scoped_ptr<FakeLayerTreeHost> host_;
     scoped_ptr<LayerImpl> root_layer_impl_;
     scoped_ptr<RenderPass> render_pass_;

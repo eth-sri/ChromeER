@@ -67,7 +67,7 @@
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/permissions/permissions_data.h"
-#include "grit/component_scaled_resources.h"
+#include "grit/components_scaled_resources.h"
 #include "grit/theme_resources.h"
 #include "net/base/net_util.h"
 #include "skia/ext/skia_utils_mac.h"
@@ -154,6 +154,10 @@ LocationBarViewMac::LocationBarViewMac(AutocompleteTextField* field,
   if (chrome::ShouldDisplayOriginChip())
     origin_chip_decoration_.reset(new OriginChipDecoration(
         this, location_icon_decoration_.get()));
+
+  // Sets images for the decorations, and performs a layout. This call ensures
+  // that this class is in a consistent state after initialization.
+  OnChanged();
 }
 
 LocationBarViewMac::~LocationBarViewMac() {
@@ -179,7 +183,7 @@ WindowOpenDisposition LocationBarViewMac::GetWindowOpenDisposition() const {
   return disposition();
 }
 
-content::PageTransition LocationBarViewMac::GetPageTransition() const {
+ui::PageTransition LocationBarViewMac::GetPageTransition() const {
   return transition();
 }
 
@@ -222,6 +226,10 @@ void LocationBarViewMac::UpdatePageActions() {
 void LocationBarViewMac::InvalidatePageActions() {
   DeletePageActionDecorations();
   Layout();
+}
+
+void LocationBarViewMac::UpdateBookmarkStarVisibility() {
+  star_decoration_->SetVisible(IsStarEnabled());
 }
 
 bool LocationBarViewMac::ShowPageActionPopup(
@@ -313,7 +321,7 @@ bool LocationBarViewMac::GetBookmarkStarVisibility() {
 
 void LocationBarViewMac::SetEditable(bool editable) {
   [field_ setEditable:editable ? YES : NO];
-  UpdateStarDecorationVisibility();
+  UpdateBookmarkStarVisibility();
   UpdateZoomDecoration();
   UpdatePageActions();
   Layout();
@@ -328,7 +336,7 @@ void LocationBarViewMac::SetStarred(bool starred) {
     return;
 
   star_decoration_->SetStarred(starred);
-  UpdateStarDecorationVisibility();
+  UpdateBookmarkStarVisibility();
   OnDecorationsChanged();
 }
 
@@ -528,7 +536,7 @@ NSPoint LocationBarViewMac::GetPageActionBubblePoint(
 
 void LocationBarViewMac::Update(const WebContents* contents) {
   UpdateManagePasswordsIconAndBubble();
-  UpdateStarDecorationVisibility();
+  UpdateBookmarkStarVisibility();
   UpdateTranslateDecoration();
   UpdateZoomDecoration();
   RefreshPageActionDecorations();
@@ -658,7 +666,7 @@ void LocationBarViewMac::DeletePageActionDecorations() {
 }
 
 void LocationBarViewMac::OnEditBookmarksEnabledChanged() {
-  UpdateStarDecorationVisibility();
+  UpdateBookmarkStarVisibility();
   OnChanged();
 }
 
@@ -754,10 +762,6 @@ bool LocationBarViewMac::UpdateZoomDecoration() {
 
   return zoom_decoration_->UpdateIfNecessary(
       ZoomController::FromWebContents(web_contents));
-}
-
-void LocationBarViewMac::UpdateStarDecorationVisibility() {
-  star_decoration_->SetVisible(IsStarEnabled());
 }
 
 bool LocationBarViewMac::UpdateMicSearchDecorationVisibility() {

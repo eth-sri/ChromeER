@@ -202,8 +202,11 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
       int bridge_id,
       const GURL& requesting_frame,
       bool user_gesture,
-      base::Callback<void(bool)> result_callback,
-      base::Closure* cancel_callback) OVERRIDE;
+      const base::Callback<void(bool)>& result_callback) OVERRIDE;
+  virtual void CancelGeolocationPermissionRequest(
+      content::WebContents* web_contents,
+      int bridge_id,
+      const GURL& requesting_frame) OVERRIDE;
   virtual void RequestMidiSysExPermission(
       content::WebContents* web_contents,
       int bridge_id,
@@ -289,6 +292,10 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
   virtual void PreSpawnRenderer(sandbox::TargetPolicy* policy,
                                 bool* success) OVERRIDE;
 #endif
+  virtual bool CheckMediaAccessPermission(
+      content::BrowserContext* browser_context,
+      const GURL& security_origin,
+      content::MediaStreamType type) OVERRIDE;
 
  private:
   friend class DisableWebRtcEncryptionFlagTest;

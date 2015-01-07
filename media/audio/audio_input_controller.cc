@@ -5,17 +5,18 @@
 #include "media/audio/audio_input_controller.h"
 
 #include "base/bind.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/time/time.h"
 #include "media/audio/audio_parameters.h"
-#include "media/base/limits.h"
 #include "media/base/scoped_histogram_timer.h"
 #include "media/base/user_input_monitor.h"
 
 using base::TimeDelta;
 
 namespace {
+
 const int kMaxInputChannels = 3;
 
 // TODO(henrika): remove usage of timers and add support for proper
@@ -44,7 +45,26 @@ const int kTimerInitialIntervalSeconds = 5;
 const int kPowerMeasurementTimeConstantMilliseconds = 10;
 
 // Time in seconds between two successive measurements of audio power levels.
-const int kPowerMonitorLogIntervalSeconds = 5;
+const int kPowerMonitorLogIntervalSeconds = 15;
+
+// A warning will be logged when the microphone audio volume is below this
+// threshold.
+const int kLowLevelMicrophoneLevelPercent = 10;
+
+// Logs if the user has enabled the microphone mute or not. This is normally
+// done by marking a checkbox in an audio-settings UI which is unique for each
+// platform. Elements in this enum should not be added, deleted or rearranged.
+enum MicrophoneMuteResult {
+  MICROPHONE_IS_MUTED = 0,
+  MICROPHONE_IS_NOT_MUTED = 1,
+  MICROPHONE_MUTE_MAX = MICROPHONE_IS_NOT_MUTED
+};
+
+void LogMicrophoneMuteResult(MicrophoneMuteResult result) {
+  UMA_HISTOGRAM_ENUMERATION("Media.MicrophoneMuted",
+                            result,
+                            MICROPHONE_MUTE_MAX + 1);
+}
 #endif
 }
 
@@ -263,6 +283,7 @@ void AudioInputController::DoCreateForLowLatency(AudioManager* audio_manager,
     log_silence_state_ = true;
 #endif
 
+  low_latency_create_time_ = base::TimeTicks::Now();
   DoCreate(audio_manager, params, device_id);
 }
 
@@ -347,8 +368,20 @@ void AudioInputController::DoClose() {
   if (state_ == CLOSED)
     return;
 
-  if (handler_)
-    handler_->OnLog(this, "AIC::DoClose");
+  // If this is a low-latency stream, log the total duration (since DoCreate)
+  // and add it to a UMA histogram.
+  if (!low_latency_create_time_.is_null()) {
+    base::TimeDelta duration =
+        base::TimeTicks::Now() - low_latency_create_time_;
+    UMA_HISTOGRAM_LONG_TIMES("Media.InputStreamDuration", duration);
+    if (handler_) {
+      std::string log_string =
+          base::StringPrintf("AIC::DoClose: stream duration=");
+      log_string += base::Int64ToString(duration.InSeconds());
+      log_string += " seconds";
+      handler_->OnLog(this, log_string);
+    }
+  }
 
   // Delete the timer on the same thread that created it.
   no_data_timer_.reset();
@@ -496,12 +529,16 @@ void AudioInputController::OnData(AudioInputStream* stream,
       // Possible range is given by [-inf, 0] dBFS.
       std::pair<float, bool> result = audio_level_->ReadCurrentPowerAndClip();
 
+      // Add current microphone volume to log and UMA histogram.
+      const int mic_volume_percent = static_cast<int>(100.0 * volume);
+
       // Use event handler on the audio thread to relay a message to the ARIH
       // in content which does the actual logging on the IO thread.
-      task_runner_->PostTask(
-          FROM_HERE,
-          base::Bind(
-              &AudioInputController::DoLogAudioLevel, this, result.first));
+      task_runner_->PostTask(FROM_HERE,
+                             base::Bind(&AudioInputController::DoLogAudioLevels,
+                                        this,
+                                        result.first,
+                                        mic_volume_percent));
 
       last_audio_level_log_time_ = base::TimeTicks::Now();
 
@@ -533,7 +570,8 @@ void AudioInputController::DoOnData(scoped_ptr<AudioBus> data) {
     handler_->OnData(this, data.get());
 }
 
-void AudioInputController::DoLogAudioLevel(float level_dbfs) {
+void AudioInputController::DoLogAudioLevels(float level_dbfs,
+                                            int microphone_volume_percent) {
 #if defined(AUDIO_POWER_MONITORING)
   DCHECK(task_runner_->BelongsToCurrentThread());
   if (!handler_)
@@ -547,6 +585,27 @@ void AudioInputController::DoLogAudioLevel(float level_dbfs) {
   handler_->OnLog(this, log_string);
 
   UpdateSilenceState(level_dbfs < kSilenceThresholdDBFS);
+
+  UMA_HISTOGRAM_PERCENTAGE("Media.MicrophoneVolume", microphone_volume_percent);
+  log_string = base::StringPrintf(
+      "AIC::OnData: microphone volume=%d%%", microphone_volume_percent);
+  if (microphone_volume_percent < kLowLevelMicrophoneLevelPercent)
+    log_string += " <=> low microphone level!";
+  handler_->OnLog(this, log_string);
+
+  // Try to detect if the user has enabled hardware mute by pressing the mute
+  // button in audio settings for the selected microphone. The idea here is to
+  // detect when all input samples are zeros but the actual volume slider is
+  // larger than zero. It should correspond to a hardware mute state.
+  if (level_dbfs == -std::numeric_limits<float>::infinity() &&
+      microphone_volume_percent > 0) {
+    LogMicrophoneMuteResult(MICROPHONE_IS_MUTED);
+    log_string = base::StringPrintf(
+        "AIC::OnData: microphone is muted!");
+    handler_->OnLog(this, log_string);
+  } else {
+    LogMicrophoneMuteResult(MICROPHONE_IS_NOT_MUTED);
+  }
 #endif
 }
 

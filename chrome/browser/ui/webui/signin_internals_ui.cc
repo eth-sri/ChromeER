@@ -20,8 +20,7 @@ content::WebUIDataSource* CreateSignInInternalsHTMLSource() {
       content::WebUIDataSource::Create(chrome::kChromeUISignInInternalsHost);
 
   source->SetJsonPath("strings.js");
-  source->AddResourcePath("signin_internals.js",
-                            IDR_SIGNIN_INTERNALS_INDEX_JS);
+  source->AddResourcePath("signin_internals.js", IDR_SIGNIN_INTERNALS_INDEX_JS);
   source->SetDefaultResource(IDR_SIGNIN_INTERNALS_INDEX_HTML);
   return source;
 }
@@ -79,13 +78,13 @@ bool SignInInternalsUI::OverrideHandleWebUIMessage(
 }
 
 void SignInInternalsUI::OnSigninStateChanged(
-    scoped_ptr<base::DictionaryValue> info) {
+    const base::DictionaryValue* info) {
   web_ui()->CallJavascriptFunction(
       "chrome.signin.onSigninInfoChanged.fire", *info);
 }
 
 void SignInInternalsUI::OnCookieAccountsFetched(
-    scoped_ptr<base::DictionaryValue> info) {
+    const base::DictionaryValue* info) {
   web_ui()->CallJavascriptFunction(
       "chrome.signin.onCookieAccountsFetched.fire", *info);
 }

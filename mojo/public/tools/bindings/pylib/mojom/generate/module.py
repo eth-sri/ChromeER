@@ -21,8 +21,8 @@ class Kind(object):
 
 class ReferenceKind(Kind):
   """ReferenceKind represents pointer types and handle types.
-     A type is nullable means that NULL (for pointer types) or invalid handle
-     (for handle types) is a legal value for the type.
+  A type is nullable if null (for pointer types) or invalid handle (for handle
+  types) is a legal value for the type.
   """
 
   def __init__(self, spec=None, is_nullable=False):
@@ -149,15 +149,21 @@ class BuiltinValue(object):
     self.value = value
 
 
+class ConstantValue(NamedValue):
+  def __init__(self, module, parent_kind, constant):
+    NamedValue.__init__(self, module, parent_kind, constant.name)
+    self.constant = constant
+
+
 class EnumValue(NamedValue):
   def __init__(self, module, enum, field):
     NamedValue.__init__(self, module, enum.parent_kind, field.name)
-    self.enum_name = enum.name
+    self.enum = enum
 
   def GetSpec(self):
     return (self.namespace + '.' +
         (self.parent_kind and (self.parent_kind.name + '.') or "") +
-        self.enum_name + '.' + self.name)
+        self.enum.name + '.' + self.name)
 
 
 class Constant(object):
@@ -326,6 +332,10 @@ class Module(object):
 
 def IsBoolKind(kind):
   return kind.spec == BOOL.spec
+
+
+def IsFloatKind(kind):
+  return kind.spec == FLOAT.spec
 
 
 def IsStringKind(kind):

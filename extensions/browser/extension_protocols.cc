@@ -10,8 +10,8 @@
 
 #include "base/base64.h"
 #include "base/compiler_specific.h"
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/format_macros.h"
 #include "base/logging.h"
 #include "base/memory/weak_ptr.h"
@@ -37,6 +37,7 @@
 #include "extensions/browser/content_verify_job.h"
 #include "extensions/browser/extensions_browser_client.h"
 #include "extensions/browser/info_map.h"
+#include "extensions/browser/url_request_util.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_resource.h"
@@ -430,7 +431,7 @@ ExtensionProtocolHandler::MaybeCreateJob(
     std::string resource_path = request->url().path();
 
     // Use default CSP for <webview>.
-    if (!ExtensionsBrowserClient::Get()->IsWebViewRequest(request)) {
+    if (!url_request_util::IsWebViewRequest(request)) {
       content_security_policy =
           extensions::CSPInfo::GetResourceContentSecurityPolicy(extension,
                                                                 resource_path);

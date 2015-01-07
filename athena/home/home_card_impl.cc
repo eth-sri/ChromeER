@@ -7,7 +7,6 @@
 #include <cmath>
 #include <limits>
 
-#include "athena/common/container_priorities.h"
 #include "athena/env/public/athena_env.h"
 #include "athena/home/app_list_view_delegate.h"
 #include "athena/home/athena_start_page_view.h"
@@ -15,6 +14,7 @@
 #include "athena/home/minimized_home.h"
 #include "athena/home/public/app_model_builder.h"
 #include "athena/screen/public/screen_manager.h"
+#include "athena/util/container_priorities.h"
 #include "athena/wm/public/window_manager.h"
 #include "ui/app_list/search_provider.h"
 #include "ui/app_list/views/app_list_main_view.h"
@@ -23,6 +23,7 @@
 #include "ui/aura/window.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
+#include "ui/gfx/animation/tween.h"
 #include "ui/views/layout/fill_layout.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_delegate.h"
@@ -74,7 +75,7 @@ class HomeCardLayoutManager : public aura::LayoutManager {
 
   virtual ~HomeCardLayoutManager() {}
 
-  void Layout(bool animate) {
+  void Layout(bool animate, gfx::Tween::Type tween_type) {
     // |home_card| could be detached from the root window (e.g. when it is being
     // destroyed).
     if (!home_card_ || !home_card_->IsVisible() || !home_card_->GetRootWindow())
@@ -84,7 +85,7 @@ class HomeCardLayoutManager : public aura::LayoutManager {
     if (animate) {
       settings.reset(new ui::ScopedLayerAnimationSettings(
           home_card_->layer()->GetAnimator()));
-      settings->SetTweenType(gfx::Tween::EASE_IN_OUT);
+      settings->SetTweenType(tween_type);
     }
     SetChildBoundsDirect(home_card_, GetBoundsForState(
         home_card_->GetRootWindow()->bounds(), HomeCard::Get()->GetState()));
@@ -106,13 +107,13 @@ class HomeCardLayoutManager : public aura::LayoutManager {
 
   // aura::LayoutManager:
   virtual void OnWindowResized() OVERRIDE {
-    Layout(false);
+    Layout(false, gfx::Tween::LINEAR);
     UpdateMinimizedHomeBounds();
   }
   virtual void OnWindowAddedToLayout(aura::Window* child) OVERRIDE {
     if (!home_card_) {
       home_card_ = child;
-      Layout(false);
+      Layout(false, gfx::Tween::LINEAR);
     }
   }
   virtual void OnWillRemoveWindowFromLayout(aura::Window* child) OVERRIDE {
@@ -120,11 +121,11 @@ class HomeCardLayoutManager : public aura::LayoutManager {
       home_card_ = NULL;
   }
   virtual void OnWindowRemovedFromLayout(aura::Window* child) OVERRIDE {
-    Layout(false);
   }
   virtual void OnChildWindowVisibilityChanged(aura::Window* child,
                                               bool visible) OVERRIDE {
-    Layout(false);
+    if (home_card_ == child)
+      Layout(false, gfx::Tween::LINEAR);
   }
   virtual void SetChildBounds(aura::Window* child,
                               const gfx::Rect& requested_bounds) OVERRIDE {
@@ -157,10 +158,7 @@ class HomeCardView : public views::WidgetDelegateView {
                         HomeCard::State to_state,
                         float progress) {
     // TODO(mukai): not clear the focus, but simply close the virtual keyboard.
-    if (from_state != HomeCard::VISIBLE_CENTERED ||
-        to_state != HomeCard::VISIBLE_CENTERED) {
-      GetFocusManager()->ClearFocus();
-    }
+    GetFocusManager()->ClearFocus();
     if (from_state == HomeCard::VISIBLE_CENTERED)
       main_view_->SetLayoutState(1.0f - progress);
     else if (to_state == HomeCard::VISIBLE_CENTERED)
@@ -168,18 +166,16 @@ class HomeCardView : public views::WidgetDelegateView {
     UpdateShadow(true);
   }
 
-  void SetStateWithAnimation(HomeCard::State state) {
+  void SetStateWithAnimation(HomeCard::State state,
+                             gfx::Tween::Type tween_type) {
     UpdateShadow(state != HomeCard::VISIBLE_MINIMIZED);
     if (state == HomeCard::VISIBLE_CENTERED)
       main_view_->RequestFocusOnSearchBox();
     else
       GetWidget()->GetFocusManager()->ClearFocus();
 
-    if (state == HomeCard::VISIBLE_MINIMIZED)
-      return;
-
     main_view_->SetLayoutStateWithAnimation(
-        (state == HomeCard::VISIBLE_CENTERED) ? 1.0f : 0.0f);
+        (state == HomeCard::VISIBLE_CENTERED) ? 1.0f : 0.0f, tween_type);
   }
 
   void ClearGesture() {
@@ -201,7 +197,7 @@ class HomeCardView : public views::WidgetDelegateView {
   virtual bool OnMousePressed(const ui::MouseEvent& event) OVERRIDE {
     if (HomeCard::Get()->GetState() == HomeCard::VISIBLE_MINIMIZED &&
         event.IsLeftMouseButton() && event.GetClickCount() == 1) {
-      athena::WindowManager::GetInstance()->ToggleOverview();
+      athena::WindowManager::Get()->ToggleOverview();
       return true;
     }
     return false;
@@ -236,12 +232,12 @@ HomeCardImpl::HomeCardImpl(AppModelBuilder* model_builder)
       activation_client_(NULL) {
   DCHECK(!instance);
   instance = this;
-  WindowManager::GetInstance()->AddObserver(this);
+  WindowManager::Get()->AddObserver(this);
 }
 
 HomeCardImpl::~HomeCardImpl() {
   DCHECK(instance);
-  WindowManager::GetInstance()->RemoveObserver(this);
+  WindowManager::Get()->RemoveObserver(this);
   if (activation_client_)
     activation_client_->RemoveObserver(this);
   home_card_widget_->CloseNow();
@@ -330,12 +326,12 @@ void HomeCardImpl::SetState(HomeCard::State state) {
   if (state_ == HIDDEN) {
     home_card_widget_->Hide();
   } else {
-    if (state_ == VISIBLE_CENTERED)
-      home_card_widget_->Show();
-    else
+    if (state_ == VISIBLE_MINIMIZED)
       home_card_widget_->ShowInactive();
-    home_card_view_->SetStateWithAnimation(state);
-    layout_manager_->Layout(true);
+    else
+      home_card_widget_->Show();
+    home_card_view_->SetStateWithAnimation(state, gfx::Tween::EASE_IN_OUT);
+    layout_manager_->Layout(true, gfx::Tween::EASE_IN_OUT);
   }
 }
 
@@ -378,16 +374,21 @@ bool HomeCardImpl::OnAcceleratorFired(int command_id,
   return true;
 }
 
-void HomeCardImpl::OnGestureEnded(State final_state) {
+void HomeCardImpl::OnGestureEnded(State final_state, bool is_fling) {
   home_card_view_->ClearGesture();
   if (state_ != final_state &&
       (state_ == VISIBLE_MINIMIZED || final_state == VISIBLE_MINIMIZED)) {
     SetState(final_state);
-    WindowManager::GetInstance()->ToggleOverview();
+    WindowManager::Get()->ToggleOverview();
   } else {
     state_ = final_state;
-    home_card_view_->SetStateWithAnimation(state_);
-    layout_manager_->Layout(true);
+    // When the animation happens after a fling, EASE_IN_OUT would cause weird
+    // slow-down right after the finger release because of slow-in. Therefore
+    // EASE_OUT is better.
+    gfx::Tween::Type tween_type =
+        is_fling ? gfx::Tween::EASE_OUT : gfx::Tween::EASE_IN_OUT;
+    home_card_view_->SetStateWithAnimation(state_, tween_type);
+    layout_manager_->Layout(true, tween_type);
   }
 }
 
@@ -413,7 +414,7 @@ void HomeCardImpl::OnGestureProgressed(
 }
 
 void HomeCardImpl::OnOverviewModeEnter() {
-  if (state_ == VISIBLE_MINIMIZED)
+  if (state_ == HIDDEN || state_ == VISIBLE_MINIMIZED)
     SetState(VISIBLE_BOTTOM);
 }
 
@@ -421,7 +422,10 @@ void HomeCardImpl::OnOverviewModeExit() {
   SetState(VISIBLE_MINIMIZED);
 }
 
-void HomeCardImpl::OnActivityOrderHasChanged() {
+void HomeCardImpl::OnSplitViewModeEnter() {
+}
+
+void HomeCardImpl::OnSplitViewModeExit() {
 }
 
 void HomeCardImpl::OnWindowActivated(aura::Window* gained_active,

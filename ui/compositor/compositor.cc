@@ -97,7 +97,6 @@ Compositor::Compositor(gfx::AcceleratedWidget widget,
       context_factory_->DoesCreateTestContexts()
       ? kTestRefreshRate
       : kDefaultRefreshRate;
-  settings.main_frame_before_draw_enabled = false;
   settings.main_frame_before_activation_enabled = false;
   settings.throttle_frame_production =
       !command_line->HasSwitch(switches::kDisableGpuVsync);
@@ -231,7 +230,6 @@ void Compositor::Draw() {
                                    base::TimeTicks(),
                                    cc::BeginFrameArgs::DefaultInterval());
     BeginMainFrame(args);
-    Layout();
     host_->Composite(args.frame_time);
   }
   if (swap_state_ == SWAP_NONE)
@@ -342,8 +340,9 @@ void Compositor::Layout() {
   disable_schedule_composite_ = false;
 }
 
-scoped_ptr<cc::OutputSurface> Compositor::CreateOutputSurface(bool fallback) {
-  return context_factory_->CreateOutputSurface(this, fallback);
+void Compositor::RequestNewOutputSurface(bool fallback) {
+  host_->SetOutputSurface(
+      context_factory_->CreateOutputSurface(this, fallback));
 }
 
 void Compositor::DidCommit() {

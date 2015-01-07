@@ -55,8 +55,8 @@ RenderViewHost* RenderViewHostTester::GetPendingForController(
 
 // static
 bool RenderViewHostTester::IsRenderViewHostSwappedOut(RenderViewHost* rvh) {
-  return static_cast<RenderViewHostImpl*>(rvh)->rvh_state() ==
-         RenderViewHostImpl::STATE_SWAPPED_OUT;
+  return static_cast<RenderFrameHostImpl*>(rvh->GetMainFrame())->rfh_state() ==
+         RenderFrameHostImpl::STATE_SWAPPED_OUT;
 }
 
 // static
@@ -162,7 +162,7 @@ void RenderViewHostTestHarness::Reload() {
   controller().Reload(false);
   static_cast<TestRenderViewHost*>(
       rvh())->SendNavigateWithTransition(
-          entry->GetPageID(), entry->GetURL(), PAGE_TRANSITION_RELOAD);
+          entry->GetPageID(), entry->GetURL(), ui::PAGE_TRANSITION_RELOAD);
 }
 
 void RenderViewHostTestHarness::FailedReload() {

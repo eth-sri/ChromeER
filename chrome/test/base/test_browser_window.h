@@ -149,10 +149,6 @@ class TestBrowserWindow : public BrowserWindow {
                                 const gfx::Rect& rect) OVERRIDE {}
   virtual void ShowAvatarBubbleFromAvatarButton(AvatarBubbleMode mode,
       const signin::ManageAccountsParams& manage_accounts_params) OVERRIDE {}
-  virtual void ShowPasswordGenerationBubble(
-      const gfx::Rect& rect,
-      const autofill::PasswordForm& form,
-      autofill::PasswordGenerator* generator) OVERRIDE {}
   virtual int GetRenderViewHeightInsetWithDetachedBookmarkBar() OVERRIDE;
   virtual void ExecuteExtensionCommand(
       const extensions::Extension* extension,
@@ -171,7 +167,7 @@ class TestBrowserWindow : public BrowserWindow {
     virtual void ShowFirstRunBubble() OVERRIDE {}
     virtual GURL GetDestinationURL() const OVERRIDE;
     virtual WindowOpenDisposition GetWindowOpenDisposition() const OVERRIDE;
-    virtual content::PageTransition GetPageTransition() const OVERRIDE;
+    virtual ui::PageTransition GetPageTransition() const OVERRIDE;
     virtual void AcceptInput() OVERRIDE {}
     virtual void FocusLocation(bool select_all) OVERRIDE {}
     virtual void FocusSearch() OVERRIDE {}
@@ -179,6 +175,7 @@ class TestBrowserWindow : public BrowserWindow {
     virtual void UpdateManagePasswordsIconAndBubble() OVERRIDE {}
     virtual void UpdatePageActions() OVERRIDE {}
     virtual void InvalidatePageActions() OVERRIDE {}
+    virtual void UpdateBookmarkStarVisibility() OVERRIDE {}
     virtual bool ShowPageActionPopup(const extensions::Extension* extension,
                                      bool grant_active_tab) OVERRIDE;
     virtual void UpdateOpenPDFInReaderPrompt() OVERRIDE {}

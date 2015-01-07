@@ -14,19 +14,6 @@ namespace aura {
 class Window;
 }
 
-namespace gfx {
-class ImageSkia;
-class Insets;
-}
-
-namespace ui {
-class LayerAnimator;
-}
-
-namespace wm {
-class FocusRules;
-}
-
 namespace athena {
 class ScreenManagerDelegate;
 
@@ -68,17 +55,11 @@ class ATHENA_EXPORT ScreenManager {
   // Return the context object to be used for widget creation.
   virtual aura::Window* GetContext() = 0;
 
-  // Sets the background image.
-  virtual void SetBackgroundImage(const gfx::ImageSkia& image) = 0;
-
   // Set screen rotation.
   // TODO(flackr): Extract and use ash DisplayManager to set rotation
   // instead: http://crbug.com/401044.
   virtual void SetRotation(gfx::Display::Rotation rotation) = 0;
-
-  // Returns the LayerAnimator to use to animate the entire screen (e.g. fade
-  // screen to white).
-  virtual ui::LayerAnimator* GetScreenAnimator() = 0;
+  virtual void SetRotationLocked(bool rotation_locked) = 0;
 };
 
 }  // namespace athena

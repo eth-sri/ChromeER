@@ -375,7 +375,7 @@ scoped_ptr<DesktopSession> DesktopSessionWin::CreateForConsole(
       caller_task_runner, io_task_runner, daemon_process, id,
       HostService::GetInstance()));
 
-  return session.PassAs<DesktopSession>();
+  return session.Pass();
 }
 
 // static
@@ -389,9 +389,9 @@ scoped_ptr<DesktopSession> DesktopSessionWin::CreateForVirtualTerminal(
       caller_task_runner, io_task_runner, daemon_process, id,
       HostService::GetInstance()));
   if (!session->Initialize(resolution))
-    return scoped_ptr<DesktopSession>();
+    return nullptr;
 
-  return session.PassAs<DesktopSession>();
+  return session.Pass();
 }
 
 DesktopSessionWin::DesktopSessionWin(
@@ -552,8 +552,7 @@ void DesktopSessionWin::OnSessionAttached(uint32 session_id) {
   }
 
   // Create a launcher for the desktop process, using the per-session delegate.
-  launcher_.reset(new WorkerProcessLauncher(
-      delegate.PassAs<WorkerProcessLauncher::Delegate>(), this));
+  launcher_.reset(new WorkerProcessLauncher(delegate.Pass(), this));
 }
 
 void DesktopSessionWin::OnSessionDetached() {
@@ -573,7 +572,7 @@ void DesktopSessionWin::OnSessionDetached() {
 void DesktopSessionWin::OnDesktopSessionAgentAttached(
       IPC::PlatformFileForTransit desktop_pipe) {
   if (!daemon_process()->OnDesktopSessionAgentAttached(id(),
-                                                       desktop_process_,
+                                                       desktop_process_.Get(),
                                                        desktop_pipe)) {
     CrashDesktopProcess(FROM_HERE);
   }

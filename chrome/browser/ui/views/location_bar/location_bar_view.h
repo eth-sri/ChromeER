@@ -342,13 +342,14 @@ class LocationBarView : public LocationBar,
   virtual void ShowFirstRunBubble() OVERRIDE;
   virtual GURL GetDestinationURL() const OVERRIDE;
   virtual WindowOpenDisposition GetWindowOpenDisposition() const OVERRIDE;
-  virtual content::PageTransition GetPageTransition() const OVERRIDE;
+  virtual ui::PageTransition GetPageTransition() const OVERRIDE;
   virtual void AcceptInput() OVERRIDE;
   virtual void FocusSearch() OVERRIDE;
   virtual void UpdateContentSettingsIcons() OVERRIDE;
   virtual void UpdateManagePasswordsIconAndBubble() OVERRIDE;
   virtual void UpdatePageActions() OVERRIDE;
   virtual void InvalidatePageActions() OVERRIDE;
+  virtual void UpdateBookmarkStarVisibility() OVERRIDE;
   virtual bool ShowPageActionPopup(const extensions::Extension* extension,
                                    bool grant_active_tab) OVERRIDE;
   virtual void UpdateOpenPDFInReaderPrompt() OVERRIDE;

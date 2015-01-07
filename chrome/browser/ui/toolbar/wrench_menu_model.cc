@@ -199,12 +199,10 @@ class WrenchMenuModel::HelpMenuModel : public ui::SimpleMenuModel {
 
  private:
   void Build(Browser* browser) {
-    int help_string_id = IDS_HELP_PAGE;
 #if defined(OS_CHROMEOS) && defined(OFFICIAL_BUILD)
-    if (!CommandLine::ForCurrentProcess()->HasSwitch(
-            chromeos::switches::kDisableGeniusApp)) {
-      help_string_id = IDS_GET_HELP;
-    }
+    int help_string_id = IDS_GET_HELP;
+#else
+    int help_string_id = IDS_HELP_PAGE;
 #endif
     AddItemWithStringId(IDC_HELP_PAGE_VIA_MENU, help_string_id);
     if (browser_defaults::kShowHelpMenuItemIcon) {
@@ -560,8 +558,11 @@ void WrenchMenuModel::Build() {
   }
 
 #if defined(OS_WIN)
- if (base::win::GetVersion() >= base::win::VERSION_WIN7 &&
-     content::GpuDataManager::GetInstance()->CanUseGpuBrowserCompositor()) {
+  // Windows 8 can support ASH mode using WARP, but Windows 7 requires a working
+  // GPU compositor.
+  if ((base::win::GetVersion() >= base::win::VERSION_WIN7 &&
+      content::GpuDataManager::GetInstance()->CanUseGpuBrowserCompositor()) ||
+      (base::win::GetVersion() >= base::win::VERSION_WIN8)) {
     if (browser_->host_desktop_type() == chrome::HOST_DESKTOP_TYPE_ASH) {
       // ASH/Metro mode, add the 'Relaunch Chrome in desktop mode'.
       AddSeparator(ui::NORMAL_SEPARATOR);

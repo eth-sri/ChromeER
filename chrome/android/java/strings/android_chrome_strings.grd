@@ -254,7 +254,7 @@ You are signing in with a managed account and giving its administrator control o
         There was a problem printing the page. Please try again.
       </message>
       <message name="IDS_ACCESSIBILITY_MENU_BOOKMARK" desc="Content description for the bookmark button when the page is not currently bookmarked.">
-        Bookmark page
+        Bookmark this page
       </message>
       <message name="IDS_ACCESSIBILITY_MENU_FORWARD" desc="Content description for the forward navigation button.">
         Go forward
@@ -268,6 +268,9 @@ You are signing in with a managed account and giving its administrator control o
       </message>
       <message name="IDS_CONTEXTMENU_OPEN_IN_INCOGNITO_TAB" desc="Context sensitive menu item to open the selected link in a new incognito tab. [CHAR-LIMIT=30]">
         Open in incognito tab
+      </message>
+      <message name="IDS_CONTEXTMENU_COPY_EMAIL_ADDRESS" desc="Context sensitive menu item for copying email address. [CHAR-LIMIT=30]">
+        Copy email address
       </message>
       <message name="IDS_CONTEXTMENU_COPY_LINK_ADDRESS" desc="Context sensitive menu item for copying the selected link URL / address. [CHAR-LIMIT=30]">
         Copy link address

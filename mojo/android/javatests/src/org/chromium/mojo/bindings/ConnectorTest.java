@@ -30,7 +30,7 @@ public class ConnectorTest extends MojoTestCase {
 
     private MessagePipeHandle mHandle;
     private Connector mConnector;
-    private MessageWithHeader mTestMessage;
+    private Message mTestMessage;
     private RecordingMessageReceiver mReceiver;
     private CapturingErrorHandler mErrorHandler;
 
@@ -50,7 +50,7 @@ public class ConnectorTest extends MojoTestCase {
         mErrorHandler = new CapturingErrorHandler();
         mConnector.setErrorHandler(mErrorHandler);
         mConnector.start();
-        mTestMessage = BindingsTestUtils.newRandomMessageWithHeader(DATA_LENGTH);
+        mTestMessage = BindingsTestUtils.newRandomMessage(DATA_LENGTH);
         assertNull(mErrorHandler.getLastMojoException());
         assertEquals(0, mReceiver.messages.size());
     }
@@ -77,7 +77,7 @@ public class ConnectorTest extends MojoTestCase {
                 MessagePipeHandle.ReadFlags.NONE);
         assertEquals(MojoResult.OK, result.getMojoResult());
         assertEquals(DATA_LENGTH, result.getMessageSize());
-        assertEquals(mTestMessage.getMessage().buffer, received);
+        assertEquals(mTestMessage.getData(), received);
     }
 
     /**
@@ -85,14 +85,14 @@ public class ConnectorTest extends MojoTestCase {
      */
     @SmallTest
     public void testReceivingMessage() {
-        mHandle.writeMessage(mTestMessage.getMessage().buffer, new ArrayList<Handle>(),
+        mHandle.writeMessage(mTestMessage.getData(), new ArrayList<Handle>(),
                 MessagePipeHandle.WriteFlags.NONE);
         nativeRunLoop(RUN_LOOP_TIMEOUT_MS);
         assertNull(mErrorHandler.getLastMojoException());
         assertEquals(1, mReceiver.messages.size());
-        MessageWithHeader received = mReceiver.messages.get(0);
-        assertEquals(0, received.getMessage().handles.size());
-        assertEquals(mTestMessage.getMessage().buffer, received.getMessage().buffer);
+        Message received = mReceiver.messages.get(0);
+        assertEquals(0, received.getHandles().size());
+        assertEquals(mTestMessage.getData(), received.getData());
     }
 
     /**

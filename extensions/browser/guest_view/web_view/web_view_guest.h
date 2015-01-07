@@ -13,6 +13,7 @@
 #include "content/public/browser/notification_registrar.h"
 #include "extensions/browser/guest_view/guest_view.h"
 #include "extensions/browser/guest_view/web_view/javascript_dialog_helper.h"
+#include "extensions/browser/guest_view/web_view/web_view_find_helper.h"
 #include "extensions/browser/guest_view/web_view/web_view_guest_delegate.h"
 #include "extensions/browser/guest_view/web_view/web_view_permission_helper.h"
 #include "extensions/browser/guest_view/web_view/web_view_permission_types.h"
@@ -73,12 +74,22 @@ class WebViewGuest : public GuestView<WebViewGuest>,
   // Set the zoom factor.
   void SetZoom(double zoom_factor);
 
+  // Sets the transparency of the guest.
+  void SetAllowTransparency(bool allow);
+
+  // Loads a data URL with a specified base URL and virtual URL.
+  bool LoadDataWithBaseURL(const std::string& data_url,
+                           const std::string& base_url,
+                           const std::string& virtual_url,
+                           std::string* error);
+
   // GuestViewBase implementation.
   virtual const char* GetAPINamespace() const OVERRIDE;
   virtual int GetTaskPrefix() const OVERRIDE;
   virtual void CreateWebContents(
       const std::string& embedder_extension_id,
       int embedder_render_process_id,
+      const GURL& embedder_site_url,
       const base::DictionaryValue& create_params,
       const WebContentsCreatedCallback& callback) OVERRIDE;
   virtual void DidAttachToEmbedder() OVERRIDE;
@@ -121,6 +132,10 @@ class WebViewGuest : public GuestView<WebViewGuest>,
       content::WebContents* source,
       const content::MediaStreamRequest& request,
       const content::MediaResponseCallback& callback) OVERRIDE;
+  virtual bool CheckMediaAccessPermission(
+      content::WebContents* source,
+      const GURL& security_origin,
+      content::MediaStreamType type) OVERRIDE;
   virtual void CanDownload(content::RenderViewHost* render_view_host,
                            const GURL& url,
                            const std::string& request_method,
@@ -131,9 +146,6 @@ class WebViewGuest : public GuestView<WebViewGuest>,
       content::WebContents* web_contents,
       SkColor color,
       const std::vector<content::ColorSuggestion>& suggestions) OVERRIDE;
-  virtual void RunFileChooser(
-      content::WebContents* web_contents,
-      const content::FileChooserParams& params) OVERRIDE;
   virtual void AddNewContents(content::WebContents* source,
                               content::WebContents* new_contents,
                               WindowOpenDisposition disposition,
@@ -165,10 +177,9 @@ class WebViewGuest : public GuestView<WebViewGuest>,
   double GetZoom();
 
   // Begin or continue a find request.
-  void Find(
-      const base::string16& search_text,
-      const blink::WebFindOptions& options,
-      WebViewInternalFindFunction* find_function);
+  void Find(const base::string16& search_text,
+            const blink::WebFindOptions& options,
+            scoped_refptr<WebViewInternalFindFunction> find_function);
 
   // Conclude a find request to clear highlighting.
   void StopFinding(content::StopFindAction);
@@ -245,7 +256,7 @@ class WebViewGuest : public GuestView<WebViewGuest>,
   virtual void DidCommitProvisionalLoadForFrame(
       content::RenderFrameHost* render_frame_host,
       const GURL& url,
-      content::PageTransition transition_type) OVERRIDE;
+      ui::PageTransition transition_type) OVERRIDE;
   virtual void DidFailProvisionalLoad(
       content::RenderFrameHost* render_frame_host,
       const GURL& validated_url,
@@ -281,7 +292,7 @@ class WebViewGuest : public GuestView<WebViewGuest>,
 
   void LoadURLWithParams(const GURL& url,
                          const content::Referrer& referrer,
-                         content::PageTransition transition_type,
+                         ui::PageTransition transition_type,
                          content::WebContents* web_contents);
 
   void RequestNewWindowPermission(
@@ -315,6 +326,9 @@ class WebViewGuest : public GuestView<WebViewGuest>,
 
   void SetUpAutoSize();
 
+  // Handles find requests and replies for the webview find API.
+  WebViewFindHelper find_helper_;
+
   ObserverList<ScriptExecutionObserver> script_observers_;
   scoped_ptr<ScriptExecutor> script_executor_;
 
@@ -325,6 +339,9 @@ class WebViewGuest : public GuestView<WebViewGuest>,
 
   // Stores the window name of the main frame of the guest.
   std::string name_;
+
+  // Stores whether the contents of the guest can be transparent.
+  bool guest_opaque_;
 
   // Handles the JavaScript dialog requests.
   JavaScriptDialogHelper javascript_dialog_helper_;

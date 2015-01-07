@@ -16,6 +16,7 @@
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/common/referrer.h"
+#include "ui/base/page_transition_types.h"
 
 struct FrameHostMsg_BeginNavigation_Params;
 struct FrameMsg_Navigate_Params;
@@ -42,7 +43,9 @@ class RenderWidgetHostDelegate;
 class RenderWidgetHostView;
 class TestWebContents;
 class WebUIImpl;
+struct CommonNavigationParams;
 struct NavigationBeforeCommitInfo;
+struct RequestNavigationParams;
 
 // Manages RenderFrameHosts for a FrameTreeNode.  This class acts as a state
 // machine to make cross-process navigations in a frame possible.
@@ -232,7 +235,7 @@ class CONTENT_EXPORT RenderFrameHostManager : public NotificationObserver {
       scoped_ptr<CrossSiteTransferringRequest> cross_site_transferring_request,
       const std::vector<GURL>& transfer_url_chain,
       const Referrer& referrer,
-      PageTransition page_transition,
+      ui::PageTransition page_transition,
       bool should_replace_current_entry);
 
   // Received a response from CrossSiteResourceHandler. If the navigation
@@ -315,16 +318,18 @@ class CONTENT_EXPORT RenderFrameHostManager : public NotificationObserver {
 
   // PlzNavigate: sends a RequestNavigation IPC to the renderer to ask it to
   // navigate. If no live renderer is present, then the navigation request will
-  // be sent directly to the ResourceDispatcherHost.
-  bool RequestNavigation(const NavigationEntryImpl& entry,
-                         const FrameMsg_Navigate_Params& navigate_params);
+  // be sent directly to the ResourceDispatcherHost. Takes ownership of
+  // |navigation_request|.
+  bool RequestNavigation(scoped_ptr<NavigationRequest> navigation_request,
+                         const RequestNavigationParams& request_params);
 
   // PlzNavigate: Used to start a navigation. OnBeginNavigation is called
   // directly by RequestNavigation when there is no live renderer. Otherwise, it
   // is called following a BeginNavigation IPC from the renderer (which in
   // browser-initiated navigation also happens after RequestNavigation has been
   // called).
-  void OnBeginNavigation(const FrameHostMsg_BeginNavigation_Params& params);
+  void OnBeginNavigation(const FrameHostMsg_BeginNavigation_Params& params,
+                         const CommonNavigationParams& common_params);
 
   // PlzNavigate: Called when a navigation request has received a response, to
   // select a renderer to use for the navigation.
@@ -382,7 +387,7 @@ class CONTENT_EXPORT RenderFrameHostManager : public NotificationObserver {
   SiteInstance* GetSiteInstanceForNavigation(
       const GURL& dest_url,
       SiteInstance* dest_instance,
-      PageTransition dest_transition,
+      ui::PageTransition dest_transition,
       bool dest_is_restore,
       bool dest_is_view_source_mode);
 
@@ -394,7 +399,7 @@ class CONTENT_EXPORT RenderFrameHostManager : public NotificationObserver {
   SiteInstance* GetSiteInstanceForURL(
       const GURL& dest_url,
       SiteInstance* dest_instance,
-      PageTransition dest_transition,
+      ui::PageTransition dest_transition,
       bool dest_is_restore,
       bool dest_is_view_source_mode,
       SiteInstance* current_instance,
@@ -421,14 +426,14 @@ class CONTENT_EXPORT RenderFrameHostManager : public NotificationObserver {
   // initialized for another RenderFrameHost.
   // TODO(creis): opener_route_id is currently for the RenderViewHost but should
   // be for the RenderFrame, since frames can have openers.
-  bool InitRenderView(RenderViewHost* render_view_host,
+  bool InitRenderView(RenderViewHostImpl* render_view_host,
                       int opener_route_id,
                       int proxy_routing_id,
                       bool for_main_frame_navigation);
 
   // Initialization for RenderFrameHost uses the same sequence as InitRenderView
   // above.
-  bool InitRenderFrame(RenderFrameHost* render_frame_host);
+  bool InitRenderFrame(RenderFrameHostImpl* render_frame_host);
 
   // Sets the pending RenderFrameHost/WebUI to be the active one. Note that this
   // doesn't require the pending render_frame_host_ pointer to be non-NULL,

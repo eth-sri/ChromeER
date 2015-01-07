@@ -33,14 +33,6 @@
 #include "chrome/browser/printing/print_error_dialog.h"
 #endif
 
-#if defined(OS_WIN)
-#include "base/memory/ref_counted.h"
-#include "base/memory/ref_counted_memory.h"
-#include "chrome/browser/printing/pdf_to_emf_converter.h"
-#include "printing/emf_win.h"
-#include "printing/pdf_render_settings.h"
-#endif
-
 using base::TimeDelta;
 using content::BrowserThread;
 
@@ -75,11 +67,11 @@ PrintViewManagerBase::~PrintViewManagerBase() {
   DisconnectFromCurrentPrintJob();
 }
 
-#if !defined(OS_WIN)
+#if !defined(DISABLE_BASIC_PRINTING)
 bool PrintViewManagerBase::PrintNow() {
   return PrintNowInternal(new PrintMsg_PrintPages(routing_id()));
 }
-#endif  // !OS_WIN
+#endif  // !DISABLE_BASIC_PRINTING
 
 void PrintViewManagerBase::UpdateScriptedPrintingBlocked() {
   Send(new PrintMsg_SetScriptedPrintingBlocked(
@@ -126,37 +118,6 @@ void PrintViewManagerBase::OnDidGetDocumentCookie(int cookie) {
   cookie_ = cookie;
 }
 
-#if defined(OS_WIN)
-void PrintViewManagerBase::OnPdfToEmfConverted(
-    const PrintHostMsg_DidPrintPage_Params& params,
-    double scale_factor,
-    const std::vector<base::FilePath>& emf_files) {
-  if (!print_job_.get())
-    return;
-
-  PrintedDocument* document = print_job_->document();
-  if (!document)
-    return;
-
-  for (size_t i = 0; i < emf_files.size(); ++i) {
-    scoped_ptr<printing::Emf> metafile(new printing::Emf);
-    if (!metafile->InitFromFile(emf_files[i])) {
-      NOTREACHED() << "Invalid metafile";
-      web_contents()->Stop();
-      return;
-    }
-    // Update the rendered document. It will send notifications to the listener.
-    document->SetPage(i,
-                      metafile.release(),
-                      scale_factor,
-                      params.page_size,
-                      params.content_area);
-  }
-
-  ShouldQuitFromInnerMessageLoop();
-}
-#endif  // OS_WIN
-
 void PrintViewManagerBase::OnDidPrintPage(
   const PrintHostMsg_DidPrintPage_Params& params) {
   if (!OpportunisticallyCreatePrintJob(params.document_cookie))
@@ -197,7 +158,7 @@ void PrintViewManagerBase::OnDidPrintPage(
 #if !defined(OS_WIN)
   // Update the rendered document. It will send notifications to the listener.
   document->SetPage(params.page_number,
-                    metafile.release(),
+                    metafile.PassAs<MetafilePlayer>(),
                     params.page_size,
                     params.content_area);
 
@@ -209,17 +170,8 @@ void PrintViewManagerBase::OnDidPrintPage(
         params.data_size);
 
     document->DebugDumpData(bytes, FILE_PATH_LITERAL(".pdf"));
-
-    if (!pdf_to_emf_converter_)
-      pdf_to_emf_converter_ = PdfToEmfConverter::CreateDefault();
-
-    const int kPrinterDpi = print_job_->settings().dpi();
-    pdf_to_emf_converter_->Start(
-        bytes,
-        printing::PdfRenderSettings(params.content_area, kPrinterDpi, true),
-        base::Bind(&PrintViewManagerBase::OnPdfToEmfConverted,
-                   base::Unretained(this),
-                   params));
+    print_job_->StartPdfToEmfConversion(
+        bytes, params.page_size, params.content_area);
   }
 #endif  // !OS_WIN
 }

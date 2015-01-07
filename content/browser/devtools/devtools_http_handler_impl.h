@@ -16,6 +16,7 @@
 #include "content/public/browser/devtools_agent_host.h"
 #include "content/public/browser/devtools_http_handler.h"
 #include "content/public/browser/devtools_http_handler_delegate.h"
+#include "content/public/browser/devtools_manager_delegate.h"
 #include "net/http/http_status_code.h"
 #include "net/server/http_server.h"
 
@@ -55,6 +56,7 @@ class DevToolsHttpHandlerImpl
   virtual GURL GetFrontendURL() OVERRIDE;
 
   // net::HttpServer::Delegate implementation.
+  virtual void OnConnect(int connection_id) OVERRIDE {}
   virtual void OnHttpRequest(int connection_id,
                              const net::HttpServerRequestInfo& info) OVERRIDE;
   virtual void OnWebSocketRequest(
@@ -80,7 +82,7 @@ class DevToolsHttpHandlerImpl
   void OnTargetListReceived(
       int connection_id,
       const std::string& host,
-      const DevToolsHttpHandlerDelegate::TargetList& targets);
+      const DevToolsManagerDelegate::TargetList& targets);
 
   DevToolsTarget* GetTarget(const std::string& id);
 

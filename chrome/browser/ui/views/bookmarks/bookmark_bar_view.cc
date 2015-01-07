@@ -38,6 +38,7 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/view_ids.h"
 #include "chrome/browser/ui/views/bookmarks/bookmark_bar_instructions_view.h"
+#include "chrome/browser/ui/views/bookmarks/bookmark_bar_view_observer.h"
 #include "chrome/browser/ui/views/bookmarks/bookmark_context_menu.h"
 #include "chrome/browser/ui/views/bookmarks/bookmark_drag_drop_views.h"
 #include "chrome/browser/ui/views/bookmarks/bookmark_menu_controller_views.h"
@@ -59,7 +60,6 @@
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/common/page_transition_types.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_set.h"
@@ -68,6 +68,7 @@
 #include "ui/base/dragdrop/drag_utils.h"
 #include "ui/base/dragdrop/os_exchange_data.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/base/page_transition_types.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/theme_provider.h"
 #include "ui/base/window_open_disposition.h"
@@ -473,7 +474,6 @@ BookmarkBarView::BookmarkBarView(Browser* browser, BrowserView* browser_view)
       other_bookmarked_button_(NULL),
       managed_bookmarks_button_(NULL),
       apps_page_shortcut_(NULL),
-      show_folder_method_factory_(this),
       overflow_button_(NULL),
       instructions_(NULL),
       bookmarks_separator_view_(NULL),
@@ -482,7 +482,8 @@ BookmarkBarView::BookmarkBarView(Browser* browser, BrowserView* browser_view)
       infobar_visible_(false),
       throbbing_view_(NULL),
       bookmark_bar_state_(BookmarkBar::SHOW),
-      animating_detached_(false) {
+      animating_detached_(false),
+      show_folder_method_factory_(this) {
   set_id(VIEW_ID_BOOKMARK_BAR);
   Init();
 
@@ -509,6 +510,14 @@ BookmarkBarView::~BookmarkBarView() {
 // static
 void BookmarkBarView::DisableAnimationsForTesting(bool disabled) {
   animations_enabled = !disabled;
+}
+
+void BookmarkBarView::AddObserver(BookmarkBarViewObserver* observer) {
+  observers_.AddObserver(observer);
+}
+
+void BookmarkBarView::RemoveObserver(BookmarkBarViewObserver* observer) {
+  observers_.RemoveObserver(observer);
 }
 
 void BookmarkBarView::SetPageNavigator(PageNavigator* navigator) {
@@ -977,6 +986,15 @@ const char* BookmarkBarView::GetClassName() const {
   return kViewClassName;
 }
 
+void BookmarkBarView::SetVisible(bool v) {
+  if (v == visible())
+    return;
+
+  View::SetVisible(v);
+  FOR_EACH_OBSERVER(BookmarkBarViewObserver, observers_,
+                    OnBookmarkBarVisibilityChanged());
+}
+
 void BookmarkBarView::GetAccessibleState(ui::AXViewState* state) {
   state->role = ui::AX_ROLE_TOOLBAR;
   state->name = l10n_util::GetStringUTF16(IDS_ACCNAME_BOOKMARKS);
@@ -1251,7 +1269,7 @@ void BookmarkBarView::ButtonPressed(views::Button* sender,
     OpenURLParams params(GURL(chrome::kChromeUIAppsURL),
                          Referrer(),
                          disposition_from_event_flags,
-                         content::PAGE_TRANSITION_AUTO_BOOKMARK,
+                         ui::PAGE_TRANSITION_AUTO_BOOKMARK,
                          false);
     page_navigator_->OpenURL(params);
     RecordBookmarkAppsPageOpen(GetBookmarkLaunchLocation());
@@ -1274,7 +1292,7 @@ void BookmarkBarView::ButtonPressed(views::Button* sender,
     RecordAppLaunch(browser_->profile(), node->url());
     OpenURLParams params(
         node->url(), Referrer(), disposition_from_event_flags,
-        content::PAGE_TRANSITION_AUTO_BOOKMARK, false);
+        ui::PAGE_TRANSITION_AUTO_BOOKMARK, false);
     page_navigator_->OpenURL(params);
   } else {
     chrome::OpenAll(GetWidget()->GetNativeWindow(), page_navigator_, node,

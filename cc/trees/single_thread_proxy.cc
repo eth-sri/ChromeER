@@ -26,8 +26,7 @@ scoped_ptr<Proxy> SingleThreadProxy::Create(
     LayerTreeHostSingleThreadClient* client,
     scoped_refptr<base::SingleThreadTaskRunner> main_task_runner) {
   return make_scoped_ptr(
-             new SingleThreadProxy(layer_tree_host, client, main_task_runner))
-      .PassAs<Proxy>();
+      new SingleThreadProxy(layer_tree_host, client, main_task_runner));
 }
 
 SingleThreadProxy::SingleThreadProxy(
@@ -107,15 +106,16 @@ void SingleThreadProxy::SetVisible(bool visible) {
   UpdateBackgroundAnimateTicking();
 }
 
-void SingleThreadProxy::CreateAndInitializeOutputSurface() {
-  TRACE_EVENT0(
-      "cc", "SingleThreadProxy::CreateAndInitializeOutputSurface");
+void SingleThreadProxy::RequestNewOutputSurface() {
   DCHECK(Proxy::IsMainThread());
   DCHECK(layer_tree_host_->output_surface_lost());
+  layer_tree_host_->RequestNewOutputSurface();
+}
 
-  scoped_ptr<OutputSurface> output_surface =
-      layer_tree_host_->CreateOutputSurface();
-
+void SingleThreadProxy::SetOutputSurface(
+    scoped_ptr<OutputSurface> output_surface) {
+  DCHECK(Proxy::IsMainThread());
+  DCHECK(layer_tree_host_->output_surface_lost());
   renderer_capabilities_for_main_thread_ = RendererCapabilities();
 
   bool success = !!output_surface;
@@ -135,7 +135,7 @@ void SingleThreadProxy::CreateAndInitializeOutputSurface() {
   } else if (Proxy::MainThreadTaskRunner()) {
     MainThreadTaskRunner()->PostTask(
         FROM_HERE,
-        base::Bind(&SingleThreadProxy::CreateAndInitializeOutputSurface,
+        base::Bind(&SingleThreadProxy::RequestNewOutputSurface,
                    weak_factory_.GetWeakPtr()));
   }
 }
@@ -192,7 +192,8 @@ void SingleThreadProxy::DoCommit(const BeginFrameArgs& begin_frame_args) {
     // This CapturePostTasks should be destroyed before CommitComplete() is
     // called since that goes out to the embedder, and we want the embedder
     // to receive its callbacks before that.
-    BlockingTaskRunner::CapturePostTasks blocked;
+    BlockingTaskRunner::CapturePostTasks blocked(
+        blocking_main_thread_task_runner());
 
     layer_tree_host_impl_->BeginCommit();
 
@@ -308,11 +309,12 @@ void SingleThreadProxy::Stop() {
     DebugScopedSetMainThreadBlocked main_thread_blocked(this);
     DebugScopedSetImplThread impl(this);
 
-    BlockingTaskRunner::CapturePostTasks blocked;
+    BlockingTaskRunner::CapturePostTasks blocked(
+        blocking_main_thread_task_runner());
     layer_tree_host_->DeleteContentsTexturesOnImplThread(
         layer_tree_host_impl_->resource_provider());
-    scheduler_on_impl_thread_.reset();
-    layer_tree_host_impl_.reset();
+    scheduler_on_impl_thread_ = nullptr;
+    layer_tree_host_impl_ = nullptr;
   }
   layer_tree_host_ = NULL;
 }
@@ -429,12 +431,6 @@ void SingleThreadProxy::DidSwapBuffersCompleteOnImplThread() {
   layer_tree_host_->DidCompleteSwapBuffers();
 }
 
-void SingleThreadProxy::BeginFrame(const BeginFrameArgs& args) {
-  TRACE_EVENT0("cc", "SingleThreadProxy::BeginFrame");
-  if (scheduler_on_impl_thread_)
-    scheduler_on_impl_thread_->BeginImplFrame(args);
-}
-
 void SingleThreadProxy::CompositeImmediately(base::TimeTicks frame_begin_time) {
   TRACE_EVENT0("cc", "SingleThreadProxy::CompositeImmediately");
   DCHECK(Proxy::IsMainThread());
@@ -534,7 +530,8 @@ DrawResult SingleThreadProxy::DoComposite(base::TimeTicks frame_begin_time,
     // the swap buffers will execute first.
     DebugScopedSetMainThreadBlocked main_thread_blocked(this);
 
-    BlockingTaskRunner::CapturePostTasks blocked;
+    BlockingTaskRunner::CapturePostTasks blocked(
+        blocking_main_thread_task_runner());
     layer_tree_host_impl_->SwapBuffers(*frame);
   }
   DidCommitAndDrawFrame();
@@ -554,8 +551,8 @@ bool SingleThreadProxy::MainFrameWillHappenForTesting() {
   return false;
 }
 
-void SingleThreadProxy::SetNeedsBeginFrame(bool enable) {
-  layer_tree_host_impl_->SetNeedsBeginFrame(enable);
+BeginFrameSource* SingleThreadProxy::ExternalBeginFrameSource() {
+  return layer_tree_host_impl_.get();
 }
 
 void SingleThreadProxy::WillBeginImplFrame(const BeginFrameArgs& args) {
@@ -661,10 +658,10 @@ void SingleThreadProxy::ScheduledActionBeginOutputSurfaceCreation() {
   if (Proxy::MainThreadTaskRunner()) {
     MainThreadTaskRunner()->PostTask(
         FROM_HERE,
-        base::Bind(&SingleThreadProxy::CreateAndInitializeOutputSurface,
+        base::Bind(&SingleThreadProxy::RequestNewOutputSurface,
                    weak_factory_.GetWeakPtr()));
   } else {
-    CreateAndInitializeOutputSurface();
+    RequestNewOutputSurface();
   }
 }
 

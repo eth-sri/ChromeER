@@ -25,6 +25,7 @@
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/extension_util.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/extension_urls.h"
 #include "grit/theme_resources.h"
 #include "net/base/url_util.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -111,7 +112,7 @@ void WebstoreResult::Open(int event_flags) {
 
   chrome::NavigateParams params(profile_,
                                 store_url,
-                                content::PAGE_TRANSITION_LINK);
+                                ui::PAGE_TRANSITION_LINK);
   params.disposition = ui::DispositionFromEventFlags(event_flags);
   chrome::Navigate(&params);
 }

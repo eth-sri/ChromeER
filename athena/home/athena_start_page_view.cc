@@ -5,6 +5,7 @@
 #include "athena/home/athena_start_page_view.h"
 
 #include "athena/home/home_card_constants.h"
+#include "athena/system/public/system_ui.h"
 #include "base/bind.h"
 #include "base/strings/string_util.h"
 #include "third_party/skia/include/core/SkPaint.h"
@@ -45,6 +46,11 @@ const int kSearchBoxCornerRadius = 2;
 // covers 6 icons with margin.
 const int kSearchBoxWidth = kIconSize * 6 + kIconMargin * 7;
 const int kSearchBoxHeight = 40;
+
+gfx::Size GetIconContainerSize() {
+  return gfx::Size(kIconSize *  kMaxIconNum + kIconMargin * (kMaxIconNum - 1),
+                   kIconSize);
+}
 
 class PlaceHolderButton : public views::ImageButton,
                           public views::ButtonListener {
@@ -155,7 +161,8 @@ namespace athena {
 const char AthenaStartPageView::kViewClassName[] = "AthenaStartPageView";
 
 AthenaStartPageView::LayoutData::LayoutData()
-    : logo_opacity(1.0f),
+    : system_info_opacity(1.0f),
+      logo_opacity(1.0f),
       background_opacity(1.0f) {
 }
 
@@ -170,6 +177,12 @@ AthenaStartPageView::AthenaStartPageView(
   background_->SetPaintToLayer(true);
   background_->SetFillsBoundsOpaquely(false);
   AddChildView(background_);
+
+  system_info_view_ =
+      SystemUI::Get()->CreateSystemInfoView(SystemUI::COLOR_SCHEME_DARK);
+  system_info_view_->SetPaintToLayer(true);
+  system_info_view_->SetFillsBoundsOpaquely(false);
+  AddChildView(system_info_view_);
 
   logo_ = view_delegate->CreateStartPageWebView(
       gfx::Size(kWebViewWidth, kWebViewHeight));
@@ -200,7 +213,7 @@ AthenaStartPageView::AthenaStartPageView(
       view_delegate->GetModel()->top_level_item_list();
   for (size_t i = 0; i < std::min(top_level->item_count(), kMaxIconNum); ++i)
     app_icon_container_->AddChildView(new AppIconButton(top_level->item_at(i)));
-  app_icon_container_->SetSize(app_icon_container_->GetPreferredSize());
+  app_icon_container_->SetSize(GetIconContainerSize());
 
   control_icon_container_ = new views::View();
   control_icon_container_->SetPaintToLayer(true);
@@ -210,7 +223,7 @@ AthenaStartPageView::AthenaStartPageView(
       views::BoxLayout::kHorizontal, 0, 0, kIconMargin));
   for (size_t i = 0; i < kMaxIconNum; ++i)
     control_icon_container_->AddChildView(new PlaceHolderButton());
-  control_icon_container_->SetSize(control_icon_container_->GetPreferredSize());
+  control_icon_container_->SetSize(GetIconContainerSize());
 
   search_box_view_ = new app_list::SearchBoxView(this, view_delegate);
   search_box_view_->set_contents_view(this);
@@ -233,7 +246,11 @@ void AthenaStartPageView::SetLayoutState(float layout_state) {
   Layout();
 }
 
-void AthenaStartPageView::SetLayoutStateWithAnimation(float layout_state) {
+void AthenaStartPageView::SetLayoutStateWithAnimation(
+    float layout_state,
+    gfx::Tween::Type tween_type) {
+  ui::ScopedLayerAnimationSettings system_info(
+      system_info_view_->layer()->GetAnimator());
   ui::ScopedLayerAnimationSettings logo(logo_->layer()->GetAnimator());
   ui::ScopedLayerAnimationSettings search_box(
       search_box_container_->layer()->GetAnimator());
@@ -242,10 +259,11 @@ void AthenaStartPageView::SetLayoutStateWithAnimation(float layout_state) {
   ui::ScopedLayerAnimationSettings controls(
       control_icon_container_->layer()->GetAnimator());
 
-  logo.SetTweenType(gfx::Tween::EASE_IN_OUT);
-  search_box.SetTweenType(gfx::Tween::EASE_IN_OUT);
-  icons.SetTweenType(gfx::Tween::EASE_IN_OUT);
-  controls.SetTweenType(gfx::Tween::EASE_IN_OUT);
+  system_info.SetTweenType(tween_type);
+  logo.SetTweenType(tween_type);
+  search_box.SetTweenType(tween_type);
+  icons.SetTweenType(tween_type);
+  controls.SetTweenType(tween_type);
 
   SetLayoutState(layout_state);
 }
@@ -268,6 +286,7 @@ AthenaStartPageView::LayoutData AthenaStartPageView::CreateBottomBounds(
   state.search_box.set_x((width - state.search_box.width()) / 2);
   state.search_box.set_y((kHomeCardHeight - state.search_box.height()) / 2);
 
+  state.system_info_opacity = 0.0f;
   state.logo_opacity = 0.0f;
   state.background_opacity = 0.9f;
   return state;
@@ -289,6 +308,7 @@ AthenaStartPageView::LayoutData AthenaStartPageView::CreateCenteredBounds(
   state.controls.set_x(width / 2 + kIconMargin / 2 + kIconMargin % 2);
   state.controls.set_y(state.icons.y());
 
+  state.system_info_opacity = 1.0f;
   state.logo_opacity = 1.0f;
   state.background_opacity = 1.0f;
   return state;
@@ -364,12 +384,22 @@ void AthenaStartPageView::OnSearchResultLayoutAnimationCompleted(
 
 void AthenaStartPageView::Layout() {
   search_results_view_->SetVisible(false);
+
+  system_info_view_->SetBounds(
+      0, 0, width(), system_info_view_->GetPreferredSize().height());
+
   gfx::Rect logo_bounds(x() + width() / 2 - kWebViewWidth / 2, y() + kTopMargin,
                         kWebViewWidth, kWebViewHeight);
   logo_->SetBoundsRect(logo_bounds);
 
   LayoutData bottom_bounds = CreateBottomBounds(width());
   LayoutData centered_bounds = CreateCenteredBounds(width());
+
+  system_info_view_->layer()->SetOpacity(gfx::Tween::FloatValueBetween(
+      gfx::Tween::CalculateValue(gfx::Tween::EASE_IN_2, layout_state_),
+      bottom_bounds.system_info_opacity, centered_bounds.system_info_opacity));
+  system_info_view_->SetVisible(
+      system_info_view_->layer()->GetTargetOpacity() != 0.0f);
 
   logo_->layer()->SetOpacity(gfx::Tween::FloatValueBetween(
       gfx::Tween::CalculateValue(gfx::Tween::EASE_IN_2, layout_state_),

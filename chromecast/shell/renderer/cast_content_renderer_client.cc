@@ -8,10 +8,12 @@
 
 #include "base/command_line.h"
 #include "base/memory/memory_pressure_listener.h"
+#include "chromecast/shell/renderer/key_systems_cast.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/renderer/render_view.h"
 #include "crypto/nss_util.h"
 #include "third_party/WebKit/public/platform/WebColor.h"
+#include "third_party/WebKit/public/web/WebSettings.h"
 #include "third_party/WebKit/public/web/WebView.h"
 
 namespace chromecast {
@@ -19,8 +21,9 @@ namespace shell {
 
 namespace {
 
-// Default background color to set for WebViews
-const blink::WebColor kColorBlack = 0x000000FF;
+// Default background color to set for WebViews. WebColor is in ARGB format
+// though the comment of WebColor says it is in RGBA.
+const blink::WebColor kColorBlack = 0xFF000000;
 
 }  // namespace
 
@@ -41,11 +44,14 @@ void CastContentRendererClient::RenderViewCreated(
   blink::WebView* webview = render_view->GetWebView();
   if (webview) {
     webview->setBaseBackgroundColor(kColorBlack);
+    webview->settings()->setShrinksViewportContentToFit(false);
   }
 }
 
 void CastContentRendererClient::AddKeySystems(
     std::vector<content::KeySystemInfo>* key_systems) {
+  AddChromecastKeySystems(key_systems);
+  AddChromecastPlatformKeySystems(key_systems);
 }
 
 }  // namespace shell

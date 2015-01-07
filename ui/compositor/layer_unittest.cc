@@ -6,8 +6,8 @@
 #include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/debug/trace_event.h"
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/json/json_reader.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
@@ -132,11 +132,11 @@ class LayerWithRealCompositorTest : public testing::Test {
     WaitForDraw();
   }
 
-  bool ReadPixels(SkBitmap* bitmap) {
-    return ReadPixels(bitmap, gfx::Rect(GetCompositor()->size()));
+  void ReadPixels(SkBitmap* bitmap) {
+    ReadPixels(bitmap, gfx::Rect(GetCompositor()->size()));
   }
 
-  bool ReadPixels(SkBitmap* bitmap, gfx::Rect source_rect) {
+  void ReadPixels(SkBitmap* bitmap, gfx::Rect source_rect) {
     scoped_refptr<ReadbackHolder> holder(new ReadbackHolder);
     scoped_ptr<cc::CopyOutputRequest> request =
         cc::CopyOutputRequest::CreateBitmapRequest(
@@ -153,14 +153,10 @@ class LayerWithRealCompositorTest : public testing::Test {
       WaitForDraw();
     }
 
-    if (holder->completed()) {
-      *bitmap = holder->result();
-      return true;
-    }
+    // Waits for the callback to finish run and return result.
+    holder->WaitForReadback();
 
-    // Callback never called.
-    NOTREACHED();
-    return false;
+    *bitmap = holder->result();
   }
 
   void WaitForDraw() { ui::DrawWaiterForTest::Wait(GetCompositor()); }
@@ -182,16 +178,15 @@ class LayerWithRealCompositorTest : public testing::Test {
  private:
   class ReadbackHolder : public base::RefCountedThreadSafe<ReadbackHolder> {
    public:
-    ReadbackHolder() : completed_(false) {}
+    ReadbackHolder() : run_loop_(new base::RunLoop) {}
 
     void OutputRequestCallback(scoped_ptr<cc::CopyOutputResult> result) {
-      DCHECK(!completed_);
       result_ = result->TakeBitmap();
-      completed_ = true;
+      run_loop_->Quit();
     }
-    bool completed() const {
-      return completed_;
-    };
+
+    void WaitForReadback() { run_loop_->Run(); }
+
     const SkBitmap& result() const { return *result_; }
 
    private:
@@ -200,7 +195,7 @@ class LayerWithRealCompositorTest : public testing::Test {
     virtual ~ReadbackHolder() {}
 
     scoped_ptr<SkBitmap> result_;
-    bool completed_;
+    scoped_ptr<base::RunLoop> run_loop_;
   };
 
   scoped_ptr<TestCompositorHost> compositor_host_;
@@ -847,6 +842,21 @@ TEST_F(LayerWithNullDelegateTest, SetBoundsSchedulesPaint) {
   WaitForDraw();
 }
 
+void ExpectRgba(int x, int y, SkColor expected_color, SkColor actual_color) {
+  EXPECT_EQ(expected_color, actual_color)
+      << "Pixel error at x=" << x << " y=" << y << "; "
+      << "actual RGBA=("
+      << SkColorGetR(actual_color) << ","
+      << SkColorGetG(actual_color) << ","
+      << SkColorGetB(actual_color) << ","
+      << SkColorGetA(actual_color) << "); "
+      << "expected RGBA=("
+      << SkColorGetR(expected_color) << ","
+      << SkColorGetG(expected_color) << ","
+      << SkColorGetB(expected_color) << ","
+      << SkColorGetA(expected_color) << ")";
+}
+
 // Checks that pixels are actually drawn to the screen with a read back.
 TEST_F(LayerWithRealCompositorTest, DrawPixels) {
   gfx::Size viewport_size = GetCompositor()->size();
@@ -869,7 +879,7 @@ TEST_F(LayerWithRealCompositorTest, DrawPixels) {
   DrawTree(layer.get());
 
   SkBitmap bitmap;
-  ASSERT_TRUE(ReadPixels(&bitmap, gfx::Rect(viewport_size)));
+  ReadPixels(&bitmap, gfx::Rect(viewport_size));
   ASSERT_FALSE(bitmap.empty());
 
   SkAutoLockPixels lock(bitmap);
@@ -877,18 +887,86 @@ TEST_F(LayerWithRealCompositorTest, DrawPixels) {
     for (int y = 0; y < viewport_size.height(); y++) {
       SkColor actual_color = bitmap.getColor(x, y);
       SkColor expected_color = y < blue_height ? SK_ColorBLUE : SK_ColorRED;
-      EXPECT_EQ(expected_color, actual_color)
-          << "Pixel error at x=" << x << " y=" << y << "; "
-          << "actual RGBA=("
-          << SkColorGetR(actual_color) << ","
-          << SkColorGetG(actual_color) << ","
-          << SkColorGetB(actual_color) << ","
-          << SkColorGetA(actual_color) << "); "
-          << "expected RGBA=("
-          << SkColorGetR(expected_color) << ","
-          << SkColorGetG(expected_color) << ","
-          << SkColorGetB(expected_color) << ","
-          << SkColorGetA(expected_color) << ")";
+      ExpectRgba(x, y, expected_color, actual_color);
+    }
+  }
+}
+
+// Checks that drawing a layer with transparent pixels is blended correctly
+// with the lower layer.
+TEST_F(LayerWithRealCompositorTest, DrawAlphaBlendedPixels) {
+  gfx::Size viewport_size = GetCompositor()->size();
+
+  int test_size = 200;
+  EXPECT_GE(viewport_size.width(), test_size);
+  EXPECT_GE(viewport_size.height(), test_size);
+
+  // Blue with a wee bit of transparency.
+  SkColor blue_with_alpha = SkColorSetARGBInline(40, 10, 20, 200);
+  SkColor blend_color = SkColorSetARGBInline(255, 216, 3, 32);
+
+  scoped_ptr<Layer> background_layer(
+      CreateColorLayer(SK_ColorRED, gfx::Rect(viewport_size)));
+  scoped_ptr<Layer> foreground_layer(
+      CreateColorLayer(blue_with_alpha, gfx::Rect(viewport_size)));
+
+  // This must be set to false for layers with alpha to be blended correctly.
+  foreground_layer->SetFillsBoundsOpaquely(false);
+
+  background_layer->Add(foreground_layer.get());
+  DrawTree(background_layer.get());
+
+  SkBitmap bitmap;
+  ReadPixels(&bitmap, gfx::Rect(viewport_size));
+  ASSERT_FALSE(bitmap.empty());
+
+  SkAutoLockPixels lock(bitmap);
+  for (int x = 0; x < test_size; x++) {
+    for (int y = 0; y < test_size; y++) {
+      SkColor actual_color = bitmap.getColor(x, y);
+      ExpectRgba(x, y, blend_color, actual_color);
+    }
+  }
+}
+
+// Checks that using the AlphaShape filter applied to a layer with
+// transparency, alpha-blends properly with the layer below.
+TEST_F(LayerWithRealCompositorTest, DrawAlphaThresholdFilterPixels) {
+  gfx::Size viewport_size = GetCompositor()->size();
+
+  int test_size = 200;
+  EXPECT_GE(viewport_size.width(), test_size);
+  EXPECT_GE(viewport_size.height(), test_size);
+
+  int blue_height = 10;
+  SkColor blue_with_alpha = SkColorSetARGBInline(40, 0, 0, 255);
+  SkColor blend_color = SkColorSetARGBInline(255, 215, 0, 40);
+
+  scoped_ptr<Layer> background_layer(
+      CreateColorLayer(SK_ColorRED, gfx::Rect(viewport_size)));
+  scoped_ptr<Layer> foreground_layer(
+      CreateColorLayer(blue_with_alpha, gfx::Rect(viewport_size)));
+
+  // Add a shape to restrict the visible part of the layer.
+  SkRegion shape;
+  shape.setRect(0, 0, viewport_size.width(), blue_height);
+  foreground_layer->SetAlphaShape(make_scoped_ptr(new SkRegion(shape)));
+
+  foreground_layer->SetFillsBoundsOpaquely(false);
+
+  background_layer->Add(foreground_layer.get());
+  DrawTree(background_layer.get());
+
+  SkBitmap bitmap;
+  ReadPixels(&bitmap, gfx::Rect(viewport_size));
+  ASSERT_FALSE(bitmap.empty());
+
+  SkAutoLockPixels lock(bitmap);
+  for (int x = 0; x < test_size; x++) {
+    for (int y = 0; y < test_size; y++) {
+      SkColor actual_color = bitmap.getColor(x, y);
+      ExpectRgba(x, y, actual_color,
+                 y < blue_height ? blend_color : SK_ColorRED);
     }
   }
 }
@@ -1026,14 +1104,14 @@ TEST_F(LayerWithRealCompositorTest, ModifyHierarchy) {
   l11->Add(l21.get());
   l0->Add(l12.get());
   DrawTree(l0.get());
-  ASSERT_TRUE(ReadPixels(&bitmap));
+  ReadPixels(&bitmap);
   ASSERT_FALSE(bitmap.empty());
   // WritePNGFile(bitmap, ref_img1);
   EXPECT_TRUE(MatchesPNGFile(bitmap, ref_img1, cc::ExactPixelComparator(true)));
 
   l0->StackAtTop(l11.get());
   DrawTree(l0.get());
-  ASSERT_TRUE(ReadPixels(&bitmap));
+  ReadPixels(&bitmap);
   ASSERT_FALSE(bitmap.empty());
   // WritePNGFile(bitmap, ref_img2);
   EXPECT_TRUE(MatchesPNGFile(bitmap, ref_img2, cc::ExactPixelComparator(true)));
@@ -1041,28 +1119,28 @@ TEST_F(LayerWithRealCompositorTest, ModifyHierarchy) {
   // should restore to original configuration
   l0->StackAbove(l12.get(), l11.get());
   DrawTree(l0.get());
-  ASSERT_TRUE(ReadPixels(&bitmap));
+  ReadPixels(&bitmap);
   ASSERT_FALSE(bitmap.empty());
   EXPECT_TRUE(MatchesPNGFile(bitmap, ref_img1, cc::ExactPixelComparator(true)));
 
   // l11 back to front
   l0->StackAtTop(l11.get());
   DrawTree(l0.get());
-  ASSERT_TRUE(ReadPixels(&bitmap));
+  ReadPixels(&bitmap);
   ASSERT_FALSE(bitmap.empty());
   EXPECT_TRUE(MatchesPNGFile(bitmap, ref_img2, cc::ExactPixelComparator(true)));
 
   // should restore to original configuration
   l0->StackAbove(l12.get(), l11.get());
   DrawTree(l0.get());
-  ASSERT_TRUE(ReadPixels(&bitmap));
+  ReadPixels(&bitmap);
   ASSERT_FALSE(bitmap.empty());
   EXPECT_TRUE(MatchesPNGFile(bitmap, ref_img1, cc::ExactPixelComparator(true)));
 
   // l11 back to front
   l0->StackAbove(l11.get(), l12.get());
   DrawTree(l0.get());
-  ASSERT_TRUE(ReadPixels(&bitmap));
+  ReadPixels(&bitmap);
   ASSERT_FALSE(bitmap.empty());
   EXPECT_TRUE(MatchesPNGFile(bitmap, ref_img2, cc::ExactPixelComparator(true)));
 }
@@ -1085,7 +1163,7 @@ TEST_F(LayerWithRealCompositorTest, Opacity) {
   l0->Add(l11.get());
   DrawTree(l0.get());
   SkBitmap bitmap;
-  ASSERT_TRUE(ReadPixels(&bitmap));
+  ReadPixels(&bitmap);
   ASSERT_FALSE(bitmap.empty());
   // WritePNGFile(bitmap, ref_img);
   EXPECT_TRUE(MatchesPNGFile(bitmap, ref_img, cc::ExactPixelComparator(true)));

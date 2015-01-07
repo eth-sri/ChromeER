@@ -105,13 +105,13 @@ class USER_MANAGER_EXPORT UserManager {
   // is sorted by last login date with the most recent user at the beginning.
   virtual const UserList& GetUsers() const = 0;
 
-  // Returns list of users admitted for logging in into multi-profile session.
+  // Returns list of users allowed for logging in into multi-profile session.
   // Users that have a policy that prevents them from being added to the
   // multi-profile session will still be part of this list as long as they
   // are regular users (i.e. not a public session/supervised etc.).
   // Returns an empty list in case when primary user is not a regular one or
   // has a policy that prohibids it to be part of multi-profile session.
-  virtual UserList GetUsersAdmittedForMultiProfile() const = 0;
+  virtual UserList GetUsersAllowedForMultiProfile() const = 0;
 
   // Returns a list of users who are currently logged in.
   virtual const UserList& GetLoggedInUsers() const = 0;
@@ -144,6 +144,10 @@ class USER_MANAGER_EXPORT UserManager {
 
   // Switches to active user identified by |user_id|. User has to be logged in.
   virtual void SwitchActiveUser(const std::string& user_id) = 0;
+
+  // Switches to the last active user (called after crash happens and session
+  // restore has completed).
+  virtual void SwitchToLastActiveUser() = 0;
 
   // Called when browser session is started i.e. after
   // browser_creator.LaunchBrowser(...) was called after user sign in.
@@ -288,6 +292,9 @@ class USER_MANAGER_EXPORT UserManager {
 
   // Returns true if supervised users allowed.
   virtual bool AreSupervisedUsersAllowed() const = 0;
+
+  // Force update login state.
+  virtual void ForceUpdateState() {}
 
  protected:
   // Sets UserManager instance.

@@ -13,7 +13,6 @@
 #include "cc/test/pixel_test.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
 #include "media/base/video_frame.h"
-#include "third_party/skia/include/core/SkBitmapDevice.h"
 #include "third_party/skia/include/core/SkColorPriv.h"
 #include "third_party/skia/include/core/SkImageFilter.h"
 #include "third_party/skia/include/core/SkMatrix.h"
@@ -160,13 +159,6 @@ typedef ::testing::Types<GLRenderer,
                          GLRendererWithExpandedViewport,
                          SoftwareRendererWithExpandedViewport> RendererTypes;
 TYPED_TEST_CASE(RendererPixelTest, RendererTypes);
-
-// All pixels can be off by one, but any more than that is an error.
-class FuzzyPixelOffByOneComparator : public FuzzyPixelComparator {
- public:
-  explicit FuzzyPixelOffByOneComparator(bool discard_alpha)
-    : FuzzyPixelComparator(discard_alpha, 100.f, 0.f, 1.f, 1, 0) {}
-};
 
 template <typename RendererType>
 class FuzzyForSoftwareOnlyPixelComparator : public PixelComparator {
@@ -499,23 +491,23 @@ class VideoGLRendererPixelTest : public GLRendererPixelTest {
     ResourceProvider::ResourceId y_resource =
         resource_provider_->CreateResourceFromTextureMailbox(
             resources.mailboxes[media::VideoFrame::kYPlane],
-            SingleReleaseCallback::Create(
+            SingleReleaseCallbackImpl::Create(
                 resources.release_callbacks[media::VideoFrame::kYPlane]));
     ResourceProvider::ResourceId u_resource =
         resource_provider_->CreateResourceFromTextureMailbox(
             resources.mailboxes[media::VideoFrame::kUPlane],
-            SingleReleaseCallback::Create(
+            SingleReleaseCallbackImpl::Create(
                 resources.release_callbacks[media::VideoFrame::kUPlane]));
     ResourceProvider::ResourceId v_resource =
         resource_provider_->CreateResourceFromTextureMailbox(
             resources.mailboxes[media::VideoFrame::kVPlane],
-            SingleReleaseCallback::Create(
+            SingleReleaseCallbackImpl::Create(
                 resources.release_callbacks[media::VideoFrame::kVPlane]));
     ResourceProvider::ResourceId a_resource = 0;
     if (with_alpha) {
       a_resource = resource_provider_->CreateResourceFromTextureMailbox(
           resources.mailboxes[media::VideoFrame::kAPlane],
-          SingleReleaseCallback::Create(
+          SingleReleaseCallbackImpl::Create(
               resources.release_callbacks[media::VideoFrame::kAPlane]));
     }
 

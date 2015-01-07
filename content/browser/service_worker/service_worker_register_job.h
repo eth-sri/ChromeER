@@ -38,8 +38,7 @@ class ServiceWorkerRegisterJob : public ServiceWorkerRegisterJobBase,
                                  public ServiceWorkerRegistration::Listener {
  public:
   typedef base::Callback<void(ServiceWorkerStatusCode status,
-                              ServiceWorkerRegistration* registration,
-                              ServiceWorkerVersion* version)>
+                              ServiceWorkerRegistration* registration)>
       RegistrationCallback;
 
   // For registration jobs.
@@ -55,11 +54,11 @@ class ServiceWorkerRegisterJob : public ServiceWorkerRegisterJobBase,
   virtual ~ServiceWorkerRegisterJob();
 
   // Registers a callback to be called when the promise would resolve (whether
-  // successfully or not). Multiple callbacks may be registered. If |process_id|
-  // is not -1, it's added to the existing clients when deciding in which
-  // process to create the Service Worker instance.  If there are no existing
-  // clients, a new RenderProcessHost will be created.
-  void AddCallback(const RegistrationCallback& callback, int process_id);
+  // successfully or not). Multiple callbacks may be registered.
+  // If |provider_host| is not NULL, its process will be regarded as a candidate
+  // process to run the worker.
+  void AddCallback(const RegistrationCallback& callback,
+                   ServiceWorkerProviderHost* provider_host);
 
   // ServiceWorkerRegisterJobBase implementation:
   virtual void Start() OVERRIDE;
@@ -132,8 +131,7 @@ class ServiceWorkerRegisterJob : public ServiceWorkerRegisterJobBase,
   void Complete(ServiceWorkerStatusCode status);
   void CompleteInternal(ServiceWorkerStatusCode status);
   void ResolvePromise(ServiceWorkerStatusCode status,
-                      ServiceWorkerRegistration* registration,
-                      ServiceWorkerVersion* version);
+                      ServiceWorkerRegistration* registration);
 
   // EmbeddedWorkerInstance::Listener override of OnPausedAfterDownload.
   virtual void OnPausedAfterDownload() OVERRIDE;
@@ -144,7 +142,6 @@ class ServiceWorkerRegisterJob : public ServiceWorkerRegisterJobBase,
       ServiceWorkerRegistration* registration) OVERRIDE;
 
   void OnCompareScriptResourcesComplete(
-      ServiceWorkerVersion* most_recent_version,
       ServiceWorkerStatusCode status,
       bool are_equal);
 
@@ -158,13 +155,11 @@ class ServiceWorkerRegisterJob : public ServiceWorkerRegisterJobBase,
   const GURL pattern_;
   const GURL script_url_;
   std::vector<RegistrationCallback> callbacks_;
-  std::vector<int> pending_process_ids_;
   Phase phase_;
   Internal internal_;
   bool is_promise_resolved_;
   ServiceWorkerStatusCode promise_resolved_status_;
   scoped_refptr<ServiceWorkerRegistration> promise_resolved_registration_;
-  scoped_refptr<ServiceWorkerVersion> promise_resolved_version_;
   base::WeakPtrFactory<ServiceWorkerRegisterJob> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ServiceWorkerRegisterJob);

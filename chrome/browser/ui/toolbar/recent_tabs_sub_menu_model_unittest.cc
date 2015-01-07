@@ -4,15 +4,17 @@
 
 #include "chrome/browser/ui/toolbar/recent_tabs_sub_menu_model.h"
 
+#include <string>
+#include <vector>
+
 #include "base/command_line.h"
 #include "base/run_loop.h"
 #include "chrome/app/chrome_command_ids.h"
+#include "chrome/browser/sessions/persistent_tab_restore_service.h"
 #include "chrome/browser/sessions/session_service.h"
 #include "chrome/browser/sessions/session_service_factory.h"
 #include "chrome/browser/sessions/session_types.h"
-#include "chrome/browser/sessions/persistent_tab_restore_service.h"
 #include "chrome/browser/sessions/tab_restore_service_factory.h"
-#include "chrome/browser/sync/glue/local_device_info_provider_mock.h"
 #include "chrome/browser/sync/glue/synced_session.h"
 #include "chrome/browser/sync/profile_sync_service_mock.h"
 #include "chrome/browser/sync/sessions/sessions_sync_manager.h"
@@ -25,7 +27,10 @@
 #include "chrome/test/base/menu_model_test.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/sessions/serialized_navigation_entry_test_helper.h"
+#include "components/sync_driver/local_device_info_provider_mock.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/test/test_utils.h"
+#include "grit/generated_resources.h"
 #include "sync/api/fake_sync_change_processor.h"
 #include "sync/api/sync_error_factory_mock.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -113,7 +118,7 @@ class RecentTabsSubMenuModelTest
  public:
   RecentTabsSubMenuModelTest()
       : sync_service_(&testing_profile_),
-        local_device_(new browser_sync::LocalDeviceInfoProviderMock(
+        local_device_(new sync_driver::LocalDeviceInfoProviderMock(
                       "RecentTabsSubMenuModelTest",
                       "Test Machine",
                       "Chromium 10k",
@@ -135,9 +140,7 @@ class RecentTabsSubMenuModelTest
   }
 
   void WaitForLoadFromLastSession() {
-    content::BrowserThread::GetBlockingPool()->FlushForTesting();
-    base::RunLoop().RunUntilIdle();
-    content::BrowserThread::GetBlockingPool()->FlushForTesting();
+    content::RunAllBlockingPoolTasksUntilIdle();
   }
 
   static KeyedService* GetTabRestoreService(
@@ -160,7 +163,7 @@ class RecentTabsSubMenuModelTest
   testing::NiceMock<ProfileSyncServiceMock> sync_service_;
 
   scoped_ptr<browser_sync::SessionsSyncManager> manager_;
-  scoped_ptr<browser_sync::LocalDeviceInfoProviderMock> local_device_;
+  scoped_ptr<sync_driver::LocalDeviceInfoProviderMock> local_device_;
 };
 
 // Test disabled "Recently closed" header with no foreign tabs.
@@ -282,7 +285,7 @@ TEST_F(RecentTabsSubMenuModelTest,
   TabRestoreServiceFactory::GetInstance()->SetTestingFactory(
       profile(), RecentTabsSubMenuModelTest::GetTabRestoreService);
   // Let the shutdown of previous TabRestoreService run.
-  content::BrowserThread::GetBlockingPool()->FlushForTesting();
+  content::RunAllBlockingPoolTasksUntilIdle();
 
   TestRecentTabsSubMenuModel model(NULL, browser(), NULL);
   TestRecentTabsMenuModelDelegate delegate(&model);

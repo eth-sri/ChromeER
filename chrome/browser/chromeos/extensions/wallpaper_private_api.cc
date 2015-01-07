@@ -31,6 +31,7 @@
 #include "components/user_manager/user_manager.h"
 #include "content/public/browser/browser_thread.h"
 #include "extensions/browser/event_router.h"
+#include "grit/components_strings.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/webui/web_ui_util.h"
 #include "ui/strings/grit/app_locale_settings.h"
@@ -297,6 +298,8 @@ WallpaperPrivateSetWallpaperIfExistsFunction::
     ~WallpaperPrivateSetWallpaperIfExistsFunction() {}
 
 bool WallpaperPrivateSetWallpaperIfExistsFunction::RunAsync() {
+#if !defined(USE_ATHENA)
+  // TODO(bshe): Support wallpaper manager in Athena, crbug.com/408734.
   params = set_wallpaper_if_exists::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(params);
 
@@ -330,6 +333,7 @@ bool WallpaperPrivateSetWallpaperIfExistsFunction::RunAsync() {
           &WallpaperPrivateSetWallpaperIfExistsFunction::
               ReadFileAndInitiateStartDecode,
           this, wallpaper_path, fallback_path));
+#endif
   return true;
 }
 

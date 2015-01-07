@@ -78,7 +78,7 @@ void IpcDesktopEnvironment::SetCapabilities(const std::string& capabilities) {
 
 scoped_ptr<GnubbyAuthHandler> IpcDesktopEnvironment::CreateGnubbyAuthHandler(
     protocol::ClientStub* client_stub) {
-  return scoped_ptr<GnubbyAuthHandler>();
+  return nullptr;
 }
 
 IpcDesktopEnvironmentFactory::IpcDesktopEnvironmentFactory(
@@ -93,8 +93,8 @@ IpcDesktopEnvironmentFactory::IpcDesktopEnvironmentFactory(
       io_task_runner_(io_task_runner),
       curtain_enabled_(false),
       daemon_channel_(daemon_channel),
-      connector_factory_(this),
-      next_id_(0) {
+      next_id_(0),
+      connector_factory_(this) {
 }
 
 IpcDesktopEnvironmentFactory::~IpcDesktopEnvironmentFactory() {

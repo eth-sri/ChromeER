@@ -91,6 +91,7 @@ ValueStore* LocalValueStoreCache::GetStorage(
       new SettingsStorageQuotaEnforcer(
           quota_, storage_factory_->Create(file_path, extension->id())));
   DCHECK(storage.get());
+
   storage_map_[extension->id()] = storage;
   return storage.get();
 }

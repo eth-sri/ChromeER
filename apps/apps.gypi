@@ -38,8 +38,6 @@
         'app_restore_service.h',
         'app_restore_service_factory.cc',
         'app_restore_service_factory.h',
-        'app_window_contents.cc',
-        'app_window_contents.h',
         'browser_context_keyed_service_factories.cc',
         'browser_context_keyed_service_factories.h',
         'custom_launcher_page_contents.cc',
@@ -55,8 +53,6 @@
         'switches.h',
         'ui/views/app_window_frame_view.cc',
         'ui/views/app_window_frame_view.h',
-        'ui/views/native_app_window_views.cc',
-        'ui/views/native_app_window_views.h',
       ],
       'conditions': [
         ['chromeos==1',
@@ -70,6 +66,7 @@
           {
             'dependencies!': [
               'browser_extensions',
+              'common/extensions/api/api.gyp:chrome_api',
             ],
             'sources/': [
               ['exclude', '.*'],
@@ -78,6 +75,7 @@
         ],
         ['toolkit_views==1', {
           'dependencies': [
+            '../components/components.gyp:native_app_window',
             '../ui/strings/ui_strings.gyp:ui_strings',
             '../ui/views/views.gyp:views',
           ],

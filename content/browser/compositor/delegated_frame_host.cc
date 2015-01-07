@@ -13,6 +13,7 @@
 #include "cc/resources/texture_mailbox.h"
 #include "cc/surfaces/surface_factory.h"
 #include "content/browser/compositor/resize_lock.h"
+#include "content/browser/gpu/compositor_util.h"
 #include "content/common/gpu/client/gl_helper.h"
 #include "content/public/browser/render_widget_host_view_frame_subscriber.h"
 #include "content/public/common/content_switches.h"
@@ -53,8 +54,7 @@ void DelegatedFrameHostClient::RequestCopyOfOutput(
 
 DelegatedFrameHost::DelegatedFrameHost(DelegatedFrameHostClient* client)
     : client_(client),
-      use_surfaces_(base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kUseSurfaces)),
+      use_surfaces_(UseSurfacesEnabled()),
       last_output_surface_id_(0),
       pending_delegated_ack_count_(0),
       skipped_frames_(false),
@@ -143,7 +143,7 @@ void DelegatedFrameHost::RequestCopyOfOutput(
 void DelegatedFrameHost::CopyFromCompositingSurface(
     const gfx::Rect& src_subrect,
     const gfx::Size& output_size,
-    const base::Callback<void(bool, const SkBitmap&)>& callback,
+    CopyFromCompositingSurfaceCallback& callback,
     const SkColorType color_type) {
   // Only ARGB888 and RGB565 supported as of now.
   bool format_support = ((color_type == kAlpha_8_SkColorType) ||
@@ -361,12 +361,10 @@ void DelegatedFrameHost::SwapDelegatedFrame(
     }
     last_output_surface_id_ = output_surface_id;
   }
-  bool modified_layers = false;
   ui::Compositor* compositor = client_->GetCompositor();
   if (frame_size.IsEmpty()) {
     DCHECK(frame_data->resource_list.empty());
     EvictDelegatedFrame();
-    modified_layers = true;
   } else {
     if (use_surfaces_) {
       if (!surface_factory_) {
@@ -386,11 +384,17 @@ void DelegatedFrameHost::SwapDelegatedFrame(
         surface_factory_->Create(surface_id_, frame_size);
         client_->GetLayer()->SetShowSurface(surface_id_, frame_size_in_dip);
         current_surface_size_ = frame_size;
-        modified_layers = true;
       }
       scoped_ptr<cc::CompositorFrame> compositor_frame =
           make_scoped_ptr(new cc::CompositorFrame());
       compositor_frame->delegated_frame_data = frame_data.Pass();
+
+      compositor_frame->metadata.latency_info.swap(skipped_latency_info_list_);
+      compositor_frame->metadata.latency_info.insert(
+          compositor_frame->metadata.latency_info.end(),
+          latency_info.begin(),
+          latency_info.end());
+
       base::Closure ack_callback;
       if (compositor) {
         ack_callback = base::Bind(&DelegatedFrameHost::SendDelegatedFrameAck,
@@ -419,18 +423,14 @@ void DelegatedFrameHost::SwapDelegatedFrame(
       } else {
         frame_provider_->SetFrameData(frame_data.Pass());
       }
-      modified_layers = true;
     }
   }
   released_front_lock_ = NULL;
   current_frame_size_in_dip_ = frame_size_in_dip;
   CheckResizeLock();
 
-  if (modified_layers && !damage_rect_in_dip.IsEmpty()) {
-    // TODO(jbauman): Need to always tell the window observer about the
-    // damage.
+  if (!damage_rect_in_dip.IsEmpty())
     client_->GetLayer()->OnDelegatedFrameDamage(damage_rect_in_dip);
-  }
 
   pending_delegated_ack_count_++;
 
@@ -450,6 +450,8 @@ void DelegatedFrameHost::SwapDelegatedFrame(
         base::Bind(&DelegatedFrameHost::SendDelegatedFrameAck,
                    AsWeakPtr(),
                    output_surface_id));
+  } else {
+    AddOnCommitCallbackAndDisableLocks(base::Closure());
   }
   DidReceiveFrameFromRenderer(damage_rect);
   if (frame_provider_.get() || !surface_id_.is_null())
@@ -574,11 +576,14 @@ void DelegatedFrameHost::PrepareTextureCopyOutputResult(
   base::ScopedClosureRunner scoped_callback_runner(
       base::Bind(callback, false, SkBitmap()));
 
+  // TODO(sikugu): We should be able to validate the format here using
+  // GLHelper::IsReadbackConfigSupported before we processs the result.
+  // See crbug.com/415682.
   scoped_ptr<SkBitmap> bitmap(new SkBitmap);
-  if (!bitmap->allocPixels(SkImageInfo::Make(dst_size_in_pixel.width(),
-                                             dst_size_in_pixel.height(),
-                                             color_type,
-                                             kOpaque_SkAlphaType)))
+  if (!bitmap->tryAllocPixels(SkImageInfo::Make(dst_size_in_pixel.width(),
+                                                dst_size_in_pixel.height(),
+                                                color_type,
+                                                kOpaque_SkAlphaType)))
     return;
 
   ImageTransportFactory* factory = ImageTransportFactory::GetInstance();
@@ -649,7 +654,7 @@ void DelegatedFrameHost::PrepareBitmapCopyOutputResult(
   DCHECK_EQ(scaled_bitmap.colorType(), kN32_SkColorType);
   // Paint |scaledBitmap| to alpha-only |grayscale_bitmap|.
   SkBitmap grayscale_bitmap;
-  bool success = grayscale_bitmap.allocPixels(
+  bool success = grayscale_bitmap.tryAllocPixels(
       SkImageInfo::MakeA8(scaled_bitmap.width(), scaled_bitmap.height()));
   if (!success) {
     callback.Run(false, SkBitmap());
@@ -929,7 +934,8 @@ void DelegatedFrameHost::AddOnCommitCallbackAndDisableLocks(
     compositor->AddObserver(this);
 
   can_lock_compositor_ = NO_PENDING_COMMIT;
-  on_compositing_did_commit_callbacks_.push_back(callback);
+  if (!callback.is_null())
+    on_compositing_did_commit_callbacks_.push_back(callback);
 }
 
 void DelegatedFrameHost::AddedToWindow() {

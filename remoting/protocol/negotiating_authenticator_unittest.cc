@@ -15,7 +15,7 @@
 #include "remoting/protocol/protocol_mock_objects.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/libjingle/source/talk/xmllite/xmlelement.h"
+#include "third_party/webrtc/libjingle/xmllite/xmlelement.h"
 
 using testing::_;
 using testing::DeleteArg;
@@ -79,7 +79,7 @@ class NegotiatingAuthenticatorTest : public AuthenticatorTestBase {
     client_as_negotiating_authenticator_ = new NegotiatingClientAuthenticator(
         client_id, client_paired_secret,
         kTestHostId, fetch_secret_callback,
-        scoped_ptr<ThirdPartyClientAuthenticator::TokenFetcher>(), methods);
+        nullptr, methods);
     client_.reset(client_as_negotiating_authenticator_);
   }
 

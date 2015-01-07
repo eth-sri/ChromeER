@@ -29,7 +29,6 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/test/test_utils.h"
-#include "grit/webui_resources.h"
 #include "net/base/filename_util.h"
 #include "net/cookies/cookie_store.h"
 #include "net/test/python_utils.h"
@@ -40,6 +39,7 @@
 #include "ui/compositor/test/draw_waiter_for_test.h"
 #include "ui/events/gestures/gesture_configuration.h"
 #include "ui/events/keycodes/dom4/keycode_converter.h"
+#include "ui/resources/grit/webui_resources.h"
 
 #if defined(USE_AURA)
 #include "ui/aura/test/window_event_dispatcher_test_api.h"
@@ -109,7 +109,7 @@ bool ExecuteScriptHelper(RenderFrameHost* render_frame_host,
   std::string script =
       "window.domAutomationController.setAutomationId(0);" + original_script;
   DOMOperationObserver dom_op_observer(render_frame_host->GetRenderViewHost());
-  render_frame_host->ExecuteJavaScript(base::UTF8ToUTF16(script));
+  render_frame_host->ExecuteJavaScriptForTests(base::UTF8ToUTF16(script));
   std::string json;
   if (!dom_op_observer.WaitAndGetResponse(&json)) {
     DLOG(ERROR) << "Cannot communicate with DOMOperationObserver.";

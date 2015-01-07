@@ -4,21 +4,23 @@
 
 #include "chrome/browser/apps/app_browsertest_util.h"
 
-#include "apps/app_window_contents.h"
 #include "base/command_line.h"
 #include "base/strings/stringprintf.h"
+#include "chrome/browser/apps/scoped_keep_alive.h"
 #include "chrome/browser/extensions/api/tabs/tabs_api.h"
 #include "chrome/browser/extensions/extension_function_test_utils.h"
-#include "chrome/browser/extensions/extension_test_message_listener.h"
 #include "chrome/browser/ui/apps/chrome_app_delegate.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/extensions/application_launch.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/test_utils.h"
+#include "extensions/browser/app_window/app_window_contents.h"
 #include "extensions/browser/app_window/app_window_registry.h"
 #include "extensions/browser/app_window/native_app_window.h"
+#include "extensions/browser/process_manager.h"
 #include "extensions/common/switches.h"
+#include "extensions/test/extension_test_message_listener.h"
 
 using content::WebContents;
 
@@ -41,8 +43,8 @@ void PlatformAppBrowserTest::SetUpCommandLine(CommandLine* command_line) {
   ExtensionBrowserTest::SetUpCommandLine(command_line);
 
   // Make event pages get suspended quicker.
-  command_line->AppendSwitchASCII(switches::kEventPageIdleTime, "1000");
-  command_line->AppendSwitchASCII(switches::kEventPageSuspendingTime, "1000");
+  ProcessManager::SetEventPageIdleTimeForTesting(1000);
+  ProcessManager::SetEventPageSuspendingTimeForTesting(1000);
 }
 
 // static
@@ -200,9 +202,10 @@ AppWindow* PlatformAppBrowserTest::CreateAppWindowFromParams(
     const Extension* extension,
     const AppWindow::CreateParams& params) {
   AppWindow* window =
-      new AppWindow(browser()->profile(), new ChromeAppDelegate(), extension);
-  window->Init(
-      GURL(std::string()), new apps::AppWindowContentsImpl(window), params);
+      new AppWindow(browser()->profile(),
+                    new ChromeAppDelegate(make_scoped_ptr(new ScopedKeepAlive)),
+                    extension);
+  window->Init(GURL(std::string()), new AppWindowContentsImpl(window), params);
   return window;
 }
 

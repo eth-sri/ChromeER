@@ -10,9 +10,11 @@
 #include "android_webview/browser/aw_contents_client_bridge_base.h"
 #include "android_webview/browser/aw_contents_io_thread_client.h"
 #include "android_webview/browser/aw_cookie_access_policy.h"
+#include "android_webview/browser/aw_dev_tools_manager_delegate.h"
 #include "android_webview/browser/aw_quota_permission_context.h"
 #include "android_webview/browser/aw_web_preferences_populater.h"
 #include "android_webview/browser/jni_dependency_factory.h"
+#include "android_webview/browser/net/aw_url_request_context_getter.h"
 #include "android_webview/browser/net_disk_cache_remover.h"
 #include "android_webview/browser/renderer_host/aw_resource_dispatcher_host_delegate.h"
 #include "android_webview/common/render_view_messages.h"
@@ -147,17 +149,6 @@ void CancelProtectedMediaIdentifierPermissionRequests(
                                                  render_view_id);
   if (delegate)
     delegate->CancelProtectedMediaIdentifierPermissionRequests(origin);
-}
-
-void CancelGeolocationPermissionRequests(
-    int render_process_id,
-    int render_view_id,
-    const GURL& origin) {
-  AwBrowserPermissionRequestDelegate* delegate =
-      AwBrowserPermissionRequestDelegate::FromID(render_process_id,
-                                                 render_view_id);
-  if (delegate)
-    delegate->CancelGeolocationPermissionRequests(origin);
 }
 
 }  // namespace
@@ -417,8 +408,7 @@ void AwContentBrowserClient::RequestGeolocationPermission(
     int bridge_id,
     const GURL& requesting_frame,
     bool user_gesture,
-    base::Callback<void(bool)> result_callback,
-    base::Closure* cancel_callback) {
+    const base::Callback<void(bool)>& result_callback) {
   int render_process_id = web_contents->GetRenderProcessHost()->GetID();
   int render_view_id = web_contents->GetRenderViewHost()->GetRoutingID();
   AwBrowserPermissionRequestDelegate* delegate =
@@ -431,12 +421,20 @@ void AwContentBrowserClient::RequestGeolocationPermission(
   }
 
   GURL origin = requesting_frame.GetOrigin();
-  if (cancel_callback) {
-    *cancel_callback = base::Bind(
-        CancelGeolocationPermissionRequests, render_process_id, render_view_id,
-        origin);
-  }
   delegate->RequestGeolocationPermission(origin, result_callback);
+}
+
+void AwContentBrowserClient::CancelGeolocationPermissionRequest(
+    content::WebContents* web_contents,
+    int bridge_id,
+    const GURL& requesting_frame) {
+  int render_process_id = web_contents->GetRenderProcessHost()->GetID();
+  int render_view_id = web_contents->GetRenderViewHost()->GetRoutingID();
+  AwBrowserPermissionRequestDelegate* delegate =
+      AwBrowserPermissionRequestDelegate::FromID(render_process_id,
+                                                 render_view_id);
+  if (delegate)
+    delegate->CancelGeolocationPermissionRequests(requesting_frame);
 }
 
 void AwContentBrowserClient::RequestMidiSysExPermission(
@@ -508,8 +506,7 @@ void AwContentBrowserClient::ResourceDispatcherHostCreated() {
 }
 
 net::NetLog* AwContentBrowserClient::GetNetLog() {
-  // TODO(boliu): Implement AwNetLog.
-  return NULL;
+  return browser_context_->GetAwURLRequestContext()->GetNetLog();
 }
 
 content::AccessTokenStore* AwContentBrowserClient::CreateAccessTokenStore() {
@@ -579,5 +576,10 @@ AwContentBrowserClient::OverrideCreateExternalVideoSurfaceContainer(
   return native_factory_->CreateExternalVideoSurfaceContainer(web_contents);
 }
 #endif
+
+content::DevToolsManagerDelegate*
+AwContentBrowserClient::GetDevToolsManagerDelegate() {
+  return new AwDevToolsManagerDelegate();
+}
 
 }  // namespace android_webview

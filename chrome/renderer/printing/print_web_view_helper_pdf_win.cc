@@ -9,7 +9,6 @@
 #include "base/process/process_handle.h"
 #include "chrome/common/print_messages.h"
 #include "content/public/renderer/render_thread.h"
-#include "printing/metafile.h"
 #include "printing/metafile_skia_wrapper.h"
 #include "printing/page_size_margins.h"
 #include "printing/pdf_metafile_skia.h"
@@ -29,8 +28,8 @@ bool PrintWebViewHelper::RenderPreviewPage(
   PrintMsg_PrintPage_Params page_params;
   page_params.params = print_params;
   page_params.page_number = page_number;
-  scoped_ptr<Metafile> draft_metafile;
-  Metafile* initial_render_metafile = print_preview_context_.metafile();
+  scoped_ptr<PdfMetafileSkia> draft_metafile;
+  PdfMetafileSkia* initial_render_metafile = print_preview_context_.metafile();
   if (print_preview_context_.IsModifiable() && is_print_ready_metafile_sent_) {
     draft_metafile.reset(new PdfMetafileSkia);
     initial_render_metafile = draft_metafile.get();
@@ -38,7 +37,6 @@ bool PrintWebViewHelper::RenderPreviewPage(
 
   base::TimeTicks begin_time = base::TimeTicks::Now();
   PrintPageInternal(page_params,
-                    print_preview_context_.GetPrintCanvasSize(),
                     print_preview_context_.prepared_frame(),
                     initial_render_metafile,
                     NULL,
@@ -50,15 +48,14 @@ bool PrintWebViewHelper::RenderPreviewPage(
   } else if (print_preview_context_.IsModifiable() &&
              print_preview_context_.generate_draft_pages()) {
     DCHECK(!draft_metafile.get());
-    draft_metafile.reset(
-        print_preview_context_.metafile()->GetMetafileForCurrentPage());
+    draft_metafile =
+        print_preview_context_.metafile()->GetMetafileForCurrentPage();
   }
   return PreviewPageRendered(page_number, draft_metafile.get());
 }
 
 bool PrintWebViewHelper::PrintPagesNative(blink::WebFrame* frame,
-                                          int page_count,
-                                          const gfx::Size& canvas_size) {
+                                          int page_count) {
   PdfMetafileSkia metafile;
   if (!metafile.Init())
     return false;
@@ -88,7 +85,6 @@ bool PrintWebViewHelper::PrintPagesNative(blink::WebFrame* frame,
   for (size_t i = 0; i < printed_pages.size(); ++i) {
     page_params.page_number = printed_pages[i];
     PrintPageInternal(page_params,
-                      canvas_size,
                       frame,
                       &metafile,
                       &page_size_in_dpi[i],
@@ -147,9 +143,8 @@ bool PrintWebViewHelper::PrintPagesNative(blink::WebFrame* frame,
 
 void PrintWebViewHelper::PrintPageInternal(
     const PrintMsg_PrintPage_Params& params,
-    const gfx::Size& canvas_size,
     WebFrame* frame,
-    Metafile* metafile,
+    PdfMetafileSkia* metafile,
     gfx::Size* page_size_in_dpi,
     gfx::Rect* content_area_in_dpi) {
   PageSizeMargins page_layout_in_points;
@@ -221,7 +216,8 @@ void PrintWebViewHelper::PrintPageInternal(
 }
 
 bool PrintWebViewHelper::CopyMetafileDataToSharedMem(
-    Metafile* metafile, base::SharedMemoryHandle* shared_mem_handle) {
+    PdfMetafileSkia* metafile,
+    base::SharedMemoryHandle* shared_mem_handle) {
   uint32 buf_size = metafile->GetDataSize();
   base::SharedMemory shared_buf;
   // Allocate a shared memory buffer to hold the generated metafile data.

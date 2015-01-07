@@ -14,6 +14,7 @@
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "components/signin/core/browser/profile_oauth2_token_service.h"
 #include "components/signin/core/browser/signin_manager.h"
+#include "google_apis/gaia/gaia_constants.h"
 #include "google_apis/gaia/gaia_urls.h"
 #include "net/base/escape.h"
 
@@ -77,6 +78,7 @@ void GaiaWebAuthFlow::Start() {
       ProfileOAuth2TokenServiceFactory::GetForProfile(profile_);
   ubertoken_fetcher_.reset(new UbertokenFetcher(token_service,
                                                 this,
+                                                GaiaConstants::kChromeSource,
                                                 profile_->GetRequestContext()));
   ubertoken_fetcher_->StartFetchingToken(account_id_);
 }
@@ -165,14 +167,13 @@ void GaiaWebAuthFlow::OnAuthFlowURLChange(const GURL& url) {
 
     std::string fragment = url.GetContent().substr(
         redirect_path_prefix_.length(), std::string::npos);
-    std::vector<std::pair<std::string, std::string> > pairs;
+    base::StringPairs pairs;
     base::SplitStringIntoKeyValuePairs(fragment, '=', '&', &pairs);
     std::string access_token;
     std::string error;
     std::string expiration;
 
-    for (std::vector<std::pair<std::string, std::string> >::iterator
-             it = pairs.begin();
+    for (base::StringPairs::iterator it = pairs.begin();
          it != pairs.end();
          ++it) {
       if (it->first == kOAuth2RedirectAccessTokenKey)

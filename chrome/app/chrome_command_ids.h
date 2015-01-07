@@ -84,7 +84,7 @@
 #define IDC_SAVE_PAGE                   35004
 #define IDC_ENCODING_MENU               35005
 #define IDC_EMAIL_PAGE_LOCATION         35006
-#define IDC_ADVANCED_PRINT              35007
+#define IDC_BASIC_PRINT                 35007
 #define IDC_TRANSLATE_PAGE              35009
 #define IDC_MANAGE_PASSWORDS_FOR_PAGE   35010
 
@@ -213,6 +213,7 @@
 #define IDC_DISTILL_PAGE                40244
 #define IDC_HELP_MENU                   40245
 #define IDC_EXTENSIONS_OVERFLOW_MENU    40246
+#define IDC_SHOW_SRT_BUBBLE             40247
 
 // Spell-check
 // Insert any additional suggestions before _LAST; these have to be consecutive.

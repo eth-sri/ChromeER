@@ -78,6 +78,20 @@ CONTROL_USB_CHARGING_COMMANDS = [
     'disable_command':
         'echo 1 > /sys/module/pm8921_charger/parameters/disabled',
   },
+  {
+    # Nexus 5
+    # Setting the HIZ bit of the bq24192 causes the charger to actually ignore
+    # energy coming from USB. Setting the power_supply offline just updates the
+    # Android system to reflect that.
+    'witness_file': '/sys/kernel/debug/bq24192/INPUT_SRC_CONT',
+    'enable_command': (
+        'echo 0x4A > /sys/kernel/debug/bq24192/INPUT_SRC_CONT && '
+        'echo 1 > /sys/class/power_supply/usb/online'),
+    'disable_command': (
+        'echo 0xCA > /sys/kernel/debug/bq24192/INPUT_SRC_CONT && '
+        'chmod 644 /sys/class/power_supply/usb/online && '
+        'echo 0 > /sys/class/power_supply/usb/online'),
+  },
 ]
 
 class DeviceTempFile(object):
@@ -701,8 +715,7 @@ class AndroidCommands(object):
     """Send a command to the adb shell and return the result.
 
     Args:
-      command: String containing the shell command to send. Must not include
-               the single quotes as we use them to escape the whole command.
+      command: String containing the shell command to send.
       timeout_time: Number of seconds to wait for command to respond before
         retrying, used by AdbInterface.SendShellCommand.
       log_result: Boolean to indicate whether we should log the result of the

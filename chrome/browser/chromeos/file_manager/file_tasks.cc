@@ -20,9 +20,10 @@
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/extensions/application_launch.h"
 #include "chrome/browser/ui/webui/extensions/extension_icon_source.h"
 #include "chrome/common/extensions/api/file_browser_handlers/file_browser_handler.h"
-#include "chrome/common/extensions/api/file_browser_private.h"
+#include "chrome/common/extensions/api/file_manager_private.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/pref_names.h"
 #include "extensions/browser/extension_host.h"
@@ -31,7 +32,7 @@
 #include "extensions/browser/extension_util.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension_set.h"
-#include "webkit/browser/fileapi/file_system_url.h"
+#include "storage/browser/fileapi/file_system_url.h"
 
 using extensions::Extension;
 using extensions::app_file_handler_util::FindFileHandlersForFiles;
@@ -285,7 +286,7 @@ bool ExecuteFileTask(Profile* profile,
     apps::LaunchPlatformAppWithFileHandler(
         profile, extension, task.action_id, paths);
     if (!done.is_null())
-      done.Run(extensions::api::file_browser_private::TASK_RESULT_MESSAGE_SENT);
+      done.Run(extensions::api::file_manager_private::TASK_RESULT_MESSAGE_SENT);
     return true;
   }
   NOTREACHED();
@@ -371,8 +372,9 @@ void FindFileHandlerTasks(
        ++iter) {
     const Extension* extension = iter->get();
 
-    // We don't support using hosted apps to open files.
-    if (!extension->is_platform_app())
+    // Check that the extension can be launched via an event. This includes all
+    // platform apps plus whitelisted extensions.
+    if (!CanLaunchViaEvent(extension))
       continue;
 
     // Ephemeral apps cannot be file handlers.

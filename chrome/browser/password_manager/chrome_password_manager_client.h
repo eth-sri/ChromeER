@@ -7,6 +7,7 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "components/password_manager/content/browser/content_credential_manager_dispatcher.h"
 #include "components/password_manager/content/browser/content_password_manager_driver.h"
 #include "components/password_manager/core/browser/password_manager_client.h"
 #include "content/public/browser/web_contents_observer.h"
@@ -25,6 +26,7 @@ class WebContents;
 }
 
 namespace password_manager {
+struct CredentialInfo;
 class PasswordGenerationManager;
 class PasswordManager;
 }
@@ -45,7 +47,7 @@ class ChromePasswordManagerClient
   virtual bool IsSyncAccountCredential(
       const std::string& username, const std::string& origin) const OVERRIDE;
   virtual void AutofillResultsComputed() OVERRIDE;
-  virtual void PromptUserToSavePassword(
+  virtual bool PromptUserToSavePassword(
       scoped_ptr<password_manager::PasswordFormManager> form_to_save) OVERRIDE;
   virtual void AutomaticPasswordSave(
       scoped_ptr<password_manager::PasswordFormManager> saved_form_manager)
@@ -149,15 +151,15 @@ class ChromePasswordManagerClient
 
   password_manager::ContentPasswordManagerDriver driver_;
 
+  password_manager::ContentCredentialManagerDispatcher
+      credential_manager_dispatcher_;
+
   // Observer for password generation popup.
   autofill::PasswordGenerationPopupObserver* observer_;
 
   // Controls the popup
   base::WeakPtr<
     autofill::PasswordGenerationPopupControllerImpl> popup_controller_;
-
-  // Allows authentication callbacks to be destroyed when this client is gone.
-  base::WeakPtrFactory<ChromePasswordManagerClient> weak_factory_;
 
   // True if |this| is registered with some LogRouter which can accept logs.
   bool can_use_log_router_;
@@ -168,6 +170,9 @@ class ChromePasswordManagerClient
   // If the sync credential was filtered during autofill. Used for statistics
   // reporting.
   bool sync_credential_was_filtered_;
+
+  // Allows authentication callbacks to be destroyed when this client is gone.
+  base::WeakPtrFactory<ChromePasswordManagerClient> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromePasswordManagerClient);
 };

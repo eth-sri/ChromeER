@@ -5,6 +5,8 @@
 # distutils language = c++
 
 cimport c_core
+cimport c_environment
+
 
 from cpython.buffer cimport PyBUF_CONTIG
 from cpython.buffer cimport PyBUF_CONTIG_RO
@@ -15,7 +17,7 @@ from cpython.buffer cimport PyObject_GetBuffer
 from cpython.mem cimport PyMem_Malloc, PyMem_Free
 from libc.stdint cimport int32_t, int64_t, uint32_t, uint64_t, uintptr_t
 
-def set_system_thunks(system_thunks_as_object):
+def SetSystemThunks(system_thunks_as_object):
   """Bind the basic Mojo Core functions.
 
   This should only be used by the embedder.
@@ -58,7 +60,7 @@ READ_DATA_FLAG_DISCARD = c_core.MOJO_READ_DATA_FLAG_DISCARD
 READ_DATA_FLAG_QUERY = c_core.MOJO_READ_DATA_FLAG_QUERY
 MAP_BUFFER_FLAG_NONE = c_core.MOJO_MAP_BUFFER_FLAG_NONE
 
-def get_time_ticks_now():
+def GetTimeTicksNow():
   """Monotonically increasing tick count representing "right now."
 
   See mojo/public/c/system/functions.h
@@ -95,7 +97,7 @@ cdef class _ScopedBuffer:
     if self.buf:
       PyBuffer_Release(&self._buf)
 
-def _slice_buffer(buffer, size):
+def _SliceBuffer(buffer, size):
   """Slice the given buffer, reducing it to the given size.
 
   Return None if None is passed in.
@@ -124,7 +126,7 @@ cdef class _NativeMemoryView(object):
     self._read_only = True
     self._wrapped = False
 
-  cdef wrap(self,
+  cdef Wrap(self,
             const void* memory,
             uint32_t size,
             read_only=True):
@@ -183,7 +185,7 @@ class MojoException(Exception):
   def __init__(self, mojo_result):
     self.mojo_result = mojo_result
 
-def wait_many(handles_and_signals, deadline):
+def WaitMany(handles_and_signals, deadline):
   """Waits on a list of handles.
 
   Args:
@@ -227,7 +229,7 @@ cdef class DataPipeTwoPhaseBuffer(object):
     self._handle = handle
     self._read = read
 
-  def end(self, num_bytes):
+  def End(self, num_bytes):
     self._buffer = None
     cdef c_core.MojoResult result
     if self._read:
@@ -260,7 +262,7 @@ cdef class MappedBuffer(object):
     self._handle = handle
     self._cleanup = cleanup
 
-  def unmap(self):
+  def UnMap(self):
     self._buffer = None
     cdef c_core.MojoResult result = self._cleanup()
     self._cleanup = None
@@ -273,7 +275,7 @@ cdef class MappedBuffer(object):
 
   def __dealloc__(self):
     if self._buffer:
-      self.unmap()
+      self.UnMap()
 
 cdef class Handle(object):
   """A mojo object."""
@@ -283,7 +285,7 @@ cdef class Handle(object):
   def __init__(self, mojo_handle=c_core.MOJO_HANDLE_INVALID):
     self._mojo_handle = mojo_handle
 
-  def _invalidate(self):
+  def _Invalidate(self):
     """Invalidate the current handle.
 
     The close operation is not called. It is the responsability of the caller to
@@ -291,25 +293,25 @@ cdef class Handle(object):
     """
     self._mojo_handle = c_core.MOJO_HANDLE_INVALID
 
-  def is_valid(self):
+  def IsValid(self):
     """Returns whether this handle is valid."""
     return self._mojo_handle != c_core.MOJO_HANDLE_INVALID
 
-  def close(self):
+  def Close(self):
     """Closes this handle.
 
     See mojo/public/c/system/functions.h
     """
     cdef c_core.MojoResult result = c_core.MOJO_RESULT_OK
-    if self.is_valid():
+    if self.IsValid():
       result = c_core.MojoClose(self._mojo_handle)
-      self._invalidate()
+      self._Invalidate()
     return result
 
   def __dealloc__(self):
-    self.close()
+    self.Close()
 
-  def wait(self, signals, deadline):
+  def Wait(self, signals, deadline):
     """Waits on the given handle.
 
     See mojo/public/c/system/functions.h
@@ -322,7 +324,20 @@ cdef class Handle(object):
       result = c_core.MojoWait(handle, csignals, cdeadline)
     return result
 
-  def write_message(self,
+  def AsyncWait(self, signals, deadline, callback):
+    cdef c_core.MojoHandle handle = self._mojo_handle
+    cdef c_core.MojoHandleSignals csignals = signals
+    cdef c_core.MojoDeadline cdeadline = deadline
+    cdef c_environment.MojoAsyncWaitID wait_id = _ASYNC_WAITER.AsyncWait(
+        handle,
+        csignals,
+        cdeadline,
+        callback)
+    def cancel():
+      _ASYNC_WAITER.CancelWait(wait_id)
+    return cancel
+
+  def WriteMessage(self,
                     buffer=None,
                     handles=None,
                     flags=WRITE_MESSAGE_FLAG_NONE):
@@ -353,10 +368,10 @@ cdef class Handle(object):
     if res == c_core.MOJO_RESULT_OK and handles:
       # Handles have been transferred. Let's invalidate those.
       for handle in handles:
-        handle._invalidate()
+        handle._Invalidate()
     return res
 
-  def read_message(self,
+  def ReadMessage(self,
                    buffer=None,
                    max_number_of_handles=0,
                    flags=READ_MESSAGE_FLAG_NONE):
@@ -398,11 +413,11 @@ cdef class Handle(object):
       returned_handles = [Handle(input_handles[i])
                           for i in xrange(input_handles_length)]
       return (res,
-              (_slice_buffer(buffer, input_buffer_length), returned_handles),
+              (_SliceBuffer(buffer, input_buffer_length), returned_handles),
               None)
     return (res, None, None)
 
-  def write_data(self, buffer=None, flags=WRITE_DATA_FLAG_NONE):
+  def WriteData(self, buffer=None, flags=WRITE_DATA_FLAG_NONE):
     """
     Writes the given data to the data pipe producer.
 
@@ -425,7 +440,7 @@ cdef class Handle(object):
       return (res, input_buffer_length)
     return (res, None)
 
-  def begin_write_data(self,
+  def BeginWriteData(self,
                        min_size=None,
                        flags=WRITE_DATA_FLAG_NONE):
     """
@@ -453,10 +468,10 @@ cdef class Handle(object):
     if res != c_core.MOJO_RESULT_OK:
       return (res, None)
     cdef _NativeMemoryView view_buffer = _NativeMemoryView(self)
-    view_buffer.wrap(out_buffer, out_size, read_only=False)
+    view_buffer.Wrap(out_buffer, out_size, read_only=False)
     return (res, DataPipeTwoPhaseBuffer(self, memoryview(view_buffer), False))
 
-  def read_data(self, buffer=None, flags=READ_DATA_FLAG_NONE):
+  def ReadData(self, buffer=None, flags=READ_DATA_FLAG_NONE):
     """Reads data from the data pipe consumer.
 
     This method can only be used on a consumer handle obtained from
@@ -476,10 +491,10 @@ cdef class Handle(object):
                                                      &input_buffer_length,
                                                      flags)
     if res == c_core.MOJO_RESULT_OK:
-      return (res, _slice_buffer(buffer, input_buffer_length))
+      return (res, _SliceBuffer(buffer, input_buffer_length))
     return (res, None)
 
-  def query_data(self, flags=READ_DATA_FLAG_NONE):
+  def QueryData(self, flags=READ_DATA_FLAG_NONE):
     """Queries the amount of data available on the data pipe consumer.
 
     This method can only be used on a consumer handle obtained from
@@ -500,7 +515,7 @@ cdef class Handle(object):
         flags|c_core.MOJO_READ_DATA_FLAG_QUERY)
     return (res, num_bytes)
 
-  def begin_read_data(self, min_size=None, flags=READ_DATA_FLAG_NONE):
+  def BeginReadData(self, min_size=None, flags=READ_DATA_FLAG_NONE):
     """
     Begins a two-phase read to the data pipe consumer.
 
@@ -526,14 +541,14 @@ cdef class Handle(object):
     if res != c_core.MOJO_RESULT_OK:
       return (res, None)
     cdef _NativeMemoryView view_buffer = _NativeMemoryView(self)
-    view_buffer.wrap(out_buffer, out_size, read_only=True)
+    view_buffer.Wrap(out_buffer, out_size, read_only=True)
     return (res, DataPipeTwoPhaseBuffer(self, memoryview(view_buffer), True))
 
-  def duplicate(self, options=None):
+  def Duplicate(self, options=None):
     """Duplicate the shared buffer handle.
 
     This method can only be used on a handle obtained from
-    |create_shared_buffer()| or |duplicate()|.
+    |CreateSharedBuffer()| or |Duplicate()|.
 
     See mojo/public/c/system/buffer.h
     """
@@ -551,11 +566,11 @@ cdef class Handle(object):
       raise MojoException(result)
     return new_handle
 
-  def map(self, offset, num_bytes, flags=MAP_BUFFER_FLAG_NONE):
+  def Map(self, offset, num_bytes, flags=MAP_BUFFER_FLAG_NONE):
     """Maps the part (at offset |offset| of length |num_bytes|) of the buffer.
 
     This method can only be used on a handle obtained from
-    |create_shared_buffer()| or |duplicate()|.
+    |CreateSharedBuffer()| or |Duplicate()|.
 
     This method returns a tuple (code, mapped_buffer).
     - If code is RESULT_OK, mapped_buffer is a readable/writable
@@ -573,7 +588,7 @@ cdef class Handle(object):
     if res != c_core.MOJO_RESULT_OK:
       return (res, None)
     cdef _NativeMemoryView view_buffer = _NativeMemoryView(self)
-    view_buffer.wrap(buffer, num_bytes, read_only=False)
+    view_buffer.Wrap(buffer, num_bytes, read_only=False)
     return (res, MappedBuffer(self,
                               memoryview(view_buffer),
                               lambda: c_core.MojoUnmapBuffer(buffer)))
@@ -665,7 +680,7 @@ class CreateSharedBufferOptions(object):
   def __init__(self):
     self.flags = CreateSharedBufferOptions.FLAG_NONE
 
-def create_shared_buffer(num_bytes, options=None):
+def CreateSharedBuffer(num_bytes, options=None):
   """Creates a buffer of size |num_bytes| bytes that can be shared.
 
   See mojo/public/c/system/buffer.h
@@ -694,3 +709,33 @@ class DuplicateSharedBufferOptions(object):
 
   def __init__(self):
     self.flags = DuplicateSharedBufferOptions.FLAG_NONE
+
+
+cdef class RunLoop(object):
+  """RunLoop to use when using asynchronous operations on handles."""
+
+  cdef c_environment.CRunLoop c_run_loop
+
+  def Run(self):
+    """Run the runloop until Quit is called."""
+    self.c_run_loop.Run()
+
+  def RunUntilIdle(self):
+    """Run the runloop until Quit is called or no operation is waiting."""
+    self.c_run_loop.RunUntilIdle()
+
+  def Quit(self):
+    """Quit the runloop."""
+    self.c_run_loop.Quit()
+
+  def PostDelayedTask(self, runnable, delay=0):
+    """
+    Post a task on the runloop. This must be called from the thread owning the
+    runloop.
+    """
+    cdef c_environment.CClosure closure = c_environment.BuildClosure(runnable)
+    self.c_run_loop.PostDelayedTask(closure, delay)
+
+
+cdef c_environment.CEnvironment* _ENVIRONMENT = new c_environment.CEnvironment()
+cdef c_environment.PythonAsyncWaiter* _ASYNC_WAITER = new c_environment.PythonAsyncWaiter()

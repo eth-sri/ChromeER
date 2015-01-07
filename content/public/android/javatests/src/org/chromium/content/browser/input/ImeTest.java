@@ -18,6 +18,7 @@ import android.view.View;
 import android.view.inputmethod.EditorInfo;
 
 import org.chromium.base.ThreadUtils;
+import org.chromium.base.test.util.DisabledTest;
 import org.chromium.base.test.util.Feature;
 import org.chromium.base.test.util.UrlUtils;
 import org.chromium.content.browser.ContentViewCore;
@@ -43,6 +44,7 @@ public class ImeTest extends ContentShellTestBase {
             "<input id=\"input_text\" type=\"text\" /><br/>" +
             "<input id=\"input_radio\" type=\"radio\" style=\"width:50px;height:50px\" />" +
             "<br/><textarea id=\"textarea\" rows=\"4\" cols=\"20\"></textarea>" +
+            "<br/><p><span id=\"plain_text\">This is Plain Text One</span></p>" +
             "</form></body></html>");
 
     private TestAdapterInputConnection mConnection;
@@ -195,8 +197,11 @@ public class ImeTest extends ContentShellTestBase {
         assertWaitForSelectActionBarStatus(true);
     }
 
+    /*
     @SmallTest
     @Feature({"TextInput"})
+    */
+    @DisabledTest
     public void testSelectActionBarClearedOnTappingInput() throws Exception {
         commitText(mConnection, "Sample Text", 1);
         DOMUtils.longPressNode(this, mContentViewCore, "input_text");
@@ -313,8 +318,11 @@ public class ImeTest extends ContentShellTestBase {
         assertWaitForKeyboardStatus(true);
     }
 
+    /*
     @SmallTest
     @Feature({"TextInput", "Main"})
+    */
+    @DisabledTest
     public void testFinishComposingText() throws Throwable {
         DOMUtils.focusNode(mContentViewCore, "input_radio");
         assertWaitForKeyboardStatus(false);
@@ -390,8 +398,11 @@ public class ImeTest extends ContentShellTestBase {
         assertTrue(ev.isShiftPressed());
     }
 
+    /*
     @SmallTest
     @Feature({"TextInput", "Main"})
+    */
+    @DisabledTest
     public void testKeyCodesWhileComposingText() throws Throwable {
         DOMUtils.focusNode(mContentViewCore, "textarea");
         assertWaitForKeyboardStatus(true);
@@ -460,13 +471,55 @@ public class ImeTest extends ContentShellTestBase {
         assertEquals("", mConnection.getTextBeforeCursor(9, 0));
     }
 
+    /*
+    @SmallTest
+    @Feature({"TextInput", "Main"})
+    */
+    @DisabledTest
+    public void testKeyCodesWhileSwipingText() throws Throwable {
+        DOMUtils.focusNode(mContentViewCore, "textarea");
+        assertWaitForKeyboardStatus(true);
+
+        // The calls below are a reflection of what the stock Google Keyboard (Android 4.4) sends
+        // when the word is swiped on the soft keyboard.  Exercise care when altering to make sure
+        // that the test reflects reality.  If this test breaks, it's possible that code has
+        // changed and different calls need to be made instead.
+        mConnection = (TestAdapterInputConnection) getAdapterInputConnection();
+        waitAndVerifyEditableCallback(mConnection.mImeUpdateQueue, 0, "", 0, 0, -1, -1);
+
+        // "three"
+        expectUpdateStateCall(mConnection);
+        setComposingText(mConnection, "three", 1);
+        assertEquals(KeyEvent.KEYCODE_UNKNOWN, mImeAdapter.mLastSyntheticKeyCode);
+        assertUpdateStateCall(mConnection, 1000);
+        assertEquals("three", mConnection.getTextBeforeCursor(99, 0));
+
+        // "word"
+        commitText(mConnection, "three", 1);
+        commitText(mConnection, " ", 1);
+        expectUpdateStateCall(mConnection);
+        setComposingText(mConnection, "word", 1);
+        assertEquals(KeyEvent.KEYCODE_UNKNOWN, mImeAdapter.mLastSyntheticKeyCode);
+        assertUpdateStateCall(mConnection, 1000);
+        assertEquals("three word", mConnection.getTextBeforeCursor(99, 0));
+
+        // "test"
+        commitText(mConnection, "word", 1);
+        commitText(mConnection, " ", 1);
+        expectUpdateStateCall(mConnection);
+        setComposingText(mConnection, "test", 1);
+        assertEquals(KeyEvent.KEYCODE_UNKNOWN, mImeAdapter.mLastSyntheticKeyCode);
+        assertUpdateStateCall(mConnection, 1000);
+        assertEquals("three word test", mConnection.getTextBeforeCursor(99, 0));
+    }
+
     @SmallTest
     @Feature({"TextInput", "Main"})
     public void testKeyCodesWhileTypingText() throws Throwable {
         DOMUtils.focusNode(mContentViewCore, "textarea");
         assertWaitForKeyboardStatus(true);
 
-        // The calls below are a reflection of what the Hacker's Keyboard sends  when the noted
+        // The calls below are a reflection of what the Hacker's Keyboard sends when the noted
         // key is touched on screen.  Exercise care when altering to make sure that the test
         // reflects reality.
         mConnection = (TestAdapterInputConnection) getAdapterInputConnection();
@@ -557,8 +610,11 @@ public class ImeTest extends ContentShellTestBase {
         setComposingRegion(mConnection, 9, 0);
     }
 
+    /*
     @SmallTest
     @Feature({"TextInput", "Main"})
+    */
+    @DisabledTest
     public void testEnterKeyEventWhileComposingText() throws Throwable {
         DOMUtils.focusNode(mContentViewCore, "input_radio");
         assertWaitForKeyboardStatus(false);
@@ -630,6 +686,26 @@ public class ImeTest extends ContentShellTestBase {
                 return pastePopup.isShowing();
             }
         }));
+    }
+
+    @SmallTest
+    @Feature({"TextInput"})
+    public void testTextHandlesPreservedWithDpadNavigation() throws Throwable {
+        DOMUtils.longPressNode(this, mContentViewCore, "plain_text");
+        assertWaitForSelectActionBarStatus(true);
+        assertTrue(mContentViewCore.hasSelection());
+
+        ThreadUtils.runOnUiThreadBlocking(new Runnable() {
+            @Override
+            public void run() {
+                final KeyEvent downKeyEvent = new KeyEvent(
+                        KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_DOWN);
+                mImeAdapter.dispatchKeyEvent(downKeyEvent);
+            }
+        });
+
+        assertWaitForSelectActionBarStatus(true);
+        assertTrue(mContentViewCore.hasSelection());
     }
 
     private void performGo(final AdapterInputConnection inputConnection,

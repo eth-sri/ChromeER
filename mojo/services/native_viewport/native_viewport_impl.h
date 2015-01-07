@@ -24,15 +24,16 @@ class ViewportSurface;
 class NativeViewportImpl : public InterfaceImpl<NativeViewport>,
                            public PlatformViewport::Delegate {
  public:
-  explicit NativeViewportImpl(ApplicationImpl* app);
+  NativeViewportImpl(ApplicationImpl* app, bool is_headless);
   virtual ~NativeViewportImpl();
 
   // InterfaceImpl<NativeViewport> implementation.
-  virtual void Create(RectPtr bounds) OVERRIDE;
+  virtual void Create(SizePtr size,
+                      const Callback<void(uint64_t)>& callback) OVERRIDE;
   virtual void Show() OVERRIDE;
   virtual void Hide() OVERRIDE;
   virtual void Close() OVERRIDE;
-  virtual void SetBounds(RectPtr bounds) OVERRIDE;
+  virtual void SetSize(SizePtr size) OVERRIDE;
   virtual void SubmittedFrame(SurfaceIdPtr surface_id) OVERRIDE;
 
   // PlatformViewport::Delegate implementation.
@@ -45,14 +46,18 @@ class NativeViewportImpl : public InterfaceImpl<NativeViewport>,
   void AckEvent();
 
  private:
+  void ProcessOnBoundsChanged();
+
+  bool is_headless_;
   scoped_ptr<PlatformViewport> platform_viewport_;
   scoped_ptr<ViewportSurface> viewport_surface_;
   uint64_t widget_id_;
-  gfx::Rect bounds_;
+  gfx::Size size_;
   GpuPtr gpu_service_;
   SurfacesServicePtr surfaces_service_;
   cc::SurfaceId child_surface_id_;
   bool waiting_for_event_ack_;
+  Callback<void(uint64_t)> create_callback_;
   base::WeakPtrFactory<NativeViewportImpl> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(NativeViewportImpl);

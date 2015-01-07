@@ -5,9 +5,11 @@
 #include "tools/gn/ninja_binary_target_writer.h"
 
 #include <set>
+#include <sstream>
 
 #include "base/strings/string_util.h"
 #include "tools/gn/config_values_extractors.h"
+#include "tools/gn/deps_iterator.h"
 #include "tools/gn/err.h"
 #include "tools/gn/escape.h"
 #include "tools/gn/ninja_utils.h"
@@ -51,8 +53,13 @@ struct IncludeWriter {
   }
 
   void operator()(const SourceDir& d, std::ostream& out) const {
-    out << " -I";
-    path_output_.WriteDir(out, d, PathOutput::DIR_NO_LAST_SLASH);
+    std::ostringstream path_out;
+    path_output_.WriteDir(path_out, d, PathOutput::DIR_NO_LAST_SLASH);
+    const std::string& path = path_out.str();
+    if (path[0] == '"')
+      out << " \"-I" << path.substr(1);
+    else
+      out << " -I" << path;
   }
 
   PathOutput& path_output_;
@@ -95,9 +102,11 @@ void NinjaBinaryTargetWriter::WriteCompilerVars() {
   // Include directories.
   if (subst.used[SUBSTITUTION_INCLUDE_DIRS]) {
     out_ << kSubstitutionNinjaNames[SUBSTITUTION_INCLUDE_DIRS] << " =";
+    PathOutput include_path_output(path_output_.current_dir(),
+                                   ESCAPE_NINJA_COMMAND);
     RecursiveTargetConfigToStream<SourceDir>(
         target_, &ConfigValues::include_dirs,
-        IncludeWriter(path_output_), out_);
+        IncludeWriter(include_path_output), out_);
     out_ << std::endl;
   }
 
@@ -366,26 +375,21 @@ void NinjaBinaryTargetWriter::GetDeps(
     UniqueVector<OutputFile>* extra_object_files,
     UniqueVector<const Target*>* linkable_deps,
     UniqueVector<const Target*>* non_linkable_deps) const {
-  const LabelTargetVector& deps = target_->deps();
-  const UniqueVector<const Target*>& inherited =
-      target_->inherited_libraries();
-
-  // Normal deps.
-  for (size_t i = 0; i < deps.size(); i++) {
-    ClassifyDependency(deps[i].ptr, extra_object_files,
+  // Normal public/private deps.
+  for (const auto& pair : target_->GetDeps(Target::DEPS_LINKED)) {
+    ClassifyDependency(pair.ptr, extra_object_files,
                        linkable_deps, non_linkable_deps);
   }
 
   // Inherited libraries.
-  for (size_t i = 0; i < inherited.size(); i++) {
-    ClassifyDependency(inherited[i], extra_object_files,
+  for (const auto& inherited_target : target_->inherited_libraries()) {
+    ClassifyDependency(inherited_target, extra_object_files,
                        linkable_deps, non_linkable_deps);
   }
 
   // Data deps.
-  const LabelTargetVector& datadeps = target_->datadeps();
-  for (size_t i = 0; i < datadeps.size(); i++)
-    non_linkable_deps->push_back(datadeps[i].ptr);
+  for (const auto& data_dep_pair : target_->data_deps())
+    non_linkable_deps->push_back(data_dep_pair.ptr);
 }
 
 void NinjaBinaryTargetWriter::ClassifyDependency(
@@ -393,27 +397,26 @@ void NinjaBinaryTargetWriter::ClassifyDependency(
     UniqueVector<OutputFile>* extra_object_files,
     UniqueVector<const Target*>* linkable_deps,
     UniqueVector<const Target*>* non_linkable_deps) const {
-  // Only these types of outputs have libraries linked into them. Child deps of
-  // static libraries get pushed up the dependency tree until one of these is
-  // reached, and source sets don't link at all.
-  bool can_link_libs =
-      (target_->output_type() == Target::EXECUTABLE ||
-       target_->output_type() == Target::SHARED_LIBRARY);
+  // Only the following types of outputs have libraries linked into them:
+  //  EXECUTABLE
+  //  SHARED_LIBRARY
+  //  _complete_ STATIC_LIBRARY
+  //
+  // Child deps of intermediate static libraries get pushed up the
+  // dependency tree until one of these is reached, and source sets
+  // don't link at all.
+  bool can_link_libs = target_->IsFinal();
 
   if (dep->output_type() == Target::SOURCE_SET) {
-    // Source sets have their object files linked into final targets (shared
-    // libraries and executables). Intermediate static libraries and other
-    // source sets just forward the dependency, otherwise the files in the
-    // source set can easily get linked more than once which will cause
+    // Source sets have their object files linked into final targets
+    // (shared libraries, executables, and complete static
+    // libraries). Intermediate static libraries and other source sets
+    // just forward the dependency, otherwise the files in the source
+    // set can easily get linked more than once which will cause
     // multiple definition errors.
-    //
-    // In the future, we may need a way to specify a "complete" static library
-    // for cases where you want a static library that includes all source sets
-    // (like if you're shipping that to customers to link against).
-    if (target_->output_type() != Target::SOURCE_SET &&
-        target_->output_type() != Target::STATIC_LIBRARY) {
-      // Linking in a source set to an executable or shared library, copy its
-      // object files.
+    if (can_link_libs) {
+      // Linking in a source set to an executable, shared library, or
+      // complete static library, so copy its object files.
       std::vector<OutputFile> tool_outputs;  // Prevent allocation in loop.
       for (size_t i = 0; i < dep->sources().size(); i++) {
         Toolchain::ToolType tool_type = Toolchain::TYPE_NONE;

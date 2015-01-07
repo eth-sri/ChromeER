@@ -9,7 +9,6 @@
 #define CONTENT_PUBLIC_COMMON_COMMON_PARAM_TRAITS_MACROS_H_
 
 #include "content/public/common/console_message_level.h"
-#include "content/public/common/page_transition_types.h"
 #include "content/public/common/referrer.h"
 #include "content/public/common/security_style.h"
 #include "content/public/common/ssl_status.h"
@@ -23,12 +22,13 @@
 #include "third_party/WebKit/public/platform/WebReferrerPolicy.h"
 #include "third_party/WebKit/public/platform/WebURLRequest.h"
 #include "third_party/WebKit/public/web/WebWindowFeatures.h"
+#include "ui/base/page_transition_types.h"
 #include "ui/base/window_open_disposition.h"
 
 #undef IPC_MESSAGE_EXPORT
 #define IPC_MESSAGE_EXPORT CONTENT_EXPORT
 
-IPC_ENUM_TRAITS(content::PageTransition)  // Bitmask.
+IPC_ENUM_TRAITS(ui::PageTransition)  // Bitmask.
 IPC_ENUM_TRAITS_MAX_VALUE(net::NetworkChangeNotifier::ConnectionType,
                           net::NetworkChangeNotifier::CONNECTION_LAST)
 IPC_ENUM_TRAITS_MAX_VALUE(content::ConsoleMessageLevel,
@@ -176,6 +176,7 @@ IPC_STRUCT_TRAITS_BEGIN(content::WebPreferences)
   IPC_STRUCT_TRAITS_MEMBER(navigate_on_drag_drop)
   IPC_STRUCT_TRAITS_MEMBER(spatial_navigation_enabled)
   IPC_STRUCT_TRAITS_MEMBER(v8_cache_options)
+  IPC_STRUCT_TRAITS_MEMBER(v8_script_streaming_enabled)
   IPC_STRUCT_TRAITS_MEMBER(pepper_accelerated_video_decode_enabled)
 #if defined(OS_ANDROID)
   IPC_STRUCT_TRAITS_MEMBER(text_autosizing_enabled)

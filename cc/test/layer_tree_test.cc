@@ -55,10 +55,8 @@ class ThreadProxyForTest : public ThreadProxy {
       LayerTreeHost* host,
       scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
       scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner) {
-    return make_scoped_ptr(
-               new ThreadProxyForTest(
-                   test_hooks, host, main_task_runner, impl_task_runner))
-        .PassAs<Proxy>();
+    return make_scoped_ptr(new ThreadProxyForTest(
+        test_hooks, host, main_task_runner, impl_task_runner));
   }
 
   virtual ~ThreadProxyForTest() {}
@@ -282,14 +280,25 @@ class LayerTreeHostClientForTesting : public LayerTreeHostClient,
 
   virtual void Layout() OVERRIDE { test_hooks_->Layout(); }
 
-  virtual void ApplyScrollAndScale(const gfx::Vector2d& scroll_delta,
-                                   float scale) OVERRIDE {
-    test_hooks_->ApplyScrollAndScale(scroll_delta, scale);
+  virtual void ApplyViewportDeltas(const gfx::Vector2d& inner_delta,
+                                   const gfx::Vector2d& outer_delta,
+                                   float page_scale,
+                                   float top_controls_delta) OVERRIDE {
+    test_hooks_->ApplyViewportDeltas(inner_delta,
+                                     outer_delta,
+                                     page_scale,
+                                     top_controls_delta);
+  }
+  virtual void ApplyViewportDeltas(const gfx::Vector2d& scroll_delta,
+                                   float scale,
+                                   float top_controls_delta) OVERRIDE {
+    test_hooks_->ApplyViewportDeltas(scroll_delta,
+                                     scale,
+                                     top_controls_delta);
   }
 
-  virtual scoped_ptr<OutputSurface> CreateOutputSurface(bool fallback)
-      OVERRIDE {
-    return test_hooks_->CreateOutputSurface(fallback);
+  virtual void RequestNewOutputSurface(bool fallback) OVERRIDE {
+    test_hooks_->RequestNewOutputSurface(fallback);
   }
 
   virtual void DidInitializeOutputSurface() OVERRIDE {
@@ -349,12 +358,12 @@ class LayerTreeHostForTesting : public LayerTreeHost {
   virtual scoped_ptr<LayerTreeHostImpl> CreateLayerTreeHostImpl(
       LayerTreeHostImplClient* host_impl_client) OVERRIDE {
     return LayerTreeHostImplForTesting::Create(
-               test_hooks_,
-               settings(),
-               host_impl_client,
-               proxy(),
-               shared_bitmap_manager_.get(),
-               rendering_stats_instrumentation()).PassAs<LayerTreeHostImpl>();
+        test_hooks_,
+        settings(),
+        host_impl_client,
+        proxy(),
+        shared_bitmap_manager_.get(),
+        rendering_stats_instrumentation());
   }
 
   virtual void SetNeedsCommit() OVERRIDE {
@@ -652,7 +661,7 @@ void LayerTreeTest::RunTest(bool threaded,
   timeout_.Cancel();
 
   ASSERT_FALSE(layer_tree_host_.get());
-  client_.reset();
+  client_ = nullptr;
   if (timed_out_) {
     FAIL() << "Test timed out";
     return;
@@ -664,6 +673,10 @@ void LayerTreeTest::RunTestWithImplSidePainting() {
   RunTest(true, false, true);
 }
 
+void LayerTreeTest::RequestNewOutputSurface(bool fallback) {
+  layer_tree_host_->SetOutputSurface(CreateOutputSurface(fallback));
+}
+
 scoped_ptr<OutputSurface> LayerTreeTest::CreateOutputSurface(bool fallback) {
   scoped_ptr<FakeOutputSurface> output_surface =
       CreateFakeOutputSurface(fallback);
@@ -672,7 +685,7 @@ scoped_ptr<OutputSurface> LayerTreeTest::CreateOutputSurface(bool fallback) {
               output_surface->capabilities().delegated_rendering);
   }
   output_surface_ = output_surface.get();
-  return output_surface.PassAs<OutputSurface>();
+  return output_surface.Pass();
 }
 
 scoped_ptr<FakeOutputSurface> LayerTreeTest::CreateFakeOutputSurface(
@@ -701,7 +714,7 @@ int LayerTreeTest::LastCommittedSourceFrameNumber(LayerTreeHostImpl* impl)
 void LayerTreeTest::DestroyLayerTreeHost() {
   if (layer_tree_host_ && layer_tree_host_->root_layer())
     layer_tree_host_->root_layer()->SetLayerTreeHost(NULL);
-  layer_tree_host_.reset();
+  layer_tree_host_ = nullptr;
 }
 
 }  // namespace cc

@@ -15,7 +15,7 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/json/json_reader.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
@@ -118,7 +118,11 @@ class GLHelperTest : public testing::Test {
         CHECK(item->GetAsDictionary(&dict));
         std::string name;
         CHECK(dict->GetString("name", &name));
-        (*event_counts)[name]++;
+        std::string trace_type;
+        CHECK(dict->GetString("ph", &trace_type));
+        // Count all except END traces, as they come in BEGIN/END pairs.
+        if (trace_type != "E")
+          (*event_counts)[name]++;
         VLOG(1) << "trace name: " << name;
       }
     }

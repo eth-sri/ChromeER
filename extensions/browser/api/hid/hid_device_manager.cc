@@ -8,6 +8,8 @@
 #include <vector>
 
 #include "base/lazy_instance.h"
+#include "content/public/browser/browser_thread.h"
+#include "device/core/device_client.h"
 #include "device/hid/hid_device_filter.h"
 #include "device/hid/hid_service.h"
 #include "extensions/browser/api/extensions_api_client.h"
@@ -21,7 +23,8 @@ using device::HidUsageAndPage;
 namespace extensions {
 
 HidDeviceManager::HidDeviceManager(content::BrowserContext* context)
-  : next_resource_id_(0) {}
+    : next_resource_id_(0) {
+}
 
 HidDeviceManager::~HidDeviceManager() {}
 
@@ -36,9 +39,10 @@ HidDeviceManager::GetFactoryInstance() {
 scoped_ptr<base::ListValue> HidDeviceManager::GetApiDevices(
     const Extension* extension,
     const std::vector<HidDeviceFilter>& filters) {
+  DCHECK(IsCalledOnValidThread());
   UpdateDevices();
 
-  HidService* hid_service = ExtensionsAPIClient::Get()->GetHidService();
+  HidService* hid_service = device::DeviceClient::Get()->GetHidService();
   DCHECK(hid_service);
   base::ListValue* api_devices = new base::ListValue();
   for (ResourceIdToDeviceIdMap::const_iterator device_iter =
@@ -105,8 +109,9 @@ scoped_ptr<base::ListValue> HidDeviceManager::GetApiDevices(
 
 bool HidDeviceManager::GetDeviceInfo(int resource_id,
                                      device::HidDeviceInfo* device_info) {
+  DCHECK(IsCalledOnValidThread());
   UpdateDevices();
-  HidService* hid_service = ExtensionsAPIClient::Get()->GetHidService();
+  HidService* hid_service = device::DeviceClient::Get()->GetHidService();
   DCHECK(hid_service);
 
   ResourceIdToDeviceIdMap::const_iterator device_iter =
@@ -119,6 +124,7 @@ bool HidDeviceManager::GetDeviceInfo(int resource_id,
 
 bool HidDeviceManager::HasPermission(const Extension* extension,
                                      const device::HidDeviceInfo& device_info) {
+  DCHECK(IsCalledOnValidThread());
   UsbDevicePermission::CheckParam usbParam(
       device_info.vendor_id,
       device_info.product_id,
@@ -128,12 +134,26 @@ bool HidDeviceManager::HasPermission(const Extension* extension,
     return true;
   }
 
+  if (extension->permissions_data()->HasAPIPermission(
+          APIPermission::kU2fDevices)) {
+    HidDeviceFilter u2f_filter;
+    u2f_filter.SetUsagePage(0xF1D0);
+    if (u2f_filter.Matches(device_info)) {
+      return true;
+    }
+  }
+
   return false;
 }
 
+// static
+bool HidDeviceManager::IsCalledOnValidThread() {
+  return content::BrowserThread::CurrentlyOn(content::BrowserThread::FILE);
+}
+
 void HidDeviceManager::UpdateDevices() {
-  thread_checker_.CalledOnValidThread();
-  HidService* hid_service = ExtensionsAPIClient::Get()->GetHidService();
+  DCHECK(IsCalledOnValidThread());
+  HidService* hid_service = device::DeviceClient::Get()->GetHidService();
   DCHECK(hid_service);
 
   std::vector<device::HidDeviceInfo> devices;

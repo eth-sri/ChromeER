@@ -33,6 +33,7 @@
 #include "chrome/browser/ui/webui/options/easy_unlock_handler.h"
 #include "chrome/browser/ui/webui/options/font_settings_handler.h"
 #include "chrome/browser/ui/webui/options/handler_options_handler.h"
+#include "chrome/browser/ui/webui/options/help_overlay_handler.h"
 #include "chrome/browser/ui/webui/options/home_page_overlay_handler.h"
 #include "chrome/browser/ui/webui/options/import_data_handler.h"
 #include "chrome/browser/ui/webui/options/language_dictionary_overlay_handler.h"
@@ -69,6 +70,12 @@
 #include "ui/base/webui/web_ui_util.h"
 #include "url/gurl.h"
 
+#if defined(ENABLE_MANAGED_USERS)
+#include "chrome/browser/ui/webui/options/supervised_user_create_confirm_handler.h"
+#include "chrome/browser/ui/webui/options/supervised_user_import_handler.h"
+#include "chrome/browser/ui/webui/options/supervised_user_learn_more_handler.h"
+#endif
+
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/browser_process_platform_part.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
@@ -89,7 +96,6 @@
 #include "chrome/browser/ui/webui/options/chromeos/proxy_handler.h"
 #include "chrome/browser/ui/webui/options/chromeos/stats_options_handler.h"
 #include "chrome/browser/ui/webui/options/chromeos/user_image_source.h"
-#include "chrome/browser/ui/webui/options/help_overlay_handler.h"
 #endif
 
 #if defined(USE_NSS)
@@ -161,7 +167,6 @@ void OptionsUIHTMLSource::StartDataRequest(
 
   if (path == kLocalizedStringsFile) {
     // Return dynamically-generated strings from memory.
-    webui::UseVersion2 version;
     std::string strings_js;
     webui::AppendJsonJS(localized_strings_.get(), &strings_js);
     response_bytes = base::RefCountedString::TakeString(&strings_js);
@@ -278,6 +283,7 @@ OptionsUI::OptionsUI(content::WebUI* web_ui)
 #if defined(ENABLE_GOOGLE_NOW)
   AddOptionsPageUIHandler(localized_strings, new GeolocationOptionsHandler());
 #endif
+  AddOptionsPageUIHandler(localized_strings, new options::HelpOverlayHandler());
   AddOptionsPageUIHandler(localized_strings, new HomePageOverlayHandler());
   AddOptionsPageUIHandler(localized_strings,
                           new MediaDevicesSelectionHandler());
@@ -295,11 +301,13 @@ OptionsUI::OptionsUI(content::WebUI* web_ui)
   AddOptionsPageUIHandler(localized_strings, new SearchEngineManagerHandler());
   AddOptionsPageUIHandler(localized_strings, new ImportDataHandler());
   AddOptionsPageUIHandler(localized_strings, new StartupPagesHandler());
+#if defined(ENABLE_MANAGED_USERS)
   AddOptionsPageUIHandler(localized_strings,
                           new SupervisedUserCreateConfirmHandler());
   AddOptionsPageUIHandler(localized_strings, new SupervisedUserImportHandler());
   AddOptionsPageUIHandler(localized_strings,
                           new SupervisedUserLearnMoreHandler());
+#endif
   AddOptionsPageUIHandler(localized_strings, new SyncSetupHandler(
       g_browser_process->profile_manager()));
   AddOptionsPageUIHandler(localized_strings, new WebsiteSettingsHandler());
@@ -316,7 +324,6 @@ OptionsUI::OptionsUI(content::WebUI* web_ui)
                           new chromeos::options::DisplayOverscanHandler());
   AddOptionsPageUIHandler(localized_strings,
                           new chromeos::options::InternetOptionsHandler());
-  AddOptionsPageUIHandler(localized_strings, new options::HelpOverlayHandler());
   AddOptionsPageUIHandler(localized_strings,
                           new chromeos::options::KeyboardHandler());
 

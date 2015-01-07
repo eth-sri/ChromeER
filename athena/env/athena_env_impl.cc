@@ -4,7 +4,9 @@
 
 #include "athena/env/public/athena_env.h"
 
-#include "athena/common/fill_layout_manager.h"
+#include <vector>
+
+#include "athena/util/fill_layout_manager.h"
 #include "base/sys_info.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/cursor_client.h"
@@ -18,8 +20,8 @@
 #include "ui/base/cursor/image_cursors.h"
 #include "ui/chromeos/user_activity_power_manager_notifier.h"
 #include "ui/display/chromeos/display_configurator.h"
-#include "ui/display/types/chromeos/display_mode.h"
-#include "ui/display/types/chromeos/display_snapshot.h"
+#include "ui/display/types/display_mode.h"
+#include "ui/display/types/display_snapshot.h"
 #include "ui/gfx/screen.h"
 #include "ui/wm/core/compound_event_filter.h"
 #include "ui/wm/core/cursor_manager.h"
@@ -33,6 +35,63 @@ namespace athena {
 namespace {
 
 AthenaEnv* instance = NULL;
+
+// Screen object used during shutdown.
+gfx::Screen* screen_for_shutdown = NULL;
+
+// TODO(flackr:oshima): Remove this once athena switches to share
+// ash::DisplayManager.
+class ScreenForShutdown : public gfx::Screen {
+ public:
+  // Creates and sets the screen for shutdown. Deletes existing one if any.
+  static void Create(const gfx::Screen* screen) {
+    delete screen_for_shutdown;
+    screen_for_shutdown = new ScreenForShutdown(screen->GetPrimaryDisplay());
+    gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE,
+                                   screen_for_shutdown);
+  }
+
+ private:
+  explicit ScreenForShutdown(const gfx::Display& primary_display)
+      : primary_display_(primary_display) {}
+
+  // gfx::Screen overrides:
+  virtual bool IsDIPEnabled() OVERRIDE { return true; }
+  virtual gfx::Point GetCursorScreenPoint() OVERRIDE { return gfx::Point(); }
+  virtual gfx::NativeWindow GetWindowUnderCursor() OVERRIDE { return NULL; }
+  virtual gfx::NativeWindow GetWindowAtScreenPoint(
+      const gfx::Point& point) OVERRIDE {
+    return NULL;
+  }
+  virtual int GetNumDisplays() const OVERRIDE { return 1; }
+  virtual std::vector<gfx::Display> GetAllDisplays() const OVERRIDE {
+    std::vector<gfx::Display> displays(1, primary_display_);
+    return displays;
+  }
+  virtual gfx::Display GetDisplayNearestWindow(
+      gfx::NativeView view) const OVERRIDE {
+    return primary_display_;
+  }
+  virtual gfx::Display GetDisplayNearestPoint(
+      const gfx::Point& point) const OVERRIDE {
+    return primary_display_;
+  }
+  virtual gfx::Display GetDisplayMatching(
+      const gfx::Rect& match_rect) const OVERRIDE {
+    return primary_display_;
+  }
+  virtual gfx::Display GetPrimaryDisplay() const OVERRIDE {
+    return primary_display_;
+  }
+  virtual void AddObserver(gfx::DisplayObserver* observer) OVERRIDE {
+    NOTREACHED() << "Observer should not be added during shutdown";
+  }
+  virtual void RemoveObserver(gfx::DisplayObserver* observer) OVERRIDE {}
+
+  const gfx::Display primary_display_;
+
+  DISALLOW_COPY_AND_ASSIGN(ScreenForShutdown);
+};
 
 // A class that bridges the gap between CursorManager and Aura. It borrows
 // heavily from AshNativeCursorManager.
@@ -182,9 +241,9 @@ class AthenaEnvImpl : public AthenaEnv,
 
     input_method_filter_.reset();
     host_.reset();
-    screen_.reset();
-    gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE, NULL);
 
+    ScreenForShutdown::Create(screen_.get());
+    screen_.reset();
     aura::Env::DeleteInstance();
 
     display_configurator_->RemoveObserver(this);
@@ -192,11 +251,48 @@ class AthenaEnvImpl : public AthenaEnv,
   }
 
  private:
-  virtual aura::WindowTreeHost* GetHost() OVERRIDE { return host_.get(); }
+  struct Finder {
+    explicit Finder(const base::Closure& c) : closure(c) {}
+    bool operator()(const base::Closure& other) {
+      return closure.Equals(other);
+    }
+    base::Closure closure;
+  };
 
   // AthenaEnv:
+  virtual aura::WindowTreeHost* GetHost() OVERRIDE { return host_.get(); }
+
   virtual void SetDisplayWorkAreaInsets(const gfx::Insets& insets) OVERRIDE {
     screen_->SetWorkAreaInsets(insets);
+  }
+
+  virtual void AddTerminatingCallback(const base::Closure& closure) OVERRIDE {
+    if (closure.is_null())
+      return;
+    DCHECK(terminating_callbacks_.end() ==
+           std::find_if(terminating_callbacks_.begin(),
+                        terminating_callbacks_.end(),
+                        Finder(closure)));
+    terminating_callbacks_.push_back(closure);
+  }
+
+  virtual void RemoveTerminatingCallback(
+      const base::Closure& closure) OVERRIDE {
+    std::vector<base::Closure>::iterator iter =
+        std::find_if(terminating_callbacks_.begin(),
+                     terminating_callbacks_.end(),
+                     Finder(closure));
+    if (iter != terminating_callbacks_.end())
+      terminating_callbacks_.erase(iter);
+  }
+
+  virtual void OnTerminating() OVERRIDE {
+    for (std::vector<base::Closure>::iterator iter =
+             terminating_callbacks_.begin();
+         iter != terminating_callbacks_.end();
+         ++iter) {
+      iter->Run();
+    }
   }
 
   // ui::DisplayConfigurator::Observer:
@@ -232,6 +328,8 @@ class AthenaEnvImpl : public AthenaEnv,
   scoped_ptr<wm::UserActivityDetector> user_activity_detector_;
   scoped_ptr<ui::DisplayConfigurator> display_configurator_;
   scoped_ptr<ui::UserActivityPowerManagerNotifier> user_activity_notifier_;
+
+  std::vector<base::Closure> terminating_callbacks_;
 
   DISALLOW_COPY_AND_ASSIGN(AthenaEnvImpl);
 };

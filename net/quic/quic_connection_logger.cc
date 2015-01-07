@@ -47,6 +47,7 @@ base::Value* NetLogQuicPacketCallback(const IPEndPoint* self_address,
 
 base::Value* NetLogQuicPacketSentCallback(
     QuicPacketSequenceNumber sequence_number,
+    QuicPacketSequenceNumber original_sequence_number,
     EncryptionLevel level,
     TransmissionType transmission_type,
     size_t packet_size,
@@ -57,22 +58,12 @@ base::Value* NetLogQuicPacketSentCallback(
   dict->SetInteger("transmission_type", transmission_type);
   dict->SetString("packet_sequence_number",
                   base::Uint64ToString(sequence_number));
+  dict->SetString("original_sequence_number",
+                  base::Uint64ToString(original_sequence_number));
   dict->SetInteger("size", packet_size);
   if (result.status != WRITE_STATUS_OK) {
     dict->SetInteger("net_error", result.error_code);
   }
-  return dict;
-}
-
-base::Value* NetLogQuicPacketRetransmittedCallback(
-    QuicPacketSequenceNumber old_sequence_number,
-    QuicPacketSequenceNumber new_sequence_number,
-    NetLog::LogLevel /* log_level */) {
-  base::DictionaryValue* dict = new base::DictionaryValue();
-  dict->SetString("old_packet_sequence_number",
-                  base::Uint64ToString(old_sequence_number));
-  dict->SetString("new_packet_sequence_number",
-                  base::Uint64ToString(new_sequence_number));
   return dict;
 }
 
@@ -106,7 +97,12 @@ base::Value* NetLogQuicAckFrameCallback(const QuicAckFrame* frame,
   base::DictionaryValue* dict = new base::DictionaryValue();
   dict->SetString("largest_observed",
                   base::Uint64ToString(frame->largest_observed));
+  dict->SetInteger("delta_time_largest_observed_us",
+                   frame->delta_time_largest_observed.ToMicroseconds());
+  dict->SetInteger("entropy_hash",
+                   frame->entropy_hash);
   dict->SetBoolean("truncated", frame->is_truncated);
+
   base::ListValue* missing = new base::ListValue();
   dict->Set("missing_packets", missing);
   const SequenceNumberSet& missing_packets = frame->missing_packets;
@@ -114,6 +110,26 @@ base::Value* NetLogQuicAckFrameCallback(const QuicAckFrame* frame,
        it != missing_packets.end(); ++it) {
     missing->AppendString(base::Uint64ToString(*it));
   }
+
+  base::ListValue* revived = new base::ListValue();
+  dict->Set("revived_packets", revived);
+  const SequenceNumberSet& revived_packets = frame->revived_packets;
+  for (SequenceNumberSet::const_iterator it = revived_packets.begin();
+       it != revived_packets.end(); ++it) {
+    revived->AppendString(base::Uint64ToString(*it));
+  }
+
+  base::ListValue* received = new base::ListValue();
+  dict->Set("received_packet_times", received);
+  const PacketTimeList& received_times = frame->received_packet_times;
+  for (PacketTimeList::const_iterator it = received_times.begin();
+       it != received_times.end(); ++it) {
+    base::DictionaryValue* info = new base::DictionaryValue();
+    info->SetInteger("sequence_number", it->first);
+    info->SetInteger("received", it->second.ToDebuggingValue());
+    received->Append(info);
+  }
+
   return dict;
 }
 
@@ -367,13 +383,32 @@ void QuicConnectionLogger::OnFrameAddedToPacket(const QuicFrame& frame) {
           NetLog::TYPE_QUIC_SESSION_STREAM_FRAME_SENT,
           base::Bind(&NetLogQuicStreamFrameCallback, frame.stream_frame));
       break;
-    case ACK_FRAME:
+    case ACK_FRAME: {
       net_log_.AddEvent(
           NetLog::TYPE_QUIC_SESSION_ACK_FRAME_SENT,
           base::Bind(&NetLogQuicAckFrameCallback, frame.ack_frame));
-      if (frame.ack_frame->is_truncated)
-        ++num_truncated_acks_sent_;
+      const SequenceNumberSet& missing_packets =
+          frame.ack_frame->missing_packets;
+      const uint8 max_ranges = std::numeric_limits<uint8>::max();
+      // Compute an upper bound on the number of NACK ranges. If the bound
+      // is below the max, then it clearly isn't truncated.
+      if (missing_packets.size() < max_ranges ||
+          (*missing_packets.rbegin() - *missing_packets.begin() -
+           missing_packets.size() + 1) < max_ranges) {
+        break;
+      }
+      size_t num_ranges = 0;
+      QuicPacketSequenceNumber last_missing = 0;
+      for (SequenceNumberSet::const_iterator it = missing_packets.begin();
+           it != missing_packets.end(); ++it) {
+        if (*it != last_missing + 1 && ++num_ranges >= max_ranges) {
+          ++num_truncated_acks_sent_;
+          break;
+        }
+        last_missing = *it;
+      }
       break;
+    }
     case CONGESTION_FEEDBACK_FRAME:
       net_log_.AddEvent(
           NetLog::TYPE_QUIC_SESSION_CONGESTION_FEEDBACK_FRAME_SENT,
@@ -429,23 +464,16 @@ void QuicConnectionLogger::OnFrameAddedToPacket(const QuicFrame& frame) {
 
 void QuicConnectionLogger::OnPacketSent(
     QuicPacketSequenceNumber sequence_number,
+    QuicPacketSequenceNumber original_sequence_number,
     EncryptionLevel level,
     TransmissionType transmission_type,
     const QuicEncryptedPacket& packet,
     WriteResult result) {
   net_log_.AddEvent(
       NetLog::TYPE_QUIC_SESSION_PACKET_SENT,
-      base::Bind(&NetLogQuicPacketSentCallback, sequence_number, level,
-                 transmission_type, packet.length(), result));
-}
-
-void QuicConnectionLogger:: OnPacketRetransmitted(
-      QuicPacketSequenceNumber old_sequence_number,
-      QuicPacketSequenceNumber new_sequence_number) {
-  net_log_.AddEvent(
-      NetLog::TYPE_QUIC_SESSION_PACKET_RETRANSMITTED,
-      base::Bind(&NetLogQuicPacketRetransmittedCallback,
-                 old_sequence_number, new_sequence_number));
+      base::Bind(&NetLogQuicPacketSentCallback, sequence_number,
+                 original_sequence_number, level, transmission_type,
+                 packet.length(), result));
 }
 
 void QuicConnectionLogger::OnPacketReceived(const IPEndPoint& self_address,

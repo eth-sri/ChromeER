@@ -277,6 +277,7 @@
       ],
       'dependencies': [
         '<(DEPTH)/third_party/webrtc/base/base.gyp:webrtc_base',
+        '<(DEPTH)/third_party/webrtc/libjingle/xmllite/xmllite.gyp:rtc_xmllite',
         'libjingle_p2p_constants',
         '<@(libjingle_additional_deps)',
       ],
@@ -325,6 +326,7 @@
     ['enable_webrtc==1', {
       'targets': [
         {
+          # GN version: //third_party/libjingle:libjingle_webrtc_common
           'target_name': 'libjingle_webrtc_common',
           'type': 'static_library',
           'all_dependent_settings': {
@@ -513,18 +515,6 @@
               'sources': [
                 '<(libjingle_source)/talk/media/devices/devicemanager.cc',
                 '<(libjingle_source)/talk/media/devices/devicemanager.h',
-                '<(libjingle_source)/talk/sound/nullsoundsystem.cc',
-                '<(libjingle_source)/talk/sound/nullsoundsystem.h',
-                '<(libjingle_source)/talk/sound/nullsoundsystemfactory.cc',
-                '<(libjingle_source)/talk/sound/nullsoundsystemfactory.h',
-                '<(libjingle_source)/talk/sound/platformsoundsystem.cc',
-                '<(libjingle_source)/talk/sound/platformsoundsystem.h',
-                '<(libjingle_source)/talk/sound/platformsoundsystemfactory.cc',
-                '<(libjingle_source)/talk/sound/platformsoundsystemfactory.h',
-                '<(libjingle_source)/talk/sound/soundsysteminterface.cc',
-                '<(libjingle_source)/talk/sound/soundsysteminterface.h',
-                '<(libjingle_source)/talk/sound/soundsystemproxy.cc',
-                '<(libjingle_source)/talk/sound/soundsystemproxy.h',
               ],
               'conditions': [
                 ['OS=="win"', {
@@ -543,16 +533,6 @@
                     '<(libjingle_source)/talk/media/devices/linuxdevicemanager.h',
                     '<(libjingle_source)/talk/media/devices/v4llookup.cc',
                     '<(libjingle_source)/talk/media/devices/v4llookup.h',
-                    '<(libjingle_source)/talk/sound/alsasoundsystem.cc',
-                    '<(libjingle_source)/talk/sound/alsasoundsystem.h',
-                    '<(libjingle_source)/talk/sound/alsasymboltable.cc',
-                    '<(libjingle_source)/talk/sound/alsasymboltable.h',
-                    '<(libjingle_source)/talk/sound/linuxsoundsystem.cc',
-                    '<(libjingle_source)/talk/sound/linuxsoundsystem.h',
-                    '<(libjingle_source)/talk/sound/pulseaudiosoundsystem.cc',
-                    '<(libjingle_source)/talk/sound/pulseaudiosoundsystem.h',
-                    '<(libjingle_source)/talk/sound/pulseaudiosymboltable.cc',
-                    '<(libjingle_source)/talk/sound/pulseaudiosymboltable.h',
                   ],
                 }],
                 ['OS=="mac"', {
@@ -576,12 +556,13 @@
           'dependencies': [
             '<(DEPTH)/third_party/libsrtp/libsrtp.gyp:libsrtp',
             '<(DEPTH)/third_party/webrtc/modules/modules.gyp:media_file',
-            '<(DEPTH)/third_party/webrtc/modules/modules.gyp:video_capture_module',
-            '<(DEPTH)/third_party/webrtc/modules/modules.gyp:video_render_module',
+            '<(DEPTH)/third_party/webrtc/modules/modules.gyp:video_capture_module_impl',
+            '<(DEPTH)/third_party/webrtc/modules/modules.gyp:video_render_module_impl',
             'libjingle',
           ],
         },  # target libjingle_webrtc_common
         {
+          # GN version: //third_party/libjingle:libjingle_webrtc
           'target_name': 'libjingle_webrtc',
           'type': 'static_library',
           'sources': [
@@ -593,9 +574,11 @@
           ],
         },
         {
+          # GN version: //third_party/libjingle:libpeerconnection
           'target_name': 'libpeerconnection',
           'type': '<(libpeer_target_type)',
           'sources': [
+            # Note: sources list duplicated in GN build.
             '<(libjingle_source)/talk/media/webrtc/webrtcmediaengine.cc',
             '<(libjingle_source)/talk/media/webrtc/webrtcmediaengine.h',
             '<(libjingle_source)/talk/media/webrtc/webrtcvideoengine.cc',

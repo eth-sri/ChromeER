@@ -38,8 +38,7 @@ scoped_ptr<LayerImpl> SolidColorScrollbarLayerImpl::CreateLayerImpl(
                                               thumb_thickness_,
                                               track_start_,
                                               is_left_side_vertical_scrollbar(),
-                                              is_overlay_scrollbar())
-      .PassAs<LayerImpl>();
+                                              is_overlay_scrollbar());
 }
 
 SolidColorScrollbarLayerImpl::SolidColorScrollbarLayerImpl(
@@ -106,8 +105,10 @@ void SolidColorScrollbarLayerImpl::AppendQuads(
       render_pass, content_bounds(), shared_quad_state, append_quads_data);
 
   gfx::Rect thumb_quad_rect(ComputeThumbQuadRect());
-  gfx::Rect visible_quad_rect = occlusion_tracker.UnoccludedContentRect(
-      thumb_quad_rect, draw_properties().target_space_transform);
+  gfx::Rect visible_quad_rect =
+      occlusion_tracker.GetCurrentOcclusionForLayer(
+                            draw_properties().target_space_transform)
+          .GetUnoccludedContentRect(thumb_quad_rect);
   if (visible_quad_rect.IsEmpty())
     return;
 

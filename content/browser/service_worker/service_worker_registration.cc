@@ -30,6 +30,7 @@ ServiceWorkerRegistration::ServiceWorkerRegistration(
       registration_id_(registration_id),
       is_deleted_(false),
       is_uninstalling_(false),
+      is_uninstalled_(false),
       should_activate_when_ready_(false),
       context_(context) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
@@ -287,6 +288,7 @@ void ServiceWorkerRegistration::OnDeleteFinished(
 
 void ServiceWorkerRegistration::Clear() {
   is_uninstalling_ = false;
+  is_uninstalled_ = true;
   if (context_)
     context_->storage()->NotifyDoneUninstallingRegistration(this);
 
@@ -322,7 +324,7 @@ void ServiceWorkerRegistration::OnRestoreFinished(
     scoped_refptr<ServiceWorkerVersion> version,
     ServiceWorkerStatusCode status) {
   if (!context_) {
-    callback.Run(ServiceWorkerStatusCode::SERVICE_WORKER_ERROR_ABORT);
+    callback.Run(SERVICE_WORKER_ERROR_ABORT);
     return;
   }
   context_->storage()->NotifyDoneInstallingRegistration(

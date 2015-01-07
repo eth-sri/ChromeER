@@ -8,6 +8,7 @@
 #include "base/stl_util.h"
 #include "mojo/aura/aura_init.h"
 #include "mojo/public/cpp/application/application_connection.h"
+#include "mojo/public/cpp/application/application_impl.h"
 #include "mojo/services/public/cpp/input_events/input_events_type_converters.h"
 #include "mojo/services/public/cpp/view_manager/view.h"
 #include "mojo/services/public/cpp/view_manager/view_manager.h"
@@ -17,7 +18,6 @@
 #include "ui/base/hit_test.h"
 #include "ui/wm/core/capture_controller.h"
 #include "ui/wm/core/focus_controller.h"
-#include "ui/wm/core/focus_rules.h"
 #include "ui/wm/public/activation_client.h"
 
 DECLARE_WINDOW_PROPERTY_TYPE(mojo::View*);
@@ -71,42 +71,6 @@ Id GetIdForWindow(aura::Window* window) {
   return window ? WindowManagerApp::GetViewForWindow(window)->id() : 0;
 }
 
-class WMFocusRules : public wm::FocusRules {
- public:
-  WMFocusRules() {}
-  virtual ~WMFocusRules() {}
-
- private:
-  // Overridden from wm::FocusRules:
-  virtual bool IsToplevelWindow(aura::Window* window) const MOJO_OVERRIDE {
-    return true;
-  }
-  virtual bool CanActivateWindow(aura::Window* window) const MOJO_OVERRIDE {
-    return true;
-  }
-  virtual bool CanFocusWindow(aura::Window* window) const MOJO_OVERRIDE {
-    return true;
-  }
-  virtual aura::Window* GetToplevelWindow(
-      aura::Window* window) const MOJO_OVERRIDE {
-    return window;
-  }
-  virtual aura::Window* GetActivatableWindow(
-      aura::Window* window) const MOJO_OVERRIDE {
-    return window;
-  }
-  virtual aura::Window* GetFocusableWindow(
-      aura::Window* window) const MOJO_OVERRIDE {
-    return window;
-  }
-  virtual aura::Window* GetNextActivatableWindow(
-      aura::Window* ignore) const MOJO_OVERRIDE {
-    return NULL;
-  }
-
-  DISALLOW_COPY_AND_ASSIGN(WMFocusRules);
-};
-
 }  // namespace
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -119,7 +83,6 @@ WindowManagerApp::WindowManagerApp(
       wrapped_view_manager_delegate_(view_manager_delegate),
       wrapped_window_manager_delegate_(window_manager_delegate),
       view_manager_(NULL),
-      view_manager_client_factory_(this),
       root_(NULL),
       dummy_delegate_(new DummyDelegate) {
 }
@@ -129,6 +92,11 @@ WindowManagerApp::~WindowManagerApp() {}
 // static
 View* WindowManagerApp::GetViewForWindow(aura::Window* window) {
   return window->GetProperty(kViewKey);
+}
+
+aura::Window* WindowManagerApp::GetWindowForViewId(Id view) {
+  ViewIdToWindowMap::const_iterator it = view_id_to_window_map_.find(view);
+  return it != view_id_to_window_map_.end() ? it->second : NULL;
 }
 
 void WindowManagerApp::AddConnection(WindowManagerServiceImpl* connection) {
@@ -163,17 +131,31 @@ bool WindowManagerApp::IsReady() const {
   return view_manager_ && root_;
 }
 
+void WindowManagerApp::InitFocus(wm::FocusRules* rules) {
+  wm::FocusController* focus_controller = new wm::FocusController(rules);
+  activation_client_ = focus_controller;
+  focus_client_.reset(focus_controller);
+  aura::client::SetFocusClient(window_tree_host_->window(), focus_controller);
+  aura::client::SetActivationClient(window_tree_host_->window(),
+                                    focus_controller);
+
+  focus_client_->AddObserver(this);
+  activation_client_->AddObserver(this);
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // WindowManagerApp, ApplicationDelegate implementation:
 
 void WindowManagerApp::Initialize(ApplicationImpl* impl) {
   aura_init_.reset(new AuraInit);
+  view_manager_client_factory_.reset(
+      new ViewManagerClientFactory(impl->shell(), this));
 }
 
 bool WindowManagerApp::ConfigureIncomingConnection(
     ApplicationConnection* connection) {
   connection->AddService(&window_manager_service_factory_);
-  connection->AddService(&view_manager_client_factory_);
+  connection->AddService(view_manager_client_factory_.get());
   return true;
 }
 
@@ -197,14 +179,6 @@ void WindowManagerApp::OnEmbed(ViewManager* view_manager,
 
   capture_client_.reset(
       new wm::ScopedCaptureClient(window_tree_host_->window()));
-  wm::FocusController* focus_controller =
-      new wm::FocusController(new WMFocusRules);
-  activation_client_ = focus_controller;
-  focus_client_.reset(focus_controller);
-  aura::client::SetFocusClient(window_tree_host_->window(), focus_controller);
-
-  focus_client_->AddObserver(this);
-  activation_client_->AddObserver(this);
 
   if (wrapped_view_manager_delegate_) {
     wrapped_view_manager_delegate_->OnEmbed(
@@ -237,8 +211,7 @@ void WindowManagerApp::Embed(
 }
 
 void WindowManagerApp::DispatchEvent(EventPtr event) {
-  scoped_ptr<ui::Event> ui_event =
-      TypeConverter<EventPtr, scoped_ptr<ui::Event> >::ConvertTo(event);
+  scoped_ptr<ui::Event> ui_event = event.To<scoped_ptr<ui::Event> >();
   if (ui_event)
     window_tree_host_->SendEventToProcessor(ui_event.get());
 }
@@ -301,9 +274,7 @@ void WindowManagerApp::CompositorContentsChanged(const SkBitmap& bitmap) {
 
 void WindowManagerApp::OnEvent(ui::Event* event) {
   aura::Window* window = static_cast<aura::Window*>(event->target());
-  view_manager_->DispatchEvent(
-      GetViewForWindow(window),
-      TypeConverter<EventPtr, ui::Event>::ConvertFrom(*event));
+  view_manager_->DispatchEvent(GetViewForWindow(window), Event::From(*event));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -328,15 +299,14 @@ void WindowManagerApp::OnWindowActivated(aura::Window* gained_active,
     (*it)->NotifyWindowActivated(GetIdForWindow(gained_active),
                                  GetIdForWindow(lost_active));
   }
+  if (gained_active) {
+    View* view = GetViewForWindow(gained_active);
+    view->MoveToFront();
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // WindowManagerApp, private:
-
-aura::Window* WindowManagerApp::GetWindowForViewId(Id view) const {
-  ViewIdToWindowMap::const_iterator it = view_id_to_window_map_.find(view);
-  return it != view_id_to_window_map_.end() ? it->second : NULL;
-}
 
 void WindowManagerApp::RegisterSubtree(View* view, aura::Window* parent) {
   view->AddObserver(this);

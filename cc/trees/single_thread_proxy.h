@@ -34,6 +34,7 @@ class CC_EXPORT SingleThreadProxy : public Proxy,
   // Proxy implementation
   virtual void FinishAllRendering() OVERRIDE;
   virtual bool IsStarted() const OVERRIDE;
+  virtual void SetOutputSurface(scoped_ptr<OutputSurface>) OVERRIDE;
   virtual void SetLayerTreeHostClientReady() OVERRIDE;
   virtual void SetVisible(bool visible) OVERRIDE;
   virtual const RendererCapabilities& GetRendererCapabilities() const OVERRIDE;
@@ -56,7 +57,7 @@ class CC_EXPORT SingleThreadProxy : public Proxy,
   virtual bool MainFrameWillHappenForTesting() OVERRIDE;
 
   // SchedulerClient implementation
-  virtual void SetNeedsBeginFrame(bool enable) OVERRIDE;
+  virtual BeginFrameSource* ExternalBeginFrameSource() OVERRIDE;
   virtual void WillBeginImplFrame(const BeginFrameArgs& args) OVERRIDE;
   virtual void ScheduledActionSendBeginMainFrame() OVERRIDE;
   virtual DrawResult ScheduledActionDrawAndSwapIfPossible() OVERRIDE;
@@ -82,7 +83,6 @@ class CC_EXPORT SingleThreadProxy : public Proxy,
   virtual void SetMaxSwapsPendingOnImplThread(int max) OVERRIDE {}
   virtual void DidSwapBuffersOnImplThread() OVERRIDE;
   virtual void DidSwapBuffersCompleteOnImplThread() OVERRIDE;
-  virtual void BeginFrame(const BeginFrameArgs& args) OVERRIDE;
   virtual void OnCanDrawStateChanged(bool can_draw) OVERRIDE;
   virtual void NotifyReadyToActivate() OVERRIDE;
   virtual void SetNeedsRedrawOnImplThread() OVERRIDE;
@@ -106,9 +106,7 @@ class CC_EXPORT SingleThreadProxy : public Proxy,
   virtual void DidManageTiles() OVERRIDE;
   virtual void SetDebugState(const LayerTreeDebugState& debug_state) OVERRIDE {}
 
-  // Attempts to create the context and renderer synchronously. Calls
-  // LayerTreeHost::OnCreateAndInitializeOutputSurfaceAttempted with the result.
-  void CreateAndInitializeOutputSurface();
+  void RequestNewOutputSurface();
 
   // Called by the legacy path where RenderWidget does the scheduling.
   void CompositeImmediately(base::TimeTicks frame_begin_time);

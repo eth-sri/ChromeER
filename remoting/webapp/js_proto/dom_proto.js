@@ -27,6 +27,8 @@ Document.prototype.webkitIsFullScreen;
 /** @type {boolean} */
 Document.prototype.webkitHidden;
 
+/** @type {Element} */
+Document.prototype.firstElementChild;
 
 /** @type {number} */
 Element.ALLOW_KEYBOARD_INPUT;
@@ -37,6 +39,12 @@ Element.prototype.webkitRequestFullScreen = function(flags) {};
 
 /** @type {boolean} */
 Element.prototype.hidden;
+
+/** @type {string} */
+Element.prototype.localName;
+
+/** @type {string} */
+Element.prototype.textContent;
 
 
 /** @constructor
@@ -221,6 +229,11 @@ Promise.reject = function (reason) {};
 Promise.resolve = function (value) {};
 
 /**
+ * @type {DataTransfer}
+ */
+Event.prototype.dataTransfer = null;
+
+/**
  * @param {string} type
  * @param {boolean} canBubble
  * @param {boolean} cancelable
@@ -242,3 +255,10 @@ Event.prototype.initMouseEvent = function(
     screenX, screenY, clientX, clientY,
     ctrlKey, altKey, shiftKey, metaKey,
     button, relatedTarget) {};
+
+/**
+ * @param {number} begin
+ * @param {number=} end
+ * @return {ArrayBuffer}
+ */
+ArrayBuffer.prototype.slice = function(begin, end) {};

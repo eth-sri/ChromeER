@@ -248,7 +248,7 @@ bool DesktopSessionProxy::AttachToDesktop(
   }
   base::win::ScopedHandle pipe(temp_handle);
 
-  IPC::ChannelHandle desktop_channel_handle(pipe);
+  IPC::ChannelHandle desktop_channel_handle(pipe.Get());
 
 #elif defined(OS_POSIX)
   // On posix: |desktop_pipe| is a valid file descriptor.
@@ -291,7 +291,7 @@ void DesktopSessionProxy::DetachFromDesktop() {
   // Generate fake responses to keep the video capturer in sync.
   while (pending_capture_frame_requests_) {
     --pending_capture_frame_requests_;
-    PostCaptureCompleted(scoped_ptr<webrtc::DesktopFrame>());
+    PostCaptureCompleted(nullptr);
   }
 }
 
@@ -313,7 +313,7 @@ void DesktopSessionProxy::CaptureFrame() {
     ++pending_capture_frame_requests_;
     SendToDesktop(new ChromotingNetworkDesktopMsg_CaptureFrame());
   } else {
-    PostCaptureCompleted(scoped_ptr<webrtc::DesktopFrame>());
+    PostCaptureCompleted(nullptr);
   }
 }
 

@@ -7,8 +7,6 @@ package org.chromium.media;
 import android.content.Context;
 import android.graphics.ImageFormat;
 import android.graphics.SurfaceTexture;
-import android.hardware.Camera;
-import android.hardware.Camera.PreviewCallback;
 import android.opengl.GLES20;
 import android.util.Log;
 import android.view.Surface;
@@ -25,7 +23,8 @@ import java.util.concurrent.locks.ReentrantLock;
  * Video Capture Device base class to interface to native Chromium.
  **/
 @JNINamespace("media")
-public abstract class VideoCapture implements PreviewCallback {
+@SuppressWarnings("deprecation")
+public abstract class VideoCapture implements android.hardware.Camera.PreviewCallback {
 
     protected static class CaptureFormat {
         int mWidth;
@@ -58,7 +57,7 @@ public abstract class VideoCapture implements PreviewCallback {
         }
     }
 
-    protected Camera mCamera;
+    protected android.hardware.Camera mCamera;
     protected CaptureFormat mCaptureFormat = null;
     // Lock to mutually exclude execution of OnPreviewFrame {start/stop}Capture.
     protected ReentrantLock mPreviewBufferLock = new ReentrantLock();
@@ -78,6 +77,18 @@ public abstract class VideoCapture implements PreviewCallback {
     protected int mDeviceOrientation;
     private static final String TAG = "VideoCapture";
 
+    static android.hardware.Camera.CameraInfo getCameraInfo(int id) {
+        android.hardware.Camera.CameraInfo cameraInfo =
+                new android.hardware.Camera.CameraInfo();
+        try {
+            android.hardware.Camera.getCameraInfo(id, cameraInfo);
+        } catch (RuntimeException ex) {
+            Log.e(TAG, "getCameraInfo: Camera.getCameraInfo: " + ex);
+            return null;
+        }
+        return cameraInfo;
+    }
+
     VideoCapture(Context context,
                  int id,
                  long nativeVideoCaptureDeviceAndroid) {
@@ -91,13 +102,13 @@ public abstract class VideoCapture implements PreviewCallback {
         Log.d(TAG, "allocate: requested (" + width + "x" + height + ")@" +
                 frameRate + "fps");
         try {
-            mCamera = Camera.open(mId);
+            mCamera = android.hardware.Camera.open(mId);
         } catch (RuntimeException ex) {
             Log.e(TAG, "allocate: Camera.open: " + ex);
             return false;
         }
 
-        Camera.CameraInfo cameraInfo = getCameraInfo(mId);
+        android.hardware.Camera.CameraInfo cameraInfo = VideoCapture.getCameraInfo(mId);
         if (cameraInfo == null) {
             mCamera.release();
             mCamera = null;
@@ -110,7 +121,7 @@ public abstract class VideoCapture implements PreviewCallback {
         Log.d(TAG, "allocate: orientation dev=" + mDeviceOrientation +
                   ", cam=" + mCameraOrientation + ", facing=" + mCameraFacing);
 
-        Camera.Parameters parameters = getCameraParameters(mCamera);
+        android.hardware.Camera.Parameters parameters = getCameraParameters(mCamera);
         if (parameters == null) {
             mCamera = null;
             return false;
@@ -123,27 +134,30 @@ public abstract class VideoCapture implements PreviewCallback {
             Log.e(TAG, "allocate: no fps range found");
             return false;
         }
-        int frameRateInMs = frameRate * 1000;
-        // Use the first range as default.
-        int[] fpsMinMax = listFpsRange.get(0);
-        int newFrameRate = (fpsMinMax[0] + 999) / 1000;
+        // Use the first range as the default chosen range.
+        int[] chosenFpsRange = listFpsRange.get(0);
+        int chosenFrameRate = (chosenFpsRange[0] + 999) / 1000;
+        int fpsRangeSize = Integer.MAX_VALUE;
+        // API fps ranges are scaled up x1000 to avoid floating point.
+        int frameRateScaled = frameRate * 1000;
         for (int[] fpsRange : listFpsRange) {
-            if (fpsRange[0] <= frameRateInMs && frameRateInMs <= fpsRange[1]) {
-                fpsMinMax = fpsRange;
-                newFrameRate = frameRate;
-                break;
+            if (fpsRange[0] <= frameRateScaled && frameRateScaled <= fpsRange[1] &&
+                    (fpsRange[1] - fpsRange[0]) <= fpsRangeSize) {
+                chosenFpsRange = fpsRange;
+                chosenFrameRate = frameRate;
+                fpsRangeSize = fpsRange[1] - fpsRange[0];
             }
         }
-        frameRate = newFrameRate;
-        Log.d(TAG, "allocate: fps set to " + frameRate);
+        Log.d(TAG, "allocate: fps set to " + chosenFrameRate + ", [" +
+                chosenFpsRange[0] + "-" + chosenFpsRange[1] + "]");
 
         // Calculate size.
-        List<Camera.Size> listCameraSize =
+        List<android.hardware.Camera.Size> listCameraSize =
                 parameters.getSupportedPreviewSizes();
         int minDiff = Integer.MAX_VALUE;
         int matchedWidth = width;
         int matchedHeight = height;
-        for (Camera.Size size : listCameraSize) {
+        for (android.hardware.Camera.Size size : listCameraSize) {
             int diff = Math.abs(size.width - width) +
                        Math.abs(size.height - height);
             Log.d(TAG, "allocate: supported (" +
@@ -172,10 +186,10 @@ public abstract class VideoCapture implements PreviewCallback {
             Log.d(TAG, "Image stabilization not supported.");
         }
 
-        setCaptureParameters(matchedWidth, matchedHeight, frameRate, parameters);
+        setCaptureParameters(matchedWidth, matchedHeight, chosenFrameRate, parameters);
         parameters.setPreviewSize(mCaptureFormat.mWidth,
                                   mCaptureFormat.mHeight);
-        parameters.setPreviewFpsRange(fpsMinMax[0], fpsMinMax[1]);
+        parameters.setPreviewFpsRange(chosenFpsRange[0], chosenFpsRange[1]);
         parameters.setPreviewFormat(mCaptureFormat.mPixelFormat);
         try {
             mCamera.setParameters(parameters);
@@ -287,7 +301,7 @@ public abstract class VideoCapture implements PreviewCallback {
             int width,
             int height,
             int frameRate,
-            Camera.Parameters cameraParameters);
+            android.hardware.Camera.Parameters cameraParameters);
 
     // Local hook to allow derived classes to configure and plug capture
     // buffers if needed.
@@ -295,7 +309,7 @@ public abstract class VideoCapture implements PreviewCallback {
 
     // Local method to be overriden with the particular setPreviewCallback to be
     // used in the implementations.
-    abstract void setPreviewCallback(Camera.PreviewCallback cb);
+    abstract void setPreviewCallback(android.hardware.Camera.PreviewCallback cb);
 
     @CalledByNative
     public int queryWidth() {
@@ -316,12 +330,12 @@ public abstract class VideoCapture implements PreviewCallback {
     public int getColorspace() {
         switch (mCaptureFormat.mPixelFormat) {
             case ImageFormat.YV12:
-                return AndroidImageFormatList.ANDROID_IMAGEFORMAT_YV12;
+                return AndroidImageFormat.ANDROID_IMAGEFORMAT_YV12;
             case ImageFormat.NV21:
-                return AndroidImageFormatList.ANDROID_IMAGEFORMAT_NV21;
+                return AndroidImageFormat.ANDROID_IMAGEFORMAT_NV21;
             case ImageFormat.UNKNOWN:
             default:
-                return AndroidImageFormatList.ANDROID_IMAGEFORMAT_UNKNOWN;
+                return AndroidImageFormat.ANDROID_IMAGEFORMAT_UNKNOWN;
         }
     }
 
@@ -356,26 +370,17 @@ public abstract class VideoCapture implements PreviewCallback {
             int length,
             int rotation);
 
-    protected static Camera.Parameters getCameraParameters(Camera camera) {
-        Camera.Parameters parameters;
+    protected static android.hardware.Camera.Parameters getCameraParameters(
+            android.hardware.Camera camera) {
+        android.hardware.Camera.Parameters parameters;
         try {
             parameters = camera.getParameters();
         } catch (RuntimeException ex) {
-            Log.e(TAG, "getCameraParameters: Camera.getParameters: " + ex);
+            Log.e(TAG, "getCameraParameters: android.hardware.Camera.getParameters: " + ex);
             camera.release();
             return null;
         }
         return parameters;
     }
 
-    private Camera.CameraInfo getCameraInfo(int id) {
-        Camera.CameraInfo cameraInfo = new Camera.CameraInfo();
-        try {
-            Camera.getCameraInfo(id, cameraInfo);
-        } catch (RuntimeException ex) {
-            Log.e(TAG, "getCameraInfo: Camera.getCameraInfo: " + ex);
-            return null;
-        }
-        return cameraInfo;
-    }
 }

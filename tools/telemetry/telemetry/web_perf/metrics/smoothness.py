@@ -36,9 +36,10 @@ class SmoothnessMetric(timeline_based_metric.TimelineBasedMetric):
     queueing_durations: The queueing delay between compositor & main threads
 
   Note that if any of the interaction records provided to AddResults have less
-  than 2 frames, we will return None values for each of the smoothness metrics.
-  Similarly, older browsers without support for tracking the BeginMainFrame
-  events will report a None value for the queueing duration metric.
+  than 2 frames, we will return telemetry values with None values for each of
+  the smoothness metrics. Similarly, older browsers without support for
+  tracking the BeginMainFrame events will report a ListOfScalarValues with a
+  None value for the queueing duration metric.
   """
 
   def __init__(self):
@@ -55,15 +56,15 @@ class SmoothnessMetric(timeline_based_metric.TimelineBasedMetric):
   def _PopulateResultsFromStats(self, results, stats):
     page = results.current_page
     values = [
-        self._ComputeFirstGestureScrollUpdateLatency(page, stats),
         self._ComputeQueueingDuration(page, stats),
         self._ComputeFrameTimeDiscrepancy(page, stats),
         self._ComputeMeanPixelsApproximated(page, stats)
     ]
     values += self._ComputeLatencyMetric(page, stats, 'input_event_latency',
-                                        stats.input_event_latency)
+                                         stats.input_event_latency)
     values += self._ComputeLatencyMetric(page, stats, 'scroll_update_latency',
-                                        stats.scroll_update_latency)
+                                         stats.scroll_update_latency)
+    values += self._ComputeFirstGestureScrollUpdateLatency(page, stats)
     values += self._ComputeFrameTimeMetric(page, stats)
     for v in values:
       results.AddValue(v)
@@ -79,12 +80,11 @@ class SmoothnessMetric(timeline_based_metric.TimelineBasedMetric):
     none_value_reason = None
     if self._HasEnoughFrames(stats.frame_timestamps):
       latency_list = FlattenList(list_of_latency_lists)
-      if len(latency_list) > 0:
-        mean_latency = round(statistics.ArithmeticMean(latency_list), 3)
-        latency_discrepancy = (
-            round(statistics.DurationsDiscrepancy(latency_list), 4))
-      else:
-        none_value_reason = 'No latency values recorded.'
+      if len(latency_list) == 0:
+        return ()
+      mean_latency = round(statistics.ArithmeticMean(latency_list), 3)
+      latency_discrepancy = (
+          round(statistics.DurationsDiscrepancy(latency_list), 4))
     else:
       none_value_reason = NOT_ENOUGH_FRAMES_MESSAGE
     return (
@@ -104,20 +104,21 @@ class SmoothnessMetric(timeline_based_metric.TimelineBasedMetric):
     none_value_reason = None
     if self._HasEnoughFrames(stats.frame_timestamps):
       latency_list = FlattenList(stats.gesture_scroll_update_latency)
-      if len(latency_list) > 0:
-        first_gesture_scroll_update_latency = round(latency_list[0], 4)
-      else:
-        none_value_reason = 'No gesture scroll update latency values recorded.'
+      if len(latency_list) == 0:
+        return ()
+      first_gesture_scroll_update_latency = round(latency_list[0], 4)
     else:
       none_value_reason = NOT_ENOUGH_FRAMES_MESSAGE
-    return scalar.ScalarValue(
+    return (
+      scalar.ScalarValue(
         page, 'first_gesture_scroll_update_latency', 'ms',
         first_gesture_scroll_update_latency,
         description='First gesture scroll update latency measures the time it '
                     'takes to process the very first gesture scroll update '
                     'input event. The first scroll gesture can often get '
                     'delayed by work related to page loading.',
-        none_value_reason=none_value_reason)
+        none_value_reason=none_value_reason),
+    )
 
   def _ComputeQueueingDuration(self, page, stats):
     """Returns a Value for the frame queueing durations."""

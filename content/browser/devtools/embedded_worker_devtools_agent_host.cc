@@ -5,7 +5,6 @@
 #include "content/browser/devtools/embedded_worker_devtools_agent_host.h"
 
 #include "base/strings/utf_string_conversions.h"
-#include "content/browser/devtools/devtools_manager_impl.h"
 #include "content/browser/devtools/devtools_protocol.h"
 #include "content/browser/devtools/devtools_protocol_constants.h"
 #include "content/browser/service_worker/service_worker_context_core.h"
@@ -69,7 +68,13 @@ DevToolsAgentHost::Type EmbeddedWorkerDevToolsAgentHost::GetType() {
 }
 
 std::string EmbeddedWorkerDevToolsAgentHost::GetTitle() {
-  return shared_worker_ ? base::UTF16ToUTF8(shared_worker_->name()) : "";
+  if (shared_worker_ && shared_worker_->name().length())
+    return base::UTF16ToUTF8(shared_worker_->name());
+  if (RenderProcessHost* host = RenderProcessHost::FromID(worker_id_.first)) {
+    return base::StringPrintf("Worker pid:%d",
+                              base::GetProcId(host->GetHandle()));
+  }
+  return "";
 }
 
 GURL EmbeddedWorkerDevToolsAgentHost::GetURL() {

@@ -83,10 +83,10 @@ void CertificateSelectorTableModel::SetObserver(
 SSLClientCertificateSelector::SSLClientCertificateSelector(
     content::WebContents* web_contents,
     const net::HttpNetworkSession* network_session,
-    net::SSLCertRequestInfo* cert_request_info,
+    const scoped_refptr<net::SSLCertRequestInfo>& cert_request_info,
     const chrome::SelectCertificateCallback& callback)
     : SSLClientAuthObserver(network_session, cert_request_info, callback),
-      model_(new CertificateSelectorTableModel(cert_request_info)),
+      model_(new CertificateSelectorTableModel(cert_request_info.get())),
       web_contents_(web_contents),
       table_(NULL),
       view_cert_button_(NULL) {
@@ -204,7 +204,7 @@ bool SSLClientCertificateSelector::Accept() {
                    base::Unretained(this),
                    cert));
 #else
-    Unlocked(cert);
+    Unlocked(cert.get());
 #endif
     return false;  // Unlocked() will close the dialog.
   }

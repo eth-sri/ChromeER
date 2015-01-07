@@ -5,8 +5,8 @@
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/file_util.h"
 #include "base/files/file.h"
+#include "base/files/file_util.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/threading/platform_thread.h"
@@ -1617,10 +1617,10 @@ TEST_F(DiskCacheEntryTest, MemoryOnlyEnumerationWithSparseEntries) {
   parent_entry->Close();
 
   // Perform the enumerations.
-  void* iter = NULL;
+  scoped_ptr<TestIterator> iter = CreateIterator();
   disk_cache::Entry* entry = NULL;
   int count = 0;
-  while (OpenNextEntry(&iter, &entry) == net::OK) {
+  while (iter->OpenNextEntry(&entry) == net::OK) {
     ASSERT_TRUE(entry != NULL);
     ++count;
     disk_cache::MemEntryImpl* mem_entry =
@@ -2217,10 +2217,10 @@ TEST_F(DiskCacheEntryTest, CleanupSparseEntry) {
   entry->Close();
   EXPECT_EQ(4, cache_->GetEntryCount());
 
-  void* iter = NULL;
+  scoped_ptr<TestIterator> iter = CreateIterator();
   int count = 0;
   std::string child_key[2];
-  while (OpenNextEntry(&iter, &entry) == net::OK) {
+  while (iter->OpenNextEntry(&entry) == net::OK) {
     ASSERT_TRUE(entry != NULL);
     // Writing to an entry will alter the LRU list and invalidate the iterator.
     if (entry->GetKey() != key && count < 2)

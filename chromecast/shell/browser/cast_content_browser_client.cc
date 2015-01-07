@@ -6,12 +6,18 @@
 
 #include "base/command_line.h"
 #include "base/i18n/rtl.h"
+#include "base/path_service.h"
+#include "chromecast/common/cast_paths.h"
+#include "chromecast/common/global_descriptors.h"
 #include "chromecast/shell/browser/cast_browser_context.h"
 #include "chromecast/shell/browser/cast_browser_main_parts.h"
 #include "chromecast/shell/browser/cast_browser_process.h"
+#include "chromecast/shell/browser/devtools/cast_dev_tools_delegate.h"
 #include "chromecast/shell/browser/geolocation/cast_access_token_store.h"
 #include "chromecast/shell/browser/url_request_context_factory.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/certificate_request_result_type.h"
+#include "content/public/browser/file_descriptor_info.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/common/content_descriptors.h"
 #include "content/public/common/content_switches.h"
@@ -26,6 +32,10 @@ CastContentBrowserClient::CastContentBrowserClient()
 }
 
 CastContentBrowserClient::~CastContentBrowserClient() {
+  content::BrowserThread::DeleteSoon(
+      content::BrowserThread::IO,
+      FROM_HERE,
+      url_request_context_factory_.release());
 }
 
 content::BrowserMainParts* CastContentBrowserClient::CreateBrowserMainParts(
@@ -58,6 +68,9 @@ bool CastContentBrowserClient::IsHandledURL(const GURL& url) {
       content::kChromeUIScheme,
       content::kChromeDevToolsScheme,
       url::kDataScheme,
+#if defined(OS_ANDROID)
+      url::kFileScheme,
+#endif  // defined(OS_ANDROID)
   };
 
   const std::string& scheme = url.scheme();
@@ -140,10 +153,28 @@ bool CastContentBrowserClient::CanCreateWindow(
   return false;
 }
 
+content::DevToolsManagerDelegate*
+CastContentBrowserClient::GetDevToolsManagerDelegate() {
+  return new CastDevToolsManagerDelegate();
+}
+
 void CastContentBrowserClient::GetAdditionalMappedFilesForChildProcess(
     const base::CommandLine& command_line,
     int child_process_id,
     std::vector<content::FileDescriptorInfo>* mappings) {
+#if defined(OS_ANDROID)
+  int flags = base::File::FLAG_OPEN | base::File::FLAG_READ;
+  base::FilePath pak_file;
+  CHECK(PathService::Get(FILE_CAST_PAK, &pak_file));
+  base::File pak_with_flags(pak_file, flags);
+  if (!pak_with_flags.IsValid()) {
+    NOTREACHED() << "Failed to open file when creating renderer process: "
+                 << "cast_shell.pak";
+  }
+  mappings->push_back(content::FileDescriptorInfo(
+      kAndroidPakDescriptor,
+      base::FileDescriptor(base::File(pak_file, flags))));
+#endif  // defined(OS_ANDROID)
 }
 
 }  // namespace shell

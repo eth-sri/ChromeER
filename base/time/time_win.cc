@@ -92,7 +92,7 @@ const int kMinTimerIntervalLowResMs = 4;
 // Track if kMinTimerIntervalHighResMs or kMinTimerIntervalLowResMs is active.
 bool g_high_res_timer_enabled = false;
 // How many times the high resolution timer has been called.
-int g_high_res_timer_count = 0;
+uint32_t g_high_res_timer_count = 0;
 // The lock to control access to the above two variables.
 base::LazyInstance<base::Lock>::Leaky g_high_res_lock =
     LAZY_INSTANCE_INITIALIZER;
@@ -197,17 +197,20 @@ bool Time::ActivateHighResolutionTimer(bool activating) {
   // We only do work on the transition from zero to one or one to zero so we
   // can easily undo the effect (if necessary) when EnableHighResolutionTimer is
   // called.
+  const uint32_t max = std::numeric_limits<uint32_t>::max();
+
   base::AutoLock lock(g_high_res_lock.Get());
   UINT period = g_high_res_timer_enabled ? kMinTimerIntervalHighResMs
                                          : kMinTimerIntervalLowResMs;
-  int high_res_count =
-      activating ? ++g_high_res_timer_count : --g_high_res_timer_count;
-
   if (activating) {
-    if (high_res_count == 1)
+    DCHECK(g_high_res_timer_count != max);
+    ++g_high_res_timer_count;
+    if (g_high_res_timer_count == 1)
       timeBeginPeriod(period);
   } else {
-    if (high_res_count == 0)
+    DCHECK(g_high_res_timer_count != 0);
+    --g_high_res_timer_count;
+    if (g_high_res_timer_count == 0)
       timeEndPeriod(period);
   }
   return (period == kMinTimerIntervalHighResMs);
@@ -373,21 +376,24 @@ bool IsBuggyAthlon(const base::CPU& cpu) {
 class HighResNowSingleton {
  public:
   HighResNowSingleton()
-    : ticks_per_second_(0),
-      skew_(0) {
-    InitializeClock();
+      : ticks_per_second_(0),
+        skew_(0) {
 
     base::CPU cpu;
     if (IsBuggyAthlon(cpu))
-      DisableHighResClock();
+      return;
+
+    // Synchronize the QPC clock with GetSystemTimeAsFileTime.
+    LARGE_INTEGER ticks_per_sec = {0};
+    if (!QueryPerformanceFrequency(&ticks_per_sec))
+      return; // QPC is not available.
+    ticks_per_second_ = ticks_per_sec.QuadPart;
+
+    skew_ = UnreliableNow() - ReliableNow();
   }
 
   bool IsUsingHighResClock() {
-    return ticks_per_second_ != 0.0;
-  }
-
-  void DisableHighResClock() {
-    ticks_per_second_ = 0.0;
+    return ticks_per_second_ != 0;
   }
 
   TimeDelta Now() {
@@ -422,16 +428,6 @@ class HighResNowSingleton {
   }
 
  private:
-  // Synchronize the QPC clock with GetSystemTimeAsFileTime.
-  void InitializeClock() {
-    LARGE_INTEGER ticks_per_sec = {0};
-    if (!QueryPerformanceFrequency(&ticks_per_sec))
-      return;  // Broken, we don't guarantee this function works.
-    ticks_per_second_ = ticks_per_sec.QuadPart;
-
-    skew_ = UnreliableNow() - ReliableNow();
-  }
-
   // Get the number of microseconds since boot in an unreliable fashion.
   int64 UnreliableNow() {
     LARGE_INTEGER now;
@@ -460,7 +456,6 @@ TimeDelta HighResNowWrapper() {
 }
 
 typedef TimeDelta (*NowFunction)(void);
-NowFunction now_function = RolloverProtectedNow;
 
 bool CPUReliablySupportsHighResTime() {
   base::CPU cpu;
@@ -474,6 +469,23 @@ bool CPUReliablySupportsHighResTime() {
   return true;
 }
 
+TimeDelta InitialNowFunction();
+
+volatile NowFunction now_function = InitialNowFunction;
+
+TimeDelta InitialNowFunction() {
+  if (!CPUReliablySupportsHighResTime()) {
+    InterlockedExchangePointer(
+        reinterpret_cast<void* volatile*>(&now_function),
+        &RolloverProtectedNow);
+    return RolloverProtectedNow();
+  }
+  InterlockedExchangePointer(
+        reinterpret_cast<void* volatile*>(&now_function),
+        &HighResNowWrapper);
+  return HighResNowWrapper();
+}
+
 }  // namespace
 
 // static
@@ -485,16 +497,6 @@ TimeTicks::TickFunctionType TimeTicks::SetMockTickFunction(
   rollover_ms = 0;
   last_seen_now = 0;
   return old;
-}
-
-// static
-bool TimeTicks::SetNowIsHighResNowIfSupported() {
-  if (!CPUReliablySupportsHighResTime()) {
-    return false;
-  }
-
-  now_function = HighResNowWrapper;
-  return true;
 }
 
 // static

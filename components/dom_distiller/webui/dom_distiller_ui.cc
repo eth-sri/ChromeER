@@ -11,7 +11,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_data_source.h"
-#include "grit/component_resources.h"
+#include "grit/components_resources.h"
 #include "grit/components_strings.h"
 
 namespace dom_distiller {
@@ -28,7 +28,6 @@ DomDistillerUi::DomDistillerUi(content::WebUI* web_ui,
                           IDR_ABOUT_DOM_DISTILLER_CSS);
   source->AddResourcePath("about_dom_distiller.js", IDR_ABOUT_DOM_DISTILLER_JS);
 
-  source->SetUseJsonJSFormatV2();
   source->AddLocalizedString("domDistillerTitle",
                              IDS_DOM_DISTILLER_WEBUI_TITLE);
   source->AddLocalizedString("addArticleUrl",

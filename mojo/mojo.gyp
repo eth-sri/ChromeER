@@ -21,6 +21,7 @@
   ],
   'targets': [
     {
+      # GN version: //mojo
       'target_name': 'mojo',
       'type': 'none',
       'dependencies': [
@@ -28,6 +29,8 @@
         'mojo_application_manager_unittests',
         'mojo_apps_js_unittests',
         'mojo_base.gyp:mojo_base',
+        'mojo_clipboard',
+        'mojo_clipboard_unittests',
         'mojo_compositor_app',
         'mojo_content_handler_demo',
         'mojo_echo_client',
@@ -37,8 +40,7 @@
         'mojo_geometry_lib',
         'mojo_html_viewer',
         'mojo_js',
-        'mojo_launcher',
-        'mojo_native_viewport_service_lib',
+        'mojo_native_viewport_service',
         'mojo_network_service',
         'mojo_pepper_container_app',
         'mojo_png_viewer',
@@ -85,10 +87,12 @@
           'dependencies': [
             'mojo_dbus_echo',
             'mojo_dbus_echo_service',
+            'mojo_external_application_tests',
           ],
         }],
         ['component != "shared_library" and OS == "linux"', {
           'dependencies': [
+            'mojo_python_bindings',
             'mojo_python_embedder',
             'mojo_python_system',
             'mojo_python',
@@ -112,11 +116,11 @@
       ],
     },
     {
+      # GN version: //mojo/spy
       'target_name': 'mojo_spy',
       'type': 'static_library',
       'dependencies': [
         '../base/base.gyp:base',
-        '../base/base.gyp:base_static',
         '../net/net.gyp:http_server',
         '../url/url.gyp:url_lib',
         'mojo_application_manager',
@@ -144,8 +148,6 @@
         '../base/base.gyp:base',
         '../base/base.gyp:base_static',
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
-        '../net/net.gyp:net',
-        '../url/url.gyp:url_lib',
         'mojo_application_manager',
         'mojo_base.gyp:mojo_application_bindings',
         'mojo_base.gyp:mojo_common_lib',
@@ -153,7 +155,6 @@
         'mojo_base.gyp:mojo_system_impl',
         'mojo_base.gyp:mojo_application_chromium',
         'mojo_external_service_bindings',
-        'mojo_native_viewport_service_lib',
         'mojo_network_bindings',
         'mojo_spy',
       ],
@@ -175,6 +176,12 @@
         'shell/dynamic_application_loader.cc',
         'shell/dynamic_application_loader.h',
         'shell/dynamic_service_runner.h',
+        'shell/external_application_listener_posix.cc',
+        'shell/external_application_listener_win.cc',
+        'shell/external_application_listener.h',
+        'shell/external_application_registrar.mojom',
+        'shell/incoming_connection_listener_posix.cc',
+        'shell/incoming_connection_listener_posix.h',
         'shell/init.cc',
         'shell/init.h',
         'shell/in_process_dynamic_service_runner.cc',
@@ -191,36 +198,31 @@
         'shell/test_child_process.h',
         'shell/ui_application_loader_android.cc',
         'shell/ui_application_loader_android.h',
-        'shell/view_manager_loader.cc',
-        'shell/view_manager_loader.h',
       ],
       'conditions': [
+        ['component=="shared_library"', {
+          'dependencies': [
+            '../ui/gl/gl.gyp:gl',
+          ],
+        }],
         ['OS=="linux"', {
           'dependencies': [
             '../build/linux/system.gyp:dbus',
             '../dbus/dbus.gyp:dbus',
           ],
+          'sources': [
+            'shell/external_application_registrar_connection.cc',
+            'shell/external_application_registrar_connection.h',
+          ],
         }],
         ['OS=="android"', {
           'dependencies': [
             'mojo_network_service_lib',
+            'mojo_native_viewport_service_lib',
           ],
           'sources': [
             'shell/network_application_loader.cc',
             'shell/network_application_loader.h',
-          ],
-        }],
-        ['use_aura==1', {
-          'dependencies': [
-            # These are only necessary as long as we hard code use of ViewManager.
-            '../skia/skia.gyp:skia',
-            'mojo_view_manager',
-            'mojo_view_manager_bindings',
-          ],
-        }, {  # use_aura==0
-          'sources!': [
-            'shell/view_manager_loader.cc',
-            'shell/view_manager_loader.h',
           ],
         }],
       ],
@@ -230,10 +232,6 @@
       'target_name': 'mojo_shell_test_support',
       'type': 'static_library',
       'dependencies': [
-        '../base/base.gyp:base',
-        '../base/base.gyp:base_static',
-        '../url/url.gyp:url_lib',
-        'mojo_application_manager',
         'mojo_base.gyp:mojo_system_impl',
         'mojo_shell_lib',
       ],
@@ -248,23 +246,19 @@
       'type': 'executable',
       'dependencies': [
         '../base/base.gyp:base',
-        '../ui/gl/gl.gyp:gl',
-        '../url/url.gyp:url_lib',
-        'mojo_application_manager',
         'mojo_base.gyp:mojo_common_lib',
         'mojo_base.gyp:mojo_environment_chromium',
-        'mojo_base.gyp:mojo_system_impl',
         'mojo_shell_lib',
-      ],
-      'conditions': [
-        ['use_ozone==1', {
-          'dependencies': [
-            '../ui/ozone/ozone.gyp:ozone',
-          ],
-        }],
       ],
       'sources': [
         'shell/desktop/mojo_main.cc',
+      ],
+      'conditions': [
+        ['component=="shared_library"', {
+          'dependencies': [
+            '../ui/gfx/gfx.gyp:gfx',
+          ],
+        }],
       ],
     },
     {
@@ -277,8 +271,6 @@
         '../base/base.gyp:test_support_base',
         '../testing/gtest.gyp:gtest',
         '../net/net.gyp:net_test_support',
-        # TODO(vtl): We don't currently need this, but I imagine we will soon.
-        # '../ui/gl/gl.gyp:gl',
         '../url/url.gyp:url_lib',
         'mojo_application_manager',
         'mojo_base.gyp:mojo_common_lib',
@@ -316,7 +308,6 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
-        '../net/net.gyp:net',
         '../url/url.gyp:url_lib',
         'mojo_content_handler_bindings',
         'mojo_network_bindings',
@@ -341,7 +332,7 @@
       ],
     },
     {
-      # GN version: //mojo/application_manager:unittests
+      # GN version: //mojo/application_manager:mojo_application_manager_unittests
       'target_name': 'mojo_application_manager_unittests',
       'type': 'executable',
       'dependencies': [
@@ -447,6 +438,7 @@
     ['OS=="linux"', {
       'targets': [
         {
+          # GN version: //mojo/dbus
           'target_name': 'mojo_dbus_service',
           'type': 'static_library',
           'dependencies': [
@@ -463,6 +455,28 @@
             'dbus/dbus_external_service.cc',
           ],
         },
+        {
+          # GN version: //mojo/shell:mojo_external_application_tests
+          'target_name': 'mojo_external_application_tests',
+          'type': '<(gtest_target_type)',
+          'dependencies': [
+            '../base/base.gyp:base',
+            '../base/base.gyp:test_support_base',
+            '../testing/gtest.gyp:gtest',
+            '../net/net.gyp:net_test_support',
+            '../url/url.gyp:url_lib',
+            'mojo_application_manager',
+            'mojo_base.gyp:mojo_common_lib',
+            'mojo_base.gyp:mojo_environment_chromium',
+            'mojo_base.gyp:mojo_system_impl',
+            'mojo_shell_lib',
+          ],
+          'sources': [
+            'shell/incoming_connection_listener_unittest.cc',
+            'shell/external_application_listener_unittest.cc',
+            'shell/external_application_test_main.cc',
+          ],
+        },
       ],
     }],
     ['use_aura==1', {
@@ -477,8 +491,6 @@
             '../ui/compositor/compositor.gyp:compositor',
             '../ui/events/events.gyp:events',
             '../ui/events/events.gyp:events_base',
-            '../ui/gl/gl.gyp:gl',
-            '../webkit/common/gpu/webkit_gpu.gyp:webkit_gpu',
             'mojo_cc_support',
             'mojo_native_viewport_bindings',
           ],
@@ -498,12 +510,12 @@
           ],
         },
         {
+          # GN version: //mojo/views
           'target_name': 'mojo_views_support',
           'type': 'static_library',
           'dependencies': [
             '../base/base.gyp:base',
             '../base/base.gyp:base_i18n',
-            '../skia/skia.gyp:skia',
             '../skia/skia.gyp:skia',
             '../third_party/icu/icu.gyp:icui18n',
             '../third_party/icu/icu.gyp:icuuc',
@@ -513,6 +525,7 @@
             '../ui/wm/wm.gyp:wm',
             'mojo_aura_support',
             'mojo_views_support_internal',
+            'mojo_view_manager_bindings',
           ],
           'sources': [
             'views/input_method_mojo_linux.cc',
@@ -524,14 +537,13 @@
           ],
         },
         {
+          # GN version: //mojo/views:views_internal
           'target_name': 'mojo_views_support_internal',
           'type': '<(component)',
           'dependencies': [
             '../base/base.gyp:base',
             '../base/base.gyp:base_i18n',
-            '../base/base.gyp:base_static',
             '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
-            '../skia/skia.gyp:skia',
             '../skia/skia.gyp:skia',
             '../third_party/icu/icu.gyp:icui18n',
             '../third_party/icu/icu.gyp:icuuc',
@@ -552,6 +564,7 @@
     ['component!="shared_library" and OS=="linux"', {
       'targets': [
         {
+          # GN version: //mojo/public/python:system
           'target_name': 'mojo_python_system',
           'variables': {
             'python_base_module': 'mojo',
@@ -559,14 +572,20 @@
           },
           'sources': [
             'public/python/mojo/c_core.pxd',
+            'public/python/mojo/c_environment.pxd',
             'public/python/mojo/system.pyx',
+            'public/python/src/python_system_helper.cc',
+            'public/python/src/python_system_helper.h',
           ],
           'dependencies': [
+            'mojo_base.gyp:mojo_environment_standalone',
             'mojo_base.gyp:mojo_system',
+            'mojo_base.gyp:mojo_utility',
           ],
           'includes': [ '../third_party/cython/cython_compiler.gypi' ],
         },
         {
+          # GN version: //mojo/python:embedder
           'target_name': 'mojo_python_embedder',
           'type': 'loadable_module',
           'variables': {
@@ -582,6 +601,27 @@
           'includes': [ '../third_party/cython/cython_compiler.gypi' ],
         },
         {
+          # GN version: //mojo/public/python:bindings
+          'target_name': 'mojo_python_bindings',
+          'type': 'none',
+          'variables': {
+            'python_base_module': 'mojo/bindings',
+          },
+          'sources': [
+            'public/python/mojo/bindings/__init__.py',
+            'public/python/mojo/bindings/descriptor.py',
+            'public/python/mojo/bindings/messaging.py',
+            'public/python/mojo/bindings/promise.py',
+            'public/python/mojo/bindings/reflection.py',
+            'public/python/mojo/bindings/serialization.py',
+          ],
+          'dependencies': [
+            'mojo_python_system',
+          ],
+          'includes': [ '../third_party/cython/python_module.gypi' ],
+        },
+        {
+          # GN version: //mojo/python
           'target_name': 'mojo_python',
           'type': 'none',
           'variables': {
@@ -591,10 +631,63 @@
             'public/python/mojo/__init__.py',
           ],
           'dependencies': [
+            'mojo_python_bindings',
             'mojo_python_embedder',
             'mojo_python_system',
           ],
+          # The python module need to be copied to their destinations
+          'actions': [
+            {
+              'action_name': 'Copy system module.',
+              'inputs': [
+                '<(DEPTH)/build/cp.py',
+                '<(PRODUCT_DIR)/libmojo_python_system.so',
+              ],
+              'outputs': [
+                '<(PRODUCT_DIR)/python/mojo/system.so',
+              ],
+              'action': [
+                'python',
+                '<@(_inputs)',
+                '<@(_outputs)',
+              ]
+            },
+            {
+              'action_name': 'Copy embedder module.',
+              'inputs': [
+                '<(DEPTH)/build/cp.py',
+                '<(PRODUCT_DIR)/libmojo_python_embedder.so',
+              ],
+              'outputs': [
+                '<(PRODUCT_DIR)/python/mojo/embedder.so',
+              ],
+              'action': [
+                'python',
+                '<@(_inputs)',
+                '<@(_outputs)',
+              ]
+            },
+          ],
           'includes': [ '../third_party/cython/python_module.gypi' ],
+        },
+      ],
+    }],
+    ['component!="shared_library" and OS=="linux" and test_isolation_mode!="noop"', {
+      'targets': [
+        {
+          'target_name': 'mojo_python_unittests_run',
+          'type': 'none',
+          'dependencies': [
+            'mojo_python',
+            'mojo_base.gyp:mojo_public_test_interfaces',
+          ],
+          'includes': [
+            '../build/isolate.gypi',
+            'mojo_python_unittests.isolate',
+          ],
+          'sources': [
+            'mojo_python_unittests.isolate',
+          ],
         },
       ],
     }],

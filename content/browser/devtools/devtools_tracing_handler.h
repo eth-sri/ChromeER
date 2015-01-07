@@ -30,13 +30,10 @@ class DevToolsTracingHandler : public DevToolsProtocol::Handler {
 
   void OnClientDetached();
 
-  void EnableTracing(const std::string& category_filter);
-  void DisableTracing();
+  void OnTraceDataCollected(const std::string& trace_fragment);
+  void OnTraceComplete();
 
  private:
-  void BeginReadingRecordingResult(const base::FilePath& path);
-  void ReadRecordingResult(const scoped_refptr<base::RefCountedString>& result);
-  void OnTraceDataCollected(const std::string& trace_fragment);
   void OnRecordingEnabled(scoped_refptr<DevToolsProtocol::Command> command);
   void OnBufferUsage(float usage);
 
@@ -55,11 +52,8 @@ class DevToolsTracingHandler : public DevToolsProtocol::Handler {
 
   void SetupTimer(double usage_reporting_interval);
 
-  void DisableRecording(
-      const TracingController::TracingFileResultCallback& callback =
-          TracingController::TracingFileResultCallback());
+  void DisableRecording(bool abort);
 
-  base::WeakPtrFactory<DevToolsTracingHandler> weak_factory_;
   scoped_ptr<base::Timer> buffer_usage_poll_timer_;
   Target target_;
   bool is_recording_;
@@ -67,6 +61,8 @@ class DevToolsTracingHandler : public DevToolsProtocol::Handler {
   static const char* kDefaultCategories;
   static const double kDefaultReportingInterval;
   static const double kMinimumReportingInterval;
+
+  base::WeakPtrFactory<DevToolsTracingHandler> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(DevToolsTracingHandler);
 };

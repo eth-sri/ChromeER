@@ -5,8 +5,8 @@
 #include <map>
 
 #include "base/bind.h"
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/message_loop/message_loop.h"
 #include "base/test/test_simple_task_runner.h"
@@ -18,8 +18,8 @@
 #include "content/public/browser/storage_partition.h"
 #include "content/public/test/test_browser_context.h"
 #include "content/public/test/test_browser_thread_bundle.h"
+#include "storage/common/database/database_identifier.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/common/database/database_identifier.h"
 
 // Declared to shorten the line lengths.
 static const storage::StorageType kTemp = storage::kStorageTypeTemporary;

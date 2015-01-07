@@ -77,6 +77,7 @@ class ASH_EXPORT TrayBackgroundView : public ActionableView,
   // ActionableView:
   virtual bool PerformAction(const ui::Event& event) OVERRIDE;
   virtual gfx::Rect GetFocusBounds() OVERRIDE;
+  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
 
   // BackgroundAnimatorDelegate:
   virtual void UpdateBackground(int alpha) OVERRIDE;

@@ -240,13 +240,9 @@ void CrosLanguageOptionsHandler::InputMethodOptionsOpenCallback(
   content::OpenURLParams params(ime->options_page_url(),
       content::Referrer(),
       SINGLETON_TAB,
-      content::PAGE_TRANSITION_LINK,
+      ui::PAGE_TRANSITION_LINK,
       false);
   browser->OpenURL(params);
-  browser->window()->Show();
-  content::WebContents* web_contents =
-      browser->tab_strip_model()->GetActiveWebContents();
-  web_contents->GetDelegate()->ActivateContents(web_contents);
 }
 
 void CrosLanguageOptionsHandler::AddImeProvider(base::ListValue* list) {

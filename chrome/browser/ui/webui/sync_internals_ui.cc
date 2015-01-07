@@ -9,7 +9,6 @@
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_data_source.h"
-#include "extensions/common/extension_messages.h"
 #include "grit/sync_internals_resources.h"
 
 namespace {
@@ -18,7 +17,6 @@ content::WebUIDataSource* CreateSyncInternalsHTMLSource() {
   content::WebUIDataSource* source =
       content::WebUIDataSource::Create(chrome::kChromeUISyncInternalsHost);
 
-  source->SetUseJsonJSFormatV2();
   source->SetJsonPath("strings.js");
   source->AddResourcePath("sync_index.js", IDR_SYNC_INTERNALS_INDEX_JS);
   source->AddResourcePath("chrome_sync.js",

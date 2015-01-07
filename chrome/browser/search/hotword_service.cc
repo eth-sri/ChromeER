@@ -215,11 +215,6 @@ HotwordService::HotwordService(Profile* profile)
       base::Bind(&HotwordService::OnHotwordSearchEnabledChanged,
                  base::Unretained(this)));
 
-  pref_registrar_.Add(
-      prefs::kHotwordAlwaysOnSearchEnabled,
-      base::Bind(&HotwordService::OnHotwordAlwaysOnSearchEnabledChanged,
-                 base::Unretained(this)));
-
   registrar_.Add(this,
                  chrome::NOTIFICATION_BROWSER_WINDOW_READY,
                  content::NotificationService::AllSources());
@@ -389,8 +384,16 @@ bool HotwordService::IsServiceAvailable() {
   ExtensionService* service = system->extension_service();
   // Include disabled extensions (true parameter) since it may not be enabled
   // if the user opted out.
+  std::string extensionId;
+  if (IsExperimentalHotwordingEnabled()) {
+    // TODO(amistry): Handle reloading on language change as the old extension
+    // does.
+    extensionId = extension_misc::kHotwordSharedModuleId;
+  } else {
+    extensionId = extension_misc::kHotwordExtensionId;
+  }
   const extensions::Extension* extension =
-      service->GetExtensionById(extension_misc::kHotwordExtensionId, true);
+      service->GetExtensionById(extensionId, true);
   if (!extension)
     error_message_ = IDS_HOTWORD_GENERIC_ERROR_MESSAGE;
 
@@ -450,23 +453,25 @@ void HotwordService::DisableHotwordExtension(
   }
 }
 
-void HotwordService::OnHotwordAlwaysOnSearchEnabledChanged(
-    const std::string& pref_name) {
-  DCHECK_EQ(pref_name, std::string(prefs::kHotwordAlwaysOnSearchEnabled));
+void HotwordService::LaunchHotwordAudioVerificationApp(
+    const LaunchMode& launch_mode) {
+  hotword_audio_verification_launch_mode_ = launch_mode;
 
   ExtensionService* extension_service = GetExtensionService(profile_);
   if (!extension_service)
     return;
-
   const extensions::Extension* extension = extension_service->GetExtensionById(
       extension_misc::kHotwordAudioVerificationAppId, true);
   if (!extension)
     return;
 
-  if (profile_->GetPrefs()->GetBoolean(prefs::kHotwordAlwaysOnSearchEnabled)) {
-    OpenApplication(AppLaunchParams(
-        profile_, extension, extensions::LAUNCH_CONTAINER_WINDOW, NEW_WINDOW));
-  }
+  OpenApplication(AppLaunchParams(
+      profile_, extension, extensions::LAUNCH_CONTAINER_WINDOW, NEW_WINDOW));
+}
+
+HotwordService::LaunchMode
+HotwordService::GetHotwordAudioVerificationLaunchMode() {
+  return hotword_audio_verification_launch_mode_;
 }
 
 void HotwordService::OnHotwordSearchEnabledChanged(

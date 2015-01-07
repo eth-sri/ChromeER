@@ -36,6 +36,9 @@ const char kEnableTouchDragDrop[] = "enable-touch-drag-drop";
 // Enables controls that support touch base text editing.
 const char kEnableTouchEditing[] = "enable-touch-editing";
 
+// Enables additional visual feedback to touch input.
+const char kEnableTouchFeedback[] = "enable-touch-feedback";
+
 // The language file that we want to try to open. Of the form
 // language[-country] where language is the 2 letter code from ISO-639.
 const char kLang[] = "lang";
@@ -43,5 +46,9 @@ const char kLang[] = "lang";
 // Disable ui::MessageBox. This is useful when running as part of scripts that
 // do not have a user interface.
 const char kNoMessageBox[] = "no-message-box";
+
+// On Windows only: requests that Chrome connect to the running Metro viewer
+// process.
+const char kViewerConnect[] = "connect-to-metro-viewer";
 
 }  // namespace switches

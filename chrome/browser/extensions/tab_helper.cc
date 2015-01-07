@@ -10,8 +10,7 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/active_script_controller.h"
 #include "chrome/browser/extensions/activity_log/activity_log.h"
-#include "chrome/browser/extensions/api/declarative/rules_registry_service.h"
-#include "chrome/browser/extensions/api/declarative_content/content_rules_registry.h"
+#include "chrome/browser/extensions/api/declarative_content/chrome_content_rules_registry.h"
 #include "chrome/browser/extensions/api/extension_action/extension_action_api.h"
 #include "chrome/browser/extensions/api/webstore/webstore_api.h"
 #include "chrome/browser/extensions/bookmark_app_helper.h"
@@ -46,6 +45,7 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/frame_navigate_params.h"
+#include "extensions/browser/api/declarative/rules_registry_service.h"
 #include "extensions/browser/extension_error.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
@@ -88,8 +88,9 @@ TabHelper::TabHelper(content::WebContents* web_contents)
       script_executor_(
           new ScriptExecutor(web_contents, &script_execution_observers_)),
       location_bar_controller_(new LocationBarController(web_contents)),
-      image_loader_ptr_factory_(this),
-      webstore_inline_installer_factory_(new WebstoreInlineInstallerFactory()) {
+      active_script_controller_(new ActiveScriptController(web_contents)),
+      webstore_inline_installer_factory_(new WebstoreInlineInstallerFactory()),
+      image_loader_ptr_factory_(this) {
   // The ActiveTabPermissionManager requires a session ID; ensure this
   // WebContents has one.
   SessionTabHelper::CreateForWebContents(web_contents);
@@ -249,8 +250,8 @@ void TabHelper::DidNavigateMainFrame(
 bool TabHelper::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(TabHelper, message)
-    IPC_MESSAGE_HANDLER(ChromeExtensionHostMsg_DidGetApplicationInfo,
-                        OnDidGetApplicationInfo)
+    IPC_MESSAGE_HANDLER(ChromeViewHostMsg_DidGetWebApplicationInfo,
+                        OnDidGetWebApplicationInfo)
     IPC_MESSAGE_HANDLER(ExtensionHostMsg_InlineWebstoreInstall,
                         OnInlineWebstoreInstall)
     IPC_MESSAGE_HANDLER(ExtensionHostMsg_GetAppInstallState,
@@ -287,7 +288,7 @@ void TabHelper::DidCloneToNewWebContents(WebContents* old_web_contents,
   new_helper->extension_app_icon_ = extension_app_icon_;
 }
 
-void TabHelper::OnDidGetApplicationInfo(const WebApplicationInfo& info) {
+void TabHelper::OnDidGetWebApplicationInfo(const WebApplicationInfo& info) {
 #if !defined(OS_MACOSX)
   web_app_info_ = info;
 
@@ -512,7 +513,7 @@ void TabHelper::GetApplicationInfo(WebAppAction action) {
   pending_web_app_action_ = action;
   last_committed_page_id_ = entry->GetPageID();
 
-  Send(new ChromeExtensionMsg_GetApplicationInfo(routing_id()));
+  Send(new ChromeViewMsg_GetWebApplicationInfo(routing_id()));
 }
 
 void TabHelper::Observe(int type,

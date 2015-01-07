@@ -32,6 +32,7 @@
 #include "content/browser/download/save_file_resource_handler.h"
 #include "content/browser/fileapi/chrome_blob_storage_context.h"
 #include "content/browser/frame_host/navigation_request_info.h"
+#include "content/browser/frame_host/navigator.h"
 #include "content/browser/loader/async_resource_handler.h"
 #include "content/browser/loader/buffered_resource_handler.h"
 #include "content/browser/loader/cross_site_resource_handler.h"
@@ -44,7 +45,6 @@
 #include "content/browser/loader/sync_resource_handler.h"
 #include "content/browser/loader/throttling_resource_handler.h"
 #include "content/browser/loader/upload_data_stream_builder.h"
-#include "content/browser/plugin_service_impl.h"
 #include "content/browser/renderer_host/render_view_host_delegate.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/resource_context_impl.h"
@@ -54,6 +54,7 @@
 #include "content/browser/streams/stream_registry.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/common/appcache_interfaces.h"
+#include "content/common/navigation_params.h"
 #include "content/common/resource_messages.h"
 #include "content/common/ssl_status_serialization.h"
 #include "content/common/view_messages.h"
@@ -86,14 +87,18 @@
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_job_factory.h"
+#include "storage/browser/blob/blob_data_handle.h"
+#include "storage/browser/blob/blob_storage_context.h"
+#include "storage/browser/blob/blob_url_request_job_factory.h"
+#include "storage/browser/fileapi/file_permission_policy.h"
+#include "storage/browser/fileapi/file_system_context.h"
+#include "storage/common/blob/blob_data.h"
+#include "storage/common/blob/shareable_file_reference.h"
 #include "url/url_constants.h"
-#include "webkit/common/blob/blob_data.h"
-#include "webkit/browser/blob/blob_data_handle.h"
-#include "webkit/browser/blob/blob_storage_context.h"
-#include "webkit/browser/blob/blob_url_request_job_factory.h"
-#include "webkit/browser/fileapi/file_permission_policy.h"
-#include "webkit/browser/fileapi/file_system_context.h"
-#include "webkit/common/blob/shareable_file_reference.h"
+
+#if defined(ENABLE_PLUGINS)
+#include "content/browser/plugin_service_impl.h"
+#endif
 
 using base::Time;
 using base::TimeDelta;
@@ -134,6 +139,60 @@ const double kMaxRequestsPerProcessRatio = 0.45;
 // should be and once we stop blocking multiple simultaneous requests for the
 // same resource (see bugs 46104 and 31014).
 const int kDefaultDetachableCancelDelayMs = 30000;
+
+enum SHA1HistogramTypes {
+  // SHA-1 is not present in the certificate chain.
+  SHA1_NOT_PRESENT = 0,
+  // SHA-1 is present in the certificate chain, and the leaf expires on or
+  // after January 1, 2017.
+  SHA1_EXPIRES_AFTER_JANUARY_2017 = 1,
+  // SHA-1 is present in the certificate chain, and the leaf expires on or
+  // after June 1, 2016.
+  SHA1_EXPIRES_AFTER_JUNE_2016 = 2,
+  // SHA-1 is present in the certificate chain, and the leaf expires on or
+  // after January 1, 2016.
+  SHA1_EXPIRES_AFTER_JANUARY_2016 = 3,
+  // SHA-1 is present in the certificate chain, but the leaf expires before
+  // January 1, 2016
+  SHA1_PRESENT = 4,
+  // Always keep this at the end.
+  SHA1_HISTOGRAM_TYPES_MAX,
+};
+
+void RecordCertificateHistograms(const net::SSLInfo& ssl_info,
+                                 ResourceType resource_type) {
+  // The internal representation of the dates for UI treatment of SHA-1.
+  // See http://crbug.com/401365 for details
+  static const int64_t kJanuary2017 = INT64_C(13127702400000000);
+  static const int64_t kJune2016 = INT64_C(13109213000000000);
+  static const int64_t kJanuary2016 = INT64_C(13096080000000000);
+
+  SHA1HistogramTypes sha1_histogram = SHA1_NOT_PRESENT;
+  if (ssl_info.cert_status & net::CERT_STATUS_SHA1_SIGNATURE_PRESENT) {
+    DCHECK(ssl_info.cert.get());
+    if (ssl_info.cert->valid_expiry() >=
+        base::Time::FromInternalValue(kJanuary2017)) {
+      sha1_histogram = SHA1_EXPIRES_AFTER_JANUARY_2017;
+    } else if (ssl_info.cert->valid_expiry() >=
+               base::Time::FromInternalValue(kJune2016)) {
+      sha1_histogram = SHA1_EXPIRES_AFTER_JUNE_2016;
+    } else if (ssl_info.cert->valid_expiry() >=
+               base::Time::FromInternalValue(kJanuary2016)) {
+      sha1_histogram = SHA1_EXPIRES_AFTER_JANUARY_2016;
+    } else {
+      sha1_histogram = SHA1_PRESENT;
+    }
+  }
+  if (resource_type == RESOURCE_TYPE_MAIN_FRAME) {
+    UMA_HISTOGRAM_ENUMERATION("Net.Certificate.SHA1.MainFrame",
+                              sha1_histogram,
+                              SHA1_HISTOGRAM_TYPES_MAX);
+  } else {
+    UMA_HISTOGRAM_ENUMERATION("Net.Certificate.SHA1.Subresource",
+                              sha1_histogram,
+                              SHA1_HISTOGRAM_TYPES_MAX);
+  }
+}
 
 bool IsDetachableResourceType(ResourceType type) {
   switch (type) {
@@ -323,6 +382,24 @@ void AttachRequestBodyBlobDataHandles(
     // upload completion. The |body| takes ownership of |handle|.
     const void* key = handle.get();
     body->SetUserData(key, handle.release());
+  }
+}
+
+// PlzNavigate
+// This method is called in the UI thread to send the timestamp of a resource
+// request to the respective Navigator (for an UMA histogram).
+void LogResourceRequestTimeOnUI(
+    base::TimeTicks timestamp,
+    int render_process_id,
+    int render_frame_id,
+    const GURL& url) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  RenderFrameHostImpl* host =
+      RenderFrameHostImpl::FromID(render_process_id, render_frame_id);
+  if (host != NULL) {
+    DCHECK(host->frame_tree_node()->IsMainFrame());
+    host->frame_tree_node()->navigator()->LogResourceRequestTime(
+        timestamp, url);
   }
 }
 
@@ -742,7 +819,7 @@ void ResourceDispatcherHostImpl::DidReceiveResponse(ResourceLoader* loader) {
 
   if (loader->request()->was_fetched_via_proxy() &&
       loader->request()->was_fetched_via_spdy() &&
-      loader->request()->url().SchemeIs("http")) {
+      loader->request()->url().SchemeIs(url::kHttpScheme)) {
     scheduler_->OnReceivedSpdyProxiedHttpResponse(
         info->GetChildID(), info->GetRouteID());
   }
@@ -796,6 +873,11 @@ void ResourceDispatcherHostImpl::DidFinishLoading(ResourceLoader* loader) {
     UMA_HISTOGRAM_SPARSE_SLOWLY(
         "Net.ErrorCodesForSubresources2",
         -loader->request()->status().error());
+  }
+
+  if (loader->request()->url().SchemeIsSecure()) {
+    RecordCertificateHistograms(loader->request()->ssl_info(),
+                                info->GetResourceType());
   }
 
   if (delegate_)
@@ -885,6 +967,19 @@ void ResourceDispatcherHostImpl::OnRequestResource(
     int routing_id,
     int request_id,
     const ResourceHostMsg_Request& request_data) {
+  // When logging time-to-network only care about main frame and non-transfer
+  // navigations.
+  if (request_data.resource_type == RESOURCE_TYPE_MAIN_FRAME &&
+      request_data.transferred_request_request_id == -1) {
+    BrowserThread::PostTask(
+        BrowserThread::UI,
+        FROM_HERE,
+        base::Bind(&LogResourceRequestTimeOnUI,
+                   TimeTicks::Now(),
+                   filter_->child_id(),
+                   request_data.render_frame_id,
+                   request_data.url));
+  }
   BeginRequest(request_id, request_data, NULL, routing_id);
 }
 
@@ -1135,13 +1230,16 @@ void ResourceDispatcherHostImpl::BeginRequest(
             new_request->url()));
   }
 
-  // Initialize the service worker handler for the request.
+  // Initialize the service worker handler for the request. We don't use
+  // ServiceWorker for synchronous loads to avoid renderer deadlocks.
   ServiceWorkerRequestHandler::InitializeHandler(
       new_request.get(),
       filter_->service_worker_context(),
       blob_context,
       child_id,
       request_data.service_worker_provider_id,
+      request_data.skip_service_worker || is_sync_load,
+      request_data.fetch_request_mode,
       request_data.resource_type,
       request_data.request_body);
 
@@ -1332,7 +1430,7 @@ ResourceRequestInfoImpl* ResourceDispatcherHostImpl::CreateRequestInfo(
       false,     // parent_is_main_frame
       -1,        // parent_render_frame_id
       RESOURCE_TYPE_SUB_RESOURCE,
-      PAGE_TRANSITION_LINK,
+      ui::PAGE_TRANSITION_LINK,
       false,     // should_replace_current_entry
       download,  // is_download
       false,     // is_stream
@@ -1657,9 +1755,17 @@ void ResourceDispatcherHostImpl::FinishedWithResourcesForRequest(
   IncrementOutstandingRequestsCount(-1, *info);
 }
 
-void ResourceDispatcherHostImpl::NavigationRequest(
+void ResourceDispatcherHostImpl::StartNavigationRequest(
+    const CommonNavigationParams& params,
     const NavigationRequestInfo& info,
     scoped_refptr<ResourceRequestBody> request_body,
+    int64 navigation_request_id,
+    int64 frame_node_id) {
+  NOTIMPLEMENTED();
+}
+
+void ResourceDispatcherHostImpl::CancelNavigationRequest(
+    int64 navigation_request_id,
     int64 frame_node_id) {
   NOTIMPLEMENTED();
 }

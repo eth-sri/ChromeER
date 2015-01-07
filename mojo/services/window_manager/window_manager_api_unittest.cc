@@ -65,22 +65,16 @@ class TestWindowManagerClient : public WindowManagerClient {
 
  private:
   // Overridden from WindowManagerClient:
-  virtual void OnWindowManagerReady() MOJO_OVERRIDE {
-    run_loop_->Quit();
-  }
-  virtual void OnCaptureChanged(
-      Id old_capture_node_id,
-      Id new_capture_node_id) MOJO_OVERRIDE {
-  }
-  virtual void OnFocusChanged(
-      Id old_focused_node_id,
-      Id new_focused_node_id) MOJO_OVERRIDE {
+  virtual void OnWindowManagerReady() override { run_loop_->Quit(); }
+  virtual void OnCaptureChanged(Id old_capture_node_id,
+                                Id new_capture_node_id) override {}
+  virtual void OnFocusChanged(Id old_focused_node_id,
+                              Id new_focused_node_id) override {
     if (!focus_changed_callback_.is_null())
       focus_changed_callback_.Run(old_focused_node_id, new_focused_node_id);
   }
-  virtual void OnActiveWindowChanged(
-      Id old_active_window,
-      Id new_active_window) MOJO_OVERRIDE {
+  virtual void OnActiveWindowChanged(Id old_active_window,
+                                     Id new_active_window) override {
     if (!active_window_changed_callback_.is_null())
       active_window_changed_callback_.Run(old_active_window, new_active_window);
   }
@@ -99,15 +93,14 @@ class TestApplicationLoader : public ApplicationLoader,
   typedef base::Callback<void(View*)> RootAddedCallback;
 
   explicit TestApplicationLoader(const RootAddedCallback& root_added_callback)
-      : root_added_callback_(root_added_callback),
-        view_manager_client_factory_(this) {}
+      : root_added_callback_(root_added_callback) {}
   virtual ~TestApplicationLoader() {}
 
  private:
   // Overridden from ApplicationLoader:
   virtual void Load(ApplicationManager* application_manager,
                     const GURL& url,
-                    scoped_refptr<LoadCallbacks> callbacks) MOJO_OVERRIDE {
+                    scoped_refptr<LoadCallbacks> callbacks) override {
     ScopedMessagePipeHandle shell_handle = callbacks->RegisterApplication();
     if (!shell_handle.is_valid())
       return;
@@ -116,31 +109,33 @@ class TestApplicationLoader : public ApplicationLoader,
     apps_.push_back(app.release());
   }
   virtual void OnApplicationError(ApplicationManager* application_manager,
-                                  const GURL& url) MOJO_OVERRIDE {}
+                                  const GURL& url) override {}
 
   // Overridden from ApplicationDelegate:
+  virtual void Initialize(ApplicationImpl* app) override {
+    view_manager_client_factory_.reset(
+        new ViewManagerClientFactory(app->shell(), this));
+  }
+
   virtual bool ConfigureIncomingConnection(
-      ApplicationConnection* connection) MOJO_OVERRIDE {
-    connection->AddService(&view_manager_client_factory_);
+      ApplicationConnection* connection) override {
+    connection->AddService(view_manager_client_factory_.get());
     return true;
   }
 
   // Overridden from ViewManagerDelegate:
-  virtual void OnEmbed(
-      ViewManager* view_manager,
-      View* root,
-      ServiceProviderImpl* exported_services,
-      scoped_ptr<ServiceProvider> imported_services) MOJO_OVERRIDE {
+  virtual void OnEmbed(ViewManager* view_manager,
+                       View* root,
+                       ServiceProviderImpl* exported_services,
+                       scoped_ptr<ServiceProvider> imported_services) override {
     root_added_callback_.Run(root);
   }
-  virtual void OnViewManagerDisconnected(
-      ViewManager* view_manager) MOJO_OVERRIDE {
-  }
+  virtual void OnViewManagerDisconnected(ViewManager* view_manager) override {}
 
   RootAddedCallback root_added_callback_;
 
   ScopedVector<ApplicationImpl> apps_;
-  ViewManagerClientFactory view_manager_client_factory_;
+  scoped_ptr<ViewManagerClientFactory> view_manager_client_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(TestApplicationLoader);
 };
@@ -201,7 +196,7 @@ class WindowManagerApiTest : public testing::Test {
 
  private:
   // Overridden from testing::Test:
-  virtual void SetUp() MOJO_OVERRIDE {
+  virtual void SetUp() override {
     test_helper_.Init();
     test_helper_.SetLoaderForURL(
         scoped_ptr<ApplicationLoader>(new TestApplicationLoader(base::Bind(
@@ -213,7 +208,7 @@ class WindowManagerApiTest : public testing::Test {
                           "mojo:mojo_core_window_manager"));
     ConnectToWindowManager();
   }
-  virtual void TearDown() MOJO_OVERRIDE {}
+  virtual void TearDown() override {}
 
   void ConnectToWindowManager() {
     test_helper_.application_manager()->ConnectToService(

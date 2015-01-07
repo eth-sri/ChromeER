@@ -8,7 +8,7 @@
 #include "base/lazy_instance.h"
 #include "base/strings/utf_string_conversions.h"
 #include "content/browser/child_process_security_policy_impl.h"
-#include "content/browser/devtools/devtools_manager_impl.h"
+#include "content/browser/devtools/devtools_manager.h"
 #include "content/browser/devtools/devtools_power_handler.h"
 #include "content/browser/devtools/devtools_protocol.h"
 #include "content/browser/devtools/devtools_protocol_constants.h"
@@ -123,6 +123,7 @@ RenderViewDevToolsAgentHost::RenderViewDevToolsAgentHost(RenderViewHost* rvh)
   power_handler_->SetNotifier(notifier);
   g_instances.Get().push_back(this);
   AddRef();  // Balanced in RenderViewHostDestroyed.
+  DevToolsManager::GetInstance()->AgentHostChanged(this);
 }
 
 WebContents* RenderViewDevToolsAgentHost::GetWebContents() {
@@ -142,7 +143,7 @@ void RenderViewDevToolsAgentHost::DispatchProtocolMessage(
     scoped_refptr<DevToolsProtocol::Response> overridden_response;
 
     DevToolsManagerDelegate* delegate =
-        DevToolsManagerImpl::GetInstance()->delegate();
+        DevToolsManager::GetInstance()->delegate();
     if (delegate) {
       scoped_ptr<base::DictionaryValue> overridden_response_value(
           delegate->HandleCommand(this, message_dict.get()));
@@ -179,7 +180,7 @@ void RenderViewDevToolsAgentHost::OnClientAttached() {
 
   InnerOnClientAttached();
 
-  // TODO(kaznacheev): Move this call back to DevToolsManagerImpl when
+  // TODO(kaznacheev): Move this call back to DevToolsManager when
   // extensions::ProcessManager no longer relies on this notification.
   if (!reattaching_)
     DevToolsAgentHostImpl::NotifyCallbacks(this, true);
@@ -211,7 +212,7 @@ void RenderViewDevToolsAgentHost::OnClientDetached() {
   power_handler_->OnClientDetached();
   ClientDetachedFromRenderer();
 
-  // TODO(kaznacheev): Move this call back to DevToolsManagerImpl when
+  // TODO(kaznacheev): Move this call back to DevToolsManager when
   // extensions::ProcessManager no longer relies on this notification.
   if (!reattaching_)
     DevToolsAgentHostImpl::NotifyCallbacks(this, false);
@@ -290,6 +291,7 @@ void RenderViewDevToolsAgentHost::RenderViewDeleted(RenderViewHost* rvh) {
   scoped_refptr<RenderViewDevToolsAgentHost> protect(this);
   HostClosed();
   ClearRenderViewHost();
+  DevToolsManager::GetInstance()->AgentHostChanged(this);
   Release();
 }
 
@@ -337,6 +339,16 @@ void RenderViewDevToolsAgentHost::DidAttachInterstitialPage() {
 
 void RenderViewDevToolsAgentHost::DidDetachInterstitialPage() {
   overrides_handler_->DidDetachInterstitialPage();
+}
+
+void RenderViewDevToolsAgentHost::TitleWasSet(
+    NavigationEntry* entry, bool explicit_set) {
+  DevToolsManager::GetInstance()->AgentHostChanged(this);
+}
+
+void RenderViewDevToolsAgentHost::NavigationEntryCommitted(
+    const LoadCommittedDetails& load_details) {
+  DevToolsManager::GetInstance()->AgentHostChanged(this);
 }
 
 void RenderViewDevToolsAgentHost::Observe(int type,
@@ -441,8 +453,6 @@ bool RenderViewDevToolsAgentHost::DispatchIPCMessage(
                         OnDispatchOnInspectorFrontend)
     IPC_MESSAGE_HANDLER(DevToolsHostMsg_SaveAgentRuntimeState,
                         OnSaveAgentRuntimeState)
-    IPC_MESSAGE_HANDLER(DevToolsHostMsg_EnableTracing, OnEnableTracing)
-    IPC_MESSAGE_HANDLER(DevToolsHostMsg_DisableTracing, OnDisableTracing)
     IPC_MESSAGE_HANDLER_GENERIC(ViewHostMsg_SwapCompositorFrame,
                                 handled = false; OnSwapCompositorFrame(msg))
     IPC_MESSAGE_UNHANDLED(handled = false)
@@ -477,15 +487,6 @@ void RenderViewDevToolsAgentHost::OnDispatchOnInspectorFrontend(
   if (!render_view_host_)
     return;
   SendMessageToClient(message);
-}
-
-void RenderViewDevToolsAgentHost::OnEnableTracing(
-    const std::string& category_filter) {
-  tracing_handler_->EnableTracing(category_filter);
-}
-
-void RenderViewDevToolsAgentHost::OnDisableTracing() {
-  tracing_handler_->DisableTracing();
 }
 
 }  // namespace content

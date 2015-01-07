@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 #include "base/command_line.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/threading/platform_thread.h"
 #include "content/browser/web_contents/web_contents_impl.h"
@@ -32,6 +32,9 @@ namespace content {
 
 #if defined(OS_ANDROID) && defined(ADDRESS_SANITIZER)
 // Renderer crashes under Android ASAN: https://crbug.com/408496.
+#define MAYBE_WebRtcBrowserTest DISABLED_WebRtcBrowserTest
+#elif defined(OS_ANDROID) && defined(__aarch64__)
+// Failures on ARM64 Android: http://crbug.com/408179.
 #define MAYBE_WebRtcBrowserTest DISABLED_WebRtcBrowserTest
 #else
 #define MAYBE_WebRtcBrowserTest WebRtcBrowserTest

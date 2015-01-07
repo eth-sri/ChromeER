@@ -7,7 +7,6 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/apps/app_browsertest_util.h"
 #include "chrome/browser/chrome_content_browser_client.h"
-#include "chrome/browser/extensions/extension_test_message_listener.h"
 #include "chrome/browser/prerender/prerender_link_manager.h"
 #include "chrome/browser/prerender/prerender_link_manager_factory.h"
 #include "chrome/browser/profiles/profile.h"
@@ -31,12 +30,15 @@
 #include "extensions/browser/app_window/native_app_window.h"
 #include "extensions/browser/guest_view/guest_view_manager.h"
 #include "extensions/browser/guest_view/guest_view_manager_factory.h"
+#include "extensions/browser/guest_view/web_view/test_guest_view_manager.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extensions_client.h"
+#include "extensions/test/extension_test_message_listener.h"
 #include "media/base/media_switches.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/test/embedded_test_server/http_request.h"
 #include "net/test/embedded_test_server/http_response.h"
+#include "ui/gfx/switches.h"
 #include "ui/gl/gl_switches.h"
 
 #if defined(OS_CHROMEOS)
@@ -92,85 +94,6 @@ class TestInterstitialPageDelegate : public content::InterstitialPageDelegate {
   }
   virtual ~TestInterstitialPageDelegate() {}
   virtual std::string GetHTMLContents() OVERRIDE { return std::string(); }
-};
-
-class TestGuestViewManager : public extensions::GuestViewManager {
- public:
-  explicit TestGuestViewManager(content::BrowserContext* context) :
-      GuestViewManager(context),
-      seen_guest_removed_(false),
-      web_contents_(NULL) {}
-
-  content::WebContents* WaitForGuestCreated() {
-    if (web_contents_)
-      return web_contents_;
-
-    created_message_loop_runner_ = new content::MessageLoopRunner;
-    created_message_loop_runner_->Run();
-    return web_contents_;
-  }
-
-  void WaitForGuestDeleted() {
-    if (seen_guest_removed_)
-      return;
-
-    deleted_message_loop_runner_ = new content::MessageLoopRunner;
-    deleted_message_loop_runner_->Run();
-  }
-
- private:
-  // GuestViewManager override:
-  virtual void AddGuest(int guest_instance_id,
-                        content::WebContents* guest_web_contents) OVERRIDE{
-    extensions::GuestViewManager::AddGuest(
-        guest_instance_id, guest_web_contents);
-    web_contents_ = guest_web_contents;
-    seen_guest_removed_ = false;
-
-    if (created_message_loop_runner_.get())
-      created_message_loop_runner_->Quit();
-  }
-
-  virtual void RemoveGuest(int guest_instance_id) OVERRIDE {
-    extensions::GuestViewManager::RemoveGuest(guest_instance_id);
-    web_contents_ = NULL;
-    seen_guest_removed_ = true;
-
-    if (deleted_message_loop_runner_.get())
-      deleted_message_loop_runner_->Quit();
-  }
-
-  bool seen_guest_removed_;
-  content::WebContents* web_contents_;
-  scoped_refptr<content::MessageLoopRunner> created_message_loop_runner_;
-  scoped_refptr<content::MessageLoopRunner> deleted_message_loop_runner_;
-};
-
-// Test factory for creating test instances of GuestViewManager.
-class TestGuestViewManagerFactory :
-  public extensions::GuestViewManagerFactory {
- public:
-  TestGuestViewManagerFactory() :
-      test_guest_view_manager_(NULL) {}
-
-  virtual ~TestGuestViewManagerFactory() {}
-
-  virtual extensions::GuestViewManager* CreateGuestViewManager(
-      content::BrowserContext* context) OVERRIDE {
-    return GetManager(context);
-  }
-
-  TestGuestViewManager* GetManager(content::BrowserContext* context) {
-    if (!test_guest_view_manager_) {
-      test_guest_view_manager_ = new TestGuestViewManager(context);
-    }
-    return test_guest_view_manager_;
-  }
-
- private:
-  TestGuestViewManager* test_guest_view_manager_;
-
-  DISALLOW_COPY_AND_ASSIGN(TestGuestViewManagerFactory);
 };
 
 class WebContentsHiddenObserver : public content::WebContentsObserver {
@@ -743,8 +666,10 @@ class WebViewTest : public extensions::PlatformAppBrowserTest {
     return embedder_web_contents_;
   }
 
-  TestGuestViewManager* GetGuestViewManager() {
-    return factory_.GetManager(browser()->profile());
+  extensions::TestGuestViewManager* GetGuestViewManager() {
+    return static_cast<extensions::TestGuestViewManager*>(
+        extensions::TestGuestViewManager::FromBrowserContext(
+            browser()->profile()));
   }
 
   WebViewTest() : guest_web_contents_(NULL),
@@ -765,10 +690,21 @@ class WebViewTest : public extensions::PlatformAppBrowserTest {
   scoped_ptr<content::FakeSpeechRecognitionManager>
       fake_speech_recognition_manager_;
 
-  TestGuestViewManagerFactory factory_;
+  extensions::TestGuestViewManagerFactory factory_;
   // Note that these are only set if you launch app using LoadAppWithGuest().
   content::WebContents* guest_web_contents_;
   content::WebContents* embedder_web_contents_;
+};
+
+class WebViewDPITest : public WebViewTest {
+ protected:
+  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+    WebViewTest::SetUpCommandLine(command_line);
+    command_line->AppendSwitchASCII(switches::kForceDeviceScaleFactor,
+                                    base::StringPrintf("%f", scale()));
+  }
+
+  static float scale() { return 2.0f; }
 };
 
 // This test verifies that hiding the guest triggers WebContents::WasHidden().
@@ -894,9 +830,30 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, DISABLED_Shim_TestAutosizeAfterNavigation) {
   TestHelper("testAutosizeAfterNavigation", "web_view/shim", NO_TEST_SERVER);
 }
 
+IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestAllowTransparencyAttribute) {
+  TestHelper("testAllowTransparencyAttribute", "web_view/shim", NO_TEST_SERVER);
+}
+
+IN_PROC_BROWSER_TEST_F(WebViewDPITest, Shim_TestAutosizeHeight) {
+  TestHelper("testAutosizeHeight", "web_view/shim", NO_TEST_SERVER);
+}
+
+IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestAutosizeHeight) {
+  TestHelper("testAutosizeHeight", "web_view/shim", NO_TEST_SERVER);
+}
+
+IN_PROC_BROWSER_TEST_F(WebViewDPITest, Shim_TestAutosizeBeforeNavigation) {
+  TestHelper("testAutosizeBeforeNavigation", "web_view/shim", NO_TEST_SERVER);
+}
+
 IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestAutosizeBeforeNavigation) {
   TestHelper("testAutosizeBeforeNavigation", "web_view/shim", NO_TEST_SERVER);
 }
+
+IN_PROC_BROWSER_TEST_F(WebViewDPITest, Shim_TestAutosizeRemoveAttributes) {
+  TestHelper("testAutosizeRemoveAttributes", "web_view/shim", NO_TEST_SERVER);
+}
+
 IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestAutosizeRemoveAttributes) {
   TestHelper("testAutosizeRemoveAttributes", "web_view/shim", NO_TEST_SERVER);
 }
@@ -971,7 +928,13 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestInvalidChromeExtensionURL) {
   TestHelper("testInvalidChromeExtensionURL", "web_view/shim", NO_TEST_SERVER);
 }
 
-IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestEventName) {
+// Disable on Chrome OS, as it is flaking a lot. See: http://crbug.com/413618.
+#if defined(OS_CHROMEOS)
+#define MAYBE_Shim_TestEventName DISABLED_Shim_TestEventName
+#else
+#define MAYBE_Shim_TestEventName Shim_TestEventName
+#endif
+IN_PROC_BROWSER_TEST_F(WebViewTest, MAYBE_Shim_TestEventName) {
   TestHelper("testEventName", "web_view/shim", NO_TEST_SERVER);
 }
 
@@ -1158,11 +1121,15 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestLoadAbortNonWebSafeScheme) {
 }
 
 IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestReload) {
-  TestHelper("testReload", "web_view/shim", NEEDS_TEST_SERVER);
+  TestHelper("testReload", "web_view/shim", NO_TEST_SERVER);
+}
+
+IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestReloadAfterTerminate) {
+  TestHelper("testReloadAfterTerminate", "web_view/shim", NO_TEST_SERVER);
 }
 
 IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestGetProcessId) {
-  TestHelper("testGetProcessId", "web_view/shim", NEEDS_TEST_SERVER);
+  TestHelper("testGetProcessId", "web_view/shim", NO_TEST_SERVER);
 }
 
 IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestHiddenBeforeNavigation) {
@@ -2291,6 +2258,10 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestFindAPI) {
 
 IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestFindAPI_findupdate) {
   TestHelper("testFindAPI_findupdate", "web_view/shim", NO_TEST_SERVER);
+}
+
+IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestLoadDataAPI) {
+  TestHelper("testLoadDataAPI", "web_view/shim", NEEDS_TEST_SERVER);
 }
 
 // <webview> screenshot capture fails with ubercomp.

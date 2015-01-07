@@ -98,8 +98,8 @@ DWORD OpenService(ScopedScHandle* service_out) {
     return error;
   }
 
-  ScopedScHandle service(
-      ::OpenServiceW(scmanager, kWindowsServiceName, SERVICE_QUERY_STATUS));
+  ScopedScHandle service(::OpenServiceW(scmanager.Get(), kWindowsServiceName,
+                                        SERVICE_QUERY_STATUS));
   if (!service.IsValid()) {
     DWORD error = GetLastError();
     if (error != ERROR_SERVICE_DOES_NOT_EXIST) {
@@ -153,7 +153,7 @@ DaemonController::State DaemonControllerDelegateWin::GetState() {
   switch (error) {
     case ERROR_SUCCESS: {
       SERVICE_STATUS status;
-      if (::QueryServiceStatus(service, &status)) {
+      if (::QueryServiceStatus(service.Get(), &status)) {
         return ConvertToDaemonState(status.dwCurrentState);
       } else {
         PLOG(ERROR) << "Failed to query the state of the '"
@@ -173,13 +173,13 @@ scoped_ptr<base::DictionaryValue> DaemonControllerDelegateWin::GetConfig() {
   // Configure and start the Daemon Controller if it is installed already.
   HRESULT hr = ActivateController();
   if (FAILED(hr))
-    return scoped_ptr<base::DictionaryValue>();
+    return nullptr;
 
   // Get the host configuration.
   ScopedBstr host_config;
   hr = control_->GetConfig(host_config.Receive());
   if (FAILED(hr))
-    return scoped_ptr<base::DictionaryValue>();
+    return nullptr;
 
   // Parse the string into a dictionary.
   base::string16 file_content(
@@ -189,7 +189,7 @@ scoped_ptr<base::DictionaryValue> DaemonControllerDelegateWin::GetConfig() {
           base::JSON_ALLOW_TRAILING_COMMAS));
 
   if (!config || config->GetType() != base::Value::TYPE_DICTIONARY)
-    return scoped_ptr<base::DictionaryValue>();
+    return nullptr;
 
   return scoped_ptr<base::DictionaryValue>(
       static_cast<base::DictionaryValue*>(config.release()));

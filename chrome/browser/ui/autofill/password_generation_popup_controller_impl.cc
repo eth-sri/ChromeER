@@ -156,7 +156,7 @@ void PasswordGenerationPopupControllerImpl::PasswordAccepted() {
 
 int PasswordGenerationPopupControllerImpl::GetMinimumWidth() {
   // Minimum width in pixels.
-  const int minimum_width = 360;
+  const int minimum_width = 350;
 
   // If the width of the field is longer than the minimum, use that instead.
   return std::max(minimum_width,
@@ -217,7 +217,7 @@ void PasswordGenerationPopupControllerImpl::OnSavedPasswordsLinkClicked() {
       chrome::FindBrowserWithWebContents(controller_common_.web_contents());
   content::OpenURLParams params(
       GURL(chrome::kPasswordManagerAccountDashboardURL), content::Referrer(),
-      NEW_FOREGROUND_TAB, content::PAGE_TRANSITION_LINK, false);
+      NEW_FOREGROUND_TAB, ui::PAGE_TRANSITION_LINK, false);
   browser->OpenURL(params);
 }
 

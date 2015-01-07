@@ -275,6 +275,7 @@ void SimUnlockUIHTMLSource::StartDataRequest(
   strings.SetString("title",
       l10n_util::GetStringUTF16(IDS_SIM_UNLOCK_ENTER_PIN_TITLE));
   strings.SetString("ok", l10n_util::GetStringUTF16(IDS_OK));
+  strings.SetString("cancel", l10n_util::GetStringUTF16(IDS_CANCEL));
   strings.SetString("enterPinTitle",
       l10n_util::GetStringUTF16(IDS_SIM_UNLOCK_ENTER_PIN_TITLE));
   strings.SetString("enterPinMessage",
@@ -330,7 +331,6 @@ void SimUnlockUIHTMLSource::StartDataRequest(
           IDR_SIM_UNLOCK_HTML));
 
   std::string full_html = webui::GetI18nTemplateHtml(html, &strings);
-
   callback.Run(base::RefCountedString::TakeString(&full_html));
 }
 

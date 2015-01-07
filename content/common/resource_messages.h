@@ -11,6 +11,7 @@
 #include "base/process/process.h"
 #include "content/common/content_param_traits_macros.h"
 #include "content/common/resource_request_body.h"
+#include "content/common/service_worker/service_worker_types.h"
 #include "content/public/common/common_param_traits.h"
 #include "content/public/common/resource_response.h"
 #include "ipc/ipc_message_macros.h"
@@ -84,15 +85,18 @@ IPC_ENUM_TRAITS_MAX_VALUE( \
     net::HttpResponseInfo::ConnectionInfo, \
     net::HttpResponseInfo::NUM_OF_CONNECTION_INFOS - 1)
 
+IPC_ENUM_TRAITS_MAX_VALUE(content::FetchRequestMode,
+                          content::FETCH_REQUEST_MODE_LAST)
+
 IPC_STRUCT_TRAITS_BEGIN(content::ResourceResponseHead)
 IPC_STRUCT_TRAITS_PARENT(content::ResourceResponseInfo)
-  IPC_STRUCT_TRAITS_MEMBER(error_code)
   IPC_STRUCT_TRAITS_MEMBER(request_start)
   IPC_STRUCT_TRAITS_MEMBER(response_start)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(content::SyncLoadResult)
   IPC_STRUCT_TRAITS_PARENT(content::ResourceResponseHead)
+  IPC_STRUCT_TRAITS_MEMBER(error_code)
   IPC_STRUCT_TRAITS_MEMBER(final_url)
   IPC_STRUCT_TRAITS_MEMBER(data)
 IPC_STRUCT_TRAITS_END()
@@ -120,6 +124,9 @@ IPC_STRUCT_TRAITS_BEGIN(content::ResourceResponseInfo)
   IPC_STRUCT_TRAITS_MEMBER(socket_address)
   IPC_STRUCT_TRAITS_MEMBER(was_fetched_via_service_worker)
   IPC_STRUCT_TRAITS_MEMBER(original_url_via_service_worker)
+  IPC_STRUCT_TRAITS_MEMBER(service_worker_fetch_start)
+  IPC_STRUCT_TRAITS_MEMBER(service_worker_fetch_ready)
+  IPC_STRUCT_TRAITS_MEMBER(service_worker_fetch_end)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(net::RedirectInfo)
@@ -185,6 +192,12 @@ IPC_STRUCT_BEGIN(ResourceHostMsg_Request)
   // or kInvalidServiceWorkerProviderId.
   IPC_STRUCT_MEMBER(int, service_worker_provider_id)
 
+  // True if the request should not be handled by the ServiceWorker.
+  IPC_STRUCT_MEMBER(bool, skip_service_worker)
+
+  // The request mode passed to the ServiceWorker.
+  IPC_STRUCT_MEMBER(content::FetchRequestMode, fetch_request_mode)
+
   // Optional resource request body (may be null).
   IPC_STRUCT_MEMBER(scoped_refptr<content::ResourceRequestBody>,
                     request_body)
@@ -210,7 +223,7 @@ IPC_STRUCT_BEGIN(ResourceHostMsg_Request)
   // -1 if unknown / invalid.
   IPC_STRUCT_MEMBER(int, parent_render_frame_id)
 
-  IPC_STRUCT_MEMBER(content::PageTransition, transition_type)
+  IPC_STRUCT_MEMBER(ui::PageTransition, transition_type)
 
   // For navigations, whether this navigation should replace the current session
   // history entry on commit.

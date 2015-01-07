@@ -35,9 +35,11 @@ static_library("omnibox") {
     "url_prefix.h",
   ]
 
+  public_deps = [
+    "//components/metrics/proto",
+  ]
   deps = [
     "//base",
-    "//components/metrics/proto",
     "//components/resources",
     "//components/search_engines",
     "//components/strings",
@@ -46,10 +48,6 @@ static_library("omnibox") {
     "//net",
     "//ui/base",
     "//url",
-  ]
-
-  forward_dependent_configs_from = [
-    "//components/metrics/proto",
   ]
 }
 
@@ -67,11 +65,13 @@ static_library("test_support") {
 }
 
 source_set("unit_tests") {
+  testonly = true
   sources = [
     "answers_cache_unittest.cc",
     "autocomplete_input_unittest.cc",
     "autocomplete_match_unittest.cc",
     "autocomplete_result_unittest.cc",
+    "base_search_provider_unittest.cc",
     "keyword_provider_unittest.cc",
     "omnibox_field_trial_unittest.cc",
   ]
@@ -79,6 +79,7 @@ source_set("unit_tests") {
   deps = [
     ":omnibox",
     ":test_support",
+    "//testing/gmock",
     "//testing/gtest",
   ]
 }

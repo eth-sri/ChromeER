@@ -14,7 +14,10 @@
 #include "gpu/command_buffer/common/mailbox_holder.h"
 #include "media/base/limits.h"
 #include "media/base/video_util.h"
+
+#if !defined(MEDIA_FOR_CAST_IOS)
 #include "third_party/skia/include/core/SkBitmap.h"
+#endif
 
 namespace media {
 
@@ -181,11 +184,13 @@ scoped_refptr<VideoFrame> VideoFrame::WrapNativeTexture(
   return frame;
 }
 
+#if !defined(MEDIA_FOR_CAST_IOS)
 void VideoFrame::ReadPixelsFromNativeTexture(const SkBitmap& pixels) {
   DCHECK_EQ(format_, NATIVE_TEXTURE);
   if (!read_pixels_cb_.is_null())
     read_pixels_cb_.Run(pixels);
 }
+#endif
 
 // static
 scoped_refptr<VideoFrame> VideoFrame::WrapExternalPackedMemory(
@@ -745,7 +750,8 @@ int VideoFrame::stride(size_t plane) const {
 }
 
 // static
-int VideoFrame::RowBytes(size_t plane, VideoFrame::Format format, int width) {
+size_t VideoFrame::RowBytes(size_t plane, VideoFrame::Format format,
+                            int width) {
   DCHECK(IsValidPlane(plane, format));
   switch (format) {
     case VideoFrame::YV24:
@@ -809,10 +815,10 @@ int VideoFrame::row_bytes(size_t plane) const {
   return RowBytes(plane, format_, coded_size_.width());
 }
 
-int VideoFrame::rows(size_t plane) const {
-  DCHECK(IsValidPlane(plane, format_));
-  int height = coded_size_.height();
-  switch (format_) {
+// static
+size_t VideoFrame::Rows(size_t plane, VideoFrame::Format format, int height) {
+  DCHECK(IsValidPlane(plane, format));
+  switch (format) {
     case VideoFrame::YV24:
     case VideoFrame::YV16:
       switch (plane) {
@@ -866,9 +872,13 @@ int VideoFrame::rows(size_t plane) const {
     case VideoFrame::NATIVE_TEXTURE:
       break;
   }
-  NOTREACHED() << "Unsupported video frame format/plane: "
-               << format_ << "/" << plane;
+  NOTREACHED() << "Unsupported video frame format/plane: " << format << "/"
+               << plane;
   return 0;
+}
+
+int VideoFrame::rows(size_t plane) const {
+  return Rows(plane, format_, coded_size_.height());
 }
 
 uint8* VideoFrame::data(size_t plane) const {

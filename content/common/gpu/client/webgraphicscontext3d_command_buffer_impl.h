@@ -142,8 +142,7 @@ class WebGraphicsContext3DCommandBufferImpl
     return mem_limits_.mapped_memory_reclaim_limit;
   }
 
-  // WebGraphicsContext3DImpl methods
-  virtual bool InitializeOnCurrentThread() OVERRIDE;
+  CONTENT_EXPORT bool InitializeOnCurrentThread();
 
   //----------------------------------------------------------------------
   // WebGraphicsContext3D methods
@@ -199,8 +198,6 @@ class WebGraphicsContext3DCommandBufferImpl
 
   gfx::GpuPreference gpu_preference_;
 
-  base::WeakPtrFactory<WebGraphicsContext3DCommandBufferImpl> weak_ptr_factory_;
-
   scoped_ptr<CommandBufferProxyImpl> command_buffer_;
   scoped_ptr<gpu::gles2::GLES2CmdHelper> gles2_helper_;
   scoped_ptr<gpu::TransferBuffer> transfer_buffer_;
@@ -209,6 +206,11 @@ class WebGraphicsContext3DCommandBufferImpl
   Error last_error_;
   SharedMemoryLimits mem_limits_;
   scoped_refptr<ShareGroup> share_group_;
+
+  // Member variables should appear before the WeakPtrFactory, to ensure
+  // that any WeakPtrs to Controller are invalidated before its members
+  // variable's destructors are executed, rendering them invalid.
+  base::WeakPtrFactory<WebGraphicsContext3DCommandBufferImpl> weak_ptr_factory_;
 };
 
 }  // namespace content

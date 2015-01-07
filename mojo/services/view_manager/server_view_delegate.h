@@ -22,7 +22,10 @@ class MOJO_VIEW_MANAGER_EXPORT ServerViewDelegate {
   // the hierarchy).
   virtual void OnViewDestroyed(const ServerView* view) = 0;
 
-  // Invoked when the hierarchy has changed.
+  virtual void OnWillChangeViewHierarchy(const ServerView* view,
+                                         const ServerView* new_parent,
+                                         const ServerView* old_parent) = 0;
+
   virtual void OnViewHierarchyChanged(const ServerView* view,
                                       const ServerView* new_parent,
                                       const ServerView* old_parent) = 0;
@@ -31,7 +34,13 @@ class MOJO_VIEW_MANAGER_EXPORT ServerViewDelegate {
                                    const gfx::Rect& old_bounds,
                                    const gfx::Rect& new_bounds) = 0;
 
-  virtual void OnViewBitmapChanged(const ServerView* view) = 0;
+  virtual void OnViewSurfaceIdChanged(const ServerView* view) = 0;
+
+  virtual void OnViewReordered(const ServerView* view,
+                               const ServerView* relative,
+                               OrderDirection direction) = 0;
+
+  virtual void OnWillChangeViewVisibility(const ServerView* view) = 0;
 
  protected:
   virtual ~ServerViewDelegate() {}

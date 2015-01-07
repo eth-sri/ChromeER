@@ -10,6 +10,20 @@
         ],
       },
     }],
+    ['chromeos==1', {
+      'variables': {
+        'isolate_dependency_tracked': [
+          '<(PRODUCT_DIR)/content_shell.pak',
+        ],
+      },
+    }],
+    ['OS=="linux" or OS=="mac" or OS=="win"', {
+      'variables': {
+        'isolate_dependency_tracked': [
+          '<(PRODUCT_DIR)/content_shell.pak',
+        ],
+      },
+    }],
     ['OS=="android" or OS=="linux" or OS=="mac" or OS=="win"', {
       'variables': {
         'isolate_dependency_untracked': [
@@ -26,6 +40,7 @@
           '<(PRODUCT_DIR)',
           '<(PRODUCT_DIR)/content_browsertests<(EXECUTABLE_SUFFIX)',
           '--test-launcher-bot-mode',
+          '--lsan=<(lsan)',
         ],
         'isolate_dependency_tracked': [
           '../testing/xvfb.py',
@@ -33,6 +48,12 @@
           '<(PRODUCT_DIR)/libffmpegsumo.so',
           '<(PRODUCT_DIR)/libosmesa.so',
           '<(PRODUCT_DIR)/libppapi_tests.so',
+        ],
+      },
+    }],
+    ['OS=="linux" and use_ozone==0', {
+      'variables': {
+        'isolate_dependency_tracked': [
           '<(PRODUCT_DIR)/xdisplaycheck<(EXECUTABLE_SUFFIX)',
         ],
       },
@@ -85,6 +106,10 @@
           '<(PRODUCT_DIR)/plugins/npapi_test_plugin.dll',
           '<(PRODUCT_DIR)/ppapi_tests.dll',
         ],
+      },
+    }],
+    ['OS=="win" and (fastbuild==0 or fastbuild==1)', {
+      'variables': {
         'isolate_dependency_untracked': [
           '<(PRODUCT_DIR)/content_browsertests.exe.pdb',
         ],
@@ -92,6 +117,6 @@
     }],
   ],
   'includes': [
-    '../third_party/icu/icu.isolate',
+    '../base/base.isolate',
   ],
 }

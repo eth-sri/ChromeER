@@ -16,10 +16,6 @@
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/invalidate_type.h"
 #include "content/public/browser/navigation_entry.h"
-#include "content/public/browser/notification_details.h"
-#include "content/public/browser/notification_service.h"
-#include "content/public/browser/notification_source.h"
-#include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/resource_dispatcher_host.h"
 #include "content/public/browser/web_contents.h"
@@ -27,15 +23,14 @@
 #include "content/public/common/media_stream_request.h"
 #include "extensions/browser/app_window/app_delegate.h"
 #include "extensions/browser/app_window/app_web_contents_helper.h"
+#include "extensions/browser/app_window/app_window_client.h"
 #include "extensions/browser/app_window/app_window_geometry_cache.h"
 #include "extensions/browser/app_window/app_window_registry.h"
-#include "extensions/browser/app_window/apps_client.h"
 #include "extensions/browser/app_window/native_app_window.h"
 #include "extensions/browser/app_window/size_constraints.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/extensions_browser_client.h"
-#include "extensions/browser/notification_types.h"
 #include "extensions/browser/process_manager.h"
 #include "extensions/browser/suggest_permission_util.h"
 #include "extensions/browser/view_type_utils.h"
@@ -44,7 +39,9 @@
 #include "extensions/common/manifest_handlers/icons_handler.h"
 #include "extensions/common/permissions/permissions_data.h"
 #include "extensions/common/switches.h"
+#include "extensions/grit/extensions_browser_resources.h"
 #include "third_party/skia/include/core/SkRegion.h"
+#include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/screen.h"
 
 #if !defined(OS_MACOSX)
@@ -155,12 +152,14 @@ AppWindow::CreateParams::CreateParams()
       active_frame_color(SK_ColorBLACK),
       inactive_frame_color(SK_ColorBLACK),
       alpha_enabled(false),
+      is_ime_window(false),
       creator_process_id(0),
       state(ui::SHOW_STATE_DEFAULT),
       hidden(false),
       resizable(true),
       focused(true),
-      always_on_top(false) {
+      always_on_top(false),
+      visible_on_all_workspaces(false) {
 }
 
 AppWindow::CreateParams::~CreateParams() {}
@@ -276,9 +275,9 @@ void AppWindow::Init(const GURL& url,
 
   requested_alpha_enabled_ = new_params.alpha_enabled;
 
-  AppsClient* apps_client = AppsClient::Get();
+  AppWindowClient* app_window_client = AppWindowClient::Get();
   native_app_window_.reset(
-      apps_client->CreateNativeAppWindow(this, new_params));
+      app_window_client->CreateNativeAppWindow(this, new_params));
 
   helper_.reset(new AppWebContentsHelper(
       browser_context_, extension_id_, web_contents, app_delegate_.get()));
@@ -287,8 +286,6 @@ void AppWindow::Init(const GURL& url,
       new web_modal::PopupManager(GetWebContentsModalDialogHost()));
   popup_manager_->RegisterWith(web_contents);
 
-  // Prevent the browser process from shutting down while this window exists.
-  apps_client->IncrementKeepAliveCount();
   UpdateExtensionAppIcon();
   AppWindowRegistry::Get(browser_context_)->AddAppWindow(this);
 
@@ -311,21 +308,7 @@ void AppWindow::Init(const GURL& url,
 
   OnNativeWindowChanged();
 
-  // When the render view host is changed, the native window needs to know
-  // about it in case it has any setup to do to make the renderer appear
-  // properly. In particular, on Windows, the view's clickthrough region needs
-  // to be set.
-  ExtensionsBrowserClient* client = ExtensionsBrowserClient::Get();
-  registrar_.Add(this,
-                 NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
-                 content::Source<content::BrowserContext>(
-                     client->GetOriginalContext(browser_context_)));
-  // Update the app menu if an ephemeral app becomes installed.
-  registrar_.Add(
-      this,
-      NOTIFICATION_EXTENSION_WILL_BE_INSTALLED_DEPRECATED,
-      content::Source<content::BrowserContext>(
-          client->GetOriginalContext(browser_context_)));
+  ExtensionRegistry::Get(browser_context_)->AddObserver(this);
 
   // Close when the browser process is exiting.
   app_delegate_->SetTerminatingCallback(
@@ -347,11 +330,7 @@ void AppWindow::Init(const GURL& url,
 }
 
 AppWindow::~AppWindow() {
-  // Unregister now to prevent getting notified if we're the last window open.
-  app_delegate_->SetTerminatingCallback(base::Closure());
-
-  // Remove shutdown prevention.
-  AppsClient::Get()->DecrementKeepAliveCount();
+  ExtensionRegistry::Get(browser_context_)->RemoveObserver(this);
 }
 
 void AppWindow::RequestMediaAccessPermission(
@@ -360,6 +339,13 @@ void AppWindow::RequestMediaAccessPermission(
     const content::MediaResponseCallback& callback) {
   DCHECK_EQ(AppWindow::web_contents(), web_contents);
   helper_->RequestMediaAccessPermission(request, callback);
+}
+
+bool AppWindow::CheckMediaAccessPermission(content::WebContents* web_contents,
+                                           const GURL& security_origin,
+                                           content::MediaStreamType type) {
+  DCHECK_EQ(AppWindow::web_contents(), web_contents);
+  return helper_->CheckMediaAccessPermission(security_origin, type);
 }
 
 WebContents* AppWindow::OpenURLFromTab(WebContents* source,
@@ -808,11 +794,15 @@ void AppWindow::UpdateExtensionAppIcon() {
   if (!extension)
     return;
 
+  gfx::ImageSkia app_default_icon =
+      *ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
+          IDR_APP_DEFAULT_ICON);
+
   app_icon_image_.reset(new IconImage(browser_context(),
                                       extension,
                                       IconsInfo::GetIcons(extension),
                                       app_delegate_->PreferredIconSize(),
-                                      app_delegate_->GetAppDefaultIcon(),
+                                      app_default_icon,
                                       this));
 
   // Triggers actual image loading with 1x resources. The 2x resource will
@@ -934,28 +924,22 @@ bool AppWindow::IsFullscreenForTabOrPending(const content::WebContents* source)
   return IsHtmlApiFullscreen();
 }
 
-void AppWindow::Observe(int type,
-                        const content::NotificationSource& source,
-                        const content::NotificationDetails& details) {
-  switch (type) {
-    case NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED: {
-      const Extension* unloaded_extension =
-          content::Details<UnloadedExtensionInfo>(details)->extension;
-      if (extension_id_ == unloaded_extension->id())
-        native_app_window_->Close();
-      break;
-    }
-    case NOTIFICATION_EXTENSION_WILL_BE_INSTALLED_DEPRECATED: {
-      const Extension* installed_extension =
-          content::Details<const InstalledExtensionInfo>(details)->extension;
-      DCHECK(installed_extension);
-      if (installed_extension->id() == extension_id())
-        native_app_window_->UpdateShelfMenu();
-      break;
-    }
-    default:
-      NOTREACHED() << "Received unexpected notification";
-  }
+void AppWindow::OnExtensionUnloaded(content::BrowserContext* browser_context,
+                                    const Extension* extension,
+                                    UnloadedExtensionInfo::Reason reason) {
+  if (extension_id_ == extension->id())
+    native_app_window_->Close();
+}
+
+void AppWindow::OnExtensionWillBeInstalled(
+    content::BrowserContext* browser_context,
+    const Extension* extension,
+    bool is_update,
+    bool from_ephemeral,
+    const std::string& old_name) {
+  // Update the app menu if an ephemeral app becomes installed.
+  if (extension_id_ == extension->id())
+    native_app_window_->UpdateShelfMenu();
 }
 
 void AppWindow::SetWebContentsBlocked(content::WebContents* web_contents,

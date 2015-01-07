@@ -13,10 +13,10 @@
 #include "build/build_config.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
-#include "content/public/common/page_transition_types.h"
 #include "content/public/test/test_renderer_host.h"
 #include "ui/base/ime/dummy_text_input_client.h"
 #include "ui/base/layout.h"
+#include "ui/base/page_transition_types.h"
 #include "ui/gfx/vector2d_f.h"
 
 // This file provides a testing framework for mocking out the RenderProcessHost
@@ -44,7 +44,7 @@ class TestWebContents;
 void InitNavigateParams(FrameHostMsg_DidCommitProvisionalLoad_Params* params,
                         int page_id,
                         const GURL& url,
-                        PageTransition transition_type);
+                        ui::PageTransition transition_type);
 
 // TestRenderViewHostView ------------------------------------------------------
 
@@ -116,31 +116,19 @@ class TestRenderWidgetHostView : public RenderWidgetHostViewBase {
   virtual void CopyFromCompositingSurface(
       const gfx::Rect& src_subrect,
       const gfx::Size& dst_size,
-      const base::Callback<void(bool, const SkBitmap&)>& callback,
+      CopyFromCompositingSurfaceCallback& callback,
       const SkColorType color_type) OVERRIDE;
   virtual void CopyFromCompositingSurfaceToVideoFrame(
       const gfx::Rect& src_subrect,
       const scoped_refptr<media::VideoFrame>& target,
       const base::Callback<void(bool)>& callback) OVERRIDE;
   virtual bool CanCopyToVideoFrame() const OVERRIDE;
-  virtual void AcceleratedSurfaceInitialized(int host_id,
-                                             int route_id) OVERRIDE;
-  virtual void AcceleratedSurfaceBuffersSwapped(
-      const GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params& params,
-      int gpu_host_id) OVERRIDE;
-  virtual void AcceleratedSurfacePostSubBuffer(
-      const GpuHostMsg_AcceleratedSurfacePostSubBuffer_Params& params,
-      int gpu_host_id) OVERRIDE;
-  virtual void AcceleratedSurfaceSuspend() OVERRIDE;
-  virtual void AcceleratedSurfaceRelease() OVERRIDE {}
   virtual bool HasAcceleratedSurface(const gfx::Size& desired_size) OVERRIDE;
 #if defined(OS_MACOSX)
   virtual bool PostProcessEventForPluginIme(
       const NativeWebKeyboardEvent& event) OVERRIDE;
-#elif defined(OS_ANDROID)
-  virtual void ShowDisambiguationPopup(
-      const gfx::Rect& target_rect,
-      const SkBitmap& zoomed_bitmap) OVERRIDE {}
+#endif
+#if defined(OS_ANDROID)
   virtual void LockCompositingSurface() OVERRIDE {}
   virtual void UnlockCompositingSurface() OVERRIDE {}
 #endif
@@ -223,9 +211,7 @@ class TestRenderViewHost
   // RenderViewHostTester implementation.  Note that CreateRenderView
   // is not specified since it is synonymous with the one from
   // RenderViewHostImpl, see below.
-  virtual void SendBeforeUnloadACK(bool proceed) OVERRIDE;
   virtual void SetContentsMimeType(const std::string& mime_type) OVERRIDE;
-  virtual void SimulateSwapOutACK() OVERRIDE;
   virtual void SimulateWasHidden() OVERRIDE;
   virtual void SimulateWasShown() OVERRIDE;
 
@@ -233,8 +219,10 @@ class TestRenderViewHost
   // TestRenderFrameHost should be used.
   virtual void SendNavigate(int page_id, const GURL& url) OVERRIDE;
   virtual void SendFailedNavigate(int page_id, const GURL& url) OVERRIDE;
-  virtual void SendNavigateWithTransition(int page_id, const GURL& url,
-                                          PageTransition transition) OVERRIDE;
+  virtual void SendNavigateWithTransition(
+      int page_id,
+      const GURL& url,
+      ui::PageTransition transition) OVERRIDE;
 
   // Calls OnNavigate on the RenderViewHost with the given information,
   // including a custom original request URL.  Sets the rest of the
@@ -250,7 +238,7 @@ class TestRenderViewHost
       FrameHostMsg_DidCommitProvisionalLoad_Params* params);
 
   void TestOnUpdateStateWithFile(
-      int process_id, const base::FilePath& file_path);
+      int page_id, const base::FilePath& file_path);
 
   void TestOnStartDragging(const DropData& drop_data);
 
@@ -264,18 +252,6 @@ class TestRenderViewHost
   // check whether the RenderView has crashed or not.
   void set_render_view_created(bool created) {
     render_view_created_ = created;
-  }
-
-  // Returns whether the RenderViewHost is currently waiting to hear the result
-  // of a before unload handler from the renderer.
-  bool is_waiting_for_beforeunload_ack() const {
-    return is_waiting_for_beforeunload_ack_;
-  }
-
-  // Sets whether the RenderViewHost is currently swapped out, and thus
-  // filtering messages from the renderer.
-  void set_rvh_state(RenderViewHostImplState rvh_state) {
-    rvh_state_ = rvh_state;
   }
 
   // If set, navigations will appear to have loaded through a proxy
@@ -315,7 +291,7 @@ class TestRenderViewHost
 
   void SendNavigateWithTransitionAndResponseCode(int page_id,
                                                  const GURL& url,
-                                                 PageTransition transition,
+                                                 ui::PageTransition transition,
                                                  int response_code);
 
   // Calls OnNavigate on the RenderViewHost with the given information.
@@ -324,7 +300,7 @@ class TestRenderViewHost
   void SendNavigateWithParameters(
       int page_id,
       const GURL& url,
-      PageTransition transition,
+      ui::PageTransition transition,
       const GURL& original_request_url,
       int response_code,
       const base::FilePath* file_path_for_history_item);

@@ -379,7 +379,6 @@ def SetupGitDepot(opts, custom_deps):
     if os.path.isfile(os.path.join('src', FILE_DEPS_GIT)):
       cwd = os.getcwd()
       os.chdir('src')
-      passed_deps_check = True
       if passed_deps_check:
         passed_deps_check = RemoveThirdPartyDirectory('libjingle')
       if passed_deps_check:
@@ -441,7 +440,6 @@ def RunGit(command, cwd=None):
     A tuple of the output and return code.
   """
   command = ['git'] + command
-
   return RunProcessAndRetrieveOutput(command, cwd=cwd)
 
 

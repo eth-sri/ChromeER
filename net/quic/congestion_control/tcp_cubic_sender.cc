@@ -36,6 +36,7 @@ TcpCubicSender::TcpCubicSender(
       rtt_stats_(rtt_stats),
       stats_(stats),
       reno_(reno),
+      num_connections_(2),
       congestion_window_count_(0),
       receive_window_(kDefaultSocketReceiveBuffer),
       prr_out_(0),
@@ -77,6 +78,11 @@ void TcpCubicSender::SetFromConfig(const QuicConfig& config, bool is_server) {
   }
 }
 
+void TcpCubicSender::SetNumEmulatedConnections(int num_connections) {
+  num_connections_ = max(1, num_connections);
+  cubic_.SetNumConnections(num_connections_);
+}
+
 void TcpCubicSender::OnIncomingQuicCongestionFeedbackFrame(
     const QuicCongestionFeedbackFrame& feedback,
     QuicTime feedback_receive_time) {
@@ -88,19 +94,19 @@ void TcpCubicSender::OnIncomingQuicCongestionFeedbackFrame(
 void TcpCubicSender::OnCongestionEvent(
     bool rtt_updated,
     QuicByteCount bytes_in_flight,
-    const CongestionMap& acked_packets,
-    const CongestionMap& lost_packets) {
+    const CongestionVector& acked_packets,
+    const CongestionVector& lost_packets) {
   if (rtt_updated && InSlowStart() &&
       hybrid_slow_start_.ShouldExitSlowStart(rtt_stats_->latest_rtt(),
                                              rtt_stats_->min_rtt(),
                                              congestion_window_)) {
     slowstart_threshold_ = congestion_window_;
   }
-  for (CongestionMap::const_iterator it = lost_packets.begin();
+  for (CongestionVector::const_iterator it = lost_packets.begin();
        it != lost_packets.end(); ++it) {
     OnPacketLost(it->first, bytes_in_flight);
   }
-  for (CongestionMap::const_iterator it = acked_packets.begin();
+  for (CongestionVector::const_iterator it = acked_packets.begin();
        it != acked_packets.end(); ++it) {
     OnPacketAcked(it->first, it->second.bytes_sent, bytes_in_flight);
   }
@@ -273,10 +279,11 @@ void TcpCubicSender::MaybeIncreaseCwnd(
   }
   // Congestion avoidance
   if (reno_) {
-    // Classic Reno congestion avoidance provided for testing.
-
+    // Classic Reno congestion avoidance.
     ++congestion_window_count_;
-    if (congestion_window_count_ >= congestion_window_) {
+    // Divide by num_connections to smoothly increase the CWND at a faster
+    // rate than conventional Reno.
+    if (congestion_window_count_ * num_connections_ >= congestion_window_) {
       ++congestion_window_;
       congestion_window_count_ = 0;
     }

@@ -51,6 +51,10 @@ void ShowManagePasswordsBubble(content::WebContents* webContents) {
   ManagePasswordsUIController* controller =
       ManagePasswordsUIController::FromWebContents(webContents);
   NSWindow* window = webContents->GetTopLevelNativeWindow();
+  if (!window) {
+    // The tab isn't active right now.
+    return;
+  }
   BrowserWindowController* bwc =
       [BrowserWindowController browserWindowControllerForWindow:window];
   ManagePasswordsBubbleCocoa::ShowBubble(
@@ -59,6 +63,10 @@ void ShowManagePasswordsBubble(content::WebContents* webContents) {
           ? ManagePasswordsBubble::AUTOMATIC
           : ManagePasswordsBubble::USER_ACTION,
       [bwc locationBarBridge]->manage_passwords_decoration()->icon());
+}
+
+void CloseManagePasswordsBubble(content::WebContents* web_contents) {
+  // The bubble is closed when it loses the focus.
 }
 }  // namespace chrome
 

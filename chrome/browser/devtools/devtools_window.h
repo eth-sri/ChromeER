@@ -33,7 +33,6 @@ class DevToolsWindow : public DevToolsUIBindings::Delegate,
    public:
     explicit ObserverWithAccessor(content::WebContents* web_contents);
     virtual ~ObserverWithAccessor();
-    content::WebContents* GetWebContents();
 
    private:
     DISALLOW_COPY_AND_ASSIGN(ObserverWithAccessor);
@@ -225,8 +224,6 @@ class DevToolsWindow : public DevToolsUIBindings::Delegate,
       bool force_open,
       const DevToolsToggleAction& action,
       const std::string& settings);
-
-  static std::string GetDevToolsWindowPlacementPrefKey();
 
   // content::WebContentsDelegate:
   virtual content::WebContents* OpenURLFromTab(

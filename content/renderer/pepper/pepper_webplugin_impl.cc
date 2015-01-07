@@ -141,8 +141,11 @@ v8::Local<v8::Object> PepperWebPluginImpl::v8ScriptableObject(
       V8ObjectVar::FromPPVar(instance_object_));
   // If there's an InstanceObject, tell the Instance's MessageChannel to pass
   // any non-postMessage calls to it.
-  if (object_var.get())
-    instance_->message_channel()->SetPassthroughObject(object_var->GetHandle());
+  if (object_var.get()) {
+    MessageChannel* message_channel = instance_->message_channel();
+    if (message_channel)
+      message_channel->SetPassthroughObject(object_var->GetHandle());
+  }
 
   v8::Handle<v8::Object> result = instance_->GetMessageChannelObject();
   return result;

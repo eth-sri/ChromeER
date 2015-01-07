@@ -60,9 +60,10 @@
 #include "chrome/browser/safe_browsing/safe_browsing_service.h"
 #include "chrome/browser/shell_integration.h"
 #include "chrome/browser/status_icons/status_tray.h"
-#include "chrome/browser/ui/apps/chrome_apps_client.h"
+#include "chrome/browser/ui/apps/chrome_app_window_client.h"
 #include "chrome/browser/ui/browser_dialogs.h"
 #include "chrome/browser/ui/browser_finder.h"
+#include "chrome/browser/ui/user_manager.h"
 #include "chrome/browser/web_resource/promo_resource_service.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
@@ -200,7 +201,10 @@ BrowserProcessImpl::BrowserProcessImpl(
 #endif
 
 #if defined(ENABLE_EXTENSIONS)
-  extensions::AppsClient::Set(ChromeAppsClient::GetInstance());
+#if !defined(USE_ATHENA)
+  // Athena sets its own instance during Athena's init process.
+  extensions::AppWindowClient::Set(ChromeAppWindowClient::GetInstance());
+#endif
 
   extension_event_router_forwarder_ = new extensions::EventRouterForwarder;
   ExtensionRendererState::GetInstance()->Init();
@@ -252,7 +256,7 @@ void BrowserProcessImpl::StartTearDown() {
     // The desktop User Manager needs to be closed before the guest profile
     // can be destroyed.
     if (switches::IsNewAvatarMenu())
-      chrome::HideUserManager();
+      UserManager::Hide();
     profile_manager_.reset();
   }
 
@@ -782,8 +786,6 @@ void BrowserProcessImpl::RegisterPrefs(PrefRegistrySimple* registry) {
 
   registry->RegisterBooleanPref(prefs::kAllowCrossOriginAuthPrompt, false);
 
-  registry->RegisterBooleanPref(prefs::kBrowserGuestModeEnabled, true);
-
 #if defined(OS_CHROMEOS) || defined(OS_ANDROID) || defined(OS_IOS)
   registry->RegisterBooleanPref(prefs::kEulaAccepted, false);
 #endif  // defined(OS_CHROMEOS) || defined(OS_ANDROID) || defined(OS_IOS)
@@ -1134,6 +1136,7 @@ void BrowserProcessImpl::CreateGCMDriver() {
   CHECK(PathService::Get(chrome::DIR_GLOBAL_GCM_STORE, &store_path));
   gcm_driver_ = gcm::CreateGCMDriverDesktop(
       make_scoped_ptr(new gcm::GCMClientFactory),
+      local_state(),
       store_path,
       system_request_context());
   // Sign-in is not required for device-level GCM usage. So we just call

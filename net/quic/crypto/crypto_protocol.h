@@ -55,6 +55,7 @@ const QuicTag kTBBR = TAG('T', 'B', 'B', 'R');   // Reduced Buffer Bloat TCP
 const QuicTag kRENO = TAG('R', 'E', 'N', 'O');   // Reno Congestion Control
 const QuicTag kIW10 = TAG('I', 'W', '1', '0');   // Force ICWND to 10
 const QuicTag kPACE = TAG('P', 'A', 'C', 'E');   // Paced TCP cubic
+const QuicTag k1CON = TAG('1', 'C', 'O', 'N');   // Emulate a single connection
 
 // Loss detection algorithm types
 const QuicTag kNACK = TAG('N', 'A', 'C', 'K');   // TCP style nack counting
@@ -81,8 +82,6 @@ const QuicTag kAEAD = TAG('A', 'E', 'A', 'D');   // Authenticated
 const QuicTag kCGST = TAG('C', 'G', 'S', 'T');   // Congestion control
                                                  // feedback types
 const QuicTag kCOPT = TAG('C', 'O', 'P', 'T');   // Connection options
-// kLOSS was 'L', 'O', 'S', 'S', but was changed from a tag vector to a tag.
-const QuicTag kLOSS = TAG('L', 'O', 'S', 'A');   // Loss detection algorithms
 const QuicTag kICSL = TAG('I', 'C', 'S', 'L');   // Idle connection state
                                                  // lifetime
 const QuicTag kKATO = TAG('K', 'A', 'T', 'O');   // Keepalive timeout

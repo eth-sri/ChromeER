@@ -58,15 +58,13 @@ void DriSurface::ResizeCanvas(const gfx::Size& viewport_size) {
 
   // For the display buffers use the mode size since a |viewport_size| smaller
   // than the display size will not scanout.
-  gfx::Size mode_size(controller->get_mode().hdisplay,
-                      controller->get_mode().vdisplay);
   for (size_t i = 0; i < arraysize(buffers_); ++i)
-    buffers_[i] = AllocateBuffer(dri_, mode_size);
+    buffers_[i] = AllocateBuffer(dri_, controller->GetModeSize());
 }
 
 void DriSurface::PresentCanvas(const gfx::Rect& damage) {
   DCHECK(base::MessageLoopForUI::IsCurrent());
-  DCHECK(buffers_[front_buffer_ ^ 1]);
+  DCHECK(buffers_[front_buffer_ ^ 1].get());
 
   HardwareDisplayController* controller = window_delegate_->GetController();
   if (!controller)
@@ -95,7 +93,7 @@ void DriSurface::UpdateNativeSurface(const gfx::Rect& damage) {
 
   // Copy damage region.
   skia::RefPtr<SkImage> image = skia::AdoptRef(surface_->newImageSnapshot());
-  image->draw(canvas, &real_damage, real_damage, NULL);
+  canvas->drawImageRect(image.get(), &real_damage, real_damage, NULL);
 
   last_damage_ = damage;
 }

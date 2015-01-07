@@ -15,7 +15,6 @@
 #include "components/metrics/compression_utils.h"
 #include "components/metrics/metrics_log.h"
 #include "components/metrics/metrics_pref_names.h"
-#include "components/metrics/metrics_service_observer.h"
 #include "components/metrics/metrics_state_manager.h"
 #include "components/metrics/test_metrics_service_client.h"
 #include "components/variations/metrics_util.h"
@@ -31,6 +30,30 @@ void StoreNoClientInfoBackup(const ClientInfo& /* client_info */) {
 scoped_ptr<ClientInfo> ReturnNoBackup() {
   return scoped_ptr<ClientInfo>();
 }
+
+class TestMetricsProvider : public metrics::MetricsProvider {
+ public:
+  explicit TestMetricsProvider(bool has_stability_metrics) :
+      has_stability_metrics_(has_stability_metrics),
+      provide_stability_metrics_called_(false) {
+  }
+
+  virtual bool HasStabilityMetrics() OVERRIDE { return has_stability_metrics_; }
+  virtual void ProvideStabilityMetrics(
+      SystemProfileProto* system_profile_proto) OVERRIDE {
+    provide_stability_metrics_called_ = true;
+  }
+
+  bool provide_stability_metrics_called() const {
+    return provide_stability_metrics_called_;
+  }
+
+ private:
+  bool has_stability_metrics_;
+  bool provide_stability_metrics_called_;
+
+  DISALLOW_COPY_AND_ASSIGN(TestMetricsProvider);
+};
 
 class TestMetricsService : public MetricsService {
  public:
@@ -130,22 +153,6 @@ class MetricsServiceTest : public testing::Test {
   DISALLOW_COPY_AND_ASSIGN(MetricsServiceTest);
 };
 
-class TestMetricsServiceObserver : public MetricsServiceObserver {
- public:
-  TestMetricsServiceObserver(): observed_(0) {}
-  virtual ~TestMetricsServiceObserver() {}
-
-  virtual void OnDidCreateMetricsLog() OVERRIDE {
-    ++observed_;
-  }
-  int observed() const { return observed_; }
-
- private:
-  int observed_;
-
-  DISALLOW_COPY_AND_ASSIGN(TestMetricsServiceObserver);
-};
-
 }  // namespace
 
 TEST_F(MetricsServiceTest, InitialStabilityLogAfterCleanShutDown) {
@@ -155,10 +162,83 @@ TEST_F(MetricsServiceTest, InitialStabilityLogAfterCleanShutDown) {
   TestMetricsServiceClient client;
   TestMetricsService service(
       GetMetricsStateManager(), &client, GetLocalState());
+
+  TestMetricsProvider* test_provider = new TestMetricsProvider(false);
+  service.RegisterMetricsProvider(
+      scoped_ptr<metrics::MetricsProvider>(test_provider));
+
   service.InitializeMetricsRecordingState();
   // No initial stability log should be generated.
   EXPECT_FALSE(service.log_manager()->has_unsent_logs());
   EXPECT_FALSE(service.log_manager()->has_staged_log());
+
+  // The test provider should not have been called upon to provide stability
+  // metrics.
+  EXPECT_FALSE(test_provider->provide_stability_metrics_called());
+}
+
+TEST_F(MetricsServiceTest, InitialStabilityLogAtProviderRequest) {
+  EnableMetricsReporting();
+
+  // Save an existing system profile to prefs, to correspond to what would be
+  // saved from a previous session.
+  TestMetricsServiceClient client;
+  TestMetricsLog log("client", 1, &client, GetLocalState());
+  log.RecordEnvironment(std::vector<metrics::MetricsProvider*>(),
+                        std::vector<variations::ActiveGroupId>(),
+                        0);
+
+  // Record stability build time and version from previous session, so that
+  // stability metrics (including exited cleanly flag) won't be cleared.
+  GetLocalState()->SetInt64(prefs::kStabilityStatsBuildTime,
+                            MetricsLog::GetBuildTime());
+  GetLocalState()->SetString(prefs::kStabilityStatsVersion,
+                             client.GetVersionString());
+
+  // Set the clean exit flag, as that will otherwise cause a stabilty
+  // log to be produced, irrespective provider requests.
+  GetLocalState()->SetBoolean(prefs::kStabilityExitedCleanly, true);
+
+  TestMetricsService service(
+      GetMetricsStateManager(), &client, GetLocalState());
+  // Add a metrics provider that requests a stability log.
+  TestMetricsProvider* test_provider = new TestMetricsProvider(true);
+  service.RegisterMetricsProvider(
+      scoped_ptr<MetricsProvider>(test_provider));
+
+  service.InitializeMetricsRecordingState();
+
+  // The initial stability log should be generated and persisted in unsent logs.
+  MetricsLogManager* log_manager = service.log_manager();
+  EXPECT_TRUE(log_manager->has_unsent_logs());
+  EXPECT_FALSE(log_manager->has_staged_log());
+
+  // The test provider should have been called upon to provide stability
+  // metrics.
+  EXPECT_TRUE(test_provider->provide_stability_metrics_called());
+
+  // Stage the log and retrieve it.
+  log_manager->StageNextLogForUpload();
+  EXPECT_TRUE(log_manager->has_staged_log());
+
+  std::string uncompressed_log;
+  EXPECT_TRUE(GzipUncompress(log_manager->staged_log(),
+                                      &uncompressed_log));
+
+  ChromeUserMetricsExtension uma_log;
+  EXPECT_TRUE(uma_log.ParseFromString(uncompressed_log));
+
+  EXPECT_TRUE(uma_log.has_client_id());
+  EXPECT_TRUE(uma_log.has_session_id());
+  EXPECT_TRUE(uma_log.has_system_profile());
+  EXPECT_EQ(0, uma_log.user_action_event_size());
+  EXPECT_EQ(0, uma_log.omnibox_event_size());
+  EXPECT_EQ(0, uma_log.histogram_event_size());
+  EXPECT_EQ(0, uma_log.profiler_event_size());
+  EXPECT_EQ(0, uma_log.perf_data_size());
+
+  // As there wasn't an unclean shutdown, this log has zero crash count.
+  EXPECT_EQ(0, uma_log.system_profile().stability().crash_count());
 }
 
 TEST_F(MetricsServiceTest, InitialStabilityLogAfterCrash) {
@@ -281,38 +361,6 @@ TEST_F(MetricsServiceTest, RegisterSyntheticTrial) {
   EXPECT_TRUE(HasSyntheticTrial(synthetic_trials, "TestTrial2", "Group2"));
   EXPECT_TRUE(HasSyntheticTrial(synthetic_trials, "TestTrial3", "Group3"));
   service.log_manager_.FinishCurrentLog();
-}
-
-TEST_F(MetricsServiceTest, MetricsServiceObserver) {
-  metrics::TestMetricsServiceClient client;
-  MetricsService service(GetMetricsStateManager(), &client, GetLocalState());
-  TestMetricsServiceObserver observer1;
-  TestMetricsServiceObserver observer2;
-
-  service.AddObserver(&observer1);
-  EXPECT_EQ(0, observer1.observed());
-  EXPECT_EQ(0, observer2.observed());
-
-  service.OpenNewLog();
-  EXPECT_EQ(1, observer1.observed());
-  EXPECT_EQ(0, observer2.observed());
-  service.log_manager_.FinishCurrentLog();
-
-  service.AddObserver(&observer2);
-
-  service.OpenNewLog();
-  EXPECT_EQ(2, observer1.observed());
-  EXPECT_EQ(1, observer2.observed());
-  service.log_manager_.FinishCurrentLog();
-
-  service.RemoveObserver(&observer1);
-
-  service.OpenNewLog();
-  EXPECT_EQ(2, observer1.observed());
-  EXPECT_EQ(2, observer2.observed());
-  service.log_manager_.FinishCurrentLog();
-
-  service.RemoveObserver(&observer2);
 }
 
 }  // namespace metrics

@@ -11,6 +11,9 @@
 #ifndef COMPONENTS_OMNIBOX_SEARCH_PROVIDER_H_
 #define COMPONENTS_OMNIBOX_SEARCH_PROVIDER_H_
 
+#include <string>
+#include <vector>
+
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
@@ -75,15 +78,17 @@ class SearchProvider : public BaseSearchProvider,
  private:
   friend class SearchProviderTest;
   FRIEND_TEST_ALL_PREFIXES(SearchProviderTest, CanSendURL);
+  FRIEND_TEST_ALL_PREFIXES(SearchProviderTest,
+                           DontInlineAutocompleteAsynchronously);
   FRIEND_TEST_ALL_PREFIXES(SearchProviderTest, NavigationInline);
   FRIEND_TEST_ALL_PREFIXES(SearchProviderTest, NavigationInlineDomainClassify);
   FRIEND_TEST_ALL_PREFIXES(SearchProviderTest, NavigationInlineSchemeSubstring);
-  FRIEND_TEST_ALL_PREFIXES(SearchProviderTest, RemoveStaleResultsTest);
   FRIEND_TEST_ALL_PREFIXES(SearchProviderTest, SuggestRelevanceExperiment);
   FRIEND_TEST_ALL_PREFIXES(SearchProviderTest, TestDeleteMatch);
   FRIEND_TEST_ALL_PREFIXES(SearchProviderTest, SuggestQueryUsesToken);
   FRIEND_TEST_ALL_PREFIXES(SearchProviderTest, SessionToken);
   FRIEND_TEST_ALL_PREFIXES(SearchProviderTest, AnswersCache);
+  FRIEND_TEST_ALL_PREFIXES(SearchProviderTest, RemoveExtraAnswers);
   FRIEND_TEST_ALL_PREFIXES(AutocompleteProviderTest, GetDestinationURL);
   FRIEND_TEST_ALL_PREFIXES(InstantExtendedPrefetchTest, ClearPrefetchedResults);
   FRIEND_TEST_ALL_PREFIXES(InstantExtendedPrefetchTest, SetPrefetchQuery);
@@ -139,19 +144,18 @@ class SearchProvider : public BaseSearchProvider,
 
   typedef std::vector<history::KeywordSearchTermVisit> HistoryResults;
 
-  // Removes non-inlineable results until either the top result can inline
-  // autocomplete the current input or verbatim outscores the top result.
-  static void RemoveStaleResults(
-      const base::string16& input,
-      int verbatim_relevance,
-      SearchSuggestionParser::SuggestResults* suggest_results,
-      SearchSuggestionParser::NavigationResults* navigation_results);
-
   // Calculates the relevance score for the keyword verbatim result (if the
   // input matches one of the profile's keyword).
   static int CalculateRelevanceForKeywordVerbatim(
       metrics::OmniboxInputType::Type type,
       bool prefer_keyword);
+
+  // A helper function for UpdateAllOldResults().
+  static void UpdateOldResults(bool minimal_changes,
+                               SearchSuggestionParser::Results* results);
+
+  // Returns the first match in |matches| which might be chosen as default.
+  static ACMatches::iterator FindTopMatch(ACMatches* matches);
 
   // AutocompleteProvider:
   virtual void Start(const AutocompleteInput& input,
@@ -207,12 +211,16 @@ class SearchProvider : public BaseSearchProvider,
   // potentially private data, etc.
   bool IsQuerySuitableForSuggest() const;
 
-  // Removes stale results for both default and keyword providers.  See comments
-  // on RemoveStaleResults().
-  void RemoveAllStaleResults();
+  // Remove existing keyword results if the user is no longer in keyword mode,
+  // and, if |minimal_changes| is false, revise the existing results to
+  // indicate they were received before the last keystroke.
+  void UpdateAllOldResults(bool minimal_changes);
+
+  // Given new asynchronous results, ensure that we don't clobber the current
+  // top results, which were determined synchronously on the last keystroke.
+  void PersistTopSuggestions(SearchSuggestionParser::Results* results);
 
   // Apply calculated relevance scores to the current results.
-  void ApplyCalculatedRelevance();
   void ApplyCalculatedSuggestRelevance(
       SearchSuggestionParser::SuggestResults* list);
   void ApplyCalculatedNavigationRelevance(
@@ -226,6 +234,10 @@ class SearchProvider : public BaseSearchProvider,
 
   // Converts the parsed results to a set of AutocompleteMatches, |matches_|.
   void ConvertResultsToAutocompleteMatches();
+
+  // Remove answer contents from each match in |matches| other than the first
+  // that appears.
+  static void RemoveExtraAnswers(ACMatches* matches);
 
   // Returns an iterator to the first match in |matches_| which might
   // be chosen as default.
@@ -242,20 +254,34 @@ class SearchProvider : public BaseSearchProvider,
       const SearchSuggestionParser::NavigationResults& navigation_results,
       ACMatches* matches);
 
-  // Adds a match for each result in |results| to |map|. |is_keyword| indicates
-  // whether the results correspond to the keyword provider or default provider.
-  void AddHistoryResultsToMap(const HistoryResults& results,
-                              bool is_keyword,
-                              int did_not_accept_suggestion,
-                              MatchMap* map);
+  // Adds a match for each result in |raw_default_history_results_| or
+  // |raw_keyword_history_results_| to |map|. |is_keyword| indicates
+  // which one of the two.
+  void AddRawHistoryResultsToMap(bool is_keyword,
+                                 int did_not_accept_suggestion,
+                                 MatchMap* map);
+
+  // Adds a match for each transformed result in |results| to |map|.
+  void AddTransformedHistoryResultsToMap(
+      const SearchSuggestionParser::SuggestResults& results,
+      int did_not_accept_suggestion,
+      MatchMap* map);
 
   // Calculates relevance scores for all |results|.
-  SearchSuggestionParser::SuggestResults ScoreHistoryResults(
+  SearchSuggestionParser::SuggestResults ScoreHistoryResultsHelper(
       const HistoryResults& results,
       bool base_prevent_inline_autocomplete,
       bool input_multiple_words,
       const base::string16& input_text,
       bool is_keyword);
+
+  // Calculates relevance scores for |results|, adjusting for boundary
+  // conditions around multi-word queries. (See inline comments in function
+  // definition for more details.)
+  void ScoreHistoryResults(
+      const HistoryResults& results,
+      bool is_keyword,
+      SearchSuggestionParser::SuggestResults* scored_results);
 
   // Adds matches for |results| to |map|.
   void AddSuggestResultsToMap(
@@ -309,9 +335,11 @@ class SearchProvider : public BaseSearchProvider,
   // Obtains a session token, regenerating if necessary.
   std::string GetSessionToken();
 
-  // Answers prefetch handling - finds previously displayed answer matching the
-  // current |input| and sets |prefetch_data_|.
-  void DoAnswersQuery(const AutocompleteInput& input);
+  // Answers prefetch handling - finds the previously displayed answer matching
+  // the current top-scoring history result. If there is a previous answer,
+  // returns the query data associated with it. Otherwise, returns an empty
+  // AnswersQueryData.
+  AnswersQueryData FindAnswersPrefetchData();
 
   // The amount of time to wait before sending a new suggest request after the
   // previous one.  Non-const because some unittests modify this value.
@@ -333,8 +361,13 @@ class SearchProvider : public BaseSearchProvider,
   AutocompleteInput keyword_input_;
 
   // Searches in the user's history that begin with the input text.
-  HistoryResults keyword_history_results_;
-  HistoryResults default_history_results_;
+  HistoryResults raw_keyword_history_results_;
+  HistoryResults raw_default_history_results_;
+
+  // Scored searches in the user's history - based on |keyword_history_results_|
+  // or |default_history_results_| as appropriate.
+  SearchSuggestionParser::SuggestResults transformed_keyword_history_results_;
+  SearchSuggestionParser::SuggestResults transformed_default_history_results_;
 
   // A timer to start a query to the suggest server after the user has stopped
   // typing for long enough.
@@ -350,6 +383,11 @@ class SearchProvider : public BaseSearchProvider,
   // Results from the default and keyword search providers.
   SearchSuggestionParser::Results default_results_;
   SearchSuggestionParser::Results keyword_results_;
+
+  // The top query suggestion, left blank if none.
+  base::string16 top_query_suggestion_match_contents_;
+  // The top navigation suggestion, left blank/invalid if none.
+  GURL top_navigation_suggestion_;
 
   GURL current_page_url_;
 

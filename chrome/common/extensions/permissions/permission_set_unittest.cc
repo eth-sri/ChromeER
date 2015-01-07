@@ -646,7 +646,6 @@ TEST(PermissionsTest, PermissionMessages) {
   skip.insert(APIPermission::kCastStreaming);
   skip.insert(APIPermission::kCommandsAccessibility);
   skip.insert(APIPermission::kContextMenus);
-  skip.insert(APIPermission::kCopresence);
   skip.insert(APIPermission::kCopresencePrivate);
   skip.insert(APIPermission::kDiagnostics);
   skip.insert(APIPermission::kDns);
@@ -656,6 +655,7 @@ TEST(PermissionsTest, PermissionMessages) {
   skip.insert(APIPermission::kFullscreen);
   skip.insert(APIPermission::kGcm);
   skip.insert(APIPermission::kIdle);
+  skip.insert(APIPermission::kImeWindowEnabled);
   skip.insert(APIPermission::kIdltest);
   skip.insert(APIPermission::kLogPrivate);
   skip.insert(APIPermission::kNotifications);
@@ -731,7 +731,7 @@ TEST(PermissionsTest, PermissionMessages) {
   skip.insert(APIPermission::kEnterprisePlatformKeysPrivate);
   skip.insert(APIPermission::kFeedbackPrivate);
   skip.insert(APIPermission::kFileBrowserHandlerInternal);
-  skip.insert(APIPermission::kFileBrowserPrivate);
+  skip.insert(APIPermission::kFileManagerPrivate);
   skip.insert(APIPermission::kFirstRunPrivate);
   skip.insert(APIPermission::kGcdPrivate);
   skip.insert(APIPermission::kHotwordPrivate);
@@ -770,6 +770,9 @@ TEST(PermissionsTest, PermissionMessages) {
   skip.insert(APIPermission::kSocket);
   skip.insert(APIPermission::kUsbDevice);
 
+  // We already have a generic message for declaring externally_connectable.
+  skip.insert(APIPermission::kExternallyConnectableAllUrls);
+
   PermissionsInfo* info = PermissionsInfo::GetInstance();
   APIPermissionSet permissions = info->GetAll();
   for (APIPermissionSet::const_iterator i = permissions.begin();
@@ -805,6 +808,38 @@ TEST(PermissionsTest, FileSystemPermissionMessages) {
     ids.insert(it->id());
   }
   EXPECT_TRUE(ContainsKey(ids, PermissionMessage::kFileSystemDirectory));
+}
+
+// The file system permissions have a special-case hack to show a warning for
+// write and directory at the same time.
+// TODO(sammc): Remove this. See http://crbug.com/284849.
+TEST(PermissionsTest, FileSystemImplicitPermissions) {
+  APIPermissionSet apis;
+  apis.insert(APIPermission::kFileSystemWrite);
+  apis.AddImpliedPermissions();
+
+  EXPECT_EQ(apis.find(APIPermission::kFileSystemWrite)->id(),
+            APIPermission::kFileSystemWrite);
+  EXPECT_EQ(apis.size(), 1u);
+
+  apis.erase(APIPermission::kFileSystemWrite);
+  apis.insert(APIPermission::kFileSystemDirectory);
+  apis.AddImpliedPermissions();
+
+  EXPECT_EQ(apis.find(APIPermission::kFileSystemDirectory)->id(),
+            APIPermission::kFileSystemDirectory);
+  EXPECT_EQ(apis.size(), 1u);
+
+  apis.insert(APIPermission::kFileSystemWrite);
+  apis.AddImpliedPermissions();
+
+  EXPECT_EQ(apis.find(APIPermission::kFileSystemWrite)->id(),
+            APIPermission::kFileSystemWrite);
+  EXPECT_EQ(apis.find(APIPermission::kFileSystemDirectory)->id(),
+            APIPermission::kFileSystemDirectory);
+  EXPECT_EQ(apis.find(APIPermission::kFileSystemWriteDirectory)->id(),
+            APIPermission::kFileSystemWriteDirectory);
+  EXPECT_EQ(apis.size(), 3u);
 }
 
 TEST(PermissionsTest, HiddenFileSystemPermissionMessages) {

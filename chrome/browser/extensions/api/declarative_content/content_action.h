@@ -9,10 +9,8 @@
 #include <vector>
 
 #include "base/memory/ref_counted.h"
-#include "chrome/browser/extensions/api/declarative/declarative_rule.h"
 #include "chrome/browser/extensions/declarative_user_script_master.h"
-
-class Profile;
+#include "extensions/browser/api/declarative/declarative_rule.h"
 
 namespace base {
 class Time;
@@ -20,6 +18,7 @@ class Value;
 }
 
 namespace content {
+class BrowserContext;
 class WebContents;
 }
 
@@ -33,11 +32,13 @@ class ContentAction : public base::RefCounted<ContentAction> {
   enum Type {
     ACTION_SHOW_PAGE_ACTION,
     ACTION_REQUEST_CONTENT_SCRIPT,
+    ACTION_SET_ICON,
   };
 
   struct ApplyInfo {
-    Profile* profile;
+    content::BrowserContext* browser_context;
     content::WebContents* tab;
+    int priority;
   };
 
   ContentAction();
@@ -92,15 +93,7 @@ class ContentAction : public base::RefCounted<ContentAction> {
 // Action that injects a content script.
 class RequestContentScript : public ContentAction {
  public:
-  struct ScriptData {
-    ScriptData();
-    ~ScriptData();
-
-    std::vector<std::string> css_file_names;
-    std::vector<std::string> js_file_names;
-    bool all_frames;
-    bool match_about_blank;
-  };
+  struct ScriptData;
 
   RequestContentScript(content::BrowserContext* browser_context,
                        const Extension* extension,

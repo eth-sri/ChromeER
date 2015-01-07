@@ -25,6 +25,8 @@ namespace cast {
 class CastTransportSender;
 class VideoEncoder;
 
+typedef base::Callback<void(base::TimeDelta)> PlayoutDelayChangeCB;
+
 // Not thread safe. Only called from the main cast thread.
 // This class owns all objects related to sending video, objects that create RTP
 // packets, congestion control, video encoder, parsing and sending of
@@ -37,15 +39,13 @@ class VideoSender : public FrameSender,
  public:
   VideoSender(scoped_refptr<CastEnvironment> cast_environment,
               const VideoSenderConfig& video_config,
+              const CastInitializationCallback& initialization_cb,
               const CreateVideoEncodeAcceleratorCallback& create_vea_cb,
               const CreateVideoEncodeMemoryCallback& create_video_encode_mem_cb,
-              CastTransportSender* const transport_sender);
+              CastTransportSender* const transport_sender,
+              const PlayoutDelayChangeCB& playout_delay_change_cb);
 
   virtual ~VideoSender();
-
-  CastInitializationStatus InitializationResult() const {
-    return cast_initialization_status_;
-  }
 
   // Note: It is not guaranteed that |video_frame| will actually be encoded and
   // sent, if VideoSender detects too many frames in flight.  Therefore, clients
@@ -57,36 +57,39 @@ class VideoSender : public FrameSender,
                            const base::TimeTicks& capture_time);
 
  protected:
-  // Protected for testability.
-  void OnReceivedCastFeedback(const RtcpCastMessage& cast_feedback);
+  virtual int GetNumberOfFramesInEncoder() const OVERRIDE;
+  virtual base::TimeDelta GetInFlightMediaDuration() const OVERRIDE;
+  virtual void OnAck(uint32 frame_id) OVERRIDE;
 
  private:
-  // Returns true if there are too many frames in flight, or if the media
-  // duration of the frames in flight would be too high by sending the next
-  // frame.  The latter metric is determined from the given |capture_time|
-  // for the next frame to be encoded and sent.
-  bool ShouldDropNextFrame(base::TimeTicks capture_time) const;
+  // Called when the encoder is initialized or has failed to initialize.
+  void OnEncoderInitialized(
+      const CastInitializationCallback& initialization_cb,
+      CastInitializationStatus status);
 
-  // Called by the |video_encoder_| with the next EncodeFrame to send.
-  void SendEncodedVideoFrame(int requested_bitrate_before_encode,
-                             scoped_ptr<EncodedFrame> encoded_frame);
-  // If this value is non zero then a fixed value is used for bitrate.
-  // If external video encoder is used then bitrate will be fixed to
-  // (min_bitrate + max_bitrate) / 2.
-  const size_t fixed_bitrate_;
+  // Called by the |video_encoder_| with the next EncodedFrame to send.
+  void OnEncodedVideoFrame(int encoder_bitrate,
+                           scoped_ptr<EncodedFrame> encoded_frame);
 
   // Encodes media::VideoFrame images into EncodedFrames.  Per configuration,
   // this will point to either the internal software-based encoder or a proxy to
   // a hardware-based encoder.
   scoped_ptr<VideoEncoder> video_encoder_;
 
-  // The number of frames currently being processed in |video_encoder_|.
+  // The number of frames queued for encoding, but not yet sent.
   int frames_in_encoder_;
 
-  // When we get close to the max number of un-acked frames, we set lower
-  // the bitrate drastically to ensure that we catch up. Without this we
-  // risk getting stuck in a catch-up state forever.
-  CongestionControl congestion_control_;
+  // The duration of video queued for encoding, but not yet sent.
+  base::TimeDelta duration_in_encoder_;
+
+  // The timestamp of the frame that was last enqueued in |video_encoder_|.
+  base::TimeTicks last_enqueued_frame_reference_time_;
+
+  // Remember what we set the bitrate to before, no need to set it again if
+  // we get the same value.
+  uint32 last_bitrate_;
+
+  PlayoutDelayChangeCB playout_delay_change_cb_;
 
   // NOTE: Weak pointers must be invalidated before all other member variables.
   base::WeakPtrFactory<VideoSender> weak_factory_;

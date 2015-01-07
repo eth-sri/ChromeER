@@ -14,8 +14,8 @@
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/common/page_transition_types.h"
 #include "content/public/test/test_renderer_host.h"
+#include "ui/base/page_transition_types.h"
 
 #if defined(USE_AURA)
 #include "ui/aura/test/aura_test_helper.h"
@@ -34,6 +34,8 @@
 #endif
 
 using content::NavigationController;
+using content::RenderFrameHost;
+using content::RenderFrameHostTester;
 using content::RenderViewHost;
 using content::RenderViewHostTester;
 using content::WebContents;
@@ -121,7 +123,7 @@ void BrowserWithTestWindowTest::TearDown() {
 }
 
 void BrowserWithTestWindowTest::AddTab(Browser* browser, const GURL& url) {
-  chrome::NavigateParams params(browser, url, content::PAGE_TRANSITION_TYPED);
+  chrome::NavigateParams params(browser, url, ui::PAGE_TRANSITION_TYPED);
   params.tabstrip_index = 0;
   params.disposition = NEW_FOREGROUND_TAB;
   chrome::Navigate(&params);
@@ -135,6 +137,7 @@ void BrowserWithTestWindowTest::CommitPendingLoad(
 
   RenderViewHost* old_rvh =
       controller->GetWebContents()->GetRenderViewHost();
+  RenderFrameHost* old_rfh = old_rvh->GetMainFrame();
 
   RenderViewHost* pending_rvh = RenderViewHostTester::GetPendingForController(
       controller);
@@ -142,7 +145,7 @@ void BrowserWithTestWindowTest::CommitPendingLoad(
     // Simulate the BeforeUnload_ACK that is received from the current renderer
     // for a cross-site navigation.
     DCHECK_NE(old_rvh, pending_rvh);
-    RenderViewHostTester::For(old_rvh)->SendBeforeUnloadACK(true);
+    RenderFrameHostTester::For(old_rfh)->SendBeforeUnloadACK(true);
   }
   // Commit on the pending_rvh, if one exists.
   RenderViewHost* test_rvh = pending_rvh ? pending_rvh : old_rvh;
@@ -150,7 +153,7 @@ void BrowserWithTestWindowTest::CommitPendingLoad(
 
   // Simulate a SwapOut_ACK before the navigation commits.
   if (pending_rvh)
-    RenderViewHostTester::For(old_rvh)->SimulateSwapOutACK();
+    RenderFrameHostTester::For(old_rfh)->SimulateSwapOutACK();
 
   // For new navigations, we need to send a larger page ID. For renavigations,
   // we need to send the preexisting page ID. We can tell these apart because
@@ -174,7 +177,7 @@ void BrowserWithTestWindowTest::NavigateAndCommit(
     NavigationController* controller,
     const GURL& url) {
   controller->LoadURL(
-      url, content::Referrer(), content::PAGE_TRANSITION_LINK, std::string());
+      url, content::Referrer(), ui::PAGE_TRANSITION_LINK, std::string());
   CommitPendingLoad(controller);
 }
 

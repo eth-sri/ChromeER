@@ -92,11 +92,9 @@
 #include "ppapi/shared_impl/var.h"
 #include "ppapi/thunk/enter.h"
 #include "ppapi/thunk/ppb_buffer_api.h"
-#include "printing/metafile.h"
 #include "printing/metafile_skia_wrapper.h"
-#include "printing/units.h"
+#include "printing/pdf_metafile_skia.h"
 #include "skia/ext/platform_canvas.h"
-#include "skia/ext/platform_device.h"
 #include "third_party/WebKit/public/platform/WebCursorInfo.h"
 #include "third_party/WebKit/public/platform/WebGamepads.h"
 #include "third_party/WebKit/public/platform/WebRect.h"
@@ -120,13 +118,9 @@
 #include "third_party/WebKit/public/web/WebUserGestureIndicator.h"
 #include "third_party/WebKit/public/web/WebView.h"
 #include "third_party/khronos/GLES2/gl2.h"
-#include "third_party/skia/include/core/SkCanvas.h"
-#include "third_party/skia/include/core/SkRect.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/image/image_skia_rep.h"
 #include "ui/gfx/range/range.h"
-#include "ui/gfx/rect_conversions.h"
-#include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
 #include "v8/include/v8.h"
 
 #if defined(OS_CHROMEOS)
@@ -137,8 +131,6 @@
 #include "base/metrics/histogram.h"
 #include "base/win/windows_version.h"
 #include "skia/ext/platform_canvas.h"
-#include "ui/gfx/codec/jpeg_codec.h"
-#include "ui/gfx/gdi_util.h"
 #endif
 
 using base::StringPrintf;
@@ -185,35 +177,6 @@ using blink::WebUserGestureToken;
 using blink::WebView;
 
 namespace content {
-
-#if defined(OS_WIN)
-// Exported by pdf.dll
-typedef bool (*RenderPDFPageToDCProc)(const unsigned char* pdf_buffer,
-                                      int buffer_size,
-                                      int page_number,
-                                      HDC dc,
-                                      int dpi_x,
-                                      int dpi_y,
-                                      int bounds_origin_x,
-                                      int bounds_origin_y,
-                                      int bounds_width,
-                                      int bounds_height,
-                                      bool fit_to_bounds,
-                                      bool stretch_to_bounds,
-                                      bool keep_aspect_ratio,
-                                      bool center_in_bounds,
-                                      bool autorotate);
-
-void DrawEmptyRectangle(HDC dc) {
-  // TODO(sanjeevr): This is a temporary hack. If we output a JPEG
-  // to the EMF, the EnumEnhMetaFile call fails in the browser
-  // process. The failure also happens if we output nothing here.
-  // We need to investigate the reason for this failure and fix it.
-  // In the meantime this temporary hack of drawing an empty
-  // rectangle in the DC gets us by.
-  Rectangle(dc, 0, 0, 0, 0);
-}
-#endif  // defined(OS_WIN)
 
 namespace {
 
@@ -630,11 +593,9 @@ PepperPluginInstanceImpl::~PepperPluginInstanceImpl() {
     (*i)->InstanceDeleted();
   }
 
-  if (message_channel_) {
+  if (message_channel_)
     message_channel_->InstanceDeleted();
-    message_channel_object_.Reset();
-    message_channel_ = NULL;
-  }
+  message_channel_object_.Reset();
 
   if (TrackedCallback::IsPending(lock_mouse_callback_))
     lock_mouse_callback_->Abort();
@@ -669,14 +630,26 @@ v8::Local<v8::Object> PepperPluginInstanceImpl::GetMessageChannelObject() {
   return v8::Local<v8::Object>::New(isolate_, message_channel_object_);
 }
 
-v8::Local<v8::Context> PepperPluginInstanceImpl::GetContext() {
+void PepperPluginInstanceImpl::MessageChannelDestroyed() {
+  message_channel_ = NULL;
+  message_channel_object_.Reset();
+}
+
+v8::Local<v8::Context> PepperPluginInstanceImpl::GetMainWorldContext() {
   if (!container_)
     return v8::Handle<v8::Context>();
-  WebLocalFrame* frame = container_->element().document().frame();
-  if (!frame)
+
+  if (container_->element().isNull())
     return v8::Handle<v8::Context>();
 
-  v8::Local<v8::Context> context = frame->mainWorldScriptContext();
+  if (container_->element().document().isNull())
+    return v8::Handle<v8::Context>();
+
+  if (!container_->element().document().frame())
+    return v8::Handle<v8::Context>();
+
+  v8::Local<v8::Context> context =
+      container_->element().document().frame()->mainWorldScriptContext();
   DCHECK(context->GetIsolate() == isolate_);
   return context;
 }
@@ -695,7 +668,8 @@ void PepperPluginInstanceImpl::Delete() {
   // release our last reference to the "InstanceObject" and will probably
   // destroy it. We want to do this prior to calling DidDestroy in case the
   // destructor of the instance object tries to use the instance.
-  message_channel_->SetPassthroughObject(v8::Handle<v8::Object>());
+  if (message_channel_)
+    message_channel_->SetPassthroughObject(v8::Handle<v8::Object>());
   // If this is a NaCl plugin instance, shut down the NaCl plugin by calling
   // its DidDestroy. Don't call DidDestroy on the untrusted plugin instance,
   // since there is little that it can do at this point.
@@ -880,9 +854,11 @@ bool PepperPluginInstanceImpl::Initialize(
   // messages. (E.g., NaCl trusted plugin starting a child NaCl app.)
   //
   // A host for external plugins will call ResetAsProxied later, at which point
-  // we can Start() the message_channel_.
-  if (success && (!module_->renderer_ppapi_host()->IsExternalPluginHost()))
-    message_channel_->Start();
+  // we can Start() the MessageChannel.
+  if (success && (!module_->renderer_ppapi_host()->IsExternalPluginHost())) {
+    if (message_channel_)
+      message_channel_->Start();
+  }
   return success;
 }
 
@@ -1185,6 +1161,8 @@ bool PepperPluginInstanceImpl::HandleInputEvent(
 
 void PepperPluginInstanceImpl::HandleMessage(ScopedPPVar message) {
   TRACE_EVENT0("ppapi", "PepperPluginInstanceImpl::HandleMessage");
+  if (is_deleted_)
+    return;
   ppapi::proxy::HostDispatcher* dispatcher =
       ppapi::proxy::HostDispatcher::GetForInstance(pp_instance());
   if (!dispatcher || (message.get().type == PP_VARTYPE_OBJECT)) {
@@ -1203,6 +1181,8 @@ void PepperPluginInstanceImpl::HandleMessage(ScopedPPVar message) {
 bool PepperPluginInstanceImpl::HandleBlockingMessage(ScopedPPVar message,
                                                      ScopedPPVar* result) {
   TRACE_EVENT0("ppapi", "PepperPluginInstanceImpl::HandleBlockingMessage");
+  if (is_deleted_)
+    return false;
   ppapi::proxy::HostDispatcher* dispatcher =
       ppapi::proxy::HostDispatcher::GetForInstance(pp_instance());
   if (!dispatcher || (message.get().type == PP_VARTYPE_OBJECT)) {
@@ -1367,13 +1347,24 @@ void PepperPluginInstanceImpl::SetTextInputType(ui::TextInputType type) {
 }
 
 void PepperPluginInstanceImpl::PostMessageToJavaScript(PP_Var message) {
-  message_channel_->PostMessageToJavaScript(message);
+  if (message_channel_)
+    message_channel_->PostMessageToJavaScript(message);
 }
 
 int32_t PepperPluginInstanceImpl::RegisterMessageHandler(
     PP_Instance instance,
     void* user_data,
-    const PPP_MessageHandler_0_1* handler,
+    const PPP_MessageHandler_0_2* handler,
+    PP_Resource message_loop) {
+  // Not supported in-process.
+  NOTIMPLEMENTED();
+  return PP_ERROR_FAILED;
+}
+
+int32_t PepperPluginInstanceImpl::RegisterMessageHandler_1_1_Deprecated(
+    PP_Instance instance,
+    void* user_data,
+    const PPP_MessageHandler_0_1_Deprecated* handler,
     PP_Resource message_loop) {
   // Not supported in-process.
   NOTIMPLEMENTED();
@@ -1678,6 +1669,12 @@ void PepperPluginInstanceImpl::SendDidChangeView() {
 
   UpdateLayerTransform();
 
+  if (bound_graphics_2d_platform_ &&
+      (!view_data_.is_page_visible ||
+       PP_ToGfxRect(view_data_.clip_rect).IsEmpty())) {
+    bound_graphics_2d_platform_->ClearCache();
+  }
+
   // It's possible that Delete() has been called but the renderer hasn't
   // released its reference to this object yet.
   if (instance_interface_) {
@@ -1753,7 +1750,7 @@ int PepperPluginInstanceImpl::PrintBegin(const WebPrintParams& print_params) {
 
 bool PepperPluginInstanceImpl::PrintPage(int page_number,
                                          blink::WebCanvas* canvas) {
-#if defined(ENABLE_FULL_PRINTING)
+#if defined(ENABLE_PRINTING)
   DCHECK(plugin_print_interface_);
   PP_PrintPageNumberRange_Dev page_range;
   page_range.first_page_number = page_range.last_page_number = page_number;
@@ -1770,7 +1767,7 @@ bool PepperPluginInstanceImpl::PrintPage(int page_number,
   } else {
     return PrintPageHelper(&page_range, 1, canvas);
   }
-#else  // defined(ENABLED_PRINTING)
+#else  // ENABLE_PRINTING
   return false;
 #endif
 }
@@ -1937,7 +1934,7 @@ bool PepperPluginInstanceImpl::IsViewAccelerated() {
 
 bool PepperPluginInstanceImpl::PrintPDFOutput(PP_Resource print_output,
                                               blink::WebCanvas* canvas) {
-#if defined(ENABLE_FULL_PRINTING)
+#if defined(ENABLE_PRINTING)
   ppapi::thunk::EnterResourceNoLock<PPB_Buffer_API> enter(print_output, true);
   if (enter.failed())
     return false;
@@ -1947,91 +1944,15 @@ bool PepperPluginInstanceImpl::PrintPDFOutput(PP_Resource print_output,
     NOTREACHED();
     return false;
   }
-#if defined(OS_WIN)
-  // For Windows, we need the PDF DLL to render the output PDF to a DC.
-  HMODULE pdf_module = GetModuleHandle(L"pdf.dll");
-  if (!pdf_module)
-    return false;
-  RenderPDFPageToDCProc render_proc = reinterpret_cast<RenderPDFPageToDCProc>(
-      GetProcAddress(pdf_module, "RenderPDFPageToDC"));
-  if (!render_proc)
-    return false;
-#endif  // defined(OS_WIN)
 
-  bool ret = false;
-#if defined(OS_POSIX) && !defined(OS_ANDROID)
-  printing::Metafile* metafile =
+  printing::PdfMetafileSkia* metafile =
       printing::MetafileSkiaWrapper::GetMetafileFromCanvas(*canvas);
-  DCHECK(metafile != NULL);
   if (metafile)
-    ret = metafile->InitFromData(mapper.data(), mapper.size());
-#elif defined(OS_WIN)
-  printing::Metafile* metafile =
-      printing::MetafileSkiaWrapper::GetMetafileFromCanvas(*canvas);
-  if (metafile) {
-    // We only have a metafile when doing print preview, so we just want to
-    // pass the PDF off to preview.
-    ret = metafile->InitFromData(mapper.data(), mapper.size());
-  } else {
-    // On Windows, we now need to render the PDF to the DC that backs the
-    // supplied canvas.
-    HDC dc = skia::BeginPlatformPaint(canvas);
-    DrawEmptyRectangle(dc);
-    gfx::Size size_in_pixels;
-    size_in_pixels.set_width(
-        printing::ConvertUnit(current_print_settings_.printable_area.size.width,
-                              static_cast<int>(printing::kPointsPerInch),
-                              current_print_settings_.dpi));
-    size_in_pixels.set_height(printing::ConvertUnit(
-        current_print_settings_.printable_area.size.height,
-        static_cast<int>(printing::kPointsPerInch),
-        current_print_settings_.dpi));
-    // We need to scale down DC to fit an entire page into DC available area.
-    // First, we'll try to use default scaling based on the 72dpi that is
-    // used in webkit for printing.
-    // If default scaling is not enough to fit the entire PDF without
-    // Current metafile is based on screen DC and have current screen size.
-    // Writing outside of those boundaries will result in the cut-off output.
-    // On metafiles (this is the case here), scaling down will still record
-    // original coordinates and we'll be able to print in full resolution.
-    // Before playback we'll need to counter the scaling up that will happen
-    // in the browser (printed_document_win.cc).
-    double dynamic_scale = gfx::CalculatePageScale(
-        dc, size_in_pixels.width(), size_in_pixels.height());
-    double page_scale = static_cast<double>(printing::kPointsPerInch) /
-                        static_cast<double>(current_print_settings_.dpi);
+    return metafile->InitFromData(mapper.data(), mapper.size());
 
-    if (dynamic_scale < page_scale) {
-      page_scale = dynamic_scale;
-      printing::MetafileSkiaWrapper::SetCustomScaleOnCanvas(*canvas,
-                                                            page_scale);
-    }
-
-    gfx::ScaleDC(dc, page_scale);
-
-    ret = render_proc(static_cast<unsigned char*>(mapper.data()),
-                      mapper.size(),
-                      0,
-                      dc,
-                      current_print_settings_.dpi,
-                      current_print_settings_.dpi,
-                      0,
-                      0,
-                      size_in_pixels.width(),
-                      size_in_pixels.height(),
-                      true,
-                      false,
-                      true,
-                      true,
-                      true);
-    skia::EndPlatformPaint(canvas);
-  }
-#endif  // defined(OS_WIN)
-
-  return ret;
-#else  // defined(ENABLE_FULL_PRINTING)
+  NOTREACHED();
+#endif  // ENABLE_PRINTING
   return false;
-#endif
 }
 
 void PepperPluginInstanceImpl::UpdateLayer(bool device_changed) {
@@ -2399,6 +2320,11 @@ PP_Var PepperPluginInstanceImpl::ExecuteScript(PP_Instance instance,
   // WebBindings::evaluate() below.
   scoped_refptr<PepperPluginInstanceImpl> ref(this);
   PepperTryCatchVar try_catch(this, exception);
+
+  // Check for an exception due to the context being destroyed.
+  if (try_catch.HasException())
+    return PP_MakeUndefined();
+
   WebLocalFrame* frame = container_->element().document().frame();
   if (!frame) {
     try_catch.SetException("No frame to execute script in.");
@@ -2421,6 +2347,10 @@ PP_Var PepperPluginInstanceImpl::ExecuteScript(PP_Instance instance,
   } else {
     result = frame->executeScriptAndReturnValue(script);
   }
+
+  // Check for an exception due to the context being destroyed.
+  if (try_catch.HasException())
+    return PP_MakeUndefined();
 
   ScopedPPVar var_result = try_catch.FromV8(result);
   if (try_catch.HasException())
@@ -2465,6 +2395,13 @@ void PepperPluginInstanceImpl::PromiseResolvedWithSession(
                                                             web_session_id_var);
 }
 
+void PepperPluginInstanceImpl::PromiseResolvedWithKeyIds(PP_Instance instance,
+                                                         uint32 promise_id,
+                                                         PP_Var key_ids_var) {
+  content_decryptor_delegate_->OnPromiseResolvedWithKeyIds(promise_id,
+                                                           key_ids_var);
+}
+
 void PepperPluginInstanceImpl::PromiseRejected(
     PP_Instance instance,
     uint32 promise_id,
@@ -2481,6 +2418,22 @@ void PepperPluginInstanceImpl::SessionMessage(PP_Instance instance,
                                               PP_Var destination_url_var) {
   content_decryptor_delegate_->OnSessionMessage(
       web_session_id_var, message_var, destination_url_var);
+}
+
+void PepperPluginInstanceImpl::SessionKeysChange(
+    PP_Instance instance,
+    PP_Var web_session_id_var,
+    PP_Bool has_additional_usable_key) {
+  content_decryptor_delegate_->OnSessionKeysChange(web_session_id_var,
+                                                   has_additional_usable_key);
+}
+
+void PepperPluginInstanceImpl::SessionExpirationChange(
+    PP_Instance instance,
+    PP_Var web_session_id_var,
+    PP_Time new_expiry_time) {
+  content_decryptor_delegate_->OnSessionExpirationChange(web_session_id_var,
+                                                         new_expiry_time);
 }
 
 void PepperPluginInstanceImpl::SessionReady(PP_Instance instance,
@@ -2955,7 +2908,8 @@ PP_ExternalPluginResult PepperPluginInstanceImpl::ResetAsProxied(
   if (!instance_interface_->DidCreate(
           pp_instance(), argn_.size(), argn_array.get(), argv_array.get()))
     return PP_EXTERNAL_PLUGIN_ERROR_INSTANCE;
-  message_channel_->Start();
+  if (message_channel_)
+    message_channel_->Start();
 
   // Clear sent_initial_did_change_view_ and cancel any pending DidChangeView
   // event. This way, SendDidChangeView will send the "current" view
@@ -3157,7 +3111,7 @@ int32_t PepperPluginInstanceImpl::Navigate(
   web_request.setHasUserGesture(from_user_action);
 
   GURL gurl(web_request.url());
-  if (gurl.SchemeIs("javascript")) {
+  if (gurl.SchemeIs(url::kJavaScriptScheme)) {
     // In imitation of the NPAPI implementation, only |target_frame == frame| is
     // allowed for security reasons.
     WebFrame* target_frame =
@@ -3190,7 +3144,8 @@ int PepperPluginInstanceImpl::MakePendingFileRefRendererHost(
 }
 
 void PepperPluginInstanceImpl::SetEmbedProperty(PP_Var key, PP_Var value) {
-  message_channel_->SetReadOnlyProperty(key, value);
+  if (message_channel_)
+    message_channel_->SetReadOnlyProperty(key, value);
 }
 
 bool PepperPluginInstanceImpl::CanAccessMainFrame() const {

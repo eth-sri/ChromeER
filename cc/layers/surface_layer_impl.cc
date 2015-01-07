@@ -19,7 +19,7 @@ SurfaceLayerImpl::~SurfaceLayerImpl() {}
 
 scoped_ptr<LayerImpl> SurfaceLayerImpl::CreateLayerImpl(
     LayerTreeImpl* tree_impl) {
-  return SurfaceLayerImpl::Create(tree_impl, id()).PassAs<LayerImpl>();
+  return SurfaceLayerImpl::Create(tree_impl, id());
 }
 
 void SurfaceLayerImpl::SetSurfaceId(SurfaceId surface_id) {
@@ -52,8 +52,10 @@ void SurfaceLayerImpl::AppendQuads(
     return;
 
   gfx::Rect quad_rect(content_bounds());
-  gfx::Rect visible_quad_rect = occlusion_tracker.UnoccludedContentRect(
-      quad_rect, draw_properties().target_space_transform);
+  gfx::Rect visible_quad_rect =
+      occlusion_tracker.GetCurrentOcclusionForLayer(
+                            draw_properties().target_space_transform)
+          .GetUnoccludedContentRect(quad_rect);
   if (visible_quad_rect.IsEmpty())
     return;
   SurfaceDrawQuad* quad =

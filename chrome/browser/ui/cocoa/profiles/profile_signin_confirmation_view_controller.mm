@@ -16,7 +16,6 @@
 #import "chrome/browser/ui/chrome_style.h"
 #import "chrome/browser/ui/cocoa/constrained_window/constrained_window_control_utils.h"
 #import "chrome/browser/ui/cocoa/hover_close_button.h"
-#import "chrome/browser/ui/cocoa/hyperlink_text_view.h"
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/sync/profile_signin_confirmation_helper.h"
 #include "chrome/common/url_constants.h"
@@ -26,6 +25,7 @@
 #include "skia/ext/skia_utils_mac.h"
 #import "third_party/google_toolbox_for_mac/src/AppKit/GTMUILocalizerAndLayoutTweaker.h"
 #import "ui/base/cocoa/controls/hyperlink_button_cell.h"
+#import "ui/base/cocoa/controls/hyperlink_text_view.h"
 #include "ui/base/l10n/l10n_util.h"
 
 namespace {
@@ -396,7 +396,7 @@ NSTextField* AddTextField(
 - (void)learnMore {
   chrome::NavigateParams params(
       browser_, GURL(chrome::kChromeEnterpriseSignInLearnMoreURL),
-      content::PAGE_TRANSITION_AUTO_TOPLEVEL);
+      ui::PAGE_TRANSITION_AUTO_TOPLEVEL);
   params.disposition = NEW_POPUP;
   params.window_action = chrome::NavigateParams::SHOW_WINDOW;
   chrome::Navigate(&params);

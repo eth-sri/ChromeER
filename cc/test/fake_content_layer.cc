@@ -12,7 +12,7 @@ namespace cc {
 
 class FakeContentLayerUpdater : public ContentLayerUpdater {
  public:
-  using ContentLayerUpdater::content_rect;
+  using ContentLayerUpdater::paint_rect;
 
  private:
   virtual ~FakeContentLayerUpdater() {}
@@ -32,7 +32,7 @@ FakeContentLayer::~FakeContentLayer() {}
 
 scoped_ptr<LayerImpl> FakeContentLayer::CreateLayerImpl(
     LayerTreeImpl* tree_impl) {
-  return FakeContentLayerImpl::Create(tree_impl, layer_id_).PassAs<LayerImpl>();
+  return FakeContentLayerImpl::Create(tree_impl, layer_id_);
 }
 
 bool FakeContentLayer::Update(ResourceUpdateQueue* queue,
@@ -43,8 +43,7 @@ bool FakeContentLayer::Update(ResourceUpdateQueue* queue,
 }
 
 gfx::Rect FakeContentLayer::LastPaintRect() const {
-  return (static_cast<FakeContentLayerUpdater*>
-          (Updater()))->content_rect();
+  return (static_cast<FakeContentLayerUpdater*>(Updater()))->paint_rect();
 }
 
 void FakeContentLayer::PushPropertiesTo(LayerImpl* layer) {

@@ -15,6 +15,7 @@
 #include "chrome/browser/ui/views/apps/shaped_app_window_targeter.h"
 #include "chrome/browser/ui/views/extensions/extension_keybinding_registry_views.h"
 #include "chrome/browser/ui/views/frame/taskbar_decorator.h"
+#include "chrome/browser/ui/zoom/zoom_controller.h"
 #include "chrome/browser/web_applications/web_app.h"
 #include "chrome/common/chrome_switches.h"
 #include "extensions/common/extension.h"
@@ -49,6 +50,10 @@
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/window_tree_client.h"
 #include "ui/aura/window_observer.h"
+#endif
+
+#if defined(OS_CHROMEOS)
+#include "ash/shell_window_ids.h"
 #endif
 
 using extensions::AppWindow;
@@ -215,6 +220,8 @@ void ChromeNativeAppWindowViews::InitializeDefaultWindow(
   if (create_params.alpha_enabled)
     init_params.opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
   init_params.keep_on_top = create_params.always_on_top;
+  init_params.visible_on_all_workspaces =
+      create_params.visible_on_all_workspaces;
 
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS)
   // Set up a custom WM_CLASS for app windows. This allows task switchers in
@@ -226,6 +233,14 @@ void ChromeNativeAppWindowViews::InitializeDefaultWindow(
 #endif
 
   OnBeforeWidgetInit(&init_params, widget());
+#if defined(OS_CHROMEOS)
+  if (create_params.is_ime_window) {
+    // Puts ime windows into ime window container.
+    init_params.parent =
+        ash::Shell::GetContainer(ash::Shell::GetPrimaryRootWindow(),
+                                 ash::kShellWindowId_ImeWindowParentContainer);
+  }
+#endif
   widget()->Init(init_params);
 
   // The frame insets are required to resolve the bounds specifications
@@ -254,6 +269,11 @@ void ChromeNativeAppWindowViews::InitializeDefaultWindow(
     wm::SetShadowType(widget()->GetNativeWindow(), wm::SHADOW_TYPE_NONE);
   }
 
+#if defined(OS_CHROMEOS)
+  if (create_params.is_ime_window)
+    return;
+#endif
+
   // Register accelarators supported by app windows.
   // TODO(jeremya/stevenjb): should these be registered for panels too?
   views::FocusManager* focus_manager = GetFocusManager();
@@ -270,6 +290,11 @@ void ChromeNativeAppWindowViews::InitializeDefaultWindow(
          accelerator_table.size() ==
              arraysize(kAppWindowAcceleratorMap) +
                  arraysize(kAppWindowKioskAppModeAcceleratorMap));
+
+  // Ensure there is a ZoomController in kiosk mode, otherwise the processing
+  // of the accelerators will cause a crash.
+  DCHECK(!is_kiosk_app_mode ||
+         ZoomController::FromWebContents(web_view()->GetWebContents()));
 
   for (std::map<ui::Accelerator, int>::const_iterator iter =
            accelerator_table.begin();
@@ -581,7 +606,8 @@ void ChromeNativeAppWindowViews::SetFullscreen(int fullscreen_types) {
   is_fullscreen_ = (fullscreen_types != AppWindow::FULLSCREEN_TYPE_NONE);
   widget()->SetFullscreen(is_fullscreen_);
 
-#if defined(USE_ASH)
+  // TODO(oshima): Remove USE_ATHENA once athena has its own NativeAppWindow.
+#if defined(USE_ASH) && !defined(USE_ATHENA)
   if (immersive_fullscreen_controller_.get()) {
     // |immersive_fullscreen_controller_| should only be set if immersive
     // fullscreen is the fullscreen type used by the OS.
@@ -640,6 +666,7 @@ void ChromeNativeAppWindowViews::UpdateShape(scoped_ptr<SkRegion> region) {
     if (had_shape)
       native_window->SetEventTargeter(scoped_ptr<ui::EventTargeter>());
   }
+  widget()->OnSizeConstraintsChanged();
 }
 
 bool ChromeNativeAppWindowViews::HasFrameColor() const {

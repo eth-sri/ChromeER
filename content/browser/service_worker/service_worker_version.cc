@@ -29,7 +29,7 @@ namespace {
 const int64 kStopWorkerDelay = 30;  // 30 secs.
 
 // Default delay for scheduled update.
-const int kUpdateDelaySeconds = 10;
+const int kUpdateDelaySeconds = 1;
 
 void RunSoon(const base::Closure& callback) {
   if (!callback.is_null())
@@ -160,11 +160,10 @@ ServiceWorkerVersionInfo ServiceWorkerVersion::GetInfo() {
 }
 
 void ServiceWorkerVersion::StartWorker(const StatusCallback& callback) {
-  StartWorkerWithCandidateProcesses(std::vector<int>(), false, callback);
+  StartWorker(false, callback);
 }
 
-void ServiceWorkerVersion::StartWorkerWithCandidateProcesses(
-    const std::vector<int>& possible_process_ids,
+void ServiceWorkerVersion::StartWorker(
     bool pause_after_download,
     const StatusCallback& callback) {
   switch (running_status()) {
@@ -183,7 +182,6 @@ void ServiceWorkerVersion::StartWorkerWithCandidateProcesses(
             scope_,
             script_url_,
             pause_after_download,
-            possible_process_ids,
             base::Bind(&ServiceWorkerVersion::RunStartWorkerCallbacksOnError,
                        weak_factory_.GetWeakPtr()));
       }
@@ -376,24 +374,11 @@ void ServiceWorkerVersion::DispatchPushEvent(const StatusCallback& callback,
   }
 }
 
-void ServiceWorkerVersion::AddProcessToWorker(int process_id) {
-  embedded_worker_->AddProcessReference(process_id);
-}
-
-void ServiceWorkerVersion::RemoveProcessFromWorker(int process_id) {
-  embedded_worker_->ReleaseProcessReference(process_id);
-}
-
-bool ServiceWorkerVersion::HasProcessToRun() const {
-  return embedded_worker_->HasProcessToRun();
-}
-
 void ServiceWorkerVersion::AddControllee(
     ServiceWorkerProviderHost* provider_host) {
   DCHECK(!ContainsKey(controllee_map_, provider_host));
   int controllee_id = controllee_by_id_.Add(provider_host);
   controllee_map_[provider_host] = controllee_id;
-  AddProcessToWorker(provider_host->process_id());
   if (stop_worker_timer_.IsRunning())
     stop_worker_timer_.Stop();
 }
@@ -404,7 +389,6 @@ void ServiceWorkerVersion::RemoveControllee(
   DCHECK(found != controllee_map_.end());
   controllee_by_id_.Remove(found->second);
   controllee_map_.erase(found);
-  RemoveProcessFromWorker(provider_host->process_id());
   if (HasControllee())
     return;
   FOR_EACH_OBSERVER(Listener, listeners_, OnNoControllees(this));
@@ -413,16 +397,6 @@ void ServiceWorkerVersion::RemoveControllee(
     return;
   }
   ScheduleStopWorker();
-}
-
-void ServiceWorkerVersion::AddPotentialControllee(
-    ServiceWorkerProviderHost* provider_host) {
-  AddProcessToWorker(provider_host->process_id());
-}
-
-void ServiceWorkerVersion::RemovePotentialControllee(
-    ServiceWorkerProviderHost* provider_host) {
-  RemoveProcessFromWorker(provider_host->process_id());
 }
 
 void ServiceWorkerVersion::AddListener(Listener* listener) {
@@ -572,6 +546,8 @@ void ServiceWorkerVersion::DispatchActivateEventAfterStartWorker(
 void ServiceWorkerVersion::OnGetClientDocuments(int request_id) {
   std::vector<int> client_ids;
   ControlleeByIDMap::iterator it(&controllee_by_id_);
+  TRACE_EVENT0("ServiceWorker",
+               "ServiceWorkerVersion::OnGetClientDocuments");
   while (!it.IsAtEnd()) {
     client_ids.push_back(it.GetCurrentKey());
     it.Advance();
@@ -588,6 +564,8 @@ void ServiceWorkerVersion::OnActivateEventFinished(
     blink::WebServiceWorkerEventResult result) {
   DCHECK(ACTIVATING == status() ||
          REDUNDANT == status()) << status();
+  TRACE_EVENT0("ServiceWorker",
+               "ServiceWorkerVersion::OnActivateEventFinished");
 
   StatusCallback* callback = activate_callbacks_.Lookup(request_id);
   if (!callback) {
@@ -609,6 +587,8 @@ void ServiceWorkerVersion::OnInstallEventFinished(
     int request_id,
     blink::WebServiceWorkerEventResult result) {
   DCHECK_EQ(INSTALLING, status()) << status();
+  TRACE_EVENT0("ServiceWorker",
+               "ServiceWorkerVersion::OnInstallEventFinished");
 
   StatusCallback* callback = install_callbacks_.Lookup(request_id);
   if (!callback) {
@@ -628,6 +608,9 @@ void ServiceWorkerVersion::OnFetchEventFinished(
     int request_id,
     ServiceWorkerFetchEventResult result,
     const ServiceWorkerResponse& response) {
+  TRACE_EVENT1("ServiceWorker",
+               "ServiceWorkerVersion::OnFetchEventFinished",
+               "Request id", request_id);
   FetchCallback* callback = fetch_callbacks_.Lookup(request_id);
   if (!callback) {
     NOTREACHED() << "Got unexpected message: " << request_id;
@@ -641,6 +624,9 @@ void ServiceWorkerVersion::OnFetchEventFinished(
 
 void ServiceWorkerVersion::OnSyncEventFinished(
     int request_id) {
+  TRACE_EVENT1("ServiceWorker",
+               "ServiceWorkerVersion::OnSyncEventFinished",
+               "Request id", request_id);
   StatusCallback* callback = sync_callbacks_.Lookup(request_id);
   if (!callback) {
     NOTREACHED() << "Got unexpected message: " << request_id;
@@ -654,6 +640,9 @@ void ServiceWorkerVersion::OnSyncEventFinished(
 
 void ServiceWorkerVersion::OnPushEventFinished(
     int request_id) {
+  TRACE_EVENT1("ServiceWorker",
+               "ServiceWorkerVersion::OnPushEventFinished",
+               "Request id", request_id);
   StatusCallback* callback = push_callbacks_.Lookup(request_id);
   if (!callback) {
     NOTREACHED() << "Got unexpected message: " << request_id;
@@ -669,6 +658,9 @@ void ServiceWorkerVersion::OnPostMessageToDocument(
     int client_id,
     const base::string16& message,
     const std::vector<int>& sent_message_port_ids) {
+  TRACE_EVENT1("ServiceWorker",
+               "ServiceWorkerVersion::OnPostMessageToDocument",
+               "Client id", client_id);
   ServiceWorkerProviderHost* provider_host =
       controllee_by_id_.Lookup(client_id);
   if (!provider_host) {

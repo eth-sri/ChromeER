@@ -8,11 +8,6 @@
 #include <string>
 
 #include "base/memory/ref_counted.h"
-#include "base/memory/scoped_ptr.h"
-
-namespace base {
-class DictionaryValue;
-}  // namespace base
 
 namespace extensions {
 class Extension;
@@ -23,18 +18,16 @@ namespace test_util {
 // Adds an extension manifest to a builder.
 ExtensionBuilder& BuildExtension(ExtensionBuilder& builder);
 
+// Adds an app manifest to a builder.
+ExtensionBuilder& BuildApp(ExtensionBuilder& builder);
+
 // Creates an extension instance that can be attached to an ExtensionFunction
 // before running it.
 scoped_refptr<Extension> CreateEmptyExtension();
 
-// Return a very simple extension with a given |id|.
-scoped_refptr<Extension> CreateExtensionWithID(const std::string& id);
-
-// Parses |json| allowing trailing commas and replacing single quotes with
-// double quotes for test readability. If the json fails to parse, calls gtest's
-// ADD_FAILURE and returns an empty dictionary.
-scoped_ptr<base::DictionaryValue> ParseJsonDictionaryWithSingleQuotes(
-    std::string json);
+// Create an extension with a variable |id|, for tests that require multiple
+// extensions side-by-side having distinct IDs.
+scoped_refptr<Extension> CreateEmptyExtension(const std::string& id);
 
 }  // namespace test_util
 }  // namespace extensions

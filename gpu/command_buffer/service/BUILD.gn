@@ -116,12 +116,17 @@ source_set("service") {
     "//third_party/khronos:khronos_headers",
   ]
 
+  # Prefer mesa GL headers to system headers, which cause problems on Win.
+  include_dirs = [ "//third_party/mesa/src/include" ]
+
+  public_deps = [
+    "//gpu/command_buffer/common",
+  ]
   deps = [
     ":disk_cache_proto",
     "//base",
     "//base/third_party/dynamic_annotations",
     "//crypto",
-    "//gpu/command_buffer/common",
     "//third_party/angle:translator",
     "//third_party/protobuf:protobuf_lite",
     "//third_party/re2",
@@ -132,7 +137,7 @@ source_set("service") {
   ]
 
   if (ui_compositor_image_transport) {
-    include_dirs = [ "//third_party/khronos" ]
+    include_dirs += [ "//third_party/khronos" ]
   }
 
   if (is_win || is_android || (is_linux && use_x11)) {

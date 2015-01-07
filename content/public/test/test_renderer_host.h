@@ -9,9 +9,9 @@
 #include "base/message_loop/message_loop.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_view_host.h"
-#include "content/public/common/page_transition_types.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/base/page_transition_types.h"
 
 #if defined(USE_AURA)
 #include "ui/aura/test/aura_test_helper.h"
@@ -54,13 +54,20 @@ class RenderFrameHostTester {
   // RenderFrameHost is owned by the parent RenderFrameHost.
   virtual RenderFrameHost* AppendChild(const std::string& frame_name) = 0;
 
-  // Calls OnMsgNavigate on the RenderViewHost with the given information,
-  // including a custom PageTransition.  Sets the rest of the
+  // Calls OnDidCommitProvisionalLoad on the RenderFrameHost with the given
+  // information, including a custom PageTransition.  Sets the rest of the
   // parameters in the message to the "typical" values. This is a helper
   // function for simulating the most common types of loads.
   virtual void SendNavigateWithTransition(int page_id,
                                           const GURL& url,
-                                          PageTransition transition) = 0;
+                                          ui::PageTransition transition) = 0;
+
+  // Calls OnBeforeUnloadACK on this RenderFrameHost with the given parameter.
+  virtual void SendBeforeUnloadACK(bool proceed) = 0;
+
+  // Simulates the SwapOut_ACK that fires if you commit a cross-site
+  // navigation without making any network requests.
+  virtual void SimulateSwapOutACK() = 0;
 };
 
 // An interface and utility for driving tests of RenderViewHost.
@@ -111,19 +118,11 @@ class RenderViewHostTester {
   // parameters in the message to the "typical" values. This is a helper
   // function for simulating the most common types of loads.
   virtual void SendNavigateWithTransition(int page_id, const GURL& url,
-                                          PageTransition transition) = 0;
-
-  // Calls OnBeforeUnloadACK on the main RenderFrameHost with the given
-  // parameter.
-  virtual void SendBeforeUnloadACK(bool proceed) = 0;
+                                          ui::PageTransition transition) = 0;
 
   // If set, future loads will have |mime_type| set as the mime type.
   // If not set, the mime type will default to "text/html".
   virtual void SetContentsMimeType(const std::string& mime_type) = 0;
-
-  // Simulates the SwapOut_ACK that fires if you commit a cross-site
-  // navigation without making any network requests.
-  virtual void SimulateSwapOutACK() = 0;
 
   // Makes the WasHidden/WasShown calls to the RenderWidget that
   // tell it it has been hidden or restored from having been hidden.

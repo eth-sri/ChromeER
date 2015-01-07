@@ -31,7 +31,6 @@
 #include "chrome/browser/drive/fake_drive_service.h"
 #include "chrome/browser/extensions/component_loader.h"
 #include "chrome/browser/extensions/extension_apitest.h"
-#include "chrome/browser/extensions/extension_test_message_listener.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/ash/multi_user/multi_user_util.h"
 #include "chrome/browser/ui/ash/multi_user/multi_user_window_manager.h"
@@ -46,10 +45,11 @@
 #include "extensions/browser/app_window/app_window_registry.h"
 #include "extensions/browser/notification_types.h"
 #include "extensions/common/extension.h"
+#include "extensions/test/extension_test_message_listener.h"
 #include "google_apis/drive/drive_api_parser.h"
 #include "google_apis/drive/test_util.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
-#include "webkit/browser/fileapi/external_mount_points.h"
+#include "storage/browser/fileapi/external_mount_points.h"
 
 using drive::DriveIntegrationServiceFactory;
 
@@ -815,14 +815,9 @@ WRAPPED_INSTANTIATE_TEST_CASE_P(
         TestParameter(NOT_IN_GUEST_MODE, "audioRepeatMultipleFileDrive"),
         TestParameter(NOT_IN_GUEST_MODE, "audioNoRepeatMultipleFileDrive")));
 
-// Slow tests are disabled on debug build. http://crbug.com/327719
-#if !defined(NDEBUG)
-#define MAYBE_CreateNewFolder DISABLED_CreateNewFolder
-#else
-#define MAYBE_CreateNewFolder CreateNewFolder
-#endif
+// Flaky http://crbug.com/327719
 WRAPPED_INSTANTIATE_TEST_CASE_P(
-    MAYBE_CreateNewFolder,
+    DISABLED_CreateNewFolder,
     FileManagerBrowserTest,
     ::testing::Values(TestParameter(NOT_IN_GUEST_MODE,
                                     "createNewFolderAfterSelectFile"),
@@ -1219,26 +1214,6 @@ IN_PROC_BROWSER_TEST_F(MultiProfileFileManagerBrowserTest, MAYBE_BasicDrive) {
   StartTest();
 }
 
-// Slow tests are disabled on debug build. http://crbug.com/327719
-#if !defined(NDEBUG)
-#define MAYBE_PRE_VisitDesktopMenu DISABLED_PRE_VisitDesktopMenu
-#define MAYBE_VisitDesktopMenu DISABLED_VisitDesktopMenu
-#else
-#define MAYBE_PRE_VisitDesktopMenu PRE_VisitDesktopMenu
-#define MAYBE_VisitDesktopMenu VisitDesktopMenu
-#endif
-IN_PROC_BROWSER_TEST_F(MultiProfileFileManagerBrowserTest,
-                       MAYBE_PRE_VisitDesktopMenu) {
-  AddAllUsers();
-}
-
-IN_PROC_BROWSER_TEST_F(MultiProfileFileManagerBrowserTest,
-                       MAYBE_VisitDesktopMenu) {
-  // Test for the menu item for visiting other profile's desktop.
-  set_test_case_name("multiProfileVisitDesktopMenu");
-  StartTest();
-}
-
 template<GuestMode M>
 class GalleryBrowserTestBase : public FileManagerBrowserTestBase {
  public:
@@ -1454,6 +1429,12 @@ class VideoPlayerBrowserTestBase : public FileManagerBrowserTestBase {
     AddScript("common/test_util_common.js");
     AddScript("video_player/test_util.js");
     FileManagerBrowserTestBase::SetUp();
+  }
+
+  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+    command_line->AppendSwitch(
+        chromeos::switches::kEnableVideoPlayerChromecastSupport);
+    FileManagerBrowserTestBase::SetUpCommandLine(command_line);
   }
 
   virtual std::string OnMessage(const std::string& name,

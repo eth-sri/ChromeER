@@ -20,10 +20,6 @@ class ChromeWebViewPermissionHelperDelegate :
   virtual ~ChromeWebViewPermissionHelperDelegate();
 
   // WebViewPermissionHelperDelegate implementation.
-  virtual void RequestMediaAccessPermission(
-      content::WebContents* source,
-      const content::MediaStreamRequest& request,
-      const content::MediaResponseCallback& callback) OVERRIDE;
   virtual void CanDownload(
       content::RenderViewHost* render_view_host,
       const GURL& url,
@@ -93,12 +89,6 @@ class ChromeWebViewPermissionHelperDelegate :
 
   void OnFileSystemPermissionResponse(
       const base::Callback<void(bool)>& callback,
-      bool allow,
-      const std::string& user_input);
-
-  void OnMediaPermissionResponse(
-      const content::MediaStreamRequest& request,
-      const content::MediaResponseCallback& callback,
       bool allow,
       const std::string& user_input);
 

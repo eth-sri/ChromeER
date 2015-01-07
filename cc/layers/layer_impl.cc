@@ -119,7 +119,7 @@ scoped_ptr<LayerImpl> LayerImpl::RemoveChild(LayerImpl* child) {
       return ret.Pass();
     }
   }
-  return scoped_ptr<LayerImpl>();
+  return nullptr;
 }
 
 void LayerImpl::SetParent(LayerImpl* parent) {
@@ -206,7 +206,7 @@ void LayerImpl::PassCopyRequests(ScopedPtrVector<CopyOutputRequest>* requests) {
     return;
 
   bool was_empty = copy_requests_.empty();
-  copy_requests_.insert_and_take(copy_requests_.end(), *requests);
+  copy_requests_.insert_and_take(copy_requests_.end(), requests);
   requests->clear();
 
   if (was_empty && layer_tree_impl()->IsActiveTree())
@@ -220,7 +220,7 @@ void LayerImpl::TakeCopyRequestsAndTransformToTarget(
   DCHECK(layer_tree_impl()->IsActiveTree());
 
   size_t first_inserted_request = requests->size();
-  requests->insert_and_take(requests->end(), copy_requests_);
+  requests->insert_and_take(requests->end(), &copy_requests_);
   copy_requests_.clear();
 
   for (size_t i = first_inserted_request; i < requests->size(); ++i) {
@@ -246,7 +246,7 @@ void LayerImpl::CreateRenderSurface() {
 }
 
 void LayerImpl::ClearRenderSurface() {
-  draw_properties_.render_surface.reset();
+  draw_properties_.render_surface = nullptr;
 }
 
 void LayerImpl::ClearRenderSurfaceLayerList() {
@@ -1275,35 +1275,44 @@ void LayerImpl::SetScrollbarPosition(ScrollbarLayerImplBase* scrollbar_layer,
     current_offset.Scale(layer_tree_impl()->total_page_scale_factor());
   }
 
-  scrollbar_layer->SetVerticalAdjust(scrollbar_clip_layer->bounds_delta().y());
+  bool scrollbar_needs_animation = false;
+  scrollbar_needs_animation |= scrollbar_layer->SetVerticalAdjust(
+      scrollbar_clip_layer->bounds_delta().y());
   if (scrollbar_layer->orientation() == HORIZONTAL) {
     float visible_ratio = clip_rect.width() / scroll_rect.width();
-    scrollbar_layer->SetCurrentPos(current_offset.x());
-    scrollbar_layer->SetMaximum(scroll_rect.width() - clip_rect.width());
-    scrollbar_layer->SetVisibleToTotalLengthRatio(visible_ratio);
+    scrollbar_needs_animation |=
+        scrollbar_layer->SetCurrentPos(current_offset.x());
+    scrollbar_needs_animation |=
+        scrollbar_layer->SetMaximum(scroll_rect.width() - clip_rect.width());
+    scrollbar_needs_animation |=
+        scrollbar_layer->SetVisibleToTotalLengthRatio(visible_ratio);
   } else {
     float visible_ratio = clip_rect.height() / scroll_rect.height();
-    scrollbar_layer->SetCurrentPos(current_offset.y());
-    scrollbar_layer->SetMaximum(scroll_rect.height() - clip_rect.height());
-    scrollbar_layer->SetVisibleToTotalLengthRatio(visible_ratio);
+    scrollbar_needs_animation |=
+        scrollbar_layer->SetCurrentPos(current_offset.y());
+    scrollbar_needs_animation |=
+        scrollbar_layer->SetMaximum(scroll_rect.height() - clip_rect.height());
+    scrollbar_needs_animation |=
+        scrollbar_layer->SetVisibleToTotalLengthRatio(visible_ratio);
   }
-
-  layer_tree_impl()->set_needs_update_draw_properties();
-  // TODO(wjmaclean) The scrollbar animator for the pinch-zoom scrollbars should
-  // activate for every scroll on the main frame, not just the scrolls that move
-  // the pinch virtual viewport (i.e. trigger from either inner or outer
-  // viewport).
-  if (scrollbar_animation_controller_) {
-    // When both non-overlay and overlay scrollbars are both present, don't
-    // animate the overlay scrollbars when page scale factor is at the min.
-    // Non-overlay scrollbars also shouldn't trigger animations.
-    bool is_animatable_scrollbar =
-        scrollbar_layer->is_overlay_scrollbar() &&
-        ((layer_tree_impl()->total_page_scale_factor() >
-          layer_tree_impl()->min_page_scale_factor()) ||
-         !layer_tree_impl()->settings().use_pinch_zoom_scrollbars);
-    if (is_animatable_scrollbar)
-      scrollbar_animation_controller_->DidScrollUpdate();
+  if (scrollbar_needs_animation) {
+    layer_tree_impl()->set_needs_update_draw_properties();
+    // TODO(wjmaclean) The scrollbar animator for the pinch-zoom scrollbars
+    // should activate for every scroll on the main frame, not just the
+    // scrolls that move the pinch virtual viewport (i.e. trigger from
+    // either inner or outer viewport).
+    if (scrollbar_animation_controller_) {
+      // When both non-overlay and overlay scrollbars are both present, don't
+      // animate the overlay scrollbars when page scale factor is at the min.
+      // Non-overlay scrollbars also shouldn't trigger animations.
+      bool is_animatable_scrollbar =
+          scrollbar_layer->is_overlay_scrollbar() &&
+          ((layer_tree_impl()->total_page_scale_factor() >
+            layer_tree_impl()->min_page_scale_factor()) ||
+           !layer_tree_impl()->settings().use_pinch_zoom_scrollbars);
+      if (is_animatable_scrollbar)
+        scrollbar_animation_controller_->DidScrollUpdate();
+    }
   }
 }
 
@@ -1315,7 +1324,7 @@ void LayerImpl::DidBecomeActive() {
 
   bool need_scrollbar_animation_controller = scrollable() && scrollbars_;
   if (!need_scrollbar_animation_controller) {
-    scrollbar_animation_controller_.reset();
+    scrollbar_animation_controller_ = nullptr;
     return;
   }
 
@@ -1349,7 +1358,7 @@ void LayerImpl::RemoveScrollbar(ScrollbarLayerImplBase* layer) {
 
   scrollbars_->erase(layer);
   if (scrollbars_->empty())
-    scrollbars_.reset();
+    scrollbars_ = nullptr;
 }
 
 bool LayerImpl::HasScrollbar(ScrollbarOrientation orientation) const {
@@ -1414,6 +1423,8 @@ void LayerImpl::AsValueInto(base::debug::TracedValue* state) const {
   state->BeginDictionary("bounds");
   MathUtil::AddToTracedValue(bounds_, state);
   state->EndDictionary();
+
+  state->SetDouble("opacity", opacity());
 
   state->BeginArray("position");
   MathUtil::AddToTracedValue(position_, state);

@@ -4,14 +4,15 @@
 
 #import "chrome/browser/ui/cocoa/apps/app_shim_menu_controller_mac.h"
 
-#include "apps/app_shim/extension_app_shim_handler_mac.h"
+#include "base/mac/scoped_nsautorelease_pool.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
+#include "chrome/browser/apps/app_shim/extension_app_shim_handler_mac.h"
+#include "chrome/browser/apps/app_window_registry_util.h"
 #import "chrome/browser/ui/cocoa/apps/native_app_window_cocoa.h"
 #include "chrome/grit/generated_resources.h"
 #include "extensions/browser/app_window/app_window.h"
-#include "extensions/browser/app_window/app_window_registry.h"
 #include "extensions/common/extension.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/l10n/l10n_util_mac.h"
@@ -277,11 +278,18 @@ void AddDuplicateItem(NSMenuItem* top_level_item,
 }
 
 - (void)windowMainStatusChanged:(NSNotification*)notification {
+  // A Yosemite AppKit bug causes this notification to be sent during the
+  // -dealloc for a specific NSWindow. Any autoreleases sent to that window
+  // must be drained before the window finishes -dealloc. In this method, an
+  // autorelease is sent by the invocation of [NSApp windows].
+  // http://crbug.com/406944.
+  base::mac::ScopedNSAutoreleasePool pool;
+
   id window = [notification object];
   NSString* name = [notification name];
   if ([name isEqualToString:NSWindowDidBecomeMainNotification]) {
     extensions::AppWindow* appWindow =
-        extensions::AppWindowRegistry::GetAppWindowForNativeWindowAnyProfile(
+        AppWindowRegistryUtil::GetAppWindowForNativeWindowAnyProfile(
             window);
 
     const extensions::Extension* extension = NULL;
@@ -362,7 +370,7 @@ void AddDuplicateItem(NSMenuItem* top_level_item,
 
 - (void)quitCurrentPlatformApp {
   extensions::AppWindow* appWindow =
-      extensions::AppWindowRegistry::GetAppWindowForNativeWindowAnyProfile(
+      AppWindowRegistryUtil::GetAppWindowForNativeWindowAnyProfile(
           [NSApp keyWindow]);
   if (appWindow)
     apps::ExtensionAppShimHandler::QuitAppForWindow(appWindow);
@@ -370,7 +378,7 @@ void AddDuplicateItem(NSMenuItem* top_level_item,
 
 - (void)hideCurrentPlatformApp {
   extensions::AppWindow* appWindow =
-      extensions::AppWindowRegistry::GetAppWindowForNativeWindowAnyProfile(
+      AppWindowRegistryUtil::GetAppWindowForNativeWindowAnyProfile(
           [NSApp keyWindow]);
   if (appWindow)
     apps::ExtensionAppShimHandler::HideAppForWindow(appWindow);
@@ -378,7 +386,7 @@ void AddDuplicateItem(NSMenuItem* top_level_item,
 
 - (void)focusCurrentPlatformApp {
   extensions::AppWindow* appWindow =
-      extensions::AppWindowRegistry::GetAppWindowForNativeWindowAnyProfile(
+      AppWindowRegistryUtil::GetAppWindowForNativeWindowAnyProfile(
           [NSApp keyWindow]);
   if (appWindow)
     apps::ExtensionAppShimHandler::FocusAppForWindow(appWindow);

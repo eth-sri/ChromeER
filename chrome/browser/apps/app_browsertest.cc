@@ -18,7 +18,6 @@
 #include "chrome/browser/extensions/component_loader.h"
 #include "chrome/browser/extensions/extension_browsertest.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_test_message_listener.h"
 #include "chrome/browser/renderer_context_menu/render_view_context_menu.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/extensions/application_launch.h"
@@ -44,6 +43,8 @@
 #include "extensions/browser/notification_types.h"
 #include "extensions/browser/pref_names.h"
 #include "extensions/common/api/app_runtime.h"
+#include "extensions/test/extension_test_message_listener.h"
+#include "extensions/test/result_catcher.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "url/gurl.h"
 
@@ -114,6 +115,7 @@ class TabsAddedNotificationObserver
   DISALLOW_COPY_AND_ASSIGN(TabsAddedNotificationObserver);
 };
 
+#if defined(ENABLE_FULL_PRINTING)
 class ScopedPreviewTestingDelegate : PrintPreviewUI::TestingDelegate {
  public:
   explicit ScopedPreviewTestingDelegate(bool auto_cancel)
@@ -168,6 +170,8 @@ class ScopedPreviewTestingDelegate : PrintPreviewUI::TestingDelegate {
   scoped_refptr<content::MessageLoopRunner> waiting_runner_;
   gfx::Size dialog_size_;
 };
+
+#endif  // ENABLE_FULL_PRINTING
 
 #if !defined(OS_CHROMEOS) && !defined(OS_WIN)
 bool CopyTestDataAndSetCommandLineArg(
@@ -1048,9 +1052,8 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, ComponentAppBackgroundPage) {
   ASSERT_TRUE(launched_listener.WaitUntilSatisfied());
 }
 
-// Flaky: http://crbug.com/407409
 IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest,
-                       DISABLED_ComponentExtensionRuntimeReload) {
+                       ComponentExtensionRuntimeReload) {
   // Ensure that we wait until the background page is run (to register the
   // OnLaunched listener) before trying to open the application. This is similar
   // to LoadAndLaunchPlatformApp, but we want to load as a component extension.
@@ -1072,9 +1075,15 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest,
   }
 
   {
-    ASSERT_TRUE(ExecuteScriptInBackgroundPageNoWait(
-        extension->id(), "chrome.runtime.reload();"));
     ExtensionTestMessageListener launched_listener("Launched", false);
+    ASSERT_TRUE(ExecuteScriptInBackgroundPageNoWait(
+        extension->id(),
+        // NoWait actually waits for a domAutomationController.send() which is
+        // implicitly append to the script. Since reload() restarts the
+        // extension, the send after reload may not get executed. To get around
+        // this, send first, then execute the reload().
+        "window.domAutomationController.send(0);"
+        "chrome.runtime.reload();"));
     ASSERT_TRUE(launched_listener.WaitUntilSatisfied());
   }
 }
@@ -1086,7 +1095,7 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest,
 #define MAYBE_Messaging Messaging
 #endif
 IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, MAYBE_Messaging) {
-  ExtensionApiTest::ResultCatcher result_catcher;
+  ResultCatcher result_catcher;
   LoadAndLaunchPlatformApp("messaging/app2", "Ready");
   LoadAndLaunchPlatformApp("messaging/app1", "Launched");
   EXPECT_TRUE(result_catcher.GetNextResult());
@@ -1109,6 +1118,9 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, MAYBE_WebContentsHasFocus) {
                   ->GetRenderWidgetHostView()
                   ->HasFocus());
 }
+
+
+#if defined(ENABLE_FULL_PRINTING)
 
 #if defined(OS_WIN) || defined(OS_LINUX) || defined(OS_MACOSX)
 #define MAYBE_WindowDotPrintShouldBringUpPrintPreview \
@@ -1159,6 +1171,7 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest,
             minimum_dialog_size.height());
   GetFirstAppWindow()->GetBaseWindow()->Close();
 }
+#endif  // ENABLE_FULL_PRINTING
 
 
 #if defined(OS_CHROMEOS)
@@ -1302,7 +1315,7 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, ReinstallDataCleanup) {
     ASSERT_TRUE(extension);
     extension_id = extension->id();
 
-    ExtensionApiTest::ResultCatcher result_catcher;
+    ResultCatcher result_catcher;
     EXPECT_TRUE(result_catcher.GetNextResult());
   }
 
@@ -1315,7 +1328,7 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, ReinstallDataCleanup) {
     ASSERT_TRUE(extension);
     ASSERT_EQ(extension_id, extension->id());
 
-    ExtensionApiTest::ResultCatcher result_catcher;
+    ResultCatcher result_catcher;
     EXPECT_TRUE(result_catcher.GetNextResult());
   }
 }

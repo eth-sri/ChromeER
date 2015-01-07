@@ -7,13 +7,14 @@
 
 #include <string>
 
+#include "athena/athena_export.h"
 #include "base/macros.h"
 
 namespace athena {
 
 // The resource manager delegate which abstracts system function calls to allow
 // unit tests to override them.
-class ResourceManagerDelegate {
+class ATHENA_EXPORT ResourceManagerDelegate {
  public:
   static ResourceManagerDelegate* CreateResourceManagerDelegate();
 
@@ -24,7 +25,8 @@ class ResourceManagerDelegate {
   virtual int GetUsedMemoryInPercent() = 0;
 
   // Returns the time memory pressure interval time in ms to be used by the
-  // memory pressure monitoring system.
+  // memory pressure monitoring system. This is also used as the default time
+  // difference between resource de-allocation operation calls.
   virtual int MemoryPressureIntervalInMS() = 0;
 };
 

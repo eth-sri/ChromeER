@@ -7,9 +7,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/extensions/extension_apitest.h"
-#include "chrome/browser/extensions/extension_function_test_utils.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_test_message_listener.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "device/bluetooth/bluetooth_adapter_factory.h"
@@ -18,6 +16,9 @@
 #include "device/bluetooth/test/mock_bluetooth_device.h"
 #include "device/bluetooth/test/mock_bluetooth_socket.h"
 #include "extensions/browser/api/bluetooth_socket/bluetooth_socket_api.h"
+#include "extensions/common/test_util.h"
+#include "extensions/test/extension_test_message_listener.h"
+#include "extensions/test/result_catcher.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
 using device::BluetoothAdapter;
@@ -29,8 +30,8 @@ using device::MockBluetoothAdapter;
 using device::MockBluetoothDevice;
 using device::MockBluetoothSocket;
 using extensions::Extension;
+using extensions::ResultCatcher;
 
-namespace utils = extension_function_test_utils;
 namespace api = extensions::core_api;
 
 namespace {
@@ -41,7 +42,7 @@ class BluetoothSocketApiTest : public ExtensionApiTest {
 
   virtual void SetUpOnMainThread() OVERRIDE {
     ExtensionApiTest::SetUpOnMainThread();
-    empty_extension_ = utils::CreateEmptyExtension();
+    empty_extension_ = extensions::test_util::CreateEmptyExtension();
     SetUpMockAdapter();
   }
 
@@ -100,7 +101,7 @@ ACTION_TEMPLATE(InvokeCallbackArgument,
 
 IN_PROC_BROWSER_TEST_F(BluetoothSocketApiTest, Connect) {
   ResultCatcher catcher;
-  catcher.RestrictToProfile(browser()->profile());
+  catcher.RestrictToBrowserContext(browser()->profile());
 
   // Return the right mock device object for the address used by the test,
   // return NULL for the "Device not found" test.
@@ -145,7 +146,7 @@ IN_PROC_BROWSER_TEST_F(BluetoothSocketApiTest, Connect) {
 #endif
 IN_PROC_BROWSER_TEST_F(BluetoothSocketApiTest, MAYBE_Listen) {
   ResultCatcher catcher;
-  catcher.RestrictToProfile(browser()->profile());
+  catcher.RestrictToBrowserContext(browser()->profile());
 
   // Return a mock socket object as a successful result to the create service
   // call.
@@ -207,7 +208,7 @@ IN_PROC_BROWSER_TEST_F(BluetoothSocketApiTest, MAYBE_Listen) {
 
 IN_PROC_BROWSER_TEST_F(BluetoothSocketApiTest, PermissionDenied) {
   ResultCatcher catcher;
-  catcher.RestrictToProfile(browser()->profile());
+  catcher.RestrictToBrowserContext(browser()->profile());
 
   // Run the test.
   scoped_refptr<const Extension> extension(

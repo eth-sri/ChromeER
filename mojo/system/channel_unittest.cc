@@ -10,6 +10,7 @@
 #include "base/test/test_io_thread.h"
 #include "mojo/embedder/platform_channel_pair.h"
 #include "mojo/embedder/simple_platform_support.h"
+#include "mojo/system/channel_endpoint.h"
 #include "mojo/system/message_in_transit.h"
 #include "mojo/system/message_pipe.h"
 #include "mojo/system/raw_channel.h"
@@ -34,7 +35,7 @@ class ChannelTest : public testing::Test {
         init_result_(TRISTATE_UNKNOWN) {}
   virtual ~ChannelTest() {}
 
-  virtual void SetUp() OVERRIDE {
+  virtual void SetUp() override {
     io_thread_.PostTaskAndWait(
         FROM_HERE,
         base::Bind(&ChannelTest::SetUpOnIOThread, base::Unretained(this)));
@@ -109,7 +110,7 @@ TEST_F(ChannelTest, InitShutdown) {
 
   // Okay to destroy |Channel| on not-the-I/O-thread.
   EXPECT_TRUE(channel()->HasOneRef());
-  *mutable_channel() = NULL;
+  *mutable_channel() = nullptr;
 }
 
 // ChannelTest.InitFails -------------------------------------------------------
@@ -120,39 +121,39 @@ class MockRawChannelOnInitFails : public RawChannel {
   virtual ~MockRawChannelOnInitFails() {}
 
   // |RawChannel| public methods:
-  virtual size_t GetSerializedPlatformHandleSize() const OVERRIDE { return 0; }
+  virtual size_t GetSerializedPlatformHandleSize() const override { return 0; }
 
  private:
   // |RawChannel| protected methods:
-  virtual IOResult Read(size_t*) OVERRIDE {
+  virtual IOResult Read(size_t*) override {
     CHECK(false);
     return IO_FAILED_UNKNOWN;
   }
-  virtual IOResult ScheduleRead() OVERRIDE {
+  virtual IOResult ScheduleRead() override {
     CHECK(false);
     return IO_FAILED_UNKNOWN;
   }
   virtual embedder::ScopedPlatformHandleVectorPtr GetReadPlatformHandles(
       size_t,
-      const void*) OVERRIDE {
+      const void*) override {
     CHECK(false);
     return embedder::ScopedPlatformHandleVectorPtr();
   }
-  virtual IOResult WriteNoLock(size_t*, size_t*) OVERRIDE {
+  virtual IOResult WriteNoLock(size_t*, size_t*) override {
     CHECK(false);
     return IO_FAILED_UNKNOWN;
   }
-  virtual IOResult ScheduleWriteNoLock() OVERRIDE {
+  virtual IOResult ScheduleWriteNoLock() override {
     CHECK(false);
     return IO_FAILED_UNKNOWN;
   }
-  virtual bool OnInit() OVERRIDE {
+  virtual bool OnInit() override {
     EXPECT_FALSE(on_init_called_);
     on_init_called_ = true;
     return false;
   }
   virtual void OnShutdownNoLock(scoped_ptr<ReadBuffer>,
-                                scoped_ptr<WriteBuffer>) OVERRIDE {
+                                scoped_ptr<WriteBuffer>) override {
     CHECK(false);
   }
 
@@ -177,7 +178,7 @@ TEST_F(ChannelTest, InitFails) {
 
   // Should destroy |Channel| with no |Shutdown()| (on not-the-I/O-thread).
   EXPECT_TRUE(channel()->HasOneRef());
-  *mutable_channel() = NULL;
+  *mutable_channel() = nullptr;
 }
 
 // ChannelTest.CloseBeforeRun --------------------------------------------------
@@ -193,10 +194,12 @@ TEST_F(ChannelTest, CloseBeforeRun) {
       base::Bind(&ChannelTest::InitChannelOnIOThread, base::Unretained(this)));
   EXPECT_EQ(TRISTATE_TRUE, init_result());
 
-  scoped_refptr<MessagePipe> mp(MessagePipe::CreateLocalProxy());
+  scoped_refptr<ChannelEndpoint> channel_endpoint;
+  scoped_refptr<MessagePipe> mp(
+      MessagePipe::CreateLocalProxy(&channel_endpoint));
 
   MessageInTransit::EndpointId local_id =
-      channel()->AttachMessagePipeEndpoint(mp, 1);
+      channel()->AttachEndpoint(channel_endpoint);
   EXPECT_EQ(Channel::kBootstrapEndpointId, local_id);
 
   mp->Close(0);
@@ -204,9 +207,9 @@ TEST_F(ChannelTest, CloseBeforeRun) {
   // TODO(vtl): Currently, the |Close()| above won't detach (since it thinks
   // we're still expecting a "run" message from the other side), so the
   // |RunMessagePipeEndpoint()| below will return true. We need to refactor
-  // |AttachMessagePipeEndpoint()| to indicate whether |Run...()| will
-  // necessarily be called or not. (Then, in the case that it may not be called,
-  // this will return false.)
+  // |AttachEndpoint()| to indicate whether |Run...()| will necessarily be
+  // called or not. (Then, in the case that it may not be called, this will
+  // return false.)
   EXPECT_TRUE(channel()->RunMessagePipeEndpoint(local_id,
                                                 Channel::kBootstrapEndpointId));
 
@@ -231,24 +234,27 @@ TEST_F(ChannelTest, ShutdownAfterAttach) {
       base::Bind(&ChannelTest::InitChannelOnIOThread, base::Unretained(this)));
   EXPECT_EQ(TRISTATE_TRUE, init_result());
 
-  scoped_refptr<MessagePipe> mp(MessagePipe::CreateLocalProxy());
+  scoped_refptr<ChannelEndpoint> channel_endpoint;
+  scoped_refptr<MessagePipe> mp(
+      MessagePipe::CreateLocalProxy(&channel_endpoint));
 
   MessageInTransit::EndpointId local_id =
-      channel()->AttachMessagePipeEndpoint(mp, 1);
+      channel()->AttachEndpoint(channel_endpoint);
   EXPECT_EQ(Channel::kBootstrapEndpointId, local_id);
 
   // TODO(vtl): Currently, we always "expect" a |RunMessagePipeEndpoint()| after
-  // an |AttachMessagePipeEndpoint()| (which is actually incorrect). We need to
-  // refactor |AttachMessagePipeEndpoint()| to indicate whether |Run...()| will
-  // necessarily be called or not. (Then, in the case that it may not be called,
-  // we should test a |Shutdown()| without the |Run...()|.)
+  // an |AttachEndpoint()| (which is actually incorrect). We need to refactor
+  // |AttachEndpoint()| to indicate whether |Run...()| will necessarily be
+  // called or not. (Then, in the case that it may not be called, we should test
+  // a |Shutdown()| without the |Run...()|.)
   EXPECT_TRUE(channel()->RunMessagePipeEndpoint(local_id,
                                                 Channel::kBootstrapEndpointId));
 
   Waiter waiter;
   waiter.Init();
-  ASSERT_EQ(MOJO_RESULT_OK,
-            mp->AddWaiter(0, &waiter, MOJO_HANDLE_SIGNAL_READABLE, 123, NULL));
+  ASSERT_EQ(
+      MOJO_RESULT_OK,
+      mp->AddWaiter(0, &waiter, MOJO_HANDLE_SIGNAL_READABLE, 123, nullptr));
 
   // Don't wait for the shutdown to run ...
   io_thread()->PostTask(FROM_HERE,
@@ -257,7 +263,7 @@ TEST_F(ChannelTest, ShutdownAfterAttach) {
 
   // ... since this |Wait()| should fail once the channel is shut down.
   EXPECT_EQ(MOJO_RESULT_FAILED_PRECONDITION,
-            waiter.Wait(MOJO_DEADLINE_INDEFINITE, NULL));
+            waiter.Wait(MOJO_DEADLINE_INDEFINITE, nullptr));
   HandleSignalsState hss;
   mp->RemoveWaiter(0, &waiter, &hss);
   EXPECT_EQ(0u, hss.satisfied_signals);
@@ -281,10 +287,12 @@ TEST_F(ChannelTest, WaitAfterAttachRunAndShutdown) {
       base::Bind(&ChannelTest::InitChannelOnIOThread, base::Unretained(this)));
   EXPECT_EQ(TRISTATE_TRUE, init_result());
 
-  scoped_refptr<MessagePipe> mp(MessagePipe::CreateLocalProxy());
+  scoped_refptr<ChannelEndpoint> channel_endpoint;
+  scoped_refptr<MessagePipe> mp(
+      MessagePipe::CreateLocalProxy(&channel_endpoint));
 
   MessageInTransit::EndpointId local_id =
-      channel()->AttachMessagePipeEndpoint(mp, 1);
+      channel()->AttachEndpoint(channel_endpoint);
   EXPECT_EQ(Channel::kBootstrapEndpointId, local_id);
 
   EXPECT_TRUE(channel()->RunMessagePipeEndpoint(local_id,

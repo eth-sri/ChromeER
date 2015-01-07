@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "base/bind.h"
+#include "mojo/application/application_runner_chromium.h"
 #include "mojo/examples/wm_flow/app/embedder.mojom.h"
 #include "mojo/examples/wm_flow/embedded/embeddee.mojom.h"
 #include "mojo/public/cpp/application/application_connection.h"
@@ -15,7 +16,6 @@
 #include "mojo/services/public/cpp/view_manager/view_manager.h"
 #include "mojo/services/public/cpp/view_manager/view_manager_client_factory.h"
 #include "mojo/services/public/cpp/view_manager/view_manager_delegate.h"
-#include "mojo/services/public/interfaces/view_manager/view_manager.mojom.h"
 
 namespace examples {
 
@@ -40,17 +40,18 @@ class EmbeddeeImpl : public mojo::InterfaceImpl<Embeddee> {
 class WMFlowEmbedded : public mojo::ApplicationDelegate,
                        public mojo::ViewManagerDelegate {
  public:
-  WMFlowEmbedded()
-      : view_manager_client_factory_(this) {}
+  WMFlowEmbedded() {}
   virtual ~WMFlowEmbedded() {}
 
  private:
   // Overridden from Application:
-  virtual void Initialize(mojo::ApplicationImpl* app) MOJO_OVERRIDE {
+  virtual void Initialize(mojo::ApplicationImpl* app) override {
+    view_manager_client_factory_.reset(
+        new mojo::ViewManagerClientFactory(app->shell(), this));
   }
   virtual bool ConfigureIncomingConnection(
-      mojo::ApplicationConnection* connection) MOJO_OVERRIDE {
-    connection->AddService(&view_manager_client_factory_);
+      mojo::ApplicationConnection* connection) override {
+    connection->AddService(view_manager_client_factory_.get());
     return true;
   }
 
@@ -59,7 +60,7 @@ class WMFlowEmbedded : public mojo::ApplicationDelegate,
       mojo::ViewManager* view_manager,
       mojo::View* root,
       mojo::ServiceProviderImpl* exported_services,
-      scoped_ptr<mojo::ServiceProvider> imported_services) MOJO_OVERRIDE {
+      scoped_ptr<mojo::ServiceProvider> imported_services) override {
     root->SetColor(SK_ColorMAGENTA);
 
     exported_services->AddService(&embeddee_factory_);
@@ -68,13 +69,13 @@ class WMFlowEmbedded : public mojo::ApplicationDelegate,
                                      base::Unretained(this)));
   }
   virtual void OnViewManagerDisconnected(
-      mojo::ViewManager* view_manager) MOJO_OVERRIDE {}
+      mojo::ViewManager* view_manager) override {}
 
   void HelloWorldAck() {
     printf("HelloWorld() ack'ed\n");
   }
 
-  mojo::ViewManagerClientFactory view_manager_client_factory_;
+  scoped_ptr<mojo::ViewManagerClientFactory> view_manager_client_factory_;
   EmbedderPtr embedder_;
   mojo::InterfaceFactoryImpl<EmbeddeeImpl> embeddee_factory_;
 
@@ -83,11 +84,8 @@ class WMFlowEmbedded : public mojo::ApplicationDelegate,
 
 }  // namespace examples
 
-namespace mojo {
-
-// static
-ApplicationDelegate* ApplicationDelegate::Create() {
-  return new examples::WMFlowEmbedded;
+MojoResult MojoMain(MojoHandle shell_handle) {
+  mojo::ApplicationRunnerChromium runner(new examples::WMFlowEmbedded);
+  return runner.Run(shell_handle);
 }
 
-}  // namespace

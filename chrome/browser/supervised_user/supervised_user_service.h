@@ -5,15 +5,19 @@
 #ifndef CHROME_BROWSER_SUPERVISED_USER_SUPERVISED_USER_SERVICE_H_
 #define CHROME_BROWSER_SUPERVISED_USER_SUPERVISED_USER_SERVICE_H_
 
+#include <map>
 #include <set>
+#include <string>
 #include <vector>
 
 #include "base/callback.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/observer_list.h"
 #include "base/prefs/pref_change_registrar.h"
 #include "base/scoped_observer.h"
 #include "base/strings/string16.h"
+#include "chrome/browser/supervised_user/experimental/supervised_user_blacklist.h"
 #include "chrome/browser/supervised_user/supervised_user_url_filter.h"
 #include "chrome/browser/supervised_user/supervised_users.h"
 #include "chrome/browser/sync/profile_sync_service_observer.h"
@@ -31,10 +35,16 @@ class Browser;
 class GoogleServiceAuthError;
 class PermissionRequestCreator;
 class Profile;
+class SupervisedUserBlacklistDownloader;
 class SupervisedUserRegistrationUtility;
+class SupervisedUserServiceObserver;
 class SupervisedUserSettingsService;
 class SupervisedUserSiteList;
 class SupervisedUserURLFilter;
+
+namespace base {
+class FilePath;
+}
 
 namespace extensions {
 class ExtensionRegistry;
@@ -72,6 +82,12 @@ class SupervisedUserService : public KeyedService,
     // Returns true to indicate that the delegate handled the (de)activation, or
     // false to indicate that the SupervisedUserService itself should handle it.
     virtual bool SetActive(bool active) = 0;
+    // Returns the path to a blacklist file to load, or an empty path to
+    // indicate "none".
+    virtual base::FilePath GetBlacklistPath() const = 0;
+    // Returns the URL from which to download a blacklist if no local one exists
+    // yet. The blacklist file will be stored at |GetBlacklistPath()|.
+    virtual GURL GetBlacklistURL() const = 0;
   };
 
   virtual ~SupervisedUserService();
@@ -156,6 +172,9 @@ class SupervisedUserService : public KeyedService,
   void AddNavigationBlockedCallback(const NavigationBlockedCallback& callback);
   void DidBlockNavigation(content::WebContents* web_contents);
 
+  void AddObserver(SupervisedUserServiceObserver* observer);
+  void RemoveObserver(SupervisedUserServiceObserver* observer);
+
 #if defined(ENABLE_EXTENSIONS)
   // extensions::ManagementPolicy::Provider implementation:
   virtual std::string GetDebugPolicyProviderName() const OVERRIDE;
@@ -187,7 +206,10 @@ class SupervisedUserService : public KeyedService,
   friend class SupervisedUserServiceExtensionTestBase;
   friend class SupervisedUserServiceFactory;
   FRIEND_TEST_ALL_PREFIXES(SupervisedUserServiceTest, ClearOmitOnRegistration);
-
+  FRIEND_TEST_ALL_PREFIXES(SupervisedUserServiceTest,
+                           ChangesIncludedSessionOnChangedSettings);
+  FRIEND_TEST_ALL_PREFIXES(SupervisedUserServiceTest,
+                           ChangesSyncSessionStateOnChangedSettings);
   // A bridge from the UI thread to the SupervisedUserURLFilters, one of which
   // lives on the IO thread. This class mediates access to them and makes sure
   // they are kept in sync.
@@ -202,10 +224,13 @@ class SupervisedUserService : public KeyedService,
     void SetDefaultFilteringBehavior(
         SupervisedUserURLFilter::FilteringBehavior behavior);
     void LoadWhitelists(ScopedVector<SupervisedUserSiteList> site_lists);
+    void LoadBlacklist(const base::FilePath& path);
     void SetManualHosts(scoped_ptr<std::map<std::string, bool> > host_map);
     void SetManualURLs(scoped_ptr<std::map<GURL, bool> > url_map);
 
    private:
+    void OnBlacklistLoaded();
+
     // SupervisedUserURLFilter is refcounted because the IO thread filter is
     // used both by ProfileImplIOData and OffTheRecordProfileIOData (to filter
     // network requests), so they both keep a reference to it.
@@ -214,6 +239,8 @@ class SupervisedUserService : public KeyedService,
     // should not be used anymore either).
     scoped_refptr<SupervisedUserURLFilter> ui_url_filter_;
     scoped_refptr<SupervisedUserURLFilter> io_url_filter_;
+
+    SupervisedUserBlacklist blacklist_;
 
     DISALLOW_COPY_AND_ASSIGN(URLFilterContext);
   };
@@ -238,6 +265,8 @@ class SupervisedUserService : public KeyedService,
 
   bool ProfileIsSupervised() const;
 
+  void OnCustodianInfoChanged();
+
 #if defined(ENABLE_EXTENSIONS)
   // Internal implementation for ExtensionManagementPolicy::Delegate methods.
   // If |error| is not NULL, it will be filled with an error message if the
@@ -261,6 +290,17 @@ class SupervisedUserService : public KeyedService,
 
   void UpdateSiteLists();
 
+  // Asynchronously downloads a static blacklist file from |url|, stores it at
+  // |path|, loads it, and applies it to the URL filters. If |url| is not valid
+  // (e.g. empty), directly tries to load from |path|.
+  void LoadBlacklist(const base::FilePath& path, const GURL& url);
+
+  // Asynchronously loads a static blacklist from a binary file at |path| and
+  // applies it to the URL filters.
+  void LoadBlacklistFromFile(const base::FilePath& path);
+
+  void OnBlacklistDownloadDone(const base::FilePath& path, bool success);
+
   // Updates the manual overrides for hosts in the URL filters when the
   // corresponding preference is changed.
   void UpdateManualHosts();
@@ -271,6 +311,19 @@ class SupervisedUserService : public KeyedService,
 
   // Returns the human readable name of the supervised user.
   std::string GetSupervisedUserName() const;
+
+  // Subscribes to the SupervisedUserPrefStore, refreshes
+  // |includes_sync_sessions_type_| and triggers reconfiguring the
+  // ProfileSyncService.
+  void OnHistoryRecordingStateChanged();
+
+  // Returns true if the syncer::SESSIONS type should be included in Sync.
+  bool IncludesSyncSessionsType() const;
+
+  // The option a custodian sets to either record or prevent recording the
+  // supervised user's history. Set by |FetchNewSessionSyncState()| and
+  // defaults to true.
+  bool includes_sync_sessions_type_;
 
   // Owns us via the KeyedService mechanism.
   Profile* profile_;
@@ -303,12 +356,12 @@ class SupervisedUserService : public KeyedService,
   bool did_shutdown_;
 
   URLFilterContext url_filter_context_;
+  scoped_ptr<SupervisedUserBlacklistDownloader> blacklist_downloader_;
 
   // Used to create permission requests.
   scoped_ptr<PermissionRequestCreator> permissions_creator_;
 
-  // True iff we are waiting for a permission request to be issued.
-  bool waiting_for_permissions_;
+  ObserverList<SupervisedUserServiceObserver> observer_list_;
 
   base::WeakPtrFactory<SupervisedUserService> weak_ptr_factory_;
 };

@@ -176,7 +176,6 @@ void InlineSigninHelper::OnSigninOAuthInformationAvailable(
     } else {
       confirmation_required =
           source == signin::SOURCE_SETTINGS ||
-          source == signin::SOURCE_WEBSTORE_INSTALL ||
           choose_what_to_sync_ ?
               OneClickSigninSyncStarter::NO_CONFIRMATION :
               OneClickSigninSyncStarter::CONFIRM_AFTER_SIGNIN;
@@ -222,8 +221,8 @@ void InlineSigninHelper::OnSigninOAuthInformationFailure(
 }  // namespace
 
 InlineLoginHandlerImpl::InlineLoginHandlerImpl()
-      : weak_factory_(this),
-        confirm_untrusted_signin_(false) {
+      : confirm_untrusted_signin_(false),
+        weak_factory_(this) {
 }
 
 InlineLoginHandlerImpl::~InlineLoginHandlerImpl() {}
@@ -240,7 +239,7 @@ bool InlineLoginHandlerImpl::HandleContextMenu(
 void InlineLoginHandlerImpl::DidCommitProvisionalLoadForFrame(
     content::RenderFrameHost* render_frame_host,
     const GURL& url,
-    content::PageTransition transition_type) {
+    ui::PageTransition transition_type) {
   if (!web_contents())
     return;
 
@@ -254,11 +253,13 @@ void InlineLoginHandlerImpl::DidCommitProvisionalLoadForFrame(
 
   // Loading any untrusted (e.g., HTTP) URLs in the privileged sign-in process
   // will require confirmation before the sign in takes effect.
-  if (!url.is_empty() &&
-      url.spec() != url::kAboutBlankURL &&
-      !gaia::IsGaiaSignonRealm(url.GetOrigin()) &&
-      !signin::IsContinueUrlForWebBasedSigninFlow(url)) {
-    confirm_untrusted_signin_ = true;
+  if (!url.is_empty()) {
+    GURL origin(url.GetOrigin());
+    if (url.spec() != url::kAboutBlankURL &&
+        origin != kGaiaExtOrigin &&
+        !gaia::IsGaiaSignonRealm(origin)) {
+      confirm_untrusted_signin_ = true;
+    }
   }
 }
 

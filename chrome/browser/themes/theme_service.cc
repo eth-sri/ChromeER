@@ -4,6 +4,8 @@
 
 #include "chrome/browser/themes/theme_service.h"
 
+#include <algorithm>
+
 #include "base/bind.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/message_loop/message_loop.h"
@@ -14,7 +16,6 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/supervised_user/supervised_user_theme.h"
 #include "chrome/browser/themes/browser_theme_pack.h"
 #include "chrome/browser/themes/custom_theme_supplier.h"
 #include "chrome/browser/themes/theme_properties.h"
@@ -33,6 +34,10 @@
 #include "ui/base/layout.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/image/image_skia.h"
+
+#if defined(ENABLE_MANAGED_USERS)
+#include "chrome/browser/supervised_user/supervised_user_theme.h"
+#endif
 
 #if defined(OS_WIN)
 #include "ui/base/win/shell.h"
@@ -76,6 +81,17 @@ void WritePackToDiskCallback(BrowserThemePack* pack,
                              const base::FilePath& path) {
   if (!pack->WriteToDisk(path))
     NOTREACHED() << "Could not write theme pack to disk";
+}
+
+// Heuristic to determine if color is grayscale. This is used to decide whether
+// to use the colorful or white logo, if a theme fails to specify which.
+bool IsColorGrayscale(SkColor color) {
+  const int kChannelTolerance = 9;
+  int r = SkColorGetR(color);
+  int g = SkColorGetG(color);
+  int b = SkColorGetB(color);
+  int range = std::max(r, std::max(g, b)) - std::min(r, std::min(g, b));
+  return range < kChannelTolerance;
 }
 
 }  // namespace
@@ -155,6 +171,7 @@ SkColor ThemeService::GetColor(int id) const {
       return IncreaseLightness(GetColor(Properties::COLOR_NTP_TEXT), 0.86);
     case Properties::COLOR_NTP_TEXT_LIGHT:
       return IncreaseLightness(GetColor(Properties::COLOR_NTP_TEXT), 0.40);
+#if defined(ENABLE_MANAGED_USERS)
     case Properties::COLOR_SUPERVISED_USER_LABEL:
       return color_utils::GetReadableColor(
           SK_ColorWHITE,
@@ -167,6 +184,7 @@ SkColor ThemeService::GetColor(int id) const {
           GetColor(Properties::COLOR_SUPERVISED_USER_LABEL_BACKGROUND),
           SK_ColorBLACK,
           230);
+#endif
     case Properties::COLOR_STATUS_BAR_TEXT: {
       // A long time ago, we blended the toolbar and the tab text together to
       // get the status bar text because, at the time, our text rendering in
@@ -193,12 +211,15 @@ int ThemeService::GetDisplayProperty(int id) const {
     return result;
   }
 
-  if (id == Properties::NTP_LOGO_ALTERNATE &&
-      !UsingDefaultTheme() &&
-      !UsingSystemTheme()) {
-    // Use the alternate logo for themes from the web store except for
-    // |kDefaultThemeGalleryID|.
-    return 1;
+  if (id == Properties::NTP_LOGO_ALTERNATE) {
+    if (UsingDefaultTheme() || UsingSystemTheme())
+      return 0;  // Colorful logo.
+
+    if (HasCustomImage(IDR_THEME_NTP_BACKGROUND))
+      return 1;  // White logo.
+
+    SkColor background_color = GetColor(Properties::COLOR_NTP_BACKGROUND);
+    return IsColorGrayscale(background_color) ? 0 : 1;
   }
 
   return Properties::GetDefaultDisplayProperty(id);
@@ -379,10 +400,12 @@ void ThemeService::RemoveUnusedThemes(bool ignore_infobars) {
 void ThemeService::UseDefaultTheme() {
   if (ready_)
     content::RecordAction(UserMetricsAction("Themes_Reset"));
+#if defined(ENABLE_MANAGED_USERS)
   if (IsSupervisedUser()) {
     SetSupervisedUserTheme();
     return;
   }
+#endif
   ClearAllThemeData();
   NotifyThemeChanged();
 }
@@ -438,10 +461,15 @@ void ThemeService::LoadThemePrefs() {
 
   std::string current_id = GetThemeID();
   if (current_id == kDefaultThemeID) {
+#if defined(ENABLE_MANAGED_USERS)
     // Supervised users have a different default theme.
-    if (IsSupervisedUser())
+    if (IsSupervisedUser()) {
       SetSupervisedUserTheme();
-    else if (ShouldInitWithSystemTheme())
+      set_ready();
+      return;
+    }
+#endif
+    if (ShouldInitWithSystemTheme())
       UseSystemTheme();
     else
       UseDefaultTheme();
@@ -588,6 +616,7 @@ void ThemeService::BuildFromExtension(const Extension* extension) {
   SwapThemeSupplier(pack);
 }
 
+#if defined(ENABLE_MANAGED_USERS)
 bool ThemeService::IsSupervisedUser() const {
   return profile_->IsSupervised();
 }
@@ -595,6 +624,7 @@ bool ThemeService::IsSupervisedUser() const {
 void ThemeService::SetSupervisedUserTheme() {
   SetCustomDefaultTheme(new SupervisedUserTheme);
 }
+#endif
 
 void ThemeService::OnInfobarDisplayed() {
   number_of_infobars_++;

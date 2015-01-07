@@ -29,6 +29,7 @@
 #include "content/browser/renderer_host/input/synthetic_gesture_target_aura.h"
 #include "content/browser/renderer_host/overscroll_controller.h"
 #include "content/browser/renderer_host/render_view_host_delegate.h"
+#include "content/browser/renderer_host/render_view_host_delegate_view.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/browser/renderer_host/ui_events_helper.h"
@@ -516,10 +517,8 @@ void RenderWidgetHostViewAura::InitAsPopup(
 
   SetBounds(bounds_in_screen);
   Show();
-#if !defined(OS_WIN) && !defined(OS_CHROMEOS)
-  if (NeedsInputGrab())
+  if (NeedsMouseCapture())
     window_->SetCapture();
-#endif
 
   event_filter_for_popup_exit_.reset(new EventFilterForPopupExit(this));
 }
@@ -909,9 +908,7 @@ void RenderWidgetHostViewAura::SelectionChanged(const base::string16& text,
   }
 
   // Set the CLIPBOARD_TYPE_SELECTION to the ui::Clipboard.
-  ui::ScopedClipboardWriter clipboard_writer(
-      ui::Clipboard::GetForCurrentThread(),
-      ui::CLIPBOARD_TYPE_SELECTION);
+  ui::ScopedClipboardWriter clipboard_writer(ui::CLIPBOARD_TYPE_SELECTION);
   clipboard_writer.WriteText(text.substr(pos, n));
 #endif  // defined(USE_X11) && !defined(OS_CHROMEOS)
 }
@@ -941,7 +938,7 @@ void RenderWidgetHostViewAura::SelectionBoundsChanged(
 void RenderWidgetHostViewAura::CopyFromCompositingSurface(
     const gfx::Rect& src_subrect,
     const gfx::Size& dst_size,
-    const base::Callback<void(bool, const SkBitmap&)>& callback,
+    CopyFromCompositingSurfaceCallback& callback,
     const SkColorType color_type) {
   delegated_frame_host_->CopyFromCompositingSurface(
       src_subrect, dst_size, callback, color_type);
@@ -970,10 +967,6 @@ void RenderWidgetHostViewAura::BeginFrameSubscription(
 
 void RenderWidgetHostViewAura::EndFrameSubscription() {
   delegated_frame_host_->EndFrameSubscription();
-}
-
-void RenderWidgetHostViewAura::AcceleratedSurfaceInitialized(int host_id,
-                                                             int route_id) {
 }
 
 #if defined(OS_WIN)
@@ -1016,12 +1009,6 @@ void RenderWidgetHostViewAura::OnLegacyWindowDestroyed() {
 }
 #endif
 
-void RenderWidgetHostViewAura::AcceleratedSurfaceBuffersSwapped(
-    const GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params& params_in_pixel,
-    int gpu_host_id) {
-  // Oldschool composited mode is no longer supported.
-}
-
 void RenderWidgetHostViewAura::OnSwapCompositorFrame(
     uint32 output_surface_id,
     scoped_ptr<cc::CompositorFrame> frame) {
@@ -1046,6 +1033,11 @@ void RenderWidgetHostViewAura::OnSwapCompositorFrame(
   }
 }
 
+void RenderWidgetHostViewAura::DidStopFlinging() {
+  if (touch_editing_client_)
+    touch_editing_client_->DidStopFlinging();
+}
+
 #if defined(OS_WIN)
 void RenderWidgetHostViewAura::SetParentNativeViewAccessible(
     gfx::NativeViewAccessible accessible_parent) {
@@ -1060,18 +1052,6 @@ gfx::NativeViewId RenderWidgetHostViewAura::GetParentForWindowlessPlugin()
   return NULL;
 }
 #endif
-
-void RenderWidgetHostViewAura::AcceleratedSurfacePostSubBuffer(
-    const GpuHostMsg_AcceleratedSurfacePostSubBuffer_Params& params_in_pixel,
-    int gpu_host_id) {
-  // Oldschool composited mode is no longer supported.
-}
-
-void RenderWidgetHostViewAura::AcceleratedSurfaceSuspend() {
-}
-
-void RenderWidgetHostViewAura::AcceleratedSurfaceRelease() {
-}
 
 bool RenderWidgetHostViewAura::HasAcceleratedSurface(
     const gfx::Size& desired_size) {
@@ -1228,6 +1208,89 @@ RenderWidgetHostViewAura::AccessibilityGetNativeViewAccessible() {
 
 gfx::GLSurfaceHandle RenderWidgetHostViewAura::GetCompositingSurface() {
   return ImageTransportFactory::GetInstance()->GetSharedSurfaceHandle();
+}
+
+void RenderWidgetHostViewAura::ShowDisambiguationPopup(
+    const gfx::Rect& rect_pixels,
+    const SkBitmap& zoomed_bitmap) {
+  // |target_rect| is provided in pixels, not DIPs. So we convert it to DIPs
+  // by scaling it by the inverse of the device scale factor.
+  gfx::RectF screen_target_rect_f(rect_pixels);
+  screen_target_rect_f.Scale(1.0f / current_device_scale_factor_);
+  disambiguation_target_rect_ = gfx::ToEnclosingRect(screen_target_rect_f);
+
+  float scale = static_cast<float>(zoomed_bitmap.width()) /
+                static_cast<float>(rect_pixels.width());
+  gfx::Size zoomed_size(gfx::ToCeiledSize(
+      gfx::ScaleSize(disambiguation_target_rect_.size(), scale)));
+
+  // Save of a copy of the |last_scroll_offset_| for comparison when the copy
+  // callback fires, to ensure that we haven't scrolled.
+  disambiguation_scroll_offset_ = last_scroll_offset_;
+
+  CopyFromCompositingSurface(
+      disambiguation_target_rect_,
+      zoomed_size,
+      base::Bind(&RenderWidgetHostViewAura::DisambiguationPopupRendered,
+          base::internal::SupportsWeakPtrBase::StaticAsWeakPtr
+              <RenderWidgetHostViewAura>(this)),
+      kN32_SkColorType);
+}
+
+void RenderWidgetHostViewAura::DisambiguationPopupRendered(
+    bool success,
+    const SkBitmap& result) {
+  if (!success || disambiguation_scroll_offset_ != last_scroll_offset_)
+    return;
+
+  // Use RenderViewHostDelegate to get to the WebContentsViewAura, which will
+  // actually show the delegate.
+  RenderViewHostDelegate* delegate = NULL;
+  if (host_->IsRenderView())
+    delegate = RenderViewHost::From(host_)->GetDelegate();
+  RenderViewHostDelegateView* delegate_view = NULL;
+  if (delegate)
+    delegate_view = delegate->GetDelegateView();
+  if (delegate_view) {
+    delegate_view->ShowDisambiguationPopup(
+        disambiguation_target_rect_,
+        result,
+        base::Bind(&RenderWidgetHostViewAura::ProcessDisambiguationGesture,
+            base::internal::SupportsWeakPtrBase::StaticAsWeakPtr
+                <RenderWidgetHostViewAura>(this)),
+        base::Bind(&RenderWidgetHostViewAura::ProcessDisambiguationMouse,
+            base::internal::SupportsWeakPtrBase::StaticAsWeakPtr
+                <RenderWidgetHostViewAura>(this)));
+  }
+}
+
+void RenderWidgetHostViewAura::HideDisambiguationPopup() {
+  RenderViewHostDelegate* delegate = NULL;
+  if (host_->IsRenderView())
+    delegate = RenderViewHost::From(host_)->GetDelegate();
+  RenderViewHostDelegateView* delegate_view = NULL;
+  if (delegate)
+    delegate_view = delegate->GetDelegateView();
+  if (delegate_view)
+    delegate_view->HideDisambiguationPopup();
+}
+
+void RenderWidgetHostViewAura::ProcessDisambiguationGesture(
+    ui::GestureEvent* event) {
+  blink::WebGestureEvent web_gesture = content::MakeWebGestureEvent(event);
+  // If we fail to make a WebGestureEvent that is a Tap from the provided event,
+  // don't forward it to Blink.
+  if (web_gesture.type < blink::WebInputEvent::Type::GestureTap ||
+      web_gesture.type > blink::WebInputEvent::Type::GestureTapCancel)
+    return;
+
+  host_->ForwardGestureEvent(web_gesture);
+}
+
+void RenderWidgetHostViewAura::ProcessDisambiguationMouse(
+    ui::MouseEvent* event) {
+  blink::WebMouseEvent web_mouse = content::MakeWebMouseEvent(event);
+  host_->ForwardMouseEvent(web_mouse);
 }
 
 bool RenderWidgetHostViewAura::LockMouse() {
@@ -1846,6 +1909,10 @@ void RenderWidgetHostViewAura::OnMouseEvent(ui::MouseEvent* event) {
                         reinterpret_cast<LPARAM>(toplevel_hwnd));
     }
 #endif
+    // The Disambiguation popup does not parent itself from this window, so we
+    // manually dismiss it.
+    HideDisambiguationPopup();
+
     blink::WebMouseWheelEvent mouse_wheel_event =
         MakeWebMouseWheelEvent(static_cast<ui::MouseWheelEvent*>(event));
     if (mouse_wheel_event.deltaX != 0 || mouse_wheel_event.deltaY != 0)
@@ -1869,7 +1936,8 @@ void RenderWidgetHostViewAura::OnMouseEvent(ui::MouseEvent* event) {
       FinishImeCompositionSession();
       break;
     case ui::ET_MOUSE_RELEASED:
-      window_->ReleaseCapture();
+      if (!NeedsMouseCapture())
+        window_->ReleaseCapture();
       break;
     default:
       break;
@@ -2202,6 +2270,13 @@ ui::InputMethod* RenderWidgetHostViewAura::GetInputMethod() const {
 
 bool RenderWidgetHostViewAura::NeedsInputGrab() {
   return popup_type_ == blink::WebPopupTypeSelect;
+}
+
+bool RenderWidgetHostViewAura::NeedsMouseCapture() {
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+  return NeedsInputGrab();
+#endif
+  return false;
 }
 
 void RenderWidgetHostViewAura::FinishImeCompositionSession() {

@@ -4,7 +4,7 @@
 
 import posixpath
 
-from compiled_file_system import SingleFile, Unicode
+from compiled_file_system import Cache, SingleFile, Unicode
 from extensions_paths import API_PATHS
 from features_bundle import HasParent, GetParentName
 from file_system import FileNotFoundError
@@ -12,7 +12,7 @@ from future import All, Future, Race
 from operator import itemgetter
 from path_util import Join
 from platform_util import PlatformToExtensionType
-from schema_util import ProcessSchema
+from schema_processor import SchemaProcessor, SchemaProcessorFactory
 from third_party.json_schema_compiler.json_schema import DeleteNodes
 from third_party.json_schema_compiler.model import Namespace, UnixName
 
@@ -57,13 +57,17 @@ class APIModels(object):
                compiled_fs_factory,
                file_system,
                object_store_creator,
-               platform):
+               platform,
+               schema_processor_factory):
     self._features_bundle = features_bundle
     self._platform = PlatformToExtensionType(platform)
     self._model_cache = compiled_fs_factory.Create(
         file_system, self._CreateAPIModel, APIModels, category=self._platform)
     self._object_store = object_store_creator.Create(APIModels)
+    self._schema_processor = Future(callback=lambda:
+                                    schema_processor_factory.Create(False))
 
+  @Cache
   @SingleFile
   @Unicode
   def _CreateAPIModel(self, path, data):
@@ -72,11 +76,11 @@ class APIModels(object):
               node['extension_types'] != 'all' and
               self._platform not in node['extension_types'])
 
-    schema = ProcessSchema(path, data)[0]
+    schema = self._schema_processor.Get().Process(path, data)[0]
     if not schema:
       raise ValueError('No schema for %s' % path)
     return Namespace(DeleteNodes(
-        schema, matcher=does_not_include_platform), schema['namespace'])
+        schema, matcher=does_not_include_platform), path)
 
   def GetNames(self):
     # API names appear alongside some of their methods/events/etc in the
@@ -167,7 +171,7 @@ class APIModels(object):
       return content_script_apis
     return Future(callback=resolve)
 
-  def Cron(self):
+  def Refresh(self):
     futures = [self.GetModel(name) for name in self.GetNames()]
     return All(futures, except_pass=(FileNotFoundError, ValueError))
 

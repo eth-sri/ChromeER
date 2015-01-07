@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/test/test_simple_task_runner.h"
 #include "base/threading/thread.h"
@@ -16,10 +16,10 @@
 #include "content/public/common/url_constants.h"
 #include "content/public/test/mock_special_storage_policy.h"
 #include "content/public/test/test_browser_context.h"
+#include "storage/browser/quota/quota_manager.h"
+#include "storage/browser/quota/special_storage_policy.h"
+#include "storage/common/database/database_identifier.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/browser/quota/quota_manager.h"
-#include "webkit/browser/quota/special_storage_policy.h"
-#include "webkit/common/database/database_identifier.h"
 
 namespace content {
 

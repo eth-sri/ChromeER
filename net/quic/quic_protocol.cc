@@ -159,14 +159,10 @@ QuicVersionVector QuicSupportedVersions() {
 
 QuicTag QuicVersionToQuicTag(const QuicVersion version) {
   switch (version) {
-    case QUIC_VERSION_16:
-      return MakeQuicTag('Q', '0', '1', '6');
     case QUIC_VERSION_18:
       return MakeQuicTag('Q', '0', '1', '8');
     case QUIC_VERSION_19:
       return MakeQuicTag('Q', '0', '1', '9');
-    case QUIC_VERSION_20:
-      return MakeQuicTag('Q', '0', '2', '0');
     case QUIC_VERSION_21:
       return MakeQuicTag('Q', '0', '2', '1');
     case QUIC_VERSION_22:
@@ -199,10 +195,8 @@ return #x
 
 string QuicVersionToString(const QuicVersion version) {
   switch (version) {
-    RETURN_STRING_LITERAL(QUIC_VERSION_16);
     RETURN_STRING_LITERAL(QUIC_VERSION_18);
     RETURN_STRING_LITERAL(QUIC_VERSION_19);
-    RETURN_STRING_LITERAL(QUIC_VERSION_20);
     RETURN_STRING_LITERAL(QUIC_VERSION_21);
     RETURN_STRING_LITERAL(QUIC_VERSION_22);
     RETURN_STRING_LITERAL(QUIC_VERSION_23);
@@ -722,11 +716,11 @@ TransmissionInfo::TransmissionInfo()
       nack_count(0),
       transmission_type(NOT_RETRANSMISSION),
       all_transmissions(NULL),
-      in_flight(false) {}
+      in_flight(false),
+      is_unackable(false) {}
 
 TransmissionInfo::TransmissionInfo(
     RetransmittableFrames* retransmittable_frames,
-    QuicPacketSequenceNumber sequence_number,
     QuicSequenceNumberLength sequence_number_length)
     : retransmittable_frames(retransmittable_frames),
       sequence_number_length(sequence_number_length),
@@ -734,17 +728,15 @@ TransmissionInfo::TransmissionInfo(
       bytes_sent(0),
       nack_count(0),
       transmission_type(NOT_RETRANSMISSION),
-      all_transmissions(new SequenceNumberSet),
-      in_flight(false) {
-  all_transmissions->insert(sequence_number);
-}
+      all_transmissions(NULL),
+      in_flight(false),
+      is_unackable(false) {}
 
 TransmissionInfo::TransmissionInfo(
     RetransmittableFrames* retransmittable_frames,
-    QuicPacketSequenceNumber sequence_number,
     QuicSequenceNumberLength sequence_number_length,
     TransmissionType transmission_type,
-    SequenceNumberSet* all_transmissions)
+    SequenceNumberList* all_transmissions)
     : retransmittable_frames(retransmittable_frames),
       sequence_number_length(sequence_number_length),
       sent_time(QuicTime::Zero()),
@@ -752,8 +744,7 @@ TransmissionInfo::TransmissionInfo(
       nack_count(0),
       transmission_type(transmission_type),
       all_transmissions(all_transmissions),
-      in_flight(false) {
-  all_transmissions->insert(sequence_number);
-}
+      in_flight(false),
+      is_unackable(false) {}
 
 }  // namespace net

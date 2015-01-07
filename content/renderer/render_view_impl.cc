@@ -40,6 +40,7 @@
 #include "content/child/npapi/webplugin_delegate_impl.h"
 #include "content/child/request_extra_data.h"
 #include "content/child/webmessageportchannel_impl.h"
+#include "content/common/content_constants_internal.h"
 #include "content/common/database_messages.h"
 #include "content/common/dom_storage/dom_storage_types.h"
 #include "content/common/drag_messages.h"
@@ -119,6 +120,7 @@
 #include "net/base/net_errors.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "net/http/http_util.h"
+#include "skia/ext/platform_canvas.h"
 #include "third_party/WebKit/public/platform/WebCString.h"
 #include "third_party/WebKit/public/platform/WebConnectionType.h"
 #include "third_party/WebKit/public/platform/WebDragData.h"
@@ -201,7 +203,6 @@
 #include "content/renderer/android/email_detector.h"
 #include "content/renderer/android/phone_number_detector.h"
 #include "net/android/network_library.h"
-#include "skia/ext/platform_canvas.h"
 #include "third_party/WebKit/public/platform/WebFloatPoint.h"
 #include "third_party/WebKit/public/platform/WebFloatRect.h"
 #include "ui/gfx/rect_f.h"
@@ -342,12 +343,10 @@ static RenderViewImpl* (*g_create_render_view_impl)(RenderViewImplParams*) =
     NULL;
 
 // static
-bool RenderViewImpl::IsReload(const FrameMsg_Navigate_Params& params) {
-  return
-      params.navigation_type == FrameMsg_Navigate_Type::RELOAD ||
-      params.navigation_type == FrameMsg_Navigate_Type::RELOAD_IGNORING_CACHE ||
-      params.navigation_type ==
-          FrameMsg_Navigate_Type::RELOAD_ORIGINAL_REQUEST_URL;
+bool RenderViewImpl::IsReload(FrameMsg_Navigate_Type::Value navigation_type) {
+  return navigation_type == FrameMsg_Navigate_Type::RELOAD ||
+         navigation_type == FrameMsg_Navigate_Type::RELOAD_IGNORING_CACHE ||
+         navigation_type == FrameMsg_Navigate_Type::RELOAD_ORIGINAL_REQUEST_URL;
 }
 
 // static
@@ -758,6 +757,8 @@ void RenderViewImpl::Initialize(RenderViewImplParams* params) {
       PreferCompositingToLCDText(device_scale_factor_));
   webview()->settings()->setAcceleratedCompositingForTransitionEnabled(
       ShouldUseTransitionCompositing(device_scale_factor_));
+  webview()->settings()->setThreadedScrollingEnabled(
+      !command_line.HasSwitch(switches::kDisableThreadedScrolling));
 
   ApplyWebPreferences(webkit_preferences_, webview());
 
@@ -1067,6 +1068,8 @@ void RenderView::ApplyWebPreferences(const WebPreferences& prefs,
 
   settings->setV8CacheOptions(
       static_cast<WebSettings::V8CacheOptions>(prefs.v8_cache_options));
+
+  settings->setV8ScriptStreamingEnabled(prefs.v8_script_streaming_enabled);
 
 #if defined(OS_ANDROID)
   settings->setAllowCustomScrollbarInMainFrame(false);
@@ -1403,7 +1406,8 @@ bool RenderViewImpl::IsBackForwardToStaleEntry(
   // Make sure this isn't a back/forward to an entry we have already cropped
   // or replaced from our history, before the browser knew about it.  If so,
   // a new navigation has committed in the mean time, and we can ignore this.
-  bool is_back_forward = !is_reload && params.page_state.IsValid();
+  bool is_back_forward =
+      !is_reload && params.commit_params.page_state.IsValid();
 
   // Note: if the history_list_length_ is 0 for a back/forward, we must be
   // restoring from a previous session.  We'll update our state in OnNavigate.
@@ -1444,10 +1448,8 @@ void RenderViewImpl::OnSaveImageAt(int x, int y) {
 
 void RenderViewImpl::OnUpdateTargetURLAck() {
   // Check if there is a targeturl waiting to be sent.
-  if (target_url_status_ == TARGET_PENDING) {
-    Send(new ViewHostMsg_UpdateTargetURL(routing_id_, page_id_,
-                                         pending_target_url_));
-  }
+  if (target_url_status_ == TARGET_PENDING)
+    Send(new ViewHostMsg_UpdateTargetURL(routing_id_, pending_target_url_));
 
   target_url_status_ = TARGET_NONE;
 }
@@ -1721,6 +1723,13 @@ void RenderViewImpl::printPage(WebLocalFrame* frame) {
                     PrintPage(frame, handling_input_event_));
 }
 
+void RenderViewImpl::saveImageFromDataURL(const blink::WebString& data_url) {
+  // Note: We should basically send GURL but we use size-limited string instead
+  // in order to send a larger data url to save a image for <canvas> or <img>.
+  if (data_url.length() < kMaxLengthOfDataURLString)
+    Send(new ViewHostMsg_SaveImageFromDataURL(routing_id_, data_url.utf8()));
+}
+
 bool RenderViewImpl::enumerateChosenDirectory(
     const WebString& path,
     WebFileChooserCompletion* chooser_completion) {
@@ -1809,27 +1818,41 @@ bool RenderViewImpl::runFileChooser(
   return ScheduleFileChooser(ipc_params, chooser_completion);
 }
 
+void RenderViewImpl::SetValidationMessageDirection(
+    base::string16* wrapped_main_text,
+    blink::WebTextDirection main_text_hint,
+    base::string16* wrapped_sub_text,
+    blink::WebTextDirection sub_text_hint) {
+  if (main_text_hint == blink::WebTextDirectionLeftToRight) {
+    *wrapped_main_text =
+        base::i18n::GetDisplayStringInLTRDirectionality(*wrapped_main_text);
+  } else if (main_text_hint == blink::WebTextDirectionRightToLeft &&
+             !base::i18n::IsRTL()) {
+    base::i18n::WrapStringWithRTLFormatting(wrapped_main_text);
+  }
+
+  if (!wrapped_sub_text->empty()) {
+    if (sub_text_hint == blink::WebTextDirectionLeftToRight) {
+      *wrapped_sub_text =
+          base::i18n::GetDisplayStringInLTRDirectionality(*wrapped_sub_text);
+    } else if (sub_text_hint == blink::WebTextDirectionRightToLeft) {
+      base::i18n::WrapStringWithRTLFormatting(wrapped_sub_text);
+    }
+  }
+}
+
 void RenderViewImpl::showValidationMessage(
     const blink::WebRect& anchor_in_root_view,
     const blink::WebString& main_text,
+    blink::WebTextDirection main_text_hint,
     const blink::WebString& sub_text,
-    blink::WebTextDirection hint) {
+    blink::WebTextDirection sub_text_hint) {
   base::string16 wrapped_main_text = main_text;
   base::string16 wrapped_sub_text = sub_text;
-  if (hint == blink::WebTextDirectionLeftToRight) {
-    wrapped_main_text =
-        base::i18n::GetDisplayStringInLTRDirectionality(wrapped_main_text);
-    if (!wrapped_sub_text.empty()) {
-      wrapped_sub_text =
-          base::i18n::GetDisplayStringInLTRDirectionality(wrapped_sub_text);
-    }
-  } else if (hint == blink::WebTextDirectionRightToLeft
-             && !base::i18n::IsRTL()) {
-    base::i18n::WrapStringWithRTLFormatting(&wrapped_main_text);
-    if (!wrapped_sub_text.empty()) {
-      base::i18n::WrapStringWithRTLFormatting(&wrapped_sub_text);
-    }
-  }
+
+  SetValidationMessageDirection(
+      &wrapped_main_text, main_text_hint, &wrapped_sub_text, sub_text_hint);
+
   Send(new ViewHostMsg_ShowValidationMessage(
       routing_id(), AdjustValidationMessageAnchor(anchor_in_root_view),
       wrapped_main_text, wrapped_sub_text));
@@ -1867,7 +1890,7 @@ void RenderViewImpl::UpdateTargetURL(const GURL& url,
     // see |ParamTraits<GURL>|.
     if (latest_url.possibly_invalid_spec().size() > GetMaxURLChars())
       latest_url = GURL();
-    Send(new ViewHostMsg_UpdateTargetURL(routing_id_, page_id_, latest_url));
+    Send(new ViewHostMsg_UpdateTargetURL(routing_id_, latest_url));
     target_url_ = latest_url;
     target_url_status_ = TARGET_INFLIGHT;
   }
@@ -1952,7 +1975,7 @@ void RenderViewImpl::focusedNodeChanged(const WebNode& node) {
   FOR_EACH_OBSERVER(RenderViewObserver, observers_, FocusedNodeChanged(node));
 
   // TODO(dmazzoni): this should be part of RenderFrameObserver.
-  main_render_frame()->FocusedNodeChanged(node);
+  GetMainRenderFrame()->FocusedNodeChanged(node);
 }
 
 void RenderViewImpl::didUpdateLayout() {
@@ -1981,11 +2004,6 @@ int RenderViewImpl::historyBackListCount() {
 
 int RenderViewImpl::historyForwardListCount() {
   return history_list_length_ - historyBackListCount() - 1;
-}
-
-void RenderViewImpl::postAccessibilityEvent(
-    const WebAXObject& obj, blink::WebAXEvent event) {
-  main_render_frame()->HandleWebAccessibilityEvent(obj, event);
 }
 
 // blink::WebWidgetClient ----------------------------------------------------
@@ -2026,15 +2044,6 @@ void RenderViewImpl::show(WebNavigationPolicy policy) {
   did_show_ = true;
 
   DCHECK(opener_id_ != MSG_ROUTING_NONE);
-
-  // Force new windows to a popup if they were not opened with a user gesture.
-  if (!opened_by_user_gesture_) {
-    // We exempt background tabs for compat with older versions of Chrome.
-    // TODO(darin): This seems bogus.  These should have a user gesture, so
-    // we probably don't need this check.
-    if (policy != blink::WebNavigationPolicyNewBackgroundTab)
-      policy = blink::WebNavigationPolicyNewPopup;
-  }
 
   // NOTE: initial_pos_ may still have its default values at this point, but
   // that's okay.  It'll be ignored if disposition is not NEW_POPUP, or the
@@ -2274,8 +2283,8 @@ void RenderViewImpl::PopulateDocumentStateFromPending(
   InternalDocumentStateData* internal_data =
       InternalDocumentStateData::FromDocumentState(document_state);
 
-  if (!params.url.SchemeIs(url::kJavaScriptScheme) &&
-      params.navigation_type == FrameMsg_Navigate_Type::RESTORE) {
+  if (!params.common_params.url.SchemeIs(url::kJavaScriptScheme) &&
+      params.common_params.navigation_type == FrameMsg_Navigate_Type::RESTORE) {
     // We're doing a load of a page that was restored from the last session. By
     // default this prefers the cache over loading (LOAD_PREFERRING_CACHE) which
     // can result in stale data for pages that are set to expire. We explicitly
@@ -2290,17 +2299,18 @@ void RenderViewImpl::PopulateDocumentStateFromPending(
         WebURLRequest::UseProtocolCachePolicy);
   }
 
-  if (IsReload(params))
+  if (IsReload(params.common_params.navigation_type))
     document_state->set_load_type(DocumentState::RELOAD);
-  else if (params.page_state.IsValid())
+  else if (params.commit_params.page_state.IsValid())
     document_state->set_load_type(DocumentState::HISTORY_LOAD);
   else
     document_state->set_load_type(DocumentState::NORMAL_LOAD);
 
-  internal_data->set_is_overriding_user_agent(params.is_overriding_user_agent);
+  internal_data->set_is_overriding_user_agent(
+      params.commit_params.is_overriding_user_agent);
   internal_data->set_must_reset_scroll_and_scale_state(
-      params.navigation_type ==
-          FrameMsg_Navigate_Type::RELOAD_ORIGINAL_REQUEST_URL);
+      params.common_params.navigation_type ==
+      FrameMsg_Navigate_Type::RELOAD_ORIGINAL_REQUEST_URL);
   document_state->set_can_load_local_resources(params.can_load_local_resources);
 }
 
@@ -2311,20 +2321,20 @@ NavigationState* RenderViewImpl::CreateNavigationStateFromPending() {
   // A navigation resulting from loading a javascript URL should not be treated
   // as a browser initiated event.  Instead, we want it to look as if the page
   // initiated any load resulting from JS execution.
-  if (!params.url.SchemeIs(url::kJavaScriptScheme)) {
+  if (!params.common_params.url.SchemeIs(url::kJavaScriptScheme)) {
     navigation_state = NavigationState::CreateBrowserInitiated(
         params.page_id,
         params.pending_history_list_offset,
         params.should_clear_history_list,
-        params.transition);
+        params.common_params.transition);
     navigation_state->set_should_replace_current_entry(
         params.should_replace_current_entry);
     navigation_state->set_transferred_request_child_id(
         params.transferred_request_child_id);
     navigation_state->set_transferred_request_request_id(
         params.transferred_request_request_id);
-    navigation_state->set_allow_download(params.allow_download);
-    navigation_state->set_extra_headers(params.extra_headers);
+    navigation_state->set_allow_download(params.common_params.allow_download);
+    navigation_state->set_extra_headers(params.request_params.extra_headers);
   } else {
     navigation_state = NavigationState::CreateContentInitiated();
   }
@@ -2463,7 +2473,7 @@ bool RenderViewImpl::Send(IPC::Message* message) {
   return RenderWidget::Send(message);
 }
 
-RenderFrame* RenderViewImpl::GetMainRenderFrame() {
+RenderFrameImpl* RenderViewImpl::GetMainRenderFrame() {
   return main_render_frame_.get();
 }
 
@@ -3084,11 +3094,6 @@ void RenderViewImpl::OnSetRendererPrefs(
   }
 #endif  // defined(USE_DEFAULT_RENDER_THEME)
 
-  if (RenderThreadImpl::current())  // Will be NULL during unit tests.
-    RenderThreadImpl::current()->SetFlingCurveParameters(
-        renderer_prefs.touchpad_fling_profile,
-        renderer_prefs.touchscreen_fling_profile);
-
   // If the zoom level for this page matches the old zoom default, and this
   // is not a plugin, update the zoom level to match the new default.
   if (webview() && webview()->mainFrame()->isWebLocalFrame() &&
@@ -3118,7 +3123,7 @@ void RenderViewImpl::OnOrientationChange() {
                     observers_,
                     OrientationChangeEvent());
 
-  webview()->mainFrame()->sendOrientationChangeEvent();
+  webview()->mainFrame()->toWebLocalFrame()->sendOrientationChangeEvent();
 }
 
 void RenderViewImpl::OnPluginActionAt(const gfx::Point& location,
@@ -3668,17 +3673,23 @@ void RenderViewImpl::SetDeviceScaleFactor(float device_scale_factor) {
     AutoResizeCompositor();
 
   if (browser_plugin_manager_.get())
-    browser_plugin_manager_->UpdateDeviceScaleFactor(device_scale_factor_);
+    browser_plugin_manager_->UpdateDeviceScaleFactor();
 }
 
 bool RenderViewImpl::SetDeviceColorProfile(
     const std::vector<char>& profile) {
   bool changed = RenderWidget::SetDeviceColorProfile(profile);
   if (changed && webview()) {
-    // TODO(noel): notify the webview() of the color profile change so it
-    // can update and repaint all color profiled page elements.
+    WebVector<char> colorProfile = profile;
+    webview()->setDeviceColorProfile(colorProfile);
   }
   return changed;
+}
+
+void RenderViewImpl::ResetDeviceColorProfileForTesting() {
+  RenderWidget::ResetDeviceColorProfileForTesting();
+  if (webview())
+    webview()->resetDeviceColorProfile();
 }
 
 ui::TextInputType RenderViewImpl::GetTextInputType() {
@@ -3869,38 +3880,6 @@ double RenderViewImpl::zoomFactorToZoomLevel(double factor) const {
   return ZoomFactorToZoomLevel(factor);
 }
 
-// TODO(sanjoy.pal): Remove once blink patch lands. http://crbug.com/406236.
-void RenderViewImpl::registerProtocolHandler(const WebString& scheme,
-                                             const WebURL& base_url,
-                                             const WebURL& url,
-                                             const WebString& title) {
-  bool user_gesture = WebUserGestureIndicator::isProcessingUserGesture();
-  GURL base(base_url);
-  GURL absolute_url = base.Resolve(base::UTF16ToUTF8(url.string()));
-  if (base.GetOrigin() != absolute_url.GetOrigin()) {
-    return;
-  }
-  Send(new ViewHostMsg_RegisterProtocolHandler(routing_id_,
-                                               base::UTF16ToUTF8(scheme),
-                                               absolute_url,
-                                               title,
-                                               user_gesture));
-}
-
-void RenderViewImpl::unregisterProtocolHandler(const WebString& scheme,
-                                               const WebURL& base_url,
-                                               const WebURL& url) {
-  bool user_gesture = WebUserGestureIndicator::isProcessingUserGesture();
-  GURL base(base_url);
-  GURL absolute_url = base.Resolve(base::UTF16ToUTF8(url.string()));
-  if (base.GetOrigin() != absolute_url.GetOrigin())
-    return;
-  Send(new ViewHostMsg_UnregisterProtocolHandler(routing_id_,
-                                                 base::UTF16ToUTF8(scheme),
-                                                 absolute_url,
-                                                 user_gesture));
-}
-
 void RenderViewImpl::registerProtocolHandler(const WebString& scheme,
                                              const WebURL& url,
                                              const WebString& title) {
@@ -4031,27 +4010,27 @@ void RenderViewImpl::OnEnableViewSourceMode() {
   main_frame->enableViewSourceMode(true);
 }
 
-#if defined(OS_ANDROID)
+#if defined(OS_ANDROID) || defined(TOOLKIT_VIEWS)
 bool RenderViewImpl::didTapMultipleTargets(
-    const blink::WebGestureEvent& event,
+    const WebSize& inner_viewport_offset,
+    const WebRect& touch_rect,
     const WebVector<WebRect>& target_rects) {
   // Never show a disambiguation popup when accessibility is enabled,
   // as this interferes with "touch exploration".
   AccessibilityMode accessibility_mode =
-      main_render_frame()->accessibility_mode();
+      GetMainRenderFrame()->accessibility_mode();
   bool matches_accessibility_mode_complete =
       (accessibility_mode & AccessibilityModeComplete) ==
           AccessibilityModeComplete;
   if (matches_accessibility_mode_complete)
     return false;
 
-  gfx::Rect finger_rect(
-      event.x - event.data.tap.width / 2, event.y - event.data.tap.height / 2,
-      event.data.tap.width, event.data.tap.height);
+  // The touch_rect, target_rects and zoom_rect are in the outer viewport
+  // reference frame.
   gfx::Rect zoom_rect;
   float new_total_scale =
       DisambiguationPopupHelper::ComputeZoomAreaAndScaleFactor(
-          finger_rect, target_rects, GetSize(),
+          touch_rect, target_rects, GetSize(),
           gfx::Rect(webview()->mainFrame()->visibleContentRect()).size(),
           device_scale_factor_ * webview()->pageScaleFactor(), &zoom_rect);
   if (!new_total_scale)
@@ -4091,8 +4070,13 @@ bool RenderViewImpl::didTapMultipleTargets(
         webwidget_->paintCompositedDeprecated(&canvas, zoom_rect);
       }
 
+      gfx::Rect zoom_rect_in_screen =
+          zoom_rect - gfx::Vector2d(inner_viewport_offset.width,
+                                    inner_viewport_offset.height);
+
       gfx::Rect physical_window_zoom_rect = gfx::ToEnclosingRect(
-          ClientRectToPhysicalWindowRect(gfx::RectF(zoom_rect)));
+          ClientRectToPhysicalWindowRect(gfx::RectF(zoom_rect_in_screen)));
+
       Send(new ViewHostMsg_ShowDisambiguationPopup(routing_id_,
                                                    physical_window_zoom_rect,
                                                    canvas_size,
@@ -4109,7 +4093,7 @@ bool RenderViewImpl::didTapMultipleTargets(
 
   return handled;
 }
-#endif
+#endif  // defined(OS_ANDROID) || defined(TOOLKIT_VIEWS)
 
 unsigned RenderViewImpl::GetLocalSessionHistoryLengthForTesting() const {
   return history_list_length_;

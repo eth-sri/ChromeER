@@ -11,12 +11,12 @@
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/strings/string_number_conversions.h"
 #include "content/renderer/media/android/renderer_demuxer_android.h"
-#include "content/renderer/media/webmediaplayer_util.h"
-#include "content/renderer/media/webmediasource_impl.h"
 #include "media/base/android/demuxer_stream_player_params.h"
 #include "media/base/bind_to_current_loop.h"
 #include "media/base/demuxer_stream.h"
 #include "media/base/media_log.h"
+#include "media/blink/webmediaplayer_util.h"
+#include "media/blink/webmediasource_impl.h"
 #include "media/filters/chunk_demuxer.h"
 #include "media/filters/decrypting_demuxer_stream.h"
 #include "third_party/WebKit/public/platform/WebString.h"
@@ -81,13 +81,12 @@ MediaSourceDelegate::~MediaSourceDelegate() {
   DCHECK(!video_stream_);
 }
 
-void MediaSourceDelegate::Destroy() {
+void MediaSourceDelegate::Stop(const base::Closure& stop_cb) {
   DCHECK(main_task_runner_->BelongsToCurrentThread());
   DVLOG(1) << __FUNCTION__ << " : " << demuxer_client_id_;
 
   if (!chunk_demuxer_) {
     DCHECK(!demuxer_client_);
-    delete this;
     return;
   }
 
@@ -100,12 +99,11 @@ void MediaSourceDelegate::Destroy() {
 
   chunk_demuxer_->Shutdown();
 
-  // |this| will be transferred to the callback StopDemuxer() and
-  // OnDemuxerStopDone(). They own |this| and OnDemuxerStopDone() will delete
-  // it when called, hence using base::Unretained(this) is safe here.
-  media_task_runner_->PostTask(FROM_HERE,
-                        base::Bind(&MediaSourceDelegate::StopDemuxer,
-                        base::Unretained(this)));
+  // Continue to stop objects on the media thread.
+  media_task_runner_->PostTask(
+      FROM_HERE,
+      base::Bind(
+          &MediaSourceDelegate::StopDemuxer, base::Unretained(this), stop_cb));
 }
 
 bool MediaSourceDelegate::IsVideoEncrypted() {
@@ -122,7 +120,8 @@ base::Time MediaSourceDelegate::GetTimelineOffset() const {
   return chunk_demuxer_->GetTimelineOffset();
 }
 
-void MediaSourceDelegate::StopDemuxer() {
+void MediaSourceDelegate::StopDemuxer(const base::Closure& stop_cb) {
+  DVLOG(2) << __FUNCTION__;
   DCHECK(media_task_runner_->BelongsToCurrentThread());
   DCHECK(chunk_demuxer_);
 
@@ -139,10 +138,12 @@ void MediaSourceDelegate::StopDemuxer() {
   media_weak_factory_.InvalidateWeakPtrs();
   DCHECK(!media_weak_factory_.HasWeakPtrs());
 
-  // The callback OnDemuxerStopDone() owns |this| and will delete it when
-  // called. Hence using base::Unretained(this) is safe here.
-  chunk_demuxer_->Stop(base::Bind(&MediaSourceDelegate::OnDemuxerStopDone,
-                                  base::Unretained(this)));
+  chunk_demuxer_->Stop();
+  chunk_demuxer_.reset();
+
+  // |this| may be destroyed at this point in time as a result of running
+  // |stop_cb|.
+  stop_cb.Run();
 }
 
 void MediaSourceDelegate::InitializeMediaSource(
@@ -185,7 +186,7 @@ void MediaSourceDelegate::InitializeDemuxer() {
 }
 
 blink::WebTimeRanges MediaSourceDelegate::Buffered() const {
-  return ConvertToWebTimeRanges(buffered_time_ranges_);
+  return media::ConvertToWebTimeRanges(buffered_time_ranges_);
 }
 
 size_t MediaSourceDelegate::DecodedFrameCount() const {
@@ -626,21 +627,6 @@ void MediaSourceDelegate::FinishResettingDecryptingDemuxerStreams() {
   demuxer_client_->DemuxerSeekDone(demuxer_client_id_, browser_seek_time_);
 }
 
-void MediaSourceDelegate::OnDemuxerStopDone() {
-  DCHECK(media_task_runner_->BelongsToCurrentThread());
-  DVLOG(1) << __FUNCTION__ << " : " << demuxer_client_id_;
-  main_task_runner_->PostTask(
-      FROM_HERE,
-      base::Bind(&MediaSourceDelegate::DeleteSelf, base::Unretained(this)));
-}
-
-void MediaSourceDelegate::DeleteSelf() {
-  DCHECK(main_task_runner_->BelongsToCurrentThread());
-  DVLOG(1) << __FUNCTION__ << " : " << demuxer_client_id_;
-  chunk_demuxer_.reset();
-  delete this;
-}
-
 void MediaSourceDelegate::NotifyDemuxerReady() {
   DCHECK(media_task_runner_->BelongsToCurrentThread());
   DVLOG(1) << __FUNCTION__ << " : " << demuxer_client_id_;
@@ -667,7 +653,7 @@ base::TimeDelta MediaSourceDelegate::GetDuration() const {
   if (duration == std::numeric_limits<double>::infinity())
     return media::kInfiniteDuration();
 
-  return ConvertSecondsToTimestamp(duration);
+  return media::ConvertSecondsToTimestamp(duration);
 }
 
 void MediaSourceDelegate::OnDemuxerOpened() {
@@ -675,7 +661,7 @@ void MediaSourceDelegate::OnDemuxerOpened() {
   if (media_source_opened_cb_.is_null())
     return;
 
-  media_source_opened_cb_.Run(new WebMediaSourceImpl(
+  media_source_opened_cb_.Run(new media::WebMediaSourceImpl(
       chunk_demuxer_.get(), base::Bind(&LogMediaSourceError, media_log_)));
 }
 

@@ -16,8 +16,8 @@
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "net/url_request/url_request_context_getter.h"
-#include "webkit/browser/blob/blob_storage_context.h"
-#include "webkit/browser/quota/quota_manager_proxy.h"
+#include "storage/browser/blob/blob_storage_context.h"
+#include "storage/browser/quota/quota_manager_proxy.h"
 
 namespace content {
 
@@ -78,8 +78,7 @@ ServiceWorkerContextCore* ServiceWorkerContextWrapper::context() {
 static void FinishRegistrationOnIO(
     const ServiceWorkerContext::ResultCallback& continuation,
     ServiceWorkerStatusCode status,
-    int64 registration_id,
-    int64 version_id) {
+    int64 registration_id) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   BrowserThread::PostTask(
       BrowserThread::UI,
@@ -106,7 +105,6 @@ void ServiceWorkerContextWrapper::RegisterServiceWorker(
   context()->RegisterServiceWorker(
       pattern,
       script_url,
-      -1,
       NULL /* provider_host */,
       base::Bind(&FinishRegistrationOnIO, continuation));
 }

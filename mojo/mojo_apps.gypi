@@ -12,6 +12,7 @@
       'type': 'static_library',
       'dependencies': [
         '../base/base.gyp:base',
+        '../base/base.gyp:base_i18n',
         '../gin/gin.gyp:gin',
         '../ui/gl/gl.gyp:gl',
         '../v8/tools/gyp/v8.gyp:v8',
@@ -45,6 +46,7 @@
       ],
     },
     {
+      # GN version: //mojo/apps/js/test:js_to_cpp_bindings
       'target_name': 'mojo_apps_js_bindings',
       'type': 'static_library',
       'sources': [
@@ -72,18 +74,27 @@
         'mojo_js_lib',
       ],
       'sources': [
+        'apps/js/test/handle_unittest.cc',
         'apps/js/test/js_to_cpp_unittest.cc',
         'apps/js/test/run_apps_js_tests.cc',
       ],
     },
     {
+      # GN version: //mojo/apps/js:mojo_js
       'target_name': 'mojo_js',
       'type': 'loadable_module',
       'dependencies': [
+        'mojo_base.gyp:mojo_application_chromium',
+        'mojo_base.gyp:mojo_cpp_bindings',
+        'mojo_base.gyp:mojo_utility',
+        'mojo_content_handler_bindings',
         'mojo_js_lib',
         '<(mojo_system_for_loadable_module)',
       ],
       'sources': [
+        'apps/js/application_delegate_impl.cc',
+        'apps/js/js_app.cc',
+        'apps/js/mojo_module.cc',
         'apps/js/main.cc',
       ],
     },

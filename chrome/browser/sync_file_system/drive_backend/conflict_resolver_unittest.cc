@@ -71,7 +71,7 @@ class ConflictResolverTest : public testing::Test {
     context_.reset(new SyncEngineContext(
         fake_drive_service.PassAs<drive::DriveServiceInterface>(),
         drive_uploader.Pass(),
-        NULL,
+        nullptr,
         base::ThreadTaskRunnerHandle::Get(),
         base::ThreadTaskRunnerHandle::Get()));
     context_->SetRemoteChangeProcessor(remote_change_processor_.get());
@@ -119,10 +119,8 @@ class ConflictResolverTest : public testing::Test {
 
   void RegisterApp(const std::string& app_id,
                    const std::string& app_root_folder_id) {
-    SyncStatusCode status = SYNC_STATUS_FAILED;
-    context_->GetMetadataDatabase()->RegisterApp(app_id, app_root_folder_id,
-                                                 CreateResultReceiver(&status));
-    base::RunLoop().RunUntilIdle();
+    SyncStatusCode status = context_->GetMetadataDatabase()->RegisterApp(
+        app_id, app_root_folder_id);
     EXPECT_EQ(SYNC_STATUS_OK, status);
   }
 
@@ -217,7 +215,7 @@ class ConflictResolverTest : public testing::Test {
       status = RunRemoteToLocalSyncer();
     } while (status == SYNC_STATUS_OK ||
              status == SYNC_STATUS_RETRY ||
-             metadata_database->PromoteLowerPriorityTrackersToNormal());
+             metadata_database->PromoteDemotedTrackers());
     EXPECT_EQ(SYNC_STATUS_NO_CHANGE_TO_SYNC, status);
   }
 

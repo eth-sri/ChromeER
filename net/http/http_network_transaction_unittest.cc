@@ -11,8 +11,8 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/json/json_writer.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
@@ -565,7 +565,8 @@ template<>
 CaptureGroupNameHttpProxySocketPool::CaptureGroupNameSocketPool(
     HostResolver* host_resolver,
     CertVerifier* /* cert_verifier */)
-    : HttpProxyClientSocketPool(0, 0, NULL, host_resolver, NULL, NULL, NULL) {}
+    : HttpProxyClientSocketPool(
+          0, 0, NULL, host_resolver, NULL, NULL, NULL, NULL) {}
 
 template <>
 CaptureGroupNameSSLSocketPool::CaptureGroupNameSocketPool(

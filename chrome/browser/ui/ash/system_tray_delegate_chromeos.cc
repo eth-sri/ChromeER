@@ -185,8 +185,7 @@ void OnAcceptMultiprofilesIntro(bool no_show_again) {
 }  // namespace
 
 SystemTrayDelegateChromeOS::SystemTrayDelegateChromeOS()
-    : weak_ptr_factory_(this),
-      user_profile_(NULL),
+    : user_profile_(NULL),
       clock_type_(base::GetHourClockType()),
       search_key_mapped_to_(input_method::kSearchKey),
       screen_locked_(false),
@@ -197,7 +196,8 @@ SystemTrayDelegateChromeOS::SystemTrayDelegateChromeOS()
       device_settings_observer_(CrosSettings::Get()->AddSettingsObserver(
           kSystemUse24HourClock,
           base::Bind(&SystemTrayDelegateChromeOS::UpdateClockType,
-                     base::Unretained(this)))) {
+                     base::Unretained(this)))),
+      weak_ptr_factory_(this) {
   // Register notifications on construction so that events such as
   // PROFILE_CREATED do not get missed if they happen before Initialize().
   registrar_.reset(new content::NotificationRegistrar);
@@ -394,11 +394,16 @@ SystemTrayDelegateChromeOS::GetSupervisedUserManagerName() const {
 
 const base::string16 SystemTrayDelegateChromeOS::GetSupervisedUserMessage()
     const {
-  if (GetUserLoginStatus() != ash::user::LOGGED_IN_SUPERVISED)
+  if (!IsUserSupervised())
     return base::string16();
   return l10n_util::GetStringFUTF16(
       IDS_USER_IS_SUPERVISED_BY_NOTICE,
       base::UTF8ToUTF16(GetSupervisedUserManager()));
+}
+
+bool SystemTrayDelegateChromeOS::IsUserSupervised() const {
+  user_manager::User* user = user_manager::UserManager::Get()->GetActiveUser();
+  return user && user->IsSupervised();
 }
 
 bool SystemTrayDelegateChromeOS::SystemShouldUpgrade() const {
@@ -555,7 +560,7 @@ void SystemTrayDelegateChromeOS::ShowUserLogin() {
 
   // Launch sign in screen to add another user to current session.
   if (user_manager::UserManager::Get()
-          ->GetUsersAdmittedForMultiProfile()
+          ->GetUsersAllowedForMultiProfile()
           .size()) {
     // Don't show dialog if any logged in user in multi-profiles session
     // dismissed it.
@@ -741,15 +746,13 @@ void SystemTrayDelegateChromeOS::ActivateIMEProperty(const std::string& key) {
 }
 
 void SystemTrayDelegateChromeOS::ShowNetworkConfigure(
-    const std::string& network_id,
-    gfx::NativeWindow parent_window) {
-  NetworkConfigView::Show(network_id, parent_window);
+    const std::string& network_id) {
+  NetworkConfigView::Show(network_id, GetNativeWindow());
 }
 
 bool SystemTrayDelegateChromeOS::EnrollNetwork(
-    const std::string& network_id,
-    gfx::NativeWindow parent_window) {
-  return enrollment::CreateDialog(network_id, parent_window);
+    const std::string& network_id) {
+  return enrollment::CreateDialog(network_id, GetNativeWindow());
 }
 
 void SystemTrayDelegateChromeOS::ManageBluetoothDevices() {

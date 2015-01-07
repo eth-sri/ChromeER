@@ -6,8 +6,11 @@
 
 #include <vector>
 
+#include "base/bind.h"
 #include "base/command_line.h"
+#include "base/files/file_path.h"
 #include "base/lazy_instance.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/strings/string_split.h"
@@ -21,27 +24,24 @@
 #include "mojo/public/cpp/application/application_connection.h"
 #include "mojo/public/cpp/application/application_delegate.h"
 #include "mojo/public/cpp/application/application_impl.h"
-#include "mojo/services/native_viewport/gpu_impl.h"
-#include "mojo/services/native_viewport/native_viewport_impl.h"
 #include "mojo/shell/dynamic_application_loader.h"
+#include "mojo/shell/external_application_listener.h"
 #include "mojo/shell/in_process_dynamic_service_runner.h"
 #include "mojo/shell/out_of_process_dynamic_service_runner.h"
 #include "mojo/shell/switches.h"
 #include "mojo/shell/ui_application_loader_android.h"
 #include "mojo/spy/spy.h"
-#include "ui/gl/gl_share_group.h"
 
 #if defined(OS_LINUX)
 #include "mojo/shell/dbus_application_loader_linux.h"
 #endif  // defined(OS_LINUX)
 
 #if defined(OS_ANDROID)
+#include "mojo/services/native_viewport/gpu_impl.h"
+#include "mojo/services/native_viewport/native_viewport_impl.h"
 #include "mojo/shell/network_application_loader.h"
+#include "ui/gl/gl_share_group.h"
 #endif  // defined(OS_ANDROID)
-
-#if defined(USE_AURA)
-#include "mojo/shell/view_manager_loader.h"
-#endif
 
 namespace mojo {
 namespace shell {
@@ -72,6 +72,11 @@ static base::LazyInstance<Setup>::Leaky setup = LAZY_INSTANCE_INITIALIZER;
 
 void InitContentHandlers(DynamicApplicationLoader* loader,
                          base::CommandLine* command_line) {
+  // Default content handlers.
+  loader->RegisterContentHandler("image/png", GURL("mojo://mojo_png_viewer/"));
+  loader->RegisterContentHandler("text/html", GURL("mojo://mojo_html_viewer/"));
+
+  // Command-line-specified content handlers.
   std::string handlers_spec = command_line->GetSwitchValueASCII(
       switches::kContentHandlers);
   if (handlers_spec.empty())
@@ -98,14 +103,14 @@ void InitContentHandlers(DynamicApplicationLoader* loader,
 
 class EmptyServiceProvider : public InterfaceImpl<ServiceProvider> {
  private:
-  virtual void ConnectToService(const mojo::String& service_name,
-                                ScopedMessagePipeHandle client_handle)
-      MOJO_OVERRIDE {
-  }
+  virtual void ConnectToService(
+      const mojo::String& service_name,
+      ScopedMessagePipeHandle client_handle) override {}
 };
 
 }  // namespace
 
+#if defined(OS_ANDROID)
 class Context::NativeViewportApplicationLoader
     : public ApplicationLoader,
       public ApplicationDelegate,
@@ -121,18 +126,18 @@ class Context::NativeViewportApplicationLoader
   // ApplicationLoader implementation.
   virtual void Load(ApplicationManager* manager,
                     const GURL& url,
-                    scoped_refptr<LoadCallbacks> callbacks) OVERRIDE {
+                    scoped_refptr<LoadCallbacks> callbacks) override {
     ScopedMessagePipeHandle shell_handle = callbacks->RegisterApplication();
     if (shell_handle.is_valid())
       app_.reset(new ApplicationImpl(this, shell_handle.Pass()));
   }
 
   virtual void OnApplicationError(ApplicationManager* manager,
-                                  const GURL& url) OVERRIDE {}
+                                  const GURL& url) override {}
 
   // ApplicationDelegate implementation.
   virtual bool ConfigureIncomingConnection(
-      mojo::ApplicationConnection* connection) OVERRIDE {
+      mojo::ApplicationConnection* connection) override {
     connection->AddService<NativeViewport>(this);
     connection->AddService<Gpu>(this);
     return true;
@@ -140,13 +145,13 @@ class Context::NativeViewportApplicationLoader
 
   // InterfaceFactory<NativeViewport> implementation.
   virtual void Create(ApplicationConnection* connection,
-                      InterfaceRequest<NativeViewport> request) OVERRIDE {
-    BindToRequest(new NativeViewportImpl(app_.get()), &request);
+                      InterfaceRequest<NativeViewport> request) override {
+    BindToRequest(new NativeViewportImpl(app_.get(), false), &request);
   }
 
   // InterfaceFactory<Gpu> implementation.
   virtual void Create(ApplicationConnection* connection,
-                      InterfaceRequest<Gpu> request) OVERRIDE {
+                      InterfaceRequest<Gpu> request) override {
     BindToRequest(new GpuImpl(share_group_.get(), mailbox_manager_.get()),
                   &request);
   }
@@ -156,6 +161,7 @@ class Context::NativeViewportApplicationLoader
   scoped_ptr<ApplicationImpl> app_;
   DISALLOW_COPY_AND_ASSIGN(NativeViewportApplicationLoader);
 };
+#endif
 
 Context::Context() {
   DCHECK(!base::MessageLoop::current());
@@ -175,6 +181,21 @@ void Context::Init() {
     mojo_url_resolver_.AddLocalFileMapping(GURL(kLocalMojoURLs[i]));
 
   base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
+
+  if (command_line->HasSwitch(switches::kEnableExternalApplications)) {
+    listener_ = ExternalApplicationListener::Create(
+        task_runners_->shell_runner(), task_runners_->io_runner());
+
+    base::FilePath socket_path =
+        command_line->GetSwitchValuePath(switches::kEnableExternalApplications);
+    if (socket_path.empty())
+      socket_path = ExternalApplicationListener::ConstructDefaultSocketPath();
+
+    listener_->ListenInBackground(
+        socket_path,
+        base::Bind(&ApplicationManager::RegisterExternalApplication,
+                   base::Unretained(&application_manager_)));
+  }
   scoped_ptr<DynamicServiceRunnerFactory> runner_factory;
   if (command_line->HasSwitch(switches::kEnableMultiprocess))
     runner_factory.reset(new OutOfProcessDynamicServiceRunnerFactory());
@@ -196,24 +217,6 @@ void Context::Init() {
           scoped_ptr<ApplicationLoader>(new NativeViewportApplicationLoader()),
           this)),
       GURL("mojo:mojo_native_viewport_service"));
-#else
-  {
-    scoped_ptr<BackgroundShellApplicationLoader> loader(
-        new BackgroundShellApplicationLoader(
-            scoped_ptr<ApplicationLoader>(
-                new NativeViewportApplicationLoader()),
-            "native_viewport",
-            base::MessageLoop::TYPE_UI));
-    application_manager_.SetLoaderForURL(
-        loader.PassAs<ApplicationLoader>(),
-        GURL("mojo:mojo_native_viewport_service"));
-  }
-#endif
-#if defined(USE_AURA)
-  // TODO(sky): need a better way to find this. It shouldn't be linked in.
-  application_manager_.SetLoaderForURL(
-      scoped_ptr<ApplicationLoader>(new ViewManagerLoader()),
-      GURL("mojo:mojo_view_manager"));
 #endif
 
 #if defined(OS_LINUX)
@@ -240,6 +243,9 @@ void Context::Init() {
                                          GURL("mojo:mojo_network_service"));
   }
 #endif
+
+  if (listener_)
+    listener_->WaitForListening();
 }
 
 void Context::OnApplicationError(const GURL& gurl) {

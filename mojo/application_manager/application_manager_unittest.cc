@@ -4,6 +4,7 @@
 
 #include "base/at_exit.h"
 #include "base/bind.h"
+#include "base/macros.h"
 #include "base/message_loop/message_loop.h"
 #include "mojo/application_manager/application_loader.h"
 #include "mojo/application_manager/application_manager.h"
@@ -36,7 +37,7 @@ class QuitMessageLoopErrorHandler : public ErrorHandler {
   virtual ~QuitMessageLoopErrorHandler() {}
 
   // |ErrorHandler| implementation:
-  virtual void OnConnectionError() OVERRIDE {
+  virtual void OnConnectionError() override {
     base::MessageLoop::current()->QuitWhenIdle();
   }
 
@@ -52,14 +53,14 @@ class TestServiceImpl : public InterfaceImpl<TestService> {
 
   virtual ~TestServiceImpl() { --context_->num_impls; }
 
-  virtual void OnConnectionError() OVERRIDE {
+  virtual void OnConnectionError() override {
     if (!base::MessageLoop::current()->is_running())
       return;
     base::MessageLoop::current()->Quit();
   }
 
   // TestService implementation:
-  virtual void Test(const String& test_string) OVERRIDE {
+  virtual void Test(const String& test_string) override {
     context_->last_test_string = test_string;
     client()->AckTest();
   }
@@ -77,7 +78,7 @@ class TestClientImpl : public TestClient {
 
   virtual ~TestClientImpl() { service_.reset(); }
 
-  virtual void AckTest() OVERRIDE {
+  virtual void AckTest() override {
     if (quit_after_ack_)
       base::MessageLoop::current()->Quit();
   }
@@ -107,30 +108,33 @@ class TestApplicationLoader : public ApplicationLoader,
 
   void set_context(TestContext* context) { context_ = context; }
   int num_loads() const { return num_loads_; }
+  std::vector<std::string> GetArgs() {
+    return test_app_->args().To<std::vector<std::string> >();
+  }
 
  private:
   // ApplicationLoader implementation.
   virtual void Load(ApplicationManager* manager,
                     const GURL& url,
-                    scoped_refptr<LoadCallbacks> callbacks) OVERRIDE {
+                    scoped_refptr<LoadCallbacks> callbacks) override {
     ++num_loads_;
     test_app_.reset(
         new ApplicationImpl(this, callbacks->RegisterApplication().Pass()));
   }
 
   virtual void OnApplicationError(ApplicationManager* manager,
-                                  const GURL& url) OVERRIDE {}
+                                  const GURL& url) override {}
 
   // ApplicationDelegate implementation.
   virtual bool ConfigureIncomingConnection(
-      ApplicationConnection* connection) OVERRIDE {
+      ApplicationConnection* connection) override {
     connection->AddService(this);
     return true;
   }
 
   // InterfaceFactory implementation.
   virtual void Create(ApplicationConnection* connection,
-                      InterfaceRequest<TestService> request) OVERRIDE {
+                      InterfaceRequest<TestService> request) override {
     BindToRequest(new TestServiceImpl(context_), &request);
   }
 
@@ -249,11 +253,11 @@ class TestAImpl : public InterfaceImpl<TestA> {
   }
 
  private:
-  virtual void CallB() OVERRIDE {
+  virtual void CallB() override {
     b_->B(base::Bind(&TestAImpl::Quit, base::Unretained(this)));
   }
 
-  virtual void CallCFromB() OVERRIDE {
+  virtual void CallCFromB() override {
     b_->CallC(base::Bind(&TestAImpl::Quit, base::Unretained(this)));
   }
 
@@ -282,12 +286,12 @@ class TestBImpl : public InterfaceImpl<TestB> {
   }
 
  private:
-  virtual void B(const mojo::Callback<void()>& callback) OVERRIDE {
+  virtual void B(const mojo::Callback<void()>& callback) override {
     test_context_->IncrementNumBCalls();
     callback.Run();
   }
 
-  virtual void CallC(const mojo::Callback<void()>& callback) OVERRIDE {
+  virtual void CallC(const mojo::Callback<void()>& callback) override {
     test_context_->IncrementNumBCalls();
     c_->C(callback);
   }
@@ -304,7 +308,7 @@ class TestCImpl : public InterfaceImpl<TestC> {
   virtual ~TestCImpl() { test_context_->IncrementNumCDeletes(); }
 
  private:
-  virtual void C(const mojo::Callback<void()>& callback) OVERRIDE {
+  virtual void C(const mojo::Callback<void()>& callback) override {
     test_context_->IncrementNumCCalls();
     callback.Run();
   }
@@ -324,16 +328,16 @@ class Tester : public ApplicationDelegate,
  private:
   virtual void Load(ApplicationManager* manager,
                     const GURL& url,
-                    scoped_refptr<LoadCallbacks> callbacks) OVERRIDE {
+                    scoped_refptr<LoadCallbacks> callbacks) override {
     app_.reset(
         new ApplicationImpl(this, callbacks->RegisterApplication().Pass()));
   }
 
   virtual void OnApplicationError(ApplicationManager* manager,
-                                  const GURL& url) OVERRIDE {}
+                                  const GURL& url) override {}
 
   virtual bool ConfigureIncomingConnection(
-      ApplicationConnection* connection) OVERRIDE {
+      ApplicationConnection* connection) override {
     if (!requestor_url_.empty() &&
         requestor_url_ != connection->GetRemoteApplicationURL()) {
       context_->set_tester_called_quit();
@@ -350,7 +354,7 @@ class Tester : public ApplicationDelegate,
   }
 
   virtual bool ConfigureOutgoingConnection(
-      ApplicationConnection* connection) OVERRIDE {
+      ApplicationConnection* connection) override {
     // If we're connecting to B, then add C.
     if (connection->GetRemoteApplicationURL() == kTestBURLString)
       connection->AddService<TestC>(this);
@@ -358,17 +362,17 @@ class Tester : public ApplicationDelegate,
   }
 
   virtual void Create(ApplicationConnection* connection,
-                      InterfaceRequest<TestA> request) OVERRIDE {
+                      InterfaceRequest<TestA> request) override {
     BindToRequest(new TestAImpl(connection, context_), &request);
   }
 
   virtual void Create(ApplicationConnection* connection,
-                      InterfaceRequest<TestB> request) OVERRIDE {
+                      InterfaceRequest<TestB> request) override {
     BindToRequest(new TestBImpl(connection, context_), &request);
   }
 
   virtual void Create(ApplicationConnection* connection,
-                      InterfaceRequest<TestC> request) OVERRIDE {
+                      InterfaceRequest<TestC> request) override {
     BindToRequest(new TestCImpl(connection, context_), &request);
   }
 
@@ -383,7 +387,7 @@ class TestServiceInterceptor : public ApplicationManager::Interceptor {
 
   virtual ServiceProviderPtr OnConnectToClient(
       const GURL& url,
-      ServiceProviderPtr service_provider) OVERRIDE {
+      ServiceProviderPtr service_provider) override {
     ++call_count_;
     url_ = url;
     return service_provider.Pass();
@@ -411,7 +415,7 @@ class ApplicationManagerTest : public testing::Test {
 
   virtual ~ApplicationManagerTest() {}
 
-  virtual void SetUp() OVERRIDE {
+  virtual void SetUp() override {
     application_manager_.reset(new ApplicationManager);
     TestApplicationLoader* default_loader = new TestApplicationLoader;
     default_loader->set_context(&context_);
@@ -424,7 +428,7 @@ class ApplicationManagerTest : public testing::Test {
     test_client_.reset(new TestClientImpl(service_proxy.Pass()));
   }
 
-  virtual void TearDown() OVERRIDE {
+  virtual void TearDown() override {
     test_client_.reset(NULL);
     application_manager_.reset(NULL);
   }
@@ -466,6 +470,46 @@ TEST_F(ApplicationManagerTest, Basic) {
   EXPECT_EQ(std::string("test"), context_.last_test_string);
 }
 
+// Confirm that no arguments are sent to an application by default.
+TEST_F(ApplicationManagerTest, NoArgs) {
+  ApplicationManager am;
+  GURL test_url("test:test");
+  TestContext context;
+  TestApplicationLoader* loader = new TestApplicationLoader;
+  loader->set_context(&context);
+  am.SetLoaderForURL(scoped_ptr<ApplicationLoader>(loader), test_url);
+  TestServicePtr test_service;
+  am.ConnectToService(test_url, &test_service);
+  TestClientImpl test_client(test_service.Pass());
+  test_client.Test("test");
+  loop_.Run();
+  std::vector<std::string> app_args = loader->GetArgs();
+  EXPECT_EQ(0U, app_args.size());
+}
+
+// Confirm that arguments are sent to an application.
+TEST_F(ApplicationManagerTest, Args) {
+  ApplicationManager am;
+  GURL test_url("test:test");
+  std::vector<std::string> args;
+  args.push_back("test_arg1");
+  args.push_back("test_arg2");
+  am.SetArgsForURL(args, test_url);
+  TestContext context;
+  TestApplicationLoader* loader = new TestApplicationLoader;
+  loader->set_context(&context);
+  am.SetLoaderForURL(scoped_ptr<ApplicationLoader>(loader), test_url);
+  TestServicePtr test_service;
+  am.ConnectToService(test_url, &test_service);
+  TestClientImpl test_client(test_service.Pass());
+  test_client.Test("test");
+  loop_.Run();
+  std::vector<std::string> app_args = loader->GetArgs();
+  ASSERT_EQ(args.size(), app_args.size());
+  EXPECT_EQ(args[0], app_args[0]);
+  EXPECT_EQ(args[1], app_args[1]);
+}
+
 TEST_F(ApplicationManagerTest, ClientError) {
   test_client_->Test("test");
   EXPECT_TRUE(HasFactoryForTestURL());
@@ -479,7 +523,7 @@ TEST_F(ApplicationManagerTest, ClientError) {
 
 TEST_F(ApplicationManagerTest, Deletes) {
   {
-    ApplicationManager sm;
+    ApplicationManager am;
     TestApplicationLoader* default_loader = new TestApplicationLoader;
     default_loader->set_context(&context_);
     TestApplicationLoader* url_loader1 = new TestApplicationLoader;
@@ -490,14 +534,14 @@ TEST_F(ApplicationManagerTest, Deletes) {
     TestApplicationLoader* scheme_loader2 = new TestApplicationLoader;
     scheme_loader1->set_context(&context_);
     scheme_loader2->set_context(&context_);
-    sm.set_default_loader(scoped_ptr<ApplicationLoader>(default_loader));
-    sm.SetLoaderForURL(scoped_ptr<ApplicationLoader>(url_loader1),
+    am.set_default_loader(scoped_ptr<ApplicationLoader>(default_loader));
+    am.SetLoaderForURL(scoped_ptr<ApplicationLoader>(url_loader1),
                        GURL("test:test1"));
-    sm.SetLoaderForURL(scoped_ptr<ApplicationLoader>(url_loader2),
+    am.SetLoaderForURL(scoped_ptr<ApplicationLoader>(url_loader2),
                        GURL("test:test1"));
-    sm.SetLoaderForScheme(scoped_ptr<ApplicationLoader>(scheme_loader1),
+    am.SetLoaderForScheme(scoped_ptr<ApplicationLoader>(scheme_loader1),
                           "test");
-    sm.SetLoaderForScheme(scoped_ptr<ApplicationLoader>(scheme_loader2),
+    am.SetLoaderForScheme(scoped_ptr<ApplicationLoader>(scheme_loader2),
                           "test");
   }
   EXPECT_EQ(5, context_.num_loader_deletes);
@@ -505,7 +549,6 @@ TEST_F(ApplicationManagerTest, Deletes) {
 
 // Confirm that both urls and schemes can have their loaders explicitly set.
 TEST_F(ApplicationManagerTest, SetLoaders) {
-  ApplicationManager sm;
   TestApplicationLoader* default_loader = new TestApplicationLoader;
   TestApplicationLoader* url_loader = new TestApplicationLoader;
   TestApplicationLoader* scheme_loader = new TestApplicationLoader;

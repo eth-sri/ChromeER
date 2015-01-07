@@ -259,6 +259,7 @@
       <structure type="chrome_scaled_image" name="IDR_DEFAULT_FAVICON" file="common/default_favicon.png" />
       <structure type="chrome_scaled_image" name="IDR_DEFAULT_FAVICON_32" file="common/default_favicon_32.png" />
       <structure type="chrome_scaled_image" name="IDR_DEFAULT_FAVICON_64" file="common/default_favicon_64.png" />
+      <structure type="chrome_scaled_image" name="IDR_EASY_UNLOCK_HARDLOCKED" file="common/easy_unlock_hardlocked.png" />
       <structure type="chrome_scaled_image" name="IDR_EASY_UNLOCK_LOCKED" file="common/easy_unlock_locked.png" />
       <structure type="chrome_scaled_image" name="IDR_EASY_UNLOCK_SPINNER" file="common/easy_unlock_spinner.png" />
       <structure type="chrome_scaled_image" name="IDR_EASY_UNLOCK_UNLOCKED" file="common/easy_unlock_unlocked.png" />
@@ -520,6 +521,12 @@
         <structure type="chrome_scaled_image" name="IDR_TOUCH_DRAG_TIP_NODROP" file="common/drag_tip_nodrop.png" />
       </if>
       <if expr="is_macosx or is_ios">
+        <structure type="chrome_scaled_image" name="IDR_DARK_TRAY_ATTENTION" file="mac/notification_dark_tray_attention.png"/>
+        <structure type="chrome_scaled_image" name="IDR_DARK_TRAY_PRESSED" file="mac/notification_dark_tray_pressed.png"/>
+        <structure type="chrome_scaled_image" name="IDR_DARK_TRAY_DO_NOT_DISTURB_ATTENTION" file="mac/notification_dark_tray_do_not_disturb_attention.png"/>
+        <structure type="chrome_scaled_image" name="IDR_DARK_TRAY_DO_NOT_DISTURB_PRESSED" file="mac/notification_dark_tray_do_not_disturb_pressed.png"/>
+        <structure type="chrome_scaled_image" name="IDR_DARK_TRAY_DO_NOT_DISTURB_EMPTY" file="mac/notification_tray_do_not_disturb_empty.png"/>
+        <structure type="chrome_scaled_image" name="IDR_DARK_TRAY_EMPTY" file="mac/notification_dark_tray_empty.png"/>
         <structure type="chrome_scaled_image" name="IDR_TRAY_ATTENTION" file="mac/notification_tray_attention.png"/>
         <structure type="chrome_scaled_image" name="IDR_TRAY_ATTENTION_PRESSED" file="mac/notification_tray_attention_pressed.png"/>
         <structure type="chrome_scaled_image" name="IDR_TRAY_DO_NOT_DISTURB_ATTENTION" file="mac/notification_tray_do_not_disturb_attention.png"/>

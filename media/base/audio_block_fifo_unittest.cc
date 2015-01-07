@@ -2,54 +2,54 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/time/time.h"
+#include "media/audio/audio_power_monitor.h"
 #include "media/base/audio_block_fifo.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace media {
 
 class AudioBlockFifoTest : public testing::Test {
- protected:
+ public:
   AudioBlockFifoTest() {}
   virtual ~AudioBlockFifoTest() {}
 
- private:
-  DISALLOW_COPY_AND_ASSIGN(AudioBlockFifoTest);
-};
-
-class AudioBlockFifoFormatTest : public AudioBlockFifoTest,
-                                 public testing::WithParamInterface<bool> {
- protected:
-  void PushAndVerify(AudioBlockFifo* fifo,
-                     int frames_to_push,
-                     int channels,
-                     int block_frames,
-                     int max_frames) {
-    const int bytes_per_sample = 2;
-    const int data_byte_size = bytes_per_sample * channels * frames_to_push;
-    if (GetParam()) {
-      scoped_ptr<media::AudioBus> data =
-          AudioBus::Create(channels, frames_to_push);
-      for (int filled_frames = max_frames - fifo->GetUnfilledFrames();
-           filled_frames + frames_to_push <= max_frames;) {
-        fifo->Push(data.get());
-        filled_frames += frames_to_push;
-        EXPECT_EQ(max_frames - filled_frames, fifo->GetUnfilledFrames());
-        EXPECT_EQ(static_cast<int>(filled_frames / block_frames),
-                  fifo->available_blocks());
-      }
-    } else {
-      scoped_ptr<uint8[]> data(new uint8[data_byte_size]);
-      memset(data.get(), 0, data_byte_size);
-      for (int filled_frames = max_frames - fifo->GetUnfilledFrames();
-           filled_frames + frames_to_push <= max_frames;) {
-        fifo->Push(data.get(), frames_to_push, bytes_per_sample);
-        filled_frames += frames_to_push;
-        EXPECT_EQ(max_frames - filled_frames, fifo->GetUnfilledFrames());
-        EXPECT_EQ(static_cast<int>(filled_frames / block_frames),
-                  fifo->available_blocks());
-      }
+  void PushAndVerify(AudioBlockFifo* fifo, int frames_to_push,
+                     int channels, int block_frames, int max_frames) {
+    for (int filled_frames = max_frames - fifo->GetUnfilledFrames();
+         filled_frames + frames_to_push <= max_frames;) {
+      Push(fifo, frames_to_push, channels);
+      filled_frames += frames_to_push;
+      EXPECT_EQ(max_frames - filled_frames, fifo->GetUnfilledFrames());
+      EXPECT_EQ(static_cast<int>(filled_frames / block_frames),
+                fifo->available_blocks());
     }
   }
+
+  void Push(AudioBlockFifo* fifo, int frames_to_push, int channels) {
+    DCHECK_LE(frames_to_push, fifo->GetUnfilledFrames());
+    const int bytes_per_sample = 2;
+    const int data_byte_size = bytes_per_sample * channels * frames_to_push;
+    scoped_ptr<uint8[]> data(new uint8[data_byte_size]);
+    memset(data.get(), 1, data_byte_size);
+    fifo->Push(data.get(), frames_to_push, bytes_per_sample);
+  }
+
+  void ConsumeAndVerify(AudioBlockFifo* fifo, int expected_unfilled_frames,
+                        int expected_available_blocks) {
+    const AudioBus* bus = fifo->Consume();
+    EXPECT_EQ(fifo->GetUnfilledFrames(), expected_unfilled_frames);
+    EXPECT_EQ(fifo->available_blocks(), expected_available_blocks);
+
+    // Verify the audio data is not 0.
+    for (int i = 0; i < bus->channels(); ++i) {
+      EXPECT_GT(bus->channel(i)[0], 0.0f);
+      EXPECT_GT(bus->channel(i)[bus->frames() - 1], 0.0f);
+    }
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(AudioBlockFifoTest);
 };
 
 // Verify that construction works as intended.
@@ -63,7 +63,7 @@ TEST_F(AudioBlockFifoTest, Construct) {
 }
 
 // Pushes audio bus objects to/from a FIFO up to different degrees.
-TEST_P(AudioBlockFifoFormatTest, Push) {
+TEST_F(AudioBlockFifoTest, Push) {
   const int channels = 2;
   const int frames = 128;
   const int blocks = 2;
@@ -84,7 +84,7 @@ TEST_P(AudioBlockFifoFormatTest, Push) {
 
 // Perform a sequence of Push/Consume calls to different degrees, and verify
 // things are correct.
-TEST_P(AudioBlockFifoFormatTest, PushAndConsume) {
+TEST_F(AudioBlockFifoTest, PushAndConsume) {
   const int channels = 2;
   const int frames = 441;
   const int blocks = 4;
@@ -119,9 +119,10 @@ TEST_P(AudioBlockFifoFormatTest, PushAndConsume) {
   fifo.Clear();
   int new_push_frames = 128;
   // Change the input frame and try to fill up the FIFO.
-  PushAndVerify(&fifo, new_push_frames, channels, frames, frames * blocks);
+  PushAndVerify(&fifo, new_push_frames, channels, frames,
+                frames * blocks);
   EXPECT_TRUE(fifo.GetUnfilledFrames() != 0);
-  EXPECT_TRUE(fifo.available_blocks() == blocks - 1);
+  EXPECT_TRUE(fifo.available_blocks() == blocks -1);
 
   // Consume all the existing filled blocks of data.
   while (fifo.available_blocks()) {
@@ -140,13 +141,14 @@ TEST_P(AudioBlockFifoFormatTest, PushAndConsume) {
 
   // Completely fill up the buffer again.
   new_push_frames = frames * blocks - remain_frames;
-  PushAndVerify(&fifo, new_push_frames, channels, frames, frames * blocks);
+  PushAndVerify(&fifo, new_push_frames, channels, frames,
+                frames * blocks);
   EXPECT_TRUE(fifo.GetUnfilledFrames() == 0);
   EXPECT_TRUE(fifo.available_blocks() == blocks);
 }
 
 // Perform a sequence of Push/Consume calls to a 1 block FIFO.
-TEST_P(AudioBlockFifoFormatTest, PushAndConsumeOneBlockFifo) {
+TEST_F(AudioBlockFifoTest, PushAndConsumeOneBlockFifo) {
   static const int channels = 2;
   static const int frames = 441;
   static const int blocks = 1;
@@ -163,8 +165,62 @@ TEST_P(AudioBlockFifoFormatTest, PushAndConsumeOneBlockFifo) {
   EXPECT_TRUE(fifo.GetUnfilledFrames() == frames);
 }
 
-INSTANTIATE_TEST_CASE_P(AudioBlockFifoTests,
-                        AudioBlockFifoFormatTest,
-                        ::testing::Values(false, true));
+// Dynamically increase the capacity of FIFO and verify buffers are correct.
+TEST_F(AudioBlockFifoTest, DynamicallyIncreaseCapacity) {
+  // Create a FIFO with default blocks of buffers.
+  const int channels = 2;
+  const int frames = 441;
+  const int default_blocks = 2;
+  AudioBlockFifo fifo(channels, frames, default_blocks);
+  Push(&fifo, frames, channels);
+  int expected_unfilled_frames = frames;
+  int expected_available_blocks = 1;
+  EXPECT_EQ(expected_unfilled_frames, fifo.GetUnfilledFrames());
+  EXPECT_EQ(expected_available_blocks, fifo.available_blocks());
+
+  // Increase the capacity dynamically for the first time.
+  const int new_blocks_1 = 3;
+  fifo.IncreaseCapacity(new_blocks_1);
+  expected_unfilled_frames += new_blocks_1 * frames;
+  EXPECT_EQ(fifo.GetUnfilledFrames(), expected_unfilled_frames);
+  EXPECT_EQ(fifo.available_blocks(), expected_available_blocks);
+
+  // Verify the previous buffer is not affected by the dynamic capacity
+  // increment.
+  expected_unfilled_frames += frames;
+  expected_available_blocks -= 1;
+  ConsumeAndVerify(&fifo, expected_unfilled_frames, expected_available_blocks);
+
+  // Fill another |new_blocks_1 + 0.5| blocks of data to the FIFO.
+  const int frames_to_push = static_cast<int>((new_blocks_1 + 0.5) * frames);
+  int max_frames = frames * (default_blocks + new_blocks_1);
+  Push(&fifo, frames_to_push, channels);
+  expected_unfilled_frames = max_frames - frames_to_push;
+  expected_available_blocks = new_blocks_1;
+  EXPECT_EQ(fifo.GetUnfilledFrames(), expected_unfilled_frames);
+  EXPECT_EQ(fifo.available_blocks(), expected_available_blocks);
+
+  // Increase the capacity dynamically for the second time.
+  const int new_blocks_2 = 2;
+  fifo.IncreaseCapacity(new_blocks_2);
+  max_frames += new_blocks_2 * frames;
+  expected_unfilled_frames += new_blocks_2 * frames;
+  EXPECT_EQ(fifo.GetUnfilledFrames(), expected_unfilled_frames);
+  EXPECT_EQ(fifo.available_blocks(), expected_available_blocks);
+
+  // Verify the previous buffers are not affected by the dynamic capacity
+  // increment.
+  while (fifo.available_blocks()) {
+    expected_unfilled_frames += frames;
+    expected_available_blocks -= 1;
+    ConsumeAndVerify(&fifo, expected_unfilled_frames,
+                     expected_available_blocks);
+  }
+
+  // Fill up one block of buffer and consume it, FIFO should then be empty.
+  const int available_frames = max_frames - expected_unfilled_frames;
+  Push(&fifo, frames - available_frames, channels);
+  ConsumeAndVerify(&fifo, max_frames, 0);
+}
 
 }  // namespace media

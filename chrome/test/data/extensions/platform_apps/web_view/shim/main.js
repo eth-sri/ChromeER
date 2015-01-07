@@ -28,6 +28,9 @@ embedder.setUp_ = function(config) {
   embedder.redirectGuestURLDest = embedder.baseGuestURL +
       '/extensions/platform_apps/web_view/shim/guest_redirect.html';
   embedder.closeSocketURL = embedder.baseGuestURL + '/close-socket';
+  embedder.testImageBaseURL = embedder.baseGuestURL +
+      '/extensions/platform_apps/web_view/shim/';
+  embedder.virtualURL = 'http://virtualurl/';
 };
 
 window.runTest = function(testName) {
@@ -92,6 +95,68 @@ embedder.test.assertFalse = function(condition) {
 };
 
 // Tests begin.
+
+// This test verifies that the allowtransparency property cannot be changed
+// once set. The attribute can only be deleted.
+function testAllowTransparencyAttribute() {
+  var webview = document.createElement('webview');
+  webview.src = 'data:text/html,webview test';
+  webview.allowtransparency = true;
+
+  webview.addEventListener('loadstop', function(e) {
+    embedder.test.assertTrue(webview.hasAttribute('allowtransparency'));
+    webview.allowtransparency = false;
+    embedder.test.assertTrue(webview.allowtransparency);
+    embedder.test.assertTrue(webview.hasAttribute('allowtransparency'));
+    webview.removeAttribute('allowtransparency');
+    embedder.test.assertFalse(webview.allowtransparency);
+    embedder.test.succeed();
+  });
+
+  document.body.appendChild(webview);
+}
+
+// This test verifies that a lengthy page with autosize enabled will report
+// the correct height in the sizechanged event.
+function testAutosizeHeight() {
+  var webview = document.createElement('webview');
+
+  webview.autosize = true;
+  webview.minwidth = 200;
+  webview.maxwidth = 210;
+  webview.minheight = 40;
+  webview.maxheight = 200;
+
+  var step = 1;
+  webview.addEventListener('sizechanged', function(e) {
+    switch (step) {
+      case 1:
+        embedder.test.assertEq(0, e.oldHeight);
+        embedder.test.assertEq(200, e.newHeight);
+        // Change the maxheight to verify that we see the change.
+        webview.maxheight = 50;
+        break;
+      case 2:
+        embedder.test.assertEq(200, e.oldHeight);
+        embedder.test.assertEq(50, e.newHeight);
+        embedder.test.succeed();
+        break;
+      default:
+        window.console.log('Unexpected sizechanged event, step = ' + step);
+        embedder.test.fail();
+        break;
+    }
+    ++step;
+  });
+
+  webview.src = 'data:text/html,' +
+                'a<br/>b<br/>c<br/>d<br/>e<br/>f<br/>' +
+                'a<br/>b<br/>c<br/>d<br/>e<br/>f<br/>' +
+                'a<br/>b<br/>c<br/>d<br/>e<br/>f<br/>' +
+                'a<br/>b<br/>c<br/>d<br/>e<br/>f<br/>' +
+                'a<br/>b<br/>c<br/>d<br/>e<br/>f<br/>';
+  document.body.appendChild(webview);
+}
 
 // This test verifies that if a browser plugin is in autosize mode before
 // navigation then the guest starts auto-sized.
@@ -1325,6 +1390,40 @@ function testReload() {
   document.body.appendChild(webview);
 }
 
+// This test verifies that the reload method on webview functions as expected.
+function testReloadAfterTerminate() {
+  var triggerNavUrl = 'data:text/html,trigger navigation';
+  var webview = document.createElement('webview');
+
+  var step = 1;
+  webview.addEventListener('loadstop', function(e) {
+    switch (step) {
+      case 1:
+        webview.terminate();
+        break;
+      case 2:
+        setTimeout(function() { embedder.test.succeed(); }, 0);
+        break;
+      default:
+        window.console.log('Unexpected loadstop event, step = ' + step);
+        embedder.test.fail();
+        break;
+    }
+    ++step;
+  });
+
+  webview.addEventListener('exit', function(e) {
+    // Trigger a focus state change of the guest to test for
+    // http://crbug.com/413874.
+    webview.blur();
+    webview.focus();
+    setTimeout(function() { webview.reload(); }, 0);
+  });
+
+  webview.src = triggerNavUrl;
+  document.body.appendChild(webview);
+}
+
 // This test verifies that a <webview> is torn down gracefully when removed from
 // the DOM on exit.
 
@@ -1731,7 +1830,46 @@ function testFindAPI_findupdate() {
   document.body.appendChild(webview);
 };
 
+function testLoadDataAPI() {
+  var webview = new WebView();
+  webview.src = 'about:blank';
+
+  var loadstopListener2 = function(e) {
+    // Test the virtual URL.
+    embedder.test.assertEq(webview.src, embedder.virtualURL);
+
+    // Test that the image was loaded from the right source.
+    webview.executeScript(
+        {code: "document.querySelector('img').src"}, function(e) {
+          embedder.test.assertEq(e, embedder.testImageBaseURL + "test.bmp");
+
+          // Test that insertCSS works (executeScript already works to reach
+          // this point).
+          webview.insertCSS({code: ''}, function() {
+            embedder.test.succeed();
+          });
+        });
+  }
+
+  var loadstopListener1 = function(e) {
+    webview.removeEventListener('loadstop', loadstopListener1);
+    webview.addEventListener('loadstop', loadstopListener2);
+
+    // Load a data URL containing a relatively linked image, with the
+    // image's base URL specified, and a virtual URL provided.
+    webview.loadDataWithBaseUrl("data:text/html;base64,PGh0bWw+CiAgVGhpcyBpcy" +
+        "BhIHRlc3QuPGJyPgogIDxpbWcgc3JjPSJ0ZXN0LmJtcCI+PGJyPgo8L2h0bWw+Cg==",
+                                embedder.testImageBaseURL,
+                                embedder.virtualURL);
+  }
+
+  webview.addEventListener('loadstop', loadstopListener1);
+  document.body.appendChild(webview);
+};
+
 embedder.test.testList = {
+  'testAllowTransparencyAttribute': testAllowTransparencyAttribute,
+  'testAutosizeHeight': testAutosizeHeight,
   'testAutosizeAfterNavigation': testAutosizeAfterNavigation,
   'testAutosizeBeforeNavigation': testAutosizeBeforeNavigation,
   'testAutosizeRemoveAttributes': testAutosizeRemoveAttributes,
@@ -1791,6 +1929,7 @@ embedder.test.testList = {
   'testNavigateAfterResize': testNavigateAfterResize,
   'testNavigationToExternalProtocol': testNavigationToExternalProtocol,
   'testReload': testReload,
+  'testReloadAfterTerminate': testReloadAfterTerminate,
   'testRemoveWebviewOnExit': testRemoveWebviewOnExit,
   'testRemoveWebviewAfterNavigation': testRemoveWebviewAfterNavigation,
   'testResizeWebviewResizesContent': testResizeWebviewResizesContent,
@@ -1798,7 +1937,8 @@ embedder.test.testList = {
   'testScreenshotCapture' : testScreenshotCapture,
   'testZoomAPI' : testZoomAPI,
   'testFindAPI': testFindAPI,
-  'testFindAPI_findupdate': testFindAPI
+  'testFindAPI_findupdate': testFindAPI,
+  'testLoadDataAPI': testLoadDataAPI
 };
 
 onload = function() {

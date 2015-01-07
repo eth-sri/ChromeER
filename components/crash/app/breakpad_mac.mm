@@ -13,8 +13,8 @@
 #include "base/command_line.h"
 #include "base/debug/crash_logging.h"
 #include "base/debug/dump_without_crashing.h"
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #import "base/logging.h"
 #include "base/mac/bundle_locations.h"
 #include "base/mac/mac_util.h"
@@ -24,7 +24,9 @@
 #include "base/threading/platform_thread.h"
 #include "base/threading/thread_restrictions.h"
 #import "breakpad/src/client/mac/Framework/Breakpad.h"
-#include "components/crash/app/breakpad_client.h"
+#include "components/crash/app/crash_reporter_client.h"
+
+using crash_reporter::GetCrashReporterClient;
 
 namespace breakpad {
 
@@ -166,12 +168,13 @@ void InitCrashReporter(const std::string& process_type) {
   if (is_browser) {
     // Since the configuration management infrastructure is possibly not
     // initialized when this code runs, read the policy preference directly.
-    if (!GetBreakpadClient()->ReportingIsEnforcedByPolicy(&enable_breakpad)) {
+    if (!GetCrashReporterClient()->ReportingIsEnforcedByPolicy(
+            &enable_breakpad)) {
       // Controlled by the user. The crash reporter may be enabled by
       // preference or through an environment variable, but the kDisableBreakpad
       // switch overrides both.
-      enable_breakpad = GetBreakpadClient()->GetCollectStatsConsent() ||
-                        GetBreakpadClient()->IsRunningUnattended();
+      enable_breakpad = GetCrashReporterClient()->GetCollectStatsConsent() ||
+                        GetCrashReporterClient()->IsRunningUnattended();
       enable_breakpad &= !command_line->HasSwitch(switches::kDisableBreakpad);
     }
   } else {
@@ -214,9 +217,17 @@ void InitCrashReporter(const std::string& process_type) {
     [breakpad_config setObject:@"NO" forKey:@BREAKPAD_SEND_AND_EXIT];
 
   base::FilePath dir_crash_dumps;
-  GetBreakpadClient()->GetCrashDumpLocation(&dir_crash_dumps);
+  GetCrashReporterClient()->GetCrashDumpLocation(&dir_crash_dumps);
   [breakpad_config setObject:base::SysUTF8ToNSString(dir_crash_dumps.value())
                       forKey:@BREAKPAD_DUMP_DIRECTORY];
+
+  // Temporarily run Breakpad in-process on 10.10 and later because APIs that
+  // it depends on got broken (http://crbug.com/386208).
+  // This can catch crashes in the browser process only.
+  if (is_browser && base::mac::IsOSYosemiteOrLater()) {
+    [breakpad_config setObject:[NSNumber numberWithBool:YES]
+                        forKey:@BREAKPAD_IN_PROCESS];
+  }
 
   // Initialize Breakpad.
   gBreakpadRef = BreakpadCreate(breakpad_config);
@@ -228,7 +239,7 @@ void InitCrashReporter(const std::string& process_type) {
   // Initialize the scoped crash key system.
   base::debug::SetCrashKeyReportingFunctions(&SetCrashKeyValueImpl,
                                              &ClearCrashKeyValueImpl);
-  GetBreakpadClient()->RegisterCrashKeys();
+  GetCrashReporterClient()->RegisterCrashKeys();
 
   // Set Breakpad metadata values.  These values are added to Info.plist during
   // the branded Google Chrome.app build.
@@ -240,7 +251,7 @@ void InitCrashReporter(const std::string& process_type) {
     // Get the guid from the command line switch.
     std::string client_guid =
         command_line->GetSwitchValueASCII(switches::kEnableCrashReporter);
-    GetBreakpadClient()->SetBreakpadClientIdFromGUID(client_guid);
+    GetCrashReporterClient()->SetCrashReporterClientIdFromGUID(client_guid);
   }
 
   logging::SetLogMessageHandler(&FatalMessageHandler);
@@ -266,7 +277,7 @@ void InitCrashProcessInfo(const std::string& process_type_switch) {
     process_type = base::SysUTF8ToNSString(process_type_switch);
   }
 
-  GetBreakpadClient()->InstallAdditionalFilters(gBreakpadRef);
+  GetCrashReporterClient()->InstallAdditionalFilters(gBreakpadRef);
 
   // Store process type in crash dump.
   SetCrashKeyValue(@"ptype", process_type);

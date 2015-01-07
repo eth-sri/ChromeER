@@ -45,7 +45,6 @@ DelegatingRenderer::DelegatingRenderer(RendererClient* client,
 
   if (!output_surface_->context_provider()) {
     capabilities_.using_shared_memory_resources = true;
-    capabilities_.using_map_image = true;
   } else {
     const ContextProvider::Capabilities& caps =
         output_surface_->context_provider()->ContextCapabilities();
@@ -53,7 +52,7 @@ DelegatingRenderer::DelegatingRenderer(RendererClient* client,
     DCHECK(!caps.gpu.iosurface || caps.gpu.texture_rectangle);
 
     capabilities_.using_egl_image = caps.gpu.egl_image_external;
-    capabilities_.using_map_image = caps.gpu.map_image;
+    capabilities_.using_image = caps.gpu.image;
 
     capabilities_.allow_rasterize_on_demand = false;
   }
@@ -93,8 +92,11 @@ void DelegatingRenderer::DrawFrame(RenderPassList* render_passes_in_draw_order,
       base::Bind(&AppendToArray, &resources);
   for (size_t i = 0; i < out_data.render_pass_list.size(); ++i) {
     RenderPass* render_pass = out_data.render_pass_list.at(i);
-    for (size_t j = 0; j < render_pass->quad_list.size(); ++j)
-      render_pass->quad_list[j]->IterateResources(append_to_array);
+    for (QuadList::Iterator iter = render_pass->quad_list.begin();
+         iter != render_pass->quad_list.end();
+         ++iter) {
+      iter->IterateResources(append_to_array);
+    }
   }
   resource_provider_->PrepareSendToParent(resources, &out_data.resource_list);
 }

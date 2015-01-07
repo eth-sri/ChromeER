@@ -17,10 +17,15 @@
 #include "chrome/browser/ui/app_list/app_list_service.h"
 #include "chrome/browser/ui/app_list/profile_loader.h"
 
+class AppListViewDelegate;
 class ProfileStore;
 
 namespace base {
 class FilePath;
+}
+
+namespace test {
+class AppListServiceImplTestApi;
 }
 
 // Parts of the AppListService implementation shared between platforms.
@@ -33,6 +38,10 @@ class AppListServiceImpl : public AppListService,
   AppListServiceImpl(const base::CommandLine& command_line,
                      PrefService* local_state,
                      scoped_ptr<ProfileStore> profile_store);
+
+  // Lazily create the Chrome AppListViewDelegate and ensure it is set to the
+  // given |profile|.
+  AppListViewDelegate* GetViewDelegate(Profile* profile);
 
   void RecordAppListLaunch();
   static void RecordAppListAppLaunch();
@@ -67,6 +76,7 @@ class AppListServiceImpl : public AppListService,
   void PerformStartupChecks(Profile* initial_profile);
 
  private:
+  friend class test::AppListServiceImplTestApi;
   static void SendAppListStats();
 
   // Loads a profile asynchronously and calls OnProfileLoaded() when done.
@@ -82,10 +92,12 @@ class AppListServiceImpl : public AppListService,
       const base::FilePath& profile_path) OVERRIDE;
 
   scoped_ptr<ProfileStore> profile_store_;
-  base::WeakPtrFactory<AppListServiceImpl> weak_factory_;
   base::CommandLine command_line_;
   PrefService* local_state_;
   scoped_ptr<ProfileLoader> profile_loader_;
+  scoped_ptr<AppListViewDelegate> view_delegate_;
+
+  base::WeakPtrFactory<AppListServiceImpl> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(AppListServiceImpl);
 };

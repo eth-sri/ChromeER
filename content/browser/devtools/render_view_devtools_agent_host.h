@@ -76,6 +76,9 @@ class CONTENT_EXPORT RenderViewDevToolsAgentHost
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
   virtual void DidAttachInterstitialPage() OVERRIDE;
   virtual void DidDetachInterstitialPage() OVERRIDE;
+  virtual void TitleWasSet(NavigationEntry* entry, bool explicit_set) OVERRIDE;
+  virtual void NavigationEntryCommitted(
+      const LoadCommittedDetails& load_details) OVERRIDE;
 
   // NotificationObserver overrides:
   virtual void Observe(int type,
@@ -97,8 +100,6 @@ class CONTENT_EXPORT RenderViewDevToolsAgentHost
 
   void OnDispatchOnInspectorFrontend(const std::string& message);
   void OnSaveAgentRuntimeState(const std::string& state);
-  void OnEnableTracing(const std::string& category_filter);
-  void OnDisableTracing();
 
   void ClientDetachedFromRenderer();
 

@@ -11,6 +11,10 @@ from path_util import (
     ToDirectory)
 
 
+def IsFileSystemThrottledError(error):
+  return type(error).__name__ == 'FileSystemThrottledError'
+
+
 class _BaseFileSystemException(Exception):
   def __init__(self, message):
     Exception.__init__(self, message)
@@ -24,6 +28,14 @@ class _BaseFileSystemException(Exception):
 
 class FileNotFoundError(_BaseFileSystemException):
   '''Raised when a file isn't found for read or stat.
+  '''
+  def __init__(self, filename):
+    _BaseFileSystemException.__init__(self, filename)
+
+
+class FileSystemThrottledError(_BaseFileSystemException):
+  '''Raised when access to a file system resource is temporarily unavailable
+  due to service throttling.
   '''
   def __init__(self, filename):
     _BaseFileSystemException.__init__(self, filename)

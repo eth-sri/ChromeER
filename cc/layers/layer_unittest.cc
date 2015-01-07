@@ -51,9 +51,8 @@ class MockLayerTreeHost : public LayerTreeHost {
 
 class MockLayerPainter : public LayerPainter {
  public:
-  virtual void Paint(SkCanvas* canvas,
-                     const gfx::Rect& content_rect,
-                     gfx::RectF* opaque) OVERRIDE {}
+  virtual void Paint(SkCanvas* canvas, const gfx::Rect& content_rect) OVERRIDE {
+  }
 };
 
 class LayerTest : public testing::Test {
@@ -79,7 +78,7 @@ class LayerTest : public testing::Test {
     grand_child3_ = NULL;
 
     layer_tree_host_->SetRootLayer(NULL);
-    layer_tree_host_.reset();
+    layer_tree_host_ = nullptr;
   }
 
   void VerifyTestTreeInitialState() const {
@@ -334,6 +333,64 @@ TEST_F(LayerTest, ReplaceChildWithNewChildThatHasOtherParent) {
   // and child2 should no longer have a parent.
   ASSERT_EQ(0U, test_layer->children().size());
   EXPECT_FALSE(child2_->parent());
+}
+
+TEST_F(LayerTest, DeleteRemovedScrollParent) {
+  scoped_refptr<Layer> parent = Layer::Create();
+  scoped_refptr<Layer> child1 = Layer::Create();
+  scoped_refptr<Layer> child2 = Layer::Create();
+
+  EXPECT_SET_NEEDS_FULL_TREE_SYNC(1, layer_tree_host_->SetRootLayer(parent));
+
+  ASSERT_EQ(0U, parent->children().size());
+
+  EXPECT_SET_NEEDS_FULL_TREE_SYNC(1, parent->InsertChild(child1, 0));
+  EXPECT_SET_NEEDS_FULL_TREE_SYNC(1, parent->InsertChild(child2, 1));
+
+  ASSERT_EQ(2U, parent->children().size());
+  EXPECT_EQ(child1, parent->children()[0]);
+  EXPECT_EQ(child2, parent->children()[1]);
+
+  EXPECT_SET_NEEDS_COMMIT(2, child1->SetScrollParent(child2.get()));
+
+  EXPECT_SET_NEEDS_FULL_TREE_SYNC(1, child2->RemoveFromParent());
+
+  child1->reset_needs_push_properties_for_testing();
+
+  EXPECT_SET_NEEDS_COMMIT(1, child2 = NULL);
+
+  EXPECT_TRUE(child1->needs_push_properties());
+
+  EXPECT_SET_NEEDS_FULL_TREE_SYNC(1, layer_tree_host_->SetRootLayer(NULL));
+}
+
+TEST_F(LayerTest, DeleteRemovedScrollChild) {
+  scoped_refptr<Layer> parent = Layer::Create();
+  scoped_refptr<Layer> child1 = Layer::Create();
+  scoped_refptr<Layer> child2 = Layer::Create();
+
+  EXPECT_SET_NEEDS_FULL_TREE_SYNC(1, layer_tree_host_->SetRootLayer(parent));
+
+  ASSERT_EQ(0U, parent->children().size());
+
+  EXPECT_SET_NEEDS_FULL_TREE_SYNC(1, parent->InsertChild(child1, 0));
+  EXPECT_SET_NEEDS_FULL_TREE_SYNC(1, parent->InsertChild(child2, 1));
+
+  ASSERT_EQ(2U, parent->children().size());
+  EXPECT_EQ(child1, parent->children()[0]);
+  EXPECT_EQ(child2, parent->children()[1]);
+
+  EXPECT_SET_NEEDS_COMMIT(2, child1->SetScrollParent(child2.get()));
+
+  EXPECT_SET_NEEDS_FULL_TREE_SYNC(1, child1->RemoveFromParent());
+
+  child2->reset_needs_push_properties_for_testing();
+
+  EXPECT_SET_NEEDS_COMMIT(1, child1 = NULL);
+
+  EXPECT_TRUE(child2->needs_push_properties());
+
+  EXPECT_SET_NEEDS_FULL_TREE_SYNC(1, layer_tree_host_->SetRootLayer(NULL));
 }
 
 TEST_F(LayerTest, ReplaceChildWithSameChild) {
@@ -1087,10 +1144,7 @@ static bool AddTestAnimation(Layer* layer) {
                                            0.7f,
                                            scoped_ptr<TimingFunction>()));
   scoped_ptr<Animation> animation =
-      Animation::Create(curve.PassAs<AnimationCurve>(),
-                        0,
-                        0,
-                        Animation::Opacity);
+      Animation::Create(curve.Pass(), 0, 0, Animation::Opacity);
 
   return layer->AddAnimation(animation.Pass());
 }

@@ -25,7 +25,9 @@ class RttStats;
 
 class NET_EXPORT_PRIVATE SendAlgorithmInterface {
  public:
-  typedef std::map<QuicPacketSequenceNumber, TransmissionInfo> CongestionMap;
+  // A sorted vector of packets.
+  typedef std::vector<std::pair<QuicPacketSequenceNumber, TransmissionInfo>>
+      CongestionVector;
 
   static SendAlgorithmInterface* Create(const QuicClock* clock,
                                         const RttStats* rtt_stats,
@@ -35,6 +37,10 @@ class NET_EXPORT_PRIVATE SendAlgorithmInterface {
   virtual ~SendAlgorithmInterface() {}
 
   virtual void SetFromConfig(const QuicConfig& config, bool is_server) = 0;
+
+  // Sets the number of connections to emulate when doing congestion control,
+  // particularly for congestion avoidance.  Can be set any time.
+  virtual void SetNumEmulatedConnections(int num_connections) = 0;
 
   // Called when we receive congestion feedback from remote peer.
   virtual void OnIncomingQuicCongestionFeedbackFrame(
@@ -48,8 +54,8 @@ class NET_EXPORT_PRIVATE SendAlgorithmInterface {
   // any packets considered acked or lost as a result of the congestion event.
   virtual void OnCongestionEvent(bool rtt_updated,
                                  QuicByteCount bytes_in_flight,
-                                 const CongestionMap& acked_packets,
-                                 const CongestionMap& lost_packets) = 0;
+                                 const CongestionVector& acked_packets,
+                                 const CongestionVector& lost_packets) = 0;
 
   // Inform that we sent |bytes| to the wire, and if the packet is
   // retransmittable. Returns true if the packet should be tracked by the

@@ -4,7 +4,6 @@
 
 #include "ash/system/tray/tray_background_view.h"
 
-#include "ash/ash_switches.h"
 #include "ash/root_window_controller.h"
 #include "ash/screen_util.h"
 #include "ash/shelf/shelf_layout_manager.h"
@@ -17,14 +16,17 @@
 #include "ash/system/tray/tray_constants.h"
 #include "ash/system/tray/tray_event_filter.h"
 #include "ash/wm/window_animations.h"
+#include "base/command_line.h"
 #include "grit/ash_resources.h"
 #include "ui/accessibility/ax_view_state.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/base/ui_base_switches_util.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/layer_animation_element.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
+#include "ui/events/event_constants.h"
 #include "ui/gfx/animation/tween.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/image/image_skia.h"
@@ -426,6 +428,18 @@ gfx::Rect TrayBackgroundView::GetFocusBounds() {
   return GetContentsBounds();
 }
 
+void TrayBackgroundView::OnGestureEvent(ui::GestureEvent* event) {
+  if (switches::IsTouchFeedbackEnabled()) {
+    if (event->type() == ui::ET_GESTURE_TAP_DOWN) {
+      SetDrawBackgroundAsActive(true);
+    } else if (event->type() ==  ui::ET_GESTURE_SCROLL_BEGIN ||
+               event->type() ==  ui::ET_GESTURE_TAP_CANCEL) {
+      SetDrawBackgroundAsActive(false);
+    }
+  }
+  ActionableView::OnGestureEvent(event);
+}
+
 void TrayBackgroundView::UpdateBackground(int alpha) {
   // The animator should never fire when the alternate shelf layout is used.
   if (!background_ || draw_background_as_active_)
@@ -628,6 +642,8 @@ TrayBubbleView::AnchorAlignment TrayBackgroundView::GetAnchorAlignment() const {
 }
 
 void TrayBackgroundView::SetDrawBackgroundAsActive(bool visible) {
+  if (draw_background_as_active_ == visible)
+    return;
   draw_background_as_active_ = visible;
   if (!background_)
     return;

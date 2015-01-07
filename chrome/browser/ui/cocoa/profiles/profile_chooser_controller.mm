@@ -8,6 +8,7 @@
 
 #include "base/mac/bundle_locations.h"
 #include "base/prefs/pref_service.h"
+#include "base/strings/string_util.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
@@ -30,15 +31,14 @@
 #include "chrome/browser/signin/signin_ui_util.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
-#include "chrome/browser/ui/browser_dialogs.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/chrome_pages.h"
 #include "chrome/browser/ui/chrome_style.h"
-#import "chrome/browser/ui/cocoa/hyperlink_text_view.h"
 #import "chrome/browser/ui/cocoa/info_bubble_view.h"
 #import "chrome/browser/ui/cocoa/info_bubble_window.h"
 #import "chrome/browser/ui/cocoa/profiles/user_manager_mac.h"
 #include "chrome/browser/ui/singleton_tabs.h"
+#include "chrome/browser/ui/user_manager.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service_factory.h"
 #include "chrome/common/pref_names.h"
@@ -58,6 +58,7 @@
 #import "ui/base/cocoa/cocoa_base_utils.h"
 #import "ui/base/cocoa/controls/blue_label_button.h"
 #import "ui/base/cocoa/controls/hyperlink_button_cell.h"
+#import "ui/base/cocoa/controls/hyperlink_text_view.h"
 #import "ui/base/cocoa/hover_image_button.h"
 #include "ui/base/cocoa/window_size_constants.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -95,7 +96,7 @@ const CGFloat kFixedGaiaViewHeight = 440;
 const CGFloat kFixedAccountRemovalViewWidth = 280;
 
 // Fixed size for the switch user view.
-const int kFixedSwitchUserViewWidth = 280;
+const int kFixedSwitchUserViewWidth = 320;
 
 // The tag number for the primary account.
 const int kPrimaryProfileTag = -1;
@@ -231,7 +232,7 @@ NSView* BuildTitleCard(NSRect frame_rect,
   [container addSubview:button];
   [container addSubview:title_label];
   CGFloat height = std::max(NSMaxY([title_label frame]),
-                            NSMaxY([button frame])) + kSmallVerticalSpacing;
+                            NSMaxY([button frame])) + kVerticalSpacing;
   [container setFrameSize:NSMakeSize(NSWidth([container frame]), height)];
 
   return container.autorelease();
@@ -312,18 +313,11 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
 
   // AvatarMenuObserver:
   virtual void OnAvatarMenuChanged(AvatarMenu* avatar_menu) OVERRIDE {
-    // Do not refresh the avatar menu if the user is on a signin related view.
     profiles::BubbleViewMode viewMode = [controller_ viewMode];
-    if (viewMode == profiles::BUBBLE_VIEW_MODE_GAIA_SIGNIN ||
-        viewMode == profiles::BUBBLE_VIEW_MODE_GAIA_ADD_ACCOUNT ||
-        viewMode == profiles::BUBBLE_VIEW_MODE_GAIA_REAUTH) {
-      return;
+    if (viewMode == profiles::BUBBLE_VIEW_MODE_PROFILE_CHOOSER ||
+        viewMode == profiles::BUBBLE_VIEW_MODE_ACCOUNT_MANAGEMENT) {
+      [controller_ initMenuContentsWithView:viewMode];
     }
-
-    // While the bubble is open, the avatar menu can only change from the
-    // profile chooser view by modifying the current profile's photo or name.
-    [controller_
-        initMenuContentsWithView:profiles::BUBBLE_VIEW_MODE_PROFILE_CHOOSER];
   }
 
   // content::NotificationObserver:
@@ -902,14 +896,18 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
 }
 
 - (IBAction)showUserManager:(id)sender {
-  chrome::ShowUserManager(browser_->profile()->GetPath());
+  UserManager::Show(base::FilePath(),
+                    profiles::USER_MANAGER_NO_TUTORIAL,
+                    profiles::USER_MANAGER_SELECT_PROFILE_NO_ACTION);
   [self postActionPerformed:
       ProfileMetrics::PROFILE_DESKTOP_MENU_OPEN_USER_MANAGER];
 }
 
 - (IBAction)exitGuest:(id)sender {
   DCHECK(browser_->profile()->IsGuestSession());
-  chrome::ShowUserManager(base::FilePath());
+  UserManager::Show(base::FilePath(),
+                    profiles::USER_MANAGER_NO_TUTORIAL,
+                    profiles::USER_MANAGER_SELECT_PROFILE_NO_ACTION);
   profiles::CloseGuestProfileWindows();
 }
 
@@ -983,8 +981,9 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
 }
 
 - (IBAction)seeWhatsNew:(id)sender {
-  chrome::ShowUserManagerWithTutorial(
-      profiles::USER_MANAGER_TUTORIAL_OVERVIEW);
+  UserManager::Show(base::FilePath(),
+                    profiles::USER_MANAGER_TUTORIAL_OVERVIEW,
+                    profiles::USER_MANAGER_SELECT_PROFILE_NO_ACTION);
   ProfileMetrics::LogProfileNewAvatarMenuUpgrade(
       ProfileMetrics::PROFILE_AVATAR_MENU_UPGRADE_WHATS_NEW);
 }
@@ -1047,6 +1046,14 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
   }
 
   [super windowWillClose:notification];
+}
+
+- (void)moveDown:(id)sender {
+  [[self window] selectNextKeyView:self];
+}
+
+- (void)moveUp:(id)sender {
+  [[self window] selectPreviousKeyView:self];
 }
 
 - (void)cleanUpEmbeddedViewContents {
@@ -1581,7 +1588,6 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
 
   // The available links depend on the type of profile that is active.
   if (item.signed_in) {
-    rect.size.height = kBlueButtonHeight / 2;
     // Signed in profiles with no authentication errors do not have a clickable
     // email link.
     NSButton* link = nil;
@@ -1617,8 +1623,10 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
         [link setEnabled:NO];
       }
     }
-    // -linkButtonWithTitle sizeToFit's the link, so re-stretch it so that it
-    // can be centered correctly in the view.
+    // -linkButtonWithTitle sizeToFit's the link. We can use the height, but
+    // need to re-stretch the width so that the link can be centered correctly
+    // in the view.
+    rect.size.height = [link frame].size.height;
     [link setAlignment:NSCenterTextAlignment];
     [link setFrame:rect];
     [container addSubview:link];
@@ -1728,8 +1736,6 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
                                   IDS_PROFILES_PROFILE_SIGNOUT_BUTTON)
                   imageResourceId:IDR_ICON_PROFILES_MENU_LOCK
                            action:@selector(lockProfile:)];
-    if (!chrome::LocalAuthCredentialsExist(browser_->profile()))
-      [lockButton setEnabled:NO];
     [container addSubview:lockButton];
     viewRect.origin.y = NSMaxY([lockButton frame]);
 
@@ -1891,7 +1897,7 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
       content::WebContents::CreateParams(browser_->profile())));
   webContents_->GetController().LoadURL(url,
                                         content::Referrer(),
-                                        content::PAGE_TRANSITION_AUTO_TOPLEVEL,
+                                        ui::PAGE_TRANSITION_AUTO_TOPLEVEL,
                                         std::string());
   NSView* webview = webContents_->GetNativeView();
   [webview setFrameSize:NSMakeSize(kFixedGaiaViewWidth, kFixedGaiaViewHeight)];
@@ -1902,7 +1908,7 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
   NSBox* separator = [self horizontalSeparatorWithFrame:
       NSMakeRect(0, yOffset, kFixedGaiaViewWidth, 0)];
   [container addSubview:separator];
-  yOffset = NSMaxY([separator frame]) + kSmallVerticalSpacing;
+  yOffset = NSMaxY([separator frame]) + kVerticalSpacing;
 
   NSView* titleView = BuildTitleCard(
       NSMakeRect(0, yOffset, kFixedGaiaViewWidth, 0),
@@ -1974,7 +1980,7 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
   NSBox* separator = [self horizontalSeparatorWithFrame:
       NSMakeRect(0, yOffset, kFixedAccountRemovalViewWidth, 0)];
   [container addSubview:separator];
-  yOffset = NSMaxY([separator frame]) + kSmallVerticalSpacing;
+  yOffset = NSMaxY([separator frame]) + kVerticalSpacing;
 
   NSView* titleView = BuildTitleCard(
       NSMakeRect(0, yOffset, kFixedAccountRemovalViewWidth,0),
@@ -2014,7 +2020,7 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
   yOffset = NSMaxY([disconnectButton frame]);
 
   NSBox* separator = [self horizontalSeparatorWithFrame:
-      NSMakeRect(0, yOffset, kFixedMenuWidth, 0)];
+      NSMakeRect(0, yOffset, kFixedSwitchUserViewWidth, 0)];
   [container addSubview:separator];
   yOffset = NSMaxY([separator frame]);
 
@@ -2030,7 +2036,7 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
   yOffset = NSMaxY([addPersonButton frame]);
 
   separator = [self horizontalSeparatorWithFrame:
-      NSMakeRect(0, yOffset, kFixedMenuWidth, 0)];
+      NSMakeRect(0, yOffset, kFixedSwitchUserViewWidth, 0)];
   [container addSubview:separator];
   yOffset = NSMaxY([separator frame]);
 
@@ -2050,7 +2056,7 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
   separator = [self horizontalSeparatorWithFrame:
       NSMakeRect(0, yOffset, kFixedSwitchUserViewWidth, 0)];
   [container addSubview:separator];
-  yOffset = NSMaxY([separator frame]) + kSmallVerticalSpacing;
+  yOffset = NSMaxY([separator frame]) + kVerticalSpacing;
 
   NSView* titleView = BuildTitleCard(
       NSMakeRect(0, yOffset, kFixedSwitchUserViewWidth,0),
@@ -2060,7 +2066,7 @@ class ActiveProfileObserverBridge : public AvatarMenuObserver,
   [container addSubview:titleView];
   yOffset = NSMaxY([titleView frame]);
 
-  [container setFrameSize:NSMakeSize(kFixedAccountRemovalViewWidth, yOffset)];
+  [container setFrameSize:NSMakeSize(kFixedSwitchUserViewWidth, yOffset)];
   return container.autorelease();
 }
 

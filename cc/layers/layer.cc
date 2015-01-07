@@ -91,6 +91,9 @@ Layer::~Layer() {
   layer_animation_controller_->RemoveValueObserver(this);
   layer_animation_controller_->remove_value_provider(this);
 
+  RemoveFromScrollTree();
+  RemoveFromClipTree();
+
   // Remove the parent reference from all children and dependents.
   RemoveAllChildren();
   if (mask_layer_.get()) {
@@ -101,9 +104,6 @@ Layer::~Layer() {
     DCHECK_EQ(this, replica_layer_->parent());
     replica_layer_->RemoveFromParent();
   }
-
-  RemoveFromScrollTree();
-  RemoveFromClipTree();
 }
 
 void Layer::SetLayerTreeHost(LayerTreeHost* host) {
@@ -620,7 +620,7 @@ void Layer::AddScrollChild(Layer* child) {
 void Layer::RemoveScrollChild(Layer* child) {
   scroll_children_->erase(child);
   if (scroll_children_->empty())
-    scroll_children_.reset();
+    scroll_children_ = nullptr;
   SetNeedsCommit();
 }
 
@@ -650,7 +650,7 @@ void Layer::AddClipChild(Layer* child) {
 void Layer::RemoveClipChild(Layer* child) {
   clip_children_->erase(child);
   if (clip_children_->empty())
-    clip_children_.reset();
+    clip_children_ = nullptr;
   SetNeedsCommit();
 }
 
@@ -1085,7 +1085,7 @@ void Layer::CreateRenderSurface() {
 }
 
 void Layer::ClearRenderSurface() {
-  draw_properties_.render_surface.reset();
+  draw_properties_.render_surface = nullptr;
 }
 
 void Layer::ClearRenderSurfaceLayerList() {
@@ -1200,28 +1200,24 @@ bool Layer::SupportsLCDText() const {
 
 void Layer::RemoveFromScrollTree() {
   if (scroll_children_.get()) {
-    for (std::set<Layer*>::iterator it = scroll_children_->begin();
-        it != scroll_children_->end(); ++it)
-      (*it)->scroll_parent_ = NULL;
+    std::set<Layer*> copy = *scroll_children_;
+    for (std::set<Layer*>::iterator it = copy.begin(); it != copy.end(); ++it)
+      (*it)->SetScrollParent(NULL);
   }
 
-  if (scroll_parent_)
-    scroll_parent_->RemoveScrollChild(this);
-
-  scroll_parent_ = NULL;
+  DCHECK(!scroll_children_);
+  SetScrollParent(NULL);
 }
 
 void Layer::RemoveFromClipTree() {
   if (clip_children_.get()) {
-    for (std::set<Layer*>::iterator it = clip_children_->begin();
-        it != clip_children_->end(); ++it)
-      (*it)->clip_parent_ = NULL;
+    std::set<Layer*> copy = *clip_children_;
+    for (std::set<Layer*>::iterator it = copy.begin(); it != copy.end(); ++it)
+      (*it)->SetClipParent(NULL);
   }
 
-  if (clip_parent_)
-    clip_parent_->RemoveClipChild(this);
-
-  clip_parent_ = NULL;
+  DCHECK(!clip_children_);
+  SetClipParent(NULL);
 }
 
 void Layer::AddDrawableDescendants(int num) {

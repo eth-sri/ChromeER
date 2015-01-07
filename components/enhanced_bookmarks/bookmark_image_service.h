@@ -20,21 +20,26 @@ class BookmarkNode;
 
 namespace enhanced_bookmarks {
 
+class EnhancedBookmarkModel;
+
 // The BookmarkImageService stores salient images for bookmarks.
 class BookmarkImageService : public KeyedService,
                              public BookmarkModelObserver,
                              public base::NonThreadSafe {
  public:
-  explicit BookmarkImageService(const base::FilePath& path,
-                                BookmarkModel* bookmark_model,
-                                scoped_refptr<base::SequencedWorkerPool> pool);
+  BookmarkImageService(const base::FilePath& path,
+                       EnhancedBookmarkModel* enhanced_bookmark_model,
+                       scoped_refptr<base::SequencedWorkerPool> pool);
   BookmarkImageService(scoped_ptr<ImageStore> store,
-                       BookmarkModel* bookmark_model,
+                       EnhancedBookmarkModel* enhanced_bookmark_model,
                        scoped_refptr<base::SequencedWorkerPool> pool);
 
   virtual ~BookmarkImageService();
 
   typedef base::Callback<void(const gfx::Image&, const GURL& url)> Callback;
+
+  // KeyedService:
+  virtual void Shutdown() OVERRIDE;
 
   // Returns a salient image for a URL. This may trigger a network request for
   // the image if the image was not retrieved before and if a bookmark node has
@@ -100,8 +105,8 @@ class BookmarkImageService : public KeyedService,
   // PageUrls currently in the progress of being retrieved.
   std::set<GURL> in_progress_page_urls_;
 
-  // Cached pointer to the bookmarks model.
-  BookmarkModel* bookmark_model_;  // weak
+  // Cached pointer to the bookmark model.
+  EnhancedBookmarkModel* enhanced_bookmark_model_;
 
  private:
   // Same as SalientImageForUrl(const GURL&, Callback) but can prevent the

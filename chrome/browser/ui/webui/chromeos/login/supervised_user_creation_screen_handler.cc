@@ -386,10 +386,6 @@ void SupervisedUserCreationScreenHandler::HandleAuthenticateManager(
     const std::string& manager_password) {
   const std::string manager_username =
       gaia::SanitizeEmail(raw_manager_username);
-
-  UserFlow* flow = new SupervisedUserCreationFlow(manager_username);
-  ChromeUserManager::Get()->SetUserFlow(manager_username, flow);
-
   delegate_->AuthenticateManager(manager_username, manager_password);
 }
 
@@ -426,11 +422,16 @@ void SupervisedUserCreationScreenHandler::HandlePhotoTaken
 }
 
 void SupervisedUserCreationScreenHandler::HandleTakePhoto() {
+#if !defined(USE_ATHENA)
+  // crbug.com/408733
   ash::PlaySystemSoundIfSpokenFeedback(SOUND_CAMERA_SNAP);
+#endif
 }
 
 void SupervisedUserCreationScreenHandler::HandleDiscardPhoto() {
+#if !defined(USE_ATHENA)
   ash::PlaySystemSoundIfSpokenFeedback(SOUND_OBJECT_DELETE);
+#endif
 }
 
 void SupervisedUserCreationScreenHandler::HandleSelectImage(

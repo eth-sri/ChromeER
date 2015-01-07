@@ -10,7 +10,7 @@
 #include "remoting/protocol/channel_authenticator.h"
 #include "remoting/protocol/negotiating_host_authenticator.h"
 #include "remoting/protocol/token_validator.h"
-#include "third_party/libjingle/source/talk/xmllite/xmlelement.h"
+#include "third_party/webrtc/libjingle/xmllite/xmlelement.h"
 
 namespace remoting {
 namespace protocol {
@@ -48,13 +48,13 @@ class RejectingAuthenticator : public Authenticator {
 
   virtual scoped_ptr<buzz::XmlElement> GetNextMessage() OVERRIDE {
     NOTREACHED();
-    return scoped_ptr<buzz::XmlElement>();
+    return nullptr;
   }
 
   virtual scoped_ptr<ChannelAuthenticator>
   CreateChannelAuthenticator() const OVERRIDE {
     NOTREACHED();
-    return scoped_ptr<ChannelAuthenticator>();
+    return nullptr;
   }
 
  protected:

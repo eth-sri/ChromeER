@@ -12,6 +12,7 @@
 #include "base/files/file_path.h"
 #include "base/metrics/user_metrics.h"
 #include "base/stl_util.h"
+#include "chrome/browser/apps/scoped_keep_alive.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
@@ -35,6 +36,7 @@
 #include "chrome/common/url_constants.h"
 #include "components/signin/core/browser/signin_manager.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/notification_service.h"
 #include "content/public/browser/page_navigator.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
@@ -114,9 +116,9 @@ void GetCustomLauncherPageUrls(content::BrowserContext* browser_context,
   // First, check the command line.
   base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
   if (app_list::switches::IsExperimentalAppListEnabled() &&
-      command_line->HasSwitch(switches::kCustomLauncherPage)) {
-    GURL custom_launcher_page_url(
-        command_line->GetSwitchValueASCII(switches::kCustomLauncherPage));
+      command_line->HasSwitch(app_list::switches::kCustomLauncherPage)) {
+    GURL custom_launcher_page_url(command_line->GetSwitchValueASCII(
+        app_list::switches::kCustomLauncherPage));
 
     if (custom_launcher_page_url.SchemeIs(extensions::kExtensionScheme)) {
       urls->push_back(custom_launcher_page_url);
@@ -146,8 +148,7 @@ void GetCustomLauncherPageUrls(content::BrowserContext* browser_context,
 
 }  // namespace
 
-AppListViewDelegate::AppListViewDelegate(Profile* profile,
-                                         AppListControllerDelegate* controller)
+AppListViewDelegate::AppListViewDelegate(AppListControllerDelegate* controller)
     : controller_(controller),
       profile_(NULL),
       model_(NULL),
@@ -173,10 +174,23 @@ AppListViewDelegate::AppListViewDelegate(Profile* profile,
   }
 
   profile_manager->GetProfileInfoCache().AddObserver(this);
-  SetProfile(profile);
+  speech_ui_.reset(new app_list::SpeechUIModel);
+
+#if defined(GOOGLE_CHROME_BUILD)
+  speech_ui_->set_logo(
+      *ui::ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
+          IDR_APP_LIST_GOOGLE_LOGO_VOICE_SEARCH));
+#endif
+
+  registrar_.Add(this,
+                 chrome::NOTIFICATION_APP_TERMINATING,
+                 content::NotificationService::AllSources());
 }
 
 AppListViewDelegate::~AppListViewDelegate() {
+  // Note that the destructor is not always called. E.g. on Mac, this is owned
+  // by a leaky singleton. Essential shutdown work must be done by observing
+  // chrome::NOTIFICATION_APP_TERMINATING.
   SetProfile(NULL);
   g_browser_process->profile_manager()->GetProfileInfoCache().RemoveObserver(
       this);
@@ -187,11 +201,13 @@ AppListViewDelegate::~AppListViewDelegate() {
 }
 
 void AppListViewDelegate::SetProfile(Profile* new_profile) {
+  if (profile_ == new_profile)
+    return;
+
   if (profile_) {
     // Note: |search_controller_| has a reference to |speech_ui_| so must be
     // destroyed first.
     search_controller_.reset();
-    speech_ui_.reset();
     custom_page_contents_.clear();
     app_list::StartPageService* start_page_service =
         app_list::StartPageService::Get(profile_);
@@ -204,8 +220,10 @@ void AppListViewDelegate::SetProfile(Profile* new_profile) {
   }
 
   profile_ = new_profile;
-  if (!profile_)
+  if (!profile_) {
+    speech_ui_->SetSpeechRecognitionState(app_list::SPEECH_RECOGNITION_OFF);
     return;
+  }
 
   model_ =
       app_list::AppListSyncableServiceFactory::GetForProfile(profile_)->model();
@@ -228,15 +246,9 @@ void AppListViewDelegate::SetUpSearchUI() {
   if (start_page_service)
     start_page_service->AddObserver(this);
 
-  speech_ui_.reset(new app_list::SpeechUIModel(
-      start_page_service ? start_page_service->state()
-                         : app_list::SPEECH_RECOGNITION_OFF));
-
-#if defined(GOOGLE_CHROME_BUILD)
-  speech_ui_->set_logo(
-      *ui::ResourceBundle::GetSharedInstance().
-      GetImageSkiaNamed(IDR_APP_LIST_GOOGLE_LOGO_VOICE_SEARCH));
-#endif
+  speech_ui_->SetSpeechRecognitionState(start_page_service
+                                            ? start_page_service->state()
+                                            : app_list::SPEECH_RECOGNITION_OFF);
 
   search_controller_.reset(new app_list::SearchController(profile_,
                                                           model_->search_box(),
@@ -246,6 +258,11 @@ void AppListViewDelegate::SetUpSearchUI() {
 }
 
 void AppListViewDelegate::SetUpProfileSwitcher() {
+  // If a profile change is observed when there is no app list, there is nothing
+  // to update until SetProfile() calls this function again.
+  if (!profile_)
+    return;
+
   // Don't populate the app list users if we are on the ash desktop.
   chrome::HostDesktopType desktop = chrome::GetHostDesktopTypeForNativeWindow(
       controller_->GetAppListWindow());
@@ -270,7 +287,8 @@ void AppListViewDelegate::SetUpCustomLauncherPages() {
     std::string extension_id = it->host();
     apps::CustomLauncherPageContents* page_contents =
         new apps::CustomLauncherPageContents(
-            scoped_ptr<extensions::AppDelegate>(new ChromeAppDelegate),
+            scoped_ptr<extensions::AppDelegate>(
+                new ChromeAppDelegate(scoped_ptr<ScopedKeepAlive>())),
             extension_id);
     page_contents->Initialize(profile_, *it);
     custom_page_contents_.push_back(page_contents);
@@ -437,6 +455,9 @@ void AppListViewDelegate::Dismiss()  {
 void AppListViewDelegate::ViewClosing() {
   controller_->ViewClosing();
 
+  if (!profile_)
+    return;
+
   app_list::StartPageService* service =
       app_list::StartPageService::Get(profile_);
   if (service) {
@@ -473,7 +494,7 @@ void AppListViewDelegate::OpenHelp() {
   content::OpenURLParams params(GURL(chrome::kAppLauncherHelpURL),
                                 content::Referrer(),
                                 NEW_FOREGROUND_TAB,
-                                content::PAGE_TRANSITION_LINK,
+                                ui::PAGE_TRANSITION_LINK,
                                 false);
   displayer.browser()->OpenURL(params);
 }
@@ -620,4 +641,24 @@ void AppListViewDelegate::AddObserver(
 void AppListViewDelegate::RemoveObserver(
     app_list::AppListViewDelegateObserver* observer) {
   observers_.RemoveObserver(observer);
+}
+
+void AppListViewDelegate::Observe(int type,
+                                  const content::NotificationSource& source,
+                                  const content::NotificationDetails& details) {
+  switch (type) {
+    case chrome::NOTIFICATION_APP_TERMINATING:
+      FOR_EACH_OBSERVER(
+          app_list::AppListViewDelegateObserver, observers_, OnShutdown());
+
+      SetProfile(NULL);  // Ensures launcher page web contents are torn down.
+
+      // SigninManagerFactory is not a leaky singleton (unlike this class), and
+      // its destructor will check that it has no remaining observers.
+      scoped_observer_.RemoveAll();
+      SigninManagerFactory::GetInstance()->RemoveObserver(this);
+      break;
+    default:
+      NOTREACHED();
+  }
 }

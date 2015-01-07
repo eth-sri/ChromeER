@@ -7,6 +7,7 @@
 
 #include "base/command_line.h"
 #include "tools/gn/commands.h"
+#include "tools/gn/deps_iterator.h"
 #include "tools/gn/filesystem_utils.h"
 #include "tools/gn/input_file.h"
 #include "tools/gn/item.h"
@@ -26,21 +27,9 @@ typedef std::multimap<const Target*, const Target*> DepMap;
 
 // Populates the reverse dependency map for the targets in the Setup.
 void FillDepMap(Setup* setup, DepMap* dep_map) {
-  std::vector<const Target*> targets =
-      setup->builder()->GetAllResolvedTargets();
-
-  for (size_t target_i = 0; target_i < targets.size(); target_i++) {
-    const Target* target = targets[target_i];
-
-    // Add all deps to the map.
-    const LabelTargetVector& deps = target->deps();
-    for (size_t dep_i = 0; dep_i < deps.size(); dep_i++)
-      dep_map->insert(std::make_pair(deps[dep_i].ptr, target));
-
-    // Include data deps as well.
-    const LabelTargetVector& datadeps = target->datadeps();
-    for (size_t dep_i = 0; dep_i < datadeps.size(); dep_i++)
-      dep_map->insert(std::make_pair(datadeps[dep_i].ptr, target));
+  for (const auto& target : setup->builder()->GetAllResolvedTargets()) {
+    for (const auto& dep_pair : target->GetDeps(Target::DEPS_ALL))
+      dep_map->insert(std::make_pair(dep_pair.ptr, target));
   }
 }
 
@@ -230,7 +219,7 @@ int RunRefs(const std::vector<std::string>& args) {
 
   Setup* setup = new Setup;
   setup->set_check_for_bad_items(false);
-  if (!setup->DoSetup(args[0]) || !setup->Run())
+  if (!setup->DoSetup(args[0], false) || !setup->Run())
     return 1;
 
   // Figure out the target or targets that the user is querying.

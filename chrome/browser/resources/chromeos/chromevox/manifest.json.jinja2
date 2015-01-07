@@ -20,6 +20,9 @@
     "accessibilityPrivate",
     "bookmarks",
     "brailleDisplayPrivate",
+{% if use_chromevox_next == '1' %}
+    "commands.accessibility",
+{% endif %}
     "commandLinePrivate",
     "experimental",
     "history",
@@ -30,24 +33,19 @@
     "virtualKeyboardPrivate",
     "<all_urls>"
   ],
+{% if use_chromevox_next == '0' %}
   "content_scripts": [
     {
       "matches": [ "<all_urls>" ],
       "exclude_globs": [ "chrome-extension://mndnfokpggljbaajbnioimlmbfngpief/chromevox/background/background.html" ],
       "all_frames": true,
       "js": [
-{% if use_chromevox_next == '1' %}
-        "closure/closure_preinit.js",
-        "closure/base.js",
-        "deps.js",
-        "cvox2/injected/loader.js"
-{% else %}
         "chromeVoxChromePageScript.js"
-{% endif %}
       ]
     }
   ],
-  "web_accessible_resources": [
+{% endif %}
+"web_accessible_resources": [
     "chromevox/injected/api.js",
     "chromevox/injected/api_util.js",
     "chromevox/injected/mathjax.js",
@@ -57,6 +55,57 @@
   "automation": {
     "desktop": true
   },
+  "commands": {
+    "nextElement": {
+      "description": "Moves to the next element",
+      "suggested_key": {
+        "chromeos": "Search+Right"
+      }
+    },
+    "previousElement": {
+      "description": "Moves to the previous element",
+      "suggested_key": {
+        "chromeos": "Search+Left"
+      }
+    },
+    "nextLine": {
+      "description": "__MSG_CHROMEVOX_NEXT_LINE__",
+      "suggested_key": {
+        "chromeos": "Search+Down"
+      }
+    },
+    "previousLine": {
+      "description": "__MSG_CHROMEVOX_PREVIOUS_LINE__",
+      "suggested_key": {
+        "chromeos": "Search+Up"
+      }
+    },
+    "nextLink": {
+      "description": "__MSG_CHROMEVOX_NEXT_LINK__",
+      "suggested_key": {
+        "chromeos": "Search+L"
+      }
+    },
+    "previousLink": {
+      "description": "__MSG_CHROMEVOX_PREVIOUS_LINK__",
+      "suggested_key": {
+        "chromeos": "Search+Shift+L"
+      }
+    },
+    "nextHeading": {
+      "description": "Moves to the next heading",
+      "suggested_key": {
+        "chromeos": "Search+H"
+      }
+    },
+    "previousHeading": {
+      "description": "Moves to the previous heading",
+      "suggested_key": {
+        "chromeos": "Search+Shift+H"
+      }
+    }
+  },
 {% endif %}
+  "options_page": "chromevox/background/options.html",
   "default_locale": "en"
 }

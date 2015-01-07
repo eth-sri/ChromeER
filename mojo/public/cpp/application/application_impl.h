@@ -58,6 +58,11 @@ class ApplicationImpl : public InterfaceImpl<Application> {
                   MojoHandle shell_handle);
   virtual ~ApplicationImpl();
 
+  Shell* shell() const { return shell_.get(); }
+
+  // Returns any initial configuration arguments, passed by the Shell.
+  const Array<String>& args() { return args_; }
+
   // Establishes a new connection to an application. Caller does not own.
   ApplicationConnection* ConnectToApplication(const String& application_url);
 
@@ -70,15 +75,7 @@ class ApplicationImpl : public InterfaceImpl<Application> {
   }
 
  private:
-  class ShellPtrWatcher : public ErrorHandler {
-   public:
-    explicit ShellPtrWatcher(ApplicationImpl* impl);
-    virtual ~ShellPtrWatcher();
-    virtual void OnConnectionError() MOJO_OVERRIDE;
-   private:
-    ApplicationImpl* impl_;
-    MOJO_DISALLOW_COPY_AND_ASSIGN(ShellPtrWatcher);
-  };
+  class ShellPtrWatcher;
 
   void BindShell(ScopedMessagePipeHandle shell_handle);
   void ClearConnections();
@@ -91,15 +88,19 @@ class ApplicationImpl : public InterfaceImpl<Application> {
   static void Terminate();
 
   // Application implementation.
+  virtual void Initialize(Array<String> args) override;
   virtual void AcceptConnection(const String& requestor_url,
-                                ServiceProviderPtr provider) MOJO_OVERRIDE;
+                                ServiceProviderPtr provider) override;
 
   typedef std::vector<internal::ServiceRegistry*> ServiceRegistryList;
+
+  bool initialized_;
   ServiceRegistryList incoming_service_registries_;
   ServiceRegistryList outgoing_service_registries_;
   ApplicationDelegate* delegate_;
   ShellPtr shell_;
-  ShellPtrWatcher shell_watch_;
+  ShellPtrWatcher* shell_watch_;
+  Array<String> args_;
 
   MOJO_DISALLOW_COPY_AND_ASSIGN(ApplicationImpl);
 };

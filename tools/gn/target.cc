@@ -8,6 +8,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "tools/gn/config_values_extractors.h"
+#include "tools/gn/deps_iterator.h"
 #include "tools/gn/filesystem_utils.h"
 #include "tools/gn/scheduler.h"
 #include "tools/gn/substitution_writer.h"
@@ -16,27 +17,47 @@ namespace {
 
 typedef std::set<const Config*> ConfigSet;
 
-// Merges the dependent configs from the given target to the given config list.
-void MergeDirectDependentConfigsFrom(const Target* from_target,
-                                     UniqueVector<LabelConfigPair>* dest) {
-  const UniqueVector<LabelConfigPair>& direct =
-      from_target->direct_dependent_configs();
-  for (size_t i = 0; i < direct.size(); i++)
-    dest->push_back(direct[i]);
+// Merges the public configs from the given target to the given config list.
+void MergePublicConfigsFrom(const Target* from_target,
+                            UniqueVector<LabelConfigPair>* dest) {
+  const UniqueVector<LabelConfigPair>& pub = from_target->public_configs();
+  dest->Append(pub.begin(), pub.end());
 }
 
-// Like MergeDirectDependentConfigsFrom above except does the "all dependent"
-// ones. This additionally adds all configs to the all_dependent_configs_ of
-// the dest target given in *all_dest.
+// Like MergePublicConfigsFrom above except does the "all dependent" ones. This
+// additionally adds all configs to the all_dependent_configs_ of the dest
+// target given in *all_dest.
 void MergeAllDependentConfigsFrom(const Target* from_target,
                                   UniqueVector<LabelConfigPair>* dest,
                                   UniqueVector<LabelConfigPair>* all_dest) {
-  const UniqueVector<LabelConfigPair>& all =
-      from_target->all_dependent_configs();
-  for (size_t i = 0; i < all.size(); i++) {
-    all_dest->push_back(all[i]);
-    dest->push_back(all[i]);
+  for (const auto& pair : from_target->all_dependent_configs()) {
+    all_dest->push_back(pair);
+    dest->push_back(pair);
   }
+}
+
+Err MakeTestOnlyError(const Target* from, const Target* to) {
+  return Err(from->defined_from(), "Test-only dependency not allowed.",
+      from->label().GetUserVisibleName(false) + "\n"
+      "which is NOT marked testonly can't depend on\n" +
+      to->label().GetUserVisibleName(false) + "\n"
+      "which is marked testonly. Only targets with \"testonly = true\"\n"
+      "can depend on other test-only targets.\n"
+      "\n"
+      "Either mark it test-only or don't do this dependency.");
+}
+
+Err MakeStaticLibDepsError(const Target* from, const Target* to) {
+  return Err(from->defined_from(),
+             "Complete static libraries can't depend on static libraries.",
+             from->label().GetUserVisibleName(false) +
+                 "\n"
+                 "which is a complete static library can't depend on\n" +
+                 to->label().GetUserVisibleName(false) +
+                 "\n"
+                 "which is a static library.\n"
+                 "\n"
+                 "Use source sets for intermediate targets instead.");
 }
 
 }  // namespace
@@ -46,6 +67,8 @@ Target::Target(const Settings* settings, const Label& label)
       output_type_(UNKNOWN),
       all_headers_public_(true),
       check_includes_(true),
+      complete_static_lib_(false),
+      testonly_(false),
       hard_dep_(false),
       toolchain_(NULL) {
 }
@@ -87,27 +110,13 @@ const Target* Target::AsTarget() const {
   return this;
 }
 
-void Target::OnResolved() {
+bool Target::OnResolved(Err* err) {
   DCHECK(output_type_ != UNKNOWN);
   DCHECK(toolchain_) << "Toolchain should have been set before resolving.";
 
-  // Convert any groups we depend on to just direct dependencies on that
-  // group's deps. We insert the new deps immediately after the group so that
-  // the ordering is preserved. We need to keep the original group so that any
-  // flags, etc. that it specifies itself are applied to us.
-  for (size_t i = 0; i < deps_.size(); i++) {
-    const Target* dep = deps_[i].ptr;
-    if (dep->output_type_ == GROUP) {
-      // TODO(brettw) bug 403488 this should also handle datadeps.
-      deps_.insert(deps_.begin() + i + 1, dep->deps_.begin(), dep->deps_.end());
-      i += dep->deps_.size();
-    }
-  }
-
   // Copy our own dependent configs to the list of configs applying to us.
   configs_.Append(all_dependent_configs_.begin(), all_dependent_configs_.end());
-  configs_.Append(direct_dependent_configs_.begin(),
-                  direct_dependent_configs_.end());
+  MergePublicConfigsFrom(this, &configs_);
 
   // Copy our own libs and lib_dirs to the final set. This will be from our
   // target and all of our configs. We do this specially since these must be
@@ -118,22 +127,39 @@ void Target::OnResolved() {
     all_libs_.append(cur.libs().begin(), cur.libs().end());
   }
 
-  if (output_type_ != GROUP) {
-    // Don't pull target info like libraries and configs from dependencies into
-    // a group target. When A depends on a group G, the G's dependents will
-    // be treated as direct dependencies of A, so this is unnecessary and will
-    // actually result in duplicated settings (since settings will also be
-    // pulled from G to A in case G has configs directly on it).
-    PullDependentTargetInfo();
-  }
+  PullDependentTargetInfo();
   PullForwardedDependentConfigs();
   PullRecursiveHardDeps();
 
   FillOutputFiles();
+
+  if (!CheckVisibility(err))
+    return false;
+  if (!CheckTestonly(err))
+    return false;
+  if (!CheckNoNestedStaticLibs(err))
+    return false;
+
+  return true;
 }
 
 bool Target::IsLinkable() const {
   return output_type_ == STATIC_LIBRARY || output_type_ == SHARED_LIBRARY;
+}
+
+bool Target::IsFinal() const {
+  return output_type_ == EXECUTABLE || output_type_ == SHARED_LIBRARY ||
+         (output_type_ == STATIC_LIBRARY && complete_static_lib_);
+}
+
+DepsIteratorRange Target::GetDeps(DepsIterationType type) const {
+  if (type == DEPS_LINKED) {
+    return DepsIteratorRange(DepsIterator(
+        &public_deps_, &private_deps_, nullptr));
+  }
+  // All deps.
+  return DepsIteratorRange(DepsIterator(
+      &public_deps_, &private_deps_, &data_deps_));
 }
 
 std::string Target::GetComputedOutputName(bool include_prefix) const {
@@ -185,10 +211,10 @@ bool Target::SetToolchain(const Toolchain* toolchain, Err* err) {
 
 void Target::PullDependentTargetInfo() {
   // Gather info from our dependents we need.
-  for (size_t dep_i = 0; dep_i < deps_.size(); dep_i++) {
-    const Target* dep = deps_[dep_i].ptr;
+  for (const auto& pair : GetDeps(DEPS_LINKED)) {
+    const Target* dep = pair.ptr;
     MergeAllDependentConfigsFrom(dep, &configs_, &all_dependent_configs_);
-    MergeDirectDependentConfigsFrom(dep, &configs_);
+    MergePublicConfigsFrom(dep, &configs_);
 
     // Direct dependent libraries.
     if (dep->output_type() == STATIC_LIBRARY ||
@@ -198,8 +224,7 @@ void Target::PullDependentTargetInfo() {
 
     // Inherited libraries and flags are inherited across static library
     // boundaries.
-    if (dep->output_type() != SHARED_LIBRARY &&
-        dep->output_type() != EXECUTABLE) {
+    if (!dep->IsFinal()) {
       inherited_libraries_.Append(dep->inherited_libraries().begin(),
                                   dep->inherited_libraries().end());
 
@@ -211,39 +236,45 @@ void Target::PullDependentTargetInfo() {
 }
 
 void Target::PullForwardedDependentConfigs() {
-  // Groups implicitly forward all if its dependency's configs.
-  if (output_type() == GROUP) {
-    for (size_t i = 0; i < deps_.size(); i++)
-      forward_dependent_configs_.push_back(deps_[i]);
-  }
+  // Pull public configs from each of our dependency's public deps.
+  for (const auto& dep : public_deps_)
+    PullForwardedDependentConfigsFrom(dep.ptr);
 
-  // Forward direct dependent configs if requested.
-  for (size_t dep = 0; dep < forward_dependent_configs_.size(); dep++) {
-    const Target* from_target = forward_dependent_configs_[dep].ptr;
+  // Forward public configs if explicitly requested.
+  for (const auto& dep : forward_dependent_configs_) {
+    const Target* from_target = dep.ptr;
 
-    // The forward_dependent_configs_ must be in the deps already, so we
-    // don't need to bother copying to our configs, only forwarding.
-    DCHECK(std::find_if(deps_.begin(), deps_.end(),
+    // The forward_dependent_configs_ must be in the deps (public or private)
+    // already, so we don't need to bother copying to our configs, only
+    // forwarding.
+    DCHECK(std::find_if(private_deps_.begin(), private_deps_.end(),
                         LabelPtrPtrEquals<Target>(from_target)) !=
-           deps_.end());
-    direct_dependent_configs_.Append(
-        from_target->direct_dependent_configs().begin(),
-        from_target->direct_dependent_configs().end());
+               private_deps_.end() ||
+           std::find_if(public_deps_.begin(), public_deps_.end(),
+                        LabelPtrPtrEquals<Target>(from_target)) !=
+               public_deps_.end());
+
+    PullForwardedDependentConfigsFrom(from_target);
   }
 }
 
+void Target::PullForwardedDependentConfigsFrom(const Target* from) {
+  public_configs_.Append(from->public_configs().begin(),
+                         from->public_configs().end());
+}
+
 void Target::PullRecursiveHardDeps() {
-  for (size_t dep_i = 0; dep_i < deps_.size(); dep_i++) {
-    const Target* dep = deps_[dep_i].ptr;
-    if (dep->hard_dep())
-      recursive_hard_deps_.insert(dep);
+  for (const auto& pair : GetDeps(DEPS_LINKED)) {
+    if (pair.ptr->hard_dep())
+      recursive_hard_deps_.insert(pair.ptr);
 
     // Android STL doesn't like insert(begin, end) so do it manually.
-    // TODO(brettw) this can be changed to insert(dep->begin(), dep->end()) when
-    // Android uses a better STL.
+    // TODO(brettw) this can be changed to
+    // insert(iter.target()->begin(), iter.target()->end())
+    // when Android uses a better STL.
     for (std::set<const Target*>::const_iterator cur =
-             dep->recursive_hard_deps().begin();
-         cur != dep->recursive_hard_deps().end(); ++cur)
+             pair.ptr->recursive_hard_deps().begin();
+         cur != pair.ptr->recursive_hard_deps().end(); ++cur)
       recursive_hard_deps_.insert(*cur);
   }
 }
@@ -297,7 +328,7 @@ void Target::FillOutputFiles() {
         if (!tool->depend_output().empty()) {
           dependency_output_file_ =
               SubstitutionWriter::ApplyPatternToLinkerAsOutputFile(
-                  this, tool, tool->link_output());
+                  this, tool, tool->depend_output());
         }
       }
       break;
@@ -305,4 +336,53 @@ void Target::FillOutputFiles() {
     default:
       NOTREACHED();
   }
+}
+
+bool Target::CheckVisibility(Err* err) const {
+  for (const auto& pair : GetDeps(DEPS_ALL)) {
+    if (!Visibility::CheckItemVisibility(this, pair.ptr, err))
+      return false;
+  }
+  return true;
+}
+
+bool Target::CheckTestonly(Err* err) const {
+  // If the current target is marked testonly, it can include both testonly
+  // and non-testonly targets, so there's nothing to check.
+  if (testonly())
+    return true;
+
+  // Verify no deps have "testonly" set.
+  for (const auto& pair : GetDeps(DEPS_ALL)) {
+    if (pair.ptr->testonly()) {
+      *err = MakeTestOnlyError(this, pair.ptr);
+      return false;
+    }
+  }
+
+  return true;
+}
+
+bool Target::CheckNoNestedStaticLibs(Err* err) const {
+  // If the current target is not a complete static library, it can depend on
+  // static library targets with no problem.
+  if (!(output_type() == Target::STATIC_LIBRARY && complete_static_lib()))
+    return true;
+
+  // Verify no deps are static libraries.
+  for (const auto& pair : GetDeps(DEPS_ALL)) {
+    if (pair.ptr->output_type() == Target::STATIC_LIBRARY) {
+      *err = MakeStaticLibDepsError(this, pair.ptr);
+      return false;
+    }
+  }
+
+  // Verify no inherited libraries are static libraries.
+  for (const auto& lib : inherited_libraries()) {
+    if (lib->output_type() == Target::STATIC_LIBRARY) {
+      *err = MakeStaticLibDepsError(this, lib);
+      return false;
+    }
+  }
+  return true;
 }

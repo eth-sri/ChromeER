@@ -16,6 +16,11 @@
       'target_name': 'mojo_base',
       'type': 'none',
       'dependencies': [
+        # NOTE: If adding a new dependency here, please consider whether it
+        # should also be added to the list of Mojo-related dependencies of
+        # build/all.gyp:All on iOS, as All cannot depend on the mojo_base
+        # target on iOS due to the presence of the js targets, which cause v8
+        # to be built.
         'mojo_common_lib',
         'mojo_common_unittests',
         'mojo_cpp_bindings',
@@ -68,6 +73,7 @@
       ],
     },
     {
+      # GN version: //mojo/common/test:run_all_perftests
       'target_name': 'mojo_run_all_perftests',
       'type': 'static_library',
       'dependencies': [
@@ -121,6 +127,8 @@
         'embedder/simple_platform_support.h',
         'system/channel.cc',
         'system/channel.h',
+        'system/channel_endpoint.cc',
+        'system/channel_endpoint.h',
         'system/constants.h',
         'system/core.cc',
         'system/core.h',
@@ -226,6 +234,14 @@
         'system/waiter_test_utils.h',
         'system/waiter_unittest.cc',
       ],
+      'conditions': [
+        ['OS=="ios"', {
+          'sources!': [
+            'embedder/embedder_unittest.cc',
+            'system/multiprocess_message_pipe_unittest.cc',
+          ],
+        }],
+      ],
     },
     {
       # GN version: //mojo/system:mojo_message_pipe_perftests
@@ -307,6 +323,13 @@
         'common/test/test_utils_posix.cc',
         'common/test/test_utils_win.cc',
       ],
+      'conditions': [
+        ['OS=="ios"', {
+          'sources!': [
+            'common/test/multiprocess_test_helper.cc',
+          ],
+        }],
+      ],
     },
     {
       # GN version: //mojo/common:mojo_common_unittests
@@ -329,6 +352,13 @@
         'common/handle_watcher_unittest.cc',
         'common/message_pump_mojo_unittest.cc',
         'common/test/multiprocess_test_helper_unittest.cc',
+      ],
+      'conditions': [
+        ['OS=="ios"', {
+          'sources!': [
+            'common/test/multiprocess_test_helper_unittest.cc',
+          ],
+        }],
       ],
     },
     {
@@ -440,12 +470,12 @@
       }
     },
     {
-     # GN version: //mojo/public/cpp/application:chromium
+     # GN version: //mojo/application
      'target_name': 'mojo_application_chromium',
      'type': 'static_library',
      'sources': [
-       'public/cpp/application/lib/application_runner_chromium.cc',
-       'public/cpp/application/application_runner_chromium.h',
+       'application/application_runner_chromium.cc',
+       'application/application_runner_chromium.h',
       ],
       'dependencies': [
         'mojo_application_base',
@@ -475,8 +505,11 @@
         # Sources list duplicated in GN build.
         'bindings/js/core.cc',
         'bindings/js/core.h',
+        'bindings/js/drain_data.cc',
+        'bindings/js/drain_data.h',
         'bindings/js/handle.cc',
         'bindings/js/handle.h',
+        'bindings/js/handle_close_observer.h',
         'bindings/js/support.cc',
         'bindings/js/support.h',
         'bindings/js/waiting_callback.cc',
@@ -484,6 +517,7 @@
       ],
     },
     {
+      # GN version: //mojo/tools:message_generator
       'target_name': 'mojo_message_generator',
       'type': 'executable',
       'dependencies': [

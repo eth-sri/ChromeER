@@ -8,21 +8,24 @@
 #include "athena/env/public/athena_env.h"
 #include "athena/extensions/public/extensions_delegate.h"
 #include "athena/main/athena_content_client.h"
-#include "athena/main/athena_launcher.h"
 #include "athena/main/athena_renderer_pdf_helper.h"
+#include "athena/main/public/athena_launcher.h"
 #include "athena/screen/public/screen_manager.h"
 #include "base/command_line.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/path_service.h"
 #include "components/pdf/renderer/ppb_pdf_impl.h"
 #include "content/public/app/content_main.h"
 #include "content/public/browser/browser_thread.h"
+#include "extensions/browser/app_window/app_window.h"
+#include "extensions/browser/app_window/app_window_client.h"
 #include "extensions/shell/app/shell_main_delegate.h"
 #include "extensions/shell/browser/desktop_controller.h"
-#include "extensions/shell/browser/shell_app_window.h"
+#include "extensions/shell/browser/shell_app_delegate.h"
 #include "extensions/shell/browser/shell_browser_main_delegate.h"
 #include "extensions/shell/browser/shell_content_browser_client.h"
 #include "extensions/shell/browser/shell_extension_system.h"
+#include "extensions/shell/browser/shell_native_app_window.h"
 #include "extensions/shell/common/shell_content_client.h"
 #include "extensions/shell/common/switches.h"
 #include "extensions/shell/renderer/shell_content_renderer_client.h"
@@ -38,7 +41,7 @@ namespace {
 const char kDefaultAppPath[] =
     "chrome/common/extensions/docs/examples/apps/calculator/app";
 
-}  // namespace athena
+}  // namespace
 
 class AthenaDesktopController : public extensions::DesktopController {
  public:
@@ -53,15 +56,17 @@ class AthenaDesktopController : public extensions::DesktopController {
 
   // Creates a new app window and adds it to the desktop. The desktop maintains
   // ownership of the window.
-  virtual extensions::ShellAppWindow* CreateAppWindow(
+  // TODO(jamescook|oshima): Is this function needed?
+  virtual extensions::AppWindow* CreateAppWindow(
       content::BrowserContext* context,
       const extensions::Extension* extension) OVERRIDE {
-    extensions::ShellAppWindow* app_window = new extensions::ShellAppWindow();
-    app_window->Init(context, extension, gfx::Size(100, 100));
-    athena::ActivityManager::Get()->AddActivity(
-        athena::ActivityFactory::Get()->CreateAppActivity(app_window,
-                                                          extension->id()));
-    return app_window;
+    NOTIMPLEMENTED();
+    return NULL;
+  }
+
+  // Adds the window to the desktop.
+  virtual void AddAppWindow(aura::Window* window) OVERRIDE {
+    NOTIMPLEMENTED();
   }
 
   // Closes and destroys the app windows.
@@ -93,13 +98,16 @@ class AthenaBrowserMainDelegate : public extensions::ShellBrowserMainDelegate {
       extension_system->LoadApp(app_absolute_dir);
     }
 
-    athena::StartAthenaEnv(content::BrowserThread::GetMessageLoopProxyForThread(
-        content::BrowserThread::FILE));
+    athena::StartAthenaEnv(content::BrowserThread::GetBlockingPool()->
+        GetTaskRunnerWithShutdownBehavior(
+            base::SequencedWorkerPool::SKIP_ON_SHUTDOWN));
     athena::ExtensionsDelegate::CreateExtensionsDelegateForShell(context);
+    athena::CreateVirtualKeyboardWithContext(context);
     athena::StartAthenaSessionWithContext(context);
   }
 
   virtual void Shutdown() OVERRIDE {
+    athena::AthenaEnv::Get()->OnTerminating();
     athena::ShutdownAthena();
   }
 

@@ -26,6 +26,7 @@
 #include "chrome/browser/ui/browser_dialogs.h"
 #include "chrome/browser/ui/chrome_pages.h"
 #include "chrome/browser/ui/singleton_tabs.h"
+#include "chrome/browser/ui/user_manager.h"
 #include "chrome/browser/ui/views/profiles/user_manager_view.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service_factory.h"
@@ -72,8 +73,10 @@ const int kButtonHeight = 32;
 const int kFixedGaiaViewHeight = 440;
 const int kFixedGaiaViewWidth = 360;
 const int kFixedAccountRemovalViewWidth = 280;
-const int kFixedSwitchUserViewWidth = 280;
+const int kFixedSwitchUserViewWidth = 320;
 const int kLargeImageSide = 88;
+
+const int kVerticalSpacing = 16;
 
 // Creates a GridLayout with a single column. This ensures that all the child
 // views added get auto-expanded to fill the full width of the bubble.
@@ -422,8 +425,9 @@ class TitleCard : public views::View {
     AddChildView(title_label_);
   }
 
-  // Creates a new view that has the |title_card| with padding at the top, an
-  // edge-to-edge separator below, and the specified |view| at the bottom.
+  // Creates a new view that has the |title_card| with horizontal padding at the
+  // top, an edge-to-edge separator below, and the specified |view| at the
+  // bottom.
   static views::View* AddPaddedTitleCard(views::View* view,
                                          TitleCard* title_card,
                                          int width) {
@@ -442,9 +446,9 @@ class TitleCard : public views::View {
     layout->AddColumnSet(1)->AddColumn(views::GridLayout::FILL,
         views::GridLayout::FILL, 0,views::GridLayout::FIXED, width, width);
 
-    layout->StartRowWithPadding(1, 0, 0, views::kButtonVEdgeMarginNew);
+    layout->StartRowWithPadding(1, 0, 0, kVerticalSpacing);
     layout->AddView(title_card);
-    layout->StartRowWithPadding(1, 1, 0, views::kRelatedControlVerticalSpacing);
+    layout->StartRowWithPadding(1, 1, 0, kVerticalSpacing);
     layout->AddView(new views::Separator(views::Separator::HORIZONTAL));
 
     layout->StartRow(1, 1);
@@ -594,22 +598,22 @@ void ProfileChooserView::Init() {
     view_mode_ = profiles::BUBBLE_VIEW_MODE_ACCOUNT_MANAGEMENT;
   }
 
+  // The arrow keys can be used to tab between items.
+  AddAccelerator(ui::Accelerator(ui::VKEY_DOWN, ui::EF_NONE));
+  AddAccelerator(ui::Accelerator(ui::VKEY_UP, ui::EF_NONE));
+
   ShowView(view_mode_, avatar_menu_.get());
 }
 
 void ProfileChooserView::OnAvatarMenuChanged(
     AvatarMenu* avatar_menu) {
-  // Do not refresh the avatar menu if the user is on a signin related view.
-  if (view_mode_ == profiles::BUBBLE_VIEW_MODE_GAIA_SIGNIN ||
-      view_mode_ == profiles::BUBBLE_VIEW_MODE_GAIA_ADD_ACCOUNT ||
-      view_mode_ == profiles::BUBBLE_VIEW_MODE_GAIA_REAUTH) {
-    return;
+  if (view_mode_ == profiles::BUBBLE_VIEW_MODE_PROFILE_CHOOSER ||
+      view_mode_ == profiles::BUBBLE_VIEW_MODE_ACCOUNT_MANAGEMENT) {
+    // Refresh the view with the new menu. We can't just update the local copy
+    // as this may have been triggered by a sign out action, in which case
+    // the view is being destroyed.
+    ShowView(view_mode_, avatar_menu);
   }
-
-  // Refresh the view with the new menu. We can't just update the local copy
-  // as this may have been triggered by a sign out action, in which case
-  // the view is being destroyed.
-  ShowView(profiles::BUBBLE_VIEW_MODE_PROFILE_CHOOSER, avatar_menu);
 }
 
 void ProfileChooserView::OnRefreshTokenAvailable(
@@ -698,6 +702,16 @@ void ProfileChooserView::WindowClosing() {
   }
 }
 
+bool ProfileChooserView::AcceleratorPressed(
+    const ui::Accelerator& accelerator) {
+  if (accelerator.key_code() != ui::VKEY_DOWN &&
+      accelerator.key_code() != ui::VKEY_UP)
+    return BubbleDelegateView::AcceleratorPressed(accelerator);
+  // Move the focus up or down.
+  GetFocusManager()->AdvanceFocus(accelerator.key_code() != ui::VKEY_DOWN);
+  return true;
+}
+
 void ProfileChooserView::ButtonPressed(views::Button* sender,
                                        const ui::Event& event) {
   // Disable button after clicking so that it doesn't get clicked twice and
@@ -707,12 +721,13 @@ void ProfileChooserView::ButtonPressed(views::Button* sender,
     sender->SetEnabled(false);
 
   if (sender == users_button_) {
-    // If this is a guest session, also close all the guest browser windows.
+    // If this is a guest session, close all the guest browser windows.
     if (browser_->profile()->IsGuestSession()) {
-      chrome::ShowUserManager(base::FilePath());
       profiles::CloseGuestProfileWindows();
     } else {
-      chrome::ShowUserManager(browser_->profile()->GetPath());
+      UserManager::Show(base::FilePath(),
+                        profiles::USER_MANAGER_NO_TUTORIAL,
+                        profiles::USER_MANAGER_SELECT_PROFILE_NO_ACTION);
     }
     PostActionPerformed(ProfileMetrics::PROFILE_DESKTOP_MENU_OPEN_USER_MANAGER);
   } else if (sender == go_incognito_button_) {
@@ -736,8 +751,9 @@ void ProfileChooserView::ButtonPressed(views::Button* sender,
   } else if (sender == tutorial_see_whats_new_button_) {
     ProfileMetrics::LogProfileNewAvatarMenuUpgrade(
         ProfileMetrics::PROFILE_AVATAR_MENU_UPGRADE_WHATS_NEW);
-    chrome::ShowUserManagerWithTutorial(
-        profiles::USER_MANAGER_TUTORIAL_OVERVIEW);
+    UserManager::Show(base::FilePath(),
+                      profiles::USER_MANAGER_TUTORIAL_OVERVIEW,
+                      profiles::USER_MANAGER_SELECT_PROFILE_NO_ACTION);
   } else if (sender == remove_account_button_) {
     RemoveAccount();
   } else if (sender == account_removal_cancel_button_) {
@@ -761,7 +777,9 @@ void ProfileChooserView::ButtonPressed(views::Button* sender,
   } else if (sender == add_person_button_) {
     ProfileMetrics::LogProfileNewAvatarMenuNotYou(
         ProfileMetrics::PROFILE_AVATAR_MENU_NOT_YOU_ADD_PERSON);
-    chrome::ShowUserManager(browser_->profile()->GetPath());
+    UserManager::Show(base::FilePath(),
+                      profiles::USER_MANAGER_NO_TUTORIAL,
+                      profiles::USER_MANAGER_SELECT_PROFILE_NO_ACTION);
   } else if (sender == disconnect_button_) {
     ProfileMetrics::LogProfileNewAvatarMenuNotYou(
         ProfileMetrics::PROFILE_AVATAR_MENU_NOT_YOU_DISCONNECT);
@@ -1278,8 +1296,6 @@ views::View* ProfileChooserView::CreateOptionsView(bool display_lock) {
         this,
         l10n_util::GetStringUTF16(IDS_PROFILES_PROFILE_SIGNOUT_BUTTON),
         *rb->GetImageSkiaNamed(IDR_ICON_PROFILES_MENU_LOCK));
-    if (!chrome::LocalAuthCredentialsExist(browser_->profile()))
-      lock_button_->SetState(views::Button::STATE_DISABLED);
     layout->StartRow(1, 0);
     layout->AddView(lock_button_);
   }

@@ -70,7 +70,10 @@ def _GetChromeJars(release_version):
   version = 'Debug'
   if release_version:
     version = 'Release'
-  path = os.path.join(constants.DIR_SOURCE_ROOT, 'out', version, 'lib.java')
+  path = os.path.join(constants.DIR_SOURCE_ROOT,
+                      os.environ.get('CHROMIUM_OUT_DIR', 'out'),
+                      version,
+                      'lib.java')
   cmd = 'find %s -name "*.jar"' % path
   out = cmd_helper.GetCmdOutput(shlex.split(cmd))
   out = [p for p in out.splitlines() if not p.endswith('.dex.jar')]
@@ -140,6 +143,13 @@ def _Run(exclude, known_bugs, classes_to_analyze, auxiliary_classes,
   if not chrome_classes:
     return 1
   cmd = '%s %s ' % (cmd, chrome_classes)
+
+  print
+  print '*' * 80
+  print 'Command used to run findbugs:'
+  print cmd
+  print '*' * 80
+  print
 
   proc = subprocess.Popen(shlex.split(cmd),
                           stdout=subprocess.PIPE, stderr=subprocess.PIPE)

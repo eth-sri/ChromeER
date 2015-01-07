@@ -99,13 +99,10 @@ class UserCloudPolicyManagerChromeOSTest : public testing::Test {
         0,
         std::string(),
         factories);
-    signin_profile_ = profile_manager_->CreateTestingProfile(kSigninProfile);
-    signin_profile_->ForceIncognito(true);
     // Usually the signin Profile and the main Profile are separate, but since
     // the signin Profile is an OTR Profile then for this test it suffices to
     // attach it to the main Profile.
-    profile_->SetOffTheRecordProfile(scoped_ptr<Profile>(signin_profile_));
-    signin_profile_->SetOriginalProfile(profile_);
+    signin_profile_ = TestingProfile::Builder().BuildIncognito(profile_);
     ASSERT_EQ(signin_profile_, chromeos::ProfileHelper::GetSigninProfile());
 
     chrome::RegisterLocalState(prefs_.registry());
@@ -118,6 +115,10 @@ class UserCloudPolicyManagerChromeOSTest : public testing::Test {
     policy_map_.Set(key::kChromeOsMultiProfileUserBehavior,
                     POLICY_LEVEL_MANDATORY, POLICY_SCOPE_USER,
                     new base::StringValue("primary-only"),
+                    NULL);
+    policy_map_.Set(key::kEasyUnlockAllowed,
+                    POLICY_LEVEL_MANDATORY, POLICY_SCOPE_USER,
+                    new base::FundamentalValue(false),
                     NULL);
     expected_bundle_.Get(PolicyNamespace(POLICY_DOMAIN_CHROME, std::string()))
         .CopyFrom(policy_map_);
@@ -152,7 +153,6 @@ class UserCloudPolicyManagerChromeOSTest : public testing::Test {
     }
     signin_profile_ = NULL;
     profile_ = NULL;
-    profile_manager_->DeleteTestingProfile(kSigninProfile);
     profile_manager_->DeleteTestingProfile(chrome::kInitialProfile);
   }
 

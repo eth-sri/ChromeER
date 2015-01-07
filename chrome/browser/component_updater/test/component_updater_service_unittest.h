@@ -7,25 +7,28 @@
 
 #include <string>
 
-#include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/files/file_path.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "components/component_updater/component_updater_service.h"
-#include "components/component_updater/test/test_configurator.h"
-#include "components/component_updater/test/url_request_post_interceptor.h"
 #include "content/public/test/test_browser_thread_bundle.h"
-#include "content/test/net/url_request_prepackaged_interceptor.h"
-#include "net/url_request/url_request_test_util.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+namespace net {
+class LocalHostTestURLRequestInterceptor;
+}
+
 namespace component_updater {
 
+class InterceptorFactory;
+class TestConfigurator;
 class TestInstaller;
+class URLRequestPostInterceptor;
 
 // Intercepts HTTP GET requests sent to "localhost".
-typedef content::URLLocalHostRequestPrepackagedInterceptor GetInterceptor;
+typedef net::LocalHostTestURLRequestInterceptor GetInterceptor;
 
 class ComponentUpdaterTest : public testing::Test {
  public:

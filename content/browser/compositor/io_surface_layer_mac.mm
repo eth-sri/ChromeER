@@ -5,7 +5,10 @@
 #include "content/browser/compositor/io_surface_layer_mac.h"
 
 #include <CoreFoundation/CoreFoundation.h>
+#include <OpenGL/CGLIOSurface.h>
+#include <OpenGL/CGLRenderers.h>
 #include <OpenGL/gl.h>
+#include <OpenGL/OpenGL.h>
 
 #include "base/mac/mac_util.h"
 #include "base/mac/sdk_forward_declarations.h"
@@ -146,7 +149,7 @@ void IOSurfaceLayerHelper::DisplayIfNeededAndAck() {
 }
 
 void IOSurfaceLayerHelper::TimerFired() {
-  SetNeedsDisplayAndDisplayAndAck();
+  DisplayIfNeededAndAck();
 }
 
 void IOSurfaceLayerHelper::BeginPumpingFrames() {
@@ -181,7 +184,7 @@ void IOSurfaceLayerHelper::EndPumpingFrames() {
     iosurface_ = content::CompositingIOSurfaceMac::Create();
     context_ = content::CompositingIOSurfaceContext::Get(
         content::CompositingIOSurfaceContext::kCALayerContextWindowNumber);
-    if (!iosurface_ || !context_) {
+    if (!iosurface_.get() || !context_.get()) {
       LOG(ERROR) << "Failed create CompositingIOSurface or context";
       [self resetClient];
       [self release];
@@ -259,13 +262,13 @@ void IOSurfaceLayerHelper::EndPumpingFrames() {
 // The remaining methods implement the CAOpenGLLayer interface.
 
 - (CGLPixelFormatObj)copyCGLPixelFormatForDisplayMask:(uint32_t)mask {
-  if (!context_)
+  if (!context_.get())
     return [super copyCGLPixelFormatForDisplayMask:mask];
   return CGLRetainPixelFormat(CGLGetPixelFormat(context_->cgl_context()));
 }
 
 - (CGLContextObj)copyCGLContextForPixelFormat:(CGLPixelFormatObj)pixelFormat {
-  if (!context_)
+  if (!context_.get())
     return [super copyCGLContextForPixelFormat:pixelFormat];
   return CGLRetainContext(context_->cgl_context());
 }

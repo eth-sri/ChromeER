@@ -11,10 +11,11 @@ namespace app_list {
 namespace switches {
 
 // Please keep these flags sorted.
+APP_LIST_EXPORT extern const char kCustomLauncherPage[];
 APP_LIST_EXPORT extern const char kDisableAppInfo[];
+APP_LIST_EXPORT extern const char kDisableDriveAppsInAppList[];
 APP_LIST_EXPORT extern const char kDisableSyncAppList[];
 APP_LIST_EXPORT extern const char kEnableCenteredAppList[];
-APP_LIST_EXPORT extern const char kEnableDriveAppsInAppList[];
 APP_LIST_EXPORT extern const char kEnableExperimentalAppList[];
 APP_LIST_EXPORT extern const char kEnableHotwordAlwaysOn[];
 APP_LIST_EXPORT extern const char kEnableSyncAppList[];

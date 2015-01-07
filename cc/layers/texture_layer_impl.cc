@@ -11,7 +11,7 @@
 #include "cc/quads/texture_draw_quad.h"
 #include "cc/resources/platform_color.h"
 #include "cc/resources/scoped_resource.h"
-#include "cc/resources/single_release_callback.h"
+#include "cc/resources/single_release_callback_impl.h"
 #include "cc/trees/layer_tree_impl.h"
 #include "cc/trees/occlusion_tracker.h"
 
@@ -37,7 +37,7 @@ TextureLayerImpl::~TextureLayerImpl() { FreeTextureMailbox(); }
 
 void TextureLayerImpl::SetTextureMailbox(
     const TextureMailbox& mailbox,
-    scoped_ptr<SingleReleaseCallback> release_callback) {
+    scoped_ptr<SingleReleaseCallbackImpl> release_callback) {
   DCHECK_EQ(mailbox.IsValid(), !!release_callback);
   FreeTextureMailbox();
   texture_mailbox_ = mailbox;
@@ -49,7 +49,7 @@ void TextureLayerImpl::SetTextureMailbox(
 
 scoped_ptr<LayerImpl> TextureLayerImpl::CreateLayerImpl(
     LayerTreeImpl* tree_impl) {
-  return TextureLayerImpl::Create(tree_impl, id()).PassAs<LayerImpl>();
+  return TextureLayerImpl::Create(tree_impl, id());
 }
 
 void TextureLayerImpl::PushPropertiesTo(LayerImpl* layer) {
@@ -83,7 +83,7 @@ bool TextureLayerImpl::WillDraw(DrawMode draw_mode,
           resource_provider->CreateResourceFromTextureMailbox(
               texture_mailbox_, release_callback_.Pass());
       DCHECK(external_texture_resource_);
-      texture_copy_.reset();
+      texture_copy_ = nullptr;
       valid_texture_copy_ = false;
     }
     if (external_texture_resource_)
@@ -158,8 +158,10 @@ void TextureLayerImpl::AppendQuads(
 
   gfx::Rect quad_rect(content_bounds());
   gfx::Rect opaque_rect = opaque ? quad_rect : gfx::Rect();
-  gfx::Rect visible_quad_rect = occlusion_tracker.UnoccludedContentRect(
-      quad_rect, draw_properties().target_space_transform);
+  gfx::Rect visible_quad_rect =
+      occlusion_tracker.GetCurrentOcclusionForLayer(
+                            draw_properties().target_space_transform)
+          .GetUnoccludedContentRect(quad_rect);
   if (visible_quad_rect.IsEmpty())
     return;
 
@@ -192,7 +194,7 @@ SimpleEnclosedRegion TextureLayerImpl::VisibleContentOpaqueRegion() const {
 
 void TextureLayerImpl::ReleaseResources() {
   FreeTextureMailbox();
-  texture_copy_.reset();
+  texture_copy_ = nullptr;
   external_texture_resource_ = 0;
   valid_texture_copy_ = false;
 }
@@ -240,10 +242,13 @@ const char* TextureLayerImpl::LayerTypeAsString() const {
 void TextureLayerImpl::FreeTextureMailbox() {
   if (own_mailbox_) {
     DCHECK(!external_texture_resource_);
-    if (release_callback_)
-      release_callback_->Run(texture_mailbox_.sync_point(), false);
+    if (release_callback_) {
+      release_callback_->Run(texture_mailbox_.sync_point(),
+                             false,
+                             layer_tree_impl()->BlockingMainThreadTaskRunner());
+    }
     texture_mailbox_ = TextureMailbox();
-    release_callback_.reset();
+    release_callback_ = nullptr;
   } else if (external_texture_resource_) {
     DCHECK(!own_mailbox_);
     ResourceProvider* resource_provider =

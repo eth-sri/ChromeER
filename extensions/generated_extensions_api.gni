@@ -67,7 +67,7 @@ template("generated_extensions_api") {
 
   # Keep a copy of the target_name here since it will be trampled
   # in nested targets.
-  target_visibility = ":$target_name"
+  target_visibility = [ ":$target_name" ]
 
   generated_config_name = target_name + "_generated_config"
   config(generated_config_name) {
@@ -109,7 +109,11 @@ template("generated_extensions_api") {
         "--namespace=$root_namespace",
         "--generator=cpp",
         "--include-rules=$schema_include_rules" ]
-      visibility = target_visibility
+
+      if (defined(invoker.visibility)) {
+        # If visibility is restricted, add our own target to it.
+        visibility = [ invoker.visibility, target_visibility ]
+      }
     }
   }
 
@@ -172,13 +176,12 @@ template("generated_extensions_api") {
   source_set(target_name) {
     sources = []
     deps = []
-    
+    public_deps = []
+
     if (schemas) {
       sources += get_target_outputs(":$schema_generator_name")
-      deps += [
-        ":$schema_generator_name",
-        "//tools/json_schema_compiler:generated_api_util",
-      ]
+      public_deps += [ ":$schema_generator_name" ]
+      deps += [ "//tools/json_schema_compiler:generated_api_util" ]
     }
 
     if (bundle) {
@@ -194,7 +197,7 @@ template("generated_extensions_api") {
     if (defined(invoker.deps)) {
       deps += invoker.deps
     }
-    direct_dependent_configs = [ ":$generated_config_name" ]
+    public_configs = [ ":$generated_config_name" ]
 
     if (defined(invoker.visibility)) {
       visibility = invoker.visibility

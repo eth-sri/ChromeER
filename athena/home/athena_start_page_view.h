@@ -8,6 +8,7 @@
 #include "athena/athena_export.h"
 #include "base/memory/weak_ptr.h"
 #include "ui/app_list/views/search_box_view_delegate.h"
+#include "ui/gfx/animation/tween.h"
 #include "ui/views/view.h"
 
 namespace app_list {
@@ -33,7 +34,8 @@ class ATHENA_EXPORT AthenaStartPageView
 
   // Updates the layout state and move the subviews to the target location with
   // animation.
-  void SetLayoutStateWithAnimation(float layout_state);
+  void SetLayoutStateWithAnimation(float layout_state,
+                                   gfx::Tween::Type tween_type);
 
  private:
   friend class AthenaStartPageViewTest;
@@ -45,6 +47,7 @@ class ATHENA_EXPORT AthenaStartPageView
     gfx::Rect search_box;
     gfx::Rect icons;
     gfx::Rect controls;
+    float system_info_opacity;
     float logo_opacity;
     float background_opacity;
 
@@ -76,6 +79,7 @@ class ATHENA_EXPORT AthenaStartPageView
   app_list::AppListViewDelegate* delegate_;
 
   // Views are owned through its hierarchy.
+  views::View* system_info_view_;
   views::View* app_icon_container_;
   views::View* search_box_container_;
   views::View* control_icon_container_;

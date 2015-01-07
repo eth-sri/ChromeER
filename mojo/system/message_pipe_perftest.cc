@@ -50,7 +50,7 @@ class MultiprocessMessagePipePerfTest
     CHECK_EQ(mp->WriteMessage(0,
                               UserPointer<const void>(payload_.data()),
                               static_cast<uint32_t>(payload_.size()),
-                              NULL,
+                              nullptr,
                               MOJO_WRITE_MESSAGE_FLAG_NONE),
              MOJO_RESULT_OK);
     HandleSignalsState hss;
@@ -60,8 +60,8 @@ class MultiprocessMessagePipePerfTest
     CHECK_EQ(mp->ReadMessage(0,
                              UserPointer<void>(&read_buffer_[0]),
                              MakeUserPointer(&read_buffer_size),
-                             NULL,
-                             NULL,
+                             nullptr,
+                             nullptr,
                              MOJO_READ_MESSAGE_FLAG_NONE),
              MOJO_RESULT_OK);
     CHECK_EQ(read_buffer_size, static_cast<uint32_t>(payload_.size()));
@@ -71,7 +71,7 @@ class MultiprocessMessagePipePerfTest
     CHECK_EQ(mp->WriteMessage(0,
                               UserPointer<const void>(""),
                               0,
-                              NULL,
+                              nullptr,
                               MOJO_WRITE_MESSAGE_FLAG_NONE),
              MOJO_RESULT_OK);
   }
@@ -110,10 +110,9 @@ MOJO_MULTIPROCESS_TEST_CHILD_MAIN(PingPongClient) {
   embedder::ScopedPlatformHandle client_platform_handle =
       mojo::test::MultiprocessTestHelper::client_platform_handle.Pass();
   CHECK(client_platform_handle.is_valid());
-  scoped_refptr<MessagePipe> mp(new MessagePipe(
-      scoped_ptr<MessagePipeEndpoint>(new LocalMessagePipeEndpoint()),
-      scoped_ptr<MessagePipeEndpoint>(new ProxyMessagePipeEndpoint())));
-  channel_thread.Start(client_platform_handle.Pass(), mp);
+  scoped_refptr<ChannelEndpoint> ep;
+  scoped_refptr<MessagePipe> mp(MessagePipe::CreateLocalProxy(&ep));
+  channel_thread.Start(client_platform_handle.Pass(), ep);
 
   std::string buffer(1000000, '\0');
   int rv = 0;
@@ -131,8 +130,8 @@ MOJO_MULTIPROCESS_TEST_CHILD_MAIN(PingPongClient) {
     CHECK_EQ(mp->ReadMessage(0,
                              UserPointer<void>(&buffer[0]),
                              MakeUserPointer(&read_size),
-                             NULL,
-                             NULL,
+                             nullptr,
+                             nullptr,
                              MOJO_READ_MESSAGE_FLAG_NONE),
              MOJO_RESULT_OK);
 
@@ -143,7 +142,7 @@ MOJO_MULTIPROCESS_TEST_CHILD_MAIN(PingPongClient) {
     CHECK_EQ(mp->WriteMessage(0,
                               UserPointer<const void>(&buffer[0]),
                               static_cast<uint32_t>(read_size),
-                              NULL,
+                              nullptr,
                               MOJO_WRITE_MESSAGE_FLAG_NONE),
              MOJO_RESULT_OK);
   }
@@ -158,10 +157,9 @@ MOJO_MULTIPROCESS_TEST_CHILD_MAIN(PingPongClient) {
 TEST_F(MultiprocessMessagePipePerfTest, PingPong) {
   helper()->StartChild("PingPongClient");
 
-  scoped_refptr<MessagePipe> mp(new MessagePipe(
-      scoped_ptr<MessagePipeEndpoint>(new LocalMessagePipeEndpoint()),
-      scoped_ptr<MessagePipeEndpoint>(new ProxyMessagePipeEndpoint())));
-  Init(mp);
+  scoped_refptr<ChannelEndpoint> ep;
+  scoped_refptr<MessagePipe> mp(MessagePipe::CreateLocalProxy(&ep));
+  Init(ep);
 
   // This values are set to align with one at ipc_pertests.cc for comparison.
   const size_t kMsgSize[5] = {12, 144, 1728, 20736, 248832};

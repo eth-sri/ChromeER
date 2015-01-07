@@ -17,11 +17,13 @@
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/frame_host/cross_process_frame_connector.h"
 #include "content/browser/frame_host/cross_site_transferring_request.h"
+#include "content/browser/frame_host/frame_accessibility.h"
 #include "content/browser/frame_host/frame_tree.h"
 #include "content/browser/frame_host/frame_tree_node.h"
 #include "content/browser/frame_host/navigator.h"
 #include "content/browser/frame_host/render_frame_host_delegate.h"
 #include "content/browser/frame_host/render_frame_proxy_host.h"
+#include "content/browser/frame_host/render_widget_host_view_child_frame.h"
 #include "content/browser/renderer_host/input/input_router.h"
 #include "content/browser/renderer_host/input/timeout_monitor.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
@@ -41,6 +43,8 @@
 #include "content/common/swapped_out_messages.h"
 #include "content/public/browser/ax_event_notification_details.h"
 #include "content/public/browser/browser_accessibility_state.h"
+#include "content/public/browser/browser_context.h"
+#include "content/public/browser/browser_plugin_guest_manager.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/desktop_notification_delegate.h"
@@ -145,6 +149,12 @@ base::i18n::TextDirection WebTextDirectionToChromeTextDirection(
 
 }  // namespace
 
+// static
+bool RenderFrameHostImpl::IsRFHStateActive(RenderFrameHostImplState rfh_state) {
+  return rfh_state == STATE_DEFAULT;
+}
+
+// static
 RenderFrameHost* RenderFrameHost::FromID(int render_process_id,
                                          int render_frame_id) {
   return RenderFrameHostImpl::FromID(render_process_id, render_frame_id);
@@ -173,15 +183,23 @@ RenderFrameHostImpl::RenderFrameHostImpl(RenderViewHostImpl* render_view_host,
       frame_tree_(frame_tree),
       frame_tree_node_(frame_tree_node),
       routing_id_(routing_id),
-      is_swapped_out_(is_swapped_out),
-      renderer_initialized_(false),
+      render_frame_created_(false),
       navigations_suspended_(false),
+      is_waiting_for_beforeunload_ack_(false),
+      unload_ack_is_for_cross_site_transition_(false),
       weak_ptr_factory_(this) {
   frame_tree_->RegisterRenderFrameHost(this);
   GetProcess()->AddRoute(routing_id_, this);
   g_routing_id_frame_map.Get().insert(std::make_pair(
       RenderFrameHostID(GetProcess()->GetID(), routing_id_),
       this));
+
+  if (is_swapped_out) {
+    rfh_state_ = STATE_SWAPPED_OUT;
+  } else {
+    rfh_state_ = STATE_DEFAULT;
+    GetSiteInstance()->increment_active_frame_count();
+  }
 
   if (GetProcess()->GetServiceRegistry()) {
     RenderFrameSetupPtr setup;
@@ -192,6 +210,9 @@ RenderFrameHostImpl::RenderFrameHostImpl(RenderViewHostImpl* render_view_host,
     service_registry_.BindRemoteServiceProvider(
         service_provider.PassMessagePipe());
   }
+
+  swapout_event_monitor_timeout_.reset(new TimeoutMonitor(base::Bind(
+      &RenderFrameHostImpl::OnSwappedOut, weak_ptr_factory_.GetWeakPtr())));
 }
 
 RenderFrameHostImpl::~RenderFrameHostImpl() {
@@ -202,6 +223,13 @@ RenderFrameHostImpl::~RenderFrameHostImpl() {
   if (delegate_)
     delegate_->RenderFrameDeleted(this);
 
+  FrameAccessibility::GetInstance()->OnRenderFrameHostDestroyed(this);
+
+  // If this was swapped out, it already decremented the active frame count of
+  // the SiteInstance it belongs to.
+  if (IsRFHStateActive(rfh_state_))
+    GetSiteInstance()->decrement_active_frame_count();
+
   // Notify the FrameTree that this RFH is going away, allowing it to shut down
   // the corresponding RenderViewHost if it is no longer needed.
   frame_tree_->UnregisterRenderFrameHost(this);
@@ -211,7 +239,7 @@ int RenderFrameHostImpl::GetRoutingID() {
   return routing_id_;
 }
 
-SiteInstance* RenderFrameHostImpl::GetSiteInstance() {
+SiteInstanceImpl* RenderFrameHostImpl::GetSiteInstance() {
   return render_view_host_->GetSiteInstance();
 }
 
@@ -269,6 +297,13 @@ void RenderFrameHostImpl::ExecuteJavaScript(
   javascript_callbacks_.insert(std::make_pair(key, callback));
 }
 
+void RenderFrameHostImpl::ExecuteJavaScriptForTests(
+    const base::string16& javascript) {
+  Send(new FrameMsg_JavaScriptExecuteRequestForTests(routing_id_,
+                                                     javascript,
+                                                     0, false));
+}
+
 RenderViewHost* RenderFrameHostImpl::GetRenderViewHost() {
   return render_view_host_;
 }
@@ -287,7 +322,7 @@ bool RenderFrameHostImpl::Send(IPC::Message* message) {
   // Route IPCs through the RenderFrameProxyHost when in swapped out state.
   // Note: For subframes in --site-per-process mode, we don't use swapped out
   // RenderFrameHosts.
-  if (frame_tree_node_->IsMainFrame() && render_view_host_->IsSwappedOut()) {
+  if (frame_tree_node_->IsMainFrame() && is_swapped_out()) {
     DCHECK(render_frame_proxy_host_);
     return render_frame_proxy_host_->Send(message);
   }
@@ -296,12 +331,9 @@ bool RenderFrameHostImpl::Send(IPC::Message* message) {
 }
 
 bool RenderFrameHostImpl::OnMessageReceived(const IPC::Message &msg) {
-  // Filter out most IPC messages if this renderer is swapped out.
+  // Filter out most IPC messages if this frame is swapped out.
   // We still want to handle certain ACKs to keep our state consistent.
-  // TODO(nasko): Only check RenderViewHost state, as this object's own state
-  // isn't yet properly updated. Transition this check once the swapped out
-  // state is correct in RenderFrameHost itself.
-  if (render_view_host_->IsSwappedOut()) {
+  if (is_swapped_out()) {
     if (!SwappedOutMessages::CanHandleWhileSwappedOut(msg)) {
       // If this is a synchronous message and we decided not to handle it,
       // we must send an error reply, or else the renderer will be stuck
@@ -334,12 +366,10 @@ bool RenderFrameHostImpl::OnMessageReceived(const IPC::Message &msg) {
                         OnDidStartProvisionalLoadForFrame)
     IPC_MESSAGE_HANDLER(FrameHostMsg_DidFailProvisionalLoadWithError,
                         OnDidFailProvisionalLoadWithError)
-    IPC_MESSAGE_HANDLER(FrameHostMsg_DidRedirectProvisionalLoad,
-                        OnDidRedirectProvisionalLoad)
     IPC_MESSAGE_HANDLER(FrameHostMsg_DidFailLoadWithError,
                         OnDidFailLoadWithError)
     IPC_MESSAGE_HANDLER_GENERIC(FrameHostMsg_DidCommitProvisionalLoad,
-                                OnNavigate(msg))
+                                OnDidCommitProvisionalLoad(msg))
     IPC_MESSAGE_HANDLER(FrameHostMsg_OpenURL, OnOpenURL)
     IPC_MESSAGE_HANDLER(FrameHostMsg_DocumentOnLoadCompleted,
                         OnDocumentOnLoadCompleted)
@@ -356,6 +386,7 @@ bool RenderFrameHostImpl::OnMessageReceived(const IPC::Message &msg) {
     IPC_MESSAGE_HANDLER(FrameHostMsg_DidAccessInitialDocument,
                         OnDidAccessInitialDocument)
     IPC_MESSAGE_HANDLER(FrameHostMsg_DidDisownOpener, OnDidDisownOpener)
+    IPC_MESSAGE_HANDLER(FrameHostMsg_DidAssignPageId, OnDidAssignPageId)
     IPC_MESSAGE_HANDLER(FrameHostMsg_UpdateTitle, OnUpdateTitle)
     IPC_MESSAGE_HANDLER(FrameHostMsg_UpdateEncoding, OnUpdateEncoding)
     IPC_MESSAGE_HANDLER(FrameHostMsg_BeginNavigation,
@@ -464,6 +495,53 @@ gfx::NativeViewAccessible
   return NULL;
 }
 
+BrowserAccessibilityManager* RenderFrameHostImpl::AccessibilityGetChildFrame(
+    int accessibility_node_id) {
+  RenderFrameHostImpl* child_frame =
+      FrameAccessibility::GetInstance()->GetChild(this, accessibility_node_id);
+  if (!child_frame)
+    return NULL;
+
+  // Return NULL if this isn't an out-of-process iframe. Same-process iframes
+  // are already part of the accessibility tree.
+  if (child_frame->GetProcess()->GetID() == GetProcess()->GetID())
+    return NULL;
+
+  // As a sanity check, make sure the frame we're going to return belongs
+  // to the same BrowserContext.
+  if (GetSiteInstance()->GetBrowserContext() !=
+      child_frame->GetSiteInstance()->GetBrowserContext()) {
+    NOTREACHED();
+    return NULL;
+  }
+
+  return child_frame->GetOrCreateBrowserAccessibilityManager();
+}
+
+BrowserAccessibility* RenderFrameHostImpl::AccessibilityGetParentFrame() {
+  RenderFrameHostImpl* parent_frame = NULL;
+  int parent_node_id = 0;
+  if (!FrameAccessibility::GetInstance()->GetParent(
+      this, &parent_frame, &parent_node_id)) {
+    return NULL;
+  }
+
+  // As a sanity check, make sure the frame we're going to return belongs
+  // to the same BrowserContext.
+  if (GetSiteInstance()->GetBrowserContext() !=
+      parent_frame->GetSiteInstance()->GetBrowserContext()) {
+    NOTREACHED();
+    return NULL;
+  }
+
+  BrowserAccessibilityManager* manager =
+      parent_frame->browser_accessibility_manager();
+  if (!manager)
+    return NULL;
+
+  return manager->GetFromID(parent_node_id);
+}
+
 bool RenderFrameHostImpl::CreateRenderFrame(int parent_routing_id) {
   TRACE_EVENT0("navigation", "RenderFrameHostImpl::CreateRenderFrame");
   DCHECK(!IsRenderFrameLive()) << "Creating frame twice";
@@ -477,14 +555,29 @@ bool RenderFrameHostImpl::CreateRenderFrame(int parent_routing_id) {
 
   DCHECK(GetProcess()->HasConnection());
 
-  renderer_initialized_ = true;
   Send(new FrameMsg_NewFrame(routing_id_, parent_routing_id));
+
+  // The renderer now has a RenderFrame for this RenderFrameHost.  Note that
+  // this path is only used for out-of-process iframes.  Main frame RenderFrames
+  // are created with their RenderView, and same-site iframes are created at the
+  // time of OnCreateChildFrame.
+  set_render_frame_created(true);
 
   return true;
 }
 
 bool RenderFrameHostImpl::IsRenderFrameLive() {
-  return GetProcess()->HasConnection() && renderer_initialized_;
+  // RenderFrames are created for main frames at the same time as RenderViews,
+  // so we rely on IsRenderViewLive.  For subframes, we keep track of each
+  // RenderFrame individually with render_frame_created_.
+  bool is_live = !GetParent() ?
+      render_view_host_->IsRenderViewLive() :
+      GetProcess()->HasConnection() && render_frame_created_;
+
+  // Sanity check: the RenderView should always be live if the RenderFrame is.
+  DCHECK(!is_live || render_view_host_->IsRenderViewLive());
+
+  return is_live;
 }
 
 void RenderFrameHostImpl::Init() {
@@ -513,6 +606,11 @@ void RenderFrameHostImpl::OnCreateChildFrame(int new_routing_id,
                                              const std::string& frame_name) {
   RenderFrameHostImpl* new_frame = frame_tree_->AddFrame(
       frame_tree_node_, new_routing_id, frame_name);
+
+  // We know that the RenderFrame has been created in this case, immediately
+  // after the CreateChildFrame IPC was sent.
+  new_frame->set_render_frame_created(true);
+
   if (delegate_)
     delegate_->RenderFrameCreated(new_frame);
 }
@@ -566,14 +664,6 @@ void RenderFrameHostImpl::OnDidFailLoadWithError(
       this, validated_url, error_code, error_description);
 }
 
-void RenderFrameHostImpl::OnDidRedirectProvisionalLoad(
-    int32 page_id,
-    const GURL& source_url,
-    const GURL& target_url) {
-  frame_tree_node_->navigator()->DidRedirectProvisionalLoad(
-      this, page_id, source_url, target_url);
-}
-
 // Called when the renderer navigates.  For every frame loaded, we'll get this
 // notification containing parameters identifying the navigation.
 //
@@ -582,7 +672,7 @@ void RenderFrameHostImpl::OnDidRedirectProvisionalLoad(
 // level frame.  If the user explicitly requests a subframe navigation, we will
 // get a new page_id because we need to create a new navigation entry for that
 // action.
-void RenderFrameHostImpl::OnNavigate(const IPC::Message& msg) {
+void RenderFrameHostImpl::OnDidCommitProvisionalLoad(const IPC::Message& msg) {
   // Read the parameters out of the IPC message directly to avoid making another
   // copy when we filter the URLs.
   PickleIterator iter(msg);
@@ -590,7 +680,7 @@ void RenderFrameHostImpl::OnNavigate(const IPC::Message& msg) {
   if (!IPC::ParamTraits<FrameHostMsg_DidCommitProvisionalLoad_Params>::
       Read(&msg, &iter, &validated_params))
     return;
-  TRACE_EVENT1("navigation", "RenderFrameHostImpl::OnNavigate",
+  TRACE_EVENT1("navigation", "RenderFrameHostImpl::OnDidCommitProvisionalLoad",
                "url", validated_params.url.possibly_invalid_spec());
 
   // If we're waiting for a cross-site beforeunload ack from this renderer and
@@ -599,9 +689,9 @@ void RenderFrameHostImpl::OnNavigate(const IPC::Message& msg) {
   // We do not want to cancel the pending navigation in this case, since the
   // old page will soon be stopped.  Instead, treat this as a beforeunload ack
   // to allow the pending navigation to continue.
-  if (render_view_host_->is_waiting_for_beforeunload_ack_ &&
-      render_view_host_->unload_ack_is_for_cross_site_transition_ &&
-      PageTransitionIsMainFrame(validated_params.transition)) {
+  if (is_waiting_for_beforeunload_ack_ &&
+      unload_ack_is_for_cross_site_transition_ &&
+      ui::PageTransitionIsMainFrame(validated_params.transition)) {
     OnBeforeUnloadACK(true, send_before_unload_start_time_,
                       base::TimeTicks::Now());
     return;
@@ -612,7 +702,7 @@ void RenderFrameHostImpl::OnNavigate(const IPC::Message& msg) {
   // unload request.  It will either respond to the unload request soon or our
   // timer will expire.  Either way, we should ignore this message, because we
   // have already committed to closing this renderer.
-  if (render_view_host_->IsWaitingForUnloadACK())
+  if (IsWaitingForUnloadACK())
     return;
 
   RenderProcessHost* process = GetProcess();
@@ -667,7 +757,7 @@ void RenderFrameHostImpl::OnCrossSiteResponse(
     scoped_ptr<CrossSiteTransferringRequest> cross_site_transferring_request,
     const std::vector<GURL>& transfer_url_chain,
     const Referrer& referrer,
-    PageTransition page_transition,
+    ui::PageTransition page_transition,
     bool should_replace_current_entry) {
   frame_tree_node_->render_manager()->OnCrossSiteResponse(
       this, global_request_id, cross_site_transferring_request.Pass(),
@@ -694,30 +784,22 @@ void RenderFrameHostImpl::SwapOut(RenderFrameProxyHost* proxy) {
   // to be fixed when RenderViewHostImpl::OnSwapOut moves to RenderFrameHost.
   TRACE_EVENT_ASYNC_BEGIN0("navigation", "RenderFrameHostImpl::SwapOut", this);
 
-  // TODO(creis): Move swapped out state to RFH.  Until then, only update it
-  // when swapping out the main frame.
-  if (!GetParent()) {
-    // If this RenderViewHost is not in the default state, it must have already
-    // gone through this, therefore just return.
-    if (render_view_host_->rvh_state_ != RenderViewHostImpl::STATE_DEFAULT)
-      return;
+  // If this RenderFrameHost is not in the default state, it must have already
+  // gone through this, therefore just return.
+  if (rfh_state_ != RenderFrameHostImpl::STATE_DEFAULT)
+    return;
 
-    render_view_host_->SetState(
-        RenderViewHostImpl::STATE_PENDING_SWAP_OUT);
-    render_view_host_->unload_event_monitor_timeout_->Start(
-        base::TimeDelta::FromMilliseconds(
-            RenderViewHostImpl::kUnloadTimeoutMS));
-  }
+  SetState(RenderFrameHostImpl::STATE_PENDING_SWAP_OUT);
+  swapout_event_monitor_timeout_->Start(
+      base::TimeDelta::FromMilliseconds(RenderViewHostImpl::kUnloadTimeoutMS));
 
   set_render_frame_proxy_host(proxy);
 
-  if (render_view_host_->IsRenderViewLive())
+  if (IsRenderFrameLive())
     Send(new FrameMsg_SwapOut(routing_id_, proxy->GetRoutingID()));
 
   if (!GetParent())
     delegate_->SwappedOut(this);
-  else
-    set_swapped_out(true);
 }
 
 void RenderFrameHostImpl::OnBeforeUnloadACK(
@@ -726,12 +808,12 @@ void RenderFrameHostImpl::OnBeforeUnloadACK(
     const base::TimeTicks& renderer_before_unload_end_time) {
   TRACE_EVENT_ASYNC_END0(
       "navigation", "RenderFrameHostImpl::BeforeUnload", this);
-  // TODO(creis): Support properly beforeunload on subframes. For now just
-  // pretend that the handler ran and allowed the navigation to proceed.
+  // TODO(creis): Support beforeunload on subframes.  For now just pretend that
+  // the handler ran and allowed the navigation to proceed.
   if (GetParent()) {
-    render_view_host_->is_waiting_for_beforeunload_ack_ = false;
+    is_waiting_for_beforeunload_ack_ = false;
     frame_tree_node_->render_manager()->OnBeforeUnloadACK(
-        render_view_host_->unload_ack_is_for_cross_site_transition_, proceed,
+        unload_ack_is_for_cross_site_transition_, proceed,
         renderer_before_unload_end_time);
     return;
   }
@@ -739,18 +821,18 @@ void RenderFrameHostImpl::OnBeforeUnloadACK(
   render_view_host_->decrement_in_flight_event_count();
   render_view_host_->StopHangMonitorTimeout();
   // If this renderer navigated while the beforeunload request was in flight, we
-  // may have cleared this state in OnNavigate, in which case we can ignore
-  // this message.
+  // may have cleared this state in OnDidCommitProvisionalLoad, in which case we
+  // can ignore this message.
   // However renderer might also be swapped out but we still want to proceed
   // with navigation, otherwise it would block future navigations. This can
   // happen when pending cross-site navigation is canceled by a second one just
-  // before OnNavigate while current RVH is waiting for commit but second
-  // navigation is started from the beginning.
-  if (!render_view_host_->is_waiting_for_beforeunload_ack_) {
+  // before OnDidCommitProvisionalLoad while current RVH is waiting for commit
+  // but second navigation is started from the beginning.
+  if (!is_waiting_for_beforeunload_ack_) {
     return;
   }
 
-  render_view_host_->is_waiting_for_beforeunload_ack_ = false;
+  is_waiting_for_beforeunload_ack_ = false;
 
   base::TimeTicks before_unload_end_time;
   if (!send_before_unload_start_time_.is_null() &&
@@ -788,7 +870,7 @@ void RenderFrameHostImpl::OnBeforeUnloadACK(
         is_skew_additive);
   }
   frame_tree_node_->render_manager()->OnBeforeUnloadACK(
-      render_view_host_->unload_ack_is_for_cross_site_transition_, proceed,
+      unload_ack_is_for_cross_site_transition_, proceed,
       before_unload_end_time);
 
   // If canceled, notify the delegate to cancel its pending navigation entry.
@@ -796,15 +878,36 @@ void RenderFrameHostImpl::OnBeforeUnloadACK(
     render_view_host_->GetDelegate()->DidCancelLoading();
 }
 
-void RenderFrameHostImpl::OnSwapOutACK() {
-  OnSwappedOut(false);
-  TRACE_EVENT_ASYNC_END0("navigation", "RenderFrameHostImpl::SwapOut", this);
+bool RenderFrameHostImpl::IsWaitingForUnloadACK() const {
+  return render_view_host_->is_waiting_for_close_ack_ ||
+      rfh_state_ == STATE_PENDING_SHUTDOWN ||
+      rfh_state_ == STATE_PENDING_SWAP_OUT;
 }
 
-void RenderFrameHostImpl::OnSwappedOut(bool timed_out) {
-  // For now, we only need to update the RVH state machine for top-level swaps.
-  if (!GetParent())
-    render_view_host_->OnSwappedOut(timed_out);
+void RenderFrameHostImpl::OnSwapOutACK() {
+  OnSwappedOut();
+}
+
+void RenderFrameHostImpl::OnSwappedOut() {
+  // Ignore spurious swap out ack.
+  if (rfh_state_ != STATE_PENDING_SWAP_OUT &&
+      rfh_state_ != STATE_PENDING_SHUTDOWN)
+    return;
+
+  TRACE_EVENT_ASYNC_END0("navigation", "RenderFrameHostImpl::SwapOut", this);
+  swapout_event_monitor_timeout_->Stop();
+
+  switch (rfh_state_) {
+    case STATE_PENDING_SWAP_OUT:
+      SetState(STATE_SWAPPED_OUT);
+      break;
+    case STATE_PENDING_SHUTDOWN:
+      DCHECK(!pending_shutdown_on_swap_out_.is_null());
+      pending_shutdown_on_swap_out_.Run();
+      break;
+    default:
+      NOTREACHED();
+  }
 }
 
 void RenderFrameHostImpl::OnContextMenu(const ContextMenuParams& params) {
@@ -861,7 +964,7 @@ void RenderFrameHostImpl::OnRunBeforeUnloadConfirm(
     const base::string16& message,
     bool is_reload,
     IPC::Message* reply_msg) {
-  // While a JS before unload dialog is showing, tabs in the same process
+  // While a JS beforeunload dialog is showing, tabs in the same process
   // shouldn't process input events.
   GetProcess()->SetIgnoreInputEvents(true);
   render_view_host_->StopHangMonitorTimeout();
@@ -926,10 +1029,17 @@ void RenderFrameHostImpl::OnDidDisownOpener() {
   delegate_->DidDisownOpener(this);
 }
 
+void RenderFrameHostImpl::OnDidAssignPageId(int32 page_id) {
+  // Update the RVH's current page ID so that future IPCs from the renderer
+  // correspond to the new page.
+  render_view_host_->page_id_ = page_id;
+}
+
 void RenderFrameHostImpl::OnUpdateTitle(
     int32 page_id,
     const base::string16& title,
     blink::WebTextDirection title_direction) {
+  CHECK_EQ(render_view_host_->page_id_, page_id);
   // This message is only sent for top-level frames. TODO(avi): when frame tree
   // mirroring works correctly, add a check here to enforce it.
   if (title.length() > kMaxTitleChars) {
@@ -949,10 +1059,11 @@ void RenderFrameHostImpl::OnUpdateEncoding(const std::string& encoding_name) {
 }
 
 void RenderFrameHostImpl::OnBeginNavigation(
-    const FrameHostMsg_BeginNavigation_Params& params) {
+    const FrameHostMsg_BeginNavigation_Params& params,
+    const CommonNavigationParams& common_params) {
   CHECK(CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kEnableBrowserSideNavigation));
-  frame_tree_node()->render_manager()->OnBeginNavigation(params);
+  frame_tree_node()->render_manager()->OnBeginNavigation(params, common_params);
 }
 
 void RenderFrameHostImpl::OnAccessibilityEvents(
@@ -962,13 +1073,27 @@ void RenderFrameHostImpl::OnAccessibilityEvents(
 
   AccessibilityMode accessibility_mode = delegate_->GetAccessibilityMode();
   if ((accessibility_mode != AccessibilityModeOff) && view &&
-      RenderViewHostImpl::IsRVHStateActive(render_view_host_->rvh_state())) {
+      RenderFrameHostImpl::IsRFHStateActive(rfh_state())) {
     if (accessibility_mode & AccessibilityModeFlagPlatform) {
       GetOrCreateBrowserAccessibilityManager();
       if (browser_accessibility_manager_)
         browser_accessibility_manager_->OnAccessibilityEvents(params);
     }
 
+    if (browser_accessibility_manager_) {
+      // Get the frame routing ids from out-of-process iframes and
+      // browser plugin instance ids from guests and update the mappings in
+      // FrameAccessibility.
+      for (unsigned int i = 0; i < params.size(); ++i) {
+        const AccessibilityHostMsg_EventParams& param = params[i];
+        UpdateCrossProcessIframeAccessibility(
+            param.node_to_frame_routing_id_map);
+        UpdateGuestFrameAccessibility(
+            param.node_to_browser_plugin_instance_id_map);
+      }
+    }
+
+    // Send the updates to the automation extension API.
     std::vector<AXEventNotificationDetails> details;
     details.reserve(params.size());
     for (size_t i = 0; i < params.size(); ++i) {
@@ -997,8 +1122,16 @@ void RenderFrameHostImpl::OnAccessibilityEvents(
     const AccessibilityHostMsg_EventParams& param = params[i];
     if (static_cast<int>(param.event_type) < 0)
       continue;
+
     if (!ax_tree_for_testing_) {
-      ax_tree_for_testing_.reset(new ui::AXTree(param.update));
+      if (browser_accessibility_manager_) {
+        ax_tree_for_testing_.reset(new ui::AXTree(
+            browser_accessibility_manager_->SnapshotAXTreeForTesting()));
+      } else {
+        ax_tree_for_testing_.reset(new ui::AXTree());
+        CHECK(ax_tree_for_testing_->Unserialize(param.update))
+            << ax_tree_for_testing_->error();
+      }
     } else {
       CHECK(ax_tree_for_testing_->Unserialize(param.update))
           << ax_tree_for_testing_->error();
@@ -1011,8 +1144,7 @@ void RenderFrameHostImpl::OnAccessibilityLocationChanges(
     const std::vector<AccessibilityHostMsg_LocationChangeParams>& params) {
   RenderWidgetHostViewBase* view = static_cast<RenderWidgetHostViewBase*>(
       render_view_host_->GetView());
-  if (view &&
-      RenderViewHostImpl::IsRVHStateActive(render_view_host_->rvh_state())) {
+  if (view && RenderFrameHostImpl::IsRFHStateActive(rfh_state())) {
     AccessibilityMode accessibility_mode = delegate_->GetAccessibilityMode();
     if (accessibility_mode & AccessibilityModeFlagPlatform) {
       if (!browser_accessibility_manager_) {
@@ -1051,8 +1183,39 @@ void RenderFrameHostImpl::OnHidePopup() {
 }
 #endif
 
+void RenderFrameHostImpl::SetState(RenderFrameHostImplState rfh_state) {
+  // We update the number of RenderFrameHosts in a SiteInstance when the swapped
+  // out status of a RenderFrameHost gets flipped to/from active.
+  if (!IsRFHStateActive(rfh_state_) && IsRFHStateActive(rfh_state))
+    GetSiteInstance()->increment_active_frame_count();
+  else if (IsRFHStateActive(rfh_state_) && !IsRFHStateActive(rfh_state))
+    GetSiteInstance()->decrement_active_frame_count();
+
+  // The active and swapped out state of the RVH is determined by its main
+  // frame, since subframes should have their own widgets.
+  if (frame_tree_node_->IsMainFrame()) {
+    render_view_host_->set_is_active(IsRFHStateActive(rfh_state));
+    render_view_host_->set_is_swapped_out(rfh_state == STATE_SWAPPED_OUT);
+  }
+
+  // Whenever we change the RFH state to and from active or swapped out state,
+  // we should not be waiting for beforeunload or close acks.  We clear them
+  // here to be safe, since they can cause navigations to be ignored in
+  // OnDidCommitProvisionalLoad.
+  // TODO(creis): Move is_waiting_for_beforeunload_ack_ into the state machine.
+  if (rfh_state == STATE_DEFAULT ||
+      rfh_state == STATE_SWAPPED_OUT ||
+      rfh_state_ == STATE_DEFAULT ||
+      rfh_state_ == STATE_SWAPPED_OUT) {
+    is_waiting_for_beforeunload_ack_ = false;
+    render_view_host_->is_waiting_for_close_ack_ = false;
+  }
+  rfh_state_ = rfh_state;
+}
+
 void RenderFrameHostImpl::SetPendingShutdown(const base::Closure& on_swap_out) {
-  render_view_host_->SetPendingShutdown(on_swap_out);
+  pending_shutdown_on_swap_out_ = on_swap_out;
+  SetState(STATE_PENDING_SHUTDOWN);
 }
 
 bool RenderFrameHostImpl::CanCommitURL(const GURL& url) {
@@ -1070,8 +1233,8 @@ void RenderFrameHostImpl::Navigate(const FrameMsg_Navigate_Params& params) {
   // so do not grant them the ability to request additional URLs.
   if (!GetProcess()->IsIsolatedGuest()) {
     ChildProcessSecurityPolicyImpl::GetInstance()->GrantRequestURL(
-        GetProcess()->GetID(), params.url);
-    if (params.url.SchemeIs(url::kDataScheme) &&
+        GetProcess()->GetID(), params.common_params.url);
+    if (params.common_params.url.SchemeIs(url::kDataScheme) &&
         params.base_url_for_data_url.SchemeIs(url::kFileScheme)) {
       // If 'data:' is used, and we have a 'file:' base url, grant access to
       // local files.
@@ -1091,8 +1254,8 @@ void RenderFrameHostImpl::Navigate(const FrameMsg_Navigate_Params& params) {
     suspended_nav_params_.reset(new FrameMsg_Navigate_Params(params));
   } else {
     // Get back to a clean state, in case we start a new navigation without
-    // completing a RVH swap or unload handler.
-    render_view_host_->SetState(RenderViewHostImpl::STATE_DEFAULT);
+    // completing a RFH swap or unload handler.
+    SetState(RenderFrameHostImpl::STATE_DEFAULT);
 
     Send(new FrameMsg_Navigate(routing_id_, params));
   }
@@ -1108,20 +1271,20 @@ void RenderFrameHostImpl::Navigate(const FrameMsg_Navigate_Params& params) {
   //
   // Blink doesn't send throb notifications for JavaScript URLs, so we
   // don't want to either.
-  if (!params.url.SchemeIs(url::kJavaScriptScheme))
+  if (!params.common_params.url.SchemeIs(url::kJavaScriptScheme))
     delegate_->DidStartLoading(this, true);
 }
 
 void RenderFrameHostImpl::NavigateToURL(const GURL& url) {
   FrameMsg_Navigate_Params params;
+  params.common_params.url = url;
+  params.common_params.transition = ui::PAGE_TRANSITION_LINK;
+  params.common_params.navigation_type = FrameMsg_Navigate_Type::NORMAL;
+  params.commit_params.browser_navigation_start = base::TimeTicks::Now();
   params.page_id = -1;
   params.pending_history_list_offset = -1;
   params.current_history_list_offset = -1;
   params.current_history_list_length = 0;
-  params.url = url;
-  params.transition = PAGE_TRANSITION_LINK;
-  params.navigation_type = FrameMsg_Navigate_Type::NORMAL;
-  params.browser_navigation_start = base::TimeTicks::Now();
   Navigate(params);
 }
 
@@ -1133,11 +1296,10 @@ void RenderFrameHostImpl::DispatchBeforeUnload(bool for_cross_site_transition) {
   TRACE_EVENT_ASYNC_BEGIN0(
       "navigation", "RenderFrameHostImpl::BeforeUnload", this);
   // TODO(creis): Support subframes.
-  if (!render_view_host_->IsRenderViewLive() || GetParent()) {
+  if (GetParent() || !IsRenderFrameLive()) {
     // We don't have a live renderer, so just skip running beforeunload.
-    render_view_host_->is_waiting_for_beforeunload_ack_ = true;
-    render_view_host_->unload_ack_is_for_cross_site_transition_ =
-        for_cross_site_transition;
+    is_waiting_for_beforeunload_ack_ = true;
+    unload_ack_is_for_cross_site_transition_ = for_cross_site_transition;
     base::TimeTicks now = base::TimeTicks::Now();
     OnBeforeUnloadACK(true, now, now);
     return;
@@ -1146,22 +1308,20 @@ void RenderFrameHostImpl::DispatchBeforeUnload(bool for_cross_site_transition) {
   // This may be called more than once (if the user clicks the tab close button
   // several times, or if she clicks the tab close button then the browser close
   // button), and we only send the message once.
-  if (render_view_host_->is_waiting_for_beforeunload_ack_) {
+  if (is_waiting_for_beforeunload_ack_) {
     // Some of our close messages could be for the tab, others for cross-site
     // transitions. We always want to think it's for closing the tab if any
     // of the messages were, since otherwise it might be impossible to close
     // (if there was a cross-site "close" request pending when the user clicked
     // the close button). We want to keep the "for cross site" flag only if
     // both the old and the new ones are also for cross site.
-    render_view_host_->unload_ack_is_for_cross_site_transition_ =
-        render_view_host_->unload_ack_is_for_cross_site_transition_ &&
-        for_cross_site_transition;
+    unload_ack_is_for_cross_site_transition_ =
+        unload_ack_is_for_cross_site_transition_ && for_cross_site_transition;
   } else {
     // Start the hang monitor in case the renderer hangs in the beforeunload
     // handler.
-    render_view_host_->is_waiting_for_beforeunload_ack_ = true;
-    render_view_host_->unload_ack_is_for_cross_site_transition_ =
-        for_cross_site_transition;
+    is_waiting_for_beforeunload_ack_ = true;
+    unload_ack_is_for_cross_site_transition_ = for_cross_site_transition;
     // Increment the in-flight event count, to ensure that input events won't
     // cancel the timeout timer.
     render_view_host_->increment_in_flight_event_count();
@@ -1187,8 +1347,7 @@ void RenderFrameHostImpl::JavaScriptDialogClosed(
     const base::string16& user_input,
     bool dialog_was_suppressed) {
   GetProcess()->SetIgnoreInputEvents(false);
-  bool is_waiting = render_view_host_->is_waiting_for_beforeunload_ack() ||
-                    render_view_host_->IsWaitingForUnloadACK();
+  bool is_waiting = is_waiting_for_beforeunload_ack_ || IsWaitingForUnloadACK();
 
   // If we are executing as part of (before)unload event handling, we don't
   // want to use the regular hung_renderer_delay_ms_ if the user has agreed to
@@ -1211,20 +1370,67 @@ void RenderFrameHostImpl::JavaScriptDialogClosed(
   // This must be done after sending the reply since RenderView can't close
   // correctly while waiting for a response.
   if (is_waiting && dialog_was_suppressed)
-    render_view_host_->delegate_->RendererUnresponsive(
-        render_view_host_,
-        render_view_host_->is_waiting_for_beforeunload_ack(),
-        render_view_host_->IsWaitingForUnloadACK());
+    render_view_host_->delegate_->RendererUnresponsive(render_view_host_);
 }
 
 void RenderFrameHostImpl::NotificationClosed(int notification_id) {
   cancel_notification_callbacks_.erase(notification_id);
 }
 
+// PlzNavigate
+void RenderFrameHostImpl::CommitNavigation(
+    const GURL& stream_url,
+    const CommonNavigationParams& common_params,
+    const CommitNavigationParams& commit_params) {
+  // TODO(clamy): Check if we have to add security checks for the browser plugin
+  // guests.
+
+  Send(new FrameMsg_CommitNavigation(
+      routing_id_, stream_url, common_params, commit_params));
+  // TODO(clamy): Check if we should start the throbber for non javascript urls
+  // here.
+}
+
 void RenderFrameHostImpl::PlatformNotificationPermissionRequestDone(
     int request_id, blink::WebNotificationPermission permission) {
   Send(new PlatformNotificationMsg_PermissionRequestComplete(
       routing_id_, request_id, permission));
+}
+
+void RenderFrameHostImpl::UpdateCrossProcessIframeAccessibility(
+    const std::map<int32, int> node_to_frame_routing_id_map) {
+  std::map<int32, int>::const_iterator iter;
+  for (iter = node_to_frame_routing_id_map.begin();
+       iter != node_to_frame_routing_id_map.end();
+       ++iter) {
+    // This is the id of the accessibility node that has a child frame.
+    int32 node_id = iter->first;
+    // The routing id from either a RenderFrame or a RenderFrameProxy.
+    int frame_routing_id = iter->second;
+
+    FrameTree* frame_tree = frame_tree_node()->frame_tree();
+    FrameTreeNode* child_frame_tree_node = frame_tree->FindByRoutingID(
+        GetProcess()->GetID(), frame_routing_id);
+    if (child_frame_tree_node) {
+      FrameAccessibility::GetInstance()->AddChildFrame(
+          this, node_id, child_frame_tree_node->frame_tree_node_id());
+    }
+  }
+}
+
+void RenderFrameHostImpl::UpdateGuestFrameAccessibility(
+    const std::map<int32, int> node_to_browser_plugin_instance_id_map) {
+  std::map<int32, int>::const_iterator iter;
+  for (iter = node_to_browser_plugin_instance_id_map.begin();
+       iter != node_to_browser_plugin_instance_id_map.end();
+       ++iter) {
+    // This is the id of the accessibility node that hosts a plugin.
+    int32 node_id = iter->first;
+    // The id of the browser plugin.
+    int browser_plugin_instance_id = iter->second;
+    FrameAccessibility::GetInstance()->AddGuestWebContents(
+        this, node_id, browser_plugin_instance_id);
+  }
 }
 
 void RenderFrameHostImpl::SetAccessibilityMode(AccessibilityMode mode) {
@@ -1321,10 +1527,11 @@ void RenderFrameHostImpl::SetNavigationsSuspended(
     // There's navigation message params waiting to be sent. Now that we're not
     // suspended anymore, resume navigation by sending them. If we were swapped
     // out, we should also stop filtering out the IPC messages now.
-    render_view_host_->SetState(RenderViewHostImpl::STATE_DEFAULT);
+    SetState(RenderFrameHostImpl::STATE_DEFAULT);
 
     DCHECK(!proceed_time.is_null());
-    suspended_nav_params_->browser_navigation_start = proceed_time;
+    suspended_nav_params_->commit_params.browser_navigation_start =
+        proceed_time;
     Send(new FrameMsg_Navigate(routing_id_, *suspended_nav_params_));
     suspended_nav_params_.reset();
   }

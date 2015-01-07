@@ -58,7 +58,6 @@ content::WebUIDataSource* CreateVoiceSearchUiHtmlSource() {
   html_source->AddLocalizedString("voiceSearchLongTitle",
                                   IDS_VOICESEARCH_TITLE_MESSAGE);
 
-  html_source->SetUseJsonJSFormatV2();
   html_source->SetJsonPath("strings.js");
   html_source->AddResourcePath("about_voicesearch.js",
                                IDR_ABOUT_VOICESEARCH_JS);
@@ -245,7 +244,7 @@ class VoiceSearchDomHandler : public WebUIMessageHandler {
     std::string audio_logging_enabled = "No";
     HotwordService* hotword_service =
         HotwordServiceFactory::GetForProfile(profile_);
-    if (hotword_service->IsOptedIntoAudioLogging())
+    if (hotword_service && hotword_service->IsOptedIntoAudioLogging())
       audio_logging_enabled = "Yes";
     AddPair(list, ASCIIToUTF16("Hotword Audio Logging Enabled"),
             ASCIIToUTF16(audio_logging_enabled));

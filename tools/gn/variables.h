@@ -99,6 +99,10 @@ extern const char kCheckIncludes[];
 extern const char kCheckIncludes_HelpShort[];
 extern const char kCheckIncludes_Help[];
 
+extern const char kCompleteStaticLib[];
+extern const char kCompleteStaticLib_HelpShort[];
+extern const char kCompleteStaticLib_Help[];
+
 extern const char kConfigs[];
 extern const char kConfigs_HelpShort[];
 extern const char kConfigs_Help[];
@@ -107,9 +111,9 @@ extern const char kData[];
 extern const char kData_HelpShort[];
 extern const char kData_Help[];
 
-extern const char kDatadeps[];
-extern const char kDatadeps_HelpShort[];
-extern const char kDatadeps_Help[];
+extern const char kDataDeps[];
+extern const char kDataDeps_HelpShort[];
+extern const char kDataDeps_Help[];
 
 extern const char kDefines[];
 extern const char kDefines_HelpShort[];
@@ -122,10 +126,6 @@ extern const char kDepfile_Help[];
 extern const char kDeps[];
 extern const char kDeps_HelpShort[];
 extern const char kDeps_Help[];
-
-extern const char kDirectDependentConfigs[];
-extern const char kDirectDependentConfigs_HelpShort[];
-extern const char kDirectDependentConfigs_Help[];
 
 extern const char kForwardDependentConfigsFrom[];
 extern const char kForwardDependentConfigsFrom_HelpShort[];
@@ -167,6 +167,14 @@ extern const char kPublic[];
 extern const char kPublic_HelpShort[];
 extern const char kPublic_Help[];
 
+extern const char kPublicConfigs[];
+extern const char kPublicConfigs_HelpShort[];
+extern const char kPublicConfigs_Help[];
+
+extern const char kPublicDeps[];
+extern const char kPublicDeps_HelpShort[];
+extern const char kPublicDeps_Help[];
+
 extern const char kScript[];
 extern const char kScript_HelpShort[];
 extern const char kScript_Help[];
@@ -174,6 +182,10 @@ extern const char kScript_Help[];
 extern const char kSources[];
 extern const char kSources_HelpShort[];
 extern const char kSources_Help[];
+
+extern const char kTestonly[];
+extern const char kTestonly_HelpShort[];
+extern const char kTestonly_Help[];
 
 extern const char kVisibility[];
 extern const char kVisibility_HelpShort[];

@@ -16,13 +16,13 @@
 #include "content/renderer/media/media_stream_audio_renderer.h"
 #include "content/renderer/media/media_stream_renderer_factory.h"
 #include "content/renderer/media/video_frame_provider.h"
-#include "content/renderer/media/webmediaplayer_delegate.h"
-#include "content/renderer/media/webmediaplayer_util.h"
 #include "content/renderer/render_frame_impl.h"
 #include "media/base/media_log.h"
 #include "media/base/video_frame.h"
 #include "media/base/video_rotation.h"
 #include "media/base/video_util.h"
+#include "media/blink/webmediaplayer_delegate.h"
+#include "media/blink/webmediaplayer_util.h"
 #include "third_party/WebKit/public/platform/WebMediaPlayerClient.h"
 #include "third_party/WebKit/public/platform/WebRect.h"
 #include "third_party/WebKit/public/platform/WebSize.h"
@@ -81,7 +81,7 @@ namespace content {
 WebMediaPlayerMS::WebMediaPlayerMS(
     blink::WebFrame* frame,
     blink::WebMediaPlayerClient* client,
-    base::WeakPtr<WebMediaPlayerDelegate> delegate,
+    base::WeakPtr<media::WebMediaPlayerDelegate> delegate,
     media::MediaLog* media_log,
     scoped_ptr<MediaStreamRendererFactory> factory)
     : frame_(frame),
@@ -309,9 +309,9 @@ blink::WebTimeRanges WebMediaPlayerMS::buffered() const {
   return buffered_;
 }
 
-double WebMediaPlayerMS::maxTimeSeekable() const {
+blink::WebTimeRanges WebMediaPlayerMS::seekable() const {
   DCHECK(thread_checker_.CalledOnValidThread());
-  return 0.0;
+  return blink::WebTimeRanges();
 }
 
 bool WebMediaPlayerMS::didLoadingProgress() {
@@ -333,12 +333,8 @@ void WebMediaPlayerMS::paint(blink::WebCanvas* canvas,
   DCHECK(thread_checker_.CalledOnValidThread());
 
   gfx::RectF dest_rect(rect.x, rect.y, rect.width, rect.height);
-  video_renderer_.Paint(current_frame_.get(),
-                        canvas,
-                        dest_rect,
-                        alpha,
-                        mode,
-                        media::VIDEO_ROTATION_0);
+  video_renderer_.Paint(
+      current_frame_, canvas, dest_rect, alpha, mode, media::VIDEO_ROTATION_0);
 
   {
     base::AutoLock auto_lock(current_frame_lock_);
@@ -358,7 +354,7 @@ bool WebMediaPlayerMS::didPassCORSAccessCheck() const {
 }
 
 double WebMediaPlayerMS::mediaTimeForTimeValue(double timeValue) const {
-  return ConvertSecondsToTimestamp(timeValue).InSecondsF();
+  return media::ConvertSecondsToTimestamp(timeValue).InSecondsF();
 }
 
 unsigned WebMediaPlayerMS::decodedFrameCount() const {

@@ -5,6 +5,7 @@
 #include "chromecast/shell/browser/cast_browser_main_parts.h"
 
 #include "base/command_line.h"
+#include "base/message_loop/message_loop.h"
 #include "base/prefs/pref_registry_simple.h"
 #include "chromecast/common/chromecast_config.h"
 #include "chromecast/metrics/cast_metrics_service_client.h"
@@ -16,7 +17,13 @@
 #include "chromecast/shell/browser/devtools/remote_debugging_server.h"
 #include "chromecast/shell/browser/url_request_context_factory.h"
 #include "chromecast/shell/browser/webui/webui_cast.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/common/content_switches.h"
+#include "media/base/media_switches.h"
+
+#if defined(OS_ANDROID)
+#include "net/android/network_change_notifier_factory_android.h"
+#endif  // defined(OS_ANDROID)
 
 namespace chromecast {
 namespace shell {
@@ -29,8 +36,16 @@ struct DefaultCommandLineSwitch {
 };
 
 DefaultCommandLineSwitch g_default_switches[] = {
+#if defined(OS_ANDROID)
+  { switches::kMediaDrmEnableNonCompositing, ""},
+  { switches::kEnableOverlayFullscreenVideo, ""},
+  { switches::kDisableInfobarForProtectedMediaIdentifier, ""},
+  { switches::kDisableGestureRequirementForMediaPlayback, ""},
+#endif
   { switches::kDisableApplicationCache, "" },
   { switches::kDisablePlugins, "" },
+  // Always enable HTMLMediaElement logs.
+  { switches::kBlinkPlatformLogChannels, "Media"},
   { NULL, NULL },  // Termination
 };
 
@@ -51,6 +66,7 @@ CastBrowserMainParts::CastBrowserMainParts(
     URLRequestContextFactory* url_request_context_factory)
     : BrowserMainParts(),
       cast_browser_process_(new CastBrowserProcess()),
+      parameters_(parameters),
       url_request_context_factory_(url_request_context_factory) {
   CommandLine* command_line = CommandLine::ForCurrentProcess();
   AddDefaultCommandLineSwitches(command_line);
@@ -60,12 +76,19 @@ CastBrowserMainParts::~CastBrowserMainParts() {
 }
 
 void CastBrowserMainParts::PreMainMessageLoopStart() {
+#if defined(OS_ANDROID)
+  net::NetworkChangeNotifier::SetFactory(
+      new net::NetworkChangeNotifierFactoryAndroid());
+#else
   net::NetworkChangeNotifier::SetFactory(
       new NetworkChangeNotifierFactoryCast());
+#endif  // defined(OS_ANDROID)
 }
 
 void CastBrowserMainParts::PostMainMessageLoopStart() {
-  NOTIMPLEMENTED();
+#if defined(OS_ANDROID)
+  base::MessageLoopForUI::current()->Start();
+#endif  // defined(OS_ANDROID)
 }
 
 int CastBrowserMainParts::PreCreateThreads() {
@@ -80,19 +103,33 @@ void CastBrowserMainParts::PreMainMessageLoopRun() {
       new CastBrowserContext(url_request_context_factory_));
   cast_browser_process_->SetMetricsServiceClient(
       metrics::CastMetricsServiceClient::Create(
+          content::BrowserThread::GetBlockingPool(),
           ChromecastConfig::GetInstance()->pref_service(),
           cast_browser_process_->browser_context()->GetRequestContext()));
   cast_browser_process_->SetRemoteDebuggingServer(new RemoteDebuggingServer());
 
   InitializeWebUI();
 
-  cast_browser_process_->SetCastService(
-      CastService::Create(cast_browser_process_->browser_context()));
+  cast_browser_process_->SetCastService(CastService::Create(
+      cast_browser_process_->browser_context(),
+      url_request_context_factory_->GetSystemGetter(),
+      base::Bind(
+          &metrics::CastMetricsServiceClient::EnableMetricsService,
+          base::Unretained(cast_browser_process_->metrics_service_client()))));
+
+  // Initializing network delegates must happen after Cast service is created.
+  url_request_context_factory_->InitializeNetworkDelegates();
   cast_browser_process_->cast_service()->Start();
 }
 
 bool CastBrowserMainParts::MainMessageLoopRun(int* result_code) {
-  base::MessageLoopForUI::current()->Run();
+  // If parameters_.ui_task is not NULL, we are running browser tests. In this
+  // case, the browser's main message loop will not run.
+  if (parameters_.ui_task) {
+    parameters_.ui_task->Run();
+  } else {
+    base::MessageLoopForUI::current()->Run();
+  }
   return true;
 }
 

@@ -55,14 +55,19 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/user_metrics.h"
-#include "extensions/browser/extension_registry.h"
-#include "extensions/common/extension_set.h"
-#include "extensions/common/manifest.h"
 #include "net/http/http_transaction_factory.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "net/url_request/url_request_job.h"
 #include "ui/base/l10n/l10n_util.h"
+
+#if defined(ENABLE_EXTENSIONS)
+#include "chrome/browser/extensions/extension_service.h"
+#include "extensions/browser/extension_registry.h"
+#include "extensions/browser/extension_system.h"
+#include "extensions/common/extension_set.h"
+#include "extensions/common/manifest.h"
+#endif
 
 #if defined(ENABLE_MANAGED_USERS)
 #include "chrome/browser/supervised_user/supervised_user_service.h"
@@ -70,10 +75,8 @@
 #endif
 
 #if !defined(OS_IOS)
-#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/sessions/session_service_factory.h"
 #include "chrome/browser/ui/browser_list.h"
-#include "extensions/browser/extension_system.h"
 #endif  // !defined (OS_IOS)
 
 #if defined(OS_WIN)
@@ -84,7 +87,6 @@
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/browser_process_platform_part_chromeos.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
-#include "chrome/browser/profiles/profiles_state.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/cryptohome_client.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
@@ -219,7 +221,7 @@ size_t GetEnabledAppCount(Profile* profile) {
 
 #endif  // ENABLE_EXTENSIONS
 
-} // namespace
+}  // namespace
 
 ProfileManager::ProfileManager(const base::FilePath& user_data_dir)
     : user_data_dir_(user_data_dir),
@@ -332,6 +334,9 @@ Profile* ProfileManager::GetPrimaryUserProfile() {
 Profile* ProfileManager::GetActiveUserProfile() {
   ProfileManager* profile_manager = g_browser_process->profile_manager();
 #if defined(OS_CHROMEOS)
+  if (!profile_manager)
+    return NULL;
+
   if (!profile_manager->IsLoggedIn() ||
       !user_manager::UserManager::IsInitialized()) {
     return profile_manager->GetActiveUserOrOffTheRecordProfileFromPath(
@@ -675,6 +680,9 @@ void ProfileManager::ScheduleProfileForDeletion(
                          new_profile_name,
                          new_avatar_url,
                          std::string());
+
+      ProfileMetrics::LogProfileAddNewUser(
+          ProfileMetrics::ADD_NEW_USER_LAST_DELETED);
     } else {
       // On the Mac, the browser process is not killed when all browser windows
       // are closed, so just in case we are deleting the active profile, and no
@@ -941,6 +949,9 @@ void ProfileManager::OnProfileCreated(Profile* profile,
   } else {
     profile = NULL;
     profiles_info_.erase(iter);
+    // TODO(yiyaoliu): This is temporary, remove it after it's not used.
+    UMA_HISTOGRAM_COUNTS_100("UMA.ProfilesCount.AfterErase",
+                             profiles_info_.size());
   }
 
   if (profile) {
@@ -979,8 +990,8 @@ void ProfileManager::DoFinalInitForServices(Profile* profile,
   // During tests, when |profile| is an instance of TestingProfile,
   // ExtensionSystem might not create an ExtensionService.
   if (extensions::ExtensionSystem::Get(profile)->extension_service()) {
-    profile->GetHostContentSettingsMap()->RegisterExtensionService(
-        extensions::ExtensionSystem::Get(profile)->extension_service());
+    extensions::ExtensionSystem::Get(profile)->extension_service()->
+        RegisterContentSettings(profile->GetHostContentSettingsMap());
   }
 #endif
 #if defined(ENABLE_MANAGED_USERS) && !defined(OS_ANDROID)
@@ -1212,6 +1223,22 @@ ProfileManager::ProfileInfo::~ProfileInfo() {
 }
 
 #if !defined(OS_ANDROID) && !defined(OS_IOS)
+void ProfileManager::UpdateLastUser(Profile* last_active) {
+  PrefService* local_state = g_browser_process->local_state();
+  DCHECK(local_state);
+  // Only keep track of profiles that we are managing; tests may create others.
+  if (profiles_info_.find(last_active->GetPath()) != profiles_info_.end()) {
+    local_state->SetString(prefs::kProfileLastUsed,
+                           last_active->GetPath().BaseName().MaybeAsASCII());
+
+    ProfileInfoCache& cache = GetProfileInfoCache();
+    size_t profile_index =
+        cache.GetIndexOfProfileWithPath(last_active->GetPath());
+    if (profile_index != std::string::npos)
+      cache.SetProfileActiveTimeAtIndex(profile_index);
+  }
+}
+
 ProfileManager::BrowserListObserver::BrowserListObserver(
     ProfileManager* manager)
     : profile_manager_(manager) {
@@ -1260,20 +1287,7 @@ void ProfileManager::BrowserListObserver::OnBrowserSetLastActive(
   if (last_active->GetPrefs()->GetBoolean(prefs::kForceEphemeralProfiles))
     return;
 
-  PrefService* local_state = g_browser_process->local_state();
-  DCHECK(local_state);
-  // Only keep track of profiles that we are managing; tests may create others.
-  if (profile_manager_->profiles_info_.find(
-      last_active->GetPath()) != profile_manager_->profiles_info_.end()) {
-    local_state->SetString(prefs::kProfileLastUsed,
-                           last_active->GetPath().BaseName().MaybeAsASCII());
-
-    ProfileInfoCache& cache = profile_manager_->GetProfileInfoCache();
-    size_t profile_index =
-        cache.GetIndexOfProfileWithPath(last_active->GetPath());
-    if (profile_index != std::string::npos)
-      cache.SetProfileActiveTimeAtIndex(profile_index);
-  }
+  profile_manager_->UpdateLastUser(last_active);
 }
 #endif  // !defined(OS_ANDROID) && !defined(OS_IOS)
 

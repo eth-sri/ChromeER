@@ -24,7 +24,7 @@ namespace {
 void GetChromeBundlePath(base::FilePath* chrome_bundle) {
   base::FilePath path;
   PathService::Get(base::DIR_MODULE, &path);
-  path = path.Append(chrome::kBrowserProcessExecutableNameChromium);
+  path = path.Append(chrome::kBrowserProcessExecutableName);
   path = path.ReplaceExtension(base::FilePath::StringType("app"));
   *chrome_bundle = path;
 }

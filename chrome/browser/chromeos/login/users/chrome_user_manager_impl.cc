@@ -192,7 +192,7 @@ SupervisedUserManager* ChromeUserManagerImpl::GetSupervisedUserManager() {
   return supervised_user_manager_.get();
 }
 
-user_manager::UserList ChromeUserManagerImpl::GetUsersAdmittedForMultiProfile()
+user_manager::UserList ChromeUserManagerImpl::GetUsersAllowedForMultiProfile()
     const {
   // Supervised users are not allowed to use multi-profiles.
   if (GetLoggedInUsers().size() == 1 &&
@@ -1005,8 +1005,14 @@ void ChromeUserManagerImpl::NotifyUserListChanged() {
 void ChromeUserManagerImpl::NotifyUserAddedToSession(
     const user_manager::User* added_user,
     bool user_switch_pending) {
-  if (user_switch_pending)
+  // Special case for user session restoration after browser crash.
+  // We don't switch to each user session that has been restored as once all
+  // session will be restored we'll switch to the session that has been used
+  // before the crash.
+  if (user_switch_pending &&
+      !UserSessionManager::GetInstance()->UserSessionsRestoreInProgress()) {
     SetPendingUserSwitchID(added_user->email());
+  }
 
   UpdateNumberOfUsers();
   ChromeUserManager::NotifyUserAddedToSession(added_user, user_switch_pending);
@@ -1022,7 +1028,7 @@ void ChromeUserManagerImpl::UpdateNumberOfUsers() {
   size_t users = GetLoggedInUsers().size();
   if (users) {
     // Write the user number as UMA stat when a multi user session is possible.
-    if ((users + GetUsersAdmittedForMultiProfile().size()) > 1)
+    if ((users + GetUsersAllowedForMultiProfile().size()) > 1)
       ash::MultiProfileUMA::RecordUserCount(users);
   }
 

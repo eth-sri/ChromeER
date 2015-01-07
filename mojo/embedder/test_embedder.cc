@@ -42,13 +42,13 @@ namespace embedder {
 namespace test {
 
 void InitWithSimplePlatformSupport() {
-  Init(scoped_ptr<PlatformSupport>(new SimplePlatformSupport()));
+  Init(make_scoped_ptr(new SimplePlatformSupport()));
 }
 
 bool Shutdown() {
   system::Core* core = system::entrypoints::GetCore();
   CHECK(core);
-  system::entrypoints::SetCore(NULL);
+  system::entrypoints::SetCore(nullptr);
 
   bool rv = system::internal::ShutdownCheckNoLeaks(core);
   delete core;

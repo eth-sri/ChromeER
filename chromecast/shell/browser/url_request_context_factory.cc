@@ -10,6 +10,7 @@
 #include "base/path_service.h"
 #include "base/threading/worker_pool.h"
 #include "chromecast/shell/browser/cast_http_user_agent_settings.h"
+#include "chromecast/shell/browser/cast_network_delegate.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/cookie_store_factory.h"
@@ -30,6 +31,7 @@
 #include "net/ssl/default_channel_id_store.h"
 #include "net/ssl/ssl_config_service_defaults.h"
 #include "net/url_request/data_protocol_handler.h"
+#include "net/url_request/file_protocol_handler.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "net/url_request/url_request_intercepting_job_factory.h"
@@ -63,8 +65,10 @@ class URLRequestContextFactory::URLRequestContextGetter
         request_context_.reset(factory_->CreateMediaRequestContext());
       } else {
         request_context_.reset(factory_->CreateSystemRequestContext());
+#if defined(USE_NSS)
         // Set request context used by NSS for Crl requests.
         net::SetURLRequestContextForNSSHttpIO(request_context_.get());
+#endif  // defined(USE_NSS)
       }
     }
     return request_context_.get();
@@ -130,7 +134,9 @@ class URLRequestContextFactory::MainURLRequestContextGetter
 };
 
 URLRequestContextFactory::URLRequestContextFactory()
-    : system_dependencies_initialized_(false),
+    : app_network_delegate_(CastNetworkDelegate::Create()),
+      system_network_delegate_(CastNetworkDelegate::Create()),
+      system_dependencies_initialized_(false),
       main_dependencies_initialized_(false),
       media_dependencies_initialized_(false) {
 }
@@ -144,13 +150,22 @@ void URLRequestContextFactory::InitializeOnUIThread() {
   // because it registers itself to pref notification observer which is not
   // thread safe.
   http_user_agent_settings_.reset(new CastHttpUserAgentSettings());
+
+  // Proxy config service should be initialized in UI thread, since
+  // ProxyConfigServiceDelegate on Android expects UI thread.
+  proxy_config_service_.reset(net::ProxyService::CreateSystemProxyConfigService(
+      content::BrowserThread::GetMessageLoopProxyForThread(
+          content::BrowserThread::IO),
+      content::BrowserThread::GetMessageLoopProxyForThread(
+          content::BrowserThread::FILE)));
 }
 
 net::URLRequestContextGetter* URLRequestContextFactory::CreateMainGetter(
     content::BrowserContext* browser_context,
     content::ProtocolHandlerMap* protocol_handlers,
     content::URLRequestInterceptorScopedVector request_interceptors) {
-  DCHECK(!main_getter_) << "Main URLRequestContextGetter already initialized";
+  DCHECK(!main_getter_.get())
+      << "Main URLRequestContextGetter already initialized";
   main_getter_ = new MainURLRequestContextGetter(this,
                                                  browser_context,
                                                  protocol_handlers,
@@ -159,19 +174,19 @@ net::URLRequestContextGetter* URLRequestContextFactory::CreateMainGetter(
 }
 
 net::URLRequestContextGetter* URLRequestContextFactory::GetMainGetter() {
-  CHECK(main_getter_);
+  CHECK(main_getter_.get());
   return main_getter_.get();
 }
 
 net::URLRequestContextGetter* URLRequestContextFactory::GetSystemGetter() {
-  if (!system_getter_) {
+  if (!system_getter_.get()) {
     system_getter_ = new URLRequestContextGetter(this, false);
   }
   return system_getter_.get();
 }
 
 net::URLRequestContextGetter* URLRequestContextFactory::GetMediaGetter() {
-  if (!media_getter_) {
+  if (!media_getter_.get()) {
     media_getter_ = new URLRequestContextGetter(this, true);
   }
   return media_getter_.get();
@@ -201,13 +216,7 @@ void URLRequestContextFactory::InitializeSystemContextDependencies() {
   http_server_properties_.reset(new net::HttpServerPropertiesImpl);
 
   proxy_service_.reset(net::ProxyService::CreateUsingSystemProxyResolver(
-      net::ProxyService::CreateSystemProxyConfigService(
-          content::BrowserThread::GetMessageLoopProxyForThread(
-              content::BrowserThread::IO).get(),
-          content::BrowserThread::UnsafeGetMessageLoopForThread(
-              content::BrowserThread::FILE)),
-      0,
-      NULL));
+      proxy_config_service_.release(), 0, NULL));
   system_dependencies_initialized_ = true;
 }
 
@@ -235,6 +244,15 @@ void URLRequestContextFactory::InitializeMainContextDependencies(
       url::kDataScheme,
       new net::DataProtocolHandler);
   DCHECK(set_protocol);
+#if defined(OS_ANDROID)
+  set_protocol = job_factory->SetProtocolHandler(
+      url::kFileScheme,
+      new net::FileProtocolHandler(
+          content::BrowserThread::GetBlockingPool()->
+              GetTaskRunnerWithShutdownBehavior(
+                  base::SequencedWorkerPool::SKIP_ON_SHUTDOWN)));
+  DCHECK(set_protocol);
+#endif  // defined(OS_ANDROID)
 
   // Set up interceptors in the reverse order.
   scoped_ptr<net::URLRequestJobFactory> top_job_factory =
@@ -288,6 +306,7 @@ net::URLRequestContext* URLRequestContextFactory::CreateSystemRequestContext() {
   PopulateNetworkSessionParams(false, &system_params);
   system_transaction_factory_.reset(new net::HttpNetworkLayer(
       new net::HttpNetworkSession(system_params)));
+  system_job_factory_.reset(new net::URLRequestJobFactoryImpl());
 
   net::URLRequestContext* system_context = new net::URLRequestContext();
   system_context->set_host_resolver(host_resolver_.get());
@@ -305,14 +324,16 @@ net::URLRequestContext* URLRequestContextFactory::CreateSystemRequestContext() {
       system_transaction_factory_.get());
   system_context->set_http_user_agent_settings(
       http_user_agent_settings_.get());
+  system_context->set_job_factory(system_job_factory_.get());
   system_context->set_cookie_store(
       content::CreateCookieStore(content::CookieStoreConfig()));
+  system_context->set_network_delegate(system_network_delegate_.get());
   return system_context;
 }
 
 net::URLRequestContext* URLRequestContextFactory::CreateMediaRequestContext() {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
-  DCHECK(main_getter_)
+  DCHECK(main_getter_.get())
       << "Getting MediaRequestContext before MainRequestContext";
   net::URLRequestContext* main_context = main_getter_->GetURLRequestContext();
 
@@ -379,7 +400,15 @@ net::URLRequestContext* URLRequestContextFactory::CreateMainRequestContext(
   main_context->set_http_transaction_factory(
       main_transaction_factory_.get());
   main_context->set_job_factory(main_job_factory_.get());
+  main_context->set_network_delegate(app_network_delegate_.get());
   return main_context;
+}
+
+void URLRequestContextFactory::InitializeNetworkDelegates() {
+  app_network_delegate_->Initialize(false);
+  LOG(INFO) << "Initialized app network delegate.";
+  system_network_delegate_->Initialize(false);
+  LOG(INFO) << "Initialized system network delegate.";
 }
 
 }  // namespace shell

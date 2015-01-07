@@ -10,8 +10,8 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/media_stream_request.h"
-#include "extensions/browser/guest_view/guest_view_constants.h"
 #include "extensions/browser/guest_view/web_view/web_view_permission_types.h"
+#include "extensions/common/guest_view/guest_view_constants.h"
 
 using base::UserMetricsAction;
 
@@ -60,6 +60,9 @@ class WebViewPermissionHelper
       content::WebContents* source,
       const content::MediaStreamRequest& request,
       const content::MediaResponseCallback& callback);
+  bool CheckMediaAccessPermission(content::WebContents* source,
+                                  const GURL& security_origin,
+                                  content::MediaStreamType type);
   void CanDownload(content::RenderViewHost* render_view_host,
                    const GURL& url,
                    const std::string& request_method,
@@ -132,6 +135,11 @@ class WebViewPermissionHelper
   WebViewGuest* web_view_guest() { return web_view_guest_; }
 
  private:
+  void OnMediaPermissionResponse(const content::MediaStreamRequest& request,
+                                 const content::MediaResponseCallback& callback,
+                                 bool allow,
+                                 const std::string& user_input);
+
 #if defined(ENABLE_PLUGINS)
   // content::WebContentsObserver implementation.
   virtual bool OnMessageReceived(

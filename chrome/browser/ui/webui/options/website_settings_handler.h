@@ -11,10 +11,11 @@
 #include "base/macros.h"
 #include "base/scoped_observer.h"
 #include "chrome/browser/browsing_data/browsing_data_local_storage_helper.h"
-#include "chrome/browser/content_settings/content_settings_observer.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/content_settings/local_shared_objects_container.h"
 #include "chrome/browser/ui/webui/options/options_ui.h"
+#include "components/content_settings/core/browser/content_settings_observer.h"
+#include "components/power/origin_power_map.h"
 
 namespace options {
 
@@ -77,6 +78,15 @@ class WebsiteSettingsHandler : public content_settings::Observer,
   // Deletes the local storage and repopulates the page.
   void HandleDeleteLocalStorage(const base::ListValue* args);
 
+  // Populates the default setting drop down on the single site edit page.
+  void HandleUpdateDefaultSetting(const base::ListValue* args);
+
+  // Sets the default setting for the last used content setting to |args|.
+  void HandleSetDefaultSetting(const base::ListValue* args);
+
+  // Sets if a certain content setting enabled to |args|.
+  void HandleSetGlobalToggle(const base::ListValue* args);
+
   // Closes all tabs and app windows which have the same origin as the selected
   // page.
   void HandleStopOrigin(const base::ListValue* args);
@@ -92,6 +102,10 @@ class WebsiteSettingsHandler : public content_settings::Observer,
   // and update the page.
   void UpdateLocalStorage();
 
+  // Get all origins with power consumption, filter them by |last_filter_|,
+  // and update the page.
+  void UpdateBatteryUsage();
+
   // Kill all tabs and app windows which have the same origin as |site_url|.
   void StopOrigin(const GURL& site_url);
 
@@ -106,8 +120,15 @@ class WebsiteSettingsHandler : public content_settings::Observer,
   // Updates the page with the last settings used.
   void Update();
 
+  // Gets the default setting in string form. If |provider_id| is not NULL, the
+  // id of the provider which provided the default setting is assigned to it.
+  std::string GetSettingDefaultFromModel(ContentSettingsType type,
+                                         std::string* provider_id);
+
   // Returns the base URL for websites, or the app name for Chrome App URLs.
   const std::string& GetReadableName(const GURL& site_url);
+
+  Profile* GetProfile();
 
   std::string last_setting_;
   std::string last_filter_;
@@ -117,6 +138,9 @@ class WebsiteSettingsHandler : public content_settings::Observer,
 
   // Observer to watch for content settings changes.
   ScopedObserver<HostContentSettingsMap, content_settings::Observer> observer_;
+
+  // Subscription to watch for power consumption updates.
+  scoped_ptr<power::OriginPowerMap::Subscription> subscription_;
 
   base::WeakPtrFactory<WebsiteSettingsHandler> weak_ptr_factory_;
 

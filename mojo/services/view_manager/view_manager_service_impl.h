@@ -13,6 +13,7 @@
 #include "base/compiler_specific.h"
 #include "base/containers/hash_tables.h"
 #include "base/memory/scoped_ptr.h"
+#include "mojo/services/public/interfaces/surfaces/surface_id.mojom.h"
 #include "mojo/services/public/interfaces/view_manager/view_manager.mojom.h"
 #include "mojo/services/view_manager/access_policy_delegate.h"
 #include "mojo/services/view_manager/ids.h"
@@ -77,6 +78,10 @@ class MOJO_VIEW_MANAGER_EXPORT ViewManagerServiceImpl
                                 const gfx::Rect& old_bounds,
                                 const gfx::Rect& new_bounds,
                                 bool originated_change);
+  void ProcessWillChangeViewHierarchy(const ServerView* view,
+                                      const ServerView* new_parent,
+                                      const ServerView* old_parent,
+                                      bool originated_change);
   void ProcessViewHierarchyChanged(const ServerView* view,
                                    const ServerView* new_parent,
                                    const ServerView* old_parent,
@@ -86,11 +91,13 @@ class MOJO_VIEW_MANAGER_EXPORT ViewManagerServiceImpl
                           OrderDirection direction,
                           bool originated_change);
   void ProcessViewDeleted(const ViewId& view, bool originated_change);
+  void ProcessWillChangeViewVisibility(const ServerView* view,
+                                       bool originated_change);
 
   // TODO(sky): move this to private section (currently can't because of
   // bindings).
   // InterfaceImp overrides:
-  virtual void OnConnectionError() MOJO_OVERRIDE;
+  virtual void OnConnectionError() override;
 
  private:
   typedef std::map<ConnectionSpecificId, ServerView*> ViewMap;
@@ -119,11 +126,6 @@ class MOJO_VIEW_MANAGER_EXPORT ViewManagerServiceImpl
   void RemoveFromKnown(const ServerView* view,
                        std::vector<ServerView*>* local_views);
 
-  // Adds |view_id| to the set of roots this connection knows about. The caller
-  // should have verified |view_id| is not among the roots of this connection.
-  void AddRoot(const ViewId& view_id,
-               InterfaceRequest<ServiceProvider> service_provider);
-
   // Removes |view_id| from the set of roots this connection knows about.
   void RemoveRoot(const ViewId& view_id);
 
@@ -140,6 +142,10 @@ class MOJO_VIEW_MANAGER_EXPORT ViewManagerServiceImpl
   // CanDescendIntoViewForViewTree() returns true.
   void GetViewTreeImpl(const ServerView* view,
                        std::vector<const ServerView*>* views) const;
+
+  // Notify the client if the drawn state of any of the roots changes.
+  // |view| is the view that is changing to the drawn state |new_drawn_value|.
+  void NotifyDrawnStateChanged(const ServerView* view, bool new_drawn_value);
 
   // ViewManagerService:
   virtual void CreateView(Id transport_view_id,
@@ -159,10 +165,9 @@ class MOJO_VIEW_MANAGER_EXPORT ViewManagerServiceImpl
   virtual void GetViewTree(
       Id view_id,
       const Callback<void(Array<ViewDataPtr>)>& callback) OVERRIDE;
-  virtual void SetViewContents(Id view_id,
-                               ScopedSharedBufferHandle buffer,
-                               uint32_t buffer_size,
-                               const Callback<void(bool)>& callback) OVERRIDE;
+  virtual void SetViewSurfaceId(Id view_id,
+                                SurfaceIdPtr surface_id,
+                                const Callback<void(bool)>& callback) OVERRIDE;
   virtual void SetViewBounds(Id view_id,
                              RectPtr bounds,
                              const Callback<void(bool)>& callback) OVERRIDE;
@@ -176,7 +181,7 @@ class MOJO_VIEW_MANAGER_EXPORT ViewManagerServiceImpl
   virtual void DispatchOnViewInputEvent(Id view_id, EventPtr event) OVERRIDE;
 
   // InterfaceImpl:
-  virtual void OnConnectionEstablished() MOJO_OVERRIDE;
+  virtual void OnConnectionEstablished() override;
 
   // AccessPolicyDelegate:
   virtual const base::hash_set<Id>& GetRootsForAccessPolicy() const OVERRIDE;

@@ -1,3 +1,0 @@
-include_rules = [
-   "+extensions/shell/browser/shell_app_window.h",
-]

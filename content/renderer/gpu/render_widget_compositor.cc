@@ -178,8 +178,6 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
   settings.main_frame_before_activation_enabled =
       cmd->HasSwitch(cc::switches::kEnableMainFrameBeforeActivation) &&
       !cmd->HasSwitch(cc::switches::kDisableMainFrameBeforeActivation);
-  settings.main_frame_before_draw_enabled =
-      !cmd->HasSwitch(cc::switches::kDisableMainFrameBeforeDraw);
   settings.report_overscroll_only_for_scrollable_axes = true;
   settings.accelerated_animation_enabled =
       !cmd->HasSwitch(cc::switches::kDisableThreadedAnimation);
@@ -229,7 +227,6 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
         render_thread->is_gpu_rasterization_forced();
     settings.gpu_rasterization_enabled =
         render_thread->is_gpu_rasterization_enabled();
-    settings.create_low_res_tiling = render_thread->is_low_res_tiling_enabled();
     settings.can_use_lcd_text = render_thread->is_lcd_text_enabled();
     settings.use_distance_field_text =
         render_thread->is_distance_field_text_enabled();
@@ -392,6 +389,9 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
   settings.should_clear_root_render_pass =
       !synchronous_compositor_factory;
 
+  // TODO(danakj): Only do this on low end devices.
+  settings.create_low_res_tiling = true;
+
 #elif !defined(OS_MACOSX)
   if (ui::IsOverlayScrollbarEnabled()) {
     settings.scrollbar_animator = cc::LayerTreeSettings::Thinning;
@@ -407,6 +407,11 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
   settings.scrollbar_fade_duration_ms = 300;
 #endif
 
+  if (cmd->HasSwitch(switches::kEnableLowResTiling))
+    settings.create_low_res_tiling = true;
+  if (cmd->HasSwitch(switches::kDisableLowResTiling))
+    settings.create_low_res_tiling = false;
+
   compositor->Initialize(settings);
 
   return compositor.Pass();
@@ -416,11 +421,13 @@ RenderWidgetCompositor::RenderWidgetCompositor(RenderWidget* widget,
                                                bool threaded)
     : threaded_(threaded),
       widget_(widget),
-      send_v8_idle_notification_after_commit_(false) {
+      send_v8_idle_notification_after_commit_(true) {
   CommandLine* cmd = CommandLine::ForCurrentProcess();
 
-  if (cmd->HasSwitch(switches::kSendV8IdleNotificationAfterCommit))
+  if (cmd->HasSwitch(switches::kEnableV8IdleNotificationAfterCommit))
     send_v8_idle_notification_after_commit_ = true;
+  if (cmd->HasSwitch(switches::kDisableV8IdleNotificationAfterCommit))
+    send_v8_idle_notification_after_commit_ = false;
 }
 
 RenderWidgetCompositor::~RenderWidgetCompositor() {}
@@ -453,9 +460,8 @@ void RenderWidgetCompositor::UpdateTopControlsState(
                                            animate);
 }
 
-void RenderWidgetCompositor::SetTopControlsLayoutHeight(
-    float top_controls_layout_height) {
-  layer_tree_host_->SetTopControlsLayoutHeight(top_controls_layout_height);
+void RenderWidgetCompositor::SetTopControlsLayoutHeight(float height) {
+  layer_tree_host_->SetTopControlsLayoutHeight(height);
 }
 
 void RenderWidgetCompositor::SetNeedsRedrawRect(gfx::Rect damage_rect) {
@@ -515,6 +521,8 @@ bool RenderWidgetCompositor::SendMessageToMicroBenchmark(
 
 void RenderWidgetCompositor::Initialize(cc::LayerTreeSettings settings) {
   scoped_refptr<base::MessageLoopProxy> compositor_message_loop_proxy;
+  scoped_refptr<base::SingleThreadTaskRunner>
+      main_thread_compositor_task_runner(base::MessageLoopProxy::current());
   RenderThreadImpl* render_thread = RenderThreadImpl::current();
   cc::SharedBitmapManager* shared_bitmap_manager = NULL;
   // render_thread may be NULL in tests.
@@ -522,21 +530,23 @@ void RenderWidgetCompositor::Initialize(cc::LayerTreeSettings settings) {
     compositor_message_loop_proxy =
         render_thread->compositor_message_loop_proxy();
     shared_bitmap_manager = render_thread->shared_bitmap_manager();
+    main_thread_compositor_task_runner =
+        render_thread->main_thread_compositor_task_runner();
   }
   if (compositor_message_loop_proxy.get()) {
-    layer_tree_host_ = cc::LayerTreeHost::CreateThreaded(
-        this,
-        shared_bitmap_manager,
-        settings,
-        base::MessageLoopProxy::current(),
-        compositor_message_loop_proxy);
+    layer_tree_host_ =
+        cc::LayerTreeHost::CreateThreaded(this,
+                                          shared_bitmap_manager,
+                                          settings,
+                                          main_thread_compositor_task_runner,
+                                          compositor_message_loop_proxy);
   } else {
     layer_tree_host_ = cc::LayerTreeHost::CreateSingleThreaded(
         this,
         this,
         shared_bitmap_manager,
         settings,
-        base::MessageLoopProxy::current());
+        main_thread_compositor_task_runner);
   }
   DCHECK(layer_tree_host_);
 }
@@ -746,6 +756,10 @@ void RenderWidgetCompositor::setShowScrollBottleneckRects(bool show) {
   layer_tree_host_->SetDebugState(debug_state);
 }
 
+void RenderWidgetCompositor::setTopControlsContentOffset(float offset) {
+  layer_tree_host_->SetTopControlsContentOffset(offset);
+}
+
 void RenderWidgetCompositor::WillBeginMainFrame(int frame_id) {
   widget_->InstrumentWillBeginFrame(frame_id);
   widget_->willBeginCompositorFrame();
@@ -756,11 +770,13 @@ void RenderWidgetCompositor::DidBeginMainFrame() {
 }
 
 void RenderWidgetCompositor::BeginMainFrame(const cc::BeginFrameArgs& args) {
-  VLOG(2) << "RenderWidgetCompositor::BeginMainFrame";
   begin_main_frame_time_ = args.frame_time;
   begin_main_frame_interval_ = args.interval;
-  double frame_time = (args.frame_time - base::TimeTicks()).InSecondsF();
-  WebBeginFrameArgs web_begin_frame_args = WebBeginFrameArgs(frame_time);
+  double frame_time_sec = (args.frame_time - base::TimeTicks()).InSecondsF();
+  double deadline_sec = (args.deadline - base::TimeTicks()).InSecondsF();
+  double interval_sec = args.interval.InSecondsF();
+  WebBeginFrameArgs web_begin_frame_args =
+      WebBeginFrameArgs(frame_time_sec, deadline_sec, interval_sec);
   widget_->webwidget()->beginFrame(web_begin_frame_args);
 }
 
@@ -768,15 +784,30 @@ void RenderWidgetCompositor::Layout() {
   widget_->webwidget()->layout();
 }
 
-void RenderWidgetCompositor::ApplyScrollAndScale(
-    const gfx::Vector2d& scroll_delta,
-    float page_scale) {
-  widget_->webwidget()->applyScrollAndScale(scroll_delta, page_scale);
+void RenderWidgetCompositor::ApplyViewportDeltas(
+    const gfx::Vector2d& inner_delta,
+    const gfx::Vector2d& outer_delta,
+    float page_scale,
+    float top_controls_delta) {
+  widget_->webwidget()->applyViewportDeltas(
+      inner_delta,
+      outer_delta,
+      page_scale,
+      top_controls_delta);
 }
 
-scoped_ptr<cc::OutputSurface> RenderWidgetCompositor::CreateOutputSurface(
-    bool fallback) {
-  return widget_->CreateOutputSurface(fallback);
+void RenderWidgetCompositor::ApplyViewportDeltas(
+    const gfx::Vector2d& scroll_delta,
+    float page_scale,
+    float top_controls_delta) {
+  widget_->webwidget()->applyViewportDeltas(
+      scroll_delta,
+      page_scale,
+      top_controls_delta);
+}
+
+void RenderWidgetCompositor::RequestNewOutputSurface(bool fallback) {
+  layer_tree_host_->SetOutputSurface(widget_->CreateOutputSurface(fallback));
 }
 
 void RenderWidgetCompositor::DidInitializeOutputSurface() {
@@ -795,12 +826,14 @@ void RenderWidgetCompositor::DidCommit() {
       // Convert to 32-bit microseconds first to avoid costly 64-bit division.
       int32 idle_time_in_us = idle_time.InMicroseconds();
       int32 idle_time_in_ms = idle_time_in_us / 1000;
-      blink::mainThreadIsolate()->IdleNotification(idle_time_in_ms);
+      if (idle_time_in_ms)
+        blink::mainThreadIsolate()->IdleNotification(idle_time_in_ms);
     }
   }
 
   widget_->DidCommitCompositorFrame();
   widget_->didBecomeReadyForAdditionalInput();
+  widget_->webwidget()->didCommitFrameToCompositor();
 }
 
 void RenderWidgetCompositor::DidCommitAndDrawFrame() {

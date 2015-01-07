@@ -205,7 +205,7 @@
 #endif  // OS_WIN
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/drive/file_system_util.h"
+#include "chrome/browser/chromeos/fileapi/external_file_url_util.h"
 #endif
 
 #if defined(USE_ASH)
@@ -310,8 +310,6 @@ class Browser::InterstitialObserver : public content::WebContentsObserver {
         browser_(browser) {
   }
 
-  using content::WebContentsObserver::web_contents;
-
   virtual void DidAttachInterstitialPage() OVERRIDE {
     browser_->UpdateBookmarkBarState(BOOKMARK_BAR_STATE_CHANGE_TAB_STATE);
   }
@@ -353,9 +351,9 @@ Browser::Browser(const CreateParams& params)
       command_controller_(new chrome::BrowserCommandController(this)),
       window_has_shown_(false),
       chrome_updater_factory_(this),
-      weak_factory_(this),
       translate_driver_observer_(
-          new BrowserContentTranslateDriverObserver(this)) {
+          new BrowserContentTranslateDriverObserver(this)),
+      weak_factory_(this) {
   // If this causes a crash then a window is being opened using a profile type
   // that is disallowed by policy. The crash prevents the disabled window type
   // from opening at all, but the path that triggered it should be fixed.
@@ -369,8 +367,6 @@ Browser::Browser(const CreateParams& params)
   else
     unload_controller_.reset(new chrome::UnloadController(this));
 
-  if (!app_name_.empty())
-    chrome::RegisterAppPrefs(app_name_, profile_);
   tab_strip_model_->AddObserver(this);
 
   toolbar_model_.reset(new ToolbarModelImpl(toolbar_model_delegate_.get()));
@@ -865,7 +861,7 @@ void Browser::UpdateDownloadShelfVisibility(bool visible) {
 ///////////////////////////////////////////////////////////////////////////////
 
 void Browser::UpdateUIForNavigationInTab(WebContents* contents,
-                                         content::PageTransition transition,
+                                         ui::PageTransition transition,
                                          bool user_initiated) {
   tab_strip_model_->TabNavigating(contents, transition);
 
@@ -1432,8 +1428,7 @@ bool Browser::IsPopupOrPanel(const WebContents* source) const {
   return is_type_popup();
 }
 
-void Browser::UpdateTargetURL(WebContents* source, int32 page_id,
-                              const GURL& url) {
+void Browser::UpdateTargetURL(WebContents* source, const GURL& url) {
   if (!GetStatusBubble())
     return;
 
@@ -1763,6 +1758,12 @@ void Browser::RequestMediaAccessPermission(
   ::RequestMediaAccessPermission(web_contents, profile_, request, callback);
 }
 
+bool Browser::CheckMediaAccessPermission(content::WebContents* web_contents,
+                                         const GURL& security_origin,
+                                         content::MediaStreamType type) {
+  return ::CheckMediaAccessPermission(web_contents, security_origin, type);
+}
+
 bool Browser::RequestPpapiBrokerPermission(
     WebContents* web_contents,
     const GURL& url,
@@ -1834,7 +1835,7 @@ void Browser::NavigateOnThumbnailClick(const GURL& url,
   // TODO(kmadhusu): Page transitions to privileged destinations should be
   // marked as "LINK" instead of "AUTO_BOOKMARK"?
   chrome::NavigateParams params(this, url,
-                                content::PAGE_TRANSITION_AUTO_BOOKMARK);
+                                ui::PAGE_TRANSITION_AUTO_BOOKMARK);
   params.referrer = content::Referrer();
   params.source_contents = source_contents;
   params.disposition = disposition;
@@ -1922,14 +1923,17 @@ void Browser::FileSelectedWithExtraInfo(const ui::SelectedFileInfo& file_info,
   GURL url = net::FilePathToFileURL(file_info.local_path);
 
 #if defined(OS_CHROMEOS)
-  drive::util::MaybeSetDriveURL(profile_, file_info.file_path, &url);
+  const GURL external_url =
+      chromeos::CreateExternalFileURLFromPath(profile_, file_info.file_path);
+  if (!external_url.is_empty())
+    url = external_url;
 #endif
 
   if (url.is_empty())
     return;
 
   OpenURL(OpenURLParams(
-      url, Referrer(), CURRENT_TAB, content::PAGE_TRANSITION_TYPED, false));
+      url, Referrer(), CURRENT_TAB, ui::PAGE_TRANSITION_TYPED, false));
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -2245,14 +2249,15 @@ void Browser::SetAsDelegate(WebContents* web_contents, bool set_delegate) {
   CoreTabHelper::FromWebContents(web_contents)->set_delegate(delegate);
   SearchEngineTabHelper::FromWebContents(web_contents)->set_delegate(delegate);
   SearchTabHelper::FromWebContents(web_contents)->set_delegate(delegate);
-  if (delegate)
+  translate::ContentTranslateDriver& content_translate_driver =
+      ChromeTranslateClient::FromWebContents(web_contents)->translate_driver();
+  if (delegate) {
     ZoomController::FromWebContents(web_contents)->AddObserver(this);
-  else
+    content_translate_driver.AddObserver(translate_driver_observer_.get());
+  } else {
     ZoomController::FromWebContents(web_contents)->RemoveObserver(this);
-  ChromeTranslateClient* chrome_translate_client =
-      ChromeTranslateClient::FromWebContents(web_contents);
-  chrome_translate_client->translate_driver().set_observer(
-      delegate ? delegate->translate_driver_observer_.get() : NULL);
+    content_translate_driver.RemoveObserver(translate_driver_observer_.get());
+  }
 }
 
 void Browser::CloseFrame() {
@@ -2475,7 +2480,7 @@ bool Browser::MaybeCreateBackgroundContents(
     contents->web_contents()->GetController().LoadURL(
         target_url,
         content::Referrer(),
-        content::PAGE_TRANSITION_LINK,
+        ui::PAGE_TRANSITION_LINK,
         std::string());  // No extra headers.
   }
 

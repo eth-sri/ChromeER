@@ -24,7 +24,6 @@
 #include "chrome/browser/history/history_db_task.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
-#include "chrome/browser/history/history_types.h"
 #include "chrome/browser/history/top_sites.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search/instant_service.h"
@@ -53,6 +52,7 @@
 #include "components/bookmarks/browser/bookmark_utils.h"
 #include "components/bookmarks/test/bookmark_test_helpers.h"
 #include "components/google/core/browser/google_url_tracker.h"
+#include "components/history/core/browser/history_types.h"
 #include "components/history/core/common/thumbnail_score.h"
 #include "components/omnibox/autocomplete_match.h"
 #include "components/omnibox/autocomplete_provider.h"
@@ -834,17 +834,19 @@ IN_PROC_BROWSER_TEST_F(InstantExtendedPrefetchTest, SetPrefetchQuery) {
   observer.Wait();
 
   // Set the fake response for suggest request. Response has prefetch details.
-  // Ensure that the page received the prefetch query.
+  // Ensure that the page received the suggest response, then add another
+  // keystroke to allow the asynchronously-received inline autocomplete
+  // suggestion to actually be inlined (which in turn triggers it to prefetch).
   fake_factory()->SetFakeResponse(
-      instant_url().Resolve("#q=pupp"),
-      "[\"pupp\",[\"puppy\", \"puppies\"],[],[],"
+      instant_url().Resolve("#q=pup"),
+      "[\"pup\",[\"puppy\", \"puppies\"],[],[],"
       "{\"google:clientdata\":{\"phi\": 0},"
           "\"google:suggesttype\":[\"QUERY\", \"QUERY\"],"
           "\"google:suggestrelevance\":[1400, 9]}]",
       net::HTTP_OK,
       net::URLRequestStatus::SUCCESS);
 
-  SetOmniboxText("pupp");
+  SetOmniboxText("pup");
   while (!omnibox()->model()->autocomplete_controller()->done()) {
     content::WindowedNotificationObserver ready_observer(
         chrome::NOTIFICATION_AUTOCOMPLETE_CONTROLLER_RESULT_READY,
@@ -852,6 +854,7 @@ IN_PROC_BROWSER_TEST_F(InstantExtendedPrefetchTest, SetPrefetchQuery) {
             omnibox()->model()->autocomplete_controller()));
     ready_observer.Wait();
   }
+  SetOmniboxText("pupp");
 
   ASSERT_EQ(3, CountSearchProviderSuggestions());
   content::WebContents* active_tab =

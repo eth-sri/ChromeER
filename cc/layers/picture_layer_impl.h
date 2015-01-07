@@ -51,6 +51,8 @@ class CC_EXPORT PictureLayerImpl
    private:
     enum IteratorType { LOW_RES, HIGH_RES, NUM_ITERATORS };
 
+    void AdvanceToNextStage();
+
     PictureLayerImpl* layer_;
 
     struct IterationStage {
@@ -108,7 +110,7 @@ class CC_EXPORT PictureLayerImpl
                            const OcclusionTracker<LayerImpl>& occlusion_tracker,
                            AppendQuadsData* append_quads_data) OVERRIDE;
   virtual void UpdateTiles(
-      const OcclusionTracker<LayerImpl>* occlusion_tracker) OVERRIDE;
+      const Occlusion& occlusion_in_content_space) OVERRIDE;
   virtual void NotifyTileStateChanged(const Tile* tile) OVERRIDE;
   virtual void DidBecomeActive() OVERRIDE;
   virtual void DidBeginTracing() OVERRIDE;
@@ -135,8 +137,7 @@ class CC_EXPORT PictureLayerImpl
   // PushPropertiesTo active tree => pending tree.
   void SyncTiling(const PictureLayerTiling* tiling);
 
-  // Mask-related functions
-  void SetIsMask(bool is_mask);
+  // Mask-related functions.
   virtual ResourceProvider::ResourceId ContentsResourceId() const OVERRIDE;
 
   virtual size_t GPUMemoryUsageInBytes() const OVERRIDE;
@@ -159,8 +160,7 @@ class CC_EXPORT PictureLayerImpl
   void RemoveAllTilings();
   void SyncFromActiveLayer(const PictureLayerImpl* other);
   void AddTilingsForRasterScale();
-  void UpdateTilePriorities(
-      const OcclusionTracker<LayerImpl>* occlusion_tracker);
+  void UpdateTilePriorities(const Occlusion& occlusion_in_content_space);
   virtual bool ShouldAdjustRasterScale() const;
   virtual void RecalculateRasterScales();
   void CleanUpTilingsOnActiveLayer(
@@ -172,7 +172,6 @@ class CC_EXPORT PictureLayerImpl
   bool MarkVisibleTilesAsRequired(
       PictureLayerTiling* tiling,
       const PictureLayerTiling* optional_twin_tiling,
-      float contents_scale,
       const gfx::Rect& rect,
       const Region& missing_region) const;
   gfx::Rect GetViewportForTilePriorityInContentSpace() const;
@@ -204,8 +203,6 @@ class CC_EXPORT PictureLayerImpl
   scoped_ptr<PictureLayerTilingSet> tilings_;
   scoped_refptr<PicturePileImpl> pile_;
   Region invalidation_;
-
-  bool is_mask_;
 
   float ideal_page_scale_;
   float ideal_device_scale_;

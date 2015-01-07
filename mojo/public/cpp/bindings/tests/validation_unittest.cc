@@ -180,7 +180,7 @@ void RunValidationTests(const std::string& prefix,
 
 class DummyMessageReceiver : public MessageReceiver {
  public:
-  virtual bool Accept(Message* message) MOJO_OVERRIDE {
+  virtual bool Accept(Message* message) override {
     return true;  // Any message is OK.
   }
 };
@@ -196,23 +196,23 @@ class ValidationTest : public testing::Test {
 
 class ValidationIntegrationTest : public ValidationTest {
  public:
-  ValidationIntegrationTest() : test_message_receiver_(NULL) {
+  ValidationIntegrationTest() : test_message_receiver_(nullptr) {
   }
 
   virtual ~ValidationIntegrationTest() {
   }
 
-  virtual void SetUp() MOJO_OVERRIDE {
+  virtual void SetUp() override {
     ScopedMessagePipeHandle tester_endpoint;
     ASSERT_EQ(MOJO_RESULT_OK,
-              CreateMessagePipe(NULL, &tester_endpoint, &testee_endpoint_));
+              CreateMessagePipe(nullptr, &tester_endpoint, &testee_endpoint_));
     test_message_receiver_ =
         new TestMessageReceiver(this, tester_endpoint.Pass());
   }
 
-  virtual void TearDown() MOJO_OVERRIDE {
+  virtual void TearDown() override {
     delete test_message_receiver_;
-    test_message_receiver_ = NULL;
+    test_message_receiver_ = nullptr;
 
     // Make sure that the other end receives the OnConnectionError()
     // notification.
@@ -238,7 +238,7 @@ class ValidationIntegrationTest : public ValidationTest {
     virtual ~TestMessageReceiver() {
     }
 
-    virtual bool Accept(Message* message) MOJO_OVERRIDE {
+    virtual bool Accept(Message* message) override {
       bool rv = connector_.Accept(message);
       owner_->PumpMessages();
       return rv;
@@ -263,8 +263,7 @@ class IntegrationTestInterface1Client : public IntegrationTestInterface1 {
   virtual ~IntegrationTestInterface1Client() {
   }
 
-  virtual void Method0(BasicStructPtr param0) MOJO_OVERRIDE {
-  }
+  virtual void Method0(BasicStructPtr param0) override {}
 };
 
 class IntegrationTestInterface1Impl
@@ -273,8 +272,7 @@ class IntegrationTestInterface1Impl
   virtual ~IntegrationTestInterface1Impl() {
   }
 
-  virtual void Method0(BasicStructPtr param0) MOJO_OVERRIDE {
-  }
+  virtual void Method0(BasicStructPtr param0) override {}
 };
 
 TEST_F(ValidationTest, InputParser) {
@@ -371,7 +369,7 @@ TEST_F(ValidationTest, InputParser) {
       "[dist4]a [dist4]a [anchr]a",
       "[dist4]a [anchr]a [dist4]a [anchr]a",
       "0 [handles]50",
-      NULL
+      nullptr
     };
 
     for (size_t i = 0; error_inputs[i]; ++i) {
@@ -389,6 +387,15 @@ TEST_F(ValidationTest, Conformance) {
   validators.Append<ConformanceTestInterface::RequestValidator_>();
 
   RunValidationTests("conformance_", validators.GetHead());
+}
+
+TEST_F(ValidationTest, NotImplemented) {
+  DummyMessageReceiver dummy_receiver;
+  mojo::internal::FilterChain validators(&dummy_receiver);
+  validators.Append<mojo::internal::MessageHeaderValidator>();
+  validators.Append<ConformanceTestInterface::RequestValidator_>();
+
+  RunValidationTests("not_implemented_", validators.GetHead());
 }
 
 TEST_F(ValidationIntegrationTest, InterfacePtr) {

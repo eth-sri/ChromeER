@@ -17,7 +17,8 @@ FakePictureLayerImpl::FakePictureLayerImpl(LayerTreeImpl* tree_impl,
       append_quads_count_(0),
       did_become_active_call_count_(0),
       has_valid_tile_priorities_(false),
-      use_set_valid_tile_priorities_flag_(false) {
+      use_set_valid_tile_priorities_flag_(false),
+      release_resources_count_(0) {
   pile_ = pile;
   SetBounds(pile_->tiling_size());
   SetContentBounds(pile_->tiling_size());
@@ -31,7 +32,8 @@ FakePictureLayerImpl::FakePictureLayerImpl(LayerTreeImpl* tree_impl,
       append_quads_count_(0),
       did_become_active_call_count_(0),
       has_valid_tile_priorities_(false),
-      use_set_valid_tile_priorities_flag_(false) {
+      use_set_valid_tile_priorities_flag_(false),
+      release_resources_count_(0) {
   pile_ = pile;
   SetBounds(layer_bounds);
   SetContentBounds(layer_bounds);
@@ -42,13 +44,13 @@ FakePictureLayerImpl::FakePictureLayerImpl(LayerTreeImpl* tree_impl, int id)
       append_quads_count_(0),
       did_become_active_call_count_(0),
       has_valid_tile_priorities_(false),
-      use_set_valid_tile_priorities_flag_(false) {
+      use_set_valid_tile_priorities_flag_(false),
+      release_resources_count_(0) {
 }
 
 scoped_ptr<LayerImpl> FakePictureLayerImpl::CreateLayerImpl(
     LayerTreeImpl* tree_impl) {
-  return make_scoped_ptr(
-      new FakePictureLayerImpl(tree_impl, id())).PassAs<LayerImpl>();
+  return make_scoped_ptr(new FakePictureLayerImpl(tree_impl, id()));
 }
 
 void FakePictureLayerImpl::AppendQuads(
@@ -140,11 +142,14 @@ void FakePictureLayerImpl::SetAllTilesReadyInTiling(
   std::vector<Tile*> tiles = tiling->AllTilesForTesting();
   for (size_t tile_idx = 0; tile_idx < tiles.size(); ++tile_idx) {
     Tile* tile = tiles[tile_idx];
-    ManagedTileState& state = tile->managed_state();
-    for (size_t mode_idx = 0; mode_idx < NUM_RASTER_MODES; ++mode_idx)
-      state.tile_versions[mode_idx].SetSolidColorForTesting(true);
-    DCHECK(tile->IsReadyToDraw());
+    SetTileReady(tile);
   }
+}
+
+void FakePictureLayerImpl::SetTileReady(Tile* tile) {
+  ManagedTileState& state = tile->managed_state();
+  state.draw_info.SetSolidColorForTesting(true);
+  DCHECK(tile->IsReadyToDraw());
 }
 
 void FakePictureLayerImpl::CreateDefaultTilingsAndTiles() {
@@ -173,6 +178,11 @@ bool FakePictureLayerImpl::HasValidTilePriorities() const {
   return use_set_valid_tile_priorities_flag_
              ? has_valid_tile_priorities_
              : PictureLayerImpl::HasValidTilePriorities();
+}
+
+void FakePictureLayerImpl::ReleaseResources() {
+  PictureLayerImpl::ReleaseResources();
+  ++release_resources_count_;
 }
 
 }  // namespace cc

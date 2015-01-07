@@ -27,7 +27,7 @@ namespace content {
 void InitNavigateParams(FrameHostMsg_DidCommitProvisionalLoad_Params* params,
                         int page_id,
                         const GURL& url,
-                        PageTransition transition) {
+                        ui::PageTransition transition) {
   params->page_id = page_id;
   params->url = url;
   params->referrer = Referrer();
@@ -111,7 +111,7 @@ gfx::Rect TestRenderWidgetHostView::GetViewBounds() const {
 void TestRenderWidgetHostView::CopyFromCompositingSurface(
     const gfx::Rect& src_subrect,
     const gfx::Size& dst_size,
-    const base::Callback<void(bool, const SkBitmap&)>& callback,
+    CopyFromCompositingSurfaceCallback& callback,
     const SkColorType color_type) {
   callback.Run(false, SkBitmap());
 }
@@ -125,23 +125,6 @@ void TestRenderWidgetHostView::CopyFromCompositingSurfaceToVideoFrame(
 
 bool TestRenderWidgetHostView::CanCopyToVideoFrame() const {
   return false;
-}
-
-void TestRenderWidgetHostView::AcceleratedSurfaceInitialized(int host_id,
-                                                             int route_id) {
-}
-
-void TestRenderWidgetHostView::AcceleratedSurfaceBuffersSwapped(
-    const GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params& params,
-    int gpu_host_id) {
-}
-
-void TestRenderWidgetHostView::AcceleratedSurfacePostSubBuffer(
-    const GpuHostMsg_AcceleratedSurfacePostSubBuffer_Params& params,
-    int gpu_host_id) {
-}
-
-void TestRenderWidgetHostView::AcceleratedSurfaceSuspend() {
 }
 
 bool TestRenderWidgetHostView::HasAcceleratedSurface(
@@ -272,7 +255,7 @@ void TestRenderViewHost::SendFailedNavigate(int page_id, const GURL& url) {
 void TestRenderViewHost::SendNavigateWithTransition(
     int page_id,
     const GURL& url,
-    PageTransition transition) {
+    ui::PageTransition transition) {
   main_render_frame_host_->SendNavigateWithTransition(page_id, url, transition);
 }
 
@@ -299,7 +282,7 @@ void TestRenderViewHost::SendNavigateWithParams(
 void TestRenderViewHost::SendNavigateWithTransitionAndResponseCode(
     int page_id,
     const GURL& url,
-    PageTransition transition,
+    ui::PageTransition transition,
     int response_code) {
   main_render_frame_host_->SendNavigateWithTransitionAndResponseCode(
       page_id, url, transition, response_code);
@@ -308,7 +291,7 @@ void TestRenderViewHost::SendNavigateWithTransitionAndResponseCode(
 void TestRenderViewHost::SendNavigateWithParameters(
     int page_id,
     const GURL& url,
-    PageTransition transition,
+    ui::PageTransition transition,
     const GURL& original_request_url,
     int response_code,
     const base::FilePath* file_path_for_history_item) {
@@ -318,19 +301,9 @@ void TestRenderViewHost::SendNavigateWithParameters(
       file_path_for_history_item, std::vector<GURL>());
 }
 
-void TestRenderViewHost::SendBeforeUnloadACK(bool proceed) {
-  // TODO(creis): Move this whole method to TestRenderFrameHost.
-  base::TimeTicks now = base::TimeTicks::Now();
-  main_render_frame_host_->OnBeforeUnloadACK(proceed, now, now);
-}
-
 void TestRenderViewHost::SetContentsMimeType(const std::string& mime_type) {
   contents_mime_type_ = mime_type;
   main_render_frame_host_->set_contents_mime_type(mime_type);
-}
-
-void TestRenderViewHost::SimulateSwapOutACK() {
-  OnSwappedOut(false);
 }
 
 void TestRenderViewHost::SimulateWasHidden() {
@@ -350,9 +323,9 @@ void TestRenderViewHost::TestOnStartDragging(
 }
 
 void TestRenderViewHost::TestOnUpdateStateWithFile(
-    int process_id,
+    int page_id,
     const base::FilePath& file_path) {
-  OnUpdateState(process_id,
+  OnUpdateState(page_id,
                 PageState::CreateForTesting(GURL("http://www.google.com"),
                                             false,
                                             "data",

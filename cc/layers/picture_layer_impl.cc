@@ -16,6 +16,7 @@
 #include "cc/debug/micro_benchmark_impl.h"
 #include "cc/debug/traced_value.h"
 #include "cc/layers/append_quads_data.h"
+#include "cc/layers/solid_color_layer_impl.h"
 #include "cc/output/begin_frame_args.h"
 #include "cc/quads/checkerboard_draw_quad.h"
 #include "cc/quads/debug_border_draw_quad.h"
@@ -62,7 +63,6 @@ PictureLayerImpl::PictureLayerImpl(LayerTreeImpl* tree_impl, int id)
     : LayerImpl(tree_impl, id),
       twin_layer_(NULL),
       pile_(PicturePileImpl::Create()),
-      is_mask_(false),
       ideal_page_scale_(0.f),
       ideal_device_scale_(0.f),
       ideal_source_scale_(0.f),
@@ -89,7 +89,7 @@ const char* PictureLayerImpl::LayerTypeAsString() const {
 
 scoped_ptr<LayerImpl> PictureLayerImpl::CreateLayerImpl(
     LayerTreeImpl* tree_impl) {
-  return PictureLayerImpl::Create(tree_impl, id()).PassAs<LayerImpl>();
+  return PictureLayerImpl::Create(tree_impl, id());
 }
 
 void PictureLayerImpl::PushPropertiesTo(LayerImpl* base_layer) {
@@ -114,14 +114,18 @@ void PictureLayerImpl::PushPropertiesTo(LayerImpl* base_layer) {
   layer_impl->twin_layer_ = NULL;
   twin_layer_ = NULL;
 
-  layer_impl->SetIsMask(is_mask_);
   layer_impl->pile_ = pile_;
 
+  DCHECK(!pile_->is_solid_color() || !tilings_->num_tilings());
   // Tilings would be expensive to push, so we swap.
   layer_impl->tilings_.swap(tilings_);
   layer_impl->tilings_->SetClient(layer_impl);
   if (tilings_)
     tilings_->SetClient(this);
+
+  // Ensure that the recycle tree doesn't have any unshared tiles.
+  if (tilings_ && pile_->is_solid_color())
+    tilings_->RemoveAllTilings();
 
   // Remove invalidated tiles from what will become a recycle tree.
   if (tilings_)
@@ -152,6 +156,26 @@ void PictureLayerImpl::AppendQuads(
     AppendQuadsData* append_quads_data) {
   DCHECK(!needs_post_commit_initialization_);
 
+  SharedQuadState* shared_quad_state =
+      render_pass->CreateAndAppendSharedQuadState();
+
+  if (pile_->is_solid_color()) {
+    PopulateSharedQuadState(shared_quad_state);
+
+    AppendDebugBorderQuad(
+        render_pass, content_bounds(), shared_quad_state, append_quads_data);
+
+    SolidColorLayerImpl::AppendSolidQuads(
+        render_pass,
+        occlusion_tracker,
+        shared_quad_state,
+        content_bounds(),
+        draw_properties().target_space_transform,
+        pile_->solid_color(),
+        append_quads_data);
+    return;
+  }
+
   float max_contents_scale = MaximumTilingContentsScale();
   gfx::Transform scaled_draw_transform = draw_transform();
   scaled_draw_transform.Scale(SK_MScalar1 / max_contents_scale,
@@ -163,8 +187,9 @@ void PictureLayerImpl::AppendQuads(
       gfx::ScaleToEnclosingRect(visible_content_rect(), max_contents_scale);
   scaled_visible_content_rect.Intersect(gfx::Rect(scaled_content_bounds));
 
-  SharedQuadState* shared_quad_state =
-      render_pass->CreateAndAppendSharedQuadState();
+  Occlusion occlusion =
+      occlusion_tracker.GetCurrentOcclusionForLayer(scaled_draw_transform);
+
   shared_quad_state->SetAll(scaled_draw_transform,
                             scaled_content_bounds,
                             scaled_visible_content_rect,
@@ -185,8 +210,8 @@ void PictureLayerImpl::AppendQuads(
 
     gfx::Rect geometry_rect = scaled_visible_content_rect;
     gfx::Rect opaque_rect = contents_opaque() ? geometry_rect : gfx::Rect();
-    gfx::Rect visible_geometry_rect = occlusion_tracker.UnoccludedContentRect(
-        geometry_rect, scaled_draw_transform);
+    gfx::Rect visible_geometry_rect =
+        occlusion.GetUnoccludedContentRect(geometry_rect);
     if (visible_geometry_rect.IsEmpty())
       return;
 
@@ -223,12 +248,11 @@ void PictureLayerImpl::AppendQuads(
       SkColor color;
       float width;
       if (*iter && iter->IsReadyToDraw()) {
-        ManagedTileState::TileVersion::Mode mode =
-            iter->GetTileVersionForDrawing().mode();
-        if (mode == ManagedTileState::TileVersion::SOLID_COLOR_MODE) {
+        ManagedTileState::DrawInfo::Mode mode = iter->draw_info().mode();
+        if (mode == ManagedTileState::DrawInfo::SOLID_COLOR_MODE) {
           color = DebugColors::SolidColorTileBorderColor();
           width = DebugColors::SolidColorTileBorderWidth(layer_tree_impl());
-        } else if (mode == ManagedTileState::TileVersion::PICTURE_PILE_MODE) {
+        } else if (mode == ManagedTileState::DrawInfo::PICTURE_PILE_MODE) {
           color = DebugColors::PictureTileBorderColor();
           width = DebugColors::PictureTileBorderWidth(layer_tree_impl());
         } else if (iter->priority(ACTIVE_TREE).resolution == HIGH_RESOLUTION) {
@@ -280,8 +304,9 @@ void PictureLayerImpl::AppendQuads(
        iter;
        ++iter) {
     gfx::Rect geometry_rect = iter.geometry_rect();
-    gfx::Rect visible_geometry_rect = occlusion_tracker.UnoccludedContentRect(
-        geometry_rect, scaled_draw_transform);
+    gfx::Rect opaque_rect = contents_opaque() ? geometry_rect : gfx::Rect();
+    gfx::Rect visible_geometry_rect =
+        occlusion.GetUnoccludedContentRect(geometry_rect);
     if (visible_geometry_rect.IsEmpty())
       continue;
 
@@ -290,13 +315,10 @@ void PictureLayerImpl::AppendQuads(
 
     bool has_draw_quad = false;
     if (*iter && iter->IsReadyToDraw()) {
-      const ManagedTileState::TileVersion& tile_version =
-          iter->GetTileVersionForDrawing();
-      switch (tile_version.mode()) {
-        case ManagedTileState::TileVersion::RESOURCE_MODE: {
+      const ManagedTileState::DrawInfo& draw_info = iter->draw_info();
+      switch (draw_info.mode()) {
+        case ManagedTileState::DrawInfo::RESOURCE_MODE: {
           gfx::RectF texture_rect = iter.texture_rect();
-          gfx::Rect opaque_rect = iter->opaque_rect();
-          opaque_rect.Intersect(geometry_rect);
 
           // The raster_contents_scale_ is the best scale that the layer is
           // trying to produce, even though it may not be ideal. Since that's
@@ -316,14 +338,14 @@ void PictureLayerImpl::AppendQuads(
                        geometry_rect,
                        opaque_rect,
                        visible_geometry_rect,
-                       tile_version.get_resource_id(),
+                       draw_info.get_resource_id(),
                        texture_rect,
                        iter.texture_size(),
-                       tile_version.contents_swizzled());
+                       draw_info.contents_swizzled());
           has_draw_quad = true;
           break;
         }
-        case ManagedTileState::TileVersion::PICTURE_PILE_MODE: {
+        case ManagedTileState::DrawInfo::PICTURE_PILE_MODE: {
           if (!layer_tree_impl()
                    ->GetRendererCapabilities()
                    .allow_rasterize_on_demand) {
@@ -332,8 +354,6 @@ void PictureLayerImpl::AppendQuads(
           }
 
           gfx::RectF texture_rect = iter.texture_rect();
-          gfx::Rect opaque_rect = iter->opaque_rect();
-          opaque_rect.Intersect(geometry_rect);
 
           ResourceProvider* resource_provider =
               layer_tree_impl()->resource_provider();
@@ -354,13 +374,13 @@ void PictureLayerImpl::AppendQuads(
           has_draw_quad = true;
           break;
         }
-        case ManagedTileState::TileVersion::SOLID_COLOR_MODE: {
+        case ManagedTileState::DrawInfo::SOLID_COLOR_MODE: {
           SolidColorDrawQuad* quad =
               render_pass->CreateAndAppendDrawQuad<SolidColorDrawQuad>();
           quad->SetNew(shared_quad_state,
                        geometry_rect,
                        visible_geometry_rect,
-                       tile_version.get_solid_color(),
+                       draw_info.get_solid_color(),
                        false);
           has_draw_quad = true;
           break;
@@ -422,16 +442,12 @@ void PictureLayerImpl::AppendQuads(
 }
 
 void PictureLayerImpl::UpdateTiles(
-    const OcclusionTracker<LayerImpl>* occlusion_tracker) {
+    const Occlusion& occlusion_in_content_space) {
   TRACE_EVENT0("cc", "PictureLayerImpl::UpdateTiles");
+  DCHECK_EQ(1.f, contents_scale_x());
+  DCHECK_EQ(1.f, contents_scale_y());
 
   DoPostCommitInitializationIfNeeded();
-
-  // TODO(danakj): We should always get an occlusion tracker when we are using
-  // occlusion, so update this check when we don't use a pending tree in the
-  // browser compositor.
-  DCHECK(!occlusion_tracker ||
-         layer_tree_impl()->settings().use_occlusion_for_tile_prioritization);
 
   visible_rect_for_tile_priority_ = visible_content_rect();
   viewport_rect_for_tile_priority_ =
@@ -467,14 +483,16 @@ void PictureLayerImpl::UpdateTiles(
 
   should_update_tile_priorities_ = true;
 
-  UpdateTilePriorities(occlusion_tracker);
+  UpdateTilePriorities(occlusion_in_content_space);
 
   if (layer_tree_impl()->IsPendingTree())
     MarkVisibleResourcesAsRequired();
 }
 
 void PictureLayerImpl::UpdateTilePriorities(
-    const OcclusionTracker<LayerImpl>* occlusion_tracker) {
+    const Occlusion& occlusion_in_content_space) {
+  DCHECK(!pile_->is_solid_color() || !tilings_->num_tilings());
+
   TRACE_EVENT0("cc", "PictureLayerImpl::UpdateTilePriorities");
 
   double current_frame_time_in_seconds =
@@ -492,21 +510,18 @@ void PictureLayerImpl::UpdateTilePriorities(
   if (!tiling_needs_update)
     return;
 
-  gfx::Rect visible_rect_in_content_space(
-      GetViewportForTilePriorityInContentSpace());
-  visible_rect_in_content_space.Intersect(visible_content_rect());
-  gfx::Rect visible_layer_rect = gfx::ScaleToEnclosingRect(
-      visible_rect_in_content_space, 1.f / contents_scale_x());
+  gfx::Rect viewport_rect_in_layer_space =
+      GetViewportForTilePriorityInContentSpace();
   WhichTree tree =
       layer_tree_impl()->IsActiveTree() ? ACTIVE_TREE : PENDING_TREE;
   for (size_t i = 0; i < tilings_->num_tilings(); ++i) {
+    // Pass |occlusion_in_content_space| for |occlusion_in_layer_space| since
+    // they are the same space in picture lbayer, as contents scale is always 1.
     tilings_->tiling_at(i)->UpdateTilePriorities(tree,
-                                                 visible_layer_rect,
+                                                 viewport_rect_in_layer_space,
                                                  ideal_contents_scale_,
                                                  current_frame_time_in_seconds,
-                                                 occlusion_tracker,
-                                                 render_target(),
-                                                 draw_transform());
+                                                 occlusion_in_content_space);
   }
 
   // Tile priorities were modified.
@@ -529,11 +544,8 @@ gfx::Rect PictureLayerImpl::GetViewportForTilePriorityInContentSpace() const {
       visible_rect_in_content_space =
           gfx::ToEnclosingRect(MathUtil::ProjectClippedRect(
               view_to_layer, viewport_rect_for_tile_priority_));
-
-      visible_rect_in_content_space.Intersect(gfx::Rect(content_bounds()));
     }
   }
-
   return visible_rect_in_content_space;
 }
 
@@ -579,21 +591,25 @@ skia::RefPtr<SkPicture> PictureLayerImpl::GetPicture() {
 
 scoped_refptr<Tile> PictureLayerImpl::CreateTile(PictureLayerTiling* tiling,
                                                const gfx::Rect& content_rect) {
+  DCHECK(!pile_->is_solid_color());
   if (!pile_->CanRaster(tiling->contents_scale(), content_rect))
     return scoped_refptr<Tile>();
+
+  int flags = 0;
 
   // TODO(vmpstr): Revisit this. For now, enabling analysis means that we get as
   // much savings on memory as we can. However, for some cases like ganesh or
   // small layers, the amount of time we spend analyzing might not justify
-  // memory savings that we can get.
+  // memory savings that we can get. Note that we don't handle solid color
+  // masks, so we shouldn't bother analyzing those.
   // Bugs: crbug.com/397198, crbug.com/396908
-  int flags = Tile::USE_PICTURE_ANALYSIS;
+  if (!pile_->is_mask())
+    flags = Tile::USE_PICTURE_ANALYSIS;
 
   return layer_tree_impl()->tile_manager()->CreateTile(
       pile_.get(),
       content_rect.size(),
       content_rect,
-      contents_opaque() ? content_rect : gfx::Rect(),
       tiling->contents_scale(),
       id(),
       layer_tree_impl()->source_frame_number(),
@@ -645,15 +661,17 @@ int PictureLayerImpl::GetSkewportExtrapolationLimitInContentPixels() const {
 
 gfx::Size PictureLayerImpl::CalculateTileSize(
     const gfx::Size& content_bounds) const {
-  if (is_mask_) {
-    int max_size = layer_tree_impl()->MaxTextureSize();
-    return gfx::Size(
-        std::min(max_size, content_bounds.width()),
-        std::min(max_size, content_bounds.height()));
-  }
-
   int max_texture_size =
       layer_tree_impl()->resource_provider()->max_texture_size();
+
+  if (pile_->is_mask()) {
+    // Masks are not tiled, so if we can't cover the whole mask with one tile,
+    // don't make any tiles at all. Returning an empty size signals this.
+    if (content_bounds.width() > max_texture_size ||
+        content_bounds.height() > max_texture_size)
+      return gfx::Size();
+    return content_bounds;
+  }
 
   gfx::Size default_tile_size = layer_tree_impl()->settings().default_tile_size;
   if (layer_tree_impl()->use_gpu_rasterization()) {
@@ -752,39 +770,30 @@ void PictureLayerImpl::SyncTiling(
     // when we stop using the pending tree in the browser compositor. If we want
     // to support occlusion tracking here, we need to dirty the draw properties
     // or save occlusion as a draw property.
-    UpdateTilePriorities(NULL);
+    UpdateTilePriorities(Occlusion());
   }
-}
-
-void PictureLayerImpl::SetIsMask(bool is_mask) {
-  if (is_mask_ == is_mask)
-    return;
-  is_mask_ = is_mask;
-  if (tilings_)
-    tilings_->RemoveAllTiles();
 }
 
 ResourceProvider::ResourceId PictureLayerImpl::ContentsResourceId() const {
   gfx::Rect content_rect(content_bounds());
-  float scale = MaximumTilingContentsScale();
   PictureLayerTilingSet::CoverageIterator iter(
-      tilings_.get(), scale, content_rect, ideal_contents_scale_);
+      tilings_.get(), 1.f, content_rect, ideal_contents_scale_);
 
   // Mask resource not ready yet.
   if (!iter || !*iter)
     return 0;
 
   // Masks only supported if they fit on exactly one tile.
-  if (iter.geometry_rect() != content_rect)
+  DCHECK(iter.geometry_rect() == content_rect)
+      << "iter rect " << iter.geometry_rect().ToString() << " content rect "
+      << content_rect.ToString();
+
+  const ManagedTileState::DrawInfo& draw_info = iter->draw_info();
+  if (!draw_info.IsReadyToDraw() ||
+      draw_info.mode() != ManagedTileState::DrawInfo::RESOURCE_MODE)
     return 0;
 
-  const ManagedTileState::TileVersion& tile_version =
-      iter->GetTileVersionForDrawing();
-  if (!tile_version.IsReadyToDraw() ||
-      tile_version.mode() != ManagedTileState::TileVersion::RESOURCE_MODE)
-    return 0;
-
-  return tile_version.get_resource_id();
+  return draw_info.get_resource_id();
 }
 
 void PictureLayerImpl::MarkVisibleResourcesAsRequired() const {
@@ -800,13 +809,12 @@ void PictureLayerImpl::MarkVisibleResourcesAsRequired() const {
   if (visible_content_rect().IsEmpty())
     return;
 
-  gfx::Rect rect(visible_content_rect());
-
   // Only mark tiles inside the viewport for tile priority as required for
   // activation. This viewport is normally the same as the draw viewport but
   // can be independently overridden by embedders like Android WebView with
   // SetExternalDrawConstraints.
-  rect.Intersect(GetViewportForTilePriorityInContentSpace());
+  gfx::Rect rect = GetViewportForTilePriorityInContentSpace();
+  rect.Intersect(visible_content_rect());
 
   float min_acceptable_scale =
       std::min(raster_contents_scale_, ideal_contents_scale_);
@@ -844,10 +852,7 @@ void PictureLayerImpl::MarkVisibleResourcesAsRequired() const {
       high_res = tiling;
       continue;
     }
-    for (PictureLayerTiling::CoverageIterator iter(tiling,
-                                                   contents_scale_x(),
-                                                   rect);
-         iter;
+    for (PictureLayerTiling::CoverageIterator iter(tiling, 1.f, rect); iter;
          ++iter) {
       if (!*iter || !iter->IsReadyToDraw())
         continue;
@@ -892,14 +897,13 @@ void PictureLayerImpl::MarkVisibleResourcesAsRequired() const {
   // As a second pass, mark as required any visible high res tiles not filled in
   // by acceptable non-ideal tiles from the first pass.
   if (MarkVisibleTilesAsRequired(
-      high_res, twin_high_res, contents_scale_x(), rect, missing_region)) {
+          high_res, twin_high_res, rect, missing_region)) {
     // As an optional third pass, if a high res tile was skipped because its
     // twin was also missing, then fall back to mark low res tiles as required
     // in case the active twin is substituting those for missing high res
     // content. Only suitable, when low res is enabled.
     if (low_res) {
-      MarkVisibleTilesAsRequired(
-          low_res, twin_low_res, contents_scale_x(), rect, missing_region);
+      MarkVisibleTilesAsRequired(low_res, twin_low_res, rect, missing_region);
     }
   }
 }
@@ -907,14 +911,10 @@ void PictureLayerImpl::MarkVisibleResourcesAsRequired() const {
 bool PictureLayerImpl::MarkVisibleTilesAsRequired(
     PictureLayerTiling* tiling,
     const PictureLayerTiling* optional_twin_tiling,
-    float contents_scale,
     const gfx::Rect& rect,
     const Region& missing_region) const {
   bool twin_had_missing_tile = false;
-  for (PictureLayerTiling::CoverageIterator iter(tiling,
-                                                 contents_scale,
-                                                 rect);
-       iter;
+  for (PictureLayerTiling::CoverageIterator iter(tiling, 1.f, rect); iter;
        ++iter) {
     Tile* tile = *iter;
     // A null tile (i.e. missing recording) can just be skipped.
@@ -936,7 +936,10 @@ bool PictureLayerImpl::MarkVisibleTilesAsRequired(
     if (optional_twin_tiling) {
       Tile* twin_tile = optional_twin_tiling->TileAt(iter.i(), iter.j());
       if (!twin_tile || twin_tile == tile) {
-        twin_had_missing_tile = true;
+        // However if the shared tile is being used on the active tree, then
+        // there's no missing content in this place, and low res is not needed.
+        if (!twin_tile || !twin_tile->IsReadyToDraw())
+          twin_had_missing_tile = true;
         continue;
       }
     }
@@ -1138,7 +1141,7 @@ void PictureLayerImpl::RecalculateRasterScales() {
   // TODO(danakj): Adjust raster source scale closer to ideal source scale at
   // a throttled rate. Possibly make use of invalidation_.IsEmpty() on pending
   // tree. This will allow CSS scale changes to get re-rastered at an
-  // appropriate rate.
+  // appropriate rate. (crbug.com/413636)
   if (raster_source_scale_is_fixed_) {
     raster_contents_scale_ /= raster_source_scale_;
     raster_source_scale_ = 1.f;
@@ -1189,13 +1192,14 @@ void PictureLayerImpl::RecalculateRasterScales() {
     }
   }
 
-  // If this layer would only create one tile at this content scale,
+  // If this layer would create zero or one tiles at this content scale,
   // don't create a low res tiling.
   gfx::Size content_bounds =
       gfx::ToCeiledSize(gfx::ScaleSize(bounds(), raster_contents_scale_));
   gfx::Size tile_size = CalculateTileSize(content_bounds);
-  if (tile_size.width() >= content_bounds.width() &&
-      tile_size.height() >= content_bounds.height()) {
+  bool tile_covers_bounds = tile_size.width() >= content_bounds.width() &&
+                            tile_size.height() >= content_bounds.height();
+  if (tile_size.IsEmpty() || tile_covers_bounds) {
     low_res_raster_contents_scale_ = raster_contents_scale_;
     return;
   }
@@ -1312,6 +1316,8 @@ void PictureLayerImpl::ResetRasterScale() {
 }
 
 bool PictureLayerImpl::CanHaveTilings() const {
+  if (pile_->is_solid_color())
+    return false;
   if (!DrawsContent())
     return false;
   if (!pile_->HasRecordings())
@@ -1418,6 +1424,14 @@ void PictureLayerImpl::AsValueInto(base::debug::TracedValue* state) const {
   tilings_->AsValueInto(state);
   state->EndArray();
 
+  state->BeginArray("tile_priority_rect");
+  MathUtil::AddToTracedValue(GetViewportForTilePriorityInContentSpace(), state);
+  state->EndArray();
+
+  state->BeginArray("visible_rect");
+  MathUtil::AddToTracedValue(visible_content_rect(), state);
+  state->EndArray();
+
   state->BeginArray("pictures");
   pile_->AsValueInto(state);
   state->EndArray();
@@ -1428,7 +1442,7 @@ void PictureLayerImpl::AsValueInto(base::debug::TracedValue* state) const {
 
   state->BeginArray("coverage_tiles");
   for (PictureLayerTilingSet::CoverageIterator iter(tilings_.get(),
-                                                    contents_scale_x(),
+                                                    1.f,
                                                     gfx::Rect(content_bounds()),
                                                     ideal_contents_scale_);
        iter;
@@ -1488,9 +1502,7 @@ bool PictureLayerImpl::AllTilesRequiredForActivationAreReadyToDraw() const {
       continue;
 
     gfx::Rect rect(visible_content_rect());
-    for (PictureLayerTiling::CoverageIterator iter(
-             tiling, contents_scale_x(), rect);
-         iter;
+    for (PictureLayerTiling::CoverageIterator iter(tiling, 1.f, rect); iter;
          ++iter) {
       const Tile* tile = *iter;
       // A null tile (i.e. missing recording) can just be skipped.
@@ -1567,7 +1579,7 @@ PictureLayerImpl::LayerRasterTileIterator::LayerRasterTileIterator(
   IteratorType index = stages_[current_stage_].iterator_type;
   TilePriority::PriorityBin tile_type = stages_[current_stage_].tile_type;
   if (!iterators_[index] || iterators_[index].get_type() != tile_type)
-    ++(*this);
+    AdvanceToNextStage();
 }
 
 PictureLayerImpl::LayerRasterTileIterator::~LayerRasterTileIterator() {}
@@ -1583,22 +1595,13 @@ operator++() {
   TilePriority::PriorityBin tile_type = stages_[current_stage_].tile_type;
 
   // First advance the iterator.
-  if (iterators_[index])
-    ++iterators_[index];
+  DCHECK(iterators_[index]);
+  DCHECK(iterators_[index].get_type() == tile_type);
+  ++iterators_[index];
 
-  if (iterators_[index] && iterators_[index].get_type() == tile_type)
-    return *this;
+  if (!iterators_[index] || iterators_[index].get_type() != tile_type)
+    AdvanceToNextStage();
 
-  // Next, advance the stage.
-  ++current_stage_;
-  while (current_stage_ < arraysize(stages_)) {
-    index = stages_[current_stage_].iterator_type;
-    tile_type = stages_[current_stage_].tile_type;
-
-    if (iterators_[index] && iterators_[index].get_type() == tile_type)
-      break;
-    ++current_stage_;
-  }
   return *this;
 }
 
@@ -1620,6 +1623,19 @@ const Tile* PictureLayerImpl::LayerRasterTileIterator::operator*() const {
   DCHECK(iterators_[index].get_type() == stages_[current_stage_].tile_type);
 
   return *iterators_[index];
+}
+
+void PictureLayerImpl::LayerRasterTileIterator::AdvanceToNextStage() {
+  DCHECK_LT(current_stage_, arraysize(stages_));
+  ++current_stage_;
+  while (current_stage_ < arraysize(stages_)) {
+    IteratorType index = stages_[current_stage_].iterator_type;
+    TilePriority::PriorityBin tile_type = stages_[current_stage_].tile_type;
+
+    if (iterators_[index] && iterators_[index].get_type() == tile_type)
+      break;
+    ++current_stage_;
+  }
 }
 
 PictureLayerImpl::LayerEvictionTileIterator::LayerEvictionTileIterator()

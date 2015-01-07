@@ -9,7 +9,6 @@
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/extensions/extension_function_test_utils.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_test_message_listener.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "device/bluetooth/bluetooth_adapter.h"
@@ -19,6 +18,9 @@
 #include "device/bluetooth/test/mock_bluetooth_discovery_session.h"
 #include "extensions/browser/api/bluetooth/bluetooth_api.h"
 #include "extensions/browser/api/bluetooth/bluetooth_event_router.h"
+#include "extensions/common/test_util.h"
+#include "extensions/test/extension_test_message_listener.h"
+#include "extensions/test/result_catcher.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
 using device::BluetoothAdapter;
@@ -29,6 +31,7 @@ using device::MockBluetoothAdapter;
 using device::MockBluetoothDevice;
 using device::MockBluetoothDiscoverySession;
 using extensions::Extension;
+using extensions::ResultCatcher;
 
 namespace utils = extension_function_test_utils;
 namespace api = extensions::core_api;
@@ -44,7 +47,7 @@ class BluetoothApiTest : public ExtensionApiTest {
 
   virtual void SetUpOnMainThread() OVERRIDE {
     ExtensionApiTest::SetUpOnMainThread();
-    empty_extension_ = utils::CreateEmptyExtension();
+    empty_extension_ = extensions::test_util::CreateEmptyExtension();
     SetUpMockAdapter();
   }
 
@@ -142,7 +145,7 @@ IN_PROC_BROWSER_TEST_F(BluetoothApiTest, GetAdapterState) {
 
 IN_PROC_BROWSER_TEST_F(BluetoothApiTest, DeviceEvents) {
   ResultCatcher catcher;
-  catcher.RestrictToProfile(browser()->profile());
+  catcher.RestrictToBrowserContext(browser()->profile());
 
   ASSERT_TRUE(LoadExtension(
         test_data_dir_.AppendASCII("bluetooth/device_events")));
@@ -230,7 +233,7 @@ IN_PROC_BROWSER_TEST_F(BluetoothApiTest, DiscoveryCallback) {
       .WillOnce(testing::Invoke(StopDiscoverySessionCallback));
 
   ResultCatcher catcher;
-  catcher.RestrictToProfile(browser()->profile());
+  catcher.RestrictToBrowserContext(browser()->profile());
 
   ExtensionTestMessageListener discovery_started("ready", true);
   ASSERT_TRUE(LoadExtension(
@@ -270,7 +273,7 @@ IN_PROC_BROWSER_TEST_F(BluetoothApiTest, DiscoveryInProgress) {
   event_router()->DeviceAdded(mock_adapter_, device1_.get());
 
   ResultCatcher catcher;
-  catcher.RestrictToProfile(browser()->profile());
+  catcher.RestrictToBrowserContext(browser()->profile());
 
   mock_session_.reset(new testing::NiceMock<MockBluetoothDiscoverySession>());
   MockBluetoothDiscoverySession* session = mock_session_.get();
@@ -305,7 +308,7 @@ IN_PROC_BROWSER_TEST_F(BluetoothApiTest, DiscoveryInProgress) {
 
 IN_PROC_BROWSER_TEST_F(BluetoothApiTest, OnAdapterStateChanged) {
   ResultCatcher catcher;
-  catcher.RestrictToProfile(browser()->profile());
+  catcher.RestrictToBrowserContext(browser()->profile());
 
   // Load and wait for setup
   ExtensionTestMessageListener listener("ready", true);
@@ -357,7 +360,7 @@ IN_PROC_BROWSER_TEST_F(BluetoothApiTest, OnAdapterStateChanged) {
 
 IN_PROC_BROWSER_TEST_F(BluetoothApiTest, GetDevices) {
   ResultCatcher catcher;
-  catcher.RestrictToProfile(browser()->profile());
+  catcher.RestrictToBrowserContext(browser()->profile());
 
   BluetoothAdapter::ConstDeviceList devices;
   devices.push_back(device1_.get());
@@ -380,7 +383,7 @@ IN_PROC_BROWSER_TEST_F(BluetoothApiTest, GetDevices) {
 
 IN_PROC_BROWSER_TEST_F(BluetoothApiTest, GetDevice) {
   ResultCatcher catcher;
-  catcher.RestrictToProfile(browser()->profile());
+  catcher.RestrictToBrowserContext(browser()->profile());
 
   EXPECT_CALL(*mock_adapter_, GetDevice(device1_->GetAddress()))
       .WillOnce(testing::Return(device1_.get()));
@@ -401,7 +404,7 @@ IN_PROC_BROWSER_TEST_F(BluetoothApiTest, GetDevice) {
 
 IN_PROC_BROWSER_TEST_F(BluetoothApiTest, DeviceInfo) {
   ResultCatcher catcher;
-  catcher.RestrictToProfile(browser()->profile());
+  catcher.RestrictToBrowserContext(browser()->profile());
 
   // Set up the first device object to reflect a real-world device.
   BluetoothAdapter::ConstDeviceList devices;

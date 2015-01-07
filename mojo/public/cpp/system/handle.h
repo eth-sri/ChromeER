@@ -193,7 +193,7 @@ typedef ScopedHandleBase<Handle> ScopedHandle;
 MOJO_COMPILE_ASSERT(sizeof(ScopedHandle) == sizeof(Handle),
                     bad_size_for_cpp_ScopedHandle);
 
-inline MojoResult Wait(const Handle& handle,
+inline MojoResult Wait(Handle handle,
                        MojoHandleSignals signals,
                        MojoDeadline deadline) {
   return MojoWait(handle.value(), signals, deadline);
@@ -214,7 +214,7 @@ inline MojoResult WaitMany(const HandleVectorType& handles,
     return MOJO_RESULT_OUT_OF_RANGE;
 
   if (handles.size() == 0)
-    return MojoWaitMany(NULL, NULL, 0, deadline);
+    return MojoWaitMany(nullptr, nullptr, 0, deadline);
 
   const Handle& first_handle = handles[0];
   const MojoHandleSignals& first_signals = signals[0];
@@ -237,8 +237,7 @@ inline MojoResult CloseRaw(Handle handle) {
 }
 
 // Strict weak ordering, so that |Handle|s can be used as keys in |std::map|s,
-// etc.
-inline bool operator<(const Handle& a, const Handle& b) {
+inline bool operator<(const Handle a, const Handle b) {
   return a.value() < b.value();
 }
 

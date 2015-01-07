@@ -705,7 +705,7 @@ std::string AboutStats(const std::string& query) {
           base::JSONWriter::OPTIONS_PRETTY_PRINT,
           &data);
     if (query == kStringsJsPath)
-      data = "var templateData = " + data + ";";
+      data = "loadTimeData.data = " + data + ";";
   } else if (query == "raw") {
     // Dump the raw counters which have changed in text format.
     data = "<pre>";
@@ -971,7 +971,6 @@ void AboutMemoryHandler::OnDetailsAvailable() {
   webui::SetFontAndTextDirection(&load_time_data);
   load_time_data.Set("jstemplateData", root.release());
 
-  webui::UseVersion2 version2;
   std::string data;
   webui::AppendJsonJS(&load_time_data, &data);
   callback_.Run(base::RefCountedString::TakeString(&data));

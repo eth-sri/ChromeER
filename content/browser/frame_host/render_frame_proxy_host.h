@@ -55,6 +55,8 @@ class RenderFrameProxyHost
     : public IPC::Listener,
       public IPC::Sender {
  public:
+  static RenderFrameProxyHost* FromID(int process_id, int routing_id);
+
   RenderFrameProxyHost(SiteInstance* site_instance,
                        FrameTreeNode* frame_tree_node);
   virtual ~RenderFrameProxyHost();
@@ -75,6 +77,8 @@ class RenderFrameProxyHost
     return site_instance_.get();
   }
 
+  FrameTreeNode* frame_tree_node() const { return frame_tree_node_; };
+
   void SetChildRWHView(RenderWidgetHostView* view);
 
   // TODO(nasko): The following methods should be removed once we don't have a
@@ -85,9 +89,7 @@ class RenderFrameProxyHost
   RenderViewHostImpl* GetRenderViewHost();
 
   void TakeFrameHostOwnership(
-      scoped_ptr<RenderFrameHostImpl> render_frame_host) {
-    render_frame_host_ = render_frame_host.Pass();
-  }
+      scoped_ptr<RenderFrameHostImpl> render_frame_host);
   scoped_ptr<RenderFrameHostImpl> PassFrameHostOwnership();
 
   // IPC::Sender

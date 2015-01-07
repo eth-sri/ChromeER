@@ -2,15 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/command_line.h"
-
 #include "chrome/browser/password_manager/chrome_password_manager_client.h"
 
+#include "base/command_line.h"
+#include "base/strings/string16.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/autofill/content/common/autofill_messages.h"
 #include "components/password_manager/content/browser/password_manager_internals_service_factory.h"
+#include "components/password_manager/content/common/credential_manager_messages.h"
+#include "components/password_manager/content/common/credential_manager_types.h"
 #include "components/password_manager/core/browser/log_receiver.h"
 #include "components/password_manager/core/browser/password_manager_internals_service.h"
 #include "components/password_manager/core/common/password_manager_switches.h"
@@ -292,6 +295,12 @@ TEST_F(ChromePasswordManagerClientTest,
   NavigateAndCommit(
       GURL("https://accounts.google.com/ServiceLogin?continue="
            "https://passwords.%67oogle.com/settings&rart=123"));
+  EXPECT_FALSE(client->IsPasswordManagerEnabledForCurrentPage());
+
+  // Make sure testing sites are disabled as well.
+  NavigateAndCommit(
+      GURL("https://accounts.google.com/Login?continue="
+           "https://passwords-ac-testing.corp.google.com/settings&rart=456"));
   EXPECT_FALSE(client->IsPasswordManagerEnabledForCurrentPage());
 
   // Fully qualified domain name is considered a different hostname by GURL.

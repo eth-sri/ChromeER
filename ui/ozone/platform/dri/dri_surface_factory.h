@@ -8,6 +8,7 @@
 #include <map>
 
 #include "base/memory/scoped_ptr.h"
+#include "base/timer/timer.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/ozone/platform/dri/hardware_cursor_delegate.h"
 #include "ui/ozone/public/surface_factory_ozone.h"
@@ -15,7 +16,7 @@
 namespace ui {
 
 class DriBuffer;
-class DriWindowManager;
+class DriWindowDelegateManager;
 class DriWrapper;
 class ScreenManager;
 class SurfaceOzoneCanvas;
@@ -30,7 +31,7 @@ class DriSurfaceFactory : public SurfaceFactoryOzone,
 
   DriSurfaceFactory(DriWrapper* drm,
                     ScreenManager* screen_manager,
-                    DriWindowManager* window_manager);
+                    DriWindowDelegateManager* window_manager);
   virtual ~DriSurfaceFactory();
 
   // Describes the state of the hardware after initialization.
@@ -54,26 +55,34 @@ class DriSurfaceFactory : public SurfaceFactoryOzone,
       SetGLGetProcAddressProcCallback set_gl_get_proc_address) OVERRIDE;
 
   // HardwareCursorDelegate:
-  virtual void SetHardwareCursor(gfx::AcceleratedWidget window,
-                                 const SkBitmap& image,
-                                 const gfx::Point& location) OVERRIDE;
+  virtual void SetHardwareCursor(gfx::AcceleratedWidget widget,
+                                 const std::vector<SkBitmap>& bitmaps,
+                                 const gfx::Point& location,
+                                 int frame_delay_ms) OVERRIDE;
   virtual void MoveHardwareCursor(gfx::AcceleratedWidget window,
                                   const gfx::Point& location) OVERRIDE;
 
  protected:
   // Draw the last set cursor & update the cursor plane.
-  void ResetCursor(gfx::AcceleratedWidget w);
+  void ResetCursor();
+
+  // Draw next frame in an animated cursor.
+  void OnCursorAnimationTimeout();
 
   DriWrapper* drm_;  // Not owned.
   ScreenManager* screen_manager_;  // Not owned.
-  DriWindowManager* window_manager_;  // Not owned.
+  DriWindowDelegateManager* window_manager_;  // Not owned.
   HardwareState state_;
 
   scoped_refptr<DriBuffer> cursor_buffers_[2];
   int cursor_frontbuffer_;
 
-  SkBitmap cursor_bitmap_;
+  gfx::AcceleratedWidget cursor_widget_;
+  std::vector<SkBitmap> cursor_bitmaps_;
   gfx::Point cursor_location_;
+  int cursor_frame_;
+  int cursor_frame_delay_ms_;
+  base::RepeatingTimer<DriSurfaceFactory> cursor_timer_;
 
   DISALLOW_COPY_AND_ASSIGN(DriSurfaceFactory);
 };

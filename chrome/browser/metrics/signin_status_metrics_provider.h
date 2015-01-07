@@ -61,6 +61,7 @@ class SigninStatusMetricsProvider : public metrics::MetricsProvider,
     ALL_PROFILES_NOT_SIGNED_IN,
     MIXED_SIGNIN_STATUS,
     UNKNOWN_SIGNIN_STATUS,
+    ERROR_GETTING_SIGNIN_STATUS,
     SIGNIN_STATUS_MAX,
   };
 
@@ -94,6 +95,10 @@ class SigninStatusMetricsProvider : public metrics::MetricsProvider,
 
   // Compute current sign-in status of all opened profiles.
   void ComputeCurrentSigninStatus();
+
+  // Sets the value of |signin_status_|. It ensures that |signin_status_| will
+  // not be changed if its value is already ERROR_GETTING_SIGNIN_STATUS.
+  void SetSigninStatus(ProfilesSigninStatus new_status);
 
   // Get the current recorded sign-in status. For testing purpose only.
   ProfilesSigninStatus GetSigninStatusForTesting();

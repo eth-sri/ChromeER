@@ -12,6 +12,7 @@
 #include "printing/backend/win_helper.h"
 #include "printing/print_settings_initializer_win.h"
 #include "printing/printed_document.h"
+#include "printing/printing_context_system_dialog_win.h"
 #include "printing/printing_utils.h"
 #include "printing/units.h"
 #include "skia/ext/platform_device.h"
@@ -21,32 +22,16 @@
 #include "ui/aura/window.h"
 #endif
 
-namespace {
-
-HWND GetRootWindow(gfx::NativeView view) {
-  HWND window = NULL;
-#if defined(USE_AURA)
-  if (view)
-    window = view->GetHost()->GetAcceleratedWidget();
-#else
-  if (view && IsWindow(view)) {
-    window = GetAncestor(view, GA_ROOTOWNER);
-  }
-#endif
-  if (!window) {
-    // TODO(maruel):  bug 1214347 Get the right browser window instead.
-    return GetDesktopWindow();
-  }
-  return window;
-}
-
-}  // anonymous namespace
-
 namespace printing {
 
 // static
 scoped_ptr<PrintingContext> PrintingContext::Create(Delegate* delegate) {
+#if defined(DISABLE_BASIC_PRINTING)
   return make_scoped_ptr<PrintingContext>(new PrintingContextWin(delegate));
+#else   // DISABLE_BASIC_PRINTING
+  return make_scoped_ptr<PrintingContext>(
+      new PrintingContextSytemDialogWin(delegate));
+#endif  // DISABLE_BASIC_PRINTING
 }
 
 PrintingContextWin::PrintingContextWin(Delegate* delegate)
@@ -74,7 +59,7 @@ PrintingContext::Result PrintingContextWin::UseDefaultSettings() {
     ScopedPrinterHandle printer;
     if (printer.OpenPrinter(default_printer.c_str())) {
       scoped_ptr<DEVMODE, base::FreeDeleter> dev_mode =
-          CreateDevMode(printer, NULL);
+          CreateDevMode(printer.Get(), NULL);
       if (InitializeSettings(default_printer, dev_mode.get()) == OK)
         return OK;
     }
@@ -104,7 +89,7 @@ PrintingContext::Result PrintingContextWin::UseDefaultSettings() {
         if (!printer.OpenPrinter(info_2->pPrinterName))
           continue;
         scoped_ptr<DEVMODE, base::FreeDeleter> dev_mode =
-            CreateDevMode(printer, NULL);
+            CreateDevMode(printer.Get(), NULL);
         if (InitializeSettings(info_2->pPrinterName, dev_mode.get()) == OK)
           return OK;
       }
@@ -159,7 +144,7 @@ PrintingContext::Result PrintingContextWin::UpdatePrinterSettings(
   // Make printer changes local to Chrome.
   // See MSDN documentation regarding DocumentProperties.
   scoped_ptr<DEVMODE, base::FreeDeleter> scoped_dev_mode =
-      CreateDevModeWithColor(printer, settings_.device_name(),
+      CreateDevModeWithColor(printer.Get(), settings_.device_name(),
                              settings_.color() != GRAY);
   if (!scoped_dev_mode)
     return OnError();
@@ -214,9 +199,9 @@ PrintingContext::Result PrintingContextWin::UpdatePrinterSettings(
   // Update data using DocumentProperties.
   if (show_system_dialog) {
     scoped_dev_mode = ShowPrintDialog(
-        printer, delegate_->GetParentView(), scoped_dev_mode.get());
+        printer.Get(), delegate_->GetParentView(), scoped_dev_mode.get());
   } else {
-    scoped_dev_mode = CreateDevMode(printer, scoped_dev_mode.get());
+    scoped_dev_mode = CreateDevMode(printer.Get(), scoped_dev_mode.get());
   }
   // Set printer then refresh printer settings.
   return InitializeSettings(settings_.device_name(), scoped_dev_mode.get());
@@ -234,7 +219,7 @@ PrintingContext::Result PrintingContextWin::InitWithSettings(
     return FAILED;
 
   scoped_ptr<DEVMODE, base::FreeDeleter> dev_mode =
-      CreateDevMode(printer, NULL);
+      CreateDevMode(printer.Get(), NULL);
 
   return InitializeSettings(settings_.device_name(), dev_mode.get());
 }
@@ -362,6 +347,23 @@ PrintingContext::Result PrintingContextWin::InitializeSettings(
       context_, *dev_mode, &settings_);
 
   return OK;
+}
+
+HWND PrintingContextWin::GetRootWindow(gfx::NativeView view) {
+  HWND window = NULL;
+#if defined(USE_AURA)
+  if (view)
+    window = view->GetHost()->GetAcceleratedWidget();
+#else
+  if (view && IsWindow(view)) {
+    window = GetAncestor(view, GA_ROOTOWNER);
+  }
+#endif
+  if (!window) {
+    // TODO(maruel):  crbug.com/1214347 Get the right browser window instead.
+    return GetDesktopWindow();
+  }
+  return window;
 }
 
 scoped_ptr<DEVMODE, base::FreeDeleter> PrintingContextWin::ShowPrintDialog(

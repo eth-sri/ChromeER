@@ -47,13 +47,15 @@ class Callback<void()> {
     return !sink_.get();
   }
 
+  void reset() {
+    sink_.reset();
+  }
+
  private:
   template <typename Sink>
   struct Adapter : public Runnable {
     explicit Adapter(const Sink& sink) : sink(sink) {}
-    virtual void Run() const MOJO_OVERRIDE {
-      sink.Run();
-    }
+    virtual void Run() const override { sink.Run(); }
     Sink sink;
   };
 
@@ -88,13 +90,16 @@ class Callback<void(A1)> {
     return !sink_.get();
   }
 
+  void reset() {
+    sink_.reset();
+  }
+
  private:
   template <typename Sink>
   struct Adapter : public Runnable {
     explicit Adapter(const Sink& sink) : sink(sink) {}
-    virtual void Run(
-        typename internal::Callback_ParamTraits<A1>::ForwardType a1) const
-            MOJO_OVERRIDE {
+    virtual void Run(typename internal::Callback_ParamTraits<A1>::ForwardType
+                         a1) const override {
       sink.Run(internal::Forward(a1));
     }
     Sink sink;
@@ -136,14 +141,18 @@ class Callback<void(A1, A2)> {
     return !sink_.get();
   }
 
+  void reset() {
+    sink_.reset();
+  }
+
  private:
   template <typename Sink>
   struct Adapter : public Runnable {
     explicit Adapter(const Sink& sink) : sink(sink) {}
     virtual void Run(
         typename internal::Callback_ParamTraits<A1>::ForwardType a1,
-        typename internal::Callback_ParamTraits<A2>::ForwardType a2) const
-            MOJO_OVERRIDE {
+        typename internal::Callback_ParamTraits<A2>::ForwardType a2)
+        const override {
       sink.Run(
           internal::Forward(a1),
           internal::Forward(a2));
@@ -190,6 +199,10 @@ class Callback<void(A1, A2, A3)> {
     return !sink_.get();
   }
 
+  void reset() {
+    sink_.reset();
+  }
+
  private:
   template <typename Sink>
   struct Adapter : public Runnable {
@@ -197,8 +210,8 @@ class Callback<void(A1, A2, A3)> {
     virtual void Run(
         typename internal::Callback_ParamTraits<A1>::ForwardType a1,
         typename internal::Callback_ParamTraits<A2>::ForwardType a2,
-        typename internal::Callback_ParamTraits<A3>::ForwardType a3) const
-            MOJO_OVERRIDE {
+        typename internal::Callback_ParamTraits<A3>::ForwardType a3)
+        const override {
       sink.Run(
           internal::Forward(a1),
           internal::Forward(a2),
@@ -249,6 +262,10 @@ class Callback<void(A1, A2, A3, A4)> {
     return !sink_.get();
   }
 
+  void reset() {
+    sink_.reset();
+  }
+
  private:
   template <typename Sink>
   struct Adapter : public Runnable {
@@ -257,8 +274,8 @@ class Callback<void(A1, A2, A3, A4)> {
         typename internal::Callback_ParamTraits<A1>::ForwardType a1,
         typename internal::Callback_ParamTraits<A2>::ForwardType a2,
         typename internal::Callback_ParamTraits<A3>::ForwardType a3,
-        typename internal::Callback_ParamTraits<A4>::ForwardType a4) const
-            MOJO_OVERRIDE {
+        typename internal::Callback_ParamTraits<A4>::ForwardType a4)
+        const override {
       sink.Run(
           internal::Forward(a1),
           internal::Forward(a2),
@@ -313,6 +330,10 @@ class Callback<void(A1, A2, A3, A4, A5)> {
     return !sink_.get();
   }
 
+  void reset() {
+    sink_.reset();
+  }
+
  private:
   template <typename Sink>
   struct Adapter : public Runnable {
@@ -322,8 +343,8 @@ class Callback<void(A1, A2, A3, A4, A5)> {
         typename internal::Callback_ParamTraits<A2>::ForwardType a2,
         typename internal::Callback_ParamTraits<A3>::ForwardType a3,
         typename internal::Callback_ParamTraits<A4>::ForwardType a4,
-        typename internal::Callback_ParamTraits<A5>::ForwardType a5) const
-            MOJO_OVERRIDE {
+        typename internal::Callback_ParamTraits<A5>::ForwardType a5)
+        const override {
       sink.Run(
           internal::Forward(a1),
           internal::Forward(a2),
@@ -383,6 +404,10 @@ class Callback<void(A1, A2, A3, A4, A5, A6)> {
     return !sink_.get();
   }
 
+  void reset() {
+    sink_.reset();
+  }
+
  private:
   template <typename Sink>
   struct Adapter : public Runnable {
@@ -393,8 +418,8 @@ class Callback<void(A1, A2, A3, A4, A5, A6)> {
         typename internal::Callback_ParamTraits<A3>::ForwardType a3,
         typename internal::Callback_ParamTraits<A4>::ForwardType a4,
         typename internal::Callback_ParamTraits<A5>::ForwardType a5,
-        typename internal::Callback_ParamTraits<A6>::ForwardType a6) const
-            MOJO_OVERRIDE {
+        typename internal::Callback_ParamTraits<A6>::ForwardType a6)
+        const override {
       sink.Run(
           internal::Forward(a1),
           internal::Forward(a2),
@@ -458,6 +483,10 @@ class Callback<void(A1, A2, A3, A4, A5, A6, A7)> {
     return !sink_.get();
   }
 
+  void reset() {
+    sink_.reset();
+  }
+
  private:
   template <typename Sink>
   struct Adapter : public Runnable {
@@ -469,8 +498,8 @@ class Callback<void(A1, A2, A3, A4, A5, A6, A7)> {
         typename internal::Callback_ParamTraits<A4>::ForwardType a4,
         typename internal::Callback_ParamTraits<A5>::ForwardType a5,
         typename internal::Callback_ParamTraits<A6>::ForwardType a6,
-        typename internal::Callback_ParamTraits<A7>::ForwardType a7) const
-            MOJO_OVERRIDE {
+        typename internal::Callback_ParamTraits<A7>::ForwardType a7)
+        const override {
       sink.Run(
           internal::Forward(a1),
           internal::Forward(a2),

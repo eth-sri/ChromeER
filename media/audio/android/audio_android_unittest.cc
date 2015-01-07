@@ -4,7 +4,7 @@
 
 #include "base/android/build_info.h"
 #include "base/basictypes.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/path_service.h"
@@ -123,7 +123,7 @@ static void CheckDeviceNames(const AudioDeviceNames& device_names) {
 }
 
 // We clear the data bus to ensure that the test does not cause noise.
-static int RealOnMoreData(AudioBus* dest, AudioBuffersState buffers_state) {
+static int RealOnMoreData(AudioBus* dest, uint32 total_bytes_delay) {
   dest->Zero();
   return dest->frames();
 }
@@ -178,7 +178,7 @@ class FileAudioSource : public AudioOutputStream::AudioSourceCallback {
   // Use samples read from a data file and fill up the audio buffer
   // provided to us in the callback.
   virtual int OnMoreData(AudioBus* audio_bus,
-                         AudioBuffersState buffers_state) OVERRIDE {
+                         uint32 total_bytes_delay) OVERRIDE {
     bool stop_playing = false;
     int max_size =
         audio_bus->frames() * audio_bus->channels() * kBytesPerSample;
@@ -354,7 +354,7 @@ class FullDuplexAudioSinkSource
 
   // AudioOutputStream::AudioSourceCallback implementation
   virtual int OnMoreData(AudioBus* dest,
-                         AudioBuffersState buffers_state) OVERRIDE {
+                         uint32 total_bytes_delay) OVERRIDE {
     const int size_in_bytes =
         (params_.bits_per_sample() / 8) * dest->frames() * dest->channels();
     EXPECT_EQ(size_in_bytes, params_.GetBytesPerBuffer());

@@ -7,7 +7,7 @@
 #include <string>
 
 #include "base/command_line.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/logging.h"
 #include "base/path_service.h"
 #include "base/prefs/json_pref_store.h"
@@ -81,8 +81,9 @@ bool ChromecastConfig::Load(PrefRegistrySimple* registry) {
   PersistentPrefStore::PrefReadError prefs_read_error =
       PersistentPrefStore::PREF_READ_ERROR_NONE;
   base::PrefServiceFactory prefServiceFactory;
-  prefServiceFactory.SetUserPrefsFile(config_path_,
-      JsonPrefStore::GetTaskRunnerForFile(config_path_, worker_pool_));
+  scoped_refptr<base::SequencedTaskRunner> task_runner =
+      JsonPrefStore::GetTaskRunnerForFile(config_path_, worker_pool_.get());
+  prefServiceFactory.SetUserPrefsFile(config_path_, task_runner.get());
   prefServiceFactory.set_async(false);
   prefServiceFactory.set_read_error_callback(
       base::Bind(&UserPrefsLoadError, &prefs_read_error));
@@ -135,6 +136,11 @@ void ChromecastConfig::SetIntValue(const std::string& key, int value) const {
     LOG(ERROR) << "Cannot set read-only config: key=" << key
                << ", value=" << value;
   }
+}
+
+bool ChromecastConfig::HasValue(const std::string& key) const {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  return pref_service_->HasPrefPath(key.c_str());
 }
 
 }  // namespace chromecast

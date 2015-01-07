@@ -7,6 +7,7 @@
 #include "base/command_line.h"
 #include "base/json/json_writer.h"
 #include "base/strings/stringprintf.h"
+#include "cloud_print/gcp20/prototype/gcp20_switches.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/net_errors.h"
 #include "net/base/url_util.h"
@@ -107,7 +108,10 @@ bool PrivetHttpServer::Start(uint16 port) {
 
   scoped_ptr<net::ServerSocket> server_socket(
       new net::TCPServerSocket(NULL, net::NetLog::Source()));
-  server_socket->ListenWithAddressAndPort("0.0.0.0", port, 1);
+  std::string listen_address = "::";
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kDisableIpv6))
+    listen_address = "0.0.0.0";
+  server_socket->ListenWithAddressAndPort(listen_address, port, 1);
   server_.reset(new net::HttpServer(server_socket.Pass(), this));
 
   net::IPEndPoint address;
@@ -135,7 +139,7 @@ void PrivetHttpServer::OnHttpRequest(int connection_id,
   if (!ValidateRequestMethod(connection_id, url.path(), info.method))
     return;
 
-  if (!CommandLine::ForCurrentProcess()->HasSwitch("disable-x-token")) {
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kDisableXTocken)) {
     net::HttpServerRequestInfo::HeadersMap::const_iterator iter =
         info.headers.find("x-privet-token");
     if (iter == info.headers.end()) {

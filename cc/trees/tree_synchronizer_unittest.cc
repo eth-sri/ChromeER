@@ -56,7 +56,7 @@ class MockLayer : public Layer {
 
   virtual scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl)
       OVERRIDE {
-    return MockLayerImpl::Create(tree_impl, layer_id_).PassAs<LayerImpl>();
+    return MockLayerImpl::Create(tree_impl, layer_id_);
   }
 
   virtual void PushPropertiesTo(LayerImpl* layer_impl) OVERRIDE {
@@ -189,9 +189,12 @@ void ExpectTreesAreIdentical(Layer* layer,
 
 class TreeSynchronizerTest : public testing::Test {
  public:
-  TreeSynchronizerTest() : host_(FakeLayerTreeHost::Create()) {}
+  TreeSynchronizerTest()
+      : client_(FakeLayerTreeHostClient::DIRECT_3D),
+        host_(FakeLayerTreeHost::Create(&client_)) {}
 
  protected:
+  FakeLayerTreeHostClient client_;
   scoped_ptr<FakeLayerTreeHost> host_;
 };
 

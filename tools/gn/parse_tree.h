@@ -1,4 +1,4 @@
-// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,14 +16,54 @@
 
 class AccessorNode;
 class BinaryOpNode;
+class BlockCommentNode;
 class BlockNode;
 class ConditionNode;
+class EndNode;
 class FunctionCallNode;
 class IdentifierNode;
 class ListNode;
 class LiteralNode;
 class Scope;
 class UnaryOpNode;
+
+class Comments {
+ public:
+  Comments();
+  virtual ~Comments();
+
+  const std::vector<Token>& before() const { return before_; }
+  void append_before(Token c) {
+    before_.push_back(c);
+  }
+
+  const std::vector<Token>& suffix() const { return suffix_; }
+  void append_suffix(Token c) {
+    suffix_.push_back(c);
+  }
+  // Reverse the order of the suffix comments. When walking the tree in
+  // post-order we append suffix comments in reverse order, so this fixes them
+  // up.
+  void ReverseSuffix();
+
+  const std::vector<Token>& after() const { return after_; }
+  void append_after(Token c) {
+    after_.push_back(c);
+  }
+
+ private:
+  // Whole line comments before the expression.
+  std::vector<Token> before_;
+
+  // End-of-line comments after this expression.
+  std::vector<Token> suffix_;
+
+  // For top-level expressions only, after_ lists whole-line comments
+  // following the expression.
+  std::vector<Token> after_;
+
+  DISALLOW_COPY_AND_ASSIGN(Comments);
+};
 
 // ParseNode -------------------------------------------------------------------
 
@@ -35,8 +75,10 @@ class ParseNode {
 
   virtual const AccessorNode* AsAccessor() const;
   virtual const BinaryOpNode* AsBinaryOp() const;
+  virtual const BlockCommentNode* AsBlockComment() const;
   virtual const BlockNode* AsBlock() const;
   virtual const ConditionNode* AsConditionNode() const;
+  virtual const EndNode* AsEnd() const;
   virtual const FunctionCallNode* AsFunctionCall() const;
   virtual const IdentifierNode* AsIdentifier() const;
   virtual const ListNode* AsList() const;
@@ -57,7 +99,13 @@ class ParseNode {
   // by the given number of spaces.
   virtual void Print(std::ostream& out, int indent) const = 0;
 
+  const Comments* comments() const { return comments_.get(); }
+  Comments* comments_mutable();
+  void PrintComments(std::ostream& out, int indent) const;
+
  private:
+  scoped_ptr<Comments> comments_;
+
   DISALLOW_COPY_AND_ASSIGN(ParseNode);
 };
 
@@ -180,7 +228,8 @@ class BlockNode : public ParseNode {
   virtual void Print(std::ostream& out, int indent) const OVERRIDE;
 
   void set_begin_token(const Token& t) { begin_token_ = t; }
-  void set_end_token(const Token& t) { end_token_ = t; }
+  void set_end(scoped_ptr<EndNode> e) { end_ = e.Pass(); }
+  const EndNode* End() const { return end_.get(); }
 
   const std::vector<ParseNode*>& statements() const { return statements_; }
   void append_statement(scoped_ptr<ParseNode> s) {
@@ -193,9 +242,10 @@ class BlockNode : public ParseNode {
  private:
   bool has_scope_;
 
-  // Tokens corresponding to { and }, if any (may be NULL).
+  // Tokens corresponding to { and }, if any (may be NULL). The end is stored
+  // in a custom parse node so that it can have comments hung off of it.
   Token begin_token_;
-  Token end_token_;
+  scoped_ptr<EndNode> end_;
 
   // Owning pointers, use unique_ptr when we can use C++11.
   std::vector<ParseNode*> statements_;
@@ -321,7 +371,8 @@ class ListNode : public ParseNode {
   virtual void Print(std::ostream& out, int indent) const OVERRIDE;
 
   void set_begin_token(const Token& t) { begin_token_ = t; }
-  void set_end_token(const Token& t) { end_token_ = t; }
+  void set_end(scoped_ptr<EndNode> e) { end_ = e.Pass(); }
+  const EndNode* End() const { return end_.get(); }
 
   void append_item(scoped_ptr<ParseNode> s) {
     contents_.push_back(s.release());
@@ -329,9 +380,10 @@ class ListNode : public ParseNode {
   const std::vector<const ParseNode*>& contents() const { return contents_; }
 
  private:
-  // Tokens corresponding to the [ and ].
+  // Tokens corresponding to the [ and ]. The end token is stored in inside an
+  // custom parse node so that it can have comments hung off of it.
   Token begin_token_;
-  Token end_token_;
+  scoped_ptr<EndNode> end_;
 
   // Owning pointers, use unique_ptr when we can use C++11.
   std::vector<const ParseNode*> contents_;
@@ -392,6 +444,63 @@ class UnaryOpNode : public ParseNode {
   scoped_ptr<ParseNode> operand_;
 
   DISALLOW_COPY_AND_ASSIGN(UnaryOpNode);
+};
+
+// BlockCommentNode ------------------------------------------------------------
+
+// This node type is only used for standalone comments (that is, those not
+// specifically attached to another syntax element. The most common of these
+// is a standard header block. This node contains only the last line of such
+// a comment block as the anchor, and other lines of the block comment are
+// hung off of it as Before comments, similar to other syntax elements.
+class BlockCommentNode : public ParseNode {
+ public:
+  BlockCommentNode();
+  virtual ~BlockCommentNode();
+
+  virtual const BlockCommentNode* AsBlockComment() const OVERRIDE;
+  virtual Value Execute(Scope* scope, Err* err) const OVERRIDE;
+  virtual LocationRange GetRange() const OVERRIDE;
+  virtual Err MakeErrorDescribing(
+      const std::string& msg,
+      const std::string& help = std::string()) const OVERRIDE;
+  virtual void Print(std::ostream& out, int indent) const OVERRIDE;
+
+  const Token& comment() const { return comment_; }
+  void set_comment(const Token& t) { comment_ = t; }
+
+ private:
+  Token comment_;
+
+  DISALLOW_COPY_AND_ASSIGN(BlockCommentNode);
+};
+
+// EndNode ---------------------------------------------------------------------
+
+// This node type is used as the end_ object for lists and blocks (rather than
+// just the end ']', '}', or ')' token). This is so that during formatting
+// traversal there is a node that appears at the end of the block to which
+// comments can be attached.
+class EndNode : public ParseNode {
+ public:
+  EndNode(const Token& token);
+  virtual ~EndNode();
+
+  virtual const EndNode* AsEnd() const OVERRIDE;
+  virtual Value Execute(Scope* scope, Err* err) const OVERRIDE;
+  virtual LocationRange GetRange() const OVERRIDE;
+  virtual Err MakeErrorDescribing(
+      const std::string& msg,
+      const std::string& help = std::string()) const OVERRIDE;
+  virtual void Print(std::ostream& out, int indent) const OVERRIDE;
+
+  const Token& value() const { return value_; }
+  void set_value(const Token& t) { value_ = t; }
+
+ private:
+  Token value_;
+
+  DISALLOW_COPY_AND_ASSIGN(EndNode);
 };
 
 #endif  // TOOLS_GN_PARSE_TREE_H_

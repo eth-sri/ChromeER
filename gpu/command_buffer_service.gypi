@@ -22,7 +22,7 @@
     '../ui/gfx/gfx.gyp:gfx',
     '../ui/gfx/gfx.gyp:gfx_geometry',
     '../ui/gl/gl.gyp:gl',
-    '<(angle_path)/src/build_angle.gyp:translator',
+    '<(angle_path)/src/angle.gyp:translator',
   ],
   'sources': [
     'command_buffer/service/async_pixel_transfer_delegate.cc',
@@ -139,12 +139,5 @@
         'command_buffer/service/async_pixel_transfer_manager_egl.h',
       ],
     }],
-    ['OS=="android"', {
-      'configurations': {
-        'Release': {
-          'cflags': ['-O2']
-        }
-      }
-    }]
   ],
 }

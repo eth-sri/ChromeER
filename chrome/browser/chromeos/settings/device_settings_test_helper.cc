@@ -7,8 +7,8 @@
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/threading/sequenced_worker_pool.h"
-#include "chrome/browser/chromeos/ownership/owner_settings_service.h"
-#include "chrome/browser/chromeos/ownership/owner_settings_service_factory.h"
+#include "chrome/browser/chromeos/ownership/owner_settings_service_chromeos.h"
+#include "chrome/browser/chromeos/ownership/owner_settings_service_chromeos_factory.h"
 #include "chrome/browser/chromeos/policy/proto/chrome_device_policy.pb.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
@@ -17,23 +17,13 @@
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "components/ownership/mock_owner_key_util.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/test/test_utils.h"
 
 namespace chromeos {
 
 DeviceSettingsTestHelper::DeviceSettingsTestHelper() {}
 
 DeviceSettingsTestHelper::~DeviceSettingsTestHelper() {}
-
-void DeviceSettingsTestHelper::FlushLoops() {
-  // DeviceSettingsService may trigger operations that hop back and forth
-  // between the message loop and the blocking pool. 2 iterations are currently
-  // sufficient (key loading, signing).
-  for (int i = 0; i < 2; ++i) {
-    base::MessageLoop::current()->RunUntilIdle();
-    content::BrowserThread::GetBlockingPool()->FlushForTesting();
-  }
-  base::MessageLoop::current()->RunUntilIdle();
-}
 
 void DeviceSettingsTestHelper::FlushStore() {
   std::vector<StorePolicyCallback> callbacks;
@@ -78,11 +68,11 @@ void DeviceSettingsTestHelper::FlushRetrieve() {
 
 void DeviceSettingsTestHelper::Flush() {
   do {
-    FlushLoops();
+    content::RunAllBlockingPoolTasksUntilIdle();
     FlushStore();
-    FlushLoops();
+    content::RunAllBlockingPoolTasksUntilIdle();
     FlushRetrieve();
-    FlushLoops();
+    content::RunAllBlockingPoolTasksUntilIdle();
   } while (HasPendingOperations());
 }
 
@@ -207,6 +197,8 @@ DeviceSettingsTestBase::DeviceSettingsTestBase()
     : user_manager_(new FakeUserManager()),
       user_manager_enabler_(user_manager_),
       owner_key_util_(new ownership::MockOwnerKeyUtil()) {
+  OwnerSettingsServiceChromeOSFactory::GetInstance()->SetOwnerKeyUtilForTesting(
+      owner_key_util_);
 }
 
 DeviceSettingsTestBase::~DeviceSettingsTestBase() {
@@ -226,15 +218,13 @@ void DeviceSettingsTestBase::SetUp() {
   device_settings_test_helper_.set_policy_blob(device_policy_.GetBlob());
   device_settings_service_.SetSessionManager(&device_settings_test_helper_,
                                              owner_key_util_);
-  OwnerSettingsService::SetOwnerKeyUtilForTesting(owner_key_util_.get());
-  OwnerSettingsService::SetDeviceSettingsServiceForTesting(
+  OwnerSettingsServiceChromeOS::SetDeviceSettingsServiceForTesting(
       &device_settings_service_);
   profile_.reset(new TestingProfile());
 }
 
 void DeviceSettingsTestBase::TearDown() {
-  OwnerSettingsService::SetOwnerKeyUtilForTesting(NULL);
-  OwnerSettingsService::SetDeviceSettingsServiceForTesting(NULL);
+  OwnerSettingsServiceChromeOS::SetDeviceSettingsServiceForTesting(NULL);
   FlushDeviceSettings();
   device_settings_service_.UnsetSessionManager();
   DBusThreadManager::Shutdown();
@@ -259,11 +249,11 @@ void DeviceSettingsTestBase::InitOwner(const std::string& user_id,
     ProfileHelper::Get()->SetUserToProfileMappingForTesting(user,
                                                             profile_.get());
   }
-  OwnerSettingsService* service =
-      OwnerSettingsServiceFactory::GetForProfile(profile_.get());
+  OwnerSettingsServiceChromeOS* service =
+      OwnerSettingsServiceChromeOSFactory::GetForProfile(profile_.get());
   CHECK(service);
   if (tpm_is_ready)
-    service->OnTPMTokenReady();
+    service->OnTPMTokenReady(true /* token is enabled */);
 }
 
 }  // namespace chromeos

@@ -18,12 +18,15 @@ component("events_base") {
   sources = [
     "device_data_manager.cc",
     "device_data_manager.h",
+    "device_hotplug_event_observer.h",
     "event_constants.h",
     "event_switches.cc",
     "event_switches.h",
     "events_base_export.h",
     "gesture_event_details.cc",
     "gesture_event_details.h",
+    "gestures/fling_curve.cc",
+    "gestures/fling_curve.h",
     "gestures/gesture_configuration.cc",
     "gestures/gesture_configuration.h",
     "keycodes/keyboard_code_conversion.cc",
@@ -37,21 +40,24 @@ component("events_base") {
     "keycodes/keyboard_codes.h",
     "latency_info.cc",
     "latency_info.h",
+    "touchscreen_device.cc",
+    "touchscreen_device.h",
   ]
 
   defines = [ "EVENTS_BASE_IMPLEMENTATION" ]
 
   deps = [
     ":dom4_keycode_converter",
-    "//base",
     "//base/third_party/dynamic_annotations",
     "//skia",
+  ]
+
+  public_deps = [
+    "//base",
     "//ui/events/platform",
     "//ui/gfx",
     "//ui/gfx/geometry",
   ]
-
-  forward_dependent_configs_from = [ "//ui/gfx" ]
 
   if (use_x11) {
     configs += [ "//build/config/linux:x11" ]
@@ -63,11 +69,15 @@ component("events_base") {
       "x/device_data_manager_x11.h",
       "x/device_list_cache_x.cc",
       "x/device_list_cache_x.h",
+      "x/hotplug_event_handler_x11.cc",
+      "x/hotplug_event_handler_x11.h",
       "x/keysym_to_unicode.cc",
       "x/keysym_to_unicode.h",
       "x/touch_factory_x11.cc",
       "x/touch_factory_x11.h",
     ]
+
+    deps += [ "//ui/gfx/x" ]
   }
 }
 
@@ -99,14 +109,15 @@ component("events") {
     "gestures/gesture_recognizer_impl_mac.cc",
     "gestures/gesture_types.h",
     "win/events_win.cc",
-    "x/events_x.cc",
   ]
 
   defines = [ "EVENTS_IMPLEMENTATION" ]
 
+  public_deps = [
+    ":events_base",
+  ]
   deps = [
     ":dom4_keycode_converter",
-    ":events_base",
     ":gesture_detection",
     "//base/third_party/dynamic_annotations",
     "//skia",
@@ -114,17 +125,13 @@ component("events") {
     "//ui/gfx/geometry",
   ]
 
-  forward_dependent_configs_from = [ ":events_base" ]
-
   if (use_x11) {
+    sources += [ "x/events_x.cc" ]
     configs += [
       "//build/config/linux:glib",
       "//build/config/linux:x11",
     ]
-  } else {
-    sources -= [
-      "x/events_x.cc",
-    ]
+    deps += [ "//ui/gfx/x" ]
   }
 
   if (!is_chromeos && is_linux) {
@@ -220,8 +227,6 @@ source_set("test_support") {
     "test/event_generator.h",
     "test/events_test_utils.cc",
     "test/events_test_utils.h",
-    "test/events_test_utils_x11.cc",
-    "test/events_test_utils_x11.h",
     "test/mock_motion_event.cc",
     "test/mock_motion_event.h",
     "test/platform_event_waiter.cc",
@@ -234,10 +239,12 @@ source_set("test_support") {
     "test/test_event_target.h",
   ]
 
-  deps = [
+  public_deps = [
     ":events",
     ":events_base",
     ":gesture_detection",
+  ]
+  deps = [
     "//base",
     "//skia",
     "//ui/events/platform",
@@ -251,11 +258,12 @@ source_set("test_support") {
     ]
   }
 
-  if (!use_x11) {
-    sources -= [
+  if (use_x11) {
+    sources += [
       "test/events_test_utils_x11.cc",
       "test/events_test_utils_x11.h",
     ]
+    deps += [ "//ui/gfx/x" ]
   }
 }
 
@@ -273,6 +281,7 @@ test("events_unittests") {
     "gesture_detection/motion_event_generic_unittest.cc",
     "gesture_detection/touch_disposition_gesture_filter_unittest.cc",
     "gesture_detection/velocity_tracker_unittest.cc",
+    "gestures/fling_curve_unittest.cc",
     "keycodes/dom4/keycode_converter_unittest.cc",
     "latency_info_unittest.cc",
     "platform/platform_event_source_unittest.cc",

@@ -51,7 +51,7 @@ cr.define('print_preview', function() {
   SearchBox.prototype = {
     __proto__: print_preview.Component.prototype,
 
-    /** @param {string} New query to set the search box's query to. */
+    /** @param {?string} query New query to set the search box's query to. */
     setQuery: function(query) {
       query = query || '';
       this.input_.value = query.trim();
@@ -73,7 +73,8 @@ cr.define('print_preview', function() {
     /** @override */
     enterDocument: function() {
       print_preview.Component.prototype.enterDocument.call(this);
-      this.tracker.add(this.input_, 'input', this.onInputInput_.bind(this));
+      this.tracker.add(assert(this.input_), 'input',
+                       this.onInputInput_.bind(this));
     },
 
     /** @override */
@@ -97,7 +98,15 @@ cr.define('print_preview', function() {
     dispatchSearchEvent_: function() {
       this.timeout_ = null;
       var searchEvent = new Event(SearchBox.EventType.SEARCH);
-      searchEvent.query = this.getQuery_();
+      var query = this.getQuery_();
+      searchEvent.query = query;
+      if (query) {
+        // Generate regexp-safe query by escaping metacharacters.
+        var safeQuery = query.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+        searchEvent.queryRegExp = new RegExp('(' + safeQuery + ')', 'ig');
+      } else {
+        searchEvent.queryRegExp = null;
+      }
       this.dispatchEvent(searchEvent);
     },
 

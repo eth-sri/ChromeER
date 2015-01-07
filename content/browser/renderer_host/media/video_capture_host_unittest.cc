@@ -7,7 +7,7 @@
 
 #include "base/bind.h"
 #include "base/command_line.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_file.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
@@ -33,6 +33,10 @@
 #include "net/url_request/url_request_context.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+#if defined(OS_CHROMEOS)
+#include "chromeos/audio/cras_audio_handler.h"
+#endif
 
 using ::testing::_;
 using ::testing::AtLeast;
@@ -285,6 +289,11 @@ class VideoCaptureHostTest : public testing::Test {
 
   virtual void SetUp() OVERRIDE {
     SetBrowserClientForTesting(&browser_client_);
+
+#if defined(OS_CHROMEOS)
+    chromeos::CrasAudioHandler::InitializeForTesting();
+#endif
+
     // Create our own MediaStreamManager.
     audio_manager_.reset(media::AudioManager::CreateForTesting());
 #ifndef TEST_REAL_CAPTURE_DEVICE
@@ -315,6 +324,10 @@ class VideoCaptureHostTest : public testing::Test {
     // Release the reference to the mock object. The object will be destructed
     // on the current message loop.
     host_ = NULL;
+
+#if defined(OS_CHROMEOS)
+    chromeos::CrasAudioHandler::Shutdown();
+#endif
   }
 
   void OpenSession() {
@@ -336,8 +349,7 @@ class VideoCaptureHostTest : public testing::Test {
           browser_context_.GetResourceContext()->GetMediaDeviceIDSalt(),
           page_request_id,
           MEDIA_DEVICE_VIDEO_CAPTURE,
-          security_origin,
-          true);
+          security_origin);
       EXPECT_CALL(stream_requester_, DevicesEnumerated(render_frame_id,
                                                        page_request_id,
                                                        label,

@@ -24,6 +24,8 @@ function MediaControls(containerElement, onMediaError) {
   this.onMediaDurationBound_ = this.onMediaDuration_.bind(this);
   this.onMediaProgressBound_ = this.onMediaProgress_.bind(this);
   this.onMediaError_ = onMediaError || function() {};
+
+  this.savedVolume_ = 1;  // 100% volume.
 }
 
 /**
@@ -133,6 +135,9 @@ MediaControls.prototype.enableControls_ = function(selector, on) {
  * Play the media.
  */
 MediaControls.prototype.play = function() {
+  if (!this.media_)
+    return;  // Media is detached.
+
   this.media_.play();
 };
 
@@ -140,6 +145,9 @@ MediaControls.prototype.play = function() {
  * Pause the media.
  */
 MediaControls.prototype.pause = function() {
+  if (!this.media_)
+    return;  // Media is detached.
+
   this.media_.pause();
 };
 
@@ -230,6 +238,9 @@ MediaControls.prototype.displayProgress_ = function(current, duration) {
  * @private
  */
 MediaControls.prototype.onProgressChange_ = function(value) {
+  if (!this.media_)
+    return;  // Media is detached.
+
   if (!this.media_.seekable || !this.media_.duration) {
     console.error('Inconsistent media state');
     return;
@@ -246,17 +257,17 @@ MediaControls.prototype.onProgressChange_ = function(value) {
  */
 MediaControls.prototype.onProgressDrag_ = function(on) {
   if (!this.media_)
-    return;
+    return;  // Media is detached.
 
   if (on) {
     this.resumeAfterDrag_ = this.isPlaying();
-    this.media_.pause();
+    this.media_.pause(true /* seeking */);
   } else {
     if (this.resumeAfterDrag_) {
       if (this.media_.ended)
         this.onMediaPlay_(false);
       else
-        this.media_.play();
+        this.media_.play(true /* seeking */);
     }
     this.updatePlayButtonState_(this.isPlaying());
   }
@@ -315,6 +326,9 @@ MediaControls.getVolumeLevel_ = function(value) {
  * @private
  */
 MediaControls.prototype.onVolumeChange_ = function(value) {
+  if (!this.media_)
+    return;  // Media is detached.
+
   this.media_.volume = value;
   this.soundButton_.setAttribute('level', MediaControls.getVolumeLevel_(value));
 };
@@ -353,7 +367,7 @@ MediaControls.prototype.attachMedia = function(mediaElement) {
   this.onMediaProgress_();
   if (this.volume_) {
     /* Copy the user selected volume to the new media element. */
-    this.media_.volume = this.volume_.getValue();
+    this.savedVolume_ = this.media_.volume = this.volume_.getValue();
   }
 };
 
@@ -419,6 +433,7 @@ MediaControls.prototype.onMediaDuration_ = function() {
     sliderContainer.classList.add('readonly');
 
   var valueToString = function(value) {
+    var duration = this.media_ ? this.media_.duration : 0;
     return MediaControls.formatTime_(this.media_.duration * value);
   }.bind(this);
 
@@ -731,15 +746,15 @@ MediaControls.AnimatedSlider.prototype.setValueToUI_ = function(value) {
   var oldValue = this.getValueFromUI_();
   var step = 0;
   this.animationInterval_ = setInterval(function() {
-      step++;
-      var currentValue = oldValue +
-          (value - oldValue) * (step / MediaControls.AnimatedSlider.STEPS);
-      MediaControls.Slider.prototype.setValueToUI_.call(this, currentValue);
-      if (step == MediaControls.AnimatedSlider.STEPS) {
-        clearInterval(this.animationInterval_);
-      }
-    }.bind(this),
-    MediaControls.AnimatedSlider.DURATION / MediaControls.AnimatedSlider.STEPS);
+    step++;
+    var currentValue = oldValue +
+        (value - oldValue) * (step / MediaControls.AnimatedSlider.STEPS);
+    MediaControls.Slider.prototype.setValueToUI_.call(this, currentValue);
+    if (step == MediaControls.AnimatedSlider.STEPS) {
+      clearInterval(this.animationInterval_);
+    }
+  }.bind(this),
+  MediaControls.AnimatedSlider.DURATION / MediaControls.AnimatedSlider.STEPS);
 };
 
 /**
@@ -948,7 +963,7 @@ MediaControls.PreciseSlider.prototype.onInputDrag_ = function(on) {
  * @constructor
  */
 function VideoControls(containerElement, onMediaError, stringFunction,
-   opt_fullScreenToggle, opt_stateIconParent) {
+    opt_fullScreenToggle, opt_stateIconParent) {
   MediaControls.call(this, containerElement, onMediaError);
   this.stringFunction_ = stringFunction;
 
@@ -956,6 +971,13 @@ function VideoControls(containerElement, onMediaError, stringFunction,
   this.initPlayButton();
   this.initTimeControls(true /* show seek mark */);
   this.initVolumeControls();
+
+  // Create the cast button.
+  this.castButton_ = this.createButton('cast menubutton');
+  this.castButton_.setAttribute('menu', '#cast-menu');
+  this.castButton_.setAttribute(
+      'label', this.stringFunction_('VIDEO_PLAYER_PLAY_ON'));
+  cr.ui.decorate(this.castButton_, cr.ui.MenuButton);
 
   if (opt_fullScreenToggle) {
     this.fullscreenButton_ =
@@ -998,9 +1020,22 @@ VideoControls.prototype = { __proto__: MediaControls.prototype };
  * @private
  */
 VideoControls.prototype.showIconFeedback_ = function() {
-  this.stateIcon_.removeAttribute('state');
+  var stateIcon = this.stateIcon_;
+  stateIcon.removeAttribute('state');
+
   setTimeout(function() {
-    this.stateIcon_.setAttribute('state', this.isPlaying() ? 'play' : 'pause');
+    var newState = this.isPlaying() ? 'play' : 'pause';
+
+    var onAnimationEnd = function(state, event) {
+      if (stateIcon.getAttribute('state') === state)
+        stateIcon.removeAttribute('state');
+
+      stateIcon.removeEventListener('webkitAnimationEnd', onAnimationEnd);
+    }.bind(null, newState);
+    stateIcon.addEventListener('webkitAnimationEnd', onAnimationEnd);
+
+    // Shows the icon with animation.
+    stateIcon.setAttribute('state', newState);
   }.bind(this), 0);
 };
 
@@ -1013,7 +1048,15 @@ VideoControls.prototype.showIconFeedback_ = function() {
 VideoControls.prototype.showTextBanner_ = function(identifier) {
   this.textBanner_.removeAttribute('visible');
   this.textBanner_.textContent = this.stringFunction_(identifier);
+
   setTimeout(function() {
+    var onAnimationEnd = function(event) {
+      this.textBanner_.removeEventListener(
+          'webkitAnimationEnd', onAnimationEnd);
+      this.textBanner_.removeAttribute('visible');
+    }.bind(this);
+    this.textBanner_.addEventListener('webkitAnimationEnd', onAnimationEnd);
+
     this.textBanner_.setAttribute('visible', 'true');
   }.bind(this), 0);
 };

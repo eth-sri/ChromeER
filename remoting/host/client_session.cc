@@ -51,7 +51,6 @@ ClientSession::ClientSession(
     : event_handler_(event_handler),
       connection_(connection.Pass()),
       client_jid_(connection_->session()->jid()),
-      control_factory_(this),
       desktop_environment_factory_(desktop_environment_factory),
       input_tracker_(&host_input_filter_),
       remote_input_filter_(&input_tracker_),
@@ -71,7 +70,8 @@ ClientSession::ClientSession(
       pairing_registry_(pairing_registry),
       pause_video_(false),
       lossless_video_encode_(false),
-      lossless_video_color_(false) {
+      lossless_video_color_(false),
+      weak_factory_(this) {
   connection_->SetEventHandler(this);
 
   // TODO(sergeyu): Currently ConnectionToClient expects stubs to be
@@ -176,13 +176,6 @@ void ClientSession::SetCapabilities(
     const protocol::Capabilities& capabilities) {
   DCHECK(CalledOnValidThread());
 
-  // The client should not send protocol::Capabilities if it is not supported by
-  // the config channel.
-  if (!connection_->session()->config().SupportsCapabilities()) {
-    LOG(ERROR) << "Unexpected protocol::Capabilities has been received.";
-    return;
-  }
-
   // Ignore all the messages but the 1st one.
   if (client_capabilities_) {
     LOG(WARNING) << "protocol::Capabilities has been received already.";
@@ -235,12 +228,13 @@ void ClientSession::DeliverClientMessage(
       }
       return;
     } else {
-      extension_manager_->OnExtensionMessage(message);
-      return;
+      if (!extension_manager_->OnExtensionMessage(message))
+        return;
+
+      DLOG(INFO) << "Unexpected message received: "
+                 << message.type() << ": " << message.data();
     }
   }
-  HOST_LOG << "Unexpected message received: "
-            << message.type() << ": " << message.data();
 }
 
 void ClientSession::OnConnectionAuthenticating(
@@ -280,23 +274,17 @@ void ClientSession::OnConnectionAuthenticated(
   // Create the desktop environment. Drop the connection if it could not be
   // created for any reason (for instance the curtain could not initialize).
   desktop_environment_ =
-      desktop_environment_factory_->Create(control_factory_.GetWeakPtr());
+      desktop_environment_factory_->Create(weak_factory_.GetWeakPtr());
   if (!desktop_environment_) {
     DisconnectSession();
     return;
   }
 
   // Collate the set of capabilities to offer the client, if it supports them.
-  if (connection_->session()->config().SupportsCapabilities()) {
-    host_capabilities_ = desktop_environment_->GetCapabilities();
-    if (!host_capabilities_.empty()) {
-      host_capabilities_.append(" ");
-    }
-    host_capabilities_.append(extension_manager_->GetCapabilities());
-  } else {
-    VLOG(1) << "The client does not support any capabilities.";
-    desktop_environment_->SetCapabilities(std::string());
-  }
+  host_capabilities_ = desktop_environment_->GetCapabilities();
+  if (!host_capabilities_.empty())
+    host_capabilities_.append(" ");
+  host_capabilities_.append(extension_manager_->GetCapabilities());
 
   // Create the object that controls the screen resolution.
   screen_controls_ = desktop_environment_->CreateScreenControls();
@@ -331,13 +319,11 @@ void ClientSession::OnConnectionChannelsConnected(
   DCHECK_EQ(connection_.get(), connection);
 
   // Negotiate capabilities with the client.
-  if (connection_->session()->config().SupportsCapabilities()) {
-    VLOG(1) << "Host capabilities: " << host_capabilities_;
+  VLOG(1) << "Host capabilities: " << host_capabilities_;
 
-    protocol::Capabilities capabilities;
-    capabilities.set_capabilities(host_capabilities_);
-    connection_->client_stub()->SetCapabilities(capabilities);
-  }
+  protocol::Capabilities capabilities;
+  capabilities.set_capabilities(host_capabilities_);
+  connection_->client_stub()->SetCapabilities(capabilities);
 
   // Start the event executor.
   input_injector_->Start(CreateClipboardProxy());
@@ -361,7 +347,7 @@ void ClientSession::OnConnectionClosed(
   DCHECK_EQ(connection_.get(), connection);
 
   // Ignore any further callbacks.
-  control_factory_.InvalidateWeakPtrs();
+  weak_factory_.InvalidateWeakPtrs();
 
   // If the client never authenticated then the session failed.
   if (!auth_input_filter_.enabled())
@@ -508,15 +494,15 @@ scoped_ptr<VideoEncoder> ClientSession::CreateVideoEncoder(
   const protocol::ChannelConfig& video_config = config.video_config();
 
   if (video_config.codec == protocol::ChannelConfig::CODEC_VP8) {
-    return remoting::VideoEncoderVpx::CreateForVP8().PassAs<VideoEncoder>();
+    return remoting::VideoEncoderVpx::CreateForVP8().Pass();
   } else if (video_config.codec == protocol::ChannelConfig::CODEC_VP9) {
-    return remoting::VideoEncoderVpx::CreateForVP9().PassAs<VideoEncoder>();
+    return remoting::VideoEncoderVpx::CreateForVP9().Pass();
   } else if (video_config.codec == protocol::ChannelConfig::CODEC_VERBATIM) {
-    return scoped_ptr<VideoEncoder>(new remoting::VideoEncoderVerbatim());
+    return make_scoped_ptr(new remoting::VideoEncoderVerbatim());
   }
 
   NOTREACHED();
-  return scoped_ptr<VideoEncoder>();
+  return nullptr;
 }
 
 // static
@@ -531,7 +517,7 @@ scoped_ptr<AudioEncoder> ClientSession::CreateAudioEncoder(
   }
 
   NOTREACHED();
-  return scoped_ptr<AudioEncoder>();
+  return nullptr;
 }
 
 }  // namespace remoting

@@ -13,6 +13,7 @@
 #include "base/process/launch.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
+#include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
@@ -418,7 +419,7 @@ std::string SSLBlockingPage::GetHTMLContents() {
   webui::SetFontAndTextDirection(&load_time_data);
 
   // Shared values for both the overridable and non-overridable versions.
-  load_time_data.SetBoolean("ssl", true);
+  load_time_data.SetString("type", "SSL");
   load_time_data.SetBoolean("overridable", overridable_);
   load_time_data.SetString(
       "tabTitle", l10n_util::GetStringUTF16(IDS_SSL_V2_TITLE));
@@ -471,7 +472,7 @@ std::string SSLBlockingPage::GetHTMLContents() {
     SSLErrorInfo::ErrorType type =
         SSLErrorInfo::NetErrorToErrorType(cert_error_);
     if (type == SSLErrorInfo::CERT_INVALID && SSLErrorClassification::
-        IsWindowsVersionSP3OrLower()) {
+        MaybeWindowsLacksSHA256Support()) {
       load_time_data.SetString(
           "explanationParagraph",
           l10n_util::GetStringFUTF16(
@@ -511,10 +512,23 @@ std::string SSLBlockingPage::GetHTMLContents() {
         "finalParagraph", l10n_util::GetStringFUTF16(help_string, url));
   }
 
+  // Set debugging information at the bottom of the warning.
+  load_time_data.SetString(
+      "subject", ssl_info_.cert->subject().GetDisplayName());
+  load_time_data.SetString(
+      "issuer", ssl_info_.cert->issuer().GetDisplayName());
+  load_time_data.SetString(
+      "expirationDate",
+      base::TimeFormatShortDate(ssl_info_.cert->valid_expiry()));
+  load_time_data.SetString(
+      "currentDate", base::TimeFormatShortDate(now));
+  std::vector<std::string> encoded_chain;
+  ssl_info_.cert->GetPEMEncodedChain(&encoded_chain);
+  load_time_data.SetString("pem", JoinString(encoded_chain, std::string()));
+
   base::StringPiece html(
      ResourceBundle::GetSharedInstance().GetRawDataResource(
          IRD_SECURITY_INTERSTITIAL_HTML));
-  webui::UseVersion2 version;
   return webui::GetI18nTemplateHtml(html, &load_time_data);
 }
 

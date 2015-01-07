@@ -99,7 +99,7 @@ class GCMClient {
     int time_to_live;
     MessageData data;
 
-    static const int kMaximumTTL = 4 * 7 * 24 * 60 * 60;  // 4 weeks.
+    static const int kMaximumTTL;
   };
 
   // Message being received from the other party.
@@ -139,6 +139,13 @@ class GCMClient {
     int resend_queue_size;
 
     RecordedActivities recorded_activities;
+  };
+
+  // Information about account.
+  struct AccountTokenInfo {
+    std::string account_id;
+    std::string email;
+    std::string access_token;
   };
 
   // A delegate interface that allows the GCMClient instance to interact with
@@ -194,7 +201,10 @@ class GCMClient {
     // Called when the GCM becomes ready. To get to this state, GCMClient
     // finished loading from the GCM store and retrieved the device check-in
     // from the server if it hadn't yet.
-    virtual void OnGCMReady() = 0;
+    // |account_mappings|: a persisted list of accounts mapped to this GCM
+    //                     client.
+    virtual void OnGCMReady(
+        const std::vector<AccountMapping>& account_mappings) = 0;
 
     // Called when activities are being recorded and a new activity has just
     // been recorded.
@@ -274,9 +284,10 @@ class GCMClient {
   virtual GCMStatistics GetStatistics() const = 0;
 
   // Sets a list of accounts with OAuth2 tokens for the next checkin.
-  // |account_tokens| maps email addresses to OAuth2 access tokens.
-  virtual void SetAccountsForCheckin(
-      const std::map<std::string, std::string>& account_tokens) = 0;
+  // |account_tokens|: list of email addresses, account IDs and OAuth2 access
+  //                   tokens.
+  virtual void SetAccountTokens(
+      const std::vector<AccountTokenInfo>& account_tokens) = 0;
 
   // Persists the |account_mapping| in the store.
   virtual void UpdateAccountMapping(const AccountMapping& account_mapping) = 0;

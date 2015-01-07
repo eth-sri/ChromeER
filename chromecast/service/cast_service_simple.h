@@ -20,11 +20,12 @@ namespace chromecast {
 
 class CastServiceSimple : public CastService {
  public:
-  explicit CastServiceSimple(content::BrowserContext* browser_context);
+  CastServiceSimple(content::BrowserContext* browser_context,
+                    const OptInStatsChangedCallback& opt_in_stats_callback);
   virtual ~CastServiceSimple();
 
  protected:
-  // CastService implementation.
+  // CastService implementation:
   virtual void Initialize() OVERRIDE;
   virtual void StartInternal() OVERRIDE;
   virtual void StopInternal() OVERRIDE;

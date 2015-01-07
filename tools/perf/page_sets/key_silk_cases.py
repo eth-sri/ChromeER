@@ -466,7 +466,6 @@ class Page22(KeySilkCasesPage):
       url='http://plus.google.com/app/basic/stream',
       page_set=page_set)
 
-    self.disabled = 'Times out on Windows; crbug.com/338838'
     self.credentials = 'google'
 
   def RunNavigateSteps(self, action_runner):
@@ -633,6 +632,21 @@ class UpdateHistoryState(KeySilkCasesPage):
     interaction.End()
 
 
+class TextSizeAnimation(KeySilkCasesPage):
+
+  """ Why: Scale animation with text. """
+
+  def __init__(self, page_set):
+    super(TextSizeAnimation, self).__init__(
+      url='http://jsbin.com/gikex/2/quiet',
+      page_set=page_set)
+
+    self.gpu_raster = True
+
+  def RunSmoothness(self, action_runner):
+    action_runner.Wait(4)
+
+
 class KeySilkCasesPageSet(page_set_module.PageSet):
 
   """ Pages hand-picked for project Silk. """
@@ -667,10 +681,12 @@ class KeySilkCasesPageSet(page_set_module.PageSet):
     self.AddPage(Page20(self))
     self.AddPage(GwsGoogleExpansion(self))
     self.AddPage(GwsBoogieExpansion(self))
-    self.AddPage(Page22(self))
+    # Times out on Windows; crbug.com/338838
+    # self.AddPage(Page22(self))
     self.AddPage(Page23(self))
     self.AddPage(Page24(self))
     self.AddPage(Page25(self))
     self.AddPage(Page26(self))
     self.AddPage(SVGIconRaster(self))
     self.AddPage(UpdateHistoryState(self))
+    self.AddPage(TextSizeAnimation(self))

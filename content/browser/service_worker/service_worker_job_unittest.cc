@@ -38,10 +38,7 @@ void SaveRegistrationCallback(
     bool* called,
     scoped_refptr<ServiceWorkerRegistration>* registration_out,
     ServiceWorkerStatusCode status,
-    ServiceWorkerRegistration* registration,
-    ServiceWorkerVersion* version) {
-  ASSERT_TRUE(!version || version->registration_id() == registration->id())
-      << version << " " << registration;
+    ServiceWorkerRegistration* registration) {
   EXPECT_EQ(expected_status, status);
   *called = true;
   *registration_out = registration;
@@ -132,7 +129,7 @@ TEST_F(ServiceWorkerJobTest, SameDocumentSameRegistration) {
   job_coordinator()->Register(
       GURL("http://www.example.com/"),
       GURL("http://www.example.com/service_worker.js"),
-      render_process_id_,
+      NULL,
       SaveRegistration(SERVICE_WORKER_OK, &called, &original_registration));
   EXPECT_FALSE(called);
   base::RunLoop().RunUntilIdle();
@@ -159,7 +156,7 @@ TEST_F(ServiceWorkerJobTest, SameMatchSameRegistration) {
   job_coordinator()->Register(
       GURL("http://www.example.com/"),
       GURL("http://www.example.com/service_worker.js"),
-      render_process_id_,
+      NULL,
       SaveRegistration(SERVICE_WORKER_OK, &called, &original_registration));
   EXPECT_FALSE(called);
   base::RunLoop().RunUntilIdle();
@@ -190,7 +187,7 @@ TEST_F(ServiceWorkerJobTest, DifferentMatchDifferentRegistration) {
   job_coordinator()->Register(
       GURL("http://www.example.com/one/"),
       GURL("http://www.example.com/service_worker.js"),
-      render_process_id_,
+      NULL,
       SaveRegistration(SERVICE_WORKER_OK, &called1, &original_registration1));
 
   bool called2;
@@ -198,7 +195,7 @@ TEST_F(ServiceWorkerJobTest, DifferentMatchDifferentRegistration) {
   job_coordinator()->Register(
       GURL("http://www.example.com/two/"),
       GURL("http://www.example.com/service_worker.js"),
-      render_process_id_,
+      NULL,
       SaveRegistration(SERVICE_WORKER_OK, &called2, &original_registration2));
 
   EXPECT_FALSE(called1);
@@ -229,7 +226,7 @@ TEST_F(ServiceWorkerJobTest, Register) {
   job_coordinator()->Register(
       GURL("http://www.example.com/"),
       GURL("http://www.example.com/service_worker.js"),
-      render_process_id_,
+      NULL,
       SaveRegistration(SERVICE_WORKER_OK, &called, &registration));
 
   ASSERT_FALSE(called);
@@ -248,7 +245,7 @@ TEST_F(ServiceWorkerJobTest, Unregister) {
   job_coordinator()->Register(
       pattern,
       GURL("http://www.example.com/service_worker.js"),
-      render_process_id_,
+      NULL,
       SaveRegistration(SERVICE_WORKER_OK, &called, &registration));
 
   ASSERT_FALSE(called);
@@ -280,8 +277,9 @@ TEST_F(ServiceWorkerJobTest, Unregister_NothingRegistered) {
   GURL pattern("http://www.example.com/");
 
   bool called;
-  job_coordinator()->Unregister(pattern,
-                                SaveUnregistration(SERVICE_WORKER_OK, &called));
+  job_coordinator()->Unregister(
+      pattern,
+      SaveUnregistration(SERVICE_WORKER_ERROR_NOT_FOUND, &called));
 
   ASSERT_FALSE(called);
   base::RunLoop().RunUntilIdle();
@@ -298,7 +296,7 @@ TEST_F(ServiceWorkerJobTest, RegisterNewScript) {
   job_coordinator()->Register(
       pattern,
       GURL("http://www.example.com/service_worker.js"),
-      render_process_id_,
+      NULL,
       SaveRegistration(SERVICE_WORKER_OK, &called, &old_registration));
 
   ASSERT_FALSE(called);
@@ -322,7 +320,7 @@ TEST_F(ServiceWorkerJobTest, RegisterNewScript) {
   job_coordinator()->Register(
       pattern,
       GURL("http://www.example.com/service_worker_new.js"),
-      render_process_id_,
+      NULL,
       SaveRegistration(SERVICE_WORKER_OK, &called, &new_registration));
 
   ASSERT_FALSE(called);
@@ -355,7 +353,7 @@ TEST_F(ServiceWorkerJobTest, RegisterDuplicateScript) {
   job_coordinator()->Register(
       pattern,
       script_url,
-      render_process_id_,
+      NULL,
       SaveRegistration(SERVICE_WORKER_OK, &called, &old_registration));
 
   ASSERT_FALSE(called);
@@ -377,7 +375,7 @@ TEST_F(ServiceWorkerJobTest, RegisterDuplicateScript) {
   job_coordinator()->Register(
       pattern,
       script_url,
-      render_process_id_,
+      NULL,
       SaveRegistration(SERVICE_WORKER_OK, &called, &new_registration));
 
   ASSERT_FALSE(called);
@@ -424,7 +422,7 @@ TEST_F(ServiceWorkerJobTest, Register_FailToStartWorker) {
   job_coordinator()->Register(
       GURL("http://www.example.com/"),
       GURL("http://www.example.com/service_worker.js"),
-      render_process_id_,
+      NULL,
       SaveRegistration(
           SERVICE_WORKER_ERROR_START_WORKER_FAILED, &called, &registration));
 
@@ -446,7 +444,7 @@ TEST_F(ServiceWorkerJobTest, ParallelRegUnreg) {
   job_coordinator()->Register(
       pattern,
       script_url,
-      render_process_id_,
+      NULL,
       SaveRegistration(SERVICE_WORKER_OK, &registration_called, &registration));
 
   bool unregistration_called = false;
@@ -483,7 +481,7 @@ TEST_F(ServiceWorkerJobTest, ParallelRegNewScript) {
   job_coordinator()->Register(
       pattern,
       script_url1,
-      render_process_id_,
+      NULL,
       SaveRegistration(
           SERVICE_WORKER_OK, &registration1_called, &registration1));
 
@@ -493,7 +491,7 @@ TEST_F(ServiceWorkerJobTest, ParallelRegNewScript) {
   job_coordinator()->Register(
       pattern,
       script_url2,
-      render_process_id_,
+      NULL,
       SaveRegistration(
           SERVICE_WORKER_OK, &registration2_called, &registration2));
 
@@ -527,7 +525,7 @@ TEST_F(ServiceWorkerJobTest, ParallelRegSameScript) {
   job_coordinator()->Register(
       pattern,
       script_url,
-      render_process_id_,
+      NULL,
       SaveRegistration(
           SERVICE_WORKER_OK, &registration1_called, &registration1));
 
@@ -536,7 +534,7 @@ TEST_F(ServiceWorkerJobTest, ParallelRegSameScript) {
   job_coordinator()->Register(
       pattern,
       script_url,
-      render_process_id_,
+      NULL,
       SaveRegistration(
           SERVICE_WORKER_OK, &registration2_called, &registration2));
 
@@ -567,11 +565,14 @@ TEST_F(ServiceWorkerJobTest, ParallelUnreg) {
   bool unregistration1_called = false;
   job_coordinator()->Unregister(
       pattern,
-      SaveUnregistration(SERVICE_WORKER_OK, &unregistration1_called));
+      SaveUnregistration(SERVICE_WORKER_ERROR_NOT_FOUND,
+                         &unregistration1_called));
 
   bool unregistration2_called = false;
   job_coordinator()->Unregister(
-      pattern, SaveUnregistration(SERVICE_WORKER_OK, &unregistration2_called));
+      pattern,
+      SaveUnregistration(SERVICE_WORKER_ERROR_NOT_FOUND,
+                         &unregistration2_called));
 
   ASSERT_FALSE(unregistration1_called);
   ASSERT_FALSE(unregistration2_called);
@@ -604,7 +605,7 @@ TEST_F(ServiceWorkerJobTest, AbortAll_Register) {
   job_coordinator()->Register(
       pattern1,
       script_url1,
-      render_process_id_,
+      NULL,
       SaveRegistration(SERVICE_WORKER_ERROR_ABORT,
                        &registration_called1, &registration1));
 
@@ -613,7 +614,7 @@ TEST_F(ServiceWorkerJobTest, AbortAll_Register) {
   job_coordinator()->Register(
       pattern2,
       script_url2,
-      render_process_id_,
+      NULL,
       SaveRegistration(SERVICE_WORKER_ERROR_ABORT,
                        &registration_called2, &registration2));
 
@@ -679,7 +680,7 @@ TEST_F(ServiceWorkerJobTest, AbortAll_RegUnreg) {
   job_coordinator()->Register(
       pattern,
       script_url,
-      render_process_id_,
+      NULL,
       SaveRegistration(SERVICE_WORKER_ERROR_ABORT,
                        &registration_called, &registration));
 
@@ -717,7 +718,7 @@ TEST_F(ServiceWorkerJobTest, UnregisterWaitingSetsRedundant) {
   job_coordinator()->Register(
       GURL("http://www.example.com/"),
       script_url,
-      render_process_id_,
+      NULL,
       SaveRegistration(SERVICE_WORKER_OK, &called, &registration));
   base::RunLoop().RunUntilIdle();
   ASSERT_TRUE(called);
@@ -758,7 +759,7 @@ TEST_F(ServiceWorkerJobTest, UnregisterActiveSetsRedundant) {
   job_coordinator()->Register(
       GURL("http://www.example.com/"),
       GURL("http://www.example.com/service_worker.js"),
-      render_process_id_,
+      NULL,
       SaveRegistration(SERVICE_WORKER_OK, &called, &registration));
   base::RunLoop().RunUntilIdle();
   ASSERT_TRUE(called);
@@ -789,7 +790,7 @@ TEST_F(ServiceWorkerJobTest,
   job_coordinator()->Register(
       GURL("http://www.example.com/"),
       GURL("http://www.example.com/service_worker.js"),
-      render_process_id_,
+      NULL,
       SaveRegistration(SERVICE_WORKER_OK, &called, &registration));
   base::RunLoop().RunUntilIdle();
   ASSERT_TRUE(called);
@@ -913,7 +914,7 @@ class UpdateJobTestHelper
     job_coordinator()->Register(
         test_origin.Resolve(kScope),
         test_origin.Resolve(kScript),
-        mock_render_process_id(),
+        NULL,
         SaveRegistration(SERVICE_WORKER_OK, &called, &registration));
     base::RunLoop().RunUntilIdle();
     EXPECT_TRUE(called);
@@ -941,7 +942,8 @@ class UpdateJobTestHelper
       int64 resource_id = storage()->NewResourceId();
       version->script_cache_map()->NotifyStartedCaching(script, resource_id);
       WriteStringResponse(storage(), resource_id, kMockScriptBody);
-      version->script_cache_map()->NotifyFinishedCaching(script, true);
+      version->script_cache_map()->NotifyFinishedCaching(
+          script, net::URLRequestStatus());
     } else {
       // Spoof caching the script for the new version.
       int64 resource_id = storage()->NewResourceId();
@@ -950,7 +952,8 @@ class UpdateJobTestHelper
         WriteStringResponse(storage(), resource_id, kMockScriptBody);
       else
         WriteStringResponse(storage(), resource_id, "mock_different_script");
-      version->script_cache_map()->NotifyFinishedCaching(script, true);
+      version->script_cache_map()->NotifyFinishedCaching(
+          script, net::URLRequestStatus());
     }
     EmbeddedWorkerTestHelper::OnStartWorker(
         embedded_worker_id, version_id, scope, script, pause_after_download);
@@ -1128,7 +1131,7 @@ TEST_F(ServiceWorkerJobTest, Update_NewestVersionChanged) {
   job_coordinator()->Register(
       GURL("http://www.example.com/one/"),
       GURL("http://www.example.com/service_worker.js"),
-      render_process_id_,
+      NULL,
       SaveRegistration(SERVICE_WORKER_OK, &called, &registration));
 
   EXPECT_FALSE(called);
@@ -1161,7 +1164,7 @@ TEST_F(ServiceWorkerJobTest, Update_UninstallingRegistration) {
   job_coordinator()->Register(
       GURL("http://www.example.com/one/"),
       GURL("http://www.example.com/service_worker.js"),
-      render_process_id_,
+      NULL,
       SaveRegistration(SERVICE_WORKER_OK, &called, &registration));
 
   EXPECT_FALSE(called);

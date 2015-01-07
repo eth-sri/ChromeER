@@ -38,7 +38,7 @@ void IOSurfaceLayerImpl::DestroyResource() {
 
 scoped_ptr<LayerImpl> IOSurfaceLayerImpl::CreateLayerImpl(
     LayerTreeImpl* tree_impl) {
-  return IOSurfaceLayerImpl::Create(tree_impl, id()).PassAs<LayerImpl>();
+  return IOSurfaceLayerImpl::Create(tree_impl, id());
 }
 
 void IOSurfaceLayerImpl::PushPropertiesTo(LayerImpl* layer) {
@@ -77,8 +77,10 @@ void IOSurfaceLayerImpl::AppendQuads(
 
   gfx::Rect quad_rect(content_bounds());
   gfx::Rect opaque_rect(contents_opaque() ? quad_rect : gfx::Rect());
-  gfx::Rect visible_quad_rect = occlusion_tracker.UnoccludedContentRect(
-      quad_rect, draw_properties().target_space_transform);
+  gfx::Rect visible_quad_rect =
+      occlusion_tracker.GetCurrentOcclusionForLayer(
+                            draw_properties().target_space_transform)
+          .GetUnoccludedContentRect(quad_rect);
   if (visible_quad_rect.IsEmpty())
     return;
 

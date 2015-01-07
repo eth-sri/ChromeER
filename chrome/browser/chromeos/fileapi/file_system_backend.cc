@@ -10,15 +10,16 @@
 #include "chrome/browser/chromeos/fileapi/file_access_permissions.h"
 #include "chrome/browser/chromeos/fileapi/file_system_backend_delegate.h"
 #include "chrome/browser/media_galleries/fileapi/media_file_system_backend.h"
+#include "chrome/common/url_constants.h"
 #include "chromeos/dbus/cros_disks_client.h"
-#include "webkit/browser/blob/file_stream_reader.h"
-#include "webkit/browser/fileapi/async_file_util.h"
-#include "webkit/browser/fileapi/external_mount_points.h"
-#include "webkit/browser/fileapi/file_stream_writer.h"
-#include "webkit/browser/fileapi/file_system_context.h"
-#include "webkit/browser/fileapi/file_system_operation.h"
-#include "webkit/browser/fileapi/file_system_operation_context.h"
-#include "webkit/browser/fileapi/file_system_url.h"
+#include "storage/browser/blob/file_stream_reader.h"
+#include "storage/browser/fileapi/async_file_util.h"
+#include "storage/browser/fileapi/external_mount_points.h"
+#include "storage/browser/fileapi/file_stream_writer.h"
+#include "storage/browser/fileapi/file_system_context.h"
+#include "storage/browser/fileapi/file_system_operation.h"
+#include "storage/browser/fileapi/file_system_operation_context.h"
+#include "storage/browser/fileapi/file_system_url.h"
 
 namespace chromeos {
 
@@ -145,6 +146,21 @@ storage::FileSystemQuotaUtil* FileSystemBackend::GetQuotaUtil() {
   return NULL;
 }
 
+const storage::UpdateObserverList* FileSystemBackend::GetUpdateObservers(
+    storage::FileSystemType type) const {
+  return NULL;
+}
+
+const storage::ChangeObserverList* FileSystemBackend::GetChangeObservers(
+    storage::FileSystemType type) const {
+  return NULL;
+}
+
+const storage::AccessObserverList* FileSystemBackend::GetAccessObservers(
+    storage::FileSystemType type) const {
+  return NULL;
+}
+
 bool FileSystemBackend::IsAccessAllowed(
     const storage::FileSystemURL& url) const {
   if (!url.is_valid())
@@ -166,7 +182,7 @@ bool FileSystemBackend::IsAccessAllowed(
   }
 
   // Check first to make sure this extension has fileBrowserHander permissions.
-  if (!special_storage_policy_ ||
+  if (!special_storage_policy_.get() ||
       !special_storage_policy_->IsFileHandler(extension_id))
     return false;
 
@@ -176,7 +192,7 @@ bool FileSystemBackend::IsAccessAllowed(
 
 void FileSystemBackend::GrantFullAccessToExtension(
     const std::string& extension_id) {
-  if (!special_storage_policy_)
+  if (!special_storage_policy_.get())
     return;
   if (!special_storage_policy_->IsFileHandler(extension_id)) {
     NOTREACHED();
@@ -187,7 +203,7 @@ void FileSystemBackend::GrantFullAccessToExtension(
 
 void FileSystemBackend::GrantFileAccessToExtension(
     const std::string& extension_id, const base::FilePath& virtual_path) {
-  if (!special_storage_policy_)
+  if (!special_storage_policy_.get())
     return;
   // All we care about here is access from extensions for now.
   if (!special_storage_policy_->IsFileHandler(extension_id)) {
@@ -280,7 +296,7 @@ storage::FileSystemOperation* FileSystemBackend::CreateFileSystemOperation(
         url,
         context,
         make_scoped_ptr(new storage::FileSystemOperationContext(
-            context, MediaFileSystemBackend::MediaTaskRunner())));
+            context, MediaFileSystemBackend::MediaTaskRunner().get())));
   }
 
   DCHECK(url.type() == storage::kFileSystemTypeNativeLocal ||
@@ -319,6 +335,7 @@ bool FileSystemBackend::HasInplaceCopyImplementation(
 scoped_ptr<storage::FileStreamReader> FileSystemBackend::CreateFileStreamReader(
     const storage::FileSystemURL& url,
     int64 offset,
+    int64 max_bytes_to_read,
     const base::Time& expected_modification_time,
     storage::FileSystemContext* context) const {
   DCHECK(url.is_valid());
@@ -329,10 +346,10 @@ scoped_ptr<storage::FileStreamReader> FileSystemBackend::CreateFileStreamReader(
   switch (url.type()) {
     case storage::kFileSystemTypeDrive:
       return drive_delegate_->CreateFileStreamReader(
-          url, offset, expected_modification_time, context);
+          url, offset, max_bytes_to_read, expected_modification_time, context);
     case storage::kFileSystemTypeProvided:
       return file_system_provider_delegate_->CreateFileStreamReader(
-          url, offset, expected_modification_time, context);
+          url, offset, max_bytes_to_read, expected_modification_time, context);
     case storage::kFileSystemTypeNativeLocal:
     case storage::kFileSystemTypeRestrictedNativeLocal:
       return scoped_ptr<storage::FileStreamReader>(
@@ -340,7 +357,7 @@ scoped_ptr<storage::FileStreamReader> FileSystemBackend::CreateFileStreamReader(
               context, url, offset, expected_modification_time));
     case storage::kFileSystemTypeDeviceMediaAsFileStorage:
       return mtp_delegate_->CreateFileStreamReader(
-          url, offset, expected_modification_time, context);
+          url, offset, max_bytes_to_read, expected_modification_time, context);
     default:
       NOTREACHED();
   }
@@ -385,6 +402,35 @@ bool FileSystemBackend::GetVirtualPath(
     base::FilePath* virtual_path) {
   return mount_points_->GetVirtualPath(filesystem_path, virtual_path) ||
          system_mount_points_->GetVirtualPath(filesystem_path, virtual_path);
+}
+
+void FileSystemBackend::GetRedirectURLForContents(
+    const storage::FileSystemURL& url,
+    const storage::URLCallback& callback) {
+  DCHECK(url.is_valid());
+
+  if (!IsAccessAllowed(url))
+    return callback.Run(GURL());
+
+  switch (url.type()) {
+    case storage::kFileSystemTypeDrive:
+      drive_delegate_->GetRedirectURLForContents(url, callback);
+      return;
+    case storage::kFileSystemTypeProvided:
+      file_system_provider_delegate_->GetRedirectURLForContents(url,
+                                                                  callback);
+      return;
+    case storage::kFileSystemTypeDeviceMediaAsFileStorage:
+      mtp_delegate_->GetRedirectURLForContents(url, callback);
+      return;
+    case storage::kFileSystemTypeNativeLocal:
+    case storage::kFileSystemTypeRestrictedNativeLocal:
+      callback.Run(GURL());
+      return;
+    default:
+      NOTREACHED();
+  }
+  callback.Run(GURL());
 }
 
 }  // namespace chromeos

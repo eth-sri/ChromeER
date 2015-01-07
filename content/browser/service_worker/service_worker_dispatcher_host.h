@@ -25,6 +25,8 @@ class ServiceWorkerHandle;
 class ServiceWorkerProviderHost;
 class ServiceWorkerRegistration;
 class ServiceWorkerRegistrationHandle;
+struct ServiceWorkerRegistrationObjectInfo;
+struct ServiceWorkerVersionAttributes;
 
 class CONTENT_EXPORT ServiceWorkerDispatcherHost : public BrowserMessageFilter {
  public:
@@ -46,6 +48,12 @@ class CONTENT_EXPORT ServiceWorkerDispatcherHost : public BrowserMessageFilter {
   // process has terminated, at which point the whole instance will eventually
   // be destroyed.
   virtual bool Send(IPC::Message* message) OVERRIDE;
+
+  // Returns the existing registration handle whose reference count is
+  // incremented or newly created one if it doesn't exist.
+  ServiceWorkerRegistrationHandle* GetOrCreateRegistrationHandle(
+      int provider_id,
+      ServiceWorkerRegistration* registration);
 
   void RegisterServiceWorkerHandle(scoped_ptr<ServiceWorkerHandle> handle);
   void RegisterServiceWorkerRegistrationHandle(
@@ -73,6 +81,10 @@ class CONTENT_EXPORT ServiceWorkerDispatcherHost : public BrowserMessageFilter {
                                  int request_id,
                                  int provider_id,
                                  const GURL& pattern);
+  void OnGetRegistration(int thread_id,
+                         int request_id,
+                         int provider_id,
+                         const GURL& document_url);
   void OnProviderCreated(int provider_id);
   void OnProviderDestroyed(int provider_id);
   void OnSetHostedVersionId(int provider_id, int64 version_id);
@@ -106,21 +118,41 @@ class CONTENT_EXPORT ServiceWorkerDispatcherHost : public BrowserMessageFilter {
       int provider_id,
       int64 registration_id);
 
+  void GetRegistrationObjectInfoAndVersionAttributes(
+      int provider_id,
+      ServiceWorkerRegistration* registration,
+      ServiceWorkerRegistrationObjectInfo* info,
+      ServiceWorkerVersionAttributes* attrs);
+
   // Callbacks from ServiceWorkerContextCore
   void RegistrationComplete(int thread_id,
                             int provider_id,
                             int request_id,
                             ServiceWorkerStatusCode status,
-                            int64 registration_id,
-                            int64 version_id);
+                            int64 registration_id);
 
   void UnregistrationComplete(int thread_id,
                               int request_id,
                               ServiceWorkerStatusCode status);
 
+  void GetRegistrationComplete(
+      int thread_id,
+      int provider_id,
+      int request_id,
+      ServiceWorkerStatusCode status,
+      const scoped_refptr<ServiceWorkerRegistration>& registration);
+
   void SendRegistrationError(int thread_id,
                              int request_id,
                              ServiceWorkerStatusCode status);
+
+  void SendUnregistrationError(int thread_id,
+                               int request_id,
+                               ServiceWorkerStatusCode status);
+
+  void SendGetRegistrationError(int thread_id,
+                                int request_id,
+                                ServiceWorkerStatusCode status);
 
   ServiceWorkerContextCore* GetContext();
 

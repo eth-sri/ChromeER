@@ -141,6 +141,12 @@ class CachingFileSystem(FileSystem):
     return self._file_system.Read(set(paths) - set(up_to_date_data.iterkeys()),
                                   skip_not_found=skip_not_found).Then(next)
 
+  def GetCommitID(self):
+    return self._file_system.GetCommitID()
+
+  def GetPreviousCommitID(self):
+    return self._file_system.GetPreviousCommitID()
+
   def Walk(self, root, depth=-1):
     '''Overrides FileSystem.Walk() to provide caching functionality.
     '''
@@ -162,6 +168,12 @@ class CachingFileSystem(FileSystem):
         self._walk_cache.Set(root, (dirs, files, root_stat.version))
       return dirs, files
     return self._file_system.Walk(root, depth=depth, file_lister=file_lister)
+
+  def GetCommitID(self):
+    return self._file_system.GetCommitID()
+
+  def GetPreviousCommitID(self):
+    return self._file_system.GetPreviousCommitID()
 
   def GetIdentity(self):
     return self._file_system.GetIdentity()

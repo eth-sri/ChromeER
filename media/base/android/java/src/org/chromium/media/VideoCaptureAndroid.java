@@ -6,8 +6,6 @@ package org.chromium.media;
 
 import android.content.Context;
 import android.graphics.ImageFormat;
-import android.hardware.Camera;
-import android.hardware.Camera.Size;
 import android.util.Log;
 
 import java.util.ArrayList;
@@ -19,6 +17,7 @@ import java.util.List;
  * Java-allocated buffers. It also includes class BuggyDeviceHack to deal with
  * troublesome devices.
  **/
+@SuppressWarnings("deprecation")
 public class VideoCaptureAndroid extends VideoCapture {
 
     // Some devices don't support YV12 format correctly, even with JELLY_BEAN or
@@ -80,15 +79,25 @@ public class VideoCaptureAndroid extends VideoCapture {
     private static final int NUM_CAPTURE_BUFFERS = 3;
     private static final String TAG = "VideoCaptureAndroid";
 
+    static int getNumberOfCameras() {
+        return android.hardware.Camera.getNumberOfCameras();
+    }
+
+    static String getName(int id) {
+        android.hardware.Camera.CameraInfo cameraInfo = VideoCapture.getCameraInfo(id);
+        return "camera " + id + ", facing " + (cameraInfo.facing ==
+                android.hardware.Camera.CameraInfo.CAMERA_FACING_FRONT ? "front" : "back");
+    }
+
     static CaptureFormat[] getDeviceSupportedFormats(int id) {
-        Camera camera;
+        android.hardware.Camera camera;
         try {
-             camera = Camera.open(id);
+             camera = android.hardware.Camera.open(id);
         } catch (RuntimeException ex) {
             Log.e(TAG, "Camera.open: " + ex);
             return null;
         }
-        Camera.Parameters parameters = getCameraParameters(camera);
+        android.hardware.Camera.Parameters parameters = getCameraParameters(camera);
         if (parameters == null) {
             return null;
         }
@@ -106,10 +115,9 @@ public class VideoCaptureAndroid extends VideoCapture {
             pixelFormats.add(ImageFormat.UNKNOWN);
         }
         for (Integer previewFormat : pixelFormats) {
-            int pixelFormat =
-                    AndroidImageFormatList.ANDROID_IMAGEFORMAT_UNKNOWN;
+            int pixelFormat = AndroidImageFormat.ANDROID_IMAGEFORMAT_UNKNOWN;
             if (previewFormat == ImageFormat.YV12) {
-                pixelFormat = AndroidImageFormatList.ANDROID_IMAGEFORMAT_YV12;
+                pixelFormat = AndroidImageFormat.ANDROID_IMAGEFORMAT_YV12;
             } else if (previewFormat == ImageFormat.NV21) {
                 continue;
             }
@@ -122,15 +130,15 @@ public class VideoCaptureAndroid extends VideoCapture {
                 listFpsRange.add(new int[] {0, 0});
             }
             for (int[] fpsRange : listFpsRange) {
-                List<Camera.Size> supportedSizes =
+                List<android.hardware.Camera.Size> supportedSizes =
                         parameters.getSupportedPreviewSizes();
                 if (supportedSizes == null) {
-                    supportedSizes = new ArrayList<Camera.Size>();
+                    supportedSizes = new ArrayList<android.hardware.Camera.Size>();
                 }
                 if (supportedSizes.size() == 0) {
                     supportedSizes.add(camera.new Size(0, 0));
                 }
-                for (Camera.Size size : supportedSizes) {
+                for (android.hardware.Camera.Size size : supportedSizes) {
                     formatList.add(new CaptureFormat(size.width,
                                                      size.height,
                                                      (fpsRange[1] + 999) / 1000,
@@ -153,7 +161,7 @@ public class VideoCaptureAndroid extends VideoCapture {
             int width,
             int height,
             int frameRate,
-            Camera.Parameters cameraParameters) {
+            android.hardware.Camera.Parameters cameraParameters) {
         mCaptureFormat = new CaptureFormat(
                 width, height, frameRate, BuggyDeviceHack.getImageFormat());
         // Hack to avoid certain capture resolutions under a minimum one,
@@ -172,12 +180,12 @@ public class VideoCaptureAndroid extends VideoCapture {
     }
 
     @Override
-    protected void setPreviewCallback(Camera.PreviewCallback cb) {
+    protected void setPreviewCallback(android.hardware.Camera.PreviewCallback cb) {
         mCamera.setPreviewCallbackWithBuffer(cb);
     }
 
     @Override
-    public void onPreviewFrame(byte[] data, Camera camera) {
+    public void onPreviewFrame(byte[] data, android.hardware.Camera camera) {
         mPreviewBufferLock.lock();
         try {
             if (!mIsRunning) {
@@ -188,7 +196,7 @@ public class VideoCaptureAndroid extends VideoCapture {
                 if (rotation != mDeviceOrientation) {
                     mDeviceOrientation = rotation;
                 }
-                if (mCameraFacing == Camera.CameraInfo.CAMERA_FACING_BACK) {
+                if (mCameraFacing == android.hardware.Camera.CameraInfo.CAMERA_FACING_BACK) {
                     rotation = 360 - rotation;
                 }
                 rotation = (mCameraOrientation + rotation) % 360;

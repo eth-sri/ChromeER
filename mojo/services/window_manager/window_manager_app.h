@@ -32,6 +32,7 @@ class Window;
 }
 
 namespace wm {
+class FocusRules;
 class ScopedCaptureClient;
 }
 
@@ -68,6 +69,7 @@ class WindowManagerApp
   virtual ~WindowManagerApp();
 
   static View* GetViewForWindow(aura::Window* window);
+  aura::Window* GetWindowForViewId(Id view);
 
   // Register/deregister new connections to the window manager service.
   void AddConnection(WindowManagerServiceImpl* connection);
@@ -84,23 +86,23 @@ class WindowManagerApp
   // aura::Window hierarchy and attach event handlers.
   aura::WindowTreeHost* host() { return window_tree_host_.get(); }
 
+  void InitFocus(wm::FocusRules* rules);
+
   // Overridden from ApplicationDelegate:
-  virtual void Initialize(ApplicationImpl* impl) MOJO_OVERRIDE;
-  virtual bool ConfigureIncomingConnection(ApplicationConnection* connection)
-      MOJO_OVERRIDE;
+  virtual void Initialize(ApplicationImpl* impl) override;
+  virtual bool ConfigureIncomingConnection(
+      ApplicationConnection* connection) override;
 
  private:
   typedef std::set<WindowManagerServiceImpl*> Connections;
   typedef std::map<Id, aura::Window*> ViewIdToWindowMap;
 
   // Overridden from ViewManagerDelegate:
-  virtual void OnEmbed(
-      ViewManager* view_manager,
-      View* root,
-      ServiceProviderImpl* exported_services,
-      scoped_ptr<ServiceProvider> imported_services) MOJO_OVERRIDE;
-  virtual void OnViewManagerDisconnected(
-      ViewManager* view_manager) MOJO_OVERRIDE;
+  virtual void OnEmbed(ViewManager* view_manager,
+                       View* root,
+                       ServiceProviderImpl* exported_services,
+                       scoped_ptr<ServiceProvider> imported_services) override;
+  virtual void OnViewManagerDisconnected(ViewManager* view_manager) override;
 
   // Overridden from WindowManagerDelegate:
   virtual void Embed(
@@ -110,27 +112,25 @@ class WindowManagerApp
 
   // Overridden from ViewObserver:
   virtual void OnTreeChanged(
-      const ViewObserver::TreeChangeParams& params) MOJO_OVERRIDE;
-  virtual void OnViewDestroyed(View* view) MOJO_OVERRIDE;
+      const ViewObserver::TreeChangeParams& params) override;
+  virtual void OnViewDestroyed(View* view) override;
   virtual void OnViewBoundsChanged(View* view,
                                    const gfx::Rect& old_bounds,
-                                   const gfx::Rect& new_bounds) MOJO_OVERRIDE;
+                                   const gfx::Rect& new_bounds) override;
 
   // Overridden from WindowTreeHostMojoDelegate:
-  virtual void CompositorContentsChanged(const SkBitmap& bitmap) MOJO_OVERRIDE;
+  virtual void CompositorContentsChanged(const SkBitmap& bitmap) override;
 
   // Overridden from ui::EventHandler:
-  virtual void OnEvent(ui::Event* event) MOJO_OVERRIDE;
+  virtual void OnEvent(ui::Event* event) override;
 
   // Overridden from aura::client::FocusChangeObserver:
   virtual void OnWindowFocused(aura::Window* gained_focus,
-                               aura::Window* lost_focus) MOJO_OVERRIDE;
+                               aura::Window* lost_focus) override;
 
   // Overridden from aura::client::ActivationChangeObserver:
   virtual void OnWindowActivated(aura::Window* gained_active,
-                                 aura::Window* lost_active) MOJO_OVERRIDE;
-
-  aura::Window* GetWindowForViewId(Id view) const;
+                                 aura::Window* lost_active) override;
 
   // Creates an aura::Window for every view in the hierarchy beneath |view|,
   // and adds to the registry so that it can be retrieved later via
@@ -148,7 +148,7 @@ class WindowManagerApp
   WindowManagerDelegate* wrapped_window_manager_delegate_;
 
   ViewManager* view_manager_;
-  ViewManagerClientFactory view_manager_client_factory_;
+  scoped_ptr<ViewManagerClientFactory> view_manager_client_factory_;
   View* root_;
 
   scoped_ptr<AuraInit> aura_init_;

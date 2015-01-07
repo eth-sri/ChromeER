@@ -9,7 +9,7 @@
 #include "remoting/base/constants.h"
 #include "remoting/protocol/authenticator.h"
 #include "remoting/protocol/name_value_map.h"
-#include "third_party/libjingle/source/talk/xmllite/xmlelement.h"
+#include "third_party/webrtc/libjingle/xmllite/xmlelement.h"
 
 using buzz::QName;
 using buzz::XmlElement;
@@ -214,7 +214,7 @@ scoped_ptr<ContentDescription> ContentDescription::ParseXml(
     const XmlElement* element) {
   if (element->Name() != QName(kChromotingXmlNamespace, kDescriptionTag)) {
     LOG(ERROR) << "Invalid description: " << element->Str();
-    return scoped_ptr<ContentDescription>();
+    return nullptr;
   }
   scoped_ptr<CandidateSessionConfig> config(
       CandidateSessionConfig::CreateEmpty());
@@ -226,7 +226,7 @@ scoped_ptr<ContentDescription> ContentDescription::ParseXml(
                            config->mutable_video_configs()) ||
       !ParseChannelConfigs(element, kAudioTag, true, true,
                            config->mutable_audio_configs())) {
-    return scoped_ptr<ContentDescription>();
+    return nullptr;
   }
 
   scoped_ptr<XmlElement> authenticator_message;

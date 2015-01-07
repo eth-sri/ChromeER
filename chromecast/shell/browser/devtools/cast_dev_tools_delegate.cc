@@ -24,6 +24,7 @@ namespace {
 
 const char kTargetTypePage[] = "page";
 const char kTargetTypeServiceWorker[] = "service_worker";
+const char kTargetTypeSharedWorker[] = "worker";
 const char kTargetTypeOther[] = "other";
 
 class Target : public content::DevToolsTarget {
@@ -38,6 +39,8 @@ class Target : public content::DevToolsTarget {
         return kTargetTypePage;
       case content::DevToolsAgentHost::TYPE_SERVICE_WORKER:
         return kTargetTypeServiceWorker;
+      case content::DevToolsAgentHost::TYPE_SHARED_WORKER:
+        return kTargetTypeSharedWorker;
       default:
         break;
     }
@@ -47,7 +50,9 @@ class Target : public content::DevToolsTarget {
     return agent_host_->GetTitle();
   }
   virtual std::string GetDescription() const OVERRIDE { return std::string(); }
-  virtual GURL GetURL() const OVERRIDE { return url_; }
+  virtual GURL GetURL() const OVERRIDE {
+    return agent_host_->GetURL();
+  }
   virtual GURL GetFaviconURL() const OVERRIDE { return favicon_url_; }
   virtual base::TimeTicks GetLastActivityTime() const OVERRIDE {
     return last_activity_time_;
@@ -59,14 +64,15 @@ class Target : public content::DevToolsTarget {
       const OVERRIDE {
     return agent_host_;
   }
-  virtual bool Activate() const OVERRIDE;
-  virtual bool Close() const OVERRIDE;
+  virtual bool Activate() const OVERRIDE {
+    return agent_host_->Activate();
+  }
+  virtual bool Close() const OVERRIDE {
+    return agent_host_->Close();
+  }
 
  private:
   scoped_refptr<content::DevToolsAgentHost> agent_host_;
-  std::string id_;
-  std::string title_;
-  GURL url_;
   GURL favicon_url_;
   base::TimeTicks last_activity_time_;
 
@@ -84,23 +90,9 @@ Target::Target(scoped_refptr<content::DevToolsAgentHost> agent_host)
   }
 }
 
-bool Target::Activate() const {
-  content::WebContents* web_contents = agent_host_->GetWebContents();
-  if (!web_contents)
-    return false;
-  web_contents->GetDelegate()->ActivateContents(web_contents);
-  return true;
-}
-
-bool Target::Close() const {
-  content::WebContents* web_contents = agent_host_->GetWebContents();
-  if (!web_contents)
-    return false;
-  web_contents->GetRenderViewHost()->ClosePage();
-  return true;
-}
-
 }  // namespace
+
+// CastDevToolsDelegate -----------------------------------------------------
 
 CastDevToolsDelegate::CastDevToolsDelegate() {
 }
@@ -119,8 +111,6 @@ std::string CastDevToolsDelegate::GetDiscoveryPageHTML() {
 
 bool CastDevToolsDelegate::BundlesFrontendResources() {
 #if defined(OS_ANDROID)
-  // Since Android remote debugging connects over a Unix domain socket, Chrome
-  // will not load the same homepage.
   return false;
 #else
   return true;
@@ -131,16 +121,38 @@ base::FilePath CastDevToolsDelegate::GetDebugFrontendDir() {
   return base::FilePath();
 }
 
-std::string CastDevToolsDelegate::GetPageThumbnailData(const GURL& url) {
+scoped_ptr<net::StreamListenSocket>
+CastDevToolsDelegate::CreateSocketForTethering(
+    net::StreamListenSocket::Delegate* delegate,
+    std::string* name) {
+  return scoped_ptr<net::StreamListenSocket>();
+}
+
+// CastDevToolsManagerDelegate -----------------------------------------------
+
+CastDevToolsManagerDelegate::CastDevToolsManagerDelegate() {
+}
+
+CastDevToolsManagerDelegate::~CastDevToolsManagerDelegate() {
+}
+
+base::DictionaryValue* CastDevToolsManagerDelegate::HandleCommand(
+    content::DevToolsAgentHost* agent_host,
+    base::DictionaryValue* command) {
+  return NULL;
+}
+
+std::string CastDevToolsManagerDelegate::GetPageThumbnailData(
+    const GURL& url) {
   return "";
 }
 
-scoped_ptr<content::DevToolsTarget> CastDevToolsDelegate::CreateNewTarget(
-    const GURL& url) {
+scoped_ptr<content::DevToolsTarget>
+CastDevToolsManagerDelegate::CreateNewTarget(const GURL& url) {
   return scoped_ptr<content::DevToolsTarget>();
 }
 
-void CastDevToolsDelegate::EnumerateTargets(TargetCallback callback) {
+void CastDevToolsManagerDelegate::EnumerateTargets(TargetCallback callback) {
   TargetList targets;
   content::DevToolsAgentHost::List agents =
       content::DevToolsAgentHost::GetOrCreateAll();
@@ -149,13 +161,6 @@ void CastDevToolsDelegate::EnumerateTargets(TargetCallback callback) {
     targets.push_back(new Target(*it));
   }
   callback.Run(targets);
-}
-
-scoped_ptr<net::StreamListenSocket>
-CastDevToolsDelegate::CreateSocketForTethering(
-    net::StreamListenSocket::Delegate* delegate,
-    std::string* name) {
-  return scoped_ptr<net::StreamListenSocket>();
 }
 
 }  // namespace shell

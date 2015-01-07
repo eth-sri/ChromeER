@@ -183,12 +183,12 @@ public class ChromiumUrlRequest implements HttpUrlRequest {
 
     @Override
     public ByteBuffer getByteBuffer() {
-        return ((ChunkedWritableByteChannel)getSink()).getByteBuffer();
+        return ((ChunkedWritableByteChannel) getSink()).getByteBuffer();
     }
 
     @Override
     public byte[] getResponseAsBytes() {
-        return ((ChunkedWritableByteChannel)getSink()).getBytes();
+        return ((ChunkedWritableByteChannel) getSink()).getBytes();
     }
 
     /**
@@ -211,6 +211,7 @@ public class ChromiumUrlRequest implements HttpUrlRequest {
      *            an upload.
      * @param data The content that needs to be uploaded.
      */
+    @Override
     public void setUploadData(String contentType, byte[] data) {
         synchronized (mLock) {
             validateNotStarted();
@@ -231,6 +232,7 @@ public class ChromiumUrlRequest implements HttpUrlRequest {
      *            upload request.
      * @param contentLength The length of data to upload.
      */
+    @Override
     public void setUploadChannel(String contentType,
             ReadableByteChannel channel, long contentLength) {
         synchronized (mLock) {
@@ -295,14 +297,9 @@ public class ChromiumUrlRequest implements HttpUrlRequest {
         }
     }
 
-    /**
-     * Sets HTTP method for upload request. Only PUT or POST are allowed.
-     */
+    @Override
     public void setHttpMethod(String method) {
         validateNotStarted();
-        if (!("PUT".equals(method) || "POST".equals(method))) {
-            throw new IllegalArgumentException("Only PUT or POST are allowed.");
-        }
         mMethod = method;
     }
 
@@ -310,6 +307,7 @@ public class ChromiumUrlRequest implements HttpUrlRequest {
         return mSink;
     }
 
+    @Override
     public void start() {
         synchronized (mLock) {
             if (mCanceled) {
@@ -364,6 +362,7 @@ public class ChromiumUrlRequest implements HttpUrlRequest {
           }
     }
 
+    @Override
     public void cancel() {
         synchronized (mLock) {
             if (mCanceled) {
@@ -378,6 +377,7 @@ public class ChromiumUrlRequest implements HttpUrlRequest {
         }
     }
 
+    @Override
     public boolean isCanceled() {
         synchronized (mLock) {
             return mCanceled;
@@ -390,23 +390,36 @@ public class ChromiumUrlRequest implements HttpUrlRequest {
         }
     }
 
+    @Override
+    public String getNegotiatedProtocol() {
+        validateNotRecycled();
+        validateHeadersAvailable();
+        return nativeGetNegotiatedProtocol(mUrlRequestAdapter);
+    }
+
+    @Override
     public String getContentType() {
         return mContentType;
     }
 
+    @Override
     public String getHeader(String name) {
+        validateNotRecycled();
         validateHeadersAvailable();
         return nativeGetHeader(mUrlRequestAdapter, name);
     }
 
     // All response headers.
+    @Override
     public Map<String, List<String>> getAllHeaders() {
+        validateNotRecycled();
         validateHeadersAvailable();
         ResponseHeadersMap result = new ResponseHeadersMap();
         nativeGetAllHeaders(mUrlRequestAdapter, result);
         return result;
     }
 
+    @Override
     public String getUrl() {
         return mUrl;
     }
@@ -502,8 +515,8 @@ public class ChromiumUrlRequest implements HttpUrlRequest {
 
             if (mBufferFullResponse && mContentLength != -1 &&
                     !mContentLengthOverLimit) {
-                ((ChunkedWritableByteChannel)getSink()).setCapacity(
-                        (int)mContentLength);
+                ((ChunkedWritableByteChannel) getSink()).setCapacity(
+                        (int) mContentLength);
             }
 
             if (mOffset != 0) {
@@ -547,14 +560,14 @@ public class ChromiumUrlRequest implements HttpUrlRequest {
                     return;
                 } else {
                     mSkippingToOffset = false;
-                    buffer.position((int)(mOffset - (mSize - size)));
+                    buffer.position((int) (mOffset - (mSize - size)));
                 }
             }
 
             boolean contentLengthOverLimit =
                     (mContentLengthLimit != 0 && mSize > mContentLengthLimit);
             if (contentLengthOverLimit) {
-                buffer.limit(size - (int)(mSize - mContentLengthLimit));
+                buffer.limit(size - (int) (mSize - mContentLengthLimit));
             }
 
             while (buffer.hasRemaining()) {
@@ -647,7 +660,7 @@ public class ChromiumUrlRequest implements HttpUrlRequest {
     // Native methods are implemented in chromium_url_request.cc.
 
     private native long nativeCreateRequestAdapter(
-            long ChromiumUrlRequestContextAdapter, String url, int priority);
+            long urlRequestContextAdapter, String url, int priority);
 
     private native void nativeAddHeader(long urlRequestAdapter, String name,
             String value);
@@ -686,6 +699,8 @@ public class ChromiumUrlRequest implements HttpUrlRequest {
 
     private native void nativeGetAllHeaders(long urlRequestAdapter,
             ResponseHeadersMap headers);
+
+    private native String nativeGetNegotiatedProtocol(long urlRequestAdapter);
 
     // Explicit class to work around JNI-generator generics confusion.
     private class ResponseHeadersMap extends HashMap<String, List<String>> {

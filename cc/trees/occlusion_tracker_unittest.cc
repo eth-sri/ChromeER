@@ -85,16 +85,17 @@ class TestOcclusionTrackerWithClip : public TestOcclusionTracker<LayerType> {
   bool OccludedLayer(const LayerType* layer,
                      const gfx::Rect& content_rect) const {
     DCHECK(layer->visible_content_rect().Contains(content_rect));
-    return this->Occluded(
-        layer->render_target(), content_rect, layer->draw_transform());
+    return this->GetCurrentOcclusionForLayer(layer->draw_transform())
+        .IsOccluded(content_rect);
   }
 
   // Gives an unoccluded sub-rect of |content_rect| in the content space of the
-  // layer. Simple wrapper around UnoccludedContentRect.
+  // layer. Simple wrapper around GetUnoccludedContentRect.
   gfx::Rect UnoccludedLayerContentRect(const LayerType* layer,
                                        const gfx::Rect& content_rect) const {
     DCHECK(layer->visible_content_rect().Contains(content_rect));
-    return this->UnoccludedContentRect(content_rect, layer->draw_transform());
+    return this->GetCurrentOcclusionForLayer(layer->draw_transform())
+        .GetUnoccludedContentRect(content_rect);
   }
 
   gfx::Rect UnoccludedSurfaceContentRect(const LayerType* layer,
@@ -120,13 +121,8 @@ struct OcclusionTrackerTestMainThreadTypes {
     return make_scoped_refptr(new ContentLayerType());
   }
 
-  static LayerPtrType PassLayerPtr(ContentLayerPtrType* layer) {
-    LayerPtrType ref(*layer);
-    *layer = NULL;
-    return ref;
-  }
-
-  static LayerPtrType PassLayerPtr(LayerPtrType* layer) {
+  template <typename T>
+  static LayerPtrType PassLayerPtr(T* layer) {
     LayerPtrType ref(*layer);
     *layer = NULL;
     return ref;
@@ -155,12 +151,9 @@ struct OcclusionTrackerTestImplThreadTypes {
   }
   static int next_layer_impl_id;
 
-  static LayerPtrType PassLayerPtr(LayerPtrType* layer) {
+  template <typename T>
+  static LayerPtrType PassLayerPtr(T* layer) {
     return layer->Pass();
-  }
-
-  static LayerPtrType PassLayerPtr(ContentLayerPtrType* layer) {
-    return layer->PassAs<LayerType>();
   }
 
   static void DestroyLayer(LayerPtrType* layer) { layer->reset(); }
@@ -175,7 +168,9 @@ int OcclusionTrackerTestImplThreadTypes::next_layer_impl_id = 1;
 template <typename Types> class OcclusionTrackerTest : public testing::Test {
  protected:
   explicit OcclusionTrackerTest(bool opaque_layers)
-      : opaque_layers_(opaque_layers), host_(FakeLayerTreeHost::Create()) {}
+      : opaque_layers_(opaque_layers),
+        client_(FakeLayerTreeHostClient::DIRECT_3D),
+        host_(FakeLayerTreeHost::Create(&client_)) {}
 
   virtual void RunMyTest() = 0;
 
@@ -283,7 +278,7 @@ template <typename Types> class OcclusionTrackerTest : public testing::Test {
 
   void DestroyLayers() {
     Types::DestroyLayer(&root_);
-    render_surface_layer_list_.reset();
+    render_surface_layer_list_ = nullptr;
     render_surface_layer_list_impl_.clear();
     replica_layers_.clear();
     mask_layers_.clear();
@@ -440,6 +435,7 @@ template <typename Types> class OcclusionTrackerTest : public testing::Test {
   }
 
   bool opaque_layers_;
+  FakeLayerTreeHostClient client_;
   scoped_ptr<FakeLayerTreeHost> host_;
   // These hold ownership of the layers for the duration of the test.
   typename Types::LayerPtrType root_;

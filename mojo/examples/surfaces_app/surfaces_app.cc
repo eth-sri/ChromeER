@@ -4,14 +4,15 @@
 
 #include "base/bind.h"
 #include "base/macros.h"
+#include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "cc/surfaces/surface_id_allocator.h"
+#include "mojo/application/application_runner_chromium.h"
 #include "mojo/examples/surfaces_app/child.mojom.h"
 #include "mojo/examples/surfaces_app/embedder.h"
 #include "mojo/public/c/system/main.h"
 #include "mojo/public/cpp/application/application_connection.h"
 #include "mojo/public/cpp/application/application_delegate.h"
-#include "mojo/public/cpp/application/application_runner_chromium.h"
 #include "mojo/public/cpp/system/core.h"
 #include "mojo/services/gles2/command_buffer.mojom.h"
 #include "mojo/services/public/cpp/geometry/geometry_type_converters.h"
@@ -29,7 +30,7 @@ class SurfacesApp : public ApplicationDelegate,
                     public SurfaceClient,
                     public NativeViewportClient {
  public:
-  SurfacesApp() {}
+  SurfacesApp() : weak_factory_(this) {}
   virtual ~SurfacesApp() {}
 
   // ApplicationDelegate implementation
@@ -46,7 +47,9 @@ class SurfacesApp : public ApplicationDelegate,
 
     size_ = gfx::Size(800, 600);
 
-    viewport_->Create(Rect::From(gfx::Rect(gfx::Point(10, 10), size_)));
+    viewport_->Create(Size::From(size_),
+                      base::Bind(&SurfacesApp::OnCreatedNativeViewport,
+                                 weak_factory_.GetWeakPtr()));
     viewport_->Show();
 
     child_size_ = gfx::Size(size_.width() / 3, size_.height() / 2);
@@ -103,8 +106,7 @@ class SurfacesApp : public ApplicationDelegate,
     DCHECK(!resources.size());
   }
   // NativeViewportClient implementation.
-  virtual void OnCreated(uint64_t native_viewport_id) OVERRIDE {}
-  virtual void OnBoundsChanged(mojo::RectPtr bounds) OVERRIDE {}
+  virtual void OnSizeChanged(mojo::SizePtr size) OVERRIDE {}
   virtual void OnDestroyed() OVERRIDE {}
   virtual void OnEvent(mojo::EventPtr event,
                        const mojo::Callback<void()>& callback) OVERRIDE {
@@ -112,6 +114,8 @@ class SurfacesApp : public ApplicationDelegate,
   }
 
  private:
+  void OnCreatedNativeViewport(uint64_t native_viewport_id) {}
+
   SurfacesServicePtr surfaces_service_;
   SurfacePtr surface_;
   cc::SurfaceId onscreen_id_;
@@ -125,6 +129,8 @@ class SurfacesApp : public ApplicationDelegate,
   gfx::Size child_size_;
 
   NativeViewportPtr viewport_;
+
+  base::WeakPtrFactory<SurfacesApp> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(SurfacesApp);
 };

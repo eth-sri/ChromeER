@@ -61,13 +61,19 @@ void DrmDestroyDumbBuffer(int fd, uint32_t handle) {
 
 }  // namespace
 
-DriWrapper::DriWrapper(const char* device_path) {
-  fd_ = open(device_path, O_RDWR | O_CLOEXEC);
+DriWrapper::DriWrapper(const char* device_path)
+    : fd_(-1), device_path_(device_path) {
 }
 
 DriWrapper::~DriWrapper() {
   if (fd_ >= 0)
     close(fd_);
+}
+
+void DriWrapper::Initialize() {
+  fd_ = open(device_path_, O_RDWR | O_CLOEXEC);
+  if (fd_ < 0)
+    PLOG(FATAL) << "open: " << device_path_;
 }
 
 ScopedDrmCrtcPtr DriWrapper::GetCrtc(uint32_t crtc_id) {
@@ -83,8 +89,12 @@ bool DriWrapper::SetCrtc(uint32_t crtc_id,
   DCHECK(!connectors.empty());
   DCHECK(mode);
 
-  TRACE_EVENT1("dri", "DriWrapper::SetCrtc",
-               "crtc", crtc_id);
+  TRACE_EVENT2("dri",
+               "DriWrapper::SetCrtc",
+               "crtc",
+               crtc_id,
+               "size",
+               gfx::Size(mode->hdisplay, mode->vdisplay).ToString());
   return !drmModeSetCrtc(fd_,
                          crtc_id,
                          framebuffer,

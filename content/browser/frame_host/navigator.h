@@ -6,6 +6,7 @@
 #define CONTENT_BROWSER_FRAME_HOST_NAVIGATOR_H_
 
 #include "base/memory/ref_counted.h"
+#include "base/time/time.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/navigation_controller.h"
 #include "ui/base/window_open_disposition.h"
@@ -25,7 +26,8 @@ class NavigationControllerImpl;
 class NavigationEntryImpl;
 class NavigatorDelegate;
 class RenderFrameHostImpl;
-struct NavigationBeforeCommitInfo;
+struct CommitNavigationParams;
+struct CommonNavigationParams;
 
 // Implementations of this interface are responsible for performing navigations
 // in a node of the FrameTree. Its lifetime is bound to all FrameTreeNode
@@ -57,17 +59,6 @@ class CONTENT_EXPORT Navigator : public base::RefCounted<Navigator> {
       const GURL& url,
       int error_code,
       const base::string16& error_description) {}
-
-  // The RenderFrameHostImpl processed a redirect during a provisional load.
-  //
-  // TODO(creis): Remove this method and have the pre-rendering code listen to
-  // WebContentsObserver::DidGetRedirectForResourceRequest instead.
-  // See http://crbug.com/78512.
-  virtual void DidRedirectProvisionalLoad(
-      RenderFrameHostImpl* render_frame_host,
-      int32 page_id,
-      const GURL& source_url,
-      const GURL& target_url) {}
 
   // The RenderFrameHostImpl has committed a navigation.
   virtual void DidNavigate(
@@ -114,7 +105,7 @@ class CONTENT_EXPORT Navigator : public base::RefCounted<Navigator> {
       const GURL& url,
       const std::vector<GURL>& redirect_chain,
       const Referrer& referrer,
-      PageTransition page_transition,
+      ui::PageTransition page_transition,
       WindowOpenDisposition disposition,
       const GlobalRequestID& transferred_global_request_id,
       bool should_replace_current_entry,
@@ -124,7 +115,14 @@ class CONTENT_EXPORT Navigator : public base::RefCounted<Navigator> {
   // Signal |render_frame_host| that a navigation is ready to commit (the
   // response to the navigation request has been received).
   virtual void CommitNavigation(RenderFrameHostImpl* render_frame_host,
-                                const NavigationBeforeCommitInfo& info) {};
+                                const GURL& stream_url,
+                                const CommonNavigationParams& common_params,
+                                const CommitNavigationParams& commit_params) {}
+
+  // Called when the first resource request for a given navigation is executed
+  // so that it can be tracked into an histogram.
+  virtual void LogResourceRequestTime(
+    base::TimeTicks timestamp, const GURL& url) {};
 
  protected:
   friend class base::RefCounted<Navigator>;

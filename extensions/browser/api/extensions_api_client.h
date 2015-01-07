@@ -8,6 +8,8 @@
 #include <map>
 
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
+#include "extensions/browser/api/declarative_content/content_rules_registry.h"
 #include "extensions/browser/api/storage/settings_namespace.h"
 
 class GURL;
@@ -19,17 +21,20 @@ namespace content {
 class BrowserContext;
 }
 
-namespace device {
-class HidService;
-}
-
 namespace extensions {
 
 class AppViewGuestDelegate;
+class ContentRulesRegistry;
+class ExtensionOptionsGuest;
+class ExtensionOptionsGuestDelegate;
+class MimeHandlerViewGuest;
+class MimeHandlerViewGuestDelegate;
 class WebViewGuest;
 class WebViewGuestDelegate;
 class WebViewPermissionHelper;
 class WebViewPermissionHelperDelegate;
+class WebRequestEventRouterDelegate;
+class RulesCacheDelegate;
 class SettingsObserver;
 class SettingsStorageFactory;
 class ValueStoreCache;
@@ -61,8 +66,14 @@ class ExtensionsAPIClient {
   // Creates the AppViewGuestDelegate.
   virtual AppViewGuestDelegate* CreateAppViewGuestDelegate() const;
 
-  // Returns the HidService instance for this embedder.
-  virtual device::HidService* GetHidService();
+  // Returns a delegate for ExtensionOptionsGuest. The caller owns the returned
+  // ExtensionOptionsGuestDelegate.
+  virtual ExtensionOptionsGuestDelegate* CreateExtensionOptionsGuestDelegate(
+      ExtensionOptionsGuest* guest) const;
+
+  // Creates a delegate for MimeHandlerViewGuest.
+  virtual scoped_ptr<MimeHandlerViewGuestDelegate>
+      CreateMimeHandlerViewGuestDelegate(MimeHandlerViewGuest* guest) const;
 
   // Returns a delegate for some of WebViewGuest's behavior. The caller owns the
   // returned WebViewGuestDelegate.
@@ -75,7 +86,22 @@ class ExtensionsAPIClient {
       CreateWebViewPermissionHelperDelegate (
           WebViewPermissionHelper* web_view_permission_helper) const;
 
-  virtual void RegisterGuestViewTypes() {}
+  // TODO(wjmaclean): Remove this as soon as rules_registry_service.* moves to
+  // extensions/browser/api/declarative/.
+  virtual scoped_refptr<RulesRegistry> GetRulesRegistry(
+      content::BrowserContext* browser_context,
+      const RulesRegistry::WebViewKey& webview_key,
+      const std::string& event_name);
+
+  // Creates a delegate for WebRequestEventRouter.
+  virtual WebRequestEventRouterDelegate* CreateWebRequestEventRouterDelegate()
+      const;
+
+  // TODO(wjmaclean): Remove this when (if) ContentRulesRegistry code moves
+  // to extensions/browser/api.
+  virtual scoped_refptr<ContentRulesRegistry> CreateContentRulesRegistry(
+      content::BrowserContext* browser_context,
+      RulesCacheDelegate* cache_delegate) const;
 
   // NOTE: If this interface gains too many methods (perhaps more than 20) it
   // should be split into one interface per API.

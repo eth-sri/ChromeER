@@ -31,6 +31,7 @@
  *            installWarnings: (Array|undefined),
  *            is_hosted_app: boolean,
  *            is_platform_app: boolean,
+ *            isFromStore: boolean,
  *            isUnpacked: boolean,
  *            kioskEnabled: boolean,
  *            kioskOnly: boolean,
@@ -200,8 +201,9 @@ cr.define('options', function() {
       var blacklistText = node.querySelector('.blacklist-text');
       blacklistText.textContent = extension.blacklistText;
 
-      var description = node.querySelector('.extension-description span');
+      var description = document.createElement('span');
       description.textContent = extension.description;
+      node.querySelector('.extension-description').appendChild(description);
 
       // The 'Show Browser Action' button.
       if (extension.enable_show_button) {
@@ -272,7 +274,7 @@ cr.define('options', function() {
       if (extension.enabled && extension.optionsUrl) {
         var options = node.querySelector('.options-link');
         options.addEventListener('click', function(e) {
-          if (this.data_.enableEmbeddedExtensionOptions) {
+          if (!extension.optionsOpenInTab) {
             this.showEmbeddedExtensionOptions_(extension.id, false);
           } else {
             chrome.send('extensionSettingsOptions', [extension.id]);
@@ -318,7 +320,19 @@ cr.define('options', function() {
         }
       }
 
-      if (!extension.terminated) {
+      if (extension.terminated) {
+        var terminatedReload = node.querySelector('.terminated-reload-link');
+        terminatedReload.hidden = false;
+        terminatedReload.onclick = function() {
+          chrome.send('extensionSettingsReload', [extension.id]);
+        };
+      } else if (extension.corruptInstall && extension.isFromStore) {
+        var repair = node.querySelector('.corrupted-repair-button');
+        repair.hidden = false;
+        repair.onclick = function() {
+          chrome.send('extensionSettingsRepair', [extension.id]);
+        };
+      } else {
         // The 'Enabled' checkbox.
         var enable = node.querySelector('.enable-checkbox');
         enable.hidden = false;
@@ -349,12 +363,6 @@ cr.define('options', function() {
         }
 
         enable.querySelector('input').checked = extension.enabled;
-      } else {
-        var terminatedReload = node.querySelector('.terminated-reload-link');
-        terminatedReload.hidden = false;
-        terminatedReload.addEventListener('click', function(e) {
-          chrome.send('extensionSettingsReload', [extension.id]);
-        });
       }
 
       // 'Remove' button.

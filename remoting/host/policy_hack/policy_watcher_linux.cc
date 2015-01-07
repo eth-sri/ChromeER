@@ -16,10 +16,10 @@
 
 #include "base/bind.h"
 #include "base/compiler_specific.h"
-#include "base/file_util.h"
 #include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
 #include "base/files/file_path_watcher.h"
+#include "base/files/file_util.h"
 #include "base/json/json_file_value_serializer.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
@@ -149,12 +149,12 @@ class PolicyWatcherLinux : public PolicyWatcher {
       if (!value.get()) {
         LOG(WARNING) << "Failed to read configuration file "
                      << config_file_iter->value() << ": " << error_msg;
-        return scoped_ptr<base::DictionaryValue>();
+        return nullptr;
       }
       if (!value->IsType(base::Value::TYPE_DICTIONARY)) {
         LOG(WARNING) << "Expected JSON dictionary in configuration file "
                      << config_file_iter->value();
-        return scoped_ptr<base::DictionaryValue>();
+        return nullptr;
       }
       policy->MergeDictionary(static_cast<base::DictionaryValue*>(value.get()));
     }

@@ -8,13 +8,14 @@
 #include "ui/ozone/common/gpu/ozone_gpu_messages.h"
 #include "ui/ozone/platform/dri/dri_surface_factory.h"
 #include "ui/ozone/platform/dri/dri_window_delegate_impl.h"
-#include "ui/ozone/platform/dri/dri_window_manager.h"
+#include "ui/ozone/platform/dri/dri_window_delegate_manager.h"
 
 namespace ui {
 
-GpuPlatformSupportGbm::GpuPlatformSupportGbm(DriSurfaceFactory* dri,
-                                             DriWindowManager* window_manager,
-                                             ScreenManager* screen_manager)
+GpuPlatformSupportGbm::GpuPlatformSupportGbm(
+    DriSurfaceFactory* dri,
+    DriWindowDelegateManager* window_manager,
+    ScreenManager* screen_manager)
     : sender_(NULL),
       dri_(dri),
       window_manager_(window_manager),
@@ -83,9 +84,10 @@ void GpuPlatformSupportGbm::OnWindowBoundsChanged(gfx::AcceleratedWidget widget,
 }
 
 void GpuPlatformSupportGbm::OnCursorSet(gfx::AcceleratedWidget widget,
-                                        const SkBitmap& bitmap,
-                                        const gfx::Point& location) {
-  dri_->SetHardwareCursor(widget, bitmap, location);
+                                        const std::vector<SkBitmap>& bitmaps,
+                                        const gfx::Point& location,
+                                        int frame_delay_ms) {
+  dri_->SetHardwareCursor(widget, bitmaps, location, frame_delay_ms);
 }
 
 void GpuPlatformSupportGbm::OnCursorMove(gfx::AcceleratedWidget widget,

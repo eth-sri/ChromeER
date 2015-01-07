@@ -7,6 +7,7 @@
 
 #include <string>
 
+#include "base/macros.h"
 #include "mojo/application_manager/application_manager.h"
 #include "mojo/shell/mojo_url_resolver.h"
 #include "mojo/shell/task_runners.h"
@@ -22,6 +23,7 @@ class Spy;
 namespace shell {
 
 class DynamicApplicationLoader;
+class ExternalApplicationListener;
 
 // The "global" context for the shell's main process.
 class Context : ApplicationManager::Delegate {
@@ -32,7 +34,7 @@ class Context : ApplicationManager::Delegate {
   void Init();
 
   // ApplicationManager::Delegate override.
-  virtual void OnApplicationError(const GURL& gurl) OVERRIDE;
+  virtual void OnApplicationError(const GURL& gurl) override;
 
   void Run(const GURL& url);
   ScopedMessagePipeHandle ConnectToServiceByName(
@@ -53,6 +55,7 @@ class Context : ApplicationManager::Delegate {
 
   std::set<GURL> app_urls_;
   scoped_ptr<TaskRunners> task_runners_;
+  scoped_ptr<ExternalApplicationListener> listener_;
   ApplicationManager application_manager_;
   MojoURLResolver mojo_url_resolver_;
   scoped_ptr<Spy> spy_;

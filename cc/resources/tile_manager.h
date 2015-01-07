@@ -87,6 +87,13 @@ scoped_refptr<base::debug::ConvertableToTraceFormat>
 class CC_EXPORT TileManager : public RasterizerClient,
                               public RefCountedManager<Tile> {
  public:
+  enum NamedTaskSet {
+    REQUIRED_FOR_ACTIVATION = 0,
+    ALL = 1,
+    // Adding additional values requires increasing kNumberOfTaskSets in
+    // rasterizer.h
+  };
+
   static scoped_ptr<TileManager> Create(
       TileManagerClient* client,
       base::SequencedTaskRunner* task_runner,
@@ -103,7 +110,6 @@ class CC_EXPORT TileManager : public RasterizerClient,
   scoped_refptr<Tile> CreateTile(PicturePileImpl* picture_pile,
                                  const gfx::Size& tile_size,
                                  const gfx::Rect& content_rect,
-                                 const gfx::Rect& opaque_rect,
                                  float contents_scale,
                                  int layer_id,
                                  int source_frame_number,
@@ -119,10 +125,8 @@ class CC_EXPORT TileManager : public RasterizerClient,
   void InitializeTilesWithResourcesForTesting(const std::vector<Tile*>& tiles) {
     for (size_t i = 0; i < tiles.size(); ++i) {
       ManagedTileState& mts = tiles[i]->managed_state();
-      ManagedTileState::TileVersion& tile_version =
-          mts.tile_versions[HIGH_QUALITY_RASTER_MODE];
 
-      tile_version.resource_ =
+      mts.draw_info.resource_ =
           resource_pool_->AcquireResource(tiles[i]->size());
 
       bytes_releasable_ += BytesConsumedIfAllocated(tiles[i]);
@@ -133,9 +137,7 @@ class CC_EXPORT TileManager : public RasterizerClient,
   void ReleaseTileResourcesForTesting(const std::vector<Tile*>& tiles) {
     for (size_t i = 0; i < tiles.size(); ++i) {
       Tile* tile = tiles[i];
-      for (int mode = 0; mode < NUM_RASTER_MODES; ++mode) {
-        FreeResourceForTile(tile, static_cast<RasterMode>(mode));
-      }
+      FreeResourcesForTile(tile);
     }
   }
 
@@ -157,6 +159,15 @@ class CC_EXPORT TileManager : public RasterizerClient,
     CleanUpReleasedTiles();
   }
 
+  std::vector<Tile*> AllTilesForTesting() const {
+    std::vector<Tile*> tiles;
+    for (TileMap::const_iterator it = tiles_.begin(); it != tiles_.end();
+         ++it) {
+      tiles.push_back(it->second);
+    }
+    return tiles;
+  }
+
  protected:
   TileManager(TileManagerClient* client,
               const scoped_refptr<base::SequencedTaskRunner>& task_runner,
@@ -175,9 +186,8 @@ class CC_EXPORT TileManager : public RasterizerClient,
   virtual void Release(Tile* tile) OVERRIDE;
 
   // Overriden from RasterizerClient:
-  virtual bool ShouldForceTasksRequiredForActivationToComplete() const OVERRIDE;
-  virtual void DidFinishRunningTasks() OVERRIDE;
-  virtual void DidFinishRunningTasksRequiredForActivation() OVERRIDE;
+  virtual void DidFinishRunningTasks(TaskSet task_set) OVERRIDE;
+  virtual TaskSetCollection TasksThatShouldBeForcedToComplete() const OVERRIDE;
 
   typedef std::vector<Tile*> TileVector;
   typedef std::set<Tile*> TileSet;
@@ -196,7 +206,6 @@ class CC_EXPORT TileManager : public RasterizerClient,
                                   bool was_canceled);
   void OnRasterTaskCompleted(Tile::Id tile,
                              scoped_ptr<ScopedResource> resource,
-                             RasterMode raster_mode,
                              const PicturePileImpl::Analysis& analysis,
                              bool was_canceled);
 
@@ -205,9 +214,7 @@ class CC_EXPORT TileManager : public RasterizerClient,
                                      resource_pool_->resource_format());
   }
 
-  void FreeResourceForTile(Tile* tile, RasterMode mode);
   void FreeResourcesForTile(Tile* tile);
-  void FreeUnusedResourcesForTile(Tile* tile);
   void FreeResourcesForTileAndNotifyClientIfTileWasReadyToDraw(Tile* tile);
   scoped_refptr<ImageDecodeTask> CreateImageDecodeTask(Tile* tile,
                                                        SkPixelRef* pixel_ref);
@@ -242,6 +249,7 @@ class CC_EXPORT TileManager : public RasterizerClient,
 
   bool did_initialize_visible_tile_;
   bool did_check_for_completed_tasks_since_last_schedule_tasks_;
+  bool did_oom_on_last_assign_;
 
   typedef base::hash_map<uint32_t, scoped_refptr<ImageDecodeTask> >
       PixelRefTaskMap;

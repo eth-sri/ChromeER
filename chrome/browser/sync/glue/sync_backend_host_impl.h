@@ -56,7 +56,6 @@ namespace browser_sync {
 class ChangeProcessor;
 class SyncBackendHostCore;
 class SyncBackendRegistrar;
-class SyncedDeviceTracker;
 struct DoInitializeOptions;
 
 // The only real implementation of the SyncBackendHost.  See that interface's
@@ -128,7 +127,6 @@ class SyncBackendHostImpl
       const syncer::BaseTransaction* trans) const OVERRIDE;
   virtual void GetModelSafeRoutingInfo(
       syncer::ModelSafeRoutingInfo* out) const OVERRIDE;
-  virtual SyncedDeviceTracker* GetSyncedDeviceTracker() const OVERRIDE;
   virtual void RequestBufferedProtocolEventsAndEnableForwarding() OVERRIDE;
   virtual void DisableProtocolEventForwarding() OVERRIDE;
   virtual void EnableDirectoryTypeDebugInfoForwarding() OVERRIDE;
@@ -180,10 +178,6 @@ class SyncBackendHostImpl
           debug_info_listener,
       syncer::SyncContextProxy* sync_context_proxy,
       const std::string& cache_guid);
-
-  // Downloading of control types failed and will be retried. Invokes the
-  // frontend's sync configure retry method.
-  void HandleControlTypesDownloadRetry();
 
   // Forwards a ProtocolEvent to the frontend.  Will not be called unless a
   // call to SetForwardProtocolEvents() explicitly requested that we start

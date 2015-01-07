@@ -30,6 +30,8 @@ source_set("component_updater") {
     "default_component_installer.h",
     "pref_names.cc",
     "pref_names.h",
+    "request_sender.cc",
+    "request_sender.h",
     "update_checker.cc",
     "update_checker.h",
     "update_response.cc",
@@ -52,6 +54,7 @@ source_set("component_updater") {
 }
 
 static_library("test_support") {
+  testonly = true
   sources = [
     "test/test_configurator.cc",
     "test/test_configurator.h",
@@ -69,10 +72,12 @@ static_library("test_support") {
 }
 
 source_set("unit_tests") {
+  testonly = true
   sources = [
     "test/component_patcher_unittest.cc",
     "test/component_updater_ping_manager_unittest.cc",
     "test/crx_downloader_unittest.cc",
+    "test/request_sender_unittest.cc",
     "test/update_checker_unittest.cc",
     "test/update_response_unittest.cc",
   ]

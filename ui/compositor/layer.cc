@@ -378,7 +378,7 @@ void Layer::SetLayerFilters() {
   }
   if (alpha_shape_) {
     filters.Append(cc::FilterOperation::CreateAlphaThresholdFilter(
-            *alpha_shape_, 1.f, 0.f));
+            *alpha_shape_, 0.f, 0.f));
   }
 
   cc_layer_->SetFilters(filters);
@@ -598,8 +598,7 @@ void Layer::SetShowPaintedContent() {
   RecomputeDrawsContentAndUVRect();
 }
 
-void Layer::UpdateNinePatchLayerBitmap(const SkBitmap& bitmap,
-                                       const gfx::Rect& aperture) {
+void Layer::UpdateNinePatchLayerBitmap(const SkBitmap& bitmap) {
   DCHECK(type_ == LAYER_NINE_PATCH && nine_patch_layer_.get());
   SkBitmap bitmap_copy;
   if (bitmap.isImmutable()) {
@@ -610,6 +609,10 @@ void Layer::UpdateNinePatchLayerBitmap(const SkBitmap& bitmap,
     bitmap_copy.setImmutable();
   }
   nine_patch_layer_->SetBitmap(bitmap_copy);
+}
+
+void Layer::UpdateNinePatchLayerAperture(const gfx::Rect& aperture) {
+  DCHECK(type_ == LAYER_NINE_PATCH && nine_patch_layer_.get());
   nine_patch_layer_->SetAperture(aperture);
 }
 
@@ -707,7 +710,6 @@ void Layer::RequestCopyOfOutput(scoped_ptr<cc::CopyOutputRequest> request) {
 
 void Layer::PaintContents(SkCanvas* sk_canvas,
                           const gfx::Rect& clip,
-                          gfx::RectF* opaque,
                           ContentLayerClient::GraphicsContextStatus gc_status) {
   TRACE_EVENT0("ui", "Layer::PaintContents");
   scoped_ptr<gfx::Canvas> canvas(gfx::Canvas::CreateCanvasWithoutScaling(

@@ -55,11 +55,13 @@ class PrioritizedTileSetTest : public testing::Test {
     CHECK(output_surface_->BindToClient(&output_surface_client_));
 
     shared_bitmap_manager_.reset(new TestSharedBitmapManager());
-    resource_provider_ =
-        ResourceProvider::Create(
-            output_surface_.get(), shared_bitmap_manager_.get(), 0, false, 1,
-            false)
-            .Pass();
+    resource_provider_ = ResourceProvider::Create(output_surface_.get(),
+                                                  shared_bitmap_manager_.get(),
+                                                  NULL,
+                                                  0,
+                                                  false,
+                                                  1,
+                                                  false).Pass();
     resource_pool_ = ResourcePool::Create(
         resource_provider_.get(), GL_TEXTURE_2D, RGBA_8888);
     tile_manager_.reset(
@@ -70,7 +72,6 @@ class PrioritizedTileSetTest : public testing::Test {
   scoped_refptr<Tile> CreateTile() {
     return tile_manager_->CreateTile(picture_pile_.get(),
                                      settings_.default_tile_size,
-                                     gfx::Rect(),
                                      gfx::Rect(),
                                      1.0,
                                      0,

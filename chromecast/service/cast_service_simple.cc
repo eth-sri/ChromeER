@@ -10,6 +10,7 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "net/base/filename_util.h"
+#include "net/url_request/url_request_context_getter.h"
 #include "ui/aura/env.h"
 #include "ui/aura/layout_manager.h"
 #include "ui/aura/test/test_screen.h"
@@ -69,12 +70,17 @@ class FillLayout : public aura::LayoutManager {
 }  // namespace
 
 // static
-CastService* CastService::Create(content::BrowserContext* browser_context) {
-  return new CastServiceSimple(browser_context);
+CastService* CastService::Create(
+    content::BrowserContext* browser_context,
+    net::URLRequestContextGetter* request_context_getter,
+    const OptInStatsChangedCallback& opt_in_stats_callback) {
+  return new CastServiceSimple(browser_context, opt_in_stats_callback);
 }
 
-CastServiceSimple::CastServiceSimple(content::BrowserContext* browser_context)
-    : CastService(browser_context) {
+CastServiceSimple::CastServiceSimple(
+    content::BrowserContext* browser_context,
+    const OptInStatsChangedCallback& opt_in_stats_callback)
+    : CastService(browser_context, opt_in_stats_callback) {
 }
 
 CastServiceSimple::~CastServiceSimple() {
@@ -115,7 +121,7 @@ void CastServiceSimple::StartInternal() {
 
   web_contents_->GetController().LoadURL(GetStartupURL(),
                                          content::Referrer(),
-                                         content::PAGE_TRANSITION_TYPED,
+                                         ui::PAGE_TRANSITION_TYPED,
                                          std::string());
 }
 

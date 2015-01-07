@@ -29,7 +29,7 @@ UIResourceLayerImpl::~UIResourceLayerImpl() {}
 
 scoped_ptr<LayerImpl> UIResourceLayerImpl::CreateLayerImpl(
     LayerTreeImpl* tree_impl) {
-  return UIResourceLayerImpl::Create(tree_impl, id()).PassAs<LayerImpl>();
+  return UIResourceLayerImpl::Create(tree_impl, id());
 }
 
 void UIResourceLayerImpl::PushPropertiesTo(LayerImpl* layer) {
@@ -121,8 +121,10 @@ void UIResourceLayerImpl::AppendQuads(
 
   gfx::Rect quad_rect(bounds());
   gfx::Rect opaque_rect(opaque ? quad_rect : gfx::Rect());
-  gfx::Rect visible_quad_rect = occlusion_tracker.UnoccludedContentRect(
-      quad_rect, draw_properties().target_space_transform);
+  gfx::Rect visible_quad_rect =
+      occlusion_tracker.GetCurrentOcclusionForLayer(
+                            draw_properties().target_space_transform)
+          .GetUnoccludedContentRect(quad_rect);
   if (visible_quad_rect.IsEmpty())
     return;
 

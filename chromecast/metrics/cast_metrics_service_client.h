@@ -14,6 +14,11 @@
 
 class PrefService;
 
+namespace base {
+class MessageLoopProxy;
+class TaskRunner;
+}
+
 namespace metrics {
 class MetricsService;
 class MetricsStateManager;
@@ -31,12 +36,14 @@ class CastMetricsServiceClient : public ::metrics::MetricsServiceClient {
   virtual ~CastMetricsServiceClient();
 
   static CastMetricsServiceClient* Create(
+      base::TaskRunner* io_task_runner,
       PrefService* pref_service,
       net::URLRequestContextGetter* request_context);
 
   // metrics::MetricsServiceClient implementation:
   virtual void SetMetricsClientId(const std::string& client_id) OVERRIDE;
   virtual bool IsOffTheRecordSessionActive() OVERRIDE;
+  virtual int32_t GetProduct() OVERRIDE;
   virtual std::string GetApplicationLocale() OVERRIDE;
   virtual bool GetBrand(std::string* brand_code) OVERRIDE;
   virtual ::metrics::SystemProfileProto::Channel GetChannel() OVERRIDE;
@@ -55,6 +62,7 @@ class CastMetricsServiceClient : public ::metrics::MetricsServiceClient {
 
  private:
   CastMetricsServiceClient(
+      base::TaskRunner* io_task_runner,
       PrefService* pref_service,
       net::URLRequestContextGetter* request_context);
 
@@ -63,6 +71,7 @@ class CastMetricsServiceClient : public ::metrics::MetricsServiceClient {
 
   scoped_ptr< ::metrics::MetricsStateManager> metrics_state_manager_;
   scoped_ptr< ::metrics::MetricsService> metrics_service_;
+  scoped_refptr<base::MessageLoopProxy> metrics_service_loop_;
   net::URLRequestContextGetter* request_context_;
 
   DISALLOW_COPY_AND_ASSIGN(CastMetricsServiceClient);

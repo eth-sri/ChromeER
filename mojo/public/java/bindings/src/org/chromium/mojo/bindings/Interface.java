@@ -174,6 +174,12 @@ public interface Interface extends ConnectionErrorHandler, Closeable {
     abstract class Manager<I extends Interface, P extends Proxy> {
 
         /**
+         * Returns the name of the interface. This is an opaque (but human readable) identifier used
+         * by the service provider to identify services.
+         */
+        public abstract String getName();
+
+        /**
          * Binds the given implementation to the handle.
          */
         public void bind(I impl, MessagePipeHandle handle) {
@@ -207,7 +213,7 @@ public interface Interface extends ConnectionErrorHandler, Closeable {
         }
 
         /**
-         * Construct a new |InterfaceRequest| for the interface. This method returns a Pair where
+         * Constructs a new |InterfaceRequest| for the interface. This method returns a Pair where
          * the first element is a proxy, and the second element is the request. The proxy can be
          * used immediately.
          */

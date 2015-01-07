@@ -2,18 +2,25 @@
   "Type": "Cellular",
   "Name": "Test Network",
   "Cellular": {
-    "ActivationState": "activated",
+    "ActivationState": "Activated",
     "ActivationType": "OTASP",
     "AllowRoaming": true,
+    "AutoConnect": true,
+    "Carrier": "cellular_provider",
     "HomeProvider": {
       "country": "us",
       "name": "cellular_provider"
     },
+    "RoamingState": "Home",
     "ServingOperator": {
       "Code": "test-code",
       "Country": "test-country",
       "Name": "test-name"
     },
+    "SupportedCarriers": [
+      "cellular_provider",
+      "generic_provider"
+    ],
     "APN": {
       "AccessPointName": "test-apn",
       "Name": "test-apn-name",
@@ -37,10 +44,11 @@
         "Password": "test-password3",
         "Username": "test-username3"
       }
-    ],
+    ],	
     "SIMLockStatus": {
       "LockType": "sim-pin",
       "LockEnabled": true
     }
-  }
+  },
+  "Source":"Device"
 }

@@ -14,9 +14,8 @@
 namespace mojo {
 
 template <>
-class TypeConverter<sample::BarPtr, int32_t> {
- public:
-  static int32_t ConvertTo(const sample::BarPtr& bar) {
+struct TypeConverter<int32_t, sample::BarPtr> {
+  static int32_t Convert(const sample::BarPtr& bar) {
     return static_cast<int32_t>(bar->alpha) << 16 |
            static_cast<int32_t>(bar->beta) << 8 |
            static_cast<int32_t>(bar->gamma);
@@ -256,8 +255,7 @@ void DumpHex(const uint8_t* bytes, uint32_t num_bytes) {
 
 class ServiceImpl : public Service {
  public:
-  virtual void Frobinate(FooPtr foo, BazOptions baz, PortPtr port)
-      MOJO_OVERRIDE {
+  virtual void Frobinate(FooPtr foo, BazOptions baz, PortPtr port) override {
     // Users code goes here to handle the incoming Frobinate message.
 
     // We mainly check that we're given the expected arguments.
@@ -276,9 +274,7 @@ class ServiceImpl : public Service {
     }
   }
 
-  virtual void GetPort(mojo::InterfaceRequest<Port> port_request)
-      MOJO_OVERRIDE {
-  }
+  virtual void GetPort(mojo::InterfaceRequest<Port> port_request) override {}
 };
 
 class ServiceProxyImpl : public ServiceProxy {
@@ -290,7 +286,7 @@ class ServiceProxyImpl : public ServiceProxy {
 
 class SimpleMessageReceiver : public mojo::MessageReceiverWithResponder {
  public:
-  virtual bool Accept(mojo::Message* message) MOJO_OVERRIDE {
+  virtual bool Accept(mojo::Message* message) override {
     // Imagine some IPC happened here.
 
     if (g_dump_message_as_hex) {
@@ -308,8 +304,7 @@ class SimpleMessageReceiver : public mojo::MessageReceiverWithResponder {
   }
 
   virtual bool AcceptWithResponder(mojo::Message* message,
-                                   mojo::MessageReceiver* responder)
-                                       MOJO_OVERRIDE {
+                                   mojo::MessageReceiver* responder) override {
     return false;
   }
 };

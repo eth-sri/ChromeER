@@ -34,27 +34,20 @@ namespace content {
 // on the IO thread.
 class CONTENT_EXPORT ServiceWorkerCacheStorage {
  public:
-  // TODO(jkarlin): Convert this (and everything that uses it) to int64_t so
-  // that we don't run out of id space.
-  typedef int32_t CacheID;
-
-  // The CacheID returned on failed cache operations.
-  const static int kInvalidCacheID;
-
   enum CacheStorageError {
     CACHE_STORAGE_ERROR_NO_ERROR,
     CACHE_STORAGE_ERROR_NOT_IMPLEMENTED,
     CACHE_STORAGE_ERROR_NOT_FOUND,
     CACHE_STORAGE_ERROR_EXISTS,
     CACHE_STORAGE_ERROR_STORAGE,
-    CACHE_STORAGE_ERROR_EMPTY_KEY,
     CACHE_STORAGE_ERROR_CLOSING
   };
-
+  typedef std::vector<std::string> StringVector;
   typedef base::Callback<void(bool, CacheStorageError)> BoolAndErrorCallback;
-  typedef base::Callback<void(int, CacheStorageError)> CacheAndErrorCallback;
-  typedef base::Callback<void(const std::vector<std::string>&,
-                              CacheStorageError)> StringsAndErrorCallback;
+  typedef base::Callback<void(const scoped_refptr<ServiceWorkerCache>&,
+                              CacheStorageError)> CacheAndErrorCallback;
+  typedef base::Callback<void(const StringVector&, CacheStorageError)>
+      StringsAndErrorCallback;
 
   ServiceWorkerCacheStorage(
       const base::FilePath& origin_path,
@@ -94,41 +87,31 @@ class CONTENT_EXPORT ServiceWorkerCacheStorage {
   class MemoryLoader;
   class SimpleCacheLoader;
   class CacheLoader;
-  struct CacheContext;
 
-  typedef std::map<CacheID, CacheContext*> CacheMap;
-  typedef std::map<std::string, CacheID> NameMap;
+  typedef std::map<std::string, base::WeakPtr<ServiceWorkerCache> > CacheMap;
 
-  CacheContext* GetLoadedCache(const std::string& cache_name) const;
+  // Return a ServiceWorkerCache for the given name if the name is known. If the
+  // ServiceWorkerCache has been deleted, creates a new one.
+  scoped_refptr<ServiceWorkerCache> GetLoadedCache(
+      const std::string& cache_name);
 
-  // Initializer and its callback are below.
+  // Initializer and its callback are below. While LazyInit is running any new
+  // operations will be queued and started in order after initialization.
   void LazyInit(const base::Closure& closure);
   void LazyInitDidLoadIndex(
       const base::Closure& callback,
       scoped_ptr<std::vector<std::string> > indexed_cache_names);
-  void LazyInitIterateAndLoadCacheName(
-      const base::Closure& callback,
-      scoped_ptr<std::vector<std::string> > indexed_cache_names,
-      const std::vector<std::string>::const_iterator& iter,
-      const std::string& cache_name,
-      scoped_ptr<ServiceWorkerCache> cache);
-  void LazyInitDone();
 
-  void DidCreateBackend(base::WeakPtr<ServiceWorkerCache> cache,
-                        CacheID cache_id,
-                        const CacheAndErrorCallback& callback,
-                        ServiceWorkerCache::ErrorType error);
-
-  CacheContext* AddCacheToMaps(const std::string& cache_name,
-                               scoped_ptr<ServiceWorkerCache> cache);
+  void AddCacheToMap(const std::string& cache_name,
+                     base::WeakPtr<ServiceWorkerCache> cache);
 
   // The CreateCache callbacks are below.
-  void CreateCacheDidCreateCache(const std::string& cache_name,
-                                 const CacheAndErrorCallback& callback,
-                                 scoped_ptr<ServiceWorkerCache> cache);
+  void CreateCacheDidCreateCache(
+      const std::string& cache_name,
+      const CacheAndErrorCallback& callback,
+      const scoped_refptr<ServiceWorkerCache>& cache);
   void CreateCacheDidWriteIndex(const CacheAndErrorCallback& callback,
-                                base::WeakPtr<ServiceWorkerCache> cache,
-                                CacheID id,
+                                const scoped_refptr<ServiceWorkerCache>& cache,
                                 bool success);
 
   // The DeleteCache callbacks are below.
@@ -144,20 +127,20 @@ class CONTENT_EXPORT ServiceWorkerCacheStorage {
   // The list of operations waiting on initialization.
   std::vector<base::Closure> init_callbacks_;
 
-  // The map of CacheIDs to their CacheContext objects. Owns the CacheContext
-  // object. The CacheIDs are used by JavaScript to reference a
-  // ServiceWorkerCache.
+  // The map of cache names to ServiceWorkerCache objects.
   CacheMap cache_map_;
-  CacheID next_cache_id_;  // The next CacheID to use in cache_map_
 
-  // The map of cache names to their integer ids.
-  NameMap name_map_;
+  // The names of caches in the order that they were created.
+  StringVector ordered_cache_names_;
 
   // The file path for this CacheStorage.
   base::FilePath origin_path_;
 
   // The TaskRunner to run file IO on.
   scoped_refptr<base::SequencedTaskRunner> cache_task_runner_;
+
+  // Whether or not to store data in disk or memory.
+  bool memory_only_;
 
   // Performs backend specific operations (memory vs disk).
   scoped_ptr<CacheLoader> cache_loader_;

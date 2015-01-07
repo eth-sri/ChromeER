@@ -65,6 +65,7 @@ class SystemTrayDelegateChromeOS
   virtual const std::string GetSupervisedUserManager() const OVERRIDE;
   virtual const base::string16 GetSupervisedUserManagerName() const OVERRIDE;
   virtual const base::string16 GetSupervisedUserMessage() const OVERRIDE;
+  virtual bool IsUserSupervised() const OVERRIDE;
   virtual bool SystemShouldUpgrade() const OVERRIDE;
   virtual base::HourClockType GetHourClockType() const OVERRIDE;
   virtual void ShowSettings() OVERRIDE;
@@ -102,10 +103,8 @@ class SystemTrayDelegateChromeOS
   virtual void GetCurrentIMEProperties(ash::IMEPropertyInfoList* list) OVERRIDE;
   virtual void SwitchIME(const std::string& ime_id) OVERRIDE;
   virtual void ActivateIMEProperty(const std::string& key) OVERRIDE;
-  virtual void ShowNetworkConfigure(const std::string& network_id,
-                                    gfx::NativeWindow parent_window) OVERRIDE;
-  virtual bool EnrollNetwork(const std::string& network_id,
-                             gfx::NativeWindow parent_window) OVERRIDE;
+  virtual void ShowNetworkConfigure(const std::string& network_id) OVERRIDE;
+  virtual bool EnrollNetwork(const std::string& network_id) OVERRIDE;
   virtual void ManageBluetoothDevices() OVERRIDE;
   virtual void ToggleBluetooth() OVERRIDE;
   virtual void ShowMobileSimDialog() OVERRIDE;
@@ -235,7 +234,6 @@ class SystemTrayDelegateChromeOS
   void OnAccessibilityStatusChanged(
       const AccessibilityStatusEventDetails& details);
 
-  base::WeakPtrFactory<SystemTrayDelegateChromeOS> weak_ptr_factory_;
   scoped_ptr<content::NotificationRegistrar> registrar_;
   scoped_ptr<PrefChangeRegistrar> local_state_registrar_;
   scoped_ptr<PrefChangeRegistrar> user_pref_registrar_;
@@ -257,6 +255,8 @@ class SystemTrayDelegateChromeOS
   scoped_ptr<AccessibilityStatusSubscription> accessibility_subscription_;
   base::ScopedPtrHashMap<std::string, ash::tray::UserAccountsDelegate>
       accounts_delegates_;
+
+  base::WeakPtrFactory<SystemTrayDelegateChromeOS> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(SystemTrayDelegateChromeOS);
 };

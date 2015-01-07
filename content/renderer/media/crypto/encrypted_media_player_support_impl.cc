@@ -16,6 +16,7 @@
 #include "content/renderer/media/webcontentdecryptionmodule_impl.h"
 #include "content/renderer/pepper/pepper_webplugin_impl.h"
 #include "media/base/bind_to_current_loop.h"
+#include "media/blink/encrypted_media_player_support.h"
 #include "third_party/WebKit/public/platform/WebContentDecryptionModule.h"
 #include "third_party/WebKit/public/platform/WebContentDecryptionModuleResult.h"
 #include "third_party/WebKit/public/platform/WebMediaPlayerClient.h"
@@ -123,8 +124,8 @@ static std::string GuessInitDataType(const unsigned char* init_data,
   return "video/mp4";
 }
 
-scoped_ptr<EncryptedMediaPlayerSupport> EncryptedMediaPlayerSupportImpl::Create(
-    blink::WebMediaPlayerClient* client) {
+scoped_ptr<media::EncryptedMediaPlayerSupport>
+EncryptedMediaPlayerSupportImpl::Create(blink::WebMediaPlayerClient* client) {
   return scoped_ptr<EncryptedMediaPlayerSupport>(
       new EncryptedMediaPlayerSupportImpl(client));
 }
@@ -295,6 +296,14 @@ EncryptedMediaPlayerSupportImpl::CancelKeyRequestInternal(
   return WebMediaPlayer::MediaKeyExceptionNoError;
 }
 
+void EncryptedMediaPlayerSupportImpl::SetInitialContentDecryptionModule(
+    blink::WebContentDecryptionModule* initial_cdm) {
+  // Used when loading media and no pipeline/decoder attached yet.
+  DCHECK(decryptor_ready_cb_.is_null());
+
+  web_cdm_ = ToWebContentDecryptionModuleImpl(initial_cdm);
+}
+
 void EncryptedMediaPlayerSupportImpl::SetContentDecryptionModule(
     blink::WebContentDecryptionModule* cdm) {
   // TODO(xhwang): Support setMediaKeys(0) if necessary: http://crbug.com/330324
@@ -332,14 +341,6 @@ void EncryptedMediaPlayerSupportImpl::SetContentDecryptionModule(
     // is connected, setting the CDM will happen in SetDecryptorReadyCB().
     ContentDecryptionModuleAttached(result, true);
   }
-}
-
-void EncryptedMediaPlayerSupportImpl::SetContentDecryptionModuleSync(
-    blink::WebContentDecryptionModule* cdm) {
-  // Used when loading media and no pipeline/decoder attached yet.
-  DCHECK(decryptor_ready_cb_.is_null());
-
-  web_cdm_ = ToWebContentDecryptionModuleImpl(cdm);
 }
 
 void EncryptedMediaPlayerSupportImpl::ContentDecryptionModuleAttached(

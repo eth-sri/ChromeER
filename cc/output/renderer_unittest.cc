@@ -38,8 +38,7 @@ scoped_ptr<Renderer> CreateRenderer<DelegatingRenderer>(
     OutputSurface* output_surface,
     ResourceProvider* resource_provider) {
   return DelegatingRenderer::Create(
-             client, settings, output_surface, resource_provider)
-      .PassAs<Renderer>();
+      client, settings, output_surface, resource_provider);
 }
 
 template <>
@@ -49,8 +48,7 @@ scoped_ptr<Renderer> CreateRenderer<GLRenderer>(
     OutputSurface* output_surface,
     ResourceProvider* resource_provider) {
   return GLRenderer::Create(
-             client, settings, output_surface, resource_provider, NULL, 0)
-      .PassAs<Renderer>();
+      client, settings, output_surface, resource_provider, NULL, 0);
 }
 
 template <typename T>
@@ -61,9 +59,8 @@ class RendererTest : public ::testing::Test {
         new MockContextProvider(TestWebGraphicsContext3D::Create());
     output_surface_.reset(new OutputSurface(context_provider_));
     output_surface_->BindToClient(&output_surface_client_);
-    resource_provider_ =
-        ResourceProvider::Create(output_surface_.get(), NULL, 0, false, 1,
-        false);
+    resource_provider_ = ResourceProvider::Create(
+        output_surface_.get(), NULL, NULL, 0, false, 1, false);
     renderer_ = CreateRenderer<T>(&renderer_client_,
                                   &tree_settings_,
                                   output_surface_.get(),

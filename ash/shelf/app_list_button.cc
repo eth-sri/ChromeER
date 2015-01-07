@@ -5,18 +5,19 @@
 #include "ash/shelf/app_list_button.h"
 
 #include "ash/ash_constants.h"
-#include "ash/ash_switches.h"
 #include "ash/shelf/shelf_button.h"
 #include "ash/shelf/shelf_button_host.h"
 #include "ash/shelf/shelf_item_types.h"
 #include "ash/shelf/shelf_layout_manager.h"
 #include "ash/shelf/shelf_widget.h"
 #include "ash/shell.h"
+#include "base/command_line.h"
 #include "grit/ash_resources.h"
 #include "grit/ash_strings.h"
 #include "ui/accessibility/ax_view_state.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/base/ui_base_switches_util.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/layer_animation_element.h"
 #include "ui/compositor/layer_animation_sequence.h"
@@ -35,6 +36,7 @@ AppListButton::AppListButton(views::ButtonListener* listener,
                              ShelfButtonHost* host,
                              ShelfWidget* shelf_widget)
     : views::ImageButton(listener),
+      draw_background_as_active_(false),
       host_(host),
       shelf_widget_(shelf_widget) {
   SetAccessibleName(l10n_util::GetStringUTF16(IDS_ASH_SHELF_APP_LIST_TITLE));
@@ -86,6 +88,8 @@ void AppListButton::OnMouseExited(const ui::MouseEvent& event) {
 void AppListButton::OnGestureEvent(ui::GestureEvent* event) {
   switch (event->type()) {
    case ui::ET_GESTURE_SCROLL_BEGIN:
+     if (switches::IsTouchFeedbackEnabled())
+       SetDrawBackgroundAsActive(false);
      host_->PointerPressedOnButton(this, ShelfButtonHost::TOUCH, *event);
      event->SetHandled();
      return;
@@ -98,6 +102,17 @@ void AppListButton::OnGestureEvent(ui::GestureEvent* event) {
      host_->PointerReleasedOnButton(this, ShelfButtonHost::TOUCH, false);
      event->SetHandled();
      return;
+   case ui::ET_GESTURE_TAP_DOWN:
+     if (switches::IsTouchFeedbackEnabled())
+       SetDrawBackgroundAsActive(true);
+     ImageButton::OnGestureEvent(event);
+     break;
+   case ui::ET_GESTURE_TAP_CANCEL:
+   case ui::ET_GESTURE_TAP:
+     if (switches::IsTouchFeedbackEnabled())
+       SetDrawBackgroundAsActive(false);
+     ImageButton::OnGestureEvent(event);
+     break;
    default:
      ImageButton::OnGestureEvent(event);
      return;
@@ -109,7 +124,8 @@ void AppListButton::OnPaint(gfx::Canvas* canvas) {
   View::OnPaint(canvas);
 
   int background_image_id = 0;
-  if (Shell::GetInstance()->GetAppListTargetVisibility()) {
+  if (Shell::GetInstance()->GetAppListTargetVisibility() ||
+      draw_background_as_active_) {
     background_image_id = IDR_AURA_NOTIFICATION_BACKGROUND_PRESSED;
   } else {
     if (shelf_widget_->GetDimsShelf())
@@ -164,6 +180,14 @@ void AppListButton::OnPaint(gfx::Canvas* canvas) {
 void AppListButton::GetAccessibleState(ui::AXViewState* state) {
   state->role = ui::AX_ROLE_BUTTON;
   state->name = host_->GetAccessibleName(this);
+}
+
+void AppListButton::SetDrawBackgroundAsActive(
+    bool draw_background_as_active) {
+  if (draw_background_as_active_ == draw_background_as_active)
+    return;
+  draw_background_as_active_ = draw_background_as_active;
+  SchedulePaint();
 }
 
 }  // namespace ash

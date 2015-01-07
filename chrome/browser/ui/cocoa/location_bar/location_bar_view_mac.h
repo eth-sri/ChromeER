@@ -59,7 +59,7 @@ class LocationBarViewMac : public LocationBar,
   virtual void ShowFirstRunBubble() OVERRIDE;
   virtual GURL GetDestinationURL() const OVERRIDE;
   virtual WindowOpenDisposition GetWindowOpenDisposition() const OVERRIDE;
-  virtual content::PageTransition GetPageTransition() const OVERRIDE;
+  virtual ui::PageTransition GetPageTransition() const OVERRIDE;
   virtual void AcceptInput() OVERRIDE;
   virtual void FocusLocation(bool select_all) OVERRIDE;
   virtual void FocusSearch() OVERRIDE;
@@ -67,6 +67,7 @@ class LocationBarViewMac : public LocationBar,
   virtual void UpdateManagePasswordsIconAndBubble() OVERRIDE;
   virtual void UpdatePageActions() OVERRIDE;
   virtual void InvalidatePageActions() OVERRIDE;
+  virtual void UpdateBookmarkStarVisibility() OVERRIDE;
   virtual bool ShowPageActionPopup(const extensions::Extension* extension,
                                    bool grant_active_tab) OVERRIDE;
   virtual void UpdateOpenPDFInReaderPrompt() OVERRIDE;
@@ -212,9 +213,6 @@ class LocationBarViewMac : public LocationBar,
   // Updates the zoom decoration in the omnibox with the current zoom level.
   // Returns whether any updates were made.
   bool UpdateZoomDecoration();
-
-  // Ensures the star decoration is visible or hidden, as required.
-  void UpdateStarDecorationVisibility();
 
   // Updates the voice search decoration. Returns true if the visible state was
   // changed.

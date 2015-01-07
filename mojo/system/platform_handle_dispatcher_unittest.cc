@@ -6,8 +6,8 @@
 
 #include <stdio.h>
 
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_file.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/ref_counted.h"
@@ -88,7 +88,7 @@ TEST(PlatformHandleDispatcherTest, CreateEquivalentDispatcherAndClose) {
 
   transport.End();
   EXPECT_TRUE(dispatcher->HasOneRef());
-  dispatcher = NULL;
+  dispatcher = nullptr;
 
   ASSERT_EQ(Dispatcher::kTypePlatformHandle, generic_dispatcher->GetType());
   dispatcher = static_cast<PlatformHandleDispatcher*>(generic_dispatcher.get());

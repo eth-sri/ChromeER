@@ -17,6 +17,8 @@ RequestInfo::RequestInfo()
       routing_id(0),
       download_to_file(false),
       has_user_gesture(false),
+      skip_service_worker(false),
+      fetch_request_mode(FETCH_REQUEST_MODE_NO_CORS),
       enable_load_timing(false),
       extra_data(NULL) {
 }

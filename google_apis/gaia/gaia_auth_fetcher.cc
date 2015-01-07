@@ -185,9 +185,10 @@ GaiaAuthFetcher::GaiaAuthFetcher(GaiaAuthConsumer* consumer,
       uberauth_token_gurl_(GaiaUrls::GetInstance()->oauth1_login_url().Resolve(
           base::StringPrintf(kUberAuthTokenURLFormat, source.c_str()))),
       oauth_login_gurl_(GaiaUrls::GetInstance()->oauth1_login_url()),
-      list_accounts_gurl_(GaiaUrls::GetInstance()->list_accounts_url()),
+      list_accounts_gurl_(
+          GaiaUrls::GetInstance()->ListAccountsURLWithSource(source)),
       get_check_connection_info_url_(
-          GaiaUrls::GetInstance()->get_check_connection_info_url()),
+          GaiaUrls::GetInstance()->GetCheckConnectionInfoURLWithSource(source)),
       client_login_to_oauth2_gurl_(
           GaiaUrls::GetInstance()->client_login_to_oauth2_url()),
       fetch_pending_(false) {}
@@ -867,10 +868,10 @@ void GaiaAuthFetcher::OnGetUserInfoFetched(
     const net::URLRequestStatus& status,
     int response_code) {
   if (status.is_success() && response_code == net::HTTP_OK) {
-    std::vector<std::pair<std::string, std::string> > tokens;
+    base::StringPairs tokens;
     UserInfoMap matches;
     base::SplitStringIntoKeyValuePairs(data, '=', '\n', &tokens);
-    std::vector<std::pair<std::string, std::string> >::iterator i;
+    base::StringPairs::iterator i;
     for (i = tokens.begin(); i != tokens.end(); ++i) {
       matches[i->first] = i->second;
     }

@@ -137,14 +137,21 @@ void WebLayerTreeViewImplForTesting::setDeferCommits(bool defer_commits) {
 void WebLayerTreeViewImplForTesting::Layout() {
 }
 
-void WebLayerTreeViewImplForTesting::ApplyScrollAndScale(
-    const gfx::Vector2d& scroll_delta,
-    float page_scale) {}
+void WebLayerTreeViewImplForTesting::ApplyViewportDeltas(
+    const gfx::Vector2d& inner_delta,
+    const gfx::Vector2d& outer_delta,
+    float page_scale,
+    float top_controls_delta) {}
 
-scoped_ptr<cc::OutputSurface>
-WebLayerTreeViewImplForTesting::CreateOutputSurface(bool fallback) {
-  return make_scoped_ptr(
-      new cc::OutputSurface(cc::TestContextProvider::Create()));
+void WebLayerTreeViewImplForTesting::ApplyViewportDeltas(
+    const gfx::Vector2d& scroll_delta,
+    float page_scale,
+    float top_controls_delta) {}
+
+void WebLayerTreeViewImplForTesting::RequestNewOutputSurface(
+    bool fallback) {
+  layer_tree_host_->SetOutputSurface(make_scoped_ptr(
+      new cc::OutputSurface(cc::TestContextProvider::Create())));
 }
 
 void WebLayerTreeViewImplForTesting::registerViewportLayers(

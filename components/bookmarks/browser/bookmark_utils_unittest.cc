@@ -74,7 +74,7 @@ class BookmarkUtilsTest : public testing::Test,
 };
 
 TEST_F(BookmarkUtilsTest, GetBookmarksMatchingPropertiesWordPhraseQuery) {
-  test::TestBookmarkClient client;
+  TestBookmarkClient client;
   scoped_ptr<BookmarkModel> model(client.CreateModel());
   const BookmarkNode* node1 = model->AddURL(model->other_node(),
                                             0,
@@ -132,7 +132,7 @@ TEST_F(BookmarkUtilsTest, GetBookmarksMatchingPropertiesWordPhraseQuery) {
 
 // Check exact matching against a URL query.
 TEST_F(BookmarkUtilsTest, GetBookmarksMatchingPropertiesUrl) {
-  test::TestBookmarkClient client;
+  TestBookmarkClient client;
   scoped_ptr<BookmarkModel> model(client.CreateModel());
   const BookmarkNode* node1 = model->AddURL(model->other_node(),
                                             0,
@@ -168,7 +168,7 @@ TEST_F(BookmarkUtilsTest, GetBookmarksMatchingPropertiesUrl) {
 
 // Check exact matching against a title query.
 TEST_F(BookmarkUtilsTest, GetBookmarksMatchingPropertiesTitle) {
-  test::TestBookmarkClient client;
+  TestBookmarkClient client;
   scoped_ptr<BookmarkModel> model(client.CreateModel());
   const BookmarkNode* node1 = model->AddURL(model->other_node(),
                                             0,
@@ -206,7 +206,7 @@ TEST_F(BookmarkUtilsTest, GetBookmarksMatchingPropertiesTitle) {
 
 // Check matching against a query with multiple predicates.
 TEST_F(BookmarkUtilsTest, GetBookmarksMatchingPropertiesConjunction) {
-  test::TestBookmarkClient client;
+  TestBookmarkClient client;
   scoped_ptr<BookmarkModel> model(client.CreateModel());
   const BookmarkNode* node1 = model->AddURL(model->other_node(),
                                             0,
@@ -257,8 +257,38 @@ TEST_F(BookmarkUtilsTest, GetBookmarksMatchingPropertiesConjunction) {
 
 // Copy and paste is not yet supported on iOS. http://crbug.com/228147
 #if !defined(OS_IOS)
+TEST_F(BookmarkUtilsTest, PasteBookmarkFromURL) {
+  TestBookmarkClient client;
+  scoped_ptr<BookmarkModel> model(client.CreateModel());
+  const base::string16 url_text = ASCIIToUTF16("http://www.google.com/");
+  const BookmarkNode* new_folder = model->AddFolder(
+      model->bookmark_bar_node(), 0, ASCIIToUTF16("New_Folder"));
+
+  // Write blank text to clipboard.
+  {
+    ui::ScopedClipboardWriter clipboard_writer(ui::CLIPBOARD_TYPE_COPY_PASTE);
+    clipboard_writer.WriteText(base::string16());
+  }
+  // Now we shouldn't be able to paste from the clipboard.
+  EXPECT_FALSE(CanPasteFromClipboard(model.get(), new_folder));
+
+  // Write some valid url to the clipboard.
+  {
+    ui::ScopedClipboardWriter clipboard_writer(ui::CLIPBOARD_TYPE_COPY_PASTE);
+    clipboard_writer.WriteText(url_text);
+  }
+  // Now we should be able to paste from the clipboard.
+  EXPECT_TRUE(CanPasteFromClipboard(model.get(), new_folder));
+
+  PasteFromClipboard(model.get(), new_folder, 0);
+  ASSERT_EQ(1, new_folder->child_count());
+
+  // Url for added node should be same as url_text.
+  EXPECT_EQ(url_text, ASCIIToUTF16(new_folder->GetChild(0)->url().spec()));
+}
+
 TEST_F(BookmarkUtilsTest, CopyPaste) {
-  test::TestBookmarkClient client;
+  TestBookmarkClient client;
   scoped_ptr<BookmarkModel> model(client.CreateModel());
   const BookmarkNode* node = model->AddURL(model->other_node(),
                                            0,
@@ -276,7 +306,6 @@ TEST_F(BookmarkUtilsTest, CopyPaste) {
   // Write some text to the clipboard.
   {
     ui::ScopedClipboardWriter clipboard_writer(
-        ui::Clipboard::GetForCurrentThread(),
         ui::CLIPBOARD_TYPE_COPY_PASTE);
     clipboard_writer.WriteText(ASCIIToUTF16("foo"));
   }
@@ -286,7 +315,7 @@ TEST_F(BookmarkUtilsTest, CopyPaste) {
 }
 
 TEST_F(BookmarkUtilsTest, CopyPasteMetaInfo) {
-  test::TestBookmarkClient client;
+  TestBookmarkClient client;
   scoped_ptr<BookmarkModel> model(client.CreateModel());
   const BookmarkNode* node = model->AddURL(model->other_node(),
                                            0,
@@ -329,7 +358,7 @@ TEST_F(BookmarkUtilsTest, CopyPasteMetaInfo) {
 #define MAYBE_CutToClipboard CutToClipboard
 #endif
 TEST_F(BookmarkUtilsTest, MAYBE_CutToClipboard) {
-  test::TestBookmarkClient client;
+  TestBookmarkClient client;
   scoped_ptr<BookmarkModel> model(client.CreateModel());
   model->AddObserver(this);
 
@@ -355,7 +384,7 @@ TEST_F(BookmarkUtilsTest, MAYBE_CutToClipboard) {
 }
 
 TEST_F(BookmarkUtilsTest, PasteNonEditableNodes) {
-  test::TestBookmarkClient client;
+  TestBookmarkClient client;
   // Load a model with an extra node that is not editable.
   BookmarkPermanentNode* extra_node = new BookmarkPermanentNode(100);
   BookmarkPermanentNodeList extra_nodes;
@@ -384,7 +413,7 @@ TEST_F(BookmarkUtilsTest, PasteNonEditableNodes) {
 #endif  // !defined(OS_IOS)
 
 TEST_F(BookmarkUtilsTest, GetParentForNewNodes) {
-  test::TestBookmarkClient client;
+  TestBookmarkClient client;
   scoped_ptr<BookmarkModel> model(client.CreateModel());
   // This tests the case where selection contains one item and that item is a
   // folder.
@@ -426,7 +455,7 @@ TEST_F(BookmarkUtilsTest, GetParentForNewNodes) {
 
 // Verifies that meta info is copied when nodes are cloned.
 TEST_F(BookmarkUtilsTest, CloneMetaInfo) {
-  test::TestBookmarkClient client;
+  TestBookmarkClient client;
   scoped_ptr<BookmarkModel> model(client.CreateModel());
   // Add a node containing meta info.
   const BookmarkNode* node = model->AddURL(model->other_node(),
@@ -458,7 +487,7 @@ TEST_F(BookmarkUtilsTest, CloneMetaInfo) {
 }
 
 TEST_F(BookmarkUtilsTest, RemoveAllBookmarks) {
-  test::TestBookmarkClient client;
+  TestBookmarkClient client;
   // Load a model with an extra node that is not editable.
   BookmarkPermanentNode* extra_node = new BookmarkPermanentNode(100);
   BookmarkPermanentNodeList extra_nodes;

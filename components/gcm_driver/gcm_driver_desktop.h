@@ -15,9 +15,12 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
+#include "components/gcm_driver/gcm_channel_status_syncer.h"
 #include "components/gcm_driver/gcm_client.h"
 #include "components/gcm_driver/gcm_connection_observer.h"
 #include "components/gcm_driver/gcm_driver.h"
+
+class PrefService;
 
 namespace base {
 class FilePath;
@@ -34,8 +37,10 @@ class URLRequestContextGetter;
 
 namespace gcm {
 
+class GCMAccountMapper;
 class GCMAppHandler;
 class GCMClientFactory;
+class GCMDelayedTaskController;
 
 // GCMDriver implementation for desktop and Chrome OS, using GCMClient.
 class GCMDriverDesktop : public GCMDriver {
@@ -43,6 +48,7 @@ class GCMDriverDesktop : public GCMDriver {
   GCMDriverDesktop(
       scoped_ptr<GCMClientFactory> gcm_client_factory,
       const GCMClient::ChromeBuildInfo& chrome_build_info,
+      PrefService* prefs,
       const base::FilePath& store_path,
       const scoped_refptr<net::URLRequestContextGetter>& request_context,
       const scoped_refptr<base::SequencedTaskRunner>& ui_thread,
@@ -69,18 +75,17 @@ class GCMDriverDesktop : public GCMDriver {
                                 bool clear_logs) OVERRIDE;
   virtual void SetGCMRecording(const GetGCMStatisticsCallback& callback,
                                bool recording) OVERRIDE;
+  virtual void SetAccountTokens(
+      const std::vector<GCMClient::AccountTokenInfo>& account_tokens) OVERRIDE;
   virtual void UpdateAccountMapping(
       const AccountMapping& account_mapping) OVERRIDE;
   virtual void RemoveAccountMapping(const std::string& account_id) OVERRIDE;
 
-  // GCMDriverDesktop specific implementation.
-  // Sets a list of accounts with OAuth2 tokens for the next checkin.
-  // |account_tokens| maps email addresses to OAuth2 access tokens.
-  // |account_removed| indicates that an account has been removed since the
-  //     last time the callback was called, which triggers an immediate checkin,
-  //     to ensure that association between device and account is removed.
-  void SetAccountsForCheckin(
-      const std::map<std::string, std::string>& account_tokens);
+  // Exposed for testing purpose.
+  bool gcm_enabled() const { return gcm_enabled_; }
+  GCMChannelStatusSyncer* gcm_channel_status_syncer_for_testing() {
+    return gcm_channel_status_syncer_.get();
+  }
 
  protected:
   // GCMDriver implementation:
@@ -94,7 +99,6 @@ class GCMDriverDesktop : public GCMDriver {
                         const GCMClient::OutgoingMessage& message) OVERRIDE;
 
  private:
-  class DelayedTaskController;
   class IOWorker;
 
   //  Stops the GCM service. It can be restarted by calling EnsureStarted again.
@@ -118,11 +122,14 @@ class GCMDriverDesktop : public GCMDriver {
                         const GCMClient::SendErrorDetails& send_error_details);
   void SendAcknowledged(const std::string& app_id,
                         const std::string& message_id);
-  void GCMClientReady();
+  void GCMClientReady(
+      const std::vector<AccountMapping>& account_mappings);
   void OnConnected(const net::IPEndPoint& ip_endpoint);
   void OnDisconnected();
 
   void GetGCMStatisticsFinished(const GCMClient::GCMStatistics& stats);
+
+  scoped_ptr<GCMChannelStatusSyncer> gcm_channel_status_syncer_;
 
   // Flag to indicate whether the user is signed in to a GAIA account.
   // TODO(jianli): To be removed when sign-in enforcement is dropped.
@@ -132,6 +139,7 @@ class GCMDriverDesktop : public GCMDriver {
   bool gcm_started_;
 
   // Flag to indicate if GCM is enabled.
+  // TODO(jianli): Removed when we switch completely to support all users.
   bool gcm_enabled_;
 
   // Flag to indicate the last known state of the GCM client. Because this
@@ -143,10 +151,13 @@ class GCMDriverDesktop : public GCMDriver {
   // Makes sure list is empty on destruction.
   ObserverList<GCMConnectionObserver, true> connection_observer_list_;
 
+  // Account mapper. Only works when user is signed in.
+  scoped_ptr<GCMAccountMapper> account_mapper_;
+
   scoped_refptr<base::SequencedTaskRunner> ui_thread_;
   scoped_refptr<base::SequencedTaskRunner> io_thread_;
 
-  scoped_ptr<DelayedTaskController> delayed_task_controller_;
+  scoped_ptr<GCMDelayedTaskController> delayed_task_controller_;
 
   // For all the work occurring on the IO thread. Must be destroyed on the IO
   // thread.

@@ -6,11 +6,11 @@ package org.chromium.sync.internal_api.pub.base;
 
 import android.util.Log;
 
-import com.google.common.annotations.VisibleForTesting;
 import com.google.ipc.invalidation.external.client.types.ObjectId;
 import com.google.protos.ipc.invalidation.Types;
 
 import org.chromium.base.FieldTrialList;
+import org.chromium.base.VisibleForTesting;
 import org.chromium.base.library_loader.LibraryLoader;
 
 import java.util.Collection;
@@ -100,7 +100,7 @@ public enum ModelType {
     }
 
     private boolean isNonInvalidationType() {
-      if (this == SESSION && LibraryLoader.isInitialized()) {
+      if ((this == SESSION || this == FAVICON_TRACKING) && LibraryLoader.isInitialized()) {
         return FieldTrialList
             .findFullName("AndroidSessionNotifications")
             .equals("Disabled");
@@ -117,8 +117,7 @@ public enum ModelType {
      */
     @VisibleForTesting
     public ObjectId toObjectId() {
-        return ObjectId.newInstance(Types.ObjectSource.Type.CHROME_SYNC.getNumber(),
-                mModelType.getBytes());
+        return ObjectId.newInstance(Types.ObjectSource.CHROME_SYNC, mModelType.getBytes());
     }
 
     public static ModelType fromObjectId(ObjectId objectId) {

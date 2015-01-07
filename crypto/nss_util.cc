@@ -27,8 +27,8 @@
 #include "base/debug/alias.h"
 #include "base/debug/stack_trace.h"
 #include "base/environment.h"
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
@@ -450,10 +450,8 @@ class NSSInitSingleton {
     return crypto::ScopedPK11Slot(slot);
   }
 
-  bool InitializeNSSForChromeOSUser(
-      const std::string& email,
-      const std::string& username_hash,
-      const base::FilePath& path) {
+  bool InitializeNSSForChromeOSUser(const std::string& username_hash,
+                                    const base::FilePath& path) {
     DCHECK(thread_checker_.CalledOnValidThread());
     if (chromeos_user_map_.find(username_hash) != chromeos_user_map_.end()) {
       // This user already exists in our mapping.
@@ -1045,12 +1043,10 @@ void InitializeTPMTokenAndSystemSlot(
                                                         callback);
 }
 
-bool InitializeNSSForChromeOSUser(
-    const std::string& email,
-    const std::string& username_hash,
-    const base::FilePath& path) {
-  return g_nss_singleton.Get().InitializeNSSForChromeOSUser(
-      email, username_hash, path);
+bool InitializeNSSForChromeOSUser(const std::string& username_hash,
+                                  const base::FilePath& path) {
+  return g_nss_singleton.Get().InitializeNSSForChromeOSUser(username_hash,
+                                                            path);
 }
 
 bool ShouldInitializeTPMForChromeOSUser(const std::string& username_hash) {

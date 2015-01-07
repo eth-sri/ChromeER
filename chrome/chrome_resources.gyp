@@ -111,17 +111,8 @@
           ],
         }],
         ['chromeos==1 and disable_nacl==0 and disable_nacl_untrusted==0', {
-          'conditions': [
-            # TODO(dtseng): Remove use_chromevox_next once ChromeVox Next is ready for testing.
-            ['use_chromevox_next==1', {
-              'dependencies': [
-                'browser/resources/chromeos/chromevox2/chromevox.gyp:chromevox2',
-              ],
-            }, { # else use_chromevox_next == 0
-              'dependencies': [
-                'browser/resources/chromeos/chromevox/chromevox.gyp:chromevox',
-              ],
-            }],
+          'dependencies': [
+            'browser/resources/chromeos/chromevox/chromevox.gyp:chromevox',
           ],
         }],
         ['enable_extensions==1', {
@@ -378,6 +369,7 @@
       'includes': [ '../build/grit_target.gypi' ],
     },
     {
+      # GN version: //chrome:packed_extra_resources
       'target_name': 'packed_extra_resources',
       'type': 'none',
       'dependencies': [
@@ -405,6 +397,7 @@
       ],
     },
     {
+      # GN version: //chrome:packed_resources
       'target_name': 'packed_resources',
       'type': 'none',
       'dependencies': [
@@ -421,6 +414,7 @@
       ],
       'actions': [
         {
+          # GN version: //chrome:repack_locales_pack
           'action_name': 'repack_locales_pack',
           'variables': {
             'pak_locales': '<(locales)',
@@ -428,6 +422,7 @@
           'includes': ['chrome_repack_locales.gypi']
         },
         {
+          # GN version: //chrome:repack_pseudo_locales_pack
           'action_name': 'repack_pseudo_locales_pack',
           'variables': {
             'pak_locales': '<(pseudo_locales)',
@@ -459,6 +454,12 @@
           'dependencies': [
             '<(DEPTH)/ui/chromeos/ui_chromeos.gyp:ui_chromeos_resources',
             '<(DEPTH)/ui/chromeos/ui_chromeos.gyp:ui_chromeos_strings',
+          ],
+        }],
+        ['use_athena==1', {
+          'dependencies': [
+            '<(DEPTH)/athena/resources/athena_resources.gyp:athena_resources',
+            '<(DEPTH)/athena/strings/athena_strings.gyp:athena_strings',
           ],
         }],
         ['enable_autofill_dialog==1 and OS!="android"', {

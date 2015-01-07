@@ -12,8 +12,8 @@
 #include "remoting/protocol/transport.h"
 #include "remoting/signaling/iq_sender.h"
 #include "remoting/signaling/signal_strategy.h"
-#include "third_party/libjingle/source/talk/xmllite/xmlelement.h"
 #include "third_party/webrtc/base/socketaddress.h"
+#include "third_party/webrtc/libjingle/xmllite/xmlelement.h"
 
 using buzz::QName;
 
@@ -54,7 +54,7 @@ scoped_ptr<Session> JingleSessionManager::Connect(
   scoped_ptr<JingleSession> session(new JingleSession(this));
   session->StartConnection(host_jid, authenticator.Pass(), config.Pass());
   sessions_[session->session_id_] = session.get();
-  return session.PassAs<Session>();
+  return session.Pass();
 }
 
 void JingleSessionManager::Close() {

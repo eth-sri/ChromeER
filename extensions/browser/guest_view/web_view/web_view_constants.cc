@@ -7,20 +7,28 @@
 namespace webview {
 
 // Attributes.
+const char kAttributeAllowTransparency[] = "allowtransparency";
 const char kAttributeAutoSize[] = "autosize";
 const char kAttributeMaxHeight[] = "maxheight";
 const char kAttributeMaxWidth[] = "maxwidth";
 const char kAttributeMinHeight[] = "minheight";
 const char kAttributeMinWidth[] = "minwidth";
+const char kAttributeName[] = "name";
+const char kAttributeSrc[] = "src";
 
 // API namespace.
 const char kAPINamespace[] = "webViewInternal";
+
+// API error messages.
+const char kAPILoadDataInvalidDataURL[] = "Invalid data URL \"%s\".";
+const char kAPILoadDataInvalidBaseURL[] = "Invalid base URL \"%s\".";
+const char kAPILoadDataInvalidVirtualURL[] = "Invalid virtual URL \"%s\".";
 
 // Events.
 const char kEventClose[] = "webViewInternal.onClose";
 const char kEventConsoleMessage[] = "webViewInternal.onConsoleMessage";
 const char kEventContentLoad[] = "webViewInternal.onContentLoad";
-const char kEventContextMenu[] = "webViewInternal.contextmenu";
+const char kEventContextMenu[] = "chromeWebViewInternal.contextmenu";
 const char kEventDialog[] = "webViewInternal.onDialog";
 const char kEventExit[] = "webViewInternal.onExit";
 const char kEventFindReply[] = "webViewInternal.onFindReply";
@@ -84,6 +92,7 @@ const char kOldZoomFactor[] = "oldZoomFactor";
 const char kNewZoomFactor[] = "newZoomFactor";
 
 // Internal parameters/properties on events.
+const char kInternalBaseURLForDataURL[] = "baseUrlForDataUrl";
 const char kInternalCurrentEntryIndex[] = "currentEntryIndex";
 const char kInternalEntryCount[] = "entryCount";
 const char kInternalProcessId[] = "processId";

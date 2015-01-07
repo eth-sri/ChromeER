@@ -5,7 +5,6 @@
 #include "athena/home/public/home_card.h"
 
 #include "athena/activity/public/activity_factory.h"
-#include "athena/activity/public/activity_manager.h"
 #include "athena/home/home_card_constants.h"
 #include "athena/home/home_card_impl.h"
 #include "athena/test/athena_test_base.h"
@@ -18,6 +17,7 @@
 #include "ui/views/focus/focus_manager.h"
 #include "ui/views/widget/widget.h"
 #include "ui/wm/core/shadow_types.h"
+#include "ui/wm/core/window_util.h"
 
 namespace athena {
 
@@ -48,13 +48,13 @@ TEST_F(HomeCardTest, BasicTransition) {
   EXPECT_EQ(work_area_height, home_card->GetTargetBounds().y());
   EXPECT_EQ(wm::ShadowType::SHADOW_TYPE_NONE, wm::GetShadowType(home_card));
 
-  WindowManager::GetInstance()->ToggleOverview();
+  WindowManager::Get()->ToggleOverview();
   EXPECT_EQ(HomeCard::VISIBLE_BOTTOM, HomeCard::Get()->GetState());
   EXPECT_EQ(screen_height - kHomeCardHeight, home_card->GetTargetBounds().y());
   EXPECT_EQ(wm::ShadowType::SHADOW_TYPE_RECTANGULAR,
             wm::GetShadowType(home_card));
 
-  WindowManager::GetInstance()->ToggleOverview();
+  WindowManager::Get()->ToggleOverview();
   EXPECT_EQ(HomeCard::VISIBLE_MINIMIZED, HomeCard::Get()->GetState());
   EXPECT_EQ(work_area_height, home_card->GetTargetBounds().y());
   EXPECT_EQ(wm::ShadowType::SHADOW_TYPE_NONE, wm::GetShadowType(home_card));
@@ -70,7 +70,7 @@ TEST_F(HomeCardTest, VirtualKeyboardTransition) {
   EXPECT_EQ(HomeCard::VISIBLE_MINIMIZED, HomeCard::Get()->GetState());
 
   // bottom -> centered for virtual keyboard.
-  WindowManager::GetInstance()->ToggleOverview();
+  WindowManager::Get()->ToggleOverview();
   EXPECT_EQ(HomeCard::VISIBLE_BOTTOM, HomeCard::Get()->GetState());
   HomeCard::Get()->UpdateVirtualKeyboardBounds(vk_bounds);
   EXPECT_EQ(HomeCard::VISIBLE_CENTERED, HomeCard::Get()->GetState());
@@ -82,22 +82,32 @@ TEST_F(HomeCardTest, VirtualKeyboardTransition) {
 
   HomeCard::Get()->UpdateVirtualKeyboardBounds(gfx::Rect());
   EXPECT_EQ(HomeCard::VISIBLE_BOTTOM, HomeCard::Get()->GetState());
+}
 
-  // Overview mode has to finish before ending test, otherwise it crashes.
-  // TODO(mukai): fix this.
-  WindowManager::GetInstance()->ToggleOverview();
+TEST_F(HomeCardTest, ToggleOverviewWithVirtualKeyboard) {
+  // Minimized -> Hidden for virtual keyboard.
+  EXPECT_EQ(HomeCard::VISIBLE_MINIMIZED, HomeCard::Get()->GetState());
+  const gfx::Rect vk_bounds(0, 0, 100, 100);
+  HomeCard::Get()->UpdateVirtualKeyboardBounds(vk_bounds);
+  EXPECT_EQ(HomeCard::HIDDEN, HomeCard::Get()->GetState());
+
+  // Toogle overview revives the bottom home card. Home card also gets
+  /// activated which will close the virtual keyboard.
+  WindowManager::Get()->ToggleOverview();
+  EXPECT_EQ(HomeCard::VISIBLE_BOTTOM, HomeCard::Get()->GetState());
+  aura::Window* home_card = GetHomeCardWindow();
+  EXPECT_TRUE(wm::IsActiveWindow(home_card));
 }
 
 // Verify if the home card is correctly minimized after app launch.
 TEST_F(HomeCardTest, AppSelection) {
   EXPECT_EQ(HomeCard::VISIBLE_MINIMIZED, HomeCard::Get()->GetState());
 
-  WindowManager::GetInstance()->ToggleOverview();
+  WindowManager::Get()->ToggleOverview();
   EXPECT_EQ(HomeCard::VISIBLE_BOTTOM, HomeCard::Get()->GetState());
 
-  athena::ActivityManager::Get()->AddActivity(
-      athena::ActivityFactory::Get()->CreateWebActivity(
-          NULL, GURL("http://www.google.com/")));
+  athena::ActivityFactory::Get()->CreateWebActivity(
+      NULL, base::string16(), GURL("http://www.google.com/"));
   EXPECT_EQ(HomeCard::VISIBLE_MINIMIZED, HomeCard::Get()->GetState());
 }
 
@@ -112,7 +122,7 @@ TEST_F(HomeCardTest, Accelerators) {
   EXPECT_EQ(HomeCard::VISIBLE_MINIMIZED, HomeCard::Get()->GetState());
 
   // Do nothing for BOTTOM.
-  WindowManager::GetInstance()->ToggleOverview();
+  WindowManager::Get()->ToggleOverview();
   EXPECT_EQ(HomeCard::VISIBLE_BOTTOM, HomeCard::Get()->GetState());
   generator.PressKey(ui::VKEY_L, ui::EF_CONTROL_DOWN);
   EXPECT_EQ(HomeCard::VISIBLE_BOTTOM, HomeCard::Get()->GetState());
@@ -136,12 +146,12 @@ TEST_F(HomeCardTest, MouseClick) {
   generator.ClickLeftButton();
 
   EXPECT_EQ(HomeCard::VISIBLE_BOTTOM, HomeCard::Get()->GetState());
-  EXPECT_TRUE(WindowManager::GetInstance()->IsOverviewModeActive());
+  EXPECT_TRUE(WindowManager::Get()->IsOverviewModeActive());
 
   // Further clicks are simply ignored.
   generator.ClickLeftButton();
   EXPECT_EQ(HomeCard::VISIBLE_BOTTOM, HomeCard::Get()->GetState());
-  EXPECT_TRUE(WindowManager::GetInstance()->IsOverviewModeActive());
+  EXPECT_TRUE(WindowManager::Get()->IsOverviewModeActive());
 }
 
 TEST_F(HomeCardTest, Gestures) {
@@ -157,7 +167,7 @@ TEST_F(HomeCardTest, Gestures) {
                                   base::TimeDelta::FromSeconds(1),
                                   10);
   EXPECT_EQ(HomeCard::VISIBLE_BOTTOM, HomeCard::Get()->GetState());
-  EXPECT_TRUE(WindowManager::GetInstance()->IsOverviewModeActive());
+  EXPECT_TRUE(WindowManager::Get()->IsOverviewModeActive());
 
   // Too short moves. Nothing has changed.
   generator.GestureScrollSequence(gfx::Point(x, bottom - 40),
@@ -165,14 +175,14 @@ TEST_F(HomeCardTest, Gestures) {
                                   base::TimeDelta::FromSeconds(1),
                                   10);
   EXPECT_EQ(HomeCard::VISIBLE_BOTTOM, HomeCard::Get()->GetState());
-  EXPECT_TRUE(WindowManager::GetInstance()->IsOverviewModeActive());
+  EXPECT_TRUE(WindowManager::Get()->IsOverviewModeActive());
 
   generator.GestureScrollSequence(gfx::Point(x, bottom - 40),
                                   gfx::Point(x, bottom - 20),
                                   base::TimeDelta::FromSeconds(1),
                                   10);
   EXPECT_EQ(HomeCard::VISIBLE_BOTTOM, HomeCard::Get()->GetState());
-  EXPECT_TRUE(WindowManager::GetInstance()->IsOverviewModeActive());
+  EXPECT_TRUE(WindowManager::Get()->IsOverviewModeActive());
 
   // Swipe up to the centered state.
   generator.GestureScrollSequence(gfx::Point(x, bottom - 40),
@@ -180,7 +190,7 @@ TEST_F(HomeCardTest, Gestures) {
                                   base::TimeDelta::FromSeconds(1),
                                   10);
   EXPECT_EQ(HomeCard::VISIBLE_CENTERED, HomeCard::Get()->GetState());
-  EXPECT_TRUE(WindowManager::GetInstance()->IsOverviewModeActive());
+  EXPECT_TRUE(WindowManager::Get()->IsOverviewModeActive());
 
   // Swipe up from centered; nothing has to be changed.
   generator.GestureScrollSequence(gfx::Point(x, bottom - 300),
@@ -188,7 +198,7 @@ TEST_F(HomeCardTest, Gestures) {
                                   base::TimeDelta::FromSeconds(1),
                                   10);
   EXPECT_EQ(HomeCard::VISIBLE_CENTERED, HomeCard::Get()->GetState());
-  EXPECT_TRUE(WindowManager::GetInstance()->IsOverviewModeActive());
+  EXPECT_TRUE(WindowManager::Get()->IsOverviewModeActive());
 
   // Swipe down slightly; nothing has to be changed.
   generator.GestureScrollSequence(gfx::Point(x, bottom - 300),
@@ -196,7 +206,7 @@ TEST_F(HomeCardTest, Gestures) {
                                   base::TimeDelta::FromSeconds(1),
                                   10);
   EXPECT_EQ(HomeCard::VISIBLE_CENTERED, HomeCard::Get()->GetState());
-  EXPECT_TRUE(WindowManager::GetInstance()->IsOverviewModeActive());
+  EXPECT_TRUE(WindowManager::Get()->IsOverviewModeActive());
 
   // Swipe down to the bottom state.
   generator.GestureScrollSequence(gfx::Point(x, 10),
@@ -204,14 +214,14 @@ TEST_F(HomeCardTest, Gestures) {
                                   base::TimeDelta::FromSeconds(1),
                                   10);
   EXPECT_EQ(HomeCard::VISIBLE_BOTTOM, HomeCard::Get()->GetState());
-  EXPECT_TRUE(WindowManager::GetInstance()->IsOverviewModeActive());
+  EXPECT_TRUE(WindowManager::Get()->IsOverviewModeActive());
 
   generator.GestureScrollSequence(gfx::Point(x, bottom - 40),
                                   gfx::Point(x, bottom - 300),
                                   base::TimeDelta::FromSeconds(1),
                                   10);
   EXPECT_EQ(HomeCard::VISIBLE_CENTERED, HomeCard::Get()->GetState());
-  EXPECT_TRUE(WindowManager::GetInstance()->IsOverviewModeActive());
+  EXPECT_TRUE(WindowManager::Get()->IsOverviewModeActive());
 
   // Swipe down to the minimized state.
   generator.GestureScrollSequence(gfx::Point(x, 10),
@@ -219,8 +229,7 @@ TEST_F(HomeCardTest, Gestures) {
                                   base::TimeDelta::FromSeconds(1),
                                   10);
   EXPECT_EQ(HomeCard::VISIBLE_MINIMIZED, HomeCard::Get()->GetState());
-  EXPECT_FALSE(WindowManager::GetInstance()->IsOverviewModeActive());
-
+  EXPECT_FALSE(WindowManager::Get()->IsOverviewModeActive());
 }
 
 TEST_F(HomeCardTest, GesturesToFullDirectly) {
@@ -236,7 +245,7 @@ TEST_F(HomeCardTest, GesturesToFullDirectly) {
                                   base::TimeDelta::FromSeconds(1),
                                   10);
   EXPECT_EQ(HomeCard::VISIBLE_CENTERED, HomeCard::Get()->GetState());
-  EXPECT_TRUE(WindowManager::GetInstance()->IsOverviewModeActive());
+  EXPECT_TRUE(WindowManager::Get()->IsOverviewModeActive());
 }
 
 TEST_F(HomeCardTest, KeyboardFocus) {
@@ -244,7 +253,7 @@ TEST_F(HomeCardTest, KeyboardFocus) {
   aura::Window* home_card = GetHomeCardWindow();
   ASSERT_FALSE(IsSearchBoxFocused(home_card));
 
-  WindowManager::GetInstance()->ToggleOverview();
+  WindowManager::Get()->ToggleOverview();
   ASSERT_FALSE(IsSearchBoxFocused(home_card));
 
   ui::test::EventGenerator generator(root_window());

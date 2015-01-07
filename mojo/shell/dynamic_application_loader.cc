@@ -6,8 +6,8 @@
 
 #include "base/bind.h"
 #include "base/command_line.h"
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
@@ -160,7 +160,6 @@ class DynamicApplicationLoader::NetworkLoader : public Loader {
         mime_type_to_url_->find(response->mime_type);
     if (iter != mime_type_to_url_->end()) {
       load_callbacks_->LoadWithContentHandler(iter->second, response.Pass());
-      LoaderComplete();
       return;
     }
 

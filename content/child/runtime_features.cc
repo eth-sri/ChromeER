@@ -42,9 +42,6 @@ static void SetRuntimeFeatureDefaultsForPlatform() {
        (cpu_family == ANDROID_CPU_FAMILY_X86) ||
        (cpu_family == ANDROID_CPU_FAMILY_MIPS)));
 
-  // Android supports gamepad API for JellyBean and beyond
-  WebRuntimeFeatures::enableGamepad(
-      base::android::BuildInfo::GetInstance()->sdk_int() >= 16);
   // Android does not have support for PagePopup
   WebRuntimeFeatures::enablePagePopup(false);
   // Android does not yet support the Web Notification API. crbug.com/115320
@@ -57,6 +54,7 @@ static void SetRuntimeFeatureDefaultsForPlatform() {
   WebRuntimeFeatures::enableOrientationEvent(true);
   WebRuntimeFeatures::enableFastMobileScrolling(true);
   WebRuntimeFeatures::enableMediaCapture(true);
+  WebRuntimeFeatures::enableCompositedSelectionUpdate(true);
   // If navigation transitions gets activated via field trial, enable it in
   // blink. We don't set this to false in case the user has manually enabled
   // the feature via experimental web platform features.
@@ -110,10 +108,8 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
     WebRuntimeFeatures::enableSharedWorker(false);
 
 #if defined(OS_ANDROID)
-  if (command_line.HasSwitch(switches::kDisableWebRTC)) {
-    WebRuntimeFeatures::enableMediaStream(false);
+  if (command_line.HasSwitch(switches::kDisableWebRTC))
     WebRuntimeFeatures::enablePeerConnection(false);
-  }
 
   if (!command_line.HasSwitch(switches::kEnableSpeechRecognition))
     WebRuntimeFeatures::enableScriptedSpeech(false);
@@ -133,9 +129,6 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
 
   if (command_line.HasSwitch(switches::kDisablePrefixedEncryptedMedia))
     WebRuntimeFeatures::enablePrefixedEncryptedMedia(false);
-
-  if (command_line.HasSwitch(switches::kEnableWebAnimationsSVG))
-    WebRuntimeFeatures::enableWebAnimationsSVG(true);
 
   if (command_line.HasSwitch(switches::kEnableWebMIDI))
     WebRuntimeFeatures::enableWebMIDI(true);
@@ -167,9 +160,6 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
 
   if (ui::IsOverlayScrollbarEnabled())
     WebRuntimeFeatures::enableOverlayScrollbars(true);
-
-  if (command_line.HasSwitch(switches::kEnableTargetedStyleRecalc))
-    WebRuntimeFeatures::enableTargetedStyleRecalc(true);
 
   if (command_line.HasSwitch(switches::kEnableBleedingEdgeRenderingFastPaths))
     WebRuntimeFeatures::enableBleedingEdgeFastPaths(true);

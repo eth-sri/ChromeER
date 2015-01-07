@@ -38,6 +38,7 @@
 namespace {
 
 const char* kLocalHostAddress = "127.0.0.1";
+const int kBufferSize = 100 * 1024 * 1024;  // 100 MB
 
 typedef base::Callback<
     void(const net::HttpServerRequestInfo&, const HttpResponseSenderFunc&)>
@@ -64,6 +65,10 @@ class HttpServer : public net::HttpServer::Delegate {
   }
 
   // Overridden from net::HttpServer::Delegate:
+  virtual void OnConnect(int connection_id) OVERRIDE {
+    server_->SetSendBufferSize(connection_id, kBufferSize);
+    server_->SetReceiveBufferSize(connection_id, kBufferSize);
+  }
   virtual void OnHttpRequest(int connection_id,
                              const net::HttpServerRequestInfo& info) OVERRIDE {
     handle_request_func_.Run(
@@ -87,7 +92,8 @@ class HttpServer : public net::HttpServer::Delegate {
     // the connection to close (e.g., python 2.7 urllib).
     response->AddHeader("Connection", "close");
     server_->SendResponse(connection_id, *response);
-    server_->Close(connection_id);
+    // Don't need to call server_->Close(), since SendResponse() will handle
+    // this for us.
   }
 
   HttpRequestHandlerFunc handle_request_func_;

@@ -9,7 +9,6 @@
 #include "mojo/public/interfaces/application/service_provider.mojom.h"
 #include "mojo/services/public/cpp/input_events/input_events_type_converters.h"
 #include "mojo/services/view_manager/view_manager_service_impl.h"
-#include "ui/aura/env.h"
 
 namespace mojo {
 namespace service {
@@ -28,27 +27,17 @@ ConnectionManager::ScopedChange::~ScopedChange() {
   connection_manager_->FinishChange();
 }
 
-ConnectionManager::Context::Context() {
-  // Pass in false as native viewport creates the PlatformEventSource.
-  aura::Env::CreateInstance(false);
-}
-
-ConnectionManager::Context::~Context() {
-  aura::Env::DeleteInstance();
-}
-
 ConnectionManager::ConnectionManager(
     ApplicationConnection* app_connection,
-    DisplayManagerDelegate* display_manager_delegate,
     const Callback<void()>& native_viewport_closed_callback)
     : app_connection_(app_connection),
       next_connection_id_(1),
       display_manager_(app_connection,
                        this,
-                       display_manager_delegate,
                        native_viewport_closed_callback),
       root_(new ServerView(this, RootViewId())),
       current_change_(NULL) {
+  root_->SetBounds(gfx::Rect(800, 600));
 }
 
 ConnectionManager::~ConnectionManager() {
@@ -130,18 +119,6 @@ bool ConnectionManager::DidConnectionMessageClient(
   return current_change_ && current_change_->DidMessageConnection(id);
 }
 
-ViewManagerServiceImpl* ConnectionManager::GetConnectionByCreator(
-    ConnectionSpecificId creator_id,
-    const std::string& url) const {
-  for (ConnectionMap::const_iterator i = connection_map_.begin();
-       i != connection_map_.end();
-       ++i) {
-    if (i->second->creator_id() == creator_id && i->second->url() == url)
-      return i->second;
-  }
-  return NULL;
-}
-
 const ViewManagerServiceImpl* ConnectionManager::GetConnectionWithRoot(
     const ViewId& id) const {
   for (ConnectionMap::const_iterator i = connection_map_.begin();
@@ -170,6 +147,18 @@ void ConnectionManager::ProcessViewBoundsChanged(const ServerView* view,
        ++i) {
     i->second->ProcessViewBoundsChanged(
         view, old_bounds, new_bounds, IsChangeSource(i->first));
+  }
+}
+
+void ConnectionManager::ProcessWillChangeViewHierarchy(
+    const ServerView* view,
+    const ServerView* new_parent,
+    const ServerView* old_parent) {
+  for (ConnectionMap::iterator i = connection_map_.begin();
+       i != connection_map_.end();
+       ++i) {
+    i->second->ProcessWillChangeViewHierarchy(
+        view, new_parent, old_parent, IsChangeSource(i->first));
   }
 }
 
@@ -250,11 +239,28 @@ void ConnectionManager::OnViewDestroyed(const ServerView* view) {
   ProcessViewDeleted(view->id());
 }
 
+void ConnectionManager::OnWillChangeViewHierarchy(
+    const ServerView* view,
+    const ServerView* new_parent,
+    const ServerView* old_parent) {
+  if (!display_manager_.in_setup())
+    ProcessWillChangeViewHierarchy(view, new_parent, old_parent);
+}
+
 void ConnectionManager::OnViewHierarchyChanged(const ServerView* view,
                                                const ServerView* new_parent,
                                                const ServerView* old_parent) {
   if (!display_manager_.in_setup())
     ProcessViewHierarchyChanged(view, new_parent, old_parent);
+  // TODO(beng): optimize.
+  if (old_parent) {
+    display_manager_.SchedulePaint(old_parent,
+                                   gfx::Rect(old_parent->bounds().size()));
+  }
+  if (new_parent) {
+    display_manager_.SchedulePaint(new_parent,
+                                   gfx::Rect(new_parent->bounds().size()));
+  }
 }
 
 void ConnectionManager::OnViewBoundsChanged(const ServerView* view,
@@ -269,8 +275,22 @@ void ConnectionManager::OnViewBoundsChanged(const ServerView* view,
   display_manager_.SchedulePaint(view->parent(), new_bounds);
 }
 
-void ConnectionManager::OnViewBitmapChanged(const ServerView* view) {
+void ConnectionManager::OnViewSurfaceIdChanged(const ServerView* view) {
   display_manager_.SchedulePaint(view, gfx::Rect(view->bounds().size()));
+}
+
+void ConnectionManager::OnViewReordered(const ServerView* view,
+                                        const ServerView* relative,
+                                        OrderDirection direction) {
+  display_manager_.SchedulePaint(view, gfx::Rect(view->bounds().size()));
+}
+
+void ConnectionManager::OnWillChangeViewVisibility(const ServerView* view) {
+  for (ConnectionMap::iterator i = connection_map_.begin();
+       i != connection_map_.end();
+       ++i) {
+    i->second->ProcessWillChangeViewVisibility(view, IsChangeSource(i->first));
+  }
 }
 
 }  // namespace service

@@ -26,8 +26,10 @@
 #include "content/common/content_export.h"
 #include "content/common/drag_event_source_info.h"
 #include "content/common/edit_command.h"
+#include "content/common/frame_message_enums.h"
 #include "content/common/gpu/client/webgraphicscontext3d_command_buffer_impl.h"
 #include "content/common/navigation_gesture.h"
+#include "content/common/navigation_params.h"
 #include "content/common/view_message_enums.h"
 #include "content/public/common/page_zoom.h"
 #include "content/public/common/referrer.h"
@@ -125,7 +127,6 @@ namespace content {
 class BrowserPluginManager;
 class DevToolsAgent;
 class DocumentState;
-class FaviconHelper;
 class HistoryController;
 class HistoryEntry;
 class ImageResourceFetcher;
@@ -211,8 +212,6 @@ class CONTENT_EXPORT RenderViewImpl
   void set_send_content_state_immediately(bool value) {
     send_content_state_immediately_ = value;
   }
-
-  RenderFrameImpl* main_render_frame() { return main_render_frame_.get(); }
 
   MouseLockDispatcher* mouse_lock_dispatcher() {
     return mouse_lock_dispatcher_;
@@ -333,6 +332,7 @@ class CONTENT_EXPORT RenderViewImpl
 
   // Change the device ICC color profile while running a layout test.
   void SetDeviceColorProfileForTesting(const std::vector<char>& color_profile);
+  virtual void ResetDeviceColorProfileForTesting() OVERRIDE;
 
   // Used to force the size of a window when running layout tests.
   void ForceResizeForTesting(const gfx::Size& new_size);
@@ -378,13 +378,19 @@ class CONTENT_EXPORT RenderViewImpl
   virtual bool enumerateChosenDirectory(
       const blink::WebString& path,
       blink::WebFileChooserCompletion* chooser_completion);
+  virtual void saveImageFromDataURL(const blink::WebString& data_url);
   virtual void didCancelCompositionOnSelectionChange();
   virtual bool handleCurrentKeyboardEvent();
   virtual bool runFileChooser(
       const blink::WebFileChooserParams& params,
       blink::WebFileChooserCompletion* chooser_completion);
+  void SetValidationMessageDirection(base::string16* main_text,
+                                     blink::WebTextDirection main_text_hint,
+                                     base::string16* sub_text,
+                                     blink::WebTextDirection sub_text_hint);
   virtual void showValidationMessage(const blink::WebRect& anchor_in_root_view,
                                      const blink::WebString& main_text,
+                                     blink::WebTextDirection main_text_hint,
                                      const blink::WebString& sub_text,
                                      blink::WebTextDirection hint) OVERRIDE;
   virtual void hideValidationMessage() OVERRIDE;
@@ -403,31 +409,21 @@ class CONTENT_EXPORT RenderViewImpl
   virtual void focusPrevious();
   virtual void focusedNodeChanged(const blink::WebNode& node);
   virtual void didUpdateLayout();
-#if defined(OS_ANDROID)
+#if defined(OS_ANDROID) || defined(TOOLKIT_VIEWS)
   virtual bool didTapMultipleTargets(
-      const blink::WebGestureEvent& event,
+      const blink::WebSize& inner_viewport_offset,
+      const blink::WebRect& touch_rect,
       const blink::WebVector<blink::WebRect>& target_rects);
 #endif
   virtual blink::WebString acceptLanguages();
   virtual void navigateBackForwardSoon(int offset);
   virtual int historyBackListCount();
   virtual int historyForwardListCount();
-  virtual void postAccessibilityEvent(
-      const blink::WebAXObject& obj, blink::WebAXEvent event);
   virtual blink::WebSpeechRecognizer* speechRecognizer();
   virtual void zoomLimitsChanged(double minimum_level, double maximum_level);
   virtual void zoomLevelChanged();
   virtual double zoomLevelToZoomFactor(double zoom_level) const;
   virtual double zoomFactorToZoomLevel(double factor) const;
-
-  // TODO(sanjoy.pal): Remove once blink patch lands. http://crbug.com/406236.
-  virtual void registerProtocolHandler(const blink::WebString& scheme,
-                                       const blink::WebURL& base_url,
-                                       const blink::WebURL& url,
-                                       const blink::WebString& title);
-  virtual void unregisterProtocolHandler(const blink::WebString& scheme,
-                                         const blink::WebURL& base_url,
-                                         const blink::WebURL& url);
   virtual void registerProtocolHandler(const blink::WebString& scheme,
                                        const blink::WebURL& url,
                                        const blink::WebString& title);
@@ -460,7 +456,7 @@ class CONTENT_EXPORT RenderViewImpl
   // RenderView implementation -------------------------------------------------
 
   virtual bool Send(IPC::Message* message) OVERRIDE;
-  virtual RenderFrame* GetMainRenderFrame() OVERRIDE;
+  virtual RenderFrameImpl* GetMainRenderFrame() OVERRIDE;
   virtual int GetRoutingID() const OVERRIDE;
   virtual gfx::Size GetSize() const OVERRIDE;
   virtual WebPreferences& GetWebkitPreferences() OVERRIDE;
@@ -630,7 +626,7 @@ class CONTENT_EXPORT RenderViewImpl
   void didUpdateCurrentHistoryItem(blink::WebLocalFrame* frame);
   void didChangeScrollOffset(blink::WebLocalFrame* frame);
 
-  static bool IsReload(const FrameMsg_Navigate_Params& params);
+  static bool IsReload(FrameMsg_Navigate_Type::Value navigation_type);
 
   static Referrer GetReferrerFromRequest(
       blink::WebFrame* frame,
@@ -750,20 +746,6 @@ class CONTENT_EXPORT RenderViewImpl
   // Misc private functions ----------------------------------------------------
   // Check whether the preferred size has changed.
   void CheckPreferredSize();
-
-  // This callback is triggered when DownloadFavicon completes, either
-  // succesfully or with a failure. See DownloadFavicon for more
-  // details.
-  void DidDownloadFavicon(ImageResourceFetcher* fetcher,
-                          const SkBitmap& image);
-
-  // Requests to download a favicon image. When done, the RenderView is notified
-  // by way of DidDownloadFavicon. Returns true if the request was successfully
-  // started, false otherwise. id is used to uniquely identify the request and
-  // passed back to the DidDownloadFavicon method. If the image has multiple
-  // frames, the frame whose size is image_size is returned. If the image
-  // doesn't have a frame at the specified size, the first is returned.
-  bool DownloadFavicon(int id, const GURL& image_url, int image_size);
 
   // Called to get the WebPlugin to handle find requests in the document.
   // Returns NULL if there is no such WebPlugin.

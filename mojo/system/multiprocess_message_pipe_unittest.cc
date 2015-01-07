@@ -10,14 +10,14 @@
 #include <vector>
 
 #include "base/bind.h"
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_file.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/macros.h"
-#include "build/build_config.h"              // TODO(vtl): Remove this.
+#include "build/build_config.h"  // TODO(vtl): Remove this.
 #include "mojo/common/test/test_utils.h"
 #include "mojo/embedder/platform_shared_buffer.h"
 #include "mojo/embedder/scoped_platform_handle.h"
@@ -48,8 +48,9 @@ MOJO_MULTIPROCESS_TEST_CHILD_MAIN(EchoEcho) {
   embedder::ScopedPlatformHandle client_platform_handle =
       mojo::test::MultiprocessTestHelper::client_platform_handle.Pass();
   CHECK(client_platform_handle.is_valid());
-  scoped_refptr<MessagePipe> mp(MessagePipe::CreateLocalProxy());
-  channel_thread.Start(client_platform_handle.Pass(), mp);
+  scoped_refptr<ChannelEndpoint> ep;
+  scoped_refptr<MessagePipe> mp(MessagePipe::CreateLocalProxy(&ep));
+  channel_thread.Start(client_platform_handle.Pass(), ep);
 
   const std::string quitquitquit("quitquitquit");
   int rv = 0;
@@ -74,8 +75,8 @@ MOJO_MULTIPROCESS_TEST_CHILD_MAIN(EchoEcho) {
     CHECK_EQ(mp->ReadMessage(0,
                              UserPointer<void>(&read_buffer[0]),
                              MakeUserPointer(&read_buffer_size),
-                             NULL,
-                             NULL,
+                             nullptr,
+                             nullptr,
                              MOJO_READ_MESSAGE_FLAG_NONE),
              MOJO_RESULT_OK);
     read_buffer.resize(read_buffer_size);
@@ -90,7 +91,7 @@ MOJO_MULTIPROCESS_TEST_CHILD_MAIN(EchoEcho) {
     CHECK_EQ(mp->WriteMessage(0,
                               UserPointer<const void>(write_buffer.data()),
                               static_cast<uint32_t>(write_buffer.size()),
-                              NULL,
+                              nullptr,
                               MOJO_WRITE_MESSAGE_FLAG_NONE),
              MOJO_RESULT_OK);
   }
@@ -103,15 +104,16 @@ MOJO_MULTIPROCESS_TEST_CHILD_MAIN(EchoEcho) {
 TEST_F(MultiprocessMessagePipeTest, Basic) {
   helper()->StartChild("EchoEcho");
 
-  scoped_refptr<MessagePipe> mp(MessagePipe::CreateLocalProxy());
-  Init(mp);
+  scoped_refptr<ChannelEndpoint> ep;
+  scoped_refptr<MessagePipe> mp(MessagePipe::CreateLocalProxy(&ep));
+  Init(ep);
 
   std::string hello("hello");
   EXPECT_EQ(MOJO_RESULT_OK,
             mp->WriteMessage(0,
                              UserPointer<const void>(hello.data()),
                              static_cast<uint32_t>(hello.size()),
-                             NULL,
+                             nullptr,
                              MOJO_WRITE_MESSAGE_FLAG_NONE));
 
   HandleSignalsState hss;
@@ -128,8 +130,8 @@ TEST_F(MultiprocessMessagePipeTest, Basic) {
   CHECK_EQ(mp->ReadMessage(0,
                            UserPointer<void>(&read_buffer[0]),
                            MakeUserPointer(&read_buffer_size),
-                           NULL,
-                           NULL,
+                           nullptr,
+                           nullptr,
                            MOJO_READ_MESSAGE_FLAG_NONE),
            MOJO_RESULT_OK);
   read_buffer.resize(read_buffer_size);
@@ -147,8 +149,9 @@ TEST_F(MultiprocessMessagePipeTest, Basic) {
 TEST_F(MultiprocessMessagePipeTest, QueueMessages) {
   helper()->StartChild("EchoEcho");
 
-  scoped_refptr<MessagePipe> mp(MessagePipe::CreateLocalProxy());
-  Init(mp);
+  scoped_refptr<ChannelEndpoint> ep;
+  scoped_refptr<MessagePipe> mp(MessagePipe::CreateLocalProxy(&ep));
+  Init(ep);
 
   static const size_t kNumMessages = 1001;
   for (size_t i = 0; i < kNumMessages; i++) {
@@ -157,7 +160,7 @@ TEST_F(MultiprocessMessagePipeTest, QueueMessages) {
               mp->WriteMessage(0,
                                UserPointer<const void>(write_buffer.data()),
                                static_cast<uint32_t>(write_buffer.size()),
-                               NULL,
+                               nullptr,
                                MOJO_WRITE_MESSAGE_FLAG_NONE));
   }
 
@@ -166,7 +169,7 @@ TEST_F(MultiprocessMessagePipeTest, QueueMessages) {
             mp->WriteMessage(0,
                              UserPointer<const void>(quitquitquit.data()),
                              static_cast<uint32_t>(quitquitquit.size()),
-                             NULL,
+                             nullptr,
                              MOJO_WRITE_MESSAGE_FLAG_NONE));
 
   for (size_t i = 0; i < kNumMessages; i++) {
@@ -184,8 +187,8 @@ TEST_F(MultiprocessMessagePipeTest, QueueMessages) {
     CHECK_EQ(mp->ReadMessage(0,
                              UserPointer<void>(&read_buffer[0]),
                              MakeUserPointer(&read_buffer_size),
-                             NULL,
-                             NULL,
+                             nullptr,
+                             nullptr,
                              MOJO_READ_MESSAGE_FLAG_NONE),
              MOJO_RESULT_OK);
     read_buffer.resize(read_buffer_size);
@@ -213,8 +216,9 @@ MOJO_MULTIPROCESS_TEST_CHILD_MAIN(CheckSharedBuffer) {
   embedder::ScopedPlatformHandle client_platform_handle =
       mojo::test::MultiprocessTestHelper::client_platform_handle.Pass();
   CHECK(client_platform_handle.is_valid());
-  scoped_refptr<MessagePipe> mp(MessagePipe::CreateLocalProxy());
-  channel_thread.Start(client_platform_handle.Pass(), mp);
+  scoped_refptr<ChannelEndpoint> ep;
+  scoped_refptr<MessagePipe> mp(MessagePipe::CreateLocalProxy(&ep));
+  channel_thread.Start(client_platform_handle.Pass(), ep);
 
   // Wait for the first message from our parent.
   HandleSignalsState hss;
@@ -268,7 +272,7 @@ MOJO_MULTIPROCESS_TEST_CHILD_MAIN(CheckSharedBuffer) {
   CHECK_EQ(mp->WriteMessage(0,
                             UserPointer<const void>(&go2[0]),
                             static_cast<uint32_t>(go2.size()),
-                            NULL,
+                            nullptr,
                             MOJO_WRITE_MESSAGE_FLAG_NONE),
            MOJO_RESULT_OK);
 
@@ -286,8 +290,8 @@ MOJO_MULTIPROCESS_TEST_CHILD_MAIN(CheckSharedBuffer) {
   CHECK_EQ(mp->ReadMessage(0,
                            UserPointer<void>(&read_buffer[0]),
                            MakeUserPointer(&num_bytes),
-                           NULL,
-                           NULL,
+                           nullptr,
+                           nullptr,
                            MOJO_READ_MESSAGE_FLAG_NONE),
            MOJO_RESULT_OK);
   read_buffer.resize(num_bytes);
@@ -312,8 +316,9 @@ MOJO_MULTIPROCESS_TEST_CHILD_MAIN(CheckSharedBuffer) {
 TEST_F(MultiprocessMessagePipeTest, MAYBE_SharedBufferPassing) {
   helper()->StartChild("CheckSharedBuffer");
 
-  scoped_refptr<MessagePipe> mp(MessagePipe::CreateLocalProxy());
-  Init(mp);
+  scoped_refptr<ChannelEndpoint> ep;
+  scoped_refptr<MessagePipe> mp(MessagePipe::CreateLocalProxy(&ep));
+  Init(ep);
 
   // Make a shared buffer.
   scoped_refptr<SharedBufferDispatcher> dispatcher;
@@ -350,7 +355,7 @@ TEST_F(MultiprocessMessagePipeTest, MAYBE_SharedBufferPassing) {
   transport.End();
 
   EXPECT_TRUE(dispatcher->HasOneRef());
-  dispatcher = NULL;
+  dispatcher = nullptr;
 
   // Wait for a message from the child.
   HandleSignalsState hss;
@@ -365,8 +370,8 @@ TEST_F(MultiprocessMessagePipeTest, MAYBE_SharedBufferPassing) {
             mp->ReadMessage(0,
                             UserPointer<void>(&read_buffer[0]),
                             MakeUserPointer(&num_bytes),
-                            NULL,
-                            NULL,
+                            nullptr,
+                            nullptr,
                             MOJO_READ_MESSAGE_FLAG_NONE));
   read_buffer.resize(num_bytes);
   EXPECT_EQ(std::string("go 2"), read_buffer);
@@ -386,7 +391,7 @@ TEST_F(MultiprocessMessagePipeTest, MAYBE_SharedBufferPassing) {
             mp->WriteMessage(0,
                              UserPointer<const void>(&go3[0]),
                              static_cast<uint32_t>(go3.size()),
-                             NULL,
+                             nullptr,
                              MOJO_WRITE_MESSAGE_FLAG_NONE));
 
   // Wait for |mp| to become readable, which should fail.
@@ -407,8 +412,9 @@ MOJO_MULTIPROCESS_TEST_CHILD_MAIN(CheckPlatformHandleFile) {
   embedder::ScopedPlatformHandle client_platform_handle =
       mojo::test::MultiprocessTestHelper::client_platform_handle.Pass();
   CHECK(client_platform_handle.is_valid());
-  scoped_refptr<MessagePipe> mp(MessagePipe::CreateLocalProxy());
-  channel_thread.Start(client_platform_handle.Pass(), mp);
+  scoped_refptr<ChannelEndpoint> ep;
+  scoped_refptr<MessagePipe> mp(MessagePipe::CreateLocalProxy(&ep));
+  channel_thread.Start(client_platform_handle.Pass(), ep);
 
   HandleSignalsState hss;
   CHECK_EQ(test::WaitIfNecessary(mp, MOJO_HANDLE_SIGNAL_READABLE, &hss),
@@ -465,8 +471,9 @@ TEST_F(MultiprocessMessagePipeTest, MAYBE_PlatformHandlePassing) {
 
   helper()->StartChild("CheckPlatformHandleFile");
 
-  scoped_refptr<MessagePipe> mp(MessagePipe::CreateLocalProxy());
-  Init(mp);
+  scoped_refptr<ChannelEndpoint> ep;
+  scoped_refptr<MessagePipe> mp(MessagePipe::CreateLocalProxy(&ep));
+  Init(ep);
 
   base::FilePath unused;
   base::ScopedFILE fp(
@@ -497,7 +504,7 @@ TEST_F(MultiprocessMessagePipeTest, MAYBE_PlatformHandlePassing) {
   transport.End();
 
   EXPECT_TRUE(dispatcher->HasOneRef());
-  dispatcher = NULL;
+  dispatcher = nullptr;
 
   // Wait for it to become readable, which should fail.
   HandleSignalsState hss;

@@ -39,6 +39,7 @@ class MTPFileSystemBackendDelegate : public FileSystemBackendDelegate {
   virtual scoped_ptr<storage::FileStreamReader> CreateFileStreamReader(
       const storage::FileSystemURL& url,
       int64 offset,
+      int64 max_bytes_to_read,
       const base::Time& expected_modification_time,
       storage::FileSystemContext* context) OVERRIDE;
   virtual scoped_ptr<storage::FileStreamWriter> CreateFileStreamWriter(
@@ -47,6 +48,9 @@ class MTPFileSystemBackendDelegate : public FileSystemBackendDelegate {
       storage::FileSystemContext* context) OVERRIDE;
   virtual storage::WatcherManager* GetWatcherManager(
       const storage::FileSystemURL& url) OVERRIDE;
+  virtual void GetRedirectURLForContents(
+      const storage::FileSystemURL& url,
+      const storage::URLCallback& callback) OVERRIDE;
 
  private:
   scoped_ptr<DeviceMediaAsyncFileUtil> device_media_async_file_util_;

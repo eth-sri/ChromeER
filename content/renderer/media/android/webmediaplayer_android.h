@@ -14,6 +14,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/threading/thread_checker.h"
+#include "base/time/default_tick_clock.h"
 #include "base/time/time.h"
 #include "cc/layers/video_frame_provider.h"
 #include "content/common/media/media_player_messages_enums_android.h"
@@ -26,6 +27,7 @@
 #include "media/base/android/media_player_android.h"
 #include "media/base/demuxer_stream.h"
 #include "media/base/media_keys.h"
+#include "media/base/time_delta_interpolator.h"
 #include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
 #include "third_party/WebKit/public/platform/WebMediaPlayer.h"
 #include "third_party/WebKit/public/platform/WebSize.h"
@@ -56,13 +58,13 @@ struct MailboxHolder;
 
 namespace media {
 class MediaLog;
+class WebMediaPlayerDelegate;
 }
 
 namespace content {
 class RendererCdmManager;
 class RendererMediaPlayerManager;
 class WebContentDecryptionModuleImpl;
-class WebMediaPlayerDelegate;
 
 // This class implements blink::WebMediaPlayer by keeping the android
 // media player in the browser process. It listens to all the status changes
@@ -70,7 +72,8 @@ class WebMediaPlayerDelegate;
 // player.
 class WebMediaPlayerAndroid : public blink::WebMediaPlayer,
                               public cc::VideoFrameProvider,
-                              public RenderFrameObserver {
+                              public RenderFrameObserver,
+                              public StreamTextureFactoryContextObserver {
  public:
   // Construct a WebMediaPlayerAndroid object. This class communicates with the
   // MediaPlayerAndroid object in the browser process through |proxy|.
@@ -81,9 +84,10 @@ class WebMediaPlayerAndroid : public blink::WebMediaPlayer,
   WebMediaPlayerAndroid(
       blink::WebFrame* frame,
       blink::WebMediaPlayerClient* client,
-      base::WeakPtr<WebMediaPlayerDelegate> delegate,
+      base::WeakPtr<media::WebMediaPlayerDelegate> delegate,
       RendererMediaPlayerManager* player_manager,
       RendererCdmManager* cdm_manager,
+      blink::WebContentDecryptionModule* initial_cdm,
       scoped_refptr<StreamTextureFactory> factory,
       const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
       media::MediaLog* media_log);
@@ -105,8 +109,10 @@ class WebMediaPlayerAndroid : public blink::WebMediaPlayer,
   virtual bool supportsSave() const;
   virtual void setRate(double rate);
   virtual void setVolume(double volume);
+  virtual void requestRemotePlayback();
+  virtual void requestRemotePlaybackControl();
   virtual blink::WebTimeRanges buffered() const;
-  virtual double maxTimeSeekable() const;
+  virtual blink::WebTimeRanges seekable() const;
 
   // Poster image, as defined in the <video> element.
   virtual void setPoster(const blink::WebURL& poster) OVERRIDE;
@@ -185,7 +191,8 @@ class WebMediaPlayerAndroid : public blink::WebMediaPlayer,
   void OnDurationChanged(const base::TimeDelta& duration);
 
   // Called to update the current time.
-  void OnTimeUpdate(const base::TimeDelta& current_time);
+  void OnTimeUpdate(base::TimeDelta current_timestamp,
+                    base::TimeTicks current_time_ticks);
 
   // Functions called when media player status changes.
   void OnConnectedToRemoteDevice(const std::string& remote_playback_message);
@@ -195,6 +202,10 @@ class WebMediaPlayerAndroid : public blink::WebMediaPlayer,
   void OnMediaPlayerPlay();
   void OnMediaPlayerPause();
   void OnRequestFullscreen();
+  void OnRemoteRouteAvailabilityChanged(bool routes_available);
+
+  // StreamTextureFactoryContextObserver implementation.
+  virtual void ResetStreamTextureProxy() OVERRIDE;
 
   // Called when the player is released.
   virtual void OnPlayerReleased();
@@ -237,8 +248,6 @@ class WebMediaPlayerAndroid : public blink::WebMediaPlayer,
   virtual void setContentDecryptionModule(
       blink::WebContentDecryptionModule* cdm,
       blink::WebContentDecryptionModuleResult result);
-  virtual void setContentDecryptionModuleSync(
-      blink::WebContentDecryptionModule* cdm);
 
   void OnKeyAdded(const std::string& session_id);
   void OnKeyError(const std::string& session_id,
@@ -331,7 +340,7 @@ class WebMediaPlayerAndroid : public blink::WebMediaPlayer,
   // TODO(qinmin): Currently android mediaplayer takes care of the screen
   // lock. So this is only used for media source. Will apply this to regular
   // media tag once http://crbug.com/247892 is fixed.
-  base::WeakPtr<WebMediaPlayerDelegate> delegate_;
+  base::WeakPtr<media::WebMediaPlayerDelegate> delegate_;
 
   // Save the list of buffered time ranges.
   blink::WebTimeRanges buffered_;
@@ -410,17 +419,18 @@ class WebMediaPlayerAndroid : public blink::WebMediaPlayer,
   // Whether media player needs to re-establish the surface texture peer.
   bool needs_establish_peer_;
 
-  // Whether |stream_texture_proxy_| is initialized.
-  bool stream_texture_proxy_initialized_;
-
   // Whether the video size info is available.
   bool has_size_info_;
+
+  const scoped_refptr<base::MessageLoopProxy> compositor_loop_;
 
   // Object for allocating stream textures.
   scoped_refptr<StreamTextureFactory> stream_texture_factory_;
 
   // Object for calling back the compositor thread to repaint the video when a
   // frame available. It should be initialized on the compositor thread.
+  // Accessed on main thread and on compositor thread when main thread is
+  // blocked.
   ScopedStreamTextureProxy stream_texture_proxy_;
 
   // Whether media player needs external surface.
@@ -429,6 +439,8 @@ class WebMediaPlayerAndroid : public blink::WebMediaPlayer,
 
   // A pointer back to the compositor to inform it about state changes. This is
   // not NULL while the compositor is actively using this webmediaplayer.
+  // Accessed on main thread and on compositor thread when main thread is
+  // blocked.
   cc::VideoFrameProvider::Client* video_frame_provider_client_;
 
   scoped_ptr<cc_blink::WebLayerImpl> video_weblayer_;
@@ -443,19 +455,7 @@ class WebMediaPlayerAndroid : public blink::WebMediaPlayer,
   bool force_use_overlay_embedded_video_;
 #endif  // defined(VIDEO_HOLE)
 
-  scoped_ptr<MediaSourceDelegate,
-             MediaSourceDelegate::Destroyer> media_source_delegate_;
-
-  // Internal pending playback state.
-  // Store a playback request that cannot be started immediately.
-  bool pending_playback_;
-
   MediaPlayerHostMsg_Initialize_Type player_type_;
-
-  // The current playing time. Because the media player is in the browser
-  // process, it will regularly update the |current_time_| by calling
-  // OnTimeUpdate().
-  double current_time_;
 
   // Whether the browser is currently connected to a remote media player.
   bool is_remote_;
@@ -492,6 +492,15 @@ class WebMediaPlayerAndroid : public blink::WebMediaPlayer,
 
   // Whether the resource is local.
   bool is_local_resource_;
+
+  // base::TickClock used by |interpolator_|.
+  base::DefaultTickClock default_tick_clock_;
+
+  // Tracks the most recent media time update and provides interpolated values
+  // as playback progresses.
+  media::TimeDeltaInterpolator interpolator_;
+
+  scoped_ptr<MediaSourceDelegate> media_source_delegate_;
 
   // NOTE: Weak pointers must be invalidated before all other member variables.
   base::WeakPtrFactory<WebMediaPlayerAndroid> weak_factory_;

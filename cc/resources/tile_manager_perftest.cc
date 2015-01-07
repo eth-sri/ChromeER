@@ -4,6 +4,7 @@
 
 #include "base/time/time.h"
 #include "cc/debug/lap_timer.h"
+#include "cc/resources/raster_buffer.h"
 #include "cc/resources/tile.h"
 #include "cc/resources/tile_priority.h"
 #include "cc/test/begin_frame_args_test.h"
@@ -68,10 +69,12 @@ class FakeRasterizerImpl : public Rasterizer, public RasterizerTaskClient {
   }
 
   // Overridden from RasterizerTaskClient:
-  virtual RasterBuffer* AcquireBufferForRaster(RasterTask* task) OVERRIDE {
-    return NULL;
+  virtual scoped_ptr<RasterBuffer> AcquireBufferForRaster(
+      const Resource* resource) OVERRIDE {
+    return nullptr;
   }
-  virtual void ReleaseBufferForRaster(RasterTask* task) OVERRIDE {}
+  virtual void ReleaseBufferForRaster(
+      scoped_ptr<RasterBuffer> buffer) OVERRIDE {}
 
  private:
   RasterTask::Vector completed_tasks_;
@@ -116,8 +119,7 @@ class TileManagerPerfTest : public testing::Test {
   }
 
   virtual void InitializeRenderer() {
-    host_impl_.InitializeRenderer(
-        FakeOutputSurface::Create3d().PassAs<OutputSurface>());
+    host_impl_.InitializeRenderer(FakeOutputSurface::Create3d().Pass());
     tile_manager()->SetRasterizerForTesting(g_fake_rasterizer.Pointer());
   }
 
@@ -163,7 +165,7 @@ class TileManagerPerfTest : public testing::Test {
     scoped_ptr<FakePictureLayerImpl> pending_layer =
         FakePictureLayerImpl::CreateWithPile(pending_tree, id_, pile);
     pending_layer->SetDrawsContent(true);
-    pending_tree->SetRootLayer(pending_layer.PassAs<LayerImpl>());
+    pending_tree->SetRootLayer(pending_layer.Pass());
 
     pending_root_layer_ = static_cast<FakePictureLayerImpl*>(
         host_impl_.pending_tree()->LayerById(id_));
@@ -187,7 +189,7 @@ class TileManagerPerfTest : public testing::Test {
 
     std::vector<LayerImpl*> layers = CreateLayers(layer_count, 10);
     for (unsigned i = 0; i < layers.size(); ++i)
-      layers[i]->UpdateTiles(NULL);
+      layers[i]->UpdateTiles(Occlusion());
 
     timer_.Reset();
     do {
@@ -214,7 +216,7 @@ class TileManagerPerfTest : public testing::Test {
 
     std::vector<LayerImpl*> layers = CreateLayers(layer_count, 100);
     for (unsigned i = 0; i < layers.size(); ++i)
-      layers[i]->UpdateTiles(NULL);
+      layers[i]->UpdateTiles(Occlusion());
 
     int priority_count = 0;
     timer_.Reset();
@@ -251,7 +253,7 @@ class TileManagerPerfTest : public testing::Test {
     for (unsigned i = 0; i < layers.size(); ++i) {
       FakePictureLayerImpl* layer =
           static_cast<FakePictureLayerImpl*>(layers[i]);
-      layer->UpdateTiles(NULL);
+      layer->UpdateTiles(Occlusion());
       for (size_t j = 0; j < layer->GetTilings()->num_tilings(); ++j) {
         tile_manager()->InitializeTilesWithResourcesForTesting(
             layer->GetTilings()->tiling_at(j)->AllTilesForTesting());
@@ -286,7 +288,7 @@ class TileManagerPerfTest : public testing::Test {
     for (unsigned i = 0; i < layers.size(); ++i) {
       FakePictureLayerImpl* layer =
           static_cast<FakePictureLayerImpl*>(layers[i]);
-      layer->UpdateTiles(NULL);
+      layer->UpdateTiles(Occlusion());
       for (size_t j = 0; j < layer->GetTilings()->num_tilings(); ++j) {
         tile_manager()->InitializeTilesWithResourcesForTesting(
             layer->GetTilings()->tiling_at(j)->AllTilesForTesting());
@@ -359,7 +361,7 @@ class TileManagerPerfTest : public testing::Test {
               host_impl_.pending_tree(), next_id, picture_pile_);
       layer->SetBounds(layer_bounds);
       layers.push_back(layer.get());
-      pending_root_layer_->AddChild(layer.PassAs<LayerImpl>());
+      pending_root_layer_->AddChild(layer.Pass());
 
       FakePictureLayerImpl* fake_layer =
           static_cast<FakePictureLayerImpl*>(layers.back());
@@ -396,7 +398,7 @@ class TileManagerPerfTest : public testing::Test {
       BeginFrameArgs args = CreateBeginFrameArgsForTesting();
       host_impl_.UpdateCurrentBeginFrameArgs(args);
       for (unsigned i = 0; i < layers.size(); ++i)
-        layers[i]->UpdateTiles(NULL);
+        layers[i]->UpdateTiles(Occlusion());
 
       GlobalStateThatImpactsTilePriority global_state(GlobalStateForTest());
       tile_manager()->ManageTiles(global_state);

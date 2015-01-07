@@ -64,12 +64,11 @@ gfx::Rect AdjustDragImageBoundsForScaleAndOffset(
 
 void DispatchGestureEndToWindow(aura::Window* window) {
   if (window && window->delegate()) {
-    ui::GestureEvent gesture_end(
-        0,
-        0,
-        0,
-        ui::EventTimeForNow(),
-        ui::GestureEventDetails(ui::ET_GESTURE_END, 0, 0));
+    ui::GestureEvent gesture_end(0,
+                                 0,
+                                 0,
+                                 ui::EventTimeForNow(),
+                                 ui::GestureEventDetails(ui::ET_GESTURE_END));
     window->delegate()->OnGestureEvent(&gesture_end);
   }
 }
@@ -558,9 +557,9 @@ void DragDropController::Cleanup() {
     drag_window_->RemoveObserver(this);
   drag_window_ = NULL;
   drag_data_ = NULL;
-  // Cleanup can be called again while deleting DragDropTracker, so use Pass
-  // instead of reset to avoid double free.
-  drag_drop_tracker_.Pass();
+  // Cleanup can be called again while deleting DragDropTracker, so delete
+  // the pointer with a local variable to avoid double free.
+  scoped_ptr<ash::DragDropTracker> holder = drag_drop_tracker_.Pass();
 }
 
 }  // namespace ash

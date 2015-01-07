@@ -80,15 +80,18 @@
 #include "content/public/common/url_constants.h"
 #include "content/public/common/url_utils.h"
 #include "content/public/common/user_agent.h"
-#include "extensions/browser/extension_registry.h"
-#include "extensions/browser/extension_system.h"
-#include "extensions/common/extension.h"
-#include "extensions/common/extension_set.h"
 #include "net/base/escape.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 
 #if defined(OS_WIN)
 #include "chrome/browser/ui/metro_pin_tab_helper_win.h"
+#endif
+
+#if defined(ENABLE_EXTENSIONS)
+#include "extensions/browser/extension_registry.h"
+#include "extensions/browser/extension_system.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/extension_set.h"
 #endif
 
 #if defined(ENABLE_PRINTING)
@@ -132,6 +135,7 @@ bool GetBookmarkOverrideCommand(
     const extensions::Extension** extension,
     extensions::Command* command,
     extensions::CommandService::ExtensionCommandType* command_type) {
+#if defined(ENABLE_EXTENSIONS)
   DCHECK(extension);
   DCHECK(command);
   DCHECK(command_type);
@@ -160,6 +164,7 @@ bool GetBookmarkOverrideCommand(
       return true;
     }
   }
+#endif
 
   return false;
 }
@@ -208,7 +213,7 @@ WebContents* GetTabAndRevertIfNecessary(Browser* browser,
     case NEW_BACKGROUND_TAB: {
       WebContents* new_tab = current_tab->Clone();
       browser->tab_strip_model()->AddWebContents(
-          new_tab, -1, content::PAGE_TRANSITION_LINK,
+          new_tab, -1, ui::PAGE_TRANSITION_LINK,
           (disposition == NEW_FOREGROUND_TAB) ?
               TabStripModel::ADD_ACTIVE : TabStripModel::ADD_NONE);
       return new_tab;
@@ -218,7 +223,7 @@ WebContents* GetTabAndRevertIfNecessary(Browser* browser,
       Browser* new_browser = new Browser(Browser::CreateParams(
           browser->profile(), browser->host_desktop_type()));
       new_browser->tab_strip_model()->AddWebContents(
-          new_tab, -1, content::PAGE_TRANSITION_LINK,
+          new_tab, -1, ui::PAGE_TRANSITION_LINK,
           TabStripModel::ADD_ACTIVE);
       new_browser->window()->Show();
       return new_tab;
@@ -388,7 +393,7 @@ void OpenURLOffTheRecord(Profile* profile,
   ScopedTabbedBrowserDisplayer displayer(profile->GetOffTheRecordProfile(),
                                          desktop_type);
   AddSelectedTabWithURL(displayer.browser(), url,
-      content::PAGE_TRANSITION_LINK);
+      ui::PAGE_TRANSITION_LINK);
 }
 
 bool CanGoBack(const Browser* browser) {
@@ -466,6 +471,7 @@ void Home(Browser* browser, WindowOpenDisposition disposition) {
 
   GURL url = browser->profile()->GetHomePage();
 
+#if defined(ENABLE_EXTENSIONS)
   // Streamlined hosted apps should return to their launch page when the home
   // button is pressed.
   if (browser->is_app()) {
@@ -479,12 +485,13 @@ void Home(Browser* browser, WindowOpenDisposition disposition) {
 
     url = extensions::AppLaunchInfo::GetLaunchWebURL(extension);
   }
+#endif
 
   OpenURLParams params(
       url, Referrer(), disposition,
-      content::PageTransitionFromInt(
-          content::PAGE_TRANSITION_AUTO_BOOKMARK |
-          content::PAGE_TRANSITION_HOME_PAGE),
+      ui::PageTransitionFromInt(
+          ui::PAGE_TRANSITION_AUTO_BOOKMARK |
+          ui::PAGE_TRANSITION_HOME_PAGE),
       false);
   params.extra_headers = extra_headers;
   browser->OpenURL(params);
@@ -498,9 +505,9 @@ void OpenCurrentURL(Browser* browser) {
 
   GURL url(location_bar->GetDestinationURL());
 
-  content::PageTransition page_transition = location_bar->GetPageTransition();
-  content::PageTransition page_transition_without_qualifier(
-      PageTransitionStripQualifier(page_transition));
+  ui::PageTransition page_transition = location_bar->GetPageTransition();
+  ui::PageTransition page_transition_without_qualifier(
+      ui::PageTransitionStripQualifier(page_transition));
   WindowOpenDisposition open_disposition =
       location_bar->GetWindowOpenDisposition();
   // A PAGE_TRANSITION_TYPED means the user has typed a URL. We do not want to
@@ -510,8 +517,8 @@ void OpenCurrentURL(Browser* browser) {
   // Instant should also not handle PAGE_TRANSITION_RELOAD because its knowledge
   // of the omnibox text may be stale if the user focuses in the omnibox and
   // presses enter without typing anything.
-  if (page_transition_without_qualifier != content::PAGE_TRANSITION_TYPED &&
-      page_transition_without_qualifier != content::PAGE_TRANSITION_RELOAD &&
+  if (page_transition_without_qualifier != ui::PAGE_TRANSITION_TYPED &&
+      page_transition_without_qualifier != ui::PAGE_TRANSITION_RELOAD &&
       browser->instant_controller() &&
       browser->instant_controller()->OpenInstant(open_disposition, url))
     return;
@@ -526,6 +533,7 @@ void OpenCurrentURL(Browser* browser) {
       TabStripModel::ADD_FORCE_INDEX | TabStripModel::ADD_INHERIT_OPENER;
   Navigate(&params);
 
+#if defined(ENABLE_EXTENSIONS)
   DCHECK(extensions::ExtensionSystem::Get(
       browser->profile())->extension_service());
   const extensions::Extension* extension =
@@ -536,6 +544,7 @@ void OpenCurrentURL(Browser* browser) {
         extension_misc::APP_LAUNCH_OMNIBOX_LOCATION,
         extension->GetType());
   }
+#endif
 }
 
 void Stop(Browser* browser) {
@@ -700,7 +709,7 @@ WebContents* DuplicateTabAt(Browser* browser, int index) {
     // The page transition below is only for the purpose of inserting the tab.
     new_browser->tab_strip_model()->AddWebContents(
         contents_dupe, -1,
-        content::PAGE_TRANSITION_LINK,
+        ui::PAGE_TRANSITION_LINK,
         TabStripModel::ADD_ACTIVE);
   }
 
@@ -844,19 +853,27 @@ void ShowWebsiteSettings(Browser* browser,
       web_contents, url, ssl);
 }
 
-
 void Print(Browser* browser) {
 #if defined(ENABLE_PRINTING)
   WebContents* contents = browser->tab_strip_model()->GetActiveWebContents();
+
 #if defined(ENABLE_FULL_PRINTING)
   printing::PrintViewManager* print_view_manager =
       printing::PrintViewManager::FromWebContents(contents);
-  print_view_manager->PrintPreviewNow(false);
-#else
+  if (!browser->profile()->GetPrefs()->GetBoolean(
+          prefs::kPrintPreviewDisabled)) {
+    print_view_manager->PrintPreviewNow(false);
+    return;
+  }
+#else   // ENABLE_FULL_PRINTING
   printing::PrintViewManagerBasic* print_view_manager =
       printing::PrintViewManagerBasic::FromWebContents(contents);
+#endif  // ENABLE_FULL_PRINTING
+
+#if !defined(DISABLE_BASIC_PRINTING)
   print_view_manager->PrintNow();
-#endif  // defined(ENABLE_FULL_PRINTING)
+#endif  // DISABLE_BASIC_PRINTING
+
 #endif  // defined(ENABLE_PRINTING)
 }
 
@@ -872,21 +889,30 @@ bool CanPrint(Browser* browser) {
       GetContentRestrictions(browser) & CONTENT_RESTRICTION_PRINT);
 }
 
-#if !defined(OS_WIN)
-void AdvancedPrint(Browser* browser) {
+#if !defined(DISABLE_BASIC_PRINTING)
+void BasicPrint(Browser* browser) {
 #if defined(ENABLE_FULL_PRINTING)
   printing::PrintViewManager* print_view_manager =
       printing::PrintViewManager::FromWebContents(
           browser->tab_strip_model()->GetActiveWebContents());
-  print_view_manager->AdvancedPrintNow();
+  print_view_manager->BasicPrint();
 #endif
 }
 
-bool CanAdvancedPrint(Browser* browser) {
+bool CanBasicPrint(Browser* browser) {
+  // If printing is not disabled via pref or policy, it is always possible to
+  // advanced print when the print preview is visible.  The exception to this
+  // is under Win8 ash, since showing the advanced print dialog will open it
+  // modally on the Desktop and hang the browser.
+#if defined(OS_WIN)
+  if (chrome::GetActiveDesktop() == chrome::HOST_DESKTOP_TYPE_ASH)
+    return false;
+#endif
+
   return browser->profile()->GetPrefs()->GetBoolean(prefs::kPrintingEnabled) &&
       (PrintPreviewShowing(browser) || CanPrint(browser));
 }
-#endif  // !OS_WIN
+#endif  // !DISABLE_BASIC_PRINTING
 
 void EmailPageLocation(Browser* browser) {
   content::RecordAction(UserMetricsAction("EmailPageLocation"));
@@ -1198,7 +1224,7 @@ void ViewSource(Browser* browser,
 
     // The page transition below is only for the purpose of inserting the tab.
     b->tab_strip_model()->AddWebContents(view_source_contents, -1,
-                                         content::PAGE_TRANSITION_LINK,
+                                         ui::PAGE_TRANSITION_LINK,
                                          TabStripModel::ADD_ACTIVE);
   }
 

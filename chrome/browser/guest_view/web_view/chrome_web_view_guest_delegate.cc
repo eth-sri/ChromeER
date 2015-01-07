@@ -5,7 +5,6 @@
 
 #include "chrome/browser/guest_view/web_view/chrome_web_view_guest_delegate.h"
 
-#include "chrome/browser/extensions/api/web_request/web_request_api.h"
 #include "chrome/browser/extensions/chrome_extension_web_contents_observer.h"
 #include "chrome/browser/favicon/favicon_tab_helper.h"
 #include "chrome/browser/renderer_context_menu/render_view_context_menu.h"
@@ -15,6 +14,7 @@
 #include "components/pdf/browser/pdf_web_contents_helper.h"
 #include "components/renderer_context_menu/context_menu_delegate.h"
 #include "content/public/common/page_zoom.h"
+#include "extensions/browser/api/web_request/web_request_api.h"
 #include "extensions/browser/guest_view/web_view/web_view_constants.h"
 
 #if defined(ENABLE_PRINTING)
@@ -41,36 +41,13 @@ void RemoveWebViewEventListenersOnIOThread(
 
 ChromeWebViewGuestDelegate::ChromeWebViewGuestDelegate(
     extensions::WebViewGuest* web_view_guest)
-  : WebViewGuestDelegate(web_view_guest),
-    find_helper_(web_view_guest),
-    pending_context_menu_request_id_(0),
-    chromevox_injected_(false),
-    current_zoom_factor_(1.0) {
+    : pending_context_menu_request_id_(0),
+      chromevox_injected_(false),
+      current_zoom_factor_(1.0),
+      web_view_guest_(web_view_guest) {
 }
 
 ChromeWebViewGuestDelegate::~ChromeWebViewGuestDelegate() {
-}
-
-void ChromeWebViewGuestDelegate::Find(
-    const base::string16& search_text,
-    const blink::WebFindOptions& options,
-    extensions::WebViewInternalFindFunction* find_function) {
-  find_helper_.Find(guest_web_contents(), search_text, options, find_function);
-}
-
-void ChromeWebViewGuestDelegate::FindReply(content::WebContents* source,
-                                           int request_id,
-                                           int number_of_matches,
-                                           const gfx::Rect& selection_rect,
-                                           int active_match_ordinal,
-                                           bool final_update) {
-  find_helper_.FindReply(request_id, number_of_matches, selection_rect,
-                         active_match_ordinal, final_update);
-}
-
-void ChromeWebViewGuestDelegate::StopFinding(content::StopFindAction action) {
-  find_helper_.CancelAllFindSessions();
-  guest_web_contents()->StopFinding(action);
 }
 
 double ChromeWebViewGuestDelegate::GetZoom() {
@@ -146,10 +123,22 @@ void ChromeWebViewGuestDelegate::OnEmbedderDestroyed() {
           web_view_guest()->view_instance_id()));
 }
 
+void ChromeWebViewGuestDelegate::OnDidAttachToEmbedder() {
+  // TODO(fsamuel): This code should be implemented in GuestViewBase once the
+  // ZoomController moves to the extensions module.
+  ZoomController* zoom_controller = ZoomController::FromWebContents(
+      web_view_guest()->embedder_web_contents());
+  if (!zoom_controller)
+    return;
+  // Listen to the embedder's zoom changes.
+  zoom_controller->AddObserver(this);
+  // Set the guest's initial zoom level to be equal to the embedder's.
+  ZoomController::FromWebContents(guest_web_contents())->
+      SetZoomLevel(zoom_controller->GetZoomLevel());
+}
+
 void ChromeWebViewGuestDelegate::OnDidCommitProvisionalLoadForFrame(
     bool is_main_frame) {
-  find_helper_.CancelAllFindSessions();
-
   // Update the current zoom factor for the new page.
   ZoomController* zoom_controller =
       ZoomController::FromWebContents(guest_web_contents());
@@ -199,11 +188,6 @@ scoped_ptr<base::ListValue> ChromeWebViewGuestDelegate::MenuModelToValue(
     items->Append(item_value);
   }
   return items.Pass();
-}
-
-void ChromeWebViewGuestDelegate::OnRenderProcessGone() {
-  // Cancel all find sessions in progress.
-  find_helper_.CancelAllFindSessions();
 }
 
 void ChromeWebViewGuestDelegate::OnSetZoom(double zoom_factor) {
@@ -268,3 +252,9 @@ void ChromeWebViewGuestDelegate::OnAccessibilityStatusChanged(
   }
 }
 #endif
+
+void ChromeWebViewGuestDelegate::OnZoomChanged(
+    const ZoomController::ZoomChangedEventData& data) {
+  ZoomController::FromWebContents(guest_web_contents())->
+      SetZoomLevel(data.new_zoom_level);
+}

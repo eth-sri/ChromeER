@@ -10,7 +10,7 @@
 #include "base/files/file_path.h"
 #include "third_party/khronos/EGL/egl.h"
 #include "ui/ozone/platform/dri/dri_window_delegate_impl.h"
-#include "ui/ozone/platform/dri/dri_window_manager.h"
+#include "ui/ozone/platform/dri/dri_window_delegate_manager.h"
 #include "ui/ozone/platform/dri/gbm_buffer.h"
 #include "ui/ozone/platform/dri/gbm_surface.h"
 #include "ui/ozone/platform/dri/gbm_surfaceless.h"
@@ -74,10 +74,11 @@ GbmSurfaceFactory::GbmSurfaceFactory(bool allow_surfaceless)
 
 GbmSurfaceFactory::~GbmSurfaceFactory() {}
 
-void GbmSurfaceFactory::InitializeGpu(DriWrapper* dri,
-                                      gbm_device* device,
-                                      ScreenManager* screen_manager,
-                                      DriWindowManager* window_manager) {
+void GbmSurfaceFactory::InitializeGpu(
+    DriWrapper* dri,
+    gbm_device* device,
+    ScreenManager* screen_manager,
+    DriWindowDelegateManager* window_manager) {
   drm_ = dri;
   device_ = device;
   screen_manager_ = screen_manager;
@@ -150,8 +151,6 @@ scoped_ptr<SurfaceOzoneEGL> GbmSurfaceFactory::CreateEGLSurfaceForWidget(
 
   DriWindowDelegate* delegate = GetOrCreateWindowDelegate(widget);
 
-  ResetCursor(widget);
-
   scoped_ptr<GbmSurface> surface(new GbmSurface(delegate, device_, drm_));
   if (!surface->Initialize())
     return scoped_ptr<SurfaceOzoneEGL>();
@@ -174,7 +173,7 @@ scoped_refptr<ui::NativePixmap> GbmSurfaceFactory::CreateNativePixmap(
     BufferFormat format) {
   scoped_refptr<GbmBuffer> buffer = GbmBuffer::CreateBuffer(
       drm_, device_, format, size, true);
-  if (!buffer)
+  if (!buffer.get())
     return NULL;
 
   return scoped_refptr<GbmPixmap>(new GbmPixmap(buffer));
@@ -196,7 +195,7 @@ bool GbmSurfaceFactory::ScheduleOverlayPlane(
     const gfx::Rect& display_bounds,
     const gfx::RectF& crop_rect) {
   scoped_refptr<GbmPixmap> pixmap = static_cast<GbmPixmap*>(buffer.get());
-  if (!pixmap) {
+  if (!pixmap.get()) {
     LOG(ERROR) << "ScheduleOverlayPlane passed NULL buffer.";
     return false;
   }

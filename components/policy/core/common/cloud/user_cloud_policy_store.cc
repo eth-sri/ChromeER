@@ -5,7 +5,7 @@
 #include "components/policy/core/common/cloud/user_cloud_policy_store.h"
 
 #include "base/bind.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/location.h"
 #include "base/metrics/histogram.h"
 #include "base/task_runner_util.h"
@@ -168,10 +168,10 @@ UserCloudPolicyStore::UserCloudPolicyStore(
     const std::string& verification_key,
     scoped_refptr<base::SequencedTaskRunner> background_task_runner)
     : UserCloudPolicyStoreBase(background_task_runner),
-      weak_factory_(this),
       policy_path_(policy_path),
       key_path_(key_path),
-      verification_key_(verification_key) {}
+      verification_key_(verification_key),
+      weak_factory_(this) {}
 
 UserCloudPolicyStore::~UserCloudPolicyStore() {}
 

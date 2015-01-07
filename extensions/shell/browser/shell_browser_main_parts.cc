@@ -8,12 +8,15 @@
 #include "base/run_loop.h"
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
 #include "components/omaha_query_params/omaha_query_params.h"
+#include "content/public/browser/child_process_security_policy.h"
 #include "content/public/browser/context_factory.h"
 #include "content/public/common/result_codes.h"
 #include "content/shell/browser/shell_devtools_delegate.h"
 #include "content/shell/browser/shell_net_log.h"
+#include "extensions/browser/app_window/app_window_client.h"
 #include "extensions/browser/browser_context_keyed_service_factories.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/common/constants.cc"
 #include "extensions/shell/browser/shell_browser_context.h"
 #include "extensions/shell/browser/shell_browser_main_delegate.h"
 #include "extensions/shell/browser/shell_desktop_controller.h"
@@ -28,6 +31,10 @@
 #include "ui/aura/window_tree_host.h"
 #include "ui/base/ime/input_method_initializer.h"
 #include "ui/base/resource/resource_bundle.h"
+
+#if !defined(OS_ANDROID) && !defined(OS_IOS)
+#include "components/storage_monitor/storage_monitor.h"
+#endif
 
 #if defined(OS_CHROMEOS)
 #include "chromeos/audio/cras_audio_handler.h"
@@ -91,6 +98,11 @@ void ShellBrowserMainParts::PreEarlyInitialization() {
 int ShellBrowserMainParts::PreCreateThreads() {
   // TODO(jamescook): Initialize chromeos::CrosSettings here?
 
+  content::ChildProcessSecurityPolicy::GetInstance()->RegisterWebSafeScheme(
+      kExtensionScheme);
+  content::ChildProcessSecurityPolicy::GetInstance()->RegisterWebSafeScheme(
+      kExtensionResourceScheme);
+
   // Return no error.
   return 0;
 }
@@ -100,6 +112,10 @@ void ShellBrowserMainParts::PreMainMessageLoopRun() {
   browser_context_.reset(new ShellBrowserContext);
 
   aura::Env::GetInstance()->set_context_factory(content::GetContextFactory());
+
+#if !defined(OS_ANDROID) && !defined(OS_IOS)
+  storage_monitor::StorageMonitor::Create();
+#endif
 
   desktop_controller_.reset(browser_main_delegate_->CreateDesktopController());
 
@@ -176,6 +192,10 @@ void ShellBrowserMainParts::PostMainMessageLoopRun() {
   browser_context_.reset();
 
   desktop_controller_.reset();
+
+#if !defined(OS_ANDROID) && !defined(OS_IOS)
+  storage_monitor::StorageMonitor::Destroy();
+#endif
 }
 
 void ShellBrowserMainParts::PostDestroyThreads() {

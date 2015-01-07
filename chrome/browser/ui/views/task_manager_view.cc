@@ -172,6 +172,7 @@ class TaskManagerView : public views::ButtonListener,
   // views::DialogDelegateView:
   virtual bool CanResize() const OVERRIDE;
   virtual bool CanMaximize() const OVERRIDE;
+  virtual bool CanMinimize() const OVERRIDE;
   virtual bool ExecuteWindowsCommand(int command_id) OVERRIDE;
   virtual base::string16 GetWindowTitle() const OVERRIDE;
   virtual std::string GetWindowName() const OVERRIDE;
@@ -331,6 +332,12 @@ void TaskManagerView::Init() {
       ui::TableColumn(IDS_TASK_MANAGER_JAVASCRIPT_MEMORY_ALLOCATED_COLUMN,
                       ui::TableColumn::RIGHT, -1, 0));
   columns_.back().sortable = true;
+  // TODO(port) http://crbug.com/120488 for non-Linux.
+#if defined(OS_LINUX)
+  columns_.push_back(ui::TableColumn(IDS_TASK_MANAGER_IDLE_WAKEUPS_COLUMN,
+                                     ui::TableColumn::RIGHT, -1, 0));
+  columns_.back().sortable = true;
+#endif
 
   tab_table_ = new views::TableView(
       table_model_.get(), columns_, views::ICON_AND_TEXT, false);
@@ -354,10 +361,9 @@ void TaskManagerView::Init() {
                                   false);
   tab_table_->SetColumnVisibility(
       IDS_TASK_MANAGER_JAVASCRIPT_MEMORY_ALLOCATED_COLUMN, false);
-  tab_table_->SetColumnVisibility(IDS_TASK_MANAGER_GOATS_TELEPORTED_COLUMN,
-                                  false);
   tab_table_->SetColumnVisibility(IDS_TASK_MANAGER_GDI_HANDLES_COLUMN, false);
   tab_table_->SetColumnVisibility(IDS_TASK_MANAGER_USER_HANDLES_COLUMN, false);
+  tab_table_->SetColumnVisibility(IDS_TASK_MANAGER_IDLE_WAKEUPS_COLUMN, false);
 
   UpdateStatsCounters();
   tab_table_->SetObserver(this);
@@ -522,6 +528,10 @@ bool TaskManagerView::CanResize() const {
 }
 
 bool TaskManagerView::CanMaximize() const {
+  return true;
+}
+
+bool TaskManagerView::CanMinimize() const {
   return true;
 }
 

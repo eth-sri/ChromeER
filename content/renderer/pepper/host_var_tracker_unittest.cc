@@ -50,6 +50,7 @@ class PepperTryCatchForTest : public PepperTryCatch {
         context_scope_(v8::Context::New(instance->GetIsolate())) {}
 
   virtual void SetException(const char* message) OVERRIDE { NOTREACHED(); }
+  virtual bool HasException() OVERRIDE { return false; }
   virtual v8::Handle<v8::Context> GetContext() OVERRIDE {
     return instance_->GetIsolate()->GetCurrentContext();
   }
@@ -100,7 +101,7 @@ TEST_F(HostVarTrackerTest, DeleteObjectVarWithInstance) {
   EXPECT_EQ(0, tracker().GetLiveV8ObjectVarsForTest(pp_instance2));
 }
 
-// Make sure that using the same NPObject should give the same PP_Var
+// Make sure that using the same v8 object should give the same PP_Var
 // each time.
 TEST_F(HostVarTrackerTest, ReuseVar) {
   PepperTryCatchForTest try_catch(instance());

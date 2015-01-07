@@ -32,6 +32,7 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/common/user_agent.h"
+#include "grit/components_strings.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "v8/include/v8.h"
 
@@ -313,23 +314,17 @@ base::string16 HelpHandler::BuildBrowserVersionString() {
   chrome::VersionInfo version_info;
   DCHECK(version_info.is_valid());
 
-  std::string browser_version = version_info.Version();
-  std::string version_modifier =
-      chrome::VersionInfo::GetVersionStringModifier();
-  if (!version_modifier.empty())
-    browser_version += " " + version_modifier;
+  std::string version = version_info.Version();
 
-#if !defined(GOOGLE_CHROME_BUILD)
-  browser_version += " (";
-  browser_version += version_info.LastChange();
-  browser_version += ")";
-#endif
+  std::string modifier = chrome::VersionInfo::GetVersionStringModifier();
+  if (!modifier.empty())
+    version += " " + modifier;
 
 #if defined(ARCH_CPU_64_BITS)
-  browser_version += " (64-bit)";
+  version += " (64-bit)";
 #endif
 
-  return base::UTF8ToUTF16(browser_version);
+  return base::UTF8ToUTF16(version);
 }
 
 void HelpHandler::OnPageLoaded(const base::ListValue* args) {

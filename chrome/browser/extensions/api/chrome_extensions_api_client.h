@@ -6,7 +6,6 @@
 #define CHROME_BROWSER_EXTENSIONS_API_CHROME_EXTENSIONS_API_CLIENT_H_
 
 #include "base/compiler_specific.h"
-#include "base/memory/scoped_ptr.h"
 #include "extensions/browser/api/extensions_api_client.h"
 
 namespace extensions {
@@ -25,17 +24,27 @@ class ChromeExtensionsAPIClient : public ExtensionsAPIClient {
       std::map<settings_namespace::Namespace, ValueStoreCache*>* caches)
       OVERRIDE;
   virtual AppViewGuestDelegate* CreateAppViewGuestDelegate() const OVERRIDE;
+  virtual ExtensionOptionsGuestDelegate* CreateExtensionOptionsGuestDelegate(
+      ExtensionOptionsGuest* guest) const OVERRIDE;
+  virtual scoped_ptr<MimeHandlerViewGuestDelegate>
+      CreateMimeHandlerViewGuestDelegate(
+          MimeHandlerViewGuest* guest) const OVERRIDE;
   virtual WebViewGuestDelegate* CreateWebViewGuestDelegate(
       WebViewGuest* web_view_guest) const OVERRIDE;
   virtual WebViewPermissionHelperDelegate*
       CreateWebViewPermissionHelperDelegate(
           WebViewPermissionHelper* web_view_permission_helper) const OVERRIDE;
-  virtual device::HidService* GetHidService() OVERRIDE;
-  virtual void RegisterGuestViewTypes() OVERRIDE;
+  virtual scoped_refptr<RulesRegistry> GetRulesRegistry(
+      content::BrowserContext* browser_context,
+      const RulesRegistry::WebViewKey& webview_key,
+      const std::string& event_name) OVERRIDE;
+  virtual WebRequestEventRouterDelegate* CreateWebRequestEventRouterDelegate()
+      const OVERRIDE;
+  virtual scoped_refptr<ContentRulesRegistry> CreateContentRulesRegistry(
+      content::BrowserContext* browser_context,
+      RulesCacheDelegate* cache_delegate) const OVERRIDE;
 
  private:
-  scoped_ptr<device::HidService> hid_service_;
-
   DISALLOW_COPY_AND_ASSIGN(ChromeExtensionsAPIClient);
 };
 

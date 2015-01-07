@@ -4,6 +4,7 @@
 
 #include "media/cdm/ppapi/cdm_adapter.h"
 
+#include "media/base/limits.h"
 #include "media/cdm/ppapi/cdm_file_io_impl.h"
 #include "media/cdm/ppapi/cdm_helpers.h"
 #include "media/cdm/ppapi/cdm_logging.h"
@@ -17,6 +18,12 @@
 #endif  // defined(CHECK_DOCUMENT_URL)
 
 namespace {
+
+// Constants for UMA reporting of file size (in KB) via HistogramCustomCounts().
+// Note that the histogram is log-scaled (rather than linear).
+const uint32_t kSizeKBMin = 1;
+const uint32_t kSizeKBMax = 512 * 1024;  // 512MB
+const uint32_t kSizeKBBuckets = 100;
 
 #if !defined(NDEBUG)
   #define DLOG_TO_CONSOLE(message) LogToConsole(message);
@@ -266,7 +273,9 @@ CdmAdapter::CdmAdapter(PP_Instance instance, pp::Module* module)
       deferred_initialize_audio_decoder_(false),
       deferred_audio_decoder_config_id_(0),
       deferred_initialize_video_decoder_(false),
-      deferred_video_decoder_config_id_(0) {
+      deferred_video_decoder_config_id_(0),
+      last_read_file_size_kb_(0),
+      file_size_uma_reported_(false) {
   callback_factory_.Initialize(this);
 }
 
@@ -321,6 +330,38 @@ void CdmAdapter::Initialize(const std::string& key_system) {
 
   PP_DCHECK(cdm_);
   key_system_ = key_system;
+}
+
+void CdmAdapter::SetServerCertificate(uint32_t promise_id,
+                                      pp::VarArrayBuffer server_certificate) {
+  const uint8_t* server_certificate_ptr =
+      static_cast<const uint8_t*>(server_certificate.Map());
+  const uint32_t server_certificate_size = server_certificate.ByteLength();
+
+  if (!server_certificate_ptr ||
+      server_certificate_size < media::limits::kMinCertificateLength ||
+      server_certificate_size > media::limits::kMaxCertificateLength) {
+    RejectPromise(
+        promise_id, cdm::kInvalidAccessError, 0, "Incorrect certificate.");
+    return;
+  }
+
+  // Initialize() doesn't report an error, so SetServerCertificate() can be
+  // called even if Initialize() failed.
+  // TODO(jrummell): Remove this code when prefixed EME gets removed.
+  if (!cdm_) {
+    RejectPromise(promise_id,
+                  cdm::kInvalidStateError,
+                  0,
+                  "CDM has not been initialized.");
+    return;
+  }
+
+  if (!cdm_->SetServerCertificate(
+          promise_id, server_certificate_ptr, server_certificate_size)) {
+    // CDM_4 and CDM_5 don't support this method, so reject the promise.
+    RejectPromise(promise_id, cdm::kNotSupportedError, 0, "Not implemented.");
+  }
 }
 
 void CdmAdapter::CreateSession(uint32_t promise_id,
@@ -392,8 +433,8 @@ void CdmAdapter::CloseSession(uint32_t promise_id,
   }
 }
 
-void CdmAdapter::ReleaseSession(uint32_t promise_id,
-                                const std::string& web_session_id) {
+void CdmAdapter::RemoveSession(uint32_t promise_id,
+                               const std::string& web_session_id) {
   cdm_->RemoveSession(
       promise_id, web_session_id.data(), web_session_id.length());
 }
@@ -726,6 +767,17 @@ void CdmAdapter::OnRejectPromise(uint32_t promise_id,
                                  uint32_t system_code,
                                  const char* error_message,
                                  uint32_t error_message_length) {
+  // UMA to investigate http://crbug.com/410630
+  // TODO(xhwang): Remove after bug is fixed.
+  if (system_code == 0x27) {
+    pp::UMAPrivate uma_interface(this);
+    uma_interface.HistogramCustomCounts("Media.EME.CdmFileIO.FileSizeKBOnError",
+                                        last_read_file_size_kb_,
+                                        kSizeKBMin,
+                                        kSizeKBMax,
+                                        kSizeKBBuckets);
+  }
+
   RejectPromise(promise_id,
                 error,
                 system_code,
@@ -816,8 +868,7 @@ void CdmAdapter::SendPromiseResolvedWithUsableKeyIdsInternal(
     uint32_t promise_id,
     std::vector<std::vector<uint8> > key_ids) {
   PP_DCHECK(result == PP_OK);
-  // TODO(jrummell): Implement this event in subsequent CL.
-  // (http://crbug.com/358271).
+  pp::ContentDecryptor_Private::PromiseResolvedWithKeyIds(promise_id, key_ids);
 }
 
 void CdmAdapter::SendPromiseRejectedInternal(int32_t result,
@@ -875,16 +926,16 @@ void CdmAdapter::SendSessionUsableKeysChangeInternal(
     const std::string& web_session_id,
     bool has_additional_usable_key) {
   PP_DCHECK(result == PP_OK);
-  // TODO(jrummell): Implement this event in subsequent CL.
-  // (http://crbug.com/358271).
+  pp::ContentDecryptor_Private::SessionKeysChange(web_session_id,
+                                                  has_additional_usable_key);
 }
 
 void CdmAdapter::SendExpirationChangeInternal(int32_t result,
                                               const std::string& web_session_id,
                                               cdm::Time new_expiry_time) {
   PP_DCHECK(result == PP_OK);
-  // TODO(jrummell): Implement this event in subsequent CL.
-  // (http://crbug.com/358271).
+  pp::ContentDecryptor_Private::SessionExpirationChange(web_session_id,
+                                                        new_expiry_time);
 }
 
 void CdmAdapter::DeliverBlock(int32_t result,
@@ -1050,6 +1101,25 @@ bool CdmAdapter::IsValidVideoFrame(const LinkedVideoFrame& video_frame) {
   return true;
 }
 
+void CdmAdapter::OnFirstFileRead(int32_t file_size_bytes) {
+  PP_DCHECK(IsMainThread());
+  PP_DCHECK(file_size_bytes >= 0);
+
+  last_read_file_size_kb_ = file_size_bytes / 1024;
+
+  if (file_size_uma_reported_)
+    return;
+
+  pp::UMAPrivate uma_interface(this);
+  uma_interface.HistogramCustomCounts(
+      "Media.EME.CdmFileIO.FileSizeKBOnFirstRead",
+      last_read_file_size_kb_,
+      kSizeKBMin,
+      kSizeKBMax,
+      kSizeKBBuckets);
+  file_size_uma_reported_ = true;
+}
+
 #if !defined(NDEBUG)
 void CdmAdapter::LogToConsole(const pp::Var& value) {
   PP_DCHECK(IsMainThread());
@@ -1157,13 +1227,16 @@ void CdmAdapter::OnDeferredInitializationDone(cdm::StreamType stream_type,
 
 // The CDM owns the returned object and must call FileIO::Close() to release it.
 cdm::FileIO* CdmAdapter::CreateFileIO(cdm::FileIOClient* client) {
-  return new CdmFileIOImpl(client, pp_instance());
+  return new CdmFileIOImpl(
+      client,
+      pp_instance(),
+      callback_factory_.NewCallback(&CdmAdapter::OnFirstFileRead));
 }
 
 #if defined(OS_CHROMEOS)
 void CdmAdapter::ReportOutputProtectionUMA(OutputProtectionStatus status) {
-  pp::UMAPrivate uma_interface_(this);
-  uma_interface_.HistogramEnumeration(
+  pp::UMAPrivate uma_interface(this);
+  uma_interface.HistogramEnumeration(
       "Media.EME.OutputProtection", status, OUTPUT_PROTECTION_MAX);
 }
 
